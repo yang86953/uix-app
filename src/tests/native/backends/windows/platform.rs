@@ -1,5 +1,11 @@
-use super::*;
-use crate::core::Rect;
+use crate::tests::common::*;
+use std::collections::{ BTreeMap };
+use crate::native::shared::{OsEventSource, PlatformWindowCore, WindowState};
+use crate::native::traits::event::{EventLoopWaker, UiEvent};
+use crate::native::traits::*;
+use crate::native::backends::windows::platform::*;
+use crate::native::backends::windows::consts::{WM_SIZE, WM_CHAR, WM_IME_STARTCOMPOSITION, WM_IME_ENDCOMPOSITION, SIZE_RESTORED};
+use crate::native::backends::windows::ffi::PostMessageW;
 use crate::native::traits::event::{UiEventPayload, UiEventType};
 
 fn size_lparam(width: u16, height: u16) -> isize {

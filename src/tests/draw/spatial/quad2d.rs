@@ -1,4 +1,6 @@
-use super::*;
+use crate::tests::common::*;
+use std::ops::{Add, Mul, Sub};
+use crate::draw::spatial::quad2d::*;
 
 #[test]
 fn bounds_axis_aligned() {

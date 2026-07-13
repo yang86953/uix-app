@@ -1,8 +1,10 @@
-use super::*;
-use crate::core::Point;
-use crate::native::traits::input::MouseButton;
-use crate::ui::traits::widget::EventHandler;
-use crate::ui::traits::WidgetLayout;
+use crate::tests::common::*;
+use crate::component;
+use crate::draw::spatial::PhysicalUnit;
+use crate::draw::TextLayoutOptions;
+use crate::ui::clipboard;
+use crate::ui::{ SnapshotSource };
+use crate::ui::widgets::general::label::*;
 
 #[test]
 fn measure_clamps_label_size() {

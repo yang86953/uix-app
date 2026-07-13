@@ -1,6 +1,7 @@
-use super::*;
-use crate::core::{Constraints, Size};
-use crate::ui::traits::WidgetLayout;
+use crate::tests::common::*;
+use crate::component;
+use crate::draw::Radius;
+use crate::ui::widgets::display::descriptions::*;
 
 #[test]
 fn descriptions_normalizes_zero_columns_before_measurement() {

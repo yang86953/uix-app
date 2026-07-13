@@ -323,6 +323,3 @@ impl Footer {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/containers/layout.rs"]
-mod tests;

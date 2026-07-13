@@ -245,7 +245,7 @@ impl EglContext {
         })
     }
 
-    fn shutdown_result(&mut self) -> Result<(), Error> {
+    pub(crate) fn shutdown_result(&mut self) -> Result<(), Error> {
         if self.shutdown {
             return Ok(());
         }

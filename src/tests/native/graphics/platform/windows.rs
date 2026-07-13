@@ -1,4 +1,6 @@
-use super::*;
+use crate::tests::common::*;
+use std::ffi::c_void;
+use crate::native::graphics::platform::windows::*;
 
 #[test]
 fn drawable_size_scales_logical_extent_with_monitor_dpi() {

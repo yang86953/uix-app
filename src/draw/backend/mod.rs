@@ -7,10 +7,6 @@ pub mod offscreen_pool;
 pub mod registry;
 pub mod traits;
 
-#[cfg(all(test, feature = "opengles"))]
-#[path = "../../tests/draw/backend/opengl_native_tests.rs"]
-mod opengl_native_tests;
-
 pub use crate::core::DamageRegion;
 pub use cpu::CpuBackend;
 pub use native_gpu::NativeGpuBackend;
@@ -37,6 +33,3 @@ pub(crate) fn create_backend(
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/backend/mod.rs"]
-mod tests;

@@ -1,8 +1,8 @@
-use super::*;
-use crate::core::{Errc, Error};
-use crate::draw::null_engine::NullEngine;
-use std::cell::RefCell;
-use std::rc::Rc;
+use crate::tests::common::*;
+use crate::draw::engine::{ GraphicsFailure, GraphicsRecovery };
+use crate::draw::pipeline::{ EncodedFrameExecution, EncodedPictureExecution };
+use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
+use crate::draw::engine::recovering::*;
 
 struct EndFailingEngine {
     inner: NullEngine,

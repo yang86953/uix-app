@@ -164,6 +164,3 @@ impl Carousel {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/display/carousel.rs"]
-mod tests;

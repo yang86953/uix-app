@@ -32,9 +32,9 @@ component! {
         mask: bool,
         footer_visible: bool,
         extra: String,
-        transition: TransitionPlayer,
+        pub(crate) transition: TransitionPlayer,
         closing: bool,
-        transition_dirty: bool,
+        pub(crate) transition_dirty: bool,
         last_surface_w: Cell<f32>,
         last_surface_h: Cell<f32>,
     }
@@ -489,6 +489,3 @@ impl Drawer {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/feedback/drawer.rs"]
-mod tests;

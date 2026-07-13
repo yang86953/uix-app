@@ -1,6 +1,10 @@
-use super::*;
+use crate::tests::common::*;
+use crate::core::error::{ Result };
+use crate::native::shared::state::WindowState;
+use crate::native::traits::present::{ IPresenter };
+use crate::native::traits::window::{INativeHandle, IWindowProperties, PlatformWindow};
+use crate::native::shared::window::*;
 use crate::native::presenter::NullPresenter;
-use std::cell::Cell;
 
 fn assert_error_code(result: Result<()>, expected: Errc) {
     match result {

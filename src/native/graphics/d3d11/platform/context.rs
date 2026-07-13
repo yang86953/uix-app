@@ -46,20 +46,20 @@ type HWND_PTR = *mut c_void;
 struct OffscreenTarget {
     #[allow(dead_code)] // kept alive for RTV/SRV; not read directly after create
     texture: ID3D11Texture2D,
-    rtv: ID3D11RenderTargetView,
+    pub(crate) rtv: ID3D11RenderTargetView,
     srv: ID3D11ShaderResourceView,
     width: i32,
     height: i32,
 }
 
-const D3D11_FEATURE_LEVELS: [D3D_FEATURE_LEVEL; 4] = [
+pub(crate) const D3D11_FEATURE_LEVELS: [D3D_FEATURE_LEVEL; 4] = [
     D3D_FEATURE_LEVEL_11_1,
     D3D_FEATURE_LEVEL_11_0,
     D3D_FEATURE_LEVEL_10_1,
     D3D_FEATURE_LEVEL_10_0,
 ];
 
-fn swap_chain_desc(hwnd: HWND_PTR, width: i32, height: i32) -> DXGI_SWAP_CHAIN_DESC {
+pub(crate) fn swap_chain_desc(hwnd: HWND_PTR, width: i32, height: i32) -> DXGI_SWAP_CHAIN_DESC {
     DXGI_SWAP_CHAIN_DESC {
         BufferDesc: DXGI_MODE_DESC {
             Width: width.max(1) as u32,
@@ -103,7 +103,7 @@ fn d3d_error(operation: &str, err: ::windows::core::Error) -> Error {
     )
 }
 
-fn map_dxgi_present_result(result: ::windows::core::HRESULT) -> Result<()> {
+pub(crate) fn map_dxgi_present_result(result: ::windows::core::HRESULT) -> Result<()> {
     if result.is_err() {
         return Err(Error::new(
             d3d_hresult_code(result),
@@ -193,11 +193,11 @@ fn query_adapter_info(device: &ID3D11Device, driver: D3d11DriverKind) -> Result<
 pub struct D3d11Context {
     hwnd: HWND_PTR,
     device: ID3D11Device,
-    context: ID3D11DeviceContext,
+    pub(crate) context: ID3D11DeviceContext,
     swap_chain: IDXGISwapChain,
-    rtv: Option<ID3D11RenderTargetView>,
+    pub(crate) rtv: Option<ID3D11RenderTargetView>,
     pipeline: D3d11Pipeline,
-    adapter_info: D3d11AdapterInfo,
+    pub(crate) adapter_info: D3d11AdapterInfo,
     logical_width: i32,
     logical_height: i32,
     width: i32,
@@ -255,8 +255,7 @@ impl D3d11Context {
     /// Production construction deliberately keeps the hardware-then-WARP
     /// policy in [`Self::new`]. Tests that compare backend pixels must not
     /// inherit a machine-specific hardware adapter instead.
-    #[cfg(test)]
-    pub(super) fn new_warp_test_context(
+    pub(crate) fn new_warp_test_context(
         native_window: *mut c_void,
         width: i32,
         height: i32,
@@ -395,7 +394,7 @@ impl D3d11Context {
     }
 }
 
-fn create_with_driver(
+pub(crate) fn create_with_driver(
     hwnd: HWND_PTR,
     width: i32,
     height: i32,
@@ -1024,6 +1023,3 @@ impl IGraphicsContext for D3d11Context {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../../tests/native/graphics/d3d11/platform/context.rs"]
-mod tests;

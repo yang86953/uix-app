@@ -343,6 +343,3 @@ impl Drop for WindowsPlatform {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/native/backends/windows/platform.rs"]
-mod tests;

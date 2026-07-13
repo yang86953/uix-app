@@ -15,7 +15,7 @@ use std::collections::VecDeque;
 
 #[derive(Clone, Default)]
 pub(crate) struct AppRuntime {
-    sessions: Arc<Mutex<BTreeMap<WindowId, SessionRuntime>>>,
+    pub(crate) sessions: Arc<Mutex<BTreeMap<WindowId, SessionRuntime>>>,
     pending_open_windows: Arc<Mutex<VecDeque<OpenWindowRequest>>>,
     pending_theme: Arc<Mutex<Option<Theme>>>,
     shutting_down: Arc<AtomicBool>,
@@ -24,7 +24,7 @@ pub(crate) struct AppRuntime {
 }
 
 #[derive(Clone)]
-struct SessionRuntime {
+pub(crate) struct SessionRuntime {
     app_timers: AppTimerQueue,
     main_thread_queue: MainThreadQueue,
     alive: Arc<AtomicBool>,
@@ -269,6 +269,3 @@ impl AppRuntime {
     }
 }
 
-#[cfg(test)]
-#[path = "../tests/app/session_runtime.rs"]
-mod tests;

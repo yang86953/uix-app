@@ -536,7 +536,7 @@ fn release_copy_location(location: &mut D3D12_TEXTURE_COPY_LOCATION) {
     }
 }
 
-fn validated_soft_layout(width: i32, height: i32, pixels_len: usize) -> Result<(usize, usize)> {
+pub(crate) fn validated_soft_layout(width: i32, height: i32, pixels_len: usize) -> Result<(usize, usize)> {
     if width <= 0 || height <= 0 {
         return Err(invalid_input(format!(
             "D3d12Pipeline: soft dimensions must be positive, got {width}x{height}"
@@ -987,6 +987,3 @@ fn visible_pixel_bounds(pixels: &[u32], width: i32, height: i32) -> Option<(i32,
     visible.then(|| (left, top, right - left, bottom - top))
 }
 
-#[cfg(test)]
-#[path = "../../../../tests/native/graphics/d3d12/platform/pipeline.rs"]
-mod tests;

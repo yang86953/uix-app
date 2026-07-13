@@ -939,6 +939,3 @@ pub fn uniform_insets(v: f32) -> EdgeInsets {
     EdgeInsets::uniform(v)
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/foundation/style.rs"]
-mod tests;

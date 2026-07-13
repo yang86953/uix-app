@@ -1,4 +1,5 @@
-use super::*;
+use crate::tests::common::*;
+use crate::draw::spatial::ray3d::*;
 
 #[test]
 fn ray_intersects_aabb() {

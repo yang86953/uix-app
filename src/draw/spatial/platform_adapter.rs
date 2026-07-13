@@ -39,6 +39,3 @@ impl Orientation {
 
 // ════════════════════════════════════════════════════════════════════════════
 
-#[cfg(test)]
-#[path = "../../tests/draw/spatial/platform_adapter.rs"]
-mod tests;

@@ -76,6 +76,3 @@ pub fn blit_image(
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/rasterizer/image.rs"]
-mod tests;

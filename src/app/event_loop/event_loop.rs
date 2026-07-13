@@ -2,7 +2,7 @@
 
 use crate::app::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry};
 use crate::app::main_thread_queue::MainThreadContext;
-use crate::app::test_clock::{system_clock, AppClock};
+use crate::app::clock::{system_clock, AppClock};
 use crate::app::window_session::{WindowLoopState, WindowSession};
 use crate::core::{Point, Rect};
 use crate::draw::font::font_service::FontService;
@@ -98,7 +98,6 @@ where
     )
 }
 
-#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_window_session_loop<M, X, F>(
     platform: &mut dyn Platform,
@@ -136,7 +135,6 @@ where
     )
 }
 
-#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_window_session_loop_with_system_theme<M, X, F>(
     platform: &mut dyn Platform,
@@ -226,7 +224,6 @@ where
     )
 }
 
-#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_window_session_loop_with_clock<M, X, F>(
     platform: &mut dyn Platform,
@@ -885,7 +882,7 @@ fn wait_for_event_or_registered_work(
     }
 }
 
-fn earliest_deadline(a: Option<Instant>, b: Option<Instant>) -> Option<Instant> {
+pub(crate) fn earliest_deadline(a: Option<Instant>, b: Option<Instant>) -> Option<Instant> {
     match (a, b) {
         (Some(a), Some(b)) => Some(a.min(b)),
         (Some(deadline), None) | (None, Some(deadline)) => Some(deadline),
@@ -961,7 +958,7 @@ fn sync_animation_deadlines(
     }
 }
 
-fn wait_loop_state(
+pub(crate) fn wait_loop_state(
     active_work: &ActiveWorkRegistry,
     external_deadline: Option<Instant>,
 ) -> WindowLoopState {
@@ -1127,7 +1124,7 @@ fn ensure_surface_matches_window(
     changed
 }
 
-fn sync_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn GraphicsEngine) {
+pub(crate) fn sync_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn GraphicsEngine) {
     let (ew, eh) = {
         let canvas = engine.canvas_2d();
         (canvas.width() as f32, canvas.height() as f32)
@@ -1162,6 +1159,3 @@ fn sync_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn GraphicsEng
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/app/event_loop/event_loop.rs"]
-mod tests;

@@ -1,9 +1,8 @@
-use crate::core::EdgeInsets;
-use crate::draw::Color;
+// Defaults / constructors
+use crate::tests::common::*;
 use crate::ui::foundation::style::*;
 use crate::ui::theme::NeutralRole;
 
-// Defaults / constructors
 
 #[test]
 fn style_default_all_fields() {

@@ -25,22 +25,22 @@ pub fn input_height(size: ControlSize) -> f32 {
     }
 }
 
-const PAD: f32 = 12.0;
+pub(crate) const PAD: f32 = 12.0;
 pub(crate) const FONT_SIZE: f32 = 14.0;
 const LINE_HEIGHT: f32 = 22.0;
 
 component! {
     pub struct Input {
         value: String,
-        placeholder: String,
+        pub(crate) placeholder: String,
         input_size: ControlSize,
         disabled: bool,
-        focused: bool,
+        pub(crate) focused: bool,
         hovered: bool,
-        composition: String,
-        caret_rect: Cell<Rect>,
+        pub(crate) composition: String,
+        pub(crate) caret_rect: Cell<Rect>,
         /// 当前光标所在的字符索引（全文本平展）
-        cursor_char: usize,
+        pub(crate) cursor_char: usize,
         /// 水平滚动偏移（单行模式）
         scroll_offset_x: Cell<f32>,
         /// 垂直滚动行偏移（多行模式）
@@ -597,7 +597,7 @@ impl Input {
         prev + line_idx // + newlines before this line
     }
 
-    fn set_selection_range(&self, a: usize, b: usize) {
+    pub(crate) fn set_selection_range(&self, a: usize, b: usize) {
         if a == b {
             self.selection.set(None);
         } else {
@@ -644,6 +644,3 @@ impl SnapshotSource for Input {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../../tests/ui/widgets/input/input/mod.rs"]
-mod tests;

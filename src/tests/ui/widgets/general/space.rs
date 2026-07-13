@@ -1,6 +1,10 @@
-use super::*;
+use crate::tests::common::*;
+use crate::component;
+use crate::ui::children::WidgetChildren;
+use crate::ui::layout::engine::{child_from_tree_with_constraints, LayoutChild};
+use crate::ui::layout::{ flex::compute_flex_layout, FlexChild, FlexInput };
+use crate::ui::widgets::general::space::*;
 use crate::ui::core::widget::WidgetCore;
-use crate::ui::traits::{WidgetCapabilities, WidgetLayout};
 
 struct FixedChild(Size);
 

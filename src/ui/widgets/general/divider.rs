@@ -177,6 +177,3 @@ impl Divider {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/general/divider.rs"]
-mod tests;

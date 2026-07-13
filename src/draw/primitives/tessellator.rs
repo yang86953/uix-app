@@ -23,7 +23,7 @@ const MAX_COMPLEX_EVENTS: usize = 8192;
 /// Max cumulative pair, edge-band scan and crossing-sort work.
 const MAX_COMPLEX_WORK: usize = 4_194_304;
 /// Max triangles emitted by the complex-path decomposition.
-const MAX_COMPLEX_TRIANGLES: usize = 65_536;
+pub(crate) const MAX_COMPLEX_TRIANGLES: usize = 65_536;
 
 /// Tessellate a path into a triangle-list of xy pairs (`[x0,y0, x1,y1, …]`).
 ///
@@ -336,9 +336,9 @@ fn validate_triangle_area(tris: &[f32], expected_area: f64) -> bool {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct F64Point {
-    x: f64,
-    y: f64,
+pub(crate) struct F64Point {
+    pub(crate) x: f64,
+    pub(crate) y: f64,
 }
 
 impl From<Point> for F64Point {
@@ -389,7 +389,7 @@ struct BoundaryLine {
 /// Decompose arbitrary directed contours into non-overlapping filled
 /// trapezoids. Every vertex and proper crossing y is a band boundary, so edge
 /// order is stable inside each open band.
-fn tessellate_complex_fill(rings: &[Vec<Point>], fill_rule: FillRule) -> Option<Vec<f32>> {
+pub(crate) fn tessellate_complex_fill(rings: &[Vec<Point>], fill_rule: FillRule) -> Option<Vec<f32>> {
     let mut edges = Vec::<ComplexEdge>::new();
     let mut events = Vec::<f64>::new();
     for ring in rings {
@@ -667,7 +667,7 @@ fn append_complex_span(
     Some(area)
 }
 
-fn append_complex_triangle(
+pub(crate) fn append_complex_triangle(
     triangles: &mut Vec<f32>,
     a: F64Point,
     b: F64Point,
@@ -813,11 +813,11 @@ fn polygon_area(pts: &[Point]) -> f32 {
     a * 0.5
 }
 
-fn cross(o: Point, a: Point, b: Point) -> f32 {
+pub(crate) fn cross(o: Point, a: Point, b: Point) -> f32 {
     (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
 }
 
-fn point_in_triangle(p: Point, a: Point, b: Point, c: Point) -> bool {
+pub(crate) fn point_in_triangle(p: Point, a: Point, b: Point, c: Point) -> bool {
     let c1 = cross(a, b, p);
     let c2 = cross(b, c, p);
     let c3 = cross(c, a, p);
@@ -896,6 +896,3 @@ fn ear_clip(ring: &[Point]) -> Option<Vec<f32>> {
     Some(tris)
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/primitives/tessellator.rs"]
-mod tests;

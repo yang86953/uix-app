@@ -1,19 +1,23 @@
 // WidgetTree unit tests.
 // Split out of `tree_core.rs` to keep implementation files manageable.
-use crate::core::{ComponentId, Constraints, EdgeInsets, Point, Size};
-use crate::draw::Color;
-use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
+use crate::tests::common::*;
+use crate::ui::widgets::Container;
+use crate::ui::core::widget::WidgetNode;
+use crate::draw::pipeline::InvalidationQueueHandle;
+use crate::ui::component_snapshot::ComponentConfigSnapshot;
+use crate::ui::event::HandlerTable;
+use crate::ui::foundation::focus_trap::next_focus_in_order;
+use crate::ui::managers::WidgetManagers;
+use crate::ui::overlay::OverlayStack;
+use std::collections::{ BTreeMap };
+use std::sync::atomic::{ AtomicU64 };
+use crate::ui::core::widget::*;
 use crate::ui::core::widget::tree_core::*;
 use crate::ui::layout::engine::{child_from_tree, child_from_tree_with_constraints};
 use crate::ui::managers::StyleManager;
 use crate::ui::view::combinators::label;
 use crate::ui::view::{column, row, ViewAdapter};
-use crate::ui::{
-    AppState, Button, Container, Drawer, Grid, Label, Modal, OverlayEntry, OverlayKind, QRCode,
-    SnapshotFields, Style, TextManager, Tooltip,
-};
-use std::cell::RefCell;
-use std::rc::Rc;
+use crate::ui::{ Button, Drawer, Grid, Label, Modal, OverlayEntry, QRCode, TextManager, Tooltip };
 
 struct SpyWidget {
     size: crate::core::Size,
@@ -3852,7 +3856,6 @@ fn file_drop_targets_overlay_owner_before_main_tree() {
 
 #[test]
 fn typography_drag_selection_extends_to_sibling_above() {
-    use crate::core::Rect;
     use crate::ui::Typography;
 
     let mut tree = WidgetTree::new();
@@ -3920,7 +3923,6 @@ fn typography_drag_selection_extends_to_sibling_above() {
 
 #[test]
 fn typography_drag_selection_extends_through_middle_sibling() {
-    use crate::core::Rect;
     use crate::ui::Typography;
 
     let mut tree = WidgetTree::new();
@@ -3967,7 +3969,6 @@ fn typography_drag_selection_extends_through_middle_sibling() {
 
 #[test]
 fn typography_cross_selection_copy_aggregates_sibling_lines() {
-    use crate::core::Rect;
     use crate::native::test_harness::FakeClipboard;
     use crate::native::traits::input::IClipboard;
     use crate::ui::clipboard;
@@ -4086,18 +4087,13 @@ fn typography_cross_selection_copy_aggregates_sibling_lines() {
 
 #[test]
 fn rendered_typography_drag_selection_copies_the_actual_cross_node_range() {
-    use crate::core::Rect;
     use crate::draw::engine::cpu::pixel_surface::PixelSurface;
     use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
-    use crate::draw::font::font_service::FontService;
-    use crate::draw::image::ImageService;
     use crate::draw::painting::PaintContext;
     use crate::draw::spatial::Orientation;
     use crate::native::test_harness::FakeClipboard;
     use crate::native::traits::input::IClipboard;
     use crate::ui::clipboard;
-    use crate::ui::theme::DesignTokens;
-    use crate::ui::traits::WidgetRender;
     use crate::ui::Typography;
 
     let mut tree = WidgetTree::new();

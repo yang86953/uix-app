@@ -26,5 +26,4 @@ pub mod prelude;
 pub mod ui;
 
 #[cfg(test)]
-#[path = "tests/architecture/boundaries.rs"]
-mod architecture_boundaries;
+pub(crate) mod tests;

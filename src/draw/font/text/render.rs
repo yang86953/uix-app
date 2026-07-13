@@ -449,6 +449,3 @@ impl<'a> TextRenderService<'a> {
 
 // ── TextRenderer trait 实现 ────────────────────────────────────────
 
-#[cfg(test)]
-#[path = "../../../tests/draw/font/text/render.rs"]
-mod tests;

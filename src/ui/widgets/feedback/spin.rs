@@ -197,6 +197,3 @@ impl Spin {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/feedback/spin.rs"]
-mod tests;

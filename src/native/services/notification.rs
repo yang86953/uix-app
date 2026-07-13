@@ -302,6 +302,3 @@ fn toast_message_for_error(error: &Error) -> String {
 // 测试
 // ════════════════════════════════════════════════════════════════════════════
 
-#[cfg(test)]
-#[path = "../../tests/native/services/notification.rs"]
-mod tests;

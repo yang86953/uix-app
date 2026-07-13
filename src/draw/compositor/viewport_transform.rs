@@ -108,6 +108,3 @@ fn is_viewport(scene: &impl ScenePaint, id: NodeId) -> bool {
     scene.children_clip(id, scene.node_frame(id)).is_some()
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/compositor/viewport_transform.rs"]
-mod tests;

@@ -1,8 +1,6 @@
-use super::*;
-use crate::core::{Point, Rect};
+use crate::tests::common::*;
+use crate::ui::widgets::display::table::*;
 use crate::ui::core::widget::WidgetCore;
-use crate::ui::traits::EventHandler;
-use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 fn large_table() -> Table {
     let rows: Vec<Vec<String>> = (0..100)

@@ -22,7 +22,7 @@ pub use crate::native::traits::input::ScrollDirection;
 component! {
     /// A scrollable viewport that clips its children.
     pub struct ScrollView {
-        children: WidgetChildren,
+        pub(crate) children: WidgetChildren,
         pub scroll_x: f32,
         pub scroll_y: f32,
         direction: ScrollDirection,
@@ -30,11 +30,11 @@ component! {
         fixed_height: Option<f32>,
         flex_grow_val: f32,
         flex_shrink_val: f32,
-        content_bounds: Cell<Option<Size>>,
-        scroll_delta_strip: Cell<(f32, f32)>,
+        pub(crate) content_bounds: Cell<Option<Size>>,
+        pub(crate) scroll_delta_strip: Cell<(f32, f32)>,
         scrollbar_v: ScrollBar,
         scrollbar_h: ScrollBar,
-        last_frame: Cell<Option<Rect>>,
+        pub(crate) last_frame: Cell<Option<Rect>>,
     }
 
     flex_grow => (&self) -> f32 { self.flex_grow_val }
@@ -413,7 +413,7 @@ impl ScrollView {
         content_h > frame.h + 0.5
     }
 
-    fn needs_h_scrollbar(&self, frame: Rect, children: &[LayoutChild]) -> bool {
+    pub(crate) fn needs_h_scrollbar(&self, frame: Rect, children: &[LayoutChild]) -> bool {
         if !(self.scrollbar_h.show && self.direction.can_scroll_x()) {
             return false;
         }
@@ -615,6 +615,3 @@ impl Default for ScrollView {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../../tests/ui/widgets/other/scroll_view/mod.rs"]
-mod tests;

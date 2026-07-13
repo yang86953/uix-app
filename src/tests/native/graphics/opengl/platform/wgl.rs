@@ -1,8 +1,14 @@
-use super::*;
-use crate::native::graphics::platform::windows::drawable_size_from_dpi;
-use crate::native::traits::present::{
-    GraphicsBackend, PresentDamage, PresentFrame, PresentMode, RasterMode,
+use crate::tests::common::*;
+use std::ffi::{CStr, CString, c_void};
+use std::ptr;
+use crate::native::backends::windows::util::windows_diag;
+use crate::native::graphics::opengl::raster::OpenGlRasterPipeline;
+use crate::native::graphics::platform::windows::{
+    device_context, drawable_size_from_hdc, release_device_context, release_device_context_checked,
 };
+use crate::native::traits::present::{ GpuSolidRect, OffscreenTargetId };
+use crate::native::graphics::opengl::platform::wgl::*;
+use crate::native::graphics::platform::windows::drawable_size_from_dpi;
 
 #[test]
 fn drawable_size_scales_logical_client_by_monitor_dpi() {

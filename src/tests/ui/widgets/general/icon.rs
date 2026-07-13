@@ -1,5 +1,7 @@
-use super::*;
-use crate::ui::traits::WidgetLayout;
+use crate::tests::common::*;
+use std::sync::OnceLock;
+use crate::component;
+use crate::ui::widgets::general::icon::*;
 
 #[test]
 fn measure_clamps_icon_size() {

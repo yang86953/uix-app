@@ -360,6 +360,3 @@ fn prev_month(y: i32, m: usize) -> (i32, usize) {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/input/date_picker.rs"]
-mod tests;

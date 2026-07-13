@@ -1,4 +1,4 @@
-use crate::ui::traits::WidgetAnimation;
+use crate::tests::common::*;
 use crate::ui::widgets::feedback::Popover;
 
 #[test]

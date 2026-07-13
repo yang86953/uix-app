@@ -33,6 +33,3 @@ pub fn push_window_resize(
     });
 }
 
-#[cfg(test)]
-#[path = "../../tests/native/shared/window_lifecycle.rs"]
-mod tests;

@@ -700,6 +700,3 @@ fn frame_encoder_error(error: FrameEncoderError) -> Error {
     )
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/pipeline/frame_recording.rs"]
-mod tests;

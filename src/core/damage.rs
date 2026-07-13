@@ -197,6 +197,3 @@ impl PresentDamage {
     }
 }
 
-#[cfg(test)]
-#[path = "../tests/core/damage.rs"]
-mod tests;

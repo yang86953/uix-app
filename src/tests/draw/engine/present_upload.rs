@@ -1,12 +1,12 @@
-use super::*;
+use crate::tests::common::*;
+use crate::draw::backend::{ BackendKind, CpuBackend };
+use crate::draw::engine::{ GraphicsFailure };
+use crate::draw::pipeline::RenderSession;
+use crate::draw::pipeline::{ EncodedFrameExecution, EncodedPictureExecution };
+use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
+use crate::draw::engine::present_upload::*;
 use crate::core::Result;
-use crate::native::traits::present::{
-    GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage,
-};
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicUsize, Ordering},
-};
+use std::sync::{ atomic::{AtomicUsize, Ordering} };
 
 #[derive(Clone, Debug, PartialEq)]
 struct PresentedFrame {

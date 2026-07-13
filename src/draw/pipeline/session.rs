@@ -4,7 +4,7 @@ use crate::core::Error;
 use crate::native::traits::present::IGraphicsContext;
 use std::thread::ThreadId;
 
-#[cfg(all(test, feature = "opengles"))]
+#[cfg(feature = "opengles")]
 use crate::draw::backend::NativeGpuBackend;
 use crate::draw::backend::{
     create_backend, BackendCapabilities, BackendKind, CpuBackend, NullBackend, RenderBackend,
@@ -219,7 +219,7 @@ impl RenderSession {
         self.backend.as_any_mut().downcast_mut()
     }
 
-    #[cfg(all(test, feature = "opengles"))]
+    #[cfg(feature = "opengles")]
     pub(crate) fn native_gpu_backend_mut(&mut self) -> Option<&mut NativeGpuBackend> {
         self.backend.as_any_mut().downcast_mut()
     }
@@ -263,6 +263,3 @@ fn resolve_kind(kind: BackendKind) -> BackendKind {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/pipeline/session.rs"]
-mod tests;

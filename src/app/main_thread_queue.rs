@@ -84,12 +84,8 @@ impl MainThreadQueue {
             .clear();
     }
 
-    #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.pending.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 }
 
-#[cfg(test)]
-#[path = "../tests/app/main_thread_queue.rs"]
-mod tests;

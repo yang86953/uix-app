@@ -36,10 +36,10 @@ impl CollapsePanel {
 component! {
     /// Collapse — 可折叠面板组。
     pub struct Collapse {
-        panels: Vec<CollapsePanel>,
+        pub(crate) panels: Vec<CollapsePanel>,
         accordion: bool,
         pending_change: Cell<Option<usize>>,
-        transitions: Vec<TransitionPlayer>,
+        pub(crate) transitions: Vec<TransitionPlayer>,
         transition_dirty: bool,
     }
 
@@ -247,7 +247,7 @@ impl Collapse {
         }
     }
 
-    fn panel_present(&self, idx: usize, panel: &CollapsePanel) -> bool {
+    pub(crate) fn panel_present(&self, idx: usize, panel: &CollapsePanel) -> bool {
         panel.expanded
             || self
                 .transitions
@@ -300,6 +300,3 @@ impl Collapse {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/display/collapse.rs"]
-mod tests;

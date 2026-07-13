@@ -346,6 +346,3 @@ fn draw_popconfirm_arrow(
     ctx.fill_path(&pb.build(), color, FillRule::NonZero);
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/feedback/popconfirm.rs"]
-mod tests;

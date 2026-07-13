@@ -60,7 +60,7 @@ impl TsfEventSink {
 pub(crate) struct TsfStoreState {
     text: Vec<u16>,
     sel_start: i32,
-    sel_end: i32,
+    pub(crate) sel_end: i32,
     locked: bool,
     acp_sink: Option<ITextStoreACPSink>,
     sink_mask: u32,
@@ -116,7 +116,7 @@ impl TsfStoreState {
         }
     }
 
-    fn replace_range(&mut self, start: i32, end: i32, insert: &[u16]) -> TS_TEXTCHANGE {
+    pub(crate) fn replace_range(&mut self, start: i32, end: i32, insert: &[u16]) -> TS_TEXTCHANGE {
         let start = self.clamp_acp(start) as usize;
         let end = self.clamp_acp(end) as usize;
         let end = end.max(start);
@@ -131,7 +131,7 @@ impl TsfStoreState {
         }
     }
 
-    fn utf16_string(&self) -> String {
+    pub(crate) fn utf16_string(&self) -> String {
         String::from_utf16_lossy(&self.text)
     }
 }
@@ -638,6 +638,3 @@ impl ITfContextOwnerCompositionSink_Impl for TsfTextStore_Impl {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/native/backends/windows/tsf_text_store.rs"]
-mod tests;

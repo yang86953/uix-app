@@ -143,6 +143,3 @@ impl FloatButtonBackTop {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/general/float_button.rs"]
-mod tests;

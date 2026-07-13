@@ -5,7 +5,7 @@ use std::ffi::c_void;
 use crate::core::{Error, Result};
 use crate::native::traits::present::IGraphicsContext;
 
-mod platform;
+pub(crate) mod platform;
 
 pub(crate) fn create(
     surface: *mut c_void,

@@ -1,5 +1,6 @@
-use super::*;
-use crate::ui::traits::WidgetLayout;
+use crate::tests::common::*;
+use crate::component;
+use crate::ui::widgets::feedback::message::*;
 
 #[test]
 fn measure_preserves_message_zero_layout_footprint() {

@@ -1,8 +1,9 @@
-use super::*;
-use crate::native::traits::present::{GraphicsContextCaps, NativeRasterCaps, PresentDamage};
-use std::cell::Cell;
+use crate::tests::common::*;
+use crate::core::{ Result };
+use crate::draw::backend::native_gpu::NativeGpuBackend;
+use crate::draw::backend::traits::RenderBackend;
+use crate::draw::backend::registry::*;
 use std::ffi::c_void;
-use std::rc::Rc;
 
 struct UploadOnlyContext;
 

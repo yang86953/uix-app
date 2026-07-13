@@ -1,7 +1,7 @@
-use super::*;
-use crate::ui::traits::{EventHandler, WidgetComponent, WidgetLayout};
+use crate::tests::common::*;
+use crate::ui::core::widget::WidgetNode;
+use crate::ui::foundation::virtual_scroll::*;
 use crate::ui::widgets::Label;
-use crate::ui::WidgetTree;
 
 #[test]
 fn virtual_list_scroll_range_matches_virtual_scroll() {

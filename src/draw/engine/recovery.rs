@@ -57,6 +57,3 @@ impl GraphicsRecovery {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/engine/recovery.rs"]
-mod tests;

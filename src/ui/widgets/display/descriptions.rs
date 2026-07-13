@@ -177,6 +177,3 @@ impl DescriptionsItem {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/display/descriptions.rs"]
-mod tests;

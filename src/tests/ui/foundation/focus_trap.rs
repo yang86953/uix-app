@@ -1,6 +1,6 @@
-use super::*;
-use crate::native::traits::input::{KeyCode, KeyMod};
-use crate::ui::traits::EventHandler;
+use crate::tests::common::*;
+use crate::component;
+use crate::ui::foundation::focus_trap::*;
 
 #[test]
 fn next_focus_in_order_wraps_forward_and_backward() {

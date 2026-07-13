@@ -192,6 +192,3 @@ impl OverlayStack {
     }
 }
 
-#[cfg(test)]
-#[path = "../tests/ui/overlay.rs"]
-mod tests;

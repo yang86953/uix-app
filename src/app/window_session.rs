@@ -220,6 +220,3 @@ impl Drop for WindowSession {
     }
 }
 
-#[cfg(test)]
-#[path = "../tests/app/window_session.rs"]
-mod tests;

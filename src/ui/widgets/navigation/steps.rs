@@ -198,6 +198,3 @@ impl Step {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/navigation/steps.rs"]
-mod tests;

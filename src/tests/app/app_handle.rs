@@ -1,20 +1,26 @@
-use super::*;
+use crate::tests::common::*;
+use crate::ui::widgets::Container;
+use crate::app::Container as DiContainer;
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc,
+};
+use crate::app::app_timer::TimerHandle;
+use crate::app::window_config::WindowConfig;
+use crate::core::{ Result };
+use crate::impl_widget_component;
+use crate::native::notification::ToastEntry;
+use crate::ui::state::State;
+use crate::ui::view::{View, ViewAdapter, ViewNode};
+use crate::ui::widgets::feedback::notification::{Notification, NotificationItem};
+use crate::app::app_handle::*;
 use crate::app::app_timer::AppTimerQueue;
 use crate::app::main_thread_queue::MainThreadContext;
 use crate::app::main_thread_queue::MainThreadQueue;
 use crate::app::session_runtime::AppRuntime;
-use crate::app::{Container, WindowConfig};
 use crate::native::traits::event::EventLoopWaker;
 use crate::ui::view::combinators::label;
-use crate::ui::view::ViewAdapter;
-use crate::ui::widgets::feedback::notification::Notification;
 use crate::ui::widgets::Label;
-use crate::ui::AppState;
-use std::sync::{
-    atomic::{AtomicBool, AtomicUsize, Ordering},
-    Arc,
-};
-use std::time::Duration;
 
 fn drain_with_empty_context(
     queue: &MainThreadQueue,
@@ -37,7 +43,7 @@ fn new_test_handle(
         WindowId::root(),
         AppState::new(),
         runtime,
-        Container::new(),
+        DiContainer::new(),
         alive,
     )
 }
@@ -77,7 +83,7 @@ fn app_handle_post_to_ui_routes_by_window_id() {
         child_id,
         AppState::new(),
         runtime,
-        Container::new(),
+        DiContainer::new(),
         child_alive,
     );
 
@@ -114,7 +120,7 @@ fn app_handle_set_theme_updates_the_app_wide_runtime() {
         WindowId::ROOT,
         AppState::new(),
         runtime.clone(),
-        Container::new(),
+        DiContainer::new(),
         alive,
     );
 
@@ -137,7 +143,7 @@ fn app_handle_set_theme_rejects_closed_handles() {
         WindowId::ROOT,
         AppState::new(),
         runtime.clone(),
-        Container::new(),
+        DiContainer::new(),
         alive,
     );
     handle.mark_closed();
@@ -216,7 +222,7 @@ fn app_handle_notify_error_updates_default_overlay_queue() {
     let runtime = AppRuntime::new();
     runtime.register_session(WindowId::ROOT, timers, queue.clone(), alive.clone());
     let notifications = AppNotificationState::new();
-    let mut container = Container::new();
+    let mut container = DiContainer::new();
     container.singleton(notifications.clone());
     let handle = AppHandle::new(WindowId::ROOT, AppState::new(), runtime, container, alive);
 
@@ -253,14 +259,8 @@ fn app_overlay_root_keeps_app_root_and_mounts_notification() {
 
 #[test]
 fn app_overlay_root_passes_clicks_to_app_when_notifications_empty() {
-    use crate::core::Point;
-    use crate::core::Rect;
-    use crate::native::traits::input::{KeyMod, MouseButton};
     use crate::ui::core::widget::WidgetCore;
-    use crate::ui::SystemEvent;
     use crate::ui::view::button;
-    use std::cell::Cell;
-    use std::rc::Rc;
 
     let clicks = Rc::new(Cell::new(0));
     let clicks_for_handler = clicks.clone();
@@ -327,7 +327,7 @@ fn app_handle_run_after_routes_by_window_id() {
         child_id,
         AppState::new(),
         runtime,
-        Container::new(),
+        DiContainer::new(),
         child_alive,
     );
 
@@ -355,7 +355,7 @@ fn app_handle_timer_registration_wakes_event_loop() {
         WindowId::ROOT,
         AppState::new(),
         runtime,
-        Container::new(),
+        DiContainer::new(),
         alive,
     );
 
@@ -384,7 +384,7 @@ fn app_handle_open_window_returns_child_handle_and_queues_request() {
         WindowId::ROOT,
         AppState::new(),
         runtime.clone(),
-        Container::new(),
+        DiContainer::new(),
         alive,
     );
 

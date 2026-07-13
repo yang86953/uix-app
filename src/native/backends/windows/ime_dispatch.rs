@@ -92,6 +92,3 @@ pub(crate) fn ime_composition_events(
     (handled, events)
 }
 
-#[cfg(test)]
-#[path = "../../../tests/native/backends/windows/ime_dispatch.rs"]
-mod tests;

@@ -318,7 +318,7 @@ impl Card {
         )
     }
 
-    fn action_rect(&self, frame: Rect) -> Option<Rect> {
+    pub(crate) fn action_rect(&self, frame: Rect) -> Option<Rect> {
         if self.actions.is_empty() {
             return None;
         }
@@ -424,6 +424,3 @@ impl Card {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/display/card.rs"]
-mod tests;

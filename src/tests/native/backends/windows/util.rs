@@ -1,4 +1,5 @@
-use super::*;
+use crate::tests::common::*;
+use crate::native::backends::windows::util::*;
 
 #[test]
 fn to_wide_empty_string_returns_null_terminated() {

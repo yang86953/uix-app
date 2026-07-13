@@ -211,7 +211,7 @@ impl Pagination {
     }
 
     /// 计算可见页码范围（含省略号逻辑，最多 7 个按钮）。
-    fn visible_range(&self, total_pages: usize, cur: usize) -> Vec<usize> {
+    pub(crate) fn visible_range(&self, total_pages: usize, cur: usize) -> Vec<usize> {
         if total_pages == 0 {
             return Vec::new();
         }
@@ -256,6 +256,3 @@ impl Pagination {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/navigation/pagination.rs"]
-mod tests;

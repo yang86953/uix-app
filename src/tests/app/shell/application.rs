@@ -1,35 +1,48 @@
-use super::*;
-use crate::app::app_timer::AppTimerQueue;
-use crate::app::main_thread_queue::MainThreadQueue;
-use crate::app::test_clock::system_clock;
-use crate::app::window_session::WindowLoopState;
-use crate::core::{Point, Rect};
+use crate::tests::common::*;
+use crate::ui::widgets::Container;
+use crate::app::Container as DiContainer;
+use crate::ui::core::widget::WidgetCore;
+use std::sync::{ atomic::AtomicBool };
+use crate::app::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry};
+use crate::app::app_handle::{
+    wrap_root_with_notification_overlay, AppHandle, AppNotificationState,
+};
+use crate::app::app_timer::{AppTimerQueue, TimerHandle};
+use crate::app::event_loop::run_window_session_loop_with_system_theme_and_tasks;
+use crate::app::main_thread_queue::{MainThreadContext, MainThreadQueue};
+use crate::app::session_runtime::{AppRuntime, OpenWindowRequest};
+use crate::app::shell::cli::Cli;
+use crate::app::clock::{system_clock, AppClock};
+use crate::app::window_config::WindowConfig;
+use crate::app::window_session::{WindowLoopState, WindowSession};
+use crate::draw::engine::bootstrap::{
+    assemble_graphics_engine, bootstrap_graphics_engine, ProbeReport,
+};
+use crate::draw::engine::{ GraphicsEngineRebuilder, RecoveringGraphicsEngine };
+use crate::draw::pipeline::{ FrameRenderInput, FrameRenderer, InvalidationSource };
+use crate::draw::traits::GraphicsEngine;
+use crate::native::create_platform;
+use crate::native::factory::{
+    gpu_recipe_candidates, graphics_runtime_platform, try_create_gpu_recipe, GraphicsRecipe,
+};
+use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
+use crate::native::traits::platform::Platform;
+use crate::native::traits::present::{ NativeSurfaceHandle };
+use crate::native::traits::window::PlatformWindow;
+use crate::ui::traits::TokenProvider;
+use crate::ui::view::{ViewAdapter, ViewNode};
+use crate::app::shell::application::*;
 use crate::data::SettingsService;
 use crate::draw::engine::bootstrap::ProbeFailure;
-use crate::draw::engine::RecoveryAction;
-use crate::draw::font::font_service::FontService;
-use crate::draw::image::ImageService;
 use crate::native::test_harness::FakePlatform;
 use crate::native::traits::event::{
     ClipboardData, FileDropData, ImeCompositionData, LocaleChangeData, ThemeChangeData,
 };
-use crate::native::traits::present::{GraphicsBackend, NativeSurfaceHandle};
 use crate::ui::state::State;
-use crate::ui::theme::Theme;
 use crate::ui::view::combinators::{dynamic_label, label};
-use crate::ui::view::ViewNode;
 use crate::ui::widgets::Label;
-use crate::ui::{
-    EventHandler, EventResult, HandlerRegistration, SemanticEvent, SemanticKind, SystemEvent,
-    WidgetAnimation, WidgetCapabilities, WidgetComponent, WidgetRender, WidgetTree,
-};
+use crate::ui::{ HandlerRegistration };
 use std::any::Any;
-use std::cell::{Cell, RefCell};
-use std::sync::{
-    atomic::{AtomicBool, AtomicUsize, Ordering},
-    Arc, Mutex,
-};
-use std::time::Duration;
 
 #[test]
 fn graphics_recovery_rebuilder_uses_initialized_software_only_at_final_fallback() {
@@ -509,7 +522,7 @@ fn drain_pending_open_windows_bootstraps_secondary_session() {
         &mut platform,
         &runtime,
         &AppState::new(),
-        &Container::new(),
+        &DiContainer::new(),
         Some(&on_window_start),
         &mut secondary_windows,
     );
@@ -567,7 +580,7 @@ fn drain_secondary_window_queues_drains_all_sessions() {
             &mut platform,
             &runtime,
             &AppState::new(),
-            &Container::new(),
+            &DiContainer::new(),
             None,
             &mut secondary_windows,
         ),
@@ -629,7 +642,7 @@ fn dispatch_secondary_window_event_routes_by_window_id() {
             &mut platform,
             &runtime,
             &AppState::new(),
-            &Container::new(),
+            &DiContainer::new(),
             None,
             &mut secondary_windows,
         ),
@@ -675,7 +688,7 @@ fn dispatch_secondary_system_theme_changed_broadcasts_to_all_sessions() {
             &mut platform,
             &runtime,
             &AppState::new(),
-            &Container::new(),
+            &DiContainer::new(),
             None,
             &mut secondary_windows,
         ),
@@ -713,7 +726,7 @@ fn dispatch_secondary_system_theme_changed_invalidates_palette_widgets() {
         &mut platform,
         &runtime,
         &AppState::new(),
-        &Container::new(),
+        &DiContainer::new(),
         None,
         &mut secondary_windows,
     );
@@ -771,7 +784,7 @@ fn apply_runtime_theme_change_updates_theme_and_broadcasts_to_every_tree() {
         &mut platform,
         &runtime,
         &AppState::new(),
-        &Container::new(),
+        &DiContainer::new(),
         None,
         &mut secondary_windows,
     );
@@ -831,7 +844,7 @@ fn dispatch_secondary_window_close_removes_session() {
         &mut platform,
         &runtime,
         &AppState::new(),
-        &Container::new(),
+        &DiContainer::new(),
         None,
         &mut secondary_windows,
     );
@@ -872,7 +885,7 @@ fn drain_secondary_window_frames_fires_window_timer() {
         &mut platform,
         &runtime,
         &AppState::new(),
-        &Container::new(),
+        &DiContainer::new(),
         None,
         &mut secondary_windows,
     );
@@ -918,7 +931,7 @@ fn secondary_windows_next_deadline_reads_window_timers() {
         &mut platform,
         &runtime,
         &AppState::new(),
-        &Container::new(),
+        &DiContainer::new(),
         None,
         &mut secondary_windows,
     );
@@ -948,7 +961,7 @@ fn drain_secondary_window_frames_records_registered_active_state() {
         &mut platform,
         &runtime,
         &AppState::new(),
-        &Container::new(),
+        &DiContainer::new(),
         None,
         &mut secondary_windows,
     );
@@ -996,7 +1009,7 @@ fn drain_secondary_window_frames_skips_deep_idle_windows() {
         &mut platform,
         &runtime,
         &AppState::new(),
-        &Container::new(),
+        &DiContainer::new(),
         None,
         &mut secondary_windows,
     );
@@ -1070,7 +1083,7 @@ fn state_set_only_wakes_secondary_windows_bound_to_that_state() {
         &mut platform,
         &runtime,
         &AppState::new(),
-        &Container::new(),
+        &DiContainer::new(),
         None,
         &mut secondary_windows,
     );
@@ -1162,7 +1175,7 @@ fn lookup_emit_only_wakes_secondary_window_containing_target() {
         &mut platform,
         &runtime,
         &app_state,
-        &Container::new(),
+        &DiContainer::new(),
         None,
         &mut secondary_windows,
     );
@@ -1242,7 +1255,7 @@ fn noop_secondary_post_to_ui_does_not_tick_animation() {
         &mut platform,
         &runtime,
         &AppState::new(),
-        &Container::new(),
+        &DiContainer::new(),
         None,
         &mut secondary_windows,
     );

@@ -98,6 +98,3 @@ impl Affix {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/containers/affix.rs"]
-mod tests;

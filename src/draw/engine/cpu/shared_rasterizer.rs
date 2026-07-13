@@ -369,6 +369,3 @@ impl Canvas2D for SharedRasterizer {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/draw/engine/cpu/shared_rasterizer.rs"]
-mod tests;

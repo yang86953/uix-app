@@ -15,7 +15,7 @@ use crate::app::main_thread_queue::{MainThreadContext, MainThreadQueue};
 use crate::app::session_runtime::{AppRuntime, OpenWindowRequest};
 use crate::app::shell::cli::Cli;
 use crate::app::shell::di::Container;
-use crate::app::test_clock::{system_clock, AppClock};
+use crate::app::clock::{system_clock, AppClock};
 use crate::app::window_config::WindowConfig;
 use crate::app::window_session::{WindowLoopState, WindowSession};
 use crate::core::{Errc, Error, Point, WindowId};
@@ -74,14 +74,14 @@ fn report_graphics_resize_error(context: &str, result: crate::core::Result<()>) 
     }
 }
 
-struct SecondaryWindowSession {
+pub(crate) struct SecondaryWindowSession {
     // session 必须先于原生窗口析构，确保 engine/GL 资源先释放。
-    session: WindowSession,
+    pub(crate) session: WindowSession,
     _window: Box<dyn PlatformWindow>,
-    handle: AppHandle,
+    pub(crate) handle: AppHandle,
     frame_renderer: FrameRenderer,
     rendered_first: bool,
-    last_frame: Option<Instant>,
+    pub(crate) last_frame: Option<Instant>,
     window_visible: bool,
     initial_size: (i32, i32),
 }
@@ -483,20 +483,20 @@ pub struct App {
     title: String,
     size: (i32, i32),
     theme: Theme,
-    follow_system_theme: bool,
+    pub(crate) follow_system_theme: bool,
     app_state: AppState,
-    app_timers: AppTimerQueue,
-    main_thread_queue: MainThreadQueue,
+    pub(crate) app_timers: AppTimerQueue,
+    pub(crate) main_thread_queue: MainThreadQueue,
     runtime: AppRuntime,
     handle_alive: Arc<AtomicBool>,
     root_factory: Option<Arc<dyn Fn() -> ViewNode + Send + Sync>>,
-    on_start: Option<Box<dyn FnOnce(AppHandle) + Send>>,
-    on_window_start: Option<Arc<dyn Fn(AppHandle) + Send + Sync>>,
+    pub(crate) on_start: Option<Box<dyn FnOnce(AppHandle) + Send>>,
+    pub(crate) on_window_start: Option<Arc<dyn Fn(AppHandle) + Send + Sync>>,
     on_exit: Option<ExitPredicate>,
     cli: Option<Cli>,
     container: Container,
     settings_path: Option<String>,
-    graphics_backend: Option<GraphicsBackend>,
+    pub(crate) graphics_backend: Option<GraphicsBackend>,
     exit_code: i32,
 }
 
@@ -647,7 +647,7 @@ impl App {
         self
     }
 
-    fn configured_graphics_backend(&self) -> GraphicsBackend {
+    pub(crate) fn configured_graphics_backend(&self) -> GraphicsBackend {
         let env_value = std::env::var(GRAPHICS_BACKEND_ENV).ok();
         resolve_graphics_backend(
             self.graphics_backend,
@@ -656,7 +656,6 @@ impl App {
         )
     }
 
-    #[cfg(test)]
     pub(crate) fn app_handle(&self) -> AppHandle {
         self.app_handle_for_window(WindowId::ROOT)
     }
@@ -715,7 +714,7 @@ impl App {
         }
     }
 
-    fn load_configured_settings(&mut self) -> bool {
+    pub(crate) fn load_configured_settings(&mut self) -> bool {
         let Some(path) = self.settings_path.as_deref() else {
             return true;
         };
@@ -731,7 +730,7 @@ impl App {
         true
     }
 
-    fn run_cli(&mut self) -> i32 {
+    pub(crate) fn run_cli(&mut self) -> i32 {
         if let Some(ref mut cli) = self.cli {
             let args = std::env::args().collect::<Vec<_>>();
             self.exit_code = cli.run(&args);
@@ -960,7 +959,7 @@ impl App {
     }
 }
 
-fn resolve_graphics_backend(
+pub(crate) fn resolve_graphics_backend(
     builder: Option<GraphicsBackend>,
     env_value: Option<&str>,
     settings: Option<&SettingsService>,
@@ -1001,8 +1000,7 @@ fn parse_graphics_backend_config(source: &str, value: &str) -> Option<GraphicsBa
     }
 }
 
-#[cfg(test)]
-fn drain_pending_open_windows(
+pub(crate) fn drain_pending_open_windows(
     platform: &mut dyn Platform,
     runtime: &AppRuntime,
     app_state: &AppState,
@@ -1021,7 +1019,7 @@ fn drain_pending_open_windows(
     )
 }
 
-fn drain_pending_open_windows_with_backend(
+pub(crate) fn drain_pending_open_windows_with_backend(
     platform: &mut dyn Platform,
     runtime: &AppRuntime,
     app_state: &AppState,
@@ -1051,7 +1049,7 @@ fn drain_pending_open_windows_with_backend(
     created
 }
 
-fn drain_secondary_window_queues(secondary_windows: &mut [SecondaryWindowSession]) -> bool {
+pub(crate) fn drain_secondary_window_queues(secondary_windows: &mut [SecondaryWindowSession]) -> bool {
     let mut drained = false;
     for window in secondary_windows {
         drained |= window.drain_main_thread_work();
@@ -1059,7 +1057,7 @@ fn drain_secondary_window_queues(secondary_windows: &mut [SecondaryWindowSession
     drained
 }
 
-fn drain_secondary_window_frames(
+pub(crate) fn drain_secondary_window_frames(
     secondary_windows: &mut [SecondaryWindowSession],
     font_service: &FontService,
     image_service: &ImageService,
@@ -1085,7 +1083,7 @@ fn drain_secondary_window_frames(
     drained
 }
 
-fn secondary_windows_next_deadline(
+pub(crate) fn secondary_windows_next_deadline(
     secondary_windows: &mut [SecondaryWindowSession],
 ) -> Option<Instant> {
     secondary_windows
@@ -1094,7 +1092,7 @@ fn secondary_windows_next_deadline(
         .min()
 }
 
-fn dispatch_secondary_window_event(
+pub(crate) fn dispatch_secondary_window_event(
     secondary_windows: &mut Vec<SecondaryWindowSession>,
     platform: &mut dyn Platform,
     event: &UiEvent,
@@ -1117,7 +1115,7 @@ fn dispatch_secondary_window_event(
     }
 }
 
-fn dispatch_secondary_system_theme_changed(
+pub(crate) fn dispatch_secondary_system_theme_changed(
     secondary_windows: &mut [SecondaryWindowSession],
     is_dark: bool,
 ) -> bool {
@@ -1133,7 +1131,7 @@ fn dispatch_secondary_system_theme_changed(
     dispatched
 }
 
-fn apply_runtime_theme_change(
+pub(crate) fn apply_runtime_theme_change(
     theme: &RefCell<Theme>,
     root_tree: &mut WidgetTree,
     secondary_windows: &mut [SecondaryWindowSession],
@@ -1395,7 +1393,7 @@ fn create_software_recovery_engine(
     Ok(Box::new(engine))
 }
 
-fn graphics_recovery_rebuilder(
+pub(crate) fn graphics_recovery_rebuilder(
     surface: NativeSurfaceHandle,
     requested: GraphicsBackend,
     selected_recipe: GraphicsRecipe,
@@ -1501,7 +1499,7 @@ fn format_probe_failures(report: &ProbeReport) -> String {
         .join("; ")
 }
 
-fn format_gpu_probe_fallback(request: GraphicsBackend, report: &ProbeReport) -> String {
+pub(crate) fn format_gpu_probe_fallback(request: GraphicsBackend, report: &ProbeReport) -> String {
     format!(
         "GPU probe exhausted; request={request}; platform={}; fallback=software_cpu; failures=[{}]",
         graphics_runtime_platform(),
@@ -1669,6 +1667,3 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/app/shell/application.rs"]
-mod tests;

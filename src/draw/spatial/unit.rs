@@ -191,6 +191,3 @@ impl AngleExt for i32 {
 
 // ════════════════════════════════════════════════════════════════════════════
 
-#[cfg(test)]
-#[path = "../../tests/draw/spatial/unit.rs"]
-mod tests;

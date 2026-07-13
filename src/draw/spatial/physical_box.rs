@@ -98,6 +98,3 @@ impl IntoAABB3D for PhysicalBox {
 
 // ════════════════════════════════════════════════════════════════════════════
 
-#[cfg(test)]
-#[path = "../../tests/draw/spatial/physical_box.rs"]
-mod tests;

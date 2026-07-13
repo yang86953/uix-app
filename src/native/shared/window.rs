@@ -395,6 +395,3 @@ impl<O: WindowOps> INativeHandle for PlatformWindowCore<O> {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/native/shared/window.rs"]
-mod tests;

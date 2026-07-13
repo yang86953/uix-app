@@ -1,4 +1,10 @@
-use super::*;
+use crate::tests::common::*;
+use crate::draw::font::text_backend::{self, *};
+pub(crate) use text_backend::TextLayoutOptions;
+use crate::draw::TextBackend;
+use text_backend::TOFU_GLYPH_ID;
+use ab_glyph::*;
+use crate::draw::font::text_backends::ab_glyph::*;
 
 #[test]
 fn new_creates_empty_backend() {
@@ -37,7 +43,7 @@ fn has_glyph_unloaded_handle_returns_false() {
 #[test]
 fn layout_text_unloaded_handle_returns_empty_layout() {
     let backend = AbGlyphBackend::new();
-    let opts = super::TextLayoutOptions {
+    let opts = crate::draw::font::text_backends::ab_glyph::TextLayoutOptions {
         max_width: f32::MAX,
         max_height: 0.0,
         line_height: 0.0,
@@ -55,7 +61,7 @@ fn layout_text_unloaded_handle_returns_empty_layout() {
 #[test]
 fn layout_text_empty_string_unloaded_handle_returns_empty_layout() {
     let backend = AbGlyphBackend::new();
-    let opts = super::TextLayoutOptions {
+    let opts = crate::draw::font::text_backends::ab_glyph::TextLayoutOptions {
         max_width: f32::MAX,
         max_height: 0.0,
         line_height: 0.0,

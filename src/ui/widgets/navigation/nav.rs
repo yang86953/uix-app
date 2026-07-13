@@ -437,6 +437,3 @@ impl Navigation {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/navigation/nav.rs"]
-mod tests;

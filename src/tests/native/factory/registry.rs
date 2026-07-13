@@ -1,5 +1,8 @@
-use super::*;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use crate::tests::common::*;
+use std::ffi::c_void;
+use crate::native::factory::thread_bound::bind_to_current_thread;
+use crate::native::traits::present::{ NativeSurfaceHandle };
+use crate::native::factory::registry::*;
 
 static IDENTITY_MISMATCH_SHUTDOWNS: AtomicUsize = AtomicUsize::new(0);
 

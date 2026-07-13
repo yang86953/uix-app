@@ -260,6 +260,3 @@ fn fade_color(color: Color, opacity: f32) -> Color {
     color.with_alpha(alpha)
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/input/autocomplete.rs"]
-mod tests;

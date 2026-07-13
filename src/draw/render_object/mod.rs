@@ -3,6 +3,6 @@
 //! 通过 `ScenePaint` 快照构建，按 widget 缓存 Content 阶段 `DisplayList`，
 //! 使 invalidation / 录制 / 重放对齐，而不依赖 ui 域。
 
-mod tree;
+pub(crate) mod tree;
 
 pub use tree::{RenderObjectEntry, RenderObjectTree};

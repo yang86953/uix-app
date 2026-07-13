@@ -143,6 +143,3 @@ impl Tag {
 
 use crate::draw::Color;
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/display/tag.rs"]
-mod tests;

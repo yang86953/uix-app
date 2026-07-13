@@ -133,6 +133,3 @@ void main() {
 }
 "#;
 
-#[cfg(test)]
-#[path = "../../../tests/native/graphics/opengl/shaders.rs"]
-mod tests;

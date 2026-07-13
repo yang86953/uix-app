@@ -49,6 +49,3 @@ pub(crate) fn create_graphics_engine(
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/engine/factory.rs"]
-mod tests;

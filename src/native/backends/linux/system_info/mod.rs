@@ -12,7 +12,7 @@
 // Font discovery via fontconfig lives in the `fonts` submodule.
 // ============================================================================
 
-mod fonts;
+pub(crate) mod fonts;
 pub use fonts::*;
 
 use crate::native::traits::system::ISystemInfo;

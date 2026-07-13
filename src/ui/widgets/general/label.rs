@@ -456,7 +456,7 @@ impl Label {
         }
     }
 
-    fn set_selection_range(&self, a: usize, b: usize) {
+    pub(crate) fn set_selection_range(&self, a: usize, b: usize) {
         if a == b {
             self.selection.set(None);
         } else {
@@ -472,6 +472,3 @@ impl Label {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/general/label.rs"]
-mod tests;

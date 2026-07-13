@@ -91,6 +91,3 @@ impl FocusTrap {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/ui/foundation/focus_trap.rs"]
-mod tests;

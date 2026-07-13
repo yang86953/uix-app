@@ -813,6 +813,3 @@ pub fn input() -> InputBuilder {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/ui/view/combinators.rs"]
-mod tests;

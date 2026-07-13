@@ -1,4 +1,5 @@
-use super::*;
+use crate::tests::common::*;
+use crate::core::damage::*;
 
 #[test]
 fn for_paint_clear_keeps_single_rect() {

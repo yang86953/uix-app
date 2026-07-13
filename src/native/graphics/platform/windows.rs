@@ -127,6 +127,3 @@ pub(crate) unsafe fn release_device_context_checked(hwnd: *mut c_void, hdc: *mut
     ReleaseDC(hwnd, hdc) != 0
 }
 
-#[cfg(test)]
-#[path = "../../../tests/native/graphics/platform/windows.rs"]
-mod tests;

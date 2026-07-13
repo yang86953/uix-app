@@ -224,6 +224,3 @@ impl Badge {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/display/badge.rs"]
-mod tests;

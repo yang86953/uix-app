@@ -1,4 +1,5 @@
-use super::*;
+use crate::tests::common::*;
+use crate::native::traits::event::types::*;
 
 #[test]
 fn for_window_tags_event_without_changing_payload() {

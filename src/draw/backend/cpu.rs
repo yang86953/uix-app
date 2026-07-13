@@ -80,7 +80,7 @@ pub struct CpuBackend {
     height: i32,
     clear_color: Color,
     main: CpuDrawSurface,
-    offscreens: CpuOffscreenPool,
+    pub(crate) offscreens: CpuOffscreenPool,
     active_offscreen: Option<u32>,
 }
 
@@ -405,6 +405,3 @@ impl CpuBackend {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/backend/cpu.rs"]
-mod tests;

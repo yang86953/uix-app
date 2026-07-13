@@ -1,4 +1,12 @@
-use super::*;
+use crate::tests::common::*;
+use crate::native::backends::windows::text_input::WindowsImeState;
+use crate::core::{ Result };
+use crate::native::backends::windows::tsf_session::{TsfActivateParams, TsfSession};
+use crate::native::backends::windows::util::windows_diag;
+use crate::native::traits::event::UiEvent;
+use crate::native::traits::input::ITextInput;
+use std::ptr;
+use crate::native::backends::windows::text_input::*;
 
 #[test]
 fn utf16_surrogate_pair_is_emitted_as_one_scalar() {

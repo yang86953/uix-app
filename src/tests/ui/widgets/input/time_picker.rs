@@ -1,5 +1,6 @@
-use super::*;
-use crate::ui::traits::WidgetLayout;
+use crate::tests::common::*;
+use crate::component;
+use crate::ui::widgets::input::time_picker::*;
 
 #[test]
 fn measure_clamps_time_picker_size() {

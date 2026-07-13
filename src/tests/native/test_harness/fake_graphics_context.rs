@@ -1,4 +1,6 @@
-use super::*;
+use crate::tests::common::*;
+use crate::core::error::Result;
+use crate::native::test_harness::fake_graphics_context::*;
 
 #[test]
 fn fake_graphics_context_records_swap_damage() {

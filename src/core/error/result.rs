@@ -137,6 +137,3 @@ pub fn collect_errors<T, E>(
     results.into_iter().filter_map(|r| r.err()).collect()
 }
 
-#[cfg(test)]
-#[path = "../../tests/core/error/result.rs"]
-mod tests;

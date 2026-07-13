@@ -8,7 +8,7 @@ pub mod event_loop;
 pub(crate) mod main_thread_queue;
 pub(crate) mod session_runtime;
 pub mod shell;
-pub(crate) mod test_clock;
+pub(crate) mod clock;
 pub mod window;
 pub mod window_config;
 pub(crate) mod window_session;

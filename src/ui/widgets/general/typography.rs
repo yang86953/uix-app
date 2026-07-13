@@ -431,6 +431,3 @@ impl Typography {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/general/typography.rs"]
-mod tests;

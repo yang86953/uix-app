@@ -296,6 +296,3 @@ impl TimePicker {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/input/time_picker.rs"]
-mod tests;

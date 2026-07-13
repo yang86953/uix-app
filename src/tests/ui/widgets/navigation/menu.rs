@@ -1,11 +1,8 @@
-use super::*;
-use crate::core::{Constraints, Point, Size};
-use crate::native::traits::input::{KeyMod, MouseButton};
+use crate::tests::common::*;
+use crate::component;
+use crate::draw::Radius;
+use crate::ui::widgets::navigation::menu::*;
 use crate::ui::core::widget::WidgetCore;
-use crate::ui::traits::WidgetLayout;
-use crate::ui::{SemanticKind, WidgetTree};
-use std::cell::RefCell;
-use std::rc::Rc;
 
 #[test]
 fn menu_selection_emits_change_semantic_event() {

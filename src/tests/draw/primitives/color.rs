@@ -1,4 +1,5 @@
-use super::Color;
+use crate::tests::common::*;
+use std::fmt;
 
 #[test]
 fn rgba_encoding_uses_documented_aarrggbb_channel_order() {

@@ -39,18 +39,18 @@ impl LogHandler for LoggerHandler {
 // Logger 单例
 // ════════════════════════════════════════════════════════════════════════════
 
-struct LoggerInner {
-    sinks: Vec<Arc<dyn Sink>>,
+pub(crate) struct LoggerInner {
+    pub(crate) sinks: Vec<Arc<dyn Sink>>,
 }
 
 pub struct Logger {
-    inner: RwLock<LoggerInner>,
+    pub(crate) inner: RwLock<LoggerInner>,
     level: RwLock<Level>,
     sequence: AtomicU64,
 }
 
 impl Logger {
-    fn with_default_console() -> Self {
+    pub(crate) fn with_default_console() -> Self {
         let logger = Self {
             inner: RwLock::new(LoggerInner { sinks: Vec::new() }),
             level: RwLock::new(Level::Warn),
@@ -173,6 +173,3 @@ impl Logger {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/core/log/logger.rs"]
-mod tests;

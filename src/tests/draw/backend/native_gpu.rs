@@ -1,9 +1,15 @@
-use super::*;
-use crate::native::traits::present::{
-    GraphicsBackend, GraphicsContextCaps, PresentDamage, PresentMode,
-};
-use std::cell::{Cell, RefCell};
-use std::rc::Rc;
+use crate::tests::common::*;
+use crate::draw::primitives::path::{Path, PathBuilder};
+use std::any::Any;
+use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
+use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::pipeline::{ EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameRasterOp, ReferenceFrame };
+use crate::draw::primitives::tessellator;
+use crate::draw::primitives::types::{ BlendMode, GradientDirection, Radius, Transform };
+use crate::draw::traits::Canvas2D;
+use crate::native::traits::present::{ GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh, GpuSolidRect, GpuStrokeRect, OffscreenTargetId };
+use crate::draw::backend::native_gpu::*;
 
 #[test]
 fn soft_fallback_tile_is_tight_and_ignores_transparent_rgb() {
@@ -3305,7 +3311,6 @@ fn d3d12_warp_additive_and_scroll_frame_ops_match_reference_executor() {
 #[test]
 fn destination_dependent_frame_ops_use_readback_apply_upload_on_pixel_context() {
     use crate::draw::pipeline::{FrameRasterOp, FrameRect};
-    use std::cell::RefCell;
 
     struct PixelContext {
         width: i32,

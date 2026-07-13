@@ -1,8 +1,7 @@
-use super::*;
-use crate::core::{Point, Rect};
+use crate::tests::common::*;
+use crate::ui::widgets::display::tree::TREE_ROW_HEIGHT;
+use crate::ui::widgets::display::tree::*;
 use crate::ui::core::widget::WidgetCore;
-use crate::ui::traits::EventHandler;
-use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 fn large_tree() -> Tree {
     let nodes: Vec<TreeNode> = (0..80)

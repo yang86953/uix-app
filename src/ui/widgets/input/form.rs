@@ -607,6 +607,3 @@ fn simple_pattern_match(value: &str, pattern: &str) -> bool {
     pi >= p_chars.len()
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/input/form.rs"]
-mod tests;

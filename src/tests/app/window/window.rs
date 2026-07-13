@@ -1,7 +1,10 @@
-use super::Window;
+use crate::tests::common::*;
+use crate::core::{ Result };
+use crate::native::traits::platform::Platform;
+use crate::native::traits::window::PlatformWindow;
+use crate::app::window::window::Window;
 use crate::native::test_harness::FakePlatform;
 use crate::native::traits::event::UiEvent;
-use std::cell::Cell;
 
 #[test]
 fn window_run_does_not_call_frame_fn_without_event() {

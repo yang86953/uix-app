@@ -1,13 +1,9 @@
-use super::*;
-use crate::core::{DirtyRegion, Point};
-use crate::draw::compositor::PicturePolicy;
+use crate::tests::common::*;
+use crate::draw::compositor::ScenePaint;
+use crate::draw::render_object::tree::*;
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
-use crate::draw::font::font_service::FontService;
-use crate::draw::image::ImageService;
 use crate::draw::spatial::Orientation;
-use crate::draw::{Color, FontHandle};
-use crate::ui::theme::DesignTokens;
 
 struct AlphaScene;
 

@@ -32,7 +32,7 @@ impl SelectableList {
         }
     }
 
-    fn item_stride(&self) -> f32 {
+    pub(crate) fn item_stride(&self) -> f32 {
         self.item_height + 2.0
     }
 
@@ -44,7 +44,7 @@ impl SelectableList {
         }
     }
 
-    fn list_body_viewport_height(&self) -> f32 {
+    pub(crate) fn list_body_viewport_height(&self) -> f32 {
         let frame = self
             .last_frame
             .get()
@@ -57,7 +57,7 @@ impl SelectableList {
         (frame.h - self.list_body_top() - footer).max(self.item_stride())
     }
 
-    fn row_index_at_y(&self, pos_y: f32) -> Option<usize> {
+    pub(crate) fn row_index_at_y(&self, pos_y: f32) -> Option<usize> {
         let list_top = self.list_body_top();
         if pos_y < list_top {
             return None;
@@ -132,9 +132,9 @@ component! {
 
         hovered_index: Cell<Option<usize>>,
         hovered_header: Cell<bool>,
-        body_scroll: VirtualListScroll,
+        pub(crate) body_scroll: VirtualListScroll,
         scroll_delta_strip: Cell<(f32, f32)>,
-        last_frame: Cell<Option<Rect>>,
+        pub(crate) last_frame: Cell<Option<Rect>>,
         pending_change: Cell<Option<usize>>,
     }
 
@@ -344,6 +344,3 @@ component! {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/display/selectable_list_virtual_scroll.rs"]
-mod tests;

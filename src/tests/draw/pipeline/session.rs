@@ -1,11 +1,13 @@
-use super::*;
-use crate::draw::backend::DamageRegion;
-use crate::native::traits::present::{
-    GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage,
+use crate::tests::common::*;
+use std::thread::ThreadId;
+#[cfg(feature = "opengles")]
+use crate::draw::backend::NativeGpuBackend;
+use crate::draw::backend::{
+    create_backend, BackendCapabilities, BackendKind, CpuBackend, NullBackend, RenderBackend,
 };
+use crate::draw::traits::{Canvas2D, GraphicsCapabilities, UpdateStrategy};
+use crate::draw::pipeline::session::*;
 use std::ffi::c_void;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 struct CountingGraphicsContext {
     shutdowns: Arc<AtomicUsize>,

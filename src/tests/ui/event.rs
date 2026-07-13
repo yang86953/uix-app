@@ -1,13 +1,16 @@
-use super::*;
-use crate::core::{ComponentId, Rect, WindowId};
+use crate::tests::common::*;
+use crate::ui::widgets::Container;
+use std::any::{Any, TypeId};
+use std::collections::{ hash_map::DefaultHasher };
+use std::hash::{Hash, Hasher};
+use crate::ui::event::*;
 use crate::ui::core::widget::{WidgetCore, WidgetNode};
 use crate::ui::state::{Computed, State};
 use crate::ui::widgets::{
     Button, Checkbox, Input, InputNumber, Label, ProgressBar, Select, Slider, Switch,
 };
-use crate::ui::{AppState, ComponentHandle, SnapshotFields, WidgetTree};
-use std::cell::{Cell, RefCell};
-use std::rc::Rc;
+use crate::ui::{ ComponentHandle };
+use crate::register_semantic;
 
 #[test]
 fn handler_table_bubbles_until_stopped() {
@@ -783,7 +786,6 @@ fn pointer_up_on_container_padding_emits_semantic_click() {
     // 侧栏 row 空白/padding 命中 Container（不处理 PointerUp），
     // 同目标 down/up 仍须触发父级 on_semantic(Click)。
     use crate::ui::view::{label, row, ViewAdapter};
-    use crate::core::EdgeInsets;
 
     let clicked = Rc::new(Cell::new(false));
     let clicked_flag = clicked.clone();

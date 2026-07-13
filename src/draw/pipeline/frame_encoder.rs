@@ -573,6 +573,3 @@ fn blend_pixel_additive(source: u32, destination: u32) -> u32 {
     (add(24) << 24) | (add(16) << 16) | (add(8) << 8) | add(0)
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/pipeline/frame_encoder.rs"]
-mod tests;

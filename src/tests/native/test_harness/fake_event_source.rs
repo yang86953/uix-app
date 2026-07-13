@@ -1,4 +1,10 @@
-use super::*;
+use crate::tests::common::*;
+use crate::native::traits::event::{EventLoopWaker, UiEvent};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
+use crate::native::test_harness::fake_event_source::*;
 use crate::native::shared::OsEventSource;
 
 #[test]

@@ -10,7 +10,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// 自 Unix 纪元以来的毫秒数。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Timestamp(u64);
+pub struct Timestamp(pub(crate) u64);
 
 impl Timestamp {
     /// 创建当前时刻的时间戳。
@@ -94,7 +94,7 @@ impl From<Timestamp> for SystemTime {
 // ── 日期计算 ──────────────────────────────────────────────────────────────
 
 /// 将自 Unix 纪元以来的天数转换为公历日期（年、月、日）。
-fn days_to_date(days: u64) -> (i32, u32, u32) {
+pub(crate) fn days_to_date(days: u64) -> (i32, u32, u32) {
     let z = days + 719468;
     let era = z / 146097;
     let doe = z - era * 146097;
@@ -110,6 +110,3 @@ fn days_to_date(days: u64) -> (i32, u32, u32) {
 
 // ── 测试 ──────────────────────────────────────────────────────────────────
 
-#[cfg(test)]
-#[path = "../../tests/core/diagnostic/timestamp.rs"]
-mod tests;

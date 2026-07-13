@@ -1,4 +1,5 @@
-use super::*;
+use crate::tests::common::*;
+use crate::draw::spatial::platform_adapter::*;
 
 #[test]
 fn ydown_no_conversion() {

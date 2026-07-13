@@ -247,7 +247,7 @@ impl Notification {
         })
     }
 
-    fn hit_bounds(&self, frame: Rect) -> Option<Rect> {
+    pub(crate) fn hit_bounds(&self, frame: Rect) -> Option<Rect> {
         let queue = self.queue.borrow();
         self.toast_rects(frame, &queue)
             .map(|(rect, _)| rect)
@@ -265,6 +265,3 @@ impl Notification {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/feedback/notification.rs"]
-mod tests;

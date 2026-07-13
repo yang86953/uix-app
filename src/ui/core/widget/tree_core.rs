@@ -815,6 +815,3 @@ impl WidgetTree {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/core/widget/tree_core.rs"]
-mod tests;

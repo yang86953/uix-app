@@ -41,7 +41,7 @@ pub enum Invalidation {
 /// 失效队列：合并重复 Paint、判定 0 帧。
 #[derive(Debug, Clone, Default)]
 pub struct InvalidationQueue {
-    items: Vec<Invalidation>,
+    pub(crate) items: Vec<Invalidation>,
 }
 
 impl InvalidationQueue {
@@ -181,6 +181,3 @@ fn union_rect(a: Rect, b: Rect) -> Rect {
     Rect::new(x1, y1, x2 - x1, y2 - y1)
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/pipeline/invalidation.rs"]
-mod tests;

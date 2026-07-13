@@ -209,6 +209,3 @@ impl Rate {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/input/rate.rs"]
-mod tests;

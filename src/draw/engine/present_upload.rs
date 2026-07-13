@@ -14,7 +14,7 @@ use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, Update
 use crate::native::traits::present::{IGraphicsContext, PresentDamage, PresentFrame};
 
 pub struct PresentUploadEngine {
-    session: RenderSession,
+    pub(crate) session: RenderSession,
     gpu_ctx: Box<dyn IGraphicsContext>,
     pub clear_color: Color,
     shutdown: bool,
@@ -254,6 +254,3 @@ impl Drop for PresentUploadEngine {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/engine/present_upload.rs"]
-mod tests;

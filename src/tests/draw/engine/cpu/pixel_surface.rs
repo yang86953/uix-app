@@ -1,4 +1,6 @@
-use super::*;
+use crate::tests::common::*;
+use crate::draw::traits::RenderingBackend;
+use crate::draw::engine::cpu::pixel_surface::*;
 
 #[test]
 fn soft_surface_clears_to_transparent_not_opaque_black() {

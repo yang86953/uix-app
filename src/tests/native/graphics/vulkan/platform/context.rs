@@ -1,4 +1,15 @@
-use super::*;
+use crate::tests::common::*;
+use std::ffi::{CStr, c_void};
+use std::ptr;
+use ash::{Entry, vk};
+use crate::core::{ Result };
+#[cfg(all(unix, not(target_os = "macos")))]
+use crate::native::graphics::platform::linux::WaylandSurfaceHandle;
+#[cfg(target_os = "macos")]
+use crate::native::backends::macos::platform as macos_surface;
+#[cfg(windows)]
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use crate::native::graphics::vulkan::platform::context::*;
 
 #[test]
 fn crop_cpu_shadow_extracts_rect() {

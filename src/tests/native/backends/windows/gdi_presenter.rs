@@ -1,6 +1,8 @@
-use super::{clip_damage_rect, GdiPresenter};
-use crate::core::Errc;
-use crate::native::traits::present::{IPresenter, PresentDamage};
+use crate::tests::common::*;
+use crate::native::backends::windows::ffi::{GetDC, ReleaseDC};
+use crate::native::backends::windows::util::windows_diag;
+use crate::native::traits::present::IPresenter;
+use crate::native::backends::windows::gdi_presenter::{clip_damage_rect, GdiPresenter};
 
 #[test]
 fn damage_padding_is_clipped_to_the_gdi_surface() {

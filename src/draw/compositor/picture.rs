@@ -188,7 +188,7 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
     Ok(())
 }
 
-fn ensure_offscreen(
+pub(crate) fn ensure_offscreen(
     engine: &mut dyn GraphicsEngine,
     handle: &mut Option<ImageHandle>,
     w: i32,
@@ -243,10 +243,6 @@ pub(crate) fn encode_cached_picture(
     encoder.blit_picture(image, full, full);
     Ok(encoder)
 }
-
-#[cfg(test)]
-#[path = "../../tests/draw/compositor/picture.rs"]
-mod tests;
 
 fn prepare_nested_pictures<S: ScenePaint>(
     engine: &mut dyn GraphicsEngine,

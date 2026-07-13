@@ -38,7 +38,7 @@ const FRAME_COUNT: usize = 2;
 
 use super::pipeline::D3d12Pipeline;
 
-fn d3d12_hresult_code(result: ::windows::core::HRESULT) -> Errc {
+pub(crate) fn d3d12_hresult_code(result: ::windows::core::HRESULT) -> Errc {
     match result {
         DXGI_ERROR_DEVICE_HUNG
         | DXGI_ERROR_DEVICE_REMOVED
@@ -121,7 +121,7 @@ fn create_device_for_adapter(adapter: &IDXGIAdapter1) -> Result<ID3D12Device> {
     device.ok_or_else(|| platform_error("D3d12Context: D3D12CreateDevice returned no device"))
 }
 
-fn select_hardware_adapter(
+pub(crate) fn select_hardware_adapter(
     factory: &IDXGIFactory4,
 ) -> Result<(IDXGIAdapter1, ID3D12Device, D3d12AdapterInfo)> {
     let mut index = 0u32;
@@ -166,7 +166,7 @@ fn select_warp_adapter(
     Ok((adapter, device, info))
 }
 
-fn swap_chain_desc(width: i32, height: i32) -> DXGI_SWAP_CHAIN_DESC1 {
+pub(crate) fn swap_chain_desc(width: i32, height: i32) -> DXGI_SWAP_CHAIN_DESC1 {
     DXGI_SWAP_CHAIN_DESC1 {
         Width: width.max(1) as u32,
         Height: height.max(1) as u32,
@@ -309,7 +309,7 @@ fn release_copy_location(location: &mut D3D12_TEXTURE_COPY_LOCATION) {
     }
 }
 
-fn copy_mapped_bgra_rows(
+pub(crate) fn copy_mapped_bgra_rows(
     mapped: *const u8,
     footprint_offset: usize,
     row_pitch: usize,
@@ -359,12 +359,12 @@ pub struct D3d12Context {
     frame_index: usize,
     recording: bool,
     pending_gpu_resources: Vec<ID3D12Resource>,
-    adapter_info: D3d12AdapterInfo,
+    pub(crate) adapter_info: D3d12AdapterInfo,
     logical_width: i32,
     logical_height: i32,
     width: i32,
     height: i32,
-    fault: Option<String>,
+    pub(crate) fault: Option<String>,
     shutdown: bool,
 }
 
@@ -406,8 +406,7 @@ impl D3d12Context {
         }
     }
 
-    #[cfg(test)]
-    pub(super) fn new_with_driver(
+    pub(crate) fn new_with_driver(
         native_window: *mut c_void,
         width: i32,
         height: i32,
@@ -739,14 +738,14 @@ impl D3d12Context {
     /// A failed DXGI Present leaves the submitted command list in an uncertain
     /// display state. Keep the context alive only long enough for terminal
     /// cleanup; all later recording, resize, and readback work must fail.
-    fn latch_present_result(&mut self, result: Result<()>) -> Result<()> {
+    pub(crate) fn latch_present_result(&mut self, result: Result<()>) -> Result<()> {
         if let Err(error) = &result {
             self.latch_fault("present", error);
         }
         result
     }
 
-    fn resize_result(&mut self, width: i32, height: i32) -> Result<()> {
+    pub(crate) fn resize_result(&mut self, width: i32, height: i32) -> Result<()> {
         self.ensure_healthy()?;
         let drawable = win_surface::drawable_size(self.hwnd, width, height);
         if drawable.width == self.width && drawable.height == self.height {
@@ -795,7 +794,7 @@ impl D3d12Context {
         Ok(())
     }
 
-    fn read_pixels_result(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
+    pub(crate) fn read_pixels_result(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
         let x0 = x.clamp(0, self.width);
         let y0 = y.clamp(0, self.height);
         let x1 = x.saturating_add(width).clamp(x0, self.width);
@@ -975,7 +974,7 @@ impl D3d12Context {
         std::mem::forget(self.fence.clone());
     }
 
-    fn shutdown_result(&mut self) -> Result<()> {
+    pub(crate) fn shutdown_result(&mut self) -> Result<()> {
         if self.shutdown {
             return Ok(());
         }
@@ -1270,6 +1269,3 @@ impl Drop for D3d12Context {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../../tests/native/graphics/d3d12/platform/context.rs"]
-mod tests;

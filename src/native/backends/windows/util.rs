@@ -174,7 +174,7 @@ fn is_font_file(name_lower: &str) -> bool {
     name_lower.ends_with(".ttf") || name_lower.ends_with(".ttc") || name_lower.ends_with(".otf")
 }
 
-fn family_name_to_filename(family: &str) -> Option<&'static str> {
+pub(crate) fn family_name_to_filename(family: &str) -> Option<&'static str> {
     let normalized = family
         .trim()
         .to_lowercase()
@@ -239,6 +239,3 @@ extern "system" {
     fn FindClose(hFindFile: isize) -> i32;
 }
 
-#[cfg(test)]
-#[path = "../../../tests/native/backends/windows/util.rs"]
-mod tests;

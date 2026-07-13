@@ -1,7 +1,7 @@
-use super::*;
-use crate::core::Point;
+use crate::tests::common::*;
+use crate::draw::compositor::ScenePaint;
+use crate::draw::compositor::viewport_transform::*;
 
-use crate::draw::painting::PaintContext;
 
 const ROOT: NodeId = NodeId::new(1);
 const CHILD: NodeId = NodeId::new(2);

@@ -237,6 +237,3 @@ impl InputNumber {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/input/input_number.rs"]
-mod tests;

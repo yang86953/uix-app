@@ -21,7 +21,7 @@ pub use egl::EglContext;
 pub use wgl::WglContext;
 
 #[cfg(windows)]
-pub(super) fn create(
+pub(crate) fn create(
     surface: *mut c_void,
     width: i32,
     height: i32,
@@ -29,12 +29,8 @@ pub(super) fn create(
     WglContext::new(surface, width, height).map(|ctx| Box::new(ctx) as _)
 }
 
-#[cfg(all(test, unix, not(target_os = "macos")))]
-#[path = "../../../../tests/native/graphics/opengl/platform/mod.rs"]
-mod tests;
-
 #[cfg(all(unix, not(target_os = "macos")))]
-pub(super) fn create(
+pub(crate) fn create(
     surface: *mut c_void,
     width: i32,
     height: i32,
@@ -43,7 +39,7 @@ pub(super) fn create(
 }
 
 #[cfg(not(any(windows, all(unix, not(target_os = "macos")))))]
-pub(super) fn create(
+pub(crate) fn create(
     _surface: *mut c_void,
     _width: i32,
     _height: i32,

@@ -88,6 +88,3 @@ impl BackTop {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/containers/back_top.rs"]
-mod tests;

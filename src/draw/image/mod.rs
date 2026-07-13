@@ -3,7 +3,7 @@
 //! 职责：解码 PNG/JPEG 等格式、路径缓存、按句柄提供像素数据。
 //! 渲染通过 `PaintContext::draw_image` 调用 `Canvas2D::blit_image`。
 
-mod decode;
+pub(crate) mod decode;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -65,7 +65,7 @@ impl ImageSlot {
 /// 图片服务 — 解码缓存与路径索引。
 pub struct ImageService {
     slots: RefCell<Vec<ImageSlot>>,
-    path_cache: RefCell<HashMap<String, BitmapHandle>>,
+    pub(crate) path_cache: RefCell<HashMap<String, BitmapHandle>>,
 }
 
 impl Default for ImageService {
@@ -204,6 +204,3 @@ pub fn fit_dst_rect(src_w: i32, src_h: i32, bounds: Rect) -> Rect {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/image/mod.rs"]
-mod tests;

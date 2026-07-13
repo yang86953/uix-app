@@ -52,7 +52,7 @@ component! {
         pending_change: RefCell<Option<String>>,
         multiple: bool,
         search: bool,
-        dropdown_scroll: VirtualListScroll,
+        pub(crate) dropdown_scroll: VirtualListScroll,
         scroll_delta_strip: Cell<(f32, f32)>,
     }
 
@@ -426,7 +426,7 @@ impl Select {
         Size::new(w, DROPDOWN_TRIGGER_HEIGHT)
     }
 
-    fn dropdown_row_count(&self) -> usize {
+    pub(crate) fn dropdown_row_count(&self) -> usize {
         if self.optgroups.is_empty() {
             self.options.len()
         } else {
@@ -434,11 +434,11 @@ impl Select {
         }
     }
 
-    fn dropdown_viewport_height(&self, row_count: usize) -> f32 {
+    pub(crate) fn dropdown_viewport_height(&self, row_count: usize) -> f32 {
         (row_count as f32 * DROPDOWN_ROW_HEIGHT).min(MAX_DROPDOWN_VIEWPORT_HEIGHT)
     }
 
-    fn dropdown_row_at_y(&self, pos_y: f32) -> Option<usize> {
+    pub(crate) fn dropdown_row_at_y(&self, pos_y: f32) -> Option<usize> {
         if pos_y <= DROPDOWN_TRIGGER_HEIGHT {
             return None;
         }
@@ -747,6 +747,3 @@ fn fade_color(color: Color, opacity: f32) -> Color {
     color.with_alpha(alpha)
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/input/select.rs"]
-mod tests;

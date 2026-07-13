@@ -118,7 +118,7 @@ impl ViewAdapter {
         wnode
     }
 
-    fn apply_style(
+    pub(crate) fn apply_style(
         mut widget: Box<dyn WidgetComponent>,
         style: &Style,
         flex_grow_override: Option<f32>,
@@ -447,6 +447,3 @@ where
     result
 }
 
-#[cfg(test)]
-#[path = "../../tests/ui/view/adapter.rs"]
-mod tests;

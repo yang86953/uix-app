@@ -1,8 +1,9 @@
-use super::*;
+use crate::tests::common::*;
+use crate::draw::primitives::path::{Path, PathBuilder};
+use crate::draw::primitives::flattener;
+use crate::draw::primitives::tessellator::*;
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
-use crate::draw::primitives::color::Color;
-use crate::draw::primitives::path::PathBuilder;
 use crate::draw::traits::Canvas2D;
 
 fn add_rect(
@@ -579,15 +580,15 @@ fn stroke_caps_and_joins_tessellate_without_gaps_or_area_overlap() {
         .line_to(72.0, 72.0);
     let path = pb.build();
     for (join, limit, expected_area) in [
-        (super::super::path::LineJoin::Miter, 2.0, 1_536.0),
-        (super::super::path::LineJoin::Miter, 1.0, 1_504.0),
-        (super::super::path::LineJoin::Bevel, 4.0, 1_504.0),
+        (crate::draw::primitives::path::LineJoin::Miter, 2.0, 1_536.0),
+        (crate::draw::primitives::path::LineJoin::Miter, 1.0, 1_504.0),
+        (crate::draw::primitives::path::LineJoin::Bevel, 4.0, 1_504.0),
     ] {
         let vertices = tessellate_stroke(
             &path,
             &StrokeOptions {
                 width: 16.0,
-                cap: super::super::path::LineCap::Butt,
+                cap: crate::draw::primitives::path::LineCap::Butt,
                 join,
                 miter_limit: limit,
             },
@@ -611,16 +612,16 @@ fn stroke_caps_and_joins_tessellate_without_gaps_or_area_overlap() {
     let mut line = PathBuilder::new();
     line.move_to(24.0, 48.0).line_to(88.0, 48.0);
     for cap in [
-        super::super::path::LineCap::Butt,
-        super::super::path::LineCap::Round,
-        super::super::path::LineCap::Square,
+        crate::draw::primitives::path::LineCap::Butt,
+        crate::draw::primitives::path::LineCap::Round,
+        crate::draw::primitives::path::LineCap::Square,
     ] {
         assert!(tessellate_stroke(
             &line.build(),
             &StrokeOptions {
                 width: 16.0,
                 cap,
-                join: super::super::path::LineJoin::Round,
+                join: crate::draw::primitives::path::LineJoin::Round,
                 miter_limit: 4.0,
             },
         )
@@ -635,15 +636,15 @@ fn stroke_caps_and_joins_tessellate_without_gaps_or_area_overlap() {
         .line_to(24.0, 72.0)
         .close();
     for join in [
-        super::super::path::LineJoin::Miter,
-        super::super::path::LineJoin::Bevel,
-        super::super::path::LineJoin::Round,
+        crate::draw::primitives::path::LineJoin::Miter,
+        crate::draw::primitives::path::LineJoin::Bevel,
+        crate::draw::primitives::path::LineJoin::Round,
     ] {
         assert!(tessellate_stroke(
             &closed.build(),
             &StrokeOptions {
                 width: 8.0,
-                cap: super::super::path::LineCap::Square,
+                cap: crate::draw::primitives::path::LineCap::Square,
                 join,
                 miter_limit: 4.0,
             },
@@ -660,8 +661,8 @@ fn stroke_caps_and_joins_tessellate_without_gaps_or_area_overlap() {
         &reversed.build(),
         &StrokeOptions {
             width: 16.0,
-            cap: super::super::path::LineCap::Butt,
-            join: super::super::path::LineJoin::Miter,
+            cap: crate::draw::primitives::path::LineCap::Butt,
+            join: crate::draw::primitives::path::LineJoin::Miter,
             miter_limit: 2.0,
         },
     )

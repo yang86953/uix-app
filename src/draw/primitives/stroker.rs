@@ -403,7 +403,7 @@ fn vector(from: Point, to: Point) -> Point {
     Point::new(to.x - from.x, to.y - from.y)
 }
 
-fn cross(a: Point, b: Point) -> f32 {
+pub(crate) fn cross(a: Point, b: Point) -> f32 {
     a.x * b.y - a.y * b.x
 }
 
@@ -437,7 +437,7 @@ fn remove_closing_duplicate(ring: &mut Vec<Point>) {
     }
 }
 
-fn polygon_area(points: &[Point]) -> f32 {
+pub(crate) fn polygon_area(points: &[Point]) -> f32 {
     let mut area = 0.0;
     for index in 0..points.len() {
         let next = (index + 1) % points.len();
@@ -452,6 +452,3 @@ fn orient_ring(ring: &mut [Point], positive: bool) {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/primitives/stroker.rs"]
-mod tests;

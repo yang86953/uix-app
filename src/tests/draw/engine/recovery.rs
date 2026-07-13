@@ -1,5 +1,6 @@
-use super::*;
-use crate::core::{Errc, Error};
+use crate::tests::common::*;
+use crate::draw::engine::GraphicsFailure;
+use crate::draw::engine::recovery::*;
 
 fn surface_lost() -> GraphicsFailure {
     GraphicsFailure::SurfaceLost(Error::new(Errc::GraphicsSurfaceLost, "test surface lost"))

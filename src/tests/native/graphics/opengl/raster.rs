@@ -1,4 +1,8 @@
-use super::*;
+use crate::tests::common::*;
+use glow::HasContext as _;
+use crate::core::{ Result };
+use crate::native::traits::present::{ GpuSolidRect, OffscreenTargetId };
+use crate::native::graphics::opengl::raster::*;
 
 #[test]
 fn soft_tile_validation_uses_compact_payload_at_destination() {

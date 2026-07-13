@@ -98,6 +98,3 @@ pub use crate::ui::view::{
 pub use crate::views;
 pub use crate::with_cloned;
 
-#[cfg(test)]
-#[path = "tests/prelude.rs"]
-mod tests;

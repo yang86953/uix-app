@@ -1,12 +1,8 @@
-use super::*;
-use crate::core::{ComponentId, Constraints, Point, Rect, Size};
-use crate::draw::painting::PaintContext;
-use crate::ui::layout::{AlignItems, FlexDirection};
-use crate::ui::traits::{EventHandler, WidgetCapabilities, WidgetLayout, WidgetRender};
-use crate::ui::widgets::{Collapse, CollapsePanel, Container, Space};
-use crate::ui::EventResult;
-use std::cell::RefCell;
-use std::rc::Rc;
+use crate::tests::common::*;
+use crate::ui::widgets::Container;
+use crate::ui::widgets::other::scroll_view::scrollbar::{ScrollBar, ScrollbarOrientation};
+use crate::ui::widgets::other::scroll_view::*;
+use crate::ui::widgets::{ Collapse, CollapsePanel, Space };
 
 struct FixedWidget {
     size: Size,

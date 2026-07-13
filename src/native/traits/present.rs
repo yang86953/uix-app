@@ -851,6 +851,3 @@ pub trait IGraphicsContext {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/native/traits/present.rs"]
-mod tests;
