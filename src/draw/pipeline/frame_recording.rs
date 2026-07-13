@@ -6,11 +6,10 @@
 //! offscreens remain private CPU targets and are recorded as ordered blits.
 
 use crate::core::{DamageRegion, Errc, Error, Rect};
-use crate::draw::Color;
 use crate::draw::backend::{CpuBackend, RenderBackend};
-use crate::draw::engine::RenderOutcome;
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::engine::RenderOutcome;
 use crate::draw::pipeline::{
     EncodedFrameExecution, EncodedPictureExecution, FrameEncoder, FrameEncoderError, FrameImage,
     FrameRasterOp, FrameRect,
@@ -19,6 +18,7 @@ use crate::draw::primitives::path::{FillRule, Path};
 use crate::draw::primitives::stroker::StrokeOptions;
 use crate::draw::primitives::types::{BlendMode, GradientDirection, ImageHandle, Radius};
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
+use crate::draw::Color;
 
 /// The only producer used by [`super::render_frame::FrameRenderer`]. It owns
 /// no API object and cannot present; its output is consumed exactly once by
@@ -304,12 +304,13 @@ impl FrameRecordingCanvas {
         if !self.scratch_dirty {
             return Ok(());
         }
-        let pixels = self.scratch.surface().pixels();
-        if pixels.iter().any(|pixel| pixel & 0xff00_0000 != 0) {
-            let image = FrameImage::new(self.width, self.height, pixels.to_vec())
-                .map_err(frame_encoder_error)?;
-            let full = FrameRect::new(0, 0, self.width, self.height);
-            self.encoder_mut()?.cpu_image_segment(image, full, full);
+        let packed =
+            pack_visible_scratch_tile(self.scratch.surface().pixels(), self.width, self.height);
+        if let Some((pixels, dst)) = packed {
+            let image =
+                FrameImage::new(dst.width, dst.height, pixels).map_err(frame_encoder_error)?;
+            let src = FrameRect::new(0, 0, dst.width, dst.height);
+            self.encoder_mut()?.cpu_image_segment(image, src, dst);
         }
         self.scratch.surface_mut().clear_all();
         self.scratch_dirty = false;
@@ -561,6 +562,52 @@ impl Canvas2D for FrameRecordingCanvas {
     }
 }
 
+/// Packs one transparent full-surface scratch operation into its smallest
+/// alpha-visible tile. CPU segments stay immutable and ordered, but no longer
+/// retain a full window-sized pixel buffer for every glyph or rounded shape.
+fn pack_visible_scratch_tile(
+    pixels: &[u32],
+    width: i32,
+    height: i32,
+) -> Option<(Vec<u32>, FrameRect)> {
+    if width <= 0 || height <= 0 {
+        return None;
+    }
+    let expected = (width as usize).checked_mul(height as usize)?;
+    if pixels.len() < expected {
+        return None;
+    }
+
+    let mut left = width;
+    let mut top = height;
+    let mut right = 0;
+    let mut bottom = 0;
+    for y in 0..height {
+        let row = y as usize * width as usize;
+        for x in 0..width {
+            if pixels[row + x as usize] & 0xff00_0000 == 0 {
+                continue;
+            }
+            left = left.min(x);
+            top = top.min(y);
+            right = right.max(x + 1);
+            bottom = bottom.max(y + 1);
+        }
+    }
+    if left >= right || top >= bottom {
+        return None;
+    }
+
+    let tile_width = right - left;
+    let tile_height = bottom - top;
+    let mut packed = Vec::with_capacity((tile_width as usize).checked_mul(tile_height as usize)?);
+    for y in top..bottom {
+        let row = y as usize * width as usize;
+        packed.extend_from_slice(&pixels[row + left as usize..row + right as usize]);
+    }
+    Some((packed, FrameRect::new(left, top, tile_width, tile_height)))
+}
+
 fn rect_to_frame(rect: Rect) -> Result<FrameRect, Error> {
     if !rect.x.is_finite()
         || !rect.y.is_finite()
@@ -651,6 +698,45 @@ mod tests {
             encoder.commands()[4],
             crate::draw::pipeline::FrameCommand::Native { .. }
         ));
+    }
+
+    #[test]
+    fn recording_canvas_retains_compact_cpu_segment_tiles() {
+        let mut engine = FrameRecordingEngine::new();
+        engine.initialize(1200, 800).expect("initialize recorder");
+        engine.begin_recording().expect("begin recording");
+        let color = Color::from_rgba(20, 40, 60, 128);
+        engine
+            .canvas_2d()
+            .fill_rect(Rect::new(701.0, 503.0, 3.0, 2.0), color, None);
+
+        let encoder = engine.finish_recording().expect("finish recorder");
+        let cpu_segment = encoder
+            .commands()
+            .iter()
+            .find_map(|command| match command {
+                crate::draw::pipeline::FrameCommand::CpuSegment { image, src, dst } => {
+                    Some((image, src, dst))
+                }
+                _ => None,
+            })
+            .expect("CPU segment");
+
+        assert_eq!((cpu_segment.0.width(), cpu_segment.0.height()), (3, 2));
+        assert_eq!(cpu_segment.0.pixels().len(), 6);
+        assert_eq!(*cpu_segment.1, FrameRect::new(0, 0, 3, 2));
+        assert_eq!(*cpu_segment.2, FrameRect::new(701, 503, 3, 2));
+        let reference = encoder.render_reference();
+        assert_eq!(
+            reference.pixel(700, 503),
+            Some(Color::transparent().premultiplied())
+        );
+        assert_eq!(reference.pixel(701, 503), Some(color.premultiplied()));
+        assert_eq!(reference.pixel(703, 504), Some(color.premultiplied()));
+        assert_eq!(
+            reference.pixel(704, 504),
+            Some(Color::transparent().premultiplied())
+        );
     }
 
     #[test]
