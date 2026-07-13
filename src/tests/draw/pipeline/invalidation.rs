@@ -99,3 +99,23 @@ fn node_needs_paint_targeted() {
     assert!(q.node_needs_paint(NodeId::new(7)));
     assert!(!q.node_needs_paint(NodeId::new(8)));
 }
+
+#[test]
+fn clear_layout_keeps_paint_and_composite() {
+    let mut q = InvalidationQueue::new();
+    let id = NodeId::new(3);
+    q.push(Invalidation::Layout(id));
+    q.push(Invalidation::Paint {
+        id,
+        rect: Some(Rect::new(0.0, 0.0, 4.0, 4.0)),
+    });
+    q.push(Invalidation::Composite {
+        rect: Rect::new(1.0, 1.0, 2.0, 2.0),
+        scroll: None,
+    });
+    assert!(q.has_layout());
+    q.clear_layout();
+    assert!(!q.has_layout());
+    assert!(q.has_paint_or_composite());
+    assert!(q.node_needs_paint(id));
+}

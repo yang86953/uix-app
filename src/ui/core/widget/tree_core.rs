@@ -36,6 +36,12 @@ pub struct WidgetTree {
     app_state: Option<AppState>,
     timer_routes: BTreeMap<u64, (WidgetId, u32)>,
     focus_trap_restore: Vec<(WidgetId, Option<WidgetId>)>,
+    /// layout() 内实际改写 frame 次数（回归：收敛后二次 layout 应为 0）。
+    #[cfg(test)]
+    pub(crate) layout_frame_writes: std::cell::Cell<u32>,
+    /// Phase 4 实际执行的 shrink 次数（回归：Stretch 侧栏不应反复 shrink）。
+    #[cfg(test)]
+    pub(crate) layout_shrink_ops: std::cell::Cell<u32>,
 }
 
 impl Default for WidgetTree {
@@ -59,6 +65,10 @@ impl Default for WidgetTree {
             app_state: None,
             timer_routes: BTreeMap::new(),
             focus_trap_restore: Vec::new(),
+            #[cfg(test)]
+            layout_frame_writes: std::cell::Cell::new(0),
+            #[cfg(test)]
+            layout_shrink_ops: std::cell::Cell::new(0),
         }
     }
 }
@@ -603,23 +613,56 @@ impl WidgetTree {
     }
 
     pub fn set_frame_dirty(&mut self, id: ComponentId, new_frame: Rect) {
+        if !self.apply_frame_paint(id, new_frame) {
+            return;
+        }
+        self.push_layout_invalidation(id);
+        self.propagate_layout_invalidation(id);
+    }
+
+    /// layout() 内写 frame：只标 Paint，不重新入队 Layout。
+    ///
+    /// `set_frame_dirty` 会 `push_layout_invalidation`，若在收敛循环里调用，
+    /// 会在结果已稳定后仍留下 Layout pending，下一帧无事件也再跑 layout（违反休眠）。
+    pub(crate) fn set_layout_frame(&mut self, id: ComponentId, new_frame: Rect) -> bool {
+        if !self.apply_frame_paint(id, new_frame) {
+            return false;
+        }
+        #[cfg(test)]
+        {
+            self.layout_frame_writes
+                .set(self.layout_frame_writes.get().wrapping_add(1));
+        }
+        true
+    }
+
+    fn apply_frame_paint(&mut self, id: ComponentId, new_frame: Rect) -> bool {
         let old = match self.get(id) {
             Some(w) => {
                 let old = w.frame();
                 if old == new_frame {
-                    return;
+                    return false;
                 }
                 old
             }
-            None => return,
+            None => return false,
         };
         if let Some(w) = self.get_mut(id) {
             w.set_frame(new_frame);
         }
         self.invalidate_paint_rect(id, old);
         self.invalidate_paint(id);
-        self.push_layout_invalidation(id);
-        self.propagate_layout_invalidation(id);
+        true
+    }
+
+    #[cfg(test)]
+    pub(crate) fn take_layout_frame_writes(&self) -> u32 {
+        self.layout_frame_writes.replace(0)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn take_layout_shrink_ops(&self) -> u32 {
+        self.layout_shrink_ops.replace(0)
     }
 
     // WidgetNode tree building.

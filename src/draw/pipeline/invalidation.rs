@@ -157,6 +157,12 @@ impl InvalidationQueue {
     pub fn clear(&mut self) {
         self.items.clear();
     }
+
+    /// 仅移除 Layout 项（layout() 收敛后消费；保留 Paint / Composite 供 present）。
+    pub fn clear_layout(&mut self) {
+        self.items
+            .retain(|i| !matches!(i, Invalidation::Layout(_)));
+    }
 }
 
 /// 通过共享句柄推送 Paint 失效（State 绑定用）。
