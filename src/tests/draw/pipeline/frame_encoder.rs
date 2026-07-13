@@ -199,3 +199,15 @@ fn scroll_copy_matches_cpu_rasterizer_scroll_region() {
 
     assert_eq!(encoder.render_reference().pixels(), cpu.surface().pixels());
 }
+
+#[test]
+fn execute_into_pixels_without_clear_retains_undamaged_pixels() {
+    let mut pixels = vec![Color::blue().premultiplied(); 4 * 4];
+    let mut encoder = FrameEncoder::new(4, 4).unwrap();
+    encoder.native(rect(1, 1, 2, 2, Color::red()));
+    encoder.execute_into_pixels(&mut pixels);
+
+    assert_eq!(pixels[0], Color::blue().premultiplied());
+    assert_eq!(pixels[5], Color::red().premultiplied());
+    assert_eq!(pixels[15], Color::blue().premultiplied());
+}

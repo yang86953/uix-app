@@ -827,7 +827,7 @@ fn software_engine_first_frame_present_forwards_full_damage_to_fake_presenter() 
 }
 
 #[test]
-fn software_engine_full_recorder_forwards_full_damage_to_fake_presenter() {
+fn software_engine_after_first_frame_forwards_partial_damage_to_fake_presenter() {
     let mut platform = FakePlatform::new();
     platform
         .event_source
@@ -894,10 +894,11 @@ fn software_engine_full_recorder_forwards_full_damage_to_fake_presenter() {
         window.presenter.state.present_calls[0].damage,
         PresentDamage::Full
     );
-    assert_eq!(
+    assert!(matches!(
         window.presenter.state.present_calls[1].damage,
-        PresentDamage::Full
-    );
+        PresentDamage::Partial(ref rects)
+            if rects.len() == 1 && rects[0].2 > 0 && rects[0].3 > 0
+    ));
 }
 
 #[test]

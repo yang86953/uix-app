@@ -87,9 +87,11 @@ impl GraphicsEngine for PresentUploadEngine {
         self.session.resize(actual_w, actual_h)
     }
 
-    fn begin_frame(&mut self, _strategy: UpdateStrategy) -> RenderOutcome {
+    fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {
         self.sync_clear_color();
-        self.session.begin_frame(UpdateStrategy::FullRedraw)
+        // CPU canvas is retained across frames; honor DirtyRects so undamaged
+        // pixels survive and paint/present can stay damage-scoped.
+        self.session.begin_frame(strategy)
     }
 
     fn end_frame(&mut self, present_damage: &DamageRegion) -> RenderOutcome {
@@ -98,20 +100,34 @@ impl GraphicsEngine for PresentUploadEngine {
             return outcome;
         }
         if let Some(cpu) = self.session.cpu_backend() {
+            let width = cpu.width();
+            let height = cpu.height();
+            let damage = if self.gpu_ctx.caps().partial_present {
+                present_damage.to_present_damage()
+            } else {
+                PresentDamage::Full
+            };
+            let damage_full = matches!(damage, PresentDamage::Full);
             let frame = PresentFrame::PixelBuffer {
                 pixels: cpu.pixels(),
-                width: cpu.width(),
-                height: cpu.height(),
+                width,
+                height,
                 // CPU upload has the same preservation precondition as a
                 // swapchain present. Do not let a caller turn an unproven
                 // partial-present context into a partial redraw path.
-                damage: if self.gpu_ctx.caps().partial_present {
-                    present_damage.to_present_damage()
-                } else {
-                    PresentDamage::Full
-                },
+                damage,
             };
-            if let Err(err) = self.gpu_ctx.present(&frame) {
+            let present_t0 = std::time::Instant::now();
+            let present_result = self.gpu_ctx.present(&frame);
+            let present_ms = present_t0.elapsed().as_millis();
+            crate::core::log::info_fn(format!(
+                "present_upload_ms={} pixels={} damage_full={} backend={}",
+                present_ms,
+                width.saturating_mul(height),
+                if damage_full { 1 } else { 0 },
+                self.backend_name(),
+            ));
+            if let Err(err) = present_result {
                 crate::core::log::error_fn(format!(
                     "PresentUploadEngine {} present failed: {}",
                     self.backend_name(),
@@ -128,8 +144,13 @@ impl GraphicsEngine for PresentUploadEngine {
     }
 
     fn capabilities(&self) -> GraphicsCapabilities {
-        // CPU 栅格 + GPU upload：离屏走 CpuBackend。
-        GraphicsCapabilities::engine_managed_with_offscreen()
+        // CPU 栅格 + GPU upload：离屏走 CpuBackend；CPU 表面可局部清/绘。
+        // GPU partial_present 仍由 caps().partial_present 门控（Vulkan 多缓冲暂 Full upload）。
+        GraphicsCapabilities {
+            presentation_mode: crate::draw::traits::PresentationMode::EngineManaged,
+            partial_redraw: true,
+            offscreen: true,
+        }
     }
 
     fn device_pixel_ratio(&self) -> f32 {

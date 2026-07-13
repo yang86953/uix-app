@@ -44,9 +44,15 @@ impl FrameRecordingEngine {
         }
     }
 
-    pub(crate) fn begin_recording(&mut self) -> Result<(), Error> {
+    /// Start a new main-frame recording.
+    ///
+    /// `clear_target`: full frames emit an initial Clear so
+    /// `execute_into_pixels` replaces the whole CPU/GPU target. Dirty frames
+    /// omit it — the real surface already cleared only the damage AABB, and
+    /// undamaged pixels must survive.
+    pub(crate) fn begin_recording(&mut self, clear_target: bool) -> Result<(), Error> {
         self.active_offscreen = None;
-        self.canvas.begin_recording()
+        self.canvas.begin_recording(clear_target)
     }
 
     pub(crate) fn finish_recording(&mut self) -> Result<FrameEncoder, Error> {
@@ -245,7 +251,7 @@ impl FrameRecordingCanvas {
         self.deferred_error = None;
     }
 
-    fn begin_recording(&mut self) -> Result<(), Error> {
+    fn begin_recording(&mut self, clear_target: bool) -> Result<(), Error> {
         self.scratch = SharedRasterizer::new(PixelSurface::new(self.width, self.height));
         self.blend_mode = BlendMode::default();
         self.blend_stack.clear();
@@ -253,7 +259,9 @@ impl FrameRecordingCanvas {
         self.deferred_error = None;
         let mut encoder =
             FrameEncoder::new(self.width, self.height).map_err(frame_encoder_error)?;
-        encoder.clear(Color::transparent());
+        if clear_target {
+            encoder.clear(Color::transparent());
+        }
         self.encoder = Some(encoder);
         Ok(())
     }
