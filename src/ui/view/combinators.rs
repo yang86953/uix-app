@@ -408,11 +408,10 @@ impl DynamicLabel {
         component_id: ComponentId,
         queue: InvalidationQueueHandle,
         rect: Option<Rect>,
-        reconcile_key: usize,
-        reconcile: Arc<dyn Fn() + Send + Sync>,
     ) {
         for source in &self.state_sources {
-            source.bind_reconcile_site(reconcile_key, reconcile.clone());
+            // 仅 Paint：文本闭包在 render 时取值；绑 reconcile 会让 timer State
+            // 每秒触发整树 reconcile（叠加 layout 振荡即周期性卡顿）。
             source.bind_paint(component_id, queue.clone(), rect);
         }
     }

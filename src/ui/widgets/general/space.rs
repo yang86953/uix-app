@@ -52,7 +52,22 @@ component! {
     }
 
     measure => (&self, constraints: Constraints) -> Size {
-        constraints.clamp(self.intrinsic_size())
+        let intrinsic = self.intrinsic_size();
+        let clamped = constraints.clamp(intrinsic);
+        let cached = self.cached_content_size.get();
+        let grow = self.flex_grow_val > 0.0;
+        // 仅用内容缓存抵抗父级 max；纯 fixed 仍可被约束压小。
+        let w = if cached.w > 0.0 && (self.fixed_width.is_some() || !grow) {
+            clamped.w.max(cached.w)
+        } else {
+            clamped.w
+        };
+        let h = if cached.h > 0.0 && (self.fixed_height.is_some() || !grow) {
+            clamped.h.max(cached.h)
+        } else {
+            clamped.h
+        };
+        Size::new(w, h)
     }
 
     picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {

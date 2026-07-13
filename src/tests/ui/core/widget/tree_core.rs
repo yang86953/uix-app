@@ -15,7 +15,7 @@ use crate::ui::core::widget::*;
 use crate::ui::core::widget::tree_core::*;
 use crate::ui::layout::engine::{child_from_tree, child_from_tree_with_constraints};
 use crate::ui::managers::StyleManager;
-use crate::ui::view::combinators::label;
+use crate::ui::view::combinators::{label, space};
 use crate::ui::view::{column, column_fit, embed, row, scroll, ViewAdapter};
 use crate::ui::{ Button, Drawer, Grid, Label, Modal, OverlayEntry, QRCode, TextManager, Tooltip };
 
@@ -866,7 +866,8 @@ fn container_layout_measures_children_with_content_constraints() {
 
     assert_eq!(
         tree.get(child).unwrap().frame(),
-        Rect::new(0.0, 0.0, 40.0, 24.0)
+        // 与 Space 对齐：Container 子项 flex_shrink=0，定高槽位不再压扁内容
+        Rect::new(0.0, 0.0, 40.0, 80.0)
     );
 }
 
@@ -3567,9 +3568,160 @@ fn viewport_wrap_space_does_not_phase2_viewport_thrash() {
     );
 }
 
+/// 复现 demo 首页卡顿：ScrollView 内定高 Card（Column）里的 wrap Space，
+/// 内容交叉轴超过 Card content 高（约 106→121）时，不得与 Phase 1 钳制振荡至 max。
+#[test]
+fn fixed_height_card_wrap_inside_viewport_does_not_phase2_thrash() {
+    use crate::ui::layout::{AlignItems, FlexDirection};
+    use crate::ui::widgets::display::tag::Tag;
+    use crate::ui::widgets::general::space::SpaceSize;
+    use crate::ui::widgets::Space;
+
+    // 对齐 demo_card(220×140)：padding 16 → content ≈ 188×108
+    let card = column_fit([
+        label("覆盖范围").font_size(14.0),
+        space(10.0),
+        column_fit([
+            label("11").font_size(36.0),
+            space(4.0),
+            label("个演示页").font_size(13.0),
+            space(10.0),
+            embed(
+                Space::new()
+                    .size(SpaceSize::Small)
+                    .direction(FlexDirection::Row)
+                    .wrap(true)
+                    .align(AlignItems::Start)
+                    .child(Tag::new("组件"))
+                    .child(Tag::new("运行时"))
+                    .child(Tag::new("主题")),
+            ),
+        ]),
+    ])
+    .width(220.0)
+    .height(140.0)
+    .padding(16.0);
+
+    let shell = column([
+        scroll(
+            column_fit([
+                // 与 demo 首页一致：卡片在 row 内保持 220，不致被 ScrollView 拉满宽
+                row([embed(card)]).align(AlignItems::Start),
+                label("tall-tail").height(900.0),
+            ])
+            .overflow_content(),
+        )
+        .both()
+        .flex_grow(1.0)
+        .into(),
+        label("status").height(28.0),
+    ])
+    .flex_grow(1.0);
+
+    let mut tree = ViewAdapter::build(shell);
+    let rid = tree.root_id().expect("root");
+    tree.get_mut(rid)
+        .expect("root mut")
+        .set_frame(Rect::new(0.0, 0.0, 1200.0, 800.0));
+    tree.push_layout_invalidation(rid);
+    let _ = tree.take_layout_frame_writes();
+    let _ = tree.take_layout_converge_passes();
+    let _ = tree.take_layout_expand_ops();
+
+    tree.layout();
+    let first_passes = tree.take_layout_converge_passes();
+    let first_expands = tree.take_layout_expand_ops();
+    assert!(
+        first_passes < 10,
+        "must converge before max iterations, got passes={first_passes} expands={first_expands}"
+    );
+    assert!(
+        first_passes <= 4,
+        "fixed card + wrap in viewport should stabilize quickly, got passes={first_passes}"
+    );
+
+    // 定位含 3 个 Tag 的 wrap Space（demo 卡片内）
+    let wrap_id = tree
+        .traverse()
+        .into_iter()
+        .find(|&id| {
+            let kids = tree.get(id).map(|n| n.children().to_vec()).unwrap_or_default();
+            kids.len() == 3
+                && kids.iter().all(|&cid| {
+                    tree.get(cid)
+                        .and_then(|n| n.component().as_any().downcast_ref::<Tag>())
+                        .is_some()
+                })
+        })
+        .expect("wrap Space with 3 Tags");
+    let wrap_before = tree.get(wrap_id).expect("wrap").frame();
+    assert!(
+        wrap_before.w > 100.0 && wrap_before.w < 250.0,
+        "wrap Space should stay near card content width (~188), got w={}",
+        wrap_before.w
+    );
+
+    // 稳定后再 layout：不得再 Phase 2 扩（106↔121 空转）
+    let _ = tree.take_layout_frame_writes();
+    let _ = tree.take_layout_converge_passes();
+    let _ = tree.take_layout_expand_ops();
+    tree.push_layout_invalidation(rid);
+    tree.layout();
+    assert_eq!(
+        tree.take_layout_expand_ops(),
+        0,
+        "stable layout must not Phase 2 expand again (106↔121 thrash)"
+    );
+    assert_eq!(
+        tree.take_layout_converge_passes(),
+        1,
+        "stable layout should finish on first converge pass"
+    );
+    assert_eq!(
+        tree.take_layout_frame_writes(),
+        0,
+        "stable layout must not rewrite frames"
+    );
+    let wrap_after = tree.get(wrap_id).expect("wrap").frame();
+    assert_eq!(
+        wrap_before, wrap_after,
+        "wrap Space frame must not oscillate on stable re-layout"
+    );
+}
+
+/// Container 定高 Column 不得把子项 measure 钳回 content_rect.h（intrinsic 内容更高时）。
+#[test]
+fn container_measure_does_not_clamp_child_below_intrinsic_on_main_axis() {
+    use crate::core::{Constraints, EdgeInsets, Size};
+    use crate::ui::traits::WidgetLayout;
+    use crate::ui::widgets::containers::Container;
+    use crate::ui::widgets::Space;
+
+    let space = Space::new().height(106.0);
+    space.cached_content_size.set(Size::new(188.0, 121.0));
+    // 模拟定高 Card content 区：max_h=106 曾把 121 压回 → Phase 2 振荡
+    let tight = Constraints::loose(Size::new(188.0, 106.0));
+    let measured = space.measure(tight);
+    assert!(
+        measured.h >= 120.5,
+        "Space measure must resist parent max clamp below cached content, got {}",
+        measured.h
+    );
+
+    let col = Container::new().h(140.0).padding(EdgeInsets::uniform(16.0));
+    col.cached_content_size.set(Size::new(188.0, 121.0));
+    let measured_col = col.measure(Constraints::loose(Size::new(220.0, 140.0)));
+    assert!(
+        measured_col.h >= 140.0,
+        "Container fixed height is a floor at content cache"
+    );
+}
+
 /// Space.height 是下限：cached 内容更高时 measure 须回报内容高（否则 Phase 1 写回矮值）。
 #[test]
 fn space_measure_floors_fixed_height_at_cached_content() {
+    use crate::core::{Constraints, Size};
+    use crate::ui::traits::WidgetLayout;
     use crate::ui::widgets::Space;
 
     let space = Space::new().height(120.0);

@@ -231,8 +231,6 @@ impl WidgetTree {
         use crate::ui::foundation::state::{begin_state_bind_capture, end_state_bind_capture};
         use crate::ui::view::combinators::DynamicLabel;
         let handle = self.invalidation_handle();
-        let reconcile_key = self.reconcile_requester_key();
-        let reconcile = self.reconcile_requester();
         for id in self.traverse() {
             let type_id = self
                 .get(id)
@@ -255,21 +253,9 @@ impl WidgetTree {
                 });
                 if let Some(node) = self.get(id) {
                     if let Some(dl) = node.component().as_any().downcast_ref::<DynamicLabel>() {
-                        dl.bind_state_invalidation(
-                            id,
-                            handle.clone(),
-                            paint_rect,
-                            reconcile_key,
-                            reconcile.clone(),
-                        );
+                        dl.bind_state_invalidation(id, handle.clone(), paint_rect);
                         // 探测闭包运行时读取的 State（含 View 外创建的实例，如 README Counter）
-                        begin_state_bind_capture(
-                            id,
-                            handle.clone(),
-                            paint_rect,
-                            reconcile_key,
-                            reconcile.clone(),
-                        );
+                        begin_state_bind_capture(id, handle.clone(), paint_rect);
                         dl.probe_dependencies();
                         end_state_bind_capture(id);
                     }

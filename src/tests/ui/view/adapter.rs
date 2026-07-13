@@ -4524,7 +4524,7 @@ fn test_state_auto_reconcile_invalidation() {
 }
 
 #[test]
-fn captured_state_set_requests_reconcile_and_preserves_paint_invalidation() {
+fn captured_state_set_requests_paint_without_reconcile_for_dynamic_label() {
     use crate::ui::state::State;
     use crate::ui::view::dynamic_label;
 
@@ -4545,7 +4545,11 @@ fn captured_state_set_requests_reconcile_and_preserves_paint_invalidation() {
 
     state.set(2);
 
-    assert!(tree.take_reconcile_requested());
+    // DynamicLabel 仅绑 Paint：timer/counter 文本更新不得整树 reconcile+layout
+    assert!(
+        !tree.take_reconcile_requested(),
+        "DynamicLabel state update must not request reconcile"
+    );
     assert!(tree.has_render_work());
 }
 

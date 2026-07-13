@@ -40,7 +40,22 @@ component! {
     }
 
     measure => (&self, constraints: Constraints) -> Size {
-        constraints.clamp(self.intrinsic_size())
+        let intrinsic = self.intrinsic_size();
+        let clamped = constraints.clamp(intrinsic);
+        let cached = self.cached_content_size.get();
+        let grow = self.style.flex_grow > 0.0;
+        // 仅用内容缓存抵抗父级 max（Phase 2 结果）；纯 fixed 仍可被约束压小。
+        let w = if cached.w > 0.0 && (self.style.width.is_some() || !grow) {
+            clamped.w.max(cached.w)
+        } else {
+            clamped.w
+        };
+        let h = if cached.h > 0.0 && (self.style.height.is_some() || !grow) {
+            clamped.h.max(cached.h)
+        } else {
+            clamped.h
+        };
+        Size::new(w, h)
     }
 
     flex_grow => (&self) -> f32 { self.style.flex_grow }
@@ -141,7 +156,13 @@ component! {
             overflow_content: s.overflow_content,
             intrinsic_main: main_axis_indefinite,
         };
-        let output = engine.layout(content_rect, children);
+        // 与 Space 对齐：禁止子项 flex-shrink。定高 Card 若压缩 Label/wrap，
+        // Phase 1 写回矮 frame，与 Phase 2 扩展振荡（106↔121）。
+        let mut children_no_shrink = children.to_vec();
+        for child in &mut children_no_shrink {
+            child.flex_shrink = 0.0;
+        }
+        let output = engine.layout(content_rect, &children_no_shrink);
 
         // 缓存子节点内容尺寸
         self.cached_content_size.set(Size::new(
@@ -392,23 +413,16 @@ impl Container {
             self.style.flex_direction,
             crate::ui::style::FlexDirection::Row | crate::ui::style::FlexDirection::RowReverse
         );
-        let main_indefinite = if is_row {
-            self.style.width.is_none()
-        } else {
-            self.style.height.is_none()
-        };
-        let cross_indefinite = if is_row {
-            self.style.height.is_none()
-        } else {
-            self.style.width.is_none()
-        };
-
-        let max_w = if (is_row && main_indefinite) || (!is_row && cross_indefinite) {
+        // 与 Space 对齐：主轴始终 MAX。定高 Column 若用 content_rect.h 钳子项，
+        // measure 会把 wrap 内容从 121 压回 106，Phase 1 写回后与 Phase 2 振荡；
+        // ScrollView 内又无 parent_cap，会打满 converge。交叉轴在有明确尺寸时
+        // 仍约束，供 wrap 计算行宽。
+        let max_w = if is_row || self.style.width.is_none() {
             f32::MAX
         } else {
             content_rect.w
         };
-        let max_h = if (!is_row && main_indefinite) || (is_row && cross_indefinite) {
+        let max_h = if !is_row || self.style.height.is_none() {
             f32::MAX
         } else {
             content_rect.h

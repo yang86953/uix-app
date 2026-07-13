@@ -143,9 +143,13 @@ impl WidgetTree {
         // ════════════════════════════════════════════════════════════════
         let max_passes = 10;
         let mut converge_passes = 0u32;
+        // 安全网：若连续两轮 Phase 2 扩展签名完全相同（同 id、同 before/after），
+        // 视为无 progress，停止空转（根因仍应在 measure；此处防止打满 max_passes）。
+        let mut prev_expand_sig: Option<Vec<(WidgetId, i32, i32, i32, i32)>> = None;
         for _converge_pass in 0..max_passes {
             converge_passes += 1;
             let mut any_change = false;
+            let mut pass_expand_sig: Vec<(WidgetId, i32, i32, i32, i32)> = Vec::new();
 
             // Phase 1: Top-down — 父容器根据当前 frame 为子节点分配位置
             let order = self.layout_traverse();
@@ -174,7 +178,8 @@ impl WidgetTree {
 
             // 内循环：交替扩展和收缩直到稳定
             for _inner_pass in 0..3 {
-                let expanded = self.layout_expand(&rev_order);
+                let (expanded, sig) = self.layout_expand(&rev_order);
+                pass_expand_sig.extend(sig);
                 let shrunk = self.layout_shrink(&rev_order);
                 if expanded || shrunk {
                     any_change = true;
@@ -186,6 +191,16 @@ impl WidgetTree {
 
             // Phase 3: 更新 viewport 容器的 content_bounds
             self.layout_viewports();
+
+            if !pass_expand_sig.is_empty() {
+                if prev_expand_sig.as_ref() == Some(&pass_expand_sig) {
+                    crate::core::log::debug_fn(
+                        "[Layout] Phase 2: identical expand signature — stop (no progress)",
+                    );
+                    break;
+                }
+                prev_expand_sig = Some(pass_expand_sig);
+            }
 
             if !any_change {
                 break;
@@ -360,9 +375,10 @@ impl WidgetTree {
 
     /// 自下而上扩展：当子节点右侧/底部超出容器时，扩展容器宽度/高度。
     /// 后序遍历确保子节点先扩展、父节点后扩展。
-    /// 返回是否有任何容器被扩展。
-    fn layout_expand(&mut self, rev_order: &[WidgetId]) -> bool {
+    /// 返回 (是否有任何容器被扩展, 本趟扩展签名)。
+    fn layout_expand(&mut self, rev_order: &[WidgetId]) -> (bool, Vec<(WidgetId, i32, i32, i32, i32)>) {
         let mut any_resized = false;
+        let mut expand_sig: Vec<(WidgetId, i32, i32, i32, i32)> = Vec::new();
         // 收集本趟中被扩展过的子节点，用于触发其父容器重排
         let mut resized_children = std::collections::HashSet::new();
         for &id in rev_order {
@@ -472,6 +488,13 @@ impl WidgetTree {
                     ) {
                         any_resized = true;
                         resized_children.insert(id);
+                        expand_sig.push((
+                            id,
+                            node_frame.w.round() as i32,
+                            node_frame.h.round() as i32,
+                            effective_w.round() as i32,
+                            effective_h.round() as i32,
+                        ));
                         #[cfg(test)]
                         {
                             self.layout_expand_ops
@@ -512,7 +535,7 @@ impl WidgetTree {
                 }
             }
         }
-        any_resized
+        (any_resized, expand_sig)
     }
 
     /// Phase 2 重排：对已扩展子节点，measure 结果不得低于当前 frame。
