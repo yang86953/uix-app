@@ -204,24 +204,44 @@ impl Space {
         let cached = self.cached_content_size.get();
         // flex_grow 子项以 0 为 basis，避免窗口缩小时仍用旧缓存撑破父级。
         let grow = self.flex_grow_val > 0.0;
-        let w = self.fixed_width.unwrap_or_else(|| {
-            if grow {
-                0.0
-            } else if cached.w > 0.0 {
-                cached.w
-            } else {
-                0.0
+        // fixed_* 是下限：wrap / Phase 2 撑开后 cached 可能更大。
+        // 若仍只回报 fixed，父级 Phase 1 / sibling re-layout 会写回矮尺寸，与 Phase 2 振荡。
+        let w = match self.fixed_width {
+            Some(fw) => {
+                if cached.w > 0.0 {
+                    fw.max(cached.w)
+                } else {
+                    fw
+                }
             }
-        });
-        let h = self.fixed_height.unwrap_or_else(|| {
-            if grow {
-                0.0
-            } else if cached.h > 0.0 {
-                cached.h
-            } else {
-                0.0
+            None => {
+                if grow {
+                    0.0
+                } else if cached.w > 0.0 {
+                    cached.w
+                } else {
+                    0.0
+                }
             }
-        });
+        };
+        let h = match self.fixed_height {
+            Some(fh) => {
+                if cached.h > 0.0 {
+                    fh.max(cached.h)
+                } else {
+                    fh
+                }
+            }
+            None => {
+                if grow {
+                    0.0
+                } else if cached.h > 0.0 {
+                    cached.h
+                } else {
+                    0.0
+                }
+            }
+        };
         Size::new(w, h)
     }
 
