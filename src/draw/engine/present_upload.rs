@@ -108,32 +108,62 @@ impl GraphicsEngine for PresentUploadEngine {
                 PresentDamage::Full
             };
             let damage_full = matches!(damage, PresentDamage::Full);
-            let frame = PresentFrame::PixelBuffer {
-                pixels: cpu.pixels(),
-                width,
-                height,
-                // CPU upload has the same preservation precondition as a
-                // swapchain present. Do not let a caller turn an unproven
-                // partial-present context into a partial redraw path.
-                damage,
-            };
-            let present_t0 = std::time::Instant::now();
-            let present_result = self.gpu_ctx.present(&frame);
-            let present_ms = present_t0.elapsed().as_millis();
-            crate::core::log::info_fn(format!(
-                "present_upload_ms={} pixels={} damage_full={} backend={}",
-                present_ms,
-                width.saturating_mul(height),
-                if damage_full { 1 } else { 0 },
-                self.backend_name(),
-            ));
-            if let Err(err) = present_result {
-                crate::core::log::error_fn(format!(
-                    "PresentUploadEngine {} present failed: {}",
+            let pixels = (width as u64).saturating_mul(height as u64);
+            if crate::draw::perf_probe::skip_present_enabled() {
+                crate::draw::perf_probe::record_present(
+                    crate::draw::perf_probe::PresentProbeSample {
+                        present_us: 0,
+                        upload_copy_us: 0,
+                        fence_wait_us: 0,
+                        submit_present_us: 0,
+                        pixels,
+                        damage_full: if damage_full { 1 } else { 0 },
+                        skipped: 1,
+                    },
+                );
+                crate::core::log::info_fn(format!(
+                    "present_upload_us=0 pixels={} damage_full={} backend={} skipped=1",
+                    pixels,
+                    if damage_full { 1 } else { 0 },
                     self.backend_name(),
-                    err.short_what()
                 ));
-                return RenderOutcome::Failed(GraphicsFailure::from_error(err));
+            } else {
+                let frame = PresentFrame::PixelBuffer {
+                    pixels: cpu.pixels(),
+                    width,
+                    height,
+                    // CPU upload has the same preservation precondition as a
+                    // swapchain present. Do not let a caller turn an unproven
+                    // partial-present context into a partial redraw path.
+                    damage,
+                };
+                let present_t0 = std::time::Instant::now();
+                let present_result = self.gpu_ctx.present(&frame);
+                let present_us = present_t0.elapsed().as_micros();
+                let mut sample = crate::draw::perf_probe::take_present();
+                sample.present_us = present_us;
+                sample.pixels = pixels;
+                sample.damage_full = if damage_full { 1 } else { 0 };
+                sample.skipped = 0;
+                crate::draw::perf_probe::record_present(sample);
+                crate::core::log::info_fn(format!(
+                    "present_upload_us={} upload_copy_us={} fence_wait_us={} submit_present_us={} pixels={} damage_full={} backend={}",
+                    present_us,
+                    sample.upload_copy_us,
+                    sample.fence_wait_us,
+                    sample.submit_present_us,
+                    pixels,
+                    if damage_full { 1 } else { 0 },
+                    self.backend_name(),
+                ));
+                if let Err(err) = present_result {
+                    crate::core::log::error_fn(format!(
+                        "PresentUploadEngine {} present failed: {}",
+                        self.backend_name(),
+                        err.short_what()
+                    ));
+                    return RenderOutcome::Failed(GraphicsFailure::from_error(err));
+                }
             }
         }
         outcome

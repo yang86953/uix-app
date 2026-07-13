@@ -264,30 +264,22 @@ impl WidgetTree {
         }
     }
 
-    /// 将 View 构建期未关联 widget 的 pending State 绑定到根节点（兜底全帧 Paint）。
+    /// 将 View 构建期未关联 widget 的 pending State 绑定为 reconcile。
+    ///
+    /// 构建期 `State::get()` 表示 View 结构依赖该值（如 demo 的 `active` 选页）。
+    /// 若只绑根节点 Paint，变更会全帧重绘却不重建树——页面不切换，且
+    /// `layer_tree.render` 全帧 record 可达数百毫秒。
+    /// DynamicLabel 等文本闭包依赖由 `bind_reactive_widget_states` 单独绑 Paint。
     pub fn bind_orphan_pending_states(&mut self) {
         use crate::ui::foundation::state::drain_pending_state_binds;
         let orphans = drain_pending_state_binds();
         if orphans.is_empty() {
             return;
         }
-        let Some(root_id) = self.root_id else {
-            return;
-        };
-        let handle = self.invalidation_handle();
-        let paint_rect = self.get(root_id).and_then(|n| {
-            let frame = n.frame();
-            if frame.w > 0.0 && frame.h > 0.0 {
-                Some(frame)
-            } else {
-                None
-            }
-        });
+        let reconcile = self.reconcile_requester();
+        let reconcile_key = self.reconcile_requester_key();
         for source in orphans {
-            // 仅 Paint：View 构建期 `State::get()` 的孤儿绑定不得默认 reconcile。
-            // 否则 demo 里 `PulseRing { time: anim.get() }` 会把 16ms timer
-            // 绑成整树 reconcile+layout，首页 DeepIdle 也被永久打断。
-            source.bind_paint(root_id, handle.clone(), paint_rect);
+            source.bind_reconcile_site(reconcile_key, reconcile.clone());
         }
     }
 

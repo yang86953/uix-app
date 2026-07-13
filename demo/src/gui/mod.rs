@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use uix::core::log::info_fn;
 use uix::prelude::*;
 
 use crate::common::page::{page_heading, INIT_H, INIT_W, PAGE_TITLES, SIDEBAR_GROUPS, SIDEBAR_W};
@@ -257,7 +258,7 @@ pub fn run() {
         .title("UIX Demo")
         .size(INIT_W, INIT_H)
         .theme(Theme::antd_light())
-        .on_start(with_cloned!(theme_control, timer_ticks; |handle| {
+        .on_start(with_cloned!(theme_control, timer_ticks, active; |handle| {
             theme_control.set_handle(handle.clone());
             let ticks = timer_ticks.clone();
             handle
@@ -267,6 +268,55 @@ pub fn run() {
                 .detach();
             // 动画样例改走 WidgetAnimation（Spin 等）；不再全局 16ms 探活，
             // 否则 RegisteredActive 永不 DeepIdle，且曾把 orphan State 绑成整树 reconcile。
+            if std::env::var_os("UIX_PERF_PROBE").is_some() {
+                info_fn("PERF_SCENARIO=startup scheduled");
+                let page = active.clone();
+                // Delays are wall-clock from on_start; first paint can take seconds,
+                // so keep later scenarios well after that cost settles.
+                handle
+                    .run_after(Duration::from_millis(5000), {
+                        let page = page.clone();
+                        move || {
+                            info_fn("PERF_SCENARIO=page_switch_general");
+                            page.set(2);
+                        }
+                    })
+                    .detach();
+                handle
+                    .run_after(Duration::from_millis(9000), {
+                        let page = page.clone();
+                        move || {
+                            info_fn("PERF_SCENARIO=page_switch_input");
+                            page.set(5);
+                        }
+                    })
+                    .detach();
+                handle
+                    .run_after(Duration::from_millis(13000), {
+                        let page = page.clone();
+                        move || {
+                            info_fn("PERF_SCENARIO=page_switch_home");
+                            page.set(0);
+                        }
+                    })
+                    .detach();
+                handle
+                    .run_after(Duration::from_millis(16000), || {
+                        info_fn("PERF_SCENARIO=await_timer_tick");
+                    })
+                    .detach();
+                handle
+                    .run_after(Duration::from_millis(18500), || {
+                        info_fn("PERF_SCENARIO=idle_window_expect_no_frame");
+                    })
+                    .detach();
+                handle
+                    .run_after(Duration::from_millis(20000), || {
+                        info_fn("PERF_SCENARIO=done");
+                        std::process::exit(0);
+                    })
+                    .detach();
+            }
         }))
         .root(with_cloned!(
             active,

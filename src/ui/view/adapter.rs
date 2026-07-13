@@ -15,8 +15,9 @@
 //! - During view build, `begin_state_capture` records `State::new` instances.
 //! - After layout, `bind_reactive_widget_states` detects dynamic label closure
 //!   dependencies and binds them to narrow Paint invalidation.
-//! - As a fallback, `bind_orphan_pending_states` binds unassociated state to
-//!   the root node.
+//! - As a fallback, `bind_orphan_pending_states` binds unassociated build-time
+//!   `State::get()` dependencies to reconcile (structural View updates).
+//! - DynamicLabel closure dependencies bind to narrow Paint only.
 use crate::ui::component_patch::patch_builtin_widget;
 use crate::ui::component_snapshot::SnapshotFields;
 use crate::ui::core::widget::{WidgetCore, WidgetNode};

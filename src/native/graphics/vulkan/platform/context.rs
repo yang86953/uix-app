@@ -483,6 +483,7 @@ impl VulkanContext {
         }
         let needed_size = staging_size(width, height);
         self.recreate_upload_buffer(needed_size)?;
+        let copy_t0 = std::time::Instant::now();
         unsafe {
             let mapped = self
                 .device
@@ -500,6 +501,10 @@ impl VulkanContext {
             );
             self.device.unmap_memory(self.upload.memory);
         }
+        let upload_copy_us = copy_t0.elapsed().as_micros();
+        let mut sample = crate::draw::perf_probe::take_present();
+        sample.upload_copy_us = upload_copy_us;
+        crate::draw::perf_probe::record_present(sample);
         // 热路径不每帧全量复制 CPU shadow（约等于再拷一遍全屏）；
         // destination-dependent readback 时再 hydrate。
         self.cpu_shadow.clear();
@@ -544,11 +549,14 @@ impl VulkanContext {
     }
 
     fn present_uploaded_pixels(&mut self) -> Result<()> {
+        let fence_t0 = std::time::Instant::now();
         unsafe {
             self.device
                 .wait_for_fences(&[self.frame_fence], true, u64::MAX)
                 .map_err(|err| vk_err("vkWaitForFences", err))?;
         }
+        let fence_wait_us = fence_t0.elapsed().as_micros();
+        let submit_t0 = std::time::Instant::now();
         let (image_index, acquire_suboptimal) = match unsafe {
             self.swapchain_loader.acquire_next_image(
                 self.swapchain,
@@ -591,7 +599,13 @@ impl VulkanContext {
             .wait_semaphores(std::slice::from_ref(&self.render_finished))
             .swapchains(std::slice::from_ref(&self.swapchain))
             .image_indices(std::slice::from_ref(&image_index));
-        match unsafe { self.swapchain_loader.queue_present(self.queue, &present) } {
+        let present_match = unsafe { self.swapchain_loader.queue_present(self.queue, &present) };
+        let submit_present_us = submit_t0.elapsed().as_micros();
+        let mut sample = crate::draw::perf_probe::take_present();
+        sample.fence_wait_us = fence_wait_us;
+        sample.submit_present_us = submit_present_us;
+        crate::draw::perf_probe::record_present(sample);
+        match present_match {
             Ok(present_suboptimal) if acquire_suboptimal || present_suboptimal => {
                 self.recreate_after_surface_change("vkQueuePresentKHR", vk::Result::SUBOPTIMAL_KHR)
             }
