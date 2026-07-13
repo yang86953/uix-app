@@ -502,9 +502,9 @@ impl VulkanContext {
             self.device.unmap_memory(self.upload.memory);
         }
         let upload_copy_us = copy_t0.elapsed().as_micros();
-        let mut sample = crate::draw::perf_probe::take_present();
+        let mut sample = crate::core::perf_probe::take_present();
         sample.upload_copy_us = upload_copy_us;
-        crate::draw::perf_probe::record_present(sample);
+        crate::core::perf_probe::record_present(sample);
         // 热路径不每帧全量复制 CPU shadow（约等于再拷一遍全屏）；
         // destination-dependent readback 时再 hydrate。
         self.cpu_shadow.clear();
@@ -601,10 +601,10 @@ impl VulkanContext {
             .image_indices(std::slice::from_ref(&image_index));
         let present_match = unsafe { self.swapchain_loader.queue_present(self.queue, &present) };
         let submit_present_us = submit_t0.elapsed().as_micros();
-        let mut sample = crate::draw::perf_probe::take_present();
+        let mut sample = crate::core::perf_probe::take_present();
         sample.fence_wait_us = fence_wait_us;
         sample.submit_present_us = submit_present_us;
-        crate::draw::perf_probe::record_present(sample);
+        crate::core::perf_probe::record_present(sample);
         match present_match {
             Ok(present_suboptimal) if acquire_suboptimal || present_suboptimal => {
                 self.recreate_after_surface_change("vkQueuePresentKHR", vk::Result::SUBOPTIMAL_KHR)

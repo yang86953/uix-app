@@ -205,11 +205,8 @@ fn present_upload_engine_submits_cpu_pixels_to_context() {
     );
     assert_eq!(
         engine.capabilities(),
-        GraphicsCapabilities {
-            presentation_mode: crate::draw::traits::PresentationMode::EngineManaged,
-            partial_redraw: true,
-            offscreen: true,
-        }
+        GraphicsCapabilities::engine_managed_with_offscreen(),
+        "GPU 主路径绘制全帧：partial_redraw=false，与 NativeGpuBackend 对齐"
     );
 }
 

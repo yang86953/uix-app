@@ -91,23 +91,42 @@ impl FrameRenderer {
         }
 
         let caps = engine.capabilities();
-        // Retained CPU canvas + damage-aware recording: clear/paint/present only
-        // the dirty AABB when the engine supports partial_redraw. Full frames
-        // (first frame / full_frame dirty / no partial) still Clear+FullRedraw.
-        let region = if !input.rendered_first
-            || input.dirty_region.full_frame
-            || input.dirty_region.is_empty()
-            || !caps.supports_partial_redraw()
-        {
-            DirtyRegion::full()
-        } else {
+        // 绘制策略与 present damage 解耦：
+        // - 绘制区：GPU（!partial_redraw）/首帧/full/empty → 全帧（不裁剪绘制，消除脏数据风险）；
+        //   software 回退保留 dirty-rect 绘制裁剪省 CPU 像素。
+        // - present damage：始终按含 scroll 的 dirty 窄区（首帧/full → Full），与绘制是否全帧无关。
+        // 含 scroll 的 dirty 并集：绘制（software partial）与 damage 共用此几何。
+        let dirty_with_scroll = {
             // 多块 dirty 升为并集，与 begin_frame clip 一致，避免空隙被父背景盖住
-            input.dirty_region.for_paint_clear()
+            let mut r = input.dirty_region.for_paint_clear();
+            // Scroll: 把整个滚动视口并入清/绘区。只清重绘 exposed strip 会
+            // 让视口内已偏移的内容保持上一帧的旧像素（无 ScrollCopy 协作时），
+            // 与新绘的 strip 叠加产生错位/残影。并入整窗后 begin_frame 清空并
+            // 重绘整个视口，所有偏移内容由 paint 重新生成。
+            if let Some((viewport, _, _)) = input.scroll_move {
+                if viewport.w > 0.0 && viewport.h > 0.0 {
+                    r.add_rect(viewport);
+                }
+            }
+            r
         };
 
-        let damage = compute_damage(&region, input.scroll_move, input.rendered_first);
+        let draw_full = !input.rendered_first
+            || input.dirty_region.full_frame
+            || input.dirty_region.is_empty()
+            || !caps.supports_partial_redraw();
+        let damage = compute_present_damage(
+            &dirty_with_scroll,
+            input.dirty_region.full_frame,
+            input.rendered_first,
+        );
+        let region = if draw_full {
+            DirtyRegion::full()
+        } else {
+            dirty_with_scroll
+        };
 
-        let strategy = if !input.rendered_first || region.full_frame {
+        let strategy = if draw_full {
             UpdateStrategy::FullRedraw
         } else {
             UpdateStrategy::DirtyRects(region.rects().to_vec())
@@ -198,7 +217,7 @@ impl FrameRenderer {
         // keep DirtyRegion::full(); dirty frames omit the recording Clear so
         // execute_into_pixels retains undamaged CPU pixels.
         let paint_region = region.clone();
-        crate::draw::perf_probe::begin_record_acc();
+        crate::core::perf_probe::begin_record_acc();
         let record_t0 = std::time::Instant::now();
         if let Err(error) = self
             .recording_engine
@@ -212,13 +231,24 @@ impl FrameRenderer {
                 tree_version: cur_version,
             };
         }
+        // Dirty frames: clip recording to the damage AABB. begin_frame already
+        // cleared only that AABB on the retained CPU canvas, but FrameEncoder
+        // execution bypasses the real surface clip — without this, a parent
+        // background FillRect would wipe siblings outside the dirty hole
+        // (hover/timer → blank UI except the invalidated widget).
+        let damage_clip = (!region.full_frame)
+            .then(|| region.bounds())
+            .filter(|bounds| bounds.w > 0.0 && bounds.h > 0.0);
+        if let Some(bounds) = damage_clip {
+            self.recording_engine.canvas_2d().push_clip(bounds);
+        }
         // 首帧绕过 DisplayList 缓存，避免空缓存重放导致侧栏等节点漏绘
         let render_objects = if input.rendered_first {
             Some(&mut self.render_object_tree)
         } else {
             None
         };
-        if let Err(error) = self.layer_tree.render(
+        let render_result = self.layer_tree.render(
             &mut self.recording_engine,
             scene,
             &paint_region,
@@ -229,7 +259,11 @@ impl FrameRenderer {
             input.debug_mode,
             input.hover_pos,
             render_objects,
-        ) {
+        );
+        if damage_clip.is_some() {
+            self.recording_engine.canvas_2d().pop_clip();
+        }
+        if let Err(error) = render_result {
             // An offscreen bind/flush/blit failure occurred while recording.
             // Do not call end_frame: that could submit a partial frame or turn
             // the failure into a final present. LayerTree leaves the affected
@@ -301,13 +335,13 @@ impl FrameRenderer {
         let end_t0 = std::time::Instant::now();
         let end_outcome = engine.end_frame(&damage);
         let end_frame_us = end_t0.elapsed().as_micros();
-        let mut paint_sample = crate::draw::perf_probe::take_record_acc();
+        let mut paint_sample = crate::core::perf_probe::take_record_acc();
         paint_sample.layer_build_us = layer_build_us;
         paint_sample.record_us = record_us;
         paint_sample.execute_us = execute_us;
         paint_sample.end_frame_us = end_frame_us;
         paint_sample.strategy_full = strategy_full;
-        crate::draw::perf_probe::record_paint(paint_sample);
+        crate::core::perf_probe::record_paint(paint_sample);
         let outcome = match end_outcome {
             RenderOutcome::Present(_) if caps.uses_external_presenter() => {
                 RenderOutcome::PresentPending(damage)
@@ -423,25 +457,21 @@ fn draw_debug_telemetry(
     }
 }
 
-fn compute_damage(
-    region: &DirtyRegion,
-    scroll_move: Option<(Rect, f32, f32)>,
+fn compute_present_damage(
+    dirty: &DirtyRegion,
+    full_frame: bool,
     rendered_first: bool,
 ) -> DamageRegion {
-    if !rendered_first || region.full_frame {
+    if !rendered_first || full_frame {
         return DamageRegion::full();
     }
-    let mut rects: Vec<Rect> = region
+    // scroll 视口已并入 dirty（见 render_frame 的 dirty_with_scroll 构造）。
+    let rects: Vec<Rect> = dirty
         .rects()
         .iter()
         .filter(|r| r.w > 0.0 && r.h > 0.0)
         .map(pad_damage_rect)
         .collect();
-    if let Some((frame, _, _)) = scroll_move {
-        if frame.w > 0.0 && frame.h > 0.0 {
-            rects.push(pad_damage_rect(&frame));
-        }
-    }
     if rects.is_empty() {
         DamageRegion::full()
     } else {

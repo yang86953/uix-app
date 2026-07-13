@@ -41,7 +41,7 @@ pub(crate) fn blit_picture_cache(
     let blit_t0 = std::time::Instant::now();
     let src = Rect::new(0.0, 0.0, w as f32, h as f32);
     let result = engine.try_blit_offscreen_src(handle, src, *bounds);
-    crate::draw::perf_probe::add_picture_blit(blit_t0.elapsed().as_micros());
+    crate::core::perf_probe::add_picture_blit(blit_t0.elapsed().as_micros());
     result
 }
 
@@ -65,8 +65,8 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
     let picture_pixels = (w.max(0) as u64).saturating_mul(h.max(0) as u64);
 
     // A/B: prove picture raster dominates record by skipping CPU offscreen work.
-    if crate::draw::perf_probe::skip_picture_raster_enabled() {
-        crate::draw::perf_probe::add_picture_raster(0, picture_pixels);
+    if crate::core::perf_probe::skip_picture_raster_enabled() {
+        crate::core::perf_probe::add_picture_raster(0, picture_pixels);
         *is_dirty = false;
         return Ok(());
     }
@@ -198,7 +198,7 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
     }
 
     *is_dirty = false;
-    crate::draw::perf_probe::add_picture_raster(raster_t0.elapsed().as_micros(), picture_pixels);
+    crate::core::perf_probe::add_picture_raster(raster_t0.elapsed().as_micros(), picture_pixels);
     Ok(())
 }
 

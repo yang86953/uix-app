@@ -55,14 +55,14 @@ component! {
         let intrinsic = self.intrinsic_size();
         let clamped = constraints.clamp(intrinsic);
         let cached = self.cached_content_size.get();
-        let grow = self.flex_grow_val > 0.0;
-        // 仅用内容缓存抵抗父级 max；纯 fixed 仍可被约束压小。
-        let w = if cached.w > 0.0 && (self.fixed_width.is_some() || !grow) {
+        // 仅 indefinite（None 或 0）轴用 cached（子项溢出尺寸）撑开 measure；
+        // 显式 >0 尺寸为定高/定宽，尊重 clamped，不被 cached 溢出撑大。
+        let w = if cached.w > 0.0 && self.fixed_width.is_none_or(|w| w <= 0.0) {
             clamped.w.max(cached.w)
         } else {
             clamped.w
         };
-        let h = if cached.h > 0.0 && (self.fixed_height.is_some() || !grow) {
+        let h = if cached.h > 0.0 && self.fixed_height.is_none_or(|h| h <= 0.0) {
             clamped.h.max(cached.h)
         } else {
             clamped.h
@@ -138,10 +138,19 @@ component! {
         };
 
         let output = compute_flex_layout(&input);
-        self.cached_content_size.set(Size::new(
-            output.total_size.w.max(0.0),
-            output.total_size.h.max(0.0),
-        ));
+        // cached_content_size 记子布局后实际溢出尺寸（含 wrap/gap，measure 撑开用）；
+        // total_size 默认 layout 限到 frame，ScrollView 内子溢出视口时无法撑开 → max_scroll 恒 0。
+        let content_w = output
+            .child_rects
+            .iter()
+            .map(|r| (r.x + r.w - frame.x).max(0.0))
+            .fold(0.0, f32::max);
+        let content_h = output
+            .child_rects
+            .iter()
+            .map(|r| (r.y + r.h - frame.y).max(0.0))
+            .fold(0.0, f32::max);
+        self.cached_content_size.set(Size::new(content_w, content_h));
         children
             .iter()
             .zip(output.child_rects)
@@ -219,17 +228,11 @@ impl Space {
         let cached = self.cached_content_size.get();
         // flex_grow 子项以 0 为 basis，避免窗口缩小时仍用旧缓存撑破父级。
         let grow = self.flex_grow_val > 0.0;
-        // fixed_* 是下限：wrap / Phase 2 撑开后 cached 可能更大。
-        // 若仍只回报 fixed，父级 Phase 1 / sibling re-layout 会写回矮尺寸，与 Phase 2 振荡。
+        // 显式 >0 是定高/定宽，尊重之，不被内容溢出撑大；
+        // None 或 0 视为 indefinite，用 cached（子项溢出）撑开。
         let w = match self.fixed_width {
-            Some(fw) => {
-                if cached.w > 0.0 {
-                    fw.max(cached.w)
-                } else {
-                    fw
-                }
-            }
-            None => {
+            Some(fw) if fw > 0.0 => fw,
+            _ => {
                 if grow {
                     0.0
                 } else if cached.w > 0.0 {
@@ -240,14 +243,8 @@ impl Space {
             }
         };
         let h = match self.fixed_height {
-            Some(fh) => {
-                if cached.h > 0.0 {
-                    fh.max(cached.h)
-                } else {
-                    fh
-                }
-            }
-            None => {
+            Some(fh) if fh > 0.0 => fh,
+            _ => {
                 if grow {
                     0.0
                 } else if cached.h > 0.0 {

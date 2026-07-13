@@ -126,12 +126,37 @@ impl WindowSession {
         F: Fn() -> ViewNode + Send + Sync + 'static,
     {
         let factory: ViewFactory = Arc::new(build_root);
+        // 先建 tree 取 reconcile_requester，再 capture_root：factory 闭包内 State::clone
+        // 在 CURRENT_VIEW_RECONCILE_FN 设定时绑定到本 tree，State::set 即触发 reconcile。
+        let mut tree = WidgetTree::new();
+        crate::ui::foundation::state::set_current_view_reconcile_fn_arc(tree.reconcile_requester());
         let root = ViewAdapter::capture_root(|| factory());
-        let mut session = Self::from_root_for_window(window_id, root, engine, width, height);
-        session.view_factory = ViewFactorySlot {
-            factory: Some(factory),
-        };
-        session
+        crate::ui::foundation::state::clear_current_view_reconcile_fn();
+        let wnode = ViewAdapter::expand(root);
+        tree.build(wnode);
+        tree.bind_orphan_pending_states();
+        tree.bind_pending_effects();
+        if let Some(r) = tree.root_mut() {
+            r.set_frame(Rect::new(0.0, 0.0, width as f32, height as f32));
+        }
+        tree.layout();
+        tree.mark_full_frame_dirty();
+        Self {
+            window_id,
+            tree,
+            engine,
+            engine_shutdown: false,
+            loop_state: WindowLoopState::Active,
+            active_work: ActiveWorkRegistry::new(),
+            app_timers: AppTimerQueue::new(),
+            main_thread_queue: MainThreadQueue::new(),
+            pending_root: None,
+            reconcile_pending: false,
+            window_visible: true,
+            view_factory: ViewFactorySlot {
+                factory: Some(factory),
+            },
+        }
     }
 
     pub(crate) fn tree_and_engine_mut(&mut self) -> (&mut WidgetTree, &mut dyn GraphicsEngine) {

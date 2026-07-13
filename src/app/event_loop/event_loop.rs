@@ -646,29 +646,18 @@ where
 
         let now = clock.now();
         let dt = (now - last_frame).as_secs_f64().min(0.05);
-        let pending_layout_work = tree
-            .invalidation
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .has_layout();
+        let pending_layout_work = has_layout_work(tree);
         let pending_effects = tree.has_pending_effects();
         let pending_render_work = tree.has_render_work();
-        let active_frame = had_events
-            || had_registered_work
+        let base_active = had_events
             || had_app_state_semantic_work
             || *reconcile_pending
             || pending_effects
             || !rendered_first
             || pending_layout_work
             || pending_render_work;
-        let discover_animation_work = had_events
-            || had_due_widget_timer_work
-            || had_app_state_semantic_work
-            || *reconcile_pending
-            || pending_effects
-            || !rendered_first
-            || pending_layout_work
-            || pending_render_work;
+        let active_frame = base_active || had_registered_work;
+        let discover_animation_work = base_active || had_due_widget_timer_work;
         if active_frame {
             last_frame = now;
             let animation_updates = update_due_and_discovered_animations(
@@ -706,17 +695,13 @@ where
         let surface_corrected =
             window_visible && ensure_surface_matches_window(tree, engine, platform_window);
 
-        let has_layout_work = tree
-            .invalidation
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .has_layout();
+        let has_layout = has_layout_work(tree);
 
         let needs_work =
             window_visible && (had_layout_event || surface_corrected || !rendered_first);
 
         let mut laid_out = false;
-        if window_visible && (needs_work || has_layout_work) {
+        if window_visible && (needs_work || has_layout) {
             let layout_t0 = Instant::now();
             let before_version = tree.tree_version();
             tree.layout();
@@ -869,8 +854,8 @@ where
         // Engine-managed present (Vulkan PixelUpload) is timed inside
         // PresentUploadEngine::end_frame; take the probe so paint_cpu excludes it.
 
-        let present_probe = crate::draw::perf_probe::take_present();
-        let paint_probe = crate::draw::perf_probe::take_paint();
+        let present_probe = crate::core::perf_probe::take_present();
+        let paint_probe = crate::core::perf_probe::take_paint();
         if present_probe.present_us > 0 || present_probe.skipped == 1 {
             phase_present_us = present_probe.present_us;
             if phase_paint_us >= present_probe.present_us {
@@ -882,10 +867,10 @@ where
             && (had_events
                 || reconcile_ran
                 || layout_calls_this_frame > 0
-                || crate::draw::perf_probe::perf_probe_enabled());
+                || crate::core::perf_probe::perf_probe_enabled());
         if log_frame {
             let frame_us = frame_t0.elapsed().as_micros();
-            if crate::draw::perf_probe::perf_probe_enabled() {
+            if crate::core::perf_probe::perf_probe_enabled() {
                 crate::core::log::info_fn(format!(
                     "frame_us={} input={} reconcile={} layout={} paint_cpu={} present={} events={} reconcile={} layouts={} dirty_full={} strategy_full={} pixels={} layer_build={} record={} execute={} end_frame={} pic_raster={} pic_blit={} pics={} pic_px={} widgets={} text_us={} texts={} cpu_flush={} flushes={} upload_copy={} fence_wait={} submit_present={} present_skipped={}",
                     frame_us,
@@ -954,7 +939,7 @@ where
             deferred_show = false;
         }
 
-        if window_visible && frame_committed && (needs_work || has_layout_work || need_render) {
+        if window_visible && frame_committed && (needs_work || has_layout || need_render) {
             // 只有真实提交成功后才能消费失效；失败帧保留 dirty 以供恢复或重试。
             tree.reset_invalidation();
         }
@@ -1096,7 +1081,14 @@ fn next_loop_state(
     active_work: &ActiveWorkRegistry,
     external_deadline: Option<Instant>,
 ) -> WindowLoopState {
-    if tree.has_render_work() || has_layout_work(tree) {
+    let has_work = {
+        let inv = tree
+            .invalidation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        inv.has_paint_or_composite() || inv.has_layout()
+    };
+    if has_work {
         WindowLoopState::Active
     } else {
         wait_loop_state(active_work, external_deadline)

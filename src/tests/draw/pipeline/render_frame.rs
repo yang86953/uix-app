@@ -1705,8 +1705,10 @@ fn rendered_frame_with_scroll_move_adds_scroll_frame_to_partial_damage() {
     assert_eq!(out.inv_source, InvalidationSource::DirtyRegion);
 }
 
+/// GPU 主路径（!partial_redraw）绘制全帧：strategy=FullRedraw、不裁剪绘制，
+/// 但 present damage 仍按真实 dirty 窄区提交（与绘制区解耦）。
 #[test]
-fn engine_without_partial_redraw_expands_dirty_region_to_full_damage() {
+fn engine_without_partial_redraw_draws_full_frame_but_presents_narrow_damage() {
     let mut renderer = FrameRenderer::new();
     let mut engine = RecordingEngine::new().without_partial_redraw();
     let _ = engine.initialize(64, 64);
@@ -1735,7 +1737,15 @@ fn engine_without_partial_redraw_expands_dirty_region_to_full_damage() {
         },
     );
 
-    assert_eq!(out.outcome, RenderOutcome::Present(DamageRegion::full()));
+    assert!(
+        matches!(engine.last_begin_strategy, Some(UpdateStrategy::FullRedraw)),
+        "GPU 主路径绘制全帧"
+    );
+    assert_eq!(
+        out.outcome,
+        RenderOutcome::Present(DamageRegion::partial(vec![Rect::new(7.0, 7.0, 14.0, 14.0)])),
+        "present damage 仍按真实 dirty 窄区（pad ±1）"
+    );
     assert_eq!(out.inv_source, InvalidationSource::DirtyRegion);
 }
 
@@ -2110,5 +2120,505 @@ fn dirty_frame_paint_is_faster_than_full_frame_on_dense_scene() {
     assert!(
         dirty_ms <= full_ms,
         "dirty paint should not exceed full paint cost: dirty={dirty_ms}ms full={full_ms}ms"
+    );
+}
+
+/// 悬停窄标脏时父背景不得盖住未重绘的兄弟节点（移动鼠标后整页空白的根因）。
+///
+/// FrameEncoder 执行绕过 begin_frame 的 surface clip；若 recording 也不裁到
+/// damage AABB，父 FillRect 会写满自身 frame，兄弟像素被擦掉且不再绘制。
+#[test]
+fn dirty_frame_parent_bg_must_not_wipe_undamaged_sibling() {
+    use crate::draw::SoftwareEngine;
+    use crate::draw::painting::PaintContext;
+    use std::cell::Cell;
+
+    struct SiblingScene {
+        dirty: DirtyRegion,
+        /// 仅左子标脏（模拟 hover）；右子保持干净。
+        left_dirty: Cell<bool>,
+    }
+
+    impl ScenePaint for SiblingScene {
+        fn root_id(&self) -> Option<crate::draw::pipeline::NodeId> {
+            Some(crate::draw::pipeline::NodeId::new(1))
+        }
+        fn tree_version(&self) -> u64 {
+            1
+        }
+        fn dirty_region(&self) -> DirtyRegion {
+            self.dirty.clone()
+        }
+        fn node_visible(&self, id: crate::draw::pipeline::NodeId) -> bool {
+            (1..=3).contains(&id.slot())
+        }
+        fn node_frame(&self, id: crate::draw::pipeline::NodeId) -> Rect {
+            match id.slot() {
+                1 => Rect::new(0.0, 0.0, 100.0, 40.0),
+                2 => Rect::new(0.0, 0.0, 40.0, 40.0),
+                3 => Rect::new(60.0, 0.0, 40.0, 40.0),
+                _ => Rect::zero(),
+            }
+        }
+        fn node_dirty(&self, id: crate::draw::pipeline::NodeId) -> bool {
+            match id.slot() {
+                2 => self.left_dirty.get(),
+                _ => false,
+            }
+        }
+        fn node_z_index(&self, _: crate::draw::pipeline::NodeId) -> i32 {
+            0
+        }
+        fn node_children(
+            &self,
+            id: crate::draw::pipeline::NodeId,
+        ) -> &[crate::draw::pipeline::NodeId] {
+            static KIDS: [crate::draw::pipeline::NodeId; 2] = [
+                crate::draw::pipeline::NodeId::new(2),
+                crate::draw::pipeline::NodeId::new(3),
+            ];
+            if id.slot() == 1 {
+                &KIDS
+            } else {
+                &[]
+            }
+        }
+        fn children_clip(&self, _: crate::draw::pipeline::NodeId, _: Rect) -> Option<Rect> {
+            None
+        }
+        fn dirty_rect(&self, _: crate::draw::pipeline::NodeId, frame: Rect) -> Rect {
+            frame
+        }
+        fn scroll_offset(&self, _: crate::draw::pipeline::NodeId) -> Option<(f32, f32)> {
+            None
+        }
+        fn focused_node(&self) -> Option<crate::draw::pipeline::NodeId> {
+            None
+        }
+        fn node_focusable(&self, _: crate::draw::pipeline::NodeId) -> bool {
+            false
+        }
+        fn hit_test(&self, _: Point) -> Option<crate::draw::pipeline::NodeId> {
+            None
+        }
+        fn parent(&self, id: crate::draw::pipeline::NodeId) -> Option<crate::draw::pipeline::NodeId> {
+            if id.slot() == 1 {
+                None
+            } else {
+                Some(crate::draw::pipeline::NodeId::new(1))
+            }
+        }
+        fn paint(&self, id: crate::draw::pipeline::NodeId, frame: Rect, ctx: &mut PaintContext<'_>) {
+            match id.slot() {
+                // 父背景：灰。若 dirty 帧未裁剪，会盖住右子。
+                1 => ctx.fill_rect(frame, Color::from_rgba(200, 200, 200, 255), None),
+                2 => ctx.fill_rect(frame, Color::from_rgba(255, 0, 0, 255), None),
+                3 => ctx.fill_rect(frame, Color::from_rgba(0, 0, 255, 255), None),
+                _ => {}
+            }
+        }
+    }
+
+    let tokens = MockTokens;
+    let fs = FontService::new();
+    let img = ImageService::new();
+    let mut engine = SoftwareEngine::new();
+    engine.initialize(100, 40).expect("init");
+    let mut renderer = FrameRenderer::new();
+
+    let full = DirtyRegion::full();
+    let scene = SiblingScene {
+        dirty: full.clone(),
+        left_dirty: Cell::new(true),
+    };
+    let out = renderer.render_frame(
+        &mut engine,
+        &scene,
+        FrameRenderInput {
+            rendered_first: false,
+            dirty_region: &full,
+            tree_version: 1,
+            scroll_move: None,
+            theme: ThemeSnapshot::new(&tokens),
+            font: FontHandle::default(),
+            font_service: &fs,
+            image_service: &img,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+    assert!(
+        matches!(
+            out.outcome,
+            RenderOutcome::PresentPending(_) | RenderOutcome::Present(_)
+        ),
+        "first frame present: {:?}",
+        out.outcome
+    );
+
+    let blue = Color::from_rgba(0, 0, 255, 255).premultiplied();
+    let right_px = {
+        let pixels = engine.canvas_2d().pixels_mut();
+        pixels[20 * 100 + 80] // center of right sibling
+    };
+    assert_eq!(right_px, blue, "baseline: right sibling must be blue");
+
+    // 仅左子脏：父仍会因 dirty 相交被绘制；右子不得被父背景擦成灰。
+    let mut dirty = DirtyRegion::empty();
+    dirty.add_rect(Rect::new(0.0, 0.0, 40.0, 40.0));
+    scene.left_dirty.set(true);
+    let out = renderer.render_frame(
+        &mut engine,
+        &scene,
+        FrameRenderInput {
+            rendered_first: true,
+            dirty_region: &dirty,
+            tree_version: 1,
+            scroll_move: None,
+            theme: ThemeSnapshot::new(&tokens),
+            font: FontHandle::default(),
+            font_service: &fs,
+            image_service: &img,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+    assert!(
+        matches!(
+            out.outcome,
+            RenderOutcome::PresentPending(_) | RenderOutcome::Present(_)
+        ),
+        "dirty frame present: {:?}",
+        out.outcome
+    );
+
+    let right_px = {
+        let pixels = engine.canvas_2d().pixels_mut();
+        pixels[20 * 100 + 80]
+    };
+    assert_eq!(
+        right_px, blue,
+        "after hover dirty paint, undamaged sibling must stay blue (not parent gray)"
+    );
+}
+
+/// 滚动时整窗视口必须并入清/绘区，由 paint 重新生成偏移后的内容。
+///
+/// 只清重绘 exposed strip 时，视口内已偏移的内容保持上一帧的旧像素，
+/// 与新绘的 strip 叠加 → 滚动渲染错乱（标题/按钮/分割线互相重叠）。
+#[test]
+fn scroll_move_shifts_viewport_content_and_repaints_exposed_strip() {
+    use crate::draw::painting::PaintContext;
+    use std::cell::Cell;
+
+    struct ScrollScene {
+        scroll_y: Cell<f32>,
+        /// 全帧标脏（首帧）；后续帧由 dirty_region 驱动。
+        root_dirty: Cell<bool>,
+    }
+
+    impl ScrollScene {
+        fn band_color(y: f32) -> Color {
+            // 50px 一段，依次红/绿/蓝/黄…
+            match (y as i32) / 50 {
+                0 => Color::from_rgba(200, 0, 0, 255),
+                1 => Color::from_rgba(0, 200, 0, 255),
+                2 => Color::from_rgba(0, 0, 200, 255),
+                3 => Color::from_rgba(200, 200, 0, 255),
+                _ => Color::from_rgba(40, 40, 40, 255),
+            }
+        }
+    }
+
+    impl ScenePaint for ScrollScene {
+        fn root_id(&self) -> Option<NodeId> {
+            Some(NodeId::new(1))
+        }
+        fn tree_version(&self) -> u64 {
+            1
+        }
+        fn dirty_region(&self) -> DirtyRegion {
+            DirtyRegion::full()
+        }
+        fn node_visible(&self, id: NodeId) -> bool {
+            id.slot() == 1 || id.slot() == 2
+        }
+        fn node_frame(&self, id: NodeId) -> Rect {
+            match id.slot() {
+                1 => Rect::new(0.0, 0.0, 100.0, 100.0),
+                2 => Rect::new(0.0, 0.0, 100.0, 300.0),
+                _ => Rect::zero(),
+            }
+        }
+        fn node_dirty(&self, id: NodeId) -> bool {
+            id.slot() == 1 && self.root_dirty.get()
+        }
+        fn node_z_index(&self, _: NodeId) -> i32 {
+            0
+        }
+        fn node_children(&self, id: NodeId) -> &[NodeId] {
+            static KIDS: [NodeId; 1] = [NodeId::new(2)];
+            static EMPTY: [NodeId; 0] = [];
+            if id.slot() == 1 {
+                &KIDS
+            } else {
+                &EMPTY
+            }
+        }
+        fn children_clip(&self, id: NodeId, frame: Rect) -> Option<Rect> {
+            if id.slot() == 1 {
+                Some(frame)
+            } else {
+                None
+            }
+        }
+        fn dirty_rect(&self, _: NodeId, frame: Rect) -> Rect {
+            frame
+        }
+        fn scroll_offset(&self, id: NodeId) -> Option<(f32, f32)> {
+            if id.slot() == 1 {
+                Some((0.0, self.scroll_y.get()))
+            } else {
+                None
+            }
+        }
+        fn focused_node(&self) -> Option<NodeId> {
+            None
+        }
+        fn node_focusable(&self, _: NodeId) -> bool {
+            false
+        }
+        fn hit_test(&self, _: Point) -> Option<NodeId> {
+            None
+        }
+        fn parent(&self, id: NodeId) -> Option<NodeId> {
+            if id.slot() == 2 {
+                Some(NodeId::new(1))
+            } else {
+                None
+            }
+        }
+        fn paint(&self, id: NodeId, frame: Rect, ctx: &mut PaintContext<'_>) {
+            if id.slot() == 2 {
+                // 按 50px 分段填色；帧处于 content 坐标 (0,0,100,300)
+                let mut y = frame.y;
+                while y < frame.y + frame.h {
+                    let band_h: f32 = 50.0;
+                    let top = y;
+                    let h = band_h.min(frame.y + frame.h - top);
+                    ctx.fill_rect(
+                        Rect::new(frame.x, top, frame.w, h),
+                        Self::band_color(top),
+                        None,
+                    );
+                    y += band_h;
+                }
+            }
+        }
+    }
+
+    let tokens = MockTokens;
+    let theme = ThemeSnapshot::new(&tokens);
+    let fs = FontService::new();
+    let img = ImageService::new();
+    let mut engine = SoftwareEngine::new();
+    engine.initialize(100, 100).expect("init");
+    let mut renderer = FrameRenderer::new();
+
+    let scene = ScrollScene {
+        scroll_y: Cell::new(0.0),
+        root_dirty: Cell::new(true),
+    };
+
+    // 首帧：scroll_y=0，视口显示 红(0..50) + 绿(50..100)
+    let full = DirtyRegion::full();
+    let out = renderer.render_frame(
+        &mut engine,
+        &scene,
+        FrameRenderInput {
+            rendered_first: false,
+            dirty_region: &full,
+            tree_version: 1,
+            scroll_move: None,
+            theme: ThemeSnapshot::new(&tokens),
+            font: FontHandle::default(),
+            font_service: &fs,
+            image_service: &img,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+    assert!(matches!(
+        out.outcome,
+        RenderOutcome::PresentPending(_) | RenderOutcome::Present(_)
+    ));
+    let red = Color::from_rgba(200, 0, 0, 255).premultiplied();
+    let green = Color::from_rgba(0, 200, 0, 255).premultiplied();
+    let blue = Color::from_rgba(0, 0, 200, 255).premultiplied();
+    let px = |engine: &SoftwareEngine, x: usize, y: usize| {
+        // canvas_2d() 借用不便；直接通过 session 读 CPU 后端像素
+        engine
+            .session()
+            .cpu_backend()
+            .expect("CPU backend")
+            .pixels()[y * 100 + x]
+    };
+    assert_eq!(px(&engine, 50, 25), red, "baseline: top band is red");
+    assert_eq!(px(&engine, 50, 75), green, "baseline: second band is green");
+
+    // 滚动 50px：scroll_y=50。exposed strip = 底部 50px (0,50,100,50)
+    scene.scroll_y.set(50.0);
+    scene.root_dirty.set(false);
+    let mut dirty = DirtyRegion::empty();
+    dirty.add_rect(Rect::new(0.0, 50.0, 100.0, 50.0));
+    let out = renderer.render_frame(
+        &mut engine,
+        &scene,
+        FrameRenderInput {
+            rendered_first: true,
+            dirty_region: &dirty,
+            tree_version: 1,
+            scroll_move: Some((Rect::new(0.0, 0.0, 100.0, 100.0), 0.0, 50.0)),
+            theme: ThemeSnapshot::new(&tokens),
+            font: FontHandle::default(),
+            font_service: &fs,
+            image_service: &img,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+    assert!(matches!(
+        out.outcome,
+        RenderOutcome::PresentPending(_) | RenderOutcome::Present(_)
+    ));
+
+    // 视口整窗重绘后：顶部 50px 应为绿（content y=50..100 重绘到视口 0..50）
+    assert_eq!(
+        px(&engine, 50, 25),
+        green,
+        "after scroll, top band must be green (repainted content y=50..100), not stale red"
+    );
+    // exposed strip 重绘：底部 50px 应为蓝（content y=100..150）
+    assert_eq!(
+        px(&engine, 50, 75),
+        blue,
+        "exposed strip must be repainted with blue (content y=100..150)"
+    );
+}
+
+/// 滚动帧的 begin_frame 策略必须把滚动视口并入清/绘区。
+///
+/// dirty_region 只覆盖 exposed strip 时，begin_frame 只清这一条；
+/// 视口内已偏移的内容保留上一帧旧像素 → 滚动错乱。并入整窗后
+/// begin_frame 清空并重绘整个视口，所有偏移内容由 paint 重新生成。
+#[test]
+fn scroll_move_expands_dirty_strategy_to_include_viewport() {
+    let mut renderer = FrameRenderer::new();
+    let mut engine = RecordingEngine::new();
+    let _ = engine.initialize(128, 128);
+    let tokens = MockTokens;
+    let theme = ThemeSnapshot::new(&tokens);
+    let fs = FontService::new();
+    let img = ImageService::new();
+    // dirty 只覆盖 exposed strip（底部 40px），与视口 (0,0,100,100) 不重合顶部
+    let mut dirty = DirtyRegion::empty();
+    dirty.add_rect(Rect::new(0.0, 60.0, 100.0, 40.0));
+
+    let _ = renderer.render_frame(
+        &mut engine,
+        &EmptyScene::new(),
+        FrameRenderInput {
+            rendered_first: true,
+            dirty_region: &dirty,
+            tree_version: 0,
+            scroll_move: Some((Rect::new(0.0, 0.0, 100.0, 100.0), 0.0, 40.0)),
+            theme,
+            font: FontHandle::default(),
+            font_service: &fs,
+            image_service: &img,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+
+    let strategy = engine
+        .last_begin_strategy
+        .as_ref()
+        .expect("begin_frame must be called");
+    let rects = match strategy {
+        UpdateStrategy::DirtyRects(rs) => rs.clone(),
+        UpdateStrategy::FullRedraw => panic!("partial scroll must stay DirtyRects, got FullRedraw"),
+    };
+    let bounds = rects
+        .iter()
+        .fold(Rect::zero(), |acc, r| acc.union(r));
+    // 视口 (0,0,100,100) 四角须落在并入后的 bounds 内
+    let viewport = Rect::new(0.0, 0.0, 100.0, 100.0);
+    for corner in [
+        Point::new(viewport.x, viewport.y),
+        Point::new(viewport.x + viewport.w, viewport.y),
+        Point::new(viewport.x, viewport.y + viewport.h),
+        Point::new(viewport.x + viewport.w, viewport.y + viewport.h),
+    ] {
+        assert!(
+            bounds.contains(corner),
+            "strategy bounds {bounds:?} must cover the scroll viewport corner {corner:?}"
+        );
+    }
+}
+
+/// 滚动帧不应记录 ScrollCopy：begin_frame 先清 exposed strip，ScrollCopy
+/// 会从已清空区读取透明像素，平移到视口顶部反而破坏内容。整窗并入清/绘区
+/// 后由 paint 重新生成偏移内容即可。
+#[test]
+fn scroll_move_does_not_record_scroll_copy() {
+    let mut renderer = FrameRenderer::new();
+    let mut engine = RecordingEngine::new();
+    let _ = engine.initialize(128, 128);
+    let tokens = MockTokens;
+    let theme = ThemeSnapshot::new(&tokens);
+    let fs = FontService::new();
+    let img = ImageService::new();
+    let mut dirty = DirtyRegion::empty();
+    dirty.add_rect(Rect::new(0.0, 60.0, 100.0, 40.0));
+
+    let _ = renderer.render_frame(
+        &mut engine,
+        &EmptyScene::new(),
+        FrameRenderInput {
+            rendered_first: true,
+            dirty_region: &dirty,
+            tree_version: 0,
+            scroll_move: Some((Rect::new(0.0, 0.0, 100.0, 100.0), 0.0, 40.0)),
+            theme,
+            font: FontHandle::default(),
+            font_service: &fs,
+            image_service: &img,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+
+    let commands = engine
+        .encoded_frames
+        .last()
+        .expect("scroll frame must produce an encoded frame");
+    let has_scroll_copy = commands.iter().any(|cmd| {
+        matches!(
+            cmd,
+            crate::draw::pipeline::FrameCommand::Native {
+                operation: crate::draw::pipeline::FrameRasterOp::ScrollCopy { .. }
+            }
+        )
+    });
+    assert!(
+        !has_scroll_copy,
+        "scroll frame must not record ScrollCopy (begin_frame clears before execution)"
     );
 }

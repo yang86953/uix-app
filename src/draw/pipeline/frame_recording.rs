@@ -362,7 +362,7 @@ impl FrameRecordingCanvas {
         // only the last pack AABB would leave stale pixels for the next batch.
         self.scratch.surface_mut().clear_all();
         self.scratch_dirty = false;
-        crate::draw::perf_probe::add_cpu_flush(flush_t0.elapsed().as_micros());
+        crate::core::perf_probe::add_cpu_flush(flush_t0.elapsed().as_micros());
         Ok(())
     }
 

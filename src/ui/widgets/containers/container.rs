@@ -43,14 +43,14 @@ component! {
         let intrinsic = self.intrinsic_size();
         let clamped = constraints.clamp(intrinsic);
         let cached = self.cached_content_size.get();
-        let grow = self.style.flex_grow > 0.0;
-        // 仅用内容缓存抵抗父级 max（Phase 2 结果）；纯 fixed 仍可被约束压小。
-        let w = if cached.w > 0.0 && (self.style.width.is_some() || !grow) {
+        // 仅 indefinite（None 或 0）轴用 cached（子项溢出尺寸）撑开 measure；
+        // 显式 >0 尺寸为定高/定宽，尊重 clamped，不被 cached 溢出撑大。
+        let w = if cached.w > 0.0 && self.style.width.is_none_or(|w| w <= 0.0) {
             clamped.w.max(cached.w)
         } else {
             clamped.w
         };
-        let h = if cached.h > 0.0 && (self.style.height.is_some() || !grow) {
+        let h = if cached.h > 0.0 && self.style.height.is_none_or(|h| h <= 0.0) {
             clamped.h.max(cached.h)
         } else {
             clamped.h
@@ -136,15 +136,17 @@ component! {
         // bootstrap（intrinsic_main）才能用子项撑开并写入 cached_content_size（#165）。
         // 若此处直接 return，子节点 frame 会停在 (0,0)，表现为文字重叠。
 
+        // size(_, 0) 的 0 视为「主轴不指定」：让 FlexLayout 用子项撑开，
+        // 否则 Container measured_size 卡在父级分配的视口高，ScrollView 永远 max_scroll=0。
         let main_axis_indefinite = matches!(
             s.flex_direction,
             crate::ui::style::FlexDirection::Column
                 | crate::ui::style::FlexDirection::ColumnReverse
-        ) && s.height.is_none()
+        ) && s.height.is_none_or(|h| h <= 0.0)
             || matches!(
                 s.flex_direction,
                 crate::ui::style::FlexDirection::Row | crate::ui::style::FlexDirection::RowReverse
-            ) && s.width.is_none();
+            ) && s.width.is_none_or(|w| w <= 0.0);
 
         // 委托给统一的 FlexLayout 布局引擎
         let engine = FlexLayout {
@@ -164,11 +166,19 @@ component! {
         }
         let output = engine.layout(content_rect, &children_no_shrink);
 
-        // 缓存子节点内容尺寸
-        self.cached_content_size.set(Size::new(
-            output.total_size.w.max(0.0),
-            output.total_size.h.max(0.0),
-        ));
+        // cached_content_size 记子布局后实际溢出尺寸（含 wrap/gap，measure 撑开用）；
+        // total_size 默认 layout 限到 frame，ScrollView 内子溢出视口时无法撑开 → max_scroll 恒 0。
+        let content_w = output
+            .positions
+            .iter()
+            .map(|r| (r.x + r.w - content_rect.x).max(0.0))
+            .fold(0.0, f32::max);
+        let content_h = output
+            .positions
+            .iter()
+            .map(|r| (r.y + r.h - content_rect.y).max(0.0))
+            .fold(0.0, f32::max);
+        self.cached_content_size.set(Size::new(content_w, content_h));
 
         children
             .iter()
@@ -447,16 +457,11 @@ impl Container {
         } else {
             0.0
         };
-        // 显式宽高是下限：内容 / Phase 2 撑开后不得再向父级低报，否则与扩展振荡。
+        // 显式 >0 是定高/定宽，尊重之，不被内容溢出撑大（内容溢出走 overflow）；
+        // None 或 0 视为 indefinite，用内容尺寸撑开（ScrollView 内 size(_,0) 撑开用）。
         let effective_w = match self.style.width {
-            Some(w) => {
-                if content_w > 0.0 {
-                    w.max(content_w)
-                } else {
-                    w
-                }
-            }
-            None => {
+            Some(w) if w > 0.0 => w,
+            _ => {
                 if grow {
                     0.0
                 } else {
@@ -465,14 +470,8 @@ impl Container {
             }
         };
         let effective_h = match self.style.height {
-            Some(h) => {
-                if content_h > 0.0 {
-                    h.max(content_h)
-                } else {
-                    h
-                }
-            }
-            None => {
+            Some(h) if h > 0.0 => h,
+            _ => {
                 if grow {
                     0.0
                 } else {

@@ -6,6 +6,7 @@ pub mod diagnostic;
 pub mod error;
 pub mod geometry;
 pub mod log;
+pub mod perf_probe;
 pub mod window_id;
 
 pub use component_id::*;

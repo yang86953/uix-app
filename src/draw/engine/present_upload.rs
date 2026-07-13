@@ -109,9 +109,9 @@ impl GraphicsEngine for PresentUploadEngine {
             };
             let damage_full = matches!(damage, PresentDamage::Full);
             let pixels = (width as u64).saturating_mul(height as u64);
-            if crate::draw::perf_probe::skip_present_enabled() {
-                crate::draw::perf_probe::record_present(
-                    crate::draw::perf_probe::PresentProbeSample {
+            if crate::core::perf_probe::skip_present_enabled() {
+                crate::core::perf_probe::record_present(
+                    crate::core::perf_probe::PresentProbeSample {
                         present_us: 0,
                         upload_copy_us: 0,
                         fence_wait_us: 0,
@@ -140,12 +140,12 @@ impl GraphicsEngine for PresentUploadEngine {
                 let present_t0 = std::time::Instant::now();
                 let present_result = self.gpu_ctx.present(&frame);
                 let present_us = present_t0.elapsed().as_micros();
-                let mut sample = crate::draw::perf_probe::take_present();
+                let mut sample = crate::core::perf_probe::take_present();
                 sample.present_us = present_us;
                 sample.pixels = pixels;
                 sample.damage_full = if damage_full { 1 } else { 0 };
                 sample.skipped = 0;
-                crate::draw::perf_probe::record_present(sample);
+                crate::core::perf_probe::record_present(sample);
                 crate::core::log::info_fn(format!(
                     "present_upload_us={} upload_copy_us={} fence_wait_us={} submit_present_us={} pixels={} damage_full={} backend={}",
                     present_us,
@@ -174,13 +174,9 @@ impl GraphicsEngine for PresentUploadEngine {
     }
 
     fn capabilities(&self) -> GraphicsCapabilities {
-        // CPU 栅格 + GPU upload：离屏走 CpuBackend；CPU 表面可局部清/绘。
-        // GPU partial_present 仍由 caps().partial_present 门控（Vulkan 多缓冲暂 Full upload）。
-        GraphicsCapabilities {
-            presentation_mode: crate::draw::traits::PresentationMode::EngineManaged,
-            partial_redraw: true,
-            offscreen: true,
-        }
+        // GPU 主路径绘制全帧（与 NativeGpuBackend 对齐），消除 dirty-rect 绘制裁剪的脏数据风险；
+        // present damage 仍按 dirty 窄区，由 gpu_ctx caps().partial_present 门控（Vulkan 多缓冲暂 Full upload）。
+        GraphicsCapabilities::engine_managed_with_offscreen()
     }
 
     fn device_pixel_ratio(&self) -> f32 {
