@@ -765,7 +765,7 @@ impl App {
     }
 
     /// 注册全局单例。
-    pub fn singleton<T: 'static + Send + Clone>(mut self, instance: T) -> Self {
+    pub fn singleton<T: 'static + Send + Sync>(mut self, instance: T) -> Self {
         self.container.singleton(instance);
         self
     }

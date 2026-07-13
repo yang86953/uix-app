@@ -17,14 +17,27 @@ use crate::draw::traits::Canvas2D;
 pub use decode::decode_to_pixels;
 
 /// 解码位图句柄（区别于离屏缓冲 `ImageHandle`）。
+/// 低 32 位为槽位索引，高 32 位为 generation，防止 unload/reuse 后旧句柄静默指向新图片。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct BitmapHandle(pub u32);
+pub struct BitmapHandle(pub u64);
 
 impl BitmapHandle {
-    pub const INVALID: Self = Self(u32::MAX);
+    pub const INVALID: Self = Self(u64::MAX);
 
     pub fn is_valid(self) -> bool {
-        self.0 != u32::MAX
+        self.0 != u64::MAX
+    }
+
+    fn slot_index(self) -> usize {
+        (self.0 & 0xFFFF_FFFF) as usize
+    }
+
+    fn generation(self) -> u32 {
+        (self.0 >> 32) as u32
+    }
+
+    fn pack(index: u32, generation: u32) -> Self {
+        Self((generation as u64) << 32 | index as u64)
     }
 }
 
@@ -36,6 +49,7 @@ pub struct ImageSlot {
     pixels: Vec<u32>,
     path: Option<String>,
     valid: bool,
+    generation: u32,
 }
 
 impl ImageSlot {
@@ -46,6 +60,7 @@ impl ImageSlot {
             pixels,
             path,
             valid: true,
+            generation: 0,
         }
     }
 
@@ -117,24 +132,26 @@ impl ImageService {
         self.load_from_path(path).ok()
     }
 
-    /// 检查句柄是否有效。
+    /// 检查句柄是否有效（generation 也须匹配）。
     pub fn is_valid(&self, handle: BitmapHandle) -> bool {
-        let idx = handle.0 as usize;
-        self.slots.borrow().get(idx).is_some_and(|s| s.valid)
+        let idx = handle.slot_index();
+        self.slots.borrow().get(idx).is_some_and(|s| s.valid && s.generation == handle.generation())
     }
 
     /// 读取槽位像素（只读借用）。
     pub fn with_slot<R>(&self, handle: BitmapHandle, f: impl FnOnce(&ImageSlot) -> R) -> Option<R> {
         let slots = self.slots.borrow();
-        let idx = handle.0 as usize;
-        slots.get(idx).filter(|s| s.valid).map(f)
+        let idx = handle.slot_index();
+        slots.get(idx).filter(|s| s.valid && s.generation == handle.generation()).map(f)
     }
 
     /// 卸载位图并清除路径缓存引用。
     pub fn unload(&self, handle: BitmapHandle) {
         let mut slots = self.slots.borrow_mut();
-        let idx = handle.0 as usize;
-        if let Some(slot) = slots.get_mut(idx) {
+        let idx = handle.slot_index();
+        if let Some(slot) = slots.get_mut(idx)
+            .filter(|s| s.generation == handle.generation())
+        {
             if let Some(ref path) = slot.path {
                 self.path_cache.borrow_mut().remove(path);
             }
@@ -152,18 +169,21 @@ impl ImageService {
             .sum()
     }
 
-    fn insert_slot(&self, slot: ImageSlot) -> BitmapHandle {
+    fn insert_slot(&self, mut slot: ImageSlot) -> BitmapHandle {
         let mut slots = self.slots.borrow_mut();
-        // 复用已释放槽位
+        // 复用已释放槽位，递增 generation 使旧句柄失效
         for (i, s) in slots.iter_mut().enumerate() {
             if !s.valid {
+                slot.generation = s.generation.wrapping_add(1);
                 *s = slot;
-                return BitmapHandle(i as u32);
+                return BitmapHandle::pack(i as u32, s.generation);
             }
         }
+        let generation = 0;
+        slot.generation = generation;
         let idx = slots.len();
         slots.push(slot);
-        BitmapHandle(idx as u32)
+        BitmapHandle::pack(idx as u32, generation)
     }
 }
 

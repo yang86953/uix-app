@@ -158,9 +158,9 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
         off_ctx.canvas_2d().translate(-bounds.x, -bounds.y);
         if !encoded_cached_picture {
             if let Some(list) = fresh_list.as_mut() {
-                off_ctx.set_recorder(Some(list));
-                LayerTree::render_widget_self(node_id, &mut off_ctx, scene);
-                off_ctx.set_recorder(None);
+                off_ctx.with_recorder(list, |ctx| {
+                    LayerTree::render_widget_self(node_id, ctx, scene);
+                });
                 fresh_list_complete = off_ctx.recording_complete();
             } else if let Some(cached) = display_list.as_ref() {
                 cached.replay(&mut off_ctx);

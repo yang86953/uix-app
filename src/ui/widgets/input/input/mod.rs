@@ -46,6 +46,8 @@ component! {
         /// 垂直滚动行偏移（多行模式）
         scroll_line: Cell<usize>,
         glyph_xs: RefCell<Vec<f32>>,
+        /// 多行模式每行 glyph x 位置（行索引 → glyph x 数组）
+        line_glyph_xs: RefCell<Vec<Vec<f32>>>,
         selection: Cell<Option<(usize, usize)>>,
         sel_anchor: Cell<usize>,
         sel_dragging: Cell<bool>,
@@ -64,6 +66,8 @@ component! {
         textarea_rows: usize,
         pending_change: RefCell<Option<String>>,
         pending_submit: RefCell<Option<String>>,
+        /// 密码眼睛图标区域（用于命中检测）
+        pub(crate) pwd_icon_rect: Cell<Rect>,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -81,8 +85,11 @@ component! {
         if self.disabled { return EventResult::NotHandled; }
         match event {
             SystemEvent::PointerDown { pos, mods, .. } => {
-                // Visual focus comes from FocusIn via WidgetTree::set_focus;
-                // do not set local `focused` here or it can desync from FocusManager.
+                // 密码眼睛图标命中
+                if self.password && self.pwd_icon_rect.get().contains(*pos) {
+                    self.password_visible = !self.password_visible;
+                    return EventResult::Handled;
+                }
                 let ci = if self.textarea {
                     self.char_at_xy(pos.x - PAD, pos.y)
                 } else {
@@ -172,17 +179,27 @@ component! {
                         EventResult::Handled
                     }
                     KeyCode::C if ctrl => {
-                        if let Some((s, e)) = self.selection.get() {
+                        if self.password && !self.password_visible {
+                            // 密码隐藏态禁止复制明文
+                            EventResult::Handled
+                        } else if let Some((s, e)) = self.selection.get() {
                             clipboard::copy_to_clipboard(&self.slice_range(s, e));
-                        } else { clipboard::copy_to_clipboard(&self.value); }
-                        EventResult::Handled
+                            EventResult::Handled
+                        } else {
+                            clipboard::copy_to_clipboard(&self.value);
+                            EventResult::Handled
+                        }
                     }
                     KeyCode::X if ctrl => {
-                        if let Some((s, e)) = self.selection.get() {
+                        if self.password && !self.password_visible {
+                            EventResult::Handled
+                        } else if let Some((s, e)) = self.selection.get() {
                             clipboard::copy_to_clipboard(&self.slice_range(s, e));
                             self.delete_selection();
+                            EventResult::Handled
+                        } else {
+                            EventResult::Handled
                         }
-                        EventResult::Handled
                     }
                     KeyCode::Backspace => {
                         if self.selection.get().is_some() { self.delete_selection(); }
@@ -328,6 +345,7 @@ impl Input {
             scroll_offset_x: Cell::new(0.0),
             scroll_line: Cell::new(0),
             glyph_xs: RefCell::new(Vec::new()),
+            line_glyph_xs: RefCell::new(Vec::new()),
             selection: Cell::new(None),
             sel_anchor: Cell::new(0),
             sel_dragging: Cell::new(false),
@@ -343,6 +361,7 @@ impl Input {
             textarea_rows: 3,
             pending_change: RefCell::new(None),
             pending_submit: RefCell::new(None),
+            pwd_icon_rect: Cell::new(Rect::zero()),
         }
     }
     pub fn with_value(mut self, value: impl Into<String>) -> Self {
@@ -585,16 +604,41 @@ impl Input {
     }
 
     /// 多行模式下根据 (x, y) 找字符索引
-    fn char_at_xy(&self, _x: f32, y: f32) -> usize {
+    fn char_at_xy(&self, x: f32, y: f32) -> usize {
         let lines: Vec<&str> = self.value.lines().collect();
+        if lines.is_empty() {
+            return 0;
+        }
         // y < 6.0 时（点击顶部 padding 区）映射到第 0 行，防止负数转 usize panic
         if y < 6.0 {
-            return 0;
+            return self.x_to_char_on_line(0, &lines, x);
         }
         let line_idx = ((y - 6.0) / LINE_HEIGHT) as usize + self.scroll_line.get();
         let line_idx = line_idx.min(lines.len().saturating_sub(1));
+        self.x_to_char_on_line(line_idx, &lines, x)
+    }
+
+    /// 根据 x 坐标在该行内找字符索引
+    fn x_to_char_on_line(&self, line_idx: usize, lines: &[&str], x: f32) -> usize {
+        let line_glyph_xs = self.line_glyph_xs.borrow();
         let prev: usize = lines[..line_idx].iter().map(|s| s.chars().count()).sum();
-        prev + line_idx // + newlines before this line
+        let newlines_before = line_idx; // each '\n' adds 1 char position
+        let line_offset = prev + newlines_before;
+        if let Some(xs) = line_glyph_xs.get(line_idx) {
+            if xs.is_empty() {
+                return line_offset;
+            }
+            for (i, &gx) in xs.iter().enumerate() {
+                if x < gx {
+                    // hit before this char's left edge → previous character
+                    return if i == 0 { line_offset } else { line_offset + i - 1 };
+                }
+            }
+            line_offset + xs.len() - 1
+        } else {
+            // fallback: 无 glyph 数据时放到行首
+            line_offset
+        }
     }
 
     pub(crate) fn set_selection_range(&self, a: usize, b: usize) {

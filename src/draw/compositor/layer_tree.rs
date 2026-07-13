@@ -591,11 +591,14 @@ impl LayerTree {
                     *bounds = frame;
                     *is_dirty = true;
                 }
-                // Picture 自身脏标记 + 子节点传播的脏标记
+                // Picture 自身脏标记 + 子节点传播的脏标记（完整遍历，不短路）
                 let self_dirty = scene.node_dirty(*node_id);
-                let child_dirty = children
-                    .iter_mut()
-                    .any(|child| Self::update_dirty_node(child, scene));
+                let mut child_dirty = false;
+                for child in children.iter_mut() {
+                    if Self::update_dirty_node(child, scene) {
+                        child_dirty = true;
+                    }
+                }
                 *is_dirty = *is_dirty || self_dirty || child_dirty;
                 *is_dirty
             }
@@ -611,19 +614,24 @@ impl LayerTree {
                     }
                 }
                 let self_dirty = scene.node_dirty(*node_id);
-                let child_dirty = children
-                    .iter_mut()
-                    .any(|child| Self::update_dirty_node(child, scene));
+                let mut child_dirty = false;
+                for child in children.iter_mut() {
+                    if Self::update_dirty_node(child, scene) {
+                        child_dirty = true;
+                    }
+                }
                 self_dirty || child_dirty
             }
             LayerNode::Direct {
                 node_id, children, ..
             } => {
-                // 检查自身 dirty + 子节点传播的脏标记
                 let self_dirty = scene.node_dirty(*node_id);
-                let child_dirty = children
-                    .iter_mut()
-                    .any(|child| Self::update_dirty_node(child, scene));
+                let mut child_dirty = false;
+                for child in children.iter_mut() {
+                    if Self::update_dirty_node(child, scene) {
+                        child_dirty = true;
+                    }
+                }
                 self_dirty || child_dirty
             }
         }

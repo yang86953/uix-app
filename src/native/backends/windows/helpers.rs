@@ -180,6 +180,12 @@ impl WindowsPlatform {
     pub(crate) fn loword(value: isize) -> u16 {
         (value & 0xFFFF) as u16
     }
+    pub(crate) fn loword_signed(value: isize) -> i16 {
+        (value & 0xFFFF) as i16
+    }
+    pub(crate) fn hiword_signed(value: isize) -> i16 {
+        ((value >> 16) & 0xFFFF) as i16
+    }
     pub(crate) fn hiword_usize(value: usize) -> u16 {
         ((value >> 16) & 0xFFFF) as u16
     }
@@ -191,8 +197,8 @@ impl WindowsPlatform {
 
 impl WindowsPlatform {
     pub(crate) fn mouse_pos_from_lparam(&self, lparam: isize) -> Point {
-        let x = Self::loword(lparam) as f32;
-        let y = Self::hiword(lparam) as f32;
+        let x = Self::loword_signed(lparam) as f32;
+        let y = Self::hiword_signed(lparam) as f32;
         Point::new(x, y)
     }
 

@@ -184,7 +184,6 @@ fn compute_justify(
     count: usize,
     gap: f32,
     justify: JustifyContent,
-    is_reverse: bool,
 ) -> (f32, f32) {
     if remaining > 0.0 {
         let new_gap = match justify {
@@ -199,16 +198,12 @@ fn compute_justify(
             JustifyContent::SpaceEvenly => gap + remaining / (count + 1) as f32,
             _ => gap,
         };
-        let offset = if is_reverse {
-            remaining
-        } else {
-            match justify {
-                JustifyContent::Center => remaining * 0.5,
-                JustifyContent::End => remaining,
-                JustifyContent::SpaceAround => remaining * 0.5 / count as f32,
-                JustifyContent::SpaceEvenly => remaining / (count + 1) as f32,
-                _ => 0.0,
-            }
+        let offset = match justify {
+            JustifyContent::Center => remaining * 0.5,
+            JustifyContent::End => remaining,
+            JustifyContent::SpaceAround => remaining * 0.5 / count as f32,
+            JustifyContent::SpaceEvenly => remaining / (count + 1) as f32,
+            _ => 0.0,
         };
         (new_gap, offset)
     } else {
@@ -321,16 +316,11 @@ fn compute_single_line(
         count,
         input.gap,
         input.justify_content,
-        is_reverse,
     );
 
     // Phase 4: position children
     let mut child_rects = Vec::with_capacity(count);
-    let mut cursor = if is_reverse {
-        container_main - start_offset - total_after - gaps
-    } else {
-        start_offset
-    };
+    let mut cursor = start_offset;
 
     for i in 0..count {
         let margin = child_margin(input, i);
@@ -376,11 +366,19 @@ fn compute_single_line(
 
         child_rects.push(Rect::new(cx, cy, cw, ch));
         let occupied_main = base_main_sizes[i] + margin_main(margin, is_row);
-        cursor += if is_reverse {
-            -(occupied_main + effective_gap)
-        } else {
-            occupied_main + effective_gap
-        };
+        cursor += occupied_main + effective_gap;
+    }
+
+    // Reverse: 以主轴终点镜像子项位置
+    if is_reverse {
+        let main_extent = if is_row { inner.w } else { inner.h };
+        for rect in &mut child_rects {
+            if is_row {
+                rect.x = inner.x + main_extent - (rect.x - inner.x) - rect.w;
+            } else {
+                rect.y = inner.y + main_extent - (rect.y - inner.y) - rect.h;
+            }
+        }
     }
 
     // total_size：intrinsic_main 始终用子项撑开（写入 cached_content_size，供下次 measure）；
@@ -556,14 +554,9 @@ fn compute_wrapped(
             line_count,
             input.gap,
             input.justify_content,
-            is_reverse,
         );
 
-        let mut cursor_main = if is_reverse {
-            container_main - start_offset - total_line_main - line_gaps_total
-        } else {
-            start_offset
-        };
+        let mut cursor_main = start_offset;
 
         let line_cross_base = line_cross_positions[li] + cross_start_offset;
 
@@ -602,11 +595,19 @@ fn compute_wrapped(
 
             child_rects[i] = Rect::new(cx, cy, cw, ch);
             let occupied_main = base_main_sizes[i] + margin_main(margin, is_row);
-            cursor_main += if is_reverse {
-                -(occupied_main + effective_gap)
+            cursor_main += occupied_main + effective_gap;
+        }
+    }
+
+    // Reverse: 以主轴终点镜像子项位置
+    if is_reverse {
+        let main_extent = if is_row { inner.w } else { inner.h };
+        for rect in &mut child_rects {
+            if is_row {
+                rect.x = inner.x + main_extent - (rect.x - inner.x) - rect.w;
             } else {
-                occupied_main + effective_gap
-            };
+                rect.y = inner.y + main_extent - (rect.y - inner.y) - rect.h;
+            }
         }
     }
 

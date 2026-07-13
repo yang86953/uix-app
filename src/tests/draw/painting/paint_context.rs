@@ -1,6 +1,6 @@
-use crate::tests::common::*;
 use crate::draw::painting::paint_context::*;
 use crate::draw::spatial::PhysicalUnit;
+use crate::tests::common::*;
 
 #[test]
 fn resolve_font_size_no_unit_returns_base() {
@@ -105,12 +105,13 @@ fn display_list_recording_rejects_untracked_canvas_access() {
         100,
     );
     let mut list = DisplayList::new();
-    ctx.set_recorder(Some(&mut list));
-    ctx.fill_rect(Rect::new(0.0, 0.0, 10.0, 10.0), Color::red(), None);
-    assert!(ctx.recording_complete());
+    ctx.with_recorder(&mut list, |ctx| {
+        ctx.fill_rect(Rect::new(0.0, 0.0, 10.0, 10.0), Color::red(), None);
+        assert!(ctx.recording_complete());
 
-    let _ = ctx.canvas_2d();
-    assert!(!ctx.recording_complete());
+        let _ = ctx.canvas_2d();
+        assert!(!ctx.recording_complete());
+    });
 }
 
 #[test]
@@ -138,7 +139,6 @@ fn display_list_recording_covers_extended_2d_paint_operations() {
         100,
     );
     let mut list = DisplayList::new();
-    ctx.set_recorder(Some(&mut list));
     let path = PathBuilder::new()
         .move_to(1.0, 1.0)
         .line_to(8.0, 1.0)
@@ -146,21 +146,23 @@ fn display_list_recording_covers_extended_2d_paint_operations() {
         .close()
         .build();
 
-    ctx.fill_ellipse(Rect::new(1.0, 1.0, 8.0, 6.0), Color::red());
-    ctx.fill_sector(5.0, 5.0, 3.0, 0.0, 1.0, Color::green());
-    ctx.fill_path(&path, Color::blue(), FillRule::NonZero);
-    ctx.stroke_circle(5.0, 5.0, 3.0, Color::white(), 1.0);
-    ctx.stroke_path(&path, Color::black(), &StrokeOptions::default());
-    ctx.draw_line(1.0, 1.0, 8.0, 8.0, Color::white(), 1.0);
-    ctx.fill_radial_gradient(5.0, 5.0, 0.0, 4.0, Color::white(), Color::black());
-    ctx.draw_box_shadow_ambient(
-        Rect::new(1.0, 1.0, 6.0, 6.0),
-        2.0,
-        1.0,
-        1.0,
-        Color::black(),
-        None,
-    );
+    ctx.with_recorder(&mut list, |ctx| {
+        ctx.fill_ellipse(Rect::new(1.0, 1.0, 8.0, 6.0), Color::red());
+        ctx.fill_sector(5.0, 5.0, 3.0, 0.0, 1.0, Color::green());
+        ctx.fill_path(&path, Color::blue(), FillRule::NonZero);
+        ctx.stroke_circle(5.0, 5.0, 3.0, Color::white(), 1.0);
+        ctx.stroke_path(&path, Color::black(), &StrokeOptions::default());
+        ctx.draw_line(1.0, 1.0, 8.0, 8.0, Color::white(), 1.0);
+        ctx.fill_radial_gradient(5.0, 5.0, 0.0, 4.0, Color::white(), Color::black());
+        ctx.draw_box_shadow_ambient(
+            Rect::new(1.0, 1.0, 6.0, 6.0),
+            2.0,
+            1.0,
+            1.0,
+            Color::black(),
+            None,
+        );
+    });
 
     assert!(ctx.recording_complete());
     assert_eq!(list.len(), 8);

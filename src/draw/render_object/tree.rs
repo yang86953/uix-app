@@ -107,9 +107,9 @@ impl RenderObjectTree {
 
         let mut list = DisplayList::new();
         ctx.set_paint_pass(PaintPass::Content);
-        ctx.set_recorder(Some(&mut list));
-        scene.paint(id, frame, ctx);
-        ctx.set_recorder(None);
+        ctx.with_recorder(&mut list, |ctx| {
+            scene.paint(id, frame, ctx);
+        });
         entry.display_list = ctx.recording_complete().then_some(list);
     }
 

@@ -307,16 +307,20 @@ pub fn clear_current_view_reconcile_fn() {
 }
 
 /// 在当前线程启用依赖追踪，执行闭包后返回收集到的依赖 generation 检查器列表。
+/// 支持嵌套：内层 collect_deps 保存并恢复外层追踪上下文，使 `Computed` 在其 get()
+/// 内部也能被外层正确追踪。
 fn collect_deps<F, R>(f: F) -> (R, Vec<EffectDependency>)
 where
     F: FnOnce() -> R,
 {
     TRACKING_DEPS.with(|deps| {
+        let outer = deps.borrow_mut().take();
         *deps.borrow_mut() = Some(Vec::new());
-    });
-    let result = f();
-    let collected = TRACKING_DEPS.with(|deps| deps.borrow_mut().take().unwrap_or_default());
-    (result, collected)
+        let result = f();
+        let collected = deps.borrow_mut().take().unwrap_or_default();
+        *deps.borrow_mut() = outer;
+        (result, collected)
+    })
 }
 
 /// 将当前 State 注册到追踪上下文中（如果追踪已启用）。
@@ -557,6 +561,8 @@ pub struct Computed<T> {
     cached: Arc<RwLock<Option<T>>>,
     /// 依赖的 generation 检查器列表：(检查器, 上次计算时的 generation)
     deps: Arc<RwLock<Vec<(Box<dyn Fn() -> u64 + Send + Sync>, u64)>>>,
+    /// 自身 generation：值变更时递增，供外层计算/Effect 追踪本 Computed 的变化。
+    generation: Arc<AtomicU64>,
     /// Phase R2：精确 Paint 失效绑定。
     paint_sites: Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
 }
@@ -580,6 +586,7 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
             compute_fn: Arc::new(f),
             cached: Arc::new(RwLock::new(Some(initial))),
             deps: Arc::new(RwLock::new(dep_pairs)),
+            generation: Arc::new(AtomicU64::new(0)),
             paint_sites: Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
@@ -609,6 +616,17 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
     pub fn get(&self) -> T {
         try_capture_computed_bind(self);
 
+        // 将自身注册到活跃的追踪上下文中（外层 Computed/Effect 可捕获本 Computed 作为依赖）
+        let self_gen = self.generation.clone();
+        let self_slot = self.slot_id;
+        track_dep(move || EffectDependency {
+            slot_id: self_slot,
+            check_generation: Box::new(move || self_gen.load(Ordering::Acquire)),
+            subscribe_pending: Box::new(move |_pending| {
+                // Computed 暂不订阅 pending 通知；依赖变化在 get() 内同步检测。
+            }),
+        });
+
         let force_probe = STATE_BIND_CAPTURE.with(|c| c.borrow().is_some());
 
         // 检查依赖是否变化（layout 探测阶段强制执行一次以捕获 State 绑定）
@@ -634,6 +652,7 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
             *cached = Some(value.clone());
             let mut deps = self.deps.write().unwrap_or_else(|e| e.into_inner());
             *deps = new_pairs;
+            self.generation.fetch_add(1, Ordering::Release);
             fire_paint_bindings(&self.paint_sites);
             value
         } else {
@@ -644,8 +663,19 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
 
     /// 强制使缓存失效并重新计算（当依赖无法被自动追踪时使用）。
     pub fn invalidate(&self) {
-        let (value, _new_deps) = collect_deps(|| (self.compute_fn)());
-        *self.cached.write().unwrap_or_else(|e| e.into_inner()) = Some(value);
+        let (value, new_deps) = collect_deps(|| (self.compute_fn)());
+        let new_pairs: Vec<_> = new_deps
+            .into_iter()
+            .map(|dep| {
+                let gen = (dep.check_generation)();
+                (dep.check_generation, gen)
+            })
+            .collect();
+        let mut cached = self.cached.write().unwrap_or_else(|e| e.into_inner());
+        *cached = Some(value);
+        let mut deps = self.deps.write().unwrap_or_else(|e| e.into_inner());
+        *deps = new_pairs;
+        self.generation.fetch_add(1, Ordering::Release);
     }
 }
 
@@ -656,6 +686,7 @@ impl<T> Clone for Computed<T> {
             compute_fn: self.compute_fn.clone(),
             cached: self.cached.clone(),
             deps: self.deps.clone(),
+            generation: self.generation.clone(),
             paint_sites: self.paint_sites.clone(),
         }
     }

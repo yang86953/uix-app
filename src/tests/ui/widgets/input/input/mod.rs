@@ -1,12 +1,12 @@
-use crate::tests::common::*;
-use crate::ui::foundation::clipboard;
-use crate::ui::widgets::input::input::*;
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
-use crate::draw::painting::{ DisplayList };
+use crate::draw::painting::DisplayList;
 use crate::draw::spatial::Orientation;
 use crate::native::test_harness::FakeClipboard;
 use crate::native::traits::input::IClipboard;
+use crate::tests::common::*;
+use crate::ui::foundation::clipboard;
+use crate::ui::widgets::input::input::*;
 
 #[test]
 fn sync_from_preserves_runtime_value() {
@@ -144,9 +144,9 @@ fn translated_software_render_keeps_placeholder_and_value_glyphs_visible() {
             );
             ctx.canvas_2d().translate(-frame.x, -frame.y);
             if let Some(input) = input {
-                ctx.set_recorder(Some(&mut list));
-                WidgetRender::render(input, frame, &mut ctx, &tree);
-                ctx.set_recorder(None);
+                ctx.with_recorder(&mut list, |ctx| {
+                WidgetRender::render(input, frame, ctx, &tree);
+            });
                 assert!(ctx.recording_complete());
             } else if let Some(replay) = replay {
                 replay.replay(&mut ctx);

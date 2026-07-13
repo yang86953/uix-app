@@ -83,6 +83,19 @@ impl WidgetTree {
                 let zb = self.get(b).map_or(0, |c| c.z_index());
                 zb.cmp(&za)
             });
+            // 同 z-index 时，后出现的兄弟绘制在上层，hit-test 应优先命中
+            let mut start = 0;
+            while start < sorted.len() {
+                let z = self.get(sorted[start]).map_or(0, |c| c.z_index());
+                let mut end = start + 1;
+                while end < sorted.len()
+                    && self.get(sorted[end]).map_or(0, |c| c.z_index()) == z
+                {
+                    end += 1;
+                }
+                sorted[start..end].reverse();
+                start = end;
+            }
             for &child_id in &sorted {
                 if let Some(hit) = self.hit_test_internal(child_id, child_pos) {
                     return Some(hit);

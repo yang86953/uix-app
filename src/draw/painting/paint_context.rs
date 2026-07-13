@@ -98,12 +98,14 @@ impl<'a> PaintContext<'a> {
         self.paint_pass = pass;
     }
 
-    /// 绑定 DisplayList 录制目标。
-    pub fn set_recorder(&mut self, recorder: Option<&mut DisplayList>) {
-        if recorder.is_some() {
-            self.recording_complete = true;
-        }
-        self.recorder = recorder.map(NonNull::from);
+    /// 安全录制：在闭包期间设置录制目标，闭包返回后自动清除 recorder。
+    /// 录制中的 panic 会悬空 recorder，调用方应在合适的时机以 catch_unwind 包裹。
+    pub fn with_recorder<R>(&mut self, list: &mut DisplayList, f: impl FnOnce(&mut Self) -> R) -> R {
+        self.recorder = NonNull::new(list);
+        self.recording_complete = true;
+        let result = f(self);
+        self.recorder = None;
+        result
     }
 
     /// 当前一次 DisplayList 录制是否覆盖了全部绘制操作。
@@ -119,7 +121,7 @@ impl<'a> PaintContext<'a> {
     fn record_op(&mut self, op: PaintOp) {
         if self.record_ops {
             if let Some(mut list) = self.recorder {
-                // SAFETY: recorder 仅在 set_recorder 与 paint 调用栈内有效，调用方保证 list 存活。
+                // Safety: recorder 仅在 with_recorder 闭包内有效，闭包返回后已清除。
                 unsafe {
                     list.as_mut().push(op);
                 }
