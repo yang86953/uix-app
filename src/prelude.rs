@@ -5,7 +5,7 @@
 //! use uix::prelude::*;
 //! ```
 //!
-//! Macro tiers ([#180](docs/决策.md#d180)):
+//! Macro tiers ([使用](docs/使用.md)):
 //! - daily: `views!`, `with_cloned!`
 //! - advanced: `component!`
 //! - framework: `tree!`, `impl_widget_component!`, `semantic_handler!`

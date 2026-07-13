@@ -32,7 +32,9 @@ use crate::draw::traits::GraphicsEngine;
 use crate::draw::RenderOutcome;
 use crate::draw::SoftwareEngine;
 use crate::native::create_platform;
-use crate::native::factory::{gpu_recipe_candidates, try_create_gpu_recipe, GraphicsRecipe};
+use crate::native::factory::{
+    gpu_recipe_candidates, graphics_runtime_platform, try_create_gpu_recipe, GraphicsRecipe,
+};
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::traits::platform::Platform;
 use crate::native::traits::present::{GraphicsBackend, NativeSurfaceHandle};
@@ -983,7 +985,7 @@ fn resolve_graphics_backend(
         }
     }
 
-    GraphicsBackend::Auto
+    GraphicsBackend::Vulkan
 }
 
 fn parse_graphics_backend_config(source: &str, value: &str) -> Option<GraphicsBackend> {
@@ -1501,7 +1503,8 @@ fn format_probe_failures(report: &ProbeReport) -> String {
 
 fn format_gpu_probe_fallback(request: GraphicsBackend, report: &ProbeReport) -> String {
     format!(
-        "GPU probe exhausted; request={request}; failures=[{}]; falling_back=cpu",
+        "GPU probe exhausted; request={request}; platform={}; fallback=software_cpu; failures=[{}]",
+        graphics_runtime_platform(),
         format_probe_failures(report)
     )
 }

@@ -1,7 +1,7 @@
 # UIX 演示程序
 
 > **角色**：能力全景（多页组件 / Timer / 主题 / View DSL），**不是**入门 starter。  
-> 最小应用请复制 [README · 示例](../README.md#示例)；门面速查 → [`架构 · 应用作者入口`](../docs/架构.md#应用作者入口)。
+> 最小应用请复制 [README · 示例](../README.md#示例)；门面速查 → [`使用`](../docs/使用.md)。
 
 ## 快速运行
 
@@ -89,7 +89,7 @@ demo/src/
 
 ## 演示 gap
 
-本 demo 缺：多窗口 live 演示页、故障注入页、跨 OS `follow_system_theme` 实机切换。框架 backlog → [`进度 · 里程碑`](../docs/进度.md#里程碑与工作域)。
+本 demo 缺：多窗口 live 演示页、故障注入页、跨 OS `follow_system_theme` 实机切换。框架 backlog → [`进度`](../docs/进度.md)。
 
 ## CLI 演示项
 

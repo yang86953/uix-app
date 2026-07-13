@@ -53,7 +53,7 @@ pub enum BackendStatus {
 /// One graphics API factory row — API identity plus declared raster × present axes.
 ///
 /// Engine assembly still reads live [`IGraphicsContext::caps`]; these fields document
-/// the combination this entry is expected to provide ([#169](docs/决策.md#d169)).
+/// the combination this entry is expected to provide ([架构 · 图形](docs/架构.md#图形-api与帧提交硬约束)).
 pub struct GraphicsBackendEntry {
     pub id: GraphicsBackend,
     pub priority: u8,
@@ -146,16 +146,21 @@ pub(crate) fn try_create_context(
 /// Ordered probe candidates for a backend request, with one item per recipe
 /// row.  An explicit backend request deliberately retains every active recipe
 /// for that backend instead of selecting the first matching row.
+fn matches_probe_request(entry: &GraphicsBackendEntry, requested: GraphicsBackend) -> bool {
+    if requested == GraphicsBackend::Auto {
+        entry.is_probe_candidate()
+    } else {
+        entry.id == requested
+    }
+}
+
 fn active_recipes_by_priority(
     entries: &[GraphicsBackendEntry],
     requested: GraphicsBackend,
 ) -> Vec<GraphicsRecipe> {
     let mut entries = entries
         .iter()
-        .filter(|entry| {
-            entry.is_probe_candidate()
-                && (requested == GraphicsBackend::Auto || entry.id == requested)
-        })
+        .filter(|entry| matches_probe_request(entry, requested))
         .collect::<Vec<_>>();
     // Stable sort preserves declaration order for equal priorities.
     entries.sort_by_key(|entry| std::cmp::Reverse(entry.priority));
@@ -165,9 +170,48 @@ fn active_recipes_by_priority(
         .collect()
 }
 
+/// Runtime platform label used by graphics bootstrap diagnostics.
+pub fn graphics_runtime_platform() -> &'static str {
+    #[cfg(windows)]
+    {
+        "windows"
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        "linux"
+    }
+    #[cfg(target_os = "macos")]
+    {
+        "macos"
+    }
+    #[cfg(not(any(
+        windows,
+        all(unix, not(target_os = "macos")),
+        target_os = "macos"
+    )))]
+    {
+        "unknown"
+    }
+}
+
 /// Recipe-level probe candidates used by graphics bootstrap.
 pub fn gpu_recipe_candidates(requested: GraphicsBackend) -> Vec<GraphicsRecipe> {
     active_recipes_by_priority(active_entries(), requested)
+}
+
+/// Describes why an explicit backend request has no active registry row.
+pub fn describe_backend_availability(requested: GraphicsBackend) -> Option<&'static str> {
+    if requested == GraphicsBackend::Auto {
+        return None;
+    }
+    match entry_for(requested) {
+        Some(entry) => match entry.status {
+            BackendStatus::Active => None,
+            BackendStatus::Planned => Some("planned but not implemented on this platform"),
+            BackendStatus::Disabled => Some("disabled in this build"),
+        },
+        None => Some("not registered for this platform"),
+    }
 }
 
 /// Legacy backend-only view of recipe candidates.
@@ -428,6 +472,24 @@ mod tests {
         );
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn explicit_vulkan_includes_planned_registry_row_on_windows() {
+        if !cfg!(feature = "vulkan") {
+            return;
+        }
+        let candidates = gpu_recipe_candidates(GraphicsBackend::Vulkan);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].backend, GraphicsBackend::Vulkan);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn auto_backend_on_windows_skips_planned_vulkan() {
+        let candidates = gpu_probe_candidates(GraphicsBackend::Auto);
+        assert!(!candidates.contains(&GraphicsBackend::Vulkan));
+    }
+
     #[test]
     fn registry_rejects_context_with_wrong_backend_identity() {
         IDENTITY_MISMATCH_SHUTDOWNS.store(0, Ordering::SeqCst);
@@ -514,17 +576,13 @@ mod tests {
                     assert_eq!(entry.raster, RasterMode::GpuNative);
                     assert_eq!(entry.present, PresentMode::Swapchain);
                 }
-                GraphicsBackend::D3d11 => {
+                GraphicsBackend::D3d11 | GraphicsBackend::D3d12 => {
                     assert_eq!(entry.raster, RasterMode::GpuNative);
                     assert_eq!(entry.present, PresentMode::Swapchain);
                 }
                 GraphicsBackend::Vulkan | GraphicsBackend::Metal => {
                     assert_eq!(entry.raster, RasterMode::Cpu);
                     assert_eq!(entry.present, PresentMode::PixelUpload);
-                }
-                GraphicsBackend::D3d12 => {
-                    assert_eq!(entry.raster, RasterMode::GpuNative);
-                    assert_eq!(entry.present, PresentMode::Swapchain);
                 }
                 GraphicsBackend::Auto => {}
             }

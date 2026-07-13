@@ -1,15 +1,15 @@
 ﻿# UIX
 
-Rust **跨平台（桌面 + 移动端）全栈 App 开发框架**。入口：`use uix::prelude::*;`。
+Rust **跨平台全栈 App 框架**（桌面 + 移动端愿景）。入口：`use uix::prelude::*;`。
 
-**Web 式声明 UI + 原生性能 + 零闲置 + 全栈**（[#105](docs/决策.md#d105)）。应用作者 API 继续打磨 Rust 门面，现阶段不另起 UI DSL（[#179](docs/决策.md#d179)）。
+声明式 UI + 原生绘制 + 零闲置。应用 API 为 Rust 门面，现阶段无独立 UI DSL。
 
-> **当前**：桌面 Win/Linux/macOS 已编码；**Windows 优先**（[#167](docs/决策.md#d167)）；移动端未实现。愿景 → [`产品`](docs/产品.md) · 上手 → [`架构 · 应用作者入口`](docs/架构.md#应用作者入口) · 硬约束 → [`架构 · #105`](docs/架构.md#核心理念最高规则-105)。
+> **当前**：桌面 Win/Linux/macOS 已编码；**Windows 优先**；移动端未做。→ [`产品`](docs/产品.md) · [`使用`](docs/使用.md) · [`架构`](docs/架构.md)
 
 ## 快速开始
 
 ```bash
-cargo run --bin uix-demo              # GUI（默认）
+cargo run --bin uix-demo              # GUI
 cargo run --bin uix-demo -- --cli     # CLI
 cargo test
 ```
@@ -17,9 +17,6 @@ cargo test
 演示 → [`demo/README.md`](demo/README.md)
 
 ## 示例
-
-最小可运行应用（入门复制此处；demo 是能力全景，见 [`demo/README.md`](demo/README.md)）。
-门面速查 → [`docs/架构.md` · 应用作者入口](docs/架构.md#应用作者入口)。
 
 ```rust
 use uix::prelude::*;
@@ -44,11 +41,13 @@ fn main() {
 }
 ```
 
+主题 / 多窗 / Settings → [`docs/使用.md`](docs/使用.md)。
+
 ## 功能域
 
 | 域 | 路径 | 用途 |
 |----|------|------|
-| 入口 | `uix::prelude::*` | App、View、组件、事件、State |
+| 入口 | `uix::prelude::*` | App、View、组件、State |
 | core | `uix::core::*` | 错误、几何、日志 |
 | native | `uix::native::*` | 窗口、事件（仅 traits） |
 | draw | `uix::draw::*` | 引擎、颜色、字体 |

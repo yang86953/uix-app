@@ -285,7 +285,7 @@ pub trait IPresenter {
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error>;
 }
 
-/// Raster axis — how Canvas2D content is produced ([#169](docs/决策.md#d169)).
+/// Raster axis — how Canvas2D content is produced ([架构 · 图形](docs/架构.md#图形-api与帧提交硬约束)).
 ///
 /// Orthogonal to [`PresentMode`] and [`GraphicsBackend`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -305,7 +305,7 @@ impl fmt::Display for RasterMode {
     }
 }
 
-/// Present axis — how pixels reach the screen ([#169](docs/决策.md#d169)).
+/// Present axis — how pixels reach the screen ([架构 · 图形](docs/架构.md#图形-api与帧提交硬约束)).
 ///
 /// Orthogonal to [`RasterMode`] and [`GraphicsBackend`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

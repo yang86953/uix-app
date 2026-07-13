@@ -17,8 +17,9 @@ use crate::native::traits::system::ISystemInfo;
 use std::ffi::c_void;
 
 pub use registry::{
-    BackendStatus, GraphicsBackendEntry, GraphicsRecipe, active_entries, entry_for,
-    entry_for_recipe, gpu_probe_candidates, gpu_recipe_candidates, try_create_gpu_recipe,
+    describe_backend_availability, graphics_runtime_platform, BackendStatus, GraphicsBackendEntry,
+    GraphicsRecipe, active_entries, entry_for, entry_for_recipe, gpu_probe_candidates,
+    gpu_recipe_candidates, try_create_gpu_recipe,
 };
 
 #[cfg(all(test, feature = "d3d11"))]
@@ -242,7 +243,10 @@ mod tests {
 
         #[cfg(not(all(unix, not(target_os = "macos"))))]
         assert!(
-            err.message().contains("no registry entry")
+            err.message().contains("planned but not implemented")
+                || err.message().contains("WSI adapter is not implemented on Windows")
+                || err.message().contains("portability adapter is not implemented on macOS")
+                || err.message().contains("no registry entry")
                 || err.message().contains("only supported on Linux Wayland")
         );
     }

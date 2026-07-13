@@ -30,7 +30,7 @@ use crate::ui::{ComponentId, WidgetTree};
 use std::any::Any;
 use std::sync::Arc;
 
-/// 将异质 / 同质子节点收成 `Vec<ViewNode>`（[#178](docs/决策.md#d178)）。
+/// 将异质 / 同质子节点收成 `Vec<ViewNode>`（[使用](docs/使用.md)）。
 ///
 /// - 同质：`column([label("a"), label("b")])`、`Vec<_>`
 /// - 异质：`column((label("a"), button("b")))` 或 `column(views![...])`
@@ -165,9 +165,9 @@ mod embed_tests {
 
 /// 列容器（Flex 方向为 Column），默认 flex_grow(1.0) 填满父容器高度。
 ///
-/// 嵌套内容组若只需 intrinsic 高度，用 [`column_fit`]（[#180](docs/决策.md#d180)）。
+/// 嵌套内容组若只需 intrinsic 高度，用 [`column_fit`]（[使用](docs/使用.md)）。
 ///
-/// 同质数组 / `Vec`，或异质元组 / [`views!`]（[#178](docs/决策.md#d178)）。
+/// 同质数组 / `Vec`，或异质元组 / [`views!`]（[使用](docs/使用.md)）。
 pub fn column(children: impl IntoViewChildren) -> ViewNode {
     ViewNode::new(
         crate::ui::widgets::Container::new()
@@ -189,7 +189,7 @@ pub fn column_fit(children: impl IntoViewChildren) -> ViewNode {
 
 /// 行容器（Flex 方向为 Row）。
 ///
-/// 同质数组 / `Vec`，或异质元组 / [`views!`]（[#178](docs/决策.md#d178)）。
+/// 同质数组 / `Vec`，或异质元组 / [`views!`]（[使用](docs/使用.md)）。
 pub fn row(children: impl IntoViewChildren) -> ViewNode {
     ViewNode::new(
         crate::ui::widgets::Container::new().dir(FlexDirection::Row),
@@ -345,7 +345,7 @@ impl From<ScrollBuilder> for ViewNode {
     }
 }
 
-/// 文本内容：静态字符串或动态闭包（[#178](docs/决策.md#d178)）。
+/// 文本内容：静态字符串或动态闭包（[使用](docs/使用.md)）。
 pub trait IntoLabelContent {
     fn into_label_node(self) -> ViewNode;
 }
@@ -627,7 +627,7 @@ impl ButtonBuilder {
         self
     }
 
-    /// 默认点击路径：绑定 `State` 指纹，reconcile 可稳定复用（[#178](docs/决策.md#d178) · [#159](docs/决策.md#d159)）。
+    /// 默认点击路径：绑定 `State` 指纹，reconcile 可稳定复用（[使用](docs/使用.md) · [使用](docs/使用.md)）。
     ///
     /// 框架传入 `&State<T>`，调用方无需再 clone 句柄进闭包。
     pub fn on_click<T, F>(mut self, state: &State<T>, mut f: F) -> Self
@@ -643,9 +643,9 @@ impl ButtonBuilder {
         self
     }
 
-    /// 无 State 的点击闭包；每次 reconcile **保守重绑**（[#160](docs/决策.md#d160)）。
+    /// 无 State 的点击闭包；每次 reconcile **保守重绑**（[使用](docs/使用.md)）。
     ///
-    /// 命名保留 `_fn`：Rust 无法与 [`Self::on_click`] 重载；有 State 时优先 `on_click(&state, …)`（[#180](docs/决策.md#d180)）。
+    /// 命名保留 `_fn`：Rust 无法与 [`Self::on_click`] 重载；有 State 时优先 `on_click(&state, …)`（[使用](docs/使用.md)）。
     pub fn on_click_fn<F: FnMut() + 'static>(mut self, mut f: F) -> Self {
         self.handlers.push(HandlerRegistration::new(
             SemanticKind::Click,

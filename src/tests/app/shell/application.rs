@@ -267,10 +267,10 @@ fn app_builder_sets_graphics_backend() {
 }
 
 #[test]
-fn app_graphics_backend_defaults_to_auto() {
+fn app_graphics_backend_defaults_to_vulkan() {
     assert_eq!(
         resolve_graphics_backend(None, None, None),
-        GraphicsBackend::Auto
+        GraphicsBackend::Vulkan
     );
 }
 
@@ -326,9 +326,10 @@ fn gpu_probe_fallback_format_preserves_request_failures_and_order() {
         ],
     };
 
-    let message = format_gpu_probe_fallback(GraphicsBackend::Auto, &report);
-    assert!(message.contains("request=auto"));
-    assert!(message.contains("falling_back=cpu"));
+    let message = format_gpu_probe_fallback(GraphicsBackend::Vulkan, &report);
+    assert!(message.contains("request=vulkan"));
+    assert!(message.contains("platform="));
+    assert!(message.contains("fallback=software_cpu"));
     let d3d11 = message.find("candidate=d3d11");
     let opengles = message.find("candidate=opengles");
     assert!(matches!(

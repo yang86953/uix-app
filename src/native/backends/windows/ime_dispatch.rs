@@ -1,6 +1,6 @@
 //! IMM32 composition → `UiEvent` 纯分发（可单测；HWND/HIMC 读取留在 `wnd_proc`）。
 //!
-//! TSF phonetic sink 落地后复用同一事件形状（[#75](docs/决策.md#d75) · P6）。
+//! TSF phonetic sink 落地后复用同一事件形状（[产品](docs/产品.md) · P6）。
 
 #![cfg(windows)]
 

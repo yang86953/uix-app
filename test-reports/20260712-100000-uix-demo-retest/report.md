@@ -34,5 +34,5 @@
 
 ## 已知限制
 
-- Windows Microsoft Pinyin（或等价 IME）的候选、提交和 Tab 焦点遍历仍需要真实前台 composition 证据；沿用 [BUG-20260711-002](../../docs/问题.md#bug-20260711-002) 的待验证状态。
+- Windows Microsoft Pinyin（或等价 IME）的候选、提交和 Tab 焦点遍历仍需要真实前台 composition 证据；沿用 [进度 · 未关闭缺陷](../../docs/进度.md) 中 BUG-002 的待验证状态。
 - 本报告只证明当前 Windows 主机与默认图形路径；不同 GPU/驱动、DPI 和 Linux/macOS 仍需单独实机验收。

@@ -175,7 +175,7 @@ fn with_cloned_captures_states_for_static_root() {
     assert_eq!(node2.children.len(), 2);
 }
 
-/// README Counter 的编译探针（[#180](docs/决策.md#d180) · [README · 示例](../../../../../README.md#示例)）。
+/// README Counter 的编译探针（[使用](docs/使用.md) · [README · 示例](../../../../../README.md#示例)）。
 #[test]
 fn counter_facade_compiles_without_manual_into_or_clone_aliases() {
     let count = crate::ui::state::State::new(0);
