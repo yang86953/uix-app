@@ -1,9 +1,10 @@
 //! Render Loop — OS 事件 + Widget 调度；渲染段委托 draw FrameRenderer。
 
 use crate::app::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry};
-use crate::app::main_thread_queue::MainThreadContext;
 use crate::app::clock::{system_clock, AppClock};
-use crate::app::window_session::{WindowLoopState, WindowSession};
+use crate::app::main_thread_queue::MainThreadContext;
+use crate::app::text_input::sync_window_text_input;
+use crate::app::window_session::{WindowLoopState, WindowSession, WindowTextInputState};
 use crate::core::{Point, Rect};
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
@@ -69,6 +70,7 @@ where
     let mut active_work = ActiveWorkRegistry::new();
     let mut pending_root = None;
     let mut reconcile_pending = false;
+    let mut text_input = WindowTextInputState::default();
     run_widget_loop_with_active_work(
         platform,
         platform_window,
@@ -82,6 +84,7 @@ where
         &mut pending_root,
         &mut reconcile_pending,
         None,
+        &mut text_input,
         font_service,
         image_service,
         theme,
@@ -308,6 +311,7 @@ where
         parts.pending_root,
         parts.reconcile_pending,
         Some(parts.loop_state),
+        parts.text_input,
         font_service,
         image_service,
         theme,
@@ -338,6 +342,7 @@ fn run_widget_loop_with_active_work<M, X, T, R, D, F>(
     pending_root: &mut Option<crate::ui::view::ViewNode>,
     reconcile_pending: &mut bool,
     mut loop_state: Option<&mut WindowLoopState>,
+    text_input: &mut WindowTextInputState,
     font_service: &FontService,
     image_service: &ImageService,
     theme: &RefCell<Theme>,
@@ -362,6 +367,7 @@ where
 {
     let bus_ptr: *mut dyn Platform = platform as *mut dyn Platform;
     let window_id = platform_window.window_id();
+    let native_window = platform_window.native_handle().native_window();
 
     let pending_events = RefCell::new(Vec::<UiEvent>::new());
     let foreign_events = RefCell::new(Vec::<UiEvent>::new());
@@ -373,9 +379,8 @@ where
     let mut rendered_first = false;
     let mut deferred_show = !platform_window.is_visible();
     let loop_t0 = clock.now();
-    let mut last_frame = clock.now();
+    let mut last_animation_frame = clock.now();
     let mut window_visible = true;
-    let mut window_focused = true;
     let mut frame_renderer = FrameRenderer::new();
     // debug overlay：仅当 hit 目标变化时全帧标脏（非每 move）。
     let last_debug_hover = Cell::new(None::<ComponentId>);
@@ -384,17 +389,8 @@ where
         platform_window.properties().height(),
     );
 
-    {
-        let c: &mut dyn crate::native::traits::input::IClipboard = platform.clipboard();
-        let wide: *mut dyn crate::native::traits::input::IClipboard = c;
-        let parts: (usize, usize) = unsafe { std::mem::transmute(wide) };
-        clipboard::set_clipboard_parts(parts.0, parts.1);
-    }
-
     let running = Cell::new(true);
     active_work.sync_app_timers(app_timers.deadlines());
-    let mut ime_session = None;
-    let mut ime_cursor_rect = None;
 
     let collect = |ev: &UiEvent| {
         if ev.window_id.is_some_and(|target| target != window_id) {
@@ -424,7 +420,10 @@ where
                 break;
             }
             first_frame = false;
-        } else if !main_thread_queue.is_empty() || *reconcile_pending {
+        } else if !main_thread_queue.is_empty()
+            || *reconcile_pending
+            || (window_visible && has_invalidation_work(tree))
+        {
             set_loop_state(&mut loop_state, WindowLoopState::Active);
         } else {
             let external_deadline = next_external_deadline();
@@ -553,10 +552,10 @@ where
                     window_visible = false;
                 }
                 UiEventType::WindowFocus => {
-                    window_focused = true;
+                    text_input.window_focused = true;
                 }
                 UiEventType::WindowBlur => {
-                    window_focused = false;
+                    text_input.window_focused = false;
                 }
                 UiEventType::PointerMove => {
                     if let UiEventPayload::PointerMove(ref data) = ev.payload {
@@ -596,7 +595,9 @@ where
                         let is_dark = platform.display().is_dark_mode();
                         tokens.set_mode(is_dark);
                         *theme.borrow_mut() = Theme::new(tokens.snapshot());
-                        tree.dispatch_event(&SystemEvent::ThemeChanged { is_dark });
+                        clipboard::with_clipboard(platform.clipboard(), || {
+                            tree.dispatch_event(&SystemEvent::ThemeChanged { is_dark });
+                        });
                         let normalized_event = UiEvent::theme_changed(is_dark);
                         on_foreign_event(&normalized_event, platform);
                     }
@@ -609,14 +610,16 @@ where
             }
 
             if let Some(we) = map_event(&ev) {
-                tree.dispatch_event(&we);
+                clipboard::with_clipboard(platform.clipboard(), || {
+                    tree.dispatch_event(&we);
+                });
             }
-            sync_ime_session(
+            sync_window_text_input(
                 tree,
                 active_work,
-                &mut ime_session,
-                &mut ime_cursor_rect,
-                window_focused,
+                text_input,
+                window_id,
+                native_window,
                 platform,
             );
 
@@ -632,11 +635,14 @@ where
         let due_work = active_work.drain_due(now);
         let had_registered_work = !due_work.is_empty();
         let due_animation_ids = due_animation_ids(&due_work);
-        let had_due_widget_timer_work =
-            dispatch_due_active_work(tree, &app_timers, &due_work, clock.as_ref());
+        let had_due_widget_timer_work = clipboard::with_clipboard(platform.clipboard(), || {
+            dispatch_due_active_work(tree, &app_timers, &due_work, clock.as_ref())
+        });
         let mut main_thread_context = MainThreadContext::new(pending_root, reconcile_pending);
         let _had_main_thread_work = main_thread_queue.drain(&mut main_thread_context);
-        let had_app_state_semantic_work = tree.drain_app_state_semantic_events();
+        let had_app_state_semantic_work = clipboard::with_clipboard(platform.clipboard(), || {
+            tree.drain_app_state_semantic_events()
+        });
         active_work.sync_timers(tree.active_timers(), clock.now());
         active_work.sync_app_timers(app_timers.deadlines());
         on_runtime_tasks(platform, tree);
@@ -645,7 +651,7 @@ where
         }
 
         let now = clock.now();
-        let dt = (now - last_frame).as_secs_f64().min(0.05);
+        let dt = (now - last_animation_frame).as_secs_f64().min(0.05);
         let pending_layout_work = has_layout_work(tree);
         let pending_effects = tree.has_pending_effects();
         let pending_render_work = tree.has_render_work();
@@ -659,7 +665,6 @@ where
         let active_frame = base_active || had_registered_work;
         let discover_animation_work = base_active || had_due_widget_timer_work;
         if active_frame {
-            last_frame = now;
             let animation_updates = update_due_and_discovered_animations(
                 tree,
                 active_work,
@@ -667,9 +672,13 @@ where
                 dt,
                 discover_animation_work,
             );
+            if animation_clock_should_advance(!due_animation_ids.is_empty(), &animation_updates) {
+                last_animation_frame = now;
+            }
             sync_animation_deadlines(active_work, &animation_updates, now);
             if pending_effects {
-                let _effects_ran = tree.tick_effects();
+                let _effects_ran =
+                    clipboard::with_clipboard(platform.clipboard(), || tree.tick_effects());
             }
         }
 
@@ -746,7 +755,7 @@ where
             let paint_t0 = Instant::now();
             let theme_ref = theme.borrow();
             let snapshot = ThemeSnapshot::new(theme_ref.tokens());
-            let scroll_move = tree.drain_scroll_region_move();
+            let scroll_move = tree.scroll_region_moves();
             let hover_pos = if debug_mode.get() {
                 Some(cursor_pos.get())
             } else {
@@ -774,12 +783,12 @@ where
             (frame_out.outcome, frame_out.inv_source)
         };
 
-        sync_ime_session(
+        sync_window_text_input(
             tree,
             active_work,
-            &mut ime_session,
-            &mut ime_cursor_rect,
-            window_focused,
+            text_input,
+            window_id,
+            native_window,
             platform,
         );
 
@@ -948,12 +957,13 @@ where
         set_loop_state(&mut loop_state, next_state);
     }
 
-    sync_ime_session(
+    text_input.window_focused = false;
+    sync_window_text_input(
         tree,
         active_work,
-        &mut ime_session,
-        &mut ime_cursor_rect,
-        false,
+        text_input,
+        window_id,
+        native_window,
         platform,
     );
     0
@@ -1081,18 +1091,26 @@ fn next_loop_state(
     active_work: &ActiveWorkRegistry,
     external_deadline: Option<Instant>,
 ) -> WindowLoopState {
-    let has_work = {
-        let inv = tree
-            .invalidation
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        inv.has_paint_or_composite() || inv.has_layout()
-    };
-    if has_work {
+    if has_invalidation_work(tree) {
         WindowLoopState::Active
     } else {
         wait_loop_state(active_work, external_deadline)
     }
+}
+
+fn has_invalidation_work(tree: &WidgetTree) -> bool {
+    let inv = tree.invalidation.lock().unwrap_or_else(|e| e.into_inner());
+    inv.has_paint_or_composite() || inv.has_layout()
+}
+
+pub(crate) fn animation_clock_should_advance(
+    had_due_animation: bool,
+    animation_updates: &[(NodeId, bool)],
+) -> bool {
+    had_due_animation
+        || animation_updates
+            .iter()
+            .any(|(_, still_active)| *still_active)
 }
 
 fn has_layout_work(tree: &WidgetTree) -> bool {
@@ -1100,65 +1118,6 @@ fn has_layout_work(tree: &WidgetTree) -> bool {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .has_layout()
-}
-
-fn sync_ime_session(
-    tree: &WidgetTree,
-    active_work: &mut ActiveWorkRegistry,
-    current_session: &mut Option<NodeId>,
-    current_cursor_rect: &mut Option<Rect>,
-    window_focused: bool,
-    platform: &mut dyn Platform,
-) {
-    let requested = window_focused.then(|| {
-        let target = tree.managers().focus.focused_component()?;
-        let client = tree.get(target)?.as_text_input()?;
-        client
-            .accepts_text_input()
-            .then(|| (target, client.text_input_cursor_rect()))
-    });
-    let requested = requested.flatten();
-    let requested_target = requested.map(|(target, _)| target);
-
-    if *current_session != requested_target {
-        if let Some(previous) = current_session.take() {
-            active_work.unregister(ActiveWorkKind::ImeSession(previous));
-            if let Err(err) = platform.text_input().stop() {
-                crate::core::log::error_fn(format!(
-                    "IME session stop failed: {}",
-                    err.short_what()
-                ));
-            }
-        }
-        *current_cursor_rect = None;
-
-        if let Some((target, _)) = requested {
-            if let Err(err) = platform.text_input().start() {
-                crate::core::log::error_fn(format!(
-                    "IME session start failed: {}",
-                    err.short_what()
-                ));
-                return;
-            }
-            active_work.register_open(ActiveWorkKind::ImeSession(target));
-            *current_session = Some(target);
-        }
-    }
-
-    let Some((target, cursor_rect)) = requested else {
-        return;
-    };
-    active_work.register_open(ActiveWorkKind::ImeSession(target));
-    if cursor_rect.w <= 0.0 || cursor_rect.h <= 0.0 || *current_cursor_rect == Some(cursor_rect) {
-        return;
-    }
-    if let Err(err) = platform.text_input().set_cursor_rect(cursor_rect) {
-        crate::core::log::warn_fn(format!(
-            "IME cursor rect update failed: {}",
-            err.short_what()
-        ));
-    }
-    *current_cursor_rect = Some(cursor_rect);
 }
 
 fn set_loop_state(state_slot: &mut Option<&mut WindowLoopState>, state: WindowLoopState) {
@@ -1272,4 +1231,3 @@ pub(crate) fn sync_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn 
         tree.layout();
     }
 }
-

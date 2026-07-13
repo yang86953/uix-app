@@ -127,6 +127,7 @@ pub struct WaylandBackend {
     // ── 文本输入（IME）──────────────────────────────────────────
     pub(crate) text_input_manager: Option<Main<ZwpTextInputManagerV3>>,
     pub(crate) text_input: Option<Main<ZwpTextInputV3>>,
+    pub(crate) text_input_window_id: Option<crate::core::WindowId>,
     pub(crate) text_input_enabled: std::sync::Arc<std::sync::atomic::AtomicBool>,
 
     // ── xdg_activation（窗口提升/聚焦）────────────────────────
@@ -397,6 +398,7 @@ impl WaylandBackend {
             _wl_outputs,
             text_input_manager,
             text_input: None,
+            text_input_window_id: None,
             text_input_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             _xdg_activation: xdg_activation,
             next_window_id: 1,

@@ -64,6 +64,7 @@ impl WidgetLifecycle for SessionLifecycleProbe {
 struct ShutdownTrackingEngine {
     inner: NullEngine,
     shutdown_calls: Rc<Cell<usize>>,
+    shutdown_failures: Rc<Cell<usize>>,
 }
 
 impl ShutdownTrackingEngine {
@@ -71,7 +72,13 @@ impl ShutdownTrackingEngine {
         Self {
             inner: NullEngine::new(),
             shutdown_calls,
+            shutdown_failures: Rc::new(Cell::new(0)),
         }
+    }
+
+    fn with_shutdown_failures(mut self, failures: Rc<Cell<usize>>) -> Self {
+        self.shutdown_failures = failures;
+        self
     }
 }
 
@@ -82,6 +89,14 @@ impl GraphicsEngine for ShutdownTrackingEngine {
 
     fn try_shutdown(&mut self) -> Result<(), Error> {
         self.shutdown_calls.set(self.shutdown_calls.get() + 1);
+        let remaining = self.shutdown_failures.get();
+        if remaining > 0 {
+            self.shutdown_failures.set(remaining - 1);
+            return Err(Error::new(
+                Errc::InvalidState,
+                "injected WindowSession engine shutdown failure",
+            ));
+        }
         self.inner.try_shutdown()
     }
 
@@ -276,6 +291,34 @@ fn window_session_drop_shuts_engine_down_once() {
         );
     }
     assert_eq!(shutdown_calls.get(), 1);
+}
+
+#[test]
+fn window_session_checked_shutdown_failure_remains_retryable() {
+    let shutdown_calls = Rc::new(Cell::new(0));
+    let shutdown_failures = Rc::new(Cell::new(1));
+    let mut session = WindowSession::from_root(
+        label("root"),
+        Box::new(
+            ShutdownTrackingEngine::new(shutdown_calls.clone())
+                .with_shutdown_failures(shutdown_failures),
+        ),
+        320,
+        240,
+    );
+
+    let error = session
+        .try_shutdown()
+        .expect_err("first checked shutdown must propagate the engine failure");
+    assert_eq!(error.code(), Errc::InvalidState);
+    session
+        .try_shutdown()
+        .expect("failed checked shutdown must remain retryable");
+    session
+        .try_shutdown()
+        .expect("successful checked shutdown must be idempotent");
+
+    assert_eq!(shutdown_calls.get(), 2);
 }
 
 #[test]

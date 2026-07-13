@@ -253,6 +253,28 @@ impl VirtualScroll {
         }
     }
 
+    /// Apply declarative configuration while retaining framework-owned scroll state.
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        let viewport_height = self
+            .last_frame
+            .get()
+            .map(|frame| frame.h)
+            .unwrap_or(next.fixed_height.unwrap_or(300.0));
+        let scroll_offset = self.scroll_offset;
+
+        self.item_count = next.item_count;
+        self.item_height = next.item_height;
+        self.fixed_width = next.fixed_width;
+        self.fixed_height = next.fixed_height;
+        self.overscan = next.overscan;
+        self.renderer = next.renderer;
+        self.children = WidgetChildren::new();
+        self.scroll_offset = scroll_offset.min((self.total_height() - viewport_height).max(0.0));
+        if self.item_count == 0 {
+            self.visible_start.set(0);
+        }
+    }
+
     pub fn item_count(mut self, n: usize) -> Self {
         self.item_count = n;
         self
@@ -399,4 +421,3 @@ impl VirtualScroll {
             .set((current.0 + dx, current.1 + dy));
     }
 }
-

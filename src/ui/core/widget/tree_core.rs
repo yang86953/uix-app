@@ -28,7 +28,7 @@ pub struct WidgetTree {
     pub(crate) generations: Vec<u32>,
     pub(crate) next_slot: usize,
     pub(crate) root_id: Option<WidgetId>,
-    pub(crate) scroll_region_move: Option<(Rect, f32, f32)>,
+    pub(crate) scroll_region_moves: Vec<(Rect, f32, f32)>,
     pub tree_version: u64,
     cached_traversal: std::cell::RefCell<(Vec<WidgetId>, u64)>,
 
@@ -56,8 +56,7 @@ pub struct WidgetTree {
     pub(crate) layout_expand_ops: std::cell::Cell<u32>,
     /// 测试探针：记录 `(phase, id, before_h, after_h)` 的 frame 写入。
     #[cfg(test)]
-    pub(crate) layout_frame_trace:
-        std::cell::RefCell<Vec<(u8, ComponentId, i32, i32)>>,
+    pub(crate) layout_frame_trace: std::cell::RefCell<Vec<(u8, ComponentId, i32, i32)>>,
 }
 
 impl Default for WidgetTree {
@@ -69,7 +68,7 @@ impl Default for WidgetTree {
             generations: Vec::new(),
             next_slot: 0,
             root_id: None,
-            scroll_region_move: None,
+            scroll_region_moves: Vec::new(),
             tree_version: 0,
             cached_traversal: std::cell::RefCell::new((Vec::new(), 0)),
             handler_table: HandlerTable::new(),
@@ -648,7 +647,10 @@ impl WidgetTree {
     /// 会在结果已稳定后仍留下 Layout pending，下一帧无事件也再跑 layout（违反休眠）。
     pub(crate) fn set_layout_frame(&mut self, id: ComponentId, new_frame: Rect) -> bool {
         #[cfg(test)]
-        let before_h = self.get(id).map(|n| n.frame().h.round() as i32).unwrap_or(0);
+        let before_h = self
+            .get(id)
+            .map(|n| n.frame().h.round() as i32)
+            .unwrap_or(0);
         if !self.apply_frame_paint(id, new_frame) {
             return false;
         }
@@ -905,4 +907,3 @@ impl WidgetTree {
         }
     }
 }
-

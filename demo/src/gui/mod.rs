@@ -339,6 +339,6 @@ pub fn run() {
         .run();
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "test-harness"))]
 #[path = "../tests/gui.rs"]
 mod tests;

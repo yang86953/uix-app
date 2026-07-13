@@ -21,9 +21,9 @@ pub enum ResultType {
     ServerError, // 500
 }
 
-// Result — 结果页组件。
+// ResultView — 结果页组件。
 component! {
-    pub struct Result {
+    pub struct ResultView {
         type_: ResultType,
         title: String,
         subtitle: String,
@@ -98,7 +98,7 @@ component! {
     }
 }
 
-impl Result {
+impl ResultView {
     pub fn new(type_: ResultType) -> Self {
         Self {
             type_,
@@ -141,9 +141,8 @@ impl Result {
     }
 }
 
-impl Default for Result {
+impl Default for ResultView {
     fn default() -> Self {
         Self::new(ResultType::Info)
     }
 }
-

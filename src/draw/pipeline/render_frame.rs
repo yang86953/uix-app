@@ -11,7 +11,7 @@ use crate::draw::font::text::TextRenderService;
 use crate::draw::image::ImageService;
 use crate::draw::painting::ThemeSnapshot;
 use crate::draw::pipeline::{
-    EncodedFrameExecution, InvalidationSource, RenderMetrics, frame_recording::FrameRecordingEngine,
+    frame_recording::FrameRecordingEngine, EncodedFrameExecution, InvalidationSource, RenderMetrics,
 };
 use crate::draw::traits::{GraphicsEngine, UpdateStrategy};
 use crate::draw::{Color, FontHandle, RenderOutcome};
@@ -21,7 +21,7 @@ pub struct FrameRenderInput<'a> {
     pub rendered_first: bool,
     pub dirty_region: &'a DirtyRegion,
     pub tree_version: u64,
-    pub scroll_move: Option<(Rect, f32, f32)>,
+    pub scroll_move: Option<Vec<(Rect, f32, f32)>>,
     pub theme: ThemeSnapshot<'a>,
     pub font: FontHandle,
     pub font_service: &'a FontService,
@@ -103,9 +103,9 @@ impl FrameRenderer {
             // 让视口内已偏移的内容保持上一帧的旧像素（无 ScrollCopy 协作时），
             // 与新绘的 strip 叠加产生错位/残影。并入整窗后 begin_frame 清空并
             // 重绘整个视口，所有偏移内容由 paint 重新生成。
-            if let Some((viewport, _, _)) = input.scroll_move {
+            for (viewport, _, _) in input.scroll_move.as_deref().unwrap_or_default() {
                 if viewport.w > 0.0 && viewport.h > 0.0 {
-                    r.add_rect(viewport);
+                    r.add_rect(*viewport);
                 }
             }
             r
@@ -219,10 +219,7 @@ impl FrameRenderer {
         let paint_region = region.clone();
         crate::core::perf_probe::begin_record_acc();
         let record_t0 = std::time::Instant::now();
-        if let Err(error) = self
-            .recording_engine
-            .begin_recording(region.full_frame)
-        {
+        if let Err(error) = self.recording_engine.begin_recording(region.full_frame) {
             return FrameRenderOutput {
                 outcome: RenderOutcome::Failed(crate::draw::engine::GraphicsFailure::from_error(
                     error,
@@ -497,4 +494,3 @@ fn classify_invalidation(rendered_first: bool, dirty_region: &DirtyRegion) -> In
     }
     InvalidationSource::None
 }
-

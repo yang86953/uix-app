@@ -8,6 +8,7 @@ struct EndFailingEngine {
     inner: NullEngine,
     failure: GraphicsFailure,
     frame_failure: Option<Error>,
+    resize_failure: Option<Error>,
     shutdowns: Option<Rc<std::cell::Cell<usize>>>,
     checked_shutdown_failures: Option<Rc<std::cell::Cell<usize>>>,
 }
@@ -18,6 +19,7 @@ impl EndFailingEngine {
             inner: NullEngine::new(),
             failure,
             frame_failure: None,
+            resize_failure: None,
             shutdowns: None,
             checked_shutdown_failures: None,
         }
@@ -30,6 +32,11 @@ impl EndFailingEngine {
 
     fn with_frame_failure(mut self, failure: Error) -> Self {
         self.frame_failure = Some(failure);
+        self
+    }
+
+    fn with_resize_failure(mut self, failure: Error) -> Self {
+        self.resize_failure = Some(failure);
         self
     }
 
@@ -63,6 +70,9 @@ impl GraphicsEngine for EndFailingEngine {
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        if let Some(error) = &self.resize_failure {
+            return Err(error.clone());
+        }
         self.inner.resize(width, height)
     }
 
@@ -178,6 +188,38 @@ fn main_frame_encoder_failure_is_retained_until_the_next_frame_boundary() {
     assert_eq!(
         actions.borrow().as_slice(),
         [RecoveryAction::RebuildSurface]
+    );
+}
+
+#[test]
+fn failed_resize_rebuilds_the_requested_extent_at_the_next_frame_boundary() {
+    let rebuilds = Rc::new(RefCell::new(Vec::new()));
+    let recorded_rebuilds = Rc::clone(&rebuilds);
+    let mut engine = RecoveringGraphicsEngine::new(
+        Box::new(
+            EndFailingEngine::new(surface_lost()).with_resize_failure(Error::new(
+                Errc::GraphicsSurfaceLost,
+                "injected resize surface loss",
+            )),
+        ),
+        Box::new(move |action, width, height| {
+            recorded_rebuilds.borrow_mut().push((action, width, height));
+            Ok(Box::new(NullEngine::new()))
+        }),
+    );
+    engine.initialize(4, 3).expect("initial engine");
+
+    let error = engine
+        .resize(17, 19)
+        .expect_err("injected resize failure must propagate");
+    assert_eq!(error.code(), Errc::GraphicsSurfaceLost);
+    assert!(matches!(
+        engine.begin_frame(UpdateStrategy::FullRedraw),
+        RenderOutcome::FrameReady(_)
+    ));
+    assert_eq!(
+        rebuilds.borrow().as_slice(),
+        [(RecoveryAction::RebuildSurface, 17, 19)]
     );
 }
 

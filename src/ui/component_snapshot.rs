@@ -18,12 +18,12 @@ use crate::ui::widgets::{
     MenuMode, Message, MessagePlacement, Modal, NavItem, NotifPlacement, Notification, OptGroup,
     Pagination, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement,
     PopoverTrigger, ProgressBar, ProgressMode, ProgressType, QRCode, Radio, RadioDirection, Rate,
-    Result, ResultType, RichText, RichTextSegment, ScrollView, Segmented, Select, SelectableItem,
-    SelectableList, Sider, Skeleton, SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize,
-    Splitter, Step, Steps, Switch, Tab, TabPosition, Table, TableColumn, TableRow, Tabs, Tag,
-    TagColor, ThemeToggle, TimePicker, Timeline, TimelineItem, Tooltip, TooltipPlacement, Transfer,
-    TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography, TypographyType, Upload,
-    Watermark,
+    ResultType, ResultView, RichText, RichTextSegment, ScrollView, Segmented, Select,
+    SelectableItem, SelectableList, Sider, Skeleton, SkeletonShape, Slider, Space, SpaceSize, Spin,
+    SpinSize, Splitter, Step, Steps, Switch, Tab, TabPosition, Table, TableColumn, TableRow, Tabs,
+    Tag, TagColor, ThemeToggle, TimePicker, Timeline, TimelineItem, Tooltip, TooltipPlacement,
+    Transfer, TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography, TypographyType,
+    Upload, Watermark,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1234,7 +1234,7 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     if let Some(descriptions) = component.downcast_ref::<Descriptions>() {
         return descriptions.snapshot_fields();
     }
-    if let Some(result) = component.downcast_ref::<Result>() {
+    if let Some(result) = component.downcast_ref::<ResultView>() {
         return result.snapshot_fields();
     }
     if let Some(table) = component.downcast_ref::<Table>() {
@@ -1281,4 +1281,3 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     }
     SnapshotFields::Unknown
 }
-

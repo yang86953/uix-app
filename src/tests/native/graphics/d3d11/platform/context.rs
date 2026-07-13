@@ -68,6 +68,23 @@ fn dxgi_present_out_of_memory_is_typed() {
 }
 
 #[test]
+fn dxgi_resize_device_removed_is_a_typed_device_failure() {
+    let error = map_dxgi_resize_result(::windows::core::HRESULT(0x887A_0005u32 as i32))
+        .expect_err("DXGI resize failure must propagate");
+
+    assert_eq!(error.code(), Errc::GraphicsDeviceLost);
+    assert!(error.what().contains("IDXGISwapChain::ResizeBuffers"));
+}
+
+#[test]
+fn dxgi_resize_out_of_memory_is_typed() {
+    let error = map_dxgi_resize_result(::windows::core::HRESULT(0x8007_000Eu32 as i32))
+        .expect_err("DXGI resize out-of-memory must propagate");
+
+    assert_eq!(error.code(), Errc::GraphicsOutOfMemory);
+}
+
+#[test]
 fn factory_create_d3d11_gpu_native_swapchain_on_real_window() {
     let mut platform = crate::native::create_platform().expect("platform");
     let window = platform

@@ -221,7 +221,7 @@ impl WindowsPlatform {
                 0
             }
             WM_IME_STARTCOMPOSITION => {
-                if self.text_input_subsys.tsf_session_active() {
+                if self.text_input_subsys.tsf_session_active_for(window_id) {
                     return 0;
                 }
                 if let Some(event) = ime_start_composition_event(&mut ime.borrow_mut()) {
@@ -231,7 +231,7 @@ impl WindowsPlatform {
             }
             WM_IME_COMPOSITION => {
                 // TSF TextStore 已接管时跳过 IMM32，避免双发。
-                if self.text_input_subsys.tsf_session_active() {
+                if self.text_input_subsys.tsf_session_active_for(window_id) {
                     return 0;
                 }
                 let flags = lparam as u32;
@@ -270,7 +270,7 @@ impl WindowsPlatform {
                 }
             }
             WM_IME_ENDCOMPOSITION => {
-                if self.text_input_subsys.tsf_session_active() {
+                if self.text_input_subsys.tsf_session_active_for(window_id) {
                     return 0;
                 }
                 if let Some(event) = ime_end_composition_event(&mut ime.borrow_mut()) {

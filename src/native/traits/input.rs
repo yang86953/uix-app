@@ -203,6 +203,16 @@ pub trait ICursor {
 }
 
 pub trait ITextInput {
+    /// Select the native window that owns the following IME session calls.
+    ///
+    /// Text input is window-scoped even when a platform exposes one process-wide
+    /// IME service. Implementations must switch both the native target and the
+    /// `WindowId` used to tag emitted events as one operation.
+    fn set_target_window(
+        &mut self,
+        window_id: crate::core::WindowId,
+        native_window: *mut std::ffi::c_void,
+    ) -> Result<()>;
     fn start(&mut self) -> Result<()>;
     fn stop(&mut self) -> Result<()>;
     fn set_cursor_rect(&mut self, rect: Rect) -> Result<()>;

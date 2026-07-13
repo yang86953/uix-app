@@ -8,6 +8,7 @@ use std::time::Duration;
 use crate::app::app_timer::{AppTimerQueue, TimerHandle};
 use crate::app::main_thread_queue::{MainThreadContext, MainThreadQueue};
 use crate::app::window_config::WindowConfig;
+use crate::app::window_session::TextInputCoordinator;
 use crate::core::WindowId;
 use crate::native::traits::event::EventLoopWaker;
 use crate::ui::Theme;
@@ -21,6 +22,7 @@ pub(crate) struct AppRuntime {
     shutting_down: Arc<AtomicBool>,
     next_window_id: Arc<Mutex<u64>>,
     event_loop_waker: Arc<Mutex<EventLoopWaker>>,
+    text_input_coordinator: TextInputCoordinator,
 }
 
 #[derive(Clone)]
@@ -57,6 +59,16 @@ impl AppRuntime {
         alive: Arc<AtomicBool>,
     ) {
         self.reserve_after(window_id);
+        let event_loop_waker = self.event_loop_waker.clone();
+        app_timers.set_removal_waker(Arc::new(move || {
+            let waker = {
+                event_loop_waker
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone()
+            };
+            waker.wake();
+        }));
         let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
         if self.shutting_down.load(Ordering::Acquire) {
             alive.store(false, Ordering::Release);
@@ -73,6 +85,10 @@ impl AppRuntime {
                 alive,
             },
         );
+    }
+
+    pub(crate) fn text_input_coordinator(&self) -> TextInputCoordinator {
+        self.text_input_coordinator.clone()
     }
 
     pub(crate) fn request_open_window(&self, config: WindowConfig) -> ReservedWindowSession {
@@ -262,10 +278,12 @@ impl AppRuntime {
     }
 
     fn wake_event_loop(&self) {
-        self.event_loop_waker
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .wake();
+        let waker = {
+            self.event_loop_waker
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone()
+        };
+        waker.wake();
     }
 }
-

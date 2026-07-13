@@ -2,10 +2,8 @@ use super::*;
 use crate::common::page::{
     INIT_H, INIT_W, INNER_W, PAGE_APP, PAGE_COUNT, PAGE_GENERAL, PAGE_OTHER, PAGE_TITLES, SIDEBAR_W,
 };
-use uix::prelude::{
-    dynamic_label, Button, DesignTokens, Label, Rect, State, SystemEvent, ViewAdapter,
-};
-use uix::ui::core::widget::WidgetCore;
+use uix::prelude::{dynamic_label, Button, DesignTokens, Label, Rect, State, SystemEvent};
+use uix::ui::test_harness::{ViewAdapter, WidgetCore};
 use uix::ui::traits::WidgetLayout;
 use uix::ui::widgets::ScrollView;
 
@@ -78,9 +76,9 @@ fn home_page_banners_fill_content_width_after_resize() {
     let page_col = tree.get(scroll.0).unwrap().children()[0];
     let page_col_w = tree.get(page_col).unwrap().frame().w;
     let gutter = 8.0; // ScrollBar::gutter() = SB_W(6) + EDGE_PAD(2)
-    // 有纵向滚动条时内容列扣除 gutter；无条时与视口同宽。
-    let width_ok = (page_col_w - scroll_w).abs() < 2.0
-        || (scroll_w - page_col_w - gutter).abs() < 2.0;
+                      // 有纵向滚动条时内容列扣除 gutter；无条时与视口同宽。
+    let width_ok =
+        (page_col_w - scroll_w).abs() < 2.0 || (scroll_w - page_col_w - gutter).abs() < 2.0;
     assert!(
         page_col_w > 1200.0 && width_ok,
         "page column should fill ScrollView (minus scrollbar gutter), col={page_col_w} scroll={scroll_w}"

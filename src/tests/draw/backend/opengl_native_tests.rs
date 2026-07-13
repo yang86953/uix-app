@@ -237,10 +237,12 @@ fn opengles_native_path_executes_encoded_cached_picture_in_bound_offscreen() {
 
     let mut encoder = FrameEncoder::new(32, 32).expect("FrameEncoder");
     encoder.clear(Color::transparent());
-    encoder.cpu_segment([FrameRasterOp::FillRect {
-        rect: FrameRect::new(8, 8, 16, 16),
-        color: Color::blue(),
-    }]);
+    encoder
+        .cpu_segment([FrameRasterOp::FillRect {
+            rect: FrameRect::new(8, 8, 16, 16),
+            color: Color::blue(),
+        }])
+        .unwrap();
     assert_eq!(
         engine
             .try_execute_encoded_picture(&picture, &encoder)

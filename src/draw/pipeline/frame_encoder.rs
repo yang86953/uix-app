@@ -89,9 +89,15 @@ impl FrameImage {
 /// compositing is not equivalent and must not be used as a substitute.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FrameRasterOp {
-    FillRect { rect: FrameRect, color: Color },
+    FillRect {
+        rect: FrameRect,
+        color: Color,
+    },
     /// Channel-wise saturating add into the destination (CPU Additive blend).
-    FillRectAdditive { rect: FrameRect, color: Color },
+    FillRectAdditive {
+        rect: FrameRect,
+        color: Color,
+    },
     /// Copy pixels from `viewport` translated by `(dx, dy)` into `viewport`
     /// (same semantics as [`Canvas2D::scroll_region`] with rounded deltas).
     ScrollCopy {
@@ -197,6 +203,9 @@ pub enum FrameEncoderError {
         height: i32,
         actual: usize,
     },
+    DestinationDependentCpuSegment {
+        operation: &'static str,
+    },
 }
 
 impl std::fmt::Display for FrameEncoderError {
@@ -213,6 +222,10 @@ impl std::fmt::Display for FrameEncoderError {
                 f,
                 "frame image {width}x{height} requires {} pixels, got {actual}",
                 (*width as usize).saturating_mul(*height as usize)
+            ),
+            Self::DestinationDependentCpuSegment { operation } => write!(
+                f,
+                "{operation} depends on destination pixels and cannot be recorded as a transparent CPU segment"
             ),
         }
     }
@@ -263,14 +276,23 @@ impl FrameEncoder {
         self.commands.push(FrameCommand::Native { operation });
     }
 
-    /// Records a small API-neutral CPU-raster subset as one bounded fallback
-    /// segment. The operation stream is immediately rasterized to a
-    /// transparent source image so executors need no software raster API
-    /// objects and can alpha-compose it at its exact painter-order position.
-    pub fn cpu_segment(&mut self, operations: impl IntoIterator<Item = FrameRasterOp>) {
+    /// Records the source-independent CPU-raster subset as one bounded fallback
+    /// segment. Destination-dependent operations must execute against the
+    /// accumulating target and are rejected before this encoder is mutated.
+    pub fn cpu_segment(
+        &mut self,
+        operations: impl IntoIterator<Item = FrameRasterOp>,
+    ) -> Result<(), FrameEncoderError> {
         let operations = operations.into_iter().collect::<Vec<_>>();
         if operations.is_empty() {
-            return;
+            return Ok(());
+        }
+        if let Some(operation) = operations.iter().find_map(|operation| match operation {
+            FrameRasterOp::FillRect { .. } => None,
+            FrameRasterOp::FillRectAdditive { .. } => Some("FillRectAdditive"),
+            FrameRasterOp::ScrollCopy { .. } => Some("ScrollCopy"),
+        }) {
+            return Err(FrameEncoderError::DestinationDependentCpuSegment { operation });
         }
         let mut image = self.transparent_reference();
         for operation in &operations {
@@ -286,6 +308,7 @@ impl FrameEncoder {
             src: full,
             dst: full,
         });
+        Ok(())
     }
 
     /// Records an exact CPU-rasterized source segment. The payload is
@@ -575,4 +598,3 @@ fn blend_pixel_additive(source: u32, destination: u32) -> u32 {
     let add = |shift: u32| (((source >> shift) & 0xff) + ((destination >> shift) & 0xff)).min(0xff);
     (add(24) << 24) | (add(16) << 16) | (add(8) << 8) | add(0)
 }
-

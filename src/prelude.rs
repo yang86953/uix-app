@@ -56,11 +56,6 @@ pub use crate::ui::{
     SystemEventKind, WidgetChildren,
 };
 pub use crate::ui::{Animation, Easing};
-pub use crate::ui::{
-    DragManager, FocusManager, InteractionManager, StateManager, TextManager, WidgetManagers,
-};
-pub use crate::ui::{OverlayEntry, OverlayId, OverlayKind, OverlayStack};
-
 // ui / components
 pub use crate::ui::{
     Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus, BarChart,
@@ -73,7 +68,7 @@ pub use crate::ui::{
     Message, MessageItem, MessagePlacement, Modal, NavGroup, NavItem, Navigation, NotifPlacement,
     Notification, NotificationItem, OptGroup, Pagination, PieChart, PieData, Popconfirm,
     PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger, ProgressBar, ProgressMode,
-    ProgressType, QRCode, Radio, RadioDirection, Rate, Result, ResultType, RichText,
+    ProgressType, QRCode, Radio, RadioDirection, Rate, ResultType, ResultView, RichText,
     RichTextSegment, RichTextStyle, ScrollView, Segmented, Select, SelectableItem, SelectableList,
     SharedActive, Sider, Skeleton, SkeletonShape, Slider, SortDirection, Space, SpaceSize, Spin,
     SpinSize, Splitter, Step, StepStatus, Steps, Switch, Tab, TabPosition, Table, TableChange,
@@ -93,8 +88,7 @@ pub use crate::app::{map_ui_event, App, AppHandle, AppMode, TimerHandle, WindowC
 pub use crate::ui::view::{
     button, column, column_fit, dynamic_label, embed, grid, input, label, row, scroll, show, space,
     ButtonBuilder, GridBuilder, InputBuilder, IntoLabelContent, IntoViewChildren, ScrollBuilder,
-    StyleExt, Ui, View, ViewAdapter, ViewNode,
+    StyleExt, Ui, View, ViewNode,
 };
 pub use crate::views;
 pub use crate::with_cloned;
-

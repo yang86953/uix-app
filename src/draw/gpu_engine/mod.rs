@@ -12,12 +12,6 @@ use crate::draw::pipeline::{
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
 use crate::native::traits::present::IGraphicsContext;
 
-// Compatibility names retain their former public draw path while the source
-// of truth is native OpenGL ES. They do not expose a GL object or loader.
-#[cfg(feature = "opengles")]
-pub use crate::native::graphics::opengl::shaders::{
-    BLIT_FRAG, BLIT_RGBA_FRAG, BLUR_FRAG, FULLSCREEN_VERT, RECT_FRAG, RECT_VERT,
-};
 /// GPU 渲染引擎 — 委托 `RenderSession` + `RenderBackend`（GL / D3D11 / …）。
 pub struct GpuEngine {
     session: RenderSession,

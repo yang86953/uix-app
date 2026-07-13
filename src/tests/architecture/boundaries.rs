@@ -1039,10 +1039,36 @@ fn low_level_widget_loop_stays_off_prelude() {
 }
 
 #[test]
+fn draw_gpu_engine_has_no_legacy_shader_reexports() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let gpu_engine = fs::read_to_string(src.join("draw/gpu_engine/mod.rs")).unwrap();
+    let shader_names = [
+        "BLIT_FRAG",
+        "BLIT_RGBA_FRAG",
+        "BLUR_FRAG",
+        "FULLSCREEN_VERT",
+        "RECT_FRAG",
+        "RECT_VERT",
+    ];
+
+    assert!(
+        shader_names.iter().all(|name| !gpu_engine.contains(name)),
+        "native shader sources must not be re-exported through draw::gpu_engine"
+    );
+}
+
+#[test]
 fn internal_widget_tree_types_stay_off_user_entrypoints() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let checked = ["prelude.rs", "ui/mod.rs"];
-    let internal_types = ["WidgetTree", "WidgetNode", "BoxedWidget"];
+    let checked = ["prelude.rs"];
+    let internal_types = [
+        "WidgetTree",
+        "WidgetNode",
+        "BoxedWidget",
+        "ViewAdapter",
+        "WidgetManagers",
+        "OverlayStack",
+    ];
     let mut violations = Vec::new();
 
     for rel in checked {
@@ -1065,7 +1091,18 @@ fn internal_widget_tree_types_stay_off_user_entrypoints() {
 
     assert!(
         violations.is_empty(),
-        "WidgetTree/WidgetNode/BoxedWidget are internal view adapter details, not user entrypoints: {violations:?}"
+        "internal runtime types must stay off user entrypoints: {violations:?}"
+    );
+
+    let ui_mod = fs::read_to_string(src.join("ui/mod.rs")).unwrap();
+    let view_mod = fs::read_to_string(src.join("ui/view/mod.rs")).unwrap();
+    assert!(
+        ui_mod.contains("pub(crate) mod core;") && !ui_mod.contains("pub mod core;"),
+        "ui::core must remain an internal runtime module"
+    );
+    assert!(
+        view_mod.contains("pub(crate) mod adapter;") && !view_mod.contains("pub mod adapter;"),
+        "ViewAdapter must remain an internal runtime module"
     );
 }
 

@@ -1,13 +1,14 @@
+use crate::ui::foundation::virtual_scroll::VirtualScroll;
 use crate::ui::widgets::{
     Affix, Alert, Anchor, AutoComplete, Avatar, BackTop, Badge, BarChart, Breadcrumb, Button,
     Calendar, Card, Carousel, Cascader, Checkbox, Collapse, ColorPicker, Container, Content,
     DatePicker, Descriptions, Divider, Drawer, Dropdown, Empty, FloatButton, Footer, Form,
     FormItem, Grid, Header, Icon, Image, Input, InputNumber, Label, Layout, LineChart, List,
     Mentions, Menu, Message, Modal, NavItem, Notification, Pagination, PieChart, Popconfirm,
-    Popover, ProgressBar, QRCode, Radio, Rate, Result as ResultWidget, RichText, ScrollView,
-    Segmented, Select, SelectableList, Sider, Skeleton, Slider, Space, Spin, Splitter, Steps,
-    Switch, Table, Tabs, Tag, ThemeToggle, TimePicker, Timeline, Tooltip, Transfer, Tree,
-    TreeSelect, Typography, Upload, Watermark,
+    Popover, ProgressBar, QRCode, Radio, Rate, ResultView, RichText, ScrollView, Segmented, Select,
+    SelectableList, Sider, Skeleton, Slider, Space, Spin, Splitter, Steps, Switch, Table, Tabs,
+    Tag, ThemeToggle, TimePicker, Timeline, Tooltip, Transfer, Tree, TreeSelect, Typography,
+    Upload, Watermark,
 };
 use crate::ui::WidgetComponent;
 
@@ -31,6 +32,7 @@ pub(crate) fn patch_builtin_widget(
     }
 
     patch_as!(Button);
+    patch_as!(VirtualScroll);
     patch_as!(Container);
     patch_as!(Grid);
     patch_as!(Layout);
@@ -70,7 +72,7 @@ pub(crate) fn patch_builtin_widget(
     patch_as!(Collapse);
     patch_as!(Carousel);
     patch_as!(Descriptions);
-    patch_as!(ResultWidget);
+    patch_as!(ResultView);
     patch_as!(List);
     patch_as!(Timeline);
     patch_as!(Tree);

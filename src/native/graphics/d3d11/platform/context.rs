@@ -17,29 +17,29 @@ use crate::native::traits::present::{
     GpuSolidRect, GpuStrokeRect, GraphicsBackend, GraphicsContextCaps, IGraphicsContext,
     NativeRasterCaps, OffscreenTargetId, PresentDamage, PresentFrame, SoftFallbackTile,
 };
+use ::windows::core::Interface;
 use ::windows::Win32::Foundation::{E_OUTOFMEMORY, HMODULE, HWND, TRUE};
 use ::windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE, D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL,
     D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
 };
 use ::windows::Win32::Graphics::Direct3D11::{
-    D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_CPU_ACCESS_READ,
-    D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_SDK_VERSION,
-    D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING, D3D11_VIEWPORT,
     D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, ID3D11RenderTargetView,
-    ID3D11ShaderResourceView, ID3D11Texture2D,
+    ID3D11ShaderResourceView, ID3D11Texture2D, D3D11_BIND_RENDER_TARGET,
+    D3D11_BIND_SHADER_RESOURCE, D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+    D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC,
+    D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING, D3D11_VIEWPORT,
 };
 use ::windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
     DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
 };
 use ::windows::Win32::Graphics::Dxgi::{
-    DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET,
-    DXGI_ERROR_DRIVER_INTERNAL_ERROR, DXGI_ERROR_REMOTE_OUTOFMEMORY, DXGI_PRESENT,
-    DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_CHAIN_FLAG, DXGI_SWAP_EFFECT_DISCARD,
-    DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIDevice, IDXGISwapChain,
+    IDXGIDevice, IDXGISwapChain, DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED,
+    DXGI_ERROR_DEVICE_RESET, DXGI_ERROR_DRIVER_INTERNAL_ERROR, DXGI_ERROR_REMOTE_OUTOFMEMORY,
+    DXGI_PRESENT, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_CHAIN_FLAG, DXGI_SWAP_EFFECT_DISCARD,
+    DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
-use ::windows::core::Interface;
 
 type HWND_PTR = *mut c_void;
 
@@ -104,10 +104,18 @@ fn d3d_error(operation: &str, err: ::windows::core::Error) -> Error {
 }
 
 pub(crate) fn map_dxgi_present_result(result: ::windows::core::HRESULT) -> Result<()> {
+    map_dxgi_operation_result("IDXGISwapChain::Present", result)
+}
+
+pub(crate) fn map_dxgi_resize_result(result: ::windows::core::HRESULT) -> Result<()> {
+    map_dxgi_operation_result("IDXGISwapChain::ResizeBuffers", result)
+}
+
+fn map_dxgi_operation_result(operation: &str, result: ::windows::core::HRESULT) -> Result<()> {
     if result.is_err() {
         return Err(Error::new(
             d3d_hresult_code(result),
-            format!("D3d11Context: IDXGISwapChain::Present failed: {result:?}"),
+            format!("D3d11Context: {operation} failed: {result:?}"),
         ));
     }
     Ok(())
@@ -522,7 +530,7 @@ impl IGraphicsContext for D3d11Context {
             return Ok(());
         }
         self.release_rtv();
-        unsafe {
+        if let Err(error) = unsafe {
             self.swap_chain.ResizeBuffers(
                 0,
                 drawable.width as u32,
@@ -530,13 +538,9 @@ impl IGraphicsContext for D3d11Context {
                 DXGI_FORMAT_B8G8R8A8_UNORM,
                 DXGI_SWAP_CHAIN_FLAG(0),
             )
+        } {
+            map_dxgi_resize_result(error.code())?;
         }
-        .map_err(|err| {
-            Error::new(
-                Errc::PlatformError,
-                format!("D3d11Context: ResizeBuffers failed: {err}"),
-            )
-        })?;
         self.logical_width = drawable.logical_width;
         self.logical_height = drawable.logical_height;
         self.width = drawable.width;
@@ -1022,4 +1026,3 @@ impl IGraphicsContext for D3d11Context {
         self.present_result()
     }
 }
-

@@ -1,7 +1,6 @@
 //! `component!` 自定义 widget 示例。
 
 use uix::prelude::*;
-use uix::ui::core::widget::WidgetTree;
 
 component! {
     pub struct Counter { pub count: u32 }
@@ -21,7 +20,7 @@ component! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext) {
         let bg = ctx.tokens().color_primary_bg();
         let color = ctx.tokens().color_primary();
         ctx.fill_rect(frame, bg, None);
@@ -51,7 +50,7 @@ component! {
         Rect::new(cx - max_r, cy - max_r, max_r * 2.0, max_r * 2.0)
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext) {
         let cx = frame.x + frame.w * 0.5;
         let cy = frame.y + frame.h * 0.5;
         let phase = (self.time * 1.5).sin() * 0.5 + 0.5;
@@ -85,7 +84,7 @@ component! {
         Rect::new(cx - max_r, ball_top - max_r, max_r * 2.0, ball_bot - ball_top + max_r * 2.0)
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext) {
         let t = self.time / 2.0;
         let bounce = if t < 0.5 {
             1.0 - (t * 2.0).powf(2.0)

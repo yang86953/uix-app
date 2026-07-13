@@ -9,7 +9,7 @@ use crate::ui::widgets::Container;
 use std::any::{Any, TypeId};
 use std::fmt;
 use crate::ui::style::{ StyleSet };
-use crate::ui::widgets::{ Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus, BarChart, BarData, Breadcrumb, BreadcrumbItem, Button, Calendar, Card, Carousel, Cascader, CascaderOption, Checkbox, Collapse, ColorPicker, Content, DatePicker, Descriptions, DescriptionsItem, Divider, DividerDirection, DividerOrientation, Drawer, DrawerPlacement, Dropdown, Empty, FloatButton, Footer, Form, FormItem, FormLayout, Grid, Header, Icon, Image, Input, InputNumber, Label, Layout, LineChart, LineData, List, Mentions, Menu, MenuItem, MenuMode, Message, MessagePlacement, Modal, NavItem, NotifPlacement, Notification, OptGroup, Pagination, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger, ProgressBar, ProgressMode, ProgressType, QRCode, Radio, RadioDirection, Rate, Result, ResultType, RichText, RichTextSegment, ScrollView, Segmented, Select, SelectableItem, SelectableList, Sider, Skeleton, SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize, Splitter, Step, Steps, Switch, Tab, TabPosition, Table, TableColumn, TableRow, Tabs, Tag, TagColor, ThemeToggle, TimePicker, Timeline, TimelineItem, Tooltip, TooltipPlacement, Transfer, TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography, TypographyType, Upload, Watermark };
+use crate::ui::widgets::{ Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus, BarChart, BarData, Breadcrumb, BreadcrumbItem, Button, Calendar, Card, Carousel, Cascader, CascaderOption, Checkbox, Collapse, ColorPicker, Content, DatePicker, Descriptions, DescriptionsItem, Divider, DividerDirection, DividerOrientation, Drawer, DrawerPlacement, Dropdown, Empty, FloatButton, Footer, Form, FormItem, FormLayout, Grid, Header, Icon, Image, Input, InputNumber, Label, Layout, LineChart, LineData, List, Mentions, Menu, MenuItem, MenuMode, Message, MessagePlacement, Modal, NavItem, NotifPlacement, Notification, OptGroup, Pagination, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger, ProgressBar, ProgressMode, ProgressType, QRCode, Radio, RadioDirection, Rate, ResultType, ResultView, RichText, RichTextSegment, ScrollView, Segmented, Select, SelectableItem, SelectableList, Sider, Skeleton, SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize, Splitter, Step, Steps, Switch, Tab, TabPosition, Table, TableColumn, TableRow, Tabs, Tag, TagColor, ThemeToggle, TimePicker, Timeline, TimelineItem, Tooltip, TooltipPlacement, Transfer, TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography, TypographyType, Upload, Watermark };
 
 use crate::component;
 use crate::draw::spatial::PhysicalUnit;
@@ -1694,7 +1694,7 @@ fn data_display_and_other_snapshots_capture_static_config() {
     );
 
     assert_eq!(
-        Result::new(ResultType::Success)
+        ResultView::new(ResultType::Success)
             .title("Done")
             .subtitle("All set")
             .extra_text("Continue")

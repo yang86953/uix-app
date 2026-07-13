@@ -1684,7 +1684,11 @@ fn rendered_frame_with_scroll_move_adds_scroll_frame_to_partial_damage() {
             rendered_first: true,
             dirty_region: &region,
             tree_version: 0,
-            scroll_move: Some((Rect::new(30.0, 40.0, 50.0, 60.0), 0.0, -12.0)),
+            scroll_move: Some(vec![(
+                Rect::new(30.0, 40.0, 50.0, 60.0),
+                0.0,
+                -12.0,
+            )]),
             theme,
             font: FontHandle::default(),
             font_service: &fs,
@@ -1703,6 +1707,47 @@ fn rendered_frame_with_scroll_move_adds_scroll_frame_to_partial_damage() {
         ]))
     );
     assert_eq!(out.inv_source, InvalidationSource::DirtyRegion);
+}
+
+#[test]
+fn rendered_frame_keeps_every_same_frame_scroll_viewport_narrow() {
+    let mut renderer = FrameRenderer::new();
+    let mut engine = NullEngine::new();
+    let _ = engine.initialize(320, 160);
+    let tokens = MockTokens;
+    let theme = ThemeSnapshot::new(&tokens);
+    let fs = FontService::new();
+    let img = ImageService::new();
+    let region = DirtyRegion::empty();
+
+    let out = renderer.render_frame(
+        &mut engine,
+        &EmptyScene::new(),
+        FrameRenderInput {
+            rendered_first: true,
+            dirty_region: &region,
+            tree_version: 0,
+            scroll_move: Some(vec![
+                (Rect::new(10.0, 20.0, 80.0, 60.0), 0.0, 12.0),
+                (Rect::new(200.0, 30.0, 70.0, 50.0), -8.0, 0.0),
+            ]),
+            theme,
+            font: FontHandle::default(),
+            font_service: &fs,
+            image_service: &img,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+
+    assert_eq!(
+        out.outcome,
+        RenderOutcome::PresentPending(DamageRegion::partial(vec![
+            Rect::new(9.0, 19.0, 82.0, 62.0),
+            Rect::new(199.0, 29.0, 72.0, 52.0),
+        ]))
+    );
 }
 
 /// GPU 主路径（!partial_redraw）绘制全帧：strategy=FullRedraw、不裁剪绘制，
@@ -1768,7 +1813,11 @@ fn first_frame_with_scroll_move_still_uses_full_damage() {
             rendered_first: false,
             dirty_region: &region,
             tree_version: 0,
-            scroll_move: Some((Rect::new(10.0, 12.0, 30.0, 40.0), 0.0, -8.0)),
+            scroll_move: Some(vec![(
+                Rect::new(10.0, 12.0, 30.0, 40.0),
+                0.0,
+                -8.0,
+            )]),
             theme,
             font: FontHandle::default(),
             font_service: &fs,
@@ -2481,7 +2530,11 @@ fn scroll_move_shifts_viewport_content_and_repaints_exposed_strip() {
             rendered_first: true,
             dirty_region: &dirty,
             tree_version: 1,
-            scroll_move: Some((Rect::new(0.0, 0.0, 100.0, 100.0), 0.0, 50.0)),
+            scroll_move: Some(vec![(
+                Rect::new(0.0, 0.0, 100.0, 100.0),
+                0.0,
+                50.0,
+            )]),
             theme: ThemeSnapshot::new(&tokens),
             font: FontHandle::default(),
             font_service: &fs,
@@ -2535,7 +2588,11 @@ fn scroll_move_expands_dirty_strategy_to_include_viewport() {
             rendered_first: true,
             dirty_region: &dirty,
             tree_version: 0,
-            scroll_move: Some((Rect::new(0.0, 0.0, 100.0, 100.0), 0.0, 40.0)),
+            scroll_move: Some(vec![(
+                Rect::new(0.0, 0.0, 100.0, 100.0),
+                0.0,
+                40.0,
+            )]),
             theme,
             font: FontHandle::default(),
             font_service: &fs,
@@ -2594,7 +2651,11 @@ fn scroll_move_does_not_record_scroll_copy() {
             rendered_first: true,
             dirty_region: &dirty,
             tree_version: 0,
-            scroll_move: Some((Rect::new(0.0, 0.0, 100.0, 100.0), 0.0, 40.0)),
+            scroll_move: Some(vec![(
+                Rect::new(0.0, 0.0, 100.0, 100.0),
+                0.0,
+                40.0,
+            )]),
             theme,
             font: FontHandle::default(),
             font_service: &fs,

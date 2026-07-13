@@ -10,15 +10,16 @@ use crate::app::app_handle::{
     wrap_root_with_notification_overlay, AppHandle, AppNotificationState,
 };
 use crate::app::app_timer::{AppTimerQueue, TimerHandle};
+use crate::app::clock::{system_clock, AppClock};
 use crate::app::event_loop::run_window_session_loop_with_system_theme_and_tasks;
 use crate::app::main_thread_queue::{MainThreadContext, MainThreadQueue};
 use crate::app::session_runtime::{AppRuntime, OpenWindowRequest};
 use crate::app::shell::cli::Cli;
 use crate::app::shell::di::Container;
-use crate::app::clock::{system_clock, AppClock};
+use crate::app::text_input::sync_window_text_input;
 use crate::app::window_config::WindowConfig;
 use crate::app::window_session::{WindowLoopState, WindowSession};
-use crate::core::{Errc, Error, Point, WindowId};
+use crate::core::{Errc, Error, Point, Rect, WindowId};
 use crate::data::SettingsService;
 use crate::draw::engine::bootstrap::{
     assemble_graphics_engine, bootstrap_graphics_engine, ProbeReport,
@@ -82,6 +83,7 @@ pub(crate) struct SecondaryWindowSession {
     frame_renderer: FrameRenderer,
     rendered_first: bool,
     pub(crate) last_frame: Option<Instant>,
+    last_animation_frame: Option<Instant>,
     window_visible: bool,
     initial_size: (i32, i32),
     /// 首帧 present 成功后再 ShowWindow，避免空内容白屏。
@@ -94,8 +96,20 @@ impl SecondaryWindowSession {
     }
 
     fn handle_event(&mut self, platform: &mut dyn Platform, event: &UiEvent) -> bool {
+        let window_id = self.window_id();
+        let native_window = self._window.native_handle().native_window();
         if event.type_ == UiEventType::WindowClose {
             self.handle.mark_closed();
+            let parts = self.session.parts_mut();
+            parts.text_input.window_focused = false;
+            sync_window_text_input(
+                parts.tree,
+                parts.active_work,
+                parts.text_input,
+                window_id,
+                native_window,
+                platform,
+            );
             return false;
         }
 
@@ -171,6 +185,12 @@ impl SecondaryWindowSession {
             UiEventType::WindowMinimize => {
                 self.window_visible = false;
             }
+            UiEventType::WindowFocus => {
+                parts.text_input.window_focused = true;
+            }
+            UiEventType::WindowBlur => {
+                parts.text_input.window_focused = false;
+            }
             _ => {}
         }
 
@@ -178,6 +198,14 @@ impl SecondaryWindowSession {
             parts.tree.dispatch_event(&system_event);
         }
         platform.event_bus().publish(event);
+        sync_window_text_input(
+            parts.tree,
+            parts.active_work,
+            parts.text_input,
+            window_id,
+            native_window,
+            platform,
+        );
         true
     }
 
@@ -188,19 +216,7 @@ impl SecondaryWindowSession {
         let had_main_thread_work = parts.main_thread_queue.drain(&mut main_thread_context);
         let had_app_state_semantic_work = parts.tree.drain_app_state_semantic_events();
 
-        if *parts.reconcile_pending {
-            let root = parts
-                .pending_root
-                .take()
-                .or_else(|| parts.view_factory.build());
-            if let Some(root) = root {
-                ViewAdapter::reconcile_nodes(parts.tree, root);
-            }
-            *parts.reconcile_pending = false;
-            return true;
-        }
-
-        had_main_thread_work || had_app_state_semantic_work
+        had_main_thread_work || had_app_state_semantic_work || *parts.reconcile_pending
     }
 
     fn has_frame_work(&mut self, now: Instant) -> bool {
@@ -245,10 +261,23 @@ impl SecondaryWindowSession {
         debug_mode: &Cell<bool>,
         cursor_pos: &Cell<Point>,
         clock: &dyn AppClock,
+        mut platform: Option<&mut dyn Platform>,
     ) -> bool {
         let now = clock.now();
-        let last_frame = self.last_frame.get_or_insert(now);
+        let window_id = self.window_id();
+        let native_window = self._window.native_handle().native_window();
+        let native_width = self._window.properties().width();
+        let native_height = self._window.properties().height();
         let parts = self.session.parts_mut();
+
+        if self.window_visible {
+            ensure_secondary_surface_matches_window(
+                parts.tree,
+                parts.engine,
+                native_width,
+                native_height,
+            );
+        }
 
         parts
             .active_work
@@ -298,8 +327,16 @@ impl SecondaryWindowSession {
             || pending_render_work;
 
         if active_frame {
-            let dt = (now - *last_frame).as_secs_f64().min(0.05);
-            *last_frame = now;
+            self.last_frame = Some(now);
+            let had_known_animation =
+                !due_animation_ids.is_empty() || parts.active_work.animation_ids().next().is_some();
+            let dt = if had_known_animation {
+                self.last_animation_frame
+                    .map(|last_frame| (now - last_frame).as_secs_f64().min(0.05))
+                    .unwrap_or(0.0)
+            } else {
+                0.0
+            };
             let animation_updates = update_due_and_discovered_secondary_animations(
                 parts.tree,
                 parts.active_work,
@@ -308,6 +345,11 @@ impl SecondaryWindowSession {
                 discover_animation_work,
             );
             sync_secondary_animation_deadlines(parts.active_work, &animation_updates, now);
+            if !animation_updates.is_empty() {
+                self.last_animation_frame = Some(now);
+            } else if parts.active_work.animation_ids().next().is_none() {
+                self.last_animation_frame = None;
+            }
             if pending_effects {
                 let _effects_ran = parts.tree.tick_effects();
             }
@@ -346,6 +388,17 @@ impl SecondaryWindowSession {
             }
         }
 
+        if let Some(platform) = platform.as_deref_mut() {
+            sync_window_text_input(
+                parts.tree,
+                parts.active_work,
+                parts.text_input,
+                window_id,
+                native_window,
+                platform,
+            );
+        }
+
         let need_render =
             self.window_visible && (!self.rendered_first || parts.tree.has_render_work());
         let engine_capabilities = parts.engine.capabilities();
@@ -364,7 +417,7 @@ impl SecondaryWindowSession {
         } else {
             let theme_ref = theme.borrow();
             let snapshot = ThemeSnapshot::new(theme_ref.tokens());
-            let scroll_move = parts.tree.drain_scroll_region_move();
+            let scroll_move = parts.tree.scroll_region_moves();
             let hover_pos = if debug_mode.get() {
                 Some(cursor_pos.get())
             } else {
@@ -469,10 +522,7 @@ impl SecondaryWindowSession {
             self.deferred_show = false;
         }
 
-        if self.window_visible
-            && frame_committed
-            && (has_layout_work || need_render)
-        {
+        if self.window_visible && frame_committed && (has_layout_work || need_render) {
             // Failed external presentation must retain the invalidation for a retry.
             parts.tree.reset_invalidation();
         }
@@ -486,11 +536,32 @@ impl SecondaryWindowSession {
         parts
             .active_work
             .sync_app_timers(parts.app_timers.deadlines());
-        parts.active_work.next_deadline()
+        if self.window_visible
+            && (*parts.reconcile_pending
+                || parts.pending_root.is_some()
+                || parts.tree.has_pending_effects()
+                || parts.tree.has_render_work()
+                || parts
+                    .tree
+                    .invalidation
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .has_layout())
+        {
+            Some(Instant::now())
+        } else {
+            parts.active_work.next_deadline()
+        }
     }
 
     fn close(mut self) {
-        self.session.shutdown();
+        report_window_operation_error(
+            "secondary graphics shutdown failed",
+            self.session.try_shutdown(),
+        );
+        // Drop retries a failed checked shutdown while the native surface is
+        // still alive. Successful shutdown is idempotent.
+        drop(self.session);
         report_window_operation_error("secondary close failed", self._window.close());
         self.handle.mark_closed();
     }
@@ -850,6 +921,7 @@ impl App {
             w,
             h,
         );
+        session.set_text_input_coordinator(self.runtime.text_input_coordinator());
         session.set_app_state(self.app_state.clone());
         session.set_app_timers(self.app_timers.clone());
         session.set_main_thread_queue(self.main_thread_queue.clone());
@@ -881,7 +953,8 @@ impl App {
         let debug_mode = Cell::new(std::env::var("UIX_DEBUG").is_ok());
         let cursor_pos = Cell::new(Point::new(0.0, 0.0));
         let metrics = Cell::new(crate::draw::pipeline::RenderMetrics::default());
-        drain_secondary_window_frames(
+        drain_secondary_window_frames_with_platform(
+            &mut *platform,
             &mut secondary_windows.borrow_mut(),
             &font_service,
             &image_service,
@@ -931,7 +1004,8 @@ impl App {
                     &mut secondary_windows.borrow_mut(),
                 );
                 drain_secondary_window_queues(&mut secondary_windows.borrow_mut());
-                drain_secondary_window_frames(
+                drain_secondary_window_frames_with_platform(
+                    platform,
                     &mut secondary_windows.borrow_mut(),
                     &font_service,
                     &image_service,
@@ -961,7 +1035,9 @@ impl App {
             |_, _, _| {},
         );
 
-        session.shutdown();
+        report_window_operation_error("main graphics shutdown failed", session.try_shutdown());
+        // Keep the native window alive through the checked Drop retry.
+        drop(session);
         report_window_operation_error("main close failed", platform_window.close());
 
         let mut secondary_windows = secondary_windows.into_inner();
@@ -1065,7 +1141,9 @@ pub(crate) fn drain_pending_open_windows_with_backend(
     created
 }
 
-pub(crate) fn drain_secondary_window_queues(secondary_windows: &mut [SecondaryWindowSession]) -> bool {
+pub(crate) fn drain_secondary_window_queues(
+    secondary_windows: &mut [SecondaryWindowSession],
+) -> bool {
     let mut drained = false;
     for window in secondary_windows {
         drained |= window.drain_main_thread_work();
@@ -1082,18 +1160,82 @@ pub(crate) fn drain_secondary_window_frames(
     cursor_pos: &Cell<Point>,
     clock: &dyn AppClock,
 ) -> bool {
+    drain_secondary_window_frames_impl(
+        None,
+        secondary_windows,
+        font_service,
+        image_service,
+        theme,
+        debug_mode,
+        cursor_pos,
+        clock,
+    )
+}
+
+fn drain_secondary_window_frames_with_platform(
+    platform: &mut dyn Platform,
+    secondary_windows: &mut [SecondaryWindowSession],
+    font_service: &FontService,
+    image_service: &ImageService,
+    theme: &RefCell<Theme>,
+    debug_mode: &Cell<bool>,
+    cursor_pos: &Cell<Point>,
+    clock: &dyn AppClock,
+) -> bool {
+    drain_secondary_window_frames_impl(
+        Some(platform),
+        secondary_windows,
+        font_service,
+        image_service,
+        theme,
+        debug_mode,
+        cursor_pos,
+        clock,
+    )
+}
+
+fn drain_secondary_window_frames_impl(
+    platform: Option<&mut dyn Platform>,
+    secondary_windows: &mut [SecondaryWindowSession],
+    font_service: &FontService,
+    image_service: &ImageService,
+    theme: &RefCell<Theme>,
+    debug_mode: &Cell<bool>,
+    cursor_pos: &Cell<Point>,
+    clock: &dyn AppClock,
+) -> bool {
     let mut drained = false;
     let now = clock.now();
-    for window in secondary_windows {
-        if window.has_frame_work(now) {
-            drained |= window.drain_frame(
-                font_service,
-                image_service,
-                theme,
-                debug_mode,
-                cursor_pos,
-                clock,
-            );
+    match platform {
+        Some(platform) => {
+            for window in secondary_windows {
+                if window.has_frame_work(now) {
+                    drained |= window.drain_frame(
+                        font_service,
+                        image_service,
+                        theme,
+                        debug_mode,
+                        cursor_pos,
+                        clock,
+                        Some(&mut *platform),
+                    );
+                }
+            }
+        }
+        None => {
+            for window in secondary_windows {
+                if window.has_frame_work(now) {
+                    drained |= window.drain_frame(
+                        font_service,
+                        image_service,
+                        theme,
+                        debug_mode,
+                        cursor_pos,
+                        clock,
+                        None,
+                    );
+                }
+            }
         }
     }
     drained
@@ -1238,6 +1380,9 @@ fn create_secondary_window(
     };
     let mut session =
         WindowSession::from_root_factory_for_window(window_id, wrapped_root, engine, width, height);
+    session.set_text_input_coordinator(runtime.text_input_coordinator());
+    // A newly created secondary stays unfocused until its native focus event.
+    session.set_window_focused(false);
     session.set_app_state(app_state.clone());
     session.set_app_timers(app_timers);
     session.set_main_thread_queue(main_thread_queue);
@@ -1256,6 +1401,7 @@ fn create_secondary_window(
         frame_renderer: FrameRenderer::new(),
         rendered_first: false,
         last_frame: None,
+        last_animation_frame: None,
         window_visible: true,
         initial_size: (width, height),
         deferred_show: true,
@@ -1358,6 +1504,59 @@ fn sync_secondary_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn G
         tree.mark_full_frame_dirty();
         tree.layout();
     }
+}
+
+fn ensure_secondary_surface_matches_window(
+    tree: &mut WidgetTree,
+    engine: &mut dyn GraphicsEngine,
+    native_width: i32,
+    native_height: i32,
+) -> bool {
+    if native_width <= 0 || native_height <= 0 {
+        return false;
+    }
+
+    let (canvas_width, canvas_height) = {
+        let canvas = engine.canvas_2d();
+        (canvas.width(), canvas.height())
+    };
+    let mut changed = false;
+    if canvas_width != native_width || canvas_height != native_height {
+        if !report_graphics_resize_error(
+            "secondary window graphics size reconciliation failed",
+            engine.resize(native_width, native_height),
+        ) {
+            tree.mark_full_frame_dirty();
+            return false;
+        }
+        changed = true;
+    }
+
+    let (engine_width, engine_height) = {
+        let canvas = engine.canvas_2d();
+        (canvas.width() as f32, canvas.height() as f32)
+    };
+    if engine_width <= 0.0 || engine_height <= 0.0 {
+        return false;
+    }
+    let root_mismatch = tree
+        .root_id()
+        .and_then(|root_id| tree.get(root_id))
+        .is_some_and(|root| {
+            let frame = root.frame();
+            (frame.w - engine_width).abs() > 0.5 || (frame.h - engine_height).abs() > 0.5
+        });
+    if root_mismatch {
+        if let Some(root_id) = tree.root_id() {
+            if let Some(root) = tree.get_mut(root_id) {
+                root.set_frame(Rect::new(0.0, 0.0, engine_width, engine_height));
+            }
+        }
+        tree.tree_version = tree.tree_version.wrapping_add(1);
+        tree.mark_full_frame_dirty();
+        changed = true;
+    }
+    changed
 }
 
 fn secondary_next_loop_state(
@@ -1670,4 +1869,3 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
         _ => None,
     }
 }
-

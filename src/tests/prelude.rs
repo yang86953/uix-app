@@ -13,17 +13,13 @@ pub use crate::ui::style::{ BoxShadowDef, ColorValue, DisplayMode, PaletteColor,
 pub use crate::ui::theme::{ NeutralRole, ShadowToken, ThemePrimitives };
 pub use crate::ui::{ AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute, ClickEvent, ComponentConfigSnapshot, ComponentHandle, HandlerId, HandlerOptions, HandlerRegistration, IntoWidgetNode, SemanticPayload, SnapshotCollapsePanel, SnapshotField, SnapshotSource, SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue, SystemEventKind, WidgetChildren };
 pub use crate::ui::{Animation, Easing};
-pub use crate::ui::{
-    DragManager, FocusManager, InteractionManager, StateManager, TextManager, WidgetManagers,
-};
-pub use crate::ui::{ OverlayEntry, OverlayId, OverlayStack };
-pub use crate::ui::{ Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus, BarChart, BarData, Breadcrumb, BreadcrumbItem, Button, Calendar, Card, Carousel, Cascader, CascaderOption, CascaderValue, Checkbox, Collapse, CollapsePanel, ColorPicker, Content, DatePicker, DateValue, Descriptions, DescriptionsItem, Divider, DividerDirection, DividerOrientation, Drawer, DrawerPlacement, Dropdown, Empty, FieldDef, FloatButton, FloatButtonBackTop, Footer, Form, FormItem, FormLayout, Grid, Header, Icon, Image, Input, InputNumber, Label, Layout, LineChart, LineData, List, Mentions, Menu, MenuItem, MenuMode, Message, MessageItem, MessagePlacement, Modal, NavGroup, NavItem, Navigation, NotifPlacement, Notification, NotificationItem, OptGroup, Pagination, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger, ProgressBar, ProgressMode, ProgressType, QRCode, Radio, RadioDirection, Rate, Result, ResultType, RichText, RichTextSegment, RichTextStyle, ScrollView, Segmented, Select, SelectableItem, SelectableList, SharedActive, Sider, Skeleton, SkeletonShape, Slider, SortDirection, Space, SpaceSize, Spin, SpinSize, Splitter, Step, StepStatus, Steps, Switch, Tab, TabPosition, Table, TableChange, TableColumn, TableRow, Tabs, Tag, TagColor, ThemeToggle, TimePicker, TimeValue, Timeline, TimelineItem, Tooltip, TooltipPlacement, Transfer, TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography, TypographyType, Upload, UploadFile, UploadStatus, ValidateStatus, ValidationResult, ValidationRule, Watermark };
+pub use crate::ui::{ Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus, BarChart, BarData, Breadcrumb, BreadcrumbItem, Button, Calendar, Card, Carousel, Cascader, CascaderOption, CascaderValue, Checkbox, Collapse, CollapsePanel, ColorPicker, Content, DatePicker, DateValue, Descriptions, DescriptionsItem, Divider, DividerDirection, DividerOrientation, Drawer, DrawerPlacement, Dropdown, Empty, FieldDef, FloatButton, FloatButtonBackTop, Footer, Form, FormItem, FormLayout, Grid, Header, Icon, Image, Input, InputNumber, Label, Layout, LineChart, LineData, List, Mentions, Menu, MenuItem, MenuMode, Message, MessageItem, MessagePlacement, Modal, NavGroup, NavItem, Navigation, NotifPlacement, Notification, NotificationItem, OptGroup, Pagination, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger, ProgressBar, ProgressMode, ProgressType, QRCode, Radio, RadioDirection, Rate, ResultType, ResultView, RichText, RichTextSegment, RichTextStyle, ScrollView, Segmented, Select, SelectableItem, SelectableList, SharedActive, Sider, Skeleton, SkeletonShape, Slider, SortDirection, Space, SpaceSize, Spin, SpinSize, Splitter, Step, StepStatus, Steps, Switch, Tab, TabPosition, Table, TableChange, TableColumn, TableRow, Tabs, Tag, TagColor, ThemeToggle, TimePicker, TimeValue, Timeline, TimelineItem, Tooltip, TooltipPlacement, Transfer, TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography, TypographyType, Upload, UploadFile, UploadStatus, ValidateStatus, ValidationResult, ValidationRule, Watermark };
 pub use crate::app::Container as DiContainer;
 pub use crate::app::{map_ui_event, App, AppHandle, AppMode, TimerHandle, WindowConfig};
 pub use crate::ui::view::{
     button, column, column_fit, dynamic_label, embed, grid, input, label, row, scroll, show, space,
     ButtonBuilder, GridBuilder, InputBuilder, IntoLabelContent, IntoViewChildren, ScrollBuilder,
-    StyleExt, Ui, View, ViewAdapter, ViewNode,
+    StyleExt, Ui, View, ViewNode,
 };
 pub use crate::views;
 pub use crate::with_cloned;
@@ -37,8 +33,7 @@ component! {
     render => (
         &self,
         _frame: Rect,
-        _ctx: &mut PaintContext,
-        _tree: &crate::ui::core::widget::WidgetTree
+        _ctx: &mut PaintContext
     ) {}
 }
 
@@ -127,7 +122,6 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_style_ext::<ViewNode>();
     assert_view::<ViewNode>();
     assert_exported::<Ui<'static>>();
-    assert_exported::<ViewAdapter>();
     assert_exported::<ViewNode>();
     assert_exported::<BoxModel>();
     assert_exported::<BoxShadowDef>();
@@ -156,25 +150,18 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<DividerDirection>();
     assert_exported::<DividerOrientation>();
     assert_exported::<DrawerPlacement>();
-    assert_exported::<DragManager>();
     assert_exported::<DynTokens>();
     assert_exported::<Easing>();
     assert_exported::<Effect>();
     assert_exported::<FieldDef>();
-    assert_exported::<FocusManager>();
     assert_exported::<FormItem>();
     assert_exported::<FormLayout>();
-    assert_exported::<InteractionManager>();
     assert_exported::<LineData>();
     assert_exported::<MenuItem>();
     assert_exported::<MenuMode>();
     assert_exported::<NavGroup>();
     assert_exported::<NavItem>();
     assert_exported::<OptGroup>();
-    assert_exported::<OverlayEntry>();
-    assert_exported::<OverlayId>();
-    assert_exported::<OverlayKind>();
-    assert_exported::<OverlayStack>();
     assert_exported::<PieData>();
     assert_exported::<PopconfirmPlacement>();
     assert_exported::<PopoverPlacement>();
@@ -189,9 +176,7 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<ShadowToken>();
     assert_exported::<SpinSize>();
     assert_exported::<StateSlotId>();
-    assert_exported::<StateManager>();
     assert_exported::<StatusLevel>();
-    assert_exported::<TextManager>();
     assert_exported::<Step>();
     assert_exported::<StepStatus>();
     assert_exported::<Tab>();
@@ -207,7 +192,6 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<ValidateStatus>();
     assert_exported::<ValidationResult>();
     assert_exported::<ValidationRule>();
-    assert_exported::<WidgetManagers>();
     assert_exported::<Alert>();
     assert_exported::<Anchor>();
     assert_exported::<AutoComplete>();
@@ -249,7 +233,7 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<ProgressBar>();
     assert_exported::<Radio>();
     assert_exported::<Rate>();
-    assert_exported::<Result>();
+    assert_exported::<ResultView>();
     assert_exported::<ScrollView>();
     assert_exported::<Segmented>();
     assert_exported::<Select>();
@@ -304,4 +288,13 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<UploadStatus>();
     assert_exported::<Watermark>();
     assert_exported::<WidgetChildren>();
+}
+
+#[test]
+fn prelude_does_not_shadow_standard_result() {
+    fn fallible() -> Result<(), Error> {
+        Ok(())
+    }
+
+    assert!(fallible().is_ok());
 }

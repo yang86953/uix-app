@@ -6,7 +6,6 @@ use crate::draw::pipeline::{ FrameRenderInput, FrameRenderer, InvalidationSource
 use crate::draw::traits::GraphicsEngine;
 use crate::native::traits::platform::Platform;
 use crate::native::traits::window::PlatformWindow;
-use crate::ui::clipboard;
 use crate::ui::core::widget::WidgetCore;
 use crate::app::event_loop::event_loop::*;
 use crate::app::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry};
@@ -93,6 +92,63 @@ impl WidgetAnimation for TestAnimatedWidget {
 
     fn dirty_bounds(&self, _frame: Rect) -> Rect {
         self.dirty_rect
+    }
+}
+
+struct FailFirstBeginEngine {
+    inner: NullEngine,
+    begin_calls: Arc<AtomicUsize>,
+}
+
+impl FailFirstBeginEngine {
+    fn new(begin_calls: Arc<AtomicUsize>) -> Self {
+        Self {
+            inner: NullEngine::new(),
+            begin_calls,
+        }
+    }
+}
+
+impl GraphicsEngine for FailFirstBeginEngine {
+    fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.inner.initialize(width, height)
+    }
+
+    fn try_shutdown(&mut self) -> Result<(), Error> {
+        self.inner.try_shutdown()
+    }
+
+    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.inner.resize(width, height)
+    }
+
+    fn begin_frame(
+        &mut self,
+        strategy: crate::draw::traits::UpdateStrategy,
+    ) -> RenderOutcome {
+        if self.begin_calls.fetch_add(1, Ordering::Relaxed) == 0 {
+            RenderOutcome::Failed(crate::draw::engine::GraphicsFailure::from_error(Error::new(
+                Errc::GraphicsSurfaceLost,
+                "injected first-frame failure",
+            )))
+        } else {
+            self.inner.begin_frame(strategy)
+        }
+    }
+
+    fn end_frame(&mut self, damage: &DamageRegion) -> RenderOutcome {
+        self.inner.end_frame(damage)
+    }
+
+    fn canvas_2d(&mut self) -> &mut dyn crate::draw::traits::Canvas2D {
+        self.inner.canvas_2d()
+    }
+
+    fn try_execute_encoded_frame(
+        &mut self,
+        encoder: &FrameEncoder,
+    ) -> Result<crate::draw::pipeline::EncodedFrameExecution, Error> {
+        self.inner.try_execute_encoded_frame(encoder)
     }
 }
 
@@ -289,6 +345,114 @@ fn widget_tree_update_advances_animation_and_marks_dirty_rect() {
     assert_eq!(updates.load(Ordering::Relaxed), 1);
     assert_eq!(remaining.load(Ordering::Relaxed), 1);
     assert_eq!(dirty.rects(), &[Rect::new(4.0, 5.0, 6.0, 7.0)]);
+}
+
+#[test]
+fn unrelated_active_frame_does_not_reset_animation_clock() {
+    let start = Instant::now();
+    let mut last_animation_frame = start;
+
+    let unrelated_frame = start + Duration::from_millis(5);
+    let unrelated_updates = [(NodeId::new(1), false)];
+    if animation_clock_should_advance(false, &unrelated_updates) {
+        last_animation_frame = unrelated_frame;
+    }
+
+    let due_frame = start + Duration::from_millis(16);
+    assert_eq!(
+        due_frame.duration_since(last_animation_frame),
+        Duration::from_millis(16)
+    );
+    assert!(animation_clock_should_advance(true, &[]));
+}
+
+#[test]
+fn retained_dirty_retries_failed_frame_before_blocking_wait() {
+    let begin_calls = Arc::new(AtomicUsize::new(0));
+    let mut platform = FakePlatform::new();
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Container::new()),
+        Box::new(FailFirstBeginEngine::new(begin_calls.clone())),
+        800,
+        600,
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        |_| None,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(begin_calls.load(Ordering::Relaxed), 2);
+    assert_eq!(metrics.get().present_calls, 1);
+    assert_eq!(platform.event_source.state.dispatch_blocking_calls, 1);
+}
+
+#[test]
+fn event_dispatch_scopes_platform_clipboard_for_widgets() {
+    let mut platform = FakePlatform::new();
+    platform
+        .event_source
+        .inject(UiEvent::key_down(KeyCode::C, KeyMod::CTRL));
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Input::new("copy").with_value("managed clipboard")),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    {
+        let (tree, _) = session.tree_and_engine_mut();
+        let root = tree.root_id();
+        tree.set_focus(root);
+    }
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        None,
+        map_ui_event,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(
+        platform.clipboard.last_set_text(),
+        Some("managed clipboard")
+    );
 }
 
 #[test]

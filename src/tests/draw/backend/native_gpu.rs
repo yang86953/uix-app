@@ -102,6 +102,153 @@ fn native_gpu_legacy_present_rejects_an_unimplemented_scroll_copy() {
     );
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DestinationFailureStage {
+    Readback,
+    ReadbackExtent,
+    Upload,
+}
+
+struct DestinationFailureContext {
+    stage: DestinationFailureStage,
+    code: Errc,
+}
+
+impl IGraphicsContext for DestinationFailureContext {
+    fn caps(&self) -> GraphicsContextCaps {
+        GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+    }
+
+    fn native_raster_caps(&self) -> NativeRasterCaps {
+        NativeRasterCaps::d3d11_full()
+    }
+
+    fn initialize(
+        &mut self,
+        _native_window: *mut std::ffi::c_void,
+        _width: i32,
+        _height: i32,
+    ) -> crate::core::Result<()> {
+        Ok(())
+    }
+
+    fn resize(&mut self, _width: i32, _height: i32) -> crate::core::Result<()> {
+        Ok(())
+    }
+
+    fn make_current(&mut self) -> crate::core::Result<()> {
+        Ok(())
+    }
+
+    fn swap_buffers(&mut self, _damage: PresentDamage) -> crate::core::Result<()> {
+        Ok(())
+    }
+
+    fn try_shutdown(&mut self) -> crate::core::Result<()> {
+        Ok(())
+    }
+
+    fn read_pixels(
+        &mut self,
+        _x: i32,
+        _y: i32,
+        width: i32,
+        height: i32,
+    ) -> crate::core::Result<Vec<u32>> {
+        if self.stage == DestinationFailureStage::Readback {
+            Err(Error::new(self.code, "injected destination readback failure"))
+        } else if self.stage == DestinationFailureStage::ReadbackExtent {
+            Ok(Vec::new())
+        } else {
+            Ok(vec![0; (width * height) as usize])
+        }
+    }
+
+    fn width(&self) -> i32 {
+        2
+    }
+
+    fn height(&self) -> i32 {
+        2
+    }
+
+    fn clear_render_target(
+        &mut self,
+        _r: f32,
+        _g: f32,
+        _b: f32,
+        _a: f32,
+    ) -> crate::core::Result<()> {
+        Ok(())
+    }
+
+    fn upload_surface_pixels(
+        &mut self,
+        _pixels: &[u32],
+        _width: i32,
+        _height: i32,
+    ) -> crate::core::Result<()> {
+        if self.stage == DestinationFailureStage::Upload {
+            Err(Error::new(self.code, "injected destination upload failure"))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+fn destination_dependent_failure(stage: DestinationFailureStage, code: Errc) -> Error {
+    let mut backend = NativeGpuBackend::new(Box::new(DestinationFailureContext { stage, code }))
+        .expect("destination failure backend");
+    let mut encoder = FrameEncoder::new(2, 2).expect("destination failure encoder");
+    encoder.clear(Color::transparent());
+    encoder.native(FrameRasterOp::FillRectAdditive {
+        rect: crate::draw::pipeline::FrameRect::new(0, 0, 1, 1),
+        color: Color::white(),
+    });
+    backend
+        .try_execute_encoded_frame(&encoder)
+        .expect_err("injected destination-dependent operation failure")
+}
+
+#[test]
+fn destination_dependent_frame_ops_preserve_typed_runtime_failures() {
+    for code in [
+        Errc::GraphicsDeviceLost,
+        Errc::GraphicsSurfaceLost,
+        Errc::GraphicsOutOfMemory,
+    ] {
+        assert_eq!(
+            destination_dependent_failure(DestinationFailureStage::Readback, code).code(),
+            code
+        );
+        assert_eq!(
+            destination_dependent_failure(DestinationFailureStage::Upload, code).code(),
+            code
+        );
+    }
+}
+
+#[test]
+fn destination_dependent_frame_ops_keep_missing_capabilities_not_implemented() {
+    for stage in [
+        DestinationFailureStage::Readback,
+        DestinationFailureStage::Upload,
+    ] {
+        let error = destination_dependent_failure(stage, Errc::NotImplemented);
+        assert_eq!(error.code(), Errc::NotImplemented);
+        assert_eq!(error.root_cause().code(), Errc::NotImplemented);
+    }
+}
+
+#[test]
+fn destination_dependent_frame_ops_reject_bad_readback_extent_as_invalid_state() {
+    let error = destination_dependent_failure(
+        DestinationFailureStage::ReadbackExtent,
+        Errc::NotImplemented,
+    );
+    assert_eq!(error.code(), Errc::InvalidState);
+}
+
 struct FakeD3d11Context {
     clear_calls: Rc<Cell<usize>>,
     clear_rect_calls: Rc<Cell<usize>>,
@@ -1742,10 +1889,12 @@ fn main_frame_encoder_executes_each_command_at_its_recorded_boundary() {
         rect: FrameRect::new(1, 2, 3, 4),
         color: Color::from_rgb(220, 40, 80),
     });
-    encoder.cpu_segment([FrameRasterOp::FillRect {
-        rect: FrameRect::new(5, 6, 3, 4),
-        color: Color::from_rgba(20, 180, 240, 160),
-    }]);
+    encoder
+        .cpu_segment([FrameRasterOp::FillRect {
+            rect: FrameRect::new(5, 6, 3, 4),
+            color: Color::from_rgba(20, 180, 240, 160),
+        }])
+        .unwrap();
     encoder.blit_picture(
         FrameImage::solid(2, 2, Color::from_rgba(180, 220, 40, 192)).expect("picture image"),
         FrameRect::new(0, 0, 2, 2),
@@ -3043,10 +3192,12 @@ fn d3d11_warp_executes_encoded_picture_in_its_bound_offscreen_target() {
         rect: FrameRect::new(2, 2, 4, 4),
         color: Color::red(),
     });
-    encoder.cpu_segment([FrameRasterOp::FillRect {
-        rect: FrameRect::new(8, 4, 16, 12),
-        color: Color::blue(),
-    }]);
+    encoder
+        .cpu_segment([FrameRasterOp::FillRect {
+            rect: FrameRect::new(8, 4, 16, 12),
+            color: Color::blue(),
+        }])
+        .unwrap();
     encoder.blit_picture(
         FrameImage::solid(2, 2, Color::green()).expect("Picture image"),
         FrameRect::new(0, 0, 2, 2),
@@ -3127,10 +3278,12 @@ fn d3d11_warp_executes_main_frame_encoder_before_its_only_present() {
         rect: FrameRect::new(8, 8, 12, 12),
         color: Color::from_rgba(40, 220, 80, 255),
     });
-    encoder.cpu_segment([FrameRasterOp::FillRect {
-        rect: FrameRect::new(24, 16, 32, 24),
-        color: Color::from_rgba(220, 40, 80, 192),
-    }]);
+    encoder
+        .cpu_segment([FrameRasterOp::FillRect {
+            rect: FrameRect::new(24, 16, 32, 24),
+            color: Color::from_rgba(220, 40, 80, 192),
+        }])
+        .unwrap();
     encoder.blit_picture(
         FrameImage::solid(2, 2, Color::from_rgba(40, 120, 240, 255))
             .expect("main Picture image"),

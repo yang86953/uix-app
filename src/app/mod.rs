@@ -7,6 +7,7 @@ pub mod bridge;
 pub mod event_loop;
 pub(crate) mod main_thread_queue;
 pub(crate) mod session_runtime;
+pub(crate) mod text_input;
 pub mod shell;
 pub(crate) mod clock;
 pub mod window;

@@ -89,16 +89,3 @@ fn gpu_native_engine_uses_factory_drawable_without_initial_resize() {
         (8, 6)
     );
 }
-
-#[cfg(feature = "opengles")]
-#[test]
-fn legacy_draw_module_reexports_native_shader_sources() {
-    use crate::native::graphics::opengl::shaders;
-
-    assert_eq!(RECT_VERT, shaders::RECT_VERT);
-    assert_eq!(RECT_FRAG, shaders::RECT_FRAG);
-    assert_eq!(BLUR_FRAG, shaders::BLUR_FRAG);
-    assert_eq!(BLIT_FRAG, shaders::BLIT_FRAG);
-    assert_eq!(BLIT_RGBA_FRAG, shaders::BLIT_RGBA_FRAG);
-    assert_eq!(FULLSCREEN_VERT, shaders::FULLSCREEN_VERT);
-}

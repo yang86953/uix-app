@@ -3,12 +3,13 @@
 use crate::app::active_work_registry::ActiveWorkRegistry;
 use crate::app::app_timer::AppTimerQueue;
 use crate::app::main_thread_queue::MainThreadQueue;
-use crate::core::{Rect, WindowId};
+use crate::core::{Error, Rect, WindowId};
+use crate::draw::pipeline::NodeId;
 use crate::draw::traits::GraphicsEngine;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::view::{ViewAdapter, ViewNode};
 use crate::ui::{AppState, WidgetTree};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 type ViewFactory = Arc<dyn Fn() -> ViewNode + Send + Sync>;
 
@@ -17,6 +18,57 @@ pub(crate) enum WindowLoopState {
     DeepIdle,
     RegisteredActive,
     Active,
+}
+
+/// Coordinates the single native IME service without moving per-window IME
+/// state out of its owning `WindowSession`.
+#[derive(Clone, Default)]
+pub(crate) struct TextInputCoordinator {
+    active_window: Arc<Mutex<Option<WindowId>>>,
+}
+
+impl TextInputCoordinator {
+    pub(crate) fn active_window(&self) -> Option<WindowId> {
+        *self
+            .active_window
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+    }
+
+    pub(crate) fn activate(&self, window_id: WindowId) {
+        *self
+            .active_window
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(window_id);
+    }
+
+    pub(crate) fn deactivate(&self, window_id: WindowId) {
+        let mut active = self
+            .active_window
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if *active == Some(window_id) {
+            *active = None;
+        }
+    }
+}
+
+pub(crate) struct WindowTextInputState {
+    pub(crate) window_focused: bool,
+    pub(crate) ime_session: Option<NodeId>,
+    pub(crate) cursor_rect: Option<Rect>,
+    pub(crate) coordinator: TextInputCoordinator,
+}
+
+impl Default for WindowTextInputState {
+    fn default() -> Self {
+        Self {
+            window_focused: true,
+            ime_session: None,
+            cursor_rect: None,
+            coordinator: TextInputCoordinator::default(),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -49,6 +101,7 @@ pub(crate) struct WindowSession {
     reconcile_pending: bool,
     window_visible: bool,
     view_factory: ViewFactorySlot,
+    text_input: WindowTextInputState,
 }
 
 pub(crate) struct WindowSessionParts<'a> {
@@ -61,6 +114,7 @@ pub(crate) struct WindowSessionParts<'a> {
     pub(crate) pending_root: &'a mut Option<ViewNode>,
     pub(crate) reconcile_pending: &'a mut bool,
     pub(crate) loop_state: &'a mut WindowLoopState,
+    pub(crate) text_input: &'a mut WindowTextInputState,
 }
 
 impl WindowSession {
@@ -100,6 +154,7 @@ impl WindowSession {
             reconcile_pending: false,
             window_visible: true,
             view_factory: ViewFactorySlot::default(),
+            text_input: WindowTextInputState::default(),
         }
     }
 
@@ -156,6 +211,7 @@ impl WindowSession {
             view_factory: ViewFactorySlot {
                 factory: Some(factory),
             },
+            text_input: WindowTextInputState::default(),
         }
     }
 
@@ -163,13 +219,23 @@ impl WindowSession {
         (&mut self.tree, self.engine.as_mut())
     }
 
-    pub(crate) fn shutdown(&mut self) {
+    pub(crate) fn try_shutdown(&mut self) -> Result<(), Error> {
         if self.engine_shutdown {
-            return;
+            return Ok(());
         }
         self.tree.shutdown();
+        self.engine.try_shutdown()?;
         self.engine_shutdown = true;
-        let _ = self.engine.try_shutdown();
+        Ok(())
+    }
+
+    pub(crate) fn shutdown(&mut self) {
+        if let Err(error) = self.try_shutdown() {
+            crate::core::log::error_fn(format!(
+                "WindowSession checked shutdown failed: {}",
+                error.short_what()
+            ));
+        }
     }
 
     pub(crate) fn window_id(&self) -> WindowId {
@@ -187,7 +253,16 @@ impl WindowSession {
             pending_root: &mut self.pending_root,
             reconcile_pending: &mut self.reconcile_pending,
             loop_state: &mut self.loop_state,
+            text_input: &mut self.text_input,
         }
+    }
+
+    pub(crate) fn set_text_input_coordinator(&mut self, coordinator: TextInputCoordinator) {
+        self.text_input.coordinator = coordinator;
+    }
+
+    pub(crate) fn set_window_focused(&mut self, focused: bool) {
+        self.text_input.window_focused = focused;
     }
 
     pub(crate) fn set_app_timers(&mut self, app_timers: AppTimerQueue) {
@@ -244,4 +319,3 @@ impl Drop for WindowSession {
         self.shutdown();
     }
 }
-

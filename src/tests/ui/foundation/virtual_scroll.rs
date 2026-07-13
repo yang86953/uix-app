@@ -2,6 +2,7 @@ use crate::tests::common::*;
 use crate::ui::core::widget::WidgetNode;
 use crate::ui::foundation::virtual_scroll::*;
 use crate::ui::widgets::Label;
+use crate::ui::view::{ViewAdapter, ViewNode};
 
 #[test]
 fn virtual_list_scroll_range_matches_virtual_scroll() {
@@ -183,4 +184,46 @@ fn wheel_scroll_records_delta_for_composite() {
     assert!(vs.scroll_offset() > 0.0);
     assert_eq!(vs.scroll_delta_for_dirty(), Some((0.0, 40.0)));
     assert!(vs.scroll_delta_for_dirty().is_none());
+}
+
+#[test]
+fn same_type_reconcile_preserves_virtual_scroll_offset() {
+    let initial = VirtualScroll::new()
+        .item_count(100)
+        .item_height(20.0)
+        .size(200.0, 80.0)
+        .renderer(|i| WidgetNode::leaf(Box::new(Label::new(format!("row-{i}")))));
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(initial));
+    tree.layout();
+    let root = tree.root_id().expect("virtual scroll root");
+    tree.reset_invalidation();
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::Wheel {
+            pos: crate::core::Point::new(10.0, 10.0),
+            delta: crate::core::Point::new(0.0, -1.0),
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.get(root)
+            .and_then(|node| node.component().as_any().downcast_ref::<VirtualScroll>())
+            .map(VirtualScroll::scroll_offset),
+        Some(40.0)
+    );
+
+    let next = VirtualScroll::new()
+        .item_count(120)
+        .item_height(20.0)
+        .size(200.0, 80.0)
+        .renderer(|i| WidgetNode::leaf(Box::new(Label::new(format!("next-{i}")))));
+    ViewAdapter::reconcile_nodes(&mut tree, ViewNode::leaf(next));
+
+    assert_eq!(tree.root_id(), Some(root));
+    assert_eq!(
+        tree.get(root)
+            .and_then(|node| node.component().as_any().downcast_ref::<VirtualScroll>())
+            .map(VirtualScroll::scroll_offset),
+        Some(40.0)
+    );
 }
