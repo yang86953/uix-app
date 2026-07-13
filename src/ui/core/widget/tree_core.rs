@@ -12,6 +12,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_WIDGET_TREE_SCOPE: AtomicU64 = AtomicU64::new(1);
 
+#[cfg(test)]
+thread_local! {
+    /// 1=Phase1 2=Phase2 4=Phase4；0=不记录。
+    pub(crate) static LAYOUT_TRACE_PHASE: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+}
+
 #[path = "tree_layout.rs"]
 mod tree_layout;
 
@@ -48,6 +54,10 @@ pub struct WidgetTree {
     /// Phase 2 实际扩展 frame 的次数（回归：不得在稳定后反复 120→124）。
     #[cfg(test)]
     pub(crate) layout_expand_ops: std::cell::Cell<u32>,
+    /// 测试探针：记录 `(phase, id, before_h, after_h)` 的 frame 写入。
+    #[cfg(test)]
+    pub(crate) layout_frame_trace:
+        std::cell::RefCell<Vec<(u8, ComponentId, i32, i32)>>,
 }
 
 impl Default for WidgetTree {
@@ -79,6 +89,8 @@ impl Default for WidgetTree {
             layout_converge_passes: std::cell::Cell::new(0),
             #[cfg(test)]
             layout_expand_ops: std::cell::Cell::new(0),
+            #[cfg(test)]
+            layout_frame_trace: std::cell::RefCell::new(Vec::new()),
         }
     }
 }
@@ -635,6 +647,8 @@ impl WidgetTree {
     /// `set_frame_dirty` 会 `push_layout_invalidation`，若在收敛循环里调用，
     /// 会在结果已稳定后仍留下 Layout pending，下一帧无事件也再跑 layout（违反休眠）。
     pub(crate) fn set_layout_frame(&mut self, id: ComponentId, new_frame: Rect) -> bool {
+        #[cfg(test)]
+        let before_h = self.get(id).map(|n| n.frame().h.round() as i32).unwrap_or(0);
         if !self.apply_frame_paint(id, new_frame) {
             return false;
         }
@@ -642,8 +656,22 @@ impl WidgetTree {
         {
             self.layout_frame_writes
                 .set(self.layout_frame_writes.get().wrapping_add(1));
+            let phase = LAYOUT_TRACE_PHASE.with(|p| p.get());
+            if phase != 0 {
+                self.layout_frame_trace.borrow_mut().push((
+                    phase,
+                    id,
+                    before_h,
+                    new_frame.h.round() as i32,
+                ));
+            }
         }
         true
+    }
+
+    #[cfg(test)]
+    pub(crate) fn take_layout_frame_trace(&self) -> Vec<(u8, ComponentId, i32, i32)> {
+        std::mem::take(&mut *self.layout_frame_trace.borrow_mut())
     }
 
     fn apply_frame_paint(&mut self, id: ComponentId, new_frame: Rect) -> bool {

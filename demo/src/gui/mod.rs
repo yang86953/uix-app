@@ -257,7 +257,7 @@ pub fn run() {
         .title("UIX Demo")
         .size(INIT_W, INIT_H)
         .theme(Theme::antd_light())
-        .on_start(with_cloned!(theme_control, timer_ticks, anim_time; |handle| {
+        .on_start(with_cloned!(theme_control, timer_ticks; |handle| {
             theme_control.set_handle(handle.clone());
             let ticks = timer_ticks.clone();
             handle
@@ -265,12 +265,8 @@ pub fn run() {
                     ticks.update(|v| *v = v.wrapping_add(1));
                 })
                 .detach();
-            let anim = anim_time.clone();
-            handle
-                .run_interval(Duration::from_millis(16), move || {
-                    anim.update(|v| *v += 0.016);
-                })
-                .detach();
+            // 动画样例改走 WidgetAnimation（Spin 等）；不再全局 16ms 探活，
+            // 否则 RegisteredActive 永不 DeepIdle，且曾把 orphan State 绑成整树 reconcile。
         }))
         .root(with_cloned!(
             active,

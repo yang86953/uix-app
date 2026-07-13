@@ -4553,6 +4553,41 @@ fn captured_state_set_requests_paint_without_reconcile_for_dynamic_label() {
     assert!(tree.has_render_work());
 }
 
+/// View 构建期 `State::get()` 的孤儿绑定只 Paint，不 reconcile。
+/// 否则外部 State（如 demo anim_time）每次 update 都会整树 reconcile+layout。
+#[test]
+fn orphan_state_get_during_build_binds_paint_not_reconcile() {
+    use crate::ui::state::State;
+    use crate::ui::view::label;
+
+    let external = State::new(0.0f32);
+    let root = ViewAdapter::capture_root({
+        let external = external.clone();
+        move || {
+            let t = external.get(); // 须在 capture 内调用才会登记 orphan
+            label(format!("t={t:.2}"))
+        }
+    });
+    let mut tree = ViewAdapter::build_nodes(root);
+    let root_id = tree.root_id().expect("root");
+    tree.get_mut(root_id)
+        .expect("root mut")
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 24.0));
+    tree.layout();
+    tree.reset_invalidation();
+    assert!(!tree.take_reconcile_requested());
+
+    external.set(1.0);
+    assert!(
+        !tree.take_reconcile_requested(),
+        "orphan State::get bind must not reconcile"
+    );
+    assert!(
+        tree.has_render_work(),
+        "orphan State::get bind should still paint"
+    );
+}
+
 #[test]
 fn button_on_click_is_registered_as_semantic_handler() {
     use crate::ui::view::button;
