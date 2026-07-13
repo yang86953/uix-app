@@ -451,6 +451,7 @@ impl HandlerRegistration {
         self,
         state: &crate::ui::foundation::state::State<T>,
     ) -> Self {
+        crate::ui::foundation::state::capture_pending_state_bind(state);
         self.with_capture_fingerprint(state.capture_fingerprint())
     }
 
