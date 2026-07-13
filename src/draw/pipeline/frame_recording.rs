@@ -208,15 +208,19 @@ impl GraphicsEngine for FrameRecordingEngine {
     }
 }
 
-/// State-preserving CPU scratch rasterizer. Its pixels are cleared after each
-/// visual operation, not accumulated across operations: this keeps the exact
-/// source-over rounding and painter order when the segments are replayed.
+/// State-preserving CPU scratch rasterizer. Consecutive CPU draws accumulate
+/// in scratch and flush at painter-order barriers (native / Picture / finish),
+/// so glyphs and rounded fills share one packed CpuSegment instead of
+/// re-scanning the window after every op.
 struct FrameRecordingCanvas {
     scratch: SharedRasterizer,
     encoder: Option<FrameEncoder>,
     blend_mode: BlendMode,
     blend_stack: Vec<BlendMode>,
     scratch_dirty: bool,
+    /// Surface-space AABB covering pixels written since the last flush.
+    /// Pack scans only this region (plus AA pad) instead of the full window.
+    scratch_pack_bounds: Option<FrameRect>,
     deferred_error: Option<Error>,
     width: i32,
     height: i32,
@@ -232,6 +236,7 @@ impl FrameRecordingCanvas {
             blend_mode: BlendMode::default(),
             blend_stack: Vec::new(),
             scratch_dirty: false,
+            scratch_pack_bounds: None,
             deferred_error: None,
             width,
             height,
@@ -248,6 +253,7 @@ impl FrameRecordingCanvas {
         self.blend_mode = BlendMode::default();
         self.blend_stack.clear();
         self.scratch_dirty = false;
+        self.scratch_pack_bounds = None;
         self.deferred_error = None;
     }
 
@@ -256,6 +262,7 @@ impl FrameRecordingCanvas {
         self.blend_mode = BlendMode::default();
         self.blend_stack.clear();
         self.scratch_dirty = false;
+        self.scratch_pack_bounds = None;
         self.deferred_error = None;
         let mut encoder =
             FrameEncoder::new(self.width, self.height).map_err(frame_encoder_error)?;
@@ -293,11 +300,29 @@ impl FrameRecordingCanvas {
         }
         self.scratch
             .blit_image(image.pixels(), image.width(), src, dst);
+        self.note_scratch_bounds(dst, 1.0);
         self.scratch_dirty = true;
         self.flush_scratch()
     }
 
-    fn draw_cpu(&mut self, draw: impl FnOnce(&mut SharedRasterizer)) {
+    fn note_scratch_bounds(&mut self, local: Rect, pad: f32) {
+        let Some(bounds) = surface_pack_bounds(
+            local,
+            pad,
+            self.scratch.offset(),
+            self.scratch.current_clip(),
+            self.width,
+            self.height,
+        ) else {
+            return;
+        };
+        self.scratch_pack_bounds = Some(match self.scratch_pack_bounds {
+            Some(prev) => union_frame_rect(prev, bounds),
+            None => bounds,
+        });
+    }
+
+    fn draw_cpu(&mut self, local_bounds: Rect, pad: f32, draw: impl FnOnce(&mut SharedRasterizer)) {
         if self.deferred_error.is_some() {
             return;
         }
@@ -308,26 +333,36 @@ impl FrameRecordingCanvas {
             return;
         }
         draw(&mut self.scratch);
+        self.note_scratch_bounds(local_bounds, pad);
         self.scratch_dirty = true;
-        if let Err(error) = self.flush_scratch() {
-            self.remember_error(error);
-        }
+        // Defer flush until a painter-order barrier (native op / Picture blit /
+        // finish). Per-op flush re-scanned and re-uploaded after every glyph
+        // and rounded fill, dominating record time on dense pages.
     }
 
     fn flush_scratch(&mut self) -> Result<(), Error> {
         if !self.scratch_dirty {
             return Ok(());
         }
-        let packed =
-            pack_visible_scratch_tile(self.scratch.surface().pixels(), self.width, self.height);
+        let flush_t0 = std::time::Instant::now();
+        let pack_bounds = self.scratch_pack_bounds.take();
+        let packed = pack_visible_scratch_tile(
+            self.scratch.surface().pixels(),
+            self.width,
+            self.height,
+            pack_bounds,
+        );
         if let Some((pixels, dst)) = packed {
             let image =
                 FrameImage::new(dst.width, dst.height, pixels).map_err(frame_encoder_error)?;
             let src = FrameRect::new(0, 0, dst.width, dst.height);
             self.encoder_mut()?.cpu_image_segment(image, src, dst);
         }
+        // Full clear: deferred batching may have touched many tiles; clearing
+        // only the last pack AABB would leave stale pixels for the next batch.
         self.scratch.surface_mut().clear_all();
         self.scratch_dirty = false;
+        crate::draw::perf_probe::add_cpu_flush(flush_t0.elapsed().as_micros());
         Ok(())
     }
 
@@ -453,39 +488,62 @@ impl Canvas2D for FrameRecordingCanvas {
             }
             return;
         }
-        self.draw_cpu(|scratch| scratch.fill_rect(rect, color, radius));
+        self.draw_cpu(rect, 1.0, |scratch| scratch.fill_rect(rect, color, radius));
     }
 
     fn fill_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
-        self.draw_cpu(|scratch| scratch.fill_circle(cx, cy, r, color));
+        let bounds = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
+        self.draw_cpu(bounds, 1.0, |scratch| scratch.fill_circle(cx, cy, r, color));
     }
 
     fn fill_ellipse(&mut self, rect: Rect, color: Color) {
-        self.draw_cpu(|scratch| scratch.fill_ellipse(rect, color));
+        self.draw_cpu(rect, 1.0, |scratch| scratch.fill_ellipse(rect, color));
     }
 
     fn fill_sector(&mut self, cx: f32, cy: f32, r: f32, sa: f32, ea: f32, color: Color) {
-        self.draw_cpu(|scratch| scratch.fill_sector(cx, cy, r, sa, ea, color));
+        let bounds = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
+        self.draw_cpu(bounds, 1.0, |scratch| scratch.fill_sector(cx, cy, r, sa, ea, color));
     }
 
     fn fill_path(&mut self, path: &Path, color: Color, fill_rule: FillRule) {
-        self.draw_cpu(|scratch| scratch.fill_path(path, color, fill_rule));
+        let bounds = path
+            .bounds()
+            .unwrap_or_else(|| Rect::new(0.0, 0.0, self.width as f32, self.height as f32));
+        self.draw_cpu(bounds, 1.0, |scratch| scratch.fill_path(path, color, fill_rule));
     }
 
     fn stroke_rect(&mut self, rect: Rect, color: Color, width: f32, radius: Option<Radius>) {
-        self.draw_cpu(|scratch| scratch.stroke_rect(rect, color, width, radius));
+        self.draw_cpu(rect, width.max(1.0), |scratch| {
+            scratch.stroke_rect(rect, color, width, radius)
+        });
     }
 
     fn stroke_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color, width: f32) {
-        self.draw_cpu(|scratch| scratch.stroke_circle(cx, cy, r, color, width));
+        let bounds = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
+        self.draw_cpu(bounds, width.max(1.0), |scratch| {
+            scratch.stroke_circle(cx, cy, r, color, width)
+        });
     }
 
     fn stroke_path(&mut self, path: &Path, color: Color, options: &StrokeOptions) {
-        self.draw_cpu(|scratch| scratch.stroke_path(path, color, options));
+        let bounds = path
+            .bounds()
+            .unwrap_or_else(|| Rect::new(0.0, 0.0, self.width as f32, self.height as f32));
+        self.draw_cpu(bounds, options.width.max(1.0), |scratch| {
+            scratch.stroke_path(path, color, options)
+        });
     }
 
     fn draw_line(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, color: Color, width: f32) {
-        self.draw_cpu(|scratch| scratch.draw_line(x1, y1, x2, y2, color, width));
+        let bounds = Rect::new(
+            x1.min(x2),
+            y1.min(y2),
+            (x1 - x2).abs().max(1.0),
+            (y1 - y2).abs().max(1.0),
+        );
+        self.draw_cpu(bounds, width.max(1.0), |scratch| {
+            scratch.draw_line(x1, y1, x2, y2, color, width)
+        });
     }
 
     fn fill_linear_gradient(
@@ -495,7 +553,9 @@ impl Canvas2D for FrameRecordingCanvas {
         color_b: Color,
         dir: GradientDirection,
     ) {
-        self.draw_cpu(|scratch| scratch.fill_linear_gradient(rect, color_a, color_b, dir));
+        self.draw_cpu(rect, 1.0, |scratch| {
+            scratch.fill_linear_gradient(rect, color_a, color_b, dir)
+        });
     }
 
     fn fill_radial_gradient(
@@ -507,7 +567,8 @@ impl Canvas2D for FrameRecordingCanvas {
         inner_color: Color,
         outer_color: Color,
     ) {
-        self.draw_cpu(|scratch| {
+        let bounds = Rect::new(cx - outer_r, cy - outer_r, outer_r * 2.0, outer_r * 2.0);
+        self.draw_cpu(bounds, 1.0, |scratch| {
             scratch.fill_radial_gradient(cx, cy, inner_r, outer_r, inner_color, outer_color)
         });
     }
@@ -521,7 +582,8 @@ impl Canvas2D for FrameRecordingCanvas {
         color: Color,
         radius: Option<Radius>,
     ) {
-        self.draw_cpu(|scratch| {
+        let pad = blur.max(0.0) + offset_x.abs().max(offset_y.abs()) + 1.0;
+        self.draw_cpu(rect, pad, |scratch| {
             scratch.draw_box_shadow(rect, blur, offset_x, offset_y, color, radius)
         });
     }
@@ -535,13 +597,16 @@ impl Canvas2D for FrameRecordingCanvas {
         color: Color,
         radius: Option<Radius>,
     ) {
-        self.draw_cpu(|scratch| {
+        let pad = blur.max(0.0) + offset_x.abs().max(offset_y.abs()) + 1.0;
+        self.draw_cpu(rect, pad, |scratch| {
             scratch.draw_box_shadow_ambient(rect, blur, offset_x, offset_y, color, radius)
         });
     }
 
     fn blit_image(&mut self, src: &[u32], src_w: i32, src_rect: Rect, dst_rect: Rect) {
-        self.draw_cpu(|scratch| scratch.blit_image(src, src_w, src_rect, dst_rect));
+        self.draw_cpu(dst_rect, 1.0, |scratch| {
+            scratch.blit_image(src, src_w, src_rect, dst_rect)
+        });
     }
 
     fn blit_glyph(
@@ -553,7 +618,10 @@ impl Canvas2D for FrameRecordingCanvas {
         height: usize,
         color: Color,
     ) {
-        self.draw_cpu(|scratch| scratch.blit_glyph(x, y, coverage, width, height, color));
+        let bounds = Rect::new(x as f32, y as f32, width as f32, height as f32);
+        self.draw_cpu(bounds, 1.0, |scratch| {
+            scratch.blit_glyph(x, y, coverage, width, height, color)
+        });
     }
 
     fn save(&mut self) {
@@ -633,12 +701,13 @@ impl Canvas2D for FrameRecordingCanvas {
 }
 
 /// Packs one transparent full-surface scratch operation into its smallest
-/// alpha-visible tile. CPU segments stay immutable and ordered, but no longer
-/// retain a full window-sized pixel buffer for every glyph or rounded shape.
+/// alpha-visible tile. When `scan_bounds` is set, only that AABB is scanned —
+/// per-op flushes otherwise re-scanned the entire window every glyph/round-rect.
 fn pack_visible_scratch_tile(
     pixels: &[u32],
     width: i32,
     height: i32,
+    scan_bounds: Option<FrameRect>,
 ) -> Option<(Vec<u32>, FrameRect)> {
     if width <= 0 || height <= 0 {
         return None;
@@ -648,13 +717,27 @@ fn pack_visible_scratch_tile(
         return None;
     }
 
-    let mut left = width;
-    let mut top = height;
-    let mut right = 0;
-    let mut bottom = 0;
-    for y in 0..height {
+    let (scan_left, scan_top, scan_right, scan_bottom) = match scan_bounds {
+        Some(b) if b.width > 0 && b.height > 0 => {
+            let left = b.x.max(0).min(width);
+            let top = b.y.max(0).min(height);
+            let right = (b.x + b.width).max(0).min(width);
+            let bottom = (b.y + b.height).max(0).min(height);
+            if left >= right || top >= bottom {
+                return None;
+            }
+            (left, top, right, bottom)
+        }
+        _ => (0, 0, width, height),
+    };
+
+    let mut left = scan_right;
+    let mut top = scan_bottom;
+    let mut right = scan_left;
+    let mut bottom = scan_top;
+    for y in scan_top..scan_bottom {
         let row = y as usize * width as usize;
-        for x in 0..width {
+        for x in scan_left..scan_right {
             if pixels[row + x as usize] & 0xff00_0000 == 0 {
                 continue;
             }
@@ -676,6 +759,50 @@ fn pack_visible_scratch_tile(
         packed.extend_from_slice(&pixels[row + left as usize..row + right as usize]);
     }
     Some((packed, FrameRect::new(left, top, tile_width, tile_height)))
+}
+
+fn surface_pack_bounds(
+    local: Rect,
+    pad: f32,
+    offset: (f32, f32),
+    clip: Rect,
+    width: i32,
+    height: i32,
+) -> Option<FrameRect> {
+    if !local.x.is_finite()
+        || !local.y.is_finite()
+        || !local.w.is_finite()
+        || !local.h.is_finite()
+        || local.w <= 0.0
+        || local.h <= 0.0
+    {
+        return None;
+    }
+    let pad = pad.max(0.0);
+    let x0 = (local.x + offset.0 - pad).floor();
+    let y0 = (local.y + offset.1 - pad).floor();
+    let x1 = (local.x + offset.0 + local.w + pad).ceil();
+    let y1 = (local.y + offset.1 + local.h + pad).ceil();
+    let cx0 = clip.x.floor();
+    let cy0 = clip.y.floor();
+    let cx1 = (clip.x + clip.w).ceil();
+    let cy1 = (clip.y + clip.h).ceil();
+    let left = x0.max(cx0).max(0.0) as i32;
+    let top = y0.max(cy0).max(0.0) as i32;
+    let right = x1.min(cx1).min(width as f32) as i32;
+    let bottom = y1.min(cy1).min(height as f32) as i32;
+    if left >= right || top >= bottom {
+        return None;
+    }
+    Some(FrameRect::new(left, top, right - left, bottom - top))
+}
+
+fn union_frame_rect(a: FrameRect, b: FrameRect) -> FrameRect {
+    let left = a.x.min(b.x);
+    let top = a.y.min(b.y);
+    let right = (a.x + a.width).max(b.x + b.width);
+    let bottom = (a.y + a.height).max(b.y + b.height);
+    FrameRect::new(left, top, right - left, bottom - top)
 }
 
 fn rect_to_frame(rect: Rect) -> Result<FrameRect, Error> {

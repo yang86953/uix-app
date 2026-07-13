@@ -198,6 +198,7 @@ impl FrameRenderer {
         // keep DirtyRegion::full(); dirty frames omit the recording Clear so
         // execute_into_pixels retains undamaged CPU pixels.
         let paint_region = region.clone();
+        crate::draw::perf_probe::begin_record_acc();
         let record_t0 = std::time::Instant::now();
         if let Err(error) = self
             .recording_engine
@@ -300,13 +301,13 @@ impl FrameRenderer {
         let end_t0 = std::time::Instant::now();
         let end_outcome = engine.end_frame(&damage);
         let end_frame_us = end_t0.elapsed().as_micros();
-        crate::draw::perf_probe::record_paint(crate::draw::perf_probe::PaintProbeSample {
-            layer_build_us,
-            record_us,
-            execute_us,
-            end_frame_us,
-            strategy_full,
-        });
+        let mut paint_sample = crate::draw::perf_probe::take_record_acc();
+        paint_sample.layer_build_us = layer_build_us;
+        paint_sample.record_us = record_us;
+        paint_sample.execute_us = execute_us;
+        paint_sample.end_frame_us = end_frame_us;
+        paint_sample.strategy_full = strategy_full;
+        crate::draw::perf_probe::record_paint(paint_sample);
         let outcome = match end_outcome {
             RenderOutcome::Present(_) if caps.uses_external_presenter() => {
                 RenderOutcome::PresentPending(damage)

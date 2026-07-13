@@ -887,7 +887,7 @@ where
             let frame_us = frame_t0.elapsed().as_micros();
             if crate::draw::perf_probe::perf_probe_enabled() {
                 crate::core::log::info_fn(format!(
-                    "frame_us={} input={} reconcile={} layout={} paint_cpu={} present={} events={} reconcile={} layouts={} dirty_full={} strategy_full={} pixels={} layer_build={} record={} execute={} end_frame={} upload_copy={} fence_wait={} submit_present={} present_skipped={}",
+                    "frame_us={} input={} reconcile={} layout={} paint_cpu={} present={} events={} reconcile={} layouts={} dirty_full={} strategy_full={} pixels={} layer_build={} record={} execute={} end_frame={} pic_raster={} pic_blit={} pics={} pic_px={} widgets={} text_us={} texts={} cpu_flush={} flushes={} upload_copy={} fence_wait={} submit_present={} present_skipped={}",
                     frame_us,
                     phase_input_us,
                     phase_reconcile_us,
@@ -904,6 +904,15 @@ where
                     paint_probe.record_us,
                     paint_probe.execute_us,
                     paint_probe.end_frame_us,
+                    paint_probe.picture_raster_us,
+                    paint_probe.picture_blit_us,
+                    paint_probe.pictures_rasterized,
+                    paint_probe.picture_pixels,
+                    paint_probe.widgets_painted,
+                    paint_probe.text_us,
+                    paint_probe.text_draws,
+                    paint_probe.cpu_flush_us,
+                    paint_probe.cpu_flushes,
                     present_probe.upload_copy_us,
                     present_probe.fence_wait_us,
                     present_probe.submit_present_us,

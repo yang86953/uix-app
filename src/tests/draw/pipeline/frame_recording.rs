@@ -146,6 +146,51 @@ fn additive_rounded_fill_still_fails_instead_of_cpu_segment_approximation() {
 }
 
 #[test]
+fn consecutive_cpu_draws_batch_into_one_segment_until_barrier() {
+    let mut engine = FrameRecordingEngine::new();
+    engine.initialize(32, 16).expect("initialize recorder");
+    engine.begin_recording(true).expect("begin recording");
+    // Two translucent CPU fills (rounded → not native) then an opaque native.
+    engine.canvas_2d().fill_rect(
+        Rect::new(2.0, 2.0, 4.0, 4.0),
+        Color::from_rgba(255, 0, 0, 128),
+        Some(Radius::uniform(1.0)),
+    );
+    engine.canvas_2d().fill_rect(
+        Rect::new(8.0, 2.0, 4.0, 4.0),
+        Color::from_rgba(0, 255, 0, 128),
+        Some(Radius::uniform(1.0)),
+    );
+    engine
+        .canvas_2d()
+        .fill_rect(Rect::new(20.0, 2.0, 4.0, 4.0), Color::blue(), None);
+
+    let encoder = engine.finish_recording().expect("finish recorder");
+    let cpu_segments = encoder
+        .commands()
+        .iter()
+        .filter(|command| {
+            matches!(
+                command,
+                crate::draw::pipeline::FrameCommand::CpuSegment { .. }
+            )
+        })
+        .count();
+    assert_eq!(
+        cpu_segments, 1,
+        "consecutive CPU draws must share one CpuSegment until a native barrier"
+    );
+    assert!(encoder.commands().iter().any(|command| {
+        matches!(
+            command,
+            crate::draw::pipeline::FrameCommand::Native {
+                operation: FrameRasterOp::FillRect { .. }
+            }
+        )
+    }));
+}
+
+#[test]
 fn scroll_region_records_native_scroll_copy() {
     let mut engine = FrameRecordingEngine::new();
     engine.initialize(8, 6).expect("initialize recorder");
