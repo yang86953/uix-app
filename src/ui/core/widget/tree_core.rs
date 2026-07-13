@@ -42,6 +42,12 @@ pub struct WidgetTree {
     /// Phase 4 实际执行的 shrink 次数（回归：Stretch 侧栏不应反复 shrink）。
     #[cfg(test)]
     pub(crate) layout_shrink_ops: std::cell::Cell<u32>,
+    /// 单次 layout() 收敛循环实际执行的遍数（含最后稳定遍）。
+    #[cfg(test)]
+    pub(crate) layout_converge_passes: std::cell::Cell<u32>,
+    /// Phase 2 实际扩展 frame 的次数（回归：不得在稳定后反复 120→124）。
+    #[cfg(test)]
+    pub(crate) layout_expand_ops: std::cell::Cell<u32>,
 }
 
 impl Default for WidgetTree {
@@ -69,6 +75,10 @@ impl Default for WidgetTree {
             layout_frame_writes: std::cell::Cell::new(0),
             #[cfg(test)]
             layout_shrink_ops: std::cell::Cell::new(0),
+            #[cfg(test)]
+            layout_converge_passes: std::cell::Cell::new(0),
+            #[cfg(test)]
+            layout_expand_ops: std::cell::Cell::new(0),
         }
     }
 }
@@ -663,6 +673,16 @@ impl WidgetTree {
     #[cfg(test)]
     pub(crate) fn take_layout_shrink_ops(&self) -> u32 {
         self.layout_shrink_ops.replace(0)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn take_layout_converge_passes(&self) -> u32 {
+        self.layout_converge_passes.replace(0)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn take_layout_expand_ops(&self) -> u32 {
+        self.layout_expand_ops.replace(0)
     }
 
     // WidgetNode tree building.

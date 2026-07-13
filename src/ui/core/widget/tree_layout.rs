@@ -142,7 +142,9 @@ impl WidgetTree {
         // 上限提升至 10 次，应对深层嵌套（Container→Container→Widget）场景。
         // ════════════════════════════════════════════════════════════════
         let max_passes = 10;
+        let mut converge_passes = 0u32;
         for _converge_pass in 0..max_passes {
+            converge_passes += 1;
             let mut any_change = false;
 
             // Phase 1: Top-down — 父容器根据当前 frame 为子节点分配位置
@@ -188,6 +190,10 @@ impl WidgetTree {
             if !any_change {
                 break;
             }
+        }
+        #[cfg(test)]
+        {
+            self.layout_converge_passes.set(converge_passes);
         }
 
         // 最终更新 viewport（确保收敛结束后的 content_bounds 正确）
@@ -466,6 +472,11 @@ impl WidgetTree {
                     ) {
                         any_resized = true;
                         resized_children.insert(id);
+                        #[cfg(test)]
+                        {
+                            self.layout_expand_ops
+                                .set(self.layout_expand_ops.get().wrapping_add(1));
+                        }
                     }
                 } else if has_resized_child {
                     crate::core::log::debug_fn(format!(
@@ -473,16 +484,20 @@ impl WidgetTree {
                         id, node_frame.w, node_frame.h,
                     ));
                 }
-                // 重新布局子节点（容器扩展后 or 子节点被扩展过）
+                // 重新布局子节点（容器扩展后 or 子节点被扩展过）。
+                // 对已扩展子节点用当前 frame 做 measure 下限，避免父级仍按旧
+                // measured_size 把扩展写回（120↔124 振荡）。
                 let relayout_frame = if expanded_w || expanded_h {
                     Rect::new(old_frame.x, old_frame.y, effective_w, effective_h)
                 } else {
                     old_frame
                 };
-                let new_positions = self
-                    .get(id)
-                    .map(|n| n.layout_children(relayout_frame, &children, self))
-                    .unwrap_or_default();
+                let new_positions = self.layout_children_preserving_expansions(
+                    id,
+                    relayout_frame,
+                    &children,
+                    &resized_children,
+                );
                 let mut child_moved = false;
                 for (child_id, rect) in new_positions {
                     if self.set_layout_frame(child_id, rect) {
@@ -498,6 +513,33 @@ impl WidgetTree {
             }
         }
         any_resized
+    }
+
+    /// Phase 2 重排：对已扩展子节点，measure 结果不得低于当前 frame。
+    fn layout_children_preserving_expansions(
+        &self,
+        id: WidgetId,
+        frame: Rect,
+        children: &[WidgetId],
+        expanded: &std::collections::HashSet<WidgetId>,
+    ) -> Vec<(WidgetId, Rect)> {
+        let Some(node) = self.get(id) else {
+            return Vec::new();
+        };
+        let Some(layout) = node.component().as_layout() else {
+            return Vec::new();
+        };
+        let mut measured = layout.measure_children(frame, children, self);
+        for child in &mut measured {
+            if !expanded.contains(&child.id) {
+                continue;
+            }
+            if let Some(cf) = self.get(child.id).map(|n| n.frame()) {
+                child.measured_size.w = child.measured_size.w.max(cf.w);
+                child.measured_size.h = child.measured_size.h.max(cf.h);
+            }
+        }
+        layout.layout_children(frame, &measured, self)
     }
 
     /// 更新所有 viewport 容器的 content_bounds。

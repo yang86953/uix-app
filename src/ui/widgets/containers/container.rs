@@ -423,24 +423,49 @@ impl Container {
         // flex_grow 子项必须以 0 为 basis，让父级分配确定空间；
         // 否则窗口缩小后仍用上一轮 cached 内容高/宽，ScrollView 视口被撑满 → 无滚动条。
         let grow = self.style.flex_grow > 0.0;
-        let effective_w = self.style.width.unwrap_or_else(|| {
-            if grow {
-                0.0
-            } else if cached.w > 0.0 {
-                cached.w + self.style.padding.horizontal()
-            } else {
-                0.0
+        let content_w = if cached.w > 0.0 {
+            cached.w + self.style.padding.horizontal()
+        } else {
+            0.0
+        };
+        let content_h = if cached.h > 0.0 {
+            cached.h + self.style.padding.vertical()
+        } else {
+            0.0
+        };
+        // 显式宽高是下限：内容 / Phase 2 撑开后不得再向父级低报，否则与扩展振荡。
+        let effective_w = match self.style.width {
+            Some(w) => {
+                if content_w > 0.0 {
+                    w.max(content_w)
+                } else {
+                    w
+                }
             }
-        });
-        let effective_h = self.style.height.unwrap_or_else(|| {
-            if grow {
-                0.0
-            } else if cached.h > 0.0 {
-                cached.h + self.style.padding.vertical()
-            } else {
-                0.0
+            None => {
+                if grow {
+                    0.0
+                } else {
+                    content_w
+                }
             }
-        });
+        };
+        let effective_h = match self.style.height {
+            Some(h) => {
+                if content_h > 0.0 {
+                    h.max(content_h)
+                } else {
+                    h
+                }
+            }
+            None => {
+                if grow {
+                    0.0
+                } else {
+                    content_h
+                }
+            }
+        };
         Size::new(effective_w + bh, effective_h + bv)
     }
 }

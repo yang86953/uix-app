@@ -16,7 +16,7 @@ use crate::ui::core::widget::tree_core::*;
 use crate::ui::layout::engine::{child_from_tree, child_from_tree_with_constraints};
 use crate::ui::managers::StyleManager;
 use crate::ui::view::combinators::label;
-use crate::ui::view::{column, column_fit, row, scroll, ViewAdapter};
+use crate::ui::view::{column, column_fit, embed, row, scroll, ViewAdapter};
 use crate::ui::{ Button, Drawer, Grid, Label, Modal, OverlayEntry, QRCode, TextManager, Tooltip };
 
 struct SpyWidget {
@@ -3456,6 +3456,130 @@ fn stretch_sidebar_does_not_phase4_thrash_against_parent_allocation() {
         let after = tree.get(id).expect("node").frame();
         assert_eq!(before, after, "frame changed on stable re-layout for {id}");
     }
+}
+
+/// 复现 demo 卡顿：ScrollView 内 wrap Space（height=下限）内容撑开后，
+/// 不得与 Phase 1/sibling re-layout 在 120↔124 间空转至 max converge。
+#[test]
+fn viewport_wrap_space_does_not_phase2_viewport_thrash() {
+    use crate::ui::layout::{AlignItems, FlexDirection};
+    use crate::ui::widgets::general::space::SpaceSize;
+    use crate::ui::widgets::Space;
+
+    // min_h=120；窄宽下三块 200×64 换行 → 交叉轴约 64+8+64=136 > 120
+    let wrap_row = Space::new()
+        .height(120.0)
+        .direction(FlexDirection::Row)
+        .wrap(true)
+        .size(SpaceSize::Small)
+        .flex_grow(1.0)
+        .align(AlignItems::Start)
+        .child(Label::new("A").size(200.0, 64.0))
+        .child(Label::new("B").size(200.0, 64.0))
+        .child(Label::new("C").size(200.0, 64.0));
+
+    let shell = column([
+        scroll(column_fit([
+            embed(wrap_row),
+            label("tall-tail").height(900.0),
+        ]))
+        .flex_grow(1.0)
+        .into(),
+        label("status").height(28.0),
+    ])
+    .flex_grow(1.0);
+
+    let mut tree = ViewAdapter::build(shell);
+    let rid = tree.root_id().expect("root");
+    // 宽约 420：两列换行，触发交叉轴超过 min_h
+    tree.get_mut(rid)
+        .expect("root mut")
+        .set_frame(Rect::new(0.0, 0.0, 420.0, 600.0));
+    tree.push_layout_invalidation(rid);
+    let _ = tree.take_layout_frame_writes();
+    let _ = tree.take_layout_converge_passes();
+    let _ = tree.take_layout_expand_ops();
+
+    tree.layout();
+    let first_passes = tree.take_layout_converge_passes();
+    let first_expands = tree.take_layout_expand_ops();
+    assert!(
+        first_passes < 10,
+        "must converge before max iterations, got passes={first_passes} expands={first_expands}"
+    );
+    assert!(
+        first_passes <= 4,
+        "viewport+wrap should stabilize quickly, got passes={first_passes}"
+    );
+
+    let scroll_id = tree
+        .find_all_by_type::<crate::ui::widgets::ScrollView>()
+        .into_iter()
+        .next()
+        .map(|(id, _)| id)
+        .expect("ScrollView");
+    let content = tree.get(scroll_id).expect("scroll").children()[0];
+    let wrap_space = tree.get(content).expect("content col").children()[0];
+    let wrap_h = tree.get(wrap_space).expect("wrap space").frame().h;
+    assert!(
+        wrap_h > 120.5,
+        "wrap Space must keep expanded cross size, got h={wrap_h}"
+    );
+
+    // 稳定后再 layout：零 frame 写、收敛 1 遍、无 Phase 2 扩展
+    let _ = tree.take_layout_frame_writes();
+    let _ = tree.take_layout_converge_passes();
+    let _ = tree.take_layout_expand_ops();
+    tree.push_layout_invalidation(rid);
+    tree.layout();
+    assert_eq!(
+        tree.take_layout_frame_writes(),
+        0,
+        "stable viewport layout must not rewrite frames"
+    );
+    assert_eq!(
+        tree.take_layout_expand_ops(),
+        0,
+        "stable layout must not Phase 2 expand again"
+    );
+    assert_eq!(
+        tree.take_layout_converge_passes(),
+        1,
+        "stable layout should finish on first converge pass"
+    );
+
+    // resize 宽度后同样不得打满 converge
+    tree.dispatch_event(&SystemEvent::Resize {
+        width: 380.0,
+        height: 640.0,
+    });
+    let _ = tree.take_layout_converge_passes();
+    let _ = tree.take_layout_expand_ops();
+    tree.layout();
+    let resize_passes = tree.take_layout_converge_passes();
+    assert!(
+        resize_passes < 10,
+        "resize must not thrash to max passes, got {resize_passes}"
+    );
+    assert!(
+        resize_passes <= 4,
+        "resize should re-converge quickly, got {resize_passes}"
+    );
+}
+
+/// Space.height 是下限：cached 内容更高时 measure 须回报内容高（否则 Phase 1 写回矮值）。
+#[test]
+fn space_measure_floors_fixed_height_at_cached_content() {
+    use crate::ui::widgets::Space;
+
+    let space = Space::new().height(120.0);
+    space.cached_content_size.set(Size::new(400.0, 136.0));
+    let measured = space.measure(Constraints::unconstrained());
+    assert_eq!(
+        measured.h, 136.0,
+        "fixed height must not under-report wrapped content cache"
+    );
+    assert!(measured.w >= 400.0);
 }
 
 /// intrinsic column_fit（无 Stretch 拉满）布局后应稳定：二次 layout 零 frame 写、零 Phase 4。
