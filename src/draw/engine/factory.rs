@@ -120,7 +120,7 @@ mod tests {
         let mut engine = create_graphics_engine(Box::new(FakeGpuNative(GraphicsBackend::D3d11)))
             .expect("GpuEngine for D3D11");
         engine.initialize(64, 48).expect("initialize");
-        engine.shutdown();
+        engine.try_shutdown().expect("checked shutdown");
     }
 
     #[test]
@@ -128,6 +128,6 @@ mod tests {
         let mut engine = create_graphics_engine(Box::new(FakeGpuNative(GraphicsBackend::D3d12)))
             .expect("GpuEngine for D3D12");
         engine.initialize(64, 48).expect("initialize");
-        engine.shutdown();
+        engine.try_shutdown().expect("checked shutdown");
     }
 }

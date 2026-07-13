@@ -165,7 +165,7 @@ impl RenderSession {
             None
         };
         let replacement = create_backend(resolved, gpu_ctx)?;
-        self.backend.shutdown();
+        let _ = self.backend.try_shutdown();
         self.backend = replacement;
         if self.width > 0 && self.height > 0 {
             self.backend.resize(self.width, self.height)?;

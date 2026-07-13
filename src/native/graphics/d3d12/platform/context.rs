@@ -244,6 +244,30 @@ fn create_readback_buffer(device: &ID3D12Device, size: u64) -> Result<ID3D12Reso
     resource.ok_or_else(|| platform_error("D3d12Context: readback buffer was not created"))
 }
 
+fn create_upload_buffer(device: &ID3D12Device, size: u64) -> Result<ID3D12Resource> {
+    let heap = D3D12_HEAP_PROPERTIES {
+        Type: D3D12_HEAP_TYPE_UPLOAD,
+        CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+        MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
+        CreationNodeMask: 0,
+        VisibleNodeMask: 0,
+    };
+    let desc = buffer_resource_desc(size);
+    let mut resource = None;
+    unsafe {
+        device.CreateCommittedResource(
+            &heap,
+            D3D12_HEAP_FLAG_NONE,
+            &desc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            None,
+            &mut resource,
+        )
+    }
+    .map_err(|error| d3d12_error("ID3D12Device::CreateCommittedResource(upload)", error))?;
+    resource.ok_or_else(|| platform_error("D3d12Context: upload buffer was not created"))
+}
+
 fn record_transition(
     list: &ID3D12GraphicsCommandList,
     resource: &ID3D12Resource,
@@ -1119,6 +1143,120 @@ impl IGraphicsContext for D3d12Context {
             )
     }
 
+    /// Full-target replace upload of premultiplied AARRGGBB pixels. Used by
+    /// destination-dependent FrameEncoder ops after CPU reference apply — must
+    /// not alpha-over the previous RT contents.
+    fn upload_surface_pixels(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<()> {
+        self.ensure_healthy()?;
+        if width <= 0 || height <= 0 {
+            return Ok(());
+        }
+        if width != self.width || height != self.height {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                format!(
+                    "D3d12Context: upload_surface_pixels {width}x{height} does not match drawable {}x{}",
+                    self.width, self.height
+                ),
+            ));
+        }
+        let expected = (width as usize)
+            .checked_mul(height as usize)
+            .ok_or_else(|| {
+                Error::new(
+                    Errc::InvalidArgument,
+                    "D3d12Context: upload_surface_pixels pixel count overflow",
+                )
+            })?;
+        if pixels.len() < expected {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                format!(
+                    "D3d12Context: upload_surface_pixels buffer too small, got {}, need {expected}",
+                    pixels.len()
+                ),
+            ));
+        }
+        if self.frame_index >= self.back_buffers.len() {
+            return Err(platform_error(format!(
+                "D3d12Context: upload frame index {} has only {} buffers",
+                self.frame_index,
+                self.back_buffers.len()
+            )));
+        }
+        let buffer = self.back_buffers[self.frame_index].clone();
+        let desc = unsafe { buffer.GetDesc() };
+        let mut footprint = D3D12_PLACED_SUBRESOURCE_FOOTPRINT::default();
+        let mut total_bytes = 0u64;
+        unsafe {
+            self.device.GetCopyableFootprints(
+                &desc,
+                0,
+                1,
+                0,
+                Some(&mut footprint),
+                None,
+                None,
+                Some(&mut total_bytes),
+            );
+        }
+        let upload = create_upload_buffer(&self.device, total_bytes)?;
+        let empty_read = D3D12_RANGE { Begin: 0, End: 0 };
+        let mut mapped = std::ptr::null_mut();
+        unsafe { upload.Map(0, Some(&empty_read), Some(&mut mapped)) }
+            .map_err(|error| d3d12_error("ID3D12Resource::Map(upload)", error))?;
+        if mapped.is_null() {
+            unsafe { upload.Unmap(0, None) };
+            return Err(platform_error("D3d12Context: upload Map returned null"));
+        }
+        let row_bytes = width as usize * std::mem::size_of::<u32>();
+        let row_pitch = footprint.Footprint.RowPitch as usize;
+        let offset = footprint.Offset as usize;
+        for row in 0..height as usize {
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    pixels.as_ptr().add(row * width as usize).cast::<u8>(),
+                    mapped.cast::<u8>().add(offset + row * row_pitch),
+                    row_bytes,
+                );
+            }
+        }
+        let written = D3D12_RANGE {
+            Begin: 0,
+            End: total_bytes as usize,
+        };
+        unsafe { upload.Unmap(0, Some(&written)) };
+
+        self.begin_commands()?;
+        let previous_state = self.back_buffer_states[self.frame_index];
+        record_transition(
+            &self.command_list,
+            &buffer,
+            previous_state,
+            D3D12_RESOURCE_STATE_COPY_DEST,
+        );
+        self.back_buffer_states[self.frame_index] = D3D12_RESOURCE_STATE_COPY_DEST;
+        let mut destination = texture_copy_location_subresource(&buffer);
+        let mut source = texture_copy_location_footprint(&upload, footprint);
+        unsafe {
+            self.command_list
+                .CopyTextureRegion(&destination, 0, 0, 0, &source, None);
+        }
+        release_copy_location(&mut destination);
+        release_copy_location(&mut source);
+        record_transition(
+            &self.command_list,
+            &buffer,
+            D3D12_RESOURCE_STATE_COPY_DEST,
+            D3D12_RESOURCE_STATE_RENDER_TARGET,
+        );
+        self.back_buffer_states[self.frame_index] = D3D12_RESOURCE_STATE_RENDER_TARGET;
+        self.pending_gpu_resources.push(upload);
+        self.execute_recording_and_wait()?;
+        self.pending_gpu_resources.pop();
+        Ok(())
+    }
+
     fn blit_soft_fallback_tile(&mut self, pixels: &[u32], tile: SoftFallbackTile) -> Result<()> {
         self.ensure_healthy()?;
         self.begin_commands()?;
@@ -1401,6 +1539,18 @@ mod tests {
             .read_pixels(0, 0, warp.width(), warp.height())
             .expect("D3D12 WARP readback");
         assert_eq!(warp_pixels.first().copied(), Some(0xFF00_FF00));
+
+        let replace = vec![0xFF00_00FFu32; (warp.width() * warp.height()) as usize];
+        warp.upload_surface_pixels(&replace, warp.width(), warp.height())
+            .expect("WARP replace upload");
+        let replaced = warp
+            .read_pixels(0, 0, warp.width(), warp.height())
+            .expect("D3D12 WARP readback after replace upload");
+        assert!(
+            replaced.iter().all(|pixel| *pixel == 0xFF00_00FF),
+            "upload_surface_pixels must replace the drawable, not alpha-over it"
+        );
+
         warp.present(&PresentFrame::Swapchain {
             damage: PresentDamage::Full,
         })

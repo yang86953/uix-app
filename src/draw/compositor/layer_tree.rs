@@ -1367,7 +1367,9 @@ mod tests {
             Ok(())
         }
 
-        fn shutdown(&mut self) {}
+        fn try_shutdown(&mut self) -> Result<(), crate::core::Error> {
+            Ok(())
+        }
 
         fn resize(&mut self, _: i32, _: i32) -> Result<(), crate::core::Error> {
             Ok(())

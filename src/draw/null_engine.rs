@@ -32,7 +32,9 @@ impl GraphicsEngine for NullEngine {
         Ok(())
     }
 
-    fn shutdown(&mut self) {}
+    fn try_shutdown(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
 
     fn resize(&mut self, _width: i32, _height: i32) -> Result<(), Error> {
         Ok(())

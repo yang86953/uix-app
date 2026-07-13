@@ -682,6 +682,20 @@ impl IGraphicsContext for VulkanContext {
         self.upload_pixels(pixels, width, height)?;
         self.present_uploaded_pixels()
     }
+
+    /// Stage a full replace pixel buffer into the upload heap without presenting.
+    /// PixelUpload Additive/Scroll paths that only need staging (no native
+    /// readback) use this; NativeGpu destination-dependent IR still requires
+    /// readback, which this context intentionally does not provide.
+    fn upload_surface_pixels(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<()> {
+        if width <= 0 || height <= 0 {
+            return Ok(());
+        }
+        if width != self.width || height != self.height {
+            self.resize(width, height)?;
+        }
+        self.upload_pixels(pixels, width, height)
+    }
 }
 
 impl Drop for VulkanContext {

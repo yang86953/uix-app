@@ -241,14 +241,14 @@ pub fn demo_graphics_engine() -> Result<(), Error> {
     e.initialize(800, 600)?;
     e.canvas_2d()
         .fill_rect(Rect::new(10.0, 10.0, 100.0, 50.0), colors::PRIMARY, None);
-    e.shutdown();
+    e.try_shutdown()?;
     let mut boxed: Box<dyn GraphicsEngine> = Box::new(NullEngine::new());
     boxed.initialize(640, 480)?;
     println!(
         "  Box<dyn GraphicsEngine> width={}",
         boxed.canvas_2d().width()
     );
-    boxed.shutdown();
+    boxed.try_shutdown()?;
     Ok(())
 }
 

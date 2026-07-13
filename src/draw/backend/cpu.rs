@@ -165,12 +165,13 @@ impl RenderBackend for CpuBackend {
         Ok(())
     }
 
-    fn shutdown(&mut self) {
+    fn try_shutdown(&mut self) -> Result<(), Error> {
         self.width = 0;
         self.height = 0;
         self.main = CpuDrawSurface::new(1, 1);
         self.active_offscreen = None;
         self.offscreens.clear();
+        Ok(())
     }
 
     fn surface(&mut self) -> &mut dyn DrawSurface {

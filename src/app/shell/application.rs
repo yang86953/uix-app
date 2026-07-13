@@ -789,7 +789,7 @@ impl App {
                 "initial window show failed: {}",
                 error.short_what()
             ));
-            engine.shutdown();
+            let _ = engine.try_shutdown();
             report_window_operation_error(
                 "initial show failure cleanup close failed",
                 platform_window.close(),
@@ -1217,7 +1217,7 @@ fn create_secondary_window(
             "secondary window show failed: {}",
             error.short_what()
         ));
-        engine.shutdown();
+        let _ = engine.try_shutdown();
         report_window_operation_error(
             "secondary show failure cleanup close failed",
             platform_window.close(),
@@ -1473,7 +1473,7 @@ fn create_preferred_engine(
                     Some(Box::new(engine))
                 }
                 Err(e) => {
-                    engine.shutdown();
+                    let _ = engine.try_shutdown();
                     crate::core::log::error_fn(format!("SoftwareEngine 初始化失败: {}", e.what()));
                     None
                 }

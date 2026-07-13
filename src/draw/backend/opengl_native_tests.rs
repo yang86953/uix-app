@@ -81,7 +81,7 @@ fn opengles_native_path_keeps_order_and_bounded_soft_upload() {
         crate::draw::RenderOutcome::Present(_)
     ));
     engine.destroy_offscreen(picture);
-    engine.shutdown();
+    engine.try_shutdown().expect("checked shutdown");
     window.close().expect("close native window");
 }
 
@@ -176,7 +176,7 @@ fn opengles_native_path_matches_software_for_hybrid_clip_and_bounded_tile() {
         engine.end_frame(&DamageRegion::full()),
         crate::draw::RenderOutcome::Present(_)
     ));
-    engine.shutdown();
+    engine.try_shutdown().expect("checked shutdown");
     window.close().expect("close native window");
 }
 
@@ -219,7 +219,7 @@ fn opengles_native_path_matches_software_for_premultiplied_soft_tile() {
     };
     assert_eq!(rgba_to_aarrggbb(pixels[48 * stride + 48]), reference);
 
-    engine.shutdown();
+    engine.try_shutdown().expect("checked shutdown");
     window.close().expect("close native window");
 }
 
@@ -279,7 +279,7 @@ fn opengles_native_path_executes_encoded_cached_picture_in_bound_offscreen() {
         crate::draw::RenderOutcome::Present(_)
     ));
     engine.destroy_offscreen(picture);
-    engine.shutdown();
+    engine.try_shutdown().expect("checked shutdown");
     window.close().expect("close native window");
 }
 
@@ -328,7 +328,7 @@ fn opengles_native_path_honors_picture_source_crop() {
         crate::draw::RenderOutcome::Present(_)
     ));
     engine.destroy_offscreen(picture);
-    engine.shutdown();
+    engine.try_shutdown().expect("checked shutdown");
     window.close().expect("close native window");
 }
 
@@ -389,7 +389,7 @@ fn opengles_native_path_keeps_order_when_a_picture_blits_into_an_active_picture(
     ));
     engine.destroy_offscreen(source);
     engine.destroy_offscreen(destination);
-    engine.shutdown();
+    engine.try_shutdown().expect("checked shutdown");
     window.close().expect("close native window");
 }
 
@@ -409,6 +409,6 @@ fn opengles_native_path_rejects_additive_cpu_fallback() {
         crate::draw::RenderOutcome::Failed(GraphicsFailure::Other(error))
             if error.code() == crate::core::Errc::NotImplemented
     ));
-    engine.shutdown();
+    engine.try_shutdown().expect("checked shutdown");
     window.close().expect("close native window");
 }

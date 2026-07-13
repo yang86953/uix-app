@@ -52,10 +52,6 @@ impl GraphicsEngine for GpuEngine {
         Ok(())
     }
 
-    fn shutdown(&mut self) {
-        self.session.shutdown();
-    }
-
     fn try_shutdown(&mut self) -> Result<(), Error> {
         self.session.try_shutdown()
     }

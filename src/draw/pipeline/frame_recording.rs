@@ -97,9 +97,9 @@ impl GraphicsEngine for FrameRecordingEngine {
         self.resize(width, height)
     }
 
-    fn shutdown(&mut self) {
+    fn try_shutdown(&mut self) -> Result<(), Error> {
         self.active_offscreen = None;
-        self.offscreens.shutdown();
+        self.offscreens.try_shutdown()
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {

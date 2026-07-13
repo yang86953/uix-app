@@ -422,8 +422,9 @@ mod tests {
             self.inner.initialize(width, height)
         }
 
-        fn shutdown(&mut self) {
-            self.inner.shutdown();
+        fn try_shutdown(&mut self) -> Result<(), Error> {
+            self.inner.try_shutdown()?;
+            Ok(())
         }
 
         fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {

@@ -66,16 +66,6 @@ impl GraphicsEngine for PresentUploadEngine {
         self.session.initialize(actual_w, actual_h)
     }
 
-    fn shutdown(&mut self) {
-        if let Err(error) = self.try_shutdown() {
-            crate::core::log::error_fn(format!(
-                "PresentUploadEngine {} checked shutdown failed: {}",
-                self.backend_name(),
-                error.short_what()
-            ));
-        }
-    }
-
     fn try_shutdown(&mut self) -> Result<(), Error> {
         if self.shutdown {
             return Ok(());
@@ -254,7 +244,13 @@ impl GraphicsEngine for PresentUploadEngine {
 
 impl Drop for PresentUploadEngine {
     fn drop(&mut self) {
-        <Self as GraphicsEngine>::shutdown(self);
+        if let Err(error) = self.try_shutdown() {
+            crate::core::log::error_fn(format!(
+                "PresentUploadEngine {} checked shutdown failed: {}",
+                self.backend_name(),
+                error.short_what()
+            ));
+        }
     }
 }
 
@@ -520,7 +516,7 @@ mod tests {
         let checked_shutdowns = context.checked_shutdowns.clone();
         let mut engine = PresentUploadEngine::new(Box::new(context)).unwrap();
 
-        engine.shutdown();
+        engine.try_shutdown().expect("checked shutdown");
         drop(engine);
 
         assert_eq!(checked_shutdowns.load(Ordering::SeqCst), 1);

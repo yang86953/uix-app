@@ -1387,15 +1387,6 @@ impl RenderBackend for NativeGpuBackend {
         Ok(self.adopt_factory_drawable_extent())
     }
 
-    fn shutdown(&mut self) {
-        if let Err(error) = self.try_shutdown() {
-            crate::core::log::error_fn(format!(
-                "NativeGpuBackend: checked shutdown failed: {}",
-                error.short_what()
-            ));
-        }
-    }
-
     fn try_shutdown(&mut self) -> Result<(), Error> {
         if self.shutdown {
             return Ok(());
@@ -1753,7 +1744,12 @@ impl RenderBackend for NativeGpuBackend {
 
 impl Drop for NativeGpuBackend {
     fn drop(&mut self) {
-        <Self as RenderBackend>::shutdown(self);
+        if let Err(error) = self.try_shutdown() {
+            crate::core::log::error_fn(format!(
+                "NativeGpuBackend: checked shutdown failed: {}",
+                error.short_what()
+            ));
+        }
     }
 }
 
@@ -3555,8 +3551,8 @@ mod tests {
             make_current_calls,
             ..
         } = recording_backend(FailStage::None);
-        backend.shutdown();
-        backend.shutdown();
+        backend.try_shutdown().expect("checked shutdown");
+        backend.try_shutdown().expect("checked shutdown retry");
         drop(backend);
 
         assert_eq!(shutdown_calls.get(), 1);
@@ -3572,12 +3568,17 @@ mod tests {
             ..
         } = recording_backend(FailStage::Shutdown);
 
-        backend.shutdown();
+        let error = backend
+            .try_shutdown()
+            .expect_err("injected shutdown failure must stay typed");
+        assert_eq!(error.message(), "injected Shutdown failure");
         assert_eq!(shutdown_calls.get(), 1);
+        assert!(!backend.shutdown);
 
         fail_stage.set(FailStage::None);
-        backend.shutdown();
+        backend.try_shutdown().expect("checked shutdown retry");
         assert_eq!(shutdown_calls.get(), 2);
+        assert!(backend.shutdown);
 
         drop(backend);
         assert_eq!(shutdown_calls.get(), 2);
@@ -3607,7 +3608,7 @@ mod tests {
         assert!(backend.active_offscreen.is_none());
 
         fail_stage.set(FailStage::None);
-        backend.shutdown();
+        backend.try_shutdown().expect("checked shutdown");
     }
 
     #[test]
@@ -4305,7 +4306,7 @@ mod tests {
             "edge-touching contours",
         );
 
-        backend.shutdown();
+        backend.try_shutdown().expect("checked shutdown");
         drop(backend);
         window.close().expect("close native window");
     }
@@ -4651,7 +4652,7 @@ mod tests {
             assert!(surface.canvas.pending_native.is_empty());
             assert!(!surface.canvas.soft_has_content);
         }
-        GraphicsEngine::shutdown(&mut engine);
+        engine.try_shutdown().expect("checked shutdown");
         drop(engine);
         window.close().expect("close window after D3D12 engine");
     }
@@ -4843,7 +4844,7 @@ mod tests {
             .present(&DamageRegion::full())
             .expect("present encoded Picture frame");
         native.destroy_offscreen(picture);
-        native.shutdown();
+        native.try_shutdown().expect("checked shutdown");
         window.close().expect("close encoded Picture WARP window");
     }
 
@@ -4916,7 +4917,7 @@ mod tests {
         native
             .present(&DamageRegion::full())
             .expect("single final present after main FrameEncoder");
-        native.shutdown();
+        native.try_shutdown().expect("checked shutdown");
         window.close().expect("close main FrameEncoder WARP window");
     }
 
@@ -4983,6 +4984,75 @@ mod tests {
                 pixels[10 * stride + 10],
             ],
             "D3D11 WARP additive+scroll FrameEncoder",
+        );
+
+        let _ = native.try_shutdown();
+        window.close().expect("close");
+    }
+
+    #[cfg(feature = "d3d12")]
+    #[test]
+    fn d3d12_warp_additive_and_scroll_frame_ops_match_reference_executor() {
+        use crate::draw::pipeline::{FrameRasterOp, FrameRect};
+
+        if !crate::native::factory::d3d12_warp_test_context_available() {
+            return;
+        }
+
+        let mut platform = crate::native::create_platform().expect("platform");
+        let mut window = platform
+            .window_manager()
+            .create_window("additive scroll FrameEncoder D3D12 WARP", 48, 32)
+            .expect("window");
+        let context = crate::native::factory::create_d3d12_warp_test_context(
+            window.native_surface_ptr(),
+            48,
+            32,
+        )
+        .expect("D3D12 WARP context");
+        let mut native = NativeGpuBackend::new(context).expect("native WARP backend");
+        native.resize(48, 32).expect("resize");
+        let (frame_w, frame_h) = (native.width, native.height);
+
+        let mut encoder = FrameEncoder::new(frame_w, frame_h).expect("encoder");
+        encoder.clear(Color::from_rgba(20, 40, 60, 255));
+        encoder.native(FrameRasterOp::FillRect {
+            rect: FrameRect::new(4, 4, 8, 8),
+            color: Color::from_rgba(80, 160, 40, 255),
+        });
+        encoder.native(FrameRasterOp::FillRectAdditive {
+            rect: FrameRect::new(6, 6, 6, 6),
+            color: Color::from_rgba(40, 20, 80, 128),
+        });
+        encoder.native(FrameRasterOp::ScrollCopy {
+            viewport: FrameRect::new(0, 0, frame_w, frame_h),
+            dx: 0,
+            dy: 2,
+        });
+        assert_eq!(
+            native
+                .try_execute_encoded_frame(&encoder)
+                .expect("execute additive/scroll FrameEncoder"),
+            EncodedFrameExecution::Executed
+        );
+
+        let reference = encoder.render_reference();
+        let stride = native.gpu_ctx.width() as usize;
+        let pixels = native.try_readback().expect("readback");
+        assert_premultiplied_probes_match(
+            &[
+                reference.pixel(2, 2).expect("bg"),
+                reference.pixel(5, 5).expect("fill"),
+                reference.pixel(8, 8).expect("additive"),
+                reference.pixel(10, 10).expect("scrolled"),
+            ],
+            &[
+                pixels[2 * stride + 2],
+                pixels[5 * stride + 5],
+                pixels[8 * stride + 8],
+                pixels[10 * stride + 10],
+            ],
+            "D3D12 WARP additive+scroll FrameEncoder",
         );
 
         let _ = native.try_shutdown();
