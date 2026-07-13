@@ -1,14 +1,10 @@
 use crate::tests::common::*;
-use crate::ui::widgets::Container;
-use crate::ui::component_patch::patch_builtin_widget;
-use crate::ui::core::widget::{WidgetCore, WidgetNode};
-use crate::ui::event::{ HandlerRegistration, HandlerSignature };
-use crate::ui::foundation::state::{begin_state_capture, end_state_capture};
-use crate::ui::view::{View, ViewNode};
-use crate::ui::widgets::{ Button, Grid, Label };
-use crate::ui::widgets::*;
-use crate::ui::view::{column, dynamic_label, grid, label, row, scroll};
+use crate::ui::core::widget::WidgetCore;
 use crate::ui::view::adapter::*;
+use crate::ui::view::{View, ViewNode};
+use crate::ui::widgets::Button;
+use crate::ui::widgets::Container;
+use crate::ui::widgets::*;
 
 #[test]
 fn test_build_with_children() {
@@ -766,7 +762,7 @@ fn reconcile_form_patches_instance_and_syncs_layout_config() {
 #[test]
 fn reconcile_table_preserves_runtime_selection_and_syncs_config() {
     use crate::ui::widgets::{Table, TableColumn};
-use crate::ui::{ SnapshotTableColumn };
+    use crate::ui::SnapshotTableColumn;
 
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
         Table::new()
@@ -810,7 +806,7 @@ use crate::ui::{ SnapshotTableColumn };
 
     ViewAdapter::reconcile_nodes(
         &mut tree,
-        ViewNode::leaf(
+        crate::ui::view::View::build(
             Table::new()
                 .columns(vec![TableColumn::new("City", 96.0).filterable(true)])
                 .rows(vec![vec!["Paris".to_string()], vec!["London".to_string()]])
@@ -844,11 +840,98 @@ use crate::ui::{ SnapshotTableColumn };
             rows: vec![vec!["Paris".to_string()], vec!["London".to_string()]],
             row_h: 36.0,
             header_h: 32.0,
+            expandable: true,
             expand_height: 72.0,
             empty_text: "No rows".to_string(),
             page_size: 8,
         }
     );
+}
+
+#[test]
+fn table_expand_renderer_is_replaced_and_removed_with_component_sidecar() {
+    use crate::ui::widgets::Table;
+
+    let first_capture = Rc::new(Cell::new(0));
+    let first_renderer = Rc::clone(&first_capture);
+    let mut tree = ViewAdapter::build(Table::new().rows(vec![vec!["Ada".to_string()]]).expandable(
+        48.0,
+        move |_row, _ctx, _rect| {
+            first_renderer.set(first_renderer.get() + 1);
+        },
+    ));
+    let root = tree.root_id().expect("table root");
+
+    assert!(tree.has_table_expand_renderer(root));
+    assert_eq!(Rc::strong_count(&first_capture), 2);
+
+    let second_capture = Rc::new(Cell::new(0));
+    let second_renderer = Rc::clone(&second_capture);
+    ViewAdapter::reconcile(
+        &mut tree,
+        Table::new()
+            .rows(vec![vec!["Grace".to_string()]])
+            .expandable(56.0, move |_row, _ctx, _rect| {
+                second_renderer.set(second_renderer.get() + 1);
+            }),
+    );
+
+    assert_eq!(tree.root_id(), Some(root), "ComponentId must stay stable");
+    assert!(tree.has_table_expand_renderer(root));
+    assert_eq!(Rc::strong_count(&first_capture), 1);
+    assert_eq!(Rc::strong_count(&second_capture), 2);
+
+    ViewAdapter::reconcile_nodes(&mut tree, ViewNode::leaf(Table::new()));
+
+    assert_eq!(tree.root_id(), Some(root));
+    assert!(!tree.has_table_expand_renderer(root));
+    assert_eq!(Rc::strong_count(&second_capture), 1);
+}
+
+#[test]
+fn table_expand_affordance_toggles_component_state_without_owning_renderer() {
+    use crate::ui::widgets::{Table, TableColumn};
+
+    let mut tree = ViewAdapter::build(
+        Table::new()
+            .columns(vec![TableColumn::new("Name", 120.0)])
+            .rows(vec![vec!["Ada".to_string()]])
+            .expandable(48.0, |_row, _ctx, _rect| {}),
+    );
+    let root = tree.root_id().expect("table root");
+    let table = tree
+        .get_mut(root)
+        .unwrap()
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<Table>()
+        .unwrap();
+
+    let click = SystemEvent::PointerDown {
+        pos: Point::new(112.0, 40.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    };
+    assert_eq!(EventHandler::on_event(table, &click), EventResult::Handled);
+    assert_eq!(table.expanded_row(), Some(0));
+    assert_eq!(EventHandler::on_event(table, &click), EventResult::Handled);
+    assert_eq!(table.expanded_row(), None);
+}
+
+#[test]
+fn replacing_tree_root_drops_table_expand_renderer() {
+    use crate::ui::widgets::{Label, Table};
+
+    let capture = Rc::new(Cell::new(0));
+    let renderer_capture = Rc::clone(&capture);
+    let mut tree = ViewAdapter::build(Table::new().expandable(48.0, move |_row, _ctx, _rect| {
+        renderer_capture.set(renderer_capture.get() + 1)
+    }));
+    assert_eq!(Rc::strong_count(&capture), 2);
+
+    ViewAdapter::reconcile_nodes(&mut tree, ViewNode::leaf(Label::new("replacement")));
+
+    assert_eq!(Rc::strong_count(&capture), 1);
 }
 
 #[test]
@@ -3804,7 +3887,7 @@ fn reconcile_mentions_preserves_suggestion_state_and_syncs_options() {
 
 #[test]
 fn reconcile_preserves_consumed_once_handler_when_signature_is_unchanged() {
-use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
+    use crate::ui::event::{ClickEvent, HandlerOptions, HandlerRegistration};
     use crate::ui::view::button;
     use crate::ui::view::View;
 
@@ -3848,7 +3931,7 @@ use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
 
 #[test]
 fn reconcile_reregisters_plain_handler_without_stable_signature() {
-use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
+    use crate::ui::event::{ClickEvent, HandlerOptions, HandlerRegistration};
     use crate::ui::view::button;
     use crate::ui::view::View;
 
@@ -3892,7 +3975,7 @@ use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
 
 #[test]
 fn reconcile_reregisters_handler_when_generation_changes() {
-use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
+    use crate::ui::event::{ClickEvent, HandlerOptions, HandlerRegistration};
     use crate::ui::view::button;
     use crate::ui::view::View;
 
@@ -3936,7 +4019,7 @@ use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
 
 #[test]
 fn reconcile_preserves_consumed_once_handler_when_state_capture_fingerprint_is_unchanged() {
-use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
+    use crate::ui::event::{ClickEvent, HandlerOptions, HandlerRegistration};
     use crate::ui::state::State;
     use crate::ui::view::button;
     use crate::ui::view::View;
@@ -3983,7 +4066,7 @@ use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
 
 #[test]
 fn reconcile_reregisters_handler_when_state_capture_fingerprint_changes() {
-use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
+    use crate::ui::event::{ClickEvent, HandlerOptions, HandlerRegistration};
     use crate::ui::state::State;
     use crate::ui::view::button;
     use crate::ui::view::View;
@@ -4030,7 +4113,7 @@ use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
 
 #[test]
 fn reconcile_reregisters_handler_when_options_change_with_same_capture() {
-use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
+    use crate::ui::event::{ClickEvent, HandlerOptions, HandlerRegistration};
     use crate::ui::state::State;
     use crate::ui::view::button;
     use crate::ui::view::View;
@@ -4073,7 +4156,7 @@ use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
 
 #[test]
 fn reconcile_preserves_consumed_once_handler_when_window_capture_fingerprint_is_unchanged() {
-use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
+    use crate::ui::event::{ClickEvent, HandlerOptions, HandlerRegistration};
     use crate::ui::view::button;
     use crate::ui::view::View;
 
@@ -4118,7 +4201,7 @@ use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
 
 #[test]
 fn reconcile_reregisters_handler_when_window_capture_fingerprint_changes() {
-use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
+    use crate::ui::event::{ClickEvent, HandlerOptions, HandlerRegistration};
     use crate::ui::view::button;
     use crate::ui::view::View;
 
@@ -4164,7 +4247,7 @@ use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
 
 #[test]
 fn reconcile_reregisters_handler_when_one_of_multiple_captures_changes() {
-use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
+    use crate::ui::event::{ClickEvent, HandlerOptions, HandlerRegistration};
     use crate::ui::state::State;
     use crate::ui::view::button;
     use crate::ui::view::View;
@@ -4641,7 +4724,11 @@ fn input_on_change_is_registered_as_semantic_handler() {
 #[test]
 fn static_display_widgets_are_picture_eligible() {
     use crate::draw::compositor::PicturePolicy;
-use crate::ui::widgets::{ Alert, Avatar, Badge, BarChart, Content, Descriptions, Divider, Empty, Footer, Grid, Header, Icon, Layout, LineChart, List, PieChart, QRCode, ResultType, ResultView, Sider, Skeleton, Space, Tag, Timeline, Watermark };
+    use crate::ui::widgets::{
+        Alert, Avatar, Badge, BarChart, Content, Descriptions, Divider, Empty, Footer, Grid,
+        Header, Icon, Layout, LineChart, List, PieChart, QRCode, ResultType, ResultView, Sider,
+        Skeleton, Space, Tag, Timeline, Watermark,
+    };
 
     let widgets: Vec<Box<dyn WidgetComponent>> = vec![
         Box::new(Space::new()),

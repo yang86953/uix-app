@@ -9,10 +9,11 @@ use std::fs::File;
 use std::io::{Seek, SeekFrom, Write};
 use std::os::unix::io::AsRawFd;
 
-use wayland_client::protocol::{wl_callback, wl_compositor, wl_shm, wl_surface};
+use wayland_client::protocol::{wl_buffer, wl_compositor, wl_shm, wl_surface};
 use wayland_client::Main;
 
 use crate::core::{Errc, Error, Result};
+use crate::native::shared::buffer_lease::BufferLease;
 use crate::native::traits::present::PresentDamage;
 use crate::native::traits::present::{validate_pixel_buffer, IPresenter};
 
@@ -82,33 +83,8 @@ impl WaylandPresenter {
             self.width = width;
             self.height = height;
             self.shm_buffers = new_bufs;
+            self.active_buffer = 0;
         }
-
-        let write_idx = 1 - self.active_buffer;
-        let shm = self.shm_buffers[write_idx].as_mut().ok_or_else(|| {
-            Error::new(
-                Errc::InvalidState,
-                "WaylandPresenter: selected SHM buffer is unavailable",
-            )
-        })?;
-
-        let pixel_count = shm.size / 4;
-        let bytes = unsafe {
-            std::slice::from_raw_parts(pixels[..pixel_count].as_ptr().cast::<u8>(), shm.size)
-        };
-
-        shm.file.seek(SeekFrom::Start(0)).map_err(|error| {
-            Error::new(
-                Errc::PlatformError,
-                format!("WaylandPresenter: seek SHM buffer failed: {error}"),
-            )
-        })?;
-        shm.file.write_all(bytes).map_err(|error| {
-            Error::new(
-                Errc::PlatformError,
-                format!("WaylandPresenter: write SHM buffer failed: {error}"),
-            )
-        })?;
 
         let surface = self.surface.as_ref().ok_or_else(|| {
             Error::new(
@@ -116,6 +92,33 @@ impl WaylandPresenter {
                 "WaylandPresenter: Wayland surface is unavailable",
             )
         })?;
+        let write_idx = [1 - self.active_buffer, self.active_buffer]
+            .into_iter()
+            .find(|&index| {
+                self.shm_buffers[index]
+                    .as_ref()
+                    .is_some_and(ShmBuffer::try_acquire)
+            })
+            .ok_or_else(|| {
+                Error::new(
+                    Errc::WouldBlock,
+                    "WaylandPresenter: all SHM buffers are busy",
+                )
+            })?;
+        let shm = self.shm_buffers[write_idx].as_mut().ok_or_else(|| {
+            Error::new(
+                Errc::InvalidState,
+                "WaylandPresenter: selected SHM buffer is unavailable",
+            )
+        })?;
+
+        if let Err(error) = shm.write_pixels(pixels) {
+            shm.release();
+            return Err(Error::new(
+                Errc::PlatformError,
+                format!("WaylandPresenter: write SHM buffer failed: {error}"),
+            ));
+        }
 
         surface.attach(Some(&shm.buffer), 0, 0);
         match damage {
@@ -129,7 +132,6 @@ impl WaylandPresenter {
             PresentDamage::Full => surface.damage(0, 0, width, height),
         }
 
-        let _cb: Main<wl_callback::WlCallback> = surface.frame();
         surface.commit();
         self.active_buffer = write_idx;
 
@@ -182,6 +184,13 @@ impl WaylandPresenter {
         let fd = f.as_raw_fd();
         let pool = self.shm.create_pool(fd, pool_size);
         let buf = pool.create_buffer(0, width, height, stride, wl_shm_proto::Format::Argb8888);
+        let lease = BufferLease::new();
+        let released = lease.clone();
+        buf.quick_assign(move |_, event, _| {
+            if matches!(event, wl_buffer::Event::Release) {
+                released.release();
+            }
+        });
 
         let _ = std::fs::remove_file(&tmp);
         Ok(ShmBuffer {
@@ -189,6 +198,7 @@ impl WaylandPresenter {
             size,
             pool,
             buffer: buf,
+            lease,
         })
     }
 }

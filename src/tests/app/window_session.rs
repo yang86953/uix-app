@@ -1,19 +1,16 @@
-use crate::tests::common::*;
-use crate::ui::widgets::Container;
-use crate::app::active_work_registry::ActiveWorkRegistry;
-use crate::app::app_timer::AppTimerQueue;
-use crate::app::main_thread_queue::MainThreadQueue;
-use crate::draw::traits::GraphicsEngine;
-use crate::ui::view::{ViewAdapter, ViewNode};
-use crate::app::window_session::*;
 use crate::app::main_thread_queue::MainThreadContext;
-use crate::draw::traits::{ Canvas2D, GraphicsCapabilities, UpdateStrategy };
+use crate::app::window_session::*;
+use crate::draw::traits::GraphicsEngine;
+use crate::draw::traits::{Canvas2D, GraphicsCapabilities, UpdateStrategy};
 use crate::impl_widget_component;
+use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
-use crate::ui::traits::{ WidgetLifecycle };
+use crate::ui::traits::WidgetLifecycle;
 use crate::ui::view::combinators::{dynamic_label, label};
+use crate::ui::view::{ViewAdapter, ViewNode};
+use crate::ui::widgets::Container;
 use crate::ui::widgets::Label;
-use crate::ui::{ State };
+use crate::ui::State;
 
 struct SessionLifecycleProbe {
     events: Rc<RefCell<Vec<&'static str>>>,

@@ -1,6 +1,5 @@
-use crate::tests::common::*;
-use std::collections::{BTreeMap, BTreeSet};
 use crate::app::active_work_registry::*;
+use crate::tests::common::*;
 
 #[test]
 fn next_deadline_returns_earliest_registered_work() {

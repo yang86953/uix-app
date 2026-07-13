@@ -1,8 +1,7 @@
-use crate::tests::common::*;
-use crate::native::backends::windows::text_input::WindowsImeState;
-use crate::native::traits::event::{UiEvent, UiEventType};
 use crate::native::backends::windows::ime_dispatch::*;
+use crate::native::backends::windows::text_input::WindowsImeState;
 use crate::native::traits::event::UiEventPayload;
+use crate::native::traits::event::{UiEvent, UiEventType};
 
 fn payload_text(event: &UiEvent) -> Option<&str> {
     match &event.payload {

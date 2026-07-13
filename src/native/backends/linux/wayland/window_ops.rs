@@ -7,10 +7,13 @@
 // SHM 像素呈现由独立的 WaylandPresenter 处理。
 // ============================================================================
 
+use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
-use wayland_client::protocol::{wl_compositor, wl_region, wl_shm, wl_surface};
+use wayland_client::protocol::{wl_callback, wl_compositor, wl_region, wl_shm, wl_surface};
 use wayland_client::Main;
 use wayland_protocols::misc::server_decoration::client::org_kde_kwin_server_decoration::OrgKdeKwinServerDecoration;
 use wayland_protocols::staging::xdg_activation::v1::client::xdg_activation_v1::XdgActivationV1;
@@ -20,9 +23,11 @@ use wayland_protocols::xdg_shell::client::{xdg_surface, xdg_toplevel, xdg_wm_bas
 use crate::core::error::{Errc, Error, Result};
 use crate::core::WindowId;
 use crate::native::graphics::platform::linux::WaylandSurfaceHandle;
-use crate::native::shared::unimpl;
-use crate::native::shared::WindowOps;
-use crate::native::traits::event::UiEvent;
+use crate::native::shared::window_mode::{NativeMaximizeTransition, NativeWindowModeState};
+use crate::native::shared::window_target::SurfaceWindowTargets;
+use crate::native::shared::{unimpl, WindowOps, WindowState};
+use crate::native::traits::event::{FrameRequestToken, UiEvent};
+use crate::native::traits::window::{NativeFrameRequest, NativeFrameRequestPhase};
 
 /// Wayland 平台窗口操作句柄。
 ///
@@ -32,12 +37,16 @@ pub(crate) struct WaylandWindowOps {
     pub(crate) window_id: WindowId,
     native_surface: WaylandSurfaceHandle,
     pub(crate) surface: Option<Main<wl_surface::WlSurface>>,
+    surface_id: Option<u32>,
     pub(crate) xdg_surface: Option<Main<xdg_surface::XdgSurface>>,
     pub(crate) toplevel: Option<Main<xdg_toplevel::XdgToplevel>>,
     pub(crate) compositor: Main<wl_compositor::WlCompositor>,
     pub(crate) shm: Main<wl_shm::WlShm>,
     pub(crate) input_region: Option<Main<wl_region::WlRegion>>,
     pub(crate) events: Arc<Mutex<VecDeque<UiEvent>>>,
+    surface_windows: Arc<Mutex<SurfaceWindowTargets>>,
+    frame_request: Arc<Mutex<Option<NativeFrameRequest>>>,
+    configured_modes: Arc<Mutex<NativeWindowModeState>>,
     /// KDE 服务器端装饰对象（需维持生命周期以避免装饰被撤销）
     pub(crate) kde_decoration: Option<Main<OrgKdeKwinServerDecoration>>,
     /// xdg-decoration 装饰对象（需维持生命周期以避免装饰被撤销）
@@ -81,6 +90,7 @@ impl WaylandWindowOps {
         compositor: Main<wl_compositor::WlCompositor>,
         shm: Main<wl_shm::WlShm>,
         events: Arc<Mutex<VecDeque<UiEvent>>>,
+        surface_windows: Arc<Mutex<SurfaceWindowTargets>>,
         outputs: Arc<Mutex<Vec<super::output::RawOutput>>>,
         xdg_activation: Option<Main<XdgActivationV1>>,
     ) -> Self {
@@ -88,17 +98,31 @@ impl WaylandWindowOps {
             window_id,
             native_surface: WaylandSurfaceHandle::default(),
             surface: None,
+            surface_id: None,
             xdg_surface: None,
             toplevel: None,
             compositor,
             shm,
             input_region: None,
             events,
+            surface_windows,
+            frame_request: Arc::new(Mutex::new(None)),
+            configured_modes: Arc::new(Mutex::new(NativeWindowModeState::default())),
             kde_decoration: None,
             xdg_decoration: None,
             outputs,
             xdg_activation,
         }
+    }
+
+    fn unregister_surface(&mut self) {
+        let Some(surface_id) = self.surface_id.take() else {
+            return;
+        };
+        self.surface_windows
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .unregister_surface(surface_id);
     }
 
     /// 初始化 Wayland 窗口：创建 surface/toplevel、设置装饰、绑定事件回调。
@@ -112,8 +136,7 @@ impl WaylandWindowOps {
         title: &str,
         width: i32,
         height: i32,
-        maximized: Arc<Mutex<bool>>,
-        fullscreen: Arc<Mutex<bool>>,
+        window_state: Rc<RefCell<WindowState>>,
     ) -> Result<(), Error> {
         use crate::native::traits::event::{UiEventPayload, UiEventType};
         use wayland_protocols::misc::server_decoration::client::{
@@ -129,6 +152,7 @@ impl WaylandWindowOps {
         let window_id = self.window_id;
 
         let surface = self.compositor.create_surface();
+        let surface_id = surface.as_ref().id();
         let xdg_surf = wm_base.get_xdg_surface(&surface);
         let tl = xdg_surf.get_toplevel();
         tl.set_title(title.to_string());
@@ -141,8 +165,7 @@ impl WaylandWindowOps {
         });
 
         let tl_events = events.clone();
-        let max_state = maximized;
-        let fs_state = fullscreen;
+        let configured_modes = Arc::clone(&self.configured_modes);
         tl.quick_assign(move |_, event, _| match event {
             xdg_toplevel::Event::Close => {
                 let _ = tl_events
@@ -161,37 +184,39 @@ impl WaylandWindowOps {
                 let is_full = states
                     .chunks_exact(4)
                     .any(|c| c.len() == 4 && u32::from_ne_bytes([c[0], c[1], c[2], c[3]]) == 2);
-                let was_max = max_state.lock().map(|m| *m).unwrap_or(false);
-                if let Ok(mut m) = max_state.lock() {
-                    *m = is_max;
+                let (transition, maximized, fullscreen) = {
+                    let mut modes = configured_modes
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner());
+                    let transition = modes.apply_configure(is_max, is_full);
+                    let (maximized, fullscreen) = modes.snapshot();
+                    (transition, maximized, fullscreen)
+                };
+                {
+                    let mut state = window_state.borrow_mut();
+                    state.maximized = maximized;
+                    state.fullscreen = fullscreen;
                 }
-                if let Ok(mut f) = fs_state.lock() {
-                    *f = is_full;
-                }
+                let mut queued = tl_events.lock().unwrap_or_else(|error| error.into_inner());
                 if w > 0 && h > 0 {
-                    let _ = tl_events
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .push_back(UiEvent::resize(w, h).for_window(window_id));
+                    queued.push_back(UiEvent::resize(w, h).for_window(window_id));
                 }
-                if is_max && !was_max {
-                    let _ = tl_events
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .push_back(UiEvent {
+                match transition {
+                    NativeMaximizeTransition::Maximized => {
+                        queued.push_back(UiEvent {
                             window_id: Some(window_id),
                             type_: UiEventType::WindowMaximize,
                             payload: UiEventPayload::None,
                         });
-                } else if !is_max && was_max {
-                    let _ = tl_events
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .push_back(UiEvent {
+                    }
+                    NativeMaximizeTransition::Restored => {
+                        queued.push_back(UiEvent {
                             window_id: Some(window_id),
                             type_: UiEventType::WindowRestore,
                             payload: UiEventPayload::None,
                         });
+                    }
+                    NativeMaximizeTransition::Unchanged => {}
                 }
             }
             _ => {}
@@ -226,6 +251,11 @@ impl WaylandWindowOps {
             surface.set_input_region(Some(&region));
             self.input_region = Some(region);
         }
+        self.surface_windows
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .register_surface(surface_id, window_id);
+        self.surface_id = Some(surface_id);
         surface.commit();
 
         self.surface = Some(surface);
@@ -248,6 +278,12 @@ impl WaylandWindowOps {
         }
         let _ = display.flush();
         Ok(())
+    }
+}
+
+impl Drop for WaylandWindowOps {
+    fn drop(&mut self) {
+        self.unregister_surface();
     }
 }
 
@@ -277,6 +313,11 @@ impl WindowOps for WaylandWindowOps {
     }
 
     fn os_close(&mut self) -> Result<()> {
+        *self
+            .frame_request
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = None;
+        self.unregister_surface();
         self.toplevel = None;
         self.xdg_surface = None;
         self.surface = None;
@@ -381,6 +422,69 @@ impl WindowOps for WaylandWindowOps {
 
     fn native_surface_ptr(&self) -> *mut std::ffi::c_void {
         self.native_surface_descriptor_ptr()
+    }
+
+    fn os_request_native_frame(&mut self, request: NativeFrameRequest) -> Result<bool> {
+        if request.phase != NativeFrameRequestPhase::AfterPresent {
+            return Ok(false);
+        }
+        let surface = self
+            .surface
+            .as_ref()
+            .ok_or_else(|| Self::missing_proxy("os_request_native_frame", "wl_surface"))?;
+        {
+            let mut active = self
+                .frame_request
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if active.as_ref() == Some(&request) {
+                return Ok(true);
+            }
+            *active = Some(request);
+        }
+
+        let callback = surface.frame();
+        let active = Arc::clone(&self.frame_request);
+        let events = Arc::clone(&self.events);
+        let window_id = self.window_id;
+        callback.quick_assign(move |_, event, _| {
+            if !matches!(event, wl_callback::Event::Done { .. }) {
+                return;
+            }
+            let should_deliver = {
+                let mut current = active.lock().unwrap_or_else(|error| error.into_inner());
+                if current.as_ref() == Some(&request) {
+                    *current = None;
+                    true
+                } else {
+                    false
+                }
+            };
+            if should_deliver {
+                events
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .push_back(
+                        UiEvent::frame_opportunity(request.token, Instant::now(), None)
+                            .for_window(window_id),
+                    );
+            }
+        });
+        Ok(true)
+    }
+
+    fn os_cancel_native_frame(&mut self, token: FrameRequestToken) -> Result<()> {
+        let mut active = self
+            .frame_request
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if active
+            .as_ref()
+            .is_some_and(|request| request.token == token)
+        {
+            *active = None;
+        }
+        Ok(())
     }
 
     // ── 窗口状态 ──────────────────────────────────────────

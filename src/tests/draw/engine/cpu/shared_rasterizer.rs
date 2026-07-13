@@ -1,8 +1,7 @@
-use crate::tests::common::*;
-use crate::draw::engine::cpu::raster_renderer::RasterRenderer;
-use crate::draw::primitives::types::{BlendMode, GradientDirection, Radius, Transform};
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+use crate::draw::primitives::types::BlendMode;
 use crate::draw::traits::Canvas2D;
+use crate::tests::common::*;
 
 use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
 

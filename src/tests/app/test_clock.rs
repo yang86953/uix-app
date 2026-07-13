@@ -1,6 +1,5 @@
-
-use crate::tests::common::*;
 use crate::app::clock::AppClock;
+use crate::tests::common::*;
 
 #[derive(Debug)]
 pub(crate) struct TestClock {

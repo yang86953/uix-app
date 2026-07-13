@@ -1,8 +1,9 @@
-use crate::tests::common::*;
-use crate::draw::engine::{ GraphicsFailure, GraphicsRecovery };
-use crate::draw::pipeline::{ EncodedFrameExecution, EncodedPictureExecution };
-use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
 use crate::draw::engine::recovering::*;
+use crate::draw::engine::GraphicsFailure;
+use crate::draw::pipeline::EncodedFrameExecution;
+use crate::draw::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
+use crate::native::traits::present::PresentTestResult;
+use crate::tests::common::*;
 
 struct EndFailingEngine {
     inner: NullEngine,
@@ -101,6 +102,85 @@ impl GraphicsEngine for EndFailingEngine {
 
 fn surface_lost() -> GraphicsFailure {
     GraphicsFailure::SurfaceLost(Error::new(Errc::GraphicsSurfaceLost, "test surface lost"))
+}
+
+struct OccludedEngine {
+    inner: NullEngine,
+    probes: Rc<std::cell::Cell<usize>>,
+}
+
+impl GraphicsEngine for OccludedEngine {
+    fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.inner.initialize(width, height)
+    }
+
+    fn try_shutdown(&mut self) -> Result<(), Error> {
+        self.inner.try_shutdown()
+    }
+
+    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.inner.resize(width, height)
+    }
+
+    fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {
+        self.inner.begin_frame(strategy)
+    }
+
+    fn end_frame(&mut self, _damage: &DamageRegion) -> RenderOutcome {
+        RenderOutcome::Failed(GraphicsFailure::Occluded(Error::new(
+            Errc::GraphicsOccluded,
+            "test window occluded",
+        )))
+    }
+
+    fn test_present(&mut self) -> Result<PresentTestResult, Error> {
+        self.probes.set(self.probes.get() + 1);
+        Ok(PresentTestResult::Occluded)
+    }
+
+    fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
+        self.inner.canvas_2d()
+    }
+
+    fn try_execute_encoded_frame(
+        &mut self,
+        encoder: &FrameEncoder,
+    ) -> Result<EncodedFrameExecution, Error> {
+        self.inner.try_execute_encoded_frame(encoder)
+    }
+}
+
+#[test]
+fn occlusion_keeps_the_healthy_engine_and_delegates_idle_probe() {
+    let actions = Rc::new(RefCell::new(Vec::new()));
+    let recorded_actions = Rc::clone(&actions);
+    let probes = Rc::new(std::cell::Cell::new(0));
+    let mut engine = RecoveringGraphicsEngine::new(
+        Box::new(OccludedEngine {
+            inner: NullEngine::new(),
+            probes: Rc::clone(&probes),
+        }),
+        Box::new(move |action, _, _| {
+            recorded_actions.borrow_mut().push(action);
+            Ok(Box::new(NullEngine::new()))
+        }),
+    );
+    engine.initialize(4, 3).expect("initial engine");
+
+    assert!(matches!(
+        engine.end_frame(&DamageRegion::full()),
+        RenderOutcome::Failed(GraphicsFailure::Occluded(_))
+    ));
+    assert_eq!(
+        engine.test_present().expect("idle probe"),
+        PresentTestResult::Occluded
+    );
+    assert!(matches!(
+        engine.begin_frame(UpdateStrategy::FullRedraw),
+        RenderOutcome::FrameReady(_)
+    ));
+    assert_eq!(probes.get(), 1);
+    assert!(actions.borrow().is_empty());
 }
 
 #[test]

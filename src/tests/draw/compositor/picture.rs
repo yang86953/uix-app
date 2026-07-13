@@ -1,15 +1,15 @@
-use crate::tests::common::*;
-use crate::draw::Orientation;
-use crate::draw::traits::GraphicsEngine;
-use crate::draw::compositor::{PicturePolicy, ScenePaint};
-use crate::draw::painting::DisplayList;
-use crate::draw::traits::Canvas2D;
 use crate::draw::compositor::picture::*;
+use crate::draw::compositor::ScenePaint;
+use crate::draw::painting::DisplayList;
 use crate::draw::painting::{
     IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, PaintOp, ShadowToken,
     ThemeTokens,
 };
+use crate::draw::traits::Canvas2D;
+use crate::draw::traits::GraphicsEngine;
 use crate::draw::traits::UpdateStrategy;
+use crate::draw::Orientation;
+use crate::tests::common::*;
 
 struct TestTokens;
 

@@ -12,8 +12,7 @@
 
 use crate::native::backends::windows::ffi::{GetDC, ReleaseDC};
 use crate::native::backends::windows::util::windows_diag;
-use crate::native::traits::present::IPresenter;
-use crate::native::traits::present::PresentDamage;
+use crate::native::traits::present::{IPresenter, PresentCoherency, PresentDamage};
 use crate::native::{Errc, Error};
 // ── Windows FFI declarations ────────────────────────────────────────────────
 
@@ -275,6 +274,11 @@ impl GdiPresenter {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl IPresenter for GdiPresenter {
+    fn present_coherency(&self) -> PresentCoherency {
+        // The DIB retains every successfully copied pixel across presents.
+        PresentCoherency::RetainedBuffer
+    }
+
     fn present(
         &mut self,
         pixels: &[u32],
@@ -339,4 +343,3 @@ impl IPresenter for GdiPresenter {
         Ok(())
     }
 }
-

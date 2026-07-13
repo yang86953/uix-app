@@ -1,8 +1,6 @@
-use crate::tests::common::*;
-use crate::draw::spatial::{ PhysicalUnit, SpatialContext };
-use crate::draw::traits::Canvas2D;
-use crate::draw::{ HAlign, VAlign };
 use crate::draw::font::text::render::*;
+use crate::draw::spatial::PhysicalUnit;
+use crate::tests::common::*;
 
 #[test]
 fn new_sets_font_and_service() {
@@ -306,9 +304,7 @@ fn visual_center_y_is_em_box_geometry_without_optical_nudge() {
     let Some(segoe) = fs.load_font_from_path(r"C:\Windows\Fonts\segoeui.ttf", 14.0) else {
         return;
     };
-    let m = fs
-        .horizontal_line_metrics(&segoe, 14.0)
-        .expect("metrics");
+    let m = fs.horizontal_line_metrics(&segoe, 14.0).expect("metrics");
     let mut trs = TextRenderService::new(segoe, &fs, 500.0);
     let row = Rect::new(0.0, 0.0, 200.0, 40.0);
     let y = trs.visual_center_y(row, 14.0);
@@ -325,9 +321,7 @@ fn line_box_height_matches_ascent_plus_descent() {
     let Some(segoe) = fs.load_font_from_path(r"C:\Windows\Fonts\segoeui.ttf", 14.0) else {
         return;
     };
-    let m = fs
-        .horizontal_line_metrics(&segoe, 14.0)
-        .expect("metrics");
+    let m = fs.horizontal_line_metrics(&segoe, 14.0).expect("metrics");
     let mut trs = TextRenderService::new(segoe, &fs, 500.0);
     let h = trs.line_box_height(14.0);
     assert!(

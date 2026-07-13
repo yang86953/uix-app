@@ -1,8 +1,11 @@
 #![allow(dead_code)]
 
 use crate::app::active_work_registry::ActiveWorkRegistry;
+use crate::app::agent_bridge::AgentWindowRegistration;
+use crate::app::agent_control::{AgentCommandQueue, WindowAgentState};
 use crate::app::app_timer::AppTimerQueue;
 use crate::app::main_thread_queue::MainThreadQueue;
+use crate::app::window_semantics::{WindowSemanticSnapshot, WindowSemanticState};
 use crate::core::{Error, Rect, WindowId};
 use crate::draw::pipeline::NodeId;
 use crate::draw::traits::GraphicsEngine;
@@ -102,6 +105,8 @@ pub(crate) struct WindowSession {
     window_visible: bool,
     view_factory: ViewFactorySlot,
     text_input: WindowTextInputState,
+    semantic_state: WindowSemanticState,
+    agent_commands: WindowAgentState,
 }
 
 pub(crate) struct WindowSessionParts<'a> {
@@ -115,6 +120,8 @@ pub(crate) struct WindowSessionParts<'a> {
     pub(crate) reconcile_pending: &'a mut bool,
     pub(crate) loop_state: &'a mut WindowLoopState,
     pub(crate) text_input: &'a mut WindowTextInputState,
+    pub(crate) semantic_state: &'a mut WindowSemanticState,
+    pub(crate) agent_commands: &'a mut WindowAgentState,
 }
 
 impl WindowSession {
@@ -140,6 +147,15 @@ impl WindowSession {
         }
         tree.layout();
         tree.mark_full_frame_dirty();
+        #[cfg(feature = "test-harness")]
+        tree.configure_automation_from_env(window_id);
+
+        #[allow(unused_mut)]
+        let mut semantic_state = WindowSemanticState::new(window_id);
+        #[cfg(feature = "test-harness")]
+        if tree.automation_snapshot_configured() {
+            semantic_state.enable(&tree);
+        }
 
         Self {
             window_id,
@@ -155,6 +171,8 @@ impl WindowSession {
             window_visible: true,
             view_factory: ViewFactorySlot::default(),
             text_input: WindowTextInputState::default(),
+            semantic_state,
+            agent_commands: WindowAgentState::new(),
         }
     }
 
@@ -196,6 +214,14 @@ impl WindowSession {
         }
         tree.layout();
         tree.mark_full_frame_dirty();
+        #[cfg(feature = "test-harness")]
+        tree.configure_automation_from_env(window_id);
+        #[allow(unused_mut)]
+        let mut semantic_state = WindowSemanticState::new(window_id);
+        #[cfg(feature = "test-harness")]
+        if tree.automation_snapshot_configured() {
+            semantic_state.enable(&tree);
+        }
         Self {
             window_id,
             tree,
@@ -212,6 +238,8 @@ impl WindowSession {
                 factory: Some(factory),
             },
             text_input: WindowTextInputState::default(),
+            semantic_state,
+            agent_commands: WindowAgentState::new(),
         }
     }
 
@@ -222,6 +250,16 @@ impl WindowSession {
     pub(crate) fn try_shutdown(&mut self) -> Result<(), Error> {
         if self.engine_shutdown {
             return Ok(());
+        }
+        self.agent_commands.close();
+        self.semantic_state.close();
+        #[cfg(feature = "test-harness")]
+        if let Some(snapshot) = self.semantic_state.snapshot() {
+            self.tree.close_automation_snapshot(
+                snapshot.generation,
+                snapshot.revision,
+                snapshot.presented_revision,
+            );
         }
         self.tree.shutdown();
         self.engine.try_shutdown()?;
@@ -254,6 +292,8 @@ impl WindowSession {
             reconcile_pending: &mut self.reconcile_pending,
             loop_state: &mut self.loop_state,
             text_input: &mut self.text_input,
+            semantic_state: &mut self.semantic_state,
+            agent_commands: &mut self.agent_commands,
         }
     }
 
@@ -271,6 +311,18 @@ impl WindowSession {
 
     pub(crate) fn set_main_thread_queue(&mut self, queue: MainThreadQueue) {
         self.main_thread_queue = queue;
+    }
+
+    pub(crate) fn set_agent_command_queue(&mut self, queue: AgentCommandQueue) {
+        self.agent_commands.replace_queue(queue);
+    }
+
+    pub(crate) fn bind_agent_window(&mut self, registration: AgentWindowRegistration) -> bool {
+        if !self.semantic_state.bind_agent_window(registration) {
+            return false;
+        }
+        let _ = self.semantic_state.enable(&self.tree);
+        true
     }
 
     pub(crate) fn set_app_state(&mut self, app_state: AppState) {
@@ -311,6 +363,18 @@ impl WindowSession {
 
     pub(crate) fn view_factory(&self) -> &ViewFactorySlot {
         &self.view_factory
+    }
+
+    pub(crate) fn enable_semantic_tracking(&mut self) -> bool {
+        self.semantic_state.enable(&self.tree)
+    }
+
+    pub(crate) fn semantic_snapshot(&self) -> Option<&WindowSemanticSnapshot> {
+        self.semantic_state.snapshot()
+    }
+
+    pub(crate) fn agent_command_queue(&self) -> AgentCommandQueue {
+        self.agent_commands.queue()
     }
 }
 

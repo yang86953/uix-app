@@ -1,20 +1,7 @@
-use crate::tests::common::*;
-use windows::core::{
-    implement, ComObject, Error as WinError, Interface, Ref, Result as WinResult, BOOL, GUID,
-    HRESULT, PCWSTR, PWSTR,
-};
-use windows::Win32::Foundation::{HWND, POINT, RECT};
-use windows::Win32::UI::TextServices::{
-    ITextStoreACP, ITextStoreACPSink, ITextStoreACP_Impl, ITfCompositionView,
-    ITfContextOwnerCompositionSink, ITfContextOwnerCompositionSink_Impl, TEXT_STORE_LOCK_FLAGS,
-    TS_AE_END, TS_AS_SEL_CHANGE, TS_AS_TEXT_CHANGE, TS_E_NOLOCK, TS_E_SYNCHRONOUS, TS_IAS_NOQUERY,
-    TS_IAS_QUERYONLY, TS_LF_READWRITE, TS_RT_PLAIN, TS_RUNINFO, TS_SELECTIONSTYLE,
-    TS_SELECTION_ACP, TS_SS_NOHIDDENTEXT, TS_SS_TRANSITORY, TS_STATUS, TS_TEXTCHANGE,
-};
-use crate::native::backends::windows::tsf_session::tsf_composition_events;
-use crate::native::shared::ime_events::ImeCompositionState;
-use crate::native::traits::event::UiEvent;
 use crate::native::backends::windows::tsf_text_store::*;
+use crate::tests::common::*;
+use windows::Win32::Foundation::HWND;
+use windows::Win32::UI::TextServices::{TS_AS_SEL_CHANGE, TS_AS_TEXT_CHANGE};
 
 fn test_state() -> TsfStoreState {
     TsfStoreState::new(TsfEventSink {

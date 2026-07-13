@@ -1,5 +1,4 @@
 use crate::tests::common::*;
-use crate::component;
 use crate::ui::foundation::focus_trap::*;
 
 #[test]
@@ -25,6 +24,14 @@ fn next_focus_in_order_wraps_forward_and_backward() {
     assert_eq!(
         next_focus_in_order(&ids, Some(ComponentId::new(9)), true),
         Some(ComponentId::new(1))
+    );
+    assert_eq!(
+        next_focus_in_order(&ids, None, false),
+        Some(ComponentId::new(5))
+    );
+    assert_eq!(
+        next_focus_in_order(&ids, Some(ComponentId::new(9)), false),
+        Some(ComponentId::new(5))
     );
 }
 

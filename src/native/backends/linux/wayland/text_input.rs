@@ -9,7 +9,7 @@ use std::sync::atomic::Ordering;
 use wayland_protocols::unstable::text_input::v3::client::zwp_text_input_v3;
 
 use crate::core::{Errc, Error, Rect, Result, WindowId};
-use crate::native::traits::event::UiEvent;
+use crate::native::shared::ime_events::{on_unmark_text_for_window, PendingImeBatch};
 use crate::native::traits::input::ITextInput;
 
 use super::WaylandBackend;
@@ -35,6 +35,9 @@ impl ITextInput for WaylandBackend {
                 "Wayland text_input: no target window selected",
             )
         })?;
+        if self.text_input.is_some() || self.active_text_input_window_id.is_some() {
+            self.stop()?;
+        }
         let seat = match self.seat.as_ref() {
             Some(s) => s,
             None => {
@@ -60,30 +63,81 @@ impl ITextInput for WaylandBackend {
 
         let ti = manager.get_text_input(seat);
         let events = self.events.clone();
+        let surface_windows = self.surface_windows.clone();
+        let composition = self.text_input_composition.clone();
+        let active_generation = self.text_input_generation.clone();
+        let generation = active_generation
+            .fetch_add(1, Ordering::SeqCst)
+            .wrapping_add(1);
+        let mut focused = false;
+        let mut pending = PendingImeBatch::default();
 
         ti.quick_assign(move |_, event, _| {
-            if let zwp_text_input_v3::Event::CommitString { text } = event {
-                if let Some(ref t) = text {
-                    if !t.is_empty() {
-                        if let Ok(mut q) = events.lock() {
-                            q.push_back(UiEvent::text_input(t.clone()).for_window(window_id));
-                        }
+            if active_generation.load(Ordering::SeqCst) != generation {
+                return;
+            }
+            match event {
+                zwp_text_input_v3::Event::Enter { surface } => {
+                    let owns_surface = surface_windows
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner())
+                        .window_for_surface(surface.as_ref().id())
+                        == Some(window_id);
+                    if focused && !owns_surface {
+                        let mut state = composition
+                            .lock()
+                            .unwrap_or_else(|error| error.into_inner());
+                        on_unmark_text_for_window(&events, &mut state, window_id);
                     }
+                    focused = owns_surface;
+                    pending = PendingImeBatch::default();
                 }
+                zwp_text_input_v3::Event::Leave { .. } => {
+                    if focused {
+                        let mut state = composition
+                            .lock()
+                            .unwrap_or_else(|error| error.into_inner());
+                        on_unmark_text_for_window(&events, &mut state, window_id);
+                    }
+                    focused = false;
+                    pending = PendingImeBatch::default();
+                }
+                zwp_text_input_v3::Event::PreeditString { text, .. } if focused => {
+                    pending.set_preedit(text);
+                }
+                zwp_text_input_v3::Event::CommitString { text } if focused => {
+                    pending.set_commit(text);
+                }
+                zwp_text_input_v3::Event::Done { .. } if focused => {
+                    let mut state = composition
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner());
+                    pending.apply_for_window(&events, &mut state, window_id);
+                }
+                _ => {}
             }
         });
 
         ti.enable();
         ti.commit();
         self.text_input = Some(ti);
+        self.active_text_input_window_id = Some(window_id);
         self.text_input_enabled.store(true, Ordering::SeqCst);
         Ok(())
     }
 
     fn stop(&mut self) -> Result<()> {
+        self.text_input_generation.fetch_add(1, Ordering::SeqCst);
         if let Some(ref ti) = self.text_input {
             ti.disable();
             ti.commit();
+        }
+        if let Some(window_id) = self.active_text_input_window_id.take() {
+            let mut state = self
+                .text_input_composition
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            on_unmark_text_for_window(&self.events, &mut state, window_id);
         }
         self.text_input = None;
         self.text_input_enabled.store(false, Ordering::SeqCst);

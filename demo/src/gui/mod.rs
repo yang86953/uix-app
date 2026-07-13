@@ -56,6 +56,7 @@ fn sidebar_nav_item(
                 }
             }
         })
+        .automation_id(format!("sidebar-page-{page_idx}"))
 }
 
 fn sidebar(active: State<usize>, tk: &DesignTokens) -> ViewNode {
@@ -108,12 +109,14 @@ fn header_bar(
             dynamic_label(move || format!("{}s", ticks.get()))
                 .font_size(12.0)
                 .color(ColorValue::Neutral(NeutralRole::TextTertiary)),
-            embed(ThemeToggle::new().dark(theme_control.is_dark())).on_click_fn({
-                let theme_control = theme_control.clone();
-                move || {
-                    theme_control.toggle();
-                }
-            }),
+            embed(ThemeToggle::new().dark(theme_control.is_dark()))
+                .on_click_fn({
+                    let theme_control = theme_control.clone();
+                    move || {
+                        theme_control.toggle();
+                    }
+                })
+                .automation_id("theme-toggle"),
         ])
         .align(AlignItems::Center)
         .gap(12.0)

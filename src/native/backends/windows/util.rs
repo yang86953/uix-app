@@ -49,12 +49,7 @@ pub fn system_default_font_paths() -> Vec<String> {
     };
 
     // 主字体候选（Latin UI）；CJK 走 probe_cjk_font_path，避免启动同步装一堆 fallback。
-    let candidates = [
-        "segoeui.ttf",
-        "segoeuib.ttf",
-        "arial.ttf",
-        "tahoma.ttf",
-    ];
+    let candidates = ["segoeui.ttf", "segoeuib.ttf", "arial.ttf", "tahoma.ttf"];
 
     let mut paths = Vec::new();
     for name in candidates {
@@ -261,4 +256,3 @@ extern "system" {
     fn FindNextFileW(hFindFile: isize, lpFindFileData: *mut WIN32_FIND_DATAW) -> i32;
     fn FindClose(hFindFile: isize) -> i32;
 }
-

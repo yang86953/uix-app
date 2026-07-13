@@ -1,5 +1,5 @@
-use crate::tests::common::*;
 use crate::draw::pipeline::invalidation::*;
+use crate::tests::common::*;
 
 #[test]
 fn paint_merges_to_dirty_region() {

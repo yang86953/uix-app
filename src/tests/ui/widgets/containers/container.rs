@@ -1,14 +1,7 @@
 use crate::tests::common::*;
-use crate::ui::widgets::Container;
-use crate::component;
-use crate::ui::layout::engine::{
-    child_from_tree_with_constraints, BoxModel, FlexLayout, LayoutChild,
-};
-use crate::ui::style::{ apply_style, BoxShadowDef, ColorValue, DisplayMode, TypographyToken };
-use crate::ui::traits::LayoutEngine;
-use crate::ui::{ SnapshotSource };
-use crate::ui::widgets::containers::container::*;
 use crate::ui::core::widget::WidgetCore;
+use crate::ui::layout::engine::BoxModel;
+use crate::ui::widgets::Container;
 
 #[test]
 fn measure_clamps_container_intrinsic_size() {
@@ -169,10 +162,7 @@ fn column_fit_nav_tile_in_row_does_not_overlap_labels() {
             frames.push((l.text().to_string(), node.frame()));
         }
     }
-    let title = frames
-        .iter()
-        .find(|(t, _)| t == "应用能力")
-        .expect("title");
+    let title = frames.iter().find(|(t, _)| t == "应用能力").expect("title");
     let desc = frames
         .iter()
         .find(|(t, _)| t.contains("State"))

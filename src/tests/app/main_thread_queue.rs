@@ -1,6 +1,5 @@
-use crate::tests::common::*;
-use crate::ui::view::ViewNode;
 use crate::app::main_thread_queue::*;
+use crate::tests::common::*;
 use crate::ui::view::combinators::label;
 use crate::ui::view::ViewAdapter;
 use crate::ui::widgets::Label;

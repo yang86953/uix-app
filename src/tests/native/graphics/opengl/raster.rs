@@ -1,25 +1,18 @@
-use crate::tests::common::*;
-use glow::HasContext as _;
-use crate::core::{ Result };
-use crate::native::traits::present::{ GpuSolidRect, OffscreenTargetId };
 use crate::native::graphics::opengl::raster::*;
+use crate::tests::common::*;
 
 #[test]
 fn soft_tile_validation_uses_compact_payload_at_destination() {
     let pixels = vec![0u32; 4 * 3];
     assert!(validate_tile(&pixels, 8, 6, SoftFallbackTile::at_destination(2, 1, 4, 3)).is_ok());
-    assert!(
-        validate_tile(&pixels, 8, 6, SoftFallbackTile::at_destination(6, 1, 4, 3)).is_err()
-    );
-    assert!(
-        validate_tile(
-            &pixels[..10],
-            8,
-            6,
-            SoftFallbackTile::at_destination(0, 0, 4, 3)
-        )
-        .is_err()
-    );
+    assert!(validate_tile(&pixels, 8, 6, SoftFallbackTile::at_destination(6, 1, 4, 3)).is_err());
+    assert!(validate_tile(
+        &pixels[..10],
+        8,
+        6,
+        SoftFallbackTile::at_destination(0, 0, 4, 3)
+    )
+    .is_err());
 }
 
 #[test]

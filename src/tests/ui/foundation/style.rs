@@ -3,7 +3,6 @@ use crate::tests::common::*;
 use crate::ui::foundation::style::*;
 use crate::ui::theme::NeutralRole;
 
-
 #[test]
 fn style_default_all_fields() {
     let s = Style::default();
@@ -95,84 +94,48 @@ fn style_grid_template_builders() {
 // effective_bg
 
 #[test]
-fn effective_bg_pressed_returns_active() {
-    let s = Style {
+fn effective_bg_obeys_interaction_priority_and_fallbacks() {
+    let complete = Style {
         background: Some(ColorValue::Custom(Color::red())),
         background_hover: Some(ColorValue::Custom(Color::green())),
         background_active: Some(ColorValue::Custom(Color::blue())),
         ..Style::default()
     };
     assert_eq!(
-        s.effective_bg(true, true),
+        complete.effective_bg(true, true),
         Some(ColorValue::Custom(Color::blue()))
     );
-}
-
-#[test]
-fn effective_bg_pressed_fallback_to_background() {
-    let s = Style {
-        background: Some(ColorValue::Custom(Color::red())),
-        background_hover: None,
-        background_active: None,
-        ..Style::default()
-    };
     assert_eq!(
-        s.effective_bg(false, true),
-        Some(ColorValue::Custom(Color::red()))
-    );
-}
-
-#[test]
-fn effective_bg_hovered_returns_hover() {
-    let s = Style {
-        background: Some(ColorValue::Custom(Color::red())),
-        background_hover: Some(ColorValue::Custom(Color::green())),
-        background_active: None,
-        ..Style::default()
-    };
-    assert_eq!(
-        s.effective_bg(true, false),
+        complete.effective_bg(true, false),
         Some(ColorValue::Custom(Color::green()))
     );
-}
-
-#[test]
-fn effective_bg_hovered_no_hover_fallback() {
-    let s = Style {
-        background: Some(ColorValue::Custom(Color::red())),
-        background_hover: None,
-        background_active: None,
-        ..Style::default()
-    };
     assert_eq!(
-        s.effective_bg(true, false),
+        complete.effective_bg(false, false),
         Some(ColorValue::Custom(Color::red()))
     );
-}
 
-#[test]
-fn effective_bg_normal_returns_background() {
-    let s = Style {
+    let background_only = Style {
         background: Some(ColorValue::Custom(Color::red())),
         ..Style::default()
     };
     assert_eq!(
-        s.effective_bg(false, false),
-        Some(ColorValue::Custom(Color::red()))
+        background_only.effective_bg(false, true),
+        background_only.background
     );
-}
+    assert_eq!(
+        background_only.effective_bg(true, false),
+        background_only.background
+    );
 
-#[test]
-fn effective_bg_all_none_returns_none() {
-    let s = Style {
+    let empty = Style {
         background: None,
         background_hover: None,
         background_active: None,
         ..Style::default()
     };
-    assert_eq!(s.effective_bg(true, true), None);
-    assert_eq!(s.effective_bg(true, false), None);
-    assert_eq!(s.effective_bg(false, false), None);
+    for (hovered, pressed) in [(true, true), (true, false), (false, false)] {
+        assert_eq!(empty.effective_bg(hovered, pressed), None);
+    }
 }
 
 // Chained builder

@@ -134,10 +134,11 @@ fn adopt_widget_node(node: WidgetNode) -> ViewNode {
         flex_shrink_override: None,
         z_index: node.z_index,
         key: node.key.map(|k| k.to_string()),
+        automation_id: node.automation_id.map(|id| id.to_string()),
         handlers: node.handlers,
+        render_handlers: node.render_handlers,
     }
 }
-
 
 // ── 基础组合子 ──────────────────────────────────────────────
 
@@ -420,6 +421,10 @@ impl DynamicLabel {
     pub(crate) fn probe_dependencies(&self) {
         let _ = (self.text_fn)();
     }
+
+    pub(crate) fn semantic_text(&self) -> String {
+        (self.text_fn)()
+    }
 }
 
 impl WidgetComponent for DynamicLabel {
@@ -479,11 +484,7 @@ impl WidgetLayout for DynamicLabel {
 
 impl DynamicLabel {
     fn intrinsic_size(&self) -> Size {
-        let pad = self
-            .style
-            .as_ref()
-            .map(|s| s.padding)
-            .unwrap_or_default();
+        let pad = self.style.as_ref().map(|s| s.padding).unwrap_or_default();
         if let Some(style) = &self.style {
             if let (Some(w), Some(h)) = (style.width, style.height) {
                 return Size::new(w, h);
@@ -798,6 +799,12 @@ impl View for InputBuilder {
     }
 }
 
+impl From<InputBuilder> for ViewNode {
+    fn from(builder: InputBuilder) -> Self {
+        builder.build()
+    }
+}
+
 /// 创建输入框。返回 `InputBuilder` 以链式设置属性。
 ///
 /// # 示例
@@ -811,4 +818,3 @@ pub fn input() -> InputBuilder {
         handlers: Vec::new(),
     }
 }
-

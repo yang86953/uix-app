@@ -13,7 +13,7 @@ use crate::core::{Errc, Error, Result};
 use crate::native::graphics::platform::windows as win_surface;
 use crate::native::traits::present::{
     GpuSolidRect, GraphicsBackend, GraphicsContextCaps, IGraphicsContext, NativeRasterCaps,
-    PresentDamage, PresentFrame, SoftFallbackTile,
+    PresentCoherency, PresentDamage, PresentFrame, SoftFallbackTile,
 };
 use ::windows::Win32::Foundation::{CloseHandle, E_OUTOFMEMORY, HANDLE, HWND, WAIT_OBJECT_0};
 use ::windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
@@ -999,7 +999,7 @@ impl IGraphicsContext for D3d12Context {
     fn caps(&self) -> GraphicsContextCaps {
         GraphicsContextCaps::gpu_native_swapchain(
             GraphicsBackend::D3d12,
-            false,
+            PresentCoherency::FullOnly,
             self.device_pixel_ratio(),
         )
     }

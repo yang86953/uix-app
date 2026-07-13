@@ -1,26 +1,20 @@
-use crate::tests::common::*;
-use crate::ui::widgets::Container;
-use crate::app::Container as DiContainer;
-use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc,
-};
-use crate::app::app_timer::TimerHandle;
-use crate::app::window_config::WindowConfig;
-use crate::core::{ Result };
-use crate::impl_widget_component;
-use crate::native::notification::ToastEntry;
-use crate::ui::state::State;
-use crate::ui::view::{View, ViewAdapter, ViewNode};
-use crate::ui::widgets::feedback::notification::{Notification, NotificationItem};
 use crate::app::app_handle::*;
 use crate::app::app_timer::AppTimerQueue;
 use crate::app::main_thread_queue::MainThreadContext;
 use crate::app::main_thread_queue::MainThreadQueue;
 use crate::app::session_runtime::AppRuntime;
+use crate::app::window_config::WindowConfig;
+use crate::app::Container as DiContainer;
 use crate::native::traits::event::EventLoopWaker;
+use crate::tests::common::*;
 use crate::ui::view::combinators::label;
+use crate::ui::view::{View, ViewAdapter};
+use crate::ui::widgets::feedback::notification::Notification;
 use crate::ui::widgets::Label;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 
 fn drain_with_empty_context(
     queue: &MainThreadQueue,

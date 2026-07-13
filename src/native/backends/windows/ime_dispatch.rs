@@ -91,4 +91,3 @@ pub(crate) fn ime_composition_events(
 
     (handled, events)
 }
-

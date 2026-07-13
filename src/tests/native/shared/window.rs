@@ -1,10 +1,9 @@
-use crate::tests::common::*;
-use crate::core::error::{ Result };
-use crate::native::shared::state::WindowState;
-use crate::native::traits::present::{ IPresenter };
-use crate::native::traits::window::{INativeHandle, IWindowProperties, PlatformWindow};
-use crate::native::shared::window::*;
+use crate::core::error::Result;
 use crate::native::presenter::NullPresenter;
+use crate::native::shared::state::WindowState;
+use crate::native::shared::window::*;
+use crate::native::traits::window::{PlatformWindow, WindowOcclusionState};
+use crate::tests::common::*;
 
 fn assert_error_code(result: Result<()>, expected: Errc) {
     match result {
@@ -111,6 +110,11 @@ fn unsupported_optional_window_ops_do_not_mutate_shared_state() {
     assert_error_code(window.lower(), Errc::NotImplemented);
     assert_error_code(window.set_window_icon("icon.png"), Errc::NotImplemented);
     assert_error_code(window.flash_window(), Errc::NotImplemented);
+    assert_eq!(
+        window.occlusion_state(),
+        WindowOcclusionState::Unknown,
+        "unsupported backends must not claim the window is visible"
+    );
 
     let props = window.properties_mut();
     assert_error_code(props.set_minimum_size(100, 100), Errc::NotImplemented);

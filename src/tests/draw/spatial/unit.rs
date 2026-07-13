@@ -1,5 +1,3 @@
-use crate::tests::common::*;
-use std::ops::Add;
 use crate::draw::spatial::unit::*;
 
 #[test]

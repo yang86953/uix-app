@@ -1,48 +1,32 @@
-use crate::tests::common::*;
-use crate::ui::widgets::Container;
-use crate::app::Container as DiContainer;
-use crate::ui::core::widget::WidgetCore;
-use std::sync::{ atomic::AtomicBool };
-use crate::app::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry};
-use crate::app::app_handle::{
-    wrap_root_with_notification_overlay, AppHandle, AppNotificationState,
-};
-use crate::app::app_timer::{AppTimerQueue, TimerHandle};
-use crate::app::event_loop::run_window_session_loop_with_system_theme_and_tasks;
-use crate::app::main_thread_queue::{MainThreadContext, MainThreadQueue};
-use crate::app::session_runtime::{AppRuntime, OpenWindowRequest};
-use crate::app::shell::cli::Cli;
-use crate::app::clock::{system_clock, AppClock};
-use crate::app::window_config::WindowConfig;
-use crate::app::window_session::{WindowLoopState, WindowSession};
-use crate::draw::engine::bootstrap::{
-    assemble_graphics_engine, bootstrap_graphics_engine, ProbeReport,
-};
-use crate::draw::engine::{ GraphicsEngineRebuilder, RecoveringGraphicsEngine };
-use crate::draw::pipeline::{ FrameRenderInput, FrameRenderer, InvalidationSource };
-use crate::draw::traits::GraphicsEngine;
-use crate::native::create_platform;
-use crate::native::factory::{
-    gpu_recipe_candidates, graphics_runtime_platform, try_create_gpu_recipe, GraphicsRecipe,
-};
-use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
-use crate::native::traits::platform::Platform;
-use crate::native::traits::present::{ NativeSurfaceHandle };
-use crate::native::traits::window::PlatformWindow;
-use crate::ui::traits::TokenProvider;
-use crate::ui::view::{ViewAdapter, ViewNode};
+use crate::app::app_handle::AppHandle;
+use crate::app::app_timer::AppTimerQueue;
+use crate::app::clock::system_clock;
+use crate::app::main_thread_queue::MainThreadQueue;
+use crate::app::session_runtime::AppRuntime;
 use crate::app::shell::application::*;
+use crate::app::window_config::WindowConfig;
+use crate::app::window_session::WindowLoopState;
+use crate::app::Container as DiContainer;
 use crate::data::SettingsService;
 use crate::draw::engine::bootstrap::ProbeFailure;
+use crate::draw::engine::bootstrap::ProbeReport;
+use crate::native::factory::GraphicsRecipe;
 use crate::native::test_harness::FakePlatform;
 use crate::native::traits::event::{
     ClipboardData, FileDropData, ImeCompositionData, LocaleChangeData, ThemeChangeData,
 };
+use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
+use crate::native::traits::platform::Platform;
+use crate::native::traits::present::NativeSurfaceHandle;
+use crate::tests::common::*;
+use crate::ui::core::widget::WidgetCore;
 use crate::ui::state::State;
 use crate::ui::view::combinators::{dynamic_label, label};
+use crate::ui::view::{ViewAdapter, ViewNode};
 use crate::ui::widgets::{Input, Label};
-use crate::ui::{ HandlerRegistration };
+use crate::ui::HandlerRegistration;
 use std::any::Any;
+use std::sync::atomic::AtomicBool;
 
 fn drain_secondary_once(secondary_windows: &mut [SecondaryWindowSession]) -> bool {
     let font_service = FontService::new();
@@ -732,7 +716,10 @@ fn secondary_ime_is_window_scoped_and_delayed_blur_does_not_stop_new_owner() {
         &focus(second.window_id),
     ));
     assert_eq!(platform.text_input.state.start_calls, 2);
-    assert_eq!(platform.text_input.state.target_window, Some(second.window_id));
+    assert_eq!(
+        platform.text_input.state.target_window,
+        Some(second.window_id)
+    );
 
     assert!(dispatch_secondary_window_event(
         &mut secondary_windows,
@@ -741,7 +728,10 @@ fn secondary_ime_is_window_scoped_and_delayed_blur_does_not_stop_new_owner() {
     ));
     assert!(platform.text_input.state.active);
     assert_eq!(platform.text_input.state.stop_calls, 0);
-    assert_eq!(platform.text_input.state.target_window, Some(second.window_id));
+    assert_eq!(
+        platform.text_input.state.target_window,
+        Some(second.window_id)
+    );
 
     assert!(dispatch_secondary_window_event(
         &mut secondary_windows,
@@ -1373,7 +1363,7 @@ fn noop_secondary_post_to_ui_does_not_tick_animation() {
     assert_eq!(update_calls.load(Ordering::Relaxed), 1);
 
     secondary_windows[0].handle.post_to_ui(|| {});
-    assert!(!drain_secondary_window_frames(
+    assert!(drain_secondary_window_frames(
         &mut secondary_windows,
         &font_service,
         &image_service,

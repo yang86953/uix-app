@@ -7,6 +7,7 @@ use crate::ui::event::HandlerTable;
 use crate::ui::foundation::focus_trap::next_focus_in_order;
 use crate::ui::managers::WidgetManagers;
 use crate::ui::overlay::OverlayStack;
+use crate::ui::render_handler::{RenderHandlerRegistration, RenderHandlerTable};
 use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -33,6 +34,7 @@ pub struct WidgetTree {
     cached_traversal: std::cell::RefCell<(Vec<WidgetId>, u64)>,
 
     pub(crate) handler_table: HandlerTable,
+    pub(crate) render_handler_table: RenderHandlerTable,
     pub(crate) overlay_stack: OverlayStack,
 
     pub(crate) invalidation: InvalidationQueueHandle,
@@ -42,6 +44,8 @@ pub struct WidgetTree {
     app_state: Option<AppState>,
     timer_routes: BTreeMap<u64, (WidgetId, u32)>,
     focus_trap_restore: Vec<(WidgetId, Option<WidgetId>)>,
+    #[cfg(feature = "test-harness")]
+    pub(crate) automation_recorder: Option<crate::ui::automation::AutomationRecorder>,
     /// layout() 内实际改写 frame 次数（回归：收敛后二次 layout 应为 0）。
     #[cfg(test)]
     pub(crate) layout_frame_writes: std::cell::Cell<u32>,
@@ -72,6 +76,7 @@ impl Default for WidgetTree {
             tree_version: 0,
             cached_traversal: std::cell::RefCell::new((Vec::new(), 0)),
             handler_table: HandlerTable::new(),
+            render_handler_table: RenderHandlerTable::default(),
             overlay_stack: OverlayStack::new(),
             invalidation: crate::draw::pipeline::InvalidationQueue::shared(),
             reconcile_requested: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -80,6 +85,8 @@ impl Default for WidgetTree {
             app_state: None,
             timer_routes: BTreeMap::new(),
             focus_trap_restore: Vec::new(),
+            #[cfg(feature = "test-harness")]
+            automation_recorder: None,
             #[cfg(test)]
             layout_frame_writes: std::cell::Cell::new(0),
             #[cfg(test)]
@@ -351,6 +358,7 @@ impl WidgetTree {
         self.next_slot = 0;
         self.root_id = None;
         self.handler_table.clear();
+        self.render_handler_table.clear();
         self.overlay_stack.clear();
         self.managers.clear_overrides();
         self.reset_interaction_state();
@@ -499,6 +507,7 @@ impl WidgetTree {
                     self.remove(child_id);
                 }
                 self.handler_table.clear_component(id);
+                self.render_handler_table.clear_component(id);
                 let owner_was_top_trap = self
                     .overlay_stack
                     .top()
@@ -541,6 +550,16 @@ impl WidgetTree {
     }
 
     pub fn set_visible(&mut self, id: ComponentId, visible: bool) {
+        if !visible
+            && self
+                .managers
+                .focus
+                .focused_component()
+                .is_some_and(|focused| self.is_descendant_of(focused, id))
+        {
+            self.set_focus(None);
+        }
+
         let mut stack = vec![id];
         while let Some(current) = stack.pop() {
             let children: Vec<WidgetId> = self
@@ -745,8 +764,10 @@ impl WidgetTree {
             children,
             z_index,
             key,
+            automation_id,
             tab_idx,
             handlers,
+            render_handlers,
         } = node;
         let id = match parent {
             Some(p) => self.add_child(p, widget),
@@ -754,6 +775,7 @@ impl WidgetTree {
         };
         if let Some(n) = self.get_mut(id) {
             n.set_key(key);
+            n.set_automation_id(automation_id);
             n.set_z_index(z_index);
             let ti = if tab_idx != 0 {
                 tab_idx
@@ -773,25 +795,18 @@ impl WidgetTree {
         for handler in handlers {
             self.handler_table.register(id, handler);
         }
+        self.render_handler_table
+            .replace_component(id, render_handlers);
         for child in children {
             self.build_node(child, Some(id));
         }
+        self.refresh_virtual_scroll_component(id, None);
         id
     }
 
     pub fn focus_by_type<T: WidgetComponent + 'static>(&mut self) -> Option<ComponentId> {
         let id = self.find_by_type::<T>()?;
-        self.managers.focus.set_focused_component(Some(id));
-        if let Some(node) = self.get_mut(id) {
-            if let Some(input) = node
-                .component_mut()
-                .as_any_mut()
-                .downcast_mut::<crate::ui::widgets::Input>()
-            {
-                input.set_focused(true);
-            }
-        }
-        self.reconcile_lifecycle_after_layout();
+        self.set_focus(Some(id));
         Some(id)
     }
 
@@ -806,6 +821,73 @@ impl WidgetTree {
 
     pub fn handler_table(&mut self) -> &mut HandlerTable {
         &mut self.handler_table
+    }
+
+    pub(crate) fn replace_render_handlers(
+        &mut self,
+        id: ComponentId,
+        handlers: Vec<RenderHandlerRegistration>,
+    ) {
+        self.render_handler_table.replace_component(id, handlers);
+    }
+
+    pub(crate) fn table_expand_renderer(
+        &self,
+        id: ComponentId,
+    ) -> Option<&crate::ui::widgets::display::table::ExpandRenderer> {
+        self.render_handler_table.table_expand(id)
+    }
+
+    pub(crate) fn refresh_virtual_scroll_component(
+        &mut self,
+        id: ComponentId,
+        viewport_height: Option<f32>,
+    ) -> bool {
+        use crate::ui::foundation::virtual_scroll::VirtualScroll;
+
+        if !self.render_handler_table.contains_virtual_scroll_item(id) {
+            return false;
+        }
+
+        let Some((range, needs_refresh)) = self.get(id).and_then(|node| {
+            let scroll = node.component().as_any().downcast_ref::<VirtualScroll>()?;
+            let height = viewport_height
+                .filter(|height| *height > 0.0)
+                .unwrap_or_else(|| scroll.configured_viewport_height());
+            let range = scroll.scroll_range(height);
+            Some((
+                range,
+                scroll.needs_child_refresh(height, node.children().len()),
+            ))
+        }) else {
+            return false;
+        };
+        if !needs_refresh {
+            return false;
+        }
+
+        let children = self
+            .render_handler_table
+            .render_virtual_scroll_items(id, range.0, range.1)
+            .unwrap_or_default();
+        self.set_children(id, children);
+        if let Some(scroll) = self
+            .get(id)
+            .and_then(|node| node.component().as_any().downcast_ref::<VirtualScroll>())
+        {
+            scroll.mark_children_materialized(range);
+        }
+        true
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_table_expand_renderer(&self, id: ComponentId) -> bool {
+        self.render_handler_table.contains_table_expand(id)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_virtual_scroll_renderer(&self, id: ComponentId) -> bool {
+        self.render_handler_table.contains_virtual_scroll_item(id)
     }
 
     pub fn overlay_stack(&self) -> &OverlayStack {
@@ -824,16 +906,41 @@ impl WidgetTree {
             .focus
             .focusable_order()
             .into_iter()
-            .filter(|&id| self.get(id).is_some_and(|node| node.is_focusable()))
+            .filter(|&id| self.is_tab_focus_candidate(id))
             .collect::<Vec<_>>();
 
         for id in self.traverse() {
-            if !result.contains(&id) && self.get(id).is_some_and(|node| node.is_focusable()) {
+            if !result.contains(&id) && self.is_tab_focus_candidate(id) {
                 result.push(id);
             }
         }
 
         result
+    }
+
+    pub(crate) fn is_effectively_visible(&self, id: WidgetId) -> bool {
+        let mut current = Some(id);
+        while let Some(current_id) = current {
+            let Some(node) = self.get(current_id) else {
+                return false;
+            };
+            if !node.visible() {
+                return false;
+            }
+            current = node.parent();
+        }
+        true
+    }
+
+    fn is_tab_focus_candidate(&self, id: WidgetId) -> bool {
+        self.is_effectively_visible(id) && self.get(id).is_some_and(|node| node.is_focusable())
+    }
+
+    pub(crate) fn focus_target_available(&self, id: WidgetId) -> bool {
+        self.is_effectively_visible(id)
+            && self
+                .get(id)
+                .is_some_and(|node| node.component().as_event().is_some())
     }
 
     pub(crate) fn is_descendant_of(&self, id: WidgetId, ancestor: WidgetId) -> bool {
@@ -897,7 +1004,7 @@ impl WidgetTree {
     pub(crate) fn restore_focus_after_trap_owner(&mut self, owner: WidgetId) {
         let restore_focus = self
             .take_focus_trap_restore(owner)
-            .filter(|&id| self.get(id).is_some());
+            .filter(|&id| self.focus_target_available(id));
         self.set_focus(restore_focus);
     }
 

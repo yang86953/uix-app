@@ -5,9 +5,15 @@ use crate::core::geometry::Point;
 use crate::core::WindowId;
 use crate::native::test_harness::fake_graphics_context::FakeGraphicsContext;
 use crate::native::test_harness::fake_presenter::FakePresenter;
+use crate::native::traits::event::FrameRequestToken;
 use crate::native::traits::present::{IGraphicsContext, IPresenter};
 use crate::native::traits::window::{
-    INativeHandle, IWindowManager, IWindowProperties, PlatformWindow,
+    INativeHandle, IWindowManager, IWindowProperties, NativeFrameRequest, PlatformWindow,
+    WindowOcclusionState,
+};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -230,6 +236,10 @@ pub struct FakeWindowState {
     pub resize_notify_calls: Vec<(i32, i32)>,
     pub set_title_calls: Vec<String>,
     pub has_gpu: bool,
+    pub native_frame_requests_supported: bool,
+    pub native_frame_requests: Vec<NativeFrameRequest>,
+    pub native_frame_presented: Vec<FrameRequestToken>,
+    pub cancelled_native_frame_requests: Vec<FrameRequestToken>,
 }
 
 #[derive(Debug)]
@@ -240,6 +250,8 @@ pub struct FakeWindow {
     pub native_handle: FakeNativeHandle,
     pub gpu_ctx: Option<FakeGraphicsContext>,
     pub state: FakeWindowState,
+    visibility_signal: Option<Arc<AtomicBool>>,
+    occlusion_signal: Option<Arc<AtomicBool>>,
 }
 
 impl FakeWindow {
@@ -269,13 +281,37 @@ impl FakeWindow {
                 resize_notify_calls: Vec::new(),
                 set_title_calls: Vec::new(),
                 has_gpu: false,
+                native_frame_requests_supported: false,
+                native_frame_requests: Vec::new(),
+                native_frame_presented: Vec::new(),
+                cancelled_native_frame_requests: Vec::new(),
             },
+            visibility_signal: None,
+            occlusion_signal: None,
         }
     }
 
     pub fn with_gpu(mut self) -> Self {
         self.gpu_ctx = Some(FakeGraphicsContext::new());
         self.state.has_gpu = true;
+        self
+    }
+
+    pub fn with_native_frame_requests(mut self) -> Self {
+        self.state.native_frame_requests_supported = true;
+        self
+    }
+
+    pub fn with_visibility_signal(mut self, signal: Arc<AtomicBool>) -> Self {
+        self.state.visible = signal.load(Ordering::Relaxed);
+        self.visibility_signal = Some(signal);
+        self
+    }
+
+    /// Installs an exact compositor-state signal. `true` means fully
+    /// occluded; omitting the signal leaves the capability unsupported.
+    pub fn with_occlusion_signal(mut self, signal: Arc<AtomicBool>) -> Self {
+        self.occlusion_signal = Some(signal);
         self
     }
 
@@ -291,6 +327,9 @@ impl FakeWindow {
         self.state.icon_path.clear();
         self.state.resize_notify_calls.clear();
         self.state.set_title_calls.clear();
+        self.state.native_frame_requests.clear();
+        self.state.native_frame_presented.clear();
+        self.state.cancelled_native_frame_requests.clear();
         self.props.clear_history();
         self.presenter.clear_history();
     }
@@ -303,21 +342,43 @@ impl PlatformWindow for FakeWindow {
 
     fn show(&mut self) -> Result<()> {
         self.state.visible = true;
+        if let Some(signal) = &self.visibility_signal {
+            signal.store(true, Ordering::Relaxed);
+        }
         self.state.show_calls += 1;
         Ok(())
     }
     fn hide(&mut self) -> Result<()> {
         self.state.visible = false;
+        if let Some(signal) = &self.visibility_signal {
+            signal.store(false, Ordering::Relaxed);
+        }
         self.state.hide_calls += 1;
         Ok(())
     }
     fn close(&mut self) -> Result<()> {
         self.state.visible = false;
+        if let Some(signal) = &self.visibility_signal {
+            signal.store(false, Ordering::Relaxed);
+        }
         self.state.close_called = true;
         Ok(())
     }
     fn is_visible(&self) -> bool {
-        self.state.visible
+        self.visibility_signal
+            .as_ref()
+            .map_or(self.state.visible, |signal| signal.load(Ordering::Relaxed))
+    }
+    fn occlusion_state(&self) -> WindowOcclusionState {
+        self.occlusion_signal
+            .as_ref()
+            .map_or(WindowOcclusionState::Unknown, |signal| {
+                if signal.load(Ordering::Relaxed) {
+                    WindowOcclusionState::Occluded
+                } else {
+                    WindowOcclusionState::Visible
+                }
+            })
     }
     fn set_title(&mut self, title: &str) -> Result<()> {
         self.state.title = title.to_string();
@@ -370,6 +431,18 @@ impl PlatformWindow for FakeWindow {
     fn native_surface_ptr(&self) -> *mut std::ffi::c_void {
         std::ptr::null_mut()
     }
+    fn request_native_frame(&mut self, request: NativeFrameRequest) -> Result<bool> {
+        self.state.native_frame_requests.push(request);
+        Ok(self.state.native_frame_requests_supported)
+    }
+    fn native_frame_presented(&mut self, token: FrameRequestToken) -> Result<()> {
+        self.state.native_frame_presented.push(token);
+        Ok(())
+    }
+    fn cancel_native_frame(&mut self, token: FrameRequestToken) -> Result<()> {
+        self.state.cancelled_native_frame_requests.push(token);
+        Ok(())
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -415,4 +488,3 @@ impl IWindowManager for FakeWindowManager {
         Ok(Box::new(FakeWindow::new(id, title, width, height)))
     }
 }
-

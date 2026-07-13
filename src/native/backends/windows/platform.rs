@@ -22,6 +22,7 @@ use super::display::WindowsDisplay;
 use super::ffi::*;
 use super::file_dialog::WindowsFileDialog;
 use super::filesystem::WindowsFileSystem;
+use super::frame_pacer::{shared_frame_pacer_state, SharedWindowsFramePacerState};
 use super::gdi_presenter::GdiPresenter;
 use super::keyboard::WindowsKeyboard;
 use super::notification::WindowsNotification;
@@ -43,6 +44,7 @@ pub(crate) struct WindowBinding {
     pub(crate) platform: *mut WindowsPlatform,
     pub(crate) state: Rc<RefCell<WindowState>>,
     pub(crate) ime: RefCell<WindowsImeState>,
+    pub(crate) frame_pacer: SharedWindowsFramePacerState,
 }
 
 pub struct WindowsPlatform {
@@ -237,10 +239,12 @@ impl IWindowManager for WindowsPlatform {
             let win_w = rect.right - rect.left;
             let win_h = rect.bottom - rect.top;
 
+            let frame_pacer = shared_frame_pacer_state();
             let binding = Box::new(WindowBinding {
                 platform: self as *mut WindowsPlatform,
                 state: Rc::clone(&state),
                 ime: RefCell::new(WindowsImeState::default()),
+                frame_pacer: Arc::clone(&frame_pacer),
             });
             let binding_ptr = Box::into_raw(binding);
 
@@ -279,7 +283,7 @@ impl IWindowManager for WindowsPlatform {
                 }
             };
 
-            let ops = WindowsWindowOps::new(hwnd, binding);
+            let ops = WindowsWindowOps::new(hwnd, binding, frame_pacer);
             let core = PlatformWindowCore::new(state, ops, presenter);
             Ok(Box::new(core))
         }

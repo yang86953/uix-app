@@ -745,6 +745,7 @@ pub enum SnapshotFields {
         rows: Vec<TableRow>,
         row_h: f32,
         header_h: f32,
+        expandable: bool,
         expand_height: f32,
         empty_text: String,
         page_size: usize,

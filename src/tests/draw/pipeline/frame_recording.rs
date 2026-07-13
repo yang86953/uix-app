@@ -1,11 +1,8 @@
-use crate::tests::common::*;
-use crate::draw::backend::{CpuBackend, RenderBackend};
-use crate::draw::engine::cpu::pixel_surface::PixelSurface;
-use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
-use crate::draw::pipeline::{ EncodedFrameExecution, EncodedPictureExecution, FrameEncoderError, FrameImage, FrameRasterOp };
-use crate::draw::primitives::types::{ BlendMode, GradientDirection, Radius };
-use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
 use crate::draw::pipeline::frame_recording::*;
+use crate::draw::pipeline::FrameRasterOp;
+use crate::draw::primitives::types::{BlendMode, Radius};
+use crate::draw::traits::GraphicsEngine;
+use crate::tests::common::*;
 
 #[test]
 fn recording_canvas_emits_native_cpu_and_picture_commands_in_painter_order() {
@@ -209,11 +206,7 @@ fn scroll_region_records_native_scroll_copy() {
         matches!(
             command,
             crate::draw::pipeline::FrameCommand::Native {
-                operation: FrameRasterOp::ScrollCopy {
-                    dx: 0,
-                    dy: 2,
-                    ..
-                }
+                operation: FrameRasterOp::ScrollCopy { dx: 0, dy: 2, .. }
             }
         )
     }));

@@ -222,4 +222,3 @@ pub(crate) fn tsf_composition_events(
         .map(|mut q| q.drain(..).collect())
         .unwrap_or_default()
 }
-

@@ -1,23 +1,13 @@
 // WidgetTree unit tests.
 // Split out of `tree_core.rs` to keep implementation files manageable.
 use crate::tests::common::*;
-use crate::ui::widgets::Container;
-use crate::ui::core::widget::WidgetNode;
-use crate::draw::pipeline::InvalidationQueueHandle;
-use crate::ui::component_snapshot::ComponentConfigSnapshot;
-use crate::ui::event::HandlerTable;
-use crate::ui::foundation::focus_trap::next_focus_in_order;
-use crate::ui::managers::WidgetManagers;
-use crate::ui::overlay::OverlayStack;
-use std::collections::{ BTreeMap };
-use std::sync::atomic::{ AtomicU64 };
 use crate::ui::core::widget::*;
-use crate::ui::core::widget::tree_core::*;
 use crate::ui::layout::engine::{child_from_tree, child_from_tree_with_constraints};
 use crate::ui::managers::StyleManager;
 use crate::ui::view::combinators::{label, space};
 use crate::ui::view::{column, column_fit, embed, row, scroll, ViewAdapter};
-use crate::ui::{ Button, Drawer, Grid, Label, Modal, OverlayEntry, QRCode, TextManager, Tooltip };
+use crate::ui::widgets::Container;
+use crate::ui::{Button, Drawer, Grid, Label, Modal, OverlayEntry, QRCode, TextManager, Tooltip};
 
 struct SpyWidget {
     size: crate::core::Size,
@@ -1172,7 +1162,7 @@ fn grid_layout_honors_explicit_cell_zero() {
             .size(100.0, 40.0)
             .align(crate::ui::layout::AlignItems::Start),
     ));
-    tree.add_child(root, Box::new(Container::new().size(10.0, 10.0)));
+    let automatic = tree.add_child(root, Box::new(Container::new().size(10.0, 10.0)));
     let explicit = tree.add_child(
         root,
         Box::new(
@@ -1187,6 +1177,10 @@ fn grid_layout_honors_explicit_cell_zero() {
     assert_eq!(
         tree.get(explicit).unwrap().frame(),
         Rect::new(0.0, 0.0, 10.0, 10.0)
+    );
+    assert_eq!(
+        tree.get(automatic).unwrap().frame(),
+        Rect::new(50.0, 0.0, 10.0, 10.0)
     );
 }
 
@@ -1682,6 +1676,182 @@ fn focus_manager_drives_tab_navigation() {
         EventResult::Handled
     );
     assert_eq!(tree.managers().focus.focused_component(), Some(second));
+}
+
+#[test]
+fn focus_manager_shift_tab_starts_at_last_candidate() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
+    let _first = tree.add_child(root, Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(1)));
+    let last = tree.add_child(root, Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(2)));
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Tab,
+            mods: KeyMod::SHIFT,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(tree.managers().focus.focused_component(), Some(last));
+}
+
+#[test]
+fn tab_navigation_skips_focusable_descendants_of_hidden_ancestors() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
+    let hidden_parent = tree.add_child(
+        root,
+        Box::new(PassThroughContainer::new(100.0, 50.0, vec![])),
+    );
+    let hidden_child = tree.add_child(
+        hidden_parent,
+        Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(1)),
+    );
+    let visible_child =
+        tree.add_child(root, Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(2)));
+    tree.get_mut(hidden_parent).unwrap().set_visible(false);
+
+    assert_eq!(tree.collect_focusable(), vec![visible_child]);
+    assert!(!tree.collect_focusable().contains(&hidden_child));
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Tab,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.managers().focus.focused_component(),
+        Some(visible_child)
+    );
+}
+
+#[test]
+fn hiding_focused_subtree_dispatches_focus_out_and_blocks_stale_key_routing() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
+    let parent = tree.add_child(
+        root,
+        Box::new(PassThroughContainer::new(100.0, 50.0, vec![])),
+    );
+    let child = tree.add_child(
+        parent,
+        Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(1)),
+    );
+    tree.set_focus(Some(child));
+    tree.get(child)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<SpyWidget>()
+        .unwrap()
+        .events
+        .borrow_mut()
+        .clear();
+
+    tree.set_visible(parent, false);
+
+    assert!(tree.managers().focus.focused_component().is_none());
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::NotHandled
+    );
+    let events = tree
+        .get(child)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<SpyWidget>()
+        .unwrap()
+        .events
+        .borrow();
+    assert_eq!(events.len(), 1);
+    assert!(matches!(events[0], SystemEvent::FocusOut));
+}
+
+#[test]
+fn dispatch_clears_focus_hidden_through_low_level_visibility_mutation() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
+    let child = tree.add_child(root, Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(1)));
+    tree.set_focus(Some(child));
+    tree.get(child)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<SpyWidget>()
+        .unwrap()
+        .events
+        .borrow_mut()
+        .clear();
+    tree.get_mut(child).unwrap().set_visible(false);
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::TextInput {
+            text: "blocked".to_string(),
+        }),
+        EventResult::NotHandled
+    );
+    assert!(tree.managers().focus.focused_component().is_none());
+    let events = tree
+        .get(child)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<SpyWidget>()
+        .unwrap()
+        .events
+        .borrow();
+    assert_eq!(events.len(), 1);
+    assert!(matches!(events[0], SystemEvent::FocusOut));
+}
+
+#[test]
+fn focus_by_type_uses_the_shared_focus_transition_path() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
+    let first = tree.add_child(root, Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(1)));
+    let second = tree.add_child(root, Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(2)));
+    tree.set_focus(Some(second));
+    for id in [first, second] {
+        tree.get(id)
+            .unwrap()
+            .component()
+            .as_any()
+            .downcast_ref::<SpyWidget>()
+            .unwrap()
+            .events
+            .borrow_mut()
+            .clear();
+    }
+
+    assert_eq!(tree.focus_by_type::<SpyWidget>(), Some(first));
+
+    let first_events = tree
+        .get(first)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<SpyWidget>()
+        .unwrap()
+        .events
+        .borrow();
+    let second_events = tree
+        .get(second)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<SpyWidget>()
+        .unwrap()
+        .events
+        .borrow();
+    assert_eq!(first_events.len(), 1);
+    assert!(matches!(first_events[0], SystemEvent::FocusIn));
+    assert_eq!(second_events.len(), 1);
+    assert!(matches!(second_events[0], SystemEvent::FocusOut));
 }
 
 #[test]
@@ -3645,7 +3815,10 @@ fn fixed_height_card_wrap_inside_viewport_does_not_phase2_thrash() {
         .traverse()
         .into_iter()
         .find(|&id| {
-            let kids = tree.get(id).map(|n| n.children().to_vec()).unwrap_or_default();
+            let kids = tree
+                .get(id)
+                .map(|n| n.children().to_vec())
+                .unwrap_or_default();
             kids.len() == 3
                 && kids.iter().all(|&cid| {
                     tree.get(cid)
@@ -3753,7 +3926,10 @@ fn scrollview_fixed_intermediate_keeps_parent_cap_no_phase_oscillation() {
         std::collections::HashMap::new();
     for (phase, id, before, after) in &trace {
         if before != after {
-            by_id.entry(*id).or_default().push((*phase, *before, *after));
+            by_id
+                .entry(*id)
+                .or_default()
+                .push((*phase, *before, *after));
         }
     }
     for (id, writes) in &by_id {
@@ -3783,7 +3959,11 @@ fn scrollview_fixed_intermediate_keeps_parent_cap_no_phase_oscillation() {
         .into_iter()
         .find(|&id| {
             tree.get(id)
-                .and_then(|n| n.component().as_any().downcast_ref::<crate::ui::widgets::ScrollView>())
+                .and_then(|n| {
+                    n.component()
+                        .as_any()
+                        .downcast_ref::<crate::ui::widgets::ScrollView>()
+                })
                 .is_some()
         })
         .expect("scrollview");
@@ -4579,9 +4759,8 @@ fn typography_cross_selection_copy_aggregates_sibling_lines() {
 
     // 菜单/系统 Copy 事件同样走聚合路径
     let mut clipboard2 = FakeClipboard::new();
-    let copy_result = clipboard::with_clipboard(&mut clipboard2, || {
-        tree.dispatch_event(&SystemEvent::Copy)
-    });
+    let copy_result =
+        clipboard::with_clipboard(&mut clipboard2, || tree.dispatch_event(&SystemEvent::Copy));
     assert_eq!(copy_result, EventResult::Handled);
     assert_eq!(clipboard2.last_set_text(), Some(aggregated.as_str()));
 }

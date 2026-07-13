@@ -1,6 +1,3 @@
-use crate::tests::common::*;
-use std::ffi::c_void;
-use crate::core::{ Result };
 #[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn egl_damage_extension_does_not_imply_partial_present() {

@@ -7,7 +7,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
 use crate::core::diagnostic::Timestamp;
@@ -91,7 +91,7 @@ impl fmt::Display for CollectorSnapshot {
 // Collector — 错误收集器（线程安全）
 // ════════════════════════════════════════════════════════════════════════════
 
-type ErrorCallback = Box<dyn Fn(&Error) + Send + Sync>;
+type ErrorCallback = Arc<dyn Fn(&Error) + Send + Sync>;
 
 struct CollectorInner {
     errors: VecDeque<Error>,
@@ -157,6 +157,7 @@ impl Collector {
 
     pub fn collect(&self, err: Error) -> usize {
         let severity = err.severity();
+        let callback_error = err.clone();
         let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
 
         if inner.config.deduplicate {
@@ -184,31 +185,26 @@ impl Collector {
         let stored = inner.errors.len();
         self.total_collected.fetch_add(1, Ordering::Relaxed);
 
-        // 在不持有内部锁时按快照调用回调，避免重入死锁
-        let callbacks: Vec<&ErrorCallback> = inner.callbacks.values().collect();
-        let err_ref = inner.errors.back().unwrap();
+        // 在不持有内部锁时按快照调用回调，避免重入死锁。
+        let callbacks: Vec<ErrorCallback> = inner.callbacks.values().cloned().collect();
+        let should_log = inner.config.auto_log || severity >= ErrorSeverity::Error;
+        drop(inner);
         for cb in &callbacks {
-            cb(err_ref);
+            cb(&callback_error);
         }
 
-        if inner.config.auto_log || severity >= ErrorSeverity::Error {
+        if should_log {
             let level = match severity {
                 ErrorSeverity::Info => Level::Info,
                 ErrorSeverity::Warning => Level::Warn,
                 ErrorSeverity::Error => Level::Error,
                 ErrorSeverity::Fatal => Level::Fatal,
             };
-            let err_copy = inner.errors.back().cloned();
-            drop(inner);
-            if let Some(ref e) = err_copy {
-                Logger::instance().log_error(e, level);
-            }
+            Logger::instance().log_error(&callback_error, level);
             if severity.should_abort() {
                 crate::core::diagnostic::dump_crash_report();
                 std::process::abort();
             }
-        } else {
-            drop(inner);
         }
 
         stored
@@ -236,7 +232,7 @@ impl Collector {
         let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
         let id = inner.next_callback_id;
         inner.next_callback_id += 1;
-        inner.callbacks.insert(id, Box::new(callback));
+        inner.callbacks.insert(id, Arc::new(callback));
         id
     }
 

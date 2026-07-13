@@ -1,7 +1,5 @@
-use crate::tests::common::*;
-use std::fmt;
-use std::time::{ SystemTime, UNIX_EPOCH };
 use crate::core::diagnostic::timestamp::*;
+use std::time::SystemTime;
 
 #[test]
 fn test_format_iso_ms() {

@@ -1,13 +1,6 @@
-use crate::tests::common::*;
-use std::any::TypeId;
-use std::collections::hash_map::DefaultHasher;
-use std::fmt;
-use std::hash::{Hash, Hasher};
-use std::sync::atomic::{ AtomicU64 };
-use std::sync::{ RwLock };
-use crate::draw::pipeline::{invalidate_paint_handle, InvalidationQueueHandle};
-use crate::ui::foundation::state::*;
 use crate::draw::pipeline::InvalidationQueue;
+use crate::tests::common::*;
+use crate::ui::foundation::state::*;
 
 #[test]
 fn state_slot_id_is_unique_and_monotonic_for_new_state() {

@@ -88,9 +88,7 @@ impl WidgetTree {
             while start < sorted.len() {
                 let z = self.get(sorted[start]).map_or(0, |c| c.z_index());
                 let mut end = start + 1;
-                while end < sorted.len()
-                    && self.get(sorted[end]).map_or(0, |c| c.z_index()) == z
-                {
+                while end < sorted.len() && self.get(sorted[end]).map_or(0, |c| c.z_index()) == z {
                     end += 1;
                 }
                 sorted[start..end].reverse();
@@ -151,6 +149,15 @@ impl WidgetTree {
     }
 
     pub fn dispatch_event(&mut self, event: &SystemEvent) -> EventResult {
+        if self
+            .managers()
+            .focus
+            .focused_component()
+            .is_some_and(|focused| !self.focus_target_available(focused))
+        {
+            self.set_focus(None);
+        }
+
         match event {
             SystemEvent::PointerDown { pos, button, mods } => {
                 if let Some(result) = self.intercept_top_overlay_outside_pointer_down(*pos) {
@@ -281,7 +288,9 @@ impl WidgetTree {
                 if let Some(drag_target) = self.managers().interaction.pressed_component() {
                     // 文字拖选：pressed 捕获会把 Move 锁在起点节点，须在树层
                     // 协调同父级兄弟行，才能向上/向下扩展选区。
-                    if self.get(drag_target).is_some_and(super::text_selection::is_dragging)
+                    if self
+                        .get(drag_target)
+                        .is_some_and(super::text_selection::is_dragging)
                         && self.apply_cross_text_selection_drag(drag_target, *pos)
                     {
                         self.rebuild_widget_overlays();
@@ -315,15 +324,13 @@ impl WidgetTree {
                     // 仅当组件实际处理了 enter/leave（有 hover 视觉态）才窄标脏。
                     // Label/Icon 等叶子 NotHandled 时若仍 invalidate，局部清屏会挖掉父背景。
                     if let Some(old) = current_hover {
-                        if self.dispatch_to(old, &SystemEvent::PointerLeave)
-                            == EventResult::Handled
+                        if self.dispatch_to(old, &SystemEvent::PointerLeave) == EventResult::Handled
                         {
                             self.invalidate_paint(old);
                         }
                     }
                     if let Some(new) = new_hover {
-                        if self.dispatch_to(new, &SystemEvent::PointerEnter)
-                            == EventResult::Handled
+                        if self.dispatch_to(new, &SystemEvent::PointerEnter) == EventResult::Handled
                         {
                             self.invalidate_paint(new);
                         }
@@ -476,8 +483,7 @@ impl WidgetTree {
             SystemEvent::Copy | SystemEvent::Cut | SystemEvent::Paste { .. } => {
                 if let Some(t) = self.managers().focus.focused_component() {
                     self.invalidate_paint(t);
-                    if matches!(event, SystemEvent::Copy) && self.try_copy_cross_text_selection(t)
-                    {
+                    if matches!(event, SystemEvent::Copy) && self.try_copy_cross_text_selection(t) {
                         let _ = self.dispatch_semantic(SemanticEvent::copy(t));
                         return EventResult::Handled;
                     }

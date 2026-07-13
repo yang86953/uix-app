@@ -1,9 +1,9 @@
-use crate::tests::common::*;
 use crate::draw::compositor::ScenePaint;
-use crate::draw::render_object::tree::*;
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::render_object::tree::*;
 use crate::draw::spatial::Orientation;
+use crate::tests::common::*;
 
 struct AlphaScene;
 

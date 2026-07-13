@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
@@ -29,10 +30,21 @@ pub struct ValidationRule {
     pub min: Option<f64>,
     pub max: Option<f64>,
     pub pattern: Option<String>,
-    pub validator: Option<Box<dyn Fn(&str) -> Result<(), String> + 'static>>,
+    pub validator_key: Option<FormValidatorKey>,
 }
 
 impl ValidationRule {
+    pub fn custom(key: impl Into<FormValidatorKey>) -> Self {
+        Self {
+            required: false,
+            message: String::new(),
+            min: None,
+            max: None,
+            pattern: None,
+            validator_key: Some(key.into()),
+        }
+    }
+
     pub fn required(msg: &str) -> Self {
         Self {
             required: true,
@@ -40,7 +52,7 @@ impl ValidationRule {
             min: None,
             max: None,
             pattern: None,
-            validator: None,
+            validator_key: None,
         }
     }
 
@@ -61,7 +73,103 @@ impl ValidationRule {
         self.message = msg.to_string();
         self
     }
+
+    /// Associates this rule with a validator held in [`FormValidatorTable`].
+    pub fn validator(mut self, key: impl Into<FormValidatorKey>) -> Self {
+        self.validator_key = Some(key.into());
+        self
+    }
 }
+
+/// Stable name used to associate a validation rule with an external validator.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FormValidatorKey(String);
+
+impl FormValidatorKey {
+    pub fn new(key: impl Into<String>) -> Self {
+        Self(key.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for FormValidatorKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+impl From<&str> for FormValidatorKey {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<String> for FormValidatorKey {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+type FormValidator = Box<dyn Fn(&str) -> Result<(), String> + 'static>;
+
+/// Application-owned custom validators, separate from the `Form` component.
+#[derive(Default)]
+pub struct FormValidatorTable {
+    validators: HashMap<FormValidatorKey, FormValidator>,
+}
+
+impl FormValidatorTable {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn register<F>(&mut self, key: impl Into<FormValidatorKey>, validator: F) -> &mut Self
+    where
+        F: Fn(&str) -> Result<(), String> + 'static,
+    {
+        self.validators.insert(key.into(), Box::new(validator));
+        self
+    }
+
+    pub fn remove(&mut self, key: &FormValidatorKey) -> bool {
+        self.validators.remove(key).is_some()
+    }
+
+    pub fn contains(&self, key: &FormValidatorKey) -> bool {
+        self.validators.contains_key(key)
+    }
+
+    fn get(&self, key: &FormValidatorKey) -> Option<&FormValidator> {
+        self.validators.get(key)
+    }
+}
+
+/// Invalid custom-validator wiring is reported instead of being silently skipped.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FormValidationError {
+    MissingValidator {
+        field: String,
+        key: FormValidatorKey,
+    },
+}
+
+impl fmt::Display for FormValidationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingValidator { field, key } => {
+                write!(
+                    formatter,
+                    "field `{field}` references missing validator `{key}`"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for FormValidationError {}
 
 #[derive(Debug, Clone)]
 pub struct ValidationResult {
@@ -76,6 +184,29 @@ pub struct FieldDef {
     pub rules: Vec<ValidationRule>,
     pub status: ValidateStatus,
     pub message: String,
+}
+
+impl FieldDef {
+    pub fn new(name: impl Into<String>, label: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            label: label.into(),
+            value: String::new(),
+            rules: Vec::new(),
+            status: ValidateStatus::None,
+            message: String::new(),
+        }
+    }
+
+    pub fn value(mut self, value: impl Into<String>) -> Self {
+        self.value = value.into();
+        self
+    }
+
+    pub fn rule(mut self, rule: ValidationRule) -> Self {
+        self.rules.push(rule);
+        self
+    }
 }
 
 component! {
@@ -471,6 +602,19 @@ impl Form {
         self
     }
 
+    pub fn with_field(mut self, field: FieldDef) -> Self {
+        self.insert_field(field);
+        self
+    }
+
+    pub fn insert_field(&mut self, field: FieldDef) {
+        self.fields.insert(field.name.clone(), field);
+    }
+
+    pub fn field(&self, name: &str) -> Option<&FieldDef> {
+        self.fields.get(name)
+    }
+
     pub fn set_field_value(&mut self, name: &str, value: &str) {
         if let Some(field) = self.fields.get_mut(name) {
             field.value = value.to_string();
@@ -484,13 +628,18 @@ impl Form {
         }
     }
 
-    pub fn validate(&mut self) -> bool {
+    pub fn validate(
+        &mut self,
+        validators: &FormValidatorTable,
+    ) -> Result<bool, FormValidationError> {
         let mut all_valid = true;
         let field_results: Vec<(String, ValidationResult)> = self
             .fields
             .iter()
-            .map(|(name, field)| (name.clone(), Self::validate_field(field)))
-            .collect();
+            .map(|(name, field)| {
+                Self::validate_field(field, validators).map(|result| (name.clone(), result))
+            })
+            .collect::<Result<_, _>>()?;
 
         for (name, result) in &field_results {
             if let Some(field) = self.fields.get_mut(name.as_str()) {
@@ -502,7 +651,7 @@ impl Form {
             }
         }
 
-        all_valid
+        Ok(all_valid)
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -519,55 +668,64 @@ impl Form {
         self.layout = next.layout;
     }
 
-    fn validate_field(field: &FieldDef) -> ValidationResult {
+    fn validate_field(
+        field: &FieldDef,
+        validators: &FormValidatorTable,
+    ) -> Result<ValidationResult, FormValidationError> {
         for rule in &field.rules {
             if rule.required && field.value.is_empty() {
-                return ValidationResult {
+                return Ok(ValidationResult {
                     status: ValidateStatus::Error,
                     message: rule.message.clone(),
-                };
+                });
             }
             if let Some(min) = rule.min {
                 if let Ok(v) = field.value.parse::<f64>() {
                     if v < min {
-                        return ValidationResult {
+                        return Ok(ValidationResult {
                             status: ValidateStatus::Error,
                             message: rule.message.clone(),
-                        };
+                        });
                     }
                 }
             }
             if let Some(max) = rule.max {
                 if let Ok(v) = field.value.parse::<f64>() {
                     if v > max {
-                        return ValidationResult {
+                        return Ok(ValidationResult {
                             status: ValidateStatus::Error,
                             message: rule.message.clone(),
-                        };
+                        });
                     }
                 }
             }
             if let Some(ref pattern) = rule.pattern {
                 if !field.value.is_empty() && !simple_pattern_match(&field.value, pattern) {
-                    return ValidationResult {
+                    return Ok(ValidationResult {
                         status: ValidateStatus::Error,
                         message: rule.message.clone(),
-                    };
+                    });
                 }
             }
-            if let Some(ref validator_fn) = rule.validator {
+            if let Some(key) = &rule.validator_key {
+                let Some(validator_fn) = validators.get(key) else {
+                    return Err(FormValidationError::MissingValidator {
+                        field: field.name.clone(),
+                        key: key.clone(),
+                    });
+                };
                 if let Err(msg) = validator_fn(&field.value) {
-                    return ValidationResult {
+                    return Ok(ValidationResult {
                         status: ValidateStatus::Error,
                         message: msg,
-                    };
+                    });
                 }
             }
         }
-        ValidationResult {
+        Ok(ValidationResult {
             status: ValidateStatus::None,
             message: String::new(),
-        }
+        })
     }
 }
 
@@ -606,4 +764,3 @@ fn simple_pattern_match(value: &str, pattern: &str) -> bool {
 
     pi >= p_chars.len()
 }
-

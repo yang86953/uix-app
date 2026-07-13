@@ -85,15 +85,21 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
                         row((
                             button("+1")
                                 .primary()
-                                .on_click(&count, |c| c.update(|v| *v += 1)),
-                            button("-1").on_click(&count, |c| {
-                                c.update(|v| {
-                                    if *v > 0 {
-                                        *v -= 1;
-                                    }
-                                });
-                            }),
-                            button("重置").ghost().on_click(&count, |c| c.set(0)),
+                                .on_click(&count, |c| c.update(|v| *v += 1))
+                                .automation_id("home-count-increment"),
+                            button("-1")
+                                .on_click(&count, |c| {
+                                    c.update(|v| {
+                                        if *v > 0 {
+                                            *v -= 1;
+                                        }
+                                    });
+                                })
+                                .automation_id("home-count-decrement"),
+                            button("重置")
+                                .ghost()
+                                .on_click(&count, |c| c.set(0))
+                                .automation_id("home-count-reset"),
                         ))
                         .gap(8.0),
                     )),

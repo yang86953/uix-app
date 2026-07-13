@@ -12,6 +12,7 @@ pub fn next_focus_in_order(
     if focusable.is_empty() {
         return None;
     }
+    let edge = if forward { 0 } else { focusable.len() - 1 };
     if let Some(cur_id) = current {
         let pos = focusable.iter().position(|&id| id == cur_id);
         match pos {
@@ -22,10 +23,10 @@ pub fn next_focus_in_order(
                     Some(focusable[(p + focusable.len() - 1) % focusable.len()])
                 }
             }
-            None => Some(focusable[0]),
+            None => Some(focusable[edge]),
         }
     } else {
-        Some(focusable[0])
+        Some(focusable[edge])
     }
 }
 
@@ -90,4 +91,3 @@ impl FocusTrap {
         crate::ui::core::widget::WidgetNode::new(Box::new(self), vec![node])
     }
 }
-

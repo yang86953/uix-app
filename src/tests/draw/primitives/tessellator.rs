@@ -1,19 +1,12 @@
-use crate::tests::common::*;
-use crate::draw::primitives::path::{Path, PathBuilder};
-use crate::draw::primitives::flattener;
-use crate::draw::primitives::tessellator::*;
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::primitives::flattener;
+use crate::draw::primitives::path::{Path, PathBuilder};
+use crate::draw::primitives::tessellator::*;
 use crate::draw::traits::Canvas2D;
+use crate::tests::common::*;
 
-fn add_rect(
-    builder: &mut PathBuilder,
-    x0: f32,
-    y0: f32,
-    x1: f32,
-    y1: f32,
-    positive_area: bool,
-) {
+fn add_rect(builder: &mut PathBuilder, x0: f32, y0: f32, x1: f32, y1: f32, positive_area: bool) {
     if positive_area {
         builder
             .move_to(x0, y0)
@@ -277,8 +270,7 @@ fn tessellates_strict_contour_forests_for_fill_rules_winding_and_path_order() {
     }
 
     for path in [nested_path(false, false), nested_path(false, true)] {
-        let same =
-            tessellate_fill(&path, FillRule::NonZero).expect("same-winding NonZero fill");
+        let same = tessellate_fill(&path, FillRule::NonZero).expect("same-winding NonZero fill");
         assert!((triangle_mesh_area(&same) - 400.0).abs() < 1e-3);
         assert!(triangle_mesh_contains(&same, Point::new(10.0, 10.0)));
     }
@@ -599,10 +591,7 @@ fn stroke_caps_and_joins_tessellate_without_gaps_or_area_overlap() {
             let covered = (0..96)
                 .flat_map(|y| (0..96).map(move |x| (x, y)))
                 .filter(|&(x, y)| {
-                    triangle_mesh_contains(
-                        &vertices,
-                        Point::new(x as f32 + 0.5, y as f32 + 0.5),
-                    )
+                    triangle_mesh_contains(&vertices, Point::new(x as f32 + 0.5, y as f32 + 0.5))
                 })
                 .count();
             assert_eq!(covered, expected_area as usize);

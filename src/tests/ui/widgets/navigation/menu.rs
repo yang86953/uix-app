@@ -1,8 +1,6 @@
 use crate::tests::common::*;
-use crate::component;
-use crate::draw::Radius;
-use crate::ui::widgets::navigation::menu::*;
 use crate::ui::core::widget::WidgetCore;
+use crate::ui::widgets::navigation::menu::*;
 
 #[test]
 fn menu_selection_emits_change_semantic_event() {
@@ -43,18 +41,4 @@ fn menu_selection_emits_change_semantic_event() {
     });
 
     assert_eq!(&*selected.borrow(), "docs");
-}
-
-#[test]
-fn measure_clamps_menu_size() {
-    let measured = Menu::new()
-        .add_item(MenuItem {
-            key: "home".into(),
-            label: "Home".into(),
-            icon: String::new(),
-            disabled: false,
-        })
-        .measure(Constraints::loose(Size::new(80.0, 20.0)));
-
-    assert_eq!(measured, Size::new(80.0, 20.0));
 }

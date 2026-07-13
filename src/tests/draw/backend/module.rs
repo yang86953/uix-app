@@ -1,5 +1,5 @@
-use crate::tests::common::*;
 use crate::draw::backend::*;
+use crate::tests::common::*;
 use std::ffi::c_void;
 
 struct FakeGpuContext {
@@ -10,7 +10,7 @@ struct FakeGpuContext {
 
 impl IGraphicsContext for FakeGpuContext {
     fn caps(&self) -> GraphicsContextCaps {
-        GraphicsContextCaps::gpu_native_swapchain(self.backend, false, 1.0)
+        GraphicsContextCaps::gpu_native_swapchain(self.backend, PresentCoherency::FullOnly, 1.0)
     }
 
     fn native_raster_caps(&self) -> NativeRasterCaps {

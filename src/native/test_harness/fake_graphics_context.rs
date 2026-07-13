@@ -58,7 +58,7 @@ impl IGraphicsContext for FakeGraphicsContext {
     fn caps(&self) -> crate::native::traits::present::GraphicsContextCaps {
         crate::native::traits::present::GraphicsContextCaps::gpu_native_swapchain(
             crate::native::traits::present::GraphicsBackend::OpenGlEs,
-            false,
+            crate::core::PresentCoherency::FullOnly,
             1.0,
         )
     }

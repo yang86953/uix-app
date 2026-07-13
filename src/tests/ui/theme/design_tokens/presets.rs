@@ -1,5 +1,4 @@
 use crate::tests::common::*;
-use crate::ui::theme::color_tokens::NeutralRole;
 use crate::ui::theme::design_tokens::presets::*;
 
 #[test]

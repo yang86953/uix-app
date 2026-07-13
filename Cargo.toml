@@ -61,6 +61,7 @@ d3d12 = [
 opengles = ["dep:glow", "dep:khronos-egl"]
 vulkan = ["dep:ash"]
 metal = []
+agent-control = []
 test-harness = []
 
 [lib]

@@ -22,6 +22,7 @@ pub mod display;
 pub mod ffi;
 pub mod file_dialog;
 pub mod filesystem;
+pub(crate) mod frame_pacer;
 pub mod gdi_presenter;
 pub mod helpers;
 pub mod ime_dispatch;

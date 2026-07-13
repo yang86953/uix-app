@@ -12,6 +12,16 @@
 use super::bindings::{CANDIDATEFORM, COMPOSITIONFORM, MSG, POINT, RECT, WNDCLASSEXW};
 
 // ════════════════════════════════════════════════════════════════════════════
+// dwmapi
+// ════════════════════════════════════════════════════════════════════════════
+
+#[link(name = "dwmapi")]
+extern "system" {
+    /// Blocks the calling thread until the next DWM compositor present.
+    pub(crate) fn DwmFlush() -> i32;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // kernel32
 // ════════════════════════════════════════════════════════════════════════════
 

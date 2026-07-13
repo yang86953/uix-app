@@ -1,5 +1,3 @@
-use crate::tests::common::*;
-use std::ffi::c_void;
 use crate::native::graphics::platform::windows::*;
 
 #[test]

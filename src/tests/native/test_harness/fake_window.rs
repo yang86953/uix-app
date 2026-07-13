@@ -1,12 +1,6 @@
-use crate::tests::common::*;
-use crate::core::error::Result;
-use crate::native::test_harness::fake_graphics_context::FakeGraphicsContext;
-use crate::native::test_harness::fake_presenter::FakePresenter;
-use crate::native::traits::present::{ IPresenter };
-use crate::native::traits::window::{
-    INativeHandle, IWindowManager, IWindowProperties, PlatformWindow,
-};
 use crate::native::test_harness::fake_window::*;
+use crate::native::traits::window::IWindowManager;
+use crate::tests::common::*;
 
 #[test]
 fn fake_window_manager_assigns_stable_incrementing_window_ids() {

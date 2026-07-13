@@ -1,6 +1,5 @@
-use crate::tests::common::*;
-use crate::draw::pipeline::RenderMetrics;
 use crate::draw::pipeline::metrics::*;
+use crate::draw::pipeline::RenderMetrics;
 
 #[test]
 fn metrics_accumulates_counters() {

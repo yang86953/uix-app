@@ -1,12 +1,7 @@
-use crate::tests::common::*;
-use std::thread::ThreadId;
-#[cfg(feature = "opengles")]
-use crate::draw::backend::NativeGpuBackend;
-use crate::draw::backend::{
-    create_backend, BackendCapabilities, BackendKind, CpuBackend, NullBackend, RenderBackend,
-};
-use crate::draw::traits::{Canvas2D, GraphicsCapabilities, UpdateStrategy};
+use crate::draw::backend::BackendKind;
 use crate::draw::pipeline::session::*;
+use crate::draw::traits::UpdateStrategy;
+use crate::tests::common::*;
 use std::ffi::c_void;
 
 struct CountingGraphicsContext {
@@ -20,7 +15,11 @@ struct FailingShutdownGraphicsContext {
 
 impl IGraphicsContext for CountingGraphicsContext {
     fn caps(&self) -> GraphicsContextCaps {
-        GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+        GraphicsContextCaps::gpu_native_swapchain(
+            GraphicsBackend::D3d11,
+            PresentCoherency::FullOnly,
+            1.0,
+        )
     }
 
     fn initialize(
@@ -74,7 +73,11 @@ fn counting_context(shutdowns: Arc<AtomicUsize>) -> Box<dyn IGraphicsContext> {
 
 impl IGraphicsContext for FailingShutdownGraphicsContext {
     fn caps(&self) -> GraphicsContextCaps {
-        GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+        GraphicsContextCaps::gpu_native_swapchain(
+            GraphicsBackend::D3d11,
+            PresentCoherency::FullOnly,
+            1.0,
+        )
     }
 
     fn initialize(

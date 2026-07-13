@@ -1,12 +1,8 @@
-use crate::tests::common::*;
-use std::collections::BTreeMap;
-use std::sync::{ Arc, Mutex, Weak,
-};
-use crate::app::active_work_registry::TimerId;
-use crate::app::clock::{system_clock, AppClock};
 use crate::app::app_timer::*;
 use crate::tests::app::test_clock::TestClock;
-use std::sync::{ atomic::{AtomicUsize, Ordering} };
+use crate::tests::common::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 #[test]
 fn run_after_fires_once_and_unregisters() {

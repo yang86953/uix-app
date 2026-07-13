@@ -15,10 +15,11 @@ use crate::native::graphics::platform::windows as win_surface;
 use crate::native::traits::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
     GpuSolidRect, GpuStrokeRect, GraphicsBackend, GraphicsContextCaps, IGraphicsContext,
-    NativeRasterCaps, OffscreenTargetId, PresentDamage, PresentFrame, SoftFallbackTile,
+    NativeRasterCaps, OffscreenTargetId, PresentCoherency, PresentDamage, PresentFrame,
+    PresentTestResult, SoftFallbackTile,
 };
 use ::windows::core::Interface;
-use ::windows::Win32::Foundation::{E_OUTOFMEMORY, HMODULE, HWND, TRUE};
+use ::windows::Win32::Foundation::{DXGI_STATUS_OCCLUDED, E_OUTOFMEMORY, HMODULE, HWND, TRUE};
 use ::windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE, D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL,
     D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
@@ -37,8 +38,8 @@ use ::windows::Win32::Graphics::Dxgi::Common::{
 use ::windows::Win32::Graphics::Dxgi::{
     IDXGIDevice, IDXGISwapChain, DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED,
     DXGI_ERROR_DEVICE_RESET, DXGI_ERROR_DRIVER_INTERNAL_ERROR, DXGI_ERROR_REMOTE_OUTOFMEMORY,
-    DXGI_PRESENT, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_CHAIN_FLAG, DXGI_SWAP_EFFECT_DISCARD,
-    DXGI_USAGE_RENDER_TARGET_OUTPUT,
+    DXGI_PRESENT, DXGI_PRESENT_TEST, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_CHAIN_FLAG,
+    DXGI_SWAP_EFFECT_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 
 type HWND_PTR = *mut c_void;
@@ -87,6 +88,7 @@ pub(crate) fn swap_chain_desc(hwnd: HWND_PTR, width: i32, height: i32) -> DXGI_S
 
 fn d3d_hresult_code(result: ::windows::core::HRESULT) -> Errc {
     match result {
+        DXGI_STATUS_OCCLUDED => Errc::GraphicsOccluded,
         DXGI_ERROR_DEVICE_HUNG
         | DXGI_ERROR_DEVICE_REMOVED
         | DXGI_ERROR_DEVICE_RESET
@@ -104,7 +106,23 @@ fn d3d_error(operation: &str, err: ::windows::core::Error) -> Error {
 }
 
 pub(crate) fn map_dxgi_present_result(result: ::windows::core::HRESULT) -> Result<()> {
+    if result == DXGI_STATUS_OCCLUDED {
+        return Err(Error::new(
+            Errc::GraphicsOccluded,
+            format!("D3d11Context: IDXGISwapChain::Present reported occlusion: {result:?}"),
+        ));
+    }
     map_dxgi_operation_result("IDXGISwapChain::Present", result)
+}
+
+pub(crate) fn map_dxgi_present_test_result(
+    result: ::windows::core::HRESULT,
+) -> Result<PresentTestResult> {
+    if result == DXGI_STATUS_OCCLUDED {
+        return Ok(PresentTestResult::Occluded);
+    }
+    map_dxgi_operation_result("IDXGISwapChain::Present(DXGI_PRESENT_TEST)", result)?;
+    Ok(PresentTestResult::Presentable)
 }
 
 pub(crate) fn map_dxgi_resize_result(result: ::windows::core::HRESULT) -> Result<()> {
@@ -507,7 +525,7 @@ impl IGraphicsContext for D3d11Context {
     fn caps(&self) -> crate::native::traits::present::GraphicsContextCaps {
         GraphicsContextCaps::gpu_native_swapchain(
             GraphicsBackend::D3d11,
-            false,
+            PresentCoherency::FullOnly,
             self.device_pixel_ratio(),
         )
     }
@@ -554,6 +572,12 @@ impl IGraphicsContext for D3d11Context {
 
     fn swap_buffers(&mut self, _damage: PresentDamage) -> Result<()> {
         self.present_result()
+    }
+
+    fn test_present(&mut self) -> Result<PresentTestResult> {
+        // DXGI_PRESENT_TEST is the documented exit probe for an already-idle
+        // bitblt swapchain. It submits no frame data and must use sync 0.
+        map_dxgi_present_test_result(unsafe { self.swap_chain.Present(0, DXGI_PRESENT_TEST) })
     }
 
     fn try_shutdown(&mut self) -> Result<()> {

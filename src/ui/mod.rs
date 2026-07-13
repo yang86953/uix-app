@@ -2,6 +2,8 @@
 
 pub mod animation;
 pub mod app_state;
+#[cfg(feature = "test-harness")]
+pub mod automation;
 pub mod component_handle;
 pub(crate) mod component_patch;
 pub mod component_snapshot;
@@ -12,6 +14,9 @@ pub mod layout;
 pub mod macros;
 pub mod managers;
 pub mod overlay;
+pub(crate) mod render_handler;
+pub(crate) mod semantic_action;
+pub(crate) mod semantic_snapshot;
 pub mod theme;
 pub mod traits;
 pub mod view;
@@ -33,8 +38,8 @@ pub use component_snapshot::{
     SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue,
 };
 pub use core::children::WidgetChildren;
-pub use core::widget::{EventResult, IntoWidgetNode};
 pub(crate) use core::widget::WidgetTree;
+pub use core::widget::{EventResult, IntoWidgetNode};
 pub(crate) use core::{children, widget};
 
 // Public component traits and exported macros mention these opaque bridge
@@ -69,8 +74,12 @@ pub use traits::{
 pub use widgets::*;
 
 #[cfg(feature = "test-harness")]
-#[doc(hidden)]
 pub mod test_harness {
+    pub use super::automation::{
+        AutomationAction, AutomationActionKind, AutomationError, AutomationErrorCode,
+        AutomationNode, AutomationSnapshot, AutomationTarget, TestApp, AUTOMATION_DIR_ENV,
+        AUTOMATION_SCHEMA,
+    };
     pub use super::core::widget::{WidgetCore, WidgetTree};
     pub use super::view::adapter::ViewAdapter;
 }

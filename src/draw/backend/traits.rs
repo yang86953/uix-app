@@ -7,6 +7,7 @@ use crate::core::{DamageRegion, Error, Point, Rect, Size};
 use crate::draw::pipeline::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::traits::{Canvas2D, PresentationMode};
 use crate::draw::ImageHandle;
+use crate::native::traits::present::PresentTestResult;
 
 /// Engine-level raster preference ([架构 · 图形](docs/架构.md#图形-api与帧提交硬约束)).
 ///
@@ -295,6 +296,15 @@ pub trait RenderBackend {
     fn present(&mut self, damage: &DamageRegion) -> Result<(), Error> {
         let _ = damage;
         Ok(())
+    }
+
+    /// Non-presenting availability test used only after a normal present has
+    /// reported occlusion.
+    fn test_present(&mut self) -> Result<PresentTestResult, Error> {
+        Err(Error::new(
+            crate::core::Errc::NotImplemented,
+            "render backend does not support idle present tests",
+        ))
     }
 
     /// 用于具体后端类型的向下转型（如 GpuEngine 读回像素）。

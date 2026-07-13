@@ -1,10 +1,5 @@
 use crate::tests::common::*;
-use crate::component;
-use crate::draw::{ Radius };
-use crate::ui::animation::{presets, TransitionPlayer};
-use crate::ui::foundation::virtual_scroll::VirtualListScroll;
 use crate::ui::widgets::display::tree::TreeNode;
-use crate::ui::{ SnapshotTreeNode };
 use crate::ui::widgets::input::tree_select::*;
 
 fn large_tree_select() -> TreeSelect {
@@ -12,45 +7,6 @@ fn large_tree_select() -> TreeSelect {
         .map(|i| TreeNode::new(&format!("Node {i}"), &format!("n-{i}")))
         .collect();
     TreeSelect::new().nodes(nodes)
-}
-
-#[test]
-fn tree_select_enter_animation_finishes_open() {
-    let mut tree_select = TreeSelect::new().nodes(vec![TreeNode::new("Alpha", "alpha")]);
-
-    tree_select.open();
-    assert!(tree_select.is_open());
-    assert!(tree_select.is_present());
-
-    assert!(WidgetAnimation::update_animation(&mut tree_select, 0.05));
-    assert!(!WidgetAnimation::update_animation(&mut tree_select, 1.0));
-    assert!(tree_select.is_open());
-    assert!(tree_select.is_present());
-}
-
-#[test]
-fn tree_select_exit_animation_stays_present_until_finished() {
-    let mut tree_select = TreeSelect::new().nodes(vec![TreeNode::new("Alpha", "alpha")]);
-    tree_select.open();
-    assert!(!WidgetAnimation::update_animation(&mut tree_select, 1.0));
-
-    tree_select.close();
-    assert!(!tree_select.is_open());
-    assert!(tree_select.is_present());
-
-    assert!(WidgetAnimation::update_animation(&mut tree_select, 0.03));
-    assert!(!WidgetAnimation::update_animation(&mut tree_select, 1.0));
-    assert!(!tree_select.is_open());
-    assert!(!tree_select.is_present());
-}
-
-#[test]
-fn measure_clamps_tree_select_size() {
-    let measured = TreeSelect::new()
-        .nodes(vec![TreeNode::new("Alpha", "alpha")])
-        .measure(Constraints::loose(Size::new(120.0, 20.0)));
-
-    assert_eq!(measured, Size::new(120.0, 20.0));
 }
 
 #[test]

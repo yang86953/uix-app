@@ -1,49 +1,25 @@
 //! Render Loop — OS 事件 + Widget 调度；渲染段委托 draw FrameRenderer。
 
-use crate::app::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry};
+use crate::app::active_work_registry::ActiveWorkRegistry;
+use crate::app::agent_control::WindowAgentState;
 use crate::app::clock::{system_clock, AppClock};
-use crate::app::main_thread_queue::MainThreadContext;
 use crate::app::text_input::sync_window_text_input;
+use crate::app::window_driver::{WindowDriver, WindowFrameContext};
+use crate::app::window_semantics::WindowSemanticState;
 use crate::app::window_session::{WindowLoopState, WindowSession, WindowTextInputState};
-use crate::core::{Point, Rect};
+use crate::core::Point;
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
-use crate::draw::painting::ThemeSnapshot;
-use crate::draw::pipeline::{
-    FrameRenderInput, FrameRenderer, InvalidationSource, NodeId, RenderMetrics,
-};
+use crate::draw::pipeline::RenderMetrics;
 use crate::draw::traits::GraphicsEngine;
-use crate::draw::RenderOutcome;
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::traits::platform::Platform;
 use crate::native::traits::window::PlatformWindow;
 use crate::ui::clipboard;
-use crate::ui::core::widget::WidgetCore;
 use crate::ui::theme::{DynTokens, Theme};
-use crate::ui::{ComponentId, EventResult, SystemEvent, WidgetTree};
+use crate::ui::{ComponentId, SystemEvent, WidgetTree};
 use std::cell::{Cell, RefCell};
-use std::time::{Duration, Instant};
-
-const ANIMATION_FRAME_INTERVAL: Duration = Duration::from_millis(16);
-
-fn report_resize_notify_error(context: &str, result: crate::core::Result<()>) {
-    if let Err(error) = result {
-        crate::core::log::warn_fn(format!("{context}: {}", error.short_what()));
-    }
-}
-
-/// Graphics resize failure is a retained-dirty frame failure, not a best-effort
-/// warning.  The event loop keeps the tree invalidated for recovery instead of
-/// continuing as if the surface had adopted the new extent.
-fn report_graphics_resize_error(context: &str, result: crate::core::Result<()>) -> bool {
-    match result {
-        Ok(()) => true,
-        Err(error) => {
-            crate::core::log::warn_fn(format!("{context}: {}", error.short_what()));
-            false
-        }
-    }
-}
+use std::time::Instant;
 
 /// 运行完整的 widget 渲染事件循环。
 #[allow(clippy::too_many_arguments)]
@@ -71,6 +47,8 @@ where
     let mut pending_root = None;
     let mut reconcile_pending = false;
     let mut text_input = WindowTextInputState::default();
+    let mut semantic_state = WindowSemanticState::new(platform_window.window_id());
+    let mut agent_commands = WindowAgentState::new();
     run_widget_loop_with_active_work(
         platform,
         platform_window,
@@ -79,12 +57,14 @@ where
         &mut active_work,
         crate::app::app_timer::AppTimerQueue::new(),
         crate::app::main_thread_queue::MainThreadQueue::new(),
+        &mut agent_commands,
         system_clock(),
         None,
         &mut pending_root,
         &mut reconcile_pending,
         None,
         &mut text_input,
+        &mut semantic_state,
         font_service,
         image_service,
         theme,
@@ -306,12 +286,14 @@ where
         parts.active_work,
         parts.app_timers,
         parts.main_thread_queue,
+        parts.agent_commands,
         clock,
         Some(parts.view_factory),
         parts.pending_root,
         parts.reconcile_pending,
         Some(parts.loop_state),
         parts.text_input,
+        parts.semantic_state,
         font_service,
         image_service,
         theme,
@@ -337,12 +319,14 @@ fn run_widget_loop_with_active_work<M, X, T, R, D, F>(
     active_work: &mut ActiveWorkRegistry,
     app_timers: crate::app::app_timer::AppTimerQueue,
     main_thread_queue: crate::app::main_thread_queue::MainThreadQueue,
+    agent_commands: &mut WindowAgentState,
     clock: std::sync::Arc<dyn AppClock>,
     view_factory: Option<&crate::app::window_session::ViewFactorySlot>,
     pending_root: &mut Option<crate::ui::view::ViewNode>,
     reconcile_pending: &mut bool,
     mut loop_state: Option<&mut WindowLoopState>,
     text_input: &mut WindowTextInputState,
+    semantic_state: &mut WindowSemanticState,
     font_service: &FontService,
     image_service: &ImageService,
     theme: &RefCell<Theme>,
@@ -376,18 +360,14 @@ where
     tree.mark_full_frame_dirty();
 
     let mut first_frame = true;
-    let mut rendered_first = false;
-    let mut deferred_show = !platform_window.is_visible();
-    let loop_t0 = clock.now();
-    let mut last_animation_frame = clock.now();
-    let mut window_visible = true;
-    let mut frame_renderer = FrameRenderer::new();
-    // debug overlay：仅当 hit 目标变化时全帧标脏（非每 move）。
-    let last_debug_hover = Cell::new(None::<ComponentId>);
-    let mut initial_size = (
+    let mut driver = WindowDriver::new(
         platform_window.properties().width(),
         platform_window.properties().height(),
+        !platform_window.is_visible(),
     );
+    // debug overlay：仅当 hit 目标变化时全帧标脏（非每 move）。
+    let last_debug_hover = Cell::new(None::<ComponentId>);
+    let mut fallback_loop_state = WindowLoopState::Active;
 
     let running = Cell::new(true);
     active_work.sync_app_timers(app_timers.deadlines());
@@ -420,143 +400,66 @@ where
                 break;
             }
             first_frame = false;
-        } else if !main_thread_queue.is_empty()
-            || *reconcile_pending
-            || (window_visible && has_invalidation_work(tree))
-        {
-            set_loop_state(&mut loop_state, WindowLoopState::Active);
         } else {
-            let external_deadline = next_external_deadline();
-            set_loop_state(
-                &mut loop_state,
-                wait_loop_state(active_work, external_deadline),
-            );
-            if !wait_for_event_or_registered_work(
-                platform,
+            let now = clock.now();
+            if driver.has_frame_work(
+                now,
+                tree,
                 active_work,
-                external_deadline,
-                clock.as_ref(),
-                &collect,
+                &app_timers,
+                &main_thread_queue,
+                agent_commands,
+                pending_root,
+                reconcile_pending,
             ) {
-                break;
+                set_loop_state(&mut loop_state, WindowLoopState::Active);
+            } else {
+                let window_deadline = driver.next_deadline(
+                    now,
+                    tree,
+                    active_work,
+                    &app_timers,
+                    agent_commands,
+                    pending_root,
+                    *reconcile_pending,
+                );
+                let external_deadline =
+                    earliest_deadline(window_deadline, next_external_deadline());
+                set_loop_state(
+                    &mut loop_state,
+                    wait_loop_state(active_work, external_deadline),
+                );
+                if !wait_for_event_or_registered_work(
+                    platform,
+                    active_work,
+                    external_deadline,
+                    clock.as_ref(),
+                    &collect,
+                ) {
+                    break;
+                }
+                platform.event_loop().poll_event(&collect);
             }
-            platform.event_loop().poll_event(&collect);
         }
 
         for ev in foreign_events.borrow_mut().drain(..) {
             on_foreign_event(&ev, platform);
         }
 
-        let frame_t0 = Instant::now();
-        let mut phase_input_us = 0u128;
-        let mut phase_reconcile_us = 0u128;
-        let mut phase_layout_us = 0u128;
-        let mut phase_paint_us = 0u128;
-        let mut phase_present_us = 0u128;
-        let mut reconcile_ran = false;
-        let mut layout_calls_this_frame = 0u32;
-
         let input_t0 = Instant::now();
         let had_events = !pending_events.borrow().is_empty();
         let mut had_layout_event = false;
         for ev in pending_events.borrow_mut().drain(..) {
-            let is_layout_event = matches!(
-                ev.type_,
-                UiEventType::WindowResize
-                    | UiEventType::WindowMaximize
-                    | UiEventType::WindowRestore
+            had_layout_event |= driver.handle_window_event(
+                &ev,
+                tree,
+                engine,
+                platform_window,
+                platform,
+                text_input,
             );
-            if is_layout_event {
-                had_layout_event = true;
-            }
 
             match ev.type_ {
-                UiEventType::WindowResize => {
-                    if let UiEventPayload::Resize(ref d) = ev.payload {
-                        if d.width > 0 && d.height > 0 {
-                            let resized = report_graphics_resize_error(
-                                "window graphics resize failed",
-                                engine.resize(d.width, d.height),
-                            );
-                            report_resize_notify_error(
-                                "window resize_notify failed",
-                                platform_window.resize_notify(d.width, d.height),
-                            );
-                            // 以 engine 实际 canvas（可能已按 GetClientRect 校正）锁定根 frame，
-                            // 避免仅依赖后续 SystemEvent::Resize 的事件尺寸。
-                            if resized {
-                                let (cw, ch) = {
-                                    let canvas = engine.canvas_2d();
-                                    (canvas.width() as f32, canvas.height() as f32)
-                                };
-                                if cw > 0.0 && ch > 0.0 {
-                                    if let Some(rid) = tree.root_id() {
-                                        if let Some(root_mut) = tree.get_mut(rid) {
-                                            let rf = root_mut.frame();
-                                            if (rf.w - cw).abs() > 0.5 || (rf.h - ch).abs() > 0.5 {
-                                                root_mut.set_frame(Rect::new(0.0, 0.0, cw, ch));
-                                                tree.tree_version =
-                                                    tree.tree_version.wrapping_add(1);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            initial_size = (d.width, d.height);
-                            // 最小化后经 SIZE_MAXIMIZED/RESTORED 带 Resize 回来时须恢复可见，
-                            // 否则 layout/render 整帧跳过 → 黑屏（与副窗 application 路径对齐）。
-                            window_visible = true;
-                            tree.mark_full_frame_dirty();
-                        }
-                    }
-                }
-                UiEventType::WindowMaximize => {
-                    // 从最小化点任务栏最大化走 SIZE_MAXIMIZED，不发 WindowRestore。
-                    window_visible = true;
-                    if engine.canvas_2d().width() != initial_size.0
-                        || engine.canvas_2d().height() != initial_size.1
-                    {
-                        // 同批 WindowResize 会校正尺寸；仍须标脏以强制重绘。
-                        tree.mark_full_frame_dirty();
-                    } else {
-                        let info = platform.display().info(0);
-                        let w = info.bounds.w as i32;
-                        let h = info.bounds.h as i32;
-                        if w > 0 && h > 0 {
-                            report_graphics_resize_error(
-                                "window graphics maximize resize failed",
-                                engine.resize(w, h),
-                            );
-                            report_resize_notify_error(
-                                "window maximize resize_notify failed",
-                                platform_window.resize_notify(w, h),
-                            );
-                        }
-                        tree.mark_full_frame_dirty();
-                    }
-                }
-                UiEventType::WindowRestore => {
-                    let (rw, rh) = initial_size;
-                    report_graphics_resize_error(
-                        "window graphics restore resize failed",
-                        engine.resize(rw, rh),
-                    );
-                    report_resize_notify_error(
-                        "window restore resize_notify failed",
-                        platform_window.resize_notify(rw, rh),
-                    );
-                    window_visible = true;
-                    tree.mark_full_frame_dirty();
-                }
-                UiEventType::WindowMinimize => {
-                    window_visible = false;
-                }
-                UiEventType::WindowFocus => {
-                    text_input.window_focused = true;
-                }
-                UiEventType::WindowBlur => {
-                    text_input.window_focused = false;
-                }
                 UiEventType::PointerMove => {
                     if let UiEventPayload::PointerMove(ref data) = ev.payload {
                         cursor_pos.set(data.pos);
@@ -627,334 +530,42 @@ where
                 (*bus_ptr).event_bus().publish(&ev);
             }
         }
-        phase_input_us = input_t0.elapsed().as_micros();
-
-        active_work.sync_timers(tree.active_timers(), clock.now());
-        active_work.sync_app_timers(app_timers.deadlines());
-        let now = clock.now();
-        let due_work = active_work.drain_due(now);
-        let had_registered_work = !due_work.is_empty();
-        let due_animation_ids = due_animation_ids(&due_work);
-        let had_due_widget_timer_work = clipboard::with_clipboard(platform.clipboard(), || {
-            dispatch_due_active_work(tree, &app_timers, &due_work, clock.as_ref())
-        });
-        let mut main_thread_context = MainThreadContext::new(pending_root, reconcile_pending);
-        let _had_main_thread_work = main_thread_queue.drain(&mut main_thread_context);
-        let had_app_state_semantic_work = clipboard::with_clipboard(platform.clipboard(), || {
-            tree.drain_app_state_semantic_events()
-        });
-        active_work.sync_timers(tree.active_timers(), clock.now());
-        active_work.sync_app_timers(app_timers.deadlines());
-        on_runtime_tasks(platform, tree);
-        if tree.take_reconcile_requested() {
-            *reconcile_pending = true;
-        }
+        let phase_input_us = input_t0.elapsed().as_micros();
 
         let now = clock.now();
-        let dt = (now - last_animation_frame).as_secs_f64().min(0.05);
-        let pending_layout_work = has_layout_work(tree);
-        let pending_effects = tree.has_pending_effects();
-        let pending_render_work = tree.has_render_work();
-        let base_active = had_events
-            || had_app_state_semantic_work
-            || *reconcile_pending
-            || pending_effects
-            || !rendered_first
-            || pending_layout_work
-            || pending_render_work;
-        let active_frame = base_active || had_registered_work;
-        let discover_animation_work = base_active || had_due_widget_timer_work;
-        if active_frame {
-            let animation_updates = update_due_and_discovered_animations(
-                tree,
-                active_work,
-                &due_animation_ids,
-                dt,
-                discover_animation_work,
-            );
-            if animation_clock_should_advance(!due_animation_ids.is_empty(), &animation_updates) {
-                last_animation_frame = now;
-            }
-            sync_animation_deadlines(active_work, &animation_updates, now);
-            if pending_effects {
-                let _effects_ran =
-                    clipboard::with_clipboard(platform.clipboard(), || tree.tick_effects());
-            }
-        }
-
-        if tree.take_reconcile_requested() {
-            *reconcile_pending = true;
-        }
-
-        if *reconcile_pending {
-            let reconcile_t0 = Instant::now();
-            let root = pending_root
-                .take()
-                .or_else(|| view_factory.and_then(|factory| factory.build()));
-            if let Some(root) = root {
-                crate::ui::view::ViewAdapter::reconcile_nodes(tree, root);
-                reconcile_ran = true;
-            }
-            *reconcile_pending = false;
-            phase_reconcile_us = reconcile_t0.elapsed().as_micros();
-        }
-
-        // 每帧用窗口客户区校正 engine/根：WM_SIZE 入队与 Present 之间若有缺口，
-        // 仅靠单次 WindowResize 仍可能留下「swapchain 已大、UI 仍旧」的黑边。
-        let surface_corrected =
-            window_visible && ensure_surface_matches_window(tree, engine, platform_window);
-
-        let has_layout = has_layout_work(tree);
-
-        let needs_work =
-            window_visible && (had_layout_event || surface_corrected || !rendered_first);
-
-        let mut laid_out = false;
-        if window_visible && (needs_work || has_layout) {
-            let layout_t0 = Instant::now();
-            let before_version = tree.tree_version();
-            tree.layout();
-            record_layout(metrics);
-            laid_out = true;
-            layout_calls_this_frame += 1;
-
-            sync_root_frame_to_engine(tree, engine);
-            on_frame(tree, engine, platform);
-            sync_root_frame_to_engine(tree, engine);
-
-            if tree.tree_version() != before_version {
-                tree.layout();
-                record_layout(metrics);
-                layout_calls_this_frame += 1;
-                tree.mark_full_frame_dirty();
-            }
-            phase_layout_us = layout_t0.elapsed().as_micros();
-        }
-
-        let need_render = window_visible && (!rendered_first || tree.has_render_work());
-        let engine_capabilities = engine.capabilities();
-
-        if !rendered_first && need_render {
-            tree.mark_full_frame_dirty();
-            // 本帧已 layout 则跳过重复首帧 layout（启动连跑 2–3 次的主因之一）。
-            if !laid_out {
-                let layout_t0 = Instant::now();
-                tree.layout();
-                record_layout(metrics);
-                layout_calls_this_frame += 1;
-                phase_layout_us += layout_t0.elapsed().as_micros();
-            }
-        }
-
-        let dirty_region = tree.dirty_region();
-        let dirty_full = dirty_region.full_frame;
-
-        let (outcome, outcome_source) = if !need_render {
-            (RenderOutcome::Idle, InvalidationSource::None)
-        } else {
-            let paint_t0 = Instant::now();
-            let theme_ref = theme.borrow();
-            let snapshot = ThemeSnapshot::new(theme_ref.tokens());
-            let scroll_move = tree.scroll_region_moves();
-            let hover_pos = if debug_mode.get() {
-                Some(cursor_pos.get())
-            } else {
-                None
-            };
-            let metrics_ref = metrics.map(|m| m.get());
-            let frame_out = frame_renderer.render_frame(
-                engine,
-                tree,
-                FrameRenderInput {
-                    rendered_first,
-                    dirty_region: &dirty_region,
-                    tree_version: tree.tree_version(),
-                    scroll_move,
-                    theme: snapshot,
-                    font: font_service.loaded_font_handle,
-                    font_service,
-                    image_service,
-                    debug_mode: debug_mode.get(),
-                    hover_pos,
-                    metrics: metrics_ref.as_ref(),
-                },
-            );
-            phase_paint_us = paint_t0.elapsed().as_micros();
-            (frame_out.outcome, frame_out.inv_source)
-        };
-
-        sync_window_text_input(
+        let external_deadline = next_external_deadline();
+        let loop_state_slot = loop_state
+            .as_deref_mut()
+            .unwrap_or(&mut fallback_loop_state);
+        driver.drive_frame(WindowFrameContext {
             tree,
+            engine,
             active_work,
+            app_timers: &app_timers,
+            main_thread_queue: &main_thread_queue,
+            agent_commands,
+            view_factory,
+            pending_root,
+            reconcile_pending,
+            loop_state: loop_state_slot,
             text_input,
-            window_id,
-            native_window,
-            platform,
-        );
-
-        let mut frame_committed = false;
-        match outcome {
-            RenderOutcome::Present(_) => {
-                if engine_capabilities.uses_external_presenter() {
-                    crate::core::log::error_fn(
-                        "[EventLoop] external presenter path reported final Present before platform submission",
-                    );
-                    rendered_first = false;
-                } else {
-                    record_present(metrics, outcome_source);
-                    rendered_first = true;
-                    frame_committed = true;
-                }
-            }
-            RenderOutcome::PresentPending(damage) => {
-                if !engine_capabilities.uses_external_presenter() {
-                    crate::core::log::error_fn(
-                        "[EventLoop] engine-managed path returned external presentation pending",
-                    );
-                    rendered_first = false;
-                } else {
-                    let present_t0 = Instant::now();
-                    let canvas = engine.canvas_2d();
-                    let cw = canvas.width();
-                    let ch = canvas.height();
-                    match platform_window.presenter().present(
-                        canvas.pixels_mut(),
-                        cw,
-                        ch,
-                        damage.to_present_damage(),
-                    ) {
-                        Ok(()) => {
-                            phase_present_us = present_t0.elapsed().as_micros();
-                            engine.external_present_succeeded();
-                            record_present(metrics, outcome_source);
-                            rendered_first = true;
-                            frame_committed = true;
-                        }
-                        Err(error) => {
-                            phase_present_us = present_t0.elapsed().as_micros();
-                            engine.external_present_failed(error.clone());
-                            crate::core::log::error_fn(format!(
-                                "[EventLoop] external present failed: {}",
-                                error.short_what()
-                            ));
-                            rendered_first = false;
-                        }
-                    }
-                }
-            }
-            RenderOutcome::Idle => {
-                record_idle(metrics, outcome_source);
-            }
-            RenderOutcome::FrameReady(_) => {
-                crate::core::log::error_fn(
-                    "[EventLoop] frame renderer returned FrameReady without final presentation",
-                );
-                rendered_first = false;
-            }
-            RenderOutcome::Failed(error) => {
-                crate::core::log::error_fn(format!(
-                    "[EventLoop] graphics frame failed: {}",
-                    error.error().short_what()
-                ));
-                rendered_first = false;
-            }
-        }
-
-        // Engine-managed present (Vulkan PixelUpload) is timed inside
-        // PresentUploadEngine::end_frame; take the probe so paint_cpu excludes it.
-
-        let present_probe = crate::core::perf_probe::take_present();
-        let paint_probe = crate::core::perf_probe::take_paint();
-        if present_probe.present_us > 0 || present_probe.skipped == 1 {
-            phase_present_us = present_probe.present_us;
-            if phase_paint_us >= present_probe.present_us {
-                phase_paint_us -= present_probe.present_us;
-            }
-        }
-
-        let log_frame = frame_committed
-            && (had_events
-                || reconcile_ran
-                || layout_calls_this_frame > 0
-                || crate::core::perf_probe::perf_probe_enabled());
-        if log_frame {
-            let frame_us = frame_t0.elapsed().as_micros();
-            if crate::core::perf_probe::perf_probe_enabled() {
-                crate::core::log::info_fn(format!(
-                    "frame_us={} input={} reconcile={} layout={} paint_cpu={} present={} events={} reconcile={} layouts={} dirty_full={} strategy_full={} pixels={} layer_build={} record={} execute={} end_frame={} pic_raster={} pic_blit={} pics={} pic_px={} widgets={} text_us={} texts={} cpu_flush={} flushes={} upload_copy={} fence_wait={} submit_present={} present_skipped={}",
-                    frame_us,
-                    phase_input_us,
-                    phase_reconcile_us,
-                    phase_layout_us,
-                    phase_paint_us,
-                    phase_present_us,
-                    if had_events { 1 } else { 0 },
-                    if reconcile_ran { 1 } else { 0 },
-                    layout_calls_this_frame,
-                    if dirty_full { 1 } else { 0 },
-                    paint_probe.strategy_full,
-                    present_probe.pixels,
-                    paint_probe.layer_build_us,
-                    paint_probe.record_us,
-                    paint_probe.execute_us,
-                    paint_probe.end_frame_us,
-                    paint_probe.picture_raster_us,
-                    paint_probe.picture_blit_us,
-                    paint_probe.pictures_rasterized,
-                    paint_probe.picture_pixels,
-                    paint_probe.widgets_painted,
-                    paint_probe.text_us,
-                    paint_probe.text_draws,
-                    paint_probe.cpu_flush_us,
-                    paint_probe.cpu_flushes,
-                    present_probe.upload_copy_us,
-                    present_probe.fence_wait_us,
-                    present_probe.submit_present_us,
-                    present_probe.skipped,
-                ));
-            } else {
-                crate::core::log::info_fn(format!(
-                    "frame_us={} input={} reconcile={} layout={} paint_cpu={} present={} events={} reconcile={} layouts={} dirty_full={}",
-                    frame_us,
-                    phase_input_us,
-                    phase_reconcile_us,
-                    phase_layout_us,
-                    phase_paint_us,
-                    phase_present_us,
-                    if had_events { 1 } else { 0 },
-                    if reconcile_ran { 1 } else { 0 },
-                    layout_calls_this_frame,
-                    if dirty_full { 1 } else { 0 },
-                ));
-            }
-        }
-
-        if frame_committed && deferred_show {
-            if let Err(error) = platform_window.show() {
-                crate::core::log::error_fn(format!(
-                    "[EventLoop] deferred show after first present failed: {}",
-                    error.short_what()
-                ));
-            } else if let Err(error) = platform_window.raise() {
-                crate::core::log::warn_fn(format!(
-                    "[EventLoop] deferred raise after first present failed: {}",
-                    error.short_what()
-                ));
-            }
-            crate::core::log::info_fn(format!(
-                "first_present_ms={} (window revealed after present; no pre-present white flash)",
-                loop_t0.elapsed().as_millis()
-            ));
-            deferred_show = false;
-        }
-
-        if window_visible && frame_committed && (needs_work || has_layout || need_render) {
-            // 只有真实提交成功后才能消费失效；失败帧保留 dirty 以供恢复或重试。
-            tree.reset_invalidation();
-        }
-
-        let next_state = next_loop_state(tree, active_work, next_external_deadline());
-        set_loop_state(&mut loop_state, next_state);
+            semantic_state,
+            platform_window,
+            platform: Some(platform),
+            font_service,
+            image_service,
+            theme,
+            debug_mode,
+            cursor_pos,
+            metrics,
+            now,
+            had_events,
+            had_layout_event,
+            input_us: phase_input_us,
+            next_external_deadline: external_deadline,
+            on_runtime_tasks: &mut on_runtime_tasks,
+            on_frame: &on_frame,
+        });
     }
 
     text_input.window_focused = false;
@@ -967,14 +578,6 @@ where
         platform,
     );
     0
-}
-
-fn record_layout(metrics: Option<&Cell<RenderMetrics>>) {
-    if let Some(m) = metrics {
-        let mut stats = m.get();
-        stats.record_layout();
-        m.set(stats);
-    }
 }
 
 fn wait_for_event_or_registered_work(
@@ -1007,74 +610,6 @@ pub(crate) fn earliest_deadline(a: Option<Instant>, b: Option<Instant>) -> Optio
     }
 }
 
-fn dispatch_due_active_work(
-    tree: &mut WidgetTree,
-    app_timers: &crate::app::app_timer::AppTimerQueue,
-    due_work: &[crate::app::active_work_registry::ActiveWorkKind],
-    clock: &dyn AppClock,
-) -> bool {
-    let mut handled_widget_timer = false;
-    for work in due_work {
-        match *work {
-            crate::app::active_work_registry::ActiveWorkKind::Timer(id) => {
-                handled_widget_timer |= tree.dispatch_timer_work(id) == EventResult::Handled;
-            }
-            crate::app::active_work_registry::ActiveWorkKind::AppTimer(id) => {
-                app_timers.fire(id, clock.now());
-            }
-            _ => {}
-        }
-    }
-    handled_widget_timer
-}
-
-fn due_animation_ids(due_work: &[ActiveWorkKind]) -> Vec<NodeId> {
-    due_work
-        .iter()
-        .filter_map(|work| match *work {
-            ActiveWorkKind::Animation(id) => Some(id),
-            _ => None,
-        })
-        .collect()
-}
-
-fn update_due_and_discovered_animations(
-    tree: &mut WidgetTree,
-    active_work: &ActiveWorkRegistry,
-    due_animation_ids: &[NodeId],
-    dt: f64,
-    discover_animation_work: bool,
-) -> Vec<(NodeId, bool)> {
-    let mut updates = if due_animation_ids.is_empty() {
-        Vec::new()
-    } else {
-        tree.update_animation_nodes(due_animation_ids.iter().copied(), dt)
-    };
-
-    if discover_animation_work {
-        let mut registered_ids: Vec<_> = active_work.animation_ids().collect();
-        registered_ids.extend_from_slice(due_animation_ids);
-        updates.extend(tree.update_animations_except(registered_ids, dt));
-    }
-
-    updates
-}
-
-fn sync_animation_deadlines(
-    active_work: &mut ActiveWorkRegistry,
-    animation_updates: &[(NodeId, bool)],
-    now: std::time::Instant,
-) {
-    for &(id, animating) in animation_updates {
-        let kind = ActiveWorkKind::Animation(id);
-        if animating {
-            active_work.register(kind, now + ANIMATION_FRAME_INTERVAL);
-        } else {
-            active_work.unregister(kind);
-        }
-    }
-}
-
 pub(crate) fn wait_loop_state(
     active_work: &ActiveWorkRegistry,
     external_deadline: Option<Instant>,
@@ -1086,148 +621,8 @@ pub(crate) fn wait_loop_state(
     }
 }
 
-fn next_loop_state(
-    tree: &WidgetTree,
-    active_work: &ActiveWorkRegistry,
-    external_deadline: Option<Instant>,
-) -> WindowLoopState {
-    if has_invalidation_work(tree) {
-        WindowLoopState::Active
-    } else {
-        wait_loop_state(active_work, external_deadline)
-    }
-}
-
-fn has_invalidation_work(tree: &WidgetTree) -> bool {
-    let inv = tree.invalidation.lock().unwrap_or_else(|e| e.into_inner());
-    inv.has_paint_or_composite() || inv.has_layout()
-}
-
-pub(crate) fn animation_clock_should_advance(
-    had_due_animation: bool,
-    animation_updates: &[(NodeId, bool)],
-) -> bool {
-    had_due_animation
-        || animation_updates
-            .iter()
-            .any(|(_, still_active)| *still_active)
-}
-
-fn has_layout_work(tree: &WidgetTree) -> bool {
-    tree.invalidation
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .has_layout()
-}
-
 fn set_loop_state(state_slot: &mut Option<&mut WindowLoopState>, state: WindowLoopState) {
     if let Some(slot) = state_slot.as_deref_mut() {
         *slot = state;
-    }
-}
-
-fn record_present(metrics: Option<&Cell<RenderMetrics>>, source: InvalidationSource) {
-    if let Some(m) = metrics {
-        let mut stats = m.get();
-        stats.record_present(source);
-        m.set(stats);
-    }
-}
-
-fn record_idle(metrics: Option<&Cell<RenderMetrics>>, source: InvalidationSource) {
-    if let Some(m) = metrics {
-        let mut stats = m.get();
-        stats.record_idle_with_source(source);
-        m.set(stats);
-    }
-}
-
-fn ensure_surface_matches_window(
-    tree: &mut WidgetTree,
-    engine: &mut dyn GraphicsEngine,
-    platform_window: &dyn PlatformWindow,
-) -> bool {
-    let pw = platform_window.properties().width();
-    let ph = platform_window.properties().height();
-    if pw <= 0 || ph <= 0 {
-        return false;
-    }
-
-    let (cw, ch) = {
-        let canvas = engine.canvas_2d();
-        (canvas.width(), canvas.height())
-    };
-    let mut changed = false;
-    if cw != pw || ch != ph {
-        if !report_graphics_resize_error(
-            "window graphics size reconciliation failed",
-            engine.resize(pw, ph),
-        ) {
-            tree.mark_full_frame_dirty();
-            return false;
-        }
-        changed = true;
-    }
-
-    let (ew, eh) = {
-        let canvas = engine.canvas_2d();
-        (canvas.width() as f32, canvas.height() as f32)
-    };
-    if ew <= 0.0 || eh <= 0.0 {
-        return false;
-    }
-
-    let root_mismatch = tree
-        .root_id()
-        .and_then(|rid| tree.get(rid))
-        .is_some_and(|root| {
-            let rf = root.frame();
-            (rf.w - ew).abs() > 0.5 || (rf.h - eh).abs() > 0.5
-        });
-    if root_mismatch {
-        if let Some(rid) = tree.root_id() {
-            if let Some(root_mut) = tree.get_mut(rid) {
-                root_mut.set_frame(Rect::new(0.0, 0.0, ew, eh));
-            }
-        }
-        tree.tree_version = tree.tree_version.wrapping_add(1);
-        tree.mark_full_frame_dirty();
-        changed = true;
-    }
-    changed
-}
-
-pub(crate) fn sync_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn GraphicsEngine) {
-    let (ew, eh) = {
-        let canvas = engine.canvas_2d();
-        (canvas.width() as f32, canvas.height() as f32)
-    };
-    if ew <= 0.0 || eh <= 0.0 {
-        return;
-    }
-    // bootstrap（根近空）：从引擎补齐。
-    // 引擎已大于根：WindowResize 先 engine.resize 再派发 SystemEvent::Resize；
-    // 若树侧滞后，Present 会清出更大 swapchain 而 UI 仍画旧几何 → 黑边。
-    // 引擎小于根：可能短暂滞后，勿把已更新的根压回旧引擎尺寸。
-    let need_sync = tree
-        .root_id()
-        .and_then(|rid| tree.get(rid))
-        .is_some_and(|root| {
-            let rf = root.frame();
-            let bootstrap = rf.w <= 1.0 || rf.h <= 1.0;
-            let engine_larger = ew > rf.w + 0.5 || eh > rf.h + 0.5;
-            bootstrap || engine_larger
-        });
-    if need_sync {
-        if let Some(rid) = tree.root_id() {
-            if let Some(root_mut) = tree.get_mut(rid) {
-                root_mut.set_frame(Rect::new(0.0, 0.0, ew, eh));
-            }
-        }
-        // LayerTree 缓存 ClipRect/Picture bounds；不 bump 则只 update_dirty 标志，
-        // 裁剪区仍停在旧尺寸 → 内容画不全、四周黑边。
-        tree.tree_version = tree.tree_version.wrapping_add(1);
-        tree.mark_full_frame_dirty();
-        tree.layout();
     }
 }

@@ -1,5 +1,5 @@
-use crate::tests::common::*;
 use crate::draw::gpu_engine::*;
+use crate::tests::common::*;
 use std::ffi::c_void;
 
 struct FactoryInitializedNativeContext {
@@ -10,7 +10,11 @@ struct FactoryInitializedNativeContext {
 
 impl IGraphicsContext for FactoryInitializedNativeContext {
     fn caps(&self) -> GraphicsContextCaps {
-        GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+        GraphicsContextCaps::gpu_native_swapchain(
+            GraphicsBackend::D3d11,
+            PresentCoherency::FullOnly,
+            1.0,
+        )
     }
 
     fn native_raster_caps(&self) -> NativeRasterCaps {

@@ -6,11 +6,14 @@ pub(crate) const DEFAULT_CLASS_STYLE: u32 = 0x0008 | 0x0002 | 0x0001 | 0x0020; /
 pub(crate) const GWLP_USERDATA: i32 = -21;
 pub(crate) const WM_NULL: u32 = 0x0000;
 pub(crate) const WM_QUIT: u32 = 0x0012;
+pub(crate) const WM_APP: u32 = 0x8000;
+pub(crate) const WM_UIX_FRAME_OPPORTUNITY: u32 = WM_APP + 0x0051;
 
 pub(crate) const WM_NCCREATE: u32 = 0x0081;
 pub(crate) const WM_DESTROY: u32 = 0x0002;
 pub(crate) const WM_CLOSE: u32 = 0x0010;
 pub(crate) const WM_SIZE: u32 = 0x0005;
+pub(crate) const WM_SHOWWINDOW: u32 = 0x0018;
 pub(crate) const WM_ERASEBKGND: u32 = 0x0014;
 pub(crate) const WM_MOVE: u32 = 0x0003;
 pub(crate) const WM_SETFOCUS: u32 = 0x0007;

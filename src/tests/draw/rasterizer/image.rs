@@ -1,5 +1,5 @@
-use crate::tests::common::*;
 use crate::draw::rasterizer::image::*;
+use crate::tests::common::*;
 
 #[test]
 fn empty_destination_is_a_noop() {

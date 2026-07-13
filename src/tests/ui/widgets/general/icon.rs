@@ -1,6 +1,4 @@
 use crate::tests::common::*;
-use std::sync::OnceLock;
-use crate::component;
 use crate::ui::widgets::general::icon::*;
 
 #[test]

@@ -1,13 +1,11 @@
-use crate::tests::common::*;
-use std::collections::BTreeMap;
-use std::sync::{ Arc, Mutex,
-};
-use crate::app::app_timer::{AppTimerQueue, TimerHandle};
+use crate::app::app_timer::AppTimerQueue;
 use crate::app::main_thread_queue::{MainThreadContext, MainThreadQueue};
-use crate::app::window_config::WindowConfig;
 use crate::app::session_runtime::*;
+use crate::app::window_config::WindowConfig;
 use crate::native::traits::event::EventLoopWaker;
+use crate::tests::common::*;
 use crate::ui::view::combinators::label;
+use std::sync::Arc;
 
 #[test]
 fn close_session_drops_queued_work_and_timers() {

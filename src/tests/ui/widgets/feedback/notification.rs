@@ -1,9 +1,6 @@
-use crate::tests::common::*;
-use crate::component;
-use crate::core::Result as CoreResult;
-use crate::draw::{ Radius };
 use crate::native::notification::NotificationService;
 use crate::native::notification::ToastEntry;
+use crate::tests::common::*;
 use crate::ui::widgets::feedback::notification::*;
 
 #[test]

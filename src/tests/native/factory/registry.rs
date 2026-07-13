@@ -1,8 +1,6 @@
+use crate::native::factory::registry::*;
 use crate::tests::common::*;
 use std::ffi::c_void;
-use crate::native::factory::thread_bound::bind_to_current_thread;
-use crate::native::traits::present::{ NativeSurfaceHandle };
-use crate::native::factory::registry::*;
 
 static IDENTITY_MISMATCH_SHUTDOWNS: AtomicUsize = AtomicUsize::new(0);
 
@@ -12,7 +10,7 @@ impl IGraphicsContext for D3d11IdentityContext {
     fn caps(&self) -> crate::native::traits::present::GraphicsContextCaps {
         crate::native::traits::present::GraphicsContextCaps::gpu_native_swapchain(
             GraphicsBackend::D3d11,
-            false,
+            PresentCoherency::FullOnly,
             1.0,
         )
     }
@@ -304,10 +302,9 @@ fn registry_rejects_context_with_wrong_backend_identity() {
         Ok(_) => panic!("wrong raster axis must be rejected"),
         Err(err) => err,
     };
-    assert!(
-        err.message()
-            .contains("reported backend=d3d11; raster=gpu_native")
-    );
+    assert!(err
+        .message()
+        .contains("reported backend=d3d11; raster=gpu_native"));
     assert!(err.message().contains("recipe backend=d3d11; raster=cpu"));
     assert_eq!(IDENTITY_MISMATCH_SHUTDOWNS.load(Ordering::SeqCst), 1);
 }

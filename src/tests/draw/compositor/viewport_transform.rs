@@ -1,7 +1,6 @@
-use crate::tests::common::*;
-use crate::draw::compositor::ScenePaint;
 use crate::draw::compositor::viewport_transform::*;
-
+use crate::draw::compositor::ScenePaint;
+use crate::tests::common::*;
 
 const ROOT: NodeId = NodeId::new(1);
 const CHILD: NodeId = NodeId::new(2);

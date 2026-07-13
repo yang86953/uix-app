@@ -1,7 +1,9 @@
 //! Presentation contracts for CPU presenters and GPU graphics contexts.
 
-pub use crate::core::PresentDamage;
 use crate::core::error::{Error, Result};
+pub use crate::core::{
+    PresentCoherency, PresentDamage, PresentImage, PresentSurface, PresentTransform,
+};
 use std::fmt;
 use std::str::FromStr;
 
@@ -179,6 +181,16 @@ pub enum PresentFrame<'a> {
     },
 }
 
+/// Result of a non-presenting availability test while a swapchain is idle.
+///
+/// This probe is not an entry detector: callers invoke it only after a normal
+/// present reported that the window was occluded. No frame data is submitted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PresentTestResult {
+    Presentable,
+    Occluded,
+}
+
 /// Validates a CPU pixel payload before it crosses a native presentation
 /// boundary.  A short slice must be a typed error: native image constructors
 /// cannot infer the intended row layout safely from missing pixels.
@@ -274,6 +286,27 @@ impl SoftFallbackTile {
 
 /// CPU pixel presenter.
 pub trait IPresenter {
+    /// Preservation proof used to gate narrow compositor damage.
+    fn present_coherency(&self) -> PresentCoherency {
+        PresentCoherency::FullOnly
+    }
+
+    /// Current target metadata. A presenter that rebuilds at the same extent
+    /// must override this method with a monotonically changing generation.
+    fn present_surface(
+        &self,
+        drawable_width: i32,
+        drawable_height: i32,
+        device_pixel_ratio: f32,
+    ) -> PresentSurface {
+        PresentSurface::identity(drawable_width, drawable_height, device_pixel_ratio, 0)
+    }
+
+    /// Acquired image identity for [`PresentCoherency::TrackedSwapchain`].
+    fn present_image(&self) -> Option<PresentImage> {
+        None
+    }
+
     fn present(
         &mut self,
         pixels: &[u32],
@@ -337,8 +370,8 @@ pub struct GraphicsContextCaps {
     pub backend: GraphicsBackend,
     pub raster: RasterMode,
     pub present: PresentMode,
-    /// Whether this context can present partial damage regions natively.
-    pub partial_present: bool,
+    /// Typed proof controlling partial redraw and present damage.
+    pub present_coherency: PresentCoherency,
     pub device_pixel_ratio: f32,
 }
 
@@ -346,14 +379,14 @@ impl GraphicsContextCaps {
     /// Legal combo: [`RasterMode::GpuNative`] × [`PresentMode::Swapchain`].
     pub fn gpu_native_swapchain(
         backend: GraphicsBackend,
-        partial_present: bool,
+        present_coherency: PresentCoherency,
         device_pixel_ratio: f32,
     ) -> Self {
         Self {
             backend,
             raster: RasterMode::GpuNative,
             present: PresentMode::Swapchain,
-            partial_present,
+            present_coherency,
             device_pixel_ratio,
         }
     }
@@ -364,7 +397,7 @@ impl GraphicsContextCaps {
             backend,
             raster: RasterMode::Cpu,
             present: PresentMode::PixelUpload,
-            partial_present: false,
+            present_coherency: PresentCoherency::FullOnly,
             device_pixel_ratio,
         }
     }
@@ -514,6 +547,17 @@ pub trait IGraphicsContext {
     fn width(&self) -> i32;
     fn height(&self) -> i32;
 
+    /// Current drawable metadata used at the final damage conversion boundary.
+    /// A non-identity or same-extent-rebuilding context must override this.
+    fn present_surface(&self) -> PresentSurface {
+        PresentSurface::identity(self.width(), self.height(), self.device_pixel_ratio(), 0)
+    }
+
+    /// Acquired image identity required by tracked multi-buffer presentation.
+    fn present_image(&self) -> Option<PresentImage> {
+        None
+    }
+
     /// Legacy capability query retained for tests and diagnostics during the
     /// runtime-lease migration. It never exposes a raw proc loader.
     fn supports_gl_proc_address(&self) -> bool {
@@ -555,6 +599,19 @@ pub trait IGraphicsContext {
                 damage,
             } => self.present_pixels(pixels, *width, *height, damage.clone()),
         }
+    }
+
+    /// Tests whether an already-occluded swapchain can leave idle state
+    /// without submitting frame data. Contexts that can report occlusion from
+    /// normal presentation must override this method.
+    fn test_present(&mut self) -> Result<PresentTestResult, Error> {
+        Err(Error::new(
+            crate::core::error::Errc::NotImplemented,
+            format!(
+                "GraphicsBackend {} does not support idle present tests",
+                self.graphics_backend()
+            ),
+        ))
     }
 
     /// Drawable pixels per logical client pixel (HiDPI). Default `1.0`.
@@ -850,4 +907,3 @@ pub trait IGraphicsContext {
         ))
     }
 }
-

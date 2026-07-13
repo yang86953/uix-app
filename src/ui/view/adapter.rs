@@ -108,12 +108,20 @@ impl ViewAdapter {
             wnode = wnode.key(&key);
         }
 
+        if let Some(automation_id) = node.automation_id {
+            wnode = wnode.automation_id(&automation_id);
+        }
+
         if node.z_index != 0 {
             wnode = wnode.z_index(node.z_index);
         }
 
         if !node.handlers.is_empty() {
             wnode = wnode.with_handlers(node.handlers);
+        }
+
+        if !node.render_handlers.is_empty() {
+            wnode = wnode.with_render_handlers(node.render_handlers);
         }
 
         wnode
@@ -203,11 +211,12 @@ impl ViewAdapter {
             flex_shrink_override,
             z_index,
             key,
+            automation_id,
             handlers,
+            render_handlers,
         } = node;
         let widget = Self::apply_style(widget, &style, flex_grow_override, flex_shrink_override);
         let widget_changed = Self::patch_widget(tree, id, widget);
-        tree.register_app_state_snapshot(id);
 
         let mut paint_changed = widget_changed;
         let mut layout_changed = widget_changed;
@@ -216,14 +225,22 @@ impl ViewAdapter {
             if current.key() != next_key.as_deref() {
                 current.set_key(next_key);
             }
+            let next_automation_id = automation_id.map(Into::into);
+            if current.automation_id() != next_automation_id.as_deref() {
+                current.set_automation_id(next_automation_id);
+            }
             if current.z_index() != z_index {
                 current.set_z_index(z_index);
                 paint_changed = true;
             }
         }
 
+        tree.register_app_state_snapshot(id);
+
         let _handlers_changed = Self::reconcile_handlers(tree, id, handlers);
-        let children_changed = Self::reconcile_children(tree, id, children);
+        tree.replace_render_handlers(id, render_handlers);
+        let mut children_changed = Self::reconcile_children(tree, id, children);
+        children_changed |= tree.refresh_virtual_scroll_component(id, None);
         if children_changed {
             paint_changed = true;
             layout_changed = true;
@@ -447,4 +464,3 @@ where
     end_state_capture();
     result
 }
-

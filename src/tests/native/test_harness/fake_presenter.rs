@@ -1,7 +1,6 @@
-use crate::tests::common::*;
-use crate::core::error::Result;
-use crate::native::traits::present::IPresenter;
 use crate::native::test_harness::fake_presenter::*;
+use crate::native::traits::present::IPresenter;
+use crate::tests::common::*;
 
 fn snapshot_hash(pixels: &[u32]) -> u64 {
     pixels.iter().fold(0xcbf29ce484222325, |hash, pixel| {

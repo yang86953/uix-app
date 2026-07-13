@@ -1,5 +1,4 @@
 use crate::tests::common::*;
-use crate::component;
 use crate::ui::widgets::feedback::message::*;
 
 #[test]
