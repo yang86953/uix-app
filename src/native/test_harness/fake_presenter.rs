@@ -84,6 +84,3 @@ impl IPresenter for FakePresenter {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/native/test_harness/fake_presenter.rs"]
-mod tests;

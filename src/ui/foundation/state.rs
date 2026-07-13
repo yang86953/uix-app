@@ -13,14 +13,14 @@ use crate::draw::pipeline::{invalidate_paint_handle, InvalidationQueueHandle};
 type ReconcileCallback = Arc<dyn Fn() + Send + Sync>;
 
 #[derive(Clone)]
-struct PaintBindSite {
+pub(crate) struct PaintBindSite {
     component_id: ComponentId,
     queue: InvalidationQueueHandle,
     rect: Option<Rect>,
 }
 
 #[derive(Clone)]
-struct ReconcileBindSite {
+pub(crate) struct ReconcileBindSite {
     key: usize,
     callback: ReconcileCallback,
 }
@@ -88,10 +88,6 @@ impl StateSlotId {
         self.0
     }
 }
-
-#[cfg(test)]
-#[path = "../../tests/ui/foundation/state.rs"]
-mod tests;
 
 /// 开始捕获 `State::get` 依赖 / `Effect::new` 实例（View 构建期间调用）。
 pub fn begin_state_capture() {
@@ -348,9 +344,9 @@ where
 pub struct State<T> {
     inner: Arc<RwLock<StateInner<T>>>,
     /// reconcile invalidation 回调——值变更时自动调用，通知 WidgetTree 重绘所属节点。
-    reconcile_sites: Arc<std::sync::Mutex<Vec<ReconcileBindSite>>>,
+    pub(crate) reconcile_sites: Arc<std::sync::Mutex<Vec<ReconcileBindSite>>>,
     /// Phase 6：精确 Paint 失效绑定（ComponentId + 队列句柄）。
-    paint_sites: Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
+    pub(crate) paint_sites: Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
 }
 
 struct StateInner<T> {

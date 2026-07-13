@@ -67,8 +67,8 @@ pub struct TableChange {
 component! {
     pub struct Table {
         columns: Vec<TableColumn>,
-        rows: Vec<TableRow>,
-        row_h: f32,
+        pub(crate) rows: Vec<TableRow>,
+        pub(crate) row_h: f32,
         header_h: f32,
         selected_row: Cell<Option<usize>>,
         hover_row: Cell<Option<usize>>,
@@ -84,9 +84,9 @@ component! {
         current_page: Cell<usize>,
         page_size: usize,
         pending_change: RefCell<Option<String>>,
-        body_scroll: VirtualListScroll,
+        pub(crate) body_scroll: VirtualListScroll,
         scroll_delta_strip: Cell<(f32, f32)>,
-        last_frame: Cell<Option<Rect>>,
+        pub(crate) last_frame: Cell<Option<Rect>>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -392,7 +392,7 @@ impl Table {
         self
     }
 
-    fn body_viewport_height(&self) -> f32 {
+    pub(crate) fn body_viewport_height(&self) -> f32 {
         self.last_frame
             .get()
             .map(|f| (f.h - self.header_h - 1.0).max(self.row_h))
@@ -479,6 +479,3 @@ fn merge_table_columns(current: &[TableColumn], next: Vec<TableColumn>) -> Vec<T
         .collect()
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/display/table_virtual_scroll.rs"]
-mod tests;

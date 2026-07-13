@@ -1,12 +1,11 @@
 #![cfg(feature = "opengles")]
 
-use crate::core::{DamageRegion, Rect};
+use crate::tests::common::*;
 use crate::draw::backend::RenderBackend;
 use crate::draw::engine::GraphicsFailure;
 use crate::draw::gpu_engine::GpuEngine;
-use crate::draw::pipeline::{EncodedPictureExecution, FrameEncoder, FrameRasterOp, FrameRect};
-use crate::draw::{BlendMode, Color, GraphicsEngine, SoftwareEngine, UpdateStrategy};
-use crate::native::traits::present::GraphicsBackend;
+use crate::draw::pipeline::{ EncodedPictureExecution, FrameRasterOp };
+use crate::draw::{ BlendMode, GraphicsEngine, UpdateStrategy };
 
 fn open_engine(
     title: &str,

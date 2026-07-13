@@ -1,9 +1,10 @@
-use super::*;
-use crate::core::Rect;
+use crate::tests::common::*;
+use crate::component;
+use crate::draw::{ Radius };
+use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::widgets::feedback::modal::*;
 use crate::draw::compositor::ScenePaint;
 use crate::ui::core::widget::WidgetCore;
-use crate::ui::core::widget::WidgetTree;
-use crate::ui::traits::{WidgetAnimation, WidgetCapabilities, WidgetComponent};
 
 #[test]
 fn closed_modal_trigger_opens_via_widget_tree_pointer_down() {

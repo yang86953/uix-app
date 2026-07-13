@@ -48,7 +48,7 @@ component! {
         fixed_height: Option<f32>,
         flex_grow_val: f32,
         /// layout_children 后缓存子树内容尺寸，供无固定宽高时的 measure。
-        cached_content_size: Cell<Size>,
+        pub(crate) cached_content_size: Cell<Size>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -280,6 +280,3 @@ impl Default for Space {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/general/space.rs"]
-mod tests;

@@ -414,6 +414,3 @@ impl DesignTokens {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/theme/design_tokens/mod.rs"]
-mod tests;

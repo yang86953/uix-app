@@ -41,6 +41,3 @@ impl AnimationRegistry {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/pipeline/animation_registry.rs"]
-mod tests;

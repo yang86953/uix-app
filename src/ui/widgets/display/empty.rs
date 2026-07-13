@@ -105,6 +105,3 @@ impl Empty {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/display/empty.rs"]
-mod tests;

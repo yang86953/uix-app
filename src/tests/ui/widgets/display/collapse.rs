@@ -1,9 +1,10 @@
-use super::*;
-use crate::core::{Point, Rect};
-use crate::native::traits::{KeyMod, MouseButton};
+use crate::tests::common::*;
+use crate::component;
+use crate::draw::Radius;
+use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::{ SnapshotCollapsePanel };
+use crate::ui::widgets::display::collapse::*;
 use crate::ui::core::widget::WidgetCore;
-use crate::ui::traits::{EventHandler, WidgetAnimation, WidgetCapabilities, WidgetComponent};
-use crate::ui::{SystemEvent, WidgetTree};
 
 #[test]
 fn collapse_advertises_animation_capability() {

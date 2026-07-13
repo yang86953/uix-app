@@ -1,5 +1,8 @@
-use super::*;
-use crate::draw::null_engine::NullEngine;
+use crate::tests::common::*;
+use crate::draw::spatial::SpatialContext;
+use crate::draw::spatial::Orientation;
+use crate::draw::traits::Canvas2D;
+use crate::draw::spatial::context::*;
 use crate::draw::traits::GraphicsEngine;
 
 fn make_context(surface_w: i32, surface_h: i32) -> SpatialContext<'static> {

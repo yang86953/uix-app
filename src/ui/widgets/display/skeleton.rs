@@ -107,6 +107,3 @@ impl Skeleton {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/display/skeleton.rs"]
-mod tests;

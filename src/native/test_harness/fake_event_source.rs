@@ -138,6 +138,3 @@ impl OsEventSource for FakeEventSource {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/native/test_harness/fake_event_source.rs"]
-mod tests;

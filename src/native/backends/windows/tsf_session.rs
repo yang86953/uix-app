@@ -223,6 +223,3 @@ pub(crate) fn tsf_composition_events(
         .unwrap_or_default()
 }
 
-#[cfg(test)]
-#[path = "../../../tests/native/backends/windows/tsf_session.rs"]
-mod tests;

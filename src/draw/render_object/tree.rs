@@ -165,6 +165,3 @@ impl RenderObjectTree {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/render_object/tree.rs"]
-mod tests;

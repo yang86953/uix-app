@@ -192,7 +192,6 @@ impl Mentions {
     pub fn value(&self) -> &str {
         &self.value
     }
-    #[cfg(test)]
     pub(crate) fn is_suggesting(&self) -> bool {
         self.suggesting
     }
@@ -241,6 +240,3 @@ impl Mentions {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/input/mentions.rs"]
-mod tests;

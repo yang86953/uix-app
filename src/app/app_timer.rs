@@ -6,7 +6,7 @@ use std::sync::{
 use std::time::{Duration, Instant};
 
 use crate::app::active_work_registry::TimerId;
-use crate::app::test_clock::{system_clock, AppClock};
+use crate::app::clock::{system_clock, AppClock};
 
 #[derive(Clone)]
 pub(crate) struct AppTimerQueue {
@@ -125,7 +125,6 @@ impl AppTimerQueue {
         true
     }
 
-    #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.inner
             .lock()
@@ -211,6 +210,3 @@ impl Drop for TimerHandle {
     }
 }
 
-#[cfg(test)]
-#[path = "../tests/app/app_timer.rs"]
-mod tests;

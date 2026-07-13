@@ -1,5 +1,5 @@
-use super::*;
-use crate::core::ComponentId;
+use crate::tests::common::*;
+use crate::ui::overlay::*;
 
 #[test]
 fn same_z_index_keeps_latest_entry_on_top() {

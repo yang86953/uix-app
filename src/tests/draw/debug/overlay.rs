@@ -1,4 +1,6 @@
-use super::*;
+use crate::tests::common::*;
+use crate::draw::pipeline::RenderMetrics;
+use crate::draw::debug::overlay::*;
 use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
 
 #[test]

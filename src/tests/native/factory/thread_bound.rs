@@ -1,8 +1,10 @@
-use super::ThreadBoundGraphicsContext;
-use crate::core::{Errc, Error, Result};
-use crate::native::traits::present::{
-    GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage, PresentFrame,
-};
+use crate::tests::common::*;
+use std::marker::PhantomData;
+use std::mem::ManuallyDrop;
+use std::thread::{self, ThreadId};
+use crate::core::{ Result };
+use crate::native::traits::present::{ GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh, GpuSolidRect, GpuStrokeRect, OffscreenTargetId };
+use crate::native::factory::thread_bound::ThreadBoundGraphicsContext;
 use std::ffi::c_void;
 
 struct PanicIfCalled {

@@ -123,6 +123,3 @@ impl ActiveWorkRegistry {
     }
 }
 
-#[cfg(test)]
-#[path = "../tests/app/active_work_registry.rs"]
-mod tests;

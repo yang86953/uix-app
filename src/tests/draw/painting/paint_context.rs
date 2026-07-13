@@ -1,4 +1,5 @@
-use super::*;
+use crate::tests::common::*;
+use crate::draw::painting::paint_context::*;
 use crate::draw::spatial::PhysicalUnit;
 
 #[test]
@@ -56,11 +57,7 @@ fn resolve_font_size_with_px_unit() {
 #[test]
 fn paint_context_debug_mode_defaults_off_until_enabled() {
     use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
-    use crate::draw::font::font_service::FontService;
-    use crate::draw::image::ImageService;
     use crate::draw::spatial::Orientation;
-    use crate::draw::FontHandle;
-    use crate::ui::theme::DesignTokens;
 
     let mut canvas = NoopCanvas2D;
     let fs = FontService::new();
@@ -88,12 +85,8 @@ fn paint_context_debug_mode_defaults_off_until_enabled() {
 #[test]
 fn display_list_recording_rejects_untracked_canvas_access() {
     use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
-    use crate::draw::font::font_service::FontService;
-    use crate::draw::image::ImageService;
     use crate::draw::painting::DisplayList;
     use crate::draw::spatial::Orientation;
-    use crate::draw::{Color, FontHandle};
-    use crate::ui::theme::DesignTokens;
 
     let mut canvas = NoopCanvas2D;
     let fs = FontService::new();
@@ -123,14 +116,10 @@ fn display_list_recording_rejects_untracked_canvas_access() {
 #[test]
 fn display_list_recording_covers_extended_2d_paint_operations() {
     use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
-    use crate::draw::font::font_service::FontService;
-    use crate::draw::image::ImageService;
     use crate::draw::painting::DisplayList;
     use crate::draw::primitives::path::{FillRule, PathBuilder};
     use crate::draw::primitives::stroker::StrokeOptions;
     use crate::draw::spatial::Orientation;
-    use crate::draw::{Color, FontHandle};
-    use crate::ui::theme::DesignTokens;
 
     let mut canvas = NoopCanvas2D;
     let fs = FontService::new();

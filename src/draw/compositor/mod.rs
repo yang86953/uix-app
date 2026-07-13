@@ -5,7 +5,7 @@
 pub mod layer_tree;
 pub(crate) mod picture;
 pub mod scene_paint;
-mod viewport_transform;
+pub(crate) mod viewport_transform;
 
 pub use crate::draw::render_object::{RenderObjectEntry, RenderObjectTree};
 pub use layer_tree::{LayerNode, LayerTree};

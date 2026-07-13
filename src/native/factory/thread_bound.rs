@@ -33,7 +33,7 @@ pub(crate) fn bind_to_current_thread(
     Box::new(ThreadBoundGraphicsContext::new(inner))
 }
 
-struct ThreadBoundGraphicsContext {
+pub(crate) struct ThreadBoundGraphicsContext {
     owner_thread: ThreadId,
     inner: ManuallyDrop<Box<dyn IGraphicsContext>>,
     /// Read-only metadata is captured on the creation thread and refreshed
@@ -107,8 +107,7 @@ impl ThreadBoundGraphicsContext {
         ));
     }
 
-    #[cfg(test)]
-    fn with_test_owner(inner: Box<dyn IGraphicsContext>, owner_thread: ThreadId) -> Self {
+    pub(crate) fn with_test_owner(inner: Box<dyn IGraphicsContext>, owner_thread: ThreadId) -> Self {
         let mut bound = Self::new(inner);
         bound.owner_thread = owner_thread;
         bound
@@ -244,6 +243,3 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
     forward_result!(blit_offscreen_target(id: OffscreenTargetId, src: crate::core::Rect, dst: crate::core::Rect) -> ());
 }
 
-#[cfg(test)]
-#[path = "../../tests/native/factory/thread_bound.rs"]
-mod tests;

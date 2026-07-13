@@ -1,5 +1,8 @@
-use super::*;
-use crate::draw::font::font_service::FontService;
+use crate::tests::common::*;
+use crate::draw::spatial::{ PhysicalUnit, SpatialContext };
+use crate::draw::traits::Canvas2D;
+use crate::draw::{ HAlign, VAlign };
+use crate::draw::font::text::render::*;
 
 #[test]
 fn new_sets_font_and_service() {

@@ -15,11 +15,11 @@
 //! - `Theme` — wraps `Arc<dyn TokenProvider>` for runtime polymorphism
 //! - `PaintContext` carries `&dyn TokenProvider` for widget rendering
 
-mod color_tokens;
-mod design_tokens;
-mod spacing_tokens;
-mod typography_tokens;
-mod wrapper;
+pub(crate) mod color_tokens;
+pub(crate) mod design_tokens;
+pub(crate) mod spacing_tokens;
+pub(crate) mod typography_tokens;
+pub(crate) mod wrapper;
 
 pub use color_tokens::*;
 pub use design_tokens::primitives::ThemePrimitives;

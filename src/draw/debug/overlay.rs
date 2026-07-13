@@ -182,6 +182,3 @@ impl DebugRenderService {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/debug/overlay.rs"]
-mod tests;

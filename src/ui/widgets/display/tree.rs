@@ -5,7 +5,7 @@ use crate::ui::foundation::virtual_scroll::VirtualListScroll;
 use crate::ui::{EventResult, SnapshotFields, SnapshotTreeNode, SystemEvent, WidgetTree};
 use std::cell::Cell;
 
-const TREE_ROW_HEIGHT: f32 = 28.0;
+pub(crate) const TREE_ROW_HEIGHT: f32 = 28.0;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TreeNode {
@@ -20,7 +20,7 @@ pub struct TreeNode {
     pub is_leaf: bool,
 }
 
-struct FlatNode {
+pub(crate) struct FlatNode {
     title: String,
     key: String,
     icon: String,
@@ -35,14 +35,14 @@ struct FlatNode {
 component! {
     pub struct Tree {
         nodes: Vec<TreeNode>,
-        flat: Vec<FlatNode>,
+        pub(crate) flat: Vec<FlatNode>,
         selected_key: String,
         selected_keys: Vec<String>,
         expanded_keys: Vec<String>,
         multiple: bool,
-        body_scroll: VirtualListScroll,
+        pub(crate) body_scroll: VirtualListScroll,
         scroll_delta_strip: Cell<(f32, f32)>,
-        last_frame: Cell<Option<Rect>>,
+        pub(crate) last_frame: Cell<Option<Rect>>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -206,7 +206,7 @@ impl Tree {
         Size::new(200.0, h.max(TREE_ROW_HEIGHT))
     }
 
-    fn body_viewport_height(&self) -> f32 {
+    pub(crate) fn body_viewport_height(&self) -> f32 {
         self.last_frame
             .get()
             .map(|f| f.h.max(TREE_ROW_HEIGHT))
@@ -428,6 +428,3 @@ impl TreeNode {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/display/tree_virtual_scroll.rs"]
-mod tests;

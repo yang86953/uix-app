@@ -20,7 +20,7 @@ use crate::native::backends::macos::platform as macos_surface;
 #[cfg(windows)]
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 
-fn vk_err(operation: &str, err: vk::Result) -> Error {
+pub(crate) fn vk_err(operation: &str, err: vk::Result) -> Error {
     let code = match err {
         vk::Result::ERROR_OUT_OF_DATE_KHR
         | vk::Result::SUBOPTIMAL_KHR
@@ -934,7 +934,7 @@ fn device_extension_names(
     }
 }
 
-fn crop_cpu_shadow(
+pub(crate) fn crop_cpu_shadow(
     shadow: &[u32],
     surface_width: i32,
     surface_height: i32,
@@ -1018,7 +1018,7 @@ fn device_has_extension(
     }))
 }
 
-fn choose_surface_format(formats: &[vk::SurfaceFormatKHR]) -> vk::SurfaceFormatKHR {
+pub(crate) fn choose_surface_format(formats: &[vk::SurfaceFormatKHR]) -> vk::SurfaceFormatKHR {
     if formats.len() == 1 && formats[0].format == vk::Format::UNDEFINED {
         return vk::SurfaceFormatKHR {
             format: vk::Format::B8G8R8A8_UNORM,
@@ -1048,7 +1048,7 @@ fn choose_present_mode(modes: &[vk::PresentModeKHR]) -> vk::PresentModeKHR {
         .unwrap_or(vk::PresentModeKHR::FIFO)
 }
 
-fn choose_composite_alpha(
+pub(crate) fn choose_composite_alpha(
     supported: vk::CompositeAlphaFlagsKHR,
 ) -> Option<vk::CompositeAlphaFlagsKHR> {
     [
@@ -1106,12 +1106,9 @@ fn color_subresource_range() -> vk::ImageSubresourceRange {
         .layer_count(1)
 }
 
-fn staging_size(width: i32, height: i32) -> vk::DeviceSize {
+pub(crate) fn staging_size(width: i32, height: i32) -> vk::DeviceSize {
     (width.max(1) as vk::DeviceSize)
         .saturating_mul(height.max(1) as vk::DeviceSize)
         .saturating_mul(4)
 }
 
-#[cfg(test)]
-#[path = "../../../../tests/native/graphics/vulkan/platform/context.rs"]
-mod tests;

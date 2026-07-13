@@ -1,13 +1,13 @@
 //! 平台工厂函数 — #[cfg] 只在此处与 backends/ 内。
 
-mod registry;
+pub(crate) mod registry;
 #[cfg(all(unix, not(target_os = "macos")))]
-mod registry_linux;
+pub(crate) mod registry_linux;
 #[cfg(target_os = "macos")]
-mod registry_macos;
+pub(crate) mod registry_macos;
 #[cfg(windows)]
-mod registry_windows;
-mod thread_bound;
+pub(crate) mod registry_windows;
+pub(crate) mod thread_bound;
 
 use crate::core::error::{Errc, Error};
 use crate::native::traits::platform::Platform;
@@ -22,7 +22,7 @@ pub use registry::{
     gpu_recipe_candidates, try_create_gpu_recipe,
 };
 
-#[cfg(all(test, feature = "d3d11"))]
+#[cfg(feature = "d3d11")]
 pub(crate) fn create_d3d11_warp_test_context(
     surface: *mut std::ffi::c_void,
     width: i32,
@@ -32,12 +32,12 @@ pub(crate) fn create_d3d11_warp_test_context(
         .map(thread_bound::bind_to_current_thread)
 }
 
-#[cfg(all(test, feature = "d3d11"))]
+#[cfg(feature = "d3d11")]
 pub(crate) fn d3d11_warp_test_context_available() -> bool {
     crate::native::graphics::d3d11::warp_test_context_available()
 }
 
-#[cfg(all(test, feature = "d3d12"))]
+#[cfg(feature = "d3d12")]
 pub(crate) fn create_d3d12_warp_test_context(
     surface: *mut std::ffi::c_void,
     width: i32,
@@ -47,7 +47,7 @@ pub(crate) fn create_d3d12_warp_test_context(
         .map(thread_bound::bind_to_current_thread)
 }
 
-#[cfg(all(test, feature = "d3d12"))]
+#[cfg(feature = "d3d12")]
 pub(crate) fn d3d12_warp_test_context_available() -> bool {
     crate::native::graphics::d3d12::warp_test_context_available()
 }
@@ -82,7 +82,7 @@ pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
-fn unsupported_platform_message() -> String {
+pub(crate) fn unsupported_platform_message() -> String {
     "Unsupported platform: only Windows, Linux, and macOS are supported".to_string()
 }
 
@@ -128,6 +128,3 @@ pub fn available_memory_bytes() -> u64 {
     512 * 1024 * 1024
 }
 
-#[cfg(test)]
-#[path = "../../tests/native/factory/mod.rs"]
-mod tests;

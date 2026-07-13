@@ -83,6 +83,3 @@ impl Default for ThemeToggle {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/other/theme_toggle.rs"]
-mod tests;

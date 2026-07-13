@@ -184,7 +184,6 @@ impl Tabs {
         self.active_index = index.min(self.tabs.len().saturating_sub(1));
         self
     }
-    #[cfg(test)]
     pub(crate) fn active_index(&self) -> usize {
         self.active_index
     }
@@ -217,6 +216,3 @@ impl Tabs {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/navigation/tabs.rs"]
-mod tests;

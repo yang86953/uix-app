@@ -2,19 +2,20 @@
 
 use crate::core::{Errc, Error};
 use crate::draw::font::text_backend::{self, *};
+pub(crate) use text_backend::TextLayoutOptions;
 use crate::draw::FontHandle;
 use crate::draw::TextBackend;
 use text_backend::TOFU_GLYPH_ID;
 use ab_glyph::*;
 use std::sync::Arc;
 
-struct FontSlot {
+pub(crate) struct FontSlot {
     handle: FontHandle,
     font: FontVec,
 }
 
 pub struct AbGlyphBackend {
-    fonts: Vec<FontSlot>,
+    pub(crate) fonts: Vec<FontSlot>,
 }
 
 impl std::fmt::Debug for AbGlyphBackend {
@@ -256,6 +257,3 @@ impl TextBackend for AbGlyphBackend {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/draw/font/text_backends/ab_glyph.rs"]
-mod tests;

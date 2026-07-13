@@ -4,7 +4,7 @@
 //! Error 结构体携带码/消息/严重度/源码位置/时间戳/可选原因链。
 
 mod codes;
-mod result;
+pub(crate) mod result;
 mod severity;
 mod types;
 

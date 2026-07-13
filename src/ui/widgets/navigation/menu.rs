@@ -333,6 +333,3 @@ impl Menu {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/navigation/menu.rs"]
-mod tests;

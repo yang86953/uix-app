@@ -114,6 +114,3 @@ impl Breadcrumb {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/navigation/breadcrumb.rs"]
-mod tests;

@@ -372,6 +372,3 @@ fn draw_popover_arrow(
     ctx.fill_path(&pb.build(), color, FillRule::NonZero);
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/feedback/popover.rs"]
-mod tests;

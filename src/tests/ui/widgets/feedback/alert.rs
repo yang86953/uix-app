@@ -1,5 +1,7 @@
-use super::*;
-use crate::ui::traits::WidgetLayout;
+use crate::tests::common::*;
+use crate::component;
+use crate::draw::Radius;
+use crate::ui::widgets::feedback::alert::*;
 
 #[test]
 fn measure_clamps_alert_size() {

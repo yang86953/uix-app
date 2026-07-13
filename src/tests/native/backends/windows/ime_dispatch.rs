@@ -1,4 +1,7 @@
-use super::*;
+use crate::tests::common::*;
+use crate::native::backends::windows::text_input::WindowsImeState;
+use crate::native::traits::event::{UiEvent, UiEventType};
+use crate::native::backends::windows::ime_dispatch::*;
 use crate::native::traits::event::UiEventPayload;
 
 fn payload_text(event: &UiEvent) -> Option<&str> {

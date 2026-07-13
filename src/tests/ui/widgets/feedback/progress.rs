@@ -1,7 +1,8 @@
-use crate::core::{Constraints, Rect, Size};
+use crate::tests::common::*;
+use crate::component;
+use crate::draw::{ Radius };
 use crate::ui::core::widget::WidgetCore;
-use crate::ui::traits::{WidgetAnimation, WidgetCapabilities, WidgetComponent, WidgetLayout};
-use crate::ui::{ProgressBar, WidgetTree};
+use crate::ui::{ ProgressBar };
 
 #[test]
 fn progress_bar_advertises_animation_capability() {

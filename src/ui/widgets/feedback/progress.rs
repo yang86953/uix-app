@@ -256,6 +256,3 @@ impl ProgressBar {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/feedback/progress.rs"]
-mod tests;

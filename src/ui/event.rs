@@ -792,6 +792,3 @@ macro_rules! register_semantic {
     };
 }
 
-#[cfg(test)]
-#[path = "../tests/ui/event.rs"]
-mod tests;

@@ -26,7 +26,7 @@ impl ProbeReport {
         self.record_failure_at(recipe, ProbeStage::Unspecified, Some(recipe), err);
     }
 
-    fn record_failure_at(
+    pub(crate) fn record_failure_at(
         &mut self,
         candidate: GraphicsRecipe,
         stage: ProbeStage,
@@ -59,7 +59,7 @@ impl ProbeReport {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ProbeStage {
+pub(crate) enum ProbeStage {
     Unspecified,
     CandidateSelection,
     ContextCreate,
@@ -157,7 +157,7 @@ pub fn bootstrap_graphics_engine(
     })
 }
 
-fn bootstrap_graphics_engine_with<F>(
+pub(crate) fn bootstrap_graphics_engine_with<F>(
     _surface: NativeSurfaceHandle,
     width: i32,
     height: i32,
@@ -176,7 +176,7 @@ where
     )
 }
 
-fn bootstrap_graphics_engine_with_candidates<F>(
+pub(crate) fn bootstrap_graphics_engine_with_candidates<F>(
     width: i32,
     height: i32,
     request: GraphicsBackend,
@@ -246,6 +246,3 @@ where
     Err(report)
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/engine/bootstrap.rs"]
-mod tests;

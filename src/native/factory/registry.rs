@@ -154,7 +154,7 @@ fn matches_probe_request(entry: &GraphicsBackendEntry, requested: GraphicsBacken
     }
 }
 
-fn active_recipes_by_priority(
+pub(crate) fn active_recipes_by_priority(
     entries: &[GraphicsBackendEntry],
     requested: GraphicsBackend,
 ) -> Vec<GraphicsRecipe> {
@@ -263,6 +263,3 @@ pub(crate) fn try_create_gpu_context(
     try_create_context(entry, native_surface, width, height)
 }
 
-#[cfg(test)]
-#[path = "../../tests/native/factory/registry.rs"]
-mod tests;

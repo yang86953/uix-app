@@ -127,7 +127,7 @@ fn invalid_wgl_proc(proc: *const c_void) -> bool {
     matches!(proc as isize, -1..=3)
 }
 
-fn load_gl_proc(name: &CStr) -> *const c_void {
+pub(crate) fn load_gl_proc(name: &CStr) -> *const c_void {
     // SAFETY: `name` is NUL-terminated and remains alive for both loader calls.
     let proc = unsafe { wglGetProcAddress(name.as_ptr()) };
     if !invalid_wgl_proc(proc) {
@@ -764,6 +764,3 @@ impl Drop for WglContext {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../../tests/native/graphics/opengl/platform/wgl.rs"]
-mod tests;

@@ -42,6 +42,3 @@ pub(crate) fn create_native_raster_backend(
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/backend/registry.rs"]
-mod tests;

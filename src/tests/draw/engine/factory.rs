@@ -1,7 +1,9 @@
-use super::*;
-use crate::native::traits::present::{
-    GraphicsBackend, GraphicsContextCaps, IGraphicsContext, NativeRasterCaps, PresentDamage,
-};
+use crate::tests::common::*;
+use crate::core::{ Result };
+use crate::draw::engine::present_upload::PresentUploadEngine;
+use crate::draw::gpu_engine::GpuEngine;
+use crate::draw::traits::GraphicsEngine;
+use crate::draw::engine::factory::*;
 use std::ffi::c_void;
 
 struct FakeGpuNative(GraphicsBackend);

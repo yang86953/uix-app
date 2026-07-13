@@ -243,6 +243,3 @@ impl Grid {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/containers/grid.rs"]
-mod tests;

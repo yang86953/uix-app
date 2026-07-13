@@ -277,6 +277,3 @@ impl Icon {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/general/icon.rs"]
-mod tests;

@@ -112,6 +112,3 @@ impl Alert {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/feedback/alert.rs"]
-mod tests;

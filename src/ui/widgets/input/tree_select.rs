@@ -27,7 +27,7 @@ component! {
         transition_dirty: bool,
         hovered_option: Option<String>,
         pending_change: RefCell<Option<String>>,
-        dropdown_scroll: VirtualListScroll,
+        pub(crate) dropdown_scroll: VirtualListScroll,
         scroll_delta_strip: Cell<(f32, f32)>,
     }
 
@@ -224,11 +224,11 @@ impl TreeSelect {
         Size::new(200.0, DROPDOWN_TRIGGER_HEIGHT)
     }
 
-    fn dropdown_viewport_height(&self, row_count: usize) -> f32 {
+    pub(crate) fn dropdown_viewport_height(&self, row_count: usize) -> f32 {
         (row_count as f32 * DROPDOWN_ROW_HEIGHT).min(MAX_DROPDOWN_VIEWPORT_HEIGHT)
     }
 
-    fn dropdown_row_at_y(&self, pos_y: f32) -> Option<usize> {
+    pub(crate) fn dropdown_row_at_y(&self, pos_y: f32) -> Option<usize> {
         if pos_y <= DROPDOWN_TRIGGER_HEIGHT {
             return None;
         }
@@ -254,7 +254,7 @@ impl TreeSelect {
             .set((current.0 + dx, current.1 + dy));
     }
 
-    fn flatten_nodes(&self) -> Vec<(String, String, usize)> {
+    pub(crate) fn flatten_nodes(&self) -> Vec<(String, String, usize)> {
         let mut result = Vec::new();
         self.flatten(&self.nodes, 0, &mut result);
         result
@@ -373,6 +373,3 @@ impl Default for TreeSelect {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/input/tree_select.rs"]
-mod tests;

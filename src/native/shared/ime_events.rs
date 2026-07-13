@@ -56,6 +56,3 @@ pub fn on_unmark_text(events: &Arc<Mutex<VecDeque<UiEvent>>>, state: &mut ImeCom
     state.active = false;
 }
 
-#[cfg(test)]
-#[path = "../../tests/native/shared/ime_events.rs"]
-mod tests;

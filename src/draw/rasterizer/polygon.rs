@@ -194,6 +194,3 @@ pub fn fill_polygons(
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/rasterizer/polygon.rs"]
-mod tests;

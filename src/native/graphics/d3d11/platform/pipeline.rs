@@ -434,10 +434,6 @@ struct RectConstants {
     stroke: [f32; 4],
 }
 
-#[cfg(test)]
-#[path = "../../../../tests/native/graphics/d3d11/platform/pipeline.rs"]
-mod tests;
-
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct BlitConstants {
@@ -649,7 +645,7 @@ fn next_pow2_u32(v: u32) -> u32 {
 /// The native soft texture persists between ordered segments, so callers must
 /// upload and sample exactly this box; sampling a fullscreen quad would draw
 /// stale texture contents outside the current CPU segment.
-fn visible_pixel_bounds(pixels: &[u32], width: i32, height: i32) -> Option<(i32, i32, i32, i32)> {
+pub(crate) fn visible_pixel_bounds(pixels: &[u32], width: i32, height: i32) -> Option<(i32, i32, i32, i32)> {
     if width <= 0 || height <= 0 {
         return None;
     }

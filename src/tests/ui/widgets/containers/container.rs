@@ -1,6 +1,14 @@
-use super::*;
+use crate::tests::common::*;
+use crate::ui::widgets::Container;
+use crate::component;
+use crate::ui::layout::engine::{
+    child_from_tree_with_constraints, BoxModel, FlexLayout, LayoutChild,
+};
+use crate::ui::style::{ apply_style, BoxShadowDef, ColorValue, DisplayMode, TypographyToken };
+use crate::ui::traits::LayoutEngine;
+use crate::ui::{ SnapshotSource };
+use crate::ui::widgets::containers::container::*;
 use crate::ui::core::widget::WidgetCore;
-use crate::ui::traits::WidgetLayout;
 
 #[test]
 fn measure_clamps_container_intrinsic_size() {
@@ -123,7 +131,6 @@ fn zero_height_row_bootstraps_from_children() {
 /// 复现首页快捷导航：不定高 column_fit 放在 row 里时，标题/描述不得重叠。
 #[test]
 fn column_fit_nav_tile_in_row_does_not_overlap_labels() {
-    use crate::ui::layout::AlignItems;
     use crate::ui::view::adapter::ViewAdapter;
     use crate::ui::view::{column_fit, embed, label, row, space};
     use crate::ui::widgets::{Icon, Label};

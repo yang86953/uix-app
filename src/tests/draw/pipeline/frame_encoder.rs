@@ -1,4 +1,5 @@
-use super::*;
+use crate::tests::common::*;
+use crate::draw::pipeline::frame_encoder::*;
 
 fn rect(x: i32, y: i32, width: i32, height: i32, color: Color) -> FrameRasterOp {
     FrameRasterOp::FillRect {
@@ -127,7 +128,6 @@ fn consuming_encoder_submits_exactly_one_frame() {
 
 #[test]
 fn reference_executor_matches_cpu_rasterizer_for_transparent_rect_layers() {
-    use crate::core::Rect;
     use crate::draw::engine::cpu::pixel_surface::PixelSurface;
     use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
     use crate::draw::traits::Canvas2D;
@@ -151,7 +151,6 @@ fn reference_executor_matches_cpu_rasterizer_for_transparent_rect_layers() {
 
 #[test]
 fn additive_fill_matches_cpu_rasterizer_destination_blend() {
-    use crate::core::Rect;
     use crate::draw::engine::cpu::pixel_surface::PixelSurface;
     use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
     use crate::draw::primitives::types::BlendMode;
@@ -177,7 +176,6 @@ fn additive_fill_matches_cpu_rasterizer_destination_blend() {
 
 #[test]
 fn scroll_copy_matches_cpu_rasterizer_scroll_region() {
-    use crate::core::Rect;
     use crate::draw::engine::cpu::pixel_surface::PixelSurface;
     use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
     use crate::draw::traits::Canvas2D;

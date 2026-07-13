@@ -14,7 +14,7 @@ use std::path::Path;
 
 /// 解析 JSON 对象为 HashMap<String, String>。
 /// 仅支持 `{"key": "value", ...}` 格式，值必须是双引号字符串。
-fn parse_json_flat(input: &str) -> Result<HashMap<String, String>> {
+pub(crate) fn parse_json_flat(input: &str) -> Result<HashMap<String, String>> {
     let input = input.trim();
     if !input.starts_with('{') || !input.ends_with('}') {
         return Err(Error::new(
@@ -161,7 +161,7 @@ fn escape_json_str(s: &str) -> String {
 }
 
 /// 序列化 HashMap<String, String> 为美化 JSON（2 空格缩进）。
-fn serialize_json_flat(map: &HashMap<String, String>) -> String {
+pub(crate) fn serialize_json_flat(map: &HashMap<String, String>) -> String {
     if map.is_empty() {
         return "{}".to_string();
     }
@@ -276,6 +276,3 @@ impl SettingsService {
 // JSON 解析器单元测试
 // ════════════════════════════════════════════════════════════════════════════
 
-#[cfg(test)]
-#[path = "../../tests/data/settings/settings.rs"]
-mod json_parser_tests;

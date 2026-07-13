@@ -1,5 +1,8 @@
-use super::*;
-use crate::draw::Color;
+use crate::tests::common::*;
+use crate::draw::engine::cpu::canvas_2d::CpuCanvas2D;
+use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+use crate::draw::traits::Canvas2D;
+use crate::draw::backend::offscreen_pool::*;
 
 #[test]
 fn pool_create_draw_copy_and_reuse() {

@@ -203,6 +203,3 @@ impl RenderingBackend for PixelSurface {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/draw/engine/cpu/pixel_surface.rs"]
-mod tests;

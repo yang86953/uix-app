@@ -1,4 +1,5 @@
-use super::*;
+use crate::tests::common::*;
+use crate::draw::rasterizer::polygon::*;
 
 fn reference_contains(polys: &[Vec<Point>], point: Point, fill_rule: FillRule) -> bool {
     let mut parity = false;

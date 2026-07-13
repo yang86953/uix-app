@@ -226,6 +226,3 @@ impl Segmented {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/input/segmented.rs"]
-mod tests;

@@ -1,4 +1,13 @@
-use super::*;
+use crate::tests::common::*;
+use crate::draw::compositor::picture::{
+    LayerRenderEnv, blit_picture_cache, rasterize_picture_to_offscreen,
+};
+use crate::draw::compositor::viewport_transform::{needs_paint, needs_paint_rect};
+use crate::draw::compositor::{ ScenePaint };
+use crate::draw::painting::{ DisplayList, PaintPass };
+use crate::draw::render_object::RenderObjectTree;
+use crate::draw::traits::GraphicsEngine;
+use crate::draw::compositor::layer_tree::*;
 
 #[derive(Clone)]
 struct TestNode {
@@ -507,8 +516,6 @@ fn paint_overlay_outside_viewport(id: NodeId, ctx: &mut PaintContext<'_>) {
 
 #[test]
 fn detached_overlay_restores_canvas_state_after_a_clipped_root() {
-    use crate::draw::font::font_service::FontService;
-    use crate::draw::image::ImageService;
     use crate::draw::painting::ThemeSnapshot;
 
     let mut scene = TestScene::static_tree(2);
@@ -549,11 +556,7 @@ fn detached_overlay_restores_canvas_state_after_a_clipped_root() {
 
 #[test]
 fn picture_partial_dirty_rerasterize_repaints_all_direct_children() {
-    use crate::draw::SoftwareEngine;
-    use crate::draw::font::font_service::FontService;
-    use crate::draw::image::ImageService;
     use crate::draw::painting::ThemeSnapshot;
-    use std::cell::RefCell;
     use std::collections::HashSet;
 
     struct PaintCountScene {

@@ -1,11 +1,7 @@
-use super::*;
-use crate::core::{Constraints, Size};
-use crate::native::traits::input::{KeyMod, MouseButton};
+use crate::tests::common::*;
+use crate::component;
+use crate::ui::widgets::navigation::anchor::*;
 use crate::ui::core::widget::WidgetCore;
-use crate::ui::traits::WidgetLayout;
-use crate::ui::{SemanticKind, WidgetTree};
-use std::cell::RefCell;
-use std::rc::Rc;
 
 #[test]
 fn anchor_click_emits_change_semantic_event() {

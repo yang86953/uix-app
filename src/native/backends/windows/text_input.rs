@@ -169,7 +169,6 @@ impl WindowsTextInput {
         self.tsf.is_some()
     }
 
-    #[cfg(test)]
     pub(crate) fn tsf_client_id(&self) -> Option<u32> {
         self.tsf.as_ref().map(TsfSession::client_id)
     }
@@ -336,6 +335,3 @@ impl ITextInput for WindowsTextInput {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/native/backends/windows/text_input.rs"]
-mod tests;

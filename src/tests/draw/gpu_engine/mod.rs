@@ -1,10 +1,6 @@
-use super::*;
-use crate::native::traits::present::{
-    GraphicsBackend, GraphicsContextCaps, NativeRasterCaps, PresentDamage,
-};
-use std::cell::Cell;
+use crate::tests::common::*;
+use crate::draw::gpu_engine::*;
 use std::ffi::c_void;
-use std::rc::Rc;
 
 struct FactoryInitializedNativeContext {
     resize_calls: Rc<Cell<usize>>,

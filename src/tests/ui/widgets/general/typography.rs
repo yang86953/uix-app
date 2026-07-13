@@ -1,5 +1,7 @@
-use super::*;
-use crate::ui::traits::WidgetLayout;
+use crate::tests::common::*;
+use crate::component;
+use crate::ui::clipboard;
+use crate::ui::widgets::general::typography::*;
 
 #[test]
 fn measure_clamps_typography_text_size() {

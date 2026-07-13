@@ -225,6 +225,3 @@ impl AppHandle {
     }
 }
 
-#[cfg(test)]
-#[path = "../tests/app/app_handle.rs"]
-mod tests;

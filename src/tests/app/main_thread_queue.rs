@@ -1,8 +1,9 @@
-use super::*;
+use crate::tests::common::*;
+use crate::ui::view::ViewNode;
+use crate::app::main_thread_queue::*;
 use crate::ui::view::combinators::label;
 use crate::ui::view::ViewAdapter;
 use crate::ui::widgets::Label;
-use std::sync::{Arc, Mutex};
 
 fn drain_with_empty_context(
     queue: &MainThreadQueue,

@@ -118,6 +118,3 @@ impl IGraphicsContext for FakeGraphicsContext {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/native/test_harness/fake_graphics_context.rs"]
-mod tests;

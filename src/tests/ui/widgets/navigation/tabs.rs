@@ -1,5 +1,5 @@
-use super::*;
-use crate::ui::traits::WidgetLayout;
+use crate::tests::common::*;
+use crate::ui::widgets::navigation::tabs::*;
 
 #[test]
 fn measure_clamps_tabs_size() {

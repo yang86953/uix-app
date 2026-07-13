@@ -12,20 +12,20 @@ use crate::ui::{EventResult, SystemEvent, WidgetTree};
 use crate::ui::{SnapshotFields, SnapshotSource};
 
 /// Material 风格水波纹：从触点扩大到盖住按钮，松手后淡出收束。
-struct ButtonRipple {
+pub(crate) struct ButtonRipple {
     /// 按钮局部坐标原点（相对 frame 左上角）。
-    origin: Point,
-    expand: Animation<f32>,
+    pub(crate) origin: Point,
+    pub(crate) expand: Animation<f32>,
     /// 按住时保持 1；松手后 1→0 淡出。
     fade: Animation<f32>,
     held: bool,
 }
 
 impl ButtonRipple {
-    const EXPAND_SECS: f64 = 0.32;
-    const FADE_SECS: f64 = 0.2;
+    pub(crate) const EXPAND_SECS: f64 = 0.32;
+    pub(crate) const FADE_SECS: f64 = 0.2;
 
-    fn start(origin: Point) -> Self {
+    pub(crate) fn start(origin: Point) -> Self {
         Self {
             origin,
             expand: Animation::new(0.0, 1.0, Self::EXPAND_SECS).with_easing(Easing::CubicOut),
@@ -63,7 +63,7 @@ impl ButtonRipple {
     }
 }
 
-fn cover_radius(origin: Point, size: Size) -> f32 {
+pub(crate) fn cover_radius(origin: Point, size: Size) -> f32 {
     let corners = [
         (0.0, 0.0),
         (size.w, 0.0),
@@ -86,9 +86,9 @@ pub struct Button {
     disabled: bool,
     block: bool,
     hovered: bool,
-    pressed: bool,
-    focused: bool,
-    ripple: Option<ButtonRipple>,
+    pub(crate) pressed: bool,
+    pub(crate) focused: bool,
+    pub(crate) ripple: Option<ButtonRipple>,
     /// 上一帧 `update_animation` 是否推进了 ripple（供窄标脏）。
     ripple_dirty: bool,
     pub(crate) style_set: StyleSet,
@@ -266,7 +266,7 @@ impl WidgetAnimation for Button {
 
 impl Button {
     /// 键盘激活用的中心原点哨兵（局部坐标不可能为负）。
-    const CENTER_ORIGIN: Point = Point::new(-1.0, -1.0);
+    pub(crate) const CENTER_ORIGIN: Point = Point::new(-1.0, -1.0);
 
     pub fn new(text: impl Into<String>) -> Self {
         Self::assemble(text.into(), StyleSet::button_default(), false, false)
@@ -335,7 +335,7 @@ impl Button {
         self
     }
 
-    fn resolve_style(&self) -> Style {
+    pub(crate) fn resolve_style(&self) -> Style {
         self.style_set
             .resolve(StyleState {
                 hovered: self.hovered,
@@ -423,6 +423,3 @@ impl Button {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/general/button.rs"]
-mod tests;

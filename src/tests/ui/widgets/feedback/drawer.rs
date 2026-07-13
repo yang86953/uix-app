@@ -1,19 +1,14 @@
-use super::*;
-use crate::core::{DirtyRegion, Rect};
+use crate::tests::common::*;
+use crate::component;
+use crate::draw::{ Radius };
+use crate::ui::animation::{presets, SlideDirection, TransitionPlayer};
+use crate::ui::widgets::feedback::drawer::*;
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
-use crate::draw::engine::cpu::software::SoftwareEngine;
-use crate::draw::font::font_service::FontService;
-use crate::draw::image::ImageService;
-use crate::draw::painting::{PaintContext, ThemeSnapshot};
 use crate::draw::pipeline::{FrameRenderInput, FrameRenderer};
 use crate::draw::spatial::Orientation;
 use crate::draw::traits::GraphicsEngine;
-use crate::native::traits::input::ScrollDirection;
 use crate::ui::core::widget::WidgetCore;
-use crate::ui::core::widget::WidgetTree;
-use crate::ui::theme::DesignTokens;
-use crate::ui::traits::{WidgetAnimation, WidgetCapabilities, WidgetComponent, WidgetRender};
 use crate::ui::widgets::other::scroll_view::ScrollView;
 
 #[test]

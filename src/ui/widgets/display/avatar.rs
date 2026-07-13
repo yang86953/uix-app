@@ -113,6 +113,3 @@ impl Avatar {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/display/avatar.rs"]
-mod tests;

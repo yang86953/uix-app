@@ -275,6 +275,3 @@ impl Radio {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/input/radio.rs"]
-mod tests;

@@ -1,4 +1,5 @@
-use super::*;
+use crate::tests::common::*;
+use crate::native::graphics::opengl::shaders::*;
 
 #[test]
 fn native_shader_sources_cover_all_current_gl_pipeline_stages() {

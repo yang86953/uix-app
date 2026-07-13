@@ -399,6 +399,3 @@ fn classify_invalidation(rendered_first: bool, dirty_region: &DirtyRegion) -> In
     InvalidationSource::None
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/pipeline/render_frame.rs"]
-mod tests;

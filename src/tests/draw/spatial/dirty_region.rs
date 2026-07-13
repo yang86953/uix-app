@@ -1,4 +1,6 @@
-use super::*;
+use crate::tests::common::*;
+use crate::draw::spatial::SpatialContext;
+use crate::draw::spatial::dirty_region::*;
 use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
 use crate::draw::spatial::Orientation;
 

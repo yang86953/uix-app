@@ -416,6 +416,3 @@ impl IWindowManager for FakeWindowManager {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/native/test_harness/fake_window.rs"]
-mod tests;

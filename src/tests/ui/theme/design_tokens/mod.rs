@@ -1,8 +1,4 @@
-use super::*;
+// Auto-organized test modules. Tests live only under src/tests.
 
-#[test]
-fn neutral_text_inverse_follows_mode() {
-    let tokens = DesignTokens::antd_dark();
-
-    assert_eq!(tokens.neutral(NeutralRole::TextInverse), tokens.color_black);
-}
+mod module;
+mod presets;

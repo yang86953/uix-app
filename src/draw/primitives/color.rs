@@ -104,10 +104,6 @@ impl Default for Color {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/primitives/color.rs"]
-mod tests;
-
 /// 从 hex 字符串（如 `"#ff4d4f"` 或 `"ff4d4f"`）解析颜色。
 /// 支持 6 位 RGB 和 8 位 RGBA 格式。
 fn parse_hex(hex: &str) -> Option<Color> {

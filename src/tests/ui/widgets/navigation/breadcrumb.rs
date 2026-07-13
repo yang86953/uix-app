@@ -1,7 +1,6 @@
-use super::*;
-use crate::draw::compositor::PicturePolicy;
-use crate::ui::traits::WidgetComponent;
-use crate::ui::traits::WidgetLayout;
+use crate::tests::common::*;
+use crate::component;
+use crate::ui::widgets::navigation::breadcrumb::*;
 
 #[test]
 fn measure_clamps_breadcrumb_size() {

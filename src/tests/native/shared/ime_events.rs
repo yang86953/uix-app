@@ -1,4 +1,6 @@
-use super::*;
+use crate::tests::common::*;
+use crate::native::traits::event::UiEvent;
+use crate::native::shared::ime_events::*;
 use crate::native::traits::event::{UiEventPayload, UiEventType};
 
 fn queue(

@@ -189,6 +189,3 @@ impl GraphicsEngine for GpuEngine {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/gpu_engine/mod.rs"]
-mod tests;

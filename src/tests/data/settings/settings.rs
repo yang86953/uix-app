@@ -1,6 +1,9 @@
-use super::*;
-
 // ── parse_json_flat：正常路径 ──────────────────────────────────────
+use crate::tests::common::*;
+use crate::core::{ Result };
+use std::fs;
+use crate::data::settings::settings::*;
+
 
 #[test]
 fn parse_empty_object() {

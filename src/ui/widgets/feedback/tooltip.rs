@@ -379,6 +379,3 @@ impl Tooltip {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/feedback/tooltip.rs"]
-mod tests;

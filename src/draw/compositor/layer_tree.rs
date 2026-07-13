@@ -133,7 +133,7 @@ impl LayerNode {
     }
 
     /// 获取该节点对应的 node_id。
-    fn node_id(&self) -> NodeId {
+    pub(crate) fn node_id(&self) -> NodeId {
         match self {
             LayerNode::Picture { node_id, .. }
             | LayerNode::ClipRect { node_id, .. }
@@ -914,25 +914,21 @@ impl Default for LayerTree {
     }
 }
 
-#[cfg(test)]
 impl LayerTree {
-    pub fn root_node(&self) -> Option<&LayerNode> {
+    pub(crate) fn root_node(&self) -> Option<&LayerNode> {
         self.root.as_ref()
     }
 
-    pub fn overlay_nodes(&self) -> &[LayerNode] {
+    pub(crate) fn overlay_nodes(&self) -> &[LayerNode] {
         &self.overlays
     }
 
-    pub fn orphaned_handles(&self) -> &[ImageHandle] {
+    pub(crate) fn orphaned_handles(&self) -> &[ImageHandle] {
         &self.orphaned_handles
     }
 
-    pub fn orphaned_handles_mut(&mut self) -> &mut Vec<ImageHandle> {
+    pub(crate) fn orphaned_handles_mut(&mut self) -> &mut Vec<ImageHandle> {
         &mut self.orphaned_handles
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/compositor/layer_tree.rs"]
-mod tests;

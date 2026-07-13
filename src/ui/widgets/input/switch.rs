@@ -139,6 +139,3 @@ impl Switch {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/input/switch.rs"]
-mod tests;

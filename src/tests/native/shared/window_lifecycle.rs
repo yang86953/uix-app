@@ -1,4 +1,7 @@
-use super::*;
+use crate::tests::common::*;
+use crate::native::shared::WindowState;
+use crate::native::traits::event::UiEvent;
+use crate::native::shared::window_lifecycle::*;
 
 #[test]
 fn push_window_resize_updates_state_and_queues_event() {

@@ -1,5 +1,7 @@
-use super::*;
-use crate::ui::traits::WidgetLayout;
+use crate::tests::common::*;
+use crate::component;
+use crate::draw::{ Radius };
+use crate::ui::widgets::input::input_number::*;
 
 #[test]
 fn measure_clamps_input_number_size() {
@@ -10,8 +12,6 @@ fn measure_clamps_input_number_size() {
 
 #[test]
 fn uncontrolled_value_survives_reconcile() {
-    use crate::native::traits::input::{KeyMod, MouseButton};
-    use crate::ui::traits::EventHandler;
 
     let mut input = InputNumber::new("Count").min(0.0).max(100.0).step(1.0);
     let _ = input.on_event(&SystemEvent::PointerDown {

@@ -785,6 +785,3 @@ pub fn resolve_font_size(base: f32, unit: Option<PhysicalUnit>, dpi: f32) -> f32
     unit.map(|u| u.to_dip(dpi)).unwrap_or(base)
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/painting/paint_context.rs"]
-mod tests;

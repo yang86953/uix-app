@@ -144,6 +144,3 @@ impl Checkbox {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/input/checkbox.rs"]
-mod tests;

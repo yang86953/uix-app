@@ -1,14 +1,13 @@
-use super::*;
-use crate::draw::NullEngine;
+use crate::tests::common::*;
+use crate::draw::primitives::path::{Path, PathBuilder};
+use crate::draw::font::text::TextRenderService;
+use crate::draw::image::{ BitmapHandle, blit_handle };
+use crate::draw::traits::Canvas2D;
+use crate::draw::{ GradientDirection, Radius };
+use crate::draw::painting::display_list::*;
 use crate::draw::compositor::picture::encode_cached_picture;
-use crate::draw::font::font_service::FontService;
-use crate::draw::painting::PaintContext;
-use crate::draw::primitives::path::{FillRule, PathBuilder};
-use crate::draw::primitives::stroker::StrokeOptions;
 use crate::draw::spatial::Orientation;
 use crate::draw::traits::{GraphicsEngine, UpdateStrategy};
-use crate::draw::{Color, FontHandle, SoftwareEngine};
-use crate::ui::theme::DesignTokens;
 
 const RED_PNG: &[u8] = &[
     137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0,

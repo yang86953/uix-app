@@ -1,4 +1,6 @@
-use super::*;
+use crate::tests::common::*;
+use std::ops::Add;
+use crate::draw::spatial::unit::*;
 
 #[test]
 fn px_to_dip_is_identity() {

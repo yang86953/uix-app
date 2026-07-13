@@ -149,8 +149,8 @@ component! {
         renderer: RefCell<Option<Box<dyn FnMut(usize) -> WidgetNode + 'static>>>,
         #[snapshot(skip)]
         children: WidgetChildren,
-        visible_start: Cell<usize>,
-        last_frame: Cell<Option<Rect>>,
+        pub(crate) visible_start: Cell<usize>,
+        pub(crate) last_frame: Cell<Option<Rect>>,
         scroll_delta_strip: Cell<(f32, f32)>,
     }
 
@@ -400,6 +400,3 @@ impl VirtualScroll {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/ui/foundation/virtual_scroll.rs"]
-mod tests;

@@ -1,8 +1,7 @@
-use super::{
-    GraphicsBackend, GraphicsContextCaps, IGraphicsContext, NativeRasterCaps, PresentDamage,
-    PresentFrame, SoftFallbackTile, validate_pixel_buffer,
-};
-use crate::core::{Errc, Error, Result};
+use crate::tests::common::*;
+use crate::core::error::{ Result };
+use std::fmt;
+use crate::native::traits::present::{ validate_pixel_buffer };
 use std::str::FromStr;
 
 #[test]

@@ -147,6 +147,3 @@ impl Default for Result {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/display/result.rs"]
-mod tests;

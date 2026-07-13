@@ -1,11 +1,14 @@
-use super::*;
-use crate::core::Error;
-use crate::draw::SoftwareEngine;
+use crate::tests::common::*;
+use crate::draw::compositor::{LayerTree, RenderObjectTree, ScenePaint};
+use crate::draw::debug::DebugRenderService;
+use crate::draw::font::text::TextRenderService;
+use crate::draw::pipeline::{
+    EncodedFrameExecution, InvalidationSource, RenderMetrics, frame_recording::FrameRecordingEngine,
+};
+use crate::draw::traits::{GraphicsEngine, UpdateStrategy};
+use crate::draw::pipeline::render_frame::*;
 use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
-use crate::draw::null_engine::NullEngine;
-use crate::draw::painting::PaintContext;
-use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
-use std::cell::Cell;
+use crate::draw::traits::{ Canvas2D, GraphicsCapabilities };
 
 struct RecordingEngine {
     canvas: NoopCanvas2D,
@@ -664,7 +667,6 @@ fn frame_renderer_d3d11_warp_executes_direct_and_picture_recordings_before_prese
 #[test]
 fn frame_renderer_wgl_executes_direct_and_picture_recordings_before_present() {
     use crate::draw::gpu_engine::GpuEngine;
-    use crate::native::traits::present::GraphicsBackend;
 
     if std::env::consts::OS != "windows" {
         return;

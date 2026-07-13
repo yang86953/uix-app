@@ -234,6 +234,3 @@ impl Drop for Window {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/app/window/window.rs"]
-mod tests;

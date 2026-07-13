@@ -221,6 +221,3 @@ impl Slider {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/input/slider.rs"]
-mod tests;

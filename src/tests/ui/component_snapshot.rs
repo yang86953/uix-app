@@ -1,40 +1,21 @@
-use std::any::TypeId;
-use std::cell::Cell;
-use std::rc::Rc;
+use crate::tests::common::{
+    AlignItems, Cell, Color, ComponentId, Constraints, ControlSize, DesignTokens, Duration,
+    EdgeInsets, EventHandler, EventResult, FlexDirection, Instant, JustifyContent, KeyCode, KeyMod,
+    MouseButton, Point, Rc, Rect, RefCell, ScrollDirection, Size, StatusLevel, Style, SystemEvent,
+    Theme, WidgetAnimation, WidgetCapabilities, WidgetLayout, WidgetRender, WidgetTree,
+};
+use crate::ui::SnapshotFields;
+use crate::ui::widgets::Container;
+use std::any::{Any, TypeId};
+use std::fmt;
+use crate::ui::style::{ StyleSet };
+use crate::ui::widgets::{ Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus, BarChart, BarData, Breadcrumb, BreadcrumbItem, Button, Calendar, Card, Carousel, Cascader, CascaderOption, Checkbox, Collapse, ColorPicker, Content, DatePicker, Descriptions, DescriptionsItem, Divider, DividerDirection, DividerOrientation, Drawer, DrawerPlacement, Dropdown, Empty, FloatButton, Footer, Form, FormItem, FormLayout, Grid, Header, Icon, Image, Input, InputNumber, Label, Layout, LineChart, LineData, List, Mentions, Menu, MenuItem, MenuMode, Message, MessagePlacement, Modal, NavItem, NotifPlacement, Notification, OptGroup, Pagination, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger, ProgressBar, ProgressMode, ProgressType, QRCode, Radio, RadioDirection, Rate, Result, ResultType, RichText, RichTextSegment, ScrollView, Segmented, Select, SelectableItem, SelectableList, Sider, Skeleton, SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize, Splitter, Step, Steps, Switch, Tab, TabPosition, Table, TableColumn, TableRow, Tabs, Tag, TagColor, ThemeToggle, TimePicker, Timeline, TimelineItem, Tooltip, TooltipPlacement, Transfer, TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography, TypographyType, Upload, Watermark };
 
 use crate::component;
-use crate::core::{Constraints, EdgeInsets, Point, Size};
 use crate::draw::spatial::PhysicalUnit;
-use crate::draw::Color;
-use crate::native::traits::input::{ControlSize, KeyMod, MouseButton, ScrollDirection};
-use crate::native::traits::system::StatusLevel;
 use crate::ui::layout::GridTrack;
-use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
-use crate::ui::widgets::{
-    Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus, BarChart,
-    BarData, Breadcrumb, BreadcrumbItem, Button, Calendar, Card, Carousel, Cascader,
-    CascaderOption, Checkbox, Collapse, CollapsePanel, ColorPicker, Container, Content, DatePicker,
-    DateValue, Descriptions, DescriptionsItem, Divider, DividerDirection, DividerOrientation,
-    Drawer, DrawerPlacement, Dropdown, Empty, FloatButton, Footer, Form, FormItem, FormLayout,
-    Grid, Header, Icon, Image, Input, InputNumber, Label, Layout, LineChart, LineData, List,
-    Mentions, Menu, MenuItem, MenuMode, Message, MessageItem, MessagePlacement, Modal, NavItem,
-    NotifPlacement, Notification, OptGroup, Pagination, PieChart, PieData, Popconfirm,
-    PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger, ProgressBar, ProgressMode,
-    ProgressType, QRCode, Radio, RadioDirection, Rate, Result as ResultWidget, ResultType,
-    RichText, RichTextSegment, RichTextStyle, ScrollView, Segmented, Select, SelectableItem,
-    SelectableList, Sider, Skeleton, SkeletonShape, Slider, SortDirection, Space, SpaceSize, Spin,
-    SpinSize, Splitter, Step, StepStatus, Steps, Switch, Tab, TabPosition, Table, TableColumn,
-    Tabs, Tag, TagColor, ThemeToggle, TimePicker, TimeValue, Timeline, TimelineItem, Tooltip,
-    TooltipPlacement, Transfer, TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography,
-    TypographyType, Upload, ValidateStatus, Watermark,
-};
-use crate::ui::ComponentId;
-use crate::ui::{
-    AccessibilityRole, AccessibilitySnapshot, AriaAttribute, ComponentConfigSnapshot, EventHandler,
-    SnapshotCollapsePanel, SnapshotFields, SnapshotSource, SnapshotTableColumn,
-    SnapshotTransferItem, SnapshotTreeNode, SnapshotValue, SystemEvent, WidgetAnimation,
-    WidgetLayout,
-};
+use crate::ui::widgets::{ CollapsePanel, DateValue, MessageItem, RichTextStyle, SortDirection, StepStatus, TimeValue, ValidateStatus };
+use crate::ui::{ AccessibilityRole, AccessibilitySnapshot, AriaAttribute, ComponentConfigSnapshot, SnapshotCollapsePanel, SnapshotSource, SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue };
 
 component! {
     struct SnapshotProbe {
@@ -1713,7 +1694,7 @@ fn data_display_and_other_snapshots_capture_static_config() {
     );
 
     assert_eq!(
-        ResultWidget::new(ResultType::Success)
+        Result::new(ResultType::Success)
             .title("Done")
             .subtitle("All set")
             .extra_text("Continue")

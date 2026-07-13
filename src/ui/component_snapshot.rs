@@ -1282,6 +1282,3 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     SnapshotFields::Unknown
 }
 
-#[cfg(test)]
-#[path = "../tests/ui/component_snapshot.rs"]
-mod tests;

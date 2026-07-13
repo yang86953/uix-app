@@ -184,6 +184,3 @@ impl Message {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/feedback/message.rs"]
-mod tests;

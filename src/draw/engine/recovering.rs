@@ -313,6 +313,3 @@ impl Drop for RecoveringGraphicsEngine {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/engine/recovering.rs"]
-mod tests;

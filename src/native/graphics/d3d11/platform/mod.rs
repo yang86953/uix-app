@@ -6,15 +6,15 @@ use crate::core::{Error, Result};
 use crate::native::traits::present::IGraphicsContext;
 
 #[cfg(windows)]
-mod context;
+pub(crate) mod context;
 #[cfg(windows)]
-mod pipeline;
+pub(crate) mod pipeline;
 
 #[cfg(windows)]
 pub use context::D3d11Context;
 
 #[cfg(windows)]
-pub(super) fn create(
+pub(crate) fn create(
     surface: *mut c_void,
     width: i32,
     height: i32,
@@ -22,8 +22,8 @@ pub(super) fn create(
     D3d11Context::new(surface, width, height).map(|ctx| Box::new(ctx) as _)
 }
 
-#[cfg(all(test, windows, feature = "d3d11"))]
-pub(super) fn create_warp_test_context(
+#[cfg(all(windows, feature = "d3d11"))]
+pub(crate) fn create_warp_test_context(
     surface: *mut c_void,
     width: i32,
     height: i32,
@@ -31,13 +31,13 @@ pub(super) fn create_warp_test_context(
     D3d11Context::new_warp_test_context(surface, width, height).map(|ctx| Box::new(ctx) as _)
 }
 
-#[cfg(all(test, windows, feature = "d3d11"))]
-pub(super) const fn warp_test_context_available() -> bool {
+#[cfg(all(windows, feature = "d3d11"))]
+pub(crate) const fn warp_test_context_available() -> bool {
     true
 }
 
-#[cfg(all(test, not(windows), feature = "d3d11"))]
-pub(super) fn create_warp_test_context(
+#[cfg(all(not(windows), feature = "d3d11"))]
+pub(crate) fn create_warp_test_context(
     _surface: *mut c_void,
     _width: i32,
     _height: i32,
@@ -50,13 +50,13 @@ pub(super) fn create_warp_test_context(
     ))
 }
 
-#[cfg(all(test, not(windows), feature = "d3d11"))]
-pub(super) const fn warp_test_context_available() -> bool {
+#[cfg(all(not(windows), feature = "d3d11"))]
+pub(crate) const fn warp_test_context_available() -> bool {
     false
 }
 
 #[cfg(not(windows))]
-pub(super) fn create(
+pub(crate) fn create(
     _surface: *mut c_void,
     _width: i32,
     _height: i32,

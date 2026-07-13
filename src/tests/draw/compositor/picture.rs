@@ -1,8 +1,10 @@
-use super::*;
-use crate::draw::SoftwareEngine;
-use crate::draw::backend::DamageRegion;
-use crate::draw::engine::RenderOutcome;
-use crate::draw::image::ImageService;
+use crate::tests::common::*;
+use crate::draw::Orientation;
+use crate::draw::traits::GraphicsEngine;
+use crate::draw::compositor::{PicturePolicy, ScenePaint};
+use crate::draw::painting::DisplayList;
+use crate::draw::traits::Canvas2D;
+use crate::draw::compositor::picture::*;
 use crate::draw::painting::{
     IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, PaintOp, ShadowToken,
     ThemeTokens,

@@ -1,7 +1,10 @@
-use super::*;
+use crate::tests::common::*;
+use crate::draw::primitives::path::{Path, PathBuilder};
+use crate::draw::backend::traits::{BackendCapabilities, DrawSurface};
+use crate::draw::traits::UpdateStrategy;
+use crate::draw::pipeline::frame::*;
 use crate::draw::backend::cpu::{CpuBackend, CpuDrawSurface};
-use crate::draw::backend::traits::{BackendCapabilities, RenderBackend};
-use crate::draw::primitives::path::PathBuilder;
+use crate::draw::backend::traits::{ RenderBackend };
 use crate::draw::traits::Canvas2D;
 
 #[test]

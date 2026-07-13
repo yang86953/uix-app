@@ -1,3 +1,3 @@
 pub use settings::SettingsService;
 
-mod settings;
+pub(crate) mod settings;

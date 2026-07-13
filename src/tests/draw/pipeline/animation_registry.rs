@@ -1,4 +1,5 @@
-use super::*;
+use crate::tests::common::*;
+use crate::draw::pipeline::animation_registry::*;
 
 #[test]
 fn register_unregister_lifecycle() {

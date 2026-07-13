@@ -1,9 +1,14 @@
-use super::*;
-use crate::draw::Color;
-use crate::ui::core::widget::WidgetCore;
-use crate::ui::view::ViewNode;
-use crate::ui::widgets::{Button, Container};
-use crate::ui::{EventResult, SnapshotFields, SystemEvent};
+use crate::tests::common::*;
+use crate::ui::widgets::Container;
+use crate::ui::component_patch::patch_builtin_widget;
+use crate::ui::core::widget::{WidgetCore, WidgetNode};
+use crate::ui::event::{ HandlerRegistration, HandlerSignature };
+use crate::ui::foundation::state::{begin_state_capture, end_state_capture};
+use crate::ui::view::{View, ViewNode};
+use crate::ui::widgets::{ Button, Grid, Label };
+use crate::ui::widgets::*;
+use crate::ui::view::{column, dynamic_label, grid, label, row, scroll};
+use crate::ui::view::adapter::*;
 
 #[test]
 fn test_build_with_children() {
@@ -45,8 +50,6 @@ fn test_apply_style_container() {
 
 #[test]
 fn container_view_style_preserves_builder_layout_style() {
-    use crate::core::EdgeInsets;
-    use crate::ui::style::FlexDirection;
     use crate::ui::view::{column, label};
 
     let tree = ViewAdapter::build_nodes(column([label("A")]).padding(8.0));
@@ -65,8 +68,6 @@ fn container_view_style_preserves_builder_layout_style() {
 
 #[test]
 fn reconcile_container_view_style_preserves_builder_layout_style() {
-    use crate::core::EdgeInsets;
-    use crate::ui::style::FlexDirection;
     use crate::ui::view::{column, label};
 
     let mut tree = ViewAdapter::build_nodes(column([label("A")]));
@@ -107,7 +108,6 @@ fn reconcile_same_view_keeps_invalidation_empty() {
 fn unused_state_created_during_view_build_does_not_bind_root() {
     use crate::ui::state::State;
     use crate::ui::widgets::Label;
-    use std::sync::{Arc, Mutex};
 
     let captured: Arc<Mutex<Option<State<i32>>>> = Arc::new(Mutex::new(None));
     let captured_for_build = captured.clone();
@@ -181,7 +181,6 @@ fn state_get_before_dynamic_label_keeps_root_reconcile() {
 
 #[test]
 fn grid_style_tracks_drive_layout() {
-    use crate::core::Rect;
     use crate::ui::layout::GridTrack;
     use crate::ui::view::{grid, label};
 
@@ -218,7 +217,6 @@ fn grid_style_tracks_drive_layout() {
 fn reconcile_reuses_keyed_children_and_updates_label_text() {
     use crate::ui::view::{column, label};
     use crate::ui::widgets::Label;
-    use crate::ui::AppState;
 
     let mut tree = ViewAdapter::build_nodes(column(vec![label("A").key("a"), label("B").key("b")]));
     let app_state = AppState::new();
@@ -258,12 +256,7 @@ fn reconcile_reuses_keyed_children_and_updates_label_text() {
 
 #[test]
 fn reconcile_reregisters_root_handlers() {
-    use crate::core::{Point, Rect};
-    use crate::native::traits::input::{KeyMod, MouseButton};
     use crate::ui::view::button;
-    use crate::ui::SystemEvent;
-    use std::cell::Cell;
-    use std::rc::Rc;
 
     let old_hits = Rc::new(Cell::new(0));
     let new_hits = Rc::new(Cell::new(0));
@@ -771,9 +764,8 @@ fn reconcile_form_patches_instance_and_syncs_layout_config() {
 
 #[test]
 fn reconcile_table_preserves_runtime_selection_and_syncs_config() {
-    use crate::core::Point;
     use crate::ui::widgets::{Table, TableColumn};
-    use crate::ui::{KeyMod, MouseButton, SnapshotTableColumn};
+use crate::ui::{ SnapshotTableColumn };
 
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
         Table::new()
@@ -860,8 +852,6 @@ fn reconcile_table_preserves_runtime_selection_and_syncs_config() {
 
 #[test]
 fn reconcile_progress_bar_preserves_animation_phase_and_syncs_config() {
-    use crate::draw::Color;
-    use crate::ui::traits::WidgetAnimation;
     use crate::ui::widgets::{ProgressBar, ProgressMode, ProgressType};
 
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(ProgressBar::new().indeterminate()));
@@ -923,8 +913,6 @@ fn reconcile_progress_bar_preserves_animation_phase_and_syncs_config() {
 
 #[test]
 fn reconcile_spin_preserves_phase_and_syncs_config() {
-    use crate::draw::Color;
-    use crate::ui::traits::WidgetAnimation;
     use crate::ui::widgets::{Spin, SpinSize};
 
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Spin::new()));
@@ -1065,7 +1053,6 @@ fn reconcile_back_top_preserves_visibility_and_syncs_threshold() {
 
 #[test]
 fn reconcile_alert_patches_instance_and_syncs_config() {
-    use crate::native::traits::system::StatusLevel;
     use crate::ui::widgets::Alert;
 
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Alert::new("old")));
@@ -1110,7 +1097,6 @@ fn reconcile_alert_patches_instance_and_syncs_config() {
 
 #[test]
 fn reconcile_tag_patches_instance_and_syncs_config() {
-    use crate::draw::Color;
     use crate::ui::widgets::{Tag, TagColor};
 
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Tag::new("old")));
@@ -1339,9 +1325,7 @@ fn reconcile_image_patches_instance_and_syncs_config() {
 
 #[test]
 fn reconcile_calendar_preserves_selection_and_syncs_config() {
-    use crate::core::Point;
     use crate::ui::widgets::Calendar;
-    use crate::ui::{KeyMod, MouseButton};
 
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Calendar::new()));
     let root_id = tree.root_id().expect("calendar root should exist");
@@ -1399,7 +1383,6 @@ fn reconcile_calendar_preserves_selection_and_syncs_config() {
 
 #[test]
 fn reconcile_descriptions_patches_instance_and_syncs_config() {
-    use crate::native::traits::input::ControlSize;
     use crate::ui::widgets::{Descriptions, DescriptionsItem};
 
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Descriptions::new().title("old")));
@@ -1492,7 +1475,6 @@ fn reconcile_result_patches_instance_and_syncs_config() {
 
 #[test]
 fn reconcile_list_patches_instance_and_syncs_config() {
-    use crate::native::traits::input::ControlSize;
     use crate::ui::widgets::List;
 
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(List::new().items(vec!["old"])));
@@ -1939,8 +1921,6 @@ fn reconcile_watermark_patches_instance_and_syncs_config() {
 
 #[test]
 fn reconcile_affix_preserves_position_state_and_syncs_offset() {
-    use crate::core::Size;
-    use crate::ui::traits::WidgetLayout;
     use crate::ui::widgets::Affix;
 
     let mut affix = Affix::new(10.0);
@@ -2106,7 +2086,6 @@ fn reconcile_message_preserves_queue_and_syncs_placement() {
 
 #[test]
 fn reconcile_notification_preserves_queue_and_syncs_placement() {
-    use crate::native::traits::system::StatusLevel;
     use crate::ui::widgets::{NotifPlacement, Notification};
 
     let notification = Notification::new();
@@ -2147,9 +2126,6 @@ fn reconcile_notification_preserves_queue_and_syncs_placement() {
 
 #[test]
 fn reconcile_collapse_preserves_expanded_state_and_syncs_config() {
-    use crate::core::{Point, Size};
-    use crate::native::traits::input::{KeyMod, MouseButton};
-    use crate::ui::traits::WidgetLayout;
     use crate::ui::widgets::{Collapse, CollapsePanel};
 
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
@@ -2248,9 +2224,6 @@ fn reconcile_carousel_patches_instance_and_syncs_config() {
 
 #[test]
 fn reconcile_tree_preserves_selection_and_syncs_nodes() {
-    use crate::core::{Point, Size};
-    use crate::native::traits::input::{KeyMod, MouseButton};
-    use crate::ui::traits::WidgetLayout;
     use crate::ui::widgets::{Tree, TreeNode};
 
     let nodes = vec![TreeNode::new("Root", "root").children(vec![TreeNode::new("Child", "child")])];
@@ -2396,7 +2369,6 @@ fn reconcile_selectable_list_preserves_active_index_and_syncs_config() {
 
 #[test]
 fn reconcile_theme_toggle_preserves_current_dark_state_and_syncs_initial() {
-    use crate::native::traits::input::{KeyMod, MouseButton};
     use crate::ui::widgets::ThemeToggle;
 
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(ThemeToggle::new()));
@@ -2444,10 +2416,7 @@ fn reconcile_theme_toggle_preserves_current_dark_state_and_syncs_initial() {
 
 #[test]
 fn reconcile_nav_item_preserves_shared_active_and_syncs_config() {
-    use crate::native::traits::input::{KeyMod, MouseButton};
     use crate::ui::widgets::NavItem;
-    use std::cell::Cell;
-    use std::rc::Rc;
 
     let active = Rc::new(Cell::new(0));
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(NavItem::new("old", 1, active.clone())));
@@ -2565,7 +2534,6 @@ fn reconcile_rich_text_clears_stale_layout_and_syncs_config() {
 
 #[test]
 fn reconcile_transfer_preserves_live_membership_and_syncs_initial_items() {
-    use crate::native::traits::input::{KeyMod, MouseButton};
     use crate::ui::widgets::{Transfer, TransferItem};
     use crate::ui::SnapshotTransferItem;
 
@@ -2854,7 +2822,6 @@ fn reconcile_popconfirm_preserves_visibility_and_syncs_config() {
 
 #[test]
 fn reconcile_modal_preserves_present_state_and_syncs_config() {
-    use crate::native::traits::input::ControlSize;
     use crate::ui::widgets::Modal;
 
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Modal::new("old").show()));
@@ -2907,7 +2874,6 @@ fn reconcile_modal_preserves_present_state_and_syncs_config() {
 
 #[test]
 fn reconcile_drawer_preserves_present_state_and_syncs_config() {
-    use crate::native::traits::input::ControlSize;
     use crate::ui::widgets::{Drawer, DrawerPlacement};
 
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Drawer::new("old").show()));
@@ -3416,7 +3382,6 @@ fn reconcile_badge_syncs_count_status_and_offsets() {
 
 #[test]
 fn reconcile_same_type_scroll_view_preserves_offset() {
-    use crate::native::traits::input::ScrollDirection;
     use crate::ui::widgets::ScrollView;
 
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
@@ -3838,15 +3803,9 @@ fn reconcile_mentions_preserves_suggestion_state_and_syncs_options() {
 
 #[test]
 fn reconcile_preserves_consumed_once_handler_when_signature_is_unchanged() {
-    use crate::core::Point;
-    use crate::native::traits::input::{KeyMod, MouseButton};
-    use crate::ui::event::{
-        ClickEvent, HandlerOptions, HandlerRegistration, SemanticEvent, SemanticKind,
-    };
+use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
     use crate::ui::view::button;
     use crate::ui::view::View;
-    use std::cell::Cell;
-    use std::rc::Rc;
 
     let first_hits = Rc::new(Cell::new(0));
     let second_hits = Rc::new(Cell::new(0));
@@ -3888,15 +3847,9 @@ fn reconcile_preserves_consumed_once_handler_when_signature_is_unchanged() {
 
 #[test]
 fn reconcile_reregisters_plain_handler_without_stable_signature() {
-    use crate::core::Point;
-    use crate::native::traits::input::{KeyMod, MouseButton};
-    use crate::ui::event::{
-        ClickEvent, HandlerOptions, HandlerRegistration, SemanticEvent, SemanticKind,
-    };
+use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
     use crate::ui::view::button;
     use crate::ui::view::View;
-    use std::cell::Cell;
-    use std::rc::Rc;
 
     let first_hits = Rc::new(Cell::new(0));
     let second_hits = Rc::new(Cell::new(0));
@@ -3938,15 +3891,9 @@ fn reconcile_reregisters_plain_handler_without_stable_signature() {
 
 #[test]
 fn reconcile_reregisters_handler_when_generation_changes() {
-    use crate::core::Point;
-    use crate::native::traits::input::{KeyMod, MouseButton};
-    use crate::ui::event::{
-        ClickEvent, HandlerOptions, HandlerRegistration, SemanticEvent, SemanticKind,
-    };
+use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
     use crate::ui::view::button;
     use crate::ui::view::View;
-    use std::cell::Cell;
-    use std::rc::Rc;
 
     let first_hits = Rc::new(Cell::new(0));
     let second_hits = Rc::new(Cell::new(0));
@@ -3988,16 +3935,10 @@ fn reconcile_reregisters_handler_when_generation_changes() {
 
 #[test]
 fn reconcile_preserves_consumed_once_handler_when_state_capture_fingerprint_is_unchanged() {
-    use crate::core::Point;
-    use crate::native::traits::input::{KeyMod, MouseButton};
-    use crate::ui::event::{
-        ClickEvent, HandlerOptions, HandlerRegistration, SemanticEvent, SemanticKind,
-    };
+use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
     use crate::ui::state::State;
     use crate::ui::view::button;
     use crate::ui::view::View;
-    use std::cell::Cell;
-    use std::rc::Rc;
 
     let state = State::new(1);
     let first_hits = Rc::new(Cell::new(0));
@@ -4041,16 +3982,10 @@ fn reconcile_preserves_consumed_once_handler_when_state_capture_fingerprint_is_u
 
 #[test]
 fn reconcile_reregisters_handler_when_state_capture_fingerprint_changes() {
-    use crate::core::Point;
-    use crate::native::traits::input::{KeyMod, MouseButton};
-    use crate::ui::event::{
-        ClickEvent, HandlerOptions, HandlerRegistration, SemanticEvent, SemanticKind,
-    };
+use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
     use crate::ui::state::State;
     use crate::ui::view::button;
     use crate::ui::view::View;
-    use std::cell::Cell;
-    use std::rc::Rc;
 
     let first_state = State::new(1);
     let second_state = State::new(1);
@@ -4094,16 +4029,10 @@ fn reconcile_reregisters_handler_when_state_capture_fingerprint_changes() {
 
 #[test]
 fn reconcile_reregisters_handler_when_options_change_with_same_capture() {
-    use crate::core::Point;
-    use crate::native::traits::input::{KeyMod, MouseButton};
-    use crate::ui::event::{
-        ClickEvent, HandlerOptions, HandlerRegistration, SemanticEvent, SemanticKind,
-    };
+use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
     use crate::ui::state::State;
     use crate::ui::view::button;
     use crate::ui::view::View;
-    use std::cell::Cell;
-    use std::rc::Rc;
 
     let state = State::new(1);
     let first_hits = Rc::new(Cell::new(0));
@@ -4143,15 +4072,9 @@ fn reconcile_reregisters_handler_when_options_change_with_same_capture() {
 
 #[test]
 fn reconcile_preserves_consumed_once_handler_when_window_capture_fingerprint_is_unchanged() {
-    use crate::core::{Point, WindowId};
-    use crate::native::traits::input::{KeyMod, MouseButton};
-    use crate::ui::event::{
-        ClickEvent, HandlerOptions, HandlerRegistration, SemanticEvent, SemanticKind,
-    };
+use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
     use crate::ui::view::button;
     use crate::ui::view::View;
-    use std::cell::Cell;
-    use std::rc::Rc;
 
     let window_id = WindowId::new(7);
     let first_hits = Rc::new(Cell::new(0));
@@ -4194,15 +4117,9 @@ fn reconcile_preserves_consumed_once_handler_when_window_capture_fingerprint_is_
 
 #[test]
 fn reconcile_reregisters_handler_when_window_capture_fingerprint_changes() {
-    use crate::core::{Point, WindowId};
-    use crate::native::traits::input::{KeyMod, MouseButton};
-    use crate::ui::event::{
-        ClickEvent, HandlerOptions, HandlerRegistration, SemanticEvent, SemanticKind,
-    };
+use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
     use crate::ui::view::button;
     use crate::ui::view::View;
-    use std::cell::Cell;
-    use std::rc::Rc;
 
     let first_window = WindowId::new(7);
     let second_window = WindowId::new(8);
@@ -4246,16 +4163,10 @@ fn reconcile_reregisters_handler_when_window_capture_fingerprint_changes() {
 
 #[test]
 fn reconcile_reregisters_handler_when_one_of_multiple_captures_changes() {
-    use crate::core::{Point, WindowId};
-    use crate::native::traits::input::{KeyMod, MouseButton};
-    use crate::ui::event::{
-        ClickEvent, HandlerOptions, HandlerRegistration, SemanticEvent, SemanticKind,
-    };
+use crate::ui::event::{ ClickEvent, HandlerOptions, HandlerRegistration };
     use crate::ui::state::State;
     use crate::ui::view::button;
     use crate::ui::view::View;
-    use std::cell::Cell;
-    use std::rc::Rc;
 
     let first_state = State::new(1);
     let second_state = State::new(1);
@@ -4302,13 +4213,8 @@ fn reconcile_reregisters_handler_when_one_of_multiple_captures_changes() {
 
 #[test]
 fn button_dsl_state_capture_preserves_handler_when_fingerprint_is_unchanged() {
-    use crate::core::Point;
-    use crate::native::traits::input::{KeyMod, MouseButton};
     use crate::ui::state::State;
     use crate::ui::view::button;
-    use crate::ui::SystemEvent;
-    use std::cell::Cell;
-    use std::rc::Rc;
 
     let state = State::new(1);
     let first_hits = Rc::new(Cell::new(0));
@@ -4346,12 +4252,7 @@ fn button_dsl_state_capture_preserves_handler_when_fingerprint_is_unchanged() {
 
 #[test]
 fn button_dsl_window_capture_preserves_handler_when_fingerprint_is_unchanged() {
-    use crate::core::{Point, WindowId};
-    use crate::native::traits::input::{KeyMod, MouseButton};
     use crate::ui::view::button;
-    use crate::ui::SystemEvent;
-    use std::cell::Cell;
-    use std::rc::Rc;
 
     let window_id = WindowId::new(7);
     let first_hits = Rc::new(Cell::new(0));
@@ -4389,13 +4290,8 @@ fn button_dsl_window_capture_preserves_handler_when_fingerprint_is_unchanged() {
 
 #[test]
 fn input_dsl_state_capture_reregisters_handler_when_fingerprint_changes() {
-    use crate::core::{Point, Rect};
-    use crate::native::traits::input::{KeyMod, MouseButton};
     use crate::ui::state::State;
     use crate::ui::view::input;
-    use crate::ui::SystemEvent;
-    use std::cell::RefCell;
-    use std::rc::Rc;
 
     let first_state = State::new(1);
     let second_state = State::new(1);
@@ -4434,12 +4330,7 @@ fn input_dsl_state_capture_reregisters_handler_when_fingerprint_changes() {
 
 #[test]
 fn input_dsl_window_capture_reregisters_handler_when_fingerprint_changes() {
-    use crate::core::{Point, Rect, WindowId};
-    use crate::native::traits::input::{KeyMod, MouseButton};
     use crate::ui::view::input;
-    use crate::ui::SystemEvent;
-    use std::cell::RefCell;
-    use std::rc::Rc;
 
     let first_window = WindowId::new(7);
     let second_window = WindowId::new(8);
@@ -4479,11 +4370,8 @@ fn input_dsl_window_capture_reregisters_handler_when_fingerprint_changes() {
 
 #[test]
 fn view_node_state_capture_preserves_handler_when_fingerprint_is_unchanged() {
-    use crate::ui::event::{SemanticEvent, SemanticKind};
     use crate::ui::state::State;
     use crate::ui::view::label;
-    use std::cell::Cell;
-    use std::rc::Rc;
 
     let state = State::new(1);
     let first_hits = Rc::new(Cell::new(0));
@@ -4515,11 +4403,8 @@ fn view_node_state_capture_preserves_handler_when_fingerprint_is_unchanged() {
 
 #[test]
 fn semantic_handler_macro_preserves_handler_when_fingerprint_is_unchanged() {
-    use crate::ui::event::{SemanticEvent, SemanticKind};
     use crate::ui::state::State;
     use crate::ui::view::label;
-    use std::cell::Cell;
-    use std::rc::Rc;
 
     let state = State::new(1);
     let first_hits = Rc::new(Cell::new(0));
@@ -4555,11 +4440,8 @@ fn semantic_handler_macro_preserves_handler_when_fingerprint_is_unchanged() {
 
 #[test]
 fn view_node_state_capture_reregisters_handler_when_fingerprint_changes() {
-    use crate::ui::event::{SemanticEvent, SemanticKind};
     use crate::ui::state::State;
     use crate::ui::view::label;
-    use std::cell::Cell;
-    use std::rc::Rc;
 
     let first_state = State::new(1);
     let second_state = State::new(1);
@@ -4592,11 +4474,7 @@ fn view_node_state_capture_reregisters_handler_when_fingerprint_changes() {
 
 #[test]
 fn view_node_window_capture_reregisters_handler_when_fingerprint_changes() {
-    use crate::core::WindowId;
-    use crate::ui::event::{SemanticEvent, SemanticKind};
     use crate::ui::view::label;
-    use std::cell::Cell;
-    use std::rc::Rc;
 
     let first_window = WindowId::new(7);
     let second_window = WindowId::new(8);
@@ -4634,8 +4512,6 @@ fn view_node_window_capture_reregisters_handler_when_fingerprint_changes() {
 #[test]
 fn test_state_auto_reconcile_invalidation() {
     use crate::ui::state::State;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
     let state = State::new(42);
     let reconcile_called = Arc::new(AtomicBool::new(false));
     let reconcile_called_clone = reconcile_called.clone();
@@ -4649,7 +4525,6 @@ fn test_state_auto_reconcile_invalidation() {
 
 #[test]
 fn captured_state_set_requests_reconcile_and_preserves_paint_invalidation() {
-    use crate::core::Rect;
     use crate::ui::state::State;
     use crate::ui::view::dynamic_label;
 
@@ -4676,12 +4551,7 @@ fn captured_state_set_requests_reconcile_and_preserves_paint_invalidation() {
 
 #[test]
 fn button_on_click_is_registered_as_semantic_handler() {
-    use crate::core::Point;
-    use crate::native::traits::input::{KeyMod, MouseButton};
     use crate::ui::view::button;
-    use crate::ui::SystemEvent;
-    use std::cell::Cell;
-    use std::rc::Rc;
 
     let clicks = Rc::new(Cell::new(0));
     let clicks_for_handler = clicks.clone();
@@ -4706,12 +4576,7 @@ fn button_on_click_is_registered_as_semantic_handler() {
 
 #[test]
 fn input_on_change_is_registered_as_semantic_handler() {
-    use crate::core::{Point, Rect};
-    use crate::native::traits::input::{KeyMod, MouseButton};
     use crate::ui::view::input;
-    use crate::ui::SystemEvent;
-    use std::cell::RefCell;
-    use std::rc::Rc;
 
     let value = Rc::new(RefCell::new(String::new()));
     let value_for_handler = value.clone();
@@ -4739,11 +4604,7 @@ fn input_on_change_is_registered_as_semantic_handler() {
 #[test]
 fn static_display_widgets_are_picture_eligible() {
     use crate::draw::compositor::PicturePolicy;
-    use crate::ui::widgets::{
-        Alert, Avatar, Badge, BarChart, Container, Content, Descriptions, Divider, Empty, Footer,
-        Grid, Header, Icon, Layout, LineChart, List, PieChart, QRCode, Result as ResultWidget,
-        ResultType, Sider, Skeleton, Space, Tag, Timeline, Watermark,
-    };
+use crate::ui::widgets::{ Alert, Avatar, Badge, BarChart, Content, Descriptions, Divider, Empty, Footer, Grid, Header, Icon, Layout, LineChart, List, PieChart, QRCode, Result as ResultWidget, ResultType, Sider, Skeleton, Space, Tag, Timeline, Watermark };
 
     let widgets: Vec<Box<dyn WidgetComponent>> = vec![
         Box::new(Space::new()),
@@ -4780,9 +4641,7 @@ fn static_display_widgets_are_picture_eligible() {
 
 #[test]
 fn layout_bootstraps_after_invalidation_cleared_with_nonzero_measure_children() {
-    use crate::core::Rect;
     use crate::ui::view::{column, label, row};
-    use crate::ui::widgets::Container;
 
     // 与 demo shell 同构：水平 row = 侧栏 + 内容
     let root = row([

@@ -1,5 +1,12 @@
-use super::*;
-use crate::draw::backend::traits::RenderBackend;
+use crate::tests::common::*;
+use crate::draw::backend::offscreen_pool::CpuOffscreenPool;
+use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
+use crate::draw::engine::cpu::canvas_2d::CpuCanvas2D;
+use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+use crate::draw::pipeline::{ EncodedFrameExecution, EncodedPictureExecution };
+use crate::draw::rasterizer::image::blit_image;
+use crate::draw::traits::Canvas2D;
+use crate::draw::backend::cpu::*;
 
 #[test]
 fn create_offscreen_reuses_destroyed_ids() {

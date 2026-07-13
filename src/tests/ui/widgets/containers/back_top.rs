@@ -1,5 +1,6 @@
-use super::*;
-use crate::ui::traits::WidgetLayout;
+use crate::tests::common::*;
+use crate::component;
+use crate::ui::widgets::containers::back_top::*;
 
 #[test]
 fn measure_clamps_back_top_size() {

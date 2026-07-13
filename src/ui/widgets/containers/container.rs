@@ -36,7 +36,7 @@ component! {
         pub style: Style,
         /// 缓存子节点内容尺寸（layout_children 后更新），
         /// 使 measure 在无固定 width/height 时能基于子节点内容估算尺寸。
-        cached_content_size: Cell<Size>,
+        pub(crate) cached_content_size: Cell<Size>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -445,6 +445,3 @@ impl Container {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/containers/container.rs"]
-mod tests;

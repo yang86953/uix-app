@@ -1,12 +1,11 @@
-use super::*;
-use crate::core::error::{Errc, Error, Result};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-
 // ════════════════════════════════════════════════════════════════════
 // 基础 notify / dismiss
 // ════════════════════════════════════════════════════════════════════
+use crate::tests::common::*;
+use crate::core::error::{ ErrorSeverity, Result };
+pub use crate::native::traits::system::StatusLevel as NotificationLevel;
+use crate::native::services::notification::*;
+
 
 #[test]
 fn test_notify_adds_toast() {

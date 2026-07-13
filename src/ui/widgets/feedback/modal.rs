@@ -25,9 +25,9 @@ component! {
         overlay: bool,
         last_win_w: Cell<f32>,
         last_win_h: Cell<f32>,
-        transition: TransitionPlayer,
+        pub(crate) transition: TransitionPlayer,
         closing: bool,
-        transition_dirty: bool,
+        pub(crate) transition_dirty: bool,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -433,6 +433,3 @@ impl Modal {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/ui/widgets/feedback/modal.rs"]
-mod tests;

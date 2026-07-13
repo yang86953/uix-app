@@ -372,6 +372,3 @@ impl UiEvent {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/native/traits/event/types.rs"]
-mod tests;

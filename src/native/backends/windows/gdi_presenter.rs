@@ -69,7 +69,7 @@ const BI_RGB: u32 = 0;
 const DIB_RGB_COLORS: u32 = 0;
 const SRCCOPY: u32 = 0x00CC0020;
 
-fn clip_damage_rect(
+pub(crate) fn clip_damage_rect(
     x: i32,
     y: i32,
     width: i32,
@@ -340,6 +340,3 @@ impl IPresenter for GdiPresenter {
     }
 }
 
-#[cfg(test)]
-#[path = "../../../tests/native/backends/windows/gdi_presenter.rs"]
-mod tests;

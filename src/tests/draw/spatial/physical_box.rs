@@ -1,4 +1,5 @@
-use super::*;
+use crate::tests::common::*;
+use crate::draw::spatial::physical_box::*;
 use crate::draw::spatial::PhysicalUnitExt;
 
 #[test]
@@ -15,8 +16,8 @@ fn rect_into_aabb() {
 #[test]
 fn aabb3d_into_aabb_identity() {
     let aabb = AABB3D::new(
-        super::super::vec3::Vec3::new(1.0, 2.0, 3.0),
-        super::super::vec3::Vec3::new(4.0, 5.0, 6.0),
+        crate::draw::spatial::Vec3::new(1.0, 2.0, 3.0),
+        crate::draw::spatial::Vec3::new(4.0, 5.0, 6.0),
     );
     let result = aabb.into_aabb(96.0, 1.0);
     assert!((result.min.x - 1.0).abs() < 1e-10);

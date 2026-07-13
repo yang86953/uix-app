@@ -34,7 +34,7 @@ use crate::native::traits::present::{
 };
 
 #[derive(Clone)]
-struct StateSnapshot {
+pub(crate) struct StateSnapshot {
     clip_rect: Rect,
     opacity: f32,
     offset_x: f32,
@@ -43,43 +43,43 @@ struct StateSnapshot {
     blend_mode: BlendMode,
 }
 
-struct PendingNativeRect {
+pub(crate) struct PendingNativeRect {
     rect: GpuSolidRect,
     /// Logical scissor AABB (x, y, w, h).
     scissor: (i32, i32, i32, i32),
 }
 
-struct PendingNativeStroke {
+pub(crate) struct PendingNativeStroke {
     rect: GpuStrokeRect,
     scissor: (i32, i32, i32, i32),
 }
 
-struct PendingNativeGlyph {
+pub(crate) struct PendingNativeGlyph {
     glyph: GpuGlyphBlit,
     scissor: (i32, i32, i32, i32),
 }
 
-struct PendingNativeLinearGrad {
+pub(crate) struct PendingNativeLinearGrad {
     rect: GpuLinearGradientRect,
     scissor: (i32, i32, i32, i32),
 }
 
-struct PendingNativeRadialGrad {
+pub(crate) struct PendingNativeRadialGrad {
     grad: GpuRadialGradient,
     scissor: (i32, i32, i32, i32),
 }
 
-struct PendingNativeMesh {
+pub(crate) struct PendingNativeMesh {
     mesh: GpuSolidMesh,
     scissor: (i32, i32, i32, i32),
 }
 
-struct PendingNativeShadow {
+pub(crate) struct PendingNativeShadow {
     shadow: GpuBoxShadow,
     scissor: (i32, i32, i32, i32),
 }
 
-enum PendingNativeOp {
+pub(crate) enum PendingNativeOp {
     SolidRect(PendingNativeRect),
     StrokeRect(PendingNativeStroke),
     Glyph(PendingNativeGlyph),
@@ -120,16 +120,16 @@ impl PendingNativeOp {
 pub struct NativeGpuCanvas2D {
     native_caps: NativeRasterCaps,
     /// Allocated on first soft-path use (#105) — pure-native frames keep no CPU framebuffer.
-    soft_fallback: Option<SharedRasterizer>,
+    pub(crate) soft_fallback: Option<SharedRasterizer>,
     /// Soft buffer has content that must be composited (until full clear).
-    soft_has_content: bool,
+    pub(crate) soft_has_content: bool,
     /// Destination-dependent blend cannot be faithfully composed from a
     /// transparent CPU segment over native output.
     soft_uses_destination_blend: bool,
     /// Immediate Canvas2D calls that have no `Result` return channel record
     /// an error here. The frame boundary consumes it before any present.
     deferred_error: Option<Error>,
-    pending_native: Vec<PendingNativeOp>,
+    pub(crate) pending_native: Vec<PendingNativeOp>,
     clip_rect: Rect,
     clip_stack: Vec<Rect>,
     opacity: f32,
@@ -140,12 +140,12 @@ pub struct NativeGpuCanvas2D {
     state_stack: Vec<StateSnapshot>,
     surface_w: i32,
     surface_h: i32,
-    #[cfg(test)]
-    last_soft_upload_bytes: usize,
+    /// Soft-upload byte count from the last successful soft fallback blit (diagnostics).
+    pub(crate) last_soft_upload_bytes: usize,
 }
 
 impl NativeGpuCanvas2D {
-    fn new(width: i32, height: i32, native_caps: NativeRasterCaps) -> Self {
+    pub(crate) fn new(width: i32, height: i32, native_caps: NativeRasterCaps) -> Self {
         let w = width.max(1);
         let h = height.max(1);
         Self {
@@ -165,20 +165,19 @@ impl NativeGpuCanvas2D {
             state_stack: Vec::new(),
             surface_w: w,
             surface_h: h,
-            #[cfg(test)]
             last_soft_upload_bytes: 0,
         }
     }
 
-    #[cfg(all(test, feature = "d3d11"))]
-    fn pending_mesh_count(&self) -> usize {
+    #[cfg(feature = "d3d11")]
+    pub(crate) fn pending_mesh_count(&self) -> usize {
         self.pending_native
             .iter()
             .filter(|op| matches!(op, PendingNativeOp::SolidMesh(_)))
             .count()
     }
 
-    fn ensure_soft(&mut self) -> &mut SharedRasterizer {
+    pub(crate) fn ensure_soft(&mut self) -> &mut SharedRasterizer {
         let width = self.surface_w;
         let height = self.surface_h;
         self.soft_fallback
@@ -201,7 +200,7 @@ impl NativeGpuCanvas2D {
         self.deferred_error = None;
     }
 
-    fn clear_soft(&mut self) {
+    pub(crate) fn clear_soft(&mut self) {
         if let Some(soft) = self.soft_fallback.as_mut() {
             soft.surface_mut().clear_all();
         }
@@ -214,7 +213,7 @@ impl NativeGpuCanvas2D {
         self.soft_has_content = true;
     }
 
-    fn take_deferred_error(&mut self) -> Option<Error> {
+    pub(crate) fn take_deferred_error(&mut self) -> Option<Error> {
         self.deferred_error.take()
     }
 
@@ -529,7 +528,7 @@ impl NativeGpuCanvas2D {
         }
     }
 
-    fn submit_native(&mut self, gpu_ctx: &mut dyn IGraphicsContext) -> Result<(), Error> {
+    pub(crate) fn submit_native(&mut self, gpu_ctx: &mut dyn IGraphicsContext) -> Result<(), Error> {
         let vw = self.surface_w as f32;
         let vh = self.surface_h as f32;
         let mut start = 0;
@@ -620,7 +619,7 @@ impl NativeGpuCanvas2D {
         Ok(())
     }
 
-    fn submit_soft(&mut self, gpu_ctx: &mut dyn IGraphicsContext) -> Result<(), Error> {
+    pub(crate) fn submit_soft(&mut self, gpu_ctx: &mut dyn IGraphicsContext) -> Result<(), Error> {
         if !self.soft_has_content {
             return Ok(());
         }
@@ -639,17 +638,14 @@ impl NativeGpuCanvas2D {
         let Some((pixels, tile)) = packed else {
             return Ok(());
         };
-        #[cfg(test)]
-        {
-            self.last_soft_upload_bytes = (tile.width as usize)
-                .saturating_mul(tile.height as usize)
-                .saturating_mul(std::mem::size_of::<u32>());
-        }
+        self.last_soft_upload_bytes = (tile.width as usize)
+            .saturating_mul(tile.height as usize)
+            .saturating_mul(std::mem::size_of::<u32>());
         gpu_ctx.blit_soft_fallback_tile(&pixels, tile)?;
         Ok(())
     }
 
-    fn commit_presented_frame(&mut self) {
+    pub(crate) fn commit_presented_frame(&mut self) {
         self.pending_native.clear();
         if self.soft_has_content {
             self.ensure_soft().surface_mut().clear_all();
@@ -662,7 +658,7 @@ impl NativeGpuCanvas2D {
 /// Computes the smallest alpha-visible source tile for one retained CPU
 /// segment. Transparent RGB is deliberately ignored: it cannot affect the
 /// alpha-blended target and must not force a texture upload.
-fn pack_visible_soft_fallback_tile(
+pub(crate) fn pack_visible_soft_fallback_tile(
     pixels: &[u32],
     width: i32,
     height: i32,
@@ -958,14 +954,14 @@ impl Canvas2D for NativeGpuCanvas2D {
 
 /// DrawSurface for an API-neutral `GpuNative × Swapchain` path.
 pub struct NativeGpuDrawSurface {
-    canvas: NativeGpuCanvas2D,
+    pub(crate) canvas: NativeGpuCanvas2D,
     native_caps: NativeRasterCaps,
-    width: i32,
-    height: i32,
+    pub(crate) width: i32,
+    pub(crate) height: i32,
     /// Full clear pending (ClearRenderTargetView).
-    needs_gpu_clear: bool,
+    pub(crate) needs_gpu_clear: bool,
     /// Partial clear rects (replace-blend quads).
-    pending_clear_rects: Vec<GpuSolidRect>,
+    pub(crate) pending_clear_rects: Vec<GpuSolidRect>,
 }
 
 impl DrawSurface for NativeGpuDrawSurface {
@@ -1025,28 +1021,28 @@ impl DrawSurface for NativeGpuDrawSurface {
 
 /// Capability-driven non-GL `RenderBackend` with deterministic soft fallback.
 pub struct NativeGpuBackend {
-    gpu_ctx: Box<dyn IGraphicsContext>,
-    width: i32,
-    height: i32,
-    surface: NativeGpuDrawSurface,
-    offscreens: Vec<Option<NativeGpuOffscreen>>,
-    free_offscreen_ids: Vec<u32>,
+    pub(crate) gpu_ctx: Box<dyn IGraphicsContext>,
+    pub(crate) width: i32,
+    pub(crate) height: i32,
+    pub(crate) surface: NativeGpuDrawSurface,
+    pub(crate) offscreens: Vec<Option<NativeGpuOffscreen>>,
+    pub(crate) free_offscreen_ids: Vec<u32>,
     next_offscreen_id: u32,
     /// Picture paint currently targeting this offscreen handle id.
-    active_offscreen: Option<u32>,
+    pub(crate) active_offscreen: Option<u32>,
     /// A draw-time operation without a `Result` return path (for example an
     /// immediate Picture blit) failed.  The failure is reported from the sole
     /// final present boundary, so callers keep the frame dirty instead of
     /// treating an incomplete command stream as committed.
     frame_failure: Option<Error>,
-    shutdown: bool,
+    pub(crate) shutdown: bool,
 }
 
-struct NativeGpuOffscreen {
+pub(crate) struct NativeGpuOffscreen {
     target: OffscreenTargetId,
-    canvas: NativeGpuCanvas2D,
-    width: i32,
-    height: i32,
+    pub(crate) canvas: NativeGpuCanvas2D,
+    pub(crate) width: i32,
+    pub(crate) height: i32,
 }
 
 /// Canvas coordinates are logical pixels. Native contexts report their
@@ -1753,6 +1749,3 @@ impl Drop for NativeGpuBackend {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/backend/native_gpu.rs"]
-mod tests;

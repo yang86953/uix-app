@@ -11,17 +11,17 @@ use crate::native::traits::present::{GpuSolidRect, OffscreenTargetId, SoftFallba
 use super::{NativeOpenGlRuntime, shaders};
 
 #[derive(Clone, Copy)]
-struct TargetState {
-    framebuffer: Option<glow::Framebuffer>,
-    logical_width: i32,
-    logical_height: i32,
-    drawable_width: i32,
-    drawable_height: i32,
-    dpr: f32,
+pub(crate) struct TargetState {
+    pub(crate) framebuffer: Option<glow::Framebuffer>,
+    pub(crate) logical_width: i32,
+    pub(crate) logical_height: i32,
+    pub(crate) drawable_width: i32,
+    pub(crate) drawable_height: i32,
+    pub(crate) dpr: f32,
 }
 
 impl TargetState {
-    fn swapchain(
+    pub(crate) fn swapchain(
         logical_width: i32,
         logical_height: i32,
         drawable_width: i32,
@@ -703,7 +703,7 @@ impl OpenGlRasterPipeline {
     }
 }
 
-fn logical_scissor_to_drawable(
+pub(crate) fn logical_scissor_to_drawable(
     target: TargetState,
     (x, y, width, height): (i32, i32, i32, i32),
 ) -> (i32, i32, i32, i32) {
@@ -844,7 +844,7 @@ unsafe fn compile_shader(
     Ok(shader)
 }
 
-fn validate_tile(
+pub(crate) fn validate_tile(
     pixels: &[u32],
     target_width: i32,
     target_height: i32,
@@ -875,6 +875,3 @@ fn gl_error(operation: &str, error: String) -> Error {
     )
 }
 
-#[cfg(test)]
-#[path = "../../../tests/native/graphics/opengl/raster.rs"]
-mod tests;

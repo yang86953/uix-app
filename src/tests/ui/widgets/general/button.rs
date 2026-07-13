@@ -1,6 +1,9 @@
-use super::*;
-use crate::native::traits::input::{KeyMod, MouseButton};
-use crate::ui::traits::WidgetAnimation;
+use crate::tests::common::*;
+use crate::impl_widget_component;
+use crate::ui::animation::{Animation, Easing};
+use crate::ui::style::{ apply_style, ColorValue, PaletteColor, StyleSet, StyleState };
+use crate::ui::{ SnapshotSource };
+use crate::ui::widgets::general::button::*;
 
 #[test]
 fn measure_clamps_button_size() {

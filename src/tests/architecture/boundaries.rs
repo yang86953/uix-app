@@ -1,5 +1,6 @@
-use std::fs;
+use crate::tests::common::*;
 use std::path::{Path, PathBuf};
+use std::fs;
 
 fn read_source(path: impl AsRef<Path>) -> String {
     fs::read_to_string(path)
@@ -563,10 +564,10 @@ fn data_domain_does_not_depend_on_upper_domains() {
         "crate::draw",
         "crate::ui",
         "crate::app",
-        "super::super::native",
-        "super::super::draw",
-        "super::super::ui",
-        "super::super::app",
+        "crate::crate::native",
+        "crate::crate::draw",
+        "crate::crate::ui",
+        "crate::crate::app",
     ];
     assert_domain_has_no_forbidden_dependencies("data", &forbidden);
 }
@@ -581,11 +582,11 @@ fn domain_dependencies_stay_layered() {
             "crate::ui",
             "crate::app",
             "crate::data",
-            "super::super::native",
-            "super::super::draw",
-            "super::super::ui",
-            "super::super::app",
-            "super::super::data",
+            "crate::crate::native",
+            "crate::crate::draw",
+            "crate::crate::ui",
+            "crate::crate::app",
+            "crate::crate::data",
         ],
     );
     assert_domain_has_no_forbidden_dependencies(
@@ -595,10 +596,10 @@ fn domain_dependencies_stay_layered() {
             "crate::ui",
             "crate::app",
             "crate::data",
-            "super::super::draw",
-            "super::super::ui",
-            "super::super::app",
-            "super::super::data",
+            "crate::crate::draw",
+            "crate::crate::ui",
+            "crate::crate::app",
+            "crate::crate::data",
         ],
     );
     assert_domain_has_no_forbidden_dependencies(
@@ -607,9 +608,9 @@ fn domain_dependencies_stay_layered() {
             "crate::ui",
             "crate::app",
             "crate::data",
-            "super::super::ui",
-            "super::super::app",
-            "super::super::data",
+            "crate::crate::ui",
+            "crate::crate::app",
+            "crate::crate::data",
         ],
     );
     assert_domain_has_no_forbidden_dependencies(
@@ -617,8 +618,8 @@ fn domain_dependencies_stay_layered() {
         &[
             "crate::app",
             "crate::data",
-            "super::super::app",
-            "super::super::data",
+            "crate::crate::app",
+            "crate::crate::data",
         ],
     );
 }
@@ -1251,17 +1252,30 @@ fn architecture_document_stays_in_the_qualified_docs_tree() {
 }
 
 #[test]
-fn production_modules_do_not_embed_inline_test_bodies() {
+fn production_modules_do_not_embed_or_mount_tests() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let mut violations = Vec::new();
+    let mut inline_body = Vec::new();
+    let mut path_mount = Vec::new();
+    let mut mod_tests = Vec::new();
+    let mut bare_test_attr = Vec::new();
 
     for path in rust_files_under(&src) {
         let rel = relative_src_path(&path);
-        if rel.starts_with("tests/") {
+        if rel.starts_with("tests/") || rel == "lib.rs" {
             continue;
         }
         let text = read_source(&path);
-        // Inline `mod … { … #[test] … }` (path-wired `mod tests;` stubs are allowed).
+
+        if text.contains("#[path") && text.contains("tests/") {
+            path_mount.push(rel.clone());
+        }
+        if text.contains("mod tests;") {
+            mod_tests.push(rel.clone());
+        }
+        if text.contains("#[test]") {
+            bare_test_attr.push(rel.clone());
+        }
+
         let mut search = text.as_str();
         let mut offset = 0usize;
         while let Some(idx) = search.find("mod ") {
@@ -1276,8 +1290,6 @@ fn production_modules_do_not_embed_inline_test_bodies() {
             let name = &rest[..name_end];
             let after_name = rest[name_end..].trim_start();
             if after_name.starts_with('{') {
-                // Find matching body roughly via brace depth ignoring strings is hard;
-                // use a bounded scan for #[test] before the next top-level-looking close.
                 let body_start = abs + after.find('{').expect("brace");
                 let mut depth = 0i32;
                 let mut i = body_start;
@@ -1297,7 +1309,7 @@ fn production_modules_do_not_embed_inline_test_bodies() {
                 }
                 let body = &text[body_start..=i.min(text.len().saturating_sub(1))];
                 if body.contains("#[test]") {
-                    violations.push(format!("{rel}::{name}"));
+                    inline_body.push(format!("{rel}::{name}"));
                 }
             }
             offset = abs + 4;
@@ -1306,7 +1318,19 @@ fn production_modules_do_not_embed_inline_test_bodies() {
     }
 
     assert!(
-        violations.is_empty(),
-        "inline test bodies must live under src/tests (use #[path] stubs only): {violations:?}"
+        inline_body.is_empty(),
+        "inline test bodies must live under src/tests: {inline_body:?}"
+    );
+    assert!(
+        path_mount.is_empty(),
+        "production modules must not #[path]-mount tests: {path_mount:?}"
+    );
+    assert!(
+        mod_tests.is_empty(),
+        "production modules must not declare mod tests: {mod_tests:?}"
+    );
+    assert!(
+        bare_test_attr.is_empty(),
+        "production modules must not contain #[test]: {bare_test_attr:?}"
     );
 }
