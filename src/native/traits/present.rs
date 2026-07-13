@@ -503,16 +503,9 @@ pub trait IGraphicsContext {
 
     /// Checked shutdown boundary for thread-affine native resources.
     ///
-    /// New lifecycle code must use this method.  The legacy [`Self::shutdown`]
-    /// hook remains temporarily so platform implementations can migrate
-    /// independently; its default preserves the old behavior but cannot
-    /// surface a native teardown error.
-    fn try_shutdown(&mut self) -> Result<(), Error> {
-        self.shutdown();
-        Ok(())
-    }
-
-    fn shutdown(&mut self);
+    /// Callers and Drop paths must use this method. Teardown failures stay
+    /// typed so recovery can retain the previous owner instead of logging only.
+    fn try_shutdown(&mut self) -> Result<(), Error>;
 
     /// Reads native pixels through the checked, thread-affine lifecycle
     /// boundary. Readback failure is never represented as an empty pixel
@@ -971,7 +964,9 @@ mod tests {
             Err(Error::new(Errc::PlatformError, "swap failed"))
         }
 
-        fn shutdown(&mut self) {}
+        fn try_shutdown(&mut self) -> Result<()> {
+            Ok(())
+        }
 
         fn read_pixels(
             &mut self,

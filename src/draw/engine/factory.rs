@@ -95,7 +95,9 @@ mod tests {
         fn swap_buffers(&mut self, _damage: PresentDamage) -> crate::core::Result<()> {
             Ok(())
         }
-        fn shutdown(&mut self) {}
+        fn try_shutdown(&mut self) -> crate::core::Result<()> {
+            Ok(())
+        }
         fn read_pixels(
             &mut self,
             _x: i32,

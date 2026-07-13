@@ -242,7 +242,9 @@ mod tests {
             Ok(())
         }
 
-        fn shutdown(&mut self) {}
+        fn try_shutdown(&mut self) -> crate::core::Result<()> {
+            Ok(())
+        }
 
         fn read_pixels(
             &mut self,

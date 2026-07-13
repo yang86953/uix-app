@@ -39,6 +39,11 @@ impl MetalPixelUploadContext {
             initialized: false,
         })
     }
+
+    fn shutdown_result(&mut self) -> Result<()> {
+        self.initialized = false;
+        Ok(())
+    }
 }
 
 impl IGraphicsContext for MetalPixelUploadContext {
@@ -70,8 +75,8 @@ impl IGraphicsContext for MetalPixelUploadContext {
         ))
     }
 
-    fn shutdown(&mut self) {
-        self.initialized = false;
+    fn try_shutdown(&mut self) -> Result<()> {
+        self.shutdown_result()
     }
 
     fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Result<Vec<u32>> {

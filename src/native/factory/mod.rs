@@ -221,7 +221,7 @@ mod tests {
                 ..NativeRasterCaps::default()
             }
         );
-        context.shutdown();
+        let _ = context.try_shutdown();
         drop(context);
         window.close().expect("close factory test window");
     }

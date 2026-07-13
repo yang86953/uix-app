@@ -293,8 +293,9 @@ mod tests {
         fn swap_buffers(&mut self, _: crate::core::PresentDamage) -> crate::core::Result<()> {
             Ok(())
         }
-        fn shutdown(&mut self) {
+        fn try_shutdown(&mut self) -> crate::core::Result<()> {
             IDENTITY_MISMATCH_SHUTDOWNS.fetch_add(1, Ordering::SeqCst);
+            Ok(())
         }
         fn read_pixels(&mut self, _: i32, _: i32, _: i32, _: i32) -> crate::core::Result<Vec<u32>> {
             Ok(Vec::new())

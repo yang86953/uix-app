@@ -293,6 +293,12 @@ impl FrameRecordingCanvas {
         if self.deferred_error.is_some() {
             return;
         }
+        // Transparent scratch + source-over upload cannot preserve Additive
+        // against prior commands; only Native FillRectAdditive is equivalent.
+        if self.blend_mode == BlendMode::Additive {
+            self.unsupported_state("destination-dependent Additive blend via CPU segment");
+            return;
+        }
         draw(&mut self.scratch);
         self.scratch_dirty = true;
         if let Err(error) = self.flush_scratch() {
@@ -351,6 +357,27 @@ impl FrameRecordingCanvas {
             && rect.y + rect.h <= self.height as f32
     }
 
+    /// Additive fills are destination-dependent, so they must land as Native
+    /// ops. Geometry constraints match the SrcOver native path, but alpha may
+    /// be any value (Additive is meaningful with translucent sources).
+    fn can_emit_native_additive_rect(&self, rect: Rect, radius: Option<Radius>) -> bool {
+        self.blend_mode == BlendMode::Additive
+            && radius.is_none()
+            && self.scratch.offset() == (0.0, 0.0)
+            && self.scratch.opacity() == 1.0
+            && self.scratch.current_clip() == self.full_rect()
+            && rect.x.fract() == 0.0
+            && rect.y.fract() == 0.0
+            && rect.w.fract() == 0.0
+            && rect.h.fract() == 0.0
+            && rect.x >= 0.0
+            && rect.y >= 0.0
+            && rect.w > 0.0
+            && rect.h > 0.0
+            && rect.x + rect.w <= self.width as f32
+            && rect.y + rect.h <= self.height as f32
+    }
+
     fn can_emit_direct_picture(&self) -> bool {
         self.blend_mode != BlendMode::Additive
             && self.scratch.offset() == (0.0, 0.0)
@@ -384,6 +411,23 @@ impl Canvas2D for FrameRecordingCanvas {
     }
 
     fn fill_rect(&mut self, rect: Rect, color: Color, radius: Option<Radius>) {
+        if self.can_emit_native_additive_rect(rect, radius) {
+            if let Err(error) = self.flush_scratch().and_then(|()| {
+                self.encoder_mut()?.native(FrameRasterOp::FillRectAdditive {
+                    rect: FrameRect::new(
+                        rect.x as i32,
+                        rect.y as i32,
+                        rect.w as i32,
+                        rect.h as i32,
+                    ),
+                    color,
+                });
+                Ok(())
+            }) {
+                self.remember_error(error);
+            }
+            return;
+        }
         if self.can_emit_native_rect(rect, color, radius) {
             if let Err(error) = self.flush_scratch().and_then(|()| {
                 self.encoder_mut()?.native(FrameRasterOp::FillRect {
@@ -535,9 +579,6 @@ impl Canvas2D for FrameRecordingCanvas {
     fn set_blend_mode(&mut self, mode: BlendMode) {
         self.scratch.set_blend_mode(mode);
         self.blend_mode = mode;
-        if mode == BlendMode::Additive {
-            self.unsupported_state("destination-dependent Additive blend");
-        }
     }
 
     fn push_clip_path(&mut self, _path: &Path) {
@@ -557,8 +598,29 @@ impl Canvas2D for FrameRecordingCanvas {
         self.scratch.current_clip()
     }
 
-    fn scroll_region(&mut self, _viewport: Rect, _dx: f32, _dy: f32) {
-        self.unsupported_state("scroll-region copy");
+    fn scroll_region(&mut self, viewport: Rect, dx: f32, dy: f32) {
+        if self.deferred_error.is_some() {
+            return;
+        }
+        let int_dx = dx.round() as i32;
+        let int_dy = dy.round() as i32;
+        if int_dx == 0 && int_dy == 0 {
+            return;
+        }
+        let Ok(frame_viewport) = rect_to_frame(viewport) else {
+            self.unsupported_state("scroll-region with non-integral viewport");
+            return;
+        };
+        if let Err(error) = self.flush_scratch().and_then(|()| {
+            self.encoder_mut()?.native(FrameRasterOp::ScrollCopy {
+                viewport: frame_viewport,
+                dx: int_dx,
+                dy: int_dy,
+            });
+            Ok(())
+        }) {
+            self.remember_error(error);
+        }
     }
 }
 
@@ -740,7 +802,7 @@ mod tests {
     }
 
     #[test]
-    fn additive_recording_fails_instead_of_approximating_destination_blend() {
+    fn additive_axis_aligned_fill_records_native_additive_op() {
         let mut engine = FrameRecordingEngine::new();
         engine.initialize(2, 2).expect("initialize recorder");
         engine.begin_recording().expect("begin recording");
@@ -749,9 +811,63 @@ mod tests {
             .canvas_2d()
             .fill_rect(Rect::new(0.0, 0.0, 1.0, 1.0), Color::red(), None);
 
+        let encoder = engine
+            .finish_recording()
+            .expect("Additive axis-aligned fill must record as Native IR");
+        assert!(encoder.commands().iter().any(|command| {
+            matches!(
+                command,
+                crate::draw::pipeline::FrameCommand::Native {
+                    operation: FrameRasterOp::FillRectAdditive { .. }
+                }
+            )
+        }));
+    }
+
+    #[test]
+    fn additive_rounded_fill_still_fails_instead_of_cpu_segment_approximation() {
+        let mut engine = FrameRecordingEngine::new();
+        engine.initialize(2, 2).expect("initialize recorder");
+        engine.begin_recording().expect("begin recording");
+        engine.canvas_2d().set_blend_mode(BlendMode::Additive);
+        engine.canvas_2d().fill_rect(
+            Rect::new(0.0, 0.0, 1.0, 1.0),
+            Color::red(),
+            Some(Radius::uniform(1.0)),
+        );
+
         let error = engine
             .finish_recording()
-            .expect_err("Additive must not become a source-over CPU segment");
+            .expect_err("Additive rounded fill must not become a source-over CPU segment");
         assert_eq!(error.code(), Errc::NotImplemented);
+    }
+
+    #[test]
+    fn scroll_region_records_native_scroll_copy() {
+        let mut engine = FrameRecordingEngine::new();
+        engine.initialize(8, 6).expect("initialize recorder");
+        engine.begin_recording().expect("begin recording");
+        engine
+            .canvas_2d()
+            .fill_rect(Rect::new(0.0, 0.0, 4.0, 4.0), Color::red(), None);
+        engine
+            .canvas_2d()
+            .scroll_region(Rect::new(0.0, 0.0, 8.0, 6.0), 0.0, 2.0);
+
+        let encoder = engine
+            .finish_recording()
+            .expect("integral scroll must record as Native IR");
+        assert!(encoder.commands().iter().any(|command| {
+            matches!(
+                command,
+                crate::draw::pipeline::FrameCommand::Native {
+                    operation: FrameRasterOp::ScrollCopy {
+                        dx: 0,
+                        dy: 2,
+                        ..
+                    }
+                }
+            )
+        }));
     }
 }

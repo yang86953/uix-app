@@ -82,9 +82,23 @@ impl FrameImage {
 
 /// API-neutral raster work.  More operations can be added without changing
 /// frame ordering or the presentation contract.
+///
+/// Destination-dependent ops ([`Self::FillRectAdditive`], [`Self::ScrollCopy`])
+/// must run against the accumulating target (Native commands or the reference
+/// executor). Recording them into a transparent CPU segment and source-over
+/// compositing is not equivalent and must not be used as a substitute.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FrameRasterOp {
     FillRect { rect: FrameRect, color: Color },
+    /// Channel-wise saturating add into the destination (CPU Additive blend).
+    FillRectAdditive { rect: FrameRect, color: Color },
+    /// Copy pixels from `viewport` translated by `(dx, dy)` into `viewport`
+    /// (same semantics as [`Canvas2D::scroll_region`] with rounded deltas).
+    ScrollCopy {
+        viewport: FrameRect,
+        dx: i32,
+        dy: i32,
+    },
 }
 
 /// A single ordered frame command.
@@ -382,7 +396,25 @@ fn apply_raster_op_pixels(width: i32, height: i32, pixels: &mut [u32], operation
         FrameRasterOp::FillRect { rect, color } => {
             fill_rect_pixels(width, height, pixels, *rect, *color)
         }
+        FrameRasterOp::FillRectAdditive { rect, color } => {
+            fill_rect_additive_pixels(width, height, pixels, *rect, *color)
+        }
+        FrameRasterOp::ScrollCopy { viewport, dx, dy } => {
+            scroll_copy_pixels(width, height, pixels, *viewport, *dx, *dy)
+        }
     }
+}
+
+/// Applies one destination-dependent (or ordinary) raster op onto an existing
+/// premultiplied pixel buffer. Used by CPU execution and by NativeGpu when it
+/// lowers Additive/Scroll through readback → reference op → upload.
+pub(crate) fn apply_frame_raster_op(
+    width: i32,
+    height: i32,
+    pixels: &mut [u32],
+    operation: &FrameRasterOp,
+) {
+    apply_raster_op_pixels(width, height, pixels, operation);
 }
 
 fn fill_rect_pixels(width: i32, height: i32, pixels: &mut [u32], rect: FrameRect, color: Color) {
@@ -400,6 +432,81 @@ fn fill_rect_pixels(width: i32, height: i32, pixels: &mut [u32], rect: FrameRect
         for x in x0..x1 {
             let index = y as usize * width as usize + x as usize;
             pixels[index] = blend_pixel_src_over(color.premultiplied(), pixels[index]);
+        }
+    }
+}
+
+fn fill_rect_additive_pixels(
+    width: i32,
+    height: i32,
+    pixels: &mut [u32],
+    rect: FrameRect,
+    color: Color,
+) {
+    if rect.is_empty() {
+        return;
+    }
+    let x0 = rect.x.max(0);
+    let y0 = rect.y.max(0);
+    let x1 = rect.x.saturating_add(rect.width).min(width);
+    let y1 = rect.y.saturating_add(rect.height).min(height);
+    if x0 >= x1 || y0 >= y1 {
+        return;
+    }
+    let source = color.premultiplied();
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let index = y as usize * width as usize + x as usize;
+            pixels[index] = blend_pixel_additive(source, pixels[index]);
+        }
+    }
+}
+
+fn scroll_copy_pixels(
+    width: i32,
+    height: i32,
+    pixels: &mut [u32],
+    viewport: FrameRect,
+    dx: i32,
+    dy: i32,
+) {
+    if viewport.is_empty() || (dx == 0 && dy == 0) {
+        return;
+    }
+    // Match SharedRasterizer::scroll_region: source is viewport shifted by
+    // (dx, dy), destination is the viewport origin.
+    let src = FrameRect::new(
+        viewport.x.saturating_add(dx),
+        viewport.y.saturating_add(dy),
+        viewport.width,
+        viewport.height,
+    );
+    let src_x = src.x;
+    let src_y = src.y;
+    let copy_w = src.width;
+    let copy_h = src.height;
+    let dst_x = viewport.x;
+    let dst_y = viewport.y;
+
+    let clip_x0 = src_x.max(0).max(src_x - dst_x);
+    let clip_y0 = src_y.max(0).max(src_y - dst_y);
+    let clip_x1 = (src_x + copy_w).min(width).min(width + src_x - dst_x);
+    let clip_y1 = (src_y + copy_h).min(height).min(height + src_y - dst_y);
+    if clip_x0 >= clip_x1 || clip_y0 >= clip_y1 {
+        return;
+    }
+    let row_len = (clip_x1 - clip_x0) as usize;
+    if dst_y <= src_y {
+        for row in clip_y0..clip_y1 {
+            let src_idx = (row * width + clip_x0) as usize;
+            let dst_idx = ((row + dst_y - src_y) * width + (clip_x0 + dst_x - src_x)) as usize;
+            pixels.copy_within(src_idx..src_idx + row_len, dst_idx);
+        }
+    } else {
+        for row in (clip_y0..clip_y1).rev() {
+            let src_idx = (row * width + clip_x0) as usize;
+            let dst_idx = ((row + dst_y - src_y) * width + (clip_x0 + dst_x - src_x)) as usize;
+            pixels.copy_within(src_idx..src_idx + row_len, dst_idx);
         }
     }
 }
@@ -455,6 +562,15 @@ fn blend_pixel_src_over(source: u32, destination: u32) -> u32 {
         (destination >> 8) & 0xff,
         destination & 0xff,
     )
+}
+
+fn blend_pixel_additive(source: u32, destination: u32) -> u32 {
+    let source_a = (source >> 24) & 0xff;
+    if source_a == 0 {
+        return destination;
+    }
+    let add = |shift: u32| (((source >> shift) & 0xff) + ((destination >> shift) & 0xff)).min(0xff);
+    (add(24) << 24) | (add(16) << 16) | (add(8) << 8) | add(0)
 }
 
 #[cfg(test)]
@@ -606,6 +722,59 @@ mod tests {
         cpu.surface_mut().clear_all();
         cpu.fill_rect(Rect::new(-1.0, 0.0, 3.0, 3.0), first, None);
         cpu.fill_rect(Rect::new(1.0, 1.0, 4.0, 3.0), second, None);
+
+        assert_eq!(encoder.render_reference().pixels(), cpu.surface().pixels());
+    }
+
+    #[test]
+    fn additive_fill_matches_cpu_rasterizer_destination_blend() {
+        use crate::core::Rect;
+        use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+        use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+        use crate::draw::primitives::types::BlendMode;
+        use crate::draw::traits::Canvas2D;
+
+        let base = Color::from_rgba(40, 80, 120, 200);
+        let add = Color::from_rgba(30, 40, 50, 100);
+        let mut encoder = FrameEncoder::new(3, 2).unwrap();
+        encoder.clear(base);
+        encoder.native(FrameRasterOp::FillRectAdditive {
+            rect: FrameRect::new(1, 0, 1, 2),
+            color: add,
+        });
+
+        let mut cpu = SharedRasterizer::new(PixelSurface::new(3, 2));
+        cpu.surface_mut().set_clear_color(base);
+        cpu.surface_mut().clear_all();
+        cpu.set_blend_mode(BlendMode::Additive);
+        cpu.fill_rect(Rect::new(1.0, 0.0, 1.0, 2.0), add, None);
+
+        assert_eq!(encoder.render_reference().pixels(), cpu.surface().pixels());
+    }
+
+    #[test]
+    fn scroll_copy_matches_cpu_rasterizer_scroll_region() {
+        use crate::core::Rect;
+        use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+        use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+        use crate::draw::traits::Canvas2D;
+
+        let mut encoder = FrameEncoder::new(4, 3).unwrap();
+        encoder.clear(Color::black());
+        encoder.native(rect(0, 0, 2, 2, Color::red()));
+        encoder.native(rect(2, 1, 2, 2, Color::blue()));
+        encoder.native(FrameRasterOp::ScrollCopy {
+            viewport: FrameRect::new(0, 0, 4, 3),
+            dx: 0,
+            dy: 1,
+        });
+
+        let mut cpu = SharedRasterizer::new(PixelSurface::new(4, 3));
+        cpu.surface_mut().set_clear_color(Color::black());
+        cpu.surface_mut().clear_all();
+        cpu.fill_rect(Rect::new(0.0, 0.0, 2.0, 2.0), Color::red(), None);
+        cpu.fill_rect(Rect::new(2.0, 1.0, 2.0, 2.0), Color::blue(), None);
+        cpu.scroll_region(Rect::new(0.0, 0.0, 4.0, 3.0), 0.0, 1.0);
 
         assert_eq!(encoder.render_reference().pixels(), cpu.surface().pixels());
     }

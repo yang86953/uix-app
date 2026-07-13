@@ -42,8 +42,9 @@ impl IGraphicsContext for CountingGraphicsContext {
         Ok(())
     }
 
-    fn shutdown(&mut self) {
+    fn try_shutdown(&mut self) -> crate::core::Result<()> {
         self.shutdowns.fetch_add(1, Ordering::SeqCst);
+        Ok(())
     }
 
     fn read_pixels(
@@ -101,11 +102,6 @@ impl IGraphicsContext for FailingShutdownGraphicsContext {
             crate::core::Errc::PlatformError,
             self.message,
         ))
-    }
-
-    fn shutdown(&mut self) {
-        // RenderSession::Drop is a legacy no-return path. The regression
-        // asserts that the fallible replacement path itself never uses it.
     }
 
     fn read_pixels(

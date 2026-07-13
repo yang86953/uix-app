@@ -94,8 +94,9 @@ impl IGraphicsContext for FakeGraphicsContext {
         Ok(())
     }
 
-    fn shutdown(&mut self) {
+    fn try_shutdown(&mut self) -> crate::core::Result<()> {
         self.state.shutdown_called = true;
+        Ok(())
     }
 
     fn read_pixels(

@@ -755,6 +755,70 @@ fn vulkan_checked_shutdown_cannot_fall_back_to_the_void_hook() {
 }
 
 #[test]
+fn d3d11_checked_shutdown_cannot_fall_back_to_the_void_hook() {
+    let source = read_source(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/native/graphics/d3d11/platform/context.rs"),
+    );
+
+    assert!(
+        source.contains(
+            "fn try_shutdown(&mut self) -> Result<()> {\n        self.shutdown_result()\n    }"
+        ),
+        "D3D11 checked shutdown must return shutdown_result instead of the legacy void hook"
+    );
+}
+
+#[test]
+fn metal_checked_shutdown_cannot_fall_back_to_the_void_hook() {
+    let source = read_source(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/native/graphics/metal/platform/context.rs"),
+    );
+
+    assert!(
+        source.contains(
+            "fn try_shutdown(&mut self) -> Result<()> {\n        self.shutdown_result()\n    }"
+        ),
+        "Metal checked shutdown must return shutdown_result instead of the legacy void hook"
+    );
+}
+
+#[test]
+fn igraphics_context_has_no_legacy_void_shutdown() {
+    let source = read_source(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/native/traits/present.rs"),
+    );
+
+    assert!(
+        source.contains("fn try_shutdown(&mut self) -> Result<(), Error>;"),
+        "IGraphicsContext must require checked try_shutdown"
+    );
+    assert!(
+        !source.contains("fn shutdown(&mut self);"),
+        "IGraphicsContext must not keep a legacy void shutdown hook"
+    );
+    assert!(
+        !source.contains("fn try_shutdown(&mut self) -> Result<(), Error> {\n        self.shutdown();"),
+        "try_shutdown must not default to a void shutdown adapter"
+    );
+}
+
+#[test]
+fn thread_bound_drop_guards_foreign_thread_teardown() {
+    let source = read_source(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/native/factory/thread_bound.rs"),
+    );
+
+    assert!(
+        source.contains("impl Drop for ThreadBoundGraphicsContext"),
+        "thread-bound contexts must own Drop so foreign-thread teardown stays typed"
+    );
+    assert!(
+        source.contains("std::mem::forget(inner)"),
+        "wrong-thread Drop must leak the native context instead of calling its Drop"
+    );
+}
+
+#[test]
 fn vulkan_readback_cannot_report_an_empty_success() {
     let source = fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR"))

@@ -1037,15 +1037,6 @@ impl IGraphicsContext for D3d12Context {
         self.shutdown_result()
     }
 
-    fn shutdown(&mut self) {
-        if let Err(error) = self.shutdown_result() {
-            crate::core::log::error_fn(format!(
-                "D3d12Context: shutdown failed: {}",
-                error.short_what()
-            ));
-        }
-    }
-
     fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
         self.read_pixels_result(x, y, width, height)
     }
@@ -1393,8 +1384,8 @@ mod tests {
                 })
                 .expect("present across allocator ring");
         }
-        context.shutdown();
-        context.shutdown();
+        context.try_shutdown().expect("shutdown");
+        context.try_shutdown().expect("shutdown remains idempotent");
         drop(context);
 
         let mut warp = D3d12Context::new_with_driver(surface, 65, 37, D3d12DriverKind::Warp)

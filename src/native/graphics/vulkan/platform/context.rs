@@ -651,15 +651,6 @@ impl IGraphicsContext for VulkanContext {
         self.shutdown_result()
     }
 
-    fn shutdown(&mut self) {
-        if let Err(error) = self.shutdown_result() {
-            crate::core::log::error_fn(format!(
-                "VulkanContext: shutdown failed: {}",
-                error.short_what()
-            ));
-        }
-    }
-
     fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Result<Vec<u32>> {
         Err(Error::new(
             Errc::NotImplemented,
@@ -695,7 +686,7 @@ impl IGraphicsContext for VulkanContext {
 
 impl Drop for VulkanContext {
     fn drop(&mut self) {
-        self.shutdown();
+        let _ = self.try_shutdown();
     }
 }
 

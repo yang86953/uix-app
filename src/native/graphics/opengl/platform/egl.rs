@@ -414,15 +414,6 @@ impl IGraphicsContext for EglContext {
         self.shutdown_result()
     }
 
-    fn shutdown(&mut self) {
-        if let Err(error) = self.shutdown_result() {
-            crate::core::log::error_fn(format!(
-                "EglContext: shutdown failed: {}",
-                error.short_what()
-            ));
-        }
-    }
-
     fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>, Error> {
         self.make_current()?;
         self.pipeline.read_pixels(x, y, width, height)
@@ -516,7 +507,7 @@ impl IGraphicsContext for EglContext {
 
 impl Drop for EglContext {
     fn drop(&mut self) {
-        self.shutdown();
+        let _ = self.try_shutdown();
     }
 }
 
