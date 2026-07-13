@@ -13,11 +13,9 @@ use std::ptr;
 use crate::native::graphics::opengl::raster::OpenGlRasterPipeline;
 use crate::native::traits::present::{
     GpuSolidRect, IGraphicsContext, NativeRasterCaps, OffscreenTargetId, PresentDamage,
-    SoftFallbackTile,
+    PresentCoherency, SoftFallbackTile,
 };
 use crate::native::{Errc, Error};
-
-use super::EGL_PARTIAL_PRESENT;
 
 use crate::native::graphics::platform::linux::WaylandSurfaceHandle;
 // ════════════════════════════════════════════════════════════════════════════
@@ -321,7 +319,7 @@ impl IGraphicsContext for EglContext {
     fn caps(&self) -> crate::native::traits::present::GraphicsContextCaps {
         crate::native::traits::present::GraphicsContextCaps::gpu_native_swapchain(
             crate::native::traits::present::GraphicsBackend::OpenGlEs,
-            EGL_PARTIAL_PRESENT,
+            PresentCoherency::FullOnly,
             1.0,
         )
     }

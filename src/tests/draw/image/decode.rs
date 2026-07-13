@@ -1,5 +1,3 @@
-/// 1×1 红色 PNG（标准测试图）。
-use crate::tests::common::*;
 use crate::draw::image::decode::*;
 
 const RED_PNG: &[u8] = &[

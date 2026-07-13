@@ -1,14 +1,10 @@
-use crate::tests::common::*;
-use crate::draw::compositor::{LayerTree, RenderObjectTree, ScenePaint};
-use crate::draw::debug::DebugRenderService;
-use crate::draw::font::text::TextRenderService;
-use crate::draw::pipeline::{
-    EncodedFrameExecution, InvalidationSource, RenderMetrics, frame_recording::FrameRecordingEngine,
-};
-use crate::draw::traits::{GraphicsEngine, UpdateStrategy};
-use crate::draw::pipeline::render_frame::*;
+use crate::draw::compositor::ScenePaint;
 use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
-use crate::draw::traits::{ Canvas2D, GraphicsCapabilities };
+use crate::draw::pipeline::render_frame::*;
+use crate::draw::pipeline::{InvalidationSource, RenderMetrics};
+use crate::draw::traits::{Canvas2D, GraphicsCapabilities};
+use crate::draw::traits::{GraphicsEngine, UpdateStrategy};
+use crate::tests::common::*;
 
 struct RecordingEngine {
     canvas: NoopCanvas2D,
@@ -1684,11 +1680,7 @@ fn rendered_frame_with_scroll_move_adds_scroll_frame_to_partial_damage() {
             rendered_first: true,
             dirty_region: &region,
             tree_version: 0,
-            scroll_move: Some(vec![(
-                Rect::new(30.0, 40.0, 50.0, 60.0),
-                0.0,
-                -12.0,
-            )]),
+            scroll_move: Some(vec![(Rect::new(30.0, 40.0, 50.0, 60.0), 0.0, -12.0)]),
             theme,
             font: FontHandle::default(),
             font_service: &fs,
@@ -1813,11 +1805,7 @@ fn first_frame_with_scroll_move_still_uses_full_damage() {
             rendered_first: false,
             dirty_region: &region,
             tree_version: 0,
-            scroll_move: Some(vec![(
-                Rect::new(10.0, 12.0, 30.0, 40.0),
-                0.0,
-                -8.0,
-            )]),
+            scroll_move: Some(vec![(Rect::new(10.0, 12.0, 30.0, 40.0), 0.0, -8.0)]),
             theme,
             font: FontHandle::default(),
             font_service: &fs,
@@ -1953,7 +1941,9 @@ fn partial_dirty_uses_dirty_rects_strategy_and_padded_damage() {
     }
     assert_eq!(
         engine.end_damages.last(),
-        Some(&DamageRegion::partial(vec![Rect::new(9.0, 11.0, 10.0, 8.0)]))
+        Some(&DamageRegion::partial(vec![Rect::new(
+            9.0, 11.0, 10.0, 8.0
+        )]))
     );
     assert_eq!(
         out.outcome,
@@ -2043,14 +2033,22 @@ fn dirty_frame_paint_is_faster_than_full_frame_on_dense_scene() {
         fn hit_test(&self, _: Point) -> Option<crate::draw::pipeline::NodeId> {
             None
         }
-        fn parent(&self, id: crate::draw::pipeline::NodeId) -> Option<crate::draw::pipeline::NodeId> {
+        fn parent(
+            &self,
+            id: crate::draw::pipeline::NodeId,
+        ) -> Option<crate::draw::pipeline::NodeId> {
             if id.slot() == 1 {
                 None
             } else {
                 Some(crate::draw::pipeline::NodeId::new(1))
             }
         }
-        fn paint(&self, id: crate::draw::pipeline::NodeId, frame: Rect, ctx: &mut PaintContext<'_>) {
+        fn paint(
+            &self,
+            id: crate::draw::pipeline::NodeId,
+            frame: Rect,
+            ctx: &mut PaintContext<'_>,
+        ) {
             if id.slot() == 1 {
                 return;
             }
@@ -2156,7 +2154,10 @@ fn dirty_frame_paint_is_faster_than_full_frame_on_dense_scene() {
         dirty_ms += t0.elapsed().as_millis();
         match &out.outcome {
             RenderOutcome::PresentPending(d) | RenderOutcome::Present(d) => {
-                assert!(!d.full, "dirty frame must not expand to full present damage");
+                assert!(
+                    !d.full,
+                    "dirty frame must not expand to full present damage"
+                );
             }
             other => panic!("expected present, got {other:?}"),
         }
@@ -2178,8 +2179,8 @@ fn dirty_frame_paint_is_faster_than_full_frame_on_dense_scene() {
 /// damage AABB，父 FillRect 会写满自身 frame，兄弟像素被擦掉且不再绘制。
 #[test]
 fn dirty_frame_parent_bg_must_not_wipe_undamaged_sibling() {
-    use crate::draw::SoftwareEngine;
     use crate::draw::painting::PaintContext;
+    use crate::draw::SoftwareEngine;
     use std::cell::Cell;
 
     struct SiblingScene {
@@ -2250,14 +2251,22 @@ fn dirty_frame_parent_bg_must_not_wipe_undamaged_sibling() {
         fn hit_test(&self, _: Point) -> Option<crate::draw::pipeline::NodeId> {
             None
         }
-        fn parent(&self, id: crate::draw::pipeline::NodeId) -> Option<crate::draw::pipeline::NodeId> {
+        fn parent(
+            &self,
+            id: crate::draw::pipeline::NodeId,
+        ) -> Option<crate::draw::pipeline::NodeId> {
             if id.slot() == 1 {
                 None
             } else {
                 Some(crate::draw::pipeline::NodeId::new(1))
             }
         }
-        fn paint(&self, id: crate::draw::pipeline::NodeId, frame: Rect, ctx: &mut PaintContext<'_>) {
+        fn paint(
+            &self,
+            id: crate::draw::pipeline::NodeId,
+            frame: Rect,
+            ctx: &mut PaintContext<'_>,
+        ) {
             match id.slot() {
                 // 父背景：灰。若 dirty 帧未裁剪，会盖住右子。
                 1 => ctx.fill_rect(frame, Color::from_rgba(200, 200, 200, 255), None),
@@ -2469,7 +2478,7 @@ fn scroll_move_shifts_viewport_content_and_repaints_exposed_strip() {
     }
 
     let tokens = MockTokens;
-    let theme = ThemeSnapshot::new(&tokens);
+    let _theme = ThemeSnapshot::new(&tokens);
     let fs = FontService::new();
     let img = ImageService::new();
     let mut engine = SoftwareEngine::new();
@@ -2530,11 +2539,7 @@ fn scroll_move_shifts_viewport_content_and_repaints_exposed_strip() {
             rendered_first: true,
             dirty_region: &dirty,
             tree_version: 1,
-            scroll_move: Some(vec![(
-                Rect::new(0.0, 0.0, 100.0, 100.0),
-                0.0,
-                50.0,
-            )]),
+            scroll_move: Some(vec![(Rect::new(0.0, 0.0, 100.0, 100.0), 0.0, 50.0)]),
             theme: ThemeSnapshot::new(&tokens),
             font: FontHandle::default(),
             font_service: &fs,
@@ -2588,11 +2593,7 @@ fn scroll_move_expands_dirty_strategy_to_include_viewport() {
             rendered_first: true,
             dirty_region: &dirty,
             tree_version: 0,
-            scroll_move: Some(vec![(
-                Rect::new(0.0, 0.0, 100.0, 100.0),
-                0.0,
-                40.0,
-            )]),
+            scroll_move: Some(vec![(Rect::new(0.0, 0.0, 100.0, 100.0), 0.0, 40.0)]),
             theme,
             font: FontHandle::default(),
             font_service: &fs,
@@ -2611,9 +2612,7 @@ fn scroll_move_expands_dirty_strategy_to_include_viewport() {
         UpdateStrategy::DirtyRects(rs) => rs.clone(),
         UpdateStrategy::FullRedraw => panic!("partial scroll must stay DirtyRects, got FullRedraw"),
     };
-    let bounds = rects
-        .iter()
-        .fold(Rect::zero(), |acc, r| acc.union(r));
+    let bounds = rects.iter().fold(Rect::zero(), |acc, r| acc.union(r));
     // 视口 (0,0,100,100) 四角须落在并入后的 bounds 内
     let viewport = Rect::new(0.0, 0.0, 100.0, 100.0);
     for corner in [
@@ -2651,11 +2650,7 @@ fn scroll_move_does_not_record_scroll_copy() {
             rendered_first: true,
             dirty_region: &dirty,
             tree_version: 0,
-            scroll_move: Some(vec![(
-                Rect::new(0.0, 0.0, 100.0, 100.0),
-                0.0,
-                40.0,
-            )]),
+            scroll_move: Some(vec![(Rect::new(0.0, 0.0, 100.0, 100.0), 0.0, 40.0)]),
             theme,
             font: FontHandle::default(),
             font_service: &fs,

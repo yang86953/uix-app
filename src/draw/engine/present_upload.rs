@@ -3,20 +3,23 @@
 //! This engine keeps the existing CPU Canvas2D raster path, then uploads the
 //! frame pixels to a non-GL swapchain at present time.
 
-use crate::core::{Error, Rect};
-use crate::draw::ImageHandle;
+use crate::core::{Error, PresentDamageTracker, Rect};
 use crate::draw::backend::{BackendKind, CpuBackend, DamageRegion};
 use crate::draw::engine::{GraphicsFailure, RenderOutcome};
 use crate::draw::pipeline::RenderSession;
 use crate::draw::pipeline::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::primitives::color::Color;
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
-use crate::native::traits::present::{IGraphicsContext, PresentDamage, PresentFrame};
+use crate::draw::ImageHandle;
+use crate::native::traits::present::{
+    IGraphicsContext, PresentDamage, PresentFrame, PresentTestResult,
+};
 
 pub struct PresentUploadEngine {
     pub(crate) session: RenderSession,
     gpu_ctx: Box<dyn IGraphicsContext>,
     pub clear_color: Color,
+    present_damage_tracker: PresentDamageTracker,
     shutdown: bool,
 }
 
@@ -34,6 +37,7 @@ impl PresentUploadEngine {
             session,
             gpu_ctx,
             clear_color: Color::from_rgba(0, 0, 0, 0),
+            present_damage_tracker: PresentDamageTracker::new(),
             shutdown: false,
         })
     }
@@ -102,11 +106,18 @@ impl GraphicsEngine for PresentUploadEngine {
         if let Some(cpu) = self.session.cpu_backend() {
             let width = cpu.width();
             let height = cpu.height();
-            let damage = if self.gpu_ctx.caps().partial_present {
-                present_damage.to_present_damage()
-            } else {
-                PresentDamage::Full
-            };
+            let caps = self.gpu_ctx.caps();
+            let present_surface = self.gpu_ctx.present_surface();
+            let present_image = self.gpu_ctx.present_image();
+            let damage = self
+                .present_damage_tracker
+                .plan(
+                    caps.present_coherency,
+                    present_surface,
+                    present_image,
+                    present_damage,
+                )
+                .present_damage;
             let damage_full = matches!(damage, PresentDamage::Full);
             let pixels = (width as u64).saturating_mul(height as u64);
             if crate::core::perf_probe::skip_present_enabled() {
@@ -164,9 +175,19 @@ impl GraphicsEngine for PresentUploadEngine {
                     ));
                     return RenderOutcome::Failed(GraphicsFailure::from_error(err));
                 }
+                self.present_damage_tracker.commit(
+                    caps.present_coherency,
+                    present_surface,
+                    present_image,
+                    present_damage,
+                );
             }
         }
         outcome
+    }
+
+    fn test_present(&mut self) -> Result<PresentTestResult, Error> {
+        self.gpu_ctx.test_present()
     }
 
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
@@ -175,7 +196,7 @@ impl GraphicsEngine for PresentUploadEngine {
 
     fn capabilities(&self) -> GraphicsCapabilities {
         // GPU 主路径绘制全帧（与 NativeGpuBackend 对齐），消除 dirty-rect 绘制裁剪的脏数据风险；
-        // present damage 仍按 dirty 窄区，由 gpu_ctx caps().partial_present 门控（Vulkan 多缓冲暂 Full upload）。
+        // Present damage is gated by typed coherency; Vulkan remains FullOnly.
         GraphicsCapabilities::engine_managed_with_offscreen()
     }
 
@@ -300,4 +321,3 @@ impl Drop for PresentUploadEngine {
         }
     }
 }
-

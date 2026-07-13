@@ -1,11 +1,11 @@
-use crate::tests::common::*;
-use crate::draw::primitives::path::{Path, PathBuilder};
-use crate::draw::backend::traits::{BackendCapabilities, DrawSurface};
-use crate::draw::traits::UpdateStrategy;
-use crate::draw::pipeline::frame::*;
 use crate::draw::backend::cpu::{CpuBackend, CpuDrawSurface};
-use crate::draw::backend::traits::{ RenderBackend };
+use crate::draw::backend::traits::BackendCapabilities;
+use crate::draw::backend::traits::RenderBackend;
+use crate::draw::pipeline::frame::*;
+use crate::draw::primitives::path::PathBuilder;
 use crate::draw::traits::Canvas2D;
+use crate::draw::traits::UpdateStrategy;
+use crate::tests::common::*;
 
 #[test]
 fn normalize_strategy_expands_dirty_to_full_when_no_partial_redraw() {

@@ -20,7 +20,7 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
 
     // ── Phase 1: register explicit placements ──
     let init_rows = input.rows.len().max(1);
-    let mut occupied: Vec<bool> = Vec::new();
+    let mut occupied = vec![false; n_cols * init_rows];
     let mut assignments: Vec<CellAssignment> = Vec::with_capacity(input.children.len());
     let mut auto_items: Vec<(usize, &GridChild)> = Vec::new();
 
@@ -60,7 +60,6 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
         // 搜索下一个完整可用矩形
         let (col, row) = 'search: loop {
             let cur_rows = occupied.len() / n_cols;
-            let mut found = false;
             for base_row in 0..cur_rows.max(1) {
                 'row_search: for base_col in 0..n_cols {
                     // 验证完整 span 是否可用
@@ -71,26 +70,19 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
                         // 需要扩展行
                         break 'row_search;
                     }
-                    let mut ok = true;
                     for r in 0..span_rows {
                         for c in 0..span_cols {
                             if occupied[(base_row + r) * n_cols + (base_col + c)] {
-                                ok = false;
-                                break 'row_search;
+                                continue 'row_search;
                             }
                         }
                     }
-                    if ok {
-                        found = true;
-                        break 'search (base_col, base_row);
-                    }
+                    break 'search (base_col, base_row);
                 }
             }
-            if !found {
-                // 扩展一行继续搜索
-                let cur_rows = occupied.len() / n_cols;
-                occupied.resize(n_cols * (cur_rows + 1), false);
-            }
+            // 当前矩阵没有可用矩形，扩展一行继续搜索。
+            let cur_rows = occupied.len() / n_cols;
+            occupied.resize(n_cols * (cur_rows + 1), false);
         };
 
         // 确保有足够行

@@ -1,15 +1,10 @@
-use crate::tests::common::*;
-use std::ffi::{CStr, c_void};
-use std::ptr;
-use ash::{Entry, vk};
-use crate::core::{ Result };
-#[cfg(all(unix, not(target_os = "macos")))]
-use crate::native::graphics::platform::linux::WaylandSurfaceHandle;
 #[cfg(target_os = "macos")]
 use crate::native::backends::macos::platform as macos_surface;
-#[cfg(windows)]
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+#[cfg(all(unix, not(target_os = "macos")))]
+use crate::native::graphics::platform::linux::WaylandSurfaceHandle;
 use crate::native::graphics::vulkan::platform::context::*;
+use crate::tests::common::*;
+use ash::vk;
 
 #[test]
 fn crop_cpu_shadow_extracts_rect() {
@@ -68,12 +63,10 @@ fn vulkan_present_statuses_are_typed_graphics_failures() {
 
 #[test]
 fn composite_alpha_prefers_opaque_but_uses_a_supported_fallback() {
-    assert!(
-        choose_composite_alpha(
-            vk::CompositeAlphaFlagsKHR::OPAQUE | vk::CompositeAlphaFlagsKHR::INHERIT
-        )
-        .is_some_and(|mode| mode == vk::CompositeAlphaFlagsKHR::OPAQUE)
-    );
+    assert!(choose_composite_alpha(
+        vk::CompositeAlphaFlagsKHR::OPAQUE | vk::CompositeAlphaFlagsKHR::INHERIT
+    )
+    .is_some_and(|mode| mode == vk::CompositeAlphaFlagsKHR::OPAQUE));
     assert!(
         choose_composite_alpha(vk::CompositeAlphaFlagsKHR::PRE_MULTIPLIED)
             .is_some_and(|mode| mode == vk::CompositeAlphaFlagsKHR::PRE_MULTIPLIED)

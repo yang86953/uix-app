@@ -1,32 +1,25 @@
-use crate::tests::common::*;
-use std::ffi::c_void;
-use crate::core::{ Result };
-use crate::native::graphics::platform::windows as win_surface;
-use crate::native::traits::present::{ GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh, GpuSolidRect, GpuStrokeRect, OffscreenTargetId };
-use ::windows::Win32::Foundation::{E_OUTOFMEMORY, HMODULE, HWND, TRUE};
-use ::windows::Win32::Graphics::Direct3D::{
-    D3D_DRIVER_TYPE, D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL,
-    D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
-};
-use ::windows::Win32::Graphics::Direct3D11::{
-    D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_CPU_ACCESS_READ,
-    D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_SDK_VERSION,
-    D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING, D3D11_VIEWPORT,
-    D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, ID3D11RenderTargetView,
-    ID3D11ShaderResourceView, ID3D11Texture2D,
-};
-use ::windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
-    DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
-};
-use ::windows::Win32::Graphics::Dxgi::{
-    DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET,
-    DXGI_ERROR_DRIVER_INTERNAL_ERROR, DXGI_ERROR_REMOTE_OUTOFMEMORY, DXGI_PRESENT,
-    DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_CHAIN_FLAG, DXGI_SWAP_EFFECT_DISCARD,
-    DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIDevice, IDXGISwapChain,
-};
-use ::windows::core::Interface;
 use crate::native::graphics::d3d11::platform::context::*;
+use crate::native::graphics::platform::windows as win_surface;
+use crate::native::traits::present::{
+    GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
+    GpuSolidRect, GpuStrokeRect, PresentTestResult,
+};
+use crate::tests::common::*;
+use ::windows::Win32::Foundation::TRUE;
+use ::windows::Win32::Graphics::Direct3D11::D3D11_VIEWPORT;
+use ::windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
+use ::windows::Win32::Graphics::Dxgi::DXGI_USAGE_RENDER_TARGET_OUTPUT;
+use std::ffi::c_void;
+
+#[link(name = "dwmapi")]
+extern "system" {
+    fn DwmFlush() -> i32;
+}
+
+fn flush_desktop_composition() {
+    let result = unsafe { DwmFlush() };
+    assert!(result >= 0, "DwmFlush failed with HRESULT {result:#x}");
+}
 
 #[test]
 fn swap_chain_desc_uses_bgra_windowed_backbuffer() {
@@ -65,6 +58,58 @@ fn dxgi_present_out_of_memory_is_typed() {
         .expect_err("DXGI out-of-memory must propagate");
 
     assert_eq!(error.code(), Errc::GraphicsOutOfMemory);
+}
+
+#[test]
+fn dxgi_present_occlusion_is_not_swallowed_as_success() {
+    let error = map_dxgi_present_result(::windows::core::HRESULT(0x087A_0001u32 as i32))
+        .expect_err("DXGI occlusion must suspend the window instead of committing the frame");
+
+    assert_eq!(error.code(), Errc::GraphicsOccluded);
+    assert!(error.what().contains("occlusion"));
+}
+
+#[test]
+fn dxgi_present_test_classifies_occluded_and_presentable_status() {
+    assert_eq!(
+        map_dxgi_present_test_result(::windows::core::HRESULT(0x087A_0001u32 as i32))
+            .expect("occlusion is a healthy test result"),
+        PresentTestResult::Occluded
+    );
+    assert_eq!(
+        map_dxgi_present_test_result(::windows::core::HRESULT(0)).expect("S_OK is presentable"),
+        PresentTestResult::Presentable
+    );
+}
+
+#[test]
+fn real_minimized_hwnd_reports_d3d11_occlusion_idle() {
+    let mut platform = crate::native::create_platform().expect("platform");
+    let mut target = platform
+        .window_manager()
+        .create_window("D3D11 occlusion target", 320, 240)
+        .expect("target window");
+    let mut ctx =
+        D3d11Context::new(target.native_surface_ptr(), 320, 240).expect("target D3D11 context");
+    target.show().expect("show target");
+    target.properties_mut().minimize().expect("minimize target");
+    platform.event_loop().poll_event(&|_| true);
+    flush_desktop_composition();
+    ctx.clear_render_target(0.3, 0.2, 0.1, 1.0)
+        .expect("minimized clear");
+    let error = ctx
+        .present(&PresentFrame::Swapchain {
+            damage: PresentDamage::Full,
+        })
+        .expect_err("minimized bitblt swapchain must report occlusion");
+    assert_eq!(error.code(), Errc::GraphicsOccluded);
+    assert_eq!(
+        ctx.test_present().expect("minimized idle probe"),
+        PresentTestResult::Occluded
+    );
+
+    ctx.try_shutdown().expect("shutdown");
+    target.close().expect("close target");
 }
 
 #[test]
@@ -210,9 +255,7 @@ fn factory_create_d3d11_gpu_native_swapchain_on_real_window() {
         ctx.height() as f32,
         None,
         &[GpuSolidMesh {
-            vertices: std::sync::Arc::<[f32]>::from(vec![
-                180.0, 80.0, 220.0, 80.0, 200.0, 120.0,
-            ]),
+            vertices: std::sync::Arc::<[f32]>::from(vec![180.0, 80.0, 220.0, 80.0, 200.0, 120.0]),
             rgba: [0.2, 1.0, 0.4, 1.0],
         }],
     )

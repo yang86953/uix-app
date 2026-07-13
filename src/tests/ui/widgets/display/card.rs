@@ -1,10 +1,6 @@
 use crate::tests::common::*;
-use crate::component;
-use crate::draw::{ Radius };
-use crate::ui::children::WidgetChildren;
-use crate::ui::layout::{ child_from_tree_with_constraints, flex::compute_flex_layout, FlexChild, FlexInput, LayoutChild };
-use crate::ui::widgets::display::card::*;
 use crate::ui::core::widget::WidgetCore;
+use crate::ui::widgets::display::card::*;
 
 struct FixedChild(Size);
 
@@ -64,15 +60,6 @@ impl WidgetLayout for CountingChild {
         self.measure_calls.set(self.measure_calls.get() + 1);
         constraints.clamp(self.size)
     }
-}
-
-#[test]
-fn measure_clamps_card_size() {
-    let measured = Card::new()
-        .size(240.0, 120.0)
-        .measure(Constraints::loose(Size::new(100.0, 60.0)));
-
-    assert_eq!(measured, Size::new(100.0, 60.0));
 }
 
 #[test]

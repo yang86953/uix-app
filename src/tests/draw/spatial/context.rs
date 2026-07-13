@@ -1,9 +1,8 @@
-use crate::tests::common::*;
-use crate::draw::spatial::SpatialContext;
 use crate::draw::spatial::Orientation;
+use crate::draw::spatial::SpatialContext;
 use crate::draw::traits::Canvas2D;
-use crate::draw::spatial::context::*;
 use crate::draw::traits::GraphicsEngine;
+use crate::tests::common::*;
 
 fn make_context(surface_w: i32, surface_h: i32) -> SpatialContext<'static> {
     let mut engine = NullEngine::new();

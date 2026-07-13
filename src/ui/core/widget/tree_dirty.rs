@@ -29,6 +29,10 @@ impl WidgetTree {
         self.reconcile_requested.swap(false, Ordering::AcqRel)
     }
 
+    pub(crate) fn has_reconcile_requested(&self) -> bool {
+        self.reconcile_requested.load(Ordering::Acquire)
+    }
+
     /// 是否有待渲染工作（Paint / Composite 失效，不含纯 Layout）。
     ///
     /// Layout 失效由 `layout()` 消费；若仅用 `is_empty()` 判定，

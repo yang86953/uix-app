@@ -1,8 +1,8 @@
-use crate::tests::common::*;
-use crate::draw::spatial::SpatialContext;
-use crate::draw::spatial::dirty_region::*;
 use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
+use crate::draw::spatial::dirty_region::*;
 use crate::draw::spatial::Orientation;
+use crate::draw::spatial::SpatialContext;
+use crate::tests::common::*;
 
 #[test]
 fn from_rect_z_builds_aabb() {

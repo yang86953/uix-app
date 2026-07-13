@@ -637,4 +637,3 @@ impl ITfContextOwnerCompositionSink_Impl for TsfTextStore_Impl {
         Ok(())
     }
 }
-

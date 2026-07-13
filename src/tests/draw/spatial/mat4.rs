@@ -1,8 +1,6 @@
 // ── 构造与 identity ──
-use crate::tests::common::*;
-use std::ops::Mul;
 use crate::draw::spatial::mat4::*;
-
+use crate::tests::common::*;
 
 #[test]
 fn identity_matrix() {

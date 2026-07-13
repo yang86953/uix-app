@@ -1,5 +1,5 @@
-use crate::tests::common::*;
 use crate::draw::pipeline::animation_registry::*;
+use crate::tests::common::*;
 
 #[test]
 fn register_unregister_lifecycle() {

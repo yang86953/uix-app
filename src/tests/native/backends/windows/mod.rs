@@ -1,5 +1,6 @@
 // Auto-organized test modules. Tests live only under src/tests.
 
+mod frame_pacer;
 mod gdi_presenter;
 mod ime_dispatch;
 mod platform;

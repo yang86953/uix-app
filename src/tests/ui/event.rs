@@ -1,16 +1,12 @@
+use crate::register_semantic;
 use crate::tests::common::*;
-use crate::ui::widgets::Container;
-use std::any::{Any, TypeId};
-use std::collections::{ hash_map::DefaultHasher };
-use std::hash::{Hash, Hasher};
-use crate::ui::event::*;
 use crate::ui::core::widget::{WidgetCore, WidgetNode};
+use crate::ui::event::*;
 use crate::ui::state::{Computed, State};
 use crate::ui::widgets::{
     Button, Checkbox, Input, InputNumber, Label, ProgressBar, Select, Slider, Switch,
 };
-use crate::ui::{ ComponentHandle };
-use crate::register_semantic;
+use crate::ui::ComponentHandle;
 
 #[test]
 fn handler_table_bubbles_until_stopped() {

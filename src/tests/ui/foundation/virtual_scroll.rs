@@ -1,8 +1,11 @@
 use crate::tests::common::*;
 use crate::ui::core::widget::WidgetNode;
 use crate::ui::foundation::virtual_scroll::*;
-use crate::ui::widgets::Label;
 use crate::ui::view::{ViewAdapter, ViewNode};
+use crate::ui::widgets::Label;
+use crate::ui::IntoWidgetNode;
+use std::cell::Cell;
+use std::rc::Rc;
 
 #[test]
 fn virtual_list_scroll_range_matches_virtual_scroll() {
@@ -38,39 +41,115 @@ fn scroll_range_respects_item_count() {
 
 #[test]
 fn build_visible_children_uses_renderer() {
-    let vs = VirtualScroll::new()
+    let builder = VirtualScroll::new()
         .item_count(10)
         .item_height(32.0)
         .overscan(1)
+        .size(200.0, 64.0)
         .renderer(|i| WidgetNode::leaf(Box::new(Label::new(format!("row-{i}")))));
-    let nodes = vs.build_visible_children(64.0);
-    assert!(!nodes.is_empty());
-    assert!(nodes.len() <= 4);
+    let mut tree = WidgetTree::new();
+    let root = tree.build(builder.into_node());
+    tree.layout();
+
+    assert!(tree.has_virtual_scroll_renderer(root));
+    let labels = tree.find_all_by_type::<Label>();
+    assert!(!labels.is_empty());
+    assert!(labels.len() <= 4);
 }
 
 #[test]
-fn prepare_for_build_populates_children() {
-    let vs = VirtualScroll::new()
+fn virtual_scroll_renderer_is_released_with_component_sidecar() {
+    let capture = Rc::new(Cell::new(0));
+    let renderer_capture = Rc::clone(&capture);
+    let builder = VirtualScroll::new()
         .item_count(20)
         .item_height(32.0)
-        .renderer(|i| WidgetNode::leaf(Box::new(Label::new(format!("row-{i}")))));
-    vs.prepare_for_build(96.0);
-    assert_eq!(vs.visible_start(), 0);
-    let built = vs.build();
-    assert!(!built.is_empty());
+        .renderer(move |i| {
+            renderer_capture.set(renderer_capture.get() + 1);
+            WidgetNode::leaf(Box::new(Label::new(format!("row-{i}"))))
+        });
+    let mut tree = WidgetTree::new();
+    let root = tree.build(builder.into_node());
+
+    assert!(tree.has_virtual_scroll_renderer(root));
+    assert!(capture.get() > 0);
+    assert_eq!(Rc::strong_count(&capture), 2);
+
+    tree.remove(root);
+    assert_eq!(Rc::strong_count(&capture), 1);
+}
+
+#[test]
+fn reconcile_replaces_virtual_scroll_renderer_sidecar() {
+    let first_capture = Rc::new(Cell::new(0));
+    let first_renderer = Rc::clone(&first_capture);
+    let mut tree = ViewAdapter::build(
+        VirtualScroll::new()
+            .item_count(20)
+            .item_height(20.0)
+            .size(200.0, 60.0)
+            .renderer(move |i| {
+                first_renderer.set(first_renderer.get() + 1);
+                WidgetNode::leaf(Box::new(Label::new(format!("first-{i}"))))
+            }),
+    );
+    let root = tree.root_id().expect("virtual scroll root");
+
+    assert!(first_capture.get() > 0);
+    assert_eq!(Rc::strong_count(&first_capture), 2);
+
+    let second_capture = Rc::new(Cell::new(0));
+    let second_renderer = Rc::clone(&second_capture);
+    ViewAdapter::reconcile(
+        &mut tree,
+        VirtualScroll::new()
+            .item_count(20)
+            .item_height(20.0)
+            .size(200.0, 60.0)
+            .renderer(move |i| {
+                second_renderer.set(second_renderer.get() + 1);
+                WidgetNode::leaf(Box::new(Label::new(format!("second-{i}"))))
+            }),
+    );
+
+    assert_eq!(tree.root_id(), Some(root));
+    assert!(tree.has_virtual_scroll_renderer(root));
+    assert_eq!(Rc::strong_count(&first_capture), 1);
+    assert!(second_capture.get() > 0);
+    assert_eq!(Rc::strong_count(&second_capture), 2);
+}
+
+#[test]
+fn replacing_tree_root_drops_virtual_scroll_renderer() {
+    let capture = Rc::new(Cell::new(0));
+    let renderer_capture = Rc::clone(&capture);
+    let mut tree = WidgetTree::new();
+    tree.build(
+        VirtualScroll::new()
+            .item_count(10)
+            .renderer(move |i| {
+                renderer_capture.set(renderer_capture.get() + 1);
+                WidgetNode::leaf(Box::new(Label::new(format!("row-{i}"))))
+            })
+            .into_node(),
+    );
+    assert_eq!(Rc::strong_count(&capture), 2);
+
+    tree.build(Label::new("replacement").into_node());
+    assert_eq!(Rc::strong_count(&capture), 1);
 }
 
 #[test]
 fn widget_tree_build_auto_prepares_visible_rows() {
     use crate::ui::core::widget::{WidgetCore, WidgetNode};
 
-    let vs = VirtualScroll::new()
+    let builder = VirtualScroll::new()
         .item_count(50)
         .item_height(32.0)
         .size(200.0, 96.0)
         .renderer(|i| WidgetNode::leaf(Box::new(Label::new(format!("row-{i}")))));
     let mut tree = WidgetTree::new();
-    let root_id = tree.build(WidgetNode::leaf(Box::new(vs)));
+    let root_id = tree.build(builder.into_node());
     tree.get_mut(root_id)
         .expect("virtual scroll root")
         .set_frame(Rect::new(0.0, 0.0, 200.0, 96.0));
@@ -151,7 +230,7 @@ fn measure_uses_configured_viewport_size() {
 #[test]
 fn layout_children_positions_by_absolute_index() {
     let vs = VirtualScroll::new().item_count(100).item_height(32.0);
-    vs.visible_start.set(5);
+    vs.mark_children_materialized((5, 8));
     let frame = Rect::new(0.0, 0.0, 200.0, 96.0);
     let ids = [
         ComponentId::new(1),
@@ -193,7 +272,7 @@ fn same_type_reconcile_preserves_virtual_scroll_offset() {
         .item_height(20.0)
         .size(200.0, 80.0)
         .renderer(|i| WidgetNode::leaf(Box::new(Label::new(format!("row-{i}")))));
-    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(initial));
+    let mut tree = ViewAdapter::build_nodes(ViewNode::from(initial));
     tree.layout();
     let root = tree.root_id().expect("virtual scroll root");
     tree.reset_invalidation();
@@ -217,7 +296,7 @@ fn same_type_reconcile_preserves_virtual_scroll_offset() {
         .item_height(20.0)
         .size(200.0, 80.0)
         .renderer(|i| WidgetNode::leaf(Box::new(Label::new(format!("next-{i}")))));
-    ViewAdapter::reconcile_nodes(&mut tree, ViewNode::leaf(next));
+    ViewAdapter::reconcile_nodes(&mut tree, ViewNode::from(next));
 
     assert_eq!(tree.root_id(), Some(root));
     assert_eq!(

@@ -1,8 +1,6 @@
-use crate::tests::common::*;
-use crate::native::backends::windows::ffi::{GetDC, ReleaseDC};
-use crate::native::backends::windows::util::windows_diag;
-use crate::native::traits::present::IPresenter;
 use crate::native::backends::windows::gdi_presenter::{clip_damage_rect, GdiPresenter};
+use crate::native::traits::present::IPresenter;
+use crate::tests::common::*;
 
 #[test]
 fn damage_padding_is_clipped_to_the_gdi_surface() {
@@ -30,6 +28,10 @@ fn present_propagates_rejected_resize_instead_of_using_the_old_dib() {
         .expect("window");
     let mut presenter =
         unsafe { GdiPresenter::new(window.native_surface_ptr(), 16, 16) }.expect("presenter");
+    assert_eq!(
+        presenter.present_coherency(),
+        PresentCoherency::RetainedBuffer
+    );
 
     let error = presenter
         .present(&[0], 0, 1, PresentDamage::Full)

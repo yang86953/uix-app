@@ -9,7 +9,10 @@
 
 use crate::core::error::{Errc, Error, Result};
 use crate::native::shared::WindowOps;
+use crate::native::traits::event::FrameRequestToken;
+use crate::native::traits::window::NativeFrameRequest;
 
+use super::frame_pacer::{SharedWindowsFramePacerState, WindowsFramePacer};
 use super::platform::WindowBinding;
 
 /// Windows 平台窗口操作句柄。
@@ -19,13 +22,19 @@ use super::platform::WindowBinding;
 pub(crate) struct WindowsWindowOps {
     hwnd: *mut std::ffi::c_void,
     _binding: Box<WindowBinding>,
+    frame_pacer: WindowsFramePacer,
 }
 
 impl WindowsWindowOps {
-    pub(crate) fn new(hwnd: *mut std::ffi::c_void, binding: Box<WindowBinding>) -> Self {
+    pub(crate) fn new(
+        hwnd: *mut std::ffi::c_void,
+        binding: Box<WindowBinding>,
+        frame_pacer_state: SharedWindowsFramePacerState,
+    ) -> Self {
         Self {
             hwnd,
             _binding: binding,
+            frame_pacer: WindowsFramePacer::new(hwnd, frame_pacer_state),
         }
     }
 
@@ -421,6 +430,21 @@ impl WindowOps for WindowsWindowOps {
         unsafe {
             DragAcceptFiles(self.hwnd, if enable { TRUE } else { FALSE });
         }
+        Ok(())
+    }
+
+    fn os_request_native_frame(&mut self, request: NativeFrameRequest) -> Result<bool> {
+        self.ensure_valid_window("os_request_native_frame")?;
+        self.frame_pacer.request(request)
+    }
+
+    fn os_native_frame_presented(&mut self, token: FrameRequestToken) -> Result<()> {
+        self.ensure_valid_window("os_native_frame_presented")?;
+        self.frame_pacer.presented(token)
+    }
+
+    fn os_cancel_native_frame(&mut self, token: FrameRequestToken) -> Result<()> {
+        self.frame_pacer.cancel(token);
         Ok(())
     }
 

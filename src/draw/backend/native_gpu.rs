@@ -11,7 +11,7 @@
 use std::any::Any;
 use std::sync::Arc;
 
-use crate::core::{DamageRegion, Errc, Error, Point, Rect};
+use crate::core::{DamageRegion, Errc, Error, Point, PresentDamageTracker, Rect};
 use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
@@ -30,7 +30,7 @@ use crate::draw::traits::Canvas2D;
 use crate::native::traits::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
     GpuSolidRect, GpuStrokeRect, IGraphicsContext, NativeRasterCaps, OffscreenTargetId,
-    PresentFrame, PresentMode, RasterMode, SoftFallbackTile,
+    PresentFrame, PresentMode, PresentTestResult, RasterMode, SoftFallbackTile,
 };
 
 #[derive(Clone)]
@@ -1038,6 +1038,7 @@ pub struct NativeGpuBackend {
     /// final present boundary, so callers keep the frame dirty instead of
     /// treating an incomplete command stream as committed.
     frame_failure: Option<Error>,
+    present_damage_tracker: PresentDamageTracker,
     pub(crate) shutdown: bool,
 }
 
@@ -1092,6 +1093,7 @@ impl NativeGpuBackend {
             next_offscreen_id: 0,
             active_offscreen: None,
             frame_failure: None,
+            present_damage_tracker: PresentDamageTracker::new(),
             surface: NativeGpuDrawSurface {
                 canvas: NativeGpuCanvas2D::new(logical_w, logical_h, native_caps),
                 native_caps,
@@ -1363,12 +1365,10 @@ impl RenderBackend for NativeGpuBackend {
     }
 
     fn capabilities(&self) -> BackendCapabilities {
-        let partial = self.gpu_ctx.caps().partial_present && self.surface.native_caps.clear_rects;
-        let mut caps = if partial {
-            BackendCapabilities::gpu()
-        } else {
-            BackendCapabilities::gpu_full_redraw()
-        };
+        // Swapchain image repair is planned at the final present boundary.
+        // Until acquisition moves before draw, render the complete GPU frame;
+        // narrow compositor damage remains available without stale pixels.
+        let mut caps = BackendCapabilities::gpu_full_redraw();
         caps.offscreen = self.surface.native_caps.offscreen_targets;
         caps
     }
@@ -1725,15 +1725,34 @@ impl RenderBackend for NativeGpuBackend {
             return Err(err);
         }
 
+        let caps = self.gpu_ctx.caps();
+        let present_surface = self.gpu_ctx.present_surface();
+        let present_image = self.gpu_ctx.present_image();
+        let damage_plan = self.present_damage_tracker.plan(
+            caps.present_coherency,
+            present_surface,
+            present_image,
+            damage,
+        );
         let frame = PresentFrame::Swapchain {
-            damage: damage.to_present_damage(),
+            damage: damage_plan.present_damage,
         };
         if let Err(err) = self.gpu_ctx.present(&frame) {
             self.surface.needs_gpu_clear = true;
             return Err(err);
         }
+        self.present_damage_tracker.commit(
+            caps.present_coherency,
+            present_surface,
+            present_image,
+            damage,
+        );
         self.surface.canvas.commit_presented_frame();
         Ok(())
+    }
+
+    fn test_present(&mut self) -> Result<PresentTestResult, Error> {
+        self.gpu_ctx.test_present()
     }
 
     fn as_any(&self) -> &dyn Any {

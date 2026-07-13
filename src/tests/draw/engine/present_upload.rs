@@ -1,12 +1,9 @@
-use crate::tests::common::*;
-use crate::draw::backend::{ BackendKind, CpuBackend };
-use crate::draw::engine::{ GraphicsFailure };
-use crate::draw::pipeline::RenderSession;
-use crate::draw::pipeline::{ EncodedFrameExecution, EncodedPictureExecution };
-use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
-use crate::draw::engine::present_upload::*;
 use crate::core::Result;
-use std::sync::{ atomic::{AtomicUsize, Ordering} };
+use crate::draw::engine::present_upload::*;
+use crate::draw::engine::GraphicsFailure;
+use crate::draw::traits::{GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
+use crate::tests::common::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Clone, Debug, PartialEq)]
 struct PresentedFrame {
@@ -24,7 +21,7 @@ struct RecordingPixelContext {
     initialize_calls: Arc<AtomicUsize>,
     fail_present: bool,
     fail_resize: bool,
-    partial_present: bool,
+    present_coherency: PresentCoherency,
     shutdowns: Arc<AtomicUsize>,
     checked_shutdowns: Arc<AtomicUsize>,
 }
@@ -42,7 +39,7 @@ impl RecordingPixelContext {
             initialize_calls: Arc::new(AtomicUsize::new(0)),
             fail_present: false,
             fail_resize: false,
-            partial_present: false,
+            present_coherency: PresentCoherency::FullOnly,
             shutdowns: Arc::new(AtomicUsize::new(0)),
             checked_shutdowns: Arc::new(AtomicUsize::new(0)),
         }
@@ -52,7 +49,7 @@ impl RecordingPixelContext {
 impl IGraphicsContext for RecordingPixelContext {
     fn caps(&self) -> GraphicsContextCaps {
         let mut caps = GraphicsContextCaps::cpu_pixel_upload(GraphicsBackend::D3d11, 1.0);
-        caps.partial_present = self.partial_present;
+        caps.present_coherency = self.present_coherency;
         caps
     }
 
@@ -231,14 +228,18 @@ fn present_upload_upgrades_partial_damage_when_context_does_not_prove_preservati
 }
 
 #[test]
-fn present_upload_forwards_partial_damage_only_when_context_proves_preservation() {
+fn present_upload_forwards_partial_damage_after_retained_target_is_primed() {
     let frame = Arc::new(Mutex::new(None));
     let mut context = RecordingPixelContext::new(frame.clone());
-    context.partial_present = true;
+    context.present_coherency = PresentCoherency::RetainedBuffer;
     let mut engine = PresentUploadEngine::new(Box::new(context)).unwrap();
 
     engine.initialize(4, 3).unwrap();
     let _ = engine.begin_frame(UpdateStrategy::FullRedraw);
+    let _ = engine.end_frame(&DamageRegion::full());
+    let _ = engine.begin_frame(UpdateStrategy::DirtyRects(vec![Rect::new(
+        1.0, 1.0, 2.0, 1.0,
+    )]));
     let _ = engine.end_frame(&DamageRegion::partial(vec![Rect::new(1.0, 1.0, 2.0, 1.0)]));
 
     assert_eq!(

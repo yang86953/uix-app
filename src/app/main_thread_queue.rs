@@ -88,4 +88,3 @@ impl MainThreadQueue {
         self.pending.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 }
-

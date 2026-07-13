@@ -1,8 +1,6 @@
 use crate::tests::common::*;
-use crate::component;
-use crate::ui::layout::{child_from_tree_with_constraints, LayoutChild};
-use crate::ui::widgets::input::form::*;
 use crate::ui::core::widget::WidgetCore;
+use crate::ui::widgets::input::form::*;
 
 struct FixedChild(Size);
 
@@ -200,4 +198,52 @@ fn form_item_arrange_uses_precomputed_measurements() {
 
     assert_eq!(calls.get(), 1, "arrange must not measure children again");
     assert_eq!(placements[0].1, Rect::new(88.0, 2.0, 12.0, 26.0));
+}
+
+#[test]
+fn custom_validator_is_resolved_from_named_table() {
+    let calls = Rc::new(Cell::new(0));
+    let validator_calls = Rc::clone(&calls);
+    let mut validators = FormValidatorTable::new();
+    validators.register("username", move |value| {
+        validator_calls.set(validator_calls.get() + 1);
+        (value == "ada")
+            .then_some(())
+            .ok_or_else(|| "unknown user".to_string())
+    });
+    let mut form = Form::new().with_field(
+        FieldDef::new("user", "User")
+            .value("grace")
+            .rule(ValidationRule::required("required").validator("username")),
+    );
+
+    assert_eq!(form.validate(&validators), Ok(false));
+    assert_eq!(calls.get(), 1);
+    let field = form.field("user").expect("registered field");
+    assert_eq!(field.status, ValidateStatus::Error);
+    assert_eq!(field.message, "unknown user");
+
+    form.set_field_value("user", "ada");
+    assert_eq!(form.validate(&validators), Ok(true));
+    assert_eq!(calls.get(), 2);
+    assert_eq!(form.field("user").unwrap().status, ValidateStatus::None);
+}
+
+#[test]
+fn missing_custom_validator_is_a_typed_configuration_error() {
+    let key = FormValidatorKey::new("email-domain");
+    let mut form = Form::new().with_field(
+        FieldDef::new("email", "Email")
+            .value("ada@example.test")
+            .rule(ValidationRule::required("required").validator(key.clone())),
+    );
+
+    assert_eq!(
+        form.validate(&FormValidatorTable::new()),
+        Err(FormValidationError::MissingValidator {
+            field: "email".to_string(),
+            key,
+        })
+    );
+    assert_eq!(form.field("email").unwrap().status, ValidateStatus::None);
 }

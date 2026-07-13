@@ -1,16 +1,13 @@
-use crate::tests::common::*;
-use crate::core::{ Result };
-use crate::draw::engine::present_upload::PresentUploadEngine;
-use crate::draw::gpu_engine::GpuEngine;
-use crate::draw::traits::GraphicsEngine;
+use crate::core::Result;
 use crate::draw::engine::factory::*;
+use crate::tests::common::*;
 use std::ffi::c_void;
 
 struct FakeGpuNative(GraphicsBackend);
 
 impl IGraphicsContext for FakeGpuNative {
     fn caps(&self) -> GraphicsContextCaps {
-        GraphicsContextCaps::gpu_native_swapchain(self.0, false, 1.0)
+        GraphicsContextCaps::gpu_native_swapchain(self.0, PresentCoherency::FullOnly, 1.0)
     }
 
     fn native_raster_caps(&self) -> NativeRasterCaps {
@@ -26,12 +23,7 @@ impl IGraphicsContext for FakeGpuNative {
         }
     }
 
-    fn initialize(
-        &mut self,
-        _native_window: *mut c_void,
-        _width: i32,
-        _height: i32,
-    ) -> Result<()> {
+    fn initialize(&mut self, _native_window: *mut c_void, _width: i32, _height: i32) -> Result<()> {
         Ok(())
     }
 
@@ -47,13 +39,7 @@ impl IGraphicsContext for FakeGpuNative {
     fn try_shutdown(&mut self) -> crate::core::Result<()> {
         Ok(())
     }
-    fn read_pixels(
-        &mut self,
-        _x: i32,
-        _y: i32,
-        _w: i32,
-        _h: i32,
-    ) -> crate::core::Result<Vec<u32>> {
+    fn read_pixels(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) -> crate::core::Result<Vec<u32>> {
         Ok(Vec::new())
     }
     fn width(&self) -> i32 {

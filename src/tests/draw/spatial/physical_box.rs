@@ -1,6 +1,6 @@
-use crate::tests::common::*;
 use crate::draw::spatial::physical_box::*;
 use crate::draw::spatial::PhysicalUnitExt;
+use crate::tests::common::*;
 
 #[test]
 fn rect_into_aabb() {

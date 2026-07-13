@@ -32,4 +32,3 @@ pub fn push_window_resize(
         queue.push_back(UiEvent::resize(width, height).for_window(window_id));
     });
 }
-

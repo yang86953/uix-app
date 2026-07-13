@@ -6,6 +6,7 @@ use super::canvas::Canvas2D;
 use crate::core::{Error, Rect};
 use crate::draw::pipeline::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::primitives::types::ImageHandle;
+use crate::native::traits::present::PresentTestResult;
 
 /// 帧更新策略。
 #[derive(Debug, Clone)]
@@ -99,6 +100,16 @@ pub trait GraphicsEngine: 'static {
     fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome;
     /// `present_damage` 为合成层计算的呈现损伤；EngineManaged 后端用于 swap/present。
     fn end_frame(&mut self, present_damage: &crate::draw::backend::DamageRegion) -> RenderOutcome;
+
+    /// Tests an already-occluded engine-managed swapchain without drawing or
+    /// submitting frame data. Ordinary engines never need to override this.
+    fn test_present(&mut self) -> Result<PresentTestResult, Error> {
+        Err(Error::new(
+            crate::core::Errc::NotImplemented,
+            "graphics engine does not support idle present tests",
+        ))
+    }
+
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D;
 
     /// The sole external platform presenter has accepted the pending frame.

@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashSet, VecDeque};
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::path::PathBuf;
@@ -11,7 +11,7 @@ use crate::native::shared::{
     FileSystemCore, OsEventSource, PlatformWindowCore, SpecialDirProvider, WindowOps, WindowState,
 };
 use crate::native::traits::display::{DisplayInfo, IDisplay};
-use crate::native::traits::event::{EventBus, EventLoopWaker, UiEvent};
+use crate::native::traits::event::{EventBus, EventLoopWaker, FrameRequestToken, UiEvent};
 use crate::native::traits::input::{
     CursorType, IClipboard, ICursor, IKeyboard, ITextInput, KeyCode, KeyMod, MouseButton,
 };
@@ -21,8 +21,11 @@ use crate::native::traits::system::{
     ConsoleColor, IConsole, IFileDialog, IFileSystem, INotification, ISystemInfo, ITimer,
     MemoryInfo, OsInfo, SpecialDir, TerminalCapabilities,
 };
-use crate::native::traits::window::{IWindowManager, PlatformWindow};
+use crate::native::traits::window::{
+    IWindowManager, NativeFrameRequest, PlatformWindow, WindowOcclusionState,
+};
 
+use super::display_link::MacosFramePacer;
 use super::text_input_view::{self, MacosTextInput};
 use super::window_delegate::{self, WindowDelegateContext};
 
@@ -98,10 +101,21 @@ impl OsEventSource for MacosPlatform {
     }
 
     fn next_event(&mut self) -> Option<UiEvent> {
-        self.events
+        let event = self
+            .events
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .pop_front()
+            .pop_front();
+        if event.as_ref().is_some_and(|event| {
+            matches!(
+                event.type_,
+                crate::native::traits::event::UiEventType::WindowBlur
+                    | crate::native::traits::event::UiEventType::WindowClose
+            )
+        }) {
+            self.keyboard.keys_down.clear();
+        }
+        event
     }
 
     fn waker(&self) -> EventLoopWaker {
@@ -121,7 +135,7 @@ impl MacosPlatform {
         let Some(event) = cocoa::dispatch_one_event(until) else {
             return false;
         };
-        let suppress_keydown_text = self.text_input.suppress_keydown_text();
+        let suppress_keydown_text = self.text_input.suppress_keydown_text(event.window_id);
         for ui_event in event.into_ui_events(suppress_keydown_text) {
             match ui_event.type_ {
                 crate::native::traits::event::UiEventType::KeyDown => {
@@ -160,33 +174,49 @@ impl IWindowManager for MacosPlatform {
         self.next_window_id += 1;
         // SAFETY: create_window constructs AppKit objects on the current thread
         // and returns Objective-C object pointers managed by AppKit.
-        let session_active = self.text_input.session_active_handle();
+        let text_input_owner = self.text_input.owner_handle();
         let (window, content_layer) = unsafe {
             cocoa::create_window(
                 title,
                 width,
                 height,
                 Arc::clone(&self.events),
-                session_active,
+                window_id,
+                Arc::clone(&text_input_owner),
             )
-        };
-        self.text_input.set_view(content_layer.view);
+        }?;
         let state = Rc::new(RefCell::new(WindowState::with_id_and_size(
             window_id, width, height,
         )));
-        // SAFETY: delegate callbacks only read the leaked context for the window
-        // lifetime and push tagged UiEvent values into the shared queue.
-        unsafe {
+        let open = Rc::new(Cell::new(true));
+        // SAFETY: the NSWindow owns the installed Objective-C delegate; its raw
+        // ivar owns the Rust context until delegate dealloc.
+        if let Err(error) = unsafe {
             window_delegate::install(
                 window,
                 WindowDelegateContext {
                     events: Arc::clone(&self.events),
                     window_id,
                     state: Rc::clone(&state),
+                    open: Rc::clone(&open),
                 },
-            );
+            )
+        } {
+            // SAFETY: create_window returned the still-owned +1 NSWindow. No
+            // delegate was published, so close/release is the complete rollback.
+            unsafe {
+                cocoa::close_and_release_window(window);
+            }
+            return Err(error);
         }
-        let ops = MacosWindowOps::new(window, content_layer.layer);
+        let ops = MacosWindowOps::new(
+            window,
+            content_layer.layer,
+            window_id,
+            Arc::clone(&self.events),
+            text_input_owner,
+            open,
+        );
         let presenter = MacosPresenter::new(content_layer.layer, width, height);
         let core = PlatformWindowCore::new(state, ops, Box::new(presenter));
         Ok(Box::new(core))
@@ -254,21 +284,64 @@ impl Platform for MacosPlatform {
 struct MacosWindowOps {
     window: cocoa::Id,
     layer: cocoa::Id,
+    window_id: WindowId,
+    frame_pacer: MacosFramePacer,
+    text_input_owner: text_input_view::SharedImeOwner,
+    open: Rc<Cell<bool>>,
 }
 
 impl MacosWindowOps {
-    fn new(window: cocoa::Id, layer: cocoa::Id) -> Self {
-        Self { window, layer }
+    fn new(
+        window: cocoa::Id,
+        layer: cocoa::Id,
+        window_id: WindowId,
+        events: Arc<Mutex<VecDeque<UiEvent>>>,
+        text_input_owner: text_input_view::SharedImeOwner,
+        open: Rc<Cell<bool>>,
+    ) -> Self {
+        Self {
+            window,
+            layer,
+            window_id,
+            frame_pacer: MacosFramePacer::new(window, events, window_id),
+            text_input_owner,
+            open,
+        }
     }
 
     fn ensure_valid_window(&self, operation: &str) -> crate::core::Result<()> {
-        if self.window.is_null() {
+        if self.window.is_null() || !self.open.get() {
             return Err(Error::new(
                 Errc::InvalidState,
-                format!("{operation}: invalid NSWindow handle"),
+                format!("{operation}: NSWindow is closed or invalid"),
             ));
         }
         Ok(())
+    }
+
+    fn close_and_release(&mut self) {
+        self.frame_pacer.shutdown();
+        let window = std::mem::replace(&mut self.window, std::ptr::null_mut());
+        self.layer = std::ptr::null_mut();
+        if window.is_null() {
+            return;
+        }
+        let was_open = self.open.replace(false);
+        // SAFETY: this struct owns the +1 NSWindow returned by alloc/init.
+        // releasedWhenClosed is disabled, so close cannot consume that owner;
+        // the matching release below is the unique final relinquish point.
+        unsafe {
+            if was_open {
+                cocoa::close_window(window);
+            }
+            cocoa::release_object(window);
+        }
+    }
+}
+
+impl Drop for MacosWindowOps {
+    fn drop(&mut self) {
+        self.close_and_release();
     }
 }
 
@@ -292,11 +365,7 @@ impl WindowOps for MacosWindowOps {
     }
 
     fn os_close(&mut self) -> crate::core::Result<()> {
-        self.ensure_valid_window("os_close")?;
-        // SAFETY: self.window is the NSWindow pointer returned by create_window.
-        unsafe {
-            cocoa::close_window(self.window);
-        }
+        self.close_and_release();
         Ok(())
     }
 
@@ -351,13 +420,52 @@ impl WindowOps for MacosWindowOps {
     fn os_start_text_input(&mut self) -> crate::core::Result<()> {
         self.ensure_valid_window("os_start_text_input")?;
         // SAFETY: self.window is the NSWindow pointer returned by create_window.
-        unsafe { text_input_view::make_window_text_input_active(self.window) }
+        unsafe {
+            text_input_view::make_window_text_input_active(
+                &self.text_input_owner,
+                self.window_id,
+                self.window,
+            )
+        }
     }
 
     fn os_stop_text_input(&mut self) -> crate::core::Result<()> {
         self.ensure_valid_window("os_stop_text_input")?;
         // SAFETY: self.window is the NSWindow pointer returned by create_window.
-        unsafe { text_input_view::make_window_text_input_inactive(self.window) }
+        unsafe {
+            text_input_view::make_window_text_input_inactive(
+                &self.text_input_owner,
+                self.window_id,
+                self.window,
+            )
+        }
+    }
+
+    fn os_request_native_frame(
+        &mut self,
+        request: NativeFrameRequest,
+    ) -> crate::core::Result<bool> {
+        self.ensure_valid_window("os_request_native_frame")?;
+        self.frame_pacer.request(request)
+    }
+
+    fn os_native_frame_presented(&mut self, token: FrameRequestToken) -> crate::core::Result<()> {
+        self.ensure_valid_window("os_native_frame_presented")?;
+        self.frame_pacer.presented(token)
+    }
+
+    fn os_cancel_native_frame(&mut self, token: FrameRequestToken) -> crate::core::Result<()> {
+        self.frame_pacer.cancel(token);
+        Ok(())
+    }
+
+    fn os_occlusion_state(&self) -> WindowOcclusionState {
+        if self.window.is_null() || !self.open.get() {
+            return WindowOcclusionState::Unknown;
+        }
+        // SAFETY: self.window remains owned by this WindowOps until teardown,
+        // and occlusionState is a synchronous NSWindow property query.
+        unsafe { cocoa::window_occlusion_state(self.window) }
     }
 
     fn native_surface_ptr(&self) -> *mut c_void {
@@ -415,6 +523,7 @@ impl IPresenter for MacosPresenter {
 
 #[derive(Debug, Clone)]
 struct MacosAppEvent {
+    window_id: Option<WindowId>,
     kind: isize,
     location: crate::core::Point,
     button_number: isize,
@@ -427,7 +536,10 @@ struct MacosAppEvent {
 
 impl MacosAppEvent {
     fn into_ui_events(self, suppress_keydown_text: bool) -> Vec<UiEvent> {
-        match self.kind {
+        let Some(window_id) = self.window_id else {
+            return Vec::new();
+        };
+        let events = match self.kind {
             cocoa::NSEVENT_TYPE_LEFT_MOUSE_DOWN => {
                 vec![UiEvent::pointer_down(self.location, MouseButton::Left)]
             }
@@ -477,7 +589,11 @@ impl MacosAppEvent {
                 macos_mods_to_key_mod(self.modifiers),
             )],
             _ => Vec::new(),
-        }
+        };
+        events
+            .into_iter()
+            .map(|event| event.for_window(window_id))
+            .collect()
     }
 }
 
@@ -914,6 +1030,7 @@ mod cocoa {
     const NS_WINDOW_STYLE_CLOSABLE: usize = 1 << 1;
     const NS_WINDOW_STYLE_MINIATURIZABLE: usize = 1 << 2;
     const NS_WINDOW_STYLE_RESIZABLE: usize = 1 << 3;
+    const NS_WINDOW_OCCLUSION_STATE_VISIBLE: usize = 1 << 1;
     const NSEVENT_MASK_ANY: usize = usize::MAX;
     const KCGIMAGE_ALPHA_PREMULTIPLIED_FIRST: u32 = 2;
     const KCGIMAGE_BYTE_ORDER_32_LITTLE: u32 = 2 << 12;
@@ -969,6 +1086,8 @@ mod cocoa {
         fn objc_getClass(name: *const c_char) -> Id;
         fn sel_registerName(name: *const c_char) -> Sel;
         fn objc_msgSend();
+        #[cfg(target_arch = "x86_64")]
+        fn objc_msgSend_stret();
     }
 
     #[link(name = "AppKit", kind = "framework")]
@@ -1008,7 +1127,6 @@ mod cocoa {
     }
 
     pub struct CreatedWindow {
-        pub view: Id,
         pub layer: Id,
     }
 
@@ -1017,8 +1135,9 @@ mod cocoa {
         width: i32,
         height: i32,
         events: Arc<Mutex<VecDeque<UiEvent>>>,
-        session_active: Arc<std::sync::atomic::AtomicBool>,
-    ) -> (Id, CreatedWindow) {
+        window_id: WindowId,
+        text_input_owner: text_input_view::SharedImeOwner,
+    ) -> crate::core::Result<(Id, CreatedWindow)> {
         initialize_app();
         let width = width.max(1);
         let height = height.max(1);
@@ -1035,6 +1154,12 @@ mod cocoa {
             | NS_WINDOW_STYLE_RESIZABLE;
 
         let window = msg_id(class("NSWindow"), "alloc");
+        if window.is_null() {
+            return Err(Error::new(
+                Errc::PlatformError,
+                "macOS create_window: NSWindow alloc returned null",
+            ));
+        }
         let window = msg_id_rect_usize_isize_bool(
             window,
             "initWithContentRect:styleMask:backing:defer:",
@@ -1043,18 +1168,44 @@ mod cocoa {
             NS_BACKING_STORE_BUFFERED,
             NO,
         );
+        if window.is_null() {
+            return Err(Error::new(
+                Errc::PlatformError,
+                "macOS create_window: NSWindow initialization failed",
+            ));
+        }
+        // Rust owns the alloc/init +1 reference until WindowOps releases it
+        // after graphics shutdown. A user close only orders the window out.
+        msg_void_bool(window, "setReleasedWhenClosed:", NO);
         set_window_title(window, title);
-        let content_view = super::text_input_view::create_content_view(
+        let content_view = match super::text_input_view::create_content_view(
             rect.size.width,
             rect.size.height,
             events,
-            session_active,
-        );
+            window_id,
+            text_input_owner,
+        ) {
+            Ok(view) => view,
+            Err(error) => {
+                msg_void(window, "release");
+                return Err(error);
+            }
+        };
         msg_void_id(window, "setContentView:", content_view);
         // Vulkan/MoltenVK and Metal identity both consume a CAMetalLayer as the
         // native surface (VK_EXT_metal_surface / CPU setContents).
         msg_void_bool(content_view, "setWantsLayer:", YES);
         let layer = msg_id(class("CAMetalLayer"), "layer");
+        if layer.is_null() {
+            // NSWindow retains contentView; balance our alloc/init ownership,
+            // then release the window to tear the retained view back down.
+            msg_void(content_view, "release");
+            msg_void(window, "release");
+            return Err(Error::new(
+                Errc::PlatformError,
+                "macOS create_window: CAMetalLayer factory returned null",
+            ));
+        }
         msg_void_bool(layer, "setNeedsDisplayOnBoundsChange:", YES);
         // PixelUpload stages via TRANSFER_DST; MoltenVK needs non-framebufferOnly.
         msg_void_bool(layer, "setFramebufferOnly:", NO);
@@ -1067,13 +1218,10 @@ mod cocoa {
             },
         );
         msg_void_id(content_view, "setLayer:", layer);
-        (
-            window,
-            CreatedWindow {
-                view: content_view,
-                layer,
-            },
-        )
+        // `NSWindow.contentView` is strong; balance create_content_view's +1 so
+        // UixContentView dealloc follows the owning window exactly.
+        msg_void(content_view, "release");
+        Ok((window, CreatedWindow { layer }))
     }
 
     pub unsafe fn show_window(window: Id) {
@@ -1085,8 +1233,30 @@ mod cocoa {
         msg_void_id(window, "orderOut:", std::ptr::null_mut());
     }
 
+    pub unsafe fn window_occlusion_state(window: Id) -> WindowOcclusionState {
+        if msg_usize(window, "occlusionState") & NS_WINDOW_OCCLUSION_STATE_VISIBLE != 0 {
+            WindowOcclusionState::Visible
+        } else {
+            WindowOcclusionState::Occluded
+        }
+    }
+
     pub unsafe fn close_window(window: Id) {
         msg_void(window, "close");
+    }
+
+    pub unsafe fn release_object(object: Id) {
+        if !object.is_null() {
+            msg_void(object, "release");
+        }
+    }
+
+    pub unsafe fn close_and_release_window(window: Id) {
+        if window.is_null() {
+            return;
+        }
+        close_window(window);
+        release_object(window);
     }
 
     pub unsafe fn set_window_title(window: Id, title: &str) {
@@ -1198,7 +1368,9 @@ mod cocoa {
         }
         let len = (width as usize)
             .checked_mul(height as usize)
-            .ok_or_else(|| format!("CAMetalLayer pixel extent overflows usize: {width}x{height}"))?;
+            .ok_or_else(|| {
+                format!("CAMetalLayer pixel extent overflows usize: {width}x{height}")
+            })?;
         if pixels.len() < len {
             return Err(format!(
                 "CAMetalLayer pixel payload too short: got {}, need {len} for {width}x{height}",
@@ -1345,7 +1517,9 @@ mod cocoa {
 
     unsafe fn macos_app_event_from_ns_event(event: Id) -> MacosAppEvent {
         let kind = msg_isize(event, "type");
+        let event_window = msg_id(event, "window");
         MacosAppEvent {
+            window_id: window_delegate::window_id(event_window),
             kind,
             location: event_location(event),
             button_number: event_button_number(event, kind),
@@ -1417,18 +1591,22 @@ mod cocoa {
     }
 
     unsafe fn class(name: &str) -> Id {
-        let name = CString::new(name).expect("Objective-C class name contains no nul");
-        objc_getClass(name.as_ptr())
+        CString::new(name)
+            .ok()
+            .map(|name| objc_getClass(name.as_ptr()))
+            .unwrap_or(std::ptr::null_mut())
     }
 
     unsafe fn sel(name: &str) -> Sel {
-        let name = CString::new(name).expect("Objective-C selector contains no nul");
-        sel_registerName(name.as_ptr())
+        CString::new(name)
+            .ok()
+            .map(|name| sel_registerName(name.as_ptr()))
+            .unwrap_or(std::ptr::null_mut())
     }
 
     unsafe fn ns_string(value: &str) -> Id {
         let string = msg_id(class("NSString"), "alloc");
-        let c_string = CString::new(value).unwrap_or_else(|_| CString::new("").unwrap());
+        let c_string = CString::new(value).unwrap_or_default();
         msg_id_ptr(
             string,
             "initWithUTF8String:",
@@ -1584,9 +1762,20 @@ mod cocoa {
     }
 
     unsafe fn msg_rect(receiver: Id, selector: &str) -> CGRect {
-        type FnType = unsafe extern "C" fn(Id, Sel) -> CGRect;
-        let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
-        f(receiver, sel(selector))
+        #[cfg(target_arch = "x86_64")]
+        {
+            type FnType = unsafe extern "C" fn(*mut CGRect, Id, Sel);
+            let f: FnType = std::mem::transmute(objc_msgSend_stret as unsafe extern "C" fn());
+            let mut result = std::mem::MaybeUninit::<CGRect>::uninit();
+            f(result.as_mut_ptr(), receiver, sel(selector));
+            result.assume_init()
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            type FnType = unsafe extern "C" fn(Id, Sel) -> CGRect;
+            let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+            f(receiver, sel(selector))
+        }
     }
 
     unsafe fn msg_bool_id_id(receiver: Id, selector: &str, first: Id, second: Id) -> Bool {

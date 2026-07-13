@@ -6,6 +6,7 @@
 use crate::core::{EdgeInsets, Point, Rect};
 use crate::draw::Color;
 use crate::ui::event::{HandlerRegistration, SemanticEvent, SemanticKind};
+use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::style::{ColorValue, Style, TypographyToken};
 use crate::ui::traits::WidgetComponent;
 
@@ -34,7 +35,9 @@ pub struct ViewNode {
     pub(crate) flex_shrink_override: Option<f32>,
     pub(crate) z_index: i32,
     pub(crate) key: Option<String>,
+    pub(crate) automation_id: Option<String>,
     pub(crate) handlers: Vec<HandlerRegistration>,
+    pub(crate) render_handlers: Vec<RenderHandlerRegistration>,
 }
 
 impl View for ViewNode {
@@ -57,7 +60,9 @@ impl ViewNode {
             flex_shrink_override: None,
             z_index: 0,
             key: None,
+            automation_id: None,
             handlers: Vec::new(),
+            render_handlers: Vec::new(),
         }
     }
 
@@ -70,7 +75,9 @@ impl ViewNode {
             flex_shrink_override: None,
             z_index: 0,
             key: None,
+            automation_id: None,
             handlers: Vec::new(),
+            render_handlers: Vec::new(),
         }
     }
 
@@ -177,6 +184,13 @@ impl ViewNode {
 
     pub fn key(mut self, k: impl Into<String>) -> Self {
         self.key = Some(k.into());
+        self
+    }
+
+    /// Assigns a stable selector for test automation without affecting
+    /// reconciliation identity or runtime behavior.
+    pub fn automation_id(mut self, id: impl Into<String>) -> Self {
+        self.automation_id = Some(id.into());
         self
     }
 
@@ -325,6 +339,12 @@ impl crate::ui::IntoWidgetNode for ViewNode {
 /// **链式顺序**：先写 builder 专有方法（如 `button(…).primary().on_click(…)`），再写本 trait
 /// （`bg` / `padding`…）——一旦进入 `ViewNode`，`primary` 等 builder 方法不可再调。
 pub trait StyleExt: Into<ViewNode> + Sized {
+    /// Assigns a stable selector for test automation. Put builder-specific
+    /// methods before this call because it materializes a [`ViewNode`].
+    fn automation_id(self, id: impl Into<String>) -> ViewNode {
+        self.into().automation_id(id)
+    }
+
     fn color(self, color: impl Into<ColorValue>) -> ViewNode {
         self.into().color(color)
     }

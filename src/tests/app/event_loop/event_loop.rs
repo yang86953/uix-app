@@ -1,31 +1,33 @@
-use crate::tests::common::*;
-use crate::ui::widgets::Container;
-use crate::app::main_thread_queue::MainThreadContext;
-use crate::app::clock::{system_clock, AppClock};
-use crate::draw::pipeline::{ FrameRenderInput, FrameRenderer, InvalidationSource, RenderMetrics };
-use crate::draw::traits::GraphicsEngine;
-use crate::native::traits::platform::Platform;
-use crate::native::traits::window::PlatformWindow;
-use crate::ui::core::widget::WidgetCore;
-use crate::app::event_loop::event_loop::*;
 use crate::app::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry};
 use crate::app::app_timer::AppTimerQueue;
+use crate::app::clock::AppClock;
+use crate::app::event_loop::event_loop::*;
 use crate::app::map_ui_event;
-use crate::tests::app::test_clock::TestClock;
+use crate::app::window_driver::{animation_clock_should_advance, sync_root_frame_to_engine};
 use crate::app::window_session::{WindowLoopState, WindowSession};
+use crate::draw::pipeline::RenderMetrics;
+use crate::draw::traits::GraphicsEngine;
 use crate::native::test_harness::{FakePlatform, FakeWindow};
-use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
+use crate::native::traits::event::{FrameRequestToken, UiEvent, UiEventPayload, UiEventType};
+use crate::native::traits::platform::Platform;
+use crate::native::traits::present::PresentTestResult;
+use crate::native::traits::window::{NativeFrameRequest, PlatformWindow};
+use crate::tests::app::test_clock::TestClock;
+use crate::tests::common::*;
+use crate::ui::core::widget::WidgetCore;
 use crate::ui::traits::TokenProvider;
 use crate::ui::view::combinators::{button, dynamic_label, label};
-use crate::ui::view::{View, ViewNode, column, row};
-use crate::ui::widgets::Label;
+use crate::ui::view::{column, row, View, ViewNode};
 use crate::ui::widgets::feedback::Tooltip;
 use crate::ui::widgets::input::input::Input;
+use crate::ui::widgets::Container;
+use crate::ui::widgets::Label;
 use std::any::Any;
 
 struct TestAnimatedWidget {
     remaining_updates: Arc<AtomicUsize>,
     update_calls: Arc<AtomicUsize>,
+    recorded_dts: Option<Arc<Mutex<Vec<f64>>>>,
     dirty_rect: Rect,
 }
 
@@ -34,6 +36,20 @@ impl TestAnimatedWidget {
         Self {
             remaining_updates,
             update_calls,
+            recorded_dts: None,
+            dirty_rect: Rect::new(4.0, 5.0, 6.0, 7.0),
+        }
+    }
+
+    fn recording(
+        remaining_updates: Arc<AtomicUsize>,
+        update_calls: Arc<AtomicUsize>,
+        recorded_dts: Arc<Mutex<Vec<f64>>>,
+    ) -> Self {
+        Self {
+            remaining_updates,
+            update_calls,
+            recorded_dts: Some(recorded_dts),
             dirty_rect: Rect::new(4.0, 5.0, 6.0, 7.0),
         }
     }
@@ -84,8 +100,14 @@ impl WidgetRender for TestAnimatedWidget {
 }
 
 impl WidgetAnimation for TestAnimatedWidget {
-    fn update_animation(&mut self, _dt: f64) -> bool {
+    fn update_animation(&mut self, dt: f64) -> bool {
         self.update_calls.fetch_add(1, Ordering::Relaxed);
+        if let Some(recorded_dts) = &self.recorded_dts {
+            recorded_dts
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .push(dt);
+        }
         let previous = self.remaining_updates.fetch_sub(1, Ordering::Relaxed);
         previous > 1
     }
@@ -122,15 +144,11 @@ impl GraphicsEngine for FailFirstBeginEngine {
         self.inner.resize(width, height)
     }
 
-    fn begin_frame(
-        &mut self,
-        strategy: crate::draw::traits::UpdateStrategy,
-    ) -> RenderOutcome {
+    fn begin_frame(&mut self, strategy: crate::draw::traits::UpdateStrategy) -> RenderOutcome {
         if self.begin_calls.fetch_add(1, Ordering::Relaxed) == 0 {
-            RenderOutcome::Failed(crate::draw::engine::GraphicsFailure::from_error(Error::new(
-                Errc::GraphicsSurfaceLost,
-                "injected first-frame failure",
-            )))
+            RenderOutcome::Failed(crate::draw::engine::GraphicsFailure::from_error(
+                Error::new(Errc::GraphicsSurfaceLost, "injected first-frame failure"),
+            ))
         } else {
             self.inner.begin_frame(strategy)
         }
@@ -149,6 +167,103 @@ impl GraphicsEngine for FailFirstBeginEngine {
         encoder: &FrameEncoder,
     ) -> Result<crate::draw::pipeline::EncodedFrameExecution, Error> {
         self.inner.try_execute_encoded_frame(encoder)
+    }
+}
+
+struct OccludeFirstPresentEngine {
+    inner: NullEngine,
+    begin_calls: Arc<AtomicUsize>,
+    end_calls: Arc<AtomicUsize>,
+    probe_calls: Arc<AtomicUsize>,
+}
+
+impl OccludeFirstPresentEngine {
+    fn new(
+        begin_calls: Arc<AtomicUsize>,
+        end_calls: Arc<AtomicUsize>,
+        probe_calls: Arc<AtomicUsize>,
+    ) -> Self {
+        Self {
+            inner: NullEngine::new(),
+            begin_calls,
+            end_calls,
+            probe_calls,
+        }
+    }
+}
+
+impl GraphicsEngine for OccludeFirstPresentEngine {
+    fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.inner.initialize(width, height)
+    }
+
+    fn try_shutdown(&mut self) -> Result<(), Error> {
+        self.inner.try_shutdown()
+    }
+
+    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.inner.resize(width, height)
+    }
+
+    fn begin_frame(&mut self, strategy: crate::draw::traits::UpdateStrategy) -> RenderOutcome {
+        self.begin_calls.fetch_add(1, Ordering::Relaxed);
+        self.inner.begin_frame(strategy)
+    }
+
+    fn end_frame(&mut self, damage: &DamageRegion) -> RenderOutcome {
+        let inner = self.inner.end_frame(damage);
+        if self.end_calls.fetch_add(1, Ordering::Relaxed) == 0 {
+            RenderOutcome::Failed(crate::draw::engine::GraphicsFailure::Occluded(Error::new(
+                Errc::GraphicsOccluded,
+                "injected first-present occlusion",
+            )))
+        } else {
+            inner
+        }
+    }
+
+    fn test_present(&mut self) -> Result<PresentTestResult, Error> {
+        let call = self.probe_calls.fetch_add(1, Ordering::Relaxed);
+        Ok(if call == 0 {
+            PresentTestResult::Occluded
+        } else {
+            PresentTestResult::Presentable
+        })
+    }
+
+    fn canvas_2d(&mut self) -> &mut dyn crate::draw::traits::Canvas2D {
+        self.inner.canvas_2d()
+    }
+
+    fn try_execute_encoded_frame(
+        &mut self,
+        encoder: &FrameEncoder,
+    ) -> Result<crate::draw::pipeline::EncodedFrameExecution, Error> {
+        self.inner.try_execute_encoded_frame(encoder)
+    }
+}
+
+#[derive(Debug)]
+struct SteppingClock {
+    now: Mutex<Instant>,
+    step: Duration,
+}
+
+impl SteppingClock {
+    fn new(now: Instant, step: Duration) -> Arc<Self> {
+        Arc::new(Self {
+            now: Mutex::new(now),
+            step,
+        })
+    }
+}
+
+impl AppClock for SteppingClock {
+    fn now(&self) -> Instant {
+        let mut now = self.now.lock().unwrap_or_else(|error| error.into_inner());
+        let current = *now;
+        *now += self.step;
+        current
     }
 }
 
@@ -367,7 +482,65 @@ fn unrelated_active_frame_does_not_reset_animation_clock() {
 }
 
 #[test]
-fn retained_dirty_retries_failed_frame_before_blocking_wait() {
+fn failed_frame_waits_for_recovery_deadline_without_busy_retry() {
+    let start = Instant::now();
+    let clock = TestClock::new(start);
+    let begin_calls = Arc::new(AtomicUsize::new(0));
+    let mut platform = FakePlatform::new();
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Container::new()),
+        Box::new(FailFirstBeginEngine::new(begin_calls.clone())),
+        800,
+        600,
+    );
+    assert!(session.enable_semantic_tracking());
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop_with_clock(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        clock,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        |_| None,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(begin_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(metrics.get().present_calls, 0);
+    assert_eq!(platform.event_source.state.dispatch_timeout_calls, 1);
+    assert_eq!(
+        platform.event_source.state.dispatch_timeout_durations,
+        vec![Duration::from_millis(8)]
+    );
+    assert_eq!(session.loop_state(), WindowLoopState::RegisteredActive);
+    let semantic = session.semantic_snapshot().unwrap();
+    assert_eq!(semantic.revision, 1);
+    assert_eq!(
+        semantic.presented_revision, 0,
+        "a failed frame must not advance the presented semantic revision"
+    );
+}
+
+#[test]
+fn retained_dirty_is_presented_after_recovery_deadline() {
+    let start = Instant::now();
+    let clock = SteppingClock::new(start, Duration::from_millis(10));
     let begin_calls = Arc::new(AtomicUsize::new(0));
     let mut platform = FakePlatform::new();
     platform.event_source.state.exit_after_blocking_calls = Some(1);
@@ -379,6 +552,7 @@ fn retained_dirty_retries_failed_frame_before_blocking_wait() {
         800,
         600,
     );
+    assert!(session.enable_semantic_tracking());
     let font_service = FontService::new();
     let image_service = ImageService::new();
     let theme = RefCell::new(Theme::default());
@@ -386,13 +560,14 @@ fn retained_dirty_retries_failed_frame_before_blocking_wait() {
     let cursor_pos = Cell::new(Point::default());
     let metrics = Cell::new(RenderMetrics::default());
 
-    let status = run_window_session_loop(
+    let status = run_window_session_loop_with_clock(
         &mut platform,
         &mut window,
         &mut session,
         &font_service,
         &image_service,
         &theme,
+        clock,
         &debug_mode,
         &cursor_pos,
         Some(&metrics),
@@ -404,6 +579,137 @@ fn retained_dirty_retries_failed_frame_before_blocking_wait() {
     assert_eq!(status, 0);
     assert_eq!(begin_calls.load(Ordering::Relaxed), 2);
     assert_eq!(metrics.get().present_calls, 1);
+    let semantic = session.semantic_snapshot().unwrap();
+    assert_eq!(semantic.revision, 1);
+    assert_eq!(
+        semantic.presented_revision, semantic.revision,
+        "only the recovered successful present may advance presented_revision"
+    );
+    assert_eq!(platform.event_source.state.dispatch_blocking_calls, 1);
+    assert_eq!(platform.event_source.state.dispatch_timeout_calls, 0);
+}
+
+#[test]
+fn occluded_frame_waits_for_probe_deadline_without_visual_retry() {
+    let start = Instant::now();
+    let clock = TestClock::new(start);
+    let begin_calls = Arc::new(AtomicUsize::new(0));
+    let end_calls = Arc::new(AtomicUsize::new(0));
+    let probe_calls = Arc::new(AtomicUsize::new(0));
+    let mut platform = FakePlatform::new();
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Container::new()),
+        Box::new(OccludeFirstPresentEngine::new(
+            Arc::clone(&begin_calls),
+            Arc::clone(&end_calls),
+            Arc::clone(&probe_calls),
+        )),
+        800,
+        600,
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop_with_clock(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        clock,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        |_| None,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(begin_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(end_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(probe_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(metrics.get().present_calls, 0);
+    assert_eq!(platform.event_source.state.dispatch_timeout_calls, 1);
+    assert_eq!(
+        platform.event_source.state.dispatch_timeout_durations,
+        vec![Duration::from_millis(100)]
+    );
+    assert_eq!(session.loop_state(), WindowLoopState::RegisteredActive);
+}
+
+#[test]
+fn occlusion_probes_without_visual_phases_then_recovers_retained_dirty() {
+    let start = Instant::now();
+    let clock = SteppingClock::new(start, Duration::from_millis(100));
+    let remaining = Arc::new(AtomicUsize::new(2));
+    let updates = Arc::new(AtomicUsize::new(0));
+    let recorded_dts = Arc::new(Mutex::new(Vec::new()));
+    let begin_calls = Arc::new(AtomicUsize::new(0));
+    let end_calls = Arc::new(AtomicUsize::new(0));
+    let probe_calls = Arc::new(AtomicUsize::new(0));
+    let mut platform = FakePlatform::new();
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(TestAnimatedWidget::recording(
+            remaining,
+            Arc::clone(&updates),
+            Arc::clone(&recorded_dts),
+        )),
+        Box::new(OccludeFirstPresentEngine::new(
+            Arc::clone(&begin_calls),
+            Arc::clone(&end_calls),
+            Arc::clone(&probe_calls),
+        )),
+        800,
+        600,
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop_with_clock(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        clock,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        |_| None,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(probe_calls.load(Ordering::Relaxed), 2);
+    assert_eq!(begin_calls.load(Ordering::Relaxed), 2);
+    assert_eq!(end_calls.load(Ordering::Relaxed), 2);
+    assert_eq!(updates.load(Ordering::Relaxed), 2);
+    assert_eq!(
+        *recorded_dts
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()),
+        vec![0.0, 0.0]
+    );
+    assert_eq!(metrics.get().present_calls, 1);
+    assert_eq!(platform.event_source.state.dispatch_timeout_calls, 0);
     assert_eq!(platform.event_source.state.dispatch_blocking_calls, 1);
 }
 
@@ -501,7 +807,7 @@ fn widget_tree_update_animation_nodes_advances_only_requested_ids() {
 }
 
 #[test]
-fn active_animation_registers_next_frame_deadline() {
+fn active_animation_arms_one_fallback_frame_request() {
     let start = Instant::now();
     let clock = TestClock::new(start);
     let remaining = Arc::new(AtomicUsize::new(2));
@@ -545,14 +851,83 @@ fn active_animation_registers_next_frame_deadline() {
     assert_eq!(platform.event_source.state.dispatch_blocking_calls, 0);
     assert_eq!(
         platform.event_source.state.dispatch_timeout_durations,
-        vec![Duration::from_millis(16)]
+        vec![Duration::from_nanos(1_000_000_000 / 60)]
     );
     assert!(!session.active_work().is_empty());
     assert_eq!(session.loop_state(), WindowLoopState::RegisteredActive);
 }
 
 #[test]
-fn due_animation_work_advances_only_due_node() {
+fn native_frame_callback_advances_animation_before_fallback_deadline() {
+    let start = Instant::now();
+    let clock = TestClock::new(start);
+    let remaining = Arc::new(AtomicUsize::new(2));
+    let updates = Arc::new(AtomicUsize::new(0));
+    let recorded_dts = Arc::new(Mutex::new(Vec::new()));
+    let token = FrameRequestToken::new(1, 2);
+    let mut platform = FakePlatform::new();
+    platform.event_source.state.timeout_events.push_back(
+        UiEvent::frame_opportunity(token, start + Duration::from_millis(10), None)
+            .for_window(WindowId::new(1)),
+    );
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600).with_native_frame_requests();
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(TestAnimatedWidget::recording(
+            remaining,
+            updates.clone(),
+            recorded_dts.clone(),
+        )),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop_with_clock(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        clock,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        |_| None,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(updates.load(Ordering::Relaxed), 2);
+    assert_eq!(
+        *recorded_dts
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()),
+        vec![0.0, 0.01]
+    );
+    assert_eq!(
+        window.state.native_frame_requests,
+        vec![NativeFrameRequest::after_present(token)]
+    );
+    assert_eq!(window.state.native_frame_presented, vec![token]);
+    assert!(window.state.cancelled_native_frame_requests.is_empty());
+    assert_eq!(platform.event_source.state.dispatch_timeout_calls, 1);
+    assert_eq!(platform.event_source.state.dispatch_blocking_calls, 1);
+    assert_eq!(metrics.get().present_calls, 2);
+    assert!(session.active_work().is_empty());
+}
+
+#[test]
+fn frame_opportunity_advances_all_open_animation_registrations() {
     let start = Instant::now();
     let clock = TestClock::new(start);
     let first_remaining = Arc::new(AtomicUsize::new(2));
@@ -599,11 +974,10 @@ fn due_animation_work_advances_only_due_node() {
     };
     session
         .active_work_mut()
-        .register(ActiveWorkKind::Animation(first), start);
-    session.active_work_mut().register(
-        ActiveWorkKind::Animation(second),
-        start + Duration::from_secs(60),
-    );
+        .register_open(ActiveWorkKind::Animation(first));
+    session
+        .active_work_mut()
+        .register_open(ActiveWorkKind::Animation(second));
     let font_service = FontService::new();
     let image_service = ImageService::new();
     let theme = RefCell::new(Theme::default());
@@ -629,13 +1003,13 @@ fn due_animation_work_advances_only_due_node() {
     assert_eq!(status, 0);
     assert_eq!(first_updates.load(Ordering::Relaxed), 1);
     assert_eq!(first_remaining.load(Ordering::Relaxed), 1);
-    assert_eq!(second_updates.load(Ordering::Relaxed), 0);
-    assert_eq!(second_remaining.load(Ordering::Relaxed), 2);
+    assert_eq!(second_updates.load(Ordering::Relaxed), 1);
+    assert_eq!(second_remaining.load(Ordering::Relaxed), 1);
     assert!(!session.active_work().is_empty());
 }
 
 #[test]
-fn due_animation_work_unregisters_hidden_node_without_tick() {
+fn frame_opportunity_unregisters_hidden_animation_without_tick() {
     let start = Instant::now();
     let clock = TestClock::new(start);
     let remaining = Arc::new(AtomicUsize::new(2));
@@ -659,7 +1033,7 @@ fn due_animation_work_unregisters_hidden_node_without_tick() {
     };
     session
         .active_work_mut()
-        .register(ActiveWorkKind::Animation(root), start);
+        .register_open(ActiveWorkKind::Animation(root));
     let font_service = FontService::new();
     let image_service = ImageService::new();
     let theme = RefCell::new(Theme::default());
@@ -689,7 +1063,7 @@ fn due_animation_work_unregisters_hidden_node_without_tick() {
 }
 
 #[test]
-fn due_animation_frame_discovers_unregistered_animation_without_advancing_future() {
+fn frame_opportunity_advances_registered_and_discovers_unregistered_animations() {
     let start = Instant::now();
     let clock = TestClock::new(start);
     let due_remaining = Arc::new(AtomicUsize::new(2));
@@ -749,11 +1123,10 @@ fn due_animation_frame_discovers_unregistered_animation_without_advancing_future
     };
     session
         .active_work_mut()
-        .register(ActiveWorkKind::Animation(due_id), start);
-    session.active_work_mut().register(
-        ActiveWorkKind::Animation(future_id),
-        start + Duration::from_secs(60),
-    );
+        .register_open(ActiveWorkKind::Animation(due_id));
+    session
+        .active_work_mut()
+        .register_open(ActiveWorkKind::Animation(future_id));
     let font_service = FontService::new();
     let image_service = ImageService::new();
     let theme = RefCell::new(Theme::default());
@@ -779,14 +1152,14 @@ fn due_animation_frame_discovers_unregistered_animation_without_advancing_future
     assert_eq!(status, 0);
     assert_eq!(due_updates.load(Ordering::Relaxed), 1);
     assert_eq!(due_remaining.load(Ordering::Relaxed), 1);
-    assert_eq!(future_updates.load(Ordering::Relaxed), 0);
-    assert_eq!(future_remaining.load(Ordering::Relaxed), 2);
+    assert_eq!(future_updates.load(Ordering::Relaxed), 1);
+    assert_eq!(future_remaining.load(Ordering::Relaxed), 1);
     assert_eq!(discovered_updates.load(Ordering::Relaxed), 1);
     assert_eq!(discovered_remaining.load(Ordering::Relaxed), 1);
 }
 
 #[test]
-fn app_timer_due_work_does_not_advance_future_animation() {
+fn app_timer_due_work_does_not_add_an_animation_tick() {
     let start = Instant::now();
     let clock = TestClock::new(start);
     let remaining = Arc::new(AtomicUsize::new(2));
@@ -805,10 +1178,9 @@ fn app_timer_due_work_does_not_advance_future_animation() {
         let (tree, _) = session.tree_and_engine_mut();
         tree.root_id().unwrap()
     };
-    session.active_work_mut().register(
-        ActiveWorkKind::Animation(root),
-        start + Duration::from_secs(60),
-    );
+    session
+        .active_work_mut()
+        .register_open(ActiveWorkKind::Animation(root));
     let app_timers = crate::app::app_timer::AppTimerQueue::with_clock(clock.clone());
     let fired = Arc::new(AtomicUsize::new(0));
     let _handle = app_timers.run_after(Duration::ZERO, {
@@ -842,8 +1214,8 @@ fn app_timer_due_work_does_not_advance_future_animation() {
 
     assert_eq!(status, 0);
     assert_eq!(fired.load(Ordering::Relaxed), 1);
-    assert_eq!(updates.load(Ordering::Relaxed), 0);
-    assert_eq!(remaining.load(Ordering::Relaxed), 2);
+    assert_eq!(updates.load(Ordering::Relaxed), 1);
+    assert_eq!(remaining.load(Ordering::Relaxed), 1);
     assert!(!session.active_work().is_empty());
 }
 
@@ -932,7 +1304,7 @@ fn deep_idle_waits_without_fixed_timeout_or_extra_present() {
     assert_eq!(platform.event_source.state.dispatch_timeout_calls, 0);
     assert_eq!(stats.present_calls, 1);
     assert_eq!(window.presenter.state.present_calls.len(), 1);
-    assert_eq!(stats.idle_frames, 4);
+    assert_eq!(stats.idle_frames, 0);
     assert_eq!(platform.text_input.state.start_calls, 0);
     assert_eq!(platform.text_input.state.stop_calls, 0);
 }
@@ -1285,7 +1657,553 @@ fn fake_platform_file_drop_reaches_handler_table() {
 }
 
 #[test]
-fn hidden_window_preserves_dirty_until_restore() {
+fn minimized_animation_keeps_registration_without_timeout_or_frame() {
+    let start = Instant::now();
+    let clock = TestClock::new(start);
+    let remaining = Arc::new(AtomicUsize::new(2));
+    let updates = Arc::new(AtomicUsize::new(0));
+    let mut platform = FakePlatform::new();
+    platform.event_source.inject(UiEvent::new(
+        UiEventType::WindowMinimize,
+        UiEventPayload::None,
+    ));
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(TestAnimatedWidget::new(remaining, updates.clone())),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let root = session.tree_and_engine_mut().0.root_id().unwrap();
+    session
+        .active_work_mut()
+        .register_open(ActiveWorkKind::Animation(root));
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop_with_clock(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        clock,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        map_ui_event,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(updates.load(Ordering::Relaxed), 0);
+    assert_eq!(metrics.get().present_calls, 0);
+    assert_eq!(platform.event_source.state.dispatch_timeout_calls, 0);
+    assert_eq!(platform.event_source.state.dispatch_blocking_calls, 1);
+    assert!(!session.active_work().is_empty());
+    assert_eq!(session.loop_state(), WindowLoopState::RegisteredActive);
+}
+
+#[test]
+fn hidden_animation_keeps_dirty_and_registration_without_wake_or_frame() {
+    let start = Instant::now();
+    let clock = TestClock::new(start);
+    let remaining = Arc::new(AtomicUsize::new(2));
+    let updates = Arc::new(AtomicUsize::new(0));
+    let visible = Arc::new(AtomicBool::new(true));
+    let mut platform = FakePlatform::new();
+    platform.event_source.inject(UiEvent::window_hide());
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window =
+        FakeWindow::new(1, "test", 800, 600).with_visibility_signal(Arc::clone(&visible));
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(TestAnimatedWidget::new(remaining, updates.clone())),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let root = session.tree_and_engine_mut().0.root_id().unwrap();
+    session
+        .active_work_mut()
+        .register_open(ActiveWorkKind::Animation(root));
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop_with_clock(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        clock,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        map_ui_event,
+        {
+            let visible = Arc::clone(&visible);
+            move |event| {
+                if event.type_ == UiEventType::WindowHide {
+                    visible.store(false, Ordering::Relaxed);
+                }
+                false
+            }
+        },
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(updates.load(Ordering::Relaxed), 0);
+    assert_eq!(metrics.get().layout_calls, 0);
+    assert_eq!(metrics.get().present_calls, 0);
+    assert_eq!(platform.event_source.state.dispatch_timeout_calls, 0);
+    assert_eq!(platform.event_source.state.dispatch_blocking_calls, 1);
+    assert!(!session.active_work().is_empty());
+    assert!(session.tree_and_engine_mut().0.has_render_work());
+    assert_eq!(session.loop_state(), WindowLoopState::RegisteredActive);
+}
+
+#[test]
+fn visibility_change_without_lifecycle_event_suspends_before_present() {
+    let visible = Arc::new(AtomicBool::new(true));
+    let mut platform = FakePlatform::new();
+    platform
+        .event_source
+        .inject(UiEvent::key_up(KeyCode::Enter, KeyMod::NONE));
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window =
+        FakeWindow::new(1, "test", 800, 600).with_visibility_signal(Arc::clone(&visible));
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Container::new()),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        map_ui_event,
+        {
+            let visible = Arc::clone(&visible);
+            move |event| {
+                if event.type_ == UiEventType::KeyUp {
+                    visible.store(false, Ordering::Relaxed);
+                }
+                false
+            }
+        },
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(metrics.get().layout_calls, 0);
+    assert_eq!(metrics.get().paint_calls, 0);
+    assert_eq!(metrics.get().present_calls, 0);
+    assert_eq!(platform.event_source.state.dispatch_timeout_calls, 0);
+    assert_eq!(platform.event_source.state.dispatch_blocking_calls, 1);
+    assert!(session.tree_and_engine_mut().0.has_render_work());
+}
+
+#[test]
+fn exact_occlusion_query_suspends_before_visual_work_without_waiting_for_notification() {
+    let visible = Arc::new(AtomicBool::new(true));
+    let occluded = Arc::new(AtomicBool::new(false));
+    let mut platform = FakePlatform::new();
+    platform
+        .event_source
+        .inject(UiEvent::key_up(KeyCode::Enter, KeyMod::NONE));
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600)
+        .with_visibility_signal(Arc::clone(&visible))
+        .with_occlusion_signal(Arc::clone(&occluded));
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Container::new()),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        map_ui_event,
+        {
+            let occluded = Arc::clone(&occluded);
+            move |event| {
+                if event.type_ == UiEventType::KeyUp {
+                    occluded.store(true, Ordering::Relaxed);
+                }
+                false
+            }
+        },
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(metrics.get().layout_calls, 0);
+    assert_eq!(metrics.get().paint_calls, 0);
+    assert_eq!(metrics.get().present_calls, 0);
+    assert_eq!(platform.event_source.state.dispatch_timeout_calls, 0);
+    assert_eq!(platform.event_source.state.dispatch_blocking_calls, 1);
+    assert!(session.tree_and_engine_mut().0.has_render_work());
+}
+
+#[test]
+fn occlusion_notification_blocks_without_polling_then_exposure_rebases_animation() {
+    let start = Instant::now();
+    let clock = TestClock::new(start);
+    let remaining = Arc::new(AtomicUsize::new(1));
+    let updates = Arc::new(AtomicUsize::new(0));
+    let recorded_dts = Arc::new(Mutex::new(Vec::new()));
+    let visible = Arc::new(AtomicBool::new(true));
+    let occluded = Arc::new(AtomicBool::new(false));
+    let transitions = Arc::new(AtomicUsize::new(0));
+    let mut platform = FakePlatform::new();
+    platform
+        .event_source
+        .inject(UiEvent::window_occlusion_changed());
+    platform
+        .event_source
+        .state
+        .blocking_events
+        .push_back(UiEvent::window_occlusion_changed());
+    platform.event_source.state.exit_after_blocking_calls = Some(2);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600)
+        .with_visibility_signal(Arc::clone(&visible))
+        .with_occlusion_signal(Arc::clone(&occluded));
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(TestAnimatedWidget::recording(
+            remaining,
+            updates.clone(),
+            recorded_dts.clone(),
+        )),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let root = session.tree_and_engine_mut().0.root_id().unwrap();
+    session
+        .active_work_mut()
+        .register_open(ActiveWorkKind::Animation(root));
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop_with_clock(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        clock,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        map_ui_event,
+        {
+            let occluded = Arc::clone(&occluded);
+            let transitions = Arc::clone(&transitions);
+            move |event| {
+                if event.type_ == UiEventType::WindowOcclusionChanged {
+                    let transition = transitions.fetch_add(1, Ordering::Relaxed);
+                    occluded.store(transition == 0, Ordering::Relaxed);
+                }
+                false
+            }
+        },
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(transitions.load(Ordering::Relaxed), 2);
+    assert_eq!(updates.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        recorded_dts
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .as_slice(),
+        &[0.0]
+    );
+    assert_eq!(metrics.get().layout_calls, 1);
+    assert_eq!(metrics.get().present_calls, 1);
+    assert_eq!(platform.event_source.state.dispatch_timeout_calls, 0);
+    assert_eq!(platform.event_source.state.dispatch_blocking_calls, 2);
+    assert!(session.active_work().is_empty());
+    assert!(!session.tree_and_engine_mut().0.has_render_work());
+}
+
+#[test]
+fn showing_hidden_window_rebases_animation_and_presents_retained_dirty_once() {
+    let start = Instant::now();
+    let clock = TestClock::new(start);
+    let remaining = Arc::new(AtomicUsize::new(1));
+    let updates = Arc::new(AtomicUsize::new(0));
+    let recorded_dts = Arc::new(Mutex::new(Vec::new()));
+    let visible = Arc::new(AtomicBool::new(true));
+    let mut platform = FakePlatform::new();
+    platform.event_source.inject(UiEvent::window_hide());
+    platform
+        .event_source
+        .state
+        .blocking_events
+        .push_back(UiEvent::window_show());
+    platform.event_source.state.exit_after_blocking_calls = Some(2);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window =
+        FakeWindow::new(1, "test", 800, 600).with_visibility_signal(Arc::clone(&visible));
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(TestAnimatedWidget::recording(
+            remaining,
+            updates.clone(),
+            recorded_dts.clone(),
+        )),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let root = session.tree_and_engine_mut().0.root_id().unwrap();
+    session
+        .active_work_mut()
+        .register_open(ActiveWorkKind::Animation(root));
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop_with_clock(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        clock,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        map_ui_event,
+        {
+            let visible = Arc::clone(&visible);
+            move |event| {
+                match event.type_ {
+                    UiEventType::WindowHide => visible.store(false, Ordering::Relaxed),
+                    UiEventType::WindowShow => visible.store(true, Ordering::Relaxed),
+                    _ => {}
+                }
+                false
+            }
+        },
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(updates.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        recorded_dts
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .as_slice(),
+        &[0.0]
+    );
+    assert_eq!(metrics.get().layout_calls, 1);
+    assert_eq!(metrics.get().present_calls, 1);
+    assert_eq!(platform.event_source.state.dispatch_timeout_calls, 0);
+    assert_eq!(platform.event_source.state.dispatch_blocking_calls, 2);
+    assert!(session.active_work().is_empty());
+    assert!(!session.tree_and_engine_mut().0.has_render_work());
+}
+
+#[test]
+fn zero_extent_keeps_dirty_and_animation_registered_without_wake() {
+    let start = Instant::now();
+    let clock = TestClock::new(start);
+    let remaining = Arc::new(AtomicUsize::new(2));
+    let updates = Arc::new(AtomicUsize::new(0));
+    let mut platform = FakePlatform::new();
+    platform.event_source.inject(UiEvent::resize(0, 0));
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(TestAnimatedWidget::new(remaining, updates.clone())),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let root = session.tree_and_engine_mut().0.root_id().unwrap();
+    session
+        .active_work_mut()
+        .register_open(ActiveWorkKind::Animation(root));
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop_with_clock(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        clock,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        map_ui_event,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(updates.load(Ordering::Relaxed), 0);
+    assert_eq!(metrics.get().layout_calls, 0);
+    assert_eq!(metrics.get().present_calls, 0);
+    assert_eq!(platform.event_source.state.dispatch_timeout_calls, 0);
+    assert_eq!(platform.event_source.state.dispatch_blocking_calls, 1);
+    assert!(!session.active_work().is_empty());
+    assert!(session.tree_and_engine_mut().0.has_render_work());
+    assert_eq!(session.loop_state(), WindowLoopState::RegisteredActive);
+}
+
+#[test]
+fn restore_rebases_animation_clock_and_presents_retained_dirty() {
+    let start = Instant::now();
+    let clock = TestClock::new(start);
+    let remaining = Arc::new(AtomicUsize::new(1));
+    let updates = Arc::new(AtomicUsize::new(0));
+    let recorded_dts = Arc::new(Mutex::new(Vec::new()));
+    let mut platform = FakePlatform::new();
+    platform.event_source.inject(UiEvent::new(
+        UiEventType::WindowMinimize,
+        UiEventPayload::None,
+    ));
+    platform
+        .event_source
+        .state
+        .blocking_events
+        .push_back(UiEvent::new(
+            UiEventType::WindowRestore,
+            UiEventPayload::None,
+        ));
+    platform.event_source.state.exit_after_blocking_calls = Some(2);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(TestAnimatedWidget::recording(
+            remaining,
+            updates.clone(),
+            recorded_dts.clone(),
+        )),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let root = session.tree_and_engine_mut().0.root_id().unwrap();
+    session
+        .active_work_mut()
+        .register_open(ActiveWorkKind::Animation(root));
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop_with_clock(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        clock,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        map_ui_event,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(updates.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        recorded_dts
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .as_slice(),
+        &[0.0]
+    );
+    assert_eq!(metrics.get().present_calls, 1);
+    assert_eq!(platform.event_source.state.dispatch_timeout_calls, 0);
+    assert_eq!(platform.event_source.state.dispatch_blocking_calls, 2);
+    assert!(session.active_work().is_empty());
+    assert!(!session.tree_and_engine_mut().0.has_render_work());
+}
+
+#[test]
+fn minimized_window_preserves_dirty_until_restore() {
     let mut platform = FakePlatform::new();
     platform
         .event_source
@@ -1348,7 +2266,7 @@ fn hidden_window_preserves_dirty_until_restore() {
 }
 
 #[test]
-fn hidden_window_repaints_on_maximize() {
+fn minimized_window_repaints_on_maximize() {
     // Win32：最小化后再最大化发 SIZE_MAXIMIZED（WindowMaximize + Resize），
     // 不发 WindowRestore；须恢复可见并 Present，否则客户区黑屏。
     let mut platform = FakePlatform::new();
@@ -1792,6 +2710,67 @@ fn window_blur_unregisters_focused_input_ime_work() {
     assert_eq!(platform.text_input.state.start_calls, 1);
     assert_eq!(platform.text_input.state.stop_calls, 1);
     assert!(!platform.text_input.state.active);
+}
+
+#[test]
+fn hiding_focused_input_unregisters_ime_work_in_same_frame() {
+    let mut platform = FakePlatform::new();
+    platform
+        .event_source
+        .inject(UiEvent::key_down(KeyCode::Tab, KeyMod::NONE));
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Input::new("type here")),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let input = session.tree_and_engine_mut().0.root_id().unwrap();
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+    let hidden = Cell::new(false);
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        map_ui_event,
+        |_| false,
+        |tree, _, _| {
+            if !hidden.replace(true) {
+                tree.set_visible(input, false);
+            }
+        },
+    );
+
+    assert_eq!(status, 0);
+    assert!(hidden.get());
+    assert_eq!(platform.text_input.state.start_calls, 1);
+    assert_eq!(platform.text_input.state.stop_calls, 1);
+    assert!(!platform.text_input.state.active);
+    assert!(session.active_work().is_empty());
+    assert_eq!(
+        session
+            .tree_and_engine_mut()
+            .0
+            .managers()
+            .focus
+            .focused_component(),
+        None
+    );
 }
 
 #[test]
@@ -2718,7 +3697,10 @@ fn deferred_show_reveals_window_only_after_first_present() {
 
     assert_eq!(status, 0);
     assert_eq!(metrics.get().present_calls, 1);
-    assert!(window.is_visible(), "window must show only after first present");
+    assert!(
+        window.is_visible(),
+        "window must show only after first present"
+    );
     assert_eq!(window.state.show_calls, 1);
     assert_eq!(window.state.raise_calls, 1);
 }
@@ -2731,13 +3713,11 @@ fn first_frame_skips_redundant_forced_layout_when_already_laid_out() {
 
     let mut window = FakeWindow::new(1, "test", 120, 80);
     let mut engine = SoftwareEngine::new();
-    engine.initialize(120, 80).expect("init engine to window size");
-    let mut session = WindowSession::from_root(
-        button("layout once").into(),
-        Box::new(engine),
-        120,
-        80,
-    );
+    engine
+        .initialize(120, 80)
+        .expect("init engine to window size");
+    let mut session =
+        WindowSession::from_root(button("layout once").into(), Box::new(engine), 120, 80);
     let font_service = FontService::new();
     let image_service = ImageService::new();
     let theme = RefCell::new(Theme::default());

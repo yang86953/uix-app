@@ -1,9 +1,4 @@
 use crate::tests::common::*;
-use crate::component;
-use crate::draw::spatial::PhysicalUnit;
-use crate::draw::TextLayoutOptions;
-use crate::ui::clipboard;
-use crate::ui::{ SnapshotSource };
 use crate::ui::widgets::general::label::*;
 
 #[test]

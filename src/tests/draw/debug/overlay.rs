@@ -1,7 +1,7 @@
-use crate::tests::common::*;
-use crate::draw::pipeline::RenderMetrics;
 use crate::draw::debug::overlay::*;
 use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
+use crate::draw::pipeline::RenderMetrics;
+use crate::tests::common::*;
 
 #[test]
 fn set_debug_mode_toggle() {

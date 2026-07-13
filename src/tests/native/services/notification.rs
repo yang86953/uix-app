@@ -1,11 +1,9 @@
 // ════════════════════════════════════════════════════════════════════
 // 基础 notify / dismiss
 // ════════════════════════════════════════════════════════════════════
-use crate::tests::common::*;
-use crate::core::error::{ ErrorSeverity, Result };
-pub use crate::native::traits::system::StatusLevel as NotificationLevel;
+use crate::core::error::Result;
 use crate::native::services::notification::*;
-
+use crate::tests::common::*;
 
 #[test]
 fn test_notify_adds_toast() {

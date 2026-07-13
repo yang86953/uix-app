@@ -25,12 +25,16 @@ impl IWindowManager for WaylandBackend {
 
         let window_id = WindowId::new(self.next_window_id);
         self.next_window_id += 1;
+        let state = Rc::new(RefCell::new(WindowState::with_id_and_size(
+            window_id, width, height,
+        )));
 
         let mut ops = WaylandWindowOps::new(
             window_id,
             self._compositor.clone(),
             self._shm.clone(),
             self.events.clone(),
+            self.surface_windows.clone(),
             self.outputs.clone(),
             self._xdg_activation.clone(),
         );
@@ -44,8 +48,7 @@ impl IWindowManager for WaylandBackend {
             title,
             width,
             height,
-            self.maximized.clone(),
-            self.fullscreen.clone(),
+            Rc::clone(&state),
         )?;
 
         let presenter = super::presenter::WaylandPresenter::new(
@@ -56,9 +59,6 @@ impl IWindowManager for WaylandBackend {
             height,
         );
 
-        let state = Rc::new(RefCell::new(WindowState::with_id_and_size(
-            window_id, width, height,
-        )));
         let core = PlatformWindowCore::new(state, ops, Box::new(presenter));
         Ok(Box::new(core))
     }

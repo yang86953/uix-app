@@ -1,10 +1,6 @@
-use crate::tests::common::*;
-use std::marker::PhantomData;
-use std::mem::ManuallyDrop;
-use std::thread::{self, ThreadId};
-use crate::core::{ Result };
-use crate::native::traits::present::{ GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh, GpuSolidRect, GpuStrokeRect, OffscreenTargetId };
+use crate::core::Result;
 use crate::native::factory::thread_bound::ThreadBoundGraphicsContext;
+use crate::tests::common::*;
 use std::ffi::c_void;
 
 struct PanicIfCalled {
@@ -30,12 +26,7 @@ impl IGraphicsContext for PanicIfCalled {
         GraphicsContextCaps::cpu_pixel_upload(GraphicsBackend::D3d11, 1.0)
     }
 
-    fn initialize(
-        &mut self,
-        _native_window: *mut c_void,
-        _width: i32,
-        _height: i32,
-    ) -> Result<()> {
+    fn initialize(&mut self, _native_window: *mut c_void, _width: i32, _height: i32) -> Result<()> {
         panic!("foreign thread must not call the native context")
     }
 
@@ -74,10 +65,7 @@ impl IGraphicsContext for PanicIfCalled {
         panic!("foreign thread must not call the native context")
     }
 
-    fn destroy_offscreen_target(
-        &mut self,
-        _id: crate::native::traits::present::OffscreenTargetId,
-    ) {
+    fn destroy_offscreen_target(&mut self, _id: crate::native::traits::present::OffscreenTargetId) {
         panic!("foreign thread must not call the native context")
     }
 }

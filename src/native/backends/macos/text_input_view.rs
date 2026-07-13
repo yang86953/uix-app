@@ -1,111 +1,100 @@
-use std::cell::Cell;
 use std::collections::VecDeque;
 use std::ffi::{c_char, c_void, CString};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, Once};
+use std::sync::{Arc, Mutex, MutexGuard, Once};
 
+use crate::core::{Errc, Error, WindowId};
 use crate::native::shared::ime_events::{
-    on_committed_text, on_marked_text, on_unmark_text, ImeCompositionState,
+    on_committed_text_for_window, on_marked_text_for_window, on_unmark_text_for_window,
+    ImeCompositionState,
 };
+use crate::native::shared::ime_owner::{NativeImeOwner, NativeImeSession, NativeImeTarget};
 use crate::native::traits::event::UiEvent;
 
+use super::objc_runtime;
+
+pub(crate) type SharedImeOwner = Arc<Mutex<NativeImeOwner>>;
+
 pub(crate) struct TextInputContext {
-    pub events: Arc<Mutex<VecDeque<UiEvent>>>,
-    pub composition: ImeCompositionState,
-    pub marked_text: String,
-    pub session_active: Arc<AtomicBool>,
+    events: Arc<Mutex<VecDeque<UiEvent>>>,
+    window_id: WindowId,
+    owner: SharedImeOwner,
+    composition: ImeCompositionState,
+    marked_text: String,
+    session_generation: Option<u64>,
+}
+
+impl TextInputContext {
+    fn target(&self, view: cocoa::Id) -> NativeImeTarget {
+        NativeImeTarget::new(self.window_id, view as usize)
+    }
+
+    fn accepts_callback(&self, view: cocoa::Id) -> bool {
+        let Some(generation) = self.session_generation else {
+            return false;
+        };
+        lock_owner(&self.owner).matches(self.target(view), generation)
+    }
 }
 
 pub(crate) struct MacosTextInput {
-    view: Cell<cocoa::Id>,
-    session_active: Arc<AtomicBool>,
+    owner: SharedImeOwner,
 }
 
 impl MacosTextInput {
     pub(crate) fn new() -> Self {
         Self {
-            view: Cell::new(std::ptr::null_mut()),
-            session_active: Arc::new(AtomicBool::new(false)),
+            owner: Arc::new(Mutex::new(NativeImeOwner::default())),
         }
     }
 
-    pub(crate) fn session_active_handle(&self) -> Arc<AtomicBool> {
-        Arc::clone(&self.session_active)
+    pub(crate) fn owner_handle(&self) -> SharedImeOwner {
+        Arc::clone(&self.owner)
     }
 
-    pub(crate) fn set_view(&self, view: cocoa::Id) {
-        self.view.set(view);
+    pub(crate) fn suppress_keydown_text(&self, window_id: Option<WindowId>) -> bool {
+        let Some(window_id) = window_id else {
+            return false;
+        };
+        lock_owner(&self.owner)
+            .active()
+            .is_some_and(|session| session.target.window_id == window_id)
     }
+}
 
-    pub(crate) fn suppress_keydown_text(&self) -> bool {
-        self.session_active.load(Ordering::Relaxed)
+impl Drop for MacosTextInput {
+    fn drop(&mut self) {
+        // SAFETY: owner targets are registered UixContentView instances. Their
+        // dealloc callback removes the target before its pointer becomes stale.
+        unsafe {
+            shutdown_owner(&self.owner);
+        }
     }
 }
 
 impl crate::native::traits::input::ITextInput for MacosTextInput {
     fn set_target_window(
         &mut self,
-        _window_id: crate::core::WindowId,
-        native_window: *mut std::ffi::c_void,
+        window_id: WindowId,
+        native_window: *mut c_void,
     ) -> crate::core::Result<()> {
-        if native_window.is_null() {
-            return Err(crate::core::Error::new(
-                crate::core::Errc::InvalidOperation,
-                "macOS text input: target window is null",
-            ));
-        }
-        // SAFETY: `native_window` is the live NSWindow owned by PlatformWindow.
-        let view = unsafe { cocoa::msg_id(native_window, "contentView") };
-        if view.is_null() {
-            return Err(crate::core::Error::new(
-                crate::core::Errc::InvalidOperation,
-                "macOS text input: target window has no content view",
-            ));
-        }
-        let previous = self.view.replace(view);
-        if previous != view && !previous.is_null() && self.session_active.load(Ordering::Relaxed) {
-            // SAFETY: the previous view belongs to a still-live PlatformWindow;
-            // switching target must release its first-responder ownership.
-            unsafe {
-                cocoa::resign_view_first_responder(previous);
-            }
-        }
-        Ok(())
+        // SAFETY: the app coordinator supplies the live NSWindow paired with
+        // `window_id`; select_window verifies the content-view context agrees.
+        unsafe { select_window(&self.owner, window_id, native_window).map(|_| ()) }
     }
 
     fn start(&mut self) -> crate::core::Result<()> {
-        self.session_active.store(true, Ordering::Relaxed);
-        let view = self.view.get();
-        if view.is_null() {
-            self.session_active.store(false, Ordering::Relaxed);
-            return Err(crate::core::Error::new(
-                crate::core::Errc::InvalidOperation,
-                "macOS text input: no active content view",
-            ));
-        }
-        // SAFETY: view is the window content view installed at creation time.
-        unsafe {
-            cocoa::make_view_first_responder(view);
-        }
-        Ok(())
+        // SAFETY: selection verifies and records a live UixContentView target.
+        unsafe { start_selected(&self.owner) }
     }
 
     fn stop(&mut self) -> crate::core::Result<()> {
-        self.session_active.store(false, Ordering::Relaxed);
-        let view = self.view.get();
-        if view.is_null() {
-            return Ok(());
-        }
-        // SAFETY: view is the window content view installed at creation time.
-        unsafe {
-            cocoa::resign_view_first_responder(view);
-        }
-        Ok(())
+        // SAFETY: only the selected active generation can be stopped.
+        unsafe { stop_selected(&self.owner) }
     }
 
     fn set_cursor_rect(&mut self, _rect: crate::core::Rect) -> crate::core::Result<()> {
-        Err(crate::core::Error::new(
-            crate::core::Errc::NotImplemented,
+        Err(Error::new(
+            Errc::NotImplemented,
             "macOS text input cursor rect is not connected to NSTextInputClient",
         ))
     }
@@ -115,43 +104,146 @@ pub(crate) unsafe fn create_content_view(
     width: f64,
     height: f64,
     events: Arc<Mutex<VecDeque<UiEvent>>>,
-    session_active: Arc<AtomicBool>,
-) -> cocoa::Id {
+    window_id: WindowId,
+    owner: SharedImeOwner,
+) -> crate::core::Result<cocoa::Id> {
     let frame = cocoa::CGRect {
         origin: cocoa::CGPoint { x: 0.0, y: 0.0 },
         size: cocoa::CGSize { width, height },
     };
     let class = cocoa::content_view_class();
+    if class.is_null() {
+        return Err(platform_error(
+            "failed to register UixContentView Objective-C class",
+        ));
+    }
     let view = cocoa::msg_id(class, "alloc");
     let view = cocoa::msg_id_rect(view, "initWithFrame:", frame);
     if view.is_null() {
-        return std::ptr::null_mut();
+        return Err(platform_error("failed to allocate UixContentView"));
     }
     let context = Box::new(TextInputContext {
         events,
+        window_id,
+        owner,
         composition: ImeCompositionState::default(),
         marked_text: String::new(),
-        session_active,
+        session_generation: None,
     });
-    cocoa::set_view_context(view, Box::into_raw(context));
-    view
-}
-
-pub(crate) unsafe fn make_window_text_input_active(window: cocoa::Id) -> crate::core::Result<()> {
-    let view = cocoa::msg_id(window, "contentView");
-    if view.is_null() {
-        return Err(crate::core::Error::new(
-            crate::core::Errc::NotImplemented,
-            "macOS text input: window has no content view",
+    if let Err(context) = cocoa::install_view_context(view, context) {
+        cocoa::msg_void(view, "release");
+        drop(context);
+        return Err(platform_error(
+            "failed to install UixContentView Rust context ivar",
         ));
     }
-    cocoa::make_view_first_responder(view);
+    Ok(view)
+}
+
+pub(crate) unsafe fn make_window_text_input_active(
+    owner: &SharedImeOwner,
+    window_id: WindowId,
+    window: cocoa::Id,
+) -> crate::core::Result<()> {
+    select_window(owner, window_id, window)?;
+    start_selected(owner)
+}
+
+pub(crate) unsafe fn make_window_text_input_inactive(
+    owner: &SharedImeOwner,
+    window_id: WindowId,
+    window: cocoa::Id,
+) -> crate::core::Result<()> {
+    select_window(owner, window_id, window)?;
+    stop_selected(owner)
+}
+
+unsafe fn select_window(
+    owner: &SharedImeOwner,
+    window_id: WindowId,
+    native_window: cocoa::Id,
+) -> crate::core::Result<NativeImeTarget> {
+    if native_window.is_null() {
+        return Err(Error::new(
+            Errc::InvalidOperation,
+            "macOS text input: target window is null",
+        ));
+    }
+    let view = cocoa::msg_id(native_window, "contentView");
+    if view.is_null() {
+        return Err(Error::new(
+            Errc::InvalidOperation,
+            "macOS text input: target window has no content view",
+        ));
+    }
+    if cocoa::view_window_id(view) != Some(window_id) {
+        return Err(Error::new(
+            Errc::InvalidOperation,
+            "macOS text input: target window and UixContentView identity disagree",
+        ));
+    }
+    let target = NativeImeTarget::new(window_id, view as usize);
+    lock_owner(owner).select(target);
+    Ok(target)
+}
+
+unsafe fn start_selected(owner: &SharedImeOwner) -> crate::core::Result<()> {
+    let activation = lock_owner(owner).activate_selected().ok_or_else(|| {
+        Error::new(
+            Errc::InvalidOperation,
+            "macOS text input: no target window selected",
+        )
+    })?;
+
+    if let Some(previous) = activation.previous {
+        cocoa::finish_view_session(previous);
+        cocoa::resign_view_first_responder(previous.target.native_id as cocoa::Id);
+    }
+    if !cocoa::begin_view_session(activation.current) {
+        lock_owner(owner).fail_activation(activation.current);
+        return Err(platform_error(
+            "selected UixContentView disappeared before IME activation",
+        ));
+    }
+    if !cocoa::make_view_first_responder(activation.current.target.native_id as cocoa::Id) {
+        cocoa::finish_view_session(activation.current);
+        lock_owner(owner).fail_activation(activation.current);
+        return Err(Error::new(
+            Errc::InvalidOperation,
+            "macOS text input: NSWindow rejected UixContentView as first responder",
+        ));
+    }
     Ok(())
 }
 
-pub(crate) unsafe fn make_window_text_input_inactive(window: cocoa::Id) -> crate::core::Result<()> {
-    cocoa::resign_view_first_responder(cocoa::msg_id(window, "contentView"));
+unsafe fn stop_selected(owner: &SharedImeOwner) -> crate::core::Result<()> {
+    let Some(session) = lock_owner(owner).deactivate_selected() else {
+        // A delayed blur may select an old window after another window became
+        // active. It must not stop the new owner's session.
+        return Ok(());
+    };
+    cocoa::finish_view_session(session);
+    cocoa::resign_view_first_responder(session.target.native_id as cocoa::Id);
     Ok(())
+}
+
+unsafe fn shutdown_owner(owner: &SharedImeOwner) {
+    let Some(session) = lock_owner(owner).deactivate_active() else {
+        return;
+    };
+    cocoa::finish_view_session(session);
+    cocoa::resign_view_first_responder(session.target.native_id as cocoa::Id);
+}
+
+fn lock_owner(owner: &SharedImeOwner) -> MutexGuard<'_, NativeImeOwner> {
+    owner.lock().unwrap_or_else(|error| error.into_inner())
+}
+
+fn platform_error(message: impl Into<String>) -> Error {
+    Error::new(
+        Errc::PlatformError,
+        format!("macOS text input: {}", message.into()),
+    )
 }
 
 mod cocoa {
@@ -163,12 +255,11 @@ mod cocoa {
 
     const YES: Bool = 1;
     const NO: Bool = 0;
-    const OBJC_ASSOCIATION_RETAIN_NONATOMIC: usize = 1;
     const NS_NOT_FOUND: usize = usize::MAX;
 
     static VIEW_CLASS: Once = Once::new();
     static mut VIEW_CLASS_PTR: Id = std::ptr::null_mut();
-    static mut VIEW_CONTEXT_KEY: Sel = std::ptr::null_mut();
+    static mut VIEW_CONTEXT_OFFSET: isize = objc_runtime::INVALID_IVAR_OFFSET;
 
     #[repr(C)]
     #[derive(Clone, Copy, Default)]
@@ -204,116 +295,129 @@ mod cocoa {
         fn sel_registerName(name: *const c_char) -> Sel;
         fn objc_msgSend();
         fn objc_allocateClassPair(superclass: Id, name: *const c_char, extra_bytes: usize) -> Id;
+        fn objc_disposeClassPair(cls: Id);
         fn class_addMethod(cls: Id, name: Sel, imp: *const c_void, types: *const c_char) -> u8;
         fn objc_registerClassPair(cls: Id);
-        fn objc_setAssociatedObject(object: Id, key: Sel, value: Id, policy: usize);
-        fn objc_getAssociatedObject(object: Id, key: Sel) -> Id;
     }
 
     pub unsafe fn content_view_class() -> Id {
         VIEW_CLASS.call_once(|| {
             let superclass = class("NSView");
-            let name = CString::new("UixContentView").expect("view class name");
+            let Ok(name) = CString::new("UixContentView") else {
+                return;
+            };
             let class_pair = objc_allocateClassPair(superclass, name.as_ptr(), 0);
             if class_pair.is_null() {
                 return;
             }
-            VIEW_CONTEXT_KEY = sel("uixTextInputContext");
-            let enc_bool = CString::new("c@:").expect("type encoding");
-            let enc_void = CString::new("v@:").expect("type encoding");
-            let enc_insert = CString::new("v@:@{_NSRange=QQ}").expect("type encoding");
-            let enc_marked = CString::new("v@:@{_NSRange=QQ}{_NSRange=QQ}").expect("type encoding");
-            let enc_range = CString::new("{_NSRange=QQ}16@0:8").expect("type encoding");
-
-            class_addMethod(
-                class_pair,
-                sel_registerName(CString::new("acceptsFirstResponder").unwrap().as_ptr()),
-                accepts_first_responder as *const c_void,
-                enc_bool.as_ptr(),
-            );
-            class_addMethod(
-                class_pair,
-                sel_registerName(
-                    CString::new("insertText:replacementRange:")
-                        .unwrap()
-                        .as_ptr(),
-                ),
-                insert_text as *const c_void,
-                enc_insert.as_ptr(),
-            );
-            class_addMethod(
-                class_pair,
-                sel_registerName(
-                    CString::new("setMarkedText:selectedRange:replacementRange:")
-                        .unwrap()
-                        .as_ptr(),
-                ),
-                set_marked_text as *const c_void,
-                enc_marked.as_ptr(),
-            );
-            class_addMethod(
-                class_pair,
-                sel_registerName(CString::new("unmarkText").unwrap().as_ptr()),
-                unmark_text as *const c_void,
-                enc_void.as_ptr(),
-            );
-            class_addMethod(
-                class_pair,
-                sel_registerName(CString::new("markedRange").unwrap().as_ptr()),
-                marked_range as *const c_void,
-                enc_range.as_ptr(),
-            );
-            class_addMethod(
-                class_pair,
-                sel_registerName(CString::new("selectedRange").unwrap().as_ptr()),
-                selected_range as *const c_void,
-                enc_range.as_ptr(),
-            );
-            class_addMethod(
-                class_pair,
-                sel_registerName(CString::new("hasMarkedText").unwrap().as_ptr()),
-                has_marked_text as *const c_void,
-                enc_bool.as_ptr(),
-            );
-            class_addMethod(
-                class_pair,
-                sel_registerName(CString::new("keyDown:").unwrap().as_ptr()),
-                key_down as *const c_void,
-                CString::new("v@:@").unwrap().as_ptr(),
-            );
+            let Some(context_offset) =
+                objc_runtime::add_raw_pointer_ivar(class_pair, "_uixTextInputContext")
+            else {
+                objc_disposeClassPair(class_pair);
+                return;
+            };
+            let callbacks_ok =
+                add_method(
+                    class_pair,
+                    "acceptsFirstResponder",
+                    accepts_first_responder as *const c_void,
+                    "c@:",
+                ) && add_method(
+                    class_pair,
+                    "insertText:replacementRange:",
+                    insert_text as *const c_void,
+                    "v@:@{_NSRange=QQ}",
+                ) && add_method(
+                    class_pair,
+                    "setMarkedText:selectedRange:replacementRange:",
+                    set_marked_text as *const c_void,
+                    "v@:@{_NSRange=QQ}{_NSRange=QQ}",
+                ) && add_method(
+                    class_pair,
+                    "unmarkText",
+                    unmark_text as *const c_void,
+                    "v@:",
+                ) && add_method(
+                    class_pair,
+                    "markedRange",
+                    marked_range as *const c_void,
+                    "{_NSRange=QQ}16@0:8",
+                ) && add_method(
+                    class_pair,
+                    "selectedRange",
+                    selected_range as *const c_void,
+                    "{_NSRange=QQ}16@0:8",
+                ) && add_method(
+                    class_pair,
+                    "hasMarkedText",
+                    has_marked_text as *const c_void,
+                    "c@:",
+                ) && add_method(class_pair, "keyDown:", key_down as *const c_void, "v@:@")
+                    && add_method(class_pair, "dealloc", view_dealloc as *const c_void, "v@:");
+            if !callbacks_ok {
+                objc_disposeClassPair(class_pair);
+                return;
+            }
             objc_registerClassPair(class_pair);
+            VIEW_CONTEXT_OFFSET = context_offset;
             VIEW_CLASS_PTR = class_pair;
         });
         VIEW_CLASS_PTR
     }
 
-    pub unsafe fn set_view_context(view: Id, context: *mut TextInputContext) {
-        objc_setAssociatedObject(
-            view,
-            VIEW_CONTEXT_KEY,
-            context as Id,
-            OBJC_ASSOCIATION_RETAIN_NONATOMIC,
+    pub unsafe fn install_view_context(
+        view: Id,
+        context: Box<TextInputContext>,
+    ) -> Result<(), Box<TextInputContext>> {
+        objc_runtime::install_box(view, VIEW_CONTEXT_OFFSET, context)
+    }
+
+    unsafe fn view_context(view: Id) -> *mut TextInputContext {
+        objc_runtime::box_ptr(view, VIEW_CONTEXT_OFFSET)
+    }
+
+    pub unsafe fn view_window_id(view: Id) -> Option<WindowId> {
+        let context = view_context(view);
+        (!context.is_null()).then(|| (*context).window_id)
+    }
+
+    pub unsafe fn begin_view_session(session: NativeImeSession) -> bool {
+        let view = session.target.native_id as Id;
+        let context = view_context(view);
+        if context.is_null() || (*context).target(view) != session.target {
+            return false;
+        }
+        (*context).session_generation = Some(session.generation);
+        true
+    }
+
+    pub unsafe fn finish_view_session(session: NativeImeSession) {
+        let view = session.target.native_id as Id;
+        let context = view_context(view);
+        if context.is_null()
+            || (*context).target(view) != session.target
+            || (*context).session_generation != Some(session.generation)
+        {
+            return;
+        }
+        (*context).session_generation = None;
+        (*context).marked_text.clear();
+        on_unmark_text_for_window(
+            &(*context).events,
+            &mut (*context).composition,
+            (*context).window_id,
         );
     }
 
-    unsafe fn view_context(view: Id) -> Option<&'static mut TextInputContext> {
-        let ptr = objc_getAssociatedObject(view, VIEW_CONTEXT_KEY) as *mut TextInputContext;
-        if ptr.is_null() {
-            None
-        } else {
-            Some(&mut *ptr)
-        }
-    }
-
-    pub unsafe fn make_view_first_responder(view: Id) {
+    pub unsafe fn make_view_first_responder(view: Id) -> bool {
         if view.is_null() {
-            return;
+            return false;
         }
         let window = msg_id(view, "window");
         if window.is_null() {
-            return;
+            return false;
         }
-        msg_void_id(window, "makeFirstResponder:", view);
+        msg_bool_id(window, "makeFirstResponder:", view) != NO
     }
 
     pub unsafe fn resign_view_first_responder(view: Id) {
@@ -326,8 +430,24 @@ mod cocoa {
         }
         let responder = msg_id(window, "firstResponder");
         if responder == view {
-            msg_void_id(window, "makeFirstResponder:", std::ptr::null_mut());
+            let _ = msg_bool_id(window, "makeFirstResponder:", std::ptr::null_mut());
         }
+    }
+
+    unsafe extern "C" fn view_dealloc(view: Id, _cmd: Sel) {
+        // SAFETY: UixContentView installs the Box once before publication and
+        // clears the ivar here, making this the unique Rust reclaim point.
+        if let Some(mut context) =
+            objc_runtime::take_box::<TextInputContext>(view, VIEW_CONTEXT_OFFSET)
+        {
+            let target = context.target(view);
+            lock_owner(&context.owner).forget_target(target);
+            context.session_generation = None;
+            context.marked_text.clear();
+            on_unmark_text_for_window(&context.events, &mut context.composition, context.window_id);
+            drop(context);
+        }
+        objc_runtime::call_super_dealloc(view, VIEW_CLASS_PTR);
     }
 
     unsafe extern "C" fn accepts_first_responder(_view: Id, _cmd: Sel) -> Bool {
@@ -335,30 +455,36 @@ mod cocoa {
     }
 
     unsafe extern "C" fn has_marked_text(view: Id, _cmd: Sel) -> Bool {
-        match view_context(view) {
-            Some(ctx) if !ctx.marked_text.is_empty() => YES,
-            _ => NO,
+        let context = view_context(view);
+        if context.is_null() {
+            return NO;
+        }
+        let context = &mut *context;
+        if context.accepts_callback(view) && !context.marked_text.is_empty() {
+            YES
+        } else {
+            NO
         }
     }
 
     unsafe extern "C" fn marked_range(view: Id, _cmd: Sel) -> NSRange {
-        match view_context(view) {
-            Some(ctx) if !ctx.marked_text.is_empty() => NSRange {
+        let context = view_context(view);
+        if context.is_null() {
+            return not_found_range();
+        }
+        let context = &mut *context;
+        if context.accepts_callback(view) && !context.marked_text.is_empty() {
+            NSRange {
                 location: 0,
-                length: ctx.marked_text.chars().count(),
-            },
-            _ => NSRange {
-                location: NS_NOT_FOUND,
-                length: 0,
-            },
+                length: context.marked_text.chars().count(),
+            }
+        } else {
+            not_found_range()
         }
     }
 
     unsafe extern "C" fn selected_range(_view: Id, _cmd: Sel) -> NSRange {
-        NSRange {
-            location: NS_NOT_FOUND,
-            length: 0,
-        }
+        not_found_range()
     }
 
     unsafe extern "C" fn set_marked_text(
@@ -368,33 +494,63 @@ mod cocoa {
         _selected_range: NSRange,
         _replacement_range: NSRange,
     ) {
-        let Some(ctx) = view_context(view) else {
+        let context = view_context(view);
+        if context.is_null() {
             return;
-        };
+        }
+        let context = &mut *context;
+        if !context.accepts_callback(view) {
+            return;
+        }
         let text = id_to_string(string).unwrap_or_default();
-        ctx.marked_text = text.clone();
-        on_marked_text(&ctx.events, &mut ctx.composition, &text);
+        context.marked_text = text.clone();
+        on_marked_text_for_window(
+            &context.events,
+            &mut context.composition,
+            &text,
+            context.window_id,
+        );
     }
 
     unsafe extern "C" fn insert_text(view: Id, _cmd: Sel, string: Id, _replacement_range: NSRange) {
-        let Some(ctx) = view_context(view) else {
+        let context = view_context(view);
+        if context.is_null() {
             return;
-        };
+        }
+        let context = &mut *context;
+        if !context.accepts_callback(view) {
+            return;
+        }
         let text = id_to_string(string).unwrap_or_default();
-        ctx.marked_text.clear();
-        on_committed_text(&ctx.events, &mut ctx.composition, &text);
+        context.marked_text.clear();
+        on_committed_text_for_window(
+            &context.events,
+            &mut context.composition,
+            &text,
+            context.window_id,
+        );
     }
 
     unsafe extern "C" fn unmark_text(view: Id, _cmd: Sel) {
-        let Some(ctx) = view_context(view) else {
+        let context = view_context(view);
+        if context.is_null() {
             return;
-        };
-        ctx.marked_text.clear();
-        on_unmark_text(&ctx.events, &mut ctx.composition);
+        }
+        let context = &mut *context;
+        if !context.accepts_callback(view) {
+            return;
+        }
+        context.marked_text.clear();
+        on_unmark_text_for_window(&context.events, &mut context.composition, context.window_id);
     }
 
     unsafe extern "C" fn key_down(view: Id, _cmd: Sel, event: Id) {
-        if view.is_null() || event.is_null() {
+        let context = view_context(view);
+        if context.is_null() || event.is_null() {
+            return;
+        }
+        let context = &mut *context;
+        if !context.accepts_callback(view) {
             return;
         }
         let array = msg_id(class("NSArray"), "alloc");
@@ -403,56 +559,108 @@ mod cocoa {
             return;
         }
         msg_void_id(view, "interpretKeyEvents:", array);
+        msg_void(array, "release");
+    }
+
+    unsafe fn not_found_range() -> NSRange {
+        NSRange {
+            location: NS_NOT_FOUND,
+            length: 0,
+        }
     }
 
     unsafe fn id_to_string(value: Id) -> Option<String> {
         if value.is_null() {
             return None;
         }
-        let ptr = msg_const_char_ptr(value, "UTF8String");
-        if ptr.is_null() {
-            return None;
+        let utf8_selector = sel("UTF8String");
+        if msg_bool_sel(value, "respondsToSelector:", utf8_selector) != NO {
+            let pointer = msg_const_char_ptr(value, "UTF8String");
+            if !pointer.is_null() {
+                return Some(
+                    std::ffi::CStr::from_ptr(pointer)
+                        .to_string_lossy()
+                        .into_owned(),
+                );
+            }
         }
-        Some(std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned())
+        let string_selector = sel("string");
+        if msg_bool_sel(value, "respondsToSelector:", string_selector) != NO {
+            let plain = msg_id(value, "string");
+            if plain != value {
+                return id_to_string(plain);
+            }
+        }
+        None
+    }
+
+    unsafe fn add_method(class: Id, name: &str, imp: *const c_void, encoding: &str) -> bool {
+        let Ok(encoding) = CString::new(encoding) else {
+            return false;
+        };
+        let selector = sel(name);
+        !selector.is_null() && class_addMethod(class, selector, imp, encoding.as_ptr()) != 0
     }
 
     unsafe fn class(name: &str) -> Id {
-        let name = CString::new(name).expect("class name");
-        objc_getClass(name.as_ptr())
+        CString::new(name)
+            .ok()
+            .map(|name| objc_getClass(name.as_ptr()))
+            .unwrap_or(std::ptr::null_mut())
     }
 
     unsafe fn sel(name: &str) -> Sel {
-        let name = CString::new(name).expect("selector");
-        sel_registerName(name.as_ptr())
+        CString::new(name)
+            .ok()
+            .map(|name| sel_registerName(name.as_ptr()))
+            .unwrap_or(std::ptr::null_mut())
     }
 
     pub unsafe fn msg_id(receiver: Id, selector: &str) -> Id {
         type FnType = unsafe extern "C" fn(Id, Sel) -> Id;
-        let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
-        f(receiver, sel(selector))
+        let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        function(receiver, sel(selector))
     }
 
     pub unsafe fn msg_id_rect(receiver: Id, selector: &str, rect: CGRect) -> Id {
         type FnType = unsafe extern "C" fn(Id, Sel, CGRect) -> Id;
-        let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
-        f(receiver, sel(selector), rect)
+        let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        function(receiver, sel(selector), rect)
     }
 
     unsafe fn msg_id_id(receiver: Id, selector: &str, arg: Id) -> Id {
         type FnType = unsafe extern "C" fn(Id, Sel, Id) -> Id;
-        let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
-        f(receiver, sel(selector), arg)
+        let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        function(receiver, sel(selector), arg)
+    }
+
+    unsafe fn msg_bool_id(receiver: Id, selector: &str, arg: Id) -> Bool {
+        type FnType = unsafe extern "C" fn(Id, Sel, Id) -> Bool;
+        let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        function(receiver, sel(selector), arg)
+    }
+
+    unsafe fn msg_bool_sel(receiver: Id, selector: &str, arg: Sel) -> Bool {
+        type FnType = unsafe extern "C" fn(Id, Sel, Sel) -> Bool;
+        let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        function(receiver, sel(selector), arg)
+    }
+
+    pub unsafe fn msg_void(receiver: Id, selector: &str) {
+        type FnType = unsafe extern "C" fn(Id, Sel);
+        let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        function(receiver, sel(selector));
     }
 
     unsafe fn msg_void_id(receiver: Id, selector: &str, arg: Id) {
         type FnType = unsafe extern "C" fn(Id, Sel, Id);
-        let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
-        f(receiver, sel(selector), arg);
+        let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        function(receiver, sel(selector), arg);
     }
 
     unsafe fn msg_const_char_ptr(receiver: Id, selector: &str) -> *const c_char {
         type FnType = unsafe extern "C" fn(Id, Sel) -> *const c_char;
-        let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
-        f(receiver, sel(selector))
+        let function: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        function(receiver, sel(selector))
     }
 }

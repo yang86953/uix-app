@@ -382,7 +382,7 @@ impl WidgetTree {
         false
     }
 
-    fn visible_rect_for(&self, id: WidgetId) -> Option<Rect> {
+    pub(crate) fn visible_rect_for(&self, id: WidgetId) -> Option<Rect> {
         let node = self.get(id)?;
         if !node.visible() {
             return None;
@@ -645,34 +645,13 @@ impl WidgetTree {
 
     /// Rebuild VirtualScroll child windows when layout frame or scroll offset changes.
     fn refresh_virtual_scroll_children(&mut self) {
-        use crate::ui::foundation::virtual_scroll::VirtualScroll;
-
         let ids = self.traverse();
         for id in ids {
             let viewport_h = self.get(id).map(|node| node.frame().h).unwrap_or(0.0);
             if viewport_h <= 0.0 {
                 continue;
             }
-            let needs_refresh = self
-                .get(id)
-                .and_then(|node| node.component().as_any().downcast_ref::<VirtualScroll>())
-                .is_some_and(|vs| vs.needs_child_refresh(viewport_h));
-            if !needs_refresh {
-                continue;
-            }
-
-            let child_nodes = {
-                let node = match self.get(id) {
-                    Some(node) => node,
-                    None => continue,
-                };
-                let vs = match node.component().as_any().downcast_ref::<VirtualScroll>() {
-                    Some(vs) => vs,
-                    None => continue,
-                };
-                vs.build_visible_children(viewport_h)
-            };
-            self.set_children(id, child_nodes);
+            self.refresh_virtual_scroll_component(id, Some(viewport_h));
         }
     }
 

@@ -11,6 +11,7 @@ use crate::draw::engine::{GraphicsFailure, GraphicsRecovery, RecoveryAction, Ren
 use crate::draw::pipeline::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::primitives::types::ImageHandle;
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
+use crate::native::traits::present::PresentTestResult;
 
 /// Recreates one initialized engine for a permitted recovery action.
 ///
@@ -54,6 +55,11 @@ impl RecoveringGraphicsEngine {
     }
 
     fn record_failure(&mut self, failure: GraphicsFailure) {
+        // Occlusion is a healthy swapchain availability state. Rebuilding a
+        // surface cannot make another window stop covering this one.
+        if matches!(failure, GraphicsFailure::Occluded(_)) {
+            return;
+        }
         // The first failure identifies the frame that was not committed.  Do
         // not overwrite it with secondary cleanup noise before recovery gets
         // a frame-boundary chance to act.
@@ -172,6 +178,14 @@ impl GraphicsEngine for RecoveringGraphicsEngine {
             RenderOutcome::Idle => {}
         }
         outcome
+    }
+
+    fn test_present(&mut self) -> Result<PresentTestResult, Error> {
+        let result = self.engine.test_present();
+        if let Err(error) = &result {
+            self.record_failure(GraphicsFailure::from_error(error.clone()));
+        }
+        result
     }
 
     fn external_present_succeeded(&mut self) {

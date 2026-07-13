@@ -88,3 +88,72 @@ fn table_wheel_registers_composite_scroll_strip() {
     assert_eq!(dx, 0.0);
     assert_eq!(dy, 40.0);
 }
+
+#[test]
+fn table_expand_renderer_is_invoked_from_paint_sidecar() {
+    use crate::draw::compositor::ScenePaint;
+    use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+    use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+    use crate::draw::spatial::Orientation;
+    use crate::ui::view::adapter::ViewAdapter;
+
+    let calls = Rc::new(Cell::new(0));
+    let renderer_calls = Rc::clone(&calls);
+    let mut tree = ViewAdapter::build(
+        Table::new()
+            .columns(vec![TableColumn::new("Name", 320.0)])
+            .rows(vec![vec!["Ada".to_string()]])
+            .expandable(48.0, move |row, _ctx, _rect| {
+                assert_eq!(row, 0);
+                renderer_calls.set(renderer_calls.get() + 1);
+            }),
+    );
+    let id = tree.root_id().expect("table root");
+    let frame = Rect::new(0.0, 0.0, 320.0, 120.0);
+    tree.get_mut(id).unwrap().set_frame(frame);
+    {
+        let table = tree
+            .get_mut(id)
+            .unwrap()
+            .component_mut()
+            .as_any_mut()
+            .downcast_mut::<Table>()
+            .unwrap();
+        assert_eq!(
+            EventHandler::on_event(
+                table,
+                &SystemEvent::PointerDown {
+                    pos: Point::new(310.0, 40.0),
+                    button: MouseButton::Left,
+                    mods: KeyMod::NONE,
+                },
+            ),
+            EventResult::Handled
+        );
+        assert_eq!(table.expanded_row(), Some(0));
+    }
+
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(320, 120));
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("deterministic font");
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let mut ctx = PaintContext::new(
+        &mut canvas,
+        font,
+        &fonts,
+        &images,
+        &tokens,
+        96.0,
+        1.0,
+        Orientation::YDown,
+        320,
+        120,
+    );
+
+    ScenePaint::paint(&tree, id, frame, &mut ctx);
+
+    assert_eq!(calls.get(), 1);
+}

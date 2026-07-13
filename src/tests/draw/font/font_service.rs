@@ -60,10 +60,7 @@ impl ISystemInfo for CountingSystemInfo {
 
 #[test]
 fn load_default_system_font_stops_after_first_primary_and_probes_cjk_once() {
-    let lucide = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/assets/fonts/lucide.ttf"
-    );
+    let lucide = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/fonts/lucide.ttf");
     // 同一主字体路径重复多次：旧实现会把后续全部当 fallback 同步装载。
     let info = CountingSystemInfo::with_paths(vec![
         lucide.to_string(),

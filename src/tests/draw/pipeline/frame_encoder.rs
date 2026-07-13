@@ -1,5 +1,5 @@
-use crate::tests::common::*;
 use crate::draw::pipeline::frame_encoder::*;
+use crate::tests::common::*;
 
 fn rect(x: i32, y: i32, width: i32, height: i32, color: Color) -> FrameRasterOp {
     FrameRasterOp::FillRect {
@@ -140,9 +140,7 @@ fn reference_executor_matches_cpu_rasterizer_for_transparent_rect_layers() {
     let mut encoder = FrameEncoder::new(4, 3).unwrap();
     encoder.clear(clear);
     encoder.native(rect(-1, 0, 3, 3, first));
-    encoder
-        .cpu_segment([rect(1, 1, 4, 3, second)])
-        .unwrap();
+    encoder.cpu_segment([rect(1, 1, 4, 3, second)]).unwrap();
 
     let mut cpu = SharedRasterizer::new(PixelSurface::new(4, 3));
     cpu.surface_mut().set_clear_color(clear);

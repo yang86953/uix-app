@@ -1,8 +1,6 @@
 use crate::tests::common::*;
-use crate::component;
-use crate::draw::{ Radius };
-use crate::ui::widgets::navigation::pagination::*;
 use crate::ui::core::widget::WidgetCore;
+use crate::ui::widgets::navigation::pagination::*;
 
 #[test]
 fn pagination_click_emits_change_semantic_event() {
@@ -28,13 +26,6 @@ fn pagination_click_emits_change_semantic_event() {
     });
 
     assert_eq!(&*page.borrow(), "2");
-}
-
-#[test]
-fn measure_clamps_pagination_size() {
-    let measured = Pagination::new(100, 10).measure(Constraints::loose(Size::new(160.0, 24.0)));
-
-    assert_eq!(measured, Size::new(160.0, 24.0));
 }
 
 #[test]

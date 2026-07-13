@@ -1,7 +1,6 @@
+use crate::core::error::Result;
+use crate::native::traits::present::validate_pixel_buffer;
 use crate::tests::common::*;
-use crate::core::error::{ Result };
-use std::fmt;
-use crate::native::traits::present::{ validate_pixel_buffer };
 use std::str::FromStr;
 
 #[test]
@@ -79,7 +78,11 @@ struct DefaultPresentFailure {
 
 impl IGraphicsContext for DefaultPresentFailure {
     fn caps(&self) -> GraphicsContextCaps {
-        GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+        GraphicsContextCaps::gpu_native_swapchain(
+            GraphicsBackend::D3d11,
+            PresentCoherency::FullOnly,
+            1.0,
+        )
     }
 
     fn initialize(

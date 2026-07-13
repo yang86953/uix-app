@@ -1,14 +1,11 @@
-use crate::tests::common::*;
-use crate::component;
-use crate::draw::{ Radius };
-use crate::ui::animation::{presets, SlideDirection, TransitionPlayer};
-use crate::ui::widgets::feedback::drawer::*;
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
 use crate::draw::pipeline::{FrameRenderInput, FrameRenderer};
 use crate::draw::spatial::Orientation;
 use crate::draw::traits::GraphicsEngine;
+use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
+use crate::ui::widgets::feedback::drawer::*;
 use crate::ui::widgets::other::scroll_view::ScrollView;
 
 #[test]

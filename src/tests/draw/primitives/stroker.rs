@@ -1,7 +1,7 @@
-use crate::tests::common::*;
-use crate::draw::primitives::path::{Path, PathBuilder};
 use crate::draw::primitives::flattener;
+use crate::draw::primitives::path::PathBuilder;
 use crate::draw::primitives::stroker::*;
+use crate::tests::common::*;
 
 fn horizontal_line(cap: LineCap) -> Vec<Point> {
     let mut builder = PathBuilder::new();

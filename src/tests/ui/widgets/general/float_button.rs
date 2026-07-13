@@ -1,6 +1,4 @@
 use crate::tests::common::*;
-use crate::component;
-use crate::draw::{ Radius };
 use crate::ui::widgets::general::float_button::*;
 
 #[test]

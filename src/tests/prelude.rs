@@ -1,29 +1,50 @@
-use crate::tests::common::*;
-use crate::ui::widgets::Container;
-pub use crate::native::create_platform;
-pub use crate::draw::traits::GraphicsEngine;
-pub use crate::draw::{ colors };
-pub use crate::component;
-pub use crate::impl_widget_component;
-pub use crate::semantic_handler;
-pub use crate::tree;
-pub use crate::ui::layout::{ BoxModel, FlexLayout, GridLayout, GridTrack, LayoutChild, LayoutEngine, LayoutOutput };
-pub use crate::ui::state::{Computed, Effect, State, StateSlotId};
-pub use crate::ui::style::{ BoxShadowDef, ColorValue, DisplayMode, PaletteColor, StyleSet, StyleState, TypographyToken };
-pub use crate::ui::theme::{ NeutralRole, ShadowToken, ThemePrimitives };
-pub use crate::ui::{ AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute, ClickEvent, ComponentConfigSnapshot, ComponentHandle, HandlerId, HandlerOptions, HandlerRegistration, IntoWidgetNode, SemanticPayload, SnapshotCollapsePanel, SnapshotField, SnapshotSource, SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue, SystemEventKind, WidgetChildren };
-pub use crate::ui::{Animation, Easing};
-pub use crate::ui::{ Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus, BarChart, BarData, Breadcrumb, BreadcrumbItem, Button, Calendar, Card, Carousel, Cascader, CascaderOption, CascaderValue, Checkbox, Collapse, CollapsePanel, ColorPicker, Content, DatePicker, DateValue, Descriptions, DescriptionsItem, Divider, DividerDirection, DividerOrientation, Drawer, DrawerPlacement, Dropdown, Empty, FieldDef, FloatButton, FloatButtonBackTop, Footer, Form, FormItem, FormLayout, Grid, Header, Icon, Image, Input, InputNumber, Label, Layout, LineChart, LineData, List, Mentions, Menu, MenuItem, MenuMode, Message, MessageItem, MessagePlacement, Modal, NavGroup, NavItem, Navigation, NotifPlacement, Notification, NotificationItem, OptGroup, Pagination, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger, ProgressBar, ProgressMode, ProgressType, QRCode, Radio, RadioDirection, Rate, ResultType, ResultView, RichText, RichTextSegment, RichTextStyle, ScrollView, Segmented, Select, SelectableItem, SelectableList, SharedActive, Sider, Skeleton, SkeletonShape, Slider, SortDirection, Space, SpaceSize, Spin, SpinSize, Splitter, Step, StepStatus, Steps, Switch, Tab, TabPosition, Table, TableChange, TableColumn, TableRow, Tabs, Tag, TagColor, ThemeToggle, TimePicker, TimeValue, Timeline, TimelineItem, Tooltip, TooltipPlacement, Transfer, TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography, TypographyType, Upload, UploadFile, UploadStatus, ValidateStatus, ValidationResult, ValidationRule, Watermark };
 pub use crate::app::Container as DiContainer;
-pub use crate::app::{map_ui_event, App, AppHandle, AppMode, TimerHandle, WindowConfig};
-pub use crate::ui::view::{
-    button, column, column_fit, dynamic_label, embed, grid, input, label, row, scroll, show, space,
-    ButtonBuilder, GridBuilder, InputBuilder, IntoLabelContent, IntoViewChildren, ScrollBuilder,
-    StyleExt, Ui, View, ViewNode,
-};
-pub use crate::views;
-pub use crate::with_cloned;
+pub use crate::app::{App, AppHandle, AppMode, TimerHandle, WindowConfig};
+pub use crate::component;
+pub use crate::draw::traits::GraphicsEngine;
 use crate::prelude::*;
+pub use crate::semantic_handler;
+use crate::tests::common::*;
+pub use crate::ui::layout::{
+    BoxModel, FlexLayout, GridLayout, GridTrack, LayoutChild, LayoutEngine, LayoutOutput,
+};
+pub use crate::ui::state::{Computed, Effect, State, StateSlotId};
+pub use crate::ui::style::{
+    BoxShadowDef, ColorValue, DisplayMode, PaletteColor, StyleSet, StyleState, TypographyToken,
+};
+pub use crate::ui::theme::{NeutralRole, ShadowToken, ThemePrimitives};
+pub use crate::ui::view::{
+    label, ButtonBuilder, GridBuilder, InputBuilder, ScrollBuilder, StyleExt, Ui, View, ViewNode,
+};
+use crate::ui::widgets::Container;
+pub use crate::ui::{
+    AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute, ClickEvent,
+    ComponentConfigSnapshot, ComponentHandle, HandlerId, HandlerOptions, HandlerRegistration,
+    IntoWidgetNode, SemanticPayload, SnapshotCollapsePanel, SnapshotField, SnapshotSource,
+    SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue, SystemEventKind,
+    WidgetChildren,
+};
+pub use crate::ui::{
+    Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus, BarChart,
+    BarData, Breadcrumb, BreadcrumbItem, Button, Calendar, Card, Carousel, Cascader,
+    CascaderOption, CascaderValue, Checkbox, Collapse, CollapsePanel, ColorPicker, Content,
+    DatePicker, DateValue, Descriptions, DescriptionsItem, Divider, DividerDirection,
+    DividerOrientation, Drawer, DrawerPlacement, Dropdown, Empty, FieldDef, FloatButton,
+    FloatButtonBackTop, Footer, Form, FormItem, FormLayout, FormValidationError, FormValidatorKey,
+    FormValidatorTable, Grid, Header, Icon, Image, Input, InputNumber, Label, Layout, LineChart,
+    LineData, List, Mentions, Menu, MenuItem, MenuMode, Message, MessageItem, MessagePlacement,
+    Modal, NavGroup, NavItem, Navigation, NotifPlacement, Notification, NotificationItem, OptGroup,
+    Pagination, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement,
+    PopoverTrigger, ProgressBar, ProgressMode, ProgressType, QRCode, Radio, RadioDirection, Rate,
+    ResultType, ResultView, RichText, RichTextSegment, RichTextStyle, ScrollView, Segmented,
+    Select, SelectableItem, SelectableList, SharedActive, Sider, Skeleton, SkeletonShape, Slider,
+    SortDirection, Space, SpaceSize, Spin, SpinSize, Splitter, Step, StepStatus, Steps, Switch,
+    Tab, TabPosition, Table, TableBuilder, TableChange, TableColumn, TableRow, Tabs, Tag, TagColor,
+    ThemeToggle, TimePicker, TimeValue, Timeline, TimelineItem, Tooltip, TooltipPlacement,
+    Transfer, TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography, TypographyType,
+    Upload, UploadFile, UploadStatus, ValidateStatus, ValidationResult, ValidationRule, Watermark,
+};
+pub use crate::ui::{Animation, Easing};
 
 component! {
     struct PreludeComponentProbe {
@@ -43,8 +64,8 @@ fn prelude_exports_event_and_state_capture_types() {
         label: "probe".to_string(),
     };
     let state = State::new(1);
-    let _registration = HandlerRegistration::new(SemanticKind::Click, Box::new(|_| {}))
-        .with_state_capture(&state);
+    let _registration =
+        HandlerRegistration::new(SemanticKind::Click, Box::new(|_| {})).with_state_capture(&state);
     let _node = label("captured").on_semantic_capture(SemanticKind::Click, &state, |_| {});
     let _macro_registration = semantic_handler!(SemanticKind::Click, state[state], |_event| {});
 
@@ -156,6 +177,9 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<FieldDef>();
     assert_exported::<FormItem>();
     assert_exported::<FormLayout>();
+    assert_exported::<FormValidationError>();
+    assert_exported::<FormValidatorKey>();
+    assert_exported::<FormValidatorTable>();
     assert_exported::<LineData>();
     assert_exported::<MenuItem>();
     assert_exported::<MenuMode>();
@@ -192,6 +216,7 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<ValidateStatus>();
     assert_exported::<ValidationResult>();
     assert_exported::<ValidationRule>();
+    assert_exported::<TableBuilder>();
     assert_exported::<Alert>();
     assert_exported::<Anchor>();
     assert_exported::<AutoComplete>();

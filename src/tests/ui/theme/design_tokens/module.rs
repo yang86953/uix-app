@@ -1,6 +1,5 @@
-use crate::tests::common::*;
-use crate::ui::theme::NeutralRole;
 use crate::ui::theme::design_tokens::*;
+use crate::ui::theme::NeutralRole;
 
 #[test]
 fn neutral_text_inverse_follows_mode() {

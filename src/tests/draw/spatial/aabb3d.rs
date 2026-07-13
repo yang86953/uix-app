@@ -1,5 +1,5 @@
-use crate::tests::common::*;
 use crate::draw::spatial::aabb3d::*;
+use crate::tests::common::*;
 
 #[test]
 fn from_center_size() {

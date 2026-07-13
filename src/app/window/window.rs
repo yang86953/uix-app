@@ -233,4 +233,3 @@ impl Drop for Window {
         self.running = false;
     }
 }
-

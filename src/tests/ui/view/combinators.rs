@@ -1,14 +1,10 @@
 use crate::tests::common::*;
-use crate::ui::widgets::Container;
-use crate::ui::core::widget::WidgetNode;
-use crate::ui::layout::{ GridTrack };
-use crate::ui::style::{ DisplayMode };
-use crate::ui::view::{View, ViewNode};
-use crate::draw::pipeline::InvalidationQueueHandle;
-use crate::ui::state::{State, StatePaintBind};
-use std::any::Any;
+use crate::ui::layout::GridTrack;
+use crate::ui::style::DisplayMode;
 use crate::ui::view::combinators::*;
 use crate::ui::view::ViewAdapter;
+use crate::ui::view::{View, ViewNode};
+use crate::ui::widgets::Container;
 use crate::ui::widgets::{Grid, Input, Label, ScrollView, Space};
 
 #[test]
@@ -58,7 +54,6 @@ fn view_node_overflow_content_preserves_natural_flow() {
 
 #[test]
 fn dynamic_label_measure_clamps_current_text() {
-
     let label = DynamicLabel::new(|| "abcdef".to_string());
 
     let measured = label.measure(Constraints::loose(Size::new(30.0, 12.0)));
@@ -68,10 +63,7 @@ fn dynamic_label_measure_clamps_current_text() {
 
 #[test]
 fn column_accepts_heterogeneous_tuple_children() {
-    let node = column((
-        label("static"),
-        button("go").on_click_fn(|| {}),
-    ));
+    let node = column((label("static"), button("go").on_click_fn(|| {})));
     assert_eq!(node.children.len(), 2);
 }
 
@@ -143,7 +135,6 @@ fn option_view_builds_space_when_none() {
 
 #[test]
 fn column_fit_keeps_intrinsic_flex_grow() {
-
     let grow = column([label("fill")]);
     let fit = column_fit([label("intrinsic")]);
 
@@ -195,9 +186,8 @@ fn counter_facade_compiles_without_manual_into_or_clone_aliases() {
 
 #[test]
 fn embedded_component_children_survive_view_reconcile() {
-    let mut tree = ViewAdapter::build_nodes(embed(
-        Space::new().child(Label::new("before reconcile")),
-    ));
+    let mut tree =
+        ViewAdapter::build_nodes(embed(Space::new().child(Label::new("before reconcile"))));
     assert_eq!(tree.find_all_by_type::<Label>().len(), 1);
 
     ViewAdapter::reconcile_nodes(

@@ -23,7 +23,10 @@ pub(crate) mod window_ops;
 
 // ── 依赖 ────────────────────────────────────────────────────────
 use self::shm_buffer::ShmBuffer;
-use crate::core::Point;
+use crate::core::{Point, WindowId};
+use crate::native::shared::ime_events::ImeCompositionState;
+use crate::native::shared::input_serial::InputSerial;
+use crate::native::shared::window_target::SurfaceWindowTargets;
 use crate::native::traits::event::*;
 use crate::native::traits::input::{KeyCode, KeyMod};
 use std::collections::{HashSet, VecDeque};
@@ -55,6 +58,14 @@ pub(crate) struct LastPointerState {
     pub(crate) position: Point,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct HeldKeyInfo {
+    pub(crate) code: KeyCode,
+    pub(crate) mods: KeyMod,
+    pub(crate) first_press: std::time::Instant,
+    pub(crate) window_id: WindowId,
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // WaylandBackend — Wayland 后端主结构体
 // ════════════════════════════════════════════════════════════════════════════
@@ -82,8 +93,6 @@ pub struct WaylandBackend {
     pub(crate) shown: bool,
     pub(crate) closed: bool,
     pub(crate) configured: bool,
-    pub(crate) maximized: Arc<Mutex<bool>>,
-    pub(crate) fullscreen: Arc<Mutex<bool>>,
 
     // ── 事件队列（线程安全，供 quick_assign 回调写入）───────────
     pub(crate) events: Arc<Mutex<VecDeque<UiEvent>>>,
@@ -99,6 +108,7 @@ pub struct WaylandBackend {
     pub(crate) last_pointer: Arc<Mutex<LastPointerState>>,
     pub(crate) keys_down: Arc<Mutex<HashSet<KeyCode>>>,
     pub(crate) input_region: Option<Main<wl_region::WlRegion>>,
+    pub(crate) surface_windows: Arc<Mutex<SurfaceWindowTargets>>,
 
     // ── 按键重复（客户端侧实现，Wayland 协议要求）──────────
     /// 重复速率（字符/秒），0 = 禁用重复。来自 wl_keyboard.repeat_info。
@@ -106,7 +116,7 @@ pub struct WaylandBackend {
     /// 首次重复前的延迟（毫秒）。
     pub(crate) repeat_delay: Arc<Mutex<i32>>,
     /// 当前按住的键信息：(linux_keycode, KeyCode, 修饰键, 首次按下时间)。
-    pub(crate) held_key_info: Arc<Mutex<Option<(u32, KeyCode, KeyMod, std::time::Instant)>>>,
+    pub(crate) held_key_info: Arc<Mutex<Option<HeldKeyInfo>>>,
     /// 上次生成重复事件的时间。
     pub(crate) last_repeat_time: Arc<Mutex<Option<std::time::Instant>>>,
 
@@ -115,9 +125,12 @@ pub struct WaylandBackend {
     pub(crate) data_device: Option<Main<wayland_client::protocol::wl_data_device::WlDataDevice>>,
     pub(crate) clipboard_text: Arc<Mutex<String>>,
     pub(crate) owns_clipboard: Arc<Mutex<bool>>,
-    pub(crate) clipboard_read_fd: Arc<Mutex<Option<RawFd>>>,
+    pub(crate) clipboard_read: Arc<Mutex<Option<clipboard::ClipboardRead>>>,
+    pub(crate) clipboard_writes: Arc<Mutex<Vec<clipboard::ClipboardWrite>>>,
+    pub(crate) last_input_serial: Arc<Mutex<InputSerial>>,
     pub(crate) wake_read_fd: RawFd,
     pub(crate) wake_write_fd: RawFd,
+    pub(crate) poll_fds: Vec<libc::pollfd>,
 
     // ── 显示器 ────────────────────────────────────────────────────
     pub(crate) outputs: Arc<Mutex<Vec<output::RawOutput>>>,
@@ -127,7 +140,10 @@ pub struct WaylandBackend {
     // ── 文本输入（IME）──────────────────────────────────────────
     pub(crate) text_input_manager: Option<Main<ZwpTextInputManagerV3>>,
     pub(crate) text_input: Option<Main<ZwpTextInputV3>>,
-    pub(crate) text_input_window_id: Option<crate::core::WindowId>,
+    pub(crate) text_input_window_id: Option<WindowId>,
+    pub(crate) active_text_input_window_id: Option<WindowId>,
+    pub(crate) text_input_composition: Arc<Mutex<ImeCompositionState>>,
+    pub(crate) text_input_generation: Arc<std::sync::atomic::AtomicU64>,
     pub(crate) text_input_enabled: std::sync::Arc<std::sync::atomic::AtomicBool>,
 
     // ── xdg_activation（窗口提升/聚焦）────────────────────────
@@ -331,7 +347,7 @@ impl WaylandBackend {
         let events: Arc<Mutex<VecDeque<UiEvent>>> = Arc::new(Mutex::new(VecDeque::new()));
         let clipboard_text: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
         let owns_clipboard: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
-        let clipboard_read_fd: Arc<Mutex<Option<RawFd>>> = Arc::new(Mutex::new(None));
+        let clipboard_read = Arc::new(Mutex::new(None));
         let last_pointer: Arc<Mutex<LastPointerState>> =
             Arc::new(Mutex::new(LastPointerState::default()));
 
@@ -372,8 +388,6 @@ impl WaylandBackend {
             shown: false,
             closed: false,
             configured: false,
-            maximized: Arc::new(Mutex::new(false)),
-            fullscreen: Arc::new(Mutex::new(false)),
             shm_buffers: [None, None],
             active_buffer: 0,
             events,
@@ -382,6 +396,7 @@ impl WaylandBackend {
             keyboard: Arc::new(Mutex::new(None)),
             last_pointer,
             keys_down: Arc::new(Mutex::new(HashSet::new())),
+            surface_windows: Arc::new(Mutex::new(SurfaceWindowTargets::default())),
             repeat_rate: Arc::new(Mutex::new(0)),
             repeat_delay: Arc::new(Mutex::new(400)),
             held_key_info: Arc::new(Mutex::new(None)),
@@ -391,14 +406,20 @@ impl WaylandBackend {
             data_device: None,
             clipboard_text,
             owns_clipboard,
-            clipboard_read_fd,
+            clipboard_read,
+            clipboard_writes: Arc::new(Mutex::new(Vec::new())),
+            last_input_serial: Arc::new(Mutex::new(InputSerial::default())),
             wake_read_fd,
             wake_write_fd,
+            poll_fds: Vec::with_capacity(4),
             outputs,
             _wl_outputs,
             text_input_manager,
             text_input: None,
             text_input_window_id: None,
+            active_text_input_window_id: None,
+            text_input_composition: Arc::new(Mutex::new(ImeCompositionState::default())),
+            text_input_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             text_input_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             _xdg_activation: xdg_activation,
             next_window_id: 1,

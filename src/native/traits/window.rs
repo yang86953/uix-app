@@ -1,9 +1,44 @@
 //! 窗口协议 — 窗口创建、属性与生命周期。
 
+use super::event::FrameRequestToken;
 use super::present::{IGraphicsContext, IPresenter};
 use crate::core::error::{Error, Result};
 use crate::core::geometry::Point;
 use crate::core::WindowId;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeFrameRequestPhase {
+    /// The callback becomes eligible after the frame currently being
+    /// assembled is committed. Display-paced APIs such as wl_surface.frame
+    /// implement this phase.
+    AfterPresent,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeFrameRequest {
+    pub token: FrameRequestToken,
+    pub phase: NativeFrameRequestPhase,
+}
+
+/// Current compositor knowledge about whether this window can contribute
+/// visible pixels. `Unknown` means the backend has no exact per-window query;
+/// callers must retain any backend-specific recovery mechanism.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum WindowOcclusionState {
+    #[default]
+    Unknown,
+    Visible,
+    Occluded,
+}
+
+impl NativeFrameRequest {
+    pub const fn after_present(token: FrameRequestToken) -> Self {
+        Self {
+            token,
+            phase: NativeFrameRequestPhase::AfterPresent,
+        }
+    }
+}
 
 pub trait IWindowProperties {
     fn width(&self) -> i32;
@@ -49,6 +84,14 @@ pub trait PlatformWindow {
     fn hide(&mut self) -> Result<()>;
     fn close(&mut self) -> Result<()>;
     fn is_visible(&self) -> bool;
+
+    /// Returns the latest exact compositor visibility when the backend can
+    /// query it. This is intentionally distinct from `is_visible`: a window
+    /// may be onscreen while fully covered by other windows.
+    fn occlusion_state(&self) -> WindowOcclusionState {
+        WindowOcclusionState::Unknown
+    }
+
     fn set_title(&mut self, title: &str) -> Result<()>;
     fn center_on_screen(&mut self) -> Result<()>;
     fn raise(&mut self) -> Result<()>;
@@ -60,6 +103,25 @@ pub trait PlatformWindow {
     fn properties_mut(&mut self) -> &mut dyn IWindowProperties;
     fn presenter(&mut self) -> &mut dyn IPresenter;
     fn native_handle(&self) -> &dyn INativeHandle;
+
+    /// Arms a native one-shot callback. `Ok(false)` means this window does
+    /// not support the requested phase and the scheduler must use fallback.
+    fn request_native_frame(&mut self, _request: NativeFrameRequest) -> Result<bool> {
+        Ok(false)
+    }
+
+    /// Confirms that the frame associated with `token` was committed.
+    /// Backends whose native wait must begin after presentation use this hook;
+    /// pre-commit protocols can keep the default no-op.
+    fn native_frame_presented(&mut self, _token: FrameRequestToken) -> Result<()> {
+        Ok(())
+    }
+
+    /// Invalidates a still-in-flight native request. Backends that cannot
+    /// cancel the OS object must at least suppress delivery for this token.
+    fn cancel_native_frame(&mut self, _token: FrameRequestToken) -> Result<()> {
+        Ok(())
+    }
 
     fn graphics_context(&mut self) -> Option<&mut dyn IGraphicsContext> {
         None

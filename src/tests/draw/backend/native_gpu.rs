@@ -1,15 +1,14 @@
-use crate::tests::common::*;
-use crate::draw::primitives::path::{Path, PathBuilder};
-use std::any::Any;
-use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
-use crate::draw::engine::cpu::pixel_surface::PixelSurface;
-use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
-use crate::draw::pipeline::{ EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameRasterOp, ReferenceFrame };
-use crate::draw::primitives::tessellator;
-use crate::draw::primitives::types::{ BlendMode, GradientDirection, Radius, Transform };
-use crate::draw::traits::Canvas2D;
-use crate::native::traits::present::{ GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh, GpuSolidRect, GpuStrokeRect, OffscreenTargetId };
 use crate::draw::backend::native_gpu::*;
+use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
+use crate::draw::pipeline::{EncodedFrameExecution, EncodedPictureExecution, FrameRasterOp};
+use crate::draw::primitives::path::Path;
+use crate::draw::primitives::types::{BlendMode, GradientDirection, Radius};
+use crate::draw::traits::Canvas2D;
+use crate::native::traits::present::{
+    GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
+    GpuSolidRect, GpuStrokeRect, OffscreenTargetId,
+};
+use crate::tests::common::*;
 
 #[test]
 fn soft_fallback_tile_is_tight_and_ignores_transparent_rgb() {
@@ -116,7 +115,11 @@ struct DestinationFailureContext {
 
 impl IGraphicsContext for DestinationFailureContext {
     fn caps(&self) -> GraphicsContextCaps {
-        GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+        GraphicsContextCaps::gpu_native_swapchain(
+            GraphicsBackend::D3d11,
+            PresentCoherency::FullOnly,
+            1.0,
+        )
     }
 
     fn native_raster_caps(&self) -> NativeRasterCaps {
@@ -156,7 +159,10 @@ impl IGraphicsContext for DestinationFailureContext {
         height: i32,
     ) -> crate::core::Result<Vec<u32>> {
         if self.stage == DestinationFailureStage::Readback {
-            Err(Error::new(self.code, "injected destination readback failure"))
+            Err(Error::new(
+                self.code,
+                "injected destination readback failure",
+            ))
         } else if self.stage == DestinationFailureStage::ReadbackExtent {
             Ok(Vec::new())
         } else {
@@ -275,7 +281,11 @@ struct FakeD3d11Context {
 
 impl IGraphicsContext for FakeD3d11Context {
     fn caps(&self) -> GraphicsContextCaps {
-        GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+        GraphicsContextCaps::gpu_native_swapchain(
+            GraphicsBackend::D3d11,
+            PresentCoherency::FullOnly,
+            1.0,
+        )
     }
 
     fn native_raster_caps(&self) -> NativeRasterCaps {
@@ -315,13 +325,7 @@ impl IGraphicsContext for FakeD3d11Context {
         Ok(())
     }
 
-    fn read_pixels(
-        &mut self,
-        _x: i32,
-        _y: i32,
-        _w: i32,
-        _h: i32,
-    ) -> crate::core::Result<Vec<u32>> {
+    fn read_pixels(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) -> crate::core::Result<Vec<u32>> {
         Ok(Vec::new())
     }
 
@@ -559,7 +563,11 @@ impl RecordingContext {
 
 impl IGraphicsContext for RecordingContext {
     fn caps(&self) -> GraphicsContextCaps {
-        GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+        GraphicsContextCaps::gpu_native_swapchain(
+            GraphicsBackend::D3d11,
+            PresentCoherency::FullOnly,
+            1.0,
+        )
     }
 
     fn native_raster_caps(&self) -> NativeRasterCaps {
@@ -599,13 +607,7 @@ impl IGraphicsContext for RecordingContext {
         self.fail_if(FailStage::Shutdown)
     }
 
-    fn read_pixels(
-        &mut self,
-        _x: i32,
-        _y: i32,
-        _w: i32,
-        _h: i32,
-    ) -> crate::core::Result<Vec<u32>> {
+    fn read_pixels(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) -> crate::core::Result<Vec<u32>> {
         Ok(Vec::new())
     }
 
@@ -754,9 +756,7 @@ impl IGraphicsContext for RecordingContext {
     }
 
     fn bind_swapchain_target(&mut self) -> crate::core::Result<()> {
-        if self.active_offscreen
-            && self.fail_stage.get() == FailStage::RestoreSwapchainAfterClear
-        {
+        if self.active_offscreen && self.fail_stage.get() == FailStage::RestoreSwapchainAfterClear {
             return Err(Error::new(
                 Errc::InvalidState,
                 "injected swapchain restore failure",
@@ -839,7 +839,11 @@ struct ClientRectLargerContext {
 
 impl IGraphicsContext for ClientRectLargerContext {
     fn caps(&self) -> GraphicsContextCaps {
-        GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, true, self.dpr)
+        GraphicsContextCaps::gpu_native_swapchain(
+            GraphicsBackend::D3d11,
+            PresentCoherency::RetainedBuffer,
+            self.dpr,
+        )
     }
 
     fn native_raster_caps(&self) -> NativeRasterCaps {
@@ -873,13 +877,7 @@ impl IGraphicsContext for ClientRectLargerContext {
     fn try_shutdown(&mut self) -> crate::core::Result<()> {
         Ok(())
     }
-    fn read_pixels(
-        &mut self,
-        _x: i32,
-        _y: i32,
-        _w: i32,
-        _h: i32,
-    ) -> crate::core::Result<Vec<u32>> {
+    fn read_pixels(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) -> crate::core::Result<Vec<u32>> {
         Ok(Vec::new())
     }
     fn width(&self) -> i32 {
@@ -1062,7 +1060,11 @@ fn native_gpu_backend_offscreen_create_bind_blit_when_caps_prove_support() {
     }
     impl IGraphicsContext for OffscreenFake {
         fn caps(&self) -> GraphicsContextCaps {
-            GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+            GraphicsContextCaps::gpu_native_swapchain(
+                GraphicsBackend::D3d11,
+                PresentCoherency::FullOnly,
+                1.0,
+            )
         }
         fn native_raster_caps(&self) -> NativeRasterCaps {
             let mut caps = NativeRasterCaps::d3d11_full();
@@ -1091,13 +1093,7 @@ fn native_gpu_backend_offscreen_create_bind_blit_when_caps_prove_support() {
         fn try_shutdown(&mut self) -> crate::core::Result<()> {
             Ok(())
         }
-        fn read_pixels(
-            &mut self,
-            _: i32,
-            _: i32,
-            _: i32,
-            _: i32,
-        ) -> crate::core::Result<Vec<u32>> {
+        fn read_pixels(&mut self, _: i32, _: i32, _: i32, _: i32) -> crate::core::Result<Vec<u32>> {
             Ok(Vec::new())
         }
         fn width(&self) -> i32 {
@@ -1317,7 +1313,11 @@ fn native_gpu_backend_rejects_context_without_hybrid_baseline() {
     struct GlCaps;
     impl IGraphicsContext for GlCaps {
         fn caps(&self) -> GraphicsContextCaps {
-            GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::OpenGlEs, false, 1.0)
+            GraphicsContextCaps::gpu_native_swapchain(
+                GraphicsBackend::OpenGlEs,
+                PresentCoherency::FullOnly,
+                1.0,
+            )
         }
         fn initialize(
             &mut self,
@@ -1339,13 +1339,7 @@ fn native_gpu_backend_rejects_context_without_hybrid_baseline() {
         fn try_shutdown(&mut self) -> crate::core::Result<()> {
             Ok(())
         }
-        fn read_pixels(
-            &mut self,
-            _: i32,
-            _: i32,
-            _: i32,
-            _: i32,
-        ) -> crate::core::Result<Vec<u32>> {
+        fn read_pixels(&mut self, _: i32, _: i32, _: i32, _: i32) -> crate::core::Result<Vec<u32>> {
             Ok(Vec::new())
         }
         fn width(&self) -> i32 {
@@ -1364,7 +1358,11 @@ fn native_gpu_backend_rejects_context_without_hybrid_baseline() {
     struct LimitedD3d12;
     impl IGraphicsContext for LimitedD3d12 {
         fn caps(&self) -> GraphicsContextCaps {
-            GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d12, false, 1.0)
+            GraphicsContextCaps::gpu_native_swapchain(
+                GraphicsBackend::D3d12,
+                PresentCoherency::FullOnly,
+                1.0,
+            )
         }
         fn native_raster_caps(&self) -> NativeRasterCaps {
             NativeRasterCaps {
@@ -1394,13 +1392,7 @@ fn native_gpu_backend_rejects_context_without_hybrid_baseline() {
         fn try_shutdown(&mut self) -> crate::core::Result<()> {
             Ok(())
         }
-        fn read_pixels(
-            &mut self,
-            _: i32,
-            _: i32,
-            _: i32,
-            _: i32,
-        ) -> crate::core::Result<Vec<u32>> {
+        fn read_pixels(&mut self, _: i32, _: i32, _: i32, _: i32) -> crate::core::Result<Vec<u32>> {
             Ok(Vec::new())
         }
         fn width(&self) -> i32 {
@@ -1641,9 +1633,7 @@ fn soft_fallback_applies_canvas_offset_exactly_once() {
         (4, 4),
     );
     assert_soft_offset(
-        |canvas| {
-            canvas.fill_radial_gradient(6.0, 6.0, 0.0, 4.0, Color::white(), Color::black())
-        },
+        |canvas| canvas.fill_radial_gradient(6.0, 6.0, 0.0, 4.0, Color::white(), Color::black()),
         (26, 26),
         (6, 6),
     );
@@ -1655,8 +1645,7 @@ fn native_gpu_canvas_flushes_native_operations_in_recorded_order() {
     let stages = Rc::new(RefCell::new(Vec::new()));
     let shutdown_calls = Rc::new(Cell::new(0));
     let make_current_calls = Rc::new(Cell::new(0));
-    let mut context =
-        recording_context(&fail_stage, &stages, &shutdown_calls, &make_current_calls);
+    let mut context = recording_context(&fail_stage, &stages, &shutdown_calls, &make_current_calls);
     let mut canvas = NativeGpuCanvas2D::new(32, 32, NativeRasterCaps::d3d11_full());
     canvas.stroke_rect(Rect::new(1.0, 1.0, 8.0, 8.0), Color::white(), 1.0, None);
     canvas.fill_rect(Rect::new(2.0, 2.0, 8.0, 8.0), Color::white(), None);
@@ -2941,6 +2930,7 @@ fn d3d12_warp_real_context_flows_through_gpu_engine_with_mixed_native_and_soft()
     use crate::draw::gpu_engine::GpuEngine;
     use crate::draw::traits::GraphicsEngine;
 
+    let _warp_guard = d3d12_warp_test_guard();
     if !crate::native::factory::d3d12_warp_test_context_available() {
         return;
     }
@@ -3173,12 +3163,9 @@ fn d3d11_warp_executes_encoded_picture_in_its_bound_offscreen_target() {
         .window_manager()
         .create_window("encoded Picture WARP test", 96, 64)
         .expect("window");
-    let context = crate::native::factory::create_d3d11_warp_test_context(
-        window.native_surface_ptr(),
-        96,
-        64,
-    )
-    .expect("D3D11 WARP context");
+    let context =
+        crate::native::factory::create_d3d11_warp_test_context(window.native_surface_ptr(), 96, 64)
+            .expect("D3D11 WARP context");
     let mut native = NativeGpuBackend::new(context).expect("native WARP backend");
     native.resize(96, 64).expect("resize native WARP backend");
 
@@ -3262,12 +3249,9 @@ fn d3d11_warp_executes_main_frame_encoder_before_its_only_present() {
         .window_manager()
         .create_window("main FrameEncoder WARP test", 96, 64)
         .expect("window");
-    let context = crate::native::factory::create_d3d11_warp_test_context(
-        window.native_surface_ptr(),
-        96,
-        64,
-    )
-    .expect("D3D11 WARP context");
+    let context =
+        crate::native::factory::create_d3d11_warp_test_context(window.native_surface_ptr(), 96, 64)
+            .expect("D3D11 WARP context");
     let mut native = NativeGpuBackend::new(context).expect("native WARP backend");
     native.resize(96, 64).expect("resize native WARP backend");
     let (frame_w, frame_h) = (native.width, native.height);
@@ -3285,8 +3269,7 @@ fn d3d11_warp_executes_main_frame_encoder_before_its_only_present() {
         }])
         .unwrap();
     encoder.blit_picture(
-        FrameImage::solid(2, 2, Color::from_rgba(40, 120, 240, 255))
-            .expect("main Picture image"),
+        FrameImage::solid(2, 2, Color::from_rgba(40, 120, 240, 255)).expect("main Picture image"),
         FrameRect::new(0, 0, 2, 2),
         FrameRect::new(72, 48, 2, 2),
     );
@@ -3337,12 +3320,9 @@ fn d3d11_warp_additive_and_scroll_frame_ops_match_reference_executor() {
         .window_manager()
         .create_window("additive scroll FrameEncoder WARP", 48, 32)
         .expect("window");
-    let context = crate::native::factory::create_d3d11_warp_test_context(
-        window.native_surface_ptr(),
-        48,
-        32,
-    )
-    .expect("D3D11 WARP context");
+    let context =
+        crate::native::factory::create_d3d11_warp_test_context(window.native_surface_ptr(), 48, 32)
+            .expect("D3D11 WARP context");
     let mut native = NativeGpuBackend::new(context).expect("native WARP backend");
     native.resize(48, 32).expect("resize");
     let (frame_w, frame_h) = (native.width, native.height);
@@ -3388,8 +3368,11 @@ fn d3d11_warp_additive_and_scroll_frame_ops_match_reference_executor() {
         "D3D11 WARP additive+scroll FrameEncoder",
     );
 
-    let _ = native.try_shutdown();
-    window.close().expect("close");
+    native.try_shutdown().expect("checked shutdown");
+    drop(native);
+    window
+        .close()
+        .expect("close window after D3D11 backend");
 }
 
 #[cfg(feature = "d3d12")]
@@ -3397,6 +3380,7 @@ fn d3d11_warp_additive_and_scroll_frame_ops_match_reference_executor() {
 fn d3d12_warp_additive_and_scroll_frame_ops_match_reference_executor() {
     use crate::draw::pipeline::{FrameRasterOp, FrameRect};
 
+    let _warp_guard = d3d12_warp_test_guard();
     if !crate::native::factory::d3d12_warp_test_context_available() {
         return;
     }
@@ -3406,12 +3390,9 @@ fn d3d12_warp_additive_and_scroll_frame_ops_match_reference_executor() {
         .window_manager()
         .create_window("additive scroll FrameEncoder D3D12 WARP", 48, 32)
         .expect("window");
-    let context = crate::native::factory::create_d3d12_warp_test_context(
-        window.native_surface_ptr(),
-        48,
-        32,
-    )
-    .expect("D3D12 WARP context");
+    let context =
+        crate::native::factory::create_d3d12_warp_test_context(window.native_surface_ptr(), 48, 32)
+            .expect("D3D12 WARP context");
     let mut native = NativeGpuBackend::new(context).expect("native WARP backend");
     native.resize(48, 32).expect("resize");
     let (frame_w, frame_h) = (native.width, native.height);
@@ -3457,8 +3438,11 @@ fn d3d12_warp_additive_and_scroll_frame_ops_match_reference_executor() {
         "D3D12 WARP additive+scroll FrameEncoder",
     );
 
-    let _ = native.try_shutdown();
-    window.close().expect("close");
+    native.try_shutdown().expect("checked shutdown");
+    drop(native);
+    window
+        .close()
+        .expect("close window after D3D12 backend");
 }
 
 #[test]
@@ -3473,7 +3457,11 @@ fn destination_dependent_frame_ops_use_readback_apply_upload_on_pixel_context() 
 
     impl IGraphicsContext for PixelContext {
         fn caps(&self) -> GraphicsContextCaps {
-            GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+            GraphicsContextCaps::gpu_native_swapchain(
+                GraphicsBackend::D3d11,
+                PresentCoherency::FullOnly,
+                1.0,
+            )
         }
 
         fn native_raster_caps(&self) -> NativeRasterCaps {
@@ -3492,8 +3480,7 @@ fn destination_dependent_frame_ops_use_readback_apply_upload_on_pixel_context() 
         fn resize(&mut self, width: i32, height: i32) -> crate::core::Result<()> {
             self.width = width.max(1);
             self.height = height.max(1);
-            *self.pixels.borrow_mut() =
-                vec![0; (self.width as usize) * (self.height as usize)];
+            *self.pixels.borrow_mut() = vec![0; (self.width as usize) * (self.height as usize)];
             Ok(())
         }
 
@@ -3627,7 +3614,10 @@ fn destination_dependent_frame_ops_use_readback_apply_upload_on_pixel_context() 
             .expect("execute"),
         EncodedFrameExecution::Executed
     );
-    assert_eq!(pixels.borrow().as_slice(), encoder.render_reference().pixels());
+    assert_eq!(
+        pixels.borrow().as_slice(),
+        encoder.render_reference().pixels()
+    );
 }
 
 #[cfg(feature = "d3d11")]
@@ -3646,12 +3636,9 @@ fn software_and_d3d11_warp_match_offscreen_source_crop_and_post_blit_clip_script
         .window_manager()
         .create_window("offscreen crop parity WARP test", 96, 64)
         .expect("window");
-    let context = crate::native::factory::create_d3d11_warp_test_context(
-        window.native_surface_ptr(),
-        96,
-        64,
-    )
-    .expect("D3D11 WARP context");
+    let context =
+        crate::native::factory::create_d3d11_warp_test_context(window.native_surface_ptr(), 96, 64)
+            .expect("D3D11 WARP context");
     let mut native = NativeGpuBackend::new(context).expect("native WARP backend");
     native.resize(96, 64).expect("resize native WARP backend");
     assert!(native.capabilities().offscreen);
@@ -3688,6 +3675,7 @@ fn native_common_hybrid_clip_pixels(
 #[cfg(all(feature = "d3d11", feature = "d3d12"))]
 #[test]
 fn software_and_warp_backends_match_common_hybrid_clip_and_bounded_tile_script() {
+    let _warp_guard = d3d12_warp_test_guard();
     if !crate::native::factory::d3d11_warp_test_context_available()
         || !crate::native::factory::d3d12_warp_test_context_available()
     {

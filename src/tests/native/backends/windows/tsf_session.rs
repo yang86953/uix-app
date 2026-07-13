@@ -1,21 +1,7 @@
-use crate::tests::common::*;
-use windows::core::{Interface, Type};
-use windows::Win32::Foundation::HWND;
-use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
-};
-use windows::Win32::UI::TextServices::{
-    CLSID_TF_ThreadMgr, ITfContext, ITfDocumentMgr, ITfThreadMgr, TF_POPF_ALL,
-};
-use crate::core::{ Result };
-use crate::native::backends::windows::tsf_text_store::{TsfEventSink, TsfStoreState, TsfTextStore};
-use crate::native::backends::windows::util::windows_diag;
-use crate::native::shared::ime_events::{
-    on_committed_text, on_marked_text, on_unmark_text, ImeCompositionState,
-};
-use crate::native::traits::event::UiEvent;
 use crate::native::backends::windows::tsf_session::*;
+use crate::native::shared::ime_events::ImeCompositionState;
 use crate::native::traits::event::UiEventType;
+use crate::tests::common::*;
 
 #[test]
 fn tsf_composition_helpers_match_ime_events_shape() {

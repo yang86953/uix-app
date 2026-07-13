@@ -1,8 +1,6 @@
-use crate::tests::common::*;
-use crate::core::{ Result };
-use crate::draw::backend::native_gpu::NativeGpuBackend;
-use crate::draw::backend::traits::RenderBackend;
+use crate::core::Result;
 use crate::draw::backend::registry::*;
+use crate::tests::common::*;
 use std::ffi::c_void;
 
 struct UploadOnlyContext;
@@ -12,12 +10,7 @@ impl IGraphicsContext for UploadOnlyContext {
         GraphicsContextCaps::cpu_pixel_upload(GraphicsBackend::D3d11, 1.0)
     }
 
-    fn initialize(
-        &mut self,
-        _native_window: *mut c_void,
-        _width: i32,
-        _height: i32,
-    ) -> Result<()> {
+    fn initialize(&mut self, _native_window: *mut c_void, _width: i32, _height: i32) -> Result<()> {
         Ok(())
     }
 
@@ -33,13 +26,7 @@ impl IGraphicsContext for UploadOnlyContext {
     fn try_shutdown(&mut self) -> crate::core::Result<()> {
         Ok(())
     }
-    fn read_pixels(
-        &mut self,
-        _x: i32,
-        _y: i32,
-        _w: i32,
-        _h: i32,
-    ) -> crate::core::Result<Vec<u32>> {
+    fn read_pixels(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) -> crate::core::Result<Vec<u32>> {
         Ok(Vec::new())
     }
     fn width(&self) -> i32 {
@@ -63,19 +50,18 @@ struct FakeD3d11GpuNative;
 
 impl IGraphicsContext for FakeD3d11GpuNative {
     fn caps(&self) -> GraphicsContextCaps {
-        GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+        GraphicsContextCaps::gpu_native_swapchain(
+            GraphicsBackend::D3d11,
+            PresentCoherency::FullOnly,
+            1.0,
+        )
     }
 
     fn native_raster_caps(&self) -> NativeRasterCaps {
         NativeRasterCaps::d3d11_full()
     }
 
-    fn initialize(
-        &mut self,
-        _native_window: *mut c_void,
-        _width: i32,
-        _height: i32,
-    ) -> Result<()> {
+    fn initialize(&mut self, _native_window: *mut c_void, _width: i32, _height: i32) -> Result<()> {
         Ok(())
     }
 
@@ -91,13 +77,7 @@ impl IGraphicsContext for FakeD3d11GpuNative {
     fn try_shutdown(&mut self) -> crate::core::Result<()> {
         Ok(())
     }
-    fn read_pixels(
-        &mut self,
-        _x: i32,
-        _y: i32,
-        _w: i32,
-        _h: i32,
-    ) -> crate::core::Result<Vec<u32>> {
+    fn read_pixels(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) -> crate::core::Result<Vec<u32>> {
         Ok(Vec::new())
     }
     fn width(&self) -> i32 {
@@ -122,19 +102,18 @@ struct FakeD3d12GpuNative {
 
 impl IGraphicsContext for FakeD3d12GpuNative {
     fn caps(&self) -> GraphicsContextCaps {
-        GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d12, false, 1.0)
+        GraphicsContextCaps::gpu_native_swapchain(
+            GraphicsBackend::D3d12,
+            PresentCoherency::FullOnly,
+            1.0,
+        )
     }
 
     fn native_raster_caps(&self) -> NativeRasterCaps {
         self.caps
     }
 
-    fn initialize(
-        &mut self,
-        _native_window: *mut c_void,
-        _width: i32,
-        _height: i32,
-    ) -> Result<()> {
+    fn initialize(&mut self, _native_window: *mut c_void, _width: i32, _height: i32) -> Result<()> {
         Ok(())
     }
 
@@ -151,13 +130,7 @@ impl IGraphicsContext for FakeD3d12GpuNative {
         self.shutdowns.set(self.shutdowns.get() + 1);
         Ok(())
     }
-    fn read_pixels(
-        &mut self,
-        _x: i32,
-        _y: i32,
-        _w: i32,
-        _h: i32,
-    ) -> crate::core::Result<Vec<u32>> {
+    fn read_pixels(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) -> crate::core::Result<Vec<u32>> {
         Ok(Vec::new())
     }
     fn width(&self) -> i32 {

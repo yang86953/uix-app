@@ -5,6 +5,7 @@
 use crate::core::geometry::Point;
 use crate::core::WindowId;
 use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
+use std::time::Instant;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 事件类型枚举
@@ -21,6 +22,7 @@ pub enum UiEventType {
     WindowRestore,
     WindowFocus,
     WindowBlur,
+    FrameOpportunity,
     PointerDown,
     PointerUp,
     PointerMove,
@@ -38,6 +40,9 @@ pub enum UiEventType {
     FileDrop,
     ThemeChanged,
     LocaleChanged,
+    WindowShow,
+    WindowHide,
+    WindowOcclusionChanged,
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -152,6 +157,33 @@ pub struct LocaleChangeData {
     pub locale: String,
 }
 
+/// Identifies one outstanding frame request within a surface generation.
+///
+/// Surface generation alone is insufficient: a fallback may consume one
+/// request while its native callback is still in flight, and that callback
+/// must not consume the next request on the same surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FrameRequestToken {
+    pub surface_generation: u64,
+    pub request_id: u64,
+}
+
+impl FrameRequestToken {
+    pub const fn new(surface_generation: u64, request_id: u64) -> Self {
+        Self {
+            surface_generation,
+            request_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameOpportunityData {
+    pub token: FrameRequestToken,
+    pub frame_time: Instant,
+    pub target_present_time: Option<Instant>,
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // UiEventPayload — 事件载荷枚举
 // ════════════════════════════════════════════════════════════════════════════
@@ -172,6 +204,7 @@ pub enum UiEventPayload {
     FileDrop(FileDropData),
     ThemeChanged(ThemeChangeData),
     LocaleChanged(LocaleChangeData),
+    FrameOpportunity(FrameOpportunityData),
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -206,6 +239,34 @@ impl UiEvent {
             window_id: None,
             type_: UiEventType::WindowClose,
             payload: UiEventPayload::None,
+        }
+    }
+
+    pub fn window_show() -> Self {
+        Self::new(UiEventType::WindowShow, UiEventPayload::None)
+    }
+
+    pub fn window_hide() -> Self {
+        Self::new(UiEventType::WindowHide, UiEventPayload::None)
+    }
+
+    pub fn window_occlusion_changed() -> Self {
+        Self::new(UiEventType::WindowOcclusionChanged, UiEventPayload::None)
+    }
+
+    pub fn frame_opportunity(
+        token: FrameRequestToken,
+        frame_time: Instant,
+        target_present_time: Option<Instant>,
+    ) -> Self {
+        Self {
+            window_id: None,
+            type_: UiEventType::FrameOpportunity,
+            payload: UiEventPayload::FrameOpportunity(FrameOpportunityData {
+                token,
+                frame_time,
+                target_present_time,
+            }),
         }
     }
 
@@ -371,4 +432,3 @@ impl UiEvent {
         }
     }
 }
-

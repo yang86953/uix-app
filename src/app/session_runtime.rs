@@ -5,6 +5,13 @@ use std::sync::{
 };
 use std::time::Duration;
 
+use crate::app::agent_bridge::{
+    AgentBridgeDirectory, AgentProcessBridge, AgentWaitCondition, AgentWaitError, AgentWaitOutcome,
+    AgentWindowInfo, AgentWindowRegistration,
+};
+use crate::app::agent_control::{
+    AgentCommandQueue, AgentCommandRequest, AgentCommandTicket, AgentSubmitError,
+};
 use crate::app::app_timer::{AppTimerQueue, TimerHandle};
 use crate::app::main_thread_queue::{MainThreadContext, MainThreadQueue};
 use crate::app::window_config::WindowConfig;
@@ -23,12 +30,14 @@ pub(crate) struct AppRuntime {
     next_window_id: Arc<Mutex<u64>>,
     event_loop_waker: Arc<Mutex<EventLoopWaker>>,
     text_input_coordinator: TextInputCoordinator,
+    agent_bridge: AgentBridgeDirectory,
 }
 
 #[derive(Clone)]
 pub(crate) struct SessionRuntime {
     app_timers: AppTimerQueue,
     main_thread_queue: MainThreadQueue,
+    agent_commands: AgentCommandQueue,
     alive: Arc<AtomicBool>,
 }
 
@@ -59,6 +68,7 @@ impl AppRuntime {
         alive: Arc<AtomicBool>,
     ) {
         self.reserve_after(window_id);
+        let agent_commands = AgentCommandQueue::new();
         let event_loop_waker = self.event_loop_waker.clone();
         app_timers.set_removal_waker(Arc::new(move || {
             let waker = {
@@ -74,17 +84,67 @@ impl AppRuntime {
             alive.store(false, Ordering::Release);
             app_timers.cancel_all();
             main_thread_queue.clear();
+            agent_commands.close();
             return;
         }
         alive.store(true, Ordering::Release);
-        sessions.insert(
+        let replaced = sessions.insert(
             window_id,
             SessionRuntime {
                 app_timers,
                 main_thread_queue,
+                agent_commands,
                 alive,
             },
         );
+        if let Some(replaced) = replaced {
+            replaced.agent_commands.close();
+            self.agent_bridge.close_window(window_id);
+        }
+    }
+
+    pub(crate) fn enable_agent_control(&self) -> bool {
+        self.agent_bridge.enable()
+    }
+
+    pub(crate) fn agent_bridge(&self) -> Option<AgentProcessBridge> {
+        self.agent_bridge
+            .is_enabled()
+            .then(|| AgentProcessBridge::new(self.clone()))
+    }
+
+    pub(crate) fn register_agent_window(
+        &self,
+        window_id: WindowId,
+        title: String,
+        visible: bool,
+        presentable: bool,
+    ) -> Option<AgentWindowRegistration> {
+        self.agent_bridge
+            .register_window(window_id, title, visible, presentable)
+    }
+
+    pub(crate) fn list_agent_windows(&self) -> Result<Vec<AgentWindowInfo>, AgentSubmitError> {
+        self.agent_bridge.list_windows()
+    }
+
+    pub(crate) fn wait_agent_window(
+        &self,
+        window_id: WindowId,
+        generation: u64,
+        condition: AgentWaitCondition,
+        timeout: Duration,
+    ) -> Result<AgentWaitOutcome, AgentWaitError> {
+        self.agent_bridge
+            .wait(window_id, generation, condition, timeout)
+    }
+
+    pub(crate) fn contains_live_agent_window(&self, window_id: WindowId) -> bool {
+        self.agent_bridge.contains_live_window(window_id)
+    }
+
+    pub(crate) fn is_shutting_down(&self) -> bool {
+        self.shutting_down.load(Ordering::Acquire)
     }
 
     pub(crate) fn text_input_coordinator(&self) -> TextInputCoordinator {
@@ -165,7 +225,9 @@ impl AppRuntime {
             session.alive.store(false, Ordering::Release);
             session.app_timers.cancel_all();
             session.main_thread_queue.clear();
+            session.agent_commands.close();
         }
+        self.agent_bridge.close_window(window_id);
         self.pending_open_windows
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -182,6 +244,7 @@ impl AppRuntime {
             session.alive.store(false, Ordering::Release);
             session.app_timers.cancel_all();
             session.main_thread_queue.clear();
+            session.agent_commands.close();
         }
         self.pending_open_windows
             .lock()
@@ -191,6 +254,7 @@ impl AppRuntime {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .take();
+        self.agent_bridge.close_all();
     }
 
     pub(crate) fn run_after<F>(&self, window_id: WindowId, delay: Duration, f: F) -> TimerHandle
@@ -240,6 +304,29 @@ impl AppRuntime {
             session.main_thread_queue.enqueue_with_context(f);
             self.wake_event_loop();
         }
+    }
+
+    pub(crate) fn submit_agent_command(
+        &self,
+        window_id: WindowId,
+        request: AgentCommandRequest,
+    ) -> Result<AgentCommandTicket, AgentSubmitError> {
+        if self.shutting_down.load(Ordering::Acquire) {
+            return Err(AgentSubmitError::AppClosed);
+        }
+        let session = self
+            .session(window_id)
+            .ok_or(AgentSubmitError::WindowNotFound)?;
+        let (ticket, should_wake) = session.agent_commands.submit(request)?;
+        if should_wake {
+            self.wake_event_loop();
+        }
+        Ok(ticket)
+    }
+
+    pub(crate) fn agent_command_queue(&self, window_id: WindowId) -> Option<AgentCommandQueue> {
+        self.session(window_id)
+            .map(|session| session.agent_commands)
     }
 
     fn session(&self, window_id: WindowId) -> Option<SessionRuntime> {

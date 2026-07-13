@@ -15,8 +15,11 @@ use std::rc::Rc;
 
 use crate::core::error::{Errc, Error, Result};
 use crate::native::shared::state::WindowState;
+use crate::native::traits::event::FrameRequestToken;
 use crate::native::traits::present::{IGraphicsContext, IPresenter};
-use crate::native::traits::window::{INativeHandle, IWindowProperties, PlatformWindow};
+use crate::native::traits::window::{
+    INativeHandle, IWindowProperties, NativeFrameRequest, PlatformWindow, WindowOcclusionState,
+};
 
 // ════════════════════════════════════════════════════════════════════════════
 // WindowOps — 平台特有的窗口操作
@@ -105,6 +108,23 @@ pub trait WindowOps {
     // ── 几何通知 ─────────────────────────────────────────
     fn os_resize_notify(&mut self, _w: i32, _h: i32) -> Result<()> {
         Ok(())
+    }
+
+    fn os_request_native_frame(&mut self, _request: NativeFrameRequest) -> Result<bool> {
+        Ok(false)
+    }
+
+    fn os_native_frame_presented(&mut self, _token: FrameRequestToken) -> Result<()> {
+        Ok(())
+    }
+
+    fn os_cancel_native_frame(&mut self, _token: FrameRequestToken) -> Result<()> {
+        Ok(())
+    }
+
+    /// Exact compositor visibility, when the native window system exposes it.
+    fn os_occlusion_state(&self) -> WindowOcclusionState {
+        WindowOcclusionState::Unknown
     }
 
     /// Wayland wl_surface C 指针（EGL 初始化用）。非 Wayland 返回 null。
@@ -223,6 +243,9 @@ impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
     fn is_visible(&self) -> bool {
         state_read!(self.state, visible)
     }
+    fn occlusion_state(&self) -> WindowOcclusionState {
+        self.ops.os_occlusion_state()
+    }
     fn set_title(&mut self, title: &str) -> Result<()> {
         self.ops.os_set_title(title)
     }
@@ -270,6 +293,18 @@ impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
 
     fn native_surface_ptr(&self) -> *mut std::ffi::c_void {
         self.ops.native_surface_ptr()
+    }
+
+    fn request_native_frame(&mut self, request: NativeFrameRequest) -> Result<bool> {
+        self.ops.os_request_native_frame(request)
+    }
+
+    fn native_frame_presented(&mut self, token: FrameRequestToken) -> Result<()> {
+        self.ops.os_native_frame_presented(token)
+    }
+
+    fn cancel_native_frame(&mut self, token: FrameRequestToken) -> Result<()> {
+        self.ops.os_cancel_native_frame(token)
     }
 }
 
@@ -394,4 +429,3 @@ impl<O: WindowOps> INativeHandle for PlatformWindowCore<O> {
         self.ops.native_handle()
     }
 }
-

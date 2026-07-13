@@ -1,17 +1,22 @@
 //! 应用能力 — 生命周期、主循环、窗口、CLI、DI。
 
 pub(crate) mod active_work_registry;
+pub(crate) mod agent_bridge;
+pub(crate) mod agent_control;
 pub mod app_handle;
 pub mod app_timer;
 pub mod bridge;
+pub(crate) mod clock;
 pub mod event_loop;
+pub(crate) mod frame_scheduler;
 pub(crate) mod main_thread_queue;
 pub(crate) mod session_runtime;
-pub(crate) mod text_input;
 pub mod shell;
-pub(crate) mod clock;
+pub(crate) mod text_input;
 pub mod window;
 pub mod window_config;
+pub(crate) mod window_driver;
+pub(crate) mod window_semantics;
 pub(crate) mod window_session;
 
 pub use crate::ui::AppState;

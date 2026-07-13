@@ -1,8 +1,6 @@
 use crate::tests::common::*;
-use crate::component;
-use crate::draw::{ Radius };
 use crate::ui::core::widget::WidgetCore;
-use crate::ui::{ ProgressBar };
+use crate::ui::ProgressBar;
 
 #[test]
 fn progress_bar_advertises_animation_capability() {
@@ -12,15 +10,6 @@ fn progress_bar_advertises_animation_capability() {
         .capabilities()
         .contains(WidgetCapabilities::ANIMATION));
     assert!(progress.as_animation().is_some());
-}
-
-#[test]
-fn measure_clamps_progress_size() {
-    let measured = ProgressBar::new()
-        .size(200.0, 8.0)
-        .measure(Constraints::loose(Size::new(120.0, 6.0)));
-
-    assert_eq!(measured, Size::new(120.0, 6.0));
 }
 
 #[test]

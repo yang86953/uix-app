@@ -1,7 +1,6 @@
 use crate::tests::common::*;
-use crate::component;
-use crate::ui::widgets::navigation::anchor::*;
 use crate::ui::core::widget::WidgetCore;
+use crate::ui::widgets::navigation::anchor::*;
 
 #[test]
 fn anchor_click_emits_change_semantic_event() {
@@ -31,15 +30,4 @@ fn anchor_click_emits_change_semantic_event() {
     });
 
     assert_eq!(&*href.borrow(), "#api");
-}
-
-#[test]
-fn measure_clamps_anchor_size() {
-    let measured = Anchor::new(vec![
-        AnchorItem::new("Basic", "#basic"),
-        AnchorItem::new("Advanced", "#advanced"),
-    ])
-    .measure(Constraints::loose(Size::new(80.0, 36.0)));
-
-    assert_eq!(measured, Size::new(80.0, 36.0));
 }

@@ -3,14 +3,14 @@
 // ============================================================================
 
 use crate::core::Error;
-use crate::draw::backend::DamageRegion;
 use crate::draw::backend::registry::create_native_raster_backend;
+use crate::draw::backend::DamageRegion;
 use crate::draw::engine::{GraphicsFailure, RenderOutcome};
 use crate::draw::pipeline::{
     EncodedFrameExecution, EncodedPictureExecution, FrameEncoder, RenderSession,
 };
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
-use crate::native::traits::present::IGraphicsContext;
+use crate::native::traits::present::{IGraphicsContext, PresentTestResult};
 
 /// GPU 渲染引擎 — 委托 `RenderSession` + `RenderBackend`（GL / D3D11 / …）。
 pub struct GpuEngine {
@@ -73,6 +73,10 @@ impl GraphicsEngine for GpuEngine {
             return RenderOutcome::Failed(GraphicsFailure::from_error(error));
         }
         outcome
+    }
+
+    fn test_present(&mut self) -> Result<PresentTestResult, Error> {
+        self.session.backend_mut().test_present()
     }
 
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
@@ -182,4 +186,3 @@ impl GraphicsEngine for GpuEngine {
             .try_blit_offscreen_src(handle, src_rect, dst_rect)
     }
 }
-

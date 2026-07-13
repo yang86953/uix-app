@@ -1,8 +1,4 @@
 use crate::tests::common::*;
-use crate::impl_widget_component;
-use crate::ui::animation::{Animation, Easing};
-use crate::ui::style::{ apply_style, ColorValue, PaletteColor, StyleSet, StyleState };
-use crate::ui::{ SnapshotSource };
 use crate::ui::widgets::general::button::*;
 
 #[test]

@@ -1,12 +1,6 @@
-use crate::tests::common::*;
-use crate::draw::backend::offscreen_pool::CpuOffscreenPool;
-use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
-use crate::draw::engine::cpu::canvas_2d::CpuCanvas2D;
-use crate::draw::engine::cpu::pixel_surface::PixelSurface;
-use crate::draw::pipeline::{ EncodedFrameExecution, EncodedPictureExecution };
-use crate::draw::rasterizer::image::blit_image;
-use crate::draw::traits::Canvas2D;
 use crate::draw::backend::cpu::*;
+use crate::draw::backend::traits::RenderBackend;
+use crate::tests::common::*;
 
 #[test]
 fn create_offscreen_reuses_destroyed_ids() {
@@ -29,9 +23,7 @@ fn create_offscreen_reuses_destroyed_ids() {
 
 #[test]
 fn encoded_picture_replaces_cpu_offscreen_pixels_and_begin_clears_stale_content() {
-    use crate::draw::pipeline::{
-        EncodedPictureExecution, FrameEncoder, FrameRasterOp, FrameRect,
-    };
+    use crate::draw::pipeline::{EncodedPictureExecution, FrameEncoder, FrameRasterOp, FrameRect};
 
     let mut backend = CpuBackend::new();
     let handle = backend.create_offscreen(4, 3).expect("Picture target");

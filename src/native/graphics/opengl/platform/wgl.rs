@@ -16,7 +16,7 @@ use crate::native::graphics::platform::windows::{
 };
 use crate::native::traits::present::{
     GpuSolidRect, IGraphicsContext, NativeRasterCaps, OffscreenTargetId, PresentDamage,
-    PresentFrame, SoftFallbackTile,
+    PresentCoherency, PresentFrame, SoftFallbackTile,
 };
 use crate::native::{Errc, Error};
 
@@ -583,7 +583,7 @@ impl IGraphicsContext for WglContext {
     fn caps(&self) -> crate::native::traits::present::GraphicsContextCaps {
         crate::native::traits::present::GraphicsContextCaps::gpu_native_swapchain(
             crate::native::traits::present::GraphicsBackend::OpenGlEs,
-            false,
+            PresentCoherency::FullOnly,
             self.device_pixel_ratio(),
         )
     }

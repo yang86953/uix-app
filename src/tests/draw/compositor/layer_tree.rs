@@ -1,13 +1,7 @@
-use crate::tests::common::*;
-use crate::draw::compositor::picture::{
-    LayerRenderEnv, blit_picture_cache, rasterize_picture_to_offscreen,
-};
-use crate::draw::compositor::viewport_transform::{needs_paint, needs_paint_rect};
-use crate::draw::compositor::{ ScenePaint };
-use crate::draw::painting::{ DisplayList, PaintPass };
-use crate::draw::render_object::RenderObjectTree;
-use crate::draw::traits::GraphicsEngine;
 use crate::draw::compositor::layer_tree::*;
+use crate::draw::compositor::ScenePaint;
+use crate::draw::traits::GraphicsEngine;
+use crate::tests::common::*;
 
 #[derive(Clone)]
 struct TestNode {
@@ -451,9 +445,7 @@ impl GraphicsEngine for LeakyClipEngine {
         &mut self,
         _: crate::draw::traits::UpdateStrategy,
     ) -> crate::draw::engine::RenderOutcome {
-        crate::draw::engine::RenderOutcome::FrameReady(
-            crate::draw::backend::DamageRegion::full(),
-        )
+        crate::draw::engine::RenderOutcome::FrameReady(crate::draw::backend::DamageRegion::full())
     }
 
     fn end_frame(
@@ -467,10 +459,7 @@ impl GraphicsEngine for LeakyClipEngine {
         &mut self.canvas
     }
 
-    fn try_destroy_offscreen(
-        &mut self,
-        _handle: ImageHandle,
-    ) -> Result<(), crate::core::Error> {
+    fn try_destroy_offscreen(&mut self, _handle: ImageHandle) -> Result<(), crate::core::Error> {
         self.destroy_attempts += 1;
         match &self.destroy_error {
             Some(error) => Err(error.clone()),

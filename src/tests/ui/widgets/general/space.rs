@@ -1,10 +1,7 @@
 use crate::tests::common::*;
-use crate::component;
-use crate::ui::children::WidgetChildren;
-use crate::ui::layout::engine::{child_from_tree_with_constraints, LayoutChild};
-use crate::ui::layout::{ flex::compute_flex_layout, FlexChild, FlexInput };
-use crate::ui::widgets::general::space::*;
 use crate::ui::core::widget::WidgetCore;
+use crate::ui::layout::engine::LayoutChild;
+use crate::ui::widgets::general::space::*;
 
 struct FixedChild(Size);
 
@@ -71,7 +68,9 @@ fn measure_children_respects_axes_and_preserves_flex_metadata() {
     let child = tree.set_root(Box::new(FixedChild(Size::new(120.0, 30.0))));
     let frame = Rect::new(0.0, 0.0, 40.0, 20.0);
 
-    let row = Space::new().height(20.0).measure_children(frame, &[child], &tree);
+    let row = Space::new()
+        .height(20.0)
+        .measure_children(frame, &[child], &tree);
     assert_eq!(row[0].measured_size, Size::new(120.0, 20.0));
     assert_eq!(row[0].flex_grow, 2.0);
     assert_eq!(row[0].flex_shrink, 0.25);

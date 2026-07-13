@@ -1,14 +1,10 @@
-use crate::tests::common::*;
+use crate::core::Result;
 use crate::draw::engine::bootstrap::ProbeStage;
-use crate::draw::engine::GraphicsFailure;
-use crate::core::{ Result };
-use crate::draw::engine::factory::create_graphics_engine;
-use crate::draw::traits::GraphicsEngine;
-use crate::native::factory::{
-    describe_backend_availability, GraphicsRecipe, gpu_recipe_candidates, try_create_gpu_recipe,
-};
-use crate::native::traits::present::{ NativeSurfaceHandle };
 use crate::draw::engine::bootstrap::*;
+use crate::draw::engine::factory::create_graphics_engine;
+use crate::native::factory::{gpu_recipe_candidates, GraphicsRecipe};
+use crate::native::traits::present::NativeSurfaceHandle;
+use crate::tests::common::*;
 #[cfg(feature = "d3d11")]
 use std::ffi::c_void;
 
@@ -31,17 +27,12 @@ impl IGraphicsContext for ShutdownTrackingContext {
             backend: GraphicsBackend::D3d11,
             raster: self.raster,
             present: self.present,
-            partial_present: false,
+            present_coherency: PresentCoherency::FullOnly,
             device_pixel_ratio: 1.0,
         }
     }
 
-    fn initialize(
-        &mut self,
-        _native_window: *mut c_void,
-        _width: i32,
-        _height: i32,
-    ) -> Result<()> {
+    fn initialize(&mut self, _native_window: *mut c_void, _width: i32, _height: i32) -> Result<()> {
         Ok(())
     }
 
@@ -143,11 +134,9 @@ fn bootstrap_shuts_down_context_when_engine_creation_fails() {
             let failure = report.failures.first().expect("engine failure");
             assert_eq!(failure.backend, GraphicsBackend::D3d11);
             assert!(failure.message.contains("stage=engine_create"));
-            assert!(
-                failure
-                    .message
-                    .contains("selected=backend=d3d11; raster=cpu; present=cpu_presenter")
-            );
+            assert!(failure
+                .message
+                .contains("selected=backend=d3d11; raster=cpu; present=cpu_presenter"));
             assert!(failure.message.contains("CpuPresenter"));
         }
     }
@@ -162,19 +151,18 @@ struct MakeCurrentFailingNativeContext {
 #[cfg(feature = "d3d11")]
 impl IGraphicsContext for MakeCurrentFailingNativeContext {
     fn caps(&self) -> GraphicsContextCaps {
-        GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+        GraphicsContextCaps::gpu_native_swapchain(
+            GraphicsBackend::D3d11,
+            PresentCoherency::FullOnly,
+            1.0,
+        )
     }
 
     fn native_raster_caps(&self) -> NativeRasterCaps {
         NativeRasterCaps::d3d11_full()
     }
 
-    fn initialize(
-        &mut self,
-        _native_window: *mut c_void,
-        _width: i32,
-        _height: i32,
-    ) -> Result<()> {
+    fn initialize(&mut self, _native_window: *mut c_void, _width: i32, _height: i32) -> Result<()> {
         Ok(())
     }
 
@@ -258,11 +246,9 @@ fn bootstrap_shuts_down_context_when_engine_initialize_fails() {
             let failure = report.failures.first().expect("init failure");
             assert_eq!(failure.backend, GraphicsBackend::D3d11);
             assert!(failure.message.contains("stage=engine_initialize"));
-            assert!(
-                failure
-                    .message
-                    .contains("selected=backend=d3d11; raster=gpu_native; present=swapchain")
-            );
+            assert!(failure
+                .message
+                .contains("selected=backend=d3d11; raster=gpu_native; present=swapchain"));
             assert!(failure.message.contains("make-current failed for test"));
         }
     }
@@ -301,7 +287,11 @@ struct BootstrapD3d12Context;
 #[cfg(all(feature = "d3d12", feature = "d3d11", feature = "opengles"))]
 impl IGraphicsContext for BootstrapD3d12Context {
     fn caps(&self) -> GraphicsContextCaps {
-        GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d12, false, 1.0)
+        GraphicsContextCaps::gpu_native_swapchain(
+            GraphicsBackend::D3d12,
+            PresentCoherency::FullOnly,
+            1.0,
+        )
     }
 
     fn native_raster_caps(&self) -> NativeRasterCaps {
@@ -313,12 +303,7 @@ impl IGraphicsContext for BootstrapD3d12Context {
         }
     }
 
-    fn initialize(
-        &mut self,
-        _native_window: *mut c_void,
-        _width: i32,
-        _height: i32,
-    ) -> Result<()> {
+    fn initialize(&mut self, _native_window: *mut c_void, _width: i32, _height: i32) -> Result<()> {
         Ok(())
     }
 
@@ -403,13 +388,11 @@ fn auto_falls_through_established_backends_to_low_priority_d3d12() {
     for (index, recipe) in expected.iter().take(expected_failures).enumerate() {
         assert_eq!(bootstrap.report.failures[index].backend, recipe.backend);
     }
-    assert!(
-        bootstrap
-            .report
-            .failures
-            .iter()
-            .all(|failure| failure.message.contains("stage=context_create"))
-    );
+    assert!(bootstrap
+        .report
+        .failures
+        .iter()
+        .all(|failure| failure.message.contains("stage=context_create")));
     bootstrap.engine.try_shutdown().expect("checked shutdown");
 }
 
@@ -455,11 +438,9 @@ fn same_api_recipe_probe_falls_through_to_later_recipe() {
     assert_eq!(bootstrap.selected_recipe, upload_recipe);
     assert_eq!(bootstrap.report.failures.len(), 1);
     assert_eq!(bootstrap.report.failures[0].backend, GraphicsBackend::D3d11);
-    assert!(
-        bootstrap.report.failures[0]
-            .message
-            .contains("recipe=backend=d3d11; raster=gpu_native; present=swapchain")
-    );
+    assert!(bootstrap.report.failures[0]
+        .message
+        .contains("recipe=backend=d3d11; raster=gpu_native; present=swapchain"));
     bootstrap.engine.try_shutdown().expect("checked shutdown");
 }
 
@@ -480,11 +461,9 @@ fn probe_report_preserves_context_create_stage_and_message() {
     let failure = report.failures.first().expect("context failure");
     assert_eq!(failure.backend, GraphicsBackend::OpenGlEs);
     assert!(failure.message.contains("stage=context_create"));
-    assert!(
-        failure
-            .message
-            .contains("recipe=backend=opengles; raster=gpu_native; present=swapchain")
-    );
+    assert!(failure
+        .message
+        .contains("recipe=backend=opengles; raster=gpu_native; present=swapchain"));
     assert!(failure.message.contains("selected=none"));
     assert!(failure.message.contains("WGL context creation failed"));
 }

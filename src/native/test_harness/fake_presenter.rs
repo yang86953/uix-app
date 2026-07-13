@@ -1,8 +1,7 @@
 //! Fake 呈现器 — 记录每次像素输出。
 
 use crate::core::error::Result;
-use crate::native::traits::present::IPresenter;
-use crate::native::traits::present::PresentDamage;
+use crate::native::traits::present::{IPresenter, PresentCoherency, PresentDamage};
 
 #[derive(Debug, Clone)]
 pub struct PresentCall {
@@ -59,6 +58,11 @@ impl Default for FakePresenter {
 }
 
 impl IPresenter for FakePresenter {
+    fn present_coherency(&self) -> PresentCoherency {
+        // The harness snapshots a complete pixel payload on every call.
+        PresentCoherency::RetainedBuffer
+    }
+
     fn present(
         &mut self,
         pixels: &[u32],

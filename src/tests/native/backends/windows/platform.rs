@@ -1,12 +1,14 @@
-use crate::tests::common::*;
-use std::collections::{ BTreeMap };
-use crate::native::shared::{OsEventSource, PlatformWindowCore, WindowState};
-use crate::native::traits::event::{EventLoopWaker, UiEvent};
-use crate::native::traits::*;
-use crate::native::backends::windows::platform::*;
-use crate::native::backends::windows::consts::{WM_SIZE, WM_CHAR, WM_IME_STARTCOMPOSITION, WM_IME_ENDCOMPOSITION, SIZE_RESTORED};
+use crate::native::backends::windows::consts::{
+    SIZE_RESTORED, WM_CHAR, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_SIZE,
+};
 use crate::native::backends::windows::ffi::PostMessageW;
+use crate::native::backends::windows::platform::*;
+use crate::native::shared::OsEventSource;
 use crate::native::traits::event::{UiEventPayload, UiEventType};
+use crate::native::traits::*;
+use crate::tests::common::*;
+use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
 
 fn size_lparam(width: u16, height: u16) -> isize {
     (u32::from(width) | (u32::from(height) << 16)) as isize
@@ -80,6 +82,86 @@ fn native_windows_keep_independent_state_and_route_resize_events() {
     second.close().expect("close secondary window");
     assert!(platform.dispatch_pending());
     first.close().expect("close primary window");
+    assert!(platform.dispatch_pending());
+}
+
+#[test]
+fn native_dwm_frame_opportunity_waits_for_present_and_keeps_window_identity() {
+    let mut platform = WindowsPlatform::new();
+    let mut window = platform
+        .create_window("UIX DWM frame opportunity", 64, 48)
+        .expect("native window");
+    let window_id = window.window_id();
+    let token = FrameRequestToken::new(9, 27);
+
+    window.show().expect("show native window");
+    assert!(platform.dispatch_pending());
+    while platform.next_event().is_some() {}
+
+    assert!(window
+        .request_native_frame(NativeFrameRequest::after_present(token))
+        .expect("arm DWM frame request"));
+
+    let quiet_until = Instant::now() + Duration::from_millis(20);
+    while Instant::now() < quiet_until {
+        assert!(platform.dispatch_timeout(Duration::from_millis(2)));
+        while let Some(event) = platform.next_event() {
+            assert_ne!(event.type_, UiEventType::FrameOpportunity);
+        }
+    }
+
+    let pixels = vec![0xff20_4060; 64 * 48];
+    window
+        .presenter()
+        .present(&pixels, 64, 48, PresentDamage::Full)
+        .expect("present GDI frame");
+    window
+        .native_frame_presented(token)
+        .expect("release DWM waiter after present");
+
+    let deadline = Instant::now() + Duration::from_secs(1);
+    let mut opportunity = None;
+    while Instant::now() < deadline && opportunity.is_none() {
+        assert!(platform.dispatch_timeout(Duration::from_millis(20)));
+        while let Some(event) = platform.next_event() {
+            if event.type_ != UiEventType::FrameOpportunity {
+                continue;
+            }
+            let UiEventPayload::FrameOpportunity(data) = event.payload else {
+                panic!("FrameOpportunity must carry its token");
+            };
+            opportunity = Some((event.window_id, data.token));
+        }
+    }
+
+    assert_eq!(opportunity, Some((Some(window_id), token)));
+    window.close().expect("close native window");
+    assert!(platform.dispatch_pending());
+}
+
+#[test]
+fn native_show_hide_events_track_visibility_and_keep_window_identity() {
+    let mut platform = WindowsPlatform::new();
+    let mut window = platform
+        .create_window("UIX native visibility route", 96, 64)
+        .expect("native window");
+    let window_id = window.window_id();
+
+    window.show().expect("show native window");
+    assert!(window.is_visible());
+    assert!(platform.dispatch_pending());
+    let shown = std::iter::from_fn(|| platform.next_event())
+        .any(|event| event.type_ == UiEventType::WindowShow && event.window_id == Some(window_id));
+    assert!(shown, "WM_SHOWWINDOW must route WindowShow to its window");
+
+    window.hide().expect("hide native window");
+    assert!(!window.is_visible());
+    assert!(platform.dispatch_pending());
+    let hidden = std::iter::from_fn(|| platform.next_event())
+        .any(|event| event.type_ == UiEventType::WindowHide && event.window_id == Some(window_id));
+    assert!(hidden, "WM_SHOWWINDOW must route WindowHide to its window");
+
+    window.close().expect("close native window");
     assert!(platform.dispatch_pending());
 }
 

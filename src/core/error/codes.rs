@@ -18,6 +18,7 @@ pub enum Errc {
     InvalidOperation = 10,
     InsufficientResources = 11,
     BadWeakPointer = 12,
+    WouldBlock = 13,
 
     IoError = 100,
     FileNotFound = 101,
@@ -53,6 +54,7 @@ pub enum Errc {
     GraphicsSurfaceLost = 504,
     GraphicsDeviceLost = 505,
     GraphicsOutOfMemory = 506,
+    GraphicsOccluded = 507,
 
     AppDomainBase = 1000,
 }
@@ -92,6 +94,7 @@ impl Errc {
             Self::AlreadyExists => Some(std::io::ErrorKind::AlreadyExists),
             Self::OutOfRange => Some(std::io::ErrorKind::InvalidData),
             Self::WriteFailure => Some(std::io::ErrorKind::WriteZero),
+            Self::WouldBlock => Some(std::io::ErrorKind::WouldBlock),
             _ => None,
         }
     }
@@ -113,6 +116,7 @@ impl fmt::Display for Errc {
             Errc::InvalidOperation => "invalid_operation",
             Errc::InsufficientResources => "insufficient_resources",
             Errc::BadWeakPointer => "bad_weak_pointer",
+            Errc::WouldBlock => "would_block",
             Errc::IoError => "io_error",
             Errc::FileNotFound => "file_not_found",
             Errc::AccessDenied => "access_denied",
@@ -143,6 +147,7 @@ impl fmt::Display for Errc {
             Errc::GraphicsSurfaceLost => "graphics_surface_lost",
             Errc::GraphicsDeviceLost => "graphics_device_lost",
             Errc::GraphicsOutOfMemory => "graphics_out_of_memory",
+            Errc::GraphicsOccluded => "graphics_occluded",
             Errc::AppDomainBase => "app_domain_base",
         };
         write!(f, "{}", name)

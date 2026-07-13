@@ -1,5 +1,5 @@
-use crate::tests::common::*;
 use crate::native::factory::*;
+use crate::tests::common::*;
 
 #[test]
 fn unsupported_platform_message_tracks_platform_boundary() {
@@ -41,7 +41,6 @@ fn d3d12_explicit_request_reports_build_state_or_surface_error() {
 #[cfg(all(windows, feature = "d3d11"))]
 #[test]
 fn d3d11_warp_test_factory_returns_a_gpu_native_context() {
-
     assert!(d3d11_warp_test_context_available());
     let mut platform = crate::native::create_platform().expect("platform");
     let mut window = platform
@@ -65,16 +64,15 @@ fn d3d11_warp_test_factory_returns_a_gpu_native_context() {
 #[cfg(all(windows, feature = "d3d12"))]
 #[test]
 fn d3d12_explicit_factory_creates_active_real_window_context() {
-
+    let _warp_guard = d3d12_warp_test_guard();
     let mut platform = crate::native::create_platform().expect("platform");
     let mut window = platform
         .window_manager()
         .create_window("D3D12 factory test", 120, 80)
         .expect("window");
     let surface = window.native_surface_ptr();
-    let mut context =
-        registry::try_create_gpu_context(GraphicsBackend::D3d12, surface, 120, 80)
-            .expect("active D3D12 factory row");
+    let mut context = registry::try_create_gpu_context(GraphicsBackend::D3d12, surface, 120, 80)
+        .expect("active D3D12 factory row");
     assert_eq!(context.graphics_backend(), GraphicsBackend::D3d12);
     assert_eq!(context.caps().raster, RasterMode::GpuNative);
     assert_eq!(context.caps().present, PresentMode::Swapchain);
@@ -94,15 +92,12 @@ fn d3d12_explicit_factory_creates_active_real_window_context() {
 
 #[test]
 fn vulkan_candidate_is_real_linux_backend_or_platform_specific_error() {
-    let err = match registry::try_create_gpu_context(
-        GraphicsBackend::Vulkan,
-        std::ptr::null_mut(),
-        1,
-        1,
-    ) {
-        Ok(_) => panic!("null surface should not create a Vulkan context"),
-        Err(err) => err,
-    };
+    let err =
+        match registry::try_create_gpu_context(GraphicsBackend::Vulkan, std::ptr::null_mut(), 1, 1)
+        {
+            Ok(_) => panic!("null surface should not create a Vulkan context"),
+            Err(err) => err,
+        };
 
     #[cfg(all(unix, not(target_os = "macos")))]
     assert!(err.message().contains("WaylandSurfaceHandle"));
@@ -131,11 +126,7 @@ fn vulkan_candidate_is_real_linux_backend_or_platform_specific_error() {
         err.message()
     );
 
-    #[cfg(not(any(
-        all(unix, not(target_os = "macos")),
-        windows,
-        target_os = "macos"
-    )))]
+    #[cfg(not(any(all(unix, not(target_os = "macos")), windows, target_os = "macos")))]
     assert!(
         err.message().contains("planned but not implemented")
             || err.message().contains("no registry entry")

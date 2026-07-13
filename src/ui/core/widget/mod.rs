@@ -6,6 +6,7 @@ use crate::draw::spatial::{Ray3D, SpatialContext};
 pub use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::event::{HandlerRegistration, HandlerSignature};
 pub use crate::ui::event::{SystemEvent, SystemEventKind};
+use crate::ui::render_handler::RenderHandlerRegistration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventResult {
@@ -27,8 +28,10 @@ pub struct WidgetNode {
     pub children: Vec<WidgetNode>,
     pub z_index: i32,
     pub key: Option<Box<str>>,
+    pub automation_id: Option<Box<str>>,
     pub tab_idx: i32,
     pub handlers: Vec<HandlerRegistration>,
+    pub(crate) render_handlers: Vec<RenderHandlerRegistration>,
 }
 
 impl WidgetNode {
@@ -38,12 +41,18 @@ impl WidgetNode {
             children,
             z_index: 0,
             key: None,
+            automation_id: None,
             tab_idx: 0,
             handlers: Vec::new(),
+            render_handlers: Vec::new(),
         }
     }
     pub fn key(mut self, k: &str) -> Self {
         self.key = Some(k.into());
+        self
+    }
+    pub fn automation_id(mut self, id: &str) -> Self {
+        self.automation_id = Some(id.into());
         self
     }
     pub fn leaf(widget: Box<dyn WidgetComponent>) -> Self {
@@ -52,8 +61,10 @@ impl WidgetNode {
             children: vec![],
             z_index: 0,
             key: None,
+            automation_id: None,
             tab_idx: 0,
             handlers: Vec::new(),
+            render_handlers: Vec::new(),
         }
     }
     pub fn z_index(mut self, z: i32) -> Self {
@@ -106,6 +117,10 @@ impl WidgetNode {
         self.handlers = handlers;
         self
     }
+    pub(crate) fn with_render_handlers(mut self, handlers: Vec<RenderHandlerRegistration>) -> Self {
+        self.render_handlers = handlers;
+        self
+    }
 }
 
 pub trait WidgetCore {
@@ -135,6 +150,7 @@ pub struct BoxedWidget {
     parent: Option<WidgetId>,
     children: Vec<WidgetId>,
     key: Option<Box<str>>,
+    automation_id: Option<Box<str>>,
     frame: Rect,
     visible: bool,
     attached: bool,
@@ -161,6 +177,7 @@ impl BoxedWidget {
             parent: None,
             children: Vec::new(),
             key: None,
+            automation_id: None,
             frame: Rect::zero(),
             visible: true,
             attached: false,
@@ -222,6 +239,12 @@ impl BoxedWidget {
     }
     pub(crate) fn set_key(&mut self, key: Option<Box<str>>) {
         self.key = key;
+    }
+    pub fn automation_id(&self) -> Option<&str> {
+        self.automation_id.as_deref()
+    }
+    pub(crate) fn set_automation_id(&mut self, automation_id: Option<Box<str>>) {
+        self.automation_id = automation_id;
     }
     pub(crate) fn handler_signatures(&self) -> &[HandlerSignature] {
         &self.handler_signatures

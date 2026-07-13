@@ -1,287 +1,176 @@
-// ── parse_json_flat：正常路径 ──────────────────────────────────────
-use crate::tests::common::*;
-use crate::core::{ Result };
 use std::fs;
+use std::path::{Path, PathBuf};
+
 use crate::data::settings::settings::*;
+use crate::tests::common::*;
 
+fn temp_settings_path(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("uix_settings_{name}_{}.json", std::process::id()))
+}
 
-#[test]
-fn parse_empty_object() {
-    let m = parse_json_flat("{}").unwrap();
-    assert!(m.is_empty());
+fn remove_if_present(path: &Path) {
+    let _ = fs::remove_file(path);
 }
 
 #[test]
-fn parse_multiple_pairs() {
-    let m = parse_json_flat(r#"{"a": "1", "b": "2", "c": "3"}"#).unwrap();
-    assert_eq!(m.len(), 3);
-    assert_eq!(m.get("a").unwrap(), "1");
-    assert_eq!(m.get("b").unwrap(), "2");
-    assert_eq!(m.get("c").unwrap(), "3");
+fn parse_json_flat_accepts_supported_inputs() {
+    let cases: &[(&str, &[(&str, &str)])] = &[
+        ("{}", &[]),
+        (
+            r#"{"a": "1", "b": "2", "c": "3"}"#,
+            &[("a", "1"), ("b", "2"), ("c", "3")],
+        ),
+        (r#"{  "key"  :  "val"  }"#, &[("key", "val")]),
+        ("{\n  \"key\": \"val\"\n}", &[("key", "val")]),
+        (r#"{"key": "hello\"world"}"#, &[("key", "hello\"world")]),
+        (r#"{"path": "C:\\Users"}"#, &[("path", "C:\\Users")]),
+        (r#"{"msg": "line1\nline2"}"#, &[("msg", "line1\nline2")]),
+        (r#"{"col": "a\tb"}"#, &[("col", "a\tb")]),
+        (r#"{"he\"llo": "world"}"#, &[("he\"llo", "world")]),
+        (r#"{"a": "1",}"#, &[("a", "1")]),
+    ];
+
+    for &(input, expected) in cases {
+        let parsed = parse_json_flat(input)
+            .unwrap_or_else(|error| panic!("expected supported input {input:?}, got {error:?}"));
+        assert_eq!(parsed.len(), expected.len(), "input: {input:?}");
+        for &(key, value) in expected {
+            assert_eq!(
+                parsed.get(key).map(String::as_str),
+                Some(value),
+                "input: {input:?}"
+            );
+        }
+    }
 }
 
 #[test]
-fn parse_extra_whitespace() {
-    let m = parse_json_flat(r#"{  "key"  :  "val"  }"#).unwrap();
-    assert_eq!(m.get("key").unwrap(), "val");
+fn parse_json_flat_rejects_invalid_inputs() {
+    for input in [
+        "null",
+        "[\"a\"]",
+        "{123: \"val\"}",
+        r#"{"key": 123}"#,
+        r#"{"key: "val"}"#,
+        r#"{"key": "val}"#,
+        r#"{"key" "val"}"#,
+        "",
+        "   ",
+    ] {
+        let error = parse_json_flat(input).unwrap_err();
+        assert_eq!(error.code(), Errc::FormatError, "input: {input:?}");
+    }
 }
 
 #[test]
-fn parse_newlines_and_tabs() {
-    let input = "{\n  \"key\": \"val\"\n}";
-    let m = parse_json_flat(input).unwrap();
-    assert_eq!(m.get("key").unwrap(), "val");
-}
+fn serialize_json_flat_handles_empty_and_escaped_values() {
+    assert_eq!(serialize_json_flat(&HashMap::new()), "{}");
 
-// ── parse_json_flat：转义字符 ──────────────────────────────────────
-
-#[test]
-fn parse_escaped_quote_in_value() {
-    let m = parse_json_flat(r#"{"key": "hello\"world"}"#).unwrap();
-    assert_eq!(m.get("key").unwrap(), "hello\"world");
-}
-
-#[test]
-fn parse_escaped_backslash() {
-    let m = parse_json_flat(r#"{"path": "C:\\Users"}"#).unwrap();
-    assert_eq!(m.get("path").unwrap(), "C:\\Users");
-}
-
-#[test]
-fn parse_escaped_newline() {
-    let m = parse_json_flat(r#"{"msg": "line1\nline2"}"#).unwrap();
-    assert_eq!(m.get("msg").unwrap(), "line1\nline2");
-}
-
-#[test]
-fn parse_escaped_tab() {
-    let m = parse_json_flat(r#"{"col": "a\tb"}"#).unwrap();
-    assert_eq!(m.get("col").unwrap(), "a\tb");
-}
-
-#[test]
-fn parse_escaped_key() {
-    let m = parse_json_flat(r#"{"he\"llo": "world"}"#).unwrap();
-    assert_eq!(m.get("he\"llo").unwrap(), "world");
-}
-
-// ── parse_json_flat：错误路径 ──────────────────────────────────────
-
-#[test]
-fn parse_not_json_object_returns_error() {
-    let r = parse_json_flat("null");
-    assert!(r.is_err());
-    assert_eq!(r.unwrap_err().code(), Errc::FormatError);
-}
-
-#[test]
-fn parse_array_returns_error() {
-    let r = parse_json_flat("[\"a\"]");
-    assert!(r.is_err());
-}
-
-#[test]
-fn parse_invalid_key_not_string() {
-    let r = parse_json_flat("{123: \"val\"}");
-    assert!(r.is_err());
-}
-
-#[test]
-fn parse_invalid_value_not_string() {
-    let r = parse_json_flat(r#"{"key": 123}"#);
-    assert!(r.is_err());
-}
-
-#[test]
-fn parse_unterminated_key() {
-    let r = parse_json_flat(r#"{"key: "val"}"#);
-    assert!(r.is_err());
-}
-
-#[test]
-fn parse_unterminated_value() {
-    let r = parse_json_flat(r#"{"key": "val}"#);
-    assert!(r.is_err());
-}
-
-#[test]
-fn parse_missing_colon() {
-    let r = parse_json_flat(r#"{"key" "val"}"#);
-    assert!(r.is_err());
-}
-
-#[test]
-fn parse_trailing_comma_is_tolerated() {
-    // 多余逗号被当作分隔符跳过，解析器宽容处理
-    let m = parse_json_flat(r#"{"a": "1",}"#).unwrap();
-    assert_eq!(m.get("a").unwrap(), "1");
-    assert_eq!(m.len(), 1);
-}
-
-#[test]
-fn parse_empty_input() {
-    let r = parse_json_flat("");
-    assert!(r.is_err());
-}
-
-#[test]
-fn parse_only_whitespace() {
-    let r = parse_json_flat("   ");
-    assert!(r.is_err());
-}
-
-// ── serialize_json_flat ────────────────────────────────────────────
-
-#[test]
-fn serialize_empty() {
-    let map = HashMap::new();
-    let json = serialize_json_flat(&map);
-    assert_eq!(json, "{}");
-}
-
-#[test]
-fn serialize_escapes_special_chars() {
     let mut map = HashMap::new();
     map.insert("k".into(), "hello\"world\nnext".into());
-    let json = serialize_json_flat(&map);
-    assert!(json.contains(r#"hello\"world\nnext"#));
+    assert!(serialize_json_flat(&map).contains(r#"hello\"world\nnext"#));
 }
 
-// ── 序列化 ↔ 反序列化 一致性 ───────────────────────────────────────
-
 #[test]
-fn roundtrip_identity() {
-    let cases = vec![
+fn parse_serialize_roundtrip_preserves_entries() {
+    for input in [
         r#"{"a": "1"}"#,
         r#"{"a": "1", "b": "2"}"#,
         r#"{"key": "value"}"#,
-        r#"{"x": "y"}"#,
-    ];
-    for input in cases {
-        let map = parse_json_flat(input).unwrap();
-        let json = serialize_json_flat(&map);
-        let map2 = parse_json_flat(&json).unwrap();
-        assert_eq!(map, map2, "roundtrip failed for: {}", input);
+    ] {
+        let parsed = parse_json_flat(input).unwrap();
+        let reparsed = parse_json_flat(&serialize_json_flat(&parsed)).unwrap();
+        assert_eq!(parsed, reparsed, "input: {input}");
     }
 }
 
-// ════════════════════════════════════════════════════════════════════
-// SettingsService 原有测试
-// ════════════════════════════════════════════════════════════════════
-
 #[test]
-fn test_set_get() {
-    let mut s = SettingsService::new();
-    s.set("theme", "dark");
-    assert_eq!(s.get("theme"), Some("dark"));
-    assert!(s.dirty());
+fn set_get_has_and_remove_share_one_state_contract() {
+    let mut settings = SettingsService::new();
+    settings.set("theme", "dark");
+
+    assert_eq!(settings.get("theme"), Some("dark"));
+    assert!(settings.has("theme"));
+    assert!(settings.dirty());
+
+    settings.remove("theme");
+    assert!(!settings.has("theme"));
 }
 
 #[test]
-fn test_has_remove() {
-    let mut s = SettingsService::new();
-    s.set("key", "val");
-    assert!(s.has("key"));
-    s.remove("key");
-    assert!(!s.has("key"));
+fn save_load_roundtrip_persists_values() {
+    let path = temp_settings_path("roundtrip");
+    remove_if_present(&path);
+    let path_string = path.to_string_lossy().to_string();
+
+    let mut settings = SettingsService::new();
+    settings.load(&path_string).unwrap();
+    settings.set("key", "value");
+    settings.save().unwrap();
+
+    let mut loaded = SettingsService::new();
+    loaded.load(&path_string).unwrap();
+    assert_eq!(loaded.get("key"), Some("value"));
+    assert!(!loaded.dirty());
+
+    remove_if_present(&path);
 }
 
 #[test]
-fn test_save_load_roundtrip() {
-    let p = std::env::temp_dir().join("uix_settings_test.json");
-    let ps = p.to_string_lossy().to_string();
+fn load_missing_file_resets_state_and_tracks_path() {
+    let path = temp_settings_path("missing");
+    remove_if_present(&path);
+    let path_string = path.to_string_lossy().to_string();
 
-    {
-        let mut s = SettingsService::new();
-        s.set("key1", "value1");
-        s.set("key2", "value2");
-        s.load(&ps).unwrap();
-        s.set("key3", "value3");
-        s.save().unwrap();
-    }
+    let mut settings = SettingsService::new();
+    settings.set("stale", "value");
+    settings.load(&path_string).unwrap();
 
-    {
-        let mut s2 = SettingsService::new();
-        s2.load(&ps).unwrap();
-        assert_eq!(s2.get("key3"), Some("value3"));
-        assert!(!s2.dirty());
-    }
-
-    std::fs::remove_file(&ps).ok();
+    assert_eq!(settings.count(), 0);
+    assert_eq!(settings.loaded_path(), Some(path_string.as_str()));
+    assert!(!settings.dirty());
 }
 
 #[test]
-fn test_loaded_path_after_load() {
-    let p = std::env::temp_dir().join("uix_settings_loaded_path_test.json");
-    let ps = p.to_string_lossy().to_string();
-    std::fs::remove_file(&ps).ok();
+fn load_whitespace_file_resets_state() {
+    let path = temp_settings_path("whitespace");
+    let path_string = path.to_string_lossy().to_string();
+    fs::write(&path, "   \n\t").unwrap();
 
-    let mut s = SettingsService::new();
-    assert_eq!(s.loaded_path(), None);
-    s.load(&ps).unwrap();
-    assert_eq!(s.loaded_path(), Some(ps.as_str()));
-    assert!(!s.dirty());
+    let mut settings = SettingsService::new();
+    settings.set("stale", "value");
+    settings.load(&path_string).unwrap();
+
+    assert_eq!(settings.count(), 0);
+    assert_eq!(settings.loaded_path(), Some(path_string.as_str()));
+    assert!(!settings.dirty());
+
+    remove_if_present(&path);
 }
 
 #[test]
-fn test_load_missing_file_resets_to_clean_empty_map() {
-    let p = std::env::temp_dir().join("uix_settings_missing_load_test.json");
-    let ps = p.to_string_lossy().to_string();
-    std::fs::remove_file(&ps).ok();
+fn save_without_loaded_path_is_noop() {
+    let mut settings = SettingsService::new();
+    settings.set("theme", "dark");
+    settings.save().unwrap();
 
-    let mut s = SettingsService::new();
-    s.set("stale", "value");
-    assert!(s.dirty());
-
-    s.load(&ps).unwrap();
-
-    assert_eq!(s.count(), 0);
-    assert_eq!(s.loaded_path(), Some(ps.as_str()));
-    assert!(!s.dirty());
+    assert_eq!(settings.loaded_path(), None);
+    assert_eq!(settings.get("theme"), Some("dark"));
+    assert!(settings.dirty());
 }
 
 #[test]
-fn test_load_empty_file_resets_to_clean_empty_map() {
-    let p = std::env::temp_dir().join("uix_settings_empty_load_test.json");
-    let ps = p.to_string_lossy().to_string();
-    std::fs::write(&ps, "   \n\t").unwrap();
+fn save_uses_two_space_pretty_format() {
+    let path = temp_settings_path("pretty");
+    remove_if_present(&path);
+    let path_string = path.to_string_lossy().to_string();
 
-    let mut s = SettingsService::new();
-    s.set("stale", "value");
-    assert!(s.dirty());
+    let mut settings = SettingsService::new();
+    settings.load(&path_string).unwrap();
+    settings.set("theme", "dark");
+    settings.save().unwrap();
 
-    s.load(&ps).unwrap();
-
-    assert_eq!(s.count(), 0);
-    assert_eq!(s.loaded_path(), Some(ps.as_str()));
-    assert!(!s.dirty());
-    std::fs::remove_file(&ps).ok();
-}
-
-#[test]
-fn test_save_without_loaded_path_is_noop() {
-    let mut s = SettingsService::new();
-    s.set("theme", "dark");
-
-    s.save().unwrap();
-
-    assert_eq!(s.loaded_path(), None);
-    assert_eq!(s.get("theme"), Some("dark"));
-    assert!(s.dirty());
-}
-
-#[test]
-fn test_save_pretty_prints_two_spaces() {
-    let p = std::env::temp_dir().join("uix_settings_pretty_print_test.json");
-    let ps = p.to_string_lossy().to_string();
-    std::fs::remove_file(&ps).ok();
-
-    let mut s = SettingsService::new();
-    s.load(&ps).unwrap();
-    s.set("theme", "dark");
-    s.save().unwrap();
-
-    let saved = std::fs::read_to_string(&ps).unwrap();
+    let saved = fs::read_to_string(&path).unwrap();
     assert!(saved.starts_with("{\n"));
     assert!(saved.ends_with("\n}"));
     assert!(saved
@@ -289,22 +178,23 @@ fn test_save_pretty_prints_two_spaces() {
         .filter(|line| line.contains("\": \""))
         .all(|line| line.starts_with("  ") && !line.starts_with("   ")));
 
-    std::fs::remove_file(&ps).ok();
+    remove_if_present(&path);
 }
 
 #[test]
-fn test_save_skips_clean_settings() {
-    let p = std::env::temp_dir().join("uix_settings_clean_save_test.json");
-    let ps = p.to_string_lossy().to_string();
-    std::fs::write(&ps, r#"{"theme": "light"}"#).unwrap();
-    let before = std::fs::metadata(&ps).unwrap().modified().unwrap();
+fn save_skips_clean_settings() {
+    let path = temp_settings_path("clean");
+    let path_string = path.to_string_lossy().to_string();
+    fs::write(&path, r#"{"theme": "light"}"#).unwrap();
+    let before = fs::metadata(&path).unwrap().modified().unwrap();
 
-    let mut s = SettingsService::new();
-    s.load(&ps).unwrap();
-    s.save().unwrap();
+    let mut settings = SettingsService::new();
+    settings.load(&path_string).unwrap();
+    settings.save().unwrap();
 
-    let after = std::fs::metadata(&ps).unwrap().modified().unwrap();
+    let after = fs::metadata(&path).unwrap().modified().unwrap();
     assert_eq!(before, after);
-    assert!(!s.dirty());
-    std::fs::remove_file(&ps).ok();
+    assert!(!settings.dirty());
+
+    remove_if_present(&path);
 }

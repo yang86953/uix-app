@@ -224,4 +224,3 @@ impl AppHandle {
         self.runtime.close_session(self.window_id);
     }
 }
-

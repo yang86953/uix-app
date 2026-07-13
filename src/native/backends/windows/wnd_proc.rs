@@ -8,12 +8,15 @@
 #![cfg(windows)]
 #![allow(non_snake_case)]
 
+use std::time::Instant;
+
 use crate::core::Point;
 use crate::native::traits::*;
 
 use super::bindings::*;
 use super::consts::*;
 use super::ffi::*;
+use super::frame_pacer::{clear_pending_frame, complete_posted_frame};
 use super::ime_dispatch::{
     ime_composition_events, ime_end_composition_event, ime_start_composition_event, ImmStringRead,
 };
@@ -42,6 +45,19 @@ pub(crate) unsafe extern "system" fn wnd_proc(
     }
     let binding = &*(ptr as *const WindowBinding);
     let platform = &mut *binding.platform;
+    if msg == WM_UIX_FRAME_OPPORTUNITY {
+        if let Some(request) = complete_posted_frame(&binding.frame_pacer, wparam, lparam) {
+            let window_id = binding.state.borrow().window_id;
+            platform.push_event(
+                window_id,
+                UiEvent::frame_opportunity(request.token, Instant::now(), None),
+            );
+        }
+        return 0;
+    }
+    if msg == WM_DESTROY {
+        clear_pending_frame(&binding.frame_pacer);
+    }
     platform.handle_message(hwnd, &binding.state, &binding.ime, msg, wparam, lparam)
 }
 
@@ -157,6 +173,19 @@ impl WindowsPlatform {
                         }
                     }
                 }
+                0
+            }
+            WM_SHOWWINDOW => {
+                let visible = wparam != 0;
+                window.borrow_mut().visible = visible;
+                self.push_event(
+                    window_id,
+                    if visible {
+                        UiEvent::window_show()
+                    } else {
+                        UiEvent::window_hide()
+                    },
+                );
                 0
             }
             WM_MOVE => {

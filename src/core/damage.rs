@@ -1,8 +1,12 @@
 //! Shared dirty-region and present-damage geometry contracts.
 
 use crate::core::geometry::Rect;
+use std::collections::VecDeque;
 
 const DIRTY_MERGE_THRESHOLD: usize = 16;
+const MAX_PRESENT_DAMAGE_RECTS: usize = 64;
+const MAX_PRESENT_HISTORY_FRAMES: usize = 256;
+const MAX_TRACKED_PRESENT_IMAGES: usize = 8;
 
 /// Dirty region tracking for incremental rendering.
 #[derive(Debug, Clone, PartialEq)]
@@ -150,20 +154,27 @@ impl DamageRegion {
         Some(bounds)
     }
 
-    pub fn to_present_damage(&self) -> PresentDamage {
-        if self.full || self.rects.is_empty() {
+    /// Converts logical top-left damage into drawable buffer coordinates.
+    ///
+    /// Each minimum edge is rounded down, each maximum edge is rounded up,
+    /// and the transformed result is clipped to the live drawable extent.
+    /// Invalid surface metadata or damage degrades to [`PresentDamage::Full`].
+    pub fn to_present_damage(&self, surface: PresentSurface) -> PresentDamage {
+        if self.full || self.rects.is_empty() || !surface.is_valid() {
             PresentDamage::Full
         } else {
-            let tuples: Vec<(i32, i32, i32, i32)> = self
-                .rects
-                .iter()
-                .filter(|rect| rect.w > 0.0 && rect.h > 0.0)
-                .map(|rect| (rect.x as i32, rect.y as i32, rect.w as i32, rect.h as i32))
-                .collect();
+            let mut tuples = Vec::with_capacity(self.rects.len());
+            for rect in &self.rects {
+                match logical_rect_to_drawable(*rect, surface) {
+                    Ok(Some(rect)) => tuples.push(rect),
+                    Ok(None) => {}
+                    Err(()) => return PresentDamage::Full,
+                }
+            }
             if tuples.is_empty() {
                 PresentDamage::Full
             } else {
-                PresentDamage::Partial(tuples)
+                PresentDamage::from_rects(tuples)
             }
         }
     }
@@ -195,5 +206,421 @@ impl PresentDamage {
     pub fn is_full(&self) -> bool {
         matches!(self, Self::Full)
     }
+
+    /// Conservative union used by swapchain-history repair planning.
+    pub fn union(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Full, _) | (_, Self::Full) => Self::Full,
+            (Self::Partial(lhs), Self::Partial(rhs)) => {
+                let mut rects = Vec::with_capacity(lhs.len().saturating_add(rhs.len()));
+                rects.extend_from_slice(lhs);
+                rects.extend_from_slice(rhs);
+                Self::from_rects(rects)
+            }
+        }
+    }
+
+    fn from_rects(rects: Vec<(i32, i32, i32, i32)>) -> Self {
+        match normalize_present_rects(rects) {
+            Some(rects) if !rects.is_empty() => Self::Partial(rects),
+            _ => Self::Full,
+        }
+    }
 }
 
+/// Buffer-preservation proof available at a presentation boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum PresentCoherency {
+    /// No preservation or image-history proof; draw and present the full frame.
+    #[default]
+    FullOnly,
+    /// One retained target whose pixels outside damage survive successful presents.
+    RetainedBuffer,
+    /// Multiple images whose stale regions must be repaired from per-image history.
+    TrackedSwapchain,
+}
+
+/// Mapping from logical top-left coordinates into the drawable buffer.
+///
+/// Mirrored variants follow the Vulkan convention: horizontal mirror first,
+/// then clockwise rotation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum PresentTransform {
+    #[default]
+    Identity,
+    Rotate90,
+    Rotate180,
+    Rotate270,
+    HorizontalMirror,
+    HorizontalMirrorRotate90,
+    HorizontalMirrorRotate180,
+    HorizontalMirrorRotate270,
+}
+
+impl PresentTransform {
+    fn swaps_axes(self) -> bool {
+        matches!(
+            self,
+            Self::Rotate90
+                | Self::Rotate270
+                | Self::HorizontalMirrorRotate90
+                | Self::HorizontalMirrorRotate270
+        )
+    }
+}
+
+/// Live surface metadata required for safe logical-to-drawable damage mapping.
+#[derive(Debug, Clone, Copy)]
+pub struct PresentSurface {
+    pub drawable_width: i32,
+    pub drawable_height: i32,
+    pub device_pixel_ratio: f32,
+    pub transform: PresentTransform,
+    /// Changes whenever the native surface is rebuilt, even at the same extent.
+    pub generation: u64,
+}
+
+impl PresentSurface {
+    pub const fn new(
+        drawable_width: i32,
+        drawable_height: i32,
+        device_pixel_ratio: f32,
+        transform: PresentTransform,
+        generation: u64,
+    ) -> Self {
+        Self {
+            drawable_width,
+            drawable_height,
+            device_pixel_ratio,
+            transform,
+            generation,
+        }
+    }
+
+    pub const fn identity(
+        drawable_width: i32,
+        drawable_height: i32,
+        device_pixel_ratio: f32,
+        generation: u64,
+    ) -> Self {
+        Self::new(
+            drawable_width,
+            drawable_height,
+            device_pixel_ratio,
+            PresentTransform::Identity,
+            generation,
+        )
+    }
+
+    pub fn is_valid(self) -> bool {
+        self.drawable_width > 0
+            && self.drawable_height > 0
+            && self.device_pixel_ratio.is_finite()
+            && self.device_pixel_ratio > 0.0
+    }
+
+    fn untransformed_extent(self) -> (f32, f32) {
+        if self.transform.swaps_axes() {
+            (self.drawable_height as f32, self.drawable_width as f32)
+        } else {
+            (self.drawable_width as f32, self.drawable_height as f32)
+        }
+    }
+}
+
+impl PartialEq for PresentSurface {
+    fn eq(&self, other: &Self) -> bool {
+        self.drawable_width == other.drawable_width
+            && self.drawable_height == other.drawable_height
+            && self.device_pixel_ratio.to_bits() == other.device_pixel_ratio.to_bits()
+            && self.transform == other.transform
+            && self.generation == other.generation
+    }
+}
+
+impl Eq for PresentSurface {}
+
+/// Identity of the drawable swapchain image acquired for the current frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PresentImage {
+    pub index: usize,
+    pub image_count: usize,
+}
+
+impl PresentImage {
+    pub const fn new(index: usize, image_count: usize) -> Self {
+        Self { index, image_count }
+    }
+
+    fn is_valid(self) -> bool {
+        self.image_count > 0
+            && self.image_count <= MAX_TRACKED_PRESENT_IMAGES
+            && self.index < self.image_count
+    }
+}
+
+/// Required draw repair and compositor damage for one presentation.
+///
+/// A tracked swapchain caller must arrange for every pixel in `draw_damage`
+/// to be current in the acquired image before submitting `present_damage`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PresentDamagePlan {
+    pub draw_damage: PresentDamage,
+    pub present_damage: PresentDamage,
+}
+
+impl PresentDamagePlan {
+    pub fn full() -> Self {
+        Self {
+            draw_damage: PresentDamage::Full,
+            present_damage: PresentDamage::Full,
+        }
+    }
+
+    fn partial(damage: PresentDamage) -> Self {
+        Self {
+            draw_damage: damage.clone(),
+            present_damage: damage,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CommittedPresentDamage {
+    sequence: u64,
+    damage: PresentDamage,
+}
+
+/// Successful-present history for retained and multi-image targets.
+///
+/// Call [`Self::plan`] before drawing/presenting and call [`Self::commit`]
+/// only after the native present succeeds. A missing image identity, changed
+/// surface signature, or invalid metadata always produces a full plan.
+#[derive(Debug, Clone, Default)]
+pub struct PresentDamageTracker {
+    surface: Option<PresentSurface>,
+    coherency: Option<PresentCoherency>,
+    sequence: u64,
+    image_sequences: Vec<Option<u64>>,
+    history: VecDeque<CommittedPresentDamage>,
+}
+
+impl PresentDamageTracker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    pub fn plan(
+        &self,
+        coherency: PresentCoherency,
+        surface: PresentSurface,
+        image: Option<PresentImage>,
+        logical_damage: &DamageRegion,
+    ) -> PresentDamagePlan {
+        if coherency == PresentCoherency::FullOnly || !surface.is_valid() {
+            return PresentDamagePlan::full();
+        }
+        let current = logical_damage.to_present_damage(surface);
+        if current.is_full() || self.surface != Some(surface) || self.coherency != Some(coherency) {
+            return PresentDamagePlan::full();
+        }
+
+        match coherency {
+            PresentCoherency::FullOnly => PresentDamagePlan::full(),
+            PresentCoherency::RetainedBuffer => PresentDamagePlan::partial(current),
+            PresentCoherency::TrackedSwapchain => {
+                let Some(image) = image.filter(|image| image.is_valid()) else {
+                    return PresentDamagePlan::full();
+                };
+                if self.image_sequences.len() != image.image_count {
+                    return PresentDamagePlan::full();
+                }
+                let Some(last_sequence) = self.image_sequences[image.index] else {
+                    return PresentDamagePlan::full();
+                };
+                let mut required = current;
+                for committed in self
+                    .history
+                    .iter()
+                    .filter(|committed| committed.sequence > last_sequence)
+                {
+                    required = required.union(&committed.damage);
+                    if required.is_full() {
+                        return PresentDamagePlan::full();
+                    }
+                }
+                PresentDamagePlan::partial(required)
+            }
+        }
+    }
+
+    /// Records the logical changes from a successful native present.
+    ///
+    /// The caller must have honored the `draw_damage` returned by the matching
+    /// [`Self::plan`]. Failed or skipped presents must not call this method.
+    pub fn commit(
+        &mut self,
+        coherency: PresentCoherency,
+        surface: PresentSurface,
+        image: Option<PresentImage>,
+        logical_damage: &DamageRegion,
+    ) {
+        if coherency == PresentCoherency::FullOnly || !surface.is_valid() {
+            self.reset();
+            return;
+        }
+
+        let current = logical_damage.to_present_damage(surface);
+        let state_changed = self.surface != Some(surface) || self.coherency != Some(coherency);
+        if state_changed {
+            self.reset();
+            self.surface = Some(surface);
+            self.coherency = Some(coherency);
+        }
+
+        match coherency {
+            PresentCoherency::FullOnly => self.reset(),
+            PresentCoherency::RetainedBuffer => {
+                self.sequence = 0;
+                self.image_sequences.clear();
+                self.history.clear();
+            }
+            PresentCoherency::TrackedSwapchain => {
+                let Some(image) = image.filter(|image| image.is_valid()) else {
+                    self.reset();
+                    return;
+                };
+                if self.image_sequences.len() != image.image_count {
+                    self.sequence = 0;
+                    self.image_sequences = vec![None; image.image_count];
+                    self.history.clear();
+                }
+                let Some(sequence) = self.sequence.checked_add(1) else {
+                    self.sequence = 0;
+                    self.image_sequences.fill(None);
+                    self.history.clear();
+                    return;
+                };
+                self.sequence = sequence;
+                self.history.push_back(CommittedPresentDamage {
+                    sequence,
+                    damage: current,
+                });
+                self.image_sequences[image.index] = Some(sequence);
+
+                if let Some(oldest_required) = self.image_sequences.iter().flatten().copied().min()
+                {
+                    while self
+                        .history
+                        .front()
+                        .is_some_and(|committed| committed.sequence <= oldest_required)
+                    {
+                        self.history.pop_front();
+                    }
+                }
+                if self.history.len() > MAX_PRESENT_HISTORY_FRAMES {
+                    // Losing bounded history invalidates every image proof.
+                    self.sequence = 0;
+                    self.image_sequences.fill(None);
+                    self.history.clear();
+                }
+            }
+        }
+    }
+}
+
+fn logical_rect_to_drawable(
+    rect: Rect,
+    surface: PresentSurface,
+) -> Result<Option<(i32, i32, i32, i32)>, ()> {
+    if !rect.x.is_finite() || !rect.y.is_finite() || !rect.w.is_finite() || !rect.h.is_finite() {
+        return Err(());
+    }
+    if rect.w <= 0.0 || rect.h <= 0.0 {
+        return Ok(None);
+    }
+
+    let dpr = surface.device_pixel_ratio;
+    let x0 = rect.x * dpr;
+    let y0 = rect.y * dpr;
+    let x1 = (rect.x + rect.w) * dpr;
+    let y1 = (rect.y + rect.h) * dpr;
+    if !x0.is_finite() || !y0.is_finite() || !x1.is_finite() || !y1.is_finite() {
+        return Err(());
+    }
+
+    let (source_w, source_h) = surface.untransformed_extent();
+    let (tx0, ty0, tx1, ty1) = match surface.transform {
+        PresentTransform::Identity => (x0, y0, x1, y1),
+        PresentTransform::Rotate90 => (source_h - y1, x0, source_h - y0, x1),
+        PresentTransform::Rotate180 => (source_w - x1, source_h - y1, source_w - x0, source_h - y0),
+        PresentTransform::Rotate270 => (y0, source_w - x1, y1, source_w - x0),
+        PresentTransform::HorizontalMirror => (source_w - x1, y0, source_w - x0, y1),
+        PresentTransform::HorizontalMirrorRotate90 => {
+            (source_h - y1, source_w - x1, source_h - y0, source_w - x0)
+        }
+        PresentTransform::HorizontalMirrorRotate180 => (x0, source_h - y1, x1, source_h - y0),
+        PresentTransform::HorizontalMirrorRotate270 => (y0, x0, y1, x1),
+    };
+
+    let drawable_w = surface.drawable_width as f32;
+    let drawable_h = surface.drawable_height as f32;
+    let left = tx0.min(tx1).floor().clamp(0.0, drawable_w) as i32;
+    let top = ty0.min(ty1).floor().clamp(0.0, drawable_h) as i32;
+    let right = tx0.max(tx1).ceil().clamp(0.0, drawable_w) as i32;
+    let bottom = ty0.max(ty1).ceil().clamp(0.0, drawable_h) as i32;
+    if right <= left || bottom <= top {
+        Ok(None)
+    } else {
+        Ok(Some((left, top, right - left, bottom - top)))
+    }
+}
+
+fn normalize_present_rects(
+    mut rects: Vec<(i32, i32, i32, i32)>,
+) -> Option<Vec<(i32, i32, i32, i32)>> {
+    rects.retain(|&(_, _, w, h)| w > 0 && h > 0);
+    if rects.len() > MAX_PRESENT_DAMAGE_RECTS {
+        return None;
+    }
+    let mut i = 0;
+    while i < rects.len() {
+        let mut j = i + 1;
+        while j < rects.len() {
+            if let Some(union) = union_if_touching(rects[i], rects[j]) {
+                rects[i] = union;
+                rects.swap_remove(j);
+                j = i + 1;
+            } else {
+                j += 1;
+            }
+        }
+        i += 1;
+    }
+    rects.sort_unstable_by_key(|&(x, y, w, h)| (y, x, h, w));
+    Some(rects)
+}
+
+fn union_if_touching(
+    lhs: (i32, i32, i32, i32),
+    rhs: (i32, i32, i32, i32),
+) -> Option<(i32, i32, i32, i32)> {
+    let (lx, ly, lw, lh) = lhs;
+    let (rx, ry, rw, rh) = rhs;
+    let l_right = lx.saturating_add(lw);
+    let l_bottom = ly.saturating_add(lh);
+    let r_right = rx.saturating_add(rw);
+    let r_bottom = ry.saturating_add(rh);
+    if l_right < rx || r_right < lx || l_bottom < ry || r_bottom < ly {
+        return None;
+    }
+    let x0 = lx.min(rx);
+    let y0 = ly.min(ry);
+    let x1 = l_right.max(r_right);
+    let y1 = l_bottom.max(r_bottom);
+    Some((x0, y0, x1.saturating_sub(x0), y1.saturating_sub(y0)))
+}

@@ -1,5 +1,5 @@
-use crate::tests::common::*;
 use crate::draw::rasterizer::polygon::*;
+use crate::tests::common::*;
 
 fn reference_contains(polys: &[Vec<Point>], point: Point, fill_rule: FillRule) -> bool {
     let mut parity = false;
@@ -54,11 +54,7 @@ fn assert_matches_reference(
         for x in 0..width {
             let in_clip = clip.contains(Point::new(x as f32 + 0.5, y as f32 + 0.5));
             let expected = in_clip
-                && reference_contains(
-                    polys,
-                    Point::new(x as f32 + 0.5, y as f32 + 0.5),
-                    fill_rule,
-                );
+                && reference_contains(polys, Point::new(x as f32 + 0.5, y as f32 + 0.5), fill_rule);
             let actual = pixels[(y * width + x) as usize] >> 24 != 0;
             assert_eq!(actual, expected, "coverage mismatch at ({x}, {y})");
             reference_pixels += usize::from(expected);

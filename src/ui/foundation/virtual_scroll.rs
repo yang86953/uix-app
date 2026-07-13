@@ -2,7 +2,7 @@
 //!
 //! Renders only children near the viewport; useful for large Select, Tree,
 //! Table, and similar lists.
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 
 /// Visible index range `[start, end)` for a fixed-height virtual list.
 pub fn virtual_list_index_range(
@@ -133,9 +133,18 @@ impl VirtualListScroll {
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::{PaintContext, PaintPass};
-use crate::ui::children::WidgetChildren;
 use crate::ui::core::widget::WidgetNode;
+use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::{ComponentId, EventResult, SystemEvent, WidgetTree};
+
+/// Application-authored child factory stored in the tree's keyed side table.
+pub type VirtualScrollRenderer = Box<dyn FnMut(usize) -> WidgetNode + 'static>;
+
+/// Declarative `VirtualScroll` plus its application-owned item renderer.
+pub struct VirtualScrollBuilder {
+    scroll: VirtualScroll,
+    renderer: VirtualScrollRenderer,
+}
 
 component! {
     pub struct VirtualScroll {
@@ -146,21 +155,13 @@ component! {
         fixed_height: Option<f32>,
         overscan: usize,
         #[snapshot(skip)]
-        renderer: RefCell<Option<Box<dyn FnMut(usize) -> WidgetNode + 'static>>>,
-        #[snapshot(skip)]
-        children: WidgetChildren,
-        pub(crate) visible_start: Cell<usize>,
+        materialized_range: Cell<Option<(usize, usize)>>,
         pub(crate) last_frame: Cell<Option<Rect>>,
         scroll_delta_strip: Cell<(f32, f32)>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    build => (&self) -> Vec<Box<dyn crate::ui::WidgetComponent>> {
-        self.ensure_prepared(self.configured_viewport_height());
-        self.children.take()
     }
 
     has_dynamic_content => (&self) -> bool {
@@ -217,7 +218,7 @@ component! {
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
-        let start = self.visible_start.get();
+        let start = self.visible_start();
         children
             .iter()
             .enumerate()
@@ -245,9 +246,7 @@ impl VirtualScroll {
             fixed_width: None,
             fixed_height: None,
             overscan: 3,
-            renderer: RefCell::new(None),
-            children: WidgetChildren::new(),
-            visible_start: Cell::new(0),
+            materialized_range: Cell::new(None),
             last_frame: Cell::new(None),
             scroll_delta_strip: Cell::new((0.0, 0.0)),
         }
@@ -267,12 +266,8 @@ impl VirtualScroll {
         self.fixed_width = next.fixed_width;
         self.fixed_height = next.fixed_height;
         self.overscan = next.overscan;
-        self.renderer = next.renderer;
-        self.children = WidgetChildren::new();
+        self.materialized_range.set(None);
         self.scroll_offset = scroll_offset.min((self.total_height() - viewport_height).max(0.0));
-        if self.item_count == 0 {
-            self.visible_start.set(0);
-        }
     }
 
     pub fn item_count(mut self, n: usize) -> Self {
@@ -296,9 +291,11 @@ impl VirtualScroll {
         self
     }
 
-    pub fn renderer<F: FnMut(usize) -> WidgetNode + 'static>(self, f: F) -> Self {
-        *self.renderer.borrow_mut() = Some(Box::new(f));
-        self
+    pub fn renderer<F: FnMut(usize) -> WidgetNode + 'static>(self, f: F) -> VirtualScrollBuilder {
+        VirtualScrollBuilder {
+            scroll: self,
+            renderer: Box::new(f),
+        }
     }
 
     /// Total scrollable content height (fixed row height contract).
@@ -324,56 +321,23 @@ impl VirtualScroll {
         )
     }
 
-    /// Whether the visible index window changed for the given viewport height.
-    pub fn visible_range_changed(&self, viewport_height: f32) -> bool {
-        self.scroll_range(viewport_height).0 != self.visible_start.get()
-    }
-
-    /// Populate `WidgetChildren` for the current scroll offset before tree build.
-    pub fn prepare_for_build(&self, viewport_height: f32) {
-        self.ensure_prepared(viewport_height);
-    }
-
-    /// Idempotent: skip when the visible window is already materialized.
-    pub(crate) fn ensure_prepared(&self, viewport_height: f32) {
-        if self.item_count == 0 {
-            self.visible_start.set(0);
-            self.children.set_all(Vec::new());
-            return;
-        }
-        let (start, end) = self.scroll_range(viewport_height);
-        if self.visible_start.get() == start && self.children.is_set() {
-            return;
-        }
-        self.visible_start.set(start);
-        let widgets = self.collect_visible_widgets(start, end);
-        self.children.set_all(widgets);
-    }
-
-    pub fn build_visible_children(&self, viewport_height: f32) -> Vec<WidgetNode> {
-        self.ensure_prepared(viewport_height);
-        if self.item_count == 0 {
-            return Vec::new();
-        }
-        let (start, end) = self.scroll_range(viewport_height);
-        let mut nodes = Vec::with_capacity(end.saturating_sub(start));
-        let mut guard = self.renderer.borrow_mut();
-        if let Some(renderer) = guard.as_mut() {
-            for i in start..end {
-                nodes.push(renderer(i));
-            }
-        }
-        nodes
-    }
-
     /// Returns true when the visible index window no longer matches prepared children.
-    pub(crate) fn needs_child_refresh(&self, viewport_height: f32) -> bool {
-        self.item_count > 0
-            && (!self.children.is_set() || self.visible_range_changed(viewport_height))
+    pub(crate) fn needs_child_refresh(
+        &self,
+        viewport_height: f32,
+        mounted_children: usize,
+    ) -> bool {
+        let range = self.scroll_range(viewport_height);
+        self.materialized_range.get() != Some(range)
+            || mounted_children != range.1.saturating_sub(range.0)
     }
 
-    fn configured_viewport_height(&self) -> f32 {
+    pub(crate) fn configured_viewport_height(&self) -> f32 {
         self.fixed_height.unwrap_or(300.0)
+    }
+
+    pub(crate) fn mark_children_materialized(&self, range: (usize, usize)) {
+        self.materialized_range.set(Some(range));
     }
 
     pub fn scroll_offset(&self) -> f32 {
@@ -386,7 +350,10 @@ impl VirtualScroll {
     }
 
     pub fn visible_start(&self) -> usize {
-        self.visible_start.get()
+        self.materialized_range
+            .get()
+            .map(|range| range.0)
+            .unwrap_or(0)
     }
 
     fn intrinsic_size(&self) -> Size {
@@ -396,22 +363,6 @@ impl VirtualScroll {
         )
     }
 
-    fn collect_visible_widgets(
-        &self,
-        start: usize,
-        end: usize,
-    ) -> Vec<Box<dyn crate::ui::WidgetComponent>> {
-        let mut guard = self.renderer.borrow_mut();
-        let Some(renderer) = guard.as_mut() else {
-            return Vec::new();
-        };
-        let mut widgets = Vec::with_capacity(end.saturating_sub(start));
-        for i in start..end {
-            widgets.push(renderer(i).widget);
-        }
-        widgets
-    }
-
     fn push_scroll_delta(&self, dx: f32, dy: f32) {
         if dx.abs() <= 0.01 && dy.abs() <= 0.01 {
             return;
@@ -419,5 +370,57 @@ impl VirtualScroll {
         let current = self.scroll_delta_strip.get();
         self.scroll_delta_strip
             .set((current.0 + dx, current.1 + dy));
+    }
+}
+
+impl VirtualScrollBuilder {
+    fn into_parts(self) -> (VirtualScroll, RenderHandlerRegistration) {
+        (
+            self.scroll,
+            RenderHandlerRegistration::VirtualScrollItem(self.renderer),
+        )
+    }
+
+    pub fn item_count(mut self, n: usize) -> Self {
+        self.scroll.item_count = n;
+        self
+    }
+
+    pub fn item_height(mut self, height: f32) -> Self {
+        self.scroll.item_height = height;
+        self
+    }
+
+    pub fn overscan(mut self, n: usize) -> Self {
+        self.scroll.overscan = n;
+        self
+    }
+
+    pub fn size(mut self, width: f32, height: f32) -> Self {
+        self.scroll.fixed_width = Some(width);
+        self.scroll.fixed_height = Some(height);
+        self
+    }
+}
+
+impl crate::ui::IntoWidgetNode for VirtualScrollBuilder {
+    fn into_node(self) -> WidgetNode {
+        let (scroll, handler) = self.into_parts();
+        WidgetNode::leaf(Box::new(scroll)).with_render_handlers(vec![handler])
+    }
+}
+
+impl crate::ui::view::View for VirtualScrollBuilder {
+    fn build(self) -> crate::ui::view::ViewNode {
+        let (scroll, handler) = self.into_parts();
+        let mut node = crate::ui::view::ViewNode::leaf(scroll);
+        node.render_handlers.push(handler);
+        node
+    }
+}
+
+impl From<VirtualScrollBuilder> for crate::ui::view::ViewNode {
+    fn from(builder: VirtualScrollBuilder) -> Self {
+        crate::ui::view::View::build(builder)
     }
 }

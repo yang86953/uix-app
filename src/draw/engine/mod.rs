@@ -45,6 +45,7 @@ pub enum GraphicsFailure {
     SurfaceLost(Error),
     DeviceLost(Error),
     OutOfMemory(Error),
+    Occluded(Error),
     Other(Error),
 }
 
@@ -54,6 +55,7 @@ impl GraphicsFailure {
             Errc::GraphicsSurfaceLost => Self::SurfaceLost(error),
             Errc::GraphicsDeviceLost => Self::DeviceLost(error),
             Errc::GraphicsOutOfMemory | Errc::InsufficientResources => Self::OutOfMemory(error),
+            Errc::GraphicsOccluded => Self::Occluded(error),
             _ => Self::Other(error),
         }
     }
@@ -63,6 +65,7 @@ impl GraphicsFailure {
             Self::SurfaceLost(error)
             | Self::DeviceLost(error)
             | Self::OutOfMemory(error)
+            | Self::Occluded(error)
             | Self::Other(error) => error,
         }
     }

@@ -9,17 +9,18 @@
 // 注意：不再直接实现 IEventLoop，由 LinuxPlatform 通过 OsEventSource 获得。
 // ============================================================================
 
-use std::fs::File;
-use std::os::unix::io::FromRawFd;
+use std::os::fd::RawFd;
 use std::time::{Duration, Instant};
 
-use libc::{poll, pollfd, POLLERR, POLLHUP, POLLIN, POLLNVAL};
+use libc::{poll, pollfd, POLLERR, POLLHUP, POLLIN, POLLNVAL, POLLOUT};
 
 use crate::native::traits::event::{EventLoopWaker, UiEvent};
 use crate::native::traits::input::KeyMod;
 
 use super::keycode::keycode_to_char;
 use super::WaylandBackend;
+use crate::native::shared::nonblocking_read::NonBlockingReadStatus;
+use crate::native::shared::nonblocking_write::NonBlockingWriteStatus;
 
 impl WaylandBackend {
     /// 非阻塞事件分发。
@@ -103,19 +104,52 @@ impl WaylandBackend {
     fn dispatch_polled(&mut self, timeout_ms: i32, context: &str) -> bool {
         let _ = self.display.flush();
         let wayland_fd = self.display.get_connection_fd();
-        let mut pfds = [
-            pollfd {
-                fd: wayland_fd,
+        let clipboard_fd = self
+            .clipboard_read
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .as_ref()
+            .map(super::clipboard::ClipboardRead::fd);
+        self.poll_fds.clear();
+        self.poll_fds.push(pollfd {
+            fd: wayland_fd,
+            events: POLLIN,
+            revents: 0,
+        });
+        self.poll_fds.push(pollfd {
+            fd: self.wake_read_fd,
+            events: POLLIN,
+            revents: 0,
+        });
+        let clipboard_read_index = clipboard_fd.map(|fd| {
+            let index = self.poll_fds.len();
+            self.poll_fds.push(pollfd {
+                fd,
                 events: POLLIN,
                 revents: 0,
-            },
-            pollfd {
-                fd: self.wake_read_fd,
-                events: POLLIN,
+            });
+            index
+        });
+        let clipboard_write_start = self.poll_fds.len();
+        {
+            let writes = self
+                .clipboard_writes
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            self.poll_fds.extend(writes.iter().map(|write| pollfd {
+                fd: write.fd(),
+                events: POLLOUT,
                 revents: 0,
-            },
-        ];
-        let ret = unsafe { poll(pfds.as_mut_ptr(), pfds.len() as libc::nfds_t, timeout_ms) };
+            }));
+        }
+        let poll_len = self.poll_fds.len();
+        let ret = unsafe {
+            poll(
+                self.poll_fds.as_mut_ptr(),
+                poll_len as libc::nfds_t,
+                timeout_ms,
+            )
+        };
         if ret < 0 {
             let error = std::io::Error::last_os_error();
             if error.kind() == std::io::ErrorKind::Interrupted {
@@ -126,8 +160,8 @@ impl WaylandBackend {
             return false;
         }
 
-        let wayland_revents = pfds[0].revents;
-        let wake_revents = pfds[1].revents;
+        let wayland_revents = self.poll_fds[0].revents;
+        let wake_revents = self.poll_fds[1].revents;
         if (wake_revents & POLLIN) != 0 {
             self.drain_wake_pipe();
         }
@@ -143,7 +177,35 @@ impl WaylandBackend {
                 return false;
             }
         }
-        self.read_clipboard_pipe();
+        if let Some(polled_fd) = clipboard_fd {
+            let clipboard_revents = clipboard_read_index
+                .map(|index| self.poll_fds[index].revents)
+                .unwrap_or(0);
+            if (clipboard_revents & (POLLIN | POLLHUP)) != 0 {
+                self.read_clipboard_pipe(polled_fd);
+            } else if (clipboard_revents & (POLLERR | POLLNVAL)) != 0 {
+                let mut active = self
+                    .clipboard_read
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner());
+                if active.as_ref().is_some_and(|read| read.fd() == polled_fd) {
+                    *active = None;
+                    crate::core::log::error_fn("Wayland clipboard fd error");
+                }
+            }
+        }
+        let mut write_budget = super::clipboard::CLIPBOARD_WRITE_BUDGET;
+        for index in clipboard_write_start..poll_len {
+            if write_budget == 0 {
+                break;
+            }
+            let polled_fd = self.poll_fds[index].fd;
+            let revents = self.poll_fds[index].revents;
+            let slots_left = poll_len - index;
+            let budget = (write_budget / slots_left).max(1);
+            let written = self.write_clipboard_pipe(polled_fd, revents, budget);
+            write_budget = write_budget.saturating_sub(written);
+        }
         self.generate_key_repeats();
         true
     }
@@ -166,15 +228,29 @@ impl WaylandBackend {
     }
 
     fn generate_key_repeats(&mut self) {
-        let (_linux_key, code, mods, first_press) = match self
-            .held_key_info
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .as_ref()
-        {
-            Some(info) => (info.0, info.1, info.2, info.3),
-            None => return,
+        let Some(held) = *self.held_key_info.lock().unwrap_or_else(|e| e.into_inner()) else {
+            return;
         };
+        let code = held.code;
+        let mods = held.mods;
+        let first_press = held.first_press;
+        let window_id = held.window_id;
+        let current_target = self
+            .surface_windows
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .keyboard_target();
+        if current_target != Some(window_id) {
+            *self
+                .held_key_info
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()) = None;
+            *self
+                .last_repeat_time
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()) = None;
+            return;
+        }
 
         let rate = *self.repeat_rate.lock().unwrap_or_else(|e| e.into_inner());
         if rate <= 0 {
@@ -212,38 +288,81 @@ impl WaylandBackend {
 
         let shift_down = mods.intersects(KeyMod::SHIFT);
         let mut q = self.events.lock().unwrap_or_else(|e| e.into_inner());
-        q.push_back(UiEvent::key_down(code, mods));
+        q.push_back(UiEvent::key_down(code, mods).for_window(window_id));
         if let Some(text) = keycode_to_char(code, shift_down) {
-            q.push_back(UiEvent::text_input(text));
+            q.push_back(UiEvent::text_input(text).for_window(window_id));
         }
     }
 
-    fn read_clipboard_pipe(&mut self) {
-        let fd = {
-            let mut f = self
-                .clipboard_read_fd
+    fn read_clipboard_pipe(&mut self, polled_fd: RawFd) {
+        let outcome = {
+            let mut active = self
+                .clipboard_read
                 .lock()
-                .unwrap_or_else(|e| e.into_inner());
-            f.take()
-        };
-        if let Some(fd) = fd {
-            let mut pfd = pollfd {
-                fd,
-                events: POLLIN,
-                revents: 0,
+                .unwrap_or_else(|error| error.into_inner());
+            let Some(read) = active.as_mut() else {
+                return;
             };
-            let ret = unsafe { poll(&mut pfd as *mut pollfd, 1, 0) };
-            if ret > 0 && (pfd.revents & POLLIN) != 0 {
-                use std::io::Read;
-                let mut buf = Vec::new();
-                let mut file = unsafe { File::from_raw_fd(fd) };
-                if file.read_to_end(&mut buf).is_ok() {
-                    if let Ok(mut text) = self.clipboard_text.lock() {
-                        *text = String::from_utf8_lossy(&buf).to_string();
-                    }
+            if read.fd() != polled_fd {
+                return;
+            }
+            match read.read_available() {
+                Ok(NonBlockingReadStatus::Pending) => None,
+                Ok(NonBlockingReadStatus::Complete(bytes)) => {
+                    *active = None;
+                    Some(Ok(bytes))
                 }
-            } else {
-                let _ = unsafe { libc::close(fd) };
+                Err(error) => {
+                    *active = None;
+                    Some(Err(error))
+                }
+            }
+        };
+
+        match outcome {
+            Some(Ok(bytes)) => {
+                *self
+                    .clipboard_text
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner()) =
+                    String::from_utf8_lossy(&bytes).into_owned();
+            }
+            Some(Err(error)) => {
+                crate::core::log::error_fn(format!("Wayland clipboard read failed: {error}"));
+            }
+            None => {}
+        }
+    }
+
+    fn write_clipboard_pipe(&mut self, polled_fd: RawFd, revents: i16, budget: usize) -> usize {
+        let mut writes = self
+            .clipboard_writes
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let Some(index) = writes.iter().position(|write| write.fd() == polled_fd) else {
+            return 0;
+        };
+
+        if (revents & (POLLERR | POLLHUP | POLLNVAL)) != 0 {
+            writes.swap_remove(index);
+            crate::core::log::warn_fn("Wayland clipboard receiver closed before send completed");
+            return 0;
+        }
+        if (revents & POLLOUT) == 0 {
+            return 0;
+        }
+
+        match writes[index].write_available(budget) {
+            Ok(progress) => {
+                if progress.status == NonBlockingWriteStatus::Complete {
+                    writes.swap_remove(index);
+                }
+                progress.written
+            }
+            Err(error) => {
+                writes.swap_remove(index);
+                crate::core::log::error_fn(format!("Wayland clipboard send failed: {error}"));
+                0
             }
         }
     }

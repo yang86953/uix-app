@@ -1,26 +1,10 @@
-use crate::tests::common::*;
-use std::ffi::c_void;
-use std::mem::ManuallyDrop;
-use crate::core::{ Result };
-use crate::native::graphics::platform::windows as win_surface;
-use crate::native::traits::present::{ GpuSolidRect };
-use ::windows::Win32::Foundation::{CloseHandle, E_OUTOFMEMORY, HANDLE, HWND, WAIT_OBJECT_0};
-use ::windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
-use ::windows::Win32::Graphics::Direct3D12::*;
-use ::windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_ALPHA_MODE_IGNORE, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC,
-};
-use ::windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory2, DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_CREATE_FACTORY_FLAGS,
-    DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET,
-    DXGI_ERROR_DRIVER_INTERNAL_ERROR, DXGI_ERROR_REMOTE_OUTOFMEMORY, DXGI_MWA_NO_ALT_ENTER,
-    DXGI_PRESENT, DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_CHAIN_FLAG,
-    DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter1, IDXGIFactory4,
-    IDXGIOutput, IDXGISwapChain3,
-};
-use ::windows::Win32::System::Threading::{CreateEventW, INFINITE, WaitForSingleObject};
-use ::windows::core::Interface;
 use crate::native::graphics::d3d12::platform::context::*;
+use crate::native::graphics::platform::windows as win_surface;
+use crate::native::traits::present::GpuSolidRect;
+use crate::tests::common::*;
+use ::windows::Win32::Graphics::Dxgi::{
+    CreateDXGIFactory2, IDXGIFactory4, DXGI_CREATE_FACTORY_FLAGS,
+};
 
 #[test]
 fn d3d12_hresult_classifies_device_loss_and_out_of_memory() {
@@ -70,6 +54,7 @@ fn d3d12_rejects_null_hwnd() {
 
 #[test]
 fn d3d12_context_clear_readback_present_resize_and_shutdown_on_real_window() {
+    let _warp_guard = d3d12_warp_test_guard();
     let mut platform = crate::native::create_platform().expect("platform");
     let mut window = platform
         .window_manager()
@@ -84,15 +69,14 @@ fn d3d12_context_clear_readback_present_resize_and_shutdown_on_real_window() {
     assert_eq!(context.graphics_backend(), GraphicsBackend::D3d12);
     assert_eq!(context.caps().raster, RasterMode::GpuNative);
     assert_eq!(context.caps().present, PresentMode::Swapchain);
-    assert!(!context.caps().partial_present);
+    assert_eq!(context.caps().present_coherency, PresentCoherency::FullOnly);
     let drawable = win_surface::drawable_size(surface, 65, 37);
     assert_eq!(
         (context.width(), context.height()),
         (drawable.width, drawable.height)
     );
     assert!(
-        (context.caps().device_pixel_ratio
-            - drawable.width as f32 / drawable.logical_width as f32)
+        (context.caps().device_pixel_ratio - drawable.width as f32 / drawable.logical_width as f32)
             .abs()
             < f32::EPSILON,
         "D3D12 caps must report the drawable-to-logical DPR"
@@ -320,12 +304,11 @@ fn d3d12_context_clear_readback_present_resize_and_shutdown_on_real_window() {
         .resize_result(warp.width() + 1, warp.height() + 1)
         .expect_err("faulted context must reject resize");
     assert_eq!(error.code(), Errc::InvalidState);
-    assert!(
-        warp.present(&PresentFrame::Swapchain {
+    assert!(warp
+        .present(&PresentFrame::Swapchain {
             damage: PresentDamage::Full,
         })
-        .is_err()
-    );
+        .is_err());
     assert!(warp.read_pixels_result(0, 0, 1, 1).is_err());
     warp.try_shutdown()
         .expect("faulted context should still terminal-fence drain");
@@ -383,8 +366,7 @@ fn d3d12_context_clear_readback_present_resize_and_shutdown_on_real_window() {
             let hardware_pixels = hardware
                 .read_pixels_result(0, 0, hardware_w, hardware_h)
                 .expect("hardware mixed readback");
-            let hardware_pixel =
-                |x: usize, y: usize| hardware_pixels[y * hardware_w as usize + x];
+            let hardware_pixel = |x: usize, y: usize| hardware_pixels[y * hardware_w as usize + x];
             assert_eq!(hardware_pixel(10, 10), 0xFF00_00FF);
             assert_eq!(hardware_pixel(20, 15), 0xFF7F_8000);
             hardware
