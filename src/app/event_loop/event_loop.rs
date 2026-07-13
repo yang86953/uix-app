@@ -449,11 +449,11 @@ where
         }
 
         let frame_t0 = Instant::now();
-        let mut phase_input_ms = 0u128;
-        let mut phase_reconcile_ms = 0u128;
-        let mut phase_layout_ms = 0u128;
-        let mut phase_paint_ms = 0u128;
-        let mut phase_present_ms = 0u128;
+        let mut phase_input_us = 0u128;
+        let mut phase_reconcile_us = 0u128;
+        let mut phase_layout_us = 0u128;
+        let mut phase_paint_us = 0u128;
+        let mut phase_present_us = 0u128;
         let mut reconcile_ran = false;
         let mut layout_calls_this_frame = 0u32;
 
@@ -624,7 +624,7 @@ where
                 (*bus_ptr).event_bus().publish(&ev);
             }
         }
-        phase_input_ms = input_t0.elapsed().as_millis();
+        phase_input_us = input_t0.elapsed().as_micros();
 
         active_work.sync_timers(tree.active_timers(), clock.now());
         active_work.sync_app_timers(app_timers.deadlines());
@@ -698,7 +698,7 @@ where
                 reconcile_ran = true;
             }
             *reconcile_pending = false;
-            phase_reconcile_ms = reconcile_t0.elapsed().as_millis();
+            phase_reconcile_us = reconcile_t0.elapsed().as_micros();
         }
 
         // 每帧用窗口客户区校正 engine/根：WM_SIZE 入队与 Present 之间若有缺口，
@@ -734,7 +734,7 @@ where
                 layout_calls_this_frame += 1;
                 tree.mark_full_frame_dirty();
             }
-            phase_layout_ms = layout_t0.elapsed().as_millis();
+            phase_layout_us = layout_t0.elapsed().as_micros();
         }
 
         let need_render = window_visible && (!rendered_first || tree.has_render_work());
@@ -748,7 +748,7 @@ where
                 tree.layout();
                 record_layout(metrics);
                 layout_calls_this_frame += 1;
-                phase_layout_ms += layout_t0.elapsed().as_millis();
+                phase_layout_us += layout_t0.elapsed().as_micros();
             }
         }
 
@@ -785,7 +785,7 @@ where
                     metrics: metrics_ref.as_ref(),
                 },
             );
-            phase_paint_ms = paint_t0.elapsed().as_millis();
+            phase_paint_us = paint_t0.elapsed().as_micros();
             (frame_out.outcome, frame_out.inv_source)
         };
 
@@ -830,14 +830,14 @@ where
                         damage.to_present_damage(),
                     ) {
                         Ok(()) => {
-                            phase_present_ms = present_t0.elapsed().as_millis();
+                            phase_present_us = present_t0.elapsed().as_micros();
                             engine.external_present_succeeded();
                             record_present(metrics, outcome_source);
                             rendered_first = true;
                             frame_committed = true;
                         }
                         Err(error) => {
-                            phase_present_ms = present_t0.elapsed().as_millis();
+                            phase_present_us = present_t0.elapsed().as_micros();
                             engine.external_present_failed(error.clone());
                             crate::core::log::error_fn(format!(
                                 "[EventLoop] external present failed: {}",
@@ -867,24 +867,63 @@ where
         }
 
         // Engine-managed present (Vulkan PixelUpload) is timed inside
-        // PresentUploadEngine::end_frame as present_upload_ms; paint_ms already
-        // includes that work — do not invent a second present bucket here.
+        // PresentUploadEngine::end_frame; take the probe so paint_cpu excludes it.
 
-        if frame_committed && (had_events || reconcile_ran || layout_calls_this_frame > 0) {
-            let frame_ms = frame_t0.elapsed().as_millis();
-            crate::core::log::info_fn(format!(
-                "frame_ms={} input={} reconcile={} layout={} paint={} present={} events={} reconcile={} layouts={} dirty_full={}",
-                frame_ms,
-                phase_input_ms,
-                phase_reconcile_ms,
-                phase_layout_ms,
-                phase_paint_ms,
-                phase_present_ms,
-                if had_events { 1 } else { 0 },
-                if reconcile_ran { 1 } else { 0 },
-                layout_calls_this_frame,
-                if dirty_full { 1 } else { 0 },
-            ));
+        let present_probe = crate::draw::perf_probe::take_present();
+        let paint_probe = crate::draw::perf_probe::take_paint();
+        if present_probe.present_us > 0 || present_probe.skipped == 1 {
+            phase_present_us = present_probe.present_us;
+            if phase_paint_us >= present_probe.present_us {
+                phase_paint_us -= present_probe.present_us;
+            }
+        }
+
+        let log_frame = frame_committed
+            && (had_events
+                || reconcile_ran
+                || layout_calls_this_frame > 0
+                || crate::draw::perf_probe::perf_probe_enabled());
+        if log_frame {
+            let frame_us = frame_t0.elapsed().as_micros();
+            if crate::draw::perf_probe::perf_probe_enabled() {
+                crate::core::log::info_fn(format!(
+                    "frame_us={} input={} reconcile={} layout={} paint_cpu={} present={} events={} reconcile={} layouts={} dirty_full={} strategy_full={} pixels={} layer_build={} record={} execute={} end_frame={} upload_copy={} fence_wait={} submit_present={} present_skipped={}",
+                    frame_us,
+                    phase_input_us,
+                    phase_reconcile_us,
+                    phase_layout_us,
+                    phase_paint_us,
+                    phase_present_us,
+                    if had_events { 1 } else { 0 },
+                    if reconcile_ran { 1 } else { 0 },
+                    layout_calls_this_frame,
+                    if dirty_full { 1 } else { 0 },
+                    paint_probe.strategy_full,
+                    present_probe.pixels,
+                    paint_probe.layer_build_us,
+                    paint_probe.record_us,
+                    paint_probe.execute_us,
+                    paint_probe.end_frame_us,
+                    present_probe.upload_copy_us,
+                    present_probe.fence_wait_us,
+                    present_probe.submit_present_us,
+                    present_probe.skipped,
+                ));
+            } else {
+                crate::core::log::info_fn(format!(
+                    "frame_us={} input={} reconcile={} layout={} paint_cpu={} present={} events={} reconcile={} layouts={} dirty_full={}",
+                    frame_us,
+                    phase_input_us,
+                    phase_reconcile_us,
+                    phase_layout_us,
+                    phase_paint_us,
+                    phase_present_us,
+                    if had_events { 1 } else { 0 },
+                    if reconcile_ran { 1 } else { 0 },
+                    layout_calls_this_frame,
+                    if dirty_full { 1 } else { 0 },
+                ));
+            }
         }
 
         if frame_committed && deferred_show {

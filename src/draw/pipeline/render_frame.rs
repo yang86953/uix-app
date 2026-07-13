@@ -112,6 +112,7 @@ impl FrameRenderer {
         } else {
             UpdateStrategy::DirtyRects(region.rects().to_vec())
         };
+        let strategy_full = matches!(strategy, UpdateStrategy::FullRedraw) as u8;
         let begin_outcome = engine.begin_frame(strategy.clone());
         match begin_outcome {
             RenderOutcome::FrameReady(_) => {}
@@ -169,6 +170,7 @@ impl FrameRenderer {
             };
         }
 
+        let layer_t0 = std::time::Instant::now();
         if self.last_tree_version != cur_version || !self.layer_tree.is_ready() {
             // The private producer owns CPU Picture targets, so cached and
             // direct paths are both included before the one real main-surface
@@ -190,11 +192,13 @@ impl FrameRenderer {
         }
         self.layer_tree.update_dirty(scene);
         self.render_object_tree.sync(scene);
+        let layer_build_us = layer_t0.elapsed().as_micros();
 
         // Paint prune uses the same region as begin_frame clear. Full frames
         // keep DirtyRegion::full(); dirty frames omit the recording Clear so
         // execute_into_pixels retains undamaged CPU pixels.
         let paint_region = region.clone();
+        let record_t0 = std::time::Instant::now();
         if let Err(error) = self
             .recording_engine
             .begin_recording(region.full_frame)
@@ -260,6 +264,8 @@ impl FrameRenderer {
                 };
             }
         };
+        let record_us = record_t0.elapsed().as_micros();
+        let execute_t0 = std::time::Instant::now();
         match engine.try_execute_encoded_frame(&encoded_frame) {
             Ok(EncodedFrameExecution::Executed) => {}
             Ok(EncodedFrameExecution::Unsupported) => {
@@ -289,8 +295,18 @@ impl FrameRenderer {
                 };
             }
         }
+        let execute_us = execute_t0.elapsed().as_micros();
 
+        let end_t0 = std::time::Instant::now();
         let end_outcome = engine.end_frame(&damage);
+        let end_frame_us = end_t0.elapsed().as_micros();
+        crate::draw::perf_probe::record_paint(crate::draw::perf_probe::PaintProbeSample {
+            layer_build_us,
+            record_us,
+            execute_us,
+            end_frame_us,
+            strategy_full,
+        });
         let outcome = match end_outcome {
             RenderOutcome::Present(_) if caps.uses_external_presenter() => {
                 RenderOutcome::PresentPending(damage)
