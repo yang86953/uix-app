@@ -255,10 +255,14 @@ mod tests {
 
         #[cfg(target_os = "macos")]
         assert!(
-            err.message().contains("planned but not implemented")
-                || err.message().contains("portability adapter is not implemented on macOS")
+            err.message().contains("CAMetalLayer")
+                || err.message().contains("load Vulkan")
+                || err.message().contains("vkCreate")
                 || err.message().contains("no registry entry")
                 || err.message().contains("disabled in this build")
+                || err.message().contains("portability"),
+            "unexpected macOS Vulkan null-surface error: {}",
+            err.message()
         );
 
         #[cfg(not(any(
