@@ -1,4 +1,4 @@
-//! Vulkan graphics context for Linux Wayland.
+//! Vulkan graphics context for Linux Wayland and Windows Win32 (PixelUpload).
 
 use std::ffi::{CStr, c_void};
 use std::ptr;
@@ -10,7 +10,11 @@ use crate::native::traits::present::{
     GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage,
 };
 
+#[cfg(all(unix, not(target_os = "macos")))]
 use crate::native::graphics::platform::linux::WaylandSurfaceHandle;
+
+#[cfg(windows)]
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 
 fn vk_err(operation: &str, err: vk::Result) -> Error {
     let code = match err {
@@ -53,7 +57,10 @@ pub struct VulkanContext {
     _entry: Entry,
     instance: ash::Instance,
     surface_loader: ash::khr::surface::Instance,
+    #[cfg(all(unix, not(target_os = "macos")))]
     _wayland_surface_loader: ash::khr::wayland_surface::Instance,
+    #[cfg(windows)]
+    _win32_surface_loader: ash::khr::win32_surface::Instance,
     surface: vk::SurfaceKHR,
     physical_device: vk::PhysicalDevice,
     device: ash::Device,
@@ -72,12 +79,15 @@ pub struct VulkanContext {
     frame_fence: vk::Fence,
     width: i32,
     height: i32,
+    /// Last successfully staged PixelUpload frame (CPU shadow of staging buffer).
+    /// Enables destination-dependent IR via readback → apply → replace upload without
+    /// claiming GPU image readback.
+    cpu_shadow: Vec<u32>,
     shutdown: bool,
 }
 
 impl VulkanContext {
     pub(crate) fn new(native_surface: *mut c_void, width: i32, height: i32) -> Result<Self> {
-        let wayland = unsafe { WaylandSurfaceHandle::from_native(native_surface)? };
         let width = width.max(1);
         let height = height.max(1);
         let extent = vk::Extent2D {
@@ -95,10 +105,7 @@ impl VulkanContext {
             .engine_name(engine_name)
             .engine_version(1)
             .api_version(vk::API_VERSION_1_0);
-        let instance_extensions = [
-            ash::khr::surface::NAME.as_ptr(),
-            ash::khr::wayland_surface::NAME.as_ptr(),
-        ];
+        let instance_extensions = surface_instance_extensions();
         let instance_info = vk::InstanceCreateInfo::default()
             .application_info(&app_info)
             .enabled_extension_names(&instance_extensions);
@@ -106,14 +113,17 @@ impl VulkanContext {
             .map_err(|err| vk_err("vkCreateInstance", err))?;
 
         let surface_loader = ash::khr::surface::Instance::new(&entry, &instance);
-        let wayland_surface_loader = ash::khr::wayland_surface::Instance::new(&entry, &instance);
-        let surface_info = vk::WaylandSurfaceCreateInfoKHR::default()
-            .display(wayland.display.cast())
-            .surface(wayland.surface.cast());
-        let surface = unsafe { wayland_surface_loader.create_wayland_surface(&surface_info, None) }
-            .map_err(|err| vk_err("vkCreateWaylandSurfaceKHR", err))?;
+        let (surface, platform_loader) =
+            create_platform_surface(&entry, &instance, native_surface)?;
 
-        let selection = select_queue(&instance, &surface_loader, surface)?;
+        let selection = match select_queue(&instance, &surface_loader, surface) {
+            Ok(selection) => selection,
+            Err(err) => {
+                destroy_failed_surface(&surface_loader, surface);
+                unsafe { instance.destroy_instance(None) };
+                return Err(err);
+            }
+        };
         let queue_priority = [1.0_f32];
         let queue_info = vk::DeviceQueueCreateInfo::default()
             .queue_family_index(selection.family_index)
@@ -123,39 +133,104 @@ impl VulkanContext {
             .queue_create_infos(std::slice::from_ref(&queue_info))
             .enabled_extension_names(&device_extensions);
         let device =
-            unsafe { instance.create_device(selection.physical_device, &device_info, None) }
-                .map_err(|err| vk_err("vkCreateDevice", err))?;
+            match unsafe { instance.create_device(selection.physical_device, &device_info, None) } {
+                Ok(device) => device,
+                Err(err) => {
+                    destroy_failed_surface(&surface_loader, surface);
+                    unsafe { instance.destroy_instance(None) };
+                    return Err(vk_err("vkCreateDevice", err));
+                }
+            };
         let queue = unsafe { device.get_device_queue(selection.family_index, 0) };
         let swapchain_loader = ash::khr::swapchain::Device::new(&instance, &device);
         let command_pool_info = vk::CommandPoolCreateInfo::default()
             .queue_family_index(selection.family_index)
             .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
-        let command_pool = unsafe { device.create_command_pool(&command_pool_info, None) }
-            .map_err(|err| vk_err("vkCreateCommandPool", err))?;
+        let command_pool = match unsafe { device.create_command_pool(&command_pool_info, None) } {
+            Ok(pool) => pool,
+            Err(err) => {
+                unsafe { device.destroy_device(None) };
+                destroy_failed_surface(&surface_loader, surface);
+                unsafe { instance.destroy_instance(None) };
+                return Err(vk_err("vkCreateCommandPool", err));
+            }
+        };
         let command_alloc = vk::CommandBufferAllocateInfo::default()
             .command_pool(command_pool)
             .level(vk::CommandBufferLevel::PRIMARY)
             .command_buffer_count(1);
-        let command_buffer = unsafe { device.allocate_command_buffers(&command_alloc) }
-            .map_err(|err| vk_err("vkAllocateCommandBuffers", err))?
-            .into_iter()
-            .next()
-            .ok_or_else(|| Error::new(Errc::PlatformError, "VulkanContext: no command buffer"))?;
+        let command_buffer = match unsafe { device.allocate_command_buffers(&command_alloc) } {
+            Ok(mut buffers) => buffers.pop(),
+            Err(err) => {
+                unsafe {
+                    device.destroy_command_pool(command_pool, None);
+                    device.destroy_device(None);
+                }
+                destroy_failed_surface(&surface_loader, surface);
+                unsafe { instance.destroy_instance(None) };
+                return Err(vk_err("vkAllocateCommandBuffers", err));
+            }
+        }
+        .ok_or_else(|| {
+            unsafe {
+                device.destroy_command_pool(command_pool, None);
+                device.destroy_device(None);
+            }
+            destroy_failed_surface(&surface_loader, surface);
+            unsafe { instance.destroy_instance(None) };
+            Error::new(Errc::PlatformError, "VulkanContext: no command buffer")
+        })?;
 
         let semaphore_info = vk::SemaphoreCreateInfo::default();
-        let image_available = unsafe { device.create_semaphore(&semaphore_info, None) }
-            .map_err(|err| vk_err("vkCreateSemaphore image_available", err))?;
-        let render_finished = unsafe { device.create_semaphore(&semaphore_info, None) }
-            .map_err(|err| vk_err("vkCreateSemaphore render_finished", err))?;
+        let image_available = match unsafe { device.create_semaphore(&semaphore_info, None) } {
+            Ok(sem) => sem,
+            Err(err) => {
+                unsafe {
+                    device.destroy_command_pool(command_pool, None);
+                    device.destroy_device(None);
+                }
+                destroy_failed_surface(&surface_loader, surface);
+                unsafe { instance.destroy_instance(None) };
+                return Err(vk_err("vkCreateSemaphore image_available", err));
+            }
+        };
+        let render_finished = match unsafe { device.create_semaphore(&semaphore_info, None) } {
+            Ok(sem) => sem,
+            Err(err) => {
+                unsafe {
+                    device.destroy_semaphore(image_available, None);
+                    device.destroy_command_pool(command_pool, None);
+                    device.destroy_device(None);
+                }
+                destroy_failed_surface(&surface_loader, surface);
+                unsafe { instance.destroy_instance(None) };
+                return Err(vk_err("vkCreateSemaphore render_finished", err));
+            }
+        };
         let fence_info = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
-        let frame_fence = unsafe { device.create_fence(&fence_info, None) }
-            .map_err(|err| vk_err("vkCreateFence", err))?;
+        let frame_fence = match unsafe { device.create_fence(&fence_info, None) } {
+            Ok(fence) => fence,
+            Err(err) => {
+                unsafe {
+                    device.destroy_semaphore(render_finished, None);
+                    device.destroy_semaphore(image_available, None);
+                    device.destroy_command_pool(command_pool, None);
+                    device.destroy_device(None);
+                }
+                destroy_failed_surface(&surface_loader, surface);
+                unsafe { instance.destroy_instance(None) };
+                return Err(vk_err("vkCreateFence", err));
+            }
+        };
 
         let mut ctx = Self {
             _entry: entry,
             instance,
             surface_loader,
-            _wayland_surface_loader: wayland_surface_loader,
+            #[cfg(all(unix, not(target_os = "macos")))]
+            _wayland_surface_loader: platform_loader,
+            #[cfg(windows)]
+            _win32_surface_loader: platform_loader,
             surface,
             physical_device: selection.physical_device,
             device,
@@ -178,6 +253,7 @@ impl VulkanContext {
             frame_fence,
             width,
             height,
+            cpu_shadow: Vec::new(),
             shutdown: false,
         };
         ctx.recreate_swapchain(extent)?;
@@ -384,6 +460,8 @@ impl VulkanContext {
             );
             self.device.unmap_memory(self.upload.memory);
         }
+        self.cpu_shadow.clear();
+        self.cpu_shadow.extend_from_slice(&pixels[..needed_pixels]);
         Ok(())
     }
 
@@ -633,6 +711,7 @@ impl IGraphicsContext for VulkanContext {
         self.recreate_swapchain(extent)?;
         self.width = self.extent.width as i32;
         self.height = self.extent.height as i32;
+        self.cpu_shadow.clear();
         Ok(())
     }
 
@@ -651,11 +730,15 @@ impl IGraphicsContext for VulkanContext {
         self.shutdown_result()
     }
 
-    fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Result<Vec<u32>> {
-        Err(Error::new(
-            Errc::NotImplemented,
-            "VulkanContext: native readback is not supported",
-        ))
+    fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
+        let expected = (self.width as usize).saturating_mul(self.height as usize);
+        if self.cpu_shadow.len() != expected {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "VulkanContext: no uploaded frame to read back (cpu_shadow empty)",
+            ));
+        }
+        crop_cpu_shadow(&self.cpu_shadow, self.width, self.height, x, y, width, height)
     }
 
     fn width(&self) -> i32 {
@@ -684,9 +767,8 @@ impl IGraphicsContext for VulkanContext {
     }
 
     /// Stage a full replace pixel buffer into the upload heap without presenting.
-    /// PixelUpload Additive/Scroll paths that only need staging (no native
-    /// readback) use this; NativeGpu destination-dependent IR still requires
-    /// readback, which this context intentionally does not provide.
+    /// Also refreshes the CPU shadow used by [`Self::read_pixels`] so destination-
+    /// dependent IR can round-trip through readback → apply → replace upload.
     fn upload_surface_pixels(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<()> {
         if width <= 0 || height <= 0 {
             return Ok(());
@@ -702,6 +784,98 @@ impl Drop for VulkanContext {
     fn drop(&mut self) {
         let _ = self.try_shutdown();
     }
+}
+
+fn destroy_failed_surface(surface_loader: &ash::khr::surface::Instance, surface: vk::SurfaceKHR) {
+    if surface != vk::SurfaceKHR::null() {
+        unsafe {
+            surface_loader.destroy_surface(surface, None);
+        }
+    }
+}
+
+fn surface_instance_extensions() -> [*const std::ffi::c_char; 2] {
+    [
+        ash::khr::surface::NAME.as_ptr(),
+        #[cfg(all(unix, not(target_os = "macos")))]
+        ash::khr::wayland_surface::NAME.as_ptr(),
+        #[cfg(windows)]
+        ash::khr::win32_surface::NAME.as_ptr(),
+    ]
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+type PlatformSurfaceLoader = ash::khr::wayland_surface::Instance;
+
+#[cfg(windows)]
+type PlatformSurfaceLoader = ash::khr::win32_surface::Instance;
+
+fn create_platform_surface(
+    entry: &Entry,
+    instance: &ash::Instance,
+    native_surface: *mut c_void,
+) -> Result<(vk::SurfaceKHR, PlatformSurfaceLoader)> {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let wayland = unsafe { WaylandSurfaceHandle::from_native(native_surface)? };
+        let wayland_surface_loader = ash::khr::wayland_surface::Instance::new(entry, instance);
+        let surface_info = vk::WaylandSurfaceCreateInfoKHR::default()
+            .display(wayland.display.cast())
+            .surface(wayland.surface.cast());
+        let surface =
+            unsafe { wayland_surface_loader.create_wayland_surface(&surface_info, None) }
+                .map_err(|err| vk_err("vkCreateWaylandSurfaceKHR", err))?;
+        Ok((surface, wayland_surface_loader))
+    }
+    #[cfg(windows)]
+    {
+        if native_surface.is_null() {
+            return Err(invalid(
+                "VulkanContext: Win32 HWND native_surface must not be null",
+            ));
+        }
+        let hinstance = unsafe { GetModuleHandleW(None) }.map_err(|err| {
+            Error::new(
+                Errc::PlatformError,
+                format!("VulkanContext: GetModuleHandleW failed: {err:?}"),
+            )
+        })?;
+        let win32_surface_loader = ash::khr::win32_surface::Instance::new(entry, instance);
+        let surface_info = vk::Win32SurfaceCreateInfoKHR::default()
+            .hinstance(hinstance.0 as vk::HINSTANCE)
+            .hwnd(native_surface as vk::HWND);
+        let surface = unsafe { win32_surface_loader.create_win32_surface(&surface_info, None) }
+            .map_err(|err| vk_err("vkCreateWin32SurfaceKHR", err))?;
+        Ok((surface, win32_surface_loader))
+    }
+}
+
+fn crop_cpu_shadow(
+    shadow: &[u32],
+    surface_width: i32,
+    surface_height: i32,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+) -> Result<Vec<u32>> {
+    if width <= 0 || height <= 0 {
+        return Ok(Vec::new());
+    }
+    if x < 0 || y < 0 || x.saturating_add(width) > surface_width || y.saturating_add(height) > surface_height
+    {
+        return Err(invalid(format!(
+            "VulkanContext: readback rect ({x},{y},{width}x{height}) outside {surface_width}x{surface_height}"
+        )));
+    }
+    let mut out = Vec::with_capacity((width as usize).saturating_mul(height as usize));
+    let stride = surface_width as usize;
+    for row in 0..height as usize {
+        let start = (y as usize + row).saturating_mul(stride) + x as usize;
+        let end = start + width as usize;
+        out.extend_from_slice(&shadow[start..end]);
+    }
+    Ok(out)
 }
 
 fn select_queue(
@@ -849,6 +1023,20 @@ fn staging_size(width: i32, height: i32) -> vk::DeviceSize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn crop_cpu_shadow_extracts_rect() {
+        let shadow = vec![1, 2, 3, 4, 5, 6];
+        let cropped = crop_cpu_shadow(&shadow, 3, 2, 1, 0, 2, 2).expect("crop");
+        assert_eq!(cropped, vec![2, 3, 5, 6]);
+    }
+
+    #[test]
+    fn crop_cpu_shadow_rejects_out_of_bounds() {
+        let shadow = vec![0; 4];
+        let err = crop_cpu_shadow(&shadow, 2, 2, 1, 1, 2, 1).expect_err("oob");
+        assert_eq!(err.code(), Errc::InvalidArgument);
+    }
 
     #[test]
     fn choose_surface_format_prefers_bgra_srgb() {

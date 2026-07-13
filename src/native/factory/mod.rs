@@ -241,13 +241,35 @@ mod tests {
         #[cfg(all(unix, not(target_os = "macos")))]
         assert!(err.message().contains("WaylandSurfaceHandle"));
 
-        #[cfg(not(all(unix, not(target_os = "macos"))))]
+        #[cfg(windows)]
+        assert!(
+            err.message().contains("HWND")
+                || err.message().contains("native_surface")
+                || err.message().contains("load Vulkan")
+                || err.message().contains("vkCreate")
+                || err.message().contains("no registry entry")
+                || err.message().contains("disabled in this build"),
+            "unexpected Windows Vulkan null-surface error: {}",
+            err.message()
+        );
+
+        #[cfg(target_os = "macos")]
         assert!(
             err.message().contains("planned but not implemented")
-                || err.message().contains("WSI adapter is not implemented on Windows")
                 || err.message().contains("portability adapter is not implemented on macOS")
                 || err.message().contains("no registry entry")
-                || err.message().contains("only supported on Linux Wayland")
+                || err.message().contains("disabled in this build")
+        );
+
+        #[cfg(not(any(
+            all(unix, not(target_os = "macos")),
+            windows,
+            target_os = "macos"
+        )))]
+        assert!(
+            err.message().contains("planned but not implemented")
+                || err.message().contains("no registry entry")
+                || err.message().contains("not supported on this platform")
         );
     }
 }

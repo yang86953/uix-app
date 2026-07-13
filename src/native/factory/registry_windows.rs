@@ -86,7 +86,7 @@ const OPENGL_STATUS: BackendStatus = if cfg!(feature = "opengles") {
 };
 
 const VULKAN_STATUS: BackendStatus = if cfg!(feature = "vulkan") {
-    BackendStatus::Planned
+    BackendStatus::Active
 } else {
     BackendStatus::Disabled
 };

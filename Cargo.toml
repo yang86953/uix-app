@@ -12,6 +12,8 @@ glow = { version = "0.17.0", optional = true }
 image = { version = "0.25.6", default-features = false, features = ["png", "jpeg"] }
 # `#[implement]` 宏在 crate 根解析 `windows_core`；无平台 cfg，避免违反 native-only cfg 边界。
 windows-core = "0.62.2"
+# Shared by Linux Wayland and Windows Win32 Vulkan adapters (feature = "vulkan").
+ash = { version = "0.38", default-features = false, features = ["loaded", "std"], optional = true }
 
 [target.'cfg(windows)'.dependencies.windows]
 version = "0.62.2"
@@ -38,7 +40,6 @@ libc = "0.2.186"
 wayland-client = { version = "=0.29.5", features = ["dlopen"] }
 wayland-protocols = { version = "=0.29.5", features = ["client", "unstable_protocols", "staging_protocols"] }
 khronos-egl = { version = "6", features = ["static", "no-pkg-config"], optional = true }
-ash = { version = "0.38", default-features = false, features = ["loaded", "std"], optional = true }
 
 [features]
 default = ["d3d11", "d3d12", "opengles", "vulkan", "metal"]

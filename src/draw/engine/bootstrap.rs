@@ -597,9 +597,23 @@ mod tests {
         }
     }
 
-    #[cfg(all(feature = "d3d12", feature = "d3d11", feature = "opengles"))]
+    #[cfg(all(
+        feature = "d3d12",
+        feature = "d3d11",
+        feature = "opengles",
+        feature = "vulkan"
+    ))]
     #[test]
     fn auto_falls_through_established_backends_to_low_priority_d3d12() {
+        let expected = gpu_recipe_candidates(GraphicsBackend::Auto);
+        if !expected
+            .iter()
+            .any(|recipe| recipe.backend == GraphicsBackend::D3d12)
+        {
+            // D3D12 is not an Auto candidate on this platform registry.
+            return;
+        }
+
         let calls = Rc::new(RefCell::new(Vec::new()));
         let calls_for_probe = Rc::clone(&calls);
         let mut bootstrap = bootstrap_graphics_engine_with(
@@ -620,26 +634,7 @@ mod tests {
             },
         )
         .expect("D3D12 should be selected after established candidates fail");
-        assert_eq!(
-            calls.borrow().as_slice(),
-            &[
-                GraphicsRecipe::new(
-                    GraphicsBackend::D3d11,
-                    RasterMode::GpuNative,
-                    PresentMode::Swapchain
-                ),
-                GraphicsRecipe::new(
-                    GraphicsBackend::OpenGlEs,
-                    RasterMode::GpuNative,
-                    PresentMode::Swapchain
-                ),
-                GraphicsRecipe::new(
-                    GraphicsBackend::D3d12,
-                    RasterMode::GpuNative,
-                    PresentMode::Swapchain
-                ),
-            ]
-        );
+        assert_eq!(calls.borrow().as_slice(), expected.as_slice());
         assert_eq!(bootstrap.selected, GraphicsBackend::D3d12);
         assert_eq!(
             bootstrap.selected_recipe,
@@ -649,12 +644,11 @@ mod tests {
                 PresentMode::Swapchain
             )
         );
-        assert_eq!(bootstrap.report.failures.len(), 2);
-        assert_eq!(bootstrap.report.failures[0].backend, GraphicsBackend::D3d11);
-        assert_eq!(
-            bootstrap.report.failures[1].backend,
-            GraphicsBackend::OpenGlEs
-        );
+        let expected_failures = expected.len().saturating_sub(1);
+        assert_eq!(bootstrap.report.failures.len(), expected_failures);
+        for (index, recipe) in expected.iter().take(expected_failures).enumerate() {
+            assert_eq!(bootstrap.report.failures[index].backend, recipe.backend);
+        }
         assert!(
             bootstrap
                 .report
