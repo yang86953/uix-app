@@ -61,8 +61,6 @@ thread_local! {
             ComponentId,
             InvalidationQueueHandle,
             Option<Rect>,
-            usize,
-            ReconcileCallback,
             Vec<Arc<dyn StatePaintBind>>,
         )>,
     > = const { RefCell::new(None) };
@@ -121,26 +119,16 @@ pub fn begin_state_bind_capture(
     component_id: ComponentId,
     queue: InvalidationQueueHandle,
     rect: Option<Rect>,
-    reconcile_key: usize,
-    reconcile: ReconcileCallback,
 ) {
     STATE_BIND_CAPTURE.with(|c| {
-        *c.borrow_mut() = Some((
-            component_id,
-            queue,
-            rect,
-            reconcile_key,
-            reconcile,
-            Vec::new(),
-        ));
+        *c.borrow_mut() = Some((component_id, queue, rect, Vec::new()));
     });
 }
 
-/// 结束探测并将捕获到的 State 绑定到指定 widget。
+/// 结束探测并将捕获到的 State 绑定到指定 widget（仅 Paint，不 reconcile）。
 pub fn end_state_bind_capture(component_id: ComponentId) {
     STATE_BIND_CAPTURE.with(|c| {
-        let Some((id, queue, rect, reconcile_key, reconcile, states)) = c.borrow_mut().take()
-        else {
+        let Some((id, queue, rect, states)) = c.borrow_mut().take() else {
             return;
         };
         if id != component_id {
@@ -149,7 +137,8 @@ pub fn end_state_bind_capture(component_id: ComponentId) {
             ));
         }
         for source in states {
-            source.bind_reconcile_site(reconcile_key, reconcile.clone());
+            // DynamicLabel 闭包在 render/measure 时读最新值，只需 Paint。
+            // 若再绑 reconcile，demo header 的 1s timer 会每秒整树 reconcile+layout。
             source.bind_paint(component_id, queue.clone(), rect);
         }
     });
@@ -158,7 +147,7 @@ pub fn end_state_bind_capture(component_id: ComponentId) {
 fn try_capture_state_bind<T: Clone + Send + Sync + 'static>(state: &State<T>) {
     STATE_BIND_CAPTURE.with(|c| {
         let mut guard = c.borrow_mut();
-        if let Some((_, _, _, _, _, ref mut captured)) = *guard {
+        if let Some((_, _, _, ref mut captured)) = *guard {
             let bind: Arc<dyn StatePaintBind> = Arc::new(state.clone());
             captured.push(bind);
         }
@@ -185,7 +174,7 @@ fn try_capture_pending_state_bind<T: Clone + Send + Sync + 'static>(state: &Stat
 
 fn try_capture_computed_bind<T: Clone + Send + Sync + 'static>(computed: &Computed<T>) {
     STATE_BIND_CAPTURE.with(|c| {
-        if let Some((component_id, queue, rect, _, _, _)) = c.borrow().as_ref() {
+        if let Some((component_id, queue, rect, _)) = c.borrow().as_ref() {
             computed.bind_paint_invalidation(*component_id, queue.clone(), *rect);
         }
     });
