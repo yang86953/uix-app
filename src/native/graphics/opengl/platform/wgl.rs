@@ -654,15 +654,6 @@ impl IGraphicsContext for WglContext {
         self.shutdown_result()
     }
 
-    fn shutdown(&mut self) {
-        if let Err(error) = self.shutdown_result() {
-            crate::core::log::error_fn(format!(
-                "WglContext: shutdown failed: {}",
-                error.short_what()
-            ));
-        }
-    }
-
     fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>, Error> {
         self.make_current_result()?;
         self.pipeline.read_pixels(x, y, width, height)
@@ -759,7 +750,7 @@ impl IGraphicsContext for WglContext {
 
 impl Drop for WglContext {
     fn drop(&mut self) {
-        self.shutdown();
+        let _ = self.try_shutdown();
     }
 }
 
@@ -837,7 +828,7 @@ mod tests {
             .expect("repeated swapchain present");
         }
 
-        ctx.shutdown();
+        ctx.try_shutdown().expect("shutdown");
         window.close().expect("close native window");
     }
 

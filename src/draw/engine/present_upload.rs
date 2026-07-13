@@ -355,10 +355,6 @@ mod tests {
             Ok(())
         }
 
-        fn shutdown(&mut self) {
-            self.shutdowns.fetch_add(1, Ordering::SeqCst);
-        }
-
         fn try_shutdown(&mut self) -> Result<()> {
             self.checked_shutdowns.fetch_add(1, Ordering::SeqCst);
             Ok(())

@@ -310,6 +310,15 @@ impl D3d11Context {
         self.rtv = None;
     }
 
+    fn shutdown_result(&mut self) -> Result<()> {
+        self.bound_offscreen = None;
+        self.offscreens.clear();
+        self.free_offscreen_ids.clear();
+        self.next_offscreen_id = 0;
+        self.release_rtv();
+        Ok(())
+    }
+
     fn bind_viewport(&self) {
         self.bind_viewport_size(self.width, self.height);
     }
@@ -544,12 +553,8 @@ impl IGraphicsContext for D3d11Context {
         self.present_result()
     }
 
-    fn shutdown(&mut self) {
-        self.bound_offscreen = None;
-        self.offscreens.clear();
-        self.free_offscreen_ids.clear();
-        self.next_offscreen_id = 0;
-        self.release_rtv();
+    fn try_shutdown(&mut self) -> Result<()> {
+        self.shutdown_result()
     }
 
     fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
@@ -1245,7 +1250,7 @@ mod tests {
             damage: PresentDamage::Full,
         })
         .expect("swapchain present");
-        ctx.shutdown();
+        ctx.try_shutdown().expect("shutdown");
         drop(ctx);
 
         let mut warp_ctx = create_with_driver(
@@ -1280,7 +1285,7 @@ mod tests {
                 damage: PresentDamage::Full,
             })
             .expect("WARP swapchain present");
-        warp_ctx.shutdown();
+        warp_ctx.try_shutdown().expect("shutdown");
     }
 
     #[test]
@@ -1318,7 +1323,7 @@ mod tests {
             vec![0xFF00_FF00],
             "soft fallback must not inherit the previous native draw scissor"
         );
-        ctx.shutdown();
+        ctx.try_shutdown().expect("shutdown");
     }
 
     #[test]
@@ -1364,7 +1369,7 @@ mod tests {
             0,
             "second segment must reach its own target pixel"
         );
-        ctx.shutdown();
+        ctx.try_shutdown().expect("shutdown");
     }
 
     #[test]
@@ -1435,7 +1440,7 @@ mod tests {
             damage: PresentDamage::Full,
         })
         .expect("present after resize");
-        ctx.shutdown();
+        ctx.try_shutdown().expect("shutdown");
     }
 
     #[test]
@@ -1471,7 +1476,7 @@ mod tests {
             damage: PresentDamage::Full,
         })
         .expect("present");
-        ctx.shutdown();
+        ctx.try_shutdown().expect("shutdown");
     }
 
     #[test]
@@ -1575,7 +1580,7 @@ mod tests {
         );
 
         ctx.destroy_offscreen_target(offscreen);
-        ctx.shutdown();
+        ctx.try_shutdown().expect("shutdown");
     }
 
     #[test]
@@ -1608,7 +1613,7 @@ mod tests {
             .expect("repeated present readback");
         assert_eq!(pixels.len(), 1);
         assert_eq!(pixels[0] >> 24, 0xFF, "final frame must remain opaque");
-        ctx.shutdown();
+        ctx.try_shutdown().expect("shutdown");
     }
 
     #[test]
@@ -1664,7 +1669,7 @@ mod tests {
             "light and dark layout palettes must differ on GPU"
         );
 
-        ctx_a.shutdown();
-        ctx_b.shutdown();
+        ctx_a.try_shutdown().expect("shutdown");
+        ctx_b.try_shutdown().expect("shutdown");
     }
 }

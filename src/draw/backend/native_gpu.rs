@@ -1287,7 +1287,61 @@ impl NativeGpuBackend {
                     }],
                 )
             }
+            FrameRasterOp::FillRectAdditive { .. } | FrameRasterOp::ScrollCopy { .. } => {
+                self.execute_destination_dependent_frame_op(target_width, target_height, operation)
+            }
         }
+    }
+
+    /// Destination-dependent IR ops cannot be drawn with SrcOver GPU quads.
+    /// When the context supports readback + full upload, apply the reference
+    /// semantics on CPU pixels and replace the RT — pixel-correct, not an
+    /// alpha-over approximation. Otherwise return typed NotImplemented.
+    fn execute_destination_dependent_frame_op(
+        &mut self,
+        target_width: i32,
+        target_height: i32,
+        operation: &FrameRasterOp,
+    ) -> Result<(), Error> {
+        let expected = (target_width as usize).saturating_mul(target_height as usize);
+        let mut pixels = self
+            .gpu_ctx
+            .read_pixels(0, 0, target_width, target_height)
+            .map_err(|error| {
+                Error::new(
+                    crate::core::Errc::NotImplemented,
+                    format!(
+                        "NativeGpuBackend: destination-dependent FrameRasterOp requires readback ({})",
+                        error.what()
+                    ),
+                )
+            })?;
+        if pixels.len() != expected {
+            return Err(Error::new(
+                crate::core::Errc::NotImplemented,
+                format!(
+                    "NativeGpuBackend: destination-dependent FrameRasterOp readback extent mismatch (got {}, expected {expected})",
+                    pixels.len()
+                ),
+            ));
+        }
+        crate::draw::pipeline::frame_encoder::apply_frame_raster_op(
+            target_width,
+            target_height,
+            &mut pixels,
+            operation,
+        );
+        self.gpu_ctx
+            .upload_surface_pixels(&pixels, target_width, target_height)
+            .map_err(|error| {
+                Error::new(
+                    crate::core::Errc::NotImplemented,
+                    format!(
+                        "NativeGpuBackend: destination-dependent FrameRasterOp requires replace upload ({})",
+                        error.what()
+                    ),
+                )
+            })
     }
 
     fn alpha_blit_frame_encoder_source(&mut self, source: &ReferenceFrame) -> Result<(), Error> {
@@ -1865,7 +1919,9 @@ mod tests {
             Ok(())
         }
 
-        fn shutdown(&mut self) {}
+        fn try_shutdown(&mut self) -> crate::core::Result<()> {
+            Ok(())
+        }
 
         fn read_pixels(
             &mut self,
@@ -2146,10 +2202,6 @@ mod tests {
             Ok(())
         }
 
-        fn shutdown(&mut self) {
-            self.shutdown_calls.set(self.shutdown_calls.get() + 1);
-        }
-
         fn try_shutdown(&mut self) -> crate::core::Result<()> {
             self.shutdown_calls.set(self.shutdown_calls.get() + 1);
             self.fail_if(FailStage::Shutdown)
@@ -2426,7 +2478,9 @@ mod tests {
         fn swap_buffers(&mut self, _damage: PresentDamage) -> crate::core::Result<()> {
             Ok(())
         }
-        fn shutdown(&mut self) {}
+        fn try_shutdown(&mut self) -> crate::core::Result<()> {
+            Ok(())
+        }
         fn read_pixels(
             &mut self,
             _x: i32,
@@ -2642,7 +2696,9 @@ mod tests {
             fn swap_buffers(&mut self, _: PresentDamage) -> crate::core::Result<()> {
                 Ok(())
             }
-            fn shutdown(&mut self) {}
+            fn try_shutdown(&mut self) -> crate::core::Result<()> {
+                Ok(())
+            }
             fn read_pixels(
                 &mut self,
                 _: i32,
@@ -2888,7 +2944,9 @@ mod tests {
             fn swap_buffers(&mut self, _: PresentDamage) -> crate::core::Result<()> {
                 Ok(())
             }
-            fn shutdown(&mut self) {}
+            fn try_shutdown(&mut self) -> crate::core::Result<()> {
+                Ok(())
+            }
             fn read_pixels(
                 &mut self,
                 _: i32,
@@ -2941,7 +2999,9 @@ mod tests {
             fn swap_buffers(&mut self, _: PresentDamage) -> crate::core::Result<()> {
                 Ok(())
             }
-            fn shutdown(&mut self) {}
+            fn try_shutdown(&mut self) -> crate::core::Result<()> {
+                Ok(())
+            }
             fn read_pixels(
                 &mut self,
                 _: i32,
@@ -4858,6 +4918,245 @@ mod tests {
             .expect("single final present after main FrameEncoder");
         native.shutdown();
         window.close().expect("close main FrameEncoder WARP window");
+    }
+
+    #[cfg(feature = "d3d11")]
+    #[test]
+    fn d3d11_warp_additive_and_scroll_frame_ops_match_reference_executor() {
+        use crate::draw::pipeline::{FrameRasterOp, FrameRect};
+
+        if !crate::native::factory::d3d11_warp_test_context_available() {
+            return;
+        }
+
+        let mut platform = crate::native::create_platform().expect("platform");
+        let mut window = platform
+            .window_manager()
+            .create_window("additive scroll FrameEncoder WARP", 48, 32)
+            .expect("window");
+        let context = crate::native::factory::create_d3d11_warp_test_context(
+            window.native_surface_ptr(),
+            48,
+            32,
+        )
+        .expect("D3D11 WARP context");
+        let mut native = NativeGpuBackend::new(context).expect("native WARP backend");
+        native.resize(48, 32).expect("resize");
+        let (frame_w, frame_h) = (native.width, native.height);
+
+        let mut encoder = FrameEncoder::new(frame_w, frame_h).expect("encoder");
+        encoder.clear(Color::from_rgba(20, 40, 60, 255));
+        encoder.native(FrameRasterOp::FillRect {
+            rect: FrameRect::new(4, 4, 8, 8),
+            color: Color::from_rgba(80, 160, 40, 255),
+        });
+        encoder.native(FrameRasterOp::FillRectAdditive {
+            rect: FrameRect::new(6, 6, 6, 6),
+            color: Color::from_rgba(40, 20, 80, 128),
+        });
+        encoder.native(FrameRasterOp::ScrollCopy {
+            viewport: FrameRect::new(0, 0, frame_w, frame_h),
+            dx: 0,
+            dy: 2,
+        });
+        assert_eq!(
+            native
+                .try_execute_encoded_frame(&encoder)
+                .expect("execute additive/scroll FrameEncoder"),
+            EncodedFrameExecution::Executed
+        );
+
+        let reference = encoder.render_reference();
+        let stride = native.gpu_ctx.width() as usize;
+        let pixels = native.try_readback().expect("readback");
+        assert_premultiplied_probes_match(
+            &[
+                reference.pixel(2, 2).expect("bg"),
+                reference.pixel(5, 5).expect("fill"),
+                reference.pixel(8, 8).expect("additive"),
+                reference.pixel(10, 10).expect("scrolled"),
+            ],
+            &[
+                pixels[2 * stride + 2],
+                pixels[5 * stride + 5],
+                pixels[8 * stride + 8],
+                pixels[10 * stride + 10],
+            ],
+            "D3D11 WARP additive+scroll FrameEncoder",
+        );
+
+        let _ = native.try_shutdown();
+        window.close().expect("close");
+    }
+
+    #[test]
+    fn destination_dependent_frame_ops_use_readback_apply_upload_on_pixel_context() {
+        use crate::draw::pipeline::{FrameRasterOp, FrameRect};
+        use std::cell::RefCell;
+
+        struct PixelContext {
+            width: i32,
+            height: i32,
+            pixels: Rc<RefCell<Vec<u32>>>,
+        }
+
+        impl IGraphicsContext for PixelContext {
+            fn caps(&self) -> GraphicsContextCaps {
+                GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+            }
+
+            fn native_raster_caps(&self) -> NativeRasterCaps {
+                NativeRasterCaps::d3d11_full()
+            }
+
+            fn initialize(
+                &mut self,
+                _native_window: *mut std::ffi::c_void,
+                width: i32,
+                height: i32,
+            ) -> crate::core::Result<()> {
+                self.resize(width, height)
+            }
+
+            fn resize(&mut self, width: i32, height: i32) -> crate::core::Result<()> {
+                self.width = width.max(1);
+                self.height = height.max(1);
+                *self.pixels.borrow_mut() =
+                    vec![0; (self.width as usize) * (self.height as usize)];
+                Ok(())
+            }
+
+            fn make_current(&mut self) -> crate::core::Result<()> {
+                Ok(())
+            }
+
+            fn swap_buffers(&mut self, _damage: PresentDamage) -> crate::core::Result<()> {
+                Ok(())
+            }
+
+            fn try_shutdown(&mut self) -> crate::core::Result<()> {
+                Ok(())
+            }
+
+            fn read_pixels(
+                &mut self,
+                x: i32,
+                y: i32,
+                width: i32,
+                height: i32,
+            ) -> crate::core::Result<Vec<u32>> {
+                let pixels = self.pixels.borrow();
+                let mut out = Vec::with_capacity((width * height) as usize);
+                for row in y..y + height {
+                    let start = (row * self.width + x) as usize;
+                    out.extend_from_slice(&pixels[start..start + width as usize]);
+                }
+                Ok(out)
+            }
+
+            fn width(&self) -> i32 {
+                self.width
+            }
+
+            fn height(&self) -> i32 {
+                self.height
+            }
+
+            fn clear_render_target(
+                &mut self,
+                r: f32,
+                g: f32,
+                b: f32,
+                a: f32,
+            ) -> crate::core::Result<()> {
+                let color = Color::from_rgba(
+                    (r * 255.0) as u8,
+                    (g * 255.0) as u8,
+                    (b * 255.0) as u8,
+                    (a * 255.0) as u8,
+                )
+                .premultiplied();
+                self.pixels.borrow_mut().fill(color);
+                Ok(())
+            }
+
+            fn draw_solid_rects(
+                &mut self,
+                _viewport_w: f32,
+                _viewport_h: f32,
+                _scissor: Option<(i32, i32, i32, i32)>,
+                rects: &[GpuSolidRect],
+            ) -> crate::core::Result<()> {
+                let mut pixels = self.pixels.borrow_mut();
+                for rect in rects {
+                    let color = Color::from_rgba(
+                        (rect.rgba[0] * 255.0) as u8,
+                        (rect.rgba[1] * 255.0) as u8,
+                        (rect.rgba[2] * 255.0) as u8,
+                        (rect.rgba[3] * 255.0) as u8,
+                    );
+                    crate::draw::pipeline::frame_encoder::apply_frame_raster_op(
+                        self.width,
+                        self.height,
+                        &mut pixels,
+                        &FrameRasterOp::FillRect {
+                            rect: FrameRect::new(
+                                rect.x as i32,
+                                rect.y as i32,
+                                rect.w as i32,
+                                rect.h as i32,
+                            ),
+                            color,
+                        },
+                    );
+                }
+                Ok(())
+            }
+
+            fn upload_surface_pixels(
+                &mut self,
+                pixels: &[u32],
+                width: i32,
+                height: i32,
+            ) -> crate::core::Result<()> {
+                assert_eq!((width, height), (self.width, self.height));
+                assert_eq!(pixels.len(), (width * height) as usize);
+                self.pixels.borrow_mut().copy_from_slice(pixels);
+                Ok(())
+            }
+        }
+
+        let pixels = Rc::new(RefCell::new(Vec::new()));
+        let mut backend = NativeGpuBackend::new(Box::new(PixelContext {
+            width: 1,
+            height: 1,
+            pixels: Rc::clone(&pixels),
+        }))
+        .expect("backend");
+        backend.resize(4, 3).expect("resize");
+
+        let mut encoder = FrameEncoder::new(4, 3).expect("encoder");
+        encoder.clear(Color::from_rgba(10, 20, 30, 255));
+        encoder.native(FrameRasterOp::FillRect {
+            rect: FrameRect::new(0, 0, 2, 2),
+            color: Color::from_rgba(100, 0, 0, 255),
+        });
+        encoder.native(FrameRasterOp::FillRectAdditive {
+            rect: FrameRect::new(1, 1, 2, 2),
+            color: Color::from_rgba(0, 80, 0, 128),
+        });
+        encoder.native(FrameRasterOp::ScrollCopy {
+            viewport: FrameRect::new(0, 0, 4, 3),
+            dx: 1,
+            dy: 0,
+        });
+        assert_eq!(
+            backend
+                .try_execute_encoded_frame(&encoder)
+                .expect("execute"),
+            EncodedFrameExecution::Executed
+        );
+        assert_eq!(pixels.borrow().as_slice(), encoder.render_reference().pixels());
     }
 
     #[cfg(feature = "d3d11")]

@@ -16,6 +16,7 @@
 use std::cell::Cell;
 use std::ffi::c_void;
 use std::marker::PhantomData;
+use std::mem::ManuallyDrop;
 use std::rc::Rc;
 use std::thread::{self, ThreadId};
 
@@ -34,7 +35,7 @@ pub(crate) fn bind_to_current_thread(
 
 struct ThreadBoundGraphicsContext {
     owner_thread: ThreadId,
-    inner: Box<dyn IGraphicsContext>,
+    inner: ManuallyDrop<Box<dyn IGraphicsContext>>,
     /// Read-only metadata is captured on the creation thread and refreshed
     /// only after successful owner-thread lifecycle changes. These legacy
     /// non-fallible queries can therefore never touch a native context from a
@@ -58,7 +59,7 @@ impl ThreadBoundGraphicsContext {
         let device_pixel_ratio = inner.device_pixel_ratio();
         Self {
             owner_thread: thread::current().id(),
-            inner,
+            inner: ManuallyDrop::new(inner),
             caps,
             native_raster_caps,
             width,
@@ -114,6 +115,34 @@ impl ThreadBoundGraphicsContext {
     }
 }
 
+impl Drop for ThreadBoundGraphicsContext {
+    fn drop(&mut self) {
+        // SAFETY: Drop runs once; the inner Box is taken exactly once here.
+        let mut inner = unsafe { ManuallyDrop::take(&mut self.inner) };
+        if self.require_owner("drop").is_err() {
+            // Wrong-thread Drop must not tear down native API objects. Leak the
+            // context so its Drop cannot run on this foreign thread.
+            Self::log_legacy_rejection(
+                "drop",
+                &Error::new(
+                    Errc::InvalidState,
+                    format!(
+                        "graphics context operation drop must run on creation thread {:?}; current thread is {:?}",
+                        self.owner_thread,
+                        thread::current().id()
+                    ),
+                ),
+            );
+            std::mem::forget(inner);
+            return;
+        }
+        if let Err(error) = inner.try_shutdown() {
+            Self::log_legacy_rejection("drop", &error);
+        }
+        drop(inner);
+    }
+}
+
 macro_rules! forward_result {
     ($name:ident($($argument:ident : $argument_type:ty),* $(,)?) -> $output:ty) => {
         fn $name(&mut self, $($argument: $argument_type),*) -> Result<$output> {
@@ -150,12 +179,6 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
 
     fn try_shutdown(&mut self) -> Result<()> {
         self.with_owner("try_shutdown", |inner| inner.try_shutdown())
-    }
-
-    fn shutdown(&mut self) {
-        if let Err(error) = self.try_shutdown() {
-            Self::log_legacy_rejection("shutdown", &error);
-        }
     }
 
     fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
@@ -274,8 +297,8 @@ mod tests {
             panic!("foreign thread must not call the native context")
         }
 
-        fn shutdown(&mut self) {
-            panic!("foreign thread must not call the native context")
+        fn try_shutdown(&mut self) -> Result<()> {
+            Ok(())
         }
 
         fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Result<Vec<u32>> {
@@ -373,5 +396,19 @@ mod tests {
             .expect_err("readback must preserve the native failure");
         assert_eq!(error.code(), Errc::GraphicsDeviceLost);
         assert!(error.message().contains("injected native readback failure"));
+    }
+
+    #[test]
+    fn foreign_thread_drop_does_not_reach_native_teardown() {
+        let foreign_owner = std::thread::spawn(|| std::thread::current().id())
+            .join()
+            .expect("thread id");
+        let context = ThreadBoundGraphicsContext::with_test_owner(
+            Box::new(PanicIfCalled::foreign_only()),
+            foreign_owner,
+        );
+        // Drop on this thread must log a typed owner mismatch and leak the
+        // inner context rather than calling native shutdown/Drop.
+        drop(context);
     }
 }

@@ -80,8 +80,9 @@ mod tests {
             Ok(())
         }
 
-        fn shutdown(&mut self) {
+        fn try_shutdown(&mut self) -> crate::core::Result<()> {
             self.shutdowns.fetch_add(1, Ordering::SeqCst);
+            Ok(())
         }
 
         fn read_pixels(
