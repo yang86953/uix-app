@@ -34,6 +34,7 @@ fn relative_src_path(path: &Path) -> String {
 }
 
 fn is_native_backend_boundary(path: &str) -> bool {
+    let path = path.strip_prefix("tests/").unwrap_or(path);
     path == "native/factory.rs"
         || path.starts_with("native/factory/")
         || path.starts_with("native/backends/")
@@ -41,6 +42,7 @@ fn is_native_backend_boundary(path: &str) -> bool {
 }
 
 fn is_platform_cfg_boundary(path: &str) -> bool {
+    let path = path.strip_prefix("tests/").unwrap_or(path);
     path == "native/factory.rs"
         || path.starts_with("native/factory/")
         || path.starts_with("native/backends/")
@@ -1245,5 +1247,66 @@ fn architecture_document_stays_in_the_qualified_docs_tree() {
     assert!(
         present.is_empty(),
         "docs/架构.md is the project architecture navigation; do not add standalone root architecture files: {present:?}"
+    );
+}
+
+#[test]
+fn production_modules_do_not_embed_inline_test_bodies() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut violations = Vec::new();
+
+    for path in rust_files_under(&src) {
+        let rel = relative_src_path(&path);
+        if rel.starts_with("tests/") {
+            continue;
+        }
+        let text = read_source(&path);
+        // Inline `mod … { … #[test] … }` (path-wired `mod tests;` stubs are allowed).
+        let mut search = text.as_str();
+        let mut offset = 0usize;
+        while let Some(idx) = search.find("mod ") {
+            let abs = offset + idx;
+            let after = &text[abs..];
+            let Some(rest) = after.strip_prefix("mod ") else {
+                break;
+            };
+            let name_end = rest
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .unwrap_or(rest.len());
+            let name = &rest[..name_end];
+            let after_name = rest[name_end..].trim_start();
+            if after_name.starts_with('{') {
+                // Find matching body roughly via brace depth ignoring strings is hard;
+                // use a bounded scan for #[test] before the next top-level-looking close.
+                let body_start = abs + after.find('{').expect("brace");
+                let mut depth = 0i32;
+                let mut i = body_start;
+                let bytes = text.as_bytes();
+                while i < bytes.len() {
+                    match bytes[i] as char {
+                        '{' => depth += 1,
+                        '}' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                    i += 1;
+                }
+                let body = &text[body_start..=i.min(text.len().saturating_sub(1))];
+                if body.contains("#[test]") {
+                    violations.push(format!("{rel}::{name}"));
+                }
+            }
+            offset = abs + 4;
+            search = &text[offset..];
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "inline test bodies must live under src/tests (use #[path] stubs only): {violations:?}"
     );
 }

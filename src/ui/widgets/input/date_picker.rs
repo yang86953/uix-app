@@ -361,15 +361,5 @@ fn prev_month(y: i32, m: usize) -> (i32, usize) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::ui::traits::WidgetLayout;
-
-    #[test]
-    fn measure_clamps_date_picker_size() {
-        let measured =
-            DatePicker::new("Pick date").measure(Constraints::loose(Size::new(100.0, 20.0)));
-
-        assert_eq!(measured, Size::new(100.0, 20.0));
-    }
-}
+#[path = "../../../tests/ui/widgets/input/date_picker.rs"]
+mod tests;
