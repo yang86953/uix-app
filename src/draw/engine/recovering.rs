@@ -132,12 +132,15 @@ impl GraphicsEngine for RecoveringGraphicsEngine {
         }
         let width = width.max(1);
         let height = height.max(1);
+        // A failed resize invalidates the old surface just as much as a
+        // failed present. Recovery must rebuild for the requested extent,
+        // not silently recreate the previous one.
+        self.width = width;
+        self.height = height;
         if let Err(error) = self.engine.resize(width, height) {
             self.record_failure(GraphicsFailure::from_error(error.clone()));
             return Err(error);
         }
-        self.width = width;
-        self.height = height;
         Ok(())
     }
 
@@ -312,4 +315,3 @@ impl Drop for RecoveringGraphicsEngine {
         }
     }
 }
-

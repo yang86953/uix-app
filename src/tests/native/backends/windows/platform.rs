@@ -96,6 +96,10 @@ fn native_text_input_routes_ime_lifecycle_and_surrogate_pair() {
     assert!(platform.dispatch_pending());
     while platform.next_event().is_some() {}
 
+    platform
+        .text_input()
+        .set_target_window(window_id, hwnd)
+        .expect("target text input window");
     platform.text_input().start().expect("start text input");
     platform
         .text_input()

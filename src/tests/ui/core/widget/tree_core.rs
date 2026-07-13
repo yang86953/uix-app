@@ -4486,7 +4486,6 @@ fn typography_drag_selection_extends_through_middle_sibling() {
 #[test]
 fn typography_cross_selection_copy_aggregates_sibling_lines() {
     use crate::native::test_harness::FakeClipboard;
-    use crate::native::traits::input::IClipboard;
     use crate::ui::clipboard;
     use crate::ui::Typography;
 
@@ -4569,36 +4568,22 @@ fn typography_cross_selection_copy_aggregates_sibling_lines() {
 
     // 焦点在起点（正文）时 Ctrl+C 须写入聚合文本，而非仅一行
     let mut clipboard = FakeClipboard::new();
-    {
-        let c: &mut dyn IClipboard = &mut clipboard;
-        let wide: *mut dyn IClipboard = c;
-        let parts: (usize, usize) = unsafe { std::mem::transmute(wide) };
-        clipboard::set_clipboard_parts(parts.0, parts.1);
-    }
-    assert_eq!(
+    let copy_result = clipboard::with_clipboard(&mut clipboard, || {
         tree.dispatch_event(&SystemEvent::KeyDown {
             key: KeyCode::C,
             mods: KeyMod::CTRL,
-        }),
-        EventResult::Handled
-    );
+        })
+    });
+    assert_eq!(copy_result, EventResult::Handled);
     assert_eq!(clipboard.last_set_text(), Some(aggregated.as_str()));
-    clipboard::set_clipboard_parts(0, 0);
 
     // 菜单/系统 Copy 事件同样走聚合路径
     let mut clipboard2 = FakeClipboard::new();
-    {
-        let c: &mut dyn IClipboard = &mut clipboard2;
-        let wide: *mut dyn IClipboard = c;
-        let parts: (usize, usize) = unsafe { std::mem::transmute(wide) };
-        clipboard::set_clipboard_parts(parts.0, parts.1);
-    }
-    assert_eq!(
-        tree.dispatch_event(&SystemEvent::Copy),
-        EventResult::Handled
-    );
+    let copy_result = clipboard::with_clipboard(&mut clipboard2, || {
+        tree.dispatch_event(&SystemEvent::Copy)
+    });
+    assert_eq!(copy_result, EventResult::Handled);
     assert_eq!(clipboard2.last_set_text(), Some(aggregated.as_str()));
-    clipboard::set_clipboard_parts(0, 0);
 }
 
 #[test]
@@ -4608,7 +4593,6 @@ fn rendered_typography_drag_selection_copies_the_actual_cross_node_range() {
     use crate::draw::painting::PaintContext;
     use crate::draw::spatial::Orientation;
     use crate::native::test_harness::FakeClipboard;
-    use crate::native::traits::input::IClipboard;
     use crate::ui::clipboard;
     use crate::ui::Typography;
 
@@ -4699,22 +4683,15 @@ fn rendered_typography_drag_selection_copies_the_actual_cross_node_range() {
     assert_eq!(selected(h3).as_deref(), Some("Heading 3"));
 
     let mut clipboard = FakeClipboard::new();
-    {
-        let clipboard_ref: &mut dyn IClipboard = &mut clipboard;
-        let wide: *mut dyn IClipboard = clipboard_ref;
-        let parts: (usize, usize) = unsafe { std::mem::transmute(wide) };
-        clipboard::set_clipboard_parts(parts.0, parts.1);
-    }
-    assert_eq!(
+    let copy_result = clipboard::with_clipboard(&mut clipboard, || {
         tree.dispatch_event(&SystemEvent::KeyDown {
             key: KeyCode::C,
             mods: KeyMod::CTRL,
-        }),
-        EventResult::Handled
-    );
+        })
+    });
+    assert_eq!(copy_result, EventResult::Handled);
     assert_eq!(
         clipboard.last_set_text(),
         Some("Heading 1\nHeading 2\nHeading 3")
     );
-    clipboard::set_clipboard_parts(0, 0);
 }

@@ -46,7 +46,9 @@ fn native_cpu_segment_native_preserves_the_full_command_order() {
     let mut encoder = FrameEncoder::new(5, 1).unwrap();
     encoder.clear(Color::black());
     encoder.native(rect(0, 0, 5, 1, Color::red()));
-    encoder.cpu_segment([rect(1, 0, 3, 1, Color::green())]);
+    encoder
+        .cpu_segment([rect(1, 0, 3, 1, Color::green())])
+        .unwrap();
     encoder.native(rect(2, 0, 1, 1, Color::blue()));
 
     let frame = encoder.render_reference();
@@ -138,7 +140,9 @@ fn reference_executor_matches_cpu_rasterizer_for_transparent_rect_layers() {
     let mut encoder = FrameEncoder::new(4, 3).unwrap();
     encoder.clear(clear);
     encoder.native(rect(-1, 0, 3, 3, first));
-    encoder.cpu_segment([rect(1, 1, 4, 3, second)]);
+    encoder
+        .cpu_segment([rect(1, 1, 4, 3, second)])
+        .unwrap();
 
     let mut cpu = SharedRasterizer::new(PixelSurface::new(4, 3));
     cpu.surface_mut().set_clear_color(clear);
@@ -147,6 +151,42 @@ fn reference_executor_matches_cpu_rasterizer_for_transparent_rect_layers() {
     cpu.fill_rect(Rect::new(1.0, 1.0, 4.0, 3.0), second, None);
 
     assert_eq!(encoder.render_reference().pixels(), cpu.surface().pixels());
+}
+
+#[test]
+fn cpu_segment_rejects_destination_dependent_operations_without_mutating_encoder() {
+    let mut encoder = FrameEncoder::new(3, 2).unwrap();
+    encoder.clear(Color::black());
+    let command_count = encoder.commands().len();
+
+    let additive = encoder
+        .cpu_segment([FrameRasterOp::FillRectAdditive {
+            rect: FrameRect::new(0, 0, 1, 1),
+            color: Color::white(),
+        }])
+        .unwrap_err();
+    assert_eq!(
+        additive,
+        FrameEncoderError::DestinationDependentCpuSegment {
+            operation: "FillRectAdditive"
+        }
+    );
+    assert_eq!(encoder.commands().len(), command_count);
+
+    let scroll = encoder
+        .cpu_segment([FrameRasterOp::ScrollCopy {
+            viewport: FrameRect::new(0, 0, 3, 2),
+            dx: 1,
+            dy: 0,
+        }])
+        .unwrap_err();
+    assert_eq!(
+        scroll,
+        FrameEncoderError::DestinationDependentCpuSegment {
+            operation: "ScrollCopy"
+        }
+    );
+    assert_eq!(encoder.commands().len(), command_count);
 }
 
 #[test]

@@ -9,10 +9,10 @@ use crate::ui::event::{HandlerRegistration, SemanticEvent, SemanticKind};
 use crate::ui::style::{ColorValue, Style, TypographyToken};
 use crate::ui::traits::WidgetComponent;
 
-pub mod adapter;
+pub(crate) mod adapter;
 pub mod combinators;
 
-pub use adapter::ViewAdapter;
+pub(crate) use adapter::ViewAdapter;
 pub use combinators::{
     button, column, column_fit, dynamic_label, embed, grid, input, label, row, scroll, show, space,
     ButtonBuilder, GridBuilder, InputBuilder, IntoLabelContent, IntoViewChildren, ScrollBuilder,

@@ -56,10 +56,12 @@ fn start_on_real_window_activates_tsf_session() {
         .create_window("TSF text input start", 320, 240)
         .expect("window");
     let hwnd = window.native_surface_ptr();
+    let window_id = window.window_id();
     let events = Arc::new(Mutex::new(VecDeque::new()));
     let mut input = WindowsTextInput::new(Arc::clone(&events));
-    input.set_hwnd(hwnd);
-    input.set_window_id(WindowId::new(1));
+    input
+        .set_target_window(window_id, hwnd)
+        .expect("target window");
     input.start().expect("start");
     assert!(
         input.tsf_client_id().unwrap_or(0) != 0,

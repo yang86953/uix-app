@@ -18,6 +18,7 @@ struct AppTimerQueueInner {
     next_id: TimerId,
     cancellation_epoch: u64,
     entries: BTreeMap<TimerId, AppTimerEntry>,
+    removal_waker: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl Default for AppTimerQueueInner {
@@ -26,6 +27,7 @@ impl Default for AppTimerQueueInner {
             next_id: 1,
             cancellation_epoch: 0,
             entries: BTreeMap::new(),
+            removal_waker: None,
         }
     }
 }
@@ -59,6 +61,18 @@ impl AppTimerQueue {
             inner: Arc::new(Mutex::new(AppTimerQueueInner::default())),
             clock,
         }
+    }
+
+    /// Associate this per-window queue with its owning runtime wake source.
+    ///
+    /// Handles read the current callback when they actually remove a pending
+    /// timer, so handles created before runtime startup still use the installed
+    /// native waker once the event loop begins.
+    pub(crate) fn set_removal_waker(&self, waker: Arc<dyn Fn() + Send + Sync>) {
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .removal_waker = Some(waker);
     }
 
     pub(crate) fn run_after<F>(&self, delay: Duration, f: F) -> TimerHandle
@@ -192,12 +206,17 @@ impl TimerHandle {
         }
         self.cancelled = true;
         self.active.store(false, Ordering::Release);
-        if let Some(queue) = self.queue.upgrade() {
-            queue
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .entries
-                .remove(&self.id);
+        let removal_waker = self.queue.upgrade().and_then(|queue| {
+            let mut inner = queue.lock().unwrap_or_else(|e| e.into_inner());
+            if inner.entries.remove(&self.id).is_some() {
+                inner.removal_waker.clone()
+            } else {
+                None
+            }
+        });
+        // Never invoke platform/runtime code while holding the timer queue.
+        if let Some(wake) = removal_waker {
+            wake();
         }
     }
 }
@@ -209,4 +228,3 @@ impl Drop for TimerHandle {
         }
     }
 }
-

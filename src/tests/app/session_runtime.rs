@@ -125,6 +125,38 @@ fn app_timer_registration_wakes_event_loop() {
 }
 
 #[test]
+fn app_timer_cancel_and_drop_wake_owning_runtime() {
+    let runtime = AppRuntime::new();
+    let timers = AppTimerQueue::new();
+    let wake_calls = Arc::new(AtomicUsize::new(0));
+    let window_id = WindowId::new(70);
+    runtime.set_event_loop_waker(EventLoopWaker::new({
+        let wake_calls = wake_calls.clone();
+        move || {
+            wake_calls.fetch_add(1, Ordering::Relaxed);
+        }
+    }));
+    runtime.register_session(
+        window_id,
+        timers.clone(),
+        MainThreadQueue::new(),
+        Arc::new(AtomicBool::new(true)),
+    );
+
+    let cancelled = runtime.run_after(window_id, Duration::from_secs(60), || {});
+    assert_eq!(wake_calls.load(Ordering::Relaxed), 1);
+    cancelled.cancel();
+    assert_eq!(timers.len(), 0);
+    assert_eq!(wake_calls.load(Ordering::Relaxed), 2);
+
+    let dropped = runtime.run_after(window_id, Duration::from_secs(60), || {});
+    assert_eq!(wake_calls.load(Ordering::Relaxed), 3);
+    drop(dropped);
+    assert_eq!(timers.len(), 0);
+    assert_eq!(wake_calls.load(Ordering::Relaxed), 4);
+}
+
+#[test]
 fn closed_session_post_to_ui_does_not_wake_event_loop() {
     let runtime = AppRuntime::new();
     let queue = MainThreadQueue::new();

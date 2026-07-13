@@ -8,17 +8,6 @@ use crate::draw::spatial::Orientation;
 use crate::native::test_harness::FakeClipboard;
 use crate::native::traits::input::IClipboard;
 
-fn install_clipboard(clipboard: &mut FakeClipboard) {
-    let c: &mut dyn IClipboard = clipboard;
-    let wide: *mut dyn IClipboard = c;
-    let parts: (usize, usize) = unsafe { std::mem::transmute(wide) };
-    clipboard::set_clipboard_parts(parts.0, parts.1);
-}
-
-fn clear_clipboard() {
-    clipboard::set_clipboard_parts(0, 0);
-}
-
 #[test]
 fn sync_from_preserves_runtime_value() {
     let mut input = Input::new("old").with_value("kept");
@@ -33,18 +22,18 @@ fn sync_from_preserves_runtime_value() {
 fn ctrl_v_pastes_from_injected_clipboard() {
     let mut clipboard = FakeClipboard::new();
     clipboard.set_text("clip");
-    install_clipboard(&mut clipboard);
 
     let mut input = Input::new("").with_value("ab");
     input.cursor_char = 1;
-    let result = input.on_event(&SystemEvent::KeyDown {
-        key: KeyCode::V,
-        mods: KeyMod::CTRL,
+    let result = clipboard::with_clipboard(&mut clipboard, || {
+        input.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::V,
+            mods: KeyMod::CTRL,
+        })
     });
 
     assert_eq!(result, EventResult::Handled);
     assert_eq!(input.value(), "aclipb");
-    clear_clipboard();
 }
 
 #[test]

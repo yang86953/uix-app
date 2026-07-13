@@ -5,7 +5,7 @@ pub mod app_state;
 pub mod component_handle;
 pub(crate) mod component_patch;
 pub mod component_snapshot;
-pub mod core;
+pub(crate) mod core;
 pub mod event;
 pub mod foundation;
 pub mod layout;
@@ -25,7 +25,6 @@ pub use crate::native::traits::input::{
 pub use crate::native::traits::system::StatusLevel;
 pub use animation::{Animation, Easing};
 pub use app_state::AppState;
-pub use children::WidgetChildren;
 pub use clipboard::copy_to_clipboard;
 pub use component_handle::ComponentHandle;
 pub use component_snapshot::{
@@ -33,10 +32,18 @@ pub use component_snapshot::{
     ComponentConfigSnapshot, SnapshotCollapsePanel, SnapshotField, SnapshotFields, SnapshotSource,
     SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue,
 };
-pub use core::widget;
-pub(crate) use core::widget::WidgetTree;
+pub use core::children::WidgetChildren;
 pub use core::widget::{EventResult, IntoWidgetNode};
-pub use core::{children, context};
+pub(crate) use core::widget::WidgetTree;
+pub(crate) use core::{children, widget};
+
+// Public component traits and exported macros mention these opaque bridge
+// types. Keep them nameable without making the runtime module hierarchy an
+// application-facing API.
+#[doc(hidden)]
+pub mod __private {
+    pub use super::core::widget::{WidgetNode, WidgetTree};
+}
 pub use event::{
     ClickEvent, HandlerId, HandlerOptions, HandlerRegistration, HandlerTable, SemanticEvent,
     SemanticKind, SemanticPayload, SystemEvent, SystemEventKind,
@@ -60,3 +67,10 @@ pub use traits::{
     WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetLifecycle, WidgetRender,
 };
 pub use widgets::*;
+
+#[cfg(feature = "test-harness")]
+#[doc(hidden)]
+pub mod test_harness {
+    pub use super::core::widget::{WidgetCore, WidgetTree};
+    pub use super::view::adapter::ViewAdapter;
+}

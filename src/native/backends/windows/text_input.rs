@@ -157,16 +157,16 @@ impl WindowsTextInput {
             tsf: None,
         }
     }
-    pub fn set_hwnd(&mut self, hwnd: *mut std::ffi::c_void) {
-        self.hwnd = hwnd;
+    pub(crate) fn clear_target_window(&mut self, window_id: WindowId) {
+        if self.window_id == Some(window_id) {
+            self.deactivate_tsf();
+            self.window_id = None;
+            self.hwnd = ptr::null_mut();
+        }
     }
 
-    pub(crate) fn set_window_id(&mut self, window_id: WindowId) {
-        self.window_id = Some(window_id);
-    }
-
-    pub(crate) fn tsf_session_active(&self) -> bool {
-        self.tsf.is_some()
+    pub(crate) fn tsf_session_active_for(&self, window_id: WindowId) -> bool {
+        self.tsf.is_some() && self.window_id == Some(window_id)
     }
 
     pub(crate) fn tsf_client_id(&self) -> Option<u32> {
@@ -235,6 +235,25 @@ impl Default for WindowsTextInput {
 }
 
 impl ITextInput for WindowsTextInput {
+    fn set_target_window(
+        &mut self,
+        window_id: WindowId,
+        native_window: *mut std::ffi::c_void,
+    ) -> Result<()> {
+        if native_window.is_null() {
+            return Err(Error::new(
+                Errc::InvalidOperation,
+                "Windows text input: target window is null",
+            ));
+        }
+        if self.window_id != Some(window_id) || self.hwnd != native_window {
+            self.deactivate_tsf();
+            self.window_id = Some(window_id);
+            self.hwnd = native_window;
+        }
+        Ok(())
+    }
+
     fn start(&mut self) -> Result<()> {
         let hwnd = self.require_hwnd("start")?;
         // SAFETY: HWND is the selected live platform window.
@@ -334,4 +353,3 @@ impl ITextInput for WindowsTextInput {
         }
     }
 }
-

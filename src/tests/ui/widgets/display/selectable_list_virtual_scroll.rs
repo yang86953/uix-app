@@ -1,6 +1,6 @@
 use crate::tests::common::*;
-use crate::ui::widgets::display::selectable_list::*;
 use crate::ui::core::widget::WidgetCore;
+use crate::ui::widgets::display::selectable_list::*;
 
 fn long_selectable_list() -> SelectableList {
     let mut list = SelectableList::new();
@@ -92,9 +92,11 @@ fn selectable_list_wheel_registers_composite_scroll_strip() {
         EventResult::Handled
     );
 
-    let (frame, dx, dy) = tree
-        .drain_scroll_region_move()
+    let moves = tree
+        .scroll_region_moves()
         .expect("selectable list scroll should register memmove");
+    assert_eq!(moves.len(), 1);
+    let (frame, dx, dy) = moves[0];
     assert_eq!(frame, Rect::new(0.0, 0.0, 220.0, 120.0));
     assert_eq!(dx, 0.0);
     assert_eq!(dy, 40.0);

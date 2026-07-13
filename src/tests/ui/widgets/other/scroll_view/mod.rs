@@ -1,8 +1,8 @@
 use crate::tests::common::*;
-use crate::ui::widgets::Container;
 use crate::ui::widgets::other::scroll_view::scrollbar::{ScrollBar, ScrollbarOrientation};
 use crate::ui::widgets::other::scroll_view::*;
-use crate::ui::widgets::{ Collapse, CollapsePanel, Space };
+use crate::ui::widgets::Container;
+use crate::ui::widgets::{Collapse, CollapsePanel, Space};
 
 struct FixedWidget {
     size: Size,
@@ -249,9 +249,8 @@ fn scrollview_vertical_reserves_gutter_when_content_overflows() {
         Rect::new(0.0, 0.0, 400.0 - gutter, 500.0),
         "overflowing vertical ScrollView must reserve scrollbar gutter"
     );
-    let track = ScrollBar::new(ScrollbarOrientation::Vertical).track_rect_abs(Rect::new(
-        0.0, 0.0, 400.0, 200.0,
-    ));
+    let track = ScrollBar::new(ScrollbarOrientation::Vertical)
+        .track_rect_abs(Rect::new(0.0, 0.0, 400.0, 200.0));
     let child_right = tree.get(child).unwrap().frame().x + tree.get(child).unwrap().frame().w;
     assert!(
         child_right <= track.x + 0.5,
@@ -724,9 +723,11 @@ fn scrollview_wheel_registers_composite_scroll_strip() {
     assert!((strip.w - 300.0).abs() < 1e-6);
     assert!((strip.h - 50.0).abs() < 1e-6);
 
-    let (frame, dx, dy) = tree
-        .drain_scroll_region_move()
+    let moves = tree
+        .scroll_region_moves()
         .expect("scroll memmove should be registered");
+    assert_eq!(moves.len(), 1);
+    let (frame, dx, dy) = moves[0];
     assert_eq!(frame, Rect::new(0.0, 0.0, 300.0, 200.0));
     assert_eq!(dx, 0.0);
     assert_eq!(dy, 50.0);
@@ -779,7 +780,7 @@ fn scrollview_wheel_at_scroll_boundary_does_not_fallback_invalidate() {
     let dirty = tree.dirty_region();
     assert!(!dirty.full_frame);
     assert!(dirty.rects().is_empty());
-    assert!(tree.drain_scroll_region_move().is_none());
+    assert!(tree.scroll_region_moves().is_none());
 }
 
 #[test]
@@ -816,9 +817,11 @@ fn scrollview_keyboard_page_scroll_registers_composite_scroll_strip() {
         EventResult::Handled
     );
 
-    let (frame, dx, dy) = tree
-        .drain_scroll_region_move()
+    let moves = tree
+        .scroll_region_moves()
         .expect("keyboard scroll should register memmove");
+    assert_eq!(moves.len(), 1);
+    let (frame, dx, dy) = moves[0];
     assert_eq!(frame, Rect::new(0.0, 0.0, 300.0, 200.0));
     assert_eq!(dx, 0.0);
     assert_eq!(dy, 180.0);
@@ -871,9 +874,11 @@ fn scrollview_scrollbar_drag_registers_composite_scroll_strip() {
         EventResult::Handled
     );
 
-    let (frame, dx, dy) = tree
-        .drain_scroll_region_move()
+    let moves = tree
+        .scroll_region_moves()
         .expect("scrollbar drag should register memmove");
+    assert_eq!(moves.len(), 1);
+    let (frame, dx, dy) = moves[0];
     assert_eq!(frame, Rect::new(0.0, 0.0, 300.0, 200.0));
     assert_eq!(dx, 0.0);
     assert!(dy > 0.0 && dy < 200.0, "unexpected drag delta {dy}");
@@ -1120,12 +1125,37 @@ fn scrollview_programmatic_scroll_invalidates_composite_strip() {
     assert_eq!(dirty.rects().len(), 1);
     assert_eq!(dirty.rects()[0], Rect::new(0.0, 150.0, 300.0, 50.0));
 
-    let (frame, dx, dy) = tree
-        .drain_scroll_region_move()
+    let moves = tree
+        .scroll_region_moves()
         .expect("programmatic scroll should register memmove");
+    assert_eq!(moves.len(), 1);
+    let (frame, dx, dy) = moves[0];
     assert_eq!(frame, Rect::new(0.0, 0.0, 300.0, 200.0));
     assert_eq!(dx, 0.0);
     assert_eq!(dy, 50.0);
+}
+
+#[test]
+fn same_frame_scroll_viewports_are_batched_without_overwrite() {
+    let mut tree = WidgetTree::new();
+    let first = Rect::new(0.0, 0.0, 120.0, 80.0);
+    let second = Rect::new(180.0, 20.0, 90.0, 70.0);
+
+    assert!(tree.push_scroll_composite(first, 0.0, 12.0));
+    assert!(tree.push_scroll_composite(second, -8.0, 0.0));
+
+    assert_eq!(
+        tree.scroll_region_moves(),
+        Some(vec![(first, 0.0, 12.0), (second, -8.0, 0.0)])
+    );
+    assert_eq!(
+        tree.scroll_region_moves(),
+        Some(vec![(first, 0.0, 12.0), (second, -8.0, 0.0)]),
+        "observing a failed frame must not consume retry metadata"
+    );
+
+    tree.reset_invalidation();
+    assert!(tree.scroll_region_moves().is_none());
 }
 
 #[test]

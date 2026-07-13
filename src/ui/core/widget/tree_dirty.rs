@@ -109,7 +109,7 @@ impl WidgetTree {
                 rect,
                 scroll: Some(ScrollDelta { dx, dy }),
             });
-        self.scroll_region_move = Some((viewport, dx, dy));
+        self.scroll_region_moves.push((viewport, dx, dy));
         true
     }
 
@@ -205,12 +205,16 @@ impl WidgetTree {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clear();
-        self.scroll_region_move = None;
+        self.scroll_region_moves.clear();
     }
 
-    /// 获取滚动偏移（用于 scroll_region 像素移动）。
-    pub fn drain_scroll_region_move(&mut self) -> Option<(Rect, f32, f32)> {
-        self.scroll_region_move.take()
+    /// 获取同帧全部滚动视口；提交成功前保留，供失败帧原样重试。
+    pub(crate) fn scroll_region_moves(&self) -> Option<Vec<(Rect, f32, f32)>> {
+        if self.scroll_region_moves.is_empty() {
+            None
+        } else {
+            Some(self.scroll_region_moves.clone())
+        }
     }
 
     pub fn mark_full_frame_dirty(&mut self) {

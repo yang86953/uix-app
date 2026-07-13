@@ -109,12 +109,12 @@ impl WindowsPlatform {
         self.clipboard_subsys.set_hwnd(hwnd);
         self.cursor_subsys.set_hwnd(hwnd);
         self.file_dialog_subsys.set_hwnd(hwnd);
-        self.text_input_subsys.set_hwnd(hwnd);
         self.timer_subsys.set_hwnd(hwnd);
         self.notification_subsys.set_hwnd(hwnd);
     }
 
     pub(crate) fn forget_window(&mut self, window_id: WindowId) {
+        self.text_input_subsys.clear_target_window(window_id);
         let removed = self.window_handles.remove(&window_id);
         if removed == Some(self.hwnd as usize) {
             if let Some(hwnd) = self.window_handles.values().next().copied() {
@@ -268,8 +268,6 @@ impl IWindowManager for WindowsPlatform {
             let binding = Box::from_raw(binding_ptr);
             self.window_handles.insert(window_id, hwnd as usize);
             self.select_window(hwnd);
-            self.text_input_subsys.set_window_id(window_id);
-
             let presenter: Box<dyn IPresenter> = match GdiPresenter::new(hwnd, width, height) {
                 Ok(p) => Box::new(p),
                 Err(e) => {
@@ -342,4 +340,3 @@ impl Drop for WindowsPlatform {
         self.notification_subsys.remove_icon();
     }
 }
-

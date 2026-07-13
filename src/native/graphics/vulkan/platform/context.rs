@@ -1,10 +1,10 @@
 //! Vulkan graphics context for Linux Wayland, Windows Win32, and macOS MoltenVK
 //! (PixelUpload via shared swapchain stage/present).
 
-use std::ffi::{CStr, c_void};
+use std::ffi::{c_void, CStr};
 use std::ptr;
 
-use ash::{Entry, vk};
+use ash::{vk, Entry};
 
 use crate::core::{Errc, Error, Result};
 use crate::native::traits::present::{
@@ -106,8 +106,8 @@ impl VulkanContext {
 
         let entry =
             unsafe { Entry::load() }.map_err(|err| loader_err("load Vulkan loader", err))?;
-        let app_name = CStr::from_bytes_with_nul(b"uix\0").expect("static C string");
-        let engine_name = CStr::from_bytes_with_nul(b"uix\0").expect("static C string");
+        let app_name = c"uix";
+        let engine_name = c"uix";
         let app_info = vk::ApplicationInfo::default()
             .application_name(app_name)
             .application_version(1)
@@ -156,15 +156,16 @@ impl VulkanContext {
         let device_info = vk::DeviceCreateInfo::default()
             .queue_create_infos(std::slice::from_ref(&queue_info))
             .enabled_extension_names(&device_extensions);
-        let device =
-            match unsafe { instance.create_device(selection.physical_device, &device_info, None) } {
-                Ok(device) => device,
-                Err(err) => {
-                    destroy_failed_surface(&surface_loader, surface);
-                    unsafe { instance.destroy_instance(None) };
-                    return Err(vk_err("vkCreateDevice", err));
-                }
-            };
+        let device = match unsafe {
+            instance.create_device(selection.physical_device, &device_info, None)
+        } {
+            Ok(device) => device,
+            Err(err) => {
+                destroy_failed_surface(&surface_loader, surface);
+                unsafe { instance.destroy_instance(None) };
+                return Err(vk_err("vkCreateDevice", err));
+            }
+        };
         let queue = unsafe { device.get_device_queue(selection.family_index, 0) };
         let swapchain_loader = ash::khr::swapchain::Device::new(&instance, &device);
         let command_pool_info = vk::CommandPoolCreateInfo::default()
@@ -831,7 +832,15 @@ impl IGraphicsContext for VulkanContext {
                 "VulkanContext: no uploaded frame to read back (cpu_shadow empty)",
             ));
         }
-        crop_cpu_shadow(&self.cpu_shadow, self.width, self.height, x, y, width, height)
+        crop_cpu_shadow(
+            &self.cpu_shadow,
+            self.width,
+            self.height,
+            x,
+            y,
+            width,
+            height,
+        )
     }
 
     fn width(&self) -> i32 {
@@ -922,9 +931,8 @@ fn create_platform_surface(
         let surface_info = vk::WaylandSurfaceCreateInfoKHR::default()
             .display(wayland.display.cast())
             .surface(wayland.surface.cast());
-        let surface =
-            unsafe { wayland_surface_loader.create_wayland_surface(&surface_info, None) }
-                .map_err(|err| vk_err("vkCreateWaylandSurfaceKHR", err))?;
+        let surface = unsafe { wayland_surface_loader.create_wayland_surface(&surface_info, None) }
+            .map_err(|err| vk_err("vkCreateWaylandSurfaceKHR", err))?;
         Ok((surface, wayland_surface_loader))
     }
     #[cfg(windows)]
@@ -956,8 +964,8 @@ fn create_platform_surface(
             ));
         }
         let metal_surface_loader = ash::ext::metal_surface::Instance::new(entry, instance);
-        let surface_info =
-            vk::MetalSurfaceCreateInfoEXT::default().layer(native_surface as *const vk::CAMetalLayer);
+        let surface_info = vk::MetalSurfaceCreateInfoEXT::default()
+            .layer(native_surface as *const vk::CAMetalLayer);
         let surface = unsafe { metal_surface_loader.create_metal_surface(&surface_info, None) }
             .map_err(|err| vk_err("vkCreateMetalSurfaceEXT", err))?;
         Ok((surface, metal_surface_loader))
@@ -971,7 +979,11 @@ fn device_extension_names(
     #[cfg(target_os = "macos")]
     {
         let mut extensions = vec![ash::khr::swapchain::NAME.as_ptr()];
-        if !device_has_extension(instance, physical_device, ash::khr::portability_subset::NAME)? {
+        if !device_has_extension(
+            instance,
+            physical_device,
+            ash::khr::portability_subset::NAME,
+        )? {
             return Err(Error::new(
                 Errc::PlatformError,
                 "VulkanContext: MoltenVK requires VK_KHR_portability_subset on the selected device",
@@ -999,7 +1011,10 @@ pub(crate) fn crop_cpu_shadow(
     if width <= 0 || height <= 0 {
         return Ok(Vec::new());
     }
-    if x < 0 || y < 0 || x.saturating_add(width) > surface_width || y.saturating_add(height) > surface_height
+    if x < 0
+        || y < 0
+        || x.saturating_add(width) > surface_width
+        || y.saturating_add(height) > surface_height
     {
         return Err(invalid(format!(
             "VulkanContext: readback rect ({x},{y},{width}x{height}) outside {surface_width}x{surface_height}"
@@ -1164,4 +1179,3 @@ pub(crate) fn staging_size(width: i32, height: i32) -> vk::DeviceSize {
         .saturating_mul(height.max(1) as vk::DeviceSize)
         .saturating_mul(4)
 }
-

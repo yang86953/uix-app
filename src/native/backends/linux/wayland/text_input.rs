@@ -8,7 +8,7 @@
 use std::sync::atomic::Ordering;
 use wayland_protocols::unstable::text_input::v3::client::zwp_text_input_v3;
 
-use crate::core::{Errc, Error, Rect, Result};
+use crate::core::{Errc, Error, Rect, Result, WindowId};
 use crate::native::traits::event::UiEvent;
 use crate::native::traits::input::ITextInput;
 
@@ -19,7 +19,22 @@ use super::WaylandBackend;
 // ════════════════════════════════════════════════════════════════════════════
 
 impl ITextInput for WaylandBackend {
+    fn set_target_window(
+        &mut self,
+        window_id: WindowId,
+        _native_window: *mut std::ffi::c_void,
+    ) -> Result<()> {
+        self.text_input_window_id = Some(window_id);
+        Ok(())
+    }
+
     fn start(&mut self) -> Result<()> {
+        let window_id = self.text_input_window_id.ok_or_else(|| {
+            Error::new(
+                Errc::InvalidOperation,
+                "Wayland text_input: no target window selected",
+            )
+        })?;
         let seat = match self.seat.as_ref() {
             Some(s) => s,
             None => {
@@ -51,7 +66,7 @@ impl ITextInput for WaylandBackend {
                 if let Some(ref t) = text {
                     if !t.is_empty() {
                         if let Ok(mut q) = events.lock() {
-                            q.push_back(UiEvent::text_input(t.clone()));
+                            q.push_back(UiEvent::text_input(t.clone()).for_window(window_id));
                         }
                     }
                 }

@@ -1,7 +1,7 @@
 use crate::tests::common::*;
+use crate::ui::core::widget::WidgetCore;
 use crate::ui::widgets::display::tree::TREE_ROW_HEIGHT;
 use crate::ui::widgets::display::tree::*;
-use crate::ui::core::widget::WidgetCore;
 
 fn large_tree() -> Tree {
     let nodes: Vec<TreeNode> = (0..80)
@@ -67,9 +67,11 @@ fn tree_wheel_registers_composite_scroll_strip() {
         EventResult::Handled
     );
 
-    let (frame, dx, dy) = widget_tree
-        .drain_scroll_region_move()
+    let moves = widget_tree
+        .scroll_region_moves()
         .expect("tree scroll should register memmove");
+    assert_eq!(moves.len(), 1);
+    let (frame, dx, dy) = moves[0];
     assert_eq!(frame, Rect::new(0.0, 0.0, 200.0, 112.0));
     assert_eq!(dx, 0.0);
     assert_eq!(dy, 40.0);

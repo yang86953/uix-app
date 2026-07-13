@@ -75,6 +75,39 @@ fn cancel_removes_pending_timer() {
 }
 
 #[test]
+fn pending_timer_removal_wakes_after_releasing_queue_lock() {
+    let timers = AppTimerQueue::new();
+    let wake_calls = Arc::new(AtomicUsize::new(0));
+    timers.set_removal_waker(Arc::new({
+        let timers = timers.clone();
+        let wake_calls = wake_calls.clone();
+        move || {
+            // This would deadlock if TimerHandle invoked external wake code
+            // while still holding AppTimerQueueInner.
+            assert_eq!(timers.len(), 0);
+            wake_calls.fetch_add(1, Ordering::Relaxed);
+        }
+    }));
+
+    let cancelled = timers.run_after(Duration::from_secs(1), || {});
+    cancelled.cancel();
+    assert_eq!(wake_calls.load(Ordering::Relaxed), 1);
+
+    let dropped = timers.run_after(Duration::from_secs(1), || {});
+    drop(dropped);
+    assert_eq!(wake_calls.load(Ordering::Relaxed), 2);
+
+    let completed = timers.run_after(Duration::ZERO, || {});
+    let id = timers.deadlines()[0].0;
+    assert!(timers.fire(id, Instant::now()));
+    drop(completed);
+    assert_eq!(wake_calls.load(Ordering::Relaxed), 2);
+
+    // Break the test-only callback cycle (queue -> callback -> queue).
+    timers.set_removal_waker(Arc::new(|| {}));
+}
+
+#[test]
 fn run_after_deadline_uses_injected_test_clock() {
     let start = Instant::now();
     let clock = TestClock::new(start);

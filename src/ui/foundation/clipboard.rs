@@ -1,72 +1,81 @@
-//! 剪贴板服务 — 通过 thread-local 使 widget 可访问平台剪贴板。
+//! 剪贴板服务——让 widget 在事件分发期间访问当前平台剪贴板。
 //!
-//! 将 IClipboard fat pointer 拆分为 (data, vtable) 两个 usize 存储，
-//! 断开与 platform borrow 的 provenance 关联。
-//!
-//! 用法：
-//!   1. 应用层调用 `set_clipboard_parts(data, vtable)` 注入剪贴板指针
-//!   2. widget 在 Ctrl+C / Ctrl+V 时调用 `copy_to_clipboard(text)` / `read_text_from_clipboard()`
+//! 平台剪贴板由事件循环按词法作用域托管；作用域结束后立即恢复先前服务，
+//! 不在公开安全 API 中暴露或长期保存可伪造、可悬垂的 trait-object 指针。
 
 use crate::native::traits::input::IClipboard;
-use std::cell::Cell;
+use std::cell::RefCell;
+use std::marker::PhantomData;
+use std::ptr::NonNull;
+use std::rc::Rc;
 
 thread_local! {
-    static DATA: Cell<usize> = const { Cell::new(0) };
-    static VTABLE: Cell<usize> = const { Cell::new(0) };
+    static CURRENT: RefCell<Option<NonNull<dyn IClipboard>>> = const { RefCell::new(None) };
 }
 
-/// 注入剪贴板指针的拆分部分（断开 borrow provenance）。
-pub fn set_clipboard_parts(data: usize, vtable: usize) {
-    DATA.with(|d| d.set(data));
-    VTABLE.with(|v| v.set(vtable));
+/// 在一次受框架托管的调用期间安装剪贴板服务。
+///
+/// 该函数仅供运行时和 crate 内测试使用。`ClipboardScope` 会在正常返回或
+/// panic 展开时恢复先前服务，因此指针不会越过 `clipboard` 的借用期。
+pub(crate) fn with_clipboard<R>(
+    clipboard: &mut dyn IClipboard,
+    operation: impl FnOnce() -> R,
+) -> R {
+    let pointer = NonNull::from(clipboard);
+    // `thread_local!` 的存储类型要求 trait object 为 `'static`。这里只擦除
+    // 指针上的借用期；下方作用域守卫保证它在原借用结束前被移除。
+    let pointer: NonNull<dyn IClipboard> = unsafe { std::mem::transmute(pointer) };
+    let previous = CURRENT.with(|slot| slot.replace(Some(pointer)));
+    let _scope = ClipboardScope {
+        previous,
+        _not_send: PhantomData,
+    };
+    operation()
 }
 
-/// widget 调用此方法将文本写入剪贴板。
-pub fn copy_to_clipboard(text: &str) {
-    DATA.with(|data| {
-        let d = data.get();
-        if d == 0 {
-            return;
-        }
-        VTABLE.with(|vtable| {
-            let v = vtable.get();
-            let ptr = fat_ptr_from_parts::<dyn IClipboard>(d, v);
-            unsafe {
-                (*ptr).set_text(text);
-            }
+struct ClipboardScope {
+    previous: Option<NonNull<dyn IClipboard>>,
+    // 作用域必须在安装它的线程上销毁，才能恢复正确的 thread-local 状态。
+    _not_send: PhantomData<Rc<()>>,
+}
+
+impl Drop for ClipboardScope {
+    fn drop(&mut self) {
+        CURRENT.with(|slot| {
+            slot.replace(self.previous.take());
         });
+    }
+}
+
+/// widget 调用此方法将文本写入当前平台剪贴板。
+///
+/// 没有活动窗口事件分发时为 no-op；剪贴板的生命周期由框架维护。
+pub fn copy_to_clipboard(text: &str) {
+    CURRENT.with(|slot| {
+        // 在平台调用期间持有 RefCell 独占借用。若某个自定义 IClipboard
+        // 实现重入本服务，则在创建第二个 `&mut` 前拒绝本次调用。
+        let Ok(mut current) = slot.try_borrow_mut() else {
+            return;
+        };
+        let Some(pointer) = current.as_mut() else {
+            return;
+        };
+        // SAFETY: `with_clipboard` 安装的指针在作用域结束前始终有效；当前
+        // RefCell 独占借用同时阻止通过本服务重入并创建第二个可变引用。
+        unsafe { pointer.as_mut().set_text(text) };
     });
 }
 
-/// widget 调用此方法读取剪贴板文本。
+/// widget 调用此方法读取当前平台剪贴板文本。
 pub fn read_text_from_clipboard() -> Option<String> {
-    DATA.with(|data| {
-        let d = data.get();
-        if d == 0 {
+    CURRENT.with(|slot| {
+        let Ok(current) = slot.try_borrow_mut() else {
             return None;
-        }
-        VTABLE.with(|vtable| {
-            let v = vtable.get();
-            let ptr = fat_ptr_from_parts::<dyn IClipboard>(d, v);
-            let text = unsafe { (*ptr).text() };
-            if text.is_empty() {
-                None
-            } else {
-                Some(text)
-            }
-        })
+        };
+        let pointer = current.as_ref()?;
+        // SAFETY: 见 `copy_to_clipboard`。读取期间仍持有 RefCell 独占借用，
+        // 因而自定义实现无法通过本服务重入并与该引用发生别名。
+        let text = unsafe { pointer.as_ref().text() };
+        (!text.is_empty()).then_some(text)
     })
-}
-
-fn fat_ptr_from_parts<T: ?Sized>(data: usize, vtable: usize) -> *mut T {
-    union FatPtr<T: ?Sized> {
-        wide: *mut T,
-        parts: (usize, usize),
-    }
-    unsafe {
-        FatPtr::<T> {
-            parts: (data, vtable),
-        }
-        .wide
-    }
 }

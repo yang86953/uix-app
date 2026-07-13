@@ -55,10 +55,12 @@ fn encoded_picture_replaces_cpu_offscreen_pixels_and_begin_clears_stale_content(
 
     let mut encoder = FrameEncoder::new(4, 3).expect("encoder");
     encoder.clear(Color::transparent());
-    encoder.cpu_segment([FrameRasterOp::FillRect {
-        rect: FrameRect::new(1, 1, 2, 1),
-        color: Color::from_rgba(20, 40, 200, 128),
-    }]);
+    encoder
+        .cpu_segment([FrameRasterOp::FillRect {
+            rect: FrameRect::new(1, 1, 2, 1),
+            color: Color::from_rgba(20, 40, 200, 128),
+        }])
+        .unwrap();
     assert_eq!(
         backend
             .try_execute_encoded_picture(&handle, &encoder)

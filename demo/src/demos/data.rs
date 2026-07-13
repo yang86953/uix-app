@@ -112,7 +112,7 @@ pub fn page_data(ctx: &DemoCtx<'_>) -> ViewNode {
                 .child(Badge::new().count(5).color(tk.color_error))
                 .child(Tag::new("Tag").color(TagColor::Info)),
         )
-        .section("Image / Empty / Result")
+        .section("Image / Empty / ResultView")
         .push(
             demo_row(80.0)
                 .child(
@@ -125,9 +125,9 @@ pub fn page_data(ctx: &DemoCtx<'_>) -> ViewNode {
         .push(Empty::new().description("暂无数据"))
         .push(
             tree! { Container::new().size(INNER_W, 120.0).dir(FlexDirection::Row).gap(16.0) => [
-                Result::new(ResultType::Success).title("成功").into_node(),
-                Result::new(ResultType::Error).title("失败").into_node(),
-                Result::new(ResultType::Warning).title("警告").into_node(),
+                ResultView::new(ResultType::Success).title("成功").into_node(),
+                ResultView::new(ResultType::Error).title("失败").into_node(),
+                ResultView::new(ResultType::Warning).title("警告").into_node(),
             ]},
         )
         .section("Skeleton")

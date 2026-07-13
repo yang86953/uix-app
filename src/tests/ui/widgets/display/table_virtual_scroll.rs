@@ -1,6 +1,6 @@
 use crate::tests::common::*;
-use crate::ui::widgets::display::table::*;
 use crate::ui::core::widget::WidgetCore;
+use crate::ui::widgets::display::table::*;
 
 fn large_table() -> Table {
     let rows: Vec<Vec<String>> = (0..100)
@@ -79,9 +79,11 @@ fn table_wheel_registers_composite_scroll_strip() {
         EventResult::Handled
     );
 
-    let (frame, dx, dy) = tree
-        .drain_scroll_region_move()
+    let moves = tree
+        .scroll_region_moves()
         .expect("table scroll should register memmove");
+    assert_eq!(moves.len(), 1);
+    let (frame, dx, dy) = moves[0];
     assert_eq!(frame, Rect::new(0.0, 0.0, 320.0, 120.0));
     assert_eq!(dx, 0.0);
     assert_eq!(dy, 40.0);

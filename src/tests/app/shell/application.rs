@@ -40,9 +40,27 @@ use crate::native::traits::event::{
 };
 use crate::ui::state::State;
 use crate::ui::view::combinators::{dynamic_label, label};
-use crate::ui::widgets::Label;
+use crate::ui::widgets::{Input, Label};
 use crate::ui::{ HandlerRegistration };
 use std::any::Any;
+
+fn drain_secondary_once(secondary_windows: &mut [SecondaryWindowSession]) -> bool {
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::new(0.0, 0.0));
+    let clock = system_clock();
+    drain_secondary_window_frames(
+        secondary_windows,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        clock.as_ref(),
+    )
+}
 
 #[test]
 fn graphics_recovery_rebuilder_uses_initialized_software_only_at_final_fallback() {
@@ -546,6 +564,7 @@ fn drain_pending_open_windows_bootstraps_secondary_session() {
         .handle
         .update_view(|| label("updated child"));
     assert!(drain_secondary_window_queues(&mut secondary_windows));
+    assert!(drain_secondary_once(&mut secondary_windows));
     let (tree, _) = secondary_windows[0].session.tree_and_engine_mut();
     let text = tree
         .root()
@@ -595,6 +614,7 @@ fn drain_secondary_window_queues_drains_all_sessions() {
         .update_view(|| label("updated b"));
 
     assert!(drain_secondary_window_queues(&mut secondary_windows));
+    assert!(drain_secondary_once(&mut secondary_windows));
     let (first_tree, _) = secondary_windows[0].session.tree_and_engine_mut();
     let first_text = first_tree
         .root()
@@ -656,6 +676,80 @@ fn dispatch_secondary_window_event_routes_by_window_id() {
     ));
 
     assert!(child_focus.load(Ordering::Relaxed));
+}
+
+#[test]
+fn secondary_ime_is_window_scoped_and_delayed_blur_does_not_stop_new_owner() {
+    let mut platform = FakePlatform::new();
+    let _root_window = platform
+        .window_manager()
+        .create_window("Root", 800, 600)
+        .unwrap();
+    let runtime = AppRuntime::new();
+    runtime.register_session(
+        WindowId::new(1),
+        AppTimerQueue::new(),
+        MainThreadQueue::new(),
+        Arc::new(AtomicBool::new(true)),
+    );
+    let first = runtime.request_open_window(WindowConfig::new("First", 320, 240, || {
+        ViewNode::leaf(Input::new("first"))
+    }));
+    let second = runtime.request_open_window(WindowConfig::new("Second", 320, 240, || {
+        ViewNode::leaf(Input::new("second"))
+    }));
+    let mut secondary_windows = Vec::new();
+    assert_eq!(
+        drain_pending_open_windows(
+            &mut platform,
+            &runtime,
+            &AppState::new(),
+            &DiContainer::new(),
+            None,
+            &mut secondary_windows,
+        ),
+        2
+    );
+    for window in &mut secondary_windows {
+        let (tree, _) = window.session.tree_and_engine_mut();
+        tree.set_focus(tree.root_id());
+    }
+
+    let focus = |window_id| {
+        UiEvent::new(UiEventType::WindowFocus, UiEventPayload::None).for_window(window_id)
+    };
+    let blur = |window_id| {
+        UiEvent::new(UiEventType::WindowBlur, UiEventPayload::None).for_window(window_id)
+    };
+    assert!(dispatch_secondary_window_event(
+        &mut secondary_windows,
+        &mut platform,
+        &focus(first.window_id),
+    ));
+    assert!(dispatch_secondary_window_event(
+        &mut secondary_windows,
+        &mut platform,
+        &focus(second.window_id),
+    ));
+    assert_eq!(platform.text_input.state.start_calls, 2);
+    assert_eq!(platform.text_input.state.target_window, Some(second.window_id));
+
+    assert!(dispatch_secondary_window_event(
+        &mut secondary_windows,
+        &mut platform,
+        &blur(first.window_id),
+    ));
+    assert!(platform.text_input.state.active);
+    assert_eq!(platform.text_input.state.stop_calls, 0);
+    assert_eq!(platform.text_input.state.target_window, Some(second.window_id));
+
+    assert!(dispatch_secondary_window_event(
+        &mut secondary_windows,
+        &mut platform,
+        &blur(second.window_id),
+    ));
+    assert!(!platform.text_input.state.active);
+    assert_eq!(platform.text_input.state.stop_calls, 1);
 }
 
 #[test]

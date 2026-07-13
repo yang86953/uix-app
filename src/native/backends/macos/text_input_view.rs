@@ -43,6 +43,36 @@ impl MacosTextInput {
 }
 
 impl crate::native::traits::input::ITextInput for MacosTextInput {
+    fn set_target_window(
+        &mut self,
+        _window_id: crate::core::WindowId,
+        native_window: *mut std::ffi::c_void,
+    ) -> crate::core::Result<()> {
+        if native_window.is_null() {
+            return Err(crate::core::Error::new(
+                crate::core::Errc::InvalidOperation,
+                "macOS text input: target window is null",
+            ));
+        }
+        // SAFETY: `native_window` is the live NSWindow owned by PlatformWindow.
+        let view = unsafe { cocoa::msg_id(native_window, "contentView") };
+        if view.is_null() {
+            return Err(crate::core::Error::new(
+                crate::core::Errc::InvalidOperation,
+                "macOS text input: target window has no content view",
+            ));
+        }
+        let previous = self.view.replace(view);
+        if previous != view && !previous.is_null() && self.session_active.load(Ordering::Relaxed) {
+            // SAFETY: the previous view belongs to a still-live PlatformWindow;
+            // switching target must release its first-responder ownership.
+            unsafe {
+                cocoa::resign_view_first_responder(previous);
+            }
+        }
+        Ok(())
+    }
+
     fn start(&mut self) -> crate::core::Result<()> {
         self.session_active.store(true, Ordering::Relaxed);
         let view = self.view.get();

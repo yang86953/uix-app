@@ -1433,22 +1433,22 @@ fn reconcile_descriptions_patches_instance_and_syncs_config() {
 
 #[test]
 fn reconcile_result_patches_instance_and_syncs_config() {
-    use crate::ui::widgets::{Result as ResultWidget, ResultType};
+    use crate::ui::widgets::{ResultType, ResultView};
 
-    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(ResultWidget::new(ResultType::Info)));
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(ResultView::new(ResultType::Info)));
     let root_id = tree.root_id().expect("result root should exist");
     let before_ptr = tree
         .get(root_id)
         .unwrap()
         .component()
         .as_any()
-        .downcast_ref::<ResultWidget>()
-        .unwrap() as *const ResultWidget;
+        .downcast_ref::<ResultView>()
+        .unwrap() as *const ResultView;
 
     ViewAdapter::reconcile_nodes(
         &mut tree,
         ViewNode::leaf(
-            ResultWidget::new(ResultType::Success)
+            ResultView::new(ResultType::Success)
                 .title("Done")
                 .subtitle("All set")
                 .extra_text("Continue"),
@@ -1460,9 +1460,9 @@ fn reconcile_result_patches_instance_and_syncs_config() {
         .unwrap()
         .component()
         .as_any()
-        .downcast_ref::<ResultWidget>()
+        .downcast_ref::<ResultView>()
         .unwrap();
-    assert_eq!(result as *const ResultWidget, before_ptr);
+    assert_eq!(result as *const ResultView, before_ptr);
     assert_eq!(
         result.snapshot_fields(),
         SnapshotFields::Result {
@@ -4641,7 +4641,7 @@ fn input_on_change_is_registered_as_semantic_handler() {
 #[test]
 fn static_display_widgets_are_picture_eligible() {
     use crate::draw::compositor::PicturePolicy;
-use crate::ui::widgets::{ Alert, Avatar, Badge, BarChart, Content, Descriptions, Divider, Empty, Footer, Grid, Header, Icon, Layout, LineChart, List, PieChart, QRCode, Result as ResultWidget, ResultType, Sider, Skeleton, Space, Tag, Timeline, Watermark };
+use crate::ui::widgets::{ Alert, Avatar, Badge, BarChart, Content, Descriptions, Divider, Empty, Footer, Grid, Header, Icon, Layout, LineChart, List, PieChart, QRCode, ResultType, ResultView, Sider, Skeleton, Space, Tag, Timeline, Watermark };
 
     let widgets: Vec<Box<dyn WidgetComponent>> = vec![
         Box::new(Space::new()),
@@ -4659,7 +4659,7 @@ use crate::ui::widgets::{ Alert, Avatar, Badge, BarChart, Content, Descriptions,
         Box::new(Empty::new()),
         Box::new(Tag::new("stable")),
         Box::new(Descriptions::new()),
-        Box::new(ResultWidget::new(ResultType::Info)),
+        Box::new(ResultView::new(ResultType::Info)),
         Box::new(Alert::new("stable")),
         Box::new(Timeline::new()),
         Box::new(Skeleton::new()),

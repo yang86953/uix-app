@@ -91,7 +91,7 @@ pub const COVERAGE: &[(&str, &str, &str, bool)] = &[
     ("数据", "Collapse / CollapsePanel", "数据展示", true),
     ("数据", "Descriptions", "数据展示", true),
     ("数据", "Avatar / Badge / Tag", "数据展示", true),
-    ("数据", "Image / Empty / Result", "数据展示", true),
+    ("数据", "Image / Empty / ResultView", "数据展示", true),
     ("数据", "Skeleton", "数据展示", true),
     ("数据", "Timeline / Calendar", "数据展示", true),
     ("数据", "Table", "数据展示", true),

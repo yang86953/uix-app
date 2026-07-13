@@ -116,13 +116,13 @@ macro_rules! impl_widget_component {
 #[macro_export]
 macro_rules! tree {
     ($parent:expr => [$($child:expr),+ $(,)?]) => {
-        $crate::ui::core::widget::WidgetNode::new(
+        $crate::ui::__private::WidgetNode::new(
             Box::new($parent),
             vec![$($crate::ui::IntoWidgetNode::into_node($child)),+],
         )
     };
     ($widget:expr) => {
-        $crate::ui::core::widget::WidgetNode::leaf(Box::new($widget))
+        $crate::ui::__private::WidgetNode::leaf(Box::new($widget))
     };
 }
 
@@ -570,6 +570,14 @@ macro_rules! __component_method_builder {
         fn layout_children($($p)*) -> $ret $body
     };
     // ── WidgetRender ──
+    (render; WidgetRender; (&$this:ident, $frame:ident : $frame_ty:ty, $ctx:ident : &mut $ctx_ty:ty) $body:block) => {
+        fn render(
+            &$this,
+            $frame: $frame_ty,
+            $ctx: &mut $ctx_ty,
+            _tree: &$crate::ui::__private::WidgetTree,
+        ) $body
+    };
     (render; WidgetRender; ($($p:tt)*) $body:block) => {
         fn render($($p)*) $body
     };
@@ -691,6 +699,14 @@ macro_rules! __match_trait_method {
         fn layout_children($($p)*) -> $ret $body
     };
     // ── WidgetRender ──
+    (WidgetRender, render, (&$this:ident, $frame:ident : $frame_ty:ty, $ctx:ident : &mut $ctx_ty:ty) $body:block) => {
+        fn render(
+            &$this,
+            $frame: $frame_ty,
+            $ctx: &mut $ctx_ty,
+            _tree: &$crate::ui::__private::WidgetTree,
+        ) $body
+    };
     (WidgetRender, render, ($($p:tt)*) $body:block) => {
         fn render($($p)*) $body
     };

@@ -3,7 +3,6 @@
 //! 运行：`cargo run --bin uix-demo -- --cli`
 
 use std::cell::Cell;
-use std::result::Result;
 
 use uix::core::diagnostic::{
     LogMiddleware as SvcLogMiddleware, MiddlewareContext, MiddlewarePipeline, RetryMiddleware,

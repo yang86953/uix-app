@@ -528,7 +528,10 @@ impl NativeGpuCanvas2D {
         }
     }
 
-    pub(crate) fn submit_native(&mut self, gpu_ctx: &mut dyn IGraphicsContext) -> Result<(), Error> {
+    pub(crate) fn submit_native(
+        &mut self,
+        gpu_ctx: &mut dyn IGraphicsContext,
+    ) -> Result<(), Error> {
         let vw = self.surface_w as f32;
         let vh = self.surface_h as f32;
         let mut start = 0;
@@ -1304,17 +1307,19 @@ impl NativeGpuBackend {
             .gpu_ctx
             .read_pixels(0, 0, target_width, target_height)
             .map_err(|error| {
-                Error::new(
-                    crate::core::Errc::NotImplemented,
-                    format!(
-                        "NativeGpuBackend: destination-dependent FrameRasterOp requires readback ({})",
-                        error.what()
-                    ),
-                )
+                if error.code() == Errc::NotImplemented {
+                    Error::new(
+                        Errc::NotImplemented,
+                        "NativeGpuBackend: destination-dependent FrameRasterOp requires readback",
+                    )
+                    .with_source(error)
+                } else {
+                    error
+                }
             })?;
         if pixels.len() != expected {
             return Err(Error::new(
-                crate::core::Errc::NotImplemented,
+                Errc::InvalidState,
                 format!(
                     "NativeGpuBackend: destination-dependent FrameRasterOp readback extent mismatch (got {}, expected {expected})",
                     pixels.len()
@@ -1330,13 +1335,15 @@ impl NativeGpuBackend {
         self.gpu_ctx
             .upload_surface_pixels(&pixels, target_width, target_height)
             .map_err(|error| {
-                Error::new(
-                    crate::core::Errc::NotImplemented,
-                    format!(
-                        "NativeGpuBackend: destination-dependent FrameRasterOp requires replace upload ({})",
-                        error.what()
-                    ),
-                )
+                if error.code() == Errc::NotImplemented {
+                    Error::new(
+                        Errc::NotImplemented,
+                        "NativeGpuBackend: destination-dependent FrameRasterOp requires replace upload",
+                    )
+                    .with_source(error)
+                } else {
+                    error
+                }
             })
     }
 
@@ -1748,4 +1755,3 @@ impl Drop for NativeGpuBackend {
         }
     }
 }
-
