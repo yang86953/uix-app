@@ -1,10 +1,10 @@
 ﻿# UIX
 
-Rust **跨平台全栈 App 框架**（桌面 + 移动端愿景）。入口：`use uix::prelude::*;`。
+Rust **跨平台 App 框架**（桌面 + 移动端愿景）。入口：`use uix::prelude::*;`。
 
-声明式 UI + 原生绘制 + 零闲置。应用 API 为 Rust 门面，现阶段无独立 UI DSL。
+声明式 UI + 原生绘制 + 零闲置。全栈指 UI + 应用壳 + 本地 Settings，**不含**网络 / 同步。应用 API 为 Rust 门面，现阶段无独立 UI DSL。
 
-> **当前**：桌面 Win/Linux/macOS 已编码；**Windows 优先**；移动端未做。→ [`产品`](docs/产品.md) · [`使用`](docs/使用.md) · [`架构`](docs/架构.md)
+> **当前**：桌面 Win/Linux/macOS 源码路径已在树中；**Windows 优先**生产可用（P6 未闭合）；移动端未做。→ [`产品`](docs/产品.md) · [`使用`](docs/使用.md) · [`架构`](docs/架构.md)
 
 ## 快速开始
 
@@ -41,7 +41,7 @@ fn main() {
 }
 ```
 
-主题 / 多窗 / Settings → [`docs/使用.md`](docs/使用.md)。
+主题 / 多窗 / 浮层 / Settings 等 → [`docs/使用.md`](docs/使用.md)。
 
 ## 功能域
 
