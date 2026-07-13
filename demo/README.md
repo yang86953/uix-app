@@ -89,7 +89,7 @@ demo/src/
 
 ## 演示 gap
 
-本 demo 缺：多窗口 live 演示页、故障注入页、跨 OS `follow_system_theme` 实机切换。框架 backlog → [`进度 · 后续工作`](../docs/进度.md#后续工作)。
+本 demo 缺：多窗口 live 演示页、故障注入页、跨 OS `follow_system_theme` 实机切换。框架 backlog → [`进度 · 里程碑`](../docs/进度.md#里程碑与工作域)。
 
 ## CLI 演示项
 
