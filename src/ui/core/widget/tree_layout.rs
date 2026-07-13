@@ -2,6 +2,9 @@ use super::super::*;
 use super::WidgetTree;
 use crate::core::{Constraints, Rect, Size};
 
+#[cfg(test)]
+use super::LAYOUT_TRACE_PHASE;
+
 fn frame_constraints(frame: Rect) -> Constraints {
     Constraints::loose(Size::new(frame.w, frame.h))
 }
@@ -32,6 +35,30 @@ impl WidgetTree {
             current = parent_id;
         }
         None
+    }
+
+    /// Phase 2 不得撑开显式定宽/定高的节点（Container/Space/ScrollView 等）。
+    fn phase2_explicit_size_locks(&self, id: WidgetId) -> (bool, bool) {
+        let Some(node) = self.get(id) else {
+            return (false, false);
+        };
+        match node.component().snapshot_fields() {
+            crate::ui::SnapshotFields::Container { style }
+            | crate::ui::SnapshotFields::Grid { style } => {
+                (style.width.is_some(), style.height.is_some())
+            }
+            crate::ui::SnapshotFields::Space {
+                fixed_width,
+                fixed_height,
+                ..
+            } => (fixed_width.is_some(), fixed_height.is_some()),
+            crate::ui::SnapshotFields::ScrollView {
+                fixed_width,
+                fixed_height,
+                ..
+            } => (fixed_width.is_some(), fixed_height.is_some()),
+            _ => (false, false),
+        }
     }
 
     /// 返回 Layout 失效影响的子树先序遍历顺序。
@@ -153,6 +180,8 @@ impl WidgetTree {
 
             // Phase 1: Top-down — 父容器根据当前 frame 为子节点分配位置
             let order = self.layout_traverse();
+            #[cfg(test)]
+            LAYOUT_TRACE_PHASE.with(|p| p.set(1));
             for &id in &order {
                 let positions: Vec<(WidgetId, Rect)> = {
                     let node = match self.get(id) {
@@ -172,15 +201,23 @@ impl WidgetTree {
                     }
                 }
             }
+            #[cfg(test)]
+            LAYOUT_TRACE_PHASE.with(|p| p.set(0));
 
             // 预计算逆序遍历顺序，供 Phase 2/4 复用（避免每次 inner pass 重复 clone）
             let rev_order: Vec<WidgetId> = order.iter().rev().copied().collect();
 
             // 内循环：交替扩展和收缩直到稳定
             for _inner_pass in 0..3 {
+                #[cfg(test)]
+                LAYOUT_TRACE_PHASE.with(|p| p.set(2));
                 let (expanded, sig) = self.layout_expand(&rev_order);
                 pass_expand_sig.extend(sig);
+                #[cfg(test)]
+                LAYOUT_TRACE_PHASE.with(|p| p.set(4));
                 let shrunk = self.layout_shrink(&rev_order);
+                #[cfg(test)]
+                LAYOUT_TRACE_PHASE.with(|p| p.set(0));
                 if expanded || shrunk {
                     any_change = true;
                 }
@@ -443,11 +480,21 @@ impl WidgetTree {
             if needs_relayout {
                 let old_frame = node_frame;
                 // 非根节点默认不得超过父级已分配 frame，避免窗口缩小后中间层撑破客户区。
-                // 例外：最近 ScrollView 的滚动轴必须保留自然内容尺寸，否则这里的 cap
-                // 会覆盖 ScrollView::child_constraints 提供的 f32::MAX。
-                let (scrolls_horizontally, scrolls_vertically) = self
-                    .nearest_viewport_overflow_axes(id)
-                    .unwrap_or((false, false));
+                // 仅当直接父级就是 viewport 时，才在滚动轴放开 cap，让内容根可高于/宽于视口。
+                // 旧逻辑用 nearest_viewport_overflow_axes 对视口下所有节点放开 cap，
+                // 定高 Card 等中间层也被撑破，下一轮 Phase 1 写回 → 106↔121 空转。
+                let parent_is_viewport = self
+                    .get(id)
+                    .and_then(|n| n.parent())
+                    .and_then(|pid| self.get(pid))
+                    .map(|p| p.children_clip(p.frame()).is_some())
+                    .unwrap_or(false);
+                let (scrolls_horizontally, scrolls_vertically) = if parent_is_viewport {
+                    self.nearest_viewport_overflow_axes(id)
+                        .unwrap_or((false, false))
+                } else {
+                    (false, false)
+                };
                 let parent_frame = if self.root_id == Some(id) {
                     None
                 } else {
@@ -468,6 +515,15 @@ impl WidgetTree {
                 }
                 if let Some(cap) = parent_cap_h {
                     effective_h = effective_h.min(cap);
+                }
+                // 显式定宽/定高是硬约束：Phase 2 不得再撑开，否则与 Phase 1 分配打架。
+                // （内容可溢出/裁剪；滚动尺寸增长只发生在无固定边的内容根上。）
+                let (lock_w, lock_h) = self.phase2_explicit_size_locks(id);
+                if lock_w {
+                    effective_w = node_frame.w;
+                }
+                if lock_h {
+                    effective_h = node_frame.h;
                 }
                 let expanded_w = effective_w > node_frame.w + 0.5;
                 let expanded_h = effective_h > node_frame.h + 0.5;

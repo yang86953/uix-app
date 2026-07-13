@@ -275,8 +275,6 @@ impl WidgetTree {
             return;
         };
         let handle = self.invalidation_handle();
-        let reconcile_key = self.reconcile_requester_key();
-        let reconcile = self.reconcile_requester();
         let paint_rect = self.get(root_id).and_then(|n| {
             let frame = n.frame();
             if frame.w > 0.0 && frame.h > 0.0 {
@@ -286,7 +284,9 @@ impl WidgetTree {
             }
         });
         for source in orphans {
-            source.bind_reconcile_site(reconcile_key, reconcile.clone());
+            // 仅 Paint：View 构建期 `State::get()` 的孤儿绑定不得默认 reconcile。
+            // 否则 demo 里 `PulseRing { time: anim.get() }` 会把 16ms timer
+            // 绑成整树 reconcile+layout，首页 DeepIdle 也被永久打断。
             source.bind_paint(root_id, handle.clone(), paint_rect);
         }
     }

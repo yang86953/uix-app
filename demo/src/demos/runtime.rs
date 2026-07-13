@@ -52,10 +52,7 @@ fn theme_window(control: crate::demos::context::ThemeControl) -> ViewNode {
 pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
     let tk = ctx.tk;
     let ticks = ctx.timer_ticks;
-    let anim = ctx.anim_time;
 
-    let anim_for_ball = anim.clone();
-    let anim_for_ring = anim.clone();
     let theme_toggle = if let Some(control) = ctx.theme_control() {
         let toggle_control = control.clone();
         embed(ThemeToggle::new().dark(control.is_dark())).on_semantic(
@@ -158,21 +155,17 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
                         .child(sample_block(
                             tk,
                             "PulseRing",
-                            PulseRing {
-                                time: anim_for_ring.get(),
-                            },
+                            PulseRing { time: 0.8 },
                         ))
                         .child(sample_block(
                             tk,
                             "BounceBall",
-                            BounceBall {
-                                time: anim_for_ball.get(),
-                            },
+                            BounceBall { time: 1.2 },
                         )),
                 ),
                 info_note(
                     tk,
-                    "anim_time 由 run_interval(16ms) 更新；Spin/ProgressBar 走 WidgetAnimation。",
+                    "PulseRing/BounceBall 为静态样例；Spin/ProgressBar 走 WidgetAnimation（无全局 16ms 探活）。",
                 ),
             ])
             .gap(12.0),

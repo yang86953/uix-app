@@ -3689,6 +3689,112 @@ fn fixed_height_card_wrap_inside_viewport_does_not_phase2_thrash() {
     );
 }
 
+/// 真因回归：ScrollView 下定高中间层仍须 parent_cap。
+/// 旧逻辑用 nearest_viewport_overflow_axes 放开视口下所有节点的 cap，
+/// Phase 2 把定高 Card 子树撑过父槽，下一轮 Phase 1 写回 → 高度振荡打满 converge。
+#[test]
+fn scrollview_fixed_intermediate_keeps_parent_cap_no_phase_oscillation() {
+    use crate::ui::widgets::containers::Container;
+
+    // ScrollView → overflow 内容列 → 定高 100 的中间层 → 固有高 150 的叶子
+    let shell = scroll(
+        column_fit([
+            column_fit([label("tall-leaf").width(180.0).height(150.0)])
+                .width(200.0)
+                .height(100.0),
+            label("tail").height(400.0),
+        ])
+        .overflow_content(),
+    )
+    .size(220.0, 160.0);
+
+    let mut tree = ViewAdapter::build(shell);
+    let rid = tree.root_id().expect("root");
+    tree.get_mut(rid)
+        .expect("root mut")
+        .set_frame(Rect::new(0.0, 0.0, 220.0, 160.0));
+    tree.push_layout_invalidation(rid);
+    let _ = tree.take_layout_frame_trace();
+    let _ = tree.take_layout_converge_passes();
+    let _ = tree.take_layout_expand_ops();
+
+    tree.layout();
+    let passes = tree.take_layout_converge_passes();
+    let expands = tree.take_layout_expand_ops();
+    let trace = tree.take_layout_frame_trace();
+    assert!(
+        passes < 10,
+        "must not thrash to max converge, passes={passes} expands={expands} trace={trace:?}"
+    );
+    assert!(
+        passes <= 4,
+        "fixed intermediate under scroll should stabilize quickly, got {passes}"
+    );
+
+    // 定高中间层 frame.h 必须停在 100，不得被 Phase 2 撑到 150
+    let fixed_id = tree
+        .traverse()
+        .into_iter()
+        .find(|&id| {
+            tree.get(id)
+                .and_then(|n| n.component().as_any().downcast_ref::<Container>())
+                .is_some_and(|c| c.style.height == Some(100.0) && c.style.width == Some(200.0))
+        })
+        .expect("fixed-height intermediate Container");
+    let fixed_frame = tree.get(fixed_id).expect("fixed").frame();
+    assert!(
+        (fixed_frame.h - 100.0).abs() < 1.0,
+        "fixed intermediate must keep h=100 under scroll parent_cap, got {}",
+        fixed_frame.h
+    );
+
+    // 证据：同一节点不得出现 Phase1 写矮高 + Phase2 写回更高的振荡对
+    let mut by_id: std::collections::HashMap<ComponentId, Vec<(u8, i32, i32)>> =
+        std::collections::HashMap::new();
+    for (phase, id, before, after) in &trace {
+        if before != after {
+            by_id.entry(*id).or_default().push((*phase, *before, *after));
+        }
+    }
+    for (id, writes) in &by_id {
+        let has_p1_short = writes.iter().any(|(p, b, a)| *p == 1 && a < b);
+        let has_p2_grow = writes.iter().any(|(p, b, a)| *p == 2 && a > b);
+        assert!(
+            !(has_p1_short && has_p2_grow),
+            "id={id:?} oscillated Phase1 shrink + Phase2 grow: {writes:?}"
+        );
+    }
+
+    // 稳定再 layout：不得再 Phase 2 扩展
+    let _ = tree.take_layout_expand_ops();
+    let _ = tree.take_layout_converge_passes();
+    tree.push_layout_invalidation(rid);
+    tree.layout();
+    assert_eq!(
+        tree.take_layout_expand_ops(),
+        0,
+        "stable re-layout must not Phase2-expand"
+    );
+    assert_eq!(tree.take_layout_converge_passes(), 1);
+
+    // 滚动内容根仍可高于视口（parent 是 viewport 时放开 cap）
+    let sv = tree
+        .traverse()
+        .into_iter()
+        .find(|&id| {
+            tree.get(id)
+                .and_then(|n| n.component().as_any().downcast_ref::<crate::ui::widgets::ScrollView>())
+                .is_some()
+        })
+        .expect("scrollview");
+    let content_id = tree.get(sv).expect("sv").children()[0];
+    let content_h = tree.get(content_id).expect("content").frame().h;
+    assert!(
+        content_h > 160.0,
+        "scroll content root must still grow past viewport, got {content_h}"
+    );
+}
+
 /// Container 定高 Column 不得把子项 measure 钳回 content_rect.h（intrinsic 内容更高时）。
 #[test]
 fn container_measure_does_not_clamp_child_below_intrinsic_on_main_axis() {
