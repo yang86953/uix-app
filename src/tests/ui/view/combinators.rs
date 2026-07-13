@@ -1,7 +1,8 @@
 use super::*;
 use crate::core::EdgeInsets;
 use crate::ui::view::View;
-use crate::ui::widgets::{Grid, ScrollView};
+use crate::ui::view::ViewAdapter;
+use crate::ui::widgets::{Grid, Input, Label, ScrollView, Space};
 
 #[test]
 fn grid_combinator_builds_grid_node() {
@@ -187,4 +188,20 @@ fn counter_facade_compiles_without_manual_into_or_clone_aliases() {
     ))
     .gap(12.0)
     .padding(16.0);
+}
+
+#[test]
+fn embedded_component_children_survive_view_reconcile() {
+    let mut tree = ViewAdapter::build_nodes(embed(
+        Space::new().child(Label::new("before reconcile")),
+    ));
+    assert_eq!(tree.find_all_by_type::<Label>().len(), 1);
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        embed(Space::new().child(Input::new("after reconcile"))),
+    );
+
+    assert!(tree.find_all_by_type::<Label>().is_empty());
+    assert_eq!(tree.find_all_by_type::<Input>().len(), 1);
 }

@@ -138,28 +138,6 @@ fn adopt_widget_node(node: WidgetNode) -> ViewNode {
     }
 }
 
-#[cfg(test)]
-mod embed_tests {
-    use super::*;
-    use crate::ui::view::ViewAdapter;
-    use crate::ui::widgets::{Input, Label, Space};
-
-    #[test]
-    fn embedded_component_children_survive_view_reconcile() {
-        let mut tree = ViewAdapter::build_nodes(embed(
-            Space::new().child(Label::new("before reconcile")),
-        ));
-        assert_eq!(tree.find_all_by_type::<Label>().len(), 1);
-
-        ViewAdapter::reconcile_nodes(
-            &mut tree,
-            embed(Space::new().child(Input::new("after reconcile"))),
-        );
-
-        assert!(tree.find_all_by_type::<Label>().is_empty());
-        assert_eq!(tree.find_all_by_type::<Input>().len(), 1);
-    }
-}
 
 // ── 基础组合子 ──────────────────────────────────────────────
 

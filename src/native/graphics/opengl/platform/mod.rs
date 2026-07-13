@@ -30,15 +30,8 @@ pub(super) fn create(
 }
 
 #[cfg(all(test, unix, not(target_os = "macos")))]
-mod tests {
-    #[test]
-    fn egl_damage_extension_does_not_imply_partial_present() {
-        assert!(
-            !super::EGL_PARTIAL_PRESENT,
-            "partial present requires a proven preservation/buffer-age contract"
-        );
-    }
-}
+#[path = "../../../../tests/native/graphics/opengl/platform/mod.rs"]
+mod tests;
 
 #[cfg(all(unix, not(target_os = "macos")))]
 pub(super) fn create(

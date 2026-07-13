@@ -297,14 +297,5 @@ impl TimePicker {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::ui::traits::WidgetLayout;
-
-    #[test]
-    fn measure_clamps_time_picker_size() {
-        let measured = TimePicker::new("time").measure(Constraints::loose(Size::new(90.0, 24.0)));
-
-        assert_eq!(measured, Size::new(90.0, 24.0));
-    }
-}
+#[path = "../../../tests/ui/widgets/input/time_picker.rs"]
+mod tests;
