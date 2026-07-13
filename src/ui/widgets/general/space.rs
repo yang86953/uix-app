@@ -55,14 +55,14 @@ component! {
         let intrinsic = self.intrinsic_size();
         let clamped = constraints.clamp(intrinsic);
         let cached = self.cached_content_size.get();
-        // 仅 indefinite（None 或 0）轴用 cached（子项溢出尺寸）撑开 measure；
-        // 显式 >0 尺寸为定高/定宽，尊重 clamped，不被 cached 溢出撑大。
-        let w = if cached.w > 0.0 && self.fixed_width.is_none_or(|w| w <= 0.0) {
+        // 缓存内容是测量结果的下限，即使存在显式尺寸也不能把子树溢出压回更小的
+        // measure；否则下一轮 Phase 1 会写回较小 frame，与 Phase 2 扩展振荡。
+        let w = if cached.w > 0.0 {
             clamped.w.max(cached.w)
         } else {
             clamped.w
         };
-        let h = if cached.h > 0.0 && self.fixed_height.is_none_or(|h| h <= 0.0) {
+        let h = if cached.h > 0.0 {
             clamped.h.max(cached.h)
         } else {
             clamped.h

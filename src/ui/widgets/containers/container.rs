@@ -43,14 +43,21 @@ component! {
         let intrinsic = self.intrinsic_size();
         let clamped = constraints.clamp(intrinsic);
         let cached = self.cached_content_size.get();
+        let uses_content_floor = self.style.flex_grow <= 0.0;
         // 仅 indefinite（None 或 0）轴用 cached（子项溢出尺寸）撑开 measure；
         // 显式 >0 尺寸为定高/定宽，尊重 clamped，不被 cached 溢出撑大。
-        let w = if cached.w > 0.0 && self.style.width.is_none_or(|w| w <= 0.0) {
+        let w = if uses_content_floor
+            && cached.w > 0.0
+            && self.style.width.is_none_or(|w| w <= 0.0)
+        {
             clamped.w.max(cached.w)
         } else {
             clamped.w
         };
-        let h = if cached.h > 0.0 && self.style.height.is_none_or(|h| h <= 0.0) {
+        let h = if uses_content_floor
+            && cached.h > 0.0
+            && self.style.height.is_none_or(|h| h <= 0.0)
+        {
             clamped.h.max(cached.h)
         } else {
             clamped.h

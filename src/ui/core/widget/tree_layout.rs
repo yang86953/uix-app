@@ -413,7 +413,10 @@ impl WidgetTree {
     /// 自下而上扩展：当子节点右侧/底部超出容器时，扩展容器宽度/高度。
     /// 后序遍历确保子节点先扩展、父节点后扩展。
     /// 返回 (是否有任何容器被扩展, 本趟扩展签名)。
-    fn layout_expand(&mut self, rev_order: &[WidgetId]) -> (bool, Vec<(WidgetId, i32, i32, i32, i32)>) {
+    fn layout_expand(
+        &mut self,
+        rev_order: &[WidgetId],
+    ) -> (bool, Vec<(WidgetId, i32, i32, i32, i32)>) {
         let mut any_resized = false;
         let mut expand_sig: Vec<(WidgetId, i32, i32, i32, i32)> = Vec::new();
         // 收集本趟中被扩展过的子节点，用于触发其父容器重排
@@ -480,21 +483,12 @@ impl WidgetTree {
             if needs_relayout {
                 let old_frame = node_frame;
                 // 非根节点默认不得超过父级已分配 frame，避免窗口缩小后中间层撑破客户区。
-                // 仅当直接父级就是 viewport 时，才在滚动轴放开 cap，让内容根可高于/宽于视口。
-                // 旧逻辑用 nearest_viewport_overflow_axes 对视口下所有节点放开 cap，
-                // 定高 Card 等中间层也被撑破，下一轮 Phase 1 写回 → 106↔121 空转。
-                let parent_is_viewport = self
-                    .get(id)
-                    .and_then(|n| n.parent())
-                    .and_then(|pid| self.get(pid))
-                    .map(|p| p.children_clip(p.frame()).is_some())
-                    .unwrap_or(false);
-                let (scrolls_horizontally, scrolls_vertically) = if parent_is_viewport {
-                    self.nearest_viewport_overflow_axes(id)
-                        .unwrap_or((false, false))
-                } else {
-                    (false, false)
-                };
+                // 滚动轴的放行范围覆盖整个 viewport 子树，而不只是直接子节点。
+                // 中间的 Container/Space 不能把内容重新限制回 viewport 的 frame，
+                // 否则嵌套内容的扩展无法传递到 ScrollView::content_bounds。
+                let (scrolls_horizontally, scrolls_vertically) = self
+                    .nearest_viewport_overflow_axes(id)
+                    .unwrap_or((false, false));
                 let parent_frame = if self.root_id == Some(id) {
                     None
                 } else {
@@ -812,10 +806,7 @@ impl WidgetTree {
                 // 不得低于父级 Phase 1 分配高度（Stretch / flex-grow 槽位）。
                 // demo 侧栏 column_fit 被 row Stretch 拉到客户区高后，若按内容缩回，
                 // 下一轮 Phase 1 会再次拉满 → 同结果 Phase 4 空转 thrashing。
-                let parent_floor_h = self
-                    .parent_allocated_frame(id)
-                    .map(|r| r.h)
-                    .unwrap_or(0.0);
+                let parent_floor_h = self.parent_allocated_frame(id).map(|r| r.h).unwrap_or(0.0);
                 let effective_needed = min_h.max(parent_floor_h);
                 if node_frame.h - effective_needed > 0.5 {
                     crate::core::log::debug_fn(format!(

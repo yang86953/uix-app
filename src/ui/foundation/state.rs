@@ -154,7 +154,7 @@ fn try_capture_state_bind<T: Clone + Send + Sync + 'static>(state: &State<T>) {
     });
 }
 
-fn try_capture_pending_state_bind<T: Clone + Send + Sync + 'static>(state: &State<T>) {
+pub(crate) fn capture_pending_state_bind<T: Clone + Send + Sync + 'static>(state: &State<T>) {
     if !STATE_CAPTURE_ACTIVE.with(|active| active.get()) {
         return;
     }
@@ -428,7 +428,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
             }),
         });
         try_capture_state_bind(self);
-        try_capture_pending_state_bind(self);
+        capture_pending_state_bind(self);
 
         self.inner
             .read()
