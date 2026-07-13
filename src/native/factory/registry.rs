@@ -475,20 +475,32 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn explicit_vulkan_includes_planned_registry_row_on_windows() {
+    fn auto_backend_on_windows_includes_active_vulkan_when_enabled() {
+        if !cfg!(feature = "vulkan") {
+            return;
+        }
+        let candidates = gpu_probe_candidates(GraphicsBackend::Auto);
+        assert!(
+            candidates.contains(&GraphicsBackend::Vulkan),
+            "Windows Vulkan Win32 adapter is Active and must be Auto-probeable"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn explicit_vulkan_includes_active_registry_row_on_windows() {
         if !cfg!(feature = "vulkan") {
             return;
         }
         let candidates = gpu_recipe_candidates(GraphicsBackend::Vulkan);
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].backend, GraphicsBackend::Vulkan);
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn auto_backend_on_windows_skips_planned_vulkan() {
-        let candidates = gpu_probe_candidates(GraphicsBackend::Auto);
-        assert!(!candidates.contains(&GraphicsBackend::Vulkan));
+        assert_eq!(
+            entry_for(GraphicsBackend::Vulkan)
+                .expect("vulkan row")
+                .status,
+            BackendStatus::Active
+        );
     }
 
     #[test]
@@ -547,6 +559,9 @@ mod tests {
         #[cfg(windows)]
         {
             let mut expected = Vec::new();
+            if cfg!(feature = "vulkan") {
+                expected.push(GraphicsBackend::Vulkan);
+            }
             if cfg!(feature = "d3d11") {
                 expected.push(GraphicsBackend::D3d11);
             }

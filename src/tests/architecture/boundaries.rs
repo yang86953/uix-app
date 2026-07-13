@@ -859,8 +859,13 @@ fn vulkan_readback_cannot_report_an_empty_success() {
     .expect("read Vulkan context");
 
     assert!(
-        source.contains("VulkanContext: native readback is not supported"),
-        "Vulkan must return a typed readback failure instead of an empty pixel buffer"
+        source.contains("cpu_shadow")
+            && source.contains("no uploaded frame to read back (cpu_shadow empty)"),
+        "Vulkan must fail typed when no staged frame exists, not return an empty success buffer"
+    );
+    assert!(
+        !source.contains("VulkanContext: native readback is not supported"),
+        "Vulkan PixelUpload now provides CPU-shadow readback for destination-dependent IR"
     );
 }
 
