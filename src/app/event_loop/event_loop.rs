@@ -371,6 +371,8 @@ where
 
     let mut first_frame = true;
     let mut rendered_first = false;
+    let mut deferred_show = !platform_window.is_visible();
+    let loop_t0 = clock.now();
     let mut last_frame = clock.now();
     let mut window_visible = true;
     let mut window_focused = true;
@@ -699,10 +701,12 @@ where
         let needs_work =
             window_visible && (had_layout_event || surface_corrected || !rendered_first);
 
+        let mut laid_out = false;
         if window_visible && (needs_work || has_layout_work) {
             let before_version = tree.tree_version();
             tree.layout();
             record_layout(metrics);
+            laid_out = true;
 
             sync_root_frame_to_engine(tree, engine);
             on_frame(tree, engine, platform);
@@ -720,8 +724,11 @@ where
 
         if !rendered_first && need_render {
             tree.mark_full_frame_dirty();
-            // 首帧绘制前强制 layout，确保 bind 后 frame 与引擎尺寸一致
-            tree.layout();
+            // 本帧已 layout 则跳过重复首帧 layout（启动连跑 2–3 次的主因之一）。
+            if !laid_out {
+                tree.layout();
+                record_layout(metrics);
+            }
         }
 
         let dirty_region = tree.dirty_region();
@@ -830,6 +837,25 @@ where
                 ));
                 rendered_first = false;
             }
+        }
+
+        if frame_committed && deferred_show {
+            if let Err(error) = platform_window.show() {
+                crate::core::log::error_fn(format!(
+                    "[EventLoop] deferred show after first present failed: {}",
+                    error.short_what()
+                ));
+            } else if let Err(error) = platform_window.raise() {
+                crate::core::log::warn_fn(format!(
+                    "[EventLoop] deferred raise after first present failed: {}",
+                    error.short_what()
+                ));
+            }
+            crate::core::log::info_fn(format!(
+                "first_present_ms={} (window revealed after present; no pre-present white flash)",
+                loop_t0.elapsed().as_millis()
+            ));
+            deferred_show = false;
         }
 
         if window_visible && frame_committed && (needs_work || has_layout_work || need_render) {

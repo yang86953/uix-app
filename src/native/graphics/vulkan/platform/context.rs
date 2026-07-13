@@ -500,8 +500,46 @@ impl VulkanContext {
             );
             self.device.unmap_memory(self.upload.memory);
         }
+        // 热路径不每帧全量复制 CPU shadow（约等于再拷一遍全屏）；
+        // destination-dependent readback 时再 hydrate。
         self.cpu_shadow.clear();
-        self.cpu_shadow.extend_from_slice(&pixels[..needed_pixels]);
+        Ok(())
+    }
+
+    fn hydrate_cpu_shadow_from_staging(&mut self) -> Result<()> {
+        let needed_pixels = (self.width as usize).saturating_mul(self.height as usize);
+        if needed_pixels == 0 {
+            return Ok(());
+        }
+        if self.cpu_shadow.len() == needed_pixels {
+            return Ok(());
+        }
+        let needed_size = staging_size(self.width, self.height);
+        if self.upload.buffer == vk::Buffer::null() || self.upload.size < needed_size {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "VulkanContext: no uploaded frame to read back (staging empty)",
+            ));
+        }
+        unsafe {
+            let mapped = self
+                .device
+                .map_memory(
+                    self.upload.memory,
+                    0,
+                    needed_size,
+                    vk::MemoryMapFlags::empty(),
+                )
+                .map_err(|err| vk_err("vkMapMemory staging hydrate", err))?;
+            self.cpu_shadow.clear();
+            self.cpu_shadow.resize(needed_pixels, 0);
+            ptr::copy_nonoverlapping(
+                mapped.cast::<u8>(),
+                self.cpu_shadow.as_mut_ptr().cast::<u8>(),
+                needed_pixels.saturating_mul(4),
+            );
+            self.device.unmap_memory(self.upload.memory);
+        }
         Ok(())
     }
 
@@ -771,6 +809,7 @@ impl IGraphicsContext for VulkanContext {
     }
 
     fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
+        self.hydrate_cpu_shadow_from_staging()?;
         let expected = (self.width as usize).saturating_mul(self.height as usize);
         if self.cpu_shadow.len() != expected {
             return Err(Error::new(

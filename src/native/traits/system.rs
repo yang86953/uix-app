@@ -105,6 +105,10 @@ pub trait ISystemInfo {
     fn probe_cjk_font_path(&self) -> Option<String> {
         None
     }
+    /// 有序 CJK 候选；启动至多成功装载一枚。默认包装 [`Self::probe_cjk_font_path`]。
+    fn probe_cjk_font_paths(&self) -> Vec<String> {
+        self.probe_cjk_font_path().into_iter().collect()
+    }
     fn probe_family_font_path(&self, _family: &str) -> Option<String> {
         None
     }

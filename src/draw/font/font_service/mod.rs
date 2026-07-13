@@ -276,39 +276,24 @@ impl FontService {
             if !paths.is_empty() {
                 let mut primary_loaded = false;
 
+                // 启动只装主字体：其余 Latin fallback 不在首帧同步读盘。
+                // CJK 由 load_cjk_fallback / probe_cjk_font_path 单独装一枚。
                 for path in &paths {
                     match std::fs::read(path) {
                         Ok(data) => {
                             if let Some(handle) = self.load_raw_font(data, size) {
                                 let idx = handle.0 as usize;
-                                let fallback_name = std::path::Path::new(path)
-                                    .file_stem()
-                                    .and_then(|s| s.to_str())
-                                    .unwrap_or("fallback");
                                 if idx < self.registry.len() {
                                     self.registry[idx].face.path = Some(path.clone());
-                                    if !primary_loaded {
-                                        self.registry[idx].face.family =
-                                            self.primary_family.clone();
-                                    } else {
-                                        self.registry[idx].face.family = fallback_name.to_owned();
-                                    }
+                                    self.registry[idx].face.family = self.primary_family.clone();
                                 }
-
-                                if !primary_loaded {
-                                    primary_loaded = true;
-                                    self.loaded_font_handle = handle;
-                                    crate::core::log::info_fn(format!(
-                                        "Loaded system default font: {} (handle={:?})",
-                                        path, handle
-                                    ));
-                                } else {
-                                    crate::core::log::info_fn(format!(
-                                        "Loaded fallback font: {}",
-                                        path
-                                    ));
-                                    self.fallback_handles.push(handle);
-                                }
+                                primary_loaded = true;
+                                self.loaded_font_handle = handle;
+                                crate::core::log::info_fn(format!(
+                                    "Loaded system default font: {} (handle={:?})",
+                                    path, handle
+                                ));
+                                break;
                             }
                         }
                         Err(e) => {
@@ -373,9 +358,14 @@ impl FontService {
             return;
         }
 
-        let cjk_path = system_info.probe_cjk_font_path();
-        match cjk_path {
-            Some(path) => match std::fs::read(&path) {
+        let cjk_paths = system_info.probe_cjk_font_paths();
+        if cjk_paths.is_empty() {
+            crate::core::log::info_fn("No CJK fallback font found via platform");
+            return;
+        }
+
+        for path in cjk_paths {
+            match std::fs::read(&path) {
                 Ok(data) => {
                     if let Some(handle) = self.load_raw_font(data, size) {
                         if !self.fallback_handles.iter().any(|h| h.0 == handle.0) {
@@ -385,12 +375,12 @@ impl FontService {
                                 path
                             ));
                         }
-                    } else {
-                        crate::core::log::info_fn(format!(
-                            "CJK font '{}' found but failed to load (unsupported format)",
-                            path
-                        ));
+                        return;
                     }
+                    crate::core::log::info_fn(format!(
+                        "CJK font '{}' found but failed to load (unsupported format)",
+                        path
+                    ));
                 }
                 Err(e) => {
                     crate::core::log::info_fn(format!(
@@ -398,11 +388,9 @@ impl FontService {
                         path, e
                     ));
                 }
-            },
-            None => {
-                crate::core::log::info_fn("No CJK fallback font found via platform");
             }
         }
+        crate::core::log::info_fn("No CJK fallback font could be loaded via platform");
     }
 
     /// 通过平台层按字体族名称查找并加载字体。
