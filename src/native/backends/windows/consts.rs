@@ -13,6 +13,7 @@ pub(crate) const WM_NCCREATE: u32 = 0x0081;
 pub(crate) const WM_DESTROY: u32 = 0x0002;
 pub(crate) const WM_CLOSE: u32 = 0x0010;
 pub(crate) const WM_SIZE: u32 = 0x0005;
+pub(crate) const WM_DPICHANGED: u32 = 0x02E0;
 pub(crate) const WM_SHOWWINDOW: u32 = 0x0018;
 pub(crate) const WM_ERASEBKGND: u32 = 0x0014;
 pub(crate) const WM_MOVE: u32 = 0x0003;
@@ -61,6 +62,7 @@ pub(crate) const IDI_APPLICATION: *const u16 = 32512 as *const u16;
 pub(crate) const SWP_NOMOVE: u32 = 0x0002;
 pub(crate) const SWP_NOSIZE: u32 = 0x0001;
 pub(crate) const SWP_NOZORDER: u32 = 0x0004;
+pub(crate) const SWP_NOACTIVATE: u32 = 0x0010;
 pub(crate) const SWP_FRAMECHANGED: u32 = 0x0020;
 
 pub(crate) const HWND_TOP: isize = 0;

@@ -1,7 +1,9 @@
 use crate::native::backends::windows::consts::{
-    SIZE_RESTORED, WM_CHAR, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_SIZE,
+    SIZE_RESTORED, WM_CHAR, WM_DPICHANGED, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_SIZE,
 };
-use crate::native::backends::windows::dpi::{dpi_for_window, logical_extent_to_physical};
+use crate::native::backends::windows::dpi::{
+    dpi_for_window, logical_extent_to_physical, physical_extent_to_logical,
+};
 use crate::native::backends::windows::ffi::PostMessageW;
 use crate::native::backends::windows::platform::*;
 use crate::native::graphics::platform::windows::{drawable_size, query_client_rect};
@@ -11,11 +13,12 @@ use crate::native::traits::*;
 use crate::tests::common::*;
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
-use windows::Win32::Foundation::HWND;
+use windows::Win32::Foundation::{HWND, LPARAM, RECT, WPARAM};
 use windows::Win32::UI::HiDpi::{
     AreDpiAwarenessContextsEqual, GetWindowDpiAwarenessContext,
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
+use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, SendMessageW};
 
 fn size_lparam(width: u16, height: u16) -> isize {
     (u32::from(width) | (u32::from(height) << 16)) as isize
@@ -166,6 +169,67 @@ fn native_window_keeps_logical_client_size_and_physical_drawable_size() {
     assert_eq!(
         (window.properties().width(), window.properties().height()),
         (411, 277)
+    );
+
+    window.close().expect("close window");
+}
+
+#[test]
+fn native_dpi_change_applies_suggested_rect_and_routes_logical_resize() {
+    let mut platform = WindowsPlatform::new();
+    let mut window = platform
+        .create_window("UIX WM_DPICHANGED route", 320, 210)
+        .expect("native window");
+    let window_id = window.window_id();
+    let hwnd = window.native_handle().native_window();
+    assert!(platform.dispatch_pending());
+    while platform.next_event().is_some() {}
+
+    let mut original = RECT::default();
+    unsafe { GetWindowRect(HWND(hwnd), &mut original) }.expect("original window rect");
+    let suggested = RECT {
+        left: original.left + 7,
+        top: original.top + 11,
+        right: original.right + 87,
+        bottom: original.bottom + 71,
+    };
+    let dpi = dpi_for_window(hwnd) as usize;
+    let dpi_wparam = dpi | (dpi << 16);
+    unsafe {
+        SendMessageW(
+            HWND(hwnd),
+            WM_DPICHANGED,
+            Some(WPARAM(dpi_wparam)),
+            Some(LPARAM((&suggested as *const RECT) as isize)),
+        );
+    }
+
+    let mut applied = RECT::default();
+    unsafe { GetWindowRect(HWND(hwnd), &mut applied) }.expect("applied window rect");
+    assert_eq!(applied.left, suggested.left);
+    assert_eq!(applied.top, suggested.top);
+    assert_eq!(applied.right, suggested.right);
+    assert_eq!(applied.bottom, suggested.bottom);
+
+    platform.dispatch_pending();
+    let client = unsafe { query_client_rect(hwnd) }.expect("client after DPI change");
+    let expected = (
+        physical_extent_to_logical(client.right - client.left, dpi as u32),
+        physical_extent_to_logical(client.bottom - client.top, dpi as u32),
+    );
+    let resize = std::iter::from_fn(|| platform.next_event()).find_map(|event| {
+        if event.window_id != Some(window_id) || event.type_ != UiEventType::WindowResize {
+            return None;
+        }
+        let UiEventPayload::Resize(data) = event.payload else {
+            return None;
+        };
+        Some((data.width, data.height))
+    });
+    assert_eq!(resize, Some(expected));
+    assert_eq!(
+        (window.properties().width(), window.properties().height()),
+        expected
     );
 
     window.close().expect("close window");

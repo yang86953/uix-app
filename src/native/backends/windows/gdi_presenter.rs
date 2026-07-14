@@ -1,18 +1,20 @@
 //! GdiPresenter — Windows GDI DIB pixel presentation.
 //!
-//! Takes a `&[u32]` ARGB pixel buffer from a software renderer and presents it
-//! to a Windows window via `CreateDIBSection` + `BitBlt`.
+//! 接收软件渲染器的 `&[u32]` ARGB 像素，并通过
+//! `CreateDIBSection` + `StretchBlt` 提交到 Windows 窗口。
 //!
-//! Uses memory DC (`CreateCompatibleDC` + `SelectObject`) + `BitBlt`, the
-//! classic and reliable GDI pixel-pushing approach.
+//! 保留型 DIB 使用 logical pixels；每次提交再映射到当前 physical client extent。
 
 #![cfg(windows)]
 #![allow(clippy::upper_case_acronyms)]
 #![allow(nonstandard_style)]
 
+use std::cell::Cell;
+
 use crate::native::backends::windows::ffi::{GetDC, ReleaseDC};
 use crate::native::backends::windows::util::windows_diag;
-use crate::native::traits::present::{IPresenter, PresentCoherency, PresentDamage};
+use crate::native::graphics::platform::windows::query_client_rect;
+use crate::native::traits::present::{IPresenter, PresentCoherency, PresentDamage, PresentSurface};
 use crate::native::{Errc, Error};
 // ── Windows FFI declarations ────────────────────────────────────────────────
 
@@ -29,7 +31,7 @@ extern "system" {
     fn SelectObject(hdc: *mut std::ffi::c_void, h: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
     fn DeleteObject(h: *mut std::ffi::c_void) -> i32;
     fn DeleteDC(hdc: *mut std::ffi::c_void) -> i32;
-    fn BitBlt(
+    fn StretchBlt(
         hdc_dst: *mut std::ffi::c_void,
         x: i32,
         y: i32,
@@ -38,8 +40,20 @@ extern "system" {
         hdc_src: *mut std::ffi::c_void,
         sx: i32,
         sy: i32,
+        sw: i32,
+        sh: i32,
         rop: u32,
     ) -> i32;
+    fn SaveDC(hdc: *mut std::ffi::c_void) -> i32;
+    fn RestoreDC(hdc: *mut std::ffi::c_void, saved_dc: i32) -> i32;
+    fn IntersectClipRect(
+        hdc: *mut std::ffi::c_void,
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+    ) -> i32;
+    fn SetStretchBltMode(hdc: *mut std::ffi::c_void, mode: i32) -> i32;
     fn CreateCompatibleDC(hdc: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
 }
 
@@ -67,6 +81,7 @@ struct BITMAPINFO {
 const BI_RGB: u32 = 0;
 const DIB_RGB_COLORS: u32 = 0;
 const SRCCOPY: u32 = 0x00CC0020;
+const COLORONCOLOR: i32 = 3;
 
 pub(crate) fn clip_damage_rect(
     x: i32,
@@ -89,6 +104,46 @@ pub(crate) fn clip_damage_rect(
         return None;
     }
     Some((x0 as i32, y0 as i32, (x1 - x0) as i32, (y1 - y0) as i32))
+}
+
+/// 将 logical source damage 外扩映射到 physical target pixels。
+pub(crate) fn scale_damage_rect_to_target(
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    source_width: i32,
+    source_height: i32,
+    target_width: i32,
+    target_height: i32,
+) -> Option<(i32, i32, i32, i32)> {
+    if target_width <= 0 || target_height <= 0 {
+        return None;
+    }
+    let (x, y, width, height) = clip_damage_rect(x, y, width, height, source_width, source_height)?;
+    let x0 = scale_floor(x, target_width, source_width);
+    let y0 = scale_floor(y, target_height, source_height);
+    let x1 = scale_ceil(x.saturating_add(width), target_width, source_width);
+    let y1 = scale_ceil(y.saturating_add(height), target_height, source_height);
+    Some((x0, y0, x1 - x0, y1 - y0))
+}
+
+fn scale_floor(value: i32, target: i32, source: i32) -> i32 {
+    ((i64::from(value) * i64::from(target)) / i64::from(source.max(1))) as i32
+}
+
+fn scale_ceil(value: i32, target: i32, source: i32) -> i32 {
+    let numerator = i64::from(value) * i64::from(target);
+    let denominator = i64::from(source.max(1));
+    ((numerator + denominator - 1) / denominator) as i32
+}
+
+fn query_target_extent(hwnd: *mut std::ffi::c_void) -> Option<(i32, i32)> {
+    // SAFETY: query_client_rect 只在同步调用内写入栈上 RECT。
+    let rect = unsafe { query_client_rect(hwnd) }?;
+    let width = rect.right.saturating_sub(rect.left);
+    let height = rect.bottom.saturating_sub(rect.top);
+    (width > 0 && height > 0).then_some((width, height))
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -188,6 +243,8 @@ pub struct GdiPresenter {
     dib: DibHandle,
     width: i32,
     height: i32,
+    observed_target: Cell<Option<(i32, i32)>>,
+    surface_generation: Cell<u64>,
 }
 
 impl GdiPresenter {
@@ -205,56 +262,126 @@ impl GdiPresenter {
             dib,
             width: w,
             height: h,
+            observed_target: Cell::new(query_target_extent(hwnd)),
+            surface_generation: Cell::new(1),
+        })
+    }
+
+    fn target_extent(&self) -> Result<(i32, i32), Error> {
+        query_target_extent(self.hwnd).ok_or_else(|| {
+            windows_diag(
+                Errc::PlatformError,
+                "GdiPresenter: GetClientRect failed or returned an empty client",
+            )
         })
     }
 
     fn blit(&self) -> Result<(), Error> {
-        unsafe {
-            let hdc = GetDC(self.hwnd);
-            if hdc.is_null() {
-                return Err(windows_diag(
-                    Errc::PlatformError,
-                    "GdiPresenter: GetDC failed during full present",
-                ));
-            }
-            let succeeded = BitBlt(
-                hdc,
-                0,
-                0,
-                self.width,
-                self.height,
-                self.dib.hdc_mem,
-                0,
-                0,
-                SRCCOPY,
-            );
-            ReleaseDC(self.hwnd, hdc);
-            if succeeded == 0 {
-                return Err(windows_diag(
-                    Errc::PlatformError,
-                    "GdiPresenter: full BitBlt failed",
-                ));
-            }
-        }
-        Ok(())
+        self.stretch_to_client(None)
     }
 
     fn blit_rect(&self, x: i32, y: i32, w: i32, h: i32) -> Result<(), Error> {
+        self.stretch_to_client(Some((x, y, w, h)))
+    }
+
+    /// 在保存的 DC 状态内把完整 logical DIB 映射到 physical client；
+    /// 局部提交只收窄 physical clip，因而与完整缩放使用同一采样原点。
+    fn stretch_to_client(&self, logical_clip: Option<(i32, i32, i32, i32)>) -> Result<(), Error> {
+        super::dpi::with_per_monitor_v2(|| self.stretch_to_client_in_dpi_scope(logical_clip))
+    }
+
+    fn stretch_to_client_in_dpi_scope(
+        &self,
+        logical_clip: Option<(i32, i32, i32, i32)>,
+    ) -> Result<(), Error> {
+        let (target_width, target_height) = self.target_extent()?;
+        let physical_clip = match logical_clip {
+            Some((x, y, width, height)) => {
+                let Some(rect) = scale_damage_rect_to_target(
+                    x,
+                    y,
+                    width,
+                    height,
+                    self.width,
+                    self.height,
+                    target_width,
+                    target_height,
+                ) else {
+                    return Ok(());
+                };
+                Some(rect)
+            }
+            None => None,
+        };
         unsafe {
             let hdc = GetDC(self.hwnd);
             if hdc.is_null() {
                 return Err(windows_diag(
                     Errc::PlatformError,
-                    "GdiPresenter: GetDC failed during partial present",
+                    "GdiPresenter: GetDC failed during present",
                 ));
             }
-            let succeeded = BitBlt(hdc, x, y, w, h, self.dib.hdc_mem, x, y, SRCCOPY);
-            ReleaseDC(self.hwnd, hdc);
-            if succeeded == 0 {
-                return Err(windows_diag(
+
+            let saved_dc = SaveDC(hdc);
+            let mut failure = (saved_dc == 0)
+                .then(|| windows_diag(Errc::PlatformError, "GdiPresenter: SaveDC failed"));
+            if failure.is_none() && SetStretchBltMode(hdc, COLORONCOLOR) == 0 {
+                failure = Some(windows_diag(
                     Errc::PlatformError,
-                    "GdiPresenter: partial BitBlt failed",
+                    "GdiPresenter: SetStretchBltMode failed",
                 ));
+            }
+            if failure.is_none() {
+                if let Some((x, y, width, height)) = physical_clip {
+                    if IntersectClipRect(
+                        hdc,
+                        x,
+                        y,
+                        x.saturating_add(width),
+                        y.saturating_add(height),
+                    ) == 0
+                    {
+                        failure = Some(windows_diag(
+                            Errc::PlatformError,
+                            "GdiPresenter: IntersectClipRect failed",
+                        ));
+                    }
+                }
+            }
+            if failure.is_none()
+                && StretchBlt(
+                    hdc,
+                    0,
+                    0,
+                    target_width,
+                    target_height,
+                    self.dib.hdc_mem,
+                    0,
+                    0,
+                    self.width,
+                    self.height,
+                    SRCCOPY,
+                ) == 0
+            {
+                failure = Some(windows_diag(
+                    Errc::PlatformError,
+                    "GdiPresenter: StretchBlt failed",
+                ));
+            }
+            if saved_dc != 0 && RestoreDC(hdc, saved_dc) == 0 && failure.is_none() {
+                failure = Some(windows_diag(
+                    Errc::PlatformError,
+                    "GdiPresenter: RestoreDC failed",
+                ));
+            }
+            if ReleaseDC(self.hwnd, hdc) == 0 && failure.is_none() {
+                failure = Some(windows_diag(
+                    Errc::PlatformError,
+                    "GdiPresenter: ReleaseDC failed",
+                ));
+            }
+            if let Some(error) = failure {
+                return Err(error);
             }
         }
         Ok(())
@@ -297,6 +424,28 @@ impl IPresenter for GdiPresenter {
     fn present_coherency(&self) -> PresentCoherency {
         // The DIB retains every successfully copied pixel across presents.
         PresentCoherency::RetainedBuffer
+    }
+
+    fn present_surface(
+        &self,
+        drawable_width: i32,
+        drawable_height: i32,
+        device_pixel_ratio: f32,
+    ) -> PresentSurface {
+        // Damage 仍以 logical DIB 为坐标面；physical client extent 只进入
+        // generation，用于在跨 DPI 且 logical extent 不变时强制一次完整提交。
+        let current_target = query_target_extent(self.hwnd);
+        if self.observed_target.get() != current_target {
+            self.observed_target.set(current_target);
+            self.surface_generation
+                .set(self.surface_generation.get().wrapping_add(1));
+        }
+        PresentSurface::identity(
+            drawable_width,
+            drawable_height,
+            device_pixel_ratio,
+            self.surface_generation.get(),
+        )
     }
 
     fn present(

@@ -12,8 +12,8 @@ use windows::Win32::UI::HiDpi::{
 };
 
 use super::bindings::RECT;
-use super::consts::FALSE;
-use super::ffi::AdjustWindowRectExForDpi;
+use super::consts::{FALSE, SWP_NOACTIVATE, SWP_NOZORDER};
+use super::ffi::{AdjustWindowRectExForDpi, SetWindowPos};
 use super::util::windows_diag;
 use crate::native::{Errc, Error};
 
@@ -85,6 +85,52 @@ pub(crate) fn outer_size_for_logical_client(
         ));
     }
     Ok((rect.right - rect.left, rect.bottom - rect.top))
+}
+
+/// 应用 `WM_DPICHANGED` 提供的 physical 外窗矩形。
+///
+/// # Safety
+///
+/// `suggested` 必须指向当前同步消息调用期间有效的 Win32 `RECT`。
+pub(super) unsafe fn apply_suggested_window_rect(
+    hwnd: *mut c_void,
+    suggested: *const RECT,
+) -> Result<(), Error> {
+    if hwnd.is_null() || suggested.is_null() {
+        return Err(Error::new(
+            Errc::InvalidArgument,
+            "WM_DPICHANGED requires a valid HWND and suggested RECT",
+        ));
+    }
+    // SAFETY: 有效期由调用方保证；read_unaligned 不额外要求指针对齐。
+    let rect = unsafe { std::ptr::read_unaligned(suggested) };
+    let width = rect.right.saturating_sub(rect.left);
+    let height = rect.bottom.saturating_sub(rect.top);
+    if width <= 0 || height <= 0 {
+        return Err(Error::new(
+            Errc::InvalidArgument,
+            format!("WM_DPICHANGED suggested an invalid window extent {width}x{height}"),
+        ));
+    }
+    // SAFETY: HWND 与矩形已校验，调用不保留 Rust 指针。
+    if unsafe {
+        SetWindowPos(
+            hwnd,
+            std::ptr::null_mut(),
+            rect.left,
+            rect.top,
+            width,
+            height,
+            SWP_NOZORDER | SWP_NOACTIVATE,
+        )
+    } == 0
+    {
+        return Err(windows_diag(
+            Errc::PlatformError,
+            "WM_DPICHANGED SetWindowPos failed",
+        ));
+    }
+    Ok(())
 }
 
 /// 临时把当前线程切到 Per-Monitor V2；调用方必须显式 finish 以保留 typed 失败。
