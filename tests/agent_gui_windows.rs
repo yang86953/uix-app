@@ -12,11 +12,15 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-use windows::Win32::UI::Input::KeyboardAndMouse::VK_TAB;
+use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    SendInput, SetActiveWindow, SetFocus, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
+    KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_TAB,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowThreadProcessId, IsIconic, IsZoomed, PostMessageW, SetWindowPos,
-    ShowWindowAsync, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
-    SW_MAXIMIZE, SW_MINIMIZE, WM_CLOSE, WM_KEYDOWN, WM_KEYUP,
+    BringWindowToTop, EnumWindows, GetForegroundWindow, GetWindowThreadProcessId, IsIconic,
+    IsZoomed, PostMessageW, SetForegroundWindow, SetWindowPos, ShowWindowAsync, HWND_TOPMOST,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_MAXIMIZE, SW_MINIMIZE, WM_CLOSE,
 };
 
 const START_TIMEOUT: Duration = Duration::from_secs(45);
@@ -213,28 +217,20 @@ impl DemoProcess {
         });
     }
 
-    fn post_native_tab(&self) {
+    fn send_system_tab(&self) {
         let window = self.window_handle();
-        unsafe {
-            // SAFETY: 目标 HWND 属于仍存活的测试子进程；键盘消息只携带值类型参数。
-            PostMessageW(
-                Some(window),
-                WM_KEYDOWN,
-                WPARAM(VK_TAB.0 as usize),
-                LPARAM(0),
-            )
-        }
-        .expect("post native Tab key-down to demo");
-        unsafe {
-            // SAFETY: bit 30/31 只声明该键此前按下且本消息为释放，不携带借用指针。
-            PostMessageW(
-                Some(window),
-                WM_KEYUP,
-                WPARAM(VK_TAB.0 as usize),
-                LPARAM(0xC000_0001u32 as isize),
-            )
-        }
-        .expect("post native Tab key-up to demo");
+        request_foreground_focus(window);
+        let inputs = [
+            keyboard_input(VK_TAB, KEYBD_EVENT_FLAGS(0)),
+            keyboard_input(VK_TAB, KEYEVENTF_KEYUP),
+        ];
+        // SAFETY: INPUT 数组在同步调用期间有效，结构尺寸与 Win32 ABI 一致。
+        let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+        assert_eq!(
+            sent as usize,
+            inputs.len(),
+            "SendInput must enqueue the complete Tab press"
+        );
     }
 
     fn window_handle(&self) -> HWND {
@@ -260,6 +256,78 @@ impl DemoProcess {
             );
             thread::sleep(Duration::from_millis(25));
         }
+    }
+}
+
+fn keyboard_input(vk: VIRTUAL_KEY, flags: KEYBD_EVENT_FLAGS) -> INPUT {
+    INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: vk,
+                wScan: 0,
+                dwFlags: flags,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    }
+}
+
+fn window_thread_id(window: HWND) -> u32 {
+    // SAFETY: window 来自仍存活测试子进程的 EnumWindows 结果；不请求进程 ID 输出。
+    unsafe { GetWindowThreadProcessId(window, None) }
+}
+
+fn foreground_window() -> HWND {
+    // SAFETY: GetForegroundWindow 不接收指针，也不转移返回句柄的所有权。
+    unsafe { GetForegroundWindow() }
+}
+
+fn attach_input_thread(current: u32, other: u32) -> bool {
+    if other == 0 || other == current {
+        return false;
+    }
+    // SAFETY: 两个线程 ID 均来自 Win32 查询；调用只临时合并其输入队列。
+    unsafe { AttachThreadInput(current, other, true) }.as_bool()
+}
+
+fn request_foreground_focus(window: HWND) {
+    // SAFETY: GetCurrentThreadId 不接收指针，返回值只用于本次输入队列操作。
+    let current_thread = unsafe { GetCurrentThreadId() };
+    let target_thread = window_thread_id(window);
+    assert_ne!(target_thread, 0, "demo HWND must belong to a live thread");
+    let foreground = foreground_window();
+    let foreground_thread = if foreground.0.is_null() {
+        0
+    } else {
+        window_thread_id(foreground)
+    };
+    let attached_foreground = attach_input_thread(current_thread, foreground_thread);
+    let attached_target =
+        target_thread != foreground_thread && attach_input_thread(current_thread, target_thread);
+
+    unsafe {
+        // SAFETY: window 属于仍存活的测试子进程；临时合并输入队列后仅请求激活与键盘焦点。
+        let _ = BringWindowToTop(window);
+        let _ = SetActiveWindow(window);
+        let _ = SetForegroundWindow(window);
+        let _ = SetFocus(Some(window));
+        if attached_target {
+            let _ = AttachThreadInput(current_thread, target_thread, false);
+        }
+        if attached_foreground {
+            let _ = AttachThreadInput(current_thread, foreground_thread, false);
+        }
+    }
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while foreground_window() != window {
+        assert!(
+            Instant::now() < deadline,
+            "demo HWND did not become the foreground window"
+        );
+        thread::sleep(Duration::from_millis(25));
     }
 }
 
@@ -664,7 +732,7 @@ fn run_real_gui_scenario(graphics: GraphicsExpectation) {
         json!({ "kind": "focus" }),
     );
     assert_eq!(focused["settled"], true);
-    demo.post_native_tab();
+    demo.send_system_tab();
     wait_for_focused_node(
         &mut connection,
         window_id,
