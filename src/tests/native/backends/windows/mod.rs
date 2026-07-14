@@ -3,6 +3,7 @@
 mod frame_pacer;
 mod gdi_presenter;
 mod ime_dispatch;
+mod ime_foreground;
 mod platform;
 mod text_input;
 mod tsf_session;

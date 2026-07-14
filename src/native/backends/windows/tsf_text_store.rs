@@ -466,13 +466,17 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         prc: *mut RECT,
         pfclipped: *mut BOOL,
     ) -> WinResult<()> {
+        if prc.is_null() || pfclipped.is_null() {
+            return Err(WinError::from(E_INVALIDARG));
+        }
         let state = self
             .state
             .lock()
             .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
         require_read_lock(&state)?;
+        let rect = state.cursor_screen_rect()?;
         unsafe {
-            *prc = state.cursor;
+            *prc = rect;
             *pfclipped = false.into();
         }
         Ok(())
@@ -483,24 +487,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
             .state
             .lock()
             .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
-        let mut rect = state.cursor;
-        let mut tl = POINT {
-            x: rect.left,
-            y: rect.top,
-        };
-        let mut br = POINT {
-            x: rect.right,
-            y: rect.bottom,
-        };
-        unsafe {
-            let _ = windows::Win32::Graphics::Gdi::ClientToScreen(state.event_sink.hwnd, &mut tl);
-            let _ = windows::Win32::Graphics::Gdi::ClientToScreen(state.event_sink.hwnd, &mut br);
-        }
-        rect.left = tl.x;
-        rect.top = tl.y;
-        rect.right = br.x;
-        rect.bottom = br.y;
-        Ok(rect)
+        state.screen_extent()
     }
 
     fn GetWnd(&self, _vcview: u32) -> WinResult<HWND> {

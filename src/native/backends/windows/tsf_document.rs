@@ -5,7 +5,9 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
+use windows::core::{Error as WinError, Result as WinResult};
 use windows::Win32::Foundation::{HWND, RECT};
+use windows::Win32::Graphics::Gdi::ClientToScreen;
 use windows::Win32::UI::TextServices::{
     ITextStoreACPSink, TEXT_STORE_LOCK_FLAGS, TS_AE_END, TS_LF_READ, TS_LF_READWRITE, TS_LF_SYNC,
     TS_SELECTIONSTYLE, TS_SELECTION_ACP, TS_TEXTCHANGE,
@@ -79,6 +81,47 @@ impl TsfStoreState {
 
     pub(crate) fn set_cursor_rect(&mut self, rect: RECT) {
         self.cursor = rect;
+    }
+
+    pub(crate) fn cursor_screen_rect(&self) -> WinResult<RECT> {
+        self.client_rect_to_screen(self.cursor)
+    }
+
+    pub(crate) fn screen_extent(&self) -> WinResult<RECT> {
+        let hwnd = self.event_sink.hwnd;
+        // 最小化窗口没有可呈现的文本表面，向 TIP 返回空范围。
+        if unsafe { windows::Win32::UI::WindowsAndMessaging::IsIconic(hwnd) }.as_bool() {
+            return Ok(RECT::default());
+        }
+        let mut rect = RECT::default();
+        // SAFETY: rect 在调用期间有效，hwnd 由活动文本输入会话持有。
+        unsafe { windows::Win32::UI::WindowsAndMessaging::GetClientRect(hwnd, &mut rect)? };
+        self.client_rect_to_screen(rect)
+    }
+
+    fn client_rect_to_screen(&self, rect: RECT) -> WinResult<RECT> {
+        let mut top_left = windows::Win32::Foundation::POINT {
+            x: rect.left,
+            y: rect.top,
+        };
+        let mut bottom_right = windows::Win32::Foundation::POINT {
+            x: rect.right,
+            y: rect.bottom,
+        };
+        // SAFETY: 两个 POINT 在调用期间有效，hwnd 由活动文本输入会话持有。
+        let converted = unsafe {
+            ClientToScreen(self.event_sink.hwnd, &mut top_left).as_bool()
+                && ClientToScreen(self.event_sink.hwnd, &mut bottom_right).as_bool()
+        };
+        if !converted {
+            return Err(WinError::from_thread());
+        }
+        Ok(RECT {
+            left: top_left.x,
+            top: top_left.y,
+            right: bottom_right.x,
+            bottom: bottom_right.y,
+        })
     }
 
     pub(crate) fn composition_active(&self) -> bool {
