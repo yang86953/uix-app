@@ -7,4 +7,5 @@ mod notification;
 mod popover;
 mod progress;
 mod spin;
+mod toast_motion;
 mod tooltip;
