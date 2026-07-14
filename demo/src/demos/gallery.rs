@@ -27,13 +27,13 @@ fn coverage_row(
             return button(line)
                 .on_click(&nav, move |nav| nav.set(target))
                 .font_size(12.0)
-                .color(color)
+                .fg(color)
                 .padding((2.0, 0.0, 2.0, 0.0))
                 .width(900.0);
         }
     }
 
-    embed(Label::new(&line).color(color).font_size(12.0))
+    label(line).font_size(12.0).fg(color).into_node()
 }
 
 /// 单行覆盖项：(分类, widget/特性, 演示页, 是否已展示)
@@ -50,6 +50,7 @@ pub const COVERAGE: &[(&str, &str, &str, bool)] = &[
     // ── 布局 ──
     ("布局", "Container", "布局", true),
     ("布局", "Grid", "布局", true),
+    ("布局", "Grid responsive", "布局", true),
     (
         "布局",
         "Layout / Header / Sider / Content / Footer",
@@ -60,6 +61,7 @@ pub const COVERAGE: &[(&str, &str, &str, bool)] = &[
     ("布局", "Affix", "布局", true),
     ("布局", "BackTop", "布局", true),
     ("布局", "ScrollView", "布局", true),
+    ("布局", "VirtualScroll", "布局", true),
     // ── 导航 ──
     ("导航", "Menu / MenuItem / MenuMode", "导航", true),
     ("导航", "Tabs / TabPosition", "导航", true),
@@ -77,13 +79,14 @@ pub const COVERAGE: &[(&str, &str, &str, bool)] = &[
     ("输入", "Checkbox / Radio / Switch", "输入", true),
     ("输入", "Slider / Rate", "输入", true),
     ("输入", "Form / FormItem", "输入", true),
+    ("输入", "Form validation", "输入", true),
     ("输入", "TreeSelect", "输入", true),
     ("输入", "DatePicker / TimePicker", "输入", true),
     ("输入", "ColorPicker", "输入", true),
     ("输入", "Cascader", "输入", true),
     ("输入", "AutoComplete / Mentions", "输入", true),
     ("输入", "Segmented", "输入", true),
-    // ── 数据展示 ──
+    // ── 数据 ──
     ("数据", "Card", "数据展示", true),
     ("数据", "List", "数据展示", true),
     ("数据", "Tree / TreeNode", "数据展示", true),
@@ -110,17 +113,17 @@ pub const COVERAGE: &[(&str, &str, &str, bool)] = &[
         true,
     ),
     // ── 图表 ──
-    ("图表", "BarChart / BarData", "图表", true),
-    ("图表", "LineChart / LineData", "图表", true),
-    ("图表", "PieChart / PieData", "图表", true),
+    ("图表", "BarChart", "图表", true),
+    ("图表", "LineChart / Series", "图表", true),
+    ("图表", "PieChart (solid / donut)", "图表", true),
     // ── 其他 ──
     ("其他", "ScrollView", "其他", true),
     ("其他", "QRCode / Watermark", "其他", true),
     ("其他", "Transfer / Upload", "其他", true),
     ("其他", "ThemeToggle", "其他", true),
     ("其他", "component! 自定义", "其他", true),
-    ("其他", "RichText", "数据展示", true),
-    // ── App 能力 ──
+    ("其他", "canvas 轻量绘制", "其他", true),
+    // ── 应用能力 ──
     ("应用能力", "State / label / on_click", "应用能力", true),
     (
         "应用能力",
@@ -128,6 +131,10 @@ pub const COVERAGE: &[(&str, &str, &str, bool)] = &[
         "应用能力",
         true,
     ),
+    ("应用能力", "Computed / Effect", "应用能力", true),
+    ("应用能力", "Animation", "应用能力", true),
+    ("应用能力", "ConfigProvider", "应用能力", true),
+    ("应用能力", "Accessibility (role / aria)", "应用能力", true),
     (
         "应用能力",
         "run_after / run_interval (Timer)",
@@ -205,7 +212,7 @@ pub fn page_gallery(ctx: &DemoCtx<'_>) -> ViewNode {
     let mut last_cat = "";
     for (cat, name, page, ok) in COVERAGE {
         if *cat != last_cat {
-            builder = builder.section(&format!("{cat}"));
+            builder = builder.section(cat);
             last_cat = cat;
         }
         builder = builder.push(coverage_row(tk, active, name, page, *ok));
@@ -220,11 +227,15 @@ mod tests {
 
     #[test]
     fn coverage_has_entries() {
-        assert!(COVERAGE.len() >= 60);
+        assert!(
+            COVERAGE.len() >= 80,
+            "expected at least 80 coverage entries, got {}",
+            COVERAGE.len()
+        );
         let (shown, total) = covered_count();
         assert_eq!(shown + (total - shown), total);
         assert!(
-            shown > 50,
+            shown > 70,
             "expected most widgets covered, got {shown}/{total}"
         );
     }

@@ -1,4 +1,5 @@
 //! Dashboard 共享上下文 — 跨页 State（定时器 tick、动画 time）。
+//! 使用 [`使用.md`](../../docs/使用.md) 风格。
 
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -28,28 +29,21 @@ impl ThemeControl {
         self.dark.load(Ordering::Acquire)
     }
 
-    pub fn toggle(&self) -> bool {
+    pub fn toggle(&self) {
         let next = !self.is_dark();
         let handle = self
             .handle
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone();
-        let Some(handle) = handle else {
-            return false;
-        };
-        if handle
-            .set_theme(if next {
+        if let Some(handle) = handle {
+            let _ = handle.set_theme(if next {
                 Theme::antd_dark()
             } else {
                 Theme::antd_light()
-            })
-            .is_err()
-        {
-            return false;
+            });
+            self.dark.store(next, Ordering::Release);
         }
-        self.dark.store(next, Ordering::Release);
-        true
     }
 }
 
@@ -58,7 +52,6 @@ pub struct DemoCtx<'a> {
     pub tk: &'a DesignTokens,
     pub timer_ticks: &'a State<u32>,
     pub anim_time: &'a State<f32>,
-    /// 当前页索引；覆盖清单等页用于跳转导航。
     pub active_page: Option<&'a State<usize>>,
     home_count: Option<&'a State<i32>>,
     runtime_count: Option<&'a State<i32>>,

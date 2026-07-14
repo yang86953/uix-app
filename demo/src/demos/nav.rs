@@ -1,4 +1,5 @@
-//! 组件库页面 — page_nav（导航 + Overlay Dropdown）。
+//! 组件库页面 — page_nav（导航）。
+//! 对照 [`使用.md`](../../docs/使用.md#导航) 导航组件。
 
 use uix::prelude::*;
 
@@ -8,6 +9,12 @@ use crate::demos::context::DemoCtx;
 
 pub fn page_nav(ctx: &DemoCtx<'_>) -> ViewNode {
     let tk = ctx.tk;
+
+    // State-driven 导航状态
+    let menu_selected = State::new(0usize);
+    let dropdown_selected = State::new(0usize);
+    let active_tab = State::new(0usize);
+    let page = State::new(1u32);
 
     let nav_items = Navigation::new("Demo Nav")
         .item("首页", "home")
@@ -28,7 +35,9 @@ pub fn page_nav(ctx: &DemoCtx<'_>) -> ViewNode {
 
     PageBuilder::new(tk)
         .gap()
-        .block("Navigation — 侧栏构建器", embed(nav_items))
+        // 1. Navigation — 侧栏构建器
+        .block("Navigation — 侧栏构建器", nav_items)
+        // 2. NavGroup + NavItem
         .block("NavGroup + NavItem", {
             let mut sp = Space::new()
                 .size(SpaceSize::Small)
@@ -38,117 +47,99 @@ pub fn page_nav(ctx: &DemoCtx<'_>) -> ViewNode {
             for item in group_items {
                 sp = sp.child(item);
             }
-            embed(sp)
+            sp
         })
+        // 3. Menu — Inline / Horizontal / Vertical
         .block(
-            "Menu — Horizontal / Vertical",
-            column_fit([
-                embed(
-                    Menu::new()
-                        .add_item(MenuItem {
-                            key: "home".into(),
-                            label: "首页".into(),
-                            icon: "home".into(),
-                            disabled: false,
-                        })
-                        .add_item(MenuItem {
-                            key: "docs".into(),
-                            label: "文档".into(),
-                            icon: "file-text".into(),
-                            disabled: false,
-                        })
-                        .add_item(MenuItem {
-                            key: "about".into(),
-                            label: "关于".into(),
-                            icon: "info".into(),
-                            disabled: false,
-                        })
-                        .mode(MenuMode::Horizontal)
-                        .active_key("home"),
-                ),
-                embed(
-                    Menu::new()
-                        .add_item(MenuItem {
-                            key: "a".into(),
-                            label: "菜单 A".into(),
-                            icon: "".into(),
-                            disabled: false,
-                        })
-                        .add_item(MenuItem {
-                            key: "b".into(),
-                            label: "菜单 B".into(),
-                            icon: "".into(),
-                            disabled: false,
-                        })
-                        .mode(MenuMode::Vertical)
-                        .active_key("a"),
-                ),
+            "Menu — Inline / Horizontal / Vertical",
+            column([
+                // Inline 模式
+                Menu::new()
+                    .items(vec![
+                        MenuItem::new("首页").icon("home"),
+                        MenuItem::new("文档").icon("file-text"),
+                        MenuItem::new("设置").icon("settings"),
+                    ])
+                    .selected_index(&menu_selected)
+                    .mode(MenuMode::Inline),
+                // Horizontal 模式
+                Menu::new()
+                    .items(vec![
+                        MenuItem::new("首页").icon("home"),
+                        MenuItem::new("文档").icon("file-text"),
+                        MenuItem::new("关于").icon("info"),
+                    ])
+                    .selected_index(&menu_selected)
+                    .mode(MenuMode::Horizontal),
+                // Vertical 模式
+                Menu::new()
+                    .items(vec![MenuItem::new("菜单 A"), MenuItem::new("菜单 B")])
+                    .selected_index(&menu_selected)
+                    .mode(MenuMode::Vertical),
             ])
             .gap(16.0),
         )
+        // 4. Tabs
         .block(
             "Tabs",
-            embed(
-                tree! { Tabs::new().tab("用户", "u").tab("设置", "s").tab("分析", "a")
-                    .active(0).position(TabPosition::Top).size(INNER_W - 48.0, 140.0) => [
-                    tree! { Container::new().size(INNER_W - 48.0, 100.0) => [
-                        Label::new("用户面板").style(Style {
-                            color: ColorValue::Neutral(NeutralRole::Text),
-                            ..Style::default()
-                        }).font_size(14.0),
-                    ]},
-                    tree! { Container::new().size(INNER_W - 48.0, 100.0) => [
-                        Label::new("设置面板").style(Style {
-                            color: ColorValue::Neutral(NeutralRole::Text),
-                            ..Style::default()
-                        }).font_size(14.0),
-                    ]},
-                    tree! { Container::new().size(INNER_W - 48.0, 100.0) => [
-                        Label::new("分析面板").style(Style {
-                            color: ColorValue::Neutral(NeutralRole::Text),
-                            ..Style::default()
-                        }).font_size(14.0),
-                    ]},
-                ]},
-            ),
+            Tabs::new()
+                .tabs(vec![
+                    Tab::new("用户", || {
+                        column((label("用户面板").fg(tk.color_text).font_size(14.0),))
+                            .size(INNER_W - 48.0, 100.0)
+                    }),
+                    Tab::new("设置", || {
+                        column((label("设置面板").fg(tk.color_text).font_size(14.0),))
+                            .size(INNER_W - 48.0, 100.0)
+                    }),
+                    Tab::new("分析", || {
+                        column((label("分析面板").fg(tk.color_text).font_size(14.0),))
+                            .size(INNER_W - 48.0, 100.0)
+                    }),
+                ])
+                .active(&active_tab),
         )
+        // 5-7. Dropdown / Breadcrumb / Anchor
         .block(
             "Dropdown / Breadcrumb / Anchor",
-            column_fit([
-                embed(labeled_row(
-                    tk,
-                    36.0,
-                    "Dropdown",
-                    Dropdown::new("Actions").items(vec!["编辑", "复制", "删除", "导出"]),
-                )),
-                embed(
-                    demo_row(28.0).child(
-                        Breadcrumb::new()
-                            .item(BreadcrumbItem::new("首页"))
-                            .item(BreadcrumbItem::new("组件"))
-                            .item(BreadcrumbItem::new("导航").active()),
-                    ),
-                ),
-                embed(Anchor::new(vec![
-                    AnchorItem::new("基础", "#basic"),
-                    AnchorItem::new("高级", "#advanced"),
-                    AnchorItem::new("API", "#api"),
-                ])),
+            column([
+                // Dropdown
+                Dropdown::new()
+                    .items(vec![
+                        DropdownItem::new("编辑"),
+                        DropdownItem::new("复制"),
+                        DropdownItem::new("删除").danger(true),
+                        DropdownItem::divider(),
+                        DropdownItem::new("导出"),
+                    ])
+                    .attach(button("操作")),
+                // Breadcrumb
+                Breadcrumb::new().items(vec!["首页", "组件", "导航"]),
+                // Anchor
+                Anchor::new().items(vec![
+                    AnchorItem::new("section-1", "基本信息"),
+                    AnchorItem::new("section-2", "高级设置"),
+                    AnchorItem::new("section-3", "API"),
+                ]),
             ])
             .gap(12.0),
         )
+        // 8-9. Steps / Pagination
         .block(
             "Steps / Pagination",
-            column_fit([
-                embed(
-                    Steps::new(vec![
-                        Step::new("注册").status(StepStatus::Finish),
-                        Step::new("验证").status(StepStatus::Process),
-                        Step::new("完成").status(StepStatus::Wait),
-                    ])
-                    .current(1),
-                ),
-                embed(Pagination::new(85, 10)),
+            column([
+                // Steps with different statuses
+                Steps::new().current(1).items(vec![
+                    Step::new("注册").status(StepStatus::Finish),
+                    Step::new("验证").status(StepStatus::Process),
+                    Step::new("完成").status(StepStatus::Wait),
+                ]),
+                // Pagination with State
+                Pagination::new()
+                    .total(200)
+                    .page_size(20)
+                    .current(&page)
+                    .on_change(|p| page.set(p)),
             ])
             .gap(16.0),
         )

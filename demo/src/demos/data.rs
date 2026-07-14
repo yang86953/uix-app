@@ -6,72 +6,113 @@ use crate::common::page::{demo_row, PageBuilder, INNER_W};
 use crate::common::showcase::labeled_row;
 use crate::demos::context::DemoCtx;
 
+#[derive(Clone)]
+struct User {
+    name: String,
+    age: u32,
+    role: String,
+}
+
 pub fn page_data(ctx: &DemoCtx<'_>) -> ViewNode {
     let tk = ctx.tk;
-    let c4 = (INNER_W - 24.0) / 4.0;
+
+    let users = vec![
+        User {
+            name: "张三".into(),
+            age: 28,
+            role: "管理员".into(),
+        },
+        User {
+            name: "李四".into(),
+            age: 35,
+            role: "开发者".into(),
+        },
+        User {
+            name: "王五".into(),
+            age: 22,
+            role: "设计师".into(),
+        },
+        User {
+            name: "赵六".into(),
+            age: 30,
+            role: "测试".into(),
+        },
+    ];
+
+    let tree_nodes = {
+        let mut children = Vec::new();
+        for i in 0..40 {
+            children.push(TreeNode::new(&format!("节点 {i}"), &format!("n-{i}")));
+        }
+        vec![TreeNode::new("根", "root").children(children)]
+    };
 
     PageBuilder::new(tk)
         .gap()
         .section("Card — elevation 0~3")
         .push(
-            Space::new()
-                .size(SpaceSize::Middle)
-                .width(INNER_W)
-                .height(130.0)
-                .direction(FlexDirection::Row)
-                .align(AlignItems::Stretch)
-                .child(
-                    Card::new()
-                        .title("E0")
-                        .elevation(0)
-                        .bordered(true)
-                        .size(c4, 120.0)
-                        .child(
-                            Label::new("有边框")
-                                .color(tk.color_text_tertiary)
-                                .font_size(12.0),
-                        ),
-                )
-                .child(
-                    Card::new().title("E1").elevation(1).size(c4, 120.0).child(
-                        Label::new("柔和阴影")
-                            .color(tk.color_text_tertiary)
-                            .font_size(12.0),
-                    ),
-                )
-                .child(
-                    Card::new().title("E2").elevation(2).size(c4, 120.0).child(
-                        Label::new("中等阴影")
-                            .color(tk.color_text_tertiary)
-                            .font_size(12.0),
-                    ),
-                )
-                .child(
-                    Card::new().title("E3").elevation(3).size(c4, 120.0).child(
-                        Label::new("深阴影")
-                            .color(tk.color_text_tertiary)
-                            .font_size(12.0),
-                    ),
-                ),
+            row((
+                Card::new()
+                    .title("Elevation 0")
+                    .elevation(0)
+                    .child(label("有边框").fg(tk.color_text_tertiary).font_size(12.0)),
+                Card::new()
+                    .title("Elevation 1")
+                    .elevation(1)
+                    .child(label("柔和阴影").fg(tk.color_text_tertiary).font_size(12.0)),
+                Card::new()
+                    .title("Elevation 2")
+                    .elevation(2)
+                    .child(label("中等阴影").fg(tk.color_text_tertiary).font_size(12.0)),
+                Card::new()
+                    .title("Elevation 3")
+                    .elevation(3)
+                    .child(label("深阴影").fg(tk.color_text_tertiary).font_size(12.0)),
+            ))
+            .gap(8.0),
+        )
+        .section("Table")
+        .push(
+            Table::new()
+                .columns(vec![
+                    TableColumn::new("姓名", 120.0).render(|u: &User| u.name.clone()),
+                    TableColumn::new("年龄", 80.0).render(|u: &User| u.age.to_string()),
+                    TableColumn::new("角色", 100.0).render(|u: &User| u.role.clone()),
+                ])
+                .rows(users.clone())
+                .sortable(true)
+                .selection(true)
+                .bordered(true),
+        )
+        .section("Table — 固定列")
+        .push(
+            Table::new()
+                .columns(vec![
+                    TableColumn::new("姓名", 120.0)
+                        .fixed(Fixed::Left)
+                        .render(|u: &User| u.name.clone()),
+                    TableColumn::new("年龄", 80.0).render(|u: &User| u.age.to_string()),
+                    TableColumn::new("邮箱", 200.0).render(|_: &User| "-".to_string()),
+                    TableColumn::new("操作", 100.0)
+                        .fixed(Fixed::Right)
+                        .render(|_: &User| "编辑".to_string()),
+                ])
+                .rows(users),
         )
         .section("List")
-        .push(tree! { Container::new().size(INNER_W, 180.0) => [
+        .push(
             List::new()
-                .header("用户列表")
-                .items(vec!["Alice — 设计师", "Bob — 开发者", "Carol — 管理者"])
-                .footer("共 3 人")
-                .into_node(),
-        ]})
+                .items(&vec!["Alice — 设计师", "Bob — 开发者", "Carol — 管理者"])
+                .render(|item| label(item).font_size(14.0))
+                .gap(4.0),
+        )
         .section("Tree")
-        .push(tree! { Container::new().size(INNER_W, 160.0) => [
-            Tree::new({
-                let mut children = Vec::new();
-                for i in 0..40 {
-                    children.push(TreeNode::new(&format!("节点 {i}"), &format!("n-{i}")));
-                }
-                vec![TreeNode::new("根", "root").children(children)]
-            }).into_node(),
-        ]})
+        .push(
+            Tree::new()
+                .data(&tree_nodes)
+                .default_expand_all(true)
+                .render(|node| label(node.label)),
+        )
         .section("Collapse")
         .push(Collapse::new().panels(vec![
             CollapsePanel::new("面板 1", "常规内容。").expanded(),
@@ -79,94 +120,56 @@ pub fn page_data(ctx: &DemoCtx<'_>) -> ViewNode {
             CollapsePanel::new("面板 3", "高级内容。"),
         ]))
         .section("Descriptions")
-        .push(tree! { Container::new().size(INNER_W, 100.0) => [
-            Descriptions::new().title("用户信息")
-                .add(DescriptionsItem::new("姓名", "张三"))
-                .add(DescriptionsItem::new("邮箱", "zhang@ex.com"))
-                .add(DescriptionsItem::new("角色", "管理员"))
-                .column(3).into_node(),
-        ]})
-        .section("Timeline / Calendar")
-        .push(tree! { Container::new().size(INNER_W, 120.0) => [
-            Timeline::new()
-                .add(TimelineItem::new("创建").description("2024-01-15"))
-                .add(TimelineItem::new("设计").description("2024-02-20"))
-                .add(TimelineItem::new("上线").description("2024-03-10"))
-                .into_node(),
-        ]})
-        .push(tree! { Container::new().size(INNER_W, 220.0) => [
-            Calendar::new().cell_size(28.0).into_node(),
-        ]})
+        .push(
+            Descriptions::new()
+                .item("用户名", "张三")
+                .item("邮箱", "zhang@ex.com")
+                .item("角色", "管理员")
+                .bordered(true),
+        )
+        .section("Timeline")
+        .push(Timeline::new().items(vec![
+            TimelineItem::new("2024-01-15", "创建"),
+            TimelineItem::new("2024-02-20", "设计"),
+            TimelineItem::new("2024-03-10", "上线"),
+        ]))
+        .section("Calendar")
+        .push(Calendar::new().cell_size(28.0))
         .section("Carousel")
-        .push(labeled_row(
-            tk,
-            120.0,
-            "Carousel",
-            Carousel::new().show_dots(true).show_arrows(true),
-        ))
+        .push(Carousel::new().show_dots(true).show_arrows(true))
         .section("Avatar / Badge / Tag")
         .push(
-            demo_row(40.0)
-                .child(Avatar::new("U"))
-                .child(Avatar::new("A").bg(tk.color_primary))
-                .child(Badge::new().count(5).color(tk.color_error))
-                .child(Tag::new("Tag").color(TagColor::Info)),
+            row((
+                Avatar::new("U"),
+                Avatar::new("A").bg(tk.color_primary),
+                Badge::new().count(5).color(tk.color_error),
+                Tag::new("Tag").color(TagColor::Info),
+            ))
+            .gap(16.0),
         )
         .section("Image / Empty / ResultView")
         .push(
-            demo_row(80.0)
-                .child(
-                    Image::new(80.0, 60.0)
-                        .src("assets/images/demo.png")
-                        .alt("demo"),
-                )
-                .child(Image::new(80.0, 60.0).alt("placeholder")),
+            row((
+                Image::new(80.0, 60.0)
+                    .src("assets/images/demo.png")
+                    .alt("demo"),
+                Image::new(80.0, 60.0).alt("placeholder"),
+            ))
+            .gap(16.0),
         )
         .push(Empty::new().description("暂无数据"))
         .push(
-            tree! { Container::new().size(INNER_W, 120.0).dir(FlexDirection::Row).gap(16.0) => [
-                ResultView::new(ResultType::Success).title("成功").into_node(),
-                ResultView::new(ResultType::Error).title("失败").into_node(),
-                ResultView::new(ResultType::Warning).title("警告").into_node(),
-            ]},
+            row((
+                ResultView::new(ResultType::Success).title("成功"),
+                ResultView::new(ResultType::Error).title("失败"),
+                ResultView::new(ResultType::Warning).title("警告"),
+            ))
+            .gap(16.0),
         )
         .section("Skeleton")
-        .push(
-            Space::new()
-                .size(SpaceSize::Small)
-                .width(INNER_W)
-                .height(60.0)
-                .direction(FlexDirection::Column)
-                .child(
-                    Skeleton::new()
-                        .shape(SkeletonShape::Rect)
-                        .size(INNER_W, 16.0),
-                )
-                .child(
-                    Skeleton::new()
-                        .shape(SkeletonShape::Rect)
-                        .size(INNER_W * 0.6, 16.0),
-                ),
-        )
-        .section("Table")
-        .push(tree! { Container::new().size(INNER_W, 200.0) => [
-            Table::new()
-                .columns(vec![
-                    TableColumn::new("姓名", 100.0).sortable(true),
-                    TableColumn::new("角色", 120.0),
-                    TableColumn::new("状态", 80.0).filterable(true),
-                ])
-                .rows((0..60).map(|i: usize| {
-                    vec![
-                        format!("User {i}"),
-                        if i % 3 == 0 { "Designer".into() } else { "Engineer".into() },
-                        "Active".into(),
-                    ]
-                }).collect())
-                .into_node(),
-        ]})
+        .push(Skeleton::new().rows(3).animated(true))
         .section("SelectableList")
-        .push(labeled_row(tk, 140.0, "SelectableList", {
+        .push({
             let mut list = SelectableList::new();
             list.items = vec![
                 SelectableItem::new("1", "第一项").icon("file"),
@@ -176,22 +179,17 @@ pub fn page_data(ctx: &DemoCtx<'_>) -> ViewNode {
             list.header_button_text = "全选".into();
             list.footer_text = "3 项".into();
             list
-        }))
+        })
         .section("RichText")
-        .push(labeled_row(
-            tk,
-            40.0,
-            "RichText",
-            RichText::new().content(vec![
-                RichTextSegment::Text {
-                    content: "UIX ".to_string(),
-                    style: RichTextStyle::default(),
-                },
-                RichTextSegment::Link {
-                    content: "文档".to_string(),
-                    url: "https://uix.dev".to_string(),
-                },
-            ]),
-        ))
+        .push(RichText::new().content(vec![
+            RichTextSegment::Text {
+                content: "UIX ".to_string(),
+                style: RichTextStyle::default(),
+            },
+            RichTextSegment::Link {
+                content: "文档".to_string(),
+                url: "https://uix.dev".to_string(),
+            },
+        ]))
         .build()
 }
