@@ -1,6 +1,6 @@
 use super::*;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::pipeline::InvalidationQueueHandle;
+use crate::draw::pipeline::{Invalidation, InvalidationQueueHandle};
 use crate::ui::app_state::AppState;
 use crate::ui::component_snapshot::ComponentConfigSnapshot;
 use crate::ui::event::HandlerTable;
@@ -39,6 +39,8 @@ pub struct WidgetTree {
     pub(crate) overlay_stack: OverlayStack,
 
     pub(crate) invalidation: InvalidationQueueHandle,
+    pub(crate) pending_invalidations: Vec<Invalidation>,
+    pub(crate) invalidation_batch_depth: usize,
     pub(crate) reconcile_requested: Arc<AtomicBool>,
     pub(crate) reconcile_callback: Arc<dyn Fn() + Send + Sync>,
     pub(crate) effects: Vec<crate::ui::foundation::state::Effect>,
@@ -87,6 +89,8 @@ impl Default for WidgetTree {
             render_handler_table: RenderHandlerTable::default(),
             overlay_stack: OverlayStack::new(),
             invalidation: crate::draw::pipeline::InvalidationQueue::shared(),
+            pending_invalidations: Vec::new(),
+            invalidation_batch_depth: 0,
             reconcile_requested,
             reconcile_callback,
             effects: Vec::new(),
@@ -638,6 +642,13 @@ impl WidgetTree {
     }
 
     pub(crate) fn dispatch_timer_work(&mut self, timer_id: u64) -> EventResult {
+        self.begin_invalidation_batch();
+        let result = self.dispatch_timer_work_inner(timer_id);
+        self.finish_invalidation_batch();
+        result
+    }
+
+    fn dispatch_timer_work_inner(&mut self, timer_id: u64) -> EventResult {
         if let Some((target, local_id)) = self.timer_routes.get(&timer_id).copied() {
             if self.get(target).is_some() {
                 let result = self.dispatch_to(target, &SystemEvent::Timer { id: local_id });
