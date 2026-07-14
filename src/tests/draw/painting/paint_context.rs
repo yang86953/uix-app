@@ -151,6 +151,7 @@ fn display_list_recording_covers_extended_2d_paint_operations() {
         ctx.fill_sector(5.0, 5.0, 3.0, 0.0, 1.0, Color::green());
         ctx.fill_path(&path, Color::blue(), FillRule::NonZero);
         ctx.stroke_circle(5.0, 5.0, 3.0, Color::white(), 1.0);
+        ctx.stroke_arc(5.0, 5.0, 3.0, 0.0, 1.5, Color::white(), 1.0);
         ctx.stroke_path(&path, Color::black(), &StrokeOptions::default());
         ctx.draw_line(1.0, 1.0, 8.0, 8.0, Color::white(), 1.0);
         ctx.fill_radial_gradient(5.0, 5.0, 0.0, 4.0, Color::white(), Color::black());
@@ -165,5 +166,5 @@ fn display_list_recording_covers_extended_2d_paint_operations() {
     });
 
     assert!(ctx.recording_complete());
-    assert_eq!(list.len(), 8);
+    assert_eq!(list.len(), 9);
 }
