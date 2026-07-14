@@ -124,6 +124,7 @@ impl WidgetNode {
 }
 
 pub trait WidgetCore {
+    #[cfg(any(test, feature = "test-harness"))]
     fn id(&self) -> ComponentId;
     fn set_id(&mut self, id: ComponentId);
     fn parent(&self) -> Option<ComponentId>;
@@ -134,8 +135,6 @@ pub trait WidgetCore {
     fn set_frame(&mut self, rect: Rect);
     fn visible(&self) -> bool;
     fn set_visible(&mut self, v: bool);
-    fn opacity(&self) -> f32;
-    fn set_opacity(&mut self, v: f32);
     fn z_index(&self) -> i32;
     fn set_z_index(&mut self, v: i32);
     /// Tab 键导航顺序索引。0 = 不可通过 Tab 导航获取焦点，> 0 = 可聚焦。
@@ -157,7 +156,6 @@ pub struct BoxedWidget {
     mounted: bool,
     active: bool,
     destroyed: bool,
-    widget_opacity: f32,
     z: i32,
     /// Tab 键导航顺序（0=不可通过 Tab 导航聚焦）。
     tab_idx: i32,
@@ -184,7 +182,6 @@ impl BoxedWidget {
             mounted: false,
             active: false,
             destroyed: false,
-            widget_opacity: 1.0,
             z: 0,
             tab_idx: 0,
             handler_signatures: Vec::new(),
@@ -499,6 +496,7 @@ impl BoxedWidget {
 }
 
 impl WidgetCore for BoxedWidget {
+    #[cfg(any(test, feature = "test-harness"))]
     fn id(&self) -> ComponentId {
         self.id
     }
@@ -528,12 +526,6 @@ impl WidgetCore for BoxedWidget {
     }
     fn set_visible(&mut self, v: bool) {
         self.visible = v;
-    }
-    fn opacity(&self) -> f32 {
-        self.widget_opacity
-    }
-    fn set_opacity(&mut self, v: f32) {
-        self.widget_opacity = v;
     }
     fn z_index(&self) -> i32 {
         self.z
