@@ -6,6 +6,7 @@ mod form;
 mod input;
 mod input_number;
 mod radio;
+mod segmented;
 mod select;
 mod slider;
 mod tree_select;
