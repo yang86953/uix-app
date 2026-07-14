@@ -31,6 +31,18 @@ fn perform_request(
     }
 }
 
+fn window_action_request(
+    generation: u64,
+    expected_revision: Option<u64>,
+    action: AgentWindowAction,
+) -> AgentCommandRequest {
+    AgentCommandRequest::PerformWindow {
+        generation,
+        expected_revision,
+        action,
+    }
+}
+
 fn laid_out_button() -> WidgetTree {
     let mut tree = ViewAdapter::build_nodes(button("Run").automation_id("run"));
     tree.root_mut()
@@ -203,6 +215,138 @@ fn perform_validation_returns_stable_typed_errors_before_mutation() {
             .code(),
         AgentErrorCode::NotPresentable
     );
+
+    let (ticket, _) = queue
+        .submit(window_action_request(
+            1,
+            Some(1),
+            AgentWindowAction::PressKey {
+                key: KeyCode::A,
+                modifiers: KeyMod::CTRL,
+            },
+        ))
+        .unwrap();
+    assert!(commands.drain_ready(&mut tree, &mut semantics, false));
+    assert_eq!(
+        ticket
+            .recv_timeout(Duration::from_millis(20))
+            .unwrap()
+            .unwrap_err()
+            .code(),
+        AgentErrorCode::NotPresentable,
+        "window input must fail before dispatch while the surface cannot present"
+    );
+}
+
+#[test]
+fn window_actions_share_system_events_fifo_and_the_settle_barrier() {
+    let invoked = Rc::new(Cell::new(0usize));
+    let invoked_for_handler = invoked.clone();
+    let mut tree = ViewAdapter::build_nodes(
+        button("Run")
+            .on_click_fn(move || invoked_for_handler.set(invoked_for_handler.get() + 1))
+            .automation_id("run"),
+    );
+    tree.root_mut()
+        .expect("button root")
+        .set_frame(Rect::new(0.0, 0.0, 160.0, 40.0));
+    tree.layout();
+
+    let mut semantics = WindowSemanticState::new(WindowId::new(28));
+    assert!(semantics.enable(&tree));
+    let mut commands = WindowAgentState::new();
+    let queue = commands.queue();
+    let (click_ticket, first_wake) = queue
+        .submit(window_action_request(
+            1,
+            Some(1),
+            AgentWindowAction::ClickAt {
+                position: Point::new(80.0, 20.0),
+            },
+        ))
+        .unwrap();
+    let (key_ticket, second_wake) = queue
+        .submit(window_action_request(
+            1,
+            None,
+            AgentWindowAction::PressKey {
+                key: KeyCode::Enter,
+                modifiers: KeyMod::NONE,
+            },
+        ))
+        .unwrap();
+    let (snapshot_ticket, third_wake) = queue.submit(snapshot_request()).unwrap();
+
+    assert!(first_wake);
+    assert!(!second_wake);
+    assert!(!third_wake);
+    assert!(commands.drain_ready(&mut tree, &mut semantics, true));
+    assert_eq!(invoked.get(), 2, "click and focused key use normal events");
+    assert_eq!(queue.len(), 1, "snapshot stays behind both window actions");
+    assert!(commands.has_in_flight());
+
+    let _ = semantics.refresh(&tree);
+    assert!(commands.finish_or_defer(&semantics, false));
+    for ticket in [click_ticket, key_ticket] {
+        assert!(matches!(
+            ticket
+                .recv_timeout(Duration::from_millis(20))
+                .unwrap()
+                .unwrap(),
+            AgentCommandResponse::Performed {
+                revision: 2,
+                settled: true,
+                ..
+            }
+        ));
+    }
+
+    assert!(commands.drain_ready(&mut tree, &mut semantics, true));
+    assert!(matches!(
+        snapshot_ticket
+            .recv_timeout(Duration::from_millis(20))
+            .unwrap()
+            .unwrap(),
+        AgentCommandResponse::Snapshot(WindowSemanticSnapshot { revision: 2, .. })
+    ));
+    assert!(!commands.has_work());
+}
+
+#[test]
+fn window_input_settles_even_when_no_node_consumes_the_event() {
+    let mut tree = laid_out_button();
+    let root = tree.root_id().expect("button root");
+    tree.set_focus(Some(root));
+    let mut semantics = WindowSemanticState::new(WindowId::new(29));
+    assert!(semantics.enable(&tree));
+    let mut commands = WindowAgentState::new();
+    let (ticket, _) = commands
+        .queue()
+        .submit(window_action_request(
+            1,
+            Some(1),
+            AgentWindowAction::ClickAt {
+                position: Point::new(500.0, 500.0),
+            },
+        ))
+        .unwrap();
+
+    assert!(commands.drain_ready(&mut tree, &mut semantics, true));
+    assert!(commands.has_in_flight());
+    assert!(semantics.refresh(&tree), "the real miss clears focus");
+    assert!(commands.finish_or_defer(&semantics, false));
+    assert!(matches!(
+        ticket
+            .recv_timeout(Duration::from_millis(20))
+            .unwrap()
+            .unwrap(),
+        AgentCommandResponse::Performed {
+            revision: 2,
+            settled: true,
+            ..
+        }
+    ));
+    assert!(!semantics.snapshot().unwrap().nodes[0].focused);
 }
 
 #[test]

@@ -1,6 +1,6 @@
 //! Process-wide routing and window discovery for the opt-in Agent Bridge.
 //!
-//! This layer is transport-neutral. A future native transport owns connection
+//! This layer is transport-neutral. The native transport owns connection
 //! authentication and JSON framing, then delegates authenticated requests to
 //! [`AgentProcessBridge`]. It never receives a `WidgetTree` reference.
 
@@ -11,7 +11,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use crate::app::agent_control::{
-    AgentCommandRequest, AgentCommandTicket, AgentErrorCode, AgentSubmitError,
+    AgentCommandRequest, AgentCommandTicket, AgentErrorCode, AgentSubmitError, AgentWindowAction,
 };
 use crate::app::session_runtime::AppRuntime;
 use crate::app::window_semantics::WindowSemanticSnapshot;
@@ -375,7 +375,7 @@ impl AgentWindowRegistration {
     }
 }
 
-/// Process adapter consumed by future authenticated transport workers.
+/// Process adapter consumed by authenticated transport workers.
 /// Snapshot/perform return tickets completed by the target UI turn; wait
 /// blocks only its calling transport worker on directory notifications.
 #[derive(Clone)]
@@ -413,6 +413,23 @@ impl AgentProcessBridge {
                 generation,
                 expected_revision,
                 target,
+                action,
+            },
+        )
+    }
+
+    pub(crate) fn perform_window(
+        &self,
+        window_id: WindowId,
+        generation: u64,
+        expected_revision: Option<u64>,
+        action: AgentWindowAction,
+    ) -> Result<AgentCommandTicket, AgentSubmitError> {
+        self.submit_for_live_window(
+            window_id,
+            AgentCommandRequest::PerformWindow {
+                generation,
+                expected_revision,
                 action,
             },
         )

@@ -12,15 +12,18 @@ use serde_json::{json, Map, Value};
 
 use crate::app::agent_bridge::{
     AgentProcessBridge, AgentWaitCondition, AgentWaitError, AgentWaitOutcome, AgentWindowInfo,
+    MAX_AGENT_WAIT_TIMEOUT,
 };
 use crate::app::agent_control::{
-    AgentCommandError, AgentCommandResponse, AgentErrorCode, AgentSubmitError,
+    AgentCommandError, AgentCommandResponse, AgentErrorCode, AgentSubmitError, AgentWindowAction,
+    DEFAULT_AGENT_COMMAND_QUEUE_CAPACITY, MAX_AGENT_SETTLE_PASSES,
 };
 use crate::app::window_semantics::WindowSemanticSnapshot;
 use crate::core::{ComponentId, Point, Rect, WindowId};
 use crate::ui::component_snapshot::{AccessibilityRole, AccessibilityState};
 use crate::ui::semantic_action::SemanticAction;
 use crate::ui::semantic_snapshot::{SemanticNode, SemanticTarget};
+use crate::ui::{KeyCode, KeyMod};
 
 pub(crate) const AGENT_PROTOCOL_SCHEMA: &str = "uix.agent.v1";
 pub(crate) const MAX_AGENT_MESSAGE_BYTES: usize = 4 * 1024 * 1024;
@@ -29,6 +32,89 @@ pub(crate) const MAX_AGENT_CONNECTIONS: usize = 8;
 const MAX_REQUEST_ID_BYTES: usize = 128;
 const MAX_AUTOMATION_ID_BYTES: usize = 512;
 const AGENT_COMMAND_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
+const AGENT_REQUEST_TYPES: &[&str] = &["hello", "list_windows", "snapshot", "perform", "wait"];
+const AGENT_SEMANTIC_ACTIONS: &[&str] = &[
+    "invoke",
+    "focus",
+    "set_value",
+    "insert_text",
+    "select",
+    "toggle",
+    "increment",
+    "decrement",
+    "scroll",
+];
+const AGENT_WINDOW_ACTIONS: &[&str] = &["press_key", "click_at"];
+const AGENT_KEY_MODIFIERS: &[&str] = &["shift", "ctrl", "alt", "super"];
+const AGENT_KEY_CODES: &[(&str, KeyCode)] = &[
+    ("a", KeyCode::A),
+    ("b", KeyCode::B),
+    ("c", KeyCode::C),
+    ("d", KeyCode::D),
+    ("e", KeyCode::E),
+    ("f", KeyCode::F),
+    ("g", KeyCode::G),
+    ("h", KeyCode::H),
+    ("i", KeyCode::I),
+    ("j", KeyCode::J),
+    ("k", KeyCode::K),
+    ("l", KeyCode::L),
+    ("m", KeyCode::M),
+    ("n", KeyCode::N),
+    ("o", KeyCode::O),
+    ("p", KeyCode::P),
+    ("q", KeyCode::Q),
+    ("r", KeyCode::R),
+    ("s", KeyCode::S),
+    ("t", KeyCode::T),
+    ("u", KeyCode::U),
+    ("v", KeyCode::V),
+    ("w", KeyCode::W),
+    ("x", KeyCode::X),
+    ("y", KeyCode::Y),
+    ("z", KeyCode::Z),
+    ("0", KeyCode::Num0),
+    ("1", KeyCode::Num1),
+    ("2", KeyCode::Num2),
+    ("3", KeyCode::Num3),
+    ("4", KeyCode::Num4),
+    ("5", KeyCode::Num5),
+    ("6", KeyCode::Num6),
+    ("7", KeyCode::Num7),
+    ("8", KeyCode::Num8),
+    ("9", KeyCode::Num9),
+    ("f1", KeyCode::F1),
+    ("f2", KeyCode::F2),
+    ("f3", KeyCode::F3),
+    ("f4", KeyCode::F4),
+    ("f5", KeyCode::F5),
+    ("f6", KeyCode::F6),
+    ("f7", KeyCode::F7),
+    ("f8", KeyCode::F8),
+    ("f9", KeyCode::F9),
+    ("f10", KeyCode::F10),
+    ("f11", KeyCode::F11),
+    ("f12", KeyCode::F12),
+    ("up", KeyCode::Up),
+    ("down", KeyCode::Down),
+    ("left", KeyCode::Left),
+    ("right", KeyCode::Right),
+    ("home", KeyCode::Home),
+    ("end", KeyCode::End),
+    ("page_up", KeyCode::PageUp),
+    ("page_down", KeyCode::PageDown),
+    ("enter", KeyCode::Enter),
+    ("escape", KeyCode::Escape),
+    ("backspace", KeyCode::Backspace),
+    ("delete", KeyCode::Delete),
+    ("tab", KeyCode::Tab),
+    ("space", KeyCode::Space),
+    ("insert", KeyCode::Insert),
+    ("shift", KeyCode::Shift),
+    ("ctrl", KeyCode::Ctrl),
+    ("alt", KeyCode::Alt),
+    ("super", KeyCode::Super),
+];
 
 #[derive(Debug)]
 pub(crate) struct AgentProtocolReply {
@@ -195,7 +281,27 @@ impl AgentProtocolSession {
         success_reply(
             request_id,
             "hello",
-            json!({ "process_id": std::process::id() }),
+            json!({
+                "process_id": std::process::id(),
+                "capabilities": {
+                    "request_types": AGENT_REQUEST_TYPES,
+                    "semantic_actions": AGENT_SEMANTIC_ACTIONS,
+                    "window_actions": AGENT_WINDOW_ACTIONS,
+                    "key_names": AGENT_KEY_CODES
+                        .iter()
+                        .map(|(name, _)| *name)
+                        .collect::<Vec<_>>(),
+                    "key_modifiers": AGENT_KEY_MODIFIERS,
+                },
+                "limits": {
+                    "max_message_bytes": MAX_AGENT_MESSAGE_BYTES,
+                    "max_text_bytes": MAX_AGENT_TEXT_BYTES,
+                    "max_connections": MAX_AGENT_CONNECTIONS,
+                    "window_queue_capacity": DEFAULT_AGENT_COMMAND_QUEUE_CAPACITY,
+                    "max_settle_passes": MAX_AGENT_SETTLE_PASSES,
+                    "max_wait_ms": MAX_AGENT_WAIT_TIMEOUT.as_millis() as u64,
+                },
+            }),
         )
     }
 
@@ -270,14 +376,6 @@ impl AgentProtocolSession {
             Ok(revision) => revision,
             Err(error) => return error.into_reply(Some(request_id), false),
         };
-        let target = match object
-            .get("target")
-            .ok_or_else(|| WireError::invalid("perform requires a target object"))
-            .and_then(parse_target)
-        {
-            Ok(target) => target,
-            Err(error) => return error.into_reply(Some(request_id), false),
-        };
         let action = match object
             .get("action")
             .ok_or_else(|| WireError::invalid("perform requires an action object"))
@@ -287,14 +385,38 @@ impl AgentProtocolSession {
             Err(error) => return error.into_reply(Some(request_id), false),
         };
 
-        let ticket =
-            match self
-                .bridge
-                .perform(window_id, generation, expected_revision, target, action)
-            {
-                Ok(ticket) => ticket,
-                Err(error) => return submit_error_reply(request_id, error),
-            };
+        let ticket = match action {
+            ParsedAgentAction::Semantic(action) => {
+                let target = match object
+                    .get("target")
+                    .ok_or_else(|| WireError::invalid("semantic action requires a target object"))
+                    .and_then(parse_target)
+                {
+                    Ok(target) => target,
+                    Err(error) => return error.into_reply(Some(request_id), false),
+                };
+                match self
+                    .bridge
+                    .perform(window_id, generation, expected_revision, target, action)
+                {
+                    Ok(ticket) => ticket,
+                    Err(error) => return submit_error_reply(request_id, error),
+                }
+            }
+            ParsedAgentAction::Window(action) => {
+                if object.contains_key("target") {
+                    return WireError::invalid("window action must not include a target")
+                        .into_reply(Some(request_id), false);
+                }
+                match self
+                    .bridge
+                    .perform_window(window_id, generation, expected_revision, action)
+                {
+                    Ok(ticket) => ticket,
+                    Err(error) => return submit_error_reply(request_id, error),
+                }
+            }
+        };
         match ticket.recv_timeout(AGENT_COMMAND_RESPONSE_TIMEOUT) {
             Ok(Ok(AgentCommandResponse::Performed {
                 window_id,
@@ -489,29 +611,86 @@ fn parse_component_id(value: &str) -> Result<ComponentId, WireError> {
     }
 }
 
-fn parse_action(value: &Value) -> Result<SemanticAction, WireError> {
+#[derive(Debug, Clone, PartialEq)]
+enum ParsedAgentAction {
+    Semantic(SemanticAction),
+    Window(AgentWindowAction),
+}
+
+fn parse_action(value: &Value) -> Result<ParsedAgentAction, WireError> {
     let object = value
         .as_object()
         .ok_or_else(|| WireError::invalid("action must be an object"))?;
     let kind = required_string(object, "kind", 32)?;
-    match kind {
-        "invoke" => Ok(SemanticAction::Invoke),
-        "focus" => Ok(SemanticAction::Focus),
-        "set_value" => Ok(SemanticAction::SetValue(action_text(object, "value")?)),
-        "insert_text" => Ok(SemanticAction::InsertText(action_text(object, "text")?)),
-        "select" => Ok(SemanticAction::Select(action_text(object, "value")?)),
-        "toggle" => Ok(SemanticAction::Toggle),
-        "increment" => Ok(SemanticAction::Increment),
-        "decrement" => Ok(SemanticAction::Decrement),
+    let semantic = match kind {
+        "invoke" => SemanticAction::Invoke,
+        "focus" => SemanticAction::Focus,
+        "set_value" => SemanticAction::SetValue(action_text(object, "value")?),
+        "insert_text" => SemanticAction::InsertText(action_text(object, "text")?),
+        "select" => SemanticAction::Select(action_text(object, "value")?),
+        "toggle" => SemanticAction::Toggle,
+        "increment" => SemanticAction::Increment,
+        "decrement" => SemanticAction::Decrement,
         "scroll" => {
             let x = required_f32(object, "delta_x")?;
             let y = required_f32(object, "delta_y")?;
-            Ok(SemanticAction::Scroll {
+            SemanticAction::Scroll {
                 delta: Point::new(x, y),
-            })
+            }
         }
-        _ => Err(WireError::invalid("unknown semantic action kind")),
+        "press_key" => {
+            return Ok(ParsedAgentAction::Window(AgentWindowAction::PressKey {
+                key: parse_key_code(object)?,
+                modifiers: parse_key_modifiers(object)?,
+            }))
+        }
+        "click_at" => {
+            return Ok(ParsedAgentAction::Window(AgentWindowAction::ClickAt {
+                position: Point::new(required_f32(object, "x")?, required_f32(object, "y")?),
+            }))
+        }
+        _ => return Err(WireError::invalid("unknown action kind")),
+    };
+    Ok(ParsedAgentAction::Semantic(semantic))
+}
+
+fn parse_key_code(object: &Map<String, Value>) -> Result<KeyCode, WireError> {
+    let name = required_string(object, "key", 32)?;
+    AGENT_KEY_CODES
+        .iter()
+        .find_map(|(candidate, key)| (*candidate == name).then_some(*key))
+        .ok_or_else(|| WireError::invalid("unknown key name"))
+}
+
+fn parse_key_modifiers(object: &Map<String, Value>) -> Result<KeyMod, WireError> {
+    let Some(value) = object.get("modifiers") else {
+        return Ok(KeyMod::NONE);
+    };
+    let modifiers = value
+        .as_array()
+        .ok_or_else(|| WireError::invalid("modifiers must be an array"))?;
+    if modifiers.len() > AGENT_KEY_MODIFIERS.len() {
+        return Err(WireError::invalid("too many key modifiers"));
     }
+
+    let mut result = KeyMod::NONE;
+    for modifier in modifiers {
+        let name = modifier
+            .as_str()
+            .ok_or_else(|| WireError::invalid("key modifier must be a string"))?;
+        let flag = match name {
+            "shift" => KeyMod::SHIFT,
+            "ctrl" => KeyMod::CTRL,
+            "alt" => KeyMod::ALT,
+            "super" => KeyMod::SUPER,
+            _ => return Err(WireError::invalid("unknown key modifier")),
+        };
+        if result.contains(flag) {
+            return Err(WireError::invalid("key modifier must not be repeated"));
+        }
+        result |= flag;
+    }
+    Ok(result)
 }
 
 fn action_text(object: &Map<String, Value>, field: &str) -> Result<String, WireError> {
@@ -588,7 +767,7 @@ fn command_error_reply(request_id: String, error: AgentCommandError) -> AgentPro
         AgentCommandError::NodeNotFound(_) => "target node was not found",
         AgentCommandError::AmbiguousTarget { .. } => "target matched multiple nodes",
         AgentCommandError::UnsupportedAction { .. } => "target does not support the action",
-        AgentCommandError::NotInteractable(_) => "target is not interactable",
+        AgentCommandError::NotInteractable(_) => "action target is not interactable",
         AgentCommandError::Blocked { .. } => "target is blocked",
         AgentCommandError::DidNotSettle { .. } => "UI did not settle within its pass limit",
         AgentCommandError::NotPresentable => "window is not presentable",
