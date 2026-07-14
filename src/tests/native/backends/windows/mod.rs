@@ -12,3 +12,4 @@ mod text_input;
 mod tsf_session;
 mod tsf_text_store;
 mod util;
+mod vulkan_fault_recovery;
