@@ -3,6 +3,7 @@
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
+use crate::ui::state::State;
 use crate::ui::SnapshotFields;
 use crate::ui::{ComponentId, EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetTree};
 use std::cell::Cell;
@@ -12,6 +13,7 @@ component! {
     pub struct Rate {
         count: usize,
         value: usize,
+        value_binding: Option<State<u32>>,
         half: bool,
         disabled: bool,
         clearable: bool,
@@ -27,6 +29,7 @@ component! {
 
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        self.sync_bound_value();
         if self.disabled { return EventResult::NotHandled; }
         match event {
             SystemEvent::PointerDown { pos, .. } => {
@@ -40,11 +43,10 @@ component! {
                     };
                     // clearable: 点击同一个值取消
                     if self.clearable && new_val == self.value {
-                        self.value = 0;
+                        self.set_value(0);
                     } else {
-                        self.value = new_val;
+                        self.set_value(new_val);
                     }
-                    self.pending_change.set(Some(self.value));
                     return EventResult::Handled;
                 }
                 EventResult::NotHandled
@@ -69,17 +71,15 @@ component! {
             SystemEvent::KeyDown { key, .. } => {
                 match key {
                     KeyCode::Right | KeyCode::Up => {
-                        let max_val = if self.half { self.count * 2 } else { self.count };
+                        let max_val = self.max_value();
                         if self.value < max_val {
-                            self.value += 1;
-                            self.pending_change.set(Some(self.value));
+                            self.set_value(self.value.saturating_add(1));
                         }
                         EventResult::Handled
                     }
                     KeyCode::Left | KeyCode::Down => {
                         if self.value > 0 {
-                            self.value -= 1;
-                            self.pending_change.set(Some(self.value));
+                            self.set_value(self.value - 1);
                         }
                         EventResult::Handled
                     }
@@ -99,6 +99,7 @@ component! {
     wants_continuous_pointer_move => (&self) -> bool { true }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        self.capture_bound_value_dependency();
         let warning = ctx.tokens().color_warning();
         let fill_tertiary = ctx.tokens().color_fill_tertiary();
         let text_quaternary = ctx.tokens().color_text_quaternary();
@@ -144,10 +145,55 @@ impl Default for Rate {
 }
 
 impl Rate {
+    fn set_value(&mut self, value: usize) {
+        let value = value.min(self.max_value());
+        if self.value == value {
+            return;
+        }
+        self.value = value;
+        self.write_bound_value();
+        self.pending_change.set(Some(value));
+    }
+
+    fn max_value(&self) -> usize {
+        if self.half {
+            self.count.saturating_mul(2)
+        } else {
+            self.count
+        }
+    }
+
+    fn state_value(&self) -> u32 {
+        self.value.min(u32::MAX as usize) as u32
+    }
+
+    fn sync_bound_value(&mut self) {
+        let Some(value) = self.value_binding.as_ref().map(State::get) else {
+            return;
+        };
+        self.value = (value as usize).min(self.max_value());
+    }
+
+    fn capture_bound_value_dependency(&self) {
+        if let Some(state) = self.value_binding.as_ref() {
+            let _ = state.get();
+        }
+    }
+
+    fn write_bound_value(&self) {
+        if let Some(state) = self.value_binding.as_ref() {
+            let value = self.state_value();
+            if state.get() != value {
+                state.set(value);
+            }
+        }
+    }
+
     pub fn new() -> Self {
         Self {
             count: 5,
             value: 0,
+            value_binding: None,
             half: false,
             disabled: false,
             clearable: false,
@@ -159,14 +205,39 @@ impl Rate {
     }
     pub fn count(mut self, n: usize) -> Self {
         self.count = n;
+        if self.value_binding.is_some() {
+            self.sync_bound_value();
+        } else {
+            self.value = self.value.min(self.max_value());
+        }
         self
     }
-    pub fn value(mut self, v: usize) -> Self {
-        self.value = v;
+
+    /// 将评分绑定到外部 `State<u32>`。
+    pub fn value(mut self, state: &State<u32>) -> Self {
+        self.value_binding = Some(state.clone());
+        self.sync_bound_value();
         self
     }
+
+    /// 设置非受控评分的初始值。
+    pub fn default_value(mut self, value: u32) -> Self {
+        self.value_binding = None;
+        self.value = (value as usize).min(self.max_value());
+        self
+    }
+
+    pub fn current_value(&self) -> u32 {
+        self.state_value()
+    }
+
     pub fn allow_half(mut self) -> Self {
         self.half = true;
+        if self.value_binding.is_some() {
+            self.sync_bound_value();
+        } else {
+            self.value = self.value.min(self.max_value());
+        }
         self
     }
     pub fn disabled(mut self, v: bool) -> Self {
@@ -200,11 +271,13 @@ impl Rate {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let controlled_value = next.value_binding.as_ref().map(|_| next.value);
         self.count = next.count;
-        self.value = next.value;
+        self.value_binding = next.value_binding;
         self.half = next.half;
         self.disabled = next.disabled;
         self.clearable = next.clearable;
         self.character = next.character;
+        self.value = controlled_value.unwrap_or_else(|| self.value.min(self.max_value()));
     }
 }

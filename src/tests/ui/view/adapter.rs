@@ -595,9 +595,11 @@ fn reconcile_input_number_patches_instance_and_syncs_snapshot_fields() {
 
 #[test]
 fn reconcile_rate_patches_instance_and_syncs_snapshot_fields() {
+    use crate::ui::state::State;
     use crate::ui::widgets::Rate;
 
-    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Rate::new().count(5).value(1)));
+    let value = State::new(1u32);
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Rate::new().count(5).value(&value)));
     let root_id = tree.root_id().expect("rate root should exist");
     let before_ptr = tree
         .get(root_id)
@@ -607,12 +609,13 @@ fn reconcile_rate_patches_instance_and_syncs_snapshot_fields() {
         .downcast_ref::<Rate>()
         .unwrap() as *const Rate;
 
+    value.set(3);
     ViewAdapter::reconcile_nodes(
         &mut tree,
         ViewNode::leaf(
             Rate::new()
                 .count(7)
-                .value(3)
+                .value(&value)
                 .allow_half()
                 .disabled(true)
                 .clearable()
