@@ -135,9 +135,9 @@ pub fn page_input(ctx: &DemoCtx<'_>) -> ViewNode {
         .push(demo_row(30.0).child(Slider::new(0.0..=100.0).step(5.0).default_value(42.0)))
         .push(
             demo_row(30.0)
-                .child(Rate::new().value(3))
-                .child(Rate::new().count(7).value(5))
-                .child(Rate::new().value(2).allow_half()),
+                .child(Rate::new().default_value(3))
+                .child(Rate::new().count(7).default_value(5))
+                .child(Rate::new().default_value(2).allow_half()),
         )
         .section("DatePicker / TimePicker / ColorPicker")
         .push(
