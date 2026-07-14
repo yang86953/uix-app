@@ -1,6 +1,7 @@
 use crate::tests::common::*;
 use crate::ui::theme::{
-    PrimaryHue, BLUE_PALETTE, COLOR_SCALE_LEN, PRIMARY_HUE_COUNT, PRIMARY_SHADE_INDEX,
+    generate_color_scale, PrimaryHue, BLUE_PALETTE, COLOR_SCALE_LEN, PRIMARY_HUE_COUNT,
+    PRIMARY_SHADE_INDEX,
 };
 
 #[test]
@@ -41,4 +42,29 @@ fn blue_palette_matches_ant_design_five() {
 
     assert_eq!(BLUE_PALETTE.colors(), &expected);
     assert_eq!(BLUE_PALETTE.shade(COLOR_SCALE_LEN), None);
+}
+
+#[test]
+fn generator_reproduces_every_preset_palette() {
+    for hue in PrimaryHue::ALL {
+        assert_eq!(
+            generate_color_scale(hue.primary()),
+            *hue.palette(),
+            "{hue:?}"
+        );
+    }
+}
+
+#[test]
+fn generator_ignores_alpha_and_keeps_seed_in_primary_slot() {
+    let seed = Color::from_rgba(102, 102, 102, 12);
+    let palette = generate_color_scale(seed);
+    let expected = [
+        "#a6a6a6", "#999999", "#8c8c8c", "#808080", "#737373", "#666666", "#404040", "#1a1a1a",
+        "#000000", "#000000",
+    ]
+    .map(Color::hex);
+
+    assert_eq!(palette.colors(), &expected);
+    assert_eq!(palette.primary(), Color::from_rgb(102, 102, 102));
 }

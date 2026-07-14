@@ -206,3 +206,139 @@ pub const MAGENTA_PALETTE: ColorScale = color_scale![
     0xfff0f6, 0xffd6e7, 0xffadd2, 0xff85c0, 0xf759ab, 0xeb2f96, 0xc41d7f, 0x9e1068, 0x780650,
     0x520339,
 ];
+
+const HUE_STEP: f64 = 2.0;
+const SATURATION_STEP_LIGHT: f64 = 0.16;
+const SATURATION_STEP_DARK: f64 = 0.05;
+const VALUE_STEP_LIGHT: f64 = 0.05;
+const VALUE_STEP_DARK: f64 = 0.15;
+const LIGHT_COLOR_COUNT: usize = 5;
+const DARK_COLOR_COUNT: usize = 4;
+
+#[derive(Debug, Clone, Copy)]
+struct Hsv {
+    hue: f64,
+    saturation: f64,
+    value: f64,
+}
+
+/// 从任意主色生成一条 Ant Design 风格的 10 阶色板。
+///
+/// 返回值从浅到深排列，输入主色位于索引 5。输入 alpha 不参与推导，
+/// 生成结果均为不透明色。
+pub fn generate_color_scale(seed: Color) -> ColorScale {
+    let hsv = rgb_to_hsv(seed);
+    let mut colors = [Color::BLACK; COLOR_SCALE_LEN];
+
+    for (index, step) in (1..=LIGHT_COLOR_COUNT).rev().enumerate() {
+        colors[index] = derived_color(hsv, step, true);
+    }
+    colors[PRIMARY_SHADE_INDEX] = Color::from_rgb(seed.r, seed.g, seed.b);
+    for step in 1..=DARK_COLOR_COUNT {
+        colors[PRIMARY_SHADE_INDEX + step] = derived_color(hsv, step, false);
+    }
+
+    ColorScale::new(colors)
+}
+
+fn rgb_to_hsv(color: Color) -> Hsv {
+    let red = f64::from(color.r) / 255.0;
+    let green = f64::from(color.g) / 255.0;
+    let blue = f64::from(color.b) / 255.0;
+    let max = red.max(green).max(blue);
+    let min = red.min(green).min(blue);
+    let delta = max - min;
+
+    let hue = if delta == 0.0 {
+        0.0
+    } else if max == red {
+        60.0 * ((green - blue) / delta).rem_euclid(6.0)
+    } else if max == green {
+        60.0 * ((blue - red) / delta + 2.0)
+    } else {
+        60.0 * ((red - green) / delta + 4.0)
+    };
+    let saturation = if max == 0.0 { 0.0 } else { delta / max };
+
+    Hsv {
+        hue,
+        saturation,
+        value: max,
+    }
+}
+
+fn derived_color(hsv: Hsv, step: usize, light: bool) -> Color {
+    let hue_direction = if hsv.hue.round() >= 60.0 && hsv.hue.round() <= 240.0 {
+        if light {
+            -1.0
+        } else {
+            1.0
+        }
+    } else if light {
+        1.0
+    } else {
+        -1.0
+    };
+    let hue = (hsv.hue.round() + hue_direction * HUE_STEP * step as f64).rem_euclid(360.0);
+    let saturation = derived_saturation(hsv, step, light);
+    let value_step = if light {
+        VALUE_STEP_LIGHT
+    } else {
+        -VALUE_STEP_DARK
+    };
+    let value = round_to_hundredths((hsv.value + value_step * step as f64).clamp(0.0, 1.0));
+
+    hsv_to_rgb(Hsv {
+        hue,
+        saturation,
+        value,
+    })
+}
+
+fn derived_saturation(hsv: Hsv, step: usize, light: bool) -> f64 {
+    if hsv.hue == 0.0 && hsv.saturation == 0.0 {
+        return 0.0;
+    }
+
+    let mut saturation = if light {
+        hsv.saturation - SATURATION_STEP_LIGHT * step as f64
+    } else if step == DARK_COLOR_COUNT {
+        hsv.saturation + SATURATION_STEP_LIGHT
+    } else {
+        hsv.saturation + SATURATION_STEP_DARK * step as f64
+    };
+    saturation = saturation.min(1.0);
+    if light && step == LIGHT_COLOR_COUNT {
+        saturation = saturation.min(0.1);
+    }
+    round_to_hundredths(saturation.max(0.06))
+}
+
+fn hsv_to_rgb(hsv: Hsv) -> Color {
+    let chroma = hsv.value * hsv.saturation;
+    let section = hsv.hue / 60.0;
+    let secondary = chroma * (1.0 - (section.rem_euclid(2.0) - 1.0).abs());
+    let (red, green, blue) = match section.floor() as u8 {
+        0 => (chroma, secondary, 0.0),
+        1 => (secondary, chroma, 0.0),
+        2 => (0.0, chroma, secondary),
+        3 => (0.0, secondary, chroma),
+        4 => (secondary, 0.0, chroma),
+        _ => (chroma, 0.0, secondary),
+    };
+    let offset = hsv.value - chroma;
+
+    Color::from_rgb(
+        to_u8_channel(red + offset),
+        to_u8_channel(green + offset),
+        to_u8_channel(blue + offset),
+    )
+}
+
+fn to_u8_channel(value: f64) -> u8 {
+    (value * 255.0).round().clamp(0.0, 255.0) as u8
+}
+
+fn round_to_hundredths(value: f64) -> f64 {
+    (value * 100.0).round() / 100.0
+}

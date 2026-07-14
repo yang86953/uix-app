@@ -66,6 +66,7 @@ component! {
 
 #[test]
 fn prelude_exports_event_and_state_capture_types() {
+    let _generated_palette = generate_color_scale(Color::BLUE);
     let _probe = PreludeComponentProbe {
         label: "probe".to_string(),
     };
