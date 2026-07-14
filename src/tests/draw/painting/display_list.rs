@@ -4,6 +4,7 @@ use crate::draw::primitives::path::PathBuilder;
 use crate::draw::spatial::Orientation;
 use crate::draw::traits::{GraphicsEngine, UpdateStrategy};
 use crate::tests::common::*;
+use std::sync::Arc;
 
 const RED_PNG: &[u8] = &[
     137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0,
@@ -36,6 +37,24 @@ fn display_list_stores_draw_text_in_frame_and_set_font() {
         font_size: 14.0,
     });
     assert_eq!(list.len(), 2);
+}
+
+#[test]
+fn cloned_text_paint_op_shares_text_storage() {
+    let original = PaintOp::DrawText {
+        text: Arc::from("shared label"),
+        pos: Point::new(2.0, 3.0),
+        color: Color::black(),
+        font_size: 14.0,
+    };
+    let cloned = original.clone();
+
+    match (&original, &cloned) {
+        (PaintOp::DrawText { text: left, .. }, PaintOp::DrawText { text: right, .. }) => {
+            assert!(Arc::ptr_eq(left, right))
+        }
+        _ => unreachable!("variant is fixed by the test"),
+    }
 }
 
 #[test]

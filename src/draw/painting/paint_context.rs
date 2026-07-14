@@ -4,6 +4,7 @@
 //! 组合 TextRenderService 与 DebugRenderService。
 
 use std::ptr::NonNull;
+use std::sync::Arc;
 
 use crate::core::{Point, Rect, Size};
 use crate::draw::debug::DebugRenderService;
@@ -530,7 +531,7 @@ impl<'a> PaintContext<'a> {
     /// 绘制文本（左对齐，顶部对齐）。
     pub fn draw_text(&mut self, text: &str, pos: Point, color: Color, font_size: f32) {
         self.record_op(PaintOp::DrawText {
-            text: text.to_string(),
+            text: Arc::from(text),
             pos,
             color,
             font_size,
@@ -551,7 +552,7 @@ impl<'a> PaintContext<'a> {
         font_size: f32,
     ) {
         self.record_op(PaintOp::DrawTextBaseline {
-            text: text.to_string(),
+            text: Arc::from(text),
             x,
             baseline_y,
             color,
@@ -570,7 +571,7 @@ impl<'a> PaintContext<'a> {
     /// 在矩形内居中绘制文本。
     pub fn text_center(&mut self, text: &str, rect: Rect, color: Color, font_size: f32) {
         self.record_op(PaintOp::TextCenter {
-            text: text.to_string(),
+            text: Arc::from(text),
             rect,
             color,
             font_size,
@@ -583,7 +584,7 @@ impl<'a> PaintContext<'a> {
     pub fn draw_text_in_frame(&mut self, text: &str, rect: Rect, color: Color, font_size: f32) {
         if !text.is_empty() {
             self.record_op(PaintOp::DrawTextInFrame {
-                text: text.to_string(),
+                text: Arc::from(text),
                 rect,
                 color,
                 font_size,
@@ -596,7 +597,7 @@ impl<'a> PaintContext<'a> {
     /// 在矩形内绘制自动换行文本。
     pub fn draw_text_wrapped(&mut self, text: &str, rect: Rect, color: Color, font_size: f32) {
         self.record_op(PaintOp::DrawTextWrapped {
-            text: text.to_string(),
+            text: Arc::from(text),
             rect,
             color,
             font_size,
@@ -616,7 +617,7 @@ impl<'a> PaintContext<'a> {
         selection_bg: Color,
     ) {
         self.record_op(PaintOp::DrawTextWithSelection {
-            text: text.to_string(),
+            text: Arc::from(text),
             pos,
             color,
             font_size,
