@@ -10,4 +10,5 @@ mod rate;
 mod segmented;
 mod select;
 mod slider;
+mod time_picker;
 mod tree_select;

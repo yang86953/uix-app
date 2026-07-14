@@ -147,7 +147,13 @@ pub fn page_input(ctx: &DemoCtx<'_>) -> ViewNode {
                     .default_value(Date::new(2026, 6, 20)),
             ),
         )
-        .push(demo_row(36.0).child(TimePicker::new("选择时间").value(TimeValue::new(14, 30))))
+        .push(
+            demo_row(36.0).child(
+                TimePicker::new()
+                    .placeholder("选择时间")
+                    .default_value(Time::new(14, 30)),
+            ),
+        )
         .push(labeled_row(
             tk,
             36.0,

@@ -73,9 +73,9 @@ pub use crate::ui::{
     ScrollView, Segmented, Select, SelectableItem, SelectableList, SharedActive, Sider, Skeleton,
     SkeletonShape, Slider, SortDirection, Space, SpaceSize, Spin, SpinSize, Splitter, Step,
     StepStatus, Steps, Switch, Tab, TabPosition, Table, TableBuilder, TableChange, TableColumn,
-    TableRow, Tabs, Tag, TagColor, ThemeToggle, TimePicker, TimeValue, Timeline, TimelineItem,
-    Tooltip, TooltipPlacement, Transfer, TransferItem, Tree, TreeNode, TreeSelect, TriggerMode,
-    Typography, TypographyType, Upload, UploadFile, UploadStatus, ValidateStatus, ValidationResult,
+    TableRow, Tabs, Tag, TagColor, ThemeToggle, Time, TimePicker, Timeline, TimelineItem, Tooltip,
+    TooltipPlacement, Transfer, TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography,
+    TypographyType, Upload, UploadFile, UploadStatus, ValidateStatus, ValidationResult,
     ValidationRule, Watermark,
 };
 

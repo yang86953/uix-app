@@ -40,9 +40,9 @@ pub use crate::ui::{
     Select, SelectableItem, SelectableList, SharedActive, Sider, Skeleton, SkeletonShape, Slider,
     SortDirection, Space, SpaceSize, Spin, SpinSize, Splitter, Step, StepStatus, Steps, Switch,
     Tab, TabPosition, Table, TableBuilder, TableChange, TableColumn, TableRow, Tabs, Tag, TagColor,
-    ThemeToggle, TimePicker, TimeValue, Timeline, TimelineItem, Tooltip, TooltipPlacement,
-    Transfer, TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography, TypographyType,
-    Upload, UploadFile, UploadStatus, ValidateStatus, ValidationResult, ValidationRule, Watermark,
+    ThemeToggle, Time, TimePicker, Timeline, TimelineItem, Tooltip, TooltipPlacement, Transfer,
+    TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography, TypographyType, Upload,
+    UploadFile, UploadStatus, ValidateStatus, ValidationResult, ValidationRule, Watermark,
 };
 pub use crate::ui::{Animation, Easing};
 
@@ -209,7 +209,7 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<TabPosition>();
     assert_exported::<TagColor>();
     assert_exported::<ThemePrimitives>();
-    assert_exported::<TimeValue>();
+    assert_exported::<Time>();
     assert_exported::<TimelineItem>();
     assert_exported::<TooltipPlacement>();
     assert_exported::<TreeNode>();
