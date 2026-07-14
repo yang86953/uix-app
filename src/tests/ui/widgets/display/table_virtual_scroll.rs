@@ -99,6 +99,41 @@ fn table_wheel_registers_composite_scroll_strip() {
 }
 
 #[test]
+fn table_horizontal_wheel_falls_back_to_table_paint() {
+    let mut tree = WidgetTree::new();
+    let table = Table::new()
+        .columns(vec![
+            TableColumn::new("Name", 80.0).fixed(Fixed::Left),
+            TableColumn::new("Email", 220.0),
+            TableColumn::new("Actions", 80.0).fixed(Fixed::Right),
+        ])
+        .rows(vec![vec![
+            "Ada".into(),
+            "ada@example.com".into(),
+            "Edit".into(),
+        ]]);
+    table
+        .last_frame
+        .set(Some(Rect::new(0.0, 0.0, 240.0, 120.0)));
+    let id = tree.set_root(Box::new(table));
+    tree.get_mut(id)
+        .expect("table root")
+        .set_frame(Rect::new(0.0, 0.0, 240.0, 120.0));
+    tree.reset_invalidation();
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::Wheel {
+            pos: Point::new(120.0, 80.0),
+            delta: Point::new(-1.0, 0.0),
+        }),
+        EventResult::Handled
+    );
+
+    assert!(tree.scroll_region_moves().is_none());
+    assert!(!tree.dirty_region().is_empty());
+}
+
+#[test]
 fn table_expand_view_is_materialized_once_and_remains_interactive() {
     use crate::draw::compositor::ScenePaint;
     use crate::draw::engine::cpu::pixel_surface::PixelSurface;

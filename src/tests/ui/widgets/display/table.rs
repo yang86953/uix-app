@@ -119,3 +119,46 @@ fn expandable_builder_forwards_virtual_scroll_policy() {
         }
     ));
 }
+
+#[test]
+fn fixed_columns_stay_hittable_after_horizontal_scroll() {
+    let mut table = Table::new()
+        .columns(vec![
+            TableColumn::new("Name", 80.0)
+                .fixed(Fixed::Left)
+                .sortable(true),
+            TableColumn::new("Email", 160.0),
+            TableColumn::new("Role", 120.0),
+            TableColumn::new("Actions", 60.0)
+                .fixed(Fixed::Right)
+                .sortable(true),
+        ])
+        .rows(vec![vec![
+            "Ada".to_owned(),
+            "ada@example.com".to_owned(),
+            "Admin".to_owned(),
+            "Edit".to_owned(),
+        ]]);
+    table
+        .last_frame
+        .set(Some(Rect::new(0.0, 0.0, 240.0, 120.0)));
+
+    assert_eq!(
+        table.on_event(&SystemEvent::Wheel {
+            pos: Point::new(120.0, 80.0),
+            delta: Point::new(-2.0, 0.0),
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(table.horizontal_scroll_offset(), 80.0);
+    assert_eq!(EventHandler::scroll_delta_for_dirty(&table), None);
+
+    assert_eq!(table.on_event(&click(220.0, 10.0)), EventResult::Handled);
+    assert!(matches!(
+        table.snapshot_fields(),
+        SnapshotFields::Table { columns, .. }
+            if columns[0].fixed == Some(Fixed::Left)
+                && columns[3].fixed == Some(Fixed::Right)
+                && columns[3].sort_direction == SortDirection::Asc
+    ));
+}
