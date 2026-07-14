@@ -1,8 +1,7 @@
-#[cfg(target_os = "macos")]
-use crate::native::backends::macos::platform as macos_surface;
-#[cfg(all(unix, not(target_os = "macos")))]
-use crate::native::graphics::platform::linux::WaylandSurfaceHandle;
 use crate::native::graphics::vulkan::platform::context::*;
+use crate::native::graphics::vulkan::platform::surface::{
+    choose_composite_alpha, choose_surface_format,
+};
 use crate::tests::common::*;
 use ash::vk;
 

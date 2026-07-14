@@ -6,7 +6,13 @@ use crate::core::{Error, Result};
 use crate::native::traits::present::IGraphicsContext;
 
 #[cfg(any(unix, windows))]
+mod adapter;
+
+#[cfg(any(unix, windows))]
 pub(crate) mod context;
+
+#[cfg(any(unix, windows))]
+pub(crate) mod surface;
 
 #[cfg(any(unix, windows))]
 pub use context::VulkanContext;
