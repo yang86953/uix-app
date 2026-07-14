@@ -158,7 +158,7 @@ impl<'a> TextRenderService<'a> {
 
     /// 在矩形内居中绘制文本（过渡 helper：行盒几何居中，无光学系数）。
     ///
-    /// 控件主路径应先由布局算出 `text_rect`，再 [`draw_text`] 顶对齐；
+    /// 控件主路径应先由布局算出 `text_rect`，再 [`Self::draw_text`] 顶对齐；
     /// 勿在此叠加观感修正。
     pub fn text_center(
         &mut self,

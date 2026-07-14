@@ -237,7 +237,7 @@ impl Mat4 {
 
     /// 矩阵乘法：self × rhs。
     ///
-    /// 列主序乘法：result[col][row] = Σ self[k][row] * rhs[col][k]
+    /// 列主序乘法：`result[col][row] = Σ self[k][row] * rhs[col][k]`。
     pub fn mul(&self, rhs: &Self) -> Self {
         let a = &self.0;
         let b = &rhs.0;
@@ -352,13 +352,13 @@ impl Mat4 {
     /// 当前矩阵是否仅包含 2D 变换（不影响 x/y 渲染的 z 轴操作允许存在）。
     ///
     /// 检查 z 轴相关分量是否会将 z 值泄露到 x/y 中：
-    /// - m[2]  (col2 row0): z → x 的影响（旋转/缩放 z 到 x）
-    /// - m[6]  (col2 row1): z → y 的影响
-    /// - m[8]  (col0 row2): x → z 的影响（不影响 x/y 渲染，但标识 3D 旋转存在）
-    /// - m[9]  (col1 row2): y → z 的影响
-    /// - m[14] (col3 row2): w → z 的影响（平移 z）
+    /// - `m[2]`（col2 row0）：z → x 的影响（旋转/缩放 z 到 x）
+    /// - `m[6]`（col2 row1）：z → y 的影响
+    /// - `m[8]`（col0 row2）：x → z 的影响（不影响 x/y 渲染，但标识 3D 旋转存在）
+    /// - `m[9]`（col1 row2）：y → z 的影响
+    /// - `m[14]`（col3 row2）：w → z 的影响（平移 z）
     ///
-    /// 不检查 m[10] (z→z) 和 m[11] (w→z)：
+    /// 不检查 `m[10]`（z→z）和 `m[11]`（w→z）：
     /// z 轴自身的缩放/平移不影响 x/y 屏幕位置。
     #[inline(always)]
     pub fn is_2d_only(&self) -> bool {
