@@ -41,12 +41,18 @@ enum WindowInteraction {
     Control(WindowControl),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ControlActivation {
+    Pointer,
+    Keyboard(KeyCode),
+}
+
 /// 布局、绘制均复用普通容器；该组件只增加窗口交互语义，不规定任何外观。
 pub(crate) struct WindowInteractionRegion {
     interaction: WindowInteraction,
     accessible_name: Option<String>,
     container: Container,
-    armed: bool,
+    activation: Option<ControlActivation>,
     pending: Option<WindowAction>,
 }
 
@@ -64,7 +70,7 @@ impl WindowInteractionRegion {
             interaction,
             accessible_name,
             container: Container::new(),
-            armed: false,
+            activation: None,
             pending: None,
         }
     }
@@ -96,7 +102,7 @@ impl WindowInteractionRegion {
 
     pub(crate) fn sync_from(&mut self, next: Self) {
         if self.interaction != next.interaction {
-            self.armed = false;
+            self.activation = None;
             self.pending = None;
         }
         self.interaction = next.interaction;
@@ -241,7 +247,9 @@ impl EventHandler for WindowInteractionRegion {
                     ..
                 },
             ) => {
-                self.armed = true;
+                if self.activation.is_none() {
+                    self.activation = Some(ControlActivation::Pointer);
+                }
                 EventResult::Handled
             }
             (
@@ -250,33 +258,33 @@ impl EventHandler for WindowInteractionRegion {
                     button: MouseButton::Left,
                     ..
                 },
-            ) if self.armed => {
-                self.armed = false;
+            ) if self.activation == Some(ControlActivation::Pointer) => {
+                self.activation = None;
                 self.pending = Some(Self::action(control));
                 EventResult::Handled
             }
-            (WindowInteraction::Control(_), SystemEvent::PointerLeave | SystemEvent::FocusOut) => {
-                self.armed = false;
+            (WindowInteraction::Control(_), SystemEvent::PointerLeave) => {
+                if self.activation == Some(ControlActivation::Pointer) {
+                    self.activation = None;
+                }
                 EventResult::Handled
             }
-            (
-                WindowInteraction::Control(_),
-                SystemEvent::KeyDown {
-                    key: KeyCode::Enter | KeyCode::Space,
-                    ..
-                },
-            ) => {
-                self.armed = true;
+            (WindowInteraction::Control(_), SystemEvent::FocusOut) => {
+                self.activation = None;
                 EventResult::Handled
             }
-            (
-                WindowInteraction::Control(control),
-                SystemEvent::KeyUp {
-                    key: KeyCode::Enter | KeyCode::Space,
-                    ..
-                },
-            ) if self.armed => {
-                self.armed = false;
+            (WindowInteraction::Control(_), SystemEvent::KeyDown { key, .. })
+                if matches!(key, KeyCode::Enter | KeyCode::Space) =>
+            {
+                if self.activation.is_none() {
+                    self.activation = Some(ControlActivation::Keyboard(*key));
+                }
+                EventResult::Handled
+            }
+            (WindowInteraction::Control(control), SystemEvent::KeyUp { key, .. })
+                if self.activation == Some(ControlActivation::Keyboard(*key)) =>
+            {
+                self.activation = None;
                 self.pending = Some(Self::action(control));
                 EventResult::Handled
             }
