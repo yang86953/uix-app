@@ -119,3 +119,51 @@ fn clear_layout_keeps_paint_and_composite() {
     assert!(q.has_paint_or_composite());
     assert!(q.node_needs_paint(id));
 }
+
+#[test]
+fn paint_index_survives_layout_removal_and_keeps_merging() {
+    let mut q = InvalidationQueue::new();
+    let first = NodeId::new(10);
+    let second = NodeId::new(11);
+    q.extend([
+        Invalidation::Layout(NodeId::new(1)),
+        Invalidation::Paint {
+            id: first,
+            rect: Some(Rect::new(0.0, 0.0, 2.0, 2.0)),
+        },
+        Invalidation::Layout(NodeId::new(2)),
+        Invalidation::Paint {
+            id: second,
+            rect: Some(Rect::new(5.0, 0.0, 2.0, 2.0)),
+        },
+    ]);
+
+    q.clear_layout();
+    q.push(Invalidation::Paint {
+        id: second,
+        rect: Some(Rect::new(6.0, 0.0, 3.0, 2.0)),
+    });
+
+    assert_eq!(q.items.len(), 2);
+    assert!(q.node_needs_paint(first));
+    assert!(q.node_needs_paint(second));
+    assert_eq!(q.dirty_region().rects()[1], Rect::new(5.0, 0.0, 4.0, 2.0));
+}
+
+#[test]
+fn clear_resets_paint_index() {
+    let mut q = InvalidationQueue::new();
+    let id = NodeId::new(12);
+    q.push(Invalidation::Paint {
+        id,
+        rect: Some(Rect::new(0.0, 0.0, 1.0, 1.0)),
+    });
+    q.clear();
+    q.push(Invalidation::Paint {
+        id,
+        rect: Some(Rect::new(3.0, 3.0, 1.0, 1.0)),
+    });
+
+    assert_eq!(q.items.len(), 1);
+    assert_eq!(q.dirty_region().rects(), &[Rect::new(3.0, 3.0, 1.0, 1.0)]);
+}
