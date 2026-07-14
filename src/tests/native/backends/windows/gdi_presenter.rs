@@ -39,3 +39,21 @@ fn present_propagates_rejected_resize_instead_of_using_the_old_dib() {
     assert_eq!(error.code(), Errc::InvalidArgument);
     window.close().expect("close window");
 }
+
+#[test]
+fn present_reports_a_destroyed_window_instead_of_claiming_success() {
+    let mut platform = crate::native::create_platform().expect("platform");
+    let mut window = platform
+        .window_manager()
+        .create_window("GDI destroyed window", 16, 16)
+        .expect("window");
+    let mut presenter =
+        unsafe { GdiPresenter::new(window.native_surface_ptr(), 16, 16) }.expect("presenter");
+    window.close().expect("close window");
+
+    let error = presenter
+        .present(&[0; 16 * 16], 16, 16, PresentDamage::Full)
+        .expect_err("a destroyed window must reject the final GDI submit");
+    assert_eq!(error.code(), Errc::PlatformError);
+    assert!(error.message().contains("GetDC"));
+}

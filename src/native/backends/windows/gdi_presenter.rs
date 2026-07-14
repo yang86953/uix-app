@@ -208,13 +208,16 @@ impl GdiPresenter {
         })
     }
 
-    fn blit(&self) {
+    fn blit(&self) -> Result<(), Error> {
         unsafe {
             let hdc = GetDC(self.hwnd);
             if hdc.is_null() {
-                return;
+                return Err(windows_diag(
+                    Errc::PlatformError,
+                    "GdiPresenter: GetDC failed during full present",
+                ));
             }
-            BitBlt(
+            let succeeded = BitBlt(
                 hdc,
                 0,
                 0,
@@ -226,18 +229,35 @@ impl GdiPresenter {
                 SRCCOPY,
             );
             ReleaseDC(self.hwnd, hdc);
+            if succeeded == 0 {
+                return Err(windows_diag(
+                    Errc::PlatformError,
+                    "GdiPresenter: full BitBlt failed",
+                ));
+            }
         }
+        Ok(())
     }
 
-    fn blit_rect(&self, x: i32, y: i32, w: i32, h: i32) {
+    fn blit_rect(&self, x: i32, y: i32, w: i32, h: i32) -> Result<(), Error> {
         unsafe {
             let hdc = GetDC(self.hwnd);
             if hdc.is_null() {
-                return;
+                return Err(windows_diag(
+                    Errc::PlatformError,
+                    "GdiPresenter: GetDC failed during partial present",
+                ));
             }
-            BitBlt(hdc, x, y, w, h, self.dib.hdc_mem, x, y, SRCCOPY);
+            let succeeded = BitBlt(hdc, x, y, w, h, self.dib.hdc_mem, x, y, SRCCOPY);
             ReleaseDC(self.hwnd, hdc);
+            if succeeded == 0 {
+                return Err(windows_diag(
+                    Errc::PlatformError,
+                    "GdiPresenter: partial BitBlt failed",
+                ));
+            }
         }
+        Ok(())
     }
 
     /// 将像素缓冲中的局部区域复制到 DIB。
@@ -305,7 +325,7 @@ impl IPresenter for GdiPresenter {
                         if let Some((dx, dy, dw, dh)) =
                             self.copy_partial_rect(pixels, dx, dy, dw, dh)
                         {
-                            self.blit_rect(dx, dy, dw, dh);
+                            self.blit_rect(dx, dy, dw, dh)?;
                         }
                     }
                     return Ok(());
@@ -320,8 +340,7 @@ impl IPresenter for GdiPresenter {
             }
             std::ptr::copy_nonoverlapping(pixels.as_ptr(), self.dib.bits, len);
         }
-        self.blit();
-        Ok(())
+        self.blit()
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
