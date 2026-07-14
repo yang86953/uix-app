@@ -425,6 +425,105 @@ fn windows_vulkan_gfx_r5_expected_vendor_resize_present_readback() {
 
 #[cfg(windows)]
 #[test]
+#[ignore = "requires a Vulkan-capable Windows driver and UIX_GFX_R5_EXPECT_VENDOR=nvidia|amd|intel"]
+fn windows_vulkan_gfx_r5_native_out_of_date_is_typed_and_recovers() {
+    let expected = expected_gfx_r5_vendor().unwrap_or_else(|error| panic!("{error}"));
+    let mut platform = crate::native::create_platform().expect("platform");
+    let mut window = platform
+        .window_manager()
+        .create_window("Vulkan GFX-R5 native surface fault", 139, 107)
+        .expect("window");
+    let surface = window.native_surface_ptr();
+    assert!(!surface.is_null(), "Windows HWND must be available");
+    window.show().expect("show window");
+    let _ = platform.event_loop().poll_event(&|_| true);
+
+    let mut context = VulkanContext::new(surface, 139, 107).expect("VulkanContext");
+    assert_eq!(
+        context.adapter_info.vendor_id,
+        expected.vendor_id(),
+        "expected {} ({:#06X}), actual {}",
+        expected.label(),
+        expected.vendor_id(),
+        context.adapter_info.diagnostic_summary()
+    );
+    let initial_extent = (context.width(), context.height());
+    let initial_pixels = vec![0xFF31_5A9C; (initial_extent.0 * initial_extent.1) as usize];
+    context
+        .present_pixels(
+            &initial_pixels,
+            initial_extent.0,
+            initial_extent.1,
+            PresentDamage::Full,
+        )
+        .expect("initial native-fault present");
+
+    window
+        .properties_mut()
+        .set_size(223, 157)
+        .expect("resize HWND without resizing Vulkan context");
+    let resized_drawable = win_surface::drawable_size(surface, 223, 157);
+    assert_ne!(
+        (resized_drawable.width, resized_drawable.height),
+        initial_extent
+    );
+    let fault = context
+        .present_pixels(
+            &initial_pixels,
+            initial_extent.0,
+            initial_extent.1,
+            PresentDamage::Full,
+        )
+        .expect_err("stale native swapchain must report a typed surface fault");
+    assert_eq!(fault.code(), Errc::GraphicsSurfaceLost);
+    assert!(
+        fault.message().contains("vkAcquireNextImageKHR")
+            || fault.message().contains("vkQueuePresentKHR"),
+        "fault must come from the native WSI path: {}",
+        fault.short_what()
+    );
+
+    context
+        .resize(
+            resized_drawable.logical_width,
+            resized_drawable.logical_height,
+        )
+        .expect("recover resized Vulkan swapchain");
+    let recovered_extent = (context.width(), context.height());
+    assert_eq!(
+        recovered_extent,
+        (resized_drawable.width, resized_drawable.height)
+    );
+    let recovered_color = 0xFFB7_642D;
+    let recovered_pixels =
+        vec![recovered_color; (recovered_extent.0 * recovered_extent.1) as usize];
+    context
+        .present_pixels(
+            &recovered_pixels,
+            recovered_extent.0,
+            recovered_extent.1,
+            PresentDamage::Full,
+        )
+        .expect("present after native surface recovery");
+    assert_eq!(
+        context
+            .read_pixels(recovered_extent.0 - 1, recovered_extent.1 - 1, 1, 1)
+            .expect("far-corner readback after native recovery"),
+        vec![recovered_color]
+    );
+
+    println!(
+        "GFX-R5 Vulkan native surface fault evidence: expected={}; fault={}; {}",
+        expected.label(),
+        fault.message(),
+        context.adapter_info.diagnostic_summary()
+    );
+    context.try_shutdown().expect("shutdown fault context");
+    window.close().expect("close fault window");
+}
+
+#[cfg(windows)]
+#[test]
 #[ignore = "requires a Vulkan-capable Windows driver"]
 fn windows_vulkan_two_surfaces_share_device_and_keep_independent_frames() {
     let mut platform = crate::native::create_platform().expect("platform");
