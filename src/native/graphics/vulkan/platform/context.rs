@@ -1,7 +1,7 @@
 //! Vulkan graphics context for Linux Wayland, Windows Win32, and macOS MoltenVK
 //! (PixelUpload via shared swapchain stage/present).
 
-use std::ffi::{c_void, CStr};
+use std::ffi::c_void;
 use std::ptr;
 
 use ash::{vk, Entry};
@@ -11,14 +11,14 @@ use crate::native::traits::present::{
     GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage,
 };
 
-#[cfg(all(unix, not(target_os = "macos")))]
-use crate::native::graphics::platform::linux::WaylandSurfaceHandle;
-
 #[cfg(target_os = "macos")]
 use crate::native::backends::macos::platform as macos_surface;
 
-#[cfg(windows)]
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use super::adapter::{device_extension_names, select_queue};
+use super::surface::{
+    choose_composite_alpha, choose_extent, choose_present_mode, choose_surface_format,
+    create_platform_surface, destroy_failed_surface, surface_instance_extensions,
+};
 
 pub(crate) fn vk_err(operation: &str, err: vk::Result) -> Error {
     let code = match err {
@@ -41,14 +41,8 @@ fn loader_err(operation: &str, err: impl std::fmt::Debug) -> Error {
     )
 }
 
-fn invalid(message: impl Into<String>) -> Error {
+pub(super) fn invalid(message: impl Into<String>) -> Error {
     Error::new(Errc::InvalidArgument, message.into())
-}
-
-#[derive(Clone, Copy)]
-struct QueueSelection {
-    physical_device: vk::PhysicalDevice,
-    family_index: u32,
 }
 
 struct UploadBuffer {
@@ -888,117 +882,6 @@ impl Drop for VulkanContext {
     }
 }
 
-fn destroy_failed_surface(surface_loader: &ash::khr::surface::Instance, surface: vk::SurfaceKHR) {
-    if surface != vk::SurfaceKHR::null() {
-        unsafe {
-            surface_loader.destroy_surface(surface, None);
-        }
-    }
-}
-
-fn surface_instance_extensions() -> Vec<*const std::ffi::c_char> {
-    let mut extensions = vec![ash::khr::surface::NAME.as_ptr()];
-    #[cfg(all(unix, not(target_os = "macos")))]
-    extensions.push(ash::khr::wayland_surface::NAME.as_ptr());
-    #[cfg(windows)]
-    extensions.push(ash::khr::win32_surface::NAME.as_ptr());
-    #[cfg(target_os = "macos")]
-    {
-        extensions.push(ash::ext::metal_surface::NAME.as_ptr());
-        extensions.push(ash::khr::portability_enumeration::NAME.as_ptr());
-    }
-    extensions
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-type PlatformSurfaceLoader = ash::khr::wayland_surface::Instance;
-
-#[cfg(windows)]
-type PlatformSurfaceLoader = ash::khr::win32_surface::Instance;
-
-#[cfg(target_os = "macos")]
-type PlatformSurfaceLoader = ash::ext::metal_surface::Instance;
-
-fn create_platform_surface(
-    entry: &Entry,
-    instance: &ash::Instance,
-    native_surface: *mut c_void,
-) -> Result<(vk::SurfaceKHR, PlatformSurfaceLoader)> {
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        let wayland = unsafe { WaylandSurfaceHandle::from_native(native_surface)? };
-        let wayland_surface_loader = ash::khr::wayland_surface::Instance::new(entry, instance);
-        let surface_info = vk::WaylandSurfaceCreateInfoKHR::default()
-            .display(wayland.display.cast())
-            .surface(wayland.surface.cast());
-        let surface = unsafe { wayland_surface_loader.create_wayland_surface(&surface_info, None) }
-            .map_err(|err| vk_err("vkCreateWaylandSurfaceKHR", err))?;
-        Ok((surface, wayland_surface_loader))
-    }
-    #[cfg(windows)]
-    {
-        if native_surface.is_null() {
-            return Err(invalid(
-                "VulkanContext: Win32 HWND native_surface must not be null",
-            ));
-        }
-        let hinstance = unsafe { GetModuleHandleW(None) }.map_err(|err| {
-            Error::new(
-                Errc::PlatformError,
-                format!("VulkanContext: GetModuleHandleW failed: {err:?}"),
-            )
-        })?;
-        let win32_surface_loader = ash::khr::win32_surface::Instance::new(entry, instance);
-        let surface_info = vk::Win32SurfaceCreateInfoKHR::default()
-            .hinstance(hinstance.0 as vk::HINSTANCE)
-            .hwnd(native_surface as vk::HWND);
-        let surface = unsafe { win32_surface_loader.create_win32_surface(&surface_info, None) }
-            .map_err(|err| vk_err("vkCreateWin32SurfaceKHR", err))?;
-        Ok((surface, win32_surface_loader))
-    }
-    #[cfg(target_os = "macos")]
-    {
-        if native_surface.is_null() {
-            return Err(invalid(
-                "VulkanContext: CAMetalLayer native_surface must not be null",
-            ));
-        }
-        let metal_surface_loader = ash::ext::metal_surface::Instance::new(entry, instance);
-        let surface_info = vk::MetalSurfaceCreateInfoEXT::default()
-            .layer(native_surface as *const vk::CAMetalLayer);
-        let surface = unsafe { metal_surface_loader.create_metal_surface(&surface_info, None) }
-            .map_err(|err| vk_err("vkCreateMetalSurfaceEXT", err))?;
-        Ok((surface, metal_surface_loader))
-    }
-}
-
-fn device_extension_names(
-    instance: &ash::Instance,
-    physical_device: vk::PhysicalDevice,
-) -> Result<Vec<*const std::ffi::c_char>> {
-    #[cfg(target_os = "macos")]
-    {
-        let mut extensions = vec![ash::khr::swapchain::NAME.as_ptr()];
-        if !device_has_extension(
-            instance,
-            physical_device,
-            ash::khr::portability_subset::NAME,
-        )? {
-            return Err(Error::new(
-                Errc::PlatformError,
-                "VulkanContext: MoltenVK requires VK_KHR_portability_subset on the selected device",
-            ));
-        }
-        extensions.push(ash::khr::portability_subset::NAME.as_ptr());
-        Ok(extensions)
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (instance, physical_device);
-        Ok(vec![ash::khr::swapchain::NAME.as_ptr()])
-    }
-}
-
 pub(crate) fn crop_cpu_shadow(
     shadow: &[u32],
     surface_width: i32,
@@ -1028,119 +911,6 @@ pub(crate) fn crop_cpu_shadow(
         out.extend_from_slice(&shadow[start..end]);
     }
     Ok(out)
-}
-
-fn select_queue(
-    instance: &ash::Instance,
-    surface_loader: &ash::khr::surface::Instance,
-    surface: vk::SurfaceKHR,
-) -> Result<QueueSelection> {
-    let physical_devices = unsafe { instance.enumerate_physical_devices() }
-        .map_err(|err| vk_err("vkEnumeratePhysicalDevices", err))?;
-    for physical_device in physical_devices {
-        if !device_supports_swapchain(instance, physical_device)? {
-            continue;
-        }
-        let queues =
-            unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
-        for (index, queue) in queues.iter().enumerate() {
-            let supports_present = unsafe {
-                surface_loader.get_physical_device_surface_support(
-                    physical_device,
-                    index as u32,
-                    surface,
-                )
-            }
-            .map_err(|err| vk_err("vkGetPhysicalDeviceSurfaceSupportKHR", err))?;
-            if queue.queue_flags.contains(vk::QueueFlags::GRAPHICS) && supports_present {
-                return Ok(QueueSelection {
-                    physical_device,
-                    family_index: index as u32,
-                });
-            }
-        }
-    }
-    Err(Error::new(
-        Errc::PlatformError,
-        "VulkanContext: no graphics+present queue with VK_KHR_swapchain",
-    ))
-}
-
-fn device_supports_swapchain(
-    instance: &ash::Instance,
-    physical_device: vk::PhysicalDevice,
-) -> Result<bool> {
-    device_has_extension(instance, physical_device, ash::khr::swapchain::NAME)
-}
-
-fn device_has_extension(
-    instance: &ash::Instance,
-    physical_device: vk::PhysicalDevice,
-    name: &CStr,
-) -> Result<bool> {
-    let extensions = unsafe { instance.enumerate_device_extension_properties(physical_device) }
-        .map_err(|err| vk_err("vkEnumerateDeviceExtensionProperties", err))?;
-    Ok(extensions.iter().any(|extension| {
-        let extension_name = unsafe { CStr::from_ptr(extension.extension_name.as_ptr()) };
-        extension_name == name
-    }))
-}
-
-pub(crate) fn choose_surface_format(formats: &[vk::SurfaceFormatKHR]) -> vk::SurfaceFormatKHR {
-    if formats.len() == 1 && formats[0].format == vk::Format::UNDEFINED {
-        return vk::SurfaceFormatKHR {
-            format: vk::Format::B8G8R8A8_UNORM,
-            color_space: vk::ColorSpaceKHR::SRGB_NONLINEAR,
-        };
-    }
-    formats
-        .iter()
-        .copied()
-        .find(|format| {
-            format.format == vk::Format::B8G8R8A8_UNORM
-                && format.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
-        })
-        .or_else(|| formats.first().copied())
-        .unwrap_or(vk::SurfaceFormatKHR {
-            format: vk::Format::B8G8R8A8_UNORM,
-            color_space: vk::ColorSpaceKHR::SRGB_NONLINEAR,
-        })
-}
-
-fn choose_present_mode(modes: &[vk::PresentModeKHR]) -> vk::PresentModeKHR {
-    modes
-        .iter()
-        .copied()
-        .find(|mode| *mode == vk::PresentModeKHR::FIFO)
-        .or_else(|| modes.first().copied())
-        .unwrap_or(vk::PresentModeKHR::FIFO)
-}
-
-pub(crate) fn choose_composite_alpha(
-    supported: vk::CompositeAlphaFlagsKHR,
-) -> Option<vk::CompositeAlphaFlagsKHR> {
-    [
-        vk::CompositeAlphaFlagsKHR::OPAQUE,
-        vk::CompositeAlphaFlagsKHR::PRE_MULTIPLIED,
-        vk::CompositeAlphaFlagsKHR::POST_MULTIPLIED,
-        vk::CompositeAlphaFlagsKHR::INHERIT,
-    ]
-    .into_iter()
-    .find(|candidate| supported.contains(*candidate))
-}
-
-fn choose_extent(caps: vk::SurfaceCapabilitiesKHR, requested: vk::Extent2D) -> vk::Extent2D {
-    if caps.current_extent.width != u32::MAX {
-        return caps.current_extent;
-    }
-    vk::Extent2D {
-        width: requested
-            .width
-            .clamp(caps.min_image_extent.width, caps.max_image_extent.width),
-        height: requested
-            .height
-            .clamp(caps.min_image_extent.height, caps.max_image_extent.height),
-    }
 }
 
 fn find_memory_type(
