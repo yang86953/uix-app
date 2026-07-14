@@ -4,7 +4,6 @@
 
 #![cfg(windows)]
 
-use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use windows::core::{
@@ -15,126 +14,15 @@ use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::Win32::UI::TextServices::{
     ITextStoreACP, ITextStoreACPSink, ITextStoreACP_Impl, ITfCompositionView,
     ITfContextOwnerCompositionSink, ITfContextOwnerCompositionSink_Impl, TEXT_STORE_LOCK_FLAGS,
-    TS_AE_END, TS_AS_SEL_CHANGE, TS_AS_TEXT_CHANGE, TS_E_NOLOCK, TS_E_SYNCHRONOUS, TS_IAS_NOQUERY,
-    TS_IAS_QUERYONLY, TS_LF_READWRITE, TS_RT_PLAIN, TS_RUNINFO, TS_SELECTIONSTYLE,
-    TS_SELECTION_ACP, TS_SS_NOHIDDENTEXT, TS_SS_TRANSITORY, TS_STATUS, TS_TEXTCHANGE,
+    TS_E_NOLOCK, TS_E_SYNCHRONOUS, TS_IAS_NOQUERY, TS_IAS_QUERYONLY, TS_LF_READWRITE, TS_RT_PLAIN,
+    TS_RUNINFO, TS_SELECTION_ACP, TS_SS_NOHIDDENTEXT, TS_SS_TRANSITORY, TS_STATUS, TS_TEXTCHANGE,
 };
 
-use crate::core::WindowId;
+pub(crate) use super::tsf_document::{TsfEventSink, TsfStoreState};
 use crate::native::backends::windows::tsf_session::tsf_composition_events;
-use crate::native::shared::ime_events::ImeCompositionState;
 use crate::native::traits::event::UiEvent;
 
 const VIEW_ID: u32 = 0;
-
-#[derive(Clone)]
-pub(crate) struct TsfEventSink {
-    pub events: Arc<Mutex<VecDeque<UiEvent>>>,
-    pub window_id: WindowId,
-    pub hwnd: HWND,
-}
-
-impl TsfEventSink {
-    fn push(&self, events: Vec<UiEvent>) {
-        if events.is_empty() {
-            return;
-        }
-        if let Ok(mut q) = self.events.lock() {
-            for mut event in events {
-                event.window_id = Some(self.window_id);
-                q.push_back(event);
-            }
-        }
-        // 唤醒主循环（与 EventLoopWaker 同形）。
-        unsafe {
-            let _ = windows::Win32::UI::WindowsAndMessaging::PostMessageW(
-                Some(self.hwnd),
-                windows::Win32::UI::WindowsAndMessaging::WM_NULL,
-                windows::Win32::Foundation::WPARAM(0),
-                windows::Win32::Foundation::LPARAM(0),
-            );
-        }
-    }
-}
-
-pub(crate) struct TsfStoreState {
-    text: Vec<u16>,
-    sel_start: i32,
-    pub(crate) sel_end: i32,
-    locked: bool,
-    acp_sink: Option<ITextStoreACPSink>,
-    sink_mask: u32,
-    composition: ImeCompositionState,
-    cursor: RECT,
-    event_sink: TsfEventSink,
-}
-
-impl TsfStoreState {
-    pub(crate) fn new(event_sink: TsfEventSink) -> Self {
-        Self {
-            text: Vec::new(),
-            sel_start: 0,
-            sel_end: 0,
-            locked: false,
-            acp_sink: None,
-            sink_mask: 0,
-            composition: ImeCompositionState::default(),
-            cursor: RECT {
-                left: 0,
-                top: 0,
-                right: 1,
-                bottom: 16,
-            },
-            event_sink,
-        }
-    }
-
-    pub(crate) fn set_cursor_rect(&mut self, rect: RECT) {
-        self.cursor = rect;
-    }
-
-    pub(crate) fn composition_active(&self) -> bool {
-        self.composition.active
-    }
-
-    fn end_acp(&self) -> i32 {
-        self.text.len() as i32
-    }
-
-    fn clamp_acp(&self, acp: i32) -> i32 {
-        acp.clamp(0, self.end_acp())
-    }
-
-    fn selection(&self) -> TS_SELECTION_ACP {
-        TS_SELECTION_ACP {
-            acpStart: self.sel_start,
-            acpEnd: self.sel_end,
-            style: TS_SELECTIONSTYLE {
-                ase: TS_AE_END,
-                fInterimChar: false.into(),
-            },
-        }
-    }
-
-    pub(crate) fn replace_range(&mut self, start: i32, end: i32, insert: &[u16]) -> TS_TEXTCHANGE {
-        let start = self.clamp_acp(start) as usize;
-        let end = self.clamp_acp(end) as usize;
-        let end = end.max(start);
-        self.text.splice(start..end, insert.iter().copied());
-        let new_end = (start + insert.len()) as i32;
-        self.sel_start = new_end;
-        self.sel_end = new_end;
-        TS_TEXTCHANGE {
-            acpStart: start as i32,
-            acpOldEnd: end as i32,
-            acpNewEnd: new_end,
-        }
-    }
-
-    pub(crate) fn utf16_string(&self) -> String {
-        String::from_utf16_lossy(&self.text)
-    }
-}
 
 #[implement(ITextStoreACP, ITfContextOwnerCompositionSink)]
 pub(crate) struct TsfTextStore {
