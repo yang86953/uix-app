@@ -174,11 +174,12 @@ where
     ) -> bool {
         let slot = queue.slot_id();
         let generation = queue.generation();
+        // 即使代次未变，渲染阶段也必须读取 State，以续订当前组件的窄脏区绑定。
+        let requests = queue.requests();
         if self.observed_slot == Some(slot) && self.observed_generation == generation {
             return false;
         }
 
-        let requests = queue.requests();
         let mut changed = false;
         let mut timer_changed = false;
 
