@@ -176,19 +176,17 @@ impl ScrollBar {
             .unwrap_or(0.0);
     }
 
-    /// End an active thumb drag.
+    /// 结束当前滑块拖动。
     pub fn end_drag(&mut self) {
         self.dragging = false;
         self.drag_grab = 0.0;
     }
 
-    /// Compute the new scroll value from a drag position in **relative**
-    /// coordinates.
+    /// 根据**相对坐标**中的拖动位置计算新滚动值。
     ///
-    /// `axis_pos` is the mouse coordinate along the scroll axis
-    /// (e.g. `pos.y` for vertical, `pos.x` for horizontal).
-    /// Uses [`Self::drag_grab`] from [`Self::begin_drag`] so the thumb tracks
-    /// the grab point instead of snapping its leading edge to the pointer.
+    /// `axis_pos` 是鼠标在滚动轴上的坐标（垂直时为 `pos.y`，水平时为 `pos.x`）。
+    /// 使用 [`Self::begin_drag`] 记录的 `drag_grab`，使滑块跟随抓取点，
+    /// 而不是把滑块前缘瞬移到指针位置。
     pub fn scroll_from_drag(
         &self,
         frame: Rect,

@@ -1,6 +1,6 @@
 //! ThemeToggle — 主题切换按钮（暗色 ↔ 亮色）。
 //!
-//! 点击切换暗色/亮色主题，通过 Cell<bool> 通知外部代码。
+//! 点击切换暗色/亮色主题，通过 `Cell<bool>` 通知外部代码。
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};

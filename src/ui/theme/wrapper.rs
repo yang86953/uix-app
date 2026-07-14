@@ -41,7 +41,7 @@ impl Theme {
         }
     }
 
-    /// 通过已有的 Arc<dyn TokenProvider> 创建 Theme。
+    /// 通过已有的 `Arc<dyn TokenProvider>` 创建 Theme。
     /// 与 `new()` 的区别在于不会重新包装 Arc，适用于需要共享同一 provider 的场景。
     pub fn from_arc(provider: Arc<dyn TokenProvider>) -> Self {
         Self { provider }
