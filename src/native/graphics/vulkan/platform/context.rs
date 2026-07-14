@@ -34,6 +34,19 @@ pub(crate) fn vk_err(operation: &str, err: vk::Result) -> Error {
     Error::new(code, format!("VulkanContext: {operation} failed: {err:?}"))
 }
 
+/// 校验 teardown 前的 device idle 结果。
+///
+/// Vulkan 把 `ERROR_DEVICE_LOST` 视为 pending 资源不再 in-use，但 child object
+/// 仍须显式销毁；因此该状态允许继续按子到父的顺序回收。其余 wait 失败保留 typed 根因。
+pub(crate) fn accept_device_wait_for_shutdown(
+    result: std::result::Result<(), vk::Result>,
+) -> Result<()> {
+    match result {
+        Ok(()) | Err(vk::Result::ERROR_DEVICE_LOST) => Ok(()),
+        Err(err) => Err(vk_err("vkDeviceWaitIdle during shutdown", err)),
+    }
+}
+
 /// 架构守卫的拆分后源边界：`surface.rs` 持有 `create_win32_surface`、
 /// `create_wayland_surface`、`create_metal_surface` 与 `portability_enumeration`；
 /// `adapter.rs` 持有 `portability_subset`。返回源码仅供测试核对真实所有权。
@@ -745,11 +758,9 @@ impl VulkanContext {
         if self.shutdown {
             return Ok(());
         }
-        unsafe {
-            self.device
-                .device_wait_idle()
-                .map_err(|err| vk_err("vkDeviceWaitIdle during shutdown", err))?;
-        }
+        // SAFETY: context 独占 device/queue；device lost 时规范仍要求显式销毁 child。
+        let wait_result = unsafe { self.device.device_wait_idle() };
+        accept_device_wait_for_shutdown(wait_result)?;
         unsafe {
             if self.upload.buffer != vk::Buffer::null() {
                 self.device.destroy_buffer(self.upload.buffer, None);

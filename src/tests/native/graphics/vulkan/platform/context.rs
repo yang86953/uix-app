@@ -96,6 +96,17 @@ fn vulkan_present_statuses_are_typed_graphics_failures() {
 }
 
 #[test]
+fn vulkan_shutdown_releases_lost_device_but_keeps_other_wait_failures_typed() {
+    assert!(accept_device_wait_for_shutdown(Ok(())).is_ok());
+    assert!(accept_device_wait_for_shutdown(Err(vk::Result::ERROR_DEVICE_LOST)).is_ok());
+
+    let error = accept_device_wait_for_shutdown(Err(vk::Result::ERROR_OUT_OF_DEVICE_MEMORY))
+        .expect_err("out-of-memory wait must remain observable");
+    assert_eq!(error.code(), Errc::GraphicsOutOfMemory);
+    assert!(error.message().contains("vkDeviceWaitIdle during shutdown"));
+}
+
+#[test]
 fn composite_alpha_prefers_opaque_but_uses_a_supported_fallback() {
     assert!(choose_composite_alpha(
         vk::CompositeAlphaFlagsKHR::OPAQUE | vk::CompositeAlphaFlagsKHR::INHERIT
