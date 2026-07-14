@@ -81,7 +81,7 @@ pub use traits::{
     WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetLifecycle, WidgetRender,
 };
 pub use widgets::*;
-pub use window_chrome::{window_control, window_drag_region, WindowControl};
+pub use window_chrome::{window_control, window_control_named, window_drag_region, WindowControl};
 
 #[cfg(feature = "test-harness")]
 pub mod test_harness {

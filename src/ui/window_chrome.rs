@@ -5,6 +5,7 @@ use std::any::Any;
 use crate::core::{ComponentId, Constraints, EdgeInsets, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::native::traits::input::{KeyCode, MouseButton};
+use crate::ui::component_snapshot::SnapshotFields;
 use crate::ui::event::WindowAction;
 use crate::ui::layout::{AlignItems, LayoutChild};
 use crate::ui::style::Style;
@@ -24,6 +25,16 @@ pub enum WindowControl {
     Close,
 }
 
+impl WindowControl {
+    const fn default_accessible_name(self) -> &'static str {
+        match self {
+            Self::Minimize => "Minimize window",
+            Self::MaximizeRestore => "Maximize or restore window",
+            Self::Close => "Close window",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WindowInteraction {
     Drag,
@@ -33,6 +44,7 @@ enum WindowInteraction {
 /// 布局、绘制均复用普通容器；该组件只增加窗口交互语义，不规定任何外观。
 pub(crate) struct WindowInteractionRegion {
     interaction: WindowInteraction,
+    accessible_name: Option<String>,
     container: Container,
     armed: bool,
     pending: Option<WindowAction>,
@@ -40,16 +52,17 @@ pub(crate) struct WindowInteractionRegion {
 
 impl WindowInteractionRegion {
     fn drag() -> Self {
-        Self::new(WindowInteraction::Drag)
+        Self::new(WindowInteraction::Drag, None)
     }
 
-    fn control(control: WindowControl) -> Self {
-        Self::new(WindowInteraction::Control(control))
+    fn control(control: WindowControl, accessible_name: String) -> Self {
+        Self::new(WindowInteraction::Control(control), Some(accessible_name))
     }
 
-    fn new(interaction: WindowInteraction) -> Self {
+    fn new(interaction: WindowInteraction, accessible_name: Option<String>) -> Self {
         Self {
             interaction,
+            accessible_name,
             container: Container::new(),
             armed: false,
             pending: None,
@@ -87,6 +100,7 @@ impl WindowInteractionRegion {
             self.pending = None;
         }
         self.interaction = next.interaction;
+        self.accessible_name = next.accessible_name;
         self.container.sync_from(next.container);
     }
 }
@@ -102,6 +116,16 @@ impl WidgetComponent for WindowInteractionRegion {
 
     fn into_any(self: Box<Self>) -> Box<dyn Any> {
         self
+    }
+
+    fn snapshot_fields(&self) -> SnapshotFields {
+        match self.interaction {
+            WindowInteraction::Drag => SnapshotFields::Unknown,
+            WindowInteraction::Control(control) => SnapshotFields::WindowControl {
+                control,
+                accessible_name: self.accessible_name.clone().unwrap_or_default(),
+            },
+        }
     }
 
     fn capabilities(&self) -> WidgetCapabilities {
@@ -280,8 +304,19 @@ pub fn window_drag_region(content: impl View) -> ViewNode {
 ///
 /// 包装器自身负责鼠标与键盘交互，因此内容只用于展示，不形成嵌套交互目标。
 pub fn window_control(control: WindowControl, content: impl View) -> ViewNode {
+    window_control_named(control, control.default_accessible_name(), content)
+}
+
+/// 将展示 View 包装为带自定义无障碍名称的窗口控制。
+///
+/// 应用使用本地化名称或图标内容无法表达动作时，应优先使用此函数。
+pub fn window_control_named(
+    control: WindowControl,
+    accessible_name: impl Into<String>,
+    content: impl View,
+) -> ViewNode {
     ViewNode::new(
-        WindowInteractionRegion::control(control),
+        WindowInteractionRegion::control(control, accessible_name.into()),
         vec![content.build()],
     )
 }

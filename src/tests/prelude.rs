@@ -76,6 +76,7 @@ fn prelude_exports_event_and_state_capture_types() {
     let _registration =
         HandlerRegistration::new(SemanticKind::Click, Box::new(|_| {})).with_state_capture(&state);
     let _node = label("captured").on_semantic_capture(SemanticKind::Click, &state, |_| {});
+    let _window_control = window_control_named(WindowControl::Close, "Close", label("×"));
     let _macro_registration = semantic_handler!(SemanticKind::Click, state[state], |_event| {});
 
     fn assert_exported<T: ?Sized>() {}
