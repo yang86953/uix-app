@@ -578,7 +578,7 @@ fn reconcile_message_preserves_queue_and_syncs_placement() {
 
     let message = Message::new();
     message.success("kept");
-    let queue = message.queue();
+    let handle = message.handle();
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(message));
     let root_id = tree.root_id().expect("message root should exist");
     let before_ptr = tree
@@ -602,8 +602,9 @@ fn reconcile_message_preserves_queue_and_syncs_placement() {
         .downcast_ref::<Message>()
         .unwrap();
     assert_eq!(message as *const Message, before_ptr);
-    assert_eq!(queue.borrow().len(), 1);
-    assert_eq!(queue.borrow()[0].content, "kept");
+    let items = handle.items();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].content, "kept");
     assert_eq!(
         message.snapshot_fields(),
         SnapshotFields::Message {
