@@ -61,7 +61,7 @@ pub use crate::ui::{
     Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus, BarChart,
     BarData, Breadcrumb, BreadcrumbItem, Button, Calendar, Card, Carousel, Cascader,
     CascaderOption, CascaderValue, Checkbox, Collapse, CollapsePanel, ColorPicker, Container,
-    Content, DatePicker, DateValue, Descriptions, DescriptionsItem, Divider, DividerDirection,
+    Content, Date, DatePicker, Descriptions, DescriptionsItem, Divider, DividerDirection,
     DividerOrientation, Drawer, DrawerPlacement, Dropdown, Empty, FieldDef, FloatButton,
     FloatButtonBackTop, Footer, Form, FormItem, FormLayout, FormValidationError, FormValidatorKey,
     FormValidatorTable, Grid, Header, Icon, Image, Input, InputNumber, Label, Layout, LineChart,

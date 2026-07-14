@@ -3,41 +3,42 @@
 //! 基于 Calendar 的日期逻辑，增加弹出面板和选中回显。
 
 use std::cell::Cell;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
+use crate::ui::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
 };
 
-// 日期结构（复用 Calendar 中的日期逻辑）
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct DateValue {
+/// 归一到合法年月日的公历日期。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Date {
     pub year: i32,
     pub month: usize,
     pub day: usize,
 }
 
-impl DateValue {
+impl Date {
     pub fn new(year: i32, month: usize, day: usize) -> Self {
-        let d = day.min(days_in_month(year, month));
-        Self {
-            year,
-            month: month.clamp(1, 12),
-            day: d.max(1),
-        }
+        let month = month.clamp(1, 12);
+        let day = day.clamp(1, days_in_month(year, month));
+        Self { year, month, day }
     }
     pub fn format(&self) -> String {
         format!("{:04}-{:02}-{:02}", self.year, self.month, self.day)
     }
+    /// 返回当前 UTC 日期。
     pub fn today() -> Self {
-        Self {
-            year: 2026,
-            month: 6,
-            day: 20,
-        }
+        let elapsed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or(Duration::ZERO);
+        let days = elapsed.as_secs() / 86_400;
+        let (year, month, day) = crate::core::diagnostic::timestamp::days_to_date(days);
+        Self::new(year, month as usize, day as usize)
     }
 }
 
@@ -72,7 +73,8 @@ fn first_weekday(year: i32, month: usize) -> usize {
 component! {
     /// DatePicker — 日期选择器。
     pub struct DatePicker {
-        value: Cell<DateValue>,
+        value: Cell<Date>,
+        value_binding: Option<State<Date>>,
         view_year: Cell<i32>,
         view_month: Cell<usize>,
         placeholder: String,
@@ -80,7 +82,7 @@ component! {
         focused: bool,
         hover_day: Cell<Option<usize>>,
         last_frame: Cell<Option<Rect>>,
-        pending_change: Cell<Option<DateValue>>,
+        pending_change: Cell<Option<Date>>,
     }
 
 
@@ -91,12 +93,13 @@ component! {
 
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        self.sync_bound_value();
         match event {
             SystemEvent::PointerDown { pos, .. } => {
                 self.focused = true;
                 if !self.open.get() {
                     self.open.set(true);
-                    let val = self.value.get();
+                    let val = self.selected_or_today();
                     self.view_year.set(val.year);
                     self.view_month.set(val.month);
                     return EventResult::Handled;
@@ -127,11 +130,8 @@ component! {
                             if day > fwd {
                                 let d = day - fwd;
                                 if d <= days_in_month(self.view_year.get(), self.view_month.get()) {
-                                    let new_val = DateValue::new(self.view_year.get(), self.view_month.get(), d);
-                                    if self.value.get() != new_val {
-                                        self.value.set(new_val);
-                                        self.pending_change.set(Some(new_val));
-                                    }
+                                    let new_val = Date::new(self.view_year.get(), self.view_month.get(), d);
+                                    self.commit_value(new_val);
                                     self.open.set(false);
                                 }
                             }
@@ -185,7 +185,7 @@ component! {
                 } else {
                     if *key == KeyCode::Space || *key == KeyCode::Enter {
                         self.open.set(true);
-                        let val = self.value.get();
+                        let val = self.selected_or_today();
                         self.view_year.set(val.year);
                         self.view_month.set(val.month);
                     }
@@ -205,6 +205,7 @@ component! {
     wants_continuous_pointer_move => (&self) -> bool { true }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        self.sync_bound_value();
         self.last_frame.set(Some(frame));
         let primary = ctx.tokens().color_primary();
         let primary_bg = ctx.tokens().color_primary_bg();
@@ -218,7 +219,7 @@ component! {
         let radius = Some(crate::draw::Radius::uniform(border_radius_sm));
 
         let val = self.value.get();
-        let is_default = val == DateValue::default();
+        let is_default = val == Date::default();
         ctx.fill_rect(frame, Color::white(), radius);
         ctx.stroke_rect(frame, if self.focused { primary } else { border_color },
             if self.focused { 2.0 } else { 1.0 }, radius);
@@ -306,12 +307,14 @@ impl DatePicker {
         Size::new(160.0, 32.0)
     }
 
-    pub fn new(placeholder: impl Into<String>) -> Self {
+    pub fn new() -> Self {
+        let today = Date::today();
         Self {
-            value: Cell::new(DateValue::default()),
-            view_year: Cell::new(2026),
-            view_month: Cell::new(6),
-            placeholder: placeholder.into(),
+            value: Cell::new(Date::default()),
+            value_binding: None,
+            view_year: Cell::new(today.year),
+            view_month: Cell::new(today.month),
+            placeholder: crate::ui::locale::use_locale().placeholder.to_owned(),
             open: Cell::new(false),
             focused: false,
             hover_day: Cell::new(None),
@@ -320,28 +323,81 @@ impl DatePicker {
         }
     }
 
-    pub fn value(self, v: DateValue) -> Self {
-        self.value.set(v);
+    /// 将日期绑定到外部 `State<Date>`。
+    pub fn value(mut self, state: &State<Date>) -> Self {
+        self.value_binding = Some(state.clone());
+        self.value.set(state.get());
         self
     }
-    pub fn selected(&self) -> DateValue {
+
+    /// 设置非受控日期选择器的初始值。
+    pub fn default_value(mut self, value: Date) -> Self {
+        self.value_binding = None;
+        self.value.set(value);
+        self
+    }
+
+    pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
+        self.placeholder = placeholder.into();
+        self
+    }
+
+    /// 返回组件当前缓存值；controlled 用法应以绑定的 `State` 为真值来源。
+    pub fn current_value(&self) -> Date {
         self.value.get()
     }
     pub fn is_open(&self) -> bool {
         self.open.get()
     }
-    pub fn set_value(&mut self, v: DateValue) {
-        self.value.set(v);
-    }
-
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        let value = self.current_value();
         SnapshotFields::DatePicker {
             placeholder: self.placeholder.clone(),
+            value: (value != Date::default()).then(|| value.format()),
         }
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let controlled_value = next.value_binding.as_ref().map(|_| next.value.get());
+        self.value_binding = next.value_binding;
+        if let Some(value) = controlled_value {
+            self.value.set(value);
+        }
         self.placeholder = next.placeholder;
+    }
+
+    fn selected_or_today(&self) -> Date {
+        let value = self.value.get();
+        if value == Date::default() {
+            Date::today()
+        } else {
+            value
+        }
+    }
+
+    fn sync_bound_value(&self) {
+        if let Some(state) = self.value_binding.as_ref() {
+            self.value.set(state.get());
+        }
+    }
+
+    fn commit_value(&self, value: Date) {
+        if self.value.get() == value {
+            return;
+        }
+        self.value.set(value);
+        if let Some(state) = self.value_binding.as_ref() {
+            if state.get() != value {
+                state.set(value);
+            }
+        }
+        self.pending_change.set(Some(value));
+    }
+}
+
+impl Default for DatePicker {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
