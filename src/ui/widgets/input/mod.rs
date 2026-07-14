@@ -8,6 +8,7 @@ mod date_calendar;
 pub mod date_picker;
 pub mod date_range_picker;
 pub mod form;
+pub mod form_list;
 pub mod form_validation;
 #[allow(clippy::module_inception)]
 pub mod input;
@@ -29,6 +30,7 @@ pub use color_picker::*;
 pub use date_picker::*;
 pub use date_range_picker::*;
 pub use form::*;
+pub use form_list::*;
 pub use form_validation::*;
 pub use input::*;
 pub use input_number::*;

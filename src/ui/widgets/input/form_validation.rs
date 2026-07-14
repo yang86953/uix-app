@@ -184,7 +184,7 @@ enum FieldRule {
 }
 
 #[derive(Clone)]
-struct FormField {
+pub(crate) struct FormField {
     name: String,
     label: String,
     value: StoredValue,
@@ -305,18 +305,19 @@ impl FormBuilder {
     }
 
     /// 完成声明；同名字段以最后一次声明为准。
-    pub fn build(mut self) -> FormModel {
+    pub fn build(self) -> FormModel {
+        let (layout, fields) = self.into_parts();
+        FormModel::from_fields(layout, fields)
+    }
+
+    pub(crate) fn into_parts(mut self) -> (Form, Vec<FormField>) {
         self.fields.push(self.current);
         let mut unique = Vec::<FormField>::with_capacity(self.fields.len());
         for field in self.fields {
             unique.retain(|existing| existing.name != field.name);
             unique.push(field);
         }
-        FormModel {
-            layout: self.layout,
-            active_errors: RefCell::new(vec![None; unique.len()]),
-            fields: unique,
-        }
+        (self.layout, unique)
     }
 }
 
@@ -328,6 +329,14 @@ pub struct FormModel {
 }
 
 impl FormModel {
+    pub(crate) fn from_fields(layout: Form, fields: Vec<FormField>) -> Self {
+        Self {
+            layout,
+            active_errors: RefCell::new(vec![None; fields.len()]),
+            fields,
+        }
+    }
+
     /// 校验全部字段；每个字段返回首个错误，字段间按声明顺序收集。
     pub fn validate(&self) -> Result<Values, Vec<FieldError>> {
         let values = values_from_fields(&self.fields);

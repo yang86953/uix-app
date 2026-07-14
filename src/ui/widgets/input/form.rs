@@ -384,6 +384,16 @@ impl Default for Form {
     }
 }
 
+impl Clone for Form {
+    fn clone(&self) -> Self {
+        Self {
+            label_width: self.label_width,
+            gap: self.gap,
+            layout: self.layout,
+        }
+    }
+}
+
 impl Form {
     fn intrinsic_size(&self) -> Size {
         Size::new(400.0, 200.0)
