@@ -9,90 +9,266 @@ use crate::demos::context::DemoCtx;
 pub fn page_layout(ctx: &DemoCtx<'_>) -> ViewNode {
     let tk = ctx.tk;
 
-    let r = |label: &str, color: Color| {
-        tree! { Container::new().size(80.0, 28.0).bg(color).rounded(4.0) => [
-            Label::new(label).color(Color::white()).font_size(11.0),
-        ]}
-    };
+    /// Helper: colored label box for container demos.
+    fn box_label(label_text: &str, color: Color) -> impl View {
+        row((label(label_text).fg(Color::white()).font_size(11.0),))
+            .width(80.0)
+            .height(28.0)
+            .bg(color)
+            .radius(4.0)
+    }
 
     PageBuilder::new(tk)
         .gap()
         .section("Container — Flex Row")
-        .push(tree! { Container::new().w(INNER_W).h(70.0).dir(FlexDirection::Row)
-            .gap(12.0).rounded(4.0).align(AlignItems::Center)
+        .push(
+            row((
+                box_label("A", Color::from_rgb(64, 150, 255)),
+                box_label("B", Color::from_rgb(82, 196, 26)),
+                box_label("C", Color::from_rgb(250, 173, 20)),
+                box_label("D", Color::from_rgb(114, 46, 209)),
+            ))
+            .width(INNER_W)
+            .height(70.0)
+            .gap(12.0)
+            .radius(4.0)
+            .align(AlignItems::Center)
             .justify(JustifyContent::SpaceBetween)
-            .bg(tk.color_fill).border(tk.color_border, 1.5) => [
-            r("A", Color::from_rgb(64, 150, 255)),
-            r("B", Color::from_rgb(82, 196, 26)),
-            r("C", Color::from_rgb(250, 173, 20)),
-            r("D", Color::from_rgb(114, 46, 209)),
-        ]})
+            .bg(tk.color_fill)
+            .border(1.5, tk.color_border),
+        )
         .section("Container — Flex Column")
-        .push(tree! { Container::new().w(INNER_W).h(160.0).dir(FlexDirection::Column)
-            .gap(8.0).rounded(4.0).align(AlignItems::Center)
-            .bg(tk.color_fill).border(tk.color_border, 1.5) => [
-            r("壹", Color::from_rgb(64, 150, 255)),
-            r("贰", Color::from_rgb(82, 196, 26)),
-            r("叁", Color::from_rgb(250, 173, 20)),
-        ]})
+        .push(
+            column((
+                box_label("壹", Color::from_rgb(64, 150, 255)),
+                box_label("贰", Color::from_rgb(82, 196, 26)),
+                box_label("叁", Color::from_rgb(250, 173, 20)),
+            ))
+            .width(INNER_W)
+            .height(160.0)
+            .gap(8.0)
+            .radius(4.0)
+            .align(AlignItems::Center)
+            .bg(tk.color_fill)
+            .border(1.5, tk.color_border),
+        )
         .section("Grid — 2 / 3 / 自定义列")
-        .push(tree! { Grid::two_columns().gap(8.0).pad(EdgeInsets::uniform(4.0)).size(INNER_W, 70.0) => [
-            tree! { Container::new().size(100.0, 60.0).bg(tk.color_primary_bg).rounded(tk.border_radius_sm) =>
-                [Label::new("2 col A").color(tk.color_primary).font_size(13.0)]},
-            tree! { Container::new().size(100.0, 60.0).bg(tk.color_success_bg).rounded(tk.border_radius_sm) =>
-                [Label::new("2 col B").color(tk.color_success).font_size(13.0)]},
-        ]})
-        .push(tree! { Grid::three_columns().gap(8.0).pad(EdgeInsets::uniform(4.0)).size(INNER_W, 70.0) => [
-            tree! { Container::new().size(80.0, 60.0).bg(tk.color_primary_bg).rounded(tk.border_radius_sm) =>
-                [Label::new("A").color(tk.color_primary).font_size(13.0)]},
-            tree! { Container::new().size(80.0, 60.0).bg(tk.color_warning_bg).rounded(tk.border_radius_sm) =>
-                [Label::new("B").color(tk.color_warning).font_size(13.0)]},
-            tree! { Container::new().size(80.0, 60.0).bg(tk.color_success_bg).rounded(tk.border_radius_sm) =>
-                [Label::new("C").color(tk.color_success).font_size(13.0)]},
-        ]})
-        .push(tree! { Grid::new()
-            .columns(vec![GridTrack::Fr(1.0), GridTrack::Fr(2.0)])
-            .gap(8.0).size(INNER_W, 70.0) => [
-            tree! { Container::new().size(100.0, 60.0).bg(tk.color_primary_bg).rounded(tk.border_radius_sm) =>
-                [Label::new("1fr").color(tk.color_primary).font_size(13.0)]},
-            tree! { Container::new().size(200.0, 60.0).bg(tk.color_info_bg).rounded(tk.border_radius_sm) =>
-                [Label::new("2fr").color(tk.color_info).font_size(13.0)]},
-        ]})
+        .push(
+            Grid::new()
+                .columns(2)
+                .gap(8.0, 8.0)
+                .size(INNER_W, 70.0)
+                .children((
+                    row((label("2 col A").fg(tk.color_primary).font_size(13.0),))
+                        .width(100.0)
+                        .height(60.0)
+                        .bg(tk.color_primary_bg)
+                        .radius(tk.border_radius_sm),
+                    row((label("2 col B").fg(tk.color_success).font_size(13.0),))
+                        .width(100.0)
+                        .height(60.0)
+                        .bg(tk.color_success_bg)
+                        .radius(tk.border_radius_sm),
+                )),
+        )
+        .push(
+            Grid::new()
+                .columns(3)
+                .gap(8.0, 8.0)
+                .size(INNER_W, 70.0)
+                .children((
+                    row((label("A").fg(tk.color_primary).font_size(13.0),))
+                        .width(80.0)
+                        .height(60.0)
+                        .bg(tk.color_primary_bg)
+                        .radius(tk.border_radius_sm),
+                    row((label("B").fg(tk.color_warning).font_size(13.0),))
+                        .width(80.0)
+                        .height(60.0)
+                        .bg(tk.color_warning_bg)
+                        .radius(tk.border_radius_sm),
+                    row((label("C").fg(tk.color_success).font_size(13.0),))
+                        .width(80.0)
+                        .height(60.0)
+                        .bg(tk.color_success_bg)
+                        .radius(tk.border_radius_sm),
+                )),
+        )
+        .push(
+            Grid::new()
+                .column_widths(&[100.0, -1.0])
+                .gap(8.0, 8.0)
+                .size(INNER_W, 70.0)
+                .children((
+                    row((label("1fr").fg(tk.color_primary).font_size(13.0),))
+                        .width(100.0)
+                        .height(60.0)
+                        .bg(tk.color_primary_bg)
+                        .radius(tk.border_radius_sm),
+                    row((label("2fr").fg(tk.color_info).font_size(13.0),))
+                        .width(200.0)
+                        .height(60.0)
+                        .bg(tk.color_info_bg)
+                        .radius(tk.border_radius_sm),
+                )),
+        )
+        .section("Grid — 响应式")
+        .push(
+            Grid::responsive()
+                .breakpoints(Breakpoints::antd())
+                .cols(vec![
+                    Col::new().span(24).sm(12).md(8).lg(6),
+                    Col::new().span(24).sm(12).md(8).lg(6),
+                    Col::new().span(24).sm(12).md(8).lg(6),
+                    Col::new().span(24).sm(12).md(8).lg(6),
+                ])
+                .children((
+                    row((label("Col 1").fg(tk.color_primary).font_size(12.0),))
+                        .bg(tk.color_primary_bg)
+                        .radius(tk.border_radius_sm),
+                    row((label("Col 2").fg(tk.color_success).font_size(12.0),))
+                        .bg(tk.color_success_bg)
+                        .radius(tk.border_radius_sm),
+                    row((label("Col 3").fg(tk.color_warning).font_size(12.0),))
+                        .bg(tk.color_warning_bg)
+                        .radius(tk.border_radius_sm),
+                    row((label("Col 4").fg(tk.color_info).font_size(12.0),))
+                        .bg(tk.color_info_bg)
+                        .radius(tk.border_radius_sm),
+                )),
+        )
         .section("Layout — Header / Sider / Content / Footer")
-        .push(tree! { Layout::new().bg(tk.color_bg_layout) => [
-            Header::new(36.0).bg(tk.color_primary_bg),
-            tree! { Container::new().size(INNER_W, 100.0).dir(FlexDirection::Row) => [
-                Sider::new(100.0).bg(tk.color_fill_secondary),
-                Content::new().bg(tk.color_bg_container),
-            ]},
-            Footer::new(28.0).bg(tk.color_fill_tertiary),
-        ]})
+        .push(
+            Layout::new()
+                .header(
+                    Header::new()
+                        .height(36.0)
+                        .child(label("Header").fg(tk.color_primary).font_size(12.0)),
+                )
+                .sider(
+                    Sider::new()
+                        .child(
+                            column((
+                                label("Sider").fg(tk.color_text_secondary).font_size(11.0),
+                                label("100px").fg(tk.color_text_tertiary).font_size(10.0),
+                            ))
+                            .align(AlignItems::Center)
+                            .padding(12.0),
+                        )
+                        .width(100.0),
+                )
+                .content(
+                    column((
+                        label("Content").fg(tk.color_text).font_size(13.0),
+                        label("主内容区域")
+                            .fg(tk.color_text_tertiary)
+                            .font_size(11.0),
+                    ))
+                    .width(-1.0)
+                    .height(80.0)
+                    .align(AlignItems::Center)
+                    .bg(tk.color_bg_container),
+                )
+                .footer(
+                    Footer::new()
+                        .height(28.0)
+                        .child(label("Footer").fg(tk.color_text_tertiary).font_size(11.0)),
+                )
+                .bg(tk.color_bg_layout),
+        )
         .section("Splitter — 水平 / 垂直")
         .push(labeled_row(
             tk,
             120.0,
             "Horizontal",
-            Splitter::new().panels(3).vertical(false),
+            Splitter::horizontal()
+                .first(
+                    column((
+                        label("面板 A").fg(tk.color_text).font_size(13.0),
+                        label("240px 初宽")
+                            .fg(tk.color_text_tertiary)
+                            .font_size(11.0),
+                    ))
+                    .align(AlignItems::Center)
+                    .bg(tk.color_primary_bg)
+                    .radius(tk.border_radius_sm),
+                    240.0,
+                )
+                .second(
+                    column((
+                        label("面板 B").fg(tk.color_text).font_size(13.0),
+                        label("弹性填充").fg(tk.color_text_tertiary).font_size(11.0),
+                    ))
+                    .align(AlignItems::Center)
+                    .bg(tk.color_success_bg)
+                    .radius(tk.border_radius_sm),
+                )
+                .min_first(180.0),
         ))
         .push(labeled_row(
             tk,
             120.0,
             "Vertical",
-            Splitter::new().panels(2).vertical(true),
+            Splitter::horizontal()
+                .first(
+                    column((
+                        label("上").fg(tk.color_text).font_size(13.0),
+                        label("拖拽分界").fg(tk.color_text_tertiary).font_size(10.0),
+                    ))
+                    .align(AlignItems::Center)
+                    .bg(tk.color_primary_bg)
+                    .radius(tk.border_radius_sm),
+                    80.0,
+                )
+                .second(
+                    column((
+                        label("下").fg(tk.color_text).font_size(13.0),
+                        label("弹性填充").fg(tk.color_text_tertiary).font_size(10.0),
+                    ))
+                    .align(AlignItems::Center)
+                    .bg(tk.color_success_bg)
+                    .radius(tk.border_radius_sm),
+                )
+                .min_first(50.0),
         ))
-        .section("ScrollView — Vertical")
+        .section("ScrollView")
         .push(
-            ScrollView::new(ScrollDirection::Vertical)
-                .size(INNER_W, 120.0)
-                .child(Label::new("ScrollView 行 1 — 滚轮滚动").font_size(12.0))
-                .child(Label::new("ScrollView 行 2").font_size(12.0))
-                .child(Label::new("ScrollView 行 3").font_size(12.0))
-                .child(Label::new("ScrollView 行 4").font_size(12.0))
-                .child(Label::new("ScrollView 行 5").font_size(12.0))
-                .child(Label::new("ScrollView 行 6").font_size(12.0)),
+            ScrollView::new().size(-1.0, 120.0).child(
+                column((
+                    label("ScrollView 行 1 — 滚轮滚动").font_size(12.0),
+                    label("ScrollView 行 2 — 内容可超出视口").font_size(12.0),
+                    label("ScrollView 行 3").font_size(12.0),
+                    label("ScrollView 行 4").font_size(12.0),
+                    label("ScrollView 行 5").font_size(12.0),
+                    label("ScrollView 行 6 — 末端").font_size(12.0),
+                ))
+                .gap(6.0),
+            ),
+        )
+        .section("VirtualScroll — 虚拟列表")
+        .push(
+            VirtualScroll::new()
+                .item_count(10000)
+                .item_height(32.0)
+                .size(INNER_W, 180.0)
+                .render(|i| {
+                    row((label(format!("row-{i}")).fg(tk.color_text).font_size(13.0),))
+                        .width(INNER_W - 16.0)
+                        .height(28.0)
+                }),
         )
         .section("Affix / BackTop")
-        .push(labeled_row(tk, 40.0, "Affix", Affix::new(12.0)))
+        .push(labeled_row(
+            tk,
+            48.0,
+            "Affix",
+            Affix::new().top(0.0).child(
+                row((label("吸顶导航栏").fg(tk.color_text).font_size(12.0),))
+                    .bg(tk.color_primary_bg)
+                    .radius(tk.border_radius_sm)
+                    .padding(EdgeInsets::new(4.0, 12.0, 4.0, 12.0)),
+            ),
+        ))
         .push(labeled_row(
             tk,
             40.0,

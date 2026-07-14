@@ -1,29 +1,10 @@
-//! 组件库页面 — page_feedback（反馈 + Overlay 浮层全覆盖）。
+//! 组件库页面 — page_feedback（反馈 + 浮层全覆盖）。
 
 use uix::prelude::*;
 
 use crate::common::page::{demo_row, PageBuilder, INNER_W};
-use crate::common::showcase::{labeled_row, widget_caption};
+use crate::common::showcase::labeled_row;
 use crate::demos::context::DemoCtx;
-
-fn focus_trap_modal(tk: &DesignTokens) -> ViewNode {
-    row([
-        embed(widget_caption(tk, "Modal ✓")),
-        ViewNode::new(
-            Modal::new("系统键盘焦点陷阱").closable(true).overlay(true),
-            vec![row([
-                button("取消").automation_id("feedback-modal-cancel"),
-                button("确认")
-                    .primary()
-                    .automation_id("feedback-modal-confirm"),
-            ])
-            .gap(8.0)],
-        )
-        .automation_id("feedback-focus-modal"),
-    ])
-    .align(AlignItems::Center)
-    .height(36.0)
-}
 
 pub fn page_feedback(ctx: &DemoCtx<'_>) -> ViewNode {
     let tk = ctx.tk;
@@ -31,88 +12,122 @@ pub fn page_feedback(ctx: &DemoCtx<'_>) -> ViewNode {
     PageBuilder::new(tk)
         .gap()
         .section("Alert — 4 种类型")
-        .push(Alert::new("成功: 操作已完成").type_(StatusLevel::Success))
-        .push(Alert::new("信息: 提示").type_(StatusLevel::Info))
-        .push(Alert::new("警告: 请注意").type_(StatusLevel::Warning))
-        .push(Alert::new("错误: 失败").type_(StatusLevel::Error))
-        .section("Overlay — Modal / Drawer")
-        .push_view(focus_trap_modal(tk))
-        .push(labeled_row(
-            tk,
-            36.0,
-            "Drawer ✓",
-            Drawer::new("抽屉标题")
-                .closable(true)
-                .placement(DrawerPlacement::Right),
-        ))
-        .section("Message / Notification")
-        .push(labeled_row(
-            tk,
-            36.0,
-            "Message",
-            Message::new().placement(MessagePlacement::Top),
-        ))
-        .push(labeled_row(
-            tk,
-            36.0,
-            "Notification",
-            Notification::new().placement(NotifPlacement::TopRight),
-        ))
+        .push(
+            Alert::new(AlertType::Success)
+                .title("成功")
+                .description("操作已完成")
+                .closable(true),
+        )
+        .push(
+            Alert::new(AlertType::Info)
+                .title("信息")
+                .description("这是一条提示信息")
+                .closable(true),
+        )
+        .push(
+            Alert::new(AlertType::Warning)
+                .title("警告")
+                .description("请注意检查")
+                .closable(true),
+        )
+        .push(
+            Alert::new(AlertType::Error)
+                .title("错误")
+                .description("操作失败，请重试")
+                .closable(true),
+        )
+        .section("Modal")
+        .push(
+            button("打开 Modal").on_click_fn(move || {
+                Modal::show(move |ctx| {
+                    column((
+                        label("确认删除？").font_size(18.0),
+                        row((
+                            button("取消").on_click_fn(|| ctx.close()),
+                            button("确认")
+                                .danger()
+                                .on_click_fn(|| ctx.close()),
+                        ))
+                        .gap(8.0),
+                    ))
+                    .gap(16.0)
+                    .padding(24.0)
+                })
+                .title("提示")
+                .width(400.0);
+            }),
+        )
+        .section("Drawer")
+        .push(
+            button("打开 Drawer").on_click_fn(move || {
+                Drawer::show(move |ctx| {
+                    column((
+                        label("详情内容").font_size(16.0),
+                        label("这里显示详细信息...").fg(tk.color_text_secondary),
+                    ))
+                    .gap(12.0)
+                    .padding(24.0)
+                })
+                .title("详情")
+                .placement(Placement::Right)
+                .width(480.0);
+            }),
+        )
+        .section("Message")
+        .push(
+            row((
+                button("Success").on_click_fn(|| Message::success("保存成功")),
+                button("Error").on_click_fn(|| Message::error("保存失败")),
+                button("Warning").on_click_fn(|| Message::warning("请先填写必填项")),
+                button("Info").on_click_fn(|| Message::info("正在加载...")),
+            ))
+            .gap(8.0),
+        )
+        .section("Notification")
+        .push(
+            button("显示通知").on_click_fn(move || {
+                Notification::new()
+                    .title("更新完成")
+                    .description("已更新到 v2.0")
+                    .duration(3.0)
+                    .placement(Placement::TopRight)
+                    .show();
+            }),
+        )
         .section("Spin — 尺寸")
         .push(
-            demo_row(40.0)
-                .child(Spin::new().small())
-                .child(Spin::new())
-                .child(Spin::new().large()),
+            row((
+                Spin::new().size(16.0),
+                Spin::new().size(32.0),
+                Spin::new().size(48.0),
+            ))
+            .gap(24.0),
         )
-        .section("ProgressBar — 线形 / 圆形 / 不确定")
-        .push(demo_row(24.0).child(ProgressBar::new().progress(45.0)))
-        .push(
-            demo_row(24.0).child(
-                ProgressBar::new()
-                    .progress(78.0)
-                    .stroke_color(tk.color_success),
-            ),
-        )
-        .push(demo_row(60.0).child(ProgressBar::new().circle().progress(0.65)))
-        .push(demo_row(24.0).child(ProgressBar::new().indeterminate()))
-        .section("Skeleton / Empty")
-        .push(
-            Space::new()
-                .size(SpaceSize::Small)
-                .width(INNER_W)
-                .height(56.0)
-                .direction(FlexDirection::Column)
-                .child(
-                    Skeleton::new()
-                        .shape(SkeletonShape::Rect)
-                        .size(INNER_W, 14.0),
-                )
-                .child(
-                    Skeleton::new()
-                        .shape(SkeletonShape::Rect)
-                        .size(INNER_W * 0.7, 14.0),
-                ),
-        )
+        .section("ProgressBar")
+        .push(ProgressBar::new().percent(45.0))
+        .push(ProgressBar::new().percent(78.0))
+        .push(ProgressBar::new().percent(65.0))
+        .push(ProgressBar::new().indeterminate())
+        .section("Skeleton")
+        .push(Skeleton::new().rows(3).animated(true))
+        .section("Empty")
         .push(Empty::new().description("暂无反馈数据"))
-        .section("Overlay — Tooltip / Popover / Popconfirm")
-        .push(labeled_row(
-            tk,
-            36.0,
-            "Tooltip ✓",
-            Tooltip::new("悬停提示").placement(TooltipPlacement::Top),
-        ))
-        .push(labeled_row(
-            tk,
-            36.0,
-            "Popover ✓",
-            Popover::new("气泡内容").title("标题"),
-        ))
-        .push(labeled_row(
-            tk,
-            36.0,
-            "Popconfirm ✓",
-            Popconfirm::new().title("确定删除？"),
-        ))
+        .section("Tooltip")
+        .push(
+            Tooltip::new("这是提示文字").attach(button("悬停查看提示")),
+        )
+        .section("Popover")
+        .push(
+            Popover::new()
+                .content(|| label("弹出内容"))
+                .trigger(Trigger::Click)
+                .attach(button("点击弹出")),
+        )
+        .section("Popconfirm")
+        .push(
+            Popconfirm::new("确定删除？")
+                .on_confirm(|| { /* 执行删除 */ })
+                .attach(button("删除").danger()),
+        )
         .build()
 }
