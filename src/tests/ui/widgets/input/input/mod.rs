@@ -49,6 +49,44 @@ fn controlled_value_reads_external_state_and_writes_edits_back() {
 }
 
 #[test]
+fn documented_input_factories_and_unicode_max_length_are_enforced() {
+    let password = Input::password().placeholder("Secret");
+    assert!(matches!(
+        password.snapshot_fields(),
+        SnapshotFields::Input {
+            password: true,
+            ref placeholder,
+            ..
+        } if placeholder == "Secret"
+    ));
+
+    let mut textarea = Input::textarea().rows(2).max_length(3);
+    assert_eq!(
+        textarea.on_event(&SystemEvent::TextInput {
+            text: "中a🙂x".to_string(),
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(textarea.current_value(), "中a🙂");
+    assert_eq!(
+        textarea.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            mods: KeyMod::SHIFT,
+        }),
+        EventResult::NotHandled
+    );
+    assert!(matches!(
+        textarea.snapshot_fields(),
+        SnapshotFields::Input {
+            textarea: true,
+            textarea_rows: 2,
+            max_length: Some(3),
+            ..
+        }
+    ));
+}
+
+#[test]
 fn ctrl_v_pastes_from_injected_clipboard() {
     let mut clipboard = FakeClipboard::new();
     clipboard.set_text("clip");

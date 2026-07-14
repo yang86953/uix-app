@@ -66,6 +66,8 @@ component! {
         textarea: bool,
         /// 默认显示行数
         textarea_rows: usize,
+        /// 用户输入允许的最大 Unicode 字符数；`None` 表示不限制。
+        max_length: Option<usize>,
         pending_change: RefCell<Option<String>>,
         pending_submit: RefCell<Option<String>>,
         /// 密码眼睛图标区域（用于命中检测）
@@ -155,9 +157,11 @@ component! {
                     }
                     // textarea: Shift+Enter 换行, Enter 提交
                     KeyCode::Enter if self.textarea && shift => {
-                        self.insert_at_cursor('\n');
-                        self.publish_change();
-                        EventResult::Handled
+                        if self.insert_text_at_cursor("\n") {
+                            EventResult::Handled
+                        } else {
+                            EventResult::NotHandled
+                        }
                     }
                     KeyCode::Enter if self.textarea => {
                         self.pending_submit.replace(Some(self.value.clone()));
@@ -368,10 +372,23 @@ impl Input {
             search: false,
             textarea: false,
             textarea_rows: 3,
+            max_length: None,
             pending_change: RefCell::new(None),
             pending_submit: RefCell::new(None),
             pwd_icon_rect: Cell::new(Rect::zero()),
         }
+    }
+    /// 创建多行文本输入框。
+    pub fn textarea() -> Self {
+        let mut input = Self::new("");
+        input.textarea = true;
+        input
+    }
+    /// 创建密码输入框。
+    pub fn password() -> Self {
+        let mut input = Self::new("");
+        input.password = true;
+        input
     }
     pub fn with_value(mut self, value: impl Into<String>) -> Self {
         self.value_binding = None;
@@ -390,6 +407,10 @@ impl Input {
     }
     pub fn disabled(mut self, v: bool) -> Self {
         self.disabled = v;
+        self
+    }
+    pub fn placeholder(mut self, text: impl Into<String>) -> Self {
+        self.placeholder = text.into();
         self
     }
     /// 返回组件当前缓存值；controlled 用法应以绑定的 `State` 为真值来源。
@@ -460,6 +481,7 @@ impl Input {
         self.search = next.search;
         self.textarea = next.textarea;
         self.textarea_rows = next.textarea_rows;
+        self.max_length = next.max_length;
     }
     pub(crate) fn controlled_value_changed(&self, next: &Self) -> bool {
         next.value_binding.is_some() && self.value != next.value
@@ -480,10 +502,6 @@ impl Input {
         self.addon_after = s.to_string();
         self
     }
-    pub fn password(mut self, v: bool) -> Self {
-        self.password = v;
-        self
-    }
     pub fn clearable(mut self, v: bool) -> Self {
         self.clearable = v;
         self
@@ -492,13 +510,13 @@ impl Input {
         self.search = v;
         self
     }
-    pub fn textarea(mut self, v: bool) -> Self {
-        self.textarea = v;
-        self.textarea_rows = if v { 3 } else { 0 };
+    pub fn rows(mut self, rows: usize) -> Self {
+        self.textarea = true;
+        self.textarea_rows = rows.max(1);
         self
     }
-    pub fn textarea_rows(mut self, n: usize) -> Self {
-        self.textarea_rows = n;
+    pub fn max_length(mut self, max_length: usize) -> Self {
+        self.max_length = Some(max_length);
         self
     }
 
@@ -622,7 +640,7 @@ impl Input {
     }
 
     fn insert_text_at_cursor(&mut self, text: &str) -> bool {
-        let chars: Vec<char> = if self.textarea {
+        let mut chars: Vec<char> = if self.textarea {
             text.chars()
                 .filter(|&c| c >= ' ' || c == '\n' || c == '\r')
                 .collect()
@@ -632,8 +650,21 @@ impl Input {
         if chars.is_empty() {
             return false;
         }
-        if self.selection.get().is_some() {
+        let replaced_selection = self.selection.get().is_some();
+        if replaced_selection {
             self.delete_selection();
+        }
+        if let Some(max_length) = self.max_length {
+            let available = max_length.saturating_sub(self.value.chars().count());
+            chars.truncate(available);
+        }
+        if chars.is_empty() {
+            if replaced_selection {
+                self.sel_anchor.set(self.cursor_char);
+                self.publish_change();
+                return true;
+            }
+            return false;
         }
         for ch in chars {
             self.insert_at_cursor(ch);
@@ -741,6 +772,7 @@ impl SnapshotSource for Input {
             search: self.search,
             textarea: self.textarea,
             textarea_rows: self.textarea_rows,
+            max_length: self.max_length,
         }
     }
 }

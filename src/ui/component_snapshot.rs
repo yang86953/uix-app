@@ -360,6 +360,7 @@ pub enum SnapshotFields {
         search: bool,
         textarea: bool,
         textarea_rows: usize,
+        max_length: Option<usize>,
     },
     Space {
         direction: FlexDirection,
