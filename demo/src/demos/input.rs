@@ -37,8 +37,20 @@ pub fn page_input(ctx: &DemoCtx<'_>) -> ViewNode {
         .section("InputNumber")
         .push(
             demo_row(36.0)
-                .child(InputNumber::new("数量").min(0.0).max(100.0).step(1.0))
-                .child(InputNumber::new("价格").min(0.0).max(999.0).step(0.5)),
+                .child(
+                    InputNumber::new()
+                        .placeholder("数量")
+                        .min(0.0)
+                        .max(100.0)
+                        .step(1.0),
+                )
+                .child(
+                    InputNumber::new()
+                        .placeholder("价格")
+                        .min(0.0)
+                        .max(999.0)
+                        .step(0.5),
+                ),
         )
         .section("Select")
         .push(

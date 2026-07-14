@@ -536,7 +536,12 @@ fn app_state_lookup_handle_exposes_read_only_config_getters() {
     let checkbox = tree.add_child(root, Box::new(Checkbox::new("Agree").default_checked(true)));
     let input_number = tree.add_child(
         root,
-        Box::new(InputNumber::new("Amount").value(12.5).disabled(true)),
+        Box::new(
+            InputNumber::new()
+                .placeholder("Amount")
+                .default_value(12.5)
+                .disabled(true),
+        ),
     );
 
     tree.layout();
@@ -713,7 +718,12 @@ fn component_handle_getters_cover_common_snapshot_fields() {
         .add_child(root, Box::new(Slider::new(0.0..=100.0).default_value(42.0)));
     let input_number = tree.borrow_mut().add_child(
         root,
-        Box::new(InputNumber::new("Amount").value(12.5).disabled(true)),
+        Box::new(
+            InputNumber::new()
+                .placeholder("Amount")
+                .default_value(12.5)
+                .disabled(true),
+        ),
     );
     let progress = tree
         .borrow_mut()
