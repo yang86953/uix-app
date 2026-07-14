@@ -67,7 +67,7 @@ impl WidgetTree {
     pub fn layout_traverse(&self) -> Vec<ComponentId> {
         let inv = self.invalidation.lock().unwrap_or_else(|e| e.into_inner());
         if inv.needs_full_frame() {
-            return self.traverse();
+            return self.traverse().iter().copied().collect();
         }
         let layout_roots = inv.layout_roots();
         drop(inv);
@@ -142,7 +142,7 @@ impl WidgetTree {
                     if rf.w <= 0.0 || rf.h <= 0.0 {
                         return true;
                     }
-                    self.traverse().into_iter().any(|cid| {
+                    self.traverse().iter().copied().any(|cid| {
                         cid != root_id
                             && self.get(cid).is_some_and(|c| {
                                 c.visible() && (c.frame().w <= 0.0 || c.frame().h <= 0.0)
@@ -284,7 +284,8 @@ impl WidgetTree {
             .collect();
         let entries: Vec<_> = self
             .traverse()
-            .into_iter()
+            .iter()
+            .copied()
             .filter_map(|id| {
                 let node = self.get(id)?;
                 if !node.visible() {
@@ -338,7 +339,8 @@ impl WidgetTree {
     pub(crate) fn reconcile_lifecycle_after_layout(&mut self) {
         let states: Vec<(WidgetId, bool)> = self
             .traverse()
-            .into_iter()
+            .iter()
+            .copied()
             .filter(|&id| self.get(id).is_some())
             .map(|id| {
                 (
@@ -645,7 +647,7 @@ impl WidgetTree {
 
     /// Rebuild VirtualScroll child windows when layout frame or scroll offset changes.
     fn refresh_virtual_scroll_children(&mut self) {
-        let ids = self.traverse();
+        let ids: Vec<_> = self.traverse().iter().copied().collect();
         for id in ids {
             let viewport_h = self.get(id).map(|node| node.frame().h).unwrap_or(0.0);
             if viewport_h <= 0.0 {
@@ -889,7 +891,8 @@ impl WidgetTree {
 
     fn animation_node_ids(&self) -> Vec<WidgetId> {
         self.traverse()
-            .into_iter()
+            .iter()
+            .copied()
             .filter(|&id| self.active_animation_frame(id).is_some())
             .collect()
     }

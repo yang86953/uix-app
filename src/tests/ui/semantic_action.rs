@@ -18,7 +18,8 @@ fn laid_out_tree(view: impl View) -> crate::ui::WidgetTree {
 
 fn find_automation_id(tree: &crate::ui::WidgetTree, automation_id: &str) -> ComponentId {
     tree.traverse()
-        .into_iter()
+        .iter()
+        .copied()
         .find(|&id| {
             tree.get(id)
                 .is_some_and(|node| node.automation_id() == Some(automation_id))
