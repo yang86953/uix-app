@@ -1,6 +1,8 @@
 //! Vulkan instance 与逻辑 device 的显式所有权边界。
 
-use std::rc::Rc;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::{Rc, Weak};
 
 use ash::{vk, Entry};
 
@@ -10,15 +12,35 @@ use super::adapter::{device_extension_names, QueueSelection, VulkanAdapterInfo};
 use super::context::{loader_err, vk_err};
 use super::surface::surface_instance_extensions;
 
+type DeviceKey = (vk::PhysicalDevice, u32);
+
+thread_local! {
+    /// Vulkan 调用受 `ThreadBoundGraphicsContext` 约束；线程本地弱引用既复用父资源，
+    /// 又不延长最后一个窗口 context 的生命周期。
+    static THREAD_RUNTIME: RefCell<Weak<VulkanRuntime>> = RefCell::new(Weak::new());
+}
+
 /// 与窗口 surface 无关的 Vulkan instance 资源。
 pub(super) struct VulkanRuntime {
     entry: Entry,
     instance: ash::Instance,
     surface_loader: ash::khr::surface::Instance,
+    devices: RefCell<HashMap<DeviceKey, Weak<VulkanDevice>>>,
 }
 
 impl VulkanRuntime {
-    pub(super) fn new() -> Result<Rc<Self>> {
+    pub(super) fn acquire() -> Result<Rc<Self>> {
+        THREAD_RUNTIME.with(|slot| {
+            if let Some(runtime) = slot.borrow().upgrade() {
+                return Ok(runtime);
+            }
+            let runtime = Self::create()?;
+            *slot.borrow_mut() = Rc::downgrade(&runtime);
+            Ok(runtime)
+        })
+    }
+
+    fn create() -> Result<Rc<Self>> {
         let entry =
             unsafe { Entry::load() }.map_err(|error| loader_err("load Vulkan loader", error))?;
         let app_info = vk::ApplicationInfo::default()
@@ -45,6 +67,7 @@ impl VulkanRuntime {
             entry,
             instance,
             surface_loader,
+            devices: RefCell::new(HashMap::new()),
         }))
     }
 
@@ -58,6 +81,22 @@ impl VulkanRuntime {
 
     pub(super) fn surface_loader(&self) -> &ash::khr::surface::Instance {
         &self.surface_loader
+    }
+
+    pub(super) fn acquire_device(
+        self: &Rc<Self>,
+        selection: QueueSelection,
+    ) -> Result<Rc<VulkanDevice>> {
+        let key = (selection.physical_device, selection.family_index);
+        if let Some(device) = self.devices.borrow().get(&key).and_then(Weak::upgrade) {
+            return Ok(device);
+        }
+
+        let device = VulkanDevice::new(Rc::clone(self), selection)?;
+        let mut devices = self.devices.borrow_mut();
+        devices.retain(|_, device| device.strong_count() > 0);
+        devices.insert(key, Rc::downgrade(&device));
+        Ok(device)
     }
 }
 

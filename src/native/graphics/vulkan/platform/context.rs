@@ -130,7 +130,7 @@ impl VulkanContext {
             height: drawable.height as u32,
         };
 
-        let runtime = VulkanRuntime::new()?;
+        let runtime = VulkanRuntime::acquire()?;
         let instance = runtime.instance().clone();
         let surface_loader = ash::khr::surface::Instance::new(runtime.entry(), &instance);
         let (surface, platform_loader) =
@@ -144,7 +144,7 @@ impl VulkanContext {
             }
         };
         let queue_family_index = selection.family_index;
-        let device_lease = match VulkanDevice::new(Rc::clone(&runtime), selection) {
+        let device_lease = match runtime.acquire_device(selection) {
             Ok(device) => device,
             Err(err) => {
                 destroy_failed_surface(&surface_loader, surface);
