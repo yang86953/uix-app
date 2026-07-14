@@ -86,6 +86,9 @@ component! {
         expanded_row: Cell<Option<usize>>,
         expandable: bool,
         expand_height: f32,
+        sortable: bool,
+        selection: bool,
+        bordered: bool,
         /// 空状态文案。
         empty_text: String,
         /// 当前分页。
@@ -98,7 +101,7 @@ component! {
     }
 
     measure => (&self, constraints: Constraints) -> Size {
-        let w: f32 = self.columns.iter().map(|c| c.width).sum();
+        let w: f32 = self.columns.iter().map(|c| c.width).sum::<f32>() + self.selection_width();
         let extra = if self.expandable && self.expanded_row.get().is_some() { self.expand_height } else { 0.0 };
         let body_h = self.rows.len() as f32 * self.row_h + extra;
         let h = self.header_h + body_h;
@@ -132,19 +135,31 @@ component! {
                 }
             }
             SystemEvent::PointerDown { pos, .. } => {
-                if pos.x < 32.0 && pos.y >= self.header_h {
-                    let row = self.row_index_at_y(pos.y);
-                    if let Some(row) = row {
-                        let idx = self.checked_rows.iter().position(|&r| r == row);
-                        if let Some(i) = idx { self.checked_rows.remove(i); }
-                        else { self.checked_rows.push(row); }
+                if self.selection && pos.x < self.selection_width() {
+                    if pos.y < self.header_h {
+                        if self.checked_rows.len() == self.rows.len() {
+                            self.checked_rows.clear();
+                        } else {
+                            self.checked_rows = (0..self.rows.len()).collect();
+                        }
+                        return EventResult::Handled;
+                    }
+                    if let Some(row) = self.row_index_at_y(pos.y) {
+                        if let Some(index) = self.checked_rows.iter().position(|&item| item == row) {
+                            self.checked_rows.remove(index);
+                        } else {
+                            self.checked_rows.push(row);
+                        }
                         return EventResult::Handled;
                     }
                 }
                 if pos.y < self.header_h {
-                    let mut x = 32.0;
+                    let mut x = self.selection_width();
                     for (ci, col) in self.columns.iter().enumerate() {
-                        if pos.x >= x && pos.x < x + col.width && col.sortable {
+                        if pos.x >= x
+                            && pos.x < x + col.width
+                            && (self.sortable || col.sortable)
+                        {
                             let new_dir = match col.sort_direction {
                                 SortDirection::None => SortDirection::Asc,
                                 SortDirection::Asc => SortDirection::Desc,
@@ -227,20 +242,36 @@ component! {
             let empty = if self.empty_text.is_empty() { loc.empty_data } else { &self.empty_text };
             let ey = ctx.visual_center_y(frame, 14.0);
             ctx.draw_text(empty, Point::new(frame.x + 16.0, ey), text_sec, 14.0);
+            if self.bordered {
+                ctx.stroke_rect(frame, border, 1.0, r);
+            }
             return;
         }
 
         // 表头
         let header_rect = Rect::new(frame.x, y, frame.w, self.header_h);
         ctx.fill_rect(header_rect, header_bg, r);
-        let mut x = frame.x + 32.0;
+        let mut x = frame.x + self.selection_width();
         let hdr_y = ctx.visual_center_y(header_rect, 13.0);
-        // 全选复选框
-        let all_checked = !self.rows.is_empty() && self.checked_rows.len() == self.rows.len();
-        ctx.draw_text(if all_checked { "☑" } else { "☐" }, Point::new(frame.x + 8.0, hdr_y), text_sec, 14.0);
+        if self.selection {
+            let all_checked = self.checked_rows.len() == self.rows.len();
+            ctx.draw_text(
+                if all_checked { "☑" } else { "☐" },
+                Point::new(frame.x + 8.0, hdr_y),
+                text_sec,
+                14.0,
+            );
+            if self.bordered {
+                ctx.fill_rect(
+                    Rect::new(x - 1.0, header_rect.y, 1.0, header_rect.h),
+                    border,
+                    None,
+                );
+            }
+        }
         for col in &self.columns {
             ctx.draw_text(&col.title, Point::new(x + 8.0, hdr_y), text_color, 13.0);
-            if col.sortable {
+            if self.sortable || col.sortable {
                 let indicator = match col.sort_direction {
                     SortDirection::Asc => loc.table_sort_asc,
                     SortDirection::Desc => loc.table_sort_desc,
@@ -253,6 +284,13 @@ component! {
                 }
             }
             x += col.width;
+            if self.bordered {
+                ctx.fill_rect(
+                    Rect::new(x - 1.0, header_rect.y, 1.0, header_rect.h),
+                    border,
+                    None,
+                );
+            }
         }
         y += self.header_h;
 
@@ -292,17 +330,42 @@ component! {
             let row_rect = Rect::new(frame.x, row_y, frame.w, self.row_h);
             ctx.fill_rect(row_rect, row_bg, None);
 
-            // 复选框
             let check_y = ctx.visual_center_y(row_rect, 14.0);
-            ctx.draw_text(if is_checked { "☑" } else { "☐" }, Point::new(frame.x + 8.0, check_y), primary, 14.0);
+            if self.selection {
+                ctx.draw_text(
+                    if is_checked { "☑" } else { "☐" },
+                    Point::new(frame.x + 8.0, check_y),
+                    primary,
+                    14.0,
+                );
+                if self.bordered {
+                    ctx.fill_rect(
+                        Rect::new(
+                            frame.x + self.selection_width() - 1.0,
+                            row_rect.y,
+                            1.0,
+                            row_rect.h,
+                        ),
+                        border,
+                        None,
+                    );
+                }
+            }
 
-            let mut x = frame.x + 32.0;
+            let mut x = frame.x + self.selection_width();
             let cell_y = ctx.visual_center_y(row_rect, 12.0);
             for (ci, col) in self.columns.iter().enumerate() {
                 let cell = row.get(ci).map(|s| s.as_str()).unwrap_or("");
                 let tc = if is_selected { primary } else { text_color };
                 ctx.draw_text(cell, Point::new(x + 8.0, cell_y), tc, 12.0);
                 x += col.width;
+                if self.bordered {
+                    ctx.fill_rect(
+                        Rect::new(x - 1.0, row_rect.y, 1.0, row_rect.h),
+                        border,
+                        None,
+                    );
+                }
             }
 
             // 扩展行箭头
@@ -325,6 +388,9 @@ component! {
         }
 
         ctx.canvas_2d().pop_clip();
+        if self.bordered {
+            ctx.stroke_rect(frame, border, 1.0, r);
+        }
     }
 }
 
@@ -365,6 +431,9 @@ impl Table {
             expanded_row: Cell::new(None),
             expandable: false,
             expand_height: 60.0,
+            sortable: false,
+            selection: false,
+            bordered: false,
             empty_text: String::new(),
             current_page: Cell::new(0),
             page_size: 20,
@@ -380,6 +449,24 @@ impl Table {
     }
     pub fn rows(mut self, rows: Vec<TableRow>) -> Self {
         self.rows = rows;
+        self
+    }
+    /// 是否让所有列头参与排序交互；列级 `TableColumn::sortable` 仍可单独启用。
+    pub fn sortable(mut self, enabled: bool) -> Self {
+        self.sortable = enabled;
+        self
+    }
+    /// 是否显示行复选框并启用多选。
+    pub fn selection(mut self, enabled: bool) -> Self {
+        self.selection = enabled;
+        if !enabled {
+            self.checked_rows.clear();
+        }
+        self
+    }
+    /// 是否绘制外框与单元格纵向边界。
+    pub fn bordered(mut self, enabled: bool) -> Self {
+        self.bordered = enabled;
         self
     }
     pub fn row_height(mut self, h: f32) -> Self {
@@ -417,6 +504,14 @@ impl Table {
     pub fn page_size(mut self, n: usize) -> Self {
         self.page_size = n;
         self
+    }
+
+    fn selection_width(&self) -> f32 {
+        if self.selection {
+            32.0
+        } else {
+            0.0
+        }
     }
 
     pub(crate) fn body_viewport_height(&self) -> f32 {
@@ -511,20 +606,40 @@ impl Table {
             header_h: self.header_h,
             expandable: self.expandable,
             expand_height: self.expand_height,
+            sortable: self.sortable,
+            selection: self.selection,
+            bordered: self.bordered,
+            selected_row: self.selected_row.get(),
+            checked_rows: self.checked_rows.clone(),
             empty_text: self.empty_text.clone(),
             page_size: self.page_size,
         }
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
-        self.columns = merge_table_columns(self.columns.as_slice(), next.columns);
+        self.columns = merge_table_columns(self.columns.as_slice(), next.columns, next.sortable);
         self.rows = next.rows;
         self.row_h = next.row_h;
         self.header_h = next.header_h;
         self.expandable = next.expandable;
         self.expand_height = next.expand_height;
+        self.sortable = next.sortable;
+        self.selection = next.selection;
+        self.bordered = next.bordered;
         self.empty_text = next.empty_text;
         self.page_size = next.page_size;
+        if self.selection {
+            self.checked_rows.retain(|row| *row < self.rows.len());
+        } else {
+            self.checked_rows.clear();
+        }
+        if self
+            .selected_row
+            .get()
+            .is_some_and(|row| row >= self.rows.len())
+        {
+            self.selected_row.set(None);
+        }
         let max = (self.body_content_height() - self.body_viewport_height()).max(0.0);
         self.body_scroll
             .set_scroll_offset(self.body_scroll.scroll_offset().min(max));
@@ -546,6 +661,27 @@ impl TableBuilder {
 
     pub fn rows(mut self, rows: Vec<TableRow>) -> Self {
         self.table.rows = rows;
+        self
+    }
+
+    /// 是否让所有列头参与排序交互。
+    pub fn sortable(mut self, enabled: bool) -> Self {
+        self.table.sortable = enabled;
+        self
+    }
+
+    /// 是否显示行复选框并启用多选。
+    pub fn selection(mut self, enabled: bool) -> Self {
+        self.table.selection = enabled;
+        if !enabled {
+            self.table.checked_rows.clear();
+        }
+        self
+    }
+
+    /// 是否绘制外框与单元格纵向边界。
+    pub fn bordered(mut self, enabled: bool) -> Self {
+        self.table.bordered = enabled;
         self
     }
 
@@ -588,12 +724,16 @@ impl From<TableBuilder> for crate::ui::view::ViewNode {
     }
 }
 
-fn merge_table_columns(current: &[TableColumn], next: Vec<TableColumn>) -> Vec<TableColumn> {
+fn merge_table_columns(
+    current: &[TableColumn],
+    next: Vec<TableColumn>,
+    table_sortable: bool,
+) -> Vec<TableColumn> {
     next.into_iter()
         .enumerate()
         .map(|(idx, mut next_col)| {
             if let Some(current_col) = current.get(idx) {
-                if next_col.sortable {
+                if table_sortable || next_col.sortable {
                     next_col.sort_direction = current_col.sort_direction;
                 }
                 if next_col.filterable {

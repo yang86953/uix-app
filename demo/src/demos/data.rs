@@ -152,7 +152,7 @@ pub fn page_data(ctx: &DemoCtx<'_>) -> ViewNode {
         .push(tree! { Container::new().size(INNER_W, 200.0) => [
             Table::new()
                 .columns(vec![
-                    TableColumn::new("姓名", 100.0).sortable(true),
+                    TableColumn::new("姓名", 100.0),
                     TableColumn::new("角色", 120.0),
                     TableColumn::new("状态", 80.0).filterable(true),
                 ])
@@ -163,6 +163,9 @@ pub fn page_data(ctx: &DemoCtx<'_>) -> ViewNode {
                         "Active".into(),
                     ]
                 }).collect())
+                .sortable(true)
+                .selection(true)
+                .bordered(true)
                 .into_node(),
         ]})
         .section("SelectableList")
