@@ -225,9 +225,12 @@ fn app_handle_notify_error_updates_default_overlay_queue() {
 
     assert_eq!(id, Some(0));
     assert_eq!(fatal, None);
-    assert_eq!(notifications.items().len(), 1);
-    assert_eq!(notifications.items()[0].title, "Warning");
-    assert!(notifications.items()[0]
+    assert_eq!(notifications.handle(WindowId::ROOT).items().len(), 1);
+    assert_eq!(
+        notifications.handle(WindowId::ROOT).items()[0].title,
+        "Warning"
+    );
+    assert!(notifications.handle(WindowId::ROOT).items()[0]
         .description
         .contains("cache is stale"));
     assert_eq!(queue.len(), 1);
@@ -236,11 +239,12 @@ fn app_handle_notify_error_updates_default_overlay_queue() {
 #[test]
 fn app_overlay_root_keeps_app_root_and_mounts_notification() {
     let notifications = AppNotificationState::new();
-    notifications.notify_error(&Error::new(Errc::IoError, "save failed"));
+    notifications.notify_error(WindowId::ROOT, &Error::new(Errc::IoError, "save failed"));
 
     let tree = ViewAdapter::build_nodes(wrap_root_with_notification_overlay(
         label("root"),
         notifications,
+        WindowId::ROOT,
     ));
 
     let labels = tree.find_all_by_type::<Label>();
@@ -248,7 +252,51 @@ fn app_overlay_root_keeps_app_root_and_mounts_notification() {
     assert_eq!(labels.len(), 1);
     assert_eq!(labels[0].1.text(), "root");
     assert_eq!(notifications.len(), 1);
-    assert_eq!(notifications[0].1.queue().borrow().len(), 1);
+    assert_eq!(notifications[0].1.items().len(), 1);
+}
+
+#[test]
+fn mounted_app_overlay_observes_later_notifications() {
+    let notifications = AppNotificationState::new();
+    let tree = ViewAdapter::build_nodes(wrap_root_with_notification_overlay(
+        label("root"),
+        notifications.clone(),
+        WindowId::ROOT,
+    ));
+    assert!(tree.find_all_by_type::<Notification>()[0]
+        .1
+        .items()
+        .is_empty());
+
+    notifications.notify_error(
+        WindowId::ROOT,
+        &Error::warn(Errc::InvalidState, "changed after mount"),
+    );
+
+    let mounted = tree.find_all_by_type::<Notification>();
+    assert_eq!(mounted[0].1.items().len(), 1);
+    assert!(mounted[0].1.items()[0]
+        .description
+        .contains("changed after mount"));
+}
+
+#[test]
+fn app_notification_queues_are_isolated_per_window() {
+    let notifications = AppNotificationState::new();
+    let child = WindowId::new(17);
+
+    notifications.notify_error(
+        WindowId::ROOT,
+        &Error::warn(Errc::InvalidState, "root only"),
+    );
+    notifications.notify_error(child, &Error::new(Errc::IoError, "child only"));
+
+    let root_items = notifications.handle(WindowId::ROOT).items();
+    let child_items = notifications.handle(child).items();
+    assert_eq!(root_items.len(), 1);
+    assert!(root_items[0].description.contains("root only"));
+    assert_eq!(child_items.len(), 1);
+    assert!(child_items[0].description.contains("child only"));
 }
 
 #[test]
@@ -265,6 +313,7 @@ fn app_overlay_root_passes_clicks_to_app_when_notifications_empty() {
             })
             .build(),
         AppNotificationState::new(),
+        WindowId::ROOT,
     ));
     if let Some(root) = tree.root_mut() {
         root.set_frame(Rect::new(0.0, 0.0, 800.0, 600.0));

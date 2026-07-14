@@ -71,6 +71,17 @@ where
         id
     }
 
+    pub(crate) fn push_external(&self, id: u64, item: T, duration_ms: u64) {
+        self.state.update(|items| {
+            items.retain(|request| request.key != ToastKey::External(id));
+            items.push(ToastRequest {
+                key: ToastKey::External(id),
+                item,
+                display_duration: display_duration(duration_ms),
+            });
+        });
+    }
+
     pub(crate) fn replace_external<I>(&self, items: I)
     where
         I: IntoIterator<Item = (u64, T, u64)>,
@@ -89,6 +100,19 @@ where
 
     pub(crate) fn remove_local(&self, id: u64) -> bool {
         self.remove_keys(&[ToastKey::Local(id)]) > 0
+    }
+
+    pub(crate) fn remove_external(&self, id: u64) -> bool {
+        self.remove_keys(&[ToastKey::External(id)]) > 0
+    }
+
+    pub(crate) fn retain_latest(&self, maximum: usize) {
+        let mut items = self.state.get();
+        let excess = items.len().saturating_sub(maximum);
+        if excess > 0 {
+            items.drain(0..excess);
+            self.state.set(items);
+        }
     }
 
     pub(crate) fn remove_keys(&self, keys: &[ToastKey]) -> usize {

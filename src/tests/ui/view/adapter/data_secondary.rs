@@ -620,7 +620,7 @@ fn reconcile_notification_preserves_queue_and_syncs_placement() {
 
     let notification = Notification::new();
     notification.open("kept", "body", StatusLevel::Info);
-    let queue = notification.queue();
+    let handle = notification.handle();
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(notification));
     let root_id = tree.root_id().expect("notification root should exist");
     let before_ptr = tree
@@ -644,8 +644,9 @@ fn reconcile_notification_preserves_queue_and_syncs_placement() {
         .downcast_ref::<Notification>()
         .unwrap();
     assert_eq!(notification as *const Notification, before_ptr);
-    assert_eq!(queue.borrow().len(), 1);
-    assert_eq!(queue.borrow()[0].title, "kept");
+    let items = handle.items();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].title, "kept");
     assert_eq!(
         notification.snapshot_fields(),
         SnapshotFields::Notification {

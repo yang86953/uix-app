@@ -3,14 +3,14 @@ use crate::core::{Point, Rect};
 use super::{Fixed, TableColumn};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ColumnZone {
+pub(crate) enum ColumnZone {
     Left,
     Middle,
     Right,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct LaidOutColumn {
+pub(crate) struct LaidOutColumn {
     pub index: usize,
     pub x: f32,
     pub width: f32,
@@ -18,7 +18,7 @@ pub(super) struct LaidOutColumn {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct TableColumnGeometry {
+pub(crate) struct TableColumnGeometry {
     pub columns: Vec<LaidOutColumn>,
     pub middle_clip: Rect,
     pub left_width: f32,
@@ -136,38 +136,4 @@ fn zone_width(columns: &[TableColumn], fixed: Option<Fixed>) -> f32 {
         .filter(|column| column.fixed == fixed)
         .map(|column| column.width.max(0.0))
         .sum()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn columns() -> Vec<TableColumn> {
-        vec![
-            TableColumn::new("Name", 80.0).fixed(Fixed::Left),
-            TableColumn::new("Email", 160.0),
-            TableColumn::new("Role", 120.0),
-            TableColumn::new("Actions", 60.0).fixed(Fixed::Right),
-        ]
-    }
-
-    #[test]
-    fn fixed_columns_stay_anchored_while_middle_columns_scroll() {
-        let initial = TableColumnGeometry::new(&columns(), 0.0, 240.0, 0.0, 0.0);
-        let scrolled = TableColumnGeometry::new(&columns(), 0.0, 240.0, 0.0, 80.0);
-
-        assert_eq!(initial.columns[0].x, scrolled.columns[0].x);
-        assert_eq!(initial.columns[3].x, scrolled.columns[3].x);
-        assert_eq!(initial.columns[1].x - scrolled.columns[1].x, 80.0);
-        assert_eq!(scrolled.max_scroll_x, 180.0);
-    }
-
-    #[test]
-    fn fixed_columns_win_hit_testing_over_clipped_middle_columns() {
-        let geometry = TableColumnGeometry::new(&columns(), 0.0, 240.0, 0.0, 100.0);
-
-        assert_eq!(geometry.column_at(20.0), Some(0));
-        assert_eq!(geometry.column_at(220.0), Some(3));
-        assert_eq!(geometry.column_at(100.0), Some(1));
-    }
 }

@@ -86,7 +86,7 @@ fn semantic_actions_stay_on_the_shared_widget_event_path() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let executor = read_source(src.join("ui/semantic_action.rs"));
     let automation = read_source(src.join("ui/automation.rs"));
-    let snapshots = read_source(src.join("ui/component_snapshot.rs"));
+    let snapshots = read_source(src.join("ui/component_snapshot/mod.rs"));
 
     assert!(
         executor.contains("self.dispatch_event(") && executor.contains("self.dispatch_semantic("),

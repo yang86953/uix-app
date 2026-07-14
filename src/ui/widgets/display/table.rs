@@ -10,7 +10,7 @@ use crate::ui::{
 };
 use std::cell::{Cell, RefCell};
 
-mod geometry;
+pub(crate) mod geometry;
 mod header;
 
 use geometry::{ColumnZone, TableColumnGeometry};
