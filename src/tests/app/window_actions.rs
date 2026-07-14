@@ -29,11 +29,14 @@ fn window_actions_target_only_the_supplied_window() {
         .expect("title bar maximize");
     apply_window_action(&mut target, WindowAction::ToggleMaximizeFromTitleBar)
         .expect("title bar restore");
+    apply_window_action(&mut target, WindowAction::ShowSystemMenuFromTitleBar)
+        .expect("title bar system menu");
     apply_window_action(&mut target, WindowAction::RequestClose).expect("request close");
 
     assert_eq!(target.props.state.begin_move_drag_calls, 1);
     assert!(!target.props.state.maximized);
     assert!(!target.props.state.minimized);
+    assert_eq!(target.state.show_system_menu_calls, 1);
     assert!(target.state.close_requested);
     assert_eq!(untouched.props.state.begin_move_drag_calls, 0);
     assert!(!untouched.state.close_requested);

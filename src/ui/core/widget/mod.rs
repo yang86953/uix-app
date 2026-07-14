@@ -554,4 +554,5 @@ pub(crate) mod tree_core;
 pub(crate) mod tree_dirty;
 pub(crate) mod tree_dynamic;
 pub(crate) mod tree_events;
+mod tree_semantics;
 pub use tree_core::WidgetTree;

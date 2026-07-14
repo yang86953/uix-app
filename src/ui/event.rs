@@ -21,13 +21,19 @@ pub enum WindowAction {
     Minimize,
     MaximizeRestore,
     ToggleMaximizeFromTitleBar,
+    ShowSystemMenuFromTitleBar,
     RequestClose,
 }
 
 impl WindowAction {
-    /// 原生拖动与标题栏双击属于窗口外壳手势，不应改变客户区内已有键盘焦点。
+    /// 原生标题栏手势不应改变客户区内已有键盘焦点。
     pub(crate) const fn preserves_keyboard_focus(self) -> bool {
-        matches!(self, Self::BeginMoveDrag | Self::ToggleMaximizeFromTitleBar)
+        matches!(
+            self,
+            Self::BeginMoveDrag
+                | Self::ToggleMaximizeFromTitleBar
+                | Self::ShowSystemMenuFromTitleBar
+        )
     }
 }
 
