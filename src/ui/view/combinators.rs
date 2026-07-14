@@ -827,6 +827,7 @@ pub fn button(text: impl Into<String>) -> ButtonBuilder {
 /// ```
 pub struct InputBuilder {
     placeholder: String,
+    value: Option<State<String>>,
     handlers: Vec<HandlerRegistration>,
 }
 
@@ -834,6 +835,12 @@ impl InputBuilder {
     /// 设置占位文本。
     pub fn placeholder(mut self, text: impl Into<String>) -> Self {
         self.placeholder = text.into();
+        self
+    }
+
+    /// 绑定输入值；组件编辑与外部 `State` 更新保持双向同步。
+    pub fn value(mut self, state: &State<String>) -> Self {
+        self.value = Some(state.clone());
         self
     }
 
@@ -890,7 +897,11 @@ impl InputBuilder {
 
 impl View for InputBuilder {
     fn build(self) -> ViewNode {
-        let mut node = ViewNode::leaf(crate::ui::widgets::Input::new(self.placeholder));
+        let mut input = crate::ui::widgets::Input::new(self.placeholder);
+        if let Some(value) = self.value.as_ref() {
+            input = input.value(value);
+        }
+        let mut node = ViewNode::leaf(input);
         node.handlers = self.handlers;
         node
     }
@@ -912,6 +923,7 @@ impl From<InputBuilder> for ViewNode {
 pub fn input() -> InputBuilder {
     InputBuilder {
         placeholder: String::new(),
+        value: None,
         handlers: Vec::new(),
     }
 }

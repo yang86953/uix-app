@@ -12,6 +12,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::native::traits::input::ControlSize;
 use crate::ui::clipboard;
+use crate::ui::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, KeyMod, SemanticEvent, SystemEvent, WidgetTree,
 };
@@ -32,6 +33,7 @@ const LINE_HEIGHT: f32 = 22.0;
 component! {
     pub struct Input {
         value: String,
+        value_binding: Option<State<String>>,
         pub(crate) placeholder: String,
         input_size: ControlSize,
         disabled: bool,
@@ -83,6 +85,7 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if self.disabled { return EventResult::NotHandled; }
+        self.sync_bound_value();
         match event {
             SystemEvent::PointerDown { pos, mods, .. } => {
                 // 密码眼睛图标命中
@@ -147,12 +150,13 @@ component! {
                         self.pending_submit.replace(Some(self.value.clone()));
                         self.value.clear();
                         self.cursor_char = 0;
+                        self.write_bound_value();
                         EventResult::Handled
                     }
                     // textarea: Shift+Enter 换行, Enter 提交
                     KeyCode::Enter if self.textarea && shift => {
                         self.insert_at_cursor('\n');
-                        self.pending_change.replace(Some(self.value.clone()));
+                        self.publish_change();
                         EventResult::Handled
                     }
                     KeyCode::Enter if self.textarea => {
@@ -162,6 +166,7 @@ component! {
                         self.cursor_char = 0;
                         self.scroll_line.set(0);
                         self.selection.set(None);
+                        self.write_bound_value();
                         EventResult::Handled
                     }
                     // 单行: Enter 提交
@@ -169,6 +174,7 @@ component! {
                         self.pending_submit.replace(Some(self.value.clone()));
                         self.value.clear();
                         self.cursor_char = 0;
+                        self.write_bound_value();
                         EventResult::Handled
                     }
                     KeyCode::A if ctrl => {
@@ -196,6 +202,7 @@ component! {
                         } else if let Some((s, e)) = self.selection.get() {
                             clipboard::copy_to_clipboard(&self.slice_range(s, e));
                             self.delete_selection();
+                            self.publish_change();
                             EventResult::Handled
                         } else {
                             EventResult::Handled
@@ -213,7 +220,7 @@ component! {
                             self.value.replace_range(byte_start..byte_end, "");
                             self.cursor_char -= 1;
                         } else { return EventResult::NotHandled; }
-                        self.pending_change.replace(Some(self.value.clone()));
+                        self.publish_change();
                         EventResult::Handled
                     }
                     KeyCode::Delete => {
@@ -228,7 +235,7 @@ component! {
                                 self.value.replace_range(byte_start..byte_end, "");
                             } else { return EventResult::NotHandled; }
                         }
-                        self.pending_change.replace(Some(self.value.clone()));
+                        self.publish_change();
                         EventResult::Handled
                     }
                     KeyCode::Left => { self.move_cursor_left(ctrl); EventResult::Handled }
@@ -306,6 +313,7 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        self.capture_bound_value_dependency();
         if self.textarea {
             self.render_textarea(frame, ctx);
         } else {
@@ -334,6 +342,7 @@ impl Input {
     pub fn new(placeholder: impl Into<String>) -> Self {
         Self {
             value: String::new(),
+            value_binding: None,
             placeholder: placeholder.into(),
             input_size: ControlSize::Medium,
             disabled: false,
@@ -365,9 +374,14 @@ impl Input {
         }
     }
     pub fn with_value(mut self, value: impl Into<String>) -> Self {
-        self.value = value.into();
-        self.cursor_char = self.value.chars().count();
-        self.scroll_offset_x.set(0.0);
+        self.value_binding = None;
+        self.replace_value(value.into());
+        self
+    }
+    /// 将输入框绑定到外部 `State<String>`；输入与外部更新保持双向同步。
+    pub fn value(mut self, state: &State<String>) -> Self {
+        self.value_binding = Some(state.clone());
+        self.replace_value(state.get());
         self
     }
     pub fn size(mut self, s: ControlSize) -> Self {
@@ -378,25 +392,61 @@ impl Input {
         self.disabled = v;
         self
     }
-    pub fn value(&self) -> &str {
+    /// 返回组件当前缓存值；controlled 用法应以绑定的 `State` 为真值来源。
+    pub fn current_value(&self) -> &str {
         &self.value
     }
     pub fn set_value(&mut self, v: impl Into<String>) {
-        self.value = v.into();
+        self.replace_value(v.into());
+        self.write_bound_value();
+    }
+    fn replace_value(&mut self, value: String) {
+        self.value = value;
         self.composition.clear();
         self.cursor_char = self.value.chars().count();
         self.scroll_offset_x.set(0.0);
         self.scroll_line.set(0);
         self.selection.set(None);
     }
+    fn sync_bound_value(&mut self) {
+        let Some(state) = self.value_binding.as_ref() else {
+            return;
+        };
+        let value = state.get();
+        if value != self.value {
+            self.replace_value(value);
+        }
+    }
+    fn capture_bound_value_dependency(&self) {
+        if let Some(state) = self.value_binding.as_ref() {
+            let _ = state.get();
+        }
+    }
+    fn write_bound_value(&self) {
+        if let Some(state) = self.value_binding.as_ref() {
+            if state.get() != self.value {
+                state.set(self.value.clone());
+            }
+        }
+    }
+    fn publish_change(&self) {
+        self.write_bound_value();
+        self.pending_change.replace(Some(self.value.clone()));
+    }
     /// 设置输入框的聚焦状态（供 tree.build 后恢复焦点用）
     pub fn set_focused(&mut self, v: bool) {
         self.focused = v;
     }
     pub(crate) fn sync_from(&mut self, next: Self) {
-        // Preserve runtime text/caret/focus across reconcile (demo anim tick
-        // rebuilds Input::new("") every frame). Config props only — same
-        // pattern as AutoComplete/Select.
+        // 未绑定时保留 reconcile 前的文本、光标与焦点；controlled 模式仅在外部值
+        // 真正变化时替换文本，避免无关重建打断编辑位置。
+        let controlled_value = next.value_binding.as_ref().map(|_| next.value.clone());
+        self.value_binding = next.value_binding;
+        if let Some(value) = controlled_value {
+            if value != self.value {
+                self.replace_value(value);
+            }
+        }
         self.placeholder = next.placeholder;
         self.input_size = next.input_size;
         self.disabled = next.disabled;
@@ -410,6 +460,9 @@ impl Input {
         self.search = next.search;
         self.textarea = next.textarea;
         self.textarea_rows = next.textarea_rows;
+    }
+    pub(crate) fn controlled_value_changed(&self, next: &Self) -> bool {
+        next.value_binding.is_some() && self.value != next.value
     }
     pub fn prefix(mut self, s: &str) -> Self {
         self.prefix = s.to_string();
@@ -586,7 +639,7 @@ impl Input {
             self.insert_at_cursor(ch);
         }
         self.sel_anchor.set(self.cursor_char);
-        self.pending_change.replace(Some(self.value.clone()));
+        self.publish_change();
         true
     }
 

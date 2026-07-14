@@ -2647,7 +2647,7 @@ fn fake_platform_tab_then_text_input_targets_second_input_only() {
             .as_any()
             .downcast_ref::<Input>()
             .expect("Input component")
-            .value()
+            .current_value()
             .to_string()
     };
     assert_eq!(input_value(input_ids[0]), "");

@@ -104,8 +104,8 @@ impl WidgetTree {
                         .as_any()
                         .downcast_ref::<crate::ui::widgets::Input>()
                     {
-                        accessibility.state.value_text =
-                            (!input.value().is_empty()).then(|| input.value().to_owned());
+                        accessibility.state.value_text = (!input.current_value().is_empty())
+                            .then(|| input.current_value().to_owned());
                     }
                 }
                 if let Some(label) = node

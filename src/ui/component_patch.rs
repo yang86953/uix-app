@@ -12,6 +12,19 @@ use crate::ui::widgets::{
 };
 use crate::ui::WidgetComponent;
 
+pub(crate) fn builtin_widget_runtime_changed(
+    current: &dyn WidgetComponent,
+    next: &dyn WidgetComponent,
+) -> bool {
+    if let (Some(current), Some(next)) = (
+        current.as_any().downcast_ref::<Input>(),
+        next.as_any().downcast_ref::<Input>(),
+    ) {
+        return current.controlled_value_changed(next);
+    }
+    false
+}
+
 pub(crate) fn patch_builtin_widget(
     current: &mut dyn WidgetComponent,
     next: Box<dyn WidgetComponent>,

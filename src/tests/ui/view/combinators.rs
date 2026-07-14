@@ -106,6 +106,33 @@ fn state_map_text_builds_dynamic_label() {
 }
 
 #[test]
+fn input_builder_value_binding_reconciles_external_updates() {
+    let value = crate::ui::state::State::new("first".to_string());
+    let mut tree = ViewAdapter::build_nodes(ViewAdapter::capture_view(input().value(&value)));
+    let root = tree.root_id().expect("input root");
+    tree.reset_invalidation();
+
+    value.set("second".to_string());
+    assert!(tree.take_reconcile_requested());
+    let next = ViewAdapter::capture_view(input().value(&value));
+    ViewAdapter::reconcile_nodes(&mut tree, next);
+
+    let input = tree
+        .get(root)
+        .expect("input node")
+        .component()
+        .as_any()
+        .downcast_ref::<Input>()
+        .expect("Input component");
+    assert_eq!(input.current_value(), "second");
+    assert!(tree
+        .invalidation()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .node_needs_paint(root));
+}
+
+#[test]
 fn button_on_click_attaches_state_capture_fingerprint() {
     let count = crate::ui::state::State::new(0);
     let node = View::build(button("+1").on_click(&count, |c| c.update(|v| *v += 1)));

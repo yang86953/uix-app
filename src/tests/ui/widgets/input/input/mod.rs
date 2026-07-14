@@ -6,6 +6,7 @@ use crate::native::test_harness::FakeClipboard;
 use crate::native::traits::input::IClipboard;
 use crate::tests::common::*;
 use crate::ui::foundation::clipboard;
+use crate::ui::state::State;
 use crate::ui::widgets::input::input::*;
 
 #[test]
@@ -13,9 +14,38 @@ fn sync_from_preserves_runtime_value() {
     let mut input = Input::new("old").with_value("kept");
     input.cursor_char = 2;
     input.sync_from(Input::new("new"));
-    assert_eq!(input.value(), "kept");
+    assert_eq!(input.current_value(), "kept");
     assert_eq!(input.placeholder, "new");
     assert_eq!(input.cursor_char, 2);
+}
+
+#[test]
+fn controlled_value_reads_external_state_and_writes_edits_back() {
+    let value = State::new("before".to_string());
+    let mut input = Input::new("Name").value(&value);
+    assert_eq!(input.current_value(), "before");
+
+    assert_eq!(
+        input.on_event(&SystemEvent::TextInput {
+            text: "!".to_string(),
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(input.current_value(), "before!");
+    assert_eq!(value.get(), "before!");
+
+    value.set("outside".to_string());
+    input.sync_from(Input::new("Name").value(&value));
+    assert_eq!(input.current_value(), "outside");
+
+    assert_eq!(
+        input.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(value.get(), "");
 }
 
 #[test]
@@ -33,7 +63,7 @@ fn ctrl_v_pastes_from_injected_clipboard() {
     });
 
     assert_eq!(result, EventResult::Handled);
-    assert_eq!(input.value(), "aclipb");
+    assert_eq!(input.current_value(), "aclipb");
 }
 
 #[test]
@@ -47,7 +77,7 @@ fn paste_event_replaces_selection() {
     });
 
     assert_eq!(result, EventResult::Handled);
-    assert_eq!(input.value(), "aXYd");
+    assert_eq!(input.current_value(), "aXYd");
 }
 
 #[test]
@@ -74,7 +104,7 @@ fn focus_and_ime_events_keep_preedit_separate_from_committed_value() {
         EventResult::Handled
     );
     assert_eq!(input.composition, "zhong");
-    assert_eq!(input.value(), "");
+    assert_eq!(input.current_value(), "");
 
     assert_eq!(
         input.on_event(&SystemEvent::ImeCompositionEnd {
@@ -83,14 +113,14 @@ fn focus_and_ime_events_keep_preedit_separate_from_committed_value() {
         EventResult::Handled
     );
     assert!(input.composition.is_empty());
-    assert_eq!(input.value(), "");
+    assert_eq!(input.current_value(), "");
     assert_eq!(
         input.on_event(&SystemEvent::TextInput {
             text: "中".to_string(),
         }),
         EventResult::Handled
     );
-    assert_eq!(input.value(), "中");
+    assert_eq!(input.current_value(), "中");
 }
 
 #[test]

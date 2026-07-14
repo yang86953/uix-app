@@ -17,8 +17,9 @@
 //!   dependencies and binds them to narrow Paint invalidation.
 //! - As a fallback, `bind_orphan_pending_states` binds unassociated build-time
 //!   `State::get()` dependencies to reconcile (structural View updates).
-//! - DynamicLabel closure dependencies bind to narrow Paint only.
-use crate::ui::component_patch::patch_builtin_widget;
+//! - render 期读取的 State / Computed 绑定窄 Paint；DynamicLabel 还会在 layout 后
+//!   主动探测闭包依赖。
+use crate::ui::component_patch::{builtin_widget_runtime_changed, patch_builtin_widget};
 use crate::ui::component_snapshot::SnapshotFields;
 use crate::ui::core::widget::{WidgetCore, WidgetNode};
 use crate::ui::event::{HandlerRegistration, HandlerSignature, SemanticKind};
@@ -366,9 +367,11 @@ impl ViewAdapter {
             return false;
         };
 
+        let runtime_changed = builtin_widget_runtime_changed(current.component(), widget.as_ref());
         let next_fields = widget.snapshot_fields();
         let config_changed = current.component().snapshot_fields() != next_fields
-            || next_fields == SnapshotFields::Unknown;
+            || next_fields == SnapshotFields::Unknown
+            || runtime_changed;
         match patch_builtin_widget(current.component_mut(), widget) {
             Ok(true) => config_changed,
             Err(widget) => {

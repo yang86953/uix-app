@@ -115,7 +115,7 @@ fn set_value_and_insert_text_share_input_focus_and_text_routing() {
         .as_any()
         .downcast_ref::<Input>()
         .unwrap();
-    assert_eq!(input_component.value(), "new!");
+    assert_eq!(input_component.current_value(), "new!");
     assert_eq!(tree.managers().focus.focused_component(), Some(input));
     assert!(!format!("{:?}", SemanticAction::SetValue("secret".to_owned())).contains("secret"));
 }
