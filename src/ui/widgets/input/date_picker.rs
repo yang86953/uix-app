@@ -11,6 +11,10 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::ui::state::State;
+use crate::ui::widgets::input::date_calendar::{
+    draw_calendar_panel, hit_calendar_date, hit_month_navigation, CalendarPanelState,
+    MonthNavigation,
+};
 use crate::ui::{
     ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
 };
@@ -111,7 +115,7 @@ impl PickerMode {
     }
 }
 
-type DisabledDate = Arc<dyn Fn(Date) -> bool + Send + Sync>;
+pub(crate) type DisabledDate = Arc<dyn Fn(Date) -> bool + Send + Sync>;
 
 pub(crate) fn days_in_month(year: i32, month: usize) -> usize {
     match month {
@@ -155,7 +159,7 @@ component! {
         disabled_date: Option<DisabledDate>,
         open: Cell<bool>,
         focused: bool,
-        hover_day: Cell<Option<usize>>,
+        hover_date: Cell<Option<Date>>,
         last_frame: Cell<Option<Rect>>,
         pending_change: Cell<Option<Date>>,
     }
@@ -181,37 +185,29 @@ component! {
                 }
 
                 if let Some(frame) = self.last_frame.get() {
-                    let popup_y = frame.y + frame.h + 2.0;
-                    let rel = Point::new(pos.x - frame.x, pos.y - popup_y);
-
-                    if rel.y >= 0.0 && rel.y < 32.0 {
-                        if rel.x > frame.w * 0.5 && rel.x < frame.w * 0.5 + 40.0 {
+                    if let Some(navigation) = hit_month_navigation(frame, *pos) {
+                        match navigation {
+                            MonthNavigation::Next => {
                             let (y, m) = next_month(self.view_year.get(), self.view_month.get());
                             self.view_year.set(y); self.view_month.set(m);
-                        } else if rel.x > frame.w * 0.5 - 50.0 && rel.x < frame.w * 0.5 - 10.0 {
+                            }
+                            MonthNavigation::Previous => {
                             let (y, m) = prev_month(self.view_year.get(), self.view_month.get());
                             self.view_year.set(y); self.view_month.set(m);
+                            }
                         }
                         return EventResult::Handled;
                     }
 
-                    let grid_y = rel.y - 32.0;
-                    if grid_y >= 0.0 {
-                        let row = (grid_y / 30.0) as usize;
-                        let col = ((rel.x - 8.0) / ((frame.w - 16.0) / 7.0)) as usize;
-                        if row < 6 && col < 7 {
-                            let day = row * 7 + col + 1;
-                            let fwd = first_weekday(self.view_year.get(), self.view_month.get());
-                            if day > fwd {
-                                let d = day - fwd;
-                                if d <= days_in_month(self.view_year.get(), self.view_month.get()) {
-                                    let hit_date = self.date_for_day(d);
-                                    if !self.is_date_disabled(hit_date) {
-                                        self.commit_value(self.mode.normalize(hit_date));
-                                        self.open.set(false);
-                                    }
-                                }
-                            }
+                    if let Some(hit_date) = hit_calendar_date(
+                        frame,
+                        *pos,
+                        self.view_year.get(),
+                        self.view_month.get(),
+                    ) {
+                        if !self.is_date_disabled(hit_date) {
+                            self.commit_value(self.mode.normalize(hit_date));
+                            self.open.set(false);
                         }
                     }
                 }
@@ -220,32 +216,23 @@ component! {
             SystemEvent::PointerMove { pos, .. } => {
                 if self.open.get() {
                     if let Some(frame) = self.last_frame.get() {
-                        let popup_y = frame.y + frame.h + 2.0;
-                        let rel = Point::new(pos.x - frame.x, pos.y - popup_y);
-                        let grid_y = rel.y - 32.0;
-                        if grid_y >= 0.0 {
-                            let row = (grid_y / 30.0) as usize;
-                            let col = ((rel.x - 8.0) / ((frame.w - 16.0) / 7.0)) as usize;
-                            if row < 6 && col < 7 {
-                                let day = row * 7 + col + 1;
-                                let fwd = first_weekday(self.view_year.get(), self.view_month.get());
-                                if day > fwd {
-                                    let d = day - fwd;
-                                    if d <= days_in_month(self.view_year.get(), self.view_month.get())
-                                        && !self.is_date_disabled(self.date_for_day(d))
-                                    {
-                                        self.hover_day.set(Some(d));
-                                        return EventResult::Handled;
-                                    }
-                                }
+                        if let Some(hit_date) = hit_calendar_date(
+                            frame,
+                            *pos,
+                            self.view_year.get(),
+                            self.view_month.get(),
+                        ) {
+                            if !self.is_date_disabled(hit_date) {
+                                self.hover_date.set(Some(hit_date));
+                                return EventResult::Handled;
                             }
                         }
-                        self.hover_day.set(None);
+                        self.hover_date.set(None);
                     }
                 }
                 EventResult::NotHandled
             }
-            SystemEvent::PointerLeave => { self.hover_day.set(None); EventResult::NotHandled }
+            SystemEvent::PointerLeave => { self.hover_date.set(None); EventResult::NotHandled }
             SystemEvent::FocusOut => { self.focused = false; self.open.set(false); EventResult::Handled }
             SystemEvent::KeyDown { key, .. } => {
                 if self.open.get() {
@@ -287,13 +274,10 @@ component! {
         self.sync_bound_value();
         self.last_frame.set(Some(frame));
         let primary = ctx.tokens().color_primary();
-        let primary_bg = ctx.tokens().color_primary_bg();
         let border_color = ctx.tokens().color_border();
         let text_color = ctx.tokens().color_text();
         let text_secondary = ctx.tokens().color_text_secondary();
         let text_tertiary = ctx.tokens().color_text_tertiary();
-        let bg_elevated = ctx.tokens().color_bg_elevated();
-        let fill_tertiary = ctx.tokens().color_fill_tertiary();
         let border_radius_sm = ctx.tokens().border_radius_sm();
         let radius = Some(crate::draw::Radius::uniform(border_radius_sm));
 
@@ -320,64 +304,18 @@ component! {
             text_secondary, 12.0);
 
         if self.open.get() {
-            let cell_w = (frame.w - 16.0) / 7.0;
-            let cell_h = 30.0;
-            let popup_h = 32.0 + 7.0 * cell_h + 8.0;
-            let popup = Rect::new(frame.x, frame.y + frame.h + 2.0, frame.w, popup_h);
-
-            ctx.fill_rect(popup, bg_elevated, radius);
-            ctx.stroke_rect(popup, border_color, 1.0, radius);
-
-            let vy = self.view_year.get();
-            let vm = self.view_month.get();
-            let title = format!("{}年{:02}月", vy, vm);
-            let header_rect = Rect::new(popup.x, popup.y, popup.w, 32.0);
-            let arrow_y = ctx.visual_center_y(header_rect, 12.0);
-            let title_y = ctx.visual_center_y(header_rect, 14.0);
-            ctx.draw_text(&title,
-                Point::new(popup.x + popup.w * 0.5 - 28.0, title_y),
-                text_color, 14.0);
-
-            ctx.draw_text("◀", Point::new(popup.x + popup.w * 0.5 - 50.0, arrow_y),
-                text_secondary, 12.0);
-            ctx.draw_text("▶", Point::new(popup.x + popup.w * 0.5 + 30.0, arrow_y),
-                text_secondary, 12.0);
-
-            let loc = crate::ui::locale::use_locale();
-            let weekdays = loc.weekdays_short;
-            for (i, &w) in weekdays.iter().enumerate() {
-                let x = popup.x + 8.0 + i as f32 * cell_w;
-                ctx.draw_text(w, Point::new(x + cell_w * 0.3, popup.y + 34.0), text_tertiary, 10.0);
-            }
-
-            let fwd = first_weekday(vy, vm);
-            let dim = days_in_month(vy, vm);
-            let sel = self.value.get();
-            let hover_d = self.hover_day.get();
-            for day in 1..=dim {
-                let idx = fwd + day - 1;
-                let row = idx / 7;
-                let col = idx % 7;
-                let x = popup.x + 8.0 + col as f32 * cell_w;
-                let y = popup.y + 32.0 + 4.0 + row as f32 * cell_h + 16.0;
-
-                let is_selected = sel.day == day && sel.month == vm && sel.year == vy;
-                let is_disabled = self.is_date_disabled(self.date_for_day(day));
-                let is_hovered = hover_d == Some(day);
-                if is_selected {
-                    ctx.fill_rect(Rect::new(x - 2.0, y - cell_h * 0.5 + 2.0, cell_w, cell_h),
-                        primary_bg, None);
-                } else if is_hovered {
-                    ctx.fill_rect(Rect::new(x - 2.0, y - cell_h * 0.5 + 2.0, cell_w, cell_h),
-                        fill_tertiary, None);
-                }
-
-                let cell_rect = Rect::new(x - 2.0, y - cell_h * 0.5 + 2.0, cell_w, cell_h);
-                let text_y = ctx.visual_center_y(cell_rect, 12.0);
-                ctx.draw_text(&day.to_string(),
-                    Point::new(x + cell_w * 0.3, text_y),
-                    if is_disabled { text_tertiary } else if is_selected { primary } else { text_color }, 12.0);
-            }
+            draw_calendar_panel(
+                frame,
+                ctx,
+                CalendarPanelState {
+                    year: self.view_year.get(),
+                    month: self.view_month.get(),
+                    active: (!is_default).then_some(val),
+                    range: None,
+                    hover: self.hover_date.get(),
+                    disabled_date: self.disabled_date.as_ref(),
+                },
+            );
         }
     }
 }
@@ -399,7 +337,7 @@ impl DatePicker {
             disabled_date: None,
             open: Cell::new(false),
             focused: false,
-            hover_day: Cell::new(None),
+            hover_date: Cell::new(None),
             last_frame: Cell::new(None),
             pending_change: Cell::new(None),
         }
@@ -494,10 +432,6 @@ impl DatePicker {
             }
         }
         self.pending_change.set(Some(value));
-    }
-
-    fn date_for_day(&self, day: usize) -> Date {
-        Date::new(self.view_year.get(), self.view_month.get(), day)
     }
 
     fn is_date_disabled(&self, date: Date) -> bool {
