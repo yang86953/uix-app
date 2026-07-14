@@ -106,6 +106,12 @@ impl ViewNode {
         self
     }
 
+    /// 设置键盘焦点状态的背景色；未设置时沿用悬停或普通背景。
+    pub fn bg_focus(mut self, color: impl Into<ColorValue>) -> Self {
+        self.style.background_focus = Some(color.into());
+        self
+    }
+
     /// 设置按压或键盘激活期间的背景色；未设置时沿用普通背景。
     pub fn bg_active(mut self, color: impl Into<ColorValue>) -> Self {
         self.style.background_active = Some(color.into());
@@ -396,6 +402,11 @@ pub trait StyleExt: Into<ViewNode> + Sized {
     /// 设置指针悬停时的背景色；未设置时沿用普通背景。
     fn bg_hover(self, color: impl Into<ColorValue>) -> ViewNode {
         self.into().bg_hover(color)
+    }
+
+    /// 设置键盘焦点状态的背景色；未设置时沿用悬停或普通背景。
+    fn bg_focus(self, color: impl Into<ColorValue>) -> ViewNode {
+        self.into().bg_focus(color)
     }
 
     /// 设置按压或键盘激活期间的背景色；未设置时沿用普通背景。
