@@ -42,7 +42,7 @@ pub use crate::ui::{
     SpaceSize, Spin, SpinSize, Splitter, Step, StepStatus, Steps, Switch, Tab, TabPosition, Table,
     TableBuilder, TableChange, TableColumn, TableRow, Tabs, Tag, TagColor, ThemeToggle, Time,
     TimePicker, Timeline, TimelineItem, Tooltip, TooltipPlacement, Transfer, TransferItem, Tree,
-    TreeNode, TreeSelect, TriggerMode, Typography, TypographyType, Upload, UploadFile,
+    TreeNode, TreeSelect, Trigger, TriggerMode, Typography, TypographyType, Upload, UploadFile,
     UploadStatus, ValidateStatus, Values, VirtualScroll, VirtualScrollBuilder, Watermark, Weekday,
 };
 pub use crate::ui::{Animation, Easing};
@@ -184,6 +184,7 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<FormItem>();
     assert_exported::<FormLayout>();
     assert_exported::<FormModel>();
+    assert_exported::<Trigger>();
     assert_form_value::<String>();
     assert_exported::<LineData>();
     assert_exported::<MenuItem>();
