@@ -3,23 +3,25 @@
 //! 弹出面板含小时/分钟滚动选择，支持 hover 高亮、键盘导航。
 
 use std::cell::Cell;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
+use crate::ui::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
 };
 
 /// 时间结构
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct TimeValue {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Time {
     pub hour: u32,
     pub minute: u32,
 }
 
-impl TimeValue {
+impl Time {
     pub fn new(hour: u32, minute: u32) -> Self {
         Self {
             hour: hour.min(23),
@@ -29,12 +31,23 @@ impl TimeValue {
     pub fn format(&self) -> String {
         format!("{:02}:{:02}", self.hour, self.minute)
     }
+
+    /// 返回当前 UTC 时间，精确到分钟。
+    pub fn now() -> Self {
+        let elapsed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or(Duration::ZERO);
+        let seconds = elapsed.as_secs() % 86_400;
+        Self::new((seconds / 3_600) as u32, ((seconds % 3_600) / 60) as u32)
+    }
 }
 
 component! {
     /// TimePicker — 时间选择器。
     pub struct TimePicker {
-        value: Cell<TimeValue>,
+        value: Cell<Time>,
+        value_configured: Cell<bool>,
+        value_binding: Option<State<Time>>,
         placeholder: String,
         open: Cell<bool>,
         focused: bool,
@@ -44,7 +57,7 @@ component! {
         scroll_hour: Cell<f32>,
         scroll_min: Cell<f32>,
         last_frame: Cell<Option<Rect>>,
-        pending_change: Cell<Option<TimeValue>>,
+        pending_change: Cell<Option<Time>>,
     }
 
 
@@ -55,6 +68,7 @@ component! {
 
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        self.sync_bound_value();
         match event {
             SystemEvent::PointerDown { pos, .. } => {
                 self.focused = true;
@@ -79,11 +93,8 @@ component! {
                             if idx < 24 {
                                 self.hover_hour.set(idx);
                                 let val = self.value.get();
-                                let new_val = TimeValue::new(idx as u32, val.minute);
-                                if val != new_val {
-                                    self.value.set(new_val);
-                                    self.pending_change.set(Some(new_val));
-                                }
+                                let new_val = Time::new(idx as u32, val.minute);
+                                self.commit_value(new_val);
                                 self.open.set(false);
                                 return EventResult::Handled;
                             }
@@ -94,11 +105,8 @@ component! {
                                 let minute = idx * 5;
                                 self.hover_minute.set(idx);
                                 let val = self.value.get();
-                                let new_val = TimeValue::new(val.hour, minute as u32);
-                                if val != new_val {
-                                    self.value.set(new_val);
-                                    self.pending_change.set(Some(new_val));
-                                }
+                                let new_val = Time::new(val.hour, minute as u32);
+                                self.commit_value(new_val);
                                 self.open.set(false);
                                 return EventResult::Handled;
                             }
@@ -173,6 +181,7 @@ component! {
     wants_continuous_pointer_move => (&self) -> bool { true }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        self.capture_bound_value_dependency();
         self.last_frame.set(Some(frame));
         let primary = ctx.tokens().color_primary();
         let border_color = ctx.tokens().color_border();
@@ -185,13 +194,12 @@ component! {
         let radius = Some(crate::draw::Radius::uniform(border_radius_sm));
 
         let val = self.value.get();
-        let is_default = val == TimeValue::default();
         ctx.fill_rect(frame, Color::white(), radius);
         ctx.stroke_rect(frame, if self.focused { primary } else { border_color },
             if self.focused { 2.0 } else { 1.0 }, radius);
 
         let input_text_y = ctx.visual_center_y(frame, 14.0);
-        if is_default {
+        if !self.value_configured.get() {
             ctx.draw_text(&self.placeholder,
                 Point::new(frame.x + 12.0, input_text_y),
                 text_tertiary, 14.0);
@@ -252,10 +260,12 @@ component! {
 }
 
 impl TimePicker {
-    pub fn new(placeholder: impl Into<String>) -> Self {
+    pub fn new() -> Self {
         Self {
-            value: Cell::new(TimeValue::new(0, 0)),
-            placeholder: placeholder.into(),
+            value: Cell::new(Time::default()),
+            value_configured: Cell::new(false),
+            value_binding: None,
+            placeholder: crate::ui::locale::use_locale().placeholder.to_owned(),
             open: Cell::new(false),
             focused: false,
             hover_hour: Cell::new(0),
@@ -267,18 +277,34 @@ impl TimePicker {
         }
     }
 
-    pub fn value(self, v: TimeValue) -> Self {
-        self.value.set(v);
+    /// 将时间绑定到外部 `State<Time>`。
+    pub fn value(mut self, state: &State<Time>) -> Self {
+        self.value_binding = Some(state.clone());
+        self.value.set(state.get());
+        self.value_configured.set(true);
         self
     }
-    pub fn selected(&self) -> TimeValue {
+
+    /// 设置非受控时间选择器的初始值。
+    pub fn default_value(mut self, value: Time) -> Self {
+        self.value_binding = None;
+        self.value.set(value);
+        self.value_configured.set(true);
+        self
+    }
+
+    pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
+        self.placeholder = placeholder.into();
+        self
+    }
+
+    /// 返回组件当前缓存值；controlled 用法应以绑定的 `State` 为真值来源。
+    pub fn current_value(&self) -> Time {
         self.value.get()
     }
+
     pub fn is_open(&self) -> bool {
         self.open.get()
-    }
-    pub fn set_value(&mut self, v: TimeValue) {
-        self.value.set(v);
     }
 
     fn intrinsic_size(&self) -> Size {
@@ -288,10 +314,53 @@ impl TimePicker {
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::TimePicker {
             placeholder: self.placeholder.clone(),
+            value: self
+                .value_configured
+                .get()
+                .then(|| self.value.get().format()),
         }
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let controlled_value = next.value_binding.as_ref().map(|_| next.value.get());
+        self.value_binding = next.value_binding;
+        if let Some(value) = controlled_value {
+            self.value.set(value);
+            self.value_configured.set(true);
+        }
         self.placeholder = next.placeholder;
+    }
+
+    fn sync_bound_value(&self) {
+        if let Some(state) = self.value_binding.as_ref() {
+            self.value.set(state.get());
+            self.value_configured.set(true);
+        }
+    }
+
+    fn capture_bound_value_dependency(&self) {
+        if let Some(state) = self.value_binding.as_ref() {
+            let _ = state.get();
+        }
+    }
+
+    fn commit_value(&self, value: Time) {
+        if self.value_configured.get() && self.value.get() == value {
+            return;
+        }
+        self.value.set(value);
+        self.value_configured.set(true);
+        if let Some(state) = self.value_binding.as_ref() {
+            if state.get() != value {
+                state.set(value);
+            }
+        }
+        self.pending_change.set(Some(value));
+    }
+}
+
+impl Default for TimePicker {
+    fn default() -> Self {
+        Self::new()
     }
 }

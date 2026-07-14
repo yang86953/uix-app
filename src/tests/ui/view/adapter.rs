@@ -3812,10 +3812,13 @@ fn reconcile_date_picker_preserves_open_value_and_syncs_placeholder() {
 
 #[test]
 fn reconcile_time_picker_preserves_open_value_and_syncs_placeholder() {
-    use crate::ui::widgets::{TimePicker, TimeValue};
+    use crate::ui::state::State;
+    use crate::ui::widgets::{Time, TimePicker};
 
-    let selected = TimeValue::new(9, 30);
-    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(TimePicker::new("old").value(selected)));
+    let selected = State::new(Time::new(9, 30));
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
+        TimePicker::new().placeholder("old").value(&selected),
+    ));
     let root_id = tree.root_id().expect("time picker root should exist");
     assert_eq!(
         crate::ui::EventHandler::on_event(
@@ -3834,7 +3837,11 @@ fn reconcile_time_picker_preserves_open_value_and_syncs_placeholder() {
         EventResult::Handled
     );
 
-    ViewAdapter::reconcile_nodes(&mut tree, ViewNode::leaf(TimePicker::new("new")));
+    selected.set(Time::new(10, 45));
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(TimePicker::new().placeholder("new").value(&selected)),
+    );
 
     let time_picker = tree
         .get(root_id)
@@ -3844,10 +3851,11 @@ fn reconcile_time_picker_preserves_open_value_and_syncs_placeholder() {
         .downcast_ref::<TimePicker>()
         .unwrap();
     assert!(time_picker.is_open());
-    assert_eq!(time_picker.selected(), selected);
+    assert_eq!(time_picker.current_value(), Time::new(10, 45));
     assert!(matches!(
         time_picker.snapshot_fields(),
-        SnapshotFields::TimePicker { placeholder } if placeholder == "new"
+        SnapshotFields::TimePicker { placeholder, value }
+            if placeholder == "new" && value.as_deref() == Some("10:45")
     ));
 }
 

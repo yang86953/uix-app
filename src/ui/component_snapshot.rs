@@ -722,6 +722,7 @@ pub enum SnapshotFields {
     },
     TimePicker {
         placeholder: String,
+        value: Option<String>,
     },
     Mentions {
         placeholder: String,
@@ -1111,9 +1112,15 @@ impl SnapshotFields {
                         ..AccessibilityState::default()
                     })
             }
+            Self::TimePicker { placeholder, value } => {
+                AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
+                    .with_state(AccessibilityState {
+                        value_text: value.clone(),
+                        ..AccessibilityState::default()
+                    })
+            }
             Self::AutoComplete { placeholder, .. }
             | Self::Cascader { placeholder, .. }
-            | Self::TimePicker { placeholder }
             | Self::Mentions { placeholder, .. } => {
                 AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
             }
