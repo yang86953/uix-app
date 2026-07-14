@@ -1,22 +1,33 @@
 use crate::core::Result;
 use crate::native::factory::thread_bound::ThreadBoundGraphicsContext;
+use crate::native::traits::PresentTestResult;
 use crate::tests::common::*;
 use std::ffi::c_void;
 
 struct PanicIfCalled {
     readback_error: Option<Error>,
+    present_test_result: Option<PresentTestResult>,
 }
 
 impl PanicIfCalled {
     fn foreign_only() -> Self {
         Self {
             readback_error: None,
+            present_test_result: None,
         }
     }
 
     fn with_readback_error(error: Error) -> Self {
         Self {
             readback_error: Some(error),
+            present_test_result: None,
+        }
+    }
+
+    fn with_present_test_result(result: PresentTestResult) -> Self {
+        Self {
+            readback_error: None,
+            present_test_result: Some(result),
         }
     }
 }
@@ -65,6 +76,11 @@ impl IGraphicsContext for PanicIfCalled {
         panic!("foreign thread must not call the native context")
     }
 
+    fn test_present(&mut self) -> Result<PresentTestResult> {
+        self.present_test_result
+            .ok_or_else(|| Error::invalid_state("foreign thread reached present test"))
+    }
+
     fn destroy_offscreen_target(&mut self, _id: crate::native::traits::present::OffscreenTargetId) {
         panic!("foreign thread must not call the native context")
     }
@@ -93,6 +109,10 @@ fn wrong_owner_returns_typed_errors_before_native_calls() {
         .expect_err("owner mismatch");
     assert_eq!(present.code(), Errc::InvalidState);
     assert!(present.message().contains("present"));
+
+    let present_test = context.test_present().expect_err("owner mismatch");
+    assert_eq!(present_test.code(), Errc::InvalidState);
+    assert!(present_test.message().contains("test_present"));
 
     let offscreen = context
         .create_offscreen_target(4, 4)
@@ -138,6 +158,21 @@ fn owner_readback_propagates_the_native_typed_failure() {
         .expect_err("readback must preserve the native failure");
     assert_eq!(error.code(), Errc::GraphicsDeviceLost);
     assert!(error.message().contains("injected native readback failure"));
+}
+
+#[test]
+fn owner_present_test_reaches_the_native_availability_probe() {
+    let mut context = ThreadBoundGraphicsContext::with_test_owner(
+        Box::new(PanicIfCalled::with_present_test_result(
+            PresentTestResult::Occluded,
+        )),
+        std::thread::current().id(),
+    );
+
+    assert_eq!(
+        context.test_present().expect("forward present test"),
+        PresentTestResult::Occluded
+    );
 }
 
 #[test]
