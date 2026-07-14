@@ -15,6 +15,7 @@ use crate::native::traits::present::{
 use crate::native::backends::macos::platform as macos_surface;
 
 use super::adapter::{device_extension_names, select_queue, VulkanAdapterInfo};
+use super::drawable::drawable_size;
 use super::surface::{
     choose_composite_alpha, choose_extent, choose_present_mode, choose_surface_format,
     create_platform_surface, destroy_failed_surface, surface_instance_extensions,
@@ -53,6 +54,11 @@ pub(crate) fn accept_device_wait_for_shutdown(
 #[cfg(test)]
 pub(crate) const fn platform_contract_sources() -> (&'static str, &'static str) {
     (include_str!("surface.rs"), include_str!("adapter.rs"))
+}
+
+#[cfg(test)]
+pub(crate) const fn drawable_contract_source() -> &'static str {
+    include_str!("drawable.rs")
 }
 
 fn loader_err(operation: &str, err: impl std::fmt::Debug) -> Error {
@@ -102,6 +108,9 @@ pub struct VulkanContext {
     image_available: vk::Semaphore,
     render_finished: vk::Semaphore,
     frame_fence: vk::Fence,
+    native_surface: *mut c_void,
+    logical_width: i32,
+    logical_height: i32,
     width: i32,
     height: i32,
     /// Last successfully staged PixelUpload frame (CPU shadow of staging buffer).
@@ -113,11 +122,10 @@ pub struct VulkanContext {
 
 impl VulkanContext {
     pub(crate) fn new(native_surface: *mut c_void, width: i32, height: i32) -> Result<Self> {
-        let width = width.max(1);
-        let height = height.max(1);
+        let drawable = drawable_size(native_surface, width, height);
         let extent = vk::Extent2D {
-            width: width as u32,
-            height: height as u32,
+            width: drawable.width as u32,
+            height: drawable.height as u32,
         };
 
         let entry =
@@ -297,8 +305,11 @@ impl VulkanContext {
             image_available,
             render_finished,
             frame_fence,
-            width,
-            height,
+            native_surface,
+            logical_width: drawable.logical_width,
+            logical_height: drawable.logical_height,
+            width: drawable.width,
+            height: drawable.height,
             cpu_shadow: Vec::new(),
             shutdown: false,
         };
@@ -797,7 +808,7 @@ impl VulkanContext {
 
 impl IGraphicsContext for VulkanContext {
     fn caps(&self) -> crate::native::traits::present::GraphicsContextCaps {
-        GraphicsContextCaps::cpu_pixel_upload(GraphicsBackend::Vulkan, 1.0)
+        GraphicsContextCaps::cpu_pixel_upload(GraphicsBackend::Vulkan, self.device_pixel_ratio())
     }
 
     fn graphics_backend(&self) -> GraphicsBackend {
@@ -809,16 +820,19 @@ impl IGraphicsContext for VulkanContext {
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<()> {
-        let width = width.max(1);
-        let height = height.max(1);
-        if width == self.width && height == self.height {
+        let drawable = drawable_size(self.native_surface, width, height);
+        if drawable.width == self.width && drawable.height == self.height {
+            self.logical_width = drawable.logical_width;
+            self.logical_height = drawable.logical_height;
             return Ok(());
         }
         let extent = vk::Extent2D {
-            width: width as u32,
-            height: height as u32,
+            width: drawable.width as u32,
+            height: drawable.height as u32,
         };
         self.recreate_swapchain(extent)?;
+        self.logical_width = drawable.logical_width;
+        self.logical_height = drawable.logical_height;
         self.width = self.extent.width as i32;
         self.height = self.extent.height as i32;
         self.cpu_shadow.clear();
@@ -868,6 +882,10 @@ impl IGraphicsContext for VulkanContext {
         self.height
     }
 
+    fn device_pixel_ratio(&self) -> f32 {
+        self.width as f32 / self.logical_width.max(1) as f32
+    }
+
     fn present_pixels(
         &mut self,
         pixels: &[u32],
@@ -877,9 +895,6 @@ impl IGraphicsContext for VulkanContext {
     ) -> Result<()> {
         if width <= 0 || height <= 0 {
             return Ok(());
-        }
-        if width != self.width || height != self.height {
-            self.resize(width, height)?;
         }
         self.upload_pixels(pixels, width, height)?;
         self.present_uploaded_pixels()
@@ -891,9 +906,6 @@ impl IGraphicsContext for VulkanContext {
     fn upload_surface_pixels(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<()> {
         if width <= 0 || height <= 0 {
             return Ok(());
-        }
-        if width != self.width || height != self.height {
-            self.resize(width, height)?;
         }
         self.upload_pixels(pixels, width, height)
     }
