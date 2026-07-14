@@ -4,7 +4,7 @@ use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
 use crate::ui::state::State;
 use crate::ui::view::{ViewAdapter, ViewNode};
-use crate::ui::widgets::{Date, DatePicker};
+use crate::ui::widgets::{Date, DatePicker, PickerMode, Weekday};
 
 fn render_picker(picker: &DatePicker) {
     let mut canvas = SharedRasterizer::new(PixelSurface::new(240, 280));
@@ -44,7 +44,7 @@ fn bound_date_picker_writes_pointer_selection_and_reads_external_updates() {
     assert!(picker.is_open());
 
     let _ = picker.on_event(&SystemEvent::PointerDown {
-        pos: Point::new(80.0, 81.0),
+        pos: Point::new(60.0, 81.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     });
@@ -64,6 +64,57 @@ fn date_normalizes_month_before_clamping_day() {
     let today = Date::today();
     assert!((1..=12).contains(&today.month));
     assert!((1..=31).contains(&today.day));
+    assert_eq!(Date::new(2026, 7, 13).weekday(), Weekday::Monday);
+    assert_eq!(Date::new(1970, 1, 1).weekday(), Weekday::Thursday);
+    assert_eq!(Date::new(1, 1, 1).weekday(), Weekday::Monday);
+    assert!(Date::new(2026, 7, 18).weekday().is_weekend());
+}
+
+#[test]
+fn picker_modes_write_period_start_and_disabled_dates_do_not_commit() {
+    let selected = State::new(Date::new(2026, 7, 10));
+    let mut picker = DatePicker::new()
+        .value(&selected)
+        .mode(PickerMode::Week)
+        .disabled_date(|date| date == Date::new(2026, 7, 1));
+    render_picker(&picker);
+
+    let _ = picker.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(4.0, 4.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    let _ = picker.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(60.0, 81.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(selected.get(), Date::new(2026, 7, 10));
+    assert!(picker.is_open());
+
+    picker.sync_from(DatePicker::new().value(&selected).mode(PickerMode::Week));
+    let _ = picker.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(60.0, 81.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(selected.get(), Date::new(2026, 6, 29));
+    assert!(!picker.is_open());
+
+    selected.set(Date::new(2026, 7, 10));
+    picker.sync_from(DatePicker::new().value(&selected).mode(PickerMode::Month));
+    let _ = picker.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(4.0, 4.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    let _ = picker.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(100.0, 81.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(selected.get(), Date::new(2026, 7, 1));
+    assert_eq!(picker.picker_mode(), PickerMode::Month);
 }
 
 #[test]

@@ -6,38 +6,10 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
+use crate::ui::widgets::input::date_picker::{days_in_month, first_weekday};
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 use std::cell::Cell;
-
-fn days_in_month(year: i32, month: usize) -> usize {
-    match month {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 => {
-            if (year % 4 == 0 && year % 100 != 0) || year % 400 == 0 {
-                29
-            } else {
-                28
-            }
-        }
-        _ => 30,
-    }
-}
-
-fn first_weekday(year: i32, month: usize) -> usize {
-    // Zeller 公式简化 (0=Sun, 1=Mon, ..., 6=Sat)
-    let m = if month <= 2 { month + 12 } else { month };
-    let y = if month <= 2 {
-        (year - 1) as usize
-    } else {
-        year as usize
-    };
-    let c = y / 100;
-    let y_mod = y % 100;
-    let w = (1usize + (13 * (m + 1)) / 5 + y_mod + y_mod / 4 + c / 4).wrapping_sub(2 * c) % 7;
-    (w + 6) % 7 // 转成周一为0
-}
 
 // Calendar — 日历组件。
 component! {

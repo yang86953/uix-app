@@ -143,11 +143,18 @@ pub fn page_input(ctx: &DemoCtx<'_>) -> ViewNode {
         )
         .section("DatePicker / TimePicker / ColorPicker")
         .push(
-            demo_row(36.0).child(
-                DatePicker::new()
-                    .placeholder("选择日期")
-                    .default_value(Date::new(2026, 6, 20)),
-            ),
+            demo_row(36.0)
+                .child(
+                    DatePicker::new()
+                        .placeholder("选择日期")
+                        .default_value(Date::new(2026, 6, 20))
+                        .disabled_date(|date| date.weekday().is_weekend()),
+                )
+                .child(
+                    DatePicker::new()
+                        .placeholder("选择周")
+                        .mode(PickerMode::Week),
+                ),
         )
         .push(
             demo_row(36.0).child(
