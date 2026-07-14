@@ -23,7 +23,7 @@ use crate::native::traits::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
     GpuSolidRect, GpuStrokeRect, GraphicsBackend, GraphicsContextCaps, IGraphicsContext,
     NativeRasterCaps, OffscreenTargetId, PresentCoherency, PresentDamage, PresentFrame,
-    PresentTestResult, SoftFallbackTile,
+    PresentOcclusionSupport, PresentTestResult, SoftFallbackTile,
 };
 use ::windows::core::Interface;
 use ::windows::Win32::Foundation::HMODULE;
@@ -450,6 +450,7 @@ impl IGraphicsContext for D3d11Context {
             PresentCoherency::FullOnly,
             self.device_pixel_ratio(),
         )
+        .with_present_occlusion(PresentOcclusionSupport::PresentStatusAndTest)
     }
 
     fn graphics_backend(&self) -> GraphicsBackend {

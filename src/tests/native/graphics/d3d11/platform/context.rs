@@ -2,7 +2,7 @@ use crate::native::graphics::d3d11::platform::context::*;
 use crate::native::graphics::platform::windows as win_surface;
 use crate::native::traits::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
-    GpuSolidRect, GpuStrokeRect, PresentTestResult,
+    GpuSolidRect, GpuStrokeRect, PresentOcclusionSupport, PresentTestResult,
 };
 use crate::tests::common::*;
 use ::windows::Win32::Foundation::TRUE;
@@ -144,6 +144,10 @@ fn factory_create_d3d11_gpu_native_swapchain_on_real_window() {
 
     let mut ctx = D3d11Context::new(surface, 320, 240).expect("D3d11Context");
     assert_eq!(ctx.graphics_backend(), GraphicsBackend::D3d11);
+    assert_eq!(
+        ctx.caps().present_occlusion,
+        PresentOcclusionSupport::PresentStatusAndTest
+    );
     let adapter_info = &ctx.adapter_info;
     assert_ne!(adapter_info.description, "unavailable");
     assert!(!adapter_info.description.trim().is_empty());

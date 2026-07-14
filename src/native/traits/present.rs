@@ -191,6 +191,27 @@ pub enum PresentTestResult {
     Occluded,
 }
 
+/// 呈现侧可提供的逐窗遮挡进入与退出能力。
+///
+/// 该能力不包含隐藏、最小化或 zero extent；这些状态始终由窗口生命周期管理。
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PresentOcclusionSupport {
+    /// 当前 recipe 无可靠逐窗遮挡 API，只能依赖窗口生命周期休眠。
+    #[default]
+    Unsupported,
+    /// 正常 present 报告进入遮挡，并支持无帧数据的 `test_present` 退出探测。
+    PresentStatusAndTest,
+}
+
+impl fmt::Display for PresentOcclusionSupport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Unsupported => "unsupported",
+            Self::PresentStatusAndTest => "present_status_and_test",
+        })
+    }
+}
+
 /// Validates a CPU pixel payload before it crosses a native presentation
 /// boundary.  A short slice must be a typed error: native image constructors
 /// cannot infer the intended row layout safely from missing pixels.
@@ -370,6 +391,8 @@ pub struct GraphicsContextCaps {
     pub backend: GraphicsBackend,
     pub raster: RasterMode,
     pub present: PresentMode,
+    /// 当前 live recipe 的逐窗呈现遮挡能力。
+    pub present_occlusion: PresentOcclusionSupport,
     /// Typed proof controlling partial redraw and present damage.
     pub present_coherency: PresentCoherency,
     pub device_pixel_ratio: f32,
@@ -386,6 +409,7 @@ impl GraphicsContextCaps {
             backend,
             raster: RasterMode::GpuNative,
             present: PresentMode::Swapchain,
+            present_occlusion: PresentOcclusionSupport::Unsupported,
             present_coherency,
             device_pixel_ratio,
         }
@@ -397,9 +421,16 @@ impl GraphicsContextCaps {
             backend,
             raster: RasterMode::Cpu,
             present: PresentMode::PixelUpload,
+            present_occlusion: PresentOcclusionSupport::Unsupported,
             present_coherency: PresentCoherency::FullOnly,
             device_pixel_ratio,
         }
+    }
+
+    /// 为具备可靠 present-status 入口与无数据退出探测的 context 提升能力。
+    pub const fn with_present_occlusion(mut self, support: PresentOcclusionSupport) -> Self {
+        self.present_occlusion = support;
+        self
     }
 }
 
