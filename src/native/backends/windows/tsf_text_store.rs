@@ -4,137 +4,25 @@
 
 #![cfg(windows)]
 
-use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use windows::core::{
     implement, ComObject, Error as WinError, Interface, Ref, Result as WinResult, BOOL, GUID,
     HRESULT, PCWSTR, PWSTR,
 };
-use windows::Win32::Foundation::{HWND, POINT, RECT};
+use windows::Win32::Foundation::{E_INVALIDARG, HWND, POINT, RECT};
 use windows::Win32::UI::TextServices::{
     ITextStoreACP, ITextStoreACPSink, ITextStoreACP_Impl, ITfCompositionView,
-    ITfContextOwnerCompositionSink, ITfContextOwnerCompositionSink_Impl, TEXT_STORE_LOCK_FLAGS,
-    TS_AE_END, TS_E_NOLOCK, TS_E_SYNCHRONOUS, TS_IAS_NOQUERY,
-    TS_IAS_QUERYONLY, TS_LF_READWRITE, TS_RT_PLAIN, TS_RUNINFO, TS_SELECTIONSTYLE,
-    TS_SELECTION_ACP, TS_SS_NOHIDDENTEXT, TS_SS_TRANSITORY, TS_STATUS, TS_TEXTCHANGE,
+    ITfContextOwnerCompositionSink, ITfContextOwnerCompositionSink_Impl, TS_E_NOLOCK,
+    TS_E_SYNCHRONOUS, TS_IAS_NOQUERY, TS_IAS_QUERYONLY, TS_RT_PLAIN, TS_RUNINFO, TS_SELECTION_ACP,
+    TS_SS_NOHIDDENTEXT, TS_SS_TRANSITORY, TS_STATUS, TS_S_ASYNC, TS_TEXTCHANGE,
 };
 
-use crate::core::WindowId;
+pub(crate) use super::tsf_document::{TsfEventSink, TsfLockKind, TsfLockRequest, TsfStoreState};
 use crate::native::backends::windows::tsf_session::tsf_composition_events;
-use crate::native::shared::ime_events::ImeCompositionState;
 use crate::native::traits::event::UiEvent;
 
 const VIEW_ID: u32 = 0;
-
-#[derive(Clone)]
-pub(crate) struct TsfEventSink {
-    pub events: Arc<Mutex<VecDeque<UiEvent>>>,
-    pub window_id: WindowId,
-    pub hwnd: HWND,
-}
-
-impl TsfEventSink {
-    fn push(&self, events: Vec<UiEvent>) {
-        if events.is_empty() {
-            return;
-        }
-        if let Ok(mut q) = self.events.lock() {
-            for mut event in events {
-                event.window_id = Some(self.window_id);
-                q.push_back(event);
-            }
-        }
-        // 唤醒主循环（与 EventLoopWaker 同形）。
-        unsafe {
-            let _ = windows::Win32::UI::WindowsAndMessaging::PostMessageW(
-                Some(self.hwnd),
-                windows::Win32::UI::WindowsAndMessaging::WM_NULL,
-                windows::Win32::Foundation::WPARAM(0),
-                windows::Win32::Foundation::LPARAM(0),
-            );
-        }
-    }
-}
-
-pub(crate) struct TsfStoreState {
-    text: Vec<u16>,
-    sel_start: i32,
-    pub(crate) sel_end: i32,
-    locked: bool,
-    acp_sink: Option<ITextStoreACPSink>,
-    sink_mask: u32,
-    composition: ImeCompositionState,
-    cursor: RECT,
-    event_sink: TsfEventSink,
-}
-
-impl TsfStoreState {
-    pub(crate) fn new(event_sink: TsfEventSink) -> Self {
-        Self {
-            text: Vec::new(),
-            sel_start: 0,
-            sel_end: 0,
-            locked: false,
-            acp_sink: None,
-            sink_mask: 0,
-            composition: ImeCompositionState::default(),
-            cursor: RECT {
-                left: 0,
-                top: 0,
-                right: 1,
-                bottom: 16,
-            },
-            event_sink,
-        }
-    }
-
-    pub(crate) fn set_cursor_rect(&mut self, rect: RECT) {
-        self.cursor = rect;
-    }
-
-    pub(crate) fn composition_active(&self) -> bool {
-        self.composition.active
-    }
-
-    fn end_acp(&self) -> i32 {
-        self.text.len() as i32
-    }
-
-    fn clamp_acp(&self, acp: i32) -> i32 {
-        acp.clamp(0, self.end_acp())
-    }
-
-    fn selection(&self) -> TS_SELECTION_ACP {
-        TS_SELECTION_ACP {
-            acpStart: self.sel_start,
-            acpEnd: self.sel_end,
-            style: TS_SELECTIONSTYLE {
-                ase: TS_AE_END,
-                fInterimChar: false.into(),
-            },
-        }
-    }
-
-    pub(crate) fn replace_range(&mut self, start: i32, end: i32, insert: &[u16]) -> TS_TEXTCHANGE {
-        let start = self.clamp_acp(start) as usize;
-        let end = self.clamp_acp(end) as usize;
-        let end = end.max(start);
-        self.text.splice(start..end, insert.iter().copied());
-        let new_end = (start + insert.len()) as i32;
-        self.sel_start = new_end;
-        self.sel_end = new_end;
-        TS_TEXTCHANGE {
-            acpStart: start as i32,
-            acpOldEnd: end as i32,
-            acpNewEnd: new_end,
-        }
-    }
-
-    pub(crate) fn utf16_string(&self) -> String {
-        String::from_utf16_lossy(&self.text)
-    }
-}
 
 #[implement(ITextStoreACP, ITfContextOwnerCompositionSink)]
 pub(crate) struct TsfTextStore {
@@ -157,11 +45,29 @@ fn lock_err() -> WinError {
     WinError::from(TS_E_NOLOCK)
 }
 
-fn require_lock(state: &TsfStoreState) -> WinResult<()> {
-    if state.locked {
+fn require_read_lock(state: &TsfStoreState) -> WinResult<()> {
+    if state.has_read_lock() {
         Ok(())
     } else {
         Err(lock_err())
+    }
+}
+
+fn require_write_lock(state: &TsfStoreState) -> WinResult<()> {
+    if state.has_write_lock() {
+        Ok(())
+    } else {
+        Err(lock_err())
+    }
+}
+
+fn notify_lock_granted(sink: Option<&ITextStoreACPSink>, kind: TsfLockKind) -> HRESULT {
+    let Some(sink) = sink else {
+        return HRESULT(0);
+    };
+    match unsafe { sink.OnLockGranted(kind.flags()) } {
+        Ok(()) => HRESULT(0),
+        Err(error) => error.code(),
     }
 }
 
@@ -205,29 +111,35 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
     }
 
     fn RequestLock(&self, dwlockflags: u32) -> WinResult<HRESULT> {
-        let sink = {
+        let (sink, request) = {
             let mut state = self
                 .state
                 .lock()
                 .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
-            if state.locked {
-                return Ok(TS_E_SYNCHRONOUS);
-            }
-            state.locked = true;
-            state.acp_sink.clone()
+            let request = state.begin_lock(dwlockflags);
+            (state.acp_sink.clone(), request)
         };
-        let session_hr = if let Some(sink) = sink {
-            match unsafe { sink.OnLockGranted(TEXT_STORE_LOCK_FLAGS(dwlockflags)) } {
-                Ok(()) => HRESULT(0),
-                Err(err) => err.code(),
-            }
-        } else {
-            HRESULT(0)
+
+        let kind = match request {
+            TsfLockRequest::Grant(kind) => kind,
+            TsfLockRequest::PendingWrite => return Ok(TS_S_ASYNC),
+            TsfLockRequest::RejectSynchronous => return Ok(TS_E_SYNCHRONOUS),
         };
-        if let Ok(mut state) = self.state.lock() {
-            state.locked = false;
+
+        let session_hr = notify_lock_granted(sink.as_ref(), kind);
+        let pending = self
+            .state
+            .lock()
+            .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?
+            .complete_lock();
+        if let Some(pending_kind) = pending {
+            let _ = notify_lock_granted(sink.as_ref(), pending_kind);
+            let _ = self
+                .state
+                .lock()
+                .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?
+                .complete_lock();
         }
-        let _ = dwlockflags & TS_LF_READWRITE.0;
         Ok(session_hr)
     }
 
@@ -260,11 +172,14 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         pselection: *mut TS_SELECTION_ACP,
         pcfetched: *mut u32,
     ) -> WinResult<()> {
+        if pcfetched.is_null() || (ulcount > 0 && pselection.is_null()) {
+            return Err(WinError::from(E_INVALIDARG));
+        }
         let state = self
             .state
             .lock()
             .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
-        require_lock(&state)?;
+        require_read_lock(&state)?;
         let mut fetched = 0u32;
         if ulcount > 0 && ulindex == 0 {
             unsafe {
@@ -279,11 +194,14 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
     }
 
     fn SetSelection(&self, ulcount: u32, pselection: *const TS_SELECTION_ACP) -> WinResult<()> {
+        if ulcount > 0 && pselection.is_null() {
+            return Err(WinError::from(E_INVALIDARG));
+        }
         let mut state = self
             .state
             .lock()
             .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
-        require_lock(&state)?;
+        require_write_lock(&state)?;
         if ulcount > 0 {
             let sel = unsafe { *pselection };
             state.sel_start = state.clamp_acp(sel.acpStart);
@@ -308,7 +226,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
             .state
             .lock()
             .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
-        require_lock(&state)?;
+        require_read_lock(&state)?;
         let start = state.clamp_acp(acpstart) as usize;
         let end = if acpend == -1 {
             state.text.len()
@@ -351,8 +269,14 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
             .state
             .lock()
             .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
-        require_lock(&state)?;
-        let insert = unsafe { std::slice::from_raw_parts(pchtext.0, cch as usize) };
+        require_write_lock(&state)?;
+        let insert = if cch == 0 {
+            &[][..]
+        } else if pchtext.0.is_null() {
+            return Err(WinError::from(E_INVALIDARG));
+        } else {
+            unsafe { std::slice::from_raw_parts(pchtext.0, cch as usize) }
+        };
         Ok(state.replace_range(acpstart, acpend, insert))
     }
 
@@ -404,7 +328,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
             .state
             .lock()
             .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
-        require_lock(&state)?;
+        require_write_lock(&state)?;
         let start = state.sel_start;
         let end = state.sel_end;
         if dwflags & TS_IAS_QUERYONLY != 0 {
@@ -414,8 +338,10 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
             }
             return Ok(());
         }
-        let insert = if cch == 0 || pchtext.0.is_null() {
+        let insert = if cch == 0 {
             &[][..]
+        } else if pchtext.0.is_null() {
+            return Err(WinError::from(E_INVALIDARG));
         } else {
             unsafe { std::slice::from_raw_parts(pchtext.0, cch as usize) }
         };
@@ -510,6 +436,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
             .state
             .lock()
             .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
+        require_read_lock(&state)?;
         Ok(state.end_acp())
     }
 
@@ -527,6 +454,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
             .state
             .lock()
             .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
+        require_read_lock(&state)?;
         Ok(state.end_acp())
     }
 
@@ -538,12 +466,17 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         prc: *mut RECT,
         pfclipped: *mut BOOL,
     ) -> WinResult<()> {
+        if prc.is_null() || pfclipped.is_null() {
+            return Err(WinError::from(E_INVALIDARG));
+        }
         let state = self
             .state
             .lock()
             .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
+        require_read_lock(&state)?;
+        let rect = state.cursor_screen_rect()?;
         unsafe {
-            *prc = state.cursor;
+            *prc = rect;
             *pfclipped = false.into();
         }
         Ok(())
@@ -554,24 +487,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
             .state
             .lock()
             .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
-        let mut rect = state.cursor;
-        let mut tl = POINT {
-            x: rect.left,
-            y: rect.top,
-        };
-        let mut br = POINT {
-            x: rect.right,
-            y: rect.bottom,
-        };
-        unsafe {
-            let _ = windows::Win32::Graphics::Gdi::ClientToScreen(state.event_sink.hwnd, &mut tl);
-            let _ = windows::Win32::Graphics::Gdi::ClientToScreen(state.event_sink.hwnd, &mut br);
-        }
-        rect.left = tl.x;
-        rect.top = tl.y;
-        rect.right = br.x;
-        rect.bottom = br.y;
-        Ok(rect)
+        state.screen_extent()
     }
 
     fn GetWnd(&self, _vcview: u32) -> WinResult<HWND> {
