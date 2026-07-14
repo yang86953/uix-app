@@ -1,9 +1,7 @@
 use crate::tests::common::*;
-use crate::ui::core::widget::WidgetNode;
 use crate::ui::foundation::virtual_scroll::*;
-use crate::ui::view::{ViewAdapter, ViewNode};
-use crate::ui::widgets::Label;
-use crate::ui::IntoWidgetNode;
+use crate::ui::view::{label, ViewAdapter};
+use crate::ui::widgets::{Button, Label};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -40,15 +38,22 @@ fn scroll_range_respects_item_count() {
 }
 
 #[test]
+fn default_overscan_matches_public_contract() {
+    let vs = VirtualScroll::new().item_count(20).item_height(32.0);
+
+    assert_eq!(vs.scroll_range(64.0), (0, 7));
+}
+
+#[test]
 fn build_visible_children_uses_renderer() {
     let builder = VirtualScroll::new()
         .item_count(10)
         .item_height(32.0)
         .overscan(1)
         .size(200.0, 64.0)
-        .renderer(|i| WidgetNode::leaf(Box::new(Label::new(format!("row-{i}")))));
-    let mut tree = WidgetTree::new();
-    let root = tree.build(builder.into_node());
+        .render(|i| label(format!("row-{i}")));
+    let mut tree = ViewAdapter::build(builder);
+    let root = tree.root_id().expect("virtual scroll root");
     tree.layout();
 
     assert!(tree.has_virtual_scroll_renderer(root));
@@ -64,12 +69,12 @@ fn virtual_scroll_renderer_is_released_with_component_sidecar() {
     let builder = VirtualScroll::new()
         .item_count(20)
         .item_height(32.0)
-        .renderer(move |i| {
+        .render(move |i| {
             renderer_capture.set(renderer_capture.get() + 1);
-            WidgetNode::leaf(Box::new(Label::new(format!("row-{i}"))))
+            label(format!("row-{i}"))
         });
-    let mut tree = WidgetTree::new();
-    let root = tree.build(builder.into_node());
+    let mut tree = ViewAdapter::build(builder);
+    let root = tree.root_id().expect("virtual scroll root");
 
     assert!(tree.has_virtual_scroll_renderer(root));
     assert!(capture.get() > 0);
@@ -88,9 +93,9 @@ fn reconcile_replaces_virtual_scroll_renderer_sidecar() {
             .item_count(20)
             .item_height(20.0)
             .size(200.0, 60.0)
-            .renderer(move |i| {
+            .render(move |i| {
                 first_renderer.set(first_renderer.get() + 1);
-                WidgetNode::leaf(Box::new(Label::new(format!("first-{i}"))))
+                label(format!("first-{i}"))
             }),
     );
     let root = tree.root_id().expect("virtual scroll root");
@@ -106,9 +111,9 @@ fn reconcile_replaces_virtual_scroll_renderer_sidecar() {
             .item_count(20)
             .item_height(20.0)
             .size(200.0, 60.0)
-            .renderer(move |i| {
+            .render(move |i| {
                 second_renderer.set(second_renderer.get() + 1);
-                WidgetNode::leaf(Box::new(Label::new(format!("second-{i}"))))
+                label(format!("second-{i}"))
             }),
     );
 
@@ -123,33 +128,25 @@ fn reconcile_replaces_virtual_scroll_renderer_sidecar() {
 fn replacing_tree_root_drops_virtual_scroll_renderer() {
     let capture = Rc::new(Cell::new(0));
     let renderer_capture = Rc::clone(&capture);
-    let mut tree = WidgetTree::new();
-    tree.build(
-        VirtualScroll::new()
-            .item_count(10)
-            .renderer(move |i| {
-                renderer_capture.set(renderer_capture.get() + 1);
-                WidgetNode::leaf(Box::new(Label::new(format!("row-{i}"))))
-            })
-            .into_node(),
-    );
+    let mut tree = ViewAdapter::build(VirtualScroll::new().item_count(10).render(move |i| {
+        renderer_capture.set(renderer_capture.get() + 1);
+        label(format!("row-{i}"))
+    }));
     assert_eq!(Rc::strong_count(&capture), 2);
 
-    tree.build(Label::new("replacement").into_node());
+    ViewAdapter::reconcile(&mut tree, label("replacement"));
     assert_eq!(Rc::strong_count(&capture), 1);
 }
 
 #[test]
 fn widget_tree_build_auto_prepares_visible_rows() {
-    use crate::ui::core::widget::{WidgetCore, WidgetNode};
-
     let builder = VirtualScroll::new()
         .item_count(50)
         .item_height(32.0)
         .size(200.0, 96.0)
-        .renderer(|i| WidgetNode::leaf(Box::new(Label::new(format!("row-{i}")))));
-    let mut tree = WidgetTree::new();
-    let root_id = tree.build(builder.into_node());
+        .render(|i| label(format!("row-{i}")));
+    let mut tree = ViewAdapter::build(builder);
+    let root_id = tree.root_id().expect("virtual scroll root");
     tree.get_mut(root_id)
         .expect("virtual scroll root")
         .set_frame(Rect::new(0.0, 0.0, 200.0, 96.0));
@@ -271,8 +268,8 @@ fn same_type_reconcile_preserves_virtual_scroll_offset() {
         .item_count(100)
         .item_height(20.0)
         .size(200.0, 80.0)
-        .renderer(|i| WidgetNode::leaf(Box::new(Label::new(format!("row-{i}")))));
-    let mut tree = ViewAdapter::build_nodes(ViewNode::from(initial));
+        .render(|i| label(format!("row-{i}")));
+    let mut tree = ViewAdapter::build(initial);
     tree.layout();
     let root = tree.root_id().expect("virtual scroll root");
     tree.reset_invalidation();
@@ -295,8 +292,8 @@ fn same_type_reconcile_preserves_virtual_scroll_offset() {
         .item_count(120)
         .item_height(20.0)
         .size(200.0, 80.0)
-        .renderer(|i| WidgetNode::leaf(Box::new(Label::new(format!("next-{i}")))));
-    ViewAdapter::reconcile_nodes(&mut tree, ViewNode::from(next));
+        .render(|i| label(format!("next-{i}")));
+    ViewAdapter::reconcile(&mut tree, next);
 
     assert_eq!(tree.root_id(), Some(root));
     assert_eq!(
@@ -305,4 +302,54 @@ fn same_type_reconcile_preserves_virtual_scroll_offset() {
             .map(VirtualScroll::scroll_offset),
         Some(40.0)
     );
+}
+
+#[test]
+fn prelude_render_materializes_interactive_view_rows() {
+    use crate::prelude::{button, VirtualScroll as PreludeVirtualScroll};
+
+    let clicks = Rc::new(Cell::new(0));
+    let renderer_clicks = Rc::clone(&clicks);
+    let mut tree = ViewAdapter::build(
+        PreludeVirtualScroll::new()
+            .item_count(1)
+            .item_height(32.0)
+            .size(200.0, 64.0)
+            .render(move |index| {
+                let button_clicks = Rc::clone(&renderer_clicks);
+                button(format!("row-{index}")).on_click_fn(move || {
+                    button_clicks.set(button_clicks.get() + 1);
+                })
+            }),
+    );
+    let root = tree.root_id().expect("virtual scroll root");
+    tree.get_mut(root)
+        .expect("virtual scroll node")
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 64.0));
+    tree.layout();
+
+    let button_id = tree
+        .find_all_by_type::<Button>()
+        .first()
+        .map(|(id, _)| *id)
+        .expect("materialized button row");
+    let frame = tree.get(button_id).expect("button row node").frame();
+    let click = Point::new(frame.x + frame.w * 0.5, frame.y + frame.h * 0.5);
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: click,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerUp {
+            pos: click,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(clicks.get(), 1);
 }

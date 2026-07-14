@@ -97,6 +97,8 @@ impl WidgetTree {
         {
             scroll.mark_children_materialized(range);
         }
+        self.bind_orphan_pending_states();
+        self.bind_pending_effects();
         true
     }
 
