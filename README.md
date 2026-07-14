@@ -22,20 +22,35 @@ cargo test
 use uix::prelude::*;
 
 fn main() {
+    App::new()
+        .title("Hello UIX")
+        .size(400, 300)
+        .root(|| label("Hello, world!").font_size(32.0))
+        .run();
+}
+```
+
+带交互的计数器：
+
+```rust
+use uix::prelude::*;
+
+fn main() {
     let count = State::new(0);
 
     App::new()
-        .title("UIX Counter")
-        .size(420, 260)
+        .title("计数器")
+        .size(360, 200)
         .root(move || {
             column((
-                count.map_text(|n| format!("当前值: {n}")).font_size(24.0),
-                button("+1").primary().on_click(&count, |c| {
-                    c.update(|v| *v += 1);
-                }),
+                count.map_text(|n| format!("{n}")).font_size(48.0),
+                row((
+                    button("-1").on_click(&count, |c| c.update(|v| *v -= 1)),
+                    button("+1").primary().on_click(&count, |c| c.update(|v| *v += 1)),
+                )).gap(8.0),
             ))
-            .gap(12.0)
-            .padding(16.0)
+            .gap(16.0)
+            .padding(24.0)
         })
         .run();
 }
