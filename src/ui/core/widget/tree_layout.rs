@@ -1,12 +1,20 @@
 use super::super::*;
 use super::WidgetTree;
 use crate::core::{Constraints, Rect, Size};
+use std::collections::HashSet;
 
 #[cfg(test)]
 use super::LAYOUT_TRACE_PHASE;
 
 fn frame_constraints(frame: Rect) -> Constraints {
     Constraints::loose(Size::new(frame.w, frame.h))
+}
+
+#[derive(Default)]
+struct LayoutTraversalScratch {
+    roots: HashSet<WidgetId>,
+    paths: HashSet<WidgetId>,
+    stack: Vec<(WidgetId, bool)>,
 }
 
 impl WidgetTree {
@@ -65,49 +73,53 @@ impl WidgetTree {
     ///
     /// 全帧或含 Layout 根时遍历对应子树；无 Layout 失效时返回空（跳过 layout）。
     pub fn layout_traverse(&self) -> Vec<ComponentId> {
+        let mut result = Vec::new();
+        self.fill_layout_traversal(&mut result, &mut LayoutTraversalScratch::default());
+        result
+    }
+
+    fn fill_layout_traversal(
+        &self,
+        result: &mut Vec<ComponentId>,
+        scratch: &mut LayoutTraversalScratch,
+    ) {
+        result.clear();
+        scratch.paths.clear();
+        scratch.stack.clear();
         let inv = self.invalidation.lock().unwrap_or_else(|e| e.into_inner());
         if inv.needs_full_frame() {
-            return self.traverse().iter().copied().collect();
+            result.extend(self.traverse().iter().copied());
+            return;
         }
-        let layout_roots = inv.layout_roots();
+        inv.layout_roots_into(&mut scratch.roots);
         drop(inv);
-        if layout_roots.is_empty() {
-            return Vec::new();
+        if scratch.roots.is_empty() {
+            return;
         }
 
-        let mut needed = std::collections::HashSet::new();
-        for &id in &layout_roots {
+        for &id in &scratch.roots {
             let mut cur = Some(id);
             while let Some(cid) = cur {
-                needed.insert(cid);
+                scratch.paths.insert(cid);
                 cur = self.get(cid).and_then(|n| n.parent());
-            }
-            let mut stack = vec![id];
-            while let Some(nid) = stack.pop() {
-                needed.insert(nid);
-                if let Some(node) = self.get(nid) {
-                    for &c in node.children() {
-                        stack.push(c);
-                    }
-                }
             }
         }
 
-        let mut result = Vec::new();
         if let Some(root_id) = self.root_id {
-            let mut stack = vec![root_id];
-            while let Some(current) = stack.pop() {
-                if needed.contains(&current) {
-                    result.push(current);
-                    if let Some(node) = self.get(current) {
-                        for &child_id in node.children().iter().rev() {
-                            stack.push(child_id);
-                        }
+            scratch.stack.push((root_id, false));
+            while let Some((current, parent_invalidated)) = scratch.stack.pop() {
+                let invalidated = parent_invalidated || scratch.roots.contains(&current);
+                if !invalidated && !scratch.paths.contains(&current) {
+                    continue;
+                }
+                result.push(current);
+                if let Some(node) = self.get(current) {
+                    for &child_id in node.children().iter().rev() {
+                        scratch.stack.push((child_id, invalidated));
                     }
                 }
             }
         }
-        result
     }
 
     pub fn layout(&mut self) {
@@ -131,7 +143,9 @@ impl WidgetTree {
             }
         }
 
-        let mut order = self.layout_traverse();
+        let mut order = Vec::new();
+        let mut traversal_scratch = LayoutTraversalScratch::default();
+        self.fill_layout_traversal(&mut order, &mut traversal_scratch);
         if order.is_empty() {
             // 根节点已有有效 frame 但子树尚未布局时（如 bind_invalidation / reset 清空队列），
             // 只要仍有可见节点 frame 为 0 就重新标脏，避免组件堆叠在 (0,0)。
@@ -156,7 +170,7 @@ impl WidgetTree {
             if let Some(root_id) = self.root_id {
                 self.push_layout_invalidation(root_id);
             }
-            order = self.layout_traverse();
+            self.fill_layout_traversal(&mut order, &mut traversal_scratch);
             if order.is_empty() {
                 return;
             }
@@ -170,6 +184,7 @@ impl WidgetTree {
         // ════════════════════════════════════════════════════════════════
         let max_passes = 10;
         let mut converge_passes = 0u32;
+        let rev_order: Vec<WidgetId> = order.iter().rev().copied().collect();
         // 安全网：若连续两轮 Phase 2 扩展签名完全相同（同 id、同 before/after），
         // 视为无 progress，停止空转（根因仍应在 measure；此处防止打满 max_passes）。
         let mut prev_expand_sig: Option<Vec<(WidgetId, i32, i32, i32, i32)>> = None;
@@ -179,7 +194,6 @@ impl WidgetTree {
             let mut pass_expand_sig: Vec<(WidgetId, i32, i32, i32, i32)> = Vec::new();
 
             // Phase 1: Top-down — 父容器根据当前 frame 为子节点分配位置
-            let order = self.layout_traverse();
             #[cfg(test)]
             LAYOUT_TRACE_PHASE.with(|p| p.set(1));
             for &id in &order {
@@ -204,9 +218,6 @@ impl WidgetTree {
             #[cfg(test)]
             LAYOUT_TRACE_PHASE.with(|p| p.set(0));
 
-            // 预计算逆序遍历顺序，供 Phase 2/4 复用（避免每次 inner pass 重复 clone）
-            let rev_order: Vec<WidgetId> = order.iter().rev().copied().collect();
-
             // 内循环：交替扩展和收缩直到稳定
             for _inner_pass in 0..3 {
                 #[cfg(test)]
@@ -227,7 +238,7 @@ impl WidgetTree {
             }
 
             // Phase 3: 更新 viewport 容器的 content_bounds
-            self.layout_viewports();
+            self.layout_viewports(&order);
 
             if !pass_expand_sig.is_empty() {
                 if prev_expand_sig.as_ref() == Some(&pass_expand_sig) {
@@ -249,7 +260,7 @@ impl WidgetTree {
         }
 
         // 最终更新 viewport（确保收敛结束后的 content_bounds 正确）
-        self.layout_viewports();
+        self.layout_viewports(&order);
         self.refresh_virtual_scroll_children();
         // Phase 6：layout 完成后用最新 frame 绑定 State → Paint rect
         self.bind_reactive_widget_states();
@@ -619,8 +630,8 @@ impl WidgetTree {
 
     /// 更新所有 viewport 容器的 content_bounds。
     /// 只触发 content_bounds 副作用，不移动子节点位置。
-    fn layout_viewports(&mut self) {
-        for &id in &self.layout_traverse() {
+    fn layout_viewports(&mut self, order: &[WidgetId]) {
+        for &id in order {
             if let Some(node) = self.get(id) {
                 if node.children_clip(node.frame()).is_none() {
                     continue;

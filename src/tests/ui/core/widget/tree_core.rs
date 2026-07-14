@@ -1283,6 +1283,25 @@ fn tree_traverse_preorder() {
 }
 
 #[test]
+fn layout_traverse_keeps_ancestor_path_and_dirty_subtree() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
+    let branch = tree.add_child(
+        root,
+        Box::new(PassThroughContainer::new(80.0, 40.0, vec![])),
+    );
+    let leaf = tree.add_child(branch, Box::new(SpyWidget::new(30.0, 20.0)));
+    let sibling = tree.add_child(root, Box::new(SpyWidget::new(50.0, 30.0)));
+    tree.layout();
+    tree.reset_invalidation();
+
+    tree.push_layout_invalidation(branch);
+
+    assert_eq!(tree.layout_traverse(), vec![root, branch, leaf]);
+    assert!(!tree.layout_traverse().contains(&sibling));
+}
+
+#[test]
 fn tree_remove_cascades_to_children() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
