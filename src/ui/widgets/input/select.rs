@@ -11,6 +11,10 @@ use crate::ui::{
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 
+mod search;
+
+use self::search::VisibleRow;
+
 const DROPDOWN_ROW_HEIGHT: f32 = 28.0;
 const DROPDOWN_TRIGGER_HEIGHT: f32 = 32.0;
 const MAX_DROPDOWN_VIEWPORT_HEIGHT: f32 = 280.0;
@@ -135,11 +139,17 @@ component! {
         pending_change: RefCell<Option<String>>,
         multiple: bool,
         search: bool,
+        search_query: String,
+        search_cursor_rect: Cell<Rect>,
         pub(crate) dropdown_scroll: VirtualListScroll,
         scroll_delta_strip: Cell<(f32, f32)>,
     }
 
     tab_index => (&self) -> i32 { 1 }
+
+    accepts_text_input => (&self) -> bool { self.search && !self.disabled }
+
+    text_input_cursor_rect => (&self) -> Rect { self.search_cursor_rect.get() }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
@@ -161,7 +171,7 @@ component! {
         }
         self.sync_bound_selection();
 
-        let all_opts: Vec<&str> = self.all_options();
+        let visible_options = self.visible_option_indices();
         match event {
             SystemEvent::PointerDown { pos, .. } => {
                 if pos.y >= 0.0 && pos.y <= DROPDOWN_TRIGGER_HEIGHT {
@@ -245,12 +255,15 @@ component! {
             SystemEvent::KeyDown { key, .. } => match key {
                 KeyCode::Down => {
                     if self.open {
-                        let next = if self.selected < all_opts.len() {
-                            self.selected.saturating_add(1)
-                        } else {
-                            0
-                        };
-                        if next < all_opts.len() {
+                        let position = visible_options
+                            .iter()
+                            .position(|index| *index == self.selected);
+                        let next = match position {
+                            Some(position) => visible_options.get(position + 1),
+                            None => visible_options.first(),
+                        }
+                        .copied();
+                        if let Some(next) = next {
                             if self.multiple {
                                 self.selected = next;
                             } else {
@@ -263,12 +276,18 @@ component! {
                     EventResult::Handled
                 }
                 KeyCode::Up => {
-                    if self.open && !all_opts.is_empty() {
-                        let prev = if self.selected < all_opts.len() {
-                            self.selected.saturating_sub(1)
-                        } else {
-                            all_opts.len() - 1
-                        };
+                    if self.open && !visible_options.is_empty() {
+                        let position = visible_options
+                            .iter()
+                            .position(|index| *index == self.selected);
+                        let prev = match position {
+                            Some(position) => {
+                                visible_options.get(position.saturating_sub(1))
+                            }
+                            None => visible_options.last(),
+                        }
+                        .copied()
+                        .unwrap_or(self.selected);
                         if self.multiple {
                             self.selected = prev;
                         } else {
@@ -277,7 +296,26 @@ component! {
                     }
                     EventResult::Handled
                 }
-                KeyCode::Enter | KeyCode::Space => {
+                KeyCode::Enter => {
+                    if self.open {
+                        if self.search && !self.multiple {
+                            let selection = visible_options
+                                .iter()
+                                .find(|index| **index == self.selected)
+                                .or_else(|| visible_options.first())
+                                .copied();
+                            if let Some(selection) = selection {
+                                self.select_single(selection);
+                            }
+                        }
+                        self.close();
+                    } else {
+                        self.open();
+                    }
+                    EventResult::Handled
+                }
+                KeyCode::Space if self.search => EventResult::NotHandled,
+                KeyCode::Space => {
                     if self.open {
                         self.close();
                     } else {
@@ -290,7 +328,10 @@ component! {
                     EventResult::Handled
                 }
                 KeyCode::Backspace => {
-                    if self.multiple && !self.selected_multi.is_empty() {
+                    if self.search && !self.search_query.is_empty() {
+                        self.search_query.pop();
+                        self.refresh_search_results();
+                    } else if self.multiple && !self.selected_multi.is_empty() {
                         self.selected_multi.pop();
                         self.publish_multi_change();
                     }
@@ -298,6 +339,14 @@ component! {
                 }
                 _ => EventResult::NotHandled,
             },
+            SystemEvent::TextInput { text } if self.search => {
+                if text.is_empty() || text.chars().any(char::is_control) {
+                    return EventResult::NotHandled;
+                }
+                self.search_query.push_str(text);
+                self.refresh_search_results();
+                EventResult::Handled
+            }
             _ => EventResult::NotHandled,
         }
     }
@@ -341,7 +390,15 @@ component! {
 
         let box_rect_v = Rect::new(frame.x, frame.y, frame.w, DROPDOWN_TRIGGER_HEIGHT);
         let draw_y = ctx.visual_center_y(box_rect_v, 13.0);
-        if self.multiple && !self.selected_multi.is_empty() {
+        let showing_query = self.search && self.open && !self.search_query.is_empty();
+        if showing_query {
+            ctx.draw_text(
+                &self.search_query,
+                Point::new(frame.x + 10.0, draw_y),
+                text_color,
+                13.0,
+            );
+        } else if self.multiple && !self.selected_multi.is_empty() {
             let all_opts: Vec<&str> = self.all_options();
             let mut x = frame.x + 8.0;
             for &idx in &self.selected_multi {
@@ -379,6 +436,14 @@ component! {
             ctx.draw_text(disp, Point::new(frame.x + 10.0, draw_y), color, 13.0);
         }
 
+        let cursor_x = (frame.x + 10.0 + self.search_query.chars().count() as f32 * 7.0)
+            .min(frame.x + frame.w - 26.0);
+        let cursor_rect = Rect::new(cursor_x, frame.y + 7.0, 1.0, 18.0);
+        self.search_cursor_rect.set(cursor_rect);
+        if self.search && self.focused && self.open {
+            ctx.fill_rect(cursor_rect, primary, None);
+        }
+
         let arrow = if self.is_present() { "▲" } else { "▼" };
         let arrow_y = ctx.visual_center_y(box_rect_v, 10.0);
         ctx.draw_text(
@@ -392,8 +457,9 @@ component! {
             return;
         }
 
-        let all_opts: Vec<&str> = self.all_options();
-        if all_opts.is_empty() {
+        let visible_rows = self.visible_rows();
+        let no_matches = self.search && !self.search_query.is_empty() && visible_rows.is_empty();
+        if self.all_options().is_empty() && !no_matches {
             return;
         }
 
@@ -442,26 +508,22 @@ component! {
                 continue;
             }
 
-            if self.optgroups.is_empty() {
-                if let Some(opt) = all_opts.get(flat_idx) {
-                    self.render_option(
-                        frame,
-                        item_y,
-                        flat_idx,
-                        opt,
-                        flat_idx,
-                        ctx,
-                        text_color,
-                        primary,
-                        primary_bg,
-                        fill_tertiary,
-                    );
-                }
-            } else {
-                self.render_flat_row(
+            if no_matches {
+                let no_data = crate::ui::locale::use_locale().no_data;
+                let item_rect = Rect::new(frame.x, item_y, frame.w, DROPDOWN_ROW_HEIGHT);
+                let draw_y = ctx.visual_center_y(item_rect, 13.0);
+                ctx.draw_text(
+                    no_data,
+                    Point::new(frame.x + 10.0, draw_y),
+                    text_sec,
+                    13.0,
+                );
+            } else if let Some(row) = visible_rows.get(flat_idx).copied() {
+                self.render_visible_row(
                     frame,
                     item_y,
                     flat_idx,
+                    row,
                     ctx,
                     text_color,
                     primary,
@@ -477,11 +539,21 @@ component! {
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        select_dirty_rect(frame, self.dropdown_row_count())
+        select_dirty_rect(frame, self.dropdown_damage_row_count())
     }
 
     update_animation => (&mut self, dt: f64) -> bool {
-        if !self.is_present() || self.transition.finished {
+        if !self.is_present() {
+            self.transition_dirty = false;
+            return false;
+        }
+
+        if self.transition.finished {
+            if self.closing {
+                self.open = false;
+                self.closing = false;
+                self.search_query.clear();
+            }
             self.transition_dirty = false;
             return false;
         }
@@ -492,6 +564,7 @@ component! {
         if self.closing && self.transition.finished {
             self.open = false;
             self.closing = false;
+            self.search_query.clear();
         }
 
         self.is_present() && !self.transition.finished
@@ -499,7 +572,7 @@ component! {
 
     dirty_bounds => (&self, frame: Rect) -> Rect {
         if self.transition_dirty {
-            select_dirty_rect(frame, self.dropdown_row_count())
+            select_dirty_rect(frame, self.dropdown_damage_row_count())
         } else {
             Rect::zero()
         }
@@ -522,64 +595,13 @@ impl Select {
         Size::new(w, DROPDOWN_TRIGGER_HEIGHT)
     }
 
-    pub(crate) fn dropdown_row_count(&self) -> usize {
-        if self.optgroups.is_empty() {
-            self.options.len()
-        } else {
-            self.optgroups.iter().map(|g| 1 + g.options.len()).sum()
-        }
-    }
-
-    pub(crate) fn dropdown_viewport_height(&self, row_count: usize) -> f32 {
-        (row_count as f32 * DROPDOWN_ROW_HEIGHT).min(MAX_DROPDOWN_VIEWPORT_HEIGHT)
-    }
-
-    pub(crate) fn dropdown_row_at_y(&self, pos_y: f32) -> Option<usize> {
-        if pos_y <= DROPDOWN_TRIGGER_HEIGHT {
-            return None;
-        }
-        let local_y = pos_y - DROPDOWN_TRIGGER_HEIGHT + self.dropdown_scroll.scroll_offset();
-        if local_y < 0.0 {
-            return None;
-        }
-        let idx = (local_y / DROPDOWN_ROW_HEIGHT) as usize;
-        if idx < self.dropdown_row_count() {
-            Some(idx)
-        } else {
-            None
-        }
-    }
-
-    fn flat_row_option_index(&self, flat_idx: usize) -> Option<usize> {
-        if self.optgroups.is_empty() {
-            return if flat_idx < self.options.len() {
-                Some(flat_idx)
-            } else {
-                None
-            };
-        }
-        let mut idx = 0;
-        for group in &self.optgroups {
-            if idx == flat_idx {
-                return None;
-            }
-            idx += 1;
-            for opt in &group.options {
-                if idx == flat_idx {
-                    return Some(self.option_index(&group.label, opt));
-                }
-                idx += 1;
-            }
-        }
-        None
-    }
-
     #[allow(clippy::too_many_arguments)]
-    fn render_flat_row(
+    fn render_visible_row(
         &self,
         frame: Rect,
         item_y: f32,
         flat_idx: usize,
+        row: VisibleRow,
         ctx: &mut PaintContext,
         text_color: Color,
         primary: Color,
@@ -588,34 +610,30 @@ impl Select {
         text_sec: Color,
         group_header: Color,
     ) {
-        let mut idx = 0;
-        for group in &self.optgroups {
-            if idx == flat_idx {
+        match row {
+            VisibleRow::Group(group_index) => {
                 let item_rect = Rect::new(frame.x, item_y, frame.w, DROPDOWN_ROW_HEIGHT);
                 ctx.fill_rect(item_rect, group_header, None);
                 let gy = ctx.visual_center_y(item_rect, 12.0);
-                ctx.draw_text(&group.label, Point::new(frame.x + 10.0, gy), text_sec, 12.0);
-                return;
+                if let Some(label) = self.group_label(group_index) {
+                    ctx.draw_text(label, Point::new(frame.x + 10.0, gy), text_sec, 12.0);
+                }
             }
-            idx += 1;
-            for opt in &group.options {
-                if idx == flat_idx {
-                    let opt_idx = self.option_index(&group.label, opt);
+            VisibleRow::Option(option_index) => {
+                if let Some(label) = self.option_label(option_index) {
                     self.render_option(
                         frame,
                         item_y,
                         flat_idx,
-                        opt,
-                        opt_idx,
+                        label,
+                        option_index,
                         ctx,
                         text_color,
                         primary,
                         primary_bg,
                         fill_tertiary,
                     );
-                    return;
                 }
-                idx += 1;
             }
         }
     }
@@ -627,6 +645,16 @@ impl Select {
         let current = self.scroll_delta_strip.get();
         self.scroll_delta_strip
             .set((current.0 + dx, current.1 + dy));
+    }
+
+    fn refresh_search_results(&mut self) {
+        self.hovered_option = None;
+        self.dropdown_scroll.set_scroll_offset(0.0);
+        if !self.open {
+            self.open();
+        } else {
+            self.transition_dirty = true;
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -673,24 +701,6 @@ impl Select {
         } else {
             ctx.draw_text(label, Point::new(frame.x + 10.0, draw_y), tc, 13.0);
         }
-    }
-
-    fn all_options(&self) -> Vec<&str> {
-        if !self.optgroups.is_empty() {
-            self.optgroups
-                .iter()
-                .flat_map(|g| g.options.iter().map(|s| s.as_str()))
-                .collect()
-        } else {
-            self.options.iter().map(|s| s.as_str()).collect()
-        }
-    }
-
-    fn option_index(&self, _group_label: &str, opt: &str) -> usize {
-        self.all_options()
-            .iter()
-            .position(|&s| s == opt)
-            .unwrap_or(0)
     }
 
     fn selected_multi_payload(&self) -> String {
@@ -777,6 +787,8 @@ impl Select {
             pending_change: RefCell::new(None),
             multiple: false,
             search: false,
+            search_query: String::new(),
+            search_cursor_rect: Cell::new(Rect::zero()),
             dropdown_scroll: VirtualListScroll::new(),
             scroll_delta_strip: Cell::new((0.0, 0.0)),
         }
@@ -897,6 +909,7 @@ impl Select {
             placeholder: self.placeholder.clone(),
             multiple: self.multiple,
             search: self.search,
+            search_query: self.search_query.clone(),
         }
     }
 
@@ -912,6 +925,9 @@ impl Select {
         self.placeholder = next.placeholder;
         self.multiple = next.multiple;
         self.search = next.search;
+        if !self.search {
+            self.search_query.clear();
+        }
         if let Some((selected, selected_multi)) = controlled_selection {
             self.selected = selected;
             self.selected_multi = selected_multi;
