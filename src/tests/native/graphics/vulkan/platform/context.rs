@@ -390,6 +390,131 @@ fn windows_vulkan_shared_device_loss_rejects_peers_and_new_context_replaces_it()
 #[cfg(windows)]
 #[test]
 #[ignore = "requires a Vulkan-capable Windows driver; set UIX_VULKAN_SOAK_SECONDS=900 for the gate"]
+fn windows_vulkan_shared_device_multiwindow_soak_is_bounded() {
+    let mut platform = crate::native::create_platform().expect("platform");
+    let mut first_window = platform
+        .window_manager()
+        .create_window("Vulkan shared soak A", 160, 120)
+        .expect("first window");
+    let mut second_window = platform
+        .window_manager()
+        .create_window("Vulkan shared soak B", 176, 132)
+        .expect("second window");
+    first_window.show().expect("show first window");
+    second_window.show().expect("show second window");
+    let _ = platform.event_loop().poll_event(&|_| true);
+
+    let mut first = VulkanContext::new(first_window.native_surface_ptr(), 160, 120)
+        .expect("first VulkanContext");
+    let mut second = VulkanContext::new(second_window.native_surface_ptr(), 176, 132)
+        .expect("second VulkanContext");
+    assert_eq!(
+        first.shared_device_identity(),
+        second.shared_device_identity()
+    );
+
+    let handles_before = current_process_handle_count();
+    let duration = requested_vulkan_soak_duration();
+    let deadline = std::time::Instant::now() + duration;
+    let first_sizes = [(128, 96), (224, 144), (176, 132), (256, 160)];
+    let second_sizes = [(192, 128), (144, 112), (240, 152), (168, 124)];
+    let mut rounds = 0_u64;
+    let mut peak_handles = handles_before;
+
+    while std::time::Instant::now() < deadline || rounds < first_sizes.len() as u64 {
+        if rounds % 2 == 0 {
+            let requested = first_sizes[rounds as usize % first_sizes.len()];
+            first_window
+                .properties_mut()
+                .set_size(requested.0, requested.1)
+                .expect("resize first HWND during shared soak");
+            let _ = platform.event_loop().poll_event(&|_| true);
+            first
+                .resize(requested.0, requested.1)
+                .expect("resize first shared surface");
+        } else {
+            let requested = second_sizes[rounds as usize % second_sizes.len()];
+            second_window
+                .properties_mut()
+                .set_size(requested.0, requested.1)
+                .expect("resize second HWND during shared soak");
+            let _ = platform.event_loop().poll_event(&|_| true);
+            second
+                .resize(requested.0, requested.1)
+                .expect("resize second shared surface");
+        }
+
+        let first_color = 0xFF00_0000 | ((rounds as u32).wrapping_mul(0x0001_0203) & 0x00FF_FFFF);
+        let second_color = 0xFF00_0000 | ((rounds as u32).wrapping_mul(0x0003_0201) & 0x00FF_FFFF);
+        let first_pixels = vec![first_color; (first.width() * first.height()) as usize];
+        let second_pixels = vec![second_color; (second.width() * second.height()) as usize];
+        first
+            .present_pixels(
+                &first_pixels,
+                first.width(),
+                first.height(),
+                PresentDamage::Full,
+            )
+            .expect("present first shared surface during soak");
+        second
+            .present_pixels(
+                &second_pixels,
+                second.width(),
+                second.height(),
+                PresentDamage::Full,
+            )
+            .expect("present second shared surface during soak");
+        if rounds % 32 == 0 {
+            assert_eq!(
+                first
+                    .read_pixels(first.width() - 1, first.height() - 1, 1, 1)
+                    .expect("first shared soak readback"),
+                vec![first_color]
+            );
+            assert_eq!(
+                second
+                    .read_pixels(second.width() - 1, second.height() - 1, 1, 1)
+                    .expect("second shared soak readback"),
+                vec![second_color]
+            );
+        }
+        peak_handles = peak_handles.max(current_process_handle_count());
+        rounds += 1;
+    }
+
+    let handles_after = current_process_handle_count();
+    assert!(
+        peak_handles <= handles_before.saturating_add(32),
+        "shared multiwindow handles grew beyond the bounded envelope: before={handles_before}, peak={peak_handles}, after={handles_after}"
+    );
+    println!(
+        "Vulkan shared-device soak: duration={:.1}s rounds={rounds} handles={handles_before}->{handles_after} peak={peak_handles}; {}",
+        duration.as_secs_f64(),
+        first.adapter_info.diagnostic_summary()
+    );
+
+    first.try_shutdown().expect("shutdown first shared surface");
+    drop(first);
+    first_window.close().expect("close first shared window");
+    let final_pixels = vec![0xFF52_7193; (second.width() * second.height()) as usize];
+    second
+        .present_pixels(
+            &final_pixels,
+            second.width(),
+            second.height(),
+            PresentDamage::Full,
+        )
+        .expect("surviving shared surface present after soak");
+    second
+        .try_shutdown()
+        .expect("shutdown second shared surface");
+    drop(second);
+    second_window.close().expect("close second shared window");
+}
+
+#[cfg(windows)]
+#[test]
+#[ignore = "requires a Vulkan-capable Windows driver; set UIX_VULKAN_SOAK_SECONDS=900 for the gate"]
 fn windows_vulkan_hardware_resize_present_soak_is_bounded() {
     let mut platform = crate::native::create_platform().expect("platform");
     let mut window = platform
