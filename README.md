@@ -57,7 +57,7 @@ fn main() {
 
 ## 图形
 
-默认 Vulkan → 失败 typed 自动回退：D3D11、OpenGL ES、Software(GDI)。失败终态 `TerminalFailure`，无静默换 API、无 busy retry。空闲真休眠，遮挡可停帧。
+默认 Vulkan；失败按 typed 原因在同 API 内有界恢复，耗尽后回 Software(GDI)，仅显式 `Auto` 可跨 GPU API probe。失败终态 `TerminalFailure`，无静默换 API、无 busy retry。空闲真休眠；遮挡矩阵仍在 P6 gate。
 
 ## 测试
 
