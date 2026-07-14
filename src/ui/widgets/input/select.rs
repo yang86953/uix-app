@@ -4,10 +4,12 @@ use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::foundation::virtual_scroll::VirtualListScroll;
+use crate::ui::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
 };
 use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 
 const DROPDOWN_ROW_HEIGHT: f32 = 28.0;
 const DROPDOWN_TRIGGER_HEIGHT: f32 = 32.0;
@@ -34,12 +36,93 @@ impl OptGroup {
     }
 }
 
+/// 可绑定到 `Select` 的外部值类型。
+pub trait SelectValue: Clone + PartialEq + Send + Sync + 'static {
+    const MULTIPLE: bool;
+
+    fn selected_indices(&self, options: &[&str]) -> Vec<usize>;
+    fn from_selected_indices(options: &[&str], indices: &[usize]) -> Self;
+}
+
+impl SelectValue for String {
+    const MULTIPLE: bool = false;
+
+    fn selected_indices(&self, options: &[&str]) -> Vec<usize> {
+        options
+            .iter()
+            .position(|option| *option == self)
+            .into_iter()
+            .collect()
+    }
+
+    fn from_selected_indices(options: &[&str], indices: &[usize]) -> Self {
+        indices
+            .first()
+            .and_then(|index| options.get(*index))
+            .copied()
+            .unwrap_or_default()
+            .to_owned()
+    }
+}
+
+impl SelectValue for HashSet<String> {
+    const MULTIPLE: bool = true;
+
+    fn selected_indices(&self, options: &[&str]) -> Vec<usize> {
+        options
+            .iter()
+            .enumerate()
+            .filter_map(|(index, option)| self.contains(*option).then_some(index))
+            .collect()
+    }
+
+    fn from_selected_indices(options: &[&str], indices: &[usize]) -> Self {
+        indices
+            .iter()
+            .filter_map(|index| options.get(*index))
+            .map(|option| (*option).to_owned())
+            .collect()
+    }
+}
+
+type ReadSelection = Box<dyn Fn(&[&str]) -> Vec<usize> + Send + Sync>;
+type WriteSelection = Box<dyn Fn(&[&str], &[usize]) + Send + Sync>;
+
+struct SelectValueBinding {
+    multiple: bool,
+    read: ReadSelection,
+    write: WriteSelection,
+    capture: Box<dyn Fn() + Send + Sync>,
+}
+
+impl SelectValueBinding {
+    fn new<T: SelectValue>(state: &State<T>) -> Self {
+        let read_state = state.clone();
+        let write_state = state.clone();
+        let capture_state = state.clone();
+        Self {
+            multiple: T::MULTIPLE,
+            read: Box::new(move |options| read_state.get().selected_indices(options)),
+            write: Box::new(move |options, indices| {
+                let value = T::from_selected_indices(options, indices);
+                if write_state.get() != value {
+                    write_state.set(value);
+                }
+            }),
+            capture: Box::new(move || {
+                let _ = capture_state.get();
+            }),
+        }
+    }
+}
+
 component! {
     pub struct Select {
         options: Vec<String>,
         optgroups: Vec<OptGroup>,
         selected: usize,
         selected_multi: Vec<usize>,
+        value_binding: Option<SelectValueBinding>,
         open: bool,
         disabled: bool,
         hovered: bool,
@@ -76,6 +159,7 @@ component! {
         if self.disabled {
             return EventResult::NotHandled;
         }
+        self.sync_bound_selection();
 
         let all_opts: Vec<&str> = self.all_options();
         match event {
@@ -101,12 +185,9 @@ component! {
                                 } else {
                                     self.selected_multi.push(opt_idx);
                                 }
-                                self.pending_change.replace(Some(self.selected_multi_payload()));
+                                self.publish_multi_change();
                             } else {
-                                if self.selected != opt_idx {
-                                    self.selected = opt_idx;
-                                    self.pending_change.replace(Some(opt_idx.to_string()));
-                                }
+                                self.select_single(opt_idx);
                                 self.close();
                             }
                             return EventResult::Handled;
@@ -164,10 +245,17 @@ component! {
             SystemEvent::KeyDown { key, .. } => match key {
                 KeyCode::Down => {
                     if self.open {
-                        let next = self.selected + 1;
+                        let next = if self.selected < all_opts.len() {
+                            self.selected.saturating_add(1)
+                        } else {
+                            0
+                        };
                         if next < all_opts.len() {
-                            self.selected = next;
-                            self.pending_change.replace(Some(next.to_string()));
+                            if self.multiple {
+                                self.selected = next;
+                            } else {
+                                self.select_single(next);
+                            }
                         }
                     } else {
                         self.open();
@@ -175,10 +263,17 @@ component! {
                     EventResult::Handled
                 }
                 KeyCode::Up => {
-                    if self.open && self.selected > 0 {
-                        let prev = self.selected - 1;
-                        self.selected = prev;
-                        self.pending_change.replace(Some(prev.to_string()));
+                    if self.open && !all_opts.is_empty() {
+                        let prev = if self.selected < all_opts.len() {
+                            self.selected.saturating_sub(1)
+                        } else {
+                            all_opts.len() - 1
+                        };
+                        if self.multiple {
+                            self.selected = prev;
+                        } else {
+                            self.select_single(prev);
+                        }
                     }
                     EventResult::Handled
                 }
@@ -197,7 +292,7 @@ component! {
                 KeyCode::Backspace => {
                     if self.multiple && !self.selected_multi.is_empty() {
                         self.selected_multi.pop();
-                        self.pending_change.replace(Some(self.selected_multi_payload()));
+                        self.publish_multi_change();
                     }
                     EventResult::Handled
                 }
@@ -217,6 +312,7 @@ component! {
     wants_continuous_pointer_move => (&self) -> bool { true }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        self.capture_bound_value_dependency();
         let bg = ctx.tokens().color_bg_elevated();
         let border = ctx.tokens().color_border();
         let text_color = ctx.tokens().color_text();
@@ -604,6 +700,55 @@ impl Select {
             .collect::<Vec<_>>()
             .join(",")
     }
+
+    fn sync_bound_selection(&mut self) {
+        let Some(binding) = self.value_binding.as_ref() else {
+            return;
+        };
+        let multiple = binding.multiple;
+        let selected = {
+            let options = self.all_options();
+            (binding.read)(&options)
+        };
+        if multiple {
+            self.selected_multi = selected;
+        } else {
+            self.selected = selected.first().copied().unwrap_or(usize::MAX);
+        }
+    }
+
+    fn capture_bound_value_dependency(&self) {
+        if let Some(binding) = self.value_binding.as_ref() {
+            (binding.capture)();
+        }
+    }
+
+    fn write_bound_selection(&self) {
+        let Some(binding) = self.value_binding.as_ref() else {
+            return;
+        };
+        let options = self.all_options();
+        if binding.multiple {
+            (binding.write)(&options, &self.selected_multi);
+        } else {
+            (binding.write)(&options, &[self.selected]);
+        }
+    }
+
+    fn select_single(&mut self, index: usize) {
+        if self.selected == index {
+            return;
+        }
+        self.selected = index;
+        self.write_bound_selection();
+        self.pending_change.replace(Some(index.to_string()));
+    }
+
+    fn publish_multi_change(&self) {
+        self.write_bound_selection();
+        self.pending_change
+            .replace(Some(self.selected_multi_payload()));
+    }
 }
 
 impl Default for Select {
@@ -619,6 +764,7 @@ impl Select {
             optgroups: Vec::new(),
             selected: 0,
             selected_multi: Vec::new(),
+            value_binding: None,
             open: false,
             disabled: false,
             hovered: false,
@@ -636,18 +782,51 @@ impl Select {
         }
     }
 
-    pub fn options(mut self, opts: Vec<impl Into<String>>) -> Self {
-        self.options = opts.into_iter().map(|s| s.into()).collect();
+    /// 创建多选选择器。
+    pub fn multiple() -> Self {
+        let mut select = Self::new();
+        select.multiple = true;
+        select
+    }
+
+    /// 创建可搜索的单选选择器。
+    pub fn searchable() -> Self {
+        let mut select = Self::new();
+        select.search = true;
+        select
+    }
+
+    pub fn options<I, S>(mut self, opts: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.options = opts
+            .into_iter()
+            .map(|option| option.as_ref().to_owned())
+            .collect();
+        self.sync_bound_selection();
         self
     }
 
     pub fn optgroups(mut self, groups: Vec<OptGroup>) -> Self {
         self.optgroups = groups;
+        self.sync_bound_selection();
         self
     }
 
-    pub fn selected(mut self, idx: usize) -> Self {
+    /// 设置非受控选择器的初始索引。
+    pub fn default_selected(mut self, idx: usize) -> Self {
+        self.value_binding = None;
         self.selected = idx;
+        self
+    }
+
+    /// 将选择值绑定到外部 State；支持 `String` 单选与 `HashSet<String>` 多选。
+    pub fn value<T: SelectValue>(mut self, state: &State<T>) -> Self {
+        self.value_binding = Some(SelectValueBinding::new(state));
+        self.multiple = T::MULTIPLE;
+        self.sync_bound_selection();
         self
     }
 
@@ -661,22 +840,27 @@ impl Select {
         self
     }
 
-    pub fn multiple(mut self, v: bool) -> Self {
-        self.multiple = v;
-        self
-    }
-
-    pub fn search(mut self, v: bool) -> Self {
-        self.search = v;
-        self
-    }
-
     pub fn is_open(&self) -> bool {
         self.open
     }
 
     pub fn is_present(&self) -> bool {
         self.open || self.closing
+    }
+
+    pub fn current_value(&self) -> Option<String> {
+        self.all_options()
+            .get(self.selected)
+            .map(|value| (*value).to_owned())
+    }
+
+    pub fn current_values(&self) -> HashSet<String> {
+        let options = self.all_options();
+        self.selected_multi
+            .iter()
+            .filter_map(|index| options.get(*index))
+            .map(|value| (*value).to_owned())
+            .collect()
     }
 
     pub fn open(&mut self) {
@@ -717,12 +901,21 @@ impl Select {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let controlled_selection = next
+            .value_binding
+            .as_ref()
+            .map(|_| (next.selected, next.selected_multi.clone()));
         self.options = next.options;
         self.optgroups = next.optgroups;
+        self.value_binding = next.value_binding;
         self.disabled = next.disabled;
         self.placeholder = next.placeholder;
         self.multiple = next.multiple;
         self.search = next.search;
+        if let Some((selected, selected_multi)) = controlled_selection {
+            self.selected = selected;
+            self.selected_multi = selected_multi;
+        }
         let row_count = self.dropdown_row_count();
         self.dropdown_scroll.clamp_to_content(
             row_count,
