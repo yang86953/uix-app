@@ -13,7 +13,8 @@ fn large_table() -> Table {
             TableColumn::new("Status", 80.0),
         ])
         .rows(rows)
-        .row_height(28.0)
+        .virtual_scroll(true)
+        .virtual_row_height(28.0)
 }
 
 #[test]
@@ -23,14 +24,22 @@ fn table_scroll_range_limits_visible_rows() {
         .last_frame
         .set(Some(Rect::new(0.0, 0.0, 320.0, 120.0)));
     let viewport_h = table.body_viewport_height();
-    let (start, end) = table
-        .body_scroll
-        .scroll_range(table.rows.len(), table.row_h, viewport_h);
+    let (start, end) = table.visible_row_range(viewport_h);
     assert_eq!(start, 0);
     assert!(
         end - start < 100,
         "virtual scroll should expose a small window"
     );
+}
+
+#[test]
+fn table_without_virtual_scroll_keeps_the_full_row_range() {
+    let rows = (0..100).map(|i| vec![i.to_string()]).collect::<Vec<_>>();
+    let table = Table::new()
+        .columns(vec![TableColumn::new("Value", 120.0)])
+        .rows(rows);
+
+    assert_eq!(table.visible_row_range(120.0), (0, 100));
 }
 
 #[test]

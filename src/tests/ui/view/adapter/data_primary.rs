@@ -58,6 +58,7 @@ fn reconcile_table_preserves_runtime_selection_and_syncs_config() {
                 .sortable(true)
                 .selection(true)
                 .bordered(true)
+                .virtual_scroll(true)
                 .page_size(8),
         ),
     );
@@ -95,6 +96,7 @@ fn reconcile_table_preserves_runtime_selection_and_syncs_config() {
             checked_rows: vec![0],
             empty_text: "No rows".to_string(),
             page_size: 8,
+            virtual_scroll: true,
         }
     );
 }
