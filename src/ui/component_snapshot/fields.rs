@@ -472,6 +472,7 @@ pub enum SnapshotFields {
         checked_rows: Vec<usize>,
         empty_text: String,
         page_size: usize,
+        virtual_scroll: bool,
     },
     SelectableList {
         items: Vec<SelectableItem>,

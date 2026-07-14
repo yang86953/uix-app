@@ -86,6 +86,35 @@ fn expandable_builder_forwards_documented_table_flags() {
             sortable: true,
             selection: true,
             bordered: true,
+            virtual_scroll: false,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn expandable_builder_forwards_virtual_scroll_policy() {
+    let tree = ViewAdapter::build(
+        Table::new()
+            .rows(vec![vec!["Ada".to_owned()]])
+            .expandable(48.0, |_row| crate::ui::view::label("Details"))
+            .virtual_scroll(true)
+            .virtual_row_height(36.0),
+    );
+    let root = tree.root_id().expect("table root");
+    let table = tree
+        .get(root)
+        .expect("table node")
+        .component()
+        .as_any()
+        .downcast_ref::<Table>()
+        .expect("Table component");
+
+    assert!(matches!(
+        table.snapshot_fields(),
+        SnapshotFields::Table {
+            row_h: 36.0,
+            virtual_scroll: true,
             ..
         }
     ));

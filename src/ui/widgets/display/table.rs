@@ -95,6 +95,7 @@ component! {
         current_page: Cell<usize>,
         page_size: usize,
         pending_change: RefCell<Option<String>>,
+        virtual_scroll: bool,
         pub(crate) body_scroll: VirtualListScroll,
         scroll_delta_strip: Cell<(f32, f32)>,
         pub(crate) last_frame: Cell<Option<Rect>>,
@@ -465,6 +466,7 @@ impl Table {
             current_page: Cell::new(0),
             page_size: 20,
             pending_change: RefCell::new(None),
+            virtual_scroll: false,
             body_scroll: VirtualListScroll::new(),
             scroll_delta_strip: Cell::new((0.0, 0.0)),
             last_frame: Cell::new(None),
@@ -498,6 +500,16 @@ impl Table {
     }
     pub fn row_height(mut self, h: f32) -> Self {
         self.row_h = h;
+        self
+    }
+    /// 是否仅遍历表体视口及 overscan 范围内的行。
+    pub fn virtual_scroll(mut self, enabled: bool) -> Self {
+        self.virtual_scroll = enabled;
+        self
+    }
+    /// 设置虚拟滚动使用的固定行高；不会隐式开启虚拟滚动。
+    pub fn virtual_row_height(mut self, height: f32) -> Self {
+        self.row_h = height;
         self
     }
     pub fn selected_row(&self) -> Option<usize> {
@@ -605,7 +617,10 @@ impl Table {
             }
     }
 
-    fn visible_row_range(&self, viewport_height: f32) -> (usize, usize) {
+    pub(crate) fn visible_row_range(&self, viewport_height: f32) -> (usize, usize) {
+        if !self.virtual_scroll {
+            return (0, self.rows.len());
+        }
         let mut logical_offset = self.body_scroll.scroll_offset();
         if self.expandable {
             if let Some(expanded) = self.expanded_row.get() {
@@ -652,6 +667,7 @@ impl Table {
             checked_rows: self.checked_rows.clone(),
             empty_text: self.empty_text.clone(),
             page_size: self.page_size,
+            virtual_scroll: self.virtual_scroll,
         }
     }
 
@@ -667,6 +683,7 @@ impl Table {
         self.bordered = next.bordered;
         self.empty_text = next.empty_text;
         self.page_size = next.page_size;
+        self.virtual_scroll = next.virtual_scroll;
         if self.selection {
             self.checked_rows.retain(|row| *row < self.rows.len());
         } else {
@@ -732,6 +749,18 @@ impl TableBuilder {
     }
 
     pub fn row_height(mut self, height: f32) -> Self {
+        self.table.row_h = height;
+        self
+    }
+
+    /// 是否仅遍历表体视口及 overscan 范围内的行。
+    pub fn virtual_scroll(mut self, enabled: bool) -> Self {
+        self.table.virtual_scroll = enabled;
+        self
+    }
+
+    /// 设置虚拟滚动使用的固定行高；不会隐式开启虚拟滚动。
+    pub fn virtual_row_height(mut self, height: f32) -> Self {
         self.table.row_h = height;
         self
     }
