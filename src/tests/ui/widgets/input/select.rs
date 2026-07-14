@@ -145,3 +145,161 @@ fn searchable_factory_and_external_state_reconcile_are_structural() {
         SnapshotFields::Select { search: true, .. }
     ));
 }
+
+#[test]
+fn searchable_filters_case_insensitively_and_selects_original_option() {
+    let options = ["Alpha", "Beta", "Alpine"];
+    let selected = State::new(String::new());
+    let mut select = Select::searchable().options(&options).value(&selected);
+
+    assert!(select
+        .as_text_input()
+        .expect("searchable Select text capability")
+        .accepts_text_input());
+    select.open();
+    assert_eq!(
+        select.on_event(&SystemEvent::TextInput {
+            text: "ALP".to_owned(),
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(select.visible_option_indices(), vec![0, 2]);
+    assert_eq!(select.dropdown_row_count(), 2);
+    assert!(matches!(
+        select.snapshot_fields(),
+        SnapshotFields::Select {
+            search_query,
+            ..
+        } if search_query == "ALP"
+    ));
+    assert_eq!(
+        select
+            .snapshot_fields()
+            .accessibility()
+            .state
+            .value_text
+            .as_deref(),
+        Some("ALP")
+    );
+
+    assert_eq!(
+        select.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(10.0, 70.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(selected.get(), "Alpine");
+    assert_eq!(
+        select
+            .snapshot_fields()
+            .accessibility()
+            .state
+            .value_text
+            .as_deref(),
+        Some("Alpine")
+    );
+}
+
+#[test]
+fn searchable_backspace_updates_results_and_keeps_an_empty_row() {
+    let mut select = Select::searchable().options(["Alpha", "Beta"]);
+    select.open();
+    let _ = select.on_event(&SystemEvent::TextInput {
+        text: "zz".to_owned(),
+    });
+    assert!(select.visible_option_indices().is_empty());
+    assert_eq!(select.dropdown_row_count(), 1);
+
+    let _ = select.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Backspace,
+        mods: KeyMod::NONE,
+    });
+    assert!(matches!(
+        select.snapshot_fields(),
+        SnapshotFields::Select {
+            search_query,
+            ..
+        } if search_query == "z"
+    ));
+    assert_eq!(select.dropdown_row_count(), 1);
+}
+
+#[test]
+fn searchable_reconcile_preserves_query_and_enter_selects_first_match() {
+    let selected = State::new(String::new());
+    let mut select = Select::searchable()
+        .options(["Alpha", "Beta", "Gamma"])
+        .value(&selected);
+    select.open();
+    let _ = select.on_event(&SystemEvent::TextInput {
+        text: "et".to_owned(),
+    });
+
+    select.sync_from(
+        Select::searchable()
+            .options(["Alpha", "Beta", "Delta"])
+            .value(&selected),
+    );
+    assert_eq!(select.visible_option_indices(), vec![1]);
+    let _ = select.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Enter,
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(selected.get(), "Beta");
+    assert!(!select.is_open());
+    assert!(select.is_present());
+    assert!(!WidgetAnimation::update_animation(&mut select, 1.0));
+    assert!(!select.is_present());
+    assert!(matches!(
+        select.snapshot_fields(),
+        SnapshotFields::Select {
+            search_query,
+            ..
+        } if search_query.is_empty()
+    ));
+}
+
+#[test]
+fn grouped_search_maps_duplicate_labels_to_their_original_indices() {
+    let selected = State::new(String::new());
+    let mut select = Select::searchable()
+        .optgroups(vec![
+            OptGroup::new("First").add("Same"),
+            OptGroup::new("Second").add("Same"),
+        ])
+        .value(&selected);
+    select.open();
+    let _ = select.on_event(&SystemEvent::TextInput {
+        text: "same".to_owned(),
+    });
+
+    assert_eq!(select.visible_option_indices(), vec![0, 1]);
+    assert_eq!(select.dropdown_row_count(), 4);
+    let _ = select.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(10.0, 32.0 + 3.0 * 28.0 + 1.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(select.current_value().as_deref(), Some("Same"));
+    assert_eq!(selected.get(), "Same");
+    assert!(matches!(
+        select.snapshot_fields(),
+        SnapshotFields::Select { selected: 1, .. }
+    ));
+}
+
+#[test]
+fn plain_select_does_not_request_platform_text_input() {
+    assert!(!Select::new()
+        .as_text_input()
+        .expect("Select text capability")
+        .accepts_text_input());
+    assert!(!Select::searchable()
+        .disabled(true)
+        .as_text_input()
+        .expect("searchable Select text capability")
+        .accepts_text_input());
+}

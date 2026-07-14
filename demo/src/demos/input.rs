@@ -54,17 +54,19 @@ pub fn page_input(ctx: &DemoCtx<'_>) -> ViewNode {
         )
         .section("Select")
         .push(
-            demo_row(36.0).child(
-                Select::new()
-                    .options(vec!["选项 1", "选项 2", "选项 3"])
-                    .default_selected(1),
-            ),
+            demo_row(36.0)
+                .child(
+                    Select::new()
+                        .options(vec!["选项 1", "选项 2", "选项 3"])
+                        .default_selected(1),
+                )
+                .child(Select::multiple().options(vec!["多选 A", "多选 B", "多选 C"])),
         )
         .push(labeled_row(
             tk,
             36.0,
-            "Select (100)",
-            Select::new()
+            "Select 搜索 (100)",
+            Select::searchable()
                 .options((0..100).map(|i| format!("选项 {i}")).collect::<Vec<_>>())
                 .default_selected(0),
         ))

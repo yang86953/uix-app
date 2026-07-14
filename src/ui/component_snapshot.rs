@@ -700,6 +700,7 @@ pub enum SnapshotFields {
         placeholder: String,
         multiple: bool,
         search: bool,
+        search_query: String,
     },
     AutoComplete {
         placeholder: String,
@@ -1080,6 +1081,8 @@ impl SnapshotFields {
                 placeholder,
                 disabled,
                 multiple,
+                open,
+                search_query,
                 ..
             } => {
                 let options = if optgroups.is_empty() {
@@ -1090,7 +1093,7 @@ impl SnapshotFields {
                         .flat_map(|group| group.options.iter().map(String::as_str))
                         .collect()
                 };
-                let value_text = if *multiple {
+                let selected_value = if *multiple {
                     let selected = selected_multi
                         .iter()
                         .filter_map(|index| options.get(*index).copied())
@@ -1098,6 +1101,11 @@ impl SnapshotFields {
                     (!selected.is_empty()).then(|| selected.join(", "))
                 } else {
                     options.get(*selected).map(|option| (*option).to_owned())
+                };
+                let value_text = if !*open || search_query.is_empty() {
+                    selected_value
+                } else {
+                    Some(search_query.clone())
                 };
                 AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
                     .with_state(AccessibilityState {
