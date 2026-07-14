@@ -9,6 +9,26 @@ use crate::native::traits::input::ControlSize;
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use std::rc::Rc;
+
+/// Modal 内容回调上下文；关闭请求只作用于持有该上下文的 Modal。
+#[derive(Clone)]
+pub struct ModalContext {
+    close_requested: Rc<Cell<bool>>,
+}
+
+impl ModalContext {
+    fn new() -> Self {
+        Self {
+            close_requested: Rc::new(Cell::new(false)),
+        }
+    }
+
+    /// 在 Modal 子树的事件回调中请求关闭当前 Modal。
+    pub fn close(&self) {
+        self.close_requested.set(true);
+    }
+}
 
 component! {
     /// Modal dialog.
@@ -23,6 +43,7 @@ component! {
         footer_visible: bool,
         centered: bool,
         overlay: bool,
+        context_close_requested: Option<Rc<Cell<bool>>>,
         last_win_w: Cell<f32>,
         last_win_h: Cell<f32>,
         pub(crate) transition: TransitionPlayer,
@@ -236,7 +257,13 @@ component! {
 
     dirty_bounds => (&self, frame: Rect) -> Rect {
         if self.transition_dirty {
-            frame
+            let surface_w = self.last_win_w.get();
+            let surface_h = self.last_win_h.get();
+            if self.overlay && surface_w > 0.0 && surface_h > 0.0 {
+                Rect::new(0.0, 0.0, surface_w, surface_h)
+            } else {
+                frame
+            }
         } else {
             Rect::zero()
         }
@@ -256,6 +283,7 @@ impl Modal {
             footer_visible: true,
             centered: true,
             overlay: false,
+            context_close_requested: None,
             last_win_w: Cell::new(0.0),
             last_win_h: Cell::new(0.0),
             transition: TransitionPlayer::new(presets::modal_enter()),
@@ -269,9 +297,17 @@ impl Modal {
         self
     }
 
-    pub fn show(mut self) -> Self {
-        self.open();
-        self
+    /// 构建默认打开的声明式 Modal；内容可通过 [`ModalContext::close`] 关闭它。
+    pub fn show<V>(content: impl FnOnce(ModalContext) -> V) -> ModalBuilder
+    where
+        V: crate::ui::view::View,
+    {
+        let context = ModalContext::new();
+        let content = crate::ui::view::View::build(content(context.clone()));
+        let mut modal = Self::new("").visible(true).overlay(true);
+        modal.footer_visible = false;
+        modal.context_close_requested = Some(context.close_requested);
+        ModalBuilder { modal, content }
     }
 
     pub fn size(mut self, w: f32, h: f32) -> Self {
@@ -370,6 +406,7 @@ impl Modal {
         self.footer_visible = next.footer_visible;
         self.centered = next.centered;
         self.overlay = next.overlay;
+        self.context_close_requested = next.context_close_requested;
     }
 
     fn dialog_rect_for_event(&self) -> Rect {
@@ -387,6 +424,12 @@ impl Modal {
 
     pub(crate) fn is_present(&self) -> bool {
         self.visible || self.closing
+    }
+
+    pub(crate) fn take_context_close_request(&self) -> bool {
+        self.context_close_requested
+            .as_ref()
+            .is_some_and(|requested| requested.replace(false))
     }
 
     fn transition_opacity(&self) -> f32 {
@@ -430,5 +473,82 @@ impl Modal {
             centered: self.centered,
             overlay: self.overlay,
         }
+    }
+}
+
+/// `Modal::show` 返回的声明式构建器。
+pub struct ModalBuilder {
+    modal: Modal,
+    content: crate::ui::view::ViewNode,
+}
+
+impl ModalBuilder {
+    pub fn title(mut self, title: impl Into<String>) -> Self {
+        self.modal.title = title.into();
+        self
+    }
+
+    pub fn width(mut self, width: f32) -> Self {
+        self.modal.width = width.max(0.0);
+        self
+    }
+
+    pub fn height(mut self, height: f32) -> Self {
+        self.modal.height = height.max(0.0);
+        self
+    }
+
+    pub fn size(mut self, width: f32, height: f32) -> Self {
+        self.modal.width = width.max(0.0);
+        self.modal.height = height.max(0.0);
+        self
+    }
+
+    pub fn modal_size(mut self, size: ControlSize) -> Self {
+        self.modal = self.modal.modal_size(size);
+        self
+    }
+
+    pub fn closable(mut self, closable: bool) -> Self {
+        self.modal.closable = closable;
+        self
+    }
+
+    pub fn mask_closable(mut self, mask_closable: bool) -> Self {
+        self.modal.mask_closable = mask_closable;
+        self
+    }
+
+    pub fn footer_visible(mut self, footer_visible: bool) -> Self {
+        self.modal.footer_visible = footer_visible;
+        self
+    }
+
+    pub fn centered(mut self, centered: bool) -> Self {
+        self.modal.centered = centered;
+        self
+    }
+
+    pub fn overlay(mut self, overlay: bool) -> Self {
+        self.modal.overlay = overlay;
+        self
+    }
+}
+
+impl crate::ui::view::View for ModalBuilder {
+    fn build(self) -> crate::ui::view::ViewNode {
+        crate::ui::view::ViewNode::new(self.modal, vec![self.content])
+    }
+}
+
+impl crate::ui::IntoWidgetNode for ModalBuilder {
+    fn into_node(self) -> crate::ui::core::widget::WidgetNode {
+        crate::ui::view::ViewAdapter::expand(crate::ui::view::View::build(self))
+    }
+}
+
+impl From<ModalBuilder> for crate::ui::view::ViewNode {
+    fn from(builder: ModalBuilder) -> Self {
+        crate::ui::view::View::build(builder)
     }
 }

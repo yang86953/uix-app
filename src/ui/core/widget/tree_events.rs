@@ -111,9 +111,11 @@ impl WidgetTree {
     }
 
     fn overlay_target_at(&self, pos: Point) -> Option<WidgetId> {
-        self.overlay_stack
+        let owner = self
+            .overlay_stack
             .hit_test(pos.x, pos.y)
-            .map(|entry| entry.owner())
+            .map(|entry| entry.owner())?;
+        self.hit_test_internal(owner, pos).or(Some(owner))
     }
 
     fn intercept_top_overlay_outside_pointer_down(&mut self, pos: Point) -> Option<EventResult> {
@@ -836,11 +838,47 @@ impl WidgetTree {
 
     pub fn dispatch_semantic_event(&mut self, event: &mut SemanticEvent) -> EventResult {
         let path = self.semantic_path_to_root(event.target);
-        self.handler_table.dispatch_path(&path, event)
+        let result = self.handler_table.dispatch_path(&path, event);
+        self.apply_modal_context_requests(&path);
+        result
     }
 
     pub fn dispatch_semantic(&mut self, mut event: SemanticEvent) -> EventResult {
         self.dispatch_semantic_event(&mut event)
+    }
+
+    fn apply_modal_context_requests(&mut self, path: &[WidgetId]) {
+        let requested: Vec<WidgetId> = path
+            .iter()
+            .copied()
+            .filter(|&id| {
+                self.get(id)
+                    .and_then(|node| {
+                        node.component()
+                            .as_any()
+                            .downcast_ref::<crate::ui::widgets::Modal>()
+                    })
+                    .is_some_and(|modal| modal.take_context_close_request())
+            })
+            .collect();
+        if requested.is_empty() {
+            return;
+        }
+
+        for id in requested {
+            if let Some(node) = self.get_mut(id) {
+                if let Some(modal) = node
+                    .component_mut()
+                    .as_any_mut()
+                    .downcast_mut::<crate::ui::widgets::Modal>()
+                {
+                    modal.close();
+                    node.set_active(true);
+                }
+            }
+        }
+        self.mark_full_frame_dirty();
+        self.rebuild_widget_overlays();
     }
 
     fn translate_pointer_event(event: &SystemEvent, frame: Rect) -> SystemEvent {
