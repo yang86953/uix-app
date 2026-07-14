@@ -11,23 +11,25 @@ use crate::demos::{build_page, DemoCtx};
 use std::cell::Cell;
 use std::rc::Rc;
 
-fn sidebar_group_label(tk: &DesignTokens, text: &str) -> ViewNode {
+fn sidebar_group_label(_tk: &DesignTokens, text: &str) -> ViewNode {
     label(text)
         .font_size(11.0)
-        .fg(tk.color_text_quaternary)
+        .color(ColorValue::Neutral(NeutralRole::TextQuaternary))
         .margin(EdgeInsets::new(16.0, 14.0, 12.0, 6.0))
 }
 
-fn sidebar_brand(tk: &DesignTokens) -> ViewNode {
-    row((
-        Icon::new("box").size(22.0),
-        column((
-            label("UIX Demo").font_size(17.0).fg(tk.color_text),
+fn sidebar_brand(_tk: &DesignTokens) -> ViewNode {
+    row([
+        embed(Icon::new("box").size(22.0)),
+        column_fit([
+            label("UIX Demo")
+                .font_size(17.0)
+                .color(ColorValue::Neutral(NeutralRole::Text)),
             label("Component Showcase")
                 .font_size(11.0)
-                .fg(tk.color_text_tertiary),
-        )),
-    ))
+                .color(ColorValue::Neutral(NeutralRole::TextTertiary)),
+        ]),
+    ])
     .align(AlignItems::Center)
     .gap(10.0)
     .padding(EdgeInsets::new(16.0, 20.0, 12.0, 16.0))
@@ -45,7 +47,8 @@ fn sidebar_nav_item(
         .icon(icon)
         .width(SIDEBAR_W - 16.0)
         .height(36.0);
-    item.margin(EdgeInsets::new(8.0, 0.0, 8.0, 0.0))
+    embed(item)
+        .margin(EdgeInsets::new(8.0, 0.0, 8.0, 0.0))
         .on_semantic(SemanticKind::Change, move |event| {
             if let Some(value) = event.text_payload() {
                 if let Ok(index) = value.parse::<usize>() {
@@ -58,7 +61,7 @@ fn sidebar_nav_item(
 
 fn sidebar(active: State<usize>, tk: &DesignTokens) -> ViewNode {
     let shared: SharedActive = Rc::new(Cell::new(active.get()));
-    let mut items: Vec<ViewNode> = vec![sidebar_brand(tk), Divider::new()];
+    let mut items = vec![sidebar_brand(tk), embed(Divider::new())];
     for (group_name, indices) in SIDEBAR_GROUPS {
         items.push(sidebar_group_label(tk, group_name));
         for &page_idx in *indices {
@@ -67,47 +70,46 @@ fn sidebar(active: State<usize>, tk: &DesignTokens) -> ViewNode {
         }
     }
     items.push(label("").flex_grow(1.0));
-    items.push(Divider::new());
+    items.push(embed(Divider::new()));
     items.push(
         label("cargo run --bin uix-demo")
             .font_size(10.0)
-            .fg(tk.color_text_quaternary)
+            .color(ColorValue::Neutral(NeutralRole::TextQuaternary))
             .padding(EdgeInsets::new(12.0, 16.0, 2.0, 8.0)),
     );
     items.push(
         label("UIX v0.1.0")
             .font_size(11.0)
-            .fg(tk.color_text_quaternary)
+            .color(ColorValue::Neutral(NeutralRole::TextQuaternary))
             .padding(EdgeInsets::new(2.0, 16.0, 16.0, 8.0)),
     );
-    column(items).width(SIDEBAR_W).bg(tk.color_bg_elevated)
+    column_fit(items)
+        .width(SIDEBAR_W)
+        .bg(ColorValue::Neutral(NeutralRole::BgElevated))
 }
 
 fn header_bar(
     active: &State<usize>,
     timer_ticks: &State<u32>,
     theme_control: &ThemeControl,
-    tk: &DesignTokens,
 ) -> ViewNode {
     let active_for_title = active.clone();
     let ticks = timer_ticks.clone();
-    column((
-        row((
-            active_for_title
-                .map_text(move |idx| {
-                    let (_, title) = PAGE_TITLES[idx];
-                    title.trim().to_string()
-                })
-                .font_size(16.0)
-                .fg(tk.color_text),
+    column_fit([
+        row([
+            dynamic_label(move || {
+                let idx = active_for_title.get();
+                let (_, title) = PAGE_TITLES[idx];
+                title.trim().to_string()
+            })
+            .font_size(16.0)
+            .color(ColorValue::Neutral(NeutralRole::Text)),
             label("").flex_grow(1.0),
-            Tag::new("live").color(TagColor::Success),
-            ticks
-                .map_text(|n| format!("{}s", n))
+            embed(Tag::new("live").color(TagColor::Success)),
+            dynamic_label(move || format!("{}s", ticks.get()))
                 .font_size(12.0)
-                .fg(tk.color_text_tertiary),
-            ThemeToggle::new()
-                .dark(theme_control.is_dark())
+                .color(ColorValue::Neutral(NeutralRole::TextTertiary)),
+            embed(ThemeToggle::new().dark(theme_control.is_dark()))
                 .on_click_fn({
                     let theme_control = theme_control.clone();
                     move || {
@@ -115,14 +117,14 @@ fn header_bar(
                     }
                 })
                 .automation_id("theme-toggle"),
-        ))
+        ])
         .align(AlignItems::Center)
         .gap(12.0)
         .height(48.0)
         .padding(EdgeInsets::new(20.0, 0.0, 16.0, 0.0))
-        .bg(tk.color_bg_container),
-        Divider::new(),
-    ))
+        .bg(ColorValue::Neutral(NeutralRole::BgContainer)),
+        embed(Divider::new()),
+    ])
 }
 
 fn page_body(
@@ -134,8 +136,8 @@ fn page_body(
     runtime_count: &State<i32>,
     theme_control: &ThemeControl,
 ) -> ViewNode {
-    column((
-        header_bar(&active, timer_ticks, theme_control, tk),
+    column([
+        header_bar(&active, timer_ticks, theme_control),
         page_content(
             active,
             tk,
@@ -145,9 +147,9 @@ fn page_body(
             runtime_count,
             theme_control,
         ),
-    ))
+    ])
     .flex_grow(1.0)
-    .bg(tk.color_bg_layout)
+    .bg(ColorValue::Neutral(NeutralRole::BgLayout))
 }
 
 fn page_shell(
@@ -164,10 +166,10 @@ fn page_shell(
     let ctx = DemoCtx::new(tk, timer_ticks, anim_time, Some(active))
         .with_counters(home_count, runtime_count)
         .with_theme_control(theme_control);
-    column((
-        page_heading(tk, icon, title.trim()).key(format!("heading-{idx}")),
+    column([
+        page_heading(icon, title.trim()).key(format!("heading-{idx}")),
         build_page(idx, &ctx).key(format!("body-{idx}")),
-    ))
+    ])
     .key(format!("page-{idx}"))
     .flex_grow(1.0)
     .padding(EdgeInsets::new(8.0, 24.0, 16.0, 24.0))
@@ -204,8 +206,8 @@ fn app_shell_with_counters(
     theme_control: &ThemeControl,
 ) -> ViewNode {
     let tk = DesignTokens::antd_light();
-    column((
-        row((
+    column([
+        row([
             sidebar(active.clone(), &tk),
             page_body(
                 active,
@@ -216,21 +218,21 @@ fn app_shell_with_counters(
                 runtime_count,
                 theme_control,
             ),
-        ))
+        ])
         .flex_grow(1.0),
-        row((
-            Icon::new("terminal").size(12.0),
+        row([
+            embed(Icon::new("terminal").size(12.0)),
             space(6.0),
             label("UIX GUI 演示 — 侧边栏切换页面 · --cli 查看无窗口 API")
                 .font_size(11.0)
-                .fg(tk.color_text_tertiary),
-        ))
+                .color(ColorValue::Neutral(NeutralRole::TextTertiary)),
+        ])
         .padding(EdgeInsets::new(6.0, 12.0, 6.0, 12.0))
-        .bg(tk.color_fill_tertiary)
-        .border(1.0, tk.color_border_secondary),
-    ))
+        .bg(ColorValue::Neutral(NeutralRole::FillTertiary))
+        .border(1.0, ColorValue::Neutral(NeutralRole::BorderSecondary)),
+    ])
     .flex_grow(1.0)
-    .bg(tk.color_bg_layout)
+    .bg(ColorValue::Neutral(NeutralRole::BgLayout))
 }
 
 #[cfg(test)]
@@ -267,9 +269,13 @@ pub fn run(agent_control: bool) {
                     ticks.update(|v| *v = v.wrapping_add(1));
                 })
                 .detach();
+            // 动画样例改走 WidgetAnimation（Spin 等）；不再全局 16ms 探活，
+            // 否则 RegisteredActive 永不 DeepIdle，且曾把 orphan State 绑成整树 reconcile。
             if std::env::var_os("UIX_PERF_PROBE").is_some() {
                 info_fn("PERF_SCENARIO=startup scheduled");
                 let page = active.clone();
+                // Delays are wall-clock from on_start; first paint can take seconds,
+                // so keep later scenarios well after that cost settles.
                 handle
                     .run_after(Duration::from_millis(5000), {
                         let page = page.clone();

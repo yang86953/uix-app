@@ -2,7 +2,7 @@
 
 use uix::prelude::*;
 
-use crate::common::page::{PageBuilder, INNER_W};
+use crate::common::page::{demo_row, PageBuilder, INNER_W};
 use crate::common::showcase::labeled_row;
 use crate::demos::context::DemoCtx;
 
@@ -29,30 +29,24 @@ pub fn page_input(ctx: &DemoCtx<'_>) -> ViewNode {
         .gap()
         .section("Input — 尺寸")
         .push(
-            row((
-                Input::new("Small...").size(ControlSize::Small),
-                Input::new("Medium...").size(ControlSize::Medium),
-                Input::new("Large...").size(ControlSize::Large),
-            ))
-            .height(32.0)
-            .align(AlignItems::Center)
-            .gap(8.0),
+            demo_row(32.0)
+                .child(Input::new("Small...").size(ControlSize::Small))
+                .child(Input::new("Medium...").size(ControlSize::Medium))
+                .child(Input::new("Large...").size(ControlSize::Large)),
         )
         .section("InputNumber")
         .push(
-            row((
-                InputNumber::new("数量").min(0.0).max(100.0).step(1.0),
-                InputNumber::new("价格").min(0.0).max(999.0).step(0.5),
-            ))
-            .height(36.0)
-            .align(AlignItems::Center)
-            .gap(12.0),
+            demo_row(36.0)
+                .child(InputNumber::new("数量").min(0.0).max(100.0).step(1.0))
+                .child(InputNumber::new("价格").min(0.0).max(999.0).step(0.5)),
         )
         .section("Select")
         .push(
-            Select::new()
-                .options(vec!["选项 1", "选项 2", "选项 3"])
-                .selected(1),
+            demo_row(36.0).child(
+                Select::new()
+                    .options(vec!["选项 1", "选项 2", "选项 3"])
+                    .selected(1),
+            ),
         )
         .push(labeled_row(
             tk,
@@ -107,45 +101,35 @@ pub fn page_input(ctx: &DemoCtx<'_>) -> ViewNode {
         ))
         .section("Checkbox / Radio / Switch")
         .push(
-            row((
-                Checkbox::new("选项 A").checked(true),
-                Checkbox::new("选项 B"),
-                Checkbox::new("禁用").disabled(true),
-            ))
-            .height(30.0)
-            .align(AlignItems::Center)
-            .gap(16.0),
+            demo_row(30.0)
+                .child(Checkbox::new("选项 A").checked(true))
+                .child(Checkbox::new("选项 B"))
+                .child(Checkbox::new("禁用").disabled(true)),
         )
         .push(
-            Radio::new()
-                .options(vec!["苹果", "香蕉", "樱桃"])
-                .selected(1),
+            demo_row(32.0).child(
+                Radio::new()
+                    .options(vec!["苹果", "香蕉", "樱桃"])
+                    .selected(1),
+            ),
         )
         .push(
-            row((
-                Switch::new().checked(true),
-                Switch::new().checked(false),
-                Switch::new().checked(true).disabled(true),
-            ))
-            .height(30.0)
-            .align(AlignItems::Center)
-            .gap(12.0),
+            demo_row(30.0)
+                .child(Switch::new().checked(true))
+                .child(Switch::new().checked(false))
+                .child(Switch::new().checked(true).disabled(true)),
         )
         .section("Slider / Rate")
-        .push(Slider::new().range(0.0, 100.0).step(5.0).value(42.0))
+        .push(demo_row(30.0).child(Slider::new().range(0.0, 100.0).step(5.0).value(42.0)))
         .push(
-            row((
-                Rate::new().value(3),
-                Rate::new().count(7).value(5),
-                Rate::new().value(2).allow_half(),
-            ))
-            .height(30.0)
-            .align(AlignItems::Center)
-            .gap(16.0),
+            demo_row(30.0)
+                .child(Rate::new().value(3))
+                .child(Rate::new().count(7).value(5))
+                .child(Rate::new().value(2).allow_half()),
         )
         .section("DatePicker / TimePicker / ColorPicker")
-        .push(DatePicker::new("选择日期").value(DateValue::new(2026, 6, 20)))
-        .push(TimePicker::new("选择时间").value(TimeValue::new(14, 30)))
+        .push(demo_row(36.0).child(DatePicker::new("选择日期").value(DateValue::new(2026, 6, 20))))
+        .push(demo_row(36.0).child(TimePicker::new("选择时间").value(TimeValue::new(14, 30))))
         .push(labeled_row(
             tk,
             36.0,
@@ -154,31 +138,20 @@ pub fn page_input(ctx: &DemoCtx<'_>) -> ViewNode {
         ))
         .section("Segmented")
         .push(
-            Segmented::new()
-                .options(vec!["每日", "每周", "每月", "每年"])
-                .selected(2),
+            demo_row(36.0).child(
+                Segmented::new()
+                    .options(vec!["每日", "每周", "每月", "每年"])
+                    .selected(2),
+            ),
         )
         .section("Form / FormItem")
         .push(
-            column((
-                Form::new()
-                    .label_width(80.0)
-                    .gap(8.0)
-                    .layout(FormLayout::Vertical),
-                FormItem::new("用户名")
-                    .name("user")
-                    .required(true)
-                    .help("必填"),
-                FormItem::new("邮箱")
-                    .name("email")
-                    .status(ValidateStatus::Success),
-                FormItem::new("密码")
-                    .name("pwd")
-                    .status(ValidateStatus::Error),
-            ))
-            .width(INNER_W)
-            .height(200.0)
-            .gap(8.0),
+            tree! { Container::new().size(INNER_W, 200.0).dir(FlexDirection::Column).gap(8.0) => [
+                Form::new().label_width(80.0).gap(8.0).layout(FormLayout::Vertical).into_node(),
+                FormItem::new("用户名").name("user").required(true).help("必填").into_node(),
+                FormItem::new("邮箱").name("email").status(ValidateStatus::Success).into_node(),
+                FormItem::new("密码").name("pwd").status(ValidateStatus::Error).into_node(),
+            ]},
         )
         .build()
 }
