@@ -138,11 +138,15 @@ pub(crate) fn graphics_failure_is_error(failure: &GraphicsFailure) -> bool {
     !matches!(failure, GraphicsFailure::Occluded(_))
 }
 
+pub(crate) fn graphics_failure_diagnostic(failure: &GraphicsFailure) -> String {
+    failure.error().what()
+}
+
 pub(super) fn report_graphics_frame_failure(failure: &GraphicsFailure) {
     if graphics_failure_is_error(failure) {
         crate::core::log::error_fn(format!(
             "[WindowDriver] graphics frame failed: {}",
-            failure.error().short_what()
+            graphics_failure_diagnostic(failure)
         ));
     } else {
         crate::core::log::debug_fn(
@@ -161,7 +165,7 @@ pub(super) fn report_graphics_resize_error(context: &str, result: crate::core::R
     match result {
         Ok(()) => true,
         Err(error) => {
-            crate::core::log::warn_fn(format!("{context}: {}", error.short_what()));
+            crate::core::log::warn_fn(format!("{context}: {}", error.what()));
             false
         }
     }
