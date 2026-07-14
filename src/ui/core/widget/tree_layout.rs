@@ -909,6 +909,7 @@ impl WidgetTree {
         I: IntoIterator<Item = WidgetId>,
     {
         let mut updates = Vec::new();
+        let mut widget_overlays_changed = false;
         for id in ids {
             let Some(frame) = self.active_animation_frame(id) else {
                 updates.push((id, false));
@@ -928,11 +929,37 @@ impl WidgetTree {
             if dirty.w > 0.0 && dirty.h > 0.0 {
                 self.invalidate_paint_rect(id, dirty);
             }
+            widget_overlays_changed |= !self.widget_overlay_is_current(id);
             updates.push((id, still_active));
         }
-        if updates.iter().any(|(_, still_active)| !still_active) {
+        if widget_overlays_changed || updates.iter().any(|(_, still_active)| !still_active) {
             self.rebuild_widget_overlays();
         }
         updates
+    }
+
+    fn widget_overlay_is_current(&self, id: WidgetId) -> bool {
+        let desired = self
+            .get(id)
+            .filter(|node| node.visible())
+            .and_then(|node| node.overlay_entry(id, node.frame()));
+        let current: Vec<_> = self
+            .overlay_stack
+            .iter()
+            .filter(|entry| !entry.is_managed() && entry.owner() == id)
+            .collect();
+
+        match (desired, current.as_slice()) {
+            (None, []) => true,
+            (Some(desired), [current]) => {
+                desired.kind() == current.kind()
+                    && desired.bounds_rect() == current.bounds_rect()
+                    && desired.z_index_value() == current.z_index_value()
+                    && desired.is_modal() == current.is_modal()
+                    && desired.dismisses_on_outside() == current.dismisses_on_outside()
+                    && desired.traps_focus() == current.traps_focus()
+            }
+            _ => false,
+        }
     }
 }
