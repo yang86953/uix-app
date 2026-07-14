@@ -10,15 +10,15 @@ use windows::core::{
     implement, ComObject, Error as WinError, Interface, Ref, Result as WinResult, BOOL, GUID,
     HRESULT, PCWSTR, PWSTR,
 };
-use windows::Win32::Foundation::{HWND, POINT, RECT};
+use windows::Win32::Foundation::{E_INVALIDARG, HWND, POINT, RECT};
 use windows::Win32::UI::TextServices::{
     ITextStoreACP, ITextStoreACPSink, ITextStoreACP_Impl, ITfCompositionView,
-    ITfContextOwnerCompositionSink, ITfContextOwnerCompositionSink_Impl, TEXT_STORE_LOCK_FLAGS,
-    TS_E_NOLOCK, TS_E_SYNCHRONOUS, TS_IAS_NOQUERY, TS_IAS_QUERYONLY, TS_LF_READWRITE, TS_RT_PLAIN,
-    TS_RUNINFO, TS_SELECTION_ACP, TS_SS_NOHIDDENTEXT, TS_SS_TRANSITORY, TS_STATUS, TS_TEXTCHANGE,
+    ITfContextOwnerCompositionSink, ITfContextOwnerCompositionSink_Impl, TS_E_NOLOCK,
+    TS_E_SYNCHRONOUS, TS_IAS_NOQUERY, TS_IAS_QUERYONLY, TS_RT_PLAIN, TS_RUNINFO, TS_SELECTION_ACP,
+    TS_SS_NOHIDDENTEXT, TS_SS_TRANSITORY, TS_STATUS, TS_S_ASYNC, TS_TEXTCHANGE,
 };
 
-pub(crate) use super::tsf_document::{TsfEventSink, TsfStoreState};
+pub(crate) use super::tsf_document::{TsfEventSink, TsfLockKind, TsfLockRequest, TsfStoreState};
 use crate::native::backends::windows::tsf_session::tsf_composition_events;
 use crate::native::traits::event::UiEvent;
 
@@ -45,11 +45,29 @@ fn lock_err() -> WinError {
     WinError::from(TS_E_NOLOCK)
 }
 
-fn require_lock(state: &TsfStoreState) -> WinResult<()> {
-    if state.locked {
+fn require_read_lock(state: &TsfStoreState) -> WinResult<()> {
+    if state.has_read_lock() {
         Ok(())
     } else {
         Err(lock_err())
+    }
+}
+
+fn require_write_lock(state: &TsfStoreState) -> WinResult<()> {
+    if state.has_write_lock() {
+        Ok(())
+    } else {
+        Err(lock_err())
+    }
+}
+
+fn notify_lock_granted(sink: Option<&ITextStoreACPSink>, kind: TsfLockKind) -> HRESULT {
+    let Some(sink) = sink else {
+        return HRESULT(0);
+    };
+    match unsafe { sink.OnLockGranted(kind.flags()) } {
+        Ok(()) => HRESULT(0),
+        Err(error) => error.code(),
     }
 }
 
@@ -93,29 +111,35 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
     }
 
     fn RequestLock(&self, dwlockflags: u32) -> WinResult<HRESULT> {
-        let sink = {
+        let (sink, request) = {
             let mut state = self
                 .state
                 .lock()
                 .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
-            if state.locked {
-                return Ok(TS_E_SYNCHRONOUS);
-            }
-            state.locked = true;
-            state.acp_sink.clone()
+            let request = state.begin_lock(dwlockflags);
+            (state.acp_sink.clone(), request)
         };
-        let session_hr = if let Some(sink) = sink {
-            match unsafe { sink.OnLockGranted(TEXT_STORE_LOCK_FLAGS(dwlockflags)) } {
-                Ok(()) => HRESULT(0),
-                Err(err) => err.code(),
-            }
-        } else {
-            HRESULT(0)
+
+        let kind = match request {
+            TsfLockRequest::Grant(kind) => kind,
+            TsfLockRequest::PendingWrite => return Ok(TS_S_ASYNC),
+            TsfLockRequest::RejectSynchronous => return Ok(TS_E_SYNCHRONOUS),
         };
-        if let Ok(mut state) = self.state.lock() {
-            state.locked = false;
+
+        let session_hr = notify_lock_granted(sink.as_ref(), kind);
+        let pending = self
+            .state
+            .lock()
+            .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?
+            .complete_lock();
+        if let Some(pending_kind) = pending {
+            let _ = notify_lock_granted(sink.as_ref(), pending_kind);
+            let _ = self
+                .state
+                .lock()
+                .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?
+                .complete_lock();
         }
-        let _ = dwlockflags & TS_LF_READWRITE.0;
         Ok(session_hr)
     }
 
@@ -148,11 +172,14 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         pselection: *mut TS_SELECTION_ACP,
         pcfetched: *mut u32,
     ) -> WinResult<()> {
+        if pcfetched.is_null() || (ulcount > 0 && pselection.is_null()) {
+            return Err(WinError::from(E_INVALIDARG));
+        }
         let state = self
             .state
             .lock()
             .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
-        require_lock(&state)?;
+        require_read_lock(&state)?;
         let mut fetched = 0u32;
         if ulcount > 0 && ulindex == 0 {
             unsafe {
@@ -167,11 +194,14 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
     }
 
     fn SetSelection(&self, ulcount: u32, pselection: *const TS_SELECTION_ACP) -> WinResult<()> {
+        if ulcount > 0 && pselection.is_null() {
+            return Err(WinError::from(E_INVALIDARG));
+        }
         let mut state = self
             .state
             .lock()
             .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
-        require_lock(&state)?;
+        require_write_lock(&state)?;
         if ulcount > 0 {
             let sel = unsafe { *pselection };
             state.sel_start = state.clamp_acp(sel.acpStart);
@@ -196,7 +226,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
             .state
             .lock()
             .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
-        require_lock(&state)?;
+        require_read_lock(&state)?;
         let start = state.clamp_acp(acpstart) as usize;
         let end = if acpend == -1 {
             state.text.len()
@@ -239,8 +269,14 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
             .state
             .lock()
             .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
-        require_lock(&state)?;
-        let insert = unsafe { std::slice::from_raw_parts(pchtext.0, cch as usize) };
+        require_write_lock(&state)?;
+        let insert = if cch == 0 {
+            &[][..]
+        } else if pchtext.0.is_null() {
+            return Err(WinError::from(E_INVALIDARG));
+        } else {
+            unsafe { std::slice::from_raw_parts(pchtext.0, cch as usize) }
+        };
         Ok(state.replace_range(acpstart, acpend, insert))
     }
 
@@ -292,7 +328,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
             .state
             .lock()
             .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
-        require_lock(&state)?;
+        require_write_lock(&state)?;
         let start = state.sel_start;
         let end = state.sel_end;
         if dwflags & TS_IAS_QUERYONLY != 0 {
@@ -302,8 +338,10 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
             }
             return Ok(());
         }
-        let insert = if cch == 0 || pchtext.0.is_null() {
+        let insert = if cch == 0 {
             &[][..]
+        } else if pchtext.0.is_null() {
+            return Err(WinError::from(E_INVALIDARG));
         } else {
             unsafe { std::slice::from_raw_parts(pchtext.0, cch as usize) }
         };
@@ -398,6 +436,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
             .state
             .lock()
             .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
+        require_read_lock(&state)?;
         Ok(state.end_acp())
     }
 
@@ -415,6 +454,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
             .state
             .lock()
             .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
+        require_read_lock(&state)?;
         Ok(state.end_acp())
     }
 
@@ -430,6 +470,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
             .state
             .lock()
             .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
+        require_read_lock(&state)?;
         unsafe {
             *prc = state.cursor;
             *pfclipped = false.into();
