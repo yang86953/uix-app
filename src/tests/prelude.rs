@@ -21,8 +21,8 @@ pub use crate::ui::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute, ClickEvent,
     ComponentConfigSnapshot, ComponentHandle, HandlerId, HandlerOptions, HandlerRegistration,
     IntoWidgetNode, SemanticPayload, SnapshotCollapsePanel, SnapshotField, SnapshotSource,
-    SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue, SystemEventKind,
-    WidgetChildren,
+    SnapshotTableColumn, SnapshotTableColumnGroup, SnapshotTransferItem, SnapshotTreeNode,
+    SnapshotValue, SystemEventKind, WidgetChildren,
 };
 pub use crate::ui::{
     Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus, BarChart,
@@ -133,6 +133,7 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<SnapshotFields>();
     assert_exported::<dyn SnapshotSource>();
     assert_exported::<SnapshotTableColumn>();
+    assert_exported::<SnapshotTableColumnGroup>();
     assert_exported::<SnapshotTransferItem>();
     assert_exported::<SnapshotTreeNode>();
     assert_exported::<SnapshotValue>();

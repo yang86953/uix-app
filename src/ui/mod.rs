@@ -36,8 +36,8 @@ pub use component_handle::ComponentHandle;
 pub use component_snapshot::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute,
     ComponentConfigSnapshot, SelectionSnapshot, SnapshotCollapsePanel, SnapshotField,
-    SnapshotFields, SnapshotSource, SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode,
-    SnapshotValue,
+    SnapshotFields, SnapshotSource, SnapshotTableColumn, SnapshotTableColumnGroup,
+    SnapshotTransferItem, SnapshotTreeNode, SnapshotValue,
 };
 pub use core::children::WidgetChildren;
 pub(crate) use core::widget::WidgetTree;

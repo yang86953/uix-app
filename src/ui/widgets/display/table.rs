@@ -6,11 +6,12 @@ use crate::ui::foundation::virtual_scroll::VirtualListScroll;
 use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::{
     ComponentId, EventResult, LayoutChild, SemanticEvent, SnapshotFields, SnapshotTableColumn,
-    SystemEvent, WidgetTree,
+    SnapshotTableColumnGroup, SystemEvent, WidgetTree,
 };
 use std::cell::{Cell, RefCell};
 
 mod geometry;
+mod header;
 
 use geometry::{ColumnZone, TableColumnGeometry};
 
@@ -68,6 +69,36 @@ impl TableColumn {
     }
 }
 
+/// 一组共享上层表头的列；`column` 用于声明不参与分组的单列。
+#[derive(Debug, Clone, PartialEq)]
+pub struct TableColumnGroup {
+    pub title: Option<String>,
+    pub columns: Vec<TableColumn>,
+}
+
+impl TableColumnGroup {
+    pub fn new(title: impl Into<String>, columns: Vec<TableColumn>) -> Self {
+        Self {
+            title: Some(title.into()),
+            columns,
+        }
+    }
+
+    pub fn column(column: TableColumn) -> Self {
+        Self {
+            title: None,
+            columns: vec![column],
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ColumnGroupRange {
+    title: Option<String>,
+    start: usize,
+    len: usize,
+}
+
 /// 表格行数据。
 pub type TableRow = Vec<String>;
 
@@ -92,6 +123,7 @@ pub struct TableBuilder {
 component! {
     pub struct Table {
         columns: Vec<TableColumn>,
+        column_groups: Vec<ColumnGroupRange>,
         pub(crate) rows: Vec<TableRow>,
         pub(crate) row_h: f32,
         header_h: f32,
@@ -125,7 +157,7 @@ component! {
         let w: f32 = self.columns.iter().map(|c| c.width).sum::<f32>() + self.selection_width();
         let extra = if self.expandable && self.expanded_row.get().is_some() { self.expand_height } else { 0.0 };
         let body_h = self.rows.len() as f32 * self.row_h + extra;
-        let h = self.header_h + body_h;
+        let h = self.total_header_height() + body_h;
         constraints.clamp(Size::new(w, h.max(60.0)))
     }
 
@@ -176,7 +208,7 @@ component! {
             }
             SystemEvent::PointerDown { pos, .. } => {
                 if self.selection && pos.x < self.selection_width() {
-                    if pos.y < self.header_h {
+                    if pos.y < self.total_header_height() {
                         if self.checked_rows.len() == self.rows.len() {
                             self.checked_rows.clear();
                         } else {
@@ -193,7 +225,7 @@ component! {
                         return EventResult::Handled;
                     }
                 }
-                if pos.y < self.header_h {
+                if self.leaf_header_contains(pos.y, self.column_at_x(pos.x)) {
                     if let Some(ci) = self.column_at_x(pos.x) {
                         let col = &self.columns[ci];
                         if self.sortable || col.sortable {
@@ -215,7 +247,7 @@ component! {
                         }
                     }
                 }
-                if pos.y >= self.header_h {
+                if pos.y >= self.total_header_height() {
                     if let Some(row) = self.row_index_at_y(pos.y) {
                         if self.expandable && self.expand_toggle_hit(pos.x) {
                             let next = (self.expanded_row.get() != Some(row)).then_some(row);
@@ -229,7 +261,7 @@ component! {
                 EventResult::NotHandled
             }
             SystemEvent::PointerMove { pos, .. } => {
-                if pos.y >= self.header_h {
+                if pos.y >= self.total_header_height() {
                     let row = self.row_index_at_y(pos.y);
                     self.hover_row.set(row.filter(|&r| r < self.rows.len()));
                 } else {
@@ -252,9 +284,7 @@ component! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.last_frame.set(Some(frame));
-        let loc = crate::ui::locale::use_locale();
         let bg = ctx.tokens().color_bg_elevated();
-        let header_bg = ctx.tokens().color_fill_tertiary();
         let border = ctx.tokens().color_border();
         let text_color = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_secondary();
@@ -280,82 +310,8 @@ component! {
             return;
         }
 
-        // 表头
-        let header_rect = Rect::new(frame.x, y, frame.w, self.header_h);
-        ctx.fill_rect(header_rect, header_bg, r);
-        let hdr_y = ctx.visual_center_y(header_rect, 13.0);
-        if self.selection {
-            let all_checked = self.checked_rows.len() == self.rows.len();
-            ctx.draw_text(
-                if all_checked { "☑" } else { "☐" },
-                Point::new(frame.x + 8.0, hdr_y),
-                text_sec,
-                14.0,
-            );
-            if self.bordered {
-                ctx.fill_rect(
-                    Rect::new(
-                        frame.x + self.selection_width() - 1.0,
-                        header_rect.y,
-                        1.0,
-                        header_rect.h,
-                    ),
-                    border,
-                    None,
-                );
-            }
-        }
-        for zone in [ColumnZone::Middle, ColumnZone::Left, ColumnZone::Right] {
-            let Some(clip) = column_geometry.clip_for(zone, header_rect.y, header_rect.h) else {
-                continue;
-            };
-            ctx.canvas_2d().push_clip(clip);
-            for laid_out in column_geometry
-                .columns
-                .iter()
-                .filter(|column| column.zone == zone)
-            {
-                let col = &self.columns[laid_out.index];
-                ctx.draw_text(
-                    &col.title,
-                    Point::new(laid_out.x + 8.0, hdr_y),
-                    text_color,
-                    13.0,
-                );
-                if self.sortable || col.sortable {
-                    let indicator = match col.sort_direction {
-                        SortDirection::Asc => loc.table_sort_asc,
-                        SortDirection::Desc => loc.table_sort_desc,
-                        SortDirection::None => "",
-                    };
-                    let indicator_x = laid_out.x + laid_out.width - 24.0;
-                    if !indicator.is_empty() {
-                        ctx.draw_text(indicator, Point::new(indicator_x, hdr_y), primary, 11.0);
-                    } else {
-                        ctx.draw_text(
-                            loc.table_sort_unsorted,
-                            Point::new(indicator_x, hdr_y),
-                            text_sec,
-                            10.0,
-                        );
-                    }
-                }
-                if self.bordered {
-                    ctx.fill_rect(
-                        Rect::new(
-                            laid_out.x + laid_out.width - 1.0,
-                            header_rect.y,
-                            1.0,
-                            header_rect.h,
-                        ),
-                        border,
-                        None,
-                    );
-                }
-            }
-            ctx.canvas_2d().pop_clip();
-        }
-        y += self.header_h;
+        header::paint(self, Rect::new(frame.x, y, frame.w, frame.h), ctx, &column_geometry);
+        y += self.total_header_height();
 
         // 分隔线
         ctx.fill_rect(Rect::new(frame.x, y, frame.w, 1.0), border, None);
@@ -476,11 +432,12 @@ component! {
     }
 
     children_clip => (&self, frame: Rect) -> Option<Rect> {
+        let header_height = self.total_header_height();
         Some(Rect::new(
             frame.x,
-            frame.y + self.header_h + 1.0,
+            frame.y + header_height + 1.0,
             frame.w,
-            (frame.h - self.header_h - 1.0).max(0.0),
+            (frame.h - header_height - 1.0).max(0.0),
         ))
     }
 
@@ -493,7 +450,10 @@ component! {
         let Some(child) = children.first() else {
             return Vec::new();
         };
-        let y = frame.y + self.header_h + 1.0 + (expanded_row + 1) as f32 * self.row_h;
+        let y = frame.y
+            + self.total_header_height()
+            + 1.0
+            + (expanded_row + 1) as f32 * self.row_h;
         vec![(
             child.id,
             Rect::new(frame.x, y, frame.w, self.expand_height),
@@ -529,6 +489,7 @@ impl Table {
     pub fn new() -> Self {
         Self {
             columns: Vec::new(),
+            column_groups: Vec::new(),
             rows: Vec::new(),
             row_h: 28.0,
             header_h: 32.0,
@@ -556,6 +517,12 @@ impl Table {
     }
     pub fn columns(mut self, cols: Vec<TableColumn>) -> Self {
         self.columns = cols;
+        self.column_groups.clear();
+        self
+    }
+    /// 使用分组定义替换当前列；`TableColumnGroup::column` 声明跨两层表头的单列。
+    pub fn column_groups(mut self, groups: Vec<TableColumnGroup>) -> Self {
+        (self.columns, self.column_groups) = flatten_column_groups(groups);
         self
     }
     pub fn rows(mut self, rows: Vec<TableRow>) -> Self {
@@ -639,6 +606,32 @@ impl Table {
         }
     }
 
+    fn total_header_height(&self) -> f32 {
+        if self.column_groups.is_empty() {
+            self.header_h
+        } else {
+            self.header_h * 2.0
+        }
+    }
+
+    fn leaf_header_contains(&self, y: f32, column: Option<usize>) -> bool {
+        if y < 0.0 || y >= self.total_header_height() {
+            return false;
+        }
+        if self.column_groups.is_empty() {
+            return true;
+        }
+        let Some(column) = column else {
+            return false;
+        };
+        let grouped = self
+            .column_groups
+            .iter()
+            .find(|group| column >= group.start && column < group.start + group.len)
+            .is_some_and(|group| group.title.is_some());
+        !grouped || y >= self.header_h
+    }
+
     fn column_geometry(&self, origin_x: f32, viewport_width: f32) -> TableColumnGeometry {
         TableColumnGeometry::new(
             &self.columns,
@@ -672,7 +665,7 @@ impl Table {
     pub(crate) fn body_viewport_height(&self) -> f32 {
         self.last_frame
             .get()
-            .map(|f| (f.h - self.header_h - 1.0).max(self.row_h))
+            .map(|f| (f.h - self.total_header_height() - 1.0).max(self.row_h))
             .unwrap_or(300.0)
     }
 
@@ -685,10 +678,11 @@ impl Table {
     }
 
     fn row_index_at_y(&self, pos_y: f32) -> Option<usize> {
-        if pos_y < self.header_h {
+        let header_height = self.total_header_height();
+        if pos_y < header_height {
             return None;
         }
-        let mut local_y = pos_y - self.header_h + self.body_scroll.scroll_offset();
+        let mut local_y = pos_y - header_height + self.body_scroll.scroll_offset();
         if local_y < 0.0 {
             return None;
         }
@@ -767,6 +761,15 @@ impl Table {
                 .iter()
                 .map(SnapshotTableColumn::from_table_column)
                 .collect(),
+            column_groups: self
+                .column_groups
+                .iter()
+                .map(|group| SnapshotTableColumnGroup {
+                    title: group.title.clone(),
+                    start: group.start,
+                    len: group.len,
+                })
+                .collect(),
             rows: self.rows.clone(),
             row_h: self.row_h,
             header_h: self.header_h,
@@ -785,6 +788,7 @@ impl Table {
 
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.columns = merge_table_columns(self.columns.as_slice(), next.columns, next.sortable);
+        self.column_groups = next.column_groups;
         self.rows = next.rows;
         self.row_h = next.row_h;
         self.header_h = next.header_h;
@@ -836,6 +840,13 @@ impl TableBuilder {
 
     pub fn columns(mut self, columns: Vec<TableColumn>) -> Self {
         self.table.columns = columns;
+        self.table.column_groups.clear();
+        self
+    }
+
+    /// 使用分组定义替换当前列；`TableColumnGroup::column` 声明跨两层表头的单列。
+    pub fn column_groups(mut self, groups: Vec<TableColumnGroup>) -> Self {
+        (self.table.columns, self.table.column_groups) = flatten_column_groups(groups);
         self
     }
 
@@ -943,4 +954,24 @@ fn merge_table_columns(
             next_col
         })
         .collect()
+}
+
+fn flatten_column_groups(
+    groups: Vec<TableColumnGroup>,
+) -> (Vec<TableColumn>, Vec<ColumnGroupRange>) {
+    let mut columns = Vec::new();
+    let mut ranges = Vec::new();
+    for group in groups {
+        let start = columns.len();
+        let len = group.columns.len();
+        columns.extend(group.columns);
+        if len > 0 {
+            ranges.push(ColumnGroupRange {
+                title: group.title,
+                start,
+                len,
+            });
+        }
+    }
+    (columns, ranges)
 }
