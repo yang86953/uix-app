@@ -14,7 +14,7 @@ cargo run --features agent-control --bin uix-demo -- --agent-control
 
 Linux GUI 需 Wayland。
 
-`--agent-control` 仅用于本机开发验收，必须与 `agent-control` feature 同时启用；它会按 [`使用 · Agent Bridge`](../docs/使用.md#agent-bridge开发预览) 启动当前用户私有端点。该参数不能与 `--cli` 同时使用。
+`--agent-control` 仅用于本机开发验收，必须与 `agent-control` feature 同时启用；它会按 [`使用 · Agent Bridge`](../docs/使用.md#附agent-bridge开发预览) 启动当前用户私有端点。该参数不能与 `--cli` 同时使用。
 
 ## 目录结构
 
