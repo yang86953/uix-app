@@ -188,18 +188,21 @@ fn builtin_snapshots_exclude_runtime_state() {
     });
     assert_eq!(button.snapshot_fields(), before);
 
-    let input = Input::new("Search")
+    let input = Input::textarea()
+        .placeholder("Search")
         .with_value("runtime text")
         .size(ControlSize::Large)
-        .password(true)
-        .textarea(true);
+        .rows(4)
+        .max_length(120);
     assert!(matches!(
         input.snapshot_fields(),
         SnapshotFields::Input {
             ref placeholder,
             input_size: ControlSize::Large,
-            password: true,
+            password: false,
             textarea: true,
+            textarea_rows: 4,
+            max_length: Some(120),
             ..
         } if placeholder == "Search"
     ));

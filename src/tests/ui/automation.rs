@@ -110,7 +110,7 @@ fn type_text_updates_accessible_value_and_redacts_passwords() {
     assert_eq!(plain.text("profile.name").unwrap(), "Belldandy");
 
     let mut password = TestApp::new((320.0, 120.0), || {
-        embed(Input::new("Password").password(true)).automation_id("profile.password")
+        embed(Input::password().placeholder("Password")).automation_id("profile.password")
     });
     password
         .type_text("profile.password", "not-exported")
