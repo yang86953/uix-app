@@ -12,10 +12,11 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+use windows::Win32::UI::Input::KeyboardAndMouse::VK_TAB;
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetWindowThreadProcessId, IsIconic, IsZoomed, PostMessageW, SetWindowPos,
     ShowWindowAsync, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
-    SW_MAXIMIZE, SW_MINIMIZE, WM_CLOSE,
+    SW_MAXIMIZE, SW_MINIMIZE, WM_CLOSE, WM_KEYDOWN, WM_KEYUP,
 };
 
 const START_TIMEOUT: Duration = Duration::from_secs(45);
@@ -208,6 +209,30 @@ impl DemoProcess {
         });
     }
 
+    fn post_native_tab(&self) {
+        let window = self.window_handle();
+        unsafe {
+            // SAFETY: 目标 HWND 属于仍存活的测试子进程；键盘消息只携带值类型参数。
+            PostMessageW(
+                Some(window),
+                WM_KEYDOWN,
+                WPARAM(VK_TAB.0 as usize),
+                LPARAM(0),
+            )
+        }
+        .expect("post native Tab key-down to demo");
+        unsafe {
+            // SAFETY: bit 30/31 只声明该键此前按下且本消息为释放，不携带借用指针。
+            PostMessageW(
+                Some(window),
+                WM_KEYUP,
+                WPARAM(VK_TAB.0 as usize),
+                LPARAM(0xC000_0001u32 as isize),
+            )
+        }
+        .expect("post native Tab key-up to demo");
+    }
+
     fn window_handle(&self) -> HWND {
         let deadline = Instant::now() + SHUTDOWN_TIMEOUT;
         loop {
@@ -394,6 +419,38 @@ fn wait_until_presentable(
         assert!(
             Instant::now() < deadline,
             "demo window presentable state did not become {expected}"
+        );
+        attempt = attempt.wrapping_add(1);
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn wait_for_focused_node(
+    connection: &mut BufReader<File>,
+    window_id: u64,
+    automation_id: &str,
+    timeout: Duration,
+) {
+    let deadline = Instant::now() + timeout;
+    let mut attempt = 0u32;
+    loop {
+        let request_id = format!("focused-{automation_id}-{attempt}");
+        let snapshot = exchange(
+            connection,
+            json!({
+                "schema": "uix.agent.v1",
+                "request_id": request_id,
+                "type": "snapshot",
+                "window_id": window_id,
+            }),
+        );
+        assert_success(&snapshot, &request_id);
+        if node_by_automation_id(&snapshot["snapshot"], automation_id)["focused"] == true {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "demo focus did not move to {automation_id}"
         );
         attempt = attempt.wrapping_add(1);
         thread::sleep(Duration::from_millis(50));
@@ -603,6 +660,23 @@ fn run_real_gui_scenario(graphics: GraphicsExpectation) {
         json!({ "kind": "focus" }),
     );
     assert_eq!(focused["settled"], true);
+    demo.post_native_tab();
+    wait_for_focused_node(
+        &mut connection,
+        window_id,
+        "home-count-decrement",
+        Duration::from_secs(10),
+    );
+    let native_tab_reset = perform_until_presentable(
+        &demo,
+        &mut connection,
+        window_id,
+        generation,
+        "native-tab-reset",
+        None,
+        json!({ "kind": "press_key", "key": "tab", "modifiers": ["shift"] }),
+    );
+    assert_eq!(native_tab_reset["settled"], true);
     let tabbed = perform_until_presentable(
         &demo,
         &mut connection,
