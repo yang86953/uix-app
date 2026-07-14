@@ -65,6 +65,39 @@ fn control_region_owns_nested_presentation_and_emits_on_release() {
 }
 
 #[test]
+fn control_region_cancels_when_pointer_is_released_outside() {
+    let mut tree = ViewAdapter::build(
+        window_control(WindowControl::Close, label("close"))
+            .width(44.0)
+            .height(32.0),
+    );
+    tree.root_mut()
+        .expect("window control root")
+        .set_frame(Rect::new(0.0, 0.0, 44.0, 32.0));
+    tree.layout();
+
+    tree.dispatch_event(&pointer_event(
+        Point::new(20.0, 16.0),
+        true,
+        MouseButton::Left,
+    ));
+    tree.dispatch_event(&pointer_event(
+        Point::new(80.0, 16.0),
+        false,
+        MouseButton::Left,
+    ));
+    assert!(tree.take_window_actions().is_empty());
+
+    // 之前的外部释放不得留下 armed 状态，让后续孤立 PointerUp 误触发。
+    tree.dispatch_event(&pointer_event(
+        Point::new(20.0, 16.0),
+        false,
+        MouseButton::Left,
+    ));
+    assert!(tree.take_window_actions().is_empty());
+}
+
+#[test]
 fn each_window_control_maps_to_its_platform_neutral_action() {
     let cases = [
         (WindowControl::Minimize, WindowAction::Minimize),

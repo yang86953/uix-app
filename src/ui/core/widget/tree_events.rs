@@ -252,6 +252,10 @@ impl WidgetTree {
                 if let Some(t) = hold {
                     if Some(t) != hit {
                         self.invalidate_paint(t);
+                        // 捕获目标外松开时，先通知指针已离开，再交付最终 PointerUp。
+                        // 组件可据此取消 armed/pressed 状态；真正的 Click 仍只在
+                        // hold == hit 时生成，避免窗口控制等释放即执行的组件误触发。
+                        let _ = self.dispatch_to(t, &SystemEvent::PointerLeave);
                         let _ = self.dispatch_to(t, event);
                     }
                 }
