@@ -168,6 +168,7 @@ impl WindowsTextInput {
         self.tsf.is_some() && self.window_id == Some(window_id)
     }
 
+    #[cfg(test)]
     pub(crate) fn tsf_client_id(&self) -> Option<u32> {
         self.tsf.as_ref().map(TsfSession::client_id)
     }

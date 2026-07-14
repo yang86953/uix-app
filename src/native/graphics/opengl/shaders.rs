@@ -65,6 +65,7 @@ void main() {
 "#;
 
 /// Gaussian blur fragment shader.
+#[cfg(test)]
 pub const BLUR_FRAG: &str = r#"#version 300 es
 precision highp float;
 
