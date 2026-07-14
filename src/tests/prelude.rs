@@ -27,17 +27,17 @@ pub use crate::ui::{
 pub use crate::ui::{
     Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus, BarChart,
     BarData, Breadcrumb, BreadcrumbItem, Button, Calendar, Card, Carousel, Cascader,
-    CascaderOption, CascaderValue, Checkbox, Collapse, CollapsePanel, ColorPicker, Content,
-    DatePicker, DateValue, Descriptions, DescriptionsItem, Divider, DividerDirection,
-    DividerOrientation, Drawer, DrawerPlacement, Dropdown, Empty, FieldDef, FloatButton,
-    FloatButtonBackTop, Footer, Form, FormItem, FormLayout, FormValidationError, FormValidatorKey,
-    FormValidatorTable, Grid, Header, Icon, Image, Input, InputNumber, Label, Layout, LineChart,
-    LineData, List, Mentions, Menu, MenuItem, MenuMode, Message, MessageItem, MessagePlacement,
-    Modal, NavGroup, NavItem, Navigation, NotifPlacement, Notification, NotificationItem, OptGroup,
-    Pagination, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement,
-    PopoverTrigger, ProgressBar, ProgressMode, ProgressType, QRCode, Radio, RadioDirection, Rate,
-    ResultType, ResultView, RichText, RichTextSegment, RichTextStyle, ScrollView, Segmented,
-    Select, SelectableItem, SelectableList, SharedActive, Sider, Skeleton, SkeletonShape, Slider,
+    CascaderOption, CascaderValue, Checkbox, Collapse, CollapsePanel, ColorPicker, Content, Date,
+    DatePicker, Descriptions, DescriptionsItem, Divider, DividerDirection, DividerOrientation,
+    Drawer, DrawerPlacement, Dropdown, Empty, FieldDef, FloatButton, FloatButtonBackTop, Footer,
+    Form, FormItem, FormLayout, FormValidationError, FormValidatorKey, FormValidatorTable, Grid,
+    Header, Icon, Image, Input, InputNumber, Label, Layout, LineChart, LineData, List, Mentions,
+    Menu, MenuItem, MenuMode, Message, MessageItem, MessagePlacement, Modal, NavGroup, NavItem,
+    Navigation, NotifPlacement, Notification, NotificationItem, OptGroup, Pagination, PieChart,
+    PieData, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger,
+    ProgressBar, ProgressMode, ProgressType, QRCode, Radio, RadioDirection, Rate, ResultType,
+    ResultView, RichText, RichTextSegment, RichTextStyle, ScrollView, Segmented, Select,
+    SelectableItem, SelectableList, SharedActive, Sider, Skeleton, SkeletonShape, Slider,
     SortDirection, Space, SpaceSize, Spin, SpinSize, Splitter, Step, StepStatus, Steps, Switch,
     Tab, TabPosition, Table, TableBuilder, TableChange, TableColumn, TableRow, Tabs, Tag, TagColor,
     ThemeToggle, TimePicker, TimeValue, Timeline, TimelineItem, Tooltip, TooltipPlacement,
@@ -166,7 +166,7 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<CascaderOption>();
     assert_exported::<CascaderValue>();
     assert_exported::<CollapsePanel>();
-    assert_exported::<DateValue>();
+    assert_exported::<Date>();
     assert_exported::<DescriptionsItem>();
     assert_exported::<DividerDirection>();
     assert_exported::<DividerOrientation>();

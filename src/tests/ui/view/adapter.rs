@@ -3745,10 +3745,12 @@ fn reconcile_input_preserves_typed_value_and_syncs_placeholder() {
 
 #[test]
 fn reconcile_date_picker_preserves_open_value_and_syncs_placeholder() {
-    use crate::ui::widgets::{DatePicker, DateValue};
+    use crate::ui::widgets::{Date, DatePicker};
 
-    let selected = DateValue::new(2026, 7, 7);
-    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(DatePicker::new("old").value(selected)));
+    let selected = Date::new(2026, 7, 7);
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
+        DatePicker::new().placeholder("old").default_value(selected),
+    ));
     let root_id = tree.root_id().expect("date picker root should exist");
     assert_eq!(
         crate::ui::EventHandler::on_event(
@@ -3767,7 +3769,14 @@ fn reconcile_date_picker_preserves_open_value_and_syncs_placeholder() {
         EventResult::Handled
     );
 
-    ViewAdapter::reconcile_nodes(&mut tree, ViewNode::leaf(DatePicker::new("new")));
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            DatePicker::new()
+                .placeholder("new")
+                .default_value(Date::new(2027, 8, 8)),
+        ),
+    );
 
     let date_picker = tree
         .get(root_id)
@@ -3777,10 +3786,10 @@ fn reconcile_date_picker_preserves_open_value_and_syncs_placeholder() {
         .downcast_ref::<DatePicker>()
         .unwrap();
     assert!(date_picker.is_open());
-    assert_eq!(date_picker.selected(), selected);
+    assert_eq!(date_picker.current_value(), selected);
     assert!(matches!(
         date_picker.snapshot_fields(),
-        SnapshotFields::DatePicker { placeholder } if placeholder == "new"
+        SnapshotFields::DatePicker { placeholder, .. } if placeholder == "new"
     ));
 }
 
