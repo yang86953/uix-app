@@ -85,17 +85,16 @@ impl RecoveringGraphicsEngine {
             | RecoveryAction::UseSoftware => {}
         }
 
+        // 同一 native surface 不能假定可同时持有旧、新两个 live swapchain。
+        // 先完成 checked teardown；失败时不探测 replacement，也不制造第二份资源。
+        if let Err(error) = self.engine.try_shutdown() {
+            let failure = GraphicsFailure::from_error(error);
+            self.record_failure(failure.clone());
+            return Some(RenderOutcome::Failed(failure));
+        }
+
         match (self.rebuilder)(action, self.width.max(1), self.height.max(1)) {
-            Ok(mut replacement) => {
-                if let Err(previous_error) = self.engine.try_shutdown() {
-                    let error = match replacement.try_shutdown() {
-                        Ok(()) => previous_error,
-                        Err(cleanup_error) => cleanup_error.with_source(previous_error),
-                    };
-                    let failure = GraphicsFailure::from_error(error);
-                    self.record_failure(failure.clone());
-                    return Some(RenderOutcome::Failed(failure));
-                }
+            Ok(replacement) => {
                 self.engine = replacement;
                 None
             }

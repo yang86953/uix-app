@@ -8,21 +8,31 @@ use crate::draw::pipeline::RenderMetrics;
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, UpdateStrategy};
 use crate::native::backends::windows::consts::WM_CLOSE;
 use crate::native::backends::windows::ffi::PostMessageW;
+use crate::native::graphics::vulkan::platform::context::accept_device_wait_for_shutdown;
 use crate::native::traits::present::NativeSurfaceHandle;
 use crate::tests::common::*;
 use crate::ui::view::ViewNode;
 use crate::ui::widgets::Container;
+use ash::vk;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 const WIDTH: i32 = 160;
 const HEIGHT: i32 = 120;
 
 struct InjectedDeviceLossEngine {
     inner: Box<dyn GraphicsEngine>,
+    vulkan_lost_wait_teardowns: Option<Arc<AtomicUsize>>,
 }
 
 impl InjectedDeviceLossEngine {
-    fn new(inner: Box<dyn GraphicsEngine>) -> Self {
-        Self { inner }
+    fn new(
+        inner: Box<dyn GraphicsEngine>,
+        vulkan_lost_wait_teardowns: Option<Arc<AtomicUsize>>,
+    ) -> Self {
+        Self {
+            inner,
+            vulkan_lost_wait_teardowns,
+        }
     }
 }
 
@@ -32,6 +42,10 @@ impl GraphicsEngine for InjectedDeviceLossEngine {
     }
 
     fn try_shutdown(&mut self) -> Result<(), Error> {
+        if let Some(teardowns) = &self.vulkan_lost_wait_teardowns {
+            accept_device_wait_for_shutdown(Err(vk::Result::ERROR_DEVICE_LOST))?;
+            teardowns.fetch_add(1, Ordering::Relaxed);
+        }
         self.inner.try_shutdown()
     }
 
@@ -117,13 +131,20 @@ fn device_loss_crosses_real_windows_recipes_and_commits_software_frame() {
     let surface = unsafe { NativeSurfaceHandle::from_raw(hwnd) };
     let bootstrap = bootstrap_graphics_engine(surface, WIDTH, HEIGHT, GraphicsBackend::Auto)
         .unwrap_or_else(|report| panic!("native GPU bootstrap failed: {:?}", report.failures));
+    assert_eq!(bootstrap.selected_recipe.backend, GraphicsBackend::Vulkan);
 
     let trace = Arc::new(Mutex::new(RecoveryTrace::default()));
     let recorded_trace = Arc::clone(&trace);
+    let vulkan_lost_wait_teardowns = Arc::new(AtomicUsize::new(0));
+    let initial_lost_wait_teardowns = Arc::clone(&vulkan_lost_wait_teardowns);
+    let rebuilt_lost_wait_teardowns = Arc::clone(&vulkan_lost_wait_teardowns);
     let mut native_rebuilder =
         graphics_recovery_rebuilder(surface, GraphicsBackend::Auto, bootstrap.selected_recipe);
     let recovering = RecoveringGraphicsEngine::new(
-        Box::new(InjectedDeviceLossEngine::new(bootstrap.engine)),
+        Box::new(InjectedDeviceLossEngine::new(
+            bootstrap.engine,
+            Some(initial_lost_wait_teardowns),
+        )),
         Box::new(move |action, width, height| {
             recorded_trace
                 .lock()
@@ -140,7 +161,15 @@ fn device_loss_crosses_real_windows_recipes_and_commits_software_frame() {
                 .unwrap_or_else(|error| error.into_inner());
             trace.successful_native_rebuilds.push(action);
             trace.next_recipe_succeeded |= action == RecoveryAction::TryNextRecipe;
-            Ok(Box::new(InjectedDeviceLossEngine::new(replacement)))
+            let lost_wait_teardowns = matches!(
+                action,
+                RecoveryAction::RebuildSurface | RecoveryAction::RebuildRecipe
+            )
+            .then(|| Arc::clone(&rebuilt_lost_wait_teardowns));
+            Ok(Box::new(InjectedDeviceLossEngine::new(
+                replacement,
+                lost_wait_teardowns,
+            )))
         }),
     )
     .with_extent(WIDTH, HEIGHT);
@@ -211,6 +240,7 @@ fn device_loss_crosses_real_windows_recipes_and_commits_software_frame() {
         .contains(&RecoveryAction::TryNextRecipe));
     assert!(trace.next_recipe_succeeded);
     drop(trace);
+    assert_eq!(vulkan_lost_wait_teardowns.load(Ordering::Relaxed), 3);
 
     let (_, engine) = session.tree_and_engine_mut();
     assert!(engine.capabilities().uses_external_presenter());
