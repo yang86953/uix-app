@@ -1,12 +1,12 @@
 //! Vulkan instance 与逻辑 device 的显式所有权边界。
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
 use ash::{vk, Entry};
 
-use crate::core::Result;
+use crate::core::{Errc, Error, Result};
 
 use super::adapter::{device_extension_names, QueueSelection, VulkanAdapterInfo};
 use super::context::{loader_err, vk_err};
@@ -89,7 +89,9 @@ impl VulkanRuntime {
     ) -> Result<Rc<VulkanDevice>> {
         let key = (selection.physical_device, selection.family_index);
         if let Some(device) = self.devices.borrow().get(&key).and_then(Weak::upgrade) {
-            return Ok(device);
+            if !device.is_lost() {
+                return Ok(device);
+            }
         }
 
         let device = VulkanDevice::new(Rc::clone(self), selection)?;
@@ -116,6 +118,7 @@ pub(super) struct VulkanDevice {
     info: VulkanAdapterInfo,
     device: ash::Device,
     queue: vk::Queue,
+    lost: Cell<bool>,
 }
 
 impl VulkanDevice {
@@ -143,6 +146,7 @@ impl VulkanDevice {
             info: selection.info,
             device,
             queue,
+            lost: Cell::new(false),
         }))
     }
 
@@ -161,6 +165,48 @@ impl VulkanDevice {
     pub(super) fn queue(&self) -> vk::Queue {
         self.queue
     }
+
+    pub(super) fn ensure_healthy(&self) -> Result<()> {
+        if self.is_lost() {
+            return Err(Error::new(
+                Errc::GraphicsDeviceLost,
+                "VulkanContext: shared logical device is lost",
+            ));
+        }
+        Ok(())
+    }
+
+    pub(super) fn observe<T>(&self, result: Result<T>) -> Result<T> {
+        if result
+            .as_ref()
+            .is_err_and(|error| error.code() == Errc::GraphicsDeviceLost)
+        {
+            self.mark_lost();
+        }
+        result
+    }
+
+    pub(super) fn observe_wait(&self, result: std::result::Result<(), vk::Result>) {
+        if result == Err(vk::Result::ERROR_DEVICE_LOST) {
+            self.mark_lost();
+        }
+    }
+
+    pub(super) fn error(&self, operation: &str, error: vk::Result) -> Error {
+        let error = vk_err(operation, error);
+        if error.code() == Errc::GraphicsDeviceLost {
+            self.mark_lost();
+        }
+        error
+    }
+
+    pub(super) fn mark_lost(&self) {
+        self.lost.set(true);
+    }
+
+    fn is_lost(&self) -> bool {
+        self.lost.get()
+    }
 }
 
 impl Drop for VulkanDevice {
@@ -170,4 +216,10 @@ impl Drop for VulkanDevice {
             self.device.destroy_device(None);
         }
     }
+}
+
+pub(crate) fn staging_size(width: i32, height: i32) -> vk::DeviceSize {
+    (width.max(1) as vk::DeviceSize)
+        .saturating_mul(height.max(1) as vk::DeviceSize)
+        .saturating_mul(4)
 }

@@ -242,6 +242,153 @@ fn windows_vulkan_hardware_resize_readback_and_present() {
 
 #[cfg(windows)]
 #[test]
+#[ignore = "requires a Vulkan-capable Windows driver"]
+fn windows_vulkan_two_surfaces_share_device_and_keep_independent_frames() {
+    let mut platform = crate::native::create_platform().expect("platform");
+    let mut first_window = platform
+        .window_manager()
+        .create_window("Vulkan shared device A", 96, 64)
+        .expect("first window");
+    let mut second_window = platform
+        .window_manager()
+        .create_window("Vulkan shared device B", 128, 72)
+        .expect("second window");
+    first_window.show().expect("show first window");
+    second_window.show().expect("show second window");
+    let _ = platform.event_loop().poll_event(&|_| true);
+
+    let mut first =
+        VulkanContext::new(first_window.native_surface_ptr(), 96, 64).expect("first VulkanContext");
+    let mut second = VulkanContext::new(second_window.native_surface_ptr(), 128, 72)
+        .expect("second VulkanContext");
+    assert_ne!(first.shared_device_identity(), 0);
+    assert_eq!(
+        first.shared_device_identity(),
+        second.shared_device_identity(),
+        "compatible surfaces on one UI thread must reuse the logical device"
+    );
+
+    let first_color = 0xFFB0_2030;
+    let second_color = 0xFF20_A050;
+    let first_pixels = vec![first_color; (first.width() * first.height()) as usize];
+    let second_pixels = vec![second_color; (second.width() * second.height()) as usize];
+    first
+        .present_pixels(
+            &first_pixels,
+            first.width(),
+            first.height(),
+            PresentDamage::Full,
+        )
+        .expect("present first surface");
+    second
+        .present_pixels(
+            &second_pixels,
+            second.width(),
+            second.height(),
+            PresentDamage::Full,
+        )
+        .expect("present second surface");
+    assert_eq!(
+        first.read_pixels(3, 3, 1, 1).expect("first readback"),
+        vec![first_color]
+    );
+    assert_eq!(
+        second.read_pixels(3, 3, 1, 1).expect("second readback"),
+        vec![second_color]
+    );
+
+    first.try_shutdown().expect("shutdown first surface");
+    drop(first);
+    first_window.close().expect("close first window");
+
+    let surviving_color = 0xFF30_6090;
+    let surviving_pixels = vec![surviving_color; (second.width() * second.height()) as usize];
+    second
+        .present_pixels(
+            &surviving_pixels,
+            second.width(),
+            second.height(),
+            PresentDamage::Full,
+        )
+        .expect("shared device must survive first surface shutdown");
+    assert_eq!(
+        second
+            .read_pixels(second.width() - 1, second.height() - 1, 1, 1)
+            .expect("surviving surface readback"),
+        vec![surviving_color]
+    );
+
+    second.try_shutdown().expect("shutdown second surface");
+    drop(second);
+    second_window.close().expect("close second window");
+}
+
+#[cfg(windows)]
+#[test]
+#[ignore = "requires a Vulkan-capable Windows driver"]
+fn windows_vulkan_shared_device_loss_rejects_peers_and_new_context_replaces_it() {
+    let mut platform = crate::native::create_platform().expect("platform");
+    let mut first_window = platform
+        .window_manager()
+        .create_window("Vulkan shared loss A", 64, 48)
+        .expect("first window");
+    let mut second_window = platform
+        .window_manager()
+        .create_window("Vulkan shared loss B", 64, 48)
+        .expect("second window");
+    let mut replacement_window = platform
+        .window_manager()
+        .create_window("Vulkan shared loss replacement", 64, 48)
+        .expect("replacement window");
+
+    let mut first =
+        VulkanContext::new(first_window.native_surface_ptr(), 64, 48).expect("first VulkanContext");
+    let mut second = VulkanContext::new(second_window.native_surface_ptr(), 64, 48)
+        .expect("second VulkanContext");
+    let lost_identity = first.shared_device_identity();
+    assert_eq!(lost_identity, second.shared_device_identity());
+
+    first.mark_shared_device_lost_for_test();
+    let pixels = vec![0xFF11_2233; (second.width() * second.height()) as usize];
+    let error = second
+        .present_pixels(
+            &pixels,
+            second.width(),
+            second.height(),
+            PresentDamage::Full,
+        )
+        .expect_err("a peer must observe shared device loss before submitting");
+    assert_eq!(error.code(), Errc::GraphicsDeviceLost);
+
+    let mut replacement = VulkanContext::new(replacement_window.native_surface_ptr(), 64, 48)
+        .expect("replacement VulkanContext");
+    assert_ne!(replacement.shared_device_identity(), lost_identity);
+    let replacement_pixels =
+        vec![0xFF44_5566; (replacement.width() * replacement.height()) as usize];
+    replacement
+        .present_pixels(
+            &replacement_pixels,
+            replacement.width(),
+            replacement.height(),
+            PresentDamage::Full,
+        )
+        .expect("replacement device present");
+
+    first.try_shutdown().expect("shutdown first lost peer");
+    second.try_shutdown().expect("shutdown second lost peer");
+    replacement
+        .try_shutdown()
+        .expect("shutdown replacement context");
+    drop((first, second, replacement));
+    first_window.close().expect("close first window");
+    second_window.close().expect("close second window");
+    replacement_window
+        .close()
+        .expect("close replacement window");
+}
+
+#[cfg(windows)]
+#[test]
 #[ignore = "requires a Vulkan-capable Windows driver; set UIX_VULKAN_SOAK_SECONDS=900 for the gate"]
 fn windows_vulkan_hardware_resize_present_soak_is_bounded() {
     let mut platform = crate::native::create_platform().expect("platform");

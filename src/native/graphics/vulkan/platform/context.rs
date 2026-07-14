@@ -16,6 +16,7 @@ use crate::native::traits::present::{
 use crate::native::backends::macos::platform as macos_surface;
 
 use super::adapter::{select_queue, VulkanAdapterInfo};
+pub(crate) use super::device::staging_size;
 use super::device::{VulkanDevice, VulkanRuntime};
 use super::drawable::drawable_size;
 use super::surface::{
@@ -163,7 +164,7 @@ impl VulkanContext {
             Ok(pool) => pool,
             Err(err) => {
                 destroy_failed_surface(&surface_loader, surface);
-                return Err(vk_err("vkCreateCommandPool", err));
+                return Err(device_lease.error("vkCreateCommandPool", err));
             }
         };
         let command_alloc = vk::CommandBufferAllocateInfo::default()
@@ -177,7 +178,7 @@ impl VulkanContext {
                     device.destroy_command_pool(command_pool, None);
                 }
                 destroy_failed_surface(&surface_loader, surface);
-                return Err(vk_err("vkAllocateCommandBuffers", err));
+                return Err(device_lease.error("vkAllocateCommandBuffers", err));
             }
         }
         .ok_or_else(|| {
@@ -196,7 +197,7 @@ impl VulkanContext {
                     device.destroy_command_pool(command_pool, None);
                 }
                 destroy_failed_surface(&surface_loader, surface);
-                return Err(vk_err("vkCreateSemaphore image_available", err));
+                return Err(device_lease.error("vkCreateSemaphore image_available", err));
             }
         };
         let render_finished = match unsafe { device.create_semaphore(&semaphore_info, None) } {
@@ -207,7 +208,7 @@ impl VulkanContext {
                     device.destroy_command_pool(command_pool, None);
                 }
                 destroy_failed_surface(&surface_loader, surface);
-                return Err(vk_err("vkCreateSemaphore render_finished", err));
+                return Err(device_lease.error("vkCreateSemaphore render_finished", err));
             }
         };
         let fence_info = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
@@ -220,7 +221,7 @@ impl VulkanContext {
                     device.destroy_command_pool(command_pool, None);
                 }
                 destroy_failed_surface(&surface_loader, surface);
-                return Err(vk_err("vkCreateFence", err));
+                return Err(device_lease.error("vkCreateFence", err));
             }
         };
 
@@ -265,10 +266,11 @@ impl VulkanContext {
             cpu_shadow: Vec::new(),
             shutdown: false,
         };
-        ctx.recreate_swapchain(extent)?;
+        let device = ctx.active_device()?;
+        device.observe(ctx.recreate_swapchain(extent))?;
         ctx.width = ctx.extent.width as i32;
         ctx.height = ctx.extent.height as i32;
-        ctx.recreate_upload_buffer(staging_size(ctx.width, ctx.height))?;
+        device.observe(ctx.recreate_upload_buffer(staging_size(ctx.width, ctx.height)))?;
         crate::core::log::info_fn(format!(
             "VulkanContext: created {}x{} swapchain; {}",
             ctx.width,
@@ -276,6 +278,49 @@ impl VulkanContext {
             ctx.adapter_info.diagnostic_summary()
         ));
         Ok(ctx)
+    }
+
+    fn active_device(&self) -> Result<Rc<VulkanDevice>> {
+        self.device_lease.as_ref().cloned().ok_or_else(|| {
+            Error::new(
+                Errc::InvalidState,
+                "VulkanContext: operation requested after shutdown",
+            )
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn shared_device_identity(&self) -> usize {
+        self.device_lease
+            .as_ref()
+            .map_or(0, |device| Rc::as_ptr(device) as usize)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn mark_shared_device_lost_for_test(&self) {
+        if let Some(device) = self.device_lease.as_ref() {
+            device.mark_lost();
+        }
+    }
+
+    fn resize_active(&mut self, width: i32, height: i32) -> Result<()> {
+        let drawable = drawable_size(self.native_surface, width, height);
+        if drawable.width == self.width && drawable.height == self.height {
+            self.logical_width = drawable.logical_width;
+            self.logical_height = drawable.logical_height;
+            return Ok(());
+        }
+        let extent = vk::Extent2D {
+            width: drawable.width as u32,
+            height: drawable.height as u32,
+        };
+        self.recreate_swapchain(extent)?;
+        self.logical_width = drawable.logical_width;
+        self.logical_height = drawable.logical_height;
+        self.width = self.extent.width as i32;
+        self.height = self.extent.height as i32;
+        self.cpu_shadow.clear();
+        Ok(())
     }
 
     fn recreate_swapchain(&mut self, extent: vk::Extent2D) -> Result<()> {
@@ -729,7 +774,9 @@ impl VulkanContext {
         }
         // 当前 context 的提交在返回前已由 frame fence 排空；device lost 时
         // Vulkan 仍要求显式销毁本窗口拥有的 child object。
+        let device = self.active_device()?;
         let wait_result = unsafe { self.device.device_wait_idle() };
+        device.observe_wait(wait_result);
         accept_device_wait_for_shutdown(wait_result)?;
         unsafe {
             if self.upload.buffer != vk::Buffer::null() {
@@ -779,23 +826,10 @@ impl IGraphicsContext for VulkanContext {
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<()> {
-        let drawable = drawable_size(self.native_surface, width, height);
-        if drawable.width == self.width && drawable.height == self.height {
-            self.logical_width = drawable.logical_width;
-            self.logical_height = drawable.logical_height;
-            return Ok(());
-        }
-        let extent = vk::Extent2D {
-            width: drawable.width as u32,
-            height: drawable.height as u32,
-        };
-        self.recreate_swapchain(extent)?;
-        self.logical_width = drawable.logical_width;
-        self.logical_height = drawable.logical_height;
-        self.width = self.extent.width as i32;
-        self.height = self.extent.height as i32;
-        self.cpu_shadow.clear();
-        Ok(())
+        let device = self.active_device()?;
+        device.ensure_healthy()?;
+        let result = self.resize_active(width, height);
+        device.observe(result)
     }
 
     fn make_current(&mut self) -> Result<()> {
@@ -814,23 +848,28 @@ impl IGraphicsContext for VulkanContext {
     }
 
     fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
-        self.hydrate_cpu_shadow_from_staging()?;
-        let expected = (self.width as usize).saturating_mul(self.height as usize);
-        if self.cpu_shadow.len() != expected {
-            return Err(Error::new(
-                Errc::InvalidState,
-                "VulkanContext: no uploaded frame to read back (cpu_shadow empty)",
-            ));
-        }
-        crop_cpu_shadow(
-            &self.cpu_shadow,
-            self.width,
-            self.height,
-            x,
-            y,
-            width,
-            height,
-        )
+        let device = self.active_device()?;
+        device.ensure_healthy()?;
+        let result = (|| {
+            self.hydrate_cpu_shadow_from_staging()?;
+            let expected = (self.width as usize).saturating_mul(self.height as usize);
+            if self.cpu_shadow.len() != expected {
+                return Err(Error::new(
+                    Errc::InvalidState,
+                    "VulkanContext: no uploaded frame to read back (cpu_shadow empty)",
+                ));
+            }
+            crop_cpu_shadow(
+                &self.cpu_shadow,
+                self.width,
+                self.height,
+                x,
+                y,
+                width,
+                height,
+            )
+        })();
+        device.observe(result)
     }
 
     fn width(&self) -> i32 {
@@ -852,21 +891,28 @@ impl IGraphicsContext for VulkanContext {
         height: i32,
         _damage: PresentDamage,
     ) -> Result<()> {
+        let device = self.active_device()?;
+        device.ensure_healthy()?;
         if width <= 0 || height <= 0 {
             return Ok(());
         }
-        self.upload_pixels(pixels, width, height)?;
-        self.present_uploaded_pixels()
+        let result = self
+            .upload_pixels(pixels, width, height)
+            .and_then(|()| self.present_uploaded_pixels());
+        device.observe(result)
     }
 
     /// Stage a full replace pixel buffer into the upload heap without presenting.
     /// Also refreshes the CPU shadow used by [`Self::read_pixels`] so destination-
     /// dependent IR can round-trip through readback → apply → replace upload.
     fn upload_surface_pixels(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<()> {
+        let device = self.active_device()?;
+        device.ensure_healthy()?;
         if width <= 0 || height <= 0 {
             return Ok(());
         }
-        self.upload_pixels(pixels, width, height)
+        let result = self.upload_pixels(pixels, width, height);
+        device.observe(result)
     }
 }
 
@@ -947,10 +993,4 @@ fn color_subresource_range() -> vk::ImageSubresourceRange {
         .level_count(1)
         .base_array_layer(0)
         .layer_count(1)
-}
-
-pub(crate) fn staging_size(width: i32, height: i32) -> vk::DeviceSize {
-    (width.max(1) as vk::DeviceSize)
-        .saturating_mul(height.max(1) as vk::DeviceSize)
-        .saturating_mul(4)
 }
