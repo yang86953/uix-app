@@ -13,14 +13,14 @@
 #![cfg(windows)]
 #![allow(non_snake_case)]
 
-pub mod bindings;
+pub(crate) mod bindings;
 pub mod clipboard;
 pub mod console;
 pub mod consts;
 pub mod cursor;
 pub mod display;
 pub(crate) mod dpi;
-pub mod ffi;
+pub(crate) mod ffi;
 pub mod file_dialog;
 pub mod filesystem;
 pub(crate) mod frame_pacer;
