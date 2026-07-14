@@ -1,7 +1,11 @@
-//! UIX 演示入口 — GUI（默认）| CLI（--cli）
-//!   cargo run --bin uix-demo          → GUI 多页应用
-//!   cargo run --bin uix-demo -- --cli → CLI 功能域演示
-//!   cargo run --features agent-control --bin uix-demo -- --agent-control
+// ============================================================================
+// UIX 演示入口 — GUI（默认）| CLI（--cli）
+// ============================================================================
+//   cargo run --bin uix-demo          → GUI 多页应用
+//   cargo run --bin uix-demo -- --cli → CLI 功能域演示
+//   cargo run --features agent-control --bin uix-demo -- --agent-control
+//                                      → 启用 Agent Bridge 的 GUI
+// ============================================================================
 
 mod cli;
 mod common;

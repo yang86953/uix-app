@@ -1,5 +1,4 @@
 //! 首页 — 轻量入门与快捷导航。
-//! 使用 [`使用.md`](../../docs/使用.md) 风格。
 
 use uix::prelude::*;
 
@@ -10,32 +9,42 @@ use crate::demos::context::DemoCtx;
 fn nav_tile(
     active: &State<usize>,
     index: usize,
-    icon_name: &str,
+    icon: &str,
     title: &str,
     desc: &str,
     tk: &DesignTokens,
-) -> impl View {
-    column((
-        row((
-            icon(icon_name),
-            label(title).font_size(14.0).fg(tk.color_text),
-        ))
+) -> ViewNode {
+    column_fit([
+        row([
+            embed(Icon::new(icon).size(20.0)),
+            label(title)
+                .font_size(14.0)
+                .color(ColorValue::Neutral(NeutralRole::Text)),
+        ])
+        .align(AlignItems::Center)
         .gap(10.0),
-        label(desc).font_size(12.0).fg(tk.color_text_tertiary),
-    ))
+        space(8.0),
+        label(desc)
+            .font_size(12.0)
+            .color(ColorValue::Neutral(NeutralRole::TextTertiary)),
+    ])
     .width(200.0)
-    .padding(16.0)
-    .bg(tk.color_bg_container)
+    .padding(EdgeInsets::uniform(16.0))
+    .bg(ColorValue::Neutral(NeutralRole::BgContainer))
     .radius(tk.border_radius)
-    .border(1.0, tk.color_border_secondary)
+    .border(1.0, ColorValue::Neutral(NeutralRole::BorderSecondary))
     .on_click(active, move |n| n.set(index))
 }
 
-pub fn page_home(ctx: &DemoCtx<'_>) -> impl View {
+pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
     let tk = ctx.tk;
     let active = ctx
         .active_page
         .expect("home page requires active_page for navigation");
+
+    let nav_app = active.clone();
+    let nav_general = active.clone();
+    let nav_gallery = active.clone();
 
     let count = ctx.home_count();
 
@@ -43,32 +52,37 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> impl View {
         .gap()
         .push_view(panel(
             tk,
-            column((
-                row((
-                    icon("star"),
-                    label("UIX 组件全景").font_size(16.0).fg(tk.color_text),
-                    Tag::new("Demo").color(TagColor::Info),
-                ))
+            column_fit([
+                row([
+                    embed(Icon::new("star").size(18.0)),
+                    label("UIX 组件全景")
+                        .font_size(16.0)
+                        .color(ColorValue::Neutral(NeutralRole::Text)),
+                    embed(Tag::new("Demo").color(TagColor::Info)),
+                ])
+                .align(AlignItems::Center)
                 .gap(10.0),
+                space(8.0),
                 label("侧边栏浏览内置组件；CLI API：`cargo run --bin uix-demo -- --cli`")
                     .font_size(12.0)
-                    .fg(tk.color_text_secondary),
-            )),
+                    .color(ColorValue::Neutral(NeutralRole::TextSecondary)),
+            ]),
         ))
         .block(
             "快速体验",
-            row((
+            row([
                 demo_card(
                     tk,
                     "响应式 State",
                     300.0,
                     140.0,
-                    column((
+                    column_fit((
                         count
                             .map_text(|n| format!("计数: {n}"))
                             .font_size(28.0)
-                            .fg(tk.color_primary)
+                            .color(ColorValue::Palette(PaletteColor::Primary))
                             .automation_id("home-count-value"),
+                        space(12.0),
                         row((
                             button("+1")
                                 .primary()
@@ -96,27 +110,36 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> impl View {
                     "覆盖范围",
                     220.0,
                     140.0,
-                    column((
+                    column_fit([
                         label(format!("{PAGE_COUNT}"))
                             .font_size(36.0)
-                            .fg(tk.color_success),
-                        label("个演示页").font_size(13.0).fg(tk.color_text),
-                        row((
-                            Tag::new("组件").color(TagColor::Success),
-                            Tag::new("运行时").color(TagColor::Info),
-                            Tag::new("主题").color(TagColor::Warning),
-                        ))
-                        .gap(8.0),
-                    )),
+                            .color(ColorValue::Palette(PaletteColor::Success)),
+                        space(4.0),
+                        label("个演示页")
+                            .font_size(13.0)
+                            .color(ColorValue::Neutral(NeutralRole::Text)),
+                        space(10.0),
+                        embed(
+                            // 卡片内容宽 ≈ 220−32；三 Tag+gap 超出时须换行，否则 Space
+                            // flex_shrink=0 会把子项画到固定宽父容器外。
+                            Space::new()
+                                .size(SpaceSize::Small)
+                                .direction(FlexDirection::Row)
+                                .wrap(true)
+                                .child(Tag::new("组件").color(TagColor::Success))
+                                .child(Tag::new("运行时").color(TagColor::Info))
+                                .child(Tag::new("主题").color(TagColor::Warning)),
+                        ),
+                    ]),
                 ),
-            ))
+            ])
             .gap(16.0),
         )
         .block(
             "快捷导航",
-            row((
+            row([
                 nav_tile(
-                    active,
+                    &nav_app,
                     PAGE_APP,
                     "cpu",
                     "应用能力",
@@ -124,7 +147,7 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> impl View {
                     tk,
                 ),
                 nav_tile(
-                    active,
+                    &nav_general,
                     PAGE_GENERAL,
                     "type",
                     "通用组件",
@@ -132,14 +155,14 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> impl View {
                     tk,
                 ),
                 nav_tile(
-                    active,
+                    &nav_gallery,
                     PAGE_GALLERY,
                     "list",
                     "覆盖清单",
                     "矩阵与 backlog",
                     tk,
                 ),
-            ))
+            ])
             .gap(12.0),
         )
         .build()

@@ -1,7 +1,8 @@
 //! CLI 演示 — 按功能域展示 `core` / `native` / `draw` / `ui` / `app` / `data` 能力。
-//! 使用 [`使用.md`](../../docs/使用.md) 风格。
 //!
 //! 运行：`cargo run --bin uix-demo -- --cli`
+
+use std::cell::Cell;
 
 use uix::core::diagnostic::{
     LogMiddleware as SvcLogMiddleware, MiddlewareContext, MiddlewarePipeline, RetryMiddleware,
@@ -49,8 +50,8 @@ pub fn demo_core_types() {
 
 pub fn demo_errors() {
     println!("\n╔══ core：错误处理 ═══╗");
-    // 使用 使用.md 的 Error API
-    let e1 = Error::new(Errc::InvalidArgument, "bad input");
+    println!("  Ok: {:?}", Ok::<i32, Error>(42));
+    let e1 = Error::invalid_arg("bad input");
     println!("  invalid_arg: {}", e1);
     let e2 = Error::not_found("config.json");
     println!("  not_found: {}", e2);
@@ -58,17 +59,12 @@ pub fn demo_errors() {
     println!(
         "  invalid_state: {} .is(InvalidState): {}",
         e3,
-        e3.code() == Errc::InvalidState
+        e3.is(Errc::InvalidState)
     );
-    // 链式错误
     let root = Error::new(Errc::IoError, "disk full");
-    let wrapped = Error::new(Errc::WriteFailure, "write failed").with_source(root);
-    println!("  Chained: {}", wrapped);
-    println!("  root_cause: {}", wrapped.root_cause());
-    // 严重级别
-    let fatal = Error::new(Errc::InvalidState, "窗口已销毁")
-        .set_severity(uix::core::diagnostic::ErrorSeverity::Fatal);
-    println!("  Fatal severity: {:?}", fatal.severity());
+    let chained = Error::new(Errc::WriteFailure, "write failed").with_source(root);
+    println!("  Chained: {}", chained);
+    println!("  root_cause: {}", chained.root_cause());
 }
 
 pub fn demo_middleware() {
@@ -86,36 +82,57 @@ pub fn demo_middleware() {
         c.status_code = 200;
     });
     println!("  Success: ok={} status={}", ctx.succeeded, ctx.status_code);
+    let mut fctx = MiddlewareContext {
+        operation: "GET /fail".into(),
+        ..Default::default()
+    };
+    let att = Cell::new(0u32);
+    p.execute(&mut fctx, move |c| {
+        let n = att.get() + 1;
+        att.set(n);
+        if n >= 3 {
+            c.succeeded = true;
+            c.status_code = 200;
+        } else {
+            c.succeeded = false;
+            c.error_message = format!("fail #{}", n);
+        }
+        println!(
+            "    attempt {}: {}",
+            n,
+            if c.succeeded { "OK" } else { "fail" }
+        );
+    });
+    println!(
+        "  After retry: ok={} retries={}",
+        fctx.succeeded, fctx.retry_count
+    );
 }
 
 pub fn demo_state() {
     println!("\n╔══ ui：响应式状态 ═══╗");
-    // State
     let count = State::new(0i32);
     println!("  State(0) = {}", count.get());
+    count.watch(|v| println!("    ⤷ Watcher: count = {}", v));
     count.set(1);
+    count.set(2);
     count.update(|v| *v += 10);
-    println!("  After set(1) + update(+10): {}", count.get());
-
-    // Computed —— 派生状态
-    let first = State::new("Ada");
-    let last = State::new("Lovelace");
-    let full = Computed::new(move || format!("{} {}", first.get(), last.get()));
-    println!("  Computed: {}", full.get());
-
-    // Effect —— 副作用
-    let effect_count = State::new(0);
-    let _effect = Effect::new({
-        let cnt = effect_count.clone();
-        move || {
-            let v = cnt.get();
-            if v > 0 {
-                info_fn(&format!("Effect 触发: count={v}"));
-            }
-        }
+    println!(
+        "  After set(1,2) + update(+10): {} gen:{}",
+        count.get(),
+        count.generation()
+    );
+    let a = State::new(5);
+    let b = State::new(3);
+    let sum = Computed::new({
+        let a = a.clone();
+        let b = b.clone();
+        move || a.get() + b.get()
     });
-    effect_count.set(1);
-    println!("  Effect: registered, count={}", effect_count.get());
+    println!("  Computed: {}+{}={}", a.get(), b.get(), sum.get());
+    a.set(10);
+    sum.invalidate();
+    println!("  After a=10, invalidate: sum={}", sum.get());
 }
 
 pub fn demo_flex() {
@@ -154,36 +171,21 @@ pub fn demo_theme() {
     println!("\n╔══ ui：主题 (Ant Design 5) ═══╗");
     let l = Theme::antd_light();
     println!(
-        "  Light: primary:{} bg_elevated:{} text:{} dark:{}",
+        "  Light: primary:{} bg:{} surface:{} text:{} dark:{}",
         l.tokens().color_primary(),
         l.tokens().color_bg_elevated(),
+        l.tokens().color_bg_container(),
         l.tokens().color_text(),
         l.tokens().is_dark()
     );
     let d = Theme::antd_dark();
     println!(
-        "  Dark:  primary:{} bg_elevated:{} text:{} dark:{}",
+        "  Dark:  primary:{} bg:{} surface:{} text:{} dark:{}",
         d.tokens().color_primary(),
         d.tokens().color_bg_elevated(),
+        d.tokens().color_bg_container(),
         d.tokens().color_text(),
         d.tokens().is_dark()
-    );
-
-    // 自定义主题
-    let primitives = ThemePrimitives {
-        primary: Color::hex("#722ed1"),
-        success: Color::hex("#52c41a"),
-        warning: Color::hex("#faad14"),
-        error: Color::hex("#ff4d4f"),
-        info: Color::hex("#722ed1"),
-        bg: Color::hex("#f5f5f7"),
-        text: Color::BLACK,
-        border: Color::hex("#e4e4e7"),
-    };
-    let custom = DesignTokens::from_primitives(primitives, false);
-    println!(
-        "  Custom: primary:{} bg:{}",
-        custom.color_primary, custom.color_bg
     );
 }
 
@@ -252,8 +254,8 @@ pub fn demo_graphics_engine() -> Result<(), Error> {
 pub fn demo_di_container() {
     println!("\n╔══ app：依赖注入容器 ═══╗");
     let mut c = DiContainer::new();
-    c.singleton(42i32);
     c.singleton("config_value".to_string());
+    c.singleton(42i32);
     match c.resolve::<String>() {
         Some(v) => println!("  resolved String: {:?}", v),
         None => eprintln!("  resolved String: not found"),
