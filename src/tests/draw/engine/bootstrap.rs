@@ -3,7 +3,7 @@ use crate::draw::engine::bootstrap::ProbeStage;
 use crate::draw::engine::bootstrap::*;
 use crate::draw::engine::factory::create_graphics_engine;
 use crate::native::factory::{gpu_recipe_candidates, GraphicsRecipe};
-use crate::native::traits::present::NativeSurfaceHandle;
+use crate::native::traits::present::{NativeSurfaceHandle, PresentOcclusionSupport};
 use crate::tests::common::*;
 #[cfg(feature = "d3d11")]
 use std::ffi::c_void;
@@ -27,6 +27,7 @@ impl IGraphicsContext for ShutdownTrackingContext {
             backend: GraphicsBackend::D3d11,
             raster: self.raster,
             present: self.present,
+            present_occlusion: PresentOcclusionSupport::Unsupported,
             present_coherency: PresentCoherency::FullOnly,
             device_pixel_ratio: 1.0,
         }
@@ -436,6 +437,10 @@ fn same_api_recipe_probe_falls_through_to_later_recipe() {
     assert_eq!(calls.borrow().as_slice(), &[native_recipe, upload_recipe]);
     assert_eq!(bootstrap.selected, GraphicsBackend::D3d11);
     assert_eq!(bootstrap.selected_recipe, upload_recipe);
+    assert_eq!(
+        bootstrap.present_occlusion,
+        PresentOcclusionSupport::Unsupported
+    );
     assert_eq!(bootstrap.report.failures.len(), 1);
     assert_eq!(bootstrap.report.failures[0].backend, GraphicsBackend::D3d11);
     assert!(bootstrap.report.failures[0]

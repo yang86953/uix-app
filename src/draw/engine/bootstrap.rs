@@ -6,7 +6,9 @@ use crate::draw::traits::GraphicsEngine;
 use crate::native::factory::{
     describe_backend_availability, gpu_recipe_candidates, try_create_gpu_recipe, GraphicsRecipe,
 };
-use crate::native::traits::present::{GraphicsBackend, IGraphicsContext, NativeSurfaceHandle};
+use crate::native::traits::present::{
+    GraphicsBackend, IGraphicsContext, NativeSurfaceHandle, PresentOcclusionSupport,
+};
 
 /// One failed probe attempt recorded for diagnostics and tests.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,6 +86,7 @@ pub struct GpuBootstrap {
     pub engine: Box<dyn GraphicsEngine>,
     pub selected: GraphicsBackend,
     pub selected_recipe: GraphicsRecipe,
+    pub present_occlusion: PresentOcclusionSupport,
     pub report: ProbeReport,
 }
 
@@ -219,6 +222,7 @@ where
         };
         let caps = context.caps();
         let selected = GraphicsRecipe::new(caps.backend, caps.raster, caps.present);
+        let present_occlusion = caps.present_occlusion;
 
         let engine = match assemble_graphics_engine(context, width, height) {
             Ok(engine) => engine,
@@ -236,11 +240,14 @@ where
                 continue;
             }
         };
-        crate::core::log::info_fn(format!("Graphics bootstrap: selected recipe {selected}"));
+        crate::core::log::info_fn(format!(
+            "Graphics bootstrap: selected recipe {selected}; present_occlusion={present_occlusion}"
+        ));
         return Ok(GpuBootstrap {
             engine,
             selected: selected.backend,
             selected_recipe: selected,
+            present_occlusion,
             report,
         });
     }

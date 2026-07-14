@@ -1,5 +1,5 @@
 use crate::core::error::Result;
-use crate::native::traits::present::validate_pixel_buffer;
+use crate::native::traits::present::{validate_pixel_buffer, PresentOcclusionSupport};
 use crate::tests::common::*;
 use std::str::FromStr;
 
@@ -35,6 +35,30 @@ fn d3d11_caps_advertise_offscreen_after_crop_and_scissor_are_correct() {
     assert!(
         NativeRasterCaps::d3d11_full().offscreen_targets,
         "D3D11 Picture offscreen support requires source crop and scissor restoration"
+    );
+}
+
+#[test]
+fn present_occlusion_support_is_typed_and_defaults_to_unsupported() {
+    let upload = GraphicsContextCaps::cpu_pixel_upload(GraphicsBackend::Vulkan, 1.0);
+    assert_eq!(
+        upload.present_occlusion,
+        PresentOcclusionSupport::Unsupported
+    );
+
+    let bitblt = GraphicsContextCaps::gpu_native_swapchain(
+        GraphicsBackend::D3d11,
+        PresentCoherency::FullOnly,
+        1.0,
+    )
+    .with_present_occlusion(PresentOcclusionSupport::PresentStatusAndTest);
+    assert_eq!(
+        bitblt.present_occlusion,
+        PresentOcclusionSupport::PresentStatusAndTest
+    );
+    assert_eq!(
+        bitblt.present_occlusion.to_string(),
+        "present_status_and_test"
     );
 }
 
