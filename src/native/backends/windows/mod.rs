@@ -32,6 +32,7 @@ pub mod platform;
 pub mod system_info;
 pub mod text_input;
 pub mod timer;
+mod tsf_document;
 pub mod tsf_session;
 pub mod tsf_text_store;
 pub mod util;
