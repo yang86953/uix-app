@@ -1,4 +1,4 @@
-//! 页面构建辅助 — View DSL + `embed` 桥接 widget-tree 片段。
+//! 页面构建辅助 — 声明式 View DSL 组合。
 
 use uix::prelude::*;
 
@@ -76,7 +76,7 @@ pub fn page_index_by_label(label: &str) -> Option<usize> {
         })
 }
 
-/// 声明式页面构建器：`section` + `push` 自动收入抬升面板；或显式 `block`。
+/// 声明式页面构建器：`section` + `push` 自动收入抬升面板。
 pub struct PageBuilder<'a> {
     tk: &'a DesignTokens,
     items: Vec<ViewNode>,
@@ -103,7 +103,7 @@ impl<'a> PageBuilder<'a> {
         let panel_body = if body.len() == 1 {
             body.into_iter().next().expect("one body node")
         } else {
-            column_fit(body).gap(12.0)
+            column(body).gap(12.0)
         };
         self.items
             .push(crate::common::showcase::panel(self.tk, panel_body));
@@ -130,13 +130,12 @@ impl<'a> PageBuilder<'a> {
         self
     }
 
-    pub fn push(mut self, node: impl IntoWidgetNode) -> Self {
-        // 不写死宽度：父 Column 默认 Stretch，子项随 ScrollView 视口变宽。
-        let node = embed(node);
+    pub fn push(mut self, node: impl IntoViewChildren) -> Self {
+        let children = node.into_view_children();
         if self.open_section.is_some() {
-            self.section_body.push(node);
+            self.section_body.extend(children);
         } else {
-            self.items.push(node);
+            self.items.extend(children);
         }
         self
     }
@@ -152,13 +151,10 @@ impl<'a> PageBuilder<'a> {
 
     pub fn build(mut self) -> ViewNode {
         self.flush_section();
-        // Both：纵向滚动为主；固定宽行溢出时出横向条。宽窗下内容列仍拉满视口。
         scroll(
-            column_fit(self.items)
+            column(self.items)
                 .gap(16.0)
                 .padding((20.0, 8.0, 28.0, 20.0))
-                // ScrollView 的内容列必须按自然尺寸流式排布；若参与普通 flex
-                // shrink，会为了匹配 viewport 而把后续演示项压缩到 0 高度。
                 .overflow_content(),
         )
         .both()
@@ -168,49 +164,38 @@ impl<'a> PageBuilder<'a> {
 }
 
 pub fn section_title(tk: &DesignTokens, text: &str) -> ViewNode {
-    // 色条必须 column_fit：column() 默认 grow=1，在 row 主轴上会吞掉整行宽度。
-    // 行本身不设 width：由父 Column Stretch 拉满；右侧细线 flex_grow(1) 填剩余。
-    row([
-        column_fit(Vec::<ViewNode>::new())
+    row((
+        column(())
             .width(3.0)
             .height(14.0)
-            .bg(ColorValue::Palette(PaletteColor::Primary))
+            .bg(tk.color_primary)
             .radius(tk.border_radius_sm),
-        label(text)
-            .color(ColorValue::Neutral(NeutralRole::Text))
-            .font_size(13.0)
-            .flex_grow(0.0),
-        column(Vec::<ViewNode>::new())
+        label(text).fg(tk.color_text).font_size(13.0).flex_grow(0.0),
+        column(())
             .height(1.0)
             .flex_grow(1.0)
-            .bg(ColorValue::Neutral(NeutralRole::BorderSecondary)),
-    ])
+            .bg(tk.color_border_secondary),
+    ))
     .align(AlignItems::Center)
     .gap(8.0)
     .padding(EdgeInsets::new(0.0, 0.0, 4.0, 0.0))
 }
 
-/// 固定高度水平 Space 行（与 View `row` 组合子区分）。
-pub fn demo_row(h: f32) -> Space {
-    Space::new()
-        .size(SpaceSize::Small)
-        .height(h)
-        .direction(FlexDirection::Row)
-        .align(AlignItems::Center)
+/// 固定高度水平行。
+pub fn demo_row(h: f32) -> ViewNode {
+    row(()).height(h).align(AlignItems::Center).gap(8.0)
 }
 
-pub fn page_heading(icon: &str, title: &str) -> ViewNode {
-    column_fit([
-        row([
-            embed(Icon::new(icon).size(24.0)),
-            label(title)
-                .color(ColorValue::Neutral(NeutralRole::Text))
-                .font_size(24.0),
-        ])
+pub fn page_heading(tk: &DesignTokens, icon: &str, title: &str) -> ViewNode {
+    column((
+        row((
+            Icon::new(icon).size(24.0),
+            label(title).fg(tk.color_text).font_size(24.0),
+        ))
         .align(AlignItems::Center)
         .gap(12.0),
         space(12.0),
-        embed(Divider::new()),
-    ])
+        Divider::new(),
+    ))
     .padding(EdgeInsets::new(0.0, 0.0, 8.0, 0.0))
 }

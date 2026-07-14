@@ -2,27 +2,18 @@
 
 use uix::prelude::*;
 
-use crate::common::page::{demo_row, PageBuilder, INNER_W};
+use crate::common::page::{PageBuilder, INNER_W};
 use crate::common::showcase::{labeled_row, widget_caption};
 use crate::demos::context::DemoCtx;
 
 fn focus_trap_modal(tk: &DesignTokens) -> ViewNode {
-    row([
-        embed(widget_caption(tk, "Modal ✓")),
-        ViewNode::new(
-            Modal::new("系统键盘焦点陷阱").closable(true).overlay(true),
-            vec![row([
-                button("取消").automation_id("feedback-modal-cancel"),
-                button("确认")
-                    .primary()
-                    .automation_id("feedback-modal-confirm"),
-            ])
-            .gap(8.0)],
-        )
-        .automation_id("feedback-focus-modal"),
-    ])
+    row((
+        widget_caption(tk, "Modal ✓"),
+        Modal::new("系统键盘焦点陷阱").closable(true).overlay(true),
+    ))
     .align(AlignItems::Center)
     .height(36.0)
+    .automation_id("feedback-focus-modal")
 }
 
 pub fn page_feedback(ctx: &DemoCtx<'_>) -> ViewNode {
@@ -60,39 +51,33 @@ pub fn page_feedback(ctx: &DemoCtx<'_>) -> ViewNode {
         ))
         .section("Spin — 尺寸")
         .push(
-            demo_row(40.0)
-                .child(Spin::new().small())
-                .child(Spin::new())
-                .child(Spin::new().large()),
+            row((Spin::new().small(), Spin::new(), Spin::new().large()))
+                .height(40.0)
+                .align(AlignItems::Center)
+                .gap(16.0),
         )
         .section("ProgressBar — 线形 / 圆形 / 不确定")
-        .push(demo_row(24.0).child(ProgressBar::new().progress(45.0)))
+        .push(ProgressBar::new().progress(45.0))
         .push(
-            demo_row(24.0).child(
-                ProgressBar::new()
-                    .progress(78.0)
-                    .stroke_color(tk.color_success),
-            ),
+            ProgressBar::new()
+                .progress(78.0)
+                .stroke_color(tk.color_success),
         )
-        .push(demo_row(60.0).child(ProgressBar::new().circle().progress(0.65)))
-        .push(demo_row(24.0).child(ProgressBar::new().indeterminate()))
+        .push(ProgressBar::new().circle().progress(0.65))
+        .push(ProgressBar::new().indeterminate())
         .section("Skeleton / Empty")
         .push(
-            Space::new()
-                .size(SpaceSize::Small)
-                .width(INNER_W)
-                .height(56.0)
-                .direction(FlexDirection::Column)
-                .child(
-                    Skeleton::new()
-                        .shape(SkeletonShape::Rect)
-                        .size(INNER_W, 14.0),
-                )
-                .child(
-                    Skeleton::new()
-                        .shape(SkeletonShape::Rect)
-                        .size(INNER_W * 0.7, 14.0),
-                ),
+            column((
+                Skeleton::new()
+                    .shape(SkeletonShape::Rect)
+                    .size(INNER_W, 14.0),
+                Skeleton::new()
+                    .shape(SkeletonShape::Rect)
+                    .size(INNER_W * 0.7, 14.0),
+            ))
+            .width(INNER_W)
+            .height(56.0)
+            .gap(8.0),
         )
         .push(Empty::new().description("暂无反馈数据"))
         .section("Overlay — Tooltip / Popover / Popconfirm")

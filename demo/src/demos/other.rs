@@ -3,7 +3,6 @@
 use uix::prelude::*;
 
 use crate::common::page::PageBuilder;
-use crate::common::showcase::{flow_row, sample_block};
 use crate::demos::context::DemoCtx;
 
 pub fn page_other(ctx: &DemoCtx<'_>) -> ViewNode {
@@ -13,7 +12,7 @@ pub fn page_other(ctx: &DemoCtx<'_>) -> ViewNode {
         .gap()
         .block(
             "Transfer",
-            embed(Transfer::new().source(vec![
+            Transfer::new().source(vec![
                 TransferItem {
                     key: "a".into(),
                     title: "选项 A".into(),
@@ -29,103 +28,133 @@ pub fn page_other(ctx: &DemoCtx<'_>) -> ViewNode {
                     title: "选项 C".into(),
                     selected: true,
                 },
-            ])),
+            ]),
         )
         .block(
             "Upload",
-            embed(Upload::new().accept(".png,.jpg").drag(true).multiple(true)),
+            Upload::new().accept(".png,.jpg").drag(true).multiple(true),
         )
         .block(
             "QRCode / Watermark",
-            embed(
-                flow_row(96.0)
-                    .child(sample_block(tk, "QRCode", QRCode::new("https://uix.dev")))
-                    .child(sample_block(tk, "Watermark", Watermark::new("UIX Demo"))),
-            ),
+            row((
+                column((
+                    label("QRCode").font_size(11.0).fg(tk.color_text_tertiary),
+                    QRCode::new("https://uix.dev"),
+                ))
+                .align(AlignItems::Start)
+                .gap(4.0),
+                column((
+                    label("Watermark")
+                        .font_size(11.0)
+                        .fg(tk.color_text_tertiary),
+                    Watermark::new("UIX Demo"),
+                ))
+                .align(AlignItems::Start)
+                .gap(4.0),
+            ))
+            .height(96.0)
+            .wrap(true)
+            .align(AlignItems::Start)
+            .gap(24.0),
         )
         .block(
             "DesignTokens — 语义色",
-            embed(
-                flow_row(56.0)
-                    .child(sample_block(
-                        tk,
-                        "Primary",
-                        Container::new()
-                            .size(72.0, 28.0)
-                            .bg(ColorValue::Palette(PaletteColor::PrimaryBg))
-                            .rounded(4.0),
-                    ))
-                    .child(sample_block(
-                        tk,
-                        "Success",
-                        Container::new()
-                            .size(72.0, 28.0)
-                            .bg(ColorValue::Palette(PaletteColor::SuccessBg))
-                            .rounded(4.0),
-                    ))
-                    .child(sample_block(
-                        tk,
-                        "Warning",
-                        Container::new()
-                            .size(72.0, 28.0)
-                            .bg(ColorValue::Palette(PaletteColor::WarningBg))
-                            .rounded(4.0),
-                    ))
-                    .child(sample_block(
-                        tk,
-                        "Error",
-                        Container::new()
-                            .size(72.0, 28.0)
-                            .bg(ColorValue::Palette(PaletteColor::ErrorBg))
-                            .rounded(4.0),
-                    ))
-                    .child(sample_block(
-                        tk,
-                        "Info",
-                        Container::new()
-                            .size(72.0, 28.0)
-                            .bg(ColorValue::Palette(PaletteColor::InfoBg))
-                            .rounded(4.0),
-                    )),
-            ),
+            row((
+                column((
+                    label("Primary").font_size(11.0).fg(tk.color_text_tertiary),
+                    Container::new()
+                        .size(72.0, 28.0)
+                        .bg(tk.color_primary_bg)
+                        .rounded(4.0),
+                ))
+                .align(AlignItems::Start)
+                .gap(4.0),
+                column((
+                    label("Success").font_size(11.0).fg(tk.color_text_tertiary),
+                    Container::new()
+                        .size(72.0, 28.0)
+                        .bg(tk.color_success_bg)
+                        .rounded(4.0),
+                ))
+                .align(AlignItems::Start)
+                .gap(4.0),
+                column((
+                    label("Warning").font_size(11.0).fg(tk.color_text_tertiary),
+                    Container::new()
+                        .size(72.0, 28.0)
+                        .bg(tk.color_warning_bg)
+                        .rounded(4.0),
+                ))
+                .align(AlignItems::Start)
+                .gap(4.0),
+                column((
+                    label("Error").font_size(11.0).fg(tk.color_text_tertiary),
+                    Container::new()
+                        .size(72.0, 28.0)
+                        .bg(tk.color_error_bg)
+                        .rounded(4.0),
+                ))
+                .align(AlignItems::Start)
+                .gap(4.0),
+                column((
+                    label("Info").font_size(11.0).fg(tk.color_text_tertiary),
+                    Container::new()
+                        .size(72.0, 28.0)
+                        .bg(tk.color_info_bg)
+                        .rounded(4.0),
+                ))
+                .align(AlignItems::Start)
+                .gap(4.0),
+            ))
+            .height(56.0)
+            .wrap(true)
+            .align(AlignItems::Start)
+            .gap(24.0),
         )
         .block(
             "Fill / Border 层级",
-            embed(
-                flow_row(48.0)
-                    .child(sample_block(
-                        tk,
-                        "Fill",
-                        Container::new()
-                            .size(56.0, 20.0)
-                            .bg(ColorValue::Neutral(NeutralRole::Fill))
-                            .rounded(2.0),
-                    ))
-                    .child(sample_block(
-                        tk,
-                        "Fill2",
-                        Container::new()
-                            .size(56.0, 20.0)
-                            .bg(ColorValue::Neutral(NeutralRole::FillSecondary))
-                            .rounded(2.0),
-                    ))
-                    .child(sample_block(
-                        tk,
-                        "Fill3",
-                        Container::new()
-                            .size(56.0, 20.0)
-                            .bg(ColorValue::Neutral(NeutralRole::FillTertiary))
-                            .rounded(2.0),
-                    ))
-                    .child(sample_block(
-                        tk,
-                        "Border",
-                        Container::new()
-                            .size(56.0, 20.0)
-                            .bg(ColorValue::Neutral(NeutralRole::Border))
-                            .rounded(2.0),
-                    )),
-            ),
+            row((
+                column((
+                    label("Fill").font_size(11.0).fg(tk.color_text_tertiary),
+                    Container::new()
+                        .size(56.0, 20.0)
+                        .bg(tk.color_fill)
+                        .rounded(2.0),
+                ))
+                .align(AlignItems::Start)
+                .gap(4.0),
+                column((
+                    label("Fill2").font_size(11.0).fg(tk.color_text_tertiary),
+                    Container::new()
+                        .size(56.0, 20.0)
+                        .bg(tk.color_fill_secondary)
+                        .rounded(2.0),
+                ))
+                .align(AlignItems::Start)
+                .gap(4.0),
+                column((
+                    label("Fill3").font_size(11.0).fg(tk.color_text_tertiary),
+                    Container::new()
+                        .size(56.0, 20.0)
+                        .bg(tk.color_fill_tertiary)
+                        .rounded(2.0),
+                ))
+                .align(AlignItems::Start)
+                .gap(4.0),
+                column((
+                    label("Border").font_size(11.0).fg(tk.color_text_tertiary),
+                    Container::new()
+                        .size(56.0, 20.0)
+                        .bg(tk.color_border)
+                        .rounded(2.0),
+                ))
+                .align(AlignItems::Start)
+                .gap(4.0),
+            ))
+            .height(48.0)
+            .wrap(true)
+            .align(AlignItems::Start)
+            .gap(24.0),
         )
         .build()
 }
