@@ -168,6 +168,16 @@ impl<'a> PaintContext<'a> {
         self.record_ops = on;
     }
 
+    pub(super) fn with_recording_disabled<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        let previous = std::mem::replace(&mut self.record_ops, false);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(self)));
+        self.record_ops = previous;
+        match result {
+            Ok(value) => value,
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
+    }
+
     fn record_op(&mut self, op: PaintOp) {
         self.record_op_lazy(|| op);
     }

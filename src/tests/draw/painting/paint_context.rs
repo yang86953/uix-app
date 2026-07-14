@@ -311,3 +311,42 @@ fn recorder_scope_clears_target_after_panic() {
     assert_eq!(recovered.len(), 1);
     assert!(ctx.recording_complete());
 }
+
+#[test]
+fn display_list_replay_restores_disabled_recording_state() {
+    use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
+    use crate::draw::painting::{DisplayList, PaintOp};
+    use crate::draw::spatial::Orientation;
+
+    let mut canvas = NoopCanvas2D;
+    let fonts = FontService::new();
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let mut ctx = PaintContext::new_for_test(
+        &mut canvas,
+        FontHandle::default(),
+        &fonts,
+        &images,
+        &tokens,
+        96.0,
+        1.0,
+        Orientation::YDown,
+        100,
+        100,
+    );
+    let mut source = DisplayList::new();
+    source.push(PaintOp::FillRect {
+        rect: Rect::new(0.0, 0.0, 2.0, 2.0),
+        color: Color::red(),
+        radius: None,
+    });
+    let mut captured = DisplayList::new();
+
+    ctx.with_recorder(&mut captured, |ctx| {
+        ctx.set_record_ops(false);
+        source.replay(ctx);
+        ctx.fill_rect(Rect::new(2.0, 0.0, 2.0, 2.0), Color::blue(), None);
+    });
+
+    assert!(captured.is_empty());
+}
