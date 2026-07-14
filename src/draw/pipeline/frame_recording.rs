@@ -293,9 +293,8 @@ impl FrameRecordingCanvas {
         dst: Rect,
     ) -> Result<(), Error> {
         self.flush_scratch()?;
-        if self.can_emit_direct_picture() {
-            self.encoder_mut()?
-                .blit_picture(image, rect_to_frame(src)?, rect_to_frame(dst)?);
+        if let Some((src, dst)) = self.direct_picture_rects(src, dst) {
+            self.encoder_mut()?.blit_picture(image, src, dst);
             return Ok(());
         }
         self.scratch
@@ -358,9 +357,23 @@ impl FrameRecordingCanvas {
             let src = FrameRect::new(0, 0, dst.width, dst.height);
             self.encoder_mut()?.cpu_image_segment(image, src, dst);
         }
-        // Full clear: deferred batching may have touched many tiles; clearing
-        // only the last pack AABB would leave stale pixels for the next batch.
-        self.scratch.surface_mut().clear_all();
+        // pack_bounds 是本批所有 draw bounds 的并集，不是最后一笔；清理该并集即可
+        // 隔离下一批，同时避免每个 painter barrier 都扫完整窗口。
+        if let Some(bounds) = pack_bounds.filter(|bounds| {
+            let bounded_area = i64::from(bounds.width).saturating_mul(i64::from(bounds.height));
+            let surface_area = i64::from(self.width).saturating_mul(i64::from(self.height));
+            bounded_area.saturating_mul(2) < surface_area
+        }) {
+            self.scratch.surface_mut().clear_rect_raw(
+                bounds.x,
+                bounds.y,
+                bounds.width,
+                bounds.height,
+            );
+        } else {
+            // 大批次连续 clear_all 更快；pixels_mut 等无边界写入也必须保守全清。
+            self.scratch.surface_mut().clear_all();
+        }
         self.scratch_dirty = false;
         crate::core::perf_probe::add_cpu_flush(flush_t0.elapsed().as_micros());
         Ok(())
@@ -419,11 +432,44 @@ impl FrameRecordingCanvas {
             && rect.y + rect.h <= self.height as f32
     }
 
-    fn can_emit_direct_picture(&self) -> bool {
-        self.blend_mode != BlendMode::Additive
-            && self.scratch.offset() == (0.0, 0.0)
-            && self.scratch.opacity() == 1.0
-            && self.scratch.current_clip() == self.full_rect()
+    fn direct_picture_rects(&self, src: Rect, dst: Rect) -> Option<(FrameRect, FrameRect)> {
+        if self.blend_mode == BlendMode::Additive
+            || self.scratch.offset() != (0.0, 0.0)
+            || self.scratch.opacity() != 1.0
+        {
+            return None;
+        }
+        let src = rect_to_frame(src).ok()?;
+        let dst = rect_to_frame(dst).ok()?;
+        let clip = self.scratch.current_clip();
+        if clip == self.full_rect() {
+            return Some((src, dst));
+        }
+        if src.width != dst.width || src.height != dst.height {
+            return None;
+        }
+        let clip = rect_to_frame(clip).ok()?;
+        let left = dst.x.max(clip.x);
+        let top = dst.y.max(clip.y);
+        let right = dst
+            .x
+            .saturating_add(dst.width)
+            .min(clip.x.saturating_add(clip.width));
+        let bottom = dst
+            .y
+            .saturating_add(dst.height)
+            .min(clip.y.saturating_add(clip.height));
+        if left >= right || top >= bottom {
+            return None;
+        }
+        let clipped_dst = FrameRect::new(left, top, right - left, bottom - top);
+        let clipped_src = FrameRect::new(
+            src.x.saturating_add(left - dst.x),
+            src.y.saturating_add(top - dst.y),
+            clipped_dst.width,
+            clipped_dst.height,
+        );
+        Some((clipped_src, clipped_dst))
     }
 
     fn full_rect(&self) -> Rect {

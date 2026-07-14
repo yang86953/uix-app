@@ -1,5 +1,5 @@
 use crate::draw::pipeline::frame_recording::*;
-use crate::draw::pipeline::{FrameRadius, FrameRasterOp};
+use crate::draw::pipeline::{FrameCommand, FrameRadius, FrameRasterOp};
 use crate::draw::primitives::types::{BlendMode, Radius};
 use crate::draw::traits::GraphicsEngine;
 use crate::tests::common::*;
@@ -60,6 +60,58 @@ fn recording_canvas_emits_native_cpu_and_picture_commands_in_painter_order() {
         encoder.commands()[4],
         crate::draw::pipeline::FrameCommand::Native { .. }
     ));
+}
+
+#[test]
+fn clipped_unscaled_picture_stays_a_direct_picture_command() {
+    let mut engine = FrameRecordingEngine::new();
+    engine.initialize(12, 8).expect("initialize recorder");
+    engine.begin_recording(true).expect("begin recording");
+    let picture = engine.create_offscreen(6, 4).expect("Picture");
+    engine
+        .try_begin_offscreen_paint(&picture)
+        .expect("begin Picture");
+    engine
+        .offscreen_canvas(&picture)
+        .expect("Picture canvas")
+        .fill_rect(Rect::new(0.0, 0.0, 6.0, 4.0), Color::green(), None);
+    engine
+        .try_end_offscreen_paint()
+        .expect("end Picture target");
+    engine.canvas_2d().push_clip(Rect::new(4.0, 2.0, 3.0, 2.0));
+    engine
+        .try_blit_offscreen_src(
+            &picture,
+            Rect::new(0.0, 0.0, 6.0, 4.0),
+            Rect::new(2.0, 1.0, 6.0, 4.0),
+        )
+        .expect("record clipped Picture blit");
+    engine.canvas_2d().pop_clip();
+
+    let encoder = engine.finish_recording().expect("finish recorder");
+    assert!(encoder.commands().iter().any(|command| {
+        matches!(
+            command,
+            FrameCommand::PictureBlit { src, dst, .. }
+                if *src == FrameRect::new(2, 1, 3, 2)
+                    && *dst == FrameRect::new(4, 2, 3, 2)
+        )
+    }));
+    assert!(!encoder
+        .commands()
+        .iter()
+        .any(|command| matches!(command, FrameCommand::CpuSegment { .. })));
+    let reference = encoder.render_reference();
+    assert_eq!(
+        reference.pixel(3, 2),
+        Some(Color::transparent().premultiplied())
+    );
+    assert_eq!(reference.pixel(4, 2), Some(Color::green().premultiplied()));
+    assert_eq!(reference.pixel(6, 3), Some(Color::green().premultiplied()));
+    assert_eq!(
+        reference.pixel(7, 3),
+        Some(Color::transparent().premultiplied())
+    );
 }
 
 #[test]
@@ -220,6 +272,46 @@ fn consecutive_cpu_draws_batch_into_one_segment_until_barrier() {
             }
         )
     }));
+}
+
+#[test]
+fn bounded_scratch_clear_prevents_pixels_leaking_across_barriers() {
+    let mut engine = FrameRecordingEngine::new();
+    engine.initialize(40, 8).expect("initialize recorder");
+    engine.begin_recording(true).expect("begin recording");
+    let first = Color::from_rgba(255, 0, 0, 128);
+    engine.canvas_2d().fill_rect(
+        Rect::new(8.0, 2.0, 4.0, 4.0),
+        first,
+        Some(Radius::uniform(1.0)),
+    );
+    engine
+        .canvas_2d()
+        .fill_rect(Rect::new(32.0, 2.0, 2.0, 2.0), Color::white(), None);
+    engine.canvas_2d().fill_rect(
+        Rect::new(1.0, 2.0, 3.0, 3.0),
+        Color::from_rgba(0, 255, 0, 128),
+        Some(Radius::uniform(1.0)),
+    );
+    engine.canvas_2d().fill_rect(
+        Rect::new(20.0, 2.0, 3.0, 3.0),
+        Color::from_rgba(0, 0, 255, 128),
+        Some(Radius::uniform(1.0)),
+    );
+
+    let encoder = engine.finish_recording().expect("finish recorder");
+    assert_eq!(
+        encoder
+            .commands()
+            .iter()
+            .filter(|command| matches!(command, FrameCommand::CpuSegment { .. }))
+            .count(),
+        2
+    );
+    assert_eq!(
+        encoder.render_reference().pixel(9, 3),
+        Some(first.premultiplied())
+    );
 }
 
 #[test]
