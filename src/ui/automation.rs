@@ -275,6 +275,23 @@ impl TestApp {
         self.tree.automation_snapshot(WindowId::ROOT)
     }
 
+    /// 返回 selector 对应节点当前对外可见的语义文本。
+    ///
+    /// 可编辑或可选择控件优先返回脱敏后的 `value_text`，其他节点返回
+    /// accessible name；节点没有文本时返回空字符串。
+    pub fn text(&self, automation_id: &str) -> Result<String, AutomationError> {
+        let snapshot = self.snapshot();
+        let node = snapshot.find(automation_id)?;
+        Ok(node
+            .accessibility
+            .state
+            .value_text
+            .as_deref()
+            .or(node.accessibility.name.as_deref())
+            .unwrap_or_default()
+            .to_owned())
+    }
+
     pub fn tree(&self) -> &WidgetTree {
         &self.tree
     }
