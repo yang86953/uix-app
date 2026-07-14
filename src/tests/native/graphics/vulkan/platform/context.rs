@@ -8,7 +8,78 @@ use crate::native::graphics::vulkan::platform::surface::{
 use crate::tests::common::*;
 use ash::vk;
 #[cfg(windows)]
+use std::fmt;
+#[cfg(windows)]
 use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessHandleCount};
+
+#[cfg(windows)]
+const GFX_R5_EXPECT_VENDOR_ENV: &str = "UIX_GFX_R5_EXPECT_VENDOR";
+
+#[cfg(windows)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExpectedVulkanVendor {
+    Nvidia,
+    Amd,
+    Intel,
+}
+
+#[cfg(windows)]
+impl ExpectedVulkanVendor {
+    const fn vendor_id(self) -> u32 {
+        match self {
+            Self::Nvidia => 0x10DE,
+            Self::Amd => 0x1002,
+            Self::Intel => 0x8086,
+        }
+    }
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Nvidia => "nvidia",
+            Self::Amd => "amd",
+            Self::Intel => "intel",
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self, GfxR5VendorExpectationError> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "nvidia" => Ok(Self::Nvidia),
+            "amd" => Ok(Self::Amd),
+            "intel" => Ok(Self::Intel),
+            _ => Err(GfxR5VendorExpectationError::Unsupported(value.to_owned())),
+        }
+    }
+}
+
+#[cfg(windows)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum GfxR5VendorExpectationError {
+    Missing,
+    Unsupported(String),
+}
+
+#[cfg(windows)]
+impl fmt::Display for GfxR5VendorExpectationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Missing => write!(
+                formatter,
+                "{GFX_R5_EXPECT_VENDOR_ENV} must be nvidia, amd, or intel"
+            ),
+            Self::Unsupported(value) => write!(
+                formatter,
+                "unsupported {GFX_R5_EXPECT_VENDOR_ENV}={value:?}; expected nvidia, amd, or intel"
+            ),
+        }
+    }
+}
+
+#[cfg(windows)]
+fn expected_gfx_r5_vendor() -> Result<ExpectedVulkanVendor, GfxR5VendorExpectationError> {
+    let value = std::env::var(GFX_R5_EXPECT_VENDOR_ENV)
+        .map_err(|_| GfxR5VendorExpectationError::Missing)?;
+    ExpectedVulkanVendor::parse(&value)
+}
 
 #[cfg(windows)]
 fn current_process_handle_count() -> u32 {
@@ -50,6 +121,41 @@ fn vulkan_adapter_diagnostic_summary_is_stable() {
     assert!(summary.contains("api=1.3.281"));
     assert!(summary.contains("driver=0x01020304"));
     assert!(summary.contains("queue_family=7"));
+}
+
+#[cfg(windows)]
+#[test]
+fn gfx_r5_vendor_expectation_accepts_named_matrix_vendors() {
+    assert_eq!(
+        ExpectedVulkanVendor::parse("NVIDIA"),
+        Ok(ExpectedVulkanVendor::Nvidia)
+    );
+    assert_eq!(
+        ExpectedVulkanVendor::parse(" amd "),
+        Ok(ExpectedVulkanVendor::Amd)
+    );
+    assert_eq!(
+        ExpectedVulkanVendor::parse("intel"),
+        Ok(ExpectedVulkanVendor::Intel)
+    );
+    assert_eq!(ExpectedVulkanVendor::Nvidia.vendor_id(), 0x10DE);
+    assert_eq!(ExpectedVulkanVendor::Amd.vendor_id(), 0x1002);
+    assert_eq!(ExpectedVulkanVendor::Intel.vendor_id(), 0x8086);
+}
+
+#[cfg(windows)]
+#[test]
+fn gfx_r5_vendor_expectation_rejects_implicit_or_unknown_vendors() {
+    assert_eq!(
+        ExpectedVulkanVendor::parse(""),
+        Err(GfxR5VendorExpectationError::Unsupported(String::new()))
+    );
+    assert_eq!(
+        ExpectedVulkanVendor::parse("virtual"),
+        Err(GfxR5VendorExpectationError::Unsupported(
+            "virtual".to_owned()
+        ))
+    );
 }
 
 #[test]
@@ -238,6 +344,83 @@ fn windows_vulkan_hardware_resize_readback_and_present() {
 
     context.try_shutdown().expect("shutdown");
     window.close().expect("close window");
+}
+
+#[cfg(windows)]
+#[test]
+#[ignore = "requires a Vulkan-capable Windows driver and UIX_GFX_R5_EXPECT_VENDOR=nvidia|amd|intel"]
+fn windows_vulkan_gfx_r5_expected_vendor_resize_present_readback() {
+    let expected = expected_gfx_r5_vendor().unwrap_or_else(|error| panic!("{error}"));
+    let mut platform = crate::native::create_platform().expect("platform");
+    let mut window = platform
+        .window_manager()
+        .create_window("Vulkan GFX-R5 vendor matrix", 137, 103)
+        .expect("window");
+    let surface = window.native_surface_ptr();
+    assert!(!surface.is_null(), "Windows HWND must be available");
+    window.show().expect("show window");
+    let _ = platform.event_loop().poll_event(&|_| true);
+
+    let mut context = VulkanContext::new(surface, 137, 103).expect("VulkanContext");
+    assert_eq!(
+        context.adapter_info.vendor_id,
+        expected.vendor_id(),
+        "expected {} ({:#06X}), actual {}",
+        expected.label(),
+        expected.vendor_id(),
+        context.adapter_info.diagnostic_summary()
+    );
+
+    let first_color = 0xFF34_78BC;
+    let first_pixels = vec![first_color; (context.width() * context.height()) as usize];
+    context
+        .present_pixels(
+            &first_pixels,
+            context.width(),
+            context.height(),
+            PresentDamage::Full,
+        )
+        .expect("initial matrix present");
+    assert_eq!(
+        context
+            .read_pixels(context.width() - 1, context.height() - 1, 1, 1)
+            .expect("initial matrix readback"),
+        vec![first_color]
+    );
+
+    window
+        .properties_mut()
+        .set_size(211, 149)
+        .expect("resize matrix HWND");
+    let _ = platform.event_loop().poll_event(&|_| true);
+    let drawable = win_surface::drawable_size(surface, 211, 149);
+    context
+        .resize(drawable.logical_width, drawable.logical_height)
+        .expect("resize matrix Vulkan surface");
+    let second_color = 0xFF9A_5C21;
+    let second_pixels = vec![second_color; (context.width() * context.height()) as usize];
+    context
+        .present_pixels(
+            &second_pixels,
+            context.width(),
+            context.height(),
+            PresentDamage::Full,
+        )
+        .expect("resized matrix present");
+    assert_eq!(
+        context
+            .read_pixels(context.width() - 1, context.height() - 1, 1, 1)
+            .expect("resized matrix readback"),
+        vec![second_color]
+    );
+
+    println!(
+        "GFX-R5 Vulkan vendor evidence: expected={}; {}",
+        expected.label(),
+        context.adapter_info.diagnostic_summary()
+    );
+    context.try_shutdown().expect("shutdown matrix context");
+    window.close().expect("close matrix window");
 }
 
 #[cfg(windows)]
