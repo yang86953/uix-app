@@ -26,7 +26,9 @@ use crate::ui::event::{HandlerRegistration, HandlerSignature, SemanticKind};
 use crate::ui::foundation::state::{begin_state_capture, end_state_capture};
 use crate::ui::style::Style;
 use crate::ui::traits::WidgetComponent;
-use crate::ui::view::{View, ViewNode};
+#[cfg(any(test, feature = "test-harness"))]
+use crate::ui::view::View;
+use crate::ui::view::ViewNode;
 use crate::ui::widgets::{Button, Container, Grid, Label};
 use crate::ui::window_chrome::WindowInteractionRegion;
 use crate::ui::{ComponentId, WidgetTree};
@@ -37,6 +39,7 @@ pub struct ViewAdapter;
 
 impl ViewAdapter {
     /// Builds a View while capturing State bindings.
+    #[cfg(any(test, feature = "test-harness"))]
     pub fn capture_view(view: impl View) -> ViewNode {
         begin_state_capture();
         let node = view.build();
@@ -56,6 +59,7 @@ impl ViewAdapter {
     }
 
     /// Builds a View tree into a WidgetTree.
+    #[cfg(any(test, feature = "test-harness"))]
     pub fn build(view: impl View) -> WidgetTree {
         Self::build_nodes(Self::capture_view(view))
     }
@@ -71,6 +75,7 @@ impl ViewAdapter {
     }
 
     /// Reconciles a new View tree into an existing WidgetTree.
+    #[cfg(any(test, feature = "test-harness"))]
     pub fn reconcile(tree: &mut WidgetTree, view: impl View) {
         Self::reconcile_nodes(tree, Self::capture_view(view));
     }
@@ -471,15 +476,4 @@ impl ViewAdapter {
         }
         structure_changed
     }
-}
-
-/// Runs a closure inside the current View state-capture context.
-pub fn with_view_context<F, R>(f: F) -> R
-where
-    F: FnOnce() -> R,
-{
-    begin_state_capture();
-    let result = f();
-    end_state_capture();
-    result
 }

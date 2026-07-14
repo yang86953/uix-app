@@ -666,6 +666,7 @@ impl Table {
             .unwrap_or(0.0)
     }
 
+    #[cfg(test)]
     pub(crate) fn horizontal_scroll_offset(&self) -> f32 {
         self.horizontal_scroll.get()
     }
