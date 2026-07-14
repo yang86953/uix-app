@@ -5,6 +5,7 @@
 //! present pipeline so root and secondary windows cannot drift into different
 //! frame semantics.
 
+mod availability;
 mod support;
 
 use crate::app::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry};
@@ -243,18 +244,6 @@ impl WindowDriver {
         }
     }
 
-    fn cancel_outstanding_native_frame(&mut self, platform_window: &mut dyn PlatformWindow) {
-        let Some(token) = self.frame_scheduler.outstanding_native_token() else {
-            return;
-        };
-        if let Err(error) = platform_window.cancel_native_frame(token) {
-            crate::core::log::warn_fn(format!(
-                "[WindowDriver] native frame cancellation failed: {}",
-                error.short_what()
-            ));
-        }
-    }
-
     /// Synchronizes programmatic visibility changes that occur during the
     /// current work turn, before layout/paint/present can run. The initial
     /// intentionally hidden window is exempt until deferred first-show.
@@ -317,27 +306,6 @@ impl WindowDriver {
             }
         }
         false
-    }
-
-    fn agent_surface_presentable(&self, platform_window: &dyn PlatformWindow) -> bool {
-        let properties = platform_window.properties();
-        let visibility_allows_work = self.deferred_show || platform_window.is_visible();
-        visibility_allows_work
-            && properties.width() > 0
-            && properties.height() > 0
-            && platform_window.occlusion_state() != WindowOcclusionState::Occluded
-            && self.frame_scheduler.is_renderable()
-    }
-
-    fn publish_agent_window_availability(
-        &self,
-        semantic_state: &WindowSemanticState,
-        platform_window: &dyn PlatformWindow,
-    ) {
-        semantic_state.publish_agent_availability(
-            platform_window.is_visible(),
-            self.agent_surface_presentable(platform_window),
-        );
     }
 
     #[allow(clippy::too_many_arguments)]
