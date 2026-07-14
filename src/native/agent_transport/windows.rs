@@ -17,10 +17,15 @@ use windows::Win32::Security::Authorization::{
     ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
 };
 use windows::Win32::Security::Cryptography::{BCryptGenRandom, BCRYPT_USE_SYSTEM_PREFERRED_RNG};
-use windows::Win32::Security::{PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES};
+use windows::Win32::Security::{
+    SetFileSecurityW, DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION,
+    PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES,
+};
+use windows::Win32::Storage::FileSystem::MoveFileExW;
 use windows::Win32::Storage::FileSystem::{
     CreateDirectoryW, CreateFileW, CREATE_NEW, FILE_ATTRIBUTE_NORMAL,
-    FILE_FLAG_FIRST_PIPE_INSTANCE, FILE_SHARE_MODE, PIPE_ACCESS_DUPLEX,
+    FILE_FLAG_FIRST_PIPE_INSTANCE, FILE_SHARE_MODE, MOVEFILE_REPLACE_EXISTING,
+    MOVEFILE_WRITE_THROUGH, PIPE_ACCESS_DUPLEX,
 };
 use windows::Win32::System::Pipes::{
     ConnectNamedPipe, CreateNamedPipeW, WaitNamedPipeW, NAMED_PIPE_MODE, PIPE_READMODE_BYTE,
@@ -84,12 +89,8 @@ impl AgentEndpoint {
             file.sync_all()
         })();
         drop(file);
-        let result = write_result.and_then(|()| {
-            if self.discovery_path.exists() {
-                fs::remove_file(&self.discovery_path)?;
-            }
-            fs::rename(&temporary, &self.discovery_path)
-        });
+        let result =
+            write_result.and_then(|()| replace_file_atomically(&temporary, &self.discovery_path));
         if result.is_err() {
             let _ = fs::remove_file(&temporary);
         } else {
@@ -215,6 +216,11 @@ pub(super) fn connect_for_test(endpoint: &str) -> io::Result<super::AgentStream>
     ))
 }
 
+#[cfg(test)]
+pub(super) fn discovery_permissions_are_private_for_test(_path: &Path) -> io::Result<Option<bool>> {
+    Ok(None)
+}
+
 fn create_pipe_instance(pipe_name: &str, first: bool) -> io::Result<File> {
     let security = OwnerOnlySecurity::new()?;
     let attributes = security.attributes();
@@ -296,7 +302,37 @@ fn private_discovery_directory() -> io::Result<PathBuf> {
         }
         Err(error) => return Err(error),
     }
+    apply_owner_only_dacl(&directory)?;
     Ok(directory)
+}
+
+fn replace_file_atomically(source: &Path, destination: &Path) -> io::Result<()> {
+    let source = wide_null(source.as_os_str());
+    let destination = wide_null(destination.as_os_str());
+    unsafe {
+        // SAFETY: 两个路径均为存活的 NUL 结尾 UTF-16；同目录替换不跨卷。
+        MoveFileExW(
+            PCWSTR(source.as_ptr()),
+            PCWSTR(destination.as_ptr()),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    }
+    .map_err(windows_error)
+}
+
+fn apply_owner_only_dacl(path: &Path) -> io::Result<()> {
+    let security = OwnerOnlySecurity::new()?;
+    let wide = wide_null(path.as_os_str());
+    unsafe {
+        // SAFETY: 路径与安全描述符在同步调用期间有效；只替换并保护 DACL，不改所有者。
+        SetFileSecurityW(
+            PCWSTR(wide.as_ptr()),
+            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+            security.descriptor,
+        )
+    }
+    .ok()
+    .map_err(windows_error)
 }
 
 fn create_owner_only_file(path: &Path) -> io::Result<File> {

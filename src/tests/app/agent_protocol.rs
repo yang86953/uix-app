@@ -20,7 +20,9 @@ use crate::app::main_thread_queue::MainThreadQueue;
 use crate::app::session_runtime::AppRuntime;
 use crate::app::window_session::WindowSession;
 use crate::core::WindowId;
-use crate::native::agent_transport::connect_for_test;
+use crate::native::agent_transport::{
+    connect_for_test, discovery_permissions_are_private_for_test,
+};
 use crate::native::traits::event::EventLoopWaker;
 use crate::tests::common::NullEngine;
 use crate::ui::view::combinators::{button, column, embed};
@@ -541,4 +543,26 @@ fn native_transport_publishes_discovery_authenticates_and_cleans_up() {
     assert!(!info.discovery_path.exists());
     assert!(runtime.agent_transport_info().is_none());
     drop(stream);
+
+    fs::write(&info.discovery_path, b"stale descriptor").expect("seed stale descriptor");
+    let replacement_runtime = AppRuntime::new();
+    assert!(replacement_runtime.enable_agent_control());
+    let replacement = replacement_runtime
+        .start_agent_transport()
+        .expect("replace stale discovery descriptor");
+    assert_eq!(replacement.discovery_path, info.discovery_path);
+    let replacement_descriptor: Value = serde_json::from_slice(
+        &fs::read(&replacement.discovery_path).expect("read replacement descriptor"),
+    )
+    .expect("replacement descriptor JSON");
+    assert_eq!(replacement_descriptor["state"], "ready");
+    assert_ne!(replacement_descriptor["token"], descriptor["token"]);
+    if let Some(is_private) =
+        discovery_permissions_are_private_for_test(&replacement.discovery_path)
+            .expect("inspect replacement permissions")
+    {
+        assert!(is_private, "replacement descriptor must remain owner-only");
+    }
+    replacement_runtime.shutdown_all();
+    assert!(!replacement.discovery_path.exists());
 }

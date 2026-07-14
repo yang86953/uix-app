@@ -29,23 +29,39 @@ pub(crate) fn connect_for_test(endpoint: &str) -> std::io::Result<AgentStream> {
     platform_connect_for_test(endpoint)
 }
 
+#[cfg(test)]
+pub(crate) fn discovery_permissions_are_private_for_test(
+    path: &std::path::Path,
+) -> std::io::Result<Option<bool>> {
+    platform_discovery_permissions_are_private_for_test(path)
+}
+
 #[cfg(unix)]
 mod unix;
 #[cfg(all(test, unix))]
-use unix::connect_for_test as platform_connect_for_test;
+use unix::{
+    connect_for_test as platform_connect_for_test,
+    discovery_permissions_are_private_for_test as platform_discovery_permissions_are_private_for_test,
+};
 #[cfg(unix)]
 pub(crate) use unix::{fill_secure_random, AgentEndpoint, AgentEndpointWake};
 
 #[cfg(windows)]
 mod windows;
 #[cfg(all(test, windows))]
-use windows::connect_for_test as platform_connect_for_test;
+use windows::{
+    connect_for_test as platform_connect_for_test,
+    discovery_permissions_are_private_for_test as platform_discovery_permissions_are_private_for_test,
+};
 #[cfg(windows)]
 pub(crate) use windows::{fill_secure_random, AgentEndpoint, AgentEndpointWake};
 
 #[cfg(not(any(unix, windows)))]
 mod unsupported;
 #[cfg(all(test, not(any(unix, windows))))]
-use unsupported::connect_for_test as platform_connect_for_test;
+use unsupported::{
+    connect_for_test as platform_connect_for_test,
+    discovery_permissions_are_private_for_test as platform_discovery_permissions_are_private_for_test,
+};
 #[cfg(not(any(unix, windows)))]
 pub(crate) use unsupported::{fill_secure_random, AgentEndpoint, AgentEndpointWake};
