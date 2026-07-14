@@ -43,6 +43,7 @@ fn parse_graphics_backend_config(source: &str, value: &str) -> Option<GraphicsBa
     }
 }
 
+#[cfg(test)]
 pub(crate) fn drain_pending_open_windows(
     platform: &mut dyn Platform,
     runtime: &AppRuntime,
@@ -102,6 +103,7 @@ pub(crate) fn drain_secondary_window_queues(
     drained
 }
 
+#[cfg(test)]
 pub(crate) fn drain_secondary_window_frames(
     secondary_windows: &mut [SecondaryWindowSession],
     font_service: &FontService,

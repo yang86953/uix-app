@@ -5,9 +5,11 @@ use std::sync::{
 };
 use std::time::Duration;
 
+#[cfg(any(test, feature = "agent-control"))]
+use crate::app::agent_bridge::AgentProcessBridge;
 use crate::app::agent_bridge::{
-    AgentBridgeDirectory, AgentProcessBridge, AgentWaitCondition, AgentWaitError, AgentWaitOutcome,
-    AgentWindowInfo, AgentWindowRegistration,
+    AgentBridgeDirectory, AgentWaitCondition, AgentWaitError, AgentWaitOutcome, AgentWindowInfo,
+    AgentWindowRegistration,
 };
 use crate::app::agent_control::{
     AgentCommandQueue, AgentCommandRequest, AgentCommandTicket, AgentSubmitError,
@@ -107,10 +109,12 @@ impl AppRuntime {
         }
     }
 
+    #[cfg(any(test, feature = "agent-control"))]
     pub(crate) fn enable_agent_control(&self) -> bool {
         self.agent_bridge.enable()
     }
 
+    #[cfg(any(test, feature = "agent-control"))]
     pub(crate) fn agent_bridge(&self) -> Option<AgentProcessBridge> {
         self.agent_bridge
             .is_enabled()

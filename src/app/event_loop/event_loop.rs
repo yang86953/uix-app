@@ -83,6 +83,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 pub(crate) fn run_window_session_loop<M, X, F>(
     platform: &mut dyn Platform,
     platform_window: &mut dyn PlatformWindow,
@@ -120,6 +121,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 pub(crate) fn run_window_session_loop_with_system_theme<M, X, F>(
     platform: &mut dyn Platform,
     platform_window: &mut dyn PlatformWindow,
@@ -209,6 +211,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 pub(crate) fn run_window_session_loop_with_clock<M, X, F>(
     platform: &mut dyn Platform,
     platform_window: &mut dyn PlatformWindow,

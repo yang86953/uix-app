@@ -453,6 +453,7 @@ impl App {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn app_handle(&self) -> AppHandle {
         self.app_handle_for_window(WindowId::ROOT)
     }
@@ -810,9 +811,12 @@ mod runtime;
 pub use runtime::map_ui_event;
 pub(crate) use runtime::{
     apply_runtime_theme_change, dispatch_secondary_system_theme_changed,
-    dispatch_secondary_window_event, drain_pending_open_windows,
-    drain_pending_open_windows_with_backend, drain_secondary_window_frames,
-    drain_secondary_window_queues, format_gpu_probe_fallback, graphics_recovery_rebuilder,
-    resolve_graphics_backend, secondary_windows_next_deadline,
+    dispatch_secondary_window_event, drain_pending_open_windows_with_backend,
+    drain_secondary_window_queues, resolve_graphics_backend, secondary_windows_next_deadline,
 };
 use runtime::{create_preferred_engine, drain_secondary_window_frames_with_platform};
+#[cfg(test)]
+pub(crate) use runtime::{
+    drain_pending_open_windows, drain_secondary_window_frames, format_gpu_probe_fallback,
+    graphics_recovery_rebuilder,
+};

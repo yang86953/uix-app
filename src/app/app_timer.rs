@@ -139,6 +139,7 @@ impl AppTimerQueue {
         true
     }
 
+    #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.inner
             .lock()
