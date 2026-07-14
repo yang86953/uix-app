@@ -29,24 +29,25 @@ pub use crate::ui::{
     BarData, Breadcrumb, BreadcrumbItem, Button, Calendar, Card, Carousel, Cascader,
     CascaderOption, CascaderValue, Checkbox, Collapse, CollapsePanel, ColorPicker, Content, Date,
     DatePicker, Descriptions, DescriptionsItem, Divider, DividerDirection, DividerOrientation,
-    Drawer, DrawerPlacement, Dropdown, Empty, FieldDef, FloatButton, FloatButtonBackTop, Footer,
-    Form, FormItem, FormLayout, FormValidationError, FormValidatorKey, FormValidatorTable, Grid,
-    Header, Icon, Image, Input, InputNumber, InputNumberValue, Label, Layout, LineChart, LineData,
-    List, Mentions, Menu, MenuItem, MenuMode, Message, MessageItem, MessagePlacement, Modal,
-    NavGroup, NavItem, Navigation, NotifPlacement, Notification, NotificationItem, OptGroup,
-    Pagination, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement,
-    PopoverTrigger, ProgressBar, ProgressMode, ProgressType, QRCode, Radio, RadioDirection, Rate,
-    ResultType, ResultView, RichText, RichTextSegment, RichTextStyle, ScrollView, Segmented,
-    Select, SelectableItem, SelectableList, SharedActive, Sider, Skeleton, SkeletonShape, Slider,
+    Drawer, DrawerPlacement, Dropdown, Empty, FieldError, FloatButton, FloatButtonBackTop, Footer,
+    Form, FormBuilder, FormItem, FormLayout, FormModel, Grid, Header, Icon, Image, Input,
+    InputNumber, InputNumberValue, IntoFormValue, Label, Layout, LineChart, LineData, List,
+    Mentions, Menu, MenuItem, MenuMode, Message, MessageItem, MessagePlacement, Modal, NavGroup,
+    NavItem, Navigation, NotifPlacement, Notification, NotificationItem, OptGroup, Pagination,
+    PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger,
+    ProgressBar, ProgressMode, ProgressType, QRCode, Radio, RadioDirection, Rate, ResultType,
+    ResultView, RichText, RichTextSegment, RichTextStyle, ScrollView, Segmented, Select,
+    SelectableItem, SelectableList, SharedActive, Sider, Skeleton, SkeletonShape, Slider,
     SortDirection, Space, SpaceSize, Spin, SpinSize, Splitter, Step, StepStatus, Steps, Switch,
     Tab, TabPosition, Table, TableBuilder, TableChange, TableColumn, TableRow, Tabs, Tag, TagColor,
     ThemeToggle, Time, TimePicker, Timeline, TimelineItem, Tooltip, TooltipPlacement, Transfer,
     TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography, TypographyType, Upload,
-    UploadFile, UploadStatus, ValidateStatus, ValidationResult, ValidationRule, Watermark,
+    UploadFile, UploadStatus, ValidateStatus, Values, Watermark,
 };
 pub use crate::ui::{Animation, Easing};
 
 fn assert_input_number_value<T: InputNumberValue>() {}
+fn assert_form_value<T: IntoFormValue>() {}
 
 component! {
     struct PreludeComponentProbe {
@@ -176,12 +177,12 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<DynTokens>();
     assert_exported::<Easing>();
     assert_exported::<Effect>();
-    assert_exported::<FieldDef>();
+    assert_exported::<FieldError>();
+    assert_exported::<FormBuilder>();
     assert_exported::<FormItem>();
     assert_exported::<FormLayout>();
-    assert_exported::<FormValidationError>();
-    assert_exported::<FormValidatorKey>();
-    assert_exported::<FormValidatorTable>();
+    assert_exported::<FormModel>();
+    assert_form_value::<String>();
     assert_exported::<LineData>();
     assert_exported::<MenuItem>();
     assert_exported::<MenuMode>();
@@ -216,8 +217,7 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<TriggerMode>();
     assert_exported::<TypographyType>();
     assert_exported::<ValidateStatus>();
-    assert_exported::<ValidationResult>();
-    assert_exported::<ValidationRule>();
+    assert_exported::<Values>();
     assert_exported::<TableBuilder>();
     assert_exported::<Alert>();
     assert_exported::<Anchor>();

@@ -10,6 +10,7 @@ ab_glyph = "0.2.32"
 earcut = "0.4.10"
 glow = { version = "0.17.0", optional = true }
 image = { version = "0.25.6", default-features = false, features = ["png", "jpeg"] }
+regex = "1"
 serde_json = { version = "1", optional = true }
 # `#[implement]` 宏在 crate 根解析 `windows_core`；无平台 cfg，避免违反 native-only cfg 边界。
 windows-core = "0.62.2"
