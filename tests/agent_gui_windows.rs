@@ -27,15 +27,18 @@ const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 struct GraphicsExpectation {
     backend_override: Option<&'static str>,
     selected_recipe: &'static str,
+    present_occlusion: &'static str,
 }
 
 const D3D11_GRAPHICS: GraphicsExpectation = GraphicsExpectation {
     backend_override: Some("d3d11"),
     selected_recipe: "backend=d3d11; raster=gpu_native; present=swapchain",
+    present_occlusion: "present_status_and_test",
 };
 const DEFAULT_VULKAN_GRAPHICS: GraphicsExpectation = GraphicsExpectation {
     backend_override: None,
     selected_recipe: "backend=vulkan; raster=cpu; present=pixel_upload",
+    present_occlusion: "unsupported",
 };
 static REAL_GUI_LOCK: Mutex<()> = Mutex::new(());
 
@@ -146,13 +149,14 @@ impl DemoProcess {
 
         let output = self.take_output();
         let selected = format!(
-            "Graphics bootstrap: selected recipe {}",
-            self.graphics.selected_recipe
+            "Graphics bootstrap: selected recipe {}; present_occlusion={}",
+            self.graphics.selected_recipe, self.graphics.present_occlusion
         );
         assert!(
             output.contains(&selected),
-            "demo did not select the expected graphics recipe `{}`; output={output}",
-            self.graphics.selected_recipe
+            "demo did not select graphics recipe `{}` with present occlusion `{}`; output={output}",
+            self.graphics.selected_recipe,
+            self.graphics.present_occlusion
         );
         assert!(
             !output.contains("fallback=software_cpu"),
