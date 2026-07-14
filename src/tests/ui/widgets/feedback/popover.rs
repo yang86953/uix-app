@@ -63,3 +63,27 @@ fn popover_overlay_is_removed_only_after_custom_leave_finishes() {
     assert!(!tree.update(0.1));
     assert!(tree.overlay_stack().is_empty());
 }
+
+#[test]
+fn animation_discovery_registers_overlay_before_enter_finishes() {
+    let popover = Popover::new("details").enter_animation(AnimationConfig::fade_in(0.3));
+    let mut tree = WidgetTree::new();
+    let id = tree.set_root(Box::new(popover));
+    tree.get_mut(id)
+        .expect("popover root")
+        .set_frame(Rect::new(300.0, 200.0, 80.0, 28.0));
+    tree.get_mut(id).expect("popover root").set_active(true);
+    tree.rebuild_widget_overlays();
+    assert!(tree.overlay_stack().is_empty());
+
+    tree.get_mut(id)
+        .expect("popover root")
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<Popover>()
+        .expect("popover component")
+        .open();
+
+    assert!(tree.update(0.1));
+    assert_eq!(tree.overlay_stack().len(), 1);
+}
