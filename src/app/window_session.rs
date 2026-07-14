@@ -199,12 +199,8 @@ impl WindowSession {
         F: Fn() -> ViewNode + Send + Sync + 'static,
     {
         let factory: ViewFactory = Arc::new(build_root);
-        // 先建 tree 取 reconcile_requester，再 capture_root：factory 闭包内 State::clone
-        // 在 CURRENT_VIEW_RECONCILE_FN 设定时绑定到本 tree，State::set 即触发 reconcile。
         let mut tree = WidgetTree::new();
-        crate::ui::foundation::state::set_current_view_reconcile_fn_arc(tree.reconcile_requester());
         let root = ViewAdapter::capture_root(|| factory());
-        crate::ui::foundation::state::clear_current_view_reconcile_fn();
         let wnode = ViewAdapter::expand(root);
         tree.build(wnode);
         tree.bind_orphan_pending_states();
