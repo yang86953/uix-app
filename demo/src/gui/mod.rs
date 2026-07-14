@@ -249,7 +249,7 @@ fn app_shell(active: State<usize>, timer_ticks: State<u32>, anim_time: State<f32
     )
 }
 
-pub fn run() {
+pub fn run(agent_control: bool) {
     let active = State::new(0usize);
     let timer_ticks = State::new(0u32);
     let anim_time = State::new(0.0f32);
@@ -257,7 +257,7 @@ pub fn run() {
     let runtime_count = State::new(0i32);
     let theme_control = ThemeControl::default();
 
-    App::new()
+    let app = App::new()
         .title("UIX Demo")
         .size(INIT_W, INIT_H)
         .theme(Theme::antd_light())
@@ -320,26 +320,38 @@ pub fn run() {
                     })
                     .detach();
             }
-        }))
-        .root(with_cloned!(
-            active,
-            timer_ticks,
-            anim_time,
-            home_count,
-            runtime_count,
-            theme_control;
-            {
-                app_shell_with_counters(
-                    active,
-                    timer_ticks,
-                    anim_time,
-                    &home_count,
-                    &runtime_count,
-                    &theme_control,
-                )
-            }
-        ))
-        .run();
+        }));
+    #[cfg(feature = "agent-control")]
+    let app = if agent_control {
+        app.enable_agent_control()
+    } else {
+        app
+    };
+    #[cfg(not(feature = "agent-control"))]
+    let app = {
+        debug_assert!(!agent_control);
+        app
+    };
+
+    app.root(with_cloned!(
+        active,
+        timer_ticks,
+        anim_time,
+        home_count,
+        runtime_count,
+        theme_control;
+        {
+            app_shell_with_counters(
+                active,
+                timer_ticks,
+                anim_time,
+                &home_count,
+                &runtime_count,
+                &theme_control,
+            )
+        }
+    ))
+    .run();
 }
 
 #[cfg(all(test, feature = "test-harness"))]
