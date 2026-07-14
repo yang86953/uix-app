@@ -263,10 +263,12 @@ impl Transfer {
         self.initial_target = next.initial_target;
     }
 
+    #[cfg(test)]
     pub(crate) fn source_count(&self) -> usize {
         self.source.len()
     }
 
+    #[cfg(test)]
     pub(crate) fn target_count(&self) -> usize {
         self.target.len()
     }

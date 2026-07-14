@@ -192,6 +192,7 @@ impl Mentions {
     pub fn value(&self) -> &str {
         &self.value
     }
+    #[cfg(test)]
     pub(crate) fn is_suggesting(&self) -> bool {
         self.suggesting
     }
