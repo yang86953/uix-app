@@ -155,8 +155,10 @@ pub enum Trigger {
     OnChange,
 }
 
-type CustomValidator = Box<dyn Fn(&str) -> Result<(), String> + 'static>;
+type CustomValidator = Arc<dyn Fn(&str) -> Result<(), String> + 'static>;
+type DependencyValidator = Arc<dyn Fn(&str, &Values) -> Result<(), String> + 'static>;
 
+#[derive(Clone)]
 enum FieldRule {
     Required(String),
     Email(String),
@@ -175,8 +177,13 @@ enum FieldRule {
         message: String,
     },
     Custom(CustomValidator),
+    Dependency {
+        field: String,
+        validator: DependencyValidator,
+    },
 }
 
+#[derive(Clone)]
 struct FormField {
     name: String,
     label: String,
@@ -274,7 +281,20 @@ impl FormBuilder {
     pub fn custom(mut self, validator: impl Fn(&str) -> Result<(), String> + 'static) -> Self {
         self.current
             .rules
-            .push(FieldRule::Custom(Box::new(validator)));
+            .push(FieldRule::Custom(Arc::new(validator)));
+        self
+    }
+
+    /// 声明当前字段依赖另一个字段；依赖源变化后会级联重验当前字段。
+    pub fn depends_on(
+        mut self,
+        field: impl Into<String>,
+        validator: impl Fn(&str, &Values) -> Result<(), String> + 'static,
+    ) -> Self {
+        self.current.rules.push(FieldRule::Dependency {
+            field: field.into(),
+            validator: Arc::new(validator),
+        });
         self
     }
 
@@ -310,20 +330,18 @@ pub struct FormModel {
 impl FormModel {
     /// 校验全部字段；每个字段返回首个错误，字段间按声明顺序收集。
     pub fn validate(&self) -> Result<Values, Vec<FieldError>> {
-        let field_errors: Vec<Option<FieldError>> =
-            self.fields.iter().map(validate_field).collect();
+        let values = values_from_fields(&self.fields);
+        let field_errors: Vec<Option<FieldError>> = self
+            .fields
+            .iter()
+            .map(|field| validate_field(field, &values))
+            .collect();
         let errors = field_errors.iter().flatten().cloned().collect::<Vec<_>>();
         *self.active_errors.borrow_mut() = field_errors;
         if !errors.is_empty() {
             return Err(errors);
         }
-
-        let entries = self
-            .fields
-            .iter()
-            .map(|field| (field.name.clone(), Arc::clone(&field.value.typed)))
-            .collect();
-        Ok(Values { entries })
+        Ok(values)
     }
 
     /// 更新字段值；字段不存在时返回 `false`。
@@ -332,10 +350,17 @@ impl FormModel {
             return false;
         };
         self.fields[index].value = StoredValue::new(value);
+        let values = values_from_fields(&self.fields);
         let error = (self.fields[index].trigger == Trigger::OnChange)
-            .then(|| validate_field(&self.fields[index]))
+            .then(|| validate_field(&self.fields[index], &values))
             .flatten();
-        self.active_errors.borrow_mut()[index] = error;
+        {
+            let mut active_errors = self.active_errors.borrow_mut();
+            active_errors[index] = error;
+            for dependent in dependent_indices(&self.fields, index) {
+                active_errors[dependent] = validate_field(&self.fields[dependent], &values);
+            }
+        }
         true
     }
 
@@ -345,7 +370,8 @@ impl FormModel {
             return false;
         };
         if self.fields[index].trigger == Trigger::OnBlur {
-            self.active_errors.borrow_mut()[index] = validate_field(&self.fields[index]);
+            let values = values_from_fields(&self.fields);
+            self.active_errors.borrow_mut()[index] = validate_field(&self.fields[index], &values);
         }
         true
     }
@@ -389,7 +415,46 @@ impl Form {
     }
 }
 
-fn validate_field(field: &FormField) -> Option<FieldError> {
+fn values_from_fields(fields: &[FormField]) -> Values {
+    let entries = fields
+        .iter()
+        .map(|field| (field.name.clone(), Arc::clone(&field.value.typed)))
+        .collect();
+    Values { entries }
+}
+
+fn dependent_indices(fields: &[FormField], changed: usize) -> Vec<usize> {
+    let mut visited = vec![false; fields.len()];
+    visited[changed] = true;
+    let mut frontier = vec![fields[changed].name.as_str()];
+    let mut dependents = Vec::new();
+
+    while let Some(source) = frontier.pop() {
+        for (index, field) in fields.iter().enumerate() {
+            if visited[index] || !field.depends_on(source) {
+                continue;
+            }
+            visited[index] = true;
+            dependents.push(index);
+            frontier.push(field.name.as_str());
+        }
+    }
+    dependents.sort_unstable();
+    dependents
+}
+
+impl FormField {
+    fn depends_on(&self, source: &str) -> bool {
+        self.rules.iter().any(|rule| {
+            matches!(
+                rule,
+                FieldRule::Dependency { field, .. } if field == source
+            )
+        })
+    }
+}
+
+fn validate_field(field: &FormField, values: &Values) -> Option<FieldError> {
     for rule in &field.rules {
         let failed_message = match rule {
             FieldRule::Required(message) if field.value.is_empty() => Some(message.clone()),
@@ -433,6 +498,7 @@ fn validate_field(field: &FormField) -> Option<FieldError> {
                 Some(message.clone())
             }
             FieldRule::Custom(validator) => validator(&field.value.text).err(),
+            FieldRule::Dependency { validator, .. } => validator(&field.value.text, values).err(),
             _ => None,
         };
         if let Some(message) = failed_message {
