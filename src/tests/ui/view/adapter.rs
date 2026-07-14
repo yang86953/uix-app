@@ -355,9 +355,11 @@ fn reconcile_same_type_select_preserves_open_state() {
 
 #[test]
 fn reconcile_checkbox_patches_instance_and_syncs_snapshot_fields() {
+    use crate::ui::state::State;
     use crate::ui::widgets::Checkbox;
 
-    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Checkbox::new("old")));
+    let checked = State::new(false);
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Checkbox::new("old").checked(&checked)));
     let root_id = tree.root_id().expect("checkbox root should exist");
     let before_ptr = tree
         .get(root_id)
@@ -367,9 +369,10 @@ fn reconcile_checkbox_patches_instance_and_syncs_snapshot_fields() {
         .downcast_ref::<Checkbox>()
         .unwrap() as *const Checkbox;
 
+    checked.set(true);
     ViewAdapter::reconcile_nodes(
         &mut tree,
-        ViewNode::leaf(Checkbox::new("new").checked(true).disabled(true)),
+        ViewNode::leaf(Checkbox::new("new").checked(&checked).disabled(true)),
     );
 
     let checkbox = tree
@@ -393,9 +396,11 @@ fn reconcile_checkbox_patches_instance_and_syncs_snapshot_fields() {
 
 #[test]
 fn reconcile_switch_patches_instance_and_syncs_snapshot_fields() {
+    use crate::ui::state::State;
     use crate::ui::widgets::Switch;
 
-    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Switch::new()));
+    let checked = State::new(false);
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Switch::new().checked(&checked)));
     let root_id = tree.root_id().expect("switch root should exist");
     let before_ptr = tree
         .get(root_id)
@@ -405,9 +410,10 @@ fn reconcile_switch_patches_instance_and_syncs_snapshot_fields() {
         .downcast_ref::<Switch>()
         .unwrap() as *const Switch;
 
+    checked.set(true);
     ViewAdapter::reconcile_nodes(
         &mut tree,
-        ViewNode::leaf(Switch::new().checked(true).disabled(true)),
+        ViewNode::leaf(Switch::new().checked(&checked).disabled(true)),
     );
 
     let switch = tree

@@ -533,7 +533,7 @@ fn app_state_lookup_handle_exposes_read_only_config_getters() {
     let mut tree = WidgetTree::new();
     let app_state = AppState::new();
     let root = tree.set_root(Box::new(Select::new().placeholder("Pick").disabled(true)));
-    let checkbox = tree.add_child(root, Box::new(Checkbox::new("Agree").checked(true)));
+    let checkbox = tree.add_child(root, Box::new(Checkbox::new("Agree").default_checked(true)));
     let input_number = tree.add_child(
         root,
         Box::new(InputNumber::new("Amount").value(12.5).disabled(true)),
@@ -703,10 +703,11 @@ fn component_handle_getters_cover_common_snapshot_fields() {
         .set_root(Box::new(Select::new().placeholder("Pick").disabled(true)));
     let checkbox = tree
         .borrow_mut()
-        .add_child(root, Box::new(Checkbox::new("Agree").checked(true)));
-    let switch = tree
-        .borrow_mut()
-        .add_child(root, Box::new(Switch::new().checked(true).disabled(true)));
+        .add_child(root, Box::new(Checkbox::new("Agree").default_checked(true)));
+    let switch = tree.borrow_mut().add_child(
+        root,
+        Box::new(Switch::new().default_checked(true).disabled(true)),
+    );
     let slider = tree
         .borrow_mut()
         .add_child(root, Box::new(Slider::new().value(42.0)));

@@ -3,6 +3,7 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
+use crate::ui::state::State;
 use crate::ui::SnapshotFields;
 use crate::ui::{ComponentId, EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetTree};
 use std::cell::Cell;
@@ -10,6 +11,7 @@ use std::cell::Cell;
 component! {
     pub struct Switch {
         checked: bool,
+        checked_binding: Option<State<bool>>,
         disabled: bool,
         size: f32,
         hovered: bool,
@@ -26,11 +28,11 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if self.disabled { return EventResult::NotHandled; }
+        self.sync_bound_checked();
         match event {
             SystemEvent::PointerDown { .. } => {
-                self.checked = !self.checked;
+                self.toggle_checked();
                 self.focused = true;
-                self.pending_change.set(Some(self.checked));
                 EventResult::Handled
             }
             SystemEvent::PointerEnter => { self.hovered = true; EventResult::Handled }
@@ -39,8 +41,7 @@ component! {
             SystemEvent::FocusOut => { self.focused = false; EventResult::Handled }
             SystemEvent::KeyDown { key, .. } => {
                 if *key == KeyCode::Space || *key == KeyCode::Enter {
-                    self.checked = !self.checked;
-                    self.pending_change.set(Some(self.checked));
+                    self.toggle_checked();
                     EventResult::Handled
                 } else {
                     EventResult::NotHandled
@@ -57,6 +58,7 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        self.capture_bound_checked_dependency();
         let primary = ctx.tokens().color_primary();
         let primary_hover = ctx.tokens().color_primary_hover();
         let primary_border = ctx.tokens().color_primary_border();
@@ -99,6 +101,7 @@ impl Switch {
     pub fn new() -> Self {
         Self {
             checked: false,
+            checked_binding: None,
             disabled: false,
             size: 22.0,
             hovered: false,
@@ -106,8 +109,16 @@ impl Switch {
             pending_change: Cell::new(None),
         }
     }
-    pub fn checked(mut self, v: bool) -> Self {
-        self.checked = v;
+    /// 将开关值绑定到外部 `State<bool>`；用户切换与外部更新保持双向同步。
+    pub fn checked(mut self, state: &State<bool>) -> Self {
+        self.checked_binding = Some(state.clone());
+        self.checked = state.get();
+        self
+    }
+    /// 设置非受控组件的初始开启值。
+    pub fn default_checked(mut self, value: bool) -> Self {
+        self.checked_binding = None;
+        self.checked = value;
         self
     }
     pub fn disabled(mut self, v: bool) -> Self {
@@ -116,6 +127,28 @@ impl Switch {
     }
     pub fn is_checked(&self) -> bool {
         self.checked
+    }
+
+    fn sync_bound_checked(&mut self) {
+        if let Some(state) = self.checked_binding.as_ref() {
+            self.checked = state.get();
+        }
+    }
+
+    fn capture_bound_checked_dependency(&self) {
+        if let Some(state) = self.checked_binding.as_ref() {
+            let _ = state.get();
+        }
+    }
+
+    fn toggle_checked(&mut self) {
+        self.checked = !self.checked;
+        if let Some(state) = self.checked_binding.as_ref() {
+            if state.get() != self.checked {
+                state.set(self.checked);
+            }
+        }
+        self.pending_change.set(Some(self.checked));
     }
 
     fn intrinsic_size(&self) -> Size {
@@ -133,7 +166,11 @@ impl Switch {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
-        self.checked = next.checked;
+        let controlled_checked = next.checked_binding.as_ref().map(|_| next.checked);
+        self.checked_binding = next.checked_binding;
+        if let Some(checked) = controlled_checked {
+            self.checked = checked;
+        }
         self.disabled = next.disabled;
         self.size = next.size;
     }
