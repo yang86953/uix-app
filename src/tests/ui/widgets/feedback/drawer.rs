@@ -7,6 +7,7 @@ use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::widgets::feedback::drawer::*;
 use crate::ui::widgets::other::scroll_view::ScrollView;
+use crate::ui::AnimationConfig;
 
 #[test]
 fn closed_drawer_trigger_opens_via_widget_tree_pointer_down() {
@@ -290,4 +291,22 @@ fn drawer_close_finishes_exit_transition_before_internal_hide() {
     assert!(!WidgetAnimation::update_animation(&mut drawer, 1.0));
     assert!(!drawer.is_present());
     assert!(drawer.transition_dirty);
+}
+
+#[test]
+fn drawer_uses_custom_enter_and_leave_animations() {
+    let mut drawer = Drawer::new("Drawer")
+        .placement(DrawerPlacement::Left)
+        .enter_animation(AnimationConfig::fade_in(0.4))
+        .leave_animation(AnimationConfig::fade_out(0.3))
+        .show();
+
+    assert_eq!(drawer.transition.offset, Point::new(0.0, 0.0));
+    assert!(WidgetAnimation::update_animation(&mut drawer, 0.2));
+
+    drawer.close();
+    assert!(WidgetAnimation::update_animation(&mut drawer, 0.2));
+    assert!(drawer.is_present());
+    assert!(!WidgetAnimation::update_animation(&mut drawer, 0.1));
+    assert!(!drawer.is_present());
 }

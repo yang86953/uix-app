@@ -6,7 +6,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::traits::input::ControlSize;
-use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::animation::{presets, AnimationConfig, TransitionPlayer};
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 use std::rc::Rc;
@@ -46,6 +46,8 @@ component! {
         context_close_requested: Option<Rc<Cell<bool>>>,
         last_win_w: Cell<f32>,
         last_win_h: Cell<f32>,
+        enter_animation: AnimationConfig,
+        leave_animation: AnimationConfig,
         pub(crate) transition: TransitionPlayer,
         closing: bool,
         pub(crate) transition_dirty: bool,
@@ -286,6 +288,8 @@ impl Modal {
             context_close_requested: None,
             last_win_w: Cell::new(0.0),
             last_win_h: Cell::new(0.0),
+            enter_animation: presets::modal_enter(),
+            leave_animation: presets::modal_exit(),
             transition: TransitionPlayer::new(presets::modal_enter()),
             closing: false,
             transition_dirty: false,
@@ -360,6 +364,26 @@ impl Modal {
         self
     }
 
+    /// 设置打开时播放的动画；已打开时从当前声明重新开始进场。
+    pub fn enter_animation(mut self, animation: AnimationConfig) -> Self {
+        self.enter_animation = animation;
+        if self.visible && !self.closing {
+            self.transition = TransitionPlayer::new(animation);
+            self.transition_dirty = true;
+        }
+        self
+    }
+
+    /// 设置关闭时播放的动画。
+    pub fn leave_animation(mut self, animation: AnimationConfig) -> Self {
+        self.leave_animation = animation;
+        if self.closing {
+            self.transition = TransitionPlayer::new(animation);
+            self.transition_dirty = true;
+        }
+        self
+    }
+
     pub fn is_visible(&self) -> bool {
         self.visible
     }
@@ -375,7 +399,7 @@ impl Modal {
     pub fn open(&mut self) {
         self.visible = true;
         self.closing = false;
-        self.transition = TransitionPlayer::new(presets::modal_enter());
+        self.transition = TransitionPlayer::new(self.enter_animation);
         self.transition_dirty = true;
     }
 
@@ -388,7 +412,7 @@ impl Modal {
         }
         self.visible = false;
         self.closing = true;
-        self.transition = TransitionPlayer::new(presets::modal_exit());
+        self.transition = TransitionPlayer::new(self.leave_animation);
         self.transition_dirty = true;
     }
 
@@ -407,6 +431,8 @@ impl Modal {
         self.centered = next.centered;
         self.overlay = next.overlay;
         self.context_close_requested = next.context_close_requested;
+        self.enter_animation = next.enter_animation;
+        self.leave_animation = next.leave_animation;
     }
 
     fn dialog_rect_for_event(&self) -> Rect {
@@ -531,6 +557,16 @@ impl ModalBuilder {
 
     pub fn overlay(mut self, overlay: bool) -> Self {
         self.modal.overlay = overlay;
+        self
+    }
+
+    pub fn enter_animation(mut self, animation: AnimationConfig) -> Self {
+        self.modal = self.modal.enter_animation(animation);
+        self
+    }
+
+    pub fn leave_animation(mut self, animation: AnimationConfig) -> Self {
+        self.modal = self.modal.leave_animation(animation);
         self
     }
 }

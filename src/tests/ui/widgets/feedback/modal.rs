@@ -2,6 +2,7 @@ use crate::draw::compositor::ScenePaint;
 use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::widgets::feedback::modal::*;
+use crate::ui::AnimationConfig;
 
 #[test]
 fn closed_modal_trigger_opens_via_widget_tree_pointer_down() {
@@ -116,6 +117,25 @@ fn modal_close_finishes_exit_transition_before_internal_hide() {
 }
 
 #[test]
+fn modal_uses_custom_enter_and_leave_animation_durations() {
+    let mut modal = Modal::new("Dialog")
+        .enter_animation(AnimationConfig::fade_in(0.4))
+        .leave_animation(AnimationConfig::fade_out(0.3))
+        .visible(true);
+
+    assert_eq!(modal.transition.scale, 1.0);
+    assert!(WidgetAnimation::update_animation(&mut modal, 0.2));
+    assert!(modal.transition.opacity_progress > 0.0);
+    assert!(modal.transition.opacity_progress < 1.0);
+
+    modal.close();
+    assert!(WidgetAnimation::update_animation(&mut modal, 0.2));
+    assert!(modal.is_present());
+    assert!(!WidgetAnimation::update_animation(&mut modal, 0.1));
+    assert!(!modal.is_present());
+}
+
+#[test]
 fn modal_show_builds_interactive_view_and_context_close_starts_exit() {
     use crate::ui::view::{button, ViewAdapter};
     use crate::ui::widgets::Button;
@@ -124,7 +144,9 @@ fn modal_show_builds_interactive_view_and_context_close_starts_exit() {
         Modal::show(|ctx| button("关闭").on_click_fn(move || ctx.close()))
             .title("提示")
             .width(400.0)
-            .height(240.0),
+            .height(240.0)
+            .enter_animation(AnimationConfig::fade_in(0.2))
+            .leave_animation(AnimationConfig::fade_out(0.15)),
     );
     let modal_id = tree.root_id().expect("modal root");
     tree.get_mut(modal_id)
