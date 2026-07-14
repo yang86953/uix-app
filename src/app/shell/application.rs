@@ -597,7 +597,13 @@ impl App {
         let root_notifications = notifications.clone();
         let mut session = WindowSession::from_root_factory_for_window(
             root_window_id,
-            move || wrap_root_with_notification_overlay(root_factory(), root_notifications.clone()),
+            move || {
+                wrap_root_with_notification_overlay(
+                    root_factory(),
+                    root_notifications.clone(),
+                    root_window_id,
+                )
+            },
             engine,
             w,
             h,
@@ -1083,7 +1089,7 @@ fn create_secondary_window(
     let wrapped_root = move || {
         let root_node = root();
         match notifications.clone() {
-            Some(state) => wrap_root_with_notification_overlay(root_node, state),
+            Some(state) => wrap_root_with_notification_overlay(root_node, state, window_id),
             None => root_node,
         }
     };

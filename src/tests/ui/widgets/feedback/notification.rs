@@ -1,8 +1,9 @@
 use crate::native::notification::NotificationService;
 use crate::native::notification::ToastEntry;
 use crate::tests::common::*;
+use crate::ui::traits::{EventHandler, WidgetAnimation};
 use crate::ui::widgets::feedback::notification::*;
-use crate::ui::Placement;
+use crate::ui::{AnimationConfig, EventResult, Placement, SystemEvent};
 
 #[test]
 fn measure_preserves_notification_zero_layout_footprint() {
@@ -59,8 +60,7 @@ fn replace_from_toasts_keeps_only_visible_toasts() {
     ];
 
     notification.replace_from_toasts(&toasts);
-    let queue = notification.queue();
-    let queue = queue.borrow();
+    let queue = notification.items();
 
     assert_eq!(queue.len(), 1);
     assert_eq!(queue[0].title, "Visible");
@@ -79,8 +79,7 @@ fn notify_error_from_service_syncs_non_fatal_error_to_queue() {
     );
 
     assert!(id.is_some());
-    let queue = notification.queue();
-    let queue = queue.borrow();
+    let queue = notification.items();
     assert_eq!(queue.len(), 1);
     assert_eq!(queue[0].type_, StatusLevel::Warning);
     assert_eq!(queue[0].title, "Warning");
@@ -103,7 +102,7 @@ fn notify_result_error_from_service_keeps_ok_and_fatal_silent() {
         None
     );
 
-    assert!(notification.queue().borrow().is_empty());
+    assert!(notification.items().is_empty());
     assert!(service.visible_toasts().is_empty());
 }
 
@@ -164,4 +163,62 @@ fn every_notification_placement_anchors_inside_window() {
         assert_eq!(Point::new(bounds.x, bounds.y), expected_origin);
         assert_eq!(Size::new(bounds.w, bounds.h), Size::new(384.0, 48.0));
     }
+}
+
+#[test]
+fn notification_holds_without_frames_and_expires_on_one_timer() {
+    let mut notification = Notification::new();
+    notification.info("Saved", "done");
+
+    assert!(!WidgetAnimation::update_animation(&mut notification, 0.2));
+    let (timer_id, delay) = EventHandler::active_timer(&notification).expect("notification timer");
+    assert_eq!(delay, std::time::Duration::from_millis(4500));
+
+    assert_eq!(
+        EventHandler::on_event(
+            &mut notification,
+            &SystemEvent::Timer {
+                id: timer_id as u32,
+            },
+        ),
+        EventResult::Handled
+    );
+    assert!(notification.items().is_empty());
+    assert!(WidgetAnimation::update_animation(&mut notification, 0.1));
+    assert!(!WidgetAnimation::update_animation(&mut notification, 0.05));
+}
+
+#[test]
+fn handle_dismisses_persistent_notification_after_leave() {
+    let mut notification = Notification::new().leave_animation(AnimationConfig::fade_out(0.2));
+    let handle = notification.handle();
+    let id = handle.add(NotificationItem {
+        type_: StatusLevel::Info,
+        title: "Persistent".into(),
+        description: "manual close".into(),
+        duration_ms: 0,
+        closable: true,
+    });
+    WidgetAnimation::update_animation(&mut notification, 0.2);
+
+    assert_eq!(EventHandler::active_timer(&notification), None);
+    assert!(handle.dismiss(id));
+    assert!(handle.is_empty());
+    assert!(WidgetAnimation::update_animation(&mut notification, 0.1));
+    assert!(!WidgetAnimation::update_animation(&mut notification, 0.1));
+}
+
+#[test]
+fn slide_motion_dirty_bounds_cover_only_notification_sweep() {
+    let mut notification =
+        Notification::new().enter_animation(AnimationConfig::slide_in(Placement::Right, 0.2));
+    notification.info("Moving", "narrow damage");
+    notification.hit_bounds(Rect::new(0.0, 0.0, 800.0, 600.0));
+    assert!(WidgetAnimation::update_animation(&mut notification, 0.1));
+
+    let dirty = WidgetAnimation::dirty_bounds(&notification, Rect::new(0.0, 0.0, 800.0, 600.0));
+
+    assert!(dirty.contains(Point::new(796.0, 40.0)));
+    assert!(dirty.w < 450.0);
+    assert!(dirty.h < 100.0);
 }
