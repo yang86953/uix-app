@@ -10,7 +10,7 @@ use crate::core::{Errc, Error, Result};
 
 use super::adapter::{QueueSelection, VulkanAdapterInfo};
 use super::context::{loader_err, vk_err};
-use super::fault::{configure_instance, DeviceFaultFeatureQuery};
+use super::fault::{configure_instance, DeviceFaultFeatureQuery, DeviceFaultReporter};
 use super::surface::surface_instance_extensions;
 
 type DeviceKey = (vk::PhysicalDevice, u32);
@@ -123,7 +123,7 @@ pub(super) struct VulkanDevice {
     info: VulkanAdapterInfo,
     device: ash::Device,
     queue: vk::Queue,
-    fault_reporting_enabled: bool,
+    fault_reporter: Option<DeviceFaultReporter>,
     lost: Cell<bool>,
 }
 
@@ -159,13 +159,16 @@ impl VulkanDevice {
         .map_err(|error| vk_err("vkCreateDevice", error))?;
         // SAFETY: 创建 device 时声明了该 queue family 的一个 queue。
         let queue = unsafe { device.get_device_queue(selection.family_index, 0) };
+        let fault_reporter = fault_support
+            .reporting()
+            .then(|| DeviceFaultReporter::new(runtime.instance(), &device));
         Ok(Rc::new(Self {
             _runtime: runtime,
             physical_device: selection.physical_device,
             info: selection.info,
             device,
             queue,
-            fault_reporting_enabled: fault_support.reporting(),
+            fault_reporter,
             lost: Cell::new(false),
         }))
     }
@@ -187,7 +190,7 @@ impl VulkanDevice {
     }
 
     pub(super) fn fault_reporting_enabled(&self) -> bool {
-        self.fault_reporting_enabled
+        self.fault_reporter.is_some()
     }
 
     pub(super) fn ensure_healthy(&self) -> Result<()> {
@@ -201,31 +204,46 @@ impl VulkanDevice {
     }
 
     pub(super) fn observe<T>(&self, result: Result<T>) -> Result<T> {
-        if result
-            .as_ref()
-            .is_err_and(|error| error.code() == Errc::GraphicsDeviceLost)
-        {
-            self.mark_lost();
-        }
-        result
+        result.map_err(|error| self.observe_error(error))
     }
 
     pub(super) fn observe_wait(&self, result: std::result::Result<(), vk::Result>) {
         if result == Err(vk::Result::ERROR_DEVICE_LOST) {
-            self.mark_lost();
+            let error = self.observe_error(vk_err(
+                "vkDeviceWaitIdle during shutdown",
+                vk::Result::ERROR_DEVICE_LOST,
+            ));
+            crate::core::log::error_fn(error.what());
         }
     }
 
     pub(super) fn error(&self, operation: &str, error: vk::Result) -> Error {
-        let error = vk_err(operation, error);
-        if error.code() == Errc::GraphicsDeviceLost {
-            self.mark_lost();
-        }
-        error
+        self.observe_error(vk_err(operation, error))
     }
 
+    #[cfg(test)]
     pub(super) fn mark_lost(&self) {
         self.lost.set(true);
+    }
+
+    fn observe_error(&self, error: Error) -> Error {
+        if error.code() != Errc::GraphicsDeviceLost {
+            return error;
+        }
+        self.lost.set(true);
+        let Some(reporter) = &self.fault_reporter else {
+            return error;
+        };
+        match reporter.collect() {
+            Ok(report) => error.with_source(Error::new(
+                Errc::GraphicsDeviceLost,
+                report.diagnostic_summary(),
+            )),
+            Err(status) => error.with_source(Error::new(
+                Errc::GraphicsDeviceLost,
+                format!("VK_EXT_device_fault: vkGetDeviceFaultInfoEXT failed: {status:?}"),
+            )),
+        }
     }
 
     fn is_lost(&self) -> bool {
