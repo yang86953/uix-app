@@ -24,6 +24,14 @@ pub(crate) struct AcceptedAgentStream {
     pub(crate) cancel: Arc<dyn AgentStreamCancelIo>,
 }
 
+#[cfg(any(unix, test))]
+mod user_identity;
+
+#[cfg(test)]
+pub(crate) fn peer_user_ids_match_for_test(current: u32, peer: u32) -> bool {
+    user_identity::UnixUserId::from_raw(current).admits(user_identity::UnixUserId::from_raw(peer))
+}
+
 #[cfg(test)]
 pub(crate) fn connect_for_test(endpoint: &str) -> std::io::Result<AgentStream> {
     platform_connect_for_test(endpoint)

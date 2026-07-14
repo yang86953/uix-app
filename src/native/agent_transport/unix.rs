@@ -7,6 +7,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use super::user_identity::UnixUserId;
 use super::{AcceptedAgentStream, AgentStreamCancelIo};
 
 const DISCOVERY_DIR_PREFIX: &str = "uix-agent";
@@ -206,7 +207,7 @@ fn peer_is_current_user(stream: &UnixStream) -> io::Result<bool> {
         // SAFETY: `geteuid` has no arguments and no memory safety preconditions.
         libc::geteuid()
     };
-    Ok(credentials.uid == effective_uid)
+    Ok(UnixUserId::from_raw(effective_uid).admits(UnixUserId::from_raw(credentials.uid)))
 }
 
 #[cfg(target_os = "macos")]
@@ -225,10 +226,13 @@ fn peer_is_current_user(stream: &UnixStream) -> io::Result<bool> {
         // SAFETY: `geteuid` has no arguments and no memory safety preconditions.
         libc::geteuid()
     };
-    Ok(uid == effective_uid)
+    Ok(UnixUserId::from_raw(effective_uid).admits(UnixUserId::from_raw(uid)))
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn peer_is_current_user(_stream: &UnixStream) -> io::Result<bool> {
-    Ok(true)
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "agent peer credentials are unavailable on this Unix target",
+    ))
 }
