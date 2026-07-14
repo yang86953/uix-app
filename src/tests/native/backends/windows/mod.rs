@@ -3,6 +3,7 @@
 mod dpi;
 mod frame_pacer;
 mod gdi_presenter;
+mod hardware_matrix;
 mod ime_dispatch;
 mod ime_foreground;
 mod platform;
