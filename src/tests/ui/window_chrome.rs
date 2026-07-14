@@ -328,9 +328,13 @@ fn each_window_control_maps_to_its_platform_neutral_action() {
 #[test]
 fn named_window_control_is_an_invokable_accessible_button() {
     let mut tree = ViewAdapter::build(
-        window_control_named(WindowControl::Close, "关闭窗口", label("×"))
-            .width(44.0)
-            .height(32.0),
+        window_control_named(
+            WindowControl::Close,
+            "关闭窗口",
+            button("nested presentation"),
+        )
+        .width(44.0)
+        .height(32.0),
     );
     let root = tree.root().expect("window control root").id();
     tree.root_mut()
@@ -347,6 +351,15 @@ fn named_window_control_is_an_invokable_accessible_button() {
     assert_eq!(control.accessibility.role, AccessibilityRole::Button);
     assert_eq!(control.accessibility.name.as_deref(), Some("关闭窗口"));
     assert!(control.actions.contains(&SemanticActionKind::Invoke));
+    assert_eq!(
+        snapshot
+            .nodes
+            .iter()
+            .filter(|node| node.accessibility.role == AccessibilityRole::Button)
+            .count(),
+        1,
+        "窗口控制的展示子树不得形成嵌套按钮语义"
+    );
 
     tree.perform_semantic_action(root, &SemanticAction::Invoke)
         .expect("invoke close control");
