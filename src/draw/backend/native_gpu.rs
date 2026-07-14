@@ -169,7 +169,7 @@ impl NativeGpuCanvas2D {
         }
     }
 
-    #[cfg(feature = "d3d11")]
+    #[cfg(all(test, feature = "d3d11"))]
     pub(crate) fn pending_mesh_count(&self) -> usize {
         self.pending_native
             .iter()
