@@ -229,3 +229,85 @@ fn text_ops_are_recorded_only_inside_recorder_scope() {
 
     assert_eq!(list.len(), 6);
 }
+
+#[test]
+fn nested_recorder_scope_restores_outer_target() {
+    use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
+    use crate::draw::painting::DisplayList;
+    use crate::draw::spatial::Orientation;
+
+    let mut canvas = NoopCanvas2D;
+    let fonts = FontService::new();
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let mut ctx = PaintContext::new_for_test(
+        &mut canvas,
+        FontHandle::default(),
+        &fonts,
+        &images,
+        &tokens,
+        96.0,
+        1.0,
+        Orientation::YDown,
+        100,
+        100,
+    );
+    let mut outer = DisplayList::new();
+    let mut inner = DisplayList::new();
+
+    ctx.with_recorder(&mut outer, |ctx| {
+        ctx.fill_rect(Rect::new(0.0, 0.0, 2.0, 2.0), Color::red(), None);
+        ctx.with_recorder(&mut inner, |ctx| {
+            ctx.fill_rect(Rect::new(2.0, 0.0, 2.0, 2.0), Color::green(), None);
+        });
+        ctx.fill_rect(Rect::new(4.0, 0.0, 2.0, 2.0), Color::blue(), None);
+    });
+
+    assert_eq!(outer.len(), 2);
+    assert_eq!(inner.len(), 1);
+    assert!(ctx.recording_complete());
+}
+
+#[test]
+fn recorder_scope_clears_target_after_panic() {
+    use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
+    use crate::draw::painting::DisplayList;
+    use crate::draw::spatial::Orientation;
+
+    let mut canvas = NoopCanvas2D;
+    let fonts = FontService::new();
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let mut ctx = PaintContext::new_for_test(
+        &mut canvas,
+        FontHandle::default(),
+        &fonts,
+        &images,
+        &tokens,
+        96.0,
+        1.0,
+        Orientation::YDown,
+        100,
+        100,
+    );
+    let mut aborted = DisplayList::new();
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        ctx.with_recorder(&mut aborted, |ctx| {
+            ctx.fill_rect(Rect::new(0.0, 0.0, 2.0, 2.0), Color::red(), None);
+            panic!("abort recorder scope");
+        });
+    }));
+    assert!(result.is_err());
+    assert!(!ctx.recording_complete());
+
+    ctx.fill_rect(Rect::new(2.0, 0.0, 2.0, 2.0), Color::green(), None);
+    assert_eq!(aborted.len(), 1);
+
+    let mut recovered = DisplayList::new();
+    ctx.with_recorder(&mut recovered, |ctx| {
+        ctx.fill_rect(Rect::new(4.0, 0.0, 2.0, 2.0), Color::blue(), None);
+    });
+    assert_eq!(recovered.len(), 1);
+    assert!(ctx.recording_complete());
+}
