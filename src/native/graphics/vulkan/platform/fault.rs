@@ -1,8 +1,12 @@
 //! 可选 Vulkan device-fault feature 协商与诊断边界。
 
 use std::ffi::CStr;
+use std::ptr;
 
 use ash::{vk, Entry};
+
+const MAX_ADDRESS_INFOS: usize = 16;
+const MAX_VENDOR_INFOS: usize = 16;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum DeviceFaultFeatureQueryMode {
@@ -14,6 +18,78 @@ pub(crate) enum DeviceFaultFeatureQueryMode {
 pub(super) struct DeviceFaultFeatureQuery {
     mode: DeviceFaultFeatureQueryMode,
     khr: Option<ash::khr::get_physical_device_properties2::Instance>,
+}
+
+pub(super) struct DeviceFaultReporter {
+    loader: ash::ext::device_fault::Device,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct DeviceFaultAddress {
+    pub(crate) address_type: i32,
+    pub(crate) reported_address: u64,
+    pub(crate) address_precision: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct DeviceFaultVendor {
+    pub(crate) description: String,
+    pub(crate) code: u64,
+    pub(crate) data: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct DeviceFaultReport {
+    pub(crate) description: String,
+    pub(crate) addresses: Vec<DeviceFaultAddress>,
+    pub(crate) vendors: Vec<DeviceFaultVendor>,
+    pub(crate) vendor_binary_bytes: u64,
+    pub(crate) truncated: bool,
+}
+
+impl DeviceFaultReport {
+    pub(crate) fn diagnostic_summary(&self) -> String {
+        let addresses = if self.addresses.is_empty() {
+            "none".to_owned()
+        } else {
+            self.addresses
+                .iter()
+                .map(|address| {
+                    format!(
+                        "{}@{:#018X}±{}",
+                        address_type_name(address.address_type),
+                        address.reported_address,
+                        address.address_precision
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",")
+        };
+        let vendors = if self.vendors.is_empty() {
+            "none".to_owned()
+        } else {
+            self.vendors
+                .iter()
+                .map(|vendor| {
+                    format!(
+                        "\"{}\" code={:#018X} data={:#018X}",
+                        normalize_text(&vendor.description),
+                        vendor.code,
+                        vendor.data
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",")
+        };
+        format!(
+            "VK_EXT_device_fault: description=\"{}\"; addresses=[{}]; vendors=[{}]; vendor_binary_bytes={}; truncated={}",
+            normalize_text(&self.description),
+            addresses,
+            vendors,
+            self.vendor_binary_bytes,
+            self.truncated
+        )
+    }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -107,6 +183,119 @@ impl DeviceFaultFeatureQuery {
         DeviceFaultSupport {
             reporting: fault_features.device_fault == vk::TRUE,
         }
+    }
+}
+
+impl DeviceFaultReporter {
+    pub(super) fn new(instance: &ash::Instance, device: &ash::Device) -> Self {
+        Self {
+            loader: ash::ext::device_fault::Device::new(instance, device),
+        }
+    }
+
+    pub(super) fn collect(&self) -> std::result::Result<DeviceFaultReport, vk::Result> {
+        let mut counts = vk::DeviceFaultCountsEXT::default();
+        let status = self.get_fault_info(&mut counts, ptr::null_mut());
+        accept_fault_query_status(status)?;
+
+        let available_addresses = counts.address_info_count as usize;
+        let available_vendors = counts.vendor_info_count as usize;
+        let available_vendor_binary = counts.vendor_binary_size;
+        let mut addresses = vec![
+            vk::DeviceFaultAddressInfoEXT::default();
+            available_addresses.min(MAX_ADDRESS_INFOS)
+        ];
+        let mut vendors =
+            vec![vk::DeviceFaultVendorInfoEXT::default(); available_vendors.min(MAX_VENDOR_INFOS)];
+        counts.address_info_count = addresses.len() as u32;
+        counts.vendor_info_count = vendors.len() as u32;
+        // 二进制 crash dump 需要厂商工具解释且可能很大；框架只采集有界文本诊断。
+        counts.vendor_binary_size = 0;
+        let mut info = vk::DeviceFaultInfoEXT::default();
+        if !addresses.is_empty() {
+            info.p_address_infos = addresses.as_mut_ptr();
+        }
+        if !vendors.is_empty() {
+            info.p_vendor_infos = vendors.as_mut_ptr();
+        }
+        let status = self.get_fault_info(&mut counts, &mut info);
+        accept_fault_query_status(status)?;
+
+        addresses.truncate((counts.address_info_count as usize).min(addresses.len()));
+        vendors.truncate((counts.vendor_info_count as usize).min(vendors.len()));
+        let description = info.description_as_c_str().map_or_else(
+            |_| String::new(),
+            |text| text.to_string_lossy().into_owned(),
+        );
+        let addresses = addresses
+            .into_iter()
+            .map(|address| DeviceFaultAddress {
+                address_type: address.address_type.as_raw(),
+                reported_address: address.reported_address,
+                address_precision: address.address_precision,
+            })
+            .collect();
+        let vendors = vendors
+            .into_iter()
+            .map(|vendor| DeviceFaultVendor {
+                description: vendor.description_as_c_str().map_or_else(
+                    |_| String::new(),
+                    |text| text.to_string_lossy().into_owned(),
+                ),
+                code: vendor.vendor_fault_code,
+                data: vendor.vendor_fault_data,
+            })
+            .collect();
+        Ok(DeviceFaultReport {
+            description,
+            addresses,
+            vendors,
+            vendor_binary_bytes: available_vendor_binary,
+            truncated: status == vk::Result::INCOMPLETE
+                || available_addresses > MAX_ADDRESS_INFOS
+                || available_vendors > MAX_VENDOR_INFOS
+                || available_vendor_binary > 0,
+        })
+    }
+
+    fn get_fault_info(
+        &self,
+        counts: &mut vk::DeviceFaultCountsEXT<'_>,
+        info: *mut vk::DeviceFaultInfoEXT<'_>,
+    ) -> vk::Result {
+        // SAFETY: loader 只在启用 VK_EXT_device_fault 后构造；device 已由驱动报告 lost，
+        // counts 与可选 info 指向本调用期间存活且按声明容量分配的可写结构。
+        unsafe { (self.loader.fp().get_device_fault_info_ext)(self.loader.device(), counts, info) }
+    }
+}
+
+fn accept_fault_query_status(status: vk::Result) -> std::result::Result<(), vk::Result> {
+    match status {
+        vk::Result::SUCCESS | vk::Result::INCOMPLETE => Ok(()),
+        error => Err(error),
+    }
+}
+
+fn normalize_text(text: &str) -> String {
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let normalized = normalized.replace('"', "'");
+    if normalized.is_empty() {
+        "unavailable".to_owned()
+    } else {
+        normalized
+    }
+}
+
+fn address_type_name(address_type: i32) -> &'static str {
+    let address_type = vk::DeviceFaultAddressTypeEXT::from_raw(address_type);
+    match address_type {
+        vk::DeviceFaultAddressTypeEXT::READ_INVALID => "read_invalid",
+        vk::DeviceFaultAddressTypeEXT::WRITE_INVALID => "write_invalid",
+        vk::DeviceFaultAddressTypeEXT::EXECUTE_INVALID => "execute_invalid",
+        vk::DeviceFaultAddressTypeEXT::INSTRUCTION_POINTER_UNKNOWN => "ip_unknown",
+        vk::DeviceFaultAddressTypeEXT::INSTRUCTION_POINTER_INVALID => "ip_invalid",
+        vk::DeviceFaultAddressTypeEXT::INSTRUCTION_POINTER_FAULT => "ip_fault",
+        _ => "unknown",
     }
 }
 
