@@ -1,22 +1,31 @@
 //! 共享帧逻辑 — clip / clear / Idle 判定，CPU 与 GPU 共用。
 
-use crate::core::Rect;
+use crate::core::{Point, Rect};
 
 use crate::draw::backend::traits::{BackendCapabilities, DrawSurface};
 use crate::draw::backend::DamageRegion;
 use crate::draw::engine::RenderOutcome;
-use crate::draw::traits::UpdateStrategy;
+use crate::draw::traits::{ScrollCopy, UpdateStrategy};
 
 /// 根据后端能力规范化更新策略。
 ///
 /// 不支持 `partial_redraw` 的后端自动降级为全帧重绘。
 pub fn normalize_strategy(strategy: UpdateStrategy, caps: BackendCapabilities) -> UpdateStrategy {
-    if caps.partial_redraw {
-        return strategy;
-    }
     match strategy {
         UpdateStrategy::FullRedraw => UpdateStrategy::FullRedraw,
-        UpdateStrategy::DirtyRects(_) => UpdateStrategy::FullRedraw,
+        UpdateStrategy::DirtyRects(rects) if caps.partial_redraw => {
+            UpdateStrategy::DirtyRects(rects)
+        }
+        UpdateStrategy::ScrollCopies {
+            dirty_rects,
+            copies,
+        } if caps.partial_redraw && caps.scroll_memmove => UpdateStrategy::ScrollCopies {
+            dirty_rects,
+            copies,
+        },
+        UpdateStrategy::DirtyRects(_) | UpdateStrategy::ScrollCopies { .. } => {
+            UpdateStrategy::FullRedraw
+        }
     }
 }
 
@@ -30,7 +39,7 @@ pub fn begin_frame(
 ) -> RenderOutcome {
     let strategy = normalize_strategy(strategy, caps);
 
-    if let UpdateStrategy::DirtyRects(rects) = &strategy {
+    if let Some(rects) = strategy.rects() {
         if rects.is_empty() {
             return RenderOutcome::Idle;
         }
@@ -59,6 +68,18 @@ pub fn begin_frame(
                 surface.push_clip(clip);
             }
         }
+        UpdateStrategy::ScrollCopies { dirty_rects, .. } => {
+            let clip = dirty_bounds(dirty_rects)
+                .and_then(|bounds| bounds.intersect(&full))
+                .unwrap_or_else(Rect::zero);
+            surface.push_clip(clip);
+        }
+    }
+
+    if let UpdateStrategy::ScrollCopies { copies, .. } = &strategy {
+        for copy in copies {
+            apply_scroll_copy(surface, *copy);
+        }
     }
 
     if strategy.should_clear() {
@@ -66,7 +87,10 @@ pub fn begin_frame(
             UpdateStrategy::FullRedraw => {
                 surface.clear_all();
             }
-            UpdateStrategy::DirtyRects(rects) => {
+            UpdateStrategy::DirtyRects(rects)
+            | UpdateStrategy::ScrollCopies {
+                dirty_rects: rects, ..
+            } => {
                 // 与 push_clip 一致：清并集 AABB，避免只清离散条带而父背景画满空隙
                 let mut bounds = rects[0];
                 for r in &rects[1..] {
@@ -100,7 +124,10 @@ pub fn end_frame(surface: &mut dyn DrawSurface) -> RenderOutcome {
 fn present_damage_for_strategy(strategy: &UpdateStrategy) -> DamageRegion {
     match strategy {
         UpdateStrategy::FullRedraw => DamageRegion::full(),
-        UpdateStrategy::DirtyRects(rects) => {
+        UpdateStrategy::DirtyRects(rects)
+        | UpdateStrategy::ScrollCopies {
+            dirty_rects: rects, ..
+        } => {
             if rects.is_empty() {
                 DamageRegion::full()
             } else {
@@ -108,4 +135,29 @@ fn present_damage_for_strategy(strategy: &UpdateStrategy) -> DamageRegion {
             }
         }
     }
+}
+
+fn dirty_bounds(rects: &[Rect]) -> Option<Rect> {
+    let (&first, rest) = rects.split_first()?;
+    Some(rest.iter().fold(first, |bounds, rect| bounds.union(rect)))
+}
+
+fn apply_scroll_copy(surface: &mut dyn DrawSurface, copy: ScrollCopy) {
+    let dx = copy.delta.x.round();
+    let dy = copy.delta.y.round();
+    if copy.viewport.w <= 0.0
+        || copy.viewport.h <= 0.0
+        || !dx.is_finite()
+        || !dy.is_finite()
+        || (dx == 0.0 && dy == 0.0)
+    {
+        return;
+    }
+    let source = Rect::new(
+        copy.viewport.x + dx,
+        copy.viewport.y + dy,
+        copy.viewport.w,
+        copy.viewport.h,
+    );
+    surface.copy_region(source, Point::new(copy.viewport.x, copy.viewport.y));
 }

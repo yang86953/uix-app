@@ -4,7 +4,7 @@ use crate::draw::backend::traits::RenderBackend;
 use crate::draw::pipeline::frame::*;
 use crate::draw::primitives::path::PathBuilder;
 use crate::draw::traits::Canvas2D;
-use crate::draw::traits::UpdateStrategy;
+use crate::draw::traits::{ScrollCopy, UpdateStrategy};
 use crate::tests::common::*;
 
 #[test]
@@ -35,6 +35,63 @@ fn normalize_strategy_keeps_dirty_for_gpu_partial() {
         BackendCapabilities::gpu(),
     );
     assert!(matches!(normalized, UpdateStrategy::DirtyRects(_)));
+}
+
+#[test]
+fn normalize_strategy_expands_scroll_copy_without_memmove_capability() {
+    let normalized = normalize_strategy(
+        UpdateStrategy::ScrollCopies {
+            dirty_rects: vec![Rect::new(0.0, 3.0, 4.0, 1.0)],
+            copies: vec![ScrollCopy::new(Rect::new(0.0, 0.0, 4.0, 4.0), 0.0, 1.0)],
+        },
+        BackendCapabilities::gpu(),
+    );
+    assert!(matches!(normalized, UpdateStrategy::FullRedraw));
+}
+
+#[test]
+fn begin_frame_scroll_copy_moves_before_clearing_exposed_strip() {
+    let mut surface = CpuDrawSurface::new(4, 4);
+    let colors = [
+        crate::draw::Color::red(),
+        crate::draw::Color::green(),
+        crate::draw::Color::blue(),
+        crate::draw::Color::from_rgb(255, 255, 0),
+    ];
+    for (y, color) in colors.into_iter().enumerate() {
+        surface
+            .canvas_mut()
+            .fill_rect(Rect::new(0.0, y as f32, 4.0, 1.0), color, None);
+    }
+
+    let dirty = Rect::new(0.0, 3.0, 4.0, 1.0);
+    let outcome = begin_frame(
+        UpdateStrategy::ScrollCopies {
+            dirty_rects: vec![dirty],
+            copies: vec![ScrollCopy::new(Rect::new(0.0, 0.0, 4.0, 4.0), 0.0, 1.0)],
+        },
+        &mut surface,
+        4,
+        4,
+        BackendCapabilities::cpu(),
+    );
+
+    assert_eq!(
+        outcome,
+        RenderOutcome::FrameReady(DamageRegion::partial(vec![dirty]))
+    );
+    let pixels = surface.surface().pixels();
+    assert_eq!(pixels[0], crate::draw::Color::green().premultiplied());
+    assert_eq!(pixels[4], crate::draw::Color::blue().premultiplied());
+    assert_eq!(
+        pixels[8],
+        crate::draw::Color::from_rgb(255, 255, 0).premultiplied()
+    );
+    assert_eq!(
+        pixels[12],
+        crate::draw::Color::transparent().premultiplied()
+    );
+    end_frame(&mut surface);
 }
 
 #[test]

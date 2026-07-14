@@ -6,7 +6,9 @@ use crate::draw::backend::DamageRegion;
 use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
 use crate::draw::engine::RenderOutcome;
 use crate::draw::pipeline::{EncodedFrameExecution, FrameEncoder};
-use crate::draw::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
+use crate::draw::traits::{
+    Canvas2D, GraphicsCapabilities, GraphicsEngine, PresentationMode, UpdateStrategy,
+};
 
 /// 空图形引擎——不做任何渲染。
 pub struct NullEngine {
@@ -50,6 +52,13 @@ impl GraphicsEngine for NullEngine {
                     RenderOutcome::FrameReady(DamageRegion::partial(rects))
                 }
             }
+            UpdateStrategy::ScrollCopies { dirty_rects, .. } => {
+                if dirty_rects.is_empty() {
+                    RenderOutcome::Idle
+                } else {
+                    RenderOutcome::FrameReady(DamageRegion::partial(dirty_rects))
+                }
+            }
         }
     }
 
@@ -59,6 +68,15 @@ impl GraphicsEngine for NullEngine {
 
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
         &mut self.canvas_2d
+    }
+
+    fn capabilities(&self) -> GraphicsCapabilities {
+        GraphicsCapabilities {
+            presentation_mode: PresentationMode::ExternalPresenter,
+            partial_redraw: true,
+            offscreen: false,
+            scroll_memmove: false,
+        }
     }
 
     fn try_execute_encoded_frame(

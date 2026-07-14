@@ -102,6 +102,7 @@ impl From<BackendCapabilities> for crate::draw::traits::GraphicsCapabilities {
             presentation_mode: caps.presentation_mode,
             partial_redraw: caps.partial_redraw,
             offscreen: caps.offscreen,
+            scroll_memmove: caps.scroll_memmove,
         }
     }
 }
