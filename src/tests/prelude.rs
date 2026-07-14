@@ -31,13 +31,13 @@ pub use crate::ui::{
     DatePicker, Descriptions, DescriptionsItem, Divider, DividerDirection, DividerOrientation,
     Drawer, DrawerPlacement, Dropdown, Empty, FieldDef, FloatButton, FloatButtonBackTop, Footer,
     Form, FormItem, FormLayout, FormValidationError, FormValidatorKey, FormValidatorTable, Grid,
-    Header, Icon, Image, Input, InputNumber, Label, Layout, LineChart, LineData, List, Mentions,
-    Menu, MenuItem, MenuMode, Message, MessageItem, MessagePlacement, Modal, NavGroup, NavItem,
-    Navigation, NotifPlacement, Notification, NotificationItem, OptGroup, Pagination, PieChart,
-    PieData, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger,
-    ProgressBar, ProgressMode, ProgressType, QRCode, Radio, RadioDirection, Rate, ResultType,
-    ResultView, RichText, RichTextSegment, RichTextStyle, ScrollView, Segmented, Select,
-    SelectableItem, SelectableList, SharedActive, Sider, Skeleton, SkeletonShape, Slider,
+    Header, Icon, Image, Input, InputNumber, InputNumberValue, Label, Layout, LineChart, LineData,
+    List, Mentions, Menu, MenuItem, MenuMode, Message, MessageItem, MessagePlacement, Modal,
+    NavGroup, NavItem, Navigation, NotifPlacement, Notification, NotificationItem, OptGroup,
+    Pagination, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement,
+    PopoverTrigger, ProgressBar, ProgressMode, ProgressType, QRCode, Radio, RadioDirection, Rate,
+    ResultType, ResultView, RichText, RichTextSegment, RichTextStyle, ScrollView, Segmented,
+    Select, SelectableItem, SelectableList, SharedActive, Sider, Skeleton, SkeletonShape, Slider,
     SortDirection, Space, SpaceSize, Spin, SpinSize, Splitter, Step, StepStatus, Steps, Switch,
     Tab, TabPosition, Table, TableBuilder, TableChange, TableColumn, TableRow, Tabs, Tag, TagColor,
     ThemeToggle, TimePicker, TimeValue, Timeline, TimelineItem, Tooltip, TooltipPlacement,
@@ -45,6 +45,8 @@ pub use crate::ui::{
     Upload, UploadFile, UploadStatus, ValidateStatus, ValidationResult, ValidationRule, Watermark,
 };
 pub use crate::ui::{Animation, Easing};
+
+fn assert_input_number_value<T: InputNumberValue>() {}
 
 component! {
     struct PreludeComponentProbe {
@@ -245,6 +247,8 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<Image>();
     assert_exported::<Input>();
     assert_exported::<InputNumber>();
+    assert_input_number_value::<i32>();
+    assert_input_number_value::<f64>();
     assert_exported::<Label>();
     assert_exported::<LineChart>();
     assert_exported::<List>();

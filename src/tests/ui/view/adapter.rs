@@ -528,14 +528,17 @@ fn reconcile_slider_patches_instance_and_syncs_snapshot_fields() {
 
 #[test]
 fn reconcile_input_number_patches_instance_and_syncs_snapshot_fields() {
+    use crate::ui::state::State;
     use crate::ui::widgets::InputNumber;
 
+    let value = State::new(4.0);
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
-        InputNumber::new("old")
+        InputNumber::new()
+            .placeholder("old")
             .min(0.0)
             .max(10.0)
             .step(1.0)
-            .value(4.0),
+            .value(&value),
     ));
     let root_id = tree.root_id().expect("input number root should exist");
     let before_ptr = tree
@@ -546,14 +549,16 @@ fn reconcile_input_number_patches_instance_and_syncs_snapshot_fields() {
         .downcast_ref::<InputNumber>()
         .unwrap() as *const InputNumber;
 
+    value.set(2.5);
     ViewAdapter::reconcile_nodes(
         &mut tree,
         ViewNode::leaf(
-            InputNumber::new("new")
+            InputNumber::new()
+                .placeholder("new")
                 .min(-5.0)
                 .max(8.0)
                 .step(0.25)
-                .value(2.5)
+                .value(&value)
                 .disabled(true),
         ),
     );
@@ -566,7 +571,7 @@ fn reconcile_input_number_patches_instance_and_syncs_snapshot_fields() {
         .downcast_ref::<InputNumber>()
         .unwrap();
     assert_eq!(input_number as *const InputNumber, before_ptr);
-    assert_eq!(input_number.get_value(), 2.5);
+    assert_eq!(input_number.current_value(), 2.5);
     assert_eq!(
         input_number.snapshot_fields(),
         SnapshotFields::InputNumber {
