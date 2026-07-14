@@ -3,6 +3,7 @@
 //! 基于 Calendar 的日期逻辑，增加弹出面板和选中回显。
 
 use std::cell::Cell;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::component;
@@ -31,6 +32,11 @@ impl Date {
     pub fn format(&self) -> String {
         format!("{:04}-{:02}-{:02}", self.year, self.month, self.day)
     }
+
+    /// 返回星期；周一为一周起点。
+    pub fn weekday(self) -> Weekday {
+        Weekday::from_monday_index((first_weekday(self.year, self.month) + self.day - 1) % 7)
+    }
     /// 返回当前 UTC 日期。
     pub fn today() -> Self {
         let elapsed = SystemTime::now()
@@ -42,7 +48,72 @@ impl Date {
     }
 }
 
-fn days_in_month(year: i32, month: usize) -> usize {
+/// 公历星期，顺序从周一到周日。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Weekday {
+    Monday,
+    Tuesday,
+    Wednesday,
+    Thursday,
+    Friday,
+    Saturday,
+    Sunday,
+}
+
+impl Weekday {
+    pub const fn is_weekend(self) -> bool {
+        matches!(self, Self::Saturday | Self::Sunday)
+    }
+
+    const fn monday_index(self) -> usize {
+        match self {
+            Self::Monday => 0,
+            Self::Tuesday => 1,
+            Self::Wednesday => 2,
+            Self::Thursday => 3,
+            Self::Friday => 4,
+            Self::Saturday => 5,
+            Self::Sunday => 6,
+        }
+    }
+
+    const fn from_monday_index(index: usize) -> Self {
+        match index % 7 {
+            0 => Self::Monday,
+            1 => Self::Tuesday,
+            2 => Self::Wednesday,
+            3 => Self::Thursday,
+            4 => Self::Friday,
+            5 => Self::Saturday,
+            _ => Self::Sunday,
+        }
+    }
+}
+
+/// DatePicker 的选择粒度。
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PickerMode {
+    #[default]
+    Date,
+    Week,
+    Month,
+    Quarter,
+}
+
+impl PickerMode {
+    fn normalize(self, date: Date) -> Date {
+        match self {
+            Self::Date => date,
+            Self::Week => add_days(date, -(date.weekday().monday_index() as i64)),
+            Self::Month => Date::new(date.year, date.month, 1),
+            Self::Quarter => Date::new(date.year, ((date.month - 1) / 3) * 3 + 1, 1),
+        }
+    }
+}
+
+type DisabledDate = Arc<dyn Fn(Date) -> bool + Send + Sync>;
+
+pub(crate) fn days_in_month(year: i32, month: usize) -> usize {
     match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
         4 | 6 | 9 | 11 => 30,
@@ -57,17 +128,19 @@ fn days_in_month(year: i32, month: usize) -> usize {
     }
 }
 
-fn first_weekday(year: i32, month: usize) -> usize {
-    let m = if month <= 2 { month + 12 } else { month };
+pub(crate) fn first_weekday(year: i32, month: usize) -> usize {
+    let m = if month <= 2 { month + 12 } else { month } as i64;
     let y = if month <= 2 {
-        (year - 1) as usize
+        year as i64 - 1
     } else {
-        year as usize
+        year as i64
     };
-    let c = y / 100;
-    let y_mod = y % 100;
-    let w = (1usize + (13 * (m + 1)) / 5 + y_mod + y_mod / 4 + c / 4).wrapping_sub(2 * c) % 7;
-    (w + 6) % 7
+    let century = y.div_euclid(100);
+    let year_in_century = y.rem_euclid(100);
+    let zeller = (1 + (13 * (m + 1)) / 5 + year_in_century + year_in_century / 4 + century / 4
+        - 2 * century)
+        .rem_euclid(7);
+    ((zeller + 5) % 7) as usize
 }
 
 component! {
@@ -78,6 +151,8 @@ component! {
         view_year: Cell<i32>,
         view_month: Cell<usize>,
         placeholder: String,
+        mode: PickerMode,
+        disabled_date: Option<DisabledDate>,
         open: Cell<bool>,
         focused: bool,
         hover_day: Cell<Option<usize>>,
@@ -130,9 +205,11 @@ component! {
                             if day > fwd {
                                 let d = day - fwd;
                                 if d <= days_in_month(self.view_year.get(), self.view_month.get()) {
-                                    let new_val = Date::new(self.view_year.get(), self.view_month.get(), d);
-                                    self.commit_value(new_val);
-                                    self.open.set(false);
+                                    let hit_date = self.date_for_day(d);
+                                    if !self.is_date_disabled(hit_date) {
+                                        self.commit_value(self.mode.normalize(hit_date));
+                                        self.open.set(false);
+                                    }
                                 }
                             }
                         }
@@ -154,7 +231,9 @@ component! {
                                 let fwd = first_weekday(self.view_year.get(), self.view_month.get());
                                 if day > fwd {
                                     let d = day - fwd;
-                                    if d <= days_in_month(self.view_year.get(), self.view_month.get()) {
+                                    if d <= days_in_month(self.view_year.get(), self.view_month.get())
+                                        && !self.is_date_disabled(self.date_for_day(d))
+                                    {
                                         self.hover_day.set(Some(d));
                                         return EventResult::Handled;
                                     }
@@ -283,6 +362,7 @@ component! {
                 let y = popup.y + 32.0 + 4.0 + row as f32 * cell_h + 16.0;
 
                 let is_selected = sel.day == day && sel.month == vm && sel.year == vy;
+                let is_disabled = self.is_date_disabled(self.date_for_day(day));
                 let is_hovered = hover_d == Some(day);
                 if is_selected {
                     ctx.fill_rect(Rect::new(x - 2.0, y - cell_h * 0.5 + 2.0, cell_w, cell_h),
@@ -296,7 +376,7 @@ component! {
                 let text_y = ctx.visual_center_y(cell_rect, 12.0);
                 ctx.draw_text(&day.to_string(),
                     Point::new(x + cell_w * 0.3, text_y),
-                    if is_selected { primary } else { text_color }, 12.0);
+                    if is_disabled { text_tertiary } else if is_selected { primary } else { text_color }, 12.0);
             }
         }
     }
@@ -315,6 +395,8 @@ impl DatePicker {
             view_year: Cell::new(today.year),
             view_month: Cell::new(today.month),
             placeholder: crate::ui::locale::use_locale().placeholder.to_owned(),
+            mode: PickerMode::Date,
+            disabled_date: None,
             open: Cell::new(false),
             focused: false,
             hover_day: Cell::new(None),
@@ -342,12 +424,30 @@ impl DatePicker {
         self
     }
 
+    /// 设置选择粒度；Week / Month / Quarter 分别写回周期起点。
+    pub fn mode(mut self, mode: PickerMode) -> Self {
+        self.mode = mode;
+        self
+    }
+
+    /// 禁止选择满足谓词的日期。
+    pub fn disabled_date(
+        mut self,
+        predicate: impl Fn(Date) -> bool + Send + Sync + 'static,
+    ) -> Self {
+        self.disabled_date = Some(Arc::new(predicate));
+        self
+    }
+
     /// 返回组件当前缓存值；controlled 用法应以绑定的 `State` 为真值来源。
     pub fn current_value(&self) -> Date {
         self.value.get()
     }
     pub fn is_open(&self) -> bool {
         self.open.get()
+    }
+    pub fn picker_mode(&self) -> PickerMode {
+        self.mode
     }
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         let value = self.current_value();
@@ -364,6 +464,8 @@ impl DatePicker {
             self.value.set(value);
         }
         self.placeholder = next.placeholder;
+        self.mode = next.mode;
+        self.disabled_date = next.disabled_date;
     }
 
     fn selected_or_today(&self) -> Date {
@@ -393,6 +495,16 @@ impl DatePicker {
         }
         self.pending_change.set(Some(value));
     }
+
+    fn date_for_day(&self, day: usize) -> Date {
+        Date::new(self.view_year.get(), self.view_month.get(), day)
+    }
+
+    fn is_date_disabled(&self, date: Date) -> bool {
+        self.disabled_date
+            .as_ref()
+            .is_some_and(|predicate| predicate(date))
+    }
 }
 
 impl Default for DatePicker {
@@ -414,4 +526,36 @@ fn prev_month(y: i32, m: usize) -> (i32, usize) {
     } else {
         (y, m - 1)
     }
+}
+
+fn add_days(date: Date, days: i64) -> Date {
+    let mut remaining = days;
+    let mut year = date.year;
+    let mut month = date.month;
+    let mut day = date.day;
+
+    while remaining < 0 {
+        if day > 1 {
+            let step = remaining.unsigned_abs().min((day - 1) as u64) as usize;
+            day -= step;
+            remaining += step as i64;
+        } else {
+            (year, month) = prev_month(year, month);
+            day = days_in_month(year, month);
+            remaining += 1;
+        }
+    }
+    while remaining > 0 {
+        let last_day = days_in_month(year, month);
+        if day < last_day {
+            let step = (remaining as usize).min(last_day - day);
+            day += step;
+            remaining -= step as i64;
+        } else {
+            (year, month) = next_month(year, month);
+            day = 1;
+            remaining -= 1;
+        }
+    }
+    Date::new(year, month, day)
 }

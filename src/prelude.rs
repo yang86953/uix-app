@@ -67,7 +67,7 @@ pub use crate::ui::{
     Grid, Header, Icon, Image, Input, InputNumber, InputNumberValue, IntoFormValue, Label, Layout,
     LineChart, LineData, List, Mentions, Menu, MenuItem, MenuMode, Message, MessageItem, Modal,
     ModalBuilder, ModalContext, NavGroup, NavItem, Navigation, Notification, NotificationItem,
-    OptGroup, Pagination, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover,
+    OptGroup, Pagination, PickerMode, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover,
     PopoverPlacement, PopoverTrigger, ProgressBar, ProgressMode, ProgressType, QRCode, Radio,
     RadioDirection, Rate, ResultType, ResultView, RichText, RichTextSegment, RichTextStyle,
     ScrollView, Segmented, Select, SelectableItem, SelectableList, SharedActive, Sider, Skeleton,
@@ -76,7 +76,7 @@ pub use crate::ui::{
     TableRow, Tabs, Tag, TagColor, ThemeToggle, Time, TimePicker, Timeline, TimelineItem, Tooltip,
     TooltipPlacement, Transfer, TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography,
     TypographyType, Upload, UploadFile, UploadStatus, ValidateStatus, Values, VirtualScroll,
-    VirtualScrollBuilder, Watermark,
+    VirtualScrollBuilder, Watermark, Weekday,
 };
 
 // app
