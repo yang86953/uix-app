@@ -9,6 +9,7 @@ pub mod popconfirm;
 pub mod popover;
 pub mod progress;
 pub mod spin;
+pub(crate) mod toast_motion;
 pub mod tooltip;
 
 pub use alert::*;
