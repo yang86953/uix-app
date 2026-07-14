@@ -15,6 +15,7 @@ pub(crate) const WM_UIX_FRAME_OPPORTUNITY: u32 = WM_APP + 0x0051;
 
 pub(crate) const WM_NCCREATE: u32 = 0x0081;
 pub(crate) const WM_NCLBUTTONDOWN: u32 = 0x00A1;
+pub(crate) const WM_NCRBUTTONUP: u32 = 0x00A5;
 pub(crate) const WM_DESTROY: u32 = 0x0002;
 pub(crate) const WM_CLOSE: u32 = 0x0010;
 pub(crate) const WM_SIZE: u32 = 0x0005;

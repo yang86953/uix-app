@@ -1,7 +1,8 @@
 use crate::app::window_actions::configure_custom_title_bar;
 use crate::native::backends::windows::consts::{
-    GWL_STYLE, SIZE_RESTORED, WM_CHAR, WM_DPICHANGED, WM_IME_ENDCOMPOSITION,
-    WM_IME_STARTCOMPOSITION, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_SIZE, WS_CAPTION, WS_THICKFRAME,
+    GWL_STYLE, HTCAPTION, SIZE_RESTORED, WM_CHAR, WM_DPICHANGED, WM_IME_ENDCOMPOSITION,
+    WM_IME_STARTCOMPOSITION, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_NCRBUTTONUP, WM_SIZE, WS_CAPTION,
+    WS_THICKFRAME,
 };
 use crate::native::backends::windows::dpi::{
     dpi_for_window, logical_extent_to_physical, physical_extent_to_logical,
@@ -20,7 +21,9 @@ use windows::Win32::UI::HiDpi::{
     AreDpiAwarenessContextsEqual, GetWindowDpiAwarenessContext,
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
-use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, SendMessageW};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetWindowRect, PeekMessageW, SendMessageW, MSG, PM_REMOVE,
+};
 
 fn size_lparam(width: u16, height: u16) -> isize {
     (u32::from(width) | (u32::from(height) << 16)) as isize
@@ -54,6 +57,38 @@ fn native_window_routes_left_button_double_click() {
         double_click.payload,
         UiEventPayload::PointerButton(data) if data.btn == MouseButton::Left
     ));
+
+    window.close().expect("close native window");
+    assert!(platform.dispatch_pending());
+}
+
+#[test]
+fn native_system_menu_operation_posts_caption_right_button_release() {
+    let mut platform = WindowsPlatform::new();
+    let mut window = platform
+        .create_window("UIX native system menu", 200, 120)
+        .expect("native window");
+    let hwnd = window.native_handle().native_window();
+    platform.dispatch_pending();
+    while platform.next_event().is_some() {}
+
+    window.show_system_menu().expect("show system menu");
+    let mut message = MSG::default();
+    // SAFETY: `message` 在调用期间保持有效可写，HWND 由刚创建且仍存活的窗口提供。
+    let found = unsafe {
+        PeekMessageW(
+            &mut message,
+            Some(HWND(hwnd)),
+            WM_NCRBUTTONUP,
+            WM_NCRBUTTONUP,
+            PM_REMOVE,
+        )
+    };
+    assert!(
+        found.as_bool(),
+        "system menu operation must post WM_NCRBUTTONUP"
+    );
+    assert_eq!(message.wParam, WPARAM(HTCAPTION));
 
     window.close().expect("close native window");
     assert!(platform.dispatch_pending());

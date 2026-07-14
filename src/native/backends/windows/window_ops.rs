@@ -15,6 +15,12 @@ use crate::native::traits::window::NativeFrameRequest;
 use super::frame_pacer::{SharedWindowsFramePacerState, WindowsFramePacer};
 use super::platform::WindowBinding;
 
+fn screen_point_lparam(point: super::bindings::POINT) -> isize {
+    let x = point.x as i16 as u16;
+    let y = point.y as i16 as u16;
+    (u32::from(x) | (u32::from(y) << 16)) as isize
+}
+
 /// Windows 平台窗口操作句柄。
 ///
 /// 持有原生窗口句柄 HWND，所有 `os_*` 方法通过 Win32 API 操作窗口。
@@ -105,6 +111,33 @@ impl WindowOps for WindowsWindowOps {
                 return Err(super::util::windows_diag(
                     Errc::PlatformError,
                     "os_begin_move_drag: PostMessageW failed",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn os_show_system_menu(&mut self) -> Result<()> {
+        self.ensure_valid_window("os_show_system_menu")?;
+        let mut cursor = super::bindings::POINT { x: 0, y: 0 };
+        // SAFETY: `cursor` 在调用期间保持有效可写，且 HWND 已由 `ensure_valid_window` 验证。
+        unsafe {
+            if GetCursorPos(&mut cursor) == 0 {
+                return Err(super::util::windows_diag(
+                    Errc::PlatformError,
+                    "os_show_system_menu: GetCursorPos failed",
+                ));
+            }
+            if PostMessageW(
+                self.hwnd,
+                WM_NCRBUTTONUP,
+                HTCAPTION,
+                screen_point_lparam(cursor),
+            ) == 0
+            {
+                return Err(super::util::windows_diag(
+                    Errc::PlatformError,
+                    "os_show_system_menu: PostMessageW failed",
                 ));
             }
         }
