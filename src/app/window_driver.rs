@@ -37,13 +37,14 @@ use crate::ui::{EventResult, WidgetTree};
 use std::cell::{Cell, RefCell};
 use std::time::Instant;
 pub(crate) use support::{
-    animation_clock_should_advance, has_invalidation_work, sync_root_frame_to_engine,
+    animation_clock_should_advance, graphics_failure_is_error, has_invalidation_work,
+    sync_root_frame_to_engine,
 };
 use support::{
     dispatch_due_active_work, earliest_deadline, ensure_surface_matches_window, has_layout_work,
     log_frame_metrics, next_loop_state, observe_agent_settle, protocol_failure, record_idle,
-    record_layout, record_present, report_graphics_resize_error, report_window_operation_error,
-    sync_animation_registrations, sync_root_frame_exactly_to_engine,
+    record_layout, record_present, report_graphics_frame_failure, report_graphics_resize_error,
+    report_window_operation_error, sync_root_frame_exactly_to_engine,
     update_scheduled_and_discovered_animations, with_platform_clipboard,
 };
 
@@ -872,10 +873,7 @@ impl WindowDriver {
                 self.rendered_first = false;
             }
             RenderOutcome::Failed(error) => {
-                crate::core::log::error_fn(format!(
-                    "[WindowDriver] graphics frame failed: {}",
-                    error.error().short_what()
-                ));
+                report_graphics_frame_failure(&error);
                 self.rendered_first = false;
                 frame_failure = Some(error);
             }
@@ -981,5 +979,19 @@ impl WindowDriver {
             agent_commands.has_work(),
         );
         WindowFrameResult { did_work: true }
+    }
+}
+
+fn sync_animation_registrations(
+    active_work: &mut ActiveWorkRegistry,
+    animation_updates: &[(NodeId, bool)],
+) {
+    for &(id, animating) in animation_updates {
+        let kind = ActiveWorkKind::Animation(id);
+        if animating {
+            active_work.register_open(kind);
+        } else {
+            active_work.unregister(kind);
+        }
     }
 }

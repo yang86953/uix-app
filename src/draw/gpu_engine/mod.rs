@@ -69,7 +69,6 @@ impl GraphicsEngine for GpuEngine {
             return outcome;
         }
         if let Err(error) = self.session.backend_mut().present(present_damage) {
-            crate::core::log::error_fn("GpuEngine present 失败");
             return RenderOutcome::Failed(GraphicsFailure::from_error(error));
         }
         outcome
