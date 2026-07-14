@@ -12,7 +12,7 @@ use crate::draw::font::text::TextRenderService;
 use crate::draw::image::{blit_handle, BitmapHandle, ImageService};
 use crate::draw::painting::display_list::{DisplayList, PaintOp, PaintPass};
 use crate::draw::painting::ThemeTokens;
-use crate::draw::primitives::path::{FillRule, Path};
+use crate::draw::primitives::path::{FillRule, Path, PathBuilder};
 use crate::draw::primitives::stroker::StrokeOptions;
 use crate::draw::spatial::{Orientation, PhysicalUnit, SpatialContext, Vec3, AABB3D};
 use crate::draw::traits::Canvas2D;
@@ -285,6 +285,34 @@ impl<'a> PaintContext<'a> {
         self.spatial
             .canvas_2d()
             .stroke_circle(cx, cy, r, color, line_width);
+    }
+
+    /// 描边圆弧；角度使用弧度，几何经共享 Path 描边管线录制与绘制。
+    #[inline(always)]
+    pub fn stroke_arc(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        r: f32,
+        start_angle: f32,
+        end_angle: f32,
+        color: Color,
+        line_width: f32,
+    ) {
+        let path = PathBuilder::new()
+            .arc(cx, cy, r, start_angle, end_angle)
+            .build();
+        if path.is_empty() {
+            return;
+        }
+        self.stroke_path(
+            &path,
+            color,
+            &StrokeOptions {
+                width: line_width,
+                ..StrokeOptions::default()
+            },
+        );
     }
 
     /// 描边路径。

@@ -186,6 +186,15 @@ fn display_list_replay_matches_recorded_extended_cpu_paint_pixels() {
         );
         ctx.fill_path(&path, Color::from_rgba(20, 220, 90, 160), FillRule::NonZero);
         ctx.stroke_circle(16.0, 16.0, 7.0, Color::white(), 2.0);
+        ctx.stroke_arc(
+            16.0,
+            16.0,
+            10.0,
+            -std::f32::consts::FRAC_PI_2,
+            std::f32::consts::PI,
+            Color::from_rgba(250, 100, 20, 220),
+            2.0,
+        );
         ctx.stroke_path(&path, Color::black(), &StrokeOptions::default());
         ctx.draw_line(
             1.0,

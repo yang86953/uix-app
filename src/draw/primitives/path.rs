@@ -213,6 +213,59 @@ impl PathBuilder {
         self
     }
 
+    /// 以三次 Bézier 段追加圆弧；角度使用弧度，单次最多绘制一周。
+    pub(crate) fn arc(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        radius: f32,
+        start_angle: f32,
+        end_angle: f32,
+    ) -> &mut Self {
+        if !cx.is_finite()
+            || !cy.is_finite()
+            || !radius.is_finite()
+            || !start_angle.is_finite()
+            || !end_angle.is_finite()
+            || radius <= 0.0
+        {
+            return self;
+        }
+
+        let sweep = (end_angle - start_angle).clamp(-std::f32::consts::TAU, std::f32::consts::TAU);
+        if sweep.abs() <= f32::EPSILON {
+            return self;
+        }
+        let segment_count = (sweep.abs() / std::f32::consts::FRAC_PI_2).ceil().max(1.0) as usize;
+        let segment_sweep = sweep / segment_count as f32;
+        self.move_to(
+            cx + radius * start_angle.cos(),
+            cy + radius * start_angle.sin(),
+        );
+
+        for index in 0..segment_count {
+            let angle_a = start_angle + segment_sweep * index as f32;
+            let angle_b = angle_a + segment_sweep;
+            let tangent_scale = 4.0 / 3.0 * (segment_sweep * 0.25).tan() * radius;
+            let (sin_a, cos_a) = angle_a.sin_cos();
+            let (sin_b, cos_b) = angle_b.sin_cos();
+            let end_x = cx + radius * cos_b;
+            let end_y = cy + radius * sin_b;
+            self.cubic_to(
+                cx + radius * cos_a - tangent_scale * sin_a,
+                cy + radius * sin_a + tangent_scale * cos_a,
+                end_x + tangent_scale * sin_b,
+                end_y - tangent_scale * cos_b,
+                end_x,
+                end_y,
+            );
+        }
+        if (sweep.abs() - std::f32::consts::TAU).abs() <= f32::EPSILON * 8.0 {
+            self.close();
+        }
+        self
+    }
+
     /// 关闭当前子路径（回到 move_to 起点）。
     pub fn close(&mut self) -> &mut Self {
         self.segments.push(PathSegment::Close);
