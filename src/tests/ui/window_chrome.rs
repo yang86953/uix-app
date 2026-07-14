@@ -88,6 +88,29 @@ fn drag_region_emits_move_only_for_left_pointer_down() {
 }
 
 #[test]
+fn drag_region_leaves_interactive_descendants_in_control() {
+    let mut tree = ViewAdapter::build(
+        window_drag_region(
+            window_control(WindowControl::Close, label("close"))
+                .width(44.0)
+                .height(32.0),
+        )
+        .width(240.0)
+        .height(32.0),
+    );
+    tree.root_mut()
+        .expect("drag region root")
+        .set_frame(Rect::new(0.0, 0.0, 240.0, 32.0));
+    tree.layout();
+
+    let pos = Point::new(20.0, 16.0);
+    tree.dispatch_event(&pointer_event(pos, true, MouseButton::Left));
+    assert!(tree.take_window_actions().is_empty());
+    tree.dispatch_event(&pointer_event(pos, false, MouseButton::Left));
+    assert_eq!(tree.take_window_actions(), vec![WindowAction::RequestClose]);
+}
+
+#[test]
 fn control_region_owns_nested_presentation_and_emits_on_release() {
     // 即便内容本身是 Button，命中也由窗口控制包装器接管，避免嵌套交互吞事件。
     let mut tree = ViewAdapter::build(
