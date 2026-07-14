@@ -107,6 +107,7 @@ impl ThreadBoundGraphicsContext {
         ));
     }
 
+    #[cfg(test)]
     pub(crate) fn with_test_owner(
         inner: Box<dyn IGraphicsContext>,
         owner_thread: ThreadId,

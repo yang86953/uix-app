@@ -203,6 +203,7 @@ impl D3d11Context {
     /// Production construction deliberately keeps the hardware-then-WARP
     /// policy in [`Self::new`]. Tests that compare backend pixels must not
     /// inherit a machine-specific hardware adapter instead.
+    #[cfg(test)]
     pub(crate) fn new_warp_test_context(
         native_window: *mut c_void,
         width: i32,

@@ -22,7 +22,7 @@ pub use registry::{
     BackendStatus, GraphicsBackendEntry, GraphicsRecipe,
 };
 
-#[cfg(feature = "d3d11")]
+#[cfg(all(test, feature = "d3d11"))]
 pub(crate) fn create_d3d11_warp_test_context(
     surface: *mut std::ffi::c_void,
     width: i32,
@@ -32,12 +32,12 @@ pub(crate) fn create_d3d11_warp_test_context(
         .map(thread_bound::bind_to_current_thread)
 }
 
-#[cfg(feature = "d3d11")]
+#[cfg(all(test, feature = "d3d11"))]
 pub(crate) fn d3d11_warp_test_context_available() -> bool {
     crate::native::graphics::d3d11::warp_test_context_available()
 }
 
-#[cfg(feature = "d3d12")]
+#[cfg(all(test, feature = "d3d12"))]
 pub(crate) fn create_d3d12_warp_test_context(
     surface: *mut std::ffi::c_void,
     width: i32,
@@ -47,7 +47,7 @@ pub(crate) fn create_d3d12_warp_test_context(
         .map(thread_bound::bind_to_current_thread)
 }
 
-#[cfg(feature = "d3d12")]
+#[cfg(all(test, feature = "d3d12"))]
 pub(crate) fn d3d12_warp_test_context_available() -> bool {
     crate::native::graphics::d3d12::warp_test_context_available()
 }

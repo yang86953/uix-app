@@ -39,14 +39,17 @@ pub(crate) struct TsfSession {
     _text_store: windows::core::ComObject<TsfTextStore>,
     store_state: Arc<Mutex<TsfStoreState>>,
     hwnd: HWND,
+    #[cfg(test)]
     client_id: u32,
 }
 
 impl TsfSession {
+    #[cfg(test)]
     pub(crate) fn client_id(&self) -> u32 {
         self.client_id
     }
 
+    #[cfg(test)]
     pub(crate) fn composition_active(&self) -> bool {
         self.store_state
             .lock()
@@ -148,6 +151,7 @@ impl TsfSession {
             _text_store: text_store,
             store_state,
             hwnd,
+            #[cfg(test)]
             client_id,
         })
     }

@@ -22,7 +22,7 @@ pub(crate) fn create(
     D3d12Context::new(surface, width, height).map(|context| Box::new(context) as _)
 }
 
-#[cfg(all(windows, feature = "d3d12"))]
+#[cfg(all(test, windows, feature = "d3d12"))]
 pub(crate) fn create_warp_test_context(
     surface: *mut c_void,
     width: i32,
@@ -32,12 +32,12 @@ pub(crate) fn create_warp_test_context(
         .map(|context| Box::new(context) as _)
 }
 
-#[cfg(all(windows, feature = "d3d12"))]
+#[cfg(all(test, windows, feature = "d3d12"))]
 pub(crate) const fn warp_test_context_available() -> bool {
     true
 }
 
-#[cfg(all(not(windows), feature = "d3d12"))]
+#[cfg(all(test, not(windows), feature = "d3d12"))]
 pub(crate) fn create_warp_test_context(
     _surface: *mut c_void,
     _width: i32,
@@ -51,7 +51,7 @@ pub(crate) fn create_warp_test_context(
     ))
 }
 
-#[cfg(all(not(windows), feature = "d3d12"))]
+#[cfg(all(test, not(windows), feature = "d3d12"))]
 pub(crate) const fn warp_test_context_available() -> bool {
     false
 }

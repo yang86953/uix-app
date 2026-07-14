@@ -124,6 +124,7 @@ impl TsfStoreState {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn composition_active(&self) -> bool {
         self.composition.active
     }
