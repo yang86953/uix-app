@@ -8,8 +8,9 @@ use ash::{vk, Entry};
 
 use crate::core::{Errc, Error, Result};
 
-use super::adapter::{device_extension_names, QueueSelection, VulkanAdapterInfo};
+use super::adapter::{QueueSelection, VulkanAdapterInfo};
 use super::context::{loader_err, vk_err};
+use super::fault::{configure_instance, DeviceFaultFeatureQuery};
 use super::surface::surface_instance_extensions;
 
 type DeviceKey = (vk::PhysicalDevice, u32);
@@ -25,6 +26,7 @@ pub(super) struct VulkanRuntime {
     entry: Entry,
     instance: ash::Instance,
     surface_loader: ash::khr::surface::Instance,
+    fault_feature_query: DeviceFaultFeatureQuery,
     devices: RefCell<HashMap<DeviceKey, Weak<VulkanDevice>>>,
 }
 
@@ -43,13 +45,14 @@ impl VulkanRuntime {
     fn create() -> Result<Rc<Self>> {
         let entry =
             unsafe { Entry::load() }.map_err(|error| loader_err("load Vulkan loader", error))?;
+        let mut instance_extensions = surface_instance_extensions();
+        let (api_version, fault_query_mode) = configure_instance(&entry, &mut instance_extensions);
         let app_info = vk::ApplicationInfo::default()
             .application_name(c"uix")
             .application_version(1)
             .engine_name(c"uix")
             .engine_version(1)
-            .api_version(vk::API_VERSION_1_0);
-        let instance_extensions = surface_instance_extensions();
+            .api_version(api_version);
         #[cfg(target_os = "macos")]
         let instance_info = vk::InstanceCreateInfo::default()
             .application_info(&app_info)
@@ -63,10 +66,12 @@ impl VulkanRuntime {
         let instance = unsafe { entry.create_instance(&instance_info, None) }
             .map_err(|error| vk_err("vkCreateInstance", error))?;
         let surface_loader = ash::khr::surface::Instance::new(&entry, &instance);
+        let fault_feature_query = DeviceFaultFeatureQuery::new(fault_query_mode, &entry, &instance);
         Ok(Rc::new(Self {
             entry,
             instance,
             surface_loader,
+            fault_feature_query,
             devices: RefCell::new(HashMap::new()),
         }))
     }
@@ -118,6 +123,7 @@ pub(super) struct VulkanDevice {
     info: VulkanAdapterInfo,
     device: ash::Device,
     queue: vk::Queue,
+    fault_reporting_enabled: bool,
     lost: Cell<bool>,
 }
 
@@ -127,10 +133,23 @@ impl VulkanDevice {
         let queue_info = vk::DeviceQueueCreateInfo::default()
             .queue_family_index(selection.family_index)
             .queue_priorities(&queue_priority);
-        let extensions = device_extension_names(runtime.instance(), selection.physical_device)?;
-        let device_info = vk::DeviceCreateInfo::default()
+        let fault_support = runtime.fault_feature_query.query(
+            runtime.instance(),
+            selection.physical_device,
+            selection.extensions.supports_device_fault(),
+        );
+        let extensions = selection
+            .extensions
+            .enabled_names(fault_support.reporting());
+        let mut fault_features = fault_support.requested_features();
+        let base_device_info = vk::DeviceCreateInfo::default()
             .queue_create_infos(std::slice::from_ref(&queue_info))
             .enabled_extension_names(&extensions);
+        let device_info = if fault_support.reporting() {
+            base_device_info.push_next(&mut fault_features)
+        } else {
+            base_device_info
+        };
         // SAFETY: selection 来自同一 runtime instance，扩展名称在调用期间有效。
         let device = unsafe {
             runtime
@@ -146,6 +165,7 @@ impl VulkanDevice {
             info: selection.info,
             device,
             queue,
+            fault_reporting_enabled: fault_support.reporting(),
             lost: Cell::new(false),
         }))
     }
@@ -164,6 +184,10 @@ impl VulkanDevice {
 
     pub(super) fn queue(&self) -> vk::Queue {
         self.queue
+    }
+
+    pub(super) fn fault_reporting_enabled(&self) -> bool {
+        self.fault_reporting_enabled
     }
 
     pub(super) fn ensure_healthy(&self) -> Result<()> {

@@ -15,6 +15,9 @@ pub(crate) mod context;
 mod device;
 
 #[cfg(any(unix, windows))]
+pub(crate) mod fault;
+
+#[cfg(any(unix, windows))]
 mod drawable;
 
 #[cfg(any(unix, windows))]
