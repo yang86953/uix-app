@@ -7,6 +7,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
 };
@@ -21,7 +22,8 @@ const PRESET_COLORS: &[u32] = &[
 // ColorPicker — 颜色选择器。
 component! {
     pub struct ColorPicker {
-        value: Color,
+        value: Cell<Color>,
+        value_binding: Option<State<Color>>,
         open: bool,
         transition: TransitionPlayer,
         closing: bool,
@@ -41,6 +43,7 @@ component! {
 
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        self.sync_bound_value();
         match event {
             SystemEvent::PointerDown { pos, .. } => {
                 if pos.y >= 0.0 && pos.y <= 32.0 {
@@ -68,10 +71,7 @@ component! {
                             let idx = ri * cols + ci;
                             if idx < self.preset_colors.len() {
                                 let next = self.preset_colors[idx];
-                                if self.value != next {
-                                    self.value = next;
-                                    self.pending_change.set(Some(next));
-                                }
+                                self.commit_value(next);
                                 self.close();
                                 return EventResult::Handled;
                             }
@@ -133,11 +133,12 @@ component! {
     wants_continuous_pointer_move => (&self) -> bool { true }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        self.sync_bound_value();
         let border = ctx.tokens().color_border();
         let primary = ctx.tokens().color_primary();
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
         let swatch = Rect::new(frame.x, frame.y + 4.0, 24.0, 24.0);
-        ctx.fill_rect(swatch, self.value, r);
+        ctx.fill_rect(swatch, self.value.get(), r);
         let border_c = if self.hovered || self.focused { primary } else { border };
         ctx.stroke_rect(swatch, border_c, 1.5, r);
 
@@ -213,9 +214,10 @@ impl ColorPicker {
         Size::new(32.0, 32.0)
     }
 
-    pub fn new(value: Color) -> Self {
+    pub fn new() -> Self {
         Self {
-            value,
+            value: Cell::new(Color::default()),
+            value_binding: None,
             open: false,
             transition: TransitionPlayer::new(presets::tooltip_enter()),
             closing: false,
@@ -237,11 +239,23 @@ impl ColorPicker {
             pending_change: Cell::new(None),
         }
     }
-    pub fn value(&self) -> Color {
-        self.value
+    /// 将颜色绑定到外部 `State<Color>`。
+    pub fn value(mut self, state: &State<Color>) -> Self {
+        self.value_binding = Some(state.clone());
+        self.value.set(state.get());
+        self
     }
-    pub fn set_value(&mut self, v: Color) {
-        self.value = v;
+
+    /// 设置非受控颜色选择器的初始值。
+    pub fn default_value(mut self, value: Color) -> Self {
+        self.value_binding = None;
+        self.value.set(value);
+        self
+    }
+
+    /// 返回组件当前缓存值；controlled 用法应以绑定的 `State` 为真值来源。
+    pub fn current_value(&self) -> Color {
+        self.value.get()
     }
 
     pub fn is_open(&self) -> bool {
@@ -275,12 +289,43 @@ impl ColorPicker {
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::ColorPicker {
+            value: self.value.get(),
             preset_colors: self.preset_colors.clone(),
         }
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let controlled_value = next.value_binding.as_ref().map(|_| next.value.get());
+        self.value_binding = next.value_binding;
         self.preset_colors = next.preset_colors;
+        if let Some(value) = controlled_value {
+            self.value.set(value);
+        }
+    }
+
+    fn sync_bound_value(&self) {
+        if let Some(state) = self.value_binding.as_ref() {
+            self.value.set(state.get());
+        }
+    }
+
+    fn commit_value(&self, value: Color) {
+        if self.value.get() == value {
+            return;
+        }
+        self.value.set(value);
+        if let Some(state) = self.value_binding.as_ref() {
+            if state.get() != value {
+                state.set(value);
+            }
+        }
+        self.pending_change.set(Some(value));
+    }
+}
+
+impl Default for ColorPicker {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -3640,10 +3640,12 @@ fn reconcile_cascader_preserves_popup_state_and_syncs_options() {
 }
 
 #[test]
-fn reconcile_color_picker_preserves_open_color_and_syncs_presets() {
+fn reconcile_color_picker_preserves_open_state_and_syncs_controlled_color() {
+    use crate::ui::state::State;
     use crate::ui::widgets::ColorPicker;
 
-    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(ColorPicker::new(Color::red())));
+    let selected = State::new(Color::red());
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(ColorPicker::new().value(&selected)));
     let root_id = tree.root_id().expect("color picker root should exist");
     {
         let color_picker = tree
@@ -3654,10 +3656,13 @@ fn reconcile_color_picker_preserves_open_color_and_syncs_presets() {
             .downcast_mut::<ColorPicker>()
             .unwrap();
         color_picker.open();
-        color_picker.set_value(Color::green());
     }
 
-    ViewAdapter::reconcile_nodes(&mut tree, ViewNode::leaf(ColorPicker::new(Color::blue())));
+    selected.set(Color::green());
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(ColorPicker::new().value(&selected)),
+    );
 
     let color_picker = tree
         .get(root_id)
@@ -3667,10 +3672,13 @@ fn reconcile_color_picker_preserves_open_color_and_syncs_presets() {
         .downcast_ref::<ColorPicker>()
         .unwrap();
     assert!(color_picker.is_open());
-    assert_eq!(color_picker.value(), Color::green());
+    assert_eq!(color_picker.current_value(), Color::green());
     assert!(matches!(
         color_picker.snapshot_fields(),
-        SnapshotFields::ColorPicker { preset_colors } if !preset_colors.is_empty()
+        SnapshotFields::ColorPicker {
+            value,
+            preset_colors,
+        } if value == Color::green() && !preset_colors.is_empty()
     ));
 }
 

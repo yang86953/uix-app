@@ -1,6 +1,7 @@
 // Auto-organized test modules. Tests live only under src/tests.
 
 mod boolean;
+mod color_picker;
 mod date_picker;
 mod form;
 mod input;

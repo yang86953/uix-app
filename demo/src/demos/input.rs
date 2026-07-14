@@ -158,7 +158,7 @@ pub fn page_input(ctx: &DemoCtx<'_>) -> ViewNode {
             tk,
             36.0,
             "ColorPicker",
-            ColorPicker::new(tk.color_primary),
+            ColorPicker::new().default_value(tk.color_primary),
         ))
         .section("Segmented")
         .push(
