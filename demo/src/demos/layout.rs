@@ -9,64 +9,115 @@ use crate::demos::context::DemoCtx;
 pub fn page_layout(ctx: &DemoCtx<'_>) -> ViewNode {
     let tk = ctx.tk;
 
-    let r = |label: &str, color: Color| {
-        tree! { Container::new().size(80.0, 28.0).bg(color).rounded(4.0) => [
-            Label::new(label).color(Color::white()).font_size(11.0),
-        ]}
+    let r = |label_text: &str, color: Color| {
+        Container::new()
+            .size(80.0, 28.0)
+            .bg(color)
+            .rounded(4.0)
+            .children((label(label_text).font_size(11.0).fg(Color::WHITE),))
     };
 
     PageBuilder::new(tk)
         .gap()
         .section("Container — Flex Row")
-        .push(tree! { Container::new().w(INNER_W).h(70.0).dir(FlexDirection::Row)
-            .gap(12.0).rounded(4.0).align(AlignItems::Center)
+        .push(
+            row((
+                r("A", Color::from_rgb(64, 150, 255)),
+                r("B", Color::from_rgb(82, 196, 26)),
+                r("C", Color::from_rgb(250, 173, 20)),
+                r("D", Color::from_rgb(114, 46, 209)),
+            ))
+            .width(INNER_W)
+            .height(70.0)
+            .gap(12.0)
+            .radius(4.0)
+            .align(AlignItems::Center)
             .justify(JustifyContent::SpaceBetween)
-            .bg(tk.color_fill).border(tk.color_border, 1.5) => [
-            r("A", Color::from_rgb(64, 150, 255)),
-            r("B", Color::from_rgb(82, 196, 26)),
-            r("C", Color::from_rgb(250, 173, 20)),
-            r("D", Color::from_rgb(114, 46, 209)),
-        ]})
+            .bg(tk.color_fill)
+            .border(1.5, tk.color_border),
+        )
         .section("Container — Flex Column")
-        .push(tree! { Container::new().w(INNER_W).h(160.0).dir(FlexDirection::Column)
-            .gap(8.0).rounded(4.0).align(AlignItems::Center)
-            .bg(tk.color_fill).border(tk.color_border, 1.5) => [
-            r("壹", Color::from_rgb(64, 150, 255)),
-            r("贰", Color::from_rgb(82, 196, 26)),
-            r("叁", Color::from_rgb(250, 173, 20)),
-        ]})
+        .push(
+            column((
+                r("壹", Color::from_rgb(64, 150, 255)),
+                r("贰", Color::from_rgb(82, 196, 26)),
+                r("叁", Color::from_rgb(250, 173, 20)),
+            ))
+            .width(INNER_W)
+            .height(160.0)
+            .gap(8.0)
+            .radius(4.0)
+            .align(AlignItems::Center)
+            .bg(tk.color_fill)
+            .border(1.5, tk.color_border),
+        )
         .section("Grid — 2 / 3 / 自定义列")
-        .push(tree! { Grid::two_columns().gap(8.0).pad(EdgeInsets::uniform(4.0)).size(INNER_W, 70.0) => [
-            tree! { Container::new().size(100.0, 60.0).bg(tk.color_primary_bg).rounded(tk.border_radius_sm) =>
-                [Label::new("2 col A").color(tk.color_primary).font_size(13.0)]},
-            tree! { Container::new().size(100.0, 60.0).bg(tk.color_success_bg).rounded(tk.border_radius_sm) =>
-                [Label::new("2 col B").color(tk.color_success).font_size(13.0)]},
-        ]})
-        .push(tree! { Grid::three_columns().gap(8.0).pad(EdgeInsets::uniform(4.0)).size(INNER_W, 70.0) => [
-            tree! { Container::new().size(80.0, 60.0).bg(tk.color_primary_bg).rounded(tk.border_radius_sm) =>
-                [Label::new("A").color(tk.color_primary).font_size(13.0)]},
-            tree! { Container::new().size(80.0, 60.0).bg(tk.color_warning_bg).rounded(tk.border_radius_sm) =>
-                [Label::new("B").color(tk.color_warning).font_size(13.0)]},
-            tree! { Container::new().size(80.0, 60.0).bg(tk.color_success_bg).rounded(tk.border_radius_sm) =>
-                [Label::new("C").color(tk.color_success).font_size(13.0)]},
-        ]})
-        .push(tree! { Grid::new()
-            .columns(vec![GridTrack::Fr(1.0), GridTrack::Fr(2.0)])
-            .gap(8.0).size(INNER_W, 70.0) => [
-            tree! { Container::new().size(100.0, 60.0).bg(tk.color_primary_bg).rounded(tk.border_radius_sm) =>
-                [Label::new("1fr").color(tk.color_primary).font_size(13.0)]},
-            tree! { Container::new().size(200.0, 60.0).bg(tk.color_info_bg).rounded(tk.border_radius_sm) =>
-                [Label::new("2fr").color(tk.color_info).font_size(13.0)]},
-        ]})
+        .push(
+            Grid::two_columns()
+                .gap(8.0, 8.0)
+                .size(INNER_W, 70.0)
+                .children((
+                    Container::new()
+                        .size(100.0, 60.0)
+                        .bg(tk.color_primary_bg)
+                        .rounded(tk.border_radius_sm)
+                        .children((label("2 col A").font_size(13.0).fg(tk.color_primary),)),
+                    Container::new()
+                        .size(100.0, 60.0)
+                        .bg(tk.color_success_bg)
+                        .rounded(tk.border_radius_sm)
+                        .children((label("2 col B").font_size(13.0).fg(tk.color_success),)),
+                )),
+        )
+        .push(
+            Grid::three_columns()
+                .gap(8.0, 8.0)
+                .size(INNER_W, 70.0)
+                .children((
+                    Container::new()
+                        .size(80.0, 60.0)
+                        .bg(tk.color_primary_bg)
+                        .rounded(tk.border_radius_sm)
+                        .children((label("A").font_size(13.0).fg(tk.color_primary),)),
+                    Container::new()
+                        .size(80.0, 60.0)
+                        .bg(tk.color_warning_bg)
+                        .rounded(tk.border_radius_sm)
+                        .children((label("B").font_size(13.0).fg(tk.color_warning),)),
+                    Container::new()
+                        .size(80.0, 60.0)
+                        .bg(tk.color_success_bg)
+                        .rounded(tk.border_radius_sm)
+                        .children((label("C").font_size(13.0).fg(tk.color_success),)),
+                )),
+        )
+        .push(
+            Grid::new()
+                .columns(vec![GridTrack::Fr(1.0), GridTrack::Fr(2.0)])
+                .gap(8.0, 8.0)
+                .size(INNER_W, 70.0)
+                .children((
+                    Container::new()
+                        .size(100.0, 60.0)
+                        .bg(tk.color_primary_bg)
+                        .rounded(tk.border_radius_sm)
+                        .children((label("1fr").font_size(13.0).fg(tk.color_primary),)),
+                    Container::new()
+                        .size(200.0, 60.0)
+                        .bg(tk.color_info_bg)
+                        .rounded(tk.border_radius_sm)
+                        .children((label("2fr").font_size(13.0).fg(tk.color_info),)),
+                )),
+        )
         .section("Layout — Header / Sider / Content / Footer")
-        .push(tree! { Layout::new().bg(tk.color_bg_layout) => [
-            Header::new(36.0).bg(tk.color_primary_bg),
-            tree! { Container::new().size(INNER_W, 100.0).dir(FlexDirection::Row) => [
-                Sider::new(100.0).bg(tk.color_fill_secondary),
-                Content::new().bg(tk.color_bg_container),
-            ]},
-            Footer::new(28.0).bg(tk.color_fill_tertiary),
-        ]})
+        .push(
+            Layout::new()
+                .bg(tk.color_bg_layout)
+                .header(Header::new(36.0).bg(tk.color_primary_bg))
+                .sider(Sider::new(100.0).bg(tk.color_fill_secondary))
+                .content(Content::new().bg(tk.color_bg_container))
+                .footer(Footer::new(28.0).bg(tk.color_fill_tertiary)),
+        )
         .section("Splitter — 水平 / 垂直")
         .push(labeled_row(
             tk,
@@ -84,12 +135,12 @@ pub fn page_layout(ctx: &DemoCtx<'_>) -> ViewNode {
         .push(
             ScrollView::new(ScrollDirection::Vertical)
                 .size(INNER_W, 120.0)
-                .child(Label::new("ScrollView 行 1 — 滚轮滚动").font_size(12.0))
-                .child(Label::new("ScrollView 行 2").font_size(12.0))
-                .child(Label::new("ScrollView 行 3").font_size(12.0))
-                .child(Label::new("ScrollView 行 4").font_size(12.0))
-                .child(Label::new("ScrollView 行 5").font_size(12.0))
-                .child(Label::new("ScrollView 行 6").font_size(12.0)),
+                .child(label("ScrollView 行 1 — 滚轮滚动").font_size(12.0))
+                .child(label("ScrollView 行 2").font_size(12.0))
+                .child(label("ScrollView 行 3").font_size(12.0))
+                .child(label("ScrollView 行 4").font_size(12.0))
+                .child(label("ScrollView 行 5").font_size(12.0))
+                .child(label("ScrollView 行 6").font_size(12.0)),
         )
         .section("Affix / BackTop")
         .push(labeled_row(tk, 40.0, "Affix", Affix::new(12.0)))

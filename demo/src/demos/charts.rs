@@ -46,20 +46,28 @@ pub fn page_charts(ctx: &DemoCtx<'_>) -> ViewNode {
         )
         .section("PieChart — 实心 / 环形")
         .push(
-            tree! { Container::new().size(inner_w, 220.0).dir(FlexDirection::Row).gap(16.0) => [
-                PieChart::new().size(180.0).data(vec![
-                    PieData::new("Chrome", 65.0, tk.color_primary),
-                    PieData::new("Firefox", 15.0, tk.color_success),
-                    PieData::new("Safari", 10.0, tk.color_warning),
-                    PieData::new("Other", 10.0, tk.color_fill_tertiary),
-                ]).into_node(),
-                PieChart::new().size(180.0).donut(0.45).data(vec![
-                    PieData::new("A", 40.0, tk.color_primary),
-                    PieData::new("B", 30.0, tk.color_success),
-                    PieData::new("C", 20.0, tk.color_warning),
-                    PieData::new("D", 10.0, tk.color_error),
-                ]).into_node(),
-            ]},
+            row((
+                PieChart::new()
+                    .size(180.0)
+                    .data(vec![
+                        PieData::new("Chrome", 65.0, tk.color_primary),
+                        PieData::new("Firefox", 15.0, tk.color_success),
+                        PieData::new("Safari", 10.0, tk.color_warning),
+                        PieData::new("Other", 10.0, tk.color_fill_tertiary),
+                    ]),
+                PieChart::new()
+                    .size(180.0)
+                    .donut(0.45)
+                    .data(vec![
+                        PieData::new("A", 40.0, tk.color_primary),
+                        PieData::new("B", 30.0, tk.color_success),
+                        PieData::new("C", 20.0, tk.color_warning),
+                        PieData::new("D", 10.0, tk.color_error),
+                    ]),
+            ))
+            .width(inner_w)
+            .height(220.0)
+            .gap(16.0),
         )
         .build()
 }
