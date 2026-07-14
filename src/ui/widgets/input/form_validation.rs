@@ -1,6 +1,7 @@
 //! 应用侧表单值、规则与校验结果。
 
 use std::any::Any;
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::ops::RangeInclusive;
@@ -142,6 +143,18 @@ impl fmt::Display for FieldError {
 
 impl std::error::Error for FieldError {}
 
+/// 字段规则的激活时机。
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum Trigger {
+    /// 只在整表提交校验时激活。
+    #[default]
+    OnSubmit,
+    /// 字段失焦时激活。
+    OnBlur,
+    /// 字段值变化时激活。
+    OnChange,
+}
+
 type CustomValidator = Box<dyn Fn(&str) -> Result<(), String> + 'static>;
 
 enum FieldRule {
@@ -169,6 +182,7 @@ struct FormField {
     label: String,
     value: StoredValue,
     rules: Vec<FieldRule>,
+    trigger: Trigger,
 }
 
 impl FormField {
@@ -178,6 +192,7 @@ impl FormField {
             label: label.into(),
             value: StoredValue::new(String::new()),
             rules: Vec::new(),
+            trigger: Trigger::OnSubmit,
         }
     }
 }
@@ -263,6 +278,12 @@ impl FormBuilder {
         self
     }
 
+    /// 设置当前字段的规则激活时机。
+    pub fn validate_trigger(mut self, trigger: Trigger) -> Self {
+        self.current.trigger = trigger;
+        self
+    }
+
     /// 完成声明；同名字段以最后一次声明为准。
     pub fn build(mut self) -> FormModel {
         self.fields.push(self.current);
@@ -273,6 +294,7 @@ impl FormBuilder {
         }
         FormModel {
             layout: self.layout,
+            active_errors: RefCell::new(vec![None; unique.len()]),
             fields: unique,
         }
     }
@@ -282,12 +304,16 @@ impl FormBuilder {
 pub struct FormModel {
     layout: Form,
     fields: Vec<FormField>,
+    active_errors: RefCell<Vec<Option<FieldError>>>,
 }
 
 impl FormModel {
     /// 校验全部字段；每个字段返回首个错误，字段间按声明顺序收集。
     pub fn validate(&self) -> Result<Values, Vec<FieldError>> {
-        let errors: Vec<FieldError> = self.fields.iter().filter_map(validate_field).collect();
+        let field_errors: Vec<Option<FieldError>> =
+            self.fields.iter().map(validate_field).collect();
+        let errors = field_errors.iter().flatten().cloned().collect::<Vec<_>>();
+        *self.active_errors.borrow_mut() = field_errors;
         if !errors.is_empty() {
             return Err(errors);
         }
@@ -302,11 +328,42 @@ impl FormModel {
 
     /// 更新字段值；字段不存在时返回 `false`。
     pub fn set_value<V: IntoFormValue>(&mut self, field: &str, value: V) -> bool {
-        let Some(target) = self.fields.iter_mut().find(|item| item.name == field) else {
+        let Some(index) = self.fields.iter().position(|item| item.name == field) else {
             return false;
         };
-        target.value = StoredValue::new(value);
+        self.fields[index].value = StoredValue::new(value);
+        let error = (self.fields[index].trigger == Trigger::OnChange)
+            .then(|| validate_field(&self.fields[index]))
+            .flatten();
+        self.active_errors.borrow_mut()[index] = error;
         true
+    }
+
+    /// 通知字段失焦；仅 `OnBlur` 字段会在此时执行规则。
+    pub fn blur(&mut self, field: &str) -> bool {
+        let Some(index) = self.fields.iter().position(|item| item.name == field) else {
+            return false;
+        };
+        if self.fields[index].trigger == Trigger::OnBlur {
+            self.active_errors.borrow_mut()[index] = validate_field(&self.fields[index]);
+        }
+        true
+    }
+
+    /// 返回当前已激活的字段错误。
+    pub fn field_error(&self, field: &str) -> Option<FieldError> {
+        let index = self.fields.iter().position(|item| item.name == field)?;
+        self.active_errors.borrow()[index].clone()
+    }
+
+    /// 按字段声明顺序返回当前已激活的错误。
+    pub fn errors(&self) -> Vec<FieldError> {
+        self.active_errors
+            .borrow()
+            .iter()
+            .flatten()
+            .cloned()
+            .collect()
     }
 
     pub fn field_label(&self, field: &str) -> Option<&str> {

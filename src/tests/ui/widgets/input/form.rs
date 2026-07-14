@@ -1,6 +1,7 @@
 use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::widgets::input::form::*;
+use crate::ui::{FieldError, Trigger};
 
 struct FixedChild(Size);
 
@@ -318,4 +319,73 @@ fn duplicate_field_uses_the_last_declaration() {
     assert_eq!(values.len(), 1);
     assert_eq!(values.get::<String>("value"), Some(&"latest".to_string()));
     assert_eq!(form.field_label("value"), Some("New"));
+}
+
+#[test]
+fn validation_triggers_activate_only_at_the_declared_boundary() {
+    let mut form = Form::new()
+        .field("submit", "Submit")
+        .default("")
+        .required("submit required")
+        .field("change", "Change")
+        .default("ready")
+        .required("change required")
+        .validate_trigger(Trigger::OnChange)
+        .field("blur", "Blur")
+        .default("ready")
+        .required("blur required")
+        .validate_trigger(Trigger::OnBlur)
+        .build();
+
+    assert!(form.set_value("submit", ""));
+    assert!(form.set_value("change", ""));
+    assert!(form.set_value("blur", ""));
+    assert_eq!(
+        form.errors()
+            .into_iter()
+            .map(|error| error.field().to_string())
+            .collect::<Vec<_>>(),
+        vec!["change"]
+    );
+
+    assert!(form.blur("blur"));
+    assert!(!form.blur("missing"));
+    assert_eq!(
+        form.errors()
+            .into_iter()
+            .map(|error| error.field().to_string())
+            .collect::<Vec<_>>(),
+        vec!["change", "blur"]
+    );
+
+    let errors = form.validate().expect_err("submit validates every field");
+    assert_eq!(errors.len(), 3);
+    assert_eq!(errors[0].field(), "submit");
+}
+
+#[test]
+fn changing_a_field_replaces_or_clears_its_active_error() {
+    let mut form = Form::new()
+        .field("change", "Change")
+        .default("ready")
+        .required("required")
+        .validate_trigger(Trigger::OnChange)
+        .field("blur", "Blur")
+        .default("")
+        .required("required")
+        .validate_trigger(Trigger::OnBlur)
+        .build();
+
+    assert!(form.set_value("change", ""));
+    assert_eq!(
+        form.field_error("change").as_ref().map(FieldError::message),
+        Some("required")
+    );
+    assert!(form.set_value("change", "valid"));
+    assert!(form.field_error("change").is_none());
+
+    assert!(form.blur("blur"));
+    assert!(form.field_error("blur").is_some());
+    assert!(form.set_value("blur", "changed"));
+    assert!(form.field_error("blur").is_none());
 }
