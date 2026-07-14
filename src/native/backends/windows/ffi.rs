@@ -42,7 +42,7 @@ extern "system" {
 
 #[link(name = "user32")]
 extern "system" {
-    pub(crate) fn RegisterClassExW(lpwcx: *const WNDCLASSEXW) -> u16;
+    pub(super) fn RegisterClassExW(lpwcx: *const WNDCLASSEXW) -> u16;
     pub(crate) fn CreateWindowExW(
         dwExStyle: u32,
         lpClassName: *const u16,
@@ -59,7 +59,7 @@ extern "system" {
     ) -> *mut std::ffi::c_void;
     pub(crate) fn DestroyWindow(hwnd: *mut std::ffi::c_void) -> i32;
     pub(crate) fn IsWindow(hwnd: *mut std::ffi::c_void) -> i32;
-    pub(crate) fn AdjustWindowRectExForDpi(
+    pub(super) fn AdjustWindowRectExForDpi(
         lpRect: *mut RECT,
         dwStyle: u32,
         bMenu: i32,
@@ -72,7 +72,7 @@ extern "system" {
         wparam: usize,
         lparam: isize,
     ) -> isize;
-    pub(crate) fn PeekMessageW(
+    pub(super) fn PeekMessageW(
         lpMsg: *mut MSG,
         hwnd: *mut std::ffi::c_void,
         wMsgFilterMin: u32,
@@ -93,8 +93,8 @@ extern "system" {
         dwMilliseconds: u32,
         dwWakeMask: u32,
     ) -> u32;
-    pub(crate) fn TranslateMessage(lpMsg: *const MSG) -> i32;
-    pub(crate) fn DispatchMessageW(lpMsg: *const MSG) -> isize;
+    pub(super) fn TranslateMessage(lpMsg: *const MSG) -> i32;
+    pub(super) fn DispatchMessageW(lpMsg: *const MSG) -> isize;
     pub(crate) fn ShowWindow(hwnd: *mut std::ffi::c_void, nCmdShow: i32) -> i32;
     pub(crate) fn SetWindowTextW(hwnd: *mut std::ffi::c_void, lpString: *const u16) -> i32;
     pub(crate) fn SetWindowPos(
@@ -136,7 +136,7 @@ extern "system" {
     pub(super) fn ClipCursor(lpRect: *const RECT) -> i32;
     pub(crate) fn SetCapture(hwnd: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
     pub(crate) fn ReleaseCapture() -> i32;
-    pub(crate) fn ScreenToClient(hwnd: *mut std::ffi::c_void, lpPoint: *mut POINT) -> i32;
+    pub(super) fn ScreenToClient(hwnd: *mut std::ffi::c_void, lpPoint: *mut POINT) -> i32;
     pub(crate) fn GetAsyncKeyState(vKey: i32) -> i16;
     pub(crate) fn DragAcceptFiles(hwnd: *mut std::ffi::c_void, fAccept: i32);
     pub(crate) fn DragQueryFileW(
@@ -145,7 +145,7 @@ extern "system" {
         lpszFile: *mut u16,
         cch: u32,
     ) -> u32;
-    pub(crate) fn DragQueryPoint(hdrop: *mut std::ffi::c_void, lppt: *mut POINT) -> i32;
+    pub(super) fn DragQueryPoint(hdrop: *mut std::ffi::c_void, lppt: *mut POINT) -> i32;
     pub(crate) fn DragFinish(hdrop: *mut std::ffi::c_void);
     pub(crate) fn GetDC(hwnd: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
     pub(crate) fn ReleaseDC(hwnd: *mut std::ffi::c_void, hdc: *mut std::ffi::c_void) -> i32;
@@ -157,7 +157,7 @@ extern "system" {
     ) -> usize;
     pub(crate) fn KillTimer(hwnd: *mut std::ffi::c_void, uIDEvent: u32) -> i32;
 
-    pub(crate) fn GetWindowRect(hwnd: *mut std::ffi::c_void, lpRect: *mut RECT) -> i32;
+    pub(super) fn GetWindowRect(hwnd: *mut std::ffi::c_void, lpRect: *mut RECT) -> i32;
 
     // ── 剪贴板 ──
     pub(crate) fn OpenClipboard(hwnd: *mut std::ffi::c_void) -> i32;
@@ -242,11 +242,11 @@ extern "system" {
         buffer: *mut std::ffi::c_void,
         buffer_len: u32,
     ) -> i32;
-    pub(crate) fn ImmSetCompositionWindow(
+    pub(super) fn ImmSetCompositionWindow(
         himc: *mut std::ffi::c_void,
         form: *const COMPOSITIONFORM,
     ) -> i32;
-    pub(crate) fn ImmSetCandidateWindow(
+    pub(super) fn ImmSetCandidateWindow(
         himc: *mut std::ffi::c_void,
         form: *const CANDIDATEFORM,
     ) -> i32;
