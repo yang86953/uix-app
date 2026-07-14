@@ -36,13 +36,23 @@ fn scroll_combinator_builds_scroll_view_node() {
 }
 
 #[test]
-fn view_node_direct_style_methods_cover_margin_and_opacity() {
+fn view_node_direct_style_methods_cover_documented_box_model() {
+    let shadow = Color::from_rgba(1, 2, 3, 40);
     let node = label("styled")
+        .padding(EdgeInsets::uniform(2.0))
+        .padding_h(8.0)
+        .padding_v(4.0)
         .margin(EdgeInsets::uniform(6.0))
-        .opacity(0.5);
+        .opacity(0.5)
+        .shadow(12.0, shadow);
 
+    assert_eq!(node.style.padding, EdgeInsets::new(8.0, 4.0, 8.0, 4.0));
     assert_eq!(node.style.margin, EdgeInsets::uniform(6.0));
     assert_eq!(node.style.opacity, 0.5);
+    assert_eq!(
+        node.style.box_shadow,
+        Some(crate::ui::style::BoxShadowDef::new(shadow, 12.0, 0.0, 0.0))
+    );
 }
 
 #[test]
