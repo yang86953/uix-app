@@ -5,6 +5,9 @@
 //! fallback segments, and Picture/offscreen blits; the only presentation entry
 //! consumes the encoder, so a recorded frame cannot be presented twice.
 
+use crate::core::Rect;
+use crate::draw::engine::cpu::raster_renderer::RasterRenderer;
+use crate::draw::primitives::types::{BlendMode, Radius};
 use crate::draw::Color;
 
 /// Integer pixel rectangle used by the API-neutral frame command model.
@@ -30,6 +33,45 @@ impl FrameRect {
         self.width <= 0 || self.height <= 0
     }
 }
+
+/// 帧命令使用的已验证圆角半径。
+///
+/// 构造时排除 NaN、无穷大与负值，并把 `-0.0` 规范化为 `0.0`，因此该类型
+/// 可以安全保持命令模型原有的 `Eq` 契约。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FrameRadius {
+    value: Radius,
+}
+
+impl FrameRadius {
+    pub fn new(value: Radius) -> Result<Self, FrameEncoderError> {
+        for (corner, radius) in [
+            ("top-left", value.tl),
+            ("top-right", value.tr),
+            ("bottom-right", value.br),
+            ("bottom-left", value.bl),
+        ] {
+            if !radius.is_finite() || radius < 0.0 {
+                return Err(FrameEncoderError::InvalidRadius { corner });
+            }
+        }
+        let canonical = |radius: f32| if radius == 0.0 { 0.0 } else { radius };
+        Ok(Self {
+            value: Radius {
+                tl: canonical(value.tl),
+                tr: canonical(value.tr),
+                br: canonical(value.br),
+                bl: canonical(value.bl),
+            },
+        })
+    }
+
+    pub const fn to_radius(self) -> Radius {
+        self.value
+    }
+}
+
+impl Eq for FrameRadius {}
 
 /// A self-contained premultiplied-AARRGGBB CPU image used to model a
 /// Picture/offscreen result. This matches the software rasterizer's pixel
@@ -83,10 +125,10 @@ impl FrameImage {
 /// API-neutral raster work.  More operations can be added without changing
 /// frame ordering or the presentation contract.
 ///
-/// Destination-dependent ops ([`Self::FillRectAdditive`], [`Self::ScrollCopy`])
-/// must run against the accumulating target (Native commands or the reference
-/// executor). Recording them into a transparent CPU segment and source-over
-/// compositing is not equivalent and must not be used as a substitute.
+/// 目标相关操作（[`Self::FillRectAdditive`]、
+/// [`Self::FillRoundedRectAdditive`]、[`Self::ScrollCopy`]）必须直接作用于
+/// 累积目标（Native 命令或参考执行器）。把它们录进透明 CPU segment 后再做
+/// source-over 合成并不等价，禁止作为替代实现。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FrameRasterOp {
     FillRect {
@@ -97,6 +139,12 @@ pub enum FrameRasterOp {
     FillRectAdditive {
         rect: FrameRect,
         color: Color,
+    },
+    /// 使用共享 SDF coverage 对圆角区域执行逐通道饱和加法。
+    FillRoundedRectAdditive {
+        rect: FrameRect,
+        color: Color,
+        radius: FrameRadius,
     },
     /// Copy pixels from `viewport` translated by `(dx, dy)` into `viewport`
     /// (same semantics as [`Canvas2D::scroll_region`] with rounded deltas).
@@ -206,6 +254,9 @@ pub enum FrameEncoderError {
     DestinationDependentCpuSegment {
         operation: &'static str,
     },
+    InvalidRadius {
+        corner: &'static str,
+    },
 }
 
 impl std::fmt::Display for FrameEncoderError {
@@ -226,6 +277,10 @@ impl std::fmt::Display for FrameEncoderError {
             Self::DestinationDependentCpuSegment { operation } => write!(
                 f,
                 "{operation} depends on destination pixels and cannot be recorded as a transparent CPU segment"
+            ),
+            Self::InvalidRadius { corner } => write!(
+                f,
+                "frame radius {corner} must be finite and non-negative"
             ),
         }
     }
@@ -290,6 +345,7 @@ impl FrameEncoder {
         if let Some(operation) = operations.iter().find_map(|operation| match operation {
             FrameRasterOp::FillRect { .. } => None,
             FrameRasterOp::FillRectAdditive { .. } => Some("FillRectAdditive"),
+            FrameRasterOp::FillRoundedRectAdditive { .. } => Some("FillRoundedRectAdditive"),
             FrameRasterOp::ScrollCopy { .. } => Some("ScrollCopy"),
         }) {
             return Err(FrameEncoderError::DestinationDependentCpuSegment { operation });
@@ -425,6 +481,11 @@ fn apply_raster_op_pixels(width: i32, height: i32, pixels: &mut [u32], operation
         FrameRasterOp::FillRectAdditive { rect, color } => {
             fill_rect_additive_pixels(width, height, pixels, *rect, *color)
         }
+        FrameRasterOp::FillRoundedRectAdditive {
+            rect,
+            color,
+            radius,
+        } => fill_rounded_rect_additive_pixels(width, height, pixels, *rect, *color, *radius),
         FrameRasterOp::ScrollCopy { viewport, dx, dy } => {
             scroll_copy_pixels(width, height, pixels, *viewport, *dx, *dy)
         }
@@ -486,6 +547,34 @@ fn fill_rect_additive_pixels(
             pixels[index] = blend_pixel_additive(source, pixels[index]);
         }
     }
+}
+
+fn fill_rounded_rect_additive_pixels(
+    width: i32,
+    height: i32,
+    pixels: &mut [u32],
+    rect: FrameRect,
+    color: Color,
+    radius: FrameRadius,
+) {
+    if rect.is_empty() {
+        return;
+    }
+    let mut renderer = RasterRenderer::new(width, height);
+    renderer.set_blend_mode(BlendMode::Additive);
+    renderer.fill_rect(
+        pixels,
+        width,
+        height,
+        Rect::new(
+            rect.x as f32,
+            rect.y as f32,
+            rect.width as f32,
+            rect.height as f32,
+        ),
+        color,
+        Some(radius.to_radius()),
+    );
 }
 
 fn scroll_copy_pixels(
