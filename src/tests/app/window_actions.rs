@@ -25,6 +25,10 @@ fn window_actions_target_only_the_supplied_window() {
     apply_window_action(&mut target, WindowAction::Minimize).expect("minimize");
     apply_window_action(&mut target, WindowAction::MaximizeRestore).expect("maximize");
     apply_window_action(&mut target, WindowAction::MaximizeRestore).expect("restore");
+    apply_window_action(&mut target, WindowAction::ToggleMaximizeFromTitleBar)
+        .expect("title bar maximize");
+    apply_window_action(&mut target, WindowAction::ToggleMaximizeFromTitleBar)
+        .expect("title bar restore");
     apply_window_action(&mut target, WindowAction::RequestClose).expect("request close");
 
     assert_eq!(target.props.state.begin_move_drag_calls, 1);

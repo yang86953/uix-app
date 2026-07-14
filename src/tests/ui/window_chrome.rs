@@ -44,6 +44,14 @@ fn key_event(key: KeyCode, down: bool) -> SystemEvent {
     }
 }
 
+fn pointer_double_click(pos: Point, button: MouseButton) -> SystemEvent {
+    SystemEvent::PointerDoubleClick {
+        pos,
+        button,
+        mods: KeyMod::NONE,
+    }
+}
+
 fn render_control_corner(tree: &WidgetTree) -> u32 {
     let root = tree.root_id().expect("window control root");
     let frame = tree.get(root).expect("window control node").frame();
@@ -112,7 +120,7 @@ fn drag_region_leaves_interactive_descendants_in_control() {
 }
 
 #[test]
-fn beginning_window_drag_preserves_existing_keyboard_focus() {
+fn window_drag_actions_preserve_existing_keyboard_focus() {
     let mut tree = ViewAdapter::build(
         row(vec![
             button("focused").width(60.0).height(32.0),
@@ -143,6 +151,44 @@ fn beginning_window_drag_preserves_existing_keyboard_focus() {
         vec![WindowAction::BeginMoveDrag]
     );
     assert_eq!(tree.managers().focus.focused_component(), Some(focused));
+
+    tree.dispatch_event(&pointer_event(
+        Point::new(120.0, 16.0),
+        false,
+        MouseButton::Left,
+    ));
+    tree.dispatch_event(&pointer_double_click(
+        Point::new(120.0, 16.0),
+        MouseButton::Left,
+    ));
+    assert_eq!(
+        tree.take_window_actions(),
+        vec![WindowAction::ToggleMaximizeFromTitleBar]
+    );
+    assert_eq!(tree.managers().focus.focused_component(), Some(focused));
+}
+
+#[test]
+fn drag_region_double_click_keeps_nested_control_action() {
+    let mut tree = ViewAdapter::build(
+        window_drag_region(
+            window_control(WindowControl::Minimize, label("minimize"))
+                .width(44.0)
+                .height(32.0),
+        )
+        .width(240.0)
+        .height(32.0),
+    );
+    tree.root_mut()
+        .expect("drag region root")
+        .set_frame(Rect::new(0.0, 0.0, 240.0, 32.0));
+    tree.layout();
+
+    let pos = Point::new(20.0, 16.0);
+    tree.dispatch_event(&pointer_double_click(pos, MouseButton::Left));
+    assert!(tree.take_window_actions().is_empty());
+    tree.dispatch_event(&pointer_event(pos, false, MouseButton::Left));
+    assert_eq!(tree.take_window_actions(), vec![WindowAction::Minimize]);
 }
 
 #[test]
