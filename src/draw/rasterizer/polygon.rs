@@ -47,7 +47,7 @@ fn make_edge(p0: Point, p1: Point) -> Edge {
 
 /// 将展平后的多边形填充到像素缓冲中。
 ///
-/// `polys`: 展平后的多边形列表（每个 Vec<Point> 为一个闭合多边形）。
+/// `polys`: 展平后的多边形列表（每个 `Vec<Point>` 为一个闭合多边形）。
 /// `pixels`: BGRA 32bit 像素缓冲。
 /// `width`, `height`: 缓冲尺寸。
 /// `clip`: 裁剪矩形（像素坐标）。

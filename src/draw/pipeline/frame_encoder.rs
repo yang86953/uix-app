@@ -146,8 +146,8 @@ pub enum FrameRasterOp {
         color: Color,
         radius: FrameRadius,
     },
-    /// Copy pixels from `viewport` translated by `(dx, dy)` into `viewport`
-    /// (same semantics as [`Canvas2D::scroll_region`] with rounded deltas).
+    /// 把 `viewport` 中按 `(dx, dy)` 平移后的像素复制回同一视口；
+    /// 语义与 [`crate::draw::traits::Canvas2D::scroll_region`] 一致，位移取整。
     ScrollCopy {
         viewport: FrameRect,
         dx: i32,

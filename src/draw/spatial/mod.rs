@@ -32,7 +32,7 @@
 //!
 //! - **2D UI**：模型=世界（identity view），正交投影使 dip≈screen，零成本路径。
 //! - **3D 场景**：完整 MVP 链路，透视投影下 dip 需经投影计算。
-//! - 单位换算见 [`unit`] 模块；坐标方向见 [`platform_adapter`]。
+//! - 单位换算见 [`mod@unit`] 模块；坐标方向见 [`mod@platform_adapter`]。
 
 pub mod aabb3d;
 pub mod context;

@@ -337,8 +337,8 @@ pub trait Canvas2D {
         );
     }
 
-    /// Shared-coverage glyph blit — default copies via [`blit_glyph`]; GPU-native
-    /// backends may retain the `Arc` without cloning coverage bytes (#105).
+    /// 共享 coverage 的字形复制；默认转发到 [`Self::blit_glyph`]。
+    /// 原生 GPU backend 可保留 `Arc`，无需复制 coverage 字节（#105）。
     fn blit_glyph_shared(
         &mut self,
         x: i32,
