@@ -15,6 +15,7 @@ use crate::app::session_runtime::{AppRuntime, OpenWindowRequest};
 use crate::app::shell::cli::Cli;
 use crate::app::shell::di::Container;
 use crate::app::text_input::sync_window_text_input;
+use crate::app::window_actions::{apply_pending_window_actions, configure_custom_title_bar};
 use crate::app::window_config::WindowConfig;
 use crate::app::window_driver::{WindowDriver, WindowFrameContext};
 use crate::app::window_session::WindowSession;
@@ -113,6 +114,13 @@ impl SecondaryWindowSession {
 
         if let Some(system_event) = map_ui_event(event) {
             parts.tree.dispatch_event(&system_event);
+            if let Err(error) = apply_pending_window_actions(parts.tree, self._window.as_mut()) {
+                crate::core::log::error_fn(format!(
+                    "secondary window action failed: {}",
+                    error.short_what()
+                ));
+                return false;
+            }
         }
         platform.event_bus().publish(event);
         sync_window_text_input(
@@ -202,6 +210,16 @@ impl SecondaryWindowSession {
             on_runtime_tasks: &mut no_runtime_tasks,
             on_frame: &no_frame,
         });
+        if let Err(error) = apply_pending_window_actions(parts.tree, _window.as_mut()) {
+            crate::core::log::error_fn(format!(
+                "secondary window action failed after runtime work: {}",
+                error.short_what()
+            ));
+            report_window_operation_error(
+                "secondary window action failure close request failed",
+                _window.request_close(),
+            );
+        }
         *last_frame = driver.last_frame();
         result.did_work
     }
@@ -241,6 +259,7 @@ pub struct App {
     mode: AppMode,
     title: String,
     size: (i32, i32),
+    custom_title_bar: bool,
     theme: Theme,
     pub(crate) follow_system_theme: bool,
     app_state: AppState,
@@ -280,6 +299,7 @@ impl Default for App {
             mode: AppMode::GUI,
             title: "UIX App".to_string(),
             size: (800, 600),
+            custom_title_bar: false,
             theme: Theme::antd_light(),
             follow_system_theme: false,
             app_state: AppState::new(),
@@ -316,6 +336,12 @@ impl App {
     /// 设置窗口初始尺寸。
     pub fn size(mut self, width: i32, height: i32) -> Self {
         self.size = (width, height);
+        self
+    }
+
+    /// 隐藏主窗口的系统标题栏，由根 View 自定义标题栏。
+    pub fn custom_title_bar(mut self, enabled: bool) -> Self {
+        self.custom_title_bar = enabled;
         self
     }
 
@@ -539,6 +565,19 @@ impl App {
                 return 1;
             }
         };
+        if self.custom_title_bar {
+            if let Err(error) = configure_custom_title_bar(platform_window.as_mut(), w, h) {
+                crate::core::log::error_fn(format!(
+                    "configure custom title bar failed: {}",
+                    error.short_what()
+                ));
+                report_window_operation_error(
+                    "custom title bar failure cleanup close failed",
+                    platform_window.close(),
+                );
+                return 1;
+            }
+        }
         report_window_operation_error(
             "initial center_on_screen failed",
             platform_window.center_on_screen(),
@@ -1035,6 +1074,7 @@ fn create_secondary_window(
         title,
         width,
         height,
+        custom_title_bar,
         root,
     } = config;
 
@@ -1065,6 +1105,21 @@ fn create_secondary_window(
             actual.raw()
         ));
         return None;
+    }
+
+    if custom_title_bar {
+        if let Err(error) = configure_custom_title_bar(platform_window.as_mut(), width, height) {
+            report_window_operation_error(
+                "custom title bar failure cleanup close failed",
+                platform_window.close(),
+            );
+            runtime.close_session(window_id);
+            crate::core::log::error_fn(format!(
+                "open_window custom title bar failed: {}",
+                error.short_what()
+            ));
+            return None;
+        }
     }
 
     report_window_operation_error(

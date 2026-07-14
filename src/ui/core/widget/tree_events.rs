@@ -73,9 +73,10 @@ impl WidgetTree {
             None => pos,
         };
 
-        let can_hit_children = node
-            .children_clip(node.frame())
-            .is_none_or(|clip| clip.contains(pos));
+        let can_hit_children = node.hit_test_children()
+            && node
+                .children_clip(node.frame())
+                .is_none_or(|clip| clip.contains(pos));
         if can_hit_children {
             let mut sorted: Vec<WidgetId> = node.children().to_vec();
             sorted.sort_by(|&a, &b| {
@@ -737,6 +738,9 @@ impl WidgetTree {
     }
 
     fn finish_scroll_aware_dispatch(&mut self, id: WidgetId, event: &SystemEvent) -> EventResult {
+        if let Some(action) = self.get_mut(id).and_then(|node| node.take_window_action()) {
+            self.pending_window_actions.push(action);
+        }
         if self.refresh_table_expand_component(id) {
             self.push_layout_invalidation(id);
             self.propagate_layout_invalidation(id);
@@ -795,6 +799,9 @@ impl WidgetTree {
 
     /// capture 阶段拦截事件后：标记拦截节点重绘。
     fn on_widget_handled_in_capture(&mut self, id: WidgetId) {
+        if let Some(action) = self.get_mut(id).and_then(|node| node.take_window_action()) {
+            self.pending_window_actions.push(action);
+        }
         self.invalidate_paint(id);
     }
 

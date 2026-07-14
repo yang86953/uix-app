@@ -81,6 +81,9 @@ pub trait WindowOps {
     fn os_restore(&mut self) -> Result<()> {
         unimpl("os_restore")
     }
+    fn os_set_system_title_bar_visible(&mut self, _visible: bool) -> Result<()> {
+        unimpl("os_set_system_title_bar_visible")
+    }
     fn os_set_borderless(&mut self, _b: bool) -> Result<()> {
         unimpl("os_set_borderless")
     }
@@ -120,6 +123,14 @@ pub trait WindowOps {
 
     fn os_cancel_native_frame(&mut self, _token: FrameRequestToken) -> Result<()> {
         Ok(())
+    }
+
+    fn os_request_close(&mut self) -> Result<()> {
+        unimpl("os_request_close")
+    }
+
+    fn os_begin_move_drag(&mut self) -> Result<()> {
+        unimpl("os_begin_move_drag")
     }
 
     /// Exact compositor visibility, when the native window system exposes it.
@@ -239,6 +250,12 @@ impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
         self.closed = true;
         state_write!(self.state, visible, false);
         Ok(())
+    }
+    fn request_close(&mut self) -> Result<()> {
+        self.ops.os_request_close()
+    }
+    fn begin_move_drag(&mut self) -> Result<()> {
+        self.ops.os_begin_move_drag()
     }
     fn is_visible(&self) -> bool {
         state_read!(self.state, visible)
@@ -375,6 +392,9 @@ impl<O: WindowOps> IWindowProperties for PlatformWindowCore<O> {
         state_write!(self.state, maximized, false);
         state_write!(self.state, minimized, false);
         Ok(())
+    }
+    fn set_system_title_bar_visible(&mut self, visible: bool) -> Result<()> {
+        self.ops.os_set_system_title_bar_visible(visible)
     }
     fn set_borderless(&mut self, b: bool) -> Result<()> {
         self.ops.os_set_borderless(b)?;

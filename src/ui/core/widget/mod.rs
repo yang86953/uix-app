@@ -373,6 +373,11 @@ impl BoxedWidget {
             .map(|e| e.hit_test_frame(actual_frame))
             .unwrap_or(actual_frame)
     }
+    pub fn hit_test_children(&self) -> bool {
+        self.component()
+            .as_event()
+            .is_none_or(|event| event.hit_test_children())
+    }
     pub fn hit_test_3d(&self, ray: &Ray3D, spatial: &SpatialContext, frame: Rect) -> bool {
         self.component()
             .as_event()
@@ -384,6 +389,11 @@ impl BoxedWidget {
             .as_event_mut()
             .map(|e| e.on_event(event))
             .unwrap_or(EventResult::NotHandled)
+    }
+    pub(crate) fn take_window_action(&mut self) -> Option<crate::ui::event::WindowAction> {
+        self.component_mut()
+            .as_event_mut()
+            .and_then(|event| event.take_window_action())
     }
     pub fn semantic_event(
         &self,

@@ -3,7 +3,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::pipeline::{Invalidation, InvalidationQueueHandle};
 use crate::ui::app_state::AppState;
 use crate::ui::component_snapshot::ComponentConfigSnapshot;
-use crate::ui::event::HandlerTable;
+use crate::ui::event::{HandlerTable, WindowAction};
 use crate::ui::foundation::focus_trap::next_focus_in_order;
 use crate::ui::managers::WidgetManagers;
 use crate::ui::overlay::OverlayStack;
@@ -31,6 +31,7 @@ pub struct WidgetTree {
     pub(crate) next_slot: usize,
     pub(crate) root_id: Option<WidgetId>,
     pub(crate) scroll_region_moves: Vec<(Rect, f32, f32)>,
+    pub(crate) pending_window_actions: Vec<WindowAction>,
     pub tree_version: u64,
     cached_traversal: std::cell::RefCell<(Vec<WidgetId>, u64)>,
 
@@ -83,6 +84,7 @@ impl Default for WidgetTree {
             next_slot: 0,
             root_id: None,
             scroll_region_moves: Vec::new(),
+            pending_window_actions: Vec::new(),
             tree_version: 0,
             cached_traversal: std::cell::RefCell::new((Vec::new(), 0)),
             handler_table: HandlerTable::new(),
@@ -123,6 +125,10 @@ impl WidgetTree {
 
     pub fn tree_version(&self) -> u64 {
         self.tree_version
+    }
+
+    pub(crate) fn take_window_actions(&mut self) -> Vec<WindowAction> {
+        std::mem::take(&mut self.pending_window_actions)
     }
 
     pub fn managers(&self) -> &WidgetManagers {

@@ -22,6 +22,7 @@ pub mod theme;
 pub mod traits;
 pub mod view;
 pub mod widgets;
+pub mod window_chrome;
 
 pub use crate::core::ComponentId;
 pub use crate::draw::painting::PaintContext;
@@ -76,6 +77,7 @@ pub use traits::{
     WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetLifecycle, WidgetRender,
 };
 pub use widgets::*;
+pub use window_chrome::{window_control, window_drag_region, WindowControl};
 
 #[cfg(feature = "test-harness")]
 pub mod test_harness {

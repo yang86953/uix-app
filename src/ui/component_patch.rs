@@ -10,6 +10,7 @@ use crate::ui::widgets::{
     Switch, Table, Tabs, Tag, ThemeToggle, TimePicker, Timeline, Tooltip, Transfer, Tree,
     TreeSelect, Typography, Upload, Watermark,
 };
+use crate::ui::window_chrome::WindowInteractionRegion;
 use crate::ui::WidgetComponent;
 
 pub(crate) fn builtin_widget_runtime_changed(
@@ -47,6 +48,7 @@ pub(crate) fn patch_builtin_widget(
     patch_as!(Button);
     patch_as!(VirtualScroll);
     patch_as!(Container);
+    patch_as!(WindowInteractionRegion);
     patch_as!(Grid);
     patch_as!(Layout);
     patch_as!(Header);

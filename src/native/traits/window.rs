@@ -54,6 +54,8 @@ pub trait IWindowProperties {
     fn maximize(&mut self) -> Result<()>;
     fn minimize(&mut self) -> Result<()>;
     fn restore(&mut self) -> Result<()>;
+    /// 显示或隐藏系统非客户区标题栏，同时保留后端可用的窗口缩放边框。
+    fn set_system_title_bar_visible(&mut self, visible: bool) -> Result<()>;
     fn set_borderless(&mut self, borderless: bool) -> Result<()>;
     fn set_fullscreen(&mut self, fullscreen: bool) -> Result<()>;
     fn is_fullscreen(&self) -> bool;
@@ -83,6 +85,10 @@ pub trait PlatformWindow {
     fn show(&mut self) -> Result<()>;
     fn hide(&mut self) -> Result<()>;
     fn close(&mut self) -> Result<()>;
+    /// 请求走平台正常关闭事件，使应用先释放图形与会话资源。
+    fn request_close(&mut self) -> Result<()>;
+    /// 将当前鼠标手势移交给窗口管理器执行原生窗口拖动。
+    fn begin_move_drag(&mut self) -> Result<()>;
     fn is_visible(&self) -> bool;
 
     /// Returns the latest exact compositor visibility when the backend can

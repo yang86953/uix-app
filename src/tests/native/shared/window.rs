@@ -124,6 +124,10 @@ fn unsupported_optional_window_ops_do_not_mutate_shared_state() {
     assert_error_code(props.maximize(), Errc::NotImplemented);
     assert_error_code(props.minimize(), Errc::NotImplemented);
     assert_error_code(props.restore(), Errc::NotImplemented);
+    assert_error_code(
+        props.set_system_title_bar_visible(false),
+        Errc::NotImplemented,
+    );
     assert_error_code(props.set_borderless(true), Errc::NotImplemented);
     assert_error_code(props.set_fullscreen(true), Errc::NotImplemented);
     assert_error_code(props.set_always_on_top(true), Errc::NotImplemented);

@@ -9,6 +9,20 @@ use crate::core::{ComponentId, Point, WindowId};
 use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::widget::EventResult;
 
+/// 由 UI 组件发往事件所属原生窗口的无外观动作。
+///
+/// 该类型只在 `ui -> app` 边界内流转；公开 API 使用
+/// [`WindowControl`](crate::ui::WindowControl)
+/// 描述可由应用放入自定义标题栏的控制项。
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowAction {
+    BeginMoveDrag,
+    Minimize,
+    MaximizeRestore,
+    RequestClose,
+}
+
 /// 应用边界后的系统事件。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SystemEventKind {

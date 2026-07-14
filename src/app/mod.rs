@@ -18,6 +18,7 @@ pub(crate) mod session_runtime;
 pub mod shell;
 pub(crate) mod text_input;
 pub mod window;
+pub(crate) mod window_actions;
 pub mod window_config;
 pub(crate) mod window_driver;
 pub(crate) mod window_semantics;
