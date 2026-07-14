@@ -375,9 +375,27 @@ impl FrameScheduler {
         self.clear_occlusion_probe();
     }
 
+    /// 将 engine 已确认的恢复终态同步为无 deadline 的吸收态。
+    pub(crate) fn mark_terminal_failure(&mut self) {
+        if self.is_terminal_failure() {
+            return;
+        }
+        self.bump_generation();
+        self.outstanding = None;
+        self.ready = None;
+        self.rebase_animation = true;
+        self.clear_occlusion_probe();
+        self.surface_state = SurfaceState::Suspended(SurfaceSuspendReason::TerminalFailure);
+        self.recovery_attempt = MAX_RECOVERY_ATTEMPTS;
+    }
+
     /// 保留 dirty 并阻止立即重试；可恢复失败有限退避，终态保持吸收。
     pub(crate) fn frame_failed(&mut self, failure: &GraphicsFailure, now: Instant) {
         if self.is_terminal_failure() {
+            return;
+        }
+        if matches!(failure, GraphicsFailure::OutOfMemory(_)) {
+            self.mark_terminal_failure();
             return;
         }
         self.bump_generation();
@@ -394,12 +412,6 @@ impl FrameScheduler {
         }
 
         self.clear_occlusion_probe();
-
-        if matches!(failure, GraphicsFailure::OutOfMemory(_)) {
-            self.surface_state = SurfaceState::Suspended(SurfaceSuspendReason::TerminalFailure);
-            self.recovery_attempt = MAX_RECOVERY_ATTEMPTS;
-            return;
-        }
 
         let attempt = self.recovery_attempt.saturating_add(1);
         self.recovery_attempt = attempt;

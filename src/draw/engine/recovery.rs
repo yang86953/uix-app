@@ -32,9 +32,9 @@ impl GraphicsRecovery {
         }
     }
 
-    /// Maps a typed failure to the next action in the required, finite order:
-    /// surface rebuild -> same recipe rebuild -> next recipe -> Software.
-    /// Out-of-memory is terminal and must never be silently downgraded.
+    /// 将 typed failure 映射到唯一的有界恢复序列：
+    /// surface rebuild -> same recipe rebuild -> next recipe -> Software。
+    /// Software 只尝试一次；OOM 与序列耗尽均进入终态。
     pub fn on_failure(&mut self, failure: &GraphicsFailure) -> RecoveryAction {
         if matches!(failure, GraphicsFailure::OutOfMemory(_)) {
             return RecoveryAction::AbortOutOfMemory;
@@ -43,7 +43,7 @@ impl GraphicsRecovery {
             0 => RecoveryAction::RebuildSurface,
             1 => RecoveryAction::RebuildRecipe,
             2 => RecoveryAction::TryNextRecipe,
-            _ if self.software_available => RecoveryAction::UseSoftware,
+            3 if self.software_available => RecoveryAction::UseSoftware,
             _ => RecoveryAction::Abort,
         };
         self.step = self.step.saturating_add(1);

@@ -1,5 +1,10 @@
 use super::*;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WindowFrameResult {
+    pub(crate) did_work: bool,
+}
+
 pub(super) fn with_platform_clipboard<R>(
     platform: &mut Option<&mut dyn Platform>,
     operation: impl FnOnce() -> R,

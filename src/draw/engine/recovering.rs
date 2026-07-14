@@ -198,6 +198,10 @@ impl GraphicsEngine for RecoveringGraphicsEngine {
         self.record_failure(GraphicsFailure::from_error(error));
     }
 
+    fn has_terminal_failure(&self) -> bool {
+        self.terminal_failure.is_some()
+    }
+
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
         self.engine.canvas_2d()
     }

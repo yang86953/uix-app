@@ -38,7 +38,7 @@ use std::cell::{Cell, RefCell};
 use std::time::Instant;
 pub(crate) use support::{
     animation_clock_should_advance, graphics_failure_is_error, has_invalidation_work,
-    sync_root_frame_to_engine,
+    sync_root_frame_to_engine, WindowFrameResult,
 };
 use support::{
     dispatch_due_active_work, earliest_deadline, ensure_surface_matches_window, has_layout_work,
@@ -76,11 +76,6 @@ pub(crate) struct WindowFrameContext<'a, 'platform> {
     pub(crate) next_external_deadline: Option<Instant>,
     pub(crate) on_runtime_tasks: &'a mut dyn FnMut(&mut dyn Platform, &mut WidgetTree),
     pub(crate) on_frame: &'a dyn Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct WindowFrameResult {
-    pub(crate) did_work: bool,
 }
 
 pub(crate) struct WindowDriver {
@@ -895,7 +890,11 @@ impl WindowDriver {
             }
         } else if let Some(failure) = frame_failure.as_ref() {
             self.cancel_outstanding_native_frame(platform_window);
-            self.frame_scheduler.frame_failed(failure, frame_time);
+            if engine.has_terminal_failure() {
+                self.frame_scheduler.mark_terminal_failure();
+            } else {
+                self.frame_scheduler.frame_failed(failure, frame_time);
+            }
         }
 
         let present_probe = crate::core::perf_probe::take_present();

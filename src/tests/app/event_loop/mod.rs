@@ -2,3 +2,4 @@
 
 mod diagnostics;
 mod event_loop;
+mod software_recovery;

@@ -22,6 +22,8 @@ pub struct FakePresenterState {
     /// 当前宽高
     pub width: i32,
     pub height: i32,
+    /// 注入的呈现失败；保留调用与像素记录后返回。
+    pub present_error: Option<crate::core::Error>,
 }
 
 #[derive(Debug)]
@@ -77,7 +79,10 @@ impl IPresenter for FakePresenter {
             pixels_len: pixels.len(),
             damage,
         });
-        Ok(())
+        match &self.state.present_error {
+            Some(error) => Err(error.clone()),
+            None => Ok(()),
+        }
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<()> {
