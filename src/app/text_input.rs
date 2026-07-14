@@ -29,13 +29,12 @@ pub(crate) fn sync_window_text_input(
     if state.ime_session != requested_target {
         if let Some(previous) = state.ime_session.take() {
             active_work.unregister(ActiveWorkKind::ImeSession(previous));
-            if state.coordinator.active_window() == Some(window_id) {
-                if select_target(platform, window_id, native_window)
+            if state.coordinator.active_window() == Some(window_id)
+                && select_target(platform, window_id, native_window)
                     && report_stop_error(platform.text_input().stop())
                 {
                     state.coordinator.deactivate(window_id);
                 }
-            }
         }
         state.cursor_rect = None;
     }

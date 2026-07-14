@@ -75,7 +75,7 @@ impl WidgetTree {
 
         let can_hit_children = node
             .children_clip(node.frame())
-            .map_or(true, |clip| clip.contains(pos));
+            .is_none_or(|clip| clip.contains(pos));
         if can_hit_children {
             let mut sorted: Vec<WidgetId> = node.children().to_vec();
             sorted.sort_by(|&a, &b| {

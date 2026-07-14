@@ -369,7 +369,8 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
                 bind_reconcile_site(&reconcile_sites, 0, f.clone());
             }
         });
-        let state = Self {
+        
+        Self {
             inner: Arc::new(RwLock::new(StateInner {
                 slot_id: StateSlotId(NEXT_STATE_SLOT.fetch_add(1, Ordering::Relaxed)),
                 value,
@@ -378,8 +379,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
             })),
             reconcile_sites,
             paint_sites,
-        };
-        state
+        }
     }
 
     /// 绑定精确 Paint 失效：State 变更时向队列推送 `Invalidation::Paint`。

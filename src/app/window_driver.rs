@@ -771,7 +771,7 @@ impl WindowDriver {
         };
         let mut phase_paint_us = paint_t0.elapsed().as_micros();
 
-        if let Some(platform) = platform.as_deref_mut() {
+        if let Some(platform) = platform {
             let window_id = platform_window.window_id();
             let native_window = platform_window.native_handle().native_window();
             sync_window_text_input(

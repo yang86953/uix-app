@@ -25,7 +25,7 @@ impl_widget_component!(AppOverlayRoot; Layout);
 
 impl WidgetLayout for AppOverlayRoot {
     fn measure(&self, constraints: Constraints) -> Size {
-        constraints.definite.unwrap_or(Size::zero())
+        constraints.definite.unwrap_or_default()
     }
 
     fn layout_children(

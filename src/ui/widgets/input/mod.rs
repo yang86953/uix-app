@@ -6,6 +6,7 @@ pub mod checkbox;
 pub mod color_picker;
 pub mod date_picker;
 pub mod form;
+#[allow(clippy::module_inception)]
 pub mod input;
 pub mod input_number;
 pub mod mentions;

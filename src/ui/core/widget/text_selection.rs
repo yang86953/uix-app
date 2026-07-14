@@ -317,7 +317,7 @@ impl WidgetTree {
                 0.0
             };
             let score = dist * 1000.0 + (cy - screen_pos.y).abs();
-            if best.map_or(true, |(_, b)| score < b) {
+            if best.is_none_or(|(_, b)| score < b) {
                 best = Some((id, score));
             }
         }
