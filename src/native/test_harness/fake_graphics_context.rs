@@ -117,4 +117,3 @@ impl IGraphicsContext for FakeGraphicsContext {
         self.state.height.get()
     }
 }
-

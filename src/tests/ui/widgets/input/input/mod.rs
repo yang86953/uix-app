@@ -145,8 +145,8 @@ fn translated_software_render_keeps_placeholder_and_value_glyphs_visible() {
             ctx.canvas_2d().translate(-frame.x, -frame.y);
             if let Some(input) = input {
                 ctx.with_recorder(&mut list, |ctx| {
-                WidgetRender::render(input, frame, ctx, &tree);
-            });
+                    WidgetRender::render(input, frame, ctx, &tree);
+                });
                 assert!(ctx.recording_complete());
             } else if let Some(replay) = replay {
                 replay.replay(&mut ctx);

@@ -502,14 +502,18 @@ impl Canvas2D for FrameRecordingCanvas {
 
     fn fill_sector(&mut self, cx: f32, cy: f32, r: f32, sa: f32, ea: f32, color: Color) {
         let bounds = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
-        self.draw_cpu(bounds, 1.0, |scratch| scratch.fill_sector(cx, cy, r, sa, ea, color));
+        self.draw_cpu(bounds, 1.0, |scratch| {
+            scratch.fill_sector(cx, cy, r, sa, ea, color)
+        });
     }
 
     fn fill_path(&mut self, path: &Path, color: Color, fill_rule: FillRule) {
         let bounds = path
             .bounds()
             .unwrap_or_else(|| Rect::new(0.0, 0.0, self.width as f32, self.height as f32));
-        self.draw_cpu(bounds, 1.0, |scratch| scratch.fill_path(path, color, fill_rule));
+        self.draw_cpu(bounds, 1.0, |scratch| {
+            scratch.fill_path(path, color, fill_rule)
+        });
     }
 
     fn stroke_rect(&mut self, rect: Rect, color: Color, width: f32, radius: Option<Radius>) {
@@ -834,4 +838,3 @@ fn frame_encoder_error(error: FrameEncoderError) -> Error {
         format!("could not record FrameEncoder command: {error}"),
     )
 }
-

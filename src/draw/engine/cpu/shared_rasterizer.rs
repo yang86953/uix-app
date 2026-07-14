@@ -368,4 +368,3 @@ impl Canvas2D for SharedRasterizer {
         RenderingBackend::copy_region(&mut self.surface, src, viewport.x as i32, viewport.y as i32);
     }
 }
-

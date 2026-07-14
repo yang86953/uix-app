@@ -16,8 +16,8 @@ pub use frame_encoder::{
     FrameImage, FramePresenter, FrameRasterOp, FrameRect, PresentOutcome, ReferenceFrame,
 };
 pub use invalidation::{
-    Invalidation, InvalidationQueue, InvalidationQueueHandle, NodeId, ScrollDelta,
-    invalidate_paint_handle,
+    invalidate_paint_handle, Invalidation, InvalidationQueue, InvalidationQueueHandle, NodeId,
+    ScrollDelta,
 };
 pub use metrics::{InvalidationSource, RenderMetrics};
 pub use render_frame::{FrameRenderInput, FrameRenderOutput, FrameRenderer};

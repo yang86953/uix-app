@@ -111,4 +111,3 @@ impl Alert {
         self._show_icon = next._show_icon;
     }
 }
-

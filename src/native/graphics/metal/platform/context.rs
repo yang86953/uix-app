@@ -9,8 +9,8 @@ use std::ffi::c_void;
 use crate::core::{Errc, Error, Result};
 use crate::native::backends::macos::platform;
 use crate::native::traits::present::{
-    GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage, PresentFrame,
-    validate_pixel_buffer,
+    validate_pixel_buffer, GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage,
+    PresentFrame,
 };
 
 type LayerId = *mut c_void;

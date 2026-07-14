@@ -56,4 +56,3 @@ impl GraphicsRecovery {
         self.step = 0;
     }
 }
-

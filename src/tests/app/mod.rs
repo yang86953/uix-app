@@ -3,6 +3,8 @@
 mod active_work_registry;
 mod agent_bridge;
 mod agent_control;
+#[cfg(feature = "agent-control")]
+mod agent_protocol;
 mod app_handle;
 mod app_timer;
 mod event_loop;

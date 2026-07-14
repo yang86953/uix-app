@@ -361,4 +361,3 @@ fn fade_color(color: Color, opacity: f32) -> Color {
         .clamp(0.0, 255.0) as u8;
     color.with_alpha(alpha)
 }
-

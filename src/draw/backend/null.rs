@@ -85,4 +85,3 @@ impl RenderBackend for NullBackend {
         self
     }
 }
-

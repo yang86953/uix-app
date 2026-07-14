@@ -40,4 +40,3 @@ impl AnimationRegistry {
         self.active.clear();
     }
 }
-

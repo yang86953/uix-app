@@ -276,4 +276,3 @@ impl Icon {
         Size::new(self.size, self.size)
     }
 }
-

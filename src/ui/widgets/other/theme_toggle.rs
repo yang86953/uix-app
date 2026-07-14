@@ -82,4 +82,3 @@ impl Default for ThemeToggle {
         Self::new()
     }
 }
-

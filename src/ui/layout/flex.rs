@@ -179,12 +179,7 @@ fn distribute_shrink(base: &mut [f32], overflow: f32, children: &[FlexChild]) {
     }
 }
 
-fn compute_justify(
-    remaining: f32,
-    count: usize,
-    gap: f32,
-    justify: JustifyContent,
-) -> (f32, f32) {
+fn compute_justify(remaining: f32, count: usize, gap: f32, justify: JustifyContent) -> (f32, f32) {
     if remaining > 0.0 {
         let new_gap = match justify {
             JustifyContent::SpaceBetween => {
@@ -311,12 +306,8 @@ fn compute_single_line(
     } else {
         0.0
     };
-    let (effective_gap, start_offset) = compute_justify(
-        remaining,
-        count,
-        input.gap,
-        input.justify_content,
-    );
+    let (effective_gap, start_offset) =
+        compute_justify(remaining, count, input.gap, input.justify_content);
 
     // Phase 4: position children
     let mut child_rects = Vec::with_capacity(count);
@@ -549,12 +540,8 @@ fn compute_wrapped(
         let total_line_main: f32 =
             base_main_sizes[line.start..line.end].iter().sum::<f32>() + line_margin_main;
         let remaining = (container_main - total_line_main - line_gaps_total).max(0.0);
-        let (effective_gap, start_offset) = compute_justify(
-            remaining,
-            line_count,
-            input.gap,
-            input.justify_content,
-        );
+        let (effective_gap, start_offset) =
+            compute_justify(remaining, line_count, input.gap, input.justify_content);
 
         let mut cursor_main = start_offset;
 

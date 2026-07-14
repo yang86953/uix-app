@@ -196,4 +196,3 @@ impl Spin {
         self.wrapper_mode = next.wrapper_mode;
     }
 }
-

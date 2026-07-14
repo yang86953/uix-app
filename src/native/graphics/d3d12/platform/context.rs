@@ -15,6 +15,7 @@ use crate::native::traits::present::{
     GpuSolidRect, GraphicsBackend, GraphicsContextCaps, IGraphicsContext, NativeRasterCaps,
     PresentCoherency, PresentDamage, PresentFrame, SoftFallbackTile,
 };
+use ::windows::core::Interface;
 use ::windows::Win32::Foundation::{CloseHandle, E_OUTOFMEMORY, HANDLE, HWND, WAIT_OBJECT_0};
 use ::windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use ::windows::Win32::Graphics::Direct3D12::*;
@@ -22,15 +23,14 @@ use ::windows::Win32::Graphics::Dxgi::Common::{
     DXGI_ALPHA_MODE_IGNORE, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC,
 };
 use ::windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory2, DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_CREATE_FACTORY_FLAGS,
-    DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET,
-    DXGI_ERROR_DRIVER_INTERNAL_ERROR, DXGI_ERROR_REMOTE_OUTOFMEMORY, DXGI_MWA_NO_ALT_ENTER,
-    DXGI_PRESENT, DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_CHAIN_FLAG,
-    DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter1, IDXGIFactory4,
-    IDXGIOutput, IDXGISwapChain3,
+    CreateDXGIFactory2, IDXGIAdapter1, IDXGIFactory4, IDXGIOutput, IDXGISwapChain3,
+    DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_CREATE_FACTORY_FLAGS, DXGI_ERROR_DEVICE_HUNG,
+    DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET, DXGI_ERROR_DRIVER_INTERNAL_ERROR,
+    DXGI_ERROR_REMOTE_OUTOFMEMORY, DXGI_MWA_NO_ALT_ENTER, DXGI_PRESENT, DXGI_SCALING_STRETCH,
+    DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_CHAIN_FLAG, DXGI_SWAP_EFFECT_FLIP_DISCARD,
+    DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
-use ::windows::Win32::System::Threading::{CreateEventW, INFINITE, WaitForSingleObject};
-use ::windows::core::Interface;
+use ::windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject, INFINITE};
 
 type HWND_PTR = *mut c_void;
 
@@ -794,7 +794,13 @@ impl D3d12Context {
         Ok(())
     }
 
-    pub(crate) fn read_pixels_result(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
+    pub(crate) fn read_pixels_result(
+        &mut self,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    ) -> Result<Vec<u32>> {
         let x0 = x.clamp(0, self.width);
         let y0 = y.clamp(0, self.height);
         let x1 = x.saturating_add(width).clamp(x0, self.width);
@@ -1268,4 +1274,3 @@ impl Drop for D3d12Context {
         }
     }
 }
-

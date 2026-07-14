@@ -1,4 +1,4 @@
-﻿//! DebugRenderService — 调试绘制服务。
+//! DebugRenderService — 调试绘制服务。
 
 use crate::core::Rect;
 use crate::draw::pipeline::{InvalidationSource, RenderMetrics};
@@ -155,11 +155,7 @@ impl DebugRenderService {
             if i == 0 {
                 canvas.fill_rect(Rect::new(bar_x, line_y, 8.0, 8.0), c, None);
             } else if i < 5 {
-                canvas.fill_rect(
-                    Rect::new(bar_x, line_y + 4.0, scale(v), 3.0),
-                    c,
-                    None,
-                );
+                canvas.fill_rect(Rect::new(bar_x, line_y + 4.0, scale(v), 3.0), c, None);
             }
         }
     }
@@ -181,4 +177,3 @@ impl DebugRenderService {
         ]
     }
 }
-

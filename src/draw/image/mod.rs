@@ -135,21 +135,28 @@ impl ImageService {
     /// 检查句柄是否有效（generation 也须匹配）。
     pub fn is_valid(&self, handle: BitmapHandle) -> bool {
         let idx = handle.slot_index();
-        self.slots.borrow().get(idx).is_some_and(|s| s.valid && s.generation == handle.generation())
+        self.slots
+            .borrow()
+            .get(idx)
+            .is_some_and(|s| s.valid && s.generation == handle.generation())
     }
 
     /// 读取槽位像素（只读借用）。
     pub fn with_slot<R>(&self, handle: BitmapHandle, f: impl FnOnce(&ImageSlot) -> R) -> Option<R> {
         let slots = self.slots.borrow();
         let idx = handle.slot_index();
-        slots.get(idx).filter(|s| s.valid && s.generation == handle.generation()).map(f)
+        slots
+            .get(idx)
+            .filter(|s| s.valid && s.generation == handle.generation())
+            .map(f)
     }
 
     /// 卸载位图并清除路径缓存引用。
     pub fn unload(&self, handle: BitmapHandle) {
         let mut slots = self.slots.borrow_mut();
         let idx = handle.slot_index();
-        if let Some(slot) = slots.get_mut(idx)
+        if let Some(slot) = slots
+            .get_mut(idx)
             .filter(|s| s.generation == handle.generation())
         {
             if let Some(ref path) = slot.path {
@@ -223,4 +230,3 @@ pub fn fit_dst_rect(src_w: i32, src_h: i32, bounds: Rect) -> Rect {
         Rect::new(bounds.x + (bounds.w - w) * 0.5, bounds.y, w, bounds.h)
     }
 }
-

@@ -107,7 +107,10 @@ impl ThreadBoundGraphicsContext {
         ));
     }
 
-    pub(crate) fn with_test_owner(inner: Box<dyn IGraphicsContext>, owner_thread: ThreadId) -> Self {
+    pub(crate) fn with_test_owner(
+        inner: Box<dyn IGraphicsContext>,
+        owner_thread: ThreadId,
+    ) -> Self {
         let mut bound = Self::new(inner);
         bound.owner_thread = owner_thread;
         bound
@@ -242,4 +245,3 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
     forward_result!(bind_swapchain_target() -> ());
     forward_result!(blit_offscreen_target(id: OffscreenTargetId, src: crate::core::Rect, dst: crate::core::Rect) -> ());
 }
-

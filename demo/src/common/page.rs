@@ -125,7 +125,8 @@ impl<'a> PageBuilder<'a> {
     pub fn block(mut self, title: &str, body: ViewNode) -> Self {
         self.flush_section();
         self.items.push(section_title(self.tk, title));
-        self.items.push(crate::common::showcase::panel(self.tk, body));
+        self.items
+            .push(crate::common::showcase::panel(self.tk, body));
         self
     }
 

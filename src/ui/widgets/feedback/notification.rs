@@ -234,7 +234,11 @@ impl Notification {
         );
 
         queue.iter().map(move |item| {
-            let desc_h = if item.description.is_empty() { 0.0 } else { 18.0 };
+            let desc_h = if item.description.is_empty() {
+                0.0
+            } else {
+                18.0
+            };
             let notif_h = 48.0 + desc_h;
             let notif_y = if grows_up { y - notif_h } else { y };
             let notif_rect = Rect::new(start_x, notif_y, notif_w, notif_h);
@@ -264,4 +268,3 @@ impl Notification {
         }
     }
 }
-

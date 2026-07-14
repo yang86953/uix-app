@@ -104,4 +104,3 @@ impl Empty {
         self.image = next.image;
     }
 }
-

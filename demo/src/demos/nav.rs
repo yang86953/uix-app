@@ -28,24 +28,18 @@ pub fn page_nav(ctx: &DemoCtx<'_>) -> ViewNode {
 
     PageBuilder::new(tk)
         .gap()
-        .block(
-            "Navigation — 侧栏构建器",
-            embed(nav_items),
-        )
-        .block(
-            "NavGroup + NavItem",
-            {
-                let mut sp = Space::new()
-                    .size(SpaceSize::Small)
-                    .width(180.0)
-                    .height(120.0)
-                    .direction(FlexDirection::Column);
-                for item in group_items {
-                    sp = sp.child(item);
-                }
-                embed(sp)
-            },
-        )
+        .block("Navigation — 侧栏构建器", embed(nav_items))
+        .block("NavGroup + NavItem", {
+            let mut sp = Space::new()
+                .size(SpaceSize::Small)
+                .width(180.0)
+                .height(120.0)
+                .direction(FlexDirection::Column);
+            for item in group_items {
+                sp = sp.child(item);
+            }
+            embed(sp)
+        })
         .block(
             "Menu — Horizontal / Vertical",
             column_fit([

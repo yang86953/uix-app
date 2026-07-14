@@ -3,6 +3,10 @@
 pub(crate) mod active_work_registry;
 pub(crate) mod agent_bridge;
 pub(crate) mod agent_control;
+#[cfg(feature = "agent-control")]
+pub(crate) mod agent_protocol;
+#[cfg(feature = "agent-control")]
+pub(crate) mod agent_transport;
 pub mod app_handle;
 pub mod app_timer;
 pub mod bridge;

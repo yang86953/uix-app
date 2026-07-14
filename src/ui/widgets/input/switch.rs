@@ -138,4 +138,3 @@ impl Switch {
         self.size = next.size;
     }
 }
-

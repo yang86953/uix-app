@@ -631,7 +631,11 @@ impl Input {
             for (i, &gx) in xs.iter().enumerate() {
                 if x < gx {
                     // hit before this char's left edge → previous character
-                    return if i == 0 { line_offset } else { line_offset + i - 1 };
+                    return if i == 0 {
+                        line_offset
+                    } else {
+                        line_offset + i - 1
+                    };
                 }
             }
             line_offset + xs.len() - 1
@@ -687,4 +691,3 @@ impl SnapshotSource for Input {
         }
     }
 }
-

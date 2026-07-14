@@ -106,4 +106,3 @@ impl Skeleton {
         self.h = next.h;
     }
 }
-

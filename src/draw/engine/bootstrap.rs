@@ -4,7 +4,7 @@ use crate::core::{Errc, Error, Result};
 use crate::draw::engine::factory::create_graphics_engine;
 use crate::draw::traits::GraphicsEngine;
 use crate::native::factory::{
-    describe_backend_availability, GraphicsRecipe, gpu_recipe_candidates, try_create_gpu_recipe,
+    describe_backend_availability, gpu_recipe_candidates, try_create_gpu_recipe, GraphicsRecipe,
 };
 use crate::native::traits::present::{GraphicsBackend, IGraphicsContext, NativeSurfaceHandle};
 
@@ -196,7 +196,9 @@ where
             request,
             &Error::new(
                 Errc::PlatformError,
-                format!("Graphics bootstrap: no GPU backend candidates for {request}{availability}"),
+                format!(
+                    "Graphics bootstrap: no GPU backend candidates for {request}{availability}"
+                ),
             ),
         );
         return Err(report);
@@ -245,4 +247,3 @@ where
 
     Err(report)
 }
-

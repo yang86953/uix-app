@@ -375,10 +375,8 @@ impl ScrollView {
         // 否则默认 300×200 会阻止窗口缩小时收缩，内容被窗口裁切且 max_scroll=0。
         let grow = self.flex_grow_val > 0.0;
         Size::new(
-            self.fixed_width
-                .unwrap_or(if grow { 0.0 } else { 300.0 }),
-            self.fixed_height
-                .unwrap_or(if grow { 0.0 } else { 200.0 }),
+            self.fixed_width.unwrap_or(if grow { 0.0 } else { 300.0 }),
+            self.fixed_height.unwrap_or(if grow { 0.0 } else { 200.0 }),
         )
     }
 
@@ -614,4 +612,3 @@ impl Default for ScrollView {
         Self::new(ScrollDirection::Vertical)
     }
 }
-

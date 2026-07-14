@@ -489,4 +489,3 @@ impl Container {
         Size::new(effective_w + bh, effective_h + bv)
     }
 }
-

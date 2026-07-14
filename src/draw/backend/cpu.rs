@@ -404,4 +404,3 @@ impl CpuBackend {
         main_bytes + self.offscreens.memory_usage()
     }
 }
-

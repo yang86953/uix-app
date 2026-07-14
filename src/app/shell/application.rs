@@ -623,6 +623,23 @@ impl App {
         ) {
             let _ = session.bind_agent_window(registration);
         }
+        #[cfg(feature = "agent-control")]
+        if self.agent_control_enabled {
+            if let Err(error) = self.runtime.start_agent_transport() {
+                crate::core::log::error_fn(format!("agent transport startup failed: {error}"));
+                report_window_operation_error(
+                    "agent transport failure graphics shutdown failed",
+                    session.try_shutdown(),
+                );
+                drop(session);
+                report_window_operation_error(
+                    "agent transport failure window close failed",
+                    platform_window.close(),
+                );
+                self.runtime.shutdown_all();
+                return 1;
+            }
+        }
         let app_handle = self.app_handle_for_window(root_window_id);
         if let Some(on_start) = self.on_start.take() {
             on_start(app_handle.clone());

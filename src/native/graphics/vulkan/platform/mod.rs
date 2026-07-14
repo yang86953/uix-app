@@ -34,4 +34,3 @@ pub(crate) fn create(
         "GraphicsBackend vulkan is not supported on this platform",
     ))
 }
-

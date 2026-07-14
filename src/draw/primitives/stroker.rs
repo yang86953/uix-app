@@ -451,4 +451,3 @@ fn orient_ring(ring: &mut [Point], positive: bool) {
         ring.reverse();
     }
 }
-

@@ -184,11 +184,7 @@ pub fn graphics_runtime_platform() -> &'static str {
     {
         "macos"
     }
-    #[cfg(not(any(
-        windows,
-        all(unix, not(target_os = "macos")),
-        target_os = "macos"
-    )))]
+    #[cfg(not(any(windows, all(unix, not(target_os = "macos")), target_os = "macos")))]
     {
         "unknown"
     }
@@ -262,4 +258,3 @@ pub(crate) fn try_create_gpu_context(
     })?;
     try_create_context(entry, native_surface, width, height)
 }
-

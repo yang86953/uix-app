@@ -8,7 +8,7 @@ use glow::HasContext as _;
 use crate::core::{Errc, Error, Rect, Result};
 use crate::native::traits::present::{GpuSolidRect, OffscreenTargetId, SoftFallbackTile};
 
-use super::{NativeOpenGlRuntime, shaders};
+use super::{shaders, NativeOpenGlRuntime};
 
 #[derive(Clone, Copy)]
 pub(crate) struct TargetState {
@@ -397,21 +397,15 @@ impl OpenGlRasterPipeline {
             }
             self.gl().use_program(Some(self.blit_bgra_program));
             self.gl().uniform_1_i32(self.blit_bgra_texture.as_ref(), 0);
-            self.gl().uniform_4_f32(
-                self.blit_bgra_uv.as_ref(),
-                0.0,
-                0.0,
-                1.0,
-                1.0,
-            );
+            self.gl()
+                .uniform_4_f32(self.blit_bgra_uv.as_ref(), 0.0, 0.0, 1.0, 1.0);
             self.set_destination_viewport(0.0, 0.0, width as f32, height as f32);
             self.gl().bind_vertex_array(Some(self.blit_vao));
             self.gl().draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
             self.gl().bind_vertex_array(None);
             self.gl().bind_texture(glow::TEXTURE_2D, None);
             self.gl().enable(glow::BLEND);
-            self.gl()
-                .blend_func(glow::ONE, glow::ONE_MINUS_SRC_ALPHA);
+            self.gl().blend_func(glow::ONE, glow::ONE_MINUS_SRC_ALPHA);
         }
         self.restore_full_viewport();
         self.check_gl_error("upload_surface_pixels")
@@ -874,4 +868,3 @@ fn gl_error(operation: &str, error: String) -> Error {
         format!("OpenGL {operation} failed: {error}"),
     )
 }
-

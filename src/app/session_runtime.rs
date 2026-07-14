@@ -12,6 +12,8 @@ use crate::app::agent_bridge::{
 use crate::app::agent_control::{
     AgentCommandQueue, AgentCommandRequest, AgentCommandTicket, AgentSubmitError,
 };
+#[cfg(feature = "agent-control")]
+use crate::app::agent_transport::{AgentTransportError, AgentTransportHandle, AgentTransportInfo};
 use crate::app::app_timer::{AppTimerQueue, TimerHandle};
 use crate::app::main_thread_queue::{MainThreadContext, MainThreadQueue};
 use crate::app::window_config::WindowConfig;
@@ -31,6 +33,8 @@ pub(crate) struct AppRuntime {
     event_loop_waker: Arc<Mutex<EventLoopWaker>>,
     text_input_coordinator: TextInputCoordinator,
     agent_bridge: AgentBridgeDirectory,
+    #[cfg(feature = "agent-control")]
+    agent_transport: Arc<Mutex<Option<AgentTransportHandle>>>,
 }
 
 #[derive(Clone)]
@@ -111,6 +115,33 @@ impl AppRuntime {
         self.agent_bridge
             .is_enabled()
             .then(|| AgentProcessBridge::new(self.clone()))
+    }
+
+    #[cfg(feature = "agent-control")]
+    pub(crate) fn start_agent_transport(&self) -> Result<AgentTransportInfo, AgentTransportError> {
+        let bridge = self
+            .agent_bridge()
+            .ok_or(AgentTransportError::BridgeDisabled)?;
+        let mut transport = self
+            .agent_transport
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if let Some(transport) = transport.as_ref() {
+            return Ok(transport.info().clone());
+        }
+        let handle = AgentTransportHandle::start(bridge)?;
+        let info = handle.info().clone();
+        *transport = Some(handle);
+        Ok(info)
+    }
+
+    #[cfg(all(feature = "agent-control", test))]
+    pub(crate) fn agent_transport_info(&self) -> Option<AgentTransportInfo> {
+        self.agent_transport
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .as_ref()
+            .map(|transport| transport.info().clone())
     }
 
     pub(crate) fn register_agent_window(
@@ -255,6 +286,15 @@ impl AppRuntime {
             .unwrap_or_else(|e| e.into_inner())
             .take();
         self.agent_bridge.close_all();
+        #[cfg(feature = "agent-control")]
+        if let Some(mut transport) = self
+            .agent_transport
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take()
+        {
+            transport.shutdown();
+        }
     }
 
     pub(crate) fn run_after<F>(&self, window_id: WindowId, delay: Duration, f: F) -> TimerHandle

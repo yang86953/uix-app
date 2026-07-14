@@ -42,6 +42,8 @@ pub(crate) enum AgentCommandResponse {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AgentErrorCode {
+    Unauthorized,
+    UnsupportedSchema,
     InvalidRequest,
     WindowNotFound,
     StaleWindow,
@@ -61,6 +63,8 @@ pub(crate) enum AgentErrorCode {
 impl AgentErrorCode {
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
+            Self::Unauthorized => "unauthorized",
+            Self::UnsupportedSchema => "unsupported_schema",
             Self::InvalidRequest => "invalid_request",
             Self::WindowNotFound => "window_not_found",
             Self::StaleWindow => "stale_window",

@@ -3370,9 +3370,7 @@ fn d3d11_warp_additive_and_scroll_frame_ops_match_reference_executor() {
 
     native.try_shutdown().expect("checked shutdown");
     drop(native);
-    window
-        .close()
-        .expect("close window after D3D11 backend");
+    window.close().expect("close window after D3D11 backend");
 }
 
 #[cfg(feature = "d3d12")]
@@ -3440,9 +3438,7 @@ fn d3d12_warp_additive_and_scroll_frame_ops_match_reference_executor() {
 
     native.try_shutdown().expect("checked shutdown");
     drop(native);
-    window
-        .close()
-        .expect("close window after D3D12 backend");
+    window.close().expect("close window after D3D12 backend");
 }
 
 #[test]
