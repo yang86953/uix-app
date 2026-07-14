@@ -89,6 +89,8 @@ pub trait PlatformWindow {
     fn request_close(&mut self) -> Result<()>;
     /// 将当前鼠标手势移交给窗口管理器执行原生窗口拖动。
     fn begin_move_drag(&mut self) -> Result<()>;
+    /// 在当前指针位置显示窗口管理器提供的原生系统菜单。
+    fn show_system_menu(&mut self) -> Result<()>;
     fn is_visible(&self) -> bool;
 
     /// Returns the latest exact compositor visibility when the backend can

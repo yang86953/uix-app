@@ -238,6 +238,7 @@ pub struct FakeWindowState {
     pub hide_calls: usize,
     pub close_called: bool,
     pub close_requested: bool,
+    pub show_system_menu_calls: usize,
     pub center_called: bool,
     pub raise_calls: usize,
     pub lower_calls: usize,
@@ -284,6 +285,7 @@ impl FakeWindow {
                 hide_calls: 0,
                 close_called: false,
                 close_requested: false,
+                show_system_menu_calls: 0,
                 center_called: false,
                 raise_calls: 0,
                 lower_calls: 0,
@@ -332,6 +334,7 @@ impl FakeWindow {
         self.state.hide_calls = 0;
         self.state.close_called = false;
         self.state.close_requested = false;
+        self.state.show_system_menu_calls = 0;
         self.state.center_called = false;
         self.state.raise_calls = 0;
         self.state.lower_calls = 0;
@@ -382,6 +385,10 @@ impl PlatformWindow for FakeWindow {
     }
     fn begin_move_drag(&mut self) -> Result<()> {
         self.props.state.begin_move_drag_calls += 1;
+        Ok(())
+    }
+    fn show_system_menu(&mut self) -> Result<()> {
+        self.state.show_system_menu_calls += 1;
         Ok(())
     }
     fn is_visible(&self) -> bool {

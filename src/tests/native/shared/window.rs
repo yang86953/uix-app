@@ -110,6 +110,7 @@ fn unsupported_optional_window_ops_do_not_mutate_shared_state() {
     assert_error_code(window.lower(), Errc::NotImplemented);
     assert_error_code(window.set_window_icon("icon.png"), Errc::NotImplemented);
     assert_error_code(window.flash_window(), Errc::NotImplemented);
+    assert_error_code(window.show_system_menu(), Errc::NotImplemented);
     assert_eq!(
         window.occlusion_state(),
         WindowOcclusionState::Unknown,
