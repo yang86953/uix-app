@@ -228,7 +228,7 @@ impl Error {
         )
     }
 
-    /// 完整格式：包含类别、码、消息、位置。
+    /// 完整格式：包含当前错误与全部原因链的类别、码、消息、位置。
     pub fn what(&self) -> String {
         let mut result = format!(
             "[{}] {}: {} ({}:{})",
@@ -238,11 +238,17 @@ impl Error {
             self.file,
             self.line
         );
-        if let Some(ref source) = self.source {
+        let mut source = self.source.as_deref();
+        let mut depth = 1;
+        while let Some(error) = source {
+            result.push('\n');
+            result.push_str(&"  ".repeat(depth));
             result.push_str(&format!(
-                "\n  cause: [{}] {} ({}:{})",
-                source.code, source.message, source.file, source.line
+                "cause: [{}] {} ({}:{})",
+                error.code, error.message, error.file, error.line
             ));
+            source = error.source.as_deref();
+            depth += 1;
         }
         result
     }
