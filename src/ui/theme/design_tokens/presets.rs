@@ -39,10 +39,10 @@ impl DesignTokens {
         primitives.into_design_tokens(self.is_dark)
     }
 
-    /// Build a theme from the 12 Ant Design chromatic primary seeds.
+    /// 从 12 个 Ant Design 主色种子构造主题。
     ///
-    /// The current token surface has one active brand primary; it uses the Blue
-    /// seed from the 12-color array and keeps the rest available to the caller.
+    /// 当前令牌面只有一个活动品牌主色，因此仅 Blue 种子进入 `DesignTokens`；
+    /// 其余色相由 `PrimaryHue` / `ColorScale` 独立提供。
     pub fn from_primaries(primaries: [Color; PRIMARY_COUNT], is_dark: bool) -> Self {
         let mut primitives = if is_dark {
             ThemePrimitives::antd_dark()
