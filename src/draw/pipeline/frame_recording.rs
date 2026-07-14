@@ -12,7 +12,7 @@ use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
 use crate::draw::engine::RenderOutcome;
 use crate::draw::pipeline::{
     EncodedFrameExecution, EncodedPictureExecution, FrameEncoder, FrameEncoderError, FrameImage,
-    FrameRasterOp, FrameRect,
+    FrameRadius, FrameRasterOp, FrameRect,
 };
 use crate::draw::primitives::path::{FillRule, Path};
 use crate::draw::primitives::stroker::StrokeOptions;
@@ -400,12 +400,10 @@ impl FrameRecordingCanvas {
             && rect.y + rect.h <= self.height as f32
     }
 
-    /// Additive fills are destination-dependent, so they must land as Native
-    /// ops. Geometry constraints match the SrcOver native path, but alpha may
-    /// be any value (Additive is meaningful with translucent sources).
-    fn can_emit_native_additive_rect(&self, rect: Rect, radius: Option<Radius>) -> bool {
+    /// Additive 填充依赖目标像素，因此只能进入 Native 命令。几何约束与
+    /// SrcOver 直达路径一致，但允许半透明源色。
+    fn can_emit_native_additive_fill(&self, rect: Rect) -> bool {
         self.blend_mode == BlendMode::Additive
-            && radius.is_none()
             && self.scratch.offset() == (0.0, 0.0)
             && self.scratch.opacity() == 1.0
             && self.scratch.current_clip() == self.full_rect()
@@ -454,17 +452,30 @@ impl Canvas2D for FrameRecordingCanvas {
     }
 
     fn fill_rect(&mut self, rect: Rect, color: Color, radius: Option<Radius>) {
-        if self.can_emit_native_additive_rect(rect, radius) {
+        let additive_radius = if self.blend_mode == BlendMode::Additive {
+            match radius.map(FrameRadius::new).transpose() {
+                Ok(radius) => radius,
+                Err(error) => {
+                    self.remember_error(frame_encoder_error(error));
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+        if self.can_emit_native_additive_fill(rect) {
             if let Err(error) = self.flush_scratch().and_then(|()| {
-                self.encoder_mut()?.native(FrameRasterOp::FillRectAdditive {
-                    rect: FrameRect::new(
-                        rect.x as i32,
-                        rect.y as i32,
-                        rect.w as i32,
-                        rect.h as i32,
-                    ),
-                    color,
-                });
+                let rect =
+                    FrameRect::new(rect.x as i32, rect.y as i32, rect.w as i32, rect.h as i32);
+                let operation = match additive_radius {
+                    Some(radius) => FrameRasterOp::FillRoundedRectAdditive {
+                        rect,
+                        color,
+                        radius,
+                    },
+                    None => FrameRasterOp::FillRectAdditive { rect, color },
+                };
+                self.encoder_mut()?.native(operation);
                 Ok(())
             }) {
                 self.remember_error(error);
