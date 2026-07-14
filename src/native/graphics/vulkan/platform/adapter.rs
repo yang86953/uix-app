@@ -12,6 +12,30 @@ pub(super) struct QueueSelection {
     pub(super) physical_device: vk::PhysicalDevice,
     pub(super) family_index: u32,
     pub(super) info: VulkanAdapterInfo,
+    pub(super) extensions: DeviceExtensions,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct DeviceExtensions {
+    device_fault: bool,
+    #[cfg(target_os = "macos")]
+    portability_subset: bool,
+}
+
+impl DeviceExtensions {
+    pub(super) fn supports_device_fault(self) -> bool {
+        self.device_fault
+    }
+
+    pub(super) fn enabled_names(self, enable_device_fault: bool) -> Vec<*const std::ffi::c_char> {
+        let mut extensions = vec![ash::khr::swapchain::NAME.as_ptr()];
+        #[cfg(target_os = "macos")]
+        extensions.push(ash::khr::portability_subset::NAME.as_ptr());
+        if enable_device_fault {
+            extensions.push(ash::ext::device_fault::NAME.as_ptr());
+        }
+        extensions
+    }
 }
 
 #[derive(Default)]
@@ -141,15 +165,20 @@ pub(super) fn select_queue(
         // SAFETY: physical_device 来自同一有效 instance 的枚举结果。
         let properties = unsafe { instance.get_physical_device_properties(physical_device) };
         let summary = properties_summary(&properties);
-        let supports_swapchain = match device_supports_swapchain(instance, physical_device) {
-            Ok(supports_swapchain) => supports_swapchain,
+        let extension_support = match query_device_extensions(instance, physical_device) {
+            Ok(extension_support) => extension_support,
             Err(error) => {
                 failures.reject_with_error(&summary, "vkEnumerateDeviceExtensionProperties", error);
                 continue;
             }
         };
-        if !supports_swapchain {
+        if !extension_support.supports_swapchain {
             failures.reject(&summary, "missing VK_KHR_swapchain");
+            continue;
+        }
+        #[cfg(target_os = "macos")]
+        if !extension_support.enabled.portability_subset {
+            failures.reject(&summary, "missing VK_KHR_portability_subset");
             continue;
         }
         // SAFETY: physical_device 来自同一有效 instance 的枚举结果。
@@ -172,59 +201,40 @@ pub(super) fn select_queue(
                 physical_device,
                 family_index,
                 info: adapter_info(&properties, family_index),
+                extensions: extension_support.enabled,
             });
         }
     }
     Err(failures.into_error())
 }
 
-pub(super) fn device_extension_names(
-    instance: &ash::Instance,
-    physical_device: vk::PhysicalDevice,
-) -> Result<Vec<*const std::ffi::c_char>> {
-    #[cfg(target_os = "macos")]
-    {
-        let mut extensions = vec![ash::khr::swapchain::NAME.as_ptr()];
-        if !device_has_extension(
-            instance,
-            physical_device,
-            ash::khr::portability_subset::NAME,
-        )? {
-            return Err(Error::new(
-                Errc::PlatformError,
-                "VulkanContext: MoltenVK requires VK_KHR_portability_subset on the selected device",
-            ));
-        }
-        extensions.push(ash::khr::portability_subset::NAME.as_ptr());
-        Ok(extensions)
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (instance, physical_device);
-        Ok(vec![ash::khr::swapchain::NAME.as_ptr()])
-    }
+struct DeviceExtensionSupport {
+    supports_swapchain: bool,
+    enabled: DeviceExtensions,
 }
 
-fn device_supports_swapchain(
+fn query_device_extensions(
     instance: &ash::Instance,
     physical_device: vk::PhysicalDevice,
-) -> Result<bool> {
-    device_has_extension(instance, physical_device, ash::khr::swapchain::NAME)
-}
-
-fn device_has_extension(
-    instance: &ash::Instance,
-    physical_device: vk::PhysicalDevice,
-    name: &CStr,
-) -> Result<bool> {
+) -> Result<DeviceExtensionSupport> {
     // SAFETY: physical_device 来自 instance，返回属性由 Vulkan 驱动按值填充。
     let extensions = unsafe { instance.enumerate_device_extension_properties(physical_device) }
         .map_err(|err| vk_err("vkEnumerateDeviceExtensionProperties", err))?;
-    Ok(extensions.iter().any(|extension| {
-        // SAFETY: Vulkan 保证 extension_name 是结构体内以 NUL 结尾的固定数组。
-        let extension_name = unsafe { CStr::from_ptr(extension.extension_name.as_ptr()) };
-        extension_name == name
-    }))
+    let has = |name: &CStr| {
+        extensions.iter().any(|extension| {
+            // SAFETY: Vulkan 保证 extension_name 是结构体内以 NUL 结尾的固定数组。
+            let extension_name = unsafe { CStr::from_ptr(extension.extension_name.as_ptr()) };
+            extension_name == name
+        })
+    };
+    Ok(DeviceExtensionSupport {
+        supports_swapchain: has(ash::khr::swapchain::NAME),
+        enabled: DeviceExtensions {
+            device_fault: has(ash::ext::device_fault::NAME),
+            #[cfg(target_os = "macos")]
+            portability_subset: has(ash::khr::portability_subset::NAME),
+        },
+    })
 }
 
 fn adapter_info(

@@ -2,4 +2,5 @@
 
 mod adapter;
 mod context;
+mod fault;
 mod module;

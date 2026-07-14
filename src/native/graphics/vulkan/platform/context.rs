@@ -272,10 +272,11 @@ impl VulkanContext {
         ctx.height = ctx.extent.height as i32;
         device.observe(ctx.recreate_upload_buffer(staging_size(ctx.width, ctx.height)))?;
         crate::core::log::info_fn(format!(
-            "VulkanContext: created {}x{} swapchain; {}",
+            "VulkanContext: created {}x{} swapchain; {}; device_fault_reporting={}",
             ctx.width,
             ctx.height,
-            ctx.adapter_info.diagnostic_summary()
+            ctx.adapter_info.diagnostic_summary(),
+            device.fault_reporting_enabled()
         ));
         Ok(ctx)
     }
