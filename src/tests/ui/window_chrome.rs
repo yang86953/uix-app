@@ -201,6 +201,45 @@ fn control_region_renders_custom_hover_and_active_backgrounds() {
 }
 
 #[test]
+fn control_region_renders_focus_and_keeps_active_priority() {
+    let mut tree = ViewAdapter::build(
+        window_control(WindowControl::Close, label(""))
+            .width(44.0)
+            .height(32.0)
+            .bg(Color::red())
+            .bg_focus(Color::from_rgb(255, 215, 0))
+            .bg_active(Color::blue()),
+    );
+    tree.root_mut()
+        .expect("window control root")
+        .set_frame(Rect::new(0.0, 0.0, 44.0, 32.0));
+    tree.layout();
+
+    assert_eq!(render_control_corner(&tree), Color::red().premultiplied());
+    tree.dispatch_event(&key_event(KeyCode::Tab, true));
+    assert_eq!(
+        render_control_corner(&tree),
+        Color::from_rgb(255, 215, 0).premultiplied()
+    );
+
+    tree.dispatch_event(&key_event(KeyCode::Enter, true));
+    assert_eq!(render_control_corner(&tree), Color::blue().premultiplied());
+    tree.dispatch_event(&key_event(KeyCode::Enter, false));
+    assert_eq!(
+        render_control_corner(&tree),
+        Color::from_rgb(255, 215, 0).premultiplied()
+    );
+    assert_eq!(tree.take_window_actions(), vec![WindowAction::RequestClose]);
+
+    tree.dispatch_event(&pointer_event(
+        Point::new(80.0, 16.0),
+        true,
+        MouseButton::Left,
+    ));
+    assert_eq!(render_control_corner(&tree), Color::red().premultiplied());
+}
+
+#[test]
 fn each_window_control_maps_to_its_platform_neutral_action() {
     let cases = [
         (WindowControl::Minimize, WindowAction::Minimize),
