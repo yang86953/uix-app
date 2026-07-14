@@ -4,12 +4,19 @@
 //! Native solid/rounded fill + stroke + glyph atlas text + linear/radial
 //! gradients + simple path meshes + box/ambient shadow; unsupported Canvas2D
 //! ops soft-raster and alpha-blit (same hybrid pattern as the native GL path).
+//! bitblt swapchain 固定使用 `DXGI_SWAP_EFFECT_DISCARD`；状态边界把
+//! `DXGI_STATUS_OCCLUDED` 映射为 `Errc::GraphicsOccluded`，并以
+//! `Present(0, DXGI_PRESENT_TEST)` 做无帧数据的退出探测。
 
 #![allow(nonstandard_style)]
 
 use std::ffi::c_void;
 
 use super::pipeline::D3d11Pipeline;
+use super::swapchain::d3d_error;
+pub(crate) use super::swapchain::{
+    map_dxgi_present_result, map_dxgi_present_test_result, map_dxgi_resize_result, swap_chain_desc,
+};
 use crate::core::{Errc, Error, Result};
 use crate::native::graphics::platform::windows as win_surface;
 use crate::native::traits::present::{
@@ -19,7 +26,7 @@ use crate::native::traits::present::{
     PresentTestResult, SoftFallbackTile,
 };
 use ::windows::core::Interface;
-use ::windows::Win32::Foundation::{DXGI_STATUS_OCCLUDED, E_OUTOFMEMORY, HMODULE, HWND, TRUE};
+use ::windows::Win32::Foundation::HMODULE;
 use ::windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE, D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL,
     D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
@@ -31,15 +38,9 @@ use ::windows::Win32::Graphics::Direct3D11::{
     D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC,
     D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING, D3D11_VIEWPORT,
 };
-use ::windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
-    DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
-};
+use ::windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC};
 use ::windows::Win32::Graphics::Dxgi::{
-    IDXGIDevice, IDXGISwapChain, DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED,
-    DXGI_ERROR_DEVICE_RESET, DXGI_ERROR_DRIVER_INTERNAL_ERROR, DXGI_ERROR_REMOTE_OUTOFMEMORY,
-    DXGI_PRESENT, DXGI_PRESENT_TEST, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_CHAIN_FLAG,
-    DXGI_SWAP_EFFECT_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
+    IDXGIDevice, IDXGISwapChain, DXGI_PRESENT, DXGI_PRESENT_TEST, DXGI_SWAP_CHAIN_FLAG,
 };
 
 type HWND_PTR = *mut c_void;
@@ -59,85 +60,6 @@ pub(crate) const D3D11_FEATURE_LEVELS: [D3D_FEATURE_LEVEL; 4] = [
     D3D_FEATURE_LEVEL_10_1,
     D3D_FEATURE_LEVEL_10_0,
 ];
-
-pub(crate) fn swap_chain_desc(hwnd: HWND_PTR, width: i32, height: i32) -> DXGI_SWAP_CHAIN_DESC {
-    DXGI_SWAP_CHAIN_DESC {
-        BufferDesc: DXGI_MODE_DESC {
-            Width: width.max(1) as u32,
-            Height: height.max(1) as u32,
-            RefreshRate: DXGI_RATIONAL {
-                Numerator: 60,
-                Denominator: 1,
-            },
-            Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-            ScanlineOrdering: DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
-            Scaling: DXGI_MODE_SCALING_UNSPECIFIED,
-        },
-        SampleDesc: DXGI_SAMPLE_DESC {
-            Count: 1,
-            Quality: 0,
-        },
-        BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
-        BufferCount: 2,
-        OutputWindow: HWND(hwnd),
-        Windowed: TRUE,
-        SwapEffect: DXGI_SWAP_EFFECT_DISCARD,
-        Flags: 0,
-    }
-}
-
-fn d3d_hresult_code(result: ::windows::core::HRESULT) -> Errc {
-    match result {
-        DXGI_STATUS_OCCLUDED => Errc::GraphicsOccluded,
-        DXGI_ERROR_DEVICE_HUNG
-        | DXGI_ERROR_DEVICE_REMOVED
-        | DXGI_ERROR_DEVICE_RESET
-        | DXGI_ERROR_DRIVER_INTERNAL_ERROR => Errc::GraphicsDeviceLost,
-        E_OUTOFMEMORY | DXGI_ERROR_REMOTE_OUTOFMEMORY => Errc::GraphicsOutOfMemory,
-        _ => Errc::PlatformError,
-    }
-}
-
-fn d3d_error(operation: &str, err: ::windows::core::Error) -> Error {
-    Error::new(
-        d3d_hresult_code(err.code()),
-        format!("D3d11Context: {operation} failed: {err}"),
-    )
-}
-
-pub(crate) fn map_dxgi_present_result(result: ::windows::core::HRESULT) -> Result<()> {
-    if result == DXGI_STATUS_OCCLUDED {
-        return Err(Error::new(
-            Errc::GraphicsOccluded,
-            format!("D3d11Context: IDXGISwapChain::Present reported occlusion: {result:?}"),
-        ));
-    }
-    map_dxgi_operation_result("IDXGISwapChain::Present", result)
-}
-
-pub(crate) fn map_dxgi_present_test_result(
-    result: ::windows::core::HRESULT,
-) -> Result<PresentTestResult> {
-    if result == DXGI_STATUS_OCCLUDED {
-        return Ok(PresentTestResult::Occluded);
-    }
-    map_dxgi_operation_result("IDXGISwapChain::Present(DXGI_PRESENT_TEST)", result)?;
-    Ok(PresentTestResult::Presentable)
-}
-
-pub(crate) fn map_dxgi_resize_result(result: ::windows::core::HRESULT) -> Result<()> {
-    map_dxgi_operation_result("IDXGISwapChain::ResizeBuffers", result)
-}
-
-fn map_dxgi_operation_result(operation: &str, result: ::windows::core::HRESULT) -> Result<()> {
-    if result.is_err() {
-        return Err(Error::new(
-            d3d_hresult_code(result),
-            format!("D3d11Context: {operation} failed: {result:?}"),
-        ));
-    }
-    Ok(())
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum D3d11DriverKind {
