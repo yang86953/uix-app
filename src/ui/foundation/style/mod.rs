@@ -1,6 +1,6 @@
 //! Style — 统一的类 CSS 样式系统。
 //!
-//! 融合了原有的 `Style` 和 `WidgetStylePreset`，增加状态变体（hover/active）、
+//! 融合了原有的 `Style` 和 `WidgetStylePreset`，增加状态变体（hover/focus/active）、
 //! 盒阴影、边距、Flex/Grid 布局属性和主题感知能力。
 //!
 //! # 设计原则
@@ -324,6 +324,8 @@ pub struct Style {
     pub background: Option<ColorValue>,
     /// 悬停状态背景色
     pub background_hover: Option<ColorValue>,
+    /// 键盘焦点状态背景色
+    pub background_focus: Option<ColorValue>,
     /// 按下/激活状态背景色
     pub background_active: Option<ColorValue>,
     /// 文字颜色
@@ -373,6 +375,7 @@ impl Default for Style {
 
             background: None,
             background_hover: None,
+            background_focus: None,
             background_active: None,
             color: ColorValue::Neutral(NeutralRole::Text),
             font_size: TypographyToken::Body,
@@ -451,13 +454,35 @@ impl Style {
 
     /// 根据 hover/pressed 状态返回当前背景色（优先返回状态色，fallback 到 background）。
     pub fn effective_bg(&self, hovered: bool, pressed: bool) -> Option<ColorValue> {
-        if pressed {
-            self.background_active.or(self.background)
-        } else if hovered {
-            self.background_hover.or(self.background)
-        } else {
-            self.background
+        self.effective_bg_for_state(StyleState {
+            hovered,
+            pressed,
+            ..StyleState::default()
+        })
+    }
+
+    /// 按 active → focus → hover → normal 解析交互背景。
+    ///
+    /// 某一状态未声明专用颜色时继续尝试较低优先级状态，保证新增 focus
+    /// 样式不会遮蔽已有 hover 反馈。
+    pub fn effective_bg_for_state(&self, state: StyleState) -> Option<ColorValue> {
+        if state.pressed {
+            return self.background_active.or(self.background);
         }
+        if state.focused {
+            return self
+                .background_focus
+                .or(if state.hovered {
+                    self.background_hover
+                } else {
+                    None
+                })
+                .or(self.background);
+        }
+        if state.hovered {
+            return self.background_hover.or(self.background);
+        }
+        self.background
     }
 
     pub fn resolve_color(&self, tokens: &dyn ThemeTokens) -> Color {
@@ -498,6 +523,7 @@ impl Style {
         self.grid_row_span = s.grid_row_span;
         self.background = s.background;
         self.background_hover = s.background_hover;
+        self.background_focus = s.background_focus;
         self.background_active = s.background_active;
         self.color = s.color;
         self.font_size = s.font_size;
@@ -586,6 +612,9 @@ impl Style {
         }
         if other.background_hover.is_some() {
             self.background_hover = other.background_hover;
+        }
+        if other.background_focus.is_some() {
+            self.background_focus = other.background_focus;
         }
         if other.background_active.is_some() {
             self.background_active = other.background_active;
@@ -727,6 +756,10 @@ impl Style {
         self.background_hover = Some(c.into());
         self
     }
+    pub fn with_bg_focus(mut self, c: impl Into<ColorValue>) -> Self {
+        self.background_focus = Some(c.into());
+        self
+    }
     pub fn with_bg_active(mut self, c: impl Into<ColorValue>) -> Self {
         self.background_active = Some(c.into());
         self
@@ -823,6 +856,7 @@ macro_rules! style {
     (@inner $s:ident bg $v:expr) => { $s.background = Some($v.into()); };
     (@inner $s:ident background $v:expr) => { $s.background = Some($v.into()); };
     (@inner $s:ident background_hover $v:expr) => { $s.background_hover = Some($v.into()); };
+    (@inner $s:ident background_focus $v:expr) => { $s.background_focus = Some($v.into()); };
     (@inner $s:ident background_active $v:expr) => { $s.background_active = Some($v.into()); };
     (@inner $s:ident color $v:expr) => { $s.color = $v.into(); };
     (@inner $s:ident fs $v:expr) => { $s.font_size = $crate::ui::style::TypographyToken::Custom($v as f32); };

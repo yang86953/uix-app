@@ -32,6 +32,7 @@ fn style_default_all_fields() {
     assert_eq!(s.grid_row_span, 1);
     assert_eq!(s.background, None);
     assert_eq!(s.background_hover, None);
+    assert_eq!(s.background_focus, None);
     assert_eq!(s.background_active, None);
     assert_eq!(s.color, ColorValue::Neutral(NeutralRole::Text));
     assert_eq!(s.font_size, TypographyToken::Body);
@@ -98,6 +99,7 @@ fn effective_bg_obeys_interaction_priority_and_fallbacks() {
     let complete = Style {
         background: Some(ColorValue::Custom(Color::red())),
         background_hover: Some(ColorValue::Custom(Color::green())),
+        background_focus: Some(ColorValue::Custom(Color::from_rgb(255, 255, 0))),
         background_active: Some(ColorValue::Custom(Color::blue())),
         ..Style::default()
     };
@@ -112,6 +114,36 @@ fn effective_bg_obeys_interaction_priority_and_fallbacks() {
     assert_eq!(
         complete.effective_bg(false, false),
         Some(ColorValue::Custom(Color::red()))
+    );
+    assert_eq!(
+        complete.effective_bg_for_state(StyleState {
+            hovered: true,
+            focused: true,
+            ..StyleState::default()
+        }),
+        Some(ColorValue::Custom(Color::from_rgb(255, 255, 0)))
+    );
+    assert_eq!(
+        complete.effective_bg_for_state(StyleState {
+            hovered: true,
+            pressed: true,
+            focused: true,
+            ..StyleState::default()
+        }),
+        Some(ColorValue::Custom(Color::blue()))
+    );
+
+    let hover_fallback = Style {
+        background_focus: None,
+        ..complete.clone()
+    };
+    assert_eq!(
+        hover_fallback.effective_bg_for_state(StyleState {
+            hovered: true,
+            focused: true,
+            ..StyleState::default()
+        }),
+        Some(ColorValue::Custom(Color::green()))
     );
 
     let background_only = Style {
@@ -130,6 +162,7 @@ fn effective_bg_obeys_interaction_priority_and_fallbacks() {
     let empty = Style {
         background: None,
         background_hover: None,
+        background_focus: None,
         background_active: None,
         ..Style::default()
     };
@@ -164,6 +197,7 @@ fn chain_builder_all_methods() {
         .with_grid_span(2, 4)
         .with_bg(Color::blue())
         .with_bg_hover(Color::green())
+        .with_bg_focus(Color::from_rgb(255, 255, 0))
         .with_bg_active(Color::red())
         .with_color(Color::white())
         .with_font_size(16.0)
@@ -190,6 +224,10 @@ fn chain_builder_all_methods() {
     assert_eq!(s.grid_cell, Some(3));
     assert_eq!(s.grid_column_span, 2);
     assert_eq!(s.grid_row_span, 4);
+    assert_eq!(
+        s.background_focus,
+        Some(ColorValue::Custom(Color::from_rgb(255, 255, 0)))
+    );
     assert_eq!(s.background, Some(ColorValue::Custom(Color::blue())));
     assert_eq!(s.background_hover, Some(ColorValue::Custom(Color::green())));
     assert_eq!(s.background_active, Some(ColorValue::Custom(Color::red())));
@@ -425,6 +463,7 @@ fn style_macro_aliases_bare() {
     let s = crate::style! {
         bg: Color::blue(),
         background_hover: Color::from_rgb(173, 216, 255),
+        background_focus: Color::from_rgb(255, 215, 0),
         background_active: Color::from_rgb(0, 0, 139),
         fs: 16,
         opacity: 0.8,
@@ -444,6 +483,10 @@ fn style_macro_aliases_bare() {
     assert_eq!(
         s.background_hover,
         Some(ColorValue::Custom(Color::from_rgb(173, 216, 255)))
+    );
+    assert_eq!(
+        s.background_focus,
+        Some(ColorValue::Custom(Color::from_rgb(255, 215, 0)))
     );
     assert_eq!(
         s.background_active,
