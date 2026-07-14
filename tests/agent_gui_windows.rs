@@ -12,8 +12,9 @@ use serde_json::{json, Value};
 use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowThreadProcessId, PostMessageW, SetWindowPos, HWND_TOPMOST,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, WM_CLOSE,
+    EnumWindows, GetWindowThreadProcessId, IsIconic, IsZoomed, PostMessageW, SetWindowPos,
+    ShowWindowAsync, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
+    SW_MAXIMIZE, SW_MINIMIZE, WM_CLOSE,
 };
 
 const START_TIMEOUT: Duration = Duration::from_secs(45);
@@ -86,16 +87,7 @@ impl DemoProcess {
 
     fn close_and_wait(&mut self) {
         let deadline = Instant::now() + SHUTDOWN_TIMEOUT;
-        let window = loop {
-            if let Some(window) = find_process_window(self.child.id()) {
-                break window;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "timed out locating the demo HWND"
-            );
-            thread::sleep(Duration::from_millis(25));
-        };
+        let window = self.window_handle();
         unsafe {
             // SAFETY: 目标 HWND 属于仍存活的测试子进程，消息不携带借用指针。
             PostMessageW(Some(window), WM_CLOSE, WPARAM(0), LPARAM(0))
@@ -125,17 +117,7 @@ impl DemoProcess {
     }
 
     fn raise_for_interaction(&self) {
-        let deadline = Instant::now() + SHUTDOWN_TIMEOUT;
-        let window = loop {
-            if let Some(window) = find_process_window(self.child.id()) {
-                break window;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "timed out locating the demo HWND"
-            );
-            thread::sleep(Duration::from_millis(25));
-        };
+        let window = self.window_handle();
         unsafe {
             // SAFETY: 仅调整测试子进程 HWND 的 Z-order 与显示状态，不传递借用数据。
             SetWindowPos(
@@ -149,6 +131,55 @@ impl DemoProcess {
             )
         }
         .expect("raise demo window for interaction");
+    }
+
+    fn minimize(&self) {
+        let window = self.window_handle();
+        unsafe {
+            // SAFETY: 命令只异步改变仍存活测试子进程 HWND 的显示状态。
+            let _ = ShowWindowAsync(window, SW_MINIMIZE);
+        }
+        self.wait_for_window_state(window, "minimized", |window| unsafe {
+            // SAFETY: 查询期间 HWND 属于仍存活的测试子进程。
+            IsIconic(window).as_bool()
+        });
+    }
+
+    fn maximize(&self) {
+        let window = self.window_handle();
+        unsafe {
+            // SAFETY: 命令只异步改变仍存活测试子进程 HWND 的显示状态。
+            let _ = ShowWindowAsync(window, SW_MAXIMIZE);
+        }
+        self.wait_for_window_state(window, "maximized", |window| unsafe {
+            // SAFETY: 查询期间 HWND 属于仍存活的测试子进程。
+            IsZoomed(window).as_bool()
+        });
+    }
+
+    fn window_handle(&self) -> HWND {
+        let deadline = Instant::now() + SHUTDOWN_TIMEOUT;
+        loop {
+            if let Some(window) = find_process_window(self.child.id()) {
+                return window;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "timed out locating the demo HWND"
+            );
+            thread::sleep(Duration::from_millis(25));
+        }
+    }
+
+    fn wait_for_window_state(&self, window: HWND, state: &str, reached: impl Fn(HWND) -> bool) {
+        let deadline = Instant::now() + SHUTDOWN_TIMEOUT;
+        while !reached(window) {
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for demo window to become {state}"
+            );
+            thread::sleep(Duration::from_millis(25));
+        }
     }
 }
 
@@ -256,11 +287,16 @@ fn node_by_automation_id<'a>(snapshot: &'a Value, automation_id: &str) -> &'a Va
         .unwrap_or_else(|| panic!("missing automation node {automation_id}"))
 }
 
-fn wait_until_presentable(connection: &mut BufReader<File>, window_id: u64, timeout: Duration) {
+fn wait_until_presentable(
+    connection: &mut BufReader<File>,
+    window_id: u64,
+    expected: bool,
+    timeout: Duration,
+) {
     let deadline = Instant::now() + timeout;
     let mut attempt = 0u32;
     loop {
-        let request_id = format!("presentable-{attempt}");
+        let request_id = format!("presentable-{expected}-{attempt}");
         let listed = exchange(
             connection,
             json!({
@@ -279,12 +315,54 @@ fn wait_until_presentable(connection: &mut BufReader<File>, window_id: u64, time
             })
             .and_then(|window| window["presentable"].as_bool())
             .unwrap_or(false);
-        if presentable {
+        if presentable == expected {
             return;
         }
         assert!(
             Instant::now() < deadline,
-            "demo window did not recover presentability"
+            "demo window presentable state did not become {expected}"
+        );
+        attempt = attempt.wrapping_add(1);
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn invoke_until_presentable(
+    demo: &DemoProcess,
+    connection: &mut BufReader<File>,
+    window_id: u64,
+    generation: u64,
+    automation_id: &str,
+) -> Value {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut attempt = 0u32;
+    loop {
+        demo.raise_for_interaction();
+        wait_until_presentable(connection, window_id, true, Duration::from_secs(10));
+        let request_id = format!("invoke-{attempt}");
+        let response = exchange(
+            connection,
+            json!({
+                "schema": "uix.agent.v1",
+                "request_id": request_id,
+                "type": "perform",
+                "window_id": window_id,
+                "generation": generation,
+                "target": { "automation_id": automation_id },
+                "action": { "kind": "invoke" },
+            }),
+        );
+        if response["ok"] == true {
+            assert_success(&response, &request_id);
+            return response;
+        }
+        assert_eq!(
+            response["error"]["code"], "not_presentable",
+            "unexpected protocol error: {response}"
+        );
+        assert!(
+            Instant::now() < deadline,
+            "window stayed non-presentable while invoking {automation_id}"
         );
         attempt = attempt.wrapping_add(1);
         thread::sleep(Duration::from_millis(50));
@@ -348,7 +426,7 @@ fn real_gui_process_authenticates_performs_and_cleans_up() {
     assert_success(&first_present, "first-present");
     assert_eq!(first_present["outcome"], "presented");
     demo.raise_for_interaction();
-    wait_until_presentable(&mut connection, window_id, Duration::from_secs(10));
+    wait_until_presentable(&mut connection, window_id, true, Duration::from_secs(10));
 
     let before = exchange(
         &mut connection,
@@ -369,19 +447,13 @@ fn real_gui_process_authenticates_performs_and_cleans_up() {
         "计数: 0"
     );
 
-    let performed = exchange(
+    let performed = invoke_until_presentable(
+        &demo,
         &mut connection,
-        json!({
-            "schema": "uix.agent.v1",
-            "request_id": "increment",
-            "type": "perform",
-            "window_id": window_id,
-            "generation": generation,
-            "target": { "automation_id": "home-count-increment" },
-            "action": { "kind": "invoke" },
-        }),
+        window_id,
+        generation,
+        "home-count-increment",
     );
-    assert_success(&performed, "increment");
     assert_eq!(performed["settled"], true);
     let changed_revision = performed["revision"].as_u64().expect("changed revision");
 
@@ -412,6 +484,77 @@ fn real_gui_process_authenticates_performs_and_cleans_up() {
     assert_success(&after, "snapshot-after");
     assert_eq!(
         node_by_automation_id(&after["snapshot"], "home-count-value")["name"],
+        "计数: 1"
+    );
+    let before_minimize_revision = after["snapshot"]["revision"]
+        .as_u64()
+        .expect("revision before minimize");
+
+    demo.minimize();
+    wait_until_presentable(&mut connection, window_id, false, Duration::from_secs(10));
+    let premature_present = exchange(
+        &mut connection,
+        json!({
+            "schema": "uix.agent.v1",
+            "request_id": "minimized-present",
+            "type": "wait",
+            "window_id": window_id,
+            "generation": generation,
+            "presented_revision": before_minimize_revision + 1,
+            "timeout_ms": 250,
+        }),
+    );
+    assert_eq!(premature_present["ok"], false);
+    assert_eq!(premature_present["error"]["code"], "timeout");
+
+    demo.maximize();
+    wait_until_presentable(&mut connection, window_id, true, Duration::from_secs(10));
+    let recovered_change = exchange(
+        &mut connection,
+        json!({
+            "schema": "uix.agent.v1",
+            "request_id": "maximized-change",
+            "type": "wait",
+            "window_id": window_id,
+            "generation": generation,
+            "after_revision": before_minimize_revision,
+            "timeout_ms": PRESENT_TIMEOUT_MS,
+        }),
+    );
+    assert_success(&recovered_change, "maximized-change");
+    assert_eq!(recovered_change["outcome"], "changed");
+    let recovered_revision = recovered_change["window"]["revision"]
+        .as_u64()
+        .expect("maximized revision");
+    assert!(recovered_revision > before_minimize_revision);
+
+    let recovered_present = exchange(
+        &mut connection,
+        json!({
+            "schema": "uix.agent.v1",
+            "request_id": "maximized-present",
+            "type": "wait",
+            "window_id": window_id,
+            "generation": generation,
+            "presented_revision": recovered_revision,
+            "timeout_ms": PRESENT_TIMEOUT_MS,
+        }),
+    );
+    assert_success(&recovered_present, "maximized-present");
+    assert_eq!(recovered_present["outcome"], "presented");
+
+    let recovered = exchange(
+        &mut connection,
+        json!({
+            "schema": "uix.agent.v1",
+            "request_id": "snapshot-recovered",
+            "type": "snapshot",
+            "window_id": window_id,
+        }),
+    );
+    assert_success(&recovered, "snapshot-recovered");
+    assert_eq!(
+        node_by_automation_id(&recovered["snapshot"], "home-count-value")["name"],
         "计数: 1"
     );
 
