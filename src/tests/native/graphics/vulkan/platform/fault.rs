@@ -1,7 +1,8 @@
 use crate::native::graphics::vulkan::platform::fault::{
     select_feature_query_mode, DeviceFaultAddress, DeviceFaultFeatureQueryMode, DeviceFaultReport,
-    DeviceFaultVendor,
+    DeviceFaultVendor, DeviceLossState,
 };
+use crate::tests::common::*;
 use ash::vk;
 
 #[test]
@@ -77,4 +78,56 @@ fn empty_device_fault_report_is_explicit() {
         report.diagnostic_summary(),
         "VK_EXT_device_fault: description=\"unavailable\"; addresses=[none]; vendors=[none]; vendor_binary_bytes=0; truncated=false"
     );
+}
+
+#[test]
+fn device_loss_state_keeps_the_first_enriched_error_for_peers() {
+    let state = DeviceLossState::default();
+    let first = state.record_with(
+        Error::new(Errc::GraphicsDeviceLost, "vkQueueSubmit failed"),
+        |error| {
+            error.with_source(Error::new(
+                Errc::GraphicsDeviceLost,
+                "VK_EXT_device_fault: page fault",
+            ))
+        },
+    );
+
+    assert_eq!(first.depth(), 1);
+    let peer = state.peer_error().expect("loss must be visible to peers");
+    assert_eq!(peer.code(), Errc::GraphicsDeviceLost);
+    assert!(peer.message().contains("shared logical device"));
+    assert_eq!(
+        peer.root_cause().message(),
+        "VK_EXT_device_fault: page fault"
+    );
+}
+
+#[test]
+fn repeated_device_loss_keeps_current_operation_and_first_diagnosis() {
+    let state = DeviceLossState::default();
+    let first = state.record_with(
+        Error::new(Errc::GraphicsDeviceLost, "first device loss"),
+        |error| error.with_source(Error::new(Errc::GraphicsDeviceLost, "first diagnosis")),
+    );
+    let repeated = state.record_with(
+        Error::new(Errc::GraphicsDeviceLost, "second device loss"),
+        |error| error.with_source(Error::new(Errc::GraphicsDeviceLost, "must not replace")),
+    );
+
+    assert_eq!(repeated.message(), "second device loss");
+    assert_eq!(repeated.source_error(), Some(&first));
+    assert_eq!(repeated.root_cause().message(), "first diagnosis");
+}
+
+#[test]
+fn non_device_loss_does_not_poison_shared_device_state() {
+    let state = DeviceLossState::default();
+    let error = state.record_with(
+        Error::new(Errc::GraphicsSurfaceLost, "surface only"),
+        |error| error,
+    );
+
+    assert_eq!(error.code(), Errc::GraphicsSurfaceLost);
+    assert!(state.peer_error().is_none());
 }

@@ -1,16 +1,18 @@
 //! Vulkan instance 与逻辑 device 的显式所有权边界。
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
 use ash::{vk, Entry};
 
-use crate::core::{Errc, Error, Result};
+use crate::core::{Error, Result};
 
 use super::adapter::{QueueSelection, VulkanAdapterInfo};
 use super::context::{loader_err, vk_err};
-use super::fault::{configure_instance, DeviceFaultFeatureQuery, DeviceFaultReporter};
+use super::fault::{
+    configure_instance, DeviceFaultFeatureQuery, DeviceFaultReporter, DeviceLossState,
+};
 use super::surface::surface_instance_extensions;
 
 type DeviceKey = (vk::PhysicalDevice, u32);
@@ -124,7 +126,7 @@ pub(super) struct VulkanDevice {
     device: ash::Device,
     queue: vk::Queue,
     fault_reporter: Option<DeviceFaultReporter>,
-    lost: Cell<bool>,
+    loss: DeviceLossState,
 }
 
 impl VulkanDevice {
@@ -169,7 +171,7 @@ impl VulkanDevice {
             device,
             queue,
             fault_reporter,
-            lost: Cell::new(false),
+            loss: DeviceLossState::default(),
         }))
     }
 
@@ -194,11 +196,8 @@ impl VulkanDevice {
     }
 
     pub(super) fn ensure_healthy(&self) -> Result<()> {
-        if self.is_lost() {
-            return Err(Error::new(
-                Errc::GraphicsDeviceLost,
-                "VulkanContext: shared logical device is lost",
-            ));
+        if let Some(error) = self.loss.peer_error() {
+            return Err(error);
         }
         Ok(())
     }
@@ -223,31 +222,15 @@ impl VulkanDevice {
 
     #[cfg(test)]
     pub(super) fn mark_lost(&self) {
-        self.lost.set(true);
+        self.loss.mark_for_test();
     }
 
     fn observe_error(&self, error: Error) -> Error {
-        if error.code() != Errc::GraphicsDeviceLost {
-            return error;
-        }
-        self.lost.set(true);
-        let Some(reporter) = &self.fault_reporter else {
-            return error;
-        };
-        match reporter.collect() {
-            Ok(report) => error.with_source(Error::new(
-                Errc::GraphicsDeviceLost,
-                report.diagnostic_summary(),
-            )),
-            Err(status) => error.with_source(Error::new(
-                Errc::GraphicsDeviceLost,
-                format!("VK_EXT_device_fault: vkGetDeviceFaultInfoEXT failed: {status:?}"),
-            )),
-        }
+        self.loss.record(error, self.fault_reporter.as_ref())
     }
 
     fn is_lost(&self) -> bool {
-        self.lost.get()
+        self.loss.is_lost()
     }
 }
 

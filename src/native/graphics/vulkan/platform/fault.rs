@@ -1,9 +1,12 @@
 //! 可选 Vulkan device-fault feature 协商与诊断边界。
 
+use std::cell::RefCell;
 use std::ffi::CStr;
 use std::ptr;
 
 use ash::{vk, Entry};
+
+use crate::core::{Errc, Error};
 
 const MAX_ADDRESS_INFOS: usize = 16;
 const MAX_VENDOR_INFOS: usize = 16;
@@ -22,6 +25,11 @@ pub(super) struct DeviceFaultFeatureQuery {
 
 pub(super) struct DeviceFaultReporter {
     loader: ash::ext::device_fault::Device,
+}
+
+#[derive(Default)]
+pub(crate) struct DeviceLossState {
+    first_error: RefCell<Option<Error>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -258,6 +266,19 @@ impl DeviceFaultReporter {
         })
     }
 
+    fn enrich(&self, error: Error) -> Error {
+        match self.collect() {
+            Ok(report) => error.with_source(Error::new(
+                Errc::GraphicsDeviceLost,
+                report.diagnostic_summary(),
+            )),
+            Err(status) => error.with_source(Error::new(
+                Errc::GraphicsDeviceLost,
+                format!("VK_EXT_device_fault: vkGetDeviceFaultInfoEXT failed: {status:?}"),
+            )),
+        }
+    }
+
     fn get_fault_info(
         &self,
         counts: &mut vk::DeviceFaultCountsEXT<'_>,
@@ -266,6 +287,50 @@ impl DeviceFaultReporter {
         // SAFETY: loader 只在启用 VK_EXT_device_fault 后构造；device 已由驱动报告 lost，
         // counts 与可选 info 指向本调用期间存活且按声明容量分配的可写结构。
         unsafe { (self.loader.fp().get_device_fault_info_ext)(self.loader.device(), counts, info) }
+    }
+}
+
+impl DeviceLossState {
+    pub(super) fn record(&self, error: Error, reporter: Option<&DeviceFaultReporter>) -> Error {
+        self.record_with(error, |error| match reporter {
+            Some(reporter) => reporter.enrich(error),
+            None => error,
+        })
+    }
+
+    pub(crate) fn record_with(&self, error: Error, enrich: impl FnOnce(Error) -> Error) -> Error {
+        if error.code() != Errc::GraphicsDeviceLost {
+            return error;
+        }
+        if let Some(first_error) = self.first_error.borrow().clone() {
+            return error.with_source(first_error);
+        }
+        let error = enrich(error);
+        *self.first_error.borrow_mut() = Some(error.clone());
+        error
+    }
+
+    pub(crate) fn peer_error(&self) -> Option<Error> {
+        self.first_error.borrow().as_ref().map(|first_error| {
+            Error::new(
+                Errc::GraphicsDeviceLost,
+                "VulkanContext: shared logical device is lost",
+            )
+            .with_source(first_error.clone())
+        })
+    }
+
+    #[cfg(test)]
+    pub(super) fn mark_for_test(&self) {
+        let error = Error::new(
+            Errc::GraphicsDeviceLost,
+            "VulkanContext: shared logical device marked lost by test",
+        );
+        let _ = self.record_with(error, |error| error);
+    }
+
+    pub(super) fn is_lost(&self) -> bool {
+        self.first_error.borrow().is_some()
     }
 }
 
