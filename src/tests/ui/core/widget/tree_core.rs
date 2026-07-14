@@ -1859,7 +1859,10 @@ fn focus_trap_tab_navigation_stays_inside_top_overlay_owner_subtree() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(PassThroughContainer::new(300.0, 200.0, vec![])));
     let outside = tree.add_child(root, Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(1)));
-    let modal = tree.add_child(root, Box::new(Modal::new("Dialog").show().overlay(true)));
+    let modal = tree.add_child(
+        root,
+        Box::new(Modal::new("Dialog").visible(true).overlay(true)),
+    );
     let first = tree.add_child(
         modal,
         Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(2)),
@@ -1909,7 +1912,10 @@ fn focus_trap_shift_tab_wraps_inside_top_overlay_owner_subtree() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(PassThroughContainer::new(300.0, 200.0, vec![])));
     let _outside = tree.add_child(root, Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(1)));
-    let modal = tree.add_child(root, Box::new(Modal::new("Dialog").show().overlay(true)));
+    let modal = tree.add_child(
+        root,
+        Box::new(Modal::new("Dialog").visible(true).overlay(true)),
+    );
     let first = tree.add_child(
         modal,
         Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(2)),
@@ -2383,7 +2389,10 @@ fn theme_changed_invalidates_palette_widget_inside_overlay_subtree() {
         root_id,
         Box::new(LifecycleProbe::new(20.0, 20.0, static_events.clone()).static_colors()),
     );
-    let modal = tree.add_child(root_id, Box::new(Modal::new("Dialog").show().overlay(true)));
+    let modal = tree.add_child(
+        root_id,
+        Box::new(Modal::new("Dialog").visible(true).overlay(true)),
+    );
     let palette_id = tree.add_child(
         modal,
         Box::new(LifecycleProbe::new(20.0, 20.0, palette_events.clone())),
@@ -3061,7 +3070,10 @@ fn removing_lower_focus_trap_owner_does_not_steal_focus_from_top_trap() {
 fn layout_registers_visible_modal_overlay() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
-    let modal = tree.add_child(root_id, Box::new(Modal::new("Dialog").show().overlay(true)));
+    let modal = tree.add_child(
+        root_id,
+        Box::new(Modal::new("Dialog").visible(true).overlay(true)),
+    );
     tree.get_mut(root_id)
         .unwrap()
         .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
@@ -3080,7 +3092,10 @@ fn layout_registers_visible_modal_overlay() {
 fn layout_rebuilds_widget_overlay_without_duplicates() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
-    let modal = tree.add_child(root_id, Box::new(Modal::new("Dialog").show().overlay(true)));
+    let modal = tree.add_child(
+        root_id,
+        Box::new(Modal::new("Dialog").visible(true).overlay(true)),
+    );
     tree.get_mut(root_id)
         .unwrap()
         .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
@@ -3100,7 +3115,10 @@ fn layout_rebuilds_widget_overlay_without_duplicates() {
 fn layout_preserves_managed_overlay_entries_between_rebuilds() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
-    let modal = tree.add_child(root_id, Box::new(Modal::new("Dialog").show().overlay(true)));
+    let modal = tree.add_child(
+        root_id,
+        Box::new(Modal::new("Dialog").visible(true).overlay(true)),
+    );
     tree.get_mut(root_id)
         .unwrap()
         .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));

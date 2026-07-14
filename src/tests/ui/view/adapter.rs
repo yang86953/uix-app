@@ -2994,7 +2994,7 @@ fn reconcile_popconfirm_preserves_visibility_and_syncs_config() {
 fn reconcile_modal_preserves_present_state_and_syncs_config() {
     use crate::ui::widgets::Modal;
 
-    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Modal::new("old").show()));
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Modal::new("old").visible(true)));
     let root_id = tree.root_id().expect("modal root should exist");
     tree.get_mut(root_id)
         .unwrap()
