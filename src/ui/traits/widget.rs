@@ -237,6 +237,10 @@ pub trait EventHandler: WidgetComponent {
     fn scroll_delta_for_dirty(&self) -> Option<(f32, f32)> {
         None
     }
+    /// 限定 scroll_region 像素移动的 viewport；`None` 表示使用组件 frame。
+    fn scroll_composite_viewport(&self, _frame: Rect) -> Option<Rect> {
+        None
+    }
     /// viewport 容器当前 scroll 偏移（content 坐标系）；非 viewport 返回 `None`。
     fn viewport_scroll_offset(&self) -> Option<(f32, f32)> {
         None

@@ -68,6 +68,50 @@ impl EventHandler for SpyWidget {
     }
 }
 
+struct ScrollCompositeViewportProbe {
+    pending_delta: Cell<Option<(f32, f32)>>,
+    viewport: Rect,
+}
+
+impl WidgetComponent for ScrollCompositeViewportProbe {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::from_bits(WidgetCapabilities::EVENT)
+    }
+
+    crate::wc_upcast!(ScrollCompositeViewportProbe; EventHandler);
+}
+
+impl EventHandler for ScrollCompositeViewportProbe {
+    fn on_event(&mut self, event: &SystemEvent) -> EventResult {
+        if matches!(event, SystemEvent::Wheel { .. }) {
+            self.pending_delta.set(Some((0.0, 10.0)));
+            EventResult::Handled
+        } else {
+            EventResult::NotHandled
+        }
+    }
+
+    fn scroll_delta_for_dirty(&self) -> Option<(f32, f32)> {
+        self.pending_delta.take()
+    }
+
+    fn scroll_composite_viewport(&self, _frame: Rect) -> Option<Rect> {
+        Some(self.viewport)
+    }
+}
+
 struct CaptureSpyWidget(SpyWidget);
 
 impl CaptureSpyWidget {
@@ -2636,6 +2680,32 @@ fn dispatch_wheel_targets_overlay_owner_before_main_tree() {
         .iter()
         .any(|event| matches!(event, SystemEvent::Wheel { .. })));
     assert!(underlying_events.is_empty());
+}
+
+#[test]
+fn scroll_composite_viewport_is_clipped_to_component_frame() {
+    let mut tree = WidgetTree::new();
+    let id = tree.set_root(Box::new(ScrollCompositeViewportProbe {
+        pending_delta: Cell::new(None),
+        viewport: Rect::new(-20.0, 20.0, 80.0, 200.0),
+    }));
+    tree.get_mut(id)
+        .expect("scroll probe")
+        .set_frame(Rect::new(10.0, 10.0, 100.0, 100.0));
+    tree.reset_invalidation();
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::Wheel {
+            pos: Point::new(20.0, 30.0),
+            delta: Point::new(0.0, -1.0),
+        }),
+        EventResult::Handled
+    );
+
+    assert_eq!(
+        tree.scroll_region_moves(),
+        Some(vec![(Rect::new(10.0, 20.0, 50.0, 90.0), 0.0, 10.0)])
+    );
 }
 
 #[test]

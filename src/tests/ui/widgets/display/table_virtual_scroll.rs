@@ -93,9 +93,47 @@ fn table_wheel_registers_composite_scroll_strip() {
         .expect("table scroll should register memmove");
     assert_eq!(moves.len(), 1);
     let (frame, dx, dy) = moves[0];
-    assert_eq!(frame, Rect::new(0.0, 0.0, 320.0, 120.0));
+    assert_eq!(frame, Rect::new(0.0, 33.0, 320.0, 87.0));
     assert_eq!(dx, 0.0);
     assert_eq!(dy, 40.0);
+}
+
+#[test]
+fn grouped_table_scroll_excludes_both_header_rows_from_composite() {
+    let mut tree = WidgetTree::new();
+    let rows = (0..10)
+        .map(|index| vec![format!("User {index}"), format!("Role {index}")])
+        .collect();
+    let table = Table::new()
+        .column_groups(vec![TableColumnGroup::new(
+            "Account",
+            vec![
+                TableColumn::new("Name", 160.0),
+                TableColumn::new("Role", 160.0),
+            ],
+        )])
+        .rows(rows);
+    table
+        .last_frame
+        .set(Some(Rect::new(0.0, 0.0, 320.0, 160.0)));
+    let id = tree.set_root(Box::new(table));
+    tree.get_mut(id)
+        .expect("table root")
+        .set_frame(Rect::new(0.0, 0.0, 320.0, 160.0));
+    tree.reset_invalidation();
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::Wheel {
+            pos: Point::new(20.0, 100.0),
+            delta: Point::new(0.0, -1.0),
+        }),
+        EventResult::Handled
+    );
+
+    let moves = tree
+        .scroll_region_moves()
+        .expect("grouped table scroll should register memmove");
+    assert_eq!(moves, vec![(Rect::new(0.0, 65.0, 320.0, 95.0), 0.0, 40.0)]);
 }
 
 #[test]

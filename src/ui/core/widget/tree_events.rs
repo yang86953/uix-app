@@ -745,13 +745,16 @@ impl WidgetTree {
     }
 
     fn register_scroll_composite(&mut self, id: WidgetId) -> bool {
-        let Some((dx, dy)) = self.get(id).and_then(|node| node.scroll_delta_for_dirty()) else {
+        let Some((viewport, dx, dy)) = self.get(id).and_then(|node| {
+            let frame = node.frame();
+            node.scroll_delta_for_dirty().map(|(dx, dy)| {
+                let viewport = node.scroll_composite_viewport(frame);
+                (viewport, dx, dy)
+            })
+        }) else {
             return false;
         };
-        let Some(frame) = self.get(id).map(|node| node.frame()) else {
-            return false;
-        };
-        self.push_scroll_composite(frame, dx, dy)
+        self.push_scroll_composite(viewport, dx, dy)
     }
 
     fn capture_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
