@@ -508,6 +508,7 @@ fn reconcile_same_type_tooltip_preserves_pending_timer_state() {
 #[test]
 fn reconcile_popover_preserves_visibility_and_syncs_config() {
     use crate::ui::widgets::{Popover, PopoverPlacement, PopoverTrigger};
+    use crate::ui::AnimationConfig;
 
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Popover::new("old").title("old title")));
     let root_id = tree.root_id().expect("popover root should exist");
@@ -526,7 +527,8 @@ fn reconcile_popover_preserves_visibility_and_syncs_config() {
                 .title("new title")
                 .placement(PopoverPlacement::BottomRight)
                 .trigger(PopoverTrigger::Hover)
-                .arrow(false),
+                .arrow(false)
+                .leave_animation(AnimationConfig::fade_out(0.5)),
         ),
     );
 
@@ -547,6 +549,18 @@ fn reconcile_popover_preserves_visibility_and_syncs_config() {
             trigger: PopoverTrigger::Hover,
             arrow: false,
         } if title == "new title" && content == "new"
+    ));
+
+    let popover = tree
+        .get_mut(root_id)
+        .unwrap()
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<Popover>()
+        .unwrap();
+    popover.close();
+    assert!(crate::ui::traits::WidgetAnimation::update_animation(
+        popover, 0.25
     ));
 }
 

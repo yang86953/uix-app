@@ -3,7 +3,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
-use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::animation::{presets, AnimationConfig, TransitionPlayer};
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
@@ -41,6 +41,8 @@ component! {
         trigger: PopoverTrigger,
         arrow: bool,
         timer: f32,
+        enter_animation: AnimationConfig,
+        leave_animation: AnimationConfig,
         transition: TransitionPlayer,
         closing: bool,
         transition_dirty: bool,
@@ -104,8 +106,8 @@ component! {
             let popup_text = fade_color(text_color, opacity);
             let popup_secondary = fade_color(text_secondary, opacity);
             let (pw, ph) = (220.0, 100.0);
-            let (px, py) = self.popup_position(frame, pw, ph);
-            let pop_rect = Rect::new(px, py, pw, ph);
+            let pop_rect = self.transitioned_popup_rect(frame, pw, ph);
+            let (px, py) = (pop_rect.x, pop_rect.y);
             ctx.fill_rect(pop_rect, popup_bg, r);
             ctx.stroke_rect(pop_rect, popup_border, 1.0, r);
 
@@ -125,7 +127,7 @@ component! {
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        popover_dirty_rect(self.placement, self.arrow, frame)
+        self.transition_dirty_rect(frame)
     }
 
     overlay_entry => (&self, id: crate::ui::ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
@@ -134,10 +136,10 @@ component! {
         }
 
         let (pw, ph) = (220.0, 100.0);
-        let (px, py) = self.popup_position(frame, pw, ph);
+        let popup = self.transition_sweep_rect(self.popup_rect_for_frame(frame, pw, ph));
         Some(
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
-                .bounds(Rect::new(px, py, pw, ph))
+                .bounds(popup)
                 .z_index(900),
         )
     }
@@ -161,7 +163,7 @@ component! {
 
     dirty_bounds => (&self, frame: Rect) -> Rect {
         if self.transition_dirty {
-            popover_dirty_rect(self.placement, self.arrow, frame)
+            self.transition_dirty_rect(frame)
         } else {
             Rect::zero()
         }
@@ -184,6 +186,8 @@ impl Popover {
             trigger: PopoverTrigger::Click,
             arrow: true,
             timer: 0.0,
+            enter_animation: presets::tooltip_enter(),
+            leave_animation: presets::tooltip_exit(),
             transition: TransitionPlayer::new(presets::tooltip_enter()),
             closing: false,
             transition_dirty: false,
@@ -206,6 +210,26 @@ impl Popover {
         self
     }
 
+    /// 设置打开时播放的动画；已打开时从当前声明重新开始进场。
+    pub fn enter_animation(mut self, animation: AnimationConfig) -> Self {
+        self.enter_animation = animation;
+        if self.visible && !self.closing {
+            self.transition = TransitionPlayer::new(animation);
+            self.transition_dirty = true;
+        }
+        self
+    }
+
+    /// 设置关闭时播放的动画。
+    pub fn leave_animation(mut self, animation: AnimationConfig) -> Self {
+        self.leave_animation = animation;
+        if self.closing {
+            self.transition = TransitionPlayer::new(animation);
+            self.transition_dirty = true;
+        }
+        self
+    }
+
     pub fn is_visible(&self) -> bool {
         self.visible
     }
@@ -217,7 +241,7 @@ impl Popover {
     pub fn open(&mut self) {
         self.visible = true;
         self.closing = false;
-        self.transition = TransitionPlayer::new(presets::tooltip_enter());
+        self.transition = TransitionPlayer::new(self.enter_animation);
         self.transition_dirty = true;
     }
 
@@ -230,7 +254,7 @@ impl Popover {
         }
         self.visible = false;
         self.closing = true;
-        self.transition = TransitionPlayer::new(presets::tooltip_exit());
+        self.transition = TransitionPlayer::new(self.leave_animation);
         self.transition_dirty = true;
     }
 
@@ -240,6 +264,8 @@ impl Popover {
         self.placement = next.placement;
         self.trigger = next.trigger;
         self.arrow = next.arrow;
+        self.enter_animation = next.enter_animation;
+        self.leave_animation = next.leave_animation;
     }
 
     fn popup_rect(&self, _fw: f32, _fh: f32) -> Rect {
@@ -256,6 +282,35 @@ impl Popover {
 
     fn popup_position(&self, frame: Rect, pw: f32, ph: f32) -> (f32, f32) {
         popover_position(frame, self.placement, self.arrow, pw, ph)
+    }
+
+    fn popup_rect_for_frame(&self, frame: Rect, pw: f32, ph: f32) -> Rect {
+        let (x, y) = self.popup_position(frame, pw, ph);
+        Rect::new(x, y, pw, ph)
+    }
+
+    fn transitioned_popup_rect(&self, frame: Rect, pw: f32, ph: f32) -> Rect {
+        let rect = self.popup_rect_for_frame(frame, pw, ph);
+        let scale = self.transition.scale.max(0.0);
+        let width = rect.w * scale;
+        let height = rect.h * scale;
+        Rect::new(
+            rect.x + (rect.w - width) * 0.5 + self.transition.offset.x,
+            rect.y + (rect.h - height) * 0.5 + self.transition.offset.y,
+            width,
+            height,
+        )
+    }
+
+    fn transition_sweep_rect(&self, rect: Rect) -> Rect {
+        let (from, to) = self.transition.offset_endpoints();
+        rect.union(&translated_rect(rect, from))
+            .union(&translated_rect(rect, to))
+    }
+
+    fn transition_dirty_rect(&self, frame: Rect) -> Rect {
+        let popup = self.popup_rect_for_frame(frame, 220.0, 100.0);
+        frame.union(&self.transition_sweep_rect(popup))
     }
 
     fn intrinsic_size(&self) -> Size {
@@ -297,10 +352,8 @@ fn popover_position(
     }
 }
 
-fn popover_dirty_rect(placement: PopoverPlacement, arrow: bool, frame: Rect) -> Rect {
-    let (pw, ph) = (220.0, 100.0);
-    let (px, py) = popover_position(frame, placement, arrow, pw, ph);
-    frame.union(&Rect::new(px, py, pw, ph))
+fn translated_rect(rect: Rect, offset: Point) -> Rect {
+    Rect::new(rect.x + offset.x, rect.y + offset.y, rect.w, rect.h)
 }
 
 fn fade_color(color: Color, opacity: f32) -> Color {
