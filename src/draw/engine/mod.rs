@@ -21,9 +21,8 @@ pub enum RenderOutcome {
     /// 零帧开销（无需呈现）
     Idle,
     /// 已渲染，需呈现（多矩形损伤）。
-    /// The recording target is ready. This is legal only as a `begin_frame`
-    /// result; it never means that a swapchain or external presenter has
-    /// consumed the frame.
+    /// 录制目标已就绪；所带区域是本轮实际清除/裁剪区域，调用方必须至少重绘该区域。
+    /// 仅可由 `begin_frame` 返回，不表示 swapchain 或外部 presenter 已消费此帧。
     FrameReady(DamageRegion),
     /// Recording is complete but an external platform presenter still owns
     /// the one final submission. This is legal only as an `end_frame` result

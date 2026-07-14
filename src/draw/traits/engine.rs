@@ -97,6 +97,7 @@ pub trait GraphicsEngine: 'static {
     /// Resize is a graphics lifecycle operation and must propagate a typed
     /// failure. Callers retain invalidation and enter bounded recovery.
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error>;
+    /// 开始一帧；`FrameReady` 携带引擎实际采用的清除/裁剪区域，可能比请求策略更保守。
     fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome;
     /// `present_damage` 为合成层计算的呈现损伤；EngineManaged 后端用于 swap/present。
     fn end_frame(&mut self, present_damage: &crate::draw::backend::DamageRegion) -> RenderOutcome;
