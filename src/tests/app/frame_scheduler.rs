@@ -205,6 +205,36 @@ fn out_of_memory_suspends_without_retry() {
 }
 
 #[test]
+fn terminal_failure_is_absorbing_across_lifecycle_signals() {
+    let now = Instant::now();
+    let mut scheduler = FrameScheduler::new(true);
+    scheduler.frame_failed(
+        &GraphicsFailure::OutOfMemory(Error::new(Errc::GraphicsOutOfMemory, "injected oom")),
+        now,
+    );
+    let terminal_generation = scheduler.generation();
+
+    scheduler.suspend(SurfaceSuspendReason::Minimized);
+    scheduler.suspend(SurfaceSuspendReason::Hidden);
+    scheduler.suspend(SurfaceSuspendReason::ZeroExtent);
+    scheduler.resume();
+    scheduler.surface_changed();
+    scheduler.presented(now, false);
+    scheduler.frame_failed(
+        &GraphicsFailure::Occluded(Error::new(Errc::GraphicsOccluded, "late occlusion")),
+        now,
+    );
+
+    assert_eq!(
+        scheduler.surface_state(),
+        SurfaceState::Suspended(SurfaceSuspendReason::TerminalFailure)
+    );
+    assert_eq!(scheduler.generation(), terminal_generation);
+    assert_eq!(scheduler.next_deadline(), None);
+    assert!(scheduler.request_immediate(now).is_none());
+}
+
+#[test]
 fn occlusion_uses_non_visual_bounded_probes_and_resume_rebases_animation() {
     let start = Instant::now();
     let mut scheduler = FrameScheduler::new(true);

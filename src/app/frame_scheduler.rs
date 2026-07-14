@@ -115,6 +115,10 @@ impl FrameScheduler {
         matches!(self.surface_state, SurfaceState::Renderable)
     }
 
+    fn is_terminal_failure(&self) -> bool {
+        self.suspended_reason() == Some(SurfaceSuspendReason::TerminalFailure)
+    }
+
     pub(crate) fn suspended_reason(&self) -> Option<SurfaceSuspendReason> {
         match self.surface_state {
             SurfaceState::Suspended(reason) => Some(reason),
@@ -290,6 +294,9 @@ impl FrameScheduler {
     }
 
     pub(crate) fn suspend(&mut self, reason: SurfaceSuspendReason) {
+        if self.is_terminal_failure() {
+            return;
+        }
         if self.surface_state == SurfaceState::Suspended(reason) && self.outstanding.is_none() {
             return;
         }
@@ -302,10 +309,9 @@ impl FrameScheduler {
         self.rebase_animation = true;
     }
 
-    /// A lifecycle signal makes the current native surface eligible again.
-    /// The caller still decides whether retained dirty requires a new request.
+    /// 生命周期信号只恢复可用性挂起；终态须随窗口 session 显式重建。
     pub(crate) fn resume(&mut self) {
-        if self.is_renderable() {
+        if self.is_renderable() || self.is_terminal_failure() {
             return;
         }
         self.bump_generation();
@@ -317,8 +323,11 @@ impl FrameScheduler {
         self.rebase_animation = true;
     }
 
-    /// Resize/DPR/transform changes invalidate callbacks for the old surface.
+    /// Resize/DPR/transform 变化使旧 surface callback 失效，但不得解除终态。
     pub(crate) fn surface_changed(&mut self) {
+        if self.is_terminal_failure() {
+            return;
+        }
         self.bump_generation();
         self.surface_state = SurfaceState::Renderable;
         self.outstanding = None;
@@ -348,6 +357,9 @@ impl FrameScheduler {
     }
 
     pub(crate) fn presented(&mut self, frame_time: Instant, cadence_sample: bool) {
+        if self.is_terminal_failure() {
+            return;
+        }
         if cadence_sample {
             if let Some(previous) = self.last_presented_at {
                 if let Some(observed) = frame_time.checked_duration_since(previous) {
@@ -363,10 +375,11 @@ impl FrameScheduler {
         self.clear_occlusion_probe();
     }
 
-    /// Retains dirty state but prevents immediate retry. Recovery attempts are
-    /// finite and exponentially backed off; a lifecycle signal can resume a
-    /// terminally suspended surface.
+    /// 保留 dirty 并阻止立即重试；可恢复失败有限退避，终态保持吸收。
     pub(crate) fn frame_failed(&mut self, failure: &GraphicsFailure, now: Instant) {
+        if self.is_terminal_failure() {
+            return;
+        }
         self.bump_generation();
         self.outstanding = None;
         self.ready = None;
