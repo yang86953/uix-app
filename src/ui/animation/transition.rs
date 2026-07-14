@@ -97,7 +97,7 @@ impl Transition {
                 };
                 Some(
                     Animation::new(offset, Point::new(0.0, 0.0), *duration)
-                        .with_easing(crate::ui::animation::easing::Easing::antd_out()),
+                        .easing(crate::ui::animation::easing::Easing::antd_out()),
                 )
             }
             Self::SlideOut {
@@ -113,7 +113,7 @@ impl Transition {
                 };
                 Some(
                     Animation::new(Point::new(0.0, 0.0), offset, *duration)
-                        .with_easing(crate::ui::animation::easing::Easing::antd_in()),
+                        .easing(crate::ui::animation::easing::Easing::antd_in()),
                 )
             }
             _ => None,
@@ -125,11 +125,11 @@ impl Transition {
         match self {
             Self::ZoomIn { duration } => Some(
                 Animation::new(0.8, 1.0, *duration)
-                    .with_easing(crate::ui::animation::easing::Easing::antd_default()),
+                    .easing(crate::ui::animation::easing::Easing::antd_default()),
             ),
             Self::ZoomOut { duration } => Some(
                 Animation::new(1.0, 0.8, *duration)
-                    .with_easing(crate::ui::animation::easing::Easing::antd_default()),
+                    .easing(crate::ui::animation::easing::Easing::antd_default()),
             ),
             _ => None,
         }
