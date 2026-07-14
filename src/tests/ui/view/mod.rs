@@ -2,3 +2,4 @@
 
 mod adapter;
 mod combinators;
+mod computed;

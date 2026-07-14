@@ -99,6 +99,10 @@ pub fn end_state_capture() {
     STATE_CAPTURE_ACTIVE.with(|active| active.set(false));
 }
 
+fn state_capture_active() -> bool {
+    STATE_CAPTURE_ACTIVE.with(Cell::get)
+}
+
 /// 取出并清空未关联 widget 的 pending State 绑定（build 末兜底）。
 pub fn drain_pending_state_binds() -> Vec<Arc<dyn StatePaintBind>> {
     PENDING_STATE_BINDS.with(|p| {
@@ -627,9 +631,11 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
             }),
         });
 
-        let force_probe = STATE_BIND_CAPTURE.with(|c| c.borrow().is_some());
+        let force_probe =
+            state_capture_active() || STATE_BIND_CAPTURE.with(|capture| capture.borrow().is_some());
 
-        // 检查依赖是否变化（layout 探测阶段强制执行一次以捕获 State 绑定）
+        // 检查依赖是否变化；View 构建与 layout 探测阶段强制执行一次，
+        // 使缓存中的 Computed 也能重新暴露底层 State 绑定。
         let need_recompute = if force_probe {
             true
         } else {

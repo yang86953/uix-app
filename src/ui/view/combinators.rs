@@ -24,7 +24,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::compositor::PicturePolicy;
 use crate::draw::painting::PaintContext;
 use crate::draw::pipeline::InvalidationQueueHandle;
-use crate::ui::state::{State, StatePaintBind};
+use crate::ui::state::{Computed, State, StatePaintBind};
 use crate::ui::traits::{WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetRender};
 use crate::ui::{ComponentId, WidgetTree};
 use std::any::Any;
@@ -380,6 +380,35 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
     {
         let state = self.clone();
         label(move || f(&state.get()))
+    }
+}
+
+impl<T: Clone + Send + Sync + 'static> Computed<T> {
+    /// 由派生值构建当前子视图；结构更新由根 View 构建期捕获的依赖触发。
+    pub fn map<F, V>(&self, f: F) -> ViewNode
+    where
+        F: FnOnce(&T) -> V,
+        V: View,
+    {
+        f(&self.get()).build()
+    }
+
+    /// 由派生值生成响应式文本节点，依赖变化仅触发窄 Paint 失效。
+    pub fn map_text<F>(&self, f: F) -> ViewNode
+    where
+        F: Fn(&T) -> String + 'static,
+    {
+        let computed = self.clone();
+        label(move || f(&computed.get()))
+    }
+
+    /// 按派生值构建可选子视图；`None` 使用空节点参与 reconcile。
+    pub fn map_opt<F, V>(&self, f: F) -> Option<ViewNode>
+    where
+        F: FnOnce(&T) -> Option<V>,
+        V: View,
+    {
+        f(&self.get()).map(View::build)
     }
 }
 
