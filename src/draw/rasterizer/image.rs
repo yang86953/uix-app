@@ -75,4 +75,3 @@ pub fn blit_image(
         }
     }
 }
-

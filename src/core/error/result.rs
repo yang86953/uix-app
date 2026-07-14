@@ -136,4 +136,3 @@ pub fn collect_errors<T, E>(
 ) -> Vec<E> {
     results.into_iter().filter_map(|r| r.err()).collect()
 }
-

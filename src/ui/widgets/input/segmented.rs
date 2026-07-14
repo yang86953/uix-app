@@ -225,4 +225,3 @@ impl Segmented {
         self.selected = self.selected.min(self.options.len().saturating_sub(1));
     }
 }
-

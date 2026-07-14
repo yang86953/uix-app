@@ -193,4 +193,3 @@ pub fn fill_polygons(
         }
     }
 }
-

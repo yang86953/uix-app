@@ -46,6 +46,7 @@ fn is_platform_cfg_boundary(path: &str) -> bool {
     path == "native/factory.rs"
         || path.starts_with("native/factory/")
         || path.starts_with("native/backends/")
+        || path.starts_with("native/agent_transport/")
         || (path.starts_with("native/graphics/")
             && path.split('/').any(|component| component == "platform"))
 }
@@ -519,7 +520,7 @@ fn platform_cfgs_stay_inside_native_boundary() {
 
     assert!(
         violations.is_empty(),
-        "platform cfgs must stay in native/factory/**, native/backends/**, or native/graphics/**/platform/**: {violations:?}"
+        "platform cfgs must stay in native/factory/**, native/backends/**, native/agent_transport/**, or native/graphics/**/platform/**: {violations:?}"
     );
 }
 
@@ -1592,7 +1593,7 @@ fn agent_semantics_share_one_snapshot_and_successful_present_boundary() {
     let window_driver = read_source(src.join("app/window_driver.rs"));
 
     assert!(
-        cargo.contains("agent-control = []"),
+        cargo.contains("agent-control = [") && cargo.contains("\"dep:serde_json\","),
         "the opt-in Agent Bridge must keep an explicit Cargo feature gate"
     );
     assert!(

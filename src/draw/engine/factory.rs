@@ -48,4 +48,3 @@ pub(crate) fn create_graphics_engine(
         }
     }
 }
-

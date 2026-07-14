@@ -792,4 +792,3 @@ macro_rules! register_semantic {
         $crate::ui::event::SemanticKind::Custom(std::any::TypeId::of::<$payload>())
     };
 }
-

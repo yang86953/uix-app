@@ -1,4 +1,4 @@
-﻿//! PaintContext — 绘制上下文（Phase 3 迁入 draw）。
+//! PaintContext — 绘制上下文（Phase 3 迁入 draw）。
 //!
 //! 持有 Canvas2D（2D 零成本路径）和 SpatialContext（3D 空间路径），
 //! 组合 TextRenderService 与 DebugRenderService。
@@ -100,7 +100,11 @@ impl<'a> PaintContext<'a> {
 
     /// 安全录制：在闭包期间设置录制目标，闭包返回后自动清除 recorder。
     /// 录制中的 panic 会悬空 recorder，调用方应在合适的时机以 catch_unwind 包裹。
-    pub fn with_recorder<R>(&mut self, list: &mut DisplayList, f: impl FnOnce(&mut Self) -> R) -> R {
+    pub fn with_recorder<R>(
+        &mut self,
+        list: &mut DisplayList,
+        f: impl FnOnce(&mut Self) -> R,
+    ) -> R {
         self.recorder = NonNull::new(list);
         self.recording_complete = true;
         let result = f(self);
@@ -788,4 +792,3 @@ impl<'a> PaintContext<'a> {
 pub fn resolve_font_size(base: f32, unit: Option<PhysicalUnit>, dpi: f32) -> f32 {
     unit.map(|u| u.to_dip(dpi)).unwrap_or(base)
 }
-

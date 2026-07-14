@@ -7,9 +7,8 @@ use std::collections::HashSet;
 use crate::core::{Point, Rect};
 
 use crate::core::DirtyRegion;
-use crate::draw::FontHandle;
 use crate::draw::compositor::picture::{
-    LayerRenderEnv, blit_picture_cache, rasterize_picture_to_offscreen,
+    blit_picture_cache, rasterize_picture_to_offscreen, LayerRenderEnv,
 };
 use crate::draw::compositor::viewport_transform::{needs_paint, needs_paint_rect};
 use crate::draw::compositor::{PicturePolicy, ScenePaint};
@@ -20,6 +19,7 @@ use crate::draw::pipeline::NodeId;
 use crate::draw::primitives::types::ImageHandle;
 use crate::draw::render_object::RenderObjectTree;
 use crate::draw::traits::GraphicsEngine;
+use crate::draw::FontHandle;
 
 /// Debug overlay：当前指针下的祖先链 + 最深命中节点。
 struct DebugHover {
@@ -941,4 +941,3 @@ impl LayerTree {
         &mut self.orphaned_handles
     }
 }
-

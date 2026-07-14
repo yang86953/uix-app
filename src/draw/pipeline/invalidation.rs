@@ -1,4 +1,4 @@
-﻿//! 渲染失效队列 — 所有渲染触发的统一入口（Phase 2 / Phase 6）。
+//! 渲染失效队列 — 所有渲染触发的统一入口（Phase 2 / Phase 6）。
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -160,8 +160,7 @@ impl InvalidationQueue {
 
     /// 仅移除 Layout 项（layout() 收敛后消费；保留 Paint / Composite 供 present）。
     pub fn clear_layout(&mut self) {
-        self.items
-            .retain(|i| !matches!(i, Invalidation::Layout(_)));
+        self.items.retain(|i| !matches!(i, Invalidation::Layout(_)));
     }
 }
 
@@ -186,4 +185,3 @@ fn union_rect(a: Rect, b: Rect) -> Rect {
     let y2 = (a.y + a.h).max(b.y + b.h);
     Rect::new(x1, y1, x2 - x1, y2 - y1)
 }
-

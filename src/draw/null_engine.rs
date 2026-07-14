@@ -3,8 +3,8 @@
 
 use crate::core::Error;
 use crate::draw::backend::DamageRegion;
-use crate::draw::engine::RenderOutcome;
 use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
+use crate::draw::engine::RenderOutcome;
 use crate::draw::pipeline::{EncodedFrameExecution, FrameEncoder};
 use crate::draw::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
 

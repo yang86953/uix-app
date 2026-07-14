@@ -1,5 +1,7 @@
 //! 平台能力 — OS 抽象，差异封装在此域。
 
+#[cfg(feature = "agent-control")]
+pub(crate) mod agent_transport;
 pub(crate) mod backends;
 pub mod factory;
 pub(crate) mod graphics;

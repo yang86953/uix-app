@@ -87,4 +87,3 @@ impl BackTop {
         self.visibility_height = next.visibility_height;
     }
 }
-

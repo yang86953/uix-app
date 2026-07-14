@@ -1,4 +1,4 @@
-﻿use crate::component;
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
@@ -378,4 +378,3 @@ impl Tooltip {
         self.arrow = next.arrow;
     }
 }
-

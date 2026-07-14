@@ -423,4 +423,3 @@ impl Card {
         self.actions = next.actions;
     }
 }
-

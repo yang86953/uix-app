@@ -13,25 +13,23 @@ pub fn page_other(ctx: &DemoCtx<'_>) -> ViewNode {
         .gap()
         .block(
             "Transfer",
-            embed(
-                Transfer::new().source(vec![
-                    TransferItem {
-                        key: "a".into(),
-                        title: "选项 A".into(),
-                        selected: false,
-                    },
-                    TransferItem {
-                        key: "b".into(),
-                        title: "选项 B".into(),
-                        selected: false,
-                    },
-                    TransferItem {
-                        key: "c".into(),
-                        title: "选项 C".into(),
-                        selected: true,
-                    },
-                ]),
-            ),
+            embed(Transfer::new().source(vec![
+                TransferItem {
+                    key: "a".into(),
+                    title: "选项 A".into(),
+                    selected: false,
+                },
+                TransferItem {
+                    key: "b".into(),
+                    title: "选项 B".into(),
+                    selected: false,
+                },
+                TransferItem {
+                    key: "c".into(),
+                    title: "选项 C".into(),
+                    selected: true,
+                },
+            ])),
         )
         .block(
             "Upload",

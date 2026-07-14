@@ -381,11 +381,7 @@ impl Label {
     fn intrinsic_size(&self) -> Size {
         let style_w = self.style.as_ref().and_then(|s| s.width);
         let style_h = self.style.as_ref().and_then(|s| s.height);
-        let pad = self
-            .style
-            .as_ref()
-            .map(|s| s.padding)
-            .unwrap_or_default();
+        let pad = self.style.as_ref().map(|s| s.padding).unwrap_or_default();
         let w = self.fixed_width.or(style_w);
         let h = self.fixed_height.or(style_h);
         if let (Some(w), Some(h)) = (w, h) {
@@ -471,4 +467,3 @@ impl Label {
         chars[s..e].iter().collect()
     }
 }
-

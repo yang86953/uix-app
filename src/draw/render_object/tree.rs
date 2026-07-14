@@ -1,4 +1,4 @@
-﻿//! RenderObjectTree — 从 ScenePaint 构建的 DisplayList 缓存索引。
+//! RenderObjectTree — 从 ScenePaint 构建的 DisplayList 缓存索引。
 
 use std::collections::HashMap;
 
@@ -164,4 +164,3 @@ impl RenderObjectTree {
         }
     }
 }
-

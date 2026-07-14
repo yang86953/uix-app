@@ -220,4 +220,3 @@ impl Slider {
         Size::new(200.0, 24.0)
     }
 }
-

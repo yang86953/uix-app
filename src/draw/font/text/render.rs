@@ -448,4 +448,3 @@ impl<'a> TextRenderService<'a> {
 }
 
 // ── TextRenderer trait 实现 ────────────────────────────────────────
-

@@ -67,4 +67,3 @@ impl RenderMetrics {
         self.last_invalidation = source;
     }
 }
-

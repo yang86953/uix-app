@@ -143,4 +143,3 @@ impl Checkbox {
         self.label = next.label;
     }
 }
-

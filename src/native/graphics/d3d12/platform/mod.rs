@@ -71,4 +71,3 @@ pub(crate) fn create(
     };
     Err(Error::new(Errc::PlatformError, reason))
 }
-

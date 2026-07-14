@@ -64,12 +64,7 @@ impl ButtonRipple {
 }
 
 pub(crate) fn cover_radius(origin: Point, size: Size) -> f32 {
-    let corners = [
-        (0.0, 0.0),
-        (size.w, 0.0),
-        (0.0, size.h),
-        (size.w, size.h),
-    ];
+    let corners = [(0.0, 0.0), (size.w, 0.0), (0.0, size.h), (size.w, size.h)];
     corners
         .into_iter()
         .map(|(x, y)| {
@@ -422,4 +417,3 @@ impl Button {
         }
     }
 }
-

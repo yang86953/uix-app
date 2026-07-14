@@ -208,4 +208,3 @@ impl Rate {
         self.character = next.character;
     }
 }
-

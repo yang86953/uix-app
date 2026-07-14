@@ -41,4 +41,3 @@ pub(crate) fn create_native_raster_backend(
         }
     }
 }
-

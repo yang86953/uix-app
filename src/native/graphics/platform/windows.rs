@@ -126,4 +126,3 @@ pub(crate) unsafe fn release_device_context(hwnd: *mut c_void, hdc: *mut c_void)
 pub(crate) unsafe fn release_device_context_checked(hwnd: *mut c_void, hdc: *mut c_void) -> bool {
     ReleaseDC(hwnd, hdc) != 0
 }
-

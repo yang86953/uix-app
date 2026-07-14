@@ -50,21 +50,22 @@ impl Input {
 
         let composed_value = self.value_with_composition();
         let has_composition = !self.composition.is_empty();
-        let display_text: String = if self.password && !self.password_visible && !self.value.is_empty() {
-            if has_composition {
-                format!(
-                    "{}{}",
-                    "\u{2022}".repeat(self.value.chars().count()),
-                    &self.composition
-                )
+        let display_text: String =
+            if self.password && !self.password_visible && !self.value.is_empty() {
+                if has_composition {
+                    format!(
+                        "{}{}",
+                        "\u{2022}".repeat(self.value.chars().count()),
+                        &self.composition
+                    )
+                } else {
+                    "\u{2022}".repeat(self.value.chars().count())
+                }
+            } else if self.value.is_empty() && !has_composition && !self.focused {
+                self.placeholder.to_string()
             } else {
-                "\u{2022}".repeat(self.value.chars().count())
-            }
-        } else if self.value.is_empty() && !has_composition && !self.focused {
-            self.placeholder.to_string()
-        } else {
-            composed_value.to_string()
-        };
+                composed_value.to_string()
+            };
         let disp_color = if self.value.is_empty() && !has_composition && !self.focused {
             text_tertiary
         } else {
@@ -340,21 +341,22 @@ impl Input {
 
         let composed_value = self.value_with_composition();
         let has_composition = !self.composition.is_empty();
-        let display_text: String = if self.password && !self.password_visible && !self.value.is_empty() {
-            if has_composition {
-                format!(
-                    "{}{}",
-                    "\u{2022}".repeat(self.value.chars().count()),
-                    &self.composition
-                )
+        let display_text: String =
+            if self.password && !self.password_visible && !self.value.is_empty() {
+                if has_composition {
+                    format!(
+                        "{}{}",
+                        "\u{2022}".repeat(self.value.chars().count()),
+                        &self.composition
+                    )
+                } else {
+                    "\u{2022}".repeat(self.value.chars().count())
+                }
+            } else if self.value.is_empty() && !has_composition {
+                self.placeholder.to_string()
             } else {
-                "\u{2022}".repeat(self.value.chars().count())
-            }
-        } else if self.value.is_empty() && !has_composition {
-            self.placeholder.to_string()
-        } else {
-            composed_value.to_string()
-        };
+                composed_value.to_string()
+            };
         let disp_color = if self.value.is_empty() && !has_composition && !self.focused {
             text_tertiary
         } else {
@@ -500,7 +502,8 @@ impl Input {
         if self.password {
             let px = inner_frame.x + inner_frame.w - pwd_w;
             let py = ctx.visual_center_y(inner_frame, 12.0);
-            self.pwd_icon_rect.set(Rect::new(px, inner_frame.y, pwd_w, inner_frame.h));
+            self.pwd_icon_rect
+                .set(Rect::new(px, inner_frame.y, pwd_w, inner_frame.h));
             ctx.draw_text(
                 if self.password_visible { "◎" } else { "◉" },
                 Point::new(px, py),

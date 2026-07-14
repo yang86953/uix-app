@@ -208,11 +208,11 @@ impl WidgetTree {
             return false;
         };
 
-        let (focus_id, focus_char) =
-            match self.resolve_cross_text_focus(&group, anchor, screen_pos) {
-                Some(v) => v,
-                None => return false,
-            };
+        let (focus_id, focus_char) = match self.resolve_cross_text_focus(&group, anchor, screen_pos)
+        {
+            Some(v) => v,
+            None => return false,
+        };
         let Some(focus_idx) = group.iter().position(|&id| id == focus_id) else {
             return false;
         };
@@ -328,9 +328,9 @@ impl WidgetTree {
         let ci = if id == anchor {
             self.get(id).map(|n| char_at(n, local)).unwrap_or(0)
         } else {
-            let anchor_frame = self.get(anchor).map(|n| {
-                self.viewport_frame_for_hit(anchor, n.frame())
-            });
+            let anchor_frame = self
+                .get(anchor)
+                .map(|n| self.viewport_frame_for_hit(anchor, n.frame()));
             let focus_frame = self.viewport_frame_for_hit(id, self.get(id)?.frame());
             let going_up = anchor_frame.is_some_and(|af| focus_frame.y + focus_frame.h <= af.y);
             if going_up {

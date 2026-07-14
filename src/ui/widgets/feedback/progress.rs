@@ -255,4 +255,3 @@ impl ProgressBar {
         self.progress_type = next.progress_type;
     }
 }
-

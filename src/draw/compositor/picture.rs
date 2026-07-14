@@ -1,13 +1,12 @@
-﻿//! Picture 离屏缓存栅格化与合成（Phase 4）。
+//! Picture 离屏缓存栅格化与合成（Phase 4）。
 
 use crate::core::{Errc, Error, Point, Rect};
 
 use super::layer_tree::{LayerNode, LayerTree};
 use crate::core::DirtyRegion;
-use crate::draw::FontHandle;
 use crate::draw::backend::cpu::CpuDrawSurface;
-use crate::draw::compositor::ScenePaint;
 use crate::draw::compositor::viewport_transform::needs_paint;
+use crate::draw::compositor::ScenePaint;
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
 use crate::draw::painting::{DisplayList, PaintContext, ThemeTokens};
@@ -15,6 +14,7 @@ use crate::draw::pipeline::{FrameEncoder, FrameEncoderError, FrameImage, FrameRe
 use crate::draw::primitives::types::ImageHandle;
 use crate::draw::spatial::Orientation;
 use crate::draw::traits::{Canvas2D, GraphicsEngine};
+use crate::draw::FontHandle;
 
 /// 离屏创建连续失败上限（超过后放弃离屏、改走直绘；仅 WARN 一次）。
 const MAX_OFFSCREEN_RETRY: u8 = 8;

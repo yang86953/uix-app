@@ -176,4 +176,3 @@ impl DescriptionsItem {
         self
     }
 }
-

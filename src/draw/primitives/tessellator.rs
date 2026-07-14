@@ -389,7 +389,10 @@ struct BoundaryLine {
 /// Decompose arbitrary directed contours into non-overlapping filled
 /// trapezoids. Every vertex and proper crossing y is a band boundary, so edge
 /// order is stable inside each open band.
-pub(crate) fn tessellate_complex_fill(rings: &[Vec<Point>], fill_rule: FillRule) -> Option<Vec<f32>> {
+pub(crate) fn tessellate_complex_fill(
+    rings: &[Vec<Point>],
+    fill_rule: FillRule,
+) -> Option<Vec<f32>> {
     let mut edges = Vec::<ComplexEdge>::new();
     let mut events = Vec::<f64>::new();
     for ring in rings {
@@ -895,4 +898,3 @@ fn ear_clip(ring: &[Point]) -> Option<Vec<f32>> {
     tris.extend_from_slice(&[a.x, a.y, b.x, b.y, c.x, c.y]);
     Some(tris)
 }
-

@@ -1,4 +1,4 @@
-﻿//! Tabs widget — Ant Design style tab bar with content panels.
+//! Tabs widget — Ant Design style tab bar with content panels.
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
@@ -215,4 +215,3 @@ impl Tabs {
         }
     }
 }
-

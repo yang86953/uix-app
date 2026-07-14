@@ -30,7 +30,9 @@ pub fn page_general(ctx: &DemoCtx<'_>) -> ViewNode {
                     .child(sample_block(
                         tk,
                         "Primary",
-                        Label::new("Primary").color(tk.color_primary).font_size(14.0),
+                        Label::new("Primary")
+                            .color(tk.color_primary)
+                            .font_size(14.0),
                     ))
                     .child(sample_block(
                         tk,
@@ -52,7 +54,11 @@ pub fn page_general(ctx: &DemoCtx<'_>) -> ViewNode {
             "Button — StyleSet 预设",
             embed(
                 flow_row(64.0)
-                    .child(sample_block(tk, "Primary", button("主要").primary().widget()))
+                    .child(sample_block(
+                        tk,
+                        "Primary",
+                        button("主要").primary().widget(),
+                    ))
                     .child(sample_block(tk, "Default", button("默认").widget()))
                     .child(sample_block(tk, "Ghost", button("幽灵").ghost().widget()))
                     .child(sample_block(tk, "Danger", button("危险").danger().widget())),
@@ -87,7 +93,11 @@ pub fn page_general(ctx: &DemoCtx<'_>) -> ViewNode {
                 flow_row(56.0)
                     .child(sample_block(tk, "search", Icon::new("search").size(20.0)))
                     .child(sample_block(tk, "home", Icon::new("home").size(20.0)))
-                    .child(sample_block(tk, "settings", Icon::new("settings").size(20.0)))
+                    .child(sample_block(
+                        tk,
+                        "settings",
+                        Icon::new("settings").size(20.0),
+                    ))
                     .child(sample_block(tk, "user", Icon::new("user").size(20.0)))
                     .child(sample_block(tk, "bell", Icon::new("bell").size(20.0)))
                     .child(sample_block(tk, "star", Icon::new("star").size(20.0)))
@@ -160,11 +170,7 @@ pub fn page_general(ctx: &DemoCtx<'_>) -> ViewNode {
             embed(
                 flow_row(56.0)
                     .child(sample_block(tk, "FloatButton", FloatButton::new("+")))
-                    .child(sample_block(
-                        tk,
-                        "BackTop",
-                        FloatButtonBackTop::new(),
-                    )),
+                    .child(sample_block(tk, "BackTop", FloatButtonBackTop::new())),
             ),
         )
         .build()

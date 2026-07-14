@@ -295,4 +295,3 @@ impl TimePicker {
         self.placeholder = next.placeholder;
     }
 }
-

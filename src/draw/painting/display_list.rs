@@ -5,7 +5,7 @@
 use crate::core::{Point, Rect};
 
 use crate::draw::font::text::TextRenderService;
-use crate::draw::image::{BitmapHandle, ImageService, blit_handle};
+use crate::draw::image::{blit_handle, BitmapHandle, ImageService};
 use crate::draw::painting::PaintContext;
 use crate::draw::primitives::path::{FillRule, Path};
 use crate::draw::primitives::stroker::StrokeOptions;
@@ -558,4 +558,3 @@ impl DisplayList {
         }
     }
 }
-

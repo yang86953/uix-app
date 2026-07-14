@@ -54,4 +54,3 @@ impl DesignTokens {
         primitives.into_design_tokens(is_dark)
     }
 }
-

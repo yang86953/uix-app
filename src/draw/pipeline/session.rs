@@ -262,4 +262,3 @@ fn resolve_kind(kind: BackendKind) -> BackendKind {
         other => other,
     }
 }
-

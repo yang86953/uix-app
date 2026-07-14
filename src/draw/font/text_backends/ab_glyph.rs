@@ -2,12 +2,12 @@
 
 use crate::core::{Errc, Error};
 use crate::draw::font::text_backend::{self, *};
-pub(crate) use text_backend::TextLayoutOptions;
 use crate::draw::FontHandle;
 use crate::draw::TextBackend;
-use text_backend::TOFU_GLYPH_ID;
 use ab_glyph::*;
 use std::sync::Arc;
+pub(crate) use text_backend::TextLayoutOptions;
+use text_backend::TOFU_GLYPH_ID;
 
 pub(crate) struct FontSlot {
     handle: FontHandle,
@@ -256,4 +256,3 @@ impl TextBackend for AbGlyphBackend {
         t
     }
 }
-

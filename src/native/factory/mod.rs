@@ -17,9 +17,9 @@ use crate::native::traits::system::ISystemInfo;
 use std::ffi::c_void;
 
 pub use registry::{
-    describe_backend_availability, graphics_runtime_platform, BackendStatus, GraphicsBackendEntry,
-    GraphicsRecipe, active_entries, entry_for, entry_for_recipe, gpu_probe_candidates,
-    gpu_recipe_candidates, try_create_gpu_recipe,
+    active_entries, describe_backend_availability, entry_for, entry_for_recipe,
+    gpu_probe_candidates, gpu_recipe_candidates, graphics_runtime_platform, try_create_gpu_recipe,
+    BackendStatus, GraphicsBackendEntry, GraphicsRecipe,
 };
 
 #[cfg(feature = "d3d11")]
@@ -127,4 +127,3 @@ pub fn available_memory_bytes() -> u64 {
 pub fn available_memory_bytes() -> u64 {
     512 * 1024 * 1024
 }
-

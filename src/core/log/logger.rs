@@ -172,4 +172,3 @@ impl Logger {
         );
     }
 }
-

@@ -109,4 +109,3 @@ fn present_damage_for_strategy(strategy: &UpdateStrategy) -> DamageRegion {
         }
     }
 }
-

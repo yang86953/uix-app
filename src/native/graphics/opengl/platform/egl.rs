@@ -12,8 +12,8 @@ use std::ptr;
 
 use crate::native::graphics::opengl::raster::OpenGlRasterPipeline;
 use crate::native::traits::present::{
-    GpuSolidRect, IGraphicsContext, NativeRasterCaps, OffscreenTargetId, PresentDamage,
-    PresentCoherency, SoftFallbackTile,
+    GpuSolidRect, IGraphicsContext, NativeRasterCaps, OffscreenTargetId, PresentCoherency,
+    PresentDamage, SoftFallbackTile,
 };
 use crate::native::{Errc, Error};
 

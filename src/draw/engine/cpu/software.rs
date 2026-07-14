@@ -4,13 +4,13 @@
 
 use crate::core::{Error, Rect};
 
-use crate::draw::ImageHandle;
 use crate::draw::backend::{BackendKind, CpuBackend, DamageRegion};
 use crate::draw::engine::RenderOutcome;
 use crate::draw::pipeline::RenderSession;
 use crate::draw::pipeline::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::primitives::color::Color;
 use crate::draw::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
+use crate::draw::ImageHandle;
 
 /// CPU 软件渲染引擎。
 pub struct SoftwareEngine {

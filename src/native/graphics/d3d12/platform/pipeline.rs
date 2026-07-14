@@ -7,12 +7,12 @@ use std::mem::ManuallyDrop;
 
 use crate::core::{Errc, Error, Result};
 use crate::native::traits::present::{GpuSolidRect, SoftFallbackTile};
+use ::windows::core::PCSTR;
 use ::windows::Win32::Foundation::{FALSE, RECT, TRUE};
 use ::windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
-use ::windows::Win32::Graphics::Direct3D::{D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST, ID3DBlob};
+use ::windows::Win32::Graphics::Direct3D::{ID3DBlob, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST};
 use ::windows::Win32::Graphics::Direct3D12::*;
 use ::windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC};
-use ::windows::core::PCSTR;
 
 const RECT_ROOT_DWORDS: u32 = 20;
 
@@ -536,7 +536,11 @@ fn release_copy_location(location: &mut D3D12_TEXTURE_COPY_LOCATION) {
     }
 }
 
-pub(crate) fn validated_soft_layout(width: i32, height: i32, pixels_len: usize) -> Result<(usize, usize)> {
+pub(crate) fn validated_soft_layout(
+    width: i32,
+    height: i32,
+    pixels_len: usize,
+) -> Result<(usize, usize)> {
     if width <= 0 || height <= 0 {
         return Err(invalid_input(format!(
             "D3d12Pipeline: soft dimensions must be positive, got {width}x{height}"
@@ -986,4 +990,3 @@ fn visible_pixel_bounds(pixels: &[u32], width: i32, height: i32) -> Option<(i32,
     }
     visible.then(|| (left, top, right - left, bottom - top))
 }
-

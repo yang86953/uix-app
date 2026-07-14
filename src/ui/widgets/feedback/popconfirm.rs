@@ -1,4 +1,4 @@
-﻿use crate::component;
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
@@ -345,4 +345,3 @@ fn draw_popconfirm_arrow(
     pb.close();
     ctx.fill_path(&pb.build(), color, FillRule::NonZero);
 }
-
