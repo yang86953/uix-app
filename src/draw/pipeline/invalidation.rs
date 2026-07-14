@@ -115,13 +115,18 @@ impl InvalidationQueue {
 
     /// 含 Layout 失效的节点 id 集合。
     pub fn layout_roots(&self) -> HashSet<NodeId> {
-        self.items
-            .iter()
-            .filter_map(|i| match i {
-                Invalidation::Layout(id) => Some(*id),
-                _ => None,
-            })
-            .collect()
+        let mut roots = HashSet::new();
+        self.layout_roots_into(&mut roots);
+        roots
+    }
+
+    /// 将 Layout 根写入调用方复用的集合。
+    pub(crate) fn layout_roots_into(&self, roots: &mut HashSet<NodeId>) {
+        roots.clear();
+        roots.extend(self.items.iter().filter_map(|item| match item {
+            Invalidation::Layout(id) => Some(*id),
+            _ => None,
+        }));
     }
 
     /// 节点是否有 Paint 失效。
