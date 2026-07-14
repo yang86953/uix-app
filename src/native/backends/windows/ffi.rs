@@ -29,6 +29,7 @@ extern "system" {
 extern "system" {
     pub(crate) fn GetModuleHandleW(lpModuleName: *const u16) -> *mut std::ffi::c_void;
     pub(crate) fn GetLastError() -> u32;
+    pub(crate) fn SetLastError(dwErrCode: u32);
 
     pub(crate) fn GlobalAlloc(uFlags: u32, dwBytes: usize) -> *mut std::ffi::c_void;
     pub(crate) fn GlobalLock(hMem: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
