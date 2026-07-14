@@ -329,7 +329,7 @@ impl EventHandler for WindowInteractionRegion {
     }
 
     fn hit_test_children(&self) -> bool {
-        false
+        matches!(self.interaction, WindowInteraction::Drag)
     }
 }
 
