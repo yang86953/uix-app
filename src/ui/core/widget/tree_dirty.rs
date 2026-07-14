@@ -43,6 +43,7 @@ impl WidgetTree {
 
     /// 绑定失效队列。
     pub fn bind_invalidation(&mut self) {
+        self.pending_invalidations.clear();
         self.invalidation
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -55,17 +56,45 @@ impl WidgetTree {
     }
 
     pub(crate) fn push_paint_invalidation(&mut self, id: WidgetId, rect: Option<Rect>) {
-        self.invalidation
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push(Invalidation::Paint { id, rect });
+        self.push_invalidation(Invalidation::Paint { id, rect });
     }
 
     pub(crate) fn push_layout_invalidation(&mut self, id: WidgetId) {
+        self.push_invalidation(Invalidation::Layout(id));
+    }
+
+    pub(crate) fn begin_invalidation_batch(&mut self) {
+        self.invalidation_batch_depth = self.invalidation_batch_depth.saturating_add(1);
+    }
+
+    pub(crate) fn finish_invalidation_batch(&mut self) {
+        if self.invalidation_batch_depth == 0 {
+            return;
+        }
+        self.invalidation_batch_depth -= 1;
+        if self.invalidation_batch_depth > 0 || self.pending_invalidations.is_empty() {
+            return;
+        }
+        let pending = std::mem::take(&mut self.pending_invalidations);
         self.invalidation
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .push(Invalidation::Layout(id));
+            .extend(pending);
+    }
+
+    fn push_invalidation(&mut self, invalidation: Invalidation) {
+        self.push_invalidations(std::iter::once(invalidation));
+    }
+
+    fn push_invalidations(&mut self, invalidations: impl IntoIterator<Item = Invalidation>) {
+        if self.invalidation_batch_depth > 0 {
+            self.pending_invalidations.extend(invalidations);
+            return;
+        }
+        self.invalidation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .extend(invalidations);
     }
 
     pub(crate) fn push_scroll_composite(&mut self, viewport: Rect, dx: f32, dy: f32) -> bool {
@@ -103,13 +132,10 @@ impl WidgetTree {
             return false;
         };
 
-        self.invalidation
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push(Invalidation::Composite {
-                rect,
-                scroll: Some(ScrollDelta { dx, dy }),
-            });
+        self.push_invalidation(Invalidation::Composite {
+            rect,
+            scroll: Some(ScrollDelta { dx, dy }),
+        });
         self.scroll_region_moves.push((viewport, dx, dy));
         true
     }
@@ -132,9 +158,7 @@ impl WidgetTree {
             }
             chain
         };
-        for pid in parents {
-            self.push_layout_invalidation(pid);
-        }
+        self.push_invalidations(parents.into_iter().map(Invalidation::Layout));
     }
 
     /// 标记节点 Paint 失效（精确 dirty_rect）。
@@ -188,9 +212,11 @@ impl WidgetTree {
             }
             result
         };
+        self.begin_invalidation_batch();
         for nid in ids {
             self.invalidate_paint(nid);
         }
+        self.finish_invalidation_batch();
     }
 
     fn collect_subtree(&self, id: WidgetId, result: &mut Vec<WidgetId>) {
@@ -204,6 +230,7 @@ impl WidgetTree {
 
     /// 清空失效队列（帧末调用）。
     pub fn reset_invalidation(&mut self) {
+        self.pending_invalidations.clear();
         self.invalidation
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -222,14 +249,13 @@ impl WidgetTree {
 
     pub fn mark_full_frame_dirty(&mut self) {
         if let Some(root) = self.root_id {
-            self.invalidation
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .push(Invalidation::Paint {
+            self.push_invalidations([
+                Invalidation::Paint {
                     id: root,
                     rect: None,
-                });
-            self.push_layout_invalidation(root);
+                },
+                Invalidation::Layout(root),
+            ]);
         }
     }
 

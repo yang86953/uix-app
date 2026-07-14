@@ -151,6 +151,13 @@ impl WidgetTree {
     }
 
     pub fn dispatch_event(&mut self, event: &SystemEvent) -> EventResult {
+        self.begin_invalidation_batch();
+        let result = self.dispatch_event_inner(event);
+        self.finish_invalidation_batch();
+        result
+    }
+
+    fn dispatch_event_inner(&mut self, event: &SystemEvent) -> EventResult {
         if self
             .managers()
             .focus

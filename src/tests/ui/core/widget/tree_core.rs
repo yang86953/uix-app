@@ -2485,6 +2485,36 @@ fn locale_changed_dispatches_to_root_and_invalidates_layout() {
 }
 
 #[test]
+fn nested_invalidation_batch_flushes_at_outer_boundary() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(SpyWidget::new(100.0, 50.0)));
+    tree.layout();
+    tree.reset_invalidation();
+
+    tree.begin_invalidation_batch();
+    tree.begin_invalidation_batch();
+    tree.push_layout_invalidation(root);
+    tree.push_paint_invalidation(root, Some(Rect::new(0.0, 0.0, 10.0, 10.0)));
+    tree.finish_invalidation_batch();
+
+    {
+        let invalidation = tree
+            .invalidation
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        assert!(invalidation.is_empty());
+    }
+
+    tree.finish_invalidation_batch();
+    let invalidation = tree
+        .invalidation
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    assert!(invalidation.has_layout());
+    assert!(invalidation.node_needs_paint(root));
+}
+
+#[test]
 fn hit_test_root_contains() {
     let mut tree = WidgetTree::new();
     tree.set_root(Box::new(SpyWidget::new(100.0, 50.0)));
