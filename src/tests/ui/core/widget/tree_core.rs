@@ -4799,7 +4799,7 @@ fn rendered_typography_drag_selection_copies_the_actual_cross_node_range() {
     let images = ImageService::new();
     let tokens = DesignTokens::antd_light();
     {
-        let mut ctx = PaintContext::new(
+        let mut ctx = PaintContext::new_for_test(
             &mut canvas,
             font,
             &fonts,

@@ -48,7 +48,7 @@ fn masked_drawer_uses_surface_height_instead_of_its_trigger_slot() {
     let tokens = DesignTokens::antd_light();
     let tree = WidgetTree::new();
     {
-        let mut ctx = PaintContext::new(
+        let mut ctx = PaintContext::new_for_test(
             &mut canvas,
             font,
             &fonts,

@@ -478,6 +478,7 @@ impl Select {
         None
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render_flat_row(
         &self,
         frame: Rect,
@@ -532,6 +533,7 @@ impl Select {
             .set((current.0 + dx, current.1 + dy));
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render_option(
         &self,
         frame: Rect,

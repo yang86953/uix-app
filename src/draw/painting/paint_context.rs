@@ -19,6 +19,16 @@ use crate::draw::traits::Canvas2D;
 use crate::draw::GradientDirection;
 use crate::draw::{Color, FontHandle, Radius};
 
+/// 绘制表面配置（组合 dpi/pr/orientation/size 减少参数传递）。
+#[derive(Clone, Copy, Debug)]
+pub struct PaintSurfaceConfig {
+    pub dpi: f32,
+    pub device_pixel_ratio: f32,
+    pub orientation: Orientation,
+    pub surface_w: i32,
+    pub surface_h: i32,
+}
+
 pub struct PaintContext<'a> {
     /// 3D 空间上下文（持有 Canvas2D 引用）。
     spatial: SpatialContext<'a>,
@@ -52,11 +62,38 @@ impl<'a> PaintContext<'a> {
     /// 创建渲染上下文。
     ///
     /// `canvas_2d` 用于所有绘制操作。
-    /// `dpi` 为屏幕 DPI（96=标准，192=高 DPI）。
-    /// `device_pixel_ratio` 为设备像素比（1.0=标准，2.0=2x）。
-    /// `orientation` 为平台坐标方向。
-    /// `surface_w` / `surface_h` 为表面尺寸。
+    /// `surface` 为表面配置（dpi/dpr/orientation/size）。
     pub fn new(
+        canvas_2d: &'a mut dyn Canvas2D,
+        font: FontHandle,
+        font_service: &'a FontService,
+        image_service: &'a ImageService,
+        tokens: &'a dyn ThemeTokens,
+        surface: PaintSurfaceConfig,
+    ) -> Self {
+        Self {
+            spatial: SpatialContext::new(
+                canvas_2d,
+                surface.dpi,
+                surface.device_pixel_ratio,
+                surface.orientation,
+                surface.surface_w,
+                surface.surface_h,
+            ),
+            text: TextRenderService::new(font, font_service, f32::MAX),
+            image_service,
+            debug: DebugRenderService::new(false),
+            tokens,
+            paint_pass: PaintPass::Content,
+            recorder: None,
+            record_ops: true,
+            recording_complete: true,
+        }
+    }
+
+    /// 测试用构造（10 参数兼容旧签名）。
+    #[doc(hidden)]
+    pub fn new_for_test(
         canvas_2d: &'a mut dyn Canvas2D,
         font: FontHandle,
         font_service: &'a FontService,
@@ -68,24 +105,20 @@ impl<'a> PaintContext<'a> {
         surface_w: i32,
         surface_h: i32,
     ) -> Self {
-        Self {
-            spatial: SpatialContext::new(
-                canvas_2d,
+        Self::new(
+            canvas_2d,
+            font,
+            font_service,
+            image_service,
+            tokens,
+            PaintSurfaceConfig {
                 dpi,
                 device_pixel_ratio,
                 orientation,
                 surface_w,
                 surface_h,
-            ),
-            text: TextRenderService::new(font, font_service, f32::MAX),
-            image_service,
-            debug: DebugRenderService::new(false),
-            tokens,
-            paint_pass: PaintPass::Content,
-            recorder: None,
-            record_ops: true,
-            recording_complete: true,
-        }
+            },
+        )
     }
 
     /// 当前绘制阶段。

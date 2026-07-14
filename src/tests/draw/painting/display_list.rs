@@ -215,7 +215,7 @@ fn display_list_replay_matches_recorded_extended_cpu_paint_pixels() {
     let _ = recorded.begin_frame(UpdateStrategy::FullRedraw);
     let list = {
         let mut list = DisplayList::new();
-        let mut ctx = PaintContext::new(
+        let mut ctx = PaintContext::new_for_test(
             recorded.canvas_2d(),
             FontHandle::default(),
             &font_service,
@@ -245,7 +245,7 @@ fn display_list_replay_matches_recorded_extended_cpu_paint_pixels() {
     replayed.initialize(32, 32).expect("replayed init");
     let _ = replayed.begin_frame(UpdateStrategy::FullRedraw);
     {
-        let mut ctx = PaintContext::new(
+        let mut ctx = PaintContext::new_for_test(
             replayed.canvas_2d(),
             FontHandle::default(),
             &font_service,

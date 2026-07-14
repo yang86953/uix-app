@@ -14,7 +14,7 @@ use crate::draw::compositor::viewport_transform::{needs_paint, needs_paint_rect}
 use crate::draw::compositor::{PicturePolicy, ScenePaint};
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
-use crate::draw::painting::{DisplayList, PaintContext, PaintPass, ThemeSnapshot};
+use crate::draw::painting::{DisplayList, PaintContext, PaintPass, PaintSurfaceConfig, ThemeSnapshot};
 use crate::draw::pipeline::NodeId;
 use crate::draw::primitives::types::ImageHandle;
 use crate::draw::render_object::RenderObjectTree;
@@ -375,11 +375,13 @@ impl LayerTree {
             env.font_service,
             env.image_service,
             env.tokens,
-            env.dpi,
-            env.dpr,
-            env.orientation,
-            surface_w,
-            surface_h,
+            PaintSurfaceConfig {
+                dpi: env.dpi,
+                device_pixel_ratio: env.dpr,
+                orientation: env.orientation,
+                surface_w,
+                surface_h,
+            },
         )
     }
 
