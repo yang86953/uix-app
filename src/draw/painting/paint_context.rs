@@ -132,18 +132,30 @@ impl<'a> PaintContext<'a> {
         self.paint_pass = pass;
     }
 
-    /// 安全录制：在闭包期间设置录制目标，闭包返回后自动清除 recorder。
-    /// 录制中的 panic 会悬空 recorder，调用方应在合适的时机以 catch_unwind 包裹。
+    /// 在闭包期间设置录制目标；正常返回或 panic 展开都会恢复上一层作用域。
     pub fn with_recorder<R>(
         &mut self,
         list: &mut DisplayList,
         f: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        self.recorder = NonNull::new(list);
+        let previous_recorder = self.recorder.replace(NonNull::from(list));
+        let previous_complete = self.recording_complete;
         self.recording_complete = true;
-        let result = f(self);
-        self.recorder = None;
-        result
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(self)));
+        let scope_complete = self.recording_complete;
+        self.recorder = previous_recorder;
+        self.recording_complete = if previous_recorder.is_some() {
+            previous_complete && scope_complete
+        } else {
+            scope_complete
+        };
+        match result {
+            Ok(value) => value,
+            Err(payload) => {
+                self.recording_complete = false;
+                std::panic::resume_unwind(payload)
+            }
+        }
     }
 
     /// 当前一次 DisplayList 录制是否覆盖了全部绘制操作。
