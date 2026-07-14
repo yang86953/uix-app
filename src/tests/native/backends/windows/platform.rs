@@ -1,7 +1,7 @@
 use crate::app::window_actions::configure_custom_title_bar;
 use crate::native::backends::windows::consts::{
     GWL_STYLE, SIZE_RESTORED, WM_CHAR, WM_DPICHANGED, WM_IME_ENDCOMPOSITION,
-    WM_IME_STARTCOMPOSITION, WM_SIZE, WS_CAPTION, WS_THICKFRAME,
+    WM_IME_STARTCOMPOSITION, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_SIZE, WS_CAPTION, WS_THICKFRAME,
 };
 use crate::native::backends::windows::dpi::{
     dpi_for_window, logical_extent_to_physical, physical_extent_to_logical,
@@ -24,6 +24,39 @@ use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, SendMessageW};
 
 fn size_lparam(width: u16, height: u16) -> isize {
     (u32::from(width) | (u32::from(height) << 16)) as isize
+}
+
+#[test]
+fn native_window_routes_left_button_double_click() {
+    let mut platform = WindowsPlatform::new();
+    let mut window = platform
+        .create_window("UIX pointer double click", 200, 120)
+        .expect("native window");
+    let window_id = window.window_id();
+    let hwnd = window.native_handle().native_window();
+    platform.dispatch_pending();
+    while platform.next_event().is_some() {}
+
+    unsafe {
+        assert_ne!(
+            PostMessageW(hwnd, WM_LBUTTONDBLCLK, 0, size_lparam(12, 16)),
+            0
+        );
+        assert_ne!(PostMessageW(hwnd, WM_LBUTTONUP, 0, size_lparam(12, 16)), 0);
+    }
+    assert!(platform.dispatch_pending());
+
+    let double_click = std::iter::from_fn(|| platform.next_event())
+        .find(|event| event.type_ == UiEventType::PointerDoubleClick)
+        .expect("double click event");
+    assert_eq!(double_click.window_id, Some(window_id));
+    assert!(matches!(
+        double_click.payload,
+        UiEventPayload::PointerButton(data) if data.btn == MouseButton::Left
+    ));
+
+    window.close().expect("close native window");
+    assert!(platform.dispatch_pending());
 }
 
 #[test]

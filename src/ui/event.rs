@@ -34,6 +34,7 @@ impl WindowAction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SystemEventKind {
     PointerDown,
+    PointerDoubleClick,
     PointerUp,
     PointerMove,
     Wheel,
@@ -68,6 +69,11 @@ pub enum SystemEventKind {
 #[derive(Debug, Clone)]
 pub enum SystemEvent {
     PointerDown {
+        pos: Point,
+        button: MouseButton,
+        mods: KeyMod,
+    },
+    PointerDoubleClick {
         pos: Point,
         button: MouseButton,
         mods: KeyMod,
@@ -155,6 +161,7 @@ impl SystemEvent {
     pub fn kind(&self) -> SystemEventKind {
         match self {
             SystemEvent::PointerDown { .. } => SystemEventKind::PointerDown,
+            SystemEvent::PointerDoubleClick { .. } => SystemEventKind::PointerDoubleClick,
             SystemEvent::PointerUp { .. } => SystemEventKind::PointerUp,
             SystemEvent::PointerMove { .. } => SystemEventKind::PointerMove,
             SystemEvent::Wheel { .. } => SystemEventKind::Wheel,

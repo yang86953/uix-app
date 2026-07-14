@@ -531,6 +531,17 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
                 None
             }
         }
+        UiEventType::PointerDoubleClick => {
+            if let UiEventPayload::PointerButton(ref d) = ev.payload {
+                Some(SystemEvent::PointerDoubleClick {
+                    pos: d.pos,
+                    button: d.btn,
+                    mods: d.mods,
+                })
+            } else {
+                None
+            }
+        }
         UiEventType::PointerUp => {
             if let UiEventPayload::PointerButton(ref d) = ev.payload {
                 Some(SystemEvent::PointerUp {
