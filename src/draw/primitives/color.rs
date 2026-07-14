@@ -10,6 +10,13 @@ pub struct Color {
 }
 
 impl Color {
+    pub const BLACK: Self = Self::from_rgb(0, 0, 0);
+    pub const WHITE: Self = Self::from_rgb(255, 255, 255);
+    pub const TRANSPARENT: Self = Self::from_rgba(0, 0, 0, 0);
+    pub const RED: Self = Self::from_rgb(255, 0, 0);
+    pub const GREEN: Self = Self::from_rgb(0, 255, 0);
+    pub const BLUE: Self = Self::from_rgb(0, 0, 255);
+
     pub const fn from_rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self { r, g, b, a }
     }
@@ -17,23 +24,36 @@ impl Color {
         Self { r, g, b, a: 255 }
     }
 
+    /// 使用 8-bit RGBA 通道构造颜色。
+    pub const fn rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
+        Self::from_rgba(r, g, b, a)
+    }
+
+    /// 解析 6 位 RGB 或 8 位 RGBA 十六进制颜色；无效输入回退为黑色。
+    pub fn hex(value: &str) -> Self {
+        parse_hex(value).unwrap_or(Self::BLACK)
+    }
+
     pub const fn black() -> Self {
-        Self::from_rgb(0, 0, 0)
+        Self::BLACK
     }
     pub const fn white() -> Self {
-        Self::from_rgb(255, 255, 255)
+        Self::WHITE
     }
     pub const fn transparent() -> Self {
-        Self::from_rgba(0, 0, 0, 0)
+        Self::TRANSPARENT
     }
     pub const fn red() -> Self {
-        Self::from_rgb(255, 0, 0)
+        Self::RED
     }
     pub const fn green() -> Self {
-        Self::from_rgb(0, 255, 0)
+        Self::GREEN
     }
     pub const fn blue() -> Self {
-        Self::from_rgb(0, 0, 255)
+        Self::BLUE
+    }
+    pub const fn gray() -> Self {
+        Self::from_rgb(128, 128, 128)
     }
 
     /// Returns the premultiplied RGBA value as u32 (AARRGGBB).
@@ -130,7 +150,7 @@ fn parse_hex(hex: &str) -> Option<Color> {
 
 impl From<&str> for Color {
     fn from(s: &str) -> Self {
-        parse_hex(s).unwrap_or_else(Color::black)
+        Self::hex(s)
     }
 }
 
