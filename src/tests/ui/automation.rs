@@ -51,6 +51,8 @@ fn click_uses_hit_testing_and_settles_reconcile() {
     app.click("counter.increment").unwrap();
 
     assert_eq!(count.get(), 1);
+    assert_eq!(app.settle().unwrap(), 0);
+    assert_eq!(app.text("counter.value").unwrap(), "Count: 1");
     assert_eq!(
         app.snapshot().find("counter.increment").unwrap().id,
         before_id,
@@ -83,6 +85,13 @@ fn duplicate_selector_is_reported_instead_of_picking_arbitrarily() {
             count: 2,
         }
     );
+    assert_eq!(
+        app.text("duplicate").unwrap_err(),
+        AutomationError::Ambiguous {
+            automation_id: "duplicate".to_string(),
+            count: 2,
+        }
+    );
 }
 
 #[test]
@@ -98,6 +107,7 @@ fn type_text_updates_accessible_value_and_redacts_passwords() {
         plain_node.accessibility.state.value_text.as_deref(),
         Some("Belldandy")
     );
+    assert_eq!(plain.text("profile.name").unwrap(), "Belldandy");
 
     let mut password = TestApp::new((320.0, 120.0), || {
         embed(Input::new("Password").password(true)).automation_id("profile.password")
@@ -110,6 +120,10 @@ fn type_text_updates_accessible_value_and_redacts_passwords() {
     assert!(password_node.accessibility.state.password);
     assert_eq!(password_node.accessibility.state.value_text, None);
     assert!(!password_snapshot.to_json().contains("not-exported"));
+    assert!(!password
+        .text("profile.password")
+        .unwrap()
+        .contains("not-exported"));
 }
 
 #[test]
