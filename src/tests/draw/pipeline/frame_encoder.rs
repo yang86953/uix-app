@@ -171,6 +171,21 @@ fn cpu_segment_rejects_destination_dependent_operations_without_mutating_encoder
     );
     assert_eq!(encoder.commands().len(), command_count);
 
+    let rounded_additive = encoder
+        .cpu_segment([FrameRasterOp::FillRoundedRectAdditive {
+            rect: FrameRect::new(0, 0, 2, 2),
+            color: Color::white(),
+            radius: FrameRadius::new(crate::draw::primitives::types::Radius::uniform(1.0)).unwrap(),
+        }])
+        .unwrap_err();
+    assert_eq!(
+        rounded_additive,
+        FrameEncoderError::DestinationDependentCpuSegment {
+            operation: "FillRoundedRectAdditive"
+        }
+    );
+    assert_eq!(encoder.commands().len(), command_count);
+
     let scroll = encoder
         .cpu_segment([FrameRasterOp::ScrollCopy {
             viewport: FrameRect::new(0, 0, 3, 2),
@@ -210,6 +225,75 @@ fn additive_fill_matches_cpu_rasterizer_destination_blend() {
     cpu.fill_rect(Rect::new(1.0, 0.0, 1.0, 2.0), add, None);
 
     assert_eq!(encoder.render_reference().pixels(), cpu.surface().pixels());
+}
+
+#[test]
+fn rounded_additive_fill_matches_shared_cpu_sdf_and_destination_blend() {
+    use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+    use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+    use crate::draw::primitives::types::{BlendMode, Radius};
+    use crate::draw::traits::Canvas2D;
+
+    let base = Color::from_rgba(36, 72, 108, 180);
+    let add = Color::from_rgba(220, 80, 40, 144);
+    let radius = Radius {
+        tl: 3.0,
+        tr: 2.0,
+        br: 1.5,
+        bl: 2.5,
+    };
+    let mut encoder = FrameEncoder::new(9, 7).unwrap();
+    encoder.clear(base);
+    encoder.native(FrameRasterOp::FillRoundedRectAdditive {
+        rect: FrameRect::new(1, 1, 7, 5),
+        color: add,
+        radius: FrameRadius::new(radius).unwrap(),
+    });
+
+    let mut cpu = SharedRasterizer::new(PixelSurface::new(9, 7));
+    cpu.surface_mut().set_clear_color(base);
+    cpu.surface_mut().clear_all();
+    cpu.set_blend_mode(BlendMode::Additive);
+    cpu.fill_rect(Rect::new(1.0, 1.0, 7.0, 5.0), add, Some(radius));
+
+    assert_eq!(encoder.render_reference().pixels(), cpu.surface().pixels());
+}
+
+#[test]
+fn frame_radius_rejects_non_finite_and_negative_corners() {
+    assert_eq!(
+        FrameRadius::new(crate::draw::primitives::types::Radius {
+            tl: f32::NAN,
+            tr: 0.0,
+            br: 0.0,
+            bl: 0.0,
+        }),
+        Err(FrameEncoderError::InvalidRadius { corner: "top-left" })
+    );
+    assert_eq!(
+        FrameRadius::new(crate::draw::primitives::types::Radius {
+            tl: 0.0,
+            tr: 0.0,
+            br: -1.0,
+            bl: 0.0,
+        }),
+        Err(FrameEncoderError::InvalidRadius {
+            corner: "bottom-right"
+        })
+    );
+    assert_eq!(
+        FrameRadius::new(crate::draw::primitives::types::Radius {
+            tl: -0.0,
+            tr: 0.0,
+            br: 0.0,
+            bl: 0.0,
+        })
+        .unwrap()
+        .to_radius()
+        .tl
+        .to_bits(),
+        0.0f32.to_bits()
+    );
 }
 
 #[test]
