@@ -32,17 +32,18 @@ pub use crate::ui::{
     Drawer, DrawerPlacement, Dropdown, Empty, FieldError, FloatButton, FloatButtonBackTop, Footer,
     Form, FormBuilder, FormItem, FormLayout, FormModel, Grid, Header, Icon, Image, Input,
     InputNumber, InputNumberValue, IntoFormValue, Label, Layout, LineChart, LineData, List,
-    Mentions, Menu, MenuItem, MenuMode, Message, MessageItem, MessagePlacement, Modal, NavGroup,
-    NavItem, Navigation, NotifPlacement, Notification, NotificationItem, OptGroup, Pagination,
-    PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger,
-    ProgressBar, ProgressMode, ProgressType, QRCode, Radio, RadioDirection, Rate, ResultType,
-    ResultView, RichText, RichTextSegment, RichTextStyle, ScrollView, Segmented, Select,
-    SelectableItem, SelectableList, SharedActive, Sider, Skeleton, SkeletonShape, Slider,
-    SortDirection, Space, SpaceSize, Spin, SpinSize, Splitter, Step, StepStatus, Steps, Switch,
-    Tab, TabPosition, Table, TableBuilder, TableChange, TableColumn, TableRow, Tabs, Tag, TagColor,
-    ThemeToggle, Time, TimePicker, Timeline, TimelineItem, Tooltip, TooltipPlacement, Transfer,
-    TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography, TypographyType, Upload,
-    UploadFile, UploadStatus, ValidateStatus, Values, Watermark,
+    Mentions, Menu, MenuItem, MenuMode, Message, MessageItem, MessagePlacement, Modal,
+    ModalBuilder, ModalContext, NavGroup, NavItem, Navigation, NotifPlacement, Notification,
+    NotificationItem, OptGroup, Pagination, PieChart, PieData, Popconfirm, PopconfirmPlacement,
+    Popover, PopoverPlacement, PopoverTrigger, ProgressBar, ProgressMode, ProgressType, QRCode,
+    Radio, RadioDirection, Rate, ResultType, ResultView, RichText, RichTextSegment, RichTextStyle,
+    ScrollView, Segmented, Select, SelectableItem, SelectableList, SharedActive, Sider, Skeleton,
+    SkeletonShape, Slider, SortDirection, Space, SpaceSize, Spin, SpinSize, Splitter, Step,
+    StepStatus, Steps, Switch, Tab, TabPosition, Table, TableBuilder, TableChange, TableColumn,
+    TableRow, Tabs, Tag, TagColor, ThemeToggle, Time, TimePicker, Timeline, TimelineItem, Tooltip,
+    TooltipPlacement, Transfer, TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography,
+    TypographyType, Upload, UploadFile, UploadStatus, ValidateStatus, Values, VirtualScroll,
+    VirtualScrollBuilder, Watermark,
 };
 pub use crate::ui::{Animation, Easing};
 
@@ -186,6 +187,8 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<LineData>();
     assert_exported::<MenuItem>();
     assert_exported::<MenuMode>();
+    assert_exported::<ModalBuilder>();
+    assert_exported::<ModalContext>();
     assert_exported::<NavGroup>();
     assert_exported::<NavItem>();
     assert_exported::<OptGroup>();
@@ -218,6 +221,8 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<TypographyType>();
     assert_exported::<ValidateStatus>();
     assert_exported::<Values>();
+    assert_exported::<VirtualScroll>();
+    assert_exported::<VirtualScrollBuilder>();
     assert_exported::<TableBuilder>();
     assert_exported::<Alert>();
     assert_exported::<Anchor>();
