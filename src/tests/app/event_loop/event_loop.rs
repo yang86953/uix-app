@@ -3245,6 +3245,64 @@ fn app_timer_due_work_runs_callback_without_fixed_polling() {
 }
 
 #[test]
+fn consecutive_due_work_pumps_pending_events_before_next_frame() {
+    let start = Instant::now();
+    let clock = TestClock::new(start);
+    let mut platform = FakePlatform::new();
+    platform.event_source.state.exit_after_pending_calls = Some(2);
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Container::new()),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let app_timers = AppTimerQueue::with_clock(clock.clone());
+    let second_fired = Arc::new(AtomicUsize::new(0));
+    let _first = app_timers.run_after(Duration::ZERO, {
+        let app_timers = app_timers.clone();
+        let second_fired = second_fired.clone();
+        move || {
+            app_timers
+                .run_after(Duration::ZERO, move || {
+                    second_fired.fetch_add(1, Ordering::Relaxed);
+                })
+                .detach();
+        }
+    });
+    session.set_app_timers(app_timers);
+
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+
+    let status = run_window_session_loop_with_clock(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        clock,
+        &debug_mode,
+        &cursor_pos,
+        None,
+        |_| None,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(platform.event_source.state.dispatch_pending_calls, 2);
+    assert_eq!(platform.event_source.state.dispatch_blocking_calls, 0);
+    assert_eq!(second_fired.load(Ordering::Relaxed), 0);
+}
+
+#[test]
 fn post_to_ui_drains_after_app_timer_and_before_frame_update() {
     let mut platform = FakePlatform::new();
     platform.event_source.state.exit_after_blocking_calls = Some(1);

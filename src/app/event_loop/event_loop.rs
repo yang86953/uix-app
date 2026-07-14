@@ -413,6 +413,9 @@ where
                 reconcile_pending,
             ) {
                 set_loop_state(&mut loop_state, WindowLoopState::Active);
+                if !platform.event_loop().poll_event(&collect) {
+                    break;
+                }
             } else {
                 let window_deadline = driver.next_deadline(
                     now,
@@ -438,7 +441,9 @@ where
                 ) {
                     break;
                 }
-                platform.event_loop().poll_event(&collect);
+                if !platform.event_loop().poll_event(&collect) {
+                    break;
+                }
             }
         }
 

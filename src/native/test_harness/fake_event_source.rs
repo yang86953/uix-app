@@ -27,6 +27,7 @@ pub struct FakeEventSourceState {
     pub blocking_events: VecDeque<UiEvent>,
     pub timeout_events: VecDeque<UiEvent>,
     pub wake_calls: Arc<AtomicUsize>,
+    pub exit_after_pending_calls: Option<usize>,
     pub exit_after_blocking_calls: Option<usize>,
     pub exit_after_timeout_calls: Option<usize>,
 }
@@ -81,6 +82,7 @@ impl FakeEventSource {
         self.state.blocking_events.clear();
         self.state.timeout_events.clear();
         self.state.wake_calls.store(0, Ordering::Relaxed);
+        self.state.exit_after_pending_calls = None;
         self.state.exit_after_blocking_calls = None;
         self.state.exit_after_timeout_calls = None;
     }
@@ -102,6 +104,13 @@ impl OsEventSource for FakeEventSource {
 
     fn dispatch_pending(&mut self) -> bool {
         self.state.dispatch_pending_calls += 1;
+        if self
+            .state
+            .exit_after_pending_calls
+            .is_some_and(|limit| self.state.dispatch_pending_calls >= limit)
+        {
+            self.state.should_exit = true;
+        }
         !self.state.should_exit
     }
 
