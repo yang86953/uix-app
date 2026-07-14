@@ -2,7 +2,7 @@ use std::any::TypeId;
 use std::fmt;
 
 use crate::core::ComponentId;
-use crate::ui::widgets::{SortDirection, TableColumn, TransferItem, TreeNode};
+use crate::ui::widgets::{Fixed, SortDirection, TableColumn, TransferItem, TreeNode};
 
 mod fields;
 mod source;
@@ -278,6 +278,7 @@ pub struct SnapshotTableColumn {
     pub sort_direction: SortDirection,
     pub filterable: bool,
     pub filters: Vec<String>,
+    pub fixed: Option<Fixed>,
 }
 
 impl SnapshotTableColumn {
@@ -293,6 +294,7 @@ impl SnapshotTableColumn {
                 .iter()
                 .map(|(label, _active)| label.clone())
                 .collect(),
+            fixed: column.fixed,
         }
     }
 }

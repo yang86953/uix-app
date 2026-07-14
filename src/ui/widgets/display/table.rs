@@ -10,12 +10,23 @@ use crate::ui::{
 };
 use std::cell::{Cell, RefCell};
 
+mod geometry;
+
+use geometry::{ColumnZone, TableColumnGeometry};
+
 /// 排序方向。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortDirection {
     None,
     Asc,
     Desc,
+}
+
+/// 表格列的固定位置。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fixed {
+    Left,
+    Right,
 }
 
 /// 表格列定义。
@@ -27,6 +38,7 @@ pub struct TableColumn {
     pub sort_direction: SortDirection,
     pub filterable: bool,
     pub filters: Vec<(String, bool)>, // (label, active)
+    pub fixed: Option<Fixed>,
 }
 
 impl TableColumn {
@@ -38,6 +50,7 @@ impl TableColumn {
             sort_direction: SortDirection::None,
             filterable: false,
             filters: Vec::new(),
+            fixed: None,
         }
     }
     pub fn sortable(mut self, v: bool) -> Self {
@@ -46,6 +59,11 @@ impl TableColumn {
     }
     pub fn filterable(mut self, v: bool) -> Self {
         self.filterable = v;
+        self
+    }
+    /// 将列固定在表格视口左侧或右侧。
+    pub fn fixed(mut self, fixed: Fixed) -> Self {
+        self.fixed = Some(fixed);
         self
     }
 }
@@ -97,6 +115,8 @@ component! {
         pending_change: RefCell<Option<String>>,
         virtual_scroll: bool,
         pub(crate) body_scroll: VirtualListScroll,
+        horizontal_scroll: Cell<f32>,
+        horizontal_scroll_requires_paint: Cell<bool>,
         scroll_delta_strip: Cell<(f32, f32)>,
         pub(crate) last_frame: Cell<Option<Rect>>,
     }
@@ -110,6 +130,10 @@ component! {
     }
 
     scroll_delta_for_dirty => (&self) -> Option<(f32, f32)> {
+        if self.horizontal_scroll_requires_paint.replace(false) {
+            self.scroll_delta_strip.set((0.0, 0.0));
+            return None;
+        }
         let delta = self.scroll_delta_strip.get();
         if delta.0.abs() > 0.01 || delta.1.abs() > 0.01 {
             self.scroll_delta_strip.set((0.0, 0.0));
@@ -127,13 +151,24 @@ component! {
         match event {
             SystemEvent::Wheel { delta, .. } => {
                 let viewport_h = self.body_viewport_height();
-                let old = self.body_scroll.scroll_offset();
+                let old_y = self.body_scroll.scroll_offset();
                 let max = (self.body_content_height() - viewport_h).max(0.0);
-                let next = (old - delta.y * 40.0).clamp(0.0, max);
-                self.body_scroll.set_scroll_offset(next);
-                let dy = next - old;
+                let next_y = (old_y - delta.y * 40.0).clamp(0.0, max);
+                self.body_scroll.set_scroll_offset(next_y);
+                let dy = next_y - old_y;
+
+                let old_x = self.horizontal_scroll.get();
+                let next_x = (old_x - delta.x * 40.0)
+                    .clamp(0.0, self.horizontal_max_scroll());
+                self.horizontal_scroll.set(next_x);
+                let dx = next_x - old_x;
+                if dx.abs() > 0.01 {
+                    self.horizontal_scroll_requires_paint.set(true);
+                }
                 if dy.abs() > 0.01 {
                     self.push_scroll_delta(0.0, dy);
+                }
+                if dx.abs() > 0.01 || dy.abs() > 0.01 {
                     EventResult::Handled
                 } else {
                     EventResult::NotHandled
@@ -159,12 +194,9 @@ component! {
                     }
                 }
                 if pos.y < self.header_h {
-                    let mut x = self.selection_width();
-                    for (ci, col) in self.columns.iter().enumerate() {
-                        if pos.x >= x
-                            && pos.x < x + col.width
-                            && (self.sortable || col.sortable)
-                        {
+                    if let Some(ci) = self.column_at_x(pos.x) {
+                        let col = &self.columns[ci];
+                        if self.sortable || col.sortable {
                             let new_dir = match col.sort_direction {
                                 SortDirection::None => SortDirection::Asc,
                                 SortDirection::Asc => SortDirection::Desc,
@@ -181,7 +213,6 @@ component! {
                             self.pending_change.replace(Some(change.payload()));
                             return EventResult::Handled;
                         }
-                        x += col.width;
                     }
                 }
                 if pos.y >= self.header_h {
@@ -235,6 +266,7 @@ component! {
         let sel = self.selected_row.get();
         let hover = self.hover_row.get();
         let expanded = self.expanded_row.get();
+        let column_geometry = self.column_geometry(frame.x, frame.w);
 
         // 空状态
         if self.rows.is_empty() {
@@ -251,7 +283,6 @@ component! {
         // 表头
         let header_rect = Rect::new(frame.x, y, frame.w, self.header_h);
         ctx.fill_rect(header_rect, header_bg, r);
-        let mut x = frame.x + self.selection_width();
         let hdr_y = ctx.visual_center_y(header_rect, 13.0);
         if self.selection {
             let all_checked = self.checked_rows.len() == self.rows.len();
@@ -263,34 +294,66 @@ component! {
             );
             if self.bordered {
                 ctx.fill_rect(
-                    Rect::new(x - 1.0, header_rect.y, 1.0, header_rect.h),
+                    Rect::new(
+                        frame.x + self.selection_width() - 1.0,
+                        header_rect.y,
+                        1.0,
+                        header_rect.h,
+                    ),
                     border,
                     None,
                 );
             }
         }
-        for col in &self.columns {
-            ctx.draw_text(&col.title, Point::new(x + 8.0, hdr_y), text_color, 13.0);
-            if self.sortable || col.sortable {
-                let indicator = match col.sort_direction {
-                    SortDirection::Asc => loc.table_sort_asc,
-                    SortDirection::Desc => loc.table_sort_desc,
-                    SortDirection::None => "",
-                };
-                if !indicator.is_empty() {
-                    ctx.draw_text(indicator, Point::new(x + col.width - 24.0, hdr_y), primary, 11.0);
-                } else {
-                    ctx.draw_text(loc.table_sort_unsorted, Point::new(x + col.width - 24.0, hdr_y), text_sec, 10.0);
+        for zone in [ColumnZone::Middle, ColumnZone::Left, ColumnZone::Right] {
+            let Some(clip) = column_geometry.clip_for(zone, header_rect.y, header_rect.h) else {
+                continue;
+            };
+            ctx.canvas_2d().push_clip(clip);
+            for laid_out in column_geometry
+                .columns
+                .iter()
+                .filter(|column| column.zone == zone)
+            {
+                let col = &self.columns[laid_out.index];
+                ctx.draw_text(
+                    &col.title,
+                    Point::new(laid_out.x + 8.0, hdr_y),
+                    text_color,
+                    13.0,
+                );
+                if self.sortable || col.sortable {
+                    let indicator = match col.sort_direction {
+                        SortDirection::Asc => loc.table_sort_asc,
+                        SortDirection::Desc => loc.table_sort_desc,
+                        SortDirection::None => "",
+                    };
+                    let indicator_x = laid_out.x + laid_out.width - 24.0;
+                    if !indicator.is_empty() {
+                        ctx.draw_text(indicator, Point::new(indicator_x, hdr_y), primary, 11.0);
+                    } else {
+                        ctx.draw_text(
+                            loc.table_sort_unsorted,
+                            Point::new(indicator_x, hdr_y),
+                            text_sec,
+                            10.0,
+                        );
+                    }
+                }
+                if self.bordered {
+                    ctx.fill_rect(
+                        Rect::new(
+                            laid_out.x + laid_out.width - 1.0,
+                            header_rect.y,
+                            1.0,
+                            header_rect.h,
+                        ),
+                        border,
+                        None,
+                    );
                 }
             }
-            x += col.width;
-            if self.bordered {
-                ctx.fill_rect(
-                    Rect::new(x - 1.0, header_rect.y, 1.0, header_rect.h),
-                    border,
-                    None,
-                );
-            }
+            ctx.canvas_2d().pop_clip();
         }
         y += self.header_h;
 
@@ -352,20 +415,37 @@ component! {
                 }
             }
 
-            let mut x = frame.x + self.selection_width();
             let cell_y = ctx.visual_center_y(row_rect, 12.0);
-            for (ci, col) in self.columns.iter().enumerate() {
-                let cell = row.get(ci).map(|s| s.as_str()).unwrap_or("");
-                let tc = if is_selected { primary } else { text_color };
-                ctx.draw_text(cell, Point::new(x + 8.0, cell_y), tc, 12.0);
-                x += col.width;
-                if self.bordered {
-                    ctx.fill_rect(
-                        Rect::new(x - 1.0, row_rect.y, 1.0, row_rect.h),
-                        border,
-                        None,
-                    );
+            for zone in [ColumnZone::Middle, ColumnZone::Left, ColumnZone::Right] {
+                let Some(clip) = column_geometry.clip_for(zone, row_rect.y, row_rect.h) else {
+                    continue;
+                };
+                ctx.canvas_2d().push_clip(clip);
+                for laid_out in column_geometry
+                    .columns
+                    .iter()
+                    .filter(|column| column.zone == zone)
+                {
+                    let cell = row
+                        .get(laid_out.index)
+                        .map(String::as_str)
+                        .unwrap_or("");
+                    let tc = if is_selected { primary } else { text_color };
+                    ctx.draw_text(cell, Point::new(laid_out.x + 8.0, cell_y), tc, 12.0);
+                    if self.bordered {
+                        ctx.fill_rect(
+                            Rect::new(
+                                laid_out.x + laid_out.width - 1.0,
+                                row_rect.y,
+                                1.0,
+                                row_rect.h,
+                            ),
+                            border,
+                            None,
+                        );
+                    }
                 }
+                ctx.canvas_2d().pop_clip();
             }
 
             // 扩展行箭头
@@ -468,6 +548,8 @@ impl Table {
             pending_change: RefCell::new(None),
             virtual_scroll: false,
             body_scroll: VirtualListScroll::new(),
+            horizontal_scroll: Cell::new(0.0),
+            horizontal_scroll_requires_paint: Cell::new(false),
             scroll_delta_strip: Cell::new((0.0, 0.0)),
             last_frame: Cell::new(None),
         }
@@ -555,6 +637,36 @@ impl Table {
         } else {
             0.0
         }
+    }
+
+    fn column_geometry(&self, origin_x: f32, viewport_width: f32) -> TableColumnGeometry {
+        TableColumnGeometry::new(
+            &self.columns,
+            origin_x,
+            viewport_width,
+            self.selection_width(),
+            self.horizontal_scroll.get(),
+        )
+    }
+
+    fn column_at_x(&self, x: f32) -> Option<usize> {
+        let width = self
+            .last_frame
+            .get()
+            .map(|frame| frame.w)
+            .unwrap_or_else(|| self.columns.iter().map(|column| column.width).sum());
+        self.column_geometry(0.0, width).column_at(x)
+    }
+
+    fn horizontal_max_scroll(&self) -> f32 {
+        self.last_frame
+            .get()
+            .map(|frame| self.column_geometry(0.0, frame.w).max_scroll_x)
+            .unwrap_or(0.0)
+    }
+
+    pub(crate) fn horizontal_scroll_offset(&self) -> f32 {
+        self.horizontal_scroll.get()
     }
 
     pub(crate) fn body_viewport_height(&self) -> f32 {
@@ -706,6 +818,11 @@ impl Table {
         let max = (self.body_content_height() - self.body_viewport_height()).max(0.0);
         self.body_scroll
             .set_scroll_offset(self.body_scroll.scroll_offset().min(max));
+        self.horizontal_scroll.set(
+            self.horizontal_scroll
+                .get()
+                .min(self.horizontal_max_scroll()),
+        );
     }
 }
 

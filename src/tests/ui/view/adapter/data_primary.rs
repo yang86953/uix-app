@@ -83,6 +83,7 @@ fn reconcile_table_preserves_runtime_selection_and_syncs_config() {
                 sort_direction: crate::ui::widgets::SortDirection::None,
                 filterable: true,
                 filters: Vec::new(),
+                fixed: None,
             }],
             rows: vec![vec!["Paris".to_string()], vec!["London".to_string()]],
             row_h: 36.0,
