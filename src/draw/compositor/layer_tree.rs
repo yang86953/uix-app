@@ -929,18 +929,22 @@ impl Default for LayerTree {
 }
 
 impl LayerTree {
+    #[cfg(test)]
     pub(crate) fn root_node(&self) -> Option<&LayerNode> {
         self.root.as_ref()
     }
 
+    #[cfg(test)]
     pub(crate) fn overlay_nodes(&self) -> &[LayerNode] {
         &self.overlays
     }
 
+    #[cfg(test)]
     pub(crate) fn orphaned_handles(&self) -> &[ImageHandle] {
         &self.orphaned_handles
     }
 
+    #[cfg(test)]
     pub(crate) fn orphaned_handles_mut(&mut self) -> &mut Vec<ImageHandle> {
         &mut self.orphaned_handles
     }

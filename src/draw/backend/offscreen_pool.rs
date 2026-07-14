@@ -88,6 +88,7 @@ impl CpuOffscreenPool {
             .sum()
     }
 
+    #[cfg(test)]
     pub(crate) fn slot_len(&self) -> usize {
         self.offscreens.len()
     }
