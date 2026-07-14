@@ -164,8 +164,10 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<StyleSet>();
     assert_exported::<AnchorItem>();
     assert_exported::<DesignTokens>();
+    assert_exported::<ColorScale>();
     assert_exported::<NeutralRole>();
     assert_exported::<Theme>();
+    assert_exported::<PrimaryHue>();
     assert_exported::<TypographyToken>();
     assert_exported::<BadgeStatus>();
     assert_exported::<BarData>();
