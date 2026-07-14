@@ -9,7 +9,7 @@ use crate::ui::component_snapshot::SnapshotFields;
 use crate::ui::event::WindowAction;
 use crate::ui::layout::engine::BoxModel;
 use crate::ui::layout::{AlignItems, LayoutChild};
-use crate::ui::style::{apply_style, Style};
+use crate::ui::style::{apply_style, Style, StyleState};
 use crate::ui::traits::{
     EventHandler, WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetRender,
 };
@@ -54,6 +54,7 @@ pub(crate) struct WindowInteractionRegion {
     accessible_name: Option<String>,
     container: Container,
     hovered: bool,
+    focused: bool,
     activation: Option<ControlActivation>,
     pending: Option<WindowAction>,
 }
@@ -73,6 +74,7 @@ impl WindowInteractionRegion {
             accessible_name,
             container: Container::new(),
             hovered: false,
+            focused: false,
             activation: None,
             pending: None,
         }
@@ -106,6 +108,7 @@ impl WindowInteractionRegion {
     pub(crate) fn sync_from(&mut self, next: Self) {
         if self.interaction != next.interaction {
             self.hovered = false;
+            self.focused = false;
             self.activation = None;
             self.pending = None;
         }
@@ -224,7 +227,12 @@ impl WidgetLayout for WindowInteractionRegion {
 impl WidgetRender for WindowInteractionRegion {
     fn render(&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let mut style = self.container.style.clone();
-        style.background = style.effective_bg(self.hovered, self.activation.is_some());
+        style.background = style.effective_bg_for_state(StyleState {
+            hovered: self.hovered,
+            pressed: self.activation.is_some(),
+            focused: self.focused,
+            disabled: false,
+        });
         let visual = BoxModel {
             margin: style.margin,
             border_width: style.border_width,
@@ -288,7 +296,12 @@ impl EventHandler for WindowInteractionRegion {
                 }
                 EventResult::Handled
             }
+            (WindowInteraction::Control(_), SystemEvent::FocusIn) => {
+                self.focused = true;
+                EventResult::Handled
+            }
             (WindowInteraction::Control(_), SystemEvent::FocusOut) => {
+                self.focused = false;
                 self.activation = None;
                 EventResult::Handled
             }

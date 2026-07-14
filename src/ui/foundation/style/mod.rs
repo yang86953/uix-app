@@ -324,7 +324,7 @@ pub struct Style {
     pub background: Option<ColorValue>,
     /// 悬停状态背景色
     pub background_hover: Option<ColorValue>,
-    /// 键盘焦点状态背景色
+    /// 焦点状态背景色
     pub background_focus: Option<ColorValue>,
     /// 按下/激活状态背景色
     pub background_active: Option<ColorValue>,
