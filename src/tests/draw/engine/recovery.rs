@@ -25,10 +25,7 @@ fn recoverable_failures_follow_the_bounded_contract_order() {
         recovery.on_failure(&surface_lost()),
         RecoveryAction::UseSoftware
     );
-    assert_eq!(
-        recovery.on_failure(&surface_lost()),
-        RecoveryAction::UseSoftware
-    );
+    assert_eq!(recovery.on_failure(&surface_lost()), RecoveryAction::Abort);
 }
 
 #[test]

@@ -121,6 +121,11 @@ pub trait GraphicsEngine: 'static {
     /// the next frame boundary while ordinary software engines retain dirty.
     fn external_present_failed(&mut self, _error: Error) {}
 
+    /// 恢复包装器是否已耗尽全部动作；窗口调度器据此进入无 deadline 终态。
+    fn has_terminal_failure(&self) -> bool {
+        false
+    }
+
     fn capabilities(&self) -> GraphicsCapabilities {
         GraphicsCapabilities::cpu_pixels()
     }
