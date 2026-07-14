@@ -155,8 +155,8 @@ impl ComponentHandle {
 
     pub fn numeric_value(&self) -> Option<f64> {
         match self.snapshot_fields()? {
-            SnapshotFields::Slider { value, .. }
-            | SnapshotFields::ProgressBar {
+            SnapshotFields::Slider { value, .. } => Some(value),
+            SnapshotFields::ProgressBar {
                 progress: value, ..
             } => Some(value as f64),
             SnapshotFields::Rate { value, .. } => Some(value as f64),

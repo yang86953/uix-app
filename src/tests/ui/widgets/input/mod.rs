@@ -5,4 +5,5 @@ mod form;
 mod input;
 mod input_number;
 mod select;
+mod slider;
 mod tree_select;

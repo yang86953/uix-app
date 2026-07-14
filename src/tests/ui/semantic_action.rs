@@ -232,7 +232,7 @@ fn select_exposes_one_index_contract_and_reuses_keyboard_change_events() {
 
 #[test]
 fn increment_decrement_and_scroll_use_the_existing_widget_event_contracts() {
-    let mut slider_tree = laid_out_tree(embed(Slider::new().range(0.0, 10.0).value(4.0)));
+    let mut slider_tree = laid_out_tree(embed(Slider::new(0.0..=10.0).default_value(4.0)));
     let slider = slider_tree.root_id().unwrap();
     slider_tree
         .perform_semantic_action(slider, &SemanticAction::Increment)
@@ -248,7 +248,7 @@ fn increment_decrement_and_scroll_use_the_existing_widget_event_contracts() {
             .as_any()
             .downcast_ref::<Slider>()
             .unwrap()
-            .get_value(),
+            .current_value(),
         4.0
     );
 

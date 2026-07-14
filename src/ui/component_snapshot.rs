@@ -415,10 +415,10 @@ pub enum SnapshotFields {
         size: f32,
     },
     Slider {
-        min: f32,
-        max: f32,
-        step: f32,
-        value: f32,
+        min: f64,
+        max: f64,
+        step: f64,
+        value: f64,
     },
     Rate {
         count: usize,
@@ -996,9 +996,9 @@ impl SnapshotFields {
                 min, max, value, ..
             } => AccessibilitySnapshot::new(AccessibilityRole::Slider).with_state(
                 AccessibilityState {
-                    value_now: Some(*value as f64),
-                    value_min: Some(*min as f64),
-                    value_max: Some(*max as f64),
+                    value_now: Some(*value),
+                    value_min: Some(*min),
+                    value_max: Some(*max),
                     ..AccessibilityState::default()
                 },
             ),

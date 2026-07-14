@@ -132,7 +132,7 @@ fn component_config_snapshot_derives_accessibility_metadata() {
     assert_eq!(accessibility.name.as_deref(), Some("Agree"));
     assert_eq!(accessibility.state.checked, Some(true));
 
-    let slider = Slider::new().range(0.0, 10.0).value(4.0);
+    let slider = Slider::new(0.0..=10.0).default_value(4.0);
     let accessibility =
         ComponentConfigSnapshot::from_component(ComponentId::new(12), &slider).accessibility();
     assert_eq!(accessibility.role, AccessibilityRole::Slider);
