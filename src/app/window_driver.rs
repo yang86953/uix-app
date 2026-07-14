@@ -37,8 +37,6 @@ use crate::ui::view::ViewAdapter;
 use crate::ui::{EventResult, WidgetTree};
 use std::cell::{Cell, RefCell};
 use std::time::Instant;
-#[cfg(test)]
-pub(crate) use support::graphics_failure_is_error;
 pub(crate) use support::{
     animation_clock_should_advance, ensure_surface_matches_window, has_invalidation_work,
     sync_root_frame_exactly_to_engine, sync_root_frame_to_engine, WindowFrameResult,
@@ -50,6 +48,8 @@ use support::{
     report_window_operation_error, update_scheduled_and_discovered_animations,
     with_platform_clipboard,
 };
+#[cfg(test)]
+pub(crate) use support::{graphics_failure_diagnostic, graphics_failure_is_error};
 
 pub(crate) struct WindowFrameContext<'a, 'platform> {
     pub(crate) tree: &'a mut WidgetTree,
@@ -814,7 +814,7 @@ impl WindowDriver {
                             engine.external_present_failed(error.clone());
                             crate::core::log::error_fn(format!(
                                 "[WindowDriver] external present failed: {}",
-                                error.short_what()
+                                error.what()
                             ));
                             frame_failure = Some(GraphicsFailure::from_error(error));
                             self.rendered_first = false;
