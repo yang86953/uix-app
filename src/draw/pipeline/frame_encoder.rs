@@ -515,10 +515,23 @@ fn fill_rect_pixels(width: i32, height: i32, pixels: &mut [u32], rect: FrameRect
     if x0 >= x1 || y0 >= y1 {
         return;
     }
+    let source = color.premultiplied();
+    let source_a = source >> 24;
+    if source_a == 0 {
+        return;
+    }
+    if source_a == 0xff {
+        let row_width = width as usize;
+        for y in y0..y1 {
+            let start = y as usize * row_width + x0 as usize;
+            pixels[start..start + (x1 - x0) as usize].fill(source);
+        }
+        return;
+    }
     for y in y0..y1 {
         for x in x0..x1 {
             let index = y as usize * width as usize + x as usize;
-            pixels[index] = blend_pixel_src_over(color.premultiplied(), pixels[index]);
+            pixels[index] = blend_pixel_src_over(source, pixels[index]);
         }
     }
 }
@@ -637,6 +650,10 @@ fn blit_image_pixels(
     if src.is_empty() || dst.is_empty() {
         return;
     }
+    if src.width == dst.width && src.height == dst.height {
+        blit_unscaled_image_pixels(width, height, pixels, image, src, dst);
+        return;
+    }
     let x0 = dst.x.max(0);
     let y0 = dst.y.max(0);
     let x1 = dst.x.saturating_add(dst.width).min(width);
@@ -661,10 +678,57 @@ fn blit_image_pixels(
     }
 }
 
+fn blit_unscaled_image_pixels(
+    width: i32,
+    height: i32,
+    pixels: &mut [u32],
+    image: &FrameImage,
+    src: FrameRect,
+    dst: FrameRect,
+) {
+    // CPU segment 与大多数 Picture blit 都是同尺寸搬运；先同时裁目标与源，
+    // 再按连续行处理，避免热路径逐像素整数除法与边界判断。
+    let x0 = dst.x.max(0).max(dst.x.saturating_sub(src.x));
+    let y0 = dst.y.max(0).max(dst.y.saturating_sub(src.y));
+    let x1 = dst
+        .x
+        .saturating_add(dst.width)
+        .min(width)
+        .min(dst.x.saturating_add(image.width).saturating_sub(src.x));
+    let y1 = dst
+        .y
+        .saturating_add(dst.height)
+        .min(height)
+        .min(dst.y.saturating_add(image.height).saturating_sub(src.y));
+    if x0 >= x1 || y0 >= y1 {
+        return;
+    }
+
+    let copy_width = (x1 - x0) as usize;
+    for y in y0..y1 {
+        let source_x = src.x + x0 - dst.x;
+        let source_y = src.y + y - dst.y;
+        let source_start = source_y as usize * image.width as usize + source_x as usize;
+        let destination_start = y as usize * width as usize + x0 as usize;
+        let source_row = &image.pixels[source_start..source_start + copy_width];
+        let destination_row = &mut pixels[destination_start..destination_start + copy_width];
+        for (&source, destination) in source_row.iter().zip(destination_row) {
+            match source >> 24 {
+                0 => {}
+                0xff => *destination = source,
+                _ => *destination = blend_pixel_src_over(source, *destination),
+            }
+        }
+    }
+}
+
 fn blend_pixel_src_over(source: u32, destination: u32) -> u32 {
     let source_a = (source >> 24) & 0xff;
     if source_a == 0 {
         return destination;
+    }
+    if source_a == 0xff {
+        return source;
     }
     let destination_a = (destination >> 24) & 0xff;
     crate::draw::rasterizer::core::blend_srcover(
