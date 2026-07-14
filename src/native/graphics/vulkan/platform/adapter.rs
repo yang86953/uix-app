@@ -8,10 +8,37 @@ use crate::core::{Errc, Error, Result};
 
 use super::context::vk_err;
 
-#[derive(Clone, Copy)]
 pub(super) struct QueueSelection {
     pub(super) physical_device: vk::PhysicalDevice,
     pub(super) family_index: u32,
+    pub(super) info: VulkanAdapterInfo,
+}
+
+/// 已选 Vulkan 物理设备与呈现队列的稳定诊断快照。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct VulkanAdapterInfo {
+    pub(crate) description: String,
+    pub(crate) device_type: &'static str,
+    pub(crate) vendor_id: u32,
+    pub(crate) device_id: u32,
+    pub(crate) api_version: u32,
+    pub(crate) driver_version: u32,
+    pub(crate) queue_family_index: u32,
+}
+
+impl VulkanAdapterInfo {
+    pub(crate) fn diagnostic_summary(&self) -> String {
+        format!(
+            "adapter=\"{}\"; type={}; vendor={:#06X}; device={:#06X}; api={}; driver={:#010X}; queue_family={}",
+            self.description,
+            self.device_type,
+            self.vendor_id,
+            self.device_id,
+            version_string(self.api_version),
+            self.driver_version,
+            self.queue_family_index
+        )
+    }
 }
 
 pub(super) fn select_queue(
@@ -22,8 +49,15 @@ pub(super) fn select_queue(
     // SAFETY: instance 在枚举期间有效，ash 负责返回句柄数组的所有权。
     let physical_devices = unsafe { instance.enumerate_physical_devices() }
         .map_err(|err| vk_err("vkEnumeratePhysicalDevices", err))?;
+    let mut failures = Vec::new();
     for physical_device in physical_devices {
+        // SAFETY: physical_device 来自同一有效 instance 的枚举结果。
+        let properties = unsafe { instance.get_physical_device_properties(physical_device) };
         if !device_supports_swapchain(instance, physical_device)? {
+            failures.push(format!(
+                "{}: missing VK_KHR_swapchain",
+                properties_summary(&properties)
+            ));
             continue;
         }
         // SAFETY: physical_device 来自同一有效 instance 的枚举结果。
@@ -43,13 +77,21 @@ pub(super) fn select_queue(
                 return Ok(QueueSelection {
                     physical_device,
                     family_index: index as u32,
+                    info: adapter_info(&properties, index as u32),
                 });
             }
         }
+        failures.push(format!(
+            "{}: no graphics+present queue",
+            properties_summary(&properties)
+        ));
     }
     Err(Error::new(
         Errc::PlatformError,
-        "VulkanContext: no graphics+present queue with VK_KHR_swapchain",
+        format!(
+            "VulkanContext: no graphics+present queue with VK_KHR_swapchain; candidates=[{}]",
+            failures.join("; ")
+        ),
     ))
 }
 
@@ -100,4 +142,54 @@ fn device_has_extension(
         let extension_name = unsafe { CStr::from_ptr(extension.extension_name.as_ptr()) };
         extension_name == name
     }))
+}
+
+fn adapter_info(
+    properties: &vk::PhysicalDeviceProperties,
+    queue_family_index: u32,
+) -> VulkanAdapterInfo {
+    VulkanAdapterInfo {
+        description: device_name(properties),
+        device_type: device_type_name(properties.device_type),
+        vendor_id: properties.vendor_id,
+        device_id: properties.device_id,
+        api_version: properties.api_version,
+        driver_version: properties.driver_version,
+        queue_family_index,
+    }
+}
+
+fn properties_summary(properties: &vk::PhysicalDeviceProperties) -> String {
+    format!(
+        "adapter=\"{}\" vendor={:#06X} device={:#06X}",
+        device_name(properties),
+        properties.vendor_id,
+        properties.device_id
+    )
+}
+
+fn device_name(properties: &vk::PhysicalDeviceProperties) -> String {
+    // SAFETY: Vulkan 保证 device_name 是结构体内以 NUL 结尾的固定数组。
+    unsafe { CStr::from_ptr(properties.device_name.as_ptr()) }
+        .to_string_lossy()
+        .into_owned()
+}
+
+fn device_type_name(device_type: vk::PhysicalDeviceType) -> &'static str {
+    match device_type {
+        vk::PhysicalDeviceType::DISCRETE_GPU => "discrete_gpu",
+        vk::PhysicalDeviceType::INTEGRATED_GPU => "integrated_gpu",
+        vk::PhysicalDeviceType::VIRTUAL_GPU => "virtual_gpu",
+        vk::PhysicalDeviceType::CPU => "cpu",
+        _ => "other",
+    }
+}
+
+fn version_string(version: u32) -> String {
+    format!(
+        "{}.{}.{}",
+        vk::api_version_major(version),
+        vk::api_version_minor(version),
+        vk::api_version_patch(version)
+    )
 }

@@ -14,7 +14,7 @@ use crate::native::traits::present::{
 #[cfg(target_os = "macos")]
 use crate::native::backends::macos::platform as macos_surface;
 
-use super::adapter::{device_extension_names, select_queue};
+use super::adapter::{device_extension_names, select_queue, VulkanAdapterInfo};
 use super::surface::{
     choose_composite_alpha, choose_extent, choose_present_mode, choose_surface_format,
     create_platform_surface, destroy_failed_surface, surface_instance_extensions,
@@ -66,6 +66,7 @@ pub struct VulkanContext {
     metal_layer: *mut c_void,
     surface: vk::SurfaceKHR,
     physical_device: vk::PhysicalDevice,
+    pub(crate) adapter_info: VulkanAdapterInfo,
     device: ash::Device,
     queue: vk::Queue,
     swapchain_loader: ash::khr::swapchain::Device,
@@ -256,6 +257,7 @@ impl VulkanContext {
             metal_layer: native_surface,
             surface,
             physical_device: selection.physical_device,
+            adapter_info: selection.info,
             device,
             queue,
             swapchain_loader,
@@ -284,8 +286,10 @@ impl VulkanContext {
         ctx.height = ctx.extent.height as i32;
         ctx.recreate_upload_buffer(staging_size(ctx.width, ctx.height))?;
         crate::core::log::info_fn(format!(
-            "VulkanContext: created {}x{} swapchain",
-            ctx.width, ctx.height
+            "VulkanContext: created {}x{} swapchain; {}",
+            ctx.width,
+            ctx.height,
+            ctx.adapter_info.diagnostic_summary()
         ));
         Ok(ctx)
     }

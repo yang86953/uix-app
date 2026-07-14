@@ -6,7 +6,7 @@ use crate::core::{Error, Result};
 use crate::native::traits::present::IGraphicsContext;
 
 #[cfg(any(unix, windows))]
-mod adapter;
+pub(crate) mod adapter;
 
 #[cfg(any(unix, windows))]
 pub(crate) mod context;
