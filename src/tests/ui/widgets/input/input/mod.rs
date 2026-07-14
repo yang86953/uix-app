@@ -130,7 +130,7 @@ fn translated_software_render_keeps_placeholder_and_value_glyphs_visible() {
         let mut list = DisplayList::new();
 
         {
-            let mut ctx = PaintContext::new(
+            let mut ctx = PaintContext::new_for_test(
                 &mut canvas,
                 font,
                 &fonts,

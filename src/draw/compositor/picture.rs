@@ -9,7 +9,7 @@ use crate::draw::compositor::viewport_transform::needs_paint;
 use crate::draw::compositor::ScenePaint;
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
-use crate::draw::painting::{DisplayList, PaintContext, ThemeTokens};
+use crate::draw::painting::{DisplayList, PaintContext, PaintSurfaceConfig, ThemeTokens};
 use crate::draw::pipeline::{FrameEncoder, FrameEncoderError, FrameImage, FrameRect, NodeId};
 use crate::draw::primitives::types::ImageHandle;
 use crate::draw::spatial::Orientation;
@@ -149,11 +149,13 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
             env.font_service,
             env.image_service,
             env.tokens,
-            env.dpi,
-            env.dpr,
-            env.orientation,
-            w,
-            h,
+            PaintSurfaceConfig {
+                dpi: env.dpi,
+                device_pixel_ratio: env.dpr,
+                orientation: env.orientation,
+                surface_w: w,
+                surface_h: h,
+            },
         );
         off_ctx.canvas_2d().translate(-bounds.x, -bounds.y);
         if !encoded_cached_picture {

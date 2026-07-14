@@ -63,7 +63,7 @@ fn paint_context_debug_mode_defaults_off_until_enabled() {
     let fs = FontService::new();
     let img = ImageService::new();
     let tokens = DesignTokens::antd_light();
-    let mut ctx = PaintContext::new(
+    let mut ctx = PaintContext::new_for_test(
         &mut canvas,
         FontHandle::default(),
         &fs,
@@ -92,7 +92,7 @@ fn display_list_recording_rejects_untracked_canvas_access() {
     let fs = FontService::new();
     let img = ImageService::new();
     let tokens = DesignTokens::antd_light();
-    let mut ctx = PaintContext::new(
+    let mut ctx = PaintContext::new_for_test(
         &mut canvas,
         FontHandle::default(),
         &fs,
@@ -126,7 +126,7 @@ fn display_list_recording_covers_extended_2d_paint_operations() {
     let fs = FontService::new();
     let img = ImageService::new();
     let tokens = DesignTokens::antd_light();
-    let mut ctx = PaintContext::new(
+    let mut ctx = PaintContext::new_for_test(
         &mut canvas,
         FontHandle::default(),
         &fs,

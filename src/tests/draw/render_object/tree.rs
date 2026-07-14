@@ -67,7 +67,7 @@ fn recording_does_not_replay_over_the_live_paint_in_the_same_frame() {
     let fonts = FontService::new();
     let images = ImageService::new();
     let tokens = DesignTokens::antd_light();
-    let mut ctx = PaintContext::new(
+    let mut ctx = PaintContext::new_for_test(
         &mut canvas,
         FontHandle::default(),
         &fonts,
