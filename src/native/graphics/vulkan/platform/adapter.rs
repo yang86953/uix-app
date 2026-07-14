@@ -66,6 +66,41 @@ impl AdapterSelectionRejections {
     }
 }
 
+pub(crate) fn select_graphics_present_queue<F>(
+    queues: &[vk::QueueFamilyProperties],
+    adapter: &str,
+    rejections: &mut AdapterSelectionRejections,
+    mut query_present: F,
+) -> Option<u32>
+where
+    F: FnMut(u32) -> Result<bool>,
+{
+    let mut found_graphics = false;
+    for (index, queue) in queues.iter().enumerate() {
+        if !queue.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
+            continue;
+        }
+        found_graphics = true;
+        let index = index as u32;
+        match query_present(index) {
+            Ok(true) => return Some(index),
+            Ok(false) => rejections.reject(
+                adapter,
+                format!("queue_family={index} lacks present support"),
+            ),
+            Err(error) => rejections.reject_with_error(
+                adapter,
+                format!("vkGetPhysicalDeviceSurfaceSupportKHR queue_family={index}"),
+                error,
+            ),
+        }
+    }
+    if !found_graphics {
+        rejections.reject(adapter, "no graphics queue");
+    }
+    None
+}
+
 /// 已选 Vulkan 物理设备与呈现队列的稳定诊断快照。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct VulkanAdapterInfo {
@@ -120,25 +155,25 @@ pub(super) fn select_queue(
         // SAFETY: physical_device 来自同一有效 instance 的枚举结果。
         let queues =
             unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
-        for (index, queue) in queues.iter().enumerate() {
-            // SAFETY: surface 与 physical_device 均属于仍存活的 instance。
-            let supports_present = unsafe {
-                surface_loader.get_physical_device_surface_support(
-                    physical_device,
-                    index as u32,
-                    surface,
-                )
-            }
-            .map_err(|err| vk_err("vkGetPhysicalDeviceSurfaceSupportKHR", err))?;
-            if queue.queue_flags.contains(vk::QueueFlags::GRAPHICS) && supports_present {
-                return Ok(QueueSelection {
-                    physical_device,
-                    family_index: index as u32,
-                    info: adapter_info(&properties, index as u32),
-                });
-            }
+        let selected_family =
+            select_graphics_present_queue(&queues, &summary, &mut failures, |index| {
+                // SAFETY: surface 与 physical_device 均属于仍存活的 instance。
+                unsafe {
+                    surface_loader.get_physical_device_surface_support(
+                        physical_device,
+                        index,
+                        surface,
+                    )
+                }
+                .map_err(|err| vk_err("vkGetPhysicalDeviceSurfaceSupportKHR", err))
+            });
+        if let Some(family_index) = selected_family {
+            return Ok(QueueSelection {
+                physical_device,
+                family_index,
+                info: adapter_info(&properties, family_index),
+            });
         }
-        failures.reject(&summary, "no graphics+present queue");
     }
     Err(failures.into_error())
 }
