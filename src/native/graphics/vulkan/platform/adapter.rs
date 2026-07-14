@@ -14,6 +14,58 @@ pub(super) struct QueueSelection {
     pub(super) info: VulkanAdapterInfo,
 }
 
+#[derive(Default)]
+pub(crate) struct AdapterSelectionRejections {
+    entries: Vec<String>,
+    first_error: Option<Error>,
+}
+
+impl AdapterSelectionRejections {
+    pub(crate) fn reject(&mut self, adapter: impl AsRef<str>, reason: impl AsRef<str>) {
+        self.entries
+            .push(format!("{}: {}", adapter.as_ref(), reason.as_ref()));
+    }
+
+    pub(crate) fn reject_with_error(
+        &mut self,
+        adapter: impl AsRef<str>,
+        operation: impl AsRef<str>,
+        error: Error,
+    ) {
+        self.entries.push(format!(
+            "{}: {} failed: {}",
+            adapter.as_ref(),
+            operation.as_ref(),
+            error.message()
+        ));
+        if self.first_error.is_none() {
+            self.first_error = Some(error);
+        }
+    }
+
+    pub(crate) fn into_error(self) -> Error {
+        let code = self
+            .first_error
+            .as_ref()
+            .map_or(Errc::PlatformError, |error| error.code());
+        let candidates = if self.entries.is_empty() {
+            "none enumerated".to_owned()
+        } else {
+            self.entries.join("; ")
+        };
+        let error = Error::new(
+            code,
+            format!(
+                "VulkanContext: no graphics+present queue with VK_KHR_swapchain; candidates=[{candidates}]"
+            ),
+        );
+        match self.first_error {
+            Some(source) => error.with_source(source),
+            None => error,
+        }
+    }
+}
+
 /// 已选 Vulkan 物理设备与呈现队列的稳定诊断快照。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct VulkanAdapterInfo {
@@ -49,15 +101,20 @@ pub(super) fn select_queue(
     // SAFETY: instance 在枚举期间有效，ash 负责返回句柄数组的所有权。
     let physical_devices = unsafe { instance.enumerate_physical_devices() }
         .map_err(|err| vk_err("vkEnumeratePhysicalDevices", err))?;
-    let mut failures = Vec::new();
+    let mut failures = AdapterSelectionRejections::default();
     for physical_device in physical_devices {
         // SAFETY: physical_device 来自同一有效 instance 的枚举结果。
         let properties = unsafe { instance.get_physical_device_properties(physical_device) };
-        if !device_supports_swapchain(instance, physical_device)? {
-            failures.push(format!(
-                "{}: missing VK_KHR_swapchain",
-                properties_summary(&properties)
-            ));
+        let summary = properties_summary(&properties);
+        let supports_swapchain = match device_supports_swapchain(instance, physical_device) {
+            Ok(supports_swapchain) => supports_swapchain,
+            Err(error) => {
+                failures.reject_with_error(&summary, "vkEnumerateDeviceExtensionProperties", error);
+                continue;
+            }
+        };
+        if !supports_swapchain {
+            failures.reject(&summary, "missing VK_KHR_swapchain");
             continue;
         }
         // SAFETY: physical_device 来自同一有效 instance 的枚举结果。
@@ -81,18 +138,9 @@ pub(super) fn select_queue(
                 });
             }
         }
-        failures.push(format!(
-            "{}: no graphics+present queue",
-            properties_summary(&properties)
-        ));
+        failures.reject(&summary, "no graphics+present queue");
     }
-    Err(Error::new(
-        Errc::PlatformError,
-        format!(
-            "VulkanContext: no graphics+present queue with VK_KHR_swapchain; candidates=[{}]",
-            failures.join("; ")
-        ),
-    ))
+    Err(failures.into_error())
 }
 
 pub(super) fn device_extension_names(
