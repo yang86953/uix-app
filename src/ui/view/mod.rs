@@ -13,7 +13,9 @@ use crate::ui::traits::WidgetComponent;
 pub(crate) mod adapter;
 pub mod combinators;
 
-pub use crate::ui::window_chrome::{window_control, window_drag_region, WindowControl};
+pub use crate::ui::window_chrome::{
+    window_control, window_control_named, window_drag_region, WindowControl,
+};
 pub(crate) use adapter::ViewAdapter;
 pub use combinators::{
     button, canvas, column, column_fit, dynamic_label, embed, grid, input, label, row, scroll,

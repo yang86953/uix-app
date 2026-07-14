@@ -2,8 +2,11 @@ use crate::core::{Point, Rect};
 use crate::native::traits::input::{KeyMod, MouseButton};
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::event::WindowAction;
-use crate::ui::view::{button, label, window_control, window_drag_region, ViewAdapter};
-use crate::ui::{SystemEvent, WindowControl};
+use crate::ui::semantic_action::{SemanticAction, SemanticActionKind};
+use crate::ui::view::{
+    button, label, window_control, window_control_named, window_drag_region, ViewAdapter,
+};
+use crate::ui::{AccessibilityRole, SystemEvent, WindowControl};
 
 fn pointer_event(pos: Point, down: bool, button: MouseButton) -> SystemEvent {
     if down {
@@ -87,4 +90,32 @@ fn each_window_control_maps_to_its_platform_neutral_action() {
         tree.dispatch_event(&pointer_event(pos, false, MouseButton::Left));
         assert_eq!(tree.take_window_actions(), vec![expected]);
     }
+}
+
+#[test]
+fn named_window_control_is_an_invokable_accessible_button() {
+    let mut tree = ViewAdapter::build(
+        window_control_named(WindowControl::Close, "关闭窗口", label("×"))
+            .width(44.0)
+            .height(32.0),
+    );
+    let root = tree.root().expect("window control root").id();
+    tree.root_mut()
+        .expect("window control root")
+        .set_frame(Rect::new(0.0, 0.0, 44.0, 32.0));
+    tree.layout();
+
+    let snapshot = tree.semantic_snapshot_body();
+    let control = snapshot
+        .nodes
+        .iter()
+        .find(|node| node.id == root)
+        .expect("window control semantic node");
+    assert_eq!(control.accessibility.role, AccessibilityRole::Button);
+    assert_eq!(control.accessibility.name.as_deref(), Some("关闭窗口"));
+    assert!(control.actions.contains(&SemanticActionKind::Invoke));
+
+    tree.perform_semantic_action(root, &SemanticAction::Invoke)
+        .expect("invoke close control");
+    assert_eq!(tree.take_window_actions(), vec![WindowAction::RequestClose]);
 }

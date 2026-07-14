@@ -5,6 +5,7 @@ use crate::native::traits::system::StatusLevel;
 use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
 use crate::ui::style::{Style, StyleSet};
 use crate::ui::widgets::*;
+use crate::ui::window_chrome::WindowControl;
 use crate::ui::Placement;
 
 use super::{
@@ -26,6 +27,10 @@ pub enum SnapshotFields {
         block: bool,
         style_set: StyleSet,
         style: Style,
+    },
+    WindowControl {
+        control: WindowControl,
+        accessible_name: String,
     },
     Label {
         text: String,
@@ -641,6 +646,9 @@ impl SnapshotFields {
                 AccessibilitySnapshot::named(AccessibilityRole::Button, text.clone())
                     .with_state(AccessibilityState::disabled(*disabled))
             }
+            Self::WindowControl {
+                accessible_name, ..
+            } => AccessibilitySnapshot::named(AccessibilityRole::Button, accessible_name.clone()),
             Self::Label { text, .. } => {
                 AccessibilitySnapshot::named(AccessibilityRole::Text, text.clone())
             }
