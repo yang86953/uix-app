@@ -4,6 +4,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
+use crate::ui::state::State;
 use crate::ui::SnapshotFields;
 use crate::ui::{ComponentId, EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetTree};
 use std::cell::Cell;
@@ -18,8 +19,10 @@ pub enum RadioDirection {
 component! {
     /// Radio — 单选按钮组。
     pub struct Radio {
+        group_name: String,
         options: Vec<String>,
         selected: usize,
+        value_binding: Option<State<String>>,
         disabled: bool,
         direction: RadioDirection,
         item_h: f32,
@@ -36,14 +39,12 @@ component! {
 
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        self.sync_bound_value();
         if self.disabled { return EventResult::NotHandled; }
         match event {
             SystemEvent::PointerDown { pos, .. } => {
                 if let Some(idx) = self.option_at(pos.x, pos.y) {
-                    if self.selected != idx {
-                        self.selected = idx;
-                        self.pending_change.set(Some(idx));
-                    }
+                    self.select_index(idx);
                     return EventResult::Handled;
                 }
                 EventResult::NotHandled
@@ -59,18 +60,24 @@ component! {
             SystemEvent::KeyDown { key, .. } => {
             match key {
                 KeyCode::Right | KeyCode::Down => {
-                    let next = self.selected + 1;
+                    let next = if self.selected < self.options.len() {
+                        self.selected.saturating_add(1)
+                    } else {
+                        0
+                    };
                     if next < self.options.len() {
-                        self.selected = next;
-                        self.pending_change.set(Some(next));
+                        self.select_index(next);
                     }
                     EventResult::Handled
                 }
                 KeyCode::Left | KeyCode::Up => {
-                        if self.selected > 0 {
+                        if self.selected == usize::MAX {
+                            if let Some(last) = self.options.len().checked_sub(1) {
+                                self.select_index(last);
+                            }
+                        } else if self.selected > 0 {
                             let prev = self.selected - 1;
-                            self.selected = prev;
-                            self.pending_change.set(Some(prev));
+                            self.select_index(prev);
                         }
                         EventResult::Handled
                     }
@@ -90,6 +97,7 @@ component! {
     wants_continuous_pointer_move => (&self) -> bool { true }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        self.capture_bound_value_dependency();
         let cy = frame.y + self.item_h * 0.5;
 
         match self.direction {
@@ -113,6 +121,44 @@ component! {
 }
 
 impl Radio {
+    fn select_index(&mut self, index: usize) {
+        if index >= self.options.len() || self.selected == index {
+            return;
+        }
+        self.selected = index;
+        self.write_bound_value();
+        self.pending_change.set(Some(index));
+    }
+
+    fn sync_bound_value(&mut self) {
+        let Some(value) = self.value_binding.as_ref().map(State::get) else {
+            return;
+        };
+        self.selected = self
+            .options
+            .iter()
+            .position(|option| option == &value)
+            .unwrap_or(usize::MAX);
+    }
+
+    fn capture_bound_value_dependency(&self) {
+        if let Some(state) = self.value_binding.as_ref() {
+            let _ = state.get();
+        }
+    }
+
+    fn write_bound_value(&self) {
+        let Some(state) = self.value_binding.as_ref() else {
+            return;
+        };
+        let Some(value) = self.options.get(self.selected) else {
+            return;
+        };
+        if state.get() != *value {
+            state.set(value.clone());
+        }
+    }
+
     fn intrinsic_size(&self) -> Size {
         let item_w = self
             .options
@@ -227,8 +273,10 @@ impl Default for Radio {
 impl Radio {
     pub fn new() -> Self {
         Self {
+            group_name: String::new(),
             options: Vec::new(),
             selected: 0,
+            value_binding: None,
             disabled: false,
             direction: RadioDirection::Horizontal,
             item_h: 24.0,
@@ -237,14 +285,56 @@ impl Radio {
             pending_change: Cell::new(None),
         }
     }
-    pub fn options(mut self, opts: Vec<impl Into<String>>) -> Self {
-        self.options = opts.into_iter().map(|s| s.into()).collect();
+
+    /// 创建具名受控单选组。
+    pub fn group<I, S>(name: impl Into<String>, options: I, state: &State<String>) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        Self::new().group_name(name).options(options).value(state)
+    }
+
+    pub fn group_name(mut self, name: impl Into<String>) -> Self {
+        self.group_name = name.into();
         self
     }
-    pub fn selected(mut self, idx: usize) -> Self {
+
+    pub fn options<I, S>(mut self, options: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.options = options
+            .into_iter()
+            .map(|option| option.as_ref().to_owned())
+            .collect();
+        self.sync_bound_value();
+        self
+    }
+
+    /// 设置非受控单选组的初始索引。
+    pub fn default_selected(mut self, idx: usize) -> Self {
+        self.value_binding = None;
         self.selected = idx;
         self
     }
+
+    /// 将当前选项值绑定到外部 `State<String>`。
+    pub fn value(mut self, state: &State<String>) -> Self {
+        self.value_binding = Some(state.clone());
+        self.sync_bound_value();
+        self
+    }
+
+    pub fn current_value(&self) -> Option<String> {
+        self.options.get(self.selected).cloned()
+    }
+
+    pub fn current_index(&self) -> Option<usize> {
+        (self.selected < self.options.len()).then_some(self.selected)
+    }
+
     pub fn disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self
@@ -258,6 +348,7 @@ impl Radio {
 impl Radio {
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Radio {
+            group_name: self.group_name.clone(),
             options: self.options.clone(),
             selected: self.selected,
             disabled: self.disabled,
@@ -267,8 +358,15 @@ impl Radio {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let controlled_selected = next.value_binding.as_ref().map(|_| next.selected);
+        self.group_name = next.group_name;
         self.options = next.options;
-        self.selected = next.selected.min(self.options.len().saturating_sub(1));
+        self.value_binding = next.value_binding;
+        self.selected = controlled_selected.unwrap_or_else(|| {
+            (self.selected < self.options.len())
+                .then_some(self.selected)
+                .unwrap_or(usize::MAX)
+        });
         self.disabled = next.disabled;
         self.direction = next.direction;
         self.item_h = next.item_h;

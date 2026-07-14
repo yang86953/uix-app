@@ -122,7 +122,7 @@ pub fn page_input(ctx: &DemoCtx<'_>) -> ViewNode {
             demo_row(32.0).child(
                 Radio::new()
                     .options(vec!["苹果", "香蕉", "樱桃"])
-                    .selected(1),
+                    .default_selected(1),
             ),
         )
         .push(

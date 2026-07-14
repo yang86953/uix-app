@@ -403,6 +403,7 @@ pub enum SnapshotFields {
         label: String,
     },
     Radio {
+        group_name: String,
         options: Vec<String>,
         selected: usize,
         disabled: bool,
@@ -973,17 +974,17 @@ impl SnapshotFields {
                     ..AccessibilityState::default()
                 }),
             Self::Radio {
+                group_name,
                 options,
                 selected,
                 disabled,
                 ..
-            } => AccessibilitySnapshot::new(AccessibilityRole::RadioGroup).with_state(
-                AccessibilityState {
+            } => AccessibilitySnapshot::named(AccessibilityRole::RadioGroup, group_name.clone())
+                .with_state(AccessibilityState {
                     disabled: *disabled,
                     value_text: options.get(*selected).cloned(),
                     ..AccessibilityState::default()
-                },
-            ),
+                }),
             Self::Switch {
                 checked, disabled, ..
             } => AccessibilitySnapshot::new(AccessibilityRole::Switch).with_state(
