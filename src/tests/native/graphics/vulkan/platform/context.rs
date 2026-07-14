@@ -605,6 +605,13 @@ fn windows_vulkan_shared_device_loss_rejects_peers_and_new_context_replaces_it()
         )
         .expect_err("a peer must observe shared device loss before submitting");
     assert_eq!(error.code(), Errc::GraphicsDeviceLost);
+    assert!(
+        error
+            .source_error()
+            .is_some_and(|source| source.message().contains("marked lost by test")),
+        "peer failure must retain the first shared-device loss: {}",
+        error.what()
+    );
 
     let mut replacement = VulkanContext::new(replacement_window.native_surface_ptr(), 64, 48)
         .expect("replacement VulkanContext");
