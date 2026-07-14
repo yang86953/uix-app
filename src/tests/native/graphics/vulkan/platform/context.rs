@@ -420,6 +420,74 @@ fn windows_vulkan_gfx_r5_native_out_of_date_is_typed_and_recovers() {
 
 #[cfg(windows)]
 #[test]
+#[ignore = "requires a Vulkan-capable Windows driver and UIX_GFX_R5_EXPECT_VENDOR=nvidia|amd|intel"]
+fn windows_vulkan_gfx_r5_destroyed_hwnd_returns_native_surface_lost() {
+    let expected = expected_gfx_r5_vendor().unwrap_or_else(|error| panic!("{error}"));
+    let mut platform = crate::native::create_platform().expect("platform");
+    let mut window = platform
+        .window_manager()
+        .create_window("Vulkan GFX-R5 fatal native surface", 157, 119)
+        .expect("window");
+    let surface = window.native_surface_ptr();
+    assert!(!surface.is_null(), "Windows HWND must be available");
+    window.show().expect("show window");
+    let _ = platform.event_loop().poll_event(&|_| true);
+
+    let mut context = VulkanContext::new(surface, 157, 119).expect("VulkanContext");
+    assert_eq!(
+        context.adapter_info.vendor_id,
+        expected.vendor_id(),
+        "expected {} ({:#06X}), actual {}",
+        expected.label(),
+        expected.vendor_id(),
+        context.adapter_info.diagnostic_summary()
+    );
+    let extent = (context.width(), context.height());
+    let pixels = vec![0xFF5C_82B4; (extent.0 * extent.1) as usize];
+    context
+        .present_pixels(&pixels, extent.0, extent.1, PresentDamage::Full)
+        .expect("initial fatal-surface present");
+
+    // 故意绕开正常的“先释放图形、后销毁 HWND”顺序，以取得驱动返回的真实 fatal surface 错误。
+    window.close().expect("destroy HWND before Vulkan surface");
+    let fault = context
+        .present_pixels(&pixels, extent.0, extent.1, PresentDamage::Full)
+        .expect_err("destroyed HWND must produce a native Vulkan surface fault");
+    assert_eq!(fault.code(), Errc::GraphicsSurfaceLost);
+    assert!(
+        fault.message().contains("vkAcquireNextImageKHR")
+            || fault.message().contains("vkQueuePresentKHR"),
+        "fault must originate in native WSI present: {}",
+        fault.what()
+    );
+    let root_cause = fault.root_cause();
+    assert_eq!(root_cause.code(), Errc::GraphicsSurfaceLost);
+    assert!(
+        root_cause
+            .message()
+            .contains("vkGetPhysicalDeviceSurfaceCapabilitiesKHR"),
+        "fatal root cause must come from native surface capabilities: {}",
+        fault.what()
+    );
+    assert!(
+        root_cause.message().contains("ERROR_SURFACE_LOST_KHR"),
+        "destroyed HWND must retain the native fatal surface root cause: {}",
+        fault.what()
+    );
+
+    println!(
+        "GFX-R5 Vulkan fatal surface evidence: expected={}; fault={}; {}",
+        expected.label(),
+        fault.what(),
+        context.adapter_info.diagnostic_summary()
+    );
+    context
+        .try_shutdown()
+        .expect("shutdown fatal-surface context");
+}
+
+#[cfg(windows)]
+#[test]
 #[ignore = "requires a Vulkan-capable Windows driver"]
 fn windows_vulkan_two_surfaces_share_device_and_keep_independent_frames() {
     let mut platform = crate::native::create_platform().expect("platform");
