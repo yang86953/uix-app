@@ -19,8 +19,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     BringWindowToTop, EnumWindows, GetForegroundWindow, GetWindowThreadProcessId, IsIconic,
-    IsZoomed, PostMessageW, SetForegroundWindow, SetWindowPos, ShowWindowAsync, HWND_TOPMOST,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_MAXIMIZE, SW_MINIMIZE, WM_CLOSE,
+    IsWindowVisible, IsZoomed, PostMessageW, SetForegroundWindow, SetWindowPos, ShowWindowAsync,
+    HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, SW_MAXIMIZE,
+    SW_MINIMIZE, SW_SHOW, WM_CLOSE,
 };
 
 const START_TIMEOUT: Duration = Duration::from_secs(45);
@@ -214,6 +215,30 @@ impl DemoProcess {
         self.wait_for_window_state(window, "maximized", |window| unsafe {
             // SAFETY: 查询期间 HWND 属于仍存活的测试子进程。
             IsZoomed(window).as_bool()
+        });
+    }
+
+    fn hide(&self) {
+        let window = self.window_handle();
+        unsafe {
+            // SAFETY: 命令只异步隐藏仍存活测试子进程的 HWND。
+            let _ = ShowWindowAsync(window, SW_HIDE);
+        }
+        self.wait_for_window_state(window, "hidden", |window| unsafe {
+            // SAFETY: 查询期间 HWND 属于仍存活的测试子进程。
+            !IsWindowVisible(window).as_bool()
+        });
+    }
+
+    fn show(&self) {
+        let window = self.window_handle();
+        unsafe {
+            // SAFETY: 命令只异步显示仍存活测试子进程的 HWND。
+            let _ = ShowWindowAsync(window, SW_SHOW);
+        }
+        self.wait_for_window_state(window, "visible", |window| unsafe {
+            // SAFETY: 查询期间 HWND 属于仍存活的测试子进程。
+            IsWindowVisible(window).as_bool()
         });
     }
 
@@ -908,6 +933,96 @@ fn run_real_gui_scenario(graphics: GraphicsExpectation) {
     assert_eq!(
         node_by_automation_id(&recovered["snapshot"], "home-count-value")["name"],
         "计数: 2"
+    );
+
+    let (feedback_x, feedback_y) = visible_center(node_by_automation_id(
+        &recovered["snapshot"],
+        "sidebar-page-7",
+    ));
+    let opened_feedback = perform_until_presentable(
+        &demo,
+        &mut connection,
+        window_id,
+        generation,
+        "open-feedback-page",
+        None,
+        json!({ "kind": "click_at", "x": feedback_x, "y": feedback_y }),
+    );
+    assert_eq!(opened_feedback["settled"], true);
+    let feedback = exchange(
+        &mut connection,
+        json!({
+            "schema": "uix.agent.v1",
+            "request_id": "snapshot-feedback",
+            "type": "snapshot",
+            "window_id": window_id,
+        }),
+    );
+    assert_success(&feedback, "snapshot-feedback");
+    let (modal_x, modal_y) = visible_center(node_by_automation_id(
+        &feedback["snapshot"],
+        "feedback-focus-modal",
+    ));
+    let opened_modal = perform_until_presentable(
+        &demo,
+        &mut connection,
+        window_id,
+        generation,
+        "open-focus-modal",
+        None,
+        json!({ "kind": "click_at", "x": modal_x, "y": modal_y }),
+    );
+    assert_eq!(opened_modal["settled"], true);
+
+    demo.send_system_tab();
+    wait_for_focused_node(
+        &mut connection,
+        window_id,
+        "feedback-modal-cancel",
+        Duration::from_secs(10),
+    );
+    demo.hide();
+    wait_until_presentable(&mut connection, window_id, false, Duration::from_secs(10));
+    let hidden_modal = exchange(
+        &mut connection,
+        json!({
+            "schema": "uix.agent.v1",
+            "request_id": "snapshot-hidden-modal",
+            "type": "snapshot",
+            "window_id": window_id,
+        }),
+    );
+    assert_success(&hidden_modal, "snapshot-hidden-modal");
+    assert_eq!(
+        node_by_automation_id(&hidden_modal["snapshot"], "feedback-modal-cancel")["focused"],
+        true
+    );
+    let hidden_presented_revision = hidden_modal["snapshot"]["presented_revision"]
+        .as_u64()
+        .expect("presented revision while hidden");
+    let hidden_present = exchange(
+        &mut connection,
+        json!({
+            "schema": "uix.agent.v1",
+            "request_id": "hidden-modal-present",
+            "type": "wait",
+            "window_id": window_id,
+            "generation": generation,
+            "presented_revision": hidden_presented_revision + 1,
+            "timeout_ms": 250,
+        }),
+    );
+    assert_eq!(hidden_present["ok"], false);
+    assert_eq!(hidden_present["error"]["code"], "timeout");
+
+    demo.show();
+    wait_until_presentable(&mut connection, window_id, true, Duration::from_secs(10));
+    demo.send_system_tab();
+    wait_for_focused_node(
+        &mut connection,
+        window_id,
+        "feedback-modal-confirm",
+        Duration::from_secs(10),
     );
 
     drop(connection);
