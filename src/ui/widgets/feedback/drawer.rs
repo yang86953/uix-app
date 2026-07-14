@@ -5,7 +5,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::traits::input::ControlSize;
-use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::animation::{presets, AnimationConfig, TransitionPlayer};
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
@@ -32,6 +32,8 @@ component! {
         mask: bool,
         footer_visible: bool,
         extra: String,
+        enter_animation: Option<AnimationConfig>,
+        leave_animation: Option<AnimationConfig>,
         pub(crate) transition: TransitionPlayer,
         closing: bool,
         pub(crate) transition_dirty: bool,
@@ -294,6 +296,8 @@ impl Drawer {
             mask: true,
             footer_visible: false,
             extra: String::new(),
+            enter_animation: None,
+            leave_animation: None,
             transition: TransitionPlayer::new(presets::drawer_enter(
                 Self::animation_placement_for(DrawerPlacement::Right),
             )),
@@ -341,8 +345,10 @@ impl Drawer {
 
     pub fn placement(mut self, p: DrawerPlacement) -> Self {
         self.placement = p;
-        self.transition =
-            TransitionPlayer::new(presets::drawer_enter(Self::animation_placement_for(p)));
+        if self.visible && !self.closing {
+            self.transition = TransitionPlayer::new(self.resolved_enter_animation());
+            self.transition_dirty = true;
+        }
         self
     }
 
@@ -371,6 +377,26 @@ impl Drawer {
         self
     }
 
+    /// 设置打开时播放的动画；已打开时从当前声明重新开始进场。
+    pub fn enter_animation(mut self, animation: AnimationConfig) -> Self {
+        self.enter_animation = Some(animation);
+        if self.visible && !self.closing {
+            self.transition = TransitionPlayer::new(animation);
+            self.transition_dirty = true;
+        }
+        self
+    }
+
+    /// 设置关闭时播放的动画。
+    pub fn leave_animation(mut self, animation: AnimationConfig) -> Self {
+        self.leave_animation = Some(animation);
+        if self.closing {
+            self.transition = TransitionPlayer::new(animation);
+            self.transition_dirty = true;
+        }
+        self
+    }
+
     pub fn is_visible(&self) -> bool {
         self.visible
     }
@@ -378,9 +404,7 @@ impl Drawer {
     pub fn open(&mut self) {
         self.visible = true;
         self.closing = false;
-        self.transition = TransitionPlayer::new(presets::drawer_enter(
-            Self::animation_placement_for(self.placement),
-        ));
+        self.transition = TransitionPlayer::new(self.resolved_enter_animation());
         self.transition_dirty = true;
     }
 
@@ -393,9 +417,7 @@ impl Drawer {
         }
         self.visible = false;
         self.closing = true;
-        self.transition = TransitionPlayer::new(presets::drawer_exit(
-            Self::animation_placement_for(self.placement),
-        ));
+        self.transition = TransitionPlayer::new(self.resolved_leave_animation());
         self.transition_dirty = true;
     }
 
@@ -422,6 +444,8 @@ impl Drawer {
         self.mask = next.mask;
         self.footer_visible = next.footer_visible;
         self.extra = next.extra;
+        self.enter_animation = next.enter_animation;
+        self.leave_animation = next.leave_animation;
     }
 
     fn transition_opacity(&self) -> f32 {
@@ -455,6 +479,16 @@ impl Drawer {
             DrawerPlacement::Top => crate::ui::Placement::Top,
             DrawerPlacement::Bottom => crate::ui::Placement::Bottom,
         }
+    }
+
+    fn resolved_enter_animation(&self) -> AnimationConfig {
+        self.enter_animation
+            .unwrap_or_else(|| presets::drawer_enter(Self::animation_placement_for(self.placement)))
+    }
+
+    fn resolved_leave_animation(&self) -> AnimationConfig {
+        self.leave_animation
+            .unwrap_or_else(|| presets::drawer_exit(Self::animation_placement_for(self.placement)))
     }
 
     fn intrinsic_size(&self) -> Size {
