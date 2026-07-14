@@ -2,7 +2,7 @@
 // platform/shared/window.rs — 窗口实现共享层
 //
 // 作用：
-//   WindowOps trait         — 平台只需实现 6 个必须方法，其余 20 个有合理默认
+//   WindowOps trait         — 平台只需实现 6 个必须方法，其余能力有 typed 默认
 //   PlatformWindowCore<O>   — 与 WindowOps 组合，自动获得 PlatformWindow +
 //                             IWindowProperties + INativeHandle 的完整实现
 //
@@ -133,6 +133,10 @@ pub trait WindowOps {
         unimpl("os_begin_move_drag")
     }
 
+    fn os_show_system_menu(&mut self) -> Result<()> {
+        unimpl("os_show_system_menu")
+    }
+
     /// Exact compositor visibility, when the native window system exposes it.
     fn os_occlusion_state(&self) -> WindowOcclusionState {
         WindowOcclusionState::Unknown
@@ -256,6 +260,9 @@ impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
     }
     fn begin_move_drag(&mut self) -> Result<()> {
         self.ops.os_begin_move_drag()
+    }
+    fn show_system_menu(&mut self) -> Result<()> {
+        self.ops.os_show_system_menu()
     }
     fn is_visible(&self) -> bool {
         state_read!(self.state, visible)
