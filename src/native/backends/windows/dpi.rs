@@ -6,6 +6,16 @@ use std::ffi::c_void;
 
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::HiDpi::{
+    GetDpiForSystem, SetThreadDpiAwarenessContext, DPI_AWARENESS_CONTEXT,
+    DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+};
+
+use super::bindings::RECT;
+use super::consts::FALSE;
+use super::ffi::AdjustWindowRectExForDpi;
+use super::util::windows_diag;
+use crate::native::{Errc, Error};
 
 pub(crate) const BASE_DPI: u32 = 96;
 
@@ -39,6 +49,117 @@ pub(crate) fn dpi_for_window(hwnd: *mut c_void) -> u32 {
     }
     // SAFETY: GetDpiForWindow 只读取 HWND；无效句柄会返回 0，再由 valid_dpi 回退。
     valid_dpi(unsafe { GetDpiForWindow(HWND(hwnd)) })
+}
+
+pub(crate) fn dpi_for_system() -> u32 {
+    // SAFETY: GetDpiForSystem 不解引用应用指针，返回值按当前线程 awareness 解释。
+    valid_dpi(unsafe { GetDpiForSystem() })
+}
+
+/// 计算指定 DPI 下容纳 logical client extent 所需的原生外窗尺寸。
+pub(crate) fn outer_size_for_logical_client(
+    logical_width: i32,
+    logical_height: i32,
+    style: u32,
+    ex_style: u32,
+    dpi: u32,
+) -> Result<(i32, i32), Error> {
+    if logical_width <= 0 || logical_height <= 0 {
+        return Err(Error::new(
+            Errc::InvalidArgument,
+            format!("Windows client extent must be positive, got {logical_width}x{logical_height}"),
+        ));
+    }
+    let dpi = valid_dpi(dpi);
+    let mut rect = RECT {
+        left: 0,
+        top: 0,
+        right: logical_extent_to_physical(logical_width, dpi),
+        bottom: logical_extent_to_physical(logical_height, dpi),
+    };
+    // SAFETY: rect 在同步调用期间有效，style/ex_style 来自同一 Win32 窗口配置。
+    if unsafe { AdjustWindowRectExForDpi(&mut rect, style, FALSE, ex_style, dpi) } == 0 {
+        return Err(windows_diag(
+            Errc::PlatformError,
+            "AdjustWindowRectExForDpi failed",
+        ));
+    }
+    Ok((rect.right - rect.left, rect.bottom - rect.top))
+}
+
+/// 临时把当前线程切到 Per-Monitor V2；调用方必须显式 finish 以保留 typed 失败。
+pub(crate) struct PerMonitorV2Scope {
+    previous: Option<DPI_AWARENESS_CONTEXT>,
+}
+
+impl PerMonitorV2Scope {
+    pub(crate) fn enter() -> Result<Self, Error> {
+        // SAFETY: 只改变当前线程，返回的 previous 由 finish/Drop 在同线程恢复。
+        let previous =
+            unsafe { SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
+        if previous.0.is_null() {
+            return Err(windows_diag(
+                Errc::PlatformError,
+                "SetThreadDpiAwarenessContext(PER_MONITOR_AWARE_V2) failed",
+            ));
+        }
+        Ok(Self {
+            previous: Some(previous),
+        })
+    }
+
+    pub(crate) fn finish(mut self) -> Result<(), Error> {
+        let Some(previous) = self.previous.take() else {
+            return Ok(());
+        };
+        restore_thread_context(previous)
+    }
+}
+
+impl Drop for PerMonitorV2Scope {
+    fn drop(&mut self) {
+        let Some(previous) = self.previous.take() else {
+            return;
+        };
+        if let Err(error) = restore_thread_context(previous) {
+            crate::core::log::error_fn(error.short_what());
+        }
+    }
+}
+
+pub(crate) fn with_per_monitor_v2<T>(
+    operation: impl FnOnce() -> Result<T, Error>,
+) -> Result<T, Error> {
+    let scope = PerMonitorV2Scope::enter()?;
+    let operation_result = operation();
+    let restore_result = scope.finish();
+    match (operation_result, restore_result) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Ok(_), Err(restore)) => Err(restore),
+        (Err(operation), Ok(())) => Err(operation),
+        (Err(operation), Err(restore)) => {
+            let code = operation.code();
+            let message = format!(
+                "{}; DPI context restore also failed: {}",
+                operation.message(),
+                restore.message()
+            );
+            Err(Error::new(code, message).with_source(operation))
+        }
+    }
+}
+
+fn restore_thread_context(previous: DPI_AWARENESS_CONTEXT) -> Result<(), Error> {
+    // SAFETY: previous 由当前线程刚才的 SetThreadDpiAwarenessContext 返回。
+    let replaced = unsafe { SetThreadDpiAwarenessContext(previous) };
+    if replaced.0.is_null() {
+        Err(windows_diag(
+            Errc::PlatformError,
+            "restoring the previous thread DPI awareness context failed",
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 fn scale_non_negative_extent(value: i32, numerator: u32, denominator: u32) -> i32 {

@@ -19,6 +19,7 @@ use super::console::WindowsConsole;
 use super::consts::*;
 use super::cursor::WindowsCursor;
 use super::display::WindowsDisplay;
+use super::dpi::{dpi_for_system, outer_size_for_logical_client, PerMonitorV2Scope};
 use super::ffi::*;
 use super::file_dialog::WindowsFileDialog;
 use super::filesystem::WindowsFileSystem;
@@ -108,6 +109,7 @@ impl WindowsPlatform {
             return;
         }
         self.hwnd = hwnd;
+        self.display_subsys.set_hwnd(hwnd);
         self.clipboard_subsys.set_hwnd(hwnd);
         self.cursor_subsys.set_hwnd(hwnd);
         self.file_dialog_subsys.set_hwnd(hwnd);
@@ -123,6 +125,7 @@ impl WindowsPlatform {
                 self.select_window(hwnd as *mut std::ffi::c_void);
             } else {
                 self.hwnd = std::ptr::null_mut();
+                self.display_subsys.set_hwnd(std::ptr::null_mut());
             }
         }
     }
@@ -229,16 +232,7 @@ impl IWindowManager for WindowsPlatform {
         let style = WS_OVERLAPPEDWINDOW;
 
         unsafe {
-            let mut rect = RECT {
-                left: 0,
-                top: 0,
-                right: width,
-                bottom: height,
-            };
-            AdjustWindowRectEx(&mut rect, style, FALSE, WS_EX_APPWINDOW);
-            let win_w = rect.right - rect.left;
-            let win_h = rect.bottom - rect.top;
-
+            let dpi_scope = PerMonitorV2Scope::enter()?;
             let frame_pacer = shared_frame_pacer_state();
             let binding = Box::new(WindowBinding {
                 platform: self as *mut WindowsPlatform,
@@ -248,27 +242,56 @@ impl IWindowManager for WindowsPlatform {
             });
             let binding_ptr = Box::into_raw(binding);
 
-            let hwnd = CreateWindowExW(
-                WS_EX_APPWINDOW,
-                class_name.as_ptr(),
-                wide_title.as_ptr(),
-                style,
-                CW_USEDEFAULT,
-                CW_USEDEFAULT,
-                win_w,
-                win_h,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                self.hinstance,
-                binding_ptr as *mut std::ffi::c_void,
-            );
-            if hwnd.is_null() {
-                drop(Box::from_raw(binding_ptr));
-                return Err(windows_diag(
-                    Errc::WindowCreationFailed,
-                    "CreateWindowExW returned null",
-                ));
-            }
+            let creation_result = (|| {
+                let dpi = dpi_for_system();
+                let (win_w, win_h) =
+                    outer_size_for_logical_client(width, height, style, WS_EX_APPWINDOW, dpi)?;
+                let hwnd = CreateWindowExW(
+                    WS_EX_APPWINDOW,
+                    class_name.as_ptr(),
+                    wide_title.as_ptr(),
+                    style,
+                    CW_USEDEFAULT,
+                    CW_USEDEFAULT,
+                    win_w,
+                    win_h,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    self.hinstance,
+                    binding_ptr as *mut std::ffi::c_void,
+                );
+                if hwnd.is_null() {
+                    Err(windows_diag(
+                        Errc::WindowCreationFailed,
+                        "CreateWindowExW returned null",
+                    ))
+                } else {
+                    Ok(hwnd)
+                }
+            })();
+            let restore_result = dpi_scope.finish();
+            let hwnd = match (creation_result, restore_result) {
+                (Ok(hwnd), Ok(())) => hwnd,
+                (Ok(hwnd), Err(error)) => {
+                    let _ = DestroyWindow(hwnd);
+                    drop(Box::from_raw(binding_ptr));
+                    return Err(error);
+                }
+                (Err(error), Ok(())) => {
+                    drop(Box::from_raw(binding_ptr));
+                    return Err(error);
+                }
+                (Err(error), Err(restore)) => {
+                    let code = error.code();
+                    let message = format!(
+                        "{}; DPI context restore also failed: {}",
+                        error.message(),
+                        restore.message()
+                    );
+                    drop(Box::from_raw(binding_ptr));
+                    return Err(Error::new(code, message).with_source(error));
+                }
+            };
             let binding = Box::from_raw(binding_ptr);
             self.window_handles.insert(window_id, hwnd as usize);
             self.select_window(hwnd);

@@ -1,14 +1,21 @@
 use crate::native::backends::windows::consts::{
     SIZE_RESTORED, WM_CHAR, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_SIZE,
 };
+use crate::native::backends::windows::dpi::{dpi_for_window, logical_extent_to_physical};
 use crate::native::backends::windows::ffi::PostMessageW;
 use crate::native::backends::windows::platform::*;
+use crate::native::graphics::platform::windows::{drawable_size, query_client_rect};
 use crate::native::shared::OsEventSource;
 use crate::native::traits::event::{UiEventPayload, UiEventType};
 use crate::native::traits::*;
 use crate::tests::common::*;
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
+use windows::Win32::Foundation::HWND;
+use windows::Win32::UI::HiDpi::{
+    AreDpiAwarenessContextsEqual, GetWindowDpiAwarenessContext,
+    DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+};
 
 fn size_lparam(width: u16, height: u16) -> isize {
     (u32::from(width) | (u32::from(height) << 16)) as isize
@@ -44,13 +51,31 @@ fn native_windows_keep_independent_state_and_route_resize_events() {
     platform.dispatch_pending();
     while platform.next_event().is_some() {}
 
+    let first_dpi = dpi_for_window(first_hwnd);
+    let second_dpi = dpi_for_window(second_hwnd);
     unsafe {
         assert_ne!(
-            PostMessageW(first_hwnd, WM_SIZE, SIZE_RESTORED, size_lparam(321, 222)),
+            PostMessageW(
+                first_hwnd,
+                WM_SIZE,
+                SIZE_RESTORED,
+                size_lparam(
+                    logical_extent_to_physical(321, first_dpi) as u16,
+                    logical_extent_to_physical(222, first_dpi) as u16,
+                ),
+            ),
             0
         );
         assert_ne!(
-            PostMessageW(second_hwnd, WM_SIZE, SIZE_RESTORED, size_lparam(654, 333),),
+            PostMessageW(
+                second_hwnd,
+                WM_SIZE,
+                SIZE_RESTORED,
+                size_lparam(
+                    logical_extent_to_physical(654, second_dpi) as u16,
+                    logical_extent_to_physical(333, second_dpi) as u16,
+                ),
+            ),
             0
         );
     }
@@ -83,6 +108,67 @@ fn native_windows_keep_independent_state_and_route_resize_events() {
     assert!(platform.dispatch_pending());
     first.close().expect("close primary window");
     assert!(platform.dispatch_pending());
+}
+
+#[test]
+fn native_window_keeps_logical_client_size_and_physical_drawable_size() {
+    let mut platform = WindowsPlatform::new();
+    let mut window = platform
+        .create_window("UIX Per-Monitor V2 extent", 321, 219)
+        .expect("native window");
+    let hwnd = window.native_handle().native_window();
+    let dpi = dpi_for_window(hwnd);
+    let awareness = unsafe { GetWindowDpiAwarenessContext(HWND(hwnd)) };
+    assert!(bool::from(unsafe {
+        AreDpiAwarenessContextsEqual(awareness, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)
+    }));
+    let client = unsafe { query_client_rect(hwnd) }.expect("client rect");
+    let physical = (client.right - client.left, client.bottom - client.top);
+    let drawable = drawable_size(hwnd, 321, 219);
+
+    assert_eq!(
+        physical,
+        (
+            logical_extent_to_physical(321, dpi),
+            logical_extent_to_physical(219, dpi),
+        )
+    );
+    assert_eq!(
+        (drawable.logical_width, drawable.logical_height),
+        (321, 219)
+    );
+    assert_eq!((drawable.width, drawable.height), physical);
+    assert_eq!(
+        (window.properties().width(), window.properties().height()),
+        (321, 219)
+    );
+    println!(
+        "Windows Per-Monitor V2 extent: dpi={dpi} logical=321x219 physical={}x{}",
+        physical.0, physical.1
+    );
+
+    window
+        .properties_mut()
+        .set_size(411, 277)
+        .expect("resize logical client");
+    assert!(platform.dispatch_pending());
+    let resized_client = unsafe { query_client_rect(hwnd) }.expect("resized client rect");
+    assert_eq!(
+        (
+            resized_client.right - resized_client.left,
+            resized_client.bottom - resized_client.top,
+        ),
+        (
+            logical_extent_to_physical(411, dpi),
+            logical_extent_to_physical(277, dpi),
+        )
+    );
+    assert_eq!(
+        (window.properties().width(), window.properties().height()),
+        (411, 277)
+    );
+
+    window.close().expect("close window");
 }
 
 #[test]
