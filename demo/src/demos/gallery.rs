@@ -27,13 +27,13 @@ fn coverage_row(
             return button(line)
                 .on_click(&nav, move |nav| nav.set(target))
                 .font_size(12.0)
-                .fg(color)
+                .color(color)
                 .padding((2.0, 0.0, 2.0, 0.0))
                 .width(900.0);
         }
     }
 
-    label(line).font_size(12.0).fg(color)
+    embed(Label::new(&line).color(color).font_size(12.0))
 }
 
 /// 单行覆盖项：(分类, widget/特性, 演示页, 是否已展示)
