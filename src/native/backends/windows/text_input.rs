@@ -23,7 +23,6 @@ use std::sync::{Arc, Mutex};
 const IACE_DEFAULT: u32 = 0x0010;
 const CFS_POINT: u32 = 0x0002;
 const CFS_EXCLUDE: u32 = 0x0080;
-const LOGPIXELSX: i32 = 88;
 const IMM_ERROR_NODATA: i32 = -1;
 const IMM_ERROR_GENERAL: i32 = -2;
 
@@ -185,20 +184,7 @@ impl WindowsTextInput {
     }
 
     fn dpi_scale(hwnd: *mut std::ffi::c_void) -> f32 {
-        // SAFETY: HWND is validated by require_hwnd. GetDC/ReleaseDC are paired.
-        unsafe {
-            let hdc = GetDC(hwnd);
-            if hdc.is_null() {
-                return 1.0;
-            }
-            let dpi = GetDeviceCaps(hdc, LOGPIXELSX);
-            let _ = ReleaseDC(hwnd, hdc);
-            if dpi > 0 {
-                dpi as f32 / 96.0
-            } else {
-                1.0
-            }
-        }
+        super::dpi::dpi_for_window(hwnd) as f32 / super::dpi::BASE_DPI as f32
     }
 
     fn activate_tsf(&mut self, hwnd: *mut std::ffi::c_void) {

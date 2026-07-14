@@ -5,7 +5,9 @@
 
 use std::ffi::c_void;
 
-const LOGPIXELSX: i32 = 88;
+use crate::native::backends::windows::dpi::{
+    dpi_for_window, logical_extent_to_physical, physical_extent_to_logical,
+};
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -21,11 +23,6 @@ extern "system" {
     fn GetClientRect(hwnd: *mut c_void, lp_rect: *mut Rect) -> i32;
     fn GetDC(hwnd: *mut c_void) -> *mut c_void;
     fn ReleaseDC(hwnd: *mut c_void, hdc: *mut c_void) -> i32;
-}
-
-#[link(name = "gdi32")]
-extern "system" {
-    fn GetDeviceCaps(hdc: *mut c_void, index: i32) -> i32;
 }
 
 /// Logical client extent and the physical drawable extent derived from the
@@ -53,15 +50,14 @@ pub(crate) unsafe fn query_client_rect(hwnd: *mut c_void) -> Option<Rect> {
     }
 }
 
-fn logical_size(hwnd: *mut c_void, fallback_w: i32, fallback_h: i32) -> (i32, i32) {
+fn physical_client_size(hwnd: *mut c_void) -> Option<(i32, i32)> {
     unsafe {
-        let Some(rect) = query_client_rect(hwnd) else {
-            return (fallback_w.max(1), fallback_h.max(1));
-        };
-        (
-            (rect.right - rect.left).max(1),
-            (rect.bottom - rect.top).max(1),
-        )
+        query_client_rect(hwnd).map(|rect| {
+            (
+                (rect.right - rect.left).max(1),
+                (rect.bottom - rect.top).max(1),
+            )
+        })
     }
 }
 
@@ -76,8 +72,23 @@ pub(crate) fn drawable_size_from_dpi(
     DrawableSize {
         logical_width,
         logical_height,
-        width: ((logical_width as i64 * dpi as i64 + 48) / 96).max(1) as i32,
-        height: ((logical_height as i64 * dpi as i64 + 48) / 96).max(1) as i32,
+        width: logical_extent_to_physical(logical_width, dpi as u32).max(1),
+        height: logical_extent_to_physical(logical_height, dpi as u32).max(1),
+    }
+}
+
+pub(crate) fn drawable_size_from_client_pixels(
+    physical_width: i32,
+    physical_height: i32,
+    dpi: u32,
+) -> DrawableSize {
+    let width = physical_width.max(1);
+    let height = physical_height.max(1);
+    DrawableSize {
+        logical_width: physical_extent_to_logical(width, dpi).max(1),
+        logical_height: physical_extent_to_logical(height, dpi).max(1),
+        width,
+        height,
     }
 }
 
@@ -85,31 +96,22 @@ pub(crate) fn drawable_size_from_dpi(
 /// HDC. WGL owns an HDC for its lifetime and therefore uses this variant.
 pub(crate) fn drawable_size_from_hdc(
     hwnd: *mut c_void,
-    hdc: *mut c_void,
+    _hdc: *mut c_void,
     fallback_w: i32,
     fallback_h: i32,
 ) -> DrawableSize {
-    let (logical_width, logical_height) = logical_size(hwnd, fallback_w, fallback_h);
-    let dpi = if hdc.is_null() {
-        96
-    } else {
-        unsafe { GetDeviceCaps(hdc, LOGPIXELSX) }.max(96)
-    };
-    drawable_size_from_dpi(logical_width, logical_height, dpi)
+    let dpi = dpi_for_window(hwnd);
+    physical_client_size(hwnd).map_or_else(
+        || drawable_size_from_dpi(fallback_w, fallback_h, dpi as i32),
+        |(width, height)| drawable_size_from_client_pixels(width, height, dpi),
+    )
 }
 
 /// Computes the shared Windows graphics drawable extent. D3D contexts acquire
 /// a short-lived HDC; callers that already own one use
 /// [`drawable_size_from_hdc`] instead.
 pub(crate) fn drawable_size(hwnd: *mut c_void, fallback_w: i32, fallback_h: i32) -> DrawableSize {
-    unsafe {
-        let hdc = GetDC(hwnd);
-        let size = drawable_size_from_hdc(hwnd, hdc, fallback_w, fallback_h);
-        if !hdc.is_null() {
-            let _ = ReleaseDC(hwnd, hdc);
-        }
-        size
-    }
+    drawable_size_from_hdc(hwnd, std::ptr::null_mut(), fallback_w, fallback_h)
 }
 
 pub(crate) unsafe fn device_context(hwnd: *mut c_void) -> *mut c_void {

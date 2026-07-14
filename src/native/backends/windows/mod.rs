@@ -19,6 +19,7 @@ pub mod console;
 pub mod consts;
 pub mod cursor;
 pub mod display;
+pub(crate) mod dpi;
 pub mod ffi;
 pub mod file_dialog;
 pub mod filesystem;
