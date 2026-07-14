@@ -176,6 +176,20 @@ impl WindowsPlatform {
                 }
                 0
             }
+            WM_DPICHANGED => {
+                // Windows 在 lParam 中给出按新 DPI 计算的 physical 外窗矩形；
+                // SetWindowPos 同步产生的 WM_SIZE 继续走唯一 resize/graphics 重建路径。
+                let result = unsafe {
+                    super::dpi::apply_suggested_window_rect(
+                        hwnd,
+                        lparam as *const super::bindings::RECT,
+                    )
+                };
+                if let Err(error) = result {
+                    crate::core::log::error_fn(error.short_what());
+                }
+                0
+            }
             WM_SHOWWINDOW => {
                 let visible = wparam != 0;
                 window.borrow_mut().visible = visible;
