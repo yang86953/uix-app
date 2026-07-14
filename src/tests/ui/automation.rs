@@ -191,12 +191,7 @@ fn semantic_set_value_insert_text_and_errors_are_protocol_typed() {
 #[test]
 fn selection_snapshot_and_convenience_action_use_zero_based_indices() {
     let mut app = TestApp::new((320.0, 80.0), || {
-        embed(
-            Segmented::new()
-                .options(vec!["Day", "Week", "Month"])
-                .disable_option(1),
-        )
-        .automation_id("period")
+        embed(Segmented::new(["Day", "Week", "Month"]).disable_option(1)).automation_id("period")
     });
 
     let before = app.snapshot();

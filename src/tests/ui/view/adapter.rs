@@ -643,12 +643,12 @@ fn reconcile_rate_patches_instance_and_syncs_snapshot_fields() {
 
 #[test]
 fn reconcile_segmented_patches_instance_and_syncs_static_config() {
+    use crate::ui::state::State;
     use crate::ui::widgets::Segmented;
 
+    let value = State::new("Weekly".to_string());
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
-        Segmented::new()
-            .options(vec!["Daily", "Weekly"])
-            .selected(1),
+        Segmented::new(["Daily", "Weekly"]).value(&value),
     ));
     let root_id = tree.root_id().expect("segmented root should exist");
     let before_ptr = tree
@@ -659,11 +659,12 @@ fn reconcile_segmented_patches_instance_and_syncs_static_config() {
         .downcast_ref::<Segmented>()
         .unwrap() as *const Segmented;
 
+    value.set("Week".to_string());
     ViewAdapter::reconcile_nodes(
         &mut tree,
         ViewNode::leaf(
-            Segmented::new()
-                .options(vec!["Day", "Week", "Month"])
+            Segmented::new(["Day", "Week", "Month"])
+                .value(&value)
                 .disable_option(2)
                 .disabled(true),
         ),

@@ -151,9 +151,7 @@ fn select_exposes_one_index_contract_and_reuses_keyboard_change_events() {
     assert_eq!(&*changes.borrow(), &["1".to_owned()]);
 
     let mut segmented_tree = laid_out_tree(embed(
-        Segmented::new()
-            .options(vec!["Day", "Week", "Month"])
-            .disable_option(1),
+        Segmented::new(["Day", "Week", "Month"]).disable_option(1),
     ));
     let segmented = segmented_tree.root_id().unwrap();
     segmented_tree

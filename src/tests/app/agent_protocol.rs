@@ -229,12 +229,8 @@ fn protocol_routes_snapshot_perform_and_wait_through_the_window_ui_turn() {
             button("Run")
                 .on_click_fn(move || invoked_for_handler.set(invoked_for_handler.get() + 1))
                 .automation_id("run"),
-            embed(
-                Segmented::new()
-                    .options(vec!["Day", "Week", "Month"])
-                    .disable_option(1),
-            )
-            .automation_id("period"),
+            embed(Segmented::new(["Day", "Week", "Month"]).disable_option(1))
+                .automation_id("period"),
         ]),
         Box::new(NullEngine::new()),
         320,

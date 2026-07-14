@@ -4,6 +4,7 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
+use crate::ui::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
 };
@@ -14,6 +15,7 @@ component! {
     pub struct Segmented {
         options: Vec<String>,
         selected: usize,
+        value_binding: Option<State<String>>,
         disabled: bool,
         disabled_options: Vec<bool>,
         hovered_idx: Option<usize>,
@@ -27,15 +29,12 @@ component! {
 
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        self.sync_bound_value();
         if self.disabled { return EventResult::NotHandled; }
         match event {
             SystemEvent::PointerDown { pos, .. } => {
                 if let Some(idx) = self.segment_at(pos.x) {
-                    if !self.is_segment_disabled(idx) {
-                        if self.selected != idx {
-                            self.selected = idx;
-                            self.pending_change.set(Some(idx));
-                        }
+                    if self.select_index(idx) {
                         return EventResult::Handled;
                     }
                 }
@@ -52,27 +51,25 @@ component! {
             SystemEvent::KeyDown { key, .. } => {
                 match key {
                     KeyCode::Right | KeyCode::Down => {
-                        let mut next = self.selected + 1;
-                        while next < self.options.len() && self.is_segment_disabled(next) {
-                            next += 1;
-                        }
-                        if next < self.options.len() {
-                            self.selected = next;
-                            self.pending_change.set(Some(next));
+                        let start = if self.selected < self.options.len() {
+                            self.selected.saturating_add(1)
+                        } else {
+                            0
+                        };
+                        if let Some(next) = (start..self.options.len())
+                            .find(|index| !self.is_segment_disabled(*index))
+                        {
+                            self.select_index(next);
                         }
                         EventResult::Handled
                     }
                     KeyCode::Left | KeyCode::Up => {
-                        let mut prev = if self.selected > 0 { self.selected - 1 } else { 0 };
-                        while prev > 0 && self.is_segment_disabled(prev) {
-                            prev -= 1;
-                        }
-                        if !self.is_segment_disabled(prev)
-                            && prev < self.options.len()
-                            && self.selected != prev
+                        let end = self.selected.min(self.options.len());
+                        if let Some(prev) = (0..end)
+                            .rev()
+                            .find(|index| !self.is_segment_disabled(*index))
                         {
-                            self.selected = prev;
-                            self.pending_change.set(Some(prev));
+                            self.select_index(prev);
                         }
                         EventResult::Handled
                     }
@@ -92,6 +89,7 @@ component! {
     wants_continuous_pointer_move => (&self) -> bool { true }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        self.capture_bound_value_dependency();
         let fill = ctx.tokens().color_fill_tertiary();
         let primary = ctx.tokens().color_primary();
         let primary_hover = ctx.tokens().color_primary_hover();
@@ -143,6 +141,47 @@ component! {
 }
 
 impl Segmented {
+    fn select_index(&mut self, index: usize) -> bool {
+        if index >= self.options.len() || self.is_segment_disabled(index) {
+            return false;
+        }
+        if self.selected != index {
+            self.selected = index;
+            self.write_bound_value();
+            self.pending_change.set(Some(index));
+        }
+        true
+    }
+
+    fn sync_bound_value(&mut self) {
+        let Some(value) = self.value_binding.as_ref().map(State::get) else {
+            return;
+        };
+        self.selected = self
+            .options
+            .iter()
+            .position(|option| option == &value)
+            .unwrap_or(usize::MAX);
+    }
+
+    fn capture_bound_value_dependency(&self) {
+        if let Some(state) = self.value_binding.as_ref() {
+            let _ = state.get();
+        }
+    }
+
+    fn write_bound_value(&self) {
+        let Some(state) = self.value_binding.as_ref() else {
+            return;
+        };
+        let Some(value) = self.options.get(self.selected) else {
+            return;
+        };
+        if state.get() != *value {
+            state.set(value.clone());
+        }
+    }
+
     fn intrinsic_size(&self) -> Size {
         if self.options.is_empty() {
             return Size::new(0.0, 32.0);
@@ -174,15 +213,23 @@ impl Segmented {
 
 impl Default for Segmented {
     fn default() -> Self {
-        Self::new()
+        Self::new(Vec::<String>::new())
     }
 }
 
 impl Segmented {
-    pub fn new() -> Self {
+    pub fn new<I, S>(options: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         Self {
-            options: Vec::new(),
+            options: options
+                .into_iter()
+                .map(|option| option.as_ref().to_owned())
+                .collect(),
             selected: 0,
+            value_binding: None,
             disabled: false,
             disabled_options: Vec::new(),
             hovered_idx: None,
@@ -190,14 +237,42 @@ impl Segmented {
             pending_change: Cell::new(None),
         }
     }
-    pub fn options(mut self, opts: Vec<impl Into<String>>) -> Self {
-        self.options = opts.into_iter().map(|s| s.into()).collect();
+
+    pub fn options<I, S>(mut self, options: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.options = options
+            .into_iter()
+            .map(|option| option.as_ref().to_owned())
+            .collect();
+        self.sync_bound_value();
         self
     }
-    pub fn selected(mut self, idx: usize) -> Self {
+
+    /// 设置非受控分段选择器的初始索引。
+    pub fn default_selected(mut self, idx: usize) -> Self {
+        self.value_binding = None;
         self.selected = idx;
         self
     }
+
+    /// 将当前选项值绑定到外部 `State<String>`。
+    pub fn value(mut self, state: &State<String>) -> Self {
+        self.value_binding = Some(state.clone());
+        self.sync_bound_value();
+        self
+    }
+
+    pub fn current_value(&self) -> Option<String> {
+        self.options.get(self.selected).cloned()
+    }
+
+    pub fn current_index(&self) -> Option<usize> {
+        (self.selected < self.options.len()).then_some(self.selected)
+    }
+
     pub fn disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self
@@ -220,9 +295,15 @@ impl Segmented {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let controlled_selected = next.value_binding.as_ref().map(|_| next.selected);
         self.options = next.options;
+        self.value_binding = next.value_binding;
         self.disabled = next.disabled;
         self.disabled_options = next.disabled_options;
-        self.selected = self.selected.min(self.options.len().saturating_sub(1));
+        self.selected = controlled_selected.unwrap_or_else(|| {
+            (self.selected < self.options.len())
+                .then_some(self.selected)
+                .unwrap_or(usize::MAX)
+        });
     }
 }

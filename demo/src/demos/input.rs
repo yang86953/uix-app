@@ -156,11 +156,8 @@ pub fn page_input(ctx: &DemoCtx<'_>) -> ViewNode {
         ))
         .section("Segmented")
         .push(
-            demo_row(36.0).child(
-                Segmented::new()
-                    .options(vec!["每日", "每周", "每月", "每年"])
-                    .selected(2),
-            ),
+            demo_row(36.0)
+                .child(Segmented::new(["每日", "每周", "每月", "每年"]).default_selected(2)),
         )
         .section("Form / FormItem")
         .push(
