@@ -240,7 +240,15 @@ impl ViewAdapter {
 
         let _handlers_changed = Self::reconcile_handlers(tree, id, handlers);
         tree.replace_render_handlers(id, render_handlers);
-        let mut children_changed = Self::reconcile_children(tree, id, children);
+        let table_expand = tree.has_table_expand_renderer(id);
+        let mut children_changed = if table_expand {
+            let expanded = tree.table_expand_view(id).into_iter().collect();
+            let changed = Self::reconcile_children(tree, id, expanded);
+            tree.mark_table_expand_materialized(id);
+            changed
+        } else {
+            Self::reconcile_children(tree, id, children)
+        };
         children_changed |= tree.refresh_virtual_scroll_component(id, None);
         if children_changed {
             paint_changed = true;

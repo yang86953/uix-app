@@ -2,12 +2,11 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
-use crate::ui::core::paint_scope::current_paint_widget;
 use crate::ui::foundation::virtual_scroll::VirtualListScroll;
 use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::{
-    ComponentId, EventResult, SemanticEvent, SnapshotFields, SnapshotTableColumn, SystemEvent,
-    WidgetTree,
+    ComponentId, EventResult, LayoutChild, SemanticEvent, SnapshotFields, SnapshotTableColumn,
+    SystemEvent, WidgetTree,
 };
 use std::cell::{Cell, RefCell};
 
@@ -54,8 +53,8 @@ impl TableColumn {
 /// 表格行数据。
 pub type TableRow = Vec<String>;
 
-/// 扩展行渲染器。
-pub type ExpandRenderer = Box<dyn Fn(usize, &mut PaintContext, Rect)>;
+/// 扩展行视图工厂；按当前行数据构建普通 View 子树。
+pub type ExpandRenderer = Box<dyn Fn(&TableRow) -> crate::ui::view::ViewNode>;
 
 /// 变更事件。
 #[derive(Debug, Clone)]
@@ -66,7 +65,7 @@ pub struct TableChange {
     pub page_size: usize,
 }
 
-/// Declarative table builder that carries paint handlers outside the component.
+/// 声明式表格构建器；展开 View factory 保存在组件外。
 pub struct TableBuilder {
     table: Table,
     expand_renderer: ExpandRenderer,
@@ -84,6 +83,7 @@ component! {
         checked_rows: Vec<usize>,
         /// 扩展行：当前展开的行索引。
         expanded_row: Cell<Option<usize>>,
+        expanded_child_row: Cell<Option<usize>>,
         expandable: bool,
         expand_height: f32,
         sortable: bool,
@@ -116,6 +116,10 @@ component! {
         } else {
             None
         }
+    }
+
+    viewport_scroll_offset => (&self) -> Option<(f32, f32)> {
+        Some((0.0, self.body_scroll.scroll_offset()))
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -214,13 +218,8 @@ component! {
 
     wants_continuous_pointer_move => (&self) -> bool { true }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.last_frame.set(Some(frame));
-        let expand_renderer = if self.expandable {
-            current_paint_widget().and_then(|id| tree.table_expand_renderer(id))
-        } else {
-            None
-        };
         let loc = crate::ui::locale::use_locale();
         let bg = ctx.tokens().color_bg_elevated();
         let header_bg = ctx.tokens().color_fill_tertiary();
@@ -369,7 +368,7 @@ component! {
             }
 
             // 扩展行箭头
-            if expand_renderer.is_some() {
+            if self.expandable {
                 ctx.draw_text(if is_expanded { "▲" } else { "▼" }, Point::new(frame.x + frame.w - 20.0, cell_y), text_sec, 10.0);
             }
 
@@ -379,11 +378,13 @@ component! {
 
             // 扩展行内容
             if is_expanded {
-                if let Some(renderer) = expand_renderer {
-                    let expand_rect = Rect::new(frame.x, row_y + self.row_h, frame.w, self.expand_height);
-                    ctx.fill_rect(expand_rect, ctx.tokens().color_bg_container(), None);
-                    renderer(actual_ri, ctx, expand_rect);
-                }
+                let expand_rect = Rect::new(
+                    frame.x,
+                    row_y + self.row_h,
+                    frame.w,
+                    self.expand_height,
+                );
+                ctx.fill_rect(expand_rect, ctx.tokens().color_bg_container(), None);
             }
         }
 
@@ -391,6 +392,31 @@ component! {
         if self.bordered {
             ctx.stroke_rect(frame, border, 1.0, r);
         }
+    }
+
+    children_clip => (&self, frame: Rect) -> Option<Rect> {
+        Some(Rect::new(
+            frame.x,
+            frame.y + self.header_h + 1.0,
+            frame.w,
+            (frame.h - self.header_h - 1.0).max(0.0),
+        ))
+    }
+
+    layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
+        -> Vec<(ComponentId, Rect)>
+    {
+        let Some(expanded_row) = self.expanded_row.get() else {
+            return Vec::new();
+        };
+        let Some(child) = children.first() else {
+            return Vec::new();
+        };
+        let y = frame.y + self.header_h + 1.0 + (expanded_row + 1) as f32 * self.row_h;
+        vec![(
+            child.id,
+            Rect::new(frame.x, y, frame.w, self.expand_height),
+        )]
     }
 }
 
@@ -429,6 +455,7 @@ impl Table {
             hover_row: Cell::new(None),
             checked_rows: Vec::new(),
             expanded_row: Cell::new(None),
+            expanded_child_row: Cell::new(None),
             expandable: false,
             expand_height: 60.0,
             sortable: false,
@@ -489,16 +516,20 @@ impl Table {
         self.empty_text = t.into();
         self
     }
-    pub fn expandable(
+    /// 为展开行声明普通 View 子树；闭包接收当前 `TableRow`。
+    pub fn expandable<V>(
         mut self,
         height: f32,
-        renderer: impl Fn(usize, &mut PaintContext, Rect) + 'static,
-    ) -> TableBuilder {
+        renderer: impl Fn(&TableRow) -> V + 'static,
+    ) -> TableBuilder
+    where
+        V: crate::ui::view::View,
+    {
         self.expandable = true;
         self.expand_height = height.max(0.0);
         TableBuilder {
             table: self,
-            expand_renderer: Box::new(renderer),
+            expand_renderer: Box::new(move |row| crate::ui::view::View::build(renderer(row))),
         }
     }
     pub fn page_size(mut self, n: usize) -> Self {
@@ -519,6 +550,14 @@ impl Table {
             .get()
             .map(|f| (f.h - self.header_h - 1.0).max(self.row_h))
             .unwrap_or(300.0)
+    }
+
+    pub(crate) fn expanded_child_row(&self) -> Option<usize> {
+        self.expanded_child_row.get()
+    }
+
+    pub(crate) fn mark_expanded_child_materialized(&self) {
+        self.expanded_child_row.set(self.expanded_row.get());
     }
 
     fn row_index_at_y(&self, pos_y: f32) -> Option<usize> {
@@ -639,6 +678,13 @@ impl Table {
             .is_some_and(|row| row >= self.rows.len())
         {
             self.selected_row.set(None);
+        }
+        if self
+            .expanded_row
+            .get()
+            .is_some_and(|row| row >= self.rows.len())
+        {
+            self.expanded_row.set(None);
         }
         let max = (self.body_content_height() - self.body_viewport_height()).max(0.0);
         self.body_scroll

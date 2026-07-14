@@ -90,48 +90,54 @@ fn table_wheel_registers_composite_scroll_strip() {
 }
 
 #[test]
-fn table_expand_renderer_is_invoked_from_paint_sidecar() {
+fn table_expand_view_is_materialized_once_and_remains_interactive() {
     use crate::draw::compositor::ScenePaint;
     use crate::draw::engine::cpu::pixel_surface::PixelSurface;
     use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
     use crate::draw::spatial::Orientation;
-    use crate::ui::view::adapter::ViewAdapter;
+    use crate::ui::view::{button, ViewAdapter};
+    use crate::ui::widgets::Button;
 
     let calls = Rc::new(Cell::new(0));
     let renderer_calls = Rc::clone(&calls);
+    let clicks = Rc::new(Cell::new(0));
+    let renderer_clicks = Rc::clone(&clicks);
     let mut tree = ViewAdapter::build(
         Table::new()
             .columns(vec![TableColumn::new("Name", 320.0)])
             .rows(vec![vec!["Ada".to_string()]])
-            .expandable(48.0, move |row, _ctx, _rect| {
-                assert_eq!(row, 0);
+            .expandable(48.0, move |row| {
+                assert_eq!(row, &["Ada".to_string()]);
                 renderer_calls.set(renderer_calls.get() + 1);
+                let button_clicks = Rc::clone(&renderer_clicks);
+                button("Open Ada").on_click_fn(move || {
+                    button_clicks.set(button_clicks.get() + 1);
+                })
             }),
     );
     let id = tree.root_id().expect("table root");
     let frame = Rect::new(0.0, 0.0, 320.0, 120.0);
-    tree.get_mut(id).unwrap().set_frame(frame);
-    {
-        let table = tree
-            .get_mut(id)
-            .unwrap()
-            .component_mut()
-            .as_any_mut()
-            .downcast_mut::<Table>()
-            .unwrap();
-        assert_eq!(
-            EventHandler::on_event(
-                table,
-                &SystemEvent::PointerDown {
-                    pos: Point::new(310.0, 40.0),
-                    button: MouseButton::Left,
-                    mods: KeyMod::NONE,
-                },
-            ),
-            EventResult::Handled
-        );
-        assert_eq!(table.expanded_row(), Some(0));
-    }
+    tree.get_mut(id).expect("table node").set_frame(frame);
+    tree.layout();
+    let toggle = SystemEvent::PointerDown {
+        pos: Point::new(310.0, 40.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    };
+    assert_eq!(tree.dispatch_event(&toggle), EventResult::Handled);
+    assert_eq!(calls.get(), 1);
+    tree.layout();
+
+    let child = tree
+        .get(id)
+        .expect("table node")
+        .children()
+        .first()
+        .copied()
+        .expect("expanded View child");
+    let child_node = tree.get(child).expect("expanded child node");
+    assert!(child_node.component().as_any().is::<Button>());
+    assert_eq!(child_node.frame(), Rect::new(0.0, 61.0, 320.0, 48.0));
 
     let mut canvas = SharedRasterizer::new(PixelSurface::new(320, 120));
     let mut fonts = FontService::new();
@@ -156,4 +162,26 @@ fn table_expand_renderer_is_invoked_from_paint_sidecar() {
     ScenePaint::paint(&tree, id, frame, &mut ctx);
 
     assert_eq!(calls.get(), 1);
+
+    let button_pos = Point::new(20.0, 80.0);
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: button_pos,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerUp {
+            pos: button_pos,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(clicks.get(), 1);
+
+    assert_eq!(tree.dispatch_event(&toggle), EventResult::Handled);
+    assert!(tree.get(id).expect("table node").children().is_empty());
 }

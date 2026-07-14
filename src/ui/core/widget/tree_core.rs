@@ -801,6 +801,7 @@ impl WidgetTree {
             self.build_node(child, Some(id));
         }
         self.refresh_virtual_scroll_component(id, None);
+        self.refresh_table_expand_component(id);
         id
     }
 
@@ -829,65 +830,6 @@ impl WidgetTree {
         handlers: Vec<RenderHandlerRegistration>,
     ) {
         self.render_handler_table.replace_component(id, handlers);
-    }
-
-    pub(crate) fn table_expand_renderer(
-        &self,
-        id: ComponentId,
-    ) -> Option<&crate::ui::widgets::display::table::ExpandRenderer> {
-        self.render_handler_table.table_expand(id)
-    }
-
-    pub(crate) fn refresh_virtual_scroll_component(
-        &mut self,
-        id: ComponentId,
-        viewport_height: Option<f32>,
-    ) -> bool {
-        use crate::ui::foundation::virtual_scroll::VirtualScroll;
-
-        if !self.render_handler_table.contains_virtual_scroll_item(id) {
-            return false;
-        }
-
-        let Some((range, needs_refresh)) = self.get(id).and_then(|node| {
-            let scroll = node.component().as_any().downcast_ref::<VirtualScroll>()?;
-            let height = viewport_height
-                .filter(|height| *height > 0.0)
-                .unwrap_or_else(|| scroll.configured_viewport_height());
-            let range = scroll.scroll_range(height);
-            Some((
-                range,
-                scroll.needs_child_refresh(height, node.children().len()),
-            ))
-        }) else {
-            return false;
-        };
-        if !needs_refresh {
-            return false;
-        }
-
-        let children = self
-            .render_handler_table
-            .render_virtual_scroll_items(id, range.0, range.1)
-            .unwrap_or_default();
-        self.set_children(id, children);
-        if let Some(scroll) = self
-            .get(id)
-            .and_then(|node| node.component().as_any().downcast_ref::<VirtualScroll>())
-        {
-            scroll.mark_children_materialized(range);
-        }
-        true
-    }
-
-    #[cfg(test)]
-    pub(crate) fn has_table_expand_renderer(&self, id: ComponentId) -> bool {
-        self.render_handler_table.contains_table_expand(id)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn has_virtual_scroll_renderer(&self, id: ComponentId) -> bool {
-        self.render_handler_table.contains_virtual_scroll_item(id)
     }
 
     pub fn overlay_stack(&self) -> &OverlayStack {

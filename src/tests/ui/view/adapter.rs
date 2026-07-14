@@ -840,7 +840,7 @@ fn reconcile_table_preserves_runtime_selection_and_syncs_config() {
                 .rows(vec![vec!["Paris".to_string()], vec!["London".to_string()]])
                 .row_height(36.0)
                 .empty_text("No rows")
-                .expandable(72.0, |_idx, _ctx, _rect| {})
+                .expandable(72.0, |_row| crate::ui::view::label("Details"))
                 .sortable(true)
                 .selection(true)
                 .bordered(true)
@@ -893,8 +893,9 @@ fn table_expand_renderer_is_replaced_and_removed_with_component_sidecar() {
     let first_renderer = Rc::clone(&first_capture);
     let mut tree = ViewAdapter::build(Table::new().rows(vec![vec!["Ada".to_string()]]).expandable(
         48.0,
-        move |_row, _ctx, _rect| {
-            first_renderer.set(first_renderer.get() + 1);
+        move |_row| {
+            let _ = first_renderer.get();
+            crate::ui::view::label("First details")
         },
     ));
     let root = tree.root_id().expect("table root");
@@ -908,8 +909,9 @@ fn table_expand_renderer_is_replaced_and_removed_with_component_sidecar() {
         &mut tree,
         Table::new()
             .rows(vec![vec!["Grace".to_string()]])
-            .expandable(56.0, move |_row, _ctx, _rect| {
-                second_renderer.set(second_renderer.get() + 1);
+            .expandable(56.0, move |_row| {
+                let _ = second_renderer.get();
+                crate::ui::view::label("Second details")
             }),
     );
 
@@ -926,33 +928,79 @@ fn table_expand_renderer_is_replaced_and_removed_with_component_sidecar() {
 }
 
 #[test]
-fn table_expand_affordance_toggles_component_state_without_owning_renderer() {
-    use crate::ui::widgets::{Table, TableColumn};
+fn table_expand_affordance_materializes_and_reconciles_view_child() {
+    use crate::ui::view::button;
+    use crate::ui::widgets::{Button, Table, TableColumn};
 
     let mut tree = ViewAdapter::build(
         Table::new()
             .columns(vec![TableColumn::new("Name", 120.0)])
             .rows(vec![vec!["Ada".to_string()]])
-            .expandable(48.0, |_row, _ctx, _rect| {}),
+            .expandable(48.0, |row| button(row.first().cloned().unwrap_or_default())),
     );
     let root = tree.root_id().expect("table root");
-    let table = tree
-        .get_mut(root)
-        .unwrap()
-        .component_mut()
-        .as_any_mut()
-        .downcast_mut::<Table>()
-        .unwrap();
+    tree.get_mut(root)
+        .expect("table node")
+        .set_frame(Rect::new(0.0, 0.0, 120.0, 120.0));
+    tree.layout();
 
-    let click = SystemEvent::PointerDown {
+    let toggle = SystemEvent::PointerDown {
         pos: Point::new(112.0, 40.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     };
-    assert_eq!(EventHandler::on_event(table, &click), EventResult::Handled);
-    assert_eq!(table.expanded_row(), Some(0));
-    assert_eq!(EventHandler::on_event(table, &click), EventResult::Handled);
-    assert_eq!(table.expanded_row(), None);
+    assert_eq!(tree.dispatch_event(&toggle), EventResult::Handled);
+    tree.layout();
+    let child = tree
+        .get(root)
+        .expect("table node")
+        .children()
+        .first()
+        .copied()
+        .expect("expanded child");
+    assert_eq!(
+        tree.get(child)
+            .expect("expanded child node")
+            .component()
+            .as_any()
+            .downcast_ref::<Button>()
+            .expect("expanded Button")
+            .text(),
+        "Ada"
+    );
+
+    ViewAdapter::reconcile(
+        &mut tree,
+        Table::new()
+            .columns(vec![TableColumn::new("Name", 120.0)])
+            .rows(vec![vec!["Grace".to_string()]])
+            .expandable(48.0, |row| button(row.first().cloned().unwrap_or_default())),
+    );
+
+    let reconciled_child = tree
+        .get(root)
+        .expect("table node")
+        .children()
+        .first()
+        .copied()
+        .expect("reconciled expanded child");
+    assert_eq!(reconciled_child, child);
+    assert_eq!(
+        tree.get(reconciled_child)
+            .expect("expanded child node")
+            .component()
+            .as_any()
+            .downcast_ref::<Button>()
+            .expect("expanded Button")
+            .text(),
+        "Grace"
+    );
+    assert_eq!(tree.dispatch_event(&toggle), EventResult::Handled);
+    assert!(tree
+        .get_mut(root)
+        .expect("table node")
+        .children()
+        .is_empty());
 }
 
 #[test]
@@ -961,8 +1009,9 @@ fn replacing_tree_root_drops_table_expand_renderer() {
 
     let capture = Rc::new(Cell::new(0));
     let renderer_capture = Rc::clone(&capture);
-    let mut tree = ViewAdapter::build(Table::new().expandable(48.0, move |_row, _ctx, _rect| {
-        renderer_capture.set(renderer_capture.get() + 1)
+    let mut tree = ViewAdapter::build(Table::new().expandable(48.0, move |_row| {
+        let _ = renderer_capture.get();
+        crate::ui::view::label("Details")
     }));
     assert_eq!(Rc::strong_count(&capture), 2);
 

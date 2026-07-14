@@ -728,6 +728,10 @@ impl WidgetTree {
     }
 
     fn finish_scroll_aware_dispatch(&mut self, id: WidgetId, event: &SystemEvent) -> EventResult {
+        if self.refresh_table_expand_component(id) {
+            self.push_layout_invalidation(id);
+            self.propagate_layout_invalidation(id);
+        }
         if !self.register_scroll_composite(id) {
             self.invalidate_paint(id);
         }

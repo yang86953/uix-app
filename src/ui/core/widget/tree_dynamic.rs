@@ -1,0 +1,111 @@
+use super::tree_core::WidgetTree;
+use super::WidgetCore;
+use crate::core::ComponentId;
+use crate::ui::foundation::virtual_scroll::VirtualScroll;
+use crate::ui::widgets::display::table::Table;
+
+impl WidgetTree {
+    pub(crate) fn table_expand_view(&self, id: ComponentId) -> Option<crate::ui::view::ViewNode> {
+        let table = self.get(id)?.component().as_any().downcast_ref::<Table>()?;
+        let row = table.rows.get(table.expanded_row()?)?;
+        self.render_handler_table.render_table_expand_view(id, row)
+    }
+
+    pub(crate) fn mark_table_expand_materialized(&self, id: ComponentId) {
+        if let Some(table) = self
+            .get(id)
+            .and_then(|node| node.component().as_any().downcast_ref::<Table>())
+        {
+            table.mark_expanded_child_materialized();
+        }
+    }
+
+    pub(crate) fn refresh_table_expand_component(&mut self, id: ComponentId) -> bool {
+        if !self.render_handler_table.contains_table_expand(id) {
+            return false;
+        }
+
+        let Some((expanded_row, materialized_row, child_count, row)) =
+            self.get(id).and_then(|node| {
+                let table = node.component().as_any().downcast_ref::<Table>()?;
+                let expanded_row = table.expanded_row();
+                let row = expanded_row.and_then(|index| table.rows.get(index).cloned());
+                Some((
+                    expanded_row,
+                    table.expanded_child_row(),
+                    node.children().len(),
+                    row,
+                ))
+            })
+        else {
+            return false;
+        };
+        let expected_children = usize::from(row.is_some());
+        if expanded_row == materialized_row && child_count == expected_children {
+            return false;
+        }
+
+        let children = row
+            .as_ref()
+            .and_then(|row| {
+                self.render_handler_table
+                    .render_table_expand_widget(id, row)
+            })
+            .into_iter()
+            .collect();
+        self.set_children(id, children);
+        self.mark_table_expand_materialized(id);
+        self.bind_orphan_pending_states();
+        self.bind_pending_effects();
+        true
+    }
+
+    pub(crate) fn refresh_virtual_scroll_component(
+        &mut self,
+        id: ComponentId,
+        viewport_height: Option<f32>,
+    ) -> bool {
+        if !self.render_handler_table.contains_virtual_scroll_item(id) {
+            return false;
+        }
+
+        let Some((range, needs_refresh)) = self.get(id).and_then(|node| {
+            let scroll = node.component().as_any().downcast_ref::<VirtualScroll>()?;
+            let height = viewport_height
+                .filter(|height| *height > 0.0)
+                .unwrap_or_else(|| scroll.configured_viewport_height());
+            let range = scroll.scroll_range(height);
+            Some((
+                range,
+                scroll.needs_child_refresh(height, node.children().len()),
+            ))
+        }) else {
+            return false;
+        };
+        if !needs_refresh {
+            return false;
+        }
+
+        let children = self
+            .render_handler_table
+            .render_virtual_scroll_items(id, range.0, range.1)
+            .unwrap_or_default();
+        self.set_children(id, children);
+        if let Some(scroll) = self
+            .get(id)
+            .and_then(|node| node.component().as_any().downcast_ref::<VirtualScroll>())
+        {
+            scroll.mark_children_materialized(range);
+        }
+        true
+    }
+
+    pub(crate) fn has_table_expand_renderer(&self, id: ComponentId) -> bool {
+        self.render_handler_table.contains_table_expand(id)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_virtual_scroll_renderer(&self, id: ComponentId) -> bool {
+        self.render_handler_table.contains_virtual_scroll_item(id)
+    }
+}
