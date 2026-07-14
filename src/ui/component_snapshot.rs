@@ -49,6 +49,10 @@ impl ComponentConfigSnapshot {
         self.fields.accessibility()
     }
 
+    pub fn selection(&self) -> Option<SelectionSnapshot> {
+        self.fields.selection()
+    }
+
     pub fn aria_role(&self) -> Option<&'static str> {
         self.accessibility().aria_role()
     }
@@ -56,6 +60,15 @@ impl ComponentConfigSnapshot {
     pub fn aria_attributes(&self) -> Vec<AriaAttribute> {
         self.accessibility().aria_attributes()
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectionSnapshot {
+    pub options: Vec<String>,
+    pub selected_indices: Vec<usize>,
+    pub disabled_indices: Vec<usize>,
+    pub multiple: bool,
+    pub expanded: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -678,6 +691,9 @@ pub enum SnapshotFields {
     Select {
         options: Vec<String>,
         optgroups: Vec<OptGroup>,
+        selected: usize,
+        selected_multi: Vec<usize>,
+        open: bool,
         disabled: bool,
         placeholder: String,
         multiple: bool,
@@ -710,6 +726,7 @@ pub enum SnapshotFields {
     },
     Segmented {
         options: Vec<String>,
+        selected: usize,
         disabled: bool,
         disabled_options: Vec<bool>,
     },
@@ -833,6 +850,81 @@ pub enum SnapshotFields {
 }
 
 impl SnapshotFields {
+    fn selection(&self) -> Option<SelectionSnapshot> {
+        match self {
+            Self::Radio {
+                options, selected, ..
+            } => Some(SelectionSnapshot {
+                options: options.clone(),
+                selected_indices: (*selected < options.len())
+                    .then_some(*selected)
+                    .into_iter()
+                    .collect(),
+                disabled_indices: Vec::new(),
+                multiple: false,
+                expanded: false,
+            }),
+            Self::Select {
+                options,
+                optgroups,
+                selected,
+                selected_multi,
+                multiple,
+                open,
+                ..
+            } => {
+                let options = if optgroups.is_empty() {
+                    options.clone()
+                } else {
+                    optgroups
+                        .iter()
+                        .flat_map(|group| group.options.iter().cloned())
+                        .collect()
+                };
+                let selected_indices = if *multiple {
+                    selected_multi
+                        .iter()
+                        .copied()
+                        .filter(|index| *index < options.len())
+                        .collect()
+                } else {
+                    (*selected < options.len())
+                        .then_some(*selected)
+                        .into_iter()
+                        .collect()
+                };
+                Some(SelectionSnapshot {
+                    options,
+                    selected_indices,
+                    disabled_indices: Vec::new(),
+                    multiple: *multiple,
+                    expanded: *open,
+                })
+            }
+            Self::Segmented {
+                options,
+                selected,
+                disabled_options,
+                ..
+            } => Some(SelectionSnapshot {
+                options: options.clone(),
+                selected_indices: (*selected < options.len())
+                    .then_some(*selected)
+                    .into_iter()
+                    .collect(),
+                disabled_indices: disabled_options
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, disabled)| disabled.then_some(index))
+                    .filter(|index| *index < options.len())
+                    .collect(),
+                multiple: false,
+                expanded: false,
+            }),
+            _ => None,
+        }
+    }
+
     pub fn accessibility(&self) -> AccessibilitySnapshot {
         match self {
             Self::Button { text, disabled, .. } => {
@@ -976,11 +1068,39 @@ impl SnapshotFields {
             }
             Self::Table { .. } => AccessibilitySnapshot::new(AccessibilityRole::Table),
             Self::Select {
+                options,
+                optgroups,
+                selected,
+                selected_multi,
                 placeholder,
                 disabled,
+                multiple,
                 ..
-            } => AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
-                .with_state(AccessibilityState::disabled(*disabled)),
+            } => {
+                let options = if optgroups.is_empty() {
+                    options.iter().map(String::as_str).collect::<Vec<_>>()
+                } else {
+                    optgroups
+                        .iter()
+                        .flat_map(|group| group.options.iter().map(String::as_str))
+                        .collect()
+                };
+                let value_text = if *multiple {
+                    let selected = selected_multi
+                        .iter()
+                        .filter_map(|index| options.get(*index).copied())
+                        .collect::<Vec<_>>();
+                    (!selected.is_empty()).then(|| selected.join(", "))
+                } else {
+                    options.get(*selected).map(|option| (*option).to_owned())
+                };
+                AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
+                    .with_state(AccessibilityState {
+                        disabled: *disabled,
+                        value_text,
+                        ..AccessibilityState::default()
+                    })
+            }
             Self::AutoComplete { placeholder, .. }
             | Self::Cascader { placeholder, .. }
             | Self::DatePicker { placeholder }
@@ -989,11 +1109,14 @@ impl SnapshotFields {
                 AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
             }
             Self::Segmented {
-                disabled, options, ..
+                disabled,
+                options,
+                selected,
+                ..
             } => AccessibilitySnapshot::new(AccessibilityRole::RadioGroup).with_state(
                 AccessibilityState {
                     disabled: *disabled,
-                    value_text: options.first().cloned(),
+                    value_text: options.get(*selected).cloned(),
                     ..AccessibilityState::default()
                 },
             ),

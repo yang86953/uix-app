@@ -175,6 +175,55 @@ fn semantic_set_value_insert_text_and_errors_are_protocol_typed() {
 }
 
 #[test]
+fn selection_snapshot_and_convenience_action_use_zero_based_indices() {
+    let mut app = TestApp::new((320.0, 80.0), || {
+        embed(
+            Segmented::new()
+                .options(vec!["Day", "Week", "Month"])
+                .disable_option(1),
+        )
+        .automation_id("period")
+    });
+
+    let before = app.snapshot();
+    let node = before.find("period").unwrap();
+    let selection = node.selection.as_ref().unwrap();
+    assert_eq!(selection.options, vec!["Day", "Week", "Month"]);
+    assert_eq!(selection.selected_indices, vec![0]);
+    assert_eq!(selection.disabled_indices, vec![1]);
+    assert!(!selection.multiple);
+    assert!(!selection.expanded);
+    assert!(node.supports(AutomationActionKind::Select));
+
+    app.select("period", 2).unwrap();
+    let after = app.snapshot();
+    let node = after.find("period").unwrap();
+    assert_eq!(node.selection.as_ref().unwrap().selected_indices, vec![2]);
+    assert_eq!(
+        node.accessibility.state.value_text.as_deref(),
+        Some("Month")
+    );
+    let json = after.to_json();
+    assert!(json.contains("\"selected_indices\": [2]"));
+    assert!(json.contains("\"disabled_indices\": [1]"));
+
+    let error = app.select("period", 1).unwrap_err();
+    assert_eq!(error.code(), AutomationErrorCode::NotInteractable);
+    assert_eq!(
+        error,
+        AutomationError::SelectionDisabled {
+            automation_id: "period".to_owned(),
+            index: 1,
+        }
+    );
+    let error = app
+        .perform("period", AutomationAction::Select("invalid".to_owned()))
+        .unwrap_err();
+    assert_eq!(error.code(), AutomationErrorCode::InvalidValue);
+    assert_eq!(error.code().as_str(), "invalid_value");
+}
+
+#[test]
 fn snapshot_json_escapes_selector_and_has_machine_readable_schema() {
     let app = TestApp::new((240.0, 80.0), || {
         button("Quoted")

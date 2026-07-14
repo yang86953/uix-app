@@ -62,6 +62,7 @@ pub(crate) enum AgentErrorCode {
     NodeNotFound,
     AmbiguousTarget,
     UnsupportedAction,
+    InvalidValue,
     NotInteractable,
     Blocked,
     DidNotSettle,
@@ -83,6 +84,7 @@ impl AgentErrorCode {
             Self::NodeNotFound => "node_not_found",
             Self::AmbiguousTarget => "ambiguous_target",
             Self::UnsupportedAction => "unsupported_action",
+            Self::InvalidValue => "invalid_value",
             Self::NotInteractable => "not_interactable",
             Self::Blocked => "blocked",
             Self::DidNotSettle => "did_not_settle",
@@ -113,6 +115,10 @@ pub(crate) enum AgentCommandError {
         target: String,
         action: SemanticActionKind,
     },
+    InvalidValue {
+        target: String,
+        action: SemanticActionKind,
+    },
     NotInteractable(String),
     Blocked {
         target: String,
@@ -134,6 +140,7 @@ impl AgentCommandError {
             Self::NodeNotFound(_) => AgentErrorCode::NodeNotFound,
             Self::AmbiguousTarget { .. } => AgentErrorCode::AmbiguousTarget,
             Self::UnsupportedAction { .. } => AgentErrorCode::UnsupportedAction,
+            Self::InvalidValue { .. } => AgentErrorCode::InvalidValue,
             Self::NotInteractable(_) => AgentErrorCode::NotInteractable,
             Self::Blocked { .. } => AgentErrorCode::Blocked,
             Self::DidNotSettle { .. } => AgentErrorCode::DidNotSettle,
@@ -589,6 +596,10 @@ fn map_action_error(target: String, error: SemanticActionError) -> AgentCommandE
         }
         SemanticActionError::NotVisible(_) | SemanticActionError::Disabled(_) => {
             AgentCommandError::NotInteractable(target)
+        }
+        SemanticActionError::SelectionDisabled { .. } => AgentCommandError::NotInteractable(target),
+        SemanticActionError::InvalidValue { action, .. } => {
+            AgentCommandError::InvalidValue { target, action }
         }
         SemanticActionError::Blocked { blocker, .. } => {
             AgentCommandError::Blocked { target, blocker }

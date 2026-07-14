@@ -1567,6 +1567,7 @@ fn semantic_actions_stay_on_the_shared_widget_event_path() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let executor = read_source(src.join("ui/semantic_action.rs"));
     let automation = read_source(src.join("ui/automation.rs"));
+    let snapshots = read_source(src.join("ui/component_snapshot.rs"));
 
     assert!(
         executor.contains("self.dispatch_event(") && executor.contains("self.dispatch_semantic("),
@@ -1579,6 +1580,15 @@ fn semantic_actions_stay_on_the_shared_widget_event_path() {
     assert!(
         automation.contains(".perform_semantic_action(node.id, &action)"),
         "TestApp must stay an adapter over the shared semantic action executor"
+    );
+    assert!(
+        executor.contains(".and_then(|snapshot| snapshot.selection())")
+            && executor.contains("!selection.multiple")
+            && executor.contains("self.press_key(KeyCode::Down)")
+            && snapshots.contains("pub struct SelectionSnapshot")
+            && snapshots.contains("pub selected_indices: Vec<usize>")
+            && snapshots.contains("pub disabled_indices: Vec<usize>"),
+        "select must be declared from shared single-choice metadata and execute through keyboard events"
     );
 }
 

@@ -213,6 +213,7 @@ impl Segmented {
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Segmented {
             options: self.options.clone(),
+            selected: self.selected,
             disabled: self.disabled,
             disabled_options: self.disabled_options.clone(),
         }

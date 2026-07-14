@@ -23,8 +23,9 @@ use crate::core::WindowId;
 use crate::native::agent_transport::connect_for_test;
 use crate::native::traits::event::EventLoopWaker;
 use crate::tests::common::NullEngine;
-use crate::ui::view::combinators::button;
+use crate::ui::view::combinators::{button, column, embed};
 use crate::ui::view::StyleExt;
+use crate::ui::widgets::Segmented;
 
 fn register_runtime_session(runtime: &AppRuntime, window_id: WindowId) {
     runtime.register_session(
@@ -221,9 +222,17 @@ fn protocol_routes_snapshot_perform_and_wait_through_the_window_ui_turn() {
     let invoked_for_handler = invoked.clone();
     let mut window = WindowSession::from_root_for_window(
         window_id,
-        button("Run")
-            .on_click_fn(move || invoked_for_handler.set(invoked_for_handler.get() + 1))
-            .automation_id("run"),
+        column([
+            button("Run")
+                .on_click_fn(move || invoked_for_handler.set(invoked_for_handler.get() + 1))
+                .automation_id("run"),
+            embed(
+                Segmented::new()
+                    .options(vec!["Day", "Week", "Month"])
+                    .disable_option(1),
+            )
+            .automation_id("period"),
+        ]),
         Box::new(NullEngine::new()),
         320,
         160,
@@ -266,8 +275,25 @@ fn protocol_routes_snapshot_perform_and_wait_through_the_window_ui_turn() {
     assert_eq!(value["ok"], true);
     assert_eq!(value["snapshot"]["generation"], 1);
     assert_eq!(value["snapshot"]["revision"], 1);
-    assert_eq!(value["snapshot"]["nodes"][0]["automation_id"], "run");
-    let frame = &value["snapshot"]["nodes"][0]["frame"];
+    let nodes = value["snapshot"]["nodes"].as_array().unwrap();
+    let run = nodes
+        .iter()
+        .find(|node| node["automation_id"] == "run")
+        .unwrap();
+    let period = nodes
+        .iter()
+        .find(|node| node["automation_id"] == "period")
+        .unwrap();
+    assert_eq!(
+        period["selection"]["options"],
+        json!(["Day", "Week", "Month"])
+    );
+    assert_eq!(period["selection"]["selected_indices"], json!([0]));
+    assert_eq!(period["selection"]["disabled_indices"], json!([1]));
+    assert!(period["actions"]
+        .as_array()
+        .is_some_and(|actions| actions.contains(&json!("select"))));
+    let frame = &run["frame"];
     let click_x = frame["x"].as_f64().unwrap() + frame["w"].as_f64().unwrap() * 0.5;
     let click_y = frame["y"].as_f64().unwrap() + frame["h"].as_f64().unwrap() * 0.5;
 
@@ -370,6 +396,68 @@ fn protocol_routes_snapshot_perform_and_wait_through_the_window_ui_turn() {
     assert_eq!(value["revision"], 2);
     assert_eq!(value["settled"], true);
 
+    let select_request = request(json!({
+        "schema": AGENT_PROTOCOL_SCHEMA,
+        "request_id": "select",
+        "type": "perform",
+        "window_id": window_id.raw(),
+        "generation": 1,
+        "expected_revision": 2,
+        "target": { "automation_id": "period" },
+        "action": { "kind": "select", "value": "2" },
+    }));
+    let select_worker = thread::spawn(move || {
+        let reply = protocol.handle_line(&select_request);
+        (protocol, reply)
+    });
+    wake_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("select wakes its target window");
+    {
+        let parts = window.parts_mut();
+        assert!(parts
+            .agent_commands
+            .drain_ready(parts.tree, parts.semantic_state, true));
+        assert!(parts.semantic_state.refresh(parts.tree));
+        assert!(parts
+            .agent_commands
+            .finish_or_defer(parts.semantic_state, false));
+    }
+    let (mut protocol, reply) = select_worker.join().unwrap();
+    let value = reply_json(&reply);
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["revision"], 3);
+    assert_eq!(value["settled"], true);
+
+    let invalid_select_request = request(json!({
+        "schema": AGENT_PROTOCOL_SCHEMA,
+        "request_id": "invalid-select",
+        "type": "perform",
+        "window_id": window_id.raw(),
+        "generation": 1,
+        "expected_revision": 3,
+        "target": { "automation_id": "period" },
+        "action": { "kind": "select", "value": "9" },
+    }));
+    let invalid_select_worker = thread::spawn(move || {
+        let reply = protocol.handle_line(&invalid_select_request);
+        (protocol, reply)
+    });
+    wake_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("invalid select wakes its target window");
+    {
+        let parts = window.parts_mut();
+        assert!(parts
+            .agent_commands
+            .drain_ready(parts.tree, parts.semantic_state, true));
+        assert!(!parts.agent_commands.has_in_flight());
+    }
+    let (mut protocol, reply) = invalid_select_worker.join().unwrap();
+    let value = reply_json(&reply);
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "invalid_value");
+
     let reply = protocol.handle_line(&request(json!({
         "schema": AGENT_PROTOCOL_SCHEMA,
         "request_id": "wait",
@@ -382,7 +470,7 @@ fn protocol_routes_snapshot_perform_and_wait_through_the_window_ui_turn() {
     let value = reply_json(&reply);
     assert_eq!(value["ok"], true);
     assert_eq!(value["outcome"], "changed");
-    assert_eq!(value["window"]["revision"], 2);
+    assert_eq!(value["window"]["revision"], 3);
 }
 
 #[test]

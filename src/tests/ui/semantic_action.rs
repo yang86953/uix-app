@@ -121,6 +121,118 @@ fn set_value_and_insert_text_share_input_focus_and_text_routing() {
 }
 
 #[test]
+fn select_exposes_one_index_contract_and_reuses_keyboard_change_events() {
+    let changes = Rc::new(RefCell::new(Vec::<String>::new()));
+    let changes_for_handler = changes.clone();
+    let mut radio_tree = laid_out_tree(embed(
+        Radio::new().options(vec!["Small", "Medium", "Large"]),
+    ));
+    let radio = radio_tree.root_id().unwrap();
+    radio_tree.handler_table().on_change(radio, move |value| {
+        changes_for_handler.borrow_mut().push(value.to_owned())
+    });
+    assert_eq!(
+        radio_tree.supported_semantic_actions(radio),
+        vec![SemanticActionKind::Focus, SemanticActionKind::Select]
+    );
+    radio_tree
+        .perform_semantic_action(radio, &SemanticAction::Select("1".to_owned()))
+        .unwrap();
+    let radio_snapshot =
+        ComponentConfigSnapshot::from_component(radio, radio_tree.get(radio).unwrap().component());
+    assert_eq!(
+        radio_snapshot.selection().unwrap().selected_indices,
+        vec![1]
+    );
+    assert_eq!(
+        radio_snapshot.accessibility().state.value_text.as_deref(),
+        Some("Medium")
+    );
+    assert_eq!(&*changes.borrow(), &["1".to_owned()]);
+
+    let mut segmented_tree = laid_out_tree(embed(
+        Segmented::new()
+            .options(vec!["Day", "Week", "Month"])
+            .disable_option(1),
+    ));
+    let segmented = segmented_tree.root_id().unwrap();
+    segmented_tree
+        .perform_semantic_action(segmented, &SemanticAction::Select("2".to_owned()))
+        .unwrap();
+    let segmented_snapshot = ComponentConfigSnapshot::from_component(
+        segmented,
+        segmented_tree.get(segmented).unwrap().component(),
+    );
+    let selection = segmented_snapshot.selection().unwrap();
+    assert_eq!(selection.selected_indices, vec![2]);
+    assert_eq!(selection.disabled_indices, vec![1]);
+    assert_eq!(
+        segmented_snapshot
+            .accessibility()
+            .state
+            .value_text
+            .as_deref(),
+        Some("Month")
+    );
+    assert_eq!(
+        segmented_tree.perform_semantic_action(segmented, &SemanticAction::Select("1".to_owned())),
+        Err(SemanticActionError::SelectionDisabled {
+            target: segmented,
+            index: 1,
+        })
+    );
+
+    let mut select_tree = laid_out_tree(embed(
+        Select::new()
+            .options(vec!["Alpha", "Beta", "Gamma"])
+            .placeholder("Choice"),
+    ));
+    let select = select_tree.root_id().unwrap();
+    select_tree
+        .perform_semantic_action(select, &SemanticAction::Select("1".to_owned()))
+        .unwrap();
+    let select_snapshot = ComponentConfigSnapshot::from_component(
+        select,
+        select_tree.get(select).unwrap().component(),
+    );
+    let selection = select_snapshot.selection().unwrap();
+    assert_eq!(selection.selected_indices, vec![1]);
+    assert!(!selection.expanded);
+    assert_eq!(
+        select_snapshot.accessibility().state.value_text.as_deref(),
+        Some("Beta")
+    );
+
+    assert_eq!(
+        select_tree
+            .perform_semantic_action(select, &SemanticAction::Select("not-an-index".to_owned())),
+        Err(SemanticActionError::InvalidValue {
+            target: select,
+            action: SemanticActionKind::Select,
+        })
+    );
+
+    let multiple_tree = laid_out_tree(embed(
+        Select::new().options(vec!["Alpha", "Beta"]).multiple(true),
+    ));
+    let multiple = multiple_tree.root_id().unwrap();
+    assert!(!multiple_tree
+        .supported_semantic_actions(multiple)
+        .contains(&SemanticActionKind::Select));
+    assert!(
+        multiple_tree
+            .semantic_snapshot_body()
+            .nodes
+            .into_iter()
+            .find(|node| node.id == multiple)
+            .unwrap()
+            .selection
+            .unwrap()
+            .multiple
+    );
+}
+
+#[test]
 fn increment_decrement_and_scroll_use_the_existing_widget_event_contracts() {
     let mut slider_tree = laid_out_tree(embed(Slider::new().range(0.0, 10.0).value(4.0)));
     let slider = slider_tree.root_id().unwrap();

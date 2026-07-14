@@ -1,12 +1,11 @@
-//! Shared semantic actions for headless automation and the future agent bridge.
+//! Shared semantic actions for headless automation and the Agent Bridge.
 //!
 //! The executor deliberately stays below transport/protocol code: callers
 //! resolve a window and node, then enqueue one of these actions onto that
 //! window's normal UI path.
 
-// The default runtime transport is the next AGENT-R1 slice. Keep the shared
-// executor compiled now without adding warning noise; tests and `test-harness`
-// builds still receive normal dead-code checking.
+// Agent control remains opt-in. Keep the shared executor compiled without
+// warning noise when neither its runtime feature nor `test-harness` is active.
 #![cfg_attr(not(any(test, feature = "test-harness")), allow(dead_code))]
 
 use std::fmt;
@@ -31,8 +30,6 @@ pub enum SemanticActionKind {
     Scroll,
 }
 
-// The transport slice is intentionally still pending, so the wire-name helper
-// is consumed only when `test-harness` is enabled today.
 #[allow(dead_code)]
 impl SemanticActionKind {
     pub const fn as_str(self) -> &'static str {
@@ -105,6 +102,14 @@ pub(crate) enum SemanticActionError {
     },
     NotVisible(ComponentId),
     Disabled(ComponentId),
+    SelectionDisabled {
+        target: ComponentId,
+        index: usize,
+    },
+    InvalidValue {
+        target: ComponentId,
+        action: SemanticActionKind,
+    },
     Blocked {
         target: ComponentId,
         blocker: ComponentId,
@@ -120,8 +125,9 @@ impl WidgetTree {
         let Some(node) = self.get(id) else {
             return Vec::new();
         };
-        let accessibility =
-            ComponentConfigSnapshot::from_component(id, node.component()).accessibility();
+        let snapshot = ComponentConfigSnapshot::from_component(id, node.component());
+        let accessibility = snapshot.accessibility();
+        let selection = snapshot.selection();
         let role = accessibility.role;
         let has_click_handler = node
             .handler_signatures()
@@ -157,6 +163,13 @@ impl WidgetTree {
         }
         if accepts_text {
             actions.push(SemanticActionKind::InsertText);
+        }
+        if selection.as_ref().is_some_and(|selection| {
+            !selection.multiple
+                && !selection.options.is_empty()
+                && selection.selected_indices.len() == 1
+        }) {
+            actions.push(SemanticActionKind::Select);
         }
         if matches!(
             role,
@@ -257,7 +270,7 @@ impl WidgetTree {
                     })
                 }
             }
-            SemanticAction::Select(_) => EventResult::NotHandled,
+            SemanticAction::Select(value) => self.select_option(id, role, value)?,
         };
 
         if handled == EventResult::Handled {
@@ -272,6 +285,10 @@ impl WidgetTree {
 
     fn focus_and_press(&mut self, id: ComponentId, key: KeyCode) -> EventResult {
         self.set_focus(Some(id));
+        self.press_key(key)
+    }
+
+    fn press_key(&mut self, key: KeyCode) -> EventResult {
         let down = self.dispatch_event(&SystemEvent::KeyDown {
             key,
             mods: KeyMod::NONE,
@@ -285,6 +302,98 @@ impl WidgetTree {
         } else {
             EventResult::NotHandled
         }
+    }
+
+    fn select_option(
+        &mut self,
+        id: ComponentId,
+        role: AccessibilityRole,
+        value: &str,
+    ) -> Result<EventResult, SemanticActionError> {
+        let selection = self
+            .get(id)
+            .map(|node| ComponentConfigSnapshot::from_component(id, node.component()))
+            .and_then(|snapshot| snapshot.selection())
+            .ok_or(SemanticActionError::NotHandled {
+                target: id,
+                action: SemanticActionKind::Select,
+            })?;
+        let index = if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) {
+            value.parse::<usize>().ok()
+        } else {
+            None
+        }
+        .filter(|index| *index < selection.options.len())
+        .ok_or(SemanticActionError::InvalidValue {
+            target: id,
+            action: SemanticActionKind::Select,
+        })?;
+        if selection.disabled_indices.contains(&index) {
+            return Err(SemanticActionError::SelectionDisabled { target: id, index });
+        }
+        let Some(mut current) = selection.selected_indices.first().copied() else {
+            return Ok(EventResult::NotHandled);
+        };
+        if current == index {
+            return Ok(EventResult::Handled);
+        }
+
+        self.set_focus(Some(id));
+        if self.managers().focus.focused_component() != Some(id) {
+            return Ok(EventResult::NotHandled);
+        }
+
+        if role == AccessibilityRole::Combobox {
+            if !selection.expanded && self.press_key(KeyCode::Down) != EventResult::Handled {
+                return Ok(EventResult::NotHandled);
+            }
+            let key = if index > current {
+                KeyCode::Down
+            } else {
+                KeyCode::Up
+            };
+            for _ in 0..current.abs_diff(index) {
+                if self.press_key(key) != EventResult::Handled {
+                    let _ = self.press_key(KeyCode::Escape);
+                    return Ok(EventResult::NotHandled);
+                }
+            }
+            let _ = self.press_key(KeyCode::Escape);
+        } else {
+            while current != index {
+                let next = if index > current {
+                    ((current + 1)..=index)
+                        .find(|candidate| !selection.disabled_indices.contains(candidate))
+                } else {
+                    (index..current)
+                        .rev()
+                        .find(|candidate| !selection.disabled_indices.contains(candidate))
+                };
+                let Some(next) = next else {
+                    return Ok(EventResult::NotHandled);
+                };
+                let key = if next > current {
+                    KeyCode::Down
+                } else {
+                    KeyCode::Up
+                };
+                if self.press_key(key) != EventResult::Handled {
+                    return Ok(EventResult::NotHandled);
+                }
+                current = next;
+            }
+        }
+
+        let selected = self
+            .get(id)
+            .map(|node| ComponentConfigSnapshot::from_component(id, node.component()))
+            .and_then(|snapshot| snapshot.selection())
+            .is_some_and(|selection| selection.selected_indices.as_slice() == [index]);
+        Ok(if selected {
+            EventResult::Handled
+        } else {
+            EventResult::NotHandled
+        })
     }
 
     fn set_input_value(&mut self, id: ComponentId, value: &str) -> EventResult {

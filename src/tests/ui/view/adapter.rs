@@ -659,6 +659,7 @@ fn reconcile_segmented_patches_instance_and_syncs_static_config() {
         segmented.snapshot_fields(),
         SnapshotFields::Segmented {
             options: vec!["Day".to_string(), "Week".to_string(), "Month".to_string()],
+            selected: 1,
             disabled: true,
             disabled_options: vec![false, false, true],
         }
