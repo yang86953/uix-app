@@ -562,6 +562,74 @@ impl WidgetRender for DynamicLabel {
     }
 }
 
+struct Canvas {
+    size: Size,
+    paint: Box<dyn Fn(Rect, &mut PaintContext<'_>)>,
+}
+
+impl WidgetComponent for Canvas {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn Any> {
+        self
+    }
+
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::from_bits(WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER)
+    }
+
+    fn as_layout(&self) -> Option<&dyn WidgetLayout> {
+        Some(self)
+    }
+
+    fn as_render(&self) -> Option<&dyn WidgetRender> {
+        Some(self)
+    }
+
+    fn as_render_mut(&mut self) -> Option<&mut dyn WidgetRender> {
+        Some(self)
+    }
+}
+
+impl WidgetLayout for Canvas {
+    fn measure(&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.size)
+    }
+}
+
+impl WidgetRender for Canvas {
+    fn render(&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        (self.paint)(frame, ctx);
+    }
+}
+
+/// 创建固定 logical 尺寸的轻量绘制节点，无需声明完整组件。
+///
+/// 闭包只在节点需要绘制时执行；其中读取的 `State` / `Computed` 会自动绑定
+/// 到该节点的 Paint 失效，不会形成每帧回调。
+pub fn canvas<F>(width: f32, height: f32, paint: F) -> ViewNode
+where
+    F: Fn(Rect, &mut PaintContext<'_>) + 'static,
+{
+    let finite_extent = |value: f32| {
+        if value.is_finite() {
+            value.max(0.0)
+        } else {
+            0.0
+        }
+    };
+    ViewNode::leaf(Canvas {
+        size: Size::new(finite_extent(width), finite_extent(height)),
+        paint: Box::new(paint),
+    })
+}
+
 /// 空白占位，通过 `height` 控制垂直间距。
 pub fn space(height: f32) -> ViewNode {
     ViewNode::leaf(
