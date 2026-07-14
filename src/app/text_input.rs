@@ -31,10 +31,10 @@ pub(crate) fn sync_window_text_input(
             active_work.unregister(ActiveWorkKind::ImeSession(previous));
             if state.coordinator.active_window() == Some(window_id)
                 && select_target(platform, window_id, native_window)
-                    && report_stop_error(platform.text_input().stop())
-                {
-                    state.coordinator.deactivate(window_id);
-                }
+                && report_stop_error(platform.text_input().stop())
+            {
+                state.coordinator.deactivate(window_id);
+            }
         }
         state.cursor_rect = None;
     }

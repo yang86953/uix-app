@@ -369,7 +369,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
                 bind_reconcile_site(&reconcile_sites, 0, f.clone());
             }
         });
-        
+
         Self {
             inner: Arc::new(RwLock::new(StateInner {
                 slot_id: StateSlotId(NEXT_STATE_SLOT.fetch_add(1, Ordering::Relaxed)),
