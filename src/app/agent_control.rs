@@ -4,19 +4,27 @@
 //! the owning window's UI turn drains this queue and touches `WidgetTree`.
 
 use std::collections::VecDeque;
-use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender};
+#[cfg(any(test, feature = "agent-control"))]
+use std::sync::mpsc::RecvTimeoutError;
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
+#[cfg(any(test, feature = "agent-control"))]
 use std::time::Duration;
 
 use crate::app::window_semantics::{WindowSemanticSnapshot, WindowSemanticState};
-use crate::core::{ComponentId, Point, WindowId};
+#[cfg(any(test, feature = "agent-control"))]
+use crate::core::Point;
+use crate::core::{ComponentId, WindowId};
 use crate::ui::semantic_action::{SemanticAction, SemanticActionError, SemanticActionKind};
 use crate::ui::semantic_snapshot::SemanticTarget;
-use crate::ui::{KeyCode, KeyMod, MouseButton, SystemEvent, WidgetTree};
+use crate::ui::WidgetTree;
+#[cfg(any(test, feature = "agent-control"))]
+use crate::ui::{KeyCode, KeyMod, MouseButton, SystemEvent};
 
 pub(crate) const DEFAULT_AGENT_COMMAND_QUEUE_CAPACITY: usize = 64;
 pub(crate) const MAX_AGENT_SETTLE_PASSES: usize = 32;
 
+#[cfg(any(test, feature = "agent-control"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum AgentWindowAction {
     PressKey { key: KeyCode, modifiers: KeyMod },
@@ -32,6 +40,7 @@ pub(crate) enum AgentCommandRequest {
         target: SemanticTarget,
         action: SemanticAction,
     },
+    #[cfg(any(test, feature = "agent-control"))]
     PerformWindow {
         generation: u64,
         expected_revision: Option<u64>,
@@ -53,26 +62,39 @@ pub(crate) enum AgentCommandResponse {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AgentErrorCode {
+    #[cfg(any(test, feature = "agent-control"))]
     Unauthorized,
+    #[cfg(any(test, feature = "agent-control"))]
     UnsupportedSchema,
     InvalidRequest,
     WindowNotFound,
     StaleWindow,
+    #[cfg(any(test, feature = "agent-control"))]
     StaleRevision,
+    #[cfg(any(test, feature = "agent-control"))]
     NodeNotFound,
+    #[cfg(any(test, feature = "agent-control"))]
     AmbiguousTarget,
+    #[cfg(any(test, feature = "agent-control"))]
     UnsupportedAction,
+    #[cfg(any(test, feature = "agent-control"))]
     InvalidValue,
+    #[cfg(any(test, feature = "agent-control"))]
     NotInteractable,
+    #[cfg(any(test, feature = "agent-control"))]
     Blocked,
+    #[cfg(any(test, feature = "agent-control"))]
     DidNotSettle,
+    #[cfg(any(test, feature = "agent-control"))]
     NotPresentable,
     Timeout,
     AppClosed,
+    #[cfg(any(test, feature = "agent-control"))]
     Internal,
 }
 
 impl AgentErrorCode {
+    #[cfg(any(test, feature = "agent-control"))]
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Unauthorized => "unauthorized",
@@ -133,6 +155,7 @@ pub(crate) enum AgentCommandError {
 }
 
 impl AgentCommandError {
+    #[cfg(any(test, feature = "agent-control"))]
     pub(crate) const fn code(&self) -> AgentErrorCode {
         match self {
             Self::StaleWindow { .. } => AgentErrorCode::StaleWindow,
@@ -161,6 +184,7 @@ pub(crate) enum AgentSubmitError {
 }
 
 impl AgentSubmitError {
+    #[cfg(any(test, feature = "agent-control"))]
     pub(crate) const fn code(self) -> AgentErrorCode {
         match self {
             Self::WindowNotFound => AgentErrorCode::WindowNotFound,
@@ -172,10 +196,12 @@ impl AgentSubmitError {
 
 #[derive(Debug)]
 pub(crate) struct AgentCommandTicket {
+    #[cfg_attr(not(any(test, feature = "agent-control")), allow(dead_code))]
     receiver: Receiver<AgentCommandResult>,
 }
 
 impl AgentCommandTicket {
+    #[cfg(any(test, feature = "agent-control"))]
     pub(crate) fn recv_timeout(
         self,
         timeout: Duration,
@@ -386,6 +412,7 @@ impl WindowAgentState {
                     }
                     Err(error) => send_result(envelope.response, Err(error)),
                 },
+                #[cfg(any(test, feature = "agent-control"))]
                 AgentCommandRequest::PerformWindow {
                     generation,
                     expected_revision,
@@ -491,6 +518,7 @@ fn perform(
         .map_err(|error| map_action_error(target.label(), error))
 }
 
+#[cfg(any(test, feature = "agent-control"))]
 fn perform_window_action(
     tree: &mut WidgetTree,
     semantic_state: &WindowSemanticState,
