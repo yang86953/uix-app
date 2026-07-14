@@ -15,10 +15,7 @@ impl WidgetTree {
     }
 
     pub fn reconcile_requester(&self) -> Arc<dyn Fn() + Send + Sync> {
-        let requested = self.reconcile_requested.clone();
-        Arc::new(move || {
-            requested.store(true, Ordering::Release);
-        })
+        Arc::clone(&self.reconcile_callback)
     }
 
     pub fn reconcile_requester_key(&self) -> usize {

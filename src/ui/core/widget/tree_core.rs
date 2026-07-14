@@ -9,7 +9,8 @@ use crate::ui::managers::WidgetManagers;
 use crate::ui::overlay::OverlayStack;
 use crate::ui::render_handler::{RenderHandlerRegistration, RenderHandlerTable};
 use std::collections::{BTreeMap, HashSet};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 
 static NEXT_WIDGET_TREE_SCOPE: AtomicU64 = AtomicU64::new(1);
 
@@ -38,7 +39,8 @@ pub struct WidgetTree {
     pub(crate) overlay_stack: OverlayStack,
 
     pub(crate) invalidation: InvalidationQueueHandle,
-    pub(crate) reconcile_requested: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub(crate) reconcile_requested: Arc<AtomicBool>,
+    pub(crate) reconcile_callback: Arc<dyn Fn() + Send + Sync>,
     pub(crate) effects: Vec<crate::ui::foundation::state::Effect>,
     managers: WidgetManagers,
     app_state: Option<AppState>,
@@ -65,6 +67,12 @@ pub struct WidgetTree {
 
 impl Default for WidgetTree {
     fn default() -> Self {
+        let reconcile_requested = Arc::new(AtomicBool::new(false));
+        let reconcile_callback = {
+            let requested = Arc::clone(&reconcile_requested);
+            Arc::new(move || requested.store(true, Ordering::Release))
+                as Arc<dyn Fn() + Send + Sync>
+        };
         Self {
             tree_scope: NEXT_WIDGET_TREE_SCOPE.fetch_add(1, Ordering::Relaxed),
             nodes: Vec::new(),
@@ -79,7 +87,8 @@ impl Default for WidgetTree {
             render_handler_table: RenderHandlerTable::default(),
             overlay_stack: OverlayStack::new(),
             invalidation: crate::draw::pipeline::InvalidationQueue::shared(),
-            reconcile_requested: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            reconcile_requested,
+            reconcile_callback,
             effects: Vec::new(),
             managers: WidgetManagers::new(),
             app_state: None,
