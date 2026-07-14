@@ -437,10 +437,15 @@ fn reconcile_switch_patches_instance_and_syncs_snapshot_fields() {
 
 #[test]
 fn reconcile_radio_patches_instance_and_syncs_snapshot_fields() {
+    use crate::ui::state::State;
     use crate::ui::widgets::{Radio, RadioDirection};
 
+    let value = State::new("A".to_string());
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
-        Radio::new().options(vec!["A", "B"]).selected(0),
+        Radio::new()
+            .group_name("old")
+            .options(vec!["A", "B"])
+            .value(&value),
     ));
     let root_id = tree.root_id().expect("radio root should exist");
     let before_ptr = tree
@@ -451,12 +456,14 @@ fn reconcile_radio_patches_instance_and_syncs_snapshot_fields() {
         .downcast_ref::<Radio>()
         .unwrap() as *const Radio;
 
+    value.set("E".to_string());
     ViewAdapter::reconcile_nodes(
         &mut tree,
         ViewNode::leaf(
             Radio::new()
+                .group_name("size")
                 .options(vec!["C", "D", "E"])
-                .selected(2)
+                .value(&value)
                 .disabled(true)
                 .vertical(),
         ),
@@ -473,6 +480,7 @@ fn reconcile_radio_patches_instance_and_syncs_snapshot_fields() {
     assert_eq!(
         radio.snapshot_fields(),
         SnapshotFields::Radio {
+            group_name: "size".to_string(),
             options: vec!["C".to_string(), "D".to_string(), "E".to_string()],
             selected: 2,
             disabled: true,
