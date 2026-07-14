@@ -1,6 +1,6 @@
 //! 帧渲染调度 — 从 UI event_loop 迁入的渲染段（Phase 3）。
 
-use crate::core::{Error, Point, Rect};
+use crate::core::{Errc, Error, Point, Rect};
 
 use crate::core::DirtyRegion;
 use crate::draw::backend::DamageRegion;
@@ -115,12 +115,12 @@ impl FrameRenderer {
             || input.dirty_region.full_frame
             || input.dirty_region.is_empty()
             || !frame_start_caps.supports_partial_redraw();
-        let damage = compute_present_damage(
+        let requested_present_damage = compute_present_damage(
             &dirty_with_scroll,
             input.dirty_region.full_frame,
             input.rendered_first,
         );
-        let region = if draw_full {
+        let requested_region = if draw_full {
             DirtyRegion::full()
         } else {
             dirty_with_scroll
@@ -129,12 +129,11 @@ impl FrameRenderer {
         let strategy = if draw_full {
             UpdateStrategy::FullRedraw
         } else {
-            UpdateStrategy::DirtyRects(region.rects().to_vec())
+            UpdateStrategy::DirtyRects(requested_region.rects().to_vec())
         };
-        let strategy_full = matches!(strategy, UpdateStrategy::FullRedraw) as u8;
         let begin_outcome = engine.begin_frame(strategy.clone());
-        match begin_outcome {
-            RenderOutcome::FrameReady(_) => {}
+        let begin_damage = match begin_outcome {
+            RenderOutcome::FrameReady(damage) => damage,
             RenderOutcome::Present(_) => {
                 return FrameRenderOutput {
                     outcome: RenderOutcome::Failed(
@@ -176,7 +175,26 @@ impl FrameRenderer {
                     tree_version: cur_version,
                 };
             }
-        }
+        };
+        let begin_promoted_full = !draw_full && begin_damage.full;
+        let region = match resolve_frame_region(&requested_region, begin_damage) {
+            Ok(region) => region,
+            Err(error) => {
+                return FrameRenderOutput {
+                    outcome: RenderOutcome::Failed(
+                        crate::draw::engine::GraphicsFailure::from_error(error),
+                    ),
+                    inv_source: InvalidationSource::None,
+                    tree_version: cur_version,
+                };
+            }
+        };
+        let damage = if begin_promoted_full {
+            DamageRegion::full()
+        } else {
+            requested_present_damage
+        };
+        let strategy_full = region.full_frame as u8;
 
         // 恢复包装器可在 begin_frame 内切换到 Software，后续呈现协议须读取新引擎能力。
         let caps = engine.capabilities();
@@ -477,6 +495,57 @@ fn compute_present_damage(
     } else {
         DamageRegion::partial(rects)
     }
+}
+
+/// 以 `begin_frame` 返回的实际清区为权威绘制区，并验证它覆盖请求区。
+fn resolve_frame_region(
+    requested: &DirtyRegion,
+    actual: DamageRegion,
+) -> Result<DirtyRegion, Error> {
+    if actual.full {
+        return Ok(DirtyRegion::full());
+    }
+    if requested.full_frame {
+        return Err(Error::new(
+            Errc::InvalidState,
+            "begin_frame returned partial damage for a full redraw request",
+        ));
+    }
+
+    let mut actual_region = DirtyRegion::empty();
+    for rect in actual.rects {
+        if !valid_frame_rect(rect) {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "begin_frame returned an invalid partial damage rectangle",
+            ));
+        }
+        actual_region.add_rect(rect);
+    }
+    let actual_region = actual_region.for_paint_clear();
+    if actual_region.is_empty() || !rect_covers(actual_region.bounds(), requested.bounds()) {
+        return Err(Error::new(
+            Errc::InvalidState,
+            "begin_frame damage does not cover the requested paint region",
+        ));
+    }
+    Ok(actual_region)
+}
+
+fn valid_frame_rect(rect: Rect) -> bool {
+    rect.x.is_finite()
+        && rect.y.is_finite()
+        && rect.w.is_finite()
+        && rect.h.is_finite()
+        && rect.w > 0.0
+        && rect.h > 0.0
+}
+
+fn rect_covers(outer: Rect, inner: Rect) -> bool {
+    outer.x <= inner.x
+        && outer.y <= inner.y
+        && outer.x + outer.w >= inner.x + inner.w
+        && outer.y + outer.h >= inner.y + inner.h
 }
 
 fn pad_damage_rect(r: &Rect) -> Rect {
