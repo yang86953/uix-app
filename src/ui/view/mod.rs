@@ -286,9 +286,9 @@ impl ViewNode {
         self
     }
 
-    /// 默认点击路径：绑定 `State` 指纹，reconcile 可稳定复用（[使用](docs/使用.md) · [使用](docs/使用.md)）。
+    /// 默认点击路径：绑定 `State` 指纹，reconcile 可稳定复用（[使用](docs/使用.md)）。
     ///
-    /// 与 [`button`](combinators::button) 的 `on_click` 对齐，可用于 `label` / `embed` 等任意 View。
+    /// 与 [`button`] 的 `on_click` 对齐，可用于 `label` / `embed` 等任意 View。
     pub fn on_click<T, F>(mut self, state: &crate::ui::state::State<T>, mut f: F) -> Self
     where
         T: Clone + Send + Sync + 'static,

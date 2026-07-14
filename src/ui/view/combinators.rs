@@ -1,6 +1,6 @@
 //! 组合子函数 — column, row, label, button, space, input 等。
 //!
-//! 提供函数式声明式 API。异质子节点用元组或 [`views!`]：
+//! 提供函数式声明式 API。异质子节点用元组或 [`crate::views!`]：
 //! `column((label("..."), button("...")))` / `column(views![...])`。
 //!
 //! # 使用示例
@@ -146,7 +146,7 @@ fn adopt_widget_node(node: WidgetNode) -> ViewNode {
 ///
 /// 嵌套内容组若只需 intrinsic 高度，用 [`column_fit`]（[使用](docs/使用.md)）。
 ///
-/// 同质数组 / `Vec`，或异质元组 / [`views!`]（[使用](docs/使用.md)）。
+/// 同质数组 / `Vec`，或异质元组 / [`crate::views!`]（[使用](docs/使用.md)）。
 pub fn column(children: impl IntoViewChildren) -> ViewNode {
     ViewNode::new(
         crate::ui::widgets::Container::new()
@@ -168,7 +168,7 @@ pub fn column_fit(children: impl IntoViewChildren) -> ViewNode {
 
 /// 行容器（Flex 方向为 Row）。
 ///
-/// 同质数组 / `Vec`，或异质元组 / [`views!`]（[使用](docs/使用.md)）。
+/// 同质数组 / `Vec`，或异质元组 / [`crate::views!`]（[使用](docs/使用.md)）。
 pub fn row(children: impl IntoViewChildren) -> ViewNode {
     ViewNode::new(
         crate::ui::widgets::Container::new().dir(FlexDirection::Row),
