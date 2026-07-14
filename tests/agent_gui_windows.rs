@@ -1,11 +1,11 @@
 #![cfg(all(windows, feature = "agent-control"))]
 
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::os::windows::fs::OpenOptionsExt;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::thread;
+use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
@@ -21,14 +21,27 @@ const START_TIMEOUT: Duration = Duration::from_secs(45);
 const PRESENT_TIMEOUT_MS: u64 = 30_000;
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 
+#[derive(Debug, Clone, Copy)]
+struct GraphicsExpectation {
+    backend_override: Option<&'static str>,
+    selected_recipe: &'static str,
+}
+
+const D3D11_GRAPHICS: GraphicsExpectation = GraphicsExpectation {
+    backend_override: Some("d3d11"),
+    selected_recipe: "backend=d3d11; raster=gpu_native; present=swapchain",
+};
+
 struct DemoProcess {
     child: Child,
     discovery_root: PathBuf,
     discovery_path: PathBuf,
+    output_readers: Vec<JoinHandle<String>>,
+    graphics: GraphicsExpectation,
 }
 
 impl DemoProcess {
-    fn spawn() -> Self {
+    fn spawn(graphics: GraphicsExpectation) -> Self {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system clock after Unix epoch")
@@ -41,16 +54,22 @@ impl DemoProcess {
         fs::create_dir(discovery_root.join("uix-agent"))
             .expect("create pre-existing discovery directory");
 
-        let child = Command::new(env!("CARGO_BIN_EXE_uix-demo"))
+        let mut command = Command::new(env!("CARGO_BIN_EXE_uix-demo"));
+        command
             .arg("--agent-control")
             .env("LOCALAPPDATA", &discovery_root)
-            .env("UIX_GRAPHICS_BACKEND", "d3d11")
-            .env("RUST_LOG", "warn")
+            .env_remove("UIX_GRAPHICS_BACKEND")
+            .env("RUST_LOG", "info")
             .stdin(Stdio::null())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .expect("launch real uix-demo process");
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if let Some(backend) = graphics.backend_override {
+            command.env("UIX_GRAPHICS_BACKEND", backend);
+        }
+        let mut child = command.spawn().expect("launch real uix-demo process");
+        let stdout = child.stdout.take().expect("capture demo stdout");
+        let stderr = child.stderr.take().expect("capture demo stderr");
+        let output_readers = vec![read_process_output(stdout), read_process_output(stderr)];
         let discovery_path = discovery_root
             .join("uix-agent")
             .join(format!("uix-{}.json", child.id()));
@@ -58,6 +77,8 @@ impl DemoProcess {
             child,
             discovery_root,
             discovery_path,
+            output_readers,
+            graphics,
         }
     }
 
@@ -74,7 +95,8 @@ impl DemoProcess {
                 }
             }
             if let Some(status) = self.child.try_wait().expect("query demo process") {
-                panic!("uix-demo exited before discovery publication: {status}");
+                let output = self.take_output();
+                panic!("uix-demo exited before discovery publication: {status}; output={output}");
             }
             assert!(
                 Instant::now() < deadline,
@@ -114,6 +136,29 @@ impl DemoProcess {
             !self.discovery_path.exists(),
             "graceful shutdown must remove the discovery descriptor"
         );
+
+        let output = self.take_output();
+        let selected = format!(
+            "Graphics bootstrap: selected recipe {}",
+            self.graphics.selected_recipe
+        );
+        assert!(
+            output.contains(&selected),
+            "demo did not select the expected graphics recipe `{}`; output={output}",
+            self.graphics.selected_recipe
+        );
+        assert!(
+            !output.contains("fallback=software_cpu"),
+            "demo unexpectedly fell back to Software; output={output}"
+        );
+    }
+
+    fn take_output(&mut self) -> String {
+        std::mem::take(&mut self.output_readers)
+            .into_iter()
+            .map(|reader| reader.join().expect("join demo output reader"))
+            .collect::<Vec<_>>()
+            .join("")
     }
 
     fn raise_for_interaction(&self) {
@@ -189,8 +234,21 @@ impl Drop for DemoProcess {
             let _ = self.child.kill();
             let _ = self.child.wait();
         }
+        for reader in std::mem::take(&mut self.output_readers) {
+            let _ = reader.join();
+        }
         let _ = fs::remove_dir_all(&self.discovery_root);
     }
+}
+
+fn read_process_output(mut stream: impl Read + Send + 'static) -> JoinHandle<String> {
+    thread::spawn(move || {
+        let mut output = String::new();
+        stream
+            .read_to_string(&mut output)
+            .expect("read demo process output");
+        output
+    })
 }
 
 struct WindowSearch {
@@ -400,8 +458,8 @@ fn invoke_until_presentable(
 
 #[test]
 #[ignore = "requires an interactive Windows desktop"]
-fn real_gui_process_authenticates_performs_and_cleans_up() {
-    let mut demo = DemoProcess::spawn();
+fn real_d3d11_gui_process_authenticates_performs_and_cleans_up() {
+    let mut demo = DemoProcess::spawn(D3D11_GRAPHICS);
     let descriptor = demo.wait_for_descriptor();
     let endpoint = descriptor["endpoint"]
         .as_str()
