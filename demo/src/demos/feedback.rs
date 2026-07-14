@@ -3,8 +3,27 @@
 use uix::prelude::*;
 
 use crate::common::page::{demo_row, PageBuilder, INNER_W};
-use crate::common::showcase::labeled_row;
+use crate::common::showcase::{labeled_row, widget_caption};
 use crate::demos::context::DemoCtx;
+
+fn focus_trap_modal(tk: &DesignTokens) -> ViewNode {
+    row([
+        embed(widget_caption(tk, "Modal ✓")),
+        ViewNode::new(
+            Modal::new("系统键盘焦点陷阱").closable(true).overlay(true),
+            vec![row([
+                button("取消").automation_id("feedback-modal-cancel"),
+                button("确认")
+                    .primary()
+                    .automation_id("feedback-modal-confirm"),
+            ])
+            .gap(8.0)],
+        )
+        .automation_id("feedback-focus-modal"),
+    ])
+    .align(AlignItems::Center)
+    .height(36.0)
+}
 
 pub fn page_feedback(ctx: &DemoCtx<'_>) -> ViewNode {
     let tk = ctx.tk;
@@ -16,6 +35,16 @@ pub fn page_feedback(ctx: &DemoCtx<'_>) -> ViewNode {
         .push(Alert::new("信息: 提示").type_(StatusLevel::Info))
         .push(Alert::new("警告: 请注意").type_(StatusLevel::Warning))
         .push(Alert::new("错误: 失败").type_(StatusLevel::Error))
+        .section("Overlay — Modal / Drawer")
+        .push_view(focus_trap_modal(tk))
+        .push(labeled_row(
+            tk,
+            36.0,
+            "Drawer ✓",
+            Drawer::new("抽屉标题")
+                .closable(true)
+                .placement(DrawerPlacement::Right),
+        ))
         .section("Message / Notification")
         .push(labeled_row(
             tk,
@@ -66,21 +95,6 @@ pub fn page_feedback(ctx: &DemoCtx<'_>) -> ViewNode {
                 ),
         )
         .push(Empty::new().description("暂无反馈数据"))
-        .section("Overlay — Modal / Drawer")
-        .push(labeled_row(
-            tk,
-            36.0,
-            "Modal ✓",
-            Modal::new("弹窗标题").closable(true).overlay(true),
-        ))
-        .push(labeled_row(
-            tk,
-            36.0,
-            "Drawer ✓",
-            Drawer::new("抽屉标题")
-                .closable(true)
-                .placement(DrawerPlacement::Right),
-        ))
         .section("Overlay — Tooltip / Popover / Popconfirm")
         .push(labeled_row(
             tk,
