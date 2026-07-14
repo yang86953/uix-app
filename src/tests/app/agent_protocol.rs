@@ -1,14 +1,18 @@
+use std::cell::Cell;
 use std::fs;
 use std::io::{BufRead, BufReader, Cursor, Write};
+use std::rc::Rc;
 use std::sync::mpsc::sync_channel;
 use std::thread;
 use std::time::Duration;
 
 use serde_json::{json, Value};
 
+use crate::app::agent_bridge::MAX_AGENT_WAIT_TIMEOUT;
+use crate::app::agent_control::{DEFAULT_AGENT_COMMAND_QUEUE_CAPACITY, MAX_AGENT_SETTLE_PASSES};
 use crate::app::agent_protocol::{
     encode_session_token, AgentProtocolReply, AgentProtocolSession, AGENT_PROTOCOL_SCHEMA,
-    MAX_AGENT_MESSAGE_BYTES,
+    MAX_AGENT_CONNECTIONS, MAX_AGENT_MESSAGE_BYTES, MAX_AGENT_TEXT_BYTES,
 };
 use crate::app::agent_transport::{read_bounded_line, BoundedLine};
 use crate::app::app_timer::AppTimerQueue;
@@ -86,7 +90,37 @@ fn protocol_requires_first_message_auth_and_returns_stable_typed_errors() {
         "type": "hello",
         "token": encode_session_token(token.as_ref()).to_uppercase(),
     })));
-    assert_eq!(reply_json(&reply)["ok"], true);
+    let value = reply_json(&reply);
+    assert_eq!(value["ok"], true);
+    assert_eq!(
+        value["capabilities"]["window_actions"],
+        json!(["press_key", "click_at"])
+    );
+    assert!(value["capabilities"]["key_names"]
+        .as_array()
+        .is_some_and(|keys| keys.contains(&json!("enter")) && keys.contains(&json!("f12"))));
+    assert_eq!(
+        value["capabilities"]["key_modifiers"],
+        json!(["shift", "ctrl", "alt", "super"])
+    );
+    assert_eq!(
+        value["limits"]["max_message_bytes"],
+        MAX_AGENT_MESSAGE_BYTES
+    );
+    assert_eq!(value["limits"]["max_text_bytes"], MAX_AGENT_TEXT_BYTES);
+    assert_eq!(value["limits"]["max_connections"], MAX_AGENT_CONNECTIONS);
+    assert_eq!(
+        value["limits"]["window_queue_capacity"],
+        DEFAULT_AGENT_COMMAND_QUEUE_CAPACITY
+    );
+    assert_eq!(
+        value["limits"]["max_settle_passes"],
+        MAX_AGENT_SETTLE_PASSES
+    );
+    assert_eq!(
+        value["limits"]["max_wait_ms"],
+        MAX_AGENT_WAIT_TIMEOUT.as_millis() as u64
+    );
     let reply = protocol.handle_line(&request(json!({
         "schema": AGENT_PROTOCOL_SCHEMA,
         "request_id": "list",
@@ -104,6 +138,46 @@ fn protocol_requires_first_message_auth_and_returns_stable_typed_errors() {
     })));
     assert_eq!(reply_json(&reply)["error"]["code"], "unsupported_schema");
     assert!(!reply.close_connection());
+
+    for invalid in [
+        json!({
+            "schema": AGENT_PROTOCOL_SCHEMA,
+            "request_id": "unknown-key",
+            "type": "perform",
+            "window_id": 99,
+            "generation": 1,
+            "action": { "kind": "press_key", "key": "return" },
+        }),
+        json!({
+            "schema": AGENT_PROTOCOL_SCHEMA,
+            "request_id": "window-target",
+            "type": "perform",
+            "window_id": 99,
+            "generation": 1,
+            "target": { "automation_id": "run" },
+            "action": { "kind": "press_key", "key": "enter" },
+        }),
+        json!({
+            "schema": AGENT_PROTOCOL_SCHEMA,
+            "request_id": "semantic-without-target",
+            "type": "perform",
+            "window_id": 99,
+            "generation": 1,
+            "action": { "kind": "focus" },
+        }),
+        json!({
+            "schema": AGENT_PROTOCOL_SCHEMA,
+            "request_id": "coordinate-range",
+            "type": "perform",
+            "window_id": 99,
+            "generation": 1,
+            "action": { "kind": "click_at", "x": 1e100, "y": 0 },
+        }),
+    ] {
+        let reply = protocol.handle_line(&request(invalid));
+        assert_eq!(reply_json(&reply)["error"]["code"], "invalid_request");
+        assert!(!reply.close_connection());
+    }
 }
 
 #[test]
@@ -143,9 +217,13 @@ fn protocol_routes_snapshot_perform_and_wait_through_the_window_ui_turn() {
     let registration = runtime
         .register_agent_window(window_id, "protocol".to_owned(), true, true)
         .expect("live registration");
+    let invoked = Rc::new(Cell::new(0usize));
+    let invoked_for_handler = invoked.clone();
     let mut window = WindowSession::from_root_for_window(
         window_id,
-        button("Run").automation_id("run"),
+        button("Run")
+            .on_click_fn(move || invoked_for_handler.set(invoked_for_handler.get() + 1))
+            .automation_id("run"),
         Box::new(NullEngine::new()),
         320,
         160,
@@ -189,6 +267,9 @@ fn protocol_routes_snapshot_perform_and_wait_through_the_window_ui_turn() {
     assert_eq!(value["snapshot"]["generation"], 1);
     assert_eq!(value["snapshot"]["revision"], 1);
     assert_eq!(value["snapshot"]["nodes"][0]["automation_id"], "run");
+    let frame = &value["snapshot"]["nodes"][0]["frame"];
+    let click_x = frame["x"].as_f64().unwrap() + frame["w"].as_f64().unwrap() * 0.5;
+    let click_y = frame["y"].as_f64().unwrap() + frame["h"].as_f64().unwrap() * 0.5;
 
     let perform_request = request(json!({
         "schema": AGENT_PROTOCOL_SCHEMA,
@@ -218,6 +299,72 @@ fn protocol_routes_snapshot_perform_and_wait_through_the_window_ui_turn() {
             .finish_or_defer(parts.semantic_state, false));
     }
     let (mut protocol, reply) = perform_worker.join().unwrap();
+    let value = reply_json(&reply);
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["revision"], 2);
+    assert_eq!(value["settled"], true);
+
+    let key_request = request(json!({
+        "schema": AGENT_PROTOCOL_SCHEMA,
+        "request_id": "press-key",
+        "type": "perform",
+        "window_id": window_id.raw(),
+        "generation": 1,
+        "expected_revision": 2,
+        "action": { "kind": "press_key", "key": "enter", "modifiers": [] },
+    }));
+    let key_worker = thread::spawn(move || {
+        let reply = protocol.handle_line(&key_request);
+        (protocol, reply)
+    });
+    wake_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("press_key wakes its target window");
+    {
+        let parts = window.parts_mut();
+        assert!(parts
+            .agent_commands
+            .drain_ready(parts.tree, parts.semantic_state, true));
+        let _ = parts.semantic_state.refresh(parts.tree);
+        assert!(parts
+            .agent_commands
+            .finish_or_defer(parts.semantic_state, false));
+    }
+    assert_eq!(invoked.get(), 1, "press_key follows the focused key path");
+    let (mut protocol, reply) = key_worker.join().unwrap();
+    let value = reply_json(&reply);
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["revision"], 2);
+    assert_eq!(value["settled"], true);
+
+    let click_request = request(json!({
+        "schema": AGENT_PROTOCOL_SCHEMA,
+        "request_id": "click-at",
+        "type": "perform",
+        "window_id": window_id.raw(),
+        "generation": 1,
+        "expected_revision": 2,
+        "action": { "kind": "click_at", "x": click_x, "y": click_y },
+    }));
+    let click_worker = thread::spawn(move || {
+        let reply = protocol.handle_line(&click_request);
+        (protocol, reply)
+    });
+    wake_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("click_at wakes its target window");
+    {
+        let parts = window.parts_mut();
+        assert!(parts
+            .agent_commands
+            .drain_ready(parts.tree, parts.semantic_state, true));
+        let _ = parts.semantic_state.refresh(parts.tree);
+        assert!(parts
+            .agent_commands
+            .finish_or_defer(parts.semantic_state, false));
+    }
+    assert_eq!(invoked.get(), 2, "click_at follows logical hit testing");
+    let (mut protocol, reply) = click_worker.join().unwrap();
     let value = reply_json(&reply);
     assert_eq!(value["ok"], true);
     assert_eq!(value["revision"], 2);

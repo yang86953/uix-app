@@ -1624,6 +1624,7 @@ fn agent_commands_stay_bounded_targeted_and_ui_thread_owned() {
     let runtime = read_source(src.join("app/session_runtime.rs"));
     let session = read_source(src.join("app/window_session.rs"));
     let driver = read_source(src.join("app/window_driver.rs"));
+    let protocol = read_source(src.join("app/agent_protocol.rs"));
 
     assert!(
         commands.contains("DEFAULT_AGENT_COMMAND_QUEUE_CAPACITY: usize = 64")
@@ -1646,6 +1647,16 @@ fn agent_commands_stay_bounded_targeted_and_ui_thread_owned() {
         !runtime.contains("WidgetTree")
             && commands.contains("tree.perform_semantic_action(node_id, action)"),
         "transport/runtime ingress must not touch WidgetTree; only UI-side command drain may act"
+    );
+    assert!(
+        commands.contains("AgentWindowAction::PressKey")
+            && commands.contains("tree.dispatch_event(&SystemEvent::KeyDown")
+            && commands.contains("AgentWindowAction::ClickAt")
+            && commands.contains("tree.dispatch_event(&SystemEvent::PointerDown")
+            && protocol
+                .contains("const AGENT_WINDOW_ACTIONS: &[&str] = &[\"press_key\", \"click_at\"]")
+            && protocol.contains("window action must not include a target"),
+        "the two window-level fallbacks must share normal UI events and remain target-free"
     );
 
     let main_queue = driver

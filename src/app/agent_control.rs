@@ -1,4 +1,4 @@
-//! Bounded, per-window command ingress for the future Agent Bridge.
+//! Bounded, per-window command ingress for the Agent Bridge.
 //!
 //! Transport workers may enqueue requests and wait for a response, but only
 //! the owning window's UI turn drains this queue and touches `WidgetTree`.
@@ -9,13 +9,19 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::app::window_semantics::{WindowSemanticSnapshot, WindowSemanticState};
-use crate::core::{ComponentId, WindowId};
+use crate::core::{ComponentId, Point, WindowId};
 use crate::ui::semantic_action::{SemanticAction, SemanticActionError, SemanticActionKind};
 use crate::ui::semantic_snapshot::SemanticTarget;
-use crate::ui::WidgetTree;
+use crate::ui::{KeyCode, KeyMod, MouseButton, SystemEvent, WidgetTree};
 
 pub(crate) const DEFAULT_AGENT_COMMAND_QUEUE_CAPACITY: usize = 64;
 pub(crate) const MAX_AGENT_SETTLE_PASSES: usize = 32;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum AgentWindowAction {
+    PressKey { key: KeyCode, modifiers: KeyMod },
+    ClickAt { position: Point },
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum AgentCommandRequest {
@@ -25,6 +31,11 @@ pub(crate) enum AgentCommandRequest {
         expected_revision: Option<u64>,
         target: SemanticTarget,
         action: SemanticAction,
+    },
+    PerformWindow {
+        generation: u64,
+        expected_revision: Option<u64>,
+        action: AgentWindowAction,
     },
 }
 
@@ -324,13 +335,13 @@ impl WindowAgentState {
         }
 
         let mut did_work = false;
-        let mut batched_perform = false;
+        let mut batched_action = false;
         let drain_budget = self.queue.len();
         for _ in 0..drain_budget {
             let Some(envelope) = self.queue.pop_front() else {
                 break;
             };
-            if batched_perform && matches!(envelope.request, AgentCommandRequest::Snapshot) {
+            if batched_action && matches!(envelope.request, AgentCommandRequest::Snapshot) {
                 self.queue.push_front(envelope);
                 break;
             }
@@ -361,7 +372,27 @@ impl WindowAgentState {
                     &action,
                 ) {
                     Ok(()) => {
-                        batched_perform = true;
+                        batched_action = true;
+                        self.in_flight.push(PendingAgentResponse {
+                            response: envelope.response,
+                        });
+                    }
+                    Err(error) => send_result(envelope.response, Err(error)),
+                },
+                AgentCommandRequest::PerformWindow {
+                    generation,
+                    expected_revision,
+                    action,
+                } => match perform_window_action(
+                    tree,
+                    semantic_state,
+                    presentable,
+                    generation,
+                    expected_revision,
+                    action,
+                ) {
+                    Ok(()) => {
+                        batched_action = true;
                         self.in_flight.push(PendingAgentResponse {
                             response: envelope.response,
                         });
@@ -442,31 +473,80 @@ fn perform(
     target: &SemanticTarget,
     action: &SemanticAction,
 ) -> Result<(), AgentCommandError> {
-    let node_id = {
-        let snapshot = semantic_state
-            .snapshot()
-            .ok_or(AgentCommandError::Internal)?;
-        if generation != snapshot.generation {
-            return Err(AgentCommandError::StaleWindow {
-                expected: generation,
-                actual: snapshot.generation,
-            });
-        }
-        if let Some(expected) = expected_revision {
-            if expected != snapshot.revision {
-                return Err(AgentCommandError::StaleRevision {
-                    expected,
-                    actual: snapshot.revision,
-                });
-            }
-        }
-        resolve_target(snapshot, target)?
-    };
+    let node_id = resolve_target(
+        validate_command(semantic_state, generation, expected_revision)?,
+        target,
+    )?;
     if !presentable {
         return Err(AgentCommandError::NotPresentable);
     }
     tree.perform_semantic_action(node_id, action)
         .map_err(|error| map_action_error(target.label(), error))
+}
+
+fn perform_window_action(
+    tree: &mut WidgetTree,
+    semantic_state: &WindowSemanticState,
+    presentable: bool,
+    generation: u64,
+    expected_revision: Option<u64>,
+    action: AgentWindowAction,
+) -> Result<(), AgentCommandError> {
+    validate_command(semantic_state, generation, expected_revision)?;
+    if !presentable {
+        return Err(AgentCommandError::NotPresentable);
+    }
+
+    match action {
+        AgentWindowAction::PressKey { key, modifiers } => {
+            let _ = tree.dispatch_event(&SystemEvent::KeyDown {
+                key,
+                mods: modifiers,
+            });
+            let _ = tree.dispatch_event(&SystemEvent::KeyUp {
+                key,
+                mods: modifiers,
+            });
+        }
+        AgentWindowAction::ClickAt { position } => {
+            let _ = tree.dispatch_event(&SystemEvent::PointerDown {
+                pos: position,
+                button: MouseButton::Left,
+                mods: KeyMod::NONE,
+            });
+            let _ = tree.dispatch_event(&SystemEvent::PointerUp {
+                pos: position,
+                button: MouseButton::Left,
+                mods: KeyMod::NONE,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn validate_command(
+    semantic_state: &WindowSemanticState,
+    generation: u64,
+    expected_revision: Option<u64>,
+) -> Result<&WindowSemanticSnapshot, AgentCommandError> {
+    let snapshot = semantic_state
+        .snapshot()
+        .ok_or(AgentCommandError::Internal)?;
+    if generation != snapshot.generation {
+        return Err(AgentCommandError::StaleWindow {
+            expected: generation,
+            actual: snapshot.generation,
+        });
+    }
+    if let Some(expected) = expected_revision {
+        if expected != snapshot.revision {
+            return Err(AgentCommandError::StaleRevision {
+                expected,
+                actual: snapshot.revision,
+            });
+        }
+    }
+    Ok(snapshot)
 }
 
 fn resolve_target(

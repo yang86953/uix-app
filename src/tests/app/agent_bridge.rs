@@ -1,7 +1,7 @@
 use crate::app::agent_bridge::{
     AgentWaitCondition, AgentWaitError, AgentWaitOutcome, MAX_AGENT_WAIT_TIMEOUT,
 };
-use crate::app::agent_control::{AgentCommandResponse, AgentSubmitError};
+use crate::app::agent_control::{AgentCommandResponse, AgentSubmitError, AgentWindowAction};
 use crate::app::app_timer::AppTimerQueue;
 use crate::app::main_thread_queue::MainThreadQueue;
 use crate::app::session_runtime::AppRuntime;
@@ -129,10 +129,44 @@ fn process_bridge_lists_metadata_and_routes_snapshot_and_perform() {
         assert!(parts
             .agent_commands
             .finish_or_defer(parts.semantic_state, false));
-        parts.semantic_state.publish_agent_availability(true, false);
     }
     assert!(matches!(
         perform_ticket
+            .recv_timeout(Duration::from_millis(20))
+            .unwrap()
+            .unwrap(),
+        AgentCommandResponse::Performed {
+            window_id: id,
+            generation: 1,
+            revision: 2,
+            presented_revision: 0,
+            settled: true,
+        } if id == window_id
+    ));
+
+    let key_ticket = bridge
+        .perform_window(
+            window_id,
+            1,
+            Some(2),
+            AgentWindowAction::PressKey {
+                key: KeyCode::Enter,
+                modifiers: KeyMod::NONE,
+            },
+        )
+        .unwrap();
+    {
+        let parts = session.parts_mut();
+        assert!(parts
+            .agent_commands
+            .drain_ready(parts.tree, parts.semantic_state, true));
+        assert!(parts
+            .agent_commands
+            .finish_or_defer(parts.semantic_state, false));
+        parts.semantic_state.publish_agent_availability(true, false);
+    }
+    assert!(matches!(
+        key_ticket
             .recv_timeout(Duration::from_millis(20))
             .unwrap()
             .unwrap(),
