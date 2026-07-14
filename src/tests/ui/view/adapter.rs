@@ -3724,7 +3724,7 @@ fn reconcile_input_preserves_typed_value_and_syncs_placeholder() {
         .as_any()
         .downcast_ref::<Input>()
         .unwrap();
-    assert_eq!(input.value(), "typed");
+    assert_eq!(input.current_value(), "typed");
     assert!(matches!(
         input.snapshot_fields(),
         SnapshotFields::Input {

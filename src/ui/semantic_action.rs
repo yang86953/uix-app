@@ -401,7 +401,7 @@ impl WidgetTree {
             node.component()
                 .as_any()
                 .downcast_ref::<Input>()
-                .map(|input| input.value().to_owned())
+                .map(|input| input.current_value().to_owned())
         }) else {
             return EventResult::NotHandled;
         };
