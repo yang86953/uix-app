@@ -22,6 +22,7 @@ use crate::app::window_session::WindowSession;
 use crate::core::WindowId;
 use crate::native::agent_transport::{
     connect_for_test, discovery_permissions_are_private_for_test,
+    endpoint_permissions_are_private_for_test,
 };
 use crate::native::traits::event::EventLoopWaker;
 use crate::tests::common::NullEngine;
@@ -557,11 +558,24 @@ fn native_transport_publishes_discovery_authenticates_and_cleans_up() {
     .expect("replacement descriptor JSON");
     assert_eq!(replacement_descriptor["state"], "ready");
     assert_ne!(replacement_descriptor["token"], descriptor["token"]);
-    if let Some(is_private) =
-        discovery_permissions_are_private_for_test(&replacement.discovery_path)
-            .expect("inspect replacement permissions")
+    let discovery_directory = replacement
+        .discovery_path
+        .parent()
+        .expect("discovery descriptor parent");
+    for path in [discovery_directory, replacement.discovery_path.as_path()] {
+        if let Some(is_private) =
+            discovery_permissions_are_private_for_test(path).expect("inspect discovery permissions")
+        {
+            assert!(
+                is_private,
+                "discovery path must remain owner-only: {path:?}"
+            );
+        }
+    }
+    if let Some(is_private) = endpoint_permissions_are_private_for_test(&replacement.endpoint)
+        .expect("inspect endpoint permissions")
     {
-        assert!(is_private, "replacement descriptor must remain owner-only");
+        assert!(is_private, "agent endpoint must remain owner-only");
     }
     replacement_runtime.shutdown_all();
     assert!(!replacement.discovery_path.exists());

@@ -66,3 +66,10 @@ pub(super) fn connect_for_test(_endpoint: &str) -> io::Result<super::AgentStream
 pub(super) fn discovery_permissions_are_private_for_test(_path: &Path) -> io::Result<Option<bool>> {
     Ok(None)
 }
+
+#[cfg(test)]
+pub(super) fn endpoint_permissions_are_private_for_test(
+    _endpoint: &str,
+) -> io::Result<Option<bool>> {
+    Ok(None)
+}
