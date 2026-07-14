@@ -90,7 +90,7 @@ impl FrameRenderer {
             };
         }
 
-        let caps = engine.capabilities();
+        let frame_start_caps = engine.capabilities();
         // 绘制策略与 present damage 解耦：
         // - 绘制区：GPU（!partial_redraw）/首帧/full/empty → 全帧（不裁剪绘制，消除脏数据风险）；
         //   software 回退保留 dirty-rect 绘制裁剪省 CPU 像素。
@@ -114,7 +114,7 @@ impl FrameRenderer {
         let draw_full = !input.rendered_first
             || input.dirty_region.full_frame
             || input.dirty_region.is_empty()
-            || !caps.supports_partial_redraw();
+            || !frame_start_caps.supports_partial_redraw();
         let damage = compute_present_damage(
             &dirty_with_scroll,
             input.dirty_region.full_frame,
@@ -177,6 +177,9 @@ impl FrameRenderer {
                 };
             }
         }
+
+        // 恢复包装器可在 begin_frame 内切换到 Software，后续呈现协议须读取新引擎能力。
+        let caps = engine.capabilities();
 
         let (recording_w, recording_h) = Self::reference_extent(engine, scene);
         if let Err(error) = self.ensure_recording_surface(recording_w, recording_h) {

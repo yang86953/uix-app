@@ -5,6 +5,7 @@ mod gdi_presenter;
 mod ime_dispatch;
 mod ime_foreground;
 mod platform;
+mod software_recovery;
 mod text_input;
 mod tsf_session;
 mod tsf_text_store;

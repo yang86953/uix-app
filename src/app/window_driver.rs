@@ -683,7 +683,6 @@ impl WindowDriver {
         }
 
         let need_render = !self.rendered_first || tree.has_render_work();
-        let engine_capabilities = engine.capabilities();
         if !self.rendered_first && need_render {
             tree.mark_full_frame_dirty();
             if !laid_out {
@@ -755,6 +754,8 @@ impl WindowDriver {
         let mut phase_present_us = 0u128;
         let mut frame_committed = false;
         let mut frame_failure = None;
+        // begin_frame 可完成 GPU 到 Software 的恢复切换，提交分支须使用切换后的能力。
+        let engine_capabilities = engine.capabilities();
         match outcome {
             RenderOutcome::Present(_) => {
                 if engine_capabilities.uses_external_presenter() {
