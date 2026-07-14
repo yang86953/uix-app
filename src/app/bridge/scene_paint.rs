@@ -9,6 +9,7 @@ use crate::draw::pipeline::NodeId;
 use crate::ui::core::paint_scope::set_current_paint_widget;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::core::widget::WidgetTree;
+use crate::ui::foundation::state::{begin_state_bind_capture, end_state_bind_capture};
 
 impl ScenePaint for WidgetTree {
     fn root_id(&self) -> Option<NodeId> {
@@ -107,9 +108,13 @@ impl ScenePaint for WidgetTree {
     fn paint(&self, id: NodeId, frame: Rect, ctx: &mut PaintContext<'_>) {
         if let Some(node) = self.get(id) {
             if node.visible() {
+                let dirty = node.dirty_rect(frame);
+                let paint_rect = (dirty.w > 0.0 && dirty.h > 0.0).then_some(dirty);
+                begin_state_bind_capture(id, self.invalidation_handle(), paint_rect);
                 set_current_paint_widget(Some(id));
                 node.render(frame, ctx, self);
                 set_current_paint_widget(None);
+                end_state_bind_capture(id);
             }
         }
     }

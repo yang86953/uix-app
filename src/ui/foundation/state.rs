@@ -118,7 +118,7 @@ pub fn drain_pending_effects() -> Vec<Effect> {
     PENDING_EFFECTS.with(|p| std::mem::take(&mut *p.borrow_mut()))
 }
 
-/// 开始探测 DynamicLabel 闭包内读取的 State / Computed（layout 后 bind 阶段调用）。
+/// 开始探测组件测量或绘制时读取的 State / Computed。
 pub fn begin_state_bind_capture(
     component_id: ComponentId,
     queue: InvalidationQueueHandle,
@@ -141,8 +141,8 @@ pub fn end_state_bind_capture(component_id: ComponentId) {
             ));
         }
         for source in states {
-            // DynamicLabel 闭包在 render/measure 时读最新值，只需 Paint。
-            // 若再绑 reconcile，demo header 的 1s timer 会每秒整树 reconcile+layout。
+            // 渲染闭包或组件在 render/measure 时读取最新值，只需 Paint。
+            // 若再绑 reconcile，周期状态会反复触发整树 reconcile+layout。
             source.bind_paint(component_id, queue.clone(), rect);
         }
     });

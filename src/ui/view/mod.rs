@@ -15,8 +15,9 @@ pub mod combinators;
 
 pub(crate) use adapter::ViewAdapter;
 pub use combinators::{
-    button, column, column_fit, dynamic_label, embed, grid, input, label, row, scroll, show, space,
-    ButtonBuilder, GridBuilder, InputBuilder, IntoLabelContent, IntoViewChildren, ScrollBuilder,
+    button, canvas, column, column_fit, dynamic_label, embed, grid, input, label, row, scroll,
+    show, space, ButtonBuilder, GridBuilder, InputBuilder, IntoLabelContent, IntoViewChildren,
+    ScrollBuilder,
 };
 
 /// 用户层 UI 声明 trait。
