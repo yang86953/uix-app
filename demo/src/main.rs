@@ -3,6 +3,8 @@
 // ============================================================================
 //   cargo run --bin uix-demo          → GUI 多页应用
 //   cargo run --bin uix-demo -- --cli → CLI 功能域演示
+//   cargo run --features agent-control --bin uix-demo -- --agent-control
+//                                      → 启用 Agent Bridge 的 GUI
 // ============================================================================
 
 mod cli;
@@ -11,6 +13,24 @@ mod demos;
 mod gui;
 
 use uix::core::log::{info_fn, Level, Logger};
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct LaunchOptions {
+    cli: bool,
+    agent_control: bool,
+}
+
+fn parse_launch_options(args: impl IntoIterator<Item = String>) -> LaunchOptions {
+    let mut options = LaunchOptions::default();
+    for argument in args {
+        match argument.as_str() {
+            "--cli" => options.cli = true,
+            "--agent-control" => options.agent_control = true,
+            _ => {}
+        }
+    }
+    options
+}
 
 fn parse_log_level() -> Level {
     std::env::var("RUST_LOG")
@@ -27,8 +47,19 @@ fn parse_log_level() -> Level {
 
 fn main() {
     Logger::instance().set_level(parse_log_level());
+    let options = parse_launch_options(std::env::args().skip(1));
 
-    if std::env::args().any(|a| a == "--cli") {
+    if options.cli && options.agent_control {
+        eprintln!("--agent-control 只适用于 GUI 模式，不能与 --cli 同时使用");
+        std::process::exit(2);
+    }
+    #[cfg(not(feature = "agent-control"))]
+    if options.agent_control {
+        eprintln!("--agent-control 需要同时启用 Cargo feature：--features agent-control");
+        std::process::exit(2);
+    }
+
+    if options.cli {
         info_fn("UIX CLI 演示启动中...");
         if let Err(e) = cli::run() {
             eprintln!("CLI 演示出错: {}", e.short_what());
@@ -36,6 +67,26 @@ fn main() {
         }
     } else {
         info_fn("UIX GUI 演示启动中...");
-        gui::run();
+        gui::run(options.agent_control);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_launch_options, LaunchOptions};
+
+    #[test]
+    fn launch_options_keep_cli_and_agent_control_explicit() {
+        assert_eq!(
+            parse_launch_options(["--cli".to_owned(), "--agent-control".to_owned()]),
+            LaunchOptions {
+                cli: true,
+                agent_control: true,
+            }
+        );
+        assert_eq!(
+            parse_launch_options(["--unknown".to_owned()]),
+            LaunchOptions::default()
+        );
     }
 }
