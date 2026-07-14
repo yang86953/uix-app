@@ -29,7 +29,7 @@ pub use crate::native::traits::input::{
     ControlSize, CursorType, KeyCode, KeyMod, MouseButton, ScrollDirection,
 };
 pub use crate::native::traits::system::StatusLevel;
-pub use animation::{Animation, Easing};
+pub use animation::{Animation, AnimationConfig, Easing};
 pub use app_state::AppState;
 pub use clipboard::copy_to_clipboard;
 pub use component_handle::ComponentHandle;

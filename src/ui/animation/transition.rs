@@ -1,134 +1,159 @@
-//! Transition — widget 进出场过渡动画。
+//! widget 进出场动画配置与播放器。
 //!
-//! 提供统一过渡动画定义，用于 Modal（弹出/关闭）、Drawer（滑入/滑出）、
-//! Tooltip（渐隐渐现）、Collapse（展开/折叠）等场景。
+//! [`AnimationConfig`] 是应用侧公开配置；[`TransitionPlayer`] 只负责把配置
+//! 展开为单次 opacity / offset / scale 插值。
 
 use crate::core::Point;
 use crate::ui::animation::core::Animation;
+use crate::ui::Placement;
 
-/// 过渡动画方向。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SlideDirection {
-    Up,
-    Down,
-    Left,
-    Right,
+/// 浮层进入或离场时使用的动画配置。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AnimationConfig {
+    kind: AnimationKind,
+    duration: f64,
+    distance: f32,
 }
 
-/// 过渡动画类型。
-#[derive(Debug, Clone, Copy)]
-pub enum Transition {
-    /// 渐入（透明度 0→1）。
-    FadeIn { duration: f64 },
-    /// 渐出（透明度 1→0）。
-    FadeOut { duration: f64 },
-    /// 方向性滑入（透明度 + 位移）。
-    SlideIn {
-        direction: SlideDirection,
-        distance: f32,
-        duration: f64,
-    },
-    /// 方向性滑出（透明度 + 位移）。
-    SlideOut {
-        direction: SlideDirection,
-        distance: f32,
-        duration: f64,
-    },
-    /// 缩放弹出（透明度 + 缩放 0.8→1.0）。
-    ZoomIn { duration: f64 },
-    /// 缩放收起（透明度 + 缩放 1.0→0.8）。
-    ZoomOut { duration: f64 },
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum AnimationKind {
+    FadeIn,
+    FadeOut,
+    SlideIn(Placement),
+    SlideOut(Placement),
+    ZoomIn,
+    ZoomOut,
 }
 
-impl Transition {
+impl AnimationConfig {
+    const DEFAULT_SLIDE_DISTANCE: f32 = 24.0;
+
+    /// 创建渐入配置。
+    pub fn fade_in(duration: f64) -> Self {
+        Self {
+            kind: AnimationKind::FadeIn,
+            duration: duration.max(0.0),
+            distance: 0.0,
+        }
+    }
+
+    /// 创建渐出配置。
+    pub fn fade_out(duration: f64) -> Self {
+        Self {
+            kind: AnimationKind::FadeOut,
+            duration: duration.max(0.0),
+            distance: 0.0,
+        }
+    }
+
+    /// 创建从 `placement` 所在方向滑入的配置。
+    pub fn slide_in(placement: Placement, duration: f64) -> Self {
+        Self {
+            kind: AnimationKind::SlideIn(placement),
+            distance: Self::DEFAULT_SLIDE_DISTANCE,
+            duration: duration.max(0.0),
+        }
+    }
+
+    /// 创建向 `placement` 所在方向滑出的配置。
+    pub fn slide_out(placement: Placement, duration: f64) -> Self {
+        Self {
+            kind: AnimationKind::SlideOut(placement),
+            distance: Self::DEFAULT_SLIDE_DISTANCE,
+            duration: duration.max(0.0),
+        }
+    }
+
+    /// 创建缩放渐入配置。
+    pub fn zoom_in(duration: f64) -> Self {
+        Self {
+            kind: AnimationKind::ZoomIn,
+            duration: duration.max(0.0),
+            distance: 0.0,
+        }
+    }
+
+    /// 创建缩放渐出配置。
+    pub fn zoom_out(duration: f64) -> Self {
+        Self {
+            kind: AnimationKind::ZoomOut,
+            duration: duration.max(0.0),
+            distance: 0.0,
+        }
+    }
+
     /// 是否为进场动画。
-    pub fn is_enter(&self) -> bool {
+    pub fn is_enter(self) -> bool {
         matches!(
-            self,
-            Self::FadeIn { .. } | Self::SlideIn { .. } | Self::ZoomIn { .. }
+            self.kind,
+            AnimationKind::FadeIn | AnimationKind::SlideIn(_) | AnimationKind::ZoomIn
         )
     }
 
     /// 是否为退场动画。
-    pub fn is_exit(&self) -> bool {
+    pub fn is_exit(self) -> bool {
         matches!(
-            self,
-            Self::FadeOut { .. } | Self::SlideOut { .. } | Self::ZoomOut { .. }
+            self.kind,
+            AnimationKind::FadeOut | AnimationKind::SlideOut(_) | AnimationKind::ZoomOut
         )
     }
 
     /// 获取动画持续时间。
-    pub fn duration(&self) -> f64 {
-        match self {
-            Self::FadeIn { duration }
-            | Self::FadeOut { duration }
-            | Self::SlideIn { duration, .. }
-            | Self::SlideOut { duration, .. }
-            | Self::ZoomIn { duration }
-            | Self::ZoomOut { duration } => *duration,
-        }
+    pub fn duration(self) -> f64 {
+        self.duration
     }
 
-    /// 创建对应的透明度动画（f32）。
-    pub fn opacity_animation(&self) -> Animation<f32> {
-        match self {
-            Self::FadeIn { .. } | Self::SlideIn { .. } | Self::ZoomIn { .. } => {
+    pub(crate) fn with_distance(mut self, distance: f32) -> Self {
+        if matches!(
+            self.kind,
+            AnimationKind::SlideIn(_) | AnimationKind::SlideOut(_)
+        ) {
+            self.distance = distance.max(0.0);
+        }
+        self
+    }
+
+    fn opacity_animation(self) -> Animation<f32> {
+        match self.kind {
+            AnimationKind::FadeIn | AnimationKind::SlideIn(_) | AnimationKind::ZoomIn => {
                 Animation::<f32>::fade_in(self.duration())
             }
-            Self::FadeOut { .. } | Self::SlideOut { .. } | Self::ZoomOut { .. } => {
+            AnimationKind::FadeOut | AnimationKind::SlideOut(_) | AnimationKind::ZoomOut => {
                 Animation::<f32>::fade_out(self.duration())
             }
         }
     }
 
-    /// 创建位移动画（用于 SlideIn/SlideOut）。
-    pub fn offset_animation(&self) -> Option<Animation<Point>> {
-        match self {
-            Self::SlideIn {
-                direction,
-                distance,
-                duration,
-            } => {
-                let offset = match direction {
-                    SlideDirection::Up => Point::new(0.0, *distance),
-                    SlideDirection::Down => Point::new(0.0, -*distance),
-                    SlideDirection::Left => Point::new(*distance, 0.0),
-                    SlideDirection::Right => Point::new(-*distance, 0.0),
-                };
-                Some(
-                    Animation::new(offset, Point::new(0.0, 0.0), *duration)
-                        .easing(crate::ui::animation::easing::Easing::antd_out()),
+    fn offset_animation(self) -> Option<Animation<Point>> {
+        match self.kind {
+            AnimationKind::SlideIn(placement) => Some(
+                Animation::new(
+                    placement_offset(placement, self.distance),
+                    Point::new(0.0, 0.0),
+                    self.duration,
                 )
-            }
-            Self::SlideOut {
-                direction,
-                distance,
-                duration,
-            } => {
-                let offset = match direction {
-                    SlideDirection::Up => Point::new(0.0, -*distance),
-                    SlideDirection::Down => Point::new(0.0, *distance),
-                    SlideDirection::Left => Point::new(-*distance, 0.0),
-                    SlideDirection::Right => Point::new(*distance, 0.0),
-                };
-                Some(
-                    Animation::new(Point::new(0.0, 0.0), offset, *duration)
-                        .easing(crate::ui::animation::easing::Easing::antd_in()),
+                .easing(crate::ui::animation::easing::Easing::antd_out()),
+            ),
+            AnimationKind::SlideOut(placement) => Some(
+                Animation::new(
+                    Point::new(0.0, 0.0),
+                    placement_offset(placement, self.distance),
+                    self.duration,
                 )
-            }
+                .easing(crate::ui::animation::easing::Easing::antd_in()),
+            ),
             _ => None,
         }
     }
 
-    /// 创建缩放动画（用于 ZoomIn/ZoomOut）。
-    pub fn scale_animation(&self) -> Option<Animation<f32>> {
-        match self {
-            Self::ZoomIn { duration } => Some(
-                Animation::new(0.8, 1.0, *duration)
+    fn scale_animation(self) -> Option<Animation<f32>> {
+        match self.kind {
+            AnimationKind::ZoomIn => Some(
+                Animation::new(0.8, 1.0, self.duration)
                     .easing(crate::ui::animation::easing::Easing::antd_default()),
             ),
-            Self::ZoomOut { duration } => Some(
-                Animation::new(1.0, 0.8, *duration)
+            AnimationKind::ZoomOut => Some(
+                Animation::new(1.0, 0.8, self.duration)
                     .easing(crate::ui::animation::easing::Easing::antd_default()),
             ),
             _ => None,
@@ -136,112 +161,110 @@ impl Transition {
     }
 }
 
-impl Default for Transition {
+impl Default for AnimationConfig {
     fn default() -> Self {
-        Self::FadeIn { duration: 0.2 }
+        Self::fade_in(0.2)
     }
 }
 
-/// 常用过渡预设。
+fn placement_offset(placement: Placement, distance: f32) -> Point {
+    match placement {
+        Placement::Top | Placement::TopLeft | Placement::TopRight => Point::new(0.0, -distance),
+        Placement::Bottom | Placement::BottomLeft | Placement::BottomRight => {
+            Point::new(0.0, distance)
+        }
+        Placement::Left => Point::new(-distance, 0.0),
+        Placement::Right => Point::new(distance, 0.0),
+    }
+}
+
+/// 内建组件使用的动画预设。
 pub mod presets {
     use super::*;
 
-    /// Modal 弹出过渡：zoom + fade。
-    pub fn modal_enter() -> Transition {
-        Transition::ZoomIn { duration: 0.2 }
+    pub fn modal_enter() -> AnimationConfig {
+        AnimationConfig::zoom_in(0.2)
     }
 
-    /// Modal 关闭过渡：zoom + fade。
-    pub fn modal_exit() -> Transition {
-        Transition::ZoomOut { duration: 0.2 }
+    pub fn modal_exit() -> AnimationConfig {
+        AnimationConfig::zoom_out(0.2)
     }
 
-    /// Drawer 滑入。
-    pub fn drawer_enter(direction: SlideDirection) -> Transition {
-        Transition::SlideIn {
-            direction,
-            distance: 180.0,
-            duration: 0.25,
-        }
+    pub fn drawer_enter(placement: Placement) -> AnimationConfig {
+        AnimationConfig::slide_in(placement, 0.25).with_distance(180.0)
     }
 
-    /// Drawer 滑出。
-    pub fn drawer_exit(direction: SlideDirection) -> Transition {
-        Transition::SlideOut {
-            direction,
-            distance: 180.0,
-            duration: 0.2,
-        }
+    pub fn drawer_exit(placement: Placement) -> AnimationConfig {
+        AnimationConfig::slide_out(placement, 0.2).with_distance(180.0)
     }
 
-    /// Tooltip 渐隐渐现。
-    pub fn tooltip_enter() -> Transition {
-        Transition::FadeIn { duration: 0.15 }
+    pub fn tooltip_enter() -> AnimationConfig {
+        AnimationConfig::fade_in(0.15)
     }
 
-    /// Tooltip 渐出。
-    pub fn tooltip_exit() -> Transition {
-        Transition::FadeOut { duration: 0.1 }
+    pub fn tooltip_exit() -> AnimationConfig {
+        AnimationConfig::fade_out(0.1)
     }
 
-    /// Collapse 展开。
-    pub fn collapse_expand() -> Transition {
-        Transition::FadeIn { duration: 0.15 }
+    pub fn collapse_expand() -> AnimationConfig {
+        AnimationConfig::fade_in(0.15)
     }
 
-    /// Collapse 折叠。
-    pub fn collapse_collapse() -> Transition {
-        Transition::FadeOut { duration: 0.1 }
+    pub fn collapse_collapse() -> AnimationConfig {
+        AnimationConfig::fade_out(0.1)
     }
 }
 
-/// TransitionPlayer — 管理单个 widget 的进出场动画状态。
+/// 管理单个 widget 的一次进场或离场动画状态。
 #[derive(Debug, Clone)]
 pub struct TransitionPlayer {
-    /// 当前过渡动画类型。
-    transition: Transition,
-    /// 透明度动画进度 [0, 1]。
+    config: AnimationConfig,
+    /// 当前透明度进度 [0, 1]。
     pub opacity_progress: f32,
-    /// 位移偏移量。
+    /// 当前位移偏移量。
     pub offset: Point,
-    /// 缩放比例。
+    /// 当前缩放比例。
     pub scale: f32,
     /// 是否已完成。
     pub finished: bool,
-    /// 内部透明度动画。
     opacity_anim: Animation<f32>,
-    /// 内部位移动画。
     offset_anim: Option<Animation<Point>>,
-    /// 内部缩放动画。
     scale_anim: Option<Animation<f32>>,
 }
 
 impl TransitionPlayer {
-    /// 创建一个新的过渡播放器。
-    pub fn new(transition: Transition) -> Self {
-        let opacity_anim = transition.opacity_animation();
-        let offset_anim = transition.offset_animation();
-        let scale_anim = transition.scale_animation();
+    pub fn new(config: AnimationConfig) -> Self {
+        let opacity_anim = config.opacity_animation();
+        let offset_anim = config.offset_animation();
+        let scale_anim = config.scale_animation();
+        let opacity_progress = opacity_anim.value();
+        let offset = offset_anim
+            .as_ref()
+            .map_or_else(|| Point::new(0.0, 0.0), Animation::value);
+        let scale = scale_anim.as_ref().map_or(1.0, Animation::value);
         Self {
-            opacity_progress: if transition.is_enter() { 0.0 } else { 1.0 },
-            offset: Point::new(0.0, 0.0),
-            scale: if transition.is_enter() { 0.8 } else { 1.0 },
+            opacity_progress,
+            offset,
+            scale,
             finished: false,
-            transition,
+            config,
             opacity_anim,
             offset_anim,
             scale_anim,
         }
     }
 
-    /// 重置动画（用于重新播放）。
+    /// 重置动画以重新播放。
     pub fn reset(&mut self) {
-        self.opacity_anim = self.transition.opacity_animation();
-        self.offset_anim = self.transition.offset_animation();
-        self.scale_anim = self.transition.scale_animation();
-        self.opacity_progress = if self.transition.is_enter() { 0.0 } else { 1.0 };
-        self.offset = Point::new(0.0, 0.0);
-        self.scale = if self.transition.is_enter() { 0.8 } else { 1.0 };
+        self.opacity_anim = self.config.opacity_animation();
+        self.offset_anim = self.config.offset_animation();
+        self.scale_anim = self.config.scale_animation();
+        self.opacity_progress = self.opacity_anim.value();
+        self.offset = self
+            .offset_anim
+            .as_ref()
+            .map_or_else(|| Point::new(0.0, 0.0), Animation::value);
+        self.scale = self.scale_anim.as_ref().map_or(1.0, Animation::value);
         self.finished = false;
     }
 
@@ -251,18 +274,18 @@ impl TransitionPlayer {
             return;
         }
         self.opacity_progress = self.opacity_anim.update(dt);
-        if let Some(ref mut anim) = self.offset_anim {
-            self.offset = anim.update(dt);
+        if let Some(ref mut animation) = self.offset_anim {
+            self.offset = animation.update(dt);
         }
-        if let Some(ref mut anim) = self.scale_anim {
-            self.scale = anim.update(dt);
+        if let Some(ref mut animation) = self.scale_anim {
+            self.scale = animation.update(dt);
         }
         let opacity_done = self.opacity_anim.is_finished();
-        let offset_done = self.offset_anim.as_ref().is_none_or(|a| a.is_finished());
-        let scale_done = self.scale_anim.as_ref().is_none_or(|a| a.is_finished());
+        let offset_done = self.offset_anim.as_ref().is_none_or(Animation::is_finished);
+        let scale_done = self.scale_anim.as_ref().is_none_or(Animation::is_finished);
         if opacity_done && offset_done && scale_done {
             self.finished = true;
-            self.opacity_progress = if self.transition.is_enter() { 1.0 } else { 0.0 };
+            self.opacity_progress = if self.config.is_enter() { 1.0 } else { 0.0 };
             self.offset = Point::new(0.0, 0.0);
             self.scale = 1.0;
         }
