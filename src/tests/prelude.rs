@@ -67,6 +67,8 @@ component! {
 #[test]
 fn prelude_exports_event_and_state_capture_types() {
     let _generated_palette = generate_color_scale(Color::BLUE);
+    let _neutral = NEUTRAL_PALETTE;
+    let _data_visualization = DATA_VISUALIZATION_PALETTE;
     let _probe = PreludeComponentProbe {
         label: "probe".to_string(),
     };
@@ -166,9 +168,12 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<AnchorItem>();
     assert_exported::<DesignTokens>();
     assert_exported::<ColorScale>();
+    assert_exported::<DataVisualizationPalette>();
     assert_exported::<NeutralRole>();
     assert_exported::<Theme>();
     assert_exported::<PrimaryHue>();
+    assert_exported::<FunctionalColorRole>();
+    assert_exported::<NeutralColorScale>();
     assert_exported::<TypographyToken>();
     assert_exported::<BadgeStatus>();
     assert_exported::<BarData>();

@@ -72,8 +72,9 @@ pub use managers::{
 pub use overlay::{OverlayEntry, OverlayId, OverlayKind, OverlayStack};
 pub use placement::Placement;
 pub use theme::{
-    generate_color_scale, ColorScale, DesignTokens, DynTokens, NeutralRole, PrimaryHue,
-    ShadowToken, Theme, ThemePrimitives,
+    generate_color_scale, ColorScale, DataVisualizationPalette, DesignTokens, DynTokens,
+    FunctionalColorRole, NeutralColorScale, NeutralRole, PrimaryHue, ShadowToken, Theme,
+    ThemePrimitives, DATA_VISUALIZATION_PALETTE, NEUTRAL_PALETTE,
 };
 pub use traits::{
     Animatable, DebugRenderer, EventHandler, TextRenderer, TokenProvider, WidgetAnimation,

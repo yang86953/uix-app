@@ -45,8 +45,9 @@ pub use crate::ui::style::{
     TypographyToken,
 };
 pub use crate::ui::theme::{
-    generate_color_scale, ColorScale, DesignTokens, DynTokens, NeutralRole, PrimaryHue,
-    ShadowToken, Theme, ThemePrimitives,
+    generate_color_scale, ColorScale, DataVisualizationPalette, DesignTokens, DynTokens,
+    FunctionalColorRole, NeutralColorScale, NeutralRole, PrimaryHue, ShadowToken, Theme,
+    ThemePrimitives, DATA_VISUALIZATION_PALETTE, NEUTRAL_PALETTE,
 };
 pub use crate::ui::{
     window_control, window_drag_region, AccessibilityRole, AccessibilitySnapshot,
