@@ -71,7 +71,10 @@ pub use managers::{
 };
 pub use overlay::{OverlayEntry, OverlayId, OverlayKind, OverlayStack};
 pub use placement::Placement;
-pub use theme::{DesignTokens, DynTokens, NeutralRole, ShadowToken, Theme, ThemePrimitives};
+pub use theme::{
+    ColorScale, DesignTokens, DynTokens, NeutralRole, PrimaryHue, ShadowToken, Theme,
+    ThemePrimitives,
+};
 pub use traits::{
     Animatable, DebugRenderer, EventHandler, TextRenderer, TokenProvider, WidgetAnimation,
     WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetLifecycle, WidgetRender,

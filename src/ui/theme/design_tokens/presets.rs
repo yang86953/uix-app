@@ -6,9 +6,10 @@
 use super::primitives::ThemePrimitives;
 use super::DesignTokens;
 use crate::draw::Color;
+use crate::ui::theme::{PrimaryHue, PRIMARY_HUE_COUNT};
 
-pub const PRIMARY_COUNT: usize = 12;
-pub const PRIMARY_BLUE_INDEX: usize = 8;
+pub const PRIMARY_COUNT: usize = PRIMARY_HUE_COUNT;
+pub const PRIMARY_BLUE_INDEX: usize = PrimaryHue::Blue.index();
 
 impl DesignTokens {
     /// Ant Design 5 亮色主题预设。
