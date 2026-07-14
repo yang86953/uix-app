@@ -10,6 +10,7 @@ pub(crate) const WM_APP: u32 = 0x8000;
 pub(crate) const WM_UIX_FRAME_OPPORTUNITY: u32 = WM_APP + 0x0051;
 
 pub(crate) const WM_NCCREATE: u32 = 0x0081;
+pub(crate) const WM_NCLBUTTONDOWN: u32 = 0x00A1;
 pub(crate) const WM_DESTROY: u32 = 0x0002;
 pub(crate) const WM_CLOSE: u32 = 0x0010;
 pub(crate) const WM_SIZE: u32 = 0x0005;
@@ -43,6 +44,7 @@ pub(crate) const SIZE_MINIMIZED: usize = 1;
 pub(crate) const SIZE_MAXIMIZED: usize = 2;
 
 pub(crate) const HTCLIENT: u32 = 1;
+pub(crate) const HTCAPTION: usize = 2;
 
 pub(crate) const SW_HIDE: i32 = 0;
 pub(crate) const SW_SHOWNORMAL: i32 = 1;

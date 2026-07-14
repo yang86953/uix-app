@@ -7,6 +7,7 @@ pub struct WindowConfig {
     pub title: String,
     pub width: i32,
     pub height: i32,
+    pub custom_title_bar: bool,
     pub root: WindowRootFactory,
 }
 
@@ -19,7 +20,14 @@ impl WindowConfig {
             title: title.into(),
             width,
             height,
+            custom_title_bar: false,
             root: Box::new(root),
         }
+    }
+
+    /// 隐藏系统标题栏，由窗口根 View 提供标题栏外观与交互区域。
+    pub fn custom_title_bar(mut self, enabled: bool) -> Self {
+        self.custom_title_bar = enabled;
+        self
     }
 }

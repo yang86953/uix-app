@@ -48,12 +48,13 @@ pub use crate::ui::theme::{
     DesignTokens, DynTokens, NeutralRole, ShadowToken, Theme, ThemePrimitives,
 };
 pub use crate::ui::{
-    AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AppState, AriaAttribute,
-    ClickEvent, ComponentConfigSnapshot, ComponentHandle, EventResult, HandlerId, HandlerOptions,
-    HandlerRegistration, IntoWidgetNode, PaintContext, Placement, SemanticEvent, SemanticKind,
-    SemanticPayload, SnapshotCollapsePanel, SnapshotField, SnapshotFields, SnapshotSource,
-    SnapshotTableColumn, SnapshotTableColumnGroup, SnapshotTransferItem, SnapshotTreeNode,
-    SnapshotValue, SystemEvent, SystemEventKind, WidgetChildren,
+    window_control, window_drag_region, AccessibilityRole, AccessibilitySnapshot,
+    AccessibilityState, AppState, AriaAttribute, ClickEvent, ComponentConfigSnapshot,
+    ComponentHandle, EventResult, HandlerId, HandlerOptions, HandlerRegistration, IntoWidgetNode,
+    PaintContext, Placement, SemanticEvent, SemanticKind, SemanticPayload, SnapshotCollapsePanel,
+    SnapshotField, SnapshotFields, SnapshotSource, SnapshotTableColumn, SnapshotTableColumnGroup,
+    SnapshotTransferItem, SnapshotTreeNode, SnapshotValue, SystemEvent, SystemEventKind,
+    WidgetChildren, WindowControl,
 };
 pub use crate::ui::{Animation, AnimationConfig, Easing};
 // ui / components

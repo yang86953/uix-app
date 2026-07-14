@@ -24,7 +24,7 @@ use crate::core::{ComponentId, Constraints, EdgeInsets, Rect, Size};
 use crate::draw::compositor::PicturePolicy;
 use crate::draw::painting::PaintContext;
 use crate::draw::spatial::{Ray3D, SpatialContext};
-use crate::ui::event::SemanticEvent;
+use crate::ui::event::{SemanticEvent, WindowAction};
 use crate::ui::layout::{AlignItems, LayoutChild};
 use crate::ui::overlay::OverlayEntry;
 use crate::ui::widget::{EventResult, SystemEvent, WidgetNode, WidgetTree};
@@ -227,6 +227,13 @@ pub trait EventHandler: WidgetComponent {
     fn on_event(&mut self, _event: &SystemEvent) -> EventResult {
         EventResult::NotHandled
     }
+    /// 取走本次已处理事件产生的窗口动作。
+    ///
+    /// 动作由 `WidgetTree` 收集，并在事件所属窗口上同步执行；组件不得直接
+    /// 持有平台窗口句柄。
+    fn take_window_action(&mut self) -> Option<WindowAction> {
+        None
+    }
     fn semantic_event(&self, _id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
         None
     }
@@ -259,6 +266,10 @@ pub trait EventHandler: WidgetComponent {
     }
     fn hit_test_frame(&self, actual_frame: Rect) -> Rect {
         actual_frame
+    }
+    /// 是否继续命中测试子节点。交互包装器可关闭它，让任意展示内容都由包装器接管。
+    fn hit_test_children(&self) -> bool {
+        true
     }
     fn hit_test_3d(&self, ray: &Ray3D, _spatial: &SpatialContext, frame: Rect) -> bool {
         if let Some(hit_point) = ray.intersect_z0() {

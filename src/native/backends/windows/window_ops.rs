@@ -86,6 +86,31 @@ impl WindowOps for WindowsWindowOps {
         Ok(())
     }
 
+    fn os_request_close(&mut self) -> Result<()> {
+        self.ensure_valid_window("os_request_close")?;
+        if unsafe { PostMessageW(self.hwnd, WM_CLOSE, 0, 0) } == 0 {
+            return Err(super::util::windows_diag(
+                Errc::PlatformError,
+                "os_request_close: PostMessageW failed",
+            ));
+        }
+        Ok(())
+    }
+
+    fn os_begin_move_drag(&mut self) -> Result<()> {
+        self.ensure_valid_window("os_begin_move_drag")?;
+        unsafe {
+            ReleaseCapture();
+            if PostMessageW(self.hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0) == 0 {
+                return Err(super::util::windows_diag(
+                    Errc::PlatformError,
+                    "os_begin_move_drag: PostMessageW failed",
+                ));
+            }
+        }
+        Ok(())
+    }
+
     // ── 窗口外观 ──────────────────────────────────────────
 
     fn os_set_title(&mut self, title: &str) -> Result<()> {
@@ -297,6 +322,35 @@ impl WindowOps for WindowsWindowOps {
         self.ensure_valid_window("os_restore")?;
         unsafe {
             ShowWindow(self.hwnd, SW_RESTORE);
+        }
+        Ok(())
+    }
+
+    fn os_set_system_title_bar_visible(&mut self, visible: bool) -> Result<()> {
+        self.ensure_valid_window("os_set_system_title_bar_visible")?;
+        unsafe {
+            let style = GetWindowLongW(self.hwnd, GWL_STYLE) as u32;
+            let new_style = if visible {
+                style | WS_CAPTION
+            } else {
+                style & !WS_CAPTION
+            };
+            SetWindowLongW(self.hwnd, GWL_STYLE, new_style as i32);
+            if SetWindowPos(
+                self.hwnd,
+                std::ptr::null_mut(),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
+            ) == 0
+            {
+                return Err(super::util::windows_diag(
+                    Errc::PlatformError,
+                    "os_set_system_title_bar_visible: SetWindowPos failed",
+                ));
+            }
         }
         Ok(())
     }

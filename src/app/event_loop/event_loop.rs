@@ -4,6 +4,7 @@ use crate::app::active_work_registry::ActiveWorkRegistry;
 use crate::app::agent_control::WindowAgentState;
 use crate::app::clock::{system_clock, AppClock};
 use crate::app::text_input::sync_window_text_input;
+use crate::app::window_actions::apply_pending_window_actions;
 use crate::app::window_driver::{WindowDriver, WindowFrameContext};
 use crate::app::window_semantics::WindowSemanticState;
 use crate::app::window_session::{WindowLoopState, WindowSession, WindowTextInputState};
@@ -521,6 +522,14 @@ where
                 clipboard::with_clipboard(platform.clipboard(), || {
                     tree.dispatch_event(&we);
                 });
+                if let Err(error) = apply_pending_window_actions(tree, platform_window) {
+                    crate::core::log::error_fn(format!(
+                        "window action failed: {}",
+                        error.short_what()
+                    ));
+                    running.set(false);
+                    break;
+                }
             }
             sync_window_text_input(
                 tree,
@@ -536,6 +545,9 @@ where
             }
         }
         let phase_input_us = input_t0.elapsed().as_micros();
+        if !running.get() {
+            break;
+        }
 
         let now = clock.now();
         let external_deadline = next_external_deadline();
@@ -571,6 +583,13 @@ where
             on_runtime_tasks: &mut on_runtime_tasks,
             on_frame: &on_frame,
         });
+        if let Err(error) = apply_pending_window_actions(tree, platform_window) {
+            crate::core::log::error_fn(format!(
+                "window action failed after runtime work: {}",
+                error.short_what()
+            ));
+            break;
+        }
     }
 
     text_input.window_focused = false;

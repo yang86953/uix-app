@@ -12,3 +12,4 @@ mod semantic_action;
 mod theme;
 mod view;
 mod widgets;
+mod window_chrome;

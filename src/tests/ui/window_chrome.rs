@@ -1,0 +1,90 @@
+use crate::core::{Point, Rect};
+use crate::native::traits::input::{KeyMod, MouseButton};
+use crate::ui::core::widget::WidgetCore;
+use crate::ui::event::WindowAction;
+use crate::ui::view::{button, label, window_control, window_drag_region, ViewAdapter};
+use crate::ui::{SystemEvent, WindowControl};
+
+fn pointer_event(pos: Point, down: bool, button: MouseButton) -> SystemEvent {
+    if down {
+        SystemEvent::PointerDown {
+            pos,
+            button,
+            mods: KeyMod::NONE,
+        }
+    } else {
+        SystemEvent::PointerUp {
+            pos,
+            button,
+            mods: KeyMod::NONE,
+        }
+    }
+}
+
+#[test]
+fn drag_region_emits_move_only_for_left_pointer_down() {
+    let mut tree = ViewAdapter::build(window_drag_region(label("title")).height(32.0));
+    tree.root_mut()
+        .expect("drag region root")
+        .set_frame(Rect::new(0.0, 0.0, 240.0, 32.0));
+    tree.layout();
+
+    let pos = Point::new(12.0, 12.0);
+    tree.dispatch_event(&pointer_event(pos, true, MouseButton::Right));
+    assert!(tree.take_window_actions().is_empty());
+
+    tree.dispatch_event(&pointer_event(pos, true, MouseButton::Left));
+    assert_eq!(
+        tree.take_window_actions(),
+        vec![WindowAction::BeginMoveDrag]
+    );
+}
+
+#[test]
+fn control_region_owns_nested_presentation_and_emits_on_release() {
+    // 即便内容本身是 Button，命中也由窗口控制包装器接管，避免嵌套交互吞事件。
+    let mut tree = ViewAdapter::build(
+        window_control(WindowControl::Close, button("×"))
+            .width(44.0)
+            .height(32.0),
+    );
+    tree.root_mut()
+        .expect("window control root")
+        .set_frame(Rect::new(0.0, 0.0, 44.0, 32.0));
+    tree.layout();
+
+    let pos = Point::new(20.0, 16.0);
+    tree.dispatch_event(&pointer_event(pos, true, MouseButton::Left));
+    assert!(tree.take_window_actions().is_empty());
+    tree.dispatch_event(&pointer_event(pos, false, MouseButton::Left));
+
+    assert_eq!(tree.take_window_actions(), vec![WindowAction::RequestClose]);
+}
+
+#[test]
+fn each_window_control_maps_to_its_platform_neutral_action() {
+    let cases = [
+        (WindowControl::Minimize, WindowAction::Minimize),
+        (
+            WindowControl::MaximizeRestore,
+            WindowAction::MaximizeRestore,
+        ),
+        (WindowControl::Close, WindowAction::RequestClose),
+    ];
+
+    for (control, expected) in cases {
+        let mut tree = ViewAdapter::build(
+            window_control(control, label("control"))
+                .width(60.0)
+                .height(32.0),
+        );
+        tree.root_mut()
+            .expect("window control root")
+            .set_frame(Rect::new(0.0, 0.0, 60.0, 32.0));
+        tree.layout();
+        let pos = Point::new(8.0, 8.0);
+        tree.dispatch_event(&pointer_event(pos, true, MouseButton::Left));
+        tree.dispatch_event(&pointer_event(pos, false, MouseButton::Left));
+        assert_eq!(tree.take_window_actions(), vec![expected]);
+    }
+}

@@ -34,6 +34,8 @@ pub struct FakeWindowPropertiesState {
     pub maximized: bool,
     pub minimized: bool,
     pub borderless: bool,
+    pub system_title_bar_visible: bool,
+    pub begin_move_drag_calls: usize,
     pub fullscreen: bool,
     pub always_on_top: bool,
     pub opacity: f32,
@@ -58,6 +60,8 @@ impl Default for FakeWindowPropertiesState {
             maximized: false,
             minimized: false,
             borderless: false,
+            system_title_bar_visible: true,
+            begin_move_drag_calls: 0,
             fullscreen: false,
             always_on_top: false,
             opacity: 1.0,
@@ -85,6 +89,7 @@ impl FakeWindowProperties {
     pub fn clear_history(&mut self) {
         self.state.set_size_calls.clear();
         self.state.set_position_calls.clear();
+        self.state.begin_move_drag_calls = 0;
     }
 }
 
@@ -149,6 +154,10 @@ impl IWindowProperties for FakeWindowProperties {
     fn restore(&mut self) -> Result<()> {
         self.state.maximized = false;
         self.state.minimized = false;
+        Ok(())
+    }
+    fn set_system_title_bar_visible(&mut self, visible: bool) -> Result<()> {
+        self.state.system_title_bar_visible = visible;
         Ok(())
     }
     fn set_borderless(&mut self, b: bool) -> Result<()> {
@@ -228,6 +237,7 @@ pub struct FakeWindowState {
     pub show_calls: usize,
     pub hide_calls: usize,
     pub close_called: bool,
+    pub close_requested: bool,
     pub center_called: bool,
     pub raise_calls: usize,
     pub lower_calls: usize,
@@ -273,6 +283,7 @@ impl FakeWindow {
                 show_calls: 0,
                 hide_calls: 0,
                 close_called: false,
+                close_requested: false,
                 center_called: false,
                 raise_calls: 0,
                 lower_calls: 0,
@@ -320,6 +331,7 @@ impl FakeWindow {
         self.state.show_calls = 0;
         self.state.hide_calls = 0;
         self.state.close_called = false;
+        self.state.close_requested = false;
         self.state.center_called = false;
         self.state.raise_calls = 0;
         self.state.lower_calls = 0;
@@ -362,6 +374,14 @@ impl PlatformWindow for FakeWindow {
             signal.store(false, Ordering::Relaxed);
         }
         self.state.close_called = true;
+        Ok(())
+    }
+    fn request_close(&mut self) -> Result<()> {
+        self.state.close_requested = true;
+        Ok(())
+    }
+    fn begin_move_drag(&mut self) -> Result<()> {
+        self.props.state.begin_move_drag_calls += 1;
         Ok(())
     }
     fn is_visible(&self) -> bool {

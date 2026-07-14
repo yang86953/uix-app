@@ -28,6 +28,7 @@ use crate::ui::style::Style;
 use crate::ui::traits::WidgetComponent;
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widgets::{Button, Container, Grid, Label};
+use crate::ui::window_chrome::WindowInteractionRegion;
 use crate::ui::{ComponentId, WidgetTree};
 use std::collections::{HashMap, HashSet};
 
@@ -192,6 +193,13 @@ impl ViewAdapter {
                 .downcast_mut::<crate::ui::view::combinators::DynamicLabel>()
             {
                 dl.set_style(style.clone());
+            }
+        } else if tid == std::any::TypeId::of::<WindowInteractionRegion>() {
+            if let Some(region) = widget
+                .as_any_mut()
+                .downcast_mut::<WindowInteractionRegion>()
+            {
+                region.apply_view_style(style, flex_grow_override, flex_shrink_override);
             }
         }
 
