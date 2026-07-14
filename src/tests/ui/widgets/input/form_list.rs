@@ -1,3 +1,6 @@
+use crate::ui::core::widget::WidgetCore;
+use crate::ui::view::ViewAdapter;
+use crate::ui::Label;
 use crate::ui::{Form, FormListError};
 
 fn item_list() -> crate::ui::FormListModel {
@@ -78,4 +81,60 @@ fn form_list_clear_is_idempotent_and_missing_targets_are_noops() {
         FormListError::ItemIdExhausted.to_string(),
         "form list item id exhausted"
     );
+}
+
+#[test]
+fn render_rows_reconciles_structure_and_preserves_stable_row_instances() {
+    let mut list = item_list();
+    let first = list.add_item().expect("first item");
+    let root =
+        ViewAdapter::capture_root(|| {
+            crate::ui::view::column(list.render_rows(|item_id, index| {
+                crate::ui::view::label(format!("{index}:{item_id:?}"))
+            }))
+        });
+    let mut tree = ViewAdapter::build_nodes(root);
+    let root_id = tree.root_id().expect("form list root");
+    let first_component = tree.get(root_id).expect("root").children()[0];
+    assert_eq!(
+        tree.get(first_component).and_then(|node| node.key()),
+        Some(list.item_key(first).as_str())
+    );
+    tree.reset_invalidation();
+
+    let second = list.add_item().expect("second item");
+    assert!(tree.take_reconcile_requested());
+    let next =
+        ViewAdapter::capture_root(|| {
+            crate::ui::view::column(list.render_rows(|item_id, index| {
+                crate::ui::view::label(format!("{index}:{item_id:?}"))
+            }))
+        });
+    ViewAdapter::reconcile_nodes(&mut tree, next);
+    let children = tree.get(root_id).expect("root after add").children();
+    assert_eq!(children.len(), 2);
+    assert_eq!(children[0], first_component);
+    assert_eq!(
+        tree.get(children[1]).and_then(|node| node.key()),
+        Some(list.item_key(second).as_str())
+    );
+
+    tree.reset_invalidation();
+    assert_eq!(list.remove_item(0), Some(first));
+    assert!(tree.take_reconcile_requested());
+    let next =
+        ViewAdapter::capture_root(|| {
+            crate::ui::view::column(list.render_rows(|item_id, index| {
+                crate::ui::view::label(format!("{index}:{item_id:?}"))
+            }))
+        });
+    ViewAdapter::reconcile_nodes(&mut tree, next);
+    let children = tree.get(root_id).expect("root after remove").children();
+    assert_eq!(children.len(), 1);
+    assert_eq!(
+        tree.get(children[0]).and_then(|node| node.key()),
+        Some(list.item_key(second).as_str())
+    );
+    assert!(tree.get(first_component).is_none());
+    assert_eq!(tree.find_all_by_type::<Label>().len(), 1);
 }

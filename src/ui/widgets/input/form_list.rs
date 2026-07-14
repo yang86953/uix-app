@@ -2,6 +2,7 @@
 
 use std::fmt;
 
+use crate::ui::view::{View, ViewNode};
 use crate::ui::State;
 
 use super::{Form, FormBuilder, FormField, FormModel, IntoFormValue, Values};
@@ -200,6 +201,25 @@ impl FormListModel {
     /// 返回当前顺序；在 View 构建期读取时自动登记结构 reconcile。
     pub fn item_ids(&self) -> Vec<FormListItemId> {
         self.item_ids.get()
+    }
+
+    /// 把当前行映射为带稳定 key 的 View；结构增删会自动请求所属根 View reconcile。
+    pub fn render_rows<V>(
+        &self,
+        mut render: impl FnMut(FormListItemId, usize) -> V,
+    ) -> Vec<ViewNode>
+    where
+        V: View,
+    {
+        self.item_ids()
+            .into_iter()
+            .enumerate()
+            .map(|(index, item_id)| render(item_id, index).build().key(self.item_key(item_id)))
+            .collect()
+    }
+
+    pub fn item_key(&self, item_id: FormListItemId) -> String {
+        format!("form-list:{}:{}", self.name, item_id.get())
     }
 
     pub fn len(&self) -> usize {
