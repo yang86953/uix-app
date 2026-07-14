@@ -484,10 +484,12 @@ fn reconcile_radio_patches_instance_and_syncs_snapshot_fields() {
 
 #[test]
 fn reconcile_slider_patches_instance_and_syncs_snapshot_fields() {
+    use crate::ui::state::State;
     use crate::ui::widgets::Slider;
 
+    let value = State::new(10.0);
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
-        Slider::new().range(0.0, 100.0).step(1.0).value(10.0),
+        Slider::new(0.0..=100.0).step(1.0).value(&value),
     ));
     let root_id = tree.root_id().expect("slider root should exist");
     let before_ptr = tree
@@ -498,9 +500,10 @@ fn reconcile_slider_patches_instance_and_syncs_snapshot_fields() {
         .downcast_ref::<Slider>()
         .unwrap() as *const Slider;
 
+    value.set(3.0);
     ViewAdapter::reconcile_nodes(
         &mut tree,
-        ViewNode::leaf(Slider::new().range(-10.0, 10.0).step(0.5).value(3.0)),
+        ViewNode::leaf(Slider::new(-10.0..=10.0).step(0.5).value(&value)),
     );
 
     let slider = tree
@@ -511,7 +514,7 @@ fn reconcile_slider_patches_instance_and_syncs_snapshot_fields() {
         .downcast_ref::<Slider>()
         .unwrap();
     assert_eq!(slider as *const Slider, before_ptr);
-    assert_eq!(slider.get_value(), 3.0);
+    assert_eq!(slider.current_value(), 3.0);
     assert_eq!(
         slider.snapshot_fields(),
         SnapshotFields::Slider {

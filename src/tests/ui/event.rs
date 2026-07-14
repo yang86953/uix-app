@@ -710,7 +710,7 @@ fn component_handle_getters_cover_common_snapshot_fields() {
     );
     let slider = tree
         .borrow_mut()
-        .add_child(root, Box::new(Slider::new().value(42.0)));
+        .add_child(root, Box::new(Slider::new(0.0..=100.0).default_value(42.0)));
     let input_number = tree.borrow_mut().add_child(
         root,
         Box::new(InputNumber::new("Amount").value(12.5).disabled(true)),

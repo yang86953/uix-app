@@ -1,26 +1,29 @@
 //! Slider input widget.
 
 use std::cell::Cell;
+use std::ops::RangeInclusive;
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
+use crate::ui::state::State;
 use crate::ui::SnapshotFields;
 use crate::ui::{ComponentId, EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetTree};
 
 component! {
     /// Horizontal slider.
     pub struct Slider {
-        min: f32,
-        max: f32,
-        step: f32,
-        value: f32,
+        min: f64,
+        max: f64,
+        step: f64,
+        value: f64,
+        value_binding: Option<State<f64>>,
         dragging: bool,
         hovered: bool,
         focused: bool,
         last_frame: Cell<Option<Rect>>,
-        pending_change: Cell<Option<f32>>,
+        pending_change: Cell<Option<f64>>,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -31,6 +34,7 @@ component! {
 
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        self.sync_bound_value();
         match event {
             SystemEvent::PointerDown { pos, .. } => {
                 self.dragging = true;
@@ -88,6 +92,7 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        self.capture_bound_value_dependency();
         self.last_frame.set(Some(frame));
         if frame.w <= 0.0 || self.max <= self.min {
             return;
@@ -100,7 +105,7 @@ component! {
         let thumb_r = 6.0;
         let cy = frame.y + frame.h * 0.5;
 
-        let pct = ((self.value - self.min) / (self.max - self.min)).clamp(0.0, 1.0);
+        let pct = ((self.value - self.min) / (self.max - self.min)).clamp(0.0, 1.0) as f32;
         let thumb_x = frame.x + pct * (frame.w - 2.0);
 
         ctx.fill_rect(
@@ -137,21 +142,50 @@ component! {
 impl Slider {
     fn update_from_pos(&mut self, px: f32, frame: Rect) {
         let usable_w = (frame.w - 4.0).max(1.0);
-        let pct = ((px - frame.x - 2.0) / usable_w).clamp(0.0, 1.0);
+        let pct = f64::from(((px - frame.x - 2.0) / usable_w).clamp(0.0, 1.0));
         let raw = self.min + pct * (self.max - self.min);
         if self.step > 0.0 {
-            let stepped = (raw / self.step).round() * self.step;
-            self.set_value(stepped.clamp(self.min, self.max));
+            let stepped = self.min + ((raw - self.min) / self.step).round() * self.step;
+            self.set_value(stepped);
         } else {
-            self.set_value(raw.clamp(self.min, self.max));
+            self.set_value(raw);
         }
     }
 
-    fn set_value(&mut self, value: f32) {
-        let value = value.clamp(self.min, self.max);
-        if (value - self.value).abs() > f32::EPSILON {
+    fn set_value(&mut self, value: f64) {
+        let value = self.clamp_value(value);
+        if value != self.value {
             self.value = value;
+            self.write_bound_value();
             self.pending_change.set(Some(self.value));
+        }
+    }
+
+    fn clamp_value(&self, value: f64) -> f64 {
+        if value.is_finite() {
+            value.clamp(self.min, self.max)
+        } else {
+            self.min
+        }
+    }
+
+    fn sync_bound_value(&mut self) {
+        if let Some(state) = self.value_binding.as_ref() {
+            self.value = self.clamp_value(state.get());
+        }
+    }
+
+    fn capture_bound_value_dependency(&self) {
+        if let Some(state) = self.value_binding.as_ref() {
+            let _ = state.get();
+        }
+    }
+
+    fn write_bound_value(&self) {
+        if let Some(state) = self.value_binding.as_ref() {
+            if state.get() != self.value {
+                state.set(self.value);
+            }
         }
     }
 }
@@ -167,26 +201,30 @@ impl Slider {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let controlled_value = next.value_binding.as_ref().map(|_| next.value);
         self.min = next.min;
         self.max = next.max;
         self.step = next.step;
-        self.value = next.value.clamp(self.min, self.max);
+        self.value_binding = next.value_binding;
+        self.value = controlled_value.unwrap_or_else(|| self.clamp_value(self.value));
     }
 }
 
 impl Default for Slider {
     fn default() -> Self {
-        Self::new()
+        Self::new(0.0..=100.0)
     }
 }
 
 impl Slider {
-    pub fn new() -> Self {
+    pub fn new(range: RangeInclusive<f64>) -> Self {
+        let (min, max) = Self::normalize_range(range);
         Self {
-            min: 0.0,
-            max: 100.0,
+            min,
+            max,
             step: 1.0,
-            value: 30.0,
+            value: min,
+            value_binding: None,
             dragging: false,
             hovered: false,
             focused: false,
@@ -195,25 +233,42 @@ impl Slider {
         }
     }
 
-    pub fn range(mut self, min: f32, max: f32) -> Self {
-        self.min = min;
-        self.max = max;
-        self.value = self.value.clamp(self.min, self.max);
+    pub fn step(mut self, step: f64) -> Self {
+        self.step = if step.is_finite() && step > 0.0 {
+            step
+        } else {
+            0.0
+        };
         self
     }
 
-    pub fn step(mut self, s: f32) -> Self {
-        self.step = s;
+    /// 将滑块值绑定到外部 `State<f64>`。
+    pub fn value(mut self, state: &State<f64>) -> Self {
+        self.value_binding = Some(state.clone());
+        self.value = self.clamp_value(state.get());
         self
     }
 
-    pub fn value(mut self, v: f32) -> Self {
-        self.value = v.clamp(self.min, self.max);
+    /// 设置非受控滑块的初始值。
+    pub fn default_value(mut self, value: f64) -> Self {
+        self.value_binding = None;
+        self.value = self.clamp_value(value);
         self
     }
 
-    pub fn get_value(&self) -> f32 {
+    pub fn current_value(&self) -> f64 {
         self.value
+    }
+
+    fn normalize_range(range: RangeInclusive<f64>) -> (f64, f64) {
+        let (start, end) = range.into_inner();
+        let start = if start.is_finite() { start } else { 0.0 };
+        let end = if end.is_finite() { end } else { 100.0 };
+        if start <= end {
+            (start, end)
+        } else {
+            (end, start)
+        }
     }
 
     fn intrinsic_size(&self) -> Size {
