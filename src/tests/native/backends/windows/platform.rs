@@ -1,10 +1,12 @@
+use crate::app::window_actions::configure_custom_title_bar;
 use crate::native::backends::windows::consts::{
-    SIZE_RESTORED, WM_CHAR, WM_DPICHANGED, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_SIZE,
+    GWL_STYLE, SIZE_RESTORED, WM_CHAR, WM_DPICHANGED, WM_IME_ENDCOMPOSITION,
+    WM_IME_STARTCOMPOSITION, WM_SIZE, WS_CAPTION, WS_THICKFRAME,
 };
 use crate::native::backends::windows::dpi::{
     dpi_for_window, logical_extent_to_physical, physical_extent_to_logical,
 };
-use crate::native::backends::windows::ffi::PostMessageW;
+use crate::native::backends::windows::ffi::{GetWindowLongW, PostMessageW};
 use crate::native::backends::windows::platform::*;
 use crate::native::graphics::platform::windows::{drawable_size, query_client_rect};
 use crate::native::shared::OsEventSource;
@@ -169,6 +171,41 @@ fn native_window_keeps_logical_client_size_and_physical_drawable_size() {
     assert_eq!(
         (window.properties().width(), window.properties().height()),
         (411, 277)
+    );
+
+    window.close().expect("close window");
+}
+
+#[test]
+fn custom_title_bar_removes_caption_but_keeps_resize_frame_and_client_size() {
+    let mut platform = WindowsPlatform::new();
+    let mut window = platform
+        .create_window("UIX custom title bar", 419, 263)
+        .expect("native window");
+    let hwnd = window.native_handle().native_window();
+    let dpi = dpi_for_window(hwnd);
+
+    configure_custom_title_bar(window.as_mut(), 419, 263).expect("configure custom title bar");
+
+    let style = unsafe { GetWindowLongW(hwnd, GWL_STYLE) } as u32;
+    assert_eq!(style & WS_CAPTION, 0, "system caption must be removed");
+    assert_ne!(
+        style & WS_THICKFRAME,
+        0,
+        "native resize frame must remain available"
+    );
+
+    let client = unsafe { query_client_rect(hwnd) }.expect("custom title bar client rect");
+    assert_eq!(
+        (client.right - client.left, client.bottom - client.top),
+        (
+            logical_extent_to_physical(419, dpi),
+            logical_extent_to_physical(263, dpi),
+        )
+    );
+    assert_eq!(
+        (window.properties().width(), window.properties().height()),
+        (419, 263)
     );
 
     window.close().expect("close window");
