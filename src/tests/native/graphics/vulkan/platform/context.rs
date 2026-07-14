@@ -7,6 +7,28 @@ use crate::native::graphics::vulkan::platform::surface::{
 };
 use crate::tests::common::*;
 use ash::vk;
+#[cfg(windows)]
+use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessHandleCount};
+
+#[cfg(windows)]
+fn current_process_handle_count() -> u32 {
+    let mut count = 0;
+    unsafe {
+        // SAFETY: pseudo handle 属于当前进程，输出指针指向有效的局部 u32。
+        GetProcessHandleCount(GetCurrentProcess(), &mut count).expect("GetProcessHandleCount");
+    }
+    count
+}
+
+#[cfg(windows)]
+fn requested_vulkan_soak_duration() -> std::time::Duration {
+    let seconds = std::env::var("UIX_VULKAN_SOAK_SECONDS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(30)
+        .clamp(1, 3_600);
+    std::time::Duration::from_secs(seconds)
+}
 
 #[test]
 fn vulkan_adapter_diagnostic_summary_is_stable() {
@@ -185,6 +207,86 @@ fn windows_vulkan_hardware_resize_readback_and_present() {
             .read_pixels(resized.0 - 1, resized.1 - 1, 1, 1)
             .expect("far-corner readback"),
         vec![0xFF7A_4BC2]
+    );
+
+    context.try_shutdown().expect("shutdown");
+    window.close().expect("close window");
+}
+
+#[cfg(windows)]
+#[test]
+#[ignore = "requires a Vulkan-capable Windows driver; set UIX_VULKAN_SOAK_SECONDS=900 for the gate"]
+fn windows_vulkan_hardware_resize_present_soak_is_bounded() {
+    let mut platform = crate::native::create_platform().expect("platform");
+    let mut window = platform
+        .window_manager()
+        .create_window("Vulkan resize/present soak", 160, 120)
+        .expect("window");
+    let surface = window.native_surface_ptr();
+    assert!(!surface.is_null(), "Windows HWND must be available");
+    window.show().expect("show window");
+    let _ = platform.event_loop().poll_event(&|_| true);
+
+    let mut context = VulkanContext::new(surface, 160, 120).expect("VulkanContext");
+    let warmup = vec![0xFF24_68AC; (context.width() * context.height()) as usize];
+    context
+        .present_pixels(
+            &warmup,
+            context.width(),
+            context.height(),
+            PresentDamage::Full,
+        )
+        .expect("warmup present");
+    let handles_before = current_process_handle_count();
+    let duration = requested_vulkan_soak_duration();
+    let deadline = std::time::Instant::now() + duration;
+    let sizes = [(128, 96), (224, 144), (176, 132), (256, 160)];
+    let mut rounds = 0_u64;
+    let mut peak_handles = handles_before;
+
+    while std::time::Instant::now() < deadline || rounds < sizes.len() as u64 {
+        let requested = sizes[rounds as usize % sizes.len()];
+        window
+            .properties_mut()
+            .set_size(requested.0, requested.1)
+            .expect("resize HWND during soak");
+        let _ = platform.event_loop().poll_event(&|_| true);
+        let drawable = win_surface::drawable_size(surface, requested.0, requested.1);
+        context
+            .resize(drawable.width, drawable.height)
+            .expect("recreate swapchain during soak");
+
+        let color = 0xFF00_0000 | ((rounds as u32).wrapping_mul(0x0001_0203) & 0x00FF_FFFF);
+        let pixels = vec![color; (context.width() * context.height()) as usize];
+        context
+            .present_pixels(
+                &pixels,
+                context.width(),
+                context.height(),
+                PresentDamage::Full,
+            )
+            .expect("present during soak");
+        if rounds % 32 == 0 {
+            assert_eq!(
+                context
+                    .read_pixels(context.width() - 1, context.height() - 1, 1, 1)
+                    .expect("soak far-corner readback"),
+                vec![color]
+            );
+        }
+        peak_handles = peak_handles.max(current_process_handle_count());
+        rounds += 1;
+    }
+
+    let handles_after = current_process_handle_count();
+    assert!(
+        peak_handles <= handles_before.saturating_add(32),
+        "process handles grew beyond the bounded envelope: before={handles_before}, peak={peak_handles}, after={handles_after}"
+    );
+    println!(
+        "Vulkan soak: duration={:.1}s rounds={rounds} handles={handles_before}->{handles_after} peak={peak_handles}; {}",
+        duration.as_secs_f64(),
+        context.adapter_info.diagnostic_summary()
     );
 
     context.try_shutdown().expect("shutdown");
