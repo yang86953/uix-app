@@ -122,6 +122,7 @@ impl ComponentHandle {
             | SnapshotFields::TreeSelect { placeholder, .. }
             | SnapshotFields::Cascader { placeholder, .. }
             | SnapshotFields::DatePicker { placeholder, .. }
+            | SnapshotFields::DateRangePicker { placeholder, .. }
             | SnapshotFields::TimePicker { placeholder, .. }
             | SnapshotFields::Mentions { placeholder, .. } => Some(placeholder),
             _ => None,

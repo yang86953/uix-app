@@ -158,6 +158,17 @@ pub fn page_input(ctx: &DemoCtx<'_>) -> ViewNode {
         )
         .push(
             demo_row(36.0).child(
+                DateRangePicker::new()
+                    .default_range(Date::new(2026, 6, 1), Date::new(2026, 6, 7))
+                    .presets([
+                        ("今天", PresetDate::today()),
+                        ("最近 7 天", PresetDate::last_days(7)),
+                    ])
+                    .disabled_date(|date| date.weekday().is_weekend()),
+            ),
+        )
+        .push(
+            demo_row(36.0).child(
                 TimePicker::new()
                     .placeholder("选择时间")
                     .default_value(Time::new(14, 30)),

@@ -412,6 +412,11 @@ pub enum SnapshotFields {
         placeholder: String,
         value: Option<String>,
     },
+    DateRangePicker {
+        placeholder: String,
+        start: Option<String>,
+        end: Option<String>,
+    },
     TimePicker {
         placeholder: String,
         value: Option<String>,
@@ -818,6 +823,18 @@ impl SnapshotFields {
                         ..AccessibilityState::default()
                     })
             }
+            Self::DateRangePicker {
+                placeholder,
+                start,
+                end,
+            } => AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
+                .with_state(AccessibilityState {
+                    value_text: start
+                        .as_ref()
+                        .zip(end.as_ref())
+                        .map(|(start, end)| format!("{start} / {end}")),
+                    ..AccessibilityState::default()
+                }),
             Self::TimePicker { placeholder, value } => {
                 AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
                     .with_state(AccessibilityState {
