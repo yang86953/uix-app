@@ -389,3 +389,102 @@ fn changing_a_field_replaces_or_clears_its_active_error() {
     assert!(form.set_value("blur", "changed"));
     assert!(form.field_error("blur").is_none());
 }
+
+#[test]
+fn dependent_validator_reads_typed_values_and_runs_on_submit() {
+    let mut form = Form::new()
+        .field("password", "Password")
+        .default("secret")
+        .field("confirm", "Confirm")
+        .default("different")
+        .depends_on("password", |value, values| {
+            (values.get::<String>("password").map(String::as_str) == Some(value))
+                .then_some(())
+                .ok_or_else(|| "passwords differ".to_string())
+        })
+        .build();
+
+    let errors = form.validate().expect_err("confirmation should fail");
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].field(), "confirm");
+    assert_eq!(errors[0].message(), "passwords differ");
+
+    assert!(form.set_value("confirm", "secret"));
+    let values = form.validate().expect("matching values should pass");
+    assert_eq!(values.get::<String>("confirm"), Some(&"secret".to_string()));
+}
+
+#[test]
+fn changing_a_dependency_cascades_in_declaration_order() {
+    let region_calls = Rc::new(Cell::new(0));
+    let code_calls = Rc::new(Cell::new(0));
+    let region_counter = Rc::clone(&region_calls);
+    let code_counter = Rc::clone(&code_calls);
+    let mut form = Form::new()
+        .field("country", "Country")
+        .default("EU")
+        .field("region", "Region")
+        .default("EU")
+        .depends_on("country", move |value, values| {
+            region_counter.set(region_counter.get() + 1);
+            (values.get::<String>("country").map(String::as_str) == Some(value))
+                .then_some(())
+                .ok_or_else(|| "region mismatch".to_string())
+        })
+        .field("code", "Code")
+        .default("EU-1")
+        .depends_on("region", move |value, values| {
+            code_counter.set(code_counter.get() + 1);
+            value
+                .starts_with(
+                    values
+                        .get::<String>("country")
+                        .map(String::as_str)
+                        .unwrap_or_default(),
+                )
+                .then_some(())
+                .ok_or_else(|| "code mismatch".to_string())
+        })
+        .build();
+
+    form.validate().expect("initial dependencies should pass");
+    region_calls.set(0);
+    code_calls.set(0);
+    assert!(form.set_value("country", "US"));
+
+    assert_eq!(region_calls.get(), 1);
+    assert_eq!(code_calls.get(), 1);
+    assert_eq!(
+        form.errors()
+            .iter()
+            .map(FieldError::field)
+            .collect::<Vec<_>>(),
+        vec!["region", "code"]
+    );
+}
+
+#[test]
+fn cyclic_dependencies_are_revalidated_once_per_change() {
+    let left_calls = Rc::new(Cell::new(0));
+    let right_calls = Rc::new(Cell::new(0));
+    let left_counter = Rc::clone(&left_calls);
+    let right_counter = Rc::clone(&right_calls);
+    let mut form = Form::new()
+        .field("left", "Left")
+        .default("same")
+        .depends_on("right", move |_, _| {
+            left_counter.set(left_counter.get() + 1);
+            Ok(())
+        })
+        .field("right", "Right")
+        .default("same")
+        .depends_on("left", move |_, _| {
+            right_counter.set(right_counter.get() + 1);
+            Ok(())
+        })
+        .build();
+
+    assert!(form.set_value("left", "changed"));
+    assert_eq!(left_calls.get(), 0);
+    assert_eq!(right_calls.get(), 1);
+}
