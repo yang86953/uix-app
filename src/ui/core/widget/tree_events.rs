@@ -181,6 +181,7 @@ impl WidgetTree {
                     .drag
                     .begin_gesture(target, *pos, *button, *mods);
                 if let Some(t) = target {
+                    let actions_before_dispatch = self.pending_window_actions.len();
                     self.invalidate_paint(t);
                     // 捕获阶段：root → target，用于 Modal 等拦截
                     if self.capture_to(t, event) == EventResult::Handled {
@@ -193,7 +194,13 @@ impl WidgetTree {
                             self.clear_sibling_cross_text_selections(t);
                         }
                         self.invalidate_nav_siblings(t);
-                        self.set_focus(Some(t));
+                        let preserves_keyboard_focus = self.pending_window_actions
+                            [actions_before_dispatch..]
+                            .iter()
+                            .any(|action| action.preserves_keyboard_focus());
+                        if !preserves_keyboard_focus {
+                            self.set_focus(Some(t));
+                        }
                     } else {
                         // 点击不处理事件的 widget → 取消焦点
                         self.set_focus(None);

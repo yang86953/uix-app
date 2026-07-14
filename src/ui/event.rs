@@ -23,6 +23,13 @@ pub enum WindowAction {
     RequestClose,
 }
 
+impl WindowAction {
+    /// 原生拖动属于窗口外壳手势，不应改变客户区内已有的键盘焦点。
+    pub(crate) const fn preserves_keyboard_focus(self) -> bool {
+        matches!(self, Self::BeginMoveDrag)
+    }
+}
+
 /// 应用边界后的系统事件。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SystemEventKind {
