@@ -73,12 +73,7 @@ impl AgentEndpoint {
             fs::set_permissions(&temporary, fs::Permissions::from_mode(0o600))
         })();
         drop(file);
-        let result = write_result.and_then(|()| {
-            if self.discovery_path.exists() {
-                fs::remove_file(&self.discovery_path)?;
-            }
-            fs::rename(&temporary, &self.discovery_path)
-        });
+        let result = write_result.and_then(|()| fs::rename(&temporary, &self.discovery_path));
         if result.is_err() {
             let _ = fs::remove_file(&temporary);
         } else {
@@ -131,6 +126,11 @@ pub(crate) fn fill_secure_random(output: &mut [u8]) -> io::Result<()> {
 #[cfg(test)]
 pub(super) fn connect_for_test(endpoint: &str) -> io::Result<super::AgentStream> {
     Ok(Box::new(UnixStream::connect(endpoint)?))
+}
+
+#[cfg(test)]
+pub(super) fn discovery_permissions_are_private_for_test(path: &Path) -> io::Result<Option<bool>> {
+    Ok(Some(fs::metadata(path)?.permissions().mode() & 0o077 == 0))
 }
 
 fn private_discovery_directory() -> io::Result<PathBuf> {

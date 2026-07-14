@@ -61,3 +61,8 @@ pub(super) fn connect_for_test(_endpoint: &str) -> io::Result<super::AgentStream
         "agent transport is unsupported on this platform",
     ))
 }
+
+#[cfg(test)]
+pub(super) fn discovery_permissions_are_private_for_test(_path: &Path) -> io::Result<Option<bool>> {
+    Ok(None)
+}

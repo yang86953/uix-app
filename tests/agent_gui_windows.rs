@@ -37,6 +37,8 @@ impl DemoProcess {
             std::process::id()
         ));
         fs::create_dir(&discovery_root).expect("create isolated LOCALAPPDATA");
+        fs::create_dir(discovery_root.join("uix-agent"))
+            .expect("create pre-existing discovery directory");
 
         let child = Command::new(env!("CARGO_BIN_EXE_uix-demo"))
             .arg("--agent-control")
