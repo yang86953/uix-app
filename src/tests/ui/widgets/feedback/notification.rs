@@ -2,6 +2,7 @@ use crate::native::notification::NotificationService;
 use crate::native::notification::ToastEntry;
 use crate::tests::common::*;
 use crate::ui::widgets::feedback::notification::*;
+use crate::ui::Placement;
 
 #[test]
 fn measure_preserves_notification_zero_layout_footprint() {
@@ -125,4 +126,42 @@ fn visible_notification_hit_bounds_cover_toast_stack() {
     assert!(hit.y >= frame.y);
     assert!(hit.x + hit.w <= frame.x + frame.w);
     assert!(hit.y + hit.h <= frame.y + frame.h);
+}
+
+#[test]
+fn bottom_left_notification_stack_uses_shared_placement() {
+    let notification = Notification::new().placement(Placement::BottomLeft);
+    notification.info("First", "with description");
+    notification.success("Second", "");
+
+    let bounds = notification
+        .hit_bounds(Rect::new(0.0, 0.0, 800.0, 600.0))
+        .expect("可见通知应有命中区域");
+
+    assert_eq!(bounds, Rect::new(24.0, 462.0, 384.0, 126.0));
+}
+
+#[test]
+fn every_notification_placement_anchors_inside_window() {
+    let cases = [
+        (Placement::Top, Point::new(208.0, 12.0)),
+        (Placement::TopLeft, Point::new(24.0, 12.0)),
+        (Placement::TopRight, Point::new(392.0, 12.0)),
+        (Placement::Bottom, Point::new(208.0, 540.0)),
+        (Placement::BottomLeft, Point::new(24.0, 540.0)),
+        (Placement::BottomRight, Point::new(392.0, 540.0)),
+        (Placement::Left, Point::new(24.0, 276.0)),
+        (Placement::Right, Point::new(392.0, 276.0)),
+    ];
+
+    for (placement, expected_origin) in cases {
+        let notification = Notification::new().placement(placement);
+        notification.info("Visible", "");
+        let bounds = notification
+            .hit_bounds(Rect::new(0.0, 0.0, 800.0, 600.0))
+            .expect("可见通知应有命中区域");
+
+        assert_eq!(Point::new(bounds.x, bounds.y), expected_origin);
+        assert_eq!(Size::new(bounds.w, bounds.h), Size::new(384.0, 48.0));
+    }
 }

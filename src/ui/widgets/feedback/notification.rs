@@ -12,15 +12,7 @@ use crate::native::notification::NotificationService;
 use crate::native::notification::ToastEntry;
 use crate::native::traits::system::StatusLevel;
 use crate::ui::core::widget::WidgetTree;
-use crate::ui::SnapshotFields;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum NotifPlacement {
-    TopRight,
-    TopLeft,
-    BottomRight,
-    BottomLeft,
-}
+use crate::ui::{Placement, SnapshotFields};
 
 #[derive(Debug, Clone)]
 pub struct NotificationItem {
@@ -46,7 +38,7 @@ impl NotificationItem {
 component! {
     pub struct Notification {
         queue: Rc<RefCell<Vec<NotificationItem>>>,
-        placement: NotifPlacement,
+        placement: Placement,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -126,11 +118,11 @@ impl Notification {
     pub fn new() -> Self {
         Self {
             queue: Rc::new(RefCell::new(Vec::new())),
-            placement: NotifPlacement::TopRight,
+            placement: Placement::TopRight,
         }
     }
 
-    pub fn placement(mut self, p: NotifPlacement) -> Self {
+    pub fn placement(mut self, p: Placement) -> Self {
         self.placement = p;
         self
     }
@@ -217,38 +209,26 @@ impl Notification {
         frame: Rect,
         queue: &'a [NotificationItem],
     ) -> impl Iterator<Item = (Rect, &'a NotificationItem)> + 'a {
-        let notif_w = 384.0;
-        let start_x = frame.x
-            + match self.placement {
-                NotifPlacement::TopRight | NotifPlacement::BottomRight => frame.w - notif_w - 24.0,
-                NotifPlacement::TopLeft | NotifPlacement::BottomLeft => 24.0,
-            };
-        let mut y = frame.y
-            + match self.placement {
-                NotifPlacement::TopRight | NotifPlacement::TopLeft => 12.0,
-                NotifPlacement::BottomRight | NotifPlacement::BottomLeft => frame.h - 12.0,
-            };
-        let grows_up = matches!(
-            self.placement,
-            NotifPlacement::BottomRight | NotifPlacement::BottomLeft
-        );
+        let notif_w = (frame.w - 48.0).clamp(0.0, 384.0);
+        let stack_height = queue.iter().map(Self::toast_height).sum::<f32>()
+            + queue.len().saturating_sub(1) as f32 * 12.0;
+        let start_x = frame.x + self.placement.horizontal_start(frame.w, notif_w, 24.0);
+        let mut y = frame.y + self.placement.vertical_start(frame.h, stack_height, 12.0);
 
         queue.iter().map(move |item| {
-            let desc_h = if item.description.is_empty() {
-                0.0
-            } else {
-                18.0
-            };
-            let notif_h = 48.0 + desc_h;
-            let notif_y = if grows_up { y - notif_h } else { y };
-            let notif_rect = Rect::new(start_x, notif_y, notif_w, notif_h);
-            if grows_up {
-                y -= notif_h + 12.0;
-            } else {
-                y += notif_h + 12.0;
-            }
+            let notif_h = Self::toast_height(item);
+            let notif_rect = Rect::new(start_x, y, notif_w, notif_h);
+            y += notif_h + 12.0;
             (notif_rect, item)
         })
+    }
+
+    fn toast_height(item: &NotificationItem) -> f32 {
+        if item.description.is_empty() {
+            48.0
+        } else {
+            66.0
+        }
     }
 
     pub(crate) fn hit_bounds(&self, frame: Rect) -> Option<Rect> {

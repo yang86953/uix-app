@@ -14,6 +14,7 @@ pub mod layout;
 pub mod macros;
 pub mod managers;
 pub mod overlay;
+pub mod placement;
 pub(crate) mod render_handler;
 pub(crate) mod semantic_action;
 pub(crate) mod semantic_snapshot;
@@ -68,6 +69,7 @@ pub use managers::{
     DragManager, FocusManager, InteractionManager, StateManager, TextManager, WidgetManagers,
 };
 pub use overlay::{OverlayEntry, OverlayId, OverlayKind, OverlayStack};
+pub use placement::Placement;
 pub use theme::{DesignTokens, DynTokens, NeutralRole, ShadowToken, Theme, ThemePrimitives};
 pub use traits::{
     Animatable, DebugRenderer, EventHandler, TextRenderer, TokenProvider, WidgetAnimation,

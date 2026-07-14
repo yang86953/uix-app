@@ -50,13 +50,13 @@ pub fn page_feedback(ctx: &DemoCtx<'_>) -> ViewNode {
             tk,
             36.0,
             "Message",
-            Message::new().placement(MessagePlacement::Top),
+            Message::new().placement(Placement::Top),
         ))
         .push(labeled_row(
             tk,
             36.0,
             "Notification",
-            Notification::new().placement(NotifPlacement::TopRight),
+            Notification::new().placement(Placement::TopRight),
         ))
         .section("Spin — 尺寸")
         .push(
