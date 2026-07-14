@@ -9,9 +9,6 @@ use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::component_snapshot::{AccessibilityRole, AccessibilityState};
 use crate::ui::core::widget::{EventResult, WidgetCore, WidgetTree};
 use crate::ui::event::SystemEvent;
-use crate::ui::foundation::state::{
-    clear_current_view_reconcile_fn, set_current_view_reconcile_fn_arc,
-};
 use crate::ui::semantic_action::SemanticActionError;
 pub use crate::ui::semantic_action::{
     SemanticAction as AutomationAction, SemanticActionKind as AutomationActionKind,
@@ -476,11 +473,8 @@ fn map_semantic_action_error(automation_id: String, error: SemanticActionError) 
     }
 }
 
-fn capture_root(tree: &WidgetTree, build_root: &dyn Fn() -> ViewNode) -> ViewNode {
-    set_current_view_reconcile_fn_arc(tree.reconcile_requester());
-    let root = ViewAdapter::capture_root(build_root);
-    clear_current_view_reconcile_fn();
-    root
+fn capture_root(_tree: &WidgetTree, build_root: &dyn Fn() -> ViewNode) -> ViewNode {
+    ViewAdapter::capture_root(build_root)
 }
 
 fn set_root_frame(tree: &mut WidgetTree, viewport: (f32, f32)) {

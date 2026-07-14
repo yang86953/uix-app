@@ -171,7 +171,7 @@ fn window_session_injects_app_state_into_existing_mounted_tree() {
 }
 
 #[test]
-fn shared_state_marks_only_bound_window_session_dirty() {
+fn dynamic_label_state_marks_only_bound_window_session_for_paint() {
     let state = State::new(0);
     let mut bound_session = WindowSession::from_root_factory(
         {
@@ -203,7 +203,7 @@ fn shared_state_marks_only_bound_window_session_dirty() {
 
     {
         let (tree, _) = bound_session.tree_and_engine_mut();
-        assert!(tree.take_reconcile_requested());
+        assert!(!tree.take_reconcile_requested());
         assert!(tree.has_render_work());
     }
     {
@@ -211,6 +211,31 @@ fn shared_state_marks_only_bound_window_session_dirty() {
         assert!(!tree.take_reconcile_requested());
         assert!(!tree.has_render_work());
     }
+}
+
+#[test]
+fn structural_state_read_requests_factory_reconcile() {
+    let state = State::new(0);
+    let mut session = WindowSession::from_root_factory(
+        {
+            let state = state.clone();
+            move || label(format!("value-{}", state.get()))
+        },
+        Box::new(NullEngine::new()),
+        320,
+        240,
+    );
+
+    {
+        let (tree, _) = session.tree_and_engine_mut();
+        tree.reset_invalidation();
+        assert!(!tree.take_reconcile_requested());
+    }
+
+    state.set(1);
+
+    let (tree, _) = session.tree_and_engine_mut();
+    assert!(tree.take_reconcile_requested());
 }
 
 #[test]

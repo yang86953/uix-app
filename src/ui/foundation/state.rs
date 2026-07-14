@@ -42,12 +42,6 @@ struct EffectDependency {
     subscribe_pending: Box<dyn Fn(Arc<AtomicBool>) + Send + Sync>,
 }
 
-// 当前 View 的 reconcile invalidation 回调：State::new 创建时自动读取并绑定。
-thread_local! {
-    static CURRENT_VIEW_RECONCILE_FN: RefCell<Option<Arc<dyn Fn() + Send + Sync>>> =
-        const { RefCell::new(None) };
-}
-
 // Phase 6：State 读取时暂存，供 DynamicLabel 等响应式 widget 绑定。
 thread_local! {
     static PENDING_STATE_BINDS: RefCell<Vec<(StateSlotId, Arc<dyn StatePaintBind>)>> =
@@ -287,29 +281,6 @@ impl<T: Clone + Send + Sync + 'static> StatePaintBind for Computed<T> {
     }
 }
 
-/// 设置当前 View 的 reconcile invalidation 回调。此回调会被新创建的 `State` 自动绑定。
-/// 由 ViewAdapter 内部调用，用户不需要直接使用。
-pub fn set_current_view_reconcile_fn<F: Fn() + Send + Sync + 'static>(f: F) {
-    CURRENT_VIEW_RECONCILE_FN.with(|reconcile| {
-        *reconcile.borrow_mut() = Some(Arc::new(f));
-    });
-}
-
-/// 与 [`set_current_view_reconcile_fn`] 同，但接收已包装的 `Arc<dyn Fn()>`，
-/// 供 `WidgetTree::reconcile_requester()` 等已返回 Arc 的调用方直接传入。
-pub fn set_current_view_reconcile_fn_arc(f: Arc<dyn Fn() + Send + Sync>) {
-    CURRENT_VIEW_RECONCILE_FN.with(|reconcile| {
-        *reconcile.borrow_mut() = Some(f);
-    });
-}
-
-/// 清除当前 View 的 reconcile invalidation 回调。
-pub fn clear_current_view_reconcile_fn() {
-    CURRENT_VIEW_RECONCILE_FN.with(|reconcile| {
-        *reconcile.borrow_mut() = None;
-    });
-}
-
 /// 在当前线程启用依赖追踪，执行闭包后返回收集到的依赖 generation 检查器列表。
 /// 支持嵌套：内层 collect_deps 保存并恢复外层追踪上下文，使 `Computed` 在其 get()
 /// 内部也能被外层正确追踪。
@@ -364,15 +335,8 @@ struct StateInner<T> {
 
 impl<T: Clone + Send + Sync + 'static> State<T> {
     pub fn new(value: T) -> Self {
-        // 自动从线程局部上下文绑定 reconcile invalidation 回调。
         let reconcile_sites = Arc::new(std::sync::Mutex::new(Vec::new()));
         let paint_sites = Arc::new(std::sync::Mutex::new(Vec::new()));
-        CURRENT_VIEW_RECONCILE_FN.with(|reconcile| {
-            let borrowed = reconcile.borrow();
-            if let Some(ref f) = *borrowed {
-                bind_reconcile_site(&reconcile_sites, 0, f.clone());
-            }
-        });
 
         Self {
             inner: Arc::new(RwLock::new(StateInner {
@@ -518,19 +482,11 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
 
 impl<T: Clone + Send + Sync + 'static> Clone for State<T> {
     fn clone(&self) -> Self {
-        let cloned = Self {
+        Self {
             inner: self.inner.clone(),
             reconcile_sites: self.reconcile_sites.clone(),
             paint_sites: self.paint_sites.clone(),
-        };
-        // factory build 上下文（CURRENT_VIEW_RECONCILE_FN 设）内 clone 时绑定 reconcile，
-        // 让 from_root_factory 的 State::set 触发所属 WindowSession reconcile。
-        CURRENT_VIEW_RECONCILE_FN.with(|reconcile| {
-            if let Some(ref f) = *reconcile.borrow() {
-                bind_reconcile_site(&cloned.reconcile_sites, 0, f.clone());
-            }
-        });
-        cloned
+        }
     }
 }
 
