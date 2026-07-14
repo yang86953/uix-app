@@ -33,7 +33,7 @@ pub(crate) fn apply_window_action(
     match action {
         WindowAction::BeginMoveDrag => window.begin_move_drag(),
         WindowAction::Minimize => window.properties_mut().minimize(),
-        WindowAction::MaximizeRestore => {
+        WindowAction::MaximizeRestore | WindowAction::ToggleMaximizeFromTitleBar => {
             if window.properties().is_maximized() {
                 window.properties_mut().restore()
             } else {

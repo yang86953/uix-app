@@ -258,6 +258,16 @@ impl EventHandler for WindowInteractionRegion {
         match (self.interaction, event) {
             (
                 WindowInteraction::Drag,
+                SystemEvent::PointerDoubleClick {
+                    button: MouseButton::Left,
+                    ..
+                },
+            ) => {
+                self.pending = Some(WindowAction::ToggleMaximizeFromTitleBar);
+                EventResult::Handled
+            }
+            (
+                WindowInteraction::Drag,
                 SystemEvent::PointerDown {
                     button: MouseButton::Left,
                     ..
