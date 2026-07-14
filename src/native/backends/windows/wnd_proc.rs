@@ -95,8 +95,9 @@ impl WindowsPlatform {
                 0
             }
             WM_SIZE => {
-                let w = Self::loword(lparam) as i32;
-                let h = Self::hiword(lparam) as i32;
+                let dpi = super::dpi::dpi_for_window(hwnd);
+                let w = super::dpi::physical_extent_to_logical(Self::loword(lparam) as i32, dpi);
+                let h = super::dpi::physical_extent_to_logical(Self::hiword(lparam) as i32, dpi);
                 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
                 enum SizeAction {
                     Minimized,
@@ -312,7 +313,7 @@ impl WindowsPlatform {
                 0
             }
             WM_LBUTTONUP => {
-                self.handle_mouse_up(window_id, lparam, MouseButton::Left);
+                self.handle_mouse_up(hwnd, window_id, lparam, MouseButton::Left);
                 0
             }
             WM_RBUTTONDOWN => {
@@ -320,7 +321,7 @@ impl WindowsPlatform {
                 0
             }
             WM_RBUTTONUP => {
-                self.handle_mouse_up(window_id, lparam, MouseButton::Right);
+                self.handle_mouse_up(hwnd, window_id, lparam, MouseButton::Right);
                 0
             }
             WM_MBUTTONDOWN => {
@@ -328,11 +329,11 @@ impl WindowsPlatform {
                 0
             }
             WM_MBUTTONUP => {
-                self.handle_mouse_up(window_id, lparam, MouseButton::Middle);
+                self.handle_mouse_up(hwnd, window_id, lparam, MouseButton::Middle);
                 0
             }
             WM_MOUSEMOVE => {
-                let pos = self.mouse_pos_from_lparam(lparam);
+                let pos = self.mouse_pos_from_lparam(hwnd, lparam);
                 self.push_event(window_id, UiEvent::pointer_move(pos));
                 0
             }
@@ -345,7 +346,11 @@ impl WindowsPlatform {
                 unsafe {
                     ScreenToClient(hwnd, &mut client_pt);
                 }
-                let pos = Point::new(client_pt.x as f32, client_pt.y as f32);
+                let dpi = super::dpi::dpi_for_window(hwnd);
+                let pos = Point::new(
+                    super::dpi::physical_point_to_logical(client_pt.x, dpi),
+                    super::dpi::physical_point_to_logical(client_pt.y, dpi),
+                );
                 let delta = (Self::hiword_usize(wparam) as i16) as i32;
                 let delta_y = -(delta as f32) / 120.0;
                 let mods = Self::get_modifier_state();
@@ -366,7 +371,7 @@ impl WindowsPlatform {
             }
             WM_DROPFILES => {
                 let hdrop = lparam as *mut std::ffi::c_void;
-                self.handle_file_drop(window_id, hdrop);
+                self.handle_file_drop(hwnd, window_id, hdrop);
                 0
             }
             WM_ERASEBKGND => {

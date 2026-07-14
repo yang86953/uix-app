@@ -188,24 +188,32 @@ impl WindowOps for WindowsWindowOps {
 
     fn os_set_size(&mut self, w: i32, h: i32) -> Result<()> {
         self.ensure_valid_window("os_set_size")?;
-        if unsafe {
-            SetWindowPos(
-                self.hwnd,
-                std::ptr::null_mut(),
-                0,
-                0,
-                w,
-                h,
-                SWP_NOMOVE | SWP_NOZORDER,
-            )
-        } == 0
-        {
-            return Err(super::util::windows_diag(
-                Errc::PlatformError,
-                "os_set_size: SetWindowPos failed",
-            ));
-        }
-        Ok(())
+        let hwnd = self.hwnd;
+        super::dpi::with_per_monitor_v2(|| {
+            let style = unsafe { GetWindowLongW(hwnd, GWL_STYLE) } as u32;
+            let ex_style = unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) } as u32;
+            let dpi = super::dpi::dpi_for_window(hwnd);
+            let (outer_width, outer_height) =
+                super::dpi::outer_size_for_logical_client(w, h, style, ex_style, dpi)?;
+            if unsafe {
+                SetWindowPos(
+                    hwnd,
+                    std::ptr::null_mut(),
+                    0,
+                    0,
+                    outer_width,
+                    outer_height,
+                    SWP_NOMOVE | SWP_NOZORDER,
+                )
+            } == 0
+            {
+                return Err(super::util::windows_diag(
+                    Errc::PlatformError,
+                    "os_set_size: SetWindowPos failed",
+                ));
+            }
+            Ok(())
+        })
     }
 
     fn os_set_min_size(&mut self, _w: i32, _h: i32) -> Result<()> {

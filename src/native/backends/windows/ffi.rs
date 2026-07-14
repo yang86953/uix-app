@@ -59,11 +59,12 @@ extern "system" {
     ) -> *mut std::ffi::c_void;
     pub(crate) fn DestroyWindow(hwnd: *mut std::ffi::c_void) -> i32;
     pub(crate) fn IsWindow(hwnd: *mut std::ffi::c_void) -> i32;
-    pub(crate) fn AdjustWindowRectEx(
+    pub(crate) fn AdjustWindowRectExForDpi(
         lpRect: *mut RECT,
         dwStyle: u32,
         bMenu: i32,
         dwExStyle: u32,
+        dpi: u32,
     ) -> i32;
     pub(crate) fn DefWindowProcW(
         hwnd: *mut std::ffi::c_void,
@@ -153,7 +154,6 @@ extern "system" {
     pub(crate) fn KillTimer(hwnd: *mut std::ffi::c_void, uIDEvent: u32) -> i32;
 
     pub(crate) fn GetWindowRect(hwnd: *mut std::ffi::c_void, lpRect: *mut RECT) -> i32;
-    pub(crate) fn GetClientRect(hwnd: *mut std::ffi::c_void, lpRect: *mut RECT) -> i32;
 
     // ── 剪贴板 ──
     pub(crate) fn OpenClipboard(hwnd: *mut std::ffi::c_void) -> i32;
@@ -176,12 +176,6 @@ extern "system" {
 // ════════════════════════════════════════════════════════════════════════════
 // gdi32
 // ════════════════════════════════════════════════════════════════════════════
-
-#[link(name = "gdi32")]
-extern "system" {
-    pub(crate) fn GetDeviceCaps(hdc: *mut std::ffi::c_void, nIndex: i32) -> i32;
-    // CreateDIBSection 已在 gdi_presenter.rs 中声明（使用具体 BITMAPINFO 类型）
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 // shell32（函数在各子系统文件中声明，避免参数类型冲突）

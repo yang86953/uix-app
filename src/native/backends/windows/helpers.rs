@@ -196,9 +196,14 @@ impl WindowsPlatform {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl WindowsPlatform {
-    pub(crate) fn mouse_pos_from_lparam(&self, lparam: isize) -> Point {
-        let x = Self::loword_signed(lparam) as f32;
-        let y = Self::hiword_signed(lparam) as f32;
+    pub(crate) fn mouse_pos_from_lparam(
+        &self,
+        hwnd: *mut std::ffi::c_void,
+        lparam: isize,
+    ) -> Point {
+        let dpi = super::dpi::dpi_for_window(hwnd);
+        let x = super::dpi::physical_point_to_logical(Self::loword_signed(lparam) as i32, dpi);
+        let y = super::dpi::physical_point_to_logical(Self::hiword_signed(lparam) as i32, dpi);
         Point::new(x, y)
     }
 
@@ -209,7 +214,7 @@ impl WindowsPlatform {
         lparam: isize,
         btn: MouseButton,
     ) {
-        let pos = self.mouse_pos_from_lparam(lparam);
+        let pos = self.mouse_pos_from_lparam(hwnd, lparam);
         let mods = Self::get_modifier_state();
         let mut ev = UiEvent::pointer_down(pos, btn);
         if let UiEventPayload::PointerButton(ref mut data) = ev.payload {
@@ -223,11 +228,12 @@ impl WindowsPlatform {
 
     pub(crate) fn handle_mouse_up(
         &mut self,
+        hwnd: *mut std::ffi::c_void,
         window_id: crate::core::WindowId,
         lparam: isize,
         btn: MouseButton,
     ) {
-        let pos = self.mouse_pos_from_lparam(lparam);
+        let pos = self.mouse_pos_from_lparam(hwnd, lparam);
         let mods = Self::get_modifier_state();
         let mut ev = UiEvent::pointer_up(pos, btn);
         if let UiEventPayload::PointerButton(ref mut data) = ev.payload {
@@ -241,6 +247,7 @@ impl WindowsPlatform {
 
     pub(crate) fn handle_file_drop(
         &mut self,
+        hwnd: *mut std::ffi::c_void,
         window_id: crate::core::WindowId,
         hdrop: *mut std::ffi::c_void,
     ) {
@@ -258,7 +265,11 @@ impl WindowsPlatform {
                 }
             }
             DragFinish(hdrop);
-            let position = Point::new(pt.x as f32, pt.y as f32);
+            let dpi = super::dpi::dpi_for_window(hwnd);
+            let position = Point::new(
+                super::dpi::physical_point_to_logical(pt.x, dpi),
+                super::dpi::physical_point_to_logical(pt.y, dpi),
+            );
             self.push_event(window_id, UiEvent::file_drop(files, position));
         }
     }

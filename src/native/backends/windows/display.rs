@@ -9,13 +9,20 @@ use super::util::to_wide;
 use crate::core::Rect;
 use crate::native::traits::display::DisplayInfo;
 use crate::native::traits::display::IDisplay;
+use std::cell::Cell;
 use std::ptr;
 
-pub struct WindowsDisplay;
+pub struct WindowsDisplay {
+    hwnd: Cell<usize>,
+}
 
 impl WindowsDisplay {
     pub fn new() -> Self {
-        Self
+        Self { hwnd: Cell::new(0) }
+    }
+
+    pub(crate) fn set_hwnd(&self, hwnd: *mut std::ffi::c_void) {
+        self.hwnd.set(hwnd as usize);
     }
 
     /// 读取 Windows 注册表检测系统深色/浅色模式
@@ -65,15 +72,13 @@ impl Default for WindowsDisplay {
 
 impl IDisplay for WindowsDisplay {
     fn dpi_scale(&self) -> f32 {
-        unsafe {
-            let hdc = GetDC(ptr::null_mut());
-            if hdc.is_null() {
-                return 1.0;
-            }
-            let dpi = GetDeviceCaps(hdc, LOGPIXELSX);
-            ReleaseDC(ptr::null_mut(), hdc);
-            dpi as f32 / 96.0
-        }
+        let hwnd = self.hwnd.get() as *mut std::ffi::c_void;
+        let dpi = if hwnd.is_null() {
+            super::dpi::dpi_for_system()
+        } else {
+            super::dpi::dpi_for_window(hwnd)
+        };
+        dpi as f32 / super::dpi::BASE_DPI as f32
     }
 
     fn is_dark_mode(&self) -> bool {
@@ -98,6 +103,5 @@ impl IDisplay for WindowsDisplay {
     }
 }
 
-const LOGPIXELSX: i32 = 88;
 const SM_CXSCREEN: i32 = 0;
 const SM_CYSCREEN: i32 = 1;
