@@ -5,6 +5,7 @@ use crate::native::traits::system::StatusLevel;
 use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
 use crate::ui::style::{Style, StyleSet};
 use crate::ui::widgets::*;
+use crate::ui::Placement;
 
 use super::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SelectionSnapshot,
@@ -211,10 +212,10 @@ pub enum SnapshotFields {
         show_icon: bool,
     },
     Message {
-        placement: MessagePlacement,
+        placement: Placement,
     },
     Notification {
-        placement: NotifPlacement,
+        placement: Placement,
     },
     ProgressBar {
         progress: f32,

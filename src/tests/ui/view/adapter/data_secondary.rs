@@ -573,7 +573,8 @@ fn reconcile_timeline_patches_instance_and_syncs_config() {
 
 #[test]
 fn reconcile_message_preserves_queue_and_syncs_placement() {
-    use crate::ui::widgets::{Message, MessagePlacement};
+    use crate::ui::widgets::Message;
+    use crate::ui::Placement;
 
     let message = Message::new();
     message.success("kept");
@@ -590,7 +591,7 @@ fn reconcile_message_preserves_queue_and_syncs_placement() {
 
     ViewAdapter::reconcile_nodes(
         &mut tree,
-        ViewNode::leaf(Message::new().placement(MessagePlacement::TopRight)),
+        ViewNode::leaf(Message::new().placement(Placement::TopRight)),
     );
 
     let message = tree
@@ -606,14 +607,15 @@ fn reconcile_message_preserves_queue_and_syncs_placement() {
     assert_eq!(
         message.snapshot_fields(),
         SnapshotFields::Message {
-            placement: MessagePlacement::TopRight,
+            placement: Placement::TopRight,
         }
     );
 }
 
 #[test]
 fn reconcile_notification_preserves_queue_and_syncs_placement() {
-    use crate::ui::widgets::{NotifPlacement, Notification};
+    use crate::ui::widgets::Notification;
+    use crate::ui::Placement;
 
     let notification = Notification::new();
     notification.open("kept", "body", StatusLevel::Info);
@@ -630,7 +632,7 @@ fn reconcile_notification_preserves_queue_and_syncs_placement() {
 
     ViewAdapter::reconcile_nodes(
         &mut tree,
-        ViewNode::leaf(Notification::new().placement(NotifPlacement::BottomLeft)),
+        ViewNode::leaf(Notification::new().placement(Placement::BottomLeft)),
     );
 
     let notification = tree
@@ -646,7 +648,7 @@ fn reconcile_notification_preserves_queue_and_syncs_placement() {
     assert_eq!(
         notification.snapshot_fields(),
         SnapshotFields::Notification {
-            placement: NotifPlacement::BottomLeft,
+            placement: Placement::BottomLeft,
         }
     );
 }
