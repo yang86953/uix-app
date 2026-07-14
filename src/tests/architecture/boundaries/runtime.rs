@@ -141,6 +141,10 @@ fn application_defers_show_until_first_present() {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("src/app/shell/application.rs"),
     )
     .expect("read application");
+    let application_runtime = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/app/shell/application/runtime.rs"),
+    )
+    .expect("read application runtime");
     let event_loop = fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("src/app/event_loop/event_loop.rs"),
     )
@@ -151,8 +155,9 @@ fn application_defers_show_until_first_present() {
 
     assert!(
         application.contains("show deferred")
-            && application.contains("WindowDriver::new(width, height, true)")
-            && !application.contains("initial window show failed"),
+            && application_runtime.contains("WindowDriver::new(width, height, true)")
+            && !application.contains("initial window show failed")
+            && !application_runtime.contains("initial window show failed"),
         "Application must not ShowWindow before fonts/session/first present"
     );
     assert!(
