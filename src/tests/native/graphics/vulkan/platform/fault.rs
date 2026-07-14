@@ -5,6 +5,9 @@ use crate::native::graphics::vulkan::platform::fault::{
 use crate::tests::common::*;
 use ash::vk;
 
+#[cfg(windows)]
+use crate::native::graphics::vulkan::platform::context::VulkanContext;
+
 #[test]
 fn device_fault_feature_query_prefers_vulkan_1_1_core() {
     assert_eq!(
@@ -130,4 +133,37 @@ fn non_device_loss_does_not_poison_shared_device_state() {
 
     assert_eq!(error.code(), Errc::GraphicsSurfaceLost);
     assert!(state.peer_error().is_none());
+}
+
+#[cfg(windows)]
+#[test]
+#[ignore = "requires a Vulkan-capable Windows driver and UIX_VULKAN_EXPECT_DEVICE_FAULT=true|false"]
+fn windows_vulkan_device_fault_reporting_matches_expected_capability() {
+    let expected = match std::env::var("UIX_VULKAN_EXPECT_DEVICE_FAULT").as_deref() {
+        Ok("true" | "1") => true,
+        Ok("false" | "0") => false,
+        Ok(value) => panic!("UIX_VULKAN_EXPECT_DEVICE_FAULT must be true|false|1|0, got {value:?}"),
+        Err(error) => panic!("UIX_VULKAN_EXPECT_DEVICE_FAULT is required: {error}"),
+    };
+    let mut platform = crate::native::create_platform().expect("platform");
+    let mut window = platform
+        .window_manager()
+        .create_window("Vulkan device fault capability", 96, 64)
+        .expect("window");
+    let mut context = VulkanContext::new(window.native_surface_ptr(), 96, 64)
+        .expect("VulkanContext for device fault capability");
+
+    assert_eq!(
+        context.device_fault_reporting_enabled_for_test(),
+        expected,
+        "unexpected VK_EXT_device_fault capability: {}",
+        context.adapter_info.diagnostic_summary()
+    );
+    println!(
+        "Vulkan device fault capability: enabled={expected}; {}",
+        context.adapter_info.diagnostic_summary()
+    );
+
+    context.try_shutdown().expect("shutdown");
+    window.close().expect("close window");
 }
