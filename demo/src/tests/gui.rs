@@ -11,3 +11,4 @@ use uix::ui::widgets::ScrollView;
 mod layout_and_interaction;
 mod navigation_structure;
 mod reconcile_and_state;
+mod window_title_bar;

@@ -11,6 +11,10 @@ use crate::demos::{build_page, DemoCtx};
 use std::cell::Cell;
 use std::rc::Rc;
 
+mod window_title_bar;
+
+use window_title_bar::demo_window;
+
 fn sidebar_group_label(_tk: &DesignTokens, text: &str) -> ViewNode {
     label(text)
         .font_size(11.0)
@@ -260,6 +264,7 @@ pub fn run(agent_control: bool) {
     let app = App::new()
         .title("UIX Demo")
         .size(INIT_W, INIT_H)
+        .custom_title_bar(true)
         .theme(Theme::antd_light())
         .on_start(with_cloned!(theme_control, timer_ticks, active; |handle| {
             theme_control.set_handle(handle.clone());
@@ -341,14 +346,14 @@ pub fn run(agent_control: bool) {
         runtime_count,
         theme_control;
         {
-            app_shell_with_counters(
+            demo_window(app_shell_with_counters(
                 active,
                 timer_ticks,
                 anim_time,
                 &home_count,
                 &runtime_count,
                 &theme_control,
-            )
+            ))
         }
     ))
     .run();
