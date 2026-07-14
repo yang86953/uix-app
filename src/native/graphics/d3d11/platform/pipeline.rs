@@ -587,7 +587,7 @@ fn compile_shader(source: &str, entry: &str, target: &str) -> Result<ID3DBlob> {
 
 fn create_static_vb(device: &ID3D11Device, vertices: &[f32]) -> Result<ID3D11Buffer> {
     let desc = D3D11_BUFFER_DESC {
-        ByteWidth: (vertices.len() * size_of::<f32>()) as u32,
+        ByteWidth: std::mem::size_of_val(vertices) as u32,
         Usage: D3D11_USAGE_DEFAULT,
         BindFlags: D3D11_BIND_VERTEX_BUFFER.0 as u32,
         CPUAccessFlags: 0,
@@ -2109,7 +2109,7 @@ impl D3d11Pipeline {
                 continue;
             }
             let vert_count = (verts.len() / 2) as u32;
-            if vert_count % 3 != 0 {
+            if !vert_count.is_multiple_of(3) {
                 continue;
             }
             self.ensure_mesh_vb(device, verts.len())?;
@@ -2127,7 +2127,7 @@ impl D3d11Pipeline {
                 std::ptr::copy_nonoverlapping(
                     verts.as_ptr().cast::<u8>(),
                     mapped.pData.cast(),
-                    verts.len() * size_of::<f32>(),
+                    std::mem::size_of_val(verts),
                 );
                 context.Unmap(&self.vb_mesh, 0);
             }

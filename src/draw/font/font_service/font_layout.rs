@@ -144,7 +144,7 @@ impl FontService {
             for mut g in seg_layout.glyphs {
                 g.x += cx;
                 g.y += cy + baseline_offset;
-                g.char_index = char_idx + g.char_index;
+                g.char_index += char_idx;
                 g.font = seg.font;
                 line.glyphs.push(g);
             }
