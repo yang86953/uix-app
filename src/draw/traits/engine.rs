@@ -102,6 +102,16 @@ impl GraphicsCapabilities {
         }
     }
 
+    /// Engine-managed present + 跨帧保留的 CPU 像素与离屏表面。
+    pub fn engine_managed_retained_pixels() -> Self {
+        Self {
+            presentation_mode: PresentationMode::EngineManaged,
+            partial_redraw: true,
+            offscreen: true,
+            scroll_memmove: true,
+        }
+    }
+
     pub fn uses_external_presenter(self) -> bool {
         matches!(self.presentation_mode, PresentationMode::ExternalPresenter)
     }

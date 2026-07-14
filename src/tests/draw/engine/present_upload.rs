@@ -10,6 +10,7 @@ struct PresentedFrame {
     width: i32,
     height: i32,
     len: usize,
+    pixels: Vec<u32>,
     damage: PresentDamage,
 }
 
@@ -130,6 +131,7 @@ impl IGraphicsContext for RecordingPixelContext {
             width,
             height,
             len: pixels.len(),
+            pixels: pixels.to_vec(),
             damage,
         });
         Ok(())
@@ -199,14 +201,43 @@ fn present_upload_engine_submits_cpu_pixels_to_context() {
             width: 4,
             height: 3,
             len: 12,
+            pixels: vec![0; 12],
             damage: PresentDamage::Full,
         })
     );
     assert_eq!(
         engine.capabilities(),
-        GraphicsCapabilities::engine_managed_with_offscreen(),
-        "GPU 主路径绘制全帧：partial_redraw=false，与 NativeGpuBackend 对齐"
+        GraphicsCapabilities::engine_managed_retained_pixels(),
+        "PixelUpload 的 CPU canvas 应支持局部重绘和滚动复制"
     );
+}
+
+#[test]
+fn present_upload_dirty_frame_preserves_pixels_outside_damage() {
+    let frame = Arc::new(Mutex::new(None));
+    let context = RecordingPixelContext::new(frame.clone());
+    let mut engine = PresentUploadEngine::new(Box::new(context)).unwrap();
+
+    engine.initialize(4, 3).unwrap();
+    let _ = engine.begin_frame(UpdateStrategy::FullRedraw);
+    engine.canvas_2d().pixels_mut().fill(0x1122_3344);
+    let _ = engine.end_frame(&DamageRegion::full());
+
+    let dirty = Rect::new(1.0, 1.0, 2.0, 1.0);
+    let _ = engine.begin_frame(UpdateStrategy::DirtyRects(vec![dirty]));
+    let pixels = engine.canvas_2d().pixels_mut();
+    pixels[5] = 0x5566_7788;
+    pixels[6] = 0x5566_7788;
+    let _ = engine.end_frame(&DamageRegion::partial(vec![dirty]));
+
+    let presented = frame.lock().unwrap().clone().expect("presented frame");
+    assert_eq!(presented.pixels[5..=6], [0x5566_7788; 2]);
+    assert!(presented
+        .pixels
+        .iter()
+        .enumerate()
+        .all(|(index, pixel)| (5..=6).contains(&index) || *pixel == 0x1122_3344));
+    assert_eq!(presented.damage, PresentDamage::Full);
 }
 
 #[test]

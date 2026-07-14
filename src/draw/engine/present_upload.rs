@@ -204,9 +204,9 @@ impl GraphicsEngine for PresentUploadEngine {
     }
 
     fn capabilities(&self) -> GraphicsCapabilities {
-        // GPU 主路径绘制全帧（与 NativeGpuBackend 对齐），消除 dirty-rect 绘制裁剪的脏数据风险；
-        // Present damage is gated by typed coherency; Vulkan remains FullOnly.
-        GraphicsCapabilities::engine_managed_with_offscreen()
+        // CPU canvas 跨帧保留，可安全执行局部清绘与重叠滚动复制；最终提交仍由
+        // context 的 present coherency 独立门控，Vulkan FullOnly 不会被冒充为窄提交。
+        GraphicsCapabilities::engine_managed_retained_pixels()
     }
 
     fn device_pixel_ratio(&self) -> f32 {
