@@ -9,6 +9,8 @@ use crate::native::traits::present::IGraphicsContext;
 pub(crate) mod context;
 #[cfg(windows)]
 pub(crate) mod pipeline;
+#[cfg(windows)]
+mod swapchain;
 
 #[cfg(windows)]
 pub use context::D3d11Context;
