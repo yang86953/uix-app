@@ -11,6 +11,7 @@ use crate::draw::primitives::path::{FillRule, Path};
 use crate::draw::primitives::stroker::StrokeOptions;
 use crate::draw::traits::Canvas2D;
 use crate::draw::{Color, FontHandle, GradientDirection, Radius};
+use std::sync::Arc;
 
 /// 绘制阶段：合成器在子节点前后分别调用 `paint`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -96,38 +97,38 @@ pub enum PaintOp {
         corner_radius: Option<Radius>,
     },
     DrawText {
-        text: String,
+        text: Arc<str>,
         pos: Point,
         color: Color,
         font_size: f32,
     },
     TextCenter {
-        text: String,
+        text: Arc<str>,
         rect: Rect,
         color: Color,
         font_size: f32,
     },
     DrawTextInFrame {
-        text: String,
+        text: Arc<str>,
         rect: Rect,
         color: Color,
         font_size: f32,
     },
     DrawTextBaseline {
-        text: String,
+        text: Arc<str>,
         x: f32,
         baseline_y: f32,
         color: Color,
         font_size: f32,
     },
     DrawTextWrapped {
-        text: String,
+        text: Arc<str>,
         rect: Rect,
         color: Color,
         font_size: f32,
     },
     DrawTextWithSelection {
-        text: String,
+        text: Arc<str>,
         pos: Point,
         color: Color,
         font_size: f32,
