@@ -714,6 +714,7 @@ pub enum SnapshotFields {
         placeholder: String,
     },
     ColorPicker {
+        value: Color,
         preset_colors: Vec<Color>,
     },
     DatePicker {
@@ -1119,6 +1120,13 @@ impl SnapshotFields {
                         ..AccessibilityState::default()
                     })
             }
+            Self::ColorPicker { value, .. } => AccessibilitySnapshot::new(
+                AccessibilityRole::Combobox,
+            )
+            .with_state(AccessibilityState {
+                value_text: Some(value.to_string()),
+                ..AccessibilityState::default()
+            }),
             Self::AutoComplete { placeholder, .. }
             | Self::Cascader { placeholder, .. }
             | Self::Mentions { placeholder, .. } => {
