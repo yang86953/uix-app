@@ -1275,7 +1275,11 @@ fn tree_traverse_preorder() {
     let a = tree.add_child(root, Box::new(SpyWidget::new(50.0, 30.0)));
     let b = tree.add_child(root, Box::new(SpyWidget::new(50.0, 30.0)));
     let c = tree.add_child(a, Box::new(SpyWidget::new(25.0, 15.0)));
-    assert_eq!(tree.traverse(), vec![root, a, c, b]);
+    let first = tree.traverse();
+    assert_eq!(&*first, &[root, a, c, b]);
+    let cached_address = first.as_ptr();
+    drop(first);
+    assert_eq!(tree.traverse().as_ptr(), cached_address);
 }
 
 #[test]
@@ -3724,7 +3728,8 @@ fn stretch_sidebar_does_not_phase4_thrash_against_parent_allocation() {
     // 再次强制 layout：结果不变时不得再写 frame / Phase 4
     let frames_before: Vec<_> = tree
         .traverse()
-        .into_iter()
+        .iter()
+        .copied()
         .map(|id| (id, tree.get(id).expect("node").frame()))
         .collect();
     let _ = tree.take_layout_frame_writes();
@@ -3931,7 +3936,8 @@ fn fixed_height_card_wrap_inside_viewport_does_not_phase2_thrash() {
     // 定位含 3 个 Tag 的 wrap Space（demo 卡片内）
     let wrap_id = tree
         .traverse()
-        .into_iter()
+        .iter()
+        .copied()
         .find(|&id| {
             let kids = tree
                 .get(id)
@@ -4025,7 +4031,8 @@ fn scrollview_fixed_intermediate_keeps_parent_cap_no_phase_oscillation() {
     // 定高中间层 frame.h 必须停在 100，不得被 Phase 2 撑到 150
     let fixed_id = tree
         .traverse()
-        .into_iter()
+        .iter()
+        .copied()
         .find(|&id| {
             tree.get(id)
                 .and_then(|n| n.component().as_any().downcast_ref::<Container>())
@@ -4074,7 +4081,8 @@ fn scrollview_fixed_intermediate_keeps_parent_cap_no_phase_oscillation() {
     // 滚动内容根仍可高于视口（parent 是 viewport 时放开 cap）
     let sv = tree
         .traverse()
-        .into_iter()
+        .iter()
+        .copied()
         .find(|&id| {
             tree.get(id)
                 .and_then(|n| {

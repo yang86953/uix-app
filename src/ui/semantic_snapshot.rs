@@ -92,7 +92,8 @@ impl WidgetTree {
         let focused = self.managers().focus.focused_component();
         let nodes = self
             .traverse()
-            .into_iter()
+            .iter()
+            .copied()
             .filter_map(|id| {
                 let node = self.get(id)?;
                 let snapshot = ComponentConfigSnapshot::from_component(id, node.component());

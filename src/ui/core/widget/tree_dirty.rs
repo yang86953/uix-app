@@ -264,7 +264,7 @@ impl WidgetTree {
         use crate::ui::foundation::state::{begin_state_bind_capture, end_state_bind_capture};
         use crate::ui::view::combinators::DynamicLabel;
         let handle = self.invalidation_handle();
-        for id in self.traverse() {
+        for &id in self.traverse().iter() {
             let type_id = self
                 .get(id)
                 .map(|n| n.component().as_any().type_id())

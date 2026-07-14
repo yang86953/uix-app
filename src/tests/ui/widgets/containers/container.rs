@@ -156,7 +156,7 @@ fn column_fit_nav_tile_in_row_does_not_overlap_labels() {
     tree.layout();
 
     let mut frames = Vec::new();
-    for id in tree.traverse() {
+    for &id in tree.traverse().iter() {
         let node = tree.get(id).expect("node");
         if let Some(l) = node.component().as_any().downcast_ref::<Label>() {
             frames.push((l.text().to_string(), node.frame()));

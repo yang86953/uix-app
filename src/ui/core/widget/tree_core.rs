@@ -146,7 +146,7 @@ impl WidgetTree {
         let Some(app_state) = self.app_state.clone() else {
             return false;
         };
-        let targets: HashSet<_> = self.traverse().into_iter().collect();
+        let targets: HashSet<_> = self.traverse().iter().copied().collect();
         let events = app_state.drain_semantic_events_for(&targets);
         if events.is_empty() {
             return false;
@@ -165,7 +165,7 @@ impl WidgetTree {
         let Some(app_state) = self.app_state.as_ref() else {
             return false;
         };
-        let targets: HashSet<_> = self.traverse().into_iter().collect();
+        let targets: HashSet<_> = self.traverse().iter().copied().collect();
         app_state.has_semantic_events_for(&targets)
     }
 
@@ -203,7 +203,7 @@ impl WidgetTree {
         if self.app_state.is_none() {
             return;
         }
-        for id in self.traverse() {
+        for &id in self.traverse().iter() {
             if self.get(id).is_some_and(|node| node.mounted()) {
                 self.register_app_state_snapshot(id);
             }
@@ -330,7 +330,7 @@ impl WidgetTree {
     }
 
     fn teardown_all(&mut self) {
-        let ids = self.traverse();
+        let ids: Vec<_> = self.traverse().iter().copied().collect();
         for id in ids.into_iter().rev() {
             self.deactivate_detach_and_destroy(id);
         }
@@ -344,7 +344,7 @@ impl WidgetTree {
     }
 
     pub fn notify_theme_changed(&mut self) {
-        let ids = self.traverse();
+        let ids: Vec<_> = self.traverse().iter().copied().collect();
         for id in ids {
             if let Some(node) = self.get_mut(id) {
                 node.on_theme_changed();
@@ -412,7 +412,7 @@ impl WidgetTree {
     }
 
     pub fn find_by_type<T: WidgetComponent + 'static>(&self) -> Option<ComponentId> {
-        for id in self.traverse() {
+        for &id in self.traverse().iter() {
             if let Some(node) = self.get(id) {
                 if node.component().as_any().downcast_ref::<T>().is_some() {
                     return Some(id);
@@ -424,7 +424,7 @@ impl WidgetTree {
 
     pub fn find_all_by_type<T: WidgetComponent + 'static>(&self) -> Vec<(ComponentId, &T)> {
         let mut results = Vec::new();
-        for id in self.traverse() {
+        for &id in self.traverse().iter() {
             if let Some(node) = self.get(id) {
                 if let Some(w) = node.component().as_any().downcast_ref::<T>() {
                     results.push((id, w));
@@ -603,32 +603,36 @@ impl WidgetTree {
         self.reconcile_lifecycle_after_layout();
     }
 
-    pub fn traverse(&self) -> Vec<ComponentId> {
-        let mut cache = self.cached_traversal.borrow_mut();
-        let (ref mut ids, ref mut ver) = *cache;
-        if *ver != self.tree_version {
-            ids.clear();
-            if let Some(root_id) = self.root_id {
-                // Iterative traversal avoids stack overflow on very deep trees.
-                let mut stack = vec![root_id];
-                while let Some(current) = stack.pop() {
-                    ids.push(current);
-                    if let Some(node) = self.get(current) {
-                        for child_id in node.children().iter().rev() {
-                            stack.push(*child_id);
+    /// 返回树的先序遍历缓存；借用守卫存活期间不得修改树结构。
+    pub fn traverse(&self) -> std::cell::Ref<'_, [ComponentId]> {
+        {
+            let mut cache = self.cached_traversal.borrow_mut();
+            let (ref mut ids, ref mut ver) = *cache;
+            if *ver != self.tree_version {
+                ids.clear();
+                if let Some(root_id) = self.root_id {
+                    // Iterative traversal avoids stack overflow on very deep trees.
+                    let mut stack = vec![root_id];
+                    while let Some(current) = stack.pop() {
+                        ids.push(current);
+                        if let Some(node) = self.get(current) {
+                            for child_id in node.children().iter().rev() {
+                                stack.push(*child_id);
+                            }
                         }
                     }
                 }
+                *ver = self.tree_version;
             }
-            *ver = self.tree_version;
         }
-        ids.clone()
+        std::cell::Ref::map(self.cached_traversal.borrow(), |(ids, _)| ids.as_slice())
     }
 
     pub fn active_timers(&mut self) -> Vec<(u64, std::time::Duration)> {
         self.timer_routes.clear();
         let mut timers = Vec::new();
-        for id in self.traverse() {
+        let ids: Vec<_> = self.traverse().iter().copied().collect();
+        for id in ids {
             if let Some((local_id, delay)) = self.get(id).and_then(|node| node.active_timer()) {
                 let Ok(local_timer_id) = u32::try_from(local_id) else {
                     continue;
@@ -871,7 +875,7 @@ impl WidgetTree {
             .filter(|&id| self.is_tab_focus_candidate(id))
             .collect::<Vec<_>>();
 
-        for id in self.traverse() {
+        for &id in self.traverse().iter() {
             if !result.contains(&id) && self.is_tab_focus_candidate(id) {
                 result.push(id);
             }
