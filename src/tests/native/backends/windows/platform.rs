@@ -9,6 +9,7 @@ use crate::native::backends::windows::dpi::{
 };
 use crate::native::backends::windows::ffi::{GetWindowLongW, PostMessageW};
 use crate::native::backends::windows::platform::*;
+use crate::native::backends::windows::window_ops::set_window_long_checked;
 use crate::native::graphics::platform::windows::{drawable_size, query_client_rect};
 use crate::native::shared::OsEventSource;
 use crate::native::traits::event::{UiEventPayload, UiEventType};
@@ -277,6 +278,21 @@ fn custom_title_bar_removes_caption_but_keeps_resize_frame_and_client_size() {
     );
 
     window.close().expect("close window");
+}
+
+#[test]
+fn window_style_mutation_reports_invalid_handle_as_typed_error() {
+    let error = set_window_long_checked(
+        std::ptr::null_mut(),
+        GWL_STYLE,
+        0,
+        "test SetWindowLongW failure",
+    )
+    .expect_err("invalid HWND must fail");
+
+    assert_eq!(error.code(), crate::core::Errc::PlatformError);
+    assert!(error.message().contains("test SetWindowLongW failure"));
+    assert!(error.message().contains("Windows error"));
 }
 
 #[test]

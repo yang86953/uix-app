@@ -15,6 +15,10 @@ pub fn to_utf8(wide: &[u16]) -> String {
 
 pub fn get_last_error_string() -> String {
     let code = unsafe { GetLastError() };
+    windows_error_string(code)
+}
+
+pub fn windows_error_string(code: u32) -> String {
     if code == 0 {
         "no error".to_string()
     } else {
@@ -24,6 +28,13 @@ pub fn get_last_error_string() -> String {
 
 pub fn windows_diag(code: Errc, context: &str) -> Error {
     Error::new(code, format!("{}: {}", context, get_last_error_string()))
+}
+
+pub fn windows_diag_for_code(code: Errc, context: &str, windows_code: u32) -> Error {
+    Error::new(
+        code,
+        format!("{}: {}", context, windows_error_string(windows_code)),
+    )
 }
 
 fn windows_fonts_dir() -> Option<String> {
