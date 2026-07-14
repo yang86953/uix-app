@@ -40,6 +40,7 @@ pub(crate) fn apply_window_action(
                 window.properties_mut().maximize()
             }
         }
+        WindowAction::ShowSystemMenuFromTitleBar => window.show_system_menu(),
         WindowAction::RequestClose => window.request_close(),
     }
 }

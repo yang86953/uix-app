@@ -56,6 +56,7 @@ pub(crate) struct WindowInteractionRegion {
     hovered: bool,
     focused: bool,
     activation: Option<ControlActivation>,
+    system_menu_armed: bool,
     pending: Option<WindowAction>,
 }
 
@@ -76,6 +77,7 @@ impl WindowInteractionRegion {
             hovered: false,
             focused: false,
             activation: None,
+            system_menu_armed: false,
             pending: None,
         }
     }
@@ -110,6 +112,7 @@ impl WindowInteractionRegion {
             self.hovered = false;
             self.focused = false;
             self.activation = None;
+            self.system_menu_armed = false;
             self.pending = None;
         }
         self.interaction = next.interaction;
@@ -265,6 +268,35 @@ impl EventHandler for WindowInteractionRegion {
             ) => {
                 self.pending = Some(WindowAction::ToggleMaximizeFromTitleBar);
                 EventResult::Handled
+            }
+            (
+                WindowInteraction::Drag,
+                SystemEvent::PointerDown {
+                    button: MouseButton::Right,
+                    ..
+                },
+            ) => {
+                self.system_menu_armed = true;
+                EventResult::Handled
+            }
+            (
+                WindowInteraction::Drag,
+                SystemEvent::PointerUp {
+                    button: MouseButton::Right,
+                    ..
+                },
+            ) if self.system_menu_armed => {
+                self.system_menu_armed = false;
+                self.pending = Some(WindowAction::ShowSystemMenuFromTitleBar);
+                EventResult::Handled
+            }
+            (WindowInteraction::Drag, SystemEvent::PointerUp { .. }) => {
+                self.system_menu_armed = false;
+                EventResult::NotHandled
+            }
+            (WindowInteraction::Drag, SystemEvent::PointerLeave) => {
+                self.system_menu_armed = false;
+                EventResult::NotHandled
             }
             (
                 WindowInteraction::Drag,

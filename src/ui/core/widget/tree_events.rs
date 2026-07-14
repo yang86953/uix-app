@@ -1,6 +1,6 @@
 use super::tree_core::WidgetTree;
 use super::*;
-use crate::ui::event::{ClickEvent, SemanticEvent};
+use crate::ui::event::{ClickEvent, SemanticEvent, WindowAction};
 use crate::ui::{OverlayEntry, OverlayKind};
 
 impl WidgetTree {
@@ -192,15 +192,19 @@ impl WidgetTree {
                 let mut result = EventResult::NotHandled;
                 if let Some(t) = hit {
                     self.invalidate_paint(t);
+                    let actions_before_dispatch = self.pending_window_actions.len();
                     // 捕获阶段：root → target
                     if self.capture_to(t, event) == EventResult::Handled {
                         return EventResult::Handled;
                     }
                     result = self.dispatch_to(t, event);
+                    let title_bar_system_menu = self.pending_window_actions
+                        [actions_before_dispatch..]
+                        .contains(&WindowAction::ShowSystemMenuFromTitleBar);
                     // 同目标 up→Click：不要求 PointerUp Handled。
                     // 侧栏 row 空白/padding 命中 Container/Space/Label 时它们不处理 Up，
                     // 但父级 on_semantic(Click) 仍须触发（#36 语义层）。
-                    if hold == Some(t) {
+                    if hold == Some(t) && !title_bar_system_menu {
                         let click = ClickEvent {
                             button: *button,
                             pos: *pos,
@@ -632,9 +636,10 @@ impl WidgetTree {
                 self.clear_sibling_cross_text_selections(target);
             }
             self.invalidate_nav_siblings(target);
-            let preserves_keyboard_focus = self.pending_window_actions[actions_before_dispatch..]
-                .iter()
-                .any(|action| action.preserves_keyboard_focus());
+            let preserves_keyboard_focus = button == MouseButton::Right
+                || self.pending_window_actions[actions_before_dispatch..]
+                    .iter()
+                    .any(|action| action.preserves_keyboard_focus());
             if !preserves_keyboard_focus {
                 self.set_focus(Some(target));
             }
@@ -918,61 +923,6 @@ impl WidgetTree {
             current = parent;
         }
         EventResult::NotHandled
-    }
-
-    fn semantic_path_to_root(&self, target: WidgetId) -> Vec<WidgetId> {
-        let mut path = Vec::new();
-        let mut current = Some(target);
-        while let Some(id) = current {
-            path.push(id);
-            current = self.get(id).and_then(|node| node.parent());
-        }
-        path
-    }
-
-    pub fn dispatch_semantic_event(&mut self, event: &mut SemanticEvent) -> EventResult {
-        let path = self.semantic_path_to_root(event.target);
-        let result = self.handler_table.dispatch_path(&path, event);
-        self.apply_modal_context_requests(&path);
-        result
-    }
-
-    pub fn dispatch_semantic(&mut self, mut event: SemanticEvent) -> EventResult {
-        self.dispatch_semantic_event(&mut event)
-    }
-
-    fn apply_modal_context_requests(&mut self, path: &[WidgetId]) {
-        let requested: Vec<WidgetId> = path
-            .iter()
-            .copied()
-            .filter(|&id| {
-                self.get(id)
-                    .and_then(|node| {
-                        node.component()
-                            .as_any()
-                            .downcast_ref::<crate::ui::widgets::Modal>()
-                    })
-                    .is_some_and(|modal| modal.take_context_close_request())
-            })
-            .collect();
-        if requested.is_empty() {
-            return;
-        }
-
-        for id in requested {
-            if let Some(node) = self.get_mut(id) {
-                if let Some(modal) = node
-                    .component_mut()
-                    .as_any_mut()
-                    .downcast_mut::<crate::ui::widgets::Modal>()
-                {
-                    modal.close();
-                    node.set_active(true);
-                }
-            }
-        }
-        self.mark_full_frame_dirty();
-        self.rebuild_widget_overlays();
     }
 
     fn translate_pointer_event(event: &SystemEvent, frame: Rect) -> SystemEvent {

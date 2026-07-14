@@ -12,7 +12,9 @@ use crate::ui::view::{
     button, label, row, window_control, window_control_named, window_drag_region, StyleExt,
     ViewAdapter,
 };
-use crate::ui::{AccessibilityRole, PaintContext, SystemEvent, WidgetTree, WindowControl};
+use crate::ui::{
+    AccessibilityRole, OverlayKind, PaintContext, SystemEvent, WidgetTree, WindowControl,
+};
 
 fn pointer_event(pos: Point, down: bool, button: MouseButton) -> SystemEvent {
     if down {
@@ -78,7 +80,7 @@ fn render_control_corner(tree: &WidgetTree) -> u32 {
 }
 
 #[test]
-fn drag_region_emits_move_only_for_left_pointer_down() {
+fn drag_region_maps_native_title_bar_pointer_gestures() {
     let mut tree = ViewAdapter::build(window_drag_region(label("title")).height(32.0));
     tree.root_mut()
         .expect("drag region root")
@@ -88,6 +90,12 @@ fn drag_region_emits_move_only_for_left_pointer_down() {
     let pos = Point::new(12.0, 12.0);
     tree.dispatch_event(&pointer_event(pos, true, MouseButton::Right));
     assert!(tree.take_window_actions().is_empty());
+    tree.dispatch_event(&pointer_event(pos, false, MouseButton::Right));
+    assert_eq!(
+        tree.take_window_actions(),
+        vec![WindowAction::ShowSystemMenuFromTitleBar]
+    );
+    assert!(tree.overlay_stack().is_empty());
 
     tree.dispatch_event(&pointer_event(pos, true, MouseButton::Left));
     assert_eq!(
@@ -166,6 +174,66 @@ fn window_drag_actions_preserve_existing_keyboard_focus() {
         vec![WindowAction::ToggleMaximizeFromTitleBar]
     );
     assert_eq!(tree.managers().focus.focused_component(), Some(focused));
+
+    tree.dispatch_event(&pointer_event(
+        Point::new(120.0, 16.0),
+        true,
+        MouseButton::Right,
+    ));
+    assert!(tree.take_window_actions().is_empty());
+    tree.dispatch_event(&pointer_event(
+        Point::new(120.0, 16.0),
+        false,
+        MouseButton::Right,
+    ));
+    assert_eq!(
+        tree.take_window_actions(),
+        vec![WindowAction::ShowSystemMenuFromTitleBar]
+    );
+    assert_eq!(tree.managers().focus.focused_component(), Some(focused));
+}
+
+#[test]
+fn drag_region_keeps_nested_interactive_context_menu() {
+    let mut tree = ViewAdapter::build(
+        window_drag_region(button("nested").width(80.0).height(32.0))
+            .width(240.0)
+            .height(32.0),
+    );
+    tree.root_mut()
+        .expect("drag region root")
+        .set_frame(Rect::new(0.0, 0.0, 240.0, 32.0));
+    tree.layout();
+
+    let pos = Point::new(20.0, 16.0);
+    tree.dispatch_event(&pointer_event(pos, true, MouseButton::Right));
+    tree.dispatch_event(&pointer_event(pos, false, MouseButton::Right));
+    assert!(tree.take_window_actions().is_empty());
+    assert_eq!(
+        tree.overlay_stack().top().map(|entry| entry.kind()),
+        Some(OverlayKind::ContextMenu)
+    );
+}
+
+#[test]
+fn drag_region_cancels_system_menu_when_released_outside() {
+    let mut tree = ViewAdapter::build(window_drag_region(label("title")).height(32.0));
+    tree.root_mut()
+        .expect("drag region root")
+        .set_frame(Rect::new(0.0, 0.0, 240.0, 32.0));
+    tree.layout();
+
+    tree.dispatch_event(&pointer_event(
+        Point::new(20.0, 16.0),
+        true,
+        MouseButton::Right,
+    ));
+    tree.dispatch_event(&pointer_event(
+        Point::new(280.0, 16.0),
+        false,
+        MouseButton::Right,
+    ));
+    assert!(tree.take_window_actions().is_empty());
 }
 
 #[test]
