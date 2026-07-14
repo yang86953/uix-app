@@ -80,7 +80,8 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
                         count
                             .map_text(|n| format!("计数: {n}"))
                             .font_size(28.0)
-                            .color(ColorValue::Palette(PaletteColor::Primary)),
+                            .color(ColorValue::Palette(PaletteColor::Primary))
+                            .automation_id("home-count-value"),
                         space(12.0),
                         row((
                             button("+1")
