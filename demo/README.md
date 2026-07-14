@@ -103,6 +103,7 @@ demo/src/
 
 ```bash
 cargo test --bin uix-demo
+cargo test --features agent-control --test agent_gui_windows -- --ignored --nocapture
 ```
 
 - 全部 11 页 `build_page` smoke test
@@ -110,3 +111,4 @@ cargo test --bin uix-demo
 - Gallery 覆盖条目数量
 - 首页 build + 页面切换 reconcile
 - 首页 / 应用能力页局部 State 在根 reconcile 后保持
+- Windows 真窗 Agent Bridge：显式运行 ignored 测试，覆盖认证、快照、语义动作、呈现等待与正常退出清理
