@@ -342,6 +342,13 @@ impl BoxedWidget {
             .as_event()
             .and_then(|e| e.scroll_delta_for_dirty())
     }
+    pub fn scroll_composite_viewport(&self, frame: Rect) -> Rect {
+        self.component()
+            .as_event()
+            .and_then(|e| e.scroll_composite_viewport(frame))
+            .and_then(|viewport| viewport.intersect(&frame))
+            .unwrap_or(frame)
+    }
     pub fn viewport_scroll_offset(&self) -> Option<(f32, f32)> {
         self.component()
             .as_event()

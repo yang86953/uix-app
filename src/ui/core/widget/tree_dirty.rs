@@ -144,11 +144,13 @@ impl WidgetTree {
         }
         let scroll = self.get(id).and_then(|node| {
             let frame = node.frame();
-            node.scroll_delta_for_dirty()
-                .map(|(dx, dy)| (frame, dx, dy))
+            node.scroll_delta_for_dirty().map(|(dx, dy)| {
+                let viewport = node.scroll_composite_viewport(frame);
+                (viewport, dx, dy)
+            })
         });
-        if let Some((frame, dx, dy)) = scroll {
-            if self.push_scroll_composite(frame, dx, dy) {
+        if let Some((viewport, dx, dy)) = scroll {
+            if self.push_scroll_composite(viewport, dx, dy) {
                 return;
             }
         }

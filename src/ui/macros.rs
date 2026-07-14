@@ -230,6 +230,7 @@ macro_rules! __component_upcast_method {
     (on_event; $T:ty) => { $crate::wc_upcast!($T; EventHandler); };
     (scroll_delta; $T:ty) => {};
     (scroll_delta_for_dirty; $T:ty) => {};
+    (scroll_composite_viewport; $T:ty) => {};
     (viewport_scroll_offset; $T:ty) => {};
     (hit_test_frame; $T:ty) => {};
     (on_init; $T:ty) => { $crate::wc_upcast!($T; WidgetLifecycle); };
@@ -310,7 +311,7 @@ macro_rules! component {
                             c.insert($crate::ui::traits::WidgetCapabilities::LAYOUT),
                         "render" | "uses_palette" | "dirty_rect" | "children_clip" | "overlay_entry" | "draw_margin" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::RENDER),
-                        "on_event" | "scroll_delta" | "scroll_delta_for_dirty" | "viewport_scroll_offset" | "active_timer" | "wants_capture_phase" | "wants_continuous_pointer_move" | "hit_test_frame" =>
+                        "on_event" | "scroll_delta" | "scroll_delta_for_dirty" | "scroll_composite_viewport" | "viewport_scroll_offset" | "active_timer" | "wants_capture_phase" | "wants_continuous_pointer_move" | "hit_test_frame" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::EVENT),
                         "on_init" | "on_attach" | "on_mount" | "on_active" | "on_inactive" | "on_theme_changed" | "on_unmount" | "on_detach" | "on_destroy" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::LIFECYCLE),
@@ -356,7 +357,7 @@ macro_rules! component {
         $crate::__component_grouped_impl! {
             EventHandler,
             $name,
-            [on_event scroll_delta scroll_delta_for_dirty viewport_scroll_offset active_timer wants_capture_phase wants_continuous_pointer_move hit_test_frame],
+            [on_event scroll_delta scroll_delta_for_dirty scroll_composite_viewport viewport_scroll_offset active_timer wants_capture_phase wants_continuous_pointer_move hit_test_frame],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -609,6 +610,9 @@ macro_rules! __component_method_builder {
     (scroll_delta_for_dirty; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn scroll_delta_for_dirty($($p)*) -> $ret $body
     };
+    (scroll_composite_viewport; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn scroll_composite_viewport($($p)*) -> $ret $body
+    };
     (viewport_scroll_offset; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn viewport_scroll_offset($($p)*) -> $ret $body
     };
@@ -737,6 +741,9 @@ macro_rules! __match_trait_method {
     };
     (EventHandler, scroll_delta_for_dirty, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn scroll_delta_for_dirty($($p)*) -> $ret $body
+    };
+    (EventHandler, scroll_composite_viewport, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn scroll_composite_viewport($($p)*) -> $ret $body
     };
     (EventHandler, viewport_scroll_offset, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn viewport_scroll_offset($($p)*) -> $ret $body

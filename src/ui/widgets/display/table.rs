@@ -175,6 +175,14 @@ component! {
         }
     }
 
+    scroll_composite_viewport => (&self, frame: Rect) -> Option<Rect> {
+        let header_height = self.total_header_height() + 1.0;
+        let body_height = (frame.h - header_height).max(0.0);
+        (body_height > 0.0).then(|| {
+            Rect::new(frame.x, frame.y + header_height, frame.w, body_height)
+        })
+    }
+
     viewport_scroll_offset => (&self) -> Option<(f32, f32)> {
         Some((0.0, self.body_scroll.scroll_offset()))
     }
