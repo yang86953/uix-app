@@ -263,7 +263,7 @@ fn compute_single_line(
     distribute_flex_grow(base_main_sizes, remaining, &input.children, total_flex_grow);
 
     // Apply Stretch justify-content: distribute remaining space as growth
-    let mut total_after: f32 = base_main_sizes.iter().sum::<f32>() + total_margin_main;
+    let total_after: f32 = base_main_sizes.iter().sum::<f32>() + total_margin_main;
     remaining = if container_main > 0.0 {
         (container_main - total_after - gaps).max(0.0)
     } else {
@@ -274,7 +274,6 @@ fn compute_single_line(
         for b in base_main_sizes.iter_mut() {
             *b += extra;
         }
-        total_after = base_main_sizes.iter().sum();
     }
 
     // Clamp to min/max

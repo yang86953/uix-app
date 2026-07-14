@@ -183,13 +183,17 @@ impl WidgetTree {
         // 上限提升至 10 次，应对深层嵌套（Container→Container→Widget）场景。
         // ════════════════════════════════════════════════════════════════
         let max_passes = 10;
+        #[cfg(test)]
         let mut converge_passes = 0u32;
         let rev_order: Vec<WidgetId> = order.iter().rev().copied().collect();
         // 安全网：若连续两轮 Phase 2 扩展签名完全相同（同 id、同 before/after），
         // 视为无 progress，停止空转（根因仍应在 measure；此处防止打满 max_passes）。
         let mut prev_expand_sig: Option<Vec<(WidgetId, i32, i32, i32, i32)>> = None;
         for _converge_pass in 0..max_passes {
-            converge_passes += 1;
+            #[cfg(test)]
+            {
+                converge_passes += 1;
+            }
             let mut any_change = false;
             let mut pass_expand_sig: Vec<(WidgetId, i32, i32, i32, i32)> = Vec::new();
 
