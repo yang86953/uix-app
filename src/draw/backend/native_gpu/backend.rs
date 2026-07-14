@@ -335,13 +335,11 @@ impl NativeGpuBackend {
                     }],
                 )
             }
-            FrameRasterOp::FillRectAdditive { .. } | FrameRasterOp::ScrollCopy { .. } => {
+            FrameRasterOp::FillRectAdditive { .. }
+            | FrameRasterOp::FillRoundedRectAdditive { .. }
+            | FrameRasterOp::ScrollCopy { .. } => {
                 self.execute_destination_dependent_frame_op(target_width, target_height, operation)
             }
-            FrameRasterOp::FillRoundedRectAdditive { .. } => Err(Error::new(
-                Errc::NotImplemented,
-                "NativeGpuBackend: rounded Additive FrameRasterOp is not wired to destination execution",
-            )),
         }
     }
 

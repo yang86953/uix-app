@@ -8,3 +8,4 @@ mod offscreen_pool;
 #[cfg(feature = "opengles")]
 mod opengl_native_tests;
 mod registry;
+mod rounded_additive;

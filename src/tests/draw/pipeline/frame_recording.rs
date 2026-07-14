@@ -1,5 +1,5 @@
 use crate::draw::pipeline::frame_recording::*;
-use crate::draw::pipeline::FrameRasterOp;
+use crate::draw::pipeline::{FrameRadius, FrameRasterOp};
 use crate::draw::primitives::types::{BlendMode, Radius};
 use crate::draw::traits::GraphicsEngine;
 use crate::tests::common::*;
@@ -125,21 +125,56 @@ fn additive_axis_aligned_fill_records_native_additive_op() {
 }
 
 #[test]
-fn additive_rounded_fill_still_fails_instead_of_cpu_segment_approximation() {
+fn additive_rounded_fill_records_validated_native_operation() {
     let mut engine = FrameRecordingEngine::new();
-    engine.initialize(2, 2).expect("initialize recorder");
+    engine.initialize(8, 6).expect("initialize recorder");
+    engine.begin_recording(true).expect("begin recording");
+    engine.canvas_2d().set_blend_mode(BlendMode::Additive);
+    let radius = Radius {
+        tl: 1.0,
+        tr: 2.0,
+        br: 3.0,
+        bl: 4.0,
+    };
+    engine
+        .canvas_2d()
+        .fill_rect(Rect::new(1.0, 1.0, 6.0, 4.0), Color::red(), Some(radius));
+
+    let encoder = engine
+        .finish_recording()
+        .expect("Additive rounded fill must record as validated Native IR");
+    assert!(encoder.commands().iter().any(|command| {
+        matches!(
+            command,
+            crate::draw::pipeline::FrameCommand::Native {
+                operation: FrameRasterOp::FillRoundedRectAdditive {
+                    rect,
+                    color,
+                    radius: recorded_radius,
+                }
+            } if *rect == FrameRect::new(1, 1, 6, 4)
+                && *color == Color::red()
+                && *recorded_radius == FrameRadius::new(radius).expect("valid radius")
+        )
+    }));
+}
+
+#[test]
+fn additive_rounded_fill_rejects_invalid_radius_before_recording() {
+    let mut engine = FrameRecordingEngine::new();
+    engine.initialize(8, 6).expect("initialize recorder");
     engine.begin_recording(true).expect("begin recording");
     engine.canvas_2d().set_blend_mode(BlendMode::Additive);
     engine.canvas_2d().fill_rect(
-        Rect::new(0.0, 0.0, 1.0, 1.0),
+        Rect::new(1.0, 1.0, 6.0, 4.0),
         Color::red(),
-        Some(Radius::uniform(1.0)),
+        Some(Radius::uniform(f32::NAN)),
     );
 
     let error = engine
         .finish_recording()
-        .expect_err("Additive rounded fill must not become a source-over CPU segment");
-    assert_eq!(error.code(), Errc::NotImplemented);
+        .expect_err("invalid rounded Additive radius must remain typed");
+    assert_eq!(error.code(), Errc::InvalidState);
 }
 
 #[test]
