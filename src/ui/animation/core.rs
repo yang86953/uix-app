@@ -2,13 +2,17 @@
 
 use crate::ui::animation::Easing;
 use crate::ui::traits::Animatable;
+use std::fmt;
+use std::sync::{Arc, Mutex};
+
+type FinishCallback = Arc<Mutex<Option<Box<dyn FnOnce() + Send + 'static>>>>;
 
 // ════════════════════════════════════════════════════════════════════════════
 // Animation<T>
 // ════════════════════════════════════════════════════════════════════════════
 
 /// 一个动画实例，从 `from` 驱动到 `to`，使用缓动曲线 `easing`，持续 `duration` 秒。
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Animation<T: Animatable> {
     /// 起始值。
     pub from: T,
@@ -22,6 +26,7 @@ pub struct Animation<T: Animatable> {
     pub easing: Easing,
     /// 是否正在运行（暂停时设为 false）。
     pub running: bool,
+    finish_callback: Option<FinishCallback>,
 }
 
 impl<T: Animatable> Animation<T> {
@@ -30,16 +35,26 @@ impl<T: Animatable> Animation<T> {
         Self {
             from,
             to,
-            duration,
+            duration: duration.max(0.0),
             elapsed: 0.0,
             easing: Easing::antd_default(),
             running: true,
+            finish_callback: None,
         }
     }
 
     /// 设置缓动函数。
-    pub fn with_easing(mut self, easing: Easing) -> Self {
+    pub fn easing(mut self, easing: Easing) -> Self {
         self.easing = easing;
+        self
+    }
+
+    /// 设置一次性完成回调；克隆体共享该回调且全局至多触发一次。
+    pub fn on_finish<F>(mut self, callback: F) -> Self
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        self.finish_callback = Some(Arc::new(Mutex::new(Some(Box::new(callback)))));
         self
     }
 
@@ -52,13 +67,16 @@ impl<T: Animatable> Animation<T> {
     /// 推进 `dt` 秒。返回当前插值后的值。
     pub fn update(&mut self, dt: f64) -> T {
         if self.running {
-            self.elapsed = (self.elapsed + dt).min(self.duration);
+            self.elapsed = (self.elapsed + dt.max(0.0)).min(self.duration);
+            if self.is_finished() {
+                self.fire_finish_callback();
+            }
         }
-        self.current_value()
+        self.value()
     }
 
     /// 获取当前插值后的值（不推进时间）。
-    pub fn current_value(&self) -> T {
+    pub fn value(&self) -> T {
         let progress = if self.duration > 0.0 {
             (self.elapsed / self.duration).min(1.0)
         } else {
@@ -99,7 +117,7 @@ impl<T: Animatable> Animation<T> {
     }
 
     /// 重置动画回到起始位置。
-    pub fn reset(&mut self) {
+    pub fn restart(&mut self) {
         self.elapsed = 0.0;
         self.running = true;
     }
@@ -108,6 +126,39 @@ impl<T: Animatable> Animation<T> {
     pub fn reverse(&mut self) {
         std::mem::swap(&mut self.from, &mut self.to);
         self.elapsed = 0.0;
+        self.running = true;
+    }
+
+    fn fire_finish_callback(&mut self) {
+        let Some(callback) = self.finish_callback.as_ref() else {
+            return;
+        };
+        let callback = match callback.lock() {
+            Ok(mut callback) => callback.take(),
+            Err(poisoned) => poisoned.into_inner().take(),
+        };
+        self.finish_callback = None;
+        if let Some(callback) = callback {
+            callback();
+        }
+    }
+}
+
+impl<T> fmt::Debug for Animation<T>
+where
+    T: Animatable + fmt::Debug,
+{
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Animation")
+            .field("from", &self.from)
+            .field("to", &self.to)
+            .field("duration", &self.duration)
+            .field("elapsed", &self.elapsed)
+            .field("easing", &self.easing)
+            .field("running", &self.running)
+            .field("has_finish_callback", &self.finish_callback.is_some())
+            .finish()
     }
 }
 
@@ -118,23 +169,23 @@ impl<T: Animatable> Animation<T> {
 impl Animation<f32> {
     /// 创建一个从不透明度 0→1 的渐入动画。
     pub fn fade_in(duration: f64) -> Self {
-        Self::new(0.0, 1.0, duration).with_easing(Easing::antd_default())
+        Self::new(0.0, 1.0, duration).easing(Easing::antd_default())
     }
 
     /// 创建一个从不透明度 1→0 的渐出动画。
     pub fn fade_out(duration: f64) -> Self {
-        Self::new(1.0, 0.0, duration).with_easing(Easing::antd_default())
+        Self::new(1.0, 0.0, duration).easing(Easing::antd_default())
     }
 }
 
 impl Animation<f64> {
     /// 从不透明度 0→1 的渐入动画。
     pub fn fade_in(duration: f64) -> Self {
-        Self::new(0.0, 1.0, duration).with_easing(Easing::antd_default())
+        Self::new(0.0, 1.0, duration).easing(Easing::antd_default())
     }
 
     /// 从不透明度 1→0 的渐出动画。
     pub fn fade_out(duration: f64) -> Self {
-        Self::new(1.0, 0.0, duration).with_easing(Easing::antd_default())
+        Self::new(1.0, 0.0, duration).easing(Easing::antd_default())
     }
 }

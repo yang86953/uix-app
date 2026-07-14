@@ -28,7 +28,7 @@ impl ButtonRipple {
     pub(crate) fn start(origin: Point) -> Self {
         Self {
             origin,
-            expand: Animation::new(0.0, 1.0, Self::EXPAND_SECS).with_easing(Easing::CubicOut),
+            expand: Animation::new(0.0, 1.0, Self::EXPAND_SECS).easing(Easing::CubicOut),
             fade: Animation::new(1.0, 1.0, 0.0),
             held: true,
         }
@@ -39,8 +39,8 @@ impl ButtonRipple {
             return;
         }
         self.held = false;
-        let current = self.fade.current_value();
-        self.fade = Animation::new(current, 0.0, Self::FADE_SECS).with_easing(Easing::QuadOut);
+        let current = self.fade.value();
+        self.fade = Animation::new(current, 0.0, Self::FADE_SECS).easing(Easing::QuadOut);
     }
 
     fn update(&mut self, dt: f64) -> bool {
@@ -59,7 +59,7 @@ impl ButtonRipple {
     }
 
     fn opacity(&self) -> f32 {
-        self.fade.current_value().clamp(0.0, 1.0)
+        self.fade.value().clamp(0.0, 1.0)
     }
 }
 
@@ -237,11 +237,11 @@ impl WidgetAnimation for Button {
             self.ripple_dirty = false;
             return false;
         };
-        let before_expand = ripple.expand.current_value();
-        let before_fade = ripple.fade.current_value();
+        let before_expand = ripple.expand.value();
+        let before_fade = ripple.fade.value();
         let active = ripple.update(dt);
-        self.ripple_dirty = (ripple.expand.current_value() - before_expand).abs() > f32::EPSILON
-            || (ripple.fade.current_value() - before_fade).abs() > f32::EPSILON;
+        self.ripple_dirty = (ripple.expand.value() - before_expand).abs() > f32::EPSILON
+            || (ripple.fade.value() - before_fade).abs() > f32::EPSILON;
         if !ripple.is_visible() {
             self.ripple = None;
             self.ripple_dirty = true;
@@ -375,7 +375,7 @@ impl Button {
             ripple.origin
         };
         let max_r = cover_radius(local, size);
-        let radius = max_r * ripple.expand.current_value();
+        let radius = max_r * ripple.expand.value();
         if radius <= 0.0 {
             return;
         }
