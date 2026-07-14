@@ -1,12 +1,17 @@
 use crate::core::{Point, Rect};
+use crate::draw::compositor::ScenePaint;
+use crate::draw::engine::cpu::canvas_2d::CpuCanvas2D;
+use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+use crate::draw::spatial::Orientation;
 use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
+use crate::tests::common::{Color, DesignTokens, FontHandle, FontService, ImageService};
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::event::WindowAction;
 use crate::ui::semantic_action::{SemanticAction, SemanticActionKind};
 use crate::ui::view::{
     button, label, window_control, window_control_named, window_drag_region, ViewAdapter,
 };
-use crate::ui::{AccessibilityRole, SystemEvent, WindowControl};
+use crate::ui::{AccessibilityRole, PaintContext, SystemEvent, WidgetTree, WindowControl};
 
 fn pointer_event(pos: Point, down: bool, button: MouseButton) -> SystemEvent {
     if down {
@@ -36,6 +41,31 @@ fn key_event(key: KeyCode, down: bool) -> SystemEvent {
             mods: KeyMod::NONE,
         }
     }
+}
+
+fn render_control_corner(tree: &WidgetTree) -> u32 {
+    let root = tree.root_id().expect("window control root");
+    let frame = tree.get(root).expect("window control node").frame();
+    let mut target = CpuCanvas2D::new(PixelSurface::new(44, 32));
+    let fonts = FontService::new();
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    {
+        let mut ctx = PaintContext::new_for_test(
+            &mut target,
+            FontHandle::default(),
+            &fonts,
+            &images,
+            &tokens,
+            96.0,
+            1.0,
+            Orientation::YDown,
+            44,
+            32,
+        );
+        ScenePaint::paint(tree, root, frame, &mut ctx);
+    }
+    target.surface().pixels()[45]
 }
 
 #[test]
@@ -135,6 +165,39 @@ fn control_region_requires_matching_activation_input() {
     assert!(tree.take_window_actions().is_empty());
     tree.dispatch_event(&key_event(KeyCode::Enter, false));
     assert_eq!(tree.take_window_actions(), vec![WindowAction::RequestClose]);
+}
+
+#[test]
+fn control_region_renders_custom_hover_and_active_backgrounds() {
+    let mut tree = ViewAdapter::build(
+        window_control(WindowControl::Close, label(""))
+            .width(44.0)
+            .height(32.0)
+            .bg(Color::red())
+            .bg_hover(Color::green())
+            .bg_active(Color::blue()),
+    );
+    tree.root_mut()
+        .expect("window control root")
+        .set_frame(Rect::new(0.0, 0.0, 44.0, 32.0));
+    tree.layout();
+    let pos = Point::new(20.0, 16.0);
+
+    assert_eq!(render_control_corner(&tree), Color::red().premultiplied());
+    tree.dispatch_event(&SystemEvent::PointerMove {
+        pos,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(render_control_corner(&tree), Color::green().premultiplied());
+    tree.dispatch_event(&pointer_event(pos, true, MouseButton::Left));
+    assert_eq!(render_control_corner(&tree), Color::blue().premultiplied());
+    tree.dispatch_event(&pointer_event(pos, false, MouseButton::Left));
+    assert_eq!(render_control_corner(&tree), Color::green().premultiplied());
+    tree.dispatch_event(&SystemEvent::PointerMove {
+        pos: Point::new(80.0, 16.0),
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(render_control_corner(&tree), Color::red().premultiplied());
 }
 
 #[test]

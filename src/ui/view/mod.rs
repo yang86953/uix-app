@@ -100,6 +100,18 @@ impl ViewNode {
         self
     }
 
+    /// 设置指针悬停时的背景色；未设置时沿用普通背景。
+    pub fn bg_hover(mut self, color: impl Into<ColorValue>) -> Self {
+        self.style.background_hover = Some(color.into());
+        self
+    }
+
+    /// 设置按压或键盘激活期间的背景色；未设置时沿用普通背景。
+    pub fn bg_active(mut self, color: impl Into<ColorValue>) -> Self {
+        self.style.background_active = Some(color.into());
+        self
+    }
+
     pub fn padding(mut self, p: impl Into<EdgeInsets>) -> Self {
         self.style.padding = p.into();
         self
@@ -379,6 +391,16 @@ pub trait StyleExt: Into<ViewNode> + Sized {
 
     fn bg(self, color: impl Into<ColorValue>) -> ViewNode {
         self.into().bg(color)
+    }
+
+    /// 设置指针悬停时的背景色；未设置时沿用普通背景。
+    fn bg_hover(self, color: impl Into<ColorValue>) -> ViewNode {
+        self.into().bg_hover(color)
+    }
+
+    /// 设置按压或键盘激活期间的背景色；未设置时沿用普通背景。
+    fn bg_active(self, color: impl Into<ColorValue>) -> ViewNode {
+        self.into().bg_active(color)
     }
 
     fn padding(self, p: impl Into<EdgeInsets>) -> ViewNode {

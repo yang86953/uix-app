@@ -7,8 +7,9 @@ use crate::draw::painting::PaintContext;
 use crate::native::traits::input::{KeyCode, MouseButton};
 use crate::ui::component_snapshot::SnapshotFields;
 use crate::ui::event::WindowAction;
+use crate::ui::layout::engine::BoxModel;
 use crate::ui::layout::{AlignItems, LayoutChild};
-use crate::ui::style::Style;
+use crate::ui::style::{apply_style, Style};
 use crate::ui::traits::{
     EventHandler, WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetRender,
 };
@@ -52,6 +53,7 @@ pub(crate) struct WindowInteractionRegion {
     interaction: WindowInteraction,
     accessible_name: Option<String>,
     container: Container,
+    hovered: bool,
     activation: Option<ControlActivation>,
     pending: Option<WindowAction>,
 }
@@ -70,6 +72,7 @@ impl WindowInteractionRegion {
             interaction,
             accessible_name,
             container: Container::new(),
+            hovered: false,
             activation: None,
             pending: None,
         }
@@ -102,6 +105,7 @@ impl WindowInteractionRegion {
 
     pub(crate) fn sync_from(&mut self, next: Self) {
         if self.interaction != next.interaction {
+            self.hovered = false;
             self.activation = None;
             self.pending = None;
         }
@@ -218,8 +222,18 @@ impl WidgetLayout for WindowInteractionRegion {
 }
 
 impl WidgetRender for WindowInteractionRegion {
-    fn render(&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
-        self.container.render(frame, ctx, tree);
+    fn render(&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        let mut style = self.container.style.clone();
+        style.background = style.effective_bg(self.hovered, self.activation.is_some());
+        let visual = BoxModel {
+            margin: style.margin,
+            border_width: style.border_width,
+            padding: style.padding,
+        }
+        .visual_rect(frame);
+        if visual.w > 0.0 && visual.h > 0.0 {
+            apply_style(ctx, visual, &style);
+        }
     }
 
     fn dirty_rect(&self, frame: Rect) -> Rect {
@@ -263,7 +277,12 @@ impl EventHandler for WindowInteractionRegion {
                 self.pending = Some(Self::action(control));
                 EventResult::Handled
             }
+            (WindowInteraction::Control(_), SystemEvent::PointerEnter) => {
+                self.hovered = true;
+                EventResult::Handled
+            }
             (WindowInteraction::Control(_), SystemEvent::PointerLeave) => {
+                self.hovered = false;
                 if self.activation == Some(ControlActivation::Pointer) {
                     self.activation = None;
                 }
