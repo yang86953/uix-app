@@ -147,6 +147,7 @@ fn present_upload_engine_uses_factory_initialized_context_without_second_initial
 
     assert_eq!(initialize_calls.load(Ordering::SeqCst), 0);
     assert_eq!((engine.session.width(), engine.session.height()), (7, 5));
+    assert_eq!(engine.logical_extent(), (64, 48));
 }
 
 #[test]
@@ -179,6 +180,7 @@ fn present_upload_engine_propagates_resize_failure_without_committing_new_extent
 
     assert_eq!(error.code(), crate::core::error::Errc::GraphicsSurfaceLost);
     assert_eq!((engine.session.width(), engine.session.height()), (4, 3));
+    assert_eq!(engine.logical_extent(), (4, 3));
 }
 
 #[test]

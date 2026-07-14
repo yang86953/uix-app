@@ -167,7 +167,12 @@ pub(super) fn report_graphics_resize_error(context: &str, result: crate::core::R
     }
 }
 
-pub(super) fn ensure_surface_matches_window(
+fn engine_logical_extent(engine: &mut dyn GraphicsEngine) -> Option<(f32, f32)> {
+    let (width, height) = engine.logical_extent();
+    (width > 0 && height > 0).then_some((width as f32, height as f32))
+}
+
+pub(crate) fn ensure_surface_matches_window(
     tree: &mut WidgetTree,
     engine: &mut dyn GraphicsEngine,
     native_width: i32,
@@ -176,12 +181,11 @@ pub(super) fn ensure_surface_matches_window(
     if native_width <= 0 || native_height <= 0 {
         return false;
     }
-    let (canvas_width, canvas_height) = {
-        let canvas = engine.canvas_2d();
-        (canvas.width(), canvas.height())
+    let Some((canvas_width, canvas_height)) = engine_logical_extent(engine) else {
+        return false;
     };
     let mut changed = false;
-    if canvas_width != native_width || canvas_height != native_height {
+    if canvas_width != native_width as f32 || canvas_height != native_height as f32 {
         if !report_graphics_resize_error(
             "window graphics size reconciliation failed",
             engine.resize(native_width, native_height),
@@ -191,13 +195,9 @@ pub(super) fn ensure_surface_matches_window(
         }
         changed = true;
     }
-    let (engine_width, engine_height) = {
-        let canvas = engine.canvas_2d();
-        (canvas.width() as f32, canvas.height() as f32)
-    };
-    if engine_width <= 0.0 || engine_height <= 0.0 {
+    let Some((engine_width, engine_height)) = engine_logical_extent(engine) else {
         return false;
-    }
+    };
     let root_mismatch = tree
         .root_id()
         .and_then(|root_id| tree.get(root_id))
@@ -218,17 +218,13 @@ pub(super) fn ensure_surface_matches_window(
     changed
 }
 
-pub(super) fn sync_root_frame_exactly_to_engine(
+pub(crate) fn sync_root_frame_exactly_to_engine(
     tree: &mut WidgetTree,
     engine: &mut dyn GraphicsEngine,
 ) {
-    let (width, height) = {
-        let canvas = engine.canvas_2d();
-        (canvas.width() as f32, canvas.height() as f32)
-    };
-    if width <= 0.0 || height <= 0.0 {
+    let Some((width, height)) = engine_logical_extent(engine) else {
         return;
-    }
+    };
     if let Some(root_id) = tree.root_id() {
         let mismatched = tree.get(root_id).is_some_and(|root| {
             let frame = root.frame();
@@ -244,13 +240,9 @@ pub(super) fn sync_root_frame_exactly_to_engine(
 }
 
 pub(crate) fn sync_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn GraphicsEngine) {
-    let (engine_width, engine_height) = {
-        let canvas = engine.canvas_2d();
-        (canvas.width() as f32, canvas.height() as f32)
-    };
-    if engine_width <= 0.0 || engine_height <= 0.0 {
+    let Some((engine_width, engine_height)) = engine_logical_extent(engine) else {
         return;
-    }
+    };
     let need_sync = tree
         .root_id()
         .and_then(|root_id| tree.get(root_id))

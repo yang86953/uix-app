@@ -20,6 +20,8 @@ pub struct PresentUploadEngine {
     gpu_ctx: Box<dyn IGraphicsContext>,
     pub clear_color: Color,
     present_damage_tracker: PresentDamageTracker,
+    logical_width: i32,
+    logical_height: i32,
     shutdown: bool,
 }
 
@@ -38,6 +40,8 @@ impl PresentUploadEngine {
             gpu_ctx,
             clear_color: Color::from_rgba(0, 0, 0, 0),
             present_damage_tracker: PresentDamageTracker::new(),
+            logical_width: 1,
+            logical_height: 1,
             shutdown: false,
         })
     }
@@ -59,7 +63,7 @@ impl PresentUploadEngine {
 }
 
 impl GraphicsEngine for PresentUploadEngine {
-    fn initialize(&mut self, _width: i32, _height: i32) -> Result<(), Error> {
+    fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         // The native factory owns creation against the real surface. Calling
         // `IGraphicsContext::initialize` here would reinitialize a live
         // context with a null surface, so this stage only creates the CPU
@@ -67,7 +71,10 @@ impl GraphicsEngine for PresentUploadEngine {
         let actual_w = self.gpu_ctx.width().max(1);
         let actual_h = self.gpu_ctx.height().max(1);
         self.sync_clear_color();
-        self.session.initialize(actual_w, actual_h)
+        self.session.initialize(actual_w, actual_h)?;
+        self.logical_width = width.max(1);
+        self.logical_height = height.max(1);
+        Ok(())
     }
 
     fn try_shutdown(&mut self) -> Result<(), Error> {
@@ -88,7 +95,10 @@ impl GraphicsEngine for PresentUploadEngine {
         let actual_w = self.gpu_ctx.width().max(1);
         let actual_h = self.gpu_ctx.height().max(1);
         self.sync_clear_color();
-        self.session.resize(actual_w, actual_h)
+        self.session.resize(actual_w, actual_h)?;
+        self.logical_width = logical_w;
+        self.logical_height = logical_h;
+        Ok(())
     }
 
     fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {
@@ -187,6 +197,10 @@ impl GraphicsEngine for PresentUploadEngine {
 
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
         self.session.canvas_2d()
+    }
+
+    fn logical_extent(&mut self) -> (i32, i32) {
+        (self.logical_width, self.logical_height)
     }
 
     fn capabilities(&self) -> GraphicsCapabilities {

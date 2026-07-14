@@ -40,15 +40,15 @@ use std::time::Instant;
 #[cfg(test)]
 pub(crate) use support::graphics_failure_is_error;
 pub(crate) use support::{
-    animation_clock_should_advance, has_invalidation_work, sync_root_frame_to_engine,
-    WindowFrameResult,
+    animation_clock_should_advance, ensure_surface_matches_window, has_invalidation_work,
+    sync_root_frame_exactly_to_engine, sync_root_frame_to_engine, WindowFrameResult,
 };
 use support::{
-    dispatch_due_active_work, earliest_deadline, ensure_surface_matches_window, has_layout_work,
-    log_frame_metrics, next_loop_state, observe_agent_settle, protocol_failure, record_idle,
-    record_layout, record_present, report_graphics_frame_failure, report_graphics_resize_error,
-    report_window_operation_error, sync_root_frame_exactly_to_engine,
-    update_scheduled_and_discovered_animations, with_platform_clipboard,
+    dispatch_due_active_work, earliest_deadline, has_layout_work, log_frame_metrics,
+    next_loop_state, observe_agent_settle, protocol_failure, record_idle, record_layout,
+    record_present, report_graphics_frame_failure, report_graphics_resize_error,
+    report_window_operation_error, update_scheduled_and_discovered_animations,
+    with_platform_clipboard,
 };
 
 pub(crate) struct WindowFrameContext<'a, 'platform> {
