@@ -24,7 +24,7 @@ use crate::core::{Errc, Error, Result};
 use crate::native::traits::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
     GpuSolidRect, GpuStrokeRect, GraphicsContextCaps, IGraphicsContext, NativeRasterCaps,
-    OffscreenTargetId, PresentDamage, PresentFrame, SoftFallbackTile,
+    OffscreenTargetId, PresentDamage, PresentFrame, PresentTestResult, SoftFallbackTile,
 };
 
 pub(crate) fn bind_to_current_thread(
@@ -210,6 +210,7 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
     }
 
     forward_result!(present(frame: &PresentFrame) -> ());
+    forward_result!(test_present() -> PresentTestResult);
 
     fn device_pixel_ratio(&self) -> f32 {
         self.device_pixel_ratio
