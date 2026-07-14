@@ -168,11 +168,6 @@ impl GraphicsEngine for PresentUploadEngine {
                     self.backend_name(),
                 ));
                 if let Err(err) = present_result {
-                    crate::core::log::error_fn(format!(
-                        "PresentUploadEngine {} present failed: {}",
-                        self.backend_name(),
-                        err.short_what()
-                    ));
                     return RenderOutcome::Failed(GraphicsFailure::from_error(err));
                 }
                 self.present_damage_tracker.commit(

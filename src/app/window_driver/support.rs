@@ -48,20 +48,6 @@ pub(super) fn update_scheduled_and_discovered_animations(
     updates
 }
 
-pub(super) fn sync_animation_registrations(
-    active_work: &mut ActiveWorkRegistry,
-    animation_updates: &[(NodeId, bool)],
-) {
-    for &(id, animating) in animation_updates {
-        let kind = ActiveWorkKind::Animation(id);
-        if animating {
-            active_work.register_open(kind);
-        } else {
-            active_work.unregister(kind);
-        }
-    }
-}
-
 pub(crate) fn animation_clock_should_advance(
     had_registered_animation: bool,
     animation_updates: &[(NodeId, bool)],
@@ -141,6 +127,23 @@ pub(super) fn earliest_deadline(a: Option<Instant>, b: Option<Instant>) -> Optio
 
 pub(super) fn protocol_failure(message: &str) -> GraphicsFailure {
     GraphicsFailure::Other(Error::new(Errc::InvalidState, message))
+}
+
+pub(crate) fn graphics_failure_is_error(failure: &GraphicsFailure) -> bool {
+    !matches!(failure, GraphicsFailure::Occluded(_))
+}
+
+pub(super) fn report_graphics_frame_failure(failure: &GraphicsFailure) {
+    if graphics_failure_is_error(failure) {
+        crate::core::log::error_fn(format!(
+            "[WindowDriver] graphics frame failed: {}",
+            failure.error().short_what()
+        ));
+    } else {
+        crate::core::log::debug_fn(
+            "[WindowDriver] graphics surface occluded; waiting for availability",
+        );
+    }
 }
 
 pub(super) fn report_window_operation_error(context: &str, result: crate::core::Result<()>) {
