@@ -767,6 +767,7 @@ fn command_error_reply(request_id: String, error: AgentCommandError) -> AgentPro
         AgentCommandError::NodeNotFound(_) => "target node was not found",
         AgentCommandError::AmbiguousTarget { .. } => "target matched multiple nodes",
         AgentCommandError::UnsupportedAction { .. } => "target does not support the action",
+        AgentCommandError::InvalidValue { .. } => "action value is invalid for the target",
         AgentCommandError::NotInteractable(_) => "action target is not interactable",
         AgentCommandError::Blocked { .. } => "target is blocked",
         AgentCommandError::DidNotSettle { .. } => "UI did not settle within its pass limit",
@@ -839,7 +840,18 @@ fn semantic_node_value(node: &SemanticNode) -> Value {
         "role": role_name(node.accessibility.role),
         "name": node.accessibility.name,
         "state": accessibility_state_value(state),
+        "selection": node.selection.as_ref().map(selection_value),
         "actions": node.actions.iter().map(|action| action.as_str()).collect::<Vec<_>>(),
+    })
+}
+
+fn selection_value(selection: &crate::ui::SelectionSnapshot) -> Value {
+    json!({
+        "options": selection.options,
+        "selected_indices": selection.selected_indices,
+        "disabled_indices": selection.disabled_indices,
+        "multiple": selection.multiple,
+        "expanded": selection.expanded,
     })
 }
 

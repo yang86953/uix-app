@@ -34,8 +34,9 @@ pub use clipboard::copy_to_clipboard;
 pub use component_handle::ComponentHandle;
 pub use component_snapshot::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute,
-    ComponentConfigSnapshot, SnapshotCollapsePanel, SnapshotField, SnapshotFields, SnapshotSource,
-    SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue,
+    ComponentConfigSnapshot, SelectionSnapshot, SnapshotCollapsePanel, SnapshotField,
+    SnapshotFields, SnapshotSource, SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode,
+    SnapshotValue,
 };
 pub use core::children::WidgetChildren;
 pub(crate) use core::widget::WidgetTree;
@@ -77,8 +78,8 @@ pub use widgets::*;
 pub mod test_harness {
     pub use super::automation::{
         AutomationAction, AutomationActionKind, AutomationError, AutomationErrorCode,
-        AutomationNode, AutomationSnapshot, AutomationTarget, TestApp, AUTOMATION_DIR_ENV,
-        AUTOMATION_SCHEMA,
+        AutomationNode, AutomationSelection, AutomationSnapshot, AutomationTarget, TestApp,
+        AUTOMATION_DIR_ENV, AUTOMATION_SCHEMA,
     };
     pub use super::core::widget::{WidgetCore, WidgetTree};
     pub use super::view::adapter::ViewAdapter;

@@ -704,6 +704,9 @@ impl Select {
         SnapshotFields::Select {
             options: self.options.clone(),
             optgroups: self.optgroups.clone(),
+            selected: self.selected,
+            selected_multi: self.selected_multi.clone(),
+            open: self.open,
             disabled: self.disabled,
             placeholder: self.placeholder.clone(),
             multiple: self.multiple,

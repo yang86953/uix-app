@@ -6,7 +6,7 @@
 
 use crate::core::{ComponentId, Point, Rect};
 use crate::ui::component_snapshot::{
-    AccessibilityRole, AccessibilitySnapshot, ComponentConfigSnapshot,
+    AccessibilityRole, AccessibilitySnapshot, ComponentConfigSnapshot, SelectionSnapshot,
 };
 use crate::ui::core::widget::{WidgetCore, WidgetTree};
 use crate::ui::semantic_action::SemanticActionKind;
@@ -53,6 +53,7 @@ pub struct SemanticNode {
     pub visible_bounds: Option<Rect>,
     pub focused: bool,
     pub accessibility: AccessibilitySnapshot,
+    pub selection: Option<SelectionSnapshot>,
     pub actions: Vec<SemanticActionKind>,
 }
 
@@ -96,6 +97,7 @@ impl WidgetTree {
                 let node = self.get(id)?;
                 let snapshot = ComponentConfigSnapshot::from_component(id, node.component());
                 let mut accessibility = snapshot.accessibility();
+                let selection = snapshot.selection();
                 if !accessibility.state.password {
                     if let Some(input) = node
                         .component()
@@ -124,6 +126,7 @@ impl WidgetTree {
                     visible_bounds: self.visible_rect_for(id),
                     focused: focused == Some(id),
                     accessibility,
+                    selection,
                     actions,
                 })
             })

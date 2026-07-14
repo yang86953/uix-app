@@ -20,6 +20,7 @@ pub use crate::ui::semantic_snapshot::{
     SemanticNode as AutomationNode, SemanticTarget as AutomationTarget,
 };
 use crate::ui::view::{ViewAdapter, ViewNode};
+pub use crate::ui::SelectionSnapshot as AutomationSelection;
 
 pub const AUTOMATION_DIR_ENV: &str = "UIX_AUTOMATION_DIR";
 pub const AUTOMATION_SCHEMA: &str = "uix.automation.v1";
@@ -107,6 +108,7 @@ pub enum AutomationErrorCode {
     NodeNotFound,
     AmbiguousTarget,
     UnsupportedAction,
+    InvalidValue,
     NotInteractable,
     Blocked,
     DidNotSettle,
@@ -119,6 +121,7 @@ impl AutomationErrorCode {
             Self::NodeNotFound => "node_not_found",
             Self::AmbiguousTarget => "ambiguous_target",
             Self::UnsupportedAction => "unsupported_action",
+            Self::InvalidValue => "invalid_value",
             Self::NotInteractable => "not_interactable",
             Self::Blocked => "blocked",
             Self::DidNotSettle => "did_not_settle",
@@ -148,6 +151,14 @@ pub enum AutomationError {
         automation_id: String,
         action: AutomationActionKind,
     },
+    InvalidValue {
+        automation_id: String,
+        action: AutomationActionKind,
+    },
+    SelectionDisabled {
+        automation_id: String,
+        index: usize,
+    },
     NotHandled(String),
     DidNotSettle {
         passes: usize,
@@ -162,6 +173,8 @@ impl AutomationError {
             Self::NotVisible(_) | Self::Disabled(_) => AutomationErrorCode::NotInteractable,
             Self::Obscured { .. } | Self::Blocked { .. } => AutomationErrorCode::Blocked,
             Self::UnsupportedAction { .. } => AutomationErrorCode::UnsupportedAction,
+            Self::InvalidValue { .. } => AutomationErrorCode::InvalidValue,
+            Self::SelectionDisabled { .. } => AutomationErrorCode::NotInteractable,
             Self::NotHandled(_) => AutomationErrorCode::Internal,
             Self::DidNotSettle { .. } => AutomationErrorCode::DidNotSettle,
         }
@@ -199,6 +212,21 @@ impl fmt::Display for AutomationError {
                 f,
                 "automation node `{automation_id}` does not support `{}`",
                 action.as_str()
+            ),
+            Self::InvalidValue {
+                automation_id,
+                action,
+            } => write!(
+                f,
+                "automation node `{automation_id}` received an invalid value for `{}`",
+                action.as_str()
+            ),
+            Self::SelectionDisabled {
+                automation_id,
+                index,
+            } => write!(
+                f,
+                "automation node `{automation_id}` option {index} is disabled"
             ),
             Self::NotHandled(id) => {
                 write!(f, "automation action for `{id}` was not handled")
@@ -293,6 +321,10 @@ impl TestApp {
         text: impl Into<String>,
     ) -> Result<(), AutomationError> {
         self.perform(automation_id, AutomationAction::InsertText(text.into()))
+    }
+
+    pub fn select(&mut self, automation_id: &str, index: usize) -> Result<(), AutomationError> {
+        self.perform(automation_id, AutomationAction::Select(index.to_string()))
     }
 
     pub fn toggle(&mut self, automation_id: &str) -> Result<(), AutomationError> {
@@ -409,6 +441,16 @@ fn map_semantic_action_error(automation_id: String, error: SemanticActionError) 
         }
         SemanticActionError::NotVisible(_) => AutomationError::NotVisible(automation_id),
         SemanticActionError::Disabled(_) => AutomationError::Disabled(automation_id),
+        SemanticActionError::SelectionDisabled { index, .. } => {
+            AutomationError::SelectionDisabled {
+                automation_id,
+                index,
+            }
+        }
+        SemanticActionError::InvalidValue { action, .. } => AutomationError::InvalidValue {
+            automation_id,
+            action,
+        },
         SemanticActionError::Blocked { blocker, .. } => AutomationError::Blocked {
             automation_id,
             blocker,
@@ -579,7 +621,7 @@ fn write_node_json(out: &mut String, node: &AutomationNode) {
     let state = &node.accessibility.state;
     let _ = write!(
         out,
-        "    {{\"id\": {}, \"automation_id\": {}, \"parent\": {}, \"frame\": {}, \"visible_bounds\": {}, \"focused\": {}, \"role\": {}, \"name\": {}, \"state\": {}, \"actions\": {} }}",
+        "    {{\"id\": {}, \"automation_id\": {}, \"parent\": {}, \"frame\": {}, \"visible_bounds\": {}, \"focused\": {}, \"role\": {}, \"name\": {}, \"state\": {}, \"selection\": {}, \"actions\": {} }}",
         json_string(&node.id.to_string()),
         json_optional_string(node.automation_id.as_deref()),
         node.parent
@@ -593,8 +635,37 @@ fn write_node_json(out: &mut String, node: &AutomationNode) {
         json_string(role),
         json_optional_string(node.accessibility.name.as_deref()),
         accessibility_state_json(state),
+        selection_json(node.selection.as_ref()),
         action_kinds_json(&node.actions)
     );
+}
+
+fn selection_json(selection: Option<&AutomationSelection>) -> String {
+    let Some(selection) = selection else {
+        return "null".to_owned();
+    };
+    let options = selection
+        .options
+        .iter()
+        .map(|option| json_string(option))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let selected_indices = selection
+        .selected_indices
+        .iter()
+        .map(usize::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let disabled_indices = selection
+        .disabled_indices
+        .iter()
+        .map(usize::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "{{\"options\": [{options}], \"selected_indices\": [{selected_indices}], \"disabled_indices\": [{disabled_indices}], \"multiple\": {}, \"expanded\": {}}}",
+        selection.multiple, selection.expanded
+    )
 }
 
 fn action_kinds_json(actions: &[AutomationActionKind]) -> String {
