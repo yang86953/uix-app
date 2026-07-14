@@ -327,31 +327,33 @@ fn wait_until_presentable(
     }
 }
 
-fn invoke_until_presentable(
+fn perform_until_presentable(
     demo: &DemoProcess,
     connection: &mut BufReader<File>,
     window_id: u64,
     generation: u64,
-    automation_id: &str,
+    request_prefix: &str,
+    target: Option<Value>,
+    action: Value,
 ) -> Value {
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut attempt = 0u32;
     loop {
         demo.raise_for_interaction();
         wait_until_presentable(connection, window_id, true, Duration::from_secs(10));
-        let request_id = format!("invoke-{attempt}");
-        let response = exchange(
-            connection,
-            json!({
-                "schema": "uix.agent.v1",
-                "request_id": request_id,
-                "type": "perform",
-                "window_id": window_id,
-                "generation": generation,
-                "target": { "automation_id": automation_id },
-                "action": { "kind": "invoke" },
-            }),
-        );
+        let request_id = format!("{request_prefix}-{attempt}");
+        let mut request = json!({
+            "schema": "uix.agent.v1",
+            "request_id": request_id.clone(),
+            "type": "perform",
+            "window_id": window_id,
+            "generation": generation,
+            "action": action.clone(),
+        });
+        if let Some(target) = target.clone() {
+            request["target"] = target;
+        }
+        let response = exchange(connection, request);
         if response["ok"] == true {
             assert_success(&response, &request_id);
             return response;
@@ -362,11 +364,29 @@ fn invoke_until_presentable(
         );
         assert!(
             Instant::now() < deadline,
-            "window stayed non-presentable while invoking {automation_id}"
+            "window stayed non-presentable while performing {request_prefix}"
         );
         attempt = attempt.wrapping_add(1);
         thread::sleep(Duration::from_millis(50));
     }
+}
+
+fn invoke_until_presentable(
+    demo: &DemoProcess,
+    connection: &mut BufReader<File>,
+    window_id: u64,
+    generation: u64,
+    automation_id: &str,
+) -> Value {
+    perform_until_presentable(
+        demo,
+        connection,
+        window_id,
+        generation,
+        "invoke",
+        Some(json!({ "automation_id": automation_id })),
+        json!({ "kind": "invoke" }),
+    )
 }
 
 #[test]
@@ -486,7 +506,67 @@ fn real_gui_process_authenticates_performs_and_cleans_up() {
         node_by_automation_id(&after["snapshot"], "home-count-value")["name"],
         "计数: 1"
     );
-    let before_minimize_revision = after["snapshot"]["revision"]
+
+    let focused = perform_until_presentable(
+        &demo,
+        &mut connection,
+        window_id,
+        generation,
+        "focus-increment",
+        Some(json!({ "automation_id": "home-count-increment" })),
+        json!({ "kind": "focus" }),
+    );
+    assert_eq!(focused["settled"], true);
+    let tabbed = perform_until_presentable(
+        &demo,
+        &mut connection,
+        window_id,
+        generation,
+        "tab-forward",
+        None,
+        json!({ "kind": "press_key", "key": "tab", "modifiers": [] }),
+    );
+    assert_eq!(tabbed["settled"], true);
+    let after_tab = exchange(
+        &mut connection,
+        json!({
+            "schema": "uix.agent.v1",
+            "request_id": "snapshot-after-tab",
+            "type": "snapshot",
+            "window_id": window_id,
+        }),
+    );
+    assert_success(&after_tab, "snapshot-after-tab");
+    assert_eq!(
+        node_by_automation_id(&after_tab["snapshot"], "home-count-decrement")["focused"],
+        true
+    );
+
+    let reverse_tabbed = perform_until_presentable(
+        &demo,
+        &mut connection,
+        window_id,
+        generation,
+        "tab-backward",
+        None,
+        json!({ "kind": "press_key", "key": "tab", "modifiers": ["shift"] }),
+    );
+    assert_eq!(reverse_tabbed["settled"], true);
+    let after_reverse_tab = exchange(
+        &mut connection,
+        json!({
+            "schema": "uix.agent.v1",
+            "request_id": "snapshot-after-reverse-tab",
+            "type": "snapshot",
+            "window_id": window_id,
+        }),
+    );
+    assert_success(&after_reverse_tab, "snapshot-after-reverse-tab");
+    assert_eq!(
+        node_by_automation_id(&after_reverse_tab["snapshot"], "home-count-increment")["focused"],
+        true
+    );
+    let before_minimize_revision = after_reverse_tab["snapshot"]["revision"]
         .as_u64()
         .expect("revision before minimize");
 
