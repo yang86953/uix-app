@@ -7,8 +7,8 @@ use crate::ui::traits::Animatable;
 // Easing 曲线
 // ════════════════════════════════════════════════════════════════════════════
 
-/// 缓动函数，通过 `sample(t)` 将 [0, 1] 映射到 [0, 1]。
-#[derive(Debug, Clone, Copy)]
+/// 缓动函数；输入会收敛到 [0, 1]，Back / Elastic 曲线允许输出短暂越界。
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Easing {
     /// 线性插值。
     Linear,
@@ -34,11 +34,40 @@ pub enum Easing {
     BackOut,
     /// 弹性缓入。
     BackIn,
+    /// 弹跳缓出。
+    Bounce,
+    /// 弹性缓出，允许短暂越过目标值。
+    Elastic,
     /// 自定义三次贝塞尔曲线 `(x1, y1, x2, y2)`。
     CubicBezier(f64, f64, f64, f64),
 }
 
+#[allow(non_upper_case_globals)]
 impl Easing {
+    /// 线性缓动的公开链式写法。
+    pub const linear: Self = Self::Linear;
+    /// 二次方缓入。
+    pub const ease_in: Self = Self::QuadIn;
+    /// 二次方缓出。
+    pub const ease_out: Self = Self::QuadOut;
+    /// 二次方缓入缓出。
+    pub const ease_in_out: Self = Self::QuadInOut;
+    /// 三次方缓入。
+    pub const cubic_in: Self = Self::CubicIn;
+    /// 三次方缓出。
+    pub const cubic_out: Self = Self::CubicOut;
+    /// 三次方缓入缓出。
+    pub const cubic_in_out: Self = Self::CubicInOut;
+    /// 分段弹跳缓出。
+    pub const bounce: Self = Self::Bounce;
+    /// 衰减振荡缓出。
+    pub const elastic: Self = Self::Elastic;
+
+    /// 构造自定义三次贝塞尔曲线。
+    pub const fn cubic_bezier(x1: f64, y1: f64, x2: f64, y2: f64) -> Self {
+        Self::CubicBezier(x1, y1, x2, y2)
+    }
+
     /// 将 `t ∈ [0,1]` 映射到缓动后的值。
     pub fn sample(&self, t: f64) -> f64 {
         let t = t.clamp(0.0, 1.0);
@@ -90,6 +119,8 @@ impl Easing {
                 let t = t - 1.0;
                 C3 * t * t * t + C1 * t * t + 1.0
             }
+            Self::Bounce => sample_bounce_out(t),
+            Self::Elastic => sample_elastic_out(t),
             Self::CubicBezier(x1, y1, x2, y2) => sample_cubic_bezier(*x1, *y1, *x2, *y2, t),
         }
     }
@@ -115,6 +146,31 @@ impl Easing {
     pub const fn antd_in_out() -> Self {
         Self::CubicBezier(0.42, 0.0, 0.58, 1.0)
     }
+}
+
+fn sample_bounce_out(t: f64) -> f64 {
+    const N1: f64 = 7.5625;
+    const D1: f64 = 2.75;
+    if t < 1.0 / D1 {
+        N1 * t * t
+    } else if t < 2.0 / D1 {
+        let t = t - 1.5 / D1;
+        N1 * t * t + 0.75
+    } else if t < 2.5 / D1 {
+        let t = t - 2.25 / D1;
+        N1 * t * t + 0.9375
+    } else {
+        let t = t - 2.625 / D1;
+        N1 * t * t + 0.984375
+    }
+}
+
+fn sample_elastic_out(t: f64) -> f64 {
+    if t == 0.0 || t == 1.0 {
+        return t;
+    }
+    const ANGULAR_SCALE: f64 = std::f64::consts::TAU / 3.0;
+    2.0_f64.powf(-10.0 * t) * ((10.0 * t - 0.75) * ANGULAR_SCALE).sin() + 1.0
 }
 
 impl Default for Easing {
