@@ -287,6 +287,15 @@ fn node_by_automation_id<'a>(snapshot: &'a Value, automation_id: &str) -> &'a Va
         .unwrap_or_else(|| panic!("missing automation node {automation_id}"))
 }
 
+fn visible_center(node: &Value) -> (f64, f64) {
+    let bounds = &node["visible_bounds"];
+    let x = bounds["x"].as_f64().expect("visible bounds x");
+    let y = bounds["y"].as_f64().expect("visible bounds y");
+    let width = bounds["w"].as_f64().expect("visible bounds width");
+    let height = bounds["h"].as_f64().expect("visible bounds height");
+    (x + width * 0.5, y + height * 0.5)
+}
+
 fn wait_until_presentable(
     connection: &mut BufReader<File>,
     window_id: u64,
@@ -566,12 +575,52 @@ fn real_gui_process_authenticates_performs_and_cleans_up() {
         node_by_automation_id(&after_reverse_tab["snapshot"], "home-count-increment")["focused"],
         true
     );
-    let before_minimize_revision = after_reverse_tab["snapshot"]["revision"]
-        .as_u64()
-        .expect("revision before minimize");
-
+    let (increment_x, increment_y) = visible_center(node_by_automation_id(
+        &after_reverse_tab["snapshot"],
+        "home-count-increment",
+    ));
+    let clicked = perform_until_presentable(
+        &demo,
+        &mut connection,
+        window_id,
+        generation,
+        "click-increment",
+        None,
+        json!({ "kind": "click_at", "x": increment_x, "y": increment_y }),
+    );
+    assert_eq!(clicked["settled"], true);
+    let after_click = exchange(
+        &mut connection,
+        json!({
+            "schema": "uix.agent.v1",
+            "request_id": "snapshot-after-click",
+            "type": "snapshot",
+            "window_id": window_id,
+        }),
+    );
+    assert_success(&after_click, "snapshot-after-click");
+    assert_eq!(
+        node_by_automation_id(&after_click["snapshot"], "home-count-value")["name"],
+        "计数: 2"
+    );
     demo.minimize();
     wait_until_presentable(&mut connection, window_id, false, Duration::from_secs(10));
+    let minimized = exchange(
+        &mut connection,
+        json!({
+            "schema": "uix.agent.v1",
+            "request_id": "snapshot-minimized",
+            "type": "snapshot",
+            "window_id": window_id,
+        }),
+    );
+    assert_success(&minimized, "snapshot-minimized");
+    let before_minimize_revision = minimized["snapshot"]["revision"]
+        .as_u64()
+        .expect("revision while minimized");
+    let minimized_presented_revision = minimized["snapshot"]["presented_revision"]
+        .as_u64()
+        .expect("presented revision while minimized");
     let premature_present = exchange(
         &mut connection,
         json!({
@@ -580,7 +629,7 @@ fn real_gui_process_authenticates_performs_and_cleans_up() {
             "type": "wait",
             "window_id": window_id,
             "generation": generation,
-            "presented_revision": before_minimize_revision + 1,
+            "presented_revision": minimized_presented_revision + 1,
             "timeout_ms": 250,
         }),
     );
@@ -635,7 +684,7 @@ fn real_gui_process_authenticates_performs_and_cleans_up() {
     assert_success(&recovered, "snapshot-recovered");
     assert_eq!(
         node_by_automation_id(&recovered["snapshot"], "home-count-value")["name"],
-        "计数: 1"
+        "计数: 2"
     );
 
     drop(connection);
