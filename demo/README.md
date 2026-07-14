@@ -95,6 +95,8 @@ demo/src/
 
 本 demo 缺：多窗口 live 演示页、故障注入页、跨 OS `follow_system_theme` 实机切换。框架 backlog → [`进度`](../docs/进度.md)。
 
+> ⚠️ **API 风格回归**：提交 `9baa3ab8c35` 为恢复 demo 可编译性将写法回退到旧 API（`column_fit`/`row_fit`、`embed()`、`tree!{Container}`、`Label::new()`、`Icon::new()`、`.color()` 等），当前 demo 代码不再对齐 [`使用.md`](../docs/使用.md) 中的目标写法。待框架 API 收敛后应再次同步。
+
 ## CLI 演示项
 
 `cli/mod.rs` 顺序：`demo_core_types` · `demo_errors` · `demo_middleware` · `demo_state` · `demo_flex` · `demo_settings` · `demo_file_service` · `demo_theme` · `demo_graphics_engine` · `demo_di_container`
