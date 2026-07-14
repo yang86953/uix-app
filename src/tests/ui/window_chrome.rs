@@ -9,7 +9,8 @@ use crate::ui::core::widget::WidgetCore;
 use crate::ui::event::WindowAction;
 use crate::ui::semantic_action::{SemanticAction, SemanticActionKind};
 use crate::ui::view::{
-    button, label, window_control, window_control_named, window_drag_region, ViewAdapter,
+    button, label, row, window_control, window_control_named, window_drag_region, StyleExt,
+    ViewAdapter,
 };
 use crate::ui::{AccessibilityRole, PaintContext, SystemEvent, WidgetTree, WindowControl};
 
@@ -108,6 +109,40 @@ fn drag_region_leaves_interactive_descendants_in_control() {
     assert!(tree.take_window_actions().is_empty());
     tree.dispatch_event(&pointer_event(pos, false, MouseButton::Left));
     assert_eq!(tree.take_window_actions(), vec![WindowAction::RequestClose]);
+}
+
+#[test]
+fn beginning_window_drag_preserves_existing_keyboard_focus() {
+    let mut tree = ViewAdapter::build(
+        row(vec![
+            button("focused").width(60.0).height(32.0),
+            window_drag_region(label("title")).width(180.0).height(32.0),
+        ])
+        .width(240.0)
+        .height(32.0),
+    );
+    let root = tree.root_id().expect("title bar root");
+    tree.root_mut()
+        .expect("title bar root")
+        .set_frame(Rect::new(0.0, 0.0, 240.0, 32.0));
+    tree.layout();
+    let focused = tree
+        .get(root)
+        .and_then(|node| node.children().first().copied())
+        .expect("focused control");
+    tree.set_focus(Some(focused));
+
+    tree.dispatch_event(&pointer_event(
+        Point::new(120.0, 16.0),
+        true,
+        MouseButton::Left,
+    ));
+
+    assert_eq!(
+        tree.take_window_actions(),
+        vec![WindowAction::BeginMoveDrag]
+    );
+    assert_eq!(tree.managers().focus.focused_component(), Some(focused));
 }
 
 #[test]
