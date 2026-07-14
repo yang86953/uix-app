@@ -1,7 +1,8 @@
 use crate::tests::common::*;
 use crate::ui::theme::{
-    generate_color_scale, PrimaryHue, BLUE_PALETTE, COLOR_SCALE_LEN, PRIMARY_HUE_COUNT,
-    PRIMARY_SHADE_INDEX,
+    generate_color_scale, FunctionalColorRole, PrimaryHue, BLUE_PALETTE, COLOR_SCALE_LEN,
+    DATA_VISUALIZATION_COLOR_COUNT, DATA_VISUALIZATION_PALETTE, NEUTRAL_PALETTE, NEUTRAL_SCALE_LEN,
+    PRIMARY_HUE_COUNT, PRIMARY_SHADE_INDEX,
 };
 
 #[test]
@@ -67,4 +68,62 @@ fn generator_ignores_alpha_and_keeps_seed_in_primary_slot() {
 
     assert_eq!(palette.colors(), &expected);
     assert_eq!(palette.primary(), Color::from_rgb(102, 102, 102));
+}
+
+#[test]
+fn neutral_palette_exposes_thirteen_ordered_shades() {
+    let expected = [
+        "#ffffff", "#fafafa", "#f5f5f5", "#f0f0f0", "#d9d9d9", "#bfbfbf", "#8c8c8c", "#595959",
+        "#434343", "#262626", "#1f1f1f", "#141414", "#000000",
+    ]
+    .map(Color::hex);
+
+    assert_eq!(NEUTRAL_PALETTE.colors(), &expected);
+    assert_eq!(NEUTRAL_PALETTE.colors().len(), NEUTRAL_SCALE_LEN);
+    assert_eq!(NEUTRAL_PALETTE.shade(NEUTRAL_SCALE_LEN), None);
+}
+
+#[test]
+fn functional_palettes_follow_active_theme_seeds() {
+    let mut tokens = DesignTokens::antd_light();
+    tokens.color_success = Color::hex("#00b96b");
+
+    for role in [
+        FunctionalColorRole::Success,
+        FunctionalColorRole::Warning,
+        FunctionalColorRole::Error,
+        FunctionalColorRole::Info,
+    ] {
+        let expected_seed = match role {
+            FunctionalColorRole::Success => tokens.color_success,
+            FunctionalColorRole::Warning => tokens.color_warning,
+            FunctionalColorRole::Error => tokens.color_error,
+            FunctionalColorRole::Info => tokens.color_info,
+        };
+        assert_eq!(tokens.functional_color_scale(role).primary(), expected_seed);
+    }
+
+    assert_eq!(
+        FunctionalColorRole::Error.default_palette().primary(),
+        Color::hex("#ff4d4f")
+    );
+}
+
+#[test]
+fn data_visualization_palette_matches_antv_category_order() {
+    let expected = [
+        "#5b8ff9", "#61ddaa", "#65789b", "#f6bd16", "#7262fd", "#78d3f8", "#9661bc", "#f6903d",
+        "#008685", "#f08bb4",
+    ]
+    .map(Color::hex);
+
+    assert_eq!(DATA_VISUALIZATION_PALETTE.colors(), &expected);
+    assert_eq!(
+        DATA_VISUALIZATION_PALETTE.colors().len(),
+        DATA_VISUALIZATION_COLOR_COUNT
+    );
+    assert_eq!(
+        DATA_VISUALIZATION_PALETTE.color(DATA_VISUALIZATION_COLOR_COUNT),
+        None
+    );
 }

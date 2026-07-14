@@ -2,12 +2,18 @@
 
 use crate::draw::Color;
 
+use super::DesignTokens;
+
 /// 每条主色色板的色阶数量。
 pub const COLOR_SCALE_LEN: usize = 10;
 /// Ant Design 预设主色数量。
 pub const PRIMARY_HUE_COUNT: usize = 12;
 /// 主色在从浅到深色阶中的零基索引。
 pub const PRIMARY_SHADE_INDEX: usize = 5;
+/// 中性灰阶数量。
+pub const NEUTRAL_SCALE_LEN: usize = 13;
+/// 默认数据可视化分类色数量。
+pub const DATA_VISUALIZATION_COLOR_COUNT: usize = 10;
 
 /// 一条从浅到深排列的 10 阶色板。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,6 +42,82 @@ impl ColorScale {
     /// 返回第 6 格主色。
     pub const fn primary(&self) -> Color {
         self.0[PRIMARY_SHADE_INDEX]
+    }
+}
+
+/// 一条从浅到深排列的 13 阶中性色板。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NeutralColorScale([Color; NEUTRAL_SCALE_LEN]);
+
+impl NeutralColorScale {
+    /// 从固定长度颜色数组构造中性色板。
+    pub const fn new(colors: [Color; NEUTRAL_SCALE_LEN]) -> Self {
+        Self(colors)
+    }
+
+    /// 返回完整灰阶；索引 0 最浅，索引 12 最深。
+    pub const fn colors(&self) -> &[Color; NEUTRAL_SCALE_LEN] {
+        &self.0
+    }
+
+    /// 返回指定灰阶，越界时返回 `None`。
+    pub const fn shade(&self, index: usize) -> Option<Color> {
+        if index < NEUTRAL_SCALE_LEN {
+            Some(self.0[index])
+        } else {
+            None
+        }
+    }
+}
+
+/// 用于离散数据系列的 10 色分类色板。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DataVisualizationPalette([Color; DATA_VISUALIZATION_COLOR_COUNT]);
+
+impl DataVisualizationPalette {
+    /// 从固定长度颜色数组构造分类色板。
+    pub const fn new(colors: [Color; DATA_VISUALIZATION_COLOR_COUNT]) -> Self {
+        Self(colors)
+    }
+
+    /// 返回按建议系列顺序排列的全部颜色。
+    pub const fn colors(&self) -> &[Color; DATA_VISUALIZATION_COLOR_COUNT] {
+        &self.0
+    }
+
+    /// 返回指定系列颜色，越界时返回 `None`。
+    pub const fn color(&self, index: usize) -> Option<Color> {
+        if index < DATA_VISUALIZATION_COLOR_COUNT {
+            Some(self.0[index])
+        } else {
+            None
+        }
+    }
+}
+
+/// 主题功能色角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FunctionalColorRole {
+    Success,
+    Warning,
+    Error,
+    Info,
+}
+
+impl FunctionalColorRole {
+    /// 返回 Ant Design 5 默认功能色种子。
+    pub const fn default_seed(self) -> Color {
+        match self {
+            Self::Success => Color::from_rgb(82, 196, 26),
+            Self::Warning => Color::from_rgb(250, 173, 20),
+            Self::Error => Color::from_rgb(255, 77, 79),
+            Self::Info => Color::from_rgb(22, 119, 255),
+        }
+    }
+
+    /// 返回由默认种子生成的 10 阶功能色板。
+    pub fn default_palette(self) -> ColorScale {
+        generate_color_scale(self.default_seed())
     }
 }
 
@@ -207,6 +289,37 @@ pub const MAGENTA_PALETTE: ColorScale = color_scale![
     0x520339,
 ];
 
+/// Ant Design 13 阶中性色板。
+pub const NEUTRAL_PALETTE: NeutralColorScale = NeutralColorScale::new([
+    rgb(0xffffff),
+    rgb(0xfafafa),
+    rgb(0xf5f5f5),
+    rgb(0xf0f0f0),
+    rgb(0xd9d9d9),
+    rgb(0xbfbfbf),
+    rgb(0x8c8c8c),
+    rgb(0x595959),
+    rgb(0x434343),
+    rgb(0x262626),
+    rgb(0x1f1f1f),
+    rgb(0x141414),
+    rgb(0x000000),
+]);
+
+/// AntV 分类数据默认 10 色色板。
+pub const DATA_VISUALIZATION_PALETTE: DataVisualizationPalette = DataVisualizationPalette::new([
+    rgb(0x5b8ff9),
+    rgb(0x61ddaa),
+    rgb(0x65789b),
+    rgb(0xf6bd16),
+    rgb(0x7262fd),
+    rgb(0x78d3f8),
+    rgb(0x9661bc),
+    rgb(0xf6903d),
+    rgb(0x008685),
+    rgb(0xf08bb4),
+]);
+
 const HUE_STEP: f64 = 2.0;
 const SATURATION_STEP_LIGHT: f64 = 0.16;
 const SATURATION_STEP_DARK: f64 = 0.05;
@@ -239,6 +352,19 @@ pub fn generate_color_scale(seed: Color) -> ColorScale {
     }
 
     ColorScale::new(colors)
+}
+
+impl DesignTokens {
+    /// 按当前主题中的功能色种子生成 10 阶色板。
+    pub fn functional_color_scale(&self, role: FunctionalColorRole) -> ColorScale {
+        let seed = match role {
+            FunctionalColorRole::Success => self.color_success,
+            FunctionalColorRole::Warning => self.color_warning,
+            FunctionalColorRole::Error => self.color_error,
+            FunctionalColorRole::Info => self.color_info,
+        };
+        generate_color_scale(seed)
+    }
 }
 
 fn rgb_to_hsv(color: Color) -> Hsv {
