@@ -151,6 +151,10 @@ impl WidgetComponent for WindowInteractionRegion {
         i32::from(matches!(self.interaction, WindowInteraction::Control(_)))
     }
 
+    fn exposes_semantic_children(&self) -> bool {
+        matches!(self.interaction, WindowInteraction::Drag)
+    }
+
     fn as_layout(&self) -> Option<&dyn WidgetLayout> {
         Some(self)
     }

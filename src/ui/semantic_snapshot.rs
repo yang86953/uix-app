@@ -88,12 +88,27 @@ pub(crate) struct SemanticSnapshotBody {
 }
 
 impl WidgetTree {
+    fn exposes_semantic_node(&self, id: ComponentId) -> bool {
+        let mut ancestor = self.get(id).and_then(|node| node.parent());
+        while let Some(parent_id) = ancestor {
+            let Some(parent) = self.get(parent_id) else {
+                return false;
+            };
+            if !parent.component().exposes_semantic_children() {
+                return false;
+            }
+            ancestor = parent.parent();
+        }
+        true
+    }
+
     pub(crate) fn semantic_snapshot_body(&self) -> SemanticSnapshotBody {
         let focused = self.managers().focus.focused_component();
         let nodes = self
             .traverse()
             .iter()
             .copied()
+            .filter(|id| self.exposes_semantic_node(*id))
             .filter_map(|id| {
                 let node = self.get(id)?;
                 let snapshot = ComponentConfigSnapshot::from_component(id, node.component());

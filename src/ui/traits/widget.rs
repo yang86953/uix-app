@@ -82,6 +82,12 @@ pub trait WidgetComponent: 'static {
     fn tab_index(&self) -> i32 {
         0
     }
+    /// 是否将子树作为独立节点暴露给语义快照。
+    ///
+    /// 复合交互组件可返回 `false`，让内部纯展示 View 不形成嵌套控件语义。
+    fn exposes_semantic_children(&self) -> bool {
+        true
+    }
     fn picture_policy(&self) -> PicturePolicy {
         PicturePolicy::Never
     }
