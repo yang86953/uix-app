@@ -5,6 +5,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::os::windows::fs::OpenOptionsExt;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -31,6 +32,11 @@ const D3D11_GRAPHICS: GraphicsExpectation = GraphicsExpectation {
     backend_override: Some("d3d11"),
     selected_recipe: "backend=d3d11; raster=gpu_native; present=swapchain",
 };
+const DEFAULT_VULKAN_GRAPHICS: GraphicsExpectation = GraphicsExpectation {
+    backend_override: None,
+    selected_recipe: "backend=vulkan; raster=cpu; present=pixel_upload",
+};
+static REAL_GUI_LOCK: Mutex<()> = Mutex::new(());
 
 struct DemoProcess {
     child: Child,
@@ -459,7 +465,20 @@ fn invoke_until_presentable(
 #[test]
 #[ignore = "requires an interactive Windows desktop"]
 fn real_d3d11_gui_process_authenticates_performs_and_cleans_up() {
-    let mut demo = DemoProcess::spawn(D3D11_GRAPHICS);
+    run_real_gui_scenario(D3D11_GRAPHICS);
+}
+
+#[test]
+#[ignore = "requires an interactive Windows desktop and Vulkan driver"]
+fn real_default_vulkan_gui_presents_and_recovers_from_minimize() {
+    run_real_gui_scenario(DEFAULT_VULKAN_GRAPHICS);
+}
+
+fn run_real_gui_scenario(graphics: GraphicsExpectation) {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut demo = DemoProcess::spawn(graphics);
     let descriptor = demo.wait_for_descriptor();
     let endpoint = descriptor["endpoint"]
         .as_str()
