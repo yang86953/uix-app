@@ -43,6 +43,7 @@ pub enum UiEventType {
     WindowShow,
     WindowHide,
     WindowOcclusionChanged,
+    PointerDoubleClick,
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -274,6 +275,18 @@ impl UiEvent {
         Self {
             window_id: None,
             type_: UiEventType::PointerDown,
+            payload: UiEventPayload::PointerButton(PointerButtonEventData {
+                pos,
+                btn,
+                mods: KeyMod::NONE,
+            }),
+        }
+    }
+
+    pub fn pointer_double_click(pos: Point, btn: MouseButton) -> Self {
+        Self {
+            window_id: None,
+            type_: UiEventType::PointerDoubleClick,
             payload: UiEventPayload::PointerButton(PointerButtonEventData {
                 pos,
                 btn,

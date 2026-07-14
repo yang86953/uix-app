@@ -169,49 +169,9 @@ impl WidgetTree {
         }
 
         match event {
-            SystemEvent::PointerDown { pos, button, mods } => {
-                if let Some(result) = self.intercept_top_overlay_outside_pointer_down(*pos) {
-                    return result;
-                }
-                let target = self.overlay_target_at(*pos).or_else(|| self.hit_test(*pos));
-                self.managers_mut()
-                    .interaction
-                    .set_pressed_component(target);
-                self.managers_mut()
-                    .drag
-                    .begin_gesture(target, *pos, *button, *mods);
-                if let Some(t) = target {
-                    let actions_before_dispatch = self.pending_window_actions.len();
-                    self.invalidate_paint(t);
-                    // 捕获阶段：root → target，用于 Modal 等拦截
-                    if self.capture_to(t, event) == EventResult::Handled {
-                        return EventResult::Handled;
-                    }
-                    let result = self.dispatch_to(t, event);
-                    if result == EventResult::Handled {
-                        // 文字拖选起点：清掉同父级其他行的旧选区，避免残留高亮。
-                        if self.get(t).is_some_and(super::text_selection::participates) {
-                            self.clear_sibling_cross_text_selections(t);
-                        }
-                        self.invalidate_nav_siblings(t);
-                        let preserves_keyboard_focus = self.pending_window_actions
-                            [actions_before_dispatch..]
-                            .iter()
-                            .any(|action| action.preserves_keyboard_focus());
-                        if !preserves_keyboard_focus {
-                            self.set_focus(Some(t));
-                        }
-                    } else {
-                        // 点击不处理事件的 widget → 取消焦点
-                        self.set_focus(None);
-                    }
-                    self.rebuild_widget_overlays();
-                    result
-                } else {
-                    self.set_focus(None);
-                    self.rebuild_widget_overlays();
-                    EventResult::NotHandled
-                }
+            SystemEvent::PointerDown { pos, button, mods }
+            | SystemEvent::PointerDoubleClick { pos, button, mods } => {
+                self.dispatch_pointer_press(event, *pos, *button, *mods)
             }
             SystemEvent::PointerUp { pos, button, mods } => {
                 let hold = self.managers().interaction.pressed_component();
@@ -624,6 +584,67 @@ impl WidgetTree {
         }
     }
 
+    fn dispatch_pointer_press(
+        &mut self,
+        event: &SystemEvent,
+        pos: Point,
+        button: MouseButton,
+        mods: KeyMod,
+    ) -> EventResult {
+        if let Some(result) = self.intercept_top_overlay_outside_pointer_down(pos) {
+            return result;
+        }
+        let target = self.overlay_target_at(pos).or_else(|| self.hit_test(pos));
+        self.managers_mut()
+            .interaction
+            .set_pressed_component(target);
+        self.managers_mut()
+            .drag
+            .begin_gesture(target, pos, button, mods);
+        let Some(target) = target else {
+            self.set_focus(None);
+            self.rebuild_widget_overlays();
+            return EventResult::NotHandled;
+        };
+
+        let actions_before_dispatch = self.pending_window_actions.len();
+        self.invalidate_paint(target);
+        let pointer_down;
+        let capture_event = if matches!(event, SystemEvent::PointerDoubleClick { .. }) {
+            pointer_down = SystemEvent::PointerDown { pos, button, mods };
+            &pointer_down
+        } else {
+            event
+        };
+        if self.capture_to(target, capture_event) == EventResult::Handled {
+            return EventResult::Handled;
+        }
+        let result = if matches!(event, SystemEvent::PointerDoubleClick { .. }) {
+            self.dispatch_double_click_to(target, event)
+        } else {
+            self.dispatch_to(target, event)
+        };
+        if result == EventResult::Handled {
+            if self
+                .get(target)
+                .is_some_and(super::text_selection::participates)
+            {
+                self.clear_sibling_cross_text_selections(target);
+            }
+            self.invalidate_nav_siblings(target);
+            let preserves_keyboard_focus = self.pending_window_actions[actions_before_dispatch..]
+                .iter()
+                .any(|action| action.preserves_keyboard_focus());
+            if !preserves_keyboard_focus {
+                self.set_focus(Some(target));
+            }
+        } else {
+            self.set_focus(None);
+        }
+        self.rebuild_widget_overlays();
+        result
+    }
+
     /// 计算目标**祖先**链上所有 ScrollView 的累计滚动偏移。
     ///
     /// 从 parent 起算：目标自身若是 ScrollView，其 viewport 偏移只作用于子内容坐标，
@@ -656,6 +677,13 @@ impl WidgetTree {
                 button,
                 mods,
             },
+            SystemEvent::PointerDoubleClick { pos, button, mods } => {
+                SystemEvent::PointerDoubleClick {
+                    pos: Point::new(pos.x + sx, pos.y + sy),
+                    button,
+                    mods,
+                }
+            }
             SystemEvent::PointerUp { pos, button, mods } => SystemEvent::PointerUp {
                 pos: Point::new(pos.x + sx, pos.y + sy),
                 button,
@@ -854,6 +882,44 @@ impl WidgetTree {
         EventResult::NotHandled
     }
 
+    fn dispatch_double_click_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
+        let mut current = Some(target);
+        let scroll_offset = self.cumulative_scroll_offset(target);
+        while let Some(id) = current {
+            let Some(frame) = self.get(id).map(|node| node.frame()) else {
+                return EventResult::NotHandled;
+            };
+            let translated = Self::translate_pointer_event(event, frame);
+            let double_click = match scroll_offset {
+                Some((sx, sy)) => Self::add_offset_to_event(translated, sx, sy),
+                None => translated,
+            };
+            let SystemEvent::PointerDoubleClick { pos, button, mods } = double_click else {
+                return EventResult::NotHandled;
+            };
+            let double_click = SystemEvent::PointerDoubleClick { pos, button, mods };
+            let pointer_down = SystemEvent::PointerDown { pos, button, mods };
+            let (handled_event, parent) = {
+                let Some(node) = self.get_mut(id) else {
+                    return EventResult::NotHandled;
+                };
+                let handled = if node.on_event(&double_click) == EventResult::Handled {
+                    Some(&double_click)
+                } else if node.on_event(&pointer_down) == EventResult::Handled {
+                    Some(&pointer_down)
+                } else {
+                    None
+                };
+                (handled.cloned(), node.parent())
+            };
+            if let Some(handled_event) = handled_event {
+                return self.finish_scroll_aware_dispatch(id, &handled_event);
+            }
+            current = parent;
+        }
+        EventResult::NotHandled
+    }
+
     fn semantic_path_to_root(&self, target: WidgetId) -> Vec<WidgetId> {
         let mut path = Vec::new();
         let mut current = Some(target);
@@ -916,6 +982,13 @@ impl WidgetTree {
                 button,
                 mods,
             },
+            SystemEvent::PointerDoubleClick { pos, button, mods } => {
+                SystemEvent::PointerDoubleClick {
+                    pos: Point::new(pos.x - frame.x, pos.y - frame.y),
+                    button,
+                    mods,
+                }
+            }
             SystemEvent::PointerUp { pos, button, mods } => SystemEvent::PointerUp {
                 pos: Point::new(pos.x - frame.x, pos.y - frame.y),
                 button,

@@ -2,7 +2,11 @@
 // native/backends/windows/consts.rs — Windows 平台常量
 // ============================================================================
 
-pub(crate) const DEFAULT_CLASS_STYLE: u32 = 0x0008 | 0x0002 | 0x0001 | 0x0020; // + CS_OWNDC for WGL
+const CS_VREDRAW: u32 = 0x0001;
+const CS_HREDRAW: u32 = 0x0002;
+const CS_DBLCLKS: u32 = 0x0008;
+const CS_OWNDC: u32 = 0x0020;
+pub(crate) const DEFAULT_CLASS_STYLE: u32 = CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
 pub(crate) const GWLP_USERDATA: i32 = -21;
 pub(crate) const WM_NULL: u32 = 0x0000;
 pub(crate) const WM_QUIT: u32 = 0x0012;
@@ -30,10 +34,13 @@ pub(crate) const WM_IME_ENDCOMPOSITION: u32 = 0x010E;
 pub(crate) const WM_IME_COMPOSITION: u32 = 0x010F;
 pub(crate) const WM_LBUTTONDOWN: u32 = 0x0201;
 pub(crate) const WM_LBUTTONUP: u32 = 0x0202;
+pub(crate) const WM_LBUTTONDBLCLK: u32 = 0x0203;
 pub(crate) const WM_RBUTTONDOWN: u32 = 0x0204;
 pub(crate) const WM_RBUTTONUP: u32 = 0x0205;
+pub(crate) const WM_RBUTTONDBLCLK: u32 = 0x0206;
 pub(crate) const WM_MBUTTONDOWN: u32 = 0x0207;
 pub(crate) const WM_MBUTTONUP: u32 = 0x0208;
+pub(crate) const WM_MBUTTONDBLCLK: u32 = 0x0209;
 pub(crate) const WM_MOUSEMOVE: u32 = 0x0200;
 pub(crate) const WM_MOUSEWHEEL: u32 = 0x020A;
 pub(crate) const WM_TIMER: u32 = 0x0113;

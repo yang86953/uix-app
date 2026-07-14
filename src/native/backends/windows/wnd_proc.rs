@@ -326,6 +326,10 @@ impl WindowsPlatform {
                 self.handle_mouse_down(hwnd, window_id, lparam, MouseButton::Left);
                 0
             }
+            WM_LBUTTONDBLCLK => {
+                self.handle_mouse_double_click(hwnd, window_id, lparam, MouseButton::Left);
+                0
+            }
             WM_LBUTTONUP => {
                 self.handle_mouse_up(hwnd, window_id, lparam, MouseButton::Left);
                 0
@@ -334,12 +338,20 @@ impl WindowsPlatform {
                 self.handle_mouse_down(hwnd, window_id, lparam, MouseButton::Right);
                 0
             }
+            WM_RBUTTONDBLCLK => {
+                self.handle_mouse_double_click(hwnd, window_id, lparam, MouseButton::Right);
+                0
+            }
             WM_RBUTTONUP => {
                 self.handle_mouse_up(hwnd, window_id, lparam, MouseButton::Right);
                 0
             }
             WM_MBUTTONDOWN => {
                 self.handle_mouse_down(hwnd, window_id, lparam, MouseButton::Middle);
+                0
+            }
+            WM_MBUTTONDBLCLK => {
+                self.handle_mouse_double_click(hwnd, window_id, lparam, MouseButton::Middle);
                 0
             }
             WM_MBUTTONUP => {

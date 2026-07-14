@@ -214,9 +214,30 @@ impl WindowsPlatform {
         lparam: isize,
         btn: MouseButton,
     ) {
+        self.handle_mouse_press(hwnd, window_id, lparam, btn, UiEvent::pointer_down);
+    }
+
+    pub(crate) fn handle_mouse_double_click(
+        &mut self,
+        hwnd: *mut std::ffi::c_void,
+        window_id: crate::core::WindowId,
+        lparam: isize,
+        btn: MouseButton,
+    ) {
+        self.handle_mouse_press(hwnd, window_id, lparam, btn, UiEvent::pointer_double_click);
+    }
+
+    fn handle_mouse_press(
+        &mut self,
+        hwnd: *mut std::ffi::c_void,
+        window_id: crate::core::WindowId,
+        lparam: isize,
+        btn: MouseButton,
+        create_event: fn(Point, MouseButton) -> UiEvent,
+    ) {
         let pos = self.mouse_pos_from_lparam(hwnd, lparam);
         let mods = Self::get_modifier_state();
-        let mut ev = UiEvent::pointer_down(pos, btn);
+        let mut ev = create_event(pos, btn);
         if let UiEventPayload::PointerButton(ref mut data) = ev.payload {
             data.mods = mods;
         }
