@@ -1,5 +1,5 @@
 use crate::core::{Point, Rect};
-use crate::native::traits::input::{KeyMod, MouseButton};
+use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::event::WindowAction;
 use crate::ui::semantic_action::{SemanticAction, SemanticActionKind};
@@ -19,6 +19,20 @@ fn pointer_event(pos: Point, down: bool, button: MouseButton) -> SystemEvent {
         SystemEvent::PointerUp {
             pos,
             button,
+            mods: KeyMod::NONE,
+        }
+    }
+}
+
+fn key_event(key: KeyCode, down: bool) -> SystemEvent {
+    if down {
+        SystemEvent::KeyDown {
+            key,
+            mods: KeyMod::NONE,
+        }
+    } else {
+        SystemEvent::KeyUp {
+            key,
             mods: KeyMod::NONE,
         }
     }
@@ -95,6 +109,32 @@ fn control_region_cancels_when_pointer_is_released_outside() {
         MouseButton::Left,
     ));
     assert!(tree.take_window_actions().is_empty());
+}
+
+#[test]
+fn control_region_requires_matching_activation_input() {
+    let mut tree = ViewAdapter::build(
+        window_control(WindowControl::Close, label("close"))
+            .width(44.0)
+            .height(32.0),
+    );
+    tree.root_mut()
+        .expect("window control root")
+        .set_frame(Rect::new(0.0, 0.0, 44.0, 32.0));
+    tree.layout();
+    let pos = Point::new(20.0, 16.0);
+
+    tree.dispatch_event(&pointer_event(pos, true, MouseButton::Left));
+    tree.dispatch_event(&key_event(KeyCode::Enter, false));
+    assert!(tree.take_window_actions().is_empty());
+    tree.dispatch_event(&pointer_event(pos, false, MouseButton::Left));
+    assert_eq!(tree.take_window_actions(), vec![WindowAction::RequestClose]);
+
+    tree.dispatch_event(&key_event(KeyCode::Enter, true));
+    tree.dispatch_event(&key_event(KeyCode::Space, false));
+    assert!(tree.take_window_actions().is_empty());
+    tree.dispatch_event(&key_event(KeyCode::Enter, false));
+    assert_eq!(tree.take_window_actions(), vec![WindowAction::RequestClose]);
 }
 
 #[test]
