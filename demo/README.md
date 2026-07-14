@@ -25,21 +25,21 @@ demo/src/
 ├── cli/             # core/native/draw/ui/app/data CLI
 ├── demos/           # 11 个内容页
 │   ├── home.rs      # 首页：入门 + 快捷导航
-│   ├── runtime.rs   # 应用能力（State/Computed/Effect/Animation/Timer/Theme）
-│   ├── general.rs   # 通用 widgets + ConfigProvider
-│   ├── layout.rs    # 布局 / 容器 / Grid responsive / VirtualScroll
-│   ├── nav.rs       # 导航 + Menu/NavGroup/Dropdown/Pagination
-│   ├── input.rs     # 输入控件 + Form validation
-│   ├── data.rs      # 数据展示 + Table（sortable/selection/fixed columns）
-│   ├── feedback.rs  # 反馈 + Overlay 浮层（Modal/Drawer/Popover/Tooltip）
-│   ├── charts.rs    # 图表（Bar/Line/Pie）
-│   ├── other.rs     # Transfer/Upload/QRCode/Watermark/canvas/Accessibility
+│   ├── runtime.rs   # 应用能力（State/Timer/Theme/View DSL）
+│   ├── general.rs   # 通用 widgets
+│   ├── layout.rs    # 布局 / 容器
+│   ├── nav.rs       # 导航 + Navigation/NavGroup
+│   ├── input.rs     # 输入控件
+│   ├── data.rs      # 数据展示
+│   ├── feedback.rs  # 反馈 + Overlay 浮层
+│   ├── charts.rs    # 图表
+│   ├── other.rs     # Transfer/Upload/DesignTokens
 │   ├── gallery.rs   # 覆盖清单（参考）
 │   └── context.rs   # DemoCtx（共享 State）
 └── common/
     ├── page.rs      # PageBuilder、PAGE_TITLES、侧边栏分组
-    ├── showcase.rs  # 展示辅助（panel、info_note、demo_card）
-    └── widgets.rs   # Counter / PulseRing / BounceBall（component!）
+    ├── showcase.rs  # labeled_row、info_note 辅助
+    └── widgets.rs   # Counter / PulseRing / BounceBall
 ```
 
 ## 两种模式
@@ -63,32 +63,32 @@ demo/src/
 | # | 页 | 文件 | 覆盖 widget / 特性 |
 |---|-----|------|-------------------|
 | 0 | 首页 | `home.rs` | 入门 State、Timer tick、快捷导航 |
-| 1 | 应用能力 | `runtime.rs` | State、Computed、Effect、Animation、Timer、ThemeToggle、component!、多窗 |
-| 2 | 通用 | `general.rs` | Button、Icon、Typography、Label、Divider、Space、ConfigProvider、Size 系统、FloatButton、Tag |
-| 3 | 布局 | `layout.rs` | Container、Grid、Grid responsive、Layout/Header/Sider/Content/Footer、Splitter、ScrollView、VirtualScroll、Affix、BackTop |
+| 1 | 应用能力 | `runtime.rs` | State、dynamic_label、run_interval、ThemeToggle、component!、动画 demo |
+| 2 | 通用 | `general.rs` | Button、Icon、Typography、Label、Divider、Space、FloatButton、FloatButtonBackTop、Tag |
+| 3 | 布局 | `layout.rs` | Container、Grid、Layout/Header/Sider/Content/Footer、Splitter、ScrollView、Affix、BackTop |
 | 4 | 导航 | `nav.rs` | Navigation、NavGroup、Menu、Tabs、Dropdown、Breadcrumb、Anchor、Steps、Pagination |
-| 5 | 输入 | `input.rs` | Input、InputNumber、Select、TreeSelect、Cascader、AutoComplete、Mentions、Checkbox、Radio、Switch、Slider、Rate、DatePicker、TimePicker、ColorPicker、Segmented、Form、Upload |
-| 6 | 数据展示 | `data.rs` | Card、List、Tree、Collapse、Descriptions、Timeline、Calendar、Carousel、Avatar、Badge、Tag、Image、Empty、Result、Skeleton、Table（sortable/selection/bordered/fixed columns）、SelectableList、RichText |
+| 5 | 输入 | `input.rs` | Input、InputNumber、Select、TreeSelect、Cascader、AutoComplete、Mentions、Checkbox、Radio、Switch、Slider、Rate、DatePicker、TimePicker、ColorPicker、Segmented、Form/FormItem |
+| 6 | 数据展示 | `data.rs` | Card、List、Tree、Collapse、Descriptions、Timeline、Calendar、Carousel、Avatar、Badge、Tag、Image、Empty、Result、Skeleton、Table、SelectableList、RichText |
 | 7 | 反馈 | `feedback.rs` | Alert、Message、Notification、ProgressBar、Spin、Modal、Drawer、Tooltip、Popover、Popconfirm |
-| 8 | 图表 | `charts.rs` | BarChart、LineChart（多系列）、PieChart |
-| 9 | 其他 | `other.rs` | Transfer、Upload、QRCode、Watermark、canvas、DesignTokens、Accessibility |
+| 8 | 图表 | `charts.rs` | BarChart、LineChart、PieChart |
+| 9 | 其他 | `other.rs` | Transfer、Upload、QRCode、Watermark、DesignTokens |
 | 10 | 覆盖清单 | `gallery.rs` | 交互式覆盖矩阵；点击 ✓ 行跳转对应页 |
 
 机器可读矩阵 → [`demos/gallery.rs`](src/demos/gallery.rs) 中 `COVERAGE` 常量。
 
 ## 覆盖矩阵摘要
 
-| 分类 | 项目 | 说明 |
-|------|------|------|
-| 通用 | 10/10 | 含 ConfigProvider、Size 系统 |
-| 布局 | 9/9 | 含 Grid responsive、VirtualScroll |
+| 分类 | 已展示 | 说明 |
+|------|--------|------|
+| 通用 | 9/9 | 含 FloatButtonBackTop |
+| 布局 | 9/9 | 含 ScrollView、Layout 区段 |
 | 导航 | 11/11 | 含 Navigation/NavGroup builder |
-| 输入 | 16/16 | Form + FormItem 分开展示、含 Form validation |
-| 数据展示 | 18/18 | 含 Table sortable/selection/bordered/fixed columns |
+| 输入 | 16/16 | Form + FormItem 分开展示 |
+| 数据展示 | 18/18 | 含 Table、SelectableList、RichText |
 | 反馈 | 10/10 | Overlay 浮层集中在反馈页 |
-| 图表 | 3/3 | Bar / Line（多系列）/ Pie |
-| 其他 | 9/9 | 含 canvas、Accessibility |
-| 应用能力 | 11/11 | 含 Computed、Effect、Animation |
+| 图表 | 3/3 | Bar / Line / Pie |
+| 其他 | 7/7 | Transfer、Upload、自定义 component! |
+| 应用能力 | 8/8 | Timer 在 `on_start` 注册；多窗口见覆盖清单说明 |
 | CLI | 10 项 | `--cli` 模式 |
 
 ## 演示 gap
