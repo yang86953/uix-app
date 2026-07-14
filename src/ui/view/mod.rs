@@ -7,7 +7,7 @@ use crate::core::{EdgeInsets, Point, Rect};
 use crate::draw::Color;
 use crate::ui::event::{HandlerRegistration, SemanticEvent, SemanticKind};
 use crate::ui::render_handler::RenderHandlerRegistration;
-use crate::ui::style::{ColorValue, Style, TypographyToken};
+use crate::ui::style::{BoxShadowDef, ColorValue, Style, TypographyToken};
 use crate::ui::traits::WidgetComponent;
 
 pub(crate) mod adapter;
@@ -101,6 +101,20 @@ impl ViewNode {
         self
     }
 
+    /// 设置水平内边距，并保留已有的垂直内边距。
+    pub fn padding_h(mut self, value: f32) -> Self {
+        self.style.padding.left = value;
+        self.style.padding.right = value;
+        self
+    }
+
+    /// 设置垂直内边距，并保留已有的水平内边距。
+    pub fn padding_v(mut self, value: f32) -> Self {
+        self.style.padding.top = value;
+        self.style.padding.bottom = value;
+        self
+    }
+
     pub fn margin(mut self, m: impl Into<EdgeInsets>) -> Self {
         self.style.margin = m.into();
         self
@@ -174,6 +188,12 @@ impl ViewNode {
 
     pub fn opacity(mut self, o: f32) -> Self {
         self.style.opacity = o;
+        self
+    }
+
+    /// 设置以节点边界为中心、无偏移的盒阴影。
+    pub fn shadow(mut self, blur: f32, color: impl Into<Color>) -> Self {
+        self.style.box_shadow = Some(BoxShadowDef::new(color.into(), blur, 0.0, 0.0));
         self
     }
 
