@@ -22,7 +22,7 @@ use crate::app::window_session::WindowSession;
 use crate::core::WindowId;
 use crate::native::agent_transport::{
     connect_for_test, discovery_permissions_are_private_for_test,
-    endpoint_permissions_are_private_for_test,
+    endpoint_permissions_are_private_for_test, peer_user_ids_match_for_test,
 };
 use crate::native::traits::event::EventLoopWaker;
 use crate::tests::common::NullEngine;
@@ -57,6 +57,12 @@ fn authenticate(protocol: &mut AgentProtocolSession, token: &[u8; 32]) {
     let value = reply_json(&reply);
     assert_eq!(value["ok"], true);
     assert!(!reply.close_connection());
+}
+
+#[test]
+fn unix_peer_admission_accepts_only_the_endpoint_user_id() {
+    assert!(peer_user_ids_match_for_test(1000, 1000));
+    assert!(!peer_user_ids_match_for_test(1000, 1001));
 }
 
 #[test]
