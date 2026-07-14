@@ -535,5 +535,6 @@ impl WidgetCore for BoxedWidget {
 pub(crate) mod text_selection;
 pub(crate) mod tree_core;
 pub(crate) mod tree_dirty;
+pub(crate) mod tree_dynamic;
 pub(crate) mod tree_events;
 pub use tree_core::WidgetTree;

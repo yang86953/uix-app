@@ -1942,8 +1942,9 @@ fn authored_widget_callbacks_live_in_keyed_side_tables() {
     );
     assert!(
         render_handlers.contains("HashMap<ComponentId, ExpandRenderer>")
+            && render_handlers.contains("render_table_expand_view")
             && render_handlers.contains("clear_component"),
-        "table expand renderers must be keyed by ComponentId and cleared with node lifecycle"
+        "table expand View factories must be keyed by ComponentId and cleared with node lifecycle"
     );
     assert!(
         !virtual_scroll_component.contains("Box<dyn Fn")

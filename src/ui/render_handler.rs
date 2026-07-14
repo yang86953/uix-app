@@ -5,7 +5,8 @@ use std::collections::HashMap;
 use crate::core::ComponentId;
 use crate::ui::core::widget::WidgetNode;
 use crate::ui::foundation::virtual_scroll::VirtualScrollRenderer;
-use crate::ui::widgets::display::table::ExpandRenderer;
+use crate::ui::view::{ViewAdapter, ViewNode};
+use crate::ui::widgets::display::table::{ExpandRenderer, TableRow};
 
 pub(crate) enum RenderHandlerRegistration {
     TableExpand(ExpandRenderer),
@@ -37,8 +38,22 @@ impl RenderHandlerTable {
         }
     }
 
-    pub(crate) fn table_expand(&self, component: ComponentId) -> Option<&ExpandRenderer> {
-        self.table_expand.get(&component)
+    pub(crate) fn render_table_expand_view(
+        &self,
+        component: ComponentId,
+        row: &TableRow,
+    ) -> Option<ViewNode> {
+        let renderer = self.table_expand.get(&component)?;
+        Some(ViewAdapter::capture_root(|| renderer(row)))
+    }
+
+    pub(crate) fn render_table_expand_widget(
+        &self,
+        component: ComponentId,
+        row: &TableRow,
+    ) -> Option<WidgetNode> {
+        self.render_table_expand_view(component, row)
+            .map(ViewAdapter::expand)
     }
 
     pub(crate) fn render_virtual_scroll_items(
@@ -61,7 +76,6 @@ impl RenderHandlerTable {
         self.virtual_scroll_item.clear();
     }
 
-    #[cfg(test)]
     pub(crate) fn contains_table_expand(&self, component: ComponentId) -> bool {
         self.table_expand.contains_key(&component)
     }

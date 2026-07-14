@@ -66,7 +66,7 @@ fn expandable_builder_forwards_documented_table_flags() {
     let tree = ViewAdapter::build(
         Table::new()
             .rows(vec![vec!["Ada".to_owned()]])
-            .expandable(48.0, |_row, _ctx, _rect| {})
+            .expandable(48.0, |_row| crate::ui::view::label("Details"))
             .sortable(true)
             .selection(true)
             .bordered(true),
