@@ -206,6 +206,25 @@ impl GridBuilder {
         self
     }
 
+    /// 切换为 24 单元响应式 Grid。
+    pub fn responsive(mut self) -> Self {
+        self.style.grid_template_columns.clear();
+        self.widget = crate::ui::widgets::Grid::responsive();
+        self
+    }
+
+    pub fn breakpoints(mut self, breakpoints: crate::ui::widgets::Breakpoints) -> Self {
+        self.style.grid_template_columns.clear();
+        self.widget = self.widget.breakpoints(breakpoints);
+        self
+    }
+
+    pub fn cols(mut self, cols: Vec<crate::ui::widgets::Col>) -> Self {
+        self.style.grid_template_columns.clear();
+        self.widget = self.widget.cols(cols);
+        self
+    }
+
     pub fn gap(mut self, gap: f32) -> Self {
         self.style = self.style.with_gap(gap).with_grid_gap(gap, gap);
         self.widget = self.widget.gap(gap);

@@ -58,6 +58,21 @@ pub fn page_layout(ctx: &DemoCtx<'_>) -> ViewNode {
             tree! { Container::new().size(200.0, 60.0).bg(tk.color_info_bg).rounded(tk.border_radius_sm) =>
                 [Label::new("2fr").color(tk.color_info).font_size(13.0)]},
         ]})
+        .section("Grid — 响应式 24 栅格")
+        .push(tree! { Grid::responsive()
+            .cols(vec![
+                Col::new().span(24).sm(12).md(8).lg(6),
+                Col::new().span(24).sm(12).md(8).lg(6),
+                Col::new().span(24).sm(12).md(8).lg(6),
+            ])
+            .gap(4.0).justify(JustifyContent::Stretch).size(INNER_W, 120.0) => [
+            tree! { Container::new().bg(tk.color_primary_bg).rounded(tk.border_radius_sm) =>
+                [Label::new("24 / 12 / 8 / 6").color(tk.color_primary).font_size(12.0)]},
+            tree! { Container::new().bg(tk.color_warning_bg).rounded(tk.border_radius_sm) =>
+                [Label::new("按 logical 宽度切换").color(tk.color_warning).font_size(12.0)]},
+            tree! { Container::new().bg(tk.color_success_bg).rounded(tk.border_radius_sm) =>
+                [Label::new("resize 自动重排").color(tk.color_success).font_size(12.0)]},
+        ]})
         .section("Layout — Header / Sider / Content / Footer")
         .push(tree! { Layout::new().bg(tk.color_bg_layout) => [
             Header::new(36.0).bg(tk.color_primary_bg),
