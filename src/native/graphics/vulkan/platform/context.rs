@@ -298,6 +298,13 @@ impl VulkanContext {
     }
 
     #[cfg(test)]
+    pub(crate) fn device_fault_reporting_enabled_for_test(&self) -> bool {
+        self.device_lease
+            .as_ref()
+            .is_some_and(|device| device.fault_reporting_enabled())
+    }
+
+    #[cfg(test)]
     pub(crate) fn mark_shared_device_lost_for_test(&self) {
         if let Some(device) = self.device_lease.as_ref() {
             device.mark_lost();
