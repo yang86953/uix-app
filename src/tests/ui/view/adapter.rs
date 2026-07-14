@@ -799,6 +799,7 @@ fn reconcile_table_preserves_runtime_selection_and_syncs_config() {
                 vec!["Grace".to_string()],
                 vec!["Lin".to_string()],
             ])
+            .selection(true)
             .page_size(2),
     ));
     let root_id = tree.root_id().expect("table root should exist");
@@ -840,6 +841,9 @@ fn reconcile_table_preserves_runtime_selection_and_syncs_config() {
                 .row_height(36.0)
                 .empty_text("No rows")
                 .expandable(72.0, |_idx, _ctx, _rect| {})
+                .sortable(true)
+                .selection(true)
+                .bordered(true)
                 .page_size(8),
         ),
     );
@@ -861,6 +865,7 @@ fn reconcile_table_preserves_runtime_selection_and_syncs_config() {
                 title: "City".to_string(),
                 width: 96.0,
                 sortable: false,
+                sort_direction: crate::ui::widgets::SortDirection::None,
                 filterable: true,
                 filters: Vec::new(),
             }],
@@ -869,6 +874,11 @@ fn reconcile_table_preserves_runtime_selection_and_syncs_config() {
             header_h: 32.0,
             expandable: true,
             expand_height: 72.0,
+            sortable: true,
+            selection: true,
+            bordered: true,
+            selected_row: Some(1),
+            checked_rows: vec![0],
             empty_text: "No rows".to_string(),
             page_size: 8,
         }

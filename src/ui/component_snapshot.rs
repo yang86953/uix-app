@@ -19,11 +19,11 @@ use crate::ui::widgets::{
     Pagination, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement,
     PopoverTrigger, ProgressBar, ProgressMode, ProgressType, QRCode, Radio, RadioDirection, Rate,
     ResultType, ResultView, RichText, RichTextSegment, ScrollView, Segmented, Select,
-    SelectableItem, SelectableList, Sider, Skeleton, SkeletonShape, Slider, Space, SpaceSize, Spin,
-    SpinSize, Splitter, Step, Steps, Switch, Tab, TabPosition, Table, TableColumn, TableRow, Tabs,
-    Tag, TagColor, ThemeToggle, TimePicker, Timeline, TimelineItem, Tooltip, TooltipPlacement,
-    Transfer, TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography, TypographyType,
-    Upload, Watermark,
+    SelectableItem, SelectableList, Sider, Skeleton, SkeletonShape, Slider, SortDirection, Space,
+    SpaceSize, Spin, SpinSize, Splitter, Step, Steps, Switch, Tab, TabPosition, Table, TableColumn,
+    TableRow, Tabs, Tag, TagColor, ThemeToggle, TimePicker, Timeline, TimelineItem, Tooltip,
+    TooltipPlacement, Transfer, TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography,
+    TypographyType, Upload, Watermark,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -283,6 +283,7 @@ pub struct SnapshotTableColumn {
     pub title: String,
     pub width: f32,
     pub sortable: bool,
+    pub sort_direction: SortDirection,
     pub filterable: bool,
     pub filters: Vec<String>,
 }
@@ -293,6 +294,7 @@ impl SnapshotTableColumn {
             title: column.title.clone(),
             width: column.width,
             sortable: column.sortable,
+            sort_direction: column.sort_direction,
             filterable: column.filterable,
             filters: column
                 .filters
@@ -770,6 +772,11 @@ pub enum SnapshotFields {
         header_h: f32,
         expandable: bool,
         expand_height: f32,
+        sortable: bool,
+        selection: bool,
+        bordered: bool,
+        selected_row: Option<usize>,
+        checked_rows: Vec<usize>,
         empty_text: String,
         page_size: usize,
     },
