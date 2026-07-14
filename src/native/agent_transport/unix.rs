@@ -133,6 +133,13 @@ pub(super) fn discovery_permissions_are_private_for_test(path: &Path) -> io::Res
     Ok(Some(fs::metadata(path)?.permissions().mode() & 0o077 == 0))
 }
 
+#[cfg(test)]
+pub(super) fn endpoint_permissions_are_private_for_test(
+    endpoint: &str,
+) -> io::Result<Option<bool>> {
+    discovery_permissions_are_private_for_test(Path::new(endpoint))
+}
+
 fn private_discovery_directory() -> io::Result<PathBuf> {
     let effective_uid = unsafe {
         // SAFETY: `geteuid` has no arguments and no memory safety preconditions.
