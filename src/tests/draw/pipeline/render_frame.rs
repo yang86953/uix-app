@@ -95,6 +95,9 @@ impl GraphicsEngine for RecordingEngine {
             UpdateStrategy::DirtyRects(rects) => {
                 RenderOutcome::FrameReady(DamageRegion::partial(rects))
             }
+            UpdateStrategy::ScrollCopies { dirty_rects, .. } => {
+                RenderOutcome::FrameReady(DamageRegion::partial(dirty_rects))
+            }
         }
     }
 
@@ -122,6 +125,7 @@ impl GraphicsEngine for RecordingEngine {
             presentation_mode: self.presentation_mode,
             partial_redraw: self.partial_redraw,
             offscreen: true,
+            scroll_memmove: self.partial_redraw,
         }
     }
 
@@ -2610,6 +2614,9 @@ fn scroll_move_expands_dirty_strategy_to_include_viewport() {
         .expect("begin_frame must be called");
     let rects = match strategy {
         UpdateStrategy::DirtyRects(rs) => rs.clone(),
+        UpdateStrategy::ScrollCopies {
+            dirty_rects: rs, ..
+        } => rs.clone(),
         UpdateStrategy::FullRedraw => panic!("partial scroll must stay DirtyRects, got FullRedraw"),
     };
     let bounds = rects.iter().fold(Rect::zero(), |acc, r| acc.union(r));

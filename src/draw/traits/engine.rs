@@ -3,16 +3,40 @@
 pub use crate::draw::engine::RenderOutcome;
 
 use super::canvas::Canvas2D;
-use crate::core::{Error, Rect};
+use crate::core::{Error, Point, Rect};
 use crate::draw::pipeline::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::primitives::types::ImageHandle;
 use crate::native::traits::present::PresentTestResult;
+
+/// 一次保留缓冲内的滚动像素移动。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScrollCopy {
+    pub viewport: Rect,
+    pub delta: Point,
+}
+
+impl ScrollCopy {
+    pub const fn new(viewport: Rect, dx: f32, dy: f32) -> Self {
+        Self {
+            viewport,
+            delta: Point::new(dx, dy),
+        }
+    }
+}
 
 /// 帧更新策略。
 #[derive(Debug, Clone)]
 pub enum UpdateStrategy {
     FullRedraw,
     DirtyRects(Vec<Rect>),
+    /// 先移动滚动像素，再清除并重绘暴露区。
+    ///
+    /// 仅允许具备 `scroll_memmove` 的局部重绘后端执行；其余后端必须
+    /// 在帧边界提升为 `FullRedraw`，不能静默跳过像素移动。
+    ScrollCopies {
+        dirty_rects: Vec<Rect>,
+        copies: Vec<ScrollCopy>,
+    },
 }
 
 impl UpdateStrategy {
@@ -20,14 +44,12 @@ impl UpdateStrategy {
         match self {
             UpdateStrategy::FullRedraw => None,
             UpdateStrategy::DirtyRects(rects) => Some(rects),
+            UpdateStrategy::ScrollCopies { dirty_rects, .. } => Some(dirty_rects),
         }
     }
 
     pub fn should_clear(&self) -> bool {
-        matches!(
-            self,
-            UpdateStrategy::FullRedraw | UpdateStrategy::DirtyRects(_)
-        )
+        true
     }
 }
 
@@ -47,6 +69,8 @@ pub struct GraphicsCapabilities {
     pub partial_redraw: bool,
     /// 是否支持 Picture 离屏缓存（`create_offscreen` / blit）。
     pub offscreen: bool,
+    /// 保留缓冲是否支持帧内重叠安全的滚动像素移动。
+    pub scroll_memmove: bool,
 }
 
 impl GraphicsCapabilities {
@@ -55,6 +79,7 @@ impl GraphicsCapabilities {
             presentation_mode: PresentationMode::ExternalPresenter,
             partial_redraw: true,
             offscreen: true,
+            scroll_memmove: true,
         }
     }
 
@@ -63,6 +88,7 @@ impl GraphicsCapabilities {
             presentation_mode: PresentationMode::EngineManaged,
             partial_redraw: false,
             offscreen: false,
+            scroll_memmove: false,
         }
     }
 
@@ -72,6 +98,7 @@ impl GraphicsCapabilities {
             presentation_mode: PresentationMode::EngineManaged,
             partial_redraw: false,
             offscreen: true,
+            scroll_memmove: false,
         }
     }
 
@@ -85,6 +112,10 @@ impl GraphicsCapabilities {
 
     pub fn supports_offscreen(self) -> bool {
         self.offscreen
+    }
+
+    pub fn supports_scroll_memmove(self) -> bool {
+        self.partial_redraw && self.scroll_memmove
     }
 }
 

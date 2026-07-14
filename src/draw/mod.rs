@@ -46,6 +46,6 @@ pub use spatial::{
     Quad2D, Ray3D, SpatialContext, Vec2, Vec3, Vec4, AABB3D,
 };
 pub use traits::{
-    Canvas2D, GraphicsCapabilities, GraphicsEngine, PresentationMode, RenderingBackend,
+    Canvas2D, GraphicsCapabilities, GraphicsEngine, PresentationMode, RenderingBackend, ScrollCopy,
     TextBackend, UpdateStrategy,
 };
