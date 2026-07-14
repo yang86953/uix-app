@@ -28,22 +28,22 @@ pub use crate::ui::{
     Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus, BarChart,
     BarData, Breadcrumb, BreadcrumbItem, BreakpointError, Breakpoints, Button, Calendar, Card,
     Carousel, Cascader, CascaderOption, CascaderValue, Checkbox, Col, Collapse, CollapsePanel,
-    ColorPicker, Content, Date, DatePicker, Descriptions, DescriptionsItem, Divider,
-    DividerDirection, DividerOrientation, Drawer, DrawerPlacement, Dropdown, Empty, FieldError,
-    FloatButton, FloatButtonBackTop, Footer, Form, FormBuilder, FormItem, FormLayout, FormModel,
-    Grid, Header, Icon, Image, Input, InputNumber, InputNumberValue, IntoFormValue, Label, Layout,
-    LineChart, LineData, List, Mentions, Menu, MenuItem, MenuMode, Message, MessageItem, Modal,
-    ModalBuilder, ModalContext, NavGroup, NavItem, Navigation, Notification, NotificationItem,
-    OptGroup, Pagination, PickerMode, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover,
-    PopoverPlacement, PopoverTrigger, ProgressBar, ProgressMode, ProgressType, QRCode, Radio,
-    RadioDirection, Rate, ResultType, ResultView, RichText, RichTextSegment, RichTextStyle,
-    ScrollView, Segmented, Select, SelectableItem, SelectableList, SharedActive, Sider, Skeleton,
-    SkeletonShape, Slider, SortDirection, Space, SpaceSize, Spin, SpinSize, Splitter, Step,
-    StepStatus, Steps, Switch, Tab, TabPosition, Table, TableBuilder, TableChange, TableColumn,
-    TableRow, Tabs, Tag, TagColor, ThemeToggle, Time, TimePicker, Timeline, TimelineItem, Tooltip,
-    TooltipPlacement, Transfer, TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography,
-    TypographyType, Upload, UploadFile, UploadStatus, ValidateStatus, Values, VirtualScroll,
-    VirtualScrollBuilder, Watermark, Weekday,
+    ColorPicker, Content, Date, DatePicker, DateRangePicker, Descriptions, DescriptionsItem,
+    Divider, DividerDirection, DividerOrientation, Drawer, DrawerPlacement, Dropdown, Empty,
+    FieldError, FloatButton, FloatButtonBackTop, Footer, Form, FormBuilder, FormItem, FormLayout,
+    FormModel, Grid, Header, Icon, Image, Input, InputNumber, InputNumberValue, IntoFormValue,
+    Label, Layout, LineChart, LineData, List, Mentions, Menu, MenuItem, MenuMode, Message,
+    MessageItem, Modal, ModalBuilder, ModalContext, NavGroup, NavItem, Navigation, Notification,
+    NotificationItem, OptGroup, Pagination, PickerMode, PieChart, PieData, Popconfirm,
+    PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger, PresetDate, ProgressBar,
+    ProgressMode, ProgressType, QRCode, Radio, RadioDirection, Rate, ResultType, ResultView,
+    RichText, RichTextSegment, RichTextStyle, ScrollView, Segmented, Select, SelectableItem,
+    SelectableList, SharedActive, Sider, Skeleton, SkeletonShape, Slider, SortDirection, Space,
+    SpaceSize, Spin, SpinSize, Splitter, Step, StepStatus, Steps, Switch, Tab, TabPosition, Table,
+    TableBuilder, TableChange, TableColumn, TableRow, Tabs, Tag, TagColor, ThemeToggle, Time,
+    TimePicker, Timeline, TimelineItem, Tooltip, TooltipPlacement, Transfer, TransferItem, Tree,
+    TreeNode, TreeSelect, TriggerMode, Typography, TypographyType, Upload, UploadFile,
+    UploadStatus, ValidateStatus, Values, VirtualScroll, VirtualScrollBuilder, Watermark, Weekday,
 };
 pub use crate::ui::{Animation, Easing};
 
@@ -241,6 +241,8 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<ColorPicker>();
     assert_exported::<Container>();
     assert_exported::<DatePicker>();
+    assert_exported::<DateRangePicker>();
+    assert_exported::<PresetDate>();
     assert_exported::<PickerMode>();
     assert_exported::<Weekday>();
     assert_exported::<Descriptions>();

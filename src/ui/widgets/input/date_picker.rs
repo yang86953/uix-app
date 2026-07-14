@@ -69,7 +69,7 @@ impl Weekday {
         matches!(self, Self::Saturday | Self::Sunday)
     }
 
-    const fn monday_index(self) -> usize {
+    pub(crate) const fn monday_index(self) -> usize {
         match self {
             Self::Monday => 0,
             Self::Tuesday => 1,
@@ -447,14 +447,14 @@ impl Default for DatePicker {
     }
 }
 
-fn next_month(y: i32, m: usize) -> (i32, usize) {
+pub(crate) fn next_month(y: i32, m: usize) -> (i32, usize) {
     if m >= 12 {
         (y + 1, 1)
     } else {
         (y, m + 1)
     }
 }
-fn prev_month(y: i32, m: usize) -> (i32, usize) {
+pub(crate) fn prev_month(y: i32, m: usize) -> (i32, usize) {
     if m <= 1 {
         (y - 1, 12)
     } else {
@@ -462,34 +462,40 @@ fn prev_month(y: i32, m: usize) -> (i32, usize) {
     }
 }
 
-fn add_days(date: Date, days: i64) -> Date {
-    let mut remaining = days;
-    let mut year = date.year;
-    let mut month = date.month;
-    let mut day = date.day;
+pub(crate) fn add_days(date: Date, days: i64) -> Date {
+    let minimum = civil_day_number(Date::new(i32::MIN, 1, 1));
+    let maximum = civil_day_number(Date::new(i32::MAX, 12, 31));
+    let target = civil_day_number(date)
+        .saturating_add(days)
+        .clamp(minimum, maximum);
+    date_from_civil_day_number(target)
+}
 
-    while remaining < 0 {
-        if day > 1 {
-            let step = remaining.unsigned_abs().min((day - 1) as u64) as usize;
-            day -= step;
-            remaining += step as i64;
-        } else {
-            (year, month) = prev_month(year, month);
-            day = days_in_month(year, month);
-            remaining += 1;
-        }
+fn civil_day_number(date: Date) -> i64 {
+    let mut year = i64::from(date.year);
+    if date.month <= 2 {
+        year -= 1;
     }
-    while remaining > 0 {
-        let last_day = days_in_month(year, month);
-        if day < last_day {
-            let step = (remaining as usize).min(last_day - day);
-            day += step;
-            remaining -= step as i64;
-        } else {
-            (year, month) = next_month(year, month);
-            day = 1;
-            remaining -= 1;
-        }
+    let era = year.div_euclid(400);
+    let year_of_era = year - era * 400;
+    let shifted_month = date.month as i64 + if date.month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * shifted_month + 2) / 5 + date.day as i64 - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era
+}
+
+fn date_from_civil_day_number(day_number: i64) -> Date {
+    let era = day_number.div_euclid(146_097);
+    let day_of_era = day_number - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let mut year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let shifted_month = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * shifted_month + 2) / 5 + 1;
+    let month = shifted_month + if shifted_month < 10 { 3 } else { -9 };
+    if month <= 2 {
+        year += 1;
     }
-    Date::new(year, month, day)
+    Date::new(year as i32, month as usize, day as usize)
 }

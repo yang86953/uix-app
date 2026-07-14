@@ -186,6 +186,9 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     if let Some(date_picker) = component.downcast_ref::<DatePicker>() {
         return date_picker.snapshot_fields();
     }
+    if let Some(date_range_picker) = component.downcast_ref::<DateRangePicker>() {
+        return date_range_picker.snapshot_fields();
+    }
     if let Some(time_picker) = component.downcast_ref::<TimePicker>() {
         return time_picker.snapshot_fields();
     }

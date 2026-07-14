@@ -2,13 +2,13 @@ use crate::ui::foundation::virtual_scroll::VirtualScroll;
 use crate::ui::widgets::{
     Affix, Alert, Anchor, AutoComplete, Avatar, BackTop, Badge, BarChart, Breadcrumb, Button,
     Calendar, Card, Carousel, Cascader, Checkbox, Collapse, ColorPicker, Container, Content,
-    DatePicker, Descriptions, Divider, Drawer, Dropdown, Empty, FloatButton, Footer, Form,
-    FormItem, Grid, Header, Icon, Image, Input, InputNumber, Label, Layout, LineChart, List,
-    Mentions, Menu, Message, Modal, NavItem, Notification, Pagination, PieChart, Popconfirm,
-    Popover, ProgressBar, QRCode, Radio, Rate, ResultView, RichText, ScrollView, Segmented, Select,
-    SelectableList, Sider, Skeleton, Slider, Space, Spin, Splitter, Steps, Switch, Table, Tabs,
-    Tag, ThemeToggle, TimePicker, Timeline, Tooltip, Transfer, Tree, TreeSelect, Typography,
-    Upload, Watermark,
+    DatePicker, DateRangePicker, Descriptions, Divider, Drawer, Dropdown, Empty, FloatButton,
+    Footer, Form, FormItem, Grid, Header, Icon, Image, Input, InputNumber, Label, Layout,
+    LineChart, List, Mentions, Menu, Message, Modal, NavItem, Notification, Pagination, PieChart,
+    Popconfirm, Popover, ProgressBar, QRCode, Radio, Rate, ResultView, RichText, ScrollView,
+    Segmented, Select, SelectableList, Sider, Skeleton, Slider, Space, Spin, Splitter, Steps,
+    Switch, Table, Tabs, Tag, ThemeToggle, TimePicker, Timeline, Tooltip, Transfer, Tree,
+    TreeSelect, Typography, Upload, Watermark,
 };
 use crate::ui::WidgetComponent;
 
@@ -117,6 +117,7 @@ pub(crate) fn patch_builtin_widget(
     patch_as!(ColorPicker);
     patch_as!(AutoComplete);
     patch_as!(DatePicker);
+    patch_as!(DateRangePicker);
     patch_as!(TimePicker);
     patch_as!(Mentions);
     patch_as!(Message);
