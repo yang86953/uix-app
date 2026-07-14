@@ -196,7 +196,10 @@ impl DisplayList {
 
     /// 重放到 `PaintContext`（不再二次录制）。
     pub fn replay(&self, ctx: &mut PaintContext<'_>) {
-        ctx.set_record_ops(false);
+        ctx.with_recording_disabled(|ctx| self.replay_unrecorded(ctx));
+    }
+
+    fn replay_unrecorded(&self, ctx: &mut PaintContext<'_>) {
         for op in &self.ops {
             match op {
                 PaintOp::FillRect {
@@ -366,7 +369,6 @@ impl DisplayList {
                 PaintOp::Restore => ctx.restore(),
             }
         }
-        ctx.set_record_ops(true);
     }
 
     /// 重放到原始 Canvas（Picture 离屏回放，不含复杂文本布局）。
