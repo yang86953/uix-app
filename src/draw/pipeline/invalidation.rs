@@ -1,6 +1,6 @@
 //! 渲染失效队列 — 所有渲染触发的统一入口（Phase 2 / Phase 6）。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use crate::core::{ComponentId, Rect};
@@ -42,6 +42,7 @@ pub enum Invalidation {
 #[derive(Debug, Clone, Default)]
 pub struct InvalidationQueue {
     pub(crate) items: Vec<Invalidation>,
+    paint_indices: HashMap<NodeId, usize>,
 }
 
 impl InvalidationQueue {
@@ -58,9 +59,9 @@ impl InvalidationQueue {
     pub fn push(&mut self, inv: Invalidation) {
         if let Invalidation::Paint { id, rect } = &inv {
             if let Some(existing) = self
-                .items
-                .iter_mut()
-                .find(|i| matches!(i, Invalidation::Paint { id: eid, .. } if *eid == *id))
+                .paint_indices
+                .get(id)
+                .and_then(|&index| self.items.get_mut(index))
             {
                 if let Invalidation::Paint {
                     rect: existing_rect,
@@ -71,8 +72,16 @@ impl InvalidationQueue {
                 }
                 return;
             }
+            self.paint_indices.insert(*id, self.items.len());
         }
         self.items.push(inv);
+    }
+
+    /// 批量上报失效；调用方可在一个锁临界区内完成一轮更新。
+    pub fn extend(&mut self, invalidations: impl IntoIterator<Item = Invalidation>) {
+        for invalidation in invalidations {
+            self.push(invalidation);
+        }
     }
 
     /// 队列是否无任何失效（0 帧判定入口）。
@@ -120,10 +129,7 @@ impl InvalidationQueue {
         if self.needs_full_frame() {
             return true;
         }
-        self.items.iter().any(|i| match i {
-            Invalidation::Paint { id: pid, .. } => *pid == id,
-            _ => false,
-        })
+        self.paint_indices.contains_key(&id)
     }
 
     /// 将 Paint / Composite 矩形合并为 `DirtyRegion`（供渲染裁剪）。
@@ -156,11 +162,22 @@ impl InvalidationQueue {
     /// 清空队列（帧末或 reset 时调用）。
     pub fn clear(&mut self) {
         self.items.clear();
+        self.paint_indices.clear();
     }
 
     /// 仅移除 Layout 项（layout() 收敛后消费；保留 Paint / Composite 供 present）。
     pub fn clear_layout(&mut self) {
         self.items.retain(|i| !matches!(i, Invalidation::Layout(_)));
+        self.rebuild_paint_indices();
+    }
+
+    fn rebuild_paint_indices(&mut self) {
+        self.paint_indices.clear();
+        for (index, item) in self.items.iter().enumerate() {
+            if let Invalidation::Paint { id, .. } = item {
+                self.paint_indices.insert(*id, index);
+            }
+        }
     }
 }
 
