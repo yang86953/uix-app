@@ -1,6 +1,7 @@
 use super::*;
 use crate::common::page::{
-    INIT_H, INIT_W, INNER_W, PAGE_APP, PAGE_COUNT, PAGE_GENERAL, PAGE_OTHER, PAGE_TITLES, SIDEBAR_W,
+    INIT_H, INIT_W, INNER_W, PAGE_APP, PAGE_COUNT, PAGE_FEEDBACK, PAGE_GENERAL, PAGE_OTHER,
+    PAGE_TITLES, SIDEBAR_W,
 };
 use uix::prelude::{dynamic_label, Button, DesignTokens, Label, Rect, State, SystemEvent};
 use uix::ui::test_harness::{ViewAdapter, WidgetCore};
@@ -300,6 +301,86 @@ fn general_page_has_buttons() {
         buttons.len() >= 4,
         "general page should showcase multiple buttons"
     );
+}
+
+#[test]
+fn feedback_modal_traps_keyboard_focus_between_automation_targets() {
+    use uix::core::Point;
+    use uix::native::traits::input::{KeyCode, KeyMod, MouseButton};
+    use uix::ui::EventResult;
+
+    let active = State::new(PAGE_FEEDBACK);
+    let timer_ticks = State::new(0u32);
+    let anim_time = State::new(0.0f32);
+    let root = app_shell(active, timer_ticks, anim_time);
+    let mut tree = ViewAdapter::build(root);
+    if let Some(root) = tree.root_mut() {
+        root.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+    }
+    tree.layout();
+
+    let modal = tree
+        .traverse()
+        .into_iter()
+        .find(|&id| {
+            tree.get(id)
+                .and_then(|node| node.automation_id())
+                .is_some_and(|automation_id| automation_id == "feedback-focus-modal")
+        })
+        .expect("feedback focus modal automation target");
+    let modal_frame = tree.get(modal).expect("feedback modal node").frame();
+    assert!(
+        modal_frame.w > 0.0 && modal_frame.h > 0.0,
+        "closed modal trigger must be visible on the initial feedback viewport"
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(
+                modal_frame.x + modal_frame.w * 0.5,
+                modal_frame.y + modal_frame.h * 0.5,
+            ),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    tree.layout();
+    assert!(
+        tree.overlay_stack()
+            .top()
+            .is_some_and(|entry| entry.owner() == modal && entry.traps_focus()),
+        "opened feedback Modal must own the top focus trap"
+    );
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Tab,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    let first = tree
+        .managers()
+        .focus
+        .focused_component()
+        .and_then(|id| tree.get(id))
+        .and_then(|node| node.automation_id());
+    assert_eq!(first, Some("feedback-modal-cancel"));
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Tab,
+            mods: KeyMod::SHIFT,
+        }),
+        EventResult::Handled
+    );
+    let reverse = tree
+        .managers()
+        .focus
+        .focused_component()
+        .and_then(|id| tree.get(id))
+        .and_then(|node| node.automation_id());
+    assert_eq!(reverse, Some("feedback-modal-confirm"));
 }
 
 /// sample_block（嵌套无固定尺寸 Space）不得把 Label 压成 0×0。
