@@ -157,12 +157,17 @@ impl<'a> PaintContext<'a> {
     }
 
     fn record_op(&mut self, op: PaintOp) {
-        if self.record_ops {
-            if let Some(mut list) = self.recorder {
-                // Safety: recorder 仅在 with_recorder 闭包内有效，闭包返回后已清除。
-                unsafe {
-                    list.as_mut().push(op);
-                }
+        self.record_op_lazy(|| op);
+    }
+
+    fn record_op_lazy(&mut self, build: impl FnOnce() -> PaintOp) {
+        if !self.record_ops {
+            return;
+        }
+        if let Some(mut list) = self.recorder {
+            // SAFETY: recorder 仅在 with_recorder 闭包内有效，闭包返回前会清除。
+            unsafe {
+                list.as_mut().push(build());
             }
         }
     }
@@ -530,7 +535,7 @@ impl<'a> PaintContext<'a> {
 
     /// 绘制文本（左对齐，顶部对齐）。
     pub fn draw_text(&mut self, text: &str, pos: Point, color: Color, font_size: f32) {
-        self.record_op(PaintOp::DrawText {
+        self.record_op_lazy(|| PaintOp::DrawText {
             text: Arc::from(text),
             pos,
             color,
@@ -551,7 +556,7 @@ impl<'a> PaintContext<'a> {
         color: Color,
         font_size: f32,
     ) {
-        self.record_op(PaintOp::DrawTextBaseline {
+        self.record_op_lazy(|| PaintOp::DrawTextBaseline {
             text: Arc::from(text),
             x,
             baseline_y,
@@ -570,7 +575,7 @@ impl<'a> PaintContext<'a> {
 
     /// 在矩形内居中绘制文本。
     pub fn text_center(&mut self, text: &str, rect: Rect, color: Color, font_size: f32) {
-        self.record_op(PaintOp::TextCenter {
+        self.record_op_lazy(|| PaintOp::TextCenter {
             text: Arc::from(text),
             rect,
             color,
@@ -583,7 +588,7 @@ impl<'a> PaintContext<'a> {
     /// 左对齐、垂直居中的文本绘制。
     pub fn draw_text_in_frame(&mut self, text: &str, rect: Rect, color: Color, font_size: f32) {
         if !text.is_empty() {
-            self.record_op(PaintOp::DrawTextInFrame {
+            self.record_op_lazy(|| PaintOp::DrawTextInFrame {
                 text: Arc::from(text),
                 rect,
                 color,
@@ -596,7 +601,7 @@ impl<'a> PaintContext<'a> {
 
     /// 在矩形内绘制自动换行文本。
     pub fn draw_text_wrapped(&mut self, text: &str, rect: Rect, color: Color, font_size: f32) {
-        self.record_op(PaintOp::DrawTextWrapped {
+        self.record_op_lazy(|| PaintOp::DrawTextWrapped {
             text: Arc::from(text),
             rect,
             color,
@@ -616,7 +621,7 @@ impl<'a> PaintContext<'a> {
         selection: Option<(usize, usize)>,
         selection_bg: Color,
     ) {
-        self.record_op(PaintOp::DrawTextWithSelection {
+        self.record_op_lazy(|| PaintOp::DrawTextWithSelection {
             text: Arc::from(text),
             pos,
             color,

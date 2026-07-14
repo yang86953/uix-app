@@ -168,3 +168,64 @@ fn display_list_recording_covers_extended_2d_paint_operations() {
     assert!(ctx.recording_complete());
     assert_eq!(list.len(), 9);
 }
+
+#[test]
+fn text_ops_are_recorded_only_inside_recorder_scope() {
+    use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
+    use crate::draw::painting::DisplayList;
+    use crate::draw::spatial::Orientation;
+
+    let mut canvas = NoopCanvas2D;
+    let fonts = FontService::new();
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let mut ctx = PaintContext::new_for_test(
+        &mut canvas,
+        FontHandle::default(),
+        &fonts,
+        &images,
+        &tokens,
+        96.0,
+        1.0,
+        Orientation::YDown,
+        100,
+        100,
+    );
+    let mut list = DisplayList::new();
+
+    ctx.draw_text("direct", Point::new(0.0, 0.0), Color::black(), 12.0);
+    assert!(list.is_empty());
+
+    ctx.with_recorder(&mut list, |ctx| {
+        ctx.draw_text("plain", Point::new(0.0, 0.0), Color::black(), 12.0);
+        ctx.draw_text_baseline("baseline", 0.0, 12.0, Color::black(), 12.0);
+        ctx.text_center(
+            "center",
+            Rect::new(0.0, 0.0, 40.0, 20.0),
+            Color::black(),
+            12.0,
+        );
+        ctx.draw_text_in_frame(
+            "frame",
+            Rect::new(0.0, 0.0, 40.0, 20.0),
+            Color::black(),
+            12.0,
+        );
+        ctx.draw_text_wrapped(
+            "wrapped",
+            Rect::new(0.0, 0.0, 40.0, 20.0),
+            Color::black(),
+            12.0,
+        );
+        ctx.draw_text_with_selection(
+            "selected",
+            Point::new(0.0, 0.0),
+            Color::black(),
+            12.0,
+            Some((0, 3)),
+            Color::blue(),
+        );
+    });
+
+    assert_eq!(list.len(), 6);
+}
