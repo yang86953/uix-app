@@ -75,3 +75,35 @@ fn non_positive_duration_finishes_on_the_first_update() {
     assert_eq!(animation.update(0.0), 4.0);
     assert_eq!(finished.load(Ordering::SeqCst), 1);
 }
+
+#[test]
+fn easing_aliases_match_their_documented_curves() {
+    let t = 0.25;
+    assert_eq!(Easing::linear.sample(t), Easing::Linear.sample(t));
+    assert_eq!(Easing::ease_in.sample(t), Easing::QuadIn.sample(t));
+    assert_eq!(Easing::ease_out.sample(t), Easing::QuadOut.sample(t));
+    assert_eq!(Easing::ease_in_out.sample(t), Easing::QuadInOut.sample(t));
+    assert_eq!(Easing::cubic_in.sample(t), Easing::CubicIn.sample(t));
+    assert_eq!(Easing::cubic_out.sample(t), Easing::CubicOut.sample(t));
+    assert_eq!(Easing::cubic_in_out.sample(t), Easing::CubicInOut.sample(t));
+    assert_eq!(
+        Easing::cubic_bezier(0.25, 0.1, 0.25, 1.0),
+        Easing::antd_default()
+    );
+}
+
+#[test]
+fn bounce_and_elastic_preserve_endpoints_and_expose_rebound_motion() {
+    for easing in [Easing::bounce, Easing::elastic] {
+        assert_eq!(easing.sample(0.0), 0.0);
+        assert_eq!(easing.sample(1.0), 1.0);
+    }
+
+    for step in 0..=1000 {
+        let sample = Easing::bounce.sample(step as f64 / 1000.0);
+        assert!((0.0..=1.0).contains(&sample));
+    }
+
+    assert!(Easing::bounce.sample(0.36) > Easing::bounce.sample(0.55));
+    assert!(Easing::elastic.sample(0.1) > 1.0);
+}
