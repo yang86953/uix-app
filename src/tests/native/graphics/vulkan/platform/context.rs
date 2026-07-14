@@ -118,6 +118,12 @@ fn vulkan_present_statuses_are_typed_graphics_failures() {
 }
 
 #[test]
+fn vulkan_drawable_adapter_reuses_the_shared_windows_contract() {
+    assert!(drawable_contract_source()
+        .contains("crate::native::graphics::platform::windows::drawable_size"));
+}
+
+#[test]
 fn vulkan_shutdown_releases_lost_device_but_keeps_other_wait_failures_typed() {
     assert!(accept_device_wait_for_shutdown(Ok(())).is_ok());
     assert!(accept_device_wait_for_shutdown(Err(vk::Result::ERROR_DEVICE_LOST)).is_ok());
@@ -156,8 +162,19 @@ fn windows_vulkan_hardware_resize_readback_and_present() {
     let _ = platform.event_loop().poll_event(&|_| true);
 
     let mut context = VulkanContext::new(surface, 128, 96).expect("VulkanContext");
+    let initial_drawable = win_surface::drawable_size(surface, 128, 96);
     assert_eq!(context.graphics_backend(), GraphicsBackend::Vulkan);
     assert_eq!(context.caps().present, PresentMode::PixelUpload);
+    assert_eq!(
+        (context.width(), context.height()),
+        (initial_drawable.width, initial_drawable.height)
+    );
+    assert!(
+        (context.device_pixel_ratio()
+            - initial_drawable.width as f32 / initial_drawable.logical_width as f32)
+            .abs()
+            < f32::EPSILON
+    );
     assert!(!context.adapter_info.description.trim().is_empty());
     assert_ne!(context.adapter_info.vendor_id, 0);
     assert_ne!(context.adapter_info.device_id, 0);
@@ -184,6 +201,16 @@ fn windows_vulkan_hardware_resize_readback_and_present() {
         context.read_pixels(3, 4, 2, 2).expect("first readback"),
         vec![0xFF12_3456; 4]
     );
+    let mismatch = context
+        .present_pixels(
+            &first_pixels,
+            first_size.0 - 1,
+            first_size.1,
+            PresentDamage::Full,
+        )
+        .expect_err("physical upload mismatch must not be reinterpreted as logical resize");
+    assert_eq!(mismatch.code(), Errc::GraphicsSurfaceLost);
+    assert_eq!((context.width(), context.height()), first_size);
 
     window
         .properties_mut()
@@ -192,7 +219,7 @@ fn windows_vulkan_hardware_resize_readback_and_present() {
     let _ = platform.event_loop().poll_event(&|_| true);
     let drawable = win_surface::drawable_size(surface, 192, 128);
     context
-        .resize(drawable.width, drawable.height)
+        .resize(drawable.logical_width, drawable.logical_height)
         .expect("recreate Vulkan swapchain");
     let resized = (context.width(), context.height());
     assert_ne!(resized, first_size);
@@ -253,7 +280,7 @@ fn windows_vulkan_hardware_resize_present_soak_is_bounded() {
         let _ = platform.event_loop().poll_event(&|_| true);
         let drawable = win_surface::drawable_size(surface, requested.0, requested.1);
         context
-            .resize(drawable.width, drawable.height)
+            .resize(drawable.logical_width, drawable.logical_height)
             .expect("recreate swapchain during soak");
 
         let color = 0xFF00_0000 | ((rounds as u32).wrapping_mul(0x0001_0203) & 0x00FF_FFFF);

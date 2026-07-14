@@ -12,6 +12,9 @@ pub(crate) mod adapter;
 pub(crate) mod context;
 
 #[cfg(any(unix, windows))]
+mod drawable;
+
+#[cfg(any(unix, windows))]
 pub(crate) mod surface;
 
 #[cfg(any(unix, windows))]
