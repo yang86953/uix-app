@@ -113,6 +113,15 @@ pub trait GraphicsEngine: 'static {
 
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D;
 
+    /// 引擎当前采用的 logical viewport；默认等于 Canvas2D extent。
+    ///
+    /// drawable-sized CPU upload 引擎必须覆盖该方法，避免通过单一 DPR
+    /// 反推两个轴时引入独立取整误差。
+    fn logical_extent(&mut self) -> (i32, i32) {
+        let canvas = self.canvas_2d();
+        (canvas.width(), canvas.height())
+    }
+
     /// The sole external platform presenter has accepted the pending frame.
     /// Engine-managed paths must never receive this callback.
     fn external_present_succeeded(&mut self) {}

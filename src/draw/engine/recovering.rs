@@ -205,6 +205,10 @@ impl GraphicsEngine for RecoveringGraphicsEngine {
         self.engine.canvas_2d()
     }
 
+    fn logical_extent(&mut self) -> (i32, i32) {
+        self.engine.logical_extent()
+    }
+
     fn capabilities(&self) -> GraphicsCapabilities {
         self.engine.capabilities()
     }

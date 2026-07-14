@@ -14,5 +14,6 @@ mod session_runtime;
 mod shell;
 mod test_clock;
 mod window;
+mod window_driver;
 mod window_semantics;
 mod window_session;
