@@ -9,8 +9,8 @@ use crate::ui::Placement;
 
 use super::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SelectionSnapshot,
-    SnapshotCollapsePanel, SnapshotField, SnapshotTableColumn, SnapshotTransferItem,
-    SnapshotTreeNode,
+    SnapshotCollapsePanel, SnapshotField, SnapshotTableColumn, SnapshotTableColumnGroup,
+    SnapshotTransferItem, SnapshotTreeNode,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -460,6 +460,7 @@ pub enum SnapshotFields {
     },
     Table {
         columns: Vec<SnapshotTableColumn>,
+        column_groups: Vec<SnapshotTableColumnGroup>,
         rows: Vec<TableRow>,
         row_h: f32,
         header_h: f32,

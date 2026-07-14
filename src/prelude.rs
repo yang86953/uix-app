@@ -52,8 +52,8 @@ pub use crate::ui::{
     ClickEvent, ComponentConfigSnapshot, ComponentHandle, EventResult, HandlerId, HandlerOptions,
     HandlerRegistration, IntoWidgetNode, PaintContext, Placement, SemanticEvent, SemanticKind,
     SemanticPayload, SnapshotCollapsePanel, SnapshotField, SnapshotFields, SnapshotSource,
-    SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue, SystemEvent,
-    SystemEventKind, WidgetChildren,
+    SnapshotTableColumn, SnapshotTableColumnGroup, SnapshotTransferItem, SnapshotTreeNode,
+    SnapshotValue, SystemEvent, SystemEventKind, WidgetChildren,
 };
 pub use crate::ui::{Animation, Easing};
 // ui / components

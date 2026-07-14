@@ -1,6 +1,7 @@
 use crate::tests::common::*;
 use crate::ui::view::adapter::ViewAdapter;
 use crate::ui::widgets::display::table::*;
+use crate::ui::SnapshotTableColumnGroup;
 
 fn click(x: f32, y: f32) -> SystemEvent {
     SystemEvent::PointerDown {
@@ -160,5 +161,50 @@ fn fixed_columns_stay_hittable_after_horizontal_scroll() {
             if columns[0].fixed == Some(Fixed::Left)
                 && columns[3].fixed == Some(Fixed::Right)
                 && columns[3].sort_direction == SortDirection::Asc
+    ));
+}
+
+#[test]
+fn column_groups_create_two_level_headers_and_keep_leaf_sorting() {
+    let mut table = Table::new()
+        .column_groups(vec![
+            TableColumnGroup::new(
+                "Identity",
+                vec![
+                    TableColumn::new("Name", 100.0).sortable(true),
+                    TableColumn::new("Age", 60.0),
+                ],
+            ),
+            TableColumnGroup::column(TableColumn::new("Department", 100.0).sortable(true)),
+        ])
+        .rows(vec![vec!["Ada".into(), "36".into(), "Research".into()]]);
+
+    assert_eq!(table.on_event(&click(20.0, 10.0)), EventResult::NotHandled);
+    assert_eq!(table.on_event(&click(20.0, 42.0)), EventResult::Handled);
+    assert_eq!(table.on_event(&click(200.0, 10.0)), EventResult::Handled);
+    assert_eq!(table.on_event(&click(20.0, 70.0)), EventResult::Handled);
+    assert_eq!(table.selected_row(), Some(0));
+
+    assert!(matches!(
+        table.snapshot_fields(),
+        SnapshotFields::Table {
+            columns,
+            column_groups,
+            ..
+        } if columns.len() == 3
+            && columns[0].sort_direction == SortDirection::None
+            && columns[2].sort_direction == SortDirection::Asc
+            && column_groups == vec![
+                SnapshotTableColumnGroup {
+                    title: Some("Identity".to_owned()),
+                    start: 0,
+                    len: 2,
+                },
+                SnapshotTableColumnGroup {
+                    title: None,
+                    start: 2,
+                    len: 1,
+                },
+            ]
     ));
 }

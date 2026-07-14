@@ -299,6 +299,13 @@ impl SnapshotTableColumn {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SnapshotTableColumnGroup {
+    pub title: Option<String>,
+    pub start: usize,
+    pub len: usize,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SnapshotTransferItem {
     pub key: String,
