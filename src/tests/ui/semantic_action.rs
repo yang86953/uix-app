@@ -212,9 +212,7 @@ fn select_exposes_one_index_contract_and_reuses_keyboard_change_events() {
         })
     );
 
-    let multiple_tree = laid_out_tree(embed(
-        Select::new().options(vec!["Alpha", "Beta"]).multiple(true),
-    ));
+    let multiple_tree = laid_out_tree(embed(Select::multiple().options(vec!["Alpha", "Beta"])));
     let multiple = multiple_tree.root_id().unwrap();
     assert!(!multiple_tree
         .supported_semantic_actions(multiple)
