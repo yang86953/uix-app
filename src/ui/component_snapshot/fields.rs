@@ -547,6 +547,8 @@ pub enum SnapshotFields {
     },
     Grid {
         style: Style,
+        breakpoints: Option<Breakpoints>,
+        cols: Vec<Col>,
     },
 }
 

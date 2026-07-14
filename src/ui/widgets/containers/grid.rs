@@ -14,10 +14,221 @@ use crate::ui::traits::layout::LayoutEngine;
 use crate::ui::{ComponentId, WidgetTree};
 use crate::ui::{SnapshotFields, SnapshotSource};
 
+const RESPONSIVE_GRID_UNITS: usize = 24;
+
+/// 自定义响应式断点无效时返回的 typed 错误。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BreakpointError {
+    NonFinite,
+    Negative,
+    NotStrictlyAscending,
+}
+
+impl std::fmt::Display for BreakpointError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match self {
+            Self::NonFinite => "breakpoints must be finite",
+            Self::Negative => "breakpoints must be nonnegative",
+            Self::NotStrictlyAscending => "breakpoints must be strictly ascending from xs=0",
+        };
+        formatter.write_str(message)
+    }
+}
+
+impl std::error::Error for BreakpointError {}
+
+/// 响应式 Grid 的 logical 宽度断点。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Breakpoints {
+    sm: f32,
+    md: f32,
+    lg: f32,
+    xl: f32,
+    xxl: f32,
+}
+
+impl Breakpoints {
+    /// 构造严格递增的自定义断点；`xs` 固定为 `0`。
+    pub fn new(sm: f32, md: f32, lg: f32, xl: f32, xxl: f32) -> Result<Self, BreakpointError> {
+        let values = [sm, md, lg, xl, xxl];
+        if values.iter().any(|value| !value.is_finite()) {
+            return Err(BreakpointError::NonFinite);
+        }
+        if values.iter().any(|value| *value < 0.0) {
+            return Err(BreakpointError::Negative);
+        }
+        if sm <= 0.0 || values.windows(2).any(|pair| pair[0] >= pair[1]) {
+            return Err(BreakpointError::NotStrictlyAscending);
+        }
+        Ok(Self {
+            sm,
+            md,
+            lg,
+            xl,
+            xxl,
+        })
+    }
+
+    /// Ant Design 的默认断点，单位为 logical px。
+    pub const fn antd() -> Self {
+        Self {
+            sm: 576.0,
+            md: 768.0,
+            lg: 992.0,
+            xl: 1200.0,
+            xxl: 1600.0,
+        }
+    }
+
+    pub const fn xs(self) -> f32 {
+        0.0
+    }
+
+    pub const fn sm(self) -> f32 {
+        self.sm
+    }
+
+    pub const fn md(self) -> f32 {
+        self.md
+    }
+
+    pub const fn lg(self) -> f32 {
+        self.lg
+    }
+
+    pub const fn xl(self) -> f32 {
+        self.xl
+    }
+
+    pub const fn xxl(self) -> f32 {
+        self.xxl
+    }
+}
+
+impl Default for Breakpoints {
+    fn default() -> Self {
+        Self::antd()
+    }
+}
+
+/// 响应式 Grid 中与源顺序子节点一一对应的列配置。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Col {
+    span: u8,
+    sm: Option<u8>,
+    md: Option<u8>,
+    lg: Option<u8>,
+    xl: Option<u8>,
+    xxl: Option<u8>,
+    offset: u8,
+    order: i32,
+}
+
+impl Col {
+    pub const fn new() -> Self {
+        Self {
+            span: RESPONSIVE_GRID_UNITS as u8,
+            sm: None,
+            md: None,
+            lg: None,
+            xl: None,
+            xxl: None,
+            offset: 0,
+            order: 0,
+        }
+    }
+
+    pub fn span(mut self, span: u32) -> Self {
+        self.span = Self::normalize_span(span);
+        self
+    }
+
+    pub fn sm(mut self, span: u32) -> Self {
+        self.sm = Some(Self::normalize_span(span));
+        self
+    }
+
+    pub fn md(mut self, span: u32) -> Self {
+        self.md = Some(Self::normalize_span(span));
+        self
+    }
+
+    pub fn lg(mut self, span: u32) -> Self {
+        self.lg = Some(Self::normalize_span(span));
+        self
+    }
+
+    pub fn xl(mut self, span: u32) -> Self {
+        self.xl = Some(Self::normalize_span(span));
+        self
+    }
+
+    pub fn xxl(mut self, span: u32) -> Self {
+        self.xxl = Some(Self::normalize_span(span));
+        self
+    }
+
+    pub fn offset(mut self, offset: u32) -> Self {
+        self.offset = offset.min((RESPONSIVE_GRID_UNITS - 1) as u32) as u8;
+        self
+    }
+
+    pub fn order(mut self, order: i32) -> Self {
+        self.order = order;
+        self
+    }
+
+    pub const fn base_span(self) -> u8 {
+        self.span
+    }
+
+    pub const fn base_offset(self) -> u8 {
+        self.offset
+    }
+
+    pub const fn visual_order(self) -> i32 {
+        self.order
+    }
+
+    fn span_at(self, width: f32, breakpoints: Breakpoints) -> usize {
+        let mut span = self.span;
+        for (threshold, override_span) in [
+            (breakpoints.sm, self.sm),
+            (breakpoints.md, self.md),
+            (breakpoints.lg, self.lg),
+            (breakpoints.xl, self.xl),
+            (breakpoints.xxl, self.xxl),
+        ] {
+            if width >= threshold {
+                if let Some(value) = override_span {
+                    span = value;
+                }
+            }
+        }
+        span as usize
+    }
+
+    fn effective_offset(self, span: usize) -> usize {
+        (self.offset as usize).min(RESPONSIVE_GRID_UNITS - span)
+    }
+
+    fn normalize_span(span: u32) -> u8 {
+        span.clamp(1, RESPONSIVE_GRID_UNITS as u32) as u8
+    }
+}
+
+impl Default for Col {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 component! {
     /// Grid container widget.
     pub struct Grid {
         pub style: Style,
+        breakpoints: Option<Breakpoints>,
+        cols: Vec<Col>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -105,9 +316,10 @@ component! {
             justify_items: self.style.justify_content,
         };
 
-        let output = engine.layout(content_rect, children);
+        let responsive_children = self.responsive_children(content_rect.w, children);
+        let output = engine.layout(content_rect, &responsive_children);
 
-        children
+        responsive_children
             .iter()
             .zip(output.positions)
             .map(|(child, rect)| (child.id, rect))
@@ -125,6 +337,8 @@ impl SnapshotSource for Grid {
     fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Grid {
             style: self.style.clone(),
+            breakpoints: self.breakpoints,
+            cols: self.cols.clone(),
         }
     }
 }
@@ -133,21 +347,55 @@ impl Grid {
     pub fn new() -> Self {
         Self {
             style: Style::default().with_display(DisplayMode::Grid),
+            breakpoints: None,
+            cols: Vec::new(),
         }
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.style = next.style;
+        self.breakpoints = next.breakpoints;
+        self.cols = next.cols;
     }
 
     pub fn style(mut self, style: Style) -> Self {
         self.style = style.with_display(DisplayMode::Grid);
+        self.ensure_responsive_tracks();
         self
     }
 
     pub fn columns(mut self, cols: Vec<GridTrack>) -> Self {
         self.style.grid_template_columns = cols;
+        self.breakpoints = None;
+        self.cols.clear();
         self
+    }
+
+    /// 创建使用 24 单元栅格和 Ant Design 默认断点的响应式 Grid。
+    pub fn responsive() -> Self {
+        let mut grid = Self::new();
+        grid.breakpoints = Some(Breakpoints::antd());
+        grid.ensure_responsive_tracks();
+        grid
+    }
+
+    /// 设置断点并启用响应式布局。
+    pub fn breakpoints(mut self, breakpoints: Breakpoints) -> Self {
+        self.breakpoints = Some(breakpoints);
+        self.ensure_responsive_tracks();
+        self
+    }
+
+    /// 设置与源顺序子节点对应的列配置并启用响应式布局。
+    pub fn cols(mut self, cols: Vec<Col>) -> Self {
+        self.cols = cols;
+        self.breakpoints.get_or_insert_with(Breakpoints::antd);
+        self.ensure_responsive_tracks();
+        self
+    }
+
+    pub fn is_responsive(&self) -> bool {
+        self.breakpoints.is_some()
     }
 
     pub fn rows(mut self, rows: Vec<GridTrack>) -> Self {
@@ -212,6 +460,7 @@ impl Grid {
     pub fn apply_style(&mut self, style: &Style) {
         self.style = self.style.clone().apply(style.clone());
         self.style.display = DisplayMode::Grid;
+        self.ensure_responsive_tracks();
     }
 
     pub fn two_columns() -> Self {
@@ -240,5 +489,46 @@ impl Grid {
         } else {
             self.style.gap
         }
+    }
+
+    fn ensure_responsive_tracks(&mut self) {
+        if self.breakpoints.is_some() {
+            self.style.grid_template_columns = vec![GridTrack::Fr(1.0); RESPONSIVE_GRID_UNITS];
+        }
+    }
+
+    fn responsive_children(
+        &self,
+        available_width: f32,
+        children: &[LayoutChild],
+    ) -> Vec<LayoutChild> {
+        let Some(breakpoints) = self.breakpoints else {
+            return children.to_vec();
+        };
+
+        let mut configured = children.to_vec();
+        let mut visual_order: Vec<usize> = (0..configured.len()).collect();
+        visual_order.sort_by_key(|index| {
+            (
+                self.cols.get(*index).copied().unwrap_or_default().order,
+                *index,
+            )
+        });
+
+        let mut next_cell = 0usize;
+        for index in visual_order {
+            let col = self.cols.get(index).copied().unwrap_or_default();
+            let span = col.span_at(available_width, breakpoints);
+            let offset = col.effective_offset(span);
+            let current_column = next_cell % RESPONSIVE_GRID_UNITS;
+            if current_column + offset + span > RESPONSIVE_GRID_UNITS {
+                next_cell = next_cell.div_ceil(RESPONSIVE_GRID_UNITS) * RESPONSIVE_GRID_UNITS;
+            }
+            let cell = next_cell + offset;
+            configured[index].grid_cell = Some(cell);
+            configured[index].grid_column_span = span as u32;
+            next_cell = cell + span;
+        }
+        configured
     }
 }

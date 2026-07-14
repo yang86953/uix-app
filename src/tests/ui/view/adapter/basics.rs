@@ -205,6 +205,46 @@ fn grid_style_tracks_drive_layout() {
 }
 
 #[test]
+fn reconcile_grid_syncs_responsive_columns_and_reflows_children() {
+    use crate::ui::view::{grid, label};
+    use crate::ui::widgets::Col;
+
+    let mut tree = ViewAdapter::build(
+        grid([label("A"), label("B")])
+            .responsive()
+            .cols(vec![Col::new().span(12), Col::new().span(12)]),
+    );
+    let root_id = tree.root_id().expect("responsive grid root");
+    tree.get_mut(root_id)
+        .expect("responsive grid root node")
+        .set_frame(Rect::new(0.0, 0.0, 800.0, 200.0));
+    tree.push_layout_invalidation(root_id);
+    tree.layout();
+    let children = tree
+        .get(root_id)
+        .expect("responsive grid before reconcile")
+        .children()
+        .to_vec();
+    assert!(tree.get(children[1]).expect("second child").frame().x > 0.0);
+
+    ViewAdapter::reconcile(
+        &mut tree,
+        grid([label("A"), label("B")])
+            .responsive()
+            .cols(vec![Col::new(), Col::new()]),
+    );
+    tree.layout();
+
+    assert_eq!(tree.root_id(), Some(root_id));
+    assert_eq!(tree.get(children[0]).expect("first child").frame().x, 0.0);
+    assert_eq!(tree.get(children[1]).expect("second child").frame().x, 0.0);
+    assert!(
+        tree.get(children[1]).expect("second child").frame().y
+            > tree.get(children[0]).expect("first child").frame().y
+    );
+}
+
+#[test]
 fn reconcile_reuses_keyed_children_and_updates_label_text() {
     use crate::ui::view::{column, label};
     use crate::ui::widgets::Label;

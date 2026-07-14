@@ -44,7 +44,7 @@ impl WidgetTree {
         };
         match node.component().snapshot_fields() {
             crate::ui::SnapshotFields::Container { style }
-            | crate::ui::SnapshotFields::Grid { style } => {
+            | crate::ui::SnapshotFields::Grid { style, .. } => {
                 (style.width.is_some(), style.height.is_some())
             }
             crate::ui::SnapshotFields::Space {
