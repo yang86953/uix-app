@@ -10,6 +10,7 @@ struct RecordingEngine {
     canvas: NoopCanvas2D,
     events: Vec<&'static str>,
     partial_redraw: bool,
+    scroll_memmove: bool,
     begin_failure: Option<crate::draw::engine::GraphicsFailure>,
     begin_outcome: Option<RenderOutcome>,
     encoded_frame_failure: Option<Error>,
@@ -26,6 +27,7 @@ impl RecordingEngine {
             canvas: NoopCanvas2D,
             events: Vec::new(),
             partial_redraw: true,
+            scroll_memmove: true,
             begin_failure: None,
             begin_outcome: None,
             encoded_frame_failure: None,
@@ -39,6 +41,11 @@ impl RecordingEngine {
 
     fn without_partial_redraw(mut self) -> Self {
         self.partial_redraw = false;
+        self
+    }
+
+    fn without_scroll_memmove(mut self) -> Self {
+        self.scroll_memmove = false;
         self
     }
 
@@ -125,7 +132,7 @@ impl GraphicsEngine for RecordingEngine {
             presentation_mode: self.presentation_mode,
             partial_redraw: self.partial_redraw,
             offscreen: true,
-            scroll_memmove: self.partial_redraw,
+            scroll_memmove: self.scroll_memmove,
         }
     }
 
@@ -2578,7 +2585,7 @@ fn scroll_move_shifts_viewport_content_and_repaints_exposed_strip() {
 /// 视口内已偏移的内容保留上一帧旧像素 → 滚动错乱。并入整窗后
 /// begin_frame 清空并重绘整个视口，所有偏移内容由 paint 重新生成。
 #[test]
-fn scroll_move_expands_dirty_strategy_to_include_viewport() {
+fn scroll_move_uses_copy_strategy_with_exposed_strip_as_paint_region() {
     let mut renderer = FrameRenderer::new();
     let mut engine = RecordingEngine::new();
     let _ = engine.initialize(128, 128);
@@ -2612,34 +2619,31 @@ fn scroll_move_expands_dirty_strategy_to_include_viewport() {
         .last_begin_strategy
         .as_ref()
         .expect("begin_frame must be called");
-    let rects = match strategy {
-        UpdateStrategy::DirtyRects(rs) => rs.clone(),
+    match strategy {
         UpdateStrategy::ScrollCopies {
-            dirty_rects: rs, ..
-        } => rs.clone(),
-        UpdateStrategy::FullRedraw => panic!("partial scroll must stay DirtyRects, got FullRedraw"),
-    };
-    let bounds = rects.iter().fold(Rect::zero(), |acc, r| acc.union(r));
-    // 视口 (0,0,100,100) 四角须落在并入后的 bounds 内
-    let viewport = Rect::new(0.0, 0.0, 100.0, 100.0);
-    for corner in [
-        Point::new(viewport.x, viewport.y),
-        Point::new(viewport.x + viewport.w, viewport.y),
-        Point::new(viewport.x, viewport.y + viewport.h),
-        Point::new(viewport.x + viewport.w, viewport.y + viewport.h),
-    ] {
-        assert!(
-            bounds.contains(corner),
-            "strategy bounds {bounds:?} must cover the scroll viewport corner {corner:?}"
-        );
+            dirty_rects,
+            copies,
+        } => {
+            assert_eq!(dirty_rects, &[Rect::new(0.0, 60.0, 100.0, 40.0)]);
+            assert_eq!(
+                copies,
+                &[crate::draw::ScrollCopy::new(
+                    Rect::new(0.0, 0.0, 100.0, 100.0),
+                    0.0,
+                    40.0,
+                )]
+            );
+        }
+        UpdateStrategy::DirtyRects(_) | UpdateStrategy::FullRedraw => {
+            panic!("eligible scroll must use ScrollCopies")
+        }
     }
 }
 
-/// 滚动帧不应记录 ScrollCopy：begin_frame 先清 exposed strip，ScrollCopy
-/// 会从已清空区读取透明像素，平移到视口顶部反而破坏内容。整窗并入清/绘区
-/// 后由 paint 重新生成偏移内容即可。
+/// 滚动 copy 属于原子 begin_frame 设置，主 FrameEncoder 只记录其后的条带重绘，
+/// 避免 copy 与 clear 被拆到两个可独立失败的提交边界。
 #[test]
-fn scroll_move_does_not_record_scroll_copy() {
+fn scroll_move_keeps_copy_outside_the_main_paint_encoder() {
     let mut renderer = FrameRenderer::new();
     let mut engine = RecordingEngine::new();
     let _ = engine.initialize(128, 128);
@@ -2682,6 +2686,48 @@ fn scroll_move_does_not_record_scroll_copy() {
     });
     assert!(
         !has_scroll_copy,
-        "scroll frame must not record ScrollCopy (begin_frame clears before execution)"
+        "scroll copy must stay in the atomic begin_frame strategy"
     );
+}
+
+#[test]
+fn scroll_move_without_memmove_capability_repaints_the_viewport() {
+    let mut renderer = FrameRenderer::new();
+    let mut engine = RecordingEngine::new().without_scroll_memmove();
+    let _ = engine.initialize(128, 128);
+    let tokens = MockTokens;
+    let fs = FontService::new();
+    let img = ImageService::new();
+    let mut dirty = DirtyRegion::empty();
+    dirty.add_rect(Rect::new(0.0, 60.0, 100.0, 40.0));
+
+    let _ = renderer.render_frame(
+        &mut engine,
+        &EmptyScene::new(),
+        FrameRenderInput {
+            rendered_first: true,
+            dirty_region: &dirty,
+            tree_version: 0,
+            scroll_move: Some(vec![(Rect::new(0.0, 0.0, 100.0, 100.0), 0.0, 40.0)]),
+            theme: ThemeSnapshot::new(&tokens),
+            font: FontHandle::default(),
+            font_service: &fs,
+            image_service: &img,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+
+    match engine.last_begin_strategy.as_ref() {
+        Some(UpdateStrategy::DirtyRects(rects)) => {
+            let bounds = rects
+                .iter()
+                .copied()
+                .reduce(|bounds, rect| bounds.union(&rect))
+                .expect("fallback dirty region");
+            assert_eq!(bounds, Rect::new(0.0, 0.0, 100.0, 100.0));
+        }
+        _ => panic!("unsupported scroll copy must fall back to viewport DirtyRects"),
+    }
 }

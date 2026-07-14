@@ -13,7 +13,7 @@ use crate::draw::painting::ThemeSnapshot;
 use crate::draw::pipeline::{
     frame_recording::FrameRecordingEngine, EncodedFrameExecution, InvalidationSource, RenderMetrics,
 };
-use crate::draw::traits::{GraphicsEngine, UpdateStrategy};
+use crate::draw::traits::{GraphicsEngine, ScrollCopy, UpdateStrategy};
 use crate::draw::{Color, FontHandle, RenderOutcome};
 
 /// 单帧渲染输入。
@@ -91,29 +91,51 @@ impl FrameRenderer {
         }
 
         let frame_start_caps = engine.capabilities();
-        // 绘制策略与 present damage 解耦：
-        // - 绘制区：GPU（!partial_redraw）/首帧/full/empty → 全帧（不裁剪绘制，消除脏数据风险）；
-        //   software 回退保留 dirty-rect 绘制裁剪省 CPU 像素。
-        // - present damage：始终按含 scroll 的 dirty 窄区（首帧/full → Full），与绘制是否全帧无关。
-        // 含 scroll 的 dirty 并集：绘制（software partial）与 damage 共用此几何。
+        let scroll_moves = input.scroll_move.as_deref().unwrap_or_default();
+        // 即使上游只交付 scroll 参数，也由帧边界补齐 exposed strip；调用方仍零维护。
+        let mut dirty_for_paint = input.dirty_region.clone();
+        for &(viewport, dx, dy) in scroll_moves {
+            if let Some(exposed) = scroll_exposed_rect(viewport, dx, dy) {
+                dirty_for_paint.add_rect(exposed);
+            }
+        }
+        let dirty_for_paint = dirty_for_paint.for_paint_clear();
+
+        // 仅在保留缓冲明确支持重叠 memmove，且几何能无损映射到像素时启用。
+        // 任一滚动不满足条件时，整批退回既有整视口重绘，避免同帧部分 copy。
+        let use_scroll_copies = input.rendered_first
+            && !input.dirty_region.full_frame
+            && frame_start_caps.supports_scroll_memmove()
+            && !scroll_moves.is_empty()
+            && scroll_moves
+                .iter()
+                .all(|&(viewport, dx, dy)| valid_scroll_copy(viewport, dx, dy));
+        let scroll_copies = use_scroll_copies.then(|| {
+            scroll_moves
+                .iter()
+                .map(|&(viewport, dx, dy)| ScrollCopy::new(viewport, dx.round(), dy.round()))
+                .collect::<Vec<_>>()
+        });
+
+        // present damage 覆盖所有实际变化像素：即使只重绘 exposed strip，滚动视口
+        // 内的保留像素也发生了移动，外部 presenter 必须提交整个视口。
         let dirty_with_scroll = {
-            // 多块 dirty 升为并集，与 begin_frame clip 一致，避免空隙被父背景盖住
-            let mut r = input.dirty_region.for_paint_clear();
-            // Scroll: 把整个滚动视口并入清/绘区。只清重绘 exposed strip 会
-            // 让视口内已偏移的内容保持上一帧的旧像素（无 ScrollCopy 协作时），
-            // 与新绘的 strip 叠加产生错位/残影。并入整窗后 begin_frame 清空并
-            // 重绘整个视口，所有偏移内容由 paint 重新生成。
-            for (viewport, _, _) in input.scroll_move.as_deref().unwrap_or_default() {
-                if viewport.w > 0.0 && viewport.h > 0.0 {
-                    r.add_rect(*viewport);
+            let mut region = if scroll_moves.is_empty() {
+                input.dirty_region.for_paint_clear()
+            } else {
+                input.dirty_region.clone()
+            };
+            for &(viewport, _, _) in scroll_moves {
+                if valid_frame_rect(viewport) {
+                    region.add_rect(viewport);
                 }
             }
-            r
+            region
         };
 
         let draw_full = !input.rendered_first
             || input.dirty_region.full_frame
-            || input.dirty_region.is_empty()
+            || dirty_for_paint.is_empty()
             || !frame_start_caps.supports_partial_redraw();
         let requested_present_damage = compute_present_damage(
             &dirty_with_scroll,
@@ -122,12 +144,19 @@ impl FrameRenderer {
         );
         let requested_region = if draw_full {
             DirtyRegion::full()
+        } else if use_scroll_copies {
+            dirty_for_paint
         } else {
             dirty_with_scroll
         };
 
         let strategy = if draw_full {
             UpdateStrategy::FullRedraw
+        } else if let Some(copies) = scroll_copies {
+            UpdateStrategy::ScrollCopies {
+                dirty_rects: requested_region.rects().to_vec(),
+                copies,
+            }
         } else {
             UpdateStrategy::DirtyRects(requested_region.rects().to_vec())
         };
@@ -494,6 +523,54 @@ fn compute_present_damage(
         DamageRegion::full()
     } else {
         DamageRegion::partial(rects)
+    }
+}
+
+fn valid_scroll_copy(viewport: Rect, dx: f32, dy: f32) -> bool {
+    if !valid_frame_rect(viewport)
+        || ![viewport.x, viewport.y, viewport.w, viewport.h]
+            .into_iter()
+            .all(|value| value == value.round())
+        || !dx.is_finite()
+        || !dy.is_finite()
+    {
+        return false;
+    }
+    let dx = dx.round();
+    let dy = dy.round();
+    (dx != 0.0 || dy != 0.0)
+        && (dx == 0.0 || dx.abs() < viewport.w)
+        && (dy == 0.0 || dy.abs() < viewport.h)
+}
+
+fn scroll_exposed_rect(viewport: Rect, dx: f32, dy: f32) -> Option<Rect> {
+    if !valid_frame_rect(viewport) || !dx.is_finite() || !dy.is_finite() {
+        return None;
+    }
+    let dx = dx.round();
+    let dy = dy.round();
+    let horizontal = (dx != 0.0).then(|| {
+        let width = dx.abs().min(viewport.w);
+        let x = if dx > 0.0 {
+            viewport.x + viewport.w - width
+        } else {
+            viewport.x
+        };
+        Rect::new(x, viewport.y, width, viewport.h)
+    });
+    let vertical = (dy != 0.0).then(|| {
+        let height = dy.abs().min(viewport.h);
+        let y = if dy > 0.0 {
+            viewport.y + viewport.h - height
+        } else {
+            viewport.y
+        };
+        Rect::new(viewport.x, y, viewport.w, height)
+    });
+    match (horizontal, vertical) {
+        (Some(horizontal), Some(vertical)) => Some(horizontal.union(&vertical)),
+        (Some(rect), None) | (None, Some(rect)) => Some(rect),
+        (None, None) => None,
     }
 }
 
