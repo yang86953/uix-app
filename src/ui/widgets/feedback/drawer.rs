@@ -5,7 +5,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::traits::input::ControlSize;
-use crate::ui::animation::{presets, SlideDirection, TransitionPlayer};
+use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
@@ -294,9 +294,9 @@ impl Drawer {
             mask: true,
             footer_visible: false,
             extra: String::new(),
-            transition: TransitionPlayer::new(presets::drawer_enter(Self::slide_direction_for(
-                DrawerPlacement::Right,
-            ))),
+            transition: TransitionPlayer::new(presets::drawer_enter(
+                Self::animation_placement_for(DrawerPlacement::Right),
+            )),
             closing: false,
             transition_dirty: false,
             last_surface_w: Cell::new(0.0),
@@ -342,7 +342,7 @@ impl Drawer {
     pub fn placement(mut self, p: DrawerPlacement) -> Self {
         self.placement = p;
         self.transition =
-            TransitionPlayer::new(presets::drawer_enter(Self::slide_direction_for(p)));
+            TransitionPlayer::new(presets::drawer_enter(Self::animation_placement_for(p)));
         self
     }
 
@@ -378,9 +378,9 @@ impl Drawer {
     pub fn open(&mut self) {
         self.visible = true;
         self.closing = false;
-        self.transition = TransitionPlayer::new(presets::drawer_enter(Self::slide_direction_for(
-            self.placement,
-        )));
+        self.transition = TransitionPlayer::new(presets::drawer_enter(
+            Self::animation_placement_for(self.placement),
+        ));
         self.transition_dirty = true;
     }
 
@@ -393,9 +393,9 @@ impl Drawer {
         }
         self.visible = false;
         self.closing = true;
-        self.transition = TransitionPlayer::new(presets::drawer_exit(Self::slide_direction_for(
-            self.placement,
-        )));
+        self.transition = TransitionPlayer::new(presets::drawer_exit(
+            Self::animation_placement_for(self.placement),
+        ));
         self.transition_dirty = true;
     }
 
@@ -448,12 +448,12 @@ impl Drawer {
         }
     }
 
-    fn slide_direction_for(placement: DrawerPlacement) -> SlideDirection {
+    fn animation_placement_for(placement: DrawerPlacement) -> crate::ui::Placement {
         match placement {
-            DrawerPlacement::Right => SlideDirection::Left,
-            DrawerPlacement::Left => SlideDirection::Right,
-            DrawerPlacement::Top => SlideDirection::Down,
-            DrawerPlacement::Bottom => SlideDirection::Up,
+            DrawerPlacement::Right => crate::ui::Placement::Right,
+            DrawerPlacement::Left => crate::ui::Placement::Left,
+            DrawerPlacement::Top => crate::ui::Placement::Top,
+            DrawerPlacement::Bottom => crate::ui::Placement::Bottom,
         }
     }
 

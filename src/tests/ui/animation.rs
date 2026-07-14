@@ -1,7 +1,9 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use crate::ui::animation::{Animation, Easing};
+use crate::core::Point;
+use crate::ui::animation::{Animation, AnimationConfig, Easing, TransitionPlayer};
+use crate::ui::Placement;
 
 #[test]
 fn documented_animation_surface_restarts_and_fires_finish_once() {
@@ -106,4 +108,44 @@ fn bounce_and_elastic_preserve_endpoints_and_expose_rebound_motion() {
 
     assert!(Easing::bounce.sample(0.36) > Easing::bounce.sample(0.55));
     assert!(Easing::elastic.sample(0.1) > 1.0);
+}
+
+#[test]
+fn animation_config_constructors_normalize_duration_and_phase() {
+    let enter = AnimationConfig::zoom_in(-1.0);
+    let leave = AnimationConfig::fade_out(0.15);
+
+    assert!(enter.is_enter());
+    assert!(!enter.is_exit());
+    assert_eq!(enter.duration(), 0.0);
+    assert!(leave.is_exit());
+    assert_eq!(leave.duration(), 0.15);
+}
+
+#[test]
+fn slide_config_uses_placement_as_the_visual_origin() {
+    let cases = [
+        (Placement::Top, Point::new(0.0, -24.0)),
+        (Placement::Bottom, Point::new(0.0, 24.0)),
+        (Placement::Left, Point::new(-24.0, 0.0)),
+        (Placement::Right, Point::new(24.0, 0.0)),
+    ];
+
+    for (placement, expected_offset) in cases {
+        let player = TransitionPlayer::new(AnimationConfig::slide_in(placement, 0.2));
+
+        assert!((player.offset.x - expected_offset.x).abs() < 1e-4);
+        assert!((player.offset.y - expected_offset.y).abs() < 1e-4);
+        assert_eq!(player.opacity_progress, 0.0);
+        assert_eq!(player.scale, 1.0);
+    }
+}
+
+#[test]
+fn fade_config_does_not_apply_zoom_scale() {
+    let enter = TransitionPlayer::new(AnimationConfig::fade_in(0.2));
+    let leave = TransitionPlayer::new(AnimationConfig::fade_out(0.2));
+
+    assert_eq!(enter.scale, 1.0);
+    assert_eq!(leave.scale, 1.0);
 }

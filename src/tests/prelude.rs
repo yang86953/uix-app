@@ -272,6 +272,7 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<PieChart>();
     assert_exported::<Popconfirm>();
     assert_exported::<Popover>();
+    assert_exported::<AnimationConfig>();
     assert_exported::<ProgressBar>();
     assert_exported::<Radio>();
     assert_exported::<Rate>();

@@ -8,7 +8,7 @@
 //! - `Easing` — 缓动函数，支持 cubic-bezier、弹性和经典预设。
 //! - `Animatable` trait — 定义可插值类型（f32, f64, Color, Point, Rect）。
 //! - `Animation<T>` — 泛型动画实例，驱动单值从 from→to 的插值。
-//! - `Transition` — 进出场过渡类型定义（淡入/滑入/缩放等）。
+//! - `AnimationConfig` — 进出场动画公开配置（淡入/滑入/缩放等）。
 //! - `TransitionPlayer` — 过渡播放器，见控 widget 的单次进出场动画。
 //!
 //! ## 集成

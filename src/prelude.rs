@@ -55,7 +55,7 @@ pub use crate::ui::{
     SnapshotTableColumn, SnapshotTableColumnGroup, SnapshotTransferItem, SnapshotTreeNode,
     SnapshotValue, SystemEvent, SystemEventKind, WidgetChildren,
 };
-pub use crate::ui::{Animation, Easing};
+pub use crate::ui::{Animation, AnimationConfig, Easing};
 // ui / components
 pub use crate::ui::{
     Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus, BarChart,
