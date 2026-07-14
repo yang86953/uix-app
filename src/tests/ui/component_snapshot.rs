@@ -125,7 +125,7 @@ fn component_config_snapshot_derives_accessibility_metadata() {
     assert_eq!(accessibility.name.as_deref(), Some("Save"));
     assert!(accessibility.state.disabled);
 
-    let checkbox = Checkbox::new("Agree").checked(true);
+    let checkbox = Checkbox::new("Agree").default_checked(true);
     let accessibility =
         ComponentConfigSnapshot::from_component(ComponentId::new(11), &checkbox).accessibility();
     assert_eq!(accessibility.role, AccessibilityRole::Checkbox);

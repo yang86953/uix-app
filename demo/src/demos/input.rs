@@ -102,7 +102,7 @@ pub fn page_input(ctx: &DemoCtx<'_>) -> ViewNode {
         .section("Checkbox / Radio / Switch")
         .push(
             demo_row(30.0)
-                .child(Checkbox::new("选项 A").checked(true))
+                .child(Checkbox::new("选项 A").default_checked(true))
                 .child(Checkbox::new("选项 B"))
                 .child(Checkbox::new("禁用").disabled(true)),
         )
@@ -115,9 +115,9 @@ pub fn page_input(ctx: &DemoCtx<'_>) -> ViewNode {
         )
         .push(
             demo_row(30.0)
-                .child(Switch::new().checked(true))
-                .child(Switch::new().checked(false))
-                .child(Switch::new().checked(true).disabled(true)),
+                .child(Switch::new().default_checked(true))
+                .child(Switch::new().default_checked(false))
+                .child(Switch::new().default_checked(true).disabled(true)),
         )
         .section("Slider / Rate")
         .push(demo_row(30.0).child(Slider::new().range(0.0, 100.0).step(5.0).value(42.0)))
