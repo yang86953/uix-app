@@ -58,6 +58,7 @@ pub use foundation::state::{Computed, Effect, State, StateSlotId};
 pub use foundation::style::{
     ColorValue, PaletteColor, Style, StyleSet, StyleState, TypographyToken,
 };
+pub use foundation::virtual_scroll::{VirtualScroll, VirtualScrollBuilder};
 pub use foundation::{clipboard, config, focus_trap, locale, state, style, virtual_scroll};
 pub use layout::{
     AlignItems, BoxModel, FlexDirection, FlexLayout, GridLayout, GridTrack, JustifyContent,

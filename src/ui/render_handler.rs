@@ -63,7 +63,12 @@ impl RenderHandlerTable {
         end: usize,
     ) -> Option<Vec<WidgetNode>> {
         let renderer = self.virtual_scroll_item.get_mut(&component)?;
-        Some((start..end).map(renderer).collect())
+        Some(
+            (start..end)
+                .map(|index| ViewAdapter::capture_root(|| renderer(index)))
+                .map(ViewAdapter::expand)
+                .collect(),
+        )
     }
 
     pub(crate) fn clear_component(&mut self, component: ComponentId) {

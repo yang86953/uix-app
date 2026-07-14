@@ -76,7 +76,8 @@ pub use crate::ui::{
     TableBuilder, TableChange, TableColumn, TableRow, Tabs, Tag, TagColor, ThemeToggle, Time,
     TimePicker, Timeline, TimelineItem, Tooltip, TooltipPlacement, Transfer, TransferItem, Tree,
     TreeNode, TreeSelect, TriggerMode, Typography, TypographyType, Upload, UploadFile,
-    UploadStatus, ValidateStatus, ValidationResult, ValidationRule, Watermark,
+    UploadStatus, ValidateStatus, ValidationResult, ValidationRule, VirtualScroll,
+    VirtualScrollBuilder, Watermark,
 };
 
 // app

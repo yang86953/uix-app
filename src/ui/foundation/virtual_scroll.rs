@@ -133,12 +133,12 @@ impl VirtualListScroll {
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::{PaintContext, PaintPass};
-use crate::ui::core::widget::WidgetNode;
 use crate::ui::render_handler::RenderHandlerRegistration;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::{ComponentId, EventResult, SystemEvent, WidgetTree};
 
 /// Application-authored child factory stored in the tree's keyed side table.
-pub type VirtualScrollRenderer = Box<dyn FnMut(usize) -> WidgetNode + 'static>;
+pub(crate) type VirtualScrollRenderer = Box<dyn FnMut(usize) -> ViewNode + 'static>;
 
 /// Declarative `VirtualScroll` plus its application-owned item renderer.
 pub struct VirtualScrollBuilder {
@@ -245,7 +245,7 @@ impl VirtualScroll {
             scroll_offset: 0.0,
             fixed_width: None,
             fixed_height: None,
-            overscan: 3,
+            overscan: 5,
             materialized_range: Cell::new(None),
             last_frame: Cell::new(None),
             scroll_delta_strip: Cell::new((0.0, 0.0)),
@@ -291,10 +291,14 @@ impl VirtualScroll {
         self
     }
 
-    pub fn renderer<F: FnMut(usize) -> WidgetNode + 'static>(self, f: F) -> VirtualScrollBuilder {
+    /// 为进入物化范围的索引声明普通 View 子树。
+    pub fn render<V>(self, mut renderer: impl FnMut(usize) -> V + 'static) -> VirtualScrollBuilder
+    where
+        V: View,
+    {
         VirtualScrollBuilder {
             scroll: self,
-            renderer: Box::new(f),
+            renderer: Box::new(move |index| renderer(index).build()),
         }
     }
 
@@ -400,13 +404,6 @@ impl VirtualScrollBuilder {
         self.scroll.fixed_width = Some(width);
         self.scroll.fixed_height = Some(height);
         self
-    }
-}
-
-impl crate::ui::IntoWidgetNode for VirtualScrollBuilder {
-    fn into_node(self) -> WidgetNode {
-        let (scroll, handler) = self.into_parts();
-        WidgetNode::leaf(Box::new(scroll)).with_render_handlers(vec![handler])
     }
 }
 
