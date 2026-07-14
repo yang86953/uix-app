@@ -7,6 +7,28 @@ use ash::vk;
 
 #[cfg(windows)]
 use crate::native::graphics::vulkan::platform::context::VulkanContext;
+#[cfg(windows)]
+use crate::tests::native::gfx_r5::expected_gfx_r5_vendor;
+
+#[cfg(windows)]
+fn expected_device_fault_capability() -> bool {
+    match std::env::var("UIX_VULKAN_EXPECT_DEVICE_FAULT").as_deref() {
+        Ok("true" | "1") => true,
+        Ok("false" | "0") => false,
+        Ok(value) => panic!("UIX_VULKAN_EXPECT_DEVICE_FAULT must be true|false|1|0, got {value:?}"),
+        Err(error) => panic!("UIX_VULKAN_EXPECT_DEVICE_FAULT is required: {error}"),
+    }
+}
+
+#[cfg(windows)]
+fn requested_external_device_loss_timeout() -> std::time::Duration {
+    let seconds = std::env::var("UIX_VULKAN_DEVICE_LOST_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(60)
+        .clamp(5, 600);
+    std::time::Duration::from_secs(seconds)
+}
 
 #[test]
 fn device_fault_feature_query_prefers_vulkan_1_1_core() {
@@ -139,12 +161,7 @@ fn non_device_loss_does_not_poison_shared_device_state() {
 #[test]
 #[ignore = "requires a Vulkan-capable Windows driver and UIX_VULKAN_EXPECT_DEVICE_FAULT=true|false"]
 fn windows_vulkan_device_fault_reporting_matches_expected_capability() {
-    let expected = match std::env::var("UIX_VULKAN_EXPECT_DEVICE_FAULT").as_deref() {
-        Ok("true" | "1") => true,
-        Ok("false" | "0") => false,
-        Ok(value) => panic!("UIX_VULKAN_EXPECT_DEVICE_FAULT must be true|false|1|0, got {value:?}"),
-        Err(error) => panic!("UIX_VULKAN_EXPECT_DEVICE_FAULT is required: {error}"),
-    };
+    let expected = expected_device_fault_capability();
     let mut platform = crate::native::create_platform().expect("platform");
     let mut window = platform
         .window_manager()
@@ -166,4 +183,164 @@ fn windows_vulkan_device_fault_reporting_matches_expected_capability() {
 
     context.try_shutdown().expect("shutdown");
     window.close().expect("close window");
+}
+
+#[cfg(windows)]
+#[test]
+#[ignore = "requires UIX_GFX_R5_EXPECT_VENDOR, UIX_VULKAN_EXPECT_DEVICE_FAULT, and an external driver reset while running"]
+fn windows_vulkan_gfx_r5_external_reset_returns_device_lost_with_diagnostics() {
+    let expected_vendor = expected_gfx_r5_vendor().unwrap_or_else(|error| panic!("{error}"));
+    let expect_fault_report = expected_device_fault_capability();
+    let timeout = requested_external_device_loss_timeout();
+    let mut platform = crate::native::create_platform().expect("platform");
+    let mut first_window = platform
+        .window_manager()
+        .create_window("Vulkan external device loss A", 128, 96)
+        .expect("first window");
+    let mut second_window = platform
+        .window_manager()
+        .create_window("Vulkan external device loss B", 128, 96)
+        .expect("second window");
+    first_window.show().expect("show first window");
+    second_window.show().expect("show second window");
+    let _ = platform.event_loop().poll_event(&|_| true);
+
+    let mut first = VulkanContext::new(first_window.native_surface_ptr(), 128, 96)
+        .expect("first VulkanContext");
+    let mut second = VulkanContext::new(second_window.native_surface_ptr(), 128, 96)
+        .expect("second VulkanContext");
+    assert_eq!(
+        first.adapter_info.vendor_id,
+        expected_vendor.vendor_id(),
+        "unexpected adapter: {}",
+        first.adapter_info.diagnostic_summary()
+    );
+    assert_eq!(
+        first.shared_device_identity(),
+        second.shared_device_identity()
+    );
+    assert_eq!(
+        first.device_fault_reporting_enabled_for_test(),
+        expect_fault_report
+    );
+    let lost_identity = first.shared_device_identity();
+    let first_pixels = vec![0xFF21_5A8C; (first.width() * first.height()) as usize];
+    let second_pixels = vec![0xFF8C_5A21; (second.width() * second.height()) as usize];
+    let deadline = std::time::Instant::now() + timeout;
+    let mut frames = 0_u64;
+    let mut surface_faults = 0_u64;
+    let mut last_surface_fault = None;
+
+    let (fault, first_detected) = loop {
+        let _ = platform.event_loop().poll_event(&|_| true);
+        let first_result = first.present_pixels(
+            &first_pixels,
+            first.width(),
+            first.height(),
+            PresentDamage::Full,
+        );
+        match first_result {
+            Ok(()) => {}
+            Err(error) if error.code() == Errc::GraphicsDeviceLost => break (error, true),
+            Err(error) if error.code() == Errc::GraphicsSurfaceLost => {
+                surface_faults += 1;
+                last_surface_fault = Some(error.what());
+            }
+            Err(error) => panic!("unexpected first-context failure: {}", error.what()),
+        }
+        let second_result = second.present_pixels(
+            &second_pixels,
+            second.width(),
+            second.height(),
+            PresentDamage::Full,
+        );
+        match second_result {
+            Ok(()) => {}
+            Err(error) if error.code() == Errc::GraphicsDeviceLost => break (error, false),
+            Err(error) if error.code() == Errc::GraphicsSurfaceLost => {
+                surface_faults += 1;
+                last_surface_fault = Some(error.what());
+            }
+            Err(error) => panic!("unexpected second-context failure: {}", error.what()),
+        }
+        frames += 1;
+        assert!(
+            std::time::Instant::now() < deadline,
+            "no native device loss observed within {timeout:?}; frames={frames}; surface_faults={surface_faults}; last_surface_fault={last_surface_fault:?}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(16));
+    };
+
+    assert!(
+        fault.what().contains("ERROR_DEVICE_LOST"),
+        "{}",
+        fault.what()
+    );
+    if expect_fault_report {
+        assert!(
+            fault.what().contains("VK_EXT_device_fault"),
+            "enabled fault reporting must remain in the cause chain: {}",
+            fault.what()
+        );
+    }
+    let peer_error = if first_detected {
+        second
+            .present_pixels(
+                &second_pixels,
+                second.width(),
+                second.height(),
+                PresentDamage::Full,
+            )
+            .expect_err("second context must observe the shared loss")
+    } else {
+        first
+            .present_pixels(
+                &first_pixels,
+                first.width(),
+                first.height(),
+                PresentDamage::Full,
+            )
+            .expect_err("first context must observe the shared loss")
+    };
+    assert_eq!(peer_error.code(), Errc::GraphicsDeviceLost);
+    assert_eq!(peer_error.root_cause(), fault.root_cause());
+
+    first.try_shutdown().expect("shutdown first lost context");
+    second.try_shutdown().expect("shutdown second lost context");
+    drop((first, second));
+    first_window.close().expect("close first window");
+    second_window.close().expect("close second window");
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    let mut replacement_window = platform
+        .window_manager()
+        .create_window("Vulkan device loss replacement", 128, 96)
+        .expect("replacement window");
+    replacement_window.show().expect("show replacement window");
+    let _ = platform.event_loop().poll_event(&|_| true);
+    let mut replacement = VulkanContext::new(replacement_window.native_surface_ptr(), 128, 96)
+        .expect("replacement VulkanContext after external reset");
+    assert_ne!(replacement.shared_device_identity(), lost_identity);
+    let replacement_pixels =
+        vec![0xFF3C_7AB5; (replacement.width() * replacement.height()) as usize];
+    replacement
+        .present_pixels(
+            &replacement_pixels,
+            replacement.width(),
+            replacement.height(),
+            PresentDamage::Full,
+        )
+        .expect("replacement present after external reset");
+    println!(
+        "GFX-R5 external device loss: detector={}; frames={frames}; surface_faults={surface_faults}; fault={}; peer={}; replacement={}",
+        if first_detected { "first" } else { "second" },
+        fault.what(),
+        peer_error.what(),
+        replacement.adapter_info.diagnostic_summary()
+    );
+
+    replacement.try_shutdown().expect("shutdown replacement");
+    replacement_window
+        .close()
+        .expect("close replacement window");
 }
