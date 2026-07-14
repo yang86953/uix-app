@@ -111,4 +111,4 @@ cargo test --features agent-control --test agent_gui_windows -- --ignored --noca
 - Gallery 覆盖条目数量
 - 首页 build + 页面切换 reconcile
 - 首页 / 应用能力页局部 State 在根 reconcile 后保持
-- Windows 真窗 Agent Bridge：显式运行 ignored 测试，覆盖认证、快照、语义动作、呈现等待与正常退出清理
+- Windows 真窗 Agent Bridge：显式运行 ignored 测试，覆盖默认 Vulkan 与显式 D3D11 recipe、认证、快照、语义动作、原生 HWND Tab、呈现/最小化恢复与正常退出清理
