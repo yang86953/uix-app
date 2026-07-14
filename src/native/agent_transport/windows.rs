@@ -9,12 +9,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use windows::core::{BOOL, HRESULT, PCWSTR};
+use windows::core::{BOOL, HRESULT, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{
-    LocalFree, ERROR_ALREADY_EXISTS, ERROR_PIPE_CONNECTED, GENERIC_READ, GENERIC_WRITE, HLOCAL,
+    CloseHandle, LocalFree, ERROR_ALREADY_EXISTS, ERROR_INSUFFICIENT_BUFFER, ERROR_PIPE_CONNECTED,
+    GENERIC_READ, GENERIC_WRITE, HANDLE, HLOCAL,
 };
 #[cfg(test)]
-use windows::Win32::Foundation::{ERROR_SUCCESS, HANDLE, LUID, WIN32_ERROR};
+use windows::Win32::Foundation::{ERROR_SUCCESS, LUID, WIN32_ERROR};
 #[cfg(test)]
 use windows::Win32::Security::Authorization::{
     AuthzAccessCheck, AuthzFreeContext, AuthzFreeResourceManager, AuthzInitializeContextFromSid,
@@ -24,15 +25,16 @@ use windows::Win32::Security::Authorization::{
     AUTHZ_RM_FLAG_NO_AUDIT, AUTHZ_SKIP_TOKEN_GROUPS, SE_FILE_OBJECT,
 };
 use windows::Win32::Security::Authorization::{
-    ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+    ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
 };
 use windows::Win32::Security::Cryptography::{BCryptGenRandom, BCRYPT_USE_SYSTEM_PREFERRED_RNG};
-#[cfg(test)]
-use windows::Win32::Security::{GetSecurityDescriptorOwner, OWNER_SECURITY_INFORMATION, PSID};
 use windows::Win32::Security::{
-    SetFileSecurityW, DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION,
-    PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES,
+    GetTokenInformation, SetFileSecurityW, TokenUser, DACL_SECURITY_INFORMATION,
+    PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES, TOKEN_QUERY,
+    TOKEN_USER,
 };
+#[cfg(test)]
+use windows::Win32::Security::{OWNER_SECURITY_INFORMATION, PSID};
 use windows::Win32::Storage::FileSystem::MoveFileExW;
 #[cfg(test)]
 use windows::Win32::Storage::FileSystem::FILE_ALL_ACCESS;
@@ -45,15 +47,15 @@ use windows::Win32::System::Pipes::{
     ConnectNamedPipe, CreateNamedPipeW, WaitNamedPipeW, NAMED_PIPE_MODE, PIPE_READMODE_BYTE,
     PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_WAIT,
 };
+use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 use windows::Win32::System::IO::CancelSynchronousIo;
 
 use super::{AcceptedAgentStream, AgentStreamCancelIo};
 
 const PIPE_BUFFER_BYTES: u32 = 64 * 1024;
 const PIPE_MAX_INSTANCES: u32 = 255;
-const OWNER_ONLY_SDDL: &str = "D:P(A;;GA;;;OW)";
 #[cfg(test)]
-const FOREIGN_TEST_SID: &str = "S-1-5-7";
+const FOREIGN_TEST_SID: &str = "S-1-5-21-111111111-222222222-333333333-1001";
 
 pub(crate) struct AgentEndpoint {
     pipe_name: String,
@@ -99,7 +101,7 @@ impl AgentEndpoint {
         let temporary = self
             .discovery_path
             .with_extension(format!("json.tmp-{nonce}"));
-        let mut file = create_owner_only_file(&temporary)?;
+        let mut file = create_current_user_only_file(&temporary)?;
         let write_result = (|| {
             file.write_all(contents)?;
             file.sync_all()
@@ -235,7 +237,7 @@ pub(super) fn connect_for_test(endpoint: &str) -> io::Result<super::AgentStream>
 #[cfg(test)]
 pub(super) fn discovery_permissions_are_private_for_test(path: &Path) -> io::Result<Option<bool>> {
     let descriptor = QueriedSecurityDescriptor::from_path(path)?;
-    Ok(Some(descriptor_is_owner_only(&descriptor)?))
+    Ok(Some(descriptor_is_current_user_only(&descriptor)?))
 }
 
 #[cfg(test)]
@@ -248,11 +250,11 @@ pub(super) fn endpoint_permissions_are_private_for_test(
         .share_mode(0)
         .open(endpoint)?;
     let descriptor = QueriedSecurityDescriptor::from_handle(HANDLE(pipe.as_raw_handle()))?;
-    Ok(Some(descriptor_is_owner_only(&descriptor)?))
+    Ok(Some(descriptor_is_current_user_only(&descriptor)?))
 }
 
 fn create_pipe_instance(pipe_name: &str, first: bool) -> io::Result<File> {
-    let security = OwnerOnlySecurity::new()?;
+    let security = CurrentUserOnlySecurity::new()?;
     let attributes = security.attributes();
     let wide = wide_null(pipe_name.as_ref());
     let mut open_mode = PIPE_ACCESS_DUPLEX;
@@ -317,7 +319,7 @@ fn private_discovery_directory() -> io::Result<PathBuf> {
             ))
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            let security = OwnerOnlySecurity::new()?;
+            let security = CurrentUserOnlySecurity::new()?;
             let attributes = security.attributes();
             let wide = wide_null(directory.as_os_str());
             match unsafe {
@@ -332,7 +334,7 @@ fn private_discovery_directory() -> io::Result<PathBuf> {
         }
         Err(error) => return Err(error),
     }
-    apply_owner_only_dacl(&directory)?;
+    apply_current_user_only_dacl(&directory)?;
     Ok(directory)
 }
 
@@ -350,8 +352,8 @@ fn replace_file_atomically(source: &Path, destination: &Path) -> io::Result<()> 
     .map_err(windows_error)
 }
 
-fn apply_owner_only_dacl(path: &Path) -> io::Result<()> {
-    let security = OwnerOnlySecurity::new()?;
+fn apply_current_user_only_dacl(path: &Path) -> io::Result<()> {
+    let security = CurrentUserOnlySecurity::new()?;
     let wide = wide_null(path.as_os_str());
     unsafe {
         // SAFETY: 路径与安全描述符在同步调用期间有效；只替换并保护 DACL，不改所有者。
@@ -365,8 +367,8 @@ fn apply_owner_only_dacl(path: &Path) -> io::Result<()> {
     .map_err(windows_error)
 }
 
-fn create_owner_only_file(path: &Path) -> io::Result<File> {
-    let security = OwnerOnlySecurity::new()?;
+fn create_current_user_only_file(path: &Path) -> io::Result<File> {
+    let security = CurrentUserOnlySecurity::new()?;
     let attributes = security.attributes();
     let wide = wide_null(path.as_os_str());
     let handle = unsafe {
@@ -390,18 +392,136 @@ fn create_owner_only_file(path: &Path) -> io::Result<File> {
     })
 }
 
-struct OwnerOnlySecurity {
+struct ProcessToken(HANDLE);
+
+impl ProcessToken {
+    fn current() -> io::Result<Self> {
+        let mut token = HANDLE::default();
+        unsafe {
+            // SAFETY: GetCurrentProcess 返回当前进程伪句柄；输出指针有效，成功后由本对象接管 token。
+            OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token)
+        }
+        .map_err(windows_error)?;
+        if token.is_invalid() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "OpenProcessToken returned an invalid handle",
+            ));
+        }
+        Ok(Self(token))
+    }
+}
+
+impl Drop for ProcessToken {
+    fn drop(&mut self) {
+        unsafe {
+            // SAFETY: 句柄由 OpenProcessToken 成功返回，所有权未转移且只在此关闭一次。
+            let _ = CloseHandle(self.0);
+        }
+    }
+}
+
+fn current_process_user_sid_string() -> io::Result<String> {
+    let token = ProcessToken::current()?;
+    let mut required = 0u32;
+    let size_query = unsafe {
+        // SAFETY: token 有 TOKEN_QUERY；空缓冲用于查询 TokenUser 所需字节数。
+        GetTokenInformation(token.0, TokenUser, None, 0, &mut required)
+    };
+    match size_query {
+        Ok(()) if required == 0 => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "TokenUser size query returned zero bytes",
+            ));
+        }
+        Ok(()) => {}
+        Err(error)
+            if error.code() == HRESULT::from_win32(ERROR_INSUFFICIENT_BUFFER.0) && required > 0 => {
+        }
+        Err(error) => return Err(windows_error(error)),
+    }
+    if required < std::mem::size_of::<TOKEN_USER>() as u32 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "TokenUser buffer is smaller than TOKEN_USER",
+        ));
+    }
+
+    let word_bytes = std::mem::size_of::<usize>();
+    let word_count = (required as usize).div_ceil(word_bytes);
+    let mut buffer = vec![0usize; word_count];
+    let buffer_bytes = u32::try_from(buffer.len().saturating_mul(word_bytes)).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "TokenUser buffer length overflows Win32 DWORD",
+        )
+    })?;
+    let mut written = 0u32;
+    unsafe {
+        // SAFETY: 缓冲按 usize 对齐且容量至少为 required；token 在调用期间有效。
+        GetTokenInformation(
+            token.0,
+            TokenUser,
+            Some(buffer.as_mut_ptr().cast()),
+            buffer_bytes,
+            &mut written,
+        )
+    }
+    .map_err(windows_error)?;
+    if written < std::mem::size_of::<TOKEN_USER>() as u32 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "TokenUser query returned a truncated structure",
+        ));
+    }
+    let token_user = unsafe {
+        // SAFETY: GetTokenInformation 已在对齐且足够大的缓冲中写入完整 TOKEN_USER。
+        &*buffer.as_ptr().cast::<TOKEN_USER>()
+    };
+    if token_user.User.Sid.is_invalid() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "TokenUser query returned an invalid SID",
+        ));
+    }
+
+    let mut sid_text = PWSTR::null();
+    unsafe {
+        // SAFETY: SID 指向仍存活的 TokenUser 缓冲；输出指针有效并接收 LocalAlloc 字符串。
+        ConvertSidToStringSidW(token_user.User.Sid, &mut sid_text)
+    }
+    .map_err(windows_error)?;
+    if sid_text.0.is_null() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "ConvertSidToStringSidW returned a null string",
+        ));
+    }
+    let result = unsafe {
+        // SAFETY: ConvertSidToStringSidW 返回存活且 NUL 结尾的 UTF-16 字符串。
+        sid_text.to_string()
+    }
+    .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error));
+    unsafe {
+        // SAFETY: 字符串由 ConvertSidToStringSidW 分配，尚未转移且只在此释放一次。
+        let _ = LocalFree(Some(HLOCAL(sid_text.0.cast())));
+    }
+    result
+}
+
+struct CurrentUserOnlySecurity {
     descriptor: PSECURITY_DESCRIPTOR,
 }
 
-impl OwnerOnlySecurity {
+impl CurrentUserOnlySecurity {
     fn new() -> io::Result<Self> {
-        let sddl = wide_null(OWNER_ONLY_SDDL.as_ref());
+        let user_sid = current_process_user_sid_string()?;
+        let sddl = wide_null(format!("D:P(A;;GA;;;{user_sid})").as_ref());
         let mut descriptor = PSECURITY_DESCRIPTOR::default();
         unsafe {
-            // SAFETY: the SDDL string is NUL terminated and the output pointer
-            // refers to initialized storage. The returned LocalAlloc buffer is
-            // retained by this wrapper and freed exactly once in Drop.
+            // SAFETY: SDDL 为存活的 NUL 结尾 UTF-16，输出指针指向已初始化存储；
+            // 返回的 LocalAlloc 缓冲由本对象持有并在 Drop 中释放一次。
             ConvertStringSecurityDescriptorToSecurityDescriptorW(
                 PCWSTR(sddl.as_ptr()),
                 SDDL_REVISION_1,
@@ -422,7 +542,7 @@ impl OwnerOnlySecurity {
     }
 }
 
-impl Drop for OwnerOnlySecurity {
+impl Drop for CurrentUserOnlySecurity {
     fn drop(&mut self) {
         if !self.descriptor.0.is_null() {
             unsafe {
@@ -435,12 +555,12 @@ impl Drop for OwnerOnlySecurity {
 }
 
 #[cfg(test)]
-fn descriptor_is_owner_only(descriptor: &QueriedSecurityDescriptor) -> io::Result<bool> {
+fn descriptor_is_current_user_only(descriptor: &QueriedSecurityDescriptor) -> io::Result<bool> {
     let manager = TestAuthzResourceManager::new()?;
-    let owner = descriptor.owner()?;
+    let current_user = TestSid::from_string(&current_process_user_sid_string()?)?;
     let foreign = TestSid::from_string(FOREIGN_TEST_SID)?;
     Ok(
-        authz_grants_full_file_access(descriptor.descriptor, owner, &manager)?
+        authz_grants_full_file_access(descriptor.descriptor, current_user.sid, &manager)?
             && !authz_grants_full_file_access(descriptor.descriptor, foreign.sid, &manager)?,
     )
 }
@@ -536,23 +656,6 @@ impl QueriedSecurityDescriptor {
             ));
         }
         Ok(Self { descriptor })
-    }
-
-    fn owner(&self) -> io::Result<PSID> {
-        let mut owner = PSID::default();
-        let mut defaulted = BOOL(0);
-        unsafe {
-            // SAFETY: 描述符由 Windows 分配且在 self 生命周期内有效，两个输出指针均可写。
-            GetSecurityDescriptorOwner(self.descriptor, &mut owner, &mut defaulted)
-        }
-        .map_err(windows_error)?;
-        if owner.is_invalid() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "security descriptor has no owner",
-            ));
-        }
-        Ok(owner)
     }
 }
 

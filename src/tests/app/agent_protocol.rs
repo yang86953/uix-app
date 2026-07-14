@@ -570,14 +570,14 @@ fn native_transport_publishes_discovery_authenticates_and_cleans_up() {
         {
             assert!(
                 is_private,
-                "discovery path must remain owner-only: {path:?}"
+                "discovery path must remain current-user-only: {path:?}"
             );
         }
     }
     if let Some(is_private) = endpoint_permissions_are_private_for_test(&replacement.endpoint)
         .expect("inspect endpoint permissions")
     {
-        assert!(is_private, "agent endpoint must remain owner-only");
+        assert!(is_private, "agent endpoint must remain current-user-only");
     }
     replacement_runtime.shutdown_all();
     assert!(!replacement.discovery_path.exists());
