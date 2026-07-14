@@ -201,49 +201,121 @@ fn form_item_arrange_uses_precomputed_measurements() {
 }
 
 #[test]
-fn custom_validator_is_resolved_from_named_table() {
+fn inline_custom_and_builtin_rules_collect_errors_in_field_order() {
     let calls = Rc::new(Cell::new(0));
     let validator_calls = Rc::clone(&calls);
-    let mut validators = FormValidatorTable::new();
-    validators.register("username", move |value| {
-        validator_calls.set(validator_calls.get() + 1);
-        (value == "ada")
-            .then_some(())
-            .ok_or_else(|| "unknown user".to_string())
-    });
-    let mut form = Form::new().with_field(
-        FieldDef::new("user", "User")
-            .value("grace")
-            .rule(ValidationRule::required("required").validator("username")),
-    );
+    let form = Form::new()
+        .field("user", "User")
+        .default("grace")
+        .required("required")
+        .custom(move |value| {
+            validator_calls.set(validator_calls.get() + 1);
+            (value == "ada")
+                .then_some(())
+                .ok_or_else(|| "unknown user".to_string())
+        })
+        .field("email", "Email")
+        .default("invalid")
+        .validate_email("invalid email")
+        .field("age", "Age")
+        .default(0i32)
+        .validate_range(1..=120, "invalid age")
+        .field("code", "Code")
+        .default("ab")
+        .validate_length(3..=8, "invalid length")
+        .validate_pattern(r"^[a-z]+$", "invalid pattern")
+        .build();
 
-    assert_eq!(form.validate(&validators), Ok(false));
+    let errors = form.validate().expect_err("form should be invalid");
     assert_eq!(calls.get(), 1);
-    let field = form.field("user").expect("registered field");
-    assert_eq!(field.status, ValidateStatus::Error);
-    assert_eq!(field.message, "unknown user");
-
-    form.set_field_value("user", "ada");
-    assert_eq!(form.validate(&validators), Ok(true));
-    assert_eq!(calls.get(), 2);
-    assert_eq!(form.field("user").unwrap().status, ValidateStatus::None);
+    assert_eq!(errors.len(), 4);
+    assert_eq!(errors[0].field(), "user");
+    assert_eq!(errors[0].message(), "unknown user");
+    assert_eq!(errors[1].field(), "email");
+    assert_eq!(errors[2].field(), "age");
+    assert_eq!(errors[3].field(), "code");
 }
 
 #[test]
-fn missing_custom_validator_is_a_typed_configuration_error() {
-    let key = FormValidatorKey::new("email-domain");
-    let mut form = Form::new().with_field(
-        FieldDef::new("email", "Email")
-            .value("ada@example.test")
-            .rule(ValidationRule::required("required").validator(key.clone())),
+fn successful_validation_returns_typed_values() {
+    let form = Form::new()
+        .field("user", "User")
+        .default("ada")
+        .required("required")
+        .field("email", "Email")
+        .default("ada@example.test")
+        .validate_email("invalid email")
+        .field("age", "Age")
+        .default(42i32)
+        .validate_range(1..=120, "invalid age")
+        .field("code", "Code")
+        .default("ABC-12")
+        .validate_length(3..=8, "invalid length")
+        .validate_pattern(r"^[A-Z]+-[0-9]+$", "invalid pattern")
+        .build();
+
+    let values = form.validate().expect("form should be valid");
+    assert_eq!(values.len(), 4);
+    assert_eq!(values.get::<String>("user"), Some(&"ada".to_string()));
+    assert_eq!(values.get::<i32>("age"), Some(&42));
+    assert!(values.get::<String>("age").is_none());
+    assert_eq!(form.field_label("email"), Some("Email"));
+}
+
+#[test]
+fn set_value_revalidates_without_rebuilding_rules() {
+    let mut form = Form::new()
+        .field("user", "User")
+        .default("")
+        .required("required")
+        .build();
+
+    assert_eq!(form.validate().unwrap_err()[0].message(), "required");
+    assert!(form.set_value("user", "ada"));
+    assert!(!form.set_value("missing", "ignored"));
+    let values = form.validate().expect("updated form should be valid");
+    assert_eq!(values.get::<String>("user"), Some(&"ada".to_string()));
+}
+
+#[test]
+fn invalid_regex_is_a_field_error_and_optional_empty_builtins_are_skipped() {
+    let invalid = Form::new()
+        .field("code", "Code")
+        .default("")
+        .validate_pattern("(", "invalid pattern")
+        .build();
+    let error = invalid
+        .validate()
+        .unwrap_err()
+        .into_iter()
+        .next()
+        .expect("pattern error");
+    assert_eq!(
+        error.into_parts(),
+        ("code".to_string(), "invalid pattern".to_string())
     );
 
-    assert_eq!(
-        form.validate(&FormValidatorTable::new()),
-        Err(FormValidationError::MissingValidator {
-            field: "email".to_string(),
-            key,
-        })
-    );
-    assert_eq!(form.field("email").unwrap().status, ValidateStatus::None);
+    let optional = Form::new()
+        .field("email", "Email")
+        .default("")
+        .validate_email("invalid email")
+        .validate_length(2..=20, "invalid length")
+        .validate_pattern(r"^[a-z]+$", "invalid pattern")
+        .build();
+    assert!(optional.validate().is_ok());
+}
+
+#[test]
+fn duplicate_field_uses_the_last_declaration() {
+    let form = Form::new()
+        .field("value", "Old")
+        .default(1i32)
+        .field("value", "New")
+        .default("latest")
+        .build();
+
+    let values = form.validate().expect("last declaration should be valid");
+    assert_eq!(values.len(), 1);
+    assert_eq!(values.get::<String>("value"), Some(&"latest".to_string()));
+    assert_eq!(form.field_label("value"), Some("New"));
 }

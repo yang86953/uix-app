@@ -422,9 +422,11 @@ fn business_event_callbacks_stay_out_of_widget_fields() {
 }
 
 #[test]
-fn authored_widget_callbacks_live_in_keyed_side_tables() {
+fn authored_widget_callbacks_respect_component_ownership_boundaries() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let form = fs::read_to_string(root.join("src/ui/widgets/input/form.rs")).unwrap();
+    let form_validation =
+        fs::read_to_string(root.join("src/ui/widgets/input/form_validation.rs")).unwrap();
     let table = fs::read_to_string(root.join("src/ui/widgets/display/table.rs")).unwrap();
     let virtual_scroll =
         fs::read_to_string(root.join("src/ui/foundation/virtual_scroll.rs")).unwrap();
@@ -451,9 +453,12 @@ fn authored_widget_callbacks_live_in_keyed_side_tables() {
         "Form component data must not own custom validator closures"
     );
     assert!(
-        form.contains("validator_key: Option<FormValidatorKey>")
-            && form.contains("pub struct FormValidatorTable"),
-        "Form rules must resolve named validators through FormValidatorTable"
+        form_validation.contains("pub struct FormModel")
+            && form_validation.contains("type CustomValidator")
+            && form_validation.contains("Custom(CustomValidator)")
+            && !form.contains("FormValidatorTable")
+            && !form.contains("FormValidatorKey"),
+        "inline Form validators must stay in the application-owned FormModel"
     );
     assert!(
         !table_component.contains("expand_renderer"),
