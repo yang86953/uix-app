@@ -2,8 +2,10 @@ use crate::draw::engine::recovering::*;
 use crate::draw::engine::GraphicsFailure;
 use crate::draw::pipeline::EncodedFrameExecution;
 use crate::draw::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
+use crate::native::graphics::vulkan::platform::context::accept_device_wait_for_shutdown;
 use crate::native::traits::present::PresentTestResult;
 use crate::tests::common::*;
+use ash::vk;
 
 struct EndFailingEngine {
     inner: NullEngine,
@@ -12,6 +14,7 @@ struct EndFailingEngine {
     resize_failure: Option<Error>,
     shutdowns: Option<Rc<std::cell::Cell<usize>>>,
     checked_shutdown_failures: Option<Rc<std::cell::Cell<usize>>>,
+    shutdown_wait_error: Option<vk::Result>,
 }
 
 impl EndFailingEngine {
@@ -23,6 +26,7 @@ impl EndFailingEngine {
             resize_failure: None,
             shutdowns: None,
             checked_shutdown_failures: None,
+            shutdown_wait_error: None,
         }
     }
 
@@ -45,6 +49,11 @@ impl EndFailingEngine {
         self.checked_shutdown_failures = Some(failures);
         self
     }
+
+    fn with_shutdown_wait_error(mut self, error: vk::Result) -> Self {
+        self.shutdown_wait_error = Some(error);
+        self
+    }
 }
 
 impl GraphicsEngine for EndFailingEngine {
@@ -53,6 +62,9 @@ impl GraphicsEngine for EndFailingEngine {
     }
 
     fn try_shutdown(&mut self) -> Result<(), Error> {
+        if let Some(error) = self.shutdown_wait_error.take() {
+            accept_device_wait_for_shutdown(Err(error))?;
+        }
         if let Some(failures) = &self.checked_shutdown_failures {
             let remaining = failures.get();
             if remaining > 0 {
@@ -304,7 +316,7 @@ fn failed_resize_rebuilds_the_requested_extent_at_the_next_frame_boundary() {
 }
 
 #[test]
-fn recovery_retains_the_old_engine_when_checked_teardown_blocks_replacement() {
+fn recovery_does_not_build_replacement_until_checked_teardown_succeeds() {
     let actions = Rc::new(RefCell::new(Vec::new()));
     let recorded_actions = Rc::clone(&actions);
     let checked_shutdown_failures = Rc::new(std::cell::Cell::new(1));
@@ -333,7 +345,40 @@ fn recovery_retains_the_old_engine_when_checked_teardown_blocks_replacement() {
     assert_eq!(error.code(), Errc::InvalidState);
     assert_eq!(error.message(), "injected checked engine shutdown failure");
     assert_eq!(checked_shutdown_failures.get(), 0);
-    assert_eq!(replacement_shutdowns.get(), 1);
+    assert_eq!(replacement_shutdowns.get(), 0);
+    assert!(actions.borrow().is_empty());
+
+    assert!(matches!(
+        engine.begin_frame(UpdateStrategy::FullRedraw),
+        RenderOutcome::FrameReady(_)
+    ));
+    assert_eq!(actions.borrow().as_slice(), [RecoveryAction::RebuildRecipe]);
+}
+
+#[test]
+fn recovery_accepts_replacement_after_vulkan_device_lost_teardown() {
+    let actions = Rc::new(RefCell::new(Vec::new()));
+    let recorded_actions = Rc::clone(&actions);
+    let shutdowns = Rc::new(std::cell::Cell::new(0));
+    let mut engine = RecoveringGraphicsEngine::new(
+        Box::new(
+            EndFailingEngine::new(GraphicsFailure::DeviceLost(Error::new(
+                Errc::GraphicsDeviceLost,
+                "injected Vulkan device loss",
+            )))
+            .with_shutdown_wait_error(vk::Result::ERROR_DEVICE_LOST)
+            .with_shutdown_counter(Rc::clone(&shutdowns)),
+        ),
+        Box::new(move |action, _, _| {
+            recorded_actions.borrow_mut().push(action);
+            Ok(Box::new(NullEngine::new()))
+        }),
+    );
+    engine.initialize(4, 3).expect("initial engine");
+    assert!(matches!(
+        engine.end_frame(&DamageRegion::full()),
+        RenderOutcome::Failed(GraphicsFailure::DeviceLost(_))
+    ));
 
     assert!(matches!(
         engine.begin_frame(UpdateStrategy::FullRedraw),
@@ -341,11 +386,10 @@ fn recovery_retains_the_old_engine_when_checked_teardown_blocks_replacement() {
     ));
     assert_eq!(
         actions.borrow().as_slice(),
-        [
-            RecoveryAction::RebuildSurface,
-            RecoveryAction::RebuildRecipe
-        ]
+        [RecoveryAction::RebuildSurface]
     );
+    assert_eq!(shutdowns.get(), 1);
+    assert!(!engine.has_terminal_failure());
 }
 
 #[test]
