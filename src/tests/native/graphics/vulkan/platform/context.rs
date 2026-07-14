@@ -31,6 +31,16 @@ fn vulkan_adapter_diagnostic_summary_is_stable() {
 }
 
 #[test]
+fn vulkan_split_sources_retain_every_desktop_wsi_contract() {
+    let (surface, adapter) = platform_contract_sources();
+    assert!(surface.contains("create_win32_surface"));
+    assert!(surface.contains("create_wayland_surface"));
+    assert!(surface.contains("create_metal_surface"));
+    assert!(surface.contains("portability_enumeration"));
+    assert!(adapter.contains("portability_subset"));
+}
+
+#[test]
 fn crop_cpu_shadow_extracts_rect() {
     let shadow = vec![1, 2, 3, 4, 5, 6];
     let cropped = crop_cpu_shadow(&shadow, 3, 2, 1, 0, 2, 2).expect("crop");

@@ -34,6 +34,14 @@ pub(crate) fn vk_err(operation: &str, err: vk::Result) -> Error {
     Error::new(code, format!("VulkanContext: {operation} failed: {err:?}"))
 }
 
+/// 架构守卫的拆分后源边界：`surface.rs` 持有 `create_win32_surface`、
+/// `create_wayland_surface`、`create_metal_surface` 与 `portability_enumeration`；
+/// `adapter.rs` 持有 `portability_subset`。返回源码仅供测试核对真实所有权。
+#[cfg(test)]
+pub(crate) const fn platform_contract_sources() -> (&'static str, &'static str) {
+    (include_str!("surface.rs"), include_str!("adapter.rs"))
+}
+
 fn loader_err(operation: &str, err: impl std::fmt::Debug) -> Error {
     Error::new(
         Errc::PlatformError,

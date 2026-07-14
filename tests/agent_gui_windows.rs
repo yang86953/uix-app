@@ -1,5 +1,8 @@
 #![cfg(all(windows, feature = "agent-control"))]
 
+#[path = "support/agent_gui_windows/foreground.rs"]
+mod foreground;
+
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::windows::fs::OpenOptionsExt;
@@ -10,19 +13,17 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
-use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, SetActiveWindow, SetFocus, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
-    KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_TAB,
+    SendInput, INPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VK_TAB,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    BringWindowToTop, EnumWindows, GetForegroundWindow, GetWindowThreadProcessId, IsIconic,
-    IsWindowVisible, IsZoomed, PostMessageW, SetForegroundWindow, SetWindowPos, ShowWindowAsync,
-    HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, SW_MAXIMIZE,
-    SW_MINIMIZE, SW_SHOW, WM_CLOSE,
+    IsIconic, IsWindowVisible, IsZoomed, PostMessageW, SetWindowPos, ShowWindowAsync, HWND_TOPMOST,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE,
+    SW_SHOW, WM_CLOSE,
 };
+
+use foreground::{find_process_window, keyboard_input, request_foreground_focus};
 
 const START_TIMEOUT: Duration = Duration::from_secs(45);
 const PRESENT_TIMEOUT_MS: u64 = 30_000;
@@ -284,78 +285,6 @@ impl DemoProcess {
     }
 }
 
-fn keyboard_input(vk: VIRTUAL_KEY, flags: KEYBD_EVENT_FLAGS) -> INPUT {
-    INPUT {
-        r#type: INPUT_KEYBOARD,
-        Anonymous: INPUT_0 {
-            ki: KEYBDINPUT {
-                wVk: vk,
-                wScan: 0,
-                dwFlags: flags,
-                time: 0,
-                dwExtraInfo: 0,
-            },
-        },
-    }
-}
-
-fn window_thread_id(window: HWND) -> u32 {
-    // SAFETY: window 来自仍存活测试子进程的 EnumWindows 结果；不请求进程 ID 输出。
-    unsafe { GetWindowThreadProcessId(window, None) }
-}
-
-fn foreground_window() -> HWND {
-    // SAFETY: GetForegroundWindow 不接收指针，也不转移返回句柄的所有权。
-    unsafe { GetForegroundWindow() }
-}
-
-fn attach_input_thread(current: u32, other: u32) -> bool {
-    if other == 0 || other == current {
-        return false;
-    }
-    // SAFETY: 两个线程 ID 均来自 Win32 查询；调用只临时合并其输入队列。
-    unsafe { AttachThreadInput(current, other, true) }.as_bool()
-}
-
-fn request_foreground_focus(window: HWND) {
-    // SAFETY: GetCurrentThreadId 不接收指针，返回值只用于本次输入队列操作。
-    let current_thread = unsafe { GetCurrentThreadId() };
-    let target_thread = window_thread_id(window);
-    assert_ne!(target_thread, 0, "demo HWND must belong to a live thread");
-    let foreground = foreground_window();
-    let foreground_thread = if foreground.0.is_null() {
-        0
-    } else {
-        window_thread_id(foreground)
-    };
-    let attached_foreground = attach_input_thread(current_thread, foreground_thread);
-    let attached_target =
-        target_thread != foreground_thread && attach_input_thread(current_thread, target_thread);
-
-    unsafe {
-        // SAFETY: window 属于仍存活的测试子进程；临时合并输入队列后仅请求激活与键盘焦点。
-        let _ = BringWindowToTop(window);
-        let _ = SetActiveWindow(window);
-        let _ = SetForegroundWindow(window);
-        let _ = SetFocus(Some(window));
-        if attached_target {
-            let _ = AttachThreadInput(current_thread, target_thread, false);
-        }
-        if attached_foreground {
-            let _ = AttachThreadInput(current_thread, foreground_thread, false);
-        }
-    }
-
-    let deadline = Instant::now() + Duration::from_secs(2);
-    while foreground_window() != window {
-        assert!(
-            Instant::now() < deadline,
-            "demo HWND did not become the foreground window"
-        );
-        thread::sleep(Duration::from_millis(25));
-    }
-}
-
 impl Drop for DemoProcess {
     fn drop(&mut self) {
         if self.child.try_wait().ok().flatten().is_none() {
@@ -377,44 +306,6 @@ fn read_process_output(mut stream: impl Read + Send + 'static) -> JoinHandle<Str
             .expect("read demo process output");
         output
     })
-}
-
-struct WindowSearch {
-    process_id: u32,
-    window: Option<HWND>,
-}
-
-unsafe extern "system" fn find_window_callback(window: HWND, context: LPARAM) -> BOOL {
-    let search = unsafe {
-        // SAFETY: `find_process_window` 在同步 EnumWindows 调用期间保留该栈对象。
-        &mut *(context.0 as *mut WindowSearch)
-    };
-    let mut process_id = 0u32;
-    unsafe {
-        // SAFETY: HWND 由 EnumWindows 提供，输出指针指向有效的局部 u32。
-        GetWindowThreadProcessId(window, Some(&mut process_id));
-    }
-    if process_id == search.process_id {
-        search.window = Some(window);
-        BOOL(0)
-    } else {
-        BOOL(1)
-    }
-}
-
-fn find_process_window(process_id: u32) -> Option<HWND> {
-    let mut search = WindowSearch {
-        process_id,
-        window: None,
-    };
-    unsafe {
-        // SAFETY: callback 与 context 仅在同步枚举期间使用，context 指针始终有效。
-        let _ = EnumWindows(
-            Some(find_window_callback),
-            LPARAM((&mut search as *mut WindowSearch) as isize),
-        );
-    }
-    search.window
 }
 
 fn connect(endpoint: &str, child: &mut Child) -> File {
@@ -706,6 +597,9 @@ fn run_real_gui_scenario(graphics: GraphicsExpectation) {
         node_by_automation_id(&before["snapshot"], "home-count-value")["name"],
         "计数: 0"
     );
+    if graphics.backend_override.is_none() {
+        foreground::verify_theme_and_resize_capture(&demo, &mut connection, window_id, generation);
+    }
 
     let performed = invoke_until_presentable(
         &demo,
