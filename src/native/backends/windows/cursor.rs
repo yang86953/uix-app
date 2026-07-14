@@ -10,6 +10,12 @@ use crate::native::traits::input::CursorType;
 use crate::native::traits::input::ICursor;
 use std::ptr;
 
+use super::bindings::{POINT, RECT};
+use super::ffi::{
+    ClipCursor, GetCursorPos, GetWindowRect, LoadCursorW, ReleaseCapture, SetCapture, SetCursor,
+    SetCursorPos, ShowCursor,
+};
+
 pub struct WindowsCursor {
     hwnd: *mut std::ffi::c_void,
 }
@@ -112,21 +118,6 @@ impl ICursor for WindowsCursor {
     }
 }
 
-// ── FFI declarations ──
-
-#[repr(C)]
-struct POINT {
-    x: i32,
-    y: i32,
-}
-#[repr(C)]
-struct RECT {
-    left: i32,
-    top: i32,
-    right: i32,
-    bottom: i32,
-}
-
 const IDC_ARROW: u16 = 32512;
 const IDC_IBEAM: u16 = 32513;
 const IDC_WAIT: u16 = 32514;
@@ -138,16 +129,6 @@ const IDC_SIZENS: u16 = 32645;
 const IDC_SIZEWE: u16 = 32644;
 const IDC_SIZENWSE: u16 = 32642;
 const IDC_SIZENESW: u16 = 32643;
-use super::ffi::{LoadCursorW, ReleaseCapture, SetCapture, SetCursor};
 
 const TRUE: i32 = 1;
 const FALSE: i32 = 0;
-
-#[link(name = "user32")]
-extern "system" {
-    fn ShowCursor(bShow: i32) -> i32;
-    fn GetCursorPos(lpPoint: *mut POINT) -> i32;
-    fn SetCursorPos(x: i32, y: i32) -> i32;
-    fn ClipCursor(lpRect: *const RECT) -> i32;
-    fn GetWindowRect(hwnd: *mut std::ffi::c_void, lpRect: *mut RECT) -> i32;
-}

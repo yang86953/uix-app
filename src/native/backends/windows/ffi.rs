@@ -130,6 +130,10 @@ extern "system" {
         lpCursorName: *const u16,
     ) -> *mut std::ffi::c_void;
     pub(crate) fn SetCursor(hCursor: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
+    pub(crate) fn ShowCursor(bShow: i32) -> i32;
+    pub(super) fn GetCursorPos(lpPoint: *mut POINT) -> i32;
+    pub(crate) fn SetCursorPos(x: i32, y: i32) -> i32;
+    pub(super) fn ClipCursor(lpRect: *const RECT) -> i32;
     pub(crate) fn SetCapture(hwnd: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
     pub(crate) fn ReleaseCapture() -> i32;
     pub(crate) fn ScreenToClient(hwnd: *mut std::ffi::c_void, lpPoint: *mut POINT) -> i32;
