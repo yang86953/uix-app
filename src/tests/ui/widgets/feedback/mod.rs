@@ -4,6 +4,7 @@ mod drawer;
 mod message;
 mod modal;
 mod notification;
+mod popover;
 mod progress;
 mod spin;
 mod tooltip;

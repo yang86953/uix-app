@@ -268,6 +268,14 @@ impl TransitionPlayer {
         self.finished = false;
     }
 
+    pub(crate) fn offset_endpoints(&self) -> (Point, Point) {
+        self.offset_anim
+            .as_ref()
+            .map_or((Point::new(0.0, 0.0), Point::new(0.0, 0.0)), |animation| {
+                (animation.from, animation.to)
+            })
+    }
+
     /// 按帧推进动画。
     pub fn update(&mut self, dt: f64) {
         if self.finished {
