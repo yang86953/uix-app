@@ -1024,11 +1024,30 @@ impl SnapshotFields {
                 },
             ),
             Self::Result {
-                title, subtitle, ..
-            } => AccessibilitySnapshot::named(
-                AccessibilityRole::Status,
-                first_non_empty([title.as_str(), subtitle.as_str()]),
-            ),
+                title,
+                subtitle,
+                extra_text,
+                ..
+            } => {
+                let action = !extra_text.is_empty();
+                let summary = first_non_empty([title.as_str(), subtitle.as_str()]);
+                AccessibilitySnapshot::named(
+                    if action {
+                        AccessibilityRole::Button
+                    } else {
+                        AccessibilityRole::Status
+                    },
+                    if action {
+                        extra_text.clone()
+                    } else {
+                        summary.clone()
+                    },
+                )
+                .with_state(AccessibilityState {
+                    value_text: (action && !summary.is_empty()).then_some(summary),
+                    ..AccessibilityState::default()
+                })
+            }
             Self::Spin { tip, .. } => {
                 AccessibilitySnapshot::named(AccessibilityRole::Status, tip.clone())
             }
