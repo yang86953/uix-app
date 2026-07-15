@@ -71,18 +71,20 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             session = EvidenceSession(output, "mixed-dpi", "amd", None, 900, 60, plan)
 
             log_path = session.start_case(0)
-            self.assertEqual(log_path.name, "01-vulkan-mixed-dpi.log")
+            self.assertEqual(log_path.name, "01-vulkan-mixed-dpi-attempt-01.log")
             log_path.write_text("matrix evidence\n", encoding="utf-8")
             session.finish_case(0, 0, 1.23456)
             session.finish("passed")
 
             manifest = session.manifest
-            self.assertEqual(manifest["schema_version"], 3)
+            self.assertEqual(manifest["schema_version"], 4)
             self.assertEqual(manifest["status"], "passed")
-            self.assertEqual(manifest["cases"][0]["status"], "passed")
-            self.assertEqual(manifest["cases"][0]["duration_seconds"], 1.235)
-            self.assertEqual(manifest["cases"][0]["log_bytes"], 16)
-            self.assertEqual(manifest["cases"][0]["log_sha256"], file_sha256(log_path))
+            case = manifest["cases"][0]
+            self.assertEqual(case["status"], "passed")
+            attempt = case["attempts"][0]
+            self.assertEqual(attempt["duration_seconds"], 1.235)
+            self.assertEqual(attempt["log_bytes"], 16)
+            self.assertEqual(attempt["log_sha256"], file_sha256(log_path))
             self.assertTrue(session.manifest_path.is_file())
 
     def test_atomic_manifest_write_leaves_no_temporary_file(self) -> None:
@@ -161,8 +163,9 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
 
             case = session.manifest["cases"][0]
             self.assertEqual(case["status"], "failed")
-            self.assertEqual(case["exit_code"], 0)
-            self.assertEqual(case["evidence_error"], "missing exact test evidence")
+            attempt = case["attempts"][0]
+            self.assertEqual(attempt["exit_code"], 0)
+            self.assertEqual(attempt["evidence_error"], "missing exact test evidence")
 
     def test_evidence_verifier_rejects_log_tampering(self) -> None:
         plan = build_plan("mixed-dpi", "amd", None, 900, 60)
@@ -180,6 +183,29 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             log_path.write_text("tampered evidence\n", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "size changed|SHA-256 changed"):
                 verify_evidence_dir(output)
+
+    def test_attempt_history_retains_failure_before_success(self) -> None:
+        plan = build_plan("mixed-dpi", "amd", None, 900, 60)
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "evidence"
+            session = EvidenceSession(output, "mixed-dpi", "amd", None, 900, 60, plan)
+
+            first_log = session.start_case(0)
+            first_log.write_text("first attempt failed\n", encoding="utf-8")
+            session.finish_case(0, 1, 0.2)
+            second_log = session.start_case(0)
+            second_log.write_text("second attempt passed\n", encoding="utf-8")
+            session.finish_case(0, 0, 0.3)
+            session.finish("passed")
+
+            case = session.manifest["cases"][0]
+            self.assertEqual(case["status"], "passed")
+            self.assertEqual(
+                [attempt["status"] for attempt in case["attempts"]],
+                ["failed", "passed"],
+            )
+            self.assertNotEqual(first_log, second_log)
+            verify_evidence_dir(output)
 
 
 if __name__ == "__main__":

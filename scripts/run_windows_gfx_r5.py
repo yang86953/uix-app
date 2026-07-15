@@ -29,6 +29,7 @@ MAX_SOAK_SECONDS = 3_600
 MIN_DEVICE_LOST_TIMEOUT = 5
 MAX_DEVICE_LOST_TIMEOUT = 600
 EVIDENCE_VALIDATION_EXIT_CODE = 3
+EVIDENCE_SCHEMA_VERSION = 4
 
 VENDOR_CASES = (
     (
@@ -153,7 +154,7 @@ class EvidenceSession:
             raise ValueError(f"evidence output already exists: {output_dir}")
         self.logs_dir.mkdir(parents=True)
         self.manifest = {
-            "schema_version": 3,
+            "schema_version": EVIDENCE_SCHEMA_VERSION,
             "status": "running",
             "started_at": utc_now(),
             "completed_at": None,
@@ -176,24 +177,33 @@ class EvidenceSession:
             "name": case.name,
             "test_name": case.test_name,
             "status": "pending",
-            "started_at": None,
-            "completed_at": None,
-            "duration_seconds": None,
-            "exit_code": None,
-            "evidence_error": None,
             "environment": dict(case.environment),
             "command": list(case.command()),
-            "log": f"logs/{index:02d}-{case.name}.log",
-            "log_bytes": None,
-            "log_sha256": None,
+            "attempts": [],
         }
 
     def start_case(self, index: int) -> Path:
         case = self.manifest["cases"][index]
+        attempt_number = len(case["attempts"]) + 1
+        attempt = {
+            "attempt": attempt_number,
+            "status": "running",
+            "started_at": utc_now(),
+            "completed_at": None,
+            "duration_seconds": None,
+            "exit_code": None,
+            "evidence_error": None,
+            "log": (
+                f"logs/{case['index']:02d}-{case['name']}-"
+                f"attempt-{attempt_number:02d}.log"
+            ),
+            "log_bytes": None,
+            "log_sha256": None,
+        }
+        case["attempts"].append(attempt)
         case["status"] = "running"
-        case["started_at"] = utc_now()
         self._write()
-        return self.output_dir / case["log"]
+        return self.output_dir / attempt["log"]
 
     def finish_case(
         self,
@@ -203,14 +213,16 @@ class EvidenceSession:
         evidence_error: str | None = None,
     ) -> None:
         case = self.manifest["cases"][index]
-        case["status"] = (
+        attempt = case["attempts"][-1]
+        attempt["status"] = (
             "passed" if exit_code == 0 and evidence_error is None else "failed"
         )
-        case["completed_at"] = utc_now()
-        case["duration_seconds"] = round(duration, 3)
-        case["exit_code"] = exit_code
-        case["evidence_error"] = evidence_error
-        self._record_log_integrity(case)
+        attempt["completed_at"] = utc_now()
+        attempt["duration_seconds"] = round(duration, 3)
+        attempt["exit_code"] = exit_code
+        attempt["evidence_error"] = evidence_error
+        case["status"] = attempt["status"]
+        self._record_log_integrity(attempt)
         self._write()
 
     def finish(self, status: str) -> None:
@@ -219,18 +231,20 @@ class EvidenceSession:
         if status == "interrupted":
             for case in self.manifest["cases"]:
                 if case["status"] == "running":
+                    attempt = case["attempts"][-1]
+                    attempt["status"] = "interrupted"
+                    attempt["completed_at"] = self.manifest["completed_at"]
                     case["status"] = "interrupted"
-                    case["completed_at"] = self.manifest["completed_at"]
-                    log_path = self.output_dir / case["log"]
+                    log_path = self.output_dir / attempt["log"]
                     if log_path.is_file():
-                        self._record_log_integrity(case)
+                        self._record_log_integrity(attempt)
         self._write()
 
-    def _record_log_integrity(self, case: dict[str, object]) -> None:
-        log_path = self.output_dir / str(case["log"])
+    def _record_log_integrity(self, attempt: dict[str, object]) -> None:
+        log_path = self.output_dir / str(attempt["log"])
         normalize_log_ending(log_path)
-        case["log_bytes"] = log_path.stat().st_size
-        case["log_sha256"] = file_sha256(log_path)
+        attempt["log_bytes"] = log_path.stat().st_size
+        attempt["log_sha256"] = file_sha256(log_path)
 
     def _write(self) -> None:
         write_json_atomic(self.manifest_path, self.manifest)
@@ -326,9 +340,10 @@ def verify_evidence_dir(output_dir: Path) -> dict[str, object]:
     output_dir = output_dir.resolve()
     manifest_path = output_dir / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if manifest.get("schema_version") != 3:
+    if manifest.get("schema_version") != EVIDENCE_SCHEMA_VERSION:
         raise ValueError(
-            f"unsupported evidence schema {manifest.get('schema_version')!r}; expected 3"
+            "unsupported evidence schema "
+            f"{manifest.get('schema_version')!r}; expected {EVIDENCE_SCHEMA_VERSION}"
         )
     status = manifest.get("status")
     cases = manifest.get("cases")
@@ -338,6 +353,7 @@ def verify_evidence_dir(output_dir: Path) -> dict[str, object]:
         raise ValueError("evidence manifest must contain at least one case")
 
     case_statuses: list[object] = []
+    seen_logs: set[str] = set()
     for case in cases:
         if not isinstance(case, dict):
             raise ValueError("evidence case must be an object")
@@ -346,27 +362,30 @@ def verify_evidence_dir(output_dir: Path) -> dict[str, object]:
         case_statuses.append(case_status)
         if case_status not in ("pending", "running", "passed", "failed", "interrupted"):
             raise ValueError(f"invalid status for evidence case {case_name!r}")
-        if case_status in ("pending", "running"):
+        attempts = case.get("attempts")
+        if not isinstance(attempts, list):
+            raise ValueError(f"evidence case {case_name!r} attempts must be a list")
+        if not attempts:
+            if case_status != "pending":
+                raise ValueError(f"evidence case {case_name!r} has status without attempts")
             continue
-        relative_log = case.get("log")
-        if not isinstance(relative_log, str):
-            raise ValueError(f"evidence case {case_name!r} has no log path")
-        log_path = (output_dir / relative_log).resolve()
-        if not log_path.is_relative_to(output_dir):
-            raise ValueError(f"evidence case {case_name!r} log escapes output directory")
-        if not log_path.is_file():
-            raise ValueError(f"evidence case {case_name!r} log is missing")
-        actual_bytes = log_path.stat().st_size
-        expected_bytes = case.get("log_bytes")
-        if actual_bytes != expected_bytes:
-            raise ValueError(
-                f"evidence case {case_name!r} log size changed: "
-                f"expected={expected_bytes!r}, actual={actual_bytes}"
-            )
-        actual_hash = file_sha256(log_path)
-        expected_hash = case.get("log_sha256")
-        if actual_hash != expected_hash:
-            raise ValueError(f"evidence case {case_name!r} log SHA-256 changed")
+        for attempt_index, attempt in enumerate(attempts, 1):
+            if not isinstance(attempt, dict):
+                raise ValueError(f"evidence case {case_name!r} attempt must be an object")
+            if attempt.get("attempt") != attempt_index:
+                raise ValueError(f"evidence case {case_name!r} attempt order is invalid")
+            attempt_status = attempt.get("status")
+            if attempt_status not in ("running", "passed", "failed", "interrupted"):
+                raise ValueError(
+                    f"invalid attempt status for evidence case {case_name!r}"
+                )
+            if attempt_index < len(attempts) and attempt_status == "running":
+                raise ValueError(f"evidence case {case_name!r} has a stale running attempt")
+            if attempt_status != "running":
+                verify_attempt_log(output_dir, case_name, attempt, seen_logs)
+        latest_status = attempts[-1].get("status")
+        if latest_status != case_status:
+            raise ValueError(f"evidence case {case_name!r} status disagrees with latest attempt")
 
     if status == "passed" and any(case_status != "passed" for case_status in case_statuses):
         raise ValueError("passed manifest contains a non-passed case")
@@ -375,6 +394,36 @@ def verify_evidence_dir(output_dir: Path) -> dict[str, object]:
     if status == "interrupted" and "interrupted" not in case_statuses:
         raise ValueError("interrupted manifest contains no interrupted case")
     return manifest
+
+
+def verify_attempt_log(
+    output_dir: Path,
+    case_name: object,
+    attempt: dict[str, object],
+    seen_logs: set[str],
+) -> None:
+    relative_log = attempt.get("log")
+    if not isinstance(relative_log, str):
+        raise ValueError(f"evidence case {case_name!r} attempt has no log path")
+    if relative_log in seen_logs:
+        raise ValueError(f"evidence log is reused by multiple attempts: {relative_log}")
+    seen_logs.add(relative_log)
+    log_path = (output_dir / relative_log).resolve()
+    if not log_path.is_relative_to(output_dir):
+        raise ValueError(f"evidence case {case_name!r} log escapes output directory")
+    if not log_path.is_file():
+        raise ValueError(f"evidence case {case_name!r} log is missing")
+    actual_bytes = log_path.stat().st_size
+    expected_bytes = attempt.get("log_bytes")
+    if actual_bytes != expected_bytes:
+        raise ValueError(
+            f"evidence case {case_name!r} log size changed: "
+            f"expected={expected_bytes!r}, actual={actual_bytes}"
+        )
+    actual_hash = file_sha256(log_path)
+    expected_hash = attempt.get("log_sha256")
+    if actual_hash != expected_hash:
+        raise ValueError(f"evidence case {case_name!r} log SHA-256 changed")
 
 
 def capture(command: Sequence[str]) -> str:
@@ -539,7 +588,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--verify-evidence",
         type=Path,
-        help="verify an existing schema-3 evidence directory without running tests",
+        help="verify an existing schema-4 evidence directory without running tests",
     )
     return parser.parse_args(argv)
 
