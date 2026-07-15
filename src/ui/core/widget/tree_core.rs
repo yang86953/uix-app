@@ -720,6 +720,7 @@ impl WidgetTree {
             automation_id,
             tab_idx,
             handlers,
+            system_event_handlers,
             render_handlers,
         } = node;
         let id = match parent {
@@ -744,6 +745,7 @@ impl WidgetTree {
             .collect();
         if let Some(n) = self.get_mut(id) {
             n.set_handler_signatures(handler_signatures);
+            n.replace_system_event_handlers(system_event_handlers);
         }
         for handler in handlers {
             self.handler_table.register(id, handler);
@@ -783,6 +785,16 @@ impl WidgetTree {
         handlers: Vec<RenderHandlerRegistration>,
     ) {
         self.render_handler_table.replace_component(id, handlers);
+    }
+
+    pub(crate) fn replace_system_event_handlers(
+        &mut self,
+        id: ComponentId,
+        handlers: Vec<crate::ui::system_event_handler::SystemEventHandlerRegistration>,
+    ) {
+        if let Some(node) = self.get_mut(id) {
+            node.replace_system_event_handlers(handlers);
+        }
     }
 
     pub fn overlay_stack(&self) -> &OverlayStack {

@@ -10,6 +10,7 @@ use crate::ui::foundation::provider_context::{
     current_provider_context, with_provider_context, ProviderContext,
 };
 use crate::ui::render_handler::RenderHandlerRegistration;
+use crate::ui::system_event_handler::SystemEventHandlerRegistration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventResult {
@@ -35,6 +36,7 @@ pub struct WidgetNode {
     pub automation_id: Option<Box<str>>,
     pub tab_idx: i32,
     pub handlers: Vec<HandlerRegistration>,
+    pub(crate) system_event_handlers: Vec<SystemEventHandlerRegistration>,
     pub(crate) render_handlers: Vec<RenderHandlerRegistration>,
 }
 
@@ -49,6 +51,7 @@ impl WidgetNode {
             automation_id: None,
             tab_idx: 0,
             handlers: Vec::new(),
+            system_event_handlers: Vec::new(),
             render_handlers: Vec::new(),
         }
     }
@@ -70,6 +73,7 @@ impl WidgetNode {
             automation_id: None,
             tab_idx: 0,
             handlers: Vec::new(),
+            system_event_handlers: Vec::new(),
             render_handlers: Vec::new(),
         }
     }
@@ -123,6 +127,13 @@ impl WidgetNode {
         self.handlers = handlers;
         self
     }
+    pub(crate) fn with_system_event_handlers(
+        mut self,
+        handlers: Vec<SystemEventHandlerRegistration>,
+    ) -> Self {
+        self.system_event_handlers = handlers;
+        self
+    }
     pub(crate) fn with_render_handlers(mut self, handlers: Vec<RenderHandlerRegistration>) -> Self {
         self.render_handlers = handlers;
         self
@@ -172,6 +183,7 @@ pub struct BoxedWidget {
     /// Tab 键导航顺序（0=不可通过 Tab 导航聚焦）。
     tab_idx: i32,
     handler_signatures: Vec<HandlerSignature>,
+    system_event_handlers: Vec<SystemEventHandlerRegistration>,
 }
 
 impl BoxedWidget {
@@ -208,6 +220,7 @@ impl BoxedWidget {
             z: 0,
             tab_idx: 0,
             handler_signatures: Vec::new(),
+            system_event_handlers: Vec::new(),
         }
     }
     pub fn component(&self) -> &dyn WidgetComponent {
@@ -295,6 +308,13 @@ impl BoxedWidget {
     }
     pub(crate) fn set_handler_signatures(&mut self, signatures: Vec<HandlerSignature>) {
         self.handler_signatures = signatures;
+    }
+
+    pub(crate) fn replace_system_event_handlers(
+        &mut self,
+        handlers: Vec<SystemEventHandlerRegistration>,
+    ) {
+        self.system_event_handlers = handlers;
     }
 
     pub fn as_render(&self) -> Option<&dyn WidgetRender> {
@@ -406,14 +426,22 @@ impl BoxedWidget {
         self.component().as_event().and_then(|e| e.active_timer())
     }
     pub fn wants_capture_phase(&self) -> bool {
-        self.component()
-            .as_event()
-            .is_some_and(|e| e.wants_capture_phase())
+        self.system_event_handlers
+            .iter()
+            .any(SystemEventHandlerRegistration::wants_capture_phase)
+            || self
+                .component()
+                .as_event()
+                .is_some_and(|e| e.wants_capture_phase())
     }
     pub fn wants_continuous_pointer_move(&self) -> bool {
-        self.component()
-            .as_event()
-            .is_some_and(|e| e.wants_continuous_pointer_move())
+        self.system_event_handlers
+            .iter()
+            .any(SystemEventHandlerRegistration::wants_continuous_pointer_move)
+            || self
+                .component()
+                .as_event()
+                .is_some_and(|e| e.wants_continuous_pointer_move())
     }
     pub fn hit_test_frame(&self, actual_frame: Rect) -> Rect {
         self.component()
@@ -433,12 +461,25 @@ impl BoxedWidget {
             .unwrap_or(false)
     }
     pub fn on_event(&mut self, event: &SystemEvent) -> EventResult {
-        self.with_component_context_mut(|component| {
+        let mut bubbled = false;
+        for handler in &mut self.system_event_handlers {
+            match handler.handle(event) {
+                EventResult::Handled => return EventResult::Handled,
+                EventResult::Bubbled => bubbled = true,
+                EventResult::NotHandled => {}
+            }
+        }
+        let component_result = self.with_component_context_mut(|component| {
             component
                 .as_event_mut()
                 .map(|handler| handler.on_event(event))
                 .unwrap_or(EventResult::NotHandled)
-        })
+        });
+        if component_result == EventResult::NotHandled && bubbled {
+            EventResult::Bubbled
+        } else {
+            component_result
+        }
     }
     pub(crate) fn take_window_action(&mut self) -> Option<crate::ui::event::WindowAction> {
         self.with_component_context_mut(|component| {
@@ -496,7 +537,7 @@ impl BoxedWidget {
         self.component().has_dynamic_content()
     }
     pub fn has_interactive_state(&self) -> bool {
-        self.caps.contains(WidgetCapabilities::EVENT)
+        self.caps.contains(WidgetCapabilities::EVENT) || !self.system_event_handlers.is_empty()
     }
     pub fn on_attach(&mut self) {
         self.with_component_context_mut(|component| {
