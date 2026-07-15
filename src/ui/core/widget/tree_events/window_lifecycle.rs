@@ -5,6 +5,9 @@ impl WidgetTree {
         match event {
             SystemEvent::WindowFocus => self.activate_window_focus(),
             SystemEvent::WindowBlur | SystemEvent::WindowMinimize => {
+                if let Some(root) = self.root_id {
+                    self.cancel_pointer_hover_in_subtree(root);
+                }
                 self.cancel_active_pointer_gesture();
                 self.deactivate_window_focus();
             }
