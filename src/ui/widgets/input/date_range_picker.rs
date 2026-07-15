@@ -17,7 +17,8 @@ use crate::ui::widgets::input::date_picker::{
     add_days, days_in_month, next_month, prev_month, Date, DisabledDate,
 };
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    WidgetTree,
 };
 
 const PRESET_GAP: f32 = 2.0;
@@ -109,7 +110,11 @@ component! {
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         self.sync_bound_values();
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 self.focused = true;
                 if !self.open.get() {
                     self.open_from_current_value();

@@ -6,7 +6,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
-use crate::ui::{EventResult, KeyCode, SnapshotFields, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyCode, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
 use std::cell::Cell;
 
 const SUGGESTION_ROW_HEIGHT: f32 = 32.0;
@@ -63,7 +63,11 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 if self.suggesting && pos.y > 34.0 {
                     let index = ((pos.y - 34.0) / SUGGESTION_ROW_HEIGHT) as usize;
                     if index < self.filtered.len().min(MAX_VISIBLE_SUGGESTIONS) {

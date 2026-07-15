@@ -12,6 +12,7 @@ mod input;
 mod input_number;
 mod mentions;
 mod popup_hit_test;
+mod primary_pointer;
 mod radio;
 mod rate;
 mod segmented;

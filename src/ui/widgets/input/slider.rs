@@ -10,7 +10,9 @@ use crate::draw::{Color, Radius};
 use crate::native::traits::input::ControlSize;
 use crate::ui::state::State;
 use crate::ui::SnapshotFields;
-use crate::ui::{ComponentId, EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetTree};
+use crate::ui::{
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
+};
 
 component! {
     /// Horizontal slider.
@@ -38,7 +40,11 @@ component! {
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         self.sync_bound_value();
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 self.dragging = true;
                 self.focused = true;
                 if let Some(frame) = self.last_frame.get() {
@@ -55,7 +61,10 @@ component! {
                 self.hovered = true;
                 EventResult::Handled
             }
-            SystemEvent::PointerUp { .. } => {
+            SystemEvent::PointerUp {
+                button: MouseButton::Left,
+                ..
+            } => {
                 self.dragging = false;
                 EventResult::Handled
             }

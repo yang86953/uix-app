@@ -7,7 +7,9 @@ use crate::draw::Radius;
 use crate::native::traits::input::ControlSize;
 use crate::ui::state::State;
 use crate::ui::SnapshotFields;
-use crate::ui::{ComponentId, EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetTree};
+use crate::ui::{
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
+};
 use std::cell::Cell;
 
 component! {
@@ -37,7 +39,11 @@ component! {
         self.sync_bound_value();
         if self.disabled { return EventResult::NotHandled; }
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 let cell_width = self.cell_width();
                 let star_idx = (pos.x / cell_width) as usize;
                 if star_idx < self.count {

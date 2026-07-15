@@ -7,7 +7,8 @@ use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::foundation::virtual_scroll::VirtualListScroll;
 use crate::ui::state::State;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    WidgetTree,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
@@ -174,7 +175,11 @@ component! {
 
         let visible_options = self.visible_option_indices();
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 if pos.y >= 0.0 && pos.y <= self.control_height() {
                     if self.open {
                         self.close();

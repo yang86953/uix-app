@@ -12,7 +12,8 @@ use crate::draw::Color;
 use crate::native::traits::input::ControlSize;
 use crate::ui::state::State;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    WidgetTree,
 };
 
 const POPUP_GAP: f32 = 2.0;
@@ -75,7 +76,11 @@ component! {
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         self.sync_bound_value();
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 self.focused = true;
                 if !self.open.get() {
                     self.open.set(true);
