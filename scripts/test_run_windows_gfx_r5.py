@@ -3,7 +3,7 @@ from contextlib import redirect_stderr
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from scripts.run_windows_gfx_r5 import (
     DEVICE_FAULT_ENV,
@@ -22,6 +22,7 @@ from scripts.run_windows_gfx_r5 import (
     parse_test_inventory,
     require_case_success,
     require_planned_tests,
+    run_case,
     run_plan,
     verify_evidence_dir,
     write_json_atomic,
@@ -37,6 +38,28 @@ def passing_log(case) -> str:
 
 
 class RunWindowsGfxR5Tests(unittest.TestCase):
+    def test_run_case_cleans_process_tree_when_output_stream_fails(self) -> None:
+        class BrokenOutput:
+            def __iter__(self):
+                raise OSError("output pipe failed")
+
+        case = build_plan("mixed-dpi", "amd", None, 900, 60)[0]
+        process = Mock(stdout=BrokenOutput())
+        with TemporaryDirectory() as directory:
+            log_path = Path(directory) / "case.log"
+            with (
+                patch("scripts.run_windows_gfx_r5.subprocess.Popen", return_value=process),
+                patch(
+                    "scripts.run_windows_gfx_r5.terminate_process_tree",
+                    return_value=True,
+                ) as terminate,
+                self.assertRaisesRegex(OSError, "output pipe failed"),
+            ):
+                run_case(case, log_path)
+
+        terminate.assert_called_once_with(process)
+        process.wait.assert_not_called()
+
     def test_vendor_profile_is_exact_and_serial(self) -> None:
         plan = build_plan("vendor", "amd", None, 900, 60)
 
