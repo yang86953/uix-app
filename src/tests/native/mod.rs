@@ -2,6 +2,7 @@
 
 mod backends;
 mod factory;
+#[cfg(feature = "vulkan")]
 mod gfx_r5;
 mod graphics;
 mod services;
