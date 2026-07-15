@@ -1,4 +1,4 @@
-use crate::ui::widgets::{BreadcrumbItem, Date};
+use crate::ui::widgets::{AnchorItem, BreadcrumbItem, Date, SelectableItem};
 
 use super::{AccessibilityRole, AccessibilitySnapshot, AccessibilityState};
 
@@ -52,6 +52,49 @@ pub(super) fn breadcrumb_accessibility(items: &[BreadcrumbItem]) -> Accessibilit
         value_now: active
             .and_then(|active| items.iter().position(|item| item == active))
             .map(|index| (index + 1) as f64),
+        value_min: (!items.is_empty()).then_some(1.0),
+        value_max: (!items.is_empty()).then_some(items.len() as f64),
+        ..AccessibilityState::default()
+    })
+}
+
+pub(super) fn pagination_accessibility(
+    current: usize,
+    total: usize,
+    page_size: usize,
+) -> AccessibilitySnapshot {
+    let page_count = total.div_ceil(page_size);
+    AccessibilitySnapshot::new(AccessibilityRole::Navigation).with_state(AccessibilityState {
+        value_text: Some(format!(
+            "Page {current} of {page_count}; {page_size} per page"
+        )),
+        value_now: Some(current as f64),
+        value_min: Some(1.0),
+        value_max: Some(page_count.max(1) as f64),
+        ..AccessibilityState::default()
+    })
+}
+
+pub(super) fn anchor_accessibility(
+    items: &[AnchorItem],
+    active_index: usize,
+) -> AccessibilitySnapshot {
+    AccessibilitySnapshot::new(AccessibilityRole::Navigation).with_state(AccessibilityState {
+        value_text: items.get(active_index).map(|item| item.label.clone()),
+        value_now: (!items.is_empty()).then_some((active_index + 1) as f64),
+        value_min: (!items.is_empty()).then_some(1.0),
+        value_max: (!items.is_empty()).then_some(items.len() as f64),
+        ..AccessibilityState::default()
+    })
+}
+
+pub(super) fn selectable_list_accessibility(
+    items: &[SelectableItem],
+    active_index: usize,
+) -> AccessibilitySnapshot {
+    AccessibilitySnapshot::new(AccessibilityRole::List).with_state(AccessibilityState {
+        value_text: items.get(active_index).map(|item| item.text.clone()),
+        value_now: (!items.is_empty()).then_some((active_index + 1) as f64),
         value_min: (!items.is_empty()).then_some(1.0),
         value_max: (!items.is_empty()).then_some(items.len() as f64),
         ..AccessibilityState::default()

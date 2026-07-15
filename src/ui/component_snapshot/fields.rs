@@ -9,7 +9,8 @@ use crate::ui::window_chrome::WindowControl;
 use crate::ui::Placement;
 
 use super::accessibility::{
-    breadcrumb_accessibility, calendar_accessibility, carousel_accessibility, first_non_empty,
+    anchor_accessibility, breadcrumb_accessibility, calendar_accessibility, carousel_accessibility,
+    first_non_empty, pagination_accessibility, selectable_list_accessibility,
     theme_toggle_accessibility,
 };
 use super::{
@@ -515,6 +516,7 @@ pub enum SnapshotFields {
     },
     SelectableList {
         items: Vec<SelectableItem>,
+        active_index: usize,
         header_button_text: String,
         footer_text: String,
         item_height: f32,
@@ -732,31 +734,12 @@ impl SnapshotFields {
                 total,
                 page_size,
                 ..
-            } => AccessibilitySnapshot::new(AccessibilityRole::Navigation).with_state(
-                AccessibilityState {
-                    value_text: Some(format!(
-                        "Page {current} of {}; {page_size} per page",
-                        total.div_ceil(*page_size)
-                    )),
-                    value_now: Some(*current as f64),
-                    value_min: Some(1.0),
-                    value_max: Some(total.div_ceil(*page_size).max(1) as f64),
-                    ..AccessibilityState::default()
-                },
-            ),
+            } => pagination_accessibility(*current, *total, *page_size),
             Self::Anchor {
                 items,
                 active_index,
                 ..
-            } => AccessibilitySnapshot::new(AccessibilityRole::Navigation).with_state(
-                AccessibilityState {
-                    value_text: items.get(*active_index).map(|item| item.label.clone()),
-                    value_now: Some((*active_index + 1) as f64),
-                    value_min: Some(1.0),
-                    value_max: Some(items.len().max(1) as f64),
-                    ..AccessibilityState::default()
-                },
-            ),
+            } => anchor_accessibility(items, *active_index),
             Self::Breadcrumb { items, .. } => breadcrumb_accessibility(items),
             Self::Menu {
                 items, active_key, ..
@@ -848,7 +831,12 @@ impl SnapshotFields {
                     value_text: (!value.is_empty()).then(|| value.clone()),
                     ..AccessibilityState::default()
                 }),
-            Self::List { .. } | Self::SelectableList { .. } | Self::Transfer { .. } => {
+            Self::SelectableList {
+                items,
+                active_index,
+                ..
+            } => selectable_list_accessibility(items, *active_index),
+            Self::List { .. } | Self::Transfer { .. } => {
                 AccessibilitySnapshot::new(AccessibilityRole::List)
             }
             Self::Table { .. } => AccessibilitySnapshot::new(AccessibilityRole::Table),
