@@ -9,10 +9,12 @@ from scripts.run_windows_gfx_r5 import (
     VENDOR_ENV,
     EvidenceSession,
     build_plan,
+    file_sha256,
     normalize_log_ending,
     parse_test_inventory,
     require_case_success,
     require_planned_tests,
+    verify_evidence_dir,
     write_json_atomic,
 )
 
@@ -70,14 +72,17 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
 
             log_path = session.start_case(0)
             self.assertEqual(log_path.name, "01-vulkan-mixed-dpi.log")
+            log_path.write_text("matrix evidence\n", encoding="utf-8")
             session.finish_case(0, 0, 1.23456)
             session.finish("passed")
 
             manifest = session.manifest
-            self.assertEqual(manifest["schema_version"], 2)
+            self.assertEqual(manifest["schema_version"], 3)
             self.assertEqual(manifest["status"], "passed")
             self.assertEqual(manifest["cases"][0]["status"], "passed")
             self.assertEqual(manifest["cases"][0]["duration_seconds"], 1.235)
+            self.assertEqual(manifest["cases"][0]["log_bytes"], 16)
+            self.assertEqual(manifest["cases"][0]["log_sha256"], file_sha256(log_path))
             self.assertTrue(session.manifest_path.is_file())
 
     def test_atomic_manifest_write_leaves_no_temporary_file(self) -> None:
@@ -149,7 +154,8 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
                 plan,
             )
 
-            session.start_case(0)
+            log_path = session.start_case(0)
+            log_path.write_text("cargo returned without a test\n", encoding="utf-8")
             session.finish_case(0, 0, 0.25, "missing exact test evidence")
             session.finish("failed")
 
@@ -157,6 +163,23 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             self.assertEqual(case["status"], "failed")
             self.assertEqual(case["exit_code"], 0)
             self.assertEqual(case["evidence_error"], "missing exact test evidence")
+
+    def test_evidence_verifier_rejects_log_tampering(self) -> None:
+        plan = build_plan("mixed-dpi", "amd", None, 900, 60)
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "evidence"
+            session = EvidenceSession(output, "mixed-dpi", "amd", None, 900, 60, plan)
+            log_path = session.start_case(0)
+            log_path.write_text("verified evidence\n", encoding="utf-8")
+            session.finish_case(0, 0, 0.5)
+            session.finish("passed")
+
+            verified = verify_evidence_dir(output)
+            self.assertEqual(verified["status"], "passed")
+
+            log_path.write_text("tampered evidence\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "size changed|SHA-256 changed"):
+                verify_evidence_dir(output)
 
 
 if __name__ == "__main__":
