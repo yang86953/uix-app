@@ -534,7 +534,13 @@ impl VulkanContext {
                 }
             }
         };
-        let new_render_finished =
+        let reuse_present_sync = maintenance1
+            && old_swapchain != vk::SwapchainKHR::null()
+            && self.render_finished.len() == new_images.len()
+            && self.present_fences.len() == new_images.len();
+        let new_render_finished = if reuse_present_sync {
+            Vec::new()
+        } else {
             match create_render_finished_semaphores(&self.device, new_images.len()) {
                 Ok(semaphores) => semaphores,
                 Err(error) => {
@@ -543,8 +549,11 @@ impl VulkanContext {
                     }
                     return Err(error);
                 }
-            };
-        let new_present_fences =
+            }
+        };
+        let new_present_fences = if reuse_present_sync {
+            PresentFenceSet::empty()
+        } else {
             match PresentFenceSet::create(&self.device, new_images.len(), maintenance1) {
                 Ok(fences) => fences,
                 Err(error) => {
@@ -555,12 +564,17 @@ impl VulkanContext {
                     }
                     return Err(error);
                 }
-            };
+            }
+        };
 
-        let mut old_render_finished =
-            std::mem::replace(&mut self.render_finished, new_render_finished);
-        let mut old_present_fences =
-            std::mem::replace(&mut self.present_fences, new_present_fences);
+        let (mut old_render_finished, mut old_present_fences) = if reuse_present_sync {
+            (Vec::new(), PresentFenceSet::empty())
+        } else {
+            (
+                std::mem::replace(&mut self.render_finished, new_render_finished),
+                std::mem::replace(&mut self.present_fences, new_present_fences),
+            )
+        };
         if old_swapchain != vk::SwapchainKHR::null() {
             if maintenance1 {
                 // SAFETY: 每个成功 present 的 maintenance1 fence 均已等待完成。
