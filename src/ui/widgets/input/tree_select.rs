@@ -6,8 +6,8 @@ use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::foundation::virtual_scroll::VirtualListScroll;
 use crate::ui::widgets::display::tree::TreeNode;
 use crate::ui::{
-    ComponentId, EventResult, SemanticEvent, SnapshotFields, SnapshotTreeNode, SystemEvent,
-    WidgetTree,
+    ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SnapshotTreeNode,
+    SystemEvent, WidgetTree,
 };
 use std::cell::{Cell, RefCell};
 
@@ -25,6 +25,7 @@ component! {
         transition: TransitionPlayer,
         closing: bool,
         transition_dirty: bool,
+        focused: bool,
         hovered_option: Option<String>,
         pending_change: RefCell<Option<String>>,
         pub(crate) dropdown_scroll: VirtualListScroll,
@@ -50,6 +51,7 @@ component! {
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
             SystemEvent::PointerDown { pos, .. } => {
+                self.focused = true;
                 if pos.y >= 0.0 && pos.y <= DROPDOWN_TRIGGER_HEIGHT {
                     if self.open {
                         self.close();
@@ -61,11 +63,10 @@ component! {
                 if self.is_present() && pos.y > DROPDOWN_TRIGGER_HEIGHT {
                     if let Some(idx) = self.dropdown_row_at_y(pos.y) {
                         let flat = self.flatten_nodes();
-                        if let Some((key, title, _)) = flat.get(idx) {
-                            self.value = title.clone();
-                            self.value_key = key.clone();
-                            self.close();
-                            self.pending_change.replace(Some(key.clone()));
+                        if flat.get(idx).is_some_and(|(_, _, _, disabled)| *disabled) {
+                            return EventResult::Handled;
+                        }
+                        if self.select_flat_index(idx) {
                             return EventResult::Handled;
                         }
                     }
@@ -77,7 +78,11 @@ component! {
                 if self.is_present() && pos.y > DROPDOWN_TRIGGER_HEIGHT {
                     let idx = self.dropdown_row_at_y(pos.y);
                     let flat = self.flatten_nodes();
-                    self.hovered_option = idx.and_then(|i| flat.get(i).map(|(k, _, _)| k.clone()));
+                    self.hovered_option = idx.and_then(|i| {
+                        flat.get(i).and_then(|(key, _, _, disabled)| {
+                            (!disabled).then(|| key.clone())
+                        })
+                    });
                 } else {
                     self.hovered_option = None;
                 }
@@ -99,6 +104,45 @@ component! {
                     }
                 }
                 EventResult::NotHandled
+            }
+            SystemEvent::FocusIn => {
+                self.focused = true;
+                EventResult::Handled
+            }
+            SystemEvent::FocusOut => {
+                self.focused = false;
+                self.close();
+                EventResult::Handled
+            }
+            SystemEvent::KeyDown { key, .. } => {
+                if !self.open {
+                    return match key {
+                        KeyCode::Down | KeyCode::Enter | KeyCode::Space => {
+                            self.open();
+                            EventResult::Handled
+                        }
+                        _ => EventResult::NotHandled,
+                    };
+                }
+                match key {
+                    KeyCode::Down => {
+                        self.move_highlight(true);
+                        EventResult::Handled
+                    }
+                    KeyCode::Up => {
+                        self.move_highlight(false);
+                        EventResult::Handled
+                    }
+                    KeyCode::Enter | KeyCode::Space => {
+                        self.select_highlighted();
+                        EventResult::Handled
+                    }
+                    KeyCode::Escape => {
+                        self.close();
+                        EventResult::Handled
+                    }
+                    _ => EventResult::NotHandled,
+                }
             }
             _ => EventResult::NotHandled,
         }
@@ -122,9 +166,9 @@ component! {
         let fill = ctx.tokens().color_fill_tertiary();
         let r = Some(Radius::uniform(ctx.tokens().border_radius()));
         let input_rect = Rect::new(frame.x, frame.y, frame.w, DROPDOWN_TRIGGER_HEIGHT);
-        let bc = if self.open { primary } else { border };
+        let bc = if self.open || self.focused { primary } else { border };
         ctx.fill_rect(input_rect, bg, r);
-        ctx.stroke_rect(input_rect, bc, if self.open { 2.0 } else { 1.0 }, r);
+        ctx.stroke_rect(input_rect, bc, if self.open || self.focused { 2.0 } else { 1.0 }, r);
         let display = if self.value.is_empty() { &self.placeholder } else { &self.value };
         let input_y = ctx.visual_center_y(input_rect, 13.0);
         let disp_color = if self.value.is_empty() { text_sec } else { text };
@@ -163,14 +207,14 @@ component! {
         );
         ctx.canvas_2d().push_clip(list_rect);
 
-        for (i, (key, title, depth)) in flat.iter().enumerate().take(end).skip(start) {
+        for (i, (key, title, depth, disabled)) in flat.iter().enumerate().take(end).skip(start) {
             let item_y = list_y + i as f32 * DROPDOWN_ROW_HEIGHT - scroll_offset;
             if item_y + DROPDOWN_ROW_HEIGHT < list_y || item_y > list_y + list_h {
                 continue;
             }
             let item_rect = Rect::new(frame.x, item_y, frame.w, DROPDOWN_ROW_HEIGHT);
             let indent = *depth as f32 * 20.0 + 8.0;
-            let is_hovered = self.hovered_option.as_ref() == Some(key);
+            let is_hovered = !disabled && self.hovered_option.as_ref() == Some(key);
             let is_selected = *key == self.value_key;
 
             if is_hovered || is_selected {
@@ -181,7 +225,13 @@ component! {
             }
 
             let row_y = ctx.visual_center_y(item_rect, 13.0);
-            let tc = if is_selected { primary } else { text };
+            let tc = if *disabled {
+                text_sec
+            } else if is_selected {
+                primary
+            } else {
+                text
+            };
             ctx.draw_text(title, Point::new(frame.x + indent, row_y), tc, 13.0);
         }
 
@@ -253,15 +303,20 @@ impl TreeSelect {
             .set((current.0 + dx, current.1 + dy));
     }
 
-    pub(crate) fn flatten_nodes(&self) -> Vec<(String, String, usize)> {
+    pub(crate) fn flatten_nodes(&self) -> Vec<(String, String, usize, bool)> {
         let mut result = Vec::new();
         self.flatten(&self.nodes, 0, &mut result);
         result
     }
 
-    fn flatten(&self, nodes: &[TreeNode], depth: usize, result: &mut Vec<(String, String, usize)>) {
+    fn flatten(
+        &self,
+        nodes: &[TreeNode],
+        depth: usize,
+        result: &mut Vec<(String, String, usize, bool)>,
+    ) {
         for node in nodes {
-            result.push((node.key.clone(), node.title.clone(), depth));
+            result.push((node.key.clone(), node.title.clone(), depth, node.disabled));
             if !node.children.is_empty() {
                 self.flatten(&node.children, depth + 1, result);
             }
@@ -278,6 +333,7 @@ impl TreeSelect {
             transition: TransitionPlayer::new(presets::tooltip_enter()),
             closing: false,
             transition_dirty: false,
+            focused: false,
             hovered_option: None,
             pending_change: RefCell::new(None),
             dropdown_scroll: VirtualListScroll::new(),
@@ -311,6 +367,12 @@ impl TreeSelect {
         self.open = true;
         self.closing = false;
         self.dropdown_scroll.set_scroll_offset(0.0);
+        let flat = self.flatten_nodes();
+        self.hovered_option = flat
+            .iter()
+            .find(|(key, _, _, disabled)| key == &self.value_key && !disabled)
+            .or_else(|| flat.iter().find(|(_, _, _, disabled)| !disabled))
+            .map(|(key, _, _, _)| key.clone());
         self.transition = TransitionPlayer::new(presets::tooltip_enter());
         self.transition_dirty = true;
     }
@@ -325,6 +387,7 @@ impl TreeSelect {
 
         self.open = false;
         self.closing = true;
+        self.hovered_option = None;
         self.dropdown_scroll.set_scroll_offset(0.0);
         self.transition = TransitionPlayer::new(presets::tooltip_exit());
         self.transition_dirty = true;
@@ -338,6 +401,9 @@ impl TreeSelect {
                 .iter()
                 .map(SnapshotTreeNode::from_tree_node)
                 .collect(),
+            value: self.value.clone(),
+            value_key: self.value_key.clone(),
+            open: self.open,
         }
     }
 
@@ -350,6 +416,88 @@ impl TreeSelect {
             DROPDOWN_ROW_HEIGHT,
             self.dropdown_viewport_height(row_count),
         );
+        if self.is_present() {
+            let flat = self.flatten_nodes();
+            self.hovered_option = flat
+                .iter()
+                .find(|(key, _, _, disabled)| key == &self.value_key && !disabled)
+                .or_else(|| flat.iter().find(|(_, _, _, disabled)| !disabled))
+                .map(|(key, _, _, _)| key.clone());
+        }
+    }
+
+    fn select_highlighted(&mut self) {
+        let Some(key) = self.hovered_option.as_deref() else {
+            return;
+        };
+        let flat = self.flatten_nodes();
+        if let Some(index) = flat
+            .iter()
+            .position(|(candidate, _, _, _)| candidate == key)
+        {
+            self.select_flat_index(index);
+        }
+    }
+
+    fn select_flat_index(&mut self, index: usize) -> bool {
+        let flat = self.flatten_nodes();
+        let Some((key, title, _, disabled)) = flat.get(index) else {
+            return false;
+        };
+        if *disabled {
+            return false;
+        }
+        self.value.clone_from(title);
+        self.value_key.clone_from(key);
+        self.pending_change.replace(Some(key.clone()));
+        self.close();
+        true
+    }
+
+    fn move_highlight(&mut self, forward: bool) {
+        let flat = self.flatten_nodes();
+        let enabled: Vec<usize> = flat
+            .iter()
+            .enumerate()
+            .filter_map(|(index, (_, _, _, disabled))| (!disabled).then_some(index))
+            .collect();
+        if enabled.is_empty() {
+            return;
+        }
+        let current = self
+            .hovered_option
+            .as_ref()
+            .and_then(|key| enabled.iter().position(|index| flat[*index].0 == *key));
+        let position = match (current, forward) {
+            (Some(position), true) => (position + 1) % enabled.len(),
+            (Some(position), false) => (position + enabled.len() - 1) % enabled.len(),
+            (None, true) => 0,
+            (None, false) => enabled.len() - 1,
+        };
+        let index = enabled[position];
+        self.hovered_option = Some(flat[index].0.clone());
+        self.reveal_index(index, flat.len());
+    }
+
+    fn reveal_index(&mut self, index: usize, row_count: usize) {
+        let viewport_height = self.dropdown_viewport_height(row_count);
+        let old_offset = self.dropdown_scroll.scroll_offset();
+        let row_top = index as f32 * DROPDOWN_ROW_HEIGHT;
+        let row_bottom = row_top + DROPDOWN_ROW_HEIGHT;
+        let new_offset = if row_top < old_offset {
+            row_top
+        } else if row_bottom > old_offset + viewport_height {
+            row_bottom - viewport_height
+        } else {
+            old_offset
+        };
+        self.dropdown_scroll.set_scroll_offset(new_offset);
+        self.dropdown_scroll
+            .clamp_to_content(row_count, DROPDOWN_ROW_HEIGHT, viewport_height);
+        let applied = self.dropdown_scroll.scroll_offset() - old_offset;
+        if applied.abs() > 0.01 {
+            self.push_scroll_delta(0.0, applied);
+        }
     }
 }
 
