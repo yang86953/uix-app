@@ -1,5 +1,6 @@
 use crate::tests::common::*;
-use crate::ui::widgets::QRCode;
+use crate::ui::widgets::{QRCode, Transfer, TransferItem};
+use crate::ui::{AccessibilityRole, SnapshotTransferItem};
 
 #[test]
 fn qrcode_builds_standard_matrix_with_three_finder_patterns() {
@@ -46,4 +47,103 @@ fn qrcode_normalizes_size_and_error_level() {
         code.snapshot_fields(),
         SnapshotFields::QRCode { error_level: 3, .. }
     ));
+}
+
+#[test]
+fn transfer_pointer_uses_frame_origin_and_snapshots_live_membership() {
+    let mut transfer = Transfer::new().source(vec![TransferItem {
+        key: "a".into(),
+        title: "A".into(),
+        selected: false,
+    }]);
+    transfer.set_frame_for_test(Rect::new(100.0, 50.0, 500.0, 200.0));
+    let select = SystemEvent::PointerDown {
+        pos: Point::new(110.0, 80.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    };
+    let move_right = SystemEvent::PointerDown {
+        pos: Point::new(340.0, 135.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    };
+
+    assert_eq!(transfer.on_event(&select), EventResult::Handled);
+    assert!(transfer.source_items()[0].selected);
+    assert_eq!(transfer.on_event(&move_right), EventResult::Handled);
+    assert!(transfer.source_items().is_empty());
+    assert_eq!(transfer.target_items()[0].key, "a");
+    assert_eq!(
+        transfer.snapshot_fields(),
+        SnapshotFields::Transfer {
+            source: vec![],
+            target: vec![SnapshotTransferItem {
+                key: "a".into(),
+                title: "A".into(),
+                selected: false,
+            }],
+        }
+    );
+    assert_eq!(
+        transfer
+            .semantic_event(ComponentId::new(4), &move_right)
+            .and_then(|event| event.text_payload().map(str::to_owned)),
+        Some("a".to_string())
+    );
+}
+
+#[test]
+fn transfer_keyboard_selects_and_moves_active_rows() {
+    let mut transfer = Transfer::new().source(vec![
+        TransferItem {
+            key: "a".into(),
+            title: "A".into(),
+            selected: false,
+        },
+        TransferItem {
+            key: "b".into(),
+            title: "B".into(),
+            selected: false,
+        },
+    ]);
+
+    assert_eq!(WidgetComponent::tab_index(&transfer), 1);
+    assert_eq!(
+        transfer.on_event(&SystemEvent::FocusIn),
+        EventResult::Handled
+    );
+    for key in [KeyCode::Down, KeyCode::Space, KeyCode::Enter] {
+        assert_eq!(
+            transfer.on_event(&SystemEvent::KeyDown {
+                key,
+                mods: KeyMod::NONE,
+            }),
+            EventResult::Handled
+        );
+    }
+    assert_eq!(transfer.active_index(), 0);
+    assert_eq!(
+        transfer
+            .source_items()
+            .iter()
+            .map(|item| item.key.as_str())
+            .collect::<Vec<_>>(),
+        vec!["a"]
+    );
+    assert_eq!(transfer.target_items()[0].key, "b");
+
+    assert_eq!(
+        transfer.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Right,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(transfer.target_is_active());
+    let accessibility = transfer.snapshot_fields().accessibility();
+    assert_eq!(accessibility.role, AccessibilityRole::List);
+    assert_eq!(
+        accessibility.state.value_text.as_deref(),
+        Some("1 source; 1 target; 0 selected")
+    );
 }

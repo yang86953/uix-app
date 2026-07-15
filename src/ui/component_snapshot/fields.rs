@@ -12,6 +12,7 @@ use super::accessibility::{
     anchor_accessibility, back_top_accessibility, breadcrumb_accessibility, calendar_accessibility,
     carousel_accessibility, first_non_empty, pagination_accessibility,
     selectable_list_accessibility, splitter_accessibility, theme_toggle_accessibility,
+    transfer_accessibility,
 };
 use super::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotCollapsePanel,
@@ -850,9 +851,8 @@ impl SnapshotFields {
                 active_index,
                 ..
             } => selectable_list_accessibility(items, *active_index),
-            Self::List { .. } | Self::Transfer { .. } => {
-                AccessibilitySnapshot::new(AccessibilityRole::List)
-            }
+            Self::List { .. } => AccessibilitySnapshot::new(AccessibilityRole::List),
+            Self::Transfer { source, target } => transfer_accessibility(source, target),
             Self::Table { .. } => AccessibilitySnapshot::new(AccessibilityRole::Table),
             Self::Select {
                 options,

@@ -361,6 +361,7 @@ pub struct SnapshotTableColumnGroup {
 pub struct SnapshotTransferItem {
     pub key: String,
     pub title: String,
+    pub selected: bool,
 }
 
 impl SnapshotTransferItem {
@@ -368,6 +369,7 @@ impl SnapshotTransferItem {
         Self {
             key: item.key.clone(),
             title: item.title.clone(),
+            selected: item.selected,
         }
     }
 }

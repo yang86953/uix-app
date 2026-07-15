@@ -1,6 +1,25 @@
 use crate::ui::widgets::{AnchorItem, BreadcrumbItem, Date, SelectableItem};
 
-use super::{AccessibilityRole, AccessibilitySnapshot, AccessibilityState};
+use super::{AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotTransferItem};
+
+pub(super) fn transfer_accessibility(
+    source: &[SnapshotTransferItem],
+    target: &[SnapshotTransferItem],
+) -> AccessibilitySnapshot {
+    let selected = source
+        .iter()
+        .chain(target)
+        .filter(|item| item.selected)
+        .count();
+    AccessibilitySnapshot::new(AccessibilityRole::List).with_state(AccessibilityState {
+        value_text: Some(format!(
+            "{} source; {} target; {selected} selected",
+            source.len(),
+            target.len()
+        )),
+        ..AccessibilityState::default()
+    })
+}
 
 pub(super) fn splitter_accessibility(
     ratios: &[f32],
