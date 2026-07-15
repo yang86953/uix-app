@@ -67,6 +67,22 @@ fn lock_err() -> WinError {
     WinError::from(TS_E_NOLOCK)
 }
 
+fn require_pointer<T>(pointer: *const T) -> WinResult<()> {
+    if pointer.is_null() {
+        Err(WinError::from(E_INVALIDARG))
+    } else {
+        Ok(())
+    }
+}
+
+fn require_buffer<T>(pointer: *const T, count: u32) -> WinResult<()> {
+    if count > 0 {
+        require_pointer(pointer)
+    } else {
+        Ok(())
+    }
+}
+
 fn require_read_lock(state: &TsfStoreState) -> WinResult<()> {
     if state.has_read_lock() {
         Ok(())
@@ -100,6 +116,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         punk: Ref<'_, windows::core::IUnknown>,
         dwmask: u32,
     ) -> WinResult<()> {
+        require_pointer(riid)?;
         let iid = unsafe { *riid };
         if iid != ITextStoreACPSink::IID {
             return Ok(());
@@ -163,6 +180,8 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         pacpresultstart: *mut i32,
         pacpresultend: *mut i32,
     ) -> WinResult<()> {
+        require_pointer(pacpresultstart)?;
+        require_pointer(pacpresultend)?;
         unsafe {
             *pacpresultstart = acpteststart;
             *pacpresultend = acptestend;
@@ -221,6 +240,11 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         pcruninforet: *mut u32,
         pacpnext: *mut i32,
     ) -> WinResult<()> {
+        require_buffer(pchplain.0, cchplainreq)?;
+        require_pointer(pcchplainret)?;
+        require_buffer(prgruninfo, cruninforeq)?;
+        require_pointer(pcruninforet)?;
+        require_pointer(pacpnext)?;
         let state = self.state.read()?;
         require_read_lock(&state)?;
         let start = state.clamp_acp(acpstart) as usize;
@@ -317,6 +341,11 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         pacpend: *mut i32,
         pchange: *mut TS_TEXTCHANGE,
     ) -> WinResult<()> {
+        let returns_range = dwflags & TS_IAS_QUERYONLY != 0 || dwflags & TS_IAS_NOQUERY == 0;
+        if returns_range {
+            require_pointer(pacpstart)?;
+            require_pointer(pacpend)?;
+        }
         let mut state = self.state.write()?;
         require_write_lock(&state)?;
         let start = state.sel_start;
@@ -364,29 +393,32 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
     fn RequestSupportedAttrs(
         &self,
         _dwflags: u32,
-        _cfilterattrs: u32,
-        _pafilterattrs: *const GUID,
+        cfilterattrs: u32,
+        pafilterattrs: *const GUID,
     ) -> WinResult<()> {
+        require_buffer(pafilterattrs, cfilterattrs)?;
         Ok(())
     }
 
     fn RequestAttrsAtPosition(
         &self,
         _acppos: i32,
-        _cfilterattrs: u32,
-        _pafilterattrs: *const GUID,
+        cfilterattrs: u32,
+        pafilterattrs: *const GUID,
         _dwflags: u32,
     ) -> WinResult<()> {
+        require_buffer(pafilterattrs, cfilterattrs)?;
         Ok(())
     }
 
     fn RequestAttrsTransitioningAtPosition(
         &self,
         _acppos: i32,
-        _cfilterattrs: u32,
-        _pafilterattrs: *const GUID,
+        cfilterattrs: u32,
+        pafilterattrs: *const GUID,
         _dwflags: u32,
     ) -> WinResult<()> {
+        require_buffer(pafilterattrs, cfilterattrs)?;
         Ok(())
     }
 
@@ -394,13 +426,17 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         &self,
         _acpstart: i32,
         _acphalt: i32,
-        _cfilterattrs: u32,
-        _pafilterattrs: *const GUID,
+        cfilterattrs: u32,
+        pafilterattrs: *const GUID,
         _dwflags: u32,
         pacpnext: *mut i32,
         pffound: *mut BOOL,
         plfoundoffset: *mut i32,
     ) -> WinResult<()> {
+        require_buffer(pafilterattrs, cfilterattrs)?;
+        require_pointer(pacpnext)?;
+        require_pointer(pffound)?;
+        require_pointer(plfoundoffset)?;
         unsafe {
             *pacpnext = 0;
             *pffound = false.into();
@@ -411,10 +447,12 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
 
     fn RetrieveRequestedAttrs(
         &self,
-        _ulcount: u32,
-        _paattrvals: *mut windows::Win32::UI::TextServices::TS_ATTRVAL,
+        ulcount: u32,
+        paattrvals: *mut windows::Win32::UI::TextServices::TS_ATTRVAL,
         pcfetched: *mut u32,
     ) -> WinResult<()> {
+        require_buffer(paattrvals, ulcount)?;
+        require_pointer(pcfetched)?;
         unsafe {
             *pcfetched = 0;
         }
@@ -434,9 +472,10 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
     fn GetACPFromPoint(
         &self,
         _vcview: u32,
-        _ptscreen: *const POINT,
+        ptscreen: *const POINT,
         _dwflags: u32,
     ) -> WinResult<i32> {
+        require_pointer(ptscreen)?;
         let state = self.state.read()?;
         require_read_lock(&state)?;
         Ok(state.end_acp())
