@@ -3,8 +3,8 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::ui::foundation::virtual_scroll::VirtualListScroll;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SnapshotTreeNode,
-    SystemEvent, WidgetTree,
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields,
+    SnapshotTreeNode, SystemEvent, WidgetTree,
 };
 use std::cell::{Cell, RefCell};
 
@@ -83,7 +83,11 @@ component! {
                     EventResult::NotHandled
                 }
             }
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 if let Some(idx) = self.row_index_at_y(pos.y) {
                     let node_key = self.flat[idx].key.clone();
                     let node_disabled = self.flat[idx].disabled;

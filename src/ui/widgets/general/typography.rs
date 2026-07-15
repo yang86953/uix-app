@@ -112,7 +112,10 @@ component! {
                 self.set_selection_range(anchor, ci);
                 EventResult::Handled
             }
-            SystemEvent::PointerUp { .. } => {
+            SystemEvent::PointerUp {
+                button: MouseButton::Left,
+                ..
+            } => {
                 self.sel_dragging.set(false);
                 if let Some((s, e)) = self.selection.get() {
                     if s == e { self.selection.set(None); }

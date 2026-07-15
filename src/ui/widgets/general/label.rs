@@ -13,7 +13,7 @@ use crate::draw::spatial::PhysicalUnit;
 use crate::draw::TextLayoutOptions;
 use crate::ui::clipboard;
 use crate::ui::style::Style;
-use crate::ui::{EventResult, KeyCode, KeyMod, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyCode, KeyMod, MouseButton, SystemEvent, WidgetTree};
 use crate::ui::{SnapshotFields, SnapshotSource};
 
 component! {
@@ -79,7 +79,11 @@ component! {
             return EventResult::NotHandled;
         }
         match event {
-            SystemEvent::PointerDown { pos, mods, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                mods,
+            } => {
                 let dp = self.draw_pos.get();
                 let text_x = pos.x - dp.x;
                 let text_y = pos.y - dp.y;
@@ -104,7 +108,10 @@ component! {
                 self.set_selection_range(anchor, ci);
                 EventResult::Handled
             }
-            SystemEvent::PointerUp { .. } => {
+            SystemEvent::PointerUp {
+                button: MouseButton::Left,
+                ..
+            } => {
                 self.sel_dragging.set(false);
                 if let Some((s, e)) = self.selection.get() {
                     if s == e { self.selection.set(None); }

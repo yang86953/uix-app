@@ -8,7 +8,7 @@ use crate::draw::{Color, Radius};
 use crate::native::traits::input::ControlSize;
 use crate::ui::animation::{presets, AnimationConfig, TransitionPlayer};
 use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, MouseButton, SystemEvent, WidgetTree};
 use std::rc::Rc;
 
 /// Modal 内容回调上下文；关闭请求只作用于持有该上下文的 Modal。
@@ -70,7 +70,12 @@ component! {
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if !self.is_present() {
             // Gallery / demo: closed Modal still exposes a clickable trigger.
-            if let SystemEvent::PointerDown { pos, .. } = event {
+            if let SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } = event
+            {
                 if pos.x >= 0.0 && pos.x <= 96.0 && pos.y >= 0.0 && pos.y <= 32.0 {
                     self.open();
                     return EventResult::Handled;
@@ -80,7 +85,11 @@ component! {
         }
 
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 let dlg_rect = self.dialog_rect_for_event();
                 let close_rect = Rect::new(dlg_rect.x + dlg_rect.w - 48.0, dlg_rect.y, 48.0, 48.0);
 

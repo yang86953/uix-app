@@ -5,7 +5,8 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    WidgetTree,
 };
 use std::cell::RefCell;
 
@@ -46,7 +47,11 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 let tab_count = self.tabs.len();
                 if tab_count == 0 { return EventResult::NotHandled; }
                 // 使用 render 时存储的 tab_x_positions 做点击定位

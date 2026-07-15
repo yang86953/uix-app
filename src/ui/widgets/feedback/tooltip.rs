@@ -4,7 +4,7 @@ use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, MouseButton, SystemEvent, WidgetTree};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TooltipPlacement {
@@ -61,7 +61,13 @@ component! {
                 self.pending = false;
                 EventResult::Handled
             }
-            (TriggerMode::Click, SystemEvent::PointerDown { .. }) => {
+            (
+                TriggerMode::Click,
+                SystemEvent::PointerDown {
+                    button: MouseButton::Left,
+                    ..
+                },
+            ) => {
                 if self.is_present() {
                     self.close();
                 } else {

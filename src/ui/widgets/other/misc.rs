@@ -3,8 +3,8 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SnapshotTransferItem,
-    SystemEvent, WidgetTree,
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields,
+    SnapshotTransferItem, SystemEvent, WidgetTree,
 };
 use qrcode::{types::Color as QrModuleColor, EcLevel, QrCode};
 use std::cell::{Cell, RefCell};
@@ -198,7 +198,11 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            SystemEvent::PointerDown { pos, .. } => self.pointer_down(*pos),
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => self.pointer_down(*pos),
             SystemEvent::FocusIn => {
                 self.focused = true;
                 EventResult::Handled

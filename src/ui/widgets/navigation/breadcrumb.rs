@@ -4,7 +4,9 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::ui::core::widget::WidgetTree;
-use crate::ui::{ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent};
+use crate::ui::{
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+};
 use std::cell::Cell;
 
 /// 面包屑的一项。
@@ -48,7 +50,11 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 let Some(index) = self.item_index_at(*pos) else {
                     return EventResult::NotHandled;
                 };

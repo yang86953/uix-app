@@ -5,7 +5,7 @@ use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
 use crate::ui::animation::{presets, AnimationConfig, TransitionPlayer};
 use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, MouseButton, SystemEvent, WidgetTree};
 
 /// Popover placement.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -57,7 +57,12 @@ component! {
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match self.trigger {
             PopoverTrigger::Click => {
-                if let SystemEvent::PointerDown { pos, .. } = event {
+                if let SystemEvent::PointerDown {
+                    pos,
+                    button: MouseButton::Left,
+                    ..
+                } = event
+                {
                     if pos.x >= 0.0 && pos.x <= 80.0 && pos.y >= 0.0 && pos.y <= 28.0 {
                         if self.visible {
                             self.close();

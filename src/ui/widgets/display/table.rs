@@ -10,9 +10,11 @@ use crate::ui::{
 };
 use std::cell::{Cell, RefCell};
 
+mod config;
 pub(crate) mod geometry;
 mod header;
 
+use config::{flatten_column_groups, merge_table_columns};
 use geometry::{ColumnZone, TableColumnGeometry};
 
 /// 排序方向。
@@ -214,7 +216,11 @@ component! {
                     EventResult::NotHandled
                 }
             }
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: crate::ui::MouseButton::Left,
+                ..
+            } => {
                 if self.selection && pos.x < self.selection_width() {
                     if pos.y < self.total_header_height() {
                         if self.checked_rows.len() == self.rows.len() {
@@ -950,53 +956,4 @@ impl From<TableBuilder> for crate::ui::view::ViewNode {
     fn from(builder: TableBuilder) -> Self {
         crate::ui::view::View::build(builder)
     }
-}
-
-fn merge_table_columns(
-    current: &[TableColumn],
-    next: Vec<TableColumn>,
-    table_sortable: bool,
-) -> Vec<TableColumn> {
-    next.into_iter()
-        .enumerate()
-        .map(|(idx, mut next_col)| {
-            if let Some(current_col) = current.get(idx) {
-                if table_sortable || next_col.sortable {
-                    next_col.sort_direction = current_col.sort_direction;
-                }
-                if next_col.filterable {
-                    for (label, active) in &mut next_col.filters {
-                        if let Some((_, current_active)) = current_col
-                            .filters
-                            .iter()
-                            .find(|(current_label, _)| current_label == label)
-                        {
-                            *active = *current_active;
-                        }
-                    }
-                }
-            }
-            next_col
-        })
-        .collect()
-}
-
-fn flatten_column_groups(
-    groups: Vec<TableColumnGroup>,
-) -> (Vec<TableColumn>, Vec<ColumnGroupRange>) {
-    let mut columns = Vec::new();
-    let mut ranges = Vec::new();
-    for group in groups {
-        let start = columns.len();
-        let len = group.columns.len();
-        columns.extend(group.columns);
-        if len > 0 {
-            ranges.push(ColumnGroupRange {
-                title: group.title,
-                start,
-                len,
-            });
-        }
-    }
-    (columns, ranges)
 }

@@ -8,7 +8,7 @@ use crate::native::traits::input::ControlSize;
 use crate::ui::animation::{presets, AnimationConfig, TransitionPlayer};
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, MouseButton, SystemEvent, WidgetTree};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DrawerPlacement {
@@ -49,7 +49,12 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if !self.is_present() {
-            if let SystemEvent::PointerDown { pos, .. } = event {
+            if let SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } = event
+            {
                 if pos.x >= 0.0 && pos.x <= 96.0 && pos.y >= 0.0 && pos.y <= 32.0 {
                     self.open();
                     return EventResult::Handled;
@@ -58,7 +63,12 @@ component! {
             return EventResult::NotHandled;
         }
 
-        if let SystemEvent::PointerDown { pos, .. } = event {
+        if let SystemEvent::PointerDown {
+            pos,
+            button: MouseButton::Left,
+            ..
+        } = event
+        {
             if self.mask_closable {
                 let outside = match self.placement {
                     DrawerPlacement::Right => pos.x < 0.0,

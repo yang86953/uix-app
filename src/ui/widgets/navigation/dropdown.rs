@@ -6,7 +6,8 @@ use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    WidgetTree,
 };
 use std::cell::RefCell;
 
@@ -33,7 +34,11 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 if pos.y >= 0.0 && pos.y <= 32.0 {
                     if self.open {
                         self.close();

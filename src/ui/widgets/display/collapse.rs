@@ -6,8 +6,8 @@ use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotCollapsePanel, SnapshotFields,
-    SystemEvent, WidgetTree,
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotCollapsePanel,
+    SnapshotFields, SystemEvent, WidgetTree,
 };
 use std::cell::Cell;
 
@@ -53,7 +53,11 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 if let Some(index) = self.header_at_y(pos.y) {
                     self.focused_header = index;
                     self.toggle_panel(index);

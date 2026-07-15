@@ -9,7 +9,8 @@ use crate::draw::painting::{PaintContext, PaintPass};
 use crate::ui::children::WidgetChildren;
 use crate::ui::SnapshotFields;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetComponent, WidgetTree,
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetComponent,
+    WidgetTree,
 };
 
 const ARROW_HIT_WIDTH: f32 = 30.0;
@@ -48,7 +49,11 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 if let Some(frame) = self.last_frame.get() {
                     if let Some(index) = self.dot_index_at(frame, *pos) {
                         self.select(index);
