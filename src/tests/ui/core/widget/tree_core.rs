@@ -3441,13 +3441,32 @@ fn delayed_tooltips_use_widget_scoped_timer_keys_by_default() {
 #[test]
 fn dispatch_pointer_down_empty_space_clears_focus() {
     let mut tree = WidgetTree::new();
-    tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));
+    let root = tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));
     tree.layout();
+    tree.set_focus(Some(root));
     tree.dispatch_event(&SystemEvent::PointerDown {
         pos: Point::new(300.0, 300.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     });
+
+    assert_eq!(tree.managers().focus.focused_component(), None);
+}
+
+#[test]
+fn secondary_pointer_empty_space_preserves_existing_focus() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));
+    tree.layout();
+    tree.set_focus(Some(root));
+
+    tree.dispatch_event(&SystemEvent::PointerDown {
+        pos: Point::new(300.0, 300.0),
+        button: MouseButton::Right,
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(tree.managers().focus.focused_component(), Some(root));
 }
 
 #[test]
