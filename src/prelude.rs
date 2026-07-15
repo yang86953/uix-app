@@ -55,17 +55,17 @@ pub use crate::ui::style::{
 pub use crate::ui::theme::{
     generate_color_scale, ColorScale, DataVisualizationPalette, DesignTokens, DynTokens,
     FunctionalColorRole, NeutralColorScale, NeutralRole, PrimaryHue, ShadowToken, Theme,
-    ThemePrimitives, DATA_VISUALIZATION_PALETTE, NEUTRAL_PALETTE,
+    ThemePrimitives, TokenPatch, DATA_VISUALIZATION_PALETTE, NEUTRAL_PALETTE,
 };
 pub use crate::ui::{
     copy_to_clipboard, en_us, read_text_from_clipboard, use_config, use_locale, window_control,
     window_control_named, window_drag_region, with_config, with_locale, zh_cn, AccessibilityRole,
     AccessibilitySnapshot, AccessibilityState, AppState, AriaAttribute, ClickEvent,
-    ComponentConfig, ComponentConfigSnapshot, ComponentHandle, ComponentOverrides, Config,
-    ConfigProvider, EventResult, FocusHandle, FocusHandleError, HandlerId, HandlerOptions,
-    HandlerRegistration, IntoWidgetNode, Locale, LocaleProvider, PaintContext, Placement,
-    SemanticEvent, SemanticKind, SemanticPayload, SnapshotCollapsePanel, SnapshotField,
-    SnapshotFields, SnapshotSource, SnapshotTableColumn, SnapshotTableColumnGroup,
+    ComponentConfig, ComponentConfigSnapshot, ComponentHandle, ComponentOverrides,
+    ComponentTokenOverrides, Config, ConfigProvider, EventResult, FocusHandle, FocusHandleError,
+    HandlerId, HandlerOptions, HandlerRegistration, IntoWidgetNode, Locale, LocaleProvider,
+    PaintContext, Placement, SemanticEvent, SemanticKind, SemanticPayload, SnapshotCollapsePanel,
+    SnapshotField, SnapshotFields, SnapshotSource, SnapshotTableColumn, SnapshotTableColumnGroup,
     SnapshotTransferItem, SnapshotTreeNode, SnapshotValue, SystemEvent, SystemEventKind,
     WidgetChildren, WidgetComponent, WindowControl,
 };

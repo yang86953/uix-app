@@ -59,6 +59,10 @@ impl Theme {
         &*self.provider
     }
 
+    pub(crate) fn tokens_arc(&self) -> Arc<dyn ThemeTokens> {
+        self.provider.clone()
+    }
+
     pub fn is_dark(&self) -> bool {
         ThemeTokens::is_dark(self.provider.as_ref())
     }

@@ -12,7 +12,7 @@ use crate::draw::font::font_service::FontService;
 use crate::draw::font::text::TextRenderService;
 use crate::draw::image::{blit_handle, BitmapHandle, ImageService};
 use crate::draw::painting::display_list::{DisplayList, PaintOp, PaintPass};
-use crate::draw::painting::ThemeTokens;
+use crate::draw::painting::{ScopedThemeTokens, ThemeTokens, TokenPatch, TokenScope};
 use crate::draw::primitives::path::{FillRule, Path, PathBuilder};
 use crate::draw::primitives::stroker::StrokeOptions;
 use crate::draw::spatial::{Orientation, PhysicalUnit, SpatialContext, Vec3, AABB3D};
@@ -44,7 +44,7 @@ pub struct PaintContext<'a> {
     debug: DebugRenderService,
 
     /// 设计令牌。
-    tokens: &'a dyn ThemeTokens,
+    tokens: ScopedThemeTokens<'a>,
 
     /// 当前绘制阶段（合成器设置）。
     paint_pass: PaintPass,
@@ -84,7 +84,7 @@ impl<'a> PaintContext<'a> {
             text: TextRenderService::new(font, font_service, f32::MAX),
             image_service,
             debug: DebugRenderService::new(false),
-            tokens,
+            tokens: ScopedThemeTokens::new(tokens),
             paint_pass: PaintPass::Content,
             recorder: None,
             record_ops: true,
@@ -733,7 +733,19 @@ impl<'a> PaintContext<'a> {
     /// 获取设计令牌。
     #[inline(always)]
     pub fn tokens(&self) -> &dyn ThemeTokens {
-        self.tokens
+        &self.tokens
+    }
+
+    pub(crate) fn replace_token_scope(
+        &mut self,
+        theme: Option<Arc<dyn ThemeTokens>>,
+        patch: Option<Arc<TokenPatch>>,
+    ) -> TokenScope {
+        self.tokens.replace_scope(theme, patch)
+    }
+
+    pub(crate) fn restore_token_scope(&mut self, scope: TokenScope) {
+        self.tokens.restore_scope(scope);
     }
 
     /// 获取字体服务。
