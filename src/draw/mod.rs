@@ -42,8 +42,8 @@ pub use primitives::types::{
 pub use primitives::{blur, color, flattener, path, stroker, tessellator, types};
 pub use spatial::unit::AngleExt;
 pub use spatial::{
-    DirtyRegion3D, IntoAABB3D, Mat4, Orientation, PhysicalBox, PhysicalUnit, PhysicalUnitExt,
-    Quad2D, Ray3D, SpatialContext, Vec2, Vec3, Vec4, AABB3D,
+    IntoAABB3D, Mat4, Orientation, PhysicalBox, PhysicalUnit, PhysicalUnitExt, Quad2D, Ray3D,
+    SpatialContext, Vec2, Vec3, Vec4, AABB3D,
 };
 pub use traits::{
     Canvas2D, GraphicsCapabilities, GraphicsEngine, PresentationMode, RenderingBackend, ScrollCopy,
