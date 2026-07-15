@@ -55,3 +55,21 @@ fn retry_accepts_an_operation_that_mutates_borrowed_state() {
     assert!(result.is_ok());
     assert_eq!(attempts, 2);
 }
+
+#[test]
+fn retry_rejects_zero_attempts_without_running_the_operation() {
+    let mut called = false;
+
+    let error = retry(
+        0,
+        || {
+            called = true;
+            Ok(())
+        },
+        0,
+    )
+    .expect_err("zero attempts must be rejected");
+
+    assert_eq!(error.code(), Errc::InvalidArgument);
+    assert!(!called);
+}
