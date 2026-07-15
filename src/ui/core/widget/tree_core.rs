@@ -2,7 +2,6 @@ use super::*;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::pipeline::{Invalidation, InvalidationQueueHandle};
 use crate::ui::app_state::AppState;
-use crate::ui::component_snapshot::ComponentConfigSnapshot;
 use crate::ui::event::{HandlerTable, WindowAction};
 use crate::ui::foundation::focus_trap::next_focus_in_order;
 use crate::ui::managers::WidgetManagers;
@@ -194,7 +193,7 @@ impl WidgetTree {
         };
         app_state.register(
             id,
-            ComponentConfigSnapshot::from_component(id, node.component()),
+            node.component_snapshot(id),
             self.invalidation_handle(),
             rect,
         );
@@ -719,6 +718,7 @@ impl WidgetTree {
             key,
             automation_id,
             tab_idx,
+            accessibility_override,
             handlers,
             system_event_handlers,
             render_handlers,
@@ -737,6 +737,7 @@ impl WidgetTree {
                 n.component().tab_index()
             };
             n.set_tab_index(ti);
+            n.set_accessibility_override(accessibility_override);
         }
         self.register_focusable(id);
         let handler_signatures = handlers

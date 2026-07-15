@@ -1,5 +1,6 @@
 //! 界面能力 — 组件框架、布局、主题、内置组件与声明式 View。
 
+pub(crate) mod accessibility_override;
 pub mod animation;
 pub mod app_state;
 #[cfg(feature = "test-harness")]

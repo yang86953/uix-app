@@ -23,6 +23,8 @@ pub struct ComponentConfigSnapshot {
     pub id: ComponentId,
     pub widget_type: TypeId,
     pub fields: SnapshotFields,
+    #[doc(hidden)]
+    pub accessibility_override: Option<AccessibilitySnapshot>,
 }
 
 impl ComponentConfigSnapshot {
@@ -34,11 +36,19 @@ impl ComponentConfigSnapshot {
             id,
             widget_type: component.as_any().type_id(),
             fields: component.snapshot_fields(),
+            accessibility_override: None,
         }
     }
 
+    pub(crate) fn with_accessibility(mut self, accessibility: AccessibilitySnapshot) -> Self {
+        self.accessibility_override = Some(accessibility);
+        self
+    }
+
     pub fn accessibility(&self) -> AccessibilitySnapshot {
-        self.fields.accessibility()
+        self.accessibility_override
+            .clone()
+            .unwrap_or_else(|| self.fields.accessibility())
     }
 
     pub fn selection(&self) -> Option<SelectionSnapshot> {
@@ -159,6 +169,7 @@ pub struct AccessibilitySnapshot {
     pub role: AccessibilityRole,
     pub name: Option<String>,
     pub state: AccessibilityState,
+    pub attributes: Vec<AriaAttribute>,
 }
 
 impl AccessibilitySnapshot {
@@ -167,6 +178,7 @@ impl AccessibilitySnapshot {
             role,
             name: None,
             state: AccessibilityState::default(),
+            attributes: Vec::new(),
         }
     }
 
@@ -175,11 +187,25 @@ impl AccessibilitySnapshot {
             role,
             name: non_empty(name.into()),
             state: AccessibilityState::default(),
+            attributes: Vec::new(),
         }
     }
 
     pub fn with_state(mut self, state: AccessibilityState) -> Self {
         self.state = state;
+        self
+    }
+
+    pub fn with_attribute(mut self, attribute: AriaAttribute) -> Self {
+        self.attributes.retain(|item| item.name != attribute.name);
+        self.attributes.push(attribute);
+        self
+    }
+
+    pub fn with_attributes(mut self, attributes: impl IntoIterator<Item = AriaAttribute>) -> Self {
+        for attribute in attributes {
+            self = self.with_attribute(attribute);
+        }
         self
     }
 
@@ -216,6 +242,17 @@ impl AccessibilitySnapshot {
         }
         if self.state.required {
             attributes.push(AriaAttribute::new("aria-required", "true"));
+        }
+
+        for attribute in &self.attributes {
+            if let Some(existing) = attributes
+                .iter_mut()
+                .find(|existing| existing.name == attribute.name)
+            {
+                *existing = attribute.clone();
+            } else {
+                attributes.push(attribute.clone());
+            }
         }
 
         attributes

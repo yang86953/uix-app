@@ -1,5 +1,6 @@
 // Auto-organized test modules. Tests live only under src/tests.
 
+mod accessibility;
 mod adapter;
 mod canvas;
 mod combinators;

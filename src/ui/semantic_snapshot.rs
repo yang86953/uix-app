@@ -5,9 +5,7 @@
 //! capabilities cannot drift between control surfaces.
 
 use crate::core::{ComponentId, Point, Rect};
-use crate::ui::component_snapshot::{
-    AccessibilityRole, AccessibilitySnapshot, ComponentConfigSnapshot, SelectionSnapshot,
-};
+use crate::ui::component_snapshot::{AccessibilitySnapshot, SelectionSnapshot};
 use crate::ui::core::widget::{WidgetCore, WidgetTree};
 use crate::ui::semantic_action::SemanticActionKind;
 
@@ -111,7 +109,7 @@ impl WidgetTree {
             .filter(|id| self.exposes_semantic_node(*id))
             .filter_map(|id| {
                 let node = self.get(id)?;
-                let snapshot = ComponentConfigSnapshot::from_component(id, node.component());
+                let snapshot = node.component_snapshot(id);
                 let mut accessibility = snapshot.accessibility();
                 let selection = snapshot.selection();
                 if !accessibility.state.password {
@@ -123,15 +121,6 @@ impl WidgetTree {
                         accessibility.state.value_text = (!input.current_value().is_empty())
                             .then(|| input.current_value().to_owned());
                     }
-                }
-                if let Some(label) = node
-                    .component()
-                    .as_any()
-                    .downcast_ref::<crate::ui::view::combinators::DynamicLabel>()
-                {
-                    let text = label.semantic_text();
-                    accessibility.role = AccessibilityRole::Text;
-                    accessibility.name = (!text.is_empty()).then_some(text);
                 }
                 let actions = self.supported_semantic_actions(id);
                 Some(SemanticNode {
