@@ -34,6 +34,11 @@ from scripts.run_windows_gfx_r5 import (
 def passing_log(case) -> str:
     vendor = dict(case.environment)[VENDOR_ENV]
     markers = case.required_evidence_markers()
+    adapter = (
+        f'adapter="Test GPU"; type=discrete_gpu; '
+        f"vendor=0x{VENDOR_IDS[vendor]:04X}; device=0x1234; "
+        "api=1.3.280; driver=0x12345678; queue_family=0"
+    )
     if case.name == "vulkan-mixed-dpi":
         evidence = (
             f"{markers[0]} bounds=(0,0..1920,1080),dpi=96x96; "
@@ -51,13 +56,22 @@ def passing_log(case) -> str:
             "handles=100->101 peak=105 warmup=60s/8192 rounds; "
             "swapchain_maintenance1=true"
         )
+    elif case.name == "external-device-reset":
+        environment = dict(case.environment)
+        fault_diagnostics = (
+            "ERROR_DEVICE_LOST via VK_EXT_device_fault"
+            if environment[DEVICE_FAULT_ENV] == "true"
+            else "ERROR_DEVICE_LOST"
+        )
+        evidence = (
+            f"{markers[0]} detector=first; frames=12; surface_faults=1; "
+            "detection_seconds=5.000; recovery_seconds=1.250; "
+            f"device_fault={environment[DEVICE_FAULT_ENV]}; "
+            f"fault={fault_diagnostics}; peer=ERROR_DEVICE_LOST; "
+            f"replacement_attempts=2; replacement={adapter}"
+        )
     else:
         evidence = "\n".join(markers)
-    adapter = (
-        f'adapter="Test GPU"; type=discrete_gpu; '
-        f"vendor=0x{VENDOR_IDS[vendor]:04X}; device=0x1234; "
-        "api=1.3.280; driver=0x12345678; queue_family=0"
-    )
     return (
         evidence
         + "\n"
@@ -363,6 +377,55 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "lacks structured soak warmup"):
                 require_case_success(case, path)
+
+    def test_device_lost_evidence_requires_bounded_structured_recovery(self) -> None:
+        case = build_plan("device-lost", "nvidia", True, 900, 60)[0]
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "case.log"
+
+            invalid_logs = (
+                (
+                    passing_log(case).replace(
+                        "detection_seconds=5.000", "detection_seconds=60.001"
+                    ),
+                    "detection exceeded timeout",
+                ),
+                (
+                    passing_log(case).replace(
+                        "recovery_seconds=1.250", "recovery_seconds=30.001"
+                    ),
+                    "recovery exceeded timeout",
+                ),
+                (
+                    passing_log(case).replace(
+                        "replacement_attempts=2", "replacement_attempts=0"
+                    ),
+                    "made no replacement attempt",
+                ),
+                (
+                    passing_log(case).replace(
+                        "peer=ERROR_DEVICE_LOST", "peer=surface unavailable"
+                    ),
+                    "peer lacks ERROR_DEVICE_LOST",
+                ),
+                (
+                    passing_log(case).replace(" via VK_EXT_device_fault", ""),
+                    "fault lacks VK_EXT_device_fault diagnostics",
+                ),
+                (
+                    passing_log(case).replace(
+                        'replacement=adapter="Test GPU"',
+                        "replacement=unstructured",
+                        1,
+                    ),
+                    "lacks replacement adapter diagnostics",
+                ),
+            )
+            for content, message in invalid_logs:
+                with self.subTest(message=message):
+                    path.write_text(content, encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, message):
+                        require_case_success(case, path)
 
     def test_manifest_distinguishes_cargo_success_from_evidence_failure(self) -> None:
         plan = build_plan("mixed-dpi", "amd", None, 900, 60)

@@ -37,6 +37,7 @@ MIN_SOAK_WARMUP_SECONDS = 60
 MIN_SOAK_WARMUP_ROUNDS = 8_192
 MIN_DEVICE_LOST_TIMEOUT = 5
 MAX_DEVICE_LOST_TIMEOUT = 600
+MAX_DEVICE_LOST_RECOVERY_SECONDS = 30
 EVIDENCE_VALIDATION_EXIT_CODE = 3
 EVIDENCE_SCHEMA_VERSION = 4
 COMMAND_ERROR_OUTPUT_LIMIT = 4_000
@@ -62,6 +63,18 @@ SOAK_MEASUREMENT_PATTERN = re.compile(
 )
 SOAK_WARMUP_PATTERN = re.compile(
     r"warmup=(?P<seconds>\d+)s/(?P<rounds>\d+) rounds"
+)
+DEVICE_LOST_MEASUREMENT_PATTERN = re.compile(
+    r"detector=(?P<detector>first|second); "
+    r"frames=(?P<frames>\d+); "
+    r"surface_faults=(?P<surface_faults>\d+); "
+    r"detection_seconds=(?P<detection_seconds>\d+(?:\.\d+)?); "
+    r"recovery_seconds=(?P<recovery_seconds>\d+(?:\.\d+)?); "
+    r"device_fault=(?P<device_fault>true|false); "
+    r"fault=(?P<fault>.*?); "
+    r"peer=(?P<peer>.*?); "
+    r"replacement_attempts=(?P<replacement_attempts>\d+); "
+    r"replacement=(?P<replacement>.+)$"
 )
 
 VENDOR_CASES = (
@@ -829,6 +842,8 @@ def require_profile_measurements(case: GfxR5Case, content: str) -> None:
         require_mixed_dpi_measurements(case, evidence_line)
     elif case.name in ("single-window-soak", "shared-device-soak"):
         require_soak_measurements(case, evidence_line)
+    elif case.name == "external-device-reset":
+        require_device_lost_measurements(case, evidence_line)
 
 
 def require_mixed_dpi_measurements(case: GfxR5Case, evidence_line: str) -> None:
@@ -911,6 +926,58 @@ def require_soak_measurements(case: GfxR5Case, evidence_line: str) -> None:
     if "swapchain_maintenance1=true" not in evidence_line:
         raise ValueError(
             f"GFX-R5 case {case.name!r} soak lacks swapchain maintenance evidence"
+        )
+
+
+def require_device_lost_measurements(
+    case: GfxR5Case,
+    evidence_line: str,
+) -> None:
+    measurement = DEVICE_LOST_MEASUREMENT_PATTERN.search(evidence_line)
+    if measurement is None:
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} lacks structured device-loss measurements"
+        )
+    environment = dict(case.environment)
+    expected_fault_capability = environment[DEVICE_FAULT_ENV]
+    if measurement.group("device_fault") != expected_fault_capability:
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} device-fault capability mismatch: "
+            f"expected={expected_fault_capability}, "
+            f"actual={measurement.group('device_fault')}"
+        )
+    detection_seconds = float(measurement.group("detection_seconds"))
+    detection_limit = int(environment[DEVICE_LOST_TIMEOUT_ENV])
+    if detection_seconds > detection_limit:
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} device-loss detection exceeded timeout: "
+            f"limit={detection_limit}, actual={detection_seconds:g}"
+        )
+    recovery_seconds = float(measurement.group("recovery_seconds"))
+    if recovery_seconds > MAX_DEVICE_LOST_RECOVERY_SECONDS:
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} device-loss recovery exceeded timeout: "
+            f"limit={MAX_DEVICE_LOST_RECOVERY_SECONDS}, actual={recovery_seconds:g}"
+        )
+    if int(measurement.group("replacement_attempts")) == 0:
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} device-loss recovery made no replacement attempt"
+        )
+    for field in ("fault", "peer"):
+        if "ERROR_DEVICE_LOST" not in measurement.group(field):
+            raise ValueError(
+                f"GFX-R5 case {case.name!r} {field} lacks ERROR_DEVICE_LOST"
+            )
+    if (
+        expected_fault_capability == "true"
+        and "VK_EXT_device_fault" not in measurement.group("fault")
+    ):
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} fault lacks VK_EXT_device_fault diagnostics"
+        )
+    if ADAPTER_DIAGNOSTIC_PATTERN.search(measurement.group("replacement")) is None:
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} lacks replacement adapter diagnostics"
         )
 
 
