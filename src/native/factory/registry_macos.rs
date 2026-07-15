@@ -11,7 +11,7 @@ use crate::native::traits::present::IGraphicsContext;
 use std::ffi::c_void;
 
 #[cfg(feature = "metal")]
-use crate::native::graphics::metal::create as create_metal;
+use crate::native::graphics::metal::platform::create as create_metal;
 #[cfg(feature = "vulkan")]
 use crate::native::graphics::vulkan::create as create_vulkan;
 
