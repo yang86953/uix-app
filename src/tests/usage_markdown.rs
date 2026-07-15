@@ -1,7 +1,10 @@
 include!(concat!(env!("OUT_DIR"), "/usage_markdown_compile.rs"));
 
 #[test]
-fn usage_markdown_compile_inventory_is_explicit() {
+fn usage_markdown_compile_inventory_tracks_enabled_features() {
     assert_eq!(USAGE_RUST_BLOCKS_TOTAL, 99);
-    assert_eq!(USAGE_RUST_BLOCKS_COMPILED, 99);
+    assert_eq!(
+        USAGE_RUST_BLOCKS_COMPILED,
+        98 + usize::from(cfg!(feature = "test-harness"))
+    );
 }
