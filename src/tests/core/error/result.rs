@@ -36,3 +36,21 @@ fn would_block_has_stable_general_error_mapping() {
         Some(std::io::ErrorKind::WouldBlock)
     );
 }
+
+#[test]
+fn invalid_io_data_preserves_its_typed_format_category() {
+    let error = Error::from(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        "invalid bytes",
+    ));
+
+    assert_eq!(error.code(), Errc::FormatError);
+    assert_eq!(
+        Errc::FormatError.to_io_kind(),
+        Some(std::io::ErrorKind::InvalidData)
+    );
+    assert_eq!(
+        Errc::OutOfRange.to_io_kind(),
+        Some(std::io::ErrorKind::InvalidInput)
+    );
+}
