@@ -193,6 +193,8 @@ pub enum SnapshotFields {
         font_size: f32,
         custom_color: Option<Color>,
         checkable: bool,
+        checked: bool,
+        visible: bool,
     },
     Timeline {
         items: Vec<TimelineItem>,
@@ -743,6 +745,25 @@ impl SnapshotFields {
                 )
                 .with_state(AccessibilityState {
                     expanded: preview.then_some(*preview_open),
+                    ..AccessibilityState::default()
+                })
+            }
+            Self::Tag {
+                text,
+                closable,
+                checkable,
+                checked,
+                ..
+            } => {
+                let role = if *checkable {
+                    AccessibilityRole::Checkbox
+                } else if *closable {
+                    AccessibilityRole::Button
+                } else {
+                    AccessibilityRole::Generic
+                };
+                AccessibilitySnapshot::named(role, text.clone()).with_state(AccessibilityState {
+                    checked: checkable.then_some(*checked),
                     ..AccessibilityState::default()
                 })
             }
