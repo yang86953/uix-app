@@ -463,7 +463,10 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             session.finish("failed")
 
             stderr = StringIO()
-            with redirect_stderr(stderr):
+            with (
+                patch("scripts.run_windows_gfx_r5.require_clean_source"),
+                redirect_stderr(stderr),
+            ):
                 result = main(["--verify-evidence", str(output)])
 
             self.assertEqual(result, EVIDENCE_VALIDATION_EXIT_CODE)
@@ -474,7 +477,54 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             session.finish_case(0, 0, 0.5)
             session.finish("passed")
 
-            self.assertEqual(main(["--verify-evidence", str(output)]), 0)
+            with patch("scripts.run_windows_gfx_r5.require_clean_source"):
+                self.assertEqual(main(["--verify-evidence", str(output)]), 0)
+
+    def test_verify_command_requires_the_recorded_source_head(self) -> None:
+        plan = build_plan("mixed-dpi", "amd", None, 900, 60)
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "evidence"
+            session = EvidenceSession(output, "mixed-dpi", "amd", None, 900, 60, plan)
+            log_path = session.start_case(0)
+            log_path.write_text(passing_log(plan[0]), encoding="utf-8")
+            session.finish_case(0, 0, 0.5)
+            session.finish("passed")
+            session.manifest["source"]["git_head"] = "0" * 40
+            session._write()
+
+            stderr = StringIO()
+            with (
+                patch("scripts.run_windows_gfx_r5.require_clean_source"),
+                redirect_stderr(stderr),
+            ):
+                result = main(["--verify-evidence", str(output)])
+
+            self.assertEqual(result, 2)
+            self.assertIn("current repository HEAD", stderr.getvalue())
+
+    def test_verify_command_rejects_a_dirty_verifier_checkout(self) -> None:
+        plan = build_plan("mixed-dpi", "amd", None, 900, 60)
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "evidence"
+            session = EvidenceSession(output, "mixed-dpi", "amd", None, 900, 60, plan)
+            log_path = session.start_case(0)
+            log_path.write_text(passing_log(plan[0]), encoding="utf-8")
+            session.finish_case(0, 0, 0.5)
+            session.finish("passed")
+
+            stderr = StringIO()
+            with (
+                patch(
+                    "scripts.run_windows_gfx_r5.require_clean_source",
+                    side_effect=ValueError("dirty verifier checkout"),
+                ) as clean,
+                redirect_stderr(stderr),
+            ):
+                result = main(["--verify-evidence", str(output)])
+
+            self.assertEqual(result, 2)
+            clean.assert_called_once_with(output)
+            self.assertIn("dirty verifier checkout", stderr.getvalue())
 
     def test_attempt_history_retains_failure_before_success(self) -> None:
         plan = build_plan("mixed-dpi", "amd", None, 900, 60)
