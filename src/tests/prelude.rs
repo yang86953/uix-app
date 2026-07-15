@@ -158,6 +158,7 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<InputBuilder>();
     assert_exported::<ScrollBuilder>();
     assert_exported::<dyn IntoWidgetNode>();
+    assert_exported::<dyn WidgetComponent>();
     assert_style_ext::<ViewNode>();
     assert_view::<ViewNode>();
     assert_exported::<Ui<'static>>();

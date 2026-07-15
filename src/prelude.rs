@@ -27,7 +27,10 @@ pub use crate::native::traits::system::StatusLevel;
 // draw
 
 pub use crate::draw::traits::GraphicsEngine;
-pub use crate::draw::{colors, Color, FontService, ImageService, NullEngine, SoftwareEngine};
+pub use crate::draw::{
+    colors, Color, FillRule, FontService, ImageService, NullEngine, Path, PathBuilder, Radius,
+    SoftwareEngine, StrokeOptions,
+};
 
 // data
 
@@ -62,7 +65,7 @@ pub use crate::ui::{
     SemanticEvent, SemanticKind, SemanticPayload, SnapshotCollapsePanel, SnapshotField,
     SnapshotFields, SnapshotSource, SnapshotTableColumn, SnapshotTableColumnGroup,
     SnapshotTransferItem, SnapshotTreeNode, SnapshotValue, SystemEvent, SystemEventKind,
-    WidgetChildren, WindowControl,
+    WidgetChildren, WidgetComponent, WindowControl,
 };
 pub use crate::ui::{Animation, AnimationConfig, Easing};
 // ui / components
@@ -104,3 +107,6 @@ pub use crate::ui::view::{
 };
 pub use crate::views;
 pub use crate::with_cloned;
+
+#[cfg(feature = "test-harness")]
+pub use crate::ui::test_harness::TestApp;

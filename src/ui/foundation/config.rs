@@ -163,6 +163,12 @@ impl ConfigProvider<MissingConfigProviderChild> {
     }
 }
 
+impl Default for ConfigProvider<MissingConfigProviderChild> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<F> ConfigProvider<F> {
     pub fn component_size(mut self, size: ControlSize) -> Self {
         self.patch.size = Some(size);
