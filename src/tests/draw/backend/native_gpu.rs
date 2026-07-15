@@ -3073,7 +3073,7 @@ fn common_hybrid_probes(pixels: &[u32], stride: usize) -> Vec<u32> {
         .collect()
 }
 
-#[cfg(feature = "d3d11")]
+#[cfg(any(feature = "d3d11", feature = "d3d12"))]
 fn assert_premultiplied_probes_match(reference: &[u32], actual: &[u32], label: &str) {
     assert_eq!(reference.len(), actual.len(), "{label}: probe count");
     for (index, (expected, observed)) in reference.iter().zip(actual).enumerate() {

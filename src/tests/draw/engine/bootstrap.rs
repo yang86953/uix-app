@@ -2,10 +2,13 @@ use crate::core::Result;
 use crate::draw::engine::bootstrap::ProbeStage;
 use crate::draw::engine::bootstrap::*;
 use crate::draw::engine::factory::create_graphics_engine;
-use crate::native::factory::{gpu_recipe_candidates, GraphicsRecipe};
-use crate::native::traits::present::{NativeSurfaceHandle, PresentOcclusionSupport};
-use crate::tests::common::*;
 #[cfg(feature = "d3d11")]
+use crate::native::factory::gpu_recipe_candidates;
+use crate::native::factory::GraphicsRecipe;
+#[cfg(feature = "d3d11")]
+use crate::native::traits::present::NativeSurfaceHandle;
+use crate::native::traits::present::PresentOcclusionSupport;
+use crate::tests::common::*;
 use std::ffi::c_void;
 
 #[cfg(feature = "d3d11")]
