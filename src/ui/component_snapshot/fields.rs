@@ -327,6 +327,7 @@ pub enum SnapshotFields {
     Pagination {
         total: usize,
         page_size: usize,
+        current: usize,
         show_size_changer: bool,
         show_total: bool,
         size: f32,
@@ -787,7 +788,24 @@ impl SnapshotFields {
             Self::Modal { title, .. } | Self::Drawer { title, .. } => {
                 AccessibilitySnapshot::named(AccessibilityRole::Dialog, title.clone())
             }
-            Self::Pagination { .. } | Self::Anchor { .. } | Self::Breadcrumb { .. } => {
+            Self::Pagination {
+                current,
+                total,
+                page_size,
+                ..
+            } => AccessibilitySnapshot::new(AccessibilityRole::Navigation).with_state(
+                AccessibilityState {
+                    value_text: Some(format!(
+                        "Page {current} of {}; {page_size} per page",
+                        total.div_ceil(*page_size)
+                    )),
+                    value_now: Some(*current as f64),
+                    value_min: Some(1.0),
+                    value_max: Some(total.div_ceil(*page_size).max(1) as f64),
+                    ..AccessibilityState::default()
+                },
+            ),
+            Self::Anchor { .. } | Self::Breadcrumb { .. } => {
                 AccessibilitySnapshot::new(AccessibilityRole::Navigation)
             }
             Self::Menu {
