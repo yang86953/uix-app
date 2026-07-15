@@ -197,9 +197,18 @@ pub fn fatal_fn(msg: impl fmt::Display) {
     handler().handle(Level::Fatal, &msg.to_string(), loc.file(), loc.line());
 }
 
-/// 记录一个 Error 对象的日志（提取 short_what 作为消息，文件/行来自 Error）。
+pub(crate) fn format_error_message(error: &Error) -> String {
+    format!("{}: {}", error.code(), error.message())
+}
+
+/// 记录一个 Error 对象；消息只含 typed code 与正文，级别和位置由日志记录承载。
 pub fn log_error(error: &Error, level: Level) {
-    handler().handle(level, &error.short_what(), error.file(), error.line());
+    handler().handle(
+        level,
+        &format_error_message(error),
+        error.file(),
+        error.line(),
+    );
 }
 
 // ── 便利重导出 ─────────────────────────────────────────────────
