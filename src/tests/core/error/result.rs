@@ -9,6 +9,22 @@ fn try_invoke_panic_returns_error() {
     });
     assert!(result.has_error());
     assert_eq!(result.err_code(), Some(Errc::Unknown));
+    assert_eq!(
+        result.err_message(),
+        Some("function panicked: intentional panic in test")
+    );
+}
+
+#[test]
+fn try_invoke_preserves_owned_panic_message() {
+    let result = try_invoke(|| -> i32 {
+        std::panic::panic_any(String::from("owned panic in test"));
+    });
+
+    assert_eq!(
+        result.err_message(),
+        Some("function panicked: owned panic in test")
+    );
 }
 
 #[test]
