@@ -11,6 +11,14 @@ use crate::native::traits::display::DisplayInfo;
 use crate::native::traits::display::IDisplay;
 use std::cell::Cell;
 use std::ptr;
+use windows::core::BOOL;
+use windows::Win32::Foundation::{LPARAM, RECT};
+use windows::Win32::Graphics::Gdi::{
+    EnumDisplayMonitors, GetMonitorInfoW, MonitorFromWindow, HDC, HMONITOR, MONITORINFO,
+    MONITOR_DEFAULTTONEAREST,
+};
+use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+use windows::Win32::UI::WindowsAndMessaging::MONITORINFOF_PRIMARY;
 
 pub struct WindowsDisplay {
     hwnd: Cell<usize>,
@@ -62,6 +70,106 @@ impl WindowsDisplay {
             ret == ERROR_SUCCESS && data_type == REG_DWORD && data == 0
         }
     }
+
+    fn monitors(&self) -> Vec<MonitorDescriptor> {
+        let mut inventory = MonitorInventory::default();
+        let inventory_ptr = (&mut inventory as *mut MonitorInventory) as isize;
+        // SAFETY: EnumDisplayMonitors 同步调用回调，inventory 在整个调用期间唯一可写且有效。
+        let completed = unsafe {
+            EnumDisplayMonitors(None, None, Some(collect_monitor), LPARAM(inventory_ptr))
+        };
+        if !completed.as_bool() || inventory.failed {
+            return Vec::new();
+        }
+        inventory.monitors.sort_by_key(|monitor| {
+            (
+                !monitor.is_primary,
+                monitor.bounds.top,
+                monitor.bounds.left,
+                monitor.bounds.bottom,
+                monitor.bounds.right,
+            )
+        });
+        inventory.monitors
+    }
+
+    fn dpi_for_monitor(&self, monitor: HMONITOR) -> u32 {
+        let mut dpi_x = 0;
+        let mut dpi_y = 0;
+        // SAFETY: monitor 来自本轮 EnumDisplayMonitors；输出指针在同步调用期间有效。
+        if unsafe { GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y) }.is_ok()
+            && dpi_x > 0
+        {
+            return dpi_x;
+        }
+        let hwnd = self.hwnd.get() as *mut std::ffi::c_void;
+        if !hwnd.is_null() {
+            // SAFETY: hwnd 由仍存活的平台窗口登记；只比较其所在显示器句柄。
+            let selected = unsafe {
+                MonitorFromWindow(
+                    windows::Win32::Foundation::HWND(hwnd),
+                    MONITOR_DEFAULTTONEAREST,
+                )
+            };
+            if selected == monitor {
+                return super::dpi::dpi_for_window(hwnd);
+            }
+        }
+        super::dpi::dpi_for_system()
+    }
+
+    fn fallback_info(&self) -> DisplayInfo {
+        unsafe {
+            let width = GetSystemMetrics(SM_CXSCREEN);
+            let height = GetSystemMetrics(SM_CYSCREEN);
+            DisplayInfo {
+                bounds: Rect::new(0.0, 0.0, width as f32, height as f32),
+                dpi_scale: self.dpi_scale(),
+                is_primary: true,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct MonitorDescriptor {
+    handle: HMONITOR,
+    bounds: RECT,
+    is_primary: bool,
+}
+
+#[derive(Default)]
+struct MonitorInventory {
+    monitors: Vec<MonitorDescriptor>,
+    failed: bool,
+}
+
+unsafe extern "system" fn collect_monitor(
+    monitor: HMONITOR,
+    _device_context: HDC,
+    _bounds: *mut RECT,
+    inventory: LPARAM,
+) -> BOOL {
+    if inventory.0 == 0 {
+        return BOOL(0);
+    }
+    // SAFETY: LPARAM 由 monitors() 指向当前同步枚举期间唯一的 MonitorInventory。
+    let inventory = unsafe { &mut *(inventory.0 as *mut MonitorInventory) };
+    let mut info = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    // SAFETY: monitor 由系统回调提供，info 在调用期间有效可写。
+    if !unsafe { GetMonitorInfoW(monitor, &mut info) }.as_bool() {
+        inventory.failed = true;
+        return BOOL(0);
+    }
+    inventory.monitors.push(MonitorDescriptor {
+        handle: monitor,
+        bounds: info.rcMonitor,
+        is_primary: info.dwFlags & MONITORINFOF_PRIMARY != 0,
+    });
+    BOOL(1)
 }
 
 impl Default for WindowsDisplay {
@@ -86,19 +194,29 @@ impl IDisplay for WindowsDisplay {
     }
 
     fn count(&self) -> i32 {
-        1
+        i32::try_from(self.monitors().len())
+            .ok()
+            .filter(|count| *count > 0)
+            .unwrap_or(1)
     }
 
-    fn info(&self, _index: i32) -> DisplayInfo {
-        unsafe {
-            let w = GetSystemMetrics(SM_CXSCREEN);
-            let h = GetSystemMetrics(SM_CYSCREEN);
-            let dpi_scale = self.dpi_scale();
-            DisplayInfo {
-                bounds: Rect::new(0.0, 0.0, w as f32, h as f32),
-                dpi_scale,
-                is_primary: true,
-            }
+    fn info(&self, index: i32) -> DisplayInfo {
+        let monitors = self.monitors();
+        let monitor = monitors
+            .get(index.max(0) as usize)
+            .or_else(|| monitors.first());
+        let Some(monitor) = monitor else {
+            return self.fallback_info();
+        };
+        DisplayInfo {
+            bounds: Rect::new(
+                monitor.bounds.left as f32,
+                monitor.bounds.top as f32,
+                (monitor.bounds.right - monitor.bounds.left) as f32,
+                (monitor.bounds.bottom - monitor.bounds.top) as f32,
+            ),
+            dpi_scale: self.dpi_for_monitor(monitor.handle) as f32 / super::dpi::BASE_DPI as f32,
+            is_primary: monitor.is_primary,
         }
     }
 }
