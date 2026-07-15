@@ -1,7 +1,28 @@
-use crate::core::diagnostic::Collector;
+use crate::core::diagnostic::{Collector, CollectorConfig};
 use crate::core::{Errc, Error};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+
+#[test]
+fn configure_immediately_enforces_the_new_capacity() {
+    let collector = Collector::for_test(CollectorConfig {
+        max_errors: 3,
+        auto_log: false,
+        ..CollectorConfig::default()
+    });
+    collector.collect(Error::warn(Errc::Unknown, "first"));
+    collector.collect(Error::warn(Errc::Unknown, "second"));
+    collector.collect(Error::warn(Errc::Unknown, "third"));
+
+    collector.configure(CollectorConfig {
+        max_errors: 1,
+        auto_log: false,
+        ..CollectorConfig::default()
+    });
+
+    assert_eq!(collector.stored_count(), 1);
+    assert_eq!(collector.errors()[0].message(), "third");
+}
 
 #[test]
 fn collector_callback_can_reenter_without_holding_internal_lock() {
