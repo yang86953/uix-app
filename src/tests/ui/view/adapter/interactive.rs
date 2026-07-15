@@ -149,6 +149,7 @@ fn reconcile_selectable_list_preserves_active_index_and_syncs_config() {
         list.snapshot_fields(),
         SnapshotFields::SelectableList {
             items: vec![SelectableItem::new("c", "C").icon("*")],
+            active_index: 0,
             header_button_text: "Add".to_string(),
             footer_text: "Footer".to_string(),
             item_height: 44.0,

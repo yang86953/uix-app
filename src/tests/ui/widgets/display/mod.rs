@@ -5,6 +5,7 @@ mod card;
 mod carousel;
 mod collapse;
 mod descriptions;
+mod selectable_list;
 mod selectable_list_virtual_scroll;
 mod table;
 mod table_geometry;
