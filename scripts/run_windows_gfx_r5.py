@@ -47,6 +47,17 @@ ADAPTER_DIAGNOSTIC_PATTERN = re.compile(
     r"driver=0x(?P<driver>[0-9A-Fa-f]{8}); "
     r"queue_family=(?P<queue_family>\d+)"
 )
+MONITOR_DPI_PATTERN = re.compile(r"dpi=(?P<dpi_x>\d+)x(?P<dpi_y>\d+)")
+DPI_TRANSITION_PATTERN = re.compile(
+    r"(?P<leg>initial|forward|return)=DpiTransitionEvidence \{ "
+    r"observed_dpi: (?P<dpi>\d+),"
+)
+SOAK_MEASUREMENT_PATTERN = re.compile(
+    r"duration=(?P<duration>\d+(?:\.\d+)?)s "
+    r"rounds=(?P<rounds>\d+) "
+    r"handles=(?P<before>\d+)->(?P<after>\d+) "
+    r"peak=(?P<peak>\d+)"
+)
 
 VENDOR_CASES = (
     (
@@ -143,13 +154,6 @@ class GfxR5Case:
             markers.append("ERROR_SURFACE_LOST_KHR")
         elif self.name == "engine-recovery-boundary":
             markers.extend(("action=RebuildSurface", "ERROR_OUT_OF_DATE_KHR"))
-        elif self.name == "vulkan-mixed-dpi":
-            markers.extend(("dpi=", "initial=", "forward=", "return="))
-        elif self.name in ("single-window-soak", "shared-device-soak"):
-            duration = environment[SOAK_SECONDS_ENV]
-            markers.extend(
-                (f"duration={duration}.0s", "rounds=", "handles=", "peak=")
-            )
         elif self.name == "external-device-reset":
             markers.extend(
                 (
@@ -770,6 +774,7 @@ def require_case_success(case: GfxR5Case, log_path: Path) -> None:
             f"GFX-R5 case {case.name!r} lacks semantic evidence markers: {details}"
         )
     require_adapter_evidence(case, content)
+    require_profile_measurements(case, content)
 
 
 def require_adapter_evidence(case: GfxR5Case, content: str) -> None:
@@ -795,6 +800,85 @@ def require_adapter_evidence(case: GfxR5Case, content: str) -> None:
             raise ValueError(
                 f"GFX-R5 case {case.name!r} adapter Vulkan API must be non-zero"
             )
+
+
+def require_profile_measurements(case: GfxR5Case, content: str) -> None:
+    evidence_line = next(
+        (line for line in content.splitlines() if case.evidence_prefix in line),
+        "",
+    )
+    if case.name == "vulkan-mixed-dpi":
+        require_mixed_dpi_measurements(case, evidence_line)
+    elif case.name in ("single-window-soak", "shared-device-soak"):
+        require_soak_measurements(case, evidence_line)
+
+
+def require_mixed_dpi_measurements(case: GfxR5Case, evidence_line: str) -> None:
+    topology = {
+        (int(match.group("dpi_x")), int(match.group("dpi_y")))
+        for match in MONITOR_DPI_PATTERN.finditer(evidence_line)
+    }
+    if len(topology) < 2:
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} must record at least two distinct monitor DPIs"
+        )
+    if not any(dpi_x > 96 or dpi_y > 96 for dpi_x, dpi_y in topology):
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} must record a monitor above 100% scaling"
+        )
+    transitions = {
+        match.group("leg"): int(match.group("dpi"))
+        for match in DPI_TRANSITION_PATTERN.finditer(evidence_line)
+    }
+    if set(transitions) != {"initial", "forward", "return"}:
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} lacks three structured DPI transitions"
+        )
+    if (
+        transitions["initial"] != transitions["return"]
+        or transitions["initial"] == transitions["forward"]
+    ):
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} does not prove a round-trip DPI transition"
+        )
+    sampled_dpis = {dpi for pair in topology for dpi in pair}
+    if not set(transitions.values()).issubset(sampled_dpis):
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} transition DPI is absent from the topology"
+        )
+
+
+def require_soak_measurements(case: GfxR5Case, evidence_line: str) -> None:
+    measurement = SOAK_MEASUREMENT_PATTERN.search(evidence_line)
+    if measurement is None:
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} lacks structured soak measurements"
+        )
+    expected_duration = int(dict(case.environment)[SOAK_SECONDS_ENV])
+    actual_duration = float(measurement.group("duration"))
+    if actual_duration != float(expected_duration):
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} soak duration mismatch: "
+            f"expected={expected_duration}, actual={actual_duration:g}"
+        )
+    rounds = int(measurement.group("rounds"))
+    before = int(measurement.group("before"))
+    after = int(measurement.group("after"))
+    peak = int(measurement.group("peak"))
+    if rounds == 0:
+        raise ValueError(f"GFX-R5 case {case.name!r} soak recorded zero rounds")
+    if min(before, after, peak) == 0 or peak < max(before, after):
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} soak handle measurements are inconsistent"
+        )
+    if peak > before + 32:
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} soak handle peak exceeds the +32 bound"
+        )
+    if "swapchain_maintenance1=true" not in evidence_line:
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} soak lacks swapchain maintenance evidence"
+        )
 
 
 def require_exact_test_success(
