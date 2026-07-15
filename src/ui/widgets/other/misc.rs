@@ -483,7 +483,7 @@ impl Default for Transfer {
 // ════════════════════════════════════════════════════════════════════════════
 
 /// 上传文件项。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UploadFile {
     pub name: String,
     pub size: u64,
@@ -516,13 +516,7 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            SystemEvent::PointerDown { .. } => {
-                let file_name = Self::simulated_file_name(&self.accept, self.file_list.len() + 1);
-                self.add_file(&file_name);
-                self.pending_change
-                    .replace(Some(format!("{}:pending", file_name)));
-                EventResult::Handled
-            }
+            SystemEvent::FileDrop { files, .. } if self.drag => self.queue_dropped_files(files),
             _ => EventResult::NotHandled,
         }
     }
@@ -585,15 +579,6 @@ component! {
     }
 }
 impl Upload {
-    fn simulated_file_name(accept: &str, index: usize) -> String {
-        let ext = accept
-            .split(',')
-            .map(|s| s.trim().trim_start_matches('.'))
-            .find(|s| !s.is_empty() && *s != "*")
-            .unwrap_or("bin");
-        format!("upload_{index}.{ext}")
-    }
-
     pub fn new() -> Self {
         Self {
             accept: "*".into(),
@@ -622,19 +607,15 @@ impl Upload {
         self
     }
     pub fn add_file(&mut self, name: &str) {
-        if self.file_list.len() >= self.max_count {
-            return;
-        }
-        self.file_list.push(UploadFile {
-            name: name.to_string(),
-            size: 0,
-            progress: 0.0,
-            status: UploadStatus::Pending,
-        });
+        let _ = self.push_file(name);
     }
     pub fn update_progress(&mut self, idx: usize, progress: f32) {
         if idx < self.file_list.len() {
-            self.file_list[idx].progress = progress;
+            self.file_list[idx].progress = if progress.is_finite() {
+                progress.clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
             self.file_list[idx].status = UploadStatus::Uploading;
         }
     }
@@ -649,6 +630,77 @@ impl Upload {
     }
     pub fn file_count(&self) -> usize {
         self.file_list.len()
+    }
+    pub fn files(&self) -> &[UploadFile] {
+        &self.file_list
+    }
+
+    fn queue_dropped_files(&mut self, files: &[String]) -> EventResult {
+        let limit = if self.multiple { usize::MAX } else { 1 };
+        let mut accepted = Vec::new();
+        for path in files {
+            if accepted.len() >= limit || !self.accepts_file(path) {
+                continue;
+            }
+            let name = Self::display_name(path);
+            if self.push_file(name) {
+                accepted.push(name.to_string());
+            }
+        }
+
+        if accepted.is_empty() {
+            return EventResult::NotHandled;
+        }
+        self.pending_change.replace(Some(
+            accepted
+                .iter()
+                .map(|name| format!("{name}:pending"))
+                .collect::<Vec<_>>()
+                .join(","),
+        ));
+        EventResult::Handled
+    }
+
+    fn push_file(&mut self, name: &str) -> bool {
+        if self.file_list.len() >= self.max_count {
+            return false;
+        }
+        self.file_list.push(UploadFile {
+            name: name.to_string(),
+            size: 0,
+            progress: 0.0,
+            status: UploadStatus::Pending,
+        });
+        true
+    }
+
+    fn accepts_file(&self, path: &str) -> bool {
+        let accept = self.accept.trim();
+        if accept.is_empty() || matches!(accept, "*" | "*/*") {
+            return true;
+        }
+        let name = Self::display_name(path);
+        let extension = name.rsplit_once('.').map(|(_, extension)| extension);
+        accept.split(',').map(str::trim).any(|pattern| {
+            if matches!(pattern, "*" | "*/*") {
+                return true;
+            }
+            if pattern.contains('/') {
+                return false;
+            }
+            let expected = pattern
+                .strip_prefix("*.")
+                .or_else(|| pattern.strip_prefix('.'))
+                .unwrap_or(pattern);
+            !expected.is_empty()
+                && extension.is_some_and(|actual| actual.eq_ignore_ascii_case(expected))
+        })
+    }
+
+    fn display_name(path: &str) -> &str {
+        path.rsplit(['/', '\\'])
+            .find(|segment| !segment.is_empty())
+            .unwrap_or(path)
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
