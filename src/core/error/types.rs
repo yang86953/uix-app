@@ -231,11 +231,11 @@ impl Error {
 
     // ── 格式化输出 ──
 
-    /// 短格式：`[ERROR] invalid_argument (src/main.rs:42)`
+    /// 短格式：`[ERROR] invalid_argument: 参数错误 (src/main.rs:42)`
     pub fn short_what(&self) -> String {
         format!(
-            "[{}] {} ({}:{})",
-            self.severity, self.code, self.file, self.line
+            "[{}] {}: {} ({}:{})",
+            self.severity, self.code, self.message, self.file, self.line
         )
     }
 

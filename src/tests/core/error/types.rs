@@ -44,6 +44,7 @@ fn short_error_text_remains_single_line() {
     let text = nested_error().short_what();
 
     assert!(!text.contains('\n'));
+    assert!(text.contains("invalid_state: outer (outer.rs:11)"));
     assert!(!text.contains("middle"));
 }
 
