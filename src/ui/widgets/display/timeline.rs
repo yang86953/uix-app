@@ -9,6 +9,10 @@ use crate::draw::Color;
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
 
+const ITEM_HEIGHT: f32 = 60.0;
+const DOT_CENTER_Y: f32 = 15.0;
+const DOT_RADIUS: f32 = 5.0;
+
 /// 时间线节点。
 #[derive(Debug, Clone, PartialEq)]
 pub struct TimelineItem {
@@ -38,24 +42,26 @@ component! {
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_secondary();
         let border = ctx.tokens().color_border_secondary();
-        let dot_r = 5.0;
         let line_x = frame.x + 16.0;
         let content_x = frame.x + 40.0;
         let items: Vec<&TimelineItem> = if self.reverse { self.items.iter().rev().collect() } else { self.items.iter().collect() };
 
         for (i, item) in items.iter().enumerate() {
-            let y = frame.y + i as f32 * 60.0;
+            let y = frame.y + i as f32 * ITEM_HEIGHT;
             // 垂直连接线
             if i > 0 {
-                ctx.fill_rect(Rect::new(line_x - 1.0, y - 30.0, 2.0, 30.0), border, None);
-            }
-            if i < items.len() - 1 {
-                ctx.fill_rect(Rect::new(line_x - 1.0, y + dot_r, 2.0, 30.0 - dot_r), border, None);
+                draw_incoming_connector(ctx, line_x, y, border);
             }
             // 节点圆点
             let dot_color = item.color;
-            ctx.fill_circle(line_x, y + 15.0, dot_r, dot_color);
-            ctx.canvas_2d().stroke_circle(line_x, y + 15.0, dot_r, Color::white(), 2.0);
+            ctx.fill_circle(line_x, y + DOT_CENTER_Y, DOT_RADIUS, dot_color);
+            ctx.canvas_2d().stroke_circle(
+                line_x,
+                y + DOT_CENTER_Y,
+                DOT_RADIUS,
+                Color::white(),
+                2.0,
+            );
             // 标签
             ctx.draw_text(&item.label, Point::new(content_x, y + 5.0), text, 14.0);
             // 描述
@@ -66,8 +72,17 @@ component! {
 
         // Pending 节点
         if self.pending {
-            let y = frame.y + items.len() as f32 * 60.0;
-            ctx.canvas_2d().stroke_circle(line_x, y + 15.0, dot_r, border, 2.0);
+            let y = frame.y + items.len() as f32 * ITEM_HEIGHT;
+            if !items.is_empty() {
+                draw_incoming_connector(ctx, line_x, y, border);
+            }
+            ctx.canvas_2d().stroke_circle(
+                line_x,
+                y + DOT_CENTER_Y,
+                DOT_RADIUS,
+                border,
+                2.0,
+            );
             ctx.draw_text(loc.timeline_pending, Point::new(content_x, y + 5.0), text_sec, 14.0);
         }
     }
@@ -99,8 +114,8 @@ impl Timeline {
     }
 
     fn intrinsic_size(&self) -> Size {
-        let h = self.items.len() as f32 * 60.0;
-        Size::new(400.0, h.max(60.0))
+        let row_count = self.items.len() + usize::from(self.pending);
+        Size::new(400.0, row_count.max(1) as f32 * ITEM_HEIGHT)
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
@@ -116,6 +131,16 @@ impl Timeline {
             reverse: self.reverse,
         }
     }
+}
+
+fn draw_incoming_connector(ctx: &mut PaintContext<'_>, line_x: f32, row_y: f32, color: Color) {
+    let start_y = row_y - ITEM_HEIGHT + DOT_CENTER_Y + DOT_RADIUS;
+    let end_y = row_y + DOT_CENTER_Y - DOT_RADIUS;
+    ctx.fill_rect(
+        Rect::new(line_x - 1.0, start_y, 2.0, end_y - start_y),
+        color,
+        None,
+    );
 }
 
 impl Default for Timeline {
