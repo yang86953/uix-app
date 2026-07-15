@@ -15,7 +15,8 @@ use super::accessibility::{
     menu_accessibility, pagination_accessibility, progress_accessibility, result_accessibility,
     rich_text_accessibility, select_accessibility, selectable_list_accessibility,
     splitter_accessibility, steps_accessibility, tabs_accessibility, tag_accessibility,
-    theme_toggle_accessibility, transfer_accessibility, upload_accessibility,
+    theme_toggle_accessibility, transfer_accessibility, typography_accessibility,
+    upload_accessibility,
 };
 use super::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotCollapsePanel,
@@ -654,9 +655,11 @@ impl SnapshotFields {
                 )
             }
             Self::Typography {
-                content, disabled, ..
-            } => AccessibilitySnapshot::named(AccessibilityRole::Text, content.clone())
-                .with_state(AccessibilityState::disabled(*disabled)),
+                content,
+                disabled,
+                copyable,
+                ..
+            } => typography_accessibility(content, *disabled, *copyable),
             Self::Checkbox {
                 checked,
                 disabled,

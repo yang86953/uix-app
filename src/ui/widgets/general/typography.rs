@@ -9,10 +9,12 @@ use std::cell::RefCell;
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
-use crate::draw::Color;
+use crate::draw::{Color, Radius};
 use crate::ui::clipboard;
 use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, KeyCode, KeyMod, SystemEvent, WidgetTree};
+use crate::ui::{
+    ComponentId, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TypographyType {
@@ -46,15 +48,46 @@ component! {
         sel_anchor: Cell<usize>,
         sel_dragging: Cell<bool>,
         draw_pos: Cell<crate::core::Point>,
+        copy_rect: Cell<Option<Rect>>,
+        focused: bool,
+        pending_submit: Cell<bool>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
-        constraints.clamp(self.intrinsic_size())
+        let mut intrinsic = self.intrinsic_size();
+        if matches!(self.type_, TypographyType::Paragraph)
+            && constraints.max.w.is_finite()
+            && constraints.max.w > 0.0
+        {
+            let (fs, _) = self.compute_font_style();
+            let copy_space = if self.copyable { 28.0 } else { 0.0 };
+            let text_width = (constraints.max.w - copy_space).max(1.0);
+            let estimated_text_width = self.content.chars().count() as f32 * fs * 0.6;
+            let line_count = (estimated_text_width / text_width).ceil().max(1.0);
+            intrinsic = Size::new(
+                estimated_text_width.min(text_width) + copy_space,
+                fs * 1.5 * line_count,
+            );
+        }
+        constraints.clamp(intrinsic)
     }
 
+    tab_index => (&self) -> i32 { i32::from(self.copyable && !self.disabled) }
+
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        if self.disabled {
+            return EventResult::NotHandled;
+        }
         match event {
-            SystemEvent::PointerDown { pos, mods, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                mods,
+            } => {
+                if self.copyable && self.copy_rect.get().is_some_and(|rect| rect.contains(*pos)) {
+                    self.copy_content(true);
+                    return EventResult::Handled;
+                }
                 let dp = self.draw_pos.get();
                 let text_x = pos.x - dp.x;
                 let text_y = pos.y - dp.y;
@@ -88,8 +121,13 @@ component! {
             }
             SystemEvent::FocusOut => {
                 // 失去焦点时清除文字选中
+                self.focused = false;
                 self.selection.set(None);
                 self.sel_dragging.set(false);
+                EventResult::Handled
+            }
+            SystemEvent::FocusIn if self.copyable => {
+                self.focused = true;
                 EventResult::Handled
             }
             SystemEvent::KeyDown { key, mods } => {
@@ -110,6 +148,10 @@ component! {
                         }
                         EventResult::Handled
                     }
+                    KeyCode::Enter | KeyCode::Space if !ctrl && self.copyable => {
+                        self.copy_content(true);
+                        EventResult::Handled
+                    }
                     _ => EventResult::NotHandled,
                 }
             }
@@ -117,18 +159,27 @@ component! {
         }
     }
 
+    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_submit
+            .replace(false)
+            .then(|| SemanticEvent::submit(id, "copied"))
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        let (fs, _fw) = self.compute_font_style();
+        let (fs, fw) = self.compute_font_style();
         let text_c = self.color_override.unwrap_or_else(|| {
             if self.disabled { ctx.tokens().color_text_quaternary() } else { ctx.tokens().color_text() }
         });
+        let copy_space = if self.copyable { 28.0 } else { 0.0 };
+        let text_width = (frame.w - copy_space).max(1.0);
+        let wraps = matches!(self.type_, TypographyType::Paragraph);
 
         // 单次布局：同时用于 hit-test 缓存、选中背景和文字绘制
         let opts = crate::draw::TextLayoutOptions {
-            max_width: frame.w.max(1.0),
+            max_width: text_width,
             max_height: 0.0,
             line_height: fs * 1.5,
-            word_wrap: false,
+            word_wrap: wraps,
             h_align: crate::draw::HAlign::Left,
             v_align: crate::draw::VAlign::Top,
             font_size: fs,
@@ -138,7 +189,7 @@ component! {
         let layout = ctx.font_service().layout_text(&fh, &self.content, &backend_opts);
 
         let x = 0.0;
-        let y = ctx.visual_center_y(frame, fs) - frame.y;
+        let y = if wraps { 0.0 } else { ctx.visual_center_y(frame, fs) - frame.y };
         let draw_pos = crate::core::Point::new(x, y);
         self.draw_pos.set(draw_pos);
         let abs_pos = crate::core::Point::new(frame.x + draw_pos.x, frame.y + draw_pos.y);
@@ -160,6 +211,28 @@ component! {
                 li.clear();
                 for l in &layout.lines {
                     li.push((l.y, l.glyph_count));
+                }
+            }
+
+            if self.mark || self.code {
+                let background = if self.code {
+                    ctx.tokens().color_fill_secondary()
+                } else {
+                    ctx.tokens().color_warning_bg()
+                };
+                for line in &layout.lines {
+                    if let Some(bounds) = Self::line_bounds(&layout, line, abs_pos, fs) {
+                        ctx.fill_rect(
+                            Rect::new(
+                                bounds.x - 3.0,
+                                bounds.y - 1.0,
+                                bounds.w + 6.0,
+                                bounds.h + 2.0,
+                            ),
+                            background,
+                            Some(Radius::uniform(if self.code { 3.0 } else { 1.0 })),
+                        );
+                    }
                 }
             }
 
@@ -193,14 +266,64 @@ component! {
             }
 
             ctx.blit_glyph_layout(&layout, abs_pos, text_c, fs);
+            if self.strong || fw >= 600.0 {
+                ctx.blit_glyph_layout(
+                    &layout,
+                    Point::new(abs_pos.x + 0.6, abs_pos.y),
+                    text_c,
+                    fs,
+                );
+            }
+            if self.underline || self.delete {
+                for line in &layout.lines {
+                    if let Some(bounds) = Self::line_bounds(&layout, line, abs_pos, fs) {
+                        if self.underline {
+                            ctx.draw_line(
+                                bounds.x,
+                                bounds.y + bounds.h - 1.0,
+                                bounds.x + bounds.w,
+                                bounds.y + bounds.h - 1.0,
+                                text_c,
+                                1.0,
+                            );
+                        }
+                        if self.delete {
+                            ctx.draw_line(
+                                bounds.x,
+                                bounds.y + bounds.h * 0.52,
+                                bounds.x + bounds.w,
+                                bounds.y + bounds.h * 0.52,
+                                text_c,
+                                1.0,
+                            );
+                        }
+                    }
+                }
+            }
         }
 
         // copyable 图标
         if self.copyable {
             let copy_icon = "📋";
-            let copy_x = frame.x + frame.w - 22.0;
-            let copy_y = ctx.visual_center_y(frame, 14.0);
+            let copy_x = frame.x + (frame.w - 24.0).max(0.0);
+            let copy_y = if wraps { frame.y } else { ctx.visual_center_y(frame, 14.0) };
+            self.copy_rect.set(Some(Rect::new(
+                copy_x - frame.x,
+                copy_y - frame.y,
+                24.0,
+                20.0,
+            )));
+            if self.focused {
+                ctx.stroke_rect(
+                    Rect::new(copy_x - 2.0, copy_y - 2.0, 24.0, 20.0),
+                    ctx.tokens().color_primary(),
+                    1.0,
+                    Some(Radius::uniform(3.0)),
+                );
+            }
             ctx.draw_text(copy_icon, Point::new(copy_x, copy_y), ctx.tokens().color_text_quaternary(), 14.0);
+        } else {
+            self.copy_rect.set(None);
         }
     }
 }
@@ -226,6 +349,9 @@ impl Typography {
             sel_anchor: Cell::new(0),
             sel_dragging: Cell::new(false),
             draw_pos: Cell::new(crate::core::Point::new(0.0, 0.0)),
+            copy_rect: Cell::new(None),
+            focused: false,
+            pending_submit: Cell::new(false),
         }
     }
     pub fn heading(content: &str, level: u8) -> Self {
@@ -285,6 +411,10 @@ impl Typography {
         self.selection.get().map(|(s, e)| self.slice_range(s, e))
     }
 
+    pub fn is_copy_focused(&self) -> bool {
+        self.focused
+    }
+
     pub(crate) fn is_cross_text_dragging(&self) -> bool {
         self.sel_dragging.get()
     }
@@ -323,10 +453,42 @@ impl Typography {
 
     fn intrinsic_size(&self) -> Size {
         let (fs, _fw) = self.compute_font_style();
-        let w = self.content.chars().count() as f32 * fs * 0.6;
+        let copy_space = if self.copyable { 28.0 } else { 0.0 };
+        let w = self.content.chars().count() as f32 * fs * 0.6 + copy_space;
         // 与 Label 一致：单行用视觉字高，避免光学居中后量高偏大
         let h = fs * 1.2;
         Size::new(w, h)
+    }
+
+    fn copy_content(&self, emit_submit: bool) {
+        clipboard::copy_to_clipboard(&self.content);
+        if emit_submit {
+            self.pending_submit.set(true);
+        }
+    }
+
+    fn line_bounds(
+        layout: &crate::draw::font::text_backend::TextLayout,
+        line: &crate::draw::font::text_backend::LineInfo,
+        origin: Point,
+        font_size: f32,
+    ) -> Option<Rect> {
+        let start = line.glyph_start;
+        let end = (start + line.glyph_count).min(layout.glyphs.len());
+        let glyphs = layout.glyphs.get(start..end)?;
+        let first = glyphs.first()?;
+        let last = glyphs.last()?;
+        Some(Rect::new(
+            origin.x + first.x,
+            origin.y + line.y,
+            (last.x + last.width - first.x).max(0.0),
+            line.height.max(font_size * 1.2),
+        ))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn copy_rect_for_test(&self) -> Option<Rect> {
+        self.copy_rect.get()
     }
 
     fn char_at_xy(&self, text_x: f32, text_y: f32) -> usize {
@@ -412,6 +574,11 @@ impl Typography {
         self.italic = next.italic;
         self.copyable = next.copyable;
         self.color_override = next.color_override;
+        if !self.copyable || self.disabled {
+            self.focused = false;
+            self.copy_rect.set(None);
+            self.pending_submit.set(false);
+        }
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {

@@ -5,3 +5,4 @@ mod float_button;
 mod icon;
 mod label;
 mod space;
+mod typography;
