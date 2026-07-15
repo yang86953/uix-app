@@ -897,6 +897,14 @@ pub(crate) fn crop_cpu_shadow(
     if width <= 0 || height <= 0 {
         return Ok(Vec::new());
     }
+    if surface_width <= 0 || surface_height <= 0 {
+        return Err(Error::new(
+            Errc::InvalidState,
+            format!(
+                "VulkanContext: CPU shadow has invalid surface extent {surface_width}x{surface_height}"
+            ),
+        ));
+    }
     if x < 0
         || y < 0
         || x.saturating_add(width) > surface_width
@@ -906,12 +914,73 @@ pub(crate) fn crop_cpu_shadow(
             "VulkanContext: readback rect ({x},{y},{width}x{height}) outside {surface_width}x{surface_height}"
         )));
     }
-    let mut out = Vec::with_capacity((width as usize).saturating_mul(height as usize));
     let stride = surface_width as usize;
+    let expected = stride
+        .checked_mul(surface_height as usize)
+        .ok_or_else(|| {
+            Error::new(
+                Errc::InvalidState,
+                format!(
+                    "VulkanContext: CPU shadow extent {surface_width}x{surface_height} exceeds host address space"
+                ),
+            )
+        })?;
+    if shadow.len() != expected {
+        return Err(Error::new(
+            Errc::InvalidState,
+            format!(
+                "VulkanContext: CPU shadow length {} does not match {surface_width}x{surface_height} ({expected} pixels)",
+                shadow.len()
+            ),
+        ));
+    }
+    let output_pixels = (width as usize)
+        .checked_mul(height as usize)
+        .ok_or_else(|| {
+            Error::new(
+                Errc::GraphicsOutOfMemory,
+                format!(
+                    "VulkanContext: CPU readback extent {width}x{height} exceeds host address space"
+                ),
+            )
+        })?;
+    let mut out = allocate_readback_output(output_pixels)?;
     for row in 0..height as usize {
-        let start = (y as usize + row).saturating_mul(stride) + x as usize;
-        let end = start + width as usize;
-        out.extend_from_slice(&shadow[start..end]);
+        let start = (y as usize + row)
+            .checked_mul(stride)
+            .and_then(|offset| offset.checked_add(x as usize))
+            .ok_or_else(|| {
+                Error::new(
+                    Errc::InvalidState,
+                    "VulkanContext: CPU shadow row offset overflowed",
+                )
+            })?;
+        let end = start.checked_add(width as usize).ok_or_else(|| {
+            Error::new(
+                Errc::InvalidState,
+                "VulkanContext: CPU shadow row end overflowed",
+            )
+        })?;
+        let source = shadow.get(start..end).ok_or_else(|| {
+            Error::new(
+                Errc::InvalidState,
+                format!("VulkanContext: CPU shadow row {row} is incomplete"),
+            )
+        })?;
+        out.extend_from_slice(source);
     }
     Ok(out)
+}
+
+pub(crate) fn allocate_readback_output(pixel_count: usize) -> Result<Vec<u32>> {
+    let mut output = Vec::new();
+    output.try_reserve_exact(pixel_count).map_err(|error| {
+        Error::new(
+            Errc::GraphicsOutOfMemory,
+            format!(
+                "VulkanContext: CPU readback output allocation for {pixel_count} pixels failed: {error}"
+            ),
+        )
+    })?;
+    Ok(output)
 }
