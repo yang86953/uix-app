@@ -263,7 +263,7 @@ fn reconcile_anchor_preserves_active_index_and_syncs_items() {
 
 #[test]
 fn reconcile_steps_preserves_current_step_and_syncs_steps() {
-    use crate::ui::widgets::{Step, StepStatus, Steps};
+    use crate::ui::widgets::{Step, StepStatus, Steps, StepsDirection};
 
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
         Steps::new(vec![Step::new("One"), Step::new("Two")]).current(1),
@@ -297,7 +297,11 @@ fn reconcile_steps_preserves_current_step_and_syncs_steps() {
     assert_eq!(steps.step_count(), 3);
     assert!(matches!(
         steps.snapshot_fields(),
-        SnapshotFields::Steps { steps, direction: true }
+        SnapshotFields::Steps {
+            steps,
+            current: 1,
+            direction: StepsDirection::Horizontal,
+        }
             if steps.len() == 3
                 && steps[0].status == StepStatus::Finish
                 && steps[1].description == "in progress"
