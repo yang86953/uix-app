@@ -258,7 +258,7 @@ impl CircuitBreaker {
             failure_count: AtomicUsize::new(0),
             success_count: AtomicUsize::new(0),
             rejected_count: AtomicUsize::new(0),
-            threshold: AtomicUsize::new(failure_threshold),
+            threshold: AtomicUsize::new(failure_threshold.max(1)),
             recovery_timeout_ms: AtomicU64::new(duration_millis_saturating(recovery_timeout)),
             last_failure_time: AtomicU64::new(0),
             half_open_probe_in_flight: AtomicBool::new(false),
@@ -349,7 +349,7 @@ impl CircuitBreaker {
     }
 
     pub fn set_threshold(&self, failures: usize) {
-        self.threshold.store(failures, Ordering::Relaxed);
+        self.threshold.store(failures.max(1), Ordering::Relaxed);
     }
     pub fn threshold(&self) -> usize {
         self.threshold.load(Ordering::Relaxed)

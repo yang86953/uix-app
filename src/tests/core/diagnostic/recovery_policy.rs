@@ -42,3 +42,18 @@ fn circuit_recovery_timeout_saturates_instead_of_wrapping() {
 
     assert_eq!(circuit.recovery_timeout(), Duration::from_millis(u64::MAX));
 }
+
+#[test]
+fn circuit_failure_threshold_is_never_zero() {
+    let circuit = CircuitBreaker::new(0, Duration::from_secs(60));
+
+    assert_eq!(circuit.threshold(), 1);
+    circuit.record_failure();
+    assert_eq!(circuit.state(), CircuitState::Open);
+
+    circuit.reset();
+    circuit.set_threshold(0);
+    assert_eq!(circuit.threshold(), 1);
+    circuit.record_failure();
+    assert_eq!(circuit.state(), CircuitState::Open);
+}
