@@ -102,7 +102,15 @@ component! {
         input_size: ControlSize,
         text_buffer: String,
         pending_change: Cell<Option<f64>>,
+        cursor_rect: Cell<Rect>,
+        rendered_width: Cell<f32>,
     }
+
+    tab_index => (&self) -> i32 { 1 }
+
+    accepts_text_input => (&self) -> bool { !self.disabled }
+
+    text_input_cursor_rect => (&self) -> Rect { self.cursor_rect.get() }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
@@ -113,14 +121,31 @@ component! {
         self.sync_bound_value();
         if self.disabled { return EventResult::NotHandled; }
         match event {
-            SystemEvent::PointerDown { pos: _, .. } => {
-                self.focused = true;
-                self.text_buffer = self.value.to_string();
+            SystemEvent::PointerDown { pos, .. } => {
+                let control_height = crate::ui::config::control_height(self.input_size);
+                let step_left = self.rendered_width.get() - control_height;
+                if pos.x >= step_left {
+                    if pos.y < control_height * 0.5 {
+                        self.set_value(self.value + self.step);
+                    } else {
+                        self.set_value(self.value - self.step);
+                    }
+                    return EventResult::Handled;
+                }
+                self.begin_editing();
                 EventResult::Handled
             }
             SystemEvent::PointerEnter => { self.hovered = true; EventResult::Handled }
             SystemEvent::PointerLeave => { self.hovered = false; EventResult::Handled }
-            SystemEvent::FocusOut => { self.focused = false; EventResult::Handled }
+            SystemEvent::FocusIn => {
+                self.begin_editing();
+                EventResult::Handled
+            }
+            SystemEvent::FocusOut => {
+                self.commit_buffer();
+                self.focused = false;
+                EventResult::Handled
+            }
             SystemEvent::KeyDown { key, .. } => {
                 match key {
                     KeyCode::Up => {
@@ -136,23 +161,17 @@ component! {
                         EventResult::Handled
                     }
                     KeyCode::Backspace => {
-                        self.text_buffer.pop();
-                        EventResult::Handled
+                        if self.text_buffer.pop().is_some() {
+                            EventResult::Handled
+                        } else {
+                            EventResult::NotHandled
+                        }
                     }
                     _ => EventResult::NotHandled,
                 }
             }
-            SystemEvent::TextInput { text } => {
-                if text.chars().any(|c| c.is_control()) {
-                    return EventResult::NotHandled;
-                }
-                for ch in text.chars() {
-                    if ch.is_ascii_digit() || ch == '-' || ch == '.' {
-                        self.text_buffer.push(ch);
-                    }
-                }
-                EventResult::Handled
-            }
+            SystemEvent::TextInput { text } | SystemEvent::Paste { text } =>
+                self.append_numeric_text(text),
             _ => EventResult::NotHandled,
         }
     }
@@ -166,6 +185,7 @@ component! {
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.capture_bound_value_dependency();
         let step_width = crate::ui::config::control_height(self.input_size);
+        self.rendered_width.set(frame.w);
         let input_frame = Rect::new(frame.x, frame.y, frame.w - step_width, frame.h);
         let primary = ctx.tokens().color_primary();
         let primary_hover = ctx.tokens().color_primary_hover();
@@ -198,6 +218,13 @@ component! {
         ctx.draw_text(display,
             Point::new(input_frame.x + 12.0, draw_y),
             if self.focused || self.value_configured { text_color } else { text_tertiary }, 14.0);
+        let cursor_x = (input_frame.x + 12.0 + self.text_buffer.chars().count() as f32 * 7.0)
+            .min(input_frame.x + input_frame.w - 8.0);
+        let cursor_rect = Rect::new(cursor_x, input_frame.y + 7.0, 1.0, 18.0);
+        self.cursor_rect.set(cursor_rect);
+        if self.focused {
+            ctx.fill_rect(cursor_rect, primary, None);
+        }
 
         let btn_area = Rect::new(
             frame.x + frame.w - step_width,
@@ -234,6 +261,8 @@ impl InputNumber {
             input_size: config.size,
             text_buffer: String::new(),
             pending_change: Cell::new(None),
+            cursor_rect: Cell::new(Rect::zero()),
+            rendered_width: Cell::new(80.0),
         }
     }
 
@@ -305,6 +334,31 @@ impl InputNumber {
 
     fn intrinsic_size(&self) -> Size {
         Size::new(80.0, crate::ui::config::control_height(self.input_size))
+    }
+
+    fn begin_editing(&mut self) {
+        self.focused = true;
+        self.text_buffer = if self.value_configured {
+            self.format_value()
+        } else {
+            String::new()
+        };
+    }
+
+    fn append_numeric_text(&mut self, text: &str) -> EventResult {
+        if text.is_empty() || text.chars().any(char::is_control) {
+            return EventResult::NotHandled;
+        }
+        let previous_len = self.text_buffer.len();
+        self.text_buffer.extend(
+            text.chars()
+                .filter(|character| character.is_ascii_digit() || matches!(character, '-' | '.')),
+        );
+        if self.text_buffer.len() > previous_len {
+            EventResult::Handled
+        } else {
+            EventResult::NotHandled
+        }
     }
 
     fn commit_buffer(&mut self) {
@@ -403,6 +457,9 @@ impl InputNumber {
         self.disabled = next.disabled;
         self.input_size = next.input_size;
         self.value_binding = next.value_binding;
+        if self.disabled {
+            self.focused = false;
+        }
 
         let next_value = controlled_value.unwrap_or_else(|| self.clamp_value(self.value));
         if controlled_value.is_some() {
