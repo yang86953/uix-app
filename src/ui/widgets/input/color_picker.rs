@@ -6,6 +6,7 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
+use crate::native::traits::input::ControlSize;
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::state::State;
 use crate::ui::{
@@ -32,6 +33,7 @@ component! {
         hovered: bool,
         hovered_idx: Option<usize>,
         focused: bool,
+        picker_size: ControlSize,
         pending_change: Cell<Option<Color>>,
     }
 
@@ -46,7 +48,7 @@ component! {
         self.sync_bound_value();
         match event {
             SystemEvent::PointerDown { pos, .. } => {
-                if pos.y >= 0.0 && pos.y <= 32.0 {
+                if pos.y >= 0.0 && pos.y <= self.control_height() {
                     if self.open {
                         self.close();
                     } else {
@@ -55,26 +57,28 @@ component! {
                     self.focused = true;
                     return EventResult::Handled;
                 }
-                if self.is_present() && pos.y > 32.0 {
+                if self.is_present() && pos.y > self.control_height() {
                     let cols = 8;
                     let cell = 24.0;
                     let pad = 8.0;
                     let panel_x = pos.x;
-                    let panel_y = pos.y - 40.0;
+                    let panel_y = pos.y - self.panel_offset();
                     let panel_w = cols as f32 * cell + pad * 2.0;
-                    if panel_x >= 0.0 && panel_x < panel_w && panel_y >= pad {
-                        let rows = self.preset_colors.len().div_ceil(cols);
-                        let panel_h = rows as f32 * cell + pad * 2.0;
+                    let rows = self.preset_colors.len().div_ceil(cols);
+                    let panel_h = rows as f32 * cell + pad * 2.0;
+                    if panel_x >= pad
+                        && panel_x < panel_w - pad
+                        && panel_y >= pad
+                        && panel_y < panel_h - pad
+                    {
                         let ci = ((panel_x - pad) / cell) as usize;
                         let ri = ((panel_y - pad) / cell) as usize;
-                        if panel_y >= 0.0 && panel_y <= panel_h {
-                            let idx = ri * cols + ci;
-                            if idx < self.preset_colors.len() {
-                                let next = self.preset_colors[idx];
-                                self.commit_value(next);
-                                self.close();
-                                return EventResult::Handled;
-                            }
+                        let idx = ri * cols + ci;
+                        if idx < self.preset_colors.len() {
+                            let next = self.preset_colors[idx];
+                            self.commit_value(next);
+                            self.close();
+                            return EventResult::Handled;
                         }
                     }
                     self.close();
@@ -83,12 +87,12 @@ component! {
                 EventResult::NotHandled
             }
             SystemEvent::PointerMove { pos, .. } => {
-                if self.is_present() && pos.y > 36.0 {
+                if self.is_present() && pos.y > self.panel_offset() {
                     let cols = 8;
                     let cell = 24.0;
                     let pad = 8.0;
                     let panel_x = pos.x;
-                    let panel_y = pos.y - 40.0;
+                    let panel_y = pos.y - self.panel_offset();
                     let ci = ((panel_x - pad) / cell) as usize;
                     let ri = ((panel_y - pad) / cell) as usize;
                     let idx = ri * cols + ci;
@@ -98,7 +102,7 @@ component! {
                         self.hovered_idx = None;
                     }
                 } else {
-                    self.hovered = pos.y >= 0.0 && pos.y <= 32.0;
+                    self.hovered = pos.y >= 0.0 && pos.y <= self.control_height();
                     self.hovered_idx = None;
                 }
                 EventResult::Handled
@@ -137,13 +141,30 @@ component! {
         let border = ctx.tokens().color_border();
         let primary = ctx.tokens().color_primary();
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
-        let swatch = Rect::new(frame.x, frame.y + 4.0, 24.0, 24.0);
+        let swatch_inset = 4.0;
+        let swatch_size = (frame.h - swatch_inset * 2.0).max(8.0);
+        let swatch = Rect::new(
+            frame.x,
+            frame.y + swatch_inset,
+            swatch_size,
+            swatch_size,
+        );
         ctx.fill_rect(swatch, self.value.get(), r);
         let border_c = if self.hovered || self.focused { primary } else { border };
         ctx.stroke_rect(swatch, border_c, 1.5, r);
 
         if self.focused {
-            ctx.stroke_rect(Rect::new(frame.x - 1.0, frame.y + 3.0, 26.0, 26.0), primary, 1.0, None);
+            ctx.stroke_rect(
+                Rect::new(
+                    swatch.x - 1.0,
+                    swatch.y - 1.0,
+                    swatch.w + 2.0,
+                    swatch.h + 2.0,
+                ),
+                primary,
+                1.0,
+                None,
+            );
         }
 
         if self.is_present() {
@@ -155,7 +176,7 @@ component! {
             let rows = self.preset_colors.len().div_ceil(cols);
             let panel_h = rows as f32 * cell + pad * 2.0;
             let panel_x = frame.x;
-            let panel_y = frame.y + 36.0;
+            let panel_y = frame.y + frame.h + 4.0;
             let bg = fade_color(ctx.tokens().color_bg_elevated(), opacity);
             let border = fade_color(border, opacity);
             let panel_rect = Rect::new(panel_x, panel_y, panel_w, panel_h);
@@ -211,10 +232,12 @@ component! {
 }
 impl ColorPicker {
     fn intrinsic_size(&self) -> Size {
-        Size::new(32.0, 32.0)
+        let height = self.control_height();
+        Size::new(height, height)
     }
 
     pub fn new() -> Self {
+        let config = crate::ui::config::use_config();
         Self {
             value: Cell::new(Color::default()),
             value_binding: None,
@@ -236,6 +259,7 @@ impl ColorPicker {
             hovered: false,
             hovered_idx: None,
             focused: false,
+            picker_size: config.size,
             pending_change: Cell::new(None),
         }
     }
@@ -256,6 +280,11 @@ impl ColorPicker {
     /// 返回组件当前缓存值；controlled 用法应以绑定的 `State` 为真值来源。
     pub fn current_value(&self) -> Color {
         self.value.get()
+    }
+
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.picker_size = size;
+        self
     }
 
     pub fn is_open(&self) -> bool {
@@ -298,6 +327,7 @@ impl ColorPicker {
         let controlled_value = next.value_binding.as_ref().map(|_| next.value.get());
         self.value_binding = next.value_binding;
         self.preset_colors = next.preset_colors;
+        self.picker_size = next.picker_size;
         if let Some(value) = controlled_value {
             self.value.set(value);
         }
@@ -321,6 +351,14 @@ impl ColorPicker {
         }
         self.pending_change.set(Some(value));
     }
+
+    fn control_height(&self) -> f32 {
+        crate::ui::config::control_height(self.picker_size)
+    }
+
+    fn panel_offset(&self) -> f32 {
+        self.control_height() + 4.0
+    }
 }
 
 impl Default for ColorPicker {
@@ -336,7 +374,7 @@ fn color_picker_dirty_rect(frame: Rect, color_count: usize) -> Rect {
     let panel_w = cols as f32 * cell + pad * 2.0;
     let rows = color_count.div_ceil(cols);
     let panel_h = rows as f32 * cell + pad * 2.0;
-    let panel = Rect::new(frame.x, frame.y + 36.0, panel_w, panel_h);
+    let panel = Rect::new(frame.x, frame.y + frame.h + 4.0, panel_w, panel_h);
     frame.union(&panel)
 }
 

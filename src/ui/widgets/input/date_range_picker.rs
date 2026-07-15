@@ -7,6 +7,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
+use crate::native::traits::input::ControlSize;
 use crate::ui::state::State;
 use crate::ui::widgets::input::date_calendar::{
     calendar_popup_rect, draw_calendar_panel, hit_calendar_date, hit_month_navigation,
@@ -91,6 +92,7 @@ component! {
         focused: bool,
         pending_start: Cell<Option<Date>>,
         hover_date: Cell<Option<Date>>,
+        picker_size: ControlSize,
         last_frame: Cell<Option<Rect>>,
         pending_change: Cell<Option<(Date, Date)>>,
     }
@@ -98,7 +100,10 @@ component! {
     tab_index => (&self) -> i32 { 1 }
 
     measure => (&self, constraints: Constraints) -> Size {
-        constraints.clamp(Size::new(280.0, 32.0))
+        constraints.clamp(Size::new(
+            280.0,
+            crate::ui::config::control_height(self.picker_size),
+        ))
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -281,6 +286,7 @@ component! {
 impl DateRangePicker {
     pub fn new() -> Self {
         let today = Date::today();
+        let config = crate::ui::config::use_config();
         Self {
             start_value: Cell::new(Date::default()),
             end_value: Cell::new(Date::default()),
@@ -295,6 +301,7 @@ impl DateRangePicker {
             focused: false,
             pending_start: Cell::new(None),
             hover_date: Cell::new(None),
+            picker_size: config.size,
             last_frame: Cell::new(None),
             pending_change: Cell::new(None),
         }
@@ -323,6 +330,11 @@ impl DateRangePicker {
 
     pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
         self.placeholder = placeholder.into();
+        self
+    }
+
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.picker_size = size;
         self
     }
 
@@ -386,6 +398,7 @@ impl DateRangePicker {
         self.placeholder = next.placeholder;
         self.presets = next.presets;
         self.disabled_date = next.disabled_date;
+        self.picker_size = next.picker_size;
     }
 
     fn sync_bound_values(&self) {
