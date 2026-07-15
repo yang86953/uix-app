@@ -34,6 +34,7 @@ pub struct WidgetNode {
     pub widget: Box<dyn WidgetComponent>,
     pub children: Vec<WidgetNode>,
     pub(crate) provider_context: ProviderContext,
+    pub(crate) visible: bool,
     pub z_index: i32,
     pub key: Option<Box<str>>,
     pub automation_id: Option<Box<str>>,
@@ -51,6 +52,7 @@ impl WidgetNode {
             widget,
             children,
             provider_context: current_provider_context(),
+            visible: true,
             z_index: 0,
             key: None,
             automation_id: None,
@@ -75,6 +77,7 @@ impl WidgetNode {
             widget,
             children: vec![],
             provider_context: current_provider_context(),
+            visible: true,
             z_index: 0,
             key: None,
             automation_id: None,
@@ -88,6 +91,10 @@ impl WidgetNode {
     }
     pub fn z_index(mut self, z: i32) -> Self {
         self.z_index = z;
+        self
+    }
+    pub(crate) fn with_visibility(mut self, visible: bool) -> Self {
+        self.visible = visible;
         self
     }
     /// 设置 Tab 键导航顺序索引（> 0 表示可通过 Tab 获取焦点）。
