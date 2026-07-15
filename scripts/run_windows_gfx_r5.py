@@ -103,6 +103,34 @@ class GfxR5Case:
         )
 
 
+def test_inventory_command() -> tuple[str, ...]:
+    return ("cargo", "test", "--features", "vulkan", "--lib", "--", "--list")
+
+
+def parse_test_inventory(output: str) -> set[str]:
+    suffix = ": test"
+    return {
+        line[: -len(suffix)]
+        for raw_line in output.splitlines()
+        if (line := raw_line.strip()).endswith(suffix)
+    }
+
+
+def require_planned_tests(plan: Sequence[GfxR5Case], inventory: set[str]) -> None:
+    missing = [case.test_name for case in plan if case.test_name not in inventory]
+    if missing:
+        details = "\n".join(f"  - {test_name}" for test_name in missing)
+        raise ValueError(
+            "GFX-R5 plan references tests absent from the current Windows Vulkan "
+            f"inventory:\n{details}"
+        )
+
+
+def preflight_test_inventory(plan: Sequence[GfxR5Case]) -> None:
+    inventory = parse_test_inventory(capture(test_inventory_command()))
+    require_planned_tests(plan, inventory)
+
+
 class EvidenceSession:
     """Persist progress after every state transition so interrupted runs are visible."""
 
@@ -420,6 +448,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     try:
         require_clean_source()
+        preflight_test_inventory(plan)
         output_dir = (
             args.output.resolve()
             if args.output is not None

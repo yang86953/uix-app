@@ -10,6 +10,8 @@ from scripts.run_windows_gfx_r5 import (
     EvidenceSession,
     build_plan,
     normalize_log_ending,
+    parse_test_inventory,
+    require_planned_tests,
     write_json_atomic,
 )
 
@@ -93,6 +95,24 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             normalize_log_ending(path)
 
             self.assertEqual(path.read_bytes(), b"result: ok\n")
+
+    def test_inventory_parser_ignores_cargo_noise(self) -> None:
+        inventory = parse_test_inventory(
+            "Finished test profile\n"
+            "tests::one: test\n"
+            "tests::benchmark: benchmark\n"
+            "tests::two: test\n"
+        )
+
+        self.assertEqual(inventory, {"tests::one", "tests::two"})
+
+    def test_plan_preflight_rejects_renamed_or_cfg_missing_tests(self) -> None:
+        plan = build_plan("mixed-dpi", "amd", None, 900, 60)
+
+        with self.assertRaisesRegex(ValueError, plan[0].test_name):
+            require_planned_tests(plan, {"tests::some_other_test"})
+
+        require_planned_tests(plan, {plan[0].test_name})
 
 
 if __name__ == "__main__":
