@@ -176,20 +176,48 @@ impl DeviceFaultFeatureQuery {
         }
         let mut fault_features = vk::PhysicalDeviceFaultFeaturesEXT::default();
         let mut features = vk::PhysicalDeviceFeatures2::default().push_next(&mut fault_features);
+        if !self.query_features2(instance, physical_device, &mut features) {
+            return DeviceFaultSupport::default();
+        }
+        DeviceFaultSupport {
+            reporting: fault_features.device_fault == vk::TRUE,
+        }
+    }
+
+    pub(super) fn query_swapchain_maintenance1(
+        &self,
+        instance: &ash::Instance,
+        physical_device: vk::PhysicalDevice,
+        extension_available: bool,
+    ) -> bool {
+        if !extension_available || self.mode == DeviceFaultFeatureQueryMode::Unavailable {
+            return false;
+        }
+        let mut maintenance = vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT::default();
+        let mut features = vk::PhysicalDeviceFeatures2::default().push_next(&mut maintenance);
+        self.query_features2(instance, physical_device, &mut features)
+            && maintenance.swapchain_maintenance1 == vk::TRUE
+    }
+
+    fn query_features2(
+        &self,
+        instance: &ash::Instance,
+        physical_device: vk::PhysicalDevice,
+        features: &mut vk::PhysicalDeviceFeatures2<'_>,
+    ) -> bool {
         // SAFETY: physical_device 属于 instance；pNext 在调用期间指向存活且可写的 feature 结构。
         unsafe {
             match (&self.mode, &self.khr) {
                 (DeviceFaultFeatureQueryMode::Core11, _) => {
-                    instance.get_physical_device_features2(physical_device, &mut features);
+                    instance.get_physical_device_features2(physical_device, features);
+                    true
                 }
                 (DeviceFaultFeatureQueryMode::Khr, Some(khr)) => {
-                    khr.get_physical_device_features2(physical_device, &mut features);
+                    khr.get_physical_device_features2(physical_device, features);
+                    true
                 }
-                _ => return DeviceFaultSupport::default(),
+                _ => false,
             }
-        }
-        DeviceFaultSupport {
-            reporting: fault_features.device_fault == vk::TRUE,
         }
     }
 }

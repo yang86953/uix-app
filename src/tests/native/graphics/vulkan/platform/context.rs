@@ -284,8 +284,9 @@ fn windows_vulkan_hardware_resize_readback_and_present() {
         "discrete_gpu" | "integrated_gpu" | "virtual_gpu"
     ));
     println!(
-        "Vulkan hardware adapter: {}",
-        context.adapter_info.diagnostic_summary()
+        "Vulkan hardware adapter: {}; swapchain_maintenance1={}",
+        context.adapter_info.diagnostic_summary(),
+        context.swapchain_maintenance1_enabled_for_test()
     );
 
     let first_size = (context.width(), context.height());
