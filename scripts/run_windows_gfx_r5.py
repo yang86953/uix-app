@@ -744,10 +744,10 @@ def run_case(case: GfxR5Case, log_path: Path) -> tuple[int, float]:
             for line in process.stdout:
                 print(line, end="", flush=True)
                 log.write(line)
-        except KeyboardInterrupt:
+        except BaseException:
             if not terminate_process_tree(process):
                 print(
-                    "warning: interrupted GFX-R5 case could not confirm full "
+                    "warning: aborted GFX-R5 case could not confirm full "
                     "process-tree cleanup",
                     file=sys.stderr,
                 )
