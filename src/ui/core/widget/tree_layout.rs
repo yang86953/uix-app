@@ -404,9 +404,21 @@ impl WidgetTree {
         if !node.visible() {
             return None;
         }
-        let mut rect = node.frame();
+        let frame = node.frame();
+        let is_overlay = node.overlay_entry(id, frame).is_some();
+        let mut rect = if frame.w > 0.0 && frame.h > 0.0 {
+            frame
+        } else {
+            node.hit_test_frame(frame)
+        };
         if rect.w <= 0.0 || rect.h <= 0.0 {
             return None;
+        }
+
+        // 零布局槽的浮动控件以真实命中区域作为语义边界；浮层本身不受祖先
+        // viewport 裁剪，否则视觉已提升到浮层而自动化边界仍会被内容区截断。
+        if is_overlay {
+            return Some(rect);
         }
 
         let mut current = id;

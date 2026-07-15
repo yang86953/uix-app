@@ -767,6 +767,10 @@ impl SnapshotFields {
                     ..AccessibilityState::default()
                 })
             }
+            Self::FloatButton { icon, tooltip, .. } => AccessibilitySnapshot::named(
+                AccessibilityRole::Button,
+                first_non_empty([tooltip.as_str(), icon.as_str()]),
+            ),
             Self::ProgressBar { progress, .. } => AccessibilitySnapshot::new(
                 AccessibilityRole::ProgressBar,
             )
