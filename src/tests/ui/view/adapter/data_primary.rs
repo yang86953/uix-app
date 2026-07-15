@@ -435,6 +435,7 @@ fn reconcile_back_top_preserves_visibility_and_syncs_threshold() {
         back_top.snapshot_fields(),
         SnapshotFields::BackTop {
             visibility_height: 240.0,
+            visible: true,
         }
     );
 }

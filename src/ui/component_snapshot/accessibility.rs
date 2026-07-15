@@ -101,6 +101,15 @@ pub(super) fn selectable_list_accessibility(
     })
 }
 
+pub(super) fn back_top_accessibility(visible: bool) -> AccessibilitySnapshot {
+    AccessibilitySnapshot::named(AccessibilityRole::Button, "Back to top").with_state(
+        AccessibilityState {
+            disabled: !visible,
+            ..AccessibilityState::default()
+        },
+    )
+}
+
 pub(super) fn first_non_empty<const N: usize>(values: [&str; N]) -> String {
     values
         .into_iter()

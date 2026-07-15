@@ -9,9 +9,9 @@ use crate::ui::window_chrome::WindowControl;
 use crate::ui::Placement;
 
 use super::accessibility::{
-    anchor_accessibility, breadcrumb_accessibility, calendar_accessibility, carousel_accessibility,
-    first_non_empty, pagination_accessibility, selectable_list_accessibility,
-    theme_toggle_accessibility,
+    anchor_accessibility, back_top_accessibility, breadcrumb_accessibility, calendar_accessibility,
+    carousel_accessibility, first_non_empty, pagination_accessibility,
+    selectable_list_accessibility, theme_toggle_accessibility,
 };
 use super::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotCollapsePanel,
@@ -328,6 +328,7 @@ pub enum SnapshotFields {
     },
     BackTop {
         visibility_height: f32,
+        visible: bool,
     },
     Breadcrumb {
         items: Vec<BreadcrumbItem>,
@@ -977,6 +978,7 @@ impl SnapshotFields {
                 AccessibilitySnapshot::named(AccessibilityRole::Status, tip.clone())
             }
             Self::ThemeToggle { dark } => theme_toggle_accessibility(*dark),
+            Self::BackTop { visible, .. } => back_top_accessibility(*visible),
             _ => AccessibilitySnapshot::new(AccessibilityRole::Generic),
         }
     }
