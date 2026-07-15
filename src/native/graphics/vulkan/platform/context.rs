@@ -96,6 +96,35 @@ pub(super) fn invalid(message: impl Into<String>) -> Error {
     Error::new(Errc::InvalidArgument, message.into())
 }
 
+pub(crate) fn validate_swapchain_support(
+    formats: &[vk::SurfaceFormatKHR],
+    present_modes: &[vk::PresentModeKHR],
+) -> Result<()> {
+    if formats.is_empty() {
+        return Err(Error::new(
+            Errc::PlatformError,
+            "VulkanContext: surface reported no swapchain formats",
+        ));
+    }
+    if present_modes.is_empty() {
+        return Err(Error::new(
+            Errc::PlatformError,
+            "VulkanContext: surface reported no present modes",
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_swapchain_images(images: &[vk::Image]) -> Result<()> {
+    if images.is_empty() {
+        return Err(Error::new(
+            Errc::PlatformError,
+            "VulkanContext: swapchain reported no images",
+        ));
+    }
+    Ok(())
+}
+
 struct UploadBuffer {
     buffer: vk::Buffer,
     memory: vk::DeviceMemory,
@@ -378,6 +407,8 @@ impl VulkanContext {
         }
         .map_err(|err| vk_err("vkGetPhysicalDeviceSurfacePresentModesKHR", err))?;
 
+        validate_swapchain_support(&formats, &present_modes)?;
+
         let surface_format = choose_surface_format(&formats);
         let present_mode = choose_present_mode(&present_modes);
         let extent = choose_extent(caps, extent);
@@ -437,6 +468,12 @@ impl VulkanContext {
                 return Err(vk_err("vkGetSwapchainImagesKHR", err));
             }
         };
+        if let Err(error) = validate_swapchain_images(&new_images) {
+            unsafe {
+                self.swapchain_loader.destroy_swapchain(new_swapchain, None);
+            }
+            return Err(error);
+        }
         let new_render_finished =
             match create_render_finished_semaphores(&self.device, new_images.len()) {
                 Ok(semaphores) => semaphores,
