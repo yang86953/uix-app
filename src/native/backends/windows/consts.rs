@@ -23,6 +23,7 @@ pub(crate) const WM_DPICHANGED: u32 = 0x02E0;
 pub(crate) const WM_SHOWWINDOW: u32 = 0x0018;
 pub(crate) const WM_ERASEBKGND: u32 = 0x0014;
 pub(crate) const WM_MOVE: u32 = 0x0003;
+pub(crate) const WM_GETMINMAXINFO: u32 = 0x0024;
 pub(crate) const WM_SETFOCUS: u32 = 0x0007;
 pub(crate) const WM_KILLFOCUS: u32 = 0x0008;
 pub(crate) const WM_KEYDOWN: u32 = 0x0100;

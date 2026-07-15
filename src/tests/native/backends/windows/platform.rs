@@ -5,7 +5,8 @@ use crate::native::backends::windows::consts::{
     WM_NCRBUTTONUP, WM_SIZE, WS_CAPTION, WS_EX_LAYERED, WS_THICKFRAME,
 };
 use crate::native::backends::windows::dpi::{
-    dpi_for_window, logical_extent_to_physical, physical_extent_to_logical,
+    dpi_for_window, logical_extent_to_physical, outer_size_for_logical_client,
+    physical_extent_to_logical,
 };
 use crate::native::backends::windows::ffi::{
     GetMonitorInfoW as GetMonitorInfoRaw, GetWindowLongW,
@@ -27,8 +28,8 @@ use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowRect, PeekMessageW, SendMessageW, SetWindowPos, MSG, PM_REMOVE, SWP_NOSIZE,
-    SWP_NOZORDER,
+    GetWindowRect, PeekMessageW, SendMessageW, SetWindowPos, MINMAXINFO, MSG, PM_REMOVE,
+    SWP_NOSIZE, SWP_NOZORDER, WM_GETMINMAXINFO,
 };
 
 fn size_lparam(width: u16, height: u16) -> isize {
@@ -287,6 +288,85 @@ fn native_move_tracks_outer_window_origin_instead_of_client_origin() {
     unsafe { GetWindowRect(HWND(hwnd), &mut rect) }.expect("moved window rect");
     assert_eq!((rect.left, rect.top), (83, 97));
     assert_eq!(window.properties().position(), Point::new(83.0, 97.0));
+
+    window.close().expect("close window");
+}
+
+#[test]
+fn native_minimum_and_maximum_sizes_use_logical_client_extents() {
+    let mut platform = WindowsPlatform::new();
+    let mut window = platform
+        .create_window("UIX track constraints", 480, 320)
+        .expect("native window");
+    let hwnd = window.native_handle().native_window();
+    window
+        .properties_mut()
+        .set_minimum_size(300, 180)
+        .expect("set minimum logical client size");
+    window
+        .properties_mut()
+        .set_maximum_size(700, 480)
+        .expect("set maximum logical client size");
+
+    let style = unsafe { GetWindowLongW(hwnd, GWL_STYLE) } as u32;
+    let ex_style = unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) } as u32;
+    let dpi = dpi_for_window(hwnd);
+    let expected_min = outer_size_for_logical_client(300, 180, style, ex_style, dpi)
+        .expect("minimum outer track size");
+    let expected_max = outer_size_for_logical_client(700, 480, style, ex_style, dpi)
+        .expect("maximum outer track size");
+    let mut limits = MINMAXINFO::default();
+    unsafe {
+        SendMessageW(
+            HWND(hwnd),
+            WM_GETMINMAXINFO,
+            Some(WPARAM(0)),
+            Some(LPARAM((&mut limits as *mut MINMAXINFO) as isize)),
+        );
+    }
+
+    assert_eq!(
+        (limits.ptMinTrackSize.x, limits.ptMinTrackSize.y),
+        expected_min
+    );
+    assert_eq!(
+        (limits.ptMaxTrackSize.x, limits.ptMaxTrackSize.y),
+        expected_max
+    );
+
+    window
+        .properties_mut()
+        .set_fullscreen(true)
+        .expect("enter fullscreen with constraints");
+    let mut fullscreen_limits = MINMAXINFO::default();
+    unsafe {
+        SendMessageW(
+            HWND(hwnd),
+            WM_GETMINMAXINFO,
+            Some(WPARAM(0)),
+            Some(LPARAM((&mut fullscreen_limits as *mut MINMAXINFO) as isize)),
+        );
+    }
+    assert_ne!(
+        (
+            fullscreen_limits.ptMinTrackSize.x,
+            fullscreen_limits.ptMinTrackSize.y,
+        ),
+        expected_min,
+        "fullscreen must not inherit the normal-window minimum"
+    );
+    assert_ne!(
+        (
+            fullscreen_limits.ptMaxTrackSize.x,
+            fullscreen_limits.ptMaxTrackSize.y,
+        ),
+        expected_max,
+        "fullscreen must not inherit the normal-window maximum"
+    );
+    window
+        .properties_mut()
+        .set_fullscreen(false)
+        .expect("leave fullscreen with constraints");
 
     window.close().expect("close window");
 }

@@ -3,7 +3,7 @@
 use crate::core::error::Result;
 use crate::core::geometry::Point;
 use crate::core::WindowId;
-use crate::native::shared::window::validate_window_extent;
+use crate::native::shared::window::validate_window_extent_constraints;
 use crate::native::test_harness::fake_graphics_context::FakeGraphicsContext;
 use crate::native::test_harness::fake_presenter::FakePresenter;
 use crate::native::traits::event::FrameRequestToken;
@@ -108,20 +108,28 @@ impl IWindowProperties for FakeWindowProperties {
         self.state.height
     }
     fn set_size(&mut self, w: i32, h: i32) -> Result<()> {
-        validate_window_extent("set_size", w, h)?;
+        let minimum = (self.state.min_w > 0 && self.state.min_h > 0)
+            .then_some((self.state.min_w, self.state.min_h));
+        let maximum = (self.state.max_w > 0 && self.state.max_h > 0)
+            .then_some((self.state.max_w, self.state.max_h));
+        validate_window_extent_constraints("set_size", w, h, minimum, maximum)?;
         self.state.width = w;
         self.state.height = h;
         self.state.set_size_calls.push((w, h));
         Ok(())
     }
     fn set_minimum_size(&mut self, w: i32, h: i32) -> Result<()> {
-        validate_window_extent("set_minimum_size", w, h)?;
+        let maximum = (self.state.max_w > 0 && self.state.max_h > 0)
+            .then_some((self.state.max_w, self.state.max_h));
+        validate_window_extent_constraints("set_minimum_size", w, h, Some((w, h)), maximum)?;
         self.state.min_w = w;
         self.state.min_h = h;
         Ok(())
     }
     fn set_maximum_size(&mut self, w: i32, h: i32) -> Result<()> {
-        validate_window_extent("set_maximum_size", w, h)?;
+        let minimum = (self.state.min_w > 0 && self.state.min_h > 0)
+            .then_some((self.state.min_w, self.state.min_h));
+        validate_window_extent_constraints("set_maximum_size", w, h, minimum, Some((w, h)))?;
         self.state.max_w = w;
         self.state.max_h = h;
         Ok(())

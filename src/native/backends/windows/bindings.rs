@@ -49,6 +49,15 @@ pub(super) struct WINDOWPLACEMENT {
 }
 
 #[repr(C)]
+pub(super) struct MINMAXINFO {
+    pub ptReserved: POINT,
+    pub ptMaxSize: POINT,
+    pub ptMaxPosition: POINT,
+    pub ptMinTrackSize: POINT,
+    pub ptMaxTrackSize: POINT,
+}
+
+#[repr(C)]
 pub(super) struct COMPOSITIONFORM {
     pub dwStyle: u32,
     pub ptCurrentPos: POINT,

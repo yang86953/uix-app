@@ -23,6 +23,45 @@ use super::ime_dispatch::{
 use super::platform::{WindowBinding, WindowsPlatform};
 use super::text_input::{composition_string, result_string, WindowsImeState};
 
+fn apply_window_track_constraints(
+    hwnd: *mut std::ffi::c_void,
+    minimum: Option<(i32, i32)>,
+    maximum: Option<(i32, i32)>,
+    info: &mut MINMAXINFO,
+) -> crate::native::Result<()> {
+    let style = super::window_ops::get_window_long_checked(
+        hwnd,
+        GWL_STYLE,
+        "WM_GETMINMAXINFO GetWindowLongW(GWL_STYLE) failed",
+    )? as u32;
+    if style & WS_POPUP != 0 {
+        return Ok(());
+    }
+    let ex_style = super::window_ops::get_window_long_checked(
+        hwnd,
+        GWL_EXSTYLE,
+        "WM_GETMINMAXINFO GetWindowLongW(GWL_EXSTYLE) failed",
+    )? as u32;
+    let dpi = super::dpi::dpi_for_window(hwnd);
+    if let Some((width, height)) = minimum {
+        let (outer_width, outer_height) =
+            super::dpi::outer_size_for_logical_client(width, height, style, ex_style, dpi)?;
+        info.ptMinTrackSize = POINT {
+            x: outer_width,
+            y: outer_height,
+        };
+    }
+    if let Some((width, height)) = maximum {
+        let (outer_width, outer_height) =
+            super::dpi::outer_size_for_logical_client(width, height, style, ex_style, dpi)?;
+        info.ptMaxTrackSize = POINT {
+            x: outer_width,
+            y: outer_height,
+        };
+    }
+    Ok(())
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // 窗口过程回调
 // ════════════════════════════════════════════════════════════════════════════
@@ -91,6 +130,22 @@ impl WindowsPlatform {
             WM_DESTROY => {
                 self.forget_window(window_id);
                 0
+            }
+            WM_GETMINMAXINFO => {
+                let default_result = self.def_window_proc(hwnd, msg, wparam, lparam);
+                let (minimum, maximum) = {
+                    let state = window.borrow();
+                    (state.minimum_size, state.maximum_size)
+                };
+                if (minimum.is_some() || maximum.is_some()) && lparam != 0 {
+                    // SAFETY: Win32 在当前同步消息期间提供唯一可写的 MINMAXINFO 指针。
+                    let info = unsafe { &mut *(lparam as *mut MINMAXINFO) };
+                    if let Err(error) = apply_window_track_constraints(hwnd, minimum, maximum, info)
+                    {
+                        crate::core::log::error_fn(error.short_what());
+                    }
+                }
+                default_result
             }
             WM_SIZE => {
                 let dpi = super::dpi::dpi_for_window(hwnd);
