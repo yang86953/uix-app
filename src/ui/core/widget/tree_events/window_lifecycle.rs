@@ -1,6 +1,24 @@
 use super::*;
 
 impl WidgetTree {
+    pub(super) fn dispatch_window_lifecycle(&mut self, event: &SystemEvent) -> EventResult {
+        match event {
+            SystemEvent::WindowFocus => self.activate_window_focus(),
+            SystemEvent::WindowBlur | SystemEvent::WindowMinimize => {
+                self.cancel_active_pointer_gesture();
+                self.deactivate_window_focus();
+            }
+            SystemEvent::WindowMaximize | SystemEvent::WindowRestore => {}
+            _ => return EventResult::NotHandled,
+        }
+
+        if let Some(root) = self.root_id {
+            self.dispatch_to(root, event)
+        } else {
+            EventResult::NotHandled
+        }
+    }
+
     pub(super) fn ignores_input_while_window_unfocused(&self, event: &SystemEvent) -> bool {
         !self.window_focused
             && matches!(

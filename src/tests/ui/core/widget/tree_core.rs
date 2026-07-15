@@ -4700,6 +4700,51 @@ fn inactive_window_rejects_stale_keyboard_text_and_ime_input() {
 }
 
 #[test]
+fn minimize_deactivates_input_until_native_focus_returns() {
+    let mut tree = WidgetTree::new();
+    let target = tree.set_root(Box::new(Button::new("Minimized")));
+    tree.get_mut(target)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 120.0, 40.0));
+    tree.set_focus(Some(target));
+    tree.dispatch_event(&SystemEvent::PointerDown {
+        pos: Point::new(20.0, 20.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    tree.dispatch_event(&SystemEvent::PointerMove {
+        pos: Point::new(40.0, 20.0),
+        mods: KeyMod::NONE,
+    });
+    assert!(tree.managers().drag.is_dragging());
+
+    tree.dispatch_event(&SystemEvent::WindowMinimize);
+
+    assert!(!tree.window_focused);
+    assert_eq!(tree.managers().interaction.pressed_component(), None);
+    assert!(!tree.managers().drag.is_dragging());
+    assert_eq!(tree.managers().focus.focused_component(), Some(target));
+    assert!(tree
+        .get(target)
+        .and_then(|node| node.component().as_any().downcast_ref::<Button>())
+        .is_some_and(|button| !button.pressed && !button.focused));
+
+    tree.dispatch_event(&SystemEvent::WindowRestore);
+    assert!(!tree.window_focused);
+    assert!(tree
+        .get(target)
+        .and_then(|node| node.component().as_any().downcast_ref::<Button>())
+        .is_some_and(|button| !button.focused));
+
+    tree.dispatch_event(&SystemEvent::WindowFocus);
+    assert!(tree.window_focused);
+    assert!(tree
+        .get(target)
+        .and_then(|node| node.component().as_any().downcast_ref::<Button>())
+        .is_some_and(|button| button.focused));
+}
+
+#[test]
 fn capture_phase_requires_explicit_opt_in() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));
