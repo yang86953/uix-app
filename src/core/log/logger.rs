@@ -103,8 +103,13 @@ impl Logger {
     }
 
     pub fn flush(&self) {
-        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
-        for sink in &inner.sinks {
+        let sinks = self
+            .inner
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .sinks
+            .clone();
+        for sink in &sinks {
             sink.flush();
         }
     }
@@ -130,8 +135,13 @@ impl Logger {
             sequence: self.sequence.fetch_add(1, Ordering::Relaxed),
         };
 
-        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
-        for sink in &inner.sinks {
+        let sinks = self
+            .inner
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .sinks
+            .clone();
+        for sink in &sinks {
             if sink.passes(level) {
                 sink.write(&record);
             }
