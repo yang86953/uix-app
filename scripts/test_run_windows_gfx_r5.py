@@ -296,6 +296,24 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "size changed|SHA-256 changed"):
                 verify_evidence_dir(output)
 
+    def test_evidence_verifier_rejects_exact_success_without_semantic_markers(self) -> None:
+        plan = build_plan("mixed-dpi", "amd", None, 900, 60)
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "evidence"
+            session = EvidenceSession(output, "mixed-dpi", "amd", None, 900, 60, plan)
+            log_path = session.start_case(0)
+            log_path.write_text(
+                "running 1 test\n"
+                f"test {plan[0].test_name} ... ok\n"
+                "test result: ok. 1 passed; 0 failed;\n",
+                encoding="utf-8",
+            )
+            session.finish_case(0, 0, 0.5)
+            session.finish("passed")
+
+            with self.assertRaisesRegex(ValueError, "semantic evidence markers"):
+                verify_evidence_dir(output)
+
     def test_evidence_verifier_rejects_plan_or_provenance_tampering(self) -> None:
         plan = build_plan("mixed-dpi", "amd", None, 900, 60)
         with TemporaryDirectory() as directory:
