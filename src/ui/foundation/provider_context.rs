@@ -3,19 +3,10 @@ use super::locale::Locale;
 use std::cell::RefCell;
 
 /// 在 View 构建时捕获、随节点保存的 Provider 上下文。
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Default, PartialEq)]
 pub(crate) struct ProviderContext {
     pub(crate) config: ComponentConfig,
     pub(crate) locale: Locale,
-}
-
-impl Default for ProviderContext {
-    fn default() -> Self {
-        Self {
-            config: ComponentConfig::default(),
-            locale: Locale::default(),
-        }
-    }
 }
 
 thread_local! {
