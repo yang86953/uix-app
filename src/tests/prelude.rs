@@ -118,6 +118,7 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<ImageService>();
     assert_exported::<NullEngine>();
     assert_exported::<SoftwareEngine>();
+    assert_exported::<SettingsService>();
     assert_exported::<AlignItems>();
     assert_exported::<FlexDirection>();
     assert_exported::<JustifyContent>();
