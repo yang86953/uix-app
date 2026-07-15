@@ -85,6 +85,18 @@ DEVICE_LOST_MEASUREMENT_PATTERN = re.compile(
     r"replacement_attempts=(?P<replacement_attempts>\d+); "
     r"replacement=(?P<replacement>.+)$"
 )
+VENDOR_RESIZE_PATTERN = re.compile(
+    r"initial_logical=(?P<initial_logical_width>\d+)x"
+    r"(?P<initial_logical_height>\d+); "
+    r"initial_drawable=(?P<initial_drawable_width>\d+)x"
+    r"(?P<initial_drawable_height>\d+); "
+    r"initial_readback=0x(?P<initial_readback>[0-9A-Fa-f]{8}); "
+    r"resized_logical=(?P<resized_logical_width>\d+)x"
+    r"(?P<resized_logical_height>\d+); "
+    r"resized_drawable=(?P<resized_drawable_width>\d+)x"
+    r"(?P<resized_drawable_height>\d+); "
+    r"resized_readback=0x(?P<resized_readback>[0-9A-Fa-f]{8})"
+)
 
 VENDOR_CASES = (
     (
@@ -849,10 +861,54 @@ def require_profile_measurements(case: GfxR5Case, content: str) -> None:
     )
     if case.name == "vulkan-mixed-dpi":
         require_mixed_dpi_measurements(case, evidence_line)
+    elif case.name == "vendor-resize-present-readback":
+        require_vendor_resize_measurements(case, evidence_line)
     elif case.name in ("single-window-soak", "shared-device-soak"):
         require_soak_measurements(case, evidence_line)
     elif case.name == "external-device-reset":
         require_device_lost_measurements(case, evidence_line)
+
+
+def require_vendor_resize_measurements(case: GfxR5Case, evidence_line: str) -> None:
+    measurement = VENDOR_RESIZE_PATTERN.search(evidence_line)
+    if measurement is None:
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} lacks structured resize/readback measurements"
+        )
+    initial_logical = (
+        int(measurement.group("initial_logical_width")),
+        int(measurement.group("initial_logical_height")),
+    )
+    resized_logical = (
+        int(measurement.group("resized_logical_width")),
+        int(measurement.group("resized_logical_height")),
+    )
+    if initial_logical != (137, 103) or resized_logical != (211, 149):
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} logical resize contract changed: "
+            f"initial={initial_logical}, resized={resized_logical}"
+        )
+    initial_drawable = (
+        int(measurement.group("initial_drawable_width")),
+        int(measurement.group("initial_drawable_height")),
+    )
+    resized_drawable = (
+        int(measurement.group("resized_drawable_width")),
+        int(measurement.group("resized_drawable_height")),
+    )
+    if any(value == 0 for value in initial_drawable + resized_drawable):
+        raise ValueError(f"GFX-R5 case {case.name!r} recorded a zero drawable extent")
+    if initial_drawable == resized_drawable:
+        raise ValueError(f"GFX-R5 case {case.name!r} drawable did not resize")
+    expected_readbacks = {
+        "initial_readback": "FF3478BC",
+        "resized_readback": "FF9A5C21",
+    }
+    for field, expected in expected_readbacks.items():
+        if measurement.group(field).upper() != expected:
+            raise ValueError(
+                f"GFX-R5 case {case.name!r} {field} does not match presented pixels"
+            )
 
 
 def require_mixed_dpi_measurements(case: GfxR5Case, evidence_line: str) -> None:
