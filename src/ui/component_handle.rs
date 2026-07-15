@@ -66,17 +66,21 @@ impl ComponentHandle {
                 state
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
-                    .snapshot(self.id)
-                    .is_some()
+                    .contains(self.id)
             })
     }
 
     pub fn snapshot(&self) -> Option<ComponentConfigSnapshot> {
+        self.map_snapshot(Clone::clone)
+    }
+
+    fn map_snapshot<R>(&self, map: impl Fn(&ComponentConfigSnapshot) -> R) -> Option<R> {
         #[cfg(test)]
         if let Some(tree) = self.tree.as_ref().and_then(RcWeak::upgrade) {
             if let Ok(tree) = tree.try_borrow() {
                 if let Some(node) = tree.get(self.id) {
-                    return Some(node.component_snapshot(self.id));
+                    let snapshot = node.component_snapshot(self.id);
+                    return Some(map(&snapshot));
                 }
             }
         }
@@ -88,16 +92,20 @@ impl ComponentHandle {
                 state
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
-                    .snapshot(self.id)
+                    .map_snapshot(self.id, map)
             })
     }
 
     pub fn snapshot_fields(&self) -> Option<SnapshotFields> {
-        self.snapshot().map(|snapshot| snapshot.fields)
+        self.map_snapshot_fields(Clone::clone)
+    }
+
+    fn map_snapshot_fields<R>(&self, map: impl Fn(&SnapshotFields) -> R) -> Option<R> {
+        self.map_snapshot(|snapshot| map(&snapshot.fields))
     }
 
     pub fn accessibility(&self) -> Option<AccessibilitySnapshot> {
-        self.snapshot().map(|snapshot| snapshot.accessibility())
+        self.map_snapshot(ComponentConfigSnapshot::accessibility)
     }
 
     pub fn aria_role(&self) -> Option<&'static str> {
@@ -110,10 +118,13 @@ impl ComponentHandle {
     }
 
     pub fn text(&self) -> Option<String> {
-        match self.snapshot_fields()? {
-            SnapshotFields::Button { text, .. } | SnapshotFields::Label { text, .. } => Some(text),
+        self.map_snapshot_fields(|fields| match fields {
+            SnapshotFields::Button { text, .. } | SnapshotFields::Label { text, .. } => {
+                Some(text.clone())
+            }
             _ => None,
-        }
+        })
+        .flatten()
     }
 
     pub fn label(&self) -> Option<String> {
@@ -121,7 +132,7 @@ impl ComponentHandle {
     }
 
     pub fn placeholder(&self) -> Option<String> {
-        match self.snapshot_fields()? {
+        self.map_snapshot_fields(|fields| match fields {
             SnapshotFields::Input { placeholder, .. }
             | SnapshotFields::InputNumber { placeholder, .. }
             | SnapshotFields::Select { placeholder, .. }
@@ -131,13 +142,14 @@ impl ComponentHandle {
             | SnapshotFields::DatePicker { placeholder, .. }
             | SnapshotFields::DateRangePicker { placeholder, .. }
             | SnapshotFields::TimePicker { placeholder, .. }
-            | SnapshotFields::Mentions { placeholder, .. } => Some(placeholder),
+            | SnapshotFields::Mentions { placeholder, .. } => Some(placeholder.clone()),
             _ => None,
-        }
+        })
+        .flatten()
     }
 
     pub fn disabled(&self) -> Option<bool> {
-        match self.snapshot_fields()? {
+        self.map_snapshot_fields(|fields| match fields {
             SnapshotFields::Button { disabled, .. }
             | SnapshotFields::Input { disabled, .. }
             | SnapshotFields::Checkbox { disabled, .. }
@@ -147,30 +159,33 @@ impl ComponentHandle {
             | SnapshotFields::InputNumber { disabled, .. }
             | SnapshotFields::Select { disabled, .. }
             | SnapshotFields::Segmented { disabled, .. }
-            | SnapshotFields::Typography { disabled, .. } => Some(disabled),
+            | SnapshotFields::Typography { disabled, .. } => Some(*disabled),
             _ => None,
-        }
+        })
+        .flatten()
     }
 
     pub fn checked(&self) -> Option<bool> {
-        match self.snapshot_fields()? {
+        self.map_snapshot_fields(|fields| match fields {
             SnapshotFields::Checkbox { checked, .. } | SnapshotFields::Switch { checked, .. } => {
-                Some(checked)
+                Some(*checked)
             }
             _ => None,
-        }
+        })
+        .flatten()
     }
 
     pub fn numeric_value(&self) -> Option<f64> {
-        match self.snapshot_fields()? {
-            SnapshotFields::Slider { value, .. } => Some(value),
+        self.map_snapshot_fields(|fields| match fields {
+            SnapshotFields::Slider { value, .. } => Some(*value),
             SnapshotFields::ProgressBar {
                 progress: value, ..
-            } => Some(value as f64),
-            SnapshotFields::Rate { value, .. } => Some(value as f64),
-            SnapshotFields::InputNumber { value, .. } => Some(value),
+            } => Some(f64::from(*value)),
+            SnapshotFields::Rate { value, .. } => Some(*value as f64),
+            SnapshotFields::InputNumber { value, .. } => Some(*value),
             _ => None,
-        }
+        })
+        .flatten()
     }
 
     pub fn invalidate(&self) {
