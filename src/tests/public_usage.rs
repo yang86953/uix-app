@@ -236,3 +236,43 @@ fn documented_test_app_control_actions_run_from_prelude() {
     assert_eq!(level.get(), 10.0);
     assert_eq!(app.text("profile.name").as_deref(), Ok("Ada"));
 }
+
+#[cfg(feature = "test-harness")]
+#[test]
+fn documented_test_app_scroll_moves_content_through_the_viewport() {
+    let mut app = TestApp::new((240.0, 160.0), || {
+        scroll(
+            column((
+                label("Top").height(80.0).automation_id("scroll.top"),
+                label("Middle").height(80.0),
+                label("Bottom").height(80.0).automation_id("scroll.bottom"),
+            ))
+            .overflow_content(),
+        )
+        .vertical()
+        .size(120.0, 80.0)
+        .show_scrollbar(false)
+        .automation_id("scroll.viewport")
+    });
+
+    let before = app.snapshot();
+    assert!(before
+        .find("scroll.viewport")
+        .expect("scroll viewport")
+        .supports(crate::ui::test_harness::AutomationActionKind::Scroll));
+    assert!(before.find("scroll.top").expect("top row").is_visible());
+    assert!(!before
+        .find("scroll.bottom")
+        .expect("bottom row")
+        .is_visible());
+
+    app.scroll("scroll.viewport", Point::new(0.0, 8.0))
+        .expect("scroll viewport");
+
+    let after = app.snapshot();
+    assert!(!after.find("scroll.top").expect("top row").is_visible());
+    assert!(after
+        .find("scroll.bottom")
+        .expect("bottom row")
+        .is_visible());
+}
