@@ -55,9 +55,13 @@ impl InteractionManager {
         }
     }
 
-    pub fn set_pressed_pointer(&mut self, id: Option<ComponentId>, button: MouseButton) {
+    pub fn begin_pressed_pointer(&mut self, id: Option<ComponentId>, button: MouseButton) -> bool {
+        if self.pressed_component.is_some() && self.pressed_button != Some(button) {
+            return false;
+        }
         self.set_pressed_component(id);
         self.pressed_button = id.map(|_| button);
+        true
     }
 
     pub fn release_pressed_pointer(&mut self, button: MouseButton) -> Option<ComponentId> {

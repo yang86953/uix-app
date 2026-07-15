@@ -503,12 +503,15 @@ impl WidgetTree {
             return result;
         }
         let target = self.overlay_target_at(pos).or_else(|| self.hit_test(pos));
-        self.managers_mut()
+        let begins_pointer = self
+            .managers_mut()
             .interaction
-            .set_pressed_pointer(target, button);
-        self.managers_mut()
-            .drag
-            .begin_gesture(target, pos, button, mods);
+            .begin_pressed_pointer(target, button);
+        if begins_pointer {
+            self.managers_mut()
+                .drag
+                .begin_gesture(target, pos, button, mods);
+        }
         let Some(target) = target else {
             self.set_focus(None);
             self.rebuild_widget_overlays();

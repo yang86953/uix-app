@@ -4609,6 +4609,72 @@ fn secondary_press_cannot_be_completed_by_primary_release() {
 }
 
 #[test]
+fn chorded_pointer_down_does_not_replace_active_press() {
+    let mut tree = WidgetTree::new();
+    let target = tree.set_root(Box::new(Button::new("Save")));
+    tree.get_mut(target)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 32.0));
+    let clicks = Rc::new(RefCell::new(Vec::new()));
+    let clicks_for_handler = clicks.clone();
+    tree.handler_table()
+        .on(target, SemanticKind::Click, move |event| {
+            if let Some(click) = event.click_payload() {
+                clicks_for_handler.borrow_mut().push(click.button);
+            }
+        });
+    let pos = Point::new(20.0, 16.0);
+
+    tree.dispatch_event(&SystemEvent::PointerDown {
+        pos,
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    tree.dispatch_event(&SystemEvent::PointerDown {
+        pos,
+        button: MouseButton::Right,
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(
+        tree.managers().interaction.pressed_component(),
+        Some(target)
+    );
+    assert_eq!(
+        tree.managers().interaction.pressed_button(),
+        Some(MouseButton::Left)
+    );
+    assert!(tree.managers().drag.is_potential());
+    assert_eq!(tree.managers().drag.button(), MouseButton::Left);
+
+    tree.dispatch_event(&SystemEvent::PointerUp {
+        pos,
+        button: MouseButton::Right,
+        mods: KeyMod::NONE,
+    });
+    assert!(clicks.borrow().is_empty());
+    assert_eq!(
+        tree.managers().interaction.pressed_button(),
+        Some(MouseButton::Left)
+    );
+    assert!(tree.managers().drag.is_potential());
+
+    tree.dispatch_event(&SystemEvent::PointerUp {
+        pos,
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(&*clicks.borrow(), &[MouseButton::Left]);
+    assert_eq!(tree.managers().interaction.pressed_component(), None);
+    assert!(!tree.managers().drag.is_potential());
+    assert!(tree
+        .overlay_stack()
+        .iter()
+        .all(|entry| entry.kind() != OverlayKind::ContextMenu));
+}
+
+#[test]
 fn right_pointer_up_opens_context_menu_overlay_by_default() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));
