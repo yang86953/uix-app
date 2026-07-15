@@ -2,6 +2,7 @@ use crate::tests::common::*;
 use crate::ui::state::State;
 use crate::ui::view::{ViewAdapter, ViewNode};
 use crate::ui::widgets::Segmented;
+use crate::ui::{with_config, ComponentConfig};
 
 #[test]
 fn bound_segmented_writes_keyboard_changes_and_skips_disabled_options() {
@@ -89,4 +90,27 @@ fn external_segmented_state_reconciles_and_invalidates_the_bound_node() {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .node_needs_paint(root));
+}
+
+#[test]
+fn provider_size_and_explicit_override_drive_segmented_layout_and_hit_widths() {
+    let large = ComponentConfig::new().component_size(ControlSize::Large);
+    let max = Constraints::loose(Size::new(1_000.0, 1_000.0));
+    let mut segmented = with_config(&large, || Segmented::new(["A", "B"]).default_selected(1));
+
+    assert_eq!(segmented.measure(max).h, 40.0);
+    assert_eq!(
+        segmented.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(37.0, 20.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(segmented.current_index(), Some(0));
+
+    let small = with_config(&large, || {
+        Segmented::new(["A", "B"]).size(ControlSize::Small)
+    });
+    assert_eq!(small.measure(max).h, 24.0);
 }

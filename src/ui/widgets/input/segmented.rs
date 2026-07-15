@@ -4,6 +4,7 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
+use crate::native::traits::input::ControlSize;
 use crate::ui::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
@@ -18,6 +19,7 @@ component! {
         value_binding: Option<State<String>>,
         disabled: bool,
         disabled_options: Vec<bool>,
+        segmented_size: ControlSize,
         hovered_idx: Option<usize>,
         focused: bool,
         pending_change: Cell<Option<usize>>,
@@ -106,28 +108,30 @@ component! {
         let mut x = frame.x;
 
         for (i, opt) in self.options.iter().enumerate() {
-            let seg_w = opt.len() as f32 * 9.0 + 24.0;
+            let seg_w = self.segment_width(opt);
             let seg_disabled = self.is_segment_disabled(i);
             let is_hovered = self.hovered_idx == Some(i) && !seg_disabled;
 
             if i == self.selected {
                 // 选中项：白色背景 + 主色文字
                 let thumb_bg = if self.disabled { fill_quaternary } else { bg };
-                ctx.fill_rect(Rect::new(x + 2.0, frame.y + 2.0, seg_w - 4.0, 28.0), thumb_bg, Some(Radius::uniform(3.0)));
+                let inset = 2.0 * self.visual_scale();
+                ctx.fill_rect(Rect::new(x + inset, frame.y + inset, seg_w - 2.0 * inset, frame.h - 2.0 * inset), thumb_bg, Some(Radius::uniform(3.0 * self.visual_scale())));
                 let tc = if self.disabled { text_quaternary } else { primary };
-                ctx.text_center(opt, Rect::new(x, frame.y, seg_w, 32.0), tc, 13.0);
+                ctx.text_center(opt, Rect::new(x, frame.y, seg_w, frame.h), tc, self.font_size());
             } else if seg_disabled {
-                ctx.text_center(opt, Rect::new(x, frame.y, seg_w, 32.0), text_quaternary, 13.0);
+                ctx.text_center(opt, Rect::new(x, frame.y, seg_w, frame.h), text_quaternary, self.font_size());
             } else if is_hovered {
-                ctx.text_center(opt, Rect::new(x, frame.y, seg_w, 32.0), primary_hover, 13.0);
+                ctx.text_center(opt, Rect::new(x, frame.y, seg_w, frame.h), primary_hover, self.font_size());
             } else {
-                ctx.text_center(opt, Rect::new(x, frame.y, seg_w, 32.0), text_secondary, 13.0);
+                ctx.text_center(opt, Rect::new(x, frame.y, seg_w, frame.h), text_secondary, self.font_size());
             }
 
             // 分隔线（非选中项之间）
             if i > 0 && i != self.selected && i - 1 != self.selected && !seg_disabled {
                 let divider_color = ctx.tokens().color_border_secondary();
-                ctx.canvas_2d().draw_line(x, frame.y + 6.0, x, frame.y + 26.0, divider_color, 1.0);
+                let inset = 6.0 * self.visual_scale();
+                ctx.canvas_2d().draw_line(x, frame.y + inset, x, frame.y + frame.h - inset, divider_color, 1.0);
             }
 
             x += seg_w;
@@ -184,20 +188,20 @@ impl Segmented {
 
     fn intrinsic_size(&self) -> Size {
         if self.options.is_empty() {
-            return Size::new(0.0, 32.0);
+            return Size::new(0.0, self.control_height());
         }
         let w = self
             .options
             .iter()
-            .map(|o| o.len() as f32 * 9.0 + 24.0)
+            .map(|o| self.segment_width(o))
             .sum::<f32>();
-        Size::new(w, 32.0)
+        Size::new(w, self.control_height())
     }
 
     fn segment_at(&self, px: f32) -> Option<usize> {
         let mut cum_x = 0.0f32;
         for (i, opt) in self.options.iter().enumerate() {
-            let seg_w = opt.len() as f32 * 9.0 + 24.0;
+            let seg_w = self.segment_width(opt);
             if px >= cum_x && px <= cum_x + seg_w {
                 return Some(i);
             }
@@ -208,6 +212,23 @@ impl Segmented {
 
     fn is_segment_disabled(&self, idx: usize) -> bool {
         self.disabled || self.disabled_options.get(idx).copied().unwrap_or(false)
+    }
+
+    fn control_height(&self) -> f32 {
+        crate::ui::config::control_height(self.segmented_size)
+    }
+
+    fn visual_scale(&self) -> f32 {
+        self.control_height() / crate::ui::config::control_height(ControlSize::Medium)
+    }
+
+    fn font_size(&self) -> f32 {
+        13.0 * self.visual_scale().sqrt()
+    }
+
+    fn segment_width(&self, option: &str) -> f32 {
+        let scale = self.visual_scale();
+        option.len() as f32 * 9.0 * scale.sqrt() + 24.0 * scale
     }
 }
 
@@ -223,6 +244,7 @@ impl Segmented {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
+        let config = crate::ui::config::use_config();
         Self {
             options: options
                 .into_iter()
@@ -232,6 +254,7 @@ impl Segmented {
             value_binding: None,
             disabled: false,
             disabled_options: Vec::new(),
+            segmented_size: config.size,
             hovered_idx: None,
             focused: false,
             pending_change: Cell::new(None),
@@ -277,6 +300,10 @@ impl Segmented {
         self.disabled = v;
         self
     }
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.segmented_size = size;
+        self
+    }
     pub fn disable_option(mut self, idx: usize) -> Self {
         while self.disabled_options.len() <= idx {
             self.disabled_options.push(false);
@@ -300,6 +327,7 @@ impl Segmented {
         self.value_binding = next.value_binding;
         self.disabled = next.disabled;
         self.disabled_options = next.disabled_options;
+        self.segmented_size = next.segmented_size;
         self.selected = controlled_selected.unwrap_or_else(|| {
             (self.selected < self.options.len())
                 .then_some(self.selected)

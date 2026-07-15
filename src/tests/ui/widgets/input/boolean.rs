@@ -2,6 +2,7 @@ use crate::tests::common::*;
 use crate::ui::state::State;
 use crate::ui::view::{ViewAdapter, ViewNode};
 use crate::ui::widgets::{Checkbox, Switch};
+use crate::ui::{with_config, ComponentConfig};
 
 #[test]
 fn checkbox_binding_writes_user_changes_and_reads_external_updates() {
@@ -76,4 +77,23 @@ fn external_boolean_state_reconciles_and_invalidates_the_bound_node() {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .node_needs_paint(root));
+}
+
+#[test]
+fn provider_size_reaches_boolean_controls_and_explicit_size_wins() {
+    let large = ComponentConfig::new().component_size(ControlSize::Large);
+    let max = Constraints::loose(Size::new(1_000.0, 1_000.0));
+    let (checkbox, switch) = with_config(&large, || (Checkbox::new("Agree"), Switch::new()));
+
+    assert_eq!(checkbox.measure(max).h, 40.0);
+    assert_eq!(switch.measure(max).h, 40.0);
+
+    let (checkbox, switch) = with_config(&large, || {
+        (
+            Checkbox::new("Agree").size(ControlSize::Small),
+            Switch::new().size(ControlSize::Small),
+        )
+    });
+    assert_eq!(checkbox.measure(max).h, 24.0);
+    assert_eq!(switch.measure(max).h, 24.0);
 }
