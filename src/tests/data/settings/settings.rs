@@ -154,6 +154,21 @@ fn load_missing_file_resets_state_and_tracks_path() {
 }
 
 #[test]
+fn load_rejects_empty_path_without_mutating_state() {
+    let settings = SettingsService::new();
+    settings.set("theme", "dark");
+
+    for path in ["", "   ", "\t\r\n"] {
+        let error = settings.load(path).unwrap_err();
+        assert_eq!(error.code(), Errc::InvalidArgument);
+    }
+
+    assert_eq!(settings.loaded_path(), None);
+    assert_eq!(settings.get("theme"), Some("dark".to_string()));
+    assert!(settings.dirty());
+}
+
+#[test]
 fn load_whitespace_file_resets_state() {
     let path = temp_settings_path("whitespace");
     let path_string = path.to_string_lossy().to_string();

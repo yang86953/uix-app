@@ -810,6 +810,9 @@ impl App {
 }
 
 fn resolve_configured_settings_path(path: &str) -> crate::core::Result<String> {
+    if path.trim().is_empty() {
+        return Err(Error::invalid_arg("settings: path must not be empty"));
+    }
     let configured = Path::new(path);
     let resolved = if configured.is_absolute() {
         configured.to_path_buf()
