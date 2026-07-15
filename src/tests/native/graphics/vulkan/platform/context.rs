@@ -79,6 +79,20 @@ fn crop_cpu_shadow_rejects_out_of_bounds() {
 }
 
 #[test]
+fn crop_cpu_shadow_rejects_incomplete_internal_storage() {
+    let err = crop_cpu_shadow(&[1, 2, 3], 2, 2, 0, 0, 1, 1).expect_err("short shadow");
+    assert_eq!(err.code(), Errc::InvalidState);
+    assert!(err.message().contains("does not match"));
+}
+
+#[test]
+fn readback_output_allocation_failure_is_typed() {
+    let err = allocate_readback_output(usize::MAX).expect_err("capacity overflow");
+    assert_eq!(err.code(), Errc::GraphicsOutOfMemory);
+    assert!(err.message().contains("CPU readback output allocation"));
+}
+
+#[test]
 fn choose_surface_format_prefers_bgra_srgb() {
     let formats = [
         vk::SurfaceFormatKHR {
