@@ -13,9 +13,9 @@ use super::accessibility::{
     calendar_accessibility, card_accessibility, carousel_accessibility, chart_accessibility,
     date_range_accessibility, dropdown_accessibility, first_non_empty, image_accessibility,
     menu_accessibility, pagination_accessibility, progress_accessibility, result_accessibility,
-    select_accessibility, selectable_list_accessibility, splitter_accessibility,
-    steps_accessibility, tabs_accessibility, tag_accessibility, theme_toggle_accessibility,
-    transfer_accessibility, upload_accessibility,
+    rich_text_accessibility, select_accessibility, selectable_list_accessibility,
+    splitter_accessibility, steps_accessibility, tabs_accessibility, tag_accessibility,
+    theme_toggle_accessibility, transfer_accessibility, upload_accessibility,
 };
 use super::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotCollapsePanel,
@@ -581,6 +581,7 @@ pub enum SnapshotFields {
         default_font_size: f32,
         default_font_size_unit: Option<PhysicalUnit>,
         default_color: Color,
+        focused_link: Option<usize>,
     },
     ThemeToggle {
         dark: bool,
@@ -854,6 +855,11 @@ impl SnapshotFields {
             } => card_accessibility(title.as_deref(), actions, *focused_action),
             Self::Transfer { source, target } => transfer_accessibility(source, target),
             Self::Upload { files, .. } => upload_accessibility(files),
+            Self::RichText {
+                segments,
+                focused_link,
+                ..
+            } => rich_text_accessibility(segments, *focused_link),
             Self::Table { .. } => AccessibilitySnapshot::new(AccessibilityRole::Table),
             Self::BarChart { data, .. } => chart_accessibility(
                 "Bar chart",

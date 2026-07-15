@@ -321,6 +321,7 @@ fn reconcile_rich_text_clears_stale_layout_and_syncs_config() {
             default_font_size: 18.0,
             default_font_size_unit: None,
             default_color: Color::green(),
+            focused_link: Some(0),
         }
     );
 }

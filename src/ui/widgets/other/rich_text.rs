@@ -9,7 +9,7 @@
 //! # 交互
 //!
 //! - 文字选择：鼠标拖选（支持 Ctrl+A 全选、Ctrl+C 复制）
-//! - 链接点击：按下时复制 URL 到剪贴板
+//! - 链接激活：鼠标或键盘提交 URL 语义事件，由应用决定导航策略
 //! - 代码复制：悬停显示 📋 按钮，点击复制
 //!
 //! # 与 Label/Typography 的区别
@@ -26,7 +26,10 @@ use crate::draw::painting::PaintContext;
 use crate::draw::spatial::PhysicalUnit;
 use crate::draw::{Color, Radius};
 use crate::ui::clipboard;
-use crate::ui::{EventResult, KeyCode, KeyMod, SnapshotFields, SystemEvent, WidgetTree};
+use crate::ui::{
+    ComponentId, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SnapshotFields,
+    SystemEvent, WidgetTree,
+};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 数据类型
@@ -143,8 +146,11 @@ component! {
         sel_anchor: Cell<usize>,
         sel_dragging: Cell<bool>,
 
-        // ── 链接悬停 ──
-        _hovered_link: Cell<Option<usize>>,
+        // ── 链接交互 ──
+        hovered_link: Cell<Option<usize>>,
+        focused: bool,
+        focused_link: usize,
+        pending_submit: RefCell<Option<String>>,
 
         // ── 代码块复制 ──
         code_regions: RefCell<Vec<CodeCopyRegion>>,
@@ -167,7 +173,10 @@ component! {
             selection: Cell::new(None),
             sel_anchor: Cell::new(0),
             sel_dragging: Cell::new(false),
-            _hovered_link: Cell::new(None),
+            hovered_link: Cell::new(None),
+            focused: false,
+            focused_link: 0,
+            pending_submit: RefCell::new(None),
             code_regions: RefCell::new(Vec::new()),
             hovered_code: Cell::new(None),
             pending_copy: Arc::new(Mutex::new(None)),
@@ -198,9 +207,15 @@ component! {
         constraints.clamp(Size::new(self.content_width.get(), self.layout_height.get()))
     }
 
+    tab_index => (&self) -> i32 { i32::from(self.link_count() > 0) }
+
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 // 代码块复制按钮点击
                 for region in self.code_regions.borrow().iter() {
                     if region.rect.contains(*pos) {
@@ -212,20 +227,17 @@ component! {
                 }
 
                 // 链接点击
-                let lines = self.layout_lines.borrow();
-                for line in lines.iter() {
-                    if pos.y < line.y || pos.y >= line.y + line.height { continue; }
-                    for glyph in &line.glyphs {
-                        if glyph.is_link && pos.x >= glyph.x && pos.x < glyph.x + glyph.width {
-                            if let Some(url) = &glyph.link_url {
-                                clipboard::copy_to_clipboard(url);
-                                return EventResult::Handled;
-                            }
-                        }
-                    }
+                if let Some((segment_idx, url)) = self.link_at_pos(*pos) {
+                    self.focused = true;
+                    self.focused_link = self.link_ordinal(segment_idx).unwrap_or(0);
+                    self.pending_submit.replace(Some(url));
+                    self.selection.set(None);
+                    self.sel_dragging.set(false);
+                    return EventResult::Handled;
                 }
 
                 // 文字选择
+                let lines = self.layout_lines.borrow();
                 let char_idx = self.char_at_pos(*pos, &lines);
                 self.selection.set(None);
                 self.sel_anchor.set(char_idx);
@@ -245,6 +257,11 @@ component! {
                 self.hovered_code.set(new_code);
                 if new_code != old_code { return EventResult::Handled; }
 
+                let old_link = self.hovered_link.get();
+                let new_link = self.link_at_pos(*pos).map(|(segment_idx, _)| segment_idx);
+                self.hovered_link.set(new_link);
+                if new_link != old_link { return EventResult::Handled; }
+
                 // 选择拖拽
                 if !self.sel_dragging.get() { return EventResult::NotHandled; }
                 let char_idx = self.char_at_pos(*pos, &lines);
@@ -261,8 +278,22 @@ component! {
                 EventResult::Handled
             }
 
+            SystemEvent::PointerLeave => {
+                let changed = self.hovered_code.get().is_some() || self.hovered_link.get().is_some();
+                self.hovered_code.set(None);
+                self.hovered_link.set(None);
+                if changed { EventResult::Handled } else { EventResult::NotHandled }
+            }
+
+            SystemEvent::FocusIn if self.link_count() > 0 => {
+                self.focused = true;
+                self.focused_link = self.focused_link.min(self.link_count() - 1);
+                EventResult::Handled
+            }
+
             SystemEvent::FocusOut => {
                 // 失去焦点时清除文字选中
+                self.focused = false;
                 self.selection.set(None);
                 self.sel_dragging.set(false);
                 EventResult::Handled
@@ -290,12 +321,43 @@ component! {
                         }
                         EventResult::Handled
                     }
+                    KeyCode::Left | KeyCode::Up if !ctrl && self.link_count() > 0 => {
+                        self.focused_link = self.focused_link.saturating_sub(1);
+                        EventResult::Handled
+                    }
+                    KeyCode::Right | KeyCode::Down if !ctrl && self.link_count() > 0 => {
+                        self.focused_link = (self.focused_link + 1).min(self.link_count() - 1);
+                        EventResult::Handled
+                    }
+                    KeyCode::Home if !ctrl && self.link_count() > 0 => {
+                        self.focused_link = 0;
+                        EventResult::Handled
+                    }
+                    KeyCode::End if !ctrl && self.link_count() > 0 => {
+                        self.focused_link = self.link_count() - 1;
+                        EventResult::Handled
+                    }
+                    KeyCode::Enter | KeyCode::Space if !ctrl => {
+                        if let Some((_, url)) = self.link_at_ordinal(self.focused_link) {
+                            self.pending_submit.replace(Some(url.to_string()));
+                            EventResult::Handled
+                        } else {
+                            EventResult::NotHandled
+                        }
+                    }
                     _ => EventResult::NotHandled,
                 }
             }
 
             _ => EventResult::NotHandled,
         }
+    }
+
+    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_submit
+            .borrow_mut()
+            .take()
+            .map(|url| SemanticEvent::submit(id, url))
     }
 
     flex_grow => (&self) -> f32 { 1.0 }
@@ -315,7 +377,7 @@ component! {
                 ctx.font_service(), &font,
             );
             let mut lines = lines;
-            assign_global_indices(&mut lines);
+            assign_global_indices(&mut lines, &self.segments);
             // 缓存相对坐标（y 从 0 开始），渲染时再加 frame.y
             self.layout_lines.replace(lines.clone());
             self.layout_height.set(h);
@@ -367,10 +429,32 @@ component! {
                     }
                 }
 
-                // 链接下划线
-                if glyph.is_link {
+                let style = match self.segments.get(glyph.segment_idx) {
+                    Some(RichTextSegment::Text { style, .. }) => Some(style),
+                    _ => None,
+                };
+                let focused_link = self.focused
+                    && self.link_segment_at_ordinal(self.focused_link) == Some(glyph.segment_idx);
+                let active_link = self.hovered_link.get() == Some(glyph.segment_idx) || focused_link;
+                if active_link {
+                    ctx.fill_rect(
+                        Rect::new(gx, gy, glyph.width, glyph.font_size),
+                        ctx.tokens().color_primary().with_alpha(24),
+                        None,
+                    );
+                }
+
+                // 链接或显式下划线
+                if glyph.is_link || style.is_some_and(|style| style.underline) {
                     ctx.fill_rect(
                         Rect::new(gx, gy + glyph.font_size * 0.95, glyph.width, 1.0),
+                        if active_link { ctx.tokens().color_primary() } else { glyph.color.with_alpha(180) },
+                        None,
+                    );
+                }
+                if style.is_some_and(|style| style.strikethrough) {
+                    ctx.fill_rect(
+                        Rect::new(gx, gy + glyph.font_size * 0.52, glyph.width, 1.0),
                         glyph.color.with_alpha(180),
                         None,
                     );
@@ -378,66 +462,70 @@ component! {
             }
         }
 
-        // ── 按段绘制文字 ──
-        for (seg_idx, segment) in self.segments.iter().enumerate() {
-            match segment {
-                RichTextSegment::NewLine => {}
-                RichTextSegment::Text { content, style } => {
-                    if content.is_empty() { continue; }
-                    let fs = style.resolved_font_size(self.default_font_size);
-                    let color = style.resolved_color(self.default_color);
-                    // 文本只在首个出现行绘制一次，由 ctx.draw_text 内部处理 \n 换行，
-                    // 避免折行后每行都画整段内容导致视觉重复。
-                    if let Some((first_li, _gi)) = find_first_glyph(&layout_lines, seg_idx) {
-                        let gx = frame.x + layout_lines[first_li].glyphs.iter()
-                            .find(|g| g.segment_idx == seg_idx).map(|g| g.x).unwrap_or(0.0);
-                        let gy = layout_lines[first_li].y
-                            + (layout_lines[first_li].height - fs) * 0.5;
-                        ctx.draw_text(content, Point::new(gx, gy), color, fs);
-                    }
+        // 按实际折行结果绘制连续 run，保证命中、选择与像素使用同一布局。
+        for line in &layout_lines {
+            let mut start = 0;
+            while start < line.glyphs.len() {
+                let segment_idx = line.glyphs[start].segment_idx;
+                let mut end = start + 1;
+                while end < line.glyphs.len() && line.glyphs[end].segment_idx == segment_idx {
+                    end += 1;
                 }
-                RichTextSegment::Code { content } => {
-                    if content.is_empty() { continue; }
-                    let fs = self.default_font_size * 0.9;
-                    let color = Color::from_rgb(230, 180, 100);
-                    if let Some((li, gi)) = find_first_glyph(&layout_lines, seg_idx) {
-                        let gx = frame.x + layout_lines[li].glyphs[gi].x;
-                        let gy = layout_lines[li].y + (layout_lines[li].height - fs) * 0.5 + 2.0;
-                        ctx.draw_text(content, Point::new(gx, gy), color, fs);
+                let run = &line.glyphs[start..end];
+                let content = run.iter().map(|glyph| glyph.ch).collect::<String>();
+                let first = &run[0];
+                let fs = first.font_size;
+                let gx = frame.x + first.x;
+                let gy = line.y + (line.height - fs) * 0.5
+                    + if matches!(self.segments.get(segment_idx), Some(RichTextSegment::Code { .. })) { 2.0 } else { 0.0 };
+                let focused_link = self.focused
+                    && self.link_segment_at_ordinal(self.focused_link) == Some(segment_idx);
+                let color = if first.is_link
+                    && (self.hovered_link.get() == Some(segment_idx) || focused_link)
+                {
+                    ctx.tokens().color_primary()
+                } else {
+                    first.color
+                };
+                ctx.draw_text(&content, Point::new(gx, gy), color, fs);
+                if matches!(
+                    self.segments.get(segment_idx),
+                    Some(RichTextSegment::Text { style, .. }) if style.bold
+                ) {
+                    ctx.draw_text(&content, Point::new(gx + 0.6, gy), color, fs);
+                }
+                start = end;
+            }
+        }
 
-                        // 记录代码块复制按钮
-                        let code_w: f32 = layout_lines[li].glyphs.iter()
-                            .filter(|g| g.segment_idx == seg_idx)
-                            .map(|g| g.width)
-                            .sum();
-                        let btn = Rect::new(gx + code_w - 4.0, gy, 24.0, 16.0);
-                        let cidx = code_regions.len();
-                        if self.hovered_code.get() == Some(cidx) {
-                            ctx.fill_rect(btn, Color::from_rgb(55, 55, 62), Some(Radius::uniform(3.0)));
-                            ctx.draw_text("📋", Point::new(btn.x + 5.0, btn.y + 1.0),
-                                Color::from_rgb(200, 200, 200), 10.0);
-                        }
-                        code_regions.push(CodeCopyRegion {
-                            rect: Rect::new(
-                                btn.x - frame.x,
-                                btn.y - frame.y,
-                                btn.w,
-                                btn.h,
-                            ),
-                            content: content.clone(),
-                        });
-                    }
+        // 每个代码段只登记一个复制按钮，折行时锚定最后一个可见字形。
+        for (segment_idx, segment) in self.segments.iter().enumerate() {
+            let RichTextSegment::Code { content } = segment else { continue; };
+            let last = layout_lines.iter().rev().find_map(|line| {
+                line.glyphs
+                    .iter()
+                    .rev()
+                    .find(|glyph| glyph.segment_idx == segment_idx)
+                    .map(|glyph| (line, glyph))
+            });
+            if let Some((line, glyph)) = last {
+                let gx = frame.x + glyph.x + glyph.width;
+                let gy = line.y + (line.height - glyph.font_size) * 0.5 + 2.0;
+                let btn = Rect::new(gx - 4.0, gy, 24.0, 16.0);
+                let cidx = code_regions.len();
+                if self.hovered_code.get() == Some(cidx) {
+                    ctx.fill_rect(btn, Color::from_rgb(55, 55, 62), Some(Radius::uniform(3.0)));
+                    ctx.draw_text(
+                        "📋",
+                        Point::new(btn.x + 5.0, btn.y + 1.0),
+                        Color::from_rgb(200, 200, 200),
+                        10.0,
+                    );
                 }
-                RichTextSegment::Link { content, .. } => {
-                    if content.is_empty() { continue; }
-                    let fs = self.default_font_size;
-                    let color = Color::from_rgb(55, 110, 255);
-                    if let Some((li, gi)) = find_first_glyph(&layout_lines, seg_idx) {
-                        let gx = frame.x + layout_lines[li].glyphs[gi].x;
-                        let gy = layout_lines[li].y + (layout_lines[li].height - fs) * 0.5;
-                        ctx.draw_text(content, Point::new(gx, gy), color, fs);
-                    }
-                }
+                code_regions.push(CodeCopyRegion {
+                    rect: Rect::new(btn.x - frame.x, btn.y - frame.y, btn.w, btn.h),
+                    content: content.clone(),
+                });
             }
         }
     }
@@ -471,7 +559,11 @@ impl RichText {
 
     /// 设置默认字体大小
     pub fn font_size(mut self, size: f32) -> Self {
-        self.default_font_size = size;
+        self.default_font_size = if size.is_finite() && size > 0.0 {
+            size
+        } else {
+            14.0
+        };
         self.default_font_size_unit = None;
         self.layout_dirty.set(true);
         self
@@ -516,7 +608,13 @@ impl RichText {
             self.selection.set(None);
             self.sel_anchor.set(0);
             self.sel_dragging.set(false);
-            self._hovered_link.set(None);
+            self.hovered_link.set(None);
+            self.pending_submit.borrow_mut().take();
+            self.focused_link = if self.link_count() == 0 {
+                0
+            } else {
+                self.focused_link.min(self.link_count() - 1)
+            };
         }
     }
 
@@ -526,7 +624,13 @@ impl RichText {
             default_font_size: self.default_font_size,
             default_font_size_unit: self.default_font_size_unit,
             default_color: self.default_color,
+            focused_link: (self.link_count() > 0).then_some(self.focused_link),
         }
+    }
+
+    /// 返回当前键盘焦点链接的显示文本与 URL。
+    pub fn focused_link(&self) -> Option<(&str, &str)> {
+        self.link_at_ordinal(self.focused_link)
     }
 
     /// 获取选中的文本
@@ -581,6 +685,26 @@ impl RichText {
             .map(|region| region.rect)
     }
 
+    #[cfg(test)]
+    pub(crate) fn layout_line_texts_for_test(&self) -> Vec<String> {
+        self.layout_lines
+            .borrow()
+            .iter()
+            .map(|line| line.glyphs.iter().map(|glyph| glyph.ch).collect())
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn link_point_for_test(&self, ordinal: usize) -> Option<Point> {
+        let segment_idx = self.link_segment_at_ordinal(ordinal)?;
+        self.layout_lines.borrow().iter().find_map(|line| {
+            line.glyphs
+                .iter()
+                .find(|glyph| glyph.segment_idx == segment_idx)
+                .map(|glyph| Point::new(glyph.x + glyph.width * 0.5, line.y + line.height * 0.5))
+        })
+    }
+
     // ── 内部 ──
 
     fn char_at_pos(&self, pos: Point, lines: &[LayoutLine]) -> usize {
@@ -623,6 +747,69 @@ impl RichText {
             .last()
             .map(|g| g.global_char_idx + if pos.x > g.x + g.width * 0.5 { 1 } else { 0 })
             .unwrap_or(0)
+    }
+
+    fn link_count(&self) -> usize {
+        self.segments
+            .iter()
+            .filter(|segment| {
+                matches!(segment, RichTextSegment::Link { url, .. } if !url.trim().is_empty())
+            })
+            .count()
+    }
+
+    fn link_at_ordinal(&self, ordinal: usize) -> Option<(&str, &str)> {
+        self.segments
+            .iter()
+            .filter_map(|segment| match segment {
+                RichTextSegment::Link { content, url } if !url.trim().is_empty() => {
+                    Some((content.as_str(), url.as_str()))
+                }
+                _ => None,
+            })
+            .nth(ordinal)
+    }
+
+    fn link_segment_at_ordinal(&self, ordinal: usize) -> Option<usize> {
+        self.segments
+            .iter()
+            .enumerate()
+            .filter_map(|(index, segment)| match segment {
+                RichTextSegment::Link { url, .. } if !url.trim().is_empty() => Some(index),
+                _ => None,
+            })
+            .nth(ordinal)
+    }
+
+    fn link_ordinal(&self, segment_idx: usize) -> Option<usize> {
+        self.segments
+            .iter()
+            .enumerate()
+            .filter(|(_, segment)| {
+                matches!(segment, RichTextSegment::Link { url, .. } if !url.trim().is_empty())
+            })
+            .position(|(index, _)| index == segment_idx)
+    }
+
+    fn link_at_pos(&self, pos: Point) -> Option<(usize, String)> {
+        let lines = self.layout_lines.borrow();
+        for line in lines.iter() {
+            if pos.y < line.y || pos.y >= line.y + line.height {
+                continue;
+            }
+            for glyph in &line.glyphs {
+                if glyph.is_link && pos.x >= glyph.x && pos.x < glyph.x + glyph.width {
+                    if let Some(url) = glyph
+                        .link_url
+                        .as_deref()
+                        .filter(|url| !url.trim().is_empty())
+                    {
+                        return Some((glyph.segment_idx, url.to_string()));
+                    }
+                }
+            }
+        }
+        None
     }
 
     fn set_selection_range(&self, a: usize, b: usize) {

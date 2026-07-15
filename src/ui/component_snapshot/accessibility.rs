@@ -1,6 +1,6 @@
 use crate::ui::widgets::{
     AnchorItem, BadgeStatus, BreadcrumbItem, Date, MenuItem, OptGroup, ProgressMode,
-    SelectableItem, Step, Tab, UploadFile, UploadStatus,
+    RichTextSegment, SelectableItem, Step, Tab, UploadFile, UploadStatus,
 };
 
 use super::{AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotTransferItem};
@@ -108,6 +108,45 @@ pub(super) fn upload_accessibility(files: &[UploadFile]) -> AccessibilitySnapsho
             ..AccessibilityState::default()
         },
     )
+}
+
+pub(super) fn rich_text_accessibility(
+    segments: &[RichTextSegment],
+    focused_link: Option<usize>,
+) -> AccessibilitySnapshot {
+    let plain_text = segments
+        .iter()
+        .map(|segment| match segment {
+            RichTextSegment::Text { content, .. }
+            | RichTextSegment::Code { content }
+            | RichTextSegment::Link { content, .. } => content.as_str(),
+            RichTextSegment::NewLine => "\n",
+        })
+        .collect::<String>();
+    let links = segments
+        .iter()
+        .filter_map(|segment| match segment {
+            RichTextSegment::Link { content, url } if !url.trim().is_empty() => {
+                Some((content.as_str(), url.as_str()))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let Some((content, url)) = focused_link.and_then(|index| links.get(index)).copied() else {
+        return AccessibilitySnapshot::named(AccessibilityRole::Text, plain_text);
+    };
+    AccessibilitySnapshot::named(
+        AccessibilityRole::Button,
+        if content.trim().is_empty() {
+            url
+        } else {
+            content
+        },
+    )
+    .with_state(AccessibilityState {
+        value_text: Some(url.to_string()),
+        ..AccessibilityState::default()
+    })
 }
 
 pub(super) fn transfer_accessibility(
