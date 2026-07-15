@@ -25,7 +25,6 @@ component! {
         max: i32,
         dot: bool,
         color: Option<Color>,
-        _size: f32,
         status: Option<BadgeStatus>,
         show_zero: bool,
         text: String,
@@ -57,25 +56,25 @@ component! {
         let actual_frame = Rect::new(frame.x + off_x, frame.y + off_y, frame.w, frame.h);
 
         if let Some(status) = self.status {
-            let sc = match status {
+            let marker_color = match status {
                 BadgeStatus::Success => ctx.tokens().color_success(),
                 BadgeStatus::Processing => ctx.tokens().color_primary(),
                 BadgeStatus::Default => ctx.tokens().color_text_quaternary(),
                 BadgeStatus::Error => ctx.tokens().color_error(),
                 BadgeStatus::Warning => ctx.tokens().color_warning(),
             };
-            let r = actual_frame.h * 0.5;
-            ctx.fill_circle(actual_frame.x + r, actual_frame.y + r, r, sc);
+            self.render_marker_label(ctx, actual_frame, marker_color);
             return;
         }
 
-        if self.count == 0 && !self.show_zero && self.text.is_empty() { return; }
         let bg = self.color.unwrap_or(ctx.tokens().color_error());
-        let display = self.count.min(self.max);
         if self.dot {
-            let r = actual_frame.h * 0.5;
-            ctx.fill_circle(actual_frame.x + r, actual_frame.y + r, r, bg);
-        } else if !self.text.is_empty() {
+            self.render_marker_label(ctx, actual_frame, bg);
+            return;
+        }
+        if self.count == 0 && !self.show_zero && self.text.is_empty() { return; }
+        let display = self.count.min(self.max);
+        if !self.text.is_empty() {
             let r = Some(Radius::uniform(actual_frame.h * 0.5));
             ctx.fill_rect(actual_frame, bg, r);
             let fs = 11.0;
@@ -119,16 +118,31 @@ impl Default for Badge {
 }
 
 impl Badge {
+    const MARKER_DIAMETER: f32 = 10.0;
+    const MARKER_TEXT_GAP: f32 = 8.0;
+    const PILL_HEIGHT: f32 = 20.0;
+    const TEXT_HORIZONTAL_PADDING: f32 = 12.0;
+
     fn intrinsic_size(&self) -> Size {
         if self.dot || self.status.is_some() {
-            Size::new(10.0, 10.0)
+            if self.text.is_empty() {
+                Size::new(Self::MARKER_DIAMETER, Self::MARKER_DIAMETER)
+            } else {
+                Size::new(
+                    Self::MARKER_DIAMETER
+                        + Self::MARKER_TEXT_GAP
+                        + Self::estimated_text_width(&self.text),
+                    Self::PILL_HEIGHT,
+                )
+            }
         } else if self.count > 0 || (self.count == 0 && self.show_zero) {
             let text = format!("{}", self.count.min(self.max));
-            let w = (text.len() as f32) * 7.0 + 12.0;
-            Size::new(w.max(20.0), 20.0)
+            let overflow = usize::from(self.count > self.max);
+            let w = (text.chars().count() + overflow) as f32 * 7.0 + Self::TEXT_HORIZONTAL_PADDING;
+            Size::new(w.max(Self::PILL_HEIGHT), Self::PILL_HEIGHT)
         } else if !self.text.is_empty() {
-            let w = self.text.len() as f32 * 7.0 + 12.0;
-            Size::new(w, 20.0)
+            let w = Self::estimated_text_width(&self.text) + Self::TEXT_HORIZONTAL_PADDING;
+            Size::new(w.max(Self::PILL_HEIGHT), Self::PILL_HEIGHT)
         } else {
             Size::zero()
         }
@@ -140,7 +154,6 @@ impl Badge {
             max: 99,
             dot: false,
             color: None,
-            _size: 16.0,
             status: None,
             show_zero: false,
             text: String::new(),
@@ -150,11 +163,11 @@ impl Badge {
         }
     }
     pub fn count(mut self, n: i32) -> Self {
-        self.count = n;
+        self.count = n.max(0);
         self
     }
     pub fn max(mut self, n: i32) -> Self {
-        self.max = n;
+        self.max = n.max(1);
         self
     }
     pub fn dot(mut self) -> Self {
@@ -194,11 +207,10 @@ impl Badge {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
-        self.count = next.count;
-        self.max = next.max;
+        self.count = next.count.max(0);
+        self.max = next.max.max(1);
         self.dot = next.dot;
         self.color = next.color;
-        self._size = next._size;
         self.status = next.status;
         self.show_zero = next.show_zero;
         self.text = next.text;
@@ -213,7 +225,7 @@ impl Badge {
             max: self.max,
             dot: self.dot,
             color: self.color,
-            size: self._size,
+            size: self.intrinsic_size().h,
             status: self.status,
             show_zero: self.show_zero,
             text: self.text.clone(),
@@ -221,5 +233,30 @@ impl Badge {
             offset_y: self.offset_y,
             offset_unit: self.offset_unit,
         }
+    }
+
+    fn render_marker_label(&self, ctx: &mut PaintContext<'_>, frame: Rect, marker_color: Color) {
+        let radius = Self::MARKER_DIAMETER * 0.5;
+        let center_y = frame.y + frame.h * 0.5;
+        ctx.fill_circle(frame.x + radius, center_y, radius, marker_color);
+        if !self.text.is_empty() {
+            let font_size = 13.0;
+            let text_y = ctx.visual_center_y(frame, font_size);
+            ctx.draw_text(
+                &self.text,
+                crate::core::Point::new(
+                    frame.x + Self::MARKER_DIAMETER + Self::MARKER_TEXT_GAP,
+                    text_y,
+                ),
+                ctx.tokens().color_text(),
+                font_size,
+            );
+        }
+    }
+
+    fn estimated_text_width(text: &str) -> f32 {
+        text.chars()
+            .map(|ch| if ch.is_ascii() { 7.0 } else { 14.0 })
+            .sum()
     }
 }

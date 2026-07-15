@@ -1,4 +1,4 @@
-use crate::ui::widgets::{AnchorItem, BreadcrumbItem, Date, SelectableItem};
+use crate::ui::widgets::{AnchorItem, BadgeStatus, BreadcrumbItem, Date, OptGroup, SelectableItem};
 
 use super::{AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotTransferItem};
 
@@ -152,6 +152,158 @@ pub(super) fn back_top_accessibility(visible: bool) -> AccessibilitySnapshot {
             ..AccessibilityState::default()
         },
     )
+}
+
+pub(super) fn image_accessibility(
+    alt: &str,
+    fallback: &str,
+    src: &str,
+    preview: bool,
+    preview_open: bool,
+) -> AccessibilitySnapshot {
+    let role = if preview {
+        AccessibilityRole::Button
+    } else {
+        AccessibilityRole::Image
+    };
+    AccessibilitySnapshot::named(role, first_non_empty([alt, fallback, src])).with_state(
+        AccessibilityState {
+            expanded: preview.then_some(preview_open),
+            ..AccessibilityState::default()
+        },
+    )
+}
+
+pub(super) fn badge_accessibility(
+    count: i32,
+    max: i32,
+    dot: bool,
+    status: Option<BadgeStatus>,
+    show_zero: bool,
+    text: &str,
+) -> AccessibilitySnapshot {
+    let visible =
+        dot || status.is_some() || !text.is_empty() || count > 0 || (count == 0 && show_zero);
+    if !visible {
+        return AccessibilitySnapshot::new(AccessibilityRole::None);
+    }
+
+    let numeric = !dot && status.is_none() && text.is_empty();
+    let name = if !text.is_empty() {
+        text.to_owned()
+    } else if numeric {
+        format!("{}{}", count.min(max), if count > max { "+" } else { "" })
+    } else {
+        String::new()
+    };
+    AccessibilitySnapshot::named(AccessibilityRole::Status, name).with_state(AccessibilityState {
+        value_now: numeric.then_some(count as f64),
+        value_min: numeric.then_some(0.0),
+        value_max: numeric.then_some(max as f64),
+        ..AccessibilityState::default()
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn select_accessibility(
+    plain_options: &[String],
+    optgroups: &[OptGroup],
+    selected: usize,
+    selected_multi: &[usize],
+    placeholder: &str,
+    disabled: bool,
+    multiple: bool,
+    open: bool,
+    search_query: &str,
+) -> AccessibilitySnapshot {
+    let options = if optgroups.is_empty() {
+        plain_options.iter().map(String::as_str).collect::<Vec<_>>()
+    } else {
+        optgroups
+            .iter()
+            .flat_map(|group| group.options.iter().map(String::as_str))
+            .collect()
+    };
+    let selected_value = if multiple {
+        let selected = selected_multi
+            .iter()
+            .filter_map(|index| options.get(*index).copied())
+            .collect::<Vec<_>>();
+        (!selected.is_empty()).then(|| selected.join(", "))
+    } else {
+        options.get(selected).map(|option| (*option).to_owned())
+    };
+    let value_text = if !open || search_query.is_empty() {
+        selected_value
+    } else {
+        Some(search_query.to_owned())
+    };
+    AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder).with_state(
+        AccessibilityState {
+            disabled,
+            value_text,
+            ..AccessibilityState::default()
+        },
+    )
+}
+
+pub(super) fn date_range_accessibility(
+    placeholder: &str,
+    start: Option<&String>,
+    end: Option<&String>,
+) -> AccessibilitySnapshot {
+    AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder).with_state(
+        AccessibilityState {
+            value_text: start
+                .zip(end)
+                .map(|(start, end)| format!("{start} / {end}")),
+            ..AccessibilityState::default()
+        },
+    )
+}
+
+pub(super) fn result_accessibility(
+    title: &str,
+    subtitle: &str,
+    extra_text: &str,
+) -> AccessibilitySnapshot {
+    let action = !extra_text.is_empty();
+    let summary = first_non_empty([title, subtitle]);
+    AccessibilitySnapshot::named(
+        if action {
+            AccessibilityRole::Button
+        } else {
+            AccessibilityRole::Status
+        },
+        if action {
+            extra_text.to_owned()
+        } else {
+            summary.clone()
+        },
+    )
+    .with_state(AccessibilityState {
+        value_text: (action && !summary.is_empty()).then_some(summary),
+        ..AccessibilityState::default()
+    })
+}
+
+pub(super) fn tag_accessibility(
+    text: &str,
+    closable: bool,
+    checkable: bool,
+    checked: bool,
+) -> AccessibilitySnapshot {
+    let role = if checkable {
+        AccessibilityRole::Checkbox
+    } else if closable {
+        AccessibilityRole::Button
+    } else {
+        AccessibilityRole::Generic
+    };
+    AccessibilitySnapshot::named(role, text).with_state(AccessibilityState {
+        checked: checkable.then_some(checked),
+        ..AccessibilityState::default()
+    })
 }
 
 pub(super) fn first_non_empty<const N: usize>(values: [&str; N]) -> String {
