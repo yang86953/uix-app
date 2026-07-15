@@ -1,0 +1,9 @@
+native-out-of-date-recovery: UIX_GFX_R5_EXPECT_VENDOR=nvidia cargo test --features vulkan --lib tests::native::graphics::vulkan::platform::context::windows_vulkan_gfx_r5_native_out_of_date_is_typed_and_recovers -- --exact --ignored --nocapture --test-threads=1
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running unittests src\lib.rs (target\debug\deps\uix-aced7e1cc6324dd6.exe)
+
+running 1 test
+test tests::native::graphics::vulkan::platform::context::windows_vulkan_gfx_r5_native_out_of_date_is_typed_and_recovers ... GFX-R5 Vulkan native surface fault evidence: expected=nvidia; fault=VulkanContext: vkQueuePresentKHR failed: ERROR_OUT_OF_DATE_KHR; adapter="NVIDIA GeForce RTX 4070 Ti SUPER"; type=discrete_gpu; vendor=0x10DE; device=0x2705; api=1.4.341; driver=0x988F8000; queue_family=0
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1618 filtered out; finished in 0.40s
