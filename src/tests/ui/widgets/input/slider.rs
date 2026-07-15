@@ -105,7 +105,7 @@ fn provider_size_and_explicit_override_drive_slider_track_geometry() {
     let mut slider = with_config(&large, || Slider::new(0.0..=100.0).step(0.0));
     assert_eq!(slider.measure(max).h, 40.0);
 
-    render_slider(&slider, Rect::new(0.0, 0.0, 200.0, 40.0));
+    render_slider(&slider, Rect::new(24.0, 12.0, 200.0, 40.0));
     let _ = slider.on_event(&SystemEvent::PointerDown {
         pos: Point::new(10.0, 20.0),
         button: MouseButton::Left,
