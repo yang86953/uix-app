@@ -392,6 +392,7 @@ pub enum SnapshotFields {
     Collapse {
         panels: Vec<SnapshotCollapsePanel>,
         accordion: bool,
+        focused_header: usize,
     },
     Carousel {
         show_dots: bool,
@@ -876,6 +877,19 @@ impl SnapshotFields {
                     value_text: (!selected_key.is_empty()).then(|| selected_key.clone()),
                     ..AccessibilityState::default()
                 }),
+            Self::Collapse {
+                panels,
+                focused_header,
+                ..
+            } => AccessibilitySnapshot::new(AccessibilityRole::Group).with_state(
+                AccessibilityState {
+                    value_text: panels
+                        .get(*focused_header)
+                        .map(|panel| panel.header.clone()),
+                    expanded: panels.get(*focused_header).map(|panel| panel.expanded),
+                    ..AccessibilityState::default()
+                },
+            ),
             Self::TreeSelect {
                 placeholder,
                 value,
