@@ -1,5 +1,5 @@
 use crate::tests::common::*;
-use crate::ui::widgets::{BarChart, BarData};
+use crate::ui::widgets::{BarChart, BarData, LineChart, LineData};
 use crate::ui::AccessibilityRole;
 
 #[test]
@@ -54,6 +54,68 @@ fn bar_chart_normalizes_geometry_and_exposes_chart_semantics() {
             fixed_height: 0.0,
             max_value: 0.0,
             bar_radius: 0.0,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn line_chart_keeps_a_single_point_visible_and_normalizes_non_finite_data() {
+    let frame = Rect::new(20.0, 10.0, 220.0, 140.0);
+    let single = LineChart::new()
+        .data(vec![LineData::new("only", 5.0)])
+        .auto_min(true);
+    let (_, points) = single
+        .geometry_for_test(frame)
+        .expect("single point should produce plot geometry");
+    assert_eq!(points.len(), 1);
+    assert!((points[0].x - (frame.x + 36.0 + (frame.w - 36.0) * 0.5)).abs() < 0.01);
+    assert!(points[0].y >= frame.y && points[0].y <= frame.y + frame.h);
+
+    let invalid = LineChart::new().data(vec![
+        LineData::new("start", f32::NEG_INFINITY),
+        LineData::new("end", 4.0),
+    ]);
+    let (_, points) = invalid
+        .geometry_for_test(frame)
+        .expect("non-finite values should normalize instead of poisoning geometry");
+    assert!(points
+        .iter()
+        .all(|point| point.x.is_finite() && point.y.is_finite()));
+}
+
+#[test]
+fn line_chart_normalizes_public_geometry_and_exposes_chart_semantics() {
+    let chart = LineChart::new()
+        .data(vec![
+            LineData::new("Mon", 5.0),
+            LineData::new("unknown", f32::NAN),
+        ])
+        .width(f32::NAN)
+        .height(-1.0)
+        .max_value(f32::INFINITY)
+        .line_width(f32::NAN)
+        .dot_radius(-3.0);
+    assert_eq!(
+        chart.measure(Constraints::loose(Size::new(130.0, 90.0))),
+        Size::new(130.0, 90.0)
+    );
+
+    let accessibility = chart.snapshot_fields().accessibility();
+    assert_eq!(accessibility.role, AccessibilityRole::Image);
+    assert_eq!(accessibility.name.as_deref(), Some("Line chart"));
+    assert_eq!(
+        accessibility.state.value_text.as_deref(),
+        Some("Mon: 5; unknown: 0")
+    );
+    assert!(matches!(
+        chart.snapshot_fields(),
+        SnapshotFields::LineChart {
+            fixed_width: 0.0,
+            fixed_height: 0.0,
+            max_value: 0.0,
+            line_width: 1.0,
+            dot_radius: 0.0,
             ..
         }
     ));
