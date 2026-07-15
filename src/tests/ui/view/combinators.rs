@@ -87,6 +87,44 @@ fn column_accepts_heterogeneous_tuple_children() {
 }
 
 #[test]
+fn default_click_handler_ignores_secondary_pointer_but_raw_click_keeps_payload() {
+    let primary_calls = Rc::new(Cell::new(0));
+    let raw_button = Rc::new(Cell::new(None));
+    let calls = Rc::clone(&primary_calls);
+    let observed_button = Rc::clone(&raw_button);
+    let mut tree = ViewAdapter::build(
+        button("menu target")
+            .on_click_fn(move || calls.set(calls.get() + 1))
+            .on_click_event(move |event| {
+                observed_button.set(event.click_payload().map(|click| click.button));
+            }),
+    );
+    let root = tree.root_id().expect("button root");
+    tree.get_mut(root)
+        .expect("button node")
+        .set_frame(Rect::new(0.0, 0.0, 120.0, 32.0));
+    let pos = Point::new(12.0, 12.0);
+
+    let _ = tree.dispatch_event(&SystemEvent::PointerDown {
+        pos,
+        button: MouseButton::Right,
+        mods: KeyMod::NONE,
+    });
+    let _ = tree.dispatch_event(&SystemEvent::PointerUp {
+        pos,
+        button: MouseButton::Right,
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(primary_calls.get(), 0);
+    assert_eq!(raw_button.get(), Some(MouseButton::Right));
+    assert_eq!(
+        tree.overlay_stack().top().map(|entry| entry.kind()),
+        Some(OverlayKind::ContextMenu)
+    );
+}
+
+#[test]
 fn label_accepts_static_and_dynamic_content() {
     let static_node = label("hello");
     assert!(static_node

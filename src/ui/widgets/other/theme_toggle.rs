@@ -6,7 +6,8 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    WidgetTree,
 };
 use std::cell::Cell;
 
@@ -29,7 +30,10 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            SystemEvent::PointerDown { .. }
+            SystemEvent::PointerDown {
+                button: MouseButton::Left,
+                ..
+            }
             | SystemEvent::KeyDown {
                 key: KeyCode::Enter | KeyCode::Space,
                 ..

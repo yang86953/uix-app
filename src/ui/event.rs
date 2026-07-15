@@ -263,6 +263,16 @@ impl SemanticEvent {
         Self::new(SemanticKind::Click, target, SemanticPayload::Click(payload))
     }
 
+    pub(crate) fn is_primary_click(&self) -> bool {
+        matches!(
+            &self.payload,
+            SemanticPayload::Click(ClickEvent {
+                button: MouseButton::Left,
+                ..
+            })
+        )
+    }
+
     pub fn context_menu(target: ComponentId, payload: ClickEvent) -> Self {
         Self::new(
             SemanticKind::ContextMenu,
