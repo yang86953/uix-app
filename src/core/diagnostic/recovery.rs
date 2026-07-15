@@ -46,9 +46,9 @@ impl RecoveryHandler {
         self.on_retry = Some(Box::new(cb));
     }
 
-    pub fn execute<F>(&self, operation: F) -> Result<(), Error>
+    pub fn execute<F>(&self, mut operation: F) -> Result<(), Error>
     where
-        F: Fn() -> Result<(), Error>,
+        F: FnMut() -> Result<(), Error>,
     {
         let mut last_error;
         let mut attempt = 0;
@@ -90,7 +90,7 @@ impl RecoveryHandler {
 
 pub fn with_recovery(
     policy: Box<dyn RetryPolicy>,
-    operation: impl Fn() -> Result<(), Error>,
+    operation: impl FnMut() -> Result<(), Error>,
     fallback: Option<FallbackFn>,
 ) -> Result<(), Error> {
     let mut handler = RecoveryHandler::new(policy);
@@ -102,7 +102,7 @@ pub fn with_recovery(
 
 pub fn retry(
     max_attempts: usize,
-    operation: impl Fn() -> Result<(), Error>,
+    operation: impl FnMut() -> Result<(), Error>,
     delay_between_ms: u64,
 ) -> Result<(), Error> {
     let policy = FixedRetryPolicy::new(
@@ -123,7 +123,7 @@ pub fn retry(
 
 pub fn with_recovery_typed<T>(
     policy: Box<dyn RetryPolicy>,
-    operation: impl Fn() -> Result<T, Error>,
+    mut operation: impl FnMut() -> Result<T, Error>,
     fallback: Option<TypedFallback<T>>,
 ) -> Result<T, Error> {
     let mut last_error;

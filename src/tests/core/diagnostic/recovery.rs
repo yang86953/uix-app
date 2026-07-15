@@ -1,4 +1,4 @@
-use crate::core::diagnostic::{FixedRetryPolicy, RecoveryHandler};
+use crate::core::diagnostic::{retry, FixedRetryPolicy, RecoveryHandler};
 use crate::core::{Errc, Error};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -33,4 +33,25 @@ fn retry_callback_runs_only_when_another_attempt_will_execute() {
             .as_slice(),
         [0]
     );
+}
+
+#[test]
+fn retry_accepts_an_operation_that_mutates_borrowed_state() {
+    let mut attempts = 0;
+
+    let result = retry(
+        2,
+        || {
+            attempts += 1;
+            if attempts == 2 {
+                Ok(())
+            } else {
+                Err(Error::new(Errc::IoError, "first attempt fails"))
+            }
+        },
+        0,
+    );
+
+    assert!(result.is_ok());
+    assert_eq!(attempts, 2);
 }
