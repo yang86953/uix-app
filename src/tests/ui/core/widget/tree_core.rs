@@ -4860,6 +4860,65 @@ fn window_deactivation_clears_hover_once() {
 }
 
 #[test]
+fn inactive_window_rejects_late_pointer_wheel_and_file_input() {
+    for deactivation in [SystemEvent::WindowBlur, SystemEvent::WindowMinimize] {
+        let mut tree = WidgetTree::new();
+        let target = tree.set_root(Box::new(SpyWidget::new(200.0, 100.0)));
+        tree.get_mut(target)
+            .expect("input target")
+            .set_frame(Rect::new(0.0, 0.0, 200.0, 100.0));
+        tree.dispatch_event(&deactivation);
+        if let Some(widget) = tree
+            .get(target)
+            .and_then(|node| node.component().as_any().downcast_ref::<SpyWidget>())
+        {
+            widget.events.borrow_mut().clear();
+        }
+
+        let late_inputs = [
+            SystemEvent::PointerMove {
+                pos: Point::new(20.0, 20.0),
+                mods: KeyMod::NONE,
+            },
+            SystemEvent::PointerDown {
+                pos: Point::new(20.0, 20.0),
+                button: MouseButton::Left,
+                mods: KeyMod::NONE,
+            },
+            SystemEvent::PointerDoubleClick {
+                pos: Point::new(20.0, 20.0),
+                button: MouseButton::Left,
+                mods: KeyMod::NONE,
+            },
+            SystemEvent::PointerUp {
+                pos: Point::new(20.0, 20.0),
+                button: MouseButton::Left,
+                mods: KeyMod::NONE,
+            },
+            SystemEvent::Wheel {
+                pos: Point::new(20.0, 20.0),
+                delta: Point::new(0.0, 1.0),
+            },
+            SystemEvent::FileDrop {
+                files: vec!["late.txt".to_owned()],
+                position: Point::new(20.0, 20.0),
+            },
+        ];
+        for input in late_inputs {
+            assert_eq!(tree.dispatch_event(&input), EventResult::NotHandled);
+        }
+
+        assert_eq!(tree.managers().interaction.hovered_component(), None);
+        assert_eq!(tree.managers().interaction.pressed_component(), None);
+        assert!(!tree.managers().drag.is_potential());
+        assert!(tree
+            .get(target)
+            .and_then(|node| node.component().as_any().downcast_ref::<SpyWidget>())
+            .is_some_and(|widget| widget.events.borrow().is_empty()));
+    }
+}
+
+#[test]
 fn window_blur_releases_pressed_visual_without_clearing_focus() {
     let mut tree = WidgetTree::new();
     let target = tree.set_root(Box::new(Button::new("Blurred")));
