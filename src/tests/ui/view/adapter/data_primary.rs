@@ -527,6 +527,8 @@ fn reconcile_tag_patches_instance_and_syncs_config() {
             font_size: 14.0,
             custom_color: Some(Color::green()),
             checkable: true,
+            checked: false,
+            visible: true,
         }
     );
 }
