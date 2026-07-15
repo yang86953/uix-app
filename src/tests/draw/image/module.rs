@@ -26,3 +26,38 @@ fn path_cache_returns_same_handle() {
     let h2 = svc.ensure_loaded("test.png").expect("cached");
     assert_eq!(h1, h2);
 }
+
+#[test]
+fn circular_crop_centers_masks_caches_and_unloads_with_source() {
+    let source = image::RgbaImage::from_fn(6, 4, |x, _| {
+        if x < 3 {
+            image::Rgba([255, 0, 0, 255])
+        } else {
+            image::Rgba([0, 0, 255, 255])
+        }
+    });
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(source)
+        .write_to(&mut bytes, image::ImageFormat::Png)
+        .expect("encode test image");
+    let service = ImageService::new();
+    let original = service
+        .load_from_bytes(bytes.get_ref())
+        .expect("decode source image");
+
+    let cropped = service.circular_crop(original).expect("circular crop");
+    assert_eq!(service.circular_crop(original), Some(cropped));
+    service
+        .with_slot(cropped, |slot| {
+            assert_eq!((slot.width(), slot.height()), (4, 4));
+            assert_eq!(slot.pixels()[0], 0);
+            assert_eq!(slot.pixels()[3], 0);
+            assert_ne!(slot.pixels()[5], 0);
+            assert_ne!(slot.pixels()[6], 0);
+        })
+        .expect("cropped slot");
+
+    service.unload(original);
+    assert!(!service.is_valid(original));
+    assert!(!service.is_valid(cropped));
+}

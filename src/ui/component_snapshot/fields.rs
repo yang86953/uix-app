@@ -9,14 +9,14 @@ use crate::ui::window_chrome::WindowControl;
 use crate::ui::Placement;
 
 use super::accessibility::{
-    anchor_accessibility, back_top_accessibility, badge_accessibility, breadcrumb_accessibility,
-    calendar_accessibility, card_accessibility, carousel_accessibility, chart_accessibility,
-    date_range_accessibility, dropdown_accessibility, first_non_empty, image_accessibility,
-    menu_accessibility, pagination_accessibility, progress_accessibility, result_accessibility,
-    rich_text_accessibility, select_accessibility, selectable_list_accessibility,
-    splitter_accessibility, steps_accessibility, tabs_accessibility, tag_accessibility,
-    theme_toggle_accessibility, transfer_accessibility, typography_accessibility,
-    upload_accessibility,
+    anchor_accessibility, avatar_accessibility, back_top_accessibility, badge_accessibility,
+    breadcrumb_accessibility, calendar_accessibility, card_accessibility, carousel_accessibility,
+    chart_accessibility, date_range_accessibility, dropdown_accessibility, first_non_empty,
+    image_accessibility, menu_accessibility, pagination_accessibility, progress_accessibility,
+    result_accessibility, rich_text_accessibility, select_accessibility,
+    selectable_list_accessibility, splitter_accessibility, steps_accessibility, tabs_accessibility,
+    tag_accessibility, theme_toggle_accessibility, transfer_accessibility,
+    typography_accessibility, upload_accessibility,
 };
 use super::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotCollapsePanel,
@@ -632,6 +632,7 @@ impl SnapshotFields {
             Self::Label { text, .. } => {
                 AccessibilitySnapshot::named(AccessibilityRole::Text, text.clone())
             }
+            Self::Avatar { text, src, .. } => avatar_accessibility(text, src),
             Self::Input {
                 placeholder,
                 disabled,

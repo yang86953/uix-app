@@ -1,9 +1,14 @@
 //! Avatar — circular avatar with initials/text.
 
+use std::cell::Cell;
+
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
+use crate::draw::image::BitmapHandle;
 use crate::draw::painting::PaintContext;
+use crate::draw::pipeline::invalidate_paint_handle;
 use crate::draw::Color;
+use crate::ui::core::paint_scope::current_paint_widget;
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
 
@@ -15,6 +20,7 @@ component! {
         text_color: Option<Color>,
         square: bool,
         src: String,
+        cached: Cell<Option<BitmapHandle>>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -25,7 +31,7 @@ component! {
         crate::draw::compositor::PicturePolicy::Eligible
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let primary_bg = ctx.tokens().color_primary_bg();
         let primary = ctx.tokens().color_primary();
         let bg = self.bg_color.unwrap_or(primary_bg);
@@ -41,7 +47,24 @@ component! {
             ctx.fill_circle(cx, cy, cr, bg);
         }
 
-        if !self.text.is_empty() {
+        let handle = self.resolve_handle(ctx, tree, frame);
+        let drew_image = if let Some(handle) = handle {
+            let drawable = if self.square {
+                Some(handle)
+            } else {
+                ctx.image_service().circular_crop(handle)
+            };
+            if let Some(drawable) = drawable {
+                ctx.draw_image_fill(drawable, frame);
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        if !drew_image && !self.text.is_empty() {
             let font_size = self.size * 0.45;
             ctx.text_center(&self.text, frame, tc, font_size);
         }
@@ -63,10 +86,11 @@ impl Avatar {
             text_color: None,
             square: false,
             src: String::new(),
+            cached: Cell::new(None),
         }
     }
     pub fn size(mut self, s: f32) -> Self {
-        self.size = s;
+        self.size = if s.is_finite() && s > 0.0 { s } else { 32.0 };
         self
     }
     pub fn bg(mut self, c: Color) -> Self {
@@ -83,11 +107,38 @@ impl Avatar {
     }
     pub fn src(mut self, s: &str) -> Self {
         self.src = s.to_string();
+        self.cached.set(None);
         self
     }
 
     fn intrinsic_size(&self) -> Size {
         Size::new(self.size, self.size)
+    }
+
+    fn resolve_handle(
+        &self,
+        ctx: &PaintContext<'_>,
+        tree: &WidgetTree,
+        frame: Rect,
+    ) -> Option<BitmapHandle> {
+        let images = ctx.image_service();
+        if let Some(handle) = self.cached.get() {
+            if images.is_valid(handle) {
+                return Some(handle);
+            }
+            self.cached.set(None);
+        }
+        let handle = images.ensure_loaded(&self.src)?;
+        self.cached.set(Some(handle));
+        if let Some(id) = current_paint_widget() {
+            invalidate_paint_handle(&tree.invalidation_handle(), id, Some(frame));
+        }
+        Some(handle)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn loaded_handle_for_test(&self) -> Option<BitmapHandle> {
+        self.cached.get()
     }
 }
 
@@ -98,7 +149,10 @@ impl Avatar {
         self.bg_color = next.bg_color;
         self.text_color = next.text_color;
         self.square = next.square;
-        self.src = next.src;
+        if self.src != next.src {
+            self.src = next.src;
+            self.cached.set(None);
+        }
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {

@@ -30,6 +30,13 @@ pub(super) fn chart_accessibility<'a>(
     })
 }
 
+pub(super) fn avatar_accessibility(text: &str, src: &str) -> AccessibilitySnapshot {
+    AccessibilitySnapshot::named(
+        AccessibilityRole::Image,
+        first_non_empty([text, src, "Avatar"]),
+    )
+}
+
 pub(super) fn steps_accessibility(steps: &[Step], current: usize) -> AccessibilitySnapshot {
     AccessibilitySnapshot::new(AccessibilityRole::Navigation).with_state(AccessibilityState {
         value_text: steps.get(current).map(|step| step.title.clone()),
