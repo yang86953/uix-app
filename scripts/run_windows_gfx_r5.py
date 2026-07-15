@@ -791,6 +791,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         except (OSError, ValueError) as error:
             print(f"error: evidence verification failed: {error}", file=sys.stderr)
             return 2
+        if manifest["status"] != "passed":
+            print(
+                "error: evidence verification requires a passed manifest; "
+                f"status={manifest['status']}; path={args.verify_evidence.resolve()}",
+                file=sys.stderr,
+            )
+            return EVIDENCE_VALIDATION_EXIT_CODE
         print(
             f"GFX-R5 evidence verified: status={manifest['status']}; "
             f"cases={len(manifest['cases'])}; path={args.verify_evidence.resolve()}"

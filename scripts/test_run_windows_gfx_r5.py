@@ -1,4 +1,6 @@
 import unittest
+from contextlib import redirect_stderr
+from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -6,6 +8,7 @@ from unittest.mock import patch
 from scripts.run_windows_gfx_r5 import (
     DEVICE_FAULT_ENV,
     DEVICE_LOST_TIMEOUT_ENV,
+    EVIDENCE_VALIDATION_EXIT_CODE,
     ROOT,
     SOAK_SECONDS_ENV,
     VENDOR_ENV,
@@ -14,6 +17,7 @@ from scripts.run_windows_gfx_r5 import (
     file_sha256,
     filter_allowed_untracked,
     load_resumable_evidence,
+    main,
     normalize_log_ending,
     parse_test_inventory,
     require_case_success,
@@ -196,6 +200,30 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             log_path.write_text("tampered evidence\n", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "size changed|SHA-256 changed"):
                 verify_evidence_dir(output)
+
+    def test_verify_command_succeeds_only_for_a_passed_manifest(self) -> None:
+        plan = build_plan("mixed-dpi", "amd", None, 900, 60)
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "evidence"
+            session = EvidenceSession(output, "mixed-dpi", "amd", None, 900, 60, plan)
+            log_path = session.start_case(0)
+            log_path.write_text("target topology unavailable\n", encoding="utf-8")
+            session.finish_case(0, 1, 0.5)
+            session.finish("failed")
+
+            stderr = StringIO()
+            with redirect_stderr(stderr):
+                result = main(["--verify-evidence", str(output)])
+
+            self.assertEqual(result, EVIDENCE_VALIDATION_EXIT_CODE)
+            self.assertIn("requires a passed manifest", stderr.getvalue())
+
+            retry_log = session.start_case(0)
+            retry_log.write_text(passing_log(plan[0]), encoding="utf-8")
+            session.finish_case(0, 0, 0.5)
+            session.finish("passed")
+
+            self.assertEqual(main(["--verify-evidence", str(output)]), 0)
 
     def test_attempt_history_retains_failure_before_success(self) -> None:
         plan = build_plan("mixed-dpi", "amd", None, 900, 60)
