@@ -1,5 +1,8 @@
+use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
-use crate::ui::widgets::{BarChart, BarData, LineChart, LineData};
+use crate::ui::widgets::{BarChart, BarData, LineChart, LineData, PieChart, PieData};
 use crate::ui::AccessibilityRole;
 
 #[test]
@@ -119,4 +122,99 @@ fn line_chart_normalizes_public_geometry_and_exposes_chart_semantics() {
             ..
         }
     ));
+}
+
+#[test]
+fn pie_chart_ignores_invalid_slices_and_normalizes_remaining_fractions() {
+    let chart = PieChart::new().data(vec![
+        PieData::new("used", 40.0, Color::blue()),
+        PieData::new("negative", -10.0, Color::red()),
+        PieData::new("unknown", f32::NAN, Color::green()),
+        PieData::new("free", 60.0, Color::from_rgb(250, 200, 40)),
+    ]);
+    let slices = chart.slices_for_test();
+
+    assert_eq!(slices.len(), 2);
+    assert_eq!(slices[0].0, "used");
+    assert_eq!(slices[1].0, "free");
+    assert!((slices[0].1 - 0.4).abs() < 0.0001);
+    assert!((slices[1].1 - 0.6).abs() < 0.0001);
+    assert!((slices.iter().map(|slice| slice.1).sum::<f32>() - 1.0).abs() < 0.0001);
+}
+
+#[test]
+fn pie_chart_normalizes_geometry_and_exposes_only_valid_slices() {
+    let chart = PieChart::new()
+        .data(vec![
+            PieData::new("valid", 7.5, Color::blue()),
+            PieData::new("zero", 0.0, Color::red()),
+            PieData::new("unknown", f32::INFINITY, Color::green()),
+        ])
+        .size(f32::NAN)
+        .donut(f32::NAN);
+    assert_eq!(
+        chart.measure(Constraints::loose(Size::new(100.0, 80.0))),
+        Size::new(100.0, 80.0)
+    );
+
+    let accessibility = chart.snapshot_fields().accessibility();
+    assert_eq!(accessibility.role, AccessibilityRole::Image);
+    assert_eq!(accessibility.name.as_deref(), Some("Pie chart"));
+    assert_eq!(
+        accessibility.state.value_text.as_deref(),
+        Some("valid: 7.5")
+    );
+    assert!(matches!(
+        chart.snapshot_fields(),
+        SnapshotFields::PieChart {
+            fixed_size: 0.0,
+            hole_radius: 0.0,
+            ..
+        }
+    ));
+    assert!(matches!(
+        PieChart::new().donut(2.0).snapshot_fields(),
+        SnapshotFields::PieChart {
+            hole_radius: 0.9,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn pie_chart_renders_a_labeled_legend_in_reserved_space() {
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(200, 120));
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+    let mut ctx = PaintContext::new_for_test(
+        &mut canvas,
+        font,
+        &fonts,
+        &images,
+        &tokens,
+        96.0,
+        1.0,
+        Orientation::YDown,
+        200,
+        120,
+    );
+    let chart = PieChart::new().data(vec![
+        PieData::new("used", 40.0, Color::blue()),
+        PieData::new("free", 60.0, Color::green()),
+    ]);
+    WidgetRender::render(&chart, Rect::new(0.0, 0.0, 200.0, 120.0), &mut ctx, &tree);
+
+    assert!(
+        (4..16).any(|y| {
+            canvas.surface().pixels()[y * 200 + 138..y * 200 + 150]
+                .iter()
+                .any(|pixel| *pixel != 0)
+        }),
+        "legend swatch or label should paint to the right of the pie area"
+    );
 }

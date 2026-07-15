@@ -1,5 +1,5 @@
 use crate::ui::widgets::{
-    AnchorItem, BadgeStatus, BreadcrumbItem, Date, OptGroup, ProgressMode, SelectableItem,
+    AnchorItem, BadgeStatus, BreadcrumbItem, Date, OptGroup, ProgressMode, SelectableItem, Step,
 };
 
 use super::{AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotTransferItem};
@@ -25,6 +25,16 @@ pub(super) fn chart_accessibility<'a>(
         .collect::<Vec<_>>();
     AccessibilitySnapshot::named(AccessibilityRole::Image, name).with_state(AccessibilityState {
         value_text: (!value_text.is_empty()).then(|| value_text.join("; ")),
+        ..AccessibilityState::default()
+    })
+}
+
+pub(super) fn steps_accessibility(steps: &[Step], current: usize) -> AccessibilitySnapshot {
+    AccessibilitySnapshot::new(AccessibilityRole::Navigation).with_state(AccessibilityState {
+        value_text: steps.get(current).map(|step| step.title.clone()),
+        value_now: Some((current + 1) as f64),
+        value_min: Some(1.0),
+        value_max: Some(steps.len().max(1) as f64),
         ..AccessibilityState::default()
     })
 }
