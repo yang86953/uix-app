@@ -6,6 +6,7 @@ mod carousel;
 mod collapse;
 mod descriptions;
 mod image;
+mod list;
 mod result;
 mod selectable_list;
 mod selectable_list_virtual_scroll;

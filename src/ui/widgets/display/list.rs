@@ -95,9 +95,10 @@ component! {
 
 impl List {
     fn intrinsic_size(&self) -> Size {
-        let h = self.items.len() as f32 * list_item_height(self.list_size)
-            + if self.header.is_empty() { 0.0 } else { 40.0 }
-            + if self.footer.is_empty() { 0.0 } else { 40.0 }
+        let item_h = list_item_height(self.list_size);
+        let h = self.items.len() as f32 * item_h
+            + if self.header.is_empty() { 0.0 } else { item_h }
+            + if self.footer.is_empty() { 0.0 } else { item_h }
             + if self.load_more_text.is_empty() {
                 0.0
             } else {
