@@ -876,6 +876,10 @@ impl SnapshotFields {
                 "Bar chart",
                 data.iter().map(|item| (item.label.as_str(), item.value)),
             ),
+            Self::LineChart { data, .. } => chart_accessibility(
+                "Line chart",
+                data.iter().map(|item| (item.label.as_str(), item.value)),
+            ),
             Self::Select {
                 options,
                 optgroups,
