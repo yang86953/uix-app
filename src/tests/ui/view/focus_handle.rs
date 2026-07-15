@@ -1,6 +1,6 @@
 use crate::tests::common::*;
 use crate::ui::view::{column, embed, input, label, EventExt, View, ViewAdapter};
-use crate::ui::{FocusHandle, FocusHandleError, Input};
+use crate::ui::{Button, FocusHandle, FocusHandleError, Input};
 
 #[test]
 fn focus_handle_routes_focus_and_blur_through_app_state() {
@@ -153,6 +153,48 @@ fn disabled_target_consumes_request_without_forcing_focus() {
     assert!(tree.drain_app_state_focus_requests());
     assert_eq!(tree.managers().focus.focused_component(), None);
     assert!(!tree.has_app_state_focus_requests());
+}
+
+#[test]
+fn reconcile_to_disabled_cancels_focused_keyboard_activation() {
+    let mut tree = ViewAdapter::build(embed(Button::new("Toggle")));
+    let target = tree.root_id().expect("button root");
+    tree.get_mut(target)
+        .expect("button node")
+        .set_frame(Rect::new(0.0, 0.0, 120.0, 40.0));
+    tree.set_focus(Some(target));
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(tree.keyboard_activation.is_some());
+    assert!(tree
+        .get(target)
+        .and_then(|node| node.component().as_any().downcast_ref::<Button>())
+        .is_some_and(|button| button.pressed && button.focused));
+
+    ViewAdapter::reconcile(&mut tree, embed(Button::new("Toggle").disabled(true)));
+
+    assert_eq!(tree.root_id(), Some(target));
+    assert_eq!(tree.managers().focus.focused_component(), None);
+    assert!(tree.keyboard_activation.is_none());
+    assert!(tree
+        .get(target)
+        .and_then(|node| node.component().as_any().downcast_ref::<Button>())
+        .is_some_and(|button| !button.pressed && !button.focused));
+
+    ViewAdapter::reconcile(&mut tree, embed(Button::new("Toggle")));
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyUp {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::NotHandled
+    );
+    assert_eq!(tree.managers().focus.focused_component(), None);
 }
 
 #[cfg(feature = "test-harness")]
