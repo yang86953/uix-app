@@ -42,6 +42,7 @@ pub use crate::component;
 pub use crate::impl_widget_component;
 pub use crate::semantic_handler;
 pub use crate::tree;
+pub use crate::ui::foundation::FocusTrap;
 pub use crate::ui::layout::{
     AlignItems, BoxModel, FlexDirection, FlexLayout, GridLayout, GridTrack, JustifyContent,
     LayoutChild, LayoutEngine, LayoutOutput,
