@@ -297,6 +297,9 @@ impl SettingsService {
     /// 从 JSON 文件加载设置。
     /// 先读入并解析，成功后一次提交 path / values / dirty；失败时保持原状态不变。
     pub fn load(&self, path: &str) -> Result<()> {
+        if path.trim().is_empty() {
+            return Err(Error::invalid_arg("settings: path must not be empty"));
+        }
         if !Path::new(path).exists() {
             let mut state = self.write_state();
             state.path = Some(path.to_string());

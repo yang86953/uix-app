@@ -374,6 +374,17 @@ fn app_settings_is_opt_in() {
 }
 
 #[test]
+fn app_settings_rejects_empty_path_without_registering_service() {
+    for path in ["", "   ", "\t\r\n"] {
+        let mut app = App::new().settings(path);
+
+        assert!(!app.load_configured_settings());
+        assert_eq!(app.exit_code(), 1);
+        assert!(!app.container().has::<SettingsService>());
+    }
+}
+
+#[test]
 fn app_settings_load_registers_settings_service() {
     let path = std::env::temp_dir().join(format!(
         "uix-settings-{}-{}.json",
