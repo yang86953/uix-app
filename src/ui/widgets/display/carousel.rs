@@ -111,7 +111,8 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        self.last_frame.set(Some(frame));
+        self.last_frame
+            .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
         let bg = ctx.tokens().color_bg_container();
         if ctx.paint_pass() == PaintPass::Content {
             ctx.fill_rect(frame, bg, None);
@@ -166,6 +167,8 @@ component! {
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
+        self.last_frame
+            .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
         self.set_child_count(children.len());
         let current = self.current.get();
         children

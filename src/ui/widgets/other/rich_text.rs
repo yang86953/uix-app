@@ -417,7 +417,15 @@ component! {
                             ctx.draw_text("📋", Point::new(btn.x + 5.0, btn.y + 1.0),
                                 Color::from_rgb(200, 200, 200), 10.0);
                         }
-                        code_regions.push(CodeCopyRegion { rect: btn, content: content.clone() });
+                        code_regions.push(CodeCopyRegion {
+                            rect: Rect::new(
+                                btn.x - frame.x,
+                                btn.y - frame.y,
+                                btn.w,
+                                btn.h,
+                            ),
+                            content: content.clone(),
+                        });
                     }
                 }
                 RichTextSegment::Link { content, .. } => {
@@ -563,6 +571,14 @@ impl RichText {
     /// 获取待复制的代码内容（由主循环调用）
     pub fn take_pending_copy(&self) -> Option<String> {
         self.pending_copy.lock().ok().and_then(|mut pc| pc.take())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn code_copy_rect_for_test(&self, index: usize) -> Option<Rect> {
+        self.code_regions
+            .borrow()
+            .get(index)
+            .map(|region| region.rect)
     }
 
     // ── 内部 ──

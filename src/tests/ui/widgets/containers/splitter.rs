@@ -99,11 +99,11 @@ fn splitter_keyboard_can_select_each_handle_and_exposes_slider_value() {
 }
 
 #[test]
-fn splitter_pointer_hit_uses_the_global_frame_origin() {
+fn splitter_pointer_hit_uses_node_local_coordinates() {
     let mut splitter = Splitter::new();
     capture_layout(&splitter, Rect::new(100.0, 50.0, 306.0, 180.0));
     let down = SystemEvent::PointerDown {
-        pos: Point::new(251.0, 80.0),
+        pos: Point::new(151.0, 30.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     };
@@ -113,7 +113,7 @@ fn splitter_pointer_hit_uses_the_global_frame_origin() {
     assert!(EventHandler::wants_continuous_pointer_move(&splitter));
     assert_eq!(
         splitter.on_event(&SystemEvent::PointerUp {
-            pos: Point::new(251.0, 80.0),
+            pos: Point::new(151.0, 30.0),
             button: MouseButton::Left,
             mods: KeyMod::NONE,
         }),
