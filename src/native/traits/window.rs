@@ -43,8 +43,11 @@ impl NativeFrameRequest {
 pub trait IWindowProperties {
     fn width(&self) -> i32;
     fn height(&self) -> i32;
+    /// 设置正的 logical 客户区尺寸。
     fn set_size(&mut self, w: i32, h: i32) -> Result<()>;
+    /// 设置正的 logical 客户区最小尺寸。
     fn set_minimum_size(&mut self, w: i32, h: i32) -> Result<()>;
+    /// 设置正的 logical 客户区最大尺寸。
     fn set_maximum_size(&mut self, w: i32, h: i32) -> Result<()>;
     fn position(&self) -> Point;
     fn set_position(&mut self, x: i32, y: i32) -> Result<()>;

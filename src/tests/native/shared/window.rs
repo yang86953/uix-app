@@ -65,6 +65,53 @@ struct OpacityTrackingOps {
     calls: Rc<RefCell<Vec<f32>>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GeometryCall {
+    Size(i32, i32),
+    Minimum(i32, i32),
+    Maximum(i32, i32),
+}
+
+struct GeometryTrackingOps {
+    calls: Rc<RefCell<Vec<GeometryCall>>>,
+}
+
+impl WindowOps for GeometryTrackingOps {
+    fn os_show(&mut self) -> Result<()> {
+        Ok(())
+    }
+    fn os_hide(&mut self) -> Result<()> {
+        Ok(())
+    }
+    fn os_close(&mut self) -> Result<()> {
+        Ok(())
+    }
+    fn os_set_title(&mut self, _title: &str) -> Result<()> {
+        Ok(())
+    }
+    fn os_set_size(&mut self, width: i32, height: i32) -> Result<()> {
+        self.calls
+            .borrow_mut()
+            .push(GeometryCall::Size(width, height));
+        Ok(())
+    }
+    fn os_set_min_size(&mut self, width: i32, height: i32) -> Result<()> {
+        self.calls
+            .borrow_mut()
+            .push(GeometryCall::Minimum(width, height));
+        Ok(())
+    }
+    fn os_set_max_size(&mut self, width: i32, height: i32) -> Result<()> {
+        self.calls
+            .borrow_mut()
+            .push(GeometryCall::Maximum(width, height));
+        Ok(())
+    }
+    fn native_handle(&self) -> *mut std::ffi::c_void {
+        std::ptr::null_mut()
+    }
+}
+
 impl WindowOps for OpacityTrackingOps {
     fn os_show(&mut self) -> Result<()> {
         Ok(())
@@ -239,6 +286,67 @@ fn window_opacity_accepts_closed_unit_interval() {
 
     assert_eq!(&*calls.borrow(), &[0.0, 0.25, 1.0]);
     assert_eq!(state.borrow().opacity, 1.0);
+}
+
+#[test]
+fn window_geometry_rejects_non_positive_extents_before_platform_mutation() {
+    let state = Rc::new(RefCell::new(WindowState::default()));
+    let calls = Rc::new(RefCell::new(Vec::new()));
+    let mut window = PlatformWindowCore::new(
+        Rc::clone(&state),
+        GeometryTrackingOps {
+            calls: Rc::clone(&calls),
+        },
+        Box::new(NullPresenter::new()),
+    );
+
+    for extent in [(0, 100), (100, 0), (-1, 100), (100, -1)] {
+        assert_error_code(
+            window.properties_mut().set_size(extent.0, extent.1),
+            Errc::InvalidArgument,
+        );
+        assert_error_code(
+            window.properties_mut().set_minimum_size(extent.0, extent.1),
+            Errc::InvalidArgument,
+        );
+        assert_error_code(
+            window.properties_mut().set_maximum_size(extent.0, extent.1),
+            Errc::InvalidArgument,
+        );
+    }
+
+    assert!(calls.borrow().is_empty());
+    assert_eq!((state.borrow().width, state.borrow().height), (800, 600));
+}
+
+#[test]
+fn window_geometry_forwards_positive_extents() {
+    let state = Rc::new(RefCell::new(WindowState::default()));
+    let calls = Rc::new(RefCell::new(Vec::new()));
+    let mut window = PlatformWindowCore::new(
+        Rc::clone(&state),
+        GeometryTrackingOps {
+            calls: Rc::clone(&calls),
+        },
+        Box::new(NullPresenter::new()),
+    );
+
+    window.properties_mut().set_size(640, 480).unwrap();
+    window.properties_mut().set_minimum_size(320, 240).unwrap();
+    window
+        .properties_mut()
+        .set_maximum_size(1920, 1080)
+        .unwrap();
+
+    assert_eq!(
+        &*calls.borrow(),
+        &[
+            GeometryCall::Size(640, 480),
+            GeometryCall::Minimum(320, 240),
+            GeometryCall::Maximum(1920, 1080),
+        ]
+    );
+    assert_eq!((state.borrow().width, state.borrow().height), (640, 480));
 }
 
 #[test]

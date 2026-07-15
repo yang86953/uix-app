@@ -3,6 +3,7 @@
 use crate::core::error::Result;
 use crate::core::geometry::Point;
 use crate::core::WindowId;
+use crate::native::shared::window::validate_window_extent;
 use crate::native::test_harness::fake_graphics_context::FakeGraphicsContext;
 use crate::native::test_harness::fake_presenter::FakePresenter;
 use crate::native::traits::event::FrameRequestToken;
@@ -107,17 +108,20 @@ impl IWindowProperties for FakeWindowProperties {
         self.state.height
     }
     fn set_size(&mut self, w: i32, h: i32) -> Result<()> {
+        validate_window_extent("set_size", w, h)?;
         self.state.width = w;
         self.state.height = h;
         self.state.set_size_calls.push((w, h));
         Ok(())
     }
     fn set_minimum_size(&mut self, w: i32, h: i32) -> Result<()> {
+        validate_window_extent("set_minimum_size", w, h)?;
         self.state.min_w = w;
         self.state.min_h = h;
         Ok(())
     }
     fn set_maximum_size(&mut self, w: i32, h: i32) -> Result<()> {
+        validate_window_extent("set_maximum_size", w, h)?;
         self.state.max_w = w;
         self.state.max_h = h;
         Ok(())
