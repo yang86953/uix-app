@@ -87,12 +87,20 @@ pub(crate) struct SemanticSnapshotBody {
 
 impl WidgetTree {
     fn exposes_semantic_node(&self, id: ComponentId) -> bool {
+        if self
+            .get(id)
+            .is_none_or(|node| node.accessibility().role == crate::ui::AccessibilityRole::None)
+        {
+            return false;
+        }
         let mut ancestor = self.get(id).and_then(|node| node.parent());
         while let Some(parent_id) = ancestor {
             let Some(parent) = self.get(parent_id) else {
                 return false;
             };
-            if !parent.component().exposes_semantic_children() {
+            if parent.accessibility().role == crate::ui::AccessibilityRole::None
+                || !parent.component().exposes_semantic_children()
+            {
                 return false;
             }
             ancestor = parent.parent();

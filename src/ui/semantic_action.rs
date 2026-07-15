@@ -129,6 +129,9 @@ impl WidgetTree {
         let accessibility = snapshot.accessibility();
         let selection = snapshot.selection();
         let role = accessibility.role;
+        if role == AccessibilityRole::None {
+            return Vec::new();
+        }
         let has_click_handler = node
             .handler_signatures()
             .iter()

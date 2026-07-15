@@ -2,7 +2,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use crate::ui::semantic_action::SemanticAction;
-use crate::ui::view::{button, label, AccessibilityExt, ViewAdapter};
+use crate::ui::view::{button, column, label, AccessibilityExt, ViewAdapter};
 use crate::ui::{AccessibilityRole, AccessibilityState, ComponentHandle};
 
 #[test]
@@ -79,4 +79,15 @@ fn custom_button_role_falls_back_to_semantic_invoke_handler() {
         .expect("custom button invoke");
 
     assert_eq!(calls.get(), 1);
+}
+
+#[test]
+fn none_role_excludes_the_node_and_its_subtree_from_semantics() {
+    let tree = ViewAdapter::build(
+        column((label("private child"),))
+            .role(AccessibilityRole::None)
+            .accessible_name("private root"),
+    );
+
+    assert!(tree.semantic_snapshot_body().nodes.is_empty());
 }

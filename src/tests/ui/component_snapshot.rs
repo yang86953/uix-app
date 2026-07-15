@@ -158,20 +158,30 @@ fn accessibility_snapshot_derives_static_aria_metadata() {
         .with_state(crate::ui::AccessibilityState {
             required: true,
             multiline: true,
+            expanded: Some(true),
+            selected: Some(false),
             ..crate::ui::AccessibilityState::default()
-        });
+        })
+        .with_attribute(AriaAttribute::new("aria-description", "Primary field"));
     assert_eq!(required_group.aria_role(), Some("group"));
     assert_eq!(
         required_group.aria_attributes(),
         vec![
             AriaAttribute::new("aria-label", "Email"),
+            AriaAttribute::new("aria-expanded", "true"),
+            AriaAttribute::new("aria-selected", "false"),
             AriaAttribute::new("aria-multiline", "true"),
             AriaAttribute::new("aria-required", "true"),
+            AriaAttribute::new("aria-description", "Primary field"),
         ]
     );
 
     assert_eq!(
         AccessibilitySnapshot::new(AccessibilityRole::Generic).aria_role(),
+        None
+    );
+    assert_eq!(
+        AccessibilitySnapshot::new(AccessibilityRole::None).aria_role(),
         None
     );
 }
