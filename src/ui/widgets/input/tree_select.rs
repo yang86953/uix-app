@@ -157,6 +157,14 @@ component! {
 
     wants_continuous_pointer_move => (&self) -> bool { true }
 
+    hit_test_frame => (&self, frame: Rect) -> Rect {
+        if self.is_present() {
+            tree_select_dirty_rect(frame, self.flatten_nodes().len())
+        } else {
+            frame
+        }
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let bg = ctx.tokens().color_bg_container();
         let border = ctx.tokens().color_border();

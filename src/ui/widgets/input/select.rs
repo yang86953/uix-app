@@ -361,6 +361,18 @@ component! {
 
     wants_continuous_pointer_move => (&self) -> bool { true }
 
+    hit_test_frame => (&self, frame: Rect) -> Rect {
+        if self.is_present() {
+            select_dirty_rect(
+                frame,
+                self.dropdown_damage_row_count(),
+                self.control_height(),
+            )
+        } else {
+            frame
+        }
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.capture_bound_value_dependency();
         let bg = ctx.tokens().color_bg_elevated();

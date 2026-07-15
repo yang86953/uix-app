@@ -112,6 +112,14 @@ component! {
         }
     }
 
+    hit_test_frame => (&self, frame: Rect) -> Rect {
+        if self.is_present() && !self.filtered.is_empty() {
+            autocomplete_dirty_rect(frame, self.filtered.len())
+        } else {
+            frame
+        }
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let bg = ctx.tokens().color_bg_container();
         let border = ctx.tokens().color_border();
