@@ -59,6 +59,22 @@ fn carousel_keyboard_navigation_wraps_and_emits_index() {
 }
 
 #[test]
+fn carousel_pointer_navigation_uses_node_local_coordinates() {
+    let mut carousel = Carousel::new();
+    layout_carousel(&carousel, 3);
+
+    assert_eq!(
+        carousel.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(150.0, 185.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(carousel.current_index(), 1);
+}
+
+#[test]
 fn carousel_snapshot_and_accessibility_expose_runtime_slide() {
     let mut carousel = Carousel::new();
     layout_carousel(&carousel, 3);

@@ -50,7 +50,7 @@ fn qrcode_normalizes_size_and_error_level() {
 }
 
 #[test]
-fn transfer_pointer_uses_frame_origin_and_snapshots_live_membership() {
+fn transfer_pointer_uses_node_local_coordinates_and_snapshots_live_membership() {
     let mut transfer = Transfer::new().source(vec![TransferItem {
         key: "a".into(),
         title: "A".into(),
@@ -58,12 +58,12 @@ fn transfer_pointer_uses_frame_origin_and_snapshots_live_membership() {
     }]);
     transfer.set_frame_for_test(Rect::new(100.0, 50.0, 500.0, 200.0));
     let select = SystemEvent::PointerDown {
-        pos: Point::new(110.0, 80.0),
+        pos: Point::new(10.0, 30.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     };
     let move_right = SystemEvent::PointerDown {
-        pos: Point::new(340.0, 135.0),
+        pos: Point::new(240.0, 85.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     };

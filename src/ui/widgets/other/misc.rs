@@ -220,7 +220,8 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        self.last_frame.set(Some(frame));
+        self.last_frame
+            .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
         let bg = ctx.tokens().color_bg_container();
         let border = ctx.tokens().color_border();
         let text = ctx.tokens().color_text();
@@ -316,7 +317,8 @@ impl Transfer {
 
     #[cfg(test)]
     pub(crate) fn set_frame_for_test(&self, frame: Rect) {
-        self.last_frame.set(Some(frame));
+        self.last_frame
+            .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {

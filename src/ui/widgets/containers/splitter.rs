@@ -138,7 +138,8 @@ component! {
     wants_continuous_pointer_move => (&self) -> bool { self.dragging.is_some() }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        self.last_frame.set(Some(frame));
+        self.last_frame
+            .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
         ctx.fill_rect(frame, ctx.tokens().color_bg_container(), None);
 
         let n = self.ratios.len();
@@ -178,7 +179,8 @@ component! {
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
-        self.last_frame.set(Some(frame));
+        self.last_frame
+            .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
         let mut result = Vec::new();
         let n = children.len().min(self.ratios.len());
         if n == 0 { return result; }
