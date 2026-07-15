@@ -107,22 +107,35 @@ pub struct Collector {
 }
 
 impl Collector {
-    pub fn instance() -> &'static Self {
-        static COLLECTOR: std::sync::OnceLock<Collector> = std::sync::OnceLock::new();
-        COLLECTOR.get_or_init(|| Collector {
+    fn with_config(config: CollectorConfig) -> Self {
+        Self {
             inner: RwLock::new(CollectorInner {
                 errors: VecDeque::new(),
-                config: CollectorConfig::default(),
+                config,
                 callbacks: HashMap::new(),
                 next_callback_id: 1,
                 last_hash: 0,
             }),
             total_collected: AtomicUsize::new(0),
-        })
+        }
+    }
+
+    pub fn instance() -> &'static Self {
+        static COLLECTOR: std::sync::OnceLock<Collector> = std::sync::OnceLock::new();
+        COLLECTOR.get_or_init(|| Collector::with_config(CollectorConfig::default()))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(config: CollectorConfig) -> Self {
+        Self::with_config(config)
     }
 
     pub fn configure(&self, config: CollectorConfig) {
-        self.inner.write().unwrap_or_else(|e| e.into_inner()).config = config;
+        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
+        while inner.errors.len() > config.max_errors {
+            inner.errors.pop_front();
+        }
+        inner.config = config;
     }
 
     pub fn get_config(&self) -> CollectorConfig {
