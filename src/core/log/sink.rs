@@ -67,27 +67,56 @@ impl Record {
             .map(|n| n.to_string_lossy())
             .unwrap_or_else(|| std::borrow::Cow::Borrowed(self.file));
 
-        let mut json = format!(
-            r#"{{"ts":"{}","level":"{}","msg":"{}","file":"{}","line":{}}}"#,
-            ts,
-            self.level.name(),
-            self.message,
-            filename,
-            self.line
-        );
+        let mut json = String::from(r#"{"ts":"#);
+        push_json_string(&mut json, &ts);
+        json.push_str(r#","level":"#);
+        push_json_string(&mut json, self.level.name());
+        json.push_str(r#","msg":"#);
+        push_json_string(&mut json, &self.message);
+        json.push_str(r#","file":"#);
+        push_json_string(&mut json, &filename);
+        json.push_str(r#","line":"#);
+        json.push_str(&self.line.to_string());
         if !self.attributes.is_empty() {
-            json = json.trim_end_matches('}').to_string();
             json.push_str(r#","attrs":{"#);
             for (i, (k, v)) in self.attributes.iter().enumerate() {
                 if i > 0 {
                     json.push(',');
                 }
-                json.push_str(&format!(r#""{}":"{}""#, k, v));
+                push_json_string(&mut json, k);
+                json.push(':');
+                push_json_string(&mut json, v);
             }
-            json.push_str("}}");
+            json.push('}');
         }
+        json.push('}');
         json
     }
+}
+
+fn push_json_string(output: &mut String, value: &str) {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+
+    output.push('"');
+    for character in value.chars() {
+        match character {
+            '"' => output.push_str("\\\""),
+            '\\' => output.push_str("\\\\"),
+            '\u{08}' => output.push_str("\\b"),
+            '\u{0c}' => output.push_str("\\f"),
+            '\n' => output.push_str("\\n"),
+            '\r' => output.push_str("\\r"),
+            '\t' => output.push_str("\\t"),
+            control if control <= '\u{1f}' => {
+                let code = control as usize;
+                output.push_str("\\u00");
+                output.push(HEX[(code >> 4) & 0x0f] as char);
+                output.push(HEX[code & 0x0f] as char);
+            }
+            character => output.push(character),
+        }
+    }
+    output.push('"');
 }
 
 // ════════════════════════════════════════════════════════════════════════════
