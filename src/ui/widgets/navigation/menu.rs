@@ -7,7 +7,9 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::ui::SnapshotFields;
-use crate::ui::{ComponentId, EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetTree};
+use crate::ui::{
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
+};
 use std::cell::{Cell, RefCell};
 
 /// Menu direction.
@@ -46,7 +48,11 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 let idx = self.item_at(pos.x, pos.y);
                 if let Some(i) = idx {
                     if !self.items[i].disabled {

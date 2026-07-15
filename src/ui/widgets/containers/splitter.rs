@@ -10,7 +10,8 @@ use crate::draw::painting::PaintContext;
 use crate::ui::children::WidgetChildren;
 use crate::ui::SnapshotFields;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetComponent, WidgetTree,
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetComponent,
+    WidgetTree,
 };
 
 component! {
@@ -51,7 +52,11 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 if let Some(frame) = self.last_frame.get() {
                     if let Some(idx) = self.hit_test_handle(frame, *pos) {
                         self.dragging = Some(idx);
@@ -62,7 +67,10 @@ component! {
                 }
                 EventResult::NotHandled
             }
-            SystemEvent::PointerUp { .. } => {
+            SystemEvent::PointerUp {
+                button: MouseButton::Left,
+                ..
+            } => {
                 if self.dragging.is_none() {
                     return EventResult::NotHandled;
                 }

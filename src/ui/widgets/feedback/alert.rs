@@ -9,7 +9,7 @@ use crate::draw::Radius;
 use crate::native::traits::system::StatusLevel;
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
-use crate::ui::{ComponentId, EventResult, KeyCode, SemanticEvent, SystemEvent};
+use crate::ui::{ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent};
 
 component! {
     /// Alert — 带类型颜色的警示条。
@@ -39,7 +39,11 @@ component! {
             return EventResult::NotHandled;
         }
         match event {
-            SystemEvent::PointerDown { pos, .. } if self.close_rect().contains(*pos) => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } if self.close_rect().contains(*pos) => {
                 self.dismiss_from_input();
                 EventResult::Handled
             }

@@ -15,7 +15,8 @@ use crate::ui::children::WidgetChildren;
 use crate::ui::layout::engine::{child_from_tree_with_constraints, LayoutChild};
 use crate::ui::state::State;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, SnapshotFields, SystemEvent, WidgetComponent, WidgetTree,
+    ComponentId, EventResult, KeyCode, MouseButton, SnapshotFields, SystemEvent, WidgetComponent,
+    WidgetTree,
 };
 
 pub use crate::native::traits::input::ScrollDirection;
@@ -78,7 +79,11 @@ component! {
                     EventResult::NotHandled
                 }
             }
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 let frame = match self.last_frame.get() {
                     Some(f) => f,
                     None => return EventResult::NotHandled,
@@ -169,7 +174,10 @@ component! {
                 }
                 EventResult::NotHandled
             }
-            SystemEvent::PointerUp { .. } => {
+            SystemEvent::PointerUp {
+                button: MouseButton::Left,
+                ..
+            } => {
                 let was_dragging = self.scrollbar_v.dragging || self.scrollbar_h.dragging;
                 self.scrollbar_v.end_drag();
                 self.scrollbar_h.end_drag();

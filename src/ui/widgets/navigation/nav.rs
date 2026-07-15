@@ -13,7 +13,9 @@ use crate::component;
 use crate::core::{ComponentId, Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
-use crate::ui::{EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree};
+use crate::ui::{
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
+};
 
 /// 共享的导航选中索引 —— 多个 NavItem 持有同一份 Rc 即可联动。
 pub type SharedActive = Rc<Cell<usize>>;
@@ -68,7 +70,10 @@ component! {
         match event {
             SystemEvent::PointerEnter => { self.hovered = true; EventResult::Handled }
             SystemEvent::PointerLeave => { self.hovered = false; EventResult::Handled }
-            SystemEvent::PointerDown { .. } => {
+            SystemEvent::PointerDown {
+                button: MouseButton::Left,
+                ..
+            } => {
                 self.activate();
                 EventResult::Handled
             }

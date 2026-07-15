@@ -9,7 +9,7 @@ use crate::draw::Color;
 use crate::native::traits::system::StatusLevel;
 use crate::ui::animation::AnimationConfig;
 use crate::ui::core::widget::WidgetTree;
-use crate::ui::{EventResult, Placement, SnapshotFields, SystemEvent};
+use crate::ui::{EventResult, MouseButton, Placement, SnapshotFields, SystemEvent};
 
 use super::toast_motion::{ToastMotion, ToastMotionEntry, ToastQueue};
 
@@ -114,7 +114,11 @@ component! {
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         self.sync_motion();
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 let frame = self.last_frame.get();
                 let clicked = {
                     let motion = self.motion.borrow();

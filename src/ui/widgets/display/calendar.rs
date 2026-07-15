@@ -8,7 +8,9 @@ use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::widgets::input::date_picker::{days_in_month, first_weekday, Date};
 use crate::ui::SnapshotFields;
-use crate::ui::{ComponentId, EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetTree};
+use crate::ui::{
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
+};
 use std::cell::Cell;
 
 const HEADER_HEIGHT: f32 = 40.0;
@@ -38,7 +40,11 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 let width = self.cell_size * 7.0;
                 if pos.x < 0.0 || pos.x >= width || pos.y < 0.0 {
                     return EventResult::NotHandled;

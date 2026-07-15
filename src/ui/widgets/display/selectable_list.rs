@@ -8,7 +8,8 @@ use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::foundation::virtual_scroll::VirtualListScroll;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    WidgetTree,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -276,7 +277,11 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 if !self.header_button_text.is_empty() && self.header_button_rect().contains(*pos) {
                     self.pending_action.set(Some(SelectableListAction::Header));
                     return EventResult::Handled;
