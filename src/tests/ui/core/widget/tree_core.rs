@@ -4551,6 +4551,44 @@ fn window_blur_releases_pressed_visual_without_clearing_focus() {
 }
 
 #[test]
+fn window_focus_lifecycle_releases_keyboard_activation_and_is_idempotent() {
+    let mut tree = WidgetTree::new();
+    let target = tree.set_root(Box::new(Button::new("Keyboard focus")));
+    tree.get_mut(target)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 120.0, 40.0));
+    tree.set_focus(Some(target));
+    tree.dispatch_event(&SystemEvent::KeyDown {
+        key: KeyCode::Enter,
+        mods: KeyMod::NONE,
+    });
+    assert!(tree
+        .get(target)
+        .and_then(|node| node.component().as_any().downcast_ref::<Button>())
+        .is_some_and(|button| button.pressed && button.focused));
+
+    tree.dispatch_event(&SystemEvent::WindowBlur);
+    tree.dispatch_event(&SystemEvent::WindowBlur);
+
+    assert!(!tree.window_focused);
+    assert_eq!(tree.managers().focus.focused_component(), Some(target));
+    assert!(tree
+        .get(target)
+        .and_then(|node| node.component().as_any().downcast_ref::<Button>())
+        .is_some_and(|button| !button.pressed && !button.focused));
+
+    tree.dispatch_event(&SystemEvent::WindowFocus);
+    tree.dispatch_event(&SystemEvent::WindowFocus);
+
+    assert!(tree.window_focused);
+    assert_eq!(tree.managers().focus.focused_component(), Some(target));
+    assert!(tree
+        .get(target)
+        .and_then(|node| node.component().as_any().downcast_ref::<Button>())
+        .is_some_and(|button| !button.pressed && button.focused));
+}
+
+#[test]
 fn capture_phase_requires_explicit_opt_in() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));
