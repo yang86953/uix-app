@@ -25,6 +25,8 @@ component! {
         pending_change: Cell<Option<usize>>,
     }
 
+    tab_index => (&self) -> i32 { 1 }
+
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
     }
@@ -328,10 +330,11 @@ impl Segmented {
         self.disabled = next.disabled;
         self.disabled_options = next.disabled_options;
         self.segmented_size = next.segmented_size;
-        self.selected = controlled_selected.unwrap_or_else(|| {
-            (self.selected < self.options.len())
-                .then_some(self.selected)
-                .unwrap_or(usize::MAX)
-        });
+        let preserved_selection = if self.selected < self.options.len() {
+            self.selected
+        } else {
+            usize::MAX
+        };
+        self.selected = controlled_selected.unwrap_or(preserved_selection);
     }
 }

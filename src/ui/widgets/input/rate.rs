@@ -3,6 +3,7 @@
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
+use crate::draw::Radius;
 use crate::native::traits::input::ControlSize;
 use crate::ui::state::State;
 use crate::ui::SnapshotFields;
@@ -24,6 +25,8 @@ component! {
         character: String,
         rate_size: ControlSize,
     }
+
+    tab_index => (&self) -> i32 { 1 }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
@@ -147,6 +150,14 @@ component! {
                     None,
                 );
             }
+        }
+        if self.focused {
+            ctx.stroke_rect(
+                frame,
+                ctx.tokens().color_primary(),
+                1.5,
+                Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+            );
         }
     }
 }

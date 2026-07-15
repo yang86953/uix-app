@@ -114,3 +114,25 @@ fn provider_size_and_explicit_override_drive_segmented_layout_and_hit_widths() {
     });
     assert_eq!(small.measure(max).h, 24.0);
 }
+
+#[test]
+fn segmented_is_keyboard_focusable_and_moves_after_focus() {
+    let mut segmented = Segmented::new(["Day", "Week"]);
+    assert_eq!(WidgetComponent::tab_index(&segmented), 1);
+    assert_eq!(
+        segmented.on_event(&SystemEvent::FocusIn),
+        EventResult::Handled
+    );
+    assert_eq!(
+        segmented.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Right,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(segmented.current_value().as_deref(), Some("Week"));
+    assert_eq!(
+        segmented.on_event(&SystemEvent::FocusOut),
+        EventResult::Handled
+    );
+}
