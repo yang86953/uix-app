@@ -1,5 +1,5 @@
 use crate::core::log::logger::*;
-use crate::core::log::{CallbackSink, Record, Sink};
+use crate::core::log::{CallbackSink, HandlerSlot, LogHandler, Record, Sink};
 use crate::core::{Errc, Error};
 use crate::tests::common::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -9,6 +9,16 @@ struct ReentrantSink {
     logger: Weak<Logger>,
     writes: AtomicUsize,
     flushes: AtomicUsize,
+}
+
+struct CountingHandler {
+    calls: Arc<AtomicUsize>,
+}
+
+impl LogHandler for CountingHandler {
+    fn handle(&self, _level: Level, _message: &str, _file: &'static str, _line: u32) {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 impl ReentrantSink {
@@ -113,4 +123,23 @@ fn error_logging_does_not_duplicate_record_level_or_location() {
     let rendered = records[0].to_string();
     assert_eq!(rendered.matches("[ERROR]").count(), 1);
     assert_eq!(rendered.matches("(failure.rs:17)").count(), 1);
+}
+
+#[test]
+fn default_handler_access_does_not_block_the_first_explicit_registration() {
+    let mut slot = HandlerSlot::with_fallback();
+    let _fallback = slot.handler();
+    let first_calls = Arc::new(AtomicUsize::new(0));
+    let second_calls = Arc::new(AtomicUsize::new(0));
+
+    assert!(slot.install(Box::new(CountingHandler {
+        calls: Arc::clone(&first_calls),
+    })));
+    assert!(!slot.install(Box::new(CountingHandler {
+        calls: Arc::clone(&second_calls),
+    })));
+    slot.handler().handle(Level::Info, "probe", "handler.rs", 1);
+
+    assert_eq!(first_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(second_calls.load(Ordering::Relaxed), 0);
 }

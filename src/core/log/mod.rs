@@ -13,7 +13,7 @@ pub mod logger;
 pub mod sink;
 
 use std::fmt;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock, RwLock};
 
 use crate::core::error::Error;
 
@@ -127,19 +127,53 @@ impl LogHandler for DefaultHandler {
 // 全局处理器
 // ════════════════════════════════════════════════════════════════════════════
 
-static GLOBAL_HANDLER: OnceLock<Box<dyn LogHandler>> = OnceLock::new();
+pub(crate) struct HandlerSlot {
+    handler: Arc<dyn LogHandler>,
+    is_fallback: bool,
+}
 
-/// 注册全局日志处理器。通常由 services 初始化时调用。
-/// 只能设置一次，后续调用静默忽略。
+impl HandlerSlot {
+    pub(crate) fn with_fallback() -> Self {
+        Self {
+            handler: Arc::new(DefaultHandler::new(Level::Warn)),
+            is_fallback: true,
+        }
+    }
+
+    pub(crate) fn install(&mut self, handler: Box<dyn LogHandler>) -> bool {
+        if !self.is_fallback {
+            return false;
+        }
+        self.handler = handler.into();
+        self.is_fallback = false;
+        true
+    }
+
+    pub(crate) fn handler(&self) -> Arc<dyn LogHandler> {
+        Arc::clone(&self.handler)
+    }
+}
+
+static GLOBAL_HANDLER: OnceLock<RwLock<HandlerSlot>> = OnceLock::new();
+
+fn handler_slot() -> &'static RwLock<HandlerSlot> {
+    GLOBAL_HANDLER.get_or_init(|| RwLock::new(HandlerSlot::with_fallback()))
+}
+
+/// 注册首个显式全局日志处理器。提前使用默认 fallback 不占用注册名额。
 pub fn set_handler(handler: Box<dyn LogHandler>) {
-    let _ = GLOBAL_HANDLER.set(handler);
+    let _ = handler_slot()
+        .write()
+        .unwrap_or_else(|error| error.into_inner())
+        .install(handler);
 }
 
 /// 获取当前日志处理器。默认使用 DefaultHandler（stderr 输出）。
-fn handler() -> &'static dyn LogHandler {
-    GLOBAL_HANDLER
-        .get_or_init(|| Box::new(DefaultHandler::new(Level::Warn)))
-        .as_ref()
+fn handler() -> Arc<dyn LogHandler> {
+    handler_slot()
+        .read()
+        .unwrap_or_else(|error| error.into_inner())
+        .handler()
 }
 
 /// 设置日志级别（委托给当前处理器）。
