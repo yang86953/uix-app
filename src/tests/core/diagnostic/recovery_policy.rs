@@ -1,4 +1,6 @@
-use crate::core::diagnostic::{CircuitBreaker, CircuitState};
+use crate::core::diagnostic::{
+    CircuitBreaker, CircuitState, ExponentialBackoffRetryPolicy, RetryPolicy,
+};
 use std::time::Duration;
 
 #[test]
@@ -56,4 +58,20 @@ fn circuit_failure_threshold_is_never_zero() {
     assert_eq!(circuit.threshold(), 1);
     circuit.record_failure();
     assert_eq!(circuit.state(), CircuitState::Open);
+}
+
+#[test]
+fn exponential_backoff_normalizes_invalid_float_configuration() {
+    let non_finite = ExponentialBackoffRetryPolicy::new(3, 25, 1_000, f64::NAN, f64::INFINITY);
+    assert_eq!(non_finite.delay(2), Duration::from_millis(25));
+    assert_eq!(
+        non_finite.describe(),
+        "exponential_backoff(max=3, init=25ms, max_delay=1000ms, mult=1, jitter=0)"
+    );
+
+    let out_of_range = ExponentialBackoffRetryPolicy::new(3, 25, 1_000, 0.5, 2.0);
+    assert_eq!(
+        out_of_range.describe(),
+        "exponential_backoff(max=3, init=25ms, max_delay=1000ms, mult=1, jitter=1)"
+    );
 }
