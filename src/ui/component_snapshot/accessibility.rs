@@ -149,6 +149,22 @@ pub(super) fn rich_text_accessibility(
     })
 }
 
+pub(super) fn typography_accessibility(
+    content: &str,
+    disabled: bool,
+    copyable: bool,
+) -> AccessibilitySnapshot {
+    AccessibilitySnapshot::named(
+        if copyable {
+            AccessibilityRole::Button
+        } else {
+            AccessibilityRole::Text
+        },
+        content,
+    )
+    .with_state(AccessibilityState::disabled(disabled))
+}
+
 pub(super) fn transfer_accessibility(
     source: &[SnapshotTransferItem],
     target: &[SnapshotTransferItem],
