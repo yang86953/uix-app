@@ -124,6 +124,15 @@ fn staging_size_is_full_rgba_frame() {
 }
 
 #[test]
+fn cpu_shadow_allocation_is_typed_and_initialized() {
+    assert_eq!(allocate_cpu_shadow(3).expect("small shadow"), vec![0; 3]);
+
+    let error = allocate_cpu_shadow(usize::MAX).expect_err("capacity overflow");
+    assert_eq!(error.code(), Errc::GraphicsOutOfMemory);
+    assert!(error.message().contains("CPU readback shadow allocation"));
+}
+
+#[test]
 fn vulkan_present_statuses_are_typed_graphics_failures() {
     assert_eq!(
         vk_err("vkQueuePresentKHR", vk::Result::ERROR_OUT_OF_DATE_KHR).code(),
