@@ -81,6 +81,7 @@ impl ImageSlot {
 pub struct ImageService {
     slots: RefCell<Vec<ImageSlot>>,
     pub(crate) path_cache: RefCell<HashMap<String, BitmapHandle>>,
+    circular_cache: RefCell<HashMap<BitmapHandle, BitmapHandle>>,
 }
 
 impl Default for ImageService {
@@ -94,6 +95,7 @@ impl ImageService {
         Self {
             slots: RefCell::new(Vec::new()),
             path_cache: RefCell::new(HashMap::new()),
+            circular_cache: RefCell::new(HashMap::new()),
         }
     }
 
@@ -151,8 +153,66 @@ impl ImageService {
             .map(f)
     }
 
+    /// 返回源位图的居中正方形圆形裁切；透明角已预乘，结果按源句柄缓存。
+    pub fn circular_crop(&self, handle: BitmapHandle) -> Option<BitmapHandle> {
+        let cached = self.circular_cache.borrow().get(&handle).copied();
+        if let Some(cached) = cached {
+            if self.is_valid(cached) {
+                return Some(cached);
+            }
+            self.circular_cache.borrow_mut().remove(&handle);
+        }
+
+        let (side, mut pixels) = self.with_slot(handle, |slot| {
+            let side = slot.width.min(slot.height).max(0);
+            let offset_x = (slot.width - side) / 2;
+            let offset_y = (slot.height - side) / 2;
+            let side_usize = side as usize;
+            let source_width = slot.width as usize;
+            let mut pixels = Vec::with_capacity(side_usize.saturating_mul(side_usize));
+            for y in 0..side_usize {
+                let source_start = (offset_y as usize + y) * source_width + offset_x as usize;
+                let source_end = source_start + side_usize;
+                pixels.extend_from_slice(&slot.pixels[source_start..source_end]);
+            }
+            (side, pixels)
+        })?;
+        if side <= 0 {
+            return None;
+        }
+
+        let radius = side as f32 * 0.5;
+        let center = radius;
+        for y in 0..side as usize {
+            for x in 0..side as usize {
+                let dx = x as f32 + 0.5 - center;
+                let dy = y as f32 + 0.5 - center;
+                if dx * dx + dy * dy > radius * radius {
+                    pixels[y * side as usize + x] = 0;
+                }
+            }
+        }
+
+        let cropped = self.insert_slot(ImageSlot::from_decoded(side, side, pixels, None));
+        self.circular_cache.borrow_mut().insert(handle, cropped);
+        Some(cropped)
+    }
+
     /// 卸载位图并清除路径缓存引用。
     pub fn unload(&self, handle: BitmapHandle) {
+        let derived = {
+            let mut cache = self.circular_cache.borrow_mut();
+            let derived = cache.remove(&handle);
+            cache.retain(|_, value| *value != handle);
+            derived
+        };
+        self.invalidate_slot(handle);
+        if let Some(derived) = derived {
+            self.invalidate_slot(derived);
+        }
+    }
+
+    fn invalidate_slot(&self, handle: BitmapHandle) {
         let mut slots = self.slots.borrow_mut();
         let idx = handle.slot_index();
         if let Some(slot) = slots
