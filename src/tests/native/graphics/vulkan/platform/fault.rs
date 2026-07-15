@@ -13,6 +13,52 @@ use crate::tests::native::gfx_r5::{
     requested_external_device_loss_timeout,
 };
 
+#[cfg(windows)]
+const EXTERNAL_RESET_RECOVERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+#[cfg(windows)]
+const EXTERNAL_RESET_WATCHDOG_GRACE: std::time::Duration = std::time::Duration::from_secs(15);
+
+#[cfg(windows)]
+struct ExternalResetWatchdog {
+    completion: Option<std::sync::mpsc::Sender<()>>,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
+
+#[cfg(windows)]
+impl ExternalResetWatchdog {
+    fn arm(observation_timeout: std::time::Duration) -> Self {
+        let hard_timeout =
+            observation_timeout + EXTERNAL_RESET_RECOVERY_TIMEOUT + EXTERNAL_RESET_WATCHDOG_GRACE;
+        let (completion, receiver) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            if receiver.recv_timeout(hard_timeout)
+                == Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            {
+                eprintln!(
+                    "GFX-R5 external reset hard timeout after {hard_timeout:?}; aborting a blocked driver call"
+                );
+                std::process::abort();
+            }
+        });
+        Self {
+            completion: Some(completion),
+            worker: Some(worker),
+        }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for ExternalResetWatchdog {
+    fn drop(&mut self) {
+        if let Some(completion) = self.completion.take() {
+            let _ = completion.send(());
+        }
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
 #[test]
 fn device_fault_feature_query_prefers_vulkan_1_1_core() {
     assert_eq!(
@@ -225,6 +271,13 @@ fn windows_vulkan_gfx_r5_external_reset_returns_device_lost_with_diagnostics() {
     let mut surface_faults = 0_u64;
     let mut last_surface_fault = None;
 
+    eprintln!(
+        "GFX-R5 external reset armed: trigger the driver reset within {timeout:?}; expected={}; device_fault={expect_fault_report}; {}; swapchain_maintenance1=true",
+        expected_vendor.label(),
+        first.adapter_info.diagnostic_summary()
+    );
+    let _watchdog = ExternalResetWatchdog::arm(timeout);
+
     let (fault, first_detected) = loop {
         let _ = platform.event_loop().poll_event(&|_| true);
         let first_result = first.present_pixels(
@@ -304,7 +357,6 @@ fn windows_vulkan_gfx_r5_external_reset_returns_device_lost_with_diagnostics() {
     drop((first, second));
     first_window.close().expect("close first window");
     second_window.close().expect("close second window");
-    std::thread::sleep(std::time::Duration::from_millis(500));
 
     let mut replacement_window = platform
         .window_manager()
@@ -312,8 +364,24 @@ fn windows_vulkan_gfx_r5_external_reset_returns_device_lost_with_diagnostics() {
         .expect("replacement window");
     replacement_window.show().expect("show replacement window");
     let _ = platform.event_loop().poll_event(&|_| true);
-    let mut replacement = VulkanContext::new(replacement_window.native_surface_ptr(), 128, 96)
-        .expect("replacement VulkanContext after external reset");
+    let recovery_deadline = std::time::Instant::now() + EXTERNAL_RESET_RECOVERY_TIMEOUT;
+    let mut replacement_attempts = 0_u64;
+    let mut replacement = loop {
+        replacement_attempts += 1;
+        match VulkanContext::new(replacement_window.native_surface_ptr(), 128, 96) {
+            Ok(context) => break context,
+            Err(error) => {
+                let last_error = error.what();
+                assert!(
+                    std::time::Instant::now() < recovery_deadline,
+                    "replacement VulkanContext did not recover within {:?}; attempts={replacement_attempts}; last_error={last_error}",
+                    EXTERNAL_RESET_RECOVERY_TIMEOUT
+                );
+                let _ = platform.event_loop().poll_event(&|_| true);
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
+    };
     assert_ne!(replacement.shared_device_identity(), lost_identity);
     expected_vendor.assert_runtime(
         &replacement.adapter_info,
@@ -336,7 +404,7 @@ fn windows_vulkan_gfx_r5_external_reset_returns_device_lost_with_diagnostics() {
         )
         .expect("replacement present after external reset");
     println!(
-        "GFX-R5 external device loss: expected={}; detector={}; frames={frames}; surface_faults={surface_faults}; fault={}; peer={}; replacement={}",
+        "GFX-R5 external device loss: expected={}; detector={}; frames={frames}; surface_faults={surface_faults}; fault={}; peer={}; replacement_attempts={replacement_attempts}; replacement={}",
         expected_vendor.label(),
         if first_detected { "first" } else { "second" },
         fault.what(),
