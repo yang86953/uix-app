@@ -2,8 +2,10 @@ use crate::draw::engine::cpu::canvas_2d::CpuCanvas2D;
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
-use crate::ui::view::{column, embed, ViewAdapter};
-use crate::ui::{ComponentOverrides, ConfigProvider, Input, SnapshotFields, TokenPatch};
+use crate::ui::view::{column, embed, label, ViewAdapter};
+use crate::ui::{
+    ComponentOverrides, ConfigProvider, Input, List, SnapshotFields, Table, TokenPatch,
+};
 
 crate::component! {
     struct TokenRenderProbe {
@@ -135,4 +137,45 @@ fn component_token_patch_merges_with_subtree_theme_during_render() {
         (patched_primary, dark.color_bg_container)
     );
     assert_eq!(ctx.tokens().color_primary(), root_tokens.color_primary);
+}
+
+#[test]
+fn configured_empty_renderer_builds_views_for_list_and_table() {
+    let list_tree = ViewAdapter::build(
+        ConfigProvider::new()
+            .render_empty(|context| label(format!("{} empty", context.component_name())))
+            .child(List::new),
+    );
+    assert!(list_tree.find_by_type::<List>().is_none());
+    assert_eq!(
+        list_tree
+            .find_all_by_type::<crate::ui::Label>()
+            .first()
+            .map(|(_, label)| label.text()),
+        Some("List empty")
+    );
+
+    let table_tree = ViewAdapter::build(
+        ConfigProvider::new()
+            .render_empty(|context| label(format!("{} empty", context.component_name())))
+            .child(Table::new),
+    );
+    assert!(table_tree.find_by_type::<Table>().is_none());
+    assert_eq!(
+        table_tree
+            .find_all_by_type::<crate::ui::Label>()
+            .first()
+            .map(|(_, label)| label.text()),
+        Some("Table empty")
+    );
+}
+
+#[test]
+fn non_empty_list_keeps_its_component_view() {
+    let tree = ViewAdapter::build(
+        ConfigProvider::new()
+            .render_empty(|_| label("unused"))
+            .child(|| List::new().items(vec!["one"])),
+    );
+    assert!(tree.find_by_type::<List>().is_some());
 }

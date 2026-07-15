@@ -167,3 +167,14 @@ impl Default for List {
         Self::new()
     }
 }
+
+impl crate::ui::view::View for List {
+    fn build(self) -> crate::ui::view::ViewNode {
+        if self.items.is_empty() {
+            if let Some(empty) = crate::ui::config::render_empty_for::<Self>() {
+                return empty;
+            }
+        }
+        crate::ui::view::ViewNode::leaf(self)
+    }
+}

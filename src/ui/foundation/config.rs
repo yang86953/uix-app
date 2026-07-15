@@ -21,6 +21,8 @@ pub struct ComponentConfig {
     pub overrides: ComponentOverrides,
     /// 按组件类型应用的设计令牌补丁。
     pub component_tokens: ComponentTokenOverrides,
+    /// 数据组件为空时使用的 View factory。
+    pub empty_renderer: Option<EmptyRenderer>,
 }
 
 impl PartialEq for ComponentConfig {
@@ -29,6 +31,11 @@ impl PartialEq for ComponentConfig {
             && self.disabled == other.disabled
             && self.overrides == other.overrides
             && self.component_tokens == other.component_tokens
+            && match (&self.empty_renderer, &other.empty_renderer) {
+                (Some(left), Some(right)) => left.is_same_renderer(right),
+                (None, None) => true,
+                _ => false,
+            }
             && match (&self.theme, &other.theme) {
                 (Some(left), Some(right)) => left.is_same_provider(right),
                 (None, None) => true,
@@ -45,6 +52,7 @@ impl Default for ComponentConfig {
             theme: None,
             overrides: ComponentOverrides::default(),
             component_tokens: ComponentTokenOverrides::default(),
+            empty_renderer: None,
         }
     }
 }
@@ -78,10 +86,71 @@ impl ComponentConfig {
         self.component_tokens.insert::<T>(patch);
         self
     }
+
+    pub fn render_empty<F, V>(mut self, renderer: F) -> Self
+    where
+        F: Fn(EmptyContext) -> V + Send + Sync + 'static,
+        V: View,
+    {
+        self.empty_renderer = Some(EmptyRenderer::new(renderer));
+        self
+    }
 }
 
 /// 应用级组件默认配置。
 pub type Config = ComponentConfig;
+
+/// 标识正在请求空态 View 的数据组件。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EmptyContext {
+    component_name: &'static str,
+}
+
+impl EmptyContext {
+    fn of<T: WidgetComponent>() -> Self {
+        let full_name = std::any::type_name::<T>();
+        Self {
+            component_name: full_name.rsplit("::").next().map_or(full_name, |name| name),
+        }
+    }
+
+    pub fn component_name(self) -> &'static str {
+        self.component_name
+    }
+}
+
+/// 由 `ComponentConfig` 持有的可克隆空态 View factory。
+#[derive(Clone)]
+pub struct EmptyRenderer {
+    renderer: Arc<dyn Fn(EmptyContext) -> ViewNode + Send + Sync>,
+}
+
+impl EmptyRenderer {
+    pub fn new<F, V>(renderer: F) -> Self
+    where
+        F: Fn(EmptyContext) -> V + Send + Sync + 'static,
+        V: View,
+    {
+        Self {
+            renderer: Arc::new(move |context| renderer(context).build()),
+        }
+    }
+
+    pub fn render<T: WidgetComponent>(&self) -> ViewNode {
+        (self.renderer)(EmptyContext::of::<T>())
+    }
+
+    fn is_same_renderer(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.renderer, &other.renderer)
+    }
+}
+
+/// 为指定组件类型构建当前配置的空态 View。
+pub fn render_empty_for<T: WidgetComponent>() -> Option<ViewNode> {
+    use_config()
+        .empty_renderer
+        .map(|renderer| renderer.render::<T>())
+}
 
 /// 按组件类型索引的设计令牌补丁集合。
 #[derive(Clone, Default, PartialEq)]
@@ -169,6 +238,7 @@ struct ConfigPatch {
     theme: Option<Theme>,
     overrides: Option<ComponentOverrides>,
     component_tokens: ComponentTokenOverrides,
+    empty_renderer: Option<EmptyRenderer>,
 }
 
 impl ConfigPatch {
@@ -187,6 +257,9 @@ impl ConfigPatch {
             config.overrides = overrides;
         }
         config.component_tokens.extend(self.component_tokens);
+        if let Some(renderer) = self.empty_renderer {
+            config.empty_renderer = Some(renderer);
+        }
         config
     }
 }
@@ -238,6 +311,15 @@ impl<F> ConfigProvider<F> {
 
     pub fn component_tokens<T: WidgetComponent>(mut self, patch: TokenPatch) -> Self {
         self.patch.component_tokens.insert::<T>(patch);
+        self
+    }
+
+    pub fn render_empty<R, V>(mut self, renderer: R) -> Self
+    where
+        R: Fn(EmptyContext) -> V + Send + Sync + 'static,
+        V: View,
+    {
+        self.patch.empty_renderer = Some(EmptyRenderer::new(renderer));
         self
     }
 
