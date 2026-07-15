@@ -201,8 +201,14 @@ fn windows_vulkan_gfx_r5_external_reset_returns_device_lost_with_diagnostics() {
         .expect("first VulkanContext");
     let mut second = VulkanContext::new(second_window.native_surface_ptr(), 128, 96)
         .expect("second VulkanContext");
-    expected_vendor.assert_adapter(&first.adapter_info);
-    expected_vendor.assert_adapter(&second.adapter_info);
+    expected_vendor.assert_runtime(
+        &first.adapter_info,
+        first.swapchain_maintenance1_enabled_for_test(),
+    );
+    expected_vendor.assert_runtime(
+        &second.adapter_info,
+        second.swapchain_maintenance1_enabled_for_test(),
+    );
     assert_eq!(
         first.shared_device_identity(),
         second.shared_device_identity()
@@ -309,7 +315,10 @@ fn windows_vulkan_gfx_r5_external_reset_returns_device_lost_with_diagnostics() {
     let mut replacement = VulkanContext::new(replacement_window.native_surface_ptr(), 128, 96)
         .expect("replacement VulkanContext after external reset");
     assert_ne!(replacement.shared_device_identity(), lost_identity);
-    expected_vendor.assert_adapter(&replacement.adapter_info);
+    expected_vendor.assert_runtime(
+        &replacement.adapter_info,
+        replacement.swapchain_maintenance1_enabled_for_test(),
+    );
     assert_eq!(
         replacement.device_fault_reporting_enabled_for_test(),
         expect_fault_report,
