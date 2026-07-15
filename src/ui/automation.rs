@@ -364,6 +364,12 @@ impl TestApp {
         if !node.is_enabled() {
             return Err(AutomationError::Disabled(automation_id.to_string()));
         }
+        if let Some(blocker) = self.tree.blocking_modal_for(node.id) {
+            return Err(AutomationError::Blocked {
+                automation_id: automation_id.to_string(),
+                blocker,
+            });
+        }
         let Some(pos) = node.center() else {
             return Err(AutomationError::NotVisible(automation_id.to_string()));
         };

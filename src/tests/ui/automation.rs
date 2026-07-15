@@ -7,6 +7,7 @@ use crate::ui::test_harness::{
     AutomationAction, AutomationActionKind, AutomationError, AutomationErrorCode, AutomationTarget,
     TestApp, AUTOMATION_SCHEMA,
 };
+use crate::ui::OverlayKind;
 
 static NEXT_TEMP_DIRECTORY: AtomicU64 = AtomicU64::new(1);
 
@@ -67,6 +68,37 @@ fn click_uses_hit_testing_and_settles_reconcile() {
             .as_deref(),
         Some("Count: 1")
     );
+}
+
+#[test]
+fn click_reports_modal_blocking_without_dispatching_to_background_target() {
+    let count = State::new(0i32);
+    let count_for_root = count.clone();
+    let mut app = TestApp::new((320.0, 120.0), move || {
+        let count = count_for_root.clone();
+        column((
+            button("Background")
+                .on_click(&count, |count| count.update(|value| *value += 1))
+                .automation_id("background"),
+            button("Modal owner").automation_id("modal"),
+        ))
+    });
+    let modal = app.snapshot().find("modal").unwrap().id;
+    app.tree_mut()
+        .overlay_stack_mut()
+        .push(modal, OverlayKind::Modal);
+
+    let error = app.click("background").unwrap_err();
+
+    assert_eq!(
+        error,
+        AutomationError::Blocked {
+            automation_id: "background".to_owned(),
+            blocker: modal,
+        }
+    );
+    assert_eq!(error.code(), AutomationErrorCode::Blocked);
+    assert_eq!(count.get(), 0);
 }
 
 #[test]
