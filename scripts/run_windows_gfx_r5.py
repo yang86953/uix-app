@@ -546,10 +546,13 @@ def verify_evidence_dir(output_dir: Path) -> dict[str, object]:
         raise ValueError("evidence resume_count must be a non-negative integer")
     if not isinstance(resumed_at, list) or len(resumed_at) != resume_count:
         raise ValueError("evidence resumed_at history does not match resume_count")
+    plan = plan_from_manifest_configuration(manifest)
+    require_manifest_matches_plan(manifest, plan)
+    require_recorded_provenance(manifest)
 
     case_statuses: list[object] = []
     seen_logs: set[str] = set()
-    for case in cases:
+    for case, planned_case in zip(cases, plan):
         if not isinstance(case, dict):
             raise ValueError("evidence case must be an object")
         case_name = case.get("name")
@@ -582,8 +585,7 @@ def verify_evidence_dir(output_dir: Path) -> dict[str, object]:
             if attempt_status != "running":
                 verify_attempt_log(
                     output_dir,
-                    case_name,
-                    test_name,
+                    planned_case,
                     attempt,
                     seen_logs,
                 )
@@ -597,19 +599,16 @@ def verify_evidence_dir(output_dir: Path) -> dict[str, object]:
         raise ValueError("failed manifest contains no failed case")
     if status == "interrupted" and "interrupted" not in case_statuses:
         raise ValueError("interrupted manifest contains no interrupted case")
-    plan = plan_from_manifest_configuration(manifest)
-    require_manifest_matches_plan(manifest, plan)
-    require_recorded_provenance(manifest)
     return manifest
 
 
 def verify_attempt_log(
     output_dir: Path,
-    case_name: object,
-    test_name: str,
+    case: GfxR5Case,
     attempt: dict[str, object],
     seen_logs: set[str],
 ) -> None:
+    case_name = case.name
     attempt_status = attempt.get("status")
     duration = attempt.get("duration_seconds")
     exit_code = attempt.get("exit_code")
@@ -672,7 +671,7 @@ def verify_attempt_log(
     if actual_hash != expected_hash:
         raise ValueError(f"evidence case {case_name!r} log SHA-256 changed")
     if attempt.get("status") == "passed":
-        require_exact_test_success(test_name, case_name, log_path)
+        require_case_success(case, log_path)
 
 
 def capture(command: Sequence[str]) -> str:
