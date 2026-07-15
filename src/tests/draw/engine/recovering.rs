@@ -2,9 +2,11 @@ use crate::draw::engine::recovering::*;
 use crate::draw::engine::GraphicsFailure;
 use crate::draw::pipeline::EncodedFrameExecution;
 use crate::draw::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
+#[cfg(feature = "vulkan")]
 use crate::native::graphics::vulkan::platform::context::accept_device_wait_for_shutdown;
 use crate::native::traits::present::PresentTestResult;
 use crate::tests::common::*;
+#[cfg(feature = "vulkan")]
 use ash::vk;
 
 struct EndFailingEngine {
@@ -14,6 +16,7 @@ struct EndFailingEngine {
     resize_failure: Option<Error>,
     shutdowns: Option<Rc<std::cell::Cell<usize>>>,
     checked_shutdown_failures: Option<Rc<std::cell::Cell<usize>>>,
+    #[cfg(feature = "vulkan")]
     shutdown_wait_error: Option<vk::Result>,
 }
 
@@ -26,6 +29,7 @@ impl EndFailingEngine {
             resize_failure: None,
             shutdowns: None,
             checked_shutdown_failures: None,
+            #[cfg(feature = "vulkan")]
             shutdown_wait_error: None,
         }
     }
@@ -50,6 +54,7 @@ impl EndFailingEngine {
         self
     }
 
+    #[cfg(feature = "vulkan")]
     fn with_shutdown_wait_error(mut self, error: vk::Result) -> Self {
         self.shutdown_wait_error = Some(error);
         self
@@ -62,8 +67,11 @@ impl GraphicsEngine for EndFailingEngine {
     }
 
     fn try_shutdown(&mut self) -> Result<(), Error> {
-        if let Some(error) = self.shutdown_wait_error.take() {
-            accept_device_wait_for_shutdown(Err(error))?;
+        #[cfg(feature = "vulkan")]
+        {
+            if let Some(error) = self.shutdown_wait_error.take() {
+                accept_device_wait_for_shutdown(Err(error))?;
+            }
         }
         if let Some(failures) = &self.checked_shutdown_failures {
             let remaining = failures.get();
@@ -355,6 +363,7 @@ fn recovery_does_not_build_replacement_until_checked_teardown_succeeds() {
     assert_eq!(actions.borrow().as_slice(), [RecoveryAction::RebuildRecipe]);
 }
 
+#[cfg(feature = "vulkan")]
 #[test]
 fn recovery_accepts_replacement_after_vulkan_device_lost_teardown() {
     let actions = Rc::new(RefCell::new(Vec::new()));
