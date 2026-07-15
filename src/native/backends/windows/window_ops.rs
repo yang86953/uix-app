@@ -67,11 +67,12 @@ pub(crate) fn set_window_long_checked(
 /// Windows 平台窗口操作句柄。
 ///
 /// 持有原生窗口句柄 HWND，所有 `os_*` 方法通过 Win32 API 操作窗口。
-/// 不持有窗口状态（状态通过 PlatformWindowCore 的共享引用管理）。
+/// 仅保留还原 Win32 原生属性所需的平台状态；逻辑状态由 PlatformWindowCore 管理。
 pub(crate) struct WindowsWindowOps {
     hwnd: *mut std::ffi::c_void,
     _binding: Box<WindowBinding>,
     frame_pacer: WindowsFramePacer,
+    opacity_layered_style_owned: bool,
 }
 
 impl WindowsWindowOps {
@@ -84,6 +85,7 @@ impl WindowsWindowOps {
             hwnd,
             _binding: binding,
             frame_pacer: WindowsFramePacer::new(hwnd, frame_pacer_state),
+            opacity_layered_style_owned: false,
         }
     }
 
@@ -584,21 +586,57 @@ impl WindowOps for WindowsWindowOps {
                 GWL_EXSTYLE,
                 "os_set_opacity: GetWindowLongW failed",
             )? as u32;
-            set_window_long_checked(
-                self.hwnd,
-                GWL_EXSTYLE,
-                (ex_style | WS_EX_LAYERED) as i32,
-                "os_set_opacity: SetWindowLongW failed",
-            )?;
+            let adds_layered_style = ex_style & WS_EX_LAYERED == 0;
+            if adds_layered_style {
+                set_window_long_checked(
+                    self.hwnd,
+                    GWL_EXSTYLE,
+                    (ex_style | WS_EX_LAYERED) as i32,
+                    "os_set_opacity: SetWindowLongW failed",
+                )?;
+            }
             unsafe {
-                if SetLayeredWindowAttributes(self.hwnd, 0, (opacity * 255.0) as u8, LWA_ALPHA) == 0
+                if SetLayeredWindowAttributes(
+                    self.hwnd,
+                    0,
+                    (opacity * 255.0).round() as u8,
+                    LWA_ALPHA,
+                ) == 0
                 {
+                    if adds_layered_style {
+                        let _ = set_window_long_checked(
+                            self.hwnd,
+                            GWL_EXSTYLE,
+                            ex_style as i32,
+                            "os_set_opacity: rollback SetWindowLongW failed",
+                        );
+                    }
                     return Err(super::util::windows_diag(
                         Errc::PlatformError,
                         "os_set_opacity: SetLayeredWindowAttributes failed",
                     ));
                 }
             }
+            self.opacity_layered_style_owned |= adds_layered_style;
+        } else if self.opacity_layered_style_owned {
+            if unsafe { SetLayeredWindowAttributes(self.hwnd, 0, u8::MAX, LWA_ALPHA) } == 0 {
+                return Err(super::util::windows_diag(
+                    Errc::PlatformError,
+                    "os_set_opacity: restore SetLayeredWindowAttributes failed",
+                ));
+            }
+            let ex_style = get_window_long_checked(
+                self.hwnd,
+                GWL_EXSTYLE,
+                "os_set_opacity: restore GetWindowLongW failed",
+            )? as u32;
+            set_window_long_checked(
+                self.hwnd,
+                GWL_EXSTYLE,
+                (ex_style & !WS_EX_LAYERED) as i32,
+                "os_set_opacity: restore SetWindowLongW failed",
+            )?;
+            self.opacity_layered_style_owned = false;
         }
         Ok(())
     }
