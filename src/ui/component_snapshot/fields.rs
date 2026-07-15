@@ -410,6 +410,9 @@ pub enum SnapshotFields {
     Cascader {
         options: Vec<CascaderOption>,
         placeholder: String,
+        selected_labels: Vec<String>,
+        selected_values: Vec<String>,
+        open: bool,
     },
     ColorPicker {
         value: Color,
@@ -885,9 +888,17 @@ impl SnapshotFields {
                     value_text: (!value.is_empty()).then(|| value.clone()),
                     ..AccessibilityState::default()
                 }),
-            Self::Cascader { placeholder, .. } => {
-                AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
-            }
+            Self::Cascader {
+                placeholder,
+                selected_labels,
+                open,
+                ..
+            } => AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
+                .with_state(AccessibilityState {
+                    expanded: Some(*open),
+                    value_text: (!selected_labels.is_empty()).then(|| selected_labels.join(" / ")),
+                    ..AccessibilityState::default()
+                }),
             Self::Segmented {
                 disabled,
                 options,
