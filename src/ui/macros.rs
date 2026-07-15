@@ -228,6 +228,7 @@ macro_rules! __component_upcast_method {
     (overlay_entry; $T:ty) => {};
     (draw_margin; $T:ty) => {};
     (on_event; $T:ty) => { $crate::wc_upcast!($T; EventHandler); };
+    (take_layout_request; $T:ty) => {};
     (scroll_delta; $T:ty) => {};
     (scroll_delta_for_dirty; $T:ty) => {};
     (scroll_composite_viewport; $T:ty) => {};
@@ -311,7 +312,7 @@ macro_rules! component {
                             c.insert($crate::ui::traits::WidgetCapabilities::LAYOUT),
                         "render" | "uses_palette" | "dirty_rect" | "children_clip" | "overlay_entry" | "draw_margin" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::RENDER),
-                        "on_event" | "scroll_delta" | "scroll_delta_for_dirty" | "scroll_composite_viewport" | "viewport_scroll_offset" | "active_timer" | "wants_capture_phase" | "wants_continuous_pointer_move" | "hit_test_frame" =>
+                        "on_event" | "take_layout_request" | "scroll_delta" | "scroll_delta_for_dirty" | "scroll_composite_viewport" | "viewport_scroll_offset" | "active_timer" | "wants_capture_phase" | "wants_continuous_pointer_move" | "hit_test_frame" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::EVENT),
                         "on_init" | "on_attach" | "on_mount" | "on_active" | "on_inactive" | "on_theme_changed" | "on_unmount" | "on_detach" | "on_destroy" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::LIFECYCLE),
@@ -357,7 +358,7 @@ macro_rules! component {
         $crate::__component_grouped_impl! {
             EventHandler,
             $name,
-            [on_event scroll_delta scroll_delta_for_dirty scroll_composite_viewport viewport_scroll_offset active_timer wants_capture_phase wants_continuous_pointer_move hit_test_frame],
+            [on_event semantic_event take_layout_request scroll_delta scroll_delta_for_dirty scroll_composite_viewport viewport_scroll_offset active_timer wants_capture_phase wants_continuous_pointer_move hit_test_frame],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -604,6 +605,9 @@ macro_rules! __component_method_builder {
     (semantic_event; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn semantic_event($($p)*) -> $ret $body
     };
+    (take_layout_request; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn take_layout_request($($p)*) -> $ret $body
+    };
     (scroll_delta; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn scroll_delta($($p)*) -> $ret $body
     };
@@ -735,6 +739,9 @@ macro_rules! __match_trait_method {
     };
     (EventHandler, semantic_event, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn semantic_event($($p)*) -> $ret $body
+    };
+    (EventHandler, take_layout_request, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn take_layout_request($($p)*) -> $ret $body
     };
     (EventHandler, scroll_delta, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn scroll_delta($($p)*) -> $ret $body

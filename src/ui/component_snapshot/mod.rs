@@ -5,6 +5,7 @@ use crate::core::ComponentId;
 use crate::ui::widgets::{Fixed, SortDirection, TableColumn, TransferItem, TreeNode};
 
 mod fields;
+mod selection;
 mod source;
 
 pub use fields::SnapshotFields;

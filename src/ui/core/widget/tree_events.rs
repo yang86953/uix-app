@@ -785,6 +785,7 @@ impl WidgetTree {
         if let Some(action) = self.get_mut(id).and_then(|node| node.take_window_action()) {
             self.pending_window_actions.push(action);
         }
+        self.apply_event_layout_request(id);
         if self.refresh_table_expand_component(id) {
             self.push_layout_invalidation(id);
             self.propagate_layout_invalidation(id);
@@ -846,7 +847,18 @@ impl WidgetTree {
         if let Some(action) = self.get_mut(id).and_then(|node| node.take_window_action()) {
             self.pending_window_actions.push(action);
         }
+        self.apply_event_layout_request(id);
         self.invalidate_paint(id);
+    }
+
+    fn apply_event_layout_request(&mut self, id: WidgetId) {
+        let requested = self
+            .get_mut(id)
+            .is_some_and(|node| node.take_layout_request());
+        if requested {
+            self.push_layout_invalidation(id);
+            self.propagate_layout_invalidation(id);
+        }
     }
 
     pub(crate) fn dispatch_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {

@@ -9,9 +9,9 @@ use crate::ui::window_chrome::WindowControl;
 use crate::ui::Placement;
 
 use super::{
-    AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SelectionSnapshot,
-    SnapshotCollapsePanel, SnapshotField, SnapshotTableColumn, SnapshotTableColumnGroup,
-    SnapshotTransferItem, SnapshotTreeNode,
+    AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotCollapsePanel,
+    SnapshotField, SnapshotTableColumn, SnapshotTableColumnGroup, SnapshotTransferItem,
+    SnapshotTreeNode,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -397,6 +397,8 @@ pub enum SnapshotFields {
     Carousel {
         show_dots: bool,
         show_arrows: bool,
+        current: usize,
+        slide_count: usize,
     },
     Select {
         options: Vec<String>,
@@ -588,81 +590,6 @@ pub enum SnapshotFields {
 }
 
 impl SnapshotFields {
-    pub(super) fn selection(&self) -> Option<SelectionSnapshot> {
-        match self {
-            Self::Radio {
-                options, selected, ..
-            } => Some(SelectionSnapshot {
-                options: options.clone(),
-                selected_indices: (*selected < options.len())
-                    .then_some(*selected)
-                    .into_iter()
-                    .collect(),
-                disabled_indices: Vec::new(),
-                multiple: false,
-                expanded: false,
-            }),
-            Self::Select {
-                options,
-                optgroups,
-                selected,
-                selected_multi,
-                multiple,
-                open,
-                ..
-            } => {
-                let options = if optgroups.is_empty() {
-                    options.clone()
-                } else {
-                    optgroups
-                        .iter()
-                        .flat_map(|group| group.options.iter().cloned())
-                        .collect()
-                };
-                let selected_indices = if *multiple {
-                    selected_multi
-                        .iter()
-                        .copied()
-                        .filter(|index| *index < options.len())
-                        .collect()
-                } else {
-                    (*selected < options.len())
-                        .then_some(*selected)
-                        .into_iter()
-                        .collect()
-                };
-                Some(SelectionSnapshot {
-                    options,
-                    selected_indices,
-                    disabled_indices: Vec::new(),
-                    multiple: *multiple,
-                    expanded: *open,
-                })
-            }
-            Self::Segmented {
-                options,
-                selected,
-                disabled_options,
-                ..
-            } => Some(SelectionSnapshot {
-                options: options.clone(),
-                selected_indices: (*selected < options.len())
-                    .then_some(*selected)
-                    .into_iter()
-                    .collect(),
-                disabled_indices: disabled_options
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(index, disabled)| disabled.then_some(index))
-                    .filter(|index| *index < options.len())
-                    .collect(),
-                multiple: false,
-                expanded: false,
-            }),
-            _ => None,
-        }
-    }
-
     pub fn accessibility(&self) -> AccessibilitySnapshot {
         match self {
             Self::Button { text, disabled, .. } => {
@@ -887,6 +814,20 @@ impl SnapshotFields {
                         .get(*focused_header)
                         .map(|panel| panel.header.clone()),
                     expanded: panels.get(*focused_header).map(|panel| panel.expanded),
+                    ..AccessibilityState::default()
+                },
+            ),
+            Self::Carousel {
+                current,
+                slide_count,
+                ..
+            } => AccessibilitySnapshot::new(AccessibilityRole::Group).with_state(
+                AccessibilityState {
+                    value_text: (*slide_count > 0)
+                        .then(|| format!("Slide {} of {slide_count}", current + 1)),
+                    value_now: (*slide_count > 0).then_some((*current + 1) as f64),
+                    value_min: (*slide_count > 0).then_some(1.0),
+                    value_max: (*slide_count > 0).then_some(*slide_count as f64),
                     ..AccessibilityState::default()
                 },
             ),

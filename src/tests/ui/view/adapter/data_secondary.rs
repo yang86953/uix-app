@@ -756,6 +756,8 @@ fn reconcile_carousel_patches_instance_and_syncs_config() {
         SnapshotFields::Carousel {
             show_dots: false,
             show_arrows: false,
+            current: 0,
+            slide_count: 0,
         }
     );
 }

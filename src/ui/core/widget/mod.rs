@@ -544,6 +544,13 @@ impl BoxedWidget {
                 .and_then(|event| event.take_window_action())
         })
     }
+    pub(crate) fn take_layout_request(&mut self) -> bool {
+        self.with_component_context_mut(|component| {
+            component
+                .as_event_mut()
+                .is_some_and(|event| event.take_layout_request())
+        })
+    }
     pub fn semantic_event(
         &self,
         id: ComponentId,
