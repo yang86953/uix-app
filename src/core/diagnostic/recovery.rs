@@ -105,14 +105,13 @@ pub fn retry(
     operation: impl FnMut() -> Result<(), Error>,
     delay_between_ms: u64,
 ) -> Result<(), Error> {
-    let policy = FixedRetryPolicy::new(
-        if max_attempts > 0 {
-            max_attempts - 1
-        } else {
-            0
-        },
-        delay_between_ms,
-    );
+    if max_attempts == 0 {
+        return Err(Error::invalid_arg(
+            "retry max_attempts must be greater than zero",
+        ));
+    }
+
+    let policy = FixedRetryPolicy::new(max_attempts - 1, delay_between_ms);
     let handler = RecoveryHandler::new(Box::new(policy));
     handler.execute(operation)
 }
