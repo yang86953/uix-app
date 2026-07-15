@@ -3682,6 +3682,65 @@ fn disabled_button_cannot_start_pointer_or_keyboard_activation() {
 }
 
 #[test]
+fn reconcile_to_disabled_cancels_pointer_activation() {
+    let calls = Rc::new(Cell::new(0));
+    let observed = Rc::clone(&calls);
+    let mut tree = ViewAdapter::build(
+        embed(Button::new("Toggle")).on_click_fn(move || observed.set(observed.get() + 1)),
+    );
+    let target = tree.root_id().expect("button root");
+    tree.get_mut(target)
+        .expect("button node")
+        .set_frame(Rect::new(0.0, 0.0, 120.0, 40.0));
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(20.0, 20.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    tree.dispatch_event(&SystemEvent::PointerMove {
+        pos: Point::new(40.0, 20.0),
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(
+        tree.managers().interaction.pressed_component(),
+        Some(target)
+    );
+    assert!(tree.managers().drag.is_dragging());
+    assert!(tree
+        .get(target)
+        .and_then(|node| node.component().as_any().downcast_ref::<Button>())
+        .is_some_and(|button| button.pressed));
+
+    let observed = Rc::clone(&calls);
+    ViewAdapter::reconcile(
+        &mut tree,
+        embed(Button::new("Toggle").disabled(true))
+            .on_click_fn(move || observed.set(observed.get() + 1)),
+    );
+
+    assert_eq!(tree.root_id(), Some(target));
+    assert_eq!(tree.managers().interaction.pressed_component(), None);
+    assert!(!tree.managers().drag.is_potential());
+    assert!(!tree.managers().drag.is_dragging());
+    assert!(tree
+        .get(target)
+        .and_then(|node| node.component().as_any().downcast_ref::<Button>())
+        .is_some_and(|button| !button.pressed));
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerUp {
+            pos: Point::new(40.0, 20.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::NotHandled
+    );
+    assert_eq!(calls.get(), 0);
+}
+
+#[test]
 fn focus_change_cancels_keyboard_activation() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(Container::new().size(240.0, 80.0)));
