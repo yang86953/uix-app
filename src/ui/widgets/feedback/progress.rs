@@ -54,10 +54,16 @@ component! {
             let cx = frame.x + frame.w * 0.5;
             let cy = frame.y + frame.h * 0.5;
             let r = frame.w.min(frame.h) * 0.4;
-            let track_width = 8.0;
+            if r <= 0.0 {
+                return;
+            }
+            let track_width = (r * 0.25).clamp(1.0, 8.0).min(r);
 
             ctx.fill_circle(cx, cy, r, track_c);
-            ctx.fill_circle(cx, cy, r - track_width, ctx.tokens().color_bg_container());
+            let inner_radius = r - track_width;
+            if inner_radius > 0.0 {
+                ctx.fill_circle(cx, cy, inner_radius, ctx.tokens().color_bg_container());
+            }
 
             let (start_angle, end_angle) = match self.mode {
                 ProgressMode::Determinate(p) => {
@@ -159,7 +165,7 @@ impl ProgressBar {
     }
 
     pub fn progress(mut self, p: f32) -> Self {
-        self.progress = p.clamp(0.0, 1.0);
+        self.progress = Self::normalize_progress(p);
         self.mode = ProgressMode::Determinate(self.progress);
         self
     }
@@ -180,18 +186,23 @@ impl ProgressBar {
     }
 
     pub fn height(mut self, h: f32) -> Self {
-        self.height = h;
+        self.height = Self::normalize_dimension(h);
         self
     }
 
     pub fn width(mut self, w: f32) -> Self {
-        self.width = w;
+        self.width = Self::normalize_dimension(w);
         self
     }
 
     pub fn size(mut self, w: f32, h: f32) -> Self {
-        self.width = w;
-        self.height = h;
+        self.width = Self::normalize_dimension(w);
+        self.height = Self::normalize_dimension(h);
+        self
+    }
+
+    pub fn round(mut self, round: bool) -> Self {
+        self.round = round;
         self
     }
 
@@ -245,13 +256,34 @@ impl ProgressBar {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
-        self.progress = next.progress;
-        self.mode = next.mode;
+        self.progress = Self::normalize_progress(next.progress);
+        self.mode = match next.mode {
+            ProgressMode::Determinate(progress) => {
+                ProgressMode::Determinate(Self::normalize_progress(progress))
+            }
+            ProgressMode::Indeterminate => ProgressMode::Indeterminate,
+        };
         self.stroke_color = next.stroke_color;
         self.track_color = next.track_color;
-        self.height = next.height;
-        self.width = next.width;
+        self.height = Self::normalize_dimension(next.height);
+        self.width = Self::normalize_dimension(next.width);
         self.round = next.round;
         self.progress_type = next.progress_type;
+    }
+
+    fn normalize_progress(value: f32) -> f32 {
+        if value.is_finite() {
+            value.clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+
+    fn normalize_dimension(value: f32) -> f32 {
+        if value.is_finite() {
+            value.max(0.0)
+        } else {
+            0.0
+        }
     }
 }

@@ -1,6 +1,7 @@
 use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
-use crate::ui::ProgressBar;
+use crate::ui::widgets::ProgressMode;
+use crate::ui::{AccessibilityRole, ProgressBar};
 
 #[test]
 fn progress_bar_advertises_animation_capability() {
@@ -59,4 +60,47 @@ fn determinate_progress_does_not_keep_animation_pending() {
 
     assert!(!tree.update(1.0 / 60.0));
     assert!(tree.invalidation().lock().unwrap().is_empty());
+}
+
+#[test]
+fn progress_normalizes_non_finite_values_and_dimensions() {
+    let progress = ProgressBar::new()
+        .progress(f32::NAN)
+        .size(f32::INFINITY, -10.0)
+        .round(false);
+
+    assert!(matches!(
+        progress.snapshot_fields(),
+        SnapshotFields::ProgressBar {
+            progress: 0.0,
+            mode: ProgressMode::Determinate(0.0),
+            width: 0.0,
+            height: 0.0,
+            round: false,
+            ..
+        }
+    ));
+    assert_eq!(
+        progress.measure(Constraints::loose(Size::new(200.0, 40.0))),
+        Size::zero()
+    );
+}
+
+#[test]
+fn indeterminate_accessibility_does_not_invent_a_numeric_value() {
+    let indeterminate = ProgressBar::new().indeterminate();
+    let accessibility = indeterminate.snapshot_fields().accessibility();
+    assert_eq!(accessibility.role, AccessibilityRole::ProgressBar);
+    assert_eq!(accessibility.state.value_now, None);
+    assert_eq!(accessibility.state.value_min, None);
+    assert_eq!(accessibility.state.value_max, None);
+
+    let determinate = ProgressBar::new().progress(0.65);
+    let accessibility = determinate.snapshot_fields().accessibility();
+    assert!(accessibility
+        .state
+        .value_now
+        .is_some_and(|value| (value - 0.65).abs() < 1.0e-6));
+    assert_eq!(accessibility.state.value_min, Some(0.0));
+    assert_eq!(accessibility.state.value_max, Some(1.0));
 }

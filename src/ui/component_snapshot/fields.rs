@@ -11,8 +11,8 @@ use crate::ui::Placement;
 use super::accessibility::{
     anchor_accessibility, back_top_accessibility, badge_accessibility, breadcrumb_accessibility,
     calendar_accessibility, carousel_accessibility, date_range_accessibility, first_non_empty,
-    image_accessibility, pagination_accessibility, result_accessibility, select_accessibility,
-    selectable_list_accessibility, splitter_accessibility, tag_accessibility,
+    image_accessibility, pagination_accessibility, progress_accessibility, result_accessibility,
+    select_accessibility, selectable_list_accessibility, splitter_accessibility, tag_accessibility,
     theme_toggle_accessibility, transfer_accessibility,
 };
 use super::{
@@ -755,15 +755,7 @@ impl SnapshotFields {
                 text,
                 ..
             } => badge_accessibility(*count, *max, *dot, *status, *show_zero, text),
-            Self::ProgressBar { progress, .. } => AccessibilitySnapshot::new(
-                AccessibilityRole::ProgressBar,
-            )
-            .with_state(AccessibilityState {
-                value_now: Some((*progress).clamp(0.0, 1.0) as f64),
-                value_min: Some(0.0),
-                value_max: Some(1.0),
-                ..AccessibilityState::default()
-            }),
+            Self::ProgressBar { mode, .. } => progress_accessibility(*mode),
             Self::Alert { message, .. } => {
                 AccessibilitySnapshot::named(AccessibilityRole::Alert, message.clone())
             }
