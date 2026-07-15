@@ -110,3 +110,19 @@ fn provider_size_and_explicit_override_drive_rate_layout_and_half_hit() {
     let small = with_config(&large, || Rate::new().size(ControlSize::Small));
     assert_eq!(small.measure(max).h, 24.0);
 }
+
+#[test]
+fn rate_is_keyboard_focusable_and_tracks_focus_events() {
+    let mut rate = Rate::new();
+    assert_eq!(WidgetComponent::tab_index(&rate), 1);
+    assert_eq!(rate.on_event(&SystemEvent::FocusIn), EventResult::Handled);
+    assert_eq!(
+        rate.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Right,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(rate.current_value(), 1);
+    assert_eq!(rate.on_event(&SystemEvent::FocusOut), EventResult::Handled);
+}
