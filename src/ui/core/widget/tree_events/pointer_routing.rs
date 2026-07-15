@@ -90,7 +90,7 @@ impl WidgetTree {
         if releases_drag {
             self.managers_mut().drag.end_drag();
         }
-        let hit = self.overlay_target_at(pos).or_else(|| self.hit_test(pos));
+        let hit = self.pointer_target_at(pos);
         let mut result = EventResult::NotHandled;
         if let Some(target) = hit {
             self.invalidate_paint(target);
@@ -143,26 +143,33 @@ impl WidgetTree {
         self.hit_test_internal(owner, pos).or(Some(owner))
     }
 
+    pub(crate) fn pointer_target_at(&self, pos: Point) -> Option<WidgetId> {
+        self.overlay_target_at(pos).or_else(|| self.hit_test(pos))
+    }
+
+    fn blocking_top_overlay_at(&self, pos: Point) -> Option<&OverlayEntry> {
+        let top = self.overlay_stack.top()?;
+        let inside_top = top.bounds_rect().is_some_and(|bounds| bounds.contains(pos));
+        (!inside_top && (top.is_modal() || top.traps_focus() || top.dismisses_on_outside()))
+            .then_some(top)
+    }
+
+    #[cfg(feature = "test-harness")]
+    pub(crate) fn pointer_down_blocker_at(&self, pos: Point) -> Option<WidgetId> {
+        self.blocking_top_overlay_at(pos).map(OverlayEntry::owner)
+    }
+
     pub(super) fn intercept_top_overlay_outside_pointer_down(
         &mut self,
         pos: Point,
     ) -> Option<EventResult> {
-        let top = self.overlay_stack.top().cloned()?;
-        let inside_top = top.bounds_rect().is_some_and(|bounds| bounds.contains(pos));
-        if inside_top {
-            return None;
+        let top = self.blocking_top_overlay_at(pos).cloned()?;
+        if top.dismisses_on_outside() {
+            self.overlay_stack.remove(top.id());
+            self.invalidate_paint(top.owner());
         }
-
-        if top.is_modal() || top.traps_focus() || top.dismisses_on_outside() {
-            if top.dismisses_on_outside() {
-                self.overlay_stack.remove(top.id());
-                self.invalidate_paint(top.owner());
-            }
-            self.restore_focus_after_trap_owner(top.owner());
-            return Some(EventResult::Handled);
-        }
-
-        None
+        self.restore_focus_after_trap_owner(top.owner());
+        Some(EventResult::Handled)
     }
 
     pub(super) fn open_context_menu_overlay(&mut self, owner: WidgetId, pos: Point) {

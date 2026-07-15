@@ -442,7 +442,7 @@ impl WidgetTree {
         if let Some(result) = self.intercept_top_overlay_outside_pointer_down(pos) {
             return result;
         }
-        let target = self.overlay_target_at(pos).or_else(|| self.hit_test(pos));
+        let target = self.pointer_target_at(pos);
         if target.is_some_and(|target| {
             self.get(target)
                 .is_none_or(|node| !node.is_interaction_enabled())

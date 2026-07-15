@@ -200,7 +200,7 @@ impl fmt::Display for AutomationError {
                 blocker,
             } => write!(
                 f,
-                "automation node `{automation_id}` is blocked by modal owner {blocker}"
+                "automation node `{automation_id}` is blocked by overlay owner {blocker}"
             ),
             Self::UnsupportedAction {
                 automation_id,
@@ -373,7 +373,13 @@ impl TestApp {
         let Some(pos) = node.center() else {
             return Err(AutomationError::NotVisible(automation_id.to_string()));
         };
-        let hit = self.tree.hit_test(pos);
+        if let Some(blocker) = self.tree.pointer_down_blocker_at(pos) {
+            return Err(AutomationError::Blocked {
+                automation_id: automation_id.to_string(),
+                blocker,
+            });
+        }
+        let hit = self.tree.pointer_target_at(pos);
         let hits_target = hit
             .is_some_and(|hit_id| hit_id == node.id || self.tree.is_descendant_of(hit_id, node.id));
         if !hits_target {
