@@ -229,6 +229,34 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "host rustc"):
                 verify_evidence_dir(output)
 
+    def test_evidence_verifier_rejects_inconsistent_attempt_metadata(self) -> None:
+        plan = build_plan("mixed-dpi", "amd", None, 900, 60)
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "evidence"
+            session = EvidenceSession(output, "mixed-dpi", "amd", None, 900, 60, plan)
+            log_path = session.start_case(0)
+            log_path.write_text(passing_log(plan[0]), encoding="utf-8")
+            session.finish_case(0, 0, 0.5)
+            session.finish("passed")
+            attempt = session.manifest["cases"][0]["attempts"][0]
+
+            attempt["exit_code"] = 9
+            session._write()
+            with self.assertRaisesRegex(ValueError, "exit_code=0"):
+                verify_evidence_dir(output)
+
+            attempt["exit_code"] = 0
+            attempt["duration_seconds"] = -0.5
+            session._write()
+            with self.assertRaisesRegex(ValueError, "duration"):
+                verify_evidence_dir(output)
+
+            attempt["duration_seconds"] = 0.5
+            attempt["completed_at"] = None
+            session._write()
+            with self.assertRaisesRegex(ValueError, "completion time"):
+                verify_evidence_dir(output)
+
     def test_verify_command_succeeds_only_for_a_passed_manifest(self) -> None:
         plan = build_plan("mixed-dpi", "amd", None, 900, 60)
         with TemporaryDirectory() as directory:
@@ -378,6 +406,7 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             self.assertEqual(attempt["status"], "interrupted")
             self.assertIsNotNone(attempt["log_sha256"])
             self.assertEqual(session.manifest["status"], "running")
+            verify_evidence_dir(output)
 
     def test_clean_filter_allows_only_the_resume_directory(self) -> None:
         allowed = ROOT / "test-reports" / "partial"

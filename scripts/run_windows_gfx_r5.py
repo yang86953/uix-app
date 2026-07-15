@@ -559,6 +559,45 @@ def verify_attempt_log(
     attempt: dict[str, object],
     seen_logs: set[str],
 ) -> None:
+    attempt_status = attempt.get("status")
+    duration = attempt.get("duration_seconds")
+    exit_code = attempt.get("exit_code")
+    evidence_error = attempt.get("evidence_error")
+    if not isinstance(attempt.get("started_at"), str) or not attempt["started_at"]:
+        raise ValueError(f"evidence case {case_name!r} attempt has no start time")
+    if not isinstance(attempt.get("completed_at"), str) or not attempt["completed_at"]:
+        raise ValueError(f"evidence case {case_name!r} attempt has no completion time")
+    if evidence_error is not None and not isinstance(evidence_error, str):
+        raise ValueError(f"evidence case {case_name!r} attempt error must be text or null")
+    if attempt_status == "interrupted":
+        if exit_code is not None or duration is not None:
+            raise ValueError(
+                f"evidence case {case_name!r} interrupted attempt must not claim completion"
+            )
+    else:
+        if (
+            isinstance(duration, bool)
+            or not isinstance(duration, (int, float))
+            or duration < 0
+        ):
+            raise ValueError(
+                f"evidence case {case_name!r} attempt duration must be non-negative"
+            )
+    if attempt_status == "passed":
+        if exit_code != 0 or evidence_error is not None:
+            raise ValueError(
+                f"evidence case {case_name!r} passed attempt must record "
+                "exit_code=0 and no evidence error"
+            )
+    elif attempt_status == "failed":
+        if type(exit_code) is not int:
+            raise ValueError(
+                f"evidence case {case_name!r} failed attempt has no integer exit code"
+            )
+        if exit_code == 0 and not evidence_error:
+            raise ValueError(
+                f"evidence case {case_name!r} failed attempt has no failure reason"
+            )
     relative_log = attempt.get("log")
     if not isinstance(relative_log, str):
         raise ValueError(f"evidence case {case_name!r} attempt has no log path")
