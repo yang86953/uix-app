@@ -406,6 +406,9 @@ pub enum SnapshotFields {
     TreeSelect {
         placeholder: String,
         nodes: Vec<SnapshotTreeNode>,
+        value: String,
+        value_key: String,
+        open: bool,
     },
     Cascader {
         options: Vec<CascaderOption>,
@@ -785,9 +788,18 @@ impl SnapshotFields {
             Self::Tabs { .. } | Self::Steps { .. } => {
                 AccessibilitySnapshot::new(AccessibilityRole::TabList)
             }
-            Self::Tree { .. } | Self::TreeSelect { .. } => {
-                AccessibilitySnapshot::new(AccessibilityRole::Tree)
-            }
+            Self::Tree { .. } => AccessibilitySnapshot::new(AccessibilityRole::Tree),
+            Self::TreeSelect {
+                placeholder,
+                value,
+                open,
+                ..
+            } => AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
+                .with_state(AccessibilityState {
+                    expanded: Some(*open),
+                    value_text: (!value.is_empty()).then(|| value.clone()),
+                    ..AccessibilityState::default()
+                }),
             Self::List { .. } | Self::SelectableList { .. } | Self::Transfer { .. } => {
                 AccessibilitySnapshot::new(AccessibilityRole::List)
             }

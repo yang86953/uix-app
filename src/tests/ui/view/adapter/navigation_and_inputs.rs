@@ -551,7 +551,15 @@ fn reconcile_tree_select_preserves_open_selection_and_syncs_options() {
         SnapshotFields::TreeSelect {
             placeholder,
             nodes,
-        } if placeholder == "new placeholder" && nodes.len() == 1 && nodes[0].key == "new"
+            value,
+            value_key,
+            open,
+        } if placeholder == "new placeholder"
+            && nodes.len() == 1
+            && nodes[0].key == "new"
+            && value == "Old"
+            && value_key == "old"
+            && open
     ));
 }
 
