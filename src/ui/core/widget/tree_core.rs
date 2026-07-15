@@ -478,10 +478,14 @@ impl WidgetTree {
             return;
         };
         let parent_id = self.nodes[slot].as_ref().and_then(|n| n.parent());
-        if self.managers.focus.focused_component() == Some(id) {
-            // Dispatch FocusOut while the node is still addressable.
-            let _ = self.dispatch_to(id, &SystemEvent::FocusOut);
-            self.managers.focus.set_focused_component(None);
+        if self
+            .managers
+            .focus
+            .focused_component()
+            .is_some_and(|focused| self.is_descendant_of(focused, id))
+        {
+            // 节点仍可寻址时完成目标 FocusOut 与祖先 focus-within 离开。
+            self.set_focus(None);
         }
         self.teardown_subtree(id);
         if let Some(node) = self.nodes.get_mut(slot) {

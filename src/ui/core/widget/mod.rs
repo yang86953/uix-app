@@ -543,6 +543,14 @@ impl BoxedWidget {
             component_result
         }
     }
+    pub(crate) fn on_focus_within(&mut self, focused: bool) -> EventResult {
+        self.with_component_context_mut(|component| {
+            component
+                .as_event_mut()
+                .map(|handler| handler.on_focus_within(focused))
+                .unwrap_or(EventResult::NotHandled)
+        })
+    }
     pub(crate) fn take_window_action(&mut self) -> Option<crate::ui::event::WindowAction> {
         self.with_component_context_mut(|component| {
             component
