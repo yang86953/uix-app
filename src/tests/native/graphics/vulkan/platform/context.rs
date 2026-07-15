@@ -372,6 +372,7 @@ fn windows_vulkan_gfx_r5_expected_vendor_resize_present_readback() {
         context.swapchain_maintenance1_enabled_for_test(),
     );
 
+    let initial_drawable = (context.width(), context.height());
     let first_color = 0xFF34_78BC;
     let first_pixels = vec![first_color; (context.width() * context.height()) as usize];
     context
@@ -398,6 +399,7 @@ fn windows_vulkan_gfx_r5_expected_vendor_resize_present_readback() {
     context
         .resize(drawable.logical_width, drawable.logical_height)
         .expect("resize matrix Vulkan surface");
+    let resized_drawable = (context.width(), context.height());
     let second_color = 0xFF9A_5C21;
     let second_pixels = vec![second_color; (context.width() * context.height()) as usize];
     context
@@ -416,8 +418,12 @@ fn windows_vulkan_gfx_r5_expected_vendor_resize_present_readback() {
     );
 
     println!(
-        "GFX-R5 Vulkan vendor evidence: expected={}; {}; swapchain_maintenance1={}",
+        "GFX-R5 Vulkan vendor evidence: expected={}; initial_logical=137x103; initial_drawable={}x{}; initial_readback=0x{first_color:08X}; resized_logical=211x149; resized_drawable={}x{}; resized_readback=0x{second_color:08X}; {}; swapchain_maintenance1={}",
         expected.label(),
+        initial_drawable.0,
+        initial_drawable.1,
+        resized_drawable.0,
+        resized_drawable.1,
         context.adapter_info.diagnostic_summary(),
         context.swapchain_maintenance1_enabled_for_test()
     );

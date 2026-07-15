@@ -39,7 +39,14 @@ def passing_log(case) -> str:
         f"vendor=0x{VENDOR_IDS[vendor]:04X}; device=0x1234; "
         "api=1.3.280; driver=0x12345678; queue_family=0"
     )
-    if case.name == "vulkan-mixed-dpi":
+    if case.name == "vendor-resize-present-readback":
+        evidence = (
+            f"{markers[0]} initial_logical=137x103; initial_drawable=137x103; "
+            "initial_readback=0xFF3478BC; resized_logical=211x149; "
+            "resized_drawable=211x149; resized_readback=0xFF9A5C21; "
+            f"{adapter}; swapchain_maintenance1=true"
+        )
+    elif case.name == "vulkan-mixed-dpi":
         evidence = (
             f"{markers[0]} bounds=(0,0..1920,1080),dpi=96x96; "
             "bounds=(1920,0..3840,1080),dpi=144x144; "
@@ -314,6 +321,37 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "adapter vendor mismatch"):
                 require_case_success(case, path)
+
+    def test_vendor_evidence_requires_resize_and_readback_measurements(self) -> None:
+        case = build_plan("vendor", "amd", None, 900, 60)[0]
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "case.log"
+            invalid_logs = (
+                (
+                    passing_log(case).replace(
+                        "resized_logical=211x149", "resized_logical=210x149"
+                    ),
+                    "logical resize contract changed",
+                ),
+                (
+                    passing_log(case).replace(
+                        "resized_drawable=211x149", "resized_drawable=137x103"
+                    ),
+                    "drawable did not resize",
+                ),
+                (
+                    passing_log(case).replace(
+                        "resized_readback=0xFF9A5C21",
+                        "resized_readback=0xFF000000",
+                    ),
+                    "resized_readback does not match presented pixels",
+                ),
+            )
+            for content, message in invalid_logs:
+                with self.subTest(message=message):
+                    path.write_text(content, encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, message):
+                        require_case_success(case, path)
 
     def test_mixed_dpi_evidence_requires_distinct_round_trip_measurements(self) -> None:
         case = build_plan("mixed-dpi", "amd", None, 900, 60)[0]
