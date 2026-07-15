@@ -4,8 +4,9 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
-use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use crate::ui::{
+    ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
+};
 use std::cell::RefCell;
 
 /// A single tab definition.
@@ -31,9 +32,13 @@ component! {
         tab_height: f32,
         fixed_width: Option<f32>,
         fixed_height: Option<f32>,
+        focused: bool,
+        pending_change: RefCell<Option<String>>,
         /// 每帧 render 时计算的各 tab x 坐标（供 on_event 点击定位使用）
-        tab_x_positions: RefCell<Vec<f32>>,
+        tab_x_positions: RefCell<Vec<(f32, f32)>>,
     }
+
+    tab_index => (&self) -> i32 { 1 }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
@@ -46,24 +51,53 @@ component! {
                 if tab_count == 0 { return EventResult::NotHandled; }
                 // 使用 render 时存储的 tab_x_positions 做点击定位
                 let click_x = pos.x;
-                let positions = self.tab_x_positions.borrow();
-                for (i, &tx) in positions.iter().enumerate() {
-                    if i + 1 < positions.len() {
-                        if click_x >= tx && click_x < positions[i + 1] {
-                            self.active_index = i;
-                            return EventResult::Handled;
-                        }
-                    } else {
-                        if click_x >= tx {
-                            self.active_index = i;
-                            return EventResult::Handled;
-                        }
-                    }
+                let clicked = self
+                    .tab_x_positions
+                    .borrow()
+                    .iter()
+                    .position(|&(start, end)| click_x >= start && click_x < end);
+                if let Some(index) = clicked {
+                    self.select_index(index);
+                    return EventResult::Handled;
                 }
                 EventResult::NotHandled
             }
+            SystemEvent::FocusIn => {
+                self.focused = true;
+                EventResult::Handled
+            }
+            SystemEvent::FocusOut => {
+                self.focused = false;
+                EventResult::Handled
+            }
+            SystemEvent::KeyDown { key, .. } if !self.tabs.is_empty() => match key {
+                KeyCode::Right => {
+                    self.select_index((self.active_index + 1) % self.tabs.len());
+                    EventResult::Handled
+                }
+                KeyCode::Left => {
+                    self.select_index((self.active_index + self.tabs.len() - 1) % self.tabs.len());
+                    EventResult::Handled
+                }
+                KeyCode::Home => {
+                    self.select_index(0);
+                    EventResult::Handled
+                }
+                KeyCode::End => {
+                    self.select_index(self.tabs.len() - 1);
+                    EventResult::Handled
+                }
+                _ => EventResult::NotHandled,
+            },
             _ => EventResult::NotHandled,
         }
+    }
+
+    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_change
+            .borrow_mut()
+            .take()
+            .map(|key| SemanticEvent::change(id, key))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -78,8 +112,8 @@ component! {
         let mut positions = Vec::with_capacity(self.tabs.len());
         let mut cursor_x = pad;
         for tab in &self.tabs {
-            positions.push(cursor_x);
             let tw = ctx.measure_text(&tab.label, 14.0).w + pad * 2.0;
+            positions.push((cursor_x, cursor_x + tw));
             cursor_x += tw + gap;
         }
         *self.tab_x_positions.borrow_mut() = positions;
@@ -122,6 +156,14 @@ component! {
             TabPosition::Bottom => frame.y,
         };
         ctx.fill_rect(Rect::new(frame.x, content_y, frame.w, frame.h - tab_bar_h), bg_container, None);
+        if self.focused {
+            ctx.stroke_rect(
+                Rect::new(frame.x, tab_bar_y, frame.w, tab_bar_h),
+                primary,
+                1.5,
+                Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+            );
+        }
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
@@ -165,6 +207,8 @@ impl Tabs {
             tab_height: 40.0,
             fixed_width: None,
             fixed_height: None,
+            focused: false,
+            pending_change: RefCell::new(None),
             tab_x_positions: RefCell::new(Vec::new()),
         }
     }
@@ -184,9 +228,11 @@ impl Tabs {
         self.active_index = index.min(self.tabs.len().saturating_sub(1));
         self
     }
-    #[cfg(test)]
-    pub(crate) fn active_index(&self) -> usize {
+    pub fn active_index(&self) -> usize {
         self.active_index
+    }
+    pub fn active_key(&self) -> Option<&str> {
+        self.tabs.get(self.active_index).map(|tab| tab.key.as_str())
     }
     pub fn position(mut self, pos: TabPosition) -> Self {
         self.position = pos;
@@ -200,6 +246,7 @@ impl Tabs {
 
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.tabs = next.tabs;
+        self.active_index = self.active_index.min(self.tabs.len().saturating_sub(1));
         self.position = next.position;
         self.tab_height = next.tab_height;
         self.fixed_width = next.fixed_width;
@@ -209,10 +256,21 @@ impl Tabs {
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Tabs {
             tabs: self.tabs.clone(),
+            active_index: self.active_index,
             position: self.position,
             tab_height: self.tab_height,
             fixed_width: self.fixed_width,
             fixed_height: self.fixed_height,
+        }
+    }
+
+    fn select_index(&mut self, index: usize) {
+        let Some(tab) = self.tabs.get(index) else {
+            return;
+        };
+        if index != self.active_index {
+            self.active_index = index;
+            self.pending_change.replace(Some(tab.key.clone()));
         }
     }
 }

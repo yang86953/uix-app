@@ -349,6 +349,7 @@ pub enum SnapshotFields {
     },
     Tabs {
         tabs: Vec<Tab>,
+        active_index: usize,
         position: TabPosition,
         tab_height: f32,
         fixed_width: Option<f32>,
@@ -798,9 +799,15 @@ impl SnapshotFields {
                 })
             }
             Self::Dropdown { .. } => AccessibilitySnapshot::new(AccessibilityRole::Menu),
-            Self::Tabs { .. } | Self::Steps { .. } => {
-                AccessibilitySnapshot::new(AccessibilityRole::TabList)
-            }
+            Self::Tabs {
+                tabs, active_index, ..
+            } => AccessibilitySnapshot::new(AccessibilityRole::TabList).with_state(
+                AccessibilityState {
+                    value_text: tabs.get(*active_index).map(|tab| tab.label.clone()),
+                    ..AccessibilityState::default()
+                },
+            ),
+            Self::Steps { .. } => AccessibilitySnapshot::new(AccessibilityRole::TabList),
             Self::Tree { selected_key, .. } => AccessibilitySnapshot::new(AccessibilityRole::Tree)
                 .with_state(AccessibilityState {
                     value_text: (!selected_key.is_empty()).then(|| selected_key.clone()),
