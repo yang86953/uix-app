@@ -476,6 +476,19 @@ def require_resume_environment(manifest: dict[str, object]) -> None:
         raise ValueError("evidence host or toolchain does not match the current target machine")
 
 
+def require_current_source_head(manifest: dict[str, object]) -> None:
+    source = manifest.get("source")
+    if not isinstance(source, dict):
+        raise ValueError("evidence manifest has no source object")
+    recorded_head = source.get("git_head")
+    current_head = capture(("git", "rev-parse", "HEAD"))
+    if recorded_head != current_head:
+        raise ValueError(
+            "evidence source git_head does not match the current repository HEAD; "
+            "checkout the recorded commit before verification"
+        )
+
+
 def require_recorded_provenance(manifest: dict[str, object]) -> None:
     source = manifest.get("source")
     if not isinstance(source, dict):
@@ -1058,6 +1071,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         try:
             manifest = verify_evidence_dir(args.verify_evidence)
+            require_current_source_head(manifest)
+            require_clean_source(args.verify_evidence)
         except (OSError, ValueError) as error:
             print(f"error: evidence verification failed: {error}", file=sys.stderr)
             return 2
