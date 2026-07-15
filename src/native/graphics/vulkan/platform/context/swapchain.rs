@@ -119,7 +119,7 @@ impl PresentFenceSet {
         Ok(())
     }
 
-    pub(super) fn wait_all(&mut self, device: &ash::Device) -> Result<()> {
+    pub(super) fn wait_and_reset_all(&mut self, device: &ash::Device) -> Result<()> {
         for (image_slot, entry) in self.entries.iter_mut().enumerate() {
             if !entry.in_flight {
                 continue;
@@ -130,6 +130,11 @@ impl PresentFenceSet {
                     .wait_for_fences(std::slice::from_ref(&entry.handle), true, u64::MAX)
                     .map_err(|error| {
                         vk_err(&format!("vkWaitForFences present[{image_slot}]"), error)
+                    })?;
+                device
+                    .reset_fences(std::slice::from_ref(&entry.handle))
+                    .map_err(|error| {
+                        vk_err(&format!("vkResetFences present[{image_slot}]"), error)
                     })?;
             }
             entry.in_flight = false;
