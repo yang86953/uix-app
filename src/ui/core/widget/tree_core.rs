@@ -544,6 +544,9 @@ impl WidgetTree {
     }
 
     pub fn set_visible(&mut self, id: ComponentId, visible: bool) {
+        if !visible {
+            self.cancel_pointer_state_in_subtree(id);
+        }
         if !visible
             && self
                 .managers

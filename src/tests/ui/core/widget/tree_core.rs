@@ -1899,6 +1899,100 @@ fn hiding_focused_subtree_dispatches_focus_out_and_blocks_stale_key_routing() {
 }
 
 #[test]
+fn hiding_active_pointer_subtree_cancels_hover_press_and_drag() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(300.0, 200.0, vec![])));
+    let parent = tree.add_child(
+        root,
+        Box::new(PassThroughContainer::new(200.0, 100.0, vec![])),
+    );
+    let child = tree.add_child(parent, Box::new(SpyWidget::new(120.0, 40.0)));
+    tree.get_mut(root)
+        .expect("root")
+        .set_frame(Rect::new(0.0, 0.0, 300.0, 200.0));
+    tree.get_mut(parent)
+        .expect("parent")
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 100.0));
+    tree.get_mut(child)
+        .expect("child")
+        .set_frame(Rect::new(0.0, 0.0, 120.0, 40.0));
+    let clicks = Rc::new(Cell::new(0));
+    let clicks_for_handler = clicks.clone();
+    tree.handler_table()
+        .on(child, SemanticKind::Click, move |_| {
+            clicks_for_handler.set(clicks_for_handler.get() + 1);
+        });
+
+    tree.dispatch_event(&SystemEvent::PointerMove {
+        pos: Point::new(20.0, 20.0),
+        mods: KeyMod::NONE,
+    });
+    tree.dispatch_event(&SystemEvent::PointerDown {
+        pos: Point::new(20.0, 20.0),
+        button: MouseButton::Left,
+        mods: KeyMod::CTRL,
+    });
+    tree.dispatch_event(&SystemEvent::PointerMove {
+        pos: Point::new(60.0, 20.0),
+        mods: KeyMod::CTRL,
+    });
+    assert_eq!(tree.managers().interaction.hovered_component(), Some(child));
+    assert_eq!(tree.managers().interaction.pressed_component(), Some(child));
+    assert!(tree.managers().drag.is_dragging());
+    tree.get(child)
+        .expect("child")
+        .component()
+        .as_any()
+        .downcast_ref::<SpyWidget>()
+        .expect("spy widget")
+        .events
+        .borrow_mut()
+        .clear();
+
+    tree.set_visible(parent, false);
+    tree.set_visible(parent, false);
+
+    assert_eq!(tree.managers().interaction.hovered_component(), None);
+    assert_eq!(tree.managers().interaction.pressed_component(), None);
+    assert!(!tree.managers().drag.is_dragging());
+    assert!(!tree.managers().drag.is_potential());
+    let events = tree
+        .get(child)
+        .expect("child")
+        .component()
+        .as_any()
+        .downcast_ref::<SpyWidget>()
+        .expect("spy widget")
+        .events
+        .borrow();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event, SystemEvent::DragEnd { .. }))
+            .count(),
+        1
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event, SystemEvent::PointerLeave))
+            .count(),
+        1
+    );
+    drop(events);
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerUp {
+            pos: Point::new(60.0, 20.0),
+            button: MouseButton::Left,
+            mods: KeyMod::CTRL,
+        }),
+        EventResult::NotHandled
+    );
+    assert_eq!(clicks.get(), 0);
+}
+
+#[test]
 fn dispatch_clears_focus_hidden_through_low_level_visibility_mutation() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
