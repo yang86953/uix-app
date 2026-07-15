@@ -7,7 +7,7 @@ use crate::native::graphics::vulkan::platform::surface::{
 };
 use crate::tests::common::*;
 #[cfg(windows)]
-use crate::tests::native::gfx_r5::expected_gfx_r5_vendor;
+use crate::tests::native::gfx_r5::{expected_gfx_r5_vendor, requested_gfx_r5_soak_duration};
 use ash::vk;
 #[cfg(windows)]
 use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessHandleCount};
@@ -20,16 +20,6 @@ fn current_process_handle_count() -> u32 {
         GetProcessHandleCount(GetCurrentProcess(), &mut count).expect("GetProcessHandleCount");
     }
     count
-}
-
-#[cfg(windows)]
-fn requested_vulkan_soak_duration() -> std::time::Duration {
-    let seconds = std::env::var("UIX_VULKAN_SOAK_SECONDS")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .unwrap_or(30)
-        .clamp(1, 3_600);
-    std::time::Duration::from_secs(seconds)
 }
 
 #[test]
@@ -745,8 +735,10 @@ fn windows_vulkan_shared_device_loss_rejects_peers_and_new_context_replaces_it()
 
 #[cfg(windows)]
 #[test]
-#[ignore = "requires a Vulkan-capable Windows driver; set UIX_VULKAN_SOAK_SECONDS=900 for the gate"]
+#[ignore = "requires a Vulkan-capable Windows driver, UIX_GFX_R5_EXPECT_VENDOR, and UIX_VULKAN_SOAK_SECONDS=900..3600"]
 fn windows_vulkan_shared_device_multiwindow_soak_is_bounded() {
+    let expected = expected_gfx_r5_vendor().unwrap_or_else(|error| panic!("{error}"));
+    let duration = requested_gfx_r5_soak_duration().unwrap_or_else(|error| panic!("{error}"));
     let mut platform = crate::native::create_platform().expect("platform");
     let mut first_window = platform
         .window_manager()
@@ -764,13 +756,20 @@ fn windows_vulkan_shared_device_multiwindow_soak_is_bounded() {
         .expect("first VulkanContext");
     let mut second = VulkanContext::new(second_window.native_surface_ptr(), 176, 132)
         .expect("second VulkanContext");
+    expected.assert_runtime(
+        &first.adapter_info,
+        first.swapchain_maintenance1_enabled_for_test(),
+    );
+    expected.assert_runtime(
+        &second.adapter_info,
+        second.swapchain_maintenance1_enabled_for_test(),
+    );
     assert_eq!(
         first.shared_device_identity(),
         second.shared_device_identity()
     );
 
     let handles_before = current_process_handle_count();
-    let duration = requested_vulkan_soak_duration();
     let deadline = std::time::Instant::now() + duration;
     let first_sizes = [(128, 96), (224, 144), (176, 132), (256, 160)];
     let second_sizes = [(192, 128), (144, 112), (240, 152), (168, 124)];
@@ -844,7 +843,8 @@ fn windows_vulkan_shared_device_multiwindow_soak_is_bounded() {
         "shared multiwindow handles grew beyond the bounded envelope: before={handles_before}, peak={peak_handles}, after={handles_after}"
     );
     println!(
-        "Vulkan shared-device soak: duration={:.1}s rounds={rounds} handles={handles_before}->{handles_after} peak={peak_handles}; {}; swapchain_maintenance1={}",
+        "GFX-R5 Vulkan shared-device soak: expected={}; duration={:.1}s rounds={rounds} handles={handles_before}->{handles_after} peak={peak_handles}; {}; swapchain_maintenance1={}",
+        expected.label(),
         duration.as_secs_f64(),
         first.adapter_info.diagnostic_summary(),
         first.swapchain_maintenance1_enabled_for_test()
@@ -871,9 +871,10 @@ fn windows_vulkan_shared_device_multiwindow_soak_is_bounded() {
 
 #[cfg(windows)]
 #[test]
-#[ignore = "requires a Vulkan-capable Windows driver, UIX_GFX_R5_EXPECT_VENDOR, and UIX_VULKAN_SOAK_SECONDS=900 for the gate"]
+#[ignore = "requires a Vulkan-capable Windows driver, UIX_GFX_R5_EXPECT_VENDOR, and UIX_VULKAN_SOAK_SECONDS=900..3600"]
 fn windows_vulkan_hardware_resize_present_soak_is_bounded() {
     let expected = expected_gfx_r5_vendor().unwrap_or_else(|error| panic!("{error}"));
+    let duration = requested_gfx_r5_soak_duration().unwrap_or_else(|error| panic!("{error}"));
     let mut platform = crate::native::create_platform().expect("platform");
     let mut window = platform
         .window_manager()
@@ -899,7 +900,6 @@ fn windows_vulkan_hardware_resize_present_soak_is_bounded() {
         )
         .expect("warmup present");
     let handles_before = current_process_handle_count();
-    let duration = requested_vulkan_soak_duration();
     let deadline = std::time::Instant::now() + duration;
     let sizes = [(128, 96), (224, 144), (176, 132), (256, 160)];
     let mut rounds = 0_u64;

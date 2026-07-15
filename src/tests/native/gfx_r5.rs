@@ -6,9 +6,12 @@ use crate::native::graphics::vulkan::platform::adapter::VulkanAdapterInfo;
 const GFX_R5_EXPECT_VENDOR_ENV: &str = "UIX_GFX_R5_EXPECT_VENDOR";
 const VULKAN_EXPECT_DEVICE_FAULT_ENV: &str = "UIX_VULKAN_EXPECT_DEVICE_FAULT";
 const VULKAN_DEVICE_LOST_TIMEOUT_ENV: &str = "UIX_VULKAN_DEVICE_LOST_TIMEOUT_SECONDS";
+const VULKAN_SOAK_SECONDS_ENV: &str = "UIX_VULKAN_SOAK_SECONDS";
 const DEFAULT_DEVICE_LOST_TIMEOUT_SECONDS: u64 = 60;
 const MIN_DEVICE_LOST_TIMEOUT_SECONDS: u64 = 5;
 const MAX_DEVICE_LOST_TIMEOUT_SECONDS: u64 = 600;
+const MIN_GFX_R5_SOAK_SECONDS: u64 = 900;
+const MAX_GFX_R5_SOAK_SECONDS: u64 = 3_600;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ExpectedVulkanVendor {
@@ -137,6 +140,14 @@ pub(crate) fn requested_external_device_loss_timeout() -> Result<Duration, GfxR5
     parse_device_loss_timeout(value.as_deref())
 }
 
+pub(crate) fn requested_gfx_r5_soak_duration() -> Result<Duration, GfxR5ConfigError> {
+    let value = required_env(
+        VULKAN_SOAK_SECONDS_ENV,
+        "an integer number of seconds from 900 through 3600",
+    )?;
+    parse_gfx_r5_soak_duration(&value)
+}
+
 fn required_env(name: &'static str, expected: &'static str) -> Result<String, GfxR5ConfigError> {
     match std::env::var(name) {
         Ok(value) => Ok(value),
@@ -179,6 +190,26 @@ fn parse_device_loss_timeout(value: Option<&str>) -> Result<Duration, GfxR5Confi
             value: seconds,
             min: MIN_DEVICE_LOST_TIMEOUT_SECONDS,
             max: MAX_DEVICE_LOST_TIMEOUT_SECONDS,
+        });
+    }
+    Ok(Duration::from_secs(seconds))
+}
+
+fn parse_gfx_r5_soak_duration(value: &str) -> Result<Duration, GfxR5ConfigError> {
+    let seconds = value
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| GfxR5ConfigError::Invalid {
+            name: VULKAN_SOAK_SECONDS_ENV,
+            value: value.to_owned(),
+            expected: "an integer number of seconds from 900 through 3600",
+        })?;
+    if !(MIN_GFX_R5_SOAK_SECONDS..=MAX_GFX_R5_SOAK_SECONDS).contains(&seconds) {
+        return Err(GfxR5ConfigError::OutOfRange {
+            name: VULKAN_SOAK_SECONDS_ENV,
+            value: seconds,
+            min: MIN_GFX_R5_SOAK_SECONDS,
+            max: MAX_GFX_R5_SOAK_SECONDS,
         });
     }
     Ok(Duration::from_secs(seconds))
@@ -266,5 +297,32 @@ fn gfx_r5_device_loss_timeout_rejects_invalid_or_clamped_evidence() {
     assert!(matches!(
         parse_device_loss_timeout(Some("601")),
         Err(GfxR5ConfigError::OutOfRange { value: 601, .. })
+    ));
+}
+
+#[test]
+fn gfx_r5_soak_duration_requires_the_full_gate_window() {
+    assert_eq!(
+        parse_gfx_r5_soak_duration(" 900 "),
+        Ok(Duration::from_secs(900))
+    );
+    assert_eq!(
+        parse_gfx_r5_soak_duration("3600"),
+        Ok(Duration::from_secs(3_600))
+    );
+    assert!(matches!(
+        parse_gfx_r5_soak_duration("quick"),
+        Err(GfxR5ConfigError::Invalid {
+            name: VULKAN_SOAK_SECONDS_ENV,
+            ..
+        })
+    ));
+    assert!(matches!(
+        parse_gfx_r5_soak_duration("899"),
+        Err(GfxR5ConfigError::OutOfRange { value: 899, .. })
+    ));
+    assert!(matches!(
+        parse_gfx_r5_soak_duration("3601"),
+        Err(GfxR5ConfigError::OutOfRange { value: 3601, .. })
     ));
 }
