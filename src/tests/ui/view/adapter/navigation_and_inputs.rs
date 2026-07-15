@@ -145,6 +145,7 @@ fn reconcile_tabs_preserves_active_index_and_syncs_tabs() {
         tabs.snapshot_fields(),
         SnapshotFields::Tabs {
             tabs,
+            active_index: 1,
             position: TabPosition::Bottom,
             fixed_width: Some(520.0),
             fixed_height: Some(260.0),

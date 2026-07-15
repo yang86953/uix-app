@@ -4,3 +4,4 @@ mod anchor;
 mod breadcrumb;
 mod menu;
 mod pagination;
+mod tabs;
