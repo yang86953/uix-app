@@ -7,8 +7,9 @@
 
 use crate::core::{Errc, Error, Result};
 use std::collections::HashMap;
-use std::fs;
-use std::path::Path;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 // ── 极简 JSON 读写（仅支持扁平 HashMap<String, String>） ────────────────
@@ -275,6 +276,141 @@ pub(crate) fn serialize_json_flat(map: &HashMap<String, String>) -> String {
     out
 }
 
+pub(crate) const SETTINGS_TEMP_SUFFIX: &str = ".uix-tmp";
+pub(crate) const SETTINGS_BACKUP_SUFFIX: &str = ".uix-bak";
+
+fn settings_sidecar_path(path: &Path, suffix: &str) -> PathBuf {
+    let mut sidecar = path.as_os_str().to_os_string();
+    sidecar.push(suffix);
+    PathBuf::from(sidecar)
+}
+
+fn settings_io_error(action: &str, path: &Path, source: std::io::Error) -> Error {
+    let source = Error::from(source);
+    Error::new(
+        source.code(),
+        format!(
+            "settings: {action} '{}': {}",
+            path.display(),
+            source.message()
+        ),
+    )
+    .with_source(source)
+}
+
+fn existing_settings_file(path: &Path, role: &str, invalid_code: Errc) -> Result<bool> {
+    match fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() => Ok(true),
+        Ok(_) => Err(Error::new(
+            invalid_code,
+            format!("settings: {role} '{}' is not a file", path.display()),
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(settings_io_error("inspect", path, error)),
+    }
+}
+
+/// 恢复上次在替换窗口中断的保存，并清理未提交的临时文件。
+fn recover_interrupted_settings_save(path: &Path) -> Result<()> {
+    let backup_path = settings_sidecar_path(path, SETTINGS_BACKUP_SUFFIX);
+    let temp_path = settings_sidecar_path(path, SETTINGS_TEMP_SUFFIX);
+    let target_exists = existing_settings_file(path, "target path", Errc::InvalidArgument)?;
+    let backup_exists = existing_settings_file(&backup_path, "backup path", Errc::InvalidState)?;
+    let temp_exists = existing_settings_file(&temp_path, "temp path", Errc::InvalidState)?;
+
+    if backup_exists {
+        if target_exists {
+            fs::remove_file(&backup_path)
+                .map_err(|error| settings_io_error("remove stale backup", &backup_path, error))?;
+        } else {
+            fs::rename(&backup_path, path)
+                .map_err(|error| settings_io_error("restore backup", path, error))?;
+        }
+    }
+
+    if temp_exists {
+        fs::remove_file(&temp_path)
+            .map_err(|error| settings_io_error("remove stale temp file", &temp_path, error))?;
+    }
+
+    Ok(())
+}
+
+fn cleanup_temp_after_error(temp_path: &Path, primary: Error) -> Error {
+    match fs::remove_file(temp_path) {
+        Ok(()) => primary,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => primary,
+        Err(error) => Error::new(
+            Errc::WriteFailure,
+            "settings: save failed and its temp file could not be removed",
+        )
+        .with_source(settings_io_error("remove temp file", temp_path, error).with_source(primary)),
+    }
+}
+
+fn write_settings_temp(temp_path: &Path, json: &str) -> Result<()> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(temp_path)
+        .map_err(|error| settings_io_error("create temp file", temp_path, error))?;
+    let write_result = file
+        .write_all(json.as_bytes())
+        .and_then(|()| file.sync_all());
+    drop(file);
+
+    match write_result {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            let primary = settings_io_error("write and sync temp file", temp_path, error);
+            Err(cleanup_temp_after_error(temp_path, primary))
+        }
+    }
+}
+
+/// 使用同目录 temp + backup 提交文件；任一步失败都保留或恢复上一版本。
+fn replace_settings_file(path: &Path, json: &str) -> Result<()> {
+    recover_interrupted_settings_save(path)?;
+
+    let temp_path = settings_sidecar_path(path, SETTINGS_TEMP_SUFFIX);
+    let backup_path = settings_sidecar_path(path, SETTINGS_BACKUP_SUFFIX);
+    write_settings_temp(&temp_path, json)?;
+
+    let had_target = match existing_settings_file(path, "target path", Errc::InvalidArgument) {
+        Ok(exists) => exists,
+        Err(error) => return Err(cleanup_temp_after_error(&temp_path, error)),
+    };
+    if had_target {
+        if let Err(error) = fs::rename(path, &backup_path) {
+            let primary = settings_io_error("move current file to backup", path, error);
+            return Err(cleanup_temp_after_error(&temp_path, primary));
+        }
+    }
+
+    if let Err(error) = fs::rename(&temp_path, path) {
+        let install_error = settings_io_error("install new file", path, error);
+        if had_target {
+            if let Err(error) = fs::rename(&backup_path, path) {
+                let restore_error = settings_io_error("restore previous file", path, error)
+                    .with_source(install_error);
+                return Err(Error::new(
+                    Errc::WriteFailure,
+                    "settings: installing and restoring the settings file both failed",
+                )
+                .with_source(restore_error));
+            }
+        }
+        return Err(cleanup_temp_after_error(&temp_path, install_error));
+    }
+
+    if had_target {
+        fs::remove_file(&backup_path)
+            .map_err(|error| settings_io_error("remove committed backup", &backup_path, error))?;
+    }
+
+    Ok(())
+}
+
 /// 键值设置服务，支持 JSON 文件持久化。
 #[derive(Debug, Default)]
 struct SettingsState {
@@ -300,7 +436,9 @@ impl SettingsService {
         if path.trim().is_empty() {
             return Err(Error::invalid_arg("settings: path must not be empty"));
         }
-        if !Path::new(path).exists() {
+        let target_path = Path::new(path);
+        recover_interrupted_settings_save(target_path)?;
+        if !existing_settings_file(target_path, "target path", Errc::InvalidArgument)? {
             let mut state = self.write_state();
             state.path = Some(path.to_string());
             state.values.clear();
@@ -308,7 +446,8 @@ impl SettingsService {
             return Ok(());
         }
 
-        let content = fs::read_to_string(path)?;
+        let content = fs::read_to_string(target_path)
+            .map_err(|error| settings_io_error("read", target_path, error))?;
         let parsed = if content.trim().is_empty() {
             HashMap::new()
         } else {
@@ -321,7 +460,7 @@ impl SettingsService {
         Ok(())
     }
 
-    /// 保存设置到 JSON 文件（临时文件 + rename 保证原子性）。
+    /// 通过已同步的临时文件与可恢复备份提交设置。
     pub fn save(&self) -> Result<()> {
         let mut state = self.write_state();
         if !state.dirty {
@@ -333,10 +472,7 @@ impl SettingsService {
             ));
         };
         let json = serialize_json_flat(&state.values);
-        let tmp_path = format!("{path}.tmp");
-        fs::write(&tmp_path, &json)?;
-        let _ = fs::remove_file(path);
-        fs::rename(&tmp_path, path)?;
+        replace_settings_file(Path::new(path), &json)?;
         state.dirty = false;
         Ok(())
     }
