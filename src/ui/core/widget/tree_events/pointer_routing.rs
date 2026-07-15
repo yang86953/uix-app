@@ -15,14 +15,17 @@ impl WidgetTree {
             .managers_mut()
             .interaction
             .release_pressed_pointer(button);
-        // 如果拖拽处于活跃状态，发射 DragEnd 到拖拽目标。
-        if self.managers().drag.is_dragging() {
+        let releases_drag = self.managers().drag.is_gesture_button(button);
+        // 仅由启动键结束拖拽；其他按键释放不改变 potential/active 手势。
+        if releases_drag && self.managers().drag.is_dragging() {
             if let Some(target) = self.managers().drag.target() {
                 let drag_end = SystemEvent::DragEnd { pos, button, mods };
                 let _ = self.dispatch_to(target, &drag_end);
             }
         }
-        self.managers_mut().drag.end_drag();
+        if releases_drag {
+            self.managers_mut().drag.end_drag();
+        }
         let hit = self.overlay_target_at(pos).or_else(|| self.hit_test(pos));
         let mut result = EventResult::NotHandled;
         if let Some(target) = hit {

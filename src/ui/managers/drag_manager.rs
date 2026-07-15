@@ -117,6 +117,10 @@ impl DragManager {
         self.button
     }
 
+    pub fn is_gesture_button(&self, button: MouseButton) -> bool {
+        (self.dragging || self.potential) && self.button == button
+    }
+
     pub fn mods(&self) -> KeyMod {
         self.mods
     }
