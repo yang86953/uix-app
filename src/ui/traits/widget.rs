@@ -243,6 +243,13 @@ pub trait EventHandler: WidgetComponent {
     fn semantic_event(&self, _id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
         None
     }
+    /// 取走本次已处理事件产生的布局请求。
+    ///
+    /// 仅当组件的内部运行态改变了子节点布局时返回 `true`；纯绘制状态变化
+    /// 保持 `false`，避免把普通交互扩大为布局遍历。
+    fn take_layout_request(&mut self) -> bool {
+        false
+    }
     fn scroll_delta(&self, _frame: Rect) -> Option<(f32, f32)> {
         None
     }

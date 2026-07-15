@@ -1,6 +1,7 @@
 // Auto-organized test modules. Tests live only under src/tests.
 
 mod card;
+mod carousel;
 mod collapse;
 mod descriptions;
 mod selectable_list_virtual_scroll;
