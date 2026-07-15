@@ -368,6 +368,9 @@ pub enum SnapshotFields {
     },
     Tree {
         nodes: Vec<SnapshotTreeNode>,
+        selected_key: String,
+        selected_keys: Vec<String>,
+        expanded_keys: Vec<String>,
         multiple: bool,
     },
     List {
@@ -798,7 +801,11 @@ impl SnapshotFields {
             Self::Tabs { .. } | Self::Steps { .. } => {
                 AccessibilitySnapshot::new(AccessibilityRole::TabList)
             }
-            Self::Tree { .. } => AccessibilitySnapshot::new(AccessibilityRole::Tree),
+            Self::Tree { selected_key, .. } => AccessibilitySnapshot::new(AccessibilityRole::Tree)
+                .with_state(AccessibilityState {
+                    value_text: (!selected_key.is_empty()).then(|| selected_key.clone()),
+                    ..AccessibilityState::default()
+                }),
             Self::TreeSelect {
                 placeholder,
                 value,

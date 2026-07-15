@@ -291,6 +291,7 @@ pub struct SnapshotTreeNode {
     pub children: Vec<SnapshotTreeNode>,
     pub disabled: bool,
     pub checkable: bool,
+    pub checked: bool,
     pub draggable: bool,
     pub is_leaf: bool,
 }
@@ -304,6 +305,7 @@ impl SnapshotTreeNode {
             children: node.children.iter().map(Self::from_tree_node).collect(),
             disabled: node.disabled,
             checkable: node.checkable,
+            checked: node.checked,
             draggable: node.draggable,
             is_leaf: node.is_leaf,
         }

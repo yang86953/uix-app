@@ -2,8 +2,11 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::ui::foundation::virtual_scroll::VirtualListScroll;
-use crate::ui::{EventResult, SnapshotFields, SnapshotTreeNode, SystemEvent, WidgetTree};
-use std::cell::Cell;
+use crate::ui::{
+    ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SnapshotTreeNode,
+    SystemEvent, WidgetTree,
+};
+use std::cell::{Cell, RefCell};
 
 pub(crate) const TREE_ROW_HEIGHT: f32 = 28.0;
 
@@ -40,10 +43,14 @@ component! {
         selected_keys: Vec<String>,
         expanded_keys: Vec<String>,
         multiple: bool,
+        focused: bool,
+        pending_change: RefCell<Option<String>>,
         pub(crate) body_scroll: VirtualListScroll,
         scroll_delta_strip: Cell<(f32, f32)>,
         pub(crate) last_frame: Cell<Option<Rect>>,
     }
+
+    tab_index => (&self) -> i32 { 1 }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
@@ -90,42 +97,61 @@ component! {
                     let check_x = indent;
                     if self.flat[idx].checkable && pos.x >= check_x && pos.x < check_x + 20.0 {
                         self.toggle_check(&node_key);
+                        self.pending_change.replace(Some(node_key));
                         return EventResult::Handled;
                     }
 
                     let arrow_x = indent + 20.0;
                     if pos.x >= arrow_x && pos.x < arrow_x + 20.0 && self.flat[idx].has_children {
-                        if let Some(ek_idx) = self.expanded_keys.iter().position(|k| *k == node_key) {
-                            self.expanded_keys.remove(ek_idx);
-                        } else {
-                            self.expanded_keys.push(node_key.clone());
-                        }
-                        self.flatten();
-                        self.body_scroll.clamp_to_content(
-                            self.flat.len(),
-                            TREE_ROW_HEIGHT,
-                            self.body_viewport_height(),
-                        );
+                        self.set_expanded(&node_key, !self.flat[idx].expanded);
                         return EventResult::Handled;
                     }
 
-                    if self.multiple {
-                        if let Some(ex_idx) = self.selected_keys.iter().position(|k| *k == node_key) {
-                            self.selected_keys.remove(ex_idx);
-                        } else {
-                            self.selected_keys.push(node_key.clone());
-                        }
-                    } else {
-                        self.selected_key = node_key.clone();
-                        self.selected_keys.clear();
-                        self.selected_keys.push(node_key);
-                    }
+                    self.select_from_pointer(node_key);
                     return EventResult::Handled;
                 }
                 EventResult::NotHandled
             }
+            SystemEvent::FocusIn => {
+                self.focused = true;
+                EventResult::Handled
+            }
+            SystemEvent::FocusOut => {
+                self.focused = false;
+                EventResult::Handled
+            }
+            SystemEvent::KeyDown { key, .. } => match key {
+                KeyCode::Down => {
+                    self.move_selection(true);
+                    EventResult::Handled
+                }
+                KeyCode::Up => {
+                    self.move_selection(false);
+                    EventResult::Handled
+                }
+                KeyCode::Right => {
+                    self.expand_or_descend();
+                    EventResult::Handled
+                }
+                KeyCode::Left => {
+                    self.collapse_or_ascend();
+                    EventResult::Handled
+                }
+                KeyCode::Space | KeyCode::Enter => {
+                    self.activate_current(*key == KeyCode::Space);
+                    EventResult::Handled
+                }
+                _ => EventResult::NotHandled,
+            },
             _ => EventResult::NotHandled,
         }
+    }
+
+    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_change
+            .borrow_mut()
+            .take()
+            .map(|key| SemanticEvent::change(id, key))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -156,6 +182,9 @@ component! {
             }
 
             let row_rect = Rect::new(frame.x, y, frame.w, TREE_ROW_HEIGHT);
+            if self.focused && self.multiple && node.key == self.selected_key {
+                ctx.stroke_rect(row_rect, primary, 1.0, None);
+            }
             let mut cursor = frame.x + indent;
 
             if node.checkable {
@@ -197,6 +226,9 @@ component! {
         }
 
         ctx.canvas_2d().pop_clip();
+        if self.focused {
+            ctx.stroke_rect(frame, primary, 1.5, None);
+        }
     }
 }
 
@@ -243,6 +275,8 @@ impl Tree {
             selected_keys: Vec::new(),
             expanded_keys: Vec::new(),
             multiple: false,
+            focused: false,
+            pending_change: RefCell::new(None),
             body_scroll: VirtualListScroll::new(),
             scroll_delta_strip: Cell::new((0.0, 0.0)),
             last_frame: Cell::new(None),
@@ -261,6 +295,12 @@ impl Tree {
 
     pub fn set_selected_key(&mut self, key: &str) {
         self.selected_key = key.to_string();
+        if !self.multiple {
+            self.selected_keys.clear();
+            if !key.is_empty() {
+                self.selected_keys.push(key.to_string());
+            }
+        }
     }
 
     pub fn multiple(mut self, v: bool) -> Self {
@@ -272,6 +312,159 @@ impl Tree {
         if let Some(node) = self.find_node_mut(key) {
             node.checked = !node.checked;
             self.flatten();
+        }
+    }
+
+    fn select_from_pointer(&mut self, key: String) {
+        self.selected_key.clone_from(&key);
+        if self.multiple {
+            if let Some(index) = self
+                .selected_keys
+                .iter()
+                .position(|selected| *selected == key)
+            {
+                self.selected_keys.remove(index);
+            } else {
+                self.selected_keys.push(key.clone());
+            }
+        } else {
+            self.selected_keys.clear();
+            self.selected_keys.push(key.clone());
+        }
+        self.pending_change.replace(Some(key));
+    }
+
+    fn move_selection(&mut self, forward: bool) {
+        let enabled = self
+            .flat
+            .iter()
+            .enumerate()
+            .filter_map(|(index, node)| (!node.disabled).then_some(index))
+            .collect::<Vec<_>>();
+        if enabled.is_empty() {
+            return;
+        }
+        let current = enabled
+            .iter()
+            .position(|&index| self.flat[index].key == self.selected_key);
+        let position = match (current, forward) {
+            (Some(position), true) => (position + 1).min(enabled.len() - 1),
+            (Some(position), false) => position.saturating_sub(1),
+            (None, true) => 0,
+            (None, false) => enabled.len() - 1,
+        };
+        self.focus_visible_index(enabled[position]);
+    }
+
+    fn focus_visible_index(&mut self, index: usize) {
+        let key = self.flat[index].key.clone();
+        let changed = key != self.selected_key;
+        self.selected_key.clone_from(&key);
+        if !self.multiple {
+            self.selected_keys.clear();
+            self.selected_keys.push(key.clone());
+            if changed {
+                self.pending_change.replace(Some(key));
+            }
+        }
+        self.reveal_index(index);
+    }
+
+    fn expand_or_descend(&mut self) {
+        let Some(index) = self.current_visible_index() else {
+            self.move_selection(true);
+            return;
+        };
+        let key = self.flat[index].key.clone();
+        let depth = self.flat[index].depth;
+        if !self.flat[index].has_children {
+            return;
+        }
+        if !self.flat[index].expanded {
+            self.set_expanded(&key, true);
+            return;
+        }
+        let child = ((index + 1)..self.flat.len())
+            .take_while(|&candidate| self.flat[candidate].depth > depth)
+            .find(|&candidate| !self.flat[candidate].disabled);
+        if let Some(child) = child {
+            self.focus_visible_index(child);
+        }
+    }
+
+    fn collapse_or_ascend(&mut self) {
+        let Some(index) = self.current_visible_index() else {
+            self.move_selection(false);
+            return;
+        };
+        let key = self.flat[index].key.clone();
+        let depth = self.flat[index].depth;
+        if self.flat[index].has_children && self.flat[index].expanded {
+            self.set_expanded(&key, false);
+            return;
+        }
+        let parent = (0..index).rev().find(|&candidate| {
+            self.flat[candidate].depth < depth && !self.flat[candidate].disabled
+        });
+        if let Some(parent) = parent {
+            self.focus_visible_index(parent);
+        }
+    }
+
+    fn activate_current(&mut self, prefer_check: bool) {
+        let Some(index) = self.current_visible_index() else {
+            self.move_selection(true);
+            return;
+        };
+        let key = self.flat[index].key.clone();
+        if prefer_check && self.flat[index].checkable {
+            self.toggle_check(&key);
+            self.pending_change.replace(Some(key));
+        } else if self.multiple {
+            self.select_from_pointer(key);
+        }
+    }
+
+    fn current_visible_index(&self) -> Option<usize> {
+        self.flat
+            .iter()
+            .position(|node| node.key == self.selected_key && !node.disabled)
+    }
+
+    fn set_expanded(&mut self, key: &str, expanded: bool) {
+        if expanded {
+            if !self.expanded_keys.iter().any(|candidate| candidate == key) {
+                self.expanded_keys.push(key.to_string());
+            }
+        } else {
+            self.expanded_keys.retain(|candidate| candidate != key);
+        }
+        self.flatten();
+        self.body_scroll.clamp_to_content(
+            self.flat.len(),
+            TREE_ROW_HEIGHT,
+            self.body_viewport_height(),
+        );
+    }
+
+    fn reveal_index(&mut self, index: usize) {
+        let viewport_height = self.body_viewport_height();
+        let old_offset = self.body_scroll.scroll_offset();
+        let row_top = index as f32 * TREE_ROW_HEIGHT;
+        let row_bottom = row_top + TREE_ROW_HEIGHT;
+        let new_offset = if row_top < old_offset {
+            row_top
+        } else if row_bottom > old_offset + viewport_height {
+            row_bottom - viewport_height
+        } else {
+            old_offset
+        };
+        self.body_scroll.set_scroll_offset(new_offset);
+        self.body_scroll
+            .clamp_to_content(self.flat.len(), TREE_ROW_HEIGHT, viewport_height);
+        let applied = self.body_scroll.scroll_offset() - old_offset;
+        if applied.abs() > 0.01 {
+            self.push_scroll_delta(0.0, applied);
         }
     }
 
@@ -375,6 +568,9 @@ impl Tree {
                 .iter()
                 .map(SnapshotTreeNode::from_tree_node)
                 .collect(),
+            selected_key: self.selected_key.clone(),
+            selected_keys: self.selected_keys.clone(),
+            expanded_keys: self.expanded_keys.clone(),
             multiple: self.multiple,
         }
     }
