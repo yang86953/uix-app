@@ -420,8 +420,15 @@ impl WidgetTree {
             SystemEvent::WindowMaximize
             | SystemEvent::WindowMinimize
             | SystemEvent::WindowRestore
-            | SystemEvent::WindowFocus
-            | SystemEvent::WindowBlur => {
+            | SystemEvent::WindowFocus => {
+                if let Some(root) = self.root_id {
+                    self.dispatch_to(root, event)
+                } else {
+                    EventResult::NotHandled
+                }
+            }
+            SystemEvent::WindowBlur => {
+                self.cancel_active_pointer_gesture();
                 if let Some(root) = self.root_id {
                     self.dispatch_to(root, event)
                 } else {

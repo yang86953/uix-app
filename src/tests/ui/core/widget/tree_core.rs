@@ -4483,6 +4483,74 @@ fn captured_pointer_release_cancels_the_pressed_target() {
 }
 
 #[test]
+fn window_blur_cancels_active_pointer_and_drag_state() {
+    let mut tree = WidgetTree::new();
+    let target = tree.set_root(Box::new(SpyWidget::new(200.0, 100.0)));
+    tree.get_mut(target)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 100.0));
+
+    tree.dispatch_event(&SystemEvent::PointerDown {
+        pos: Point::new(20.0, 20.0),
+        button: MouseButton::Left,
+        mods: KeyMod::CTRL,
+    });
+    tree.dispatch_event(&SystemEvent::PointerMove {
+        pos: Point::new(40.0, 20.0),
+        mods: KeyMod::CTRL,
+    });
+    assert!(tree.managers().drag.is_dragging());
+
+    tree.dispatch_event(&SystemEvent::WindowBlur);
+
+    assert_eq!(tree.managers().interaction.pressed_component(), None);
+    assert!(!tree.managers().drag.is_dragging());
+    assert!(!tree.managers().drag.is_potential());
+    let events = tree
+        .get(target)
+        .and_then(|node| node.component().as_any().downcast_ref::<SpyWidget>())
+        .map(|widget| widget.events.borrow().clone())
+        .unwrap_or_default();
+    assert!(events.iter().any(|event| matches!(
+        event,
+        SystemEvent::DragEnd {
+            button: MouseButton::Left,
+            mods,
+            ..
+        } if *mods == KeyMod::CTRL
+    )));
+    assert!(events
+        .iter()
+        .any(|event| matches!(event, SystemEvent::PointerLeave)));
+    assert!(events
+        .iter()
+        .any(|event| matches!(event, SystemEvent::WindowBlur)));
+}
+
+#[test]
+fn window_blur_releases_pressed_visual_without_clearing_focus() {
+    let mut tree = WidgetTree::new();
+    let target = tree.set_root(Box::new(Button::new("Blurred")));
+    tree.get_mut(target)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 40.0));
+    tree.set_focus(Some(target));
+    tree.dispatch_event(&SystemEvent::PointerDown {
+        pos: Point::new(20.0, 20.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    tree.dispatch_event(&SystemEvent::WindowBlur);
+
+    assert_eq!(tree.managers().focus.focused_component(), Some(target));
+    assert!(tree
+        .get(target)
+        .and_then(|node| node.component().as_any().downcast_ref::<Button>())
+        .is_some_and(|button| !button.pressed));
+}
+
+#[test]
 fn capture_phase_requires_explicit_opt_in() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));
