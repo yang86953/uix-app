@@ -6,8 +6,9 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
-use crate::ui::SnapshotFields;
-use crate::ui::{ComponentId, EventResult, SemanticEvent, SystemEvent, WidgetTree};
+use crate::ui::{
+    ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
+};
 use std::cell::Cell;
 
 component! {
@@ -25,8 +26,11 @@ component! {
         offset_top: f32,
         /// 背景色
         bg_color: Option<Color>,
+        focused: bool,
         pending_change: Cell<Option<usize>>,
     }
+
+    tab_index => (&self) -> i32 { i32::from(!self.items.is_empty()) }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
@@ -35,10 +39,12 @@ component! {
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
             SystemEvent::PointerDown { pos, .. } => {
+                if pos.y < 0.0 {
+                    return EventResult::NotHandled;
+                }
                 let idx = (pos.y / 36.0) as usize;
                 if idx < self.items.len() {
-                    self.active_index = idx;
-                    self.pending_change.set(Some(idx));
+                    self.select(idx, true);
                     EventResult::Handled
                 } else {
                     EventResult::NotHandled
@@ -46,6 +52,37 @@ component! {
             }
             SystemEvent::PointerEnter => EventResult::Handled,
             SystemEvent::PointerLeave => EventResult::Handled,
+            SystemEvent::FocusIn => {
+                self.focused = true;
+                EventResult::Handled
+            }
+            SystemEvent::FocusOut => {
+                self.focused = false;
+                EventResult::Handled
+            }
+            SystemEvent::KeyDown { key, .. } => match key {
+                KeyCode::Down => {
+                    self.move_active(true);
+                    EventResult::Handled
+                }
+                KeyCode::Up => {
+                    self.move_active(false);
+                    EventResult::Handled
+                }
+                KeyCode::Home => {
+                    self.select(0, true);
+                    EventResult::Handled
+                }
+                KeyCode::End if !self.items.is_empty() => {
+                    self.select(self.items.len() - 1, true);
+                    EventResult::Handled
+                }
+                KeyCode::Enter | KeyCode::Space if !self.items.is_empty() => {
+                    self.pending_change.set(Some(self.active_index));
+                    EventResult::Handled
+                }
+                _ => EventResult::NotHandled,
+            },
             _ => EventResult::NotHandled,
         }
     }
@@ -91,6 +128,17 @@ component! {
             let label_y = ctx.visual_center_y(row_rect, 14.0);
             ctx.draw_text(&item.label, Point::new(label_x, label_y), color, 14.0);
         }
+
+        if self.focused {
+            ctx.stroke_rect(
+                frame,
+                primary,
+                1.5,
+                Some(crate::draw::Radius::uniform(
+                    ctx.tokens().border_radius_sm(),
+                )),
+            );
+        }
     }
 }
 
@@ -117,7 +165,7 @@ impl Anchor {
         let w = self
             .items
             .iter()
-            .map(|i| i.label.len() as f32 * 14.0 + 32.0)
+            .map(|i| i.label.chars().count() as f32 * 14.0 + 32.0)
             .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap_or(120.0)
             .max(120.0);
@@ -132,6 +180,7 @@ impl Anchor {
             anchor_positions: vec![0.0; count],
             offset_top: 0.0,
             bg_color: None,
+            focused: false,
             pending_change: Cell::new(None),
         }
     }
@@ -175,16 +224,46 @@ impl Anchor {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let old_position_count = self.anchor_positions.len();
         self.items = next.items;
         self.offset_top = next.offset_top;
         self.bg_color = next.bg_color;
+        self.active_index = self.active_index.min(self.items.len().saturating_sub(1));
+        if old_position_count != self.items.len() {
+            self.anchor_positions = vec![0.0; self.items.len()];
+        }
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Anchor {
             items: self.items.clone(),
+            active_index: self.active_index,
             offset_top: self.offset_top,
             bg_color: self.bg_color,
         }
+    }
+
+    fn select(&mut self, index: usize, emit: bool) {
+        if self.items.is_empty() {
+            return;
+        }
+        let index = index.min(self.items.len() - 1);
+        let changed = index != self.active_index;
+        self.active_index = index;
+        if emit && changed {
+            self.pending_change.set(Some(index));
+        }
+    }
+
+    fn move_active(&mut self, forward: bool) {
+        if self.items.is_empty() {
+            return;
+        }
+        let next = if forward {
+            (self.active_index + 1).min(self.items.len() - 1)
+        } else {
+            self.active_index.saturating_sub(1)
+        };
+        self.select(next, true);
     }
 }
