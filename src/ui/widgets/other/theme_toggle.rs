@@ -5,7 +5,9 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
-use crate::ui::{EventResult, SnapshotFields, SystemEvent, WidgetTree};
+use crate::ui::{
+    ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
+};
 use std::cell::Cell;
 
 component! {
@@ -14,7 +16,11 @@ component! {
         #[snapshot(skip)]
         pub dark: Cell<bool>,
         initial_dark: bool,
+        focused: bool,
+        pending_change: Cell<Option<bool>>,
     }
+
+    tab_index => (&self) -> i32 { 1 }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
@@ -22,13 +28,31 @@ component! {
 
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
-        if let SystemEvent::PointerDown { .. } = event {
-            let new = !self.dark.get();
-            self.dark.set(new);
-            EventResult::Handled
-        } else {
-            EventResult::NotHandled
+        match event {
+            SystemEvent::PointerDown { .. }
+            | SystemEvent::KeyDown {
+                key: KeyCode::Enter | KeyCode::Space,
+                ..
+            } => {
+                self.toggle();
+                EventResult::Handled
+            }
+            SystemEvent::FocusIn => {
+                self.focused = true;
+                EventResult::Handled
+            }
+            SystemEvent::FocusOut => {
+                self.focused = false;
+                EventResult::Handled
+            }
+            _ => EventResult::NotHandled,
         }
+    }
+
+    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_change.take().map(|dark| {
+            SemanticEvent::change(id, if dark { "dark" } else { "light" })
+        })
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -41,6 +65,14 @@ component! {
         }
         ctx.text_center(icon_str, frame, text_color, 18.0);
         ctx.set_font(saved);
+        if self.focused {
+            ctx.stroke_rect(
+                frame,
+                ctx.tokens().color_primary(),
+                1.5,
+                Some(crate::draw::Radius::uniform(frame.w.min(frame.h) * 0.5)),
+            );
+        }
     }
 }
 
@@ -49,6 +81,8 @@ impl ThemeToggle {
         Self {
             dark: Cell::new(false),
             initial_dark: false,
+            focused: false,
+            pending_change: Cell::new(None),
         }
     }
 
@@ -68,12 +102,18 @@ impl ThemeToggle {
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::ThemeToggle {
-            dark: self.initial_dark,
+            dark: self.dark.get(),
         }
     }
 
     fn intrinsic_size(&self) -> Size {
         Size::new(32.0, 32.0)
+    }
+
+    fn toggle(&self) {
+        let dark = !self.dark.get();
+        self.dark.set(dark);
+        self.pending_change.set(Some(dark));
     }
 }
 

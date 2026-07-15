@@ -199,7 +199,7 @@ fn reconcile_theme_toggle_preserves_current_dark_state_and_syncs_initial() {
     assert!(theme_toggle.is_dark());
     assert_eq!(
         theme_toggle.snapshot_fields(),
-        SnapshotFields::ThemeToggle { dark: false }
+        SnapshotFields::ThemeToggle { dark: true }
     );
 }
 
