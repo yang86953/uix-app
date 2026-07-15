@@ -4,6 +4,31 @@ use crate::ui::widgets::{
 
 use super::{AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotTransferItem};
 
+pub(super) fn chart_accessibility<'a>(
+    name: &'static str,
+    values: impl Iterator<Item = (&'a str, f32)>,
+) -> AccessibilitySnapshot {
+    let value_text = values
+        .map(|(label, value)| {
+            let value = if value.is_finite() { value } else { 0.0 };
+            let value = if value == value.trunc() {
+                format!("{value:.0}")
+            } else {
+                format!("{value:.1}")
+            };
+            if label.trim().is_empty() {
+                value
+            } else {
+                format!("{}: {value}", label.trim())
+            }
+        })
+        .collect::<Vec<_>>();
+    AccessibilitySnapshot::named(AccessibilityRole::Image, name).with_state(AccessibilityState {
+        value_text: (!value_text.is_empty()).then(|| value_text.join("; ")),
+        ..AccessibilityState::default()
+    })
+}
+
 pub(super) fn transfer_accessibility(
     source: &[SnapshotTransferItem],
     target: &[SnapshotTransferItem],
