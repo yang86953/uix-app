@@ -361,7 +361,8 @@ pub enum SnapshotFields {
     },
     Steps {
         steps: Vec<Step>,
-        direction: bool,
+        current: usize,
+        direction: StepsDirection,
     },
     NavItem {
         label: String,
@@ -841,7 +842,16 @@ impl SnapshotFields {
                     ..AccessibilityState::default()
                 },
             ),
-            Self::Steps { .. } => AccessibilitySnapshot::new(AccessibilityRole::TabList),
+            Self::Steps { steps, current, .. } => AccessibilitySnapshot::new(
+                AccessibilityRole::Navigation,
+            )
+            .with_state(AccessibilityState {
+                value_text: steps.get(*current).map(|step| step.title.clone()),
+                value_now: Some((*current + 1) as f64),
+                value_min: Some(1.0),
+                value_max: Some(steps.len().max(1) as f64),
+                ..AccessibilityState::default()
+            }),
             Self::NavItem { label, active, .. } => {
                 AccessibilitySnapshot::named(AccessibilityRole::Navigation, label.clone())
                     .with_state(AccessibilityState {
