@@ -97,3 +97,21 @@ fn hidden_ancestor_stops_descendant_animation_before_lifecycle_reconcile() {
     );
     assert_eq!(updates.load(Ordering::Relaxed), 0);
 }
+
+#[test]
+fn hidden_zero_frame_descendant_does_not_restart_layout_bootstrap() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new()));
+    let hidden_parent = tree.add_child(root, Box::new(Container::new()));
+    let _hidden_child = tree.add_child(hidden_parent, Box::new(Container::new()));
+    tree.get_mut(root)
+        .expect("root")
+        .set_frame(Rect::new(0.0, 0.0, 320.0, 200.0));
+    tree.set_node_visibility(hidden_parent, false);
+    tree.reset_invalidation();
+    let _ = tree.take_layout_converge_passes();
+
+    tree.layout();
+
+    assert_eq!(tree.take_layout_converge_passes(), 0);
+}

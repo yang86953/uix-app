@@ -158,9 +158,10 @@ impl WidgetTree {
                     }
                     self.traverse().iter().copied().any(|cid| {
                         cid != root_id
-                            && self.get(cid).is_some_and(|c| {
-                                c.visible() && (c.frame().w <= 0.0 || c.frame().h <= 0.0)
-                            })
+                            && self.is_effectively_visible(cid)
+                            && self
+                                .get(cid)
+                                .is_some_and(|c| c.frame().w <= 0.0 || c.frame().h <= 0.0)
                     })
                 })
             });
