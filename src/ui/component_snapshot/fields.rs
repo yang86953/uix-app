@@ -400,6 +400,8 @@ pub enum SnapshotFields {
     AutoComplete {
         placeholder: String,
         options: Vec<String>,
+        value: String,
+        open: bool,
     },
     TreeSelect {
         placeholder: String,
@@ -859,9 +861,18 @@ impl SnapshotFields {
                 value_text: Some(value.to_string()),
                 ..AccessibilityState::default()
             }),
-            Self::AutoComplete { placeholder, .. }
-            | Self::Cascader { placeholder, .. }
-            | Self::Mentions { placeholder, .. } => {
+            Self::AutoComplete {
+                placeholder,
+                value,
+                open,
+                ..
+            } => AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
+                .with_state(AccessibilityState {
+                    expanded: Some(*open),
+                    value_text: (!value.is_empty()).then(|| value.clone()),
+                    ..AccessibilityState::default()
+                }),
+            Self::Cascader { placeholder, .. } | Self::Mentions { placeholder, .. } => {
                 AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
             }
             Self::Segmented {

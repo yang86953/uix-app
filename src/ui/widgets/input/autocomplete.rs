@@ -7,7 +7,8 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
-use crate::ui::{EventResult, SnapshotFields, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyCode, SnapshotFields, SystemEvent, WidgetTree};
+use std::cell::Cell;
 
 // AutoComplete — 自动完成输入框。
 component! {
@@ -23,7 +24,14 @@ component! {
         focus: bool,
         hovered: bool,
         selected_idx: usize,
+        cursor_rect: Cell<Rect>,
     }
+
+    tab_index => (&self) -> i32 { 1 }
+
+    accepts_text_input => (&self) -> bool { true }
+
+    text_input_cursor_rect => (&self) -> Rect { self.cursor_rect.get() }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
@@ -35,7 +43,6 @@ component! {
             SystemEvent::PointerDown { pos, .. } => {
                 if pos.y >= 0.0 && pos.y <= 32.0 {
                     self.focus = true;
-                    self.filter();
                     self.open();
                     return EventResult::Handled;
                 }
@@ -53,26 +60,52 @@ component! {
             }
             SystemEvent::PointerEnter => { self.hovered = true; EventResult::Handled }
             SystemEvent::PointerLeave => { self.hovered = false; EventResult::Handled }
+            SystemEvent::FocusIn => {
+                self.focus = true;
+                EventResult::Handled
+            }
+            SystemEvent::FocusOut => {
+                self.focus = false;
+                self.close();
+                EventResult::Handled
+            }
             SystemEvent::KeyDown { key, .. } => {
                 match key {
-                    crate::ui::KeyCode::Down if self.open => {
-                        self.selected_idx = (self.selected_idx + 1).min(self.filtered.len().saturating_sub(1));
+                    KeyCode::Down => {
+                        if !self.open {
+                            self.open();
+                        } else if !self.filtered.is_empty() {
+                            self.selected_idx = (self.selected_idx + 1).min(self.filtered.len() - 1);
+                        }
                     }
-                    crate::ui::KeyCode::Up if self.open => {
+                    KeyCode::Up if self.open => {
                         self.selected_idx = self.selected_idx.saturating_sub(1);
                     }
-                    crate::ui::KeyCode::Enter if self.open => {
+                    KeyCode::Enter if self.open => {
                         if self.selected_idx < self.filtered.len() {
                             self.value = self.filtered[self.selected_idx].clone();
                             self.close();
                         }
                     }
-                    crate::ui::KeyCode::Escape => { self.close(); }
-                    _ => {
+                    KeyCode::Escape => { self.close(); }
+                    KeyCode::Backspace => {
+                        if self.value.pop().is_none() {
+                            return EventResult::NotHandled;
+                        }
                         self.filter();
                         self.open();
                     }
+                    _ => return EventResult::NotHandled,
                 }
+                EventResult::Handled
+            }
+            SystemEvent::TextInput { text } | SystemEvent::Paste { text } => {
+                if text.is_empty() || text.chars().any(char::is_control) {
+                    return EventResult::NotHandled;
+                }
+                self.value.push_str(text);
+                self.filter();
+                self.open();
                 EventResult::Handled
             }
             _ => EventResult::NotHandled,
@@ -94,6 +127,13 @@ component! {
         let disp_c = if self.value.is_empty() { text_sec } else { text };
         let draw_y = ctx.visual_center_y(input_rect, 13.0);
         ctx.draw_text(display, Point::new(frame.x + 10.0, draw_y), disp_c, 13.0);
+        let cursor_x = (frame.x + 10.0 + self.value.chars().count() as f32 * 7.0)
+            .min(frame.x + frame.w - 10.0);
+        let cursor_rect = Rect::new(cursor_x, frame.y + 7.0, 1.0, 18.0);
+        self.cursor_rect.set(cursor_rect);
+        if self.focus {
+            ctx.fill_rect(cursor_rect, primary, None);
+        }
 
         // 下拉选项
         if self.is_present() && !self.filtered.is_empty() {
@@ -119,7 +159,7 @@ component! {
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        autocomplete_dirty_rect(frame, self.filtered.len())
+        autocomplete_dirty_rect(frame, self.dropdown_damage_rows())
     }
 
     update_animation => (&mut self, dt: f64) -> bool {
@@ -141,7 +181,7 @@ component! {
 
     dirty_bounds => (&self, frame: Rect) -> Rect {
         if self.transition_dirty {
-            autocomplete_dirty_rect(frame, self.filtered.len())
+            autocomplete_dirty_rect(frame, self.dropdown_damage_rows())
         } else {
             Rect::zero()
         }
@@ -166,6 +206,7 @@ impl AutoComplete {
             focus: false,
             hovered: false,
             selected_idx: 0,
+            cursor_rect: Cell::new(Rect::zero()),
         }
     }
     pub fn placeholder(mut self, p: &str) -> Self {
@@ -181,19 +222,32 @@ impl AutoComplete {
     }
     pub fn set_value(&mut self, v: &str) {
         self.value = v.to_string();
+        if self.is_present() || self.focus {
+            self.filter();
+        }
     }
     fn filter(&mut self) {
         if self.value.is_empty() {
             self.filtered = self.options.clone();
         } else {
+            let query = self.value.to_lowercase();
             self.filtered = self
                 .options
                 .iter()
-                .filter(|o| o.contains(&self.value))
+                .filter(|option| option.to_lowercase().contains(&query))
                 .cloned()
                 .collect();
         }
         self.selected_idx = 0;
+    }
+
+    fn dropdown_damage_rows(&self) -> usize {
+        self.options.len().max(self.filtered.len())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn filtered_options(&self) -> &[String] {
+        &self.filtered
     }
 
     pub fn is_open(&self) -> bool {
@@ -205,6 +259,7 @@ impl AutoComplete {
     }
 
     pub fn open(&mut self) {
+        self.filter();
         self.open = true;
         self.closing = false;
         self.transition = TransitionPlayer::new(presets::tooltip_enter());
@@ -229,6 +284,8 @@ impl AutoComplete {
         SnapshotFields::AutoComplete {
             placeholder: self.placeholder.clone(),
             options: self.options.clone(),
+            value: self.value.clone(),
+            open: self.open,
         }
     }
 
