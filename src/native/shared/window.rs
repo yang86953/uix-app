@@ -160,6 +160,15 @@ pub fn unimpl(method: &str) -> Result<()> {
     ))
 }
 
+pub(crate) fn validate_window_extent(operation: &str, width: i32, height: i32) -> Result<()> {
+    if width <= 0 || height <= 0 {
+        return Err(Error::invalid_arg(format!(
+            "{operation} requires a positive extent, got {width}x{height}"
+        )));
+    }
+    Ok(())
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // 辅助宏
 // ════════════════════════════════════════════════════════════════════════════
@@ -345,6 +354,7 @@ impl<O: WindowOps> IWindowProperties for PlatformWindowCore<O> {
     }
 
     fn set_size(&mut self, w: i32, h: i32) -> Result<()> {
+        validate_window_extent("set_size", w, h)?;
         self.ops.os_set_size(w, h)?;
         state_write!(self.state, width, w);
         state_write!(self.state, height, h);
@@ -352,9 +362,11 @@ impl<O: WindowOps> IWindowProperties for PlatformWindowCore<O> {
     }
 
     fn set_minimum_size(&mut self, w: i32, h: i32) -> Result<()> {
+        validate_window_extent("set_minimum_size", w, h)?;
         self.ops.os_set_min_size(w, h)
     }
     fn set_maximum_size(&mut self, w: i32, h: i32) -> Result<()> {
+        validate_window_extent("set_maximum_size", w, h)?;
         self.ops.os_set_max_size(w, h)
     }
 
