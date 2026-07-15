@@ -43,15 +43,17 @@ pub fn compute_flex_layout(input: &FlexInput) -> FlexOutput {
     let mut cross_sizes = vec![0.0f32; count];
     let mut total_flex_grow = 0.0f32;
 
-    for i in 0..count {
-        let child = &input.children[i];
-        let child_size = input.child_sizes[i];
+    for ((base_main, cross), (child, child_size)) in base_main_sizes
+        .iter_mut()
+        .zip(&mut cross_sizes)
+        .zip(input.children.iter().zip(&input.child_sizes))
+    {
         let basis = match child.flex_basis {
             Some(v) if v >= 0.0 => v,
-            _ => main_size(&child_size),
+            _ => main_size(child_size),
         };
-        base_main_sizes[i] = basis;
-        cross_sizes[i] = cross_size(&child_size);
+        *base_main = basis;
+        *cross = cross_size(child_size);
         total_flex_grow += child.flex_grow;
     }
 
@@ -84,9 +86,8 @@ pub fn compute_flex_layout(input: &FlexInput) -> FlexOutput {
 }
 
 fn clamp_sizes(base: &mut [f32], cross: &mut [f32], children: &[FlexChild], is_row: bool) {
-    for i in 0..base.len() {
-        let child = &children[i];
-        let sz = make_size_from(is_row, base[i], cross[i]);
+    for ((main, cross), child) in base.iter_mut().zip(cross).zip(children) {
+        let sz = make_size_from(is_row, *main, *cross);
 
         let clamped = Size::new(
             sz.w.max(child.min_size.w).min(child.max_size.w),
@@ -96,9 +97,9 @@ fn clamp_sizes(base: &mut [f32], cross: &mut [f32], children: &[FlexChild], is_r
         let new_main = if is_row { clamped.w } else { clamped.h };
         let new_cross = if is_row { clamped.h } else { clamped.w };
 
-        if (base[i] - new_main).abs() > 0.001 || (cross[i] - new_cross).abs() > 0.001 {
-            base[i] = new_main;
-            cross[i] = new_cross;
+        if (*main - new_main).abs() > 0.001 || (*cross - new_cross).abs() > 0.001 {
+            *main = new_main;
+            *cross = new_cross;
         }
     }
 }
@@ -155,8 +156,8 @@ fn distribute_flex_grow(
     total_flex_grow: f32,
 ) {
     if total_flex_grow > 0.0 && remaining > 0.0 {
-        for i in 0..base.len() {
-            base[i] += remaining * (children[i].flex_grow / total_flex_grow);
+        for (main, child) in base.iter_mut().zip(children) {
+            *main += remaining * (child.flex_grow / total_flex_grow);
         }
     }
 }
@@ -168,13 +169,13 @@ fn distribute_shrink(base: &mut [f32], overflow: f32, children: &[FlexChild]) {
         .map(|(&sz, ch)| ch.flex_shrink * sz)
         .sum();
     if total_shrink_weight > 0.0 {
-        for (i, b) in base.iter_mut().enumerate() {
-            if *b <= 0.0 {
+        for (main, child) in base.iter_mut().zip(children) {
+            if *main <= 0.0 {
                 continue;
             }
-            let weight = children[i].flex_shrink * *b / total_shrink_weight;
-            let reduction = (overflow * weight).min(*b);
-            *b -= reduction;
+            let weight = child.flex_shrink * *main / total_shrink_weight;
+            let reduction = (overflow * weight).min(*main);
+            *main -= reduction;
         }
     }
 }
@@ -423,8 +424,8 @@ fn compute_wrapped(
     let mut line_start = 0usize;
     let mut line_main = 0.0f32;
 
-    for i in 0..count {
-        let child_main = base_main_sizes[i] + margin_main(child_margin(input, i), is_row);
+    for (i, &base_main_size) in base_main_sizes.iter().enumerate() {
+        let child_main = base_main_size + margin_main(child_margin(input, i), is_row);
         let item_gap = if i > line_start { input.gap } else { 0.0 };
 
         if line_main + item_gap + child_main > container_main && line_main > 0.0 {

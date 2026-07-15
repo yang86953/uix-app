@@ -165,20 +165,20 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
     let mut col_positions: Vec<(f32, f32)> = Vec::with_capacity(n_cols);
 
     let mut cx = inner.x;
-    for i in 0..n_cols {
-        col_positions.push((cx, col_sizes[i]));
-        cx += col_sizes[i];
-        if i < n_cols - 1 {
+    for (index, size) in col_sizes.iter().copied().enumerate() {
+        col_positions.push((cx, size));
+        cx += size;
+        if index + 1 < n_cols {
             cx += input.col_gap;
         }
     }
 
     let mut row_positions: Vec<(f32, f32)> = Vec::with_capacity(n_rows);
     let mut cy = inner.y;
-    for i in 0..n_rows {
-        row_positions.push((cy, row_sizes[i]));
-        cy += row_sizes[i];
-        if i < n_rows - 1 {
+    for (index, size) in row_sizes.iter().copied().enumerate() {
+        row_positions.push((cy, size));
+        cy += size;
+        if index + 1 < n_rows {
             cy += input.row_gap;
         }
     }
