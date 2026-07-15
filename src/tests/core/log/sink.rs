@@ -39,7 +39,7 @@ fn record_json_escapes_every_string_field() {
 
     assert_eq!(
         record.to_json(),
-        "{\"ts\":\"1970-01-01T00:00:00.000Z\",\"level\":\"INFO\",\"msg\":\"quote \\\" slash \\\\ newline\\n tab\\t control \\u0001\",\"file\":\"bad\\\"file\\n.rs\",\"line\":42,\"attrs\":{\"key\\\"\":\"value\\n\\\\\"}}"
+        "{\"ts\":\"1970-01-01T00:00:00.000Z\",\"level\":\"INFO\",\"msg\":\"quote \\\" slash \\\\ newline\\n tab\\t control \\u0001\",\"file\":\"bad\\\"file\\n.rs\",\"line\":42,\"seq\":7,\"attrs\":{\"key\\\"\":\"value\\n\\\\\"}}"
     );
 }
 

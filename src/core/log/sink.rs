@@ -77,6 +77,8 @@ impl Record {
         push_json_string(&mut json, &filename);
         json.push_str(r#","line":"#);
         json.push_str(&self.line.to_string());
+        json.push_str(r#","seq":"#);
+        json.push_str(&self.sequence.to_string());
         if !self.attributes.is_empty() {
             json.push_str(r#","attrs":{"#);
             for (i, (k, v)) in self.attributes.iter().enumerate() {
