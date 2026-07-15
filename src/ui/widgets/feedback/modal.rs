@@ -274,12 +274,13 @@ component! {
 
 impl Modal {
     pub fn new(title: &str) -> Self {
+        let size = crate::ui::config::use_config().size;
         Self {
             title: title.to_string(),
             visible: false,
             width: 520.0,
             height: 300.0,
-            modal_size: ControlSize::Medium,
+            modal_size: size,
             closable: true,
             mask_closable: true,
             footer_visible: true,
@@ -294,6 +295,7 @@ impl Modal {
             closing: false,
             transition_dirty: false,
         }
+        .modal_size(size)
     }
 
     pub fn visible(mut self, v: bool) -> Self {

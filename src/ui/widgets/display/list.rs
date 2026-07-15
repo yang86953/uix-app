@@ -111,7 +111,7 @@ impl List {
             header: String::new(),
             footer: String::new(),
             bordered: true,
-            list_size: ControlSize::Medium,
+            list_size: crate::ui::config::use_config().size,
             items: Vec::new(),
             load_more_text: String::new(),
         }

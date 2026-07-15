@@ -341,13 +341,18 @@ fn create_secondary_window(
 
     let notifications = container.resolve_clone::<AppNotificationState>();
     let locale = container.resolve_clone::<Locale>().unwrap_or_default();
+    let component_config = container
+        .resolve_clone::<ComponentConfig>()
+        .unwrap_or_default();
     let wrapped_root = move || {
-        with_locale(&locale, || {
-            let root_node = root();
-            match notifications.clone() {
-                Some(state) => wrap_root_with_notification_overlay(root_node, state, window_id),
-                None => root_node,
-            }
+        with_config(&component_config, || {
+            with_locale(&locale, || {
+                let root_node = root();
+                match notifications.clone() {
+                    Some(state) => wrap_root_with_notification_overlay(root_node, state, window_id),
+                    None => root_node,
+                }
+            })
         })
     };
     let mut session =

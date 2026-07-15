@@ -344,12 +344,14 @@ impl Input {
     }
 
     pub fn new(placeholder: impl Into<String>) -> Self {
+        let config = crate::ui::config::use_config();
+        let input_overrides = config.overrides.input;
         Self {
             value: String::new(),
             value_binding: None,
             placeholder: placeholder.into(),
-            input_size: ControlSize::Medium,
-            disabled: false,
+            input_size: config.size,
+            disabled: config.disabled,
             focused: false,
             hovered: false,
             composition: String::new(),
@@ -362,8 +364,8 @@ impl Input {
             selection: Cell::new(None),
             sel_anchor: Cell::new(0),
             sel_dragging: Cell::new(false),
-            prefix: String::new(),
-            suffix: String::new(),
+            prefix: input_overrides.prefix.unwrap_or_default(),
+            suffix: input_overrides.suffix.unwrap_or_default(),
             addon_before: String::new(),
             addon_after: String::new(),
             password: false,

@@ -264,7 +264,13 @@ impl Button {
     pub(crate) const CENTER_ORIGIN: Point = Point::new(-1.0, -1.0);
 
     pub fn new(text: impl Into<String>) -> Self {
-        Self::assemble(text.into(), StyleSet::button_default(), false, false)
+        let config = crate::ui::config::use_config();
+        let style_set = config
+            .overrides
+            .button
+            .style_set
+            .unwrap_or_else(StyleSet::button_default);
+        Self::assemble(text.into(), style_set, config.disabled, false)
     }
 
     pub(crate) fn assemble(text: String, style_set: StyleSet, disabled: bool, block: bool) -> Self {

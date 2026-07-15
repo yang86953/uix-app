@@ -104,7 +104,7 @@ impl Descriptions {
             bordered: false,
             column: 3,
             label_width: 100.0,
-            size: ControlSize::Medium,
+            size: crate::ui::config::use_config().size,
         }
     }
     pub fn title(mut self, t: &str) -> Self {
