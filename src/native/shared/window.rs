@@ -426,6 +426,11 @@ impl<O: WindowOps> IWindowProperties for PlatformWindowCore<O> {
         Ok(())
     }
     fn set_window_opacity(&mut self, opacity: f32) -> Result<()> {
+        if !opacity.is_finite() || !(0.0..=1.0).contains(&opacity) {
+            return Err(Error::invalid_arg(
+                "window opacity must be a finite value in 0.0..=1.0",
+            ));
+        }
         self.ops.os_set_opacity(opacity)?;
         state_write!(self.state, opacity, opacity);
         Ok(())

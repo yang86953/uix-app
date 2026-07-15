@@ -61,6 +61,35 @@ impl WindowOps for CloseTrackingOps {
     }
 }
 
+struct OpacityTrackingOps {
+    calls: Rc<RefCell<Vec<f32>>>,
+}
+
+impl WindowOps for OpacityTrackingOps {
+    fn os_show(&mut self) -> Result<()> {
+        Ok(())
+    }
+    fn os_hide(&mut self) -> Result<()> {
+        Ok(())
+    }
+    fn os_close(&mut self) -> Result<()> {
+        Ok(())
+    }
+    fn os_set_title(&mut self, _title: &str) -> Result<()> {
+        Ok(())
+    }
+    fn os_set_size(&mut self, _w: i32, _h: i32) -> Result<()> {
+        Ok(())
+    }
+    fn os_set_opacity(&mut self, opacity: f32) -> Result<()> {
+        self.calls.borrow_mut().push(opacity);
+        Ok(())
+    }
+    fn native_handle(&self) -> *mut std::ffi::c_void {
+        std::ptr::null_mut()
+    }
+}
+
 struct FailingRequiredOps;
 
 impl FailingRequiredOps {
@@ -164,6 +193,52 @@ fn platform_window_close_is_idempotent() {
     window.close().unwrap();
     window.close().unwrap();
     assert_eq!(close_calls.get(), 1);
+}
+
+#[test]
+fn window_opacity_rejects_invalid_values_before_platform_mutation() {
+    let state = Rc::new(RefCell::new(WindowState::default()));
+    let calls = Rc::new(RefCell::new(Vec::new()));
+    let mut window = PlatformWindowCore::new(
+        Rc::clone(&state),
+        OpacityTrackingOps {
+            calls: Rc::clone(&calls),
+        },
+        Box::new(NullPresenter::new()),
+    );
+
+    for opacity in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -0.01, 1.01] {
+        assert_error_code(
+            window.properties_mut().set_window_opacity(opacity),
+            Errc::InvalidArgument,
+        );
+    }
+
+    assert!(calls.borrow().is_empty());
+    assert_eq!(state.borrow().opacity, 1.0);
+}
+
+#[test]
+fn window_opacity_accepts_closed_unit_interval() {
+    let state = Rc::new(RefCell::new(WindowState::default()));
+    let calls = Rc::new(RefCell::new(Vec::new()));
+    let mut window = PlatformWindowCore::new(
+        Rc::clone(&state),
+        OpacityTrackingOps {
+            calls: Rc::clone(&calls),
+        },
+        Box::new(NullPresenter::new()),
+    );
+
+    for opacity in [0.0, 0.25, 1.0] {
+        window
+            .properties_mut()
+            .set_window_opacity(opacity)
+            .expect("valid opacity");
+    }
+
+    assert_eq!(&*calls.borrow(), &[0.0, 0.25, 1.0]);
+    assert_eq!(state.borrow().opacity, 1.0);
 }
 
 #[test]

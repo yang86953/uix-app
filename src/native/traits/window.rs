@@ -60,6 +60,7 @@ pub trait IWindowProperties {
     fn set_fullscreen(&mut self, fullscreen: bool) -> Result<()>;
     fn is_fullscreen(&self) -> bool;
     fn set_always_on_top(&mut self, on: bool) -> Result<()>;
+    /// 设置窗口整体不透明度，取值必须为有限的 `0.0..=1.0`。
     fn set_window_opacity(&mut self, opacity: f32) -> Result<()>;
     fn start_text_input(&mut self) -> Result<()>;
     fn stop_text_input(&mut self) -> Result<()>;
