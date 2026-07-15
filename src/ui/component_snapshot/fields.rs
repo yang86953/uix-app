@@ -431,6 +431,8 @@ pub enum SnapshotFields {
     Mentions {
         placeholder: String,
         options: Vec<String>,
+        value: String,
+        suggesting: bool,
     },
     Segmented {
         options: Vec<String>,
@@ -872,7 +874,18 @@ impl SnapshotFields {
                     value_text: (!value.is_empty()).then(|| value.clone()),
                     ..AccessibilityState::default()
                 }),
-            Self::Cascader { placeholder, .. } | Self::Mentions { placeholder, .. } => {
+            Self::Mentions {
+                placeholder,
+                value,
+                suggesting,
+                ..
+            } => AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
+                .with_state(AccessibilityState {
+                    expanded: Some(*suggesting),
+                    value_text: (!value.is_empty()).then(|| value.clone()),
+                    ..AccessibilityState::default()
+                }),
+            Self::Cascader { placeholder, .. } => {
                 AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
             }
             Self::Segmented {

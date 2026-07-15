@@ -7,6 +7,10 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::ui::{EventResult, KeyCode, SnapshotFields, SystemEvent, WidgetTree};
+use std::cell::Cell;
+
+const SUGGESTION_ROW_HEIGHT: f32 = 32.0;
+const MAX_VISIBLE_SUGGESTIONS: usize = 5;
 
 component! {
     /// Mentions — @ 提及输入框。
@@ -31,40 +35,53 @@ component! {
         selected_index: usize,
         /// 焦点状态
         focused: bool,
+        /// 平台输入法候选窗锚点
+        cursor_rect: Cell<Rect>,
     }
+
+    tab_index => (&self) -> i32 { 1 }
+
+    accepts_text_input => (&self) -> bool { true }
+
+    text_input_cursor_rect => (&self) -> Rect { self.cursor_rect.get() }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
     }
 
+    dirty_rect => (&self, frame: Rect) -> Rect {
+        mentions_dirty_rect(frame, self.options.len())
+    }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            SystemEvent::PointerDown { .. } => { self.focused = true; EventResult::Handled }
+            SystemEvent::PointerDown { pos, .. } => {
+                if self.suggesting && pos.y > 34.0 {
+                    let index = ((pos.y - 34.0) / SUGGESTION_ROW_HEIGHT) as usize;
+                    if index < self.filtered.len().min(MAX_VISIBLE_SUGGESTIONS) {
+                        self.selected_index = index;
+                        self.select_current();
+                        return EventResult::Handled;
+                    }
+                }
+                self.focused = true;
+                EventResult::Handled
+            }
             SystemEvent::PointerMove { .. } => EventResult::NotHandled,
-            SystemEvent::FocusOut => { self.focused = false; self.suggesting = false; EventResult::Handled }
+            SystemEvent::FocusIn => { self.focused = true; EventResult::Handled }
+            SystemEvent::FocusOut => {
+                self.focused = false;
+                self.stop_suggesting();
+                EventResult::Handled
+            }
             SystemEvent::KeyDown { key, .. } => {
                 match key {
                     KeyCode::Backspace => {
-                        if self.suggesting {
-                            // 在建议模式中退格
-                            if self.search_text.is_empty() {
-                                self.suggesting = false;
-                            } else {
-                                self.search_text.pop();
-                                self.update_filtered();
-                            }
-                            EventResult::Handled
-                        } else {
-                            self.value.pop();
-                            // 检查是否退格到 @
-                            if self.value.ends_with(&self.trigger) {
-                                self.suggesting = true;
-                                self.search_text.clear();
-                                self.update_filtered();
-                            }
-                            EventResult::Handled
+                        if self.value.pop().is_none() {
+                            return EventResult::NotHandled;
                         }
+                        self.refresh_suggestion_from_value();
+                        EventResult::Handled
                     }
                     KeyCode::Enter => {
                         if self.suggesting && !self.filtered.is_empty() {
@@ -91,30 +108,19 @@ component! {
                 }
             }
             SystemEvent::TextInput { text } => {
-                if text.chars().any(|c| c.is_control()) {
+                if text.is_empty() || text.chars().any(char::is_control) {
                     return EventResult::NotHandled;
                 }
-                for ch in text.chars() {
-                    if self.suggesting {
-                        if ch == ' ' || ch == '\n' {
-                            // 空格/换行结束建议
-                            self.value.push_str(&self.search_text);
-                            self.value.push(ch);
-                            self.suggesting = false;
-                        } else {
-                            self.search_text.push(ch);
-                            self.update_filtered();
-                        }
-                    } else {
-                        self.value.push(ch);
-                        if ch == '@' {
-                            self.suggesting = true;
-                            self.search_text.clear();
-                            self.selected_index = 0;
-                            self.update_filtered();
-                        }
-                    }
+                self.value.push_str(text);
+                self.refresh_suggestion_from_value();
+                EventResult::Handled
+            }
+            SystemEvent::Paste { text } => {
+                if text.is_empty() || text.chars().any(char::is_control) {
+                    return EventResult::NotHandled;
                 }
+                self.value.push_str(text);
+                self.refresh_suggestion_from_value();
                 EventResult::Handled
             }
             _ => EventResult::NotHandled,
@@ -141,17 +147,24 @@ component! {
         let draw_y = ctx.visual_center_y(frame, 14.0);
         ctx.draw_text(display, Point::new(frame.x + 12.0, draw_y),
             color, 14.0);
+        let cursor_x = (frame.x + 12.0 + self.value.chars().count() as f32 * 7.0)
+            .min(frame.x + frame.w - 12.0);
+        let cursor_rect = Rect::new(cursor_x, frame.y + 7.0, 1.0, 18.0);
+        self.cursor_rect.set(cursor_rect);
+        if self.focused {
+            ctx.fill_rect(cursor_rect, primary, None);
+        }
 
         // 建议弹出层
         if self.suggesting && !self.filtered.is_empty() {
-            let popup_h = (self.filtered.len() as f32 * 32.0).min(160.0);
+            let popup_h = self.visible_suggestion_count() as f32 * SUGGESTION_ROW_HEIGHT;
             let popup = Rect::new(frame.x, frame.y + frame.h + 2.0, frame.w, popup_h);
             ctx.fill_rect(popup, bg_elevated, radius);
             ctx.stroke_rect(popup, border_color, 1.0, radius);
 
-            for (i, opt) in self.filtered.iter().enumerate() {
-                let y = popup.y + i as f32 * 32.0;
-                let item_rect = Rect::new(popup.x, y, popup.w, 32.0);
+            for (i, opt) in self.filtered.iter().take(MAX_VISIBLE_SUGGESTIONS).enumerate() {
+                let y = popup.y + i as f32 * SUGGESTION_ROW_HEIGHT;
+                let item_rect = Rect::new(popup.x, y, popup.w, SUGGESTION_ROW_HEIGHT);
                 if i == self.selected_index {
                     ctx.fill_rect(item_rect,
                         ctx.tokens().color_primary_bg(), None);
@@ -180,6 +193,7 @@ impl Mentions {
             search_text: String::new(),
             selected_index: 0,
             focused: false,
+            cursor_rect: Cell::new(Rect::zero()),
         }
     }
 
@@ -195,6 +209,39 @@ impl Mentions {
     #[cfg(test)]
     pub(crate) fn is_suggesting(&self) -> bool {
         self.suggesting
+    }
+
+    #[cfg(test)]
+    pub(crate) fn filtered_options(&self) -> &[String] {
+        &self.filtered
+    }
+
+    fn visible_suggestion_count(&self) -> usize {
+        self.filtered.len().min(MAX_VISIBLE_SUGGESTIONS)
+    }
+
+    fn refresh_suggestion_from_value(&mut self) {
+        let Some(position) = self.value.rfind(&self.trigger) else {
+            self.stop_suggesting();
+            return;
+        };
+        let query_start = position + self.trigger.len();
+        let query = &self.value[query_start..];
+        if query.chars().any(char::is_whitespace) {
+            self.stop_suggesting();
+            return;
+        }
+
+        self.search_text = query.to_owned();
+        self.suggesting = true;
+        self.update_filtered();
+    }
+
+    fn stop_suggesting(&mut self) {
+        self.suggesting = false;
+        self.search_text.clear();
+        self.filtered.clear();
+        self.selected_index = 0;
     }
 
     fn update_filtered(&mut self) {
@@ -214,14 +261,13 @@ impl Mentions {
 
     fn select_current(&mut self) {
         if let Some(selected) = self.filtered.get(self.selected_index) {
-            // 替换 @search_text 为 @selected
-            // 找到最后一个 @
-            if let Some(pos) = self.value.rfind('@') {
-                self.value.truncate(pos + 1); // 保留 @
+            // 替换最后一段 trigger + query 为 trigger + selected。
+            if let Some(pos) = self.value.rfind(&self.trigger) {
+                self.value.truncate(pos + self.trigger.len());
                 self.value.push_str(selected);
                 self.value.push(' ');
             }
-            self.suggesting = false;
+            self.stop_suggesting();
         }
     }
 
@@ -229,6 +275,8 @@ impl Mentions {
         SnapshotFields::Mentions {
             placeholder: self.placeholder.clone(),
             options: self.options.clone(),
+            value: self.value.clone(),
+            suggesting: self.suggesting,
         }
     }
 
@@ -236,7 +284,13 @@ impl Mentions {
         self.placeholder = next.placeholder;
         self.options = next.options;
         if self.suggesting {
-            self.update_filtered();
+            self.refresh_suggestion_from_value();
         }
     }
+}
+
+fn mentions_dirty_rect(frame: Rect, option_count: usize) -> Rect {
+    let popup_height = option_count.min(MAX_VISIBLE_SUGGESTIONS) as f32 * SUGGESTION_ROW_HEIGHT;
+    let popup = Rect::new(frame.x, frame.y + frame.h + 2.0, frame.w, popup_height);
+    frame.union(&popup)
 }

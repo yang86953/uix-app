@@ -884,13 +884,18 @@ fn reconcile_mentions_preserves_suggestion_state_and_syncs_options() {
         .downcast_mut::<Mentions>()
         .unwrap();
     assert!(mentions.is_suggesting());
-    assert_eq!(mentions.value(), "@");
+    assert_eq!(mentions.value(), "@a");
     assert!(matches!(
         mentions.snapshot_fields(),
         SnapshotFields::Mentions {
             placeholder,
             options,
-        } if placeholder == "new" && options == vec!["Ann", "Cara"]
+            value,
+            suggesting,
+        } if placeholder == "new"
+            && options == vec!["Ann", "Cara"]
+            && value == "@a"
+            && suggesting
     ));
     assert_eq!(
         crate::ui::EventHandler::on_event(
