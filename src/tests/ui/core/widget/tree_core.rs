@@ -165,6 +165,63 @@ impl EventHandler for CaptureSpyWidget {
     }
 }
 
+struct PointerUpCaptureWidget(SpyWidget);
+
+impl PointerUpCaptureWidget {
+    fn new(w: f32, h: f32) -> Self {
+        Self(SpyWidget::new(w, h))
+    }
+}
+
+impl WidgetComponent for PointerUpCaptureWidget {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+    fn capabilities(&self) -> WidgetCapabilities {
+        self.0.capabilities()
+    }
+    crate::wc_upcast!(PointerUpCaptureWidget; WidgetLayout);
+    crate::wc_upcast!(PointerUpCaptureWidget; WidgetRender);
+    crate::wc_upcast!(PointerUpCaptureWidget; EventHandler);
+}
+
+impl WidgetLayout for PointerUpCaptureWidget {
+    fn measure(&self, constraints: Constraints) -> Size {
+        self.0.measure(constraints)
+    }
+}
+
+impl WidgetRender for PointerUpCaptureWidget {
+    fn render(
+        &self,
+        frame: Rect,
+        ctx: &mut crate::draw::painting::PaintContext,
+        tree: &WidgetTree,
+    ) {
+        self.0.render(frame, ctx, tree)
+    }
+}
+
+impl EventHandler for PointerUpCaptureWidget {
+    fn on_event(&mut self, event: &SystemEvent) -> EventResult {
+        if matches!(event, SystemEvent::PointerUp { .. }) {
+            self.0.on_event(event)
+        } else {
+            EventResult::NotHandled
+        }
+    }
+
+    fn wants_capture_phase(&self) -> bool {
+        true
+    }
+}
+
 struct MeasureOnlyWidget;
 
 impl WidgetComponent for MeasureOnlyWidget {
@@ -4377,6 +4434,52 @@ fn captured_pointer_press_does_not_arm_target_click_or_drag() {
 
     assert_eq!(clicks.get(), 0);
     assert!(!tree.managers().drag.is_dragging());
+}
+
+#[test]
+fn captured_pointer_release_cancels_the_pressed_target() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PointerUpCaptureWidget::new(300.0, 300.0)));
+    let child = tree.add_child(root, Box::new(Button::new("Captured release")));
+    tree.get_mut(root)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
+    tree.get_mut(child)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 120.0, 40.0));
+    let clicks = Rc::new(Cell::new(0));
+    let clicks_for_handler = clicks.clone();
+    tree.handler_table()
+        .on(child, SemanticKind::Click, move |_| {
+            clicks_for_handler.set(clicks_for_handler.get() + 1);
+        });
+
+    let pos = Point::new(50.0, 20.0);
+    tree.dispatch_event(&SystemEvent::PointerDown {
+        pos,
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    assert!(tree
+        .get(child)
+        .and_then(|node| node.component().as_any().downcast_ref::<Button>())
+        .is_some_and(|button| button.pressed));
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerUp {
+            pos,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+
+    assert_eq!(tree.managers().interaction.pressed_component(), None);
+    assert!(tree
+        .get(child)
+        .and_then(|node| node.component().as_any().downcast_ref::<Button>())
+        .is_some_and(|button| !button.pressed));
+    assert_eq!(clicks.get(), 0);
 }
 
 #[test]

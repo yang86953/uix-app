@@ -32,6 +32,11 @@ impl WidgetTree {
             self.invalidate_paint(target);
             let actions_before_dispatch = self.pending_window_actions.len();
             if self.capture_to(target, event) == EventResult::Handled {
+                if let Some(pressed) = hold {
+                    self.invalidate_paint(pressed);
+                    let _ = self.dispatch_to(pressed, &SystemEvent::PointerLeave);
+                }
+                self.rebuild_widget_overlays();
                 return EventResult::Handled;
             }
             result = self.dispatch_to(target, event);
