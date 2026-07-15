@@ -57,6 +57,7 @@ pub trait IWindowProperties {
     /// 显示或隐藏系统非客户区标题栏，同时保留后端可用的窗口缩放边框。
     fn set_system_title_bar_visible(&mut self, visible: bool) -> Result<()>;
     fn set_borderless(&mut self, borderless: bool) -> Result<()>;
+    /// 切换全屏；退出时恢复进入前的位置与窗口样式。
     fn set_fullscreen(&mut self, fullscreen: bool) -> Result<()>;
     fn is_fullscreen(&self) -> bool;
     fn set_always_on_top(&mut self, on: bool) -> Result<()>;
