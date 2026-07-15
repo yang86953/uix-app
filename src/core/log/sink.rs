@@ -222,20 +222,20 @@ impl FileSink {
             return;
         }
 
-        for i in (0..9).rev() {
-            let old = if i == 0 {
-                self.path.clone()
-            } else {
-                format!("{}.{}", self.path, i)
-            };
+        let oldest = format!("{}.9", self.path);
+        if Path::new(&oldest).exists() {
+            let _ = fs::remove_file(&oldest);
+        }
+        for i in (1..9).rev() {
+            let old = format!("{}.{}", self.path, i);
             let new = format!("{}.{}", self.path, i + 1);
             if Path::new(&old).exists() {
-                if i == 9 {
-                    let _ = fs::remove_file(&old);
-                } else {
-                    let _ = fs::rename(&old, &new);
-                }
+                let _ = fs::rename(&old, &new);
             }
+        }
+        let first_backup = format!("{}.1", self.path);
+        if fs::rename(&self.path, first_backup).is_err() {
+            return;
         }
 
         let file = match OpenOptions::new()
@@ -257,8 +257,10 @@ impl FileSink {
 impl Sink for FileSink {
     fn write(&self, record: &Record) {
         let line = format!("{}\n", record.to_json());
-        let mut file = self.file.lock().unwrap_or_else(|e| e.into_inner());
-        let _ = file.write_all(line.as_bytes());
+        {
+            let mut file = self.file.lock().unwrap_or_else(|e| e.into_inner());
+            let _ = file.write_all(line.as_bytes());
+        }
         self.rotate();
     }
 
