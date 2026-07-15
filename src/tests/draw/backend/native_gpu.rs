@@ -1,6 +1,11 @@
 use crate::draw::backend::native_gpu::*;
-use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
-use crate::draw::pipeline::{EncodedFrameExecution, EncodedPictureExecution, FrameRasterOp};
+#[cfg(feature = "d3d12")]
+use crate::draw::backend::traits::BackendCapabilities;
+use crate::draw::backend::traits::{BackendKind, DrawSurface, RenderBackend};
+#[cfg(feature = "d3d11")]
+use crate::draw::pipeline::EncodedPictureExecution;
+use crate::draw::pipeline::{EncodedFrameExecution, FrameRasterOp};
+#[cfg(feature = "d3d11")]
 use crate::draw::primitives::path::Path;
 use crate::draw::primitives::types::{BlendMode, GradientDirection, Radius};
 use crate::draw::traits::Canvas2D;
