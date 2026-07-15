@@ -598,7 +598,14 @@ fn reconcile_cascader_preserves_popup_state_and_syncs_options() {
         SnapshotFields::Cascader {
             placeholder,
             options,
-        } if placeholder == "new placeholder" && options.len() == 1 && options[0].value == "new"
+            selected_values,
+            open,
+            ..
+        } if placeholder == "new placeholder"
+            && options.len() == 1
+            && options[0].value == "new"
+            && selected_values == ["old"]
+            && open
     ));
 }
 

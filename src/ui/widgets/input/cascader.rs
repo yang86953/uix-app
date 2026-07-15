@@ -93,15 +93,33 @@ component! {
             }
             SystemEvent::KeyDown { key, .. } => {
                 if !self.open {
-                    return EventResult::NotHandled;
+                    return match key {
+                        KeyCode::Down | KeyCode::Enter | KeyCode::Space => {
+                            self.open();
+                            EventResult::Handled
+                        }
+                        _ => EventResult::NotHandled,
+                    };
                 }
                 match key {
                     KeyCode::Escape => {
                         self.close();
                         EventResult::Handled
                     }
-                    KeyCode::Enter => {
-                        self.confirm_selection();
+                    KeyCode::Down => {
+                        self.move_highlight(true);
+                        EventResult::Handled
+                    }
+                    KeyCode::Up => {
+                        self.move_highlight(false);
+                        EventResult::Handled
+                    }
+                    KeyCode::Right | KeyCode::Enter | KeyCode::Space => {
+                        self.activate_highlight();
+                        EventResult::Handled
+                    }
+                    KeyCode::Left => {
+                        self.return_to_parent();
                         EventResult::Handled
                     }
                     _ => EventResult::NotHandled,
@@ -261,7 +279,7 @@ impl Cascader {
 
     fn init_levels(&mut self) {
         self.current_levels = vec![self.options.clone()];
-        self.level_indices = vec![0];
+        self.level_indices = vec![first_enabled_index(&self.options).unwrap_or(0)];
     }
 
     pub fn select_option(&mut self, level: usize, index: usize) {
@@ -276,8 +294,12 @@ impl Cascader {
             return;
         }
 
-        self.level_indices.truncate(level);
-        self.level_indices.push(index);
+        self.level_indices.truncate(level + 1);
+        if let Some(highlighted) = self.level_indices.get_mut(level) {
+            *highlighted = index;
+        } else {
+            self.level_indices.push(index);
+        }
         self.selected.labels.truncate(level);
         self.selected.values.truncate(level);
         self.selected.labels.push(opt.label.clone());
@@ -285,16 +307,45 @@ impl Cascader {
 
         self.current_levels.truncate(level + 1);
         if !opt.children.is_empty() {
+            let child_highlight = first_enabled_index(&opt.children).unwrap_or(0);
             self.current_levels.push(opt.children);
+            self.level_indices.push(child_highlight);
         } else {
             self.close();
         }
     }
 
-    fn confirm_selection(&mut self) {
-        if !self.selected.values.is_empty() {
-            self.close();
+    fn activate_highlight(&mut self) {
+        let Some(level) = self.current_levels.len().checked_sub(1) else {
+            return;
+        };
+        let Some(index) = self.level_indices.get(level).copied() else {
+            return;
+        };
+        self.select_option(level, index);
+    }
+
+    fn move_highlight(&mut self, forward: bool) {
+        let Some(level) = self.current_levels.len().checked_sub(1) else {
+            return;
+        };
+        let Some(options) = self.current_levels.get(level) else {
+            return;
+        };
+        let current = self.level_indices.get(level).copied().unwrap_or(0);
+        if let Some(next) = next_enabled_index(options, current, forward) {
+            if let Some(highlighted) = self.level_indices.get_mut(level) {
+                *highlighted = next;
+            }
         }
+    }
+
+    fn return_to_parent(&mut self) {
+        if self.current_levels.len() <= 1 {
+            return;
+        }
+        self.current_levels.pop();
+        self.level_indices.pop();
     }
 
     pub fn selected(&self) -> &CascaderValue {
@@ -340,13 +391,40 @@ impl Cascader {
         SnapshotFields::Cascader {
             options: self.options.clone(),
             placeholder: self.placeholder.clone(),
+            selected_labels: self.selected.labels.clone(),
+            selected_values: self.selected.values.clone(),
+            open: self.open,
         }
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.options = next.options;
         self.placeholder = next.placeholder;
+        if self.is_present() {
+            self.init_levels();
+        }
     }
+}
+
+fn first_enabled_index(options: &[CascaderOption]) -> Option<usize> {
+    options.iter().position(|option| !option.disabled)
+}
+
+fn next_enabled_index(options: &[CascaderOption], current: usize, forward: bool) -> Option<usize> {
+    let len = options.len();
+    if len == 0 {
+        return None;
+    }
+
+    (1..=len)
+        .map(|step| {
+            if forward {
+                (current + step) % len
+            } else {
+                (current + len - (step % len)) % len
+            }
+        })
+        .find(|index| !options[*index].disabled)
 }
 
 fn cascader_dirty_rect(frame: Rect) -> Rect {

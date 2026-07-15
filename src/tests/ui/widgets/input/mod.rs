@@ -2,6 +2,7 @@
 
 mod autocomplete;
 mod boolean;
+mod cascader;
 mod color_picker;
 mod date_picker;
 mod date_range_picker;
