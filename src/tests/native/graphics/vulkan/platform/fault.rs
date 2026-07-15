@@ -8,27 +8,10 @@ use ash::vk;
 #[cfg(windows)]
 use crate::native::graphics::vulkan::platform::context::VulkanContext;
 #[cfg(windows)]
-use crate::tests::native::gfx_r5::expected_gfx_r5_vendor;
-
-#[cfg(windows)]
-fn expected_device_fault_capability() -> bool {
-    match std::env::var("UIX_VULKAN_EXPECT_DEVICE_FAULT").as_deref() {
-        Ok("true" | "1") => true,
-        Ok("false" | "0") => false,
-        Ok(value) => panic!("UIX_VULKAN_EXPECT_DEVICE_FAULT must be true|false|1|0, got {value:?}"),
-        Err(error) => panic!("UIX_VULKAN_EXPECT_DEVICE_FAULT is required: {error}"),
-    }
-}
-
-#[cfg(windows)]
-fn requested_external_device_loss_timeout() -> std::time::Duration {
-    let seconds = std::env::var("UIX_VULKAN_DEVICE_LOST_TIMEOUT_SECONDS")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .unwrap_or(60)
-        .clamp(5, 600);
-    std::time::Duration::from_secs(seconds)
-}
+use crate::tests::native::gfx_r5::{
+    expected_device_fault_capability, expected_gfx_r5_vendor,
+    requested_external_device_loss_timeout,
+};
 
 #[test]
 fn device_fault_feature_query_prefers_vulkan_1_1_core() {
@@ -161,7 +144,7 @@ fn non_device_loss_does_not_poison_shared_device_state() {
 #[test]
 #[ignore = "requires a Vulkan-capable Windows driver and UIX_VULKAN_EXPECT_DEVICE_FAULT=true|false"]
 fn windows_vulkan_device_fault_reporting_matches_expected_capability() {
-    let expected = expected_device_fault_capability();
+    let expected = expected_device_fault_capability().unwrap_or_else(|error| panic!("{error}"));
     let mut platform = crate::native::create_platform().expect("platform");
     let mut window = platform
         .window_manager()
@@ -190,8 +173,10 @@ fn windows_vulkan_device_fault_reporting_matches_expected_capability() {
 #[ignore = "requires UIX_GFX_R5_EXPECT_VENDOR, UIX_VULKAN_EXPECT_DEVICE_FAULT, and an external driver reset while running"]
 fn windows_vulkan_gfx_r5_external_reset_returns_device_lost_with_diagnostics() {
     let expected_vendor = expected_gfx_r5_vendor().unwrap_or_else(|error| panic!("{error}"));
-    let expect_fault_report = expected_device_fault_capability();
-    let timeout = requested_external_device_loss_timeout();
+    let expect_fault_report =
+        expected_device_fault_capability().unwrap_or_else(|error| panic!("{error}"));
+    let timeout =
+        requested_external_device_loss_timeout().unwrap_or_else(|error| panic!("{error}"));
     let mut platform = crate::native::create_platform().expect("platform");
     let mut first_window = platform
         .window_manager()
