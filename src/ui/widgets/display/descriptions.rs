@@ -29,7 +29,7 @@ component! {
     }
 
     measure => (&self, constraints: Constraints) -> Size {
-        let rows = self.items.len().div_ceil(self.column).max(1);
+        let rows = self.for_each_item_layout(|_, _, _, _| {});
         let title_h = if self.title.is_empty() { 0.0 } else { 32.0 };
         let item_h = match self.size {
             ControlSize::Small => 28.0,
@@ -52,6 +52,7 @@ component! {
         let r = Radius::uniform(ctx.tokens().border_radius());
         let mut y = frame.y;
         let col_w = frame.w / self.column as f32;
+        let rows = self.for_each_item_layout(|_, _, _, _| {});
         let item_h = match self.size {
             ControlSize::Small => 28.0,
             ControlSize::Medium => 36.0,
@@ -68,31 +69,31 @@ component! {
 
         // 主体背景
         if self.bordered {
-            ctx.fill_rect(Rect::new(frame.x, y, frame.w, self.items.len().div_ceil(self.column) as f32 * item_h), bg, Some(r));
-            ctx.stroke_rect(Rect::new(frame.x, y, frame.w, self.items.len().div_ceil(self.column) as f32 * item_h), border, 1.0, Some(r));
+            let body = Rect::new(frame.x, y, frame.w, rows as f32 * item_h);
+            ctx.fill_rect(body, bg, Some(r));
+            ctx.stroke_rect(body, border, 1.0, Some(r));
         }
 
-        // 逐行渲染
-        for (i, item) in self.items.iter().enumerate() {
-            let col = i % self.column;
-            let row = i / self.column;
+        // 按 span 顺序装箱；放不下的条目从下一行开始。
+        self.for_each_item_layout(|item, row, col, span| {
             let item_x = frame.x + col as f32 * col_w;
             let item_y = y + row as f32 * item_h;
-            let item_w = item.span as f32 * col_w;
+            let item_w = span as f32 * col_w;
+            let label_width = self.label_width.min(item_w);
 
             let row_rect = Rect::new(item_x, item_y, item_w, item_h);
             let row_y = ctx.visual_center_y(row_rect, 13.0);
             if self.bordered {
-                ctx.fill_rect(Rect::new(item_x, item_y, self.label_width, item_h), fill, None);
+                ctx.fill_rect(Rect::new(item_x, item_y, label_width, item_h), fill, None);
                 ctx.stroke_rect(Rect::new(item_x, item_y, item_w, item_h), border, 1.0, None);
                 ctx.draw_text(&item.label, Point::new(item_x + 8.0, row_y), text_sec, 13.0);
-                ctx.draw_text(&item.value, Point::new(item_x + self.label_width + 8.0, row_y), text, 13.0);
+                ctx.draw_text(&item.value, Point::new(item_x + label_width + 8.0, row_y), text, 13.0);
             } else {
                 ctx.draw_text(&item.label, Point::new(item_x + 8.0, row_y), text_sec, 13.0);
-                let val_x = item_x + self.label_width;
+                let val_x = item_x + label_width;
                 ctx.draw_text(&item.value, Point::new(val_x, row_y), text, 13.0);
             }
-        }
+        });
     }
 }
 
@@ -128,7 +129,7 @@ impl Descriptions {
         self
     }
     pub fn label_width(mut self, w: f32) -> Self {
-        self.label_width = w;
+        self.label_width = Self::normalize_dimension(w);
         self
     }
     pub fn size(mut self, s: ControlSize) -> Self {
@@ -152,8 +153,41 @@ impl Descriptions {
         self.items = next.items;
         self.bordered = next.bordered;
         self.column = next.column.max(1);
-        self.label_width = next.label_width;
+        self.label_width = Self::normalize_dimension(next.label_width);
         self.size = next.size;
+    }
+
+    /// 遍历按 `span` 装箱后的条目，并返回至少为一的行数。
+    fn for_each_item_layout(
+        &self,
+        mut visit: impl FnMut(&DescriptionsItem, usize, usize, usize),
+    ) -> usize {
+        let mut row = 0usize;
+        let mut used_columns = 0usize;
+
+        for item in &self.items {
+            let span = item.span.clamp(1, self.column);
+            if used_columns == self.column || used_columns + span > self.column {
+                row += 1;
+                used_columns = 0;
+            }
+            visit(item, row, used_columns, span);
+            used_columns += span;
+        }
+
+        if self.items.is_empty() {
+            1
+        } else {
+            row + 1
+        }
+    }
+
+    fn normalize_dimension(value: f32) -> f32 {
+        if value.is_finite() {
+            value.max(0.0)
+        } else {
+            0.0
+        }
     }
 }
 
@@ -172,7 +206,7 @@ impl DescriptionsItem {
         }
     }
     pub fn span(mut self, s: usize) -> Self {
-        self.span = s;
+        self.span = s.max(1);
         self
     }
 }
