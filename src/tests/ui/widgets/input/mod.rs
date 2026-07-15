@@ -9,6 +9,7 @@ mod form;
 mod form_list;
 mod input;
 mod input_number;
+mod mentions;
 mod radio;
 mod rate;
 mod segmented;
