@@ -193,6 +193,14 @@ impl WidgetTree {
         actions
     }
 
+    pub(crate) fn blocking_modal_for(&self, id: ComponentId) -> Option<ComponentId> {
+        self.overlay_stack
+            .top()
+            .filter(|entry| entry.is_modal())
+            .map(|entry| entry.owner())
+            .filter(|&owner| id != owner && !self.is_descendant_of(id, owner))
+    }
+
     pub(crate) fn perform_semantic_action(
         &mut self,
         id: ComponentId,
@@ -217,13 +225,7 @@ impl WidgetTree {
         if accessibility.state.disabled {
             return Err(SemanticActionError::Disabled(id));
         }
-        if let Some(blocker) = self
-            .overlay_stack
-            .top()
-            .filter(|entry| entry.is_modal())
-            .map(|entry| entry.owner())
-            .filter(|&owner| id != owner && !self.is_descendant_of(id, owner))
-        {
+        if let Some(blocker) = self.blocking_modal_for(id) {
             return Err(SemanticActionError::Blocked {
                 target: id,
                 blocker,
