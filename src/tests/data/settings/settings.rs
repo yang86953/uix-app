@@ -12,6 +12,16 @@ fn remove_if_present(path: &Path) {
     let _ = fs::remove_file(path);
 }
 
+fn settings_sidecar(path: &Path, suffix: &str) -> PathBuf {
+    PathBuf::from(format!("{}{suffix}", path.to_string_lossy()))
+}
+
+fn remove_settings_artifacts(path: &Path) {
+    remove_if_present(path);
+    remove_if_present(&settings_sidecar(path, SETTINGS_TEMP_SUFFIX));
+    remove_if_present(&settings_sidecar(path, SETTINGS_BACKUP_SUFFIX));
+}
+
 #[test]
 fn parse_json_flat_accepts_supported_inputs() {
     let cases: &[(&str, &[(&str, &str)])] = &[
@@ -122,7 +132,7 @@ fn set_get_has_and_remove_share_one_state_contract() {
 #[test]
 fn save_load_roundtrip_persists_values() {
     let path = temp_settings_path("roundtrip");
-    remove_if_present(&path);
+    remove_settings_artifacts(&path);
     let path_string = path.to_string_lossy().to_string();
 
     let settings = SettingsService::new();
@@ -135,7 +145,115 @@ fn save_load_roundtrip_persists_values() {
     assert_eq!(loaded.get("key"), Some("value".to_string()));
     assert!(!loaded.dirty());
 
-    remove_if_present(&path);
+    remove_settings_artifacts(&path);
+}
+
+#[test]
+fn save_replaces_existing_file_without_leaving_sidecars() {
+    let path = temp_settings_path("replace-existing");
+    remove_settings_artifacts(&path);
+    fs::write(&path, r#"{"theme":"light"}"#).unwrap();
+    let path_string = path.to_string_lossy().to_string();
+
+    let settings = SettingsService::new();
+    settings.load(&path_string).unwrap();
+    settings.set("theme", "dark");
+    settings.save().unwrap();
+
+    assert_eq!(settings.get("theme"), Some("dark".to_string()));
+    assert!(!settings.dirty());
+    assert!(!settings_sidecar(&path, SETTINGS_TEMP_SUFFIX).exists());
+    assert!(!settings_sidecar(&path, SETTINGS_BACKUP_SUFFIX).exists());
+
+    let reloaded = SettingsService::new();
+    reloaded.load(&path_string).unwrap();
+    assert_eq!(reloaded.get("theme"), Some("dark".to_string()));
+
+    remove_settings_artifacts(&path);
+}
+
+#[test]
+fn load_restores_backup_and_discards_uncommitted_temp() {
+    let path = temp_settings_path("restore-interrupted");
+    remove_settings_artifacts(&path);
+    let backup = settings_sidecar(&path, SETTINGS_BACKUP_SUFFIX);
+    let temp = settings_sidecar(&path, SETTINGS_TEMP_SUFFIX);
+    fs::write(&backup, r#"{"theme":"light"}"#).unwrap();
+    fs::write(&temp, r#"{"theme":"dark"}"#).unwrap();
+
+    let settings = SettingsService::new();
+    settings.load(&path.to_string_lossy()).unwrap();
+
+    assert_eq!(settings.get("theme"), Some("light".to_string()));
+    assert!(path.exists());
+    assert!(!backup.exists());
+    assert!(!temp.exists());
+
+    remove_settings_artifacts(&path);
+}
+
+#[test]
+fn load_keeps_installed_target_and_cleans_stale_sidecars() {
+    let path = temp_settings_path("clean-after-install");
+    remove_settings_artifacts(&path);
+    let backup = settings_sidecar(&path, SETTINGS_BACKUP_SUFFIX);
+    let temp = settings_sidecar(&path, SETTINGS_TEMP_SUFFIX);
+    fs::write(&path, r#"{"theme":"dark"}"#).unwrap();
+    fs::write(&backup, r#"{"theme":"light"}"#).unwrap();
+    fs::write(&temp, r#"{"theme":"pending"}"#).unwrap();
+
+    let settings = SettingsService::new();
+    settings.load(&path.to_string_lossy()).unwrap();
+
+    assert_eq!(settings.get("theme"), Some("dark".to_string()));
+    assert!(!backup.exists());
+    assert!(!temp.exists());
+
+    remove_settings_artifacts(&path);
+}
+
+#[test]
+fn save_rejects_directory_target_without_moving_or_dirtying_disk() {
+    let path = temp_settings_path("directory-target");
+    remove_settings_artifacts(&path);
+    let path_string = path.to_string_lossy().to_string();
+    let settings = SettingsService::new();
+    settings.load(&path_string).unwrap();
+    settings.set("theme", "dark");
+    fs::create_dir(&path).unwrap();
+
+    let error = settings.save().unwrap_err();
+
+    assert_eq!(error.code(), Errc::InvalidArgument);
+    assert!(path.is_dir());
+    assert!(settings.dirty());
+    assert!(!settings_sidecar(&path, SETTINGS_TEMP_SUFFIX).exists());
+    assert!(!settings_sidecar(&path, SETTINGS_BACKUP_SUFFIX).exists());
+
+    fs::remove_dir(&path).unwrap();
+}
+
+#[test]
+fn save_rejects_non_file_sidecar_without_touching_committed_target() {
+    let path = temp_settings_path("directory-sidecar");
+    remove_settings_artifacts(&path);
+    let backup = settings_sidecar(&path, SETTINGS_BACKUP_SUFFIX);
+    fs::write(&path, r#"{"theme":"light"}"#).unwrap();
+    let settings = SettingsService::new();
+    settings.load(&path.to_string_lossy()).unwrap();
+    settings.set("theme", "dark");
+    fs::create_dir(&backup).unwrap();
+
+    let error = settings.save().unwrap_err();
+
+    assert_eq!(error.code(), Errc::InvalidState);
+    assert_eq!(fs::read_to_string(&path).unwrap(), r#"{"theme":"light"}"#);
+    assert!(settings.dirty());
+    assert!(backup.is_dir());
+    assert!(!settings_sidecar(&path, SETTINGS_TEMP_SUFFIX).exists());
+
+    fs::remove_dir(&backup).unwrap();
+    remove_settings_artifacts(&path);
 }
 
 #[test]
