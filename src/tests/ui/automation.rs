@@ -1,3 +1,5 @@
+use std::cell::Cell;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::core::WindowId;
@@ -7,9 +9,57 @@ use crate::ui::test_harness::{
     AutomationAction, AutomationActionKind, AutomationError, AutomationErrorCode, AutomationTarget,
     TestApp, AUTOMATION_SCHEMA,
 };
-use crate::ui::OverlayKind;
+use crate::ui::{EventHandler, OverlayKind, WidgetCapabilities, WidgetLayout};
 
 static NEXT_TEMP_DIRECTORY: AtomicU64 = AtomicU64::new(1);
+
+struct ResizeSpy {
+    observed: Rc<Cell<Option<(f32, f32)>>>,
+}
+
+impl ResizeSpy {
+    fn new(observed: Rc<Cell<Option<(f32, f32)>>>) -> Self {
+        Self { observed }
+    }
+}
+
+impl WidgetComponent for ResizeSpy {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::from_bits(WidgetCapabilities::LAYOUT | WidgetCapabilities::EVENT)
+    }
+
+    crate::wc_upcast!(ResizeSpy; WidgetLayout);
+    crate::wc_upcast!(ResizeSpy; EventHandler);
+}
+
+impl WidgetLayout for ResizeSpy {
+    fn measure(&self, constraints: Constraints) -> Size {
+        constraints.clamp(Size::new(1.0, 1.0))
+    }
+}
+
+impl EventHandler for ResizeSpy {
+    fn on_event(&mut self, event: &SystemEvent) -> EventResult {
+        if let SystemEvent::Resize { width, height } = *event {
+            self.observed.set(Some((width, height)));
+            EventResult::Handled
+        } else {
+            EventResult::NotHandled
+        }
+    }
+}
 
 #[test]
 fn snapshot_exposes_stable_selector_semantics_and_bounds() {
@@ -203,6 +253,26 @@ fn press_key_settles_pending_reconcile_before_dispatch() {
     assert!(!target.is_enabled());
     assert!(!target.focused);
     assert_eq!(clicks.get(), 0);
+}
+
+#[test]
+fn resize_settles_pending_reconcile_before_dispatch() {
+    let show_spy = State::new(false);
+    let show_spy_for_root = show_spy.clone();
+    let observed = Rc::new(Cell::new(None));
+    let observed_for_root = observed.clone();
+    let mut app = TestApp::new((320.0, 120.0), move || {
+        if show_spy_for_root.get() {
+            embed(ResizeSpy::new(observed_for_root.clone()))
+        } else {
+            label("waiting")
+        }
+    });
+
+    show_spy.set(true);
+    app.resize(640.0, 480.0).unwrap();
+
+    assert_eq!(observed.get(), Some((640.0, 480.0)));
 }
 
 #[test]

@@ -419,6 +419,7 @@ impl TestApp {
     }
 
     pub fn resize(&mut self, width: f32, height: f32) -> Result<(), AutomationError> {
+        self.settle()?;
         self.viewport = (width.max(1.0), height.max(1.0));
         let _ = self.tree.dispatch_event(&SystemEvent::Resize {
             width: self.viewport.0,
