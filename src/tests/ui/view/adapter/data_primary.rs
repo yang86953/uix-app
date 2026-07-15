@@ -760,13 +760,17 @@ fn reconcile_calendar_preserves_selection_and_syncs_config() {
         .downcast_ref::<Calendar>()
         .unwrap();
     assert_eq!(calendar.selected_day(), selected_before);
-    assert_eq!(
+    assert!(matches!(
         calendar.snapshot_fields(),
         SnapshotFields::Calendar {
             cell_size: 32.0,
             year_jump: true,
-        }
-    );
+            year: 2026,
+            month: 6,
+            selected: Some(date),
+            focused_day,
+        } if Some(date.day) == selected_before && date.day == focused_day
+    ));
 }
 
 #[test]
