@@ -29,14 +29,7 @@ fn native_vulkan_surface_fault_reaches_engine_recovery_boundary() {
     assert!(!surface.is_null(), "Windows HWND must be available");
     let context = VulkanContext::new(surface, INITIAL_LOGICAL_EXTENT.0, INITIAL_LOGICAL_EXTENT.1)
         .expect("initial Vulkan context");
-    assert_eq!(
-        context.adapter_info.vendor_id,
-        expected.vendor_id(),
-        "expected {} ({:#06X}), actual {}",
-        expected.label(),
-        expected.vendor_id(),
-        context.adapter_info.diagnostic_summary()
-    );
+    expected.assert_adapter(&context.adapter_info);
     let adapter = context.adapter_info.diagnostic_summary();
     let initial = assemble_graphics_engine(
         Box::new(context),
@@ -52,6 +45,7 @@ fn native_vulkan_surface_fault_reaches_engine_recovery_boundary() {
         Box::new(move |action, width, height| {
             recorded_actions.borrow_mut().push(action);
             let context = VulkanContext::new(surface, width, height)?;
+            expected.assert_adapter(&context.adapter_info);
             assemble_graphics_engine(Box::new(context), width, height)
                 .map_err(|failure| failure.into_error())
         }),

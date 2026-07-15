@@ -258,14 +258,7 @@ fn windows_vulkan_gfx_r5_expected_vendor_resize_present_readback() {
     let _ = platform.event_loop().poll_event(&|_| true);
 
     let mut context = VulkanContext::new(surface, 137, 103).expect("VulkanContext");
-    assert_eq!(
-        context.adapter_info.vendor_id,
-        expected.vendor_id(),
-        "expected {} ({:#06X}), actual {}",
-        expected.label(),
-        expected.vendor_id(),
-        context.adapter_info.diagnostic_summary()
-    );
+    expected.assert_adapter(&context.adapter_info);
 
     let first_color = 0xFF34_78BC;
     let first_pixels = vec![first_color; (context.width() * context.height()) as usize];
@@ -335,14 +328,7 @@ fn windows_vulkan_gfx_r5_native_out_of_date_is_typed_and_recovers() {
     let _ = platform.event_loop().poll_event(&|_| true);
 
     let mut context = VulkanContext::new(surface, 139, 107).expect("VulkanContext");
-    assert_eq!(
-        context.adapter_info.vendor_id,
-        expected.vendor_id(),
-        "expected {} ({:#06X}), actual {}",
-        expected.label(),
-        expected.vendor_id(),
-        context.adapter_info.diagnostic_summary()
-    );
+    expected.assert_adapter(&context.adapter_info);
     let initial_extent = (context.width(), context.height());
     let initial_pixels = vec![0xFF31_5A9C; (initial_extent.0 * initial_extent.1) as usize];
     context
@@ -434,14 +420,7 @@ fn windows_vulkan_gfx_r5_destroyed_hwnd_returns_native_surface_lost() {
     let _ = platform.event_loop().poll_event(&|_| true);
 
     let mut context = VulkanContext::new(surface, 157, 119).expect("VulkanContext");
-    assert_eq!(
-        context.adapter_info.vendor_id,
-        expected.vendor_id(),
-        "expected {} ({:#06X}), actual {}",
-        expected.label(),
-        expected.vendor_id(),
-        context.adapter_info.diagnostic_summary()
-    );
+    expected.assert_adapter(&context.adapter_info);
     let extent = (context.width(), context.height());
     let pixels = vec![0xFF5C_82B4; (extent.0 * extent.1) as usize];
     context
