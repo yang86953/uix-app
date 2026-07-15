@@ -58,8 +58,19 @@ fn reconcile_tree_preserves_selection_and_syncs_nodes() {
     );
     assert!(matches!(
         tree_widget.snapshot_fields(),
-        SnapshotFields::Tree { nodes, multiple: true }
-            if nodes.len() == 1 && nodes[0].title == "Root 2" && nodes[0].children[0].title == "Child 2"
+        SnapshotFields::Tree {
+            nodes,
+            selected_key,
+            selected_keys,
+            expanded_keys,
+            multiple: true,
+        }
+            if nodes.len() == 1
+                && nodes[0].title == "Root 2"
+                && nodes[0].children[0].title == "Child 2"
+                && selected_key == "child"
+                && selected_keys == ["child"]
+                && expanded_keys == ["root"]
     ));
 }
 
