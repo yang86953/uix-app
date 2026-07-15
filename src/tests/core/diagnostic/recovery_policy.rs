@@ -33,3 +33,12 @@ fn circuit_reset_clears_state_and_all_metrics() {
     assert_eq!(circuit.success_count(), 0);
     assert_eq!(circuit.rejected_count(), 0);
 }
+
+#[test]
+fn circuit_recovery_timeout_saturates_instead_of_wrapping() {
+    let circuit = CircuitBreaker::default();
+
+    circuit.set_recovery_timeout(Duration::MAX);
+
+    assert_eq!(circuit.recovery_timeout(), Duration::from_millis(u64::MAX));
+}
