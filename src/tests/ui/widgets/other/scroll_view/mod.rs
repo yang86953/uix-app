@@ -1,3 +1,6 @@
+use crate::draw::engine::cpu::canvas_2d::CpuCanvas2D;
+use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
 use crate::ui::widgets::other::scroll_view::scrollbar::{ScrollBar, ScrollbarOrientation};
 use crate::ui::widgets::other::scroll_view::*;
@@ -39,6 +42,27 @@ impl WidgetLayout for FixedWidget {
 
 impl WidgetRender for FixedWidget {
     fn render(&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
+}
+
+fn render_scroll_view(scroll: &ScrollView, frame: Rect) {
+    let mut canvas = CpuCanvas2D::new(PixelSurface::new(400, 300));
+    let fonts = FontService::new();
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+    let mut ctx = PaintContext::new_for_test(
+        &mut canvas,
+        FontHandle::default(),
+        &fonts,
+        &images,
+        &tokens,
+        96.0,
+        1.0,
+        Orientation::YDown,
+        400,
+        300,
+    );
+    WidgetRender::render(scroll, frame, &mut ctx, &tree);
 }
 
 struct MeasureProbeWidget {
@@ -1015,6 +1039,38 @@ fn scrollview_thumb_drag_preserves_grab_offset_no_jump() {
         delta > 0.0 && delta < max_y * 0.15,
         "thumb should follow grab (small move → small scroll), before={scroll_before} after={scroll_after} max={max_y}"
     );
+}
+
+#[test]
+fn scrollview_nonzero_render_keeps_thumb_drag_in_local_coordinates() {
+    let mut scroll = ScrollView::new(ScrollDirection::Vertical).size(300.0, 200.0);
+    scroll.content_bounds.set(Some(Size::new(300.0, 800.0)));
+    render_scroll_view(&scroll, Rect::new(48.0, 32.0, 300.0, 200.0));
+
+    let local_frame = Rect::new(0.0, 0.0, 300.0, 200.0);
+    assert_eq!(scroll.last_frame.get(), Some(local_frame));
+    let max_y = scroll.max_scroll_y();
+    let thumb = ScrollBar::new(ScrollbarOrientation::Vertical)
+        .thumb_rect_rel(local_frame, scroll.scroll_y(), max_y)
+        .expect("thumb");
+    let grab = Point::new(thumb.x + thumb.w * 0.5, thumb.y + thumb.h * 0.5);
+
+    assert_eq!(
+        scroll.on_event(&SystemEvent::PointerDown {
+            pos: grab,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        scroll.on_event(&SystemEvent::PointerMove {
+            pos: Point::new(grab.x, grab.y + 20.0),
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(scroll.scroll_y() > 0.0);
 }
 
 #[test]
