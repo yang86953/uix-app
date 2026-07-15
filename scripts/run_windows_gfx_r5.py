@@ -50,7 +50,11 @@ ADAPTER_DIAGNOSTIC_PATTERN = re.compile(
     r"driver=0x(?P<driver>[0-9A-Fa-f]{8}); "
     r"queue_family=(?P<queue_family>\d+)"
 )
-MONITOR_DPI_PATTERN = re.compile(r"dpi=(?P<dpi_x>\d+)x(?P<dpi_y>\d+)")
+MONITOR_SAMPLE_PATTERN = re.compile(
+    r"bounds=\((?P<left>-?\d+),(?P<top>-?\d+)\.\."
+    r"(?P<right>-?\d+),(?P<bottom>-?\d+)\),"
+    r"dpi=(?P<dpi_x>\d+)x(?P<dpi_y>\d+)"
+)
 DPI_TRANSITION_PATTERN = re.compile(
     r"(?P<leg>initial|forward|return)=DpiTransitionEvidence \{ "
     r"observed_dpi: (?P<dpi>\d+), "
@@ -852,9 +856,29 @@ def require_profile_measurements(case: GfxR5Case, content: str) -> None:
 
 
 def require_mixed_dpi_measurements(case: GfxR5Case, evidence_line: str) -> None:
+    monitor_samples = list(MONITOR_SAMPLE_PATTERN.finditer(evidence_line))
+    if len(monitor_samples) < 2:
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} must record at least two monitor samples"
+        )
+    bounds = [
+        tuple(
+            int(sample.group(field))
+            for field in ("left", "top", "right", "bottom")
+        )
+        for sample in monitor_samples
+    ]
+    if any(right <= left or bottom <= top for left, top, right, bottom in bounds):
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} contains an invalid monitor bound"
+        )
+    if len(set(bounds)) != len(bounds):
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} reuses one monitor bound for multiple samples"
+        )
     topology = {
-        (int(match.group("dpi_x")), int(match.group("dpi_y")))
-        for match in MONITOR_DPI_PATTERN.finditer(evidence_line)
+        (int(sample.group("dpi_x")), int(sample.group("dpi_y")))
+        for sample in monitor_samples
     }
     if len(topology) < 2:
         raise ValueError(
