@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import platform
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 
@@ -99,6 +103,87 @@ class GfxR5Case:
         )
 
 
+class EvidenceSession:
+    """Persist progress after every state transition so interrupted runs are visible."""
+
+    def __init__(
+        self,
+        output_dir: Path,
+        profile: str,
+        vendor: str,
+        device_fault: bool | None,
+        soak_seconds: int,
+        device_lost_timeout: int,
+        plan: Sequence[GfxR5Case],
+    ) -> None:
+        self.output_dir = output_dir
+        self.logs_dir = output_dir / "logs"
+        self.manifest_path = output_dir / "manifest.json"
+        if output_dir.exists():
+            raise ValueError(f"evidence output already exists: {output_dir}")
+        self.logs_dir.mkdir(parents=True)
+        self.manifest = {
+            "schema_version": 1,
+            "status": "running",
+            "started_at": utc_now(),
+            "completed_at": None,
+            "configuration": {
+                "profile": profile,
+                "vendor": vendor,
+                "device_fault_expected": device_fault,
+                "soak_seconds": soak_seconds,
+                "device_lost_timeout_seconds": device_lost_timeout,
+            },
+            "source": source_metadata(),
+            "host": host_metadata(),
+            "cases": [self._pending_case(index, case) for index, case in enumerate(plan, 1)],
+        }
+        self._write()
+
+    def _pending_case(self, index: int, case: GfxR5Case) -> dict[str, object]:
+        return {
+            "index": index,
+            "name": case.name,
+            "test_name": case.test_name,
+            "status": "pending",
+            "started_at": None,
+            "completed_at": None,
+            "duration_seconds": None,
+            "exit_code": None,
+            "environment": dict(case.environment),
+            "command": list(case.command()),
+            "log": f"logs/{index:02d}-{case.name}.log",
+        }
+
+    def start_case(self, index: int) -> Path:
+        case = self.manifest["cases"][index]
+        case["status"] = "running"
+        case["started_at"] = utc_now()
+        self._write()
+        return self.output_dir / case["log"]
+
+    def finish_case(self, index: int, exit_code: int, duration: float) -> None:
+        case = self.manifest["cases"][index]
+        case["status"] = "passed" if exit_code == 0 else "failed"
+        case["completed_at"] = utc_now()
+        case["duration_seconds"] = round(duration, 3)
+        case["exit_code"] = exit_code
+        self._write()
+
+    def finish(self, status: str) -> None:
+        self.manifest["status"] = status
+        self.manifest["completed_at"] = utc_now()
+        if status == "interrupted":
+            for case in self.manifest["cases"]:
+                if case["status"] == "running":
+                    case["status"] = "interrupted"
+                    case["completed_at"] = self.manifest["completed_at"]
+        self._write()
+
+    def _write(self) -> None:
+        write_json_atomic(self.manifest_path, self.manifest)
+
+
 def _profile_cases(profile: str) -> tuple[tuple[str, str], ...]:
     if profile == "vendor":
         return VENDOR_CASES
@@ -159,23 +244,118 @@ def format_case(case: GfxR5Case) -> str:
     return f"{case.name}: {environment} {command}"
 
 
-def run_plan(plan: Sequence[GfxR5Case]) -> int:
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def default_evidence_dir(profile: str, vendor: str) -> Path:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    return ROOT / "test-reports" / f"{stamp}-gfx-r5-{vendor}-{profile}"
+
+
+def write_json_atomic(path: Path, value: object) -> None:
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(value, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
+def capture(command: Sequence[str]) -> str:
+    result = subprocess.run(
+        command,
+        cwd=ROOT,
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    return result.stdout.strip()
+
+
+def require_clean_source() -> None:
+    dirty = capture(("git", "status", "--porcelain", "--untracked-files=normal"))
+    if dirty:
+        raise ValueError(
+            "GFX-R5 evidence requires a clean worktree; commit or remove:\n" + dirty
+        )
+
+
+def source_metadata() -> dict[str, object]:
+    return {
+        "repository": str(ROOT),
+        "git_head": capture(("git", "rev-parse", "HEAD")),
+        "git_branch": capture(("git", "branch", "--show-current")),
+        "worktree_clean": True,
+    }
+
+
+def host_metadata() -> dict[str, str]:
+    return {
+        "node": platform.node(),
+        "platform": platform.platform(),
+        "python": platform.python_version(),
+        "rustc": capture(("rustc", "--version")),
+        "cargo": capture(("cargo", "--version")),
+    }
+
+
+def run_case(case: GfxR5Case, log_path: Path) -> tuple[int, float]:
+    inherited = os.environ.copy()
+    inherited.update(case.environment)
+    started = time.monotonic()
+    with log_path.open("w", encoding="utf-8", newline="\n") as log:
+        heading = format_case(case)
+        log.write(heading + "\n")
+        log.flush()
+        process = subprocess.Popen(
+            case.command(),
+            cwd=ROOT,
+            env=inherited,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+        )
+        assert process.stdout is not None
+        try:
+            for line in process.stdout:
+                print(line, end="", flush=True)
+                log.write(line)
+        except KeyboardInterrupt:
+            process.terminate()
+            process.wait()
+            raise
+        exit_code = process.wait()
+    return exit_code, time.monotonic() - started
+
+
+def run_plan(
+    plan: Sequence[GfxR5Case],
+    evidence: EvidenceSession,
+) -> int:
     if os.name != "nt":
         print("error: GFX-R5 target-machine acceptance requires Windows", file=sys.stderr)
         return 2
-    inherited = os.environ.copy()
     for index, case in enumerate(plan, start=1):
         print(f"[{index}/{len(plan)}] {format_case(case)}", flush=True)
-        environment = inherited.copy()
-        environment.update(case.environment)
-        result = subprocess.run(case.command(), cwd=ROOT, env=environment, check=False)
-        if result.returncode != 0:
+        log_path = evidence.start_case(index - 1)
+        exit_code, duration = run_case(case, log_path)
+        evidence.finish_case(index - 1, exit_code, duration)
+        if exit_code != 0:
             print(
                 f"error: GFX-R5 case {case.name!r} failed with exit code "
-                f"{result.returncode}",
+                f"{exit_code}; evidence={evidence.output_dir}",
                 file=sys.stderr,
             )
-            return result.returncode
+            evidence.finish("failed")
+            return exit_code
+    evidence.finish("passed")
     return 0
 
 
@@ -204,6 +384,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="print the exact plan without requiring Windows or running tests",
     )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="new evidence directory (default: test-reports/<timestamp>-gfx-r5-...)",
+    )
     return parser.parse_args(argv)
 
 
@@ -224,7 +409,36 @@ def main(argv: Sequence[str] | None = None) -> int:
         for case in plan:
             print(format_case(case))
         return 0
-    return run_plan(plan)
+    if os.name != "nt":
+        print("error: GFX-R5 target-machine acceptance requires Windows", file=sys.stderr)
+        return 2
+    try:
+        require_clean_source()
+        output_dir = (
+            args.output.resolve()
+            if args.output is not None
+            else default_evidence_dir(args.profile, args.vendor)
+        )
+        evidence = EvidenceSession(
+            output_dir,
+            args.profile,
+            args.vendor,
+            args.device_fault,
+            args.soak_seconds,
+            args.device_lost_timeout,
+            plan,
+        )
+    except (OSError, subprocess.SubprocessError, ValueError) as error:
+        print(f"error: evidence preflight failed: {error}", file=sys.stderr)
+        return 2
+    try:
+        result = run_plan(plan, evidence)
+    except KeyboardInterrupt:
+        evidence.finish("interrupted")
+        print(f"interrupted; partial evidence={evidence.output_dir}", file=sys.stderr)
+        return 130
+    print(f"GFX-R5 evidence: {evidence.output_dir}")
+    return result
 
 
 if __name__ == "__main__":
