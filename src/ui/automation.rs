@@ -700,9 +700,11 @@ fn rect_json(rect: Rect) -> String {
 
 fn accessibility_state_json(state: &AccessibilityState) -> String {
     format!(
-        "{{\"disabled\": {}, \"checked\": {}, \"value_text\": {}, \"value_now\": {}, \"value_min\": {}, \"value_max\": {}, \"multiline\": {}, \"password\": {}, \"required\": {}}}",
+        "{{\"disabled\": {}, \"checked\": {}, \"expanded\": {}, \"selected\": {}, \"value_text\": {}, \"value_now\": {}, \"value_min\": {}, \"value_max\": {}, \"multiline\": {}, \"password\": {}, \"required\": {}}}",
         state.disabled,
         json_optional_bool(state.checked),
+        json_optional_bool(state.expanded),
+        json_optional_bool(state.selected),
         json_optional_string(state.value_text.as_deref()),
         json_optional_number(state.value_now),
         json_optional_number(state.value_min),
@@ -715,6 +717,7 @@ fn accessibility_state_json(state: &AccessibilityState) -> String {
 
 fn accessibility_role_name(role: AccessibilityRole) -> &'static str {
     match role {
+        AccessibilityRole::None => "none",
         AccessibilityRole::Generic => "generic",
         AccessibilityRole::Alert => "alert",
         AccessibilityRole::Button => "button",

@@ -86,6 +86,31 @@ fn documented_semantic_event_builders_compile_from_prelude() {
     let _event = UsageEventProbe { last_pointer: None };
 }
 
+#[test]
+fn documented_raw_event_and_accessibility_builders_compile_from_prelude() {
+    let interactive = label("target")
+        .focusable(true)
+        .on_pointer(|event| match event {
+            SystemEvent::PointerDown { .. } => EventResult::Handled,
+            _ => EventResult::NotHandled,
+        })
+        .on_key(|_| EventResult::NotHandled)
+        .on_focus(|_| EventResult::NotHandled)
+        .on_scroll(|_| EventResult::NotHandled)
+        .role(AccessibilityRole::Button)
+        .accessible_name("Target")
+        .accessibility_state(AccessibilityState {
+            expanded: Some(false),
+            selected: Some(true),
+            ..AccessibilityState::default()
+        })
+        .aria("aria-description", "Public usage probe");
+    let _capture = column((interactive,)).on_key_capture(|_| EventResult::NotHandled);
+    let _hidden = label("decorative").role(AccessibilityRole::None);
+    let _snapshot = AccessibilitySnapshot::named(AccessibilityRole::Group, "Example")
+        .with_attribute(AriaAttribute::new("aria-live", "polite"));
+}
+
 #[cfg(feature = "test-harness")]
 #[test]
 fn documented_test_app_flow_compiles_and_runs_from_prelude() {

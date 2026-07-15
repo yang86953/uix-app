@@ -868,6 +868,8 @@ fn accessibility_state_value(state: &AccessibilityState) -> Value {
     json!({
         "disabled": state.disabled,
         "checked": state.checked,
+        "expanded": state.expanded,
+        "selected": state.selected,
         "value_text": if state.password { None } else { state.value_text.as_deref() },
         "value_now": state.value_now.and_then(finite_number_option),
         "value_min": state.value_min.and_then(finite_number_option),
@@ -888,6 +890,7 @@ fn finite_number_option(value: f64) -> Option<serde_json::Number> {
 
 fn role_name(role: AccessibilityRole) -> &'static str {
     match role {
+        AccessibilityRole::None => "none",
         AccessibilityRole::Generic => "generic",
         AccessibilityRole::Alert => "alert",
         AccessibilityRole::Button => "button",

@@ -75,6 +75,7 @@ pub struct SelectionSnapshot {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccessibilityRole {
+    None,
     Generic,
     Alert,
     Button,
@@ -102,7 +103,7 @@ pub enum AccessibilityRole {
 impl AccessibilityRole {
     pub fn aria_role(self) -> Option<&'static str> {
         match self {
-            Self::Generic | Self::Text => None,
+            Self::None | Self::Generic | Self::Text => None,
             Self::Alert => Some("alert"),
             Self::Button => Some("button"),
             Self::Checkbox => Some("checkbox"),
@@ -131,6 +132,8 @@ impl AccessibilityRole {
 pub struct AccessibilityState {
     pub disabled: bool,
     pub checked: Option<bool>,
+    pub expanded: Option<bool>,
+    pub selected: Option<bool>,
     pub value_text: Option<String>,
     pub value_now: Option<f64>,
     pub value_min: Option<f64>,
@@ -224,6 +227,12 @@ impl AccessibilitySnapshot {
         }
         if let Some(checked) = self.state.checked {
             attributes.push(AriaAttribute::new("aria-checked", checked.to_string()));
+        }
+        if let Some(expanded) = self.state.expanded {
+            attributes.push(AriaAttribute::new("aria-expanded", expanded.to_string()));
+        }
+        if let Some(selected) = self.state.selected {
+            attributes.push(AriaAttribute::new("aria-selected", selected.to_string()));
         }
         if let Some(value) = self.state.value_now {
             attributes.push(AriaAttribute::new("aria-valuenow", value.to_string()));
