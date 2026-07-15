@@ -424,25 +424,8 @@ impl WidgetTree {
             SystemEvent::WindowMaximize
             | SystemEvent::WindowMinimize
             | SystemEvent::WindowRestore
-            | SystemEvent::WindowFocus => {
-                if matches!(event, SystemEvent::WindowFocus) {
-                    self.activate_window_focus();
-                }
-                if let Some(root) = self.root_id {
-                    self.dispatch_to(root, event)
-                } else {
-                    EventResult::NotHandled
-                }
-            }
-            SystemEvent::WindowBlur => {
-                self.cancel_active_pointer_gesture();
-                self.deactivate_window_focus();
-                if let Some(root) = self.root_id {
-                    self.dispatch_to(root, event)
-                } else {
-                    EventResult::NotHandled
-                }
-            }
+            | SystemEvent::WindowFocus
+            | SystemEvent::WindowBlur => self.dispatch_window_lifecycle(event),
             SystemEvent::Timer { .. } => {
                 let target = self
                     .managers()
