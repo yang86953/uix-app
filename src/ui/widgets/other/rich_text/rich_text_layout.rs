@@ -502,8 +502,7 @@ fn layout_text_content_real(
 
         if *current_x + word_w > max_width && glyphs.is_empty() {
             let mut word_x = *current_x;
-            for i in start..end.min(advances.len()) {
-                let cw = advances[i];
+            for &cw in word_advances {
                 if word_x + cw > max_width && word_x > 0.0 && !glyphs.is_empty() {
                     *max_line_w = (*max_line_w).max(word_x);
                     flush_line(lines, glyphs, seg_line_h);
@@ -524,8 +523,7 @@ fn layout_text_content_real(
             }
             *current_x = word_x;
         } else {
-            for i in start..end.min(advances.len()) {
-                let cw = advances[i];
+            for &cw in word_advances {
                 glyphs.push(LayoutGlyph {
                     segment_idx: seg_idx,
                     global_char_idx: 0,

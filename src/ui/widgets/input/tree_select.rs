@@ -163,8 +163,7 @@ component! {
         );
         ctx.canvas_2d().push_clip(list_rect);
 
-        for i in start..end {
-            let (key, title, depth) = &flat[i];
+        for (i, (key, title, depth)) in flat.iter().enumerate().take(end).skip(start) {
             let item_y = list_y + i as f32 * DROPDOWN_ROW_HEIGHT - scroll_offset;
             if item_y + DROPDOWN_ROW_HEIGHT < list_y || item_y > list_y + list_h {
                 continue;

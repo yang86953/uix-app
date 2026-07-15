@@ -114,14 +114,14 @@ component! {
         let content_total = total - handle_total;
         let mut pos = if self.vertical { frame.y } else { frame.x };
 
-        for i in 0..n {
-            let size = self.ratios[i] * content_total;
+        for (child, ratio) in children.iter().zip(&self.ratios).take(n) {
+            let size = ratio * content_total;
             let child_frame = if self.vertical {
                 Rect::new(frame.x, pos, frame.w, size)
             } else {
                 Rect::new(pos, frame.y, size, frame.h)
             };
-            result.push((children[i].id, child_frame));
+            result.push((child.id, child_frame));
             pos += size + self.handle_size;
         }
         result
