@@ -3,4 +3,5 @@
 mod collector;
 mod middleware;
 mod recovery;
+mod recovery_policy;
 mod timestamp;

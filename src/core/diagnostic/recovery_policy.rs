@@ -6,7 +6,7 @@
 
 use crate::core::error::{Errc, Error};
 use std::fmt;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -242,6 +242,7 @@ pub struct CircuitBreaker {
     threshold: AtomicUsize,
     recovery_timeout_ms: AtomicU64,
     last_failure_time: AtomicU64,
+    half_open_probe_in_flight: AtomicBool,
 }
 
 impl CircuitBreaker {
@@ -254,6 +255,7 @@ impl CircuitBreaker {
             threshold: AtomicUsize::new(failure_threshold),
             recovery_timeout_ms: AtomicU64::new(recovery_timeout.as_millis() as u64),
             last_failure_time: AtomicU64::new(0),
+            half_open_probe_in_flight: AtomicBool::new(false),
         }
     }
 
@@ -293,7 +295,16 @@ impl CircuitBreaker {
                 self.rejected_count.fetch_add(1, Ordering::Relaxed);
                 false
             }
-            CircuitState::HalfOpen => true,
+            CircuitState::HalfOpen => {
+                let admitted = self
+                    .half_open_probe_in_flight
+                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+                    .is_ok();
+                if !admitted {
+                    self.rejected_count.fetch_add(1, Ordering::Relaxed);
+                }
+                admitted
+            }
         }
     }
 
@@ -306,18 +317,23 @@ impl CircuitBreaker {
             Ordering::Relaxed,
         );
         self.failure_count.store(0, Ordering::Relaxed);
+        self.half_open_probe_in_flight
+            .store(false, Ordering::Release);
     }
 
     pub fn record_failure(&self) {
         let fails = self.failure_count.fetch_add(1, Ordering::Relaxed) + 1;
+        let was_half_open = self.state.load(Ordering::Acquire) == CircuitState::HalfOpen as u64;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64;
         self.last_failure_time.store(now, Ordering::Relaxed);
-        if fails >= self.threshold.load(Ordering::Relaxed) {
+        if was_half_open || fails >= self.threshold.load(Ordering::Relaxed) {
             self.state
                 .store(CircuitState::Open as u64, Ordering::Release);
+            self.half_open_probe_in_flight
+                .store(false, Ordering::Release);
         }
     }
 
@@ -327,6 +343,8 @@ impl CircuitBreaker {
         self.failure_count.store(0, Ordering::Relaxed);
         self.rejected_count.store(0, Ordering::Relaxed);
         self.last_failure_time.store(0, Ordering::Relaxed);
+        self.half_open_probe_in_flight
+            .store(false, Ordering::Release);
     }
 
     pub fn set_threshold(&self, failures: usize) {
