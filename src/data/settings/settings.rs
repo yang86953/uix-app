@@ -328,7 +328,9 @@ impl SettingsService {
             return Ok(());
         }
         let Some(path) = state.path.as_deref() else {
-            return Ok(());
+            return Err(Error::invalid_state(
+                "settings: save requires a path configured by load",
+            ));
         };
         let json = serialize_json_flat(&state.values);
         let tmp_path = format!("{path}.tmp");
