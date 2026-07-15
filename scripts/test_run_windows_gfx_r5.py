@@ -201,6 +201,34 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "size changed|SHA-256 changed"):
                 verify_evidence_dir(output)
 
+    def test_evidence_verifier_rejects_plan_or_provenance_tampering(self) -> None:
+        plan = build_plan("mixed-dpi", "amd", None, 900, 60)
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "evidence"
+            session = EvidenceSession(output, "mixed-dpi", "amd", None, 900, 60, plan)
+            log_path = session.start_case(0)
+            log_path.write_text(passing_log(plan[0]), encoding="utf-8")
+            session.finish_case(0, 0, 0.5)
+            session.finish("passed")
+
+            original_command = list(session.manifest["cases"][0]["command"])
+            session.manifest["cases"][0]["command"].append("--tampered")
+            session._write()
+            with self.assertRaisesRegex(ValueError, "plan"):
+                verify_evidence_dir(output)
+
+            session.manifest["cases"][0]["command"] = original_command
+            session.manifest["source"]["git_head"] = "not-a-commit"
+            session._write()
+            with self.assertRaisesRegex(ValueError, "git_head"):
+                verify_evidence_dir(output)
+
+            session.manifest["source"]["git_head"] = "0" * 40
+            session.manifest["host"]["rustc"] = ""
+            session._write()
+            with self.assertRaisesRegex(ValueError, "host rustc"):
+                verify_evidence_dir(output)
+
     def test_verify_command_succeeds_only_for_a_passed_manifest(self) -> None:
         plan = build_plan("mixed-dpi", "amd", None, 900, 60)
         with TemporaryDirectory() as directory:
