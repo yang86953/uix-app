@@ -267,6 +267,7 @@ impl ViewAdapter {
             .disabled;
         if next_disabled {
             // PointerLeave / DragEnd 必须在旧组件仍启用时交付，随后再 patch disabled。
+            tree.cancel_pointer_hover_in_subtree(id);
             tree.cancel_pointer_gesture_in_subtree(id);
         }
         if next_disabled

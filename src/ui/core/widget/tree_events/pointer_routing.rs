@@ -4,6 +4,26 @@ use crate::ui::window_chrome::WindowInteractionRegion;
 use crate::ui::{OverlayEntry, OverlayKind};
 
 impl WidgetTree {
+    pub(crate) fn cancel_pointer_hover_in_subtree(&mut self, root: WidgetId) {
+        let hovered = self
+            .managers()
+            .interaction
+            .hovered_component()
+            .filter(|target| self.is_descendant_of(*target, root));
+        let Some(hovered) = hovered else {
+            return;
+        };
+        let leave_is_delivered_by_gesture_cancel =
+            self.managers().interaction.pressed_component() == Some(hovered);
+        self.managers_mut().interaction.set_hovered_component(None);
+        if !leave_is_delivered_by_gesture_cancel
+            && self.dispatch_to(hovered, &SystemEvent::PointerLeave) == EventResult::Handled
+        {
+            self.invalidate_paint(hovered);
+        }
+        self.rebuild_widget_overlays();
+    }
+
     pub(crate) fn cancel_pointer_gesture_in_subtree(&mut self, root: WidgetId) {
         let owns_pressed = self
             .managers()

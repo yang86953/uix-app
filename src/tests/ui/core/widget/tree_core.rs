@@ -3718,6 +3718,14 @@ fn reconcile_to_disabled_cancels_pointer_activation() {
     tree.get_mut(target)
         .expect("button node")
         .set_frame(Rect::new(0.0, 0.0, 120.0, 40.0));
+    tree.dispatch_event(&SystemEvent::PointerMove {
+        pos: Point::new(20.0, 20.0),
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(
+        tree.managers().interaction.hovered_component(),
+        Some(target)
+    );
     assert_eq!(
         tree.dispatch_event(&SystemEvent::PointerDown {
             pos: Point::new(20.0, 20.0),
@@ -3748,6 +3756,7 @@ fn reconcile_to_disabled_cancels_pointer_activation() {
     );
 
     assert_eq!(tree.root_id(), Some(target));
+    assert_eq!(tree.managers().interaction.hovered_component(), None);
     assert_eq!(tree.managers().interaction.pressed_component(), None);
     assert!(!tree.managers().drag.is_potential());
     assert!(!tree.managers().drag.is_dragging());
@@ -3764,6 +3773,44 @@ fn reconcile_to_disabled_cancels_pointer_activation() {
         EventResult::NotHandled
     );
     assert_eq!(calls.get(), 0);
+}
+
+#[test]
+fn reconcile_to_disabled_clears_hover_before_patching_component() {
+    let pointer_leaves = Rc::new(Cell::new(0));
+    let observed = Rc::clone(&pointer_leaves);
+    let mut tree = ViewAdapter::build(embed(Button::new("Toggle")).on_pointer(move |event| {
+        if matches!(event, SystemEvent::PointerLeave) {
+            observed.set(observed.get() + 1);
+        }
+        EventResult::NotHandled
+    }));
+    let target = tree.root_id().expect("button root");
+    tree.get_mut(target)
+        .expect("button node")
+        .set_frame(Rect::new(0.0, 0.0, 120.0, 40.0));
+    tree.dispatch_event(&SystemEvent::PointerMove {
+        pos: Point::new(20.0, 20.0),
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(
+        tree.managers().interaction.hovered_component(),
+        Some(target)
+    );
+
+    ViewAdapter::reconcile(&mut tree, embed(Button::new("Toggle").disabled(true)));
+
+    assert_eq!(tree.root_id(), Some(target));
+    assert_eq!(tree.managers().interaction.hovered_component(), None);
+    assert_eq!(pointer_leaves.get(), 1);
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerMove {
+            pos: Point::new(20.0, 20.0),
+            mods: KeyMod::NONE,
+        }),
+        EventResult::NotHandled
+    );
+    assert_eq!(pointer_leaves.get(), 1);
 }
 
 #[test]
