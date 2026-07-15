@@ -114,6 +114,55 @@ fn documented_raw_event_and_accessibility_builders_compile_from_prelude() {
     let _focus_result: Result<(), FocusHandleError> = focus.focus();
 }
 
+#[test]
+fn documented_form_validation_returns_typed_values_from_prelude() {
+    let mut form = Form::new()
+        .field("user", "Username")
+        .default("")
+        .required("username required")
+        .custom(|value| {
+            (value.len() >= 3)
+                .then_some(())
+                .ok_or_else(|| "username too short".to_string())
+        })
+        .field("email", "Email")
+        .default("")
+        .required("email required")
+        .validate_email("invalid email")
+        .field("age", "Age")
+        .default(0_i32)
+        .validate_range(1..=120, "invalid age")
+        .build();
+
+    let errors = form.validate().expect_err("empty form must fail");
+    assert_eq!(
+        errors
+            .iter()
+            .map(|error| (error.field(), error.message()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("user", "username required"),
+            ("email", "email required"),
+            ("age", "invalid age"),
+        ]
+    );
+
+    assert!(form.set_value("user", "Ada"));
+    assert!(form.set_value("email", "ada@example.test"));
+    assert!(form.set_value("age", 36_i32));
+    let values = form.validate().expect("valid form");
+
+    assert_eq!(
+        values.get::<String>("user").map(String::as_str),
+        Some("Ada")
+    );
+    assert_eq!(
+        values.get::<String>("email").map(String::as_str),
+        Some("ada@example.test")
+    );
+    assert_eq!(values.get::<i32>("age"), Some(&36));
+}
+
 #[cfg(feature = "test-harness")]
 #[test]
 fn documented_test_app_flow_compiles_and_runs_from_prelude() {
