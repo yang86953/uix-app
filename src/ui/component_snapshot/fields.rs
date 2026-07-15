@@ -9,7 +9,8 @@ use crate::ui::window_chrome::WindowControl;
 use crate::ui::Placement;
 
 use super::accessibility::{
-    calendar_accessibility, carousel_accessibility, first_non_empty, theme_toggle_accessibility,
+    breadcrumb_accessibility, calendar_accessibility, carousel_accessibility, first_non_empty,
+    theme_toggle_accessibility,
 };
 use super::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotCollapsePanel,
@@ -756,7 +757,7 @@ impl SnapshotFields {
                     ..AccessibilityState::default()
                 },
             ),
-            Self::Breadcrumb { .. } => AccessibilitySnapshot::new(AccessibilityRole::Navigation),
+            Self::Breadcrumb { items, .. } => breadcrumb_accessibility(items),
             Self::Menu {
                 items, active_key, ..
             } => {
