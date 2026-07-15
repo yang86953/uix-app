@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import time
@@ -37,6 +38,15 @@ MAX_DEVICE_LOST_TIMEOUT = 600
 EVIDENCE_VALIDATION_EXIT_CODE = 3
 EVIDENCE_SCHEMA_VERSION = 4
 COMMAND_ERROR_OUTPUT_LIMIT = 4_000
+ADAPTER_DIAGNOSTIC_PATTERN = re.compile(
+    r'adapter="(?P<description>[^"\r\n]+)"; '
+    r"type=(?P<device_type>[^;\r\n]+); "
+    r"vendor=0x(?P<vendor>[0-9A-Fa-f]{4}); "
+    r"device=0x(?P<device>[0-9A-Fa-f]{4}); "
+    r"api=(?P<api_major>\d+)\.(?P<api_minor>\d+)\.(?P<api_patch>\d+); "
+    r"driver=0x(?P<driver>[0-9A-Fa-f]{8}); "
+    r"queue_family=(?P<queue_family>\d+)"
+)
 
 VENDOR_CASES = (
     (
@@ -124,10 +134,7 @@ class GfxR5Case:
     def required_evidence_markers(self) -> tuple[str, ...]:
         environment = dict(self.environment)
         vendor = environment[VENDOR_ENV]
-        markers = [
-            f"{self.evidence_prefix} expected={vendor};",
-            f"vendor=0x{VENDOR_IDS[vendor]:04X}",
-        ]
+        markers = [f"{self.evidence_prefix} expected={vendor};"]
         if self.name == "vendor-resize-present-readback":
             markers.append("swapchain_maintenance1=true")
         elif self.name == "native-out-of-date-recovery":
@@ -762,6 +769,32 @@ def require_case_success(case: GfxR5Case, log_path: Path) -> None:
         raise ValueError(
             f"GFX-R5 case {case.name!r} lacks semantic evidence markers: {details}"
         )
+    require_adapter_evidence(case, content)
+
+
+def require_adapter_evidence(case: GfxR5Case, content: str) -> None:
+    diagnostics = list(ADAPTER_DIAGNOSTIC_PATTERN.finditer(content))
+    if not diagnostics:
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} lacks structured adapter diagnostics"
+        )
+    vendor = dict(case.environment)[VENDOR_ENV]
+    expected_vendor = VENDOR_IDS[vendor]
+    for diagnostic in diagnostics:
+        actual_vendor = int(diagnostic.group("vendor"), 16)
+        if actual_vendor != expected_vendor:
+            raise ValueError(
+                f"GFX-R5 case {case.name!r} adapter vendor mismatch: "
+                f"expected=0x{expected_vendor:04X}, actual=0x{actual_vendor:04X}"
+            )
+        if int(diagnostic.group("device"), 16) == 0:
+            raise ValueError(
+                f"GFX-R5 case {case.name!r} adapter device ID must be non-zero"
+            )
+        if int(diagnostic.group("api_major")) == 0:
+            raise ValueError(
+                f"GFX-R5 case {case.name!r} adapter Vulkan API must be non-zero"
+            )
 
 
 def require_exact_test_success(

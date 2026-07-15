@@ -12,6 +12,7 @@ from scripts.run_windows_gfx_r5 import (
     ROOT,
     SOAK_SECONDS_ENV,
     VENDOR_ENV,
+    VENDOR_IDS,
     EvidenceSession,
     build_plan,
     capture,
@@ -31,8 +32,16 @@ from scripts.run_windows_gfx_r5 import (
 
 
 def passing_log(case) -> str:
+    vendor = dict(case.environment)[VENDOR_ENV]
+    adapter = (
+        f'adapter="Test GPU"; type=discrete_gpu; '
+        f"vendor=0x{VENDOR_IDS[vendor]:04X}; device=0x1234; "
+        "api=1.3.280; driver=0x12345678; queue_family=0"
+    )
     return (
         "\n".join(case.required_evidence_markers())
+        + "\n"
+        + adapter
         + "\n"
         "running 1 test\n"
         f"test {case.test_name} ... ok\n"
@@ -158,8 +167,8 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             case.name: case.required_evidence_markers() for case in plan
         }
 
-        for required in markers.values():
-            self.assertIn("vendor=0x8086", required)
+        for case in plan:
+            self.assertIn("expected=intel;", case.required_evidence_markers()[0])
         self.assertIn("dpi=", markers["vulkan-mixed-dpi"])
         self.assertIn("duration=1200.0s", markers["single-window-soak"])
         self.assertIn("ERROR_DEVICE_LOST", markers["external-device-reset"])
@@ -225,14 +234,7 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
 
     def test_exact_case_success_requires_one_named_passing_test(self) -> None:
         case = build_plan("mixed-dpi", "amd", None, 900, 60)[0]
-        valid = (
-            "\n".join(case.required_evidence_markers())
-            + "\n"
-            "running 1 test\n"
-            f"test {case.test_name} ... evidence\n"
-            "ok\n\n"
-            "test result: ok. 1 passed; 0 failed; 0 ignored\n"
-        )
+        valid = passing_log(case)
         with TemporaryDirectory() as directory:
             path = Path(directory) / "case.log"
             path.write_text(valid, encoding="utf-8")
@@ -253,6 +255,25 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(ValueError, "exact one-test success"):
+                require_case_success(case, path)
+
+    def test_case_success_rejects_invalid_adapter_diagnostics(self) -> None:
+        case = build_plan("vendor", "amd", None, 900, 60)[0]
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "case.log"
+
+            path.write_text(
+                passing_log(case).replace("device=0x1234", "device=0x0000"),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "device ID must be non-zero"):
+                require_case_success(case, path)
+
+            path.write_text(
+                passing_log(case).replace("vendor=0x1002", "vendor=0x10DE"),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "adapter vendor mismatch"):
                 require_case_success(case, path)
 
     def test_manifest_distinguishes_cargo_success_from_evidence_failure(self) -> None:
