@@ -3,6 +3,7 @@ use super::*;
 use crate::ui::event::{ClickEvent, SemanticEvent, WindowAction};
 
 mod pointer_routing;
+mod window_lifecycle;
 
 impl WidgetTree {
     /// 2D 命中测试：根据屏幕坐标找到最深的 widget。
@@ -421,6 +422,9 @@ impl WidgetTree {
             | SystemEvent::WindowMinimize
             | SystemEvent::WindowRestore
             | SystemEvent::WindowFocus => {
+                if matches!(event, SystemEvent::WindowFocus) {
+                    self.activate_window_focus();
+                }
                 if let Some(root) = self.root_id {
                     self.dispatch_to(root, event)
                 } else {
@@ -429,6 +433,7 @@ impl WidgetTree {
             }
             SystemEvent::WindowBlur => {
                 self.cancel_active_pointer_gesture();
+                self.deactivate_window_focus();
                 if let Some(root) = self.root_id {
                     self.dispatch_to(root, event)
                 } else {

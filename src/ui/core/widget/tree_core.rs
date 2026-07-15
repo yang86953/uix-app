@@ -51,6 +51,7 @@ pub struct WidgetTree {
     focus_handles: HashMap<WidgetId, FocusHandle>,
     timer_routes: BTreeMap<u64, (WidgetId, u32)>,
     focus_trap_restore: Vec<(WidgetId, Option<WidgetId>)>,
+    pub(crate) window_focused: bool,
     #[cfg(feature = "test-harness")]
     pub(crate) automation_recorder: Option<crate::ui::automation::AutomationRecorder>,
     /// layout() 内实际改写 frame 次数（回归：收敛后二次 layout 应为 0）。
@@ -103,6 +104,7 @@ impl Default for WidgetTree {
             focus_handles: HashMap::new(),
             timer_routes: BTreeMap::new(),
             focus_trap_restore: Vec::new(),
+            window_focused: true,
             #[cfg(feature = "test-harness")]
             automation_recorder: None,
             #[cfg(test)]
