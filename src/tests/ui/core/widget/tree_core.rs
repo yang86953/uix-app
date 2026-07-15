@@ -13,7 +13,7 @@ struct SpyWidget {
     size: crate::core::Size,
     tab_index: i32,
     last_event: RefCell<Option<SystemEvent>>,
-    events: RefCell<Vec<SystemEvent>>,
+    events: Rc<RefCell<Vec<SystemEvent>>>,
 }
 impl SpyWidget {
     fn new(w: f32, h: f32) -> Self {
@@ -21,12 +21,17 @@ impl SpyWidget {
             size: crate::core::Size::new(w, h),
             tab_index: 0,
             last_event: RefCell::new(None),
-            events: RefCell::new(Vec::new()),
+            events: Rc::new(RefCell::new(Vec::new())),
         }
     }
 
     fn with_tab_index(mut self, tab_index: i32) -> Self {
         self.tab_index = tab_index;
+        self
+    }
+
+    fn with_event_log(mut self, events: Rc<RefCell<Vec<SystemEvent>>>) -> Self {
+        self.events = events;
         self
     }
 }
@@ -1990,6 +1995,144 @@ fn hiding_active_pointer_subtree_cancels_hover_press_and_drag() {
         EventResult::NotHandled
     );
     assert_eq!(clicks.get(), 0);
+}
+
+#[test]
+fn removing_active_pointer_subtree_delivers_cancel_before_destroy() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(300.0, 200.0, vec![])));
+    let parent = tree.add_child(
+        root,
+        Box::new(PassThroughContainer::new(200.0, 100.0, vec![])),
+    );
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let child = tree.add_child(
+        parent,
+        Box::new(SpyWidget::new(120.0, 40.0).with_event_log(events.clone())),
+    );
+    tree.get_mut(root)
+        .expect("root")
+        .set_frame(Rect::new(0.0, 0.0, 300.0, 200.0));
+    tree.get_mut(parent)
+        .expect("parent")
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 100.0));
+    tree.get_mut(child)
+        .expect("child")
+        .set_frame(Rect::new(0.0, 0.0, 120.0, 40.0));
+    let clicks = Rc::new(Cell::new(0));
+    let clicks_for_handler = clicks.clone();
+    tree.handler_table()
+        .on(child, SemanticKind::Click, move |_| {
+            clicks_for_handler.set(clicks_for_handler.get() + 1);
+        });
+
+    tree.dispatch_event(&SystemEvent::PointerMove {
+        pos: Point::new(20.0, 20.0),
+        mods: KeyMod::NONE,
+    });
+    tree.dispatch_event(&SystemEvent::PointerDown {
+        pos: Point::new(20.0, 20.0),
+        button: MouseButton::Left,
+        mods: KeyMod::CTRL,
+    });
+    tree.dispatch_event(&SystemEvent::PointerMove {
+        pos: Point::new(60.0, 20.0),
+        mods: KeyMod::CTRL,
+    });
+    events.borrow_mut().clear();
+
+    tree.remove(parent);
+
+    assert!(tree.get(parent).is_none());
+    assert!(tree.get(child).is_none());
+    assert_eq!(tree.managers().interaction.hovered_component(), None);
+    assert_eq!(tree.managers().interaction.pressed_component(), None);
+    assert!(!tree.managers().drag.is_dragging());
+    assert_eq!(
+        events
+            .borrow()
+            .iter()
+            .filter(|event| matches!(event, SystemEvent::DragEnd { .. }))
+            .count(),
+        1
+    );
+    assert_eq!(
+        events
+            .borrow()
+            .iter()
+            .filter(|event| matches!(event, SystemEvent::PointerLeave))
+            .count(),
+        1
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerUp {
+            pos: Point::new(60.0, 20.0),
+            button: MouseButton::Left,
+            mods: KeyMod::CTRL,
+        }),
+        EventResult::NotHandled
+    );
+    assert_eq!(clicks.get(), 0);
+}
+
+#[test]
+fn replacing_root_delivers_pointer_and_focus_cancellation() {
+    let mut tree = WidgetTree::new();
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let old_root = tree.set_root(Box::new(
+        SpyWidget::new(200.0, 100.0)
+            .with_tab_index(1)
+            .with_event_log(events.clone()),
+    ));
+    tree.get_mut(old_root)
+        .expect("old root")
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 100.0));
+    tree.set_focus(Some(old_root));
+    tree.dispatch_event(&SystemEvent::PointerMove {
+        pos: Point::new(20.0, 20.0),
+        mods: KeyMod::NONE,
+    });
+    tree.dispatch_event(&SystemEvent::PointerDown {
+        pos: Point::new(20.0, 20.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    tree.dispatch_event(&SystemEvent::PointerMove {
+        pos: Point::new(60.0, 20.0),
+        mods: KeyMod::NONE,
+    });
+    events.borrow_mut().clear();
+
+    let new_root = tree.set_root(Box::new(Label::new("replacement")));
+
+    assert_ne!(new_root, old_root);
+    assert!(tree.get(old_root).is_none());
+    assert_eq!(tree.managers().focus.focused_component(), None);
+    assert_eq!(tree.managers().interaction.hovered_component(), None);
+    assert_eq!(tree.managers().interaction.pressed_component(), None);
+    assert!(!tree.managers().drag.is_dragging());
+    let events = events.borrow();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event, SystemEvent::DragEnd { .. }))
+            .count(),
+        1
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event, SystemEvent::PointerLeave))
+            .count(),
+        1
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event, SystemEvent::FocusOut))
+            .count(),
+        1
+    );
 }
 
 #[test]

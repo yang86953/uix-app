@@ -484,15 +484,8 @@ impl WidgetTree {
             return;
         };
         let parent_id = self.nodes[slot].as_ref().and_then(|n| n.parent());
-        if self
-            .managers
-            .focus
-            .focused_component()
-            .is_some_and(|focused| self.is_descendant_of(focused, id))
-        {
-            // 节点仍可寻址时完成目标 FocusOut 与祖先 focus-within 离开。
-            self.set_focus(None);
-        }
+        // 节点仍可寻址时交付 PointerLeave / DragEnd / FocusOut，再销毁生命周期。
+        self.cancel_subtree_interaction(id);
         self.teardown_subtree(id);
         if let Some(node) = self.nodes.get_mut(slot) {
             if let Some(node) = node.take() {
@@ -545,16 +538,7 @@ impl WidgetTree {
 
     pub fn set_visible(&mut self, id: ComponentId, visible: bool) {
         if !visible {
-            self.cancel_pointer_state_in_subtree(id);
-        }
-        if !visible
-            && self
-                .managers
-                .focus
-                .focused_component()
-                .is_some_and(|focused| self.is_descendant_of(focused, id))
-        {
-            self.set_focus(None);
+            self.cancel_subtree_interaction(id);
         }
 
         let mut stack = vec![id];
