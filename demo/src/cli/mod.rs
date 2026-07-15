@@ -191,7 +191,7 @@ pub fn demo_theme() {
 
 pub fn demo_settings() -> Result<(), Error> {
     println!("\n╔══ data：设置服务 ═══╗");
-    let mut s = SettingsService::new();
+    let s = SettingsService::new();
     s.set("theme", "dark");
     s.set("font_size", "14");
     s.set("language", "zh-CN");
@@ -207,7 +207,7 @@ pub fn demo_settings() -> Result<(), Error> {
     s.load(&ps)?;
     s.set("demo_ok", "true");
     s.save()?;
-    let mut s2 = SettingsService::new();
+    let s2 = SettingsService::new();
     s2.load(&ps)?;
     println!("  reloaded: {} keys", s2.count());
     std::fs::remove_file(&ps)?;

@@ -517,7 +517,7 @@ impl App {
             return true;
         };
 
-        let mut settings = SettingsService::new();
+        let settings = SettingsService::new();
         if let Err(err) = settings.load(path) {
             crate::core::log::error_fn(format!("load settings failed: {}", err.short_what()));
             self.exit_code = 1;

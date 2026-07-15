@@ -9,6 +9,7 @@ use crate::core::{Errc, Error, Result};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 // ── 极简 JSON 读写（仅支持扁平 HashMap<String, String>） ────────────────
 
@@ -273,11 +274,17 @@ pub(crate) fn serialize_json_flat(map: &HashMap<String, String>) -> String {
 }
 
 /// 键值设置服务，支持 JSON 文件持久化。
-#[derive(Debug, Clone, Default)]
-pub struct SettingsService {
+#[derive(Debug, Default)]
+struct SettingsState {
     path: Option<String>,
     values: HashMap<String, String>,
     dirty: bool,
+}
+
+/// 可跨 `AppHandle` 克隆并共享同一份设置状态的键值服务。
+#[derive(Debug, Clone, Default)]
+pub struct SettingsService {
+    state: Arc<RwLock<SettingsState>>,
 }
 
 impl SettingsService {
@@ -287,11 +294,12 @@ impl SettingsService {
 
     /// 从 JSON 文件加载设置。
     /// 先读入并解析，成功后一次提交 path / values / dirty；失败时保持原状态不变。
-    pub fn load(&mut self, path: &str) -> Result<()> {
+    pub fn load(&self, path: &str) -> Result<()> {
         if !Path::new(path).exists() {
-            self.path = Some(path.to_string());
-            self.values.clear();
-            self.dirty = false;
+            let mut state = self.write_state();
+            state.path = Some(path.to_string());
+            state.values.clear();
+            state.dirty = false;
             return Ok(());
         }
 
@@ -301,67 +309,87 @@ impl SettingsService {
         } else {
             parse_json_flat(&content)?
         };
-        self.path = Some(path.to_string());
-        self.values = parsed;
-        self.dirty = false;
+        let mut state = self.write_state();
+        state.path = Some(path.to_string());
+        state.values = parsed;
+        state.dirty = false;
         Ok(())
     }
 
     /// 保存设置到 JSON 文件（临时文件 + rename 保证原子性）。
-    pub fn save(&mut self) -> Result<()> {
-        if !self.dirty {
+    pub fn save(&self) -> Result<()> {
+        let mut state = self.write_state();
+        if !state.dirty {
             return Ok(());
         }
-        let Some(path) = self.path.as_deref() else {
+        let Some(path) = state.path.as_deref() else {
             return Ok(());
         };
-        let json = serialize_json_flat(&self.values);
+        let json = serialize_json_flat(&state.values);
         let tmp_path = format!("{path}.tmp");
         fs::write(&tmp_path, &json)?;
         let _ = fs::remove_file(path);
         fs::rename(&tmp_path, path)?;
-        self.dirty = false;
+        state.dirty = false;
         Ok(())
     }
 
-    pub fn set(&mut self, key: &str, value: &str) {
-        self.values.insert(key.to_string(), value.to_string());
-        self.dirty = true;
+    pub fn set(&self, key: &str, value: &str) {
+        let mut state = self.write_state();
+        state.values.insert(key.to_string(), value.to_string());
+        state.dirty = true;
     }
 
-    pub fn get(&self, key: &str) -> Option<&str> {
-        self.values.get(key).map(|s| s.as_str())
+    pub fn get(&self, key: &str) -> Option<String> {
+        self.read_state().values.get(key).cloned()
     }
 
-    pub fn get_or<'a>(&'a self, key: &str, default: &'a str) -> &'a str {
-        self.values.get(key).map(|s| s.as_str()).unwrap_or(default)
+    pub fn get_or(&self, key: &str, default: &str) -> String {
+        self.get(key).unwrap_or_else(|| default.to_string())
     }
 
     pub fn has(&self, key: &str) -> bool {
-        self.values.contains_key(key)
+        self.read_state().values.contains_key(key)
     }
 
-    pub fn remove(&mut self, key: &str) {
-        self.values.remove(key);
-        self.dirty = true;
+    pub fn remove(&self, key: &str) {
+        let mut state = self.write_state();
+        state.values.remove(key);
+        state.dirty = true;
     }
 
-    pub fn clear(&mut self) {
-        self.values.clear();
-        self.dirty = true;
+    pub fn clear(&self) {
+        let mut state = self.write_state();
+        state.values.clear();
+        state.dirty = true;
     }
 
-    pub fn all(&self) -> &HashMap<String, String> {
-        &self.values
+    pub fn all(&self) -> HashMap<String, String> {
+        self.read_state().values.clone()
     }
-    pub fn loaded_path(&self) -> Option<&str> {
-        self.path.as_deref()
+
+    pub fn loaded_path(&self) -> Option<String> {
+        self.read_state().path.clone()
     }
+
     pub fn dirty(&self) -> bool {
-        self.dirty
+        self.read_state().dirty
     }
+
     pub fn count(&self) -> usize {
-        self.values.len()
+        self.read_state().values.len()
+    }
+
+    fn read_state(&self) -> RwLockReadGuard<'_, SettingsState> {
+        self.state
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn write_state(&self) -> RwLockWriteGuard<'_, SettingsState> {
+        self.state
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 

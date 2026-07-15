@@ -95,10 +95,10 @@ fn parse_serialize_roundtrip_preserves_entries() {
 
 #[test]
 fn set_get_has_and_remove_share_one_state_contract() {
-    let mut settings = SettingsService::new();
+    let settings = SettingsService::new();
     settings.set("theme", "dark");
 
-    assert_eq!(settings.get("theme"), Some("dark"));
+    assert_eq!(settings.get("theme"), Some("dark".to_string()));
     assert!(settings.has("theme"));
     assert!(settings.dirty());
 
@@ -112,14 +112,14 @@ fn save_load_roundtrip_persists_values() {
     remove_if_present(&path);
     let path_string = path.to_string_lossy().to_string();
 
-    let mut settings = SettingsService::new();
+    let settings = SettingsService::new();
     settings.load(&path_string).unwrap();
     settings.set("key", "value");
     settings.save().unwrap();
 
-    let mut loaded = SettingsService::new();
+    let loaded = SettingsService::new();
     loaded.load(&path_string).unwrap();
-    assert_eq!(loaded.get("key"), Some("value"));
+    assert_eq!(loaded.get("key"), Some("value".to_string()));
     assert!(!loaded.dirty());
 
     remove_if_present(&path);
@@ -131,12 +131,12 @@ fn load_missing_file_resets_state_and_tracks_path() {
     remove_if_present(&path);
     let path_string = path.to_string_lossy().to_string();
 
-    let mut settings = SettingsService::new();
+    let settings = SettingsService::new();
     settings.set("stale", "value");
     settings.load(&path_string).unwrap();
 
     assert_eq!(settings.count(), 0);
-    assert_eq!(settings.loaded_path(), Some(path_string.as_str()));
+    assert_eq!(settings.loaded_path(), Some(path_string));
     assert!(!settings.dirty());
 }
 
@@ -146,12 +146,12 @@ fn load_whitespace_file_resets_state() {
     let path_string = path.to_string_lossy().to_string();
     fs::write(&path, "   \n\t").unwrap();
 
-    let mut settings = SettingsService::new();
+    let settings = SettingsService::new();
     settings.set("stale", "value");
     settings.load(&path_string).unwrap();
 
     assert_eq!(settings.count(), 0);
-    assert_eq!(settings.loaded_path(), Some(path_string.as_str()));
+    assert_eq!(settings.loaded_path(), Some(path_string));
     assert!(!settings.dirty());
 
     remove_if_present(&path);
@@ -159,13 +159,34 @@ fn load_whitespace_file_resets_state() {
 
 #[test]
 fn save_without_loaded_path_is_noop() {
-    let mut settings = SettingsService::new();
+    let settings = SettingsService::new();
     settings.set("theme", "dark");
     settings.save().unwrap();
 
     assert_eq!(settings.loaded_path(), None);
-    assert_eq!(settings.get("theme"), Some("dark"));
+    assert_eq!(settings.get("theme"), Some("dark".to_string()));
     assert!(settings.dirty());
+}
+
+#[test]
+fn cloned_service_shares_mutations_and_persistence_state() {
+    let path = temp_settings_path("shared-clone");
+    remove_if_present(&path);
+    let path_string = path.to_string_lossy().to_string();
+
+    let settings = SettingsService::new();
+    settings.load(&path_string).unwrap();
+    let clone = settings.clone();
+
+    clone.set("theme", "dark");
+    assert_eq!(settings.get("theme"), Some("dark".to_string()));
+    assert!(settings.dirty());
+
+    settings.save().unwrap();
+    assert!(!clone.dirty());
+    assert!(fs::read_to_string(&path).unwrap().contains("dark"));
+
+    remove_if_present(&path);
 }
 
 #[test]
@@ -174,7 +195,7 @@ fn save_uses_two_space_pretty_format() {
     remove_if_present(&path);
     let path_string = path.to_string_lossy().to_string();
 
-    let mut settings = SettingsService::new();
+    let settings = SettingsService::new();
     settings.load(&path_string).unwrap();
     settings.set("theme", "dark");
     settings.save().unwrap();
@@ -197,7 +218,7 @@ fn save_skips_clean_settings() {
     fs::write(&path, r#"{"theme": "light"}"#).unwrap();
     let before = fs::metadata(&path).unwrap().modified().unwrap();
 
-    let mut settings = SettingsService::new();
+    let settings = SettingsService::new();
     settings.load(&path_string).unwrap();
     settings.save().unwrap();
 
