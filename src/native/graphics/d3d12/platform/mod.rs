@@ -6,9 +6,17 @@ use crate::core::{Error, Result};
 use crate::native::traits::present::IGraphicsContext;
 
 #[cfg(all(windows, feature = "d3d12"))]
+pub(crate) mod adapter;
+#[cfg(all(windows, feature = "d3d12"))]
 pub(crate) mod context;
 #[cfg(all(windows, feature = "d3d12"))]
+pub(crate) mod error;
+#[cfg(all(windows, feature = "d3d12"))]
 pub(crate) mod pipeline;
+#[cfg(all(windows, feature = "d3d12"))]
+pub(crate) mod swap_chain;
+#[cfg(all(windows, feature = "d3d12"))]
+pub(crate) mod transfer;
 
 #[cfg(all(windows, feature = "d3d12"))]
 pub use context::D3d12Context;
@@ -28,7 +36,7 @@ pub(crate) fn create_warp_test_context(
     width: i32,
     height: i32,
 ) -> Result<Box<dyn IGraphicsContext>, Error> {
-    D3d12Context::new_with_driver(surface, width, height, context::D3d12DriverKind::Warp)
+    D3d12Context::new_with_driver(surface, width, height, adapter::D3d12DriverKind::Warp)
         .map(|context| Box::new(context) as _)
 }
 

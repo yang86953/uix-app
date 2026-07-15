@@ -1,4 +1,7 @@
-use crate::native::graphics::d3d12::platform::context::*;
+use crate::native::graphics::d3d12::platform::adapter::{select_hardware_adapter, D3d12DriverKind};
+use crate::native::graphics::d3d12::platform::context::D3d12Context;
+use crate::native::graphics::d3d12::platform::error::d3d12_hresult_code;
+use crate::native::graphics::d3d12::platform::transfer::copy_mapped_bgra_rows;
 use crate::native::graphics::platform::windows as win_surface;
 use crate::native::traits::present::GpuSolidRect;
 use crate::tests::common::*;
