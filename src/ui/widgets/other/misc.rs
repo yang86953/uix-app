@@ -509,9 +509,9 @@ component! {
         pending_change: RefCell<Option<String>>,
     }
 
-    measure => (&self, _constraints: Constraints) -> Size {
+    measure => (&self, constraints: Constraints) -> Size {
         let list_h = self.file_list.len() as f32 * 32.0;
-        Size::new(300.0, 100.0 + list_h)
+        constraints.clamp(Size::new(300.0, 100.0 + list_h))
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -564,7 +564,7 @@ component! {
             ctx.draw_text("📄", Point::new(frame.x + 8.0, y + 4.0), text_sec, 14.0);
             ctx.draw_text(&f.name, Point::new(frame.x + 28.0, y + 5.0), text, 12.0);
             if f.status == UploadStatus::Uploading {
-                let bar_w = frame.w - 40.0;
+                let bar_w = (frame.w - 40.0).max(0.0);
                 let bar_rect = Rect::new(frame.x + 10.0, y + 20.0, bar_w * f.progress, 4.0);
                 ctx.fill_rect(bar_rect, primary, None);
             }
@@ -607,7 +607,19 @@ impl Upload {
         self
     }
     pub fn add_file(&mut self, name: &str) {
-        let _ = self.push_file(name);
+        let _ = self.try_add_file(name);
+    }
+    pub fn try_add_file(&mut self, path: &str) -> bool {
+        if !self.accepts_file(path) {
+            return false;
+        }
+        self.push_file(Self::display_name(path))
+    }
+    pub fn remove_file(&mut self, index: usize) -> Option<UploadFile> {
+        (index < self.file_list.len()).then(|| self.file_list.remove(index))
+    }
+    pub fn clear_files(&mut self) {
+        self.file_list.clear();
     }
     pub fn update_progress(&mut self, idx: usize, progress: f32) {
         if idx < self.file_list.len() {
@@ -621,6 +633,9 @@ impl Upload {
     }
     pub fn complete_file(&mut self, idx: usize, success: bool) {
         if idx < self.file_list.len() {
+            if success {
+                self.file_list[idx].progress = 1.0;
+            }
             self.file_list[idx].status = if success {
                 UploadStatus::Done
             } else {
@@ -639,12 +654,11 @@ impl Upload {
         let limit = if self.multiple { usize::MAX } else { 1 };
         let mut accepted = Vec::new();
         for path in files {
-            if accepted.len() >= limit || !self.accepts_file(path) {
+            if accepted.len() >= limit {
                 continue;
             }
-            let name = Self::display_name(path);
-            if self.push_file(name) {
-                accepted.push(name.to_string());
+            if self.try_add_file(path) {
+                accepted.push(Self::display_name(path).to_string());
             }
         }
 
@@ -719,6 +733,7 @@ impl Upload {
             multiple: self.multiple,
             drag: self.drag,
             max_count: self.max_count,
+            files: self.file_list.clone(),
         }
     }
 }

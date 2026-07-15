@@ -425,7 +425,7 @@ fn reconcile_transfer_preserves_live_membership_and_syncs_initial_items() {
 
 #[test]
 fn reconcile_upload_preserves_files_and_syncs_config() {
-    use crate::ui::widgets::Upload;
+    use crate::ui::widgets::{Upload, UploadFile, UploadStatus};
 
     let mut upload = Upload::new();
     upload.add_file("kept.txt");
@@ -467,6 +467,12 @@ fn reconcile_upload_preserves_files_and_syncs_config() {
             multiple: true,
             drag: false,
             max_count: 5,
+            files: vec![UploadFile {
+                name: "kept.txt".to_string(),
+                size: 0,
+                progress: 0.5,
+                status: UploadStatus::Uploading,
+            }],
         }
     );
 }

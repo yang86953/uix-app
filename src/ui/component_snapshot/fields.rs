@@ -11,10 +11,11 @@ use crate::ui::Placement;
 use super::accessibility::{
     anchor_accessibility, back_top_accessibility, badge_accessibility, breadcrumb_accessibility,
     calendar_accessibility, card_accessibility, carousel_accessibility, chart_accessibility,
-    date_range_accessibility, first_non_empty, image_accessibility, menu_accessibility,
-    pagination_accessibility, progress_accessibility, result_accessibility, select_accessibility,
-    selectable_list_accessibility, splitter_accessibility, steps_accessibility, tag_accessibility,
-    theme_toggle_accessibility, transfer_accessibility,
+    date_range_accessibility, dropdown_accessibility, first_non_empty, image_accessibility,
+    menu_accessibility, pagination_accessibility, progress_accessibility, result_accessibility,
+    select_accessibility, selectable_list_accessibility, splitter_accessibility,
+    steps_accessibility, tabs_accessibility, tag_accessibility, theme_toggle_accessibility,
+    transfer_accessibility, upload_accessibility,
 };
 use super::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotCollapsePanel,
@@ -593,6 +594,7 @@ pub enum SnapshotFields {
         multiple: bool,
         drag: bool,
         max_count: usize,
+        files: Vec<UploadFile>,
     },
     Watermark {
         text: String,
@@ -785,21 +787,10 @@ impl SnapshotFields {
                 open,
                 selected_index,
                 ..
-            } => AccessibilitySnapshot::named(AccessibilityRole::Menu, label.clone()).with_state(
-                AccessibilityState {
-                    expanded: Some(*open),
-                    value_text: selected_index.and_then(|index| items.get(index)).cloned(),
-                    ..AccessibilityState::default()
-                },
-            ),
+            } => dropdown_accessibility(label, items, *open, *selected_index),
             Self::Tabs {
                 tabs, active_index, ..
-            } => AccessibilitySnapshot::new(AccessibilityRole::TabList).with_state(
-                AccessibilityState {
-                    value_text: tabs.get(*active_index).map(|tab| tab.label.clone()),
-                    ..AccessibilityState::default()
-                },
-            ),
+            } => tabs_accessibility(tabs, *active_index),
             Self::Steps { steps, current, .. } => steps_accessibility(steps, *current),
             Self::NavItem { label, active, .. } => {
                 AccessibilitySnapshot::named(AccessibilityRole::Navigation, label.clone())
@@ -862,6 +853,7 @@ impl SnapshotFields {
                 ..
             } => card_accessibility(title.as_deref(), actions, *focused_action),
             Self::Transfer { source, target } => transfer_accessibility(source, target),
+            Self::Upload { files, .. } => upload_accessibility(files),
             Self::Table { .. } => AccessibilitySnapshot::new(AccessibilityRole::Table),
             Self::BarChart { data, .. } => chart_accessibility(
                 "Bar chart",
