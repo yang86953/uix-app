@@ -258,6 +258,24 @@ impl ViewAdapter {
             current.set_provider_context(provider_context);
         }
         let widget = Self::apply_style(widget, &style, flex_grow_override, flex_shrink_override);
+        let next_accessibility = widget.snapshot_fields().accessibility();
+        let next_disabled = accessibility_override
+            .as_ref()
+            .map(|override_state| override_state.apply(next_accessibility.clone()))
+            .unwrap_or(next_accessibility)
+            .state
+            .disabled;
+        if next_disabled
+            && tree
+                .managers()
+                .focus
+                .focused_component()
+                .is_some_and(|focused| tree.is_descendant_of(focused, id))
+        {
+            // 旧组件仍启用时先交付 FocusOut，清理键盘按压和控件视觉；
+            // 随后的 patch 才写入 disabled，避免 disabled 早退吞掉清理事件。
+            tree.set_focus(None);
+        }
         let widget_changed = Self::patch_widget(tree, id, widget);
         let resolved_tab_index = tab_index.unwrap_or_else(|| {
             tree.get(id)
