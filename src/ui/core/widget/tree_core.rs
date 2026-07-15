@@ -1,6 +1,7 @@
 use super::*;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::pipeline::{Invalidation, InvalidationQueueHandle};
+use crate::native::traits::input::{KeyCode, KeyMod};
 use crate::ui::app_state::AppState;
 use crate::ui::event::{HandlerTable, WindowAction};
 use crate::ui::focus_handle::FocusHandle;
@@ -52,6 +53,7 @@ pub struct WidgetTree {
     timer_routes: BTreeMap<u64, (WidgetId, u32)>,
     focus_trap_restore: Vec<(WidgetId, Option<WidgetId>)>,
     pub(crate) window_focused: bool,
+    pub(crate) keyboard_activation: Option<(WidgetId, KeyCode, KeyMod)>,
     #[cfg(feature = "test-harness")]
     pub(crate) automation_recorder: Option<crate::ui::automation::AutomationRecorder>,
     /// layout() 内实际改写 frame 次数（回归：收敛后二次 layout 应为 0）。
@@ -105,6 +107,7 @@ impl Default for WidgetTree {
             timer_routes: BTreeMap::new(),
             focus_trap_restore: Vec::new(),
             window_focused: true,
+            keyboard_activation: None,
             #[cfg(feature = "test-harness")]
             automation_recorder: None,
             #[cfg(test)]
@@ -326,6 +329,7 @@ impl WidgetTree {
         self.managers.focus.clear_tree_focus();
         self.managers.interaction.clear_tree_interaction();
         self.managers.drag.clear_tree_drag();
+        self.keyboard_activation = None;
         self.focus_trap_restore.clear();
     }
 

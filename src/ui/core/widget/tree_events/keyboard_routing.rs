@@ -1,6 +1,10 @@
 use super::*;
 
 impl WidgetTree {
+    fn is_keyboard_activation_key(key: KeyCode) -> bool {
+        matches!(key, KeyCode::Enter | KeyCode::Space)
+    }
+
     pub(super) fn dispatch_key_down(
         &mut self,
         event: &SystemEvent,
@@ -40,12 +44,40 @@ impl WidgetTree {
         {
             return EventResult::Handled;
         }
+        if Self::is_keyboard_activation_key(key) && self.keyboard_activation.is_some() {
+            // 自动重复或另一激活键不能重复启动、替换当前键盘手势。
+            return EventResult::Handled;
+        }
         // 捕获阶段：root → target，用于全局快捷键。
         if self.capture_to(target, event) == EventResult::Handled {
             return EventResult::Handled;
         }
         let result = self.dispatch_to(target, event);
-        if result == EventResult::Handled && matches!(key, KeyCode::Enter | KeyCode::Space) {
+        if result == EventResult::Handled && Self::is_keyboard_activation_key(key) {
+            self.keyboard_activation = Some((target, key, mods));
+        }
+        result
+    }
+
+    pub(super) fn dispatch_key_up(&mut self, event: &SystemEvent, key: KeyCode) -> EventResult {
+        if Self::is_keyboard_activation_key(key) {
+            let Some((target, armed_key, armed_mods)) = self.keyboard_activation else {
+                return self.dispatch_unarmed_key_up(event);
+            };
+            if key != armed_key {
+                // 其他激活键的释放不能完成或取消当前手势。
+                return EventResult::Handled;
+            }
+            self.keyboard_activation = None;
+            if self.managers().focus.focused_component() != Some(target)
+                || !self.focus_target_available(target)
+            {
+                return EventResult::NotHandled;
+            }
+
+            self.invalidate_paint(target);
+            // 已接受的 KeyDown 锁定目标；匹配 KeyUp 必须回到同一目标完成释放。
+            let _ = self.dispatch_to(target, event);
             let click = ClickEvent {
                 button: MouseButton::Left,
                 pos: self
@@ -55,14 +87,16 @@ impl WidgetTree {
                         Point::new(frame.x + frame.w * 0.5, frame.y + frame.h * 0.5)
                     })
                     .unwrap_or_default(),
-                modifiers: mods,
+                modifiers: armed_mods,
             };
             let _ = self.dispatch_semantic(SemanticEvent::click(target, click));
+            return EventResult::Handled;
         }
-        result
+
+        self.dispatch_unarmed_key_up(event)
     }
 
-    pub(super) fn dispatch_key_up(&mut self, event: &SystemEvent) -> EventResult {
+    fn dispatch_unarmed_key_up(&mut self, event: &SystemEvent) -> EventResult {
         let Some(target) = self.managers().focus.focused_component() else {
             return EventResult::NotHandled;
         };

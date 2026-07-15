@@ -267,7 +267,7 @@ impl WidgetTree {
                 }
             }
             SystemEvent::KeyDown { key, mods } => self.dispatch_key_down(event, *key, *mods),
-            SystemEvent::KeyUp { .. } => self.dispatch_key_up(event),
+            SystemEvent::KeyUp { key, .. } => self.dispatch_key_up(event, *key),
             SystemEvent::TextInput { text } => {
                 if let Some(t) = self.managers().focus.focused_component() {
                     self.invalidate_paint(t);

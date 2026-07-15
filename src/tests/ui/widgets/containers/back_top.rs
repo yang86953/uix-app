@@ -67,5 +67,13 @@ fn visible_back_top_keyboard_activation_uses_standard_click_handler() {
         }),
         EventResult::Handled
     );
+    assert_eq!(calls.get(), 0);
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyUp {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
     assert_eq!(calls.get(), 1);
 }

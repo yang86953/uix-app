@@ -3574,8 +3574,52 @@ fn enter_and_space_emit_click_for_focused_component() {
     );
     assert_eq!(
         tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            mods: KeyMod::SHIFT,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
             key: KeyCode::Space,
             mods: KeyMod::SHIFT,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyUp {
+            key: KeyCode::Space,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(clicks.borrow().is_empty());
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyUp {
+            key: KeyCode::Enter,
+            mods: KeyMod::SHIFT,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyUp {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(clicks.borrow().len(), 1);
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Space,
+            mods: KeyMod::SHIFT,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyUp {
+            key: KeyCode::Space,
+            mods: KeyMod::NONE,
         }),
         EventResult::Handled
     );
