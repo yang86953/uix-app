@@ -337,6 +337,50 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "round-trip DPI transition"):
                 require_case_success(case, path)
 
+    def test_mixed_dpi_evidence_requires_distinct_valid_monitor_bounds(self) -> None:
+        case = build_plan("mixed-dpi", "amd", None, 900, 60)[0]
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "case.log"
+
+            path.write_text(
+                passing_log(case).replace(
+                    "bounds=(1920,0..3840,1080)",
+                    "bounds=(0,0..1920,1080)",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "reuses one monitor bound"):
+                require_case_success(case, path)
+
+            path.write_text(
+                passing_log(case).replace(
+                    "bounds=(1920,0..3840,1080)",
+                    "bounds=(1920,0..1919,1080)",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "invalid monitor bound"):
+                require_case_success(case, path)
+
+            path.write_text(
+                passing_log(case).replace(
+                    "bounds=(1920,0..3840,1080),dpi=144x144",
+                    "dpi=144x144",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "at least two monitor samples"):
+                require_case_success(case, path)
+
+            path.write_text(
+                passing_log(case).replace(
+                    "bounds=(0,0..1920,1080)",
+                    "bounds=(-1920,0..0,1080)",
+                ),
+                encoding="utf-8",
+            )
+            require_case_success(case, path)
+
     def test_mixed_dpi_evidence_requires_logical_and_drawable_extents(self) -> None:
         case = build_plan("mixed-dpi", "amd", None, 900, 60)[0]
         with TemporaryDirectory() as directory:
