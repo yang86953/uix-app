@@ -143,6 +143,33 @@ fn failed_submit_keeps_the_submit_code_and_appends_fence_recovery_failure() {
 }
 
 #[test]
+fn fatal_swapchain_recreate_failure_is_not_hidden_by_surface_status() {
+    let surface = vk_err("vkQueuePresentKHR", vk::Result::ERROR_OUT_OF_DATE_KHR);
+    let device_lost = vk_err(
+        "vkDeviceWaitIdle before swapchain recreate",
+        vk::Result::ERROR_DEVICE_LOST,
+    );
+    let error = merge_surface_recreate_failure(surface.clone(), device_lost);
+
+    assert_eq!(error.code(), Errc::GraphicsDeviceLost);
+    assert!(error.message().contains("vkDeviceWaitIdle"));
+    assert_eq!(error.source_error(), Some(&surface));
+
+    let out_of_memory = vk_err(
+        "vkCreateSwapchainKHR",
+        vk::Result::ERROR_OUT_OF_DEVICE_MEMORY,
+    );
+    let error = merge_surface_recreate_failure(surface.clone(), out_of_memory);
+    assert_eq!(error.code(), Errc::GraphicsOutOfMemory);
+    assert_eq!(error.source_error(), Some(&surface));
+
+    let ordinary = Error::new(Errc::PlatformError, "swapchain format query failed");
+    let error = merge_surface_recreate_failure(surface.clone(), ordinary.clone());
+    assert_eq!(error.code(), Errc::GraphicsSurfaceLost);
+    assert_eq!(error.source_error(), Some(&ordinary));
+}
+
+#[test]
 fn vulkan_drawable_adapter_reuses_the_shared_windows_contract() {
     assert!(drawable_contract_source()
         .contains("crate::native::graphics::platform::windows::drawable_size"));

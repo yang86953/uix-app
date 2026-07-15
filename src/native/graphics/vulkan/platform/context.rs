@@ -47,6 +47,18 @@ pub(crate) fn failed_submit_error(submit_status: vk::Result, fence_recovery: Res
     }
 }
 
+pub(crate) fn merge_surface_recreate_failure(
+    surface_failure: Error,
+    recreate_failure: Error,
+) -> Error {
+    match recreate_failure.code() {
+        Errc::GraphicsDeviceLost | Errc::GraphicsOutOfMemory => {
+            recreate_failure.with_appended_source(surface_failure)
+        }
+        _ => surface_failure.with_appended_source(recreate_failure),
+    }
+}
+
 /// 校验 teardown 前的 device idle 结果。
 ///
 /// Vulkan 把 `ERROR_DEVICE_LOST` 视为 pending 资源不再 in-use，但 child object
@@ -522,7 +534,10 @@ impl VulkanContext {
         let surface_failure = vk_err(operation, status);
         match self.recreate_swapchain(self.extent) {
             Ok(()) => Err(surface_failure),
-            Err(recreate_failure) => Err(surface_failure.with_source(recreate_failure)),
+            Err(recreate_failure) => Err(merge_surface_recreate_failure(
+                surface_failure,
+                recreate_failure,
+            )),
         }
     }
 
