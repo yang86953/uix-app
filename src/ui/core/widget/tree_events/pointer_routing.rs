@@ -4,6 +4,22 @@ use crate::ui::window_chrome::WindowInteractionRegion;
 use crate::ui::{OverlayEntry, OverlayKind};
 
 impl WidgetTree {
+    pub(crate) fn cancel_pointer_gesture_in_subtree(&mut self, root: WidgetId) {
+        let owns_pressed = self
+            .managers()
+            .interaction
+            .pressed_component()
+            .is_some_and(|target| self.is_descendant_of(target, root));
+        let owns_drag = self
+            .managers()
+            .drag
+            .target()
+            .is_some_and(|target| self.is_descendant_of(target, root));
+        if owns_pressed || owns_drag {
+            self.cancel_active_pointer_gesture();
+        }
+    }
+
     pub(super) fn cancel_active_pointer_gesture(&mut self) {
         let pressed = self.managers().interaction.pressed_component();
         let drag = self.managers().drag.is_dragging().then(|| {
