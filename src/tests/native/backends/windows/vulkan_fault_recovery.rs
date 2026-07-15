@@ -109,9 +109,12 @@ fn native_vulkan_surface_fault_reaches_engine_recovery_boundary() {
     ));
 
     println!(
-        "GFX-R5 engine recovery evidence: expected={}; action={:?}; fault={}; {}",
+        "GFX-R5 engine recovery evidence: expected={}; fault_code=graphics_surface_lost; action=RebuildSurface; logical_extent={}x{}; drawable_extent={}x{}; recovered_present=true; fault={}; {}",
         expected.label(),
-        RecoveryAction::RebuildSurface,
+        RESIZED_LOGICAL_EXTENT.0,
+        RESIZED_LOGICAL_EXTENT.1,
+        drawable.width,
+        drawable.height,
         fault.message(),
         adapter
     );

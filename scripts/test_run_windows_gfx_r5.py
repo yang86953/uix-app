@@ -46,6 +46,27 @@ def passing_log(case) -> str:
             "resized_drawable=211x149; resized_readback=0xFF9A5C21; "
             f"{adapter}; swapchain_maintenance1=true"
         )
+    elif case.name == "native-out-of-date-recovery":
+        evidence = (
+            f"{markers[0]} fault_code=graphics_surface_lost; "
+            "initial_drawable=139x107; resized_logical=223x157; "
+            "resized_drawable=223x157; recovered_drawable=223x157; "
+            "recovered_readback=0xFFB7642D; recovered_present=true; "
+            f"fault=vkAcquireNextImageKHR: ERROR_OUT_OF_DATE_KHR; {adapter}"
+        )
+    elif case.name == "fatal-native-surface":
+        evidence = (
+            f"{markers[0]} fault_code=graphics_surface_lost; "
+            "root_code=graphics_surface_lost; destroyed_hwnd=true; "
+            f"fault=ERROR_SURFACE_LOST_KHR; {adapter}"
+        )
+    elif case.name == "engine-recovery-boundary":
+        evidence = (
+            f"{markers[0]} fault_code=graphics_surface_lost; "
+            "action=RebuildSurface; logical_extent=229x163; "
+            "drawable_extent=229x163; recovered_present=true; "
+            f"fault=ERROR_OUT_OF_DATE_KHR; {adapter}"
+        )
     elif case.name == "vulkan-mixed-dpi":
         evidence = (
             f"{markers[0]} bounds=(0,0..1920,1080),dpi=96x96; "
@@ -349,6 +370,60 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             )
             for content, message in invalid_logs:
                 with self.subTest(message=message):
+                    path.write_text(content, encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, message):
+                        require_case_success(case, path)
+
+    def test_native_surface_fault_evidence_requires_typed_recovery(self) -> None:
+        cases = build_plan("vendor", "amd", None, 900, 60)
+        out_of_date = next(
+            case for case in cases if case.name == "native-out-of-date-recovery"
+        )
+        fatal = next(case for case in cases if case.name == "fatal-native-surface")
+        engine = next(case for case in cases if case.name == "engine-recovery-boundary")
+        invalid_logs = (
+            (
+                out_of_date,
+                passing_log(out_of_date).replace(
+                    "recovered_drawable=223x157", "recovered_drawable=222x157"
+                ),
+                "recovered drawable does not match resize",
+            ),
+            (
+                out_of_date,
+                passing_log(out_of_date).replace(
+                    "recovered_readback=0xFFB7642D",
+                    "recovered_readback=0xFF000000",
+                ),
+                "recovery readback does not match presented pixels",
+            ),
+            (
+                fatal,
+                passing_log(fatal).replace(
+                    "root_code=graphics_surface_lost", "root_code=graphics_device_lost"
+                ),
+                "fatal fault chain is not typed",
+            ),
+            (
+                engine,
+                passing_log(engine).replace(
+                    "fault_code=graphics_surface_lost",
+                    "fault_code=graphics_device_lost",
+                ),
+                "engine fault is not typed",
+            ),
+            (
+                engine,
+                passing_log(engine).replace(
+                    "recovered_present=true", "recovered_present=false"
+                ),
+                "did not present after engine recovery",
+            ),
+        )
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "case.log"
+            for case, content, message in invalid_logs:
+                with self.subTest(case=case.name, message=message):
                     path.write_text(content, encoding="utf-8")
                     with self.assertRaisesRegex(ValueError, message):
                         require_case_success(case, path)

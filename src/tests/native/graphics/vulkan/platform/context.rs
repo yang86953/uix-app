@@ -467,10 +467,8 @@ fn windows_vulkan_gfx_r5_native_out_of_date_is_typed_and_recovers() {
         .set_size(223, 157)
         .expect("resize HWND without resizing Vulkan context");
     let resized_drawable = win_surface::drawable_size(surface, 223, 157);
-    assert_ne!(
-        (resized_drawable.width, resized_drawable.height),
-        initial_extent
-    );
+    let resized_extent = (resized_drawable.width, resized_drawable.height);
+    assert_ne!(resized_extent, initial_extent);
     let fault = context
         .present_pixels(
             &initial_pixels,
@@ -494,10 +492,7 @@ fn windows_vulkan_gfx_r5_native_out_of_date_is_typed_and_recovers() {
         )
         .expect("recover resized Vulkan swapchain");
     let recovered_extent = (context.width(), context.height());
-    assert_eq!(
-        recovered_extent,
-        (resized_drawable.width, resized_drawable.height)
-    );
+    assert_eq!(recovered_extent, resized_extent);
     let recovered_color = 0xFFB7_642D;
     let recovered_pixels =
         vec![recovered_color; (recovered_extent.0 * recovered_extent.1) as usize];
@@ -517,8 +512,14 @@ fn windows_vulkan_gfx_r5_native_out_of_date_is_typed_and_recovers() {
     );
 
     println!(
-        "GFX-R5 Vulkan native surface fault evidence: expected={}; fault={}; {}",
+        "GFX-R5 Vulkan native surface fault evidence: expected={}; fault_code=graphics_surface_lost; initial_drawable={}x{}; resized_logical=223x157; resized_drawable={}x{}; recovered_drawable={}x{}; recovered_readback=0x{recovered_color:08X}; recovered_present=true; fault={}; {}",
         expected.label(),
+        initial_extent.0,
+        initial_extent.1,
+        resized_extent.0,
+        resized_extent.1,
+        recovered_extent.0,
+        recovered_extent.1,
         fault.message(),
         context.adapter_info.diagnostic_summary()
     );
@@ -580,7 +581,7 @@ fn windows_vulkan_gfx_r5_destroyed_hwnd_returns_native_surface_lost() {
     );
 
     println!(
-        "GFX-R5 Vulkan fatal surface evidence: expected={}; fault={}; {}",
+        "GFX-R5 Vulkan fatal surface evidence: expected={}; fault_code=graphics_surface_lost; root_code=graphics_surface_lost; destroyed_hwnd=true; fault={}; {}",
         expected.label(),
         fault.what(),
         context.adapter_info.diagnostic_summary()

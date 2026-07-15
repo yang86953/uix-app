@@ -97,6 +97,27 @@ VENDOR_RESIZE_PATTERN = re.compile(
     r"(?P<resized_drawable_height>\d+); "
     r"resized_readback=0x(?P<resized_readback>[0-9A-Fa-f]{8})"
 )
+NATIVE_OUT_OF_DATE_PATTERN = re.compile(
+    r"fault_code=(?P<fault_code>[a-z_]+); "
+    r"initial_drawable=(?P<initial_width>\d+)x(?P<initial_height>\d+); "
+    r"resized_logical=(?P<logical_width>\d+)x(?P<logical_height>\d+); "
+    r"resized_drawable=(?P<resized_width>\d+)x(?P<resized_height>\d+); "
+    r"recovered_drawable=(?P<recovered_width>\d+)x(?P<recovered_height>\d+); "
+    r"recovered_readback=0x(?P<readback>[0-9A-Fa-f]{8}); "
+    r"recovered_present=(?P<recovered_present>true|false)"
+)
+FATAL_SURFACE_PATTERN = re.compile(
+    r"fault_code=(?P<fault_code>[a-z_]+); "
+    r"root_code=(?P<root_code>[a-z_]+); "
+    r"destroyed_hwnd=(?P<destroyed_hwnd>true|false)"
+)
+ENGINE_RECOVERY_PATTERN = re.compile(
+    r"fault_code=(?P<fault_code>[a-z_]+); "
+    r"action=(?P<action>[A-Za-z]+); "
+    r"logical_extent=(?P<logical_width>\d+)x(?P<logical_height>\d+); "
+    r"drawable_extent=(?P<drawable_width>\d+)x(?P<drawable_height>\d+); "
+    r"recovered_present=(?P<recovered_present>true|false)"
+)
 
 VENDOR_CASES = (
     (
@@ -863,6 +884,12 @@ def require_profile_measurements(case: GfxR5Case, content: str) -> None:
         require_mixed_dpi_measurements(case, evidence_line)
     elif case.name == "vendor-resize-present-readback":
         require_vendor_resize_measurements(case, evidence_line)
+    elif case.name == "native-out-of-date-recovery":
+        require_native_out_of_date_measurements(case, evidence_line)
+    elif case.name == "fatal-native-surface":
+        require_fatal_surface_measurements(case, evidence_line)
+    elif case.name == "engine-recovery-boundary":
+        require_engine_recovery_measurements(case, evidence_line)
     elif case.name in ("single-window-soak", "shared-device-soak"):
         require_soak_measurements(case, evidence_line)
     elif case.name == "external-device-reset":
@@ -909,6 +936,92 @@ def require_vendor_resize_measurements(case: GfxR5Case, evidence_line: str) -> N
             raise ValueError(
                 f"GFX-R5 case {case.name!r} {field} does not match presented pixels"
             )
+
+
+def require_native_out_of_date_measurements(
+    case: GfxR5Case, evidence_line: str
+) -> None:
+    measurement = NATIVE_OUT_OF_DATE_PATTERN.search(evidence_line)
+    if measurement is None:
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} lacks structured native recovery measurements"
+        )
+    if measurement.group("fault_code") != "graphics_surface_lost":
+        raise ValueError(f"GFX-R5 case {case.name!r} fault code is not typed")
+    logical_extent = (
+        int(measurement.group("logical_width")),
+        int(measurement.group("logical_height")),
+    )
+    if logical_extent != (223, 157):
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} native resize contract changed: "
+            f"{logical_extent}"
+        )
+    extents = tuple(
+        (
+            int(measurement.group(f"{stage}_width")),
+            int(measurement.group(f"{stage}_height")),
+        )
+        for stage in ("initial", "resized", "recovered")
+    )
+    if any(width == 0 or height == 0 for width, height in extents):
+        raise ValueError(f"GFX-R5 case {case.name!r} recorded a zero drawable extent")
+    if extents[0] == extents[1]:
+        raise ValueError(f"GFX-R5 case {case.name!r} native drawable did not resize")
+    if extents[1] != extents[2]:
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} recovered drawable does not match resize"
+        )
+    if measurement.group("readback").upper() != "FFB7642D":
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} recovery readback does not match presented pixels"
+        )
+    if measurement.group("recovered_present") != "true":
+        raise ValueError(f"GFX-R5 case {case.name!r} did not present after recovery")
+
+
+def require_fatal_surface_measurements(case: GfxR5Case, evidence_line: str) -> None:
+    measurement = FATAL_SURFACE_PATTERN.search(evidence_line)
+    if measurement is None:
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} lacks structured fatal surface measurements"
+        )
+    if (
+        measurement.group("fault_code") != "graphics_surface_lost"
+        or measurement.group("root_code") != "graphics_surface_lost"
+    ):
+        raise ValueError(f"GFX-R5 case {case.name!r} fatal fault chain is not typed")
+    if measurement.group("destroyed_hwnd") != "true":
+        raise ValueError(f"GFX-R5 case {case.name!r} did not destroy the native HWND")
+
+
+def require_engine_recovery_measurements(case: GfxR5Case, evidence_line: str) -> None:
+    measurement = ENGINE_RECOVERY_PATTERN.search(evidence_line)
+    if measurement is None:
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} lacks structured engine recovery measurements"
+        )
+    if measurement.group("fault_code") != "graphics_surface_lost":
+        raise ValueError(f"GFX-R5 case {case.name!r} engine fault is not typed")
+    if measurement.group("action") != "RebuildSurface":
+        raise ValueError(f"GFX-R5 case {case.name!r} did not rebuild the surface")
+    logical_extent = (
+        int(measurement.group("logical_width")),
+        int(measurement.group("logical_height")),
+    )
+    if logical_extent != (229, 163):
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} engine resize contract changed: "
+            f"{logical_extent}"
+        )
+    drawable_extent = (
+        int(measurement.group("drawable_width")),
+        int(measurement.group("drawable_height")),
+    )
+    if 0 in drawable_extent:
+        raise ValueError(f"GFX-R5 case {case.name!r} recorded a zero drawable extent")
+    if measurement.group("recovered_present") != "true":
+        raise ValueError(f"GFX-R5 case {case.name!r} did not present after engine recovery")
 
 
 def require_mixed_dpi_measurements(case: GfxR5Case, evidence_line: str) -> None:
