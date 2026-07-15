@@ -4823,6 +4823,43 @@ fn window_blur_cancels_active_pointer_and_drag_state() {
 }
 
 #[test]
+fn window_deactivation_clears_hover_once() {
+    for deactivation in [SystemEvent::WindowBlur, SystemEvent::WindowMinimize] {
+        let mut tree = WidgetTree::new();
+        let target = tree.set_root(Box::new(SpyWidget::new(200.0, 100.0)));
+        tree.get_mut(target)
+            .expect("hover target")
+            .set_frame(Rect::new(0.0, 0.0, 200.0, 100.0));
+        tree.dispatch_event(&SystemEvent::PointerMove {
+            pos: Point::new(20.0, 20.0),
+            mods: KeyMod::NONE,
+        });
+        assert_eq!(
+            tree.managers().interaction.hovered_component(),
+            Some(target)
+        );
+
+        tree.dispatch_event(&deactivation);
+        tree.dispatch_event(&deactivation);
+
+        assert_eq!(tree.managers().interaction.hovered_component(), None);
+        let pointer_leaves = tree
+            .get(target)
+            .and_then(|node| node.component().as_any().downcast_ref::<SpyWidget>())
+            .map(|widget| {
+                widget
+                    .events
+                    .borrow()
+                    .iter()
+                    .filter(|event| matches!(event, SystemEvent::PointerLeave))
+                    .count()
+            })
+            .unwrap_or_default();
+        assert_eq!(pointer_leaves, 1);
+    }
+}
+
+#[test]
 fn window_blur_releases_pressed_visual_without_clearing_focus() {
     let mut tree = WidgetTree::new();
     let target = tree.set_root(Box::new(Button::new("Blurred")));
