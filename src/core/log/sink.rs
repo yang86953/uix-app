@@ -212,11 +212,11 @@ impl FileSink {
         self.max_size = bytes;
     }
 
-    fn rotate(&self) {
+    fn rotate(&self, file: &mut File) {
         if self.max_size == 0 {
             return;
         }
-        if let Ok(metadata) = fs::metadata(&self.path) {
+        if let Ok(metadata) = file.metadata() {
             if metadata.len() < self.max_size {
                 return;
             }
@@ -240,10 +240,9 @@ impl FileSink {
             return;
         }
 
-        let file = match OpenOptions::new()
+        let replacement = match OpenOptions::new()
             .create(true)
-            .write(true)
-            .truncate(true)
+            .append(true)
             .open(&self.path)
         {
             Ok(f) => f,
@@ -252,18 +251,16 @@ impl FileSink {
                 return;
             }
         };
-        *self.file.lock().unwrap_or_else(|e| e.into_inner()) = file;
+        *file = replacement;
     }
 }
 
 impl Sink for FileSink {
     fn write(&self, record: &Record) {
         let line = format!("{}\n", record.to_json());
-        {
-            let mut file = self.file.lock().unwrap_or_else(|e| e.into_inner());
-            let _ = file.write_all(line.as_bytes());
-        }
-        self.rotate();
+        let mut file = self.file.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = file.write_all(line.as_bytes());
+        self.rotate(&mut file);
     }
 
     fn flush(&self) {
