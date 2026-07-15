@@ -1,13 +1,16 @@
 use crate::app::window_actions::configure_custom_title_bar;
 use crate::native::backends::windows::consts::{
-    GWL_EXSTYLE, GWL_STYLE, HTCAPTION, SIZE_RESTORED, WM_CHAR, WM_DPICHANGED,
-    WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_NCRBUTTONUP,
-    WM_SIZE, WS_CAPTION, WS_EX_LAYERED, WS_THICKFRAME,
+    GWL_EXSTYLE, GWL_STYLE, HTCAPTION, MONITOR_DEFAULTTONEAREST, SIZE_RESTORED, WM_CHAR,
+    WM_DPICHANGED, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_LBUTTONDBLCLK, WM_LBUTTONUP,
+    WM_NCRBUTTONUP, WM_SIZE, WS_CAPTION, WS_EX_LAYERED, WS_THICKFRAME,
 };
 use crate::native::backends::windows::dpi::{
     dpi_for_window, logical_extent_to_physical, physical_extent_to_logical,
 };
-use crate::native::backends::windows::ffi::{GetWindowLongW, PostMessageW};
+use crate::native::backends::windows::ffi::{
+    GetMonitorInfoW as GetMonitorInfoRaw, GetWindowLongW,
+    MonitorFromWindow as MonitorFromWindowRaw, PostMessageW,
+};
 use crate::native::backends::windows::platform::*;
 use crate::native::backends::windows::window_ops::set_window_long_checked;
 use crate::native::graphics::platform::windows::{drawable_size, query_client_rect};
@@ -329,6 +332,53 @@ fn native_window_opacity_restores_original_layered_style() {
     assert_eq!(
         restored_ex_style, original_ex_style,
         "restoring opacity must not leave UIX-owned layered styling behind"
+    );
+
+    window.close().expect("close window");
+}
+
+#[test]
+fn native_window_centers_in_nearest_monitor_work_area() {
+    let mut platform = WindowsPlatform::new();
+    let mut window = platform
+        .create_window("UIX monitor work-area center", 360, 220)
+        .expect("native window");
+    let hwnd = window.native_handle().native_window();
+
+    window.center_on_screen().expect("center native window");
+
+    let mut rect = RECT::default();
+    unsafe { GetWindowRect(HWND(hwnd), &mut rect) }.expect("centered window rect");
+    let monitor = unsafe { MonitorFromWindowRaw(hwnd, MONITOR_DEFAULTTONEAREST) };
+    assert!(!monitor.is_null(), "nearest monitor");
+    let mut monitor_info = crate::native::backends::windows::bindings::MONITORINFO {
+        cbSize: std::mem::size_of::<crate::native::backends::windows::bindings::MONITORINFO>()
+            as u32,
+        rcMonitor: crate::native::backends::windows::bindings::RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        },
+        rcWork: crate::native::backends::windows::bindings::RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        },
+        dwFlags: 0,
+    };
+    assert_ne!(unsafe { GetMonitorInfoRaw(monitor, &mut monitor_info) }, 0);
+
+    assert!(
+        ((rect.left + rect.right) - (monitor_info.rcWork.left + monitor_info.rcWork.right)).abs()
+            <= 1,
+        "window and work-area horizontal centers must match"
+    );
+    assert!(
+        ((rect.top + rect.bottom) - (monitor_info.rcWork.top + monitor_info.rcWork.bottom)).abs()
+            <= 1,
+        "window and work-area vertical centers must match"
     );
 
     window.close().expect("close window");

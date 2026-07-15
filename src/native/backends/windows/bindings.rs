@@ -22,11 +22,19 @@ pub(super) struct POINT {
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub(super) struct RECT {
+pub(crate) struct RECT {
     pub left: i32,
     pub top: i32,
     pub right: i32,
     pub bottom: i32,
+}
+
+#[repr(C)]
+pub(crate) struct MONITORINFO {
+    pub cbSize: u32,
+    pub rcMonitor: RECT,
+    pub rcWork: RECT,
+    pub dwFlags: u32,
 }
 
 #[repr(C)]
