@@ -184,7 +184,6 @@ impl AppStateInner {
     }
 
     pub(crate) fn snapshot(&self, id: ComponentId) -> Option<ComponentConfigSnapshot> {
-        self.assert_owner_thread();
         self.components.get(&id).map(|entry| entry.snapshot.clone())
     }
 
@@ -202,7 +201,6 @@ impl AppStateInner {
         id: ComponentId,
         event: SemanticEvent,
     ) -> Option<EventLoopWaker> {
-        self.assert_owner_thread();
         if !self.contains(id) {
             return None;
         }
@@ -285,17 +283,14 @@ impl AppStateInner {
     }
 
     fn contains(&self, id: ComponentId) -> bool {
-        self.assert_owner_thread();
         self.components.contains_key(&id)
     }
 
     fn len(&self) -> usize {
-        self.assert_owner_thread();
         self.components.len()
     }
 
     fn is_empty(&self) -> bool {
-        self.assert_owner_thread();
         self.components.is_empty()
     }
 }
