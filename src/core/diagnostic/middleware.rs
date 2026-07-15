@@ -61,17 +61,16 @@ impl MiddlewarePipeline {
         self.middlewares.push(Box::new(mw));
     }
 
-    pub fn execute(
-        &self,
-        ctx: &mut MiddlewareContext,
-        mut final_handler: impl FnMut(&mut MiddlewareContext) + 'static,
-    ) {
+    pub fn execute<'a, F>(&'a self, ctx: &mut MiddlewareContext, mut final_handler: F)
+    where
+        F: FnMut(&mut MiddlewareContext) + 'a,
+    {
         if self.middlewares.is_empty() {
             final_handler(ctx);
             return;
         }
 
-        let mut chain: Box<dyn FnMut(&mut MiddlewareContext)> = Box::new(final_handler);
+        let mut chain: Box<dyn FnMut(&mut MiddlewareContext) + 'a> = Box::new(final_handler);
 
         for mw in self.middlewares.iter().rev() {
             let mut prev = chain;
