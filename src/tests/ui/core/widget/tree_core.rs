@@ -3635,6 +3635,78 @@ fn enter_and_space_emit_click_for_focused_component() {
 }
 
 #[test]
+fn focus_change_cancels_keyboard_activation() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(240.0, 80.0)));
+    let first = tree.add_child(root, Box::new(Button::new("First")));
+    let second = tree.add_child(root, Box::new(Button::new("Second")));
+    tree.get_mut(first)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 40.0));
+    tree.get_mut(second)
+        .unwrap()
+        .set_frame(Rect::new(120.0, 0.0, 100.0, 40.0));
+
+    let first_clicks = Rc::new(RefCell::new(0));
+    let first_clicks_for_handler = first_clicks.clone();
+    tree.handler_table()
+        .on(first, crate::ui::SemanticKind::Click, move |_| {
+            *first_clicks_for_handler.borrow_mut() += 1;
+        });
+    let second_clicks = Rc::new(RefCell::new(0));
+    let second_clicks_for_handler = second_clicks.clone();
+    tree.handler_table()
+        .on(second, crate::ui::SemanticKind::Click, move |_| {
+            *second_clicks_for_handler.borrow_mut() += 1;
+        });
+
+    tree.set_focus(Some(first));
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(tree
+        .get(first)
+        .and_then(|node| node.component().as_any().downcast_ref::<Button>())
+        .is_some_and(|button| button.pressed));
+
+    tree.set_focus(Some(second));
+    assert!(tree.keyboard_activation.is_none());
+    assert!(tree
+        .get(first)
+        .and_then(|node| node.component().as_any().downcast_ref::<Button>())
+        .is_some_and(|button| !button.pressed));
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyUp {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(*first_clicks.borrow(), 0);
+    assert_eq!(*second_clicks.borrow(), 0);
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Space,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyUp {
+            key: KeyCode::Space,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(*second_clicks.borrow(), 1);
+}
+
+#[test]
 fn dispatch_pointer_move_triggers_hover_enter_leave() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));

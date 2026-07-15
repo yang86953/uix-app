@@ -823,6 +823,9 @@ impl WidgetTree {
         if new_focus == old_focus {
             return;
         }
+        // A keyboard gesture belongs to the focus target that accepted its KeyDown.
+        // Any real focus transition cancels it before FocusOut resets widget visuals.
+        self.keyboard_activation = None;
         let old_path = self.focus_containment_path(old_focus);
         let new_path = self.focus_containment_path(new_focus);
         if let Some(old) = old_focus {
