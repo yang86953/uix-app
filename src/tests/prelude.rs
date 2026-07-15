@@ -14,8 +14,8 @@ pub use crate::ui::style::{
 };
 pub use crate::ui::theme::{NeutralRole, ShadowToken, ThemePrimitives};
 pub use crate::ui::view::{
-    label, ButtonBuilder, EventExt, GridBuilder, InputBuilder, ScrollBuilder, StyleExt, Ui, View,
-    ViewNode,
+    label, AccessibilityExt, ButtonBuilder, EventExt, GridBuilder, InputBuilder, ScrollBuilder,
+    StyleExt, Ui, View, ViewNode,
 };
 use crate::ui::widgets::Container;
 pub use crate::ui::{
@@ -81,6 +81,7 @@ fn prelude_exports_event_and_state_capture_types() {
     let _macro_registration = semantic_handler!(SemanticKind::Click, state[state], |_event| {});
 
     fn assert_exported<T: ?Sized>() {}
+    fn assert_accessibility_ext<T: AccessibilityExt>() {}
     fn assert_event_ext<T: EventExt>() {}
     fn assert_style_ext<T: StyleExt>() {}
     fn assert_view<T: View>() {}
@@ -161,6 +162,7 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<ScrollBuilder>();
     assert_exported::<dyn IntoWidgetNode>();
     assert_exported::<dyn WidgetComponent>();
+    assert_accessibility_ext::<ViewNode>();
     assert_event_ext::<ViewNode>();
     assert_style_ext::<ViewNode>();
     assert_view::<ViewNode>();

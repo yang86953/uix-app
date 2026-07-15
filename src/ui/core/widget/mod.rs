@@ -4,6 +4,8 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::compositor::PicturePolicy;
 use crate::draw::spatial::{Ray3D, SpatialContext};
 pub use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
+use crate::ui::accessibility_override::AccessibilityOverride;
+use crate::ui::component_snapshot::{AccessibilitySnapshot, ComponentConfigSnapshot};
 pub use crate::ui::event::SystemEvent;
 use crate::ui::event::{HandlerRegistration, HandlerSignature};
 use crate::ui::foundation::provider_context::{
@@ -35,6 +37,7 @@ pub struct WidgetNode {
     pub key: Option<Box<str>>,
     pub automation_id: Option<Box<str>>,
     pub tab_idx: i32,
+    pub(crate) accessibility_override: Option<AccessibilityOverride>,
     pub handlers: Vec<HandlerRegistration>,
     pub(crate) system_event_handlers: Vec<SystemEventHandlerRegistration>,
     pub(crate) render_handlers: Vec<RenderHandlerRegistration>,
@@ -50,6 +53,7 @@ impl WidgetNode {
             key: None,
             automation_id: None,
             tab_idx: 0,
+            accessibility_override: None,
             handlers: Vec::new(),
             system_event_handlers: Vec::new(),
             render_handlers: Vec::new(),
@@ -72,6 +76,7 @@ impl WidgetNode {
             key: None,
             automation_id: None,
             tab_idx: 0,
+            accessibility_override: None,
             handlers: Vec::new(),
             system_event_handlers: Vec::new(),
             render_handlers: Vec::new(),
@@ -125,6 +130,13 @@ impl WidgetNode {
     }
     pub fn with_handlers(mut self, handlers: Vec<HandlerRegistration>) -> Self {
         self.handlers = handlers;
+        self
+    }
+    pub(crate) fn with_accessibility_override(
+        mut self,
+        accessibility_override: AccessibilityOverride,
+    ) -> Self {
+        self.accessibility_override = Some(accessibility_override);
         self
     }
     pub(crate) fn with_system_event_handlers(
@@ -184,6 +196,7 @@ pub struct BoxedWidget {
     tab_idx: i32,
     handler_signatures: Vec<HandlerSignature>,
     system_event_handlers: Vec<SystemEventHandlerRegistration>,
+    accessibility_override: Option<AccessibilityOverride>,
 }
 
 impl BoxedWidget {
@@ -221,6 +234,7 @@ impl BoxedWidget {
             tab_idx: 0,
             handler_signatures: Vec::new(),
             system_event_handlers: Vec::new(),
+            accessibility_override: None,
         }
     }
     pub fn component(&self) -> &dyn WidgetComponent {
@@ -315,6 +329,39 @@ impl BoxedWidget {
         handlers: Vec<SystemEventHandlerRegistration>,
     ) {
         self.system_event_handlers = handlers;
+    }
+
+    pub(crate) fn set_accessibility_override(
+        &mut self,
+        accessibility_override: Option<AccessibilityOverride>,
+    ) {
+        self.accessibility_override = accessibility_override;
+    }
+
+    pub(crate) fn accessibility(&self) -> AccessibilitySnapshot {
+        let base = self.with_component_context(|component| {
+            let mut accessibility = component.snapshot_fields().accessibility();
+            if let Some(label) = component
+                .as_any()
+                .downcast_ref::<crate::ui::view::combinators::DynamicLabel>()
+            {
+                let text = label.semantic_text();
+                accessibility.role = crate::ui::AccessibilityRole::Text;
+                accessibility.name = (!text.is_empty()).then_some(text);
+            }
+            accessibility
+        });
+        self.accessibility_override
+            .as_ref()
+            .map(|accessibility_override| accessibility_override.apply(base.clone()))
+            .unwrap_or(base)
+    }
+
+    pub(crate) fn component_snapshot(&self, id: ComponentId) -> ComponentConfigSnapshot {
+        self.with_component_context(|component| {
+            ComponentConfigSnapshot::from_component(id, component)
+        })
+        .with_accessibility(self.accessibility())
     }
 
     pub fn as_render(&self) -> Option<&dyn WidgetRender> {

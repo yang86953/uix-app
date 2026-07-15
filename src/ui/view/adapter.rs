@@ -124,6 +124,10 @@ impl ViewAdapter {
             wnode = wnode.tab_index(tab_index);
         }
 
+        if let Some(accessibility_override) = node.accessibility_override {
+            wnode = wnode.with_accessibility_override(accessibility_override);
+        }
+
         if node.z_index != 0 {
             wnode = wnode.z_index(node.z_index);
         }
@@ -237,6 +241,7 @@ impl ViewAdapter {
             key,
             automation_id,
             tab_index,
+            accessibility_override,
             handlers,
             system_event_handlers,
             render_handlers,
@@ -255,6 +260,9 @@ impl ViewAdapter {
                 .unwrap_or(0)
         });
         tree.set_tab_index(id, resolved_tab_index);
+        if let Some(current) = tree.get_mut(id) {
+            current.set_accessibility_override(accessibility_override);
+        }
 
         let mut paint_changed = widget_changed || context_changed;
         let mut layout_changed = widget_changed || context_changed;

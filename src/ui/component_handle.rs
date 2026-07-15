@@ -66,10 +66,7 @@ impl ComponentHandle {
         if let Some(tree) = self.tree.as_ref().and_then(RcWeak::upgrade) {
             if let Ok(tree) = tree.try_borrow() {
                 if let Some(node) = tree.get(self.id) {
-                    return Some(ComponentConfigSnapshot::from_component(
-                        self.id,
-                        node.component(),
-                    ));
+                    return Some(node.component_snapshot(self.id));
                 }
             }
         }

@@ -5,13 +5,17 @@
 
 use crate::core::{EdgeInsets, Point, Rect};
 use crate::draw::Color;
+use crate::ui::accessibility_override::AccessibilityOverride;
 use crate::ui::event::{HandlerRegistration, SemanticEvent, SemanticKind};
 use crate::ui::foundation::provider_context::{current_provider_context, ProviderContext};
 use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::style::{BoxShadowDef, ColorValue, Style, TypographyToken};
 use crate::ui::system_event_handler::{SystemEventFilter, SystemEventHandlerRegistration};
 use crate::ui::traits::WidgetComponent;
-use crate::ui::{EventResult, SystemEvent};
+use crate::ui::{
+    AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute, EventResult,
+    SystemEvent,
+};
 
 pub(crate) mod adapter;
 pub mod combinators;
@@ -45,6 +49,7 @@ pub struct ViewNode {
     pub(crate) key: Option<String>,
     pub(crate) automation_id: Option<String>,
     pub(crate) tab_index: Option<i32>,
+    pub(crate) accessibility_override: Option<AccessibilityOverride>,
     pub(crate) handlers: Vec<HandlerRegistration>,
     pub(crate) system_event_handlers: Vec<SystemEventHandlerRegistration>,
     pub(crate) render_handlers: Vec<RenderHandlerRegistration>,
@@ -73,6 +78,7 @@ impl ViewNode {
             key: None,
             automation_id: None,
             tab_index: None,
+            accessibility_override: None,
             handlers: Vec::new(),
             system_event_handlers: Vec::new(),
             render_handlers: Vec::new(),
@@ -91,6 +97,7 @@ impl ViewNode {
             key: None,
             automation_id: None,
             tab_index: None,
+            accessibility_override: None,
             handlers: Vec::new(),
             system_event_handlers: Vec::new(),
             render_handlers: Vec::new(),
@@ -257,6 +264,56 @@ impl ViewNode {
     /// 让节点进入或退出默认 Tab 顺序。
     pub fn focusable(self, focusable: bool) -> Self {
         self.tab_index(if focusable { 1 } else { 0 })
+    }
+
+    /// 完整替换节点对外暴露的无障碍快照。
+    pub fn accessibility(mut self, accessibility: AccessibilitySnapshot) -> Self {
+        self.accessibility_override = Some(AccessibilityOverride::replace(accessibility));
+        self
+    }
+
+    /// 覆写节点 role，同时保留组件实时派生的 name 与 state。
+    pub fn role(mut self, role: AccessibilityRole) -> Self {
+        self.accessibility_override = Some(
+            self.accessibility_override
+                .take()
+                .unwrap_or_default()
+                .with_role(role),
+        );
+        self
+    }
+
+    /// 覆写节点可访问名称；空字符串会显式清除组件默认名称。
+    pub fn accessible_name(mut self, name: impl Into<String>) -> Self {
+        self.accessibility_override = Some(
+            self.accessibility_override
+                .take()
+                .unwrap_or_default()
+                .with_name(name),
+        );
+        self
+    }
+
+    /// 覆写节点完整无障碍状态。
+    pub fn accessibility_state(mut self, state: AccessibilityState) -> Self {
+        self.accessibility_override = Some(
+            self.accessibility_override
+                .take()
+                .unwrap_or_default()
+                .with_state(state),
+        );
+        self
+    }
+
+    /// 追加或按名称替换一个 ARIA 属性。
+    pub fn aria(mut self, name: &'static str, value: impl Into<String>) -> Self {
+        self.accessibility_override = Some(
+            self.accessibility_override
+                .take()
+                .unwrap_or_default()
+                .with_attribute(AriaAttribute::new(name, value)),
+        );
+        self
     }
 
     fn with_system_event_handler(mut self, registration: SystemEventHandlerRegistration) -> Self {
@@ -533,6 +590,31 @@ pub trait EventExt: Into<ViewNode> + Sized {
 }
 
 impl<T: Into<ViewNode>> EventExt for T {}
+
+/// 为所有可转换为 [`ViewNode`] 的 builder 提供无障碍声明。
+pub trait AccessibilityExt: Into<ViewNode> + Sized {
+    fn accessibility(self, accessibility: AccessibilitySnapshot) -> ViewNode {
+        self.into().accessibility(accessibility)
+    }
+
+    fn role(self, role: AccessibilityRole) -> ViewNode {
+        self.into().role(role)
+    }
+
+    fn accessible_name(self, name: impl Into<String>) -> ViewNode {
+        self.into().accessible_name(name)
+    }
+
+    fn accessibility_state(self, state: AccessibilityState) -> ViewNode {
+        self.into().accessibility_state(state)
+    }
+
+    fn aria(self, name: &'static str, value: impl Into<String>) -> ViewNode {
+        self.into().aria(name, value)
+    }
+}
+
+impl<T: Into<ViewNode>> AccessibilityExt for T {}
 
 /// 为所有 `Into<ViewNode>` 类型提供样式链（[使用](docs/使用.md)）。
 ///

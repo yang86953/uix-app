@@ -12,7 +12,7 @@ use std::fmt;
 
 use crate::core::{ComponentId, Point};
 use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
-use crate::ui::component_snapshot::{AccessibilityRole, ComponentConfigSnapshot};
+use crate::ui::component_snapshot::AccessibilityRole;
 use crate::ui::core::widget::{EventResult, WidgetTree};
 use crate::ui::event::{ClickEvent, SemanticEvent, SemanticKind, SystemEvent};
 use crate::ui::widgets::Input;
@@ -125,7 +125,7 @@ impl WidgetTree {
         let Some(node) = self.get(id) else {
             return Vec::new();
         };
-        let snapshot = ComponentConfigSnapshot::from_component(id, node.component());
+        let snapshot = node.component_snapshot(id);
         let accessibility = snapshot.accessibility();
         let selection = snapshot.selection();
         let role = accessibility.role;
@@ -199,8 +199,7 @@ impl WidgetTree {
         let Some(node) = self.get(id) else {
             return Err(SemanticActionError::NodeNotFound(id));
         };
-        let accessibility =
-            ComponentConfigSnapshot::from_component(id, node.component()).accessibility();
+        let accessibility = node.component_snapshot(id).accessibility();
         let role = accessibility.role;
         let actions = self.supported_semantic_actions(id);
         if !actions.contains(&action_kind) {
@@ -229,16 +228,22 @@ impl WidgetTree {
         }
 
         let handled = match action {
-            SemanticAction::Invoke if role == AccessibilityRole::Button => {
-                self.focus_and_press(id, KeyCode::Enter)
-            }
             SemanticAction::Invoke => {
-                let click = ClickEvent {
-                    button: MouseButton::Left,
-                    pos: center(visible_bounds),
-                    modifiers: KeyMod::NONE,
+                let keyboard = if role == AccessibilityRole::Button {
+                    self.focus_and_press(id, KeyCode::Enter)
+                } else {
+                    EventResult::NotHandled
                 };
-                self.dispatch_semantic(SemanticEvent::click(id, click))
+                if keyboard == EventResult::Handled {
+                    keyboard
+                } else {
+                    let click = ClickEvent {
+                        button: MouseButton::Left,
+                        pos: center(visible_bounds),
+                        modifiers: KeyMod::NONE,
+                    };
+                    self.dispatch_semantic(SemanticEvent::click(id, click))
+                }
             }
             SemanticAction::Focus => {
                 self.set_focus(Some(id));
@@ -312,7 +317,7 @@ impl WidgetTree {
     ) -> Result<EventResult, SemanticActionError> {
         let selection = self
             .get(id)
-            .map(|node| ComponentConfigSnapshot::from_component(id, node.component()))
+            .map(|node| node.component_snapshot(id))
             .and_then(|snapshot| snapshot.selection())
             .ok_or(SemanticActionError::NotHandled {
                 target: id,
@@ -386,7 +391,7 @@ impl WidgetTree {
 
         let selected = self
             .get(id)
-            .map(|node| ComponentConfigSnapshot::from_component(id, node.component()))
+            .map(|node| node.component_snapshot(id))
             .and_then(|snapshot| snapshot.selection())
             .is_some_and(|selection| selection.selected_indices.as_slice() == [index]);
         Ok(if selected {
