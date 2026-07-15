@@ -10,10 +10,10 @@ use crate::ui::Placement;
 
 use super::accessibility::{
     anchor_accessibility, back_top_accessibility, badge_accessibility, breadcrumb_accessibility,
-    calendar_accessibility, carousel_accessibility, date_range_accessibility, first_non_empty,
-    image_accessibility, pagination_accessibility, progress_accessibility, result_accessibility,
-    select_accessibility, selectable_list_accessibility, splitter_accessibility, tag_accessibility,
-    theme_toggle_accessibility, transfer_accessibility,
+    calendar_accessibility, carousel_accessibility, chart_accessibility, date_range_accessibility,
+    first_non_empty, image_accessibility, pagination_accessibility, progress_accessibility,
+    result_accessibility, select_accessibility, selectable_list_accessibility,
+    splitter_accessibility, tag_accessibility, theme_toggle_accessibility, transfer_accessibility,
 };
 use super::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotCollapsePanel,
@@ -872,6 +872,10 @@ impl SnapshotFields {
             Self::List { .. } => AccessibilitySnapshot::new(AccessibilityRole::List),
             Self::Transfer { source, target } => transfer_accessibility(source, target),
             Self::Table { .. } => AccessibilitySnapshot::new(AccessibilityRole::Table),
+            Self::BarChart { data, .. } => chart_accessibility(
+                "Bar chart",
+                data.iter().map(|item| (item.label.as_str(), item.value)),
+            ),
             Self::Select {
                 options,
                 optgroups,

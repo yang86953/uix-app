@@ -33,10 +33,8 @@ component! {
         bar_radius: f32,
     }
 
-    measure => (&self, _constraints: Constraints) -> Size {
-        let w = if self.fixed_width > 0.0 { self.fixed_width } else { 300.0 };
-        let h = if self.fixed_height > 0.0 { self.fixed_height } else { 200.0 };
-        Size::new(w, h)
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
     }
 
     picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
@@ -44,64 +42,85 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        let n = self.data.len();
-        if n == 0 || frame.w <= 0.0 || frame.h <= 0.0 { return; }
-
-        let max_val = if self.max_value > 0.0 { self.max_value }
-            else { self.data.iter().map(|d| d.value).fold(0.0_f32, f32::max) };
-        if max_val <= 0.0 { return; }
+        let Some(plot) = self.plot_geometry(frame) else { return; };
 
         let tokens = ctx.tokens();
         let text_c = tokens.color_text();
         let label_c = tokens.color_text_secondary();
         let axis_c = tokens.color_border();
 
-        let gap = 4.0;
-        let y_label_w = 36.0;
-        let label_h = 14.0;
-        let value_h = if self.show_value { 14.0 } else { 0.0 };
-        let chart_x = frame.x + y_label_w;
-        let chart_w = (frame.w - y_label_w).max(1.0);
-        let chart_area_h = (frame.h - label_h - value_h - 4.0).max(1.0);
-        let bar_w = ((chart_w - gap) / n as f32 - gap).max(4.0);
+        ctx.fill_rect(
+            Rect::new(plot.chart_x, plot.baseline, plot.chart_w, 1.0),
+            axis_c,
+            None,
+        );
 
-        let br = if self.bar_radius > 0.0 { Some(crate::draw::Radius::uniform(self.bar_radius)) } else { None };
-        let baseline = frame.y + chart_area_h;
-        ctx.fill_rect(Rect::new(chart_x, baseline, chart_w, 1.0), axis_c, None);
-
-        let gl = 4.max((chart_area_h / 30.0) as usize);
-        for i in 0..gl {
-            let t = (i as f32 + 1.0) / gl as f32;
-            let gy = frame.y + chart_area_h * (1.0 - t);
-            ctx.fill_rect(Rect::new(chart_x, gy, chart_w, 0.5), axis_c, None);
-            let val = max_val * t;
-            let label = if val == val.trunc() { format!("{:.0}", val) } else { format!("{:.1}", val) };
-            let y_label_rect = Rect::new(frame.x, gy - 6.0, y_label_w - 2.0, 12.0);
+        let grid_lines = 4.max((plot.chart_h / 30.0) as usize);
+        for i in 0..=grid_lines {
+            let t = i as f32 / grid_lines as f32;
+            let gy = frame.y + plot.chart_h * (1.0 - t);
+            ctx.fill_rect(Rect::new(plot.chart_x, gy, plot.chart_w, 0.5), axis_c, None);
+            let value = plot.min + (plot.max - plot.min) * t;
+            let label = Self::format_value(value);
+            let y_label_rect = Rect::new(frame.x, gy - 6.0, plot.y_label_w - 2.0, 12.0);
             let yly = ctx.visual_center_y(y_label_rect, 9.0);
             let lsz = ctx.measure_text(&label, 9.0);
-            ctx.draw_text(&label, Point::new(chart_x - lsz.w - 4.0, yly), label_c, 9.0);
+            ctx.draw_text(
+                &label,
+                Point::new(plot.chart_x - lsz.w - 4.0, yly),
+                label_c,
+                9.0,
+            );
         }
 
-        for (i, bar) in self.data.iter().enumerate() {
-            let bx = chart_x + gap + i as f32 * (bar_w + gap);
-            let bh = (bar.value / max_val) * chart_area_h;
-            let by = baseline - bh;
-            ctx.fill_rect(Rect::new(bx, by, bar_w, bh), bar.color, br);
+        for (bar, rect) in self.data.iter().zip(&plot.bars) {
+            let radius = self
+                .bar_radius
+                .min(rect.w * 0.5)
+                .min(rect.h * 0.5);
+            let radius = (radius > 0.0).then(|| crate::draw::Radius::uniform(radius));
+            if rect.h > 0.0 {
+                ctx.fill_rect(*rect, bar.color, radius);
+            }
 
-            if self.show_value && bh > 10.0 {
-                let s = if bar.value == bar.value.trunc() { format!("{:.0}", bar.value) } else { format!("{:.1}", bar.value) };
+            let value = Self::finite_value(bar.value);
+            if self.show_value && rect.h > 10.0 {
+                let s = Self::format_value(value);
                 let sz = ctx.measure_text(&s, 10.0);
-                let val_rect = Rect::new(bx, by - sz.h - 4.0, bar_w, sz.h + 2.0);
+                let value_y = if value >= 0.0 {
+                    (rect.y - sz.h - 2.0).max(frame.y)
+                } else {
+                    (rect.y + rect.h + 2.0).min(frame.y + plot.chart_h - sz.h)
+                };
+                let val_rect = Rect::new(rect.x, value_y, rect.w, sz.h + 2.0);
                 let vy = ctx.visual_center_y(val_rect, 10.0);
-                ctx.draw_text(&s, crate::core::Point::new(bx + (bar_w - sz.w) * 0.5, vy), text_c, 10.0);
+                ctx.draw_text(
+                    &s,
+                    Point::new(rect.x + (rect.w - sz.w) * 0.5, vy),
+                    text_c,
+                    10.0,
+                );
             }
             let sz = ctx.measure_text(&bar.label, 10.0);
-            let lx = bx + (bar_w - sz.w) * 0.5;
-            let label_rect = Rect::new(lx, baseline + 2.0, sz.w, label_h - 2.0);
+            let max_label_x = (plot.chart_x + plot.chart_w - sz.w).max(plot.chart_x);
+            let lx = (rect.x + (rect.w - sz.w) * 0.5).clamp(plot.chart_x, max_label_x);
+            let label_rect = Rect::new(lx, frame.y + plot.chart_h + 2.0, sz.w, 12.0);
             let ly = ctx.visual_center_y(label_rect, 10.0);
-            ctx.draw_text(&bar.label, crate::core::Point::new(lx, ly), label_c, 10.0);
+            ctx.draw_text(&bar.label, Point::new(lx, ly), label_c, 10.0);
         }
     }
+}
+
+#[derive(Debug)]
+struct BarPlot {
+    min: f32,
+    max: f32,
+    chart_x: f32,
+    chart_w: f32,
+    chart_h: f32,
+    y_label_w: f32,
+    baseline: f32,
+    bars: Vec<Rect>,
 }
 
 impl Default for BarChart {
@@ -110,6 +129,9 @@ impl Default for BarChart {
     }
 }
 impl BarChart {
+    const DEFAULT_WIDTH: f32 = 300.0;
+    const DEFAULT_HEIGHT: f32 = 200.0;
+
     pub fn new() -> Self {
         Self {
             data: Vec::new(),
@@ -125,15 +147,15 @@ impl BarChart {
         self
     }
     pub fn width(mut self, w: f32) -> Self {
-        self.fixed_width = w;
+        self.fixed_width = Self::optional_dimension(w);
         self
     }
     pub fn height(mut self, h: f32) -> Self {
-        self.fixed_height = h;
+        self.fixed_height = Self::optional_dimension(h);
         self
     }
     pub fn max_value(mut self, v: f32) -> Self {
-        self.max_value = v;
+        self.max_value = if v.is_finite() && v > 0.0 { v } else { 0.0 };
         self
     }
     pub fn show_value(mut self, v: bool) -> Self {
@@ -141,8 +163,113 @@ impl BarChart {
         self
     }
     pub fn bar_radius(mut self, r: f32) -> Self {
-        self.bar_radius = r;
+        self.bar_radius = if r.is_finite() { r.max(0.0) } else { 0.0 };
         self
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        let width = if self.fixed_width > 0.0 {
+            self.fixed_width
+        } else {
+            Self::DEFAULT_WIDTH
+        };
+        let height = if self.fixed_height > 0.0 {
+            self.fixed_height
+        } else {
+            Self::DEFAULT_HEIGHT
+        };
+        Size::new(width, height)
+    }
+
+    fn optional_dimension(value: f32) -> f32 {
+        if value.is_finite() && value > 0.0 {
+            value
+        } else {
+            0.0
+        }
+    }
+
+    fn finite_value(value: f32) -> f32 {
+        if value.is_finite() {
+            value
+        } else {
+            0.0
+        }
+    }
+
+    fn format_value(value: f32) -> String {
+        if value == value.trunc() {
+            format!("{value:.0}")
+        } else {
+            format!("{value:.1}")
+        }
+    }
+
+    fn value_range(&self) -> Option<(f32, f32)> {
+        if self.data.is_empty() {
+            return None;
+        }
+        let (min, observed_max) = self.data.iter().fold((0.0_f32, 0.0_f32), |range, item| {
+            let value = Self::finite_value(item.value);
+            (range.0.min(value), range.1.max(value))
+        });
+        let max = if self.max_value > 0.0 {
+            self.max_value
+        } else {
+            observed_max
+        };
+        (max > min).then_some((min, max))
+    }
+
+    fn plot_geometry(&self, frame: Rect) -> Option<BarPlot> {
+        if frame.w <= 0.0 || frame.h <= 0.0 {
+            return None;
+        }
+        let (min, max) = self.value_range()?;
+        let y_label_w = 36.0_f32.min(frame.w * 0.35);
+        let chart_x = frame.x + y_label_w;
+        let chart_w = frame.w - y_label_w;
+        let label_h = 14.0;
+        let value_h = if self.show_value { 14.0 } else { 0.0 };
+        let chart_h = frame.h - label_h - value_h - 4.0;
+        if chart_w <= 0.0 || chart_h <= 0.0 {
+            return None;
+        }
+        let range = max - min;
+        let map_y = |value: f32| {
+            let clamped = value.clamp(min, max);
+            frame.y + (max - clamped) / range * chart_h
+        };
+        let baseline = map_y(0.0);
+        let group_w = chart_w / self.data.len() as f32;
+        let gap = (group_w * 0.2).clamp(1.0, 4.0);
+        let bar_w = (group_w - gap).max(1.0).min(group_w);
+        let bars = self
+            .data
+            .iter()
+            .enumerate()
+            .map(|(index, bar)| {
+                let value_y = map_y(Self::finite_value(bar.value));
+                let x = chart_x + index as f32 * group_w + (group_w - bar_w) * 0.5;
+                Rect::new(x, value_y.min(baseline), bar_w, (value_y - baseline).abs())
+            })
+            .collect();
+        Some(BarPlot {
+            min,
+            max,
+            chart_x,
+            chart_w,
+            chart_h,
+            y_label_w,
+            baseline,
+            bars,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn geometry_for_test(&self, frame: Rect) -> Option<(f32, Vec<Rect>)> {
+        self.plot_geometry(frame)
+            .map(|plot| (plot.baseline, plot.bars))
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
