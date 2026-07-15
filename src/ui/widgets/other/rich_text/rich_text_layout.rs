@@ -18,6 +18,7 @@ use crate::draw::{Color, FontHandle};
 pub(crate) struct LayoutGlyph {
     pub segment_idx: usize,
     pub global_char_idx: usize,
+    pub ch: char,
     pub x: f32,
     pub width: f32,
     pub font_size: f32,
@@ -248,6 +249,7 @@ fn layout_text_content(
                 glyphs.push(LayoutGlyph {
                     segment_idx: seg_idx,
                     global_char_idx: 0,
+                    ch,
                     x: word_chars_x,
                     width: cw,
                     font_size: fs,
@@ -265,6 +267,7 @@ fn layout_text_content(
                 glyphs.push(LayoutGlyph {
                     segment_idx: seg_idx,
                     global_char_idx: 0,
+                    ch,
                     x: *current_x,
                     width: cw,
                     font_size: fs,
@@ -279,27 +282,31 @@ fn layout_text_content(
     }
 }
 
-/// 为布局中的每个字形分配全局字符索引
-pub(crate) fn assign_global_indices(lines: &mut [LayoutLine]) {
-    let mut idx: usize = 0;
+/// 按原始 segment（含显式换行）为每个字形分配全局字符索引。
+pub(crate) fn assign_global_indices(lines: &mut [LayoutLine], segments: &[RichTextSegment]) {
+    let mut offsets = Vec::with_capacity(segments.len());
+    let mut offset = 0;
+    for segment in segments {
+        offsets.push(offset);
+        offset += match segment {
+            RichTextSegment::Text { content, .. }
+            | RichTextSegment::Code { content }
+            | RichTextSegment::Link { content, .. } => content.chars().count(),
+            RichTextSegment::NewLine => 1,
+        };
+    }
+    let mut seen = vec![0; segments.len()];
     for line in lines.iter_mut() {
         for glyph in line.glyphs.iter_mut() {
-            glyph.global_char_idx = idx;
-            idx += 1;
-        }
-    }
-}
-
-/// 在布局行中查找某个段的第一个字形位置
-pub(crate) fn find_first_glyph(lines: &[LayoutLine], segment_idx: usize) -> Option<(usize, usize)> {
-    for (li, line) in lines.iter().enumerate() {
-        for (gi, glyph) in line.glyphs.iter().enumerate() {
-            if glyph.segment_idx == segment_idx {
-                return Some((li, gi));
+            if let (Some(offset), Some(seen)) = (
+                offsets.get(glyph.segment_idx),
+                seen.get_mut(glyph.segment_idx),
+            ) {
+                glyph.global_char_idx = offset + *seen;
+                *seen += 1;
             }
         }
     }
-    None
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -328,12 +335,13 @@ fn real_char_advances(
     let layout = font_service.layout_text(font, text, &opts);
     let chars: Vec<char> = text.chars().collect();
     let mut advances = Vec::with_capacity(chars.len());
-    for (i, _) in chars.iter().enumerate() {
-        if i < layout.glyphs.len() {
-            advances.push(layout.glyphs[i].width);
-        } else {
-            advances.push(fs * 0.55);
-        }
+    for (i, ch) in chars.iter().enumerate() {
+        let measured = layout.glyphs.get(i).map(|glyph| glyph.width);
+        advances.push(
+            measured
+                .filter(|width| width.is_finite() && *width > 0.0)
+                .unwrap_or_else(|| char_width(fs, *ch)),
+        );
     }
     advances
 }
@@ -502,7 +510,7 @@ fn layout_text_content_real(
 
         if *current_x + word_w > max_width && glyphs.is_empty() {
             let mut word_x = *current_x;
-            for &cw in word_advances {
+            for (&ch, &cw) in chars[start..end].iter().zip(word_advances) {
                 if word_x + cw > max_width && word_x > 0.0 && !glyphs.is_empty() {
                     *max_line_w = (*max_line_w).max(word_x);
                     flush_line(lines, glyphs, seg_line_h);
@@ -511,6 +519,7 @@ fn layout_text_content_real(
                 glyphs.push(LayoutGlyph {
                     segment_idx: seg_idx,
                     global_char_idx: 0,
+                    ch,
                     x: word_x,
                     width: cw,
                     font_size: fs,
@@ -523,10 +532,11 @@ fn layout_text_content_real(
             }
             *current_x = word_x;
         } else {
-            for &cw in word_advances {
+            for (&ch, &cw) in chars[start..end].iter().zip(word_advances) {
                 glyphs.push(LayoutGlyph {
                     segment_idx: seg_idx,
                     global_char_idx: 0,
+                    ch,
                     x: *current_x,
                     width: cw,
                     font_size: fs,
