@@ -79,5 +79,13 @@ fn pointer_and_keyboard_activation_reach_public_click_handler() {
         }),
         EventResult::Handled
     );
+    assert_eq!(calls.get(), 1);
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyUp {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
     assert_eq!(calls.get(), 2);
 }
