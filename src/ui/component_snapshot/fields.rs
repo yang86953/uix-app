@@ -13,7 +13,8 @@ use super::accessibility::{
     calendar_accessibility, carousel_accessibility, chart_accessibility, date_range_accessibility,
     first_non_empty, image_accessibility, pagination_accessibility, progress_accessibility,
     result_accessibility, select_accessibility, selectable_list_accessibility,
-    splitter_accessibility, tag_accessibility, theme_toggle_accessibility, transfer_accessibility,
+    splitter_accessibility, steps_accessibility, tag_accessibility, theme_toggle_accessibility,
+    transfer_accessibility,
 };
 use super::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotCollapsePanel,
@@ -806,16 +807,7 @@ impl SnapshotFields {
                     ..AccessibilityState::default()
                 },
             ),
-            Self::Steps { steps, current, .. } => AccessibilitySnapshot::new(
-                AccessibilityRole::Navigation,
-            )
-            .with_state(AccessibilityState {
-                value_text: steps.get(*current).map(|step| step.title.clone()),
-                value_now: Some((*current + 1) as f64),
-                value_min: Some(1.0),
-                value_max: Some(steps.len().max(1) as f64),
-                ..AccessibilityState::default()
-            }),
+            Self::Steps { steps, current, .. } => steps_accessibility(steps, *current),
             Self::NavItem { label, active, .. } => {
                 AccessibilitySnapshot::named(AccessibilityRole::Navigation, label.clone())
                     .with_state(AccessibilityState {
@@ -879,6 +871,12 @@ impl SnapshotFields {
             Self::LineChart { data, .. } => chart_accessibility(
                 "Line chart",
                 data.iter().map(|item| (item.label.as_str(), item.value)),
+            ),
+            Self::PieChart { data, .. } => chart_accessibility(
+                "Pie chart",
+                data.iter()
+                    .filter(|item| item.value.is_finite() && item.value > 0.0)
+                    .map(|item| (item.label.as_str(), item.value)),
             ),
             Self::Select {
                 options,
