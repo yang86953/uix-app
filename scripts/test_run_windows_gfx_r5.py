@@ -1,23 +1,35 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from scripts.run_windows_gfx_r5 import (
     DEVICE_FAULT_ENV,
     DEVICE_LOST_TIMEOUT_ENV,
+    ROOT,
     SOAK_SECONDS_ENV,
     VENDOR_ENV,
     EvidenceSession,
     build_plan,
     file_sha256,
+    filter_allowed_untracked,
     load_resumable_evidence,
     normalize_log_ending,
     parse_test_inventory,
     require_case_success,
     require_planned_tests,
+    run_plan,
     verify_evidence_dir,
     write_json_atomic,
 )
+
+
+def passing_log(case) -> str:
+    return (
+        "running 1 test\n"
+        f"test {case.test_name} ... ok\n"
+        "test result: ok. 1 passed; 0 failed;\n"
+    )
 
 
 class RunWindowsGfxR5Tests(unittest.TestCase):
@@ -174,7 +186,7 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             output = Path(directory) / "evidence"
             session = EvidenceSession(output, "mixed-dpi", "amd", None, 900, 60, plan)
             log_path = session.start_case(0)
-            log_path.write_text("verified evidence\n", encoding="utf-8")
+            log_path.write_text(passing_log(plan[0]), encoding="utf-8")
             session.finish_case(0, 0, 0.5)
             session.finish("passed")
 
@@ -195,7 +207,7 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             first_log.write_text("first attempt failed\n", encoding="utf-8")
             session.finish_case(0, 1, 0.2)
             second_log = session.start_case(0)
-            second_log.write_text("second attempt passed\n", encoding="utf-8")
+            second_log.write_text(passing_log(plan[0]), encoding="utf-8")
             session.finish_case(0, 0, 0.3)
             session.finish("passed")
 
@@ -244,6 +256,70 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             session._write()
             with self.assertRaisesRegex(ValueError, "plan"):
                 load_resumable_evidence(output)
+
+    def test_resume_skips_passed_cases_and_appends_attempts(self) -> None:
+        plan = build_plan("vendor", "nvidia", None, 900, 60)
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "evidence"
+            session = EvidenceSession(output, "vendor", "nvidia", None, 900, 60, plan)
+            first_log = session.start_case(0)
+            first_log.write_text(passing_log(plan[0]), encoding="utf-8")
+            session.finish_case(0, 0, 0.1)
+            failed_log = session.start_case(1)
+            failed_log.write_text("first attempt failed\n", encoding="utf-8")
+            session.finish_case(1, 1, 0.1)
+            session.finish("failed")
+            session.begin_resume()
+
+            executed: list[str] = []
+
+            def fake_run(case, log_path):
+                executed.append(case.name)
+                log_path.write_text(passing_log(case), encoding="utf-8")
+                return 0, 0.1
+
+            with patch("scripts.run_windows_gfx_r5.run_case", side_effect=fake_run):
+                self.assertEqual(run_plan(plan, session), 0)
+
+            self.assertNotIn(plan[0].name, executed)
+            self.assertEqual(len(session.manifest["cases"][0]["attempts"]), 1)
+            self.assertEqual(len(session.manifest["cases"][1]["attempts"]), 2)
+            self.assertEqual(session.manifest["status"], "passed")
+            self.assertEqual(session.manifest["resume_count"], 1)
+            verify_evidence_dir(output)
+
+    def test_resume_recovers_stale_running_attempt(self) -> None:
+        plan = build_plan("mixed-dpi", "amd", None, 900, 60)
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "evidence"
+            session = EvidenceSession(output, "mixed-dpi", "amd", None, 900, 60, plan)
+            stale_log = session.start_case(0)
+            stale_log.write_text("partial output\n", encoding="utf-8")
+
+            session.begin_resume()
+
+            case = session.manifest["cases"][0]
+            attempt = case["attempts"][0]
+            self.assertEqual(case["status"], "interrupted")
+            self.assertEqual(attempt["status"], "interrupted")
+            self.assertIsNotNone(attempt["log_sha256"])
+            self.assertEqual(session.manifest["status"], "running")
+
+    def test_clean_filter_allows_only_the_resume_directory(self) -> None:
+        allowed = ROOT / "test-reports" / "partial"
+        entries = [
+            "?? test-reports/partial/",
+            " M scripts/run_windows_gfx_r5.py",
+        ]
+
+        self.assertEqual(
+            filter_allowed_untracked(entries[:1], allowed),
+            [],
+        )
+        self.assertEqual(
+            filter_allowed_untracked(entries, allowed),
+            [" M scripts/run_windows_gfx_r5.py"],
+        )
 
 
 if __name__ == "__main__":

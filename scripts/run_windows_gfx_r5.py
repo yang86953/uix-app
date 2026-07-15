@@ -158,6 +158,8 @@ class EvidenceSession:
             "status": "running",
             "started_at": utc_now(),
             "completed_at": None,
+            "resume_count": 0,
+            "resumed_at": [],
             "configuration": {
                 "profile": profile,
                 "vendor": vendor,
@@ -183,6 +185,29 @@ class EvidenceSession:
         session.manifest_path = session.output_dir / "manifest.json"
         session.manifest = manifest
         return session
+
+    def begin_resume(self) -> None:
+        for case in self.manifest["cases"]:
+            if case["status"] != "running":
+                continue
+            attempt = case["attempts"][-1]
+            attempt["status"] = "interrupted"
+            attempt["completed_at"] = utc_now()
+            attempt["evidence_error"] = "runner stopped before completing this attempt"
+            case["status"] = "interrupted"
+            log_path = self.output_dir / attempt["log"]
+            if not log_path.is_file():
+                log_path.write_text(
+                    "GFX-R5 runner recovered a stale attempt without a case log.\n",
+                    encoding="utf-8",
+                    newline="\n",
+                )
+            self._record_log_integrity(attempt)
+        self.manifest["status"] = "running"
+        self.manifest["completed_at"] = None
+        self.manifest["resume_count"] = self.manifest.get("resume_count", 0) + 1
+        self.manifest.setdefault("resumed_at", []).append(utc_now())
+        self._write()
 
     def _pending_case(self, index: int, case: GfxR5Case) -> dict[str, object]:
         return {
@@ -432,6 +457,12 @@ def verify_evidence_dir(output_dir: Path) -> dict[str, object]:
         raise ValueError(f"invalid evidence status: {status!r}")
     if not isinstance(cases, list) or not cases:
         raise ValueError("evidence manifest must contain at least one case")
+    resume_count = manifest.get("resume_count")
+    resumed_at = manifest.get("resumed_at")
+    if type(resume_count) is not int or resume_count < 0:
+        raise ValueError("evidence resume_count must be a non-negative integer")
+    if not isinstance(resumed_at, list) or len(resumed_at) != resume_count:
+        raise ValueError("evidence resumed_at history does not match resume_count")
 
     case_statuses: list[object] = []
     seen_logs: set[str] = set()
@@ -439,6 +470,9 @@ def verify_evidence_dir(output_dir: Path) -> dict[str, object]:
         if not isinstance(case, dict):
             raise ValueError("evidence case must be an object")
         case_name = case.get("name")
+        test_name = case.get("test_name")
+        if not isinstance(test_name, str):
+            raise ValueError(f"evidence case {case_name!r} has no test name")
         case_status = case.get("status")
         case_statuses.append(case_status)
         if case_status not in ("pending", "running", "passed", "failed", "interrupted"):
@@ -463,7 +497,13 @@ def verify_evidence_dir(output_dir: Path) -> dict[str, object]:
             if attempt_index < len(attempts) and attempt_status == "running":
                 raise ValueError(f"evidence case {case_name!r} has a stale running attempt")
             if attempt_status != "running":
-                verify_attempt_log(output_dir, case_name, attempt, seen_logs)
+                verify_attempt_log(
+                    output_dir,
+                    case_name,
+                    test_name,
+                    attempt,
+                    seen_logs,
+                )
         latest_status = attempts[-1].get("status")
         if latest_status != case_status:
             raise ValueError(f"evidence case {case_name!r} status disagrees with latest attempt")
@@ -480,6 +520,7 @@ def verify_evidence_dir(output_dir: Path) -> dict[str, object]:
 def verify_attempt_log(
     output_dir: Path,
     case_name: object,
+    test_name: str,
     attempt: dict[str, object],
     seen_logs: set[str],
 ) -> None:
@@ -505,6 +546,8 @@ def verify_attempt_log(
     expected_hash = attempt.get("log_sha256")
     if actual_hash != expected_hash:
         raise ValueError(f"evidence case {case_name!r} log SHA-256 changed")
+    if attempt.get("status") == "passed":
+        require_exact_test_success(test_name, case_name, log_path)
 
 
 def capture(command: Sequence[str]) -> str:
@@ -521,12 +564,33 @@ def capture(command: Sequence[str]) -> str:
     return result.stdout.strip()
 
 
-def require_clean_source() -> None:
-    dirty = capture(("git", "status", "--porcelain", "--untracked-files=normal"))
+def require_clean_source(allowed_untracked_dir: Path | None = None) -> None:
+    raw = capture(
+        ("git", "status", "--porcelain=v1", "-z", "--untracked-files=normal")
+    )
+    entries = [entry for entry in raw.split("\0") if entry]
+    dirty = filter_allowed_untracked(entries, allowed_untracked_dir)
     if dirty:
         raise ValueError(
-            "GFX-R5 evidence requires a clean worktree; commit or remove:\n" + dirty
+            "GFX-R5 evidence requires a clean worktree; commit or remove:\n"
+            + "\n".join(dirty)
         )
+
+
+def filter_allowed_untracked(
+    entries: Sequence[str],
+    allowed_untracked_dir: Path | None,
+) -> list[str]:
+    allowed = allowed_untracked_dir.resolve() if allowed_untracked_dir is not None else None
+    dirty: list[str] = []
+    for entry in entries:
+        status = entry[:2]
+        path = entry[3:].rstrip("/") if len(entry) >= 4 else ""
+        candidate = (ROOT / path).resolve()
+        if status == "??" and allowed is not None and candidate == allowed:
+            continue
+        dirty.append(entry)
+    return dirty
 
 
 def source_metadata() -> dict[str, object]:
@@ -554,17 +618,25 @@ def normalize_log_ending(path: Path) -> None:
 
 
 def require_case_success(case: GfxR5Case, log_path: Path) -> None:
+    require_exact_test_success(case.test_name, case.name, log_path)
+
+
+def require_exact_test_success(
+    test_name: str,
+    case_name: object,
+    log_path: Path,
+) -> None:
     content = log_path.read_text(encoding="utf-8")
     required = (
         "running 1 test",
-        f"\ntest {case.test_name} ...",
+        f"\ntest {test_name} ...",
         "test result: ok. 1 passed; 0 failed;",
     )
     missing = [marker for marker in required if marker not in content]
     if missing:
         details = ", ".join(repr(marker) for marker in missing)
         raise ValueError(
-            f"cargo exited successfully but {case.name!r} lacks exact one-test "
+            f"cargo exited successfully but {case_name!r} lacks exact one-test "
             f"success evidence: {details}"
         )
 
@@ -609,9 +681,14 @@ def run_plan(
     if os.name != "nt":
         print("error: GFX-R5 target-machine acceptance requires Windows", file=sys.stderr)
         return 2
-    for index, case in enumerate(plan, start=1):
-        print(f"[{index}/{len(plan)}] {format_case(case)}", flush=True)
-        log_path = evidence.start_case(index - 1)
+    runnable = [
+        (index, case)
+        for index, case in enumerate(plan)
+        if evidence.manifest["cases"][index]["status"] != "passed"
+    ]
+    for progress, (index, case) in enumerate(runnable, start=1):
+        print(f"[{progress}/{len(runnable)}] {format_case(case)}", flush=True)
+        log_path = evidence.start_case(index)
         exit_code, duration = run_case(case, log_path)
         evidence_error = None
         if exit_code == 0:
@@ -619,7 +696,7 @@ def run_plan(
                 require_case_success(case, log_path)
             except ValueError as error:
                 evidence_error = str(error)
-        evidence.finish_case(index - 1, exit_code, duration, evidence_error)
+        evidence.finish_case(index, exit_code, duration, evidence_error)
         if exit_code != 0 or evidence_error is not None:
             runner_exit_code = (
                 exit_code if exit_code != 0 else EVIDENCE_VALIDATION_EXIT_CODE
@@ -632,6 +709,13 @@ def run_plan(
             )
             evidence.finish("failed")
             return runner_exit_code
+    if any(case["status"] != "passed" for case in evidence.manifest["cases"]):
+        evidence.finish("failed")
+        print(
+            f"error: GFX-R5 run ended with unresolved cases; evidence={evidence.output_dir}",
+            file=sys.stderr,
+        )
+        return EVIDENCE_VALIDATION_EXIT_CODE
     evidence.finish("passed")
     return 0
 
@@ -654,8 +738,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=_bool_argument,
         help="whether VK_EXT_device_fault is expected on the target",
     )
-    parser.add_argument("--soak-seconds", type=int, default=MIN_SOAK_SECONDS)
-    parser.add_argument("--device-lost-timeout", type=int, default=60)
+    parser.add_argument("--soak-seconds", type=int)
+    parser.add_argument("--device-lost-timeout", type=int)
     parser.add_argument(
         "--list",
         action="store_true",
@@ -671,13 +755,32 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="verify an existing schema-4 evidence directory without running tests",
     )
+    parser.add_argument(
+        "--resume-evidence",
+        type=Path,
+        help="resume non-passed cases in an existing schema-4 evidence directory",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.verify_evidence is not None and args.resume_evidence is not None:
+        print(
+            "error: --verify-evidence and --resume-evidence are mutually exclusive",
+            file=sys.stderr,
+        )
+        return 2
     if args.verify_evidence is not None:
-        if args.profile is not None or args.vendor is not None or args.list or args.output:
+        if (
+            args.profile is not None
+            or args.vendor is not None
+            or args.device_fault is not None
+            or args.soak_seconds is not None
+            or args.device_lost_timeout is not None
+            or args.list
+            or args.output
+        ):
             print(
                 "error: --verify-evidence cannot be combined with run/list options",
                 file=sys.stderr,
@@ -693,6 +796,43 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"cases={len(manifest['cases'])}; path={args.verify_evidence.resolve()}"
         )
         return 0
+    if args.resume_evidence is not None:
+        if (
+            args.profile is not None
+            or args.vendor is not None
+            or args.device_fault is not None
+            or args.soak_seconds is not None
+            or args.device_lost_timeout is not None
+            or args.list
+            or args.output
+        ):
+            print(
+                "error: --resume-evidence cannot be combined with run/list options",
+                file=sys.stderr,
+            )
+            return 2
+        if os.name != "nt":
+            print(
+                "error: GFX-R5 target-machine acceptance requires Windows",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            evidence, plan = load_resumable_evidence(args.resume_evidence)
+            require_clean_source(evidence.output_dir)
+            preflight_test_inventory(plan)
+            evidence.begin_resume()
+        except (OSError, subprocess.SubprocessError, ValueError) as error:
+            print(f"error: evidence resume preflight failed: {error}", file=sys.stderr)
+            return 2
+        try:
+            result = run_plan(plan, evidence)
+        except KeyboardInterrupt:
+            evidence.finish("interrupted")
+            print(f"interrupted; partial evidence={evidence.output_dir}", file=sys.stderr)
+            return 130
+        print(f"GFX-R5 evidence resumed: {evidence.output_dir}")
+        return result
     if args.profile is None or args.vendor is None:
         print("error: --profile and --vendor are required for run/list mode", file=sys.stderr)
         return 2
@@ -701,8 +841,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.profile,
             args.vendor,
             args.device_fault,
-            args.soak_seconds,
-            args.device_lost_timeout,
+            args.soak_seconds if args.soak_seconds is not None else MIN_SOAK_SECONDS,
+            args.device_lost_timeout
+            if args.device_lost_timeout is not None
+            else 60,
         )
     except ValueError as error:
         print(f"error: {error}", file=sys.stderr)
@@ -727,8 +869,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.profile,
             args.vendor,
             args.device_fault,
-            args.soak_seconds,
-            args.device_lost_timeout,
+            args.soak_seconds if args.soak_seconds is not None else MIN_SOAK_SECONDS,
+            args.device_lost_timeout
+            if args.device_lost_timeout is not None
+            else 60,
             plan,
         )
     except (OSError, subprocess.SubprocessError, ValueError) as error:
