@@ -45,8 +45,6 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    visible => (&self) -> bool { self.is_present() }
-
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if !self.is_present() {
             if let SystemEvent::PointerDown {
