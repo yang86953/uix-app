@@ -270,6 +270,7 @@ fn windows_vulkan_gfx_r5_external_reset_returns_device_lost_with_diagnostics() {
     let mut frames = 0_u64;
     let mut surface_faults = 0_u64;
     let mut last_surface_fault = None;
+    let observation_started = std::time::Instant::now();
 
     eprintln!(
         "GFX-R5 external reset armed: trigger the driver reset within {timeout:?}; expected={}; device_fault={expect_fault_report}; {}; swapchain_maintenance1=true",
@@ -317,6 +318,7 @@ fn windows_vulkan_gfx_r5_external_reset_returns_device_lost_with_diagnostics() {
         );
         std::thread::sleep(std::time::Duration::from_millis(16));
     };
+    let detection_elapsed = observation_started.elapsed();
 
     assert!(
         fault.what().contains("ERROR_DEVICE_LOST"),
@@ -364,7 +366,8 @@ fn windows_vulkan_gfx_r5_external_reset_returns_device_lost_with_diagnostics() {
         .expect("replacement window");
     replacement_window.show().expect("show replacement window");
     let _ = platform.event_loop().poll_event(&|_| true);
-    let recovery_deadline = std::time::Instant::now() + EXTERNAL_RESET_RECOVERY_TIMEOUT;
+    let recovery_started = std::time::Instant::now();
+    let recovery_deadline = recovery_started + EXTERNAL_RESET_RECOVERY_TIMEOUT;
     let mut replacement_attempts = 0_u64;
     let mut replacement = loop {
         replacement_attempts += 1;
@@ -403,10 +406,13 @@ fn windows_vulkan_gfx_r5_external_reset_returns_device_lost_with_diagnostics() {
             PresentDamage::Full,
         )
         .expect("replacement present after external reset");
+    let recovery_elapsed = recovery_started.elapsed();
     println!(
-        "GFX-R5 external device loss: expected={}; detector={}; frames={frames}; surface_faults={surface_faults}; fault={}; peer={}; replacement_attempts={replacement_attempts}; replacement={}",
+        "GFX-R5 external device loss: expected={}; detector={}; frames={frames}; surface_faults={surface_faults}; detection_seconds={:.3}; recovery_seconds={:.3}; device_fault={expect_fault_report}; fault={}; peer={}; replacement_attempts={replacement_attempts}; replacement={}",
         expected_vendor.label(),
         if first_detected { "first" } else { "second" },
+        detection_elapsed.as_secs_f64(),
+        recovery_elapsed.as_secs_f64(),
         fault.what(),
         peer_error.what(),
         replacement.adapter_info.diagnostic_summary()
