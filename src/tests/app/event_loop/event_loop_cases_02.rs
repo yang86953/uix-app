@@ -500,6 +500,63 @@ fn app_state_lookup_emit_drains_in_event_loop_and_returns_deep_idle() {
 }
 
 #[test]
+fn focus_handle_wakes_target_event_loop_and_returns_deep_idle() {
+    let mut platform = FakePlatform::new();
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let app_state = AppState::new();
+    let focus = crate::ui::FocusHandle::new();
+    let root: ViewNode = button("focus target").into();
+    let root = root.focus_handle(&focus);
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(root, Box::new(NullEngine::new()), 800, 600);
+    session.set_app_state(app_state.clone());
+    let root_id = session
+        .tree_and_engine_mut()
+        .0
+        .root_id()
+        .expect("root should exist");
+    app_state.set_event_loop_waker(platform.event_loop().waker());
+    assert_eq!(focus.focus(), Ok(()));
+
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        None,
+        |_| None,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(platform.event_source.wake_count(), 1);
+    assert_eq!(
+        session
+            .tree_and_engine_mut()
+            .0
+            .managers()
+            .focus
+            .focused_component(),
+        Some(root_id)
+    );
+    assert_eq!(platform.event_source.state.dispatch_timeout_calls, 0);
+    assert_eq!(session.loop_state(), WindowLoopState::DeepIdle);
+}
+
+#[test]
 fn key_event_after_first_frame_does_not_force_layout_without_invalidation() {
     let mut platform = FakePlatform::new();
     platform
