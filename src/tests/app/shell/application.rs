@@ -291,7 +291,7 @@ fn app_graphics_backend_defaults_to_vulkan() {
 
 #[test]
 fn app_graphics_backend_prefers_builder_over_env_and_settings() {
-    let mut settings = SettingsService::new();
+    let settings = SettingsService::new();
     settings.set("graphics_backend", "opengles");
 
     assert_eq!(
@@ -306,7 +306,7 @@ fn app_graphics_backend_prefers_builder_over_env_and_settings() {
 
 #[test]
 fn app_graphics_backend_uses_env_before_settings() {
-    let mut settings = SettingsService::new();
+    let settings = SettingsService::new();
     settings.set("graphics_backend", "opengles");
 
     assert_eq!(
@@ -317,7 +317,7 @@ fn app_graphics_backend_uses_env_before_settings() {
 
 #[test]
 fn app_graphics_backend_falls_back_from_invalid_env_to_settings() {
-    let mut settings = SettingsService::new();
+    let settings = SettingsService::new();
     settings.set("uix.graphics_backend", "gles");
 
     assert_eq!(
@@ -395,10 +395,10 @@ fn app_settings_load_registers_settings_service() {
         .expect("settings service");
     assert_eq!(
         settings.loaded_path(),
-        Some(path.to_string_lossy().as_ref())
+        Some(path.to_string_lossy().into_owned())
     );
-    assert_eq!(settings.get("theme_mode"), Some("dark"));
-    assert_eq!(settings.get("brand_primary"), Some("#1677ff"));
+    assert_eq!(settings.get("theme_mode"), Some("dark".to_string()));
+    assert_eq!(settings.get("brand_primary"), Some("#1677ff".to_string()));
 
     let _ = std::fs::remove_file(path);
 }
@@ -1404,9 +1404,19 @@ fn app_handle_resolves_loaded_settings_service_at_runtime() {
         .expect("settings service");
     assert_eq!(
         settings.loaded_path(),
-        Some(path.to_string_lossy().as_ref())
+        Some(path.to_string_lossy().into_owned())
     );
-    assert_eq!(settings.get("theme_mode"), Some("dark"));
+    assert_eq!(settings.get("theme_mode"), Some("dark".to_string()));
+
+    settings.set("theme_mode", "light");
+    let container_settings = app
+        .container()
+        .resolve::<SettingsService>()
+        .expect("settings service");
+    assert_eq!(
+        container_settings.get("theme_mode"),
+        Some("light".to_string())
+    );
 
     let _ = std::fs::remove_file(path);
 }

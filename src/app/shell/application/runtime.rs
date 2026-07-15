@@ -20,7 +20,7 @@ pub(crate) fn resolve_graphics_backend(
     if let Some(settings) = settings {
         for key in GRAPHICS_BACKEND_SETTING_KEYS {
             if let Some(value) = settings.get(key) {
-                if let Some(backend) = parse_graphics_backend_config(key, value) {
+                if let Some(backend) = parse_graphics_backend_config(key, &value) {
                     return backend;
                 }
             }
