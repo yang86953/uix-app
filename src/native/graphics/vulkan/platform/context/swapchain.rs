@@ -60,6 +60,10 @@ impl PresentFenceSet {
         !self.entries.is_empty()
     }
 
+    pub(super) fn len(&self) -> usize {
+        self.entries.len()
+    }
+
     pub(super) fn prepare_for_present(
         &mut self,
         device: &ash::Device,
