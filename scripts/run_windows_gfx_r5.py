@@ -404,8 +404,13 @@ def require_manifest_matches_plan(
 
 
 def require_resume_environment(manifest: dict[str, object]) -> None:
-    if manifest.get("source") != source_metadata():
-        raise ValueError("evidence source does not match the current repository HEAD/branch")
+    source = manifest.get("source")
+    if not isinstance(source, dict):
+        raise ValueError("evidence manifest has no source object")
+    if source.get("git_head") != source_metadata()["git_head"]:
+        raise ValueError("evidence source does not match the current repository HEAD")
+    if source.get("worktree_clean") is not True:
+        raise ValueError("evidence source was not captured from a clean worktree")
     if manifest.get("host") != host_metadata():
         raise ValueError("evidence host or toolchain does not match the current target machine")
 

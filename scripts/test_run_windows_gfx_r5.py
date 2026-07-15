@@ -285,6 +285,24 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "plan"):
                 load_resumable_evidence(output)
 
+    def test_resume_allows_relocated_clone_and_equivalent_branch(self) -> None:
+        plan = build_plan("mixed-dpi", "amd", None, 900, 60)
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "evidence"
+            session = EvidenceSession(output, "mixed-dpi", "amd", None, 900, 60, plan)
+            log_path = session.start_case(0)
+            log_path.write_text("topology unavailable\n", encoding="utf-8")
+            session.finish_case(0, 1, 0.2)
+            session.finish("failed")
+
+            session.manifest["source"]["repository"] = "D:\\relocated\\uix-app"
+            session.manifest["source"]["git_branch"] = "gfx-r5-retry"
+            session._write()
+
+            resumed, reconstructed = load_resumable_evidence(output)
+            self.assertEqual(resumed.output_dir, output.resolve())
+            self.assertEqual(reconstructed, plan)
+
     def test_resume_skips_passed_cases_and_appends_attempts(self) -> None:
         plan = build_plan("vendor", "nvidia", None, 900, 60)
         with TemporaryDirectory() as directory:
