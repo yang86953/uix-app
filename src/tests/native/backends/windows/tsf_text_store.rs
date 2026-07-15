@@ -4,8 +4,8 @@ use crate::native::traits::IWindowManager;
 use crate::tests::common::*;
 use windows::Win32::Foundation::{E_UNEXPECTED, HWND, RECT};
 use windows::Win32::UI::TextServices::{
-    ITextStoreACP, TS_AS_SEL_CHANGE, TS_AS_TEXT_CHANGE, TS_ATTRVAL, TS_LF_READ, TS_LF_READWRITE,
-    TS_LF_SYNC, TS_RUNINFO,
+    ITextStoreACP, TS_AE_END, TS_AS_SEL_CHANGE, TS_AS_TEXT_CHANGE, TS_ATTRVAL, TS_E_INVALIDPOS,
+    TS_LF_READ, TS_LF_READWRITE, TS_LF_SYNC, TS_RUNINFO, TS_SELECTIONSTYLE, TS_SELECTION_ACP,
 };
 
 fn test_event_sink() -> TsfEventSink {
@@ -21,16 +21,38 @@ fn test_state() -> TsfStoreState {
 }
 
 fn test_text_store() -> ITextStoreACP {
-    let (store, _) = TsfTextStore::create(test_event_sink());
-    store.to_interface()
+    test_text_store_with_state().0
+}
+
+fn test_text_store_with_state() -> (ITextStoreACP, TsfStoreHandle) {
+    let (store, state) = TsfTextStore::create(test_event_sink());
+    (store.to_interface(), state)
 }
 
 #[test]
 fn replace_range_updates_selection_and_buffer() {
     let mut state = test_state();
-    let change = state.replace_range(0, 0, &[b'z' as u16, b'h' as u16]);
+    let change = state
+        .replace_range(0, 0, &[b'z' as u16, b'h' as u16])
+        .expect("valid replacement range");
     assert_eq!(state.utf16_string(), "zh");
     assert_eq!(change.acpNewEnd, 2);
+    assert_eq!(state.sel_end, 2);
+}
+
+#[test]
+fn replace_range_rejects_invalid_acp_without_mutation() {
+    let mut state = test_state();
+    state
+        .replace_range(0, 0, &[b'z' as u16, b'h' as u16])
+        .expect("seed text");
+
+    let error = state
+        .replace_range(-1, 3, &[b'x' as u16])
+        .expect_err("range outside the document must fail");
+
+    assert_eq!(error.code(), TS_E_INVALIDPOS);
+    assert_eq!(state.utf16_string(), "zh");
     assert_eq!(state.sel_end, 2);
 }
 
@@ -154,6 +176,73 @@ fn com_store_rejects_null_required_pointers() {
     let error = unsafe { store.GetACPFromPoint(0, std::ptr::null(), 0) }
         .expect_err("point query requires an input point");
     assert_eq!(error.code(), windows::Win32::Foundation::E_INVALIDARG);
+}
+
+#[test]
+fn com_store_rejects_invalid_acp_ranges_without_clamping() {
+    let (store, state) = test_text_store_with_state();
+    {
+        let mut state = state.write().expect("seed store state");
+        state
+            .replace_range(0, 0, &[b'z' as u16, b'h' as u16])
+            .expect("seed text");
+        assert_eq!(
+            state.begin_lock(TS_LF_READWRITE.0),
+            TsfLockRequest::Grant(TsfLockKind::ReadWrite)
+        );
+    }
+
+    let mut result_start = 0;
+    let mut result_end = 0;
+    let error = unsafe { store.QueryInsert(-1, 0, 0, &mut result_start, &mut result_end) }
+        .expect_err("QueryInsert must reject an invalid start");
+    assert_eq!(error.code(), windows::Win32::Foundation::E_INVALIDARG);
+
+    let selection = TS_SELECTION_ACP {
+        acpStart: 0,
+        acpEnd: 3,
+        style: TS_SELECTIONSTYLE {
+            ase: TS_AE_END,
+            fInterimChar: false.into(),
+        },
+    };
+    let error = unsafe { store.SetSelection(&[selection]) }
+        .expect_err("SetSelection must reject an out-of-document end");
+    assert_eq!(error.code(), TS_E_INVALIDPOS);
+
+    let error = unsafe { store.SetText(0, 0, 3, &[]) }
+        .expect_err("SetText must reject an out-of-document end");
+    assert_eq!(error.code(), TS_E_INVALIDPOS);
+
+    let mut plain = [0u16; 2];
+    let mut copied = 0;
+    let mut runs: [TS_RUNINFO; 0] = [];
+    let mut run_count = 0;
+    let mut next = 0;
+    let error = unsafe {
+        store.GetText(
+            -1,
+            -1,
+            &mut plain,
+            &mut copied,
+            &mut runs,
+            &mut run_count,
+            &mut next,
+        )
+    }
+    .expect_err("GetText must reject an invalid start");
+    assert_eq!(error.code(), TS_E_INVALIDPOS);
+
+    let mut rect = RECT::default();
+    let mut clipped = false.into();
+    let error = unsafe { store.GetTextExt(0, 0, 3, &mut rect, &mut clipped) }
+        .expect_err("GetTextExt must reject an out-of-document end");
+    assert_eq!(error.code(), TS_E_INVALIDPOS);
+
+    let mut state = state.write().expect("inspect store state");
+    assert_eq!(state.utf16_string(), "zh");
+    assert_eq!(state.sel_end, 2);
+    assert_eq!(state.complete_lock(), None);
 }
 
 #[test]
