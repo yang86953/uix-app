@@ -56,6 +56,7 @@ pub use event::{
     ClickEvent, HandlerId, HandlerOptions, HandlerRegistration, HandlerTable, SemanticEvent,
     SemanticKind, SemanticPayload, SystemEvent, SystemEventKind,
 };
+pub use foundation::locale::{en_us, use_locale, with_locale, zh_cn, Locale, LocaleProvider};
 pub use foundation::state::{Computed, Effect, State, StateSlotId};
 pub use foundation::style::{
     ColorValue, PaletteColor, Style, StyleSet, StyleState, TypographyToken,

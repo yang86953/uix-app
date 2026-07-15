@@ -96,6 +96,7 @@ impl ViewAdapter {
 
     /// Expands a ViewNode recursively into a WidgetNode.
     pub(crate) fn expand(node: ViewNode) -> WidgetNode {
+        let provider_context = node.provider_context;
         let children: Vec<WidgetNode> = node.children.into_iter().map(Self::expand).collect();
 
         let widget = Self::apply_style(
@@ -131,7 +132,7 @@ impl ViewAdapter {
             wnode = wnode.with_render_handlers(node.render_handlers);
         }
 
-        wnode
+        wnode.with_provider_context(provider_context)
     }
 
     pub(crate) fn apply_style(
@@ -220,6 +221,7 @@ impl ViewAdapter {
         let ViewNode {
             widget,
             children,
+            provider_context,
             style,
             flex_grow_override,
             flex_shrink_override,
@@ -229,11 +231,17 @@ impl ViewAdapter {
             handlers,
             render_handlers,
         } = node;
+        let context_changed = tree
+            .get(id)
+            .is_none_or(|current| current.provider_context() != &provider_context);
+        if let Some(current) = tree.get_mut(id) {
+            current.set_provider_context(provider_context);
+        }
         let widget = Self::apply_style(widget, &style, flex_grow_override, flex_shrink_override);
         let widget_changed = Self::patch_widget(tree, id, widget);
 
-        let mut paint_changed = widget_changed;
-        let mut layout_changed = widget_changed;
+        let mut paint_changed = widget_changed || context_changed;
+        let mut layout_changed = widget_changed || context_changed;
         if let Some(current) = tree.get_mut(id) {
             let next_key = key.map(Into::into);
             if current.key() != next_key.as_deref() {

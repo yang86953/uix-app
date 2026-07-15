@@ -340,12 +340,15 @@ fn create_secondary_window(
     // 与主窗一致：首帧 present 成功后再 show，避免空窗白屏。
 
     let notifications = container.resolve_clone::<AppNotificationState>();
+    let locale = container.resolve_clone::<Locale>().unwrap_or_default();
     let wrapped_root = move || {
-        let root_node = root();
-        match notifications.clone() {
-            Some(state) => wrap_root_with_notification_overlay(root_node, state, window_id),
-            None => root_node,
-        }
+        with_locale(&locale, || {
+            let root_node = root();
+            match notifications.clone() {
+                Some(state) => wrap_root_with_notification_overlay(root_node, state, window_id),
+                None => root_node,
+            }
+        })
     };
     let mut session =
         WindowSession::from_root_factory_for_window(window_id, wrapped_root, engine, width, height);

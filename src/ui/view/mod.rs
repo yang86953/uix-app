@@ -6,6 +6,7 @@
 use crate::core::{EdgeInsets, Point, Rect};
 use crate::draw::Color;
 use crate::ui::event::{HandlerRegistration, SemanticEvent, SemanticKind};
+use crate::ui::foundation::provider_context::{current_provider_context, ProviderContext};
 use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::style::{BoxShadowDef, ColorValue, Style, TypographyToken};
 use crate::ui::traits::WidgetComponent;
@@ -32,6 +33,7 @@ pub trait View: 'static {
 pub struct ViewNode {
     pub(crate) widget: Box<dyn WidgetComponent>,
     pub(crate) children: Vec<ViewNode>,
+    pub(crate) provider_context: ProviderContext,
     pub(crate) style: Style,
     /// DSL 显式设置的 flex_grow（含 0.0）；与 Style::default 区分，避免被 apply 吞掉。
     pub(crate) flex_grow_override: Option<f32>,
@@ -59,6 +61,7 @@ impl ViewNode {
         Self {
             widget: Box::new(widget),
             children: vec![],
+            provider_context: current_provider_context(),
             style: Style::default(),
             flex_grow_override: None,
             flex_shrink_override: None,
@@ -74,6 +77,7 @@ impl ViewNode {
         Self {
             widget: Box::new(widget),
             children,
+            provider_context: current_provider_context(),
             style: Style::default(),
             flex_grow_override: None,
             flex_shrink_override: None,

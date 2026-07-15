@@ -1,7 +1,6 @@
 use crate::native::traits::input::ControlSize;
 use crate::ui::style::StyleSet;
 use crate::ui::theme::Theme;
-use std::cell::RefCell;
 
 /// 组件全局默认配置。
 #[derive(Clone)]
@@ -16,6 +15,19 @@ pub struct ComponentConfig {
     pub overrides: ComponentOverrides,
 }
 
+impl PartialEq for ComponentConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.size == other.size
+            && self.disabled == other.disabled
+            && self.overrides == other.overrides
+            && match (&self.theme, &other.theme) {
+                (Some(left), Some(right)) => left.is_same_provider(right),
+                (None, None) => true,
+                _ => false,
+            }
+    }
+}
+
 impl Default for ComponentConfig {
     fn default() -> Self {
         Self {
@@ -28,7 +40,7 @@ impl Default for ComponentConfig {
 }
 
 /// 组件级属性覆盖。
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq)]
 pub struct ComponentOverrides {
     pub button: ButtonOverrides,
     pub input: InputOverrides,
@@ -36,23 +48,23 @@ pub struct ComponentOverrides {
     pub form: FormOverrides,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq)]
 pub struct ButtonOverrides {
     pub style_set: Option<StyleSet>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq)]
 pub struct InputOverrides {
     pub prefix: Option<String>,
     pub suffix: Option<String>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq)]
 pub struct SelectOverrides {
     pub allow_search: Option<bool>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq)]
 pub struct FormOverrides {
     pub layout: Option<FormLayout>,
 }
@@ -65,25 +77,14 @@ pub enum FormLayout {
     Inline,
 }
 
-thread_local! {
-    static CONFIG_STACK: RefCell<Vec<ComponentConfig>> = const { RefCell::new(Vec::new()) };
-}
-
 /// 获取当前生效的组件配置。
 pub fn use_config() -> ComponentConfig {
-    CONFIG_STACK.with(|stack| stack.borrow().last().cloned().unwrap_or_default())
+    crate::ui::foundation::provider_context::current_provider_context().config
 }
 
 /// 在作用域内使用指定配置执行闭包。
 pub fn with_config<T>(config: &ComponentConfig, f: impl FnOnce() -> T) -> T {
-    CONFIG_STACK.with(|stack| {
-        stack.borrow_mut().push(config.clone());
-    });
-    let result = f();
-    CONFIG_STACK.with(|stack| {
-        stack.borrow_mut().pop();
-    });
-    result
+    crate::ui::foundation::provider_context::with_component_config(config, f)
 }
 
 use crate::component;

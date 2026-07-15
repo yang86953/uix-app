@@ -1,7 +1,5 @@
-use std::cell::RefCell;
-
 /// Locale — 组件文案国际化（全覆盖）。
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Locale {
     // ── General ──
     pub empty_data: &'static str,
@@ -232,63 +230,62 @@ impl Default for Locale {
     }
 }
 
-thread_local! {
-    static LOCALE_STACK: RefCell<Vec<Locale>> = const { RefCell::new(Vec::new()) };
-}
-
 /// 获取当前生效的语言配置。
 pub fn use_locale() -> Locale {
-    LOCALE_STACK.with(|stack| stack.borrow().last().cloned().unwrap_or_default())
+    crate::ui::foundation::provider_context::current_provider_context().locale
 }
 
 /// 在作用域内使用指定语言配置执行闭包。
 pub fn with_locale<T>(locale: &Locale, f: impl FnOnce() -> T) -> T {
-    LOCALE_STACK.with(|stack| stack.borrow_mut().push(locale.clone()));
-    let result = f();
-    LOCALE_STACK.with(|stack| {
-        stack.borrow_mut().pop();
-    });
-    result
+    crate::ui::foundation::provider_context::with_component_locale(locale, f)
 }
 
-use crate::component;
-use crate::core::{Constraints, Rect, Size};
-use crate::draw::painting::PaintContext;
-use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use crate::ui::view::{View, ViewNode};
 
-// LocaleProvider — 为子树注入国际化文案。
-component! {
-    pub struct LocaleProvider {
-        #[allow(dead_code)]
-        locale: Locale,
-    }
+#[doc(hidden)]
+pub struct MissingLocaleProviderChild;
 
-    measure => (&self, constraints: Constraints) -> Size {
-        constraints.clamp(Size::new(0.0, 0.0))
-    }
-
-    render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
-
-    on_event => (&mut self, _event: &SystemEvent) -> EventResult {
-        EventResult::NotHandled
-    }
+/// 为一个 View 子树注入国际化文案。
+pub struct LocaleProvider<F = MissingLocaleProviderChild> {
+    locale: Locale,
+    child: F,
 }
 
-impl LocaleProvider {
+impl LocaleProvider<MissingLocaleProviderChild> {
     pub fn new(locale: Locale) -> Self {
-        Self { locale }
-    }
-    pub fn zh_cn() -> Self {
-        Self { locale: zh_cn() }
-    }
-    pub fn en_us() -> Self {
-        Self { locale: en_us() }
+        Self {
+            locale,
+            child: MissingLocaleProviderChild,
+        }
     }
 
-    pub fn wrap(
-        self,
-        node: crate::ui::core::widget::WidgetNode,
-    ) -> crate::ui::core::widget::WidgetNode {
-        crate::ui::core::widget::WidgetNode::new(Box::new(self), vec![node])
+    pub fn zh_cn() -> Self {
+        Self::new(zh_cn())
+    }
+
+    pub fn en_us() -> Self {
+        Self::new(en_us())
+    }
+}
+
+impl<F> LocaleProvider<F> {
+    pub fn child<G, V>(self, child: G) -> LocaleProvider<impl FnOnce() -> ViewNode>
+    where
+        G: FnOnce() -> V + 'static,
+        V: View,
+    {
+        LocaleProvider {
+            locale: self.locale,
+            child: move || child().build(),
+        }
+    }
+}
+
+impl<F> View for LocaleProvider<F>
+where
+    F: FnOnce() -> ViewNode + 'static,
+{
+    fn build(self) -> ViewNode {
+        with_locale(&self.locale, self.child)
     }
 }

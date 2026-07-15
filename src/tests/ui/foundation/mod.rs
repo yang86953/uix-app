@@ -2,6 +2,7 @@
 
 mod clipboard;
 mod focus_trap;
+mod locale;
 mod state;
 mod style;
 mod virtual_scroll;

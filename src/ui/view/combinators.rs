@@ -119,16 +119,20 @@ fn adopt_widget_node(node: WidgetNode) -> ViewNode {
     // Materialize component-owned children into the declarative View tree.
     // Otherwise the initial WidgetTree build expands them, but a later View
     // reconcile sees an empty child list and removes the live subtree.
-    let mut children: Vec<WidgetNode> = node
-        .widget
-        .build()
-        .into_iter()
-        .map(WidgetNode::leaf)
-        .collect();
+    let provider_context = node.provider_context.clone();
+    let mut children: Vec<WidgetNode> =
+        crate::ui::foundation::provider_context::with_provider_context(&provider_context, || {
+            node.widget
+                .build()
+                .into_iter()
+                .map(WidgetNode::leaf)
+                .collect()
+        });
     children.extend(node.children);
     ViewNode {
         widget: node.widget,
         children: children.into_iter().map(adopt_widget_node).collect(),
+        provider_context,
         style: Style::default(),
         flex_grow_override: None,
         flex_shrink_override: None,

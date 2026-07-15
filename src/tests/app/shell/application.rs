@@ -274,6 +274,18 @@ fn app_builder_sets_follow_system_theme() {
 }
 
 #[test]
+fn app_builder_registers_global_locale() {
+    let app = App::new().locale(crate::ui::en_us());
+
+    assert_eq!(
+        app.container()
+            .resolve::<crate::ui::Locale>()
+            .map(|locale| locale.ok_text),
+        Some("OK")
+    );
+}
+
+#[test]
 fn app_builder_sets_graphics_backend() {
     let app = App::new().graphics_backend(GraphicsBackend::Vulkan);
 
