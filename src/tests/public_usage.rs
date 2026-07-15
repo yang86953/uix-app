@@ -276,3 +276,62 @@ fn documented_test_app_scroll_moves_content_through_the_viewport() {
         .expect("bottom row")
         .is_visible());
 }
+
+#[cfg(feature = "test-harness")]
+#[test]
+fn documented_test_app_keyboard_and_resize_update_the_snapshot() {
+    let mut app = TestApp::new((240.0, 160.0), || {
+        column((
+            button("First").automation_id("focus.first"),
+            button("Second").automation_id("focus.second"),
+        ))
+        .automation_id("layout.root")
+    });
+
+    let before = app.snapshot();
+    assert_eq!(
+        before.find("layout.root").expect("root layout").frame,
+        Rect::new(0.0, 0.0, 240.0, 160.0)
+    );
+
+    app.press_key(KeyCode::Tab, KeyMod::NONE)
+        .expect("focus first button");
+    let first_focus = app.snapshot();
+    assert!(
+        first_focus
+            .find("focus.first")
+            .expect("first button")
+            .focused
+    );
+    assert!(
+        !first_focus
+            .find("focus.second")
+            .expect("second button")
+            .focused
+    );
+
+    app.press_key(KeyCode::Tab, KeyMod::NONE)
+        .expect("focus second button");
+    let second_focus = app.snapshot();
+    assert!(
+        !second_focus
+            .find("focus.first")
+            .expect("first button")
+            .focused
+    );
+    assert!(
+        second_focus
+            .find("focus.second")
+            .expect("second button")
+            .focused
+    );
+
+    app.resize(360.0, 220.0).expect("resize viewport");
+    assert_eq!(
+        app.snapshot()
+            .find("layout.root")
+            .expect("resized root layout")
+            .frame,
+        Rect::new(0.0, 0.0, 360.0, 220.0)
+    );
+}
