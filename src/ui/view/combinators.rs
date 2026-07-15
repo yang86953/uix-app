@@ -290,6 +290,7 @@ pub fn scroll(child: impl View) -> ScrollBuilder {
         fixed_size: None,
         flex_grow: 1.0,
         show_scrollbar: true,
+        scroll_offset: None,
     }
 }
 
@@ -299,6 +300,7 @@ pub struct ScrollBuilder {
     fixed_size: Option<(f32, f32)>,
     flex_grow: f32,
     show_scrollbar: bool,
+    scroll_offset: Option<State<crate::core::Point>>,
 }
 
 impl ScrollBuilder {
@@ -331,6 +333,12 @@ impl ScrollBuilder {
         self.show_scrollbar = value;
         self
     }
+
+    /// 将视口运行态偏移双向绑定到应用 State。
+    pub fn scroll_offset(mut self, state: &State<crate::core::Point>) -> Self {
+        self.scroll_offset = Some(state.clone());
+        self
+    }
 }
 
 impl View for ScrollBuilder {
@@ -340,6 +348,9 @@ impl View for ScrollBuilder {
             .show_scrollbar(self.show_scrollbar);
         if let Some((w, h)) = self.fixed_size {
             widget = widget.size(w, h);
+        }
+        if let Some(offset) = self.scroll_offset.as_ref() {
+            widget = widget.scroll_offset(offset);
         }
         ViewNode::new(widget, vec![self.child])
     }

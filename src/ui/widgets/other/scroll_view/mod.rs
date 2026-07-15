@@ -9,10 +9,11 @@ use std::cell::Cell;
 
 use self::scrollbar::{ScrollBar, ScrollbarOrientation};
 use crate::component;
-use crate::core::{Constraints, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::{PaintContext, PaintPass};
 use crate::ui::children::WidgetChildren;
 use crate::ui::layout::engine::{child_from_tree_with_constraints, LayoutChild};
+use crate::ui::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, SnapshotFields, SystemEvent, WidgetComponent, WidgetTree,
 };
@@ -25,6 +26,7 @@ component! {
         pub(crate) children: WidgetChildren,
         pub scroll_x: f32,
         pub scroll_y: f32,
+        scroll_binding: Option<State<Point>>,
         direction: ScrollDirection,
         fixed_width: Option<f32>,
         fixed_height: Option<f32>,
@@ -119,6 +121,7 @@ component! {
                             .scrollbar_v
                             .scroll_from_drag(frame, pos.y, self.scroll_y, max_y);
                         self.scroll_delta_strip.set((0.0, self.scroll_y - old_y));
+                        self.write_bound_offset();
                     }
                     return EventResult::Handled;
                 }
@@ -135,6 +138,7 @@ component! {
                             .scrollbar_h
                             .scroll_from_drag(frame, pos.x, self.scroll_x, max_x);
                         self.scroll_delta_strip.set((self.scroll_x - old_x, 0.0));
+                        self.write_bound_offset();
                     }
                     return EventResult::Handled;
                 }
@@ -243,6 +247,7 @@ component! {
 
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        self.capture_bound_offset_dependency();
         self.last_frame.set(Some(frame));
 
         match ctx.paint_pass() {
@@ -458,6 +463,7 @@ impl ScrollView {
             children: WidgetChildren::new(),
             scroll_x: 0.0,
             scroll_y: 0.0,
+            scroll_binding: None,
             direction,
             fixed_width: None,
             fixed_height: None,
@@ -504,8 +510,18 @@ impl ScrollView {
     }
 
     pub fn scroll_to(mut self, x: f32, y: f32) -> Self {
-        self.scroll_x = x.max(0.0);
-        self.scroll_y = y.max(0.0);
+        self.scroll_binding = None;
+        self.scroll_x = Self::normalize_axis(x);
+        self.scroll_y = Self::normalize_axis(y);
+        self
+    }
+
+    /// 将运行态滚动位置双向绑定到应用 State。
+    pub fn scroll_offset(mut self, state: &State<Point>) -> Self {
+        let offset = state.get();
+        self.scroll_x = Self::normalize_axis(offset.x);
+        self.scroll_y = Self::normalize_axis(offset.y);
+        self.scroll_binding = Some(state.clone());
         self
     }
 
@@ -517,10 +533,17 @@ impl ScrollView {
             flex_grow: self.flex_grow_val,
             flex_shrink: self.flex_shrink_val,
             show_scrollbar: self.scrollbar_v.show || self.scrollbar_h.show,
+            scroll_x: self.scroll_x,
+            scroll_y: self.scroll_y,
         }
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let controlled_offset = next
+            .scroll_binding
+            .as_ref()
+            .map(|_| (next.scroll_x, next.scroll_y));
+        self.scroll_binding = next.scroll_binding;
         self.direction = next.direction;
         self.fixed_width = next.fixed_width;
         self.fixed_height = next.fixed_height;
@@ -528,6 +551,10 @@ impl ScrollView {
         self.flex_shrink_val = next.flex_shrink_val;
         self.scrollbar_v.show = next.scrollbar_v.show;
         self.scrollbar_h.show = next.scrollbar_h.show;
+        if let Some((scroll_x, scroll_y)) = controlled_offset {
+            self.scroll_x = self.clamp_bound_axis(scroll_x, true);
+            self.scroll_y = self.clamp_bound_axis(scroll_y, false);
+        }
     }
 
     pub fn scroll_x(&self) -> f32 {
@@ -540,22 +567,25 @@ impl ScrollView {
 
     pub fn set_scroll_x(&mut self, x: f32) {
         let old_x = self.scroll_x;
-        self.scroll_x = x.max(0.0);
+        self.scroll_x = Self::normalize_axis(x);
         self.push_scroll_delta(self.scroll_x - old_x, 0.0);
+        self.write_bound_offset();
     }
 
     pub fn set_scroll_y(&mut self, y: f32) {
         let old_y = self.scroll_y;
-        self.scroll_y = y.max(0.0);
+        self.scroll_y = Self::normalize_axis(y);
         self.push_scroll_delta(0.0, self.scroll_y - old_y);
+        self.write_bound_offset();
     }
 
     pub fn scroll_to_xy(&mut self, x: f32, y: f32) {
         let old_x = self.scroll_x;
         let old_y = self.scroll_y;
-        self.scroll_x = x.max(0.0).min(self.max_scroll_x());
-        self.scroll_y = y.max(0.0).min(self.max_scroll_y());
+        self.scroll_x = Self::normalize_axis(x).min(self.max_scroll_x());
+        self.scroll_y = Self::normalize_axis(y).min(self.max_scroll_y());
         self.push_scroll_delta(self.scroll_x - old_x, self.scroll_y - old_y);
+        self.write_bound_offset();
     }
 
     pub fn max_scroll_x(&self) -> f32 {
@@ -603,7 +633,47 @@ impl ScrollView {
         let actual_dx = self.scroll_x - old_x;
         let actual_dy = self.scroll_y - old_y;
         self.push_scroll_delta(actual_dx, actual_dy);
+        if actual_dx.abs() > 0.01 || actual_dy.abs() > 0.01 {
+            self.write_bound_offset();
+        }
         actual_dx.abs() > 0.01 || actual_dy.abs() > 0.01
+    }
+
+    fn write_bound_offset(&self) {
+        let Some(state) = self.scroll_binding.as_ref() else {
+            return;
+        };
+        let offset = Point::new(self.scroll_x, self.scroll_y);
+        if state.get() != offset {
+            state.set(offset);
+        }
+    }
+
+    fn capture_bound_offset_dependency(&self) {
+        if let Some(state) = self.scroll_binding.as_ref() {
+            let _ = state.get();
+        }
+    }
+
+    fn clamp_bound_axis(&self, value: f32, horizontal: bool) -> f32 {
+        let value = Self::normalize_axis(value);
+        if self.content_bounds.get().is_some() {
+            value.min(if horizontal {
+                self.max_scroll_x()
+            } else {
+                self.max_scroll_y()
+            })
+        } else {
+            value
+        }
+    }
+
+    fn normalize_axis(value: f32) -> f32 {
+        if value.is_finite() {
+            value.max(0.0)
+        } else {
+            0.0
+        }
     }
 }
 

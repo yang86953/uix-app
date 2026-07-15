@@ -529,6 +529,8 @@ pub enum SnapshotFields {
         flex_grow: f32,
         flex_shrink: f32,
         show_scrollbar: bool,
+        scroll_x: f32,
+        scroll_y: f32,
     },
     BarChart {
         data: Vec<BarData>,
