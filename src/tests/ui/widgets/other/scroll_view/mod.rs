@@ -106,6 +106,58 @@ fn scrollview_set_scroll_programmatically() {
 }
 
 #[test]
+fn scrollview_controlled_offset_updates_state_and_accepts_external_changes() {
+    let offset = crate::ui::state::State::new(Point::new(0.0, 40.0));
+    let mut scroll = ScrollView::new(ScrollDirection::Vertical)
+        .size(300.0, 200.0)
+        .scroll_offset(&offset);
+    scroll.content_bounds.set(Some(Size::new(300.0, 600.0)));
+    scroll
+        .last_frame
+        .set(Some(Rect::new(0.0, 0.0, 300.0, 200.0)));
+
+    assert_eq!(scroll.scroll_y(), 40.0);
+    assert_eq!(
+        scroll.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::End,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(offset.get(), Point::new(0.0, 400.0));
+
+    offset.set(Point::new(0.0, 0.0));
+    scroll.sync_from(
+        ScrollView::new(ScrollDirection::Vertical)
+            .size(300.0, 200.0)
+            .scroll_offset(&offset),
+    );
+    assert_eq!(scroll.scroll_y(), 0.0);
+    assert_eq!(
+        scroll.snapshot_fields(),
+        SnapshotFields::ScrollView {
+            direction: ScrollDirection::Vertical,
+            fixed_width: Some(300.0),
+            fixed_height: Some(200.0),
+            flex_grow: 0.0,
+            flex_shrink: 1.0,
+            show_scrollbar: true,
+            scroll_x: 0.0,
+            scroll_y: 0.0,
+        }
+    );
+}
+
+#[test]
+fn scrollview_controlled_offset_normalizes_non_finite_values() {
+    let offset = crate::ui::state::State::new(Point::new(f32::NAN, f32::INFINITY));
+    let scroll = ScrollView::new(ScrollDirection::Both).scroll_offset(&offset);
+
+    assert_eq!(scroll.scroll_x(), 0.0);
+    assert_eq!(scroll.scroll_y(), 0.0);
+}
+
+#[test]
 fn scrollview_programmatic_scroll_records_composite_delta() {
     let mut sv = ScrollView::new(ScrollDirection::Both);
     sv.set_scroll_x(50.0);

@@ -29,10 +29,19 @@ fn grid_combinator_builds_grid_node() {
 
 #[test]
 fn scroll_combinator_builds_scroll_view_node() {
-    let node = scroll(column([label("A")])).horizontal().build();
+    let offset = crate::ui::state::State::new(Point::new(12.0, 0.0));
+    let node = scroll(column([label("A")]))
+        .horizontal()
+        .scroll_offset(&offset)
+        .build();
 
     assert_eq!(node.children.len(), 1);
-    assert!(node.widget.as_any().downcast_ref::<ScrollView>().is_some());
+    let scroll = node
+        .widget
+        .as_any()
+        .downcast_ref::<ScrollView>()
+        .expect("scroll view");
+    assert_eq!(scroll.scroll_x(), 12.0);
 }
 
 #[test]
