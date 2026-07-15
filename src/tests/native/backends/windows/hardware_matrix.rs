@@ -6,7 +6,7 @@ use crate::native::backends::windows::dpi::{dpi_for_window, logical_extent_to_ph
 use crate::native::backends::windows::platform::WindowsPlatform;
 use crate::native::graphics::platform::windows::drawable_size;
 use crate::native::shared::OsEventSource;
-use crate::native::traits::{IWindowManager, PlatformWindow};
+use crate::native::traits::{IWindowManager, PlatformWindow, UiEventPayload, UiEventType};
 use windows::core::BOOL;
 use windows::Win32::Foundation::{LPARAM, RECT};
 use windows::Win32::Graphics::Gdi::{EnumDisplayMonitors, HDC, HMONITOR};
@@ -109,6 +109,33 @@ struct GfxR5MonitorTopology {
     monitors: Vec<MonitorDpiSample>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DpiTransitionEvidence {
+    observed_dpi: u32,
+    logical_resize: Option<(i32, i32)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DpiTransitionTimeout {
+    expected_dpi: u32,
+    observed_dpi: u32,
+    expected_logical_resize: Option<(i32, i32)>,
+    observed_logical_resize: Option<(i32, i32)>,
+}
+
+impl fmt::Display for DpiTransitionTimeout {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "DPI transition timed out: expected_dpi={}, observed_dpi={}, expected_logical_resize={:?}, observed_logical_resize={:?}",
+            self.expected_dpi,
+            self.observed_dpi,
+            self.expected_logical_resize,
+            self.observed_logical_resize
+        )
+    }
+}
+
 impl GfxR5MonitorTopology {
     fn new(monitors: Vec<MonitorDpiSample>) -> Self {
         Self { monitors }
@@ -143,14 +170,18 @@ impl GfxR5MonitorTopology {
         Ok(())
     }
 
-    fn mixed_pair(&self) -> Option<(MonitorDpiSample, MonitorDpiSample)> {
-        self.monitors.iter().copied().find_map(|first| {
-            self.monitors
-                .iter()
-                .copied()
-                .find(|second| (first.dpi_x, first.dpi_y) != (second.dpi_x, second.dpi_y))
-                .map(|second| (first, second))
-        })
+    fn transition_pair(&self) -> Option<(MonitorDpiSample, MonitorDpiSample)> {
+        let lower = self
+            .monitors
+            .iter()
+            .copied()
+            .min_by_key(|monitor| (monitor.dpi_x, monitor.dpi_y))?;
+        let upper = self
+            .monitors
+            .iter()
+            .copied()
+            .max_by_key(|monitor| (monitor.dpi_x, monitor.dpi_y))?;
+        ((lower.dpi_x, lower.dpi_y) != (upper.dpi_x, upper.dpi_y)).then_some((lower, upper))
     }
 
     fn diagnostic_summary(&self) -> String {
@@ -228,16 +259,40 @@ fn wait_for_window_dpi(
     platform: &mut WindowsPlatform,
     window: &dyn PlatformWindow,
     expected_dpi: u32,
-) -> bool {
+    expected_logical_resize: Option<(i32, i32)>,
+) -> Result<DpiTransitionEvidence, DpiTransitionTimeout> {
     let deadline = Instant::now() + Duration::from_secs(2);
+    let mut observed_dpi = dpi_for_window(window.native_handle().native_window());
+    let mut observed_logical_resize = None;
     while Instant::now() < deadline {
         let _ = platform.dispatch_timeout(Duration::from_millis(10));
-        while platform.next_event().is_some() {}
-        if dpi_for_window(window.native_handle().native_window()) == expected_dpi {
-            return true;
+        while let Some(event) = platform.next_event() {
+            if event.window_id != Some(window.window_id())
+                || event.type_ != UiEventType::WindowResize
+            {
+                continue;
+            }
+            let UiEventPayload::Resize(resize) = event.payload else {
+                continue;
+            };
+            observed_logical_resize = Some((resize.width, resize.height));
+        }
+        observed_dpi = dpi_for_window(window.native_handle().native_window());
+        let resize_matches = expected_logical_resize
+            .is_none_or(|expected| observed_logical_resize == Some(expected));
+        if observed_dpi == expected_dpi && resize_matches {
+            return Ok(DpiTransitionEvidence {
+                observed_dpi,
+                logical_resize: observed_logical_resize,
+            });
         }
     }
-    false
+    Err(DpiTransitionTimeout {
+        expected_dpi,
+        observed_dpi,
+        expected_logical_resize,
+        observed_logical_resize,
+    })
 }
 
 fn sample(dpi: u32, left: i32) -> MonitorDpiSample {
@@ -284,6 +339,22 @@ fn gfx_r5_topology_accepts_scaled_mixed_dpi() {
 }
 
 #[test]
+fn gfx_r5_transition_pair_uses_the_widest_available_dpi_span() {
+    let topology = GfxR5MonitorTopology::new(vec![
+        sample(144, 1920),
+        sample(120, 3840),
+        sample(BASE_DPI, 0),
+    ]);
+
+    let (lower, upper) = topology
+        .transition_pair()
+        .expect("mixed topology must have a transition pair");
+
+    assert_eq!((lower.dpi_x, lower.dpi_y), (BASE_DPI, BASE_DPI));
+    assert_eq!((upper.dpi_x, upper.dpi_y), (144, 144));
+}
+
+#[test]
 fn windows_monitor_inventory_reports_valid_samples() {
     let topology = enumerate_monitor_topology().expect("enumerate Win32 monitor topology");
     assert!(!topology.monitors.is_empty());
@@ -302,7 +373,9 @@ fn windows_gfx_r5_window_crosses_real_mixed_dpi_monitors() {
     topology
         .validate()
         .unwrap_or_else(|gap| panic!("{gap}; topology={}", topology.diagnostic_summary()));
-    let (first, second) = topology.mixed_pair().expect("validated mixed-DPI pair");
+    let (first, second) = topology
+        .transition_pair()
+        .expect("validated mixed-DPI pair");
 
     let logical_size = (321, 219);
     let mut platform = WindowsPlatform::new();
@@ -315,18 +388,17 @@ fn windows_gfx_r5_window_crosses_real_mixed_dpi_monitors() {
         .expect("native window");
     window.show().expect("show native window");
 
-    for monitor in [first, second, first] {
+    let place_on_monitor = |platform: &mut WindowsPlatform,
+                            window: &mut dyn PlatformWindow,
+                            monitor: MonitorDpiSample,
+                            expected_resize: Option<(i32, i32)>| {
         let (x, y) = monitor.bounds.centered_origin();
         window
             .properties_mut()
             .set_position(x, y)
             .expect("move window to target monitor");
-        assert!(
-            wait_for_window_dpi(&mut platform, window.as_ref(), monitor.dpi_x),
-            "window did not adopt target DPI {}; topology={}",
-            monitor.dpi_x,
-            topology.diagnostic_summary()
-        );
+        let evidence = wait_for_window_dpi(platform, window, monitor.dpi_x, expected_resize)
+            .unwrap_or_else(|error| panic!("{error}; topology={}", topology.diagnostic_summary()));
 
         assert_eq!(
             (window.properties().width(), window.properties().height()),
@@ -349,11 +421,16 @@ fn windows_gfx_r5_window_crosses_real_mixed_dpi_monitors() {
                 logical_extent_to_physical(logical_size.1, monitor.dpi_y),
             )
         );
-    }
+        evidence
+    };
+
+    let initial = place_on_monitor(&mut platform, window.as_mut(), first, None);
+    let forward = place_on_monitor(&mut platform, window.as_mut(), second, Some(logical_size));
+    let return_trip = place_on_monitor(&mut platform, window.as_mut(), first, Some(logical_size));
 
     println!(
-        "GFX-R5 mixed-DPI topology: {}",
-        topology.diagnostic_summary()
+        "GFX-R5 mixed-DPI topology: {}; initial={initial:?}; forward={forward:?}; return={return_trip:?}",
+        topology.diagnostic_summary(),
     );
     window.close().expect("close native window");
 }
