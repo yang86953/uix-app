@@ -8,6 +8,7 @@ use crate::ui::widgets::*;
 use crate::ui::window_chrome::WindowControl;
 use crate::ui::Placement;
 
+use super::accessibility::{calendar_accessibility, carousel_accessibility, first_non_empty};
 use super::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotCollapsePanel,
     SnapshotField, SnapshotTableColumn, SnapshotTableColumnGroup, SnapshotTransferItem,
@@ -195,6 +196,10 @@ pub enum SnapshotFields {
     Calendar {
         cell_size: f32,
         year_jump: bool,
+        year: i32,
+        month: usize,
+        selected: Option<Date>,
+        focused_day: usize,
     },
     Skeleton {
         shape: SkeletonShape,
@@ -804,6 +809,13 @@ impl SnapshotFields {
                     value_text: (!selected_key.is_empty()).then(|| selected_key.clone()),
                     ..AccessibilityState::default()
                 }),
+            Self::Calendar {
+                year,
+                month,
+                selected,
+                focused_day,
+                ..
+            } => calendar_accessibility(*year, *month, *selected, *focused_day),
             Self::Collapse {
                 panels,
                 focused_header,
@@ -821,16 +833,7 @@ impl SnapshotFields {
                 current,
                 slide_count,
                 ..
-            } => AccessibilitySnapshot::new(AccessibilityRole::Group).with_state(
-                AccessibilityState {
-                    value_text: (*slide_count > 0)
-                        .then(|| format!("Slide {} of {slide_count}", current + 1)),
-                    value_now: (*slide_count > 0).then_some((*current + 1) as f64),
-                    value_min: (*slide_count > 0).then_some(1.0),
-                    value_max: (*slide_count > 0).then_some(*slide_count as f64),
-                    ..AccessibilityState::default()
-                },
-            ),
+            } => carousel_accessibility(*current, *slide_count),
             Self::TreeSelect {
                 placeholder,
                 value,
@@ -985,12 +988,4 @@ impl SnapshotFields {
             _ => AccessibilitySnapshot::new(AccessibilityRole::Generic),
         }
     }
-}
-
-fn first_non_empty<const N: usize>(values: [&str; N]) -> String {
-    values
-        .into_iter()
-        .find(|value| !value.is_empty())
-        .unwrap_or_default()
-        .to_string()
 }

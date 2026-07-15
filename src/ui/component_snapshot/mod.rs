@@ -4,6 +4,7 @@ use std::fmt;
 use crate::core::ComponentId;
 use crate::ui::widgets::{Fixed, SortDirection, TableColumn, TransferItem, TreeNode};
 
+mod accessibility;
 mod fields;
 mod selection;
 mod source;
