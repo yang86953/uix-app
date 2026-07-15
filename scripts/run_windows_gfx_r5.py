@@ -27,6 +27,7 @@ MIN_SOAK_SECONDS = 900
 MAX_SOAK_SECONDS = 3_600
 MIN_DEVICE_LOST_TIMEOUT = 5
 MAX_DEVICE_LOST_TIMEOUT = 600
+EVIDENCE_VALIDATION_EXIT_CODE = 3
 
 VENDOR_CASES = (
     (
@@ -151,7 +152,7 @@ class EvidenceSession:
             raise ValueError(f"evidence output already exists: {output_dir}")
         self.logs_dir.mkdir(parents=True)
         self.manifest = {
-            "schema_version": 1,
+            "schema_version": 2,
             "status": "running",
             "started_at": utc_now(),
             "completed_at": None,
@@ -178,6 +179,7 @@ class EvidenceSession:
             "completed_at": None,
             "duration_seconds": None,
             "exit_code": None,
+            "evidence_error": None,
             "environment": dict(case.environment),
             "command": list(case.command()),
             "log": f"logs/{index:02d}-{case.name}.log",
@@ -190,12 +192,21 @@ class EvidenceSession:
         self._write()
         return self.output_dir / case["log"]
 
-    def finish_case(self, index: int, exit_code: int, duration: float) -> None:
+    def finish_case(
+        self,
+        index: int,
+        exit_code: int,
+        duration: float,
+        evidence_error: str | None = None,
+    ) -> None:
         case = self.manifest["cases"][index]
-        case["status"] = "passed" if exit_code == 0 else "failed"
+        case["status"] = (
+            "passed" if exit_code == 0 and evidence_error is None else "failed"
+        )
         case["completed_at"] = utc_now()
         case["duration_seconds"] = round(duration, 3)
         case["exit_code"] = exit_code
+        case["evidence_error"] = evidence_error
         self._write()
 
     def finish(self, status: str) -> None:
@@ -336,6 +347,22 @@ def normalize_log_ending(path: Path) -> None:
     path.write_text(content.rstrip() + "\n", encoding="utf-8", newline="\n")
 
 
+def require_case_success(case: GfxR5Case, log_path: Path) -> None:
+    content = log_path.read_text(encoding="utf-8")
+    required = (
+        "running 1 test",
+        f"\ntest {case.test_name} ...",
+        "test result: ok. 1 passed; 0 failed;",
+    )
+    missing = [marker for marker in required if marker not in content]
+    if missing:
+        details = ", ".join(repr(marker) for marker in missing)
+        raise ValueError(
+            f"cargo exited successfully but {case.name!r} lacks exact one-test "
+            f"success evidence: {details}"
+        )
+
+
 def run_case(case: GfxR5Case, log_path: Path) -> tuple[int, float]:
     inherited = os.environ.copy()
     inherited.update(case.environment)
@@ -380,15 +407,25 @@ def run_plan(
         print(f"[{index}/{len(plan)}] {format_case(case)}", flush=True)
         log_path = evidence.start_case(index - 1)
         exit_code, duration = run_case(case, log_path)
-        evidence.finish_case(index - 1, exit_code, duration)
-        if exit_code != 0:
+        evidence_error = None
+        if exit_code == 0:
+            try:
+                require_case_success(case, log_path)
+            except ValueError as error:
+                evidence_error = str(error)
+        evidence.finish_case(index - 1, exit_code, duration, evidence_error)
+        if exit_code != 0 or evidence_error is not None:
+            runner_exit_code = (
+                exit_code if exit_code != 0 else EVIDENCE_VALIDATION_EXIT_CODE
+            )
             print(
-                f"error: GFX-R5 case {case.name!r} failed with exit code "
-                f"{exit_code}; evidence={evidence.output_dir}",
+                f"error: GFX-R5 case {case.name!r} failed; "
+                f"cargo_exit_code={exit_code}; evidence_error={evidence_error!r}; "
+                f"evidence={evidence.output_dir}",
                 file=sys.stderr,
             )
             evidence.finish("failed")
-            return exit_code
+            return runner_exit_code
     evidence.finish("passed")
     return 0
 
