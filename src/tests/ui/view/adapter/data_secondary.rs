@@ -475,15 +475,19 @@ fn reconcile_affix_preserves_position_state_and_syncs_offset() {
         .downcast_ref::<Affix>()
         .unwrap();
     assert_eq!(affix as *const Affix, before_ptr);
-    assert!(affix.is_affixed());
-    assert_eq!(affix.child_y(), 40.0);
+    assert!(!affix.is_affixed());
+    assert_eq!(affix.child_y(), 76.0);
     assert_eq!(
         affix.measure(crate::core::Constraints::loose(Size::new(120.0, 80.0))),
         Size::new(0.0, 36.0)
     );
     assert_eq!(
         affix.snapshot_fields(),
-        SnapshotFields::Affix { offset_top: 40.0 }
+        SnapshotFields::Affix {
+            offset_top: 40.0,
+            scroll_y: 24.0,
+            affixed: false,
+        }
     );
 }
 

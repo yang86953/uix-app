@@ -219,6 +219,7 @@ macro_rules! __component_upcast_method {
     (grid_column_span; $T:ty) => {};
     (grid_row_span; $T:ty) => {};
     (layout_margin; $T:ty) => {};
+    (child_overflow_expands_parent; $T:ty) => {};
     (measure_children; $T:ty) => {};
     (layout_children; $T:ty) => {};
     (render; $T:ty) => { $crate::wc_upcast!($T; WidgetRender); };
@@ -308,7 +309,7 @@ macro_rules! component {
                 let mut c = $crate::ui::traits::WidgetCapabilities::new();
                 $(
                     match stringify!($method) {
-                        "measure" | "flex_grow" | "flex_shrink" | "align_self" | "grid_cell" | "grid_column_span" | "grid_row_span" | "layout_margin" | "measure_children" | "layout_children" | "build" =>
+                        "measure" | "flex_grow" | "flex_shrink" | "align_self" | "grid_cell" | "grid_column_span" | "grid_row_span" | "layout_margin" | "child_overflow_expands_parent" | "measure_children" | "layout_children" | "build" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::LAYOUT),
                         "render" | "uses_palette" | "dirty_rect" | "children_clip" | "overlay_entry" | "draw_margin" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::RENDER),
@@ -342,7 +343,7 @@ macro_rules! component {
         $crate::__component_grouped_impl! {
             WidgetLayout,
             $name,
-            [measure flex_grow flex_shrink align_self grid_cell grid_column_span grid_row_span layout_margin measure_children layout_children],
+            [measure flex_grow flex_shrink align_self grid_cell grid_column_span grid_row_span layout_margin child_overflow_expands_parent measure_children layout_children],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -565,6 +566,9 @@ macro_rules! __component_method_builder {
     (layout_margin; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn layout_margin($($p)*) -> $ret $body
     };
+    (child_overflow_expands_parent; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn child_overflow_expands_parent($($p)*) -> $ret $body
+    };
     (measure_children; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn measure_children($($p)*) -> $ret $body
     };
@@ -699,6 +703,9 @@ macro_rules! __match_trait_method {
     };
     (WidgetLayout, layout_margin, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn layout_margin($($p)*) -> $ret $body
+    };
+    (WidgetLayout, child_overflow_expands_parent, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn child_overflow_expands_parent($($p)*) -> $ret $body
     };
     (WidgetLayout, measure_children, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn measure_children($($p)*) -> $ret $body
