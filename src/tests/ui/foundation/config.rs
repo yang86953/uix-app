@@ -1,6 +1,24 @@
+use crate::draw::engine::cpu::canvas_2d::CpuCanvas2D;
+use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
 use crate::ui::view::{column, embed, ViewAdapter};
-use crate::ui::{ComponentOverrides, ConfigProvider, Input, SnapshotFields};
+use crate::ui::{ComponentOverrides, ConfigProvider, Input, SnapshotFields, TokenPatch};
+
+crate::component! {
+    struct TokenRenderProbe {
+        #[snapshot(skip)]
+        observed: Arc<Mutex<(Color, Color)>>,
+    }
+
+    render => (&self, _frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        *self
+            .observed
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+            (ctx.tokens().color_primary(), ctx.tokens().color_bg_container());
+    }
+}
 
 #[test]
 fn config_provider_inherits_outer_values_and_overrides_nearest_size() {
@@ -64,4 +82,57 @@ fn config_provider_applies_component_constructor_overrides() {
             ..
         } if prefix == "¥" && suffix == "CNY"
     ));
+}
+
+#[test]
+fn component_token_patch_merges_with_subtree_theme_during_render() {
+    let observed = Arc::new(Mutex::new((Color::transparent(), Color::transparent())));
+    let probe_observed = observed.clone();
+    let patched_primary = Color::rgba(12, 34, 56, 255);
+    let dark = DesignTokens::antd_dark();
+    let tree = ViewAdapter::build(
+        ConfigProvider::new()
+            .theme(Theme::new(dark.clone()))
+            .component_tokens::<TokenRenderProbe>(TokenPatch {
+                color_primary: Some(patched_primary),
+                ..TokenPatch::default()
+            })
+            .child(move || {
+                embed(TokenRenderProbe {
+                    observed: probe_observed,
+                })
+            }),
+    );
+    let id = tree
+        .find_by_type::<TokenRenderProbe>()
+        .expect("token render probe");
+
+    let mut canvas = CpuCanvas2D::new(PixelSurface::new(1, 1));
+    let fonts = FontService::new();
+    let images = ImageService::new();
+    let root_tokens = DesignTokens::antd_light();
+    let mut ctx = PaintContext::new_for_test(
+        &mut canvas,
+        FontHandle::default(),
+        &fonts,
+        &images,
+        &root_tokens,
+        96.0,
+        1.0,
+        Orientation::YDown,
+        1,
+        1,
+    );
+
+    tree.get(id)
+        .expect("token render node")
+        .render(Rect::new(0.0, 0.0, 1.0, 1.0), &mut ctx, &tree);
+
+    assert_eq!(
+        *observed
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        (patched_primary, dark.color_bg_container)
+    );
+    assert_eq!(ctx.tokens().color_primary(), root_tokens.color_primary);
 }

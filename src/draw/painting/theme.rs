@@ -3,7 +3,7 @@
 use crate::draw::Color;
 
 /// 盒阴影令牌（Ant Design 5 多层阴影）。
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ShadowToken {
     pub layer_1: (f32, f32, f32, Color),
     pub layer_2: (f32, f32, f32, Color),

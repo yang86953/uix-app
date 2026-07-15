@@ -661,11 +661,18 @@ impl BoxedWidget {
         ctx: &mut crate::draw::painting::PaintContext,
         tree: &WidgetTree,
     ) {
+        let config = &self.provider_context.config;
+        let theme = config.theme.as_ref().map(|theme| theme.tokens_arc());
+        let patch = config
+            .component_tokens
+            .get(self.component.as_any().type_id());
+        let previous_scope = ctx.replace_token_scope(theme, patch);
         self.with_component_context(|component| {
             if let Some(render) = component.as_render() {
                 render.render(frame, ctx, tree);
             }
         });
+        ctx.restore_token_scope(previous_scope);
     }
 }
 

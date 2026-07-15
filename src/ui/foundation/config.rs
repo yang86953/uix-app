@@ -1,6 +1,12 @@
+use std::any::TypeId;
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use crate::draw::painting::TokenPatch;
 use crate::native::traits::input::ControlSize;
 use crate::ui::style::StyleSet;
 use crate::ui::theme::Theme;
+use crate::ui::traits::WidgetComponent;
 
 /// 组件全局默认配置。
 #[derive(Clone)]
@@ -13,6 +19,8 @@ pub struct ComponentConfig {
     pub theme: Option<Theme>,
     /// 组件级覆盖。
     pub overrides: ComponentOverrides,
+    /// 按组件类型应用的设计令牌补丁。
+    pub component_tokens: ComponentTokenOverrides,
 }
 
 impl PartialEq for ComponentConfig {
@@ -20,6 +28,7 @@ impl PartialEq for ComponentConfig {
         self.size == other.size
             && self.disabled == other.disabled
             && self.overrides == other.overrides
+            && self.component_tokens == other.component_tokens
             && match (&self.theme, &other.theme) {
                 (Some(left), Some(right)) => left.is_same_provider(right),
                 (None, None) => true,
@@ -35,6 +44,7 @@ impl Default for ComponentConfig {
             disabled: false,
             theme: None,
             overrides: ComponentOverrides::default(),
+            component_tokens: ComponentTokenOverrides::default(),
         }
     }
 }
@@ -63,10 +73,44 @@ impl ComponentConfig {
         self.overrides = overrides;
         self
     }
+
+    pub fn component_tokens<T: WidgetComponent>(mut self, patch: TokenPatch) -> Self {
+        self.component_tokens.insert::<T>(patch);
+        self
+    }
 }
 
 /// 应用级组件默认配置。
 pub type Config = ComponentConfig;
+
+/// 按组件类型索引的设计令牌补丁集合。
+#[derive(Clone, Default, PartialEq)]
+pub struct ComponentTokenOverrides {
+    patches: HashMap<TypeId, Arc<TokenPatch>>,
+}
+
+impl ComponentTokenOverrides {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn insert<T: WidgetComponent>(&mut self, patch: TokenPatch) {
+        self.patches.insert(TypeId::of::<T>(), Arc::new(patch));
+    }
+
+    pub fn with<T: WidgetComponent>(mut self, patch: TokenPatch) -> Self {
+        self.insert::<T>(patch);
+        self
+    }
+
+    pub(crate) fn get(&self, component: TypeId) -> Option<Arc<TokenPatch>> {
+        self.patches.get(&component).cloned()
+    }
+
+    fn extend(&mut self, other: Self) {
+        self.patches.extend(other.patches);
+    }
+}
 
 /// 组件级属性覆盖。
 #[derive(Clone, Default, PartialEq)]
@@ -124,6 +168,7 @@ struct ConfigPatch {
     disabled: Option<bool>,
     theme: Option<Theme>,
     overrides: Option<ComponentOverrides>,
+    component_tokens: ComponentTokenOverrides,
 }
 
 impl ConfigPatch {
@@ -141,6 +186,7 @@ impl ConfigPatch {
         if let Some(overrides) = self.overrides {
             config.overrides = overrides;
         }
+        config.component_tokens.extend(self.component_tokens);
         config
     }
 }
@@ -187,6 +233,11 @@ impl<F> ConfigProvider<F> {
 
     pub fn overrides(mut self, overrides: ComponentOverrides) -> Self {
         self.patch.overrides = Some(overrides);
+        self
+    }
+
+    pub fn component_tokens<T: WidgetComponent>(mut self, patch: TokenPatch) -> Self {
+        self.patch.component_tokens.insert::<T>(patch);
         self
     }
 
