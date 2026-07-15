@@ -132,6 +132,25 @@ impl ExponentialBackoffRetryPolicy {
             jitter_factor,
         }
     }
+
+    fn base_delay_ms(&self, attempt: usize) -> f64 {
+        let initial = self.initial_delay_ms as f64;
+        if attempt == 0 {
+            return initial;
+        }
+
+        let maximum = self.max_delay_ms as f64;
+        if initial == 0.0 || initial >= maximum || self.multiplier == 1.0 {
+            return initial.min(maximum);
+        }
+
+        let scaled = initial * self.multiplier.powf(attempt as f64);
+        if scaled.is_finite() {
+            scaled.min(maximum)
+        } else {
+            maximum
+        }
+    }
 }
 
 impl Default for ExponentialBackoffRetryPolicy {
@@ -152,14 +171,7 @@ impl RetryPolicy for ExponentialBackoffRetryPolicy {
     }
 
     fn delay(&self, attempt: usize) -> Duration {
-        let mut base = self.initial_delay_ms as f64;
-        for _ in 0..attempt {
-            base *= self.multiplier;
-            if base >= self.max_delay_ms as f64 {
-                base = self.max_delay_ms as f64;
-                break;
-            }
-        }
+        let mut base = self.base_delay_ms(attempt);
 
         if self.jitter_factor > 0.0 {
             let mut rng = FastRng::new();
