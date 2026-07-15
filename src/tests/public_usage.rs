@@ -335,3 +335,54 @@ fn documented_test_app_keyboard_and_resize_update_the_snapshot() {
         Rect::new(0.0, 0.0, 360.0, 220.0)
     );
 }
+
+#[cfg(feature = "test-harness")]
+#[test]
+fn documented_test_app_reports_typed_errors_and_redacts_passwords() {
+    use crate::ui::test_harness::AutomationErrorCode;
+
+    let mut app = TestApp::new((400.0, 240.0), || {
+        column((
+            input().placeholder("Name").automation_id("profile.name"),
+            embed(Input::password().placeholder("Password")).automation_id("profile.password"),
+            embed(Button::new("Disabled").disabled(true)).automation_id("disabled"),
+            label("First duplicate").automation_id("duplicate"),
+            label("Second duplicate").automation_id("duplicate"),
+        ))
+    });
+
+    assert_eq!(
+        app.text("missing").expect_err("missing selector").code(),
+        AutomationErrorCode::NodeNotFound
+    );
+    assert_eq!(
+        app.text("duplicate")
+            .expect_err("duplicate selector")
+            .code(),
+        AutomationErrorCode::AmbiguousTarget
+    );
+    assert_eq!(
+        app.toggle("profile.name")
+            .expect_err("input does not toggle")
+            .code(),
+        AutomationErrorCode::UnsupportedAction
+    );
+    assert_eq!(
+        app.invoke("disabled")
+            .expect_err("disabled button is not interactable")
+            .code(),
+        AutomationErrorCode::NotInteractable
+    );
+
+    app.type_text("profile.password", "must-not-be-exported")
+        .expect("type password");
+    let snapshot = app.snapshot();
+    let password = snapshot.find("profile.password").expect("password input");
+    assert!(password.accessibility.state.password);
+    assert_eq!(password.accessibility.state.value_text, None);
+    assert!(!snapshot.to_json().contains("must-not-be-exported"));
+    assert!(!app
+        .text("profile.password")
+        .expect("redacted password text")
+        .contains("must-not-be-exported"));
+}
