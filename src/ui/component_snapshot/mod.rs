@@ -316,6 +316,7 @@ impl SnapshotTreeNode {
 pub struct SnapshotCollapsePanel {
     pub header: String,
     pub content: String,
+    pub expanded: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

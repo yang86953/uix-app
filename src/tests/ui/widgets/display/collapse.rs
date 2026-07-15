@@ -81,3 +81,84 @@ fn collapse_collapse_transition_releases_content_after_finish() {
 
     assert!(!collapse.panel_present(0, &collapse.panels[0]));
 }
+
+#[test]
+fn collapse_is_focusable_and_keyboard_controls_focused_header() {
+    let mut collapse = Collapse::new().panels(vec![
+        CollapsePanel::new("First", "one"),
+        CollapsePanel::new("Second", "two"),
+    ]);
+    let down = SystemEvent::KeyDown {
+        key: KeyCode::Down,
+        mods: KeyMod::NONE,
+    };
+
+    assert_eq!(WidgetComponent::tab_index(&collapse), 1);
+    assert_eq!(
+        collapse.on_event(&SystemEvent::FocusIn),
+        EventResult::Handled
+    );
+    assert_eq!(collapse.on_event(&down), EventResult::Handled);
+    assert_eq!(collapse.focused_header(), 1);
+
+    let right = SystemEvent::KeyDown {
+        key: KeyCode::Right,
+        mods: KeyMod::NONE,
+    };
+    assert_eq!(collapse.on_event(&right), EventResult::Handled);
+    assert_eq!(collapse.expanded_indices(), vec![1]);
+    assert_eq!(
+        collapse
+            .semantic_event(ComponentId::new(4), &right)
+            .and_then(|event| event.text_payload().map(str::to_owned)),
+        Some("1".to_string())
+    );
+
+    collapse.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Left,
+        mods: KeyMod::NONE,
+    });
+    assert!(collapse.expanded_indices().is_empty());
+}
+
+#[test]
+fn collapse_snapshot_and_accessibility_expose_expansion() {
+    let mut collapse = Collapse::new().panels(vec![
+        CollapsePanel::new("First", "one"),
+        CollapsePanel::new("Second", "two").expanded(),
+    ]);
+    collapse.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Down,
+        mods: KeyMod::NONE,
+    });
+    let fields = collapse.snapshot_fields();
+
+    assert!(matches!(
+        fields,
+        SnapshotFields::Collapse {
+            ref panels,
+            focused_header: 1,
+            ..
+        } if panels[1].expanded
+    ));
+    let accessibility = fields.accessibility();
+    assert_eq!(accessibility.state.value_text.as_deref(), Some("Second"));
+    assert_eq!(accessibility.state.expanded, Some(true));
+}
+
+#[test]
+fn accordion_normalizes_multiple_initially_expanded_panels() {
+    let collapse = Collapse::new()
+        .panels(vec![
+            CollapsePanel::new("First", "one").expanded(),
+            CollapsePanel::new("Second", "two").expanded(),
+        ])
+        .accordion();
+
+    assert_eq!(collapse.expanded_indices(), vec![0]);
+}
+
+#[test]
+fn empty_collapse_is_not_focusable() {
+    assert_eq!(WidgetComponent::tab_index(&Collapse::new()), 0);
+}

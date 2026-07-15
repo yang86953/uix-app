@@ -6,8 +6,8 @@ use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::{
-    ComponentId, EventResult, SemanticEvent, SnapshotCollapsePanel, SnapshotFields, SystemEvent,
-    WidgetTree,
+    ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotCollapsePanel, SnapshotFields,
+    SystemEvent, WidgetTree,
 };
 use std::cell::Cell;
 
@@ -38,52 +38,70 @@ component! {
     pub struct Collapse {
         pub(crate) panels: Vec<CollapsePanel>,
         accordion: bool,
+        focused: bool,
+        focused_header: usize,
         pending_change: Cell<Option<usize>>,
         pub(crate) transitions: Vec<TransitionPlayer>,
         transition_dirty: bool,
     }
+
+    tab_index => (&self) -> i32 { i32::from(!self.panels.is_empty()) }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
-        if let SystemEvent::PointerDown { pos, .. } = event {
-            self.ensure_transition_count();
-            let mut cy = 0.0f32;
-            let panel_count = self.panels.len();
-            for i in 0..panel_count {
-                let header_h = 36.0f32;
-                if pos.y >= cy && pos.y <= cy + header_h {
-                    let old_states: Vec<bool> = self.panels.iter().map(|p| p.expanded).collect();
-                    let new_state = !self.panels[i].expanded;
-                    let name = self.panels[i].header.clone();
-                    if self.accordion {
-                        for p in &mut self.panels {
-                            p.expanded = false;
-                        }
-                    }
-                    self.panels[i].expanded = new_state;
-                    let changed: Vec<(usize, bool)> = self.panels.iter().enumerate()
-                        .filter_map(|(idx, panel)| {
-                            (panel.expanded != old_states[idx]).then_some((idx, panel.expanded))
-                        })
-                        .collect();
-                    for (idx, expanded) in changed {
-                        self.start_panel_transition(idx, expanded);
-                    }
-                    self.pending_change.set(Some(i));
-                    crate::core::log::debug_fn(format!("[Collapse] 面板 \"{}\" 切换 expanded: {} → {}",
-                        name, !new_state, new_state));
+        match event {
+            SystemEvent::PointerDown { pos, .. } => {
+                if let Some(index) = self.header_at_y(pos.y) {
+                    self.focused_header = index;
+                    self.toggle_panel(index);
                     return EventResult::Handled;
                 }
-                cy += header_h;
-                if self.panel_present(i, &self.panels[i]) {
-                    cy += Self::content_height(&self.panels[i].content);
-                }
+                EventResult::NotHandled
             }
+            SystemEvent::FocusIn => {
+                self.focused = true;
+                EventResult::Handled
+            }
+            SystemEvent::FocusOut => {
+                self.focused = false;
+                EventResult::Handled
+            }
+            SystemEvent::KeyDown { key, .. } => match key {
+                KeyCode::Down => {
+                    self.move_focus(true);
+                    EventResult::Handled
+                }
+                KeyCode::Up => {
+                    self.move_focus(false);
+                    EventResult::Handled
+                }
+                KeyCode::Home => {
+                    self.focused_header = 0;
+                    EventResult::Handled
+                }
+                KeyCode::End if !self.panels.is_empty() => {
+                    self.focused_header = self.panels.len() - 1;
+                    EventResult::Handled
+                }
+                KeyCode::Enter | KeyCode::Space if !self.panels.is_empty() => {
+                    self.toggle_panel(self.focused_header);
+                    EventResult::Handled
+                }
+                KeyCode::Right if !self.panels.is_empty() => {
+                    self.set_panel_expanded(self.focused_header, true);
+                    EventResult::Handled
+                }
+                KeyCode::Left if !self.panels.is_empty() => {
+                    self.set_panel_expanded(self.focused_header, false);
+                    EventResult::Handled
+                }
+                _ => EventResult::NotHandled,
+            },
+            _ => EventResult::NotHandled,
         }
-        EventResult::NotHandled
     }
 
     semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
@@ -97,6 +115,7 @@ component! {
         let border = ctx.tokens().color_border();
         let text_color = ctx.tokens().color_text();
         let text_secondary = ctx.tokens().color_text_secondary();
+        let primary = ctx.tokens().color_primary();
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
         let mut y = frame.y;
 
@@ -105,6 +124,9 @@ component! {
             // header 背景
             ctx.fill_rect(header_rect, bg, r);
             ctx.stroke_rect(header_rect, border, 1.0, r);
+            if self.focused && idx == self.focused_header {
+                ctx.stroke_rect(header_rect, primary, 1.5, r);
+            }
             // 展开指示符
             let arrow = if p.expanded { "▼" } else { "▶" };
             let arrow_y = ctx.visual_center_y(header_rect, 12.0);
@@ -183,6 +205,8 @@ impl Collapse {
         Self {
             panels: Vec::new(),
             accordion: false,
+            focused: false,
+            focused_header: 0,
             pending_change: Cell::new(None),
             transitions: Vec::new(),
             transition_dirty: false,
@@ -190,12 +214,27 @@ impl Collapse {
     }
     pub fn panels(mut self, ps: Vec<CollapsePanel>) -> Self {
         self.panels = ps;
+        self.normalize_accordion();
         self.transitions = Self::settled_transitions(&self.panels);
         self
     }
     pub fn accordion(mut self) -> Self {
         self.accordion = true;
+        self.normalize_accordion();
+        self.transitions = Self::settled_transitions(&self.panels);
         self
+    }
+
+    pub fn focused_header(&self) -> usize {
+        self.focused_header
+    }
+
+    pub fn expanded_indices(&self) -> Vec<usize> {
+        self.panels
+            .iter()
+            .enumerate()
+            .filter_map(|(index, panel)| panel.expanded.then_some(index))
+            .collect()
     }
 
     fn content_height(content: &str) -> f32 {
@@ -263,26 +302,36 @@ impl Collapse {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let expanded_before_sync = self
+            .panels
+            .iter()
+            .map(|panel| panel.expanded)
+            .collect::<Vec<_>>();
         let mut panels = next.panels;
         for (idx, panel) in panels.iter_mut().enumerate() {
             if let Some(current) = self.panels.get(idx) {
                 panel.expanded = current.expanded;
             }
         }
-        let transitions = panels
-            .iter()
-            .enumerate()
-            .map(|(idx, panel)| {
-                self.transitions
-                    .get(idx)
-                    .cloned()
-                    .unwrap_or_else(|| Self::settled_transition(panel.expanded))
-            })
-            .collect();
-
         self.panels = panels;
         self.accordion = next.accordion;
-        self.transitions = transitions;
+        self.normalize_accordion();
+        self.focused_header = self.focused_header.min(self.panels.len().saturating_sub(1));
+        self.transitions = self
+            .panels
+            .iter()
+            .enumerate()
+            .map(|(index, panel)| {
+                if expanded_before_sync.get(index) == Some(&panel.expanded) {
+                    self.transitions
+                        .get(index)
+                        .cloned()
+                        .unwrap_or_else(|| Self::settled_transition(panel.expanded))
+                } else {
+                    Self::settled_transition(panel.expanded)
+                }
+            })
+            .collect();
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -293,9 +342,98 @@ impl Collapse {
                 .map(|panel| SnapshotCollapsePanel {
                     header: panel.header.clone(),
                     content: panel.content.clone(),
+                    expanded: panel.expanded,
                 })
                 .collect(),
             accordion: self.accordion,
+            focused_header: self.focused_header,
         }
+    }
+
+    fn normalize_accordion(&mut self) {
+        if !self.accordion {
+            return;
+        }
+        let mut found_expanded = false;
+        for panel in &mut self.panels {
+            if panel.expanded && !found_expanded {
+                found_expanded = true;
+            } else if panel.expanded {
+                panel.expanded = false;
+            }
+        }
+    }
+
+    fn header_at_y(&self, y: f32) -> Option<usize> {
+        if y < 0.0 {
+            return None;
+        }
+        let mut cursor = 0.0;
+        for (index, panel) in self.panels.iter().enumerate() {
+            if y >= cursor && y < cursor + 36.0 {
+                return Some(index);
+            }
+            cursor += 36.0;
+            if self.panel_present(index, panel) {
+                cursor += Self::content_height(&panel.content);
+            }
+        }
+        None
+    }
+
+    fn move_focus(&mut self, forward: bool) {
+        if self.panels.is_empty() {
+            return;
+        }
+        self.focused_header = if forward {
+            (self.focused_header + 1).min(self.panels.len() - 1)
+        } else {
+            self.focused_header.saturating_sub(1)
+        };
+    }
+
+    fn toggle_panel(&mut self, index: usize) {
+        let Some(panel) = self.panels.get(index) else {
+            return;
+        };
+        self.set_panel_expanded(index, !panel.expanded);
+    }
+
+    fn set_panel_expanded(&mut self, index: usize, expanded: bool) {
+        let Some(panel) = self.panels.get(index) else {
+            return;
+        };
+        if panel.expanded == expanded {
+            return;
+        }
+        self.ensure_transition_count();
+        let old_states = self
+            .panels
+            .iter()
+            .map(|panel| panel.expanded)
+            .collect::<Vec<_>>();
+        let name = self.panels[index].header.clone();
+        if self.accordion && expanded {
+            for panel in &mut self.panels {
+                panel.expanded = false;
+            }
+        }
+        self.panels[index].expanded = expanded;
+        let changed = self
+            .panels
+            .iter()
+            .enumerate()
+            .filter_map(|(panel_index, panel)| {
+                (panel.expanded != old_states[panel_index]).then_some((panel_index, panel.expanded))
+            })
+            .collect::<Vec<_>>();
+        for (panel_index, panel_expanded) in changed {
+            self.start_panel_transition(panel_index, panel_expanded);
+        }
+        self.pending_change.set(Some(index));
+        crate::core::log::debug_fn(format!(
+            "[Collapse] 面板 \"{name}\" 切换 expanded: {} → {expanded}",
+            !expanded
+        ));
     }
 }

@@ -711,8 +711,15 @@ fn reconcile_collapse_preserves_expanded_state_and_syncs_config() {
     );
     assert!(matches!(
         collapse.snapshot_fields(),
-        SnapshotFields::Collapse { panels, accordion: true }
-            if panels.len() == 1 && panels[0].header == "New" && panels[0].content == "new body"
+        SnapshotFields::Collapse {
+            panels,
+            accordion: true,
+            focused_header: 0,
+        }
+            if panels.len() == 1
+                && panels[0].header == "New"
+                && panels[0].content == "new body"
+                && panels[0].expanded
     ));
 }
 
