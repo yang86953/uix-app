@@ -88,8 +88,10 @@ fn documented_semantic_event_builders_compile_from_prelude() {
 
 #[test]
 fn documented_raw_event_and_accessibility_builders_compile_from_prelude() {
+    let focus = FocusHandle::new();
     let interactive = label("target")
         .focusable(true)
+        .focus_handle(&focus)
         .on_pointer(|event| match event {
             SystemEvent::PointerDown { .. } => EventResult::Handled,
             _ => EventResult::NotHandled,
@@ -109,6 +111,7 @@ fn documented_raw_event_and_accessibility_builders_compile_from_prelude() {
     let _hidden = label("decorative").role(AccessibilityRole::None);
     let _snapshot = AccessibilitySnapshot::named(AccessibilityRole::Group, "Example")
         .with_attribute(AriaAttribute::new("aria-live", "polite"));
+    let _focus_result: Result<(), FocusHandleError> = focus.focus();
 }
 
 #[cfg(feature = "test-harness")]
@@ -130,4 +133,19 @@ fn documented_test_app_flow_compiles_and_runs_from_prelude() {
 
     app.click("counter.inc").expect("counter click");
     assert_eq!(app.text("counter.label").as_deref(), Ok("1"));
+}
+
+#[cfg(feature = "test-harness")]
+#[test]
+fn documented_focus_handle_flow_compiles_and_runs_from_prelude() {
+    let focus = FocusHandle::new();
+    let build_focus = focus.clone();
+    let mut app = TestApp::new((400.0, 300.0), move || {
+        input().placeholder("email").focus_handle(&build_focus)
+    });
+
+    focus.focus().expect("bound focus handle");
+    app.settle().expect("focus command should settle");
+    focus.blur().expect("bound blur handle");
+    app.settle().expect("blur command should settle");
 }
