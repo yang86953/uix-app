@@ -27,7 +27,8 @@ use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowRect, PeekMessageW, SendMessageW, MSG, PM_REMOVE,
+    GetWindowRect, PeekMessageW, SendMessageW, SetWindowPos, MSG, PM_REMOVE, SWP_NOSIZE,
+    SWP_NOZORDER,
 };
 
 fn size_lparam(width: u16, height: u16) -> isize {
@@ -267,6 +268,25 @@ fn native_window_keeps_logical_client_size_and_physical_drawable_size() {
         (window.properties().width(), window.properties().height()),
         (411, 277)
     );
+
+    window.close().expect("close window");
+}
+
+#[test]
+fn native_move_tracks_outer_window_origin_instead_of_client_origin() {
+    let mut platform = WindowsPlatform::new();
+    let mut window = platform
+        .create_window("UIX outer position", 320, 200)
+        .expect("native window");
+    let hwnd = window.native_handle().native_window();
+
+    unsafe { SetWindowPos(HWND(hwnd), None, 83, 97, 0, 0, SWP_NOSIZE | SWP_NOZORDER) }
+        .expect("move native window outside property API");
+
+    let mut rect = RECT::default();
+    unsafe { GetWindowRect(HWND(hwnd), &mut rect) }.expect("moved window rect");
+    assert_eq!((rect.left, rect.top), (83, 97));
+    assert_eq!(window.properties().position(), Point::new(83.0, 97.0));
 
     window.close().expect("close window");
 }

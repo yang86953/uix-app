@@ -202,9 +202,26 @@ impl WindowsPlatform {
                 0
             }
             WM_MOVE => {
-                let mut state = window.borrow_mut();
-                state.pos_x = Self::loword_signed(lparam) as i32;
-                state.pos_y = Self::hiword_signed(lparam) as i32;
+                let mut rect = RECT {
+                    left: 0,
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                };
+                // SAFETY: hwnd 属于当前同步窗口消息；rect 在调用期间有效可写。
+                if unsafe { GetWindowRect(hwnd, &mut rect) } == 0 {
+                    crate::core::log::error_fn(
+                        super::util::windows_diag(
+                            crate::native::Errc::PlatformError,
+                            "WM_MOVE GetWindowRect failed",
+                        )
+                        .short_what(),
+                    );
+                } else {
+                    let mut state = window.borrow_mut();
+                    state.pos_x = rect.left;
+                    state.pos_y = rect.top;
+                }
                 0
             }
             WM_SETFOCUS => {
