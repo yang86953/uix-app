@@ -216,6 +216,8 @@ fn unsupported_optional_window_ops_do_not_mutate_shared_state() {
     let state = state.borrow();
     assert_eq!(state.pos_x, 0);
     assert_eq!(state.pos_y, 0);
+    assert_eq!(state.minimum_size, None);
+    assert_eq!(state.maximum_size, None);
     assert!(state.resizable);
     assert!(!state.maximized);
     assert!(!state.minimized);
@@ -347,6 +349,43 @@ fn window_geometry_forwards_positive_extents() {
         ]
     );
     assert_eq!((state.borrow().width, state.borrow().height), (640, 480));
+    assert_eq!(state.borrow().minimum_size, Some((320, 240)));
+    assert_eq!(state.borrow().maximum_size, Some((1920, 1080)));
+}
+
+#[test]
+fn window_geometry_enforces_registered_constraints_before_platform_mutation() {
+    let state = Rc::new(RefCell::new(WindowState::default()));
+    let calls = Rc::new(RefCell::new(Vec::new()));
+    let mut window = PlatformWindowCore::new(
+        Rc::clone(&state),
+        GeometryTrackingOps {
+            calls: Rc::clone(&calls),
+        },
+        Box::new(NullPresenter::new()),
+    );
+    window.properties_mut().set_minimum_size(320, 240).unwrap();
+    window.properties_mut().set_maximum_size(800, 600).unwrap();
+    calls.borrow_mut().clear();
+
+    for extent in [(319, 480), (640, 239), (801, 480), (640, 601)] {
+        assert_error_code(
+            window.properties_mut().set_size(extent.0, extent.1),
+            Errc::InvalidArgument,
+        );
+    }
+    assert_error_code(
+        window.properties_mut().set_minimum_size(801, 240),
+        Errc::InvalidArgument,
+    );
+    assert_error_code(
+        window.properties_mut().set_maximum_size(319, 600),
+        Errc::InvalidArgument,
+    );
+
+    assert!(calls.borrow().is_empty());
+    assert_eq!(state.borrow().minimum_size, Some((320, 240)));
+    assert_eq!(state.borrow().maximum_size, Some((800, 600)));
 }
 
 #[test]

@@ -65,7 +65,7 @@ struct FullscreenRestore {
     placement: super::bindings::WINDOWPLACEMENT,
 }
 
-fn get_window_long_checked(
+pub(crate) fn get_window_long_checked(
     hwnd: *mut std::ffi::c_void,
     index: i32,
     operation: &str,
@@ -142,6 +142,22 @@ impl WindowsWindowOps {
                 format!("{operation}: invalid Win32 window handle"),
             ));
         }
+        Ok(())
+    }
+
+    fn validate_logical_track_size(&self, operation: &str, width: i32, height: i32) -> Result<()> {
+        self.ensure_valid_window(operation)?;
+        let style_operation = format!("{operation}: GetWindowLongW(GWL_STYLE) failed");
+        let style = get_window_long_checked(self.hwnd, GWL_STYLE, &style_operation)? as u32;
+        let ex_style_operation = format!("{operation}: GetWindowLongW(GWL_EXSTYLE) failed");
+        let ex_style = get_window_long_checked(self.hwnd, GWL_EXSTYLE, &ex_style_operation)? as u32;
+        super::dpi::outer_size_for_logical_client(
+            width,
+            height,
+            style,
+            ex_style,
+            super::dpi::dpi_for_window(self.hwnd),
+        )?;
         Ok(())
     }
 }
@@ -372,12 +388,12 @@ impl WindowOps for WindowsWindowOps {
         })
     }
 
-    fn os_set_min_size(&mut self, _w: i32, _h: i32) -> Result<()> {
-        crate::native::shared::unimpl("os_set_min_size")
+    fn os_set_min_size(&mut self, width: i32, height: i32) -> Result<()> {
+        self.validate_logical_track_size("os_set_min_size", width, height)
     }
 
-    fn os_set_max_size(&mut self, _w: i32, _h: i32) -> Result<()> {
-        crate::native::shared::unimpl("os_set_max_size")
+    fn os_set_max_size(&mut self, width: i32, height: i32) -> Result<()> {
+        self.validate_logical_track_size("os_set_max_size", width, height)
     }
 
     fn os_set_position(&mut self, x: i32, y: i32) -> Result<()> {

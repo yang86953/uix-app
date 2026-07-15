@@ -169,6 +169,31 @@ pub(crate) fn validate_window_extent(operation: &str, width: i32, height: i32) -
     Ok(())
 }
 
+pub(crate) fn validate_window_extent_constraints(
+    operation: &str,
+    width: i32,
+    height: i32,
+    minimum: Option<(i32, i32)>,
+    maximum: Option<(i32, i32)>,
+) -> Result<()> {
+    validate_window_extent(operation, width, height)?;
+    if let Some((minimum_width, minimum_height)) = minimum {
+        if width < minimum_width || height < minimum_height {
+            return Err(Error::invalid_arg(format!(
+                "{operation} extent {width}x{height} is below minimum {minimum_width}x{minimum_height}"
+            )));
+        }
+    }
+    if let Some((maximum_width, maximum_height)) = maximum {
+        if width > maximum_width || height > maximum_height {
+            return Err(Error::invalid_arg(format!(
+                "{operation} extent {width}x{height} exceeds maximum {maximum_width}x{maximum_height}"
+            )));
+        }
+    }
+    Ok(())
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // 辅助宏
 // ════════════════════════════════════════════════════════════════════════════
@@ -354,7 +379,11 @@ impl<O: WindowOps> IWindowProperties for PlatformWindowCore<O> {
     }
 
     fn set_size(&mut self, w: i32, h: i32) -> Result<()> {
-        validate_window_extent("set_size", w, h)?;
+        let (minimum, maximum) = {
+            let state = self.state.borrow();
+            (state.minimum_size, state.maximum_size)
+        };
+        validate_window_extent_constraints("set_size", w, h, minimum, maximum)?;
         self.ops.os_set_size(w, h)?;
         state_write!(self.state, width, w);
         state_write!(self.state, height, h);
@@ -362,12 +391,18 @@ impl<O: WindowOps> IWindowProperties for PlatformWindowCore<O> {
     }
 
     fn set_minimum_size(&mut self, w: i32, h: i32) -> Result<()> {
-        validate_window_extent("set_minimum_size", w, h)?;
-        self.ops.os_set_min_size(w, h)
+        let maximum = self.state.borrow().maximum_size;
+        validate_window_extent_constraints("set_minimum_size", w, h, Some((w, h)), maximum)?;
+        self.ops.os_set_min_size(w, h)?;
+        self.state.borrow_mut().minimum_size = Some((w, h));
+        Ok(())
     }
     fn set_maximum_size(&mut self, w: i32, h: i32) -> Result<()> {
-        validate_window_extent("set_maximum_size", w, h)?;
-        self.ops.os_set_max_size(w, h)
+        let minimum = self.state.borrow().minimum_size;
+        validate_window_extent_constraints("set_maximum_size", w, h, minimum, Some((w, h)))?;
+        self.ops.os_set_max_size(w, h)?;
+        self.state.borrow_mut().maximum_size = Some((w, h));
+        Ok(())
     }
 
     fn position(&self) -> crate::core::geometry::Point {
