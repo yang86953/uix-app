@@ -4,6 +4,29 @@ use crate::ui::window_chrome::WindowInteractionRegion;
 use crate::ui::{OverlayEntry, OverlayKind};
 
 impl WidgetTree {
+    pub(crate) fn cancel_hidden_interaction(&mut self) {
+        let targets = [
+            self.managers().interaction.hovered_component(),
+            self.managers().interaction.pressed_component(),
+            self.managers().drag.target(),
+        ];
+        let mut cancelled = Vec::new();
+        for target in targets.into_iter().flatten() {
+            if !cancelled.contains(&target) && !self.is_effectively_visible(target) {
+                self.cancel_pointer_state_in_subtree(target);
+                cancelled.push(target);
+            }
+        }
+        if self
+            .managers()
+            .focus
+            .focused_component()
+            .is_some_and(|focused| !self.focus_target_available(focused))
+        {
+            self.set_focus(None);
+        }
+    }
+
     pub(crate) fn cancel_subtree_interaction(&mut self, root: WidgetId) {
         self.cancel_pointer_state_in_subtree(root);
         if self

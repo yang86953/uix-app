@@ -352,6 +352,7 @@ impl WidgetTree {
     }
 
     pub(crate) fn reconcile_lifecycle_after_layout(&mut self) {
+        self.cancel_hidden_interaction();
         let states: Vec<(WidgetId, bool)> = self
             .traverse()
             .iter()
@@ -962,6 +963,7 @@ impl WidgetTree {
             widget_overlays_changed |= !self.widget_overlay_is_current(id);
             updates.push((id, still_active));
         }
+        self.cancel_hidden_interaction();
         if widget_overlays_changed || updates.iter().any(|(_, still_active)| !still_active) {
             self.rebuild_widget_overlays();
         }

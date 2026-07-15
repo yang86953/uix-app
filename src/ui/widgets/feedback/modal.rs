@@ -57,8 +57,6 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    visible => (&self) -> bool { self.is_present() }
-
     hit_test_frame => (&self, actual_frame: Rect) -> Rect {
         if self.overlay && self.is_present() {
             Rect::new(0.0, 0.0, self.last_win_w.get(), self.last_win_h.get())
