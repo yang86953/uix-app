@@ -4,9 +4,15 @@ use std::time::{Duration, Instant};
 
 use crate::native::backends::windows::dpi::{dpi_for_window, logical_extent_to_physical};
 use crate::native::backends::windows::platform::WindowsPlatform;
-use crate::native::graphics::platform::windows::drawable_size;
+use crate::native::graphics::platform::windows::{drawable_size, DrawableSize};
+#[cfg(feature = "vulkan")]
+use crate::native::graphics::vulkan::platform::context::VulkanContext;
 use crate::native::shared::OsEventSource;
+#[cfg(feature = "vulkan")]
+use crate::native::traits::{IGraphicsContext, PresentDamage};
 use crate::native::traits::{IWindowManager, PlatformWindow, UiEventPayload, UiEventType};
+#[cfg(feature = "vulkan")]
+use crate::tests::native::gfx_r5::expected_gfx_r5_vendor;
 use windows::core::BOOL;
 use windows::Win32::Foundation::{LPARAM, RECT};
 use windows::Win32::Graphics::Gdi::{EnumDisplayMonitors, HDC, HMONITOR};
@@ -295,6 +301,73 @@ fn wait_for_window_dpi(
     })
 }
 
+fn place_window_on_monitor(
+    platform: &mut WindowsPlatform,
+    window: &mut dyn PlatformWindow,
+    monitor: MonitorDpiSample,
+    logical_size: (i32, i32),
+    expected_resize: Option<(i32, i32)>,
+    topology_summary: &str,
+) -> (DpiTransitionEvidence, DrawableSize) {
+    let (x, y) = monitor.bounds.centered_origin();
+    window
+        .properties_mut()
+        .set_position(x, y)
+        .expect("move window to target monitor");
+    let evidence = wait_for_window_dpi(platform, window, monitor.dpi_x, expected_resize)
+        .unwrap_or_else(|error| panic!("{error}; topology={topology_summary}"));
+
+    assert_eq!(
+        (window.properties().width(), window.properties().height()),
+        logical_size,
+        "logical client extent must survive a real monitor transition"
+    );
+    let drawable = drawable_size(
+        window.native_handle().native_window(),
+        logical_size.0,
+        logical_size.1,
+    );
+    assert_eq!(
+        (drawable.logical_width, drawable.logical_height),
+        logical_size
+    );
+    assert_eq!(
+        (drawable.width, drawable.height),
+        (
+            logical_extent_to_physical(logical_size.0, monitor.dpi_x),
+            logical_extent_to_physical(logical_size.1, monitor.dpi_y),
+        )
+    );
+    (evidence, drawable)
+}
+
+#[cfg(feature = "vulkan")]
+fn present_mixed_dpi_frame(context: &mut VulkanContext, drawable: DrawableSize, color: u32) {
+    context
+        .resize(drawable.logical_width, drawable.logical_height)
+        .expect("resize Vulkan surface after DPI transition");
+    assert_eq!(
+        (context.width(), context.height()),
+        (drawable.width, drawable.height),
+        "Vulkan extent must follow the physical drawable extent"
+    );
+    let pixels = vec![color; (context.width() * context.height()) as usize];
+    context
+        .present_pixels(
+            &pixels,
+            context.width(),
+            context.height(),
+            PresentDamage::Full,
+        )
+        .expect("present after DPI transition");
+    assert_eq!(
+        context
+            .read_pixels(context.width() - 1, context.height() - 1, 1, 1)
+            .expect("far-corner readback after DPI transition"),
+        vec![color]
+    );
+}
+
 fn sample(dpi: u32, left: i32) -> MonitorDpiSample {
     MonitorDpiSample::new(
         MonitorBounds::new(left, 0, left.saturating_add(1920), 1080),
@@ -388,49 +461,104 @@ fn windows_gfx_r5_window_crosses_real_mixed_dpi_monitors() {
         .expect("native window");
     window.show().expect("show native window");
 
-    let place_on_monitor = |platform: &mut WindowsPlatform,
-                            window: &mut dyn PlatformWindow,
-                            monitor: MonitorDpiSample,
-                            expected_resize: Option<(i32, i32)>| {
-        let (x, y) = monitor.bounds.centered_origin();
-        window
-            .properties_mut()
-            .set_position(x, y)
-            .expect("move window to target monitor");
-        let evidence = wait_for_window_dpi(platform, window, monitor.dpi_x, expected_resize)
-            .unwrap_or_else(|error| panic!("{error}; topology={}", topology.diagnostic_summary()));
-
-        assert_eq!(
-            (window.properties().width(), window.properties().height()),
-            logical_size,
-            "logical client extent must survive a real monitor transition"
-        );
-        let drawable = drawable_size(
-            window.native_handle().native_window(),
-            logical_size.0,
-            logical_size.1,
-        );
-        assert_eq!(
-            (drawable.logical_width, drawable.logical_height),
-            logical_size
-        );
-        assert_eq!(
-            (drawable.width, drawable.height),
-            (
-                logical_extent_to_physical(logical_size.0, monitor.dpi_x),
-                logical_extent_to_physical(logical_size.1, monitor.dpi_y),
-            )
-        );
-        evidence
-    };
-
-    let initial = place_on_monitor(&mut platform, window.as_mut(), first, None);
-    let forward = place_on_monitor(&mut platform, window.as_mut(), second, Some(logical_size));
-    let return_trip = place_on_monitor(&mut platform, window.as_mut(), first, Some(logical_size));
+    let topology_summary = topology.diagnostic_summary();
+    let (initial, _) = place_window_on_monitor(
+        &mut platform,
+        window.as_mut(),
+        first,
+        logical_size,
+        None,
+        &topology_summary,
+    );
+    let (forward, _) = place_window_on_monitor(
+        &mut platform,
+        window.as_mut(),
+        second,
+        logical_size,
+        Some(logical_size),
+        &topology_summary,
+    );
+    let (return_trip, _) = place_window_on_monitor(
+        &mut platform,
+        window.as_mut(),
+        first,
+        logical_size,
+        Some(logical_size),
+        &topology_summary,
+    );
 
     println!(
-        "GFX-R5 mixed-DPI topology: {}; initial={initial:?}; forward={forward:?}; return={return_trip:?}",
-        topology.diagnostic_summary(),
+        "GFX-R5 mixed-DPI topology: {topology_summary}; initial={initial:?}; forward={forward:?}; return={return_trip:?}",
     );
+    window.close().expect("close native window");
+}
+
+#[cfg(feature = "vulkan")]
+#[test]
+#[ignore = "requires a Vulkan-capable Windows driver, UIX_GFX_R5_EXPECT_VENDOR, and two mixed-DPI monitors with one above 100%"]
+fn windows_vulkan_gfx_r5_crosses_real_mixed_dpi_monitors() {
+    let expected = expected_gfx_r5_vendor().unwrap_or_else(|error| panic!("{error}"));
+    let topology = enumerate_monitor_topology().expect("enumerate Win32 monitor topology");
+    topology
+        .validate()
+        .unwrap_or_else(|gap| panic!("{gap}; topology={}", topology.diagnostic_summary()));
+    let (first, second) = topology
+        .transition_pair()
+        .expect("validated mixed-DPI pair");
+    let topology_summary = topology.diagnostic_summary();
+    let logical_size = (321, 219);
+    let mut platform = WindowsPlatform::new();
+    let mut window = platform
+        .create_window(
+            "UIX GFX-R5 Vulkan mixed-DPI transition",
+            logical_size.0,
+            logical_size.1,
+        )
+        .expect("native window");
+    window.show().expect("show native window");
+
+    let (initial, initial_drawable) = place_window_on_monitor(
+        &mut platform,
+        window.as_mut(),
+        first,
+        logical_size,
+        None,
+        &topology_summary,
+    );
+    let mut context =
+        VulkanContext::new(window.native_surface_ptr(), logical_size.0, logical_size.1)
+            .expect("Vulkan context on the initial monitor");
+    expected.assert_runtime(
+        &context.adapter_info,
+        context.swapchain_maintenance1_enabled_for_test(),
+    );
+    present_mixed_dpi_frame(&mut context, initial_drawable, 0xFF34_78BC);
+
+    let (forward, forward_drawable) = place_window_on_monitor(
+        &mut platform,
+        window.as_mut(),
+        second,
+        logical_size,
+        Some(logical_size),
+        &topology_summary,
+    );
+    present_mixed_dpi_frame(&mut context, forward_drawable, 0xFF9A_5C21);
+
+    let (return_trip, return_drawable) = place_window_on_monitor(
+        &mut platform,
+        window.as_mut(),
+        first,
+        logical_size,
+        Some(logical_size),
+        &topology_summary,
+    );
+    present_mixed_dpi_frame(&mut context, return_drawable, 0xFF52_7193);
+
+    println!(
+        "GFX-R5 Vulkan mixed-DPI evidence: expected={}; {topology_summary}; initial={initial:?}; forward={forward:?}; return={return_trip:?}; {}",
+        expected.label(),
+        context.adapter_info.diagnostic_summary()
+    );
+    context.try_shutdown().expect("shutdown Vulkan context");
     window.close().expect("close native window");
 }
