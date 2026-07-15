@@ -109,7 +109,7 @@ fn render_test_module(total: usize, blocks: &[CompiledBlock]) -> String {
     let mut output = format!(
         "pub(super) const USAGE_RUST_BLOCKS_TOTAL: usize = {total};\n\
          pub(super) const USAGE_RUST_BLOCKS_COMPILED: usize = {};\n\
-         #[allow(dead_code, unused_imports, unused_mut, unused_must_use, unused_variables)]\n\
+         #[allow(dead_code, unnameable_test_items, unused_imports, unused_mut, unused_must_use, unused_variables)]\n\
          mod compiled_usage_examples {{\n\
              use crate::prelude::*;\n\
              type GuideResult = Result<(), Box<dyn std::error::Error>>;\n",
