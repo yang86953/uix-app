@@ -1,6 +1,22 @@
 use super::*;
 
 impl WidgetTree {
+    pub(super) fn ignores_input_while_window_unfocused(&self, event: &SystemEvent) -> bool {
+        !self.window_focused
+            && matches!(
+                event,
+                SystemEvent::KeyDown { .. }
+                    | SystemEvent::KeyUp { .. }
+                    | SystemEvent::TextInput { .. }
+                    | SystemEvent::ImeCompositionStart
+                    | SystemEvent::ImeCompositionUpdate { .. }
+                    | SystemEvent::ImeCompositionEnd { .. }
+                    | SystemEvent::Copy
+                    | SystemEvent::Cut
+                    | SystemEvent::Paste { .. }
+            )
+    }
+
     pub(super) fn deactivate_window_focus(&mut self) {
         if !self.window_focused {
             return;

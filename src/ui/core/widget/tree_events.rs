@@ -129,6 +129,9 @@ impl WidgetTree {
         {
             self.set_focus(None);
         }
+        if self.ignores_input_while_window_unfocused(event) {
+            return EventResult::NotHandled;
+        }
 
         match event {
             SystemEvent::PointerDown { pos, button, mods }
