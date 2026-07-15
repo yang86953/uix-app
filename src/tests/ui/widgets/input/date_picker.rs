@@ -8,7 +8,7 @@ use crate::ui::widgets::{Date, DatePicker, PickerMode, Weekday};
 use crate::ui::{with_config, ComponentConfig};
 
 fn render_picker(picker: &DatePicker) {
-    let mut canvas = SharedRasterizer::new(PixelSurface::new(240, 280));
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(320, 360));
     let mut fonts = FontService::new();
     let font = fonts
         .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
@@ -25,11 +25,16 @@ fn render_picker(picker: &DatePicker) {
         96.0,
         1.0,
         Orientation::YDown,
-        240,
-        280,
+        320,
+        360,
     );
     let size = picker.measure(Constraints::loose(Size::new(240.0, 280.0)));
-    WidgetRender::render(picker, Rect::new(0.0, 0.0, size.w, size.h), &mut ctx, &tree);
+    WidgetRender::render(
+        picker,
+        Rect::new(32.0, 18.0, size.w, size.h),
+        &mut ctx,
+        &tree,
+    );
 }
 
 #[test]
@@ -44,6 +49,10 @@ fn bound_date_picker_writes_pointer_selection_and_reads_external_updates() {
         mods: KeyMod::NONE,
     });
     assert!(picker.is_open());
+    let trigger = Rect::new(32.0, 18.0, 160.0, 32.0);
+    let hit_frame = EventHandler::hit_test_frame(&picker, trigger);
+    assert!(hit_frame.contains(Point::new(40.0, 180.0)));
+    assert_eq!(WidgetRender::dirty_rect(&picker, trigger), hit_frame);
 
     let _ = picker.on_event(&SystemEvent::PointerDown {
         pos: Point::new(60.0, 81.0),

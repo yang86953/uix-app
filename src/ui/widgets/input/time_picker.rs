@@ -15,6 +15,9 @@ use crate::ui::{
     ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
 };
 
+const POPUP_GAP: f32 = 2.0;
+const POPUP_HEIGHT: f32 = 200.0;
+
 /// 时间结构
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Time {
@@ -83,11 +86,11 @@ component! {
                 }
 
                 if let Some(frame) = self.last_frame.get() {
-                    let popup_y = frame.y + frame.h + 2.0;
+                    let popup_y = frame.y + frame.h + POPUP_GAP;
                     let rel_x = pos.x - frame.x;
                     let rel_y = pos.y - popup_y;
 
-                    if (0.0..200.0).contains(&rel_y) {
+                    if (0.0..POPUP_HEIGHT).contains(&rel_y) {
                         let col_w = frame.w * 0.5;
                         if rel_x < col_w {
                             let item_h = 32.0;
@@ -120,11 +123,11 @@ component! {
             SystemEvent::PointerMove { pos, .. } => {
                 if self.open.get() {
                     if let Some(frame) = self.last_frame.get() {
-                        let popup_y = frame.y + frame.h + 2.0;
+                        let popup_y = frame.y + frame.h + POPUP_GAP;
                         let rel_x = pos.x - frame.x;
                         let rel_y = pos.y - popup_y;
 
-                        if (0.0..200.0).contains(&rel_y) {
+                        if (0.0..POPUP_HEIGHT).contains(&rel_y) {
                             let col_w = frame.w * 0.5;
                             let item_h = 32.0;
                             if rel_x < col_w {
@@ -182,9 +185,18 @@ component! {
 
     wants_continuous_pointer_move => (&self) -> bool { true }
 
+    hit_test_frame => (&self, frame: Rect) -> Rect {
+        if self.open.get() {
+            picker_bounds(frame)
+        } else {
+            frame
+        }
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.capture_bound_value_dependency();
-        self.last_frame.set(Some(frame));
+        self.last_frame
+            .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
         let primary = ctx.tokens().color_primary();
         let border_color = ctx.tokens().color_border();
         let text_color = ctx.tokens().color_text();
@@ -217,7 +229,12 @@ component! {
             text_secondary, 12.0);
 
         if self.open.get() {
-            let popup = Rect::new(frame.x, frame.y + frame.h + 2.0, frame.w, 200.0);
+            let popup = Rect::new(
+                frame.x,
+                frame.y + frame.h + POPUP_GAP,
+                frame.w,
+                POPUP_HEIGHT,
+            );
             ctx.fill_rect(popup, bg_elevated, radius);
             ctx.stroke_rect(popup, border_color, 1.0, radius);
 
@@ -259,6 +276,19 @@ component! {
             }
         }
     }
+
+    dirty_rect => (&self, frame: Rect) -> Rect {
+        picker_bounds(frame)
+    }
+}
+
+fn picker_bounds(frame: Rect) -> Rect {
+    frame.union(&Rect::new(
+        frame.x,
+        frame.y + frame.h + POPUP_GAP,
+        frame.w,
+        POPUP_HEIGHT,
+    ))
 }
 
 impl TimePicker {

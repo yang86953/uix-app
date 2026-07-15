@@ -8,7 +8,7 @@ use crate::ui::widgets::{Date, DateRangePicker, PresetDate, Weekday};
 use crate::ui::{with_config, ComponentConfig};
 
 fn render_picker(picker: &DateRangePicker) {
-    let mut canvas = SharedRasterizer::new(PixelSurface::new(320, 420));
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(400, 480));
     let mut fonts = FontService::new();
     let font = fonts
         .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
@@ -25,11 +25,16 @@ fn render_picker(picker: &DateRangePicker) {
         96.0,
         1.0,
         Orientation::YDown,
-        320,
-        420,
+        400,
+        480,
     );
     let size = picker.measure(Constraints::loose(Size::new(320.0, 420.0)));
-    WidgetRender::render(picker, Rect::new(0.0, 0.0, size.w, size.h), &mut ctx, &tree);
+    WidgetRender::render(
+        picker,
+        Rect::new(36.0, 20.0, size.w, size.h),
+        &mut ctx,
+        &tree,
+    );
 }
 
 #[test]
@@ -47,6 +52,10 @@ fn pointer_selection_commits_ordered_range_and_skips_disabled_endpoint() {
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     });
+    let trigger = Rect::new(36.0, 20.0, 280.0, 32.0);
+    let hit_frame = EventHandler::hit_test_frame(&picker, trigger);
+    assert!(hit_frame.contains(Point::new(48.0, 300.0)));
+    assert_eq!(WidgetRender::dirty_rect(&picker, trigger), hit_frame);
     let _ = picker.on_event(&SystemEvent::PointerDown {
         pos: Point::new(100.0, 81.0),
         button: MouseButton::Left,

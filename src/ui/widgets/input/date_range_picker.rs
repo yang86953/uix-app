@@ -220,9 +220,18 @@ component! {
 
     wants_continuous_pointer_move => (&self) -> bool { true }
 
+    hit_test_frame => (&self, frame: Rect) -> Rect {
+        if self.open.get() {
+            self.popup_bounds(frame)
+        } else {
+            frame
+        }
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.sync_bound_values();
-        self.last_frame.set(Some(frame));
+        self.last_frame
+            .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
         let primary = ctx.tokens().color_primary();
         let border_color = ctx.tokens().color_border();
         let text_color = ctx.tokens().color_text();
@@ -280,6 +289,10 @@ component! {
             );
             self.draw_presets(frame, ctx);
         }
+    }
+
+    dirty_rect => (&self, frame: Rect) -> Rect {
+        self.popup_bounds(frame)
     }
 }
 
@@ -472,6 +485,21 @@ impl DateRangePicker {
         }
         let index = ((position.y - footer_y - PRESET_VERTICAL_INSET) / PRESET_ROW_HEIGHT) as usize;
         (index < self.presets.len()).then_some(index)
+    }
+
+    fn popup_bounds(&self, frame: Rect) -> Rect {
+        let popup = calendar_popup_rect(frame);
+        let footer_height = if self.presets.is_empty() {
+            0.0
+        } else {
+            PRESET_GAP + PRESET_VERTICAL_INSET * 2.0 + PRESET_ROW_HEIGHT * self.presets.len() as f32
+        };
+        frame.union(&Rect::new(
+            popup.x,
+            popup.y,
+            popup.w,
+            CALENDAR_PANEL_HEIGHT + footer_height,
+        ))
     }
 
     fn draw_presets(&self, frame: Rect, ctx: &mut PaintContext<'_>) {

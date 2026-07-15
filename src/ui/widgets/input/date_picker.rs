@@ -13,8 +13,8 @@ use crate::draw::Color;
 use crate::native::traits::input::ControlSize;
 use crate::ui::state::State;
 use crate::ui::widgets::input::date_calendar::{
-    draw_calendar_panel, hit_calendar_date, hit_month_navigation, CalendarPanelState,
-    MonthNavigation,
+    calendar_popup_rect, draw_calendar_panel, hit_calendar_date, hit_month_navigation,
+    CalendarPanelState, MonthNavigation,
 };
 use crate::ui::{
     ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
@@ -272,9 +272,18 @@ component! {
 
     wants_continuous_pointer_move => (&self) -> bool { true }
 
+    hit_test_frame => (&self, frame: Rect) -> Rect {
+        if self.open.get() {
+            picker_bounds(frame)
+        } else {
+            frame
+        }
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.sync_bound_value();
-        self.last_frame.set(Some(frame));
+        self.last_frame
+            .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
         let primary = ctx.tokens().color_primary();
         let border_color = ctx.tokens().color_border();
         let text_color = ctx.tokens().color_text();
@@ -320,6 +329,14 @@ component! {
             );
         }
     }
+
+    dirty_rect => (&self, frame: Rect) -> Rect {
+        picker_bounds(frame)
+    }
+}
+
+fn picker_bounds(frame: Rect) -> Rect {
+    frame.union(&calendar_popup_rect(frame))
 }
 
 impl DatePicker {

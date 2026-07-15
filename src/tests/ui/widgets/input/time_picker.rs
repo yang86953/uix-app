@@ -8,7 +8,7 @@ use crate::ui::widgets::{Time, TimePicker};
 use crate::ui::{with_config, ComponentConfig};
 
 fn render_picker(picker: &TimePicker) {
-    let mut canvas = SharedRasterizer::new(PixelSurface::new(240, 280));
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(300, 320));
     let mut fonts = FontService::new();
     let font = fonts
         .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
@@ -25,11 +25,16 @@ fn render_picker(picker: &TimePicker) {
         96.0,
         1.0,
         Orientation::YDown,
-        240,
-        280,
+        300,
+        320,
     );
     let size = picker.measure(Constraints::loose(Size::new(240.0, 280.0)));
-    WidgetRender::render(picker, Rect::new(0.0, 0.0, size.w, size.h), &mut ctx, &tree);
+    WidgetRender::render(
+        picker,
+        Rect::new(28.0, 16.0, size.w, size.h),
+        &mut ctx,
+        &tree,
+    );
 }
 
 #[test]
@@ -44,6 +49,10 @@ fn bound_time_picker_writes_pointer_selection_and_reads_external_updates() {
         mods: KeyMod::NONE,
     });
     assert!(picker.is_open());
+    let trigger = Rect::new(28.0, 16.0, 120.0, 32.0);
+    let hit_frame = EventHandler::hit_test_frame(&picker, trigger);
+    assert!(hit_frame.contains(Point::new(36.0, 180.0)));
+    assert_eq!(WidgetRender::dirty_rect(&picker, trigger), hit_frame);
 
     let _ = picker.on_event(&SystemEvent::PointerDown {
         pos: Point::new(16.0, 102.0),
