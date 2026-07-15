@@ -3,8 +3,8 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::{
-    ComponentId, EventResult, SemanticEvent, SnapshotFields, SnapshotTransferItem, SystemEvent,
-    WidgetTree,
+    ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SnapshotTransferItem,
+    SystemEvent, WidgetTree,
 };
 use qrcode::{types::Color as QrModuleColor, EcLevel, QrCode};
 use std::cell::{Cell, RefCell};
@@ -166,93 +166,61 @@ impl QRCode {
 // Transfer
 // ════════════════════════════════════════════════════════════════════════════
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransferItem {
     pub key: String,
     pub title: String,
     pub selected: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TransferPane {
+    Source,
+    Target,
+}
+
 component! {
     pub struct Transfer {
         source: Vec<TransferItem>,
         target: Vec<TransferItem>,
-        initial_source: Vec<TransferItem>,
-        initial_target: Vec<TransferItem>,
-        last_frame_w: Cell<f32>,
-        last_frame_h: Cell<f32>,
+        last_frame: Cell<Option<Rect>>,
+        focused: bool,
+        active_pane: TransferPane,
+        active_index: usize,
+        pending_change: RefCell<Option<String>>,
     }
+
+    tab_index => (&self) -> i32 { i32::from(!self.source.is_empty() || !self.target.is_empty()) }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(Size::new(500.0, 200.0))
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
-        if let SystemEvent::PointerDown { pos, .. } = event {
-            const LIST_HEADER_H: f32 = 24.0;
-            const BTN_COL_W: f32 = 60.0;
-            let item_h = 28.0;
-            let half = {
-                let w = self.last_frame_w.get();
-                let w = if w > 0.0 { w } else { 500.0 };
-                ((w - BTN_COL_W) * 0.5).max(40.0)
-            };
-            let frame_h = {
-                let h = self.last_frame_h.get();
-                if h > 0.0 { h } else { 200.0 }
-            };
-            let list_idx = |y: f32| -> Option<usize> {
-                if y < LIST_HEADER_H {
-                    return None;
-                }
-                Some(((y - LIST_HEADER_H) / item_h) as usize)
-            };
-            if pos.x < half {
-                if let Some(idx) = list_idx(pos.y) {
-                    if idx < self.source.len() {
-                        self.source[idx].selected = !self.source[idx].selected;
-                        return EventResult::Handled;
-                    }
-                }
-            } else if pos.x > half + BTN_COL_W {
-                if let Some(idx) = list_idx(pos.y) {
-                    if idx < self.target.len() {
-                        self.target[idx].selected = !self.target[idx].selected;
-                        return EventResult::Handled;
-                    }
-                }
-            } else {
-                let btn_y = frame_h * 0.5 - 20.0;
-                if pos.y >= btn_y && pos.y < btn_y + 20.0 {
-                    let mut i = 0;
-                    while i < self.source.len() {
-                        if self.source[i].selected {
-                            let mut item = self.source.remove(i);
-                            item.selected = false;
-                            self.target.push(item);
-                        } else { i += 1; }
-                    }
-                    return EventResult::Handled;
-                }
-                if pos.y >= btn_y + 24.0 && pos.y < btn_y + 44.0 {
-                    let mut i = 0;
-                    while i < self.target.len() {
-                        if self.target[i].selected {
-                            let mut item = self.target.remove(i);
-                            item.selected = false;
-                            self.source.push(item);
-                        } else { i += 1; }
-                    }
-                    return EventResult::Handled;
-                }
+        match event {
+            SystemEvent::PointerDown { pos, .. } => self.pointer_down(*pos),
+            SystemEvent::FocusIn => {
+                self.focused = true;
+                EventResult::Handled
             }
+            SystemEvent::FocusOut => {
+                self.focused = false;
+                EventResult::Handled
+            }
+            SystemEvent::KeyDown { key, .. } => self.key_down(*key),
+            _ => EventResult::NotHandled,
         }
-        EventResult::NotHandled
+    }
+
+    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_change
+            .borrow_mut()
+            .take()
+            .map(|keys| SemanticEvent::change(id, keys))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        self.last_frame_w.set(frame.w);
-        self.last_frame_h.set(frame.h);
+        self.last_frame.set(Some(frame));
         let bg = ctx.tokens().color_bg_container();
         let border = ctx.tokens().color_border();
         let text = ctx.tokens().color_text();
@@ -266,7 +234,8 @@ component! {
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
         let left_rect = Rect::new(frame.x, frame.y, half, frame.h);
         ctx.fill_rect(left_rect, bg, r);
-        ctx.stroke_rect(left_rect, border, 1.0, r);
+        let left_border = if self.focused && self.active_pane == TransferPane::Source { primary } else { border };
+        ctx.stroke_rect(left_rect, left_border, if left_border == primary { 1.5 } else { 1.0 }, r);
         let loc = crate::ui::locale::use_locale();
         ctx.draw_text(&format!("{} ({}项)", loc.transfer_source, self.source.len()), Point::new(frame.x + 8.0, frame.y + 6.0), text_sec, 12.0);
         for (i, item) in self.source.iter().enumerate() {
@@ -274,6 +243,9 @@ component! {
             let row_rect = Rect::new(frame.x, y, half, item_h);
             let row_y = ctx.visual_center_y(row_rect, 13.0);
             if item.selected { ctx.fill_rect(row_rect, fill, None); }
+            if self.focused && self.active_pane == TransferPane::Source && self.active_index == i {
+                ctx.stroke_rect(row_rect, primary, 1.0, None);
+            }
             ctx.draw_text(if item.selected { "☑" } else { "☐" }, Point::new(frame.x + 8.0, row_y), text, 12.0);
             ctx.draw_text(&item.title, Point::new(frame.x + 26.0, row_y), text, 13.0);
         }
@@ -287,13 +259,17 @@ component! {
         let right_x = frame.x + half + BTN_COL_W;
         let right_rect = Rect::new(right_x, frame.y, half, frame.h);
         ctx.fill_rect(right_rect, bg, r);
-        ctx.stroke_rect(right_rect, border, 1.0, r);
+        let right_border = if self.focused && self.active_pane == TransferPane::Target { primary } else { border };
+        ctx.stroke_rect(right_rect, right_border, if right_border == primary { 1.5 } else { 1.0 }, r);
         ctx.draw_text(&format!("{} ({}项)", loc.transfer_target, self.target.len()), Point::new(right_x + 8.0, frame.y + 6.0), text_sec, 12.0);
         for (i, item) in self.target.iter().enumerate() {
             let y = frame.y + LIST_HEADER_H + i as f32 * item_h;
             let row_rect = Rect::new(right_x, y, half, item_h);
             let row_y = ctx.visual_center_y(row_rect, 13.0);
             if item.selected { ctx.fill_rect(row_rect, fill, None); }
+            if self.focused && self.active_pane == TransferPane::Target && self.active_index == i {
+                ctx.stroke_rect(row_rect, primary, 1.0, None);
+            }
             ctx.draw_text(if item.selected { "☑" } else { "☐" }, Point::new(right_x + 8.0, row_y), text, 12.0);
             ctx.draw_text(&item.title, Point::new(right_x + 26.0, row_y), text, 13.0);
         }
@@ -304,51 +280,194 @@ impl Transfer {
         Self {
             source: Vec::new(),
             target: Vec::new(),
-            initial_source: Vec::new(),
-            initial_target: Vec::new(),
-            last_frame_w: Cell::new(500.0),
-            last_frame_h: Cell::new(200.0),
+            last_frame: Cell::new(None),
+            focused: false,
+            active_pane: TransferPane::Source,
+            active_index: 0,
+            pending_change: RefCell::new(None),
         }
     }
     pub fn source(mut self, items: Vec<TransferItem>) -> Self {
-        self.initial_source = items.clone();
         self.source = items;
         self
     }
     pub fn target(mut self, items: Vec<TransferItem>) -> Self {
-        self.initial_target = items.clone();
         self.target = items;
         self
     }
 
-    pub(crate) fn sync_from(&mut self, next: Self) {
-        self.initial_source = next.initial_source;
-        self.initial_target = next.initial_target;
+    pub fn source_items(&self) -> &[TransferItem] {
+        &self.source
     }
 
-    #[cfg(test)]
-    pub(crate) fn source_count(&self) -> usize {
-        self.source.len()
+    pub fn target_items(&self) -> &[TransferItem] {
+        &self.target
     }
 
+    pub fn active_index(&self) -> usize {
+        self.active_index
+    }
+
+    pub fn target_is_active(&self) -> bool {
+        self.active_pane == TransferPane::Target
+    }
+
+    pub(crate) fn sync_from(&mut self, _next: Self) {}
+
     #[cfg(test)]
-    pub(crate) fn target_count(&self) -> usize {
-        self.target.len()
+    pub(crate) fn set_frame_for_test(&self, frame: Rect) {
+        self.last_frame.set(Some(frame));
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Transfer {
             source: self
-                .initial_source
+                .source
                 .iter()
                 .map(SnapshotTransferItem::from_transfer_item)
                 .collect(),
             target: self
-                .initial_target
+                .target
                 .iter()
                 .map(SnapshotTransferItem::from_transfer_item)
                 .collect(),
         }
+    }
+
+    fn pointer_down(&mut self, pos: Point) -> EventResult {
+        const HEADER: f32 = 24.0;
+        const BUTTONS: f32 = 60.0;
+        const ROW: f32 = 28.0;
+        let Some(frame) = self.last_frame.get().filter(|frame| frame.contains(pos)) else {
+            return EventResult::NotHandled;
+        };
+        let x = pos.x - frame.x;
+        let y = pos.y - frame.y;
+        let half = ((frame.w - BUTTONS) * 0.5).max(40.0);
+        let row = (y >= HEADER).then(|| ((y - HEADER) / ROW) as usize);
+        if x < half {
+            return self.toggle_row(TransferPane::Source, row);
+        }
+        if x > half + BUTTONS {
+            return self.toggle_row(TransferPane::Target, row);
+        }
+        let button_y = frame.h * 0.5 - 20.0;
+        if y >= button_y && y < button_y + 20.0 {
+            self.move_selected(TransferPane::Source);
+            return EventResult::Handled;
+        }
+        if y >= button_y + 24.0 && y < button_y + 44.0 {
+            self.move_selected(TransferPane::Target);
+            return EventResult::Handled;
+        }
+        EventResult::NotHandled
+    }
+
+    fn key_down(&mut self, key: KeyCode) -> EventResult {
+        if self.source.is_empty() && self.target.is_empty() {
+            return EventResult::NotHandled;
+        }
+        match key {
+            KeyCode::Left => self.activate_pane(TransferPane::Source),
+            KeyCode::Right => self.activate_pane(TransferPane::Target),
+            KeyCode::Up => self.active_index = self.active_index.saturating_sub(1),
+            KeyCode::Down => {
+                self.active_index =
+                    (self.active_index + 1).min(self.active_len().saturating_sub(1));
+            }
+            KeyCode::Home => self.active_index = 0,
+            KeyCode::End => self.active_index = self.active_len().saturating_sub(1),
+            KeyCode::Space => {
+                self.toggle_active();
+            }
+            KeyCode::Enter => {
+                if !self.active_items().iter().any(|item| item.selected) {
+                    self.toggle_active();
+                }
+                self.move_selected(self.active_pane);
+            }
+            _ => return EventResult::NotHandled,
+        }
+        EventResult::Handled
+    }
+
+    fn toggle_row(&mut self, pane: TransferPane, row: Option<usize>) -> EventResult {
+        let Some(index) = row else {
+            return EventResult::NotHandled;
+        };
+        let items = match pane {
+            TransferPane::Source => &mut self.source,
+            TransferPane::Target => &mut self.target,
+        };
+        let Some(item) = items.get_mut(index) else {
+            return EventResult::NotHandled;
+        };
+        item.selected = !item.selected;
+        self.active_pane = pane;
+        self.active_index = index;
+        self.focused = true;
+        EventResult::Handled
+    }
+
+    fn toggle_active(&mut self) {
+        let index = self.active_index;
+        let items = match self.active_pane {
+            TransferPane::Source => &mut self.source,
+            TransferPane::Target => &mut self.target,
+        };
+        if let Some(item) = items.get_mut(index) {
+            item.selected = !item.selected;
+        }
+    }
+
+    fn move_selected(&mut self, from: TransferPane) -> bool {
+        let (source, target) = match from {
+            TransferPane::Source => (&mut self.source, &mut self.target),
+            TransferPane::Target => (&mut self.target, &mut self.source),
+        };
+        let mut kept = Vec::with_capacity(source.len());
+        let mut moved = Vec::new();
+        for mut item in source.drain(..) {
+            if item.selected {
+                item.selected = false;
+                moved.push(item);
+            } else {
+                kept.push(item);
+            }
+        }
+        *source = kept;
+        if moved.is_empty() {
+            return false;
+        }
+        target.extend(moved);
+        self.active_index = self.active_index.min(self.active_len().saturating_sub(1));
+        self.pending_change
+            .replace(Some(self.target_keys_payload()));
+        true
+    }
+
+    fn activate_pane(&mut self, pane: TransferPane) {
+        self.active_pane = pane;
+        self.active_index = self.active_index.min(self.active_len().saturating_sub(1));
+    }
+
+    fn active_items(&self) -> &[TransferItem] {
+        match self.active_pane {
+            TransferPane::Source => &self.source,
+            TransferPane::Target => &self.target,
+        }
+    }
+
+    fn active_len(&self) -> usize {
+        self.active_items().len()
+    }
+
+    fn target_keys_payload(&self) -> String {
+        self.target
+            .iter()
+            .map(|item| item.key.as_str())
+            .collect::<Vec<_>>()
+            .join(",")
     }
 }
 impl Default for Transfer {

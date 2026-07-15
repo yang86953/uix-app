@@ -353,6 +353,7 @@ fn reconcile_transfer_preserves_live_membership_and_syncs_initial_items() {
             .as_any_mut()
             .downcast_mut::<Transfer>()
             .unwrap();
+        transfer.set_frame_for_test(Rect::new(0.0, 0.0, 500.0, 200.0));
         assert_eq!(
             crate::ui::EventHandler::on_event(
                 transfer,
@@ -386,8 +387,8 @@ fn reconcile_transfer_preserves_live_membership_and_syncs_initial_items() {
             ),
             EventResult::Handled
         );
-        assert_eq!(transfer.source_count(), 0);
-        assert_eq!(transfer.target_count(), 1);
+        assert_eq!(transfer.source_items().len(), 0);
+        assert_eq!(transfer.target_items().len(), 1);
     }
 
     ViewAdapter::reconcile_nodes(
@@ -407,16 +408,17 @@ fn reconcile_transfer_preserves_live_membership_and_syncs_initial_items() {
         .downcast_ref::<Transfer>()
         .unwrap();
     assert_eq!(transfer as *const Transfer, before_ptr);
-    assert_eq!(transfer.source_count(), 0);
-    assert_eq!(transfer.target_count(), 1);
+    assert_eq!(transfer.source_items().len(), 0);
+    assert_eq!(transfer.target_items().len(), 1);
     assert_eq!(
         transfer.snapshot_fields(),
         SnapshotFields::Transfer {
-            source: vec![SnapshotTransferItem {
-                key: "b".to_string(),
-                title: "B".to_string(),
+            source: vec![],
+            target: vec![SnapshotTransferItem {
+                key: "a".to_string(),
+                title: "A".to_string(),
+                selected: false,
             }],
-            target: vec![],
         }
     );
 }
