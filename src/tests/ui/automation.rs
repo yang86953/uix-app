@@ -9,7 +9,7 @@ use crate::ui::test_harness::{
     AutomationAction, AutomationActionKind, AutomationError, AutomationErrorCode, AutomationTarget,
     TestApp, AUTOMATION_SCHEMA,
 };
-use crate::ui::{EventHandler, OverlayKind, WidgetCapabilities, WidgetLayout};
+use crate::ui::{EventHandler, OverlayEntry, OverlayKind, WidgetCapabilities, WidgetLayout};
 
 static NEXT_TEMP_DIRECTORY: AtomicU64 = AtomicU64::new(1);
 
@@ -148,6 +148,83 @@ fn click_reports_modal_blocking_without_dispatching_to_background_target() {
         }
     );
     assert_eq!(error.code(), AutomationErrorCode::Blocked);
+    assert_eq!(count.get(), 0);
+}
+
+#[test]
+fn click_reports_dismissible_overlay_interception_without_closing_it() {
+    let count = State::new(0i32);
+    let count_for_root = count.clone();
+    let mut app = TestApp::new((320.0, 120.0), move || {
+        let count = count_for_root.clone();
+        column((
+            button("Background")
+                .on_click(&count, |count| count.update(|value| *value += 1))
+                .automation_id("background"),
+            button("Popover owner").automation_id("popover"),
+        ))
+    });
+    let snapshot = app.snapshot();
+    let background_center = snapshot.find("background").unwrap().center().unwrap();
+    let owner = snapshot.find("popover").unwrap().id;
+    app.tree_mut().overlay_stack_mut().push_entry(
+        OverlayEntry::new(owner, OverlayKind::Popover)
+            .bounds(Rect::new(
+                background_center.x + 40.0,
+                background_center.y,
+                20.0,
+                20.0,
+            ))
+            .dismiss_on_outside(true),
+    );
+
+    let error = app.click("background").unwrap_err();
+
+    assert_eq!(
+        error,
+        AutomationError::Blocked {
+            automation_id: "background".to_owned(),
+            blocker: owner,
+        }
+    );
+    assert_eq!(app.tree().overlay_stack().len(), 1);
+    assert_eq!(count.get(), 0);
+}
+
+#[test]
+fn click_uses_overlay_target_for_obscured_preflight() {
+    let count = State::new(0i32);
+    let count_for_root = count.clone();
+    let mut app = TestApp::new((320.0, 120.0), move || {
+        let count = count_for_root.clone();
+        column((
+            button("Background")
+                .on_click(&count, |count| count.update(|value| *value += 1))
+                .automation_id("background"),
+            button("Popover owner").automation_id("popover"),
+        ))
+    });
+    let snapshot = app.snapshot();
+    let background_center = snapshot.find("background").unwrap().center().unwrap();
+    let owner = snapshot.find("popover").unwrap().id;
+    app.tree_mut().overlay_stack_mut().push_entry(
+        OverlayEntry::new(owner, OverlayKind::Popover).bounds(Rect::new(
+            background_center.x - 5.0,
+            background_center.y - 5.0,
+            10.0,
+            10.0,
+        )),
+    );
+
+    let error = app.click("background").unwrap_err();
+
+    assert_eq!(
+        error,
+        AutomationError::Obscured {
+            automation_id: "background".to_owned(),
+            hit: Some(owner),
+        }
+    );
     assert_eq!(count.get(), 0);
 }
 
