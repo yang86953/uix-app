@@ -2,7 +2,6 @@
 
 mod aabb3d;
 mod context;
-mod dirty_region;
 mod mat4;
 mod physical_box;
 mod platform_adapter;
