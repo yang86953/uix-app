@@ -32,6 +32,8 @@ from scripts.run_windows_gfx_r5 import (
 
 def passing_log(case) -> str:
     return (
+        "\n".join(case.required_evidence_markers())
+        + "\n"
         "running 1 test\n"
         f"test {case.test_name} ... ok\n"
         "test result: ok. 1 passed; 0 failed;\n"
@@ -150,6 +152,19 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "device-lost timeout"):
             build_plan("all", "amd", False, 900, 601)
 
+    def test_all_profile_requires_hardware_specific_evidence_markers(self) -> None:
+        plan = build_plan("all", "intel", False, 1_200, 60)
+        markers = {
+            case.name: case.required_evidence_markers() for case in plan
+        }
+
+        for required in markers.values():
+            self.assertIn("vendor=0x8086", required)
+        self.assertIn("dpi=", markers["vulkan-mixed-dpi"])
+        self.assertIn("duration=1200.0s", markers["single-window-soak"])
+        self.assertIn("ERROR_DEVICE_LOST", markers["external-device-reset"])
+        self.assertIn("device_fault=false;", markers["external-device-reset"])
+
     def test_evidence_manifest_survives_each_case_transition(self) -> None:
         plan = build_plan("mixed-dpi", "amd", None, 900, 60)
         with TemporaryDirectory() as directory:
@@ -211,6 +226,8 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
     def test_exact_case_success_requires_one_named_passing_test(self) -> None:
         case = build_plan("mixed-dpi", "amd", None, 900, 60)[0]
         valid = (
+            "\n".join(case.required_evidence_markers())
+            + "\n"
             "running 1 test\n"
             f"test {case.test_name} ... evidence\n"
             "ok\n\n"
@@ -220,6 +237,15 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             path = Path(directory) / "case.log"
             path.write_text(valid, encoding="utf-8")
             require_case_success(case, path)
+
+            path.write_text(
+                "running 1 test\n"
+                f"test {case.test_name} ... ok\n"
+                "test result: ok. 1 passed; 0 failed; 0 ignored\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "semantic evidence markers"):
+                require_case_success(case, path)
 
             path.write_text(
                 "running 0 tests\n"
