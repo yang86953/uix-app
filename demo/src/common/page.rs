@@ -98,10 +98,10 @@ impl<'a> PageBuilder<'a> {
         let Some(title) = self.open_section.take() else {
             return;
         };
-        let body = std::mem::take(&mut self.section_body);
+        let mut body = std::mem::take(&mut self.section_body);
         self.items.push(section_title(self.tk, &title));
         let panel_body = if body.len() == 1 {
-            body.into_iter().next().expect("one body node")
+            body.remove(0)
         } else {
             column_fit(body).gap(12.0)
         };

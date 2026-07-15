@@ -2,7 +2,9 @@
 
 use uix::prelude::*;
 
-use crate::common::page::{PageBuilder, PAGE_APP, PAGE_COUNT, PAGE_GALLERY, PAGE_GENERAL};
+use crate::common::page::{
+    PageBuilder, PAGE_APP, PAGE_COUNT, PAGE_GALLERY, PAGE_GENERAL, PAGE_HOME,
+};
 use crate::common::showcase::{demo_card, panel};
 use crate::demos::context::DemoCtx;
 
@@ -40,7 +42,8 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
     let tk = ctx.tk;
     let active = ctx
         .active_page
-        .expect("home page requires active_page for navigation");
+        .cloned()
+        .unwrap_or_else(|| State::new(PAGE_HOME));
 
     let nav_app = active.clone();
     let nav_general = active.clone();
