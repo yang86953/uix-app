@@ -151,6 +151,7 @@ impl Middleware for RetryMiddleware {
     fn handle(&self, ctx: &mut MiddlewareContext, next: &mut dyn FnMut(&mut MiddlewareContext)) {
         for attempt in 0..=self.max_retries {
             ctx.retry_count = attempt;
+            ctx.status_code = 0;
             ctx.succeeded = true;
             ctx.error_message.clear();
 
