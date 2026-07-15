@@ -15,6 +15,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 
+if __package__:
+    from .gfx_r5_process import terminate_process_tree
+else:
+    from gfx_r5_process import terminate_process_tree
+
 ROOT = Path(__file__).resolve().parent.parent
 
 VENDOR_ENV = "UIX_GFX_R5_EXPECT_VENDOR"
@@ -740,8 +745,12 @@ def run_case(case: GfxR5Case, log_path: Path) -> tuple[int, float]:
                 print(line, end="", flush=True)
                 log.write(line)
         except KeyboardInterrupt:
-            process.terminate()
-            process.wait()
+            if not terminate_process_tree(process):
+                print(
+                    "warning: interrupted GFX-R5 case could not confirm full "
+                    "process-tree cleanup",
+                    file=sys.stderr,
+                )
             raise
         exit_code = process.wait()
     normalize_log_ending(log_path)
