@@ -840,7 +840,8 @@ fn windows_vulkan_shared_device_multiwindow_soak_is_bounded() {
     let handles_after = current_process_handle_count();
     assert!(
         peak_handles <= handles_before.saturating_add(32),
-        "shared multiwindow handles grew beyond the bounded envelope: before={handles_before}, peak={peak_handles}, after={handles_after}"
+        "shared multiwindow handles grew beyond the bounded envelope: before={handles_before}, peak={peak_handles}, after={handles_after}, rounds={rounds}; swapchain_maintenance1={}",
+        first.swapchain_maintenance1_enabled_for_test()
     );
     println!(
         "GFX-R5 Vulkan shared-device soak: expected={}; duration={:.1}s rounds={rounds} handles={handles_before}->{handles_after} peak={peak_handles}; {}; swapchain_maintenance1={}",
@@ -942,7 +943,8 @@ fn windows_vulkan_hardware_resize_present_soak_is_bounded() {
     let handles_after = current_process_handle_count();
     assert!(
         peak_handles <= handles_before.saturating_add(32),
-        "process handles grew beyond the bounded envelope: before={handles_before}, peak={peak_handles}, after={handles_after}"
+        "process handles grew beyond the bounded envelope: before={handles_before}, peak={peak_handles}, after={handles_after}, rounds={rounds}; swapchain_maintenance1={}",
+        context.swapchain_maintenance1_enabled_for_test()
     );
     println!(
         "GFX-R5 Vulkan soak: expected={}; duration={:.1}s rounds={rounds} handles={handles_before}->{handles_after} peak={peak_handles}; {}; swapchain_maintenance1={}",
