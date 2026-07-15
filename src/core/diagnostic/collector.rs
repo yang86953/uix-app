@@ -199,7 +199,14 @@ impl Collector {
                 if let Some(last) = inner.errors.back() {
                     if last.code() == err.code() && last.message() == err.message() {
                         self.total_collected.fetch_add(1, Ordering::Relaxed);
-                        return inner.errors.len();
+                        let stored = inner.errors.len();
+                        let callbacks: Vec<ErrorCallback> =
+                            inner.callbacks.values().cloned().collect();
+                        drop(inner);
+                        for callback in &callbacks {
+                            callback(&callback_error);
+                        }
+                        return stored;
                     }
                 }
             }

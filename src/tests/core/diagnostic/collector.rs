@@ -1,7 +1,7 @@
 use crate::core::diagnostic::{Collector, CollectorConfig};
 use crate::core::log::Level;
 use crate::core::{Errc, Error, ErrorSeverity};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 #[test]
@@ -47,6 +47,27 @@ fn collector_auto_log_policy_honors_enablement_and_configured_level() {
         collector.configured_log_level_for_test(ErrorSeverity::Fatal),
         Some(Level::Fatal)
     );
+}
+
+#[test]
+fn deduplication_suppresses_storage_but_not_collection_callbacks() {
+    let collector = Collector::for_test(CollectorConfig {
+        auto_log: false,
+        deduplicate: true,
+        ..CollectorConfig::default()
+    });
+    let callback_count = Arc::new(AtomicUsize::new(0));
+    let observed_count = Arc::clone(&callback_count);
+    collector.on_collect(move |_| {
+        observed_count.fetch_add(1, Ordering::Relaxed);
+    });
+
+    collector.collect(Error::warn(Errc::Unknown, "duplicate"));
+    collector.collect(Error::warn(Errc::Unknown, "duplicate"));
+
+    assert_eq!(collector.total_collected(), 2);
+    assert_eq!(collector.stored_count(), 1);
+    assert_eq!(callback_count.load(Ordering::Relaxed), 2);
 }
 
 #[test]
