@@ -3,11 +3,12 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::pipeline::{Invalidation, InvalidationQueueHandle};
 use crate::ui::app_state::AppState;
 use crate::ui::event::{HandlerTable, WindowAction};
+use crate::ui::focus_handle::FocusHandle;
 use crate::ui::foundation::focus_trap::next_focus_in_order;
 use crate::ui::managers::WidgetManagers;
 use crate::ui::overlay::OverlayStack;
 use crate::ui::render_handler::{RenderHandlerRegistration, RenderHandlerTable};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -47,6 +48,7 @@ pub struct WidgetTree {
     pub(crate) effects: Vec<crate::ui::foundation::state::Effect>,
     managers: WidgetManagers,
     app_state: Option<AppState>,
+    focus_handles: HashMap<WidgetId, FocusHandle>,
     timer_routes: BTreeMap<u64, (WidgetId, u32)>,
     focus_trap_restore: Vec<(WidgetId, Option<WidgetId>)>,
     #[cfg(feature = "test-harness")]
@@ -98,6 +100,7 @@ impl Default for WidgetTree {
             effects: Vec::new(),
             managers: WidgetManagers::new(),
             app_state: None,
+            focus_handles: HashMap::new(),
             timer_routes: BTreeMap::new(),
             focus_trap_restore: Vec::new(),
             #[cfg(feature = "test-harness")]
@@ -175,6 +178,40 @@ impl WidgetTree {
         app_state.has_semantic_events_for(&targets)
     }
 
+    pub(crate) fn drain_app_state_focus_requests(&mut self) -> bool {
+        let Some(app_state) = self.app_state.clone() else {
+            return false;
+        };
+        let targets: HashSet<_> = self.traverse().iter().copied().collect();
+        let requests = app_state.drain_focus_requests_for(&targets);
+        if requests.is_empty() {
+            return false;
+        }
+        for (id, request) in requests {
+            match request {
+                crate::ui::app_state::FocusRequest::Focus => {
+                    if self.focus_target_available(id) {
+                        self.set_focus(Some(id));
+                    }
+                }
+                crate::ui::app_state::FocusRequest::Blur => {
+                    if self.managers.focus.focused_component() == Some(id) {
+                        self.set_focus(None);
+                    }
+                }
+            }
+        }
+        true
+    }
+
+    pub(crate) fn has_app_state_focus_requests(&self) -> bool {
+        let Some(app_state) = self.app_state.as_ref() else {
+            return false;
+        };
+        let targets: HashSet<_> = self.traverse().iter().copied().collect();
+        app_state.has_focus_requests_for(&targets)
+    }
+
     pub(crate) fn register_app_state_snapshot(&self, id: WidgetId) {
         let Some(app_state) = &self.app_state else {
             return;
@@ -197,9 +234,15 @@ impl WidgetTree {
             self.invalidation_handle(),
             rect,
         );
+        if let Some(handle) = self.focus_handles.get(&id) {
+            handle.bind(id, app_state);
+        }
     }
 
     pub(crate) fn unregister_app_state_snapshot(&self, id: WidgetId) {
+        if let Some(handle) = self.focus_handles.get(&id) {
+            handle.unbind(id);
+        }
         if let Some(app_state) = &self.app_state {
             app_state.unregister(id);
         }
@@ -468,6 +511,7 @@ impl WidgetTree {
                 self.managers.focus.unregister_component(id);
                 self.managers.interaction.unregister_component(id);
                 self.managers.drag.unregister_component(id);
+                self.focus_handles.remove(&id);
                 self.invalidate_slot_generation(slot);
                 self.free_slots.push(slot);
             }
@@ -718,6 +762,7 @@ impl WidgetTree {
             key,
             automation_id,
             tab_idx,
+            focus_handle,
             accessibility_override,
             handlers,
             system_event_handlers,
@@ -740,6 +785,7 @@ impl WidgetTree {
             n.set_accessibility_override(accessibility_override);
         }
         self.register_focusable(id);
+        self.set_focus_handle(id, focus_handle);
         let handler_signatures = handlers
             .iter()
             .map(|handler| handler.authored_signature())
@@ -803,6 +849,27 @@ impl WidgetTree {
             node.set_tab_index(tab_index.max(0));
         }
         self.register_focusable(id);
+    }
+
+    pub(crate) fn set_focus_handle(&mut self, id: ComponentId, handle: Option<FocusHandle>) {
+        let unchanged = self
+            .focus_handles
+            .get(&id)
+            .zip(handle.as_ref())
+            .is_some_and(|(current, next)| current.same_handle(next));
+        if unchanged {
+            return;
+        }
+        if let Some(previous) = self.focus_handles.remove(&id) {
+            previous.unbind(id);
+        }
+        let Some(handle) = handle else {
+            return;
+        };
+        if let Some(app_state) = &self.app_state {
+            handle.bind(id, app_state);
+        }
+        self.focus_handles.insert(id, handle);
     }
 
     pub fn overlay_stack(&self) -> &OverlayStack {

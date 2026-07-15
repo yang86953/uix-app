@@ -333,6 +333,7 @@ impl WindowDriver {
         due_registered_work
             || !main_thread_queue.is_empty()
             || agent_commands.has_work()
+            || tree.has_app_state_focus_requests()
             || tree.has_app_state_semantic_events()
             || tree.has_pending_effects()
             || self.frame_scheduler.has_due_occlusion_probe(now)
@@ -435,6 +436,8 @@ impl WindowDriver {
             semantic_state,
             self.agent_surface_presentable(platform_window),
         );
+        let had_app_state_focus_work =
+            with_platform_clipboard(&mut platform, || tree.drain_app_state_focus_requests());
         let had_app_state_semantic_work =
             with_platform_clipboard(&mut platform, || tree.drain_app_state_semantic_events());
         active_work.sync_timers(tree.active_timers(), now);
@@ -462,6 +465,7 @@ impl WindowDriver {
             || had_main_thread_work
             || had_agent_pending
             || had_agent_command_work
+            || had_app_state_focus_work
             || had_app_state_semantic_work
             || pending_effects;
 

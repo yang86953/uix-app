@@ -96,6 +96,7 @@ pub(super) fn observe_agent_settle(
         || reconcile_pending
         || tree.has_reconcile_requested()
         || !main_thread_queue.is_empty()
+        || tree.has_app_state_focus_requests()
         || tree.has_app_state_semantic_events()
         || tree.has_pending_effects()
         || layout_work_pending;

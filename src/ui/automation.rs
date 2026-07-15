@@ -258,6 +258,7 @@ impl TestApp {
         tree.build(ViewAdapter::expand(root));
         tree.bind_orphan_pending_states();
         tree.bind_pending_effects();
+        tree.set_app_state(crate::ui::AppState::new());
         set_root_frame(&mut tree, viewport);
         tree.layout();
 
@@ -425,9 +426,11 @@ impl TestApp {
     pub fn settle(&mut self) -> Result<usize, AutomationError> {
         let mut passes = 0;
         loop {
+            let focus_changed = self.tree.drain_app_state_focus_requests();
+            let semantic_changed = self.tree.drain_app_state_semantic_events();
             let effects_changed = self.tree.has_pending_effects() && self.tree.tick_effects();
             let reconcile_requested = self.tree.take_reconcile_requested();
-            if !effects_changed && !reconcile_requested {
+            if !focus_changed && !semantic_changed && !effects_changed && !reconcile_requested {
                 return Ok(passes);
             }
             if reconcile_requested {

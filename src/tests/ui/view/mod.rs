@@ -5,5 +5,6 @@ mod adapter;
 mod canvas;
 mod combinators;
 mod computed;
+mod focus_handle;
 mod style_states;
 mod system_events;

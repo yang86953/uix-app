@@ -10,6 +10,7 @@ pub(crate) mod component_patch;
 pub mod component_snapshot;
 pub(crate) mod core;
 pub mod event;
+pub mod focus_handle;
 pub mod foundation;
 pub mod layout;
 pub mod macros;
@@ -58,6 +59,7 @@ pub use event::{
     ClickEvent, HandlerId, HandlerOptions, HandlerRegistration, HandlerTable, SemanticEvent,
     SemanticKind, SemanticPayload, SystemEvent, SystemEventKind,
 };
+pub use focus_handle::{FocusHandle, FocusHandleError};
 pub use foundation::config::{
     use_config, with_config, ComponentConfig, ComponentOverrides, Config, ConfigProvider,
 };
