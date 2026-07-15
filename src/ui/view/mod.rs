@@ -9,7 +9,9 @@ use crate::ui::event::{HandlerRegistration, SemanticEvent, SemanticKind};
 use crate::ui::foundation::provider_context::{current_provider_context, ProviderContext};
 use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::style::{BoxShadowDef, ColorValue, Style, TypographyToken};
+use crate::ui::system_event_handler::SystemEventHandlerRegistration;
 use crate::ui::traits::WidgetComponent;
+use crate::ui::{EventResult, SystemEvent};
 
 pub(crate) mod adapter;
 pub mod combinators;
@@ -43,6 +45,7 @@ pub struct ViewNode {
     pub(crate) key: Option<String>,
     pub(crate) automation_id: Option<String>,
     pub(crate) handlers: Vec<HandlerRegistration>,
+    pub(crate) system_event_handlers: Vec<SystemEventHandlerRegistration>,
     pub(crate) render_handlers: Vec<RenderHandlerRegistration>,
 }
 
@@ -69,6 +72,7 @@ impl ViewNode {
             key: None,
             automation_id: None,
             handlers: Vec::new(),
+            system_event_handlers: Vec::new(),
             render_handlers: Vec::new(),
         }
     }
@@ -85,6 +89,7 @@ impl ViewNode {
             key: None,
             automation_id: None,
             handlers: Vec::new(),
+            system_event_handlers: Vec::new(),
             render_handlers: Vec::new(),
         }
     }
@@ -250,6 +255,17 @@ impl ViewNode {
         self
     }
 
+    /// 处理命中节点及其冒泡路径上的原始系统事件。
+    ///
+    /// 返回 [`EventResult::Handled`] 会停止继续冒泡；返回
+    /// [`EventResult::NotHandled`] 或 [`EventResult::Bubbled`] 时，框架继续调用
+    /// 组件自身 handler 并向父节点传播。每次 reconcile 会用新声明替换旧闭包。
+    pub fn on_event(mut self, handler: impl FnMut(&SystemEvent) -> EventResult + 'static) -> Self {
+        self.system_event_handlers
+            .push(SystemEventHandlerRegistration::new(Box::new(handler)));
+        self
+    }
+
     pub fn on_semantic_capture<T>(
         mut self,
         kind: SemanticKind,
@@ -378,6 +394,15 @@ impl crate::ui::IntoWidgetNode for ViewNode {
         adapter::ViewAdapter::expand(self)
     }
 }
+
+/// 为所有可转换为 [`ViewNode`] 的 builder 提供原始事件声明。
+pub trait EventExt: Into<ViewNode> + Sized {
+    fn on_event(self, handler: impl FnMut(&SystemEvent) -> EventResult + 'static) -> ViewNode {
+        self.into().on_event(handler)
+    }
+}
+
+impl<T: Into<ViewNode>> EventExt for T {}
 
 /// 为所有 `Into<ViewNode>` 类型提供样式链（[使用](docs/使用.md)）。
 ///

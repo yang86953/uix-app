@@ -18,6 +18,7 @@ pub mod placement;
 pub(crate) mod render_handler;
 pub(crate) mod semantic_action;
 pub(crate) mod semantic_snapshot;
+pub(crate) mod system_event_handler;
 pub mod theme;
 pub mod traits;
 pub mod view;

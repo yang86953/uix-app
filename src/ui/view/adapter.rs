@@ -128,6 +128,10 @@ impl ViewAdapter {
             wnode = wnode.with_handlers(node.handlers);
         }
 
+        if !node.system_event_handlers.is_empty() {
+            wnode = wnode.with_system_event_handlers(node.system_event_handlers);
+        }
+
         if !node.render_handlers.is_empty() {
             wnode = wnode.with_render_handlers(node.render_handlers);
         }
@@ -229,6 +233,7 @@ impl ViewAdapter {
             key,
             automation_id,
             handlers,
+            system_event_handlers,
             render_handlers,
         } = node;
         let context_changed = tree
@@ -260,6 +265,7 @@ impl ViewAdapter {
         tree.register_app_state_snapshot(id);
 
         let _handlers_changed = Self::reconcile_handlers(tree, id, handlers);
+        tree.replace_system_event_handlers(id, system_event_handlers);
         tree.replace_render_handlers(id, render_handlers);
         let table_expand = tree.has_table_expand_renderer(id);
         let mut children_changed = if table_expand {
