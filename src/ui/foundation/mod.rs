@@ -4,6 +4,7 @@ pub mod clipboard;
 pub mod config;
 pub mod focus_trap;
 pub mod locale;
+pub(crate) mod provider_context;
 pub mod state;
 pub mod style;
 pub mod virtual_scroll;

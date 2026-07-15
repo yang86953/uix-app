@@ -62,6 +62,10 @@ impl Theme {
     pub fn is_dark(&self) -> bool {
         ThemeTokens::is_dark(self.provider.as_ref())
     }
+
+    pub(crate) fn is_same_provider(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.provider, &other.provider)
+    }
 }
 
 impl Default for Theme {

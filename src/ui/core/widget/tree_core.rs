@@ -714,6 +714,7 @@ impl WidgetTree {
         let WidgetNode {
             widget,
             children,
+            provider_context,
             z_index,
             key,
             automation_id,
@@ -722,8 +723,8 @@ impl WidgetTree {
             render_handlers,
         } = node;
         let id = match parent {
-            Some(p) => self.add_child(p, widget),
-            None => self.set_root(widget),
+            Some(p) => self.add_child_with_context(p, widget, provider_context),
+            None => self.set_root_with_context(widget, provider_context),
         };
         if let Some(n) = self.get_mut(id) {
             n.set_key(key);

@@ -105,6 +105,8 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<Size>();
     assert_exported::<WindowId>();
     assert_exported::<ControlSize>();
+    assert_exported::<Locale>();
+    assert_exported::<LocaleProvider>();
     assert_exported::<CursorType>();
     assert_exported::<KeyCode>();
     assert_exported::<KeyMod>();

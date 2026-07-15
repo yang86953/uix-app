@@ -6,6 +6,9 @@ use crate::draw::spatial::{Ray3D, SpatialContext};
 pub use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 pub use crate::ui::event::SystemEvent;
 use crate::ui::event::{HandlerRegistration, HandlerSignature};
+use crate::ui::foundation::provider_context::{
+    current_provider_context, with_provider_context, ProviderContext,
+};
 use crate::ui::render_handler::RenderHandlerRegistration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,6 +29,7 @@ pub use crate::ui::traits::{
 pub struct WidgetNode {
     pub widget: Box<dyn WidgetComponent>,
     pub children: Vec<WidgetNode>,
+    pub(crate) provider_context: ProviderContext,
     pub z_index: i32,
     pub key: Option<Box<str>>,
     pub automation_id: Option<Box<str>>,
@@ -39,6 +43,7 @@ impl WidgetNode {
         Self {
             widget,
             children,
+            provider_context: current_provider_context(),
             z_index: 0,
             key: None,
             automation_id: None,
@@ -59,6 +64,7 @@ impl WidgetNode {
         Self {
             widget,
             children: vec![],
+            provider_context: current_provider_context(),
             z_index: 0,
             key: None,
             automation_id: None,
@@ -121,6 +127,11 @@ impl WidgetNode {
         self.render_handlers = handlers;
         self
     }
+
+    pub(crate) fn with_provider_context(mut self, context: ProviderContext) -> Self {
+        self.provider_context = context;
+        self
+    }
 }
 
 pub trait WidgetCore {
@@ -145,6 +156,7 @@ pub trait WidgetCore {
 pub struct BoxedWidget {
     component: Box<dyn WidgetComponent>,
     caps: WidgetCapabilities,
+    provider_context: ProviderContext,
     id: WidgetId,
     parent: Option<WidgetId>,
     children: Vec<WidgetId>,
@@ -163,14 +175,25 @@ pub struct BoxedWidget {
 }
 
 impl BoxedWidget {
-    pub fn new(mut component: Box<dyn WidgetComponent>) -> Self {
-        let caps = component.capabilities();
-        if let Some(lifecycle) = component.as_lifecycle_mut() {
-            lifecycle.on_init();
-        }
+    pub fn new(component: Box<dyn WidgetComponent>) -> Self {
+        Self::new_with_context(component, current_provider_context())
+    }
+
+    pub(crate) fn new_with_context(
+        mut component: Box<dyn WidgetComponent>,
+        provider_context: ProviderContext,
+    ) -> Self {
+        let caps = with_provider_context(&provider_context, || {
+            let caps = component.capabilities();
+            if let Some(lifecycle) = component.as_lifecycle_mut() {
+                lifecycle.on_init();
+            }
+            caps
+        });
         Self {
             component,
             caps,
+            provider_context,
             id: WidgetId::default(),
             parent: None,
             children: Vec::new(),
@@ -193,6 +216,27 @@ impl BoxedWidget {
     pub fn component_mut(&mut self) -> &mut dyn WidgetComponent {
         &mut *self.component
     }
+
+    pub(crate) fn provider_context(&self) -> &ProviderContext {
+        &self.provider_context
+    }
+
+    pub(crate) fn set_provider_context(&mut self, provider_context: ProviderContext) {
+        self.provider_context = provider_context;
+    }
+
+    fn with_component_context<T>(&self, f: impl FnOnce(&dyn WidgetComponent) -> T) -> T {
+        with_provider_context(&self.provider_context, || f(&*self.component))
+    }
+
+    fn with_component_context_mut<T>(
+        &mut self,
+        f: impl FnOnce(&mut dyn WidgetComponent) -> T,
+    ) -> T {
+        let provider_context = self.provider_context.clone();
+        with_provider_context(&provider_context, || f(&mut *self.component))
+    }
+
     pub(crate) fn replace_component(&mut self, mut component: Box<dyn WidgetComponent>) {
         let was_attached = self.attached;
         let was_mounted = self.mounted;
@@ -211,10 +255,13 @@ impl BoxedWidget {
             self.on_destroy();
         }
 
-        if let Some(lifecycle) = component.as_lifecycle_mut() {
-            lifecycle.on_init();
-        }
-        self.caps = component.capabilities();
+        self.caps = with_provider_context(&self.provider_context, || {
+            let caps = component.capabilities();
+            if let Some(lifecycle) = component.as_lifecycle_mut() {
+                lifecycle.on_init();
+            }
+            caps
+        });
         self.component = component;
         self.destroyed = false;
 
@@ -281,10 +328,12 @@ impl BoxedWidget {
     // ═══ 便捷分发方法 ═══
 
     pub fn measure(&self, constraints: Constraints) -> Size {
-        self.component()
-            .as_layout()
-            .map(|l| l.measure(constraints))
-            .unwrap_or_default()
+        self.with_component_context(|component| {
+            component
+                .as_layout()
+                .map(|layout| layout.measure(constraints))
+                .unwrap_or_default()
+        })
     }
 
     pub fn flex_grow(&self) -> f32 {
@@ -305,13 +354,15 @@ impl BoxedWidget {
         children: &[ComponentId],
         tree: &WidgetTree,
     ) -> Vec<(ComponentId, Rect)> {
-        self.component()
-            .as_layout()
-            .map(|layout| {
-                let measured = layout.measure_children(frame, children, tree);
-                layout.layout_children(frame, &measured, tree)
-            })
-            .unwrap_or_default()
+        self.with_component_context(|component| {
+            component
+                .as_layout()
+                .map(|layout| {
+                    let measured = layout.measure_children(frame, children, tree);
+                    layout.layout_children(frame, &measured, tree)
+                })
+                .unwrap_or_default()
+        })
     }
     pub fn children_clip(&self, frame: Rect) -> Option<Rect> {
         self.component()
@@ -382,15 +433,19 @@ impl BoxedWidget {
             .unwrap_or(false)
     }
     pub fn on_event(&mut self, event: &SystemEvent) -> EventResult {
-        self.component_mut()
-            .as_event_mut()
-            .map(|e| e.on_event(event))
-            .unwrap_or(EventResult::NotHandled)
+        self.with_component_context_mut(|component| {
+            component
+                .as_event_mut()
+                .map(|handler| handler.on_event(event))
+                .unwrap_or(EventResult::NotHandled)
+        })
     }
     pub(crate) fn take_window_action(&mut self) -> Option<crate::ui::event::WindowAction> {
-        self.component_mut()
-            .as_event_mut()
-            .and_then(|event| event.take_window_action())
+        self.with_component_context_mut(|component| {
+            component
+                .as_event_mut()
+                .and_then(|event| event.take_window_action())
+        })
     }
     pub fn semantic_event(
         &self,
@@ -444,44 +499,60 @@ impl BoxedWidget {
         self.caps.contains(WidgetCapabilities::EVENT)
     }
     pub fn on_attach(&mut self) {
-        if let Some(l) = self.component_mut().as_lifecycle_mut() {
-            l.on_attach();
-        }
+        self.with_component_context_mut(|component| {
+            if let Some(lifecycle) = component.as_lifecycle_mut() {
+                lifecycle.on_attach();
+            }
+        });
     }
     pub fn on_mount(&mut self) {
-        if let Some(l) = self.component_mut().as_lifecycle_mut() {
-            l.on_mount();
-        }
+        self.with_component_context_mut(|component| {
+            if let Some(lifecycle) = component.as_lifecycle_mut() {
+                lifecycle.on_mount();
+            }
+        });
     }
     pub fn on_active(&mut self) {
-        if let Some(l) = self.component_mut().as_lifecycle_mut() {
-            l.on_active();
-        }
+        self.with_component_context_mut(|component| {
+            if let Some(lifecycle) = component.as_lifecycle_mut() {
+                lifecycle.on_active();
+            }
+        });
     }
     pub fn on_inactive(&mut self) {
-        if let Some(l) = self.component_mut().as_lifecycle_mut() {
-            l.on_inactive();
-        }
+        self.with_component_context_mut(|component| {
+            if let Some(lifecycle) = component.as_lifecycle_mut() {
+                lifecycle.on_inactive();
+            }
+        });
     }
     pub fn on_theme_changed(&mut self) {
-        if let Some(l) = self.component_mut().as_lifecycle_mut() {
-            l.on_theme_changed();
-        }
+        self.with_component_context_mut(|component| {
+            if let Some(lifecycle) = component.as_lifecycle_mut() {
+                lifecycle.on_theme_changed();
+            }
+        });
     }
     pub fn on_unmount(&mut self) {
-        if let Some(l) = self.component_mut().as_lifecycle_mut() {
-            l.on_unmount();
-        }
+        self.with_component_context_mut(|component| {
+            if let Some(lifecycle) = component.as_lifecycle_mut() {
+                lifecycle.on_unmount();
+            }
+        });
     }
     pub fn on_detach(&mut self) {
-        if let Some(l) = self.component_mut().as_lifecycle_mut() {
-            l.on_detach();
-        }
+        self.with_component_context_mut(|component| {
+            if let Some(lifecycle) = component.as_lifecycle_mut() {
+                lifecycle.on_detach();
+            }
+        });
     }
     pub fn on_destroy(&mut self) {
-        if let Some(l) = self.component_mut().as_lifecycle_mut() {
-            l.on_destroy();
-        }
+        self.with_component_context_mut(|component| {
+            if let Some(lifecycle) = component.as_lifecycle_mut() {
+                lifecycle.on_destroy();
+            }
+        });
     }
     pub fn render(
         &self,
@@ -489,9 +560,11 @@ impl BoxedWidget {
         ctx: &mut crate::draw::painting::PaintContext,
         tree: &WidgetTree,
     ) {
-        if let Some(r) = self.component().as_render() {
-            r.render(frame, ctx, tree);
-        }
+        self.with_component_context(|component| {
+            if let Some(render) = component.as_render() {
+                render.render(frame, ctx, tree);
+            }
+        });
     }
 }
 
