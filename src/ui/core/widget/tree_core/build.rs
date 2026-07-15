@@ -17,6 +17,9 @@ impl WidgetTree {
         widget: Box<dyn WidgetComponent>,
         provider_context: ProviderContext,
     ) -> ComponentId {
+        if let Some(root) = self.root_id {
+            self.cancel_subtree_interaction(root);
+        }
         self.teardown_all();
 
         // Hard reset: clear the old tree and invalidate every previous ComponentId.
@@ -113,15 +116,7 @@ impl WidgetTree {
             return;
         }
         if !visible {
-            self.cancel_pointer_state_in_subtree(id);
-            if self
-                .managers
-                .focus
-                .focused_component()
-                .is_some_and(|focused| self.is_descendant_of(focused, id))
-            {
-                self.set_focus(None);
-            }
+            self.cancel_subtree_interaction(id);
         }
         if let Some(node) = self.get_mut(id) {
             node.set_visible(visible);

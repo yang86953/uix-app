@@ -4,6 +4,18 @@ use crate::ui::window_chrome::WindowInteractionRegion;
 use crate::ui::{OverlayEntry, OverlayKind};
 
 impl WidgetTree {
+    pub(crate) fn cancel_subtree_interaction(&mut self, root: WidgetId) {
+        self.cancel_pointer_state_in_subtree(root);
+        if self
+            .managers()
+            .focus
+            .focused_component()
+            .is_some_and(|focused| self.is_descendant_of(focused, root))
+        {
+            self.set_focus(None);
+        }
+    }
+
     pub(crate) fn cancel_pointer_state_in_subtree(&mut self, root: WidgetId) {
         self.cancel_pointer_hover_in_subtree(root);
         self.cancel_pointer_gesture_in_subtree(root);
