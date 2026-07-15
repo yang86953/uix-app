@@ -124,6 +124,10 @@ impl ViewAdapter {
             wnode = wnode.tab_index(tab_index);
         }
 
+        if let Some(focus_handle) = node.focus_handle {
+            wnode = wnode.with_focus_handle(focus_handle);
+        }
+
         if let Some(accessibility_override) = node.accessibility_override {
             wnode = wnode.with_accessibility_override(accessibility_override);
         }
@@ -241,6 +245,7 @@ impl ViewAdapter {
             key,
             automation_id,
             tab_index,
+            focus_handle,
             accessibility_override,
             handlers,
             system_event_handlers,
@@ -260,6 +265,7 @@ impl ViewAdapter {
                 .unwrap_or(0)
         });
         tree.set_tab_index(id, resolved_tab_index);
+        tree.set_focus_handle(id, focus_handle);
         if let Some(current) = tree.get_mut(id) {
             current.set_accessibility_override(accessibility_override);
         }

@@ -142,9 +142,13 @@ impl SecondaryWindowSession {
         let mut main_thread_context =
             MainThreadContext::new(parts.pending_root, parts.reconcile_pending);
         let had_main_thread_work = parts.main_thread_queue.drain(&mut main_thread_context);
+        let had_app_state_focus_work = parts.tree.drain_app_state_focus_requests();
         let had_app_state_semantic_work = parts.tree.drain_app_state_semantic_events();
 
-        had_main_thread_work || had_app_state_semantic_work || *parts.reconcile_pending
+        had_main_thread_work
+            || had_app_state_focus_work
+            || had_app_state_semantic_work
+            || *parts.reconcile_pending
     }
 
     fn has_frame_work(&mut self, now: Instant) -> bool {

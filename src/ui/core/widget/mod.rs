@@ -8,6 +8,7 @@ use crate::ui::accessibility_override::AccessibilityOverride;
 use crate::ui::component_snapshot::{AccessibilitySnapshot, ComponentConfigSnapshot};
 pub use crate::ui::event::SystemEvent;
 use crate::ui::event::{HandlerRegistration, HandlerSignature};
+use crate::ui::focus_handle::FocusHandle;
 use crate::ui::foundation::provider_context::{
     current_provider_context, with_provider_context, ProviderContext,
 };
@@ -37,6 +38,7 @@ pub struct WidgetNode {
     pub key: Option<Box<str>>,
     pub automation_id: Option<Box<str>>,
     pub tab_idx: i32,
+    pub(crate) focus_handle: Option<FocusHandle>,
     pub(crate) accessibility_override: Option<AccessibilityOverride>,
     pub handlers: Vec<HandlerRegistration>,
     pub(crate) system_event_handlers: Vec<SystemEventHandlerRegistration>,
@@ -53,6 +55,7 @@ impl WidgetNode {
             key: None,
             automation_id: None,
             tab_idx: 0,
+            focus_handle: None,
             accessibility_override: None,
             handlers: Vec::new(),
             system_event_handlers: Vec::new(),
@@ -76,6 +79,7 @@ impl WidgetNode {
             key: None,
             automation_id: None,
             tab_idx: 0,
+            focus_handle: None,
             accessibility_override: None,
             handlers: Vec::new(),
             system_event_handlers: Vec::new(),
@@ -89,6 +93,10 @@ impl WidgetNode {
     /// 设置 Tab 键导航顺序索引（> 0 表示可通过 Tab 获取焦点）。
     pub fn tab_index(mut self, idx: i32) -> Self {
         self.tab_idx = idx;
+        self
+    }
+    pub(crate) fn with_focus_handle(mut self, handle: FocusHandle) -> Self {
+        self.focus_handle = Some(handle);
         self
     }
     pub fn on_semantic(mut self, registration: HandlerRegistration) -> Self {

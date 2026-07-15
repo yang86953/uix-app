@@ -14,7 +14,7 @@ use crate::ui::system_event_handler::{SystemEventFilter, SystemEventHandlerRegis
 use crate::ui::traits::WidgetComponent;
 use crate::ui::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute, EventResult,
-    SystemEvent,
+    FocusHandle, SystemEvent,
 };
 
 pub(crate) mod adapter;
@@ -49,6 +49,7 @@ pub struct ViewNode {
     pub(crate) key: Option<String>,
     pub(crate) automation_id: Option<String>,
     pub(crate) tab_index: Option<i32>,
+    pub(crate) focus_handle: Option<FocusHandle>,
     pub(crate) accessibility_override: Option<AccessibilityOverride>,
     pub(crate) handlers: Vec<HandlerRegistration>,
     pub(crate) system_event_handlers: Vec<SystemEventHandlerRegistration>,
@@ -78,6 +79,7 @@ impl ViewNode {
             key: None,
             automation_id: None,
             tab_index: None,
+            focus_handle: None,
             accessibility_override: None,
             handlers: Vec::new(),
             system_event_handlers: Vec::new(),
@@ -97,6 +99,7 @@ impl ViewNode {
             key: None,
             automation_id: None,
             tab_index: None,
+            focus_handle: None,
             accessibility_override: None,
             handlers: Vec::new(),
             system_event_handlers: Vec::new(),
@@ -264,6 +267,12 @@ impl ViewNode {
     /// 让节点进入或退出默认 Tab 顺序。
     pub fn focusable(self, focusable: bool) -> Self {
         self.tab_index(if focusable { 1 } else { 0 })
+    }
+
+    /// 将应用持有的编程式焦点句柄绑定到该节点。
+    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(handle.clone());
+        self
     }
 
     /// 完整替换节点对外暴露的无障碍快照。
@@ -586,6 +595,10 @@ pub trait EventExt: Into<ViewNode> + Sized {
 
     fn focusable(self, focusable: bool) -> ViewNode {
         self.into().focusable(focusable)
+    }
+
+    fn focus_handle(self, handle: &FocusHandle) -> ViewNode {
+        self.into().focus_handle(handle)
     }
 }
 

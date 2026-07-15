@@ -18,7 +18,14 @@ pub(crate) struct AppStateInner {
     owner_thread: ThreadId,
     components: HashMap<ComponentId, AppStateEntry>,
     semantic_events: VecDeque<(ComponentId, SemanticEvent)>,
+    focus_requests: VecDeque<(ComponentId, FocusRequest)>,
     event_loop_waker: EventLoopWaker,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FocusRequest {
+    Focus,
+    Blur,
 }
 
 struct AppStateEntry {
@@ -84,6 +91,23 @@ impl AppState {
             .has_semantic_events_for(targets)
     }
 
+    pub(crate) fn drain_focus_requests_for(
+        &self,
+        targets: &HashSet<ComponentId>,
+    ) -> Vec<(ComponentId, FocusRequest)> {
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .drain_focus_requests_for(targets)
+    }
+
+    pub(crate) fn has_focus_requests_for(&self, targets: &HashSet<ComponentId>) -> bool {
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .has_focus_requests_for(targets)
+    }
+
     pub fn get_snapshot(&self, id: ComponentId) -> Option<ComponentConfigSnapshot> {
         self.inner
             .lock()
@@ -116,6 +140,7 @@ impl Default for AppStateInner {
             owner_thread: std::thread::current().id(),
             components: HashMap::new(),
             semantic_events: VecDeque::new(),
+            focus_requests: VecDeque::new(),
             event_loop_waker: EventLoopWaker::default(),
         }
     }
@@ -150,6 +175,7 @@ impl AppStateInner {
     fn unregister(&mut self, id: ComponentId) {
         self.assert_owner_thread();
         self.components.remove(&id);
+        self.focus_requests.retain(|(target, _)| *target != id);
     }
 
     fn set_event_loop_waker(&mut self, waker: EventLoopWaker) {
@@ -184,6 +210,18 @@ impl AppStateInner {
         Some(self.event_loop_waker.clone())
     }
 
+    pub(crate) fn enqueue_focus_request(
+        &mut self,
+        id: ComponentId,
+        request: FocusRequest,
+    ) -> Option<EventLoopWaker> {
+        if !self.components.contains_key(&id) {
+            return None;
+        }
+        self.focus_requests.push_back((id, request));
+        Some(self.event_loop_waker.clone())
+    }
+
     fn drain_semantic_events_for(
         &mut self,
         targets: &HashSet<ComponentId>,
@@ -211,6 +249,37 @@ impl AppStateInner {
         !targets.is_empty()
             && self
                 .semantic_events
+                .iter()
+                .any(|(id, _)| targets.contains(id))
+    }
+
+    fn drain_focus_requests_for(
+        &mut self,
+        targets: &HashSet<ComponentId>,
+    ) -> Vec<(ComponentId, FocusRequest)> {
+        self.assert_owner_thread();
+        if targets.is_empty() || self.focus_requests.is_empty() {
+            return Vec::new();
+        }
+
+        let mut matched = Vec::new();
+        let mut retained = VecDeque::new();
+        while let Some((id, request)) = self.focus_requests.pop_front() {
+            if targets.contains(&id) {
+                matched.push((id, request));
+            } else {
+                retained.push_back((id, request));
+            }
+        }
+        self.focus_requests = retained;
+        matched
+    }
+
+    fn has_focus_requests_for(&self, targets: &HashSet<ComponentId>) -> bool {
+        self.assert_owner_thread();
+        !targets.is_empty()
+            && self
+                .focus_requests
                 .iter()
                 .any(|(id, _)| targets.contains(id))
     }
