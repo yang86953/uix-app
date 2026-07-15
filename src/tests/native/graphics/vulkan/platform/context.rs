@@ -120,6 +120,29 @@ fn vulkan_present_statuses_are_typed_graphics_failures() {
 }
 
 #[test]
+fn failed_submit_keeps_the_submit_code_and_appends_fence_recovery_failure() {
+    let error = failed_submit_error(
+        vk::Result::ERROR_DEVICE_LOST,
+        Err(Error::new(
+            Errc::GraphicsOutOfMemory,
+            "replacement fence allocation failed",
+        )),
+    );
+
+    assert_eq!(error.code(), Errc::GraphicsDeviceLost);
+    assert!(error.message().contains("vkQueueSubmit"));
+    let recovery = error
+        .source_error()
+        .expect("fence recovery failure must remain in the cause chain");
+    assert_eq!(recovery.code(), Errc::GraphicsOutOfMemory);
+    assert_eq!(recovery.message(), "replacement fence allocation failed");
+
+    let recovered = failed_submit_error(vk::Result::ERROR_DEVICE_LOST, Ok(()));
+    assert_eq!(recovered.code(), Errc::GraphicsDeviceLost);
+    assert!(recovered.source_error().is_none());
+}
+
+#[test]
 fn vulkan_drawable_adapter_reuses_the_shared_windows_contract() {
     assert!(drawable_contract_source()
         .contains("crate::native::graphics::platform::windows::drawable_size"));

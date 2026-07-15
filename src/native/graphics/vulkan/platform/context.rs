@@ -39,6 +39,14 @@ pub(crate) fn vk_err(operation: &str, err: vk::Result) -> Error {
     Error::new(code, format!("VulkanContext: {operation} failed: {err:?}"))
 }
 
+pub(crate) fn failed_submit_error(submit_status: vk::Result, fence_recovery: Result<()>) -> Error {
+    let submit_failure = vk_err("vkQueueSubmit", submit_status);
+    match fence_recovery {
+        Ok(()) => submit_failure,
+        Err(recovery_failure) => submit_failure.with_appended_source(recovery_failure),
+    }
+}
+
 /// 校验 teardown 前的 device idle 结果。
 ///
 /// Vulkan 把 `ERROR_DEVICE_LOST` 视为 pending 资源不再 in-use，但 child object
@@ -478,8 +486,8 @@ impl VulkanContext {
             self.device
                 .queue_submit(self.queue, std::slice::from_ref(&submit), self.frame_fence)
         } {
-            self.restore_signaled_frame_fence()?;
-            return Err(vk_err("vkQueueSubmit", err));
+            let fence_recovery = self.restore_signaled_frame_fence();
+            return Err(failed_submit_error(err, fence_recovery));
         }
         self.image_layouts[image_index as usize] = vk::ImageLayout::PRESENT_SRC_KHR;
         let present = vk::PresentInfoKHR::default()
