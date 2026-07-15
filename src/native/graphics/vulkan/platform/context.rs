@@ -415,11 +415,7 @@ impl VulkanContext {
         let old_swapchain = self.swapchain;
         let maintenance1 = self.swapchain_maintenance1_enabled();
         if old_swapchain != vk::SwapchainKHR::null() {
-            unsafe {
-                self.device
-                    .device_wait_idle()
-                    .map_err(|err| vk_err("vkDeviceWaitIdle before swapchain recreate", err))?;
-            }
+            self.wait_for_frame_fence("vkWaitForFences before swapchain recreate")?;
             if maintenance1 {
                 self.present_fences.wait_and_reset_all(&self.device)?;
             } else {

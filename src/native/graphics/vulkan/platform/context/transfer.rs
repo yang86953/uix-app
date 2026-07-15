@@ -139,11 +139,7 @@ impl VulkanContext {
     /// 单 staging buffer 会被连续帧复用；CPU 覆写或替换前必须确认上一提交已停止读取。
     fn wait_for_previous_upload(&mut self) -> Result<()> {
         let fence_t0 = std::time::Instant::now();
-        unsafe {
-            self.device
-                .wait_for_fences(&[self.frame_fence], true, u64::MAX)
-                .map_err(|err| vk_err("vkWaitForFences before staging upload", err))?;
-        }
+        self.wait_for_frame_fence("vkWaitForFences before staging upload")?;
         if !self.present_fences.enabled() {
             self.present_lifetime
                 .complete_submission(&self.device, &self.swapchain_loader)?;
@@ -152,6 +148,16 @@ impl VulkanContext {
         sample.fence_wait_us = fence_t0.elapsed().as_micros();
         crate::core::perf_probe::record_present(sample);
         Ok(())
+    }
+
+    pub(super) fn wait_for_frame_fence(&self, operation: &str) -> Result<()> {
+        // SAFETY: frame_fence belongs to device and covers the only outstanding
+        // upload submission owned by this window context.
+        unsafe {
+            self.device
+                .wait_for_fences(&[self.frame_fence], true, u64::MAX)
+                .map_err(|error| vk_err(operation, error))
+        }
     }
 
     pub(super) fn hydrate_cpu_shadow_from_staging(&mut self) -> Result<()> {

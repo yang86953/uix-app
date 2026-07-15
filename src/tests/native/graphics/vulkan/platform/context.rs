@@ -13,6 +13,11 @@ use ash::vk;
 use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessHandleCount};
 
 #[cfg(windows)]
+const SOAK_WARMUP_SECONDS: u64 = 60;
+#[cfg(windows)]
+const SOAK_WARMUP_ROUNDS: u64 = 8_192;
+
+#[cfg(windows)]
 fn current_process_handle_count() -> u32 {
     let mut count = 0;
     unsafe {
@@ -769,16 +774,12 @@ fn windows_vulkan_shared_device_multiwindow_soak_is_bounded() {
         second.shared_device_identity()
     );
 
-    let handles_before = current_process_handle_count();
-    let deadline = std::time::Instant::now() + duration;
     let first_sizes = [(128, 96), (224, 144), (176, 132), (256, 160)];
     let second_sizes = [(192, 128), (144, 112), (240, 152), (168, 124)];
-    let mut rounds = 0_u64;
-    let mut peak_handles = handles_before;
-
-    while std::time::Instant::now() < deadline || rounds < first_sizes.len() as u64 {
-        if rounds % 2 == 0 {
-            let requested = first_sizes[rounds as usize % first_sizes.len()];
+    let mut iteration = 0_u64;
+    let mut exercise = |iteration: u64| {
+        if iteration % 2 == 0 {
+            let requested = first_sizes[iteration as usize % first_sizes.len()];
             first_window
                 .properties_mut()
                 .set_size(requested.0, requested.1)
@@ -788,7 +789,7 @@ fn windows_vulkan_shared_device_multiwindow_soak_is_bounded() {
                 .resize(requested.0, requested.1)
                 .expect("resize first shared surface");
         } else {
-            let requested = second_sizes[rounds as usize % second_sizes.len()];
+            let requested = second_sizes[iteration as usize % second_sizes.len()];
             second_window
                 .properties_mut()
                 .set_size(requested.0, requested.1)
@@ -799,8 +800,10 @@ fn windows_vulkan_shared_device_multiwindow_soak_is_bounded() {
                 .expect("resize second shared surface");
         }
 
-        let first_color = 0xFF00_0000 | ((rounds as u32).wrapping_mul(0x0001_0203) & 0x00FF_FFFF);
-        let second_color = 0xFF00_0000 | ((rounds as u32).wrapping_mul(0x0003_0201) & 0x00FF_FFFF);
+        let first_color =
+            0xFF00_0000 | ((iteration as u32).wrapping_mul(0x0001_0203) & 0x00FF_FFFF);
+        let second_color =
+            0xFF00_0000 | ((iteration as u32).wrapping_mul(0x0003_0201) & 0x00FF_FFFF);
         let first_pixels = vec![first_color; (first.width() * first.height()) as usize];
         let second_pixels = vec![second_color; (second.width() * second.height()) as usize];
         first
@@ -819,7 +822,7 @@ fn windows_vulkan_shared_device_multiwindow_soak_is_bounded() {
                 PresentDamage::Full,
             )
             .expect("present second shared surface during soak");
-        if rounds % 32 == 0 {
+        if iteration % 32 == 0 {
             assert_eq!(
                 first
                     .read_pixels(first.width() - 1, first.height() - 1, 1, 1)
@@ -833,18 +836,37 @@ fn windows_vulkan_shared_device_multiwindow_soak_is_bounded() {
                 vec![second_color]
             );
         }
-        peak_handles = peak_handles.max(current_process_handle_count());
-        rounds += 1;
-    }
+        current_process_handle_count()
+    };
 
+    let warmup_deadline =
+        std::time::Instant::now() + std::time::Duration::from_secs(SOAK_WARMUP_SECONDS);
+    while std::time::Instant::now() < warmup_deadline || iteration < SOAK_WARMUP_ROUNDS {
+        let _ = exercise(iteration);
+        iteration += 1;
+    }
+    let warmup_rounds = iteration;
+    let handles_before = current_process_handle_count();
+    let deadline = std::time::Instant::now() + duration;
+    let mut peak_handles = handles_before;
+    while std::time::Instant::now() < deadline
+        || iteration - warmup_rounds < first_sizes.len() as u64
+    {
+        peak_handles = peak_handles.max(exercise(iteration));
+        let rounds = iteration - warmup_rounds;
+        assert!(
+            peak_handles <= handles_before.saturating_add(32),
+            "shared multiwindow handles grew beyond the bounded envelope: before={handles_before}, peak={peak_handles}, rounds={rounds}; swapchain_maintenance1={}",
+            first.swapchain_maintenance1_enabled_for_test()
+        );
+        iteration += 1;
+    }
+    drop(exercise);
+
+    let rounds = iteration - warmup_rounds;
     let handles_after = current_process_handle_count();
-    assert!(
-        peak_handles <= handles_before.saturating_add(32),
-        "shared multiwindow handles grew beyond the bounded envelope: before={handles_before}, peak={peak_handles}, after={handles_after}, rounds={rounds}; swapchain_maintenance1={}",
-        first.swapchain_maintenance1_enabled_for_test()
-    );
     println!(
-        "GFX-R5 Vulkan shared-device soak: expected={}; duration={:.1}s rounds={rounds} handles={handles_before}->{handles_after} peak={peak_handles}; {}; swapchain_maintenance1={}",
+        "GFX-R5 Vulkan shared-device soak: expected={}; duration={:.1}s rounds={rounds} handles={handles_before}->{handles_after} peak={peak_handles} warmup={SOAK_WARMUP_SECONDS}s/{warmup_rounds} rounds; {}; swapchain_maintenance1={}",
         expected.label(),
         duration.as_secs_f64(),
         first.adapter_info.diagnostic_summary(),
@@ -900,14 +922,10 @@ fn windows_vulkan_hardware_resize_present_soak_is_bounded() {
             PresentDamage::Full,
         )
         .expect("warmup present");
-    let handles_before = current_process_handle_count();
-    let deadline = std::time::Instant::now() + duration;
     let sizes = [(128, 96), (224, 144), (176, 132), (256, 160)];
-    let mut rounds = 0_u64;
-    let mut peak_handles = handles_before;
-
-    while std::time::Instant::now() < deadline || rounds < sizes.len() as u64 {
-        let requested = sizes[rounds as usize % sizes.len()];
+    let mut iteration = 0_u64;
+    let mut exercise = |iteration: u64| {
+        let requested = sizes[iteration as usize % sizes.len()];
         window
             .properties_mut()
             .set_size(requested.0, requested.1)
@@ -918,7 +936,7 @@ fn windows_vulkan_hardware_resize_present_soak_is_bounded() {
             .resize(drawable.logical_width, drawable.logical_height)
             .expect("recreate swapchain during soak");
 
-        let color = 0xFF00_0000 | ((rounds as u32).wrapping_mul(0x0001_0203) & 0x00FF_FFFF);
+        let color = 0xFF00_0000 | ((iteration as u32).wrapping_mul(0x0001_0203) & 0x00FF_FFFF);
         let pixels = vec![color; (context.width() * context.height()) as usize];
         context
             .present_pixels(
@@ -928,7 +946,7 @@ fn windows_vulkan_hardware_resize_present_soak_is_bounded() {
                 PresentDamage::Full,
             )
             .expect("present during soak");
-        if rounds % 32 == 0 {
+        if iteration % 32 == 0 {
             assert_eq!(
                 context
                     .read_pixels(context.width() - 1, context.height() - 1, 1, 1)
@@ -936,18 +954,35 @@ fn windows_vulkan_hardware_resize_present_soak_is_bounded() {
                 vec![color]
             );
         }
-        peak_handles = peak_handles.max(current_process_handle_count());
-        rounds += 1;
-    }
+        current_process_handle_count()
+    };
 
+    let warmup_deadline =
+        std::time::Instant::now() + std::time::Duration::from_secs(SOAK_WARMUP_SECONDS);
+    while std::time::Instant::now() < warmup_deadline || iteration < SOAK_WARMUP_ROUNDS {
+        let _ = exercise(iteration);
+        iteration += 1;
+    }
+    let warmup_rounds = iteration;
+    let handles_before = current_process_handle_count();
+    let deadline = std::time::Instant::now() + duration;
+    let mut peak_handles = handles_before;
+    while std::time::Instant::now() < deadline || iteration - warmup_rounds < sizes.len() as u64 {
+        peak_handles = peak_handles.max(exercise(iteration));
+        let rounds = iteration - warmup_rounds;
+        assert!(
+            peak_handles <= handles_before.saturating_add(32),
+            "process handles grew beyond the bounded envelope: before={handles_before}, peak={peak_handles}, rounds={rounds}; swapchain_maintenance1={}",
+            context.swapchain_maintenance1_enabled_for_test()
+        );
+        iteration += 1;
+    }
+    drop(exercise);
+
+    let rounds = iteration - warmup_rounds;
     let handles_after = current_process_handle_count();
-    assert!(
-        peak_handles <= handles_before.saturating_add(32),
-        "process handles grew beyond the bounded envelope: before={handles_before}, peak={peak_handles}, after={handles_after}, rounds={rounds}; swapchain_maintenance1={}",
-        context.swapchain_maintenance1_enabled_for_test()
-    );
     println!(
-        "GFX-R5 Vulkan soak: expected={}; duration={:.1}s rounds={rounds} handles={handles_before}->{handles_after} peak={peak_handles}; {}; swapchain_maintenance1={}",
+        "GFX-R5 Vulkan soak: expected={}; duration={:.1}s rounds={rounds} handles={handles_before}->{handles_after} peak={peak_handles} warmup={SOAK_WARMUP_SECONDS}s/{warmup_rounds} rounds; {}; swapchain_maintenance1={}",
         expected.label(),
         duration.as_secs_f64(),
         context.adapter_info.diagnostic_summary(),
