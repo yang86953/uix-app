@@ -14,9 +14,10 @@ use crate::native::traits::{IWindowManager, PlatformWindow, UiEventPayload, UiEv
 #[cfg(feature = "vulkan")]
 use crate::tests::native::gfx_r5::expected_gfx_r5_vendor;
 use windows::core::BOOL;
-use windows::Win32::Foundation::{LPARAM, RECT};
-use windows::Win32::Graphics::Gdi::{EnumDisplayMonitors, HDC, HMONITOR};
-use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+use windows::Win32::Foundation::{HWND, LPARAM, RECT};
+use windows::Win32::Graphics::Gdi::{
+    EnumDisplayMonitors, MonitorFromWindow, HDC, HMONITOR, MONITOR_DEFAULTTONEAREST,
+};
 
 const BASE_DPI: u32 = 96;
 
@@ -63,6 +64,18 @@ impl MonitorDpiSample {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MonitorInventoryEntry {
+    handle: isize,
+    bounds: MonitorBounds,
+}
+
+impl MonitorInventoryEntry {
+    const fn new(handle: isize, bounds: MonitorBounds) -> Self {
+        Self { handle, bounds }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum GfxR5TopologyGap {
     InsufficientMonitors { found: usize },
@@ -74,7 +87,6 @@ enum GfxR5TopologyGap {
 enum MonitorInventoryError {
     EnumerationFailed,
     MissingBounds,
-    DpiQueryFailed { bounds: MonitorBounds },
 }
 
 impl fmt::Display for MonitorInventoryError {
@@ -82,9 +94,6 @@ impl fmt::Display for MonitorInventoryError {
         match self {
             Self::EnumerationFailed => write!(formatter, "Win32 monitor enumeration failed"),
             Self::MissingBounds => write!(formatter, "Win32 monitor callback omitted bounds"),
-            Self::DpiQueryFailed { bounds } => {
-                write!(formatter, "Win32 DPI query failed for monitor {bounds:?}")
-            }
         }
     }
 }
@@ -127,6 +136,23 @@ struct DpiTransitionTimeout {
     observed_dpi: u32,
     expected_logical_resize: Option<(i32, i32)>,
     observed_logical_resize: Option<(i32, i32)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MonitorDpiSamplingTimeout {
+    bounds: MonitorBounds,
+    target_reached: bool,
+    observed_dpi: u32,
+}
+
+impl fmt::Display for MonitorDpiSamplingTimeout {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "monitor DPI sampling timed out: bounds={:?}, target_reached={}, observed_dpi={}",
+            self.bounds, self.target_reached, self.observed_dpi
+        )
+    }
 }
 
 impl fmt::Display for DpiTransitionTimeout {
@@ -211,7 +237,7 @@ impl GfxR5MonitorTopology {
 
 #[derive(Default)]
 struct MonitorInventory {
-    monitors: Vec<MonitorDpiSample>,
+    monitors: Vec<MonitorInventoryEntry>,
     error: Option<MonitorInventoryError>,
 }
 
@@ -233,20 +259,13 @@ unsafe extern "system" fn collect_monitor(
     // SAFETY: Win32 保证回调期间 bounds 指向有效 RECT；此处仅复制值。
     let bounds = unsafe { *bounds };
     let bounds = MonitorBounds::new(bounds.left, bounds.top, bounds.right, bounds.bottom);
-    let mut dpi_x = 0_u32;
-    let mut dpi_y = 0_u32;
-    // SAFETY: monitor 来自当前枚举；dpi 输出指针指向本栈帧内的已初始化 u32。
-    if unsafe { GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y) }.is_err() {
-        inventory.error = Some(MonitorInventoryError::DpiQueryFailed { bounds });
-        return BOOL(0);
-    }
     inventory
         .monitors
-        .push(MonitorDpiSample::new(bounds, dpi_x, dpi_y));
+        .push(MonitorInventoryEntry::new(monitor.0 as isize, bounds));
     BOOL(1)
 }
 
-fn enumerate_monitor_topology() -> Result<GfxR5MonitorTopology, MonitorInventoryError> {
+fn enumerate_monitor_inventory() -> Result<Vec<MonitorInventoryEntry>, MonitorInventoryError> {
     let mut inventory = MonitorInventory::default();
     let inventory_ptr = (&mut inventory as *mut MonitorInventory) as isize;
     // SAFETY: 回调与 inventory 均在本函数返回前同步完成，LPARAM 指针在整个枚举期间有效。
@@ -258,7 +277,71 @@ fn enumerate_monitor_topology() -> Result<GfxR5MonitorTopology, MonitorInventory
     if !completed.as_bool() {
         return Err(MonitorInventoryError::EnumerationFailed);
     }
-    Ok(GfxR5MonitorTopology::new(inventory.monitors))
+    Ok(inventory.monitors)
+}
+
+fn monitor_inventory_summary(monitors: &[MonitorInventoryEntry]) -> String {
+    monitors
+        .iter()
+        .map(|monitor| {
+            format!(
+                "bounds=({},{}..{},{})",
+                monitor.bounds.left,
+                monitor.bounds.top,
+                monitor.bounds.right,
+                monitor.bounds.bottom,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// 用真实 Per-Monitor V2 HWND 采样目标 monitor；避免枚举 API 按调用线程 awareness 虚拟化 DPI。
+fn sample_window_monitor_dpi(
+    platform: &mut WindowsPlatform,
+    window: &mut dyn PlatformWindow,
+    monitor: MonitorInventoryEntry,
+) -> Result<u32, MonitorDpiSamplingTimeout> {
+    let (x, y) = monitor.bounds.centered_origin();
+    window
+        .properties_mut()
+        .set_position(x, y)
+        .expect("move window while sampling monitor DPI");
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let native_window = window.native_handle().native_window();
+    let mut target_reached = false;
+    let mut observed_dpi = dpi_for_window(native_window);
+    while Instant::now() < deadline {
+        let _ = platform.dispatch_timeout(Duration::from_millis(10));
+        while platform.next_event().is_some() {}
+        // SAFETY: native_window 属于仍存活的测试窗口；MonitorFromWindow 只读取句柄。
+        let observed_monitor =
+            unsafe { MonitorFromWindow(HWND(native_window), MONITOR_DEFAULTTONEAREST) };
+        target_reached = observed_monitor.0 as isize == monitor.handle;
+        observed_dpi = dpi_for_window(native_window);
+        if target_reached {
+            return Ok(observed_dpi);
+        }
+    }
+    Err(MonitorDpiSamplingTimeout {
+        bounds: monitor.bounds,
+        target_reached,
+        observed_dpi,
+    })
+}
+
+fn sample_monitor_topology(
+    platform: &mut WindowsPlatform,
+    window: &mut dyn PlatformWindow,
+    inventory: &[MonitorInventoryEntry],
+) -> Result<GfxR5MonitorTopology, MonitorDpiSamplingTimeout> {
+    let mut monitors = Vec::with_capacity(inventory.len());
+    for monitor in inventory {
+        let dpi = sample_window_monitor_dpi(platform, window, *monitor)?;
+        monitors.push(MonitorDpiSample::new(monitor.bounds, dpi, dpi));
+    }
+    Ok(GfxR5MonitorTopology::new(monitors))
 }
 
 fn wait_for_window_dpi(
@@ -428,28 +511,38 @@ fn gfx_r5_transition_pair_uses_the_widest_available_dpi_span() {
 }
 
 #[test]
-fn windows_monitor_inventory_reports_valid_samples() {
-    let topology = enumerate_monitor_topology().expect("enumerate Win32 monitor topology");
-    assert!(!topology.monitors.is_empty());
-    assert!(topology.monitors.iter().all(|monitor| {
-        monitor.bounds.right > monitor.bounds.left
-            && monitor.bounds.bottom > monitor.bounds.top
-            && monitor.dpi_x >= BASE_DPI
-            && monitor.dpi_y >= BASE_DPI
+fn windows_monitor_inventory_reports_valid_bounds() {
+    let inventory = enumerate_monitor_inventory().expect("enumerate Win32 monitor inventory");
+    assert!(!inventory.is_empty());
+    assert!(inventory.iter().all(|monitor| {
+        monitor.bounds.right > monitor.bounds.left && monitor.bounds.bottom > monitor.bounds.top
     }));
+}
+
+#[test]
+fn windows_monitor_dpi_sampling_uses_a_live_per_monitor_window() {
+    let inventory = enumerate_monitor_inventory().expect("enumerate Win32 monitor inventory");
+    let inventory_summary = monitor_inventory_summary(&inventory);
+    let logical_size = (120, 80);
+    let mut platform = WindowsPlatform::new();
+    let mut window = platform
+        .create_window("UIX monitor DPI sampling", logical_size.0, logical_size.1)
+        .expect("native window");
+    window.show().expect("show native window");
+
+    let topology = sample_monitor_topology(&mut platform, window.as_mut(), &inventory)
+        .unwrap_or_else(|error| panic!("{error}; inventory={inventory_summary}"));
+    assert_eq!(topology.monitors.len(), inventory.len());
+    assert!(topology.monitors.iter().all(|monitor| {
+        monitor.dpi_x >= BASE_DPI && monitor.dpi_y >= BASE_DPI && monitor.dpi_x == monitor.dpi_y
+    }));
+
+    window.close().expect("close native window");
 }
 
 #[test]
 #[ignore = "requires two Windows monitors with mixed DPI and at least one scale above 100%"]
 fn windows_gfx_r5_window_crosses_real_mixed_dpi_monitors() {
-    let topology = enumerate_monitor_topology().expect("enumerate Win32 monitor topology");
-    topology
-        .validate()
-        .unwrap_or_else(|gap| panic!("{gap}; topology={}", topology.diagnostic_summary()));
-    let (first, second) = topology
-        .transition_pair()
-        .expect("validated mixed-DPI pair");
-
     let logical_size = (321, 219);
     let mut platform = WindowsPlatform::new();
     let mut window = platform
@@ -460,6 +553,17 @@ fn windows_gfx_r5_window_crosses_real_mixed_dpi_monitors() {
         )
         .expect("native window");
     window.show().expect("show native window");
+
+    let inventory = enumerate_monitor_inventory().expect("enumerate Win32 monitor inventory");
+    let inventory_summary = monitor_inventory_summary(&inventory);
+    let topology = sample_monitor_topology(&mut platform, window.as_mut(), &inventory)
+        .unwrap_or_else(|error| panic!("{error}; inventory={inventory_summary}"));
+    topology
+        .validate()
+        .unwrap_or_else(|gap| panic!("{gap}; topology={}", topology.diagnostic_summary()));
+    let (first, second) = topology
+        .transition_pair()
+        .expect("validated mixed-DPI pair");
 
     let topology_summary = topology.diagnostic_summary();
     let (initial, _) = place_window_on_monitor(
@@ -498,14 +602,6 @@ fn windows_gfx_r5_window_crosses_real_mixed_dpi_monitors() {
 #[ignore = "requires a Vulkan-capable Windows driver, UIX_GFX_R5_EXPECT_VENDOR, and two mixed-DPI monitors with one above 100%"]
 fn windows_vulkan_gfx_r5_crosses_real_mixed_dpi_monitors() {
     let expected = expected_gfx_r5_vendor().unwrap_or_else(|error| panic!("{error}"));
-    let topology = enumerate_monitor_topology().expect("enumerate Win32 monitor topology");
-    topology
-        .validate()
-        .unwrap_or_else(|gap| panic!("{gap}; topology={}", topology.diagnostic_summary()));
-    let (first, second) = topology
-        .transition_pair()
-        .expect("validated mixed-DPI pair");
-    let topology_summary = topology.diagnostic_summary();
     let logical_size = (321, 219);
     let mut platform = WindowsPlatform::new();
     let mut window = platform
@@ -516,6 +612,18 @@ fn windows_vulkan_gfx_r5_crosses_real_mixed_dpi_monitors() {
         )
         .expect("native window");
     window.show().expect("show native window");
+
+    let inventory = enumerate_monitor_inventory().expect("enumerate Win32 monitor inventory");
+    let inventory_summary = monitor_inventory_summary(&inventory);
+    let topology = sample_monitor_topology(&mut platform, window.as_mut(), &inventory)
+        .unwrap_or_else(|error| panic!("{error}; inventory={inventory_summary}"));
+    topology
+        .validate()
+        .unwrap_or_else(|gap| panic!("{gap}; topology={}", topology.diagnostic_summary()));
+    let (first, second) = topology
+        .transition_pair()
+        .expect("validated mixed-DPI pair");
+    let topology_summary = topology.diagnostic_summary();
 
     let (initial, initial_drawable) = place_window_on_monitor(
         &mut platform,
