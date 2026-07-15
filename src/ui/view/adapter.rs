@@ -120,6 +120,10 @@ impl ViewAdapter {
             wnode = wnode.automation_id(&automation_id);
         }
 
+        if let Some(tab_index) = node.tab_index {
+            wnode = wnode.tab_index(tab_index);
+        }
+
         if node.z_index != 0 {
             wnode = wnode.z_index(node.z_index);
         }
@@ -232,6 +236,7 @@ impl ViewAdapter {
             z_index,
             key,
             automation_id,
+            tab_index,
             handlers,
             system_event_handlers,
             render_handlers,
@@ -244,6 +249,12 @@ impl ViewAdapter {
         }
         let widget = Self::apply_style(widget, &style, flex_grow_override, flex_shrink_override);
         let widget_changed = Self::patch_widget(tree, id, widget);
+        let resolved_tab_index = tab_index.unwrap_or_else(|| {
+            tree.get(id)
+                .map(|current| current.component().tab_index())
+                .unwrap_or(0)
+        });
+        tree.set_tab_index(id, resolved_tab_index);
 
         let mut paint_changed = widget_changed || context_changed;
         let mut layout_changed = widget_changed || context_changed;
