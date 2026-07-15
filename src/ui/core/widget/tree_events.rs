@@ -513,7 +513,9 @@ impl WidgetTree {
                 .begin_gesture(target, pos, button, mods);
         }
         let Some(target) = target else {
-            self.set_focus(None);
+            if button != MouseButton::Right {
+                self.set_focus(None);
+            }
             self.rebuild_widget_overlays();
             return EventResult::NotHandled;
         };
