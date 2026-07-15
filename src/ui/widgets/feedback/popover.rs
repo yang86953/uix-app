@@ -52,6 +52,8 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
+    hit_test_children => (&self) -> bool { false }
+
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match self.trigger {
             PopoverTrigger::Click => {

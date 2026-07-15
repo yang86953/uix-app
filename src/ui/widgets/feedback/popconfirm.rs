@@ -1,10 +1,12 @@
+use std::cell::Cell;
+
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use crate::ui::{ComponentId, EventResult, SemanticEvent, SystemEvent, WidgetTree};
 
 /// Popconfirm 弹出位置。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -29,11 +31,14 @@ component! {
         transition: TransitionPlayer,
         closing: bool,
         transition_dirty: bool,
+        pending_submit: Cell<bool>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
     }
+
+    hit_test_children => (&self) -> bool { false }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if let SystemEvent::PointerDown { pos, .. } = event {
@@ -58,6 +63,7 @@ component! {
                 let confirm_rect = Rect::new(px + 12.0, py + ph - 36.0, 80.0, 26.0);
                 let cancel_rect = Rect::new(px + pw - 92.0, py + ph - 36.0, 80.0, 26.0);
                 if confirm_rect.contains(*pos) {
+                    self.pending_submit.set(true);
                     self.close();
                     return EventResult::Handled;
                 }
@@ -68,6 +74,12 @@ component! {
             }
         }
         EventResult::NotHandled
+    }
+
+    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_submit
+            .replace(false)
+            .then(|| SemanticEvent::submit(id, "confirm"))
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
@@ -183,6 +195,7 @@ impl Popconfirm {
             transition: TransitionPlayer::new(presets::tooltip_enter()),
             closing: false,
             transition_dirty: false,
+            pending_submit: Cell::new(false),
         }
     }
     pub fn title(mut self, t: impl Into<String>) -> Self {
@@ -219,6 +232,7 @@ impl Popconfirm {
     }
 
     pub fn open(&mut self) {
+        self.pending_submit.set(false);
         self.visible = true;
         self.closing = false;
         self.transition = TransitionPlayer::new(presets::tooltip_enter());
