@@ -67,6 +67,8 @@ fn parse_json_flat_rejects_invalid_inputs() {
         r#"{"key" "val"}"#,
         r#"{"a": "1" "b": "2"}"#,
         r#"{"a": "1",}"#,
+        r#"{"key": "first", "key": "second"}"#,
+        r#"{"key": "first", "\u006bey": "second"}"#,
         r#"{"key": "bad\q"}"#,
         r#"{"key": "bad\u12xz"}"#,
         r#"{"key": "\ud83d"}"#,
@@ -284,6 +286,24 @@ fn load_rejects_empty_path_without_mutating_state() {
     assert_eq!(settings.loaded_path(), None);
     assert_eq!(settings.get("theme"), Some("dark".to_string()));
     assert!(settings.dirty());
+}
+
+#[test]
+fn load_rejects_duplicate_keys_without_mutating_state() {
+    let path = temp_settings_path("duplicate-keys");
+    remove_settings_artifacts(&path);
+    fs::write(&path, r#"{"theme":"light","theme":"dark"}"#).unwrap();
+    let settings = SettingsService::new();
+    settings.set("theme", "system");
+
+    let error = settings.load(&path.to_string_lossy()).unwrap_err();
+
+    assert_eq!(error.code(), Errc::FormatError);
+    assert_eq!(settings.loaded_path(), None);
+    assert_eq!(settings.get("theme"), Some("system".to_string()));
+    assert!(settings.dirty());
+
+    remove_settings_artifacts(&path);
 }
 
 #[test]

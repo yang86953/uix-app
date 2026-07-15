@@ -6,6 +6,7 @@
 // ============================================================================
 
 use crate::core::{Errc, Error, Result};
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -56,7 +57,17 @@ pub(crate) fn parse_json_flat(input: &str) -> Result<HashMap<String, String>> {
         // 解析 value（必须是双引号字符串）
         let value = parse_json_string(input, &mut pos, "value")?;
 
-        map.insert(key, value);
+        match map.entry(key) {
+            Entry::Vacant(entry) => {
+                entry.insert(value);
+            }
+            Entry::Occupied(entry) => {
+                return Err(Error::new(
+                    Errc::FormatError,
+                    format!("settings: duplicate key '{}'", entry.key()),
+                ));
+            }
+        }
 
         skip_json_whitespace(bytes, &mut pos);
         match bytes.get(pos) {
@@ -259,7 +270,7 @@ pub(crate) fn serialize_json_flat(map: &HashMap<String, String>) -> String {
     let mut out = String::with_capacity(128);
     out.push_str("{\n");
     let mut entries = map.iter().collect::<Vec<_>>();
-    entries.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
+    entries.sort_unstable_by_key(|(key, _)| *key);
     let mut first = true;
     for (k, v) in entries {
         if !first {
