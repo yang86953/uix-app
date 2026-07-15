@@ -268,11 +268,11 @@ impl DeviceFaultReporter {
 
     fn enrich(&self, error: Error) -> Error {
         match self.collect() {
-            Ok(report) => error.with_source(Error::new(
+            Ok(report) => error.with_appended_source(Error::new(
                 Errc::GraphicsDeviceLost,
                 report.diagnostic_summary(),
             )),
-            Err(status) => error.with_source(Error::new(
+            Err(status) => error.with_appended_source(Error::new(
                 Errc::GraphicsDeviceLost,
                 format!("VK_EXT_device_fault: vkGetDeviceFaultInfoEXT failed: {status:?}"),
             )),
@@ -303,7 +303,7 @@ impl DeviceLossState {
             return error;
         }
         if let Some(first_error) = self.first_error.borrow().clone() {
-            return error.with_source(first_error);
+            return error.with_appended_source(first_error);
         }
         let error = enrich(error);
         *self.first_error.borrow_mut() = Some(error.clone());
