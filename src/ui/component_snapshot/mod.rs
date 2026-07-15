@@ -2,7 +2,9 @@ use std::any::TypeId;
 use std::fmt;
 
 use crate::core::ComponentId;
-use crate::ui::widgets::{Fixed, SortDirection, TableColumn, TransferItem, TreeNode};
+use crate::ui::widgets::{
+    Fixed, PopconfirmPlacement, SortDirection, TableColumn, TransferItem, TreeNode,
+};
 
 mod accessibility;
 mod fields;
@@ -11,6 +13,19 @@ mod source;
 
 pub use fields::SnapshotFields;
 pub use source::{snapshot_fields_from_any, SnapshotSource};
+
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct SnapshotPopconfirm {
+    pub title: String,
+    pub confirm_text: String,
+    pub cancel_text: String,
+    pub placement: PopconfirmPlacement,
+    pub arrow: bool,
+    pub icon: bool,
+    pub visible: bool,
+    pub focused_action: Option<usize>,
+}
 
 fn non_empty(value: String) -> Option<String> {
     if value.is_empty() {

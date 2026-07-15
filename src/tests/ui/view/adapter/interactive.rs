@@ -625,14 +625,16 @@ fn reconcile_popconfirm_preserves_visibility_and_syncs_config() {
     assert!(popconfirm.is_visible());
     assert!(matches!(
         popconfirm.snapshot_fields(),
-        SnapshotFields::Popconfirm {
+        SnapshotFields::Popconfirm(crate::ui::component_snapshot::SnapshotPopconfirm {
             title,
             confirm_text,
             cancel_text,
             placement: PopconfirmPlacement::BottomRight,
             arrow: false,
             icon: false,
-        } if title == "new" && confirm_text == "Yes" && cancel_text == "No"
+            visible: true,
+            focused_action: Some(0),
+        }) if title == "new" && confirm_text == "Yes" && cancel_text == "No"
     ));
 }
 
