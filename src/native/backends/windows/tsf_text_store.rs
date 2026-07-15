@@ -182,6 +182,10 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
     ) -> WinResult<()> {
         require_pointer(pacpresultstart)?;
         require_pointer(pacpresultend)?;
+        let state = self.state.read()?;
+        if !state.contains_range(acpteststart, acptestend) {
+            return Err(WinError::from(E_INVALIDARG));
+        }
         unsafe {
             *pacpresultstart = acpteststart;
             *pacpresultend = acptestend;
@@ -222,8 +226,9 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         require_write_lock(&state)?;
         if ulcount > 0 {
             let sel = unsafe { *pselection };
-            state.sel_start = state.clamp_acp(sel.acpStart);
-            state.sel_end = state.clamp_acp(sel.acpEnd);
+            state.text_range(sel.acpStart, sel.acpEnd)?;
+            state.sel_start = sel.acpStart;
+            state.sel_end = sel.acpEnd;
         }
         Ok(())
     }
@@ -247,23 +252,26 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         require_pointer(pacpnext)?;
         let state = self.state.read()?;
         require_read_lock(&state)?;
-        let start = state.clamp_acp(acpstart) as usize;
         let end = if acpend == -1 {
-            state.text.len()
+            state.end_acp()
         } else {
-            state.clamp_acp(acpend) as usize
+            acpend
         };
-        let end = end.max(start);
-        let available = end - start;
+        let range = state.text_range(acpstart, end)?;
+        let available = range.end - range.start;
         let copy_len = available.min(cchplainreq as usize);
         if copy_len > 0 && !pchplain.is_null() {
             unsafe {
-                std::ptr::copy_nonoverlapping(state.text[start..].as_ptr(), pchplain.0, copy_len);
+                std::ptr::copy_nonoverlapping(
+                    state.text[range.start..].as_ptr(),
+                    pchplain.0,
+                    copy_len,
+                );
             }
         }
         unsafe {
             *pcchplainret = copy_len as u32;
-            *pacpnext = (start + copy_len) as i32;
+            *pacpnext = (range.start + copy_len) as i32;
             if cruninforeq > 0 && !prgruninfo.is_null() {
                 *prgruninfo = TS_RUNINFO {
                     uCount: copy_len as u32,
@@ -294,7 +302,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         } else {
             unsafe { std::slice::from_raw_parts(pchtext.0, cch as usize) }
         };
-        Ok(state.replace_range(acpstart, acpend, insert))
+        state.replace_range(acpstart, acpend, insert)
     }
 
     fn GetFormattedText(
@@ -364,7 +372,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         } else {
             unsafe { std::slice::from_raw_parts(pchtext.0, cch as usize) }
         };
-        let change = state.replace_range(start, end, insert);
+        let change = state.replace_range(start, end, insert)?;
         if dwflags & TS_IAS_NOQUERY == 0 {
             unsafe {
                 *pacpstart = change.acpStart;
@@ -484,8 +492,8 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
     fn GetTextExt(
         &self,
         _vcview: u32,
-        _acpstart: i32,
-        _acpend: i32,
+        acpstart: i32,
+        acpend: i32,
         prc: *mut RECT,
         pfclipped: *mut BOOL,
     ) -> WinResult<()> {
@@ -494,6 +502,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         }
         let state = self.state.read()?;
         require_read_lock(&state)?;
+        state.text_range(acpstart, acpend)?;
         let rect = state.cursor_screen_rect()?;
         unsafe {
             *prc = rect;

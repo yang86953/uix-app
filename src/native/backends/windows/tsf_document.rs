@@ -3,14 +3,15 @@
 #![cfg(windows)]
 
 use std::collections::VecDeque;
+use std::ops::Range;
 use std::sync::{Arc, Mutex};
 
 use windows::core::{Error as WinError, Result as WinResult};
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Gdi::ClientToScreen;
 use windows::Win32::UI::TextServices::{
-    ITextStoreACPSink, TEXT_STORE_LOCK_FLAGS, TS_AE_END, TS_LF_READ, TS_LF_READWRITE, TS_LF_SYNC,
-    TS_SELECTIONSTYLE, TS_SELECTION_ACP, TS_TEXTCHANGE,
+    ITextStoreACPSink, TEXT_STORE_LOCK_FLAGS, TS_AE_END, TS_E_INVALIDPOS, TS_LF_READ,
+    TS_LF_READWRITE, TS_LF_SYNC, TS_SELECTIONSTYLE, TS_SELECTION_ACP, TS_TEXTCHANGE,
 };
 
 use crate::core::WindowId;
@@ -149,8 +150,15 @@ impl TsfStoreState {
         self.text.len() as i32
     }
 
-    pub(super) fn clamp_acp(&self, acp: i32) -> i32 {
-        acp.clamp(0, self.end_acp())
+    pub(super) fn contains_range(&self, start: i32, end: i32) -> bool {
+        start >= 0 && start <= end && end <= self.end_acp()
+    }
+
+    pub(super) fn text_range(&self, start: i32, end: i32) -> WinResult<Range<usize>> {
+        if !self.contains_range(start, end) {
+            return Err(WinError::from(TS_E_INVALIDPOS));
+        }
+        Ok(start as usize..end as usize)
     }
 
     pub(super) fn selection(&self) -> TS_SELECTION_ACP {
@@ -164,19 +172,22 @@ impl TsfStoreState {
         }
     }
 
-    pub(crate) fn replace_range(&mut self, start: i32, end: i32, insert: &[u16]) -> TS_TEXTCHANGE {
-        let start = self.clamp_acp(start) as usize;
-        let end = self.clamp_acp(end) as usize;
-        let end = end.max(start);
-        self.text.splice(start..end, insert.iter().copied());
-        let new_end = (start + insert.len()) as i32;
+    pub(crate) fn replace_range(
+        &mut self,
+        start: i32,
+        end: i32,
+        insert: &[u16],
+    ) -> WinResult<TS_TEXTCHANGE> {
+        let range = self.text_range(start, end)?;
+        self.text.splice(range.clone(), insert.iter().copied());
+        let new_end = (range.start + insert.len()) as i32;
         self.sel_start = new_end;
         self.sel_end = new_end;
-        TS_TEXTCHANGE {
-            acpStart: start as i32,
-            acpOldEnd: end as i32,
+        Ok(TS_TEXTCHANGE {
+            acpStart: range.start as i32,
+            acpOldEnd: range.end as i32,
             acpNewEnd: new_end,
-        }
+        })
     }
 
     pub(crate) fn utf16_string(&self) -> String {
