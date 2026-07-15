@@ -26,7 +26,12 @@ impl WidgetTree {
         !self.window_focused
             && matches!(
                 event,
-                SystemEvent::KeyDown { .. }
+                SystemEvent::PointerDown { .. }
+                    | SystemEvent::PointerDoubleClick { .. }
+                    | SystemEvent::PointerUp { .. }
+                    | SystemEvent::PointerMove { .. }
+                    | SystemEvent::Wheel { .. }
+                    | SystemEvent::KeyDown { .. }
                     | SystemEvent::KeyUp { .. }
                     | SystemEvent::TextInput { .. }
                     | SystemEvent::ImeCompositionStart
@@ -35,6 +40,7 @@ impl WidgetTree {
                     | SystemEvent::Copy
                     | SystemEvent::Cut
                     | SystemEvent::Paste { .. }
+                    | SystemEvent::FileDrop { .. }
             )
     }
 
