@@ -4,10 +4,10 @@ mod generated {
 
 #[test]
 fn usage_markdown_compile_inventory_tracks_enabled_features() {
-    assert_eq!(generated::USAGE_RUST_BLOCKS_TOTAL, 107);
+    assert_eq!(generated::USAGE_RUST_BLOCKS_TOTAL, 108);
     assert_eq!(generated::USAGE_RUST_BLOCK_FEATURES, &["test-harness"]);
     assert_eq!(
         generated::USAGE_RUST_BLOCKS_COMPILED,
-        106 + usize::from(cfg!(feature = "test-harness"))
+        107 + usize::from(cfg!(feature = "test-harness"))
     );
 }

@@ -10,11 +10,11 @@ use crate::ui::Placement;
 
 use super::accessibility::{
     anchor_accessibility, back_top_accessibility, badge_accessibility, breadcrumb_accessibility,
-    calendar_accessibility, carousel_accessibility, chart_accessibility, date_range_accessibility,
-    first_non_empty, image_accessibility, pagination_accessibility, progress_accessibility,
-    result_accessibility, select_accessibility, selectable_list_accessibility,
-    splitter_accessibility, steps_accessibility, tag_accessibility, theme_toggle_accessibility,
-    transfer_accessibility,
+    calendar_accessibility, card_accessibility, carousel_accessibility, chart_accessibility,
+    date_range_accessibility, first_non_empty, image_accessibility, menu_accessibility,
+    pagination_accessibility, progress_accessibility, result_accessibility, select_accessibility,
+    selectable_list_accessibility, splitter_accessibility, steps_accessibility, tag_accessibility,
+    theme_toggle_accessibility, transfer_accessibility,
 };
 use super::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotCollapsePanel,
@@ -171,6 +171,7 @@ pub enum SnapshotFields {
         elevation: u8,
         flex_grow: f32,
         actions: Vec<String>,
+        focused_action: Option<usize>,
     },
     Empty {
         description: String,
@@ -777,15 +778,7 @@ impl SnapshotFields {
             Self::Breadcrumb { items, .. } => breadcrumb_accessibility(items),
             Self::Menu {
                 items, active_key, ..
-            } => {
-                AccessibilitySnapshot::new(AccessibilityRole::Menu).with_state(AccessibilityState {
-                    value_text: items
-                        .iter()
-                        .find(|item| item.key == *active_key)
-                        .map(|item| item.label.clone()),
-                    ..AccessibilityState::default()
-                })
-            }
+            } => menu_accessibility(items, active_key),
             Self::Dropdown {
                 label,
                 items,
@@ -862,6 +855,12 @@ impl SnapshotFields {
                 ..
             } => selectable_list_accessibility(items, *active_index),
             Self::List { .. } => AccessibilitySnapshot::new(AccessibilityRole::List),
+            Self::Card {
+                title,
+                actions,
+                focused_action,
+                ..
+            } => card_accessibility(title.as_deref(), actions, *focused_action),
             Self::Transfer { source, target } => transfer_accessibility(source, target),
             Self::Table { .. } => AccessibilitySnapshot::new(AccessibilityRole::Table),
             Self::BarChart { data, .. } => chart_accessibility(

@@ -1,6 +1,8 @@
 //! Card widget — Ant Design style container with elevation, shadow, optional
 //! title, body, hover feedback, and configurable border radius.
 
+use std::cell::{Cell, RefCell};
+
 use crate::component;
 use crate::core::{Constraints, EdgeInsets, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
@@ -11,7 +13,10 @@ use crate::ui::layout::{
     FlexDirection, FlexInput, JustifyContent, LayoutChild,
 };
 use crate::ui::SnapshotFields;
-use crate::ui::{ComponentId, EventResult, SystemEvent, WidgetComponent, WidgetTree};
+use crate::ui::{
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetComponent,
+    WidgetTree,
+};
 
 component! {
     /// Card widget with shadow elevation, hover highlight, and content padding.
@@ -27,6 +32,11 @@ component! {
         elevation: u8,
         flex_grow_val: f32,
         actions: Vec<String>,
+        focused: bool,
+        focused_action: usize,
+        hovered_action: Cell<Option<usize>>,
+        last_frame: Cell<Option<Rect>>,
+        pending_submit: RefCell<Option<String>>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -35,23 +45,84 @@ component! {
 
     flex_grow => (&self) -> f32 { self.flex_grow_val }
 
+    tab_index => (&self) -> i32 { i32::from(!self.actions.is_empty()) }
+
     build => (&self) -> Vec<Box<dyn WidgetComponent>> {
         self.children.take()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
-        if self.hoverable {
-            match event {
-                SystemEvent::PointerEnter => { self.hovered = true; EventResult::Handled }
-                SystemEvent::PointerLeave => { self.hovered = false; EventResult::Handled }
-                _ => EventResult::NotHandled,
+        match event {
+            SystemEvent::PointerEnter if self.hoverable => {
+                self.hovered = true;
+                EventResult::Handled
             }
-        } else {
-            EventResult::NotHandled
+            SystemEvent::PointerLeave => {
+                let changed = self.hovered || self.hovered_action.get().is_some();
+                self.hovered = false;
+                self.hovered_action.set(None);
+                if changed { EventResult::Handled } else { EventResult::NotHandled }
+            }
+            SystemEvent::PointerMove { pos, .. } if !self.actions.is_empty() => {
+                let action = self.action_index_at(*pos);
+                let changed = action != self.hovered_action.get();
+                self.hovered_action.set(action);
+                if changed { EventResult::Handled } else { EventResult::NotHandled }
+            }
+            SystemEvent::PointerDown { pos, button: MouseButton::Left, .. } => {
+                if let Some(index) = self.action_index_at(*pos) {
+                    self.focused = true;
+                    self.focused_action = index;
+                    self.submit_action(index);
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
+            }
+            SystemEvent::FocusIn if !self.actions.is_empty() => {
+                self.focused = true;
+                EventResult::Handled
+            }
+            SystemEvent::FocusOut => {
+                self.focused = false;
+                EventResult::Handled
+            }
+            SystemEvent::KeyDown { key, .. } if !self.actions.is_empty() => match key {
+                KeyCode::Left => {
+                    self.focused_action = self.focused_action.saturating_sub(1);
+                    EventResult::Handled
+                }
+                KeyCode::Right => {
+                    self.focused_action = (self.focused_action + 1).min(self.actions.len() - 1);
+                    EventResult::Handled
+                }
+                KeyCode::Home => {
+                    self.focused_action = 0;
+                    EventResult::Handled
+                }
+                KeyCode::End => {
+                    self.focused_action = self.actions.len() - 1;
+                    EventResult::Handled
+                }
+                KeyCode::Enter | KeyCode::Space => {
+                    self.submit_action(self.focused_action);
+                    EventResult::Handled
+                }
+                _ => EventResult::NotHandled,
+            },
+            _ => EventResult::NotHandled,
         }
     }
 
+    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_submit
+            .borrow_mut()
+            .take()
+            .map(|action| SemanticEvent::submit(id, action))
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        self.last_frame.set(Some(Rect::new(0.0, 0.0, frame.w.max(0.0), frame.h.max(0.0))));
         let border_radius_lg = ctx.tokens().border_radius_lg();
         let bg_container = ctx.tokens().color_bg_container();
         let bg_elevated = ctx.tokens().color_bg_elevated();
@@ -110,6 +181,12 @@ component! {
                     btn_w,
                     action_rect.h,
                 );
+                if self.hovered_action.get() == Some(i) {
+                    ctx.fill_rect(btn_rect, ctx.tokens().color_fill_tertiary(), None);
+                }
+                if self.focused && self.focused_action == i {
+                    ctx.stroke_rect(btn_rect, primary, 2.0, None);
+                }
                 let ay = ctx.visual_center_y(btn_rect, 13.0);
                 let text_w = ctx.measure_text(action, 13.0).w;
                 ctx.draw_text(action, Point::new(btn_rect.x + (btn_w - text_w) * 0.5, ay), primary, 13.0);
@@ -295,6 +372,8 @@ impl Default for Card {
 
 impl Card {
     const ACTION_HEIGHT: f32 = 40.0;
+    const DEFAULT_WIDTH: f32 = 200.0;
+    const DEFAULT_HEIGHT: f32 = 120.0;
 
     fn body_rect(&self, frame: Rect) -> Rect {
         // 标题和 actions 为固定区，body 只使用二者之间的剩余空间。
@@ -334,8 +413,8 @@ impl Card {
 
     fn intrinsic_size(&self) -> Size {
         Size::new(
-            self.fixed_width.unwrap_or(200.0),
-            self.fixed_height.unwrap_or(0.0),
+            self.fixed_width.unwrap_or(Self::DEFAULT_WIDTH),
+            self.fixed_height.unwrap_or(Self::DEFAULT_HEIGHT),
         )
     }
 
@@ -352,6 +431,11 @@ impl Card {
             elevation: 1,
             flex_grow_val: 0.0,
             actions: Vec::new(),
+            focused: false,
+            focused_action: 0,
+            hovered_action: Cell::new(None),
+            last_frame: Cell::new(None),
+            pending_submit: RefCell::new(None),
         }
     }
 
@@ -368,12 +452,12 @@ impl Card {
         self
     }
     pub fn size(mut self, w: f32, h: f32) -> Self {
-        self.fixed_width = Some(w);
-        self.fixed_height = Some(h);
+        self.fixed_width = Self::optional_dimension(w);
+        self.fixed_height = Self::optional_dimension(h);
         self
     }
     pub fn padding(mut self, p: f32) -> Self {
-        self.padding = p;
+        self.padding = if p.is_finite() { p.max(0.0) } else { 0.0 };
         self
     }
     pub fn elevation(mut self, e: u8) -> Self {
@@ -381,12 +465,22 @@ impl Card {
         self
     }
     pub fn flex_grow(mut self, v: f32) -> Self {
-        self.flex_grow_val = v;
+        self.flex_grow_val = if v.is_finite() { v.max(0.0) } else { 0.0 };
         self
     }
     pub fn actions(mut self, list: Vec<impl Into<String>>) -> Self {
-        self.actions = list.into_iter().map(|s| s.into()).collect();
+        self.actions = list
+            .into_iter()
+            .map(Into::into)
+            .filter(|action: &String| !action.trim().is_empty())
+            .collect();
         self
+    }
+    pub fn focused_action(&self) -> Option<usize> {
+        (!self.actions.is_empty()).then_some(self.focused_action)
+    }
+    pub fn action_labels(&self) -> &[String] {
+        &self.actions
     }
     pub fn child(self, w: impl WidgetComponent + 'static) -> Self {
         self.children.add(w);
@@ -408,6 +502,7 @@ impl Card {
             elevation: self.elevation,
             flex_grow: self.flex_grow_val,
             actions: self.actions.clone(),
+            focused_action: self.focused_action(),
         }
     }
 
@@ -421,5 +516,55 @@ impl Card {
         self.elevation = next.elevation;
         self.flex_grow_val = next.flex_grow_val;
         self.actions = next.actions;
+        self.focused_action = self
+            .focused_action
+            .min(self.actions.len().saturating_sub(1));
+        self.hovered_action.set(
+            self.hovered_action
+                .get()
+                .filter(|index| *index < self.actions.len()),
+        );
+        let pending_is_valid = self
+            .pending_submit
+            .borrow()
+            .as_ref()
+            .is_none_or(|pending| self.actions.contains(pending));
+        if !pending_is_valid {
+            self.pending_submit.borrow_mut().take();
+        }
+        if self.actions.is_empty() {
+            self.focused = false;
+        }
+    }
+
+    fn optional_dimension(value: f32) -> Option<f32> {
+        (value.is_finite() && value > 0.0).then_some(value)
+    }
+
+    fn action_index_at(&self, pos: Point) -> Option<usize> {
+        let frame = self.last_frame.get()?;
+        let action_rect = self.action_rect(frame)?;
+        if !action_rect.contains(pos) || action_rect.w <= 0.0 {
+            return None;
+        }
+        let width = action_rect.w / self.actions.len() as f32;
+        let index = ((pos.x - action_rect.x) / width) as usize;
+        Some(index.min(self.actions.len() - 1))
+    }
+
+    fn submit_action(&self, index: usize) {
+        if let Some(action) = self.actions.get(index) {
+            self.pending_submit.replace(Some(action.clone()));
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_frame_for_test(&self, frame: Rect) {
+        self.last_frame.set(Some(Rect::new(
+            0.0,
+            0.0,
+            frame.w.max(0.0),
+            frame.h.max(0.0),
+        )));
     }
 }

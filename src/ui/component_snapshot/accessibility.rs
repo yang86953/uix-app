@@ -1,5 +1,6 @@
 use crate::ui::widgets::{
-    AnchorItem, BadgeStatus, BreadcrumbItem, Date, OptGroup, ProgressMode, SelectableItem, Step,
+    AnchorItem, BadgeStatus, BreadcrumbItem, Date, MenuItem, OptGroup, ProgressMode,
+    SelectableItem, Step,
 };
 
 use super::{AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotTransferItem};
@@ -35,6 +36,35 @@ pub(super) fn steps_accessibility(steps: &[Step], current: usize) -> Accessibili
         value_now: Some((current + 1) as f64),
         value_min: Some(1.0),
         value_max: Some(steps.len().max(1) as f64),
+        ..AccessibilityState::default()
+    })
+}
+
+pub(super) fn card_accessibility(
+    title: Option<&str>,
+    actions: &[String],
+    focused_action: Option<usize>,
+) -> AccessibilitySnapshot {
+    let snapshot = if let Some(title) = title.filter(|title| !title.trim().is_empty()) {
+        AccessibilitySnapshot::named(AccessibilityRole::Group, title)
+    } else {
+        AccessibilitySnapshot::new(AccessibilityRole::Group)
+    };
+    snapshot.with_state(AccessibilityState {
+        value_text: focused_action.and_then(|index| actions.get(index)).cloned(),
+        value_now: focused_action.map(|index| (index + 1) as f64),
+        value_min: (!actions.is_empty()).then_some(1.0),
+        value_max: (!actions.is_empty()).then_some(actions.len() as f64),
+        ..AccessibilityState::default()
+    })
+}
+
+pub(super) fn menu_accessibility(items: &[MenuItem], active_key: &str) -> AccessibilitySnapshot {
+    AccessibilitySnapshot::new(AccessibilityRole::Menu).with_state(AccessibilityState {
+        value_text: items
+            .iter()
+            .find(|item| item.key == active_key)
+            .map(|item| item.label.clone()),
         ..AccessibilityState::default()
     })
 }
