@@ -45,6 +45,19 @@ impl ExpectedVulkanVendor {
         );
     }
 
+    pub(crate) fn assert_runtime(
+        self,
+        adapter: &VulkanAdapterInfo,
+        swapchain_maintenance1_enabled: bool,
+    ) {
+        self.assert_adapter(adapter);
+        assert!(
+            swapchain_maintenance1_enabled,
+            "GFX-R5 requires VK_EXT_swapchain_maintenance1: {}",
+            adapter.diagnostic_summary()
+        );
+    }
+
     fn parse(value: &str) -> Result<Self, GfxR5ConfigError> {
         match value.trim().to_ascii_lowercase().as_str() {
             "nvidia" => Ok(Self::Nvidia),

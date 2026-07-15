@@ -372,7 +372,10 @@ fn windows_vulkan_gfx_r5_expected_vendor_resize_present_readback() {
     let _ = platform.event_loop().poll_event(&|_| true);
 
     let mut context = VulkanContext::new(surface, 137, 103).expect("VulkanContext");
-    expected.assert_adapter(&context.adapter_info);
+    expected.assert_runtime(
+        &context.adapter_info,
+        context.swapchain_maintenance1_enabled_for_test(),
+    );
 
     let first_color = 0xFF34_78BC;
     let first_pixels = vec![first_color; (context.width() * context.height()) as usize];
@@ -443,7 +446,10 @@ fn windows_vulkan_gfx_r5_native_out_of_date_is_typed_and_recovers() {
     let _ = platform.event_loop().poll_event(&|_| true);
 
     let mut context = VulkanContext::new(surface, 139, 107).expect("VulkanContext");
-    expected.assert_adapter(&context.adapter_info);
+    expected.assert_runtime(
+        &context.adapter_info,
+        context.swapchain_maintenance1_enabled_for_test(),
+    );
     let initial_extent = (context.width(), context.height());
     let initial_pixels = vec![0xFF31_5A9C; (initial_extent.0 * initial_extent.1) as usize];
     context
@@ -535,7 +541,10 @@ fn windows_vulkan_gfx_r5_destroyed_hwnd_returns_native_surface_lost() {
     let _ = platform.event_loop().poll_event(&|_| true);
 
     let mut context = VulkanContext::new(surface, 157, 119).expect("VulkanContext");
-    expected.assert_adapter(&context.adapter_info);
+    expected.assert_runtime(
+        &context.adapter_info,
+        context.swapchain_maintenance1_enabled_for_test(),
+    );
     let extent = (context.width(), context.height());
     let pixels = vec![0xFF5C_82B4; (extent.0 * extent.1) as usize];
     context
@@ -862,8 +871,9 @@ fn windows_vulkan_shared_device_multiwindow_soak_is_bounded() {
 
 #[cfg(windows)]
 #[test]
-#[ignore = "requires a Vulkan-capable Windows driver; set UIX_VULKAN_SOAK_SECONDS=900 for the gate"]
+#[ignore = "requires a Vulkan-capable Windows driver, UIX_GFX_R5_EXPECT_VENDOR, and UIX_VULKAN_SOAK_SECONDS=900 for the gate"]
 fn windows_vulkan_hardware_resize_present_soak_is_bounded() {
+    let expected = expected_gfx_r5_vendor().unwrap_or_else(|error| panic!("{error}"));
     let mut platform = crate::native::create_platform().expect("platform");
     let mut window = platform
         .window_manager()
@@ -875,6 +885,10 @@ fn windows_vulkan_hardware_resize_present_soak_is_bounded() {
     let _ = platform.event_loop().poll_event(&|_| true);
 
     let mut context = VulkanContext::new(surface, 160, 120).expect("VulkanContext");
+    expected.assert_runtime(
+        &context.adapter_info,
+        context.swapchain_maintenance1_enabled_for_test(),
+    );
     let warmup = vec![0xFF24_68AC; (context.width() * context.height()) as usize];
     context
         .present_pixels(
@@ -931,7 +945,8 @@ fn windows_vulkan_hardware_resize_present_soak_is_bounded() {
         "process handles grew beyond the bounded envelope: before={handles_before}, peak={peak_handles}, after={handles_after}"
     );
     println!(
-        "Vulkan soak: duration={:.1}s rounds={rounds} handles={handles_before}->{handles_after} peak={peak_handles}; {}; swapchain_maintenance1={}",
+        "GFX-R5 Vulkan soak: expected={}; duration={:.1}s rounds={rounds} handles={handles_before}->{handles_after} peak={peak_handles}; {}; swapchain_maintenance1={}",
+        expected.label(),
         duration.as_secs_f64(),
         context.adapter_info.diagnostic_summary(),
         context.swapchain_maintenance1_enabled_for_test()
