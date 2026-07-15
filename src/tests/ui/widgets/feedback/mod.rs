@@ -9,3 +9,4 @@ mod progress;
 mod spin;
 mod toast_motion;
 mod tooltip;
+mod trigger_wrappers;

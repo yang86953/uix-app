@@ -313,7 +313,7 @@ macro_rules! component {
                             c.insert($crate::ui::traits::WidgetCapabilities::LAYOUT),
                         "render" | "uses_palette" | "dirty_rect" | "children_clip" | "overlay_entry" | "draw_margin" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::RENDER),
-                        "on_event" | "take_layout_request" | "scroll_delta" | "scroll_delta_for_dirty" | "scroll_composite_viewport" | "viewport_scroll_offset" | "active_timer" | "wants_capture_phase" | "wants_continuous_pointer_move" | "hit_test_frame" =>
+                        "on_event" | "take_layout_request" | "scroll_delta" | "scroll_delta_for_dirty" | "scroll_composite_viewport" | "viewport_scroll_offset" | "active_timer" | "wants_capture_phase" | "wants_continuous_pointer_move" | "hit_test_frame" | "hit_test_children" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::EVENT),
                         "on_init" | "on_attach" | "on_mount" | "on_active" | "on_inactive" | "on_theme_changed" | "on_unmount" | "on_detach" | "on_destroy" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::LIFECYCLE),
@@ -359,7 +359,7 @@ macro_rules! component {
         $crate::__component_grouped_impl! {
             EventHandler,
             $name,
-            [on_event semantic_event take_layout_request scroll_delta scroll_delta_for_dirty scroll_composite_viewport viewport_scroll_offset active_timer wants_capture_phase wants_continuous_pointer_move hit_test_frame],
+            [on_event semantic_event take_layout_request scroll_delta scroll_delta_for_dirty scroll_composite_viewport viewport_scroll_offset active_timer wants_capture_phase wants_continuous_pointer_move hit_test_frame hit_test_children],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -636,6 +636,9 @@ macro_rules! __component_method_builder {
     (hit_test_frame; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn hit_test_frame($($p)*) -> $ret $body
     };
+    (hit_test_children; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn hit_test_children($($p)*) -> $ret $body
+    };
     // ── WidgetLifecycle ──
     (on_init; WidgetLifecycle; ($($p:tt)*) $body:block) => {
         fn on_init($($p)*) $body
@@ -773,6 +776,9 @@ macro_rules! __match_trait_method {
     };
     (EventHandler, hit_test_frame, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn hit_test_frame($($p)*) -> $ret $body
+    };
+    (EventHandler, hit_test_children, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn hit_test_children($($p)*) -> $ret $body
     };
     // ── WidgetLifecycle ──
     (WidgetLifecycle, on_init, ($($p:tt)*) $body:block) => {
