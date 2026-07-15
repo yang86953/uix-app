@@ -1,6 +1,7 @@
 //! 应用入口 — 统一 GUI / CLI 生命周期。
 
 use std::cell::{Cell, RefCell};
+use std::path::Path;
 use std::sync::{atomic::AtomicBool, Arc};
 use std::time::{Duration, Instant};
 
@@ -518,7 +519,9 @@ impl App {
         };
 
         let settings = SettingsService::new();
-        if let Err(err) = settings.load(path) {
+        let load_result = resolve_configured_settings_path(path)
+            .and_then(|resolved_path| settings.load(&resolved_path));
+        if let Err(err) = load_result {
             crate::core::log::error_fn(format!("load settings failed: {}", err.short_what()));
             self.exit_code = 1;
             return false;
@@ -804,6 +807,29 @@ impl App {
 
         0
     }
+}
+
+fn resolve_configured_settings_path(path: &str) -> crate::core::Result<String> {
+    let configured = Path::new(path);
+    let resolved = if configured.is_absolute() {
+        configured.to_path_buf()
+    } else {
+        let executable = std::env::current_exe()?;
+        let executable_dir = executable.parent().ok_or_else(|| {
+            Error::new(
+                Errc::InvalidState,
+                "settings: current executable has no parent directory",
+            )
+        })?;
+        executable_dir.join(configured)
+    };
+
+    resolved.into_os_string().into_string().map_err(|_| {
+        Error::new(
+            Errc::FormatError,
+            "settings: configured path is not valid UTF-8",
+        )
+    })
 }
 
 mod runtime;

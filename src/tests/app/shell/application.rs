@@ -404,6 +404,28 @@ fn app_settings_load_registers_settings_service() {
 }
 
 #[test]
+fn app_settings_resolves_relative_path_from_executable() {
+    let relative_path = format!("uix-settings-relative-{}.json", std::process::id());
+    let expected = std::env::current_exe()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join(&relative_path);
+    let _ = std::fs::remove_file(&expected);
+    let mut app = App::new().settings(relative_path);
+
+    assert!(app.load_configured_settings());
+    let settings = app
+        .container()
+        .resolve::<SettingsService>()
+        .expect("settings service");
+    assert_eq!(
+        settings.loaded_path().map(std::path::PathBuf::from),
+        Some(expected)
+    );
+}
+
+#[test]
 fn app_run_after_returns_cancelable_timer_handle() {
     let app = App::new();
     let handle = app.run_after(std::time::Duration::from_secs(1), || {});

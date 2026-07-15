@@ -29,6 +29,10 @@ pub use crate::native::traits::system::StatusLevel;
 pub use crate::draw::traits::GraphicsEngine;
 pub use crate::draw::{colors, Color, FontService, ImageService, NullEngine, SoftwareEngine};
 
+// data
+
+pub use crate::data::SettingsService;
+
 // ui
 
 pub use crate::component;
