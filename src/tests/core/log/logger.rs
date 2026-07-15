@@ -1,8 +1,9 @@
 use crate::core::log::logger::*;
-use crate::core::log::{Record, Sink};
+use crate::core::log::{CallbackSink, Record, Sink};
+use crate::core::{Errc, Error};
 use crate::tests::common::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, Mutex, Weak};
 
 struct ReentrantSink {
     logger: Weak<Logger>,
@@ -87,4 +88,29 @@ fn sink_flush_can_reenter_logger_without_holding_the_sink_lock() {
         .unwrap_or_else(|error| error.into_inner())
         .sinks
         .is_empty());
+}
+
+#[test]
+fn error_logging_does_not_duplicate_record_level_or_location() {
+    let logger = Logger::with_default_console();
+    logger.clear_sinks();
+    logger.set_level(Level::Trace);
+    let records = Arc::new(Mutex::new(Vec::new()));
+    let observed_records = Arc::clone(&records);
+    logger.add_sink(Arc::new(CallbackSink::new(move |record| {
+        observed_records
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .push(record.clone());
+    })));
+    let error = Error::with_location(Errc::InvalidState, "bad state", "failure.rs", 17);
+
+    logger.log_error(&error, Level::Error);
+
+    let records = records.lock().unwrap_or_else(|error| error.into_inner());
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].message, "invalid_state: bad state");
+    let rendered = records[0].to_string();
+    assert_eq!(rendered.matches("[ERROR]").count(), 1);
+    assert_eq!(rendered.matches("(failure.rs:17)").count(), 1);
 }

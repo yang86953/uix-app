@@ -175,7 +175,7 @@ impl Logger {
     pub fn log_error(&self, error: &Error, level: Level) {
         self.log(
             level,
-            error.short_what(),
+            super::format_error_message(error),
             error.file(),
             error.line(),
             Vec::new(),
