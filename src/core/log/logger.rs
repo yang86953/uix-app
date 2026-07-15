@@ -110,7 +110,7 @@ impl Logger {
             .sinks
             .clone();
         for sink in &sinks {
-            sink.flush();
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| sink.flush()));
         }
     }
 
@@ -142,9 +142,11 @@ impl Logger {
             .sinks
             .clone();
         for sink in &sinks {
-            if sink.passes(level) {
-                sink.write(&record);
-            }
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                if sink.passes(level) {
+                    sink.write(&record);
+                }
+            }));
         }
     }
 
