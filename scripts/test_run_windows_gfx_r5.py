@@ -14,6 +14,7 @@ from scripts.run_windows_gfx_r5 import (
     VENDOR_ENV,
     EvidenceSession,
     build_plan,
+    capture,
     file_sha256,
     filter_allowed_untracked,
     load_resumable_evidence,
@@ -38,6 +39,15 @@ def passing_log(case) -> str:
 
 
 class RunWindowsGfxR5Tests(unittest.TestCase):
+    def test_capture_preserves_failed_command_diagnostics(self) -> None:
+        completed = Mock(returncode=101, stdout="error[E0433]: missing API\n")
+        with patch("scripts.run_windows_gfx_r5.subprocess.run", return_value=completed):
+            with self.assertRaisesRegex(
+                ValueError,
+                r"exit code 101: cargo test --lib\nerror\[E0433\]: missing API",
+            ):
+                capture(("cargo", "test", "--lib"))
+
     def test_preflight_checks_clean_source_and_inventory_without_running(self) -> None:
         stdout = StringIO()
         with (
