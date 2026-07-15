@@ -62,9 +62,9 @@ pub(crate) enum AgentCommandResponse {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AgentErrorCode {
-    #[cfg(any(test, feature = "agent-control"))]
+    #[cfg(feature = "agent-control")]
     Unauthorized,
-    #[cfg(any(test, feature = "agent-control"))]
+    #[cfg(feature = "agent-control")]
     UnsupportedSchema,
     InvalidRequest,
     WindowNotFound,
@@ -97,7 +97,9 @@ impl AgentErrorCode {
     #[cfg(any(test, feature = "agent-control"))]
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
+            #[cfg(feature = "agent-control")]
             Self::Unauthorized => "unauthorized",
+            #[cfg(feature = "agent-control")]
             Self::UnsupportedSchema => "unsupported_schema",
             Self::InvalidRequest => "invalid_request",
             Self::WindowNotFound => "window_not_found",
@@ -184,7 +186,7 @@ pub(crate) enum AgentSubmitError {
 }
 
 impl AgentSubmitError {
-    #[cfg(any(test, feature = "agent-control"))]
+    #[cfg(feature = "agent-control")]
     pub(crate) const fn code(self) -> AgentErrorCode {
         match self {
             Self::WindowNotFound => AgentErrorCode::WindowNotFound,
