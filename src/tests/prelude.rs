@@ -204,6 +204,7 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<CollapsePanel>();
     assert_exported::<Date>();
     assert_exported::<DescriptionsItem>();
+    assert_exported::<Fixed>();
     assert_exported::<DividerDirection>();
     assert_exported::<DividerOrientation>();
     assert_exported::<DrawerPlacement>();
@@ -252,6 +253,7 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<Tab>();
     assert_exported::<TabPosition>();
     assert_exported::<TagColor>();
+    assert_exported::<TableColumnGroup>();
     assert_exported::<ThemePrimitives>();
     assert_exported::<Time>();
     assert_exported::<TimelineItem>();
