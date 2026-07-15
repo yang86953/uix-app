@@ -1,5 +1,46 @@
 use crate::core::log::logger::*;
+use crate::core::log::{Record, Sink};
 use crate::tests::common::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Weak};
+
+struct ReentrantSink {
+    logger: Weak<Logger>,
+    writes: AtomicUsize,
+    flushes: AtomicUsize,
+}
+
+impl ReentrantSink {
+    fn new(logger: &Arc<Logger>) -> Self {
+        Self {
+            logger: Arc::downgrade(logger),
+            writes: AtomicUsize::new(0),
+            flushes: AtomicUsize::new(0),
+        }
+    }
+}
+
+impl Sink for ReentrantSink {
+    fn write(&self, _record: &Record) {
+        self.writes.fetch_add(1, Ordering::Relaxed);
+        if let Some(logger) = self.logger.upgrade() {
+            logger.clear_sinks();
+        }
+    }
+
+    fn flush(&self) {
+        self.flushes.fetch_add(1, Ordering::Relaxed);
+        if let Some(logger) = self.logger.upgrade() {
+            logger.clear_sinks();
+        }
+    }
+
+    fn set_level(&self, _level: Level) {}
+
+    fn level(&self) -> Level {
+        Level::Trace
+    }
+}
 
 #[test]
 fn default_console_obeys_the_global_logger_level() {
@@ -9,4 +50,41 @@ fn default_console_obeys_the_global_logger_level() {
     assert_eq!(logger.get_level(), Level::Warn);
     assert_eq!(inner.sinks.len(), 1);
     assert_eq!(inner.sinks[0].level(), Level::Trace);
+}
+
+#[test]
+fn sink_write_can_reenter_logger_without_holding_the_sink_lock() {
+    let logger = Arc::new(Logger::with_default_console());
+    logger.clear_sinks();
+    logger.set_level(Level::Trace);
+    let sink = Arc::new(ReentrantSink::new(&logger));
+    logger.add_sink(sink.clone());
+
+    logger.info("probe".to_owned(), file!(), line!());
+
+    assert_eq!(sink.writes.load(Ordering::Relaxed), 1);
+    assert!(logger
+        .inner
+        .read()
+        .unwrap_or_else(|error| error.into_inner())
+        .sinks
+        .is_empty());
+}
+
+#[test]
+fn sink_flush_can_reenter_logger_without_holding_the_sink_lock() {
+    let logger = Arc::new(Logger::with_default_console());
+    logger.clear_sinks();
+    let sink = Arc::new(ReentrantSink::new(&logger));
+    logger.add_sink(sink.clone());
+
+    logger.flush();
+
+    assert_eq!(sink.flushes.load(Ordering::Relaxed), 1);
+    assert!(logger
+        .inner
+        .read()
+        .unwrap_or_else(|error| error.into_inner())
+        .sinks
+        .is_empty());
 }
