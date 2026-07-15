@@ -36,6 +36,7 @@ impl WidgetTree {
     }
 
     pub(super) fn deactivate_window_focus(&mut self) {
+        self.keyboard_activation = None;
         if !self.window_focused {
             return;
         }
