@@ -119,7 +119,16 @@ where
 {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
         Ok(v) => Ok(v),
-        Err(_) => Err(Error::new(Errc::Unknown, "function panicked")),
+        Err(payload) => {
+            let message = if let Some(message) = payload.downcast_ref::<&str>() {
+                format!("function panicked: {message}")
+            } else if let Some(message) = payload.downcast_ref::<String>() {
+                format!("function panicked: {message}")
+            } else {
+                "function panicked with a non-string payload".to_owned()
+            };
+            Err(Error::new(Errc::Unknown, message))
+        }
     }
 }
 
