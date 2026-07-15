@@ -10,8 +10,7 @@ fn page_titles_match_modules() {
 fn gui_shell_layout() {
     let active = State::new(0usize);
     let timer_ticks = State::new(0u32);
-    let anim_time = State::new(0.0f32);
-    let root = app_shell(active, timer_ticks, anim_time);
+    let root = app_shell(active, timer_ticks);
     let mut tree = ViewAdapter::build(root);
     if let Some(r) = tree.root_mut() {
         r.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
@@ -43,8 +42,7 @@ fn gui_shell_layout() {
 fn home_page_banners_fill_content_width_after_resize() {
     let active = State::new(0usize);
     let timer_ticks = State::new(0u32);
-    let anim_time = State::new(0.0f32);
-    let root = app_shell(active, timer_ticks, anim_time);
+    let root = app_shell(active, timer_ticks);
     let mut tree = ViewAdapter::build(root);
     if let Some(r) = tree.root_mut() {
         r.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
@@ -118,8 +116,7 @@ fn home_page_banners_fill_content_width_after_resize() {
 fn app_page_info_notes_fill_content_width_after_resize() {
     let active = State::new(PAGE_APP);
     let timer_ticks = State::new(0u32);
-    let anim_time = State::new(0.0f32);
-    let root = app_shell(active, timer_ticks, anim_time);
+    let root = app_shell(active, timer_ticks);
     let mut tree = ViewAdapter::build(root);
     if let Some(r) = tree.root_mut() {
         r.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
@@ -173,8 +170,7 @@ fn app_page_info_notes_fill_content_width_after_resize() {
 fn window_resize_updates_shell_content() {
     let active = State::new(0usize);
     let timer_ticks = State::new(0u32);
-    let anim_time = State::new(0.0f32);
-    let root = app_shell(active, timer_ticks, anim_time);
+    let root = app_shell(active, timer_ticks);
     let mut tree = ViewAdapter::build(root);
     let root_id = tree.root_id().expect("root");
     if let Some(r) = tree.root_mut() {
@@ -278,9 +274,8 @@ fn window_resize_updates_shell_content() {
 fn general_page_has_buttons() {
     let tk = DesignTokens::antd_light();
     let timer_ticks = State::new(0u32);
-    let anim_time = State::new(0.0f32);
     let active = State::new(2usize);
-    let ctx = crate::demos::DemoCtx::new(&tk, &timer_ticks, &anim_time, Some(&active));
+    let ctx = crate::demos::DemoCtx::new(&tk, &timer_ticks, Some(&active));
     let root = crate::demos::general::page_general(&ctx);
     let mut tree = ViewAdapter::build(root);
     if let Some(r) = tree.root_mut() {
@@ -303,8 +298,7 @@ fn feedback_modal_traps_keyboard_focus_between_automation_targets() {
 
     let active = State::new(PAGE_FEEDBACK);
     let timer_ticks = State::new(0u32);
-    let anim_time = State::new(0.0f32);
-    let root = app_shell(active, timer_ticks, anim_time);
+    let root = app_shell(active, timer_ticks);
     let mut tree = ViewAdapter::build(root);
     if let Some(root) = tree.root_mut() {
         root.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
@@ -381,9 +375,8 @@ fn feedback_modal_traps_keyboard_focus_between_automation_targets() {
 fn general_page_label_color_samples_have_frames() {
     let tk = DesignTokens::antd_light();
     let timer_ticks = State::new(0u32);
-    let anim_time = State::new(0.0f32);
     let active = State::new(PAGE_GENERAL);
-    let ctx = crate::demos::DemoCtx::new(&tk, &timer_ticks, &anim_time, Some(&active));
+    let ctx = crate::demos::DemoCtx::new(&tk, &timer_ticks, Some(&active));
     let root = crate::demos::general::page_general(&ctx);
     let mut tree = ViewAdapter::build(root);
     if let Some(r) = tree.root_mut() {
@@ -413,9 +406,8 @@ fn general_page_label_color_samples_have_frames() {
 fn gallery_page_lists_coverage() {
     let tk = DesignTokens::antd_light();
     let timer_ticks = State::new(0u32);
-    let anim_time = State::new(0.0f32);
     let active = State::new(10usize);
-    let ctx = crate::demos::DemoCtx::new(&tk, &timer_ticks, &anim_time, Some(&active));
+    let ctx = crate::demos::DemoCtx::new(&tk, &timer_ticks, Some(&active));
     let root = crate::demos::gallery::page_gallery(&ctx);
     let tree = ViewAdapter::build(root);
     assert!(tree.root_id().is_some());
@@ -426,8 +418,7 @@ fn gallery_page_lists_coverage() {
 fn general_page_flow_row_wraps_instead_of_horizontal_scroll() {
     let active = State::new(PAGE_GENERAL);
     let timer_ticks = State::new(0u32);
-    let anim_time = State::new(0.0f32);
-    let root = app_shell(active, timer_ticks, anim_time);
+    let root = app_shell(active, timer_ticks);
     let mut tree = ViewAdapter::build(root);
     if let Some(r) = tree.root_mut() {
         // 侧栏 220 + 窄内容区：Icon 行（8 个 sample_block）在 wrap 下应折行。
@@ -507,8 +498,7 @@ fn general_page_flow_row_wraps_instead_of_horizontal_scroll() {
 fn content_scrollview_reports_overflow_scroll_range() {
     let active = State::new(PAGE_GENERAL);
     let timer_ticks = State::new(0u32);
-    let anim_time = State::new(0.0f32);
-    let root = app_shell(active, timer_ticks, anim_time);
+    let root = app_shell(active, timer_ticks);
     let mut tree = ViewAdapter::build(root);
     if let Some(r) = tree.root_mut() {
         // 矮窗：通用页内容必然超出视口。
@@ -549,8 +539,7 @@ fn content_scrollview_reports_overflow_scroll_range() {
 fn home_narrow_window_enables_horizontal_scroll() {
     let active = State::new(0usize);
     let timer_ticks = State::new(0u32);
-    let anim_time = State::new(0.0f32);
-    let root = app_shell(active, timer_ticks, anim_time);
+    let root = app_shell(active, timer_ticks);
     let mut tree = ViewAdapter::build(root);
     if let Some(r) = tree.root_mut() {
         // 侧栏 220 + 窄内容区，三块 200 宽导航应溢出。
@@ -597,8 +586,7 @@ fn other_page_narrow_window_keeps_content_and_vertical_scrollbar_interactive() {
 
     let active = State::new(PAGE_OTHER);
     let timer_ticks = State::new(0u32);
-    let anim_time = State::new(0.0f32);
-    let root = app_shell(active, timer_ticks, anim_time);
+    let root = app_shell(active, timer_ticks);
     let mut tree = ViewAdapter::build(root);
     if let Some(root) = tree.root_mut() {
         root.set_frame(Rect::new(0.0, 0.0, 640.0, 480.0));
