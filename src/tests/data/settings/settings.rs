@@ -81,6 +81,19 @@ fn serialize_json_flat_handles_empty_and_escaped_values() {
 }
 
 #[test]
+fn serialize_json_flat_orders_keys_deterministically() {
+    let mut map = HashMap::new();
+    map.insert("zeta".to_string(), "3".to_string());
+    map.insert("alpha".to_string(), "1".to_string());
+    map.insert("middle".to_string(), "2".to_string());
+
+    assert_eq!(
+        serialize_json_flat(&map),
+        "{\n  \"alpha\": \"1\",\n  \"middle\": \"2\",\n  \"zeta\": \"3\"\n}"
+    );
+}
+
+#[test]
 fn parse_serialize_roundtrip_preserves_entries() {
     for input in [
         r#"{"a": "1"}"#,
@@ -185,6 +198,29 @@ fn cloned_service_shares_mutations_and_persistence_state() {
     settings.save().unwrap();
     assert!(!clone.dirty());
     assert!(fs::read_to_string(&path).unwrap().contains("dark"));
+
+    remove_if_present(&path);
+}
+
+#[test]
+fn no_op_mutations_keep_clean_settings_clean() {
+    let path = temp_settings_path("no-op-mutations");
+    remove_if_present(&path);
+    let path_string = path.to_string_lossy().to_string();
+
+    let settings = SettingsService::new();
+    settings.load(&path_string).unwrap();
+    settings.set("theme", "dark");
+    settings.save().unwrap();
+
+    settings.set("theme", "dark");
+    settings.remove("missing");
+    assert!(!settings.dirty());
+
+    settings.clear();
+    settings.save().unwrap();
+    settings.clear();
+    assert!(!settings.dirty());
 
     remove_if_present(&path);
 }

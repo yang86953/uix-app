@@ -257,8 +257,10 @@ pub(crate) fn serialize_json_flat(map: &HashMap<String, String>) -> String {
     }
     let mut out = String::with_capacity(128);
     out.push_str("{\n");
+    let mut entries = map.iter().collect::<Vec<_>>();
+    entries.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
     let mut first = true;
-    for (k, v) in map {
+    for (k, v) in entries {
         if !first {
             out.push_str(",\n");
         }
@@ -336,6 +338,13 @@ impl SettingsService {
 
     pub fn set(&self, key: &str, value: &str) {
         let mut state = self.write_state();
+        if state
+            .values
+            .get(key)
+            .is_some_and(|current| current == value)
+        {
+            return;
+        }
         state.values.insert(key.to_string(), value.to_string());
         state.dirty = true;
     }
@@ -354,12 +363,16 @@ impl SettingsService {
 
     pub fn remove(&self, key: &str) {
         let mut state = self.write_state();
-        state.values.remove(key);
-        state.dirty = true;
+        if state.values.remove(key).is_some() {
+            state.dirty = true;
+        }
     }
 
     pub fn clear(&self) {
         let mut state = self.write_state();
+        if state.values.is_empty() {
+            return;
+        }
         state.values.clear();
         state.dirty = true;
     }
