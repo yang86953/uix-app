@@ -1,6 +1,9 @@
-use std::cell::RefCell;
-use std::rc::{Rc, Weak as RcWeak};
 use std::sync::{Mutex, Weak as SyncWeak};
+
+#[cfg(test)]
+use std::cell::RefCell;
+#[cfg(test)]
+use std::rc::{Rc, Weak as RcWeak};
 
 use crate::core::ComponentId;
 use crate::ui::app_state::AppStateInner;
@@ -8,16 +11,20 @@ use crate::ui::component_snapshot::{
     AccessibilitySnapshot, AriaAttribute, ComponentConfigSnapshot, SnapshotFields,
 };
 use crate::ui::event::SemanticEvent;
-use crate::ui::widget::{EventResult, WidgetTree};
+use crate::ui::widget::EventResult;
+#[cfg(test)]
+use crate::ui::widget::WidgetTree;
 
 #[derive(Clone)]
 pub struct ComponentHandle {
     id: ComponentId,
+    #[cfg(test)]
     tree: Option<RcWeak<RefCell<WidgetTree>>>,
     app_state: Option<SyncWeak<Mutex<AppStateInner>>>,
 }
 
 impl ComponentHandle {
+    #[cfg(test)]
     pub fn new(id: ComponentId, tree: &Rc<RefCell<WidgetTree>>) -> Self {
         Self {
             id,
@@ -32,6 +39,7 @@ impl ComponentHandle {
     ) -> Self {
         Self {
             id,
+            #[cfg(test)]
             tree: None,
             app_state: Some(app_state),
         }
@@ -42,6 +50,7 @@ impl ComponentHandle {
     }
 
     pub fn is_alive(&self) -> bool {
+        #[cfg(test)]
         if let Some(tree) = self.tree.as_ref().and_then(RcWeak::upgrade) {
             if tree
                 .try_borrow()
@@ -63,6 +72,7 @@ impl ComponentHandle {
     }
 
     pub fn snapshot(&self) -> Option<ComponentConfigSnapshot> {
+        #[cfg(test)]
         if let Some(tree) = self.tree.as_ref().and_then(RcWeak::upgrade) {
             if let Ok(tree) = tree.try_borrow() {
                 if let Some(node) = tree.get(self.id) {
@@ -164,6 +174,7 @@ impl ComponentHandle {
     }
 
     pub fn invalidate(&self) {
+        #[cfg(test)]
         if let Some(tree) = self.tree.as_ref().and_then(RcWeak::upgrade) {
             if let Ok(mut tree) = tree.try_borrow_mut() {
                 tree.invalidate_paint(self.id);
@@ -180,6 +191,7 @@ impl ComponentHandle {
     }
 
     pub fn emit(&self, mut event: SemanticEvent) -> EventResult {
+        #[cfg(test)]
         if let Some(tree) = self.tree.as_ref().and_then(RcWeak::upgrade) {
             let Ok(tree_ref) = tree.try_borrow() else {
                 return EventResult::NotHandled;
