@@ -158,7 +158,7 @@ fn render_test_module(total: usize, blocks: &[CompiledBlock]) -> String {
          pub(super) const USAGE_RUST_BLOCKS_COMPILED: usize = {compiled_count};\n\
          #[allow(dead_code, unnameable_test_items, unused_imports, unused_mut, unused_must_use, unused_variables)]\n\
          mod compiled_usage_examples {{\n\
-             use crate::prelude::*;\n\
+             use uix::prelude::*;\n\
              type GuideResult = Result<(), Box<dyn std::error::Error>>;\n",
     );
     for block in blocks {
