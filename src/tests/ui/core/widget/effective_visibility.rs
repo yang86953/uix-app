@@ -29,3 +29,13 @@ fn hidden_ancestor_removes_descendant_overlay_registration() {
 
     assert!(tree.overlay_stack().is_empty());
 }
+
+#[test]
+fn hidden_ancestor_removes_descendant_overlay_semantic_bounds() {
+    let (mut tree, parent, child) = open_popover_under_parent();
+    assert!(tree.visible_rect_for(child).is_some());
+
+    tree.set_node_visibility(parent, false);
+
+    assert!(tree.visible_rect_for(child).is_none());
+}

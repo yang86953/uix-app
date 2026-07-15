@@ -401,10 +401,10 @@ impl WidgetTree {
     }
 
     pub(crate) fn visible_rect_for(&self, id: WidgetId) -> Option<Rect> {
-        let node = self.get(id)?;
-        if !node.visible() {
+        if !self.is_effectively_visible(id) {
             return None;
         }
+        let node = self.get(id)?;
         let frame = node.frame();
         let is_overlay = node.overlay_entry(id, frame).is_some();
         let mut rect = if frame.w > 0.0 && frame.h > 0.0 {
