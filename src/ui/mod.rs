@@ -35,7 +35,7 @@ pub use crate::native::traits::input::{
 pub use crate::native::traits::system::StatusLevel;
 pub use animation::{Animation, AnimationConfig, Easing};
 pub use app_state::AppState;
-pub use clipboard::copy_to_clipboard;
+pub use clipboard::{copy_to_clipboard, read_text_from_clipboard};
 pub use component_handle::ComponentHandle;
 pub use component_snapshot::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute,
