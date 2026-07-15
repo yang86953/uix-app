@@ -561,6 +561,8 @@ pub enum SnapshotFields {
         value: String,
         size: f32,
         error_level: u8,
+        module_count: usize,
+        encoding_error: Option<String>,
     },
     RichText {
         segments: Vec<RichTextSegment>,

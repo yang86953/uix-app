@@ -112,6 +112,8 @@ fn component_config_snapshot_dispatches_late_builtin() {
             value: "uix".to_string(),
             size: 96.0,
             error_level: 2,
+            module_count: 21,
+            encoding_error: None,
         }
     );
 }
