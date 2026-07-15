@@ -924,9 +924,25 @@ impl crate::ui::IntoWidgetNode for TableBuilder {
 impl crate::ui::view::View for TableBuilder {
     fn build(self) -> crate::ui::view::ViewNode {
         let (table, handler) = self.into_parts();
+        if table.rows.is_empty() {
+            if let Some(empty) = crate::ui::config::render_empty_for::<Table>() {
+                return empty;
+            }
+        }
         let mut node = crate::ui::view::ViewNode::leaf(table);
         node.render_handlers.push(handler);
         node
+    }
+}
+
+impl crate::ui::view::View for Table {
+    fn build(self) -> crate::ui::view::ViewNode {
+        if self.rows.is_empty() {
+            if let Some(empty) = crate::ui::config::render_empty_for::<Self>() {
+                return empty;
+            }
+        }
+        crate::ui::view::ViewNode::leaf(self)
     }
 }
 

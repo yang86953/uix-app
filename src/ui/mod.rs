@@ -61,8 +61,8 @@ pub use event::{
 };
 pub use focus_handle::{FocusHandle, FocusHandleError};
 pub use foundation::config::{
-    use_config, with_config, ComponentConfig, ComponentOverrides, ComponentTokenOverrides, Config,
-    ConfigProvider,
+    render_empty_for, use_config, with_config, ComponentConfig, ComponentOverrides,
+    ComponentTokenOverrides, Config, ConfigProvider, EmptyContext, EmptyRenderer,
 };
 pub use foundation::locale::{en_us, use_locale, with_locale, zh_cn, Locale, LocaleProvider};
 pub use foundation::state::{Computed, Effect, State, StateSlotId};
