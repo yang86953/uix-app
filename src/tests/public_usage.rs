@@ -149,3 +149,41 @@ fn documented_focus_handle_flow_compiles_and_runs_from_prelude() {
     focus.blur().expect("bound blur handle");
     app.settle().expect("blur command should settle");
 }
+
+#[cfg(feature = "test-harness")]
+#[test]
+fn documented_test_app_control_actions_run_from_prelude() {
+    let name = State::new(String::new());
+    let period = State::new("Day".to_string());
+    let agreed = State::new(false);
+    let level = State::new(10.0_f64);
+    let build_name = name.clone();
+    let build_period = period.clone();
+    let build_agreed = agreed.clone();
+    let build_level = level.clone();
+    let mut app = TestApp::new((480.0, 320.0), move || {
+        column((
+            input()
+                .placeholder("Name")
+                .value(&build_name)
+                .automation_id("profile.name"),
+            embed(Segmented::new(["Day", "Week", "Month"]).value(&build_period))
+                .automation_id("profile.period"),
+            embed(Checkbox::new("Accept").checked(&build_agreed)).automation_id("profile.agreed"),
+            embed(Slider::new(0.0..=20.0).step(5.0).value(&build_level))
+                .automation_id("profile.level"),
+        ))
+    });
+
+    app.type_text("profile.name", "Ada").expect("type text");
+    app.select("profile.period", 2).expect("select period");
+    app.toggle("profile.agreed").expect("toggle agreement");
+    app.increment("profile.level").expect("increment level");
+    app.decrement("profile.level").expect("decrement level");
+
+    assert_eq!(name.get(), "Ada");
+    assert_eq!(period.get(), "Month");
+    assert!(agreed.get());
+    assert_eq!(level.get(), 10.0);
+    assert_eq!(app.text("profile.name").as_deref(), Ok("Ada"));
+}
