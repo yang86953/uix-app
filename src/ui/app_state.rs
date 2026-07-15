@@ -184,13 +184,19 @@ impl AppStateInner {
     }
 
     pub(crate) fn snapshot(&self, id: ComponentId) -> Option<ComponentConfigSnapshot> {
-        self.components.get(&id).map(|entry| entry.snapshot.clone())
+        self.map_snapshot(id, Clone::clone)
+    }
+
+    pub(crate) fn map_snapshot<R>(
+        &self,
+        id: ComponentId,
+        map: impl FnOnce(&ComponentConfigSnapshot) -> R,
+    ) -> Option<R> {
+        self.components.get(&id).map(|entry| map(&entry.snapshot))
     }
 
     pub(crate) fn invalidate(&self, id: ComponentId) -> Option<EventLoopWaker> {
-        let Some(entry) = self.components.get(&id) else {
-            return None;
-        };
+        let entry = self.components.get(&id)?;
         invalidate_paint_handle(&entry.invalidation, id, entry.rect);
         Some(self.event_loop_waker.clone())
     }
@@ -281,7 +287,7 @@ impl AppStateInner {
                 .any(|(id, _)| targets.contains(id))
     }
 
-    fn contains(&self, id: ComponentId) -> bool {
+    pub(crate) fn contains(&self, id: ComponentId) -> bool {
         self.components.contains_key(&id)
     }
 
