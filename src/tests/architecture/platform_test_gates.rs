@@ -6,6 +6,10 @@ fn platform_test_modules_mirror_native_visibility() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let expected_gates = [
         (
+            "tests/native/mod.rs",
+            "#[cfg(feature = \"vulkan\")]\nmod gfx_r5;",
+        ),
+        (
             "tests/native/backends/mod.rs",
             "#[cfg(windows)]\nmod windows;",
         ),
