@@ -114,6 +114,16 @@ impl ExponentialBackoffRetryPolicy {
         multiplier: f64,
         jitter_factor: f64,
     ) -> Self {
+        let multiplier = if multiplier.is_finite() {
+            multiplier.max(1.0)
+        } else {
+            1.0
+        };
+        let jitter_factor = if jitter_factor.is_finite() {
+            jitter_factor.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
         Self {
             max_retries,
             initial_delay_ms,
