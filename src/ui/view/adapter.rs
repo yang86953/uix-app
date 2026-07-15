@@ -96,6 +96,7 @@ impl ViewAdapter {
 
     /// Expands a ViewNode recursively into a WidgetNode.
     pub(crate) fn expand(node: ViewNode) -> WidgetNode {
+        let visible = node.style.visible;
         let provider_context = node.provider_context;
         let children: Vec<WidgetNode> = node.children.into_iter().map(Self::expand).collect();
 
@@ -134,6 +135,10 @@ impl ViewAdapter {
 
         if node.z_index != 0 {
             wnode = wnode.z_index(node.z_index);
+        }
+
+        if !visible {
+            wnode = wnode.with_visibility(false);
         }
 
         if !node.handlers.is_empty() {
@@ -257,6 +262,9 @@ impl ViewAdapter {
         if let Some(current) = tree.get_mut(id) {
             current.set_provider_context(provider_context);
         }
+        if !style.visible {
+            tree.set_node_visibility(id, false);
+        }
         let widget = Self::apply_style(widget, &style, flex_grow_override, flex_shrink_override);
         let next_accessibility = widget.snapshot_fields().accessibility();
         let next_disabled = accessibility_override
@@ -282,6 +290,9 @@ impl ViewAdapter {
             tree.set_focus(None);
         }
         let widget_changed = Self::patch_widget(tree, id, widget);
+        if style.visible {
+            tree.set_node_visibility(id, true);
+        }
         let resolved_tab_index = tab_index.unwrap_or_else(|| {
             tree.get(id)
                 .map(|current| current.component().tab_index())

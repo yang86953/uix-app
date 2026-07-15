@@ -235,6 +235,12 @@ impl ViewNode {
         self
     }
 
+    /// 保留节点身份，但让整棵子树退出布局、绘制、命中与焦点候选。
+    pub fn visible(mut self, visible: bool) -> Self {
+        self.style.visible = visible;
+        self
+    }
+
     /// 设置以节点边界为中心、无偏移的盒阴影。
     pub fn shadow(mut self, blur: f32, color: impl Into<Color>) -> Self {
         self.style.box_shadow = Some(BoxShadowDef::new(color.into(), blur, 0.0, 0.0));
@@ -745,6 +751,11 @@ pub trait StyleExt: Into<ViewNode> + Sized {
 
     fn opacity(self, o: f32) -> ViewNode {
         self.into().opacity(o)
+    }
+
+    /// 保留节点身份，但让整棵子树退出布局、绘制、命中与焦点候选。
+    fn visible(self, visible: bool) -> ViewNode {
+        self.into().visible(visible)
     }
 }
 

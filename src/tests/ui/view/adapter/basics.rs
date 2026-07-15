@@ -23,6 +23,15 @@ fn test_expand_key_and_zindex() {
 }
 
 #[test]
+fn expand_carries_view_visibility_into_widget_metadata() {
+    let node = ViewNode::leaf(Container::new()).visible(false);
+
+    let wnode = ViewAdapter::expand(node);
+
+    assert!(!wnode.visible);
+}
+
+#[test]
 fn test_apply_style_container() {
     let mut style = Style::default();
     style.background = Some(crate::ui::style::ColorValue::Custom(Color::red()));
@@ -75,6 +84,39 @@ fn reconcile_container_view_style_preserves_builder_layout_style() {
     assert_eq!(container.style.flex_direction, FlexDirection::Column);
     assert_eq!(container.style.flex_grow, 1.0);
     assert_eq!(container.style.padding, EdgeInsets::uniform(8.0));
+}
+
+#[test]
+fn reconcile_view_visibility_preserves_identity_and_child_gate() {
+    use crate::ui::view::{button, column, EventExt};
+
+    let mut tree =
+        ViewAdapter::build(column([button("Child").focusable(true).visible(false)]).visible(false));
+    let root = tree.root_id().expect("root");
+    let child = tree.get(root).expect("root").children()[0];
+    tree.get_mut(root)
+        .expect("root")
+        .set_frame(Rect::new(0.0, 0.0, 160.0, 60.0));
+    tree.get_mut(child)
+        .expect("child")
+        .set_frame(Rect::new(0.0, 0.0, 120.0, 40.0));
+
+    assert!(!tree.get(root).expect("root").visible());
+    assert!(!tree.get(child).expect("child").visible());
+    assert_eq!(tree.hit_test(Point::new(20.0, 20.0)), None);
+    assert!(tree.collect_focusable().is_empty());
+
+    ViewAdapter::reconcile(
+        &mut tree,
+        column([button("Child").focusable(true).visible(false)]).visible(true),
+    );
+
+    assert_eq!(tree.root_id(), Some(root));
+    assert_eq!(tree.get(root).expect("root").children(), &[child]);
+    assert!(tree.get(root).expect("root").visible());
+    assert!(!tree.get(child).expect("child").visible());
+    assert_eq!(tree.hit_test(Point::new(20.0, 20.0)), Some(root));
+    assert!(tree.collect_focusable().is_empty());
 }
 
 #[test]
