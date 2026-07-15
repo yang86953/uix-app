@@ -59,6 +59,12 @@ fn monitor_info_for_window(
     Ok(info)
 }
 
+#[derive(Clone, Copy)]
+struct FullscreenRestore {
+    style: i32,
+    placement: super::bindings::WINDOWPLACEMENT,
+}
+
 fn get_window_long_checked(
     hwnd: *mut std::ffi::c_void,
     index: i32,
@@ -111,6 +117,7 @@ pub(crate) struct WindowsWindowOps {
     _binding: Box<WindowBinding>,
     frame_pacer: WindowsFramePacer,
     opacity_layered_style_owned: bool,
+    fullscreen_restore: Option<FullscreenRestore>,
 }
 
 impl WindowsWindowOps {
@@ -124,6 +131,7 @@ impl WindowsWindowOps {
             _binding: binding,
             frame_pacer: WindowsFramePacer::new(hwnd, frame_pacer_state),
             opacity_layered_style_owned: false,
+            fullscreen_restore: None,
         }
     }
 
@@ -537,57 +545,119 @@ impl WindowOps for WindowsWindowOps {
     fn os_set_fullscreen(&mut self, fullscreen: bool) -> Result<()> {
         self.ensure_valid_window("os_set_fullscreen")?;
         if fullscreen {
+            if self.fullscreen_restore.is_some() {
+                return Ok(());
+            }
+            let style = get_window_long_checked(
+                self.hwnd,
+                GWL_STYLE,
+                "os_set_fullscreen: GetWindowLongW failed",
+            )?;
+            let mut placement = super::bindings::WINDOWPLACEMENT {
+                length: std::mem::size_of::<super::bindings::WINDOWPLACEMENT>() as u32,
+                flags: 0,
+                showCmd: 0,
+                ptMinPosition: super::bindings::POINT { x: 0, y: 0 },
+                ptMaxPosition: super::bindings::POINT { x: 0, y: 0 },
+                rcNormalPosition: super::bindings::RECT {
+                    left: 0,
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                },
+            };
+            if unsafe { GetWindowPlacement(self.hwnd, &mut placement) } == 0 {
+                return Err(super::util::windows_diag(
+                    Errc::PlatformError,
+                    "os_set_fullscreen: GetWindowPlacement failed",
+                ));
+            }
+            let monitor = monitor_info_for_window(self.hwnd, "os_set_fullscreen")?;
+            let fullscreen_style = (style as u32 & !WS_OVERLAPPEDWINDOW) | WS_POPUP;
             set_window_long_checked(
                 self.hwnd,
                 GWL_STYLE,
-                (WS_POPUP | WS_VISIBLE) as i32,
+                fullscreen_style as i32,
                 "os_set_fullscreen: SetWindowLongW failed",
             )?;
-            unsafe {
-                let sw = GetSystemMetrics(SM_CXSCREEN);
-                let sh = GetSystemMetrics(SM_CYSCREEN);
-                if SetWindowPos(
+            let fullscreen_positioned = unsafe {
+                SetWindowPos(
                     self.hwnd,
-                    HWND_TOPMOST as *mut std::ffi::c_void,
-                    0,
-                    0,
-                    sw,
-                    sh,
-                    SWP_FRAMECHANGED,
-                ) == 0
-                {
-                    return Err(super::util::windows_diag(
-                        Errc::PlatformError,
-                        "os_set_fullscreen: SetWindowPos failed",
-                    ));
+                    std::ptr::null_mut(),
+                    monitor.rcMonitor.left,
+                    monitor.rcMonitor.top,
+                    monitor.rcMonitor.right - monitor.rcMonitor.left,
+                    monitor.rcMonitor.bottom - monitor.rcMonitor.top,
+                    SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED,
+                )
+            };
+            if fullscreen_positioned == 0 {
+                let error = super::util::windows_diag(
+                    Errc::PlatformError,
+                    "os_set_fullscreen: SetWindowPos failed",
+                );
+                let _ = set_window_long_checked(
+                    self.hwnd,
+                    GWL_STYLE,
+                    style,
+                    "os_set_fullscreen: rollback SetWindowLongW failed",
+                );
+                let _ = unsafe { SetWindowPlacement(self.hwnd, &placement) };
+                if style as u32 & WS_VISIBLE == 0 {
+                    unsafe {
+                        ShowWindow(self.hwnd, SW_HIDE);
+                    }
                 }
+                return Err(error);
             }
+            self.fullscreen_restore = Some(FullscreenRestore { style, placement });
         } else {
-            let flags = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
+            let Some(restore) = self.fullscreen_restore else {
+                return Ok(());
+            };
+            let current_style = get_window_long_checked(
+                self.hwnd,
+                GWL_STYLE,
+                "os_set_fullscreen: restore GetWindowLongW failed",
+            )? as u32;
+            let was_visible = current_style & WS_VISIBLE != 0;
+            let restored_style =
+                (restore.style as u32 & !WS_VISIBLE) | (current_style & WS_VISIBLE);
             set_window_long_checked(
                 self.hwnd,
                 GWL_STYLE,
-                flags as i32,
+                restored_style as i32,
                 "os_set_fullscreen: SetWindowLongW failed",
             )?;
-            unsafe {
-                // Note: resizable state is managed by the caller before this call
-                if SetWindowPos(
-                    self.hwnd,
-                    HWND_NOTOPMOST as *mut std::ffi::c_void,
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED,
-                ) == 0
-                {
-                    return Err(super::util::windows_diag(
-                        Errc::PlatformError,
-                        "os_set_fullscreen: SetWindowPos failed",
-                    ));
+            if unsafe { SetWindowPlacement(self.hwnd, &restore.placement) } == 0 {
+                return Err(super::util::windows_diag(
+                    Errc::PlatformError,
+                    "os_set_fullscreen: SetWindowPlacement failed",
+                ));
+            }
+            if !was_visible {
+                unsafe {
+                    ShowWindow(self.hwnd, SW_HIDE);
                 }
             }
+            if unsafe {
+                SetWindowPos(
+                    self.hwnd,
+                    std::ptr::null_mut(),
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED,
+                )
+            } == 0
+            {
+                return Err(super::util::windows_diag(
+                    Errc::PlatformError,
+                    "os_set_fullscreen: restore SetWindowPos failed",
+                ));
+            }
+            self.fullscreen_restore = None;
         }
         Ok(())
     }

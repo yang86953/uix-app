@@ -38,6 +38,17 @@ pub(crate) struct MONITORINFO {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
+pub(super) struct WINDOWPLACEMENT {
+    pub length: u32,
+    pub flags: u32,
+    pub showCmd: u32,
+    pub ptMinPosition: POINT,
+    pub ptMaxPosition: POINT,
+    pub rcNormalPosition: RECT,
+}
+
+#[repr(C)]
 pub(super) struct COMPOSITIONFORM {
     pub dwStyle: u32,
     pub ptCurrentPos: POINT,

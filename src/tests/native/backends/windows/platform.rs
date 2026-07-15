@@ -34,6 +34,8 @@ fn size_lparam(width: u16, height: u16) -> isize {
     (u32::from(width) | (u32::from(height) << 16)) as isize
 }
 
+const WS_EX_TOPMOST: u32 = 0x00000008;
+
 #[test]
 fn native_event_queue_recovers_after_lock_poisoning() {
     let mut platform = WindowsPlatform::new();
@@ -380,6 +382,76 @@ fn native_window_centers_in_nearest_monitor_work_area() {
             <= 1,
         "window and work-area vertical centers must match"
     );
+
+    window.close().expect("close window");
+}
+
+#[test]
+fn native_fullscreen_restores_style_placement_and_z_order() {
+    let mut platform = WindowsPlatform::new();
+    let mut window = platform
+        .create_window("UIX fullscreen restore", 419, 263)
+        .expect("native window");
+    let hwnd = window.native_handle().native_window();
+    configure_custom_title_bar(window.as_mut(), 419, 263).expect("configure custom title bar");
+    window
+        .properties_mut()
+        .set_position(73, 91)
+        .expect("position window before fullscreen");
+
+    let mut original_rect = RECT::default();
+    unsafe { GetWindowRect(HWND(hwnd), &mut original_rect) }.expect("original window rect");
+    let original_style = unsafe { GetWindowLongW(hwnd, GWL_STYLE) } as u32;
+    let original_ex_style = unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) } as u32;
+    let monitor = unsafe { MonitorFromWindowRaw(hwnd, MONITOR_DEFAULTTONEAREST) };
+    assert!(!monitor.is_null(), "nearest monitor");
+    let mut monitor_info = crate::native::backends::windows::bindings::MONITORINFO {
+        cbSize: std::mem::size_of::<crate::native::backends::windows::bindings::MONITORINFO>()
+            as u32,
+        rcMonitor: crate::native::backends::windows::bindings::RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        },
+        rcWork: crate::native::backends::windows::bindings::RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        },
+        dwFlags: 0,
+    };
+    assert_ne!(unsafe { GetMonitorInfoRaw(monitor, &mut monitor_info) }, 0);
+
+    window
+        .properties_mut()
+        .set_fullscreen(true)
+        .expect("enter fullscreen");
+    let mut fullscreen_rect = RECT::default();
+    unsafe { GetWindowRect(HWND(hwnd), &mut fullscreen_rect) }.expect("fullscreen window rect");
+    assert_eq!(fullscreen_rect.left, monitor_info.rcMonitor.left);
+    assert_eq!(fullscreen_rect.top, monitor_info.rcMonitor.top);
+    assert_eq!(fullscreen_rect.right, monitor_info.rcMonitor.right);
+    assert_eq!(fullscreen_rect.bottom, monitor_info.rcMonitor.bottom);
+    let fullscreen_ex_style = unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) } as u32;
+    assert_eq!(
+        fullscreen_ex_style & WS_EX_TOPMOST,
+        original_ex_style & WS_EX_TOPMOST,
+        "fullscreen must preserve always-on-top state"
+    );
+
+    window
+        .properties_mut()
+        .set_fullscreen(false)
+        .expect("exit fullscreen");
+    let mut restored_rect = RECT::default();
+    unsafe { GetWindowRect(HWND(hwnd), &mut restored_rect) }.expect("restored window rect");
+    assert_eq!(
+        unsafe { GetWindowLongW(hwnd, GWL_STYLE) } as u32,
+        original_style
+    );
+    assert_eq!(restored_rect, original_rect);
 
     window.close().expect("close window");
 }

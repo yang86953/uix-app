@@ -74,6 +74,7 @@ pub(crate) const SWP_NOSIZE: u32 = 0x0001;
 pub(crate) const SWP_NOZORDER: u32 = 0x0004;
 pub(crate) const SWP_NOACTIVATE: u32 = 0x0010;
 pub(crate) const SWP_FRAMECHANGED: u32 = 0x0020;
+pub(crate) const SWP_NOOWNERZORDER: u32 = 0x0200;
 
 pub(crate) const HWND_TOP: isize = 0;
 pub(crate) const HWND_BOTTOM: isize = 1;
@@ -99,8 +100,6 @@ pub(crate) const LWA_ALPHA: u32 = 0x00000002;
 
 pub(crate) const COLOR_APPWORKSPACE: u32 = 1;
 
-pub(crate) const SM_CXSCREEN: i32 = 0;
-pub(crate) const SM_CYSCREEN: i32 = 1;
 pub(crate) const MONITOR_DEFAULTTONEAREST: u32 = 2;
 
 pub(crate) const IDC_ARROW: u16 = 32512;

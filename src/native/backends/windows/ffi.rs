@@ -9,7 +9,9 @@
 #![cfg(windows)]
 #![allow(nonstandard_style)]
 
-use super::bindings::{CANDIDATEFORM, COMPOSITIONFORM, MONITORINFO, MSG, POINT, RECT, WNDCLASSEXW};
+use super::bindings::{
+    CANDIDATEFORM, COMPOSITIONFORM, MONITORINFO, MSG, POINT, RECT, WINDOWPLACEMENT, WNDCLASSEXW,
+};
 
 // ════════════════════════════════════════════════════════════════════════════
 // dwmapi
@@ -109,6 +111,14 @@ extern "system" {
     ) -> i32;
     pub(crate) fn SetWindowLongW(hwnd: *mut std::ffi::c_void, nIndex: i32, dwNewLong: i32) -> i32;
     pub(crate) fn GetWindowLongW(hwnd: *mut std::ffi::c_void, nIndex: i32) -> i32;
+    pub(super) fn GetWindowPlacement(
+        hwnd: *mut std::ffi::c_void,
+        lpwndpl: *mut WINDOWPLACEMENT,
+    ) -> i32;
+    pub(super) fn SetWindowPlacement(
+        hwnd: *mut std::ffi::c_void,
+        lpwndpl: *const WINDOWPLACEMENT,
+    ) -> i32;
     pub(crate) fn SetWindowLongPtrW(
         hwnd: *mut std::ffi::c_void,
         nIndex: i32,
