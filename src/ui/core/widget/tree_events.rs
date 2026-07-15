@@ -2,6 +2,7 @@ use super::tree_core::WidgetTree;
 use super::*;
 use crate::ui::event::{ClickEvent, SemanticEvent, WindowAction};
 
+mod keyboard_routing;
 mod pointer_routing;
 mod window_lifecycle;
 
@@ -265,76 +266,8 @@ impl WidgetTree {
                     EventResult::NotHandled
                 }
             }
-            SystemEvent::KeyDown { key, mods } => {
-                // Tab 键焦点导航（在捕获和冒泡之前处理）
-                if *key == KeyCode::Tab {
-                    let forward = !mods.contains(KeyMod::SHIFT);
-                    if let Some(owner) = self
-                        .overlay_stack
-                        .top()
-                        .filter(|entry| entry.traps_focus())
-                        .map(|entry| entry.owner())
-                    {
-                        if let Some(next) = self.focus_next_in_scope(owner, forward) {
-                            self.remember_focus_before_trap(owner);
-                            self.set_focus(Some(next));
-                            return EventResult::Handled;
-                        } else {
-                            return EventResult::NotHandled;
-                        }
-                    } else if let Some(next) = self.focus_next(forward) {
-                        self.set_focus(Some(next));
-                        return EventResult::Handled;
-                    }
-                    return EventResult::NotHandled;
-                }
-
-                if let Some(t) = self.managers().focus.focused_component() {
-                    // 跨节点文字选区：Ctrl+C 须聚合兄弟选区，不能只读焦点节点。
-                    if *key == KeyCode::C
-                        && mods.contains(KeyMod::CTRL)
-                        && self.try_copy_cross_text_selection(t)
-                    {
-                        return EventResult::Handled;
-                    }
-                    // 捕获阶段：root → target，用于全局快捷键
-                    if self.capture_to(t, event) == EventResult::Handled {
-                        return EventResult::Handled;
-                    }
-                    let result = self.dispatch_to(t, event);
-                    if result == EventResult::Handled
-                        && matches!(*key, KeyCode::Enter | KeyCode::Space)
-                    {
-                        let click = ClickEvent {
-                            button: MouseButton::Left,
-                            pos: self
-                                .get(t)
-                                .map(|node| {
-                                    let frame = node.frame();
-                                    Point::new(frame.x + frame.w * 0.5, frame.y + frame.h * 0.5)
-                                })
-                                .unwrap_or_default(),
-                            modifiers: *mods,
-                        };
-                        let _ = self.dispatch_semantic(SemanticEvent::click(t, click));
-                    }
-                    result
-                } else {
-                    EventResult::NotHandled
-                }
-            }
-            SystemEvent::KeyUp { .. } => {
-                if let Some(t) = self.managers().focus.focused_component() {
-                    self.invalidate_paint(t);
-                    // 捕获阶段：root → target
-                    if self.capture_to(t, event) == EventResult::Handled {
-                        return EventResult::Handled;
-                    }
-                    self.dispatch_to(t, event)
-                } else {
-                    EventResult::NotHandled
-                }
-            }
+            SystemEvent::KeyDown { key, mods } => self.dispatch_key_down(event, *key, *mods),
+            SystemEvent::KeyUp { .. } => self.dispatch_key_up(event),
             SystemEvent::TextInput { text } => {
                 if let Some(t) = self.managers().focus.focused_component() {
                     self.invalidate_paint(t);
