@@ -160,6 +160,7 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<SnapshotTreeNode>();
     assert_exported::<SnapshotValue>();
     assert_exported::<PaintContext>();
+    assert_exported::<FocusTrap>();
     assert_exported::<Computed<i32>>();
     assert_exported::<State<i32>>();
     assert_exported::<ButtonBuilder>();
