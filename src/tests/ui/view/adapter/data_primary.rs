@@ -660,6 +660,7 @@ fn reconcile_card_patches_instance_and_syncs_config() {
             elevation: 3,
             flex_grow: 1.5,
             actions: vec!["Edit".to_string(), "Delete".to_string()],
+            focused_action: Some(0),
         }
     );
 }

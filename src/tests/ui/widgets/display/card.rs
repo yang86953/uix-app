@@ -1,6 +1,7 @@
 use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::widgets::display::card::*;
+use crate::ui::AccessibilityRole;
 
 struct FixedChild(Size);
 
@@ -125,6 +126,73 @@ fn action_rect_stays_inside_short_card() {
         card.action_rect(Rect::new(4.0, 6.0, 80.0, 24.0)),
         Some(Rect::new(4.0, 6.0, 80.0, 24.0))
     );
+}
+
+#[test]
+fn card_actions_support_local_pointer_and_keyboard_submission() {
+    let mut card = Card::new().title("Profile").actions(vec!["Save", "Cancel"]);
+    card.set_frame_for_test(Rect::new(80.0, 40.0, 200.0, 120.0));
+
+    assert_eq!(card.tab_index(), 1);
+    assert_eq!(
+        card.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(150.0, 100.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    let event = card
+        .semantic_event(ComponentId::new(4), &SystemEvent::FocusIn)
+        .expect("pointer action should emit submit");
+    assert_eq!(event.kind, SemanticKind::Submit);
+    assert_eq!(event.text_payload(), Some("Cancel"));
+    assert_eq!(card.focused_action(), Some(1));
+
+    assert_eq!(
+        card.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Home,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        card.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    let event = card
+        .semantic_event(ComponentId::new(4), &SystemEvent::FocusIn)
+        .expect("keyboard action should emit submit");
+    assert_eq!(event.text_payload(), Some("Save"));
+}
+
+#[test]
+fn card_normalizes_geometry_and_exposes_focused_action_semantics() {
+    let mut card = Card::new()
+        .title("Profile")
+        .actions(vec!["", "Save"])
+        .size(f32::NAN, -1.0)
+        .padding(f32::NAN)
+        .flex_grow(-2.0);
+    assert_eq!(card.action_labels(), &["Save"]);
+    assert_eq!(
+        card.measure(Constraints::loose(Size::new(500.0, 500.0))),
+        Size::new(200.0, 120.0)
+    );
+    card.set_frame_for_test(Rect::new(0.0, 0.0, 200.0, 120.0));
+    let _ = card.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Enter,
+        mods: KeyMod::NONE,
+    });
+
+    let accessibility = card.snapshot_fields().accessibility();
+    assert_eq!(accessibility.role, AccessibilityRole::Group);
+    assert_eq!(accessibility.name.as_deref(), Some("Profile"));
+    assert_eq!(accessibility.state.value_text.as_deref(), Some("Save"));
+    assert_eq!(accessibility.state.value_now, Some(1.0));
 }
 
 #[test]
