@@ -7,7 +7,11 @@
 use crate::core::error::{Errc, Error};
 use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+fn duration_millis_saturating(duration: Duration) -> u64 {
+    duration.as_millis().min(u128::from(u64::MAX)) as u64
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // RetryPolicy trait
@@ -235,6 +239,7 @@ impl From<u64> for CircuitState {
 }
 
 pub struct CircuitBreaker {
+    recovery_epoch: Instant,
     state: AtomicU64,
     failure_count: AtomicUsize,
     success_count: AtomicUsize,
@@ -248,12 +253,13 @@ pub struct CircuitBreaker {
 impl CircuitBreaker {
     pub fn new(failure_threshold: usize, recovery_timeout: Duration) -> Self {
         Self {
+            recovery_epoch: Instant::now(),
             state: AtomicU64::new(CircuitState::Closed as u64),
             failure_count: AtomicUsize::new(0),
             success_count: AtomicUsize::new(0),
             rejected_count: AtomicUsize::new(0),
             threshold: AtomicUsize::new(failure_threshold),
-            recovery_timeout_ms: AtomicU64::new(recovery_timeout.as_millis() as u64),
+            recovery_timeout_ms: AtomicU64::new(duration_millis_saturating(recovery_timeout)),
             last_failure_time: AtomicU64::new(0),
             half_open_probe_in_flight: AtomicBool::new(false),
         }
@@ -263,10 +269,7 @@ impl CircuitBreaker {
         let mut raw = self.state.load(Ordering::Acquire);
         if raw == CircuitState::Open as u64 {
             let last_fail = self.last_failure_time.load(Ordering::Relaxed);
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64;
+            let now = duration_millis_saturating(self.recovery_epoch.elapsed());
             let elapsed = now.saturating_sub(last_fail);
             let timeout = self.recovery_timeout_ms.load(Ordering::Relaxed);
             if elapsed >= timeout {
@@ -324,10 +327,7 @@ impl CircuitBreaker {
     pub fn record_failure(&self) {
         let fails = self.failure_count.fetch_add(1, Ordering::Relaxed) + 1;
         let was_half_open = self.state.load(Ordering::Acquire) == CircuitState::HalfOpen as u64;
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
+        let now = duration_millis_saturating(self.recovery_epoch.elapsed());
         self.last_failure_time.store(now, Ordering::Relaxed);
         if was_half_open || fails >= self.threshold.load(Ordering::Relaxed) {
             self.state
@@ -357,7 +357,7 @@ impl CircuitBreaker {
 
     pub fn set_recovery_timeout(&self, timeout: Duration) {
         self.recovery_timeout_ms
-            .store(timeout.as_millis() as u64, Ordering::Relaxed);
+            .store(duration_millis_saturating(timeout), Ordering::Relaxed);
     }
     pub fn recovery_timeout(&self) -> Duration {
         Duration::from_millis(self.recovery_timeout_ms.load(Ordering::Relaxed))
