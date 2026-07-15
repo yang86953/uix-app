@@ -1,5 +1,6 @@
 // Auto-organized test modules. Tests live only under src/tests.
 
+mod badge;
 mod calendar;
 mod card;
 mod carousel;

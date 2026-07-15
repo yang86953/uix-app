@@ -9,10 +9,11 @@ use crate::ui::window_chrome::WindowControl;
 use crate::ui::Placement;
 
 use super::accessibility::{
-    anchor_accessibility, back_top_accessibility, breadcrumb_accessibility, calendar_accessibility,
-    carousel_accessibility, first_non_empty, pagination_accessibility,
-    selectable_list_accessibility, splitter_accessibility, theme_toggle_accessibility,
-    transfer_accessibility,
+    anchor_accessibility, back_top_accessibility, badge_accessibility, breadcrumb_accessibility,
+    calendar_accessibility, carousel_accessibility, date_range_accessibility, first_non_empty,
+    image_accessibility, pagination_accessibility, result_accessibility, select_accessibility,
+    selectable_list_accessibility, splitter_accessibility, tag_accessibility,
+    theme_toggle_accessibility, transfer_accessibility,
 };
 use super::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotCollapsePanel,
@@ -733,44 +734,27 @@ impl SnapshotFields {
                 preview,
                 preview_open,
                 ..
-            } => {
-                let role = if *preview {
-                    AccessibilityRole::Button
-                } else {
-                    AccessibilityRole::Image
-                };
-                AccessibilitySnapshot::named(
-                    role,
-                    first_non_empty([alt.as_str(), fallback.as_str(), src.as_str()]),
-                )
-                .with_state(AccessibilityState {
-                    expanded: preview.then_some(*preview_open),
-                    ..AccessibilityState::default()
-                })
-            }
+            } => image_accessibility(alt, fallback, src, *preview, *preview_open),
             Self::Tag {
                 text,
                 closable,
                 checkable,
                 checked,
                 ..
-            } => {
-                let role = if *checkable {
-                    AccessibilityRole::Checkbox
-                } else if *closable {
-                    AccessibilityRole::Button
-                } else {
-                    AccessibilityRole::Generic
-                };
-                AccessibilitySnapshot::named(role, text.clone()).with_state(AccessibilityState {
-                    checked: checkable.then_some(*checked),
-                    ..AccessibilityState::default()
-                })
-            }
+            } => tag_accessibility(text, *closable, *checkable, *checked),
             Self::FloatButton { icon, tooltip, .. } => AccessibilitySnapshot::named(
                 AccessibilityRole::Button,
                 first_non_empty([tooltip.as_str(), icon.as_str()]),
             ),
+            Self::Badge {
+                count,
+                max,
+                dot,
+                status,
+                show_zero,
+                text,
+                ..
+            } => badge_accessibility(*count, *max, *dot, *status, *show_zero, text),
             Self::ProgressBar { progress, .. } => AccessibilitySnapshot::new(
                 AccessibilityRole::ProgressBar,
             )
@@ -907,36 +891,17 @@ impl SnapshotFields {
                 open,
                 search_query,
                 ..
-            } => {
-                let options = if optgroups.is_empty() {
-                    options.iter().map(String::as_str).collect::<Vec<_>>()
-                } else {
-                    optgroups
-                        .iter()
-                        .flat_map(|group| group.options.iter().map(String::as_str))
-                        .collect()
-                };
-                let selected_value = if *multiple {
-                    let selected = selected_multi
-                        .iter()
-                        .filter_map(|index| options.get(*index).copied())
-                        .collect::<Vec<_>>();
-                    (!selected.is_empty()).then(|| selected.join(", "))
-                } else {
-                    options.get(*selected).map(|option| (*option).to_owned())
-                };
-                let value_text = if !*open || search_query.is_empty() {
-                    selected_value
-                } else {
-                    Some(search_query.clone())
-                };
-                AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
-                    .with_state(AccessibilityState {
-                        disabled: *disabled,
-                        value_text,
-                        ..AccessibilityState::default()
-                    })
-            }
+            } => select_accessibility(
+                options,
+                optgroups,
+                *selected,
+                selected_multi,
+                placeholder,
+                *disabled,
+                *multiple,
+                *open,
+                search_query,
+            ),
             Self::DatePicker { placeholder, value } => {
                 AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
                     .with_state(AccessibilityState {
@@ -948,14 +913,7 @@ impl SnapshotFields {
                 placeholder,
                 start,
                 end,
-            } => AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
-                .with_state(AccessibilityState {
-                    value_text: start
-                        .as_ref()
-                        .zip(end.as_ref())
-                        .map(|(start, end)| format!("{start} / {end}")),
-                    ..AccessibilityState::default()
-                }),
+            } => date_range_accessibility(placeholder, start.as_ref(), end.as_ref()),
             Self::TimePicker { placeholder, value } => {
                 AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
                     .with_state(AccessibilityState {
@@ -1028,26 +986,7 @@ impl SnapshotFields {
                 subtitle,
                 extra_text,
                 ..
-            } => {
-                let action = !extra_text.is_empty();
-                let summary = first_non_empty([title.as_str(), subtitle.as_str()]);
-                AccessibilitySnapshot::named(
-                    if action {
-                        AccessibilityRole::Button
-                    } else {
-                        AccessibilityRole::Status
-                    },
-                    if action {
-                        extra_text.clone()
-                    } else {
-                        summary.clone()
-                    },
-                )
-                .with_state(AccessibilityState {
-                    value_text: (action && !summary.is_empty()).then_some(summary),
-                    ..AccessibilityState::default()
-                })
-            }
+            } => result_accessibility(title, subtitle, extra_text),
             Self::Spin { tip, .. } => {
                 AccessibilitySnapshot::named(AccessibilityRole::Status, tip.clone())
             }
