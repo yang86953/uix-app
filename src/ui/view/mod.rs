@@ -467,8 +467,15 @@ impl ViewNode {
     {
         let captured = state.clone();
         self.handlers.push(
-            HandlerRegistration::new(SemanticKind::Click, Box::new(move |_| f(&captured)))
-                .with_state_capture(state),
+            HandlerRegistration::new(
+                SemanticKind::Click,
+                Box::new(move |event| {
+                    if event.is_primary_click() {
+                        f(&captured);
+                    }
+                }),
+            )
+            .with_state_capture(state),
         );
         self
     }
@@ -479,7 +486,11 @@ impl ViewNode {
     pub fn on_click_fn<F: FnMut() + 'static>(mut self, mut f: F) -> Self {
         self.handlers.push(HandlerRegistration::new(
             SemanticKind::Click,
-            Box::new(move |_| f()),
+            Box::new(move |event| {
+                if event.is_primary_click() {
+                    f();
+                }
+            }),
         ));
         self
     }
@@ -501,8 +512,15 @@ impl ViewNode {
         F: FnMut() + 'static,
     {
         self.handlers.push(
-            HandlerRegistration::new(SemanticKind::Click, Box::new(move |_| f()))
-                .with_window_capture(window_id),
+            HandlerRegistration::new(
+                SemanticKind::Click,
+                Box::new(move |event| {
+                    if event.is_primary_click() {
+                        f();
+                    }
+                }),
+            )
+            .with_window_capture(window_id),
         );
         self
     }

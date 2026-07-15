@@ -4,7 +4,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::impl_widget_component;
-use crate::native::traits::input::{ControlSize, KeyCode};
+use crate::native::traits::input::{ControlSize, KeyCode, MouseButton};
 use crate::ui::animation::{Animation, Easing};
 use crate::ui::style::{apply_style, ColorValue, PaletteColor, Style, StyleSet, StyleState};
 use crate::ui::traits::{EventHandler, WidgetAnimation, WidgetLayout, WidgetRender};
@@ -146,12 +146,19 @@ impl EventHandler for Button {
         }
 
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 self.pressed = true;
                 self.ripple = Some(ButtonRipple::start(*pos));
                 EventResult::Handled
             }
-            SystemEvent::PointerUp { .. } => {
+            SystemEvent::PointerUp {
+                button: MouseButton::Left,
+                ..
+            } => {
                 self.pressed = false;
                 if let Some(ripple) = self.ripple.as_mut() {
                     ripple.release();

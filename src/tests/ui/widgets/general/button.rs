@@ -59,6 +59,26 @@ fn pointer_down_starts_ripple_from_local_pos() {
 }
 
 #[test]
+fn secondary_pointer_does_not_press_or_start_ripple() {
+    let mut btn = Button::new("ok").primary();
+    let down = btn.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(12.0, 8.0),
+        button: MouseButton::Right,
+        mods: KeyMod::NONE,
+    });
+    let up = btn.on_event(&SystemEvent::PointerUp {
+        pos: Point::new(12.0, 8.0),
+        button: MouseButton::Right,
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(down, EventResult::NotHandled);
+    assert_eq!(up, EventResult::NotHandled);
+    assert!(!btn.pressed);
+    assert!(btn.ripple.is_none());
+}
+
+#[test]
 fn ripple_settles_while_held_then_fades_on_release() {
     let mut btn = Button::new("ok");
     let _ = btn.on_event(&SystemEvent::PointerDown {

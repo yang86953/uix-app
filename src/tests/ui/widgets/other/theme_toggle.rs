@@ -61,3 +61,18 @@ fn theme_toggle_ignores_unrelated_keys() {
     );
     assert!(!toggle.is_dark());
 }
+
+#[test]
+fn theme_toggle_ignores_secondary_pointer() {
+    let mut toggle = ThemeToggle::new();
+
+    assert_eq!(
+        toggle.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(4.0, 4.0),
+            button: MouseButton::Right,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::NotHandled
+    );
+    assert!(!toggle.is_dark());
+}
