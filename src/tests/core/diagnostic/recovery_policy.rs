@@ -75,3 +75,12 @@ fn exponential_backoff_normalizes_invalid_float_configuration() {
         "exponential_backoff(max=3, init=25ms, max_delay=1000ms, mult=1, jitter=1)"
     );
 }
+
+#[test]
+fn exponential_backoff_handles_extreme_attempts_without_iteration() {
+    let policy = ExponentialBackoffRetryPolicy::new(usize::MAX, 10, 1_000, 2.0, 0.0);
+
+    assert_eq!(policy.delay(0), Duration::from_millis(10));
+    assert_eq!(policy.delay(1), Duration::from_millis(20));
+    assert_eq!(policy.delay(usize::MAX), Duration::from_millis(1_000));
+}
