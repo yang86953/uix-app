@@ -14,6 +14,11 @@ use ::windows::Win32::Graphics::Direct3D::{ID3DBlob, D3D_PRIMITIVE_TOPOLOGY_TRIA
 use ::windows::Win32::Graphics::Direct3D12::*;
 use ::windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC};
 
+use super::transfer::{
+    record_transition, release_copy_location, texture_copy_location_footprint,
+    texture_copy_location_subresource,
+};
+
 const RECT_ROOT_DWORDS: u32 = 20;
 
 const RECT_HLSL: &str = r#"
@@ -476,64 +481,6 @@ fn create_soft_texture(device: &ID3D12Device, width: i32, height: i32) -> Result
             "D3d12Pipeline: soft texture was not created",
         )
     })
-}
-
-fn record_transition(
-    list: &ID3D12GraphicsCommandList,
-    resource: &ID3D12Resource,
-    before: D3D12_RESOURCE_STATES,
-    after: D3D12_RESOURCE_STATES,
-) {
-    if before == after {
-        return;
-    }
-    let transition = D3D12_RESOURCE_TRANSITION_BARRIER {
-        pResource: ManuallyDrop::new(Some(resource.clone())),
-        Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
-        StateBefore: before,
-        StateAfter: after,
-    };
-    let mut barrier = D3D12_RESOURCE_BARRIER {
-        Type: D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-        Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
-        Anonymous: D3D12_RESOURCE_BARRIER_0 {
-            Transition: ManuallyDrop::new(transition),
-        },
-    };
-    unsafe {
-        list.ResourceBarrier(std::slice::from_ref(&barrier));
-        let transition = &mut *barrier.Anonymous.Transition;
-        ManuallyDrop::drop(&mut transition.pResource);
-    }
-}
-
-fn texture_copy_location_subresource(resource: &ID3D12Resource) -> D3D12_TEXTURE_COPY_LOCATION {
-    D3D12_TEXTURE_COPY_LOCATION {
-        pResource: ManuallyDrop::new(Some(resource.clone())),
-        Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
-        Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
-            SubresourceIndex: 0,
-        },
-    }
-}
-
-fn texture_copy_location_footprint(
-    resource: &ID3D12Resource,
-    footprint: D3D12_PLACED_SUBRESOURCE_FOOTPRINT,
-) -> D3D12_TEXTURE_COPY_LOCATION {
-    D3D12_TEXTURE_COPY_LOCATION {
-        pResource: ManuallyDrop::new(Some(resource.clone())),
-        Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
-        Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
-            PlacedFootprint: footprint,
-        },
-    }
-}
-
-fn release_copy_location(location: &mut D3D12_TEXTURE_COPY_LOCATION) {
-    unsafe {
-        ManuallyDrop::drop(&mut location.pResource);
-    }
 }
 
 pub(crate) fn validated_soft_layout(
