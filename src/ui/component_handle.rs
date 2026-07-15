@@ -183,10 +183,13 @@ impl ComponentHandle {
         }
 
         if let Some(state) = self.app_state.as_ref().and_then(SyncWeak::upgrade) {
-            let _ = state
+            let waker = state
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .invalidate(self.id);
+            if let Some(waker) = waker {
+                waker.wake();
+            }
         }
     }
 
