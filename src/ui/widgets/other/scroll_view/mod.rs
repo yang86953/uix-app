@@ -248,7 +248,8 @@ component! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.capture_bound_offset_dependency();
-        self.last_frame.set(Some(frame));
+        self.last_frame
+            .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
 
         match ctx.paint_pass() {
             PaintPass::Content => {
