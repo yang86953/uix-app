@@ -6,9 +6,25 @@
 #![allow(clippy::upper_case_acronyms)]
 #![allow(nonstandard_style)]
 
-use crate::native::backends::windows::util::to_wide;
 use crate::native::traits::system::INotification;
 use std::ptr;
+
+pub(crate) fn copy_notification_text(destination: &mut [u16], text: &str) {
+    destination.fill(0);
+    let Some(capacity) = destination.len().checked_sub(1) else {
+        return;
+    };
+    let mut written = 0;
+    for character in text.chars().take_while(|character| *character != '\0') {
+        let mut encoded = [0_u16; 2];
+        let units = character.encode_utf16(&mut encoded);
+        if written + units.len() > capacity {
+            break;
+        }
+        destination[written..written + units.len()].copy_from_slice(units);
+        written += units.len();
+    }
+}
 
 pub struct WindowsNotification {
     hwnd: *mut std::ffi::c_void,
@@ -52,31 +68,22 @@ impl INotification for WindowsNotification {
             return;
         }
         unsafe {
-            let wide_title = to_wide(title);
-            let wide_msg = to_wide(message);
             let mut nid: NOTIFYICONDATAW = std::mem::zeroed();
             nid.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
             nid.hWnd = self.hwnd;
             nid.uID = 1;
             nid.uFlags = NIF_INFO | NIF_ICON | NIF_TIP;
             nid.uCallbackMessage = WM_APP_NOTIFY;
-            let title_len = wide_title.len().min(64);
-            nid.szInfoTitle[..title_len].copy_from_slice(&wide_title[..title_len]);
-            if title_len < 64 {
-                nid.szInfoTitle[title_len] = 0;
-            }
-            let msg_len = wide_msg.len().min(256);
-            nid.szInfo[..msg_len].copy_from_slice(&wide_msg[..msg_len]);
-            if msg_len < 256 {
-                nid.szInfo[msg_len] = 0;
-            }
+            copy_notification_text(&mut nid.szInfoTitle, title);
+            copy_notification_text(&mut nid.szInfo, message);
             nid.dwInfoFlags = NIIF_INFO;
             nid.hIcon = LoadIconW(ptr::null_mut(), IDI_APPLICATION as *const u16);
-            if self.active {
-                Shell_NotifyIconW(NIM_MODIFY, &mut nid);
-            } else {
-                Shell_NotifyIconW(NIM_ADD, &mut nid);
+            let operation = if self.active { NIM_MODIFY } else { NIM_ADD };
+            if Shell_NotifyIconW(operation, &mut nid) != 0 {
                 self.active = true;
+            } else if self.active {
+                self.active = false;
+                self.active = Shell_NotifyIconW(NIM_ADD, &mut nid) != 0;
             }
         }
     }

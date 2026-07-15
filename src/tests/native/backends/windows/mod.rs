@@ -6,6 +6,7 @@ mod gdi_presenter;
 mod hardware_matrix;
 mod ime_dispatch;
 mod ime_foreground;
+mod notification;
 mod platform;
 #[cfg(feature = "vulkan")]
 mod software_recovery;
