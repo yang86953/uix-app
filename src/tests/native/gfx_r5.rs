@@ -1,6 +1,8 @@
 use std::fmt;
 use std::time::Duration;
 
+use crate::native::graphics::vulkan::platform::adapter::VulkanAdapterInfo;
+
 const GFX_R5_EXPECT_VENDOR_ENV: &str = "UIX_GFX_R5_EXPECT_VENDOR";
 const VULKAN_EXPECT_DEVICE_FAULT_ENV: &str = "UIX_VULKAN_EXPECT_DEVICE_FAULT";
 const VULKAN_DEVICE_LOST_TIMEOUT_ENV: &str = "UIX_VULKAN_DEVICE_LOST_TIMEOUT_SECONDS";
@@ -30,6 +32,17 @@ impl ExpectedVulkanVendor {
             Self::Amd => "amd",
             Self::Intel => "intel",
         }
+    }
+
+    pub(crate) fn assert_adapter(self, adapter: &VulkanAdapterInfo) {
+        assert_eq!(
+            adapter.vendor_id,
+            self.vendor_id(),
+            "expected {} ({:#06X}), actual {}",
+            self.label(),
+            self.vendor_id(),
+            adapter.diagnostic_summary()
+        );
     }
 
     fn parse(value: &str) -> Result<Self, GfxR5ConfigError> {

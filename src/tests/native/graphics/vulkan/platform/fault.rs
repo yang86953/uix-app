@@ -194,12 +194,8 @@ fn windows_vulkan_gfx_r5_external_reset_returns_device_lost_with_diagnostics() {
         .expect("first VulkanContext");
     let mut second = VulkanContext::new(second_window.native_surface_ptr(), 128, 96)
         .expect("second VulkanContext");
-    assert_eq!(
-        first.adapter_info.vendor_id,
-        expected_vendor.vendor_id(),
-        "unexpected adapter: {}",
-        first.adapter_info.diagnostic_summary()
-    );
+    expected_vendor.assert_adapter(&first.adapter_info);
+    expected_vendor.assert_adapter(&second.adapter_info);
     assert_eq!(
         first.shared_device_identity(),
         second.shared_device_identity()
@@ -306,6 +302,13 @@ fn windows_vulkan_gfx_r5_external_reset_returns_device_lost_with_diagnostics() {
     let mut replacement = VulkanContext::new(replacement_window.native_surface_ptr(), 128, 96)
         .expect("replacement VulkanContext after external reset");
     assert_ne!(replacement.shared_device_identity(), lost_identity);
+    expected_vendor.assert_adapter(&replacement.adapter_info);
+    assert_eq!(
+        replacement.device_fault_reporting_enabled_for_test(),
+        expect_fault_report,
+        "replacement changed VK_EXT_device_fault capability: {}",
+        replacement.adapter_info.diagnostic_summary()
+    );
     let replacement_pixels =
         vec![0xFF3C_7AB5; (replacement.width() * replacement.height()) as usize];
     replacement
@@ -317,7 +320,8 @@ fn windows_vulkan_gfx_r5_external_reset_returns_device_lost_with_diagnostics() {
         )
         .expect("replacement present after external reset");
     println!(
-        "GFX-R5 external device loss: detector={}; frames={frames}; surface_faults={surface_faults}; fault={}; peer={}; replacement={}",
+        "GFX-R5 external device loss: expected={}; detector={}; frames={frames}; surface_faults={surface_faults}; fault={}; peer={}; replacement={}",
+        expected_vendor.label(),
         if first_detected { "first" } else { "second" },
         fault.what(),
         peer_error.what(),
