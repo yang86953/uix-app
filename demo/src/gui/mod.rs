@@ -135,7 +135,6 @@ fn page_body(
     active: State<usize>,
     tk: &DesignTokens,
     timer_ticks: &State<u32>,
-    anim_time: &State<f32>,
     home_count: &State<i32>,
     runtime_count: &State<i32>,
     theme_control: &ThemeControl,
@@ -146,7 +145,6 @@ fn page_body(
             active,
             tk,
             timer_ticks,
-            anim_time,
             home_count,
             runtime_count,
             theme_control,
@@ -161,13 +159,12 @@ fn page_shell(
     active: &State<usize>,
     tk: &DesignTokens,
     timer_ticks: &State<u32>,
-    anim_time: &State<f32>,
     home_count: &State<i32>,
     runtime_count: &State<i32>,
     theme_control: &ThemeControl,
 ) -> ViewNode {
     let (icon, title) = PAGE_TITLES[idx];
-    let ctx = DemoCtx::new(tk, timer_ticks, anim_time, Some(active))
+    let ctx = DemoCtx::new(tk, timer_ticks, Some(active))
         .with_counters(home_count, runtime_count)
         .with_theme_control(theme_control);
     column([
@@ -183,7 +180,6 @@ fn page_content(
     active: State<usize>,
     tk: &DesignTokens,
     timer_ticks: &State<u32>,
-    anim_time: &State<f32>,
     home_count: &State<i32>,
     runtime_count: &State<i32>,
     theme_control: &ThemeControl,
@@ -194,7 +190,6 @@ fn page_content(
         &active,
         tk,
         timer_ticks,
-        anim_time,
         home_count,
         runtime_count,
         theme_control,
@@ -204,7 +199,6 @@ fn page_content(
 fn app_shell_with_counters(
     active: State<usize>,
     timer_ticks: State<u32>,
-    anim_time: State<f32>,
     home_count: &State<i32>,
     runtime_count: &State<i32>,
     theme_control: &ThemeControl,
@@ -217,7 +211,6 @@ fn app_shell_with_counters(
                 active,
                 &tk,
                 &timer_ticks,
-                &anim_time,
                 home_count,
                 runtime_count,
                 theme_control,
@@ -239,14 +232,13 @@ fn app_shell_with_counters(
     .bg(ColorValue::Neutral(NeutralRole::BgLayout))
 }
 
-#[cfg(test)]
-fn app_shell(active: State<usize>, timer_ticks: State<u32>, anim_time: State<f32>) -> ViewNode {
+#[cfg(all(test, feature = "test-harness"))]
+fn app_shell(active: State<usize>, timer_ticks: State<u32>) -> ViewNode {
     let home_count = State::new(0i32);
     let runtime_count = State::new(0i32);
     app_shell_with_counters(
         active,
         timer_ticks,
-        anim_time,
         &home_count,
         &runtime_count,
         &ThemeControl::default(),
@@ -256,7 +248,6 @@ fn app_shell(active: State<usize>, timer_ticks: State<u32>, anim_time: State<f32
 pub fn run(agent_control: bool) {
     let active = State::new(0usize);
     let timer_ticks = State::new(0u32);
-    let anim_time = State::new(0.0f32);
     let home_count = State::new(0i32);
     let runtime_count = State::new(0i32);
     let theme_control = ThemeControl::default();
@@ -341,7 +332,6 @@ pub fn run(agent_control: bool) {
     app.root(with_cloned!(
         active,
         timer_ticks,
-        anim_time,
         home_count,
         runtime_count,
         theme_control;
@@ -349,7 +339,6 @@ pub fn run(agent_control: bool) {
             demo_window(app_shell_with_counters(
                 active,
                 timer_ticks,
-                anim_time,
                 &home_count,
                 &runtime_count,
                 &theme_control,

@@ -6,8 +6,7 @@ fn shell_labels_are_vertically_spaced() {
 
     let active = State::new(0usize);
     let timer_ticks = State::new(0u32);
-    let anim_time = State::new(0.0f32);
-    let root = app_shell(active, timer_ticks, anim_time);
+    let root = app_shell(active, timer_ticks);
     let mut tree = ViewAdapter::build(root);
     if let Some(r) = tree.root_mut() {
         r.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
@@ -72,8 +71,7 @@ fn sidebar_nav_uses_nav_item_component() {
 
     let active = State::new(0usize);
     let timer_ticks = State::new(0u32);
-    let anim_time = State::new(0.0f32);
-    let root = app_shell(active, timer_ticks, anim_time);
+    let root = app_shell(active, timer_ticks);
     let mut tree = ViewAdapter::build(root);
     if let Some(r) = tree.root_mut() {
         r.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));

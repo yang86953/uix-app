@@ -57,7 +57,6 @@ impl ThemeControl {
 pub struct DemoCtx<'a> {
     pub tk: &'a DesignTokens,
     pub timer_ticks: &'a State<u32>,
-    pub anim_time: &'a State<f32>,
     /// 当前页索引；覆盖清单等页用于跳转导航。
     pub active_page: Option<&'a State<usize>>,
     home_count: Option<&'a State<i32>>,
@@ -69,13 +68,11 @@ impl<'a> DemoCtx<'a> {
     pub fn new(
         tk: &'a DesignTokens,
         timer_ticks: &'a State<u32>,
-        anim_time: &'a State<f32>,
         active_page: Option<&'a State<usize>>,
     ) -> Self {
         Self {
             tk,
             timer_ticks,
-            anim_time,
             active_page,
             home_count: None,
             runtime_count: None,

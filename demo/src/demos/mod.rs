@@ -60,9 +60,8 @@ mod tests {
     fn all_pages_build() {
         let tk = DesignTokens::antd_light();
         let timer_ticks = State::new(0u32);
-        let anim_time = State::new(0.0f32);
         let active = State::new(0usize);
-        let ctx = DemoCtx::new(&tk, &timer_ticks, &anim_time, Some(&active));
+        let ctx = DemoCtx::new(&tk, &timer_ticks, Some(&active));
         assert_eq!(PAGE_TITLES.len(), PAGE_COUNT);
         for i in 0..PAGE_COUNT {
             let _ = build_page(i, &ctx);
