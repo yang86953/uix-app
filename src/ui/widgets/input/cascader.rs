@@ -180,9 +180,8 @@ component! {
 
         let item_h = 32.0;
         let visible = (popup.h / item_h) as usize;
-        for i in 0..visible.min(current_opts.len()) {
+        for (i, opt) in current_opts.iter().take(visible).enumerate() {
             let y = popup.y + i as f32 * item_h;
-            let opt = &current_opts[i];
             let has_children = !opt.children.is_empty();
 
             if self.level_indices.last() == Some(&i) {
