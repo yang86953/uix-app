@@ -11,7 +11,7 @@ use crate::ui::Placement;
 use super::accessibility::{
     anchor_accessibility, back_top_accessibility, breadcrumb_accessibility, calendar_accessibility,
     carousel_accessibility, first_non_empty, pagination_accessibility,
-    selectable_list_accessibility, theme_toggle_accessibility,
+    selectable_list_accessibility, splitter_accessibility, theme_toggle_accessibility,
 };
 use super::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotCollapsePanel,
@@ -322,6 +322,8 @@ pub enum SnapshotFields {
         panel_count: usize,
         min_sizes: Vec<f32>,
         handle_size: f32,
+        ratios: Vec<f32>,
+        active_handle: usize,
     },
     Affix {
         offset_top: f32,
@@ -686,6 +688,11 @@ impl SnapshotFields {
                     ..AccessibilityState::default()
                 },
             ),
+            Self::Splitter {
+                ratios,
+                active_handle,
+                ..
+            } => splitter_accessibility(ratios, *active_handle),
             Self::Rate {
                 count,
                 value,

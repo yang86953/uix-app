@@ -2,6 +2,31 @@ use crate::ui::widgets::{AnchorItem, BreadcrumbItem, Date, SelectableItem};
 
 use super::{AccessibilityRole, AccessibilitySnapshot, AccessibilityState};
 
+pub(super) fn splitter_accessibility(
+    ratios: &[f32],
+    active_handle: usize,
+) -> AccessibilitySnapshot {
+    let boundary = ratios
+        .iter()
+        .take(active_handle.saturating_add(1))
+        .copied()
+        .sum::<f32>()
+        .clamp(0.0, 1.0);
+    AccessibilitySnapshot::new(AccessibilityRole::Slider).with_state(AccessibilityState {
+        value_text: Some(
+            ratios
+                .iter()
+                .map(|ratio| format!("{ratio:.6}"))
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
+        value_now: Some(f64::from(boundary)),
+        value_min: Some(0.0),
+        value_max: Some(1.0),
+        ..AccessibilityState::default()
+    })
+}
+
 pub(super) fn carousel_accessibility(current: usize, slide_count: usize) -> AccessibilitySnapshot {
     AccessibilitySnapshot::new(AccessibilityRole::Group).with_state(AccessibilityState {
         value_text: (slide_count > 0).then(|| format!("Slide {} of {slide_count}", current + 1)),

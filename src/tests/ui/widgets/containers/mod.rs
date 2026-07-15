@@ -5,3 +5,4 @@ mod back_top;
 mod container;
 mod grid;
 mod layout;
+mod splitter;

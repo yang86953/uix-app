@@ -108,6 +108,8 @@ fn reconcile_splitter_patches_instance_and_syncs_config() {
             panel_count: 3,
             min_sizes: vec![50.0, 80.0, 50.0],
             handle_size: 6.0,
+            ratios: vec![1.0 / 3.0; 3],
+            active_handle: 0,
         }
     );
 }
