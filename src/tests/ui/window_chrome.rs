@@ -6,7 +6,7 @@ use crate::draw::spatial::Orientation;
 use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::tests::common::{Color, DesignTokens, FontHandle, FontService, ImageService};
 use crate::ui::core::widget::WidgetCore;
-use crate::ui::event::WindowAction;
+use crate::ui::event::{SemanticKind, WindowAction};
 use crate::ui::semantic_action::{SemanticAction, SemanticActionKind};
 use crate::ui::view::{
     button, label, row, window_control, window_control_named, window_drag_region, StyleExt,
@@ -213,6 +213,35 @@ fn drag_region_keeps_nested_interactive_context_menu() {
         tree.overlay_stack().top().map(|entry| entry.kind()),
         Some(OverlayKind::ContextMenu)
     );
+}
+
+#[test]
+fn drag_region_keeps_nested_explicit_context_menu_handler() {
+    let called = Rc::new(Cell::new(false));
+    let called_for_handler = called.clone();
+    let content = row([label("title")]).width(240.0).height(32.0).on_semantic(
+        SemanticKind::ContextMenu,
+        move |event| {
+            called_for_handler.set(true);
+            event.prevent_default();
+        },
+    );
+    let mut tree = ViewAdapter::build(window_drag_region(content).width(240.0).height(32.0));
+    tree.root_mut()
+        .expect("drag region root")
+        .set_frame(Rect::new(0.0, 0.0, 240.0, 32.0));
+    tree.layout();
+
+    let pos = Point::new(200.0, 16.0);
+    tree.dispatch_event(&pointer_event(pos, true, MouseButton::Right));
+    tree.dispatch_event(&pointer_event(pos, false, MouseButton::Right));
+
+    assert!(called.get());
+    assert!(tree.take_window_actions().is_empty());
+    assert!(tree
+        .overlay_stack()
+        .iter()
+        .all(|entry| entry.kind() != OverlayKind::ContextMenu));
 }
 
 #[test]
@@ -479,3 +508,5 @@ fn named_window_control_is_an_invokable_accessible_button() {
         .expect("invoke close control");
     assert_eq!(tree.take_window_actions(), vec![WindowAction::RequestClose]);
 }
+use std::cell::Cell;
+use std::rc::Rc;
