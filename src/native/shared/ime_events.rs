@@ -4,6 +4,12 @@ use std::sync::{Arc, Mutex};
 use crate::core::WindowId;
 use crate::native::traits::event::UiEvent;
 
+fn event_queue(
+    events: &Arc<Mutex<VecDeque<UiEvent>>>,
+) -> std::sync::MutexGuard<'_, VecDeque<UiEvent>> {
+    events.lock().unwrap_or_else(|error| error.into_inner())
+}
+
 /// Tracks whether an IME composition session is in progress.
 #[derive(Debug, Clone, Default)]
 pub struct ImeCompositionState {
@@ -82,9 +88,7 @@ fn on_marked_text_targeted(
     if text.is_empty() {
         return;
     }
-    let Ok(mut queue) = events.lock() else {
-        return;
-    };
+    let mut queue = event_queue(events);
     if !state.active {
         queue.push_back(target(UiEvent::ime_composition_start(), window_id));
         state.active = true;
@@ -118,9 +122,7 @@ fn on_committed_text_targeted(
     if text.is_empty() {
         return;
     }
-    let Ok(mut queue) = events.lock() else {
-        return;
-    };
+    let mut queue = event_queue(events);
     if state.active {
         queue.push_back(target(UiEvent::ime_composition_end(text), window_id));
         state.active = false;
@@ -148,9 +150,7 @@ fn on_unmark_text_targeted(
     if !state.active {
         return;
     }
-    let Ok(mut queue) = events.lock() else {
-        return;
-    };
+    let mut queue = event_queue(events);
     queue.push_back(target(UiEvent::ime_composition_end(""), window_id));
     state.active = false;
 }
