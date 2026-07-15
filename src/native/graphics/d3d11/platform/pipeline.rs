@@ -10,7 +10,7 @@
 
 #![allow(nonstandard_style)]
 
-use std::mem::size_of;
+use std::{ffi::CStr, mem::size_of};
 
 use crate::core::{Errc, Error, Result};
 use crate::native::traits::present::{
@@ -541,7 +541,7 @@ fn d3d_error(operation: &str, err: ::windows::core::Error) -> Error {
     )
 }
 
-fn compile_shader(source: &str, entry: &str, target: &str) -> Result<ID3DBlob> {
+fn compile_shader(source: &str, entry: &CStr, target: &CStr) -> Result<ID3DBlob> {
     let mut code = None;
     let mut errors = None;
     let hr = unsafe {
@@ -551,8 +551,8 @@ fn compile_shader(source: &str, entry: &str, target: &str) -> Result<ID3DBlob> {
             PCSTR::null(),
             None,
             None,
-            PCSTR::from_raw(entry.as_ptr()),
-            PCSTR::from_raw(target.as_ptr()),
+            PCSTR::from_raw(entry.as_ptr().cast()),
+            PCSTR::from_raw(target.as_ptr().cast()),
             0,
             0,
             &mut code,
@@ -574,13 +574,13 @@ fn compile_shader(source: &str, entry: &str, target: &str) -> Result<ID3DBlob> {
             .unwrap_or_default();
         return Err(Error::new(
             Errc::PlatformError,
-            format!("D3d11Pipeline: D3DCompile {entry}/{target} failed: {detail}"),
+            format!("D3d11Pipeline: D3DCompile {entry:?}/{target:?} failed: {detail}"),
         ));
     }
     code.ok_or_else(|| {
         Error::new(
             Errc::PlatformError,
-            format!("D3d11Pipeline: D3DCompile {entry}/{target} returned no blob"),
+            format!("D3d11Pipeline: D3DCompile {entry:?}/{target:?} returned no blob"),
         )
     })
 }
@@ -733,18 +733,18 @@ pub struct D3d11Pipeline {
 
 impl D3d11Pipeline {
     pub(crate) fn new(device: &ID3D11Device) -> Result<Self> {
-        let vs_blob = compile_shader(RECT_HLSL, "VSMain\0", "vs_4_0\0")?;
-        let ps_blob = compile_shader(RECT_HLSL, "PSMain\0", "ps_4_0\0")?;
-        let blit_vs_blob = compile_shader(BLIT_HLSL, "VSMain\0", "vs_4_0\0")?;
-        let blit_ps_blob = compile_shader(BLIT_HLSL, "PSMain\0", "ps_4_0\0")?;
-        let glyph_vs_blob = compile_shader(GLYPH_HLSL, "VSMain\0", "vs_4_0\0")?;
-        let glyph_ps_blob = compile_shader(GLYPH_HLSL, "PSMain\0", "ps_4_0\0")?;
-        let grad_vs_blob = compile_shader(GRADIENT_HLSL, "VSMain\0", "vs_4_0\0")?;
-        let grad_ps_blob = compile_shader(GRADIENT_HLSL, "PSMain\0", "ps_4_0\0")?;
-        let mesh_vs_blob = compile_shader(MESH_HLSL, "VSMain\0", "vs_4_0\0")?;
-        let mesh_ps_blob = compile_shader(MESH_HLSL, "PSMain\0", "ps_4_0\0")?;
-        let shadow_vs_blob = compile_shader(SHADOW_HLSL, "VSMain\0", "vs_4_0\0")?;
-        let shadow_ps_blob = compile_shader(SHADOW_HLSL, "PSMain\0", "ps_4_0\0")?;
+        let vs_blob = compile_shader(RECT_HLSL, c"VSMain", c"vs_4_0")?;
+        let ps_blob = compile_shader(RECT_HLSL, c"PSMain", c"ps_4_0")?;
+        let blit_vs_blob = compile_shader(BLIT_HLSL, c"VSMain", c"vs_4_0")?;
+        let blit_ps_blob = compile_shader(BLIT_HLSL, c"PSMain", c"ps_4_0")?;
+        let glyph_vs_blob = compile_shader(GLYPH_HLSL, c"VSMain", c"vs_4_0")?;
+        let glyph_ps_blob = compile_shader(GLYPH_HLSL, c"PSMain", c"ps_4_0")?;
+        let grad_vs_blob = compile_shader(GRADIENT_HLSL, c"VSMain", c"vs_4_0")?;
+        let grad_ps_blob = compile_shader(GRADIENT_HLSL, c"PSMain", c"ps_4_0")?;
+        let mesh_vs_blob = compile_shader(MESH_HLSL, c"VSMain", c"vs_4_0")?;
+        let mesh_ps_blob = compile_shader(MESH_HLSL, c"PSMain", c"ps_4_0")?;
+        let shadow_vs_blob = compile_shader(SHADOW_HLSL, c"VSMain", c"vs_4_0")?;
+        let shadow_ps_blob = compile_shader(SHADOW_HLSL, c"PSMain", c"ps_4_0")?;
 
         let mut vs_rect = None;
         unsafe {
@@ -939,7 +939,7 @@ impl D3d11Pipeline {
             .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no shadow PS"))?;
 
         let input_elems = [D3D11_INPUT_ELEMENT_DESC {
-            SemanticName: PCSTR::from_raw(b"POSITION\0".as_ptr()),
+            SemanticName: PCSTR::from_raw(c"POSITION".as_ptr().cast()),
             SemanticIndex: 0,
             Format: DXGI_FORMAT_R32G32_FLOAT,
             InputSlot: 0,
@@ -965,7 +965,7 @@ impl D3d11Pipeline {
 
         let glyph_elems = [
             D3D11_INPUT_ELEMENT_DESC {
-                SemanticName: PCSTR::from_raw(b"POSITION\0".as_ptr()),
+                SemanticName: PCSTR::from_raw(c"POSITION".as_ptr().cast()),
                 SemanticIndex: 0,
                 Format: DXGI_FORMAT_R32G32_FLOAT,
                 InputSlot: 0,
@@ -974,7 +974,7 @@ impl D3d11Pipeline {
                 InstanceDataStepRate: 0,
             },
             D3D11_INPUT_ELEMENT_DESC {
-                SemanticName: PCSTR::from_raw(b"TEXCOORD\0".as_ptr()),
+                SemanticName: PCSTR::from_raw(c"TEXCOORD".as_ptr().cast()),
                 SemanticIndex: 0,
                 Format: DXGI_FORMAT_R32G32_FLOAT,
                 InputSlot: 0,
@@ -983,7 +983,7 @@ impl D3d11Pipeline {
                 InstanceDataStepRate: 0,
             },
             D3D11_INPUT_ELEMENT_DESC {
-                SemanticName: PCSTR::from_raw(b"COLOR\0".as_ptr()),
+                SemanticName: PCSTR::from_raw(c"COLOR".as_ptr().cast()),
                 SemanticIndex: 0,
                 Format: DXGI_FORMAT_R32G32B32A32_FLOAT,
                 InputSlot: 0,
