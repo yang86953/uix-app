@@ -44,8 +44,8 @@ pub use crate::ui::{
     SortDirection, Space, SpaceSize, Spin, SpinSize, Splitter, Step, StepStatus, Steps, Switch,
     Tab, TabPosition, Table, TableBuilder, TableChange, TableColumn, TableRow, Tabs, Tag, TagColor,
     ThemeToggle, Time, TimePicker, Timeline, TimelineItem, Tooltip, TooltipPlacement, Transfer,
-    TransferItem, Tree, TreeNode, TreeSelect, Trigger, TriggerMode, Typography, TypographyType,
-    Upload, UploadFile, UploadStatus, ValidateStatus, Values, VirtualScroll, VirtualScrollBuilder,
+    TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography, TypographyType, Upload,
+    UploadFile, UploadStatus, ValidateStatus, Values, VirtualScroll, VirtualScrollBuilder,
     Watermark, Weekday,
 };
 pub use crate::ui::{Animation, Easing};
