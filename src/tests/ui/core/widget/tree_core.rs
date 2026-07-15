@@ -4589,6 +4589,46 @@ fn window_focus_lifecycle_releases_keyboard_activation_and_is_idempotent() {
 }
 
 #[test]
+fn programmatic_focus_stays_dormant_while_window_is_inactive() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(240.0, 80.0)));
+    let first = tree.add_child(root, Box::new(Button::new("First")));
+    let second = tree.add_child(root, Box::new(Button::new("Second")));
+    tree.get_mut(root)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 240.0, 80.0));
+    tree.get_mut(first)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 40.0));
+    tree.get_mut(second)
+        .unwrap()
+        .set_frame(Rect::new(120.0, 0.0, 100.0, 40.0));
+    tree.set_focus(Some(first));
+    tree.dispatch_event(&SystemEvent::WindowBlur);
+
+    tree.set_focus(Some(second));
+
+    assert_eq!(tree.managers().focus.focused_component(), Some(second));
+    for target in [first, second] {
+        assert!(tree
+            .get(target)
+            .and_then(|node| node.component().as_any().downcast_ref::<Button>())
+            .is_some_and(|button| !button.focused));
+    }
+
+    tree.dispatch_event(&SystemEvent::WindowFocus);
+
+    assert!(tree
+        .get(first)
+        .and_then(|node| node.component().as_any().downcast_ref::<Button>())
+        .is_some_and(|button| !button.focused));
+    assert!(tree
+        .get(second)
+        .and_then(|node| node.component().as_any().downcast_ref::<Button>())
+        .is_some_and(|button| button.focused));
+}
+
+#[test]
 fn capture_phase_requires_explicit_opt_in() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));
