@@ -255,6 +255,7 @@ fn reconcile_anchor_preserves_active_index_and_syncs_items() {
         anchor.snapshot_fields(),
         SnapshotFields::Anchor {
             items,
+            active_index: 1,
             offset_top: 24.0,
             bg_color: Some(bg),
         } if items.len() == 2 && items[1].label == "Second" && bg == Color::red()

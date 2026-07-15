@@ -335,6 +335,7 @@ pub enum SnapshotFields {
     },
     Anchor {
         items: Vec<AnchorItem>,
+        active_index: usize,
         offset_top: f32,
         bg_color: Option<Color>,
     },
@@ -807,9 +808,20 @@ impl SnapshotFields {
                     ..AccessibilityState::default()
                 },
             ),
-            Self::Anchor { .. } | Self::Breadcrumb { .. } => {
-                AccessibilitySnapshot::new(AccessibilityRole::Navigation)
-            }
+            Self::Anchor {
+                items,
+                active_index,
+                ..
+            } => AccessibilitySnapshot::new(AccessibilityRole::Navigation).with_state(
+                AccessibilityState {
+                    value_text: items.get(*active_index).map(|item| item.label.clone()),
+                    value_now: Some((*active_index + 1) as f64),
+                    value_min: Some(1.0),
+                    value_max: Some(items.len().max(1) as f64),
+                    ..AccessibilityState::default()
+                },
+            ),
+            Self::Breadcrumb { .. } => AccessibilitySnapshot::new(AccessibilityRole::Navigation),
             Self::Menu {
                 items, active_key, ..
             } => {
