@@ -346,6 +346,9 @@ pub enum SnapshotFields {
     Dropdown {
         label: String,
         items: Vec<String>,
+        open: bool,
+        selected_index: Option<usize>,
+        highlighted_index: Option<usize>,
     },
     Tabs {
         tabs: Vec<Tab>,
@@ -798,7 +801,19 @@ impl SnapshotFields {
                     ..AccessibilityState::default()
                 })
             }
-            Self::Dropdown { .. } => AccessibilitySnapshot::new(AccessibilityRole::Menu),
+            Self::Dropdown {
+                label,
+                items,
+                open,
+                selected_index,
+                ..
+            } => AccessibilitySnapshot::named(AccessibilityRole::Menu, label.clone()).with_state(
+                AccessibilityState {
+                    expanded: Some(*open),
+                    value_text: selected_index.and_then(|index| items.get(index)).cloned(),
+                    ..AccessibilityState::default()
+                },
+            ),
             Self::Tabs {
                 tabs, active_index, ..
             } => AccessibilitySnapshot::new(AccessibilityRole::TabList).with_state(

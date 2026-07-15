@@ -30,7 +30,13 @@ fn reconcile_dropdown_preserves_open_state_and_syncs_items() {
     assert!(dropdown.is_open());
     assert!(matches!(
         dropdown.snapshot_fields(),
-        SnapshotFields::Dropdown { label, items } if label == "new" && items == vec!["C", "D", "E"]
+        SnapshotFields::Dropdown {
+            label,
+            items,
+            open: true,
+            selected_index: None,
+            highlighted_index: Some(0),
+        } if label == "new" && items == vec!["C", "D", "E"]
     ));
 }
 
