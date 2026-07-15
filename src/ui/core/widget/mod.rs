@@ -575,11 +575,15 @@ impl BoxedWidget {
             .and_then(|e| e.semantic_event(id, event))
     }
     pub fn is_focusable(&self) -> bool {
-        self.tab_idx > 0 && self.visible && self.accepts_events()
+        self.tab_idx > 0 && self.visible && self.accepts_events() && self.is_interaction_enabled()
     }
 
     pub(crate) fn accepts_events(&self) -> bool {
         self.component.as_event().is_some() || !self.system_event_handlers.is_empty()
+    }
+
+    pub(crate) fn is_interaction_enabled(&self) -> bool {
+        !self.accessibility().state.disabled
     }
 
     pub fn attached(&self) -> bool {

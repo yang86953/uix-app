@@ -434,6 +434,16 @@ impl WidgetTree {
             return result;
         }
         let target = self.overlay_target_at(pos).or_else(|| self.hit_test(pos));
+        if target.is_some_and(|target| {
+            self.get(target)
+                .is_none_or(|node| !node.is_interaction_enabled())
+        }) {
+            if button != MouseButton::Right {
+                self.set_focus(None);
+            }
+            self.rebuild_widget_overlays();
+            return EventResult::NotHandled;
+        }
         let begins_pointer = self
             .managers_mut()
             .interaction

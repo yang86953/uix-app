@@ -929,7 +929,10 @@ impl WidgetTree {
     }
 
     pub(crate) fn focus_target_available(&self, id: WidgetId) -> bool {
-        self.is_effectively_visible(id) && self.get(id).is_some_and(BoxedWidget::accepts_events)
+        self.is_effectively_visible(id)
+            && self
+                .get(id)
+                .is_some_and(|node| node.accepts_events() && node.is_interaction_enabled())
     }
 
     pub(crate) fn is_descendant_of(&self, id: WidgetId, ancestor: WidgetId) -> bool {

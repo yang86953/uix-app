@@ -3635,6 +3635,53 @@ fn enter_and_space_emit_click_for_focused_component() {
 }
 
 #[test]
+fn disabled_button_cannot_start_pointer_or_keyboard_activation() {
+    let calls = Rc::new(Cell::new(0));
+    let observed = Rc::clone(&calls);
+    let mut tree = ViewAdapter::build(
+        embed(Button::new("Disabled").disabled(true))
+            .on_click_fn(move || observed.set(observed.get() + 1)),
+    );
+    let target = tree.root_id().expect("disabled button root");
+    tree.get_mut(target)
+        .expect("disabled button node")
+        .set_frame(Rect::new(0.0, 0.0, 120.0, 40.0));
+
+    assert!(tree.collect_focusable().is_empty());
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(20.0, 20.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::NotHandled
+    );
+    assert_eq!(tree.managers().interaction.pressed_component(), None);
+    assert_eq!(tree.managers().focus.focused_component(), None);
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerUp {
+            pos: Point::new(20.0, 20.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::NotHandled
+    );
+    assert_eq!(calls.get(), 0);
+
+    tree.set_focus(Some(target));
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::NotHandled
+    );
+    assert_eq!(tree.managers().focus.focused_component(), None);
+    assert!(tree.keyboard_activation.is_none());
+    assert_eq!(calls.get(), 0);
+}
+
+#[test]
 fn focus_change_cancels_keyboard_activation() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(Container::new().size(240.0, 80.0)));

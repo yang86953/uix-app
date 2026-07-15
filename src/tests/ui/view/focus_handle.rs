@@ -1,6 +1,6 @@
 use crate::tests::common::*;
-use crate::ui::view::{column, input, label, EventExt, View, ViewAdapter};
-use crate::ui::{FocusHandle, FocusHandleError};
+use crate::ui::view::{column, embed, input, label, EventExt, View, ViewAdapter};
+use crate::ui::{FocusHandle, FocusHandleError, Input};
 
 #[test]
 fn focus_handle_routes_focus_and_blur_through_app_state() {
@@ -135,6 +135,20 @@ fn unavailable_target_consumes_request_without_forcing_focus() {
     let root = tree.root_id().expect("focus target should exist");
     tree.set_visible(root, false);
 
+    assert_eq!(handle.focus(), Ok(()));
+    assert!(tree.drain_app_state_focus_requests());
+    assert_eq!(tree.managers().focus.focused_component(), None);
+    assert!(!tree.has_app_state_focus_requests());
+}
+
+#[test]
+fn disabled_target_consumes_request_without_forcing_focus() {
+    let handle = FocusHandle::new();
+    let mut tree = ViewAdapter::build(embed(Input::new("").disabled(true)).focus_handle(&handle));
+    tree.set_app_state(AppState::new());
+    tree.layout();
+
+    assert!(tree.collect_focusable().is_empty());
     assert_eq!(handle.focus(), Ok(()));
     assert!(tree.drain_app_state_focus_requests());
     assert_eq!(tree.managers().focus.focused_component(), None);
