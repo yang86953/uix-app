@@ -4,6 +4,11 @@ use crate::ui::window_chrome::WindowInteractionRegion;
 use crate::ui::{OverlayEntry, OverlayKind};
 
 impl WidgetTree {
+    pub(crate) fn cancel_pointer_state_in_subtree(&mut self, root: WidgetId) {
+        self.cancel_pointer_hover_in_subtree(root);
+        self.cancel_pointer_gesture_in_subtree(root);
+    }
+
     pub(crate) fn cancel_pointer_hover_in_subtree(&mut self, root: WidgetId) {
         let hovered = self
             .managers()
