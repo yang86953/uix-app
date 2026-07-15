@@ -3,6 +3,7 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
+use crate::native::traits::input::ControlSize;
 use crate::ui::state::State;
 use crate::ui::SnapshotFields;
 use crate::ui::{ComponentId, EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetTree};
@@ -13,6 +14,7 @@ component! {
         checked: bool,
         checked_binding: Option<State<bool>>,
         disabled: bool,
+        control_size: ControlSize,
         size: f32,
         hovered: bool,
         focused: bool,
@@ -67,11 +69,13 @@ component! {
         let bg_container = ctx.tokens().color_bg_container();
         let bg_elevated = ctx.tokens().color_bg_elevated();
 
-        let h = frame.h;
-        let w = frame.w;
+        let h = self.size;
+        let w = self.track_width();
+        let track_x = frame.x;
+        let track_y = frame.y + (frame.h - h) * 0.5;
         let track_r = h * 0.5;
         let thumb_r = track_r - 3.0;
-        let thumb_x = if self.checked { frame.x + w - 2.0 - thumb_r * 2.0 } else { frame.x + 2.0 };
+        let thumb_x = if self.checked { track_x + w - 2.0 - thumb_r * 2.0 } else { track_x + 2.0 };
 
         let track_c = if self.checked {
             if self.disabled { primary_border } else if self.hovered { primary_hover } else { primary }
@@ -81,12 +85,12 @@ component! {
         let thumb_c = if self.disabled { bg_container } else { bg_elevated };
 
         let radius = Some(crate::draw::Radius::uniform(track_r));
-        ctx.fill_rect(Rect::new(frame.x, frame.y, w, h), track_c, radius);
-        let thumb = Rect::new(thumb_x, frame.y + 2.0, thumb_r * 2.0, thumb_r * 2.0);
+        ctx.fill_rect(Rect::new(track_x, track_y, w, h), track_c, radius);
+        let thumb = Rect::new(thumb_x, track_y + 2.0, thumb_r * 2.0, thumb_r * 2.0);
         ctx.fill_rect(thumb, thumb_c, Some(crate::draw::Radius::uniform(thumb_r)));
 
         if self.focused {
-            ctx.stroke_rect(Rect::new(frame.x - 1.0, frame.y - 1.0, w + 2.0, h + 2.0), primary, 1.5, radius);
+            ctx.stroke_rect(Rect::new(track_x - 1.0, track_y - 1.0, w + 2.0, h + 2.0), primary, 1.5, radius);
         }
     }
 }
@@ -99,11 +103,13 @@ impl Default for Switch {
 
 impl Switch {
     pub fn new() -> Self {
+        let config = crate::ui::config::use_config();
         Self {
             checked: false,
             checked_binding: None,
             disabled: false,
-            size: 22.0,
+            control_size: config.size,
+            size: Self::track_height(config.size),
             hovered: false,
             focused: false,
             pending_change: Cell::new(None),
@@ -123,6 +129,11 @@ impl Switch {
     }
     pub fn disabled(mut self, v: bool) -> Self {
         self.disabled = v;
+        self
+    }
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.control_size = size;
+        self.size = Self::track_height(size);
         self
     }
     pub fn is_checked(&self) -> bool {
@@ -152,7 +163,22 @@ impl Switch {
     }
 
     fn intrinsic_size(&self) -> Size {
-        Size::new(self.size * 2.0 - 4.0, self.size + 4.0)
+        Size::new(
+            self.track_width(),
+            crate::ui::config::control_height(self.control_size),
+        )
+    }
+
+    fn track_height(size: ControlSize) -> f32 {
+        match size {
+            ControlSize::Small => 16.0,
+            ControlSize::Medium => 22.0,
+            ControlSize::Large => 28.0,
+        }
+    }
+
+    fn track_width(&self) -> f32 {
+        self.size * 2.0 - 4.0
     }
 }
 
@@ -172,6 +198,7 @@ impl Switch {
             self.checked = checked;
         }
         self.disabled = next.disabled;
+        self.control_size = next.control_size;
         self.size = next.size;
     }
 }

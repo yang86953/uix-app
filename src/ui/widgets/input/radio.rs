@@ -4,6 +4,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
+use crate::native::traits::input::ControlSize;
 use crate::ui::state::State;
 use crate::ui::SnapshotFields;
 use crate::ui::{ComponentId, EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetTree};
@@ -104,7 +105,7 @@ component! {
             RadioDirection::Horizontal => {
                 let mut x = frame.x;
                 for (i, opt) in self.options.iter().enumerate() {
-                    let w = opt.len() as f32 * 9.0 + 30.0;
+                    let w = self.item_width(opt);
                     self.render_radio_item(ctx, i, opt, x, cy, w);
                     x += w;
                 }
@@ -163,7 +164,7 @@ impl Radio {
         let item_w = self
             .options
             .iter()
-            .map(|o| o.len() as f32 * 9.0 + 30.0)
+            .map(|o| self.item_width(o))
             .collect::<Vec<_>>();
         match self.direction {
             RadioDirection::Horizontal => {
@@ -190,7 +191,7 @@ impl Radio {
                 }
                 let mut cum_x = 0.0f32;
                 for (i, opt) in self.options.iter().enumerate() {
-                    let w = opt.len() as f32 * 9.0 + 30.0;
+                    let w = self.item_width(opt);
                     if px >= cum_x && px <= cum_x + w {
                         return Some(i);
                     }
@@ -218,8 +219,9 @@ impl Radio {
         cy: f32,
         _seg_w: f32,
     ) {
-        let r = 6.0;
-        let dot_r = 3.5;
+        let scale = self.visual_scale();
+        let r = 6.0 * scale;
+        let dot_r = 3.5 * scale;
         let selected = i == self.selected;
         let hovered = self.hovered_idx == Some(i);
 
@@ -250,17 +252,18 @@ impl Radio {
         };
 
         // 外圈
-        let circle_rect = Rect::new(x + 1.0, cy - r, r * 2.0, r * 2.0);
+        let circle_rect = Rect::new(x + scale, cy - r, r * 2.0, r * 2.0);
         ctx.stroke_rect(circle_rect, ring_color, 1.5, Some(Radius::uniform(r)));
 
         // 选中填充点
         if selected {
-            ctx.fill_circle(x + r + 1.0, cy, dot_r, dot_color);
+            ctx.fill_circle(x + r + scale, cy, dot_r, dot_color);
         }
         // 使用 em-box 高度（font_size）垂直居中，而非字体度量高度
         let row_rect = Rect::new(x, cy - self.item_h * 0.5, _seg_w, self.item_h);
-        let text_y = ctx.visual_center_y(row_rect, 13.0);
-        ctx.draw_text(opt, Point::new(x + 20.0, text_y), text_c, 13.0);
+        let font_size = self.font_size();
+        let text_y = ctx.visual_center_y(row_rect, font_size);
+        ctx.draw_text(opt, Point::new(x + 20.0 * scale, text_y), text_c, font_size);
     }
 }
 
@@ -272,6 +275,7 @@ impl Default for Radio {
 
 impl Radio {
     pub fn new() -> Self {
+        let config = crate::ui::config::use_config();
         Self {
             group_name: String::new(),
             options: Vec::new(),
@@ -279,7 +283,7 @@ impl Radio {
             value_binding: None,
             disabled: false,
             direction: RadioDirection::Horizontal,
-            item_h: 24.0,
+            item_h: crate::ui::config::control_height(config.size),
             hovered_idx: None,
             focused: false,
             pending_change: Cell::new(None),
@@ -339,9 +343,26 @@ impl Radio {
         self.disabled = v;
         self
     }
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.item_h = crate::ui::config::control_height(size);
+        self
+    }
     pub fn vertical(mut self) -> Self {
         self.direction = RadioDirection::Vertical;
         self
+    }
+
+    fn visual_scale(&self) -> f32 {
+        self.item_h / crate::ui::config::control_height(ControlSize::Medium)
+    }
+
+    fn font_size(&self) -> f32 {
+        13.0 * self.visual_scale().sqrt()
+    }
+
+    fn item_width(&self, option: &str) -> f32 {
+        let scale = self.visual_scale();
+        option.len() as f32 * 9.0 * scale.sqrt() + 30.0 * scale
     }
 }
 

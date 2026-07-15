@@ -2,6 +2,7 @@ use crate::tests::common::*;
 use crate::ui::state::State;
 use crate::ui::view::{ViewAdapter, ViewNode};
 use crate::ui::widgets::Radio;
+use crate::ui::{with_config, ComponentConfig};
 
 #[test]
 fn bound_radio_writes_keyboard_changes_and_reads_external_updates() {
@@ -85,4 +86,35 @@ fn external_radio_state_reconciles_and_invalidates_the_bound_node() {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .node_needs_paint(root));
+}
+
+#[test]
+fn provider_size_and_explicit_override_drive_radio_layout_and_hit_rows() {
+    let large = ComponentConfig::new().component_size(ControlSize::Large);
+    let max = Constraints::loose(Size::new(1_000.0, 1_000.0));
+    let mut radio = with_config(&large, || {
+        Radio::new()
+            .options(["A", "B"])
+            .default_selected(1)
+            .vertical()
+    });
+
+    assert_eq!(radio.measure(max).h, 80.0);
+    assert_eq!(
+        radio.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(4.0, 39.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(radio.current_index(), Some(0));
+
+    let small = with_config(&large, || {
+        Radio::new()
+            .options(["A", "B"])
+            .size(ControlSize::Small)
+            .vertical()
+    });
+    assert_eq!(small.measure(max).h, 48.0);
 }
