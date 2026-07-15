@@ -690,7 +690,12 @@ fn reconcile_autocomplete_preserves_open_value_and_syncs_options() {
         SnapshotFields::AutoComplete {
             placeholder,
             options,
-        } if placeholder == "new" && options == vec!["Apricot", "Avocado"]
+            value,
+            open,
+        } if placeholder == "new"
+            && options == vec!["Apricot", "Avocado"]
+            && value == "A"
+            && open
     ));
 }
 
