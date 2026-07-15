@@ -7,6 +7,7 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
+use crate::native::traits::input::ControlSize;
 use crate::ui::state::State;
 use crate::ui::SnapshotFields;
 use crate::ui::{ComponentId, EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetTree};
@@ -22,6 +23,7 @@ component! {
         dragging: bool,
         hovered: bool,
         focused: bool,
+        slider_size: ControlSize,
         last_frame: Cell<Option<Rect>>,
         pending_change: Cell<Option<f64>>,
     }
@@ -101,20 +103,21 @@ component! {
         let primary = ctx.tokens().color_primary();
         let primary_hover = ctx.tokens().color_primary_hover();
         let fill = ctx.tokens().color_fill_tertiary();
-        let track_h = 4.0;
-        let thumb_r = 6.0;
+        let track_h = self.track_height();
+        let thumb_r = self.thumb_radius();
         let cy = frame.y + frame.h * 0.5;
 
         let pct = ((self.value - self.min) / (self.max - self.min)).clamp(0.0, 1.0) as f32;
-        let thumb_x = frame.x + pct * (frame.w - 2.0);
+        let (track_x, track_w) = self.track_span(frame);
+        let thumb_x = track_x + pct * track_w;
 
         ctx.fill_rect(
-            Rect::new(frame.x, cy - track_h * 0.5, frame.w, track_h),
+            Rect::new(track_x, cy - track_h * 0.5, track_w, track_h),
             fill,
             Some(Radius::uniform(track_h * 0.5)),
         );
         ctx.fill_rect(
-            Rect::new(frame.x, cy - track_h * 0.5, thumb_x - frame.x, track_h),
+            Rect::new(track_x, cy - track_h * 0.5, thumb_x - track_x, track_h),
             primary,
             Some(Radius::uniform(track_h * 0.5)),
         );
@@ -141,8 +144,8 @@ component! {
 
 impl Slider {
     fn update_from_pos(&mut self, px: f32, frame: Rect) {
-        let usable_w = (frame.w - 4.0).max(1.0);
-        let pct = f64::from(((px - frame.x - 2.0) / usable_w).clamp(0.0, 1.0));
+        let (track_x, track_w) = self.track_span(frame);
+        let pct = f64::from(((px - track_x) / track_w).clamp(0.0, 1.0));
         let raw = self.min + pct * (self.max - self.min);
         if self.step > 0.0 {
             let stepped = self.min + ((raw - self.min) / self.step).round() * self.step;
@@ -188,6 +191,31 @@ impl Slider {
             }
         }
     }
+
+    fn control_height(&self) -> f32 {
+        crate::ui::config::control_height(self.slider_size)
+    }
+
+    fn track_height(&self) -> f32 {
+        match self.slider_size {
+            ControlSize::Small => 3.0,
+            ControlSize::Medium => 4.0,
+            ControlSize::Large => 5.0,
+        }
+    }
+
+    fn thumb_radius(&self) -> f32 {
+        match self.slider_size {
+            ControlSize::Small => 5.0,
+            ControlSize::Medium => 6.0,
+            ControlSize::Large => 7.5,
+        }
+    }
+
+    fn track_span(&self, frame: Rect) -> (f32, f32) {
+        let inset = self.thumb_radius();
+        (frame.x + inset, (frame.w - inset * 2.0).max(1.0))
+    }
 }
 
 impl Slider {
@@ -207,6 +235,7 @@ impl Slider {
         self.step = next.step;
         self.value_binding = next.value_binding;
         self.value = controlled_value.unwrap_or_else(|| self.clamp_value(self.value));
+        self.slider_size = next.slider_size;
     }
 }
 
@@ -219,6 +248,7 @@ impl Default for Slider {
 impl Slider {
     pub fn new(range: RangeInclusive<f64>) -> Self {
         let (min, max) = Self::normalize_range(range);
+        let config = crate::ui::config::use_config();
         Self {
             min,
             max,
@@ -228,6 +258,7 @@ impl Slider {
             dragging: false,
             hovered: false,
             focused: false,
+            slider_size: config.size,
             last_frame: Cell::new(None),
             pending_change: Cell::new(None),
         }
@@ -260,6 +291,11 @@ impl Slider {
         self.value
     }
 
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.slider_size = size;
+        self
+    }
+
     fn normalize_range(range: RangeInclusive<f64>) -> (f64, f64) {
         let (start, end) = range.into_inner();
         let start = if start.is_finite() { start } else { 0.0 };
@@ -272,6 +308,6 @@ impl Slider {
     }
 
     fn intrinsic_size(&self) -> Size {
-        Size::new(200.0, 24.0)
+        Size::new(200.0, self.control_height())
     }
 }

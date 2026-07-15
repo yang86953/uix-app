@@ -2,6 +2,7 @@ use crate::tests::common::*;
 use crate::ui::state::State;
 use crate::ui::view::{ViewAdapter, ViewNode};
 use crate::ui::widgets::Rate;
+use crate::ui::{with_config, ComponentConfig};
 
 #[test]
 fn bound_rate_writes_keyboard_changes_and_reads_external_updates() {
@@ -87,4 +88,25 @@ fn external_rate_state_reconciles_and_invalidates_the_bound_node() {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .node_needs_paint(root));
+}
+
+#[test]
+fn provider_size_and_explicit_override_drive_rate_layout_and_half_hit() {
+    let large = ComponentConfig::new().component_size(ControlSize::Large);
+    let max = Constraints::loose(Size::new(1_000.0, 1_000.0));
+    let mut rate = with_config(&large, || Rate::new().count(2).allow_half());
+    assert_eq!(rate.measure(max).h, 40.0);
+
+    assert_eq!(
+        rate.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(14.0, 20.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(rate.current_value(), 1);
+
+    let small = with_config(&large, || Rate::new().size(ControlSize::Small));
+    assert_eq!(small.measure(max).h, 24.0);
 }
