@@ -2,6 +2,7 @@ use crate::core::diagnostic::Timestamp;
 use crate::core::log::{FileSink, Level, Record, Sink};
 use std::fs;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Barrier};
 use std::time::UNIX_EPOCH;
 
 static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
@@ -44,7 +45,7 @@ fn record_json_escapes_every_string_field() {
 }
 
 #[test]
-fn file_sink_rotation_releases_the_file_lock_and_caps_backups() {
+fn file_sink_rotation_caps_backups_and_reopens_active_file() {
     let path = temp_log_path();
     let path_text = path.to_string_lossy().into_owned();
     fs::write(format!("{path_text}.8"), "eighth").expect("seed eighth backup");
@@ -63,6 +64,51 @@ fn file_sink_rotation_releases_the_file_lock_and_caps_backups() {
         .expect("read first backup")
         .contains("\"msg\":\"rotate\""));
     assert_eq!(fs::metadata(&path).expect("read active log").len(), 0);
+
+    fs::remove_dir_all(path.parent().expect("log parent")).expect("remove test directory");
+}
+
+#[test]
+fn file_sink_serializes_concurrent_writes_and_rotation() {
+    const WRITERS: usize = 8;
+
+    let path = temp_log_path();
+    let path_text = path.to_string_lossy().into_owned();
+    let mut sink = FileSink::new(path_text.clone()).expect("create concurrent file sink");
+    sink.set_max_size(1);
+    let sink = Arc::new(sink);
+    let start = Arc::new(Barrier::new(WRITERS));
+    let threads: Vec<_> = (0..WRITERS)
+        .map(|index| {
+            let sink = Arc::clone(&sink);
+            let start = Arc::clone(&start);
+            std::thread::spawn(move || {
+                start.wait();
+                sink.write(&record(&format!("writer-{index}")));
+            })
+        })
+        .collect();
+
+    for thread in threads {
+        thread.join().expect("concurrent log writer");
+    }
+    drop(sink);
+
+    let mut contents = fs::read_to_string(&path).expect("read active concurrent log");
+    for index in 1..=9 {
+        let backup = format!("{path_text}.{index}");
+        if let Ok(content) = fs::read_to_string(backup) {
+            contents.push_str(&content);
+        }
+    }
+    for index in 0..WRITERS {
+        let marker = format!("\"msg\":\"writer-{index}\"");
+        assert_eq!(
+            contents.matches(&marker).count(),
+            1,
+            "each concurrent record must survive exactly once"
+        );
+    }
 
     fs::remove_dir_all(path.parent().expect("log parent")).expect("remove test directory");
 }
