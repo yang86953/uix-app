@@ -1,6 +1,6 @@
 use crate::ui::widgets::{
     AnchorItem, BadgeStatus, BreadcrumbItem, Date, MenuItem, OptGroup, ProgressMode,
-    SelectableItem, Step,
+    SelectableItem, Step, Tab, UploadFile, UploadStatus,
 };
 
 use super::{AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotTransferItem};
@@ -67,6 +67,47 @@ pub(super) fn menu_accessibility(items: &[MenuItem], active_key: &str) -> Access
             .map(|item| item.label.clone()),
         ..AccessibilityState::default()
     })
+}
+
+pub(super) fn dropdown_accessibility(
+    label: &str,
+    items: &[String],
+    open: bool,
+    selected_index: Option<usize>,
+) -> AccessibilitySnapshot {
+    AccessibilitySnapshot::named(AccessibilityRole::Menu, label).with_state(AccessibilityState {
+        expanded: Some(open),
+        value_text: selected_index.and_then(|index| items.get(index)).cloned(),
+        ..AccessibilityState::default()
+    })
+}
+
+pub(super) fn tabs_accessibility(tabs: &[Tab], active_index: usize) -> AccessibilitySnapshot {
+    AccessibilitySnapshot::new(AccessibilityRole::TabList).with_state(AccessibilityState {
+        value_text: tabs.get(active_index).map(|tab| tab.label.clone()),
+        ..AccessibilityState::default()
+    })
+}
+
+pub(super) fn upload_accessibility(files: &[UploadFile]) -> AccessibilitySnapshot {
+    let value_text = files
+        .iter()
+        .map(|file| {
+            let status = match file.status {
+                UploadStatus::Pending => "pending".to_string(),
+                UploadStatus::Uploading => format!("uploading {:.0}%", file.progress * 100.0),
+                UploadStatus::Done => "done".to_string(),
+                UploadStatus::Error => "error".to_string(),
+            };
+            format!("{}: {status}", file.name)
+        })
+        .collect::<Vec<_>>();
+    AccessibilitySnapshot::named(AccessibilityRole::List, "Upload queue").with_state(
+        AccessibilityState {
+            value_text: (!value_text.is_empty()).then(|| value_text.join("; ")),
+            ..AccessibilityState::default()
+        },
+    )
 }
 
 pub(super) fn transfer_accessibility(

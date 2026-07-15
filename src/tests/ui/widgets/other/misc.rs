@@ -216,6 +216,52 @@ fn upload_single_mode_and_progress_stay_within_public_bounds() {
     assert_eq!(upload.files()[0].progress, 1.0);
     upload.update_progress(0, f32::NAN);
     assert_eq!(upload.files()[0].progress, 0.0);
+
+    upload.complete_file(0, true);
+    assert_eq!(upload.files()[0].progress, 1.0);
+    assert_eq!(upload.files()[0].status, UploadStatus::Done);
+    let accessibility = upload.snapshot_fields().accessibility();
+    assert_eq!(accessibility.role, AccessibilityRole::List);
+    assert_eq!(accessibility.name.as_deref(), Some("Upload queue"));
+    assert_eq!(
+        accessibility.state.value_text.as_deref(),
+        Some("first.png: done")
+    );
+}
+
+#[test]
+fn upload_programmatic_queue_honors_filter_limits_and_removal() {
+    let mut upload = Upload::new().accept(".png").multiple(true).max_count(2);
+
+    assert!(!upload.try_add_file(r"C:\tmp\ignored.txt"));
+    assert!(upload.try_add_file(r"C:\tmp\avatar.PNG"));
+    assert!(upload.try_add_file("/tmp/cover.png"));
+    assert!(!upload.try_add_file("overflow.png"));
+    assert_eq!(
+        upload
+            .files()
+            .iter()
+            .map(|file| file.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["avatar.PNG", "cover.png"]
+    );
+
+    let removed = upload
+        .remove_file(0)
+        .expect("queued file should be removed");
+    assert_eq!(removed.name, "avatar.PNG");
+    assert!(upload.remove_file(7).is_none());
+    upload.clear_files();
+    assert!(upload.files().is_empty());
+}
+
+#[test]
+fn upload_measure_respects_parent_constraints() {
+    let upload = Upload::new();
+    assert_eq!(
+        upload.measure(Constraints::new(Size::zero(), Size::new(120.0, 80.0), None,)),
+        Size::new(120.0, 80.0)
+    );
 }
 
 #[test]
