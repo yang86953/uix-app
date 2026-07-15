@@ -3,6 +3,7 @@
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
+use crate::native::traits::input::ControlSize;
 use crate::ui::state::State;
 use crate::ui::SnapshotFields;
 use crate::ui::{ComponentId, EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetTree};
@@ -21,6 +22,7 @@ component! {
         focused: bool,
         pending_change: Cell<Option<usize>>,
         character: String,
+        rate_size: ControlSize,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -33,11 +35,12 @@ component! {
         if self.disabled { return EventResult::NotHandled; }
         match event {
             SystemEvent::PointerDown { pos, .. } => {
-                let star_idx = (pos.x / 24.0) as usize;
+                let cell_width = self.cell_width();
+                let star_idx = (pos.x / cell_width) as usize;
                 if star_idx < self.count {
                     let new_val = if self.half {
-                        let in_star_x = pos.x - star_idx as f32 * 24.0;
-                        star_idx * 2 + if in_star_x < 12.0 { 1 } else { 2 }
+                        let in_star_x = pos.x - star_idx as f32 * cell_width;
+                        star_idx * 2 + if in_star_x < cell_width * 0.5 { 1 } else { 2 }
                     } else {
                         star_idx + 1
                     };
@@ -52,11 +55,13 @@ component! {
                 EventResult::NotHandled
             }
             SystemEvent::PointerMove { pos, .. } => {
-                let star_idx = (pos.x / 24.0) as usize;
+                let cell_width = self.cell_width();
+                let star_idx = (pos.x / cell_width) as usize;
                 if star_idx < self.count {
                     if self.half {
-                        let in_star_x = pos.x - star_idx as f32 * 24.0;
-                        self.hover_value = star_idx * 2 + if in_star_x < 12.0 { 1 } else { 2 };
+                        let in_star_x = pos.x - star_idx as f32 * cell_width;
+                        self.hover_value = star_idx * 2
+                            + if in_star_x < cell_width * 0.5 { 1 } else { 2 };
                     } else {
                         self.hover_value = star_idx + 1;
                     }
@@ -108,11 +113,14 @@ component! {
 
         // hover 预览值优先于选中值
         let display_val = if self.hover_value > 0 { self.hover_value } else { self.value };
+        let cell_width = self.cell_width();
+        let font_size = self.font_size();
+        let text_inset = 2.0 * self.visual_scale();
 
         for i in 0..self.count {
-            let sx = frame.x + i as f32 * 24.0;
-            let star_rect = Rect::new(sx, frame.y, 24.0, 24.0);
-            let sy = ctx.visual_center_y(star_rect, 18.0);
+            let sx = frame.x + i as f32 * cell_width;
+            let star_rect = Rect::new(sx, frame.y, cell_width, frame.h);
+            let sy = ctx.visual_center_y(star_rect, font_size);
             let filled = if self.half {
                 display_val >= i * 2 + 2
             } else {
@@ -127,12 +135,17 @@ component! {
                 fill_tertiary
             };
 
-            ctx.draw_text(ch, Point::new(sx + 2.0, sy), star_color, 18.0);
+            ctx.draw_text(ch, Point::new(sx + text_inset, sy), star_color, font_size);
 
             // 半星支持：左半填充
             if self.half && display_val == i * 2 + 1 {
-                ctx.draw_text(ch, Point::new(sx + 2.0, sy), star_color, 18.0);
-                ctx.fill_rect(Rect::new(sx + 14.0, sy, 10.0, 18.0), bg, None);
+                ctx.draw_text(ch, Point::new(sx + text_inset, sy), star_color, font_size);
+                let mask_x = sx + cell_width * 0.5 + text_inset;
+                ctx.fill_rect(
+                    Rect::new(mask_x, sy, (sx + cell_width - mask_x).max(0.0), font_size),
+                    bg,
+                    None,
+                );
             }
         }
     }
@@ -190,6 +203,7 @@ impl Rate {
     }
 
     pub fn new() -> Self {
+        let config = crate::ui::config::use_config();
         Self {
             count: 5,
             value: 0,
@@ -201,6 +215,7 @@ impl Rate {
             focused: false,
             pending_change: Cell::new(None),
             character: String::new(),
+            rate_size: config.size,
         }
     }
     pub fn count(mut self, n: usize) -> Self {
@@ -252,9 +267,32 @@ impl Rate {
         self.character = c.into();
         self
     }
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.rate_size = size;
+        self
+    }
 
     fn intrinsic_size(&self) -> Size {
-        Size::new(self.count as f32 * 24.0, 24.0)
+        Size::new(
+            self.count as f32 * self.cell_width(),
+            crate::ui::config::control_height(self.rate_size),
+        )
+    }
+
+    fn visual_scale(&self) -> f32 {
+        match self.rate_size {
+            ControlSize::Small => 0.8,
+            ControlSize::Medium => 1.0,
+            ControlSize::Large => 1.2,
+        }
+    }
+
+    fn cell_width(&self) -> f32 {
+        24.0 * self.visual_scale()
+    }
+
+    fn font_size(&self) -> f32 {
+        18.0 * self.visual_scale()
     }
 }
 
@@ -278,6 +316,7 @@ impl Rate {
         self.disabled = next.disabled;
         self.clearable = next.clearable;
         self.character = next.character;
+        self.rate_size = next.rate_size;
         self.value = controlled_value.unwrap_or_else(|| self.value.min(self.max_value()));
     }
 }

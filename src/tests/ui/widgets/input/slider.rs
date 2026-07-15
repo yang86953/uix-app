@@ -1,7 +1,32 @@
+use crate::draw::engine::cpu::canvas_2d::CpuCanvas2D;
+use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
 use crate::ui::state::State;
 use crate::ui::view::{ViewAdapter, ViewNode};
 use crate::ui::widgets::Slider;
+use crate::ui::{with_config, ComponentConfig};
+
+fn render_slider(slider: &Slider, frame: Rect) {
+    let mut canvas = CpuCanvas2D::new(PixelSurface::new(240, 64));
+    let fonts = FontService::new();
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+    let mut ctx = PaintContext::new_for_test(
+        &mut canvas,
+        FontHandle::default(),
+        &fonts,
+        &images,
+        &tokens,
+        96.0,
+        1.0,
+        Orientation::YDown,
+        240,
+        64,
+    );
+    WidgetRender::render(slider, frame, &mut ctx, &tree);
+}
 
 #[test]
 fn bound_slider_writes_keyboard_changes_and_reads_external_updates() {
@@ -71,4 +96,24 @@ fn external_slider_state_reconciles_and_invalidates_the_bound_node() {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .node_needs_paint(root));
+}
+
+#[test]
+fn provider_size_and_explicit_override_drive_slider_track_geometry() {
+    let large = ComponentConfig::new().component_size(ControlSize::Large);
+    let max = Constraints::loose(Size::new(1_000.0, 1_000.0));
+    let mut slider = with_config(&large, || Slider::new(0.0..=100.0).step(0.0));
+    assert_eq!(slider.measure(max).h, 40.0);
+
+    render_slider(&slider, Rect::new(0.0, 0.0, 200.0, 40.0));
+    let _ = slider.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(10.0, 20.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    let expected = (10.0 - 7.5) / (200.0 - 15.0) * 100.0;
+    assert!((slider.current_value() - expected).abs() < 0.000_001);
+
+    let small = with_config(&large, || Slider::new(0.0..=1.0).size(ControlSize::Small));
+    assert_eq!(small.measure(max).h, 24.0);
 }
