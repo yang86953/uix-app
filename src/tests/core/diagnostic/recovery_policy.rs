@@ -114,3 +114,19 @@ fn half_open_circuit_requires_an_admitted_probe_before_success() {
     assert_eq!(circuit.failure_count(), 0);
     assert_eq!(circuit.success_count(), 1);
 }
+
+#[test]
+fn lowering_circuit_threshold_opens_on_existing_failures() {
+    let circuit = CircuitBreaker::new(3, Duration::from_secs(60));
+    circuit.record_failure();
+    circuit.record_failure();
+    assert_eq!(circuit.state(), CircuitState::Closed);
+
+    circuit.set_threshold(2);
+
+    assert_eq!(circuit.state(), CircuitState::Open);
+    assert!(!circuit.try_call());
+
+    circuit.set_threshold(10);
+    assert_eq!(circuit.state(), CircuitState::Open);
+}
