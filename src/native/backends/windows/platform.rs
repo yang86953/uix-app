@@ -11,7 +11,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use super::bindings::*;
 use super::clipboard::WindowsClipboard;
@@ -102,6 +102,12 @@ impl WindowsPlatform {
             system_info_subsys: WindowsSystemInfo::new(),
             window_handles: BTreeMap::new(),
         }
+    }
+
+    pub(crate) fn lock_event_queue(&self) -> MutexGuard<'_, VecDeque<UiEvent>> {
+        self.event_queue
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
     }
 
     pub(crate) fn select_window(&mut self, hwnd: *mut std::ffi::c_void) {
@@ -195,7 +201,7 @@ impl OsEventSource for WindowsPlatform {
     }
 
     fn next_event(&mut self) -> Option<UiEvent> {
-        let event = self.event_queue.lock().ok()?.pop_front()?;
+        let event = self.lock_event_queue().pop_front()?;
         if let Some(window_id) = event.window_id {
             if let Some(hwnd) = self.window_handles.get(&window_id).copied() {
                 self.select_window(hwnd as *mut std::ffi::c_void);

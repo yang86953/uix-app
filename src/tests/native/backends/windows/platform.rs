@@ -16,6 +16,7 @@ use crate::native::traits::event::{UiEventPayload, UiEventType};
 use crate::native::traits::*;
 use crate::tests::common::*;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use windows::Win32::Foundation::{HWND, LPARAM, RECT, WPARAM};
 use windows::Win32::UI::HiDpi::{
@@ -28,6 +29,26 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 fn size_lparam(width: u16, height: u16) -> isize {
     (u32::from(width) | (u32::from(height) << 16)) as isize
+}
+
+#[test]
+fn native_event_queue_recovers_after_lock_poisoning() {
+    let mut platform = WindowsPlatform::new();
+    let poisoned = Arc::clone(&platform.event_queue);
+    let _ = std::thread::spawn(move || {
+        let _queue = poisoned.lock().expect("lock event queue before poisoning");
+        panic!("poison Windows event queue for recovery test");
+    })
+    .join();
+    let window_id = crate::core::WindowId::new(77);
+
+    platform.push_event(window_id, UiEvent::close());
+
+    let event = platform
+        .next_event()
+        .expect("poisoned event queue must remain usable");
+    assert_eq!(event.window_id, Some(window_id));
+    assert_eq!(event.type_, UiEventType::WindowClose);
 }
 
 #[test]

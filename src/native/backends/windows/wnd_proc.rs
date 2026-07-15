@@ -68,9 +68,7 @@ pub(crate) unsafe extern "system" fn wnd_proc(
 impl WindowsPlatform {
     pub(crate) fn push_event(&mut self, window_id: crate::core::WindowId, event: UiEvent) {
         let event = event.for_window(window_id);
-        if let Ok(mut queue) = self.event_queue.lock() {
-            queue.push_back(event);
-        }
+        self.lock_event_queue().push_back(event);
     }
 
     /// 处理窗口消息（由 wnd_proc 回调转发至此）。
@@ -385,13 +383,16 @@ impl WindowsPlatform {
             }
             WM_TIMER => {
                 let timer_id = wparam as u32;
-                if let Ok(mut set) = self.single_shot_timers.lock() {
-                    if set.remove(&timer_id) {
-                        unsafe {
-                            KillTimer(hwnd, timer_id);
-                        }
+                let mut set = self
+                    .single_shot_timers
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner());
+                if set.remove(&timer_id) {
+                    unsafe {
+                        KillTimer(hwnd, timer_id);
                     }
                 }
+                drop(set);
                 self.push_event(window_id, UiEvent::timer(timer_id));
                 0
             }
