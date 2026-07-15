@@ -187,13 +187,12 @@ impl AppStateInner {
         self.components.get(&id).map(|entry| entry.snapshot.clone())
     }
 
-    pub(crate) fn invalidate(&self, id: ComponentId) -> bool {
-        self.assert_owner_thread();
+    pub(crate) fn invalidate(&self, id: ComponentId) -> Option<EventLoopWaker> {
         let Some(entry) = self.components.get(&id) else {
-            return false;
+            return None;
         };
         invalidate_paint_handle(&entry.invalidation, id, entry.rect);
-        true
+        Some(self.event_loop_waker.clone())
     }
 
     pub(crate) fn emit_semantic_event(

@@ -648,6 +648,40 @@ fn lookup_component_handle_emit_queues_off_owner_thread() {
 }
 
 #[test]
+fn lookup_component_handle_invalidate_wakes_off_owner_thread() {
+    let mut tree = WidgetTree::new();
+    let app_state = AppState::new();
+    let root = tree.set_root(Box::new(Button::new("root")));
+    tree.layout();
+    tree.set_app_state(app_state.clone());
+    tree.reset_invalidation();
+
+    let wake_calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let recorded_wakes = wake_calls.clone();
+    app_state.set_event_loop_waker(crate::native::traits::event::EventLoopWaker::new(
+        move || {
+            recorded_wakes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        },
+    ));
+
+    std::thread::spawn(move || {
+        app_state
+            .get_handle(root)
+            .expect("registered component")
+            .invalidate();
+    })
+    .join()
+    .expect("background invalidation");
+
+    assert_eq!(wake_calls.load(std::sync::atomic::Ordering::Relaxed), 1);
+    let invalidation = tree
+        .invalidation()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    assert!(invalidation.node_needs_paint(root));
+}
+
+#[test]
 fn component_handle_invalidate_marks_narrow_paint_only() {
     let tree = Rc::new(RefCell::new(WidgetTree::new()));
     let root = tree.borrow_mut().set_root(Box::new(Button::new("root")));
