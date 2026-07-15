@@ -15,6 +15,14 @@ struct CountingHandler {
     calls: Arc<AtomicUsize>,
 }
 
+struct PanickingSink;
+
+#[derive(Default)]
+struct CountingSink {
+    writes: AtomicUsize,
+    flushes: AtomicUsize,
+}
+
 impl LogHandler for CountingHandler {
     fn handle(&self, _level: Level, _message: &str, _file: &'static str, _line: u32) {
         self.calls.fetch_add(1, Ordering::Relaxed);
@@ -28,6 +36,38 @@ impl ReentrantSink {
             writes: AtomicUsize::new(0),
             flushes: AtomicUsize::new(0),
         }
+    }
+}
+
+impl Sink for PanickingSink {
+    fn write(&self, _record: &Record) {
+        panic!("intentional sink write panic");
+    }
+
+    fn flush(&self) {
+        panic!("intentional sink flush panic");
+    }
+
+    fn set_level(&self, _level: Level) {}
+
+    fn level(&self) -> Level {
+        Level::Trace
+    }
+}
+
+impl Sink for CountingSink {
+    fn write(&self, _record: &Record) {
+        self.writes.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn flush(&self) {
+        self.flushes.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn set_level(&self, _level: Level) {}
+
+    fn level(&self) -> Level {
+        Level::Trace
     }
 }
 
@@ -98,6 +138,22 @@ fn sink_flush_can_reenter_logger_without_holding_the_sink_lock() {
         .unwrap_or_else(|error| error.into_inner())
         .sinks
         .is_empty());
+}
+
+#[test]
+fn panicking_sink_does_not_interrupt_later_write_or_flush() {
+    let logger = Logger::with_default_console();
+    logger.clear_sinks();
+    logger.set_level(Level::Trace);
+    logger.add_sink(Arc::new(PanickingSink));
+    let counting = Arc::new(CountingSink::default());
+    logger.add_sink(counting.clone());
+
+    logger.info("probe".to_owned(), file!(), line!());
+    logger.flush();
+
+    assert_eq!(counting.writes.load(Ordering::Relaxed), 1);
+    assert_eq!(counting.flushes.load(Ordering::Relaxed), 1);
 }
 
 #[test]
