@@ -6,6 +6,7 @@ use crate::ui::{
     ComponentId, EventResult, SemanticEvent, SnapshotFields, SnapshotTransferItem, SystemEvent,
     WidgetTree,
 };
+use qrcode::{types::Color as QrModuleColor, EcLevel, QrCode};
 use std::cell::{Cell, RefCell};
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -17,10 +18,13 @@ component! {
         value: String,
         size: f32,
         error_level: u8,
+        modules: Vec<bool>,
+        module_count: usize,
+        encoding_error: Option<String>,
     }
 
-    measure => (&self, _constraints: Constraints) -> Size {
-        Size::new(self.size, self.size)
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(Size::new(self.size, self.size))
     }
 
     picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
@@ -28,66 +32,123 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        let loc = crate::ui::locale::use_locale();
         let bg = Color::white();
         let fg = Color::black();
-        let r = Some(Radius::uniform(ctx.tokens().border_radius()));
-        ctx.fill_rect(frame, bg, r);
+        ctx.fill_rect(frame, bg, None);
 
-        // 根据 value 生成确定性伪随机 QR 矩阵（非真实编码）
-        let cells = if self.error_level > 0 { 25 } else { 21 };
-        let cell_s = frame.w / cells as f32;
-        let seed: u64 = self.value.bytes().fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
+        if self.encoding_error.is_some() || self.module_count == 0 {
+            ctx.text_center("QR !", frame, ctx.tokens().color_error(), 14.0);
+            return;
+        }
 
-        for y in 0..cells {
-            for x in 0..cells {
-                let is_finder = (x >= cells - 7 || x < 7) && y < 7 || (x < 7 && y >= cells - 7);
-                let is_filled = if is_finder {
-                    let in_pattern = (x <= 1 || x >= 5) && (y <= 1 || y >= 5);
-                    let is_center = (2..=4).contains(&x) && (2..=4).contains(&y);
-                    (in_pattern && !is_center) || (is_center && !in_pattern)
-                } else if (x >= cells - 8 || x <= 7) && y == 6 {
-                    // 时序模式
-                    x % 2 == 0
-                } else if x == 6 && (y >= cells - 8 || y <= 7) {
-                    y % 2 == 0
-                } else {
-                    // 数据区域：基于 seed 的确定性随机
-                    let idx = (y * cells + x) as u64;
-                    let hash = seed.wrapping_mul(idx + 1).wrapping_add(idx.wrapping_mul(idx + 3));
-                    !hash.is_multiple_of(3)
-                };
-                if is_filled {
-                    ctx.fill_rect(Rect::new(frame.x + x as f32 * cell_s, frame.y + y as f32 * cell_s, cell_s, cell_s), fg, None);
+        // ISO/IEC 18004 要求四模块 quiet zone；使用正方形模块并居中，
+        // 不叠加 logo 或圆角，以免破坏编码矩阵的可扫描性。
+        const QUIET_ZONE: usize = 4;
+        let symbol_modules = self.module_count + QUIET_ZONE * 2;
+        let module_size = frame.w.min(frame.h) / symbol_modules as f32;
+        if !module_size.is_finite() || module_size <= 0.0 {
+            return;
+        }
+        let symbol_size = module_size * symbol_modules as f32;
+        let origin = Point::new(
+            frame.x + (frame.w - symbol_size) * 0.5 + QUIET_ZONE as f32 * module_size,
+            frame.y + (frame.h - symbol_size) * 0.5 + QUIET_ZONE as f32 * module_size,
+        );
+        for y in 0..self.module_count {
+            for x in 0..self.module_count {
+                if self.modules[y * self.module_count + x] {
+                    ctx.fill_rect(
+                        Rect::new(
+                            origin.x + x as f32 * module_size,
+                            origin.y + y as f32 * module_size,
+                            module_size,
+                            module_size,
+                        ),
+                        fg,
+                        None,
+                    );
                 }
             }
         }
-        // 中心 UIX 标记
-        ctx.fill_rect(Rect::new(frame.x + frame.w * 0.38, frame.y + frame.h * 0.38, frame.w * 0.24, frame.h * 0.24), bg, Some(Radius::uniform(4.0)));
-        ctx.draw_text(loc.qrcode_logo, Point::new(frame.x + frame.w * 0.42, frame.y + frame.h * 0.44), fg, 11.0);
     }
 }
 impl QRCode {
     pub fn new(value: &str) -> Self {
-        Self {
+        let mut qr = Self {
             value: value.to_string(),
             size: 160.0,
             error_level: 1,
-        }
+            modules: Vec::new(),
+            module_count: 0,
+            encoding_error: None,
+        };
+        qr.rebuild_encoding();
+        qr
     }
     pub fn size(mut self, s: f32) -> Self {
-        self.size = s;
+        if s.is_finite() {
+            self.size = s.max(1.0);
+        }
         self
     }
     pub fn error_level(mut self, lv: u8) -> Self {
-        self.error_level = lv;
+        self.error_level = lv.min(3);
+        self.rebuild_encoding();
         self
+    }
+
+    /// 返回标准 QR 矩阵的边长（不含四模块 quiet zone）。
+    pub fn module_count(&self) -> usize {
+        self.module_count
+    }
+
+    /// 编码失败时返回具体原因；成功时为 `None`。
+    pub fn encoding_error(&self) -> Option<&str> {
+        self.encoding_error.as_deref()
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.encoding_error.is_none() && self.module_count > 0
+    }
+
+    #[cfg(test)]
+    pub(crate) fn module(&self, x: usize, y: usize) -> Option<bool> {
+        (x < self.module_count && y < self.module_count)
+            .then(|| self.modules[y * self.module_count + x])
+    }
+
+    fn rebuild_encoding(&mut self) {
+        let level = match self.error_level {
+            0 => EcLevel::L,
+            1 => EcLevel::M,
+            2 => EcLevel::Q,
+            _ => EcLevel::H,
+        };
+        match QrCode::with_error_correction_level(self.value.as_bytes(), level) {
+            Ok(code) => {
+                self.module_count = code.width();
+                self.modules = code
+                    .into_colors()
+                    .into_iter()
+                    .map(|module| module == QrModuleColor::Dark)
+                    .collect();
+                self.encoding_error = None;
+            }
+            Err(error) => {
+                self.modules.clear();
+                self.module_count = 0;
+                self.encoding_error = Some(error.to_string());
+            }
+        }
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.value = next.value;
         self.size = next.size;
         self.error_level = next.error_level;
+        self.modules = next.modules;
+        self.module_count = next.module_count;
+        self.encoding_error = next.encoding_error;
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -95,6 +156,8 @@ impl QRCode {
             value: self.value.clone(),
             size: self.size,
             error_level: self.error_level,
+            module_count: self.module_count,
+            encoding_error: self.encoding_error.clone(),
         }
     }
 }

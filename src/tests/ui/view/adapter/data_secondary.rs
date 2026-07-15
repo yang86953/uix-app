@@ -391,6 +391,8 @@ fn reconcile_qrcode_patches_instance_and_syncs_config() {
             value: "new".to_string(),
             size: 96.0,
             error_level: 0,
+            module_count: 21,
+            encoding_error: None,
         }
     );
 }

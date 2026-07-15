@@ -1505,6 +1505,8 @@ fn app_state_lookup_handle_reads_typed_snapshot_for_component_builtin() {
             value: "uix".to_string(),
             size: 96.0,
             error_level: 2,
+            module_count: 21,
+            encoding_error: None,
         })
     );
 }
