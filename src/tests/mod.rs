@@ -10,3 +10,4 @@ mod native;
 mod prelude;
 mod public_usage;
 mod ui;
+mod usage_markdown;
