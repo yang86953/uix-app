@@ -3682,6 +3682,32 @@ fn disabled_button_cannot_start_pointer_or_keyboard_activation() {
 }
 
 #[test]
+fn disabled_button_is_excluded_from_hover_routing() {
+    let pointer_calls = Rc::new(Cell::new(0));
+    let observed = Rc::clone(&pointer_calls);
+    let mut tree = ViewAdapter::build(embed(Button::new("Disabled").disabled(true)).on_pointer(
+        move |_| {
+            observed.set(observed.get() + 1);
+            EventResult::Handled
+        },
+    ));
+    let target = tree.root_id().expect("disabled button root");
+    tree.get_mut(target)
+        .expect("disabled button node")
+        .set_frame(Rect::new(0.0, 0.0, 120.0, 40.0));
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerMove {
+            pos: Point::new(20.0, 20.0),
+            mods: KeyMod::NONE,
+        }),
+        EventResult::NotHandled
+    );
+    assert_eq!(tree.managers().interaction.hovered_component(), None);
+    assert_eq!(pointer_calls.get(), 0);
+}
+
+#[test]
 fn reconcile_to_disabled_cancels_pointer_activation() {
     let calls = Rc::new(Cell::new(0));
     let observed = Rc::clone(&calls);
