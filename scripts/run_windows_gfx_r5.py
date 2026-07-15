@@ -350,7 +350,6 @@ def load_resumable_evidence(
     if manifest.get("status") == "passed":
         raise ValueError("passed GFX-R5 evidence has no remaining cases to resume")
     plan = plan_from_manifest_configuration(manifest)
-    require_manifest_matches_plan(manifest, plan)
     require_resume_environment(manifest)
     return EvidenceSession.from_existing(output_dir, manifest), plan
 
@@ -413,6 +412,34 @@ def require_resume_environment(manifest: dict[str, object]) -> None:
         raise ValueError("evidence source was not captured from a clean worktree")
     if manifest.get("host") != host_metadata():
         raise ValueError("evidence host or toolchain does not match the current target machine")
+
+
+def require_recorded_provenance(manifest: dict[str, object]) -> None:
+    source = manifest.get("source")
+    if not isinstance(source, dict):
+        raise ValueError("evidence manifest has no source object")
+    repository = source.get("repository")
+    git_head = source.get("git_head")
+    git_branch = source.get("git_branch")
+    if not isinstance(repository, str) or not repository:
+        raise ValueError("evidence source repository must be a non-empty string")
+    if (
+        not isinstance(git_head, str)
+        or len(git_head) != 40
+        or any(character not in "0123456789abcdefABCDEF" for character in git_head)
+    ):
+        raise ValueError("evidence source git_head must be a 40-digit hexadecimal commit")
+    if not isinstance(git_branch, str):
+        raise ValueError("evidence source git_branch must be a string")
+    if source.get("worktree_clean") is not True:
+        raise ValueError("evidence source was not captured from a clean worktree")
+
+    host = manifest.get("host")
+    if not isinstance(host, dict):
+        raise ValueError("evidence manifest has no host object")
+    for name in ("node", "platform", "python", "rustc", "cargo"):
+        if not isinstance(host.get(name), str) or not host[name]:
+            raise ValueError(f"evidence host {name} must be a non-empty string")
 
 
 def format_case(case: GfxR5Case) -> str:
@@ -519,6 +546,9 @@ def verify_evidence_dir(output_dir: Path) -> dict[str, object]:
         raise ValueError("failed manifest contains no failed case")
     if status == "interrupted" and "interrupted" not in case_statuses:
         raise ValueError("interrupted manifest contains no interrupted case")
+    plan = plan_from_manifest_configuration(manifest)
+    require_manifest_matches_plan(manifest, plan)
+    require_recorded_provenance(manifest)
     return manifest
 
 
