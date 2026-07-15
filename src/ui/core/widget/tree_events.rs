@@ -135,64 +135,7 @@ impl WidgetTree {
                 self.dispatch_pointer_press(event, *pos, *button, *mods)
             }
             SystemEvent::PointerUp { pos, button, mods } => {
-                let hold = self.managers().interaction.pressed_component();
-                // 如果拖拽处于活跃状态，发射 DragEnd 到拖拽目标
-                if self.managers().drag.is_dragging() {
-                    if let Some(target) = self.managers().drag.target() {
-                        let drag_end = SystemEvent::DragEnd {
-                            pos: *pos,
-                            button: *button,
-                            mods: *mods,
-                        };
-                        let _ = self.dispatch_to(target, &drag_end);
-                    }
-                }
-                self.managers_mut().drag.end_drag();
-                self.managers_mut().interaction.set_pressed_component(None);
-                let hit = self.overlay_target_at(*pos).or_else(|| self.hit_test(*pos));
-                let mut result = EventResult::NotHandled;
-                if let Some(t) = hit {
-                    self.invalidate_paint(t);
-                    let actions_before_dispatch = self.pending_window_actions.len();
-                    // 捕获阶段：root → target
-                    if self.capture_to(t, event) == EventResult::Handled {
-                        return EventResult::Handled;
-                    }
-                    result = self.dispatch_to(t, event);
-                    let title_bar_system_menu = self.pending_window_actions
-                        [actions_before_dispatch..]
-                        .contains(&WindowAction::ShowSystemMenuFromTitleBar);
-                    // 同目标 up→Click：不要求 PointerUp Handled。
-                    // 侧栏 row 空白/padding 命中 Container/Space/Label 时它们不处理 Up，
-                    // 但父级 on_semantic(Click) 仍须触发（#36 语义层）。
-                    if hold == Some(t) && !title_bar_system_menu {
-                        let click = ClickEvent {
-                            button: *button,
-                            pos: *pos,
-                            modifiers: *mods,
-                        };
-                        let _ = self.dispatch_semantic(SemanticEvent::click(t, click));
-                        if *button == MouseButton::Right {
-                            let mut context_menu = SemanticEvent::context_menu(t, click);
-                            let _ = self.dispatch_semantic_event(&mut context_menu);
-                            if !context_menu.default_prevented() {
-                                self.open_context_menu_overlay(t, click.pos);
-                            }
-                        }
-                    }
-                }
-                if let Some(t) = hold {
-                    if Some(t) != hit {
-                        self.invalidate_paint(t);
-                        // 捕获目标外松开时，先通知指针已离开，再交付最终 PointerUp。
-                        // 组件可据此取消 armed/pressed 状态；真正的 Click 仍只在
-                        // hold == hit 时生成，避免窗口控制等释放即执行的组件误触发。
-                        let _ = self.dispatch_to(t, &SystemEvent::PointerLeave);
-                        let _ = self.dispatch_to(t, event);
-                    }
-                }
-                self.rebuild_widget_overlays();
-                result
+                self.dispatch_pointer_release(event, *pos, *button, *mods)
             }
             SystemEvent::PointerMove { pos, mods } => {
                 // 拖拽手势检测：potential → active 转换
@@ -562,7 +505,7 @@ impl WidgetTree {
         let target = self.overlay_target_at(pos).or_else(|| self.hit_test(pos));
         self.managers_mut()
             .interaction
-            .set_pressed_component(target);
+            .set_pressed_pointer(target, button);
         self.managers_mut()
             .drag
             .begin_gesture(target, pos, button, mods);
