@@ -35,6 +35,7 @@ MIN_DEVICE_LOST_TIMEOUT = 5
 MAX_DEVICE_LOST_TIMEOUT = 600
 EVIDENCE_VALIDATION_EXIT_CODE = 3
 EVIDENCE_SCHEMA_VERSION = 4
+COMMAND_ERROR_OUTPUT_LIMIT = 4_000
 
 VENDOR_CASES = (
     (
@@ -633,14 +634,24 @@ def capture(command: Sequence[str]) -> str:
     result = subprocess.run(
         command,
         cwd=ROOT,
-        check=True,
+        check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         encoding="utf-8",
         errors="replace",
     )
-    return result.stdout.strip()
+    output = result.stdout.strip()
+    if result.returncode != 0:
+        if len(output) > COMMAND_ERROR_OUTPUT_LIMIT:
+            output = "... output truncated ...\n" + output[-COMMAND_ERROR_OUTPUT_LIMIT:]
+        if not output:
+            output = "<no captured output>"
+        raise ValueError(
+            f"command failed with exit code {result.returncode}: "
+            f"{subprocess.list2cmdline(command)}\n{output}"
+        )
+    return output
 
 
 def require_clean_source(allowed_untracked_dir: Path | None = None) -> None:
