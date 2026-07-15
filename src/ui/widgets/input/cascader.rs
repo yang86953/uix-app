@@ -228,6 +228,14 @@ component! {
         cascader_dirty_rect(frame)
     }
 
+    hit_test_frame => (&self, frame: Rect) -> Rect {
+        if self.is_present() {
+            cascader_dirty_rect(frame)
+        } else {
+            frame
+        }
+    }
+
     update_animation => (&mut self, dt: f64) -> bool {
         if !self.is_present() || self.transition.finished {
             self.transition_dirty = false;

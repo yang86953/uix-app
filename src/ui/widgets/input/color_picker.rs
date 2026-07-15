@@ -136,6 +136,14 @@ component! {
 
     wants_continuous_pointer_move => (&self) -> bool { true }
 
+    hit_test_frame => (&self, frame: Rect) -> Rect {
+        if self.is_present() {
+            color_picker_dirty_rect(frame, self.preset_colors.len())
+        } else {
+            frame
+        }
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.sync_bound_value();
         let border = ctx.tokens().color_border();

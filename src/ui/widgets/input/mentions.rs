@@ -53,6 +53,14 @@ component! {
         mentions_dirty_rect(frame, self.options.len())
     }
 
+    hit_test_frame => (&self, frame: Rect) -> Rect {
+        if self.suggesting && !self.filtered.is_empty() {
+            mentions_dirty_rect(frame, self.visible_suggestion_count())
+        } else {
+            frame
+        }
+    }
+
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
             SystemEvent::PointerDown { pos, .. } => {
