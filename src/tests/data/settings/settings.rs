@@ -26,8 +26,9 @@ fn parse_json_flat_accepts_supported_inputs() {
         (r#"{"path": "C:\\Users"}"#, &[("path", "C:\\Users")]),
         (r#"{"msg": "line1\nline2"}"#, &[("msg", "line1\nline2")]),
         (r#"{"col": "a\tb"}"#, &[("col", "a\tb")]),
+        (r#"{"ctrl": "\b\f"}"#, &[("ctrl", "\u{0008}\u{000c}")]),
         (r#"{"he\"llo": "world"}"#, &[("he\"llo", "world")]),
-        (r#"{"a": "1",}"#, &[("a", "1")]),
+        (r#"{"emoji": "\ud83d\ude03"}"#, &[("emoji", "😃")]),
     ];
 
     for &(input, expected) in cases {
@@ -54,6 +55,14 @@ fn parse_json_flat_rejects_invalid_inputs() {
         r#"{"key: "val"}"#,
         r#"{"key": "val}"#,
         r#"{"key" "val"}"#,
+        r#"{"a": "1" "b": "2"}"#,
+        r#"{"a": "1",}"#,
+        r#"{"key": "bad\q"}"#,
+        r#"{"key": "bad\u12xz"}"#,
+        r#"{"key": "\ud83d"}"#,
+        r#"{"key": "\ude03"}"#,
+        "{\"key\": \"line\nfeed\"}",
+        r#"{"key": "value"} trailing"#,
         "",
         "   ",
     ] {

@@ -16,146 +16,218 @@ use std::path::Path;
 /// 仅支持 `{"key": "value", ...}` 格式，值必须是双引号字符串。
 pub(crate) fn parse_json_flat(input: &str) -> Result<HashMap<String, String>> {
     let input = input.trim();
-    if !input.starts_with('{') || !input.ends_with('}') {
+    let bytes = input.as_bytes();
+    if bytes.first() != Some(&b'{') {
         return Err(Error::new(
             Errc::FormatError,
             "settings: expected JSON object",
         ));
     }
-    let inner = input[1..input.len() - 1].trim();
-    if inner.is_empty() {
-        return Ok(HashMap::new());
-    }
 
     let mut map = HashMap::new();
-    let mut pos = 0usize;
-    let bytes = inner.as_bytes();
-
-    while pos < bytes.len() {
-        // 跳过空白
-        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
-            pos += 1;
-        }
-        if pos >= bytes.len() {
-            break;
-        }
-
-        // 解析 key（双引号字符串）
-        if bytes[pos] != b'"' {
-            return Err(Error::new(
+    let mut pos = 1usize;
+    skip_json_whitespace(bytes, &mut pos);
+    if bytes.get(pos) == Some(&b'}') {
+        pos += 1;
+        skip_json_whitespace(bytes, &mut pos);
+        return if pos == bytes.len() {
+            Ok(map)
+        } else {
+            Err(Error::new(
                 Errc::FormatError,
-                "settings: expected key string",
-            ));
-        }
-        pos += 1;
-        let key_start = pos;
-        while pos < bytes.len() && bytes[pos] != b'"' {
-            if bytes[pos] == b'\\' {
-                pos += 2;
-            } else {
-                pos += 1;
-            }
-        }
-        if pos >= bytes.len() {
-            return Err(Error::new(Errc::FormatError, "settings: unterminated key"));
-        }
-        let key = unescape_json_str(&inner[key_start..pos]);
-        pos += 1;
+                "settings: trailing content after JSON object",
+            ))
+        };
+    }
+
+    loop {
+        let key = parse_json_string(input, &mut pos, "key")?;
 
         // 跳过空白和 ':'
-        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
-            pos += 1;
-        }
-        if pos >= bytes.len() || bytes[pos] != b':' {
+        skip_json_whitespace(bytes, &mut pos);
+        if bytes.get(pos) != Some(&b':') {
             return Err(Error::new(Errc::FormatError, "settings: expected ':'"));
         }
         pos += 1;
-        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
-            pos += 1;
-        }
+        skip_json_whitespace(bytes, &mut pos);
 
         // 解析 value（必须是双引号字符串）
-        if pos >= bytes.len() || bytes[pos] != b'"' {
-            return Err(Error::new(
-                Errc::FormatError,
-                "settings: expected value string",
-            ));
-        }
-        pos += 1;
-        let val_start = pos;
-        while pos < bytes.len() && bytes[pos] != b'"' {
-            if bytes[pos] == b'\\' {
-                pos += 2;
-            } else {
+        let value = parse_json_string(input, &mut pos, "value")?;
+
+        map.insert(key, value);
+
+        skip_json_whitespace(bytes, &mut pos);
+        match bytes.get(pos) {
+            Some(b',') => {
                 pos += 1;
+                skip_json_whitespace(bytes, &mut pos);
+                if bytes.get(pos) == Some(&b'}') {
+                    return Err(Error::new(
+                        Errc::FormatError,
+                        "settings: trailing comma is not valid JSON",
+                    ));
+                }
+            }
+            Some(b'}') => {
+                pos += 1;
+                skip_json_whitespace(bytes, &mut pos);
+                return if pos == bytes.len() {
+                    Ok(map)
+                } else {
+                    Err(Error::new(
+                        Errc::FormatError,
+                        "settings: trailing content after JSON object",
+                    ))
+                };
+            }
+            _ => {
+                return Err(Error::new(
+                    Errc::FormatError,
+                    "settings: expected ',' or '}'",
+                ));
             }
         }
-        if pos >= bytes.len() {
-            return Err(Error::new(
-                Errc::FormatError,
-                "settings: unterminated value",
-            ));
-        }
-        let val = unescape_json_str(&inner[val_start..pos]);
-        pos += 1;
-
-        map.insert(key, val);
-
-        // 跳过空白和可选的 ','
-        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
-            pos += 1;
-        }
-        if pos < bytes.len() && bytes[pos] == b',' {
-            pos += 1;
-        }
     }
-
-    Ok(map)
 }
 
-/// JSON 字符串 unescape（含 \uXXXX 解码）。
-fn unescape_json_str(s: &str) -> String {
-    if !s.contains('\\') {
-        return s.to_string();
+fn skip_json_whitespace(bytes: &[u8], pos: &mut usize) {
+    while bytes
+        .get(*pos)
+        .is_some_and(|byte| matches!(byte, b' ' | b'\n' | b'\r' | b'\t'))
+    {
+        *pos += 1;
     }
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
-        if c == '\\' {
-            match chars.next() {
-                Some('"') => out.push('"'),
-                Some('\\') => out.push('\\'),
-                Some('/') => out.push('/'),
-                Some('n') => out.push('\n'),
-                Some('r') => out.push('\r'),
-                Some('t') => out.push('\t'),
-                Some('u') => {
-                    let hex: String = chars.by_ref().take(4).collect();
-                    if hex.len() == 4 {
-                        if let Ok(code) = u32::from_str_radix(&hex, 16) {
-                            if let Some(ch) = char::from_u32(code) {
-                                out.push(ch);
-                            } else {
-                                out.push_str(&format!("\\u{hex}"));
+}
+
+/// 解析一个 JSON 字符串，并严格验证转义、控制字符和 UTF-16 代理对。
+fn parse_json_string(input: &str, pos: &mut usize, role: &str) -> Result<String> {
+    let bytes = input.as_bytes();
+    if bytes.get(*pos) != Some(&b'"') {
+        return Err(Error::new(
+            Errc::FormatError,
+            format!("settings: expected {role} string"),
+        ));
+    }
+
+    *pos += 1;
+    let mut segment_start = *pos;
+    let mut output = String::new();
+    while let Some(&byte) = bytes.get(*pos) {
+        match byte {
+            b'"' => {
+                output.push_str(&input[segment_start..*pos]);
+                *pos += 1;
+                return Ok(output);
+            }
+            b'\\' => {
+                output.push_str(&input[segment_start..*pos]);
+                *pos += 1;
+                let escaped = bytes.get(*pos).copied().ok_or_else(|| {
+                    Error::new(
+                        Errc::FormatError,
+                        format!("settings: unterminated {role} escape"),
+                    )
+                })?;
+                match escaped {
+                    b'"' => output.push('"'),
+                    b'\\' => output.push('\\'),
+                    b'/' => output.push('/'),
+                    b'b' => output.push('\u{0008}'),
+                    b'f' => output.push('\u{000c}'),
+                    b'n' => output.push('\n'),
+                    b'r' => output.push('\r'),
+                    b't' => output.push('\t'),
+                    b'u' => {
+                        *pos += 1;
+                        let high = parse_json_hex_quad(bytes, pos, role)?;
+                        let scalar = if (0xd800..=0xdbff).contains(&high) {
+                            if bytes.get(*pos) != Some(&b'\\') || bytes.get(*pos + 1) != Some(&b'u')
+                            {
+                                return Err(Error::new(
+                                    Errc::FormatError,
+                                    format!("settings: incomplete {role} surrogate pair"),
+                                ));
                             }
+                            *pos += 2;
+                            let low = parse_json_hex_quad(bytes, pos, role)?;
+                            if !(0xdc00..=0xdfff).contains(&low) {
+                                return Err(Error::new(
+                                    Errc::FormatError,
+                                    format!("settings: invalid {role} surrogate pair"),
+                                ));
+                            }
+                            0x1_0000 + (((high - 0xd800) as u32) << 10) + (low - 0xdc00) as u32
+                        } else if (0xdc00..=0xdfff).contains(&high) {
+                            return Err(Error::new(
+                                Errc::FormatError,
+                                format!("settings: unexpected low surrogate in {role}"),
+                            ));
                         } else {
-                            out.push_str(&format!("\\u{hex}"));
-                        }
-                    } else {
-                        out.push_str(&format!("\\u{hex}"));
+                            high as u32
+                        };
+                        let decoded = char::from_u32(scalar).ok_or_else(|| {
+                            Error::new(
+                                Errc::FormatError,
+                                format!("settings: invalid Unicode scalar in {role}"),
+                            )
+                        })?;
+                        output.push(decoded);
+                        segment_start = *pos;
+                        continue;
+                    }
+                    _ => {
+                        return Err(Error::new(
+                            Errc::FormatError,
+                            format!("settings: invalid escape in {role}"),
+                        ));
                     }
                 }
-                Some(c) => {
-                    out.push('\\');
-                    out.push(c);
-                }
-                None => out.push('\\'),
+                *pos += 1;
+                segment_start = *pos;
             }
-        } else {
-            out.push(c);
+            0x00..=0x1f => {
+                return Err(Error::new(
+                    Errc::FormatError,
+                    format!("settings: unescaped control character in {role}"),
+                ));
+            }
+            _ => *pos += 1,
         }
     }
-    out
+
+    Err(Error::new(
+        Errc::FormatError,
+        format!("settings: unterminated {role}"),
+    ))
+}
+
+fn parse_json_hex_quad(bytes: &[u8], pos: &mut usize, role: &str) -> Result<u16> {
+    let end = pos.saturating_add(4);
+    let Some(hex) = bytes.get(*pos..end) else {
+        return Err(Error::new(
+            Errc::FormatError,
+            format!("settings: incomplete Unicode escape in {role}"),
+        ));
+    };
+    if !hex.iter().all(u8::is_ascii_hexdigit) {
+        return Err(Error::new(
+            Errc::FormatError,
+            format!("settings: invalid Unicode escape in {role}"),
+        ));
+    }
+    *pos = end;
+    let text = std::str::from_utf8(hex).map_err(|_| {
+        Error::new(
+            Errc::FormatError,
+            format!("settings: invalid Unicode escape in {role}"),
+        )
+    })?;
+    u16::from_str_radix(text, 16).map_err(|_| {
+        Error::new(
+            Errc::FormatError,
+            format!("settings: invalid Unicode escape in {role}"),
+        )
+    })
 }
 
 /// JSON 字符串 escape。
