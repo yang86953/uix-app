@@ -124,6 +124,22 @@ fn staging_size_is_full_rgba_frame() {
 }
 
 #[test]
+fn swapchain_layout_allocation_is_typed_and_initialized() {
+    let layouts = allocate_image_layouts(3).expect("small layout table");
+    assert_eq!(layouts.len(), 3);
+    assert!(layouts
+        .iter()
+        .all(|layout| *layout == vk::ImageLayout::UNDEFINED));
+
+    let error = match allocate_image_layouts(usize::MAX) {
+        Err(error) => error,
+        Ok(_) => panic!("capacity overflow must be rejected"),
+    };
+    assert_eq!(error.code(), Errc::GraphicsOutOfMemory);
+    assert!(error.message().contains("swapchain layout allocation"));
+}
+
+#[test]
 fn cpu_shadow_allocation_is_typed_and_initialized() {
     assert_eq!(allocate_cpu_shadow(3).expect("small shadow"), vec![0; 3]);
 

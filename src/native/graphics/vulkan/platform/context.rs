@@ -23,10 +23,14 @@ use super::surface::{
     create_platform_surface, destroy_failed_surface,
 };
 
+mod swapchain;
 mod transfer;
 
+pub(crate) use swapchain::allocate_image_layouts;
 #[cfg(test)]
 pub(crate) use transfer::allocate_cpu_shadow;
+
+use swapchain::{create_render_finished_semaphores, destroy_semaphores};
 
 pub(crate) fn vk_err(operation: &str, err: vk::Result) -> Error {
     let code = match err {
@@ -477,6 +481,15 @@ impl VulkanContext {
             }
             return Err(error);
         }
+        let new_image_layouts = match allocate_image_layouts(new_images.len()) {
+            Ok(layouts) => layouts,
+            Err(error) => {
+                unsafe {
+                    self.swapchain_loader.destroy_swapchain(new_swapchain, None);
+                }
+                return Err(error);
+            }
+        };
         let new_render_finished =
             match create_render_finished_semaphores(&self.device, new_images.len()) {
                 Ok(semaphores) => semaphores,
@@ -496,7 +509,7 @@ impl VulkanContext {
         self.swapchain = new_swapchain;
         self.swapchain_images = new_images;
         self.render_finished = new_render_finished;
-        self.image_layouts = vec![vk::ImageLayout::UNDEFINED; self.swapchain_images.len()];
+        self.image_layouts = new_image_layouts;
         self.swapchain_format = surface_format.format;
         self.extent = extent;
         Ok(())
@@ -629,35 +642,6 @@ impl VulkanContext {
         self.runtime.take();
         self.shutdown = true;
         Ok(())
-    }
-}
-
-fn create_render_finished_semaphores(
-    device: &ash::Device,
-    image_count: usize,
-) -> Result<Vec<vk::Semaphore>> {
-    let create_info = vk::SemaphoreCreateInfo::default();
-    let mut semaphores = Vec::new();
-    for image_index in 0..image_count {
-        // SAFETY: device 存活；create_info 不含调用后保留的指针。
-        match unsafe { device.create_semaphore(&create_info, None) } {
-            Ok(semaphore) => semaphores.push(semaphore),
-            Err(error) => {
-                destroy_semaphores(device, &mut semaphores);
-                return Err(vk_err(
-                    &format!("vkCreateSemaphore render_finished[{image_index}]"),
-                    error,
-                ));
-            }
-        }
-    }
-    Ok(semaphores)
-}
-
-fn destroy_semaphores(device: &ash::Device, semaphores: &mut Vec<vk::Semaphore>) {
-    for semaphore in semaphores.drain(..) {
-        // SAFETY: semaphore 由同一 device 创建，且调用方已完成相应 teardown 等待。
-        unsafe { device.destroy_semaphore(semaphore, None) };
     }
 }
 
