@@ -1,5 +1,5 @@
 use crate::tests::common::*;
-use crate::ui::widgets::{QRCode, Transfer, TransferItem};
+use crate::ui::widgets::{QRCode, Transfer, TransferItem, Upload, UploadStatus};
 use crate::ui::{AccessibilityRole, SnapshotTransferItem};
 
 #[test]
@@ -146,4 +146,74 @@ fn transfer_keyboard_selects_and_moves_active_rows() {
         accessibility.state.value_text.as_deref(),
         Some("1 source; 1 target; 0 selected")
     );
+}
+
+#[test]
+fn upload_queues_real_file_drops_and_reports_the_accepted_files() {
+    let mut upload = Upload::new()
+        .accept(".JPG,.png,.pdf")
+        .multiple(true)
+        .max_count(2);
+    let drop = SystemEvent::FileDrop {
+        files: vec![
+            r"C:\photos\cover.jpg".into(),
+            "/tmp/ignored.txt".into(),
+            "/tmp/report.PDF".into(),
+            "/tmp/overflow.png".into(),
+        ],
+        position: Point::new(12.0, 8.0),
+    };
+
+    assert_eq!(upload.on_event(&drop), EventResult::Handled);
+    assert_eq!(
+        upload
+            .files()
+            .iter()
+            .map(|file| (file.name.as_str(), file.status))
+            .collect::<Vec<_>>(),
+        vec![
+            ("cover.jpg", UploadStatus::Pending),
+            ("report.PDF", UploadStatus::Pending),
+        ]
+    );
+    assert_eq!(
+        upload
+            .semantic_event(ComponentId::new(7), &drop)
+            .and_then(|event| event.text_payload().map(str::to_owned)),
+        Some("cover.jpg:pending,report.PDF:pending".into())
+    );
+}
+
+#[test]
+fn upload_does_not_invent_files_for_clicks_or_disabled_dragging() {
+    let mut upload = Upload::new().drag(false);
+    let click = SystemEvent::PointerDown {
+        pos: Point::new(10.0, 10.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    };
+    let drop = SystemEvent::FileDrop {
+        files: vec!["real.pdf".into()],
+        position: Point::new(10.0, 10.0),
+    };
+
+    assert_eq!(upload.on_event(&click), EventResult::NotHandled);
+    assert_eq!(upload.on_event(&drop), EventResult::NotHandled);
+    assert!(upload.files().is_empty());
+}
+
+#[test]
+fn upload_single_mode_and_progress_stay_within_public_bounds() {
+    let mut upload = Upload::new().accept("png");
+    let drop = SystemEvent::FileDrop {
+        files: vec!["first.png".into(), "second.png".into()],
+        position: Point::zero(),
+    };
+
+    assert_eq!(upload.on_event(&drop), EventResult::Handled);
+    assert_eq!(upload.file_count(), 1);
+    upload.update_progress(0, 4.0);
+    assert_eq!(upload.files()[0].progress, 1.0);
+    upload.update_progress(0, f32::NAN);
+    assert_eq!(upload.files()[0].progress, 0.0);
 }
