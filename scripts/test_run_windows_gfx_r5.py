@@ -33,13 +33,32 @@ from scripts.run_windows_gfx_r5 import (
 
 def passing_log(case) -> str:
     vendor = dict(case.environment)[VENDOR_ENV]
+    markers = case.required_evidence_markers()
+    if case.name == "vulkan-mixed-dpi":
+        evidence = (
+            f"{markers[0]} bounds=(0,0..1920,1080),dpi=96x96; "
+            "bounds=(1920,0..3840,1080),dpi=144x144; "
+            "initial=DpiTransitionEvidence { observed_dpi: 96, logical_resize: None }; "
+            "forward=DpiTransitionEvidence { observed_dpi: 144, "
+            "logical_resize: Some((321, 219)) }; "
+            "return=DpiTransitionEvidence { observed_dpi: 96, "
+            "logical_resize: Some((321, 219)) }"
+        )
+    elif case.name in ("single-window-soak", "shared-device-soak"):
+        duration = dict(case.environment)[SOAK_SECONDS_ENV]
+        evidence = (
+            f"{markers[0]} duration={duration}.0s rounds=128 "
+            "handles=100->101 peak=105; swapchain_maintenance1=true"
+        )
+    else:
+        evidence = "\n".join(markers)
     adapter = (
         f'adapter="Test GPU"; type=discrete_gpu; '
         f"vendor=0x{VENDOR_IDS[vendor]:04X}; device=0x1234; "
         "api=1.3.280; driver=0x12345678; queue_family=0"
     )
     return (
-        "\n".join(case.required_evidence_markers())
+        evidence
         + "\n"
         + adapter
         + "\n"
@@ -169,8 +188,9 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
 
         for case in plan:
             self.assertIn("expected=intel;", case.required_evidence_markers()[0])
-        self.assertIn("dpi=", markers["vulkan-mixed-dpi"])
-        self.assertIn("duration=1200.0s", markers["single-window-soak"])
+        cases = {case.name: case for case in plan}
+        self.assertIn("dpi=96x96", passing_log(cases["vulkan-mixed-dpi"]))
+        self.assertIn("duration=1200.0s", passing_log(cases["single-window-soak"]))
         self.assertIn("ERROR_DEVICE_LOST", markers["external-device-reset"])
         self.assertIn("device_fault=false;", markers["external-device-reset"])
 
@@ -274,6 +294,47 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(ValueError, "adapter vendor mismatch"):
+                require_case_success(case, path)
+
+    def test_mixed_dpi_evidence_requires_distinct_round_trip_measurements(self) -> None:
+        case = build_plan("mixed-dpi", "amd", None, 900, 60)[0]
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "case.log"
+
+            path.write_text(
+                passing_log(case).replace("dpi=96x96", "dpi=144x144"),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "distinct monitor DPIs"):
+                require_case_success(case, path)
+
+            path.write_text(
+                passing_log(case).replace(
+                    "return=DpiTransitionEvidence { observed_dpi: 96",
+                    "return=DpiTransitionEvidence { observed_dpi: 120",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "round-trip DPI transition"):
+                require_case_success(case, path)
+
+    def test_soak_evidence_requires_duration_and_bounded_handles(self) -> None:
+        case = build_plan("soak", "nvidia", None, 1_200, 60)[0]
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "case.log"
+
+            path.write_text(
+                passing_log(case).replace("duration=1200.0s", "duration=900.0s"),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "soak duration mismatch"):
+                require_case_success(case, path)
+
+            path.write_text(
+                passing_log(case).replace("peak=105", "peak=133"),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "peak exceeds"):
                 require_case_success(case, path)
 
     def test_manifest_distinguishes_cargo_success_from_evidence_failure(self) -> None:
