@@ -94,6 +94,30 @@ fn choose_surface_format_prefers_bgra_srgb() {
 }
 
 #[test]
+fn swapchain_inventory_rejects_empty_driver_results() {
+    let format = vk::SurfaceFormatKHR {
+        format: vk::Format::B8G8R8A8_UNORM,
+        color_space: vk::ColorSpaceKHR::SRGB_NONLINEAR,
+    };
+    let mode = vk::PresentModeKHR::FIFO;
+
+    let error = validate_swapchain_support(&[], &[mode]).expect_err("empty formats");
+    assert_eq!(error.code(), Errc::PlatformError);
+    assert!(error.message().contains("no swapchain formats"));
+
+    let error = validate_swapchain_support(&[format], &[]).expect_err("empty present modes");
+    assert_eq!(error.code(), Errc::PlatformError);
+    assert!(error.message().contains("no present modes"));
+
+    let error = validate_swapchain_images(&[]).expect_err("empty images");
+    assert_eq!(error.code(), Errc::PlatformError);
+    assert!(error.message().contains("no images"));
+
+    assert!(validate_swapchain_support(&[format], &[mode]).is_ok());
+    assert!(validate_swapchain_images(&[vk::Image::null()]).is_ok());
+}
+
+#[test]
 fn staging_size_is_full_rgba_frame() {
     assert_eq!(staging_size(4, 3), 48);
     assert_eq!(staging_size(0, 0), 4);
