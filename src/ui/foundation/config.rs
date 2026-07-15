@@ -100,6 +100,14 @@ impl ComponentConfig {
 /// 应用级组件默认配置。
 pub type Config = ComponentConfig;
 
+pub(crate) const fn control_height(size: ControlSize) -> f32 {
+    match size {
+        ControlSize::Small => 24.0,
+        ControlSize::Medium => 32.0,
+        ControlSize::Large => 40.0,
+    }
+}
+
 /// 标识正在请求空态 View 的数据组件。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EmptyContext {

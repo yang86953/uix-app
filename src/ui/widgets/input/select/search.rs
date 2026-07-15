@@ -1,4 +1,4 @@
-use super::{Select, DROPDOWN_ROW_HEIGHT, DROPDOWN_TRIGGER_HEIGHT};
+use super::{Select, DROPDOWN_ROW_HEIGHT};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum VisibleRow {
@@ -110,10 +110,10 @@ impl Select {
     }
 
     pub(crate) fn dropdown_row_at_y(&self, pos_y: f32) -> Option<usize> {
-        if pos_y <= DROPDOWN_TRIGGER_HEIGHT {
+        if pos_y <= self.control_height() {
             return None;
         }
-        let local_y = pos_y - DROPDOWN_TRIGGER_HEIGHT + self.dropdown_scroll.scroll_offset();
+        let local_y = pos_y - self.control_height() + self.dropdown_scroll.scroll_offset();
         if local_y < 0.0 {
             return None;
         }

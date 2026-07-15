@@ -683,13 +683,20 @@ pub struct ButtonBuilder {
     style_set: StyleSet,
     disabled: bool,
     block: bool,
+    size: crate::native::traits::input::ControlSize,
     handlers: Vec<HandlerRegistration>,
 }
 
 impl ButtonBuilder {
     fn into_parts(self) -> (Button, Vec<HandlerRegistration>) {
         (
-            Button::assemble(self.text, self.style_set, self.disabled, self.block),
+            Button::assemble(
+                self.text,
+                self.style_set,
+                self.disabled,
+                self.block,
+                self.size,
+            ),
             self.handlers,
         )
     }
@@ -726,6 +733,11 @@ impl ButtonBuilder {
 
     pub fn block(mut self, v: bool) -> Self {
         self.block = v;
+        self
+    }
+
+    pub fn size(mut self, size: crate::native::traits::input::ControlSize) -> Self {
+        self.size = size;
         self
     }
 
@@ -834,11 +846,17 @@ impl From<ButtonBuilder> for ViewNode {
 /// button("关闭").on_click_fn(|| close());
 /// ```
 pub fn button(text: impl Into<String>) -> ButtonBuilder {
+    let config = crate::ui::config::use_config();
     ButtonBuilder {
         text: text.into(),
-        style_set: StyleSet::button_default(),
-        disabled: false,
+        style_set: config
+            .overrides
+            .button
+            .style_set
+            .unwrap_or_else(StyleSet::button_default),
+        disabled: config.disabled,
         block: false,
+        size: config.size,
         handlers: Vec::new(),
     }
 }

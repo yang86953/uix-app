@@ -6,6 +6,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
+use crate::native::traits::input::ControlSize;
 use crate::ui::state::State;
 use crate::ui::SnapshotFields;
 use crate::ui::{ComponentId, EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetTree};
@@ -98,6 +99,7 @@ component! {
         focused: bool,
         hovered: bool,
         disabled: bool,
+        input_size: ControlSize,
         text_buffer: String,
         pending_change: Cell<Option<f64>>,
     }
@@ -163,7 +165,8 @@ component! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.capture_bound_value_dependency();
-        let input_frame = Rect::new(frame.x, frame.y, frame.w - 32.0, frame.h);
+        let step_width = crate::ui::config::control_height(self.input_size);
+        let input_frame = Rect::new(frame.x, frame.y, frame.w - step_width, frame.h);
         let primary = ctx.tokens().color_primary();
         let primary_hover = ctx.tokens().color_primary_hover();
         let border_color = ctx.tokens().color_border();
@@ -196,15 +199,21 @@ component! {
             Point::new(input_frame.x + 12.0, draw_y),
             if self.focused || self.value_configured { text_color } else { text_tertiary }, 14.0);
 
-        let btn_area = Rect::new(frame.x + frame.w - 32.0, frame.y, 32.0, frame.h);
+        let btn_area = Rect::new(
+            frame.x + frame.w - step_width,
+            frame.y,
+            step_width,
+            frame.h,
+        );
         ctx.fill_rect(btn_area, bg_elevated, None);
 
         let up_rect = Rect::new(btn_area.x, btn_area.y, btn_area.w, btn_area.h * 0.5);
         let dn_rect = Rect::new(btn_area.x, btn_area.y + btn_area.h * 0.5, btn_area.w, btn_area.h * 0.5);
         let up_y = ctx.visual_center_y(up_rect, 10.0);
         let dn_y = ctx.visual_center_y(dn_rect, 10.0);
-        ctx.draw_text("▲", Point::new(btn_area.x + 8.0, up_y), text_secondary, 10.0);
-        ctx.draw_text("▼", Point::new(btn_area.x + 8.0, dn_y), text_secondary, 10.0);
+        let step_x = btn_area.x + (step_width - 10.0) * 0.5;
+        ctx.draw_text("▲", Point::new(step_x, up_y), text_secondary, 10.0);
+        ctx.draw_text("▼", Point::new(step_x, dn_y), text_secondary, 10.0);
     }
 }
 
@@ -222,6 +231,7 @@ impl InputNumber {
             focused: false,
             hovered: false,
             disabled: config.disabled,
+            input_size: config.size,
             text_buffer: String::new(),
             pending_change: Cell::new(None),
         }
@@ -283,13 +293,18 @@ impl InputNumber {
         self
     }
 
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.input_size = size;
+        self
+    }
+
     /// 返回组件当前缓存值；controlled 用法应以绑定的 `State` 为真值来源。
     pub fn current_value(&self) -> f64 {
         self.value
     }
 
     fn intrinsic_size(&self) -> Size {
-        Size::new(80.0, 32.0)
+        Size::new(80.0, crate::ui::config::control_height(self.input_size))
     }
 
     fn commit_buffer(&mut self) {
@@ -386,6 +401,7 @@ impl InputNumber {
         self.step = next.step;
         self.placeholder = next.placeholder;
         self.disabled = next.disabled;
+        self.input_size = next.input_size;
         self.value_binding = next.value_binding;
 
         let next_value = controlled_value.unwrap_or_else(|| self.clamp_value(self.value));
