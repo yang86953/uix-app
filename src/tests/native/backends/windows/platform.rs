@@ -1,8 +1,8 @@
 use crate::app::window_actions::configure_custom_title_bar;
 use crate::native::backends::windows::consts::{
-    GWL_STYLE, HTCAPTION, SIZE_RESTORED, WM_CHAR, WM_DPICHANGED, WM_IME_ENDCOMPOSITION,
-    WM_IME_STARTCOMPOSITION, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_NCRBUTTONUP, WM_SIZE, WS_CAPTION,
-    WS_THICKFRAME,
+    GWL_EXSTYLE, GWL_STYLE, HTCAPTION, SIZE_RESTORED, WM_CHAR, WM_DPICHANGED,
+    WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_NCRBUTTONUP,
+    WM_SIZE, WS_CAPTION, WS_EX_LAYERED, WS_THICKFRAME,
 };
 use crate::native::backends::windows::dpi::{
     dpi_for_window, logical_extent_to_physical, physical_extent_to_logical,
@@ -296,6 +296,39 @@ fn custom_title_bar_removes_caption_but_keeps_resize_frame_and_client_size() {
     assert_eq!(
         (window.properties().width(), window.properties().height()),
         (419, 263)
+    );
+
+    window.close().expect("close window");
+}
+
+#[test]
+fn native_window_opacity_restores_original_layered_style() {
+    let mut platform = WindowsPlatform::new();
+    let mut window = platform
+        .create_window("UIX opacity restore", 200, 120)
+        .expect("native window");
+    let hwnd = window.native_handle().native_window();
+    let original_ex_style = unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) } as u32;
+
+    window
+        .properties_mut()
+        .set_window_opacity(0.4)
+        .expect("set translucent opacity");
+    let translucent_ex_style = unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) } as u32;
+    assert_ne!(
+        translucent_ex_style & WS_EX_LAYERED,
+        0,
+        "translucent windows must enable WS_EX_LAYERED"
+    );
+
+    window
+        .properties_mut()
+        .set_window_opacity(1.0)
+        .expect("restore opaque window");
+    let restored_ex_style = unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) } as u32;
+    assert_eq!(
+        restored_ex_style, original_ex_style,
+        "restoring opacity must not leave UIX-owned layered styling behind"
     );
 
     window.close().expect("close window");
