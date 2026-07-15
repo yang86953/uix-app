@@ -3,8 +3,10 @@ use crate::native::backends::windows::tsf_text_store::*;
 use crate::native::traits::IWindowManager;
 use crate::tests::common::*;
 use windows::Win32::Foundation::{E_UNEXPECTED, HWND, RECT};
-use windows::Win32::UI::TextServices::{TS_AS_SEL_CHANGE, TS_AS_TEXT_CHANGE};
-use windows::Win32::UI::TextServices::{TS_LF_READ, TS_LF_READWRITE, TS_LF_SYNC};
+use windows::Win32::UI::TextServices::{
+    ITextStoreACP, TS_AS_SEL_CHANGE, TS_AS_TEXT_CHANGE, TS_ATTRVAL, TS_LF_READ, TS_LF_READWRITE,
+    TS_LF_SYNC, TS_RUNINFO,
+};
 
 fn test_event_sink() -> TsfEventSink {
     TsfEventSink {
@@ -16,6 +18,11 @@ fn test_event_sink() -> TsfEventSink {
 
 fn test_state() -> TsfStoreState {
     TsfStoreState::new(test_event_sink())
+}
+
+fn test_text_store() -> ITextStoreACP {
+    let (store, _) = TsfTextStore::create(test_event_sink());
+    store.to_interface()
 }
 
 #[test]
@@ -84,6 +91,69 @@ fn thread_affine_store_reports_reentrant_borrow_instead_of_panicking() {
 
     drop(write);
     assert!(state.read().is_ok());
+}
+
+#[test]
+fn com_store_rejects_null_required_pointers() {
+    let store = test_text_store();
+    let mut position = 0;
+    let error = unsafe { store.QueryInsert(0, 0, 0, std::ptr::null_mut(), &mut position) }
+        .expect_err("QueryInsert requires both result pointers");
+    assert_eq!(error.code(), windows::Win32::Foundation::E_INVALIDARG);
+
+    let mut plain: [u16; 0] = [];
+    let mut runs: [TS_RUNINFO; 0] = [];
+    let mut run_count = 0;
+    let error = unsafe {
+        store.GetText(
+            0,
+            -1,
+            &mut plain,
+            std::ptr::null_mut(),
+            &mut runs,
+            &mut run_count,
+            &mut position,
+        )
+    }
+    .expect_err("GetText requires its scalar result pointers");
+    assert_eq!(error.code(), windows::Win32::Foundation::E_INVALIDARG);
+
+    let error = unsafe {
+        store.InsertTextAtSelection(
+            0,
+            &[],
+            std::ptr::null_mut(),
+            &mut position,
+            std::ptr::null_mut(),
+        )
+    }
+    .expect_err("queried insertion requires range result pointers");
+    assert_eq!(error.code(), windows::Win32::Foundation::E_INVALIDARG);
+
+    let mut found = false.into();
+    let mut found_offset = 0;
+    let error = unsafe {
+        store.FindNextAttrTransition(
+            0,
+            0,
+            &[],
+            0,
+            std::ptr::null_mut(),
+            &mut found,
+            &mut found_offset,
+        )
+    }
+    .expect_err("attribute transition requires all result pointers");
+    assert_eq!(error.code(), windows::Win32::Foundation::E_INVALIDARG);
+
+    let mut attributes: [TS_ATTRVAL; 0] = [];
+    let error = unsafe { store.RetrieveRequestedAttrs(&mut attributes, std::ptr::null_mut()) }
+        .expect_err("attribute retrieval requires fetched count");
+    assert_eq!(error.code(), windows::Win32::Foundation::E_INVALIDARG);
+
+    let error = unsafe { store.GetACPFromPoint(0, std::ptr::null(), 0) }
+        .expect_err("point query requires an input point");
+    assert_eq!(error.code(), windows::Win32::Foundation::E_INVALIDARG);
 }
 
 #[test]
