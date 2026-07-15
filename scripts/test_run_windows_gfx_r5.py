@@ -10,6 +10,7 @@ from scripts.run_windows_gfx_r5 import (
     EvidenceSession,
     build_plan,
     file_sha256,
+    load_resumable_evidence,
     normalize_log_ending,
     parse_test_inventory,
     require_case_success,
@@ -206,6 +207,43 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             )
             self.assertNotEqual(first_log, second_log)
             verify_evidence_dir(output)
+
+    def test_resume_loader_reconstructs_exact_failed_plan(self) -> None:
+        plan = build_plan("mixed-dpi", "amd", None, 900, 60)
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "evidence"
+            session = EvidenceSession(output, "mixed-dpi", "amd", None, 900, 60, plan)
+            log_path = session.start_case(0)
+            log_path.write_text("topology unavailable\n", encoding="utf-8")
+            session.finish_case(0, 1, 0.2)
+            session.finish("failed")
+
+            resumed, reconstructed = load_resumable_evidence(output)
+
+            self.assertEqual(resumed.output_dir, output.resolve())
+            self.assertEqual(reconstructed, plan)
+
+    def test_resume_loader_rejects_source_or_plan_drift(self) -> None:
+        plan = build_plan("mixed-dpi", "amd", None, 900, 60)
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "evidence"
+            session = EvidenceSession(output, "mixed-dpi", "amd", None, 900, 60, plan)
+            log_path = session.start_case(0)
+            log_path.write_text("topology unavailable\n", encoding="utf-8")
+            session.finish_case(0, 1, 0.2)
+            session.finish("failed")
+
+            original_source = dict(session.manifest["source"])
+            session.manifest["source"]["git_head"] = "0" * 40
+            session._write()
+            with self.assertRaisesRegex(ValueError, "source"):
+                load_resumable_evidence(output)
+
+            session.manifest["source"] = original_source
+            session.manifest["cases"][0]["test_name"] = "tests::renamed"
+            session._write()
+            with self.assertRaisesRegex(ValueError, "plan"):
+                load_resumable_evidence(output)
 
 
 if __name__ == "__main__":

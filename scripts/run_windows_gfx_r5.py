@@ -171,6 +171,19 @@ class EvidenceSession:
         }
         self._write()
 
+    @classmethod
+    def from_existing(
+        cls,
+        output_dir: Path,
+        manifest: dict[str, object],
+    ) -> "EvidenceSession":
+        session = cls.__new__(cls)
+        session.output_dir = output_dir.resolve()
+        session.logs_dir = session.output_dir / "logs"
+        session.manifest_path = session.output_dir / "manifest.json"
+        session.manifest = manifest
+        return session
+
     def _pending_case(self, index: int, case: GfxR5Case) -> dict[str, object]:
         return {
             "index": index,
@@ -302,6 +315,74 @@ def build_plan(
             )
         plan.append(GfxR5Case(name, test_name, tuple(environment)))
     return plan
+
+
+def load_resumable_evidence(
+    output_dir: Path,
+) -> tuple[EvidenceSession, list[GfxR5Case]]:
+    output_dir = output_dir.resolve()
+    manifest = verify_evidence_dir(output_dir)
+    if manifest.get("status") == "passed":
+        raise ValueError("passed GFX-R5 evidence has no remaining cases to resume")
+    plan = plan_from_manifest_configuration(manifest)
+    require_manifest_matches_plan(manifest, plan)
+    require_resume_environment(manifest)
+    return EvidenceSession.from_existing(output_dir, manifest), plan
+
+
+def plan_from_manifest_configuration(manifest: dict[str, object]) -> list[GfxR5Case]:
+    configuration = manifest.get("configuration")
+    if not isinstance(configuration, dict):
+        raise ValueError("evidence manifest has no configuration object")
+    profile = configuration.get("profile")
+    vendor = configuration.get("vendor")
+    device_fault = configuration.get("device_fault_expected")
+    soak_seconds = configuration.get("soak_seconds")
+    device_lost_timeout = configuration.get("device_lost_timeout_seconds")
+    if not isinstance(profile, str) or not isinstance(vendor, str):
+        raise ValueError("evidence profile and vendor must be strings")
+    if device_fault is not None and not isinstance(device_fault, bool):
+        raise ValueError("evidence device-fault expectation must be boolean or null")
+    if type(soak_seconds) is not int or type(device_lost_timeout) is not int:
+        raise ValueError("evidence soak and device-lost durations must be integers")
+    return build_plan(
+        profile,
+        vendor,
+        device_fault,
+        soak_seconds,
+        device_lost_timeout,
+    )
+
+
+def require_manifest_matches_plan(
+    manifest: dict[str, object],
+    plan: Sequence[GfxR5Case],
+) -> None:
+    cases = manifest.get("cases")
+    if not isinstance(cases, list) or len(cases) != len(plan):
+        raise ValueError("evidence case count does not match the reconstructed plan")
+    for index, (stored, planned) in enumerate(zip(cases, plan), 1):
+        if not isinstance(stored, dict):
+            raise ValueError(f"evidence case {index} must be an object")
+        expected = {
+            "index": index,
+            "name": planned.name,
+            "test_name": planned.test_name,
+            "environment": dict(planned.environment),
+            "command": list(planned.command()),
+        }
+        actual = {name: stored.get(name) for name in expected}
+        if actual != expected:
+            raise ValueError(
+                f"evidence case {index} no longer matches the current GFX-R5 plan"
+            )
+
+
+def require_resume_environment(manifest: dict[str, object]) -> None:
+    if manifest.get("source") != source_metadata():
+        raise ValueError("evidence source does not match the current repository HEAD/branch")
+    if manifest.get("host") != host_metadata():
+        raise ValueError("evidence host or toolchain does not match the current target machine")
 
 
 def format_case(case: GfxR5Case) -> str:
