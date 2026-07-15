@@ -2344,6 +2344,73 @@ fn drag_manager_tracks_pointer_drag_gesture() {
 }
 
 #[test]
+fn mismatched_pointer_release_does_not_end_drag_gesture() {
+    let mut tree = WidgetTree::new();
+    let target = tree.set_root(Box::new(SpyWidget::new(80.0, 40.0)));
+    tree.get_mut(target)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 80.0, 40.0));
+
+    tree.dispatch_event(&SystemEvent::PointerDown {
+        pos: Point::new(10.0, 10.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    tree.dispatch_event(&SystemEvent::PointerMove {
+        pos: Point::new(20.0, 10.0),
+        mods: KeyMod::NONE,
+    });
+    assert!(tree.managers().drag.is_dragging());
+
+    tree.dispatch_event(&SystemEvent::PointerUp {
+        pos: Point::new(20.0, 10.0),
+        button: MouseButton::Right,
+        mods: KeyMod::NONE,
+    });
+
+    assert!(tree.managers().drag.is_dragging());
+    assert_eq!(tree.managers().drag.target(), Some(target));
+    assert_eq!(tree.managers().drag.button(), MouseButton::Left);
+    assert_eq!(
+        tree.managers().interaction.pressed_component(),
+        Some(target)
+    );
+
+    tree.dispatch_event(&SystemEvent::PointerMove {
+        pos: Point::new(25.0, 10.0),
+        mods: KeyMod::NONE,
+    });
+    tree.dispatch_event(&SystemEvent::PointerUp {
+        pos: Point::new(25.0, 10.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    assert!(!tree.managers().drag.is_dragging());
+    assert_eq!(tree.managers().drag.target(), None);
+    let events = tree
+        .get(target)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<SpyWidget>()
+        .unwrap()
+        .events
+        .borrow();
+    let drag_ends: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            SystemEvent::DragEnd { button, .. } => Some(*button),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(drag_ends, vec![MouseButton::Left]);
+    assert!(events.iter().any(
+        |event| matches!(event, SystemEvent::DragMove { delta, .. } if *delta == Point::new(5.0, 0.0))
+    ));
+}
+
+#[test]
 fn drag_manager_target_drives_drag_events() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
