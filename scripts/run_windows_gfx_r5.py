@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import platform
@@ -152,7 +153,7 @@ class EvidenceSession:
             raise ValueError(f"evidence output already exists: {output_dir}")
         self.logs_dir.mkdir(parents=True)
         self.manifest = {
-            "schema_version": 2,
+            "schema_version": 3,
             "status": "running",
             "started_at": utc_now(),
             "completed_at": None,
@@ -183,6 +184,8 @@ class EvidenceSession:
             "environment": dict(case.environment),
             "command": list(case.command()),
             "log": f"logs/{index:02d}-{case.name}.log",
+            "log_bytes": None,
+            "log_sha256": None,
         }
 
     def start_case(self, index: int) -> Path:
@@ -207,6 +210,7 @@ class EvidenceSession:
         case["duration_seconds"] = round(duration, 3)
         case["exit_code"] = exit_code
         case["evidence_error"] = evidence_error
+        self._record_log_integrity(case)
         self._write()
 
     def finish(self, status: str) -> None:
@@ -217,7 +221,16 @@ class EvidenceSession:
                 if case["status"] == "running":
                     case["status"] = "interrupted"
                     case["completed_at"] = self.manifest["completed_at"]
+                    log_path = self.output_dir / case["log"]
+                    if log_path.is_file():
+                        self._record_log_integrity(case)
         self._write()
+
+    def _record_log_integrity(self, case: dict[str, object]) -> None:
+        log_path = self.output_dir / str(case["log"])
+        normalize_log_ending(log_path)
+        case["log_bytes"] = log_path.stat().st_size
+        case["log_sha256"] = file_sha256(log_path)
 
     def _write(self) -> None:
         write_json_atomic(self.manifest_path, self.manifest)
@@ -299,6 +312,69 @@ def write_json_atomic(path: Path, value: object) -> None:
         encoding="utf-8",
     )
     temporary.replace(path)
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(64 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def verify_evidence_dir(output_dir: Path) -> dict[str, object]:
+    output_dir = output_dir.resolve()
+    manifest_path = output_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("schema_version") != 3:
+        raise ValueError(
+            f"unsupported evidence schema {manifest.get('schema_version')!r}; expected 3"
+        )
+    status = manifest.get("status")
+    cases = manifest.get("cases")
+    if status not in ("running", "passed", "failed", "interrupted"):
+        raise ValueError(f"invalid evidence status: {status!r}")
+    if not isinstance(cases, list) or not cases:
+        raise ValueError("evidence manifest must contain at least one case")
+
+    case_statuses: list[object] = []
+    for case in cases:
+        if not isinstance(case, dict):
+            raise ValueError("evidence case must be an object")
+        case_name = case.get("name")
+        case_status = case.get("status")
+        case_statuses.append(case_status)
+        if case_status not in ("pending", "running", "passed", "failed", "interrupted"):
+            raise ValueError(f"invalid status for evidence case {case_name!r}")
+        if case_status in ("pending", "running"):
+            continue
+        relative_log = case.get("log")
+        if not isinstance(relative_log, str):
+            raise ValueError(f"evidence case {case_name!r} has no log path")
+        log_path = (output_dir / relative_log).resolve()
+        if not log_path.is_relative_to(output_dir):
+            raise ValueError(f"evidence case {case_name!r} log escapes output directory")
+        if not log_path.is_file():
+            raise ValueError(f"evidence case {case_name!r} log is missing")
+        actual_bytes = log_path.stat().st_size
+        expected_bytes = case.get("log_bytes")
+        if actual_bytes != expected_bytes:
+            raise ValueError(
+                f"evidence case {case_name!r} log size changed: "
+                f"expected={expected_bytes!r}, actual={actual_bytes}"
+            )
+        actual_hash = file_sha256(log_path)
+        expected_hash = case.get("log_sha256")
+        if actual_hash != expected_hash:
+            raise ValueError(f"evidence case {case_name!r} log SHA-256 changed")
+
+    if status == "passed" and any(case_status != "passed" for case_status in case_statuses):
+        raise ValueError("passed manifest contains a non-passed case")
+    if status == "failed" and "failed" not in case_statuses:
+        raise ValueError("failed manifest contains no failed case")
+    if status == "interrupted" and "interrupted" not in case_statuses:
+        raise ValueError("interrupted manifest contains no interrupted case")
+    return manifest
 
 
 def capture(command: Sequence[str]) -> str:
@@ -441,8 +517,8 @@ def _bool_argument(value: str) -> bool:
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--profile", choices=PROFILES, required=True)
-    parser.add_argument("--vendor", choices=VENDORS, required=True)
+    parser.add_argument("--profile", choices=PROFILES)
+    parser.add_argument("--vendor", choices=VENDORS)
     parser.add_argument(
         "--device-fault",
         type=_bool_argument,
@@ -460,11 +536,36 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="new evidence directory (default: test-reports/<timestamp>-gfx-r5-...)",
     )
+    parser.add_argument(
+        "--verify-evidence",
+        type=Path,
+        help="verify an existing schema-3 evidence directory without running tests",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.verify_evidence is not None:
+        if args.profile is not None or args.vendor is not None or args.list or args.output:
+            print(
+                "error: --verify-evidence cannot be combined with run/list options",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            manifest = verify_evidence_dir(args.verify_evidence)
+        except (OSError, ValueError) as error:
+            print(f"error: evidence verification failed: {error}", file=sys.stderr)
+            return 2
+        print(
+            f"GFX-R5 evidence verified: status={manifest['status']}; "
+            f"cases={len(manifest['cases'])}; path={args.verify_evidence.resolve()}"
+        )
+        return 0
+    if args.profile is None or args.vendor is None:
+        print("error: --profile and --vendor are required for run/list mode", file=sys.stderr)
+        return 2
     try:
         plan = build_plan(
             args.profile,
