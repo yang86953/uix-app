@@ -33,6 +33,8 @@ VENDOR_IDS = {"nvidia": 0x10DE, "amd": 0x1002, "intel": 0x8086}
 PROFILES = ("vendor", "mixed-dpi", "soak", "device-lost", "all")
 MIN_SOAK_SECONDS = 900
 MAX_SOAK_SECONDS = 3_600
+MIN_SOAK_WARMUP_SECONDS = 60
+MIN_SOAK_WARMUP_ROUNDS = 8_192
 MIN_DEVICE_LOST_TIMEOUT = 5
 MAX_DEVICE_LOST_TIMEOUT = 600
 EVIDENCE_VALIDATION_EXIT_CODE = 3
@@ -57,6 +59,9 @@ SOAK_MEASUREMENT_PATTERN = re.compile(
     r"rounds=(?P<rounds>\d+) "
     r"handles=(?P<before>\d+)->(?P<after>\d+) "
     r"peak=(?P<peak>\d+)"
+)
+SOAK_WARMUP_PATTERN = re.compile(
+    r"warmup=(?P<seconds>\d+)s/(?P<rounds>\d+) rounds"
 )
 
 VENDOR_CASES = (
@@ -887,6 +892,21 @@ def require_soak_measurements(case: GfxR5Case, evidence_line: str) -> None:
     if peak > before + 32:
         raise ValueError(
             f"GFX-R5 case {case.name!r} soak handle peak exceeds the +32 bound"
+        )
+    warmup = SOAK_WARMUP_PATTERN.search(evidence_line)
+    if warmup is None:
+        raise ValueError(f"GFX-R5 case {case.name!r} lacks structured soak warmup")
+    warmup_seconds = int(warmup.group("seconds"))
+    warmup_rounds = int(warmup.group("rounds"))
+    if warmup_seconds < MIN_SOAK_WARMUP_SECONDS:
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} soak warmup duration is too short: "
+            f"minimum={MIN_SOAK_WARMUP_SECONDS}, actual={warmup_seconds}"
+        )
+    if warmup_rounds < MIN_SOAK_WARMUP_ROUNDS:
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} soak warmup rounds are too few: "
+            f"minimum={MIN_SOAK_WARMUP_ROUNDS}, actual={warmup_rounds}"
         )
     if "swapchain_maintenance1=true" not in evidence_line:
         raise ValueError(
