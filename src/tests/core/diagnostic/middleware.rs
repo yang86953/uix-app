@@ -15,3 +15,28 @@ fn pipeline_handler_can_borrow_invocation_state() {
     assert_eq!(handled, 1);
     assert_eq!(context.operation, "borrowed handler");
 }
+
+#[test]
+fn retry_resets_the_previous_attempt_status_before_reentry() {
+    let mut pipeline = MiddlewarePipeline::new();
+    pipeline.add(RetryMiddleware::new(1));
+    let mut context = MiddlewareContext::default();
+    let mut attempts = 0;
+
+    pipeline.execute(&mut context, |context| {
+        if attempts == 0 {
+            context.succeeded = false;
+            context.status_code = 503;
+            context.error_message = "unavailable".to_owned();
+        } else {
+            assert_eq!(context.status_code, 0);
+            assert!(context.error_message.is_empty());
+        }
+        attempts += 1;
+    });
+
+    assert_eq!(attempts, 2);
+    assert!(context.succeeded);
+    assert_eq!(context.status_code, 0);
+    assert_eq!(context.retry_count, 1);
+}
