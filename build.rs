@@ -4,7 +4,6 @@ use std::fs;
 use std::path::PathBuf;
 
 const USAGE_DOC: &str = "docs/使用.md";
-const TAG_PREFIX: &str = "<!-- uix-compile:";
 
 struct CompiledBlock {
     id: String,
@@ -34,7 +33,6 @@ fn run() -> Result<(), String> {
 
 fn extract_compiled_blocks(source: &str) -> Result<(usize, Vec<CompiledBlock>), String> {
     let mut total = 0;
-    let mut pending_tag: Option<(String, usize)> = None;
     let mut current: Option<(Option<(String, usize)>, Vec<&str>)> = None;
     let mut blocks = Vec::new();
     let mut ids = HashSet::new();
@@ -61,45 +59,37 @@ fn extract_compiled_blocks(source: &str) -> Result<(usize, Vec<CompiledBlock>), 
         }
 
         let trimmed = line.trim();
-        if let Some(id) = parse_tag(trimmed) {
-            if pending_tag.is_some() {
-                return Err(format!(
-                    "stacked uix-compile tags near line {line_number} in {USAGE_DOC}"
-                ));
-            }
-            pending_tag = Some((sanitize_id(id, line_number)?, line_number));
-            continue;
-        }
-        if trimmed == "```rust" {
+        if let Some(tag) = parse_rust_fence(trimmed, line_number)? {
             total += 1;
-            let tag = pending_tag.take().map(|(id, _)| (id, line_number + 1));
+            let tag = tag.map(|id| (id, line_number + 1));
             current = Some((tag, Vec::new()));
-            continue;
-        }
-        if !trimmed.is_empty() {
-            if let Some((id, tag_line)) = pending_tag.take() {
-                return Err(format!(
-                    "uix-compile tag `{id}` at line {tag_line} is not followed by a Rust fence"
-                ));
-            }
         }
     }
 
     if current.is_some() {
         return Err(format!("unterminated Rust fence in {USAGE_DOC}"));
     }
-    if let Some((id, tag_line)) = pending_tag {
-        return Err(format!(
-            "dangling uix-compile tag `{id}` at line {tag_line} in {USAGE_DOC}"
-        ));
-    }
     Ok((total, blocks))
 }
 
-fn parse_tag(line: &str) -> Option<&str> {
-    line.strip_prefix(TAG_PREFIX)
-        .and_then(|value| value.strip_suffix("-->"))
-        .map(str::trim)
+fn parse_rust_fence(line: &str, line_number: usize) -> Result<Option<Option<String>>, String> {
+    let Some(suffix) = line.strip_prefix("```rust") else {
+        return Ok(None);
+    };
+    if suffix.is_empty() {
+        return Ok(Some(None));
+    }
+    let Some(metadata) = suffix.strip_prefix(' ') else {
+        return Err(format!(
+            "unsupported Rust fence metadata `{suffix}` at line {line_number} in {USAGE_DOC}"
+        ));
+    };
+    let Some(id) = metadata.strip_prefix("uix-compile=") else {
+        return Err(format!(
+            "unsupported Rust fence metadata `{metadata}` at line {line_number} in {USAGE_DOC}"
+        ));
+    };
+    Ok(Some(Some(sanitize_id(id.trim(), line_number)?)))
 }
 
 fn sanitize_id(id: &str, line_number: usize) -> Result<String, String> {
