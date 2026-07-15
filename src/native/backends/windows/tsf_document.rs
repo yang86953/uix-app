@@ -26,16 +26,19 @@ pub(crate) struct TsfEventSink {
 }
 
 impl TsfEventSink {
-    pub(super) fn push(&self, events: Vec<UiEvent>) {
+    pub(crate) fn push(&self, events: Vec<UiEvent>) {
         if events.is_empty() {
             return;
         }
-        if let Ok(mut queue) = self.events.lock() {
-            for mut event in events {
-                event.window_id = Some(self.window_id);
-                queue.push_back(event);
-            }
+        let mut queue = self
+            .events
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        for mut event in events {
+            event.window_id = Some(self.window_id);
+            queue.push_back(event);
         }
+        drop(queue);
         // 与 EventLoopWaker 同形；仅唤醒拥有该 HWND 的消息循环。
         unsafe {
             let _ = windows::Win32::UI::WindowsAndMessaging::PostMessageW(

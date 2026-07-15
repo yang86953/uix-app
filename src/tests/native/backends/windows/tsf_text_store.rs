@@ -1,5 +1,6 @@
 use crate::native::backends::windows::platform::WindowsPlatform;
 use crate::native::backends::windows::tsf_text_store::*;
+use crate::native::traits::event::{UiEvent, UiEventType};
 use crate::native::traits::IWindowManager;
 use crate::tests::common::*;
 use windows::Win32::Foundation::{E_UNEXPECTED, HWND, RECT};
@@ -243,6 +244,30 @@ fn com_store_rejects_invalid_acp_ranges_without_clamping() {
     assert_eq!(state.utf16_string(), "zh");
     assert_eq!(state.sel_end, 2);
     assert_eq!(state.complete_lock(), None);
+}
+
+#[test]
+fn tsf_sink_enqueues_before_waking_a_poisoned_event_queue() {
+    let events = Arc::new(Mutex::new(VecDeque::new()));
+    let poisoned = Arc::clone(&events);
+    let _ = std::thread::spawn(move || {
+        let _queue = poisoned.lock().expect("lock queue before poisoning");
+        panic!("poison TSF queue for recovery test");
+    })
+    .join();
+    let window_id = WindowId::new(77);
+    let sink = TsfEventSink {
+        events: Arc::clone(&events),
+        window_id,
+        hwnd: HWND(std::ptr::null_mut()),
+    };
+
+    sink.push(vec![UiEvent::ime_composition_start()]);
+
+    let queue = events.lock().unwrap_or_else(|error| error.into_inner());
+    assert_eq!(queue.len(), 1);
+    assert_eq!(queue[0].window_id, Some(window_id));
+    assert_eq!(queue[0].type_, UiEventType::ImeCompositionStart);
 }
 
 #[test]
