@@ -707,6 +707,7 @@ fn reconcile_image_patches_instance_and_syncs_config() {
             height: 60.0,
             radius: 8.0,
             preview: false,
+            preview_open: false,
             fit: false,
         }
     );

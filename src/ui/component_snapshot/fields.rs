@@ -183,6 +183,7 @@ pub enum SnapshotFields {
         height: f32,
         radius: f32,
         preview: bool,
+        preview_open: bool,
         fit: bool,
     },
     Tag {
@@ -724,11 +725,27 @@ impl SnapshotFields {
                     ..AccessibilityState::default()
                 }),
             Self::Image {
-                alt, fallback, src, ..
-            } => AccessibilitySnapshot::named(
-                AccessibilityRole::Image,
-                first_non_empty([alt.as_str(), fallback.as_str(), src.as_str()]),
-            ),
+                alt,
+                fallback,
+                src,
+                preview,
+                preview_open,
+                ..
+            } => {
+                let role = if *preview {
+                    AccessibilityRole::Button
+                } else {
+                    AccessibilityRole::Image
+                };
+                AccessibilitySnapshot::named(
+                    role,
+                    first_non_empty([alt.as_str(), fallback.as_str(), src.as_str()]),
+                )
+                .with_state(AccessibilityState {
+                    expanded: preview.then_some(*preview_open),
+                    ..AccessibilityState::default()
+                })
+            }
             Self::ProgressBar { progress, .. } => AccessibilitySnapshot::new(
                 AccessibilityRole::ProgressBar,
             )
