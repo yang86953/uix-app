@@ -18,9 +18,10 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VK_TAB,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    IsIconic, IsWindowVisible, IsZoomed, PostMessageW, SetWindowPos, ShowWindowAsync, HWND_TOPMOST,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE,
-    SW_SHOW, WM_CLOSE,
+    GetWindowLongW, IsIconic, IsWindowVisible, IsZoomed, PostMessageW, SetWindowPos,
+    ShowWindowAsync, GWL_STYLE, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_SHOWWINDOW, SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE, SW_SHOW, WM_CLOSE, WS_CAPTION,
+    WS_THICKFRAME,
 };
 
 use foreground::{find_process_window, keyboard_input, request_foreground_focus};
@@ -195,6 +196,20 @@ impl DemoProcess {
         .expect("raise demo window for interaction");
     }
 
+    fn assert_custom_title_bar_style(&self) {
+        let window = self.window_handle();
+        let style = unsafe {
+            // SAFETY: 查询期间 HWND 属于仍存活的测试子进程。
+            GetWindowLongW(window, GWL_STYLE) as u32
+        };
+        assert_eq!(style & WS_CAPTION.0, 0, "demo must remove system caption");
+        assert_ne!(
+            style & WS_THICKFRAME.0,
+            0,
+            "demo must retain the native resize frame"
+        );
+    }
+
     fn minimize(&self) {
         let window = self.window_handle();
         unsafe {
@@ -362,6 +377,21 @@ fn node_by_automation_id<'a>(snapshot: &'a Value, automation_id: &str) -> &'a Va
         .iter()
         .find(|node| node["automation_id"] == automation_id)
         .unwrap_or_else(|| panic!("missing automation node {automation_id}"))
+}
+
+fn assert_custom_title_bar_nodes(snapshot: &Value) {
+    for (automation_id, accessible_name) in [
+        ("window-control-minimize", "最小化窗口"),
+        ("window-control-maximize-restore", "最大化或还原窗口"),
+        ("window-control-close", "关闭窗口"),
+    ] {
+        let node = node_by_automation_id(snapshot, automation_id);
+        assert_eq!(node["role"], "button");
+        assert_eq!(node["name"], accessible_name);
+        assert!(node["actions"]
+            .as_array()
+            .is_some_and(|actions| actions.contains(&json!("invoke"))));
+    }
 }
 
 fn visible_center(node: &Value) -> (f64, f64) {
@@ -578,6 +608,7 @@ fn run_real_gui_scenario(graphics: GraphicsExpectation) {
     assert_eq!(first_present["outcome"], "presented");
     demo.raise_for_interaction();
     wait_until_presentable(&mut connection, window_id, true, Duration::from_secs(10));
+    demo.assert_custom_title_bar_style();
 
     let before = exchange(
         &mut connection,
@@ -589,6 +620,30 @@ fn run_real_gui_scenario(graphics: GraphicsExpectation) {
         }),
     );
     assert_success(&before, "snapshot-before");
+    assert_custom_title_bar_nodes(&before["snapshot"]);
+    let maximized = invoke_until_presentable(
+        &demo,
+        &mut connection,
+        window_id,
+        generation,
+        "window-control-maximize-restore",
+    );
+    assert_eq!(maximized["settled"], true);
+    let hwnd = demo.window_handle();
+    demo.wait_for_window_state(hwnd, "maximized", |window| unsafe {
+        IsZoomed(window).as_bool()
+    });
+    let restored = invoke_until_presentable(
+        &demo,
+        &mut connection,
+        window_id,
+        generation,
+        "window-control-maximize-restore",
+    );
+    assert_eq!(restored["settled"], true);
+    demo.wait_for_window_state(hwnd, "restored", |window| unsafe {
+        !IsZoomed(window).as_bool()
+    });
     let increment = node_by_automation_id(&before["snapshot"], "home-count-increment");
     assert!(increment["actions"]
         .as_array()
