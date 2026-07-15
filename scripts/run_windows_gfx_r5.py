@@ -53,7 +53,12 @@ ADAPTER_DIAGNOSTIC_PATTERN = re.compile(
 MONITOR_DPI_PATTERN = re.compile(r"dpi=(?P<dpi_x>\d+)x(?P<dpi_y>\d+)")
 DPI_TRANSITION_PATTERN = re.compile(
     r"(?P<leg>initial|forward|return)=DpiTransitionEvidence \{ "
-    r"observed_dpi: (?P<dpi>\d+),"
+    r"observed_dpi: (?P<dpi>\d+), "
+    r"logical_resize: (?P<resize>None|Some\(\((?P<resize_width>\d+), "
+    r"(?P<resize_height>\d+)\)\)), "
+    r"target_monitor_reached: (?P<target_monitor_reached>true|false), "
+    r"logical_extent: \((?P<logical_width>\d+), (?P<logical_height>\d+)\), "
+    r"drawable_extent: \((?P<drawable_width>\d+), (?P<drawable_height>\d+)\) \}"
 )
 SOAK_MEASUREMENT_PATTERN = re.compile(
     r"duration=(?P<duration>\d+(?:\.\d+)?)s "
@@ -860,25 +865,76 @@ def require_mixed_dpi_measurements(case: GfxR5Case, evidence_line: str) -> None:
             f"GFX-R5 case {case.name!r} must record a monitor above 100% scaling"
         )
     transitions = {
-        match.group("leg"): int(match.group("dpi"))
+        match.group("leg"): match
         for match in DPI_TRANSITION_PATTERN.finditer(evidence_line)
     }
     if set(transitions) != {"initial", "forward", "return"}:
         raise ValueError(
             f"GFX-R5 case {case.name!r} lacks three structured DPI transitions"
         )
+    transition_dpis = {
+        leg: int(transition.group("dpi"))
+        for leg, transition in transitions.items()
+    }
     if (
-        transitions["initial"] != transitions["return"]
-        or transitions["initial"] == transitions["forward"]
+        transition_dpis["initial"] != transition_dpis["return"]
+        or transition_dpis["initial"] == transition_dpis["forward"]
     ):
         raise ValueError(
             f"GFX-R5 case {case.name!r} does not prove a round-trip DPI transition"
         )
     sampled_dpis = {dpi for pair in topology for dpi in pair}
-    if not set(transitions.values()).issubset(sampled_dpis):
+    if not set(transition_dpis.values()).issubset(sampled_dpis):
         raise ValueError(
             f"GFX-R5 case {case.name!r} transition DPI is absent from the topology"
         )
+    if any(
+        transition.group("target_monitor_reached") != "true"
+        for transition in transitions.values()
+    ):
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} transition did not reach its target monitor"
+        )
+    logical_extents = {
+        (
+            int(transition.group("logical_width")),
+            int(transition.group("logical_height")),
+        )
+        for transition in transitions.values()
+    }
+    if len(logical_extents) != 1 or any(value <= 0 for value in next(iter(logical_extents))):
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} must preserve one positive logical extent"
+        )
+    logical_extent = next(iter(logical_extents))
+    for leg in ("forward", "return"):
+        transition = transitions[leg]
+        if transition.group("resize") == "None":
+            raise ValueError(
+                f"GFX-R5 case {case.name!r} {leg} lacks a logical resize event"
+            )
+        resize = (
+            int(transition.group("resize_width")),
+            int(transition.group("resize_height")),
+        )
+        if resize != logical_extent:
+            raise ValueError(
+                f"GFX-R5 case {case.name!r} {leg} resize does not preserve logical extent"
+            )
+    for leg, transition in transitions.items():
+        dpi = transition_dpis[leg]
+        drawable = (
+            int(transition.group("drawable_width")),
+            int(transition.group("drawable_height")),
+        )
+        expected_drawable = tuple(
+            (logical * dpi + 48) // 96 for logical in logical_extent
+        )
+        if drawable != expected_drawable:
+            raise ValueError(
+                f"GFX-R5 case {case.name!r} {leg} drawable extent does not match DPI: "
+                f"expected={expected_drawable}, actual={drawable}"
+            )
 
 
 def require_soak_measurements(case: GfxR5Case, evidence_line: str) -> None:
