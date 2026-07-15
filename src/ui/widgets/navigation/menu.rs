@@ -38,6 +38,8 @@ component! {
         pending_change: RefCell<Option<String>>,
     }
 
+    tab_index => (&self) -> i32 { 1 }
+
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
     }
@@ -61,8 +63,10 @@ component! {
             }
             SystemEvent::PointerMove { pos, .. } => {
                 let idx = self.item_at(pos.x, pos.y);
-                if let Some(i) = idx {
+                if let Some(i) = idx.filter(|&i| !self.items[i].disabled) {
                     self.hovered_idx.set(i);
+                } else {
+                    self.hovered_idx.set(usize::MAX);
                 }
                 EventResult::Handled
             }
@@ -73,74 +77,15 @@ component! {
             SystemEvent::FocusIn => { self.focused = true; EventResult::Handled }
             SystemEvent::FocusOut => { self.focused = false; EventResult::Handled }
             SystemEvent::KeyDown { key, .. } => {
-                let cur_idx = self.item_index_of_key(&self.active_key).unwrap_or(0);
-                match key {
-                    KeyCode::Right => {
-                        if self.mode == MenuMode::Horizontal {
-                            let mut next = cur_idx + 1;
-                            while next < self.items.len() && self.items[next].disabled {
-                                next += 1;
-                            }
-                            if next < self.items.len() {
-                                self.active_key = self.items[next].key.clone();
-                                self.pending_change.replace(Some(self.active_key.clone()));
-                            }
-                        } else {
-                            if let Some(i) = self.first_non_disabled() {
-                                self.active_key = self.items[i].key.clone();
-                                self.pending_change.replace(Some(self.active_key.clone()));
-                            }
-                        }
+                match (self.mode, key) {
+                    (MenuMode::Horizontal, KeyCode::Right)
+                    | (MenuMode::Vertical, KeyCode::Down) => {
+                        self.select_adjacent(true);
                         EventResult::Handled
                     }
-                    KeyCode::Left => {
-                        if self.mode == MenuMode::Horizontal
-                            && cur_idx > 0 {
-                                let mut prev = cur_idx - 1;
-                                loop {
-                                    if !self.items[prev].disabled {
-                                        self.active_key = self.items[prev].key.clone();
-                                        self.pending_change.replace(Some(self.active_key.clone()));
-                                        break;
-                                    }
-                                    if prev == 0 { break; }
-                                    prev -= 1;
-                                }
-                            }
-                        EventResult::Handled
-                    }
-                    KeyCode::Down => {
-                        if self.mode == MenuMode::Vertical {
-                            let mut next = cur_idx + 1;
-                            while next < self.items.len() && self.items[next].disabled {
-                                next += 1;
-                            }
-                            if next < self.items.len() {
-                                self.active_key = self.items[next].key.clone();
-                                self.pending_change.replace(Some(self.active_key.clone()));
-                            }
-                        } else {
-                            if let Some(i) = self.first_non_disabled() {
-                                self.active_key = self.items[i].key.clone();
-                                self.pending_change.replace(Some(self.active_key.clone()));
-                            }
-                        }
-                        EventResult::Handled
-                    }
-                    KeyCode::Up => {
-                        if self.mode == MenuMode::Vertical
-                            && cur_idx > 0 {
-                                let mut prev = cur_idx - 1;
-                                loop {
-                                    if !self.items[prev].disabled {
-                                        self.active_key = self.items[prev].key.clone();
-                                        self.pending_change.replace(Some(self.active_key.clone()));
-                                        break;
-                                    }
-                                    if prev == 0 { break; }
-                                    prev -= 1;
-                                }
-                            }
+                    (MenuMode::Horizontal, KeyCode::Left)
+                    | (MenuMode::Vertical, KeyCode::Up) => {
+                        self.select_adjacent(false);
                         EventResult::Handled
                     }
                     _ => EventResult::NotHandled,
@@ -268,8 +213,33 @@ impl Menu {
         self.items.iter().position(|item| item.key == key)
     }
 
-    fn first_non_disabled(&self) -> Option<usize> {
-        self.items.iter().position(|item| !item.disabled)
+    fn select_adjacent(&mut self, forward: bool) {
+        let enabled = self
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(index, item)| (!item.disabled).then_some(index))
+            .collect::<Vec<_>>();
+        if enabled.is_empty() {
+            return;
+        }
+
+        let current = self.item_index_of_key(&self.active_key);
+        let next_position = current
+            .and_then(|index| enabled.iter().position(|&candidate| candidate == index))
+            .map(|position| {
+                if forward {
+                    (position + 1) % enabled.len()
+                } else {
+                    (position + enabled.len() - 1) % enabled.len()
+                }
+            })
+            .unwrap_or_else(|| if forward { 0 } else { enabled.len() - 1 });
+        let next_key = self.items[enabled[next_position]].key.clone();
+        if next_key != self.active_key {
+            self.active_key = next_key.clone();
+            self.pending_change.replace(Some(next_key));
+        }
     }
 }
 
@@ -327,6 +297,7 @@ impl Menu {
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Menu {
             items: self.items.clone(),
+            active_key: self.active_key.clone(),
             mode: self.mode,
             item_h: self.item_h,
         }

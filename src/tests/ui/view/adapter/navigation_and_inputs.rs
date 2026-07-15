@@ -91,9 +91,13 @@ fn reconcile_menu_preserves_active_key_and_syncs_items() {
         menu.snapshot_fields(),
         SnapshotFields::Menu {
             items,
+            active_key,
             mode: MenuMode::Vertical,
             item_h: 44.0,
-        } if items.len() == 1 && items[0].key == "c" && items[0].disabled
+        } if items.len() == 1
+            && items[0].key == "c"
+            && items[0].disabled
+            && active_key == "b"
     ));
 }
 
