@@ -199,6 +199,7 @@ fn reconcile_pagination_preserves_current_page_and_syncs_config() {
         SnapshotFields::Pagination {
             total: 240,
             page_size: 20,
+            current: 4,
             show_size_changer: true,
             show_total: false,
             size: 36.0,
