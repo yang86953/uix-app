@@ -519,7 +519,7 @@ fn reconcile_radio_patches_instance_and_syncs_snapshot_fields() {
             selected: 2,
             disabled: true,
             direction: RadioDirection::Vertical,
-            item_h: 24.0,
+            item_h: crate::ui::config::control_height(ControlSize::Medium),
         }
     );
 }
