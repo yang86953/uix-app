@@ -302,10 +302,10 @@ impl WidgetTree {
             .iter()
             .copied()
             .filter_map(|id| {
-                let node = self.get(id)?;
-                if !node.visible() {
+                if !self.is_effectively_visible(id) {
                     return None;
                 }
+                let node = self.get(id)?;
                 node.overlay_entry(id, node.frame())
             })
             .collect();
@@ -972,8 +972,9 @@ impl WidgetTree {
 
     fn widget_overlay_is_current(&self, id: WidgetId) -> bool {
         let desired = self
-            .get(id)
-            .filter(|node| node.visible())
+            .is_effectively_visible(id)
+            .then(|| self.get(id))
+            .flatten()
             .and_then(|node| node.overlay_entry(id, node.frame()));
         let current: Vec<_> = self
             .overlay_stack
