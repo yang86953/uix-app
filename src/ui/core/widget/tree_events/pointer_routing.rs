@@ -4,6 +4,29 @@ use crate::ui::window_chrome::WindowInteractionRegion;
 use crate::ui::{OverlayEntry, OverlayKind};
 
 impl WidgetTree {
+    pub(super) fn cancel_active_pointer_gesture(&mut self) {
+        let pressed = self.managers().interaction.pressed_component();
+        let drag = self.managers().drag.is_dragging().then(|| {
+            (
+                self.managers().drag.target(),
+                self.managers().drag.last_pos(),
+                self.managers().drag.button(),
+                self.managers().drag.mods(),
+            )
+        });
+        self.managers_mut().interaction.set_pressed_component(None);
+        self.managers_mut().drag.end_drag();
+
+        if let Some((Some(target), pos, button, mods)) = drag {
+            let _ = self.dispatch_to(target, &SystemEvent::DragEnd { pos, button, mods });
+        }
+        if let Some(pressed) = pressed {
+            self.invalidate_paint(pressed);
+            let _ = self.dispatch_to(pressed, &SystemEvent::PointerLeave);
+        }
+        self.rebuild_widget_overlays();
+    }
+
     pub(super) fn dispatch_pointer_release(
         &mut self,
         event: &SystemEvent,
