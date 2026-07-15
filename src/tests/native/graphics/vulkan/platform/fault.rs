@@ -119,12 +119,19 @@ fn repeated_device_loss_keeps_current_operation_and_first_diagnosis() {
         |error| error.with_source(Error::new(Errc::GraphicsDeviceLost, "first diagnosis")),
     );
     let repeated = state.record_with(
-        Error::new(Errc::GraphicsDeviceLost, "second device loss"),
+        Error::new(Errc::GraphicsDeviceLost, "second device loss").with_source(Error::new(
+            Errc::PlatformError,
+            "second operation cleanup failed",
+        )),
         |error| error.with_source(Error::new(Errc::GraphicsDeviceLost, "must not replace")),
     );
 
     assert_eq!(repeated.message(), "second device loss");
-    assert_eq!(repeated.source_error(), Some(&first));
+    let cleanup = repeated
+        .source_error()
+        .expect("current operation context must remain first");
+    assert_eq!(cleanup.message(), "second operation cleanup failed");
+    assert_eq!(cleanup.source_error(), Some(&first));
     assert_eq!(repeated.root_cause().message(), "first diagnosis");
 }
 

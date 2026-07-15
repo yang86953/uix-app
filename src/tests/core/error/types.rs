@@ -35,3 +35,24 @@ fn short_error_text_remains_single_line() {
     assert!(!text.contains('\n'));
     assert!(!text.contains("middle"));
 }
+
+#[test]
+fn appended_source_keeps_the_existing_chain_in_order() {
+    let error = Error::with_location(Errc::InvalidState, "outer", "outer.rs", 11)
+        .with_source(Error::with_location(
+            Errc::PlatformError,
+            "middle",
+            "middle.rs",
+            22,
+        ))
+        .with_appended_source(Error::with_location(
+            Errc::GraphicsDeviceLost,
+            "device fault",
+            "root.rs",
+            33,
+        ));
+
+    assert_eq!(error.depth(), 2);
+    assert_eq!(error.source_error().map(Error::message), Some("middle"));
+    assert_eq!(error.root_cause().message(), "device fault");
+}

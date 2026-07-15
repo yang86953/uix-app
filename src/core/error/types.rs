@@ -107,6 +107,16 @@ impl Error {
         self
     }
 
+    /// 把新原因追加到现有原因链尾部，不覆盖已经采集的中间失败。
+    pub(crate) fn with_appended_source(mut self, source: Error) -> Self {
+        let mut tail = &mut self.source;
+        while let Some(error) = tail {
+            tail = &mut error.source;
+        }
+        *tail = Some(Box::new(source));
+        self
+    }
+
     /// 递归寻找原因链中最底层的根因。
     pub fn root_cause(&self) -> &Error {
         let mut current = self;
