@@ -15,6 +15,8 @@ struct CompileTag {
     feature: Option<String>,
 }
 
+type OpenFence<'a> = (Option<(CompileTag, usize)>, Vec<&'a str>);
+
 pub fn generate(source: &str, manifest: &str) -> Result<String, String> {
     let (total, blocks) = extract_compiled_blocks(source)?;
     let declared_features = extract_declared_features(manifest)?;
@@ -24,7 +26,7 @@ pub fn generate(source: &str, manifest: &str) -> Result<String, String> {
 
 fn extract_compiled_blocks(source: &str) -> Result<(usize, Vec<CompiledBlock>), String> {
     let mut total = 0;
-    let mut current: Option<(Option<(CompileTag, usize)>, Vec<&str>)> = None;
+    let mut current: Option<OpenFence<'_>> = None;
     let mut blocks = Vec::new();
     let mut ids = HashSet::new();
 
@@ -200,7 +202,7 @@ fn render_test_module(total: usize, blocks: &[CompiledBlock]) -> String {
         "pub(super) const USAGE_RUST_BLOCKS_TOTAL: usize = {total};\n\
          pub(super) const USAGE_RUST_BLOCKS_COMPILED: usize = {compiled_count};\n\
          pub(super) const USAGE_RUST_BLOCK_FEATURES: &[&str] = &[{documented_features}];\n\
-         #[allow(dead_code, unnameable_test_items, unused_imports, unused_mut, unused_must_use, unused_variables)]\n\
+         #[allow(dead_code, unnameable_test_items, unused_imports, unused_mut, unused_must_use, unused_variables, clippy::no_effect, clippy::unnecessary_operation)]\n\
          mod compiled_usage_examples {{\n\
              use uix::prelude::*;\n\
              type GuideResult = Result<(), Box<dyn std::error::Error>>;\n",
@@ -236,7 +238,12 @@ fn render_compiled_count(blocks: &[CompiledBlock]) -> String {
     feature_counts
         .into_iter()
         .fold(unconditional.to_string(), |expression, (feature, count)| {
-            format!("{expression} + {count} * (cfg!(feature = \"{feature}\") as usize)")
+            let feature_count = if count == 1 {
+                format!("cfg!(feature = \"{feature}\") as usize")
+            } else {
+                format!("{count} * (cfg!(feature = \"{feature}\") as usize)")
+            };
+            format!("{expression} + {feature_count}")
         })
 }
 
@@ -260,7 +267,10 @@ mod tests {
         let source = "```rust uix-compile=same\nlet first = 1;\n```\n\
                       ```rust uix-compile=same\nlet second = 2;\n```\n";
 
-        let error = generate(source, MANIFEST).expect_err("duplicate ID must fail");
+        let error = match generate(source, MANIFEST) {
+            Ok(_) => panic!("duplicate ID must fail"),
+            Err(error) => error,
+        };
 
         assert!(error.contains("duplicate uix-compile id `same`"));
     }
@@ -269,7 +279,10 @@ mod tests {
     fn rejects_unknown_documented_feature() {
         let source = "```rust uix-compile=example uix-feature=missing\nlet value = 1;\n```\n";
 
-        let error = generate(source, MANIFEST).expect_err("unknown feature must fail");
+        let error = match generate(source, MANIFEST) {
+            Ok(_) => panic!("unknown feature must fail"),
+            Err(error) => error,
+        };
 
         assert!(error.contains("unknown uix-feature `missing`"));
     }
@@ -280,11 +293,14 @@ mod tests {
                       ```rust uix-compile=public\nlet public = 1;\n```\n\
                       ```rust uix-compile=harness uix-feature=test-harness\nlet harness = 2;\n```\n";
 
-        let generated = generate(source, MANIFEST).expect("valid guide");
+        let generated = match generate(source, MANIFEST) {
+            Ok(generated) => generated,
+            Err(error) => panic!("valid guide: {error}"),
+        };
 
         assert!(generated.contains("USAGE_RUST_BLOCKS_TOTAL: usize = 3"));
         assert!(generated.contains(
-            "USAGE_RUST_BLOCKS_COMPILED: usize = 1 + 1 * (cfg!(feature = \"test-harness\") as usize)"
+            "USAGE_RUST_BLOCKS_COMPILED: usize = 1 + cfg!(feature = \"test-harness\") as usize"
         ));
         assert!(generated.contains("USAGE_RUST_BLOCK_FEATURES: &[&str] = &[\"test-harness\"]"));
         assert!(!generated.contains("prose_only"));
