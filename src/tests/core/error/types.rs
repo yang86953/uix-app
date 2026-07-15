@@ -9,6 +9,17 @@ fn nested_error() -> Error {
 }
 
 #[test]
+fn error_value_state_is_the_inverse_of_none() {
+    let none = Error::default();
+    let error = Error::new(Errc::InvalidState, "state mismatch");
+
+    assert!(none.is_none());
+    assert!(!none.has_value());
+    assert!(!error.is_none());
+    assert!(error.has_value());
+}
+
+#[test]
 fn full_error_text_renders_every_cause_in_order() {
     let text = nested_error().what();
 
