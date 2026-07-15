@@ -4406,6 +4406,42 @@ fn right_pointer_up_emits_context_menu_semantic_event() {
 }
 
 #[test]
+fn secondary_pointer_context_menu_preserves_existing_focus() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(240.0, 80.0)));
+    let focused = tree.add_child(root, Box::new(Button::new("Focused")));
+    let context_target = tree.add_child(root, Box::new(Button::new("Context")));
+    tree.get_mut(root)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 240.0, 80.0));
+    tree.get_mut(focused)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 32.0));
+    tree.get_mut(context_target)
+        .unwrap()
+        .set_frame(Rect::new(120.0, 0.0, 100.0, 32.0));
+    tree.set_focus(Some(focused));
+
+    let pos = Point::new(140.0, 16.0);
+    tree.dispatch_event(&SystemEvent::PointerDown {
+        pos,
+        button: MouseButton::Right,
+        mods: KeyMod::NONE,
+    });
+    tree.dispatch_event(&SystemEvent::PointerUp {
+        pos,
+        button: MouseButton::Right,
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(tree.managers().focus.focused_component(), Some(focused));
+    assert_eq!(
+        tree.overlay_stack().top().map(|entry| entry.kind()),
+        Some(OverlayKind::ContextMenu)
+    );
+}
+
+#[test]
 fn right_pointer_up_opens_context_menu_overlay_by_default() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));

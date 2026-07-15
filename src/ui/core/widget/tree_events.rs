@@ -604,7 +604,7 @@ impl WidgetTree {
             if !preserves_keyboard_focus {
                 self.set_focus(Some(target));
             }
-        } else {
+        } else if button != MouseButton::Right {
             self.set_focus(None);
         }
         self.rebuild_widget_overlays();
