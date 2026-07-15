@@ -3,11 +3,13 @@
 //! 用于展示操作结果（成功/错误/警告/信息/404/403/500），
 //! 包含图标、标题、副标题、额外操作区域。
 
+use std::cell::Cell;
+
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
-use crate::ui::{SnapshotFields, WidgetTree};
+use crate::ui::{EventResult, KeyCode, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
 
 /// 结果类型。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -28,10 +30,69 @@ component! {
         title: String,
         subtitle: String,
         extra_text: String,
+        focused: bool,
+        pressed: bool,
+        last_action_rect: Cell<Rect>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
+    }
+
+    tab_index => (&self) -> i32 { i32::from(!self.extra_text.is_empty()) }
+
+    hit_test_frame => (&self, frame: Rect) -> Rect {
+        if self.extra_text.is_empty() {
+            frame
+        } else {
+            let action = self.action_rect_local();
+            Rect::new(
+                frame.x + action.x,
+                frame.y + action.y,
+                action.w,
+                action.h,
+            )
+        }
+    }
+
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        if self.extra_text.is_empty() {
+            return EventResult::NotHandled;
+        }
+        match event {
+            SystemEvent::PointerDown { pos, button: MouseButton::Left, .. }
+                if self.action_rect_local().contains(*pos) =>
+            {
+                self.pressed = true;
+                EventResult::Handled
+            }
+            SystemEvent::PointerUp { button: MouseButton::Left, .. } if self.pressed => {
+                self.pressed = false;
+                EventResult::Handled
+            }
+            SystemEvent::PointerLeave => {
+                self.pressed = false;
+                EventResult::Handled
+            }
+            SystemEvent::FocusIn => {
+                self.focused = true;
+                EventResult::Handled
+            }
+            SystemEvent::FocusOut => {
+                self.focused = false;
+                self.pressed = false;
+                EventResult::Handled
+            }
+            SystemEvent::KeyDown { key: KeyCode::Enter | KeyCode::Space, .. } => {
+                self.pressed = true;
+                EventResult::Handled
+            }
+            SystemEvent::KeyUp { key: KeyCode::Enter | KeyCode::Space, .. } => {
+                self.pressed = false;
+                EventResult::Handled
+            }
+            _ => EventResult::NotHandled,
+        }
     }
 
     picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
@@ -91,7 +152,22 @@ component! {
             let btn_x = cx - btn_w * 0.5;
             let btn_y = cy + 70.0;
             let btn_rect = Rect::new(btn_x, btn_y, btn_w, 36.0);
-            ctx.fill_rect(btn_rect, ctx.tokens().color_primary(), Some(crate::draw::Radius::uniform(6.0)));
+            self.last_action_rect.set(Rect::new(
+                btn_rect.x - frame.x,
+                btn_rect.y - frame.y,
+                btn_rect.w,
+                btn_rect.h,
+            ));
+            let radius = Some(crate::draw::Radius::uniform(6.0));
+            let background = if self.pressed {
+                ctx.tokens().color_primary_active()
+            } else {
+                ctx.tokens().color_primary()
+            };
+            ctx.fill_rect(btn_rect, background, radius);
+            if self.focused {
+                ctx.stroke_rect(btn_rect, ctx.tokens().color_primary_border(), 2.0, radius);
+            }
             let btn_text_y = ctx.visual_center_y(btn_rect, 14.0);
             ctx.draw_text(&self.extra_text, Point::new(btn_x + 16.0, btn_text_y), Color::white(), 14.0);
         }
@@ -105,6 +181,9 @@ impl ResultView {
             title: String::new(),
             subtitle: String::new(),
             extra_text: String::new(),
+            focused: false,
+            pressed: false,
+            last_action_rect: Cell::new(Rect::zero()),
         }
     }
     pub fn title(mut self, t: &str) -> Self {
@@ -124,6 +203,16 @@ impl ResultView {
         Size::new(400.0, 300.0)
     }
 
+    fn action_rect_local(&self) -> Rect {
+        let rendered = self.last_action_rect.get();
+        if rendered.w > 0.0 && rendered.h > 0.0 {
+            return rendered;
+        }
+        let size = self.intrinsic_size();
+        let width = (self.extra_text.chars().count() as f32 * 8.0 + 32.0).max(32.0);
+        Rect::new((size.w - width) * 0.5, size.h * 0.4 + 70.0, width, 36.0)
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Result {
             result_type: self.type_,
@@ -134,10 +223,18 @@ impl ResultView {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let action_changed = self.extra_text != next.extra_text;
         self.type_ = next.type_;
         self.title = next.title;
         self.subtitle = next.subtitle;
         self.extra_text = next.extra_text;
+        if action_changed {
+            self.last_action_rect.set(Rect::zero());
+        }
+        if self.extra_text.is_empty() {
+            self.focused = false;
+            self.pressed = false;
+        }
     }
 }
 
