@@ -334,16 +334,34 @@ impl CircuitBreaker {
     }
 
     pub fn record_success(&self) {
-        self.success_count.fetch_add(1, Ordering::Relaxed);
-        let _ = self.state.compare_exchange(
-            CircuitState::HalfOpen as u64,
-            CircuitState::Closed as u64,
-            Ordering::AcqRel,
-            Ordering::Relaxed,
-        );
-        self.failure_count.store(0, Ordering::Relaxed);
-        self.half_open_probe_in_flight
-            .store(false, Ordering::Release);
+        match self.state.load(Ordering::Acquire).into() {
+            CircuitState::Closed => {
+                self.success_count.fetch_add(1, Ordering::Relaxed);
+                self.failure_count.store(0, Ordering::Relaxed);
+            }
+            CircuitState::Open => {}
+            CircuitState::HalfOpen => {
+                if !self.half_open_probe_in_flight.load(Ordering::Acquire) {
+                    return;
+                }
+
+                if self
+                    .state
+                    .compare_exchange(
+                        CircuitState::HalfOpen as u64,
+                        CircuitState::Closed as u64,
+                        Ordering::AcqRel,
+                        Ordering::Relaxed,
+                    )
+                    .is_ok()
+                {
+                    self.success_count.fetch_add(1, Ordering::Relaxed);
+                    self.failure_count.store(0, Ordering::Relaxed);
+                }
+                self.half_open_probe_in_flight
+                    .store(false, Ordering::Release);
+            }
+        }
     }
 
     pub fn record_failure(&self) {

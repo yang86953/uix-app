@@ -84,3 +84,33 @@ fn exponential_backoff_handles_extreme_attempts_without_iteration() {
     assert_eq!(policy.delay(1), Duration::from_millis(20));
     assert_eq!(policy.delay(usize::MAX), Duration::from_millis(1_000));
 }
+
+#[test]
+fn open_circuit_ignores_late_success() {
+    let circuit = CircuitBreaker::new(1, Duration::from_secs(60));
+    circuit.record_failure();
+
+    circuit.record_success();
+
+    assert_eq!(circuit.state(), CircuitState::Open);
+    assert_eq!(circuit.failure_count(), 1);
+    assert_eq!(circuit.success_count(), 0);
+}
+
+#[test]
+fn half_open_circuit_requires_an_admitted_probe_before_success() {
+    let circuit = CircuitBreaker::new(1, Duration::ZERO);
+    circuit.record_failure();
+    assert_eq!(circuit.state(), CircuitState::HalfOpen);
+
+    circuit.record_success();
+    assert_eq!(circuit.state(), CircuitState::HalfOpen);
+    assert_eq!(circuit.failure_count(), 1);
+    assert_eq!(circuit.success_count(), 0);
+
+    assert!(circuit.try_call());
+    circuit.record_success();
+    assert_eq!(circuit.state(), CircuitState::Closed);
+    assert_eq!(circuit.failure_count(), 0);
+    assert_eq!(circuit.success_count(), 1);
+}
