@@ -9,7 +9,7 @@
 #![cfg(windows)]
 #![allow(nonstandard_style)]
 
-use super::bindings::{CANDIDATEFORM, COMPOSITIONFORM, MSG, POINT, RECT, WNDCLASSEXW};
+use super::bindings::{CANDIDATEFORM, COMPOSITIONFORM, MONITORINFO, MSG, POINT, RECT, WNDCLASSEXW};
 
 // ════════════════════════════════════════════════════════════════════════════
 // dwmapi
@@ -159,6 +159,11 @@ extern "system" {
     pub(crate) fn KillTimer(hwnd: *mut std::ffi::c_void, uIDEvent: u32) -> i32;
 
     pub(super) fn GetWindowRect(hwnd: *mut std::ffi::c_void, lpRect: *mut RECT) -> i32;
+    pub(crate) fn MonitorFromWindow(
+        hwnd: *mut std::ffi::c_void,
+        dwFlags: u32,
+    ) -> *mut std::ffi::c_void;
+    pub(crate) fn GetMonitorInfoW(hMonitor: *mut std::ffi::c_void, lpmi: *mut MONITORINFO) -> i32;
 
     // ── 剪贴板 ──
     pub(crate) fn OpenClipboard(hwnd: *mut std::ffi::c_void) -> i32;

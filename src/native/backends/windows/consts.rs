@@ -101,6 +101,7 @@ pub(crate) const COLOR_APPWORKSPACE: u32 = 1;
 
 pub(crate) const SM_CXSCREEN: i32 = 0;
 pub(crate) const SM_CYSCREEN: i32 = 1;
+pub(crate) const MONITOR_DEFAULTTONEAREST: u32 = 2;
 
 pub(crate) const IDC_ARROW: u16 = 32512;
 

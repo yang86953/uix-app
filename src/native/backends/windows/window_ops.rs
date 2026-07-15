@@ -21,6 +21,44 @@ fn screen_point_lparam(point: super::bindings::POINT) -> isize {
     (u32::from(x) | (u32::from(y) << 16)) as isize
 }
 
+fn centered_axis_origin(area_start: i32, area_end: i32, window_extent: i32) -> i32 {
+    let start = i64::from(area_start);
+    let centered = start + (i64::from(area_end) - start - i64::from(window_extent)) / 2;
+    centered.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+}
+
+fn monitor_info_for_window(
+    hwnd: *mut std::ffi::c_void,
+    operation: &str,
+) -> Result<super::bindings::MONITORINFO> {
+    let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
+    if monitor.is_null() {
+        let context = format!("{operation}: MonitorFromWindow failed");
+        return Err(super::util::windows_diag(Errc::PlatformError, &context));
+    }
+    let mut info = super::bindings::MONITORINFO {
+        cbSize: std::mem::size_of::<super::bindings::MONITORINFO>() as u32,
+        rcMonitor: super::bindings::RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        },
+        rcWork: super::bindings::RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        },
+        dwFlags: 0,
+    };
+    if unsafe { GetMonitorInfoW(monitor, &mut info) } == 0 {
+        let context = format!("{operation}: GetMonitorInfoW failed");
+        return Err(super::util::windows_diag(Errc::PlatformError, &context));
+    }
+    Ok(info)
+}
+
 fn get_window_long_checked(
     hwnd: *mut std::ffi::c_void,
     index: i32,
@@ -206,8 +244,7 @@ impl WindowOps for WindowsWindowOps {
     fn os_center_on_screen(&mut self) -> Result<()> {
         self.ensure_valid_window("os_center_on_screen")?;
         unsafe {
-            let sw = GetSystemMetrics(SM_CXSCREEN);
-            let sh = GetSystemMetrics(SM_CYSCREEN);
+            let monitor = monitor_info_for_window(self.hwnd, "os_center_on_screen")?;
             let mut rect = super::bindings::RECT {
                 left: 0,
                 top: 0,
@@ -222,8 +259,8 @@ impl WindowOps for WindowsWindowOps {
             }
             let w = rect.right - rect.left;
             let h = rect.bottom - rect.top;
-            let x = (sw - w) / 2;
-            let y = (sh - h) / 2;
+            let x = centered_axis_origin(monitor.rcWork.left, monitor.rcWork.right, w);
+            let y = centered_axis_origin(monitor.rcWork.top, monitor.rcWork.bottom, h);
             if SetWindowPos(
                 self.hwnd,
                 std::ptr::null_mut(),
