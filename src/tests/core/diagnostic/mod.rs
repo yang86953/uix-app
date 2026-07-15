@@ -2,4 +2,5 @@
 
 mod collector;
 mod middleware;
+mod recovery;
 mod timestamp;
