@@ -32,6 +32,16 @@ pub(super) fn calendar_accessibility(
     })
 }
 
+pub(super) fn theme_toggle_accessibility(dark: bool) -> AccessibilitySnapshot {
+    AccessibilitySnapshot::named(AccessibilityRole::Button, "Theme").with_state(
+        AccessibilityState {
+            checked: Some(dark),
+            value_text: Some(if dark { "dark" } else { "light" }.to_string()),
+            ..AccessibilityState::default()
+        },
+    )
+}
+
 pub(super) fn first_non_empty<const N: usize>(values: [&str; N]) -> String {
     values
         .into_iter()

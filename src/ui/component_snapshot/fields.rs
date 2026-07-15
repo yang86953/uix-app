@@ -8,7 +8,9 @@ use crate::ui::widgets::*;
 use crate::ui::window_chrome::WindowControl;
 use crate::ui::Placement;
 
-use super::accessibility::{calendar_accessibility, carousel_accessibility, first_non_empty};
+use super::accessibility::{
+    calendar_accessibility, carousel_accessibility, first_non_empty, theme_toggle_accessibility,
+};
 use super::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotCollapsePanel,
     SnapshotField, SnapshotTableColumn, SnapshotTableColumnGroup, SnapshotTransferItem,
@@ -985,6 +987,7 @@ impl SnapshotFields {
             Self::Spin { tip, .. } => {
                 AccessibilitySnapshot::named(AccessibilityRole::Status, tip.clone())
             }
+            Self::ThemeToggle { dark } => theme_toggle_accessibility(*dark),
             _ => AccessibilitySnapshot::new(AccessibilityRole::Generic),
         }
     }
