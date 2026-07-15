@@ -7,7 +7,9 @@ use crate::draw::Color;
 use crate::native::traits::input::ControlSize;
 use crate::ui::state::State;
 use crate::ui::SnapshotFields;
-use crate::ui::{ComponentId, EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetTree};
+use crate::ui::{
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
+};
 use std::cell::Cell;
 
 component! {
@@ -33,7 +35,10 @@ component! {
         if self.disabled { return EventResult::NotHandled; }
         self.sync_bound_checked();
         match event {
-            SystemEvent::PointerDown { .. } => {
+            SystemEvent::PointerDown {
+                button: MouseButton::Left,
+                ..
+            } => {
                 self.toggle_checked();
                 self.focused = true;
                 EventResult::Handled

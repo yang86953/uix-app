@@ -5,7 +5,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
-use crate::ui::{EventResult, KeyCode, SnapshotFields, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyCode, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CascaderOption {
@@ -65,7 +65,11 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 self.focused = true;
                 if pos.y >= 0.0 && pos.y <= 32.0 {
                     if self.open {

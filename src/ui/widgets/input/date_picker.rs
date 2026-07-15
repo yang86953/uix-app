@@ -17,7 +17,8 @@ use crate::ui::widgets::input::date_calendar::{
     CalendarPanelState, MonthNavigation,
 };
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    WidgetTree,
 };
 
 /// 归一到合法年月日的公历日期。
@@ -176,7 +177,11 @@ component! {
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         self.sync_bound_value();
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 self.focused = true;
                 if !self.open.get() {
                     self.open.set(true);

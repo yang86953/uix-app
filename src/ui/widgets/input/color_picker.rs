@@ -10,7 +10,8 @@ use crate::native::traits::input::ControlSize;
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::state::State;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    WidgetTree,
 };
 use std::cell::Cell;
 
@@ -47,7 +48,11 @@ component! {
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         self.sync_bound_value();
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 if pos.y >= 0.0 && pos.y <= self.control_height() {
                     if self.open {
                         self.close();

@@ -6,8 +6,8 @@ use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::foundation::virtual_scroll::VirtualListScroll;
 use crate::ui::widgets::display::tree::TreeNode;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SnapshotTreeNode,
-    SystemEvent, WidgetTree,
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields,
+    SnapshotTreeNode, SystemEvent, WidgetTree,
 };
 use std::cell::{Cell, RefCell};
 
@@ -50,7 +50,11 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 self.focused = true;
                 if pos.y >= 0.0 && pos.y <= DROPDOWN_TRIGGER_HEIGHT {
                     if self.open {

@@ -7,7 +7,8 @@ use crate::draw::Radius;
 use crate::native::traits::input::ControlSize;
 use crate::ui::state::State;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    WidgetTree,
 };
 use std::cell::Cell;
 
@@ -36,7 +37,11 @@ component! {
         self.sync_bound_value();
         if self.disabled { return EventResult::NotHandled; }
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 if let Some(idx) = self.segment_at(pos.x) {
                     if self.select_index(idx) {
                         return EventResult::Handled;

@@ -14,7 +14,7 @@ use crate::native::traits::input::ControlSize;
 use crate::ui::clipboard;
 use crate::ui::state::State;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, KeyMod, SemanticEvent, SystemEvent, WidgetTree,
+    ComponentId, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
 };
 use crate::ui::{SnapshotFields, SnapshotSource};
 
@@ -89,7 +89,11 @@ component! {
         if self.disabled { return EventResult::NotHandled; }
         self.sync_bound_value();
         match event {
-            SystemEvent::PointerDown { pos, mods, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                mods,
+            } => {
                 // 密码眼睛图标命中
                 if self.password && self.pwd_icon_rect.get().contains(*pos) {
                     self.password_visible = !self.password_visible;
@@ -125,7 +129,10 @@ component! {
                 self.set_selection_range(anchor, ci);
                 EventResult::Handled
             }
-            SystemEvent::PointerUp { .. } => {
+            SystemEvent::PointerUp {
+                button: MouseButton::Left,
+                ..
+            } => {
                 self.sel_dragging.set(false);
                 if let Some((s, e)) = self.selection.get() {
                     if s == e { self.selection.set(None); }

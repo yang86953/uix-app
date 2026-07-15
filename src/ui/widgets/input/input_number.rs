@@ -9,7 +9,9 @@ use crate::draw::{Color, Radius};
 use crate::native::traits::input::ControlSize;
 use crate::ui::state::State;
 use crate::ui::SnapshotFields;
-use crate::ui::{ComponentId, EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetTree};
+use crate::ui::{
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
+};
 use std::cell::Cell;
 
 /// 可绑定到 `InputNumber` 的数值类型。
@@ -121,7 +123,11 @@ component! {
         self.sync_bound_value();
         if self.disabled { return EventResult::NotHandled; }
         match event {
-            SystemEvent::PointerDown { pos, .. } => {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 let control_height = crate::ui::config::control_height(self.input_size);
                 let step_left = self.rendered_width.get() - control_height;
                 if pos.x >= step_left {
