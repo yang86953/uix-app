@@ -4629,6 +4629,77 @@ fn programmatic_focus_stays_dormant_while_window_is_inactive() {
 }
 
 #[test]
+fn inactive_window_rejects_stale_keyboard_text_and_ime_input() {
+    let mut tree = WidgetTree::new();
+    let target = tree.set_root(Box::new(SpyWidget::new(200.0, 100.0)));
+    tree.get_mut(target)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 100.0));
+    tree.set_focus(Some(target));
+    tree.dispatch_event(&SystemEvent::WindowBlur);
+    tree.get(target)
+        .and_then(|node| node.component().as_any().downcast_ref::<SpyWidget>())
+        .expect("spy target")
+        .events
+        .borrow_mut()
+        .clear();
+
+    let stale = [
+        SystemEvent::KeyDown {
+            key: KeyCode::A,
+            mods: KeyMod::NONE,
+        },
+        SystemEvent::KeyUp {
+            key: KeyCode::A,
+            mods: KeyMod::NONE,
+        },
+        SystemEvent::TextInput { text: "x".into() },
+        SystemEvent::ImeCompositionStart,
+        SystemEvent::ImeCompositionUpdate { text: "拼".into() },
+        SystemEvent::ImeCompositionEnd {
+            text: "拼音".into(),
+        },
+        SystemEvent::Copy,
+        SystemEvent::Cut,
+        SystemEvent::Paste {
+            text: "stale".into(),
+        },
+    ];
+    for event in &stale {
+        assert_eq!(tree.dispatch_event(event), EventResult::NotHandled);
+    }
+    assert!(tree
+        .get(target)
+        .and_then(|node| node.component().as_any().downcast_ref::<SpyWidget>())
+        .is_some_and(|widget| widget.events.borrow().is_empty()));
+
+    tree.dispatch_event(&SystemEvent::WindowFocus);
+    tree.get(target)
+        .and_then(|node| node.component().as_any().downcast_ref::<SpyWidget>())
+        .expect("spy target")
+        .events
+        .borrow_mut()
+        .clear();
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::A,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(tree
+        .get(target)
+        .and_then(|node| node.component().as_any().downcast_ref::<SpyWidget>())
+        .is_some_and(|widget| widget.events.borrow().iter().any(|event| matches!(
+            event,
+            SystemEvent::KeyDown {
+                key: KeyCode::A,
+                ..
+            }
+        ))));
+}
+
+#[test]
 fn capture_phase_requires_explicit_opt_in() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));
