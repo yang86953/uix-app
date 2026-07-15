@@ -1,7 +1,7 @@
 use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::layout::engine::BoxModel;
-use crate::ui::widgets::Container;
+use crate::ui::widgets::{Button, Container};
 
 #[test]
 fn measure_clamps_container_intrinsic_size() {
@@ -84,6 +84,36 @@ fn measure_children_filters_hidden_and_preserves_layout_metadata() {
     assert_eq!(measured[0].grid_cell, Some(2));
     assert_eq!(measured[0].grid_column_span, 3);
     assert_eq!(measured[0].grid_row_span, 4);
+}
+
+#[test]
+fn component_visibility_gates_the_container_subtree() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().visible(false)));
+    let child = tree.add_child(root, Box::new(Button::new("Hidden")));
+    tree.get_mut(root)
+        .expect("root")
+        .set_frame(Rect::new(0.0, 0.0, 120.0, 40.0));
+    tree.get_mut(child)
+        .expect("child")
+        .set_frame(Rect::new(0.0, 0.0, 120.0, 40.0));
+
+    assert!(!tree.get(root).expect("root").visible());
+    assert_eq!(tree.hit_test(Point::new(20.0, 20.0)), None);
+    assert!(tree.collect_focusable().is_empty());
+
+    tree.get_mut(root)
+        .expect("root")
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<Container>()
+        .expect("Container")
+        .style
+        .visible = true;
+
+    assert!(tree.get(root).expect("root").visible());
+    assert_eq!(tree.hit_test(Point::new(20.0, 20.0)), Some(child));
+    assert_eq!(tree.collect_focusable(), vec![child]);
 }
 
 #[test]

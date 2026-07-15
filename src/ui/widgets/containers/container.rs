@@ -39,6 +39,8 @@ component! {
         pub(crate) cached_content_size: Cell<Size>,
     }
 
+    visible => (&self) -> bool { self.style.visible }
+
     measure => (&self, constraints: Constraints) -> Size {
         let intrinsic = self.intrinsic_size();
         let clamped = constraints.clamp(intrinsic);

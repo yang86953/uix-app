@@ -566,7 +566,7 @@ impl WidgetTree {
 
             let mut changed = false;
             if let Some(n) = self.get_mut(current) {
-                if n.visible() != visible {
+                if n.visibility_gate() != visible {
                     n.set_visible(visible);
                     self.tree_version += 1;
                     changed = true;
