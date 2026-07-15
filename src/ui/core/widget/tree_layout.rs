@@ -927,7 +927,7 @@ impl WidgetTree {
 
     fn active_animation_frame(&self, id: WidgetId) -> Option<Rect> {
         let node = self.get(id)?;
-        (node.visible()
+        (self.is_effectively_visible(id)
             && node.active()
             && node
                 .capabilities()
