@@ -186,11 +186,12 @@ fn load_whitespace_file_resets_state() {
 }
 
 #[test]
-fn save_without_loaded_path_is_noop() {
+fn save_without_loaded_path_returns_typed_error_and_keeps_dirty_state() {
     let settings = SettingsService::new();
     settings.set("theme", "dark");
-    settings.save().unwrap();
+    let error = settings.save().unwrap_err();
 
+    assert_eq!(error.code(), Errc::InvalidState);
     assert_eq!(settings.loaded_path(), None);
     assert_eq!(settings.get("theme"), Some("dark".to_string()));
     assert!(settings.dirty());
