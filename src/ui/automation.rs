@@ -409,6 +409,7 @@ impl TestApp {
     }
 
     pub fn press_key(&mut self, key: KeyCode, mods: KeyMod) -> Result<(), AutomationError> {
+        self.settle()?;
         let _ = self
             .tree
             .dispatch_event(&SystemEvent::KeyDown { key, mods });
