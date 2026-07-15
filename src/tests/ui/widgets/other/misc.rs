@@ -1,5 +1,5 @@
 use crate::tests::common::*;
-use crate::ui::widgets::{QRCode, Transfer, TransferItem, Upload, UploadStatus};
+use crate::ui::widgets::{QRCode, Transfer, TransferItem, Upload, UploadStatus, Watermark};
 use crate::ui::{AccessibilityRole, SnapshotTransferItem};
 
 #[test]
@@ -216,4 +216,48 @@ fn upload_single_mode_and_progress_stay_within_public_bounds() {
     assert_eq!(upload.files()[0].progress, 1.0);
     upload.update_progress(0, f32::NAN);
     assert_eq!(upload.files()[0].progress, 0.0);
+}
+
+#[test]
+fn watermark_tiles_are_anchored_to_the_component_frame() {
+    let watermark = Watermark::new("internal")
+        .font_size(10.0)
+        .rotate(0.0)
+        .gap(80.0, 60.0)
+        .offset(12.0, 18.0);
+    let frame = Rect::new(100.0, 50.0, 200.0, 120.0);
+
+    assert_eq!(
+        watermark.tile_position(frame, 0, 0),
+        Point::new(112.0, 68.0)
+    );
+    assert_eq!(
+        watermark.tile_position(frame, 1, 1),
+        Point::new(192.0, 128.0)
+    );
+}
+
+#[test]
+fn watermark_normalizes_non_finite_and_unbounded_configuration() {
+    let watermark = Watermark::new("safe")
+        .font_size(f32::NAN)
+        .opacity(4.0)
+        .rotate(f32::INFINITY)
+        .gap(0.0, -1.0)
+        .offset(f32::NAN, f32::NEG_INFINITY);
+
+    assert_eq!(
+        watermark.snapshot_fields(),
+        SnapshotFields::Watermark {
+            text: "safe".into(),
+            color: Color::from_rgba(0, 0, 0, 255),
+            font_size: 14.0,
+            opacity: 1.0,
+            rotate: -22.0,
+            gap_x: 200.0,
+            gap_y: 160.0,
+            x_offset: 0.0,
+            y_offset: 0.0,
+        }
+    );
 }

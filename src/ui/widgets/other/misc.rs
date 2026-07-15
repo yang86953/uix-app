@@ -756,29 +756,22 @@ component! {
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         if self.text.is_empty() { return; }
         let mut c = self.color;
-        c.a = (self.opacity * 255.0) as u8;
-        let step_x = self.gap_x;
-        let step_y = self.gap_y;
-        let angle_rad = self.rotate * std::f32::consts::PI / 180.0;
-        let cos_a = angle_rad.cos();
-        let sin_a = angle_rad.sin();
+        c.a = (self.opacity * 255.0).round() as u8;
+        let columns = (frame.w.max(0.0) / self.gap_x).ceil() as usize + 2;
+        let rows = (frame.h.max(0.0) / self.gap_y).ceil() as usize + 2;
 
-        let fw = frame.w as i32;
-        let fh = frame.h as i32;
-        let sx = step_x as i32;
-        let sy = step_y as i32;
-
-        for gy in 0..(fh / sy.max(1) + 2) {
-            for gx in 0..(fw / sx.max(1) + 2) {
-                let base_x = gx as f32 * step_x + self.x_offset;
-                let base_y = gy as f32 * step_y + self.y_offset;
-                // 旋转偏移
-                let half = self.text.len() as f32 * self.font_size * 0.3;
-                let rx = (base_x - half) * cos_a - (base_y - half) * sin_a + half;
-                let ry = (base_x - half) * sin_a + (base_y - half) * cos_a + half;
-                ctx.draw_text(&self.text, Point::new(rx, ry), c, self.font_size);
+        ctx.push_clip(frame);
+        for gy in 0..rows {
+            for gx in 0..columns {
+                ctx.draw_text(
+                    &self.text,
+                    self.tile_position(frame, gx, gy),
+                    c,
+                    self.font_size,
+                );
             }
         }
+        ctx.pop_clip();
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
@@ -789,15 +782,21 @@ component! {
     }
 }
 impl Watermark {
+    const DEFAULT_FONT_SIZE: f32 = 14.0;
+    const DEFAULT_OPACITY: f32 = 0.15;
+    const DEFAULT_ROTATE: f32 = -22.0;
+    const DEFAULT_GAP_X: f32 = 200.0;
+    const DEFAULT_GAP_Y: f32 = 160.0;
+
     pub fn new(text: &str) -> Self {
         Self {
             text: text.to_string(),
             color: Color::from_rgba(0, 0, 0, 255),
-            font_size: 14.0,
-            opacity: 0.15,
-            rotate: -22.0,
-            gap_x: 200.0,
-            gap_y: 160.0,
+            font_size: Self::DEFAULT_FONT_SIZE,
+            opacity: Self::DEFAULT_OPACITY,
+            rotate: Self::DEFAULT_ROTATE,
+            gap_x: Self::DEFAULT_GAP_X,
+            gap_y: Self::DEFAULT_GAP_Y,
             x_offset: 0.0,
             y_offset: 0.0,
         }
@@ -807,26 +806,53 @@ impl Watermark {
         self
     }
     pub fn font_size(mut self, s: f32) -> Self {
-        self.font_size = s;
+        self.font_size = Self::positive_or(s, Self::DEFAULT_FONT_SIZE);
         self
     }
     pub fn opacity(mut self, o: f32) -> Self {
-        self.opacity = o;
+        self.opacity = if o.is_finite() {
+            o.clamp(0.0, 1.0)
+        } else {
+            Self::DEFAULT_OPACITY
+        };
         self
     }
     pub fn rotate(mut self, r: f32) -> Self {
-        self.rotate = r;
+        self.rotate = if r.is_finite() {
+            r
+        } else {
+            Self::DEFAULT_ROTATE
+        };
         self
     }
     pub fn gap(mut self, x: f32, y: f32) -> Self {
-        self.gap_x = x;
-        self.gap_y = y;
+        self.gap_x = Self::positive_or(x, Self::DEFAULT_GAP_X);
+        self.gap_y = Self::positive_or(y, Self::DEFAULT_GAP_Y);
         self
     }
     pub fn offset(mut self, x: f32, y: f32) -> Self {
-        self.x_offset = x;
-        self.y_offset = y;
+        self.x_offset = if x.is_finite() { x } else { 0.0 };
+        self.y_offset = if y.is_finite() { y } else { 0.0 };
         self
+    }
+
+    pub(crate) fn tile_position(&self, frame: Rect, gx: usize, gy: usize) -> Point {
+        let base_x = gx as f32 * self.gap_x + self.x_offset;
+        let base_y = gy as f32 * self.gap_y + self.y_offset;
+        let angle_rad = self.rotate.to_radians();
+        let (sin_a, cos_a) = angle_rad.sin_cos();
+        let half = self.text.len() as f32 * self.font_size * 0.3;
+        let rotated_x = (base_x - half) * cos_a - (base_y - half) * sin_a + half;
+        let rotated_y = (base_x - half) * sin_a + (base_y - half) * cos_a + half;
+        Point::new(frame.x + rotated_x, frame.y + rotated_y)
+    }
+
+    fn positive_or(value: f32, fallback: f32) -> f32 {
+        if value.is_finite() && value >= 1.0 {
+            value
+        } else {
+            fallback
+        }
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
