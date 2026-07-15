@@ -107,6 +107,16 @@ pub struct Collector {
 }
 
 impl Collector {
+    fn configured_log_level(config: &CollectorConfig, severity: ErrorSeverity) -> Option<Level> {
+        if severity.should_abort() {
+            Some(Level::Fatal)
+        } else if config.auto_log {
+            Some(config.auto_log_level)
+        } else {
+            None
+        }
+    }
+
     fn with_config(config: CollectorConfig) -> Self {
         Self {
             inner: RwLock::new(CollectorInner {
@@ -128,6 +138,12 @@ impl Collector {
     #[cfg(test)]
     pub(crate) fn for_test(config: CollectorConfig) -> Self {
         Self::with_config(config)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn configured_log_level_for_test(&self, severity: ErrorSeverity) -> Option<Level> {
+        let inner = self.inner.read().unwrap_or_else(|error| error.into_inner());
+        Self::configured_log_level(&inner.config, severity)
     }
 
     pub fn configure(&self, config: CollectorConfig) {
@@ -200,24 +216,18 @@ impl Collector {
 
         // 在不持有内部锁时按快照调用回调，避免重入死锁。
         let callbacks: Vec<ErrorCallback> = inner.callbacks.values().cloned().collect();
-        let should_log = inner.config.auto_log || severity >= ErrorSeverity::Error;
+        let log_level = Self::configured_log_level(&inner.config, severity);
         drop(inner);
         for cb in &callbacks {
             cb(&callback_error);
         }
 
-        if should_log {
-            let level = match severity {
-                ErrorSeverity::Info => Level::Info,
-                ErrorSeverity::Warning => Level::Warn,
-                ErrorSeverity::Error => Level::Error,
-                ErrorSeverity::Fatal => Level::Fatal,
-            };
+        if let Some(level) = log_level {
             Logger::instance().log_error(&callback_error, level);
-            if severity.should_abort() {
-                crate::core::diagnostic::dump_crash_report();
-                std::process::abort();
-            }
+        }
+        if severity.should_abort() {
+            crate::core::diagnostic::dump_crash_report();
+            std::process::abort();
         }
 
         stored

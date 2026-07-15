@@ -1,5 +1,6 @@
 use crate::core::diagnostic::{Collector, CollectorConfig};
-use crate::core::{Errc, Error};
+use crate::core::log::Level;
+use crate::core::{Errc, Error, ErrorSeverity};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -22,6 +23,30 @@ fn configure_immediately_enforces_the_new_capacity() {
 
     assert_eq!(collector.stored_count(), 1);
     assert_eq!(collector.errors()[0].message(), "third");
+}
+
+#[test]
+fn collector_auto_log_policy_honors_enablement_and_configured_level() {
+    let collector = Collector::for_test(CollectorConfig {
+        auto_log: true,
+        auto_log_level: Level::Debug,
+        ..CollectorConfig::default()
+    });
+
+    assert_eq!(
+        collector.configured_log_level_for_test(ErrorSeverity::Warning),
+        Some(Level::Debug)
+    );
+
+    collector.set_auto_log(false, Level::Trace);
+    assert_eq!(
+        collector.configured_log_level_for_test(ErrorSeverity::Error),
+        None
+    );
+    assert_eq!(
+        collector.configured_log_level_for_test(ErrorSeverity::Fatal),
+        Some(Level::Fatal)
+    );
 }
 
 #[test]
