@@ -421,7 +421,7 @@ impl VulkanContext {
                     .map_err(|err| vk_err("vkDeviceWaitIdle before swapchain recreate", err))?;
             }
             if maintenance1 {
-                self.present_fences.wait_all(&self.device)?;
+                self.present_fences.wait_and_reset_all(&self.device)?;
             } else {
                 self.present_lifetime
                     .complete_submission(&self.device, &self.swapchain_loader)?;
@@ -718,7 +718,7 @@ impl VulkanContext {
         device.observe_wait(wait_result);
         match wait_result {
             Ok(()) if self.present_fences.enabled() => {
-                self.present_fences.wait_all(&self.device)?;
+                self.present_fences.wait_and_reset_all(&self.device)?;
             }
             Ok(()) => {
                 self.present_lifetime
