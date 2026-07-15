@@ -182,9 +182,9 @@ impl Error {
         self.code == Errc::None
     }
 
-    /// has_value 是 is_none 的反向，语义为「没有错误」。
+    /// 检查是否携带实际错误值，与 `is_none` 互为反向。
     pub fn has_value(&self) -> bool {
-        self.code == Errc::None
+        !self.is_none()
     }
 
     /// 检查错误码是否等于指定值。
