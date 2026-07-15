@@ -237,6 +237,13 @@ pub trait EventHandler: WidgetComponent {
     fn on_event(&mut self, _event: &SystemEvent) -> EventResult {
         EventResult::NotHandled
     }
+    /// 组件自身或后代进入/离开焦点范围时通知一次。
+    ///
+    /// 同一组件子树内的焦点切换不会重复触发；需要观察子控件焦点的交互包装器
+    /// 应实现本钩子，而不是改变普通 `FocusIn` / `FocusOut` 的目标分发语义。
+    fn on_focus_within(&mut self, _focused: bool) -> EventResult {
+        EventResult::NotHandled
+    }
     /// 取走本次已处理事件产生的窗口动作。
     ///
     /// 动作由 `WidgetTree` 收集，并在事件所属窗口上同步执行；组件不得直接

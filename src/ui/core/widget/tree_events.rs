@@ -969,16 +969,47 @@ impl WidgetTree {
         if new_focus == old_focus {
             return;
         }
+        let old_path = self.focus_containment_path(old_focus);
+        let new_path = self.focus_containment_path(new_focus);
         if let Some(old) = old_focus {
             self.invalidate_paint(old);
             let _ = self.dispatch_to(old, &SystemEvent::FocusOut);
+        }
+        for &id in &old_path {
+            if !new_path.contains(&id) {
+                self.dispatch_focus_within(id, false);
+            }
         }
         self.managers_mut().focus.set_focused_component(new_focus);
         if let Some(new) = new_focus {
             self.invalidate_paint(new);
             let _ = self.dispatch_to(new, &SystemEvent::FocusIn);
         }
+        for &id in new_path.iter().rev() {
+            if !old_path.contains(&id) {
+                self.dispatch_focus_within(id, true);
+            }
+        }
         self.reconcile_lifecycle_after_layout();
+    }
+
+    fn focus_containment_path(&self, target: Option<WidgetId>) -> Vec<WidgetId> {
+        let mut path = Vec::new();
+        let mut current = target;
+        while let Some(id) = current {
+            path.push(id);
+            current = self.get(id).and_then(|node| node.parent());
+        }
+        path
+    }
+
+    fn dispatch_focus_within(&mut self, id: WidgetId, focused: bool) {
+        let handled = self
+            .get_mut(id)
+            .is_some_and(|node| node.on_focus_within(focused) == EventResult::Handled);
+        if handled {
+            self.on_widget_handled_in_capture(id);
+        }
     }
 
     /// NavItem 共享 active 索引时，刷新整组导航项（取消/选中态联动）。

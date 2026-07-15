@@ -70,21 +70,6 @@ component! {
                 self.pending = false;
                 EventResult::Handled
             }
-            (TriggerMode::Focus, SystemEvent::FocusIn) => {
-                if self.delay_ms == 0 {
-                    self.open();
-                    self.pending = false;
-                } else {
-                    self.close();
-                    self.pending = true;
-                }
-                EventResult::Handled
-            }
-            (TriggerMode::Focus, SystemEvent::FocusOut) => {
-                self.close();
-                self.pending = false;
-                EventResult::Handled
-            }
             (_, SystemEvent::Timer { id }) if self.pending && *id == self.timer_id => {
                 self.open();
                 self.pending = false;
@@ -92,6 +77,25 @@ component! {
             }
             _ => EventResult::NotHandled,
         }
+    }
+
+    on_focus_within => (&mut self, focused: bool) -> EventResult {
+        if self.trigger != TriggerMode::Focus {
+            return EventResult::NotHandled;
+        }
+        if focused {
+            if self.delay_ms == 0 {
+                self.open();
+                self.pending = false;
+            } else {
+                self.close();
+                self.pending = true;
+            }
+        } else {
+            self.close();
+            self.pending = false;
+        }
+        EventResult::Handled
     }
 
     active_timer => (&self) -> Option<(u64, std::time::Duration)> {

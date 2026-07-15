@@ -79,15 +79,21 @@ component! {
                     _ => {}
                 }
             }
-            PopoverTrigger::Focus => {
-                match event {
-                    SystemEvent::FocusIn => { self.open(); return EventResult::Handled; }
-                    SystemEvent::FocusOut => { self.close(); return EventResult::Handled; }
-                    _ => {}
-                }
-            }
+            PopoverTrigger::Focus => {}
         }
         EventResult::NotHandled
+    }
+
+    on_focus_within => (&mut self, focused: bool) -> EventResult {
+        if self.trigger != PopoverTrigger::Focus {
+            return EventResult::NotHandled;
+        }
+        if focused {
+            self.open();
+        } else {
+            self.close();
+        }
+        EventResult::Handled
     }
 
 

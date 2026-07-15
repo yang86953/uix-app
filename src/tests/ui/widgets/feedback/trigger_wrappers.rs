@@ -1,5 +1,7 @@
 use crate::tests::common::*;
-use crate::ui::widgets::{Button, Popconfirm, Popover, Tooltip};
+use crate::ui::widgets::{
+    Button, Container, Popconfirm, Popover, PopoverTrigger, Tooltip, TriggerMode,
+};
 
 fn set_frame(tree: &mut WidgetTree, id: ComponentId, frame: Rect) {
     tree.get_mut(id).expect("widget").set_frame(frame);
@@ -95,4 +97,66 @@ fn popconfirm_trigger_owns_pointer_hit_and_confirm_emits_submit() {
         .expect("confirm submit");
     assert_eq!(semantic.kind, SemanticKind::Submit);
     assert_eq!(semantic.text_payload(), Some("confirm"));
+}
+
+#[test]
+fn focus_trigger_observes_descendants_without_churn_inside_the_wrapper() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new()));
+    let wrapper = tree.add_child(
+        root,
+        Box::new(Popover::new("details").trigger(PopoverTrigger::Focus)),
+    );
+    let first = tree.add_child(wrapper, Box::new(Button::new("first")));
+    let second = tree.add_child(wrapper, Box::new(Button::new("second")));
+    let outside = tree.add_child(root, Box::new(Button::new("outside")));
+
+    tree.set_focus(Some(first));
+    assert!(tree
+        .get(wrapper)
+        .and_then(|node| node.component().as_any().downcast_ref::<Popover>())
+        .is_some_and(Popover::is_visible));
+
+    tree.set_focus(Some(second));
+    assert!(tree
+        .get(wrapper)
+        .and_then(|node| node.component().as_any().downcast_ref::<Popover>())
+        .is_some_and(Popover::is_visible));
+
+    tree.set_focus(Some(outside));
+    assert!(tree
+        .get(wrapper)
+        .and_then(|node| node.component().as_any().downcast_ref::<Popover>())
+        .is_some_and(|popover| !popover.is_visible()));
+}
+
+#[test]
+fn delayed_focus_tooltip_tracks_child_focus_and_cancels_on_removal() {
+    let mut tree = WidgetTree::new();
+    let wrapper = tree.set_root(Box::new(
+        Tooltip::new("help")
+            .trigger(TriggerMode::Focus)
+            .delay_ms(300),
+    ));
+    let child = tree.add_child(wrapper, Box::new(Button::new("help")));
+
+    tree.set_focus(Some(child));
+    let tooltip = tree
+        .get(wrapper)
+        .and_then(|node| node.component().as_any().downcast_ref::<Tooltip>())
+        .expect("tooltip");
+    assert!(!tooltip.is_visible());
+    assert_eq!(
+        tooltip.active_timer(),
+        Some((1, Duration::from_millis(300)))
+    );
+
+    tree.remove(child);
+    let tooltip = tree
+        .get(wrapper)
+        .and_then(|node| node.component().as_any().downcast_ref::<Tooltip>())
+        .expect("tooltip");
+    assert_eq!(tree.managers().focus.focused_component(), None);
+    assert_eq!(tooltip.active_timer(), None);
+    assert!(!tooltip.is_visible());
 }
