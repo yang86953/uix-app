@@ -389,7 +389,16 @@ impl CircuitBreaker {
     }
 
     pub fn set_threshold(&self, failures: usize) {
-        self.threshold.store(failures.max(1), Ordering::Relaxed);
+        let threshold = failures.max(1);
+        self.threshold.store(threshold, Ordering::Relaxed);
+        if self.failure_count.load(Ordering::Relaxed) >= threshold {
+            let _ = self.state.compare_exchange(
+                CircuitState::Closed as u64,
+                CircuitState::Open as u64,
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            );
+        }
     }
     pub fn threshold(&self) -> usize {
         self.threshold.load(Ordering::Relaxed)
