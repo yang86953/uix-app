@@ -130,7 +130,7 @@ pub struct VulkanContext {
     command_buffer: vk::CommandBuffer,
     upload: UploadBuffer,
     image_available: vk::Semaphore,
-    render_finished: vk::Semaphore,
+    render_finished: Vec<vk::Semaphore>,
     frame_fence: vk::Fence,
     native_surface: *mut c_void,
     logical_width: i32,
@@ -221,23 +221,11 @@ impl VulkanContext {
                 return Err(device_lease.error("vkCreateSemaphore image_available", err));
             }
         };
-        let render_finished = match unsafe { device.create_semaphore(&semaphore_info, None) } {
-            Ok(sem) => sem,
-            Err(err) => {
-                unsafe {
-                    device.destroy_semaphore(image_available, None);
-                    device.destroy_command_pool(command_pool, None);
-                }
-                destroy_failed_surface(&surface_loader, surface);
-                return Err(device_lease.error("vkCreateSemaphore render_finished", err));
-            }
-        };
         let fence_info = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
         let frame_fence = match unsafe { device.create_fence(&fence_info, None) } {
             Ok(fence) => fence,
             Err(err) => {
                 unsafe {
-                    device.destroy_semaphore(render_finished, None);
                     device.destroy_semaphore(image_available, None);
                     device.destroy_command_pool(command_pool, None);
                 }
@@ -277,7 +265,7 @@ impl VulkanContext {
                 size: 0,
             },
             image_available,
-            render_finished,
+            render_finished: Vec::new(),
             frame_fence,
             native_surface,
             logical_width: drawable.logical_width,
@@ -449,6 +437,17 @@ impl VulkanContext {
                 return Err(vk_err("vkGetSwapchainImagesKHR", err));
             }
         };
+        let new_render_finished =
+            match create_render_finished_semaphores(&self.device, new_images.len()) {
+                Ok(semaphores) => semaphores,
+                Err(error) => {
+                    unsafe {
+                        self.swapchain_loader.destroy_swapchain(new_swapchain, None);
+                    }
+                    return Err(error);
+                }
+            };
+        destroy_semaphores(&self.device, &mut self.render_finished);
         if old_swapchain != vk::SwapchainKHR::null() {
             unsafe {
                 self.swapchain_loader.destroy_swapchain(old_swapchain, None);
@@ -456,6 +455,7 @@ impl VulkanContext {
         }
         self.swapchain = new_swapchain;
         self.swapchain_images = new_images;
+        self.render_finished = new_render_finished;
         self.image_layouts = vec![vk::ImageLayout::UNDEFINED; self.swapchain_images.len()];
         self.swapchain_format = surface_format.format;
         self.extent = extent;
@@ -482,7 +482,16 @@ impl VulkanContext {
             Err(err) => return Err(vk_err("vkAcquireNextImageKHR", err)),
         };
 
-        self.record_upload_commands(image_index as usize)?;
+        let image_slot = image_index as usize;
+        let render_finished = self.render_finished.get(image_slot).copied().ok_or_else(|| {
+            Error::new(
+                Errc::InvalidState,
+                format!(
+                    "VulkanContext: acquired swapchain image {image_index} without a present semaphore"
+                ),
+            )
+        })?;
+        self.record_upload_commands(image_slot)?;
         unsafe {
             self.device
                 .reset_fences(&[self.frame_fence])
@@ -493,7 +502,7 @@ impl VulkanContext {
             .wait_semaphores(std::slice::from_ref(&self.image_available))
             .wait_dst_stage_mask(&wait_stages)
             .command_buffers(std::slice::from_ref(&self.command_buffer))
-            .signal_semaphores(std::slice::from_ref(&self.render_finished));
+            .signal_semaphores(std::slice::from_ref(&render_finished));
         if let Err(err) = unsafe {
             self.device
                 .queue_submit(self.queue, std::slice::from_ref(&submit), self.frame_fence)
@@ -501,9 +510,9 @@ impl VulkanContext {
             let fence_recovery = self.restore_signaled_frame_fence();
             return Err(failed_submit_error(err, fence_recovery));
         }
-        self.image_layouts[image_index as usize] = vk::ImageLayout::PRESENT_SRC_KHR;
+        self.image_layouts[image_slot] = vk::ImageLayout::PRESENT_SRC_KHR;
         let present = vk::PresentInfoKHR::default()
-            .wait_semaphores(std::slice::from_ref(&self.render_finished))
+            .wait_semaphores(std::slice::from_ref(&render_finished))
             .swapchains(std::slice::from_ref(&self.swapchain))
             .image_indices(std::slice::from_ref(&image_index));
         let present_match = unsafe { self.swapchain_loader.queue_present(self.queue, &present) };
@@ -561,9 +570,6 @@ impl VulkanContext {
             if self.frame_fence != vk::Fence::null() {
                 self.device.destroy_fence(self.frame_fence, None);
             }
-            if self.render_finished != vk::Semaphore::null() {
-                self.device.destroy_semaphore(self.render_finished, None);
-            }
             if self.image_available != vk::Semaphore::null() {
                 self.device.destroy_semaphore(self.image_available, None);
             }
@@ -578,10 +584,40 @@ impl VulkanContext {
                 self.surface_loader.destroy_surface(self.surface, None);
             }
         }
+        destroy_semaphores(&self.device, &mut self.render_finished);
         self.device_lease.take();
         self.runtime.take();
         self.shutdown = true;
         Ok(())
+    }
+}
+
+fn create_render_finished_semaphores(
+    device: &ash::Device,
+    image_count: usize,
+) -> Result<Vec<vk::Semaphore>> {
+    let create_info = vk::SemaphoreCreateInfo::default();
+    let mut semaphores = Vec::new();
+    for image_index in 0..image_count {
+        // SAFETY: device 存活；create_info 不含调用后保留的指针。
+        match unsafe { device.create_semaphore(&create_info, None) } {
+            Ok(semaphore) => semaphores.push(semaphore),
+            Err(error) => {
+                destroy_semaphores(device, &mut semaphores);
+                return Err(vk_err(
+                    &format!("vkCreateSemaphore render_finished[{image_index}]"),
+                    error,
+                ));
+            }
+        }
+    }
+    Ok(semaphores)
+}
+
+fn destroy_semaphores(device: &ash::Device, semaphores: &mut Vec<vk::Semaphore>) {
+    for semaphore in semaphores.drain(..) {
+        // SAFETY: semaphore 由同一 device 创建，且调用方已完成相应 teardown 等待。
+        unsafe { device.destroy_semaphore(semaphore, None) };
     }
 }
 
