@@ -137,12 +137,16 @@ impl VulkanContext {
     }
 
     /// 单 staging buffer 会被连续帧复用；CPU 覆写或替换前必须确认上一提交已停止读取。
-    fn wait_for_previous_upload(&self) -> Result<()> {
+    fn wait_for_previous_upload(&mut self) -> Result<()> {
         let fence_t0 = std::time::Instant::now();
         unsafe {
             self.device
                 .wait_for_fences(&[self.frame_fence], true, u64::MAX)
                 .map_err(|err| vk_err("vkWaitForFences before staging upload", err))?;
+        }
+        if !self.present_fences.enabled() {
+            self.present_lifetime
+                .complete_submission(&self.device, &self.swapchain_loader)?;
         }
         let mut sample = crate::core::perf_probe::take_present();
         sample.fence_wait_us = fence_t0.elapsed().as_micros();

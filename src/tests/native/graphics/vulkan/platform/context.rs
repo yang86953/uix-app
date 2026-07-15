@@ -404,9 +404,10 @@ fn windows_vulkan_gfx_r5_expected_vendor_resize_present_readback() {
     );
 
     println!(
-        "GFX-R5 Vulkan vendor evidence: expected={}; {}",
+        "GFX-R5 Vulkan vendor evidence: expected={}; {}; swapchain_maintenance1={}",
         expected.label(),
-        context.adapter_info.diagnostic_summary()
+        context.adapter_info.diagnostic_summary(),
+        context.swapchain_maintenance1_enabled_for_test()
     );
     context.try_shutdown().expect("shutdown matrix context");
     window.close().expect("close matrix window");
@@ -820,9 +821,10 @@ fn windows_vulkan_shared_device_multiwindow_soak_is_bounded() {
         "shared multiwindow handles grew beyond the bounded envelope: before={handles_before}, peak={peak_handles}, after={handles_after}"
     );
     println!(
-        "Vulkan shared-device soak: duration={:.1}s rounds={rounds} handles={handles_before}->{handles_after} peak={peak_handles}; {}",
+        "Vulkan shared-device soak: duration={:.1}s rounds={rounds} handles={handles_before}->{handles_after} peak={peak_handles}; {}; swapchain_maintenance1={}",
         duration.as_secs_f64(),
-        first.adapter_info.diagnostic_summary()
+        first.adapter_info.diagnostic_summary(),
+        first.swapchain_maintenance1_enabled_for_test()
     );
 
     first.try_shutdown().expect("shutdown first shared surface");
@@ -915,9 +917,10 @@ fn windows_vulkan_hardware_resize_present_soak_is_bounded() {
         "process handles grew beyond the bounded envelope: before={handles_before}, peak={peak_handles}, after={handles_after}"
     );
     println!(
-        "Vulkan soak: duration={:.1}s rounds={rounds} handles={handles_before}->{handles_after} peak={peak_handles}; {}",
+        "Vulkan soak: duration={:.1}s rounds={rounds} handles={handles_before}->{handles_after} peak={peak_handles}; {}; swapchain_maintenance1={}",
         duration.as_secs_f64(),
-        context.adapter_info.diagnostic_summary()
+        context.adapter_info.diagnostic_summary(),
+        context.swapchain_maintenance1_enabled_for_test()
     );
 
     context.try_shutdown().expect("shutdown");

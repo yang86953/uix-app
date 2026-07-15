@@ -28,9 +28,14 @@ mod transfer;
 
 pub(crate) use swapchain::allocate_image_layouts;
 #[cfg(test)]
+pub(crate) use swapchain::PresentCompletion;
+#[cfg(test)]
 pub(crate) use transfer::allocate_cpu_shadow;
 
-use swapchain::{create_render_finished_semaphores, destroy_semaphores};
+use swapchain::{
+    allocate_presented_images, create_render_finished_semaphores, destroy_semaphores,
+    PresentFenceSet, PresentLifetime,
+};
 
 pub(crate) fn vk_err(operation: &str, err: vk::Result) -> Error {
     let code = match err {
@@ -167,6 +172,8 @@ pub struct VulkanContext {
     upload: UploadBuffer,
     image_available: vk::Semaphore,
     render_finished: Vec<vk::Semaphore>,
+    present_fences: PresentFenceSet,
+    present_lifetime: PresentLifetime,
     frame_fence: vk::Fence,
     native_surface: *mut c_void,
     logical_width: i32,
@@ -302,6 +309,8 @@ impl VulkanContext {
             },
             image_available,
             render_finished: Vec::new(),
+            present_fences: PresentFenceSet::empty(),
+            present_lifetime: PresentLifetime::new(),
             frame_fence,
             native_surface,
             logical_width: drawable.logical_width,
@@ -334,6 +343,12 @@ impl VulkanContext {
                 "VulkanContext: operation requested after shutdown",
             )
         })
+    }
+
+    fn swapchain_maintenance1_enabled(&self) -> bool {
+        self.device_lease
+            .as_ref()
+            .is_some_and(|device| device.swapchain_maintenance1_enabled())
     }
 
     #[cfg(test)]
@@ -398,11 +413,19 @@ impl VulkanContext {
             }
         }
         let old_swapchain = self.swapchain;
+        let maintenance1 = self.swapchain_maintenance1_enabled();
         if old_swapchain != vk::SwapchainKHR::null() {
             unsafe {
                 self.device
                     .device_wait_idle()
                     .map_err(|err| vk_err("vkDeviceWaitIdle before swapchain recreate", err))?;
+            }
+            if maintenance1 {
+                self.present_fences.wait_all(&self.device)?;
+            } else {
+                self.present_lifetime
+                    .complete_submission(&self.device, &self.swapchain_loader)?;
+                self.present_lifetime.reserve_retirement()?;
             }
         }
 
@@ -498,6 +521,19 @@ impl VulkanContext {
                 return Err(error);
             }
         };
+        let new_presented_images = if maintenance1 {
+            Vec::new()
+        } else {
+            match allocate_presented_images(new_images.len()) {
+                Ok(presented) => presented,
+                Err(error) => {
+                    unsafe {
+                        self.swapchain_loader.destroy_swapchain(new_swapchain, None);
+                    }
+                    return Err(error);
+                }
+            }
+        };
         let new_render_finished =
             match create_render_finished_semaphores(&self.device, new_images.len()) {
                 Ok(semaphores) => semaphores,
@@ -508,15 +544,41 @@ impl VulkanContext {
                     return Err(error);
                 }
             };
-        destroy_semaphores(&self.device, &mut self.render_finished);
+        let new_present_fences =
+            match PresentFenceSet::create(&self.device, new_images.len(), maintenance1) {
+                Ok(fences) => fences,
+                Err(error) => {
+                    let mut semaphores = new_render_finished;
+                    destroy_semaphores(&self.device, &mut semaphores);
+                    unsafe {
+                        self.swapchain_loader.destroy_swapchain(new_swapchain, None);
+                    }
+                    return Err(error);
+                }
+            };
+
+        let mut old_render_finished =
+            std::mem::replace(&mut self.render_finished, new_render_finished);
+        let mut old_present_fences =
+            std::mem::replace(&mut self.present_fences, new_present_fences);
         if old_swapchain != vk::SwapchainKHR::null() {
-            unsafe {
-                self.swapchain_loader.destroy_swapchain(old_swapchain, None);
+            if maintenance1 {
+                // SAFETY: 每个成功 present 的 maintenance1 fence 均已等待完成。
+                unsafe {
+                    self.swapchain_loader.destroy_swapchain(old_swapchain, None);
+                }
+                destroy_semaphores(&self.device, &mut old_render_finished);
+            } else {
+                self.present_lifetime
+                    .retire_reserved(old_swapchain, old_render_finished);
             }
+        } else {
+            destroy_semaphores(&self.device, &mut old_render_finished);
         }
+        old_present_fences.destroy(&self.device);
+        self.present_lifetime.begin_generation(new_presented_images);
         self.swapchain = new_swapchain;
         self.swapchain_images = new_images;
-        self.render_finished = new_render_finished;
         self.image_layouts = new_image_layouts;
         self.swapchain_format = surface_format.format;
         self.extent = extent;
@@ -552,6 +614,15 @@ impl VulkanContext {
                 ),
             )
         })?;
+        let release_count = if self.present_fences.enabled() {
+            0
+        } else {
+            self.present_lifetime
+                .release_count_for_acquire(image_slot)?
+        };
+        let present_fence = self
+            .present_fences
+            .prepare_for_present(&self.device, image_slot)?;
         self.record_upload_commands(image_slot)?;
         unsafe {
             self.device
@@ -571,21 +642,46 @@ impl VulkanContext {
             let fence_recovery = self.restore_signaled_frame_fence();
             return Err(failed_submit_error(err, fence_recovery));
         }
+        if present_fence.is_none() {
+            self.present_lifetime.on_submission_queued(release_count);
+        }
         self.image_layouts[image_slot] = vk::ImageLayout::PRESENT_SRC_KHR;
-        let present = vk::PresentInfoKHR::default()
-            .wait_semaphores(std::slice::from_ref(&render_finished))
-            .swapchains(std::slice::from_ref(&self.swapchain))
-            .image_indices(std::slice::from_ref(&image_index));
-        let present_match = unsafe { self.swapchain_loader.queue_present(self.queue, &present) };
+        let present_match = if let Some(present_fence) = present_fence {
+            let fences = [present_fence];
+            let mut fence_info = vk::SwapchainPresentFenceInfoEXT::default().fences(&fences);
+            let present = vk::PresentInfoKHR::default()
+                .wait_semaphores(std::slice::from_ref(&render_finished))
+                .swapchains(std::slice::from_ref(&self.swapchain))
+                .image_indices(std::slice::from_ref(&image_index))
+                .push_next(&mut fence_info);
+            unsafe { self.swapchain_loader.queue_present(self.queue, &present) }
+        } else {
+            let present = vk::PresentInfoKHR::default()
+                .wait_semaphores(std::slice::from_ref(&render_finished))
+                .swapchains(std::slice::from_ref(&self.swapchain))
+                .image_indices(std::slice::from_ref(&image_index));
+            unsafe { self.swapchain_loader.queue_present(self.queue, &present) }
+        };
         let submit_present_us = submit_t0.elapsed().as_micros();
         let mut sample = crate::core::perf_probe::take_present();
         sample.submit_present_us = submit_present_us;
         crate::core::perf_probe::record_present(sample);
         match present_match {
-            Ok(present_suboptimal) if acquire_suboptimal || present_suboptimal => {
-                self.recreate_after_surface_change("vkQueuePresentKHR", vk::Result::SUBOPTIMAL_KHR)
+            Ok(present_suboptimal) => {
+                if present_fence.is_some() {
+                    self.present_fences.mark_submitted(image_slot)?;
+                } else {
+                    self.present_lifetime.mark_presented(image_slot)?;
+                }
+                if acquire_suboptimal || present_suboptimal {
+                    self.recreate_after_surface_change(
+                        "vkQueuePresentKHR",
+                        vk::Result::SUBOPTIMAL_KHR,
+                    )
+                } else {
+                    Ok(())
+                }
             }
-            Ok(_) => Ok(()),
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => self.recreate_after_surface_change(
                 "vkQueuePresentKHR",
                 vk::Result::ERROR_OUT_OF_DATE_KHR,
@@ -620,6 +716,17 @@ impl VulkanContext {
         let device = self.active_device()?;
         let wait_result = unsafe { self.device.device_wait_idle() };
         device.observe_wait(wait_result);
+        match wait_result {
+            Ok(()) if self.present_fences.enabled() => {
+                self.present_fences.wait_all(&self.device)?;
+            }
+            Ok(()) => {
+                self.present_lifetime
+                    .complete_submission(&self.device, &self.swapchain_loader)?;
+            }
+            Err(vk::Result::ERROR_DEVICE_LOST) => {}
+            Err(_) => {}
+        }
         accept_device_wait_for_shutdown(wait_result)?;
         unsafe {
             if self.upload.buffer != vk::Buffer::null() {
@@ -641,11 +748,15 @@ impl VulkanContext {
                 self.swapchain_loader
                     .destroy_swapchain(self.swapchain, None);
             }
-            if self.surface != vk::SurfaceKHR::null() {
-                self.surface_loader.destroy_surface(self.surface, None);
-            }
         }
         destroy_semaphores(&self.device, &mut self.render_finished);
+        self.present_fences.destroy(&self.device);
+        self.present_lifetime
+            .destroy_all(&self.device, &self.swapchain_loader);
+        if self.surface != vk::SurfaceKHR::null() {
+            // SAFETY: 当前与 retired swapchain 均已销毁，surface 不再被 child 引用。
+            unsafe { self.surface_loader.destroy_surface(self.surface, None) };
+        }
         self.device_lease.take();
         self.runtime.take();
         self.shutdown = true;
