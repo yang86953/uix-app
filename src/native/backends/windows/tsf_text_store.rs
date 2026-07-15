@@ -4,13 +4,14 @@
 
 #![cfg(windows)]
 
-use std::sync::{Arc, Mutex};
+use std::cell::{Ref as CellRef, RefCell, RefMut as CellRefMut};
+use std::rc::Rc;
 
 use windows::core::{
     implement, ComObject, Error as WinError, Interface, Ref, Result as WinResult, BOOL, GUID,
     HRESULT, PCWSTR, PWSTR,
 };
-use windows::Win32::Foundation::{E_INVALIDARG, HWND, POINT, RECT};
+use windows::Win32::Foundation::{E_INVALIDARG, E_UNEXPECTED, HWND, POINT, RECT};
 use windows::Win32::UI::TextServices::{
     ITextStoreACP, ITextStoreACPSink, ITextStoreACP_Impl, ITfCompositionView,
     ITfContextOwnerCompositionSink, ITfContextOwnerCompositionSink_Impl, TS_E_NOLOCK,
@@ -26,18 +27,39 @@ const VIEW_ID: u32 = 0;
 
 #[implement(ITextStoreACP, ITfContextOwnerCompositionSink)]
 pub(crate) struct TsfTextStore {
-    state: Arc<Mutex<TsfStoreState>>,
+    state: TsfStoreHandle,
 }
 
 impl TsfTextStore {
-    pub(crate) fn new(state: Arc<Mutex<TsfStoreState>>) -> Self {
+    pub(crate) fn new(state: TsfStoreHandle) -> Self {
         Self { state }
     }
 
-    pub(crate) fn create(event_sink: TsfEventSink) -> (ComObject<Self>, Arc<Mutex<TsfStoreState>>) {
-        let state = Arc::new(Mutex::new(TsfStoreState::new(event_sink)));
-        let store = ComObject::new(Self::new(Arc::clone(&state)));
+    pub(crate) fn create(event_sink: TsfEventSink) -> (ComObject<Self>, TsfStoreHandle) {
+        let state = TsfStoreHandle::new(TsfStoreState::new(event_sink));
+        let store = ComObject::new(Self::new(state.clone()));
         (store, state)
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct TsfStoreHandle(Rc<RefCell<TsfStoreState>>);
+
+impl TsfStoreHandle {
+    fn new(state: TsfStoreState) -> Self {
+        Self(Rc::new(RefCell::new(state)))
+    }
+
+    pub(crate) fn read(&self) -> WinResult<CellRef<'_, TsfStoreState>> {
+        self.0
+            .try_borrow()
+            .map_err(|_| WinError::from(E_UNEXPECTED))
+    }
+
+    pub(crate) fn write(&self) -> WinResult<CellRefMut<'_, TsfStoreState>> {
+        self.0
+            .try_borrow_mut()
+            .map_err(|_| WinError::from(E_UNEXPECTED))
     }
 }
 
@@ -84,10 +106,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         }
         let punk = punk.ok()?;
         let sink: ITextStoreACPSink = punk.cast()?;
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
+        let mut state = self.state.write()?;
         state.acp_sink = Some(sink);
         state.sink_mask = dwmask;
         Ok(())
@@ -97,10 +116,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         let Ok(punk) = punk.ok() else {
             return Ok(());
         };
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
+        let mut state = self.state.write()?;
         if let Some(existing) = state.acp_sink.as_ref() {
             if Interface::as_raw(existing) == Interface::as_raw(punk) {
                 state.acp_sink = None;
@@ -112,10 +128,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
 
     fn RequestLock(&self, dwlockflags: u32) -> WinResult<HRESULT> {
         let (sink, request) = {
-            let mut state = self
-                .state
-                .lock()
-                .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
+            let mut state = self.state.write()?;
             let request = state.begin_lock(dwlockflags);
             (state.acp_sink.clone(), request)
         };
@@ -127,18 +140,10 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         };
 
         let session_hr = notify_lock_granted(sink.as_ref(), kind);
-        let pending = self
-            .state
-            .lock()
-            .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?
-            .complete_lock();
+        let pending = self.state.write()?.complete_lock();
         if let Some(pending_kind) = pending {
             let _ = notify_lock_granted(sink.as_ref(), pending_kind);
-            let _ = self
-                .state
-                .lock()
-                .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?
-                .complete_lock();
+            let _ = self.state.write()?.complete_lock();
         }
         Ok(session_hr)
     }
@@ -175,10 +180,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         if pcfetched.is_null() || (ulcount > 0 && pselection.is_null()) {
             return Err(WinError::from(E_INVALIDARG));
         }
-        let state = self
-            .state
-            .lock()
-            .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
+        let state = self.state.read()?;
         require_read_lock(&state)?;
         let mut fetched = 0u32;
         if ulcount > 0 && ulindex == 0 {
@@ -197,10 +199,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         if ulcount > 0 && pselection.is_null() {
             return Err(WinError::from(E_INVALIDARG));
         }
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
+        let mut state = self.state.write()?;
         require_write_lock(&state)?;
         if ulcount > 0 {
             let sel = unsafe { *pselection };
@@ -222,10 +221,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         pcruninforet: *mut u32,
         pacpnext: *mut i32,
     ) -> WinResult<()> {
-        let state = self
-            .state
-            .lock()
-            .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
+        let state = self.state.read()?;
         require_read_lock(&state)?;
         let start = state.clamp_acp(acpstart) as usize;
         let end = if acpend == -1 {
@@ -265,10 +261,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         pchtext: &PCWSTR,
         cch: u32,
     ) -> WinResult<TS_TEXTCHANGE> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
+        let mut state = self.state.write()?;
         require_write_lock(&state)?;
         let insert = if cch == 0 {
             &[][..]
@@ -324,10 +317,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         pacpend: *mut i32,
         pchange: *mut TS_TEXTCHANGE,
     ) -> WinResult<()> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
+        let mut state = self.state.write()?;
         require_write_lock(&state)?;
         let start = state.sel_start;
         let end = state.sel_end;
@@ -432,10 +422,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
     }
 
     fn GetEndACP(&self) -> WinResult<i32> {
-        let state = self
-            .state
-            .lock()
-            .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
+        let state = self.state.read()?;
         require_read_lock(&state)?;
         Ok(state.end_acp())
     }
@@ -450,10 +437,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         _ptscreen: *const POINT,
         _dwflags: u32,
     ) -> WinResult<i32> {
-        let state = self
-            .state
-            .lock()
-            .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
+        let state = self.state.read()?;
         require_read_lock(&state)?;
         Ok(state.end_acp())
     }
@@ -469,10 +453,7 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
         if prc.is_null() || pfclipped.is_null() {
             return Err(WinError::from(E_INVALIDARG));
         }
-        let state = self
-            .state
-            .lock()
-            .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
+        let state = self.state.read()?;
         require_read_lock(&state)?;
         let rect = state.cursor_screen_rect()?;
         unsafe {
@@ -483,28 +464,19 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
     }
 
     fn GetScreenExt(&self, _vcview: u32) -> WinResult<RECT> {
-        let state = self
-            .state
-            .lock()
-            .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
+        let state = self.state.read()?;
         state.screen_extent()
     }
 
     fn GetWnd(&self, _vcview: u32) -> WinResult<HWND> {
-        let state = self
-            .state
-            .lock()
-            .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
+        let state = self.state.read()?;
         Ok(state.event_sink.hwnd)
     }
 }
 
 impl ITfContextOwnerCompositionSink_Impl for TsfTextStore_Impl {
     fn OnStartComposition(&self, _pcomposition: Ref<'_, ITfCompositionView>) -> WinResult<BOOL> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
+        let mut state = self.state.write()?;
         let events = tsf_composition_events(&mut state.composition, Some(""), None, false);
         // empty marked is ignored by on_marked_text — force start via empty update path:
         if !state.composition.active {
@@ -522,10 +494,7 @@ impl ITfContextOwnerCompositionSink_Impl for TsfTextStore_Impl {
         _pcomposition: Ref<'_, ITfCompositionView>,
         _prangenew: Ref<'_, windows::Win32::UI::TextServices::ITfRange>,
     ) -> WinResult<()> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
+        let mut state = self.state.write()?;
         let marked = state.utf16_string();
         if marked.is_empty() {
             return Ok(());
@@ -536,10 +505,7 @@ impl ITfContextOwnerCompositionSink_Impl for TsfTextStore_Impl {
     }
 
     fn OnEndComposition(&self, _pcomposition: Ref<'_, ITfCompositionView>) -> WinResult<()> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| WinError::from(HRESULT(0x8000_FFFF_u32 as i32)))?;
+        let mut state = self.state.write()?;
         let committed = state.utf16_string();
         let events = if committed.is_empty() {
             tsf_composition_events(&mut state.composition, None, None, true)

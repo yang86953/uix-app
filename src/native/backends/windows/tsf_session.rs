@@ -17,7 +17,9 @@ use windows::Win32::UI::TextServices::{
 };
 
 use crate::core::{Errc, Error, Result, WindowId};
-use crate::native::backends::windows::tsf_text_store::{TsfEventSink, TsfStoreState, TsfTextStore};
+use crate::native::backends::windows::tsf_text_store::{
+    TsfEventSink, TsfStoreHandle, TsfTextStore,
+};
 use crate::native::backends::windows::util::windows_diag;
 use crate::native::shared::ime_events::{
     on_committed_text, on_marked_text, on_unmark_text, ImeCompositionState,
@@ -37,7 +39,7 @@ pub(crate) struct TsfSession {
     doc_mgr: ITfDocumentMgr,
     _context: ITfContext,
     _text_store: windows::core::ComObject<TsfTextStore>,
-    store_state: Arc<Mutex<TsfStoreState>>,
+    store_state: TsfStoreHandle,
     hwnd: HWND,
     #[cfg(test)]
     client_id: u32,
@@ -52,15 +54,20 @@ impl TsfSession {
     #[cfg(test)]
     pub(crate) fn composition_active(&self) -> bool {
         self.store_state
-            .lock()
+            .read()
             .map(|s| s.composition_active())
             .unwrap_or(false)
     }
 
-    pub(crate) fn set_cursor_rect(&self, rect: windows::Win32::Foundation::RECT) {
-        if let Ok(mut state) = self.store_state.lock() {
-            state.set_cursor_rect(rect);
-        }
+    pub(crate) fn set_cursor_rect(&self, rect: windows::Win32::Foundation::RECT) -> Result<()> {
+        let mut state = self.store_state.write().map_err(|error| {
+            windows_diag(
+                Errc::InvalidState,
+                &format!("TSF: text store is already borrowed: {error}"),
+            )
+        })?;
+        state.set_cursor_rect(rect);
+        Ok(())
     }
 
     pub(crate) fn activate(params: TsfActivateParams) -> Result<Self> {
