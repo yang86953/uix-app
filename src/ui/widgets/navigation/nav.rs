@@ -13,8 +13,7 @@ use crate::component;
 use crate::core::{ComponentId, Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
-use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree};
 
 /// 共享的导航选中索引 —— 多个 NavItem 持有同一份 Rc 即可联动。
 pub type SharedActive = Rc<Cell<usize>>;
@@ -55,8 +54,11 @@ component! {
         index: usize,
         active_shared: SharedActive,
         compact: bool,
+        focused: bool,
         pending_change: RefCell<Option<usize>>,
     }
+
+    tab_index => (&self) -> i32 { 1 }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
@@ -67,8 +69,22 @@ component! {
             SystemEvent::PointerEnter => { self.hovered = true; EventResult::Handled }
             SystemEvent::PointerLeave => { self.hovered = false; EventResult::Handled }
             SystemEvent::PointerDown { .. } => {
-                self.active_shared.set(self.index);
-                self.pending_change.replace(Some(self.index));
+                self.activate();
+                EventResult::Handled
+            }
+            SystemEvent::FocusIn => {
+                self.focused = true;
+                EventResult::Handled
+            }
+            SystemEvent::FocusOut => {
+                self.focused = false;
+                EventResult::Handled
+            }
+            SystemEvent::KeyDown {
+                key: KeyCode::Enter | KeyCode::Space,
+                ..
+            } => {
+                self.activate();
                 EventResult::Handled
             }
             _ => EventResult::NotHandled,
@@ -108,6 +124,15 @@ component! {
                 (bg_elevated, None, text_secondary)
             };
             paint_nav_item_bg(ctx, item_frame, base, overlay);
+
+            if self.focused {
+                ctx.stroke_rect(
+                    item_frame,
+                    primary,
+                    1.5,
+                    Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                );
+            }
 
             if !self.icon.is_empty() {
                 crate::ui::widgets::icon::paint_icon_in_frame(
@@ -179,6 +204,14 @@ component! {
         let label_w = (frame.x + frame.w - cursor_x).max(0.0);
         let label_area = Rect::new(cursor_x, frame.y, label_w, row_h);
         ctx.draw_text_in_frame(&self.label, label_area, label_color, 14.0);
+        if self.focused {
+            ctx.stroke_rect(
+                item_frame,
+                primary,
+                1.5,
+                Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+            );
+        }
     }
 }
 
@@ -197,6 +230,7 @@ impl NavItem {
             index,
             active_shared,
             compact: false,
+            focused: false,
             pending_change: RefCell::new(None),
         }
     }
@@ -212,6 +246,10 @@ impl NavItem {
 
     pub fn nav_index(&self) -> usize {
         self.index
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.active_shared.get() == self.index
     }
 
     pub fn width(mut self, w: f32) -> Self {
@@ -249,6 +287,14 @@ impl NavItem {
             fixed_height: self.fixed_height,
             index: self.index,
             compact: self.compact,
+            active: self.is_active(),
+        }
+    }
+
+    fn activate(&mut self) {
+        if !self.is_active() {
+            self.active_shared.set(self.index);
+            self.pending_change.replace(Some(self.index));
         }
     }
 }

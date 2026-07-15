@@ -246,6 +246,7 @@ fn reconcile_nav_item_preserves_shared_active_and_syncs_config() {
             fixed_height: 40.0,
             index: 3,
             compact: true,
+            active: false,
         }
     );
 

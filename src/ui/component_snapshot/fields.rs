@@ -370,6 +370,7 @@ pub enum SnapshotFields {
         fixed_height: f32,
         index: usize,
         compact: bool,
+        active: bool,
     },
     Tree {
         nodes: Vec<SnapshotTreeNode>,
@@ -841,6 +842,13 @@ impl SnapshotFields {
                 },
             ),
             Self::Steps { .. } => AccessibilitySnapshot::new(AccessibilityRole::TabList),
+            Self::NavItem { label, active, .. } => {
+                AccessibilitySnapshot::named(AccessibilityRole::Navigation, label.clone())
+                    .with_state(AccessibilityState {
+                        selected: Some(*active),
+                        ..AccessibilityState::default()
+                    })
+            }
             Self::Tree { selected_key, .. } => AccessibilitySnapshot::new(AccessibilityRole::Tree)
                 .with_state(AccessibilityState {
                     value_text: (!selected_key.is_empty()).then(|| selected_key.clone()),
