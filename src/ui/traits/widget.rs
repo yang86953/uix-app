@@ -169,6 +169,10 @@ pub trait WidgetLayout: WidgetComponent {
     fn layout_margin(&self) -> EdgeInsets {
         EdgeInsets::zero()
     }
+    /// Whether positioned children may expand this node during layout convergence.
+    fn child_overflow_expands_parent(&self) -> bool {
+        true
+    }
     /// Prepare a pass-local measurement snapshot for the next child arrange.
     ///
     /// Exact-fill containers keep the default zero-sized descriptors so they do

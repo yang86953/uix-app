@@ -423,6 +423,12 @@ impl BoxedWidget {
             .map(|l| l.flex_shrink())
             .unwrap_or(0.0)
     }
+    pub fn child_overflow_expands_parent(&self) -> bool {
+        self.component()
+            .as_layout()
+            .map(|layout| layout.child_overflow_expands_parent())
+            .unwrap_or(true)
+    }
     pub fn layout_children(
         &self,
         frame: Rect,

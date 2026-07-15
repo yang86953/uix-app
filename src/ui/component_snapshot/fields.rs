@@ -325,6 +325,8 @@ pub enum SnapshotFields {
     },
     Affix {
         offset_top: f32,
+        scroll_y: f32,
+        affixed: bool,
     },
     BackTop {
         visibility_height: f32,

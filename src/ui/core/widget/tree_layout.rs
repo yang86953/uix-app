@@ -447,16 +447,16 @@ impl WidgetTree {
                     continue;
                 }
             }
-            let (children, is_viewport, node_frame) = match self.get(id) {
+            let (children, prevents_child_expansion, node_frame) = match self.get(id) {
                 Some(n) if !n.children().is_empty() => (
                     n.children().to_vec(),
-                    n.children_clip(n.frame()).is_some(),
+                    n.children_clip(n.frame()).is_some() || !n.child_overflow_expands_parent(),
                     n.frame(),
                 ),
                 _ => continue,
             };
-            // Viewport 容器（ScrollView）不扩展，content_bounds 在 layout_viewports 中更新
-            if is_viewport {
+            // Viewport 与显式定位容器不由视觉溢出的子树反向撑开。
+            if prevents_child_expansion {
                 continue;
             }
 
