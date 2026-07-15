@@ -41,7 +41,9 @@ use crate::native::traits::window::{PlatformWindow, WindowOcclusionState};
 use crate::ui::theme::{DesignTokens, DynTokens, Theme};
 use crate::ui::traits::TokenProvider;
 use crate::ui::view::ViewNode;
-use crate::ui::{with_locale, AppState, Locale, SystemEvent, WidgetTree};
+use crate::ui::{
+    with_config, with_locale, AppState, ComponentConfig, Locale, SystemEvent, WidgetTree,
+};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 应用模式
@@ -358,6 +360,12 @@ impl App {
         self
     }
 
+    /// 设置所有窗口根 View 的组件默认配置；子树可由 `ConfigProvider` 覆写。
+    pub fn config(mut self, config: ComponentConfig) -> Self {
+        self.container.singleton(config);
+        self
+    }
+
     /// 设置是否在运行中跟随 OS 主题变化（默认 false）。
     pub fn follow_system_theme(mut self, follow: bool) -> Self {
         self.follow_system_theme = follow;
@@ -642,18 +650,24 @@ impl App {
         let notifications = AppNotificationState::new();
         self.container.singleton(notifications.clone());
         let locale = self.container.resolve_clone::<Locale>().unwrap_or_default();
+        let component_config = self
+            .container
+            .resolve_clone::<ComponentConfig>()
+            .unwrap_or_default();
 
         let root_window_id = platform_window.window_id();
         let root_notifications = notifications.clone();
         let mut session = WindowSession::from_root_factory_for_window(
             root_window_id,
             move || {
-                with_locale(&locale, || {
-                    wrap_root_with_notification_overlay(
-                        root_factory(),
-                        root_notifications.clone(),
-                        root_window_id,
-                    )
+                with_config(&component_config, || {
+                    with_locale(&locale, || {
+                        wrap_root_with_notification_overlay(
+                            root_factory(),
+                            root_notifications.clone(),
+                            root_window_id,
+                        )
+                    })
                 })
             },
             engine,

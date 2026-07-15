@@ -400,10 +400,15 @@ impl Form {
     }
 
     pub fn new() -> Self {
+        let layout = match crate::ui::config::use_config().overrides.form.layout {
+            Some(crate::ui::config::FormLayout::Horizontal) | None => FormLayout::Horizontal,
+            Some(crate::ui::config::FormLayout::Vertical) => FormLayout::Vertical,
+            Some(crate::ui::config::FormLayout::Inline) => FormLayout::Inline,
+        };
         Self {
             label_width: 80.0,
             gap: 8.0,
-            layout: FormLayout::Horizontal,
+            layout,
         }
     }
 

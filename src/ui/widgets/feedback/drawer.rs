@@ -284,12 +284,13 @@ component! {
 
 impl Drawer {
     pub fn new(title: &str) -> Self {
+        let size = crate::ui::config::use_config().size;
         Self {
             title: title.to_string(),
             visible: false,
             width: 378.0,
             height: 300.0,
-            drawer_size: ControlSize::Medium,
+            drawer_size: size,
             placement: DrawerPlacement::Right,
             closable: true,
             mask_closable: true,
@@ -306,6 +307,7 @@ impl Drawer {
             last_surface_w: Cell::new(0.0),
             last_surface_h: Cell::new(0.0),
         }
+        .drawer_size(size)
     }
 
     pub fn visible(mut self, v: bool) -> Self {

@@ -286,6 +286,22 @@ fn app_builder_registers_global_locale() {
 }
 
 #[test]
+fn app_builder_registers_global_component_config() {
+    let app = App::new().config(
+        crate::ui::Config::new()
+            .component_size(ControlSize::Large)
+            .disabled(true),
+    );
+
+    let config = app
+        .container()
+        .resolve::<crate::ui::ComponentConfig>()
+        .expect("component config singleton");
+    assert_eq!(config.size, ControlSize::Large);
+    assert!(config.disabled);
+}
+
+#[test]
 fn app_builder_sets_graphics_backend() {
     let app = App::new().graphics_backend(GraphicsBackend::Vulkan);
 

@@ -769,6 +769,7 @@ impl Default for Select {
 
 impl Select {
     pub fn new() -> Self {
+        let config = crate::ui::config::use_config();
         Self {
             options: Vec::new(),
             optgroups: Vec::new(),
@@ -776,7 +777,7 @@ impl Select {
             selected_multi: Vec::new(),
             value_binding: None,
             open: false,
-            disabled: false,
+            disabled: config.disabled,
             hovered: false,
             focused: false,
             transition: TransitionPlayer::new(presets::tooltip_enter()),
@@ -786,7 +787,7 @@ impl Select {
             hovered_option: None,
             pending_change: RefCell::new(None),
             multiple: false,
-            search: false,
+            search: config.overrides.select.allow_search.unwrap_or(false),
             search_query: String::new(),
             search_cursor_rect: Cell::new(Rect::zero()),
             dropdown_scroll: VirtualListScroll::new(),

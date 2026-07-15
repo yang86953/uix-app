@@ -95,6 +95,10 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<TimerHandle>();
     assert_exported::<ComponentId>();
     assert_exported::<ComponentConfigSnapshot>();
+    assert_exported::<ComponentConfig>();
+    assert_exported::<ComponentOverrides>();
+    assert_exported::<Config>();
+    assert_exported::<ConfigProvider>();
     assert_exported::<ComponentHandle>();
     assert_exported::<Constraints>();
     assert_exported::<EdgeInsets>();

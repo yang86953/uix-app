@@ -39,6 +39,35 @@ impl Default for ComponentConfig {
     }
 }
 
+impl ComponentConfig {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn component_size(mut self, size: ControlSize) -> Self {
+        self.size = size;
+        self
+    }
+
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    pub fn theme(mut self, theme: Theme) -> Self {
+        self.theme = Some(theme);
+        self
+    }
+
+    pub fn overrides(mut self, overrides: ComponentOverrides) -> Self {
+        self.overrides = overrides;
+        self
+    }
+}
+
+/// 应用级组件默认配置。
+pub type Config = ComponentConfig;
+
 /// 组件级属性覆盖。
 #[derive(Clone, Default, PartialEq)]
 pub struct ComponentOverrides {
@@ -87,71 +116,92 @@ pub fn with_config<T>(config: &ComponentConfig, f: impl FnOnce() -> T) -> T {
     crate::ui::foundation::provider_context::with_component_config(config, f)
 }
 
-use crate::component;
-use crate::core::{Constraints, Rect, Size};
-use crate::draw::painting::PaintContext;
-use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use crate::ui::view::{View, ViewNode};
 
-component! {
-    /// ConfigProvider — 为子树注入全局组件默认配置。
-    ///
-    /// 所有后代 widget 可通过 `use_config()` 读取当前配置。
-    pub struct ConfigProvider {
-        config: ComponentConfig,
-    }
+#[derive(Clone, Default)]
+struct ConfigPatch {
+    size: Option<ControlSize>,
+    disabled: Option<bool>,
+    theme: Option<Theme>,
+    overrides: Option<ComponentOverrides>,
+}
 
-    measure => (&self, constraints: Constraints) -> Size {
-        constraints.clamp(Size::new(0.0, 0.0))
-    }
-
-    render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
-
-    on_event => (&mut self, _event: &SystemEvent) -> EventResult {
-        EventResult::NotHandled
+impl ConfigPatch {
+    fn resolve(self) -> ComponentConfig {
+        let mut config = use_config();
+        if let Some(size) = self.size {
+            config.size = size;
+        }
+        if let Some(disabled) = self.disabled {
+            config.disabled = disabled;
+        }
+        if let Some(theme) = self.theme {
+            config.theme = Some(theme);
+        }
+        if let Some(overrides) = self.overrides {
+            config.overrides = overrides;
+        }
+        config
     }
 }
 
-impl Default for ConfigProvider {
-    fn default() -> Self {
-        Self::new()
-    }
+#[doc(hidden)]
+pub struct MissingConfigProviderChild;
+
+/// 为一个 View 子树注入组件默认配置。
+pub struct ConfigProvider<F = MissingConfigProviderChild> {
+    patch: ConfigPatch,
+    child: F,
 }
 
-impl ConfigProvider {
+impl ConfigProvider<MissingConfigProviderChild> {
     pub fn new() -> Self {
         Self {
-            config: ComponentConfig::default(),
+            patch: ConfigPatch::default(),
+            child: MissingConfigProviderChild,
         }
     }
+}
 
-    pub fn size(mut self, s: ControlSize) -> Self {
-        self.config.size = s;
+impl<F> ConfigProvider<F> {
+    pub fn component_size(mut self, size: ControlSize) -> Self {
+        self.patch.size = Some(size);
         self
     }
 
-    pub fn disabled(mut self, v: bool) -> Self {
-        self.config.disabled = v;
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.patch.disabled = Some(disabled);
         self
     }
 
     pub fn theme(mut self, theme: Theme) -> Self {
-        self.config.theme = Some(theme);
+        self.patch.theme = Some(theme);
         self
+    }
+
+    pub fn overrides(mut self, overrides: ComponentOverrides) -> Self {
+        self.patch.overrides = Some(overrides);
+        self
+    }
+
+    pub fn child<G, V>(self, child: G) -> ConfigProvider<impl FnOnce() -> ViewNode>
+    where
+        G: FnOnce() -> V + 'static,
+        V: View,
+    {
+        ConfigProvider {
+            patch: self.patch,
+            child: move || child().build(),
+        }
     }
 }
 
-/// ConfigProvider 专用 WidgetNode 包装，在 build 时注入配置。
-/// 使用方式：
-/// ```ignore
-/// ConfigProvider::new().size(Large).wrap(
-///     tree! { Container::new() => [ button("OK").widget() ] }
-/// )
-/// ```
-impl ConfigProvider {
-    pub fn wrap(
-        self,
-        node: crate::ui::core::widget::WidgetNode,
-    ) -> crate::ui::core::widget::WidgetNode {
-        crate::ui::core::widget::WidgetNode::new(Box::new(self), vec![node])
+impl<F> View for ConfigProvider<F>
+where
+    F: FnOnce() -> ViewNode + 'static,
+{
+    fn build(self) -> ViewNode {
+        let config = self.patch.resolve();
+        with_config(&config, self.child)
     }
 }

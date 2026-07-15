@@ -210,6 +210,7 @@ component! {
 
 impl InputNumber {
     pub fn new() -> Self {
+        let config = crate::ui::config::use_config();
         Self {
             value: 0.0,
             min: f64::MIN,
@@ -220,7 +221,7 @@ impl InputNumber {
             placeholder: String::new(),
             focused: false,
             hovered: false,
-            disabled: false,
+            disabled: config.disabled,
             text_buffer: String::new(),
             pending_change: Cell::new(None),
         }
