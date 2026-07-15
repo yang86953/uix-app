@@ -9,6 +9,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
+use crate::native::traits::input::ControlSize;
 use crate::ui::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
@@ -56,6 +57,7 @@ component! {
         /// 小时滚动偏移（行号）
         scroll_hour: Cell<f32>,
         scroll_min: Cell<f32>,
+        picker_size: ControlSize,
         last_frame: Cell<Option<Rect>>,
         pending_change: Cell<Option<Time>>,
     }
@@ -261,6 +263,7 @@ component! {
 
 impl TimePicker {
     pub fn new() -> Self {
+        let config = crate::ui::config::use_config();
         Self {
             value: Cell::new(Time::default()),
             value_configured: Cell::new(false),
@@ -272,6 +275,7 @@ impl TimePicker {
             hover_minute: Cell::new(0),
             scroll_hour: Cell::new(0.0),
             scroll_min: Cell::new(0.0),
+            picker_size: config.size,
             last_frame: Cell::new(None),
             pending_change: Cell::new(None),
         }
@@ -298,6 +302,11 @@ impl TimePicker {
         self
     }
 
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.picker_size = size;
+        self
+    }
+
     /// 返回组件当前缓存值；controlled 用法应以绑定的 `State` 为真值来源。
     pub fn current_value(&self) -> Time {
         self.value.get()
@@ -308,7 +317,7 @@ impl TimePicker {
     }
 
     fn intrinsic_size(&self) -> Size {
-        Size::new(120.0, 32.0)
+        Size::new(120.0, crate::ui::config::control_height(self.picker_size))
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -329,6 +338,7 @@ impl TimePicker {
             self.value_configured.set(true);
         }
         self.placeholder = next.placeholder;
+        self.picker_size = next.picker_size;
     }
 
     fn sync_bound_value(&self) {

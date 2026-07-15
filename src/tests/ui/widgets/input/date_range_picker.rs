@@ -5,6 +5,7 @@ use crate::tests::common::*;
 use crate::ui::state::State;
 use crate::ui::view::{ViewAdapter, ViewNode};
 use crate::ui::widgets::{Date, DateRangePicker, PresetDate, Weekday};
+use crate::ui::{with_config, ComponentConfig};
 
 fn render_picker(picker: &DateRangePicker) {
     let mut canvas = SharedRasterizer::new(PixelSurface::new(320, 420));
@@ -27,7 +28,8 @@ fn render_picker(picker: &DateRangePicker) {
         320,
         420,
     );
-    WidgetRender::render(picker, Rect::new(0.0, 0.0, 280.0, 32.0), &mut ctx, &tree);
+    let size = picker.measure(Constraints::loose(Size::new(320.0, 420.0)));
+    WidgetRender::render(picker, Rect::new(0.0, 0.0, size.w, size.h), &mut ctx, &tree);
 }
 
 #[test]
@@ -158,4 +160,37 @@ fn external_range_state_reconciles_and_updates_accessibility_value() {
         accessibility.state.value_text.as_deref(),
         Some("2027-08-12 / 2027-08-20")
     );
+}
+
+#[test]
+fn provider_size_and_explicit_override_move_range_popup_with_the_trigger() {
+    let start = State::new(Date::default());
+    let end = State::new(Date::default());
+    let preset = PresetDate::new(Date::new(2026, 8, 1), Date::new(2026, 8, 5));
+    let large = ComponentConfig::new().component_size(ControlSize::Large);
+    let max = Constraints::loose(Size::new(1_000.0, 1_000.0));
+    let mut picker = with_config(&large, || {
+        DateRangePicker::new()
+            .start(&start)
+            .end(&end)
+            .presets([("release", preset)])
+    });
+    assert_eq!(picker.measure(max).h, 40.0);
+    render_picker(&picker);
+
+    let _ = picker.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(4.0, 20.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    let _ = picker.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(20.0, 300.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(start.get(), Date::new(2026, 8, 1));
+    assert_eq!(end.get(), Date::new(2026, 8, 5));
+
+    let small = with_config(&large, || DateRangePicker::new().size(ControlSize::Small));
+    assert_eq!(small.measure(max).h, 24.0);
 }

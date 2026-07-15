@@ -5,6 +5,7 @@ use crate::tests::common::*;
 use crate::ui::state::State;
 use crate::ui::view::{ViewAdapter, ViewNode};
 use crate::ui::widgets::ColorPicker;
+use crate::ui::{with_config, ComponentConfig};
 
 fn render_picker(picker: &ColorPicker) {
     let mut canvas = SharedRasterizer::new(PixelSurface::new(240, 280));
@@ -27,7 +28,8 @@ fn render_picker(picker: &ColorPicker) {
         240,
         280,
     );
-    WidgetRender::render(picker, Rect::new(0.0, 0.0, 32.0, 32.0), &mut ctx, &tree);
+    let size = picker.measure(Constraints::loose(Size::new(240.0, 280.0)));
+    WidgetRender::render(picker, Rect::new(0.0, 0.0, size.w, size.h), &mut ctx, &tree);
 }
 
 #[test]
@@ -110,4 +112,29 @@ fn external_color_state_reconciles_and_updates_semantic_value() {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .node_needs_paint(root));
+}
+
+#[test]
+fn provider_size_and_explicit_override_move_color_popup_with_the_trigger() {
+    let selected = State::new(Color::blue());
+    let large = ComponentConfig::new().component_size(ControlSize::Large);
+    let max = Constraints::loose(Size::new(1_000.0, 1_000.0));
+    let mut picker = with_config(&large, || ColorPicker::new().value(&selected));
+    assert_eq!(picker.measure(max), Size::new(40.0, 40.0));
+    render_picker(&picker);
+
+    let _ = picker.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(4.0, 20.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    let _ = picker.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(9.0, 53.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(selected.get(), Color::from_rgb(0xF5, 0x22, 0x22));
+
+    let small = with_config(&large, || ColorPicker::new().size(ControlSize::Small));
+    assert_eq!(small.measure(max), Size::new(24.0, 24.0));
 }

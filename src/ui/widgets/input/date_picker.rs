@@ -10,6 +10,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
+use crate::native::traits::input::ControlSize;
 use crate::ui::state::State;
 use crate::ui::widgets::input::date_calendar::{
     draw_calendar_panel, hit_calendar_date, hit_month_navigation, CalendarPanelState,
@@ -160,6 +161,7 @@ component! {
         open: Cell<bool>,
         focused: bool,
         hover_date: Cell<Option<Date>>,
+        picker_size: ControlSize,
         last_frame: Cell<Option<Rect>>,
         pending_change: Cell<Option<Date>>,
     }
@@ -322,11 +324,12 @@ component! {
 
 impl DatePicker {
     fn intrinsic_size(&self) -> Size {
-        Size::new(160.0, 32.0)
+        Size::new(160.0, crate::ui::config::control_height(self.picker_size))
     }
 
     pub fn new() -> Self {
         let today = Date::today();
+        let config = crate::ui::config::use_config();
         Self {
             value: Cell::new(Date::default()),
             value_binding: None,
@@ -338,6 +341,7 @@ impl DatePicker {
             open: Cell::new(false),
             focused: false,
             hover_date: Cell::new(None),
+            picker_size: config.size,
             last_frame: Cell::new(None),
             pending_change: Cell::new(None),
         }
@@ -359,6 +363,11 @@ impl DatePicker {
 
     pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
         self.placeholder = placeholder.into();
+        self
+    }
+
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.picker_size = size;
         self
     }
 
@@ -404,6 +413,7 @@ impl DatePicker {
         self.placeholder = next.placeholder;
         self.mode = next.mode;
         self.disabled_date = next.disabled_date;
+        self.picker_size = next.picker_size;
     }
 
     fn selected_or_today(&self) -> Date {
