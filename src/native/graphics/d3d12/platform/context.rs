@@ -7,7 +7,6 @@
 #![allow(nonstandard_style)]
 
 use std::ffi::c_void;
-use std::mem::ManuallyDrop;
 
 use crate::core::{Errc, Error, Result};
 use crate::native::graphics::platform::windows as win_surface;
@@ -16,326 +15,27 @@ use crate::native::traits::present::{
     PresentCoherency, PresentDamage, PresentFrame, SoftFallbackTile,
 };
 use ::windows::core::Interface;
-use ::windows::Win32::Foundation::{CloseHandle, E_OUTOFMEMORY, HANDLE, HWND, WAIT_OBJECT_0};
-use ::windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
+use ::windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, WAIT_OBJECT_0};
 use ::windows::Win32::Graphics::Direct3D12::*;
-use ::windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_ALPHA_MODE_IGNORE, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC,
-};
+use ::windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use ::windows::Win32::Graphics::Dxgi::{
     CreateDXGIFactory2, IDXGIAdapter1, IDXGIFactory4, IDXGIOutput, IDXGISwapChain3,
-    DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_CREATE_FACTORY_FLAGS, DXGI_ERROR_DEVICE_HUNG,
-    DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET, DXGI_ERROR_DRIVER_INTERNAL_ERROR,
-    DXGI_ERROR_REMOTE_OUTOFMEMORY, DXGI_MWA_NO_ALT_ENTER, DXGI_PRESENT, DXGI_SCALING_STRETCH,
-    DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_CHAIN_FLAG, DXGI_SWAP_EFFECT_FLIP_DISCARD,
-    DXGI_USAGE_RENDER_TARGET_OUTPUT,
+    DXGI_CREATE_FACTORY_FLAGS, DXGI_MWA_NO_ALT_ENTER, DXGI_PRESENT, DXGI_SWAP_CHAIN_FLAG,
 };
 use ::windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject, INFINITE};
 
 type HWND_PTR = *mut c_void;
 
-const FRAME_COUNT: usize = 2;
-
+use super::adapter::{
+    select_hardware_adapter, select_warp_adapter, D3d12AdapterInfo, D3d12DriverKind,
+};
+use super::error::{d3d12_error, platform_error};
 use super::pipeline::D3d12Pipeline;
-
-pub(crate) fn d3d12_hresult_code(result: ::windows::core::HRESULT) -> Errc {
-    match result {
-        DXGI_ERROR_DEVICE_HUNG
-        | DXGI_ERROR_DEVICE_REMOVED
-        | DXGI_ERROR_DEVICE_RESET
-        | DXGI_ERROR_DRIVER_INTERNAL_ERROR => Errc::GraphicsDeviceLost,
-        E_OUTOFMEMORY | DXGI_ERROR_REMOTE_OUTOFMEMORY => Errc::GraphicsOutOfMemory,
-        _ => Errc::PlatformError,
-    }
-}
-
-fn d3d12_error(operation: &str, error: ::windows::core::Error) -> Error {
-    Error::new(
-        d3d12_hresult_code(error.code()),
-        format!("D3d12Context: {operation} failed: {error}"),
-    )
-}
-
-fn platform_error(message: impl Into<String>) -> Error {
-    Error::new(Errc::PlatformError, message)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum D3d12DriverKind {
-    Hardware,
-    Warp,
-}
-
-impl D3d12DriverKind {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Hardware => "hardware",
-            Self::Warp => "warp",
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct D3d12AdapterInfo {
-    pub driver: D3d12DriverKind,
-    pub description: String,
-    pub vendor_id: u32,
-    pub device_id: u32,
-    pub dedicated_video_memory: u64,
-}
-
-impl D3d12AdapterInfo {
-    pub fn diagnostic_summary(&self) -> String {
-        format!(
-            "driver={}; adapter=\"{}\"; vendor={:#06X}; device={:#06X}; dedicated_vram_mb={}",
-            self.driver.as_str(),
-            self.description,
-            self.vendor_id,
-            self.device_id,
-            self.dedicated_video_memory / (1024 * 1024)
-        )
-    }
-}
-
-fn adapter_info(adapter: &IDXGIAdapter1, driver: D3d12DriverKind) -> Result<D3d12AdapterInfo> {
-    let desc = unsafe { adapter.GetDesc1() }
-        .map_err(|error| d3d12_error("IDXGIAdapter1::GetDesc1", error))?;
-    let description_len = desc
-        .Description
-        .iter()
-        .position(|unit| *unit == 0)
-        .unwrap_or(desc.Description.len());
-    Ok(D3d12AdapterInfo {
-        driver,
-        description: String::from_utf16_lossy(&desc.Description[..description_len]),
-        vendor_id: desc.VendorId,
-        device_id: desc.DeviceId,
-        dedicated_video_memory: desc.DedicatedVideoMemory as u64,
-    })
-}
-
-fn create_device_for_adapter(adapter: &IDXGIAdapter1) -> Result<ID3D12Device> {
-    let mut device = None;
-    unsafe { D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_11_0, &mut device) }
-        .map_err(|error| d3d12_error("D3D12CreateDevice", error))?;
-    device.ok_or_else(|| platform_error("D3d12Context: D3D12CreateDevice returned no device"))
-}
-
-pub(crate) fn select_hardware_adapter(
-    factory: &IDXGIFactory4,
-) -> Result<(IDXGIAdapter1, ID3D12Device, D3d12AdapterInfo)> {
-    let mut index = 0u32;
-    let mut failures = Vec::new();
-    loop {
-        let adapter = match unsafe { factory.EnumAdapters1(index) } {
-            Ok(adapter) => adapter,
-            Err(_) => break,
-        };
-        index += 1;
-        let desc = match unsafe { adapter.GetDesc1() } {
-            Ok(desc) => desc,
-            Err(error) => {
-                failures.push(format!("adapter#{index} desc: {error}"));
-                continue;
-            }
-        };
-        if desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 != 0 {
-            continue;
-        }
-        match create_device_for_adapter(&adapter) {
-            Ok(device) => {
-                let info = adapter_info(&adapter, D3d12DriverKind::Hardware)?;
-                return Ok((adapter, device, info));
-            }
-            Err(error) => failures.push(format!("adapter#{index}: {}", error.short_what())),
-        }
-    }
-    Err(platform_error(format!(
-        "D3d12Context: no hardware adapter accepted feature level 11_0; failures=[{}]",
-        failures.join("; ")
-    )))
-}
-
-fn select_warp_adapter(
-    factory: &IDXGIFactory4,
-) -> Result<(IDXGIAdapter1, ID3D12Device, D3d12AdapterInfo)> {
-    let adapter: IDXGIAdapter1 = unsafe { factory.EnumWarpAdapter() }
-        .map_err(|error| d3d12_error("IDXGIFactory4::EnumWarpAdapter", error))?;
-    let device = create_device_for_adapter(&adapter)?;
-    let info = adapter_info(&adapter, D3d12DriverKind::Warp)?;
-    Ok((adapter, device, info))
-}
-
-pub(crate) fn swap_chain_desc(width: i32, height: i32) -> DXGI_SWAP_CHAIN_DESC1 {
-    DXGI_SWAP_CHAIN_DESC1 {
-        Width: width.max(1) as u32,
-        Height: height.max(1) as u32,
-        Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-        Stereo: false.into(),
-        SampleDesc: DXGI_SAMPLE_DESC {
-            Count: 1,
-            Quality: 0,
-        },
-        BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
-        BufferCount: FRAME_COUNT as u32,
-        Scaling: DXGI_SCALING_STRETCH,
-        SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
-        AlphaMode: DXGI_ALPHA_MODE_IGNORE,
-        Flags: 0,
-    }
-}
-
-fn buffer_resource_desc(size: u64) -> D3D12_RESOURCE_DESC {
-    D3D12_RESOURCE_DESC {
-        Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-        Alignment: 0,
-        Width: size.max(1),
-        Height: 1,
-        DepthOrArraySize: 1,
-        MipLevels: 1,
-        Format: Default::default(),
-        SampleDesc: DXGI_SAMPLE_DESC {
-            Count: 1,
-            Quality: 0,
-        },
-        Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-        Flags: D3D12_RESOURCE_FLAG_NONE,
-    }
-}
-
-fn create_readback_buffer(device: &ID3D12Device, size: u64) -> Result<ID3D12Resource> {
-    let heap = D3D12_HEAP_PROPERTIES {
-        Type: D3D12_HEAP_TYPE_READBACK,
-        CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-        MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
-        CreationNodeMask: 0,
-        VisibleNodeMask: 0,
-    };
-    let desc = buffer_resource_desc(size);
-    let mut resource = None;
-    unsafe {
-        device.CreateCommittedResource(
-            &heap,
-            D3D12_HEAP_FLAG_NONE,
-            &desc,
-            D3D12_RESOURCE_STATE_COPY_DEST,
-            None,
-            &mut resource,
-        )
-    }
-    .map_err(|error| d3d12_error("ID3D12Device::CreateCommittedResource(readback)", error))?;
-    resource.ok_or_else(|| platform_error("D3d12Context: readback buffer was not created"))
-}
-
-fn create_upload_buffer(device: &ID3D12Device, size: u64) -> Result<ID3D12Resource> {
-    let heap = D3D12_HEAP_PROPERTIES {
-        Type: D3D12_HEAP_TYPE_UPLOAD,
-        CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-        MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
-        CreationNodeMask: 0,
-        VisibleNodeMask: 0,
-    };
-    let desc = buffer_resource_desc(size);
-    let mut resource = None;
-    unsafe {
-        device.CreateCommittedResource(
-            &heap,
-            D3D12_HEAP_FLAG_NONE,
-            &desc,
-            D3D12_RESOURCE_STATE_GENERIC_READ,
-            None,
-            &mut resource,
-        )
-    }
-    .map_err(|error| d3d12_error("ID3D12Device::CreateCommittedResource(upload)", error))?;
-    resource.ok_or_else(|| platform_error("D3d12Context: upload buffer was not created"))
-}
-
-fn record_transition(
-    list: &ID3D12GraphicsCommandList,
-    resource: &ID3D12Resource,
-    before: D3D12_RESOURCE_STATES,
-    after: D3D12_RESOURCE_STATES,
-) {
-    if before == after {
-        return;
-    }
-    let transition = D3D12_RESOURCE_TRANSITION_BARRIER {
-        pResource: ManuallyDrop::new(Some(resource.clone())),
-        Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
-        StateBefore: before,
-        StateAfter: after,
-    };
-    let mut barrier = D3D12_RESOURCE_BARRIER {
-        Type: D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-        Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
-        Anonymous: D3D12_RESOURCE_BARRIER_0 {
-            Transition: ManuallyDrop::new(transition),
-        },
-    };
-    unsafe {
-        list.ResourceBarrier(std::slice::from_ref(&barrier));
-        let transition = &mut *barrier.Anonymous.Transition;
-        ManuallyDrop::drop(&mut transition.pResource);
-    }
-}
-
-fn texture_copy_location_subresource(resource: &ID3D12Resource) -> D3D12_TEXTURE_COPY_LOCATION {
-    D3D12_TEXTURE_COPY_LOCATION {
-        pResource: ManuallyDrop::new(Some(resource.clone())),
-        Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
-        Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
-            SubresourceIndex: 0,
-        },
-    }
-}
-
-fn texture_copy_location_footprint(
-    resource: &ID3D12Resource,
-    footprint: D3D12_PLACED_SUBRESOURCE_FOOTPRINT,
-) -> D3D12_TEXTURE_COPY_LOCATION {
-    D3D12_TEXTURE_COPY_LOCATION {
-        pResource: ManuallyDrop::new(Some(resource.clone())),
-        Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
-        Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
-            PlacedFootprint: footprint,
-        },
-    }
-}
-
-fn release_copy_location(location: &mut D3D12_TEXTURE_COPY_LOCATION) {
-    unsafe {
-        ManuallyDrop::drop(&mut location.pResource);
-    }
-}
-
-pub(crate) fn copy_mapped_bgra_rows(
-    mapped: *const u8,
-    footprint_offset: usize,
-    row_pitch: usize,
-    x: usize,
-    y: usize,
-    width: usize,
-    height: usize,
-) -> Vec<u32> {
-    let mut pixels = vec![0u32; width.saturating_mul(height)];
-    for row in 0..height {
-        // SAFETY: caller provides a mapped D3D12 readback buffer whose footprint
-        // covers `(y + row) * row_pitch + (x + width) * 4` bytes.
-        let source = unsafe {
-            mapped
-                .add(footprint_offset + (y + row) * row_pitch + x * 4)
-                .cast::<u32>()
-        };
-        let destination = pixels[row * width..].as_mut_ptr();
-        // SAFETY: source and destination are valid for `width` u32 values and do
-        // not overlap; destination points into the row allocated above.
-        unsafe {
-            std::ptr::copy_nonoverlapping(source, destination, width);
-        }
-    }
-    pixels
-}
+use super::swap_chain::{swap_chain_desc, FRAME_COUNT};
+use super::transfer::{
+    copy_mapped_bgra_rows, create_readback_buffer, create_upload_buffer, record_transition,
+    release_copy_location, texture_copy_location_footprint, texture_copy_location_subresource,
+};
 
 pub struct D3d12Context {
     hwnd: HWND_PTR,
@@ -406,6 +106,7 @@ impl D3d12Context {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn new_with_driver(
         native_window: *mut c_void,
         width: i32,

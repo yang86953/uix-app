@@ -404,7 +404,9 @@ fn d3d11_occlusion_is_a_per_window_idle_probe_not_graphics_recovery() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let present_traits = read_source(root.join("src/native/traits/present.rs"));
     let d3d11 = read_source(root.join("src/native/graphics/d3d11/platform/context.rs"));
-    let d3d12 = read_source(root.join("src/native/graphics/d3d12/platform/context.rs"));
+    let d3d12_context = read_source(root.join("src/native/graphics/d3d12/platform/context.rs"));
+    let d3d12_swap_chain =
+        read_source(root.join("src/native/graphics/d3d12/platform/swap_chain.rs"));
     let scheduler = read_source(root.join("src/app/frame_scheduler.rs"));
     let driver = read_source(root.join("src/app/window_driver.rs"));
     let recovering = read_source(root.join("src/draw/engine/recovering.rs"));
@@ -423,7 +425,9 @@ fn d3d11_occlusion_is_a_per_window_idle_probe_not_graphics_recovery() {
         "D3D11 bitblt presentation must classify occlusion and use only DXGI's no-data exit probe"
     );
     assert!(
-        d3d12.contains("DXGI_SWAP_EFFECT_FLIP_DISCARD") && !d3d12.contains("fn test_present("),
+        d3d12_swap_chain.contains("DXGI_SWAP_EFFECT_FLIP_DISCARD")
+            && !d3d12_swap_chain.contains("fn test_present(")
+            && !d3d12_context.contains("fn test_present("),
         "the flip-model D3D12 path must not falsely advertise DXGI occlusion status support"
     );
     assert!(
