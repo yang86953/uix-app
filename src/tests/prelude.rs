@@ -103,6 +103,8 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<Config>();
     assert_exported::<ConfigProvider>();
     assert_exported::<ComponentHandle>();
+    assert_exported::<FocusHandle>();
+    assert_exported::<FocusHandleError>();
     assert_exported::<Constraints>();
     assert_exported::<EdgeInsets>();
     assert_exported::<Errc>();
