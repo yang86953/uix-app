@@ -82,6 +82,10 @@ impl WindowInteractionRegion {
         }
     }
 
+    pub(crate) fn is_drag_region(&self) -> bool {
+        self.interaction == WindowInteraction::Drag
+    }
+
     fn action(control: WindowControl) -> WindowAction {
         match control {
             WindowControl::Minimize => WindowAction::Minimize,

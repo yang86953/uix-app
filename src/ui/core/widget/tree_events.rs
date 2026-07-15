@@ -1,7 +1,8 @@
 use super::tree_core::WidgetTree;
 use super::*;
 use crate::ui::event::{ClickEvent, SemanticEvent, WindowAction};
-use crate::ui::{OverlayEntry, OverlayKind};
+
+mod pointer_routing;
 
 impl WidgetTree {
     /// 2D 命中测试：根据屏幕坐标找到最深的 widget。
@@ -109,46 +110,6 @@ impl WidgetTree {
         } else {
             None
         }
-    }
-
-    fn overlay_target_at(&self, pos: Point) -> Option<WidgetId> {
-        let owner = self
-            .overlay_stack
-            .hit_test(pos.x, pos.y)
-            .map(|entry| entry.owner())?;
-        self.hit_test_internal(owner, pos).or(Some(owner))
-    }
-
-    fn intercept_top_overlay_outside_pointer_down(&mut self, pos: Point) -> Option<EventResult> {
-        let top = self.overlay_stack.top().cloned()?;
-        let inside_top = top.bounds_rect().is_some_and(|bounds| bounds.contains(pos));
-        if inside_top {
-            return None;
-        }
-
-        if top.is_modal() || top.traps_focus() || top.dismisses_on_outside() {
-            if top.dismisses_on_outside() {
-                self.overlay_stack.remove(top.id());
-                self.invalidate_paint(top.owner());
-            }
-            self.restore_focus_after_trap_owner(top.owner());
-            return Some(EventResult::Handled);
-        }
-
-        None
-    }
-
-    fn open_context_menu_overlay(&mut self, owner: WidgetId, pos: Point) {
-        self.overlay_stack
-            .retain_entries(|entry| entry.kind() != OverlayKind::ContextMenu);
-        self.overlay_stack.push_entry(
-            OverlayEntry::new(owner, OverlayKind::ContextMenu)
-                .bounds(Rect::new(pos.x, pos.y, 160.0, 160.0))
-                .z_index(1200)
-                .dismiss_on_outside(true)
-                .managed(true),
-        );
-        self.invalidate_paint(owner);
     }
 
     pub fn dispatch_event(&mut self, event: &SystemEvent) -> EventResult {
@@ -863,11 +824,15 @@ impl WidgetTree {
 
     pub(crate) fn dispatch_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
         let mut current = Some(target);
+        let secondary_drag_boundary = self.secondary_pointer_drag_boundary(target, event);
         // ScrollView 的子节点框架是自然坐标（未含滚动偏移），
         // 必须先计算目标路径上所有 ScrollView 的累计偏移量，
         // 翻译事件后加上该偏移量，使事件坐标与视觉位置一致。
         let scroll_off = self.cumulative_scroll_offset(target);
         while let Some(id) = current {
+            if secondary_drag_boundary == Some(id) {
+                return EventResult::Handled;
+            }
             // 先读取 frame（共享借用），传入 translate_pointer_event
             // 再获取可变引用调用 on_event，确保 &mut self 借用不重叠
             let frame = match self.get(id) {
