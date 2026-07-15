@@ -309,7 +309,7 @@ impl From<std::io::Error> for Error {
             std::io::ErrorKind::TimedOut => Errc::Timeout,
             std::io::ErrorKind::Interrupted => Errc::Cancelled,
             std::io::ErrorKind::InvalidInput => Errc::InvalidArgument,
-            std::io::ErrorKind::InvalidData => Errc::OutOfRange,
+            std::io::ErrorKind::InvalidData => Errc::FormatError,
             std::io::ErrorKind::WriteZero => Errc::WriteFailure,
             std::io::ErrorKind::AlreadyExists => Errc::AlreadyExists,
             _ => Errc::IoError,

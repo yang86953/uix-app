@@ -82,7 +82,7 @@ impl Errc {
     /// 尝试将 Errc 映射为 std::io::ErrorKind。
     pub fn to_io_kind(self) -> Option<std::io::ErrorKind> {
         match self {
-            Self::InvalidArgument => Some(std::io::ErrorKind::InvalidInput),
+            Self::InvalidArgument | Self::OutOfRange => Some(std::io::ErrorKind::InvalidInput),
             Self::NotFound | Self::FileNotFound => Some(std::io::ErrorKind::NotFound),
             Self::PermissionDenied | Self::AccessDenied => {
                 Some(std::io::ErrorKind::PermissionDenied)
@@ -92,7 +92,9 @@ impl Errc {
             Self::ConnectionRefused => Some(std::io::ErrorKind::ConnectionRefused),
             Self::ConnectionReset => Some(std::io::ErrorKind::ConnectionReset),
             Self::AlreadyExists => Some(std::io::ErrorKind::AlreadyExists),
-            Self::OutOfRange => Some(std::io::ErrorKind::InvalidData),
+            Self::FormatError | Self::ParseError | Self::SerializationError => {
+                Some(std::io::ErrorKind::InvalidData)
+            }
             Self::WriteFailure => Some(std::io::ErrorKind::WriteZero),
             Self::WouldBlock => Some(std::io::ErrorKind::WouldBlock),
             _ => None,
