@@ -18,3 +18,18 @@ fn half_open_circuit_admits_one_probe_and_reopens_after_probe_failure() {
     assert_eq!(circuit.state(), CircuitState::Closed);
     assert!(circuit.try_call());
 }
+
+#[test]
+fn circuit_reset_clears_state_and_all_metrics() {
+    let circuit = CircuitBreaker::new(1, Duration::from_secs(60));
+    circuit.record_success();
+    circuit.record_failure();
+    assert!(!circuit.try_call());
+
+    circuit.reset();
+
+    assert_eq!(circuit.state(), CircuitState::Closed);
+    assert_eq!(circuit.failure_count(), 0);
+    assert_eq!(circuit.success_count(), 0);
+    assert_eq!(circuit.rejected_count(), 0);
+}

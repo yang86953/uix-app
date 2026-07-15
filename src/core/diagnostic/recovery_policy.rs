@@ -341,6 +341,7 @@ impl CircuitBreaker {
         self.state
             .store(CircuitState::Closed as u64, Ordering::Release);
         self.failure_count.store(0, Ordering::Relaxed);
+        self.success_count.store(0, Ordering::Relaxed);
         self.rejected_count.store(0, Ordering::Relaxed);
         self.last_failure_time.store(0, Ordering::Relaxed);
         self.half_open_probe_in_flight
