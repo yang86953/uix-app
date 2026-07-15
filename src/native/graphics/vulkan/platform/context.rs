@@ -25,6 +25,9 @@ use super::surface::{
 
 mod transfer;
 
+#[cfg(test)]
+pub(crate) use transfer::allocate_cpu_shadow;
+
 pub(crate) fn vk_err(operation: &str, err: vk::Result) -> Error {
     let code = match err {
         vk::Result::ERROR_OUT_OF_DATE_KHR

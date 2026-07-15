@@ -8,6 +8,20 @@ use crate::core::{Errc, Error, Result};
 
 use super::{invalid, staging_size, vk_err, UploadBuffer, VulkanContext};
 
+pub(crate) fn allocate_cpu_shadow(pixel_count: usize) -> Result<Vec<u32>> {
+    let mut shadow = Vec::new();
+    shadow.try_reserve_exact(pixel_count).map_err(|error| {
+        Error::new(
+            Errc::GraphicsOutOfMemory,
+            format!(
+                "VulkanContext: CPU readback shadow allocation for {pixel_count} pixels failed: {error}"
+            ),
+        )
+    })?;
+    shadow.resize(pixel_count, 0);
+    Ok(shadow)
+}
+
 impl VulkanContext {
     pub(super) fn recreate_upload_buffer(&mut self, size: vk::DeviceSize) -> Result<()> {
         if self.upload.size >= size && self.upload.buffer != vk::Buffer::null() {
@@ -151,6 +165,7 @@ impl VulkanContext {
                 "VulkanContext: no uploaded frame to read back (staging empty)",
             ));
         }
+        let mut shadow = allocate_cpu_shadow(needed_pixels)?;
         unsafe {
             let mapped = self
                 .device
@@ -161,15 +176,14 @@ impl VulkanContext {
                     vk::MemoryMapFlags::empty(),
                 )
                 .map_err(|err| vk_err("vkMapMemory staging hydrate", err))?;
-            self.cpu_shadow.clear();
-            self.cpu_shadow.resize(needed_pixels, 0);
             ptr::copy_nonoverlapping(
                 mapped.cast::<u8>(),
-                self.cpu_shadow.as_mut_ptr().cast::<u8>(),
+                shadow.as_mut_ptr().cast::<u8>(),
                 needed_pixels.saturating_mul(4),
             );
             self.device.unmap_memory(self.upload.memory);
         }
+        self.cpu_shadow = shadow;
         Ok(())
     }
 
