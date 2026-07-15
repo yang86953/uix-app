@@ -1,5 +1,5 @@
 use crate::core::Point;
-use crate::ui::{ComponentId, EventResult, SystemEvent};
+use crate::ui::{ComponentId, EventResult, MouseButton, SystemEvent};
 
 /// Tracks mouse/touch interaction state.
 ///
@@ -12,6 +12,7 @@ pub struct InteractionManager {
     pressed: bool,
     hovered_component: Option<ComponentId>,
     pressed_component: Option<ComponentId>,
+    pressed_button: Option<MouseButton>,
     /// PointerDown 时的位置，用于 PointerUp 边界验证。
     press_pos: Option<Point>,
 }
@@ -41,12 +42,31 @@ impl InteractionManager {
         self.pressed_component
     }
 
+    pub fn pressed_button(&self) -> Option<MouseButton> {
+        self.pressed_button
+    }
+
     pub fn set_pressed_component(&mut self, id: Option<ComponentId>) {
         self.pressed_component = id;
+        self.pressed_button = None;
         self.pressed = id.is_some();
         if id.is_none() {
             self.press_pos = None;
         }
+    }
+
+    pub fn set_pressed_pointer(&mut self, id: Option<ComponentId>, button: MouseButton) {
+        self.set_pressed_component(id);
+        self.pressed_button = id.map(|_| button);
+    }
+
+    pub fn release_pressed_pointer(&mut self, button: MouseButton) -> Option<ComponentId> {
+        if self.pressed_button != Some(button) {
+            return None;
+        }
+        let pressed = self.pressed_component;
+        self.set_pressed_component(None);
+        pressed
     }
 
     pub fn unregister_component(&mut self, component_id: ComponentId) {
