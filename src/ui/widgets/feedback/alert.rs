@@ -51,9 +51,10 @@ component! {
                 self.focused = false;
                 EventResult::Handled
             }
-            SystemEvent::KeyDown { key, .. }
-                if matches!(key, KeyCode::Enter | KeyCode::Space | KeyCode::Escape) =>
-            {
+            SystemEvent::KeyDown {
+                key: KeyCode::Enter | KeyCode::Space | KeyCode::Escape,
+                ..
+            } => {
                 self.dismiss_from_input();
                 EventResult::Handled
             }
