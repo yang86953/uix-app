@@ -4336,6 +4336,50 @@ fn capture_phase_root_handles_before_child() {
 }
 
 #[test]
+fn captured_pointer_press_does_not_arm_target_click_or_drag() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(CaptureSpyWidget::new(300.0, 300.0)));
+    let child = tree.add_child(root, Box::new(Button::new("Captured")));
+    tree.get_mut(root)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
+    tree.get_mut(child)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 40.0));
+    let clicks = Rc::new(Cell::new(0));
+    let clicks_for_handler = clicks.clone();
+    tree.handler_table()
+        .on(child, SemanticKind::Click, move |_| {
+            clicks_for_handler.set(clicks_for_handler.get() + 1);
+        });
+
+    let pos = Point::new(50.0, 20.0);
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(tree.managers().interaction.pressed_component(), None);
+    assert!(!tree.managers().drag.is_potential());
+
+    tree.dispatch_event(&SystemEvent::PointerMove {
+        pos: Point::new(80.0, 20.0),
+        mods: KeyMod::NONE,
+    });
+    tree.dispatch_event(&SystemEvent::PointerUp {
+        pos,
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(clicks.get(), 0);
+    assert!(!tree.managers().drag.is_dragging());
+}
+
+#[test]
 fn capture_phase_requires_explicit_opt_in() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));

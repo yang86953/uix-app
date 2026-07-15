@@ -530,6 +530,16 @@ impl WidgetTree {
             event
         };
         if self.capture_to(target, capture_event) == EventResult::Handled {
+            if begins_pointer {
+                let _ = self
+                    .managers_mut()
+                    .interaction
+                    .release_pressed_pointer(button);
+                if self.managers().drag.is_gesture_button(button) {
+                    self.managers_mut().drag.end_drag();
+                }
+            }
+            self.rebuild_widget_overlays();
             return EventResult::Handled;
         }
         let result = if matches!(event, SystemEvent::PointerDoubleClick { .. }) {
