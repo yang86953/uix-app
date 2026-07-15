@@ -829,6 +829,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="print the exact plan without requiring Windows or running tests",
     )
     parser.add_argument(
+        "--preflight",
+        action="store_true",
+        help="validate the Windows checkout and exact test inventory without running tests",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         help="new evidence directory (default: test-reports/<timestamp>-gfx-r5-...)",
@@ -862,6 +867,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.soak_seconds is not None
             or args.device_lost_timeout is not None
             or args.list
+            or args.preflight
             or args.output
         ):
             print(
@@ -894,6 +900,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             or args.soak_seconds is not None
             or args.device_lost_timeout is not None
             or args.list
+            or args.preflight
             or args.output
         ):
             print(
@@ -924,7 +931,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"GFX-R5 evidence resumed: {evidence.output_dir}")
         return result
     if args.profile is None or args.vendor is None:
-        print("error: --profile and --vendor are required for run/list mode", file=sys.stderr)
+        print(
+            "error: --profile and --vendor are required for run/list/preflight mode",
+            file=sys.stderr,
+        )
+        return 2
+    if args.list and args.preflight:
+        print("error: --list and --preflight are mutually exclusive", file=sys.stderr)
+        return 2
+    if args.preflight and args.output is not None:
+        print("error: --preflight cannot be combined with --output", file=sys.stderr)
         return 2
     try:
         plan = build_plan(
@@ -946,6 +962,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     if os.name != "nt":
         print("error: GFX-R5 target-machine acceptance requires Windows", file=sys.stderr)
         return 2
+    if args.preflight:
+        try:
+            require_clean_source()
+            preflight_test_inventory(plan)
+        except (OSError, subprocess.SubprocessError, ValueError) as error:
+            print(f"error: GFX-R5 preflight failed: {error}", file=sys.stderr)
+            return 2
+        print(
+            f"GFX-R5 preflight passed: profile={args.profile}; "
+            f"vendor={args.vendor}; cases={len(plan)}"
+        )
+        return 0
     try:
         require_clean_source()
         preflight_test_inventory(plan)

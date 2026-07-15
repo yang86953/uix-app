@@ -1,5 +1,5 @@
 import unittest
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -38,6 +38,42 @@ def passing_log(case) -> str:
 
 
 class RunWindowsGfxR5Tests(unittest.TestCase):
+    def test_preflight_checks_clean_source_and_inventory_without_running(self) -> None:
+        stdout = StringIO()
+        with (
+            patch("scripts.run_windows_gfx_r5.os.name", "nt"),
+            patch("scripts.run_windows_gfx_r5.require_clean_source") as clean,
+            patch("scripts.run_windows_gfx_r5.preflight_test_inventory") as inventory,
+            patch("scripts.run_windows_gfx_r5.run_plan") as run_plan_mock,
+            redirect_stdout(stdout),
+        ):
+            result = main(
+                ["--preflight", "--profile", "vendor", "--vendor", "amd"]
+            )
+
+        self.assertEqual(result, 0)
+        clean.assert_called_once_with()
+        inventory.assert_called_once_with(build_plan("vendor", "amd", None, 900, 60))
+        run_plan_mock.assert_not_called()
+        self.assertIn("GFX-R5 preflight passed", stdout.getvalue())
+
+    def test_preflight_rejects_list_mode(self) -> None:
+        stderr = StringIO()
+        with redirect_stderr(stderr):
+            result = main(
+                [
+                    "--preflight",
+                    "--list",
+                    "--profile",
+                    "vendor",
+                    "--vendor",
+                    "amd",
+                ]
+            )
+
+        self.assertEqual(result, 2)
+        self.assertIn("mutually exclusive", stderr.getvalue())
+
     def test_run_case_cleans_process_tree_when_output_stream_fails(self) -> None:
         class BrokenOutput:
             def __iter__(self):
