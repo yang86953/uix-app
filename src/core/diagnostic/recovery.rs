@@ -61,12 +61,12 @@ impl RecoveryHandler {
                 }
             }
 
-            if let Some(ref cb) = self.on_retry {
-                cb(&last_error, attempt);
-            }
-
             if !self.policy.should_retry(attempt, &last_error) {
                 break;
+            }
+
+            if let Some(ref cb) = self.on_retry {
+                cb(&last_error, attempt);
             }
 
             let d = self.policy.delay(attempt);
