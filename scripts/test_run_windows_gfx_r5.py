@@ -451,6 +451,44 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             self.assertEqual(attempt["exit_code"], 0)
             self.assertEqual(attempt["evidence_error"], "missing exact test evidence")
 
+    def test_run_plan_records_runner_failure_without_a_cargo_exit_code(self) -> None:
+        plan = build_plan("mixed-dpi", "amd", None, 900, 60)
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "evidence"
+            session = EvidenceSession(
+                output,
+                "mixed-dpi",
+                "amd",
+                None,
+                900,
+                60,
+                plan,
+            )
+
+            def fail_runner(_case, log_path):
+                log_path.write_text("partial runner output\n", encoding="utf-8")
+                raise OSError("output pipe failed")
+
+            stderr = StringIO()
+            with (
+                patch("scripts.run_windows_gfx_r5.os.name", "nt"),
+                patch(
+                    "scripts.run_windows_gfx_r5.run_case",
+                    side_effect=fail_runner,
+                ),
+                redirect_stderr(stderr),
+            ):
+                result = run_plan(plan, session)
+
+            self.assertEqual(result, EVIDENCE_VALIDATION_EXIT_CODE)
+            self.assertEqual(session.manifest["status"], "failed")
+            attempt = session.manifest["cases"][0]["attempts"][0]
+            self.assertEqual(attempt["status"], "failed")
+            self.assertIsNone(attempt["exit_code"])
+            self.assertIn("OSError: output pipe failed", attempt["evidence_error"])
+            self.assertIn("could not complete", stderr.getvalue())
+            verify_evidence_dir(output)
+
     def test_evidence_verifier_rejects_log_tampering(self) -> None:
         plan = build_plan("mixed-dpi", "amd", None, 900, 60)
         with TemporaryDirectory() as directory:

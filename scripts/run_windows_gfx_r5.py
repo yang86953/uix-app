@@ -326,7 +326,7 @@ class EvidenceSession:
     def finish_case(
         self,
         index: int,
-        exit_code: int,
+        exit_code: int | None,
         duration: float,
         evidence_error: str | None = None,
     ) -> None:
@@ -682,11 +682,11 @@ def verify_attempt_log(
                 "exit_code=0 and no evidence error"
             )
     elif attempt_status == "failed":
-        if type(exit_code) is not int:
+        if exit_code is not None and type(exit_code) is not int:
             raise ValueError(
-                f"evidence case {case_name!r} failed attempt has no integer exit code"
+                f"evidence case {case_name!r} failed attempt exit code must be integer or null"
             )
-        if exit_code == 0 and not evidence_error:
+        if exit_code in (None, 0) and not evidence_error:
             raise ValueError(
                 f"evidence case {case_name!r} failed attempt has no failure reason"
             )
@@ -1053,7 +1053,23 @@ def run_plan(
     for progress, (index, case) in enumerate(runnable, start=1):
         print(f"[{progress}/{len(runnable)}] {format_case(case)}", flush=True)
         log_path = evidence.start_case(index)
-        exit_code, duration = run_case(case, log_path)
+        case_started = time.monotonic()
+        try:
+            exit_code, duration = run_case(case, log_path)
+        except Exception as error:
+            duration = time.monotonic() - case_started
+            evidence_error = (
+                "runner failed before cargo completion: "
+                f"{type(error).__name__}: {error}"
+            )
+            evidence.finish_case(index, None, duration, evidence_error)
+            evidence.finish("failed")
+            print(
+                f"error: GFX-R5 case {case.name!r} could not complete; "
+                f"runner_error={evidence_error!r}; evidence={evidence.output_dir}",
+                file=sys.stderr,
+            )
+            return EVIDENCE_VALIDATION_EXIT_CODE
         evidence_error = None
         if exit_code == 0:
             try:
