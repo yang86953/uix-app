@@ -6,6 +6,16 @@
 
 use std::fmt;
 
+fn retry_exhausted_message(service_name: &str, attempts: u64) -> String {
+    let unit = if attempts == 1 { "attempt" } else { "attempts" };
+    format!("[RETRY] {service_name} exhausted after {attempts} {unit}")
+}
+
+#[cfg(test)]
+pub(crate) fn retry_exhausted_message_for_test(service_name: &str, attempts: u64) -> String {
+    retry_exhausted_message(service_name, attempts)
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // MiddlewareContext
 // ════════════════════════════════════════════════════════════════════════════
@@ -162,9 +172,9 @@ impl Middleware for RetryMiddleware {
             }
 
             if attempt >= self.max_retries {
-                crate::core::log::warn_fn(format!(
-                    "[RETRY] {} exhausted after {} attempts",
-                    ctx.service_name, attempt
+                crate::core::log::warn_fn(retry_exhausted_message(
+                    &ctx.service_name,
+                    u64::from(attempt) + 1,
                 ));
                 return;
             }
