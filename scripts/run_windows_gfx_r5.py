@@ -28,6 +28,7 @@ DEVICE_LOST_TIMEOUT_ENV = "UIX_VULKAN_DEVICE_LOST_TIMEOUT_SECONDS"
 SOAK_SECONDS_ENV = "UIX_VULKAN_SOAK_SECONDS"
 
 VENDORS = ("nvidia", "amd", "intel")
+VENDOR_IDS = {"nvidia": 0x10DE, "amd": 0x1002, "intel": 0x8086}
 PROFILES = ("vendor", "mixed-dpi", "soak", "device-lost", "all")
 MIN_SOAK_SECONDS = 900
 MAX_SOAK_SECONDS = 3_600
@@ -42,21 +43,25 @@ VENDOR_CASES = (
         "vendor-resize-present-readback",
         "tests::native::graphics::vulkan::platform::context::"
         "windows_vulkan_gfx_r5_expected_vendor_resize_present_readback",
+        "GFX-R5 Vulkan vendor evidence:",
     ),
     (
         "native-out-of-date-recovery",
         "tests::native::graphics::vulkan::platform::context::"
         "windows_vulkan_gfx_r5_native_out_of_date_is_typed_and_recovers",
+        "GFX-R5 Vulkan native surface fault evidence:",
     ),
     (
         "fatal-native-surface",
         "tests::native::graphics::vulkan::platform::context::"
         "windows_vulkan_gfx_r5_destroyed_hwnd_returns_native_surface_lost",
+        "GFX-R5 Vulkan fatal surface evidence:",
     ),
     (
         "engine-recovery-boundary",
         "tests::native::backends::windows::vulkan_fault_recovery::"
         "native_vulkan_surface_fault_reaches_engine_recovery_boundary",
+        "GFX-R5 engine recovery evidence:",
     ),
 )
 
@@ -65,6 +70,7 @@ MIXED_DPI_CASES = (
         "vulkan-mixed-dpi",
         "tests::native::backends::windows::hardware_matrix::"
         "windows_vulkan_gfx_r5_crosses_real_mixed_dpi_monitors",
+        "GFX-R5 Vulkan mixed-DPI evidence:",
     ),
 )
 
@@ -73,11 +79,13 @@ SOAK_CASES = (
         "single-window-soak",
         "tests::native::graphics::vulkan::platform::context::"
         "windows_vulkan_hardware_resize_present_soak_is_bounded",
+        "GFX-R5 Vulkan soak:",
     ),
     (
         "shared-device-soak",
         "tests::native::graphics::vulkan::platform::context::"
         "windows_vulkan_shared_device_multiwindow_soak_is_bounded",
+        "GFX-R5 Vulkan shared-device soak:",
     ),
 )
 
@@ -86,6 +94,7 @@ DEVICE_LOST_CASES = (
         "external-device-reset",
         "tests::native::graphics::vulkan::platform::fault::"
         "windows_vulkan_gfx_r5_external_reset_returns_device_lost_with_diagnostics",
+        "GFX-R5 external device loss:",
     ),
 )
 
@@ -95,6 +104,7 @@ class GfxR5Case:
     name: str
     test_name: str
     environment: tuple[tuple[str, str], ...]
+    evidence_prefix: str
 
     def command(self) -> tuple[str, ...]:
         return (
@@ -110,6 +120,41 @@ class GfxR5Case:
             "--nocapture",
             "--test-threads=1",
         )
+
+    def required_evidence_markers(self) -> tuple[str, ...]:
+        environment = dict(self.environment)
+        vendor = environment[VENDOR_ENV]
+        markers = [
+            f"{self.evidence_prefix} expected={vendor};",
+            f"vendor=0x{VENDOR_IDS[vendor]:04X}",
+        ]
+        if self.name == "vendor-resize-present-readback":
+            markers.append("swapchain_maintenance1=true")
+        elif self.name == "native-out-of-date-recovery":
+            markers.append("ERROR_OUT_OF_DATE_KHR")
+        elif self.name == "fatal-native-surface":
+            markers.append("ERROR_SURFACE_LOST_KHR")
+        elif self.name == "engine-recovery-boundary":
+            markers.extend(("action=RebuildSurface", "ERROR_OUT_OF_DATE_KHR"))
+        elif self.name == "vulkan-mixed-dpi":
+            markers.extend(("dpi=", "initial=", "forward=", "return="))
+        elif self.name in ("single-window-soak", "shared-device-soak"):
+            duration = environment[SOAK_SECONDS_ENV]
+            markers.extend(
+                (f"duration={duration}.0s", "rounds=", "handles=", "peak=")
+            )
+        elif self.name == "external-device-reset":
+            markers.extend(
+                (
+                    "detector=",
+                    "fault=",
+                    "ERROR_DEVICE_LOST",
+                    "peer=",
+                    "replacement=",
+                    f"device_fault={environment[DEVICE_FAULT_ENV]};",
+                )
+            )
+        return tuple(markers)
 
 
 def test_inventory_command() -> tuple[str, ...]:
@@ -294,7 +339,7 @@ class EvidenceSession:
         write_json_atomic(self.manifest_path, self.manifest)
 
 
-def _profile_cases(profile: str) -> tuple[tuple[str, str], ...]:
+def _profile_cases(profile: str) -> tuple[tuple[str, str, str], ...]:
     if profile == "vendor":
         return VENDOR_CASES
     if profile == "mixed-dpi":
@@ -333,18 +378,18 @@ def build_plan(
         )
 
     plan: list[GfxR5Case] = []
-    for name, test_name in _profile_cases(profile):
+    for name, test_name, evidence_prefix in _profile_cases(profile):
         environment = [(VENDOR_ENV, vendor)]
-        if (name, test_name) in SOAK_CASES:
+        if any(name == candidate[0] for candidate in SOAK_CASES):
             environment.append((SOAK_SECONDS_ENV, str(soak_seconds)))
-        if (name, test_name) in DEVICE_LOST_CASES:
+        if any(name == candidate[0] for candidate in DEVICE_LOST_CASES):
             environment.extend(
                 (
                     (DEVICE_FAULT_ENV, str(device_fault).lower()),
                     (DEVICE_LOST_TIMEOUT_ENV, str(device_lost_timeout)),
                 )
             )
-        plan.append(GfxR5Case(name, test_name, tuple(environment)))
+        plan.append(GfxR5Case(name, test_name, tuple(environment), evidence_prefix))
     return plan
 
 
@@ -709,6 +754,15 @@ def normalize_log_ending(path: Path) -> None:
 
 def require_case_success(case: GfxR5Case, log_path: Path) -> None:
     require_exact_test_success(case.test_name, case.name, log_path)
+    content = log_path.read_text(encoding="utf-8")
+    missing = [
+        marker for marker in case.required_evidence_markers() if marker not in content
+    ]
+    if missing:
+        details = ", ".join(repr(marker) for marker in missing)
+        raise ValueError(
+            f"GFX-R5 case {case.name!r} lacks semantic evidence markers: {details}"
+        )
 
 
 def require_exact_test_success(
