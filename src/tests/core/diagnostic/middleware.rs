@@ -1,3 +1,4 @@
+use crate::core::diagnostic::middleware::retry_exhausted_message_for_test;
 use crate::core::diagnostic::{MiddlewareContext, MiddlewarePipeline, RetryMiddleware};
 
 #[test]
@@ -39,4 +40,16 @@ fn retry_resets_the_previous_attempt_status_before_reentry() {
     assert!(context.succeeded);
     assert_eq!(context.status_code, 0);
     assert_eq!(context.retry_count, 1);
+}
+
+#[test]
+fn retry_exhaustion_reports_executed_attempts() {
+    assert_eq!(
+        retry_exhausted_message_for_test("service", 1),
+        "[RETRY] service exhausted after 1 attempt"
+    );
+    assert_eq!(
+        retry_exhausted_message_for_test("service", 4),
+        "[RETRY] service exhausted after 4 attempts"
+    );
 }
