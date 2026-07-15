@@ -48,7 +48,8 @@ def passing_log(case) -> str:
         duration = dict(case.environment)[SOAK_SECONDS_ENV]
         evidence = (
             f"{markers[0]} duration={duration}.0s rounds=128 "
-            "handles=100->101 peak=105; swapchain_maintenance1=true"
+            "handles=100->101 peak=105 warmup=60s/8192 rounds; "
+            "swapchain_maintenance1=true"
         )
     else:
         evidence = "\n".join(markers)
@@ -335,6 +336,32 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(ValueError, "peak exceeds"):
+                require_case_success(case, path)
+
+    def test_soak_evidence_requires_full_warmup(self) -> None:
+        case = build_plan("soak", "nvidia", None, 1_200, 60)[0]
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "case.log"
+
+            path.write_text(
+                passing_log(case).replace("warmup=60s", "warmup=59s"),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "warmup duration is too short"):
+                require_case_success(case, path)
+
+            path.write_text(
+                passing_log(case).replace("8192 rounds", "8191 rounds"),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "warmup rounds are too few"):
+                require_case_success(case, path)
+
+            path.write_text(
+                passing_log(case).replace(" warmup=60s/8192 rounds", ""),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "lacks structured soak warmup"):
                 require_case_success(case, path)
 
     def test_manifest_distinguishes_cargo_success_from_evidence_failure(self) -> None:
