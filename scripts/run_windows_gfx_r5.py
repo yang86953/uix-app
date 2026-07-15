@@ -303,6 +303,11 @@ def host_metadata() -> dict[str, str]:
     }
 
 
+def normalize_log_ending(path: Path) -> None:
+    content = path.read_text(encoding="utf-8")
+    path.write_text(content.rstrip() + "\n", encoding="utf-8", newline="\n")
+
+
 def run_case(case: GfxR5Case, log_path: Path) -> tuple[int, float]:
     inherited = os.environ.copy()
     inherited.update(case.environment)
@@ -332,6 +337,7 @@ def run_case(case: GfxR5Case, log_path: Path) -> tuple[int, float]:
             process.wait()
             raise
         exit_code = process.wait()
+    normalize_log_ending(log_path)
     return exit_code, time.monotonic() - started
 
 

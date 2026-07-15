@@ -9,6 +9,7 @@ from scripts.run_windows_gfx_r5 import (
     VENDOR_ENV,
     EvidenceSession,
     build_plan,
+    normalize_log_ending,
     write_json_atomic,
 )
 
@@ -83,6 +84,15 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
 
             self.assertIn('"status": "running"', path.read_text(encoding="utf-8"))
             self.assertFalse(path.with_suffix(".json.tmp").exists())
+
+    def test_log_normalization_removes_eof_blank_lines(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "case.log"
+            path.write_text("result: ok\n\n", encoding="utf-8")
+
+            normalize_log_ending(path)
+
+            self.assertEqual(path.read_bytes(), b"result: ok\n")
 
 
 if __name__ == "__main__":
