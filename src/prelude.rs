@@ -13,7 +13,7 @@
 // core
 
 pub use crate::core::{
-    ComponentId, Constraints, EdgeInsets, Errc, Error, Point, Rect, Size, WindowId,
+    ComponentId, Constraints, EdgeInsets, Errc, Error, ErrorSeverity, Point, Rect, Size, WindowId,
 };
 
 // native
@@ -57,13 +57,14 @@ pub use crate::ui::theme::{
     ThemePrimitives, DATA_VISUALIZATION_PALETTE, NEUTRAL_PALETTE,
 };
 pub use crate::ui::{
-    en_us, use_config, use_locale, window_control, window_control_named, window_drag_region,
-    with_config, with_locale, zh_cn, AccessibilityRole, AccessibilitySnapshot, AccessibilityState,
-    AppState, AriaAttribute, ClickEvent, ComponentConfig, ComponentConfigSnapshot, ComponentHandle,
-    ComponentOverrides, Config, ConfigProvider, EventResult, FocusHandle, FocusHandleError,
-    HandlerId, HandlerOptions, HandlerRegistration, IntoWidgetNode, Locale, LocaleProvider,
-    PaintContext, Placement, SemanticEvent, SemanticKind, SemanticPayload, SnapshotCollapsePanel,
-    SnapshotField, SnapshotFields, SnapshotSource, SnapshotTableColumn, SnapshotTableColumnGroup,
+    copy_to_clipboard, en_us, read_text_from_clipboard, use_config, use_locale, window_control,
+    window_control_named, window_drag_region, with_config, with_locale, zh_cn, AccessibilityRole,
+    AccessibilitySnapshot, AccessibilityState, AppState, AriaAttribute, ClickEvent,
+    ComponentConfig, ComponentConfigSnapshot, ComponentHandle, ComponentOverrides, Config,
+    ConfigProvider, EventResult, FocusHandle, FocusHandleError, HandlerId, HandlerOptions,
+    HandlerRegistration, IntoWidgetNode, Locale, LocaleProvider, PaintContext, Placement,
+    SemanticEvent, SemanticKind, SemanticPayload, SnapshotCollapsePanel, SnapshotField,
+    SnapshotFields, SnapshotSource, SnapshotTableColumn, SnapshotTableColumnGroup,
     SnapshotTransferItem, SnapshotTreeNode, SnapshotValue, SystemEvent, SystemEventKind,
     WidgetChildren, WidgetComponent, WindowControl,
 };

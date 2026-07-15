@@ -105,6 +105,7 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<ComponentHandle>();
     assert_exported::<FocusHandle>();
     assert_exported::<FocusHandleError>();
+    assert_exported::<ErrorSeverity>();
     assert_exported::<Constraints>();
     assert_exported::<EdgeInsets>();
     assert_exported::<Errc>();
@@ -141,6 +142,9 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<SystemEvent>();
     assert_exported::<SystemEventKind>();
     assert_exported::<AppState>();
+
+    let _: fn(&str) = copy_to_clipboard;
+    let _: fn() -> Option<String> = read_text_from_clipboard;
     assert_exported::<ClickEvent>();
     assert_exported::<EventResult>();
     assert_exported::<HandlerId>();
