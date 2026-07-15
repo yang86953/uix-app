@@ -1,4 +1,4 @@
-use crate::ui::widgets::Date;
+use crate::ui::widgets::{BreadcrumbItem, Date};
 
 use super::{AccessibilityRole, AccessibilitySnapshot, AccessibilityState};
 
@@ -40,6 +40,22 @@ pub(super) fn theme_toggle_accessibility(dark: bool) -> AccessibilitySnapshot {
             ..AccessibilityState::default()
         },
     )
+}
+
+pub(super) fn breadcrumb_accessibility(items: &[BreadcrumbItem]) -> AccessibilitySnapshot {
+    let active = items
+        .iter()
+        .find(|item| item.active)
+        .or_else(|| items.first());
+    AccessibilitySnapshot::new(AccessibilityRole::Navigation).with_state(AccessibilityState {
+        value_text: active.map(|item| item.title.clone()),
+        value_now: active
+            .and_then(|active| items.iter().position(|item| item == active))
+            .map(|index| (index + 1) as f64),
+        value_min: (!items.is_empty()).then_some(1.0),
+        value_max: (!items.is_empty()).then_some(items.len() as f64),
+        ..AccessibilityState::default()
+    })
 }
 
 pub(super) fn first_non_empty<const N: usize>(values: [&str; N]) -> String {
