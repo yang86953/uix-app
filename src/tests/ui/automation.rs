@@ -182,6 +182,30 @@ fn shared_semantic_actions_resolve_both_selector_and_node_id() {
 }
 
 #[test]
+fn press_key_settles_pending_reconcile_before_dispatch() {
+    let disabled = State::new(false);
+    let clicks = State::new(0i32);
+    let disabled_for_root = disabled.clone();
+    let clicks_for_root = clicks.clone();
+    let mut app = TestApp::new((320.0, 120.0), move || {
+        let clicks = clicks_for_root.clone();
+        embed(Button::new("Target").disabled(disabled_for_root.get()))
+            .on_click(&clicks, |clicks| clicks.update(|count| *count += 1))
+            .automation_id("target")
+    });
+    app.focus("target").unwrap();
+    assert!(app.snapshot().find("target").unwrap().focused);
+
+    disabled.set(true);
+    app.press_key(KeyCode::Enter, KeyMod::NONE).unwrap();
+
+    let target = app.snapshot().find("target").unwrap().clone();
+    assert!(!target.is_enabled());
+    assert!(!target.focused);
+    assert_eq!(clicks.get(), 0);
+}
+
+#[test]
 fn semantic_set_value_insert_text_and_errors_are_protocol_typed() {
     let mut input_app = TestApp::new((320.0, 120.0), || {
         input().placeholder("Name").automation_id("profile.name")
