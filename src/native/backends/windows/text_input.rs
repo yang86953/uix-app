@@ -328,7 +328,7 @@ impl ITextInput for WindowsTextInput {
                         top,
                         right,
                         bottom,
-                    });
+                    })?;
                 }
                 Ok(())
             } else {

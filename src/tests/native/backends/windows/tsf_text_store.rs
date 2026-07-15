@@ -2,16 +2,20 @@ use crate::native::backends::windows::platform::WindowsPlatform;
 use crate::native::backends::windows::tsf_text_store::*;
 use crate::native::traits::IWindowManager;
 use crate::tests::common::*;
-use windows::Win32::Foundation::{HWND, RECT};
+use windows::Win32::Foundation::{E_UNEXPECTED, HWND, RECT};
 use windows::Win32::UI::TextServices::{TS_AS_SEL_CHANGE, TS_AS_TEXT_CHANGE};
 use windows::Win32::UI::TextServices::{TS_LF_READ, TS_LF_READWRITE, TS_LF_SYNC};
 
-fn test_state() -> TsfStoreState {
-    TsfStoreState::new(TsfEventSink {
+fn test_event_sink() -> TsfEventSink {
+    TsfEventSink {
         events: Arc::new(Mutex::new(VecDeque::new())),
         window_id: WindowId::new(1),
         hwnd: HWND(std::ptr::null_mut()),
-    })
+    }
+}
+
+fn test_state() -> TsfStoreState {
+    TsfStoreState::new(test_event_sink())
 }
 
 #[test]
@@ -66,6 +70,20 @@ fn synchronous_upgrade_is_rejected_without_leaking_a_pending_lock() {
     );
     assert_eq!(state.complete_lock(), None);
     assert!(!state.has_read_lock());
+}
+
+#[test]
+fn thread_affine_store_reports_reentrant_borrow_instead_of_panicking() {
+    let (_store, state) = TsfTextStore::create(test_event_sink());
+    let write = state.write().expect("first mutable borrow");
+
+    assert_eq!(
+        state.read().err().map(|error| error.code()),
+        Some(E_UNEXPECTED)
+    );
+
+    drop(write);
+    assert!(state.read().is_ok());
 }
 
 #[test]
