@@ -339,6 +339,7 @@ pub enum SnapshotFields {
     },
     Menu {
         items: Vec<MenuItem>,
+        active_key: String,
         mode: MenuMode,
         item_h: f32,
     },
@@ -782,9 +783,18 @@ impl SnapshotFields {
             Self::Pagination { .. } | Self::Anchor { .. } | Self::Breadcrumb { .. } => {
                 AccessibilitySnapshot::new(AccessibilityRole::Navigation)
             }
-            Self::Menu { .. } | Self::Dropdown { .. } => {
-                AccessibilitySnapshot::new(AccessibilityRole::Menu)
+            Self::Menu {
+                items, active_key, ..
+            } => {
+                AccessibilitySnapshot::new(AccessibilityRole::Menu).with_state(AccessibilityState {
+                    value_text: items
+                        .iter()
+                        .find(|item| item.key == *active_key)
+                        .map(|item| item.label.clone()),
+                    ..AccessibilityState::default()
+                })
             }
+            Self::Dropdown { .. } => AccessibilitySnapshot::new(AccessibilityRole::Menu),
             Self::Tabs { .. } | Self::Steps { .. } => {
                 AccessibilitySnapshot::new(AccessibilityRole::TabList)
             }

@@ -42,3 +42,82 @@ fn menu_selection_emits_change_semantic_event() {
 
     assert_eq!(&*selected.borrow(), "docs");
 }
+
+#[test]
+fn menu_is_focusable_and_keyboard_navigation_wraps_while_skipping_disabled_items() {
+    let mut menu = Menu::new()
+        .add_item(MenuItem {
+            key: "home".into(),
+            label: "Home".into(),
+            icon: String::new(),
+            disabled: false,
+        })
+        .add_item(MenuItem {
+            key: "disabled".into(),
+            label: "Disabled".into(),
+            icon: String::new(),
+            disabled: true,
+        })
+        .add_item(MenuItem {
+            key: "docs".into(),
+            label: "Docs".into(),
+            icon: String::new(),
+            disabled: false,
+        });
+
+    assert_eq!(WidgetComponent::tab_index(&menu), 1);
+    assert_eq!(
+        menu.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Right,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(menu.get_active_key(), "home");
+
+    menu.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Right,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(menu.get_active_key(), "docs");
+
+    menu.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Right,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(menu.get_active_key(), "home");
+
+    menu.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Left,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(menu.get_active_key(), "docs");
+}
+
+#[test]
+fn vertical_menu_only_handles_vertical_navigation_keys() {
+    let mut menu = Menu::new()
+        .add_item(MenuItem {
+            key: "home".into(),
+            label: "Home".into(),
+            icon: String::new(),
+            disabled: false,
+        })
+        .mode(MenuMode::Vertical);
+
+    assert_eq!(
+        menu.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Right,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::NotHandled
+    );
+    assert_eq!(
+        menu.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Down,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(menu.get_active_key(), "home");
+}
