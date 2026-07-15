@@ -12,16 +12,17 @@ use super::accessibility::{
     anchor_accessibility, avatar_accessibility, back_top_accessibility, badge_accessibility,
     breadcrumb_accessibility, calendar_accessibility, card_accessibility, carousel_accessibility,
     chart_accessibility, date_range_accessibility, dropdown_accessibility, first_non_empty,
-    image_accessibility, menu_accessibility, pagination_accessibility, progress_accessibility,
-    result_accessibility, rich_text_accessibility, select_accessibility,
-    selectable_list_accessibility, splitter_accessibility, steps_accessibility, tabs_accessibility,
-    tag_accessibility, theme_toggle_accessibility, transfer_accessibility,
-    typography_accessibility, upload_accessibility,
+    image_accessibility, input_number_accessibility, menu_accessibility, pagination_accessibility,
+    popconfirm_accessibility, progress_accessibility, result_accessibility,
+    rich_text_accessibility, select_accessibility, selectable_list_accessibility,
+    splitter_accessibility, steps_accessibility, tabs_accessibility, tag_accessibility,
+    theme_toggle_accessibility, transfer_accessibility, typography_accessibility,
+    upload_accessibility,
 };
 use super::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotCollapsePanel,
-    SnapshotField, SnapshotTableColumn, SnapshotTableColumnGroup, SnapshotTransferItem,
-    SnapshotTreeNode,
+    SnapshotField, SnapshotPopconfirm, SnapshotTableColumn, SnapshotTableColumnGroup,
+    SnapshotTransferItem, SnapshotTreeNode,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -274,14 +275,7 @@ pub enum SnapshotFields {
         trigger: PopoverTrigger,
         arrow: bool,
     },
-    Popconfirm {
-        title: String,
-        confirm_text: String,
-        cancel_text: String,
-        placement: PopconfirmPlacement,
-        arrow: bool,
-        icon: bool,
-    },
+    Popconfirm(SnapshotPopconfirm),
     Modal {
         title: String,
         width: f32,
@@ -728,14 +722,7 @@ impl SnapshotFields {
                 placeholder,
                 disabled,
                 ..
-            } => AccessibilitySnapshot::named(AccessibilityRole::SpinButton, placeholder.clone())
-                .with_state(AccessibilityState {
-                    disabled: *disabled,
-                    value_now: Some(*value),
-                    value_min: Some(*min),
-                    value_max: Some(*max),
-                    ..AccessibilityState::default()
-                }),
+            } => input_number_accessibility(*value, *min, *max, placeholder, *disabled),
             Self::Image {
                 alt,
                 fallback,
@@ -768,6 +755,13 @@ impl SnapshotFields {
             Self::Alert { message, .. } => {
                 AccessibilitySnapshot::named(AccessibilityRole::Alert, message.clone())
             }
+            Self::Popconfirm(popconfirm) => popconfirm_accessibility(
+                &popconfirm.title,
+                &popconfirm.confirm_text,
+                &popconfirm.cancel_text,
+                popconfirm.visible,
+                popconfirm.focused_action,
+            ),
             Self::Modal { title, .. } | Self::Drawer { title, .. } => {
                 AccessibilitySnapshot::named(AccessibilityRole::Dialog, title.clone())
             }

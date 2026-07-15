@@ -89,6 +89,32 @@ pub(super) fn dropdown_accessibility(
     })
 }
 
+pub(super) fn popconfirm_accessibility(
+    title: &str,
+    confirm_text: &str,
+    cancel_text: &str,
+    visible: bool,
+    focused_action: Option<usize>,
+) -> AccessibilitySnapshot {
+    let action = match focused_action {
+        Some(0) => Some(confirm_text),
+        Some(1) => Some(cancel_text),
+        _ => None,
+    };
+    AccessibilitySnapshot::named(
+        AccessibilityRole::Button,
+        first_non_empty([title, "Confirm action"]),
+    )
+    .with_state(AccessibilityState {
+        expanded: Some(visible),
+        value_text: action.map(str::to_owned),
+        value_now: action.and_then(|_| focused_action.map(|index| index as f64 + 1.0)),
+        value_min: visible.then_some(1.0),
+        value_max: visible.then_some(2.0),
+        ..AccessibilityState::default()
+    })
+}
+
 pub(super) fn tabs_accessibility(tabs: &[Tab], active_index: usize) -> AccessibilitySnapshot {
     AccessibilitySnapshot::new(AccessibilityRole::TabList).with_state(AccessibilityState {
         value_text: tabs.get(active_index).map(|tab| tab.label.clone()),
@@ -427,6 +453,24 @@ pub(super) fn date_range_accessibility(
             value_text: start
                 .zip(end)
                 .map(|(start, end)| format!("{start} / {end}")),
+            ..AccessibilityState::default()
+        },
+    )
+}
+
+pub(super) fn input_number_accessibility(
+    value: f64,
+    min: f64,
+    max: f64,
+    placeholder: &str,
+    disabled: bool,
+) -> AccessibilitySnapshot {
+    AccessibilitySnapshot::named(AccessibilityRole::SpinButton, placeholder).with_state(
+        AccessibilityState {
+            disabled,
+            value_now: Some(value),
+            value_min: Some(min),
+            value_max: Some(max),
             ..AccessibilityState::default()
         },
     )

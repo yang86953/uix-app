@@ -5,8 +5,11 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::component_snapshot::SnapshotPopconfirm;
 use crate::ui::SnapshotFields;
-use crate::ui::{ComponentId, EventResult, SemanticEvent, SystemEvent, WidgetTree};
+use crate::ui::{
+    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
+};
 
 /// Popconfirm 弹出位置。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -31,6 +34,8 @@ component! {
         transition: TransitionPlayer,
         closing: bool,
         transition_dirty: bool,
+        focused: bool,
+        focused_action: usize,
         pending_submit: Cell<bool>,
     }
 
@@ -40,40 +45,93 @@ component! {
 
     hit_test_children => (&self) -> bool { false }
 
+    tab_index => (&self) -> i32 { 1 }
+
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
-        if let SystemEvent::PointerDown { pos, .. } = event {
-            if pos.x >= 0.0 && pos.x <= 80.0 && pos.y >= 0.0 && pos.y <= 28.0 {
+        match event {
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
+                if self.trigger_rect().contains(*pos) {
+                    self.focused = true;
+                    if self.visible {
+                        self.close();
+                    } else {
+                        self.open();
+                    }
+                    return EventResult::Handled;
+                }
                 if self.visible {
-                    self.close();
-                } else {
-                    self.open();
+                    let (confirm_rect, cancel_rect) = self.button_rects();
+                    if confirm_rect.contains(*pos) {
+                        self.focused = true;
+                        self.focused_action = 0;
+                        self.confirm();
+                        return EventResult::Handled;
+                    }
+                    if cancel_rect.contains(*pos) {
+                        self.focused = true;
+                        self.focused_action = 1;
+                        self.close();
+                        return EventResult::Handled;
+                    }
+                    if !self.popup_rect().contains(*pos) {
+                        self.close();
+                        return EventResult::Handled;
+                    }
                 }
-                return EventResult::Handled;
+                EventResult::NotHandled
             }
-            if self.is_present() {
-                let (pw, ph) = (200.0, 110.0);
-                let (px, py) = self.popup_pos(pw, ph);
-                let pop_rect = Rect::new(px, py, pw, ph);
-                // 点击弹窗外关闭
-                if !pop_rect.contains(*pos) {
-                    self.close();
-                    return EventResult::Handled;
-                }
-                // 确认按钮
-                let confirm_rect = Rect::new(px + 12.0, py + ph - 36.0, 80.0, 26.0);
-                let cancel_rect = Rect::new(px + pw - 92.0, py + ph - 36.0, 80.0, 26.0);
-                if confirm_rect.contains(*pos) {
-                    self.pending_submit.set(true);
-                    self.close();
-                    return EventResult::Handled;
-                }
-                if cancel_rect.contains(*pos) {
-                    self.close();
-                    return EventResult::Handled;
-                }
+            SystemEvent::FocusIn => {
+                self.focused = true;
+                EventResult::Handled
             }
+            SystemEvent::FocusOut => {
+                self.focused = false;
+                EventResult::Handled
+            }
+            SystemEvent::KeyDown { key, .. } if self.visible => match key {
+                KeyCode::Left | KeyCode::Home => {
+                    self.focused_action = 0;
+                    EventResult::Handled
+                }
+                KeyCode::Right | KeyCode::End => {
+                    self.focused_action = 1;
+                    EventResult::Handled
+                }
+                KeyCode::Enter | KeyCode::Space => {
+                    if self.focused_action == 0 {
+                        self.confirm();
+                    } else {
+                        self.close();
+                    }
+                    EventResult::Handled
+                }
+                KeyCode::Escape => {
+                    self.close();
+                    EventResult::Handled
+                }
+                _ => EventResult::NotHandled,
+            },
+            SystemEvent::KeyDown {
+                key: KeyCode::Enter | KeyCode::Space,
+                ..
+            } => {
+                self.open();
+                EventResult::Handled
+            }
+            _ => EventResult::NotHandled,
         }
-        EventResult::NotHandled
+    }
+
+    on_focus_within => (&mut self, focused: bool) -> EventResult {
+        self.focused = focused;
+        if !focused && self.visible {
+            self.close();
+        }
+        EventResult::Handled
     }
 
     semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
@@ -97,6 +155,9 @@ component! {
         let trigger_y = ctx.visual_center_y(frame, 13.0);
         ctx.draw_text(loc.delete_text, Point::new(frame.x + 20.0, trigger_y),
             ctx.tokens().color_error(), 13.0);
+        if self.focused {
+            ctx.stroke_rect(frame, primary, 2.0, r);
+        }
 
         if self.is_present() {
             let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
@@ -126,13 +187,22 @@ component! {
 
             // 确认按钮
             let btn_r = Some(Radius::uniform(4.0));
-            ctx.fill_rect(Rect::new(px + 12.0, py + ph - 36.0, 80.0, 26.0), popup_primary, btn_r);
+            let (confirm_rect, cancel_rect) = self.button_rects();
+            ctx.fill_rect(confirm_rect, popup_primary, btn_r);
             let confirm = if self.confirm_text.is_empty() { loc.popconfirm_ok } else { &self.confirm_text };
-            ctx.text_center(confirm, Rect::new(px + 12.0, py + ph - 36.0, 80.0, 26.0), fade_color(Color::white(), opacity), 12.0);
+            ctx.text_center(confirm, confirm_rect, fade_color(Color::white(), opacity), 12.0);
 
-            ctx.stroke_rect(Rect::new(px + pw - 92.0, py + ph - 36.0, 80.0, 26.0), popup_border, 1.0, btn_r);
+            ctx.stroke_rect(cancel_rect, popup_border, 1.0, btn_r);
             let cancel = if self.cancel_text.is_empty() { loc.popconfirm_cancel } else { &self.cancel_text };
-            ctx.text_center(cancel, Rect::new(px + pw - 92.0, py + ph - 36.0, 80.0, 26.0), popup_text, 12.0);
+            ctx.text_center(cancel, cancel_rect, popup_text, 12.0);
+            if self.focused && self.visible {
+                let (focus_rect, focus_color) = if self.focused_action == 0 {
+                    (confirm_rect, fade_color(Color::white(), opacity))
+                } else {
+                    (cancel_rect, popup_primary)
+                };
+                ctx.stroke_rect(focus_rect, focus_color, 2.0, btn_r);
+            }
         }
     }
 
@@ -195,6 +265,8 @@ impl Popconfirm {
             transition: TransitionPlayer::new(presets::tooltip_enter()),
             closing: false,
             transition_dirty: false,
+            focused: false,
+            focused_action: 0,
             pending_submit: Cell::new(false),
         }
     }
@@ -233,10 +305,15 @@ impl Popconfirm {
 
     pub fn open(&mut self) {
         self.pending_submit.set(false);
+        self.focused_action = 0;
         self.visible = true;
         self.closing = false;
         self.transition = TransitionPlayer::new(presets::tooltip_enter());
         self.transition_dirty = true;
+    }
+
+    pub(crate) fn focused_action(&self) -> Option<usize> {
+        self.visible.then_some(self.focused_action)
     }
 
     pub fn close(&mut self) {
@@ -261,6 +338,34 @@ impl Popconfirm {
         self.icon = next.icon;
     }
 
+    fn trigger_rect(&self) -> Rect {
+        Rect::new(0.0, 0.0, 80.0, 28.0)
+    }
+
+    fn popup_rect(&self) -> Rect {
+        let (pw, ph) = (200.0, 110.0);
+        let (px, py) = self.popup_pos(pw, ph);
+        Rect::new(px, py, pw, ph)
+    }
+
+    fn button_rects(&self) -> (Rect, Rect) {
+        let popup = self.popup_rect();
+        (
+            Rect::new(popup.x + 12.0, popup.y + popup.h - 36.0, 80.0, 26.0),
+            Rect::new(
+                popup.x + popup.w - 92.0,
+                popup.y + popup.h - 36.0,
+                80.0,
+                26.0,
+            ),
+        )
+    }
+
+    fn confirm(&mut self) {
+        self.pending_submit.set(true);
+        self.close();
+    }
+
     fn popup_pos(&self, _pw: f32, ph: f32) -> (f32, f32) {
         popconfirm_position(
             Rect::new(0.0, 0.0, 80.0, 28.0),
@@ -276,14 +381,16 @@ impl Popconfirm {
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
-        SnapshotFields::Popconfirm {
+        SnapshotFields::Popconfirm(SnapshotPopconfirm {
             title: self.title.clone(),
             confirm_text: self.confirm_text.clone(),
             cancel_text: self.cancel_text.clone(),
             placement: self.placement,
             arrow: self.arrow,
             icon: self.icon,
-        }
+            visible: self.visible,
+            focused_action: self.focused_action(),
+        })
     }
 }
 

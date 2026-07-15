@@ -2,6 +2,7 @@ use crate::tests::common::*;
 use crate::ui::widgets::{
     Button, Container, Popconfirm, Popover, PopoverTrigger, Tooltip, TriggerMode,
 };
+use crate::ui::AccessibilityRole;
 
 fn set_frame(tree: &mut WidgetTree, id: ComponentId, frame: Rect) {
     tree.get_mut(id).expect("widget").set_frame(frame);
@@ -97,6 +98,98 @@ fn popconfirm_trigger_owns_pointer_hit_and_confirm_emits_submit() {
         .expect("confirm submit");
     assert_eq!(semantic.kind, SemanticKind::Submit);
     assert_eq!(semantic.text_payload(), Some("confirm"));
+}
+
+#[test]
+fn popconfirm_keyboard_selects_cancel_or_emits_confirm_submit() {
+    let mut popconfirm = Popconfirm::new()
+        .title("Delete item?")
+        .confirm_text("Delete")
+        .cancel_text("Keep");
+    let id = ComponentId::new(7);
+
+    assert_eq!(WidgetComponent::tab_index(&popconfirm), 1);
+    assert_eq!(
+        popconfirm.on_event(&SystemEvent::FocusIn),
+        EventResult::Handled
+    );
+    assert_eq!(
+        popconfirm.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(popconfirm.focused_action(), Some(0));
+
+    let accessibility = popconfirm.snapshot_fields().accessibility();
+    assert_eq!(accessibility.role, AccessibilityRole::Button);
+    assert_eq!(accessibility.name.as_deref(), Some("Delete item?"));
+    assert_eq!(accessibility.state.expanded, Some(true));
+    assert_eq!(accessibility.state.value_text.as_deref(), Some("Delete"));
+
+    assert_eq!(
+        popconfirm.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Right,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(popconfirm.focused_action(), Some(1));
+    assert_eq!(
+        popconfirm.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Space,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(!popconfirm.is_visible());
+    assert!(popconfirm
+        .semantic_event(
+            id,
+            &SystemEvent::KeyDown {
+                key: KeyCode::Space,
+                mods: KeyMod::NONE,
+            }
+        )
+        .is_none());
+
+    popconfirm.open();
+    assert_eq!(
+        popconfirm.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    let semantic = popconfirm
+        .semantic_event(
+            id,
+            &SystemEvent::KeyDown {
+                key: KeyCode::Enter,
+                mods: KeyMod::NONE,
+            },
+        )
+        .expect("confirm submit");
+    assert_eq!(semantic.kind, SemanticKind::Submit);
+    assert_eq!(semantic.text_payload(), Some("confirm"));
+}
+
+#[test]
+fn popconfirm_ignores_non_primary_pointer_and_closes_after_focus_leaves() {
+    let mut popconfirm = Popconfirm::new();
+    let right_click = SystemEvent::PointerDown {
+        pos: Point::new(20.0, 12.0),
+        button: MouseButton::Right,
+        mods: KeyMod::NONE,
+    };
+
+    assert_eq!(popconfirm.on_event(&right_click), EventResult::NotHandled);
+    assert!(!popconfirm.is_visible());
+
+    popconfirm.open();
+    assert_eq!(popconfirm.on_focus_within(false), EventResult::Handled);
+    assert!(!popconfirm.is_visible());
 }
 
 #[test]
