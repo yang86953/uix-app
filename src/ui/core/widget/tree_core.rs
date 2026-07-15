@@ -797,6 +797,13 @@ impl WidgetTree {
         }
     }
 
+    pub(crate) fn set_tab_index(&mut self, id: ComponentId, tab_index: i32) {
+        if let Some(node) = self.get_mut(id) {
+            node.set_tab_index(tab_index.max(0));
+        }
+        self.register_focusable(id);
+    }
+
     pub fn overlay_stack(&self) -> &OverlayStack {
         &self.overlay_stack
     }
@@ -844,10 +851,7 @@ impl WidgetTree {
     }
 
     pub(crate) fn focus_target_available(&self, id: WidgetId) -> bool {
-        self.is_effectively_visible(id)
-            && self
-                .get(id)
-                .is_some_and(|node| node.component().as_event().is_some())
+        self.is_effectively_visible(id) && self.get(id).is_some_and(BoxedWidget::accepts_events)
     }
 
     pub(crate) fn is_descendant_of(&self, id: WidgetId, ancestor: WidgetId) -> bool {

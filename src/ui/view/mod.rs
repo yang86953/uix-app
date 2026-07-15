@@ -9,7 +9,7 @@ use crate::ui::event::{HandlerRegistration, SemanticEvent, SemanticKind};
 use crate::ui::foundation::provider_context::{current_provider_context, ProviderContext};
 use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::style::{BoxShadowDef, ColorValue, Style, TypographyToken};
-use crate::ui::system_event_handler::SystemEventHandlerRegistration;
+use crate::ui::system_event_handler::{SystemEventFilter, SystemEventHandlerRegistration};
 use crate::ui::traits::WidgetComponent;
 use crate::ui::{EventResult, SystemEvent};
 
@@ -44,6 +44,7 @@ pub struct ViewNode {
     pub(crate) z_index: i32,
     pub(crate) key: Option<String>,
     pub(crate) automation_id: Option<String>,
+    pub(crate) tab_index: Option<i32>,
     pub(crate) handlers: Vec<HandlerRegistration>,
     pub(crate) system_event_handlers: Vec<SystemEventHandlerRegistration>,
     pub(crate) render_handlers: Vec<RenderHandlerRegistration>,
@@ -71,6 +72,7 @@ impl ViewNode {
             z_index: 0,
             key: None,
             automation_id: None,
+            tab_index: None,
             handlers: Vec::new(),
             system_event_handlers: Vec::new(),
             render_handlers: Vec::new(),
@@ -88,6 +90,7 @@ impl ViewNode {
             z_index: 0,
             key: None,
             automation_id: None,
+            tab_index: None,
             handlers: Vec::new(),
             system_event_handlers: Vec::new(),
             render_handlers: Vec::new(),
@@ -245,6 +248,22 @@ impl ViewNode {
         self
     }
 
+    /// 设置 Tab 导航顺序；`0` 表示不进入 Tab 顺序。
+    pub fn tab_index(mut self, index: i32) -> Self {
+        self.tab_index = Some(index.max(0));
+        self
+    }
+
+    /// 让节点进入或退出默认 Tab 顺序。
+    pub fn focusable(self, focusable: bool) -> Self {
+        self.tab_index(if focusable { 1 } else { 0 })
+    }
+
+    fn with_system_event_handler(mut self, registration: SystemEventHandlerRegistration) -> Self {
+        self.system_event_handlers.push(registration);
+        self
+    }
+
     pub fn on_semantic(
         mut self,
         kind: SemanticKind,
@@ -264,6 +283,72 @@ impl ViewNode {
         self.system_event_handlers
             .push(SystemEventHandlerRegistration::new(Box::new(handler)));
         self
+    }
+
+    /// 在捕获阶段以及节点自己的目标/冒泡阶段处理所有原始事件。
+    pub fn on_event_capture(
+        self,
+        handler: impl FnMut(&SystemEvent) -> EventResult + 'static,
+    ) -> Self {
+        self.with_system_event_handler(
+            SystemEventHandlerRegistration::new(Box::new(handler)).capture_phase(),
+        )
+    }
+
+    /// 处理指针 down/up/move/enter/leave 与双击事件。
+    ///
+    /// 声明该 handler 即明确选择接收命中范围内的连续 `PointerMove`。
+    pub fn on_pointer(self, handler: impl FnMut(&SystemEvent) -> EventResult + 'static) -> Self {
+        self.with_system_event_handler(SystemEventHandlerRegistration::filtered(
+            SystemEventFilter::Pointer,
+            Box::new(handler),
+        ))
+    }
+
+    /// 在捕获阶段处理子树指针事件，同时也处理节点自身事件。
+    pub fn on_pointer_capture(
+        self,
+        handler: impl FnMut(&SystemEvent) -> EventResult + 'static,
+    ) -> Self {
+        self.with_system_event_handler(
+            SystemEventHandlerRegistration::filtered(SystemEventFilter::Pointer, Box::new(handler))
+                .capture_phase(),
+        )
+    }
+
+    /// 处理聚焦节点收到的 `KeyDown` / `KeyUp`。
+    pub fn on_key(self, handler: impl FnMut(&SystemEvent) -> EventResult + 'static) -> Self {
+        self.with_system_event_handler(SystemEventHandlerRegistration::filtered(
+            SystemEventFilter::Key,
+            Box::new(handler),
+        ))
+    }
+
+    /// 在捕获阶段处理聚焦子树的键盘事件。
+    pub fn on_key_capture(
+        self,
+        handler: impl FnMut(&SystemEvent) -> EventResult + 'static,
+    ) -> Self {
+        self.with_system_event_handler(
+            SystemEventHandlerRegistration::filtered(SystemEventFilter::Key, Box::new(handler))
+                .capture_phase(),
+        )
+    }
+
+    /// 处理节点焦点进入与离开事件。
+    pub fn on_focus(self, handler: impl FnMut(&SystemEvent) -> EventResult + 'static) -> Self {
+        self.with_system_event_handler(SystemEventHandlerRegistration::filtered(
+            SystemEventFilter::Focus,
+            Box::new(handler),
+        ))
+    }
+
+    /// 处理命中路径上的滚轮事件。
+    pub fn on_scroll(self, handler: impl FnMut(&SystemEvent) -> EventResult + 'static) -> Self {
+        self.with_system_event_handler(SystemEventHandlerRegistration::filtered(
+            SystemEventFilter::Scroll,
+            Box::new(handler),
+        ))
     }
 
     pub fn on_semantic_capture<T>(
@@ -399,6 +484,51 @@ impl crate::ui::IntoWidgetNode for ViewNode {
 pub trait EventExt: Into<ViewNode> + Sized {
     fn on_event(self, handler: impl FnMut(&SystemEvent) -> EventResult + 'static) -> ViewNode {
         self.into().on_event(handler)
+    }
+
+    fn on_event_capture(
+        self,
+        handler: impl FnMut(&SystemEvent) -> EventResult + 'static,
+    ) -> ViewNode {
+        self.into().on_event_capture(handler)
+    }
+
+    fn on_pointer(self, handler: impl FnMut(&SystemEvent) -> EventResult + 'static) -> ViewNode {
+        self.into().on_pointer(handler)
+    }
+
+    fn on_pointer_capture(
+        self,
+        handler: impl FnMut(&SystemEvent) -> EventResult + 'static,
+    ) -> ViewNode {
+        self.into().on_pointer_capture(handler)
+    }
+
+    fn on_key(self, handler: impl FnMut(&SystemEvent) -> EventResult + 'static) -> ViewNode {
+        self.into().on_key(handler)
+    }
+
+    fn on_key_capture(
+        self,
+        handler: impl FnMut(&SystemEvent) -> EventResult + 'static,
+    ) -> ViewNode {
+        self.into().on_key_capture(handler)
+    }
+
+    fn on_focus(self, handler: impl FnMut(&SystemEvent) -> EventResult + 'static) -> ViewNode {
+        self.into().on_focus(handler)
+    }
+
+    fn on_scroll(self, handler: impl FnMut(&SystemEvent) -> EventResult + 'static) -> ViewNode {
+        self.into().on_scroll(handler)
+    }
+
+    fn tab_index(self, index: i32) -> ViewNode {
+        self.into().tab_index(index)
+    }
+
+    fn focusable(self, focusable: bool) -> ViewNode {
+        self.into().focusable(focusable)
     }
 }
 

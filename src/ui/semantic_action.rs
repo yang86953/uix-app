@@ -138,7 +138,7 @@ impl WidgetTree {
             .is_some_and(|client| client.accepts_text_input());
         let is_input = node.component().as_any().is::<Input>();
         let can_focus = node.is_focusable()
-            || (node.as_event().is_some()
+            || (node.accepts_events()
                 && matches!(
                     role,
                     AccessibilityRole::Button

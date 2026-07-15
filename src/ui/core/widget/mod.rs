@@ -464,9 +464,10 @@ impl BoxedWidget {
         let mut bubbled = false;
         for handler in &mut self.system_event_handlers {
             match handler.handle(event) {
-                EventResult::Handled => return EventResult::Handled,
-                EventResult::Bubbled => bubbled = true,
-                EventResult::NotHandled => {}
+                None => {}
+                Some(EventResult::Handled) => return EventResult::Handled,
+                Some(EventResult::Bubbled) => bubbled = true,
+                Some(EventResult::NotHandled) => {}
             }
         }
         let component_result = self.with_component_context_mut(|component| {
@@ -498,7 +499,11 @@ impl BoxedWidget {
             .and_then(|e| e.semantic_event(id, event))
     }
     pub fn is_focusable(&self) -> bool {
-        self.tab_idx > 0 && self.visible && self.component.as_event().is_some()
+        self.tab_idx > 0 && self.visible && self.accepts_events()
+    }
+
+    pub(crate) fn accepts_events(&self) -> bool {
+        self.component.as_event().is_some() || !self.system_event_handlers.is_empty()
     }
 
     pub fn attached(&self) -> bool {

@@ -139,6 +139,7 @@ fn adopt_widget_node(node: WidgetNode) -> ViewNode {
         z_index: node.z_index,
         key: node.key.map(|k| k.to_string()),
         automation_id: node.automation_id.map(|id| id.to_string()),
+        tab_index: (node.tab_idx != 0).then_some(node.tab_idx),
         handlers: node.handlers,
         system_event_handlers: node.system_event_handlers,
         render_handlers: node.render_handlers,
