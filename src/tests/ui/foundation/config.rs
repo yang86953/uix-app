@@ -2,9 +2,10 @@ use crate::draw::engine::cpu::canvas_2d::CpuCanvas2D;
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
-use crate::ui::view::{column, embed, label, ViewAdapter};
+use crate::ui::view::{button, column, embed, label, ViewAdapter};
 use crate::ui::{
-    ComponentOverrides, ConfigProvider, Input, List, SnapshotFields, Table, TokenPatch,
+    with_config, Button, ComponentConfig, ComponentOverrides, ConfigProvider, Input, InputNumber,
+    List, Select, SnapshotFields, Table, TokenPatch,
 };
 
 crate::component! {
@@ -178,4 +179,48 @@ fn non_empty_list_keeps_its_component_view() {
             .child(|| List::new().items(vec!["one"])),
     );
     assert!(tree.find_by_type::<List>().is_some());
+}
+
+#[test]
+fn provider_size_reaches_primary_controls_and_explicit_size_wins() {
+    let large = ComponentConfig::new().component_size(ControlSize::Large);
+    let max = Constraints::loose(Size::new(1_000.0, 1_000.0));
+    let (button, select, input_number) = with_config(&large, || {
+        (
+            Button::new("save"),
+            Select::new().options(["one"]),
+            InputNumber::new(),
+        )
+    });
+    assert_eq!(button.measure(max).h, 40.0);
+    assert_eq!(select.measure(max).h, 40.0);
+    assert_eq!(input_number.measure(max).h, 40.0);
+
+    let explicit_small = with_config(&large, || Button::new("save").size(ControlSize::Small));
+    assert_eq!(explicit_small.measure(max).h, 24.0);
+}
+
+#[test]
+fn public_button_builder_reads_provider_defaults() {
+    let tree = ViewAdapter::build(
+        ConfigProvider::new()
+            .component_size(ControlSize::Large)
+            .disabled(true)
+            .child(|| button("save")),
+    );
+    let configured = tree
+        .find_all_by_type::<Button>()
+        .first()
+        .map(|(_, button)| *button)
+        .expect("configured button");
+    assert_eq!(
+        configured
+            .measure(Constraints::loose(Size::new(1_000.0, 1_000.0)))
+            .h,
+        40.0
+    );
+    assert!(matches!(
+        configured.snapshot_fields(),
+        SnapshotFields::Button { disabled: true, .. }
+    ));
 }

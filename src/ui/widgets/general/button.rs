@@ -4,7 +4,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::impl_widget_component;
-use crate::native::traits::input::KeyCode;
+use crate::native::traits::input::{ControlSize, KeyCode};
 use crate::ui::animation::{Animation, Easing};
 use crate::ui::style::{apply_style, ColorValue, PaletteColor, Style, StyleSet, StyleState};
 use crate::ui::traits::{EventHandler, WidgetAnimation, WidgetLayout, WidgetRender};
@@ -78,6 +78,7 @@ pub(crate) fn cover_radius(origin: Point, size: Size) -> f32 {
 /// 按钮组件。业务绑定不存放在组件内，由 HandlerTable 按 ComponentId 管理。
 pub struct Button {
     text: String,
+    button_size: ControlSize,
     disabled: bool,
     block: bool,
     hovered: bool,
@@ -270,12 +271,19 @@ impl Button {
             .button
             .style_set
             .unwrap_or_else(StyleSet::button_default);
-        Self::assemble(text.into(), style_set, config.disabled, false)
+        Self::assemble(text.into(), style_set, config.disabled, false, config.size)
     }
 
-    pub(crate) fn assemble(text: String, style_set: StyleSet, disabled: bool, block: bool) -> Self {
+    pub(crate) fn assemble(
+        text: String,
+        style_set: StyleSet,
+        disabled: bool,
+        block: bool,
+        button_size: ControlSize,
+    ) -> Self {
         Self {
             text,
+            button_size,
             disabled,
             block,
             hovered: false,
@@ -290,6 +298,11 @@ impl Button {
 
     pub fn style_set(mut self, style_set: StyleSet) -> Self {
         self.style_set = style_set;
+        self
+    }
+
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.button_size = size;
         self
     }
 
@@ -308,6 +321,7 @@ impl Button {
 
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.text = next.text;
+        self.button_size = next.button_size;
         self.disabled = next.disabled;
         self.block = next.block;
         self.style_set = next.style_set;
@@ -352,7 +366,9 @@ impl Button {
         let base = self.style_set.normal.clone().apply(self.style.clone());
         let font_size = base.font_size.default_size().max(1.0);
         // 按钮外框高度由 Style 固定；文字行盒在 render 时于 content 内居中。
-        let height = base.height.unwrap_or(32.0);
+        let height = base
+            .height
+            .unwrap_or_else(|| crate::ui::config::control_height(self.button_size));
         // 无 FontService 时用字符估算宽；真实宽在 paint 用 measure_text。
         let text_w = self.text.chars().count() as f32 * font_size * 0.55;
         let width = base

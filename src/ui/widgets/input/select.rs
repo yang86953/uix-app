@@ -2,6 +2,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
+use crate::native::traits::input::ControlSize;
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::foundation::virtual_scroll::VirtualListScroll;
 use crate::ui::state::State;
@@ -16,7 +17,6 @@ mod search;
 use self::search::VisibleRow;
 
 const DROPDOWN_ROW_HEIGHT: f32 = 28.0;
-const DROPDOWN_TRIGGER_HEIGHT: f32 = 32.0;
 const MAX_DROPDOWN_VIEWPORT_HEIGHT: f32 = 280.0;
 
 /// 选项组。
@@ -129,6 +129,7 @@ component! {
         value_binding: Option<SelectValueBinding>,
         open: bool,
         disabled: bool,
+        select_size: ControlSize,
         hovered: bool,
         focused: bool,
         transition: TransitionPlayer,
@@ -174,7 +175,7 @@ component! {
         let visible_options = self.visible_option_indices();
         match event {
             SystemEvent::PointerDown { pos, .. } => {
-                if pos.y >= 0.0 && pos.y <= DROPDOWN_TRIGGER_HEIGHT {
+                if pos.y >= 0.0 && pos.y <= self.control_height() {
                     if self.open {
                         self.close();
                     } else {
@@ -184,7 +185,7 @@ component! {
                     return EventResult::Handled;
                 }
 
-                if self.is_present() && pos.y > DROPDOWN_TRIGGER_HEIGHT {
+                if self.is_present() && pos.y > self.control_height() {
                     if let Some(flat_idx) = self.dropdown_row_at_y(pos.y) {
                         if let Some(opt_idx) = self.flat_row_option_index(flat_idx) {
                             if self.multiple {
@@ -209,12 +210,12 @@ component! {
                 EventResult::NotHandled
             }
             SystemEvent::PointerMove { pos, .. } => {
-                if self.is_present() && pos.y > DROPDOWN_TRIGGER_HEIGHT {
+                if self.is_present() && pos.y > self.control_height() {
                     self.hovered_option = self.dropdown_row_at_y(pos.y);
                 } else {
                     self.hovered_option = None;
                 }
-                self.hovered = pos.y >= 0.0 && pos.y <= DROPDOWN_TRIGGER_HEIGHT;
+                self.hovered = pos.y >= 0.0 && pos.y <= self.control_height();
                 EventResult::Handled
             }
             SystemEvent::PointerEnter => {
@@ -236,7 +237,7 @@ component! {
                 EventResult::Handled
             }
             SystemEvent::Wheel { delta, pos, .. } => {
-                if self.is_present() && pos.y > DROPDOWN_TRIGGER_HEIGHT {
+                if self.is_present() && pos.y > self.control_height() {
                     let row_count = self.dropdown_row_count();
                     let viewport_h = self.dropdown_viewport_height(row_count);
                     let dy = self.dropdown_scroll.scroll_by_wheel(
@@ -370,7 +371,7 @@ component! {
         let fill_quaternary = ctx.tokens().color_fill_quaternary();
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
 
-        let box_rect = Rect::new(frame.x, frame.y, frame.w, DROPDOWN_TRIGGER_HEIGHT);
+        let box_rect = Rect::new(frame.x, frame.y, frame.w, self.control_height());
         let box_bg = if self.disabled {
             fill_quaternary
         } else if self.hovered || self.open {
@@ -388,7 +389,7 @@ component! {
         };
         ctx.stroke_rect(box_rect, border_color, if self.focused { 2.0 } else { 1.0 }, r);
 
-        let box_rect_v = Rect::new(frame.x, frame.y, frame.w, DROPDOWN_TRIGGER_HEIGHT);
+        let box_rect_v = Rect::new(frame.x, frame.y, frame.w, self.control_height());
         let draw_y = ctx.visual_center_y(box_rect_v, 13.0);
         let showing_query = self.search && self.open && !self.search_query.is_empty();
         if showing_query {
@@ -474,7 +475,7 @@ component! {
         let group_header = fade_color(ctx.tokens().color_fill_quaternary(), opacity);
 
         let row_count = self.dropdown_row_count();
-        let list_y = frame.y + DROPDOWN_TRIGGER_HEIGHT;
+        let list_y = frame.y + self.control_height();
         let list_h = self.dropdown_viewport_height(row_count);
         let list_rect = Rect::new(frame.x, list_y, frame.w, list_h);
         let shadow = ctx.tokens().box_shadow_secondary();
@@ -539,7 +540,11 @@ component! {
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        select_dirty_rect(frame, self.dropdown_damage_row_count())
+        select_dirty_rect(
+            frame,
+            self.dropdown_damage_row_count(),
+            self.control_height(),
+        )
     }
 
     update_animation => (&mut self, dt: f64) -> bool {
@@ -572,7 +577,11 @@ component! {
 
     dirty_bounds => (&self, frame: Rect) -> Rect {
         if self.transition_dirty {
-            select_dirty_rect(frame, self.dropdown_damage_row_count())
+            select_dirty_rect(
+                frame,
+                self.dropdown_damage_row_count(),
+                self.control_height(),
+            )
         } else {
             Rect::zero()
         }
@@ -580,9 +589,13 @@ component! {
 }
 
 impl Select {
+    fn control_height(&self) -> f32 {
+        crate::ui::config::control_height(self.select_size)
+    }
+
     fn intrinsic_size(&self) -> Size {
         if self.options.is_empty() && self.optgroups.is_empty() {
-            return Size::new(120.0, 32.0);
+            return Size::new(120.0, self.control_height());
         }
 
         let all_opts: Vec<&str> = self.all_options();
@@ -592,7 +605,7 @@ impl Select {
             .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap_or(150.0)
             .max(120.0);
-        Size::new(w, DROPDOWN_TRIGGER_HEIGHT)
+        Size::new(w, self.control_height())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -778,6 +791,7 @@ impl Select {
             value_binding: None,
             open: false,
             disabled: config.disabled,
+            select_size: config.size,
             hovered: false,
             focused: false,
             transition: TransitionPlayer::new(presets::tooltip_enter()),
@@ -853,6 +867,11 @@ impl Select {
         self
     }
 
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.select_size = size;
+        self
+    }
+
     pub fn is_open(&self) -> bool {
         self.open
     }
@@ -923,6 +942,7 @@ impl Select {
         self.optgroups = next.optgroups;
         self.value_binding = next.value_binding;
         self.disabled = next.disabled;
+        self.select_size = next.select_size;
         self.placeholder = next.placeholder;
         self.multiple = next.multiple;
         self.search = next.search;
@@ -942,9 +962,9 @@ impl Select {
     }
 }
 
-fn select_dirty_rect(frame: Rect, row_count: usize) -> Rect {
+fn select_dirty_rect(frame: Rect, row_count: usize, trigger_height: f32) -> Rect {
     let list_h = (row_count as f32 * DROPDOWN_ROW_HEIGHT).min(MAX_DROPDOWN_VIEWPORT_HEIGHT);
-    let list = Rect::new(frame.x, frame.y + DROPDOWN_TRIGGER_HEIGHT, frame.w, list_h);
+    let list = Rect::new(frame.x, frame.y + trigger_height, frame.w, list_h);
     let expanded = frame.union(&list);
     let expand = 8.0;
     Rect::new(
