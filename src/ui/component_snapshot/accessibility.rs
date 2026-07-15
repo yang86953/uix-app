@@ -1,4 +1,6 @@
-use crate::ui::widgets::{AnchorItem, BadgeStatus, BreadcrumbItem, Date, OptGroup, SelectableItem};
+use crate::ui::widgets::{
+    AnchorItem, BadgeStatus, BreadcrumbItem, Date, OptGroup, ProgressMode, SelectableItem,
+};
 
 use super::{AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotTransferItem};
 
@@ -304,6 +306,26 @@ pub(super) fn tag_accessibility(
         checked: checkable.then_some(checked),
         ..AccessibilityState::default()
     })
+}
+
+pub(super) fn progress_accessibility(mode: ProgressMode) -> AccessibilitySnapshot {
+    let state = match mode {
+        ProgressMode::Determinate(progress) => {
+            let progress = if progress.is_finite() {
+                progress.clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            AccessibilityState {
+                value_now: Some(progress as f64),
+                value_min: Some(0.0),
+                value_max: Some(1.0),
+                ..AccessibilityState::default()
+            }
+        }
+        ProgressMode::Indeterminate => AccessibilityState::default(),
+    };
+    AccessibilitySnapshot::new(AccessibilityRole::ProgressBar).with_state(state)
 }
 
 pub(super) fn first_non_empty<const N: usize>(values: [&str; N]) -> String {
