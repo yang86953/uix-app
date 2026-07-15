@@ -131,6 +131,8 @@ struct DpiTransitionEvidence {
     observed_dpi: u32,
     logical_resize: Option<(i32, i32)>,
     target_monitor_reached: bool,
+    logical_extent: (i32, i32),
+    drawable_extent: (i32, i32),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -387,10 +389,14 @@ fn wait_for_window_dpi(
         let resize_matches = expected_logical_resize
             .is_none_or(|expected| observed_logical_resize == Some(expected));
         if target_monitor_reached && observed_dpi == expected_dpi && resize_matches {
+            let logical_extent = (window.properties().width(), window.properties().height());
+            let drawable = drawable_size(native_window, logical_extent.0, logical_extent.1);
             return Ok(DpiTransitionEvidence {
                 observed_dpi,
                 logical_resize: observed_logical_resize,
                 target_monitor_reached,
+                logical_extent,
+                drawable_extent: (drawable.width, drawable.height),
             });
         }
     }
@@ -440,6 +446,8 @@ fn place_window_on_monitor(
         (drawable.logical_width, drawable.logical_height),
         logical_size
     );
+    assert_eq!(evidence.logical_extent, logical_size);
+    assert_eq!(evidence.drawable_extent, (drawable.width, drawable.height));
     assert_eq!(
         (drawable.width, drawable.height),
         (

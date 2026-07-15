@@ -43,11 +43,15 @@ def passing_log(case) -> str:
         evidence = (
             f"{markers[0]} bounds=(0,0..1920,1080),dpi=96x96; "
             "bounds=(1920,0..3840,1080),dpi=144x144; "
-            "initial=DpiTransitionEvidence { observed_dpi: 96, logical_resize: None }; "
+            "initial=DpiTransitionEvidence { observed_dpi: 96, logical_resize: None, "
+            "target_monitor_reached: true, logical_extent: (321, 219), "
+            "drawable_extent: (321, 219) }; "
             "forward=DpiTransitionEvidence { observed_dpi: 144, "
-            "logical_resize: Some((321, 219)) }; "
+            "logical_resize: Some((321, 219)), target_monitor_reached: true, "
+            "logical_extent: (321, 219), drawable_extent: (482, 329) }; "
             "return=DpiTransitionEvidence { observed_dpi: 96, "
-            "logical_resize: Some((321, 219)) }"
+            "logical_resize: Some((321, 219)), target_monitor_reached: true, "
+            "logical_extent: (321, 219), drawable_extent: (321, 219) }"
         )
     elif case.name in ("single-window-soak", "shared-device-soak"):
         duration = dict(case.environment)[SOAK_SECONDS_ENV]
@@ -332,6 +336,50 @@ class RunWindowsGfxR5Tests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "round-trip DPI transition"):
                 require_case_success(case, path)
+
+    def test_mixed_dpi_evidence_requires_logical_and_drawable_extents(self) -> None:
+        case = build_plan("mixed-dpi", "amd", None, 900, 60)[0]
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "case.log"
+            invalid_logs = (
+                (
+                    passing_log(case).replace(
+                        "target_monitor_reached: true",
+                        "target_monitor_reached: false",
+                        1,
+                    ),
+                    "did not reach its target monitor",
+                ),
+                (
+                    passing_log(case).replace(
+                        "forward=DpiTransitionEvidence { observed_dpi: 144, "
+                        "logical_resize: Some((321, 219))",
+                        "forward=DpiTransitionEvidence { observed_dpi: 144, "
+                        "logical_resize: Some((320, 219))",
+                    ),
+                    "forward resize does not preserve logical extent",
+                ),
+                (
+                    passing_log(case).replace(
+                        "drawable_extent: (482, 329)",
+                        "drawable_extent: (481, 329)",
+                    ),
+                    "forward drawable extent does not match DPI",
+                ),
+                (
+                    passing_log(case).replace(
+                        "logical_extent: (321, 219)",
+                        "logical_extent: (320, 219)",
+                        1,
+                    ),
+                    "must preserve one positive logical extent",
+                ),
+            )
+            for content, message in invalid_logs:
+                with self.subTest(message=message):
+                    path.write_text(content, encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, message):
+                        require_case_success(case, path)
 
     def test_soak_evidence_requires_duration_and_bounded_handles(self) -> None:
         case = build_plan("soak", "nvidia", None, 1_200, 60)[0]
