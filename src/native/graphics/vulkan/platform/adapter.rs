@@ -18,6 +18,7 @@ pub(super) struct QueueSelection {
 #[derive(Clone, Copy)]
 pub(super) struct DeviceExtensions {
     device_fault: bool,
+    swapchain_maintenance1: bool,
     #[cfg(target_os = "macos")]
     portability_subset: bool,
 }
@@ -27,12 +28,23 @@ impl DeviceExtensions {
         self.device_fault
     }
 
-    pub(super) fn enabled_names(self, enable_device_fault: bool) -> Vec<*const std::ffi::c_char> {
+    pub(super) fn supports_swapchain_maintenance1(self) -> bool {
+        self.swapchain_maintenance1
+    }
+
+    pub(super) fn enabled_names(
+        self,
+        enable_device_fault: bool,
+        enable_swapchain_maintenance1: bool,
+    ) -> Vec<*const std::ffi::c_char> {
         let mut extensions = vec![ash::khr::swapchain::NAME.as_ptr()];
         #[cfg(target_os = "macos")]
         extensions.push(ash::khr::portability_subset::NAME.as_ptr());
         if enable_device_fault {
             extensions.push(ash::ext::device_fault::NAME.as_ptr());
+        }
+        if enable_swapchain_maintenance1 {
+            extensions.push(ash::ext::swapchain_maintenance1::NAME.as_ptr());
         }
         extensions
     }
@@ -231,6 +243,7 @@ fn query_device_extensions(
         supports_swapchain: has(ash::khr::swapchain::NAME),
         enabled: DeviceExtensions {
             device_fault: has(ash::ext::device_fault::NAME),
+            swapchain_maintenance1: has(ash::ext::swapchain_maintenance1::NAME),
             #[cfg(target_os = "macos")]
             portability_subset: has(ash::khr::portability_subset::NAME),
         },

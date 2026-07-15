@@ -126,6 +126,7 @@ pub(super) struct VulkanDevice {
     device: ash::Device,
     queue: vk::Queue,
     fault_reporter: Option<DeviceFaultReporter>,
+    swapchain_maintenance1: bool,
     loss: DeviceLossState,
 }
 
@@ -140,18 +141,27 @@ impl VulkanDevice {
             selection.physical_device,
             selection.extensions.supports_device_fault(),
         );
+        let swapchain_maintenance1 = runtime.fault_feature_query.query_swapchain_maintenance1(
+            runtime.instance(),
+            selection.physical_device,
+            selection.extensions.supports_swapchain_maintenance1(),
+        );
         let extensions = selection
             .extensions
-            .enabled_names(fault_support.reporting());
+            .enabled_names(fault_support.reporting(), swapchain_maintenance1);
         let mut fault_features = fault_support.requested_features();
-        let base_device_info = vk::DeviceCreateInfo::default()
+        let mut maintenance_features =
+            vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT::default()
+                .swapchain_maintenance1(swapchain_maintenance1);
+        let mut device_info = vk::DeviceCreateInfo::default()
             .queue_create_infos(std::slice::from_ref(&queue_info))
             .enabled_extension_names(&extensions);
-        let device_info = if fault_support.reporting() {
-            base_device_info.push_next(&mut fault_features)
-        } else {
-            base_device_info
-        };
+        if fault_support.reporting() {
+            device_info = device_info.push_next(&mut fault_features);
+        }
+        if swapchain_maintenance1 {
+            device_info = device_info.push_next(&mut maintenance_features);
+        }
         // SAFETY: selection 来自同一 runtime instance，扩展名称在调用期间有效。
         let device = unsafe {
             runtime
@@ -171,6 +181,7 @@ impl VulkanDevice {
             device,
             queue,
             fault_reporter,
+            swapchain_maintenance1,
             loss: DeviceLossState::default(),
         }))
     }
@@ -193,6 +204,10 @@ impl VulkanDevice {
 
     pub(super) fn fault_reporting_enabled(&self) -> bool {
         self.fault_reporter.is_some()
+    }
+
+    pub(super) fn swapchain_maintenance1_enabled(&self) -> bool {
+        self.swapchain_maintenance1
     }
 
     pub(super) fn ensure_healthy(&self) -> Result<()> {

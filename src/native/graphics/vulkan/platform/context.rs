@@ -317,11 +317,12 @@ impl VulkanContext {
         ctx.height = ctx.extent.height as i32;
         device.observe(ctx.recreate_upload_buffer(staging_size(ctx.width, ctx.height)))?;
         crate::core::log::info_fn(format!(
-            "VulkanContext: created {}x{} swapchain; {}; device_fault_reporting={}",
+            "VulkanContext: created {}x{} swapchain; {}; device_fault_reporting={}; swapchain_maintenance1={}",
             ctx.width,
             ctx.height,
             ctx.adapter_info.diagnostic_summary(),
-            device.fault_reporting_enabled()
+            device.fault_reporting_enabled(),
+            device.swapchain_maintenance1_enabled()
         ));
         Ok(ctx)
     }
@@ -347,6 +348,13 @@ impl VulkanContext {
         self.device_lease
             .as_ref()
             .is_some_and(|device| device.fault_reporting_enabled())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn swapchain_maintenance1_enabled_for_test(&self) -> bool {
+        self.device_lease
+            .as_ref()
+            .is_some_and(|device| device.swapchain_maintenance1_enabled())
     }
 
     #[cfg(test)]
