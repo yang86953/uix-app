@@ -945,6 +945,70 @@ macro_rules! views {
     }};
 }
 
+/// 定义一组共享动画时钟的 typed keyframe 属性。
+///
+/// 宏生成一个普通结构体、同可见性的 `new(...)` 构造器，以及逐字段
+/// [`Animatable`](crate::ui::Animatable) 实现。将生成类型作为
+/// `Animated<T>` / `KeyframeAnimation<T>` 的值，即可让全部属性由一个
+/// source 和一条时间线推进。
+///
+/// ```ignore
+/// keyframe! {
+///     #[derive(Debug, PartialEq)]
+///     pub struct EnterFrame {
+///         pub opacity: f32,
+///         pub offset_y: f32,
+///     }
+/// }
+/// ```
+#[macro_export]
+macro_rules! keyframe {
+    (
+        $(#[$meta:meta])*
+        $vis:vis struct $name:ident {
+            $($field_vis:vis $field:ident : $field_ty:ty),+ $(,)?
+        }
+    ) => {
+        $(#[$meta])*
+        #[derive(Clone, Copy)]
+        $vis struct $name {
+            $($field_vis $field: $field_ty),+
+        }
+
+        impl $name {
+            $vis const fn new($($field: $field_ty),+) -> Self {
+                Self { $($field),+ }
+            }
+        }
+
+        impl $crate::ui::Animatable for $name {
+            fn lerp(from: Self, to: Self, t: f64) -> Self {
+                Self {
+                    $($field: <$field_ty as $crate::ui::Animatable>::lerp(
+                        from.$field,
+                        to.$field,
+                        t,
+                    )),+
+                }
+            }
+
+            fn delta(from: Self, to: Self) -> f64 {
+                let mut delta = 0.0_f64;
+                $(
+                    delta = delta.max(
+                        <$field_ty as $crate::ui::Animatable>::delta(
+                            from.$field,
+                            to.$field,
+                        )
+                        .abs(),
+                    );
+                )+
+                delta
+            }
+        }
+    };
+}
+
 /// 一次捕获多个 `Clone` 值，生成 `'static` 闭包（`App::root` / `on_start` 等）。
 ///
 /// 外层 clone 进闭包；每次调用再 clone 供 body 使用（root 重建需要）。

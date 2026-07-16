@@ -6,7 +6,7 @@
 //! ```
 //!
 //! Macro tiers ([使用](docs/使用.md)):
-//! - daily: `views!`, `with_cloned!`
+//! - daily: `keyframe!`, `views!`, `with_cloned!`
 //! - advanced: `component!`
 //! - framework: `tree!`, `impl_widget_component!`, `semantic_handler!`
 
@@ -40,6 +40,7 @@ pub use crate::data::SettingsService;
 
 pub use crate::component;
 pub use crate::impl_widget_component;
+pub use crate::keyframe;
 pub use crate::semantic_handler;
 pub use crate::tree;
 pub use crate::ui::foundation::FocusTrap;

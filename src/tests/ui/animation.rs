@@ -13,6 +13,14 @@ use crate::ui::core::widget::WidgetCore;
 use crate::ui::view::{label, ViewAdapter, ViewNode};
 use crate::ui::Placement;
 
+crate::keyframe! {
+    #[derive(Debug, PartialEq)]
+    struct MotionFrame {
+        opacity: f32,
+        offset: Point,
+    }
+}
+
 fn animated_root(animated: &Animated<f32>) -> ViewNode {
     ViewAdapter::capture_root(|| label("fade").opacity(animated.value()))
 }
@@ -46,6 +54,43 @@ fn animated_value_registers_without_adding_layout_nodes() {
     assert!(!updates[0].1);
     assert!((animated.value() - 1.0).abs() < 1e-6);
     assert!(tree.update_animations(0.1).is_empty());
+}
+
+#[test]
+fn keyframe_macro_properties_share_one_timeline_and_registration() {
+    let from = MotionFrame::new(0.0, Point::new(0.0, 0.0));
+    let to = MotionFrame::new(1.0, Point::new(3.0, 4.0));
+    assert_eq!(
+        <MotionFrame as crate::ui::Animatable>::lerp(from, to, 0.5),
+        MotionFrame::new(0.5, Point::new(1.5, 2.0))
+    );
+    assert_eq!(<MotionFrame as crate::ui::Animatable>::delta(from, to), 5.0);
+
+    let animated = Animated::new(from)
+        .to_keyframes([Keyframe::new(0.0, from), Keyframe::new(1.0, to)], 1.0)
+        .expect("aggregate keyframe sequence");
+    let root_value = animated.clone();
+    let mut tree = ViewAdapter::build_nodes(ViewAdapter::capture_root(move || {
+        let current = root_value.value();
+        label(format!("offset={}", current.offset.y)).opacity(current.opacity)
+    }));
+
+    assert_eq!(tree.animated_source_registrations().len(), 1);
+    let updates = tree.update_animations(0.5);
+    assert_eq!(updates.len(), 1);
+    assert!(updates[0].1);
+    assert_eq!(
+        animated.value(),
+        MotionFrame::new(0.5, Point::new(1.5, 2.0))
+    );
+
+    let error = animated
+        .animate_keyframes([], 1.0)
+        .expect_err("empty aggregate sequence should fail");
+    assert_eq!(error, KeyframeError::Empty);
+    assert_eq!(tree.update_animations(0.5).len(), 1);
+    assert_eq!(animated.value(), to);
+    assert!(animated.is_finished());
 }
 
 #[test]
