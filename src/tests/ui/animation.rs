@@ -245,6 +245,103 @@ fn counted_animation_group_progress_spans_all_plays() {
 }
 
 #[test]
+fn animated_finish_callback_observes_final_value_without_holding_playback_lock() {
+    let finished = Arc::new(AtomicUsize::new(0));
+    let animated = Animated::new(0.0_f32).to(1.0, 1.0, Easing::linear);
+    let callback_source = animated.clone();
+    let callback_count = Arc::clone(&finished);
+    let animated = animated.on_finish(move || {
+        assert_eq!(callback_source.value(), 1.0);
+        callback_source.stop();
+        callback_count.fetch_add(1, Ordering::SeqCst);
+    });
+    let mut tree = ViewAdapter::build_nodes(animated_root(&animated));
+
+    assert_eq!(tree.update_animations(1.0).len(), 1);
+    assert_eq!(finished.load(Ordering::SeqCst), 1);
+    assert!(tree.update_animations(1.0).is_empty());
+    assert_eq!(finished.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn animated_finish_callback_survives_stop_but_not_playback_replacement() {
+    let stopped_then_restarted = Arc::new(AtomicUsize::new(0));
+    let callback_count = Arc::clone(&stopped_then_restarted);
+    let animated = Animated::new(0.0_f32)
+        .to(1.0, 1.0, Easing::linear)
+        .on_finish(move || {
+            callback_count.fetch_add(1, Ordering::SeqCst);
+        });
+    let mut tree = ViewAdapter::build_nodes(animated_root(&animated));
+
+    animated.stop();
+    assert_eq!(stopped_then_restarted.load(Ordering::SeqCst), 0);
+    animated.restart();
+    assert_eq!(tree.update_animations(1.0).len(), 1);
+    assert_eq!(stopped_then_restarted.load(Ordering::SeqCst), 1);
+
+    let stale = Arc::new(AtomicUsize::new(0));
+    let stale_count = Arc::clone(&stale);
+    animated.animate_to(2.0, 1.0, Easing::linear);
+    animated.set_on_finish(move || {
+        stale_count.fetch_add(1, Ordering::SeqCst);
+    });
+    animated.animate_to(3.0, 1.0, Easing::linear);
+    let current = Arc::new(AtomicUsize::new(0));
+    let current_count = Arc::clone(&current);
+    animated.set_on_finish(move || {
+        current_count.fetch_add(1, Ordering::SeqCst);
+    });
+    assert_eq!(tree.update_animations(1.0).len(), 1);
+    assert_eq!(stale.load(Ordering::SeqCst), 0);
+    assert_eq!(current.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn animated_finish_callback_waits_for_delay_and_all_counted_plays() {
+    let delayed_finished = Arc::new(AtomicUsize::new(0));
+    let delayed_count = Arc::clone(&delayed_finished);
+    let delayed = Animated::new(0.0_f32)
+        .to_after(1.0, 1.0, 0.0, Easing::linear)
+        .on_finish(move || {
+            delayed_count.fetch_add(1, Ordering::SeqCst);
+        });
+    let mut delayed_tree = ViewAdapter::build_nodes(animated_root(&delayed));
+    let deadline = delayed_tree.animated_source_registrations()[0]
+        .1
+        .expect("delayed callback deadline");
+    let waiting = delayed_tree.update_animations_at(deadline - Duration::from_millis(1), 1.0);
+    assert_eq!(waiting.len(), 1);
+    assert!(!waiting[0].1);
+    assert_eq!(delayed_finished.load(Ordering::SeqCst), 0);
+    assert_eq!(delayed_tree.update_animations_at(deadline, 0.0).len(), 1);
+    assert_eq!(delayed_finished.load(Ordering::SeqCst), 1);
+
+    let counted_finished = Arc::new(AtomicUsize::new(0));
+    let counted_count = Arc::clone(&counted_finished);
+    let counted = Animated::new(0.0_f32)
+        .to(1.0, 1.0, Easing::linear)
+        .loop_count(2)
+        .on_finish(move || {
+            counted_count.fetch_add(1, Ordering::SeqCst);
+        });
+    let mut counted_tree = ViewAdapter::build_nodes(animated_root(&counted));
+    assert_eq!(counted_tree.update_animations(1.0).len(), 1);
+    assert_eq!(counted_finished.load(Ordering::SeqCst), 0);
+    assert_eq!(counted_tree.update_animations(1.0).len(), 1);
+    assert_eq!(counted_finished.load(Ordering::SeqCst), 1);
+
+    let immediate_finished = Arc::new(AtomicUsize::new(0));
+    let immediate_count = Arc::clone(&immediate_finished);
+    let _ = Animated::new(0.0_f32)
+        .to(1.0, 0.0, Easing::linear)
+        .on_finish(move || {
+            immediate_count.fetch_add(1, Ordering::SeqCst);
+        });
+    assert_eq!(immediate_finished.load(Ordering::SeqCst), 1);
+}
+
+#[test]
 fn animation_group_rejects_non_finite_timeline_items() {
     assert_eq!(
         AnimationGroup::parallel([]).expect_err("empty group should fail"),

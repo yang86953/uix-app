@@ -181,7 +181,6 @@ impl<T: Animatable> AnimatedMotion<T> {
     }
 }
 
-#[derive(Debug)]
 struct AnimatedPlayback<T: Animatable> {
     motion: AnimatedMotion<T>,
     original_from: T,
@@ -190,6 +189,7 @@ struct AnimatedPlayback<T: Animatable> {
     completed_plays: u64,
     delay: Duration,
     delay_state: DelayState,
+    finish_callback: Option<Box<dyn FnOnce() + Send + 'static>>,
 }
 
 impl<T: Animatable> AnimatedPlayback<T> {
@@ -202,6 +202,7 @@ impl<T: Animatable> AnimatedPlayback<T> {
             completed_plays: 0,
             delay,
             delay_state: DelayState::None,
+            finish_callback: None,
         };
         playback.arm_delay(now);
         playback
@@ -216,6 +217,7 @@ impl<T: Animatable> AnimatedPlayback<T> {
             completed_plays: 0,
             delay: Duration::ZERO,
             delay_state: DelayState::None,
+            finish_callback: None,
         }
     }
 
@@ -228,6 +230,7 @@ impl<T: Animatable> AnimatedPlayback<T> {
             completed_plays: 0,
             delay: Duration::ZERO,
             delay_state: DelayState::None,
+            finish_callback: None,
         }
     }
 
@@ -454,6 +457,46 @@ impl<T: Animatable> AnimatedPlayback<T> {
             DelayState::Waiting(deadline_after(now, self.delay))
         };
     }
+
+    fn replace_finish_callback(
+        &mut self,
+        callback: Box<dyn FnOnce() + Send + 'static>,
+    ) -> Option<Box<dyn FnOnce() + Send + 'static>> {
+        self.finish_callback = None;
+        if self.is_finished() {
+            Some(callback)
+        } else {
+            self.finish_callback = Some(callback);
+            None
+        }
+    }
+
+    fn take_finished_callback(&mut self) -> Option<Box<dyn FnOnce() + Send + 'static>> {
+        if self.is_finished() {
+            self.finish_callback.take()
+        } else {
+            None
+        }
+    }
+}
+
+impl<T> fmt::Debug for AnimatedPlayback<T>
+where
+    T: Animatable + fmt::Debug,
+{
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AnimatedPlayback")
+            .field("motion", &self.motion)
+            .field("original_from", &self.original_from)
+            .field("original_to", &self.original_to)
+            .field("loop_mode", &self.loop_mode)
+            .field("completed_plays", &self.completed_plays)
+            .field("delay", &self.delay)
+            .field("delay_state", &self.delay_state)
+            .field("has_finish_callback", &self.finish_callback.is_some())
+            .finish()
+    }
 }
 
 fn normalized_delay(seconds: f64) -> Duration {
@@ -516,7 +559,7 @@ impl<T: Animatable + Sync> AnimatedSource for AnimatedInner<T> {
     }
 
     fn advance(&self, now: Instant, dt: f64) -> bool {
-        let (value, active) = {
+        let (value, active, callback) = {
             let mut playback = self
                 .playback
                 .lock()
@@ -524,10 +567,15 @@ impl<T: Animatable + Sync> AnimatedSource for AnimatedInner<T> {
             let Some(playback) = playback.as_mut() else {
                 return false;
             };
-            playback.advance(now, dt)
+            let (value, active) = playback.advance(now, dt);
+            let callback = playback.take_finished_callback();
+            (value, active, callback)
         };
         if let Some(value) = value {
             self.current.set(value);
+        }
+        if let Some(callback) = callback {
+            callback();
         }
         active
     }
@@ -586,6 +634,41 @@ impl<T: Animatable + Sync> Animated<T> {
     /// Erases the value type so this source can be scheduled by `AnimationGroup`.
     pub fn group_item(&self) -> AnimationGroupItem {
         self.into()
+    }
+
+    /// Attaches a one-shot callback to the current transition.
+    ///
+    /// Clones share the callback. Replacing the playback discards it, while
+    /// `stop()` leaves it armed for a later `restart()`. A transition already
+    /// at its terminal value invokes the callback before this method returns.
+    pub fn on_finish<F>(self, callback: F) -> Self
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        self.set_on_finish(callback);
+        self
+    }
+
+    /// Replaces the one-shot callback attached to the current transition.
+    pub fn set_on_finish<F>(&self, callback: F)
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        let callback = Box::new(callback) as Box<dyn FnOnce() + Send + 'static>;
+        let callback = {
+            let mut playback = self
+                .inner
+                .playback
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            match playback.as_mut() {
+                Some(playback) => playback.replace_finish_callback(callback),
+                None => Some(callback),
+            }
+        };
+        if let Some(callback) = callback {
+            callback();
+        }
     }
 
     pub(crate) fn group_source_id(&self) -> ComponentId {
