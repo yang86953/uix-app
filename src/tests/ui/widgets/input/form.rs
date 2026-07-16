@@ -3,8 +3,9 @@ use crate::ui::core::widget::WidgetCore;
 use crate::ui::view::{column, ViewAdapter};
 use crate::ui::widgets::input::form::*;
 use crate::ui::{
-    Checkbox, ColorPicker, Date, DatePicker, FieldError, Input, InputNumber, PickerMode, Radio,
-    Rate, Segmented, Select, Slider, State, Switch, Time, TimePicker, Trigger,
+    Checkbox, ColorPicker, Date, DatePicker, DateRangePicker, FieldError, Input, InputNumber,
+    PickerMode, PresetDate, Radio, Rate, Segmented, Select, Slider, State, Switch, Time,
+    TimePicker, Trigger,
 };
 
 struct FixedChild(Size);
@@ -1340,6 +1341,151 @@ fn form_date_picker_item_preserves_typed_value_and_stable_rule_text() {
 }
 
 #[test]
+fn form_date_range_picker_item_syncs_both_typed_fields_and_cross_field_rules() {
+    let start = State::new(Date::new(2026, 7, 1));
+    let end = State::new(Date::new(2026, 7, 5));
+    let form = Form::new()
+        .field("start", "Start")
+        .default(Date::new(2026, 7, 1))
+        .field("end", "End")
+        .default(Date::new(2026, 7, 5))
+        .depends_on("start", |_, values| {
+            let start = values
+                .get::<Date>("start")
+                .copied()
+                .expect("start should remain typed");
+            let end = values
+                .get::<Date>("end")
+                .copied()
+                .expect("end should remain typed");
+            (start <= end)
+                .then_some(())
+                .ok_or_else(|| "Start must not exceed end".to_string())
+        })
+        .validate_trigger(Trigger::OnChange)
+        .build();
+    let build_item = || {
+        form.date_range_picker_item("start", &start, "end", &end)
+            .expect("declared date fields should build a range picker item")
+            .label("Range")
+            .placeholder("Pick a range")
+            .presets([(
+                "Release week",
+                PresetDate::new(Date::new(2026, 7, 1), Date::new(2026, 7, 7)),
+            )])
+            .disabled_date(|date| date == Date::new(2026, 7, 4))
+    };
+    let mut tree = ViewAdapter::build(build_item());
+    let root = tree.root_id().expect("date range form item root");
+    let picker = tree.get(root).expect("date range form item").children()[0];
+
+    start.set(Date::new(2026, 7, 10));
+    end.set(Date::new(2026, 7, 5));
+    let _ = tree.dispatch_semantic(SemanticEvent::change(picker, "2026-07-10 / 2026-07-05"));
+    assert_eq!(
+        form.field_error("end").as_ref().map(FieldError::message),
+        Some("Start must not exceed end")
+    );
+
+    start.set(Date::new(2026, 7, 2));
+    end.set(Date::new(2026, 7, 8));
+    ViewAdapter::reconcile(&mut tree, build_item());
+
+    assert!(form.field_error("start").is_none());
+    assert!(form.field_error("end").is_none());
+    let picker = tree
+        .get(root)
+        .and_then(|node| node.children().first().copied())
+        .and_then(|id| tree.get(id))
+        .and_then(|node| node.component().as_any().downcast_ref::<DateRangePicker>())
+        .expect("bound date range picker child");
+    assert_eq!(
+        picker.current_range(),
+        Some((Date::new(2026, 7, 2), Date::new(2026, 7, 8)))
+    );
+    let values = form.validate().expect("replacement range should pass");
+    assert_eq!(values.get::<Date>("start"), Some(&Date::new(2026, 7, 2)));
+    assert_eq!(values.get::<Date>("end"), Some(&Date::new(2026, 7, 8)));
+}
+
+#[test]
+fn form_date_range_picker_item_activates_both_fields_on_blur() {
+    let start = State::new(Date::new(2026, 7, 1));
+    let end = State::new(Date::new(2026, 7, 5));
+    let form = Form::new()
+        .field("start", "Start")
+        .default(Date::new(2026, 7, 1))
+        .field("end", "End")
+        .default(Date::new(2026, 7, 5))
+        .custom(|value| {
+            (value != "2026-07-08")
+                .then_some(())
+                .ok_or_else(|| "End is unavailable".to_string())
+        })
+        .validate_trigger(Trigger::OnBlur)
+        .build();
+    let build_item = || {
+        form.date_range_picker_item("start", &start, "end", &end)
+            .expect("declared date fields should build a range picker item")
+    };
+    let mut tree = ViewAdapter::build(build_item());
+    let root = tree.root_id().expect("date range form item root");
+    let picker = tree.get(root).expect("date range form item").children()[0];
+
+    end.set(Date::new(2026, 7, 8));
+    let _ = tree.dispatch_semantic(SemanticEvent::change(picker, "2026-07-01 / 2026-07-08"));
+    assert!(form.field_error("end").is_none());
+    assert_eq!(
+        tree.dispatch_to(picker, &SystemEvent::FocusOut),
+        EventResult::Handled
+    );
+    assert_eq!(
+        form.field_error("end").as_ref().map(FieldError::message),
+        Some("End is unavailable")
+    );
+
+    ViewAdapter::reconcile(&mut tree, build_item());
+    let item = tree
+        .get(root)
+        .and_then(|node| node.component().as_any().downcast_ref::<FormItem>())
+        .expect("date range form item shell");
+    assert_eq!(item.get_status(), ValidateStatus::Error);
+}
+
+#[test]
+fn form_submit_focuses_a_date_range_when_the_end_field_is_first_error() {
+    let start = State::new(Date::new(2026, 7, 1));
+    let end = State::new(Date::default());
+    let form = Form::new()
+        .field("start", "Start")
+        .default(Date::new(2026, 7, 1))
+        .field("end", "End")
+        .default(Date::default())
+        .custom(|value| {
+            (value != "0000-00-00")
+                .then_some(())
+                .ok_or_else(|| "Choose an end date".to_string())
+        })
+        .build();
+    let mut tree = ViewAdapter::build(
+        form.date_range_picker_item("start", &start, "end", &end)
+            .expect("declared date fields should build a range picker item"),
+    );
+    tree.set_app_state(AppState::new());
+    tree.layout();
+    let root = tree.root_id().expect("date range form item root");
+    let picker = tree.get(root).expect("date range form item").children()[0];
+
+    let errors = form
+        .submit()
+        .expect_err("default end date should fail submit");
+
+    assert_eq!(errors[0].field(), "end");
+    assert!(tree.drain_app_state_focus_requests());
+    assert_eq!(tree.managers().focus.focused_component(), Some(picker));
+}
+
+#[test]
 fn form_time_picker_item_activates_stable_time_rule_on_blur() {
     let selected = State::new(Time::new(10, 0));
     let form = Form::new()
@@ -1461,6 +1607,22 @@ fn cloned_form_model_shares_values_and_rejects_unknown_input_items() {
         .is_none());
     assert!(form
         .color_picker_item("missing", &State::new(Color::default()))
+        .is_none());
+    assert!(form
+        .date_range_picker_item(
+            "name",
+            &State::new(Date::default()),
+            "missing",
+            &State::new(Date::default()),
+        )
+        .is_none());
+    assert!(form
+        .date_range_picker_item(
+            "name",
+            &State::new(Date::default()),
+            "name",
+            &State::new(Date::default()),
+        )
         .is_none());
     assert!(cloned.set_value("name", "updated".to_string()));
 

@@ -625,6 +625,21 @@ impl FormModel {
         Some(handles.entry(field.to_string()).or_default().clone())
     }
 
+    pub(crate) fn shared_focus_handle_for(&self, fields: &[&str]) -> Option<FocusHandle> {
+        if fields.is_empty() || fields.iter().any(|field| !self.has_field(field)) {
+            return None;
+        }
+        let mut handles = self.inner.focus_handles.borrow_mut();
+        let handle = fields
+            .iter()
+            .find_map(|field| handles.get(*field).cloned())
+            .unwrap_or_default();
+        for field in fields {
+            handles.insert((*field).to_string(), handle.clone());
+        }
+        Some(handle)
+    }
+
     fn publish_errors(&self, errors: Vec<Option<FieldError>>) {
         if self.inner.active_errors.get_untracked() != errors {
             self.inner.active_errors.set(errors);
