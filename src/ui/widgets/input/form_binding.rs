@@ -6,7 +6,7 @@ use crate::ui::{EventResult, FocusHandle, SemanticKind, State, SystemEvent};
 
 use super::{
     FormItem, FormModel, InputNumber, InputNumberValue, IntoFormValue, OptGroup, Select,
-    ValidateStatus,
+    SelectValue, ValidateStatus,
 };
 
 /// 一个已登记字段的声明式文本输入项。
@@ -155,10 +155,13 @@ where
 }
 
 /// 一个已登记字段的声明式单选输入项。
-pub struct FormSelectItem {
+pub struct FormSelectItem<T = String>
+where
+    T: SelectValue + IntoFormValue<Stored = T>,
+{
     model: FormModel,
     field: String,
-    value: State<String>,
+    value: State<T>,
     focus_handle: FocusHandle,
     options: Vec<String>,
     optgroups: Vec<OptGroup>,
@@ -169,7 +172,10 @@ pub struct FormSelectItem {
     show_error: bool,
 }
 
-impl FormSelectItem {
+impl<T> FormSelectItem<T>
+where
+    T: SelectValue + IntoFormValue<Stored = T>,
+{
     /// 设置平铺选项。
     pub fn options<I, S>(mut self, options: I) -> Self
     where
@@ -220,10 +226,13 @@ impl FormSelectItem {
     }
 }
 
-impl View for FormSelectItem {
+impl<T> View for FormSelectItem<T>
+where
+    T: SelectValue + IntoFormValue<Stored = T>,
+{
     fn build(self) -> ViewNode {
         let current = self.value.get();
-        self.model.sync_text_value(&self.field, &current);
+        self.model.sync_typed_value(&self.field, &current);
 
         let mut select = if self.searchable {
             Select::searchable()
@@ -249,7 +258,7 @@ impl View for FormSelectItem {
         let input = ViewNode::leaf(select)
             .on_semantic(SemanticKind::Change, move |_| {
                 let value = change_value.get();
-                change_model.sync_text_value(&change_field, &value);
+                change_model.sync_typed_value(&change_field, &value);
             })
             .on_focus(move |event| {
                 if matches!(event, SystemEvent::FocusOut) {
@@ -334,14 +343,17 @@ impl FormModel {
         })
     }
 
-    /// 把已声明的字符串字段绑定为 `FormItem + Select` 单选 View。
+    /// 把已声明的选项字段绑定为 `FormItem + Select` View。
     ///
-    /// 字段不存在时返回 `None`；选项文本同时作为 Select 与表单的 typed `String` 真值。
-    pub fn select_item(
+    /// 字段不存在时返回 `None`；支持单选 `String` 与多选 `HashSet<String>` typed 真值。
+    pub fn select_item<T>(
         &self,
         field: impl AsRef<str>,
-        value: &State<String>,
-    ) -> Option<FormSelectItem> {
+        value: &State<T>,
+    ) -> Option<FormSelectItem<T>>
+    where
+        T: SelectValue + IntoFormValue<Stored = T>,
+    {
         let field = field.as_ref();
         let focus_handle = self.focus_handle_for(field)?;
         Some(FormSelectItem {

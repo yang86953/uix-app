@@ -2,7 +2,7 @@
 
 use std::any::Any;
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 use std::ops::RangeInclusive;
 use std::rc::Rc;
@@ -14,11 +14,14 @@ use crate::ui::{FocusHandle, FocusHandleError, State};
 
 use super::form::Form;
 
-/// 把公开默认值转换成可保留具体类型的表单值。
+/// 把公开默认值转换成可保留具体类型的表单值，并提供供文本规则使用的稳定投影。
 pub trait IntoFormValue {
-    type Stored: ToString + Send + Sync + 'static;
+    type Stored: Send + Sync + 'static;
 
     fn into_form_value(self) -> Self::Stored;
+
+    /// 返回内置文本规则与 inline custom validator 读取的稳定文本。
+    fn form_text(value: &Self::Stored) -> String;
 }
 
 impl IntoFormValue for &str {
@@ -27,6 +30,10 @@ impl IntoFormValue for &str {
     fn into_form_value(self) -> Self::Stored {
         self.to_string()
     }
+
+    fn form_text(value: &Self::Stored) -> String {
+        value.clone()
+    }
 }
 
 impl IntoFormValue for &String {
@@ -34,6 +41,10 @@ impl IntoFormValue for &String {
 
     fn into_form_value(self) -> Self::Stored {
         self.clone()
+    }
+
+    fn form_text(value: &Self::Stored) -> String {
+        value.clone()
     }
 }
 
@@ -46,6 +57,10 @@ macro_rules! impl_identity_form_value {
                 fn into_form_value(self) -> Self::Stored {
                     self
                 }
+
+                fn form_text(value: &Self::Stored) -> String {
+                    value.to_string()
+                }
             }
         )+
     };
@@ -54,6 +69,20 @@ macro_rules! impl_identity_form_value {
 impl_identity_form_value!(
     String, bool, char, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, f32, f64,
 );
+
+impl IntoFormValue for HashSet<String> {
+    type Stored = Self;
+
+    fn into_form_value(self) -> Self::Stored {
+        self
+    }
+
+    fn form_text(value: &Self::Stored) -> String {
+        let mut values = value.iter().map(String::as_str).collect::<Vec<_>>();
+        values.sort_unstable();
+        values.join("\n")
+    }
+}
 
 #[derive(Clone)]
 struct StoredValue {
@@ -64,7 +93,7 @@ struct StoredValue {
 impl StoredValue {
     fn new<V: IntoFormValue>(value: V) -> Self {
         let stored = value.into_form_value();
-        let text = stored.to_string();
+        let text = V::form_text(&stored);
         Self {
             typed: Arc::new(stored),
             text,

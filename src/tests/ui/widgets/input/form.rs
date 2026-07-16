@@ -822,6 +822,129 @@ fn form_select_item_activates_on_blur_after_selection() {
 }
 
 #[test]
+fn form_multi_select_item_preserves_typed_values_and_stable_rule_text() {
+    let selected = State::new(HashSet::from(["Beta".to_string()]));
+    let form = Form::new()
+        .field("choices", "Choices")
+        .default(HashSet::from(["Beta".to_string()]))
+        .custom(|value| {
+            (value != "Alpha\nBeta")
+                .then_some(())
+                .ok_or_else(|| "Alpha and Beta conflict".to_string())
+        })
+        .validate_trigger(Trigger::OnChange)
+        .build();
+    let options = ["Alpha", "Beta", "Gamma"];
+    let mut tree = ViewAdapter::build(
+        form.select_item("choices", &selected)
+            .expect("declared field should build a multi-select item")
+            .options(options)
+            .searchable(),
+    );
+    let root = tree.root_id().expect("multi-select form item root");
+    let select = tree.get(root).expect("multi-select form item").children()[0];
+
+    let _ = tree.dispatch_to(
+        select,
+        &SystemEvent::PointerDown {
+            pos: Point::new(10.0, 10.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        },
+    );
+    let _ = tree.dispatch_to(
+        select,
+        &SystemEvent::PointerDown {
+            pos: Point::new(10.0, 40.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        },
+    );
+
+    assert_eq!(
+        selected.get(),
+        HashSet::from(["Alpha".to_string(), "Beta".to_string()])
+    );
+    assert_eq!(
+        form.field_error("choices")
+            .as_ref()
+            .map(FieldError::message),
+        Some("Alpha and Beta conflict")
+    );
+
+    selected.set(HashSet::from(["Gamma".to_string()]));
+    ViewAdapter::reconcile(
+        &mut tree,
+        form.select_item("choices", &selected)
+            .expect("declared field should reconcile a multi-select item")
+            .options(options)
+            .searchable(),
+    );
+
+    assert!(form.field_error("choices").is_none());
+    let select = tree
+        .get(root)
+        .and_then(|node| node.children().first().copied())
+        .and_then(|id| tree.get(id))
+        .and_then(|node| node.component().as_any().downcast_ref::<Select>())
+        .expect("bound multi-select child");
+    assert_eq!(
+        select.current_values(),
+        HashSet::from(["Gamma".to_string()])
+    );
+    let values = form.validate().expect("replacement selections should pass");
+    assert_eq!(
+        values.get::<HashSet<String>>("choices"),
+        Some(&HashSet::from(["Gamma".to_string()]))
+    );
+}
+
+#[test]
+fn form_multi_select_item_activates_required_rule_on_blur() {
+    let selected = State::new(HashSet::from(["Beta".to_string()]));
+    let form = Form::new()
+        .field("choices", "Choices")
+        .default(HashSet::from(["Beta".to_string()]))
+        .required("Choose at least one")
+        .validate_trigger(Trigger::OnBlur)
+        .build();
+    let mut tree = ViewAdapter::build(
+        form.select_item("choices", &selected)
+            .expect("declared field should build a multi-select item")
+            .options(["Alpha", "Beta"]),
+    );
+    let root = tree.root_id().expect("multi-select form item root");
+    let select = tree.get(root).expect("multi-select form item").children()[0];
+
+    let _ = tree.dispatch_to(
+        select,
+        &SystemEvent::PointerDown {
+            pos: Point::new(10.0, 10.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        },
+    );
+    let _ = tree.dispatch_to(
+        select,
+        &SystemEvent::PointerDown {
+            pos: Point::new(10.0, 68.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        },
+    );
+
+    assert!(selected.get().is_empty());
+    assert!(form.field_error("choices").is_none());
+    let _ = tree.dispatch_to(select, &SystemEvent::FocusOut);
+    assert_eq!(
+        form.field_error("choices")
+            .as_ref()
+            .map(FieldError::message),
+        Some("Choose at least one")
+    );
+}
+
+#[test]
 fn cloned_form_model_shares_values_and_rejects_unknown_input_items() {
     let value = State::new("ready".to_string());
     let form = Form::new().field("name", "Name").default("initial").build();
