@@ -9,6 +9,9 @@ use crate::ui::{
     SnapshotTableColumnGroup, SystemEvent, WidgetTree,
 };
 use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
+use std::error::Error;
+use std::fmt;
 
 mod config;
 pub(crate) mod geometry;
@@ -69,6 +72,14 @@ impl TableColumn {
         self.fixed = Some(fixed);
         self
     }
+
+    /// 把 typed 行数据投影为本列的稳定文本与快照值。
+    pub fn bind<R>(self, accessor: impl Fn(&R) -> String + 'static) -> TableDataColumn<R> {
+        TableDataColumn {
+            column: self,
+            accessor: Box::new(accessor),
+        }
+    }
 }
 
 /// 一组共享上层表头的列；`column` 用于声明不参与分组的单列。
@@ -104,6 +115,36 @@ struct ColumnGroupRange {
 /// 表格行数据。
 pub type TableRow = Vec<String>;
 
+/// typed 行数据的一列文本投影。
+pub struct TableDataColumn<R> {
+    column: TableColumn,
+    accessor: Box<dyn Fn(&R) -> String>,
+}
+
+/// typed 表格行键校验错误。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TableDataError {
+    DuplicateRowKey(String),
+}
+
+impl fmt::Display for TableDataError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DuplicateRowKey(key) => write!(formatter, "duplicate table row key: {key}"),
+        }
+    }
+}
+
+impl Error for TableDataError {}
+
+/// 泛型行数据表格；构建 View 时投影到 Table 的文本与稳定 row key。
+pub struct DataTable<R> {
+    table: Table,
+    rows: Vec<R>,
+    row_keys: Vec<String>,
+    columns: Vec<TableDataColumn<R>>,
+}
+
 /// 扩展行视图工厂；按当前行数据构建普通 View 子树。
 pub type ExpandRenderer = Box<dyn Fn(&TableRow) -> crate::ui::view::ViewNode>;
 
@@ -127,6 +168,7 @@ component! {
         columns: Vec<TableColumn>,
         column_groups: Vec<ColumnGroupRange>,
         pub(crate) rows: Vec<TableRow>,
+        row_keys: Vec<String>,
         pub(crate) row_h: f32,
         header_h: f32,
         selected_row: Cell<Option<usize>>,
@@ -505,6 +547,7 @@ impl Table {
             columns: Vec::new(),
             column_groups: Vec::new(),
             rows: Vec::new(),
+            row_keys: Vec::new(),
             row_h: 28.0,
             header_h: 32.0,
             selected_row: Cell::new(None),
@@ -540,8 +583,31 @@ impl Table {
         self
     }
     pub fn rows(mut self, rows: Vec<TableRow>) -> Self {
+        self.row_keys = implicit_row_keys(rows.len());
         self.rows = rows;
         self
+    }
+
+    /// 以应用提供的唯一 key 创建泛型行数据表格。
+    pub fn data<R>(
+        rows: Vec<R>,
+        row_key: impl Fn(&R) -> String,
+    ) -> Result<DataTable<R>, TableDataError> {
+        let mut seen = HashSet::with_capacity(rows.len());
+        let mut row_keys = Vec::with_capacity(rows.len());
+        for row in &rows {
+            let key = row_key(row);
+            if !seen.insert(key.clone()) {
+                return Err(TableDataError::DuplicateRowKey(key));
+            }
+            row_keys.push(key);
+        }
+        Ok(DataTable {
+            table: Self::new(),
+            rows,
+            row_keys,
+            columns: Vec::new(),
+        })
     }
     /// 是否让所有列头参与排序交互；列级 `TableColumn::sortable` 仍可单独启用。
     pub fn sortable(mut self, enabled: bool) -> Self {
@@ -581,11 +647,23 @@ impl Table {
     pub fn set_selected_row(&self, row: Option<usize>) {
         self.selected_row.set(row);
     }
+    pub fn selected_row_key(&self) -> Option<&str> {
+        self.selected_row
+            .get()
+            .and_then(|row| self.row_keys.get(row))
+            .map(String::as_str)
+    }
     pub fn expanded_row(&self) -> Option<usize> {
         self.expanded_row.get()
     }
     pub fn checked_rows(&self) -> &[usize] {
         &self.checked_rows
+    }
+    pub fn checked_row_keys(&self) -> Vec<&str> {
+        self.checked_rows
+            .iter()
+            .filter_map(|row| self.row_keys.get(*row).map(String::as_str))
+            .collect()
     }
     pub fn empty_text(mut self, t: impl Into<String>) -> Self {
         self.empty_text = t.into();
@@ -786,6 +864,7 @@ impl Table {
                 })
                 .collect(),
             rows: self.rows.clone(),
+            row_keys: self.row_keys.clone(),
             row_h: self.row_h,
             header_h: self.header_h,
             expandable: self.expandable,
@@ -802,9 +881,25 @@ impl Table {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let selected_key = self
+            .selected_row
+            .get()
+            .and_then(|row| self.row_keys.get(row))
+            .cloned();
+        let checked_keys = self
+            .checked_rows
+            .iter()
+            .filter_map(|row| self.row_keys.get(*row).cloned())
+            .collect::<HashSet<_>>();
+        let expanded_key = self
+            .expanded_row
+            .get()
+            .and_then(|row| self.row_keys.get(row))
+            .cloned();
         self.columns = merge_table_columns(self.columns.as_slice(), next.columns, next.sortable);
         self.column_groups = next.column_groups;
         self.rows = next.rows;
+        self.row_keys = next.row_keys;
         self.row_h = next.row_h;
         self.header_h = next.header_h;
         self.expandable = next.expandable;
@@ -816,24 +911,21 @@ impl Table {
         self.page_size = next.page_size;
         self.virtual_scroll = next.virtual_scroll;
         if self.selection {
-            self.checked_rows.retain(|row| *row < self.rows.len());
+            self.checked_rows = self
+                .row_keys
+                .iter()
+                .enumerate()
+                .filter_map(|(index, key)| checked_keys.contains(key).then_some(index))
+                .collect();
         } else {
             self.checked_rows.clear();
         }
-        if self
-            .selected_row
-            .get()
-            .is_some_and(|row| row >= self.rows.len())
-        {
-            self.selected_row.set(None);
-        }
-        if self
-            .expanded_row
-            .get()
-            .is_some_and(|row| row >= self.rows.len())
-        {
-            self.expanded_row.set(None);
-        }
+        self.selected_row
+            .set(selected_key.and_then(|key| self.row_keys.iter().position(|item| item == &key)));
+        self.expanded_row
+            .set(expanded_key.and_then(|key| self.row_keys.iter().position(|item| item == &key)));
+        self.hover_row.set(None);
+        self.expanded_child_row.set(None);
         let max = (self.body_content_height() - self.body_viewport_height()).max(0.0);
         self.body_scroll
             .set_scroll_offset(self.body_scroll.scroll_offset().min(max));
@@ -842,6 +934,94 @@ impl Table {
                 .get()
                 .min(self.horizontal_max_scroll()),
         );
+    }
+}
+
+fn implicit_row_keys(row_count: usize) -> Vec<String> {
+    (0..row_count).map(|index| index.to_string()).collect()
+}
+
+impl<R> DataTable<R> {
+    pub fn columns(mut self, columns: Vec<TableDataColumn<R>>) -> Self {
+        self.columns = columns;
+        self
+    }
+
+    pub fn sortable(mut self, enabled: bool) -> Self {
+        self.table.sortable = enabled;
+        self
+    }
+
+    pub fn selection(mut self, enabled: bool) -> Self {
+        self.table.selection = enabled;
+        if !enabled {
+            self.table.checked_rows.clear();
+        }
+        self
+    }
+
+    pub fn bordered(mut self, enabled: bool) -> Self {
+        self.table.bordered = enabled;
+        self
+    }
+
+    pub fn row_height(mut self, height: f32) -> Self {
+        self.table.row_h = height;
+        self
+    }
+
+    pub fn virtual_scroll(mut self, enabled: bool) -> Self {
+        self.table.virtual_scroll = enabled;
+        self
+    }
+
+    pub fn virtual_row_height(mut self, height: f32) -> Self {
+        self.table.row_h = height;
+        self
+    }
+
+    pub fn empty_text(mut self, text: impl Into<String>) -> Self {
+        self.table.empty_text = text.into();
+        self
+    }
+
+    pub fn page_size(mut self, size: usize) -> Self {
+        self.table.page_size = size;
+        self
+    }
+
+    fn into_table(self) -> Table {
+        let Self {
+            mut table,
+            rows,
+            row_keys,
+            columns,
+        } = self;
+        table.columns = columns.iter().map(|column| column.column.clone()).collect();
+        table.column_groups.clear();
+        table.rows = rows
+            .iter()
+            .map(|row| {
+                columns
+                    .iter()
+                    .map(|column| (column.accessor)(row))
+                    .collect()
+            })
+            .collect();
+        table.row_keys = row_keys;
+        table
+    }
+}
+
+impl<R: 'static> crate::ui::view::View for DataTable<R> {
+    fn build(self) -> crate::ui::view::ViewNode {
+        crate::ui::view::View::build(self.into_table())
+    }
+}
+
+impl<R: 'static> crate::ui::IntoWidgetNode for DataTable<R> {
+    fn into_node(self) -> crate::ui::core::widget::WidgetNode {
+        crate::ui::IntoWidgetNode::into_node(self.into_table())
     }
 }
 
@@ -866,6 +1046,7 @@ impl TableBuilder {
     }
 
     pub fn rows(mut self, rows: Vec<TableRow>) -> Self {
+        self.table.row_keys = implicit_row_keys(rows.len());
         self.table.rows = rows;
         self
     }

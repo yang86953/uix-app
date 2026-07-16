@@ -78,7 +78,7 @@ pub use crate::ui::{
     Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus, BarChart,
     BarData, Breadcrumb, BreadcrumbItem, BreakpointError, Breakpoints, Button, Calendar, Card,
     Carousel, Cascader, CascaderOption, CascaderValue, Checkbox, Col, Collapse, CollapsePanel,
-    ColorPicker, Container, Content, Date, DatePicker, DateRangePicker, Descriptions,
+    ColorPicker, Container, Content, DataTable, Date, DatePicker, DateRangePicker, Descriptions,
     DescriptionsItem, Divider, DividerDirection, DividerOrientation, Drawer, DrawerPlacement,
     Dropdown, Empty, FieldError, Fixed, FloatButton, FloatButtonBackTop, Footer, Form, FormBuilder,
     FormCheckboxItem, FormColorPickerItem, FormDatePickerItem, FormDateRangePickerItem,
@@ -94,11 +94,11 @@ pub use crate::ui::{
     ResultView, RichText, RichTextSegment, RichTextStyle, ScrollView, Segmented, Select,
     SelectableItem, SelectableList, SharedActive, Sider, Skeleton, SkeletonShape, Slider,
     SortDirection, Space, SpaceSize, Spin, SpinSize, Splitter, Step, StepStatus, Steps, Switch,
-    Tab, TabPosition, Table, TableBuilder, TableChange, TableColumn, TableColumnGroup, TableRow,
-    Tabs, Tag, TagColor, ThemeToggle, Time, TimePicker, Timeline, TimelineItem, Tooltip,
-    TooltipPlacement, Transfer, TransferItem, Tree, TreeNode, TreeSelect, Trigger, TriggerMode,
-    Typography, TypographyType, Upload, UploadFile, UploadStatus, ValidateStatus, Values,
-    VirtualScroll, VirtualScrollBuilder, Watermark, Weekday,
+    Tab, TabPosition, Table, TableBuilder, TableChange, TableColumn, TableColumnGroup,
+    TableDataColumn, TableDataError, TableRow, Tabs, Tag, TagColor, ThemeToggle, Time, TimePicker,
+    Timeline, TimelineItem, Tooltip, TooltipPlacement, Transfer, TransferItem, Tree, TreeNode,
+    TreeSelect, Trigger, TriggerMode, Typography, TypographyType, Upload, UploadFile, UploadStatus,
+    ValidateStatus, Values, VirtualScroll, VirtualScrollBuilder, Watermark, Weekday,
 };
 
 // app

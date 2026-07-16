@@ -208,3 +208,139 @@ fn column_groups_create_two_level_headers_and_keep_leaf_sorting() {
             ]
     ));
 }
+
+#[derive(Debug)]
+struct UserRow {
+    id: u64,
+    name: String,
+    age: u32,
+}
+
+fn user_table(rows: Vec<UserRow>) -> DataTable<UserRow> {
+    Table::data(rows, |row| row.id.to_string())
+        .expect("user ids should be unique")
+        .columns(vec![
+            TableColumn::new("Name", 120.0).bind(|row: &UserRow| row.name.clone()),
+            TableColumn::new("Age", 80.0).bind(|row: &UserRow| row.age.to_string()),
+        ])
+        .selection(true)
+        .virtual_scroll(true)
+}
+
+#[test]
+fn typed_table_rows_project_text_and_publish_stable_keys() {
+    let tree = ViewAdapter::build(user_table(vec![
+        UserRow {
+            id: 10,
+            name: "Ada".to_string(),
+            age: 28,
+        },
+        UserRow {
+            id: 20,
+            name: "Grace".to_string(),
+            age: 35,
+        },
+    ]));
+    let root = tree.root_id().expect("typed table root");
+    let table = tree
+        .get(root)
+        .expect("typed table node")
+        .component()
+        .as_any()
+        .downcast_ref::<Table>()
+        .expect("Table component");
+
+    assert!(matches!(
+        table.snapshot_fields(),
+        SnapshotFields::Table {
+            rows,
+            row_keys,
+            virtual_scroll: true,
+            ..
+        } if rows == vec![
+            vec!["Ada".to_string(), "28".to_string()],
+            vec!["Grace".to_string(), "35".to_string()],
+        ] && row_keys == vec!["10".to_string(), "20".to_string()]
+    ));
+}
+
+#[test]
+fn typed_table_reconcile_preserves_selection_by_row_key_after_reorder() {
+    let mut tree = ViewAdapter::build(user_table(vec![
+        UserRow {
+            id: 10,
+            name: "Ada".to_string(),
+            age: 28,
+        },
+        UserRow {
+            id: 20,
+            name: "Grace".to_string(),
+            age: 35,
+        },
+    ]));
+    let root = tree.root_id().expect("typed table root");
+    assert_eq!(
+        tree.dispatch_to(root, &click(8.0, 70.0)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_to(root, &click(48.0, 70.0)),
+        EventResult::Handled
+    );
+
+    ViewAdapter::reconcile(
+        &mut tree,
+        user_table(vec![
+            UserRow {
+                id: 20,
+                name: "Grace".to_string(),
+                age: 36,
+            },
+            UserRow {
+                id: 10,
+                name: "Ada".to_string(),
+                age: 28,
+            },
+        ]),
+    );
+
+    let table = tree
+        .get(root)
+        .expect("reconciled typed table")
+        .component()
+        .as_any()
+        .downcast_ref::<Table>()
+        .expect("Table component");
+    assert_eq!(table.selected_row(), Some(0));
+    assert_eq!(table.selected_row_key(), Some("20"));
+    assert_eq!(table.checked_rows(), &[0]);
+    assert_eq!(table.checked_row_keys(), vec!["20"]);
+    assert!(matches!(
+        table.snapshot_fields(),
+        SnapshotFields::Table { rows, .. } if rows[0][1] == "36"
+    ));
+}
+
+#[test]
+fn typed_table_rejects_duplicate_row_keys_before_build() {
+    let result = Table::data(
+        vec![
+            UserRow {
+                id: 10,
+                name: "Ada".to_string(),
+                age: 28,
+            },
+            UserRow {
+                id: 10,
+                name: "Duplicate".to_string(),
+                age: 30,
+            },
+        ],
+        |row| row.id.to_string(),
+    );
+
+    match result {
+        Err(error) => assert_eq!(error, TableDataError::DuplicateRowKey("10".to_string())),
+        Ok(_) => panic!("duplicate row key should fail"),
+    }
+}
