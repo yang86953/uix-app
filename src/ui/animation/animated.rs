@@ -257,6 +257,24 @@ impl<T: Animatable> AnimatedPlayback<T> {
         }
     }
 
+    fn group_progress(&self) -> f64 {
+        if !matches!(self.delay_state, DelayState::None) {
+            return 0.0;
+        }
+        match self.loop_mode {
+            LoopMode::Count(0) => 1.0,
+            LoopMode::Count(total) => {
+                if self.completed_plays >= total && self.motion.is_finished() {
+                    1.0
+                } else {
+                    ((self.completed_plays as f64 + self.motion.progress()) / total as f64)
+                        .clamp(0.0, 1.0)
+                }
+            }
+            LoopMode::Once | LoopMode::Forever | LoopMode::Alternate => self.motion.progress(),
+        }
+    }
+
     fn advance(&mut self, now: Instant, dt: f64) -> (Option<T>, bool) {
         let mut dt = dt;
         match self.delay_state {
@@ -572,6 +590,17 @@ impl<T: Animatable + Sync> Animated<T> {
 
     pub(crate) fn group_source_id(&self) -> ComponentId {
         self.inner.work_id
+    }
+
+    pub(crate) fn group_progress(&self) -> f64 {
+        capture_animated_source(self.inner.clone());
+        let _ = self.inner.current.get();
+        self.inner
+            .playback
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .as_ref()
+            .map_or(1.0, AnimatedPlayback::group_progress)
     }
 
     /// Retargets the shared value from its current position.

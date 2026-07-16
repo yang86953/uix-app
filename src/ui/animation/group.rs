@@ -63,7 +63,7 @@ where
     }
 
     fn progress(&self) -> f64 {
-        Animated::progress(self)
+        self.group_progress()
     }
 
     fn is_finished(&self) -> bool {
@@ -155,12 +155,13 @@ struct ScheduledItem {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum GroupKind {
+enum GroupSchedule {
     Parallel,
     Sequential,
+    Stagger(Duration),
 }
 
-/// Parallel or sequential control over existing finite animation sources.
+/// Parallel, sequential, or staggered control over existing finite animation sources.
 ///
 /// The group does not register frame work of its own. Reading group progress
 /// captures each child source, and scheduling uses each child's existing open
@@ -169,20 +170,28 @@ enum GroupKind {
 pub struct AnimationGroup {
     items: Vec<ScheduledItem>,
     duration: Duration,
-    kind: GroupKind,
+    schedule: GroupSchedule,
 }
 
 impl AnimationGroup {
     pub fn parallel(
         items: impl IntoIterator<Item = AnimationGroupItem>,
     ) -> Result<Self, AnimationGroupError> {
-        Self::build(items, false)
+        Self::build(items, GroupSchedule::Parallel)
     }
 
     pub fn sequential(
         items: impl IntoIterator<Item = AnimationGroupItem>,
     ) -> Result<Self, AnimationGroupError> {
-        Self::build(items, true)
+        Self::build(items, GroupSchedule::Sequential)
+    }
+
+    /// Starts each item after one additional normalized interval.
+    pub fn stagger(
+        items: impl IntoIterator<Item = AnimationGroupItem>,
+        interval: f64,
+    ) -> Result<Self, AnimationGroupError> {
+        Self::build(items, GroupSchedule::Stagger(normalized_offset(interval)))
     }
 
     /// A finite no-op animation item for sequential gaps or trailing holds.
@@ -199,7 +208,7 @@ impl AnimationGroup {
 
     fn build(
         items: impl IntoIterator<Item = AnimationGroupItem>,
-        sequential: bool,
+        schedule: GroupSchedule,
     ) -> Result<Self, AnimationGroupError> {
         let items = items.into_iter().collect::<Vec<_>>();
         if items.is_empty() {
@@ -233,12 +242,19 @@ impl AnimationGroup {
         let scheduled = items
             .into_iter()
             .zip(durations)
-            .map(|(item, duration)| {
-                let offset = if sequential { cursor } else { Duration::ZERO };
+            .enumerate()
+            .map(|(index, (item, duration))| {
+                let offset = match schedule {
+                    GroupSchedule::Parallel => Duration::ZERO,
+                    GroupSchedule::Sequential => cursor,
+                    GroupSchedule::Stagger(interval) => {
+                        interval.saturating_mul(u32::try_from(index).unwrap_or(u32::MAX))
+                    }
+                };
                 item.control.schedule_at(offset, now);
                 let end = offset.saturating_add(duration);
                 total = total.max(end);
-                if sequential {
+                if matches!(schedule, GroupSchedule::Sequential) {
                     cursor = end;
                 }
                 ScheduledItem {
@@ -252,11 +268,7 @@ impl AnimationGroup {
         Ok(Self {
             items: scheduled,
             duration: total,
-            kind: if sequential {
-                GroupKind::Sequential
-            } else {
-                GroupKind::Parallel
-            },
+            schedule,
         })
     }
 
@@ -277,25 +289,22 @@ impl AnimationGroup {
         }
 
         let elapsed =
-            match self.kind {
-                GroupKind::Parallel => self.items.iter().zip(progress).fold(
-                    0.0_f64,
-                    |elapsed, (scheduled, progress)| {
-                        elapsed.max(scheduled.duration.as_secs_f64() * progress)
-                    },
-                ),
-                GroupKind::Sequential => self
-                    .items
-                    .iter()
-                    .zip(progress)
-                    .find_map(|(scheduled, progress)| {
-                        (!scheduled.item.control.is_finished()).then_some(
-                            scheduled.offset.as_secs_f64()
-                                + scheduled.duration.as_secs_f64() * progress,
-                        )
-                    })
-                    .unwrap_or(self.duration.as_secs_f64()),
-            };
+            self.items
+                .iter()
+                .zip(progress)
+                .fold(0.0_f64, |elapsed, (scheduled, progress)| {
+                    let item_elapsed = if scheduled.item.control.is_finished() {
+                        scheduled
+                            .offset
+                            .saturating_add(scheduled.duration)
+                            .as_secs_f64()
+                    } else if progress > 0.0 {
+                        scheduled.offset.as_secs_f64() + scheduled.duration.as_secs_f64() * progress
+                    } else {
+                        0.0
+                    };
+                    elapsed.max(item_elapsed)
+                });
         (elapsed / self.duration.as_secs_f64()).clamp(0.0, 1.0)
     }
 
@@ -340,7 +349,14 @@ impl fmt::Debug for AnimationGroup {
             .debug_struct("AnimationGroup")
             .field("items", &self.items.len())
             .field("duration", &self.duration)
-            .field("kind", &self.kind)
+            .field("schedule", &self.schedule)
             .finish()
     }
+}
+
+fn normalized_offset(seconds: f64) -> Duration {
+    if !seconds.is_finite() || seconds <= 0.0 {
+        return Duration::ZERO;
+    }
+    Duration::try_from_secs_f64(seconds).unwrap_or(Duration::MAX)
 }
