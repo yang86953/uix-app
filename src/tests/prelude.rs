@@ -32,14 +32,14 @@ pub use crate::ui::{
     ColorPicker, Content, Date, DatePicker, DateRangePicker, Descriptions, DescriptionsItem,
     Divider, DividerDirection, DividerOrientation, Drawer, DrawerPlacement, Dropdown, Empty,
     FieldError, FloatButton, FloatButtonBackTop, Footer, Form, FormBuilder, FormInputItem,
-    FormItem, FormLayout, FormListBuilder, FormListError, FormListFieldError, FormListFields,
-    FormListItemId, FormListModel, FormListValues, FormModel, Grid, Header, Icon, Image, Input,
-    InputNumber, InputNumberValue, IntoFormValue, Label, Layout, LineChart, LineData, List,
-    Mentions, Menu, MenuItem, MenuMode, Message, MessageItem, Modal, ModalBuilder, ModalContext,
-    NavGroup, NavItem, Navigation, Notification, NotificationItem, OptGroup, Pagination,
-    PickerMode, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement,
-    PopoverTrigger, PresetDate, ProgressBar, ProgressMode, ProgressType, QRCode, Radio,
-    RadioDirection, Rate, ResultType, ResultView, RichText, RichTextSegment, RichTextStyle,
+    FormInputNumberItem, FormItem, FormLayout, FormListBuilder, FormListError, FormListFieldError,
+    FormListFields, FormListItemId, FormListModel, FormListValues, FormModel, Grid, Header, Icon,
+    Image, Input, InputNumber, InputNumberValue, IntoFormValue, Label, Layout, LineChart, LineData,
+    List, Mentions, Menu, MenuItem, MenuMode, Message, MessageItem, Modal, ModalBuilder,
+    ModalContext, NavGroup, NavItem, Navigation, Notification, NotificationItem, OptGroup,
+    Pagination, PickerMode, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover,
+    PopoverPlacement, PopoverTrigger, PresetDate, ProgressBar, ProgressMode, ProgressType, QRCode,
+    Radio, RadioDirection, Rate, ResultType, ResultView, RichText, RichTextSegment, RichTextStyle,
     ScrollView, Segmented, Select, SelectableItem, SelectableList, SharedActive, Sider, Skeleton,
     SkeletonShape, Slider, SortDirection, Space, SpaceSize, Spin, SpinSize, Splitter, Step,
     StepStatus, Steps, Switch, Tab, TabPosition, Table, TableBuilder, TableChange, TableColumn,
@@ -214,6 +214,7 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<FieldError>();
     assert_exported::<FormBuilder>();
     assert_exported::<FormInputItem>();
+    assert_exported::<FormInputNumberItem<i32>>();
     assert_exported::<FormItem>();
     assert_exported::<FormLayout>();
     assert_exported::<FormListBuilder>();

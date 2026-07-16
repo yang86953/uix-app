@@ -2,7 +2,7 @@ use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::view::{column, ViewAdapter};
 use crate::ui::widgets::input::form::*;
-use crate::ui::{FieldError, Input, State, Trigger};
+use crate::ui::{FieldError, Input, InputNumber, State, Trigger};
 
 struct FixedChild(Size);
 
@@ -389,6 +389,11 @@ fn changing_a_field_replaces_or_clears_its_active_error() {
     assert!(form.field_error("blur").is_some());
     assert!(form.set_value("blur", "changed"));
     assert!(form.field_error("blur").is_none());
+    assert!(form.set_value("blur", ""));
+    assert_eq!(
+        form.field_error("blur").as_ref().map(FieldError::message),
+        Some("required")
+    );
 }
 
 #[test]
@@ -576,6 +581,127 @@ fn form_input_item_blur_keeps_error_status_when_help_is_hidden() {
 }
 
 #[test]
+fn form_input_number_item_binds_typed_state_and_reconciles_inline_error() {
+    let age = State::new(18_i32);
+    let form = Form::new()
+        .field("age", "Age")
+        .default(18_i32)
+        .validate_range(20_i32..=65_i32, "Age must be between 20 and 65")
+        .validate_trigger(Trigger::OnChange)
+        .build();
+    let mut tree = ViewAdapter::build(
+        form.input_number_item("age", &age)
+            .expect("declared numeric field should build an input item")
+            .min(0.0)
+            .max(120.0)
+            .step(1.0),
+    );
+    let root = tree.root_id().expect("numeric form item root");
+    let input = tree.get(root).expect("numeric form item").children()[0];
+
+    assert_eq!(
+        tree.dispatch_to(
+            input,
+            &SystemEvent::KeyDown {
+                key: KeyCode::Up,
+                mods: KeyMod::NONE,
+            },
+        ),
+        EventResult::Handled
+    );
+    assert_eq!(age.get(), 19);
+    assert_eq!(
+        form.field_error("age").as_ref().map(FieldError::message),
+        Some("Age must be between 20 and 65")
+    );
+
+    age.set(20);
+    ViewAdapter::reconcile(
+        &mut tree,
+        form.input_number_item("age", &age)
+            .expect("declared numeric field should reconcile an input item")
+            .min(0.0)
+            .max(120.0)
+            .step(1.0),
+    );
+
+    let item = tree
+        .get(root)
+        .and_then(|node| node.component().as_any().downcast_ref::<FormItem>())
+        .expect("reconciled numeric form item component");
+    assert_eq!(item.get_status(), ValidateStatus::None);
+    let input = tree
+        .get(root)
+        .and_then(|node| node.children().first().copied())
+        .and_then(|id| tree.get(id))
+        .and_then(|node| node.component().as_any().downcast_ref::<InputNumber>())
+        .expect("bound numeric input child");
+    assert_eq!(input.current_value(), 20.0);
+    let values = form.validate().expect("updated numeric value should pass");
+    assert_eq!(values.get::<i32>("age"), Some(&20));
+}
+
+#[test]
+fn form_input_number_focus_out_validates_the_committed_typed_value() {
+    let age = State::new(10_i32);
+    let form = Form::new()
+        .field("age", "Age")
+        .default(10_i32)
+        .custom(|value| {
+            (value != "17")
+                .then_some(())
+                .ok_or_else(|| "Seventeen is not allowed".to_string())
+        })
+        .validate_trigger(Trigger::OnBlur)
+        .build();
+    let mut tree = ViewAdapter::build(
+        form.input_number_item("age", &age)
+            .expect("declared numeric field should build an input item"),
+    );
+    let root = tree.root_id().expect("numeric form item root");
+    let input = tree.get(root).expect("numeric form item").children()[0];
+
+    let _ = tree.dispatch_to(input, &SystemEvent::FocusIn);
+    for _ in 0..2 {
+        let _ = tree.dispatch_to(
+            input,
+            &SystemEvent::KeyDown {
+                key: KeyCode::Backspace,
+                mods: KeyMod::NONE,
+            },
+        );
+    }
+    let _ = tree.dispatch_to(
+        input,
+        &SystemEvent::TextInput {
+            text: "17".to_string(),
+        },
+    );
+    assert_eq!(
+        tree.dispatch_to(input, &SystemEvent::FocusOut),
+        EventResult::Handled
+    );
+
+    assert_eq!(age.get(), 17);
+    assert_eq!(
+        form.field_error("age").as_ref().map(FieldError::message),
+        Some("Seventeen is not allowed")
+    );
+
+    age.set(18);
+    ViewAdapter::reconcile(
+        &mut tree,
+        form.input_number_item("age", &age)
+            .expect("declared numeric field should reconcile an input item"),
+    );
+    assert!(form.field_error("age").is_none());
+    let values = form
+        .validate()
+        .expect("replacement typed value should pass");
+    assert_eq!(values.get::<i32>("age"), Some(&18));
+}
+
+#[test]
 fn cloned_form_model_shares_values_and_rejects_unknown_input_items() {
     let value = State::new("ready".to_string());
     let form = Form::new().field("name", "Name").default("initial").build();
@@ -619,4 +745,28 @@ fn form_submit_registers_focus_for_the_first_bound_error() {
     assert!(tree.has_app_state_focus_requests());
     assert!(tree.drain_app_state_focus_requests());
     assert_eq!(tree.managers().focus.focused_component(), Some(first_input));
+}
+
+#[test]
+fn form_submit_focuses_a_bound_numeric_error() {
+    let age = State::new(0_i32);
+    let form = Form::new()
+        .field("age", "Age")
+        .default(0_i32)
+        .validate_range(1_i32..=120_i32, "Age must be positive")
+        .build();
+    let mut tree = ViewAdapter::build(
+        form.input_number_item("age", &age)
+            .expect("declared numeric field should build an input item"),
+    );
+    tree.set_app_state(AppState::new());
+    tree.layout();
+    let root = tree.root_id().expect("numeric form item root");
+    let input = tree.get(root).expect("numeric form item").children()[0];
+
+    let errors = form.submit().expect_err("invalid age should fail submit");
+
+    assert_eq!(errors[0].field(), "age");
+    assert!(tree.drain_app_state_focus_requests());
+    assert_eq!(tree.managers().focus.focused_component(), Some(input));
 }
