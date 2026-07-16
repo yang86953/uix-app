@@ -49,12 +49,14 @@ pub enum LayerNode {
         node_id: NodeId,
         rect: Rect,
         transform: Transform,
+        opacity: f32,
         children: Vec<LayerNode>,
     },
     /// 普通节点：直接渲染 widget 及其子树（无特殊图层语义，无离屏缓存）。
     Direct {
         node_id: NodeId,
         transform: Transform,
+        opacity: f32,
         children: Vec<LayerNode>,
     },
 }
@@ -84,22 +86,26 @@ impl std::fmt::Debug for LayerNode {
                 node_id,
                 rect,
                 transform,
+                opacity,
                 children,
             } => f
                 .debug_struct("ClipRectLayer")
                 .field("node_id", node_id)
                 .field("rect", rect)
                 .field("transform", transform)
+                .field("opacity", opacity)
                 .field("children_count", &children.len())
                 .finish(),
             LayerNode::Direct {
                 node_id,
                 transform,
+                opacity,
                 children,
             } => f
                 .debug_struct("DirectLayer")
                 .field("node_id", node_id)
                 .field("transform", transform)
+                .field("opacity", opacity)
                 .field("children_count", &children.len())
                 .finish(),
         }
@@ -158,6 +164,13 @@ impl LayerNode {
             LayerNode::ClipRect { transform, .. } | LayerNode::Direct { transform, .. } => {
                 *transform
             }
+        }
+    }
+
+    fn opacity(&self) -> f32 {
+        match self {
+            LayerNode::Picture { .. } => 1.0,
+            LayerNode::ClipRect { opacity, .. } | LayerNode::Direct { opacity, .. } => *opacity,
         }
     }
 }
@@ -476,6 +489,7 @@ impl LayerTree {
         }
         let frame = scene.node_frame(id);
         let transform = scene.node_transform(id);
+        let opacity = scene.node_opacity(id).clamp(0.0, 1.0);
         let descendants_support_offscreen = supports_offscreen && transform.is_identity();
 
         let stats = Self::picture_subtree_stats(scene, id);
@@ -516,6 +530,7 @@ impl LayerTree {
                 node_id: id,
                 rect: adj,
                 transform,
+                opacity,
                 children,
             })
         } else {
@@ -524,6 +539,7 @@ impl LayerTree {
             Some(LayerNode::Direct {
                 node_id: id,
                 transform,
+                opacity,
                 children,
             })
         }
@@ -540,9 +556,11 @@ impl LayerTree {
             return None;
         }
         let transform = scene.node_transform(id);
+        let opacity = scene.node_opacity(id).clamp(0.0, 1.0);
         Some(LayerNode::Direct {
             node_id: id,
             transform,
+            opacity,
             children: Self::build_children_cached(
                 scene,
                 id,
@@ -585,6 +603,7 @@ impl LayerTree {
             && scene.children_clip(id, frame).is_none()
             && scene.scroll_offset(id).is_none()
             && scene.node_transform(id).is_identity()
+            && scene.node_opacity(id) == 1.0
     }
 
     /// 带缓存复用的子节点构建，按 z_index 预排序（#97：排序缓存）。
@@ -644,11 +663,15 @@ impl LayerTree {
                 node_id,
                 rect,
                 transform,
+                opacity,
                 children,
             } => {
                 let next_transform = scene.node_transform(*node_id);
                 let transform_changed = *transform != next_transform;
                 *transform = next_transform;
+                let next_opacity = scene.node_opacity(*node_id).clamp(0.0, 1.0);
+                let opacity_changed = *opacity != next_opacity;
+                *opacity = next_opacity;
                 let frame = scene.node_frame(*node_id);
                 if let Some(clip) = scene.children_clip(*node_id, frame) {
                     if *rect != clip {
@@ -662,16 +685,20 @@ impl LayerTree {
                         child_dirty = true;
                     }
                 }
-                transform_changed || self_dirty || child_dirty
+                transform_changed || opacity_changed || self_dirty || child_dirty
             }
             LayerNode::Direct {
                 node_id,
                 transform,
+                opacity,
                 children,
             } => {
                 let next_transform = scene.node_transform(*node_id);
                 let transform_changed = *transform != next_transform;
                 *transform = next_transform;
+                let next_opacity = scene.node_opacity(*node_id).clamp(0.0, 1.0);
+                let opacity_changed = *opacity != next_opacity;
+                *opacity = next_opacity;
                 let self_dirty = scene.node_dirty(*node_id);
                 let mut child_dirty = false;
                 for child in children.iter_mut() {
@@ -679,7 +706,7 @@ impl LayerTree {
                         child_dirty = true;
                     }
                 }
-                transform_changed || self_dirty || child_dirty
+                transform_changed || opacity_changed || self_dirty || child_dirty
             }
         }
     }
@@ -699,8 +726,11 @@ impl LayerTree {
         render_objects: Option<&mut RenderObjectTree>,
     ) -> Result<(), crate::core::Error> {
         let transform = node.transform();
+        let opacity = node.opacity();
         engine.canvas_2d().save();
         Self::apply_canvas_transform(engine.canvas_2d(), transform);
+        let inherited_opacity = engine.canvas_2d().opacity();
+        engine.canvas_2d().set_opacity(inherited_opacity * opacity);
         let result = Self::render_node_inner(
             node,
             engine,

@@ -12,9 +12,22 @@ pub(crate) struct ViewTransform {
 }
 
 impl ViewTransform {
+    pub(crate) fn combined(self, overlay: Self) -> Self {
+        Self {
+            offset: Point::new(
+                self.offset.x + overlay.offset.x,
+                self.offset.y + overlay.offset.y,
+            ),
+            scale: self.scale * overlay.scale,
+        }
+    }
+
     pub(crate) fn matrix(self, frame: Rect) -> Transform {
         if self == Self::default() {
             return Transform::identity();
+        }
+        if self.scale == 1.0 {
+            return Transform::translate(self.offset.x, self.offset.y);
         }
         let center_x = frame.x + frame.w * 0.5;
         let center_y = frame.y + frame.h * 0.5;

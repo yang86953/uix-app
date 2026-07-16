@@ -82,6 +82,12 @@ impl<T: Animatable> Animation<T> {
         } else {
             1.0
         };
+        if progress <= 0.0 {
+            return self.from;
+        }
+        if progress >= 1.0 {
+            return self.to;
+        }
         let eased = self.easing.sample(progress);
         T::lerp(self.from, self.to, eased)
     }

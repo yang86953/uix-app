@@ -3,9 +3,10 @@ use std::rc::Rc;
 
 use crate::draw::compositor::LayerTree;
 use crate::tests::common::*;
+use crate::ui::animation::AnimationConfig;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::view::{canvas, label, ViewAdapter};
-use crate::ui::{EventResult, SystemEvent};
+use crate::ui::{EventResult, Placement, SystemEvent};
 
 #[test]
 fn static_transform_drives_hit_testing_events_and_semantic_bounds() {
@@ -35,6 +36,7 @@ fn static_transform_drives_hit_testing_events_and_semantic_bounds() {
     tree.get_mut(root)
         .expect("root node")
         .set_frame(Rect::new(10.0, 10.0, 20.0, 10.0));
+    tree.reconcile_lifecycle_after_layout();
 
     let visual_center = Point::new(50.0, 25.0);
     assert_eq!(tree.hit_test(visual_center), Some(root));
@@ -77,6 +79,93 @@ fn zero_scale_subtree_is_not_hittable() {
         .set_frame(Rect::new(10.0, 10.0, 20.0, 10.0));
 
     assert_eq!(tree.hit_test(Point::new(20.0, 15.0)), None);
+}
+
+#[test]
+fn mount_transition_advances_visual_bounds_and_opacity_without_reconcile() {
+    let mut tree = ViewAdapter::build(
+        label("enter")
+            .width(20.0)
+            .height(10.0)
+            .enter_animation(AnimationConfig::slide_in(Placement::Right, 1.0)),
+    );
+    let root = tree.root_id().expect("root");
+    tree.get_mut(root)
+        .expect("root node")
+        .set_frame(Rect::new(10.0, 10.0, 20.0, 10.0));
+    tree.reconcile_lifecycle_after_layout();
+
+    assert!(tree.get(root).unwrap().view_transition_active());
+    assert_eq!(tree.get(root).unwrap().view_transition_opacity(), 0.0);
+    assert_eq!(
+        tree.node_visual_rect(root, Rect::new(10.0, 10.0, 20.0, 10.0)),
+        Some(Rect::new(34.0, 10.0, 20.0, 10.0))
+    );
+
+    assert_eq!(tree.update_animation_nodes([root], 0.5), vec![(root, true)]);
+    let halfway_opacity = tree.get(root).unwrap().view_transition_opacity();
+    assert!(halfway_opacity > 0.0 && halfway_opacity < 1.0);
+    let halfway = tree
+        .node_visual_rect(root, Rect::new(10.0, 10.0, 20.0, 10.0))
+        .expect("halfway visual bounds");
+    assert!(halfway.x > 10.0 && halfway.x < 34.0);
+
+    assert_eq!(
+        tree.update_animation_nodes([root], 0.5),
+        vec![(root, false)]
+    );
+    assert!(!tree.get(root).unwrap().view_transition_active());
+    assert_eq!(tree.get(root).unwrap().view_transition_opacity(), 1.0);
+    assert_eq!(
+        tree.node_visual_rect(root, Rect::new(10.0, 10.0, 20.0, 10.0)),
+        Some(Rect::new(10.0, 10.0, 20.0, 10.0))
+    );
+}
+
+#[test]
+fn zero_duration_mount_transition_is_immediately_at_rest() {
+    let tree = ViewAdapter::build(label("instant").enter_animation(AnimationConfig::zoom_in(0.0)));
+    let root = tree.root_id().expect("root");
+
+    assert!(!tree.get(root).unwrap().view_transition_active());
+    assert_eq!(tree.get(root).unwrap().view_transition_opacity(), 1.0);
+    assert!(tree
+        .get(root)
+        .unwrap()
+        .visual_transform_matrix()
+        .is_identity());
+}
+
+#[test]
+#[should_panic(expected = "enter_animation requires fade_in, slide_in, or zoom_in")]
+fn mount_transition_rejects_exit_presets() {
+    let _ = label("invalid").enter_animation(AnimationConfig::fade_out(0.2));
+}
+
+#[test]
+fn mount_transition_does_not_restart_when_the_keyed_node_reconciles() {
+    let view = || {
+        label("stable")
+            .key("stable")
+            .enter_animation(AnimationConfig::fade_in(1.0))
+    };
+    let mut tree = ViewAdapter::build(view());
+    tree.layout();
+    let root = tree.root_id().expect("root");
+    assert_eq!(
+        tree.update_animation_nodes([root], 0.25),
+        vec![(root, true)]
+    );
+    let before = tree.get(root).unwrap().view_transition_opacity();
+
+    ViewAdapter::reconcile(&mut tree, view());
+
+    assert_eq!(tree.root_id(), Some(root));
+    assert_eq!(tree.get(root).unwrap().view_transition_opacity(), before);
+    assert_eq!(
+        tree.update_animation_nodes([root], 0.75),
+        vec![(root, false)]
+    );
 }
 
 #[test]

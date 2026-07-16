@@ -1000,5 +1000,8 @@ pub(crate) fn sync_animation_registrations(
             active_work.unregister(kind);
         }
     }
+    for id in tree.active_view_transition_ids() {
+        active_work.register_open(ActiveWorkKind::Animation(id));
+    }
     active_work.sync_animated_sources(tree.animated_source_registrations());
 }

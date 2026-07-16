@@ -158,6 +158,7 @@ impl WidgetTree {
             provider_context,
             visible,
             visual_transform,
+            enter_animation,
             z_index,
             key,
             automation_id,
@@ -175,6 +176,7 @@ impl WidgetTree {
         if let Some(node) = self.get_mut(id) {
             node.set_visible(visible);
             node.set_visual_transform(visual_transform);
+            node.set_enter_animation(enter_animation);
             node.set_key(key);
             node.set_automation_id(automation_id);
             node.set_z_index(z_index);

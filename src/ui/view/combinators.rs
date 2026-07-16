@@ -136,6 +136,7 @@ fn adopt_widget_node(node: WidgetNode) -> ViewNode {
         provider_context,
         style: Style::default(),
         visual_transform: node.visual_transform,
+        enter_animation: node.enter_animation,
         flex_grow_override: None,
         flex_shrink_override: None,
         z_index: node.z_index,

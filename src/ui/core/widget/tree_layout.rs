@@ -942,10 +942,23 @@ impl WidgetTree {
         let node = self.get(id)?;
         (self.is_effectively_visible(id)
             && node.active()
-            && node
-                .capabilities()
-                .contains(crate::ui::traits::WidgetCapabilities::ANIMATION))
+            && (node.view_transition_active()
+                || node
+                    .capabilities()
+                    .contains(crate::ui::traits::WidgetCapabilities::ANIMATION)))
         .then_some(node.frame())
+    }
+
+    pub(crate) fn active_view_transition_ids(&self) -> Vec<WidgetId> {
+        self.traverse()
+            .iter()
+            .copied()
+            .filter(|&id| {
+                self.get(id)
+                    .is_some_and(BoxedWidget::view_transition_active)
+                    && self.is_effectively_visible(id)
+            })
+            .collect()
     }
 
     #[cfg(test)]
@@ -977,21 +990,40 @@ impl WidgetTree {
                 continue;
             };
 
-            let Some((still_active, dirty)) = self.get_mut(id).and_then(|node| {
-                let animation = node.component_mut().as_animation_mut()?;
-                let still_active = animation.update_animation(dt);
-                let dirty = animation.dirty_bounds(frame);
-                Some((still_active, dirty))
-            }) else {
-                updates.push((id, false));
-                continue;
-            };
+            let view_was_active = self
+                .get(id)
+                .is_some_and(BoxedWidget::view_transition_active);
+            let old_visual_bounds = view_was_active
+                .then(|| self.visual_subtree_bounds(id))
+                .flatten();
+            let view_still_active = view_was_active
+                && self
+                    .get_mut(id)
+                    .is_some_and(|node| node.advance_view_transition(dt));
+            let new_visual_bounds = view_was_active
+                .then(|| self.visual_subtree_bounds(id))
+                .flatten();
+            for rect in [old_visual_bounds, new_visual_bounds].into_iter().flatten() {
+                if rect.w > 0.0 && rect.h > 0.0 {
+                    self.push_paint_invalidation(id, Some(rect));
+                }
+            }
+
+            let (component_still_active, dirty) = self
+                .get_mut(id)
+                .and_then(|node| {
+                    let animation = node.component_mut().as_animation_mut()?;
+                    let still_active = animation.update_animation(dt);
+                    let dirty = animation.dirty_bounds(frame);
+                    Some((still_active, dirty))
+                })
+                .unwrap_or((false, Rect::zero()));
 
             if dirty.w > 0.0 && dirty.h > 0.0 {
                 self.invalidate_paint_rect(id, dirty);
             }
             widget_overlays_changed |= !self.widget_overlay_is_current(id);
-            updates.push((id, still_active));
+            updates.push((id, view_still_active || component_still_active));
         }
         self.cancel_hidden_interaction();
         if widget_overlays_changed || updates.iter().any(|(_, still_active)| !still_active) {

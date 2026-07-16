@@ -37,6 +37,7 @@ pub struct WidgetNode {
     pub(crate) provider_context: ProviderContext,
     pub(crate) visible: bool,
     pub(crate) visual_transform: ViewTransform,
+    pub(crate) enter_animation: Option<crate::ui::animation::AnimationConfig>,
     pub z_index: i32,
     pub key: Option<Box<str>>,
     pub automation_id: Option<Box<str>>,
@@ -56,6 +57,7 @@ impl WidgetNode {
             provider_context: current_provider_context(),
             visible: true,
             visual_transform: ViewTransform::default(),
+            enter_animation: None,
             z_index: 0,
             key: None,
             automation_id: None,
@@ -82,6 +84,7 @@ impl WidgetNode {
             provider_context: current_provider_context(),
             visible: true,
             visual_transform: ViewTransform::default(),
+            enter_animation: None,
             z_index: 0,
             key: None,
             automation_id: None,
@@ -103,6 +106,13 @@ impl WidgetNode {
     }
     pub(crate) fn with_visual_transform(mut self, transform: ViewTransform) -> Self {
         self.visual_transform = transform;
+        self
+    }
+    pub(crate) fn with_enter_animation(
+        mut self,
+        animation: crate::ui::animation::AnimationConfig,
+    ) -> Self {
+        self.enter_animation = Some(animation);
         self
     }
     /// 设置 Tab 键导航顺序索引（> 0 表示可通过 Tab 获取焦点）。
@@ -211,6 +221,7 @@ pub struct BoxedWidget {
     frame: Rect,
     visible: bool,
     visual_transform: ViewTransform,
+    view_transition: Option<crate::ui::animation::TransitionPlayer>,
     attached: bool,
     mounted: bool,
     active: bool,
@@ -251,6 +262,7 @@ impl BoxedWidget {
             frame: Rect::zero(),
             visible: true,
             visual_transform: ViewTransform::default(),
+            view_transition: None,
             attached: false,
             mounted: false,
             active: false,
@@ -372,7 +384,58 @@ impl BoxedWidget {
     }
 
     pub(crate) fn visual_transform_matrix(&self) -> crate::draw::Transform {
-        self.visual_transform.matrix(self.frame)
+        let transition = self
+            .view_transition
+            .as_ref()
+            .map(|player| ViewTransform {
+                offset: player.offset,
+                scale: player.scale,
+            })
+            .unwrap_or_default();
+        self.visual_transform
+            .combined(transition)
+            .matrix(self.frame)
+    }
+
+    pub(crate) fn has_effective_visual_transform(&self) -> bool {
+        !self.visual_transform_matrix().is_identity()
+    }
+
+    pub(crate) fn set_enter_animation(
+        &mut self,
+        animation: Option<crate::ui::animation::AnimationConfig>,
+    ) {
+        self.view_transition = animation.and_then(|animation| {
+            let mut player = crate::ui::animation::TransitionPlayer::new(animation);
+            if animation.duration() <= 0.0 {
+                player.update(0.0);
+            }
+            (!player.finished).then_some(player)
+        });
+    }
+
+    pub(crate) fn view_transition_active(&self) -> bool {
+        self.view_transition
+            .as_ref()
+            .is_some_and(|player| !player.finished)
+    }
+
+    pub(crate) fn view_transition_opacity(&self) -> f32 {
+        self.view_transition
+            .as_ref()
+            .map_or(1.0, |player| player.opacity_progress.clamp(0.0, 1.0))
+    }
+
+    pub(crate) fn advance_view_transition(&mut self, dt: f64) -> bool {
+        let Some(player) = self.view_transition.as_mut() else {
+            return false;
+        };
+        player.update(dt);
+        let still_active = !player.finished;
+        if !still_active {
+            self.view_transition = None;
+        }
+        still_active
     }
 
     pub(crate) fn accessibility(&self) -> AccessibilitySnapshot {
