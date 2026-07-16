@@ -8,10 +8,15 @@
 use crate::core::{Errc, Error, Result};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+
+#[cfg(feature = "settings-serde")]
+use serde::{de::DeserializeOwned, Serialize};
 
 // ── 极简 JSON 读写（仅支持扁平 HashMap<String, String>） ────────────────
 
@@ -509,6 +514,103 @@ impl SettingsService {
         self.get(key).unwrap_or_else(|| default.to_string())
     }
 
+    /// Stores a scalar using its canonical text representation.
+    pub fn set_typed<T>(&self, key: &str, value: T)
+    where
+        T: Display,
+    {
+        self.set(key, &value.to_string());
+    }
+
+    /// Parses a scalar without performing any file I/O.
+    pub fn get_typed<T>(&self, key: &str) -> Result<Option<T>>
+    where
+        T: FromStr,
+        T::Err: Display,
+    {
+        self.get(key)
+            .map(|value| {
+                value.parse::<T>().map_err(|error| {
+                    settings_typed_parse_error(key, std::any::type_name::<T>(), error)
+                })
+            })
+            .transpose()
+    }
+
+    /// Returns the parsed scalar or `default` when the key is absent.
+    pub fn get_typed_or<T>(&self, key: &str, default: T) -> Result<T>
+    where
+        T: FromStr,
+        T::Err: Display,
+    {
+        Ok(self.get_typed(key)?.unwrap_or(default))
+    }
+
+    /// Returns a parsed scalar and reports an absent key as `NotFound`.
+    pub fn require_typed<T>(&self, key: &str) -> Result<T>
+    where
+        T: FromStr,
+        T::Err: Display,
+    {
+        self.get_typed(key)?.ok_or_else(|| {
+            Error::new(
+                Errc::NotFound,
+                format!("settings: required key '{key}' was not found"),
+            )
+        })
+    }
+
+    /// Serializes one structured value into a string-valued settings entry.
+    #[cfg(feature = "settings-serde")]
+    pub fn set_struct<T>(&self, key: &str, value: &T) -> Result<()>
+    where
+        T: Serialize + ?Sized,
+    {
+        let encoded = serde_json::to_string(value).map_err(|error| {
+            Error::new(
+                Errc::SerializationError,
+                format!("settings: failed to serialize structured key '{key}': {error}"),
+            )
+        })?;
+        self.set(key, &encoded);
+        Ok(())
+    }
+
+    /// Deserializes one structured value without performing any file I/O.
+    #[cfg(feature = "settings-serde")]
+    pub fn get_struct<T>(&self, key: &str) -> Result<Option<T>>
+    where
+        T: DeserializeOwned,
+    {
+        self.get(key)
+            .map(|value| {
+                serde_json::from_str(&value).map_err(|error| {
+                    Error::new(
+                        Errc::ParseError,
+                        format!(
+                            "settings: failed to parse structured key '{key}' as {}: {error}",
+                            std::any::type_name::<T>()
+                        ),
+                    )
+                })
+            })
+            .transpose()
+    }
+
+    /// Returns a structured value and reports an absent key as `NotFound`.
+    #[cfg(feature = "settings-serde")]
+    pub fn require_struct<T>(&self, key: &str) -> Result<T>
+    where
+        T: DeserializeOwned,
+    {
+        self.get_struct(key)?.ok_or_else(|| {
+            Error::new(
+                Errc::NotFound,
+                format!("settings: required structured key '{key}' was not found"),
+            )
+        })
+    }
+
     pub fn has(&self, key: &str) -> bool {
         self.read_state().values.contains_key(key)
     }
@@ -556,6 +658,13 @@ impl SettingsService {
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
+}
+
+fn settings_typed_parse_error(key: &str, target_type: &str, error: impl Display) -> Error {
+    Error::new(
+        Errc::ParseError,
+        format!("settings: failed to parse key '{key}' as {target_type}: {error}"),
+    )
 }
 
 // ════════════════════════════════════════════════════════════════════════════
