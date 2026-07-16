@@ -1,6 +1,7 @@
 use crate::draw::compositor::layer_tree::*;
 use crate::draw::compositor::ScenePaint;
 use crate::draw::traits::GraphicsEngine;
+use crate::draw::Transform;
 use crate::tests::common::*;
 
 #[derive(Clone)]
@@ -17,6 +18,7 @@ struct TestNode {
     focusable: bool,
     clip: bool,
     scroll: bool,
+    transform: Transform,
 }
 
 impl TestNode {
@@ -34,6 +36,7 @@ impl TestNode {
             focusable: false,
             clip: false,
             scroll: false,
+            transform: Transform::identity(),
         }
     }
 }
@@ -100,6 +103,10 @@ impl ScenePaint for TestScene {
 
     fn node_z_index(&self, _id: NodeId) -> i32 {
         0
+    }
+
+    fn node_transform(&self, id: NodeId) -> Transform {
+        self.node(id).transform
     }
 
     fn node_children(&self, id: NodeId) -> &[NodeId] {
@@ -286,7 +293,7 @@ fn picture_policy_requires_node_count_and_pixel_thresholds() {
 
 #[test]
 fn runtime_signals_force_picture_policy_never_for_subtree() {
-    let runtime_signals: [fn(&mut TestNode); 7] = [
+    let runtime_signals: [fn(&mut TestNode); 8] = [
         |node: &mut TestNode| node.has_handler = true,
         |node: &mut TestNode| node.dynamic = true,
         |node: &mut TestNode| node.interactive = true,
@@ -294,6 +301,7 @@ fn runtime_signals_force_picture_policy_never_for_subtree() {
         |node: &mut TestNode| node.overlay = true,
         |node: &mut TestNode| node.focusable = true,
         |node: &mut TestNode| node.scroll = true,
+        |node: &mut TestNode| node.transform = Transform::translate(1.0, 0.0),
     ];
 
     for mark_runtime_signal in runtime_signals {
@@ -306,6 +314,23 @@ fn runtime_signals_force_picture_policy_never_for_subtree() {
             Some(LayerNode::Direct { node_id, .. }) if *node_id == NodeId::new(1)
         ));
     }
+}
+
+#[test]
+fn transformed_ancestor_disables_descendant_picture_cache() {
+    let mut scene = TestScene::static_tree(9);
+    scene.node_mut(NodeId::new(1)).children = vec![NodeId::new(2)];
+    scene.node_mut(NodeId::new(2)).children = (3..=9).map(NodeId::new).collect();
+    scene.node_mut(NodeId::new(1)).transform = Transform::scale(1.1, 1.1);
+
+    let tree = scene.build_layer_tree();
+    let Some(LayerNode::Direct { children, .. }) = tree.root_node() else {
+        panic!("transformed root must remain direct");
+    };
+    assert!(matches!(
+        children.as_slice(),
+        [LayerNode::Direct { node_id, .. }] if *node_id == NodeId::new(2)
+    ));
 }
 
 #[test]
@@ -553,6 +578,57 @@ fn detached_overlay_restores_canvas_state_after_a_clipped_root() {
         0,
         "detached overlay must paint outside the normal tree's viewport clip"
     );
+}
+
+fn paint_affine_target(id: NodeId, ctx: &mut PaintContext<'_>) {
+    if id == NodeId::new(1) {
+        ctx.fill_rect(
+            Rect::new(1.0, 1.0, 2.0, 2.0),
+            crate::draw::Color::red(),
+            None,
+        );
+    }
+}
+
+#[test]
+fn direct_layer_applies_scene_transform_to_widget_paint() {
+    use crate::draw::painting::ThemeSnapshot;
+
+    let mut scene = TestScene::static_tree(1);
+    scene.node_mut(NodeId::new(1)).transform =
+        Transform::translate(4.0, 3.0).concat(Transform::scale(2.0, 2.0));
+    scene.dirty_ids.insert(NodeId::new(1));
+    scene.paint = Some(paint_affine_target);
+
+    let mut tree = LayerTree::new();
+    tree.build(&scene, false);
+    let mut engine = SoftwareEngine::new();
+    engine.initialize(20, 16).expect("software engine init");
+    let tokens = TestTokens;
+    let theme = ThemeSnapshot::new(&tokens);
+    let fonts = FontService::new();
+    let images = ImageService::new();
+
+    tree.render(
+        &mut engine,
+        &scene,
+        &DirtyRegion::full(),
+        &theme,
+        FontHandle::default(),
+        &fonts,
+        &images,
+        false,
+        None,
+        None,
+    )
+    .expect("transformed layer rendering");
+
+    let pixels = engine.canvas_2d().pixels_mut();
+    let at = |x: usize, y: usize| pixels[y * 20 + x];
+    assert_eq!(at(1, 1), 0, "untransformed location must remain empty");
+    assert_ne!(at(6, 5), 0, "mapped top-left pixel must be painted");
+    assert_ne!(at(9, 8), 0, "mapped lower-right pixel must be painted");
+    assert_eq!(at(10, 8), 0, "mapped width must remain bounded");
 }
 
 #[test]

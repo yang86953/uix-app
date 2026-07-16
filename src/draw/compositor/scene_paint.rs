@@ -5,6 +5,7 @@ use crate::core::{Point, Rect};
 use crate::core::DirtyRegion;
 use crate::draw::painting::PaintContext;
 use crate::draw::pipeline::NodeId;
+use crate::draw::Transform;
 
 /// Picture cache eligibility declared by widget metadata and refined by runtime signals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,6 +23,11 @@ pub trait ScenePaint {
     fn node_frame(&self, id: NodeId) -> Rect;
     fn node_dirty(&self, id: NodeId) -> bool;
     fn node_z_index(&self, id: NodeId) -> i32;
+    /// Visual transform for this node and its descendants, in layout coordinates.
+    fn node_transform(&self, id: NodeId) -> Transform {
+        let _ = id;
+        Transform::identity()
+    }
     fn node_children(&self, id: NodeId) -> &[NodeId];
     fn node_picture_policy(&self, id: NodeId) -> PicturePolicy {
         let _ = id;

@@ -1,5 +1,6 @@
 use crate::draw::compositor::viewport_transform::*;
 use crate::draw::compositor::ScenePaint;
+use crate::draw::Transform;
 use crate::tests::common::*;
 
 const ROOT: NodeId = NodeId::new(1);
@@ -9,6 +10,8 @@ const CHILDREN: &[NodeId] = &[CHILD];
 struct ScrollScene {
     region: DirtyRegion,
     scroll_y: f32,
+    root_transform: Transform,
+    child_transform: Transform,
 }
 
 impl ScrollScene {
@@ -17,6 +20,8 @@ impl ScrollScene {
         Self {
             region: DirtyRegion::area(Rect::new(0.0, 90.0, 100.0, 10.0)),
             scroll_y: 50.0,
+            root_transform: Transform::identity(),
+            child_transform: Transform::identity(),
         }
     }
 }
@@ -47,6 +52,13 @@ impl ScenePaint for ScrollScene {
     }
     fn node_z_index(&self, _: NodeId) -> i32 {
         0
+    }
+    fn node_transform(&self, id: NodeId) -> Transform {
+        match id {
+            ROOT => self.root_transform,
+            CHILD => self.child_transform,
+            _ => Transform::identity(),
+        }
     }
     fn node_children(&self, id: NodeId) -> &[NodeId] {
         match id {
@@ -122,9 +134,30 @@ fn visible_viewport_rect_none_when_fully_scrolled_out() {
     let scene = ScrollScene {
         region: DirtyRegion::full(),
         scroll_y: 200.0,
+        root_transform: Transform::identity(),
+        child_transform: Transform::identity(),
     };
     // child y=140 − 200 = -60，与 viewport [0,100) 无交
     assert!(visible_viewport_rect(&scene, CHILD).is_none());
+}
+
+#[test]
+fn nested_node_transforms_compose_after_ancestor_scroll() {
+    let scene = ScrollScene {
+        region: DirtyRegion::full(),
+        scroll_y: 70.0,
+        root_transform: Transform::scale(2.0, 2.0),
+        child_transform: Transform::translate(5.0, 10.0),
+    };
+
+    assert_eq!(
+        node_viewport_frame(&scene, CHILD),
+        Rect::new(10.0, 160.0, 200.0, 40.0)
+    );
+    assert_eq!(
+        visible_viewport_rect(&scene, CHILD),
+        Some(Rect::new(10.0, 160.0, 190.0, 40.0))
+    );
 }
 
 #[test]
