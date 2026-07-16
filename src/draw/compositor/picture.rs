@@ -360,6 +360,7 @@ fn render_non_picture_subtree<S: ScenePaint>(
                 node_id,
                 rect,
                 children: sub,
+                ..
             } => {
                 if needs_paint(scene, *node_id, dirty_region) {
                     LayerTree::render_widget_self(*node_id, ctx, scene);
@@ -377,6 +378,7 @@ fn render_non_picture_subtree<S: ScenePaint>(
             LayerNode::Direct {
                 node_id,
                 children: sub,
+                ..
             } => {
                 if !scene.node_visible(*node_id) {
                     continue;

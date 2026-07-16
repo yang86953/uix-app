@@ -18,9 +18,9 @@ use crate::draw::painting::{
     DisplayList, PaintContext, PaintPass, PaintSurfaceConfig, ThemeSnapshot,
 };
 use crate::draw::pipeline::NodeId;
-use crate::draw::primitives::types::ImageHandle;
+use crate::draw::primitives::types::{ImageHandle, Transform};
 use crate::draw::render_object::RenderObjectTree;
-use crate::draw::traits::GraphicsEngine;
+use crate::draw::traits::{Canvas2D, GraphicsEngine};
 use crate::draw::FontHandle;
 
 /// Debug overlay：当前指针下的祖先链 + 最深命中节点。
@@ -48,11 +48,13 @@ pub enum LayerNode {
     ClipRect {
         node_id: NodeId,
         rect: Rect,
+        transform: Transform,
         children: Vec<LayerNode>,
     },
     /// 普通节点：直接渲染 widget 及其子树（无特殊图层语义，无离屏缓存）。
     Direct {
         node_id: NodeId,
+        transform: Transform,
         children: Vec<LayerNode>,
     },
 }
@@ -81,16 +83,23 @@ impl std::fmt::Debug for LayerNode {
             LayerNode::ClipRect {
                 node_id,
                 rect,
+                transform,
                 children,
             } => f
                 .debug_struct("ClipRectLayer")
                 .field("node_id", node_id)
                 .field("rect", rect)
+                .field("transform", transform)
                 .field("children_count", &children.len())
                 .finish(),
-            LayerNode::Direct { node_id, children } => f
+            LayerNode::Direct {
+                node_id,
+                transform,
+                children,
+            } => f
                 .debug_struct("DirectLayer")
                 .field("node_id", node_id)
+                .field("transform", transform)
                 .field("children_count", &children.len())
                 .finish(),
         }
@@ -140,6 +149,15 @@ impl LayerNode {
             LayerNode::Picture { node_id, .. }
             | LayerNode::ClipRect { node_id, .. }
             | LayerNode::Direct { node_id, .. } => *node_id,
+        }
+    }
+
+    fn transform(&self) -> Transform {
+        match self {
+            LayerNode::Picture { .. } => Transform::identity(),
+            LayerNode::ClipRect { transform, .. } | LayerNode::Direct { transform, .. } => {
+                *transform
+            }
         }
     }
 }
@@ -457,6 +475,8 @@ impl LayerTree {
             return None;
         }
         let frame = scene.node_frame(id);
+        let transform = scene.node_transform(id);
+        let descendants_support_offscreen = supports_offscreen && transform.is_identity();
 
         let stats = Self::picture_subtree_stats(scene, id);
 
@@ -474,7 +494,8 @@ impl LayerTree {
                     }
                 })
                 .unwrap_or((None, None));
-            let children = Self::build_children_cached(scene, id, depth, cache, supports_offscreen);
+            let children =
+                Self::build_children_cached(scene, id, depth, cache, descendants_support_offscreen);
             Some(LayerNode::Picture {
                 node_id: id,
                 bounds,
@@ -489,16 +510,20 @@ impl LayerTree {
         } else if let Some(clip) = scene.children_clip(id, frame) {
             // clip 由 children_clip 基于 frame（绝对坐标）计算，直接使用
             let adj = Rect::new(clip.x, clip.y, clip.w, clip.h);
-            let children = Self::build_children_cached(scene, id, depth, cache, supports_offscreen);
+            let children =
+                Self::build_children_cached(scene, id, depth, cache, descendants_support_offscreen);
             Some(LayerNode::ClipRect {
                 node_id: id,
                 rect: adj,
+                transform,
                 children,
             })
         } else {
-            let children = Self::build_children_cached(scene, id, depth, cache, supports_offscreen);
+            let children =
+                Self::build_children_cached(scene, id, depth, cache, descendants_support_offscreen);
             Some(LayerNode::Direct {
                 node_id: id,
+                transform,
                 children,
             })
         }
@@ -514,9 +539,17 @@ impl LayerTree {
         if !scene.node_visible(id) {
             return None;
         }
+        let transform = scene.node_transform(id);
         Some(LayerNode::Direct {
             node_id: id,
-            children: Self::build_children_cached(scene, id, depth, cache, supports_offscreen),
+            transform,
+            children: Self::build_children_cached(
+                scene,
+                id,
+                depth,
+                cache,
+                supports_offscreen && transform.is_identity(),
+            ),
         })
     }
 
@@ -551,6 +584,7 @@ impl LayerTree {
             && !scene.node_focusable(id)
             && scene.children_clip(id, frame).is_none()
             && scene.scroll_offset(id).is_none()
+            && scene.node_transform(id).is_identity()
     }
 
     /// 带缓存复用的子节点构建，按 z_index 预排序（#97：排序缓存）。
@@ -609,8 +643,12 @@ impl LayerTree {
             LayerNode::ClipRect {
                 node_id,
                 rect,
+                transform,
                 children,
             } => {
+                let next_transform = scene.node_transform(*node_id);
+                let transform_changed = *transform != next_transform;
+                *transform = next_transform;
                 let frame = scene.node_frame(*node_id);
                 if let Some(clip) = scene.children_clip(*node_id, frame) {
                     if *rect != clip {
@@ -624,11 +662,16 @@ impl LayerTree {
                         child_dirty = true;
                     }
                 }
-                self_dirty || child_dirty
+                transform_changed || self_dirty || child_dirty
             }
             LayerNode::Direct {
-                node_id, children, ..
+                node_id,
+                transform,
+                children,
             } => {
+                let next_transform = scene.node_transform(*node_id);
+                let transform_changed = *transform != next_transform;
+                *transform = next_transform;
                 let self_dirty = scene.node_dirty(*node_id);
                 let mut child_dirty = false;
                 for child in children.iter_mut() {
@@ -636,13 +679,46 @@ impl LayerTree {
                         child_dirty = true;
                     }
                 }
-                self_dirty || child_dirty
+                transform_changed || self_dirty || child_dirty
             }
         }
     }
 
     /// 递归渲染单个节点；脏剪枝使用 viewport 坐标变换（Phase 5）。
     fn render_node(
+        node: &mut LayerNode,
+        engine: &mut dyn GraphicsEngine,
+        scene: &impl ScenePaint,
+        dirty_region: &DirtyRegion,
+        env: &LayerRenderEnv<'_>,
+        surface_w: i32,
+        surface_h: i32,
+        debug_mode: bool,
+        debug_hover: &Option<DebugHover>,
+        depth: usize,
+        render_objects: Option<&mut RenderObjectTree>,
+    ) -> Result<(), crate::core::Error> {
+        let transform = node.transform();
+        engine.canvas_2d().save();
+        Self::apply_canvas_transform(engine.canvas_2d(), transform);
+        let result = Self::render_node_inner(
+            node,
+            engine,
+            scene,
+            dirty_region,
+            env,
+            surface_w,
+            surface_h,
+            debug_mode,
+            debug_hover,
+            depth,
+            render_objects,
+        );
+        engine.canvas_2d().restore();
+        result
+    }
+
+    fn render_node_inner(
         node: &mut LayerNode,
         engine: &mut dyn GraphicsEngine,
         scene: &impl ScenePaint,
@@ -720,6 +796,7 @@ impl LayerTree {
                 node_id,
                 rect,
                 children,
+                ..
             } => {
                 if Self::should_paint_node(scene, *node_id, dirty_region) {
                     let mut ctx = Self::paint_context(engine, env, surface_w, surface_h);
@@ -741,7 +818,10 @@ impl LayerTree {
                 }
                 engine.canvas_2d().push_clip(*rect);
                 if let Some((sx, sy)) = Self::get_scroll_offset(scene, *node_id) {
-                    engine.canvas_2d().translate(-sx, -sy);
+                    Self::apply_canvas_transform(
+                        engine.canvas_2d(),
+                        Transform::translate(-sx, -sy),
+                    );
                 }
                 for child in children.iter_mut() {
                     Self::render_node(
@@ -759,7 +839,7 @@ impl LayerTree {
                     )?;
                 }
                 if let Some((sx, sy)) = Self::get_scroll_offset(scene, *node_id) {
-                    engine.canvas_2d().translate(sx, sy);
+                    Self::apply_canvas_transform(engine.canvas_2d(), Transform::translate(sx, sy));
                 }
                 engine.canvas_2d().pop_clip();
                 if Self::should_paint_node(scene, *node_id, dirty_region) {
@@ -767,7 +847,9 @@ impl LayerTree {
                     Self::paint_widget(*node_id, &mut ctx, scene, PaintPass::AfterChildren, None);
                 }
             }
-            LayerNode::Direct { node_id, children } => {
+            LayerNode::Direct {
+                node_id, children, ..
+            } => {
                 Self::render_widget_and_children(
                     engine,
                     *node_id,
@@ -785,6 +867,29 @@ impl LayerTree {
             }
         }
         Ok(())
+    }
+
+    /// Keeps the legacy offset fast path for pure translations, but folds an
+    /// existing offset into the affine matrix before a scale/shear is applied.
+    /// This preserves the order `ancestor * scroll * child_transform`.
+    fn apply_canvas_transform(canvas: &mut dyn Canvas2D, transform: Transform) {
+        if transform.is_identity() {
+            return;
+        }
+        let [a, b, tx, c, d, ty] = transform.m;
+        let translation_only = a == 1.0 && b == 0.0 && c == 0.0 && d == 1.0;
+        if canvas.current_transform().is_identity() && translation_only {
+            canvas.translate(tx, ty);
+            return;
+        }
+
+        let mut current = canvas.current_transform();
+        let (offset_x, offset_y) = canvas.offset();
+        if offset_x != 0.0 || offset_y != 0.0 {
+            current = current.concat(Transform::translate(offset_x, offset_y));
+            canvas.set_offset(0.0, 0.0);
+        }
+        canvas.set_transform(current.concat(transform));
     }
 
     /// 按绘制阶段调用 widget `paint`；Content 阶段可走 RenderObject DisplayList 缓存。

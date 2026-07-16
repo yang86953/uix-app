@@ -9,6 +9,44 @@ use crate::core::Rect;
 use crate::core::DirtyRegion;
 use crate::draw::compositor::ScenePaint;
 use crate::draw::pipeline::NodeId;
+use crate::draw::Transform;
+
+fn visual_path(scene: &impl ScenePaint, node_id: NodeId) -> Vec<NodeId> {
+    let mut path = Vec::new();
+    let mut current = Some(node_id);
+    while let Some(id) = current {
+        path.push(id);
+        if scene.node_is_overlay(id) {
+            break;
+        }
+        current = scene.parent(id);
+    }
+    path.reverse();
+    path
+}
+
+/// Layout coordinates to viewport/screen coordinates for a node.
+///
+/// Each node transform applies before its descendants. A viewport's scroll
+/// translation applies between the viewport transform and the child transform.
+pub fn node_visual_transform(scene: &impl ScenePaint, node_id: NodeId) -> Transform {
+    let path = visual_path(scene, node_id);
+    let mut transform = Transform::identity();
+    for (index, id) in path.iter().copied().enumerate() {
+        transform = transform.concat(scene.node_transform(id));
+        if index + 1 < path.len() {
+            if let Some((sx, sy)) = scene.scroll_offset(id) {
+                transform = transform.concat(Transform::translate(-sx, -sy));
+            }
+        }
+    }
+    transform
+}
+
+/// Maps layout geometry owned by `node_id` into viewport/screen coordinates.
+pub fn node_visual_rect(scene: &impl ScenePaint, node_id: NodeId, rect: Rect) -> Rect {
+    node_visual_transform(scene, node_id).transform_rect(rect)
+}
 
 /// 累计从根到 node 路径上所有 viewport 祖先的 scroll 偏移。
 pub fn cumulative_scroll(scene: &impl ScenePaint, node_id: NodeId) -> (f32, f32) {
@@ -21,6 +59,9 @@ pub fn cumulative_scroll(scene: &impl ScenePaint, node_id: NodeId) -> (f32, f32)
                 sx += ox;
                 sy += oy;
             }
+        }
+        if scene.node_is_overlay(pid) {
+            break;
         }
         current = scene.parent(pid);
     }
@@ -39,9 +80,7 @@ pub fn content_to_viewport(content: Rect, scroll_x: f32, scroll_y: f32) -> Rect 
 
 /// 节点 frame 映射到 viewport/screen 坐标（累计祖先 scroll，不含 clip）。
 pub fn node_viewport_frame(scene: &impl ScenePaint, node_id: NodeId) -> Rect {
-    let frame = scene.node_frame(node_id);
-    let (sx, sy) = cumulative_scroll(scene, node_id);
-    content_to_viewport(frame, sx, sy)
+    node_visual_rect(scene, node_id, scene.node_frame(node_id))
 }
 
 /// 节点在 viewport/screen 空间的可见矩形（累计祖先 scroll 与 children_clip）。
@@ -50,26 +89,28 @@ pub fn visible_viewport_rect(scene: &impl ScenePaint, node_id: NodeId) -> Option
     if !scene.node_visible(node_id) {
         return None;
     }
-    let mut rect = scene.node_frame(node_id);
+    let frame = scene.node_frame(node_id);
+    let mut rect = node_visual_rect(scene, node_id, frame);
     if rect.w <= 0.0 || rect.h <= 0.0 {
         return None;
     }
 
-    let mut current = node_id;
-    while let Some(parent_id) = scene.parent(current) {
-        if !scene.node_visible(parent_id) {
+    let path = visual_path(scene, node_id);
+    let mut transform = Transform::identity();
+    for (index, id) in path.iter().copied().enumerate() {
+        if !scene.node_visible(id) {
             return None;
         }
-        if is_viewport(scene, parent_id) {
-            if let Some((ox, oy)) = scene.scroll_offset(parent_id) {
-                rect = content_to_viewport(rect, ox, oy);
+        transform = transform.concat(scene.node_transform(id));
+        if index + 1 < path.len() {
+            let node_frame = scene.node_frame(id);
+            if let Some(clip) = scene.children_clip(id, node_frame) {
+                rect = rect.intersect(&transform.transform_rect(clip))?;
+            }
+            if let Some((sx, sy)) = scene.scroll_offset(id) {
+                transform = transform.concat(Transform::translate(-sx, -sy));
             }
         }
-        let parent_frame = scene.node_frame(parent_id);
-        if let Some(clip) = scene.children_clip(parent_id, parent_frame) {
-            rect = rect.intersect(&clip)?;
-        }
-        current = parent_id;
     }
 
     Some(rect)
@@ -80,13 +121,11 @@ pub fn needs_paint(scene: &impl ScenePaint, node_id: NodeId, dirty_region: &Dirt
     if scene.node_dirty(node_id) {
         return true;
     }
-    let frame = scene.node_frame(node_id);
+    let frame = node_viewport_frame(scene, node_id);
     if frame.w <= 0.0 || frame.h <= 0.0 {
         return false;
     }
-    let (sx, sy) = cumulative_scroll(scene, node_id);
-    let vp = content_to_viewport(frame, sx, sy);
-    dirty_region.intersects(vp)
+    dirty_region.intersects(frame)
 }
 
 /// overlay / dirty_rect 区域是否需重绘。
@@ -99,9 +138,7 @@ pub fn needs_paint_rect(
     if area.w <= 0.0 || area.h <= 0.0 {
         return false;
     }
-    let (sx, sy) = cumulative_scroll(scene, node_id);
-    let vp = content_to_viewport(area, sx, sy);
-    dirty_region.intersects(vp)
+    dirty_region.intersects(node_visual_rect(scene, node_id, area))
 }
 
 fn is_viewport(scene: &impl ScenePaint, id: NodeId) -> bool {
