@@ -1,7 +1,8 @@
 use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
+use crate::ui::view::{column, ViewAdapter};
 use crate::ui::widgets::input::form::*;
-use crate::ui::{FieldError, Trigger};
+use crate::ui::{FieldError, Input, State, Trigger};
 
 struct FixedChild(Size);
 
@@ -265,7 +266,7 @@ fn successful_validation_returns_typed_values() {
 
 #[test]
 fn set_value_revalidates_without_rebuilding_rules() {
-    let mut form = Form::new()
+    let form = Form::new()
         .field("user", "User")
         .default("")
         .required("required")
@@ -323,7 +324,7 @@ fn duplicate_field_uses_the_last_declaration() {
 
 #[test]
 fn validation_triggers_activate_only_at_the_declared_boundary() {
-    let mut form = Form::new()
+    let form = Form::new()
         .field("submit", "Submit")
         .default("")
         .required("submit required")
@@ -365,7 +366,7 @@ fn validation_triggers_activate_only_at_the_declared_boundary() {
 
 #[test]
 fn changing_a_field_replaces_or_clears_its_active_error() {
-    let mut form = Form::new()
+    let form = Form::new()
         .field("change", "Change")
         .default("ready")
         .required("required")
@@ -392,7 +393,7 @@ fn changing_a_field_replaces_or_clears_its_active_error() {
 
 #[test]
 fn dependent_validator_reads_typed_values_and_runs_on_submit() {
-    let mut form = Form::new()
+    let form = Form::new()
         .field("password", "Password")
         .default("secret")
         .field("confirm", "Confirm")
@@ -420,7 +421,7 @@ fn changing_a_dependency_cascades_in_declaration_order() {
     let code_calls = Rc::new(Cell::new(0));
     let region_counter = Rc::clone(&region_calls);
     let code_counter = Rc::clone(&code_calls);
-    let mut form = Form::new()
+    let form = Form::new()
         .field("country", "Country")
         .default("EU")
         .field("region", "Region")
@@ -469,7 +470,7 @@ fn cyclic_dependencies_are_revalidated_once_per_change() {
     let right_calls = Rc::new(Cell::new(0));
     let left_counter = Rc::clone(&left_calls);
     let right_counter = Rc::clone(&right_calls);
-    let mut form = Form::new()
+    let form = Form::new()
         .field("left", "Left")
         .default("same")
         .depends_on("right", move |_, _| {
@@ -487,4 +488,135 @@ fn cyclic_dependencies_are_revalidated_once_per_change() {
     assert!(form.set_value("left", "changed"));
     assert_eq!(left_calls.get(), 0);
     assert_eq!(right_calls.get(), 1);
+}
+
+#[test]
+fn form_input_item_binds_string_state_and_reconciles_inline_error() {
+    let value = State::new("ready".to_string());
+    let form = Form::new()
+        .field("name", "Name")
+        .default("ready")
+        .required("Name is required")
+        .validate_trigger(Trigger::OnChange)
+        .build();
+    let mut tree = ViewAdapter::build(
+        form.input_item("name", &value)
+            .expect("declared field should build an input item"),
+    );
+    let root = tree.root_id().expect("form item root");
+
+    let item = tree
+        .get(root)
+        .and_then(|node| node.component().as_any().downcast_ref::<FormItem>())
+        .expect("form item component");
+    assert_eq!(item.get_status(), ValidateStatus::None);
+
+    value.set(String::new());
+    ViewAdapter::reconcile(
+        &mut tree,
+        form.input_item("name", &value)
+            .expect("declared field should reconcile an input item"),
+    );
+
+    let item = tree
+        .get(root)
+        .and_then(|node| node.component().as_any().downcast_ref::<FormItem>())
+        .expect("reconciled form item component");
+    assert_eq!(item.get_status(), ValidateStatus::Error);
+    assert!(matches!(
+        item.snapshot_fields(),
+        SnapshotFields::FormItem { help, .. } if help == "Name is required"
+    ));
+    let input = tree
+        .get(root)
+        .and_then(|node| node.children().first().copied())
+        .and_then(|id| tree.get(id))
+        .and_then(|node| node.component().as_any().downcast_ref::<Input>())
+        .expect("bound input child");
+    assert_eq!(input.current_value(), "");
+}
+
+#[test]
+fn form_input_item_blur_keeps_error_status_when_help_is_hidden() {
+    let value = State::new(String::new());
+    let form = Form::new()
+        .field("name", "Name")
+        .default("")
+        .required("Name is required")
+        .validate_trigger(Trigger::OnBlur)
+        .build();
+    let mut tree = ViewAdapter::build(
+        form.input_item("name", &value)
+            .expect("declared field should build an input item")
+            .show_error(false),
+    );
+    let root = tree.root_id().expect("form item root");
+    let input = tree.get(root).expect("form item").children()[0];
+
+    assert_eq!(
+        tree.dispatch_to(input, &SystemEvent::FocusOut),
+        EventResult::Handled
+    );
+    ViewAdapter::reconcile(
+        &mut tree,
+        form.input_item("name", &value)
+            .expect("declared field should reconcile an input item")
+            .show_error(false),
+    );
+
+    let item = tree
+        .get(root)
+        .and_then(|node| node.component().as_any().downcast_ref::<FormItem>())
+        .expect("reconciled form item component");
+    assert_eq!(item.get_status(), ValidateStatus::Error);
+    assert!(matches!(
+        item.snapshot_fields(),
+        SnapshotFields::FormItem { help, .. } if help.is_empty()
+    ));
+}
+
+#[test]
+fn cloned_form_model_shares_values_and_rejects_unknown_input_items() {
+    let value = State::new("ready".to_string());
+    let form = Form::new().field("name", "Name").default("initial").build();
+    let cloned = form.clone();
+
+    assert!(form.input_item("missing", &value).is_none());
+    assert!(cloned.set_value("name", "updated".to_string()));
+
+    let values = form.validate().expect("shared value should remain valid");
+    assert_eq!(
+        values.get::<String>("name").map(String::as_str),
+        Some("updated")
+    );
+}
+
+#[test]
+fn form_submit_registers_focus_for_the_first_bound_error() {
+    let first = State::new(String::new());
+    let second = State::new(String::new());
+    let form = Form::new()
+        .field("first", "First")
+        .default("")
+        .required("First is required")
+        .field("second", "Second")
+        .default("")
+        .required("Second is required")
+        .build();
+    let mut tree = ViewAdapter::build(column((
+        form.input_item("first", &first),
+        form.input_item("second", &second),
+    )));
+    tree.set_app_state(AppState::new());
+    tree.layout();
+    let root = tree.root_id().expect("form column root");
+    let first_item = tree.get(root).expect("form column").children()[0];
+    let first_input = tree.get(first_item).expect("first form item").children()[0];
+
+    let errors = form.submit().expect_err("empty form should fail submit");
+
+    assert_eq!(errors[0].field(), "first");
+    assert!(tree.has_app_state_focus_requests());
+    assert!(tree.drain_app_state_focus_requests());
+    assert_eq!(tree.managers().focus.focused_component(), Some(first_input));
 }

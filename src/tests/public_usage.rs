@@ -116,7 +116,7 @@ fn documented_raw_event_and_accessibility_builders_compile_from_prelude() {
 
 #[test]
 fn documented_form_validation_returns_typed_values_from_prelude() {
-    let mut form = Form::new()
+    let form = Form::new()
         .field("user", "Username")
         .default("")
         .required("username required")
