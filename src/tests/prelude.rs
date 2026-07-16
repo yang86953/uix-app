@@ -33,11 +33,11 @@ pub use crate::ui::{
     Divider, DividerDirection, DividerOrientation, Drawer, DrawerPlacement, Dropdown, Empty,
     FieldError, FloatButton, FloatButtonBackTop, Footer, Form, FormBuilder, FormInputItem,
     FormInputNumberItem, FormItem, FormLayout, FormListBuilder, FormListError, FormListFieldError,
-    FormListFields, FormListItemId, FormListModel, FormListValues, FormModel, Grid, Header, Icon,
-    Image, Input, InputNumber, InputNumberValue, IntoFormValue, Label, Layout, LineChart, LineData,
-    List, Mentions, Menu, MenuItem, MenuMode, Message, MessageItem, Modal, ModalBuilder,
-    ModalContext, NavGroup, NavItem, Navigation, Notification, NotificationItem, OptGroup,
-    Pagination, PickerMode, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover,
+    FormListFields, FormListItemId, FormListModel, FormListValues, FormModel, FormSelectItem, Grid,
+    Header, Icon, Image, Input, InputNumber, InputNumberValue, IntoFormValue, Label, Layout,
+    LineChart, LineData, List, Mentions, Menu, MenuItem, MenuMode, Message, MessageItem, Modal,
+    ModalBuilder, ModalContext, NavGroup, NavItem, Navigation, Notification, NotificationItem,
+    OptGroup, Pagination, PickerMode, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover,
     PopoverPlacement, PopoverTrigger, PresetDate, ProgressBar, ProgressMode, ProgressType, QRCode,
     Radio, RadioDirection, Rate, ResultType, ResultView, RichText, RichTextSegment, RichTextStyle,
     ScrollView, Segmented, Select, SelectableItem, SelectableList, SharedActive, Sider, Skeleton,
@@ -225,6 +225,7 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<FormListModel>();
     assert_exported::<FormListValues>();
     assert_exported::<FormModel>();
+    assert_exported::<FormSelectItem>();
     assert_exported::<Trigger>();
     assert_form_value::<String>();
     assert_exported::<LineData>();
