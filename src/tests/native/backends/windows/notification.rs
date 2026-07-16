@@ -1,4 +1,29 @@
-use crate::native::backends::windows::notification::copy_notification_text;
+use crate::native::backends::windows::notification::{
+    copy_notification_text, notification_owner_action, NotificationOwnerAction,
+};
+
+#[test]
+fn notification_owner_action_tracks_the_registered_window() {
+    assert_eq!(
+        notification_owner_action(0, 0),
+        NotificationOwnerAction::Ignore
+    );
+    assert_eq!(
+        notification_owner_action(0, 11),
+        NotificationOwnerAction::Add { owner: 11 }
+    );
+    assert_eq!(
+        notification_owner_action(11, 11),
+        NotificationOwnerAction::Modify { owner: 11 }
+    );
+    assert_eq!(
+        notification_owner_action(11, 22),
+        NotificationOwnerAction::Move {
+            previous: 11,
+            owner: 22,
+        }
+    );
+}
 
 #[test]
 fn notification_text_reserves_a_null_terminator() {

@@ -26,16 +26,46 @@ pub(crate) fn copy_notification_text(destination: &mut [u16], text: &str) {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NotificationOwnerAction {
+    Ignore,
+    Add { owner: usize },
+    Modify { owner: usize },
+    Move { previous: usize, owner: usize },
+}
+
+pub(crate) fn notification_owner_action(
+    active_owner: usize,
+    target_owner: usize,
+) -> NotificationOwnerAction {
+    if target_owner == 0 {
+        NotificationOwnerAction::Ignore
+    } else if active_owner == 0 {
+        NotificationOwnerAction::Add {
+            owner: target_owner,
+        }
+    } else if active_owner == target_owner {
+        NotificationOwnerAction::Modify {
+            owner: target_owner,
+        }
+    } else {
+        NotificationOwnerAction::Move {
+            previous: active_owner,
+            owner: target_owner,
+        }
+    }
+}
+
 pub struct WindowsNotification {
     hwnd: *mut std::ffi::c_void,
-    active: bool,
+    active_owner: usize,
 }
 
 impl WindowsNotification {
     pub fn new() -> Self {
         Self {
             hwnd: ptr::null_mut(),
-            active: false,
+            active_owner: 0,
         }
     }
     pub fn set_hwnd(&mut self, hwnd: *mut std::ffi::c_void) {
@@ -43,15 +73,19 @@ impl WindowsNotification {
     }
     /// Remove the notification icon. Called on Drop.
     pub fn remove_icon(&mut self) {
-        if self.active && !self.hwnd.is_null() {
-            unsafe {
-                let mut nid: NOTIFYICONDATAW = std::mem::zeroed();
-                nid.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
-                nid.hWnd = self.hwnd;
-                nid.uID = 1;
-                Shell_NotifyIconW(NIM_DELETE, &mut nid);
-            }
-            self.active = false;
+        let owner = std::mem::take(&mut self.active_owner);
+        if owner != 0 {
+            Self::remove_icon_for(owner);
+        }
+    }
+
+    fn remove_icon_for(owner: usize) {
+        unsafe {
+            let mut nid: NOTIFYICONDATAW = std::mem::zeroed();
+            nid.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
+            nid.hWnd = owner as *mut std::ffi::c_void;
+            nid.uID = 1;
+            Shell_NotifyIconW(NIM_DELETE, &mut nid);
         }
     }
 }
@@ -64,13 +98,25 @@ impl Default for WindowsNotification {
 
 impl INotification for WindowsNotification {
     fn show(&mut self, title: &str, message: &str) {
-        if self.hwnd.is_null() {
+        let action = notification_owner_action(self.active_owner, self.hwnd as usize);
+        let (owner, operation) = match action {
+            NotificationOwnerAction::Ignore => return,
+            NotificationOwnerAction::Add { owner } => (owner, NIM_ADD),
+            NotificationOwnerAction::Modify { owner } => (owner, NIM_MODIFY),
+            NotificationOwnerAction::Move { previous, owner } => {
+                Self::remove_icon_for(previous);
+                self.active_owner = 0;
+                (owner, NIM_ADD)
+            }
+        };
+        let hwnd = owner as *mut std::ffi::c_void;
+        if hwnd.is_null() {
             return;
         }
         unsafe {
             let mut nid: NOTIFYICONDATAW = std::mem::zeroed();
             nid.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
-            nid.hWnd = self.hwnd;
+            nid.hWnd = hwnd;
             nid.uID = 1;
             nid.uFlags = NIF_INFO | NIF_ICON | NIF_TIP;
             nid.uCallbackMessage = WM_APP_NOTIFY;
@@ -78,12 +124,13 @@ impl INotification for WindowsNotification {
             copy_notification_text(&mut nid.szInfo, message);
             nid.dwInfoFlags = NIIF_INFO;
             nid.hIcon = LoadIconW(ptr::null_mut(), IDI_APPLICATION as *const u16);
-            let operation = if self.active { NIM_MODIFY } else { NIM_ADD };
             if Shell_NotifyIconW(operation, &mut nid) != 0 {
-                self.active = true;
-            } else if self.active {
-                self.active = false;
-                self.active = Shell_NotifyIconW(NIM_ADD, &mut nid) != 0;
+                self.active_owner = owner;
+            } else if operation == NIM_MODIFY {
+                self.active_owner = 0;
+                if Shell_NotifyIconW(NIM_ADD, &mut nid) != 0 {
+                    self.active_owner = owner;
+                }
             }
         }
     }
