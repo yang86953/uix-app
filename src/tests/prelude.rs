@@ -19,11 +19,12 @@ pub use crate::ui::view::{
 };
 use crate::ui::widgets::Container;
 pub use crate::ui::{
-    AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute, ClickEvent,
-    ComponentConfigSnapshot, ComponentHandle, HandlerId, HandlerOptions, HandlerRegistration,
-    IntoWidgetNode, SemanticPayload, SnapshotCollapsePanel, SnapshotField, SnapshotSource,
-    SnapshotTableColumn, SnapshotTableColumnGroup, SnapshotTransferItem, SnapshotTreeNode,
-    SnapshotValue, SystemEventKind, WidgetChildren,
+    AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AnimationGroup,
+    AnimationGroupError, AnimationGroupItem, AriaAttribute, ClickEvent, ComponentConfigSnapshot,
+    ComponentHandle, HandlerId, HandlerOptions, HandlerRegistration, IntoWidgetNode,
+    SemanticPayload, SnapshotCollapsePanel, SnapshotField, SnapshotSource, SnapshotTableColumn,
+    SnapshotTableColumnGroup, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue,
+    SystemEventKind, WidgetChildren,
 };
 pub use crate::ui::{
     Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus, BarChart,
@@ -215,6 +216,9 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<DrawerPlacement>();
     assert_exported::<DynTokens>();
     assert_exported::<Easing>();
+    assert_exported::<AnimationGroup>();
+    assert_exported::<AnimationGroupError>();
+    assert_exported::<AnimationGroupItem>();
     assert_exported::<Effect>();
     assert_exported::<FieldError>();
     assert_exported::<FormBuilder>();

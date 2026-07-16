@@ -6,8 +6,8 @@ use crate::app::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry};
 use crate::app::window_driver::sync_animation_registrations;
 use crate::core::Point;
 use crate::ui::animation::{
-    Animated, Animation, AnimationConfig, Easing, Keyframe, KeyframeAnimation, KeyframeError,
-    Spring, SpringAnimation, TransitionPlayer,
+    Animated, Animation, AnimationConfig, AnimationGroup, AnimationGroupError, Easing, Keyframe,
+    KeyframeAnimation, KeyframeError, Spring, SpringAnimation, TransitionPlayer,
 };
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::view::{label, ViewAdapter, ViewNode};
@@ -91,6 +91,141 @@ fn keyframe_macro_properties_share_one_timeline_and_registration() {
     assert_eq!(tree.update_animations(0.5).len(), 1);
     assert_eq!(animated.value(), to);
     assert!(animated.is_finished());
+}
+
+#[test]
+fn parallel_animation_group_reuses_children_and_pauses_them_together() {
+    let opacity = Animated::new(0.0_f32).to(1.0, 1.0, Easing::linear);
+    let offset = Animated::new(Point::new(0.0, 0.0)).to(Point::new(0.0, 20.0), 2.0, Easing::linear);
+    let group = AnimationGroup::parallel([opacity.group_item(), offset.group_item()])
+        .expect("finite parallel group");
+    assert_eq!(group.duration(), 2.0);
+
+    let root_group = group.clone();
+    let root_opacity = opacity.clone();
+    let root_offset = offset.clone();
+    let mut tree = ViewAdapter::build_nodes(ViewAdapter::capture_root(move || {
+        let _ = root_group.progress();
+        label(format!("offset={}", root_offset.value().y)).opacity(root_opacity.value())
+    }));
+    assert_eq!(tree.animated_source_registrations().len(), 2);
+
+    let updates = tree.update_animations(0.5);
+    assert_eq!(updates.len(), 2);
+    assert!((opacity.value() - 0.5).abs() < 1e-6);
+    assert!((offset.value().y - 5.0).abs() < 1e-6);
+    assert!((group.progress() - 0.25).abs() < 1e-6);
+
+    group.pause();
+    assert!(tree.update_animations(1.0).is_empty());
+    assert!((opacity.value() - 0.5).abs() < 1e-6);
+    assert!((offset.value().y - 5.0).abs() < 1e-6);
+
+    group.resume();
+    assert_eq!(tree.update_animations(0.5).len(), 2);
+    assert_eq!(opacity.value(), 1.0);
+    assert!((offset.value().y - 10.0).abs() < 1e-6);
+    assert!((group.progress() - 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn sequential_animation_group_consumes_large_delta_across_delay() {
+    let first = Animated::new(0.0_f32).to(1.0, 1.0, Easing::linear);
+    let second = Animated::new(10.0_f32).to(20.0, 1.0, Easing::linear);
+    let before_group = Instant::now();
+    let group = AnimationGroup::sequential([
+        first.group_item(),
+        AnimationGroup::delay(0.5),
+        second.group_item(),
+    ])
+    .expect("finite sequential group");
+    let after_group = Instant::now();
+    assert_eq!(group.duration(), 2.5);
+    assert!(group.progress().abs() < 1e-6);
+
+    let root_group = group.clone();
+    let root_first = first.clone();
+    let root_second = second.clone();
+    let mut tree = ViewAdapter::build_nodes(ViewAdapter::capture_root(move || {
+        let _ = root_group.progress();
+        label(format!("{}:{}", root_first.value(), root_second.value()))
+    }));
+    assert_eq!(tree.animated_source_registrations().len(), 3);
+
+    let updates = tree.update_animations_at(after_group + Duration::from_secs(2), 2.0);
+    assert_eq!(updates.len(), 3);
+    assert_eq!(first.value(), 1.0);
+    assert!(second.value() >= 14.9 && second.value() <= 15.1);
+    assert!(group.progress() >= 0.79 && group.progress() <= 0.81);
+
+    let _ = tree.update_animations_at(before_group + Duration::from_secs(10), 8.0);
+    assert_eq!(second.value(), 20.0);
+    assert_eq!(group.progress(), 1.0);
+    assert!(group.is_finished());
+
+    group.restart();
+    assert_eq!(first.value(), 0.0);
+    assert_eq!(second.value(), 10.0);
+    assert!(!group.is_finished());
+    group.stop();
+    assert_eq!(first.value(), 1.0);
+    assert_eq!(second.value(), 20.0);
+    assert!(group.is_finished());
+}
+
+#[test]
+fn animation_group_rejects_non_finite_timeline_items() {
+    assert_eq!(
+        AnimationGroup::parallel([]).expect_err("empty group should fail"),
+        AnimationGroupError::Empty
+    );
+
+    let inactive = Animated::new(0.0_f32);
+    assert_eq!(
+        AnimationGroup::parallel([inactive.group_item()])
+            .expect_err("resting value has no group playback"),
+        AnimationGroupError::InactiveItem(0)
+    );
+
+    let duplicated = Animated::new(0.0_f32).to(1.0, 1.0, Easing::linear);
+    assert_eq!(
+        AnimationGroup::sequential([duplicated.group_item(), duplicated.group_item()])
+            .expect_err("one source must not be scheduled twice"),
+        AnimationGroupError::DuplicateItem {
+            first: 0,
+            duplicate: 1,
+        }
+    );
+
+    let delayed = Animated::new(0.0_f32).to_after(1.0, 1.0, 1.0, Easing::linear);
+    assert_eq!(
+        AnimationGroup::parallel([delayed.group_item()])
+            .expect_err("pre-delayed item should be explicit"),
+        AnimationGroupError::DelayedItem(0)
+    );
+
+    let spring = Animated::new(0.0_f32).to_spring(1.0, Spring::snappy());
+    assert_eq!(
+        AnimationGroup::parallel([spring.group_item()])
+            .expect_err("spring has no finite group duration"),
+        AnimationGroupError::UnboundedItem(0)
+    );
+
+    let repeating = Animated::new(0.0_f32)
+        .to(1.0, 1.0, Easing::linear)
+        .loop_forever();
+    assert_eq!(
+        AnimationGroup::parallel([repeating.group_item()])
+            .expect_err("infinite loop has no finite group duration"),
+        AnimationGroupError::UnboundedItem(0)
+    );
+
+    let zero = Animated::new(0.0_f32).to(1.0, 0.0, Easing::linear);
+    let group = AnimationGroup::sequential([zero.group_item(), AnimationGroup::delay(0.0)])
+        .expect("zero-duration items are finite");
+    assert_eq!(group.duration(), 0.0);
+    assert_eq!(group.progress(), 1.0);
+    assert!(group.is_finished());
 }
 
 #[test]
@@ -451,6 +586,20 @@ fn delayed_animated_waits_on_one_deadline_before_open_frame_work() {
 
     let _ = tree.update_animations_at(deadline + Duration::from_millis(500), 0.5);
     assert!((animated.value() - 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn delayed_animated_consumes_time_past_a_late_deadline() {
+    let animated = Animated::new(0.0_f32).to_after(1.0, 1.0, 1.0, Easing::linear);
+    let mut tree = ViewAdapter::build_nodes(animated_root(&animated));
+    let deadline = tree.animated_source_registrations()[0]
+        .1
+        .expect("delayed animation deadline");
+
+    let updates = tree.update_animations_at(deadline + Duration::from_millis(500), 1.5);
+    assert_eq!(updates.len(), 1);
+    assert!(updates[0].1);
+    assert!((animated.value() - 0.5).abs() < 0.01);
 }
 
 #[test]
