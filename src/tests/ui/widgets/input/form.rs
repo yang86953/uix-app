@@ -2,7 +2,7 @@ use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::view::{column, ViewAdapter};
 use crate::ui::widgets::input::form::*;
-use crate::ui::{FieldError, Input, InputNumber, State, Trigger};
+use crate::ui::{FieldError, Input, InputNumber, Select, State, Trigger};
 
 struct FixedChild(Size);
 
@@ -702,12 +702,133 @@ fn form_input_number_focus_out_validates_the_committed_typed_value() {
 }
 
 #[test]
+fn form_select_item_binds_state_and_reconciles_inline_error() {
+    let selected = State::new("Beta".to_string());
+    let form = Form::new()
+        .field("choice", "Choice")
+        .default("Beta")
+        .custom(|value| {
+            (value != "Alpha")
+                .then_some(())
+                .ok_or_else(|| "Alpha is unavailable".to_string())
+        })
+        .validate_trigger(Trigger::OnChange)
+        .build();
+    let options = ["Alpha", "Beta", "Gamma"];
+    let mut tree = ViewAdapter::build(
+        form.select_item("choice", &selected)
+            .expect("declared field should build a select item")
+            .options(options)
+            .searchable()
+            .placeholder("Choose one"),
+    );
+    let root = tree.root_id().expect("select form item root");
+    let select = tree.get(root).expect("select form item").children()[0];
+
+    let _ = tree.dispatch_to(
+        select,
+        &SystemEvent::PointerDown {
+            pos: Point::new(10.0, 10.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        },
+    );
+    assert_eq!(
+        tree.dispatch_to(
+            select,
+            &SystemEvent::PointerDown {
+                pos: Point::new(10.0, 40.0),
+                button: MouseButton::Left,
+                mods: KeyMod::NONE,
+            },
+        ),
+        EventResult::Handled
+    );
+    assert_eq!(selected.get(), "Alpha");
+    assert_eq!(
+        form.field_error("choice").as_ref().map(FieldError::message),
+        Some("Alpha is unavailable")
+    );
+
+    selected.set("Gamma".to_string());
+    ViewAdapter::reconcile(
+        &mut tree,
+        form.select_item("choice", &selected)
+            .expect("declared field should reconcile a select item")
+            .options(options)
+            .searchable()
+            .placeholder("Choose one"),
+    );
+
+    assert!(form.field_error("choice").is_none());
+    let select = tree
+        .get(root)
+        .and_then(|node| node.children().first().copied())
+        .and_then(|id| tree.get(id))
+        .and_then(|node| node.component().as_any().downcast_ref::<Select>())
+        .expect("bound select child");
+    assert_eq!(select.current_value().as_deref(), Some("Gamma"));
+    let values = form.validate().expect("replacement selection should pass");
+    assert_eq!(
+        values.get::<String>("choice").map(String::as_str),
+        Some("Gamma")
+    );
+}
+
+#[test]
+fn form_select_item_activates_on_blur_after_selection() {
+    let selected = State::new("Beta".to_string());
+    let form = Form::new()
+        .field("choice", "Choice")
+        .default("Beta")
+        .required("Choose one")
+        .validate_trigger(Trigger::OnBlur)
+        .build();
+    let mut tree = ViewAdapter::build(
+        form.select_item("choice", &selected)
+            .expect("declared field should build a select item")
+            .options(["", "Beta"]),
+    );
+    let root = tree.root_id().expect("select form item root");
+    let select = tree.get(root).expect("select form item").children()[0];
+
+    let _ = tree.dispatch_to(
+        select,
+        &SystemEvent::PointerDown {
+            pos: Point::new(10.0, 10.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        },
+    );
+    let _ = tree.dispatch_to(
+        select,
+        &SystemEvent::PointerDown {
+            pos: Point::new(10.0, 40.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        },
+    );
+
+    assert_eq!(selected.get(), "");
+    assert!(form.field_error("choice").is_none());
+    assert_eq!(
+        tree.dispatch_to(select, &SystemEvent::FocusOut),
+        EventResult::Handled
+    );
+    assert_eq!(
+        form.field_error("choice").as_ref().map(FieldError::message),
+        Some("Choose one")
+    );
+}
+
+#[test]
 fn cloned_form_model_shares_values_and_rejects_unknown_input_items() {
     let value = State::new("ready".to_string());
     let form = Form::new().field("name", "Name").default("initial").build();
     let cloned = form.clone();
 
     assert!(form.input_item("missing", &value).is_none());
+    assert!(form.select_item("missing", &value).is_none());
     assert!(cloned.set_value("name", "updated".to_string()));
 
     let values = form.validate().expect("shared value should remain valid");
@@ -769,4 +890,31 @@ fn form_submit_focuses_a_bound_numeric_error() {
     assert_eq!(errors[0].field(), "age");
     assert!(tree.drain_app_state_focus_requests());
     assert_eq!(tree.managers().focus.focused_component(), Some(input));
+}
+
+#[test]
+fn form_submit_focuses_a_bound_select_error() {
+    let selected = State::new(String::new());
+    let form = Form::new()
+        .field("choice", "Choice")
+        .default("")
+        .required("Choose one")
+        .build();
+    let mut tree = ViewAdapter::build(
+        form.select_item("choice", &selected)
+            .expect("declared field should build a select item")
+            .options(["Alpha", "Beta"]),
+    );
+    tree.set_app_state(AppState::new());
+    tree.layout();
+    let root = tree.root_id().expect("select form item root");
+    let select = tree.get(root).expect("select form item").children()[0];
+
+    let errors = form
+        .submit()
+        .expect_err("empty selection should fail submit");
+
+    assert_eq!(errors[0].field(), "choice");
+    assert!(tree.drain_app_state_focus_requests());
+    assert_eq!(tree.managers().focus.focused_component(), Some(select));
 }

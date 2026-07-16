@@ -4,7 +4,10 @@ use crate::native::traits::input::ControlSize;
 use crate::ui::view::{input, EventExt, View, ViewNode};
 use crate::ui::{EventResult, FocusHandle, SemanticKind, State, SystemEvent};
 
-use super::{FormItem, FormModel, InputNumber, InputNumberValue, IntoFormValue, ValidateStatus};
+use super::{
+    FormItem, FormModel, InputNumber, InputNumberValue, IntoFormValue, OptGroup, Select,
+    ValidateStatus,
+};
 
 /// 一个已登记字段的声明式文本输入项。
 pub struct FormInputItem {
@@ -151,6 +154,115 @@ where
     }
 }
 
+/// 一个已登记字段的声明式单选输入项。
+pub struct FormSelectItem {
+    model: FormModel,
+    field: String,
+    value: State<String>,
+    focus_handle: FocusHandle,
+    options: Vec<String>,
+    optgroups: Vec<OptGroup>,
+    placeholder: String,
+    searchable: bool,
+    disabled: Option<bool>,
+    size: Option<ControlSize>,
+    show_error: bool,
+}
+
+impl FormSelectItem {
+    /// 设置平铺选项。
+    pub fn options<I, S>(mut self, options: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.options = options
+            .into_iter()
+            .map(|option| option.as_ref().to_string())
+            .collect();
+        self
+    }
+
+    /// 设置分组选项。
+    pub fn optgroups(mut self, groups: Vec<OptGroup>) -> Self {
+        self.optgroups = groups;
+        self
+    }
+
+    /// 启用可搜索单选模式。
+    pub fn searchable(mut self) -> Self {
+        self.searchable = true;
+        self
+    }
+
+    /// 设置无选中项时的占位文本。
+    pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
+        self.placeholder = placeholder.into();
+        self
+    }
+
+    /// 设置是否禁用输入。
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = Some(disabled);
+        self
+    }
+
+    /// 设置输入控件尺寸。
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.size = Some(size);
+        self
+    }
+
+    /// 控制是否在字段下方显示首条错误文本；错误状态仍会保留。
+    pub fn show_error(mut self, show_error: bool) -> Self {
+        self.show_error = show_error;
+        self
+    }
+}
+
+impl View for FormSelectItem {
+    fn build(self) -> ViewNode {
+        let current = self.value.get();
+        self.model.sync_text_value(&self.field, &current);
+
+        let mut select = if self.searchable {
+            Select::searchable()
+        } else {
+            Select::new()
+        }
+        .options(self.options)
+        .optgroups(self.optgroups)
+        .placeholder(self.placeholder)
+        .value(&self.value);
+        if let Some(disabled) = self.disabled {
+            select = select.disabled(disabled);
+        }
+        if let Some(size) = self.size {
+            select = select.size(size);
+        }
+
+        let change_model = self.model.clone();
+        let change_field = self.field.clone();
+        let change_value = self.value.clone();
+        let blur_model = self.model.clone();
+        let blur_field = self.field.clone();
+        let input = ViewNode::leaf(select)
+            .on_semantic(SemanticKind::Change, move |_| {
+                let value = change_value.get();
+                change_model.sync_text_value(&change_field, &value);
+            })
+            .on_focus(move |event| {
+                if matches!(event, SystemEvent::FocusOut) {
+                    blur_model.blur(&blur_field);
+                }
+                EventResult::NotHandled
+            })
+            .focus_handle(&self.focus_handle);
+
+        form_item_shell(&self.model, &self.field, self.show_error, input)
+    }
+}
+
 fn form_item_shell(model: &FormModel, field: &str, show_error: bool, input: ViewNode) -> ViewNode {
     let error = model.field_error(field);
     let status = if error.is_some() {
@@ -218,6 +330,31 @@ impl FormModel {
             value: value.clone(),
             focus_handle,
             input_number: InputNumber::new(),
+            show_error: true,
+        })
+    }
+
+    /// 把已声明的字符串字段绑定为 `FormItem + Select` 单选 View。
+    ///
+    /// 字段不存在时返回 `None`；选项文本同时作为 Select 与表单的 typed `String` 真值。
+    pub fn select_item(
+        &self,
+        field: impl AsRef<str>,
+        value: &State<String>,
+    ) -> Option<FormSelectItem> {
+        let field = field.as_ref();
+        let focus_handle = self.focus_handle_for(field)?;
+        Some(FormSelectItem {
+            model: self.clone(),
+            field: field.to_string(),
+            value: value.clone(),
+            focus_handle,
+            options: Vec::new(),
+            optgroups: Vec::new(),
+            placeholder: String::new(),
+            searchable: false,
+            disabled: None,
+            size: None,
             show_error: true,
         })
     }
