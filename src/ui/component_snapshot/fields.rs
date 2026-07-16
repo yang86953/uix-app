@@ -510,6 +510,7 @@ pub enum SnapshotFields {
         column_groups: Vec<SnapshotTableColumnGroup>,
         rows: Vec<TableRow>,
         row_keys: Vec<String>,
+        view_columns: Vec<usize>,
         row_h: f32,
         header_h: f32,
         expandable: bool,

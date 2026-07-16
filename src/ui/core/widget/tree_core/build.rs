@@ -203,6 +203,7 @@ impl WidgetTree {
             self.build_node(child, Some(id));
         }
         self.refresh_virtual_scroll_component(id, None);
+        self.refresh_table_cell_component(id);
         self.refresh_table_expand_component(id);
         id
     }

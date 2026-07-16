@@ -43,6 +43,98 @@ fn table_without_virtual_scroll_keeps_the_full_row_range() {
 }
 
 #[test]
+fn typed_view_cells_materialize_only_the_virtual_row_window() {
+    use crate::ui::view::{button, ViewAdapter};
+
+    #[derive(Debug)]
+    struct Row {
+        id: usize,
+        label: String,
+    }
+
+    let rows = (0..100)
+        .map(|id| Row {
+            id,
+            label: format!("Row {id}"),
+        })
+        .collect::<Vec<_>>();
+    let calls = Rc::new(Cell::new(0));
+    let renderer_calls = Rc::clone(&calls);
+    let table = Table::data(rows, |row| row.id.to_string())
+        .expect("row ids are unique")
+        .columns(vec![TableColumn::new("Action", 160.0)
+            .bind(|row: &Row| row.label.clone())
+            .render(move |row: &Row| {
+                renderer_calls.set(renderer_calls.get() + 1);
+                button(row.label.clone())
+            })])
+        .virtual_scroll(true)
+        .virtual_row_height(28.0);
+    let mut tree = ViewAdapter::build(table);
+    let root = tree.root_id().expect("typed table root");
+    tree.get_mut(root)
+        .expect("typed table node")
+        .set_frame(Rect::new(0.0, 0.0, 160.0, 120.0));
+    tree.layout();
+
+    let (range, child_count) = {
+        let node = tree.get(root).expect("typed table node");
+        let table = node
+            .component()
+            .as_any()
+            .downcast_ref::<Table>()
+            .expect("Table component");
+        (
+            table.cell_view_range_for_frame(node.frame()),
+            node.children().len(),
+        )
+    };
+    assert_eq!(child_count, range.1 - range.0);
+    assert!(child_count < 100);
+    assert!(calls.get() < 100);
+    let first_key = tree
+        .get(root)
+        .expect("typed table node")
+        .children()
+        .first()
+        .and_then(|id| tree.get(*id))
+        .and_then(|node| node.key())
+        .expect("first cell key")
+        .to_string();
+
+    tree.reset_invalidation();
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::Wheel {
+            pos: Point::new(80.0, 80.0),
+            delta: Point::new(0.0, -10.0),
+        }),
+        EventResult::Handled
+    );
+    tree.layout();
+
+    let node = tree.get(root).expect("scrolled typed table node");
+    let table = node
+        .component()
+        .as_any()
+        .downcast_ref::<Table>()
+        .expect("Table component");
+    let scrolled_range = table.cell_view_range_for_frame(node.frame());
+    assert!(scrolled_range.0 > range.0);
+    assert_eq!(node.children().len(), scrolled_range.1 - scrolled_range.0);
+    let next_key = node
+        .children()
+        .first()
+        .and_then(|id| tree.get(*id))
+        .and_then(|node| node.key())
+        .expect("first scrolled cell key");
+    assert_ne!(next_key, first_key);
+    assert!(
+        tree.scroll_region_moves().is_none(),
+        "a changed View subtree must conservatively repaint instead of composite-copying"
+    );
+}
+
+#[test]
 fn table_wheel_records_composite_delta() {
     let mut table = large_table();
     table

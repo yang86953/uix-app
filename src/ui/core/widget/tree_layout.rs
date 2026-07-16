@@ -145,6 +145,7 @@ impl WidgetTree {
             }
         }
 
+        self.refresh_table_cell_children();
         let mut order = Vec::new();
         let mut traversal_scratch = LayoutTraversalScratch::default();
         self.fill_layout_traversal(&mut order, &mut traversal_scratch);
@@ -269,6 +270,7 @@ impl WidgetTree {
         // 最终更新 viewport（确保收敛结束后的 content_bounds 正确）
         self.layout_viewports(&order);
         self.refresh_virtual_scroll_children();
+        self.refresh_table_cell_children();
         // Phase 6：layout 完成后用最新 frame 绑定 State → Paint rect
         self.bind_reactive_widget_states();
         self.rebuild_widget_overlays();
@@ -685,6 +687,16 @@ impl WidgetTree {
                 continue;
             }
             self.refresh_virtual_scroll_component(id, Some(viewport_h));
+        }
+    }
+
+    fn refresh_table_cell_children(&mut self) {
+        let ids: Vec<_> = self.traverse().iter().copied().collect();
+        for id in ids {
+            if self.refresh_table_cell_component(id) {
+                self.push_layout_invalidation(id);
+                self.propagate_layout_invalidation(id);
+            }
         }
     }
 

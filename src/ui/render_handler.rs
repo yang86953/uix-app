@@ -6,16 +6,18 @@ use crate::core::ComponentId;
 use crate::ui::core::widget::WidgetNode;
 use crate::ui::foundation::virtual_scroll::VirtualScrollRenderer;
 use crate::ui::view::{ViewAdapter, ViewNode};
-use crate::ui::widgets::display::table::{ExpandRenderer, TableRow};
+use crate::ui::widgets::display::table::{ExpandRenderer, TableCellRenderer, TableRow};
 
 pub(crate) enum RenderHandlerRegistration {
     TableExpand(ExpandRenderer),
+    TableCells(TableCellRenderer),
     VirtualScrollItem(VirtualScrollRenderer),
 }
 
 #[derive(Default)]
 pub(crate) struct RenderHandlerTable {
     table_expand: HashMap<ComponentId, ExpandRenderer>,
+    table_cells: HashMap<ComponentId, TableCellRenderer>,
     virtual_scroll_item: HashMap<ComponentId, VirtualScrollRenderer>,
 }
 
@@ -30,6 +32,9 @@ impl RenderHandlerTable {
             match handler {
                 RenderHandlerRegistration::TableExpand(renderer) => {
                     self.table_expand.insert(component, renderer);
+                }
+                RenderHandlerRegistration::TableCells(renderer) => {
+                    self.table_cells.insert(component, renderer);
                 }
                 RenderHandlerRegistration::VirtualScrollItem(renderer) => {
                     self.virtual_scroll_item.insert(component, renderer);
@@ -71,13 +76,41 @@ impl RenderHandlerTable {
         )
     }
 
+    pub(crate) fn render_table_cells(
+        &self,
+        component: ComponentId,
+        range: (usize, usize),
+        row_keys: &[String],
+        view_columns: &[usize],
+    ) -> Option<Vec<ViewNode>> {
+        let renderer = self.table_cells.get(&component)?;
+        let mut cells = Vec::with_capacity(
+            range
+                .1
+                .saturating_sub(range.0)
+                .saturating_mul(view_columns.len()),
+        );
+        for row in range.0..range.1 {
+            let Some(row_key) = row_keys.get(row) else {
+                continue;
+            };
+            for (renderer_index, &column) in view_columns.iter().enumerate() {
+                let cell = ViewAdapter::capture_root(|| renderer(row, renderer_index));
+                cells.push(cell.key(format!("table-cell:{row_key}:{column}")));
+            }
+        }
+        Some(cells)
+    }
+
     pub(crate) fn clear_component(&mut self, component: ComponentId) {
         self.table_expand.remove(&component);
+        self.table_cells.remove(&component);
         self.virtual_scroll_item.remove(&component);
     }
 
     pub(crate) fn clear(&mut self) {
         self.table_expand.clear();
+        self.table_cells.clear();
         self.virtual_scroll_item.clear();
     }
 
@@ -87,5 +120,9 @@ impl RenderHandlerTable {
 
     pub(crate) fn contains_virtual_scroll_item(&self, component: ComponentId) -> bool {
         self.virtual_scroll_item.contains_key(&component)
+    }
+
+    pub(crate) fn contains_table_cells(&self, component: ComponentId) -> bool {
+        self.table_cells.contains_key(&component)
     }
 }

@@ -410,8 +410,11 @@ impl ViewAdapter {
         let _handlers_changed = Self::reconcile_handlers(tree, id, handlers);
         tree.replace_system_event_handlers(id, system_event_handlers);
         tree.replace_render_handlers(id, render_handlers);
+        let table_cells = tree.has_table_cell_renderer(id);
         let table_expand = tree.has_table_expand_renderer(id);
-        let mut children_changed = if table_expand {
+        let mut children_changed = if table_cells {
+            tree.refresh_table_cell_component(id)
+        } else if table_expand {
             let expanded = tree.table_expand_view(id).into_iter().collect();
             let changed = Self::reconcile_children(tree, id, expanded);
             tree.mark_table_expand_materialized(id);
@@ -632,5 +635,13 @@ impl ViewAdapter {
             structure_changed = true;
         }
         structure_changed
+    }
+
+    pub(crate) fn reconcile_dynamic_children(
+        tree: &mut WidgetTree,
+        parent_id: ComponentId,
+        children: Vec<ViewNode>,
+    ) -> bool {
+        Self::reconcile_children(tree, parent_id, children)
     }
 }

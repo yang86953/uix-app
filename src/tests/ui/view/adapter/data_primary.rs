@@ -88,6 +88,7 @@ fn reconcile_table_preserves_runtime_selection_and_syncs_config() {
             column_groups: Vec::new(),
             rows: vec![vec!["Paris".to_string()], vec!["London".to_string()]],
             row_keys: vec!["0".to_string(), "1".to_string()],
+            view_columns: Vec::new(),
             row_h: 36.0,
             header_h: 32.0,
             expandable: true,
@@ -236,6 +237,43 @@ fn replacing_tree_root_drops_table_expand_renderer() {
 
     ViewAdapter::reconcile_nodes(&mut tree, ViewNode::leaf(Label::new("replacement")));
 
+    assert_eq!(Rc::strong_count(&capture), 1);
+}
+
+#[test]
+fn replacing_typed_table_drops_cell_renderer_sidecar() {
+    use crate::ui::widgets::{Label, Table, TableColumn};
+
+    #[derive(Debug)]
+    struct Row {
+        id: usize,
+        label: String,
+    }
+
+    let capture = Rc::new(Cell::new(0));
+    let renderer_capture = Rc::clone(&capture);
+    let table = Table::data(
+        vec![Row {
+            id: 1,
+            label: "Ada".to_string(),
+        }],
+        |row| row.id.to_string(),
+    )
+    .expect("row id is unique")
+    .columns(vec![TableColumn::new("Action", 120.0)
+        .bind(|row: &Row| row.label.clone())
+        .render(move |row: &Row| {
+            let _ = renderer_capture.get();
+            crate::ui::view::button(row.label.clone())
+        })]);
+    let mut tree = ViewAdapter::build(table);
+    let root = tree.root_id().expect("typed table root");
+    assert!(tree.has_table_cell_renderer(root));
+    assert_eq!(Rc::strong_count(&capture), 2);
+
+    ViewAdapter::reconcile_nodes(&mut tree, ViewNode::leaf(Label::new("replacement")));
+
+    assert!(!tree.has_table_cell_renderer(root));
     assert_eq!(Rc::strong_count(&capture), 1);
 }
 
