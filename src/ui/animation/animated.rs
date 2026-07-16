@@ -1,6 +1,6 @@
 //! Declarative, runtime-driven animation values.
 
-use super::{Animation, Easing};
+use super::{Animation, Easing, Spring, SpringAnimation};
 use crate::core::ComponentId;
 use crate::ui::foundation::state::State;
 use crate::ui::traits::Animatable;
@@ -86,8 +86,90 @@ enum DelayState {
 }
 
 #[derive(Debug)]
+enum AnimatedMotion<T: Animatable> {
+    Timed(Animation<T>),
+    Spring(SpringAnimation<T>),
+}
+
+impl<T: Animatable> AnimatedMotion<T> {
+    fn value(&self) -> T {
+        match self {
+            Self::Timed(animation) => animation.value(),
+            Self::Spring(animation) => animation.value(),
+        }
+    }
+
+    fn update(&mut self, dt: f64) -> T {
+        match self {
+            Self::Timed(animation) => animation.update(dt),
+            Self::Spring(animation) => animation.update(dt),
+        }
+    }
+
+    fn progress(&self) -> f64 {
+        match self {
+            Self::Timed(animation) => animation.progress(),
+            Self::Spring(animation) => animation.progress(),
+        }
+    }
+
+    fn is_running(&self) -> bool {
+        match self {
+            Self::Timed(animation) => animation.running,
+            Self::Spring(animation) => animation.is_running(),
+        }
+    }
+
+    fn is_finished(&self) -> bool {
+        match self {
+            Self::Timed(animation) => animation.is_finished(),
+            Self::Spring(animation) => animation.is_finished(),
+        }
+    }
+
+    fn pause(&mut self) {
+        match self {
+            Self::Timed(animation) => animation.pause(),
+            Self::Spring(animation) => animation.pause(),
+        }
+    }
+
+    fn resume(&mut self) {
+        match self {
+            Self::Timed(animation) => animation.resume(),
+            Self::Spring(animation) => animation.resume(),
+        }
+    }
+
+    fn stop(&mut self) {
+        match self {
+            Self::Timed(animation) => animation.stop(),
+            Self::Spring(animation) => animation.stop(),
+        }
+    }
+
+    fn restart(&mut self) {
+        match self {
+            Self::Timed(animation) => animation.restart(),
+            Self::Spring(animation) => animation.restart(),
+        }
+    }
+
+    fn reverse(&mut self) {
+        match self {
+            Self::Timed(animation) => animation.reverse(),
+            Self::Spring(animation) => animation.reverse(),
+        }
+    }
+
+    fn is_timed(&self) -> bool {
+        matches!(self, Self::Timed(_))
+    }
+}
+
+#[derive(Debug)]
 struct AnimatedPlayback<T: Animatable> {
-    animation: Animation<T>,
+    motion: AnimatedMotion<T>,
     original_from: T,
     original_to: T,
     loop_mode: LoopMode,
@@ -101,7 +183,7 @@ impl<T: Animatable> AnimatedPlayback<T> {
         let mut playback = Self {
             original_from: animation.from,
             original_to: animation.to,
-            animation,
+            motion: AnimatedMotion::Timed(animation),
             loop_mode,
             completed_plays: 0,
             delay,
@@ -111,12 +193,23 @@ impl<T: Animatable> AnimatedPlayback<T> {
         playback
     }
 
+    fn new_spring(animation: SpringAnimation<T>) -> Self {
+        Self {
+            original_from: animation.from,
+            original_to: animation.to,
+            motion: AnimatedMotion::Spring(animation),
+            loop_mode: LoopMode::Once,
+            completed_plays: 0,
+            delay: Duration::ZERO,
+            delay_state: DelayState::None,
+        }
+    }
+
     fn is_active(&self) -> bool {
         matches!(self.delay_state, DelayState::None)
-            && self.animation.running
-            && self.animation.duration > 0.0
+            && self.motion.is_running()
             && !matches!(self.loop_mode, LoopMode::Count(0))
-            && !self.animation.is_finished()
+            && !self.motion.is_finished()
     }
 
     fn registration(&self) -> AnimatedRegistration {
@@ -128,12 +221,12 @@ impl<T: Animatable> AnimatedPlayback<T> {
     }
 
     fn is_finished(&self) -> bool {
-        matches!(self.delay_state, DelayState::None) && self.animation.is_finished()
+        matches!(self.delay_state, DelayState::None) && self.motion.is_finished()
     }
 
     fn progress(&self) -> f64 {
         match self.delay_state {
-            DelayState::None => self.animation.progress(),
+            DelayState::None => self.motion.progress(),
             DelayState::Waiting(_) | DelayState::Paused(_) => 0.0,
         }
     }
@@ -143,10 +236,10 @@ impl<T: Animatable> AnimatedPlayback<T> {
             DelayState::Waiting(deadline) if deadline > now => return (None, false),
             DelayState::Waiting(_) => {
                 self.delay_state = DelayState::None;
-                self.animation.running = true;
-                if self.animation.duration <= 0.0 {
+                self.motion.resume();
+                if self.motion.is_finished() {
                     self.finish_forward(self.completed_plays);
-                    return (Some(self.animation.value()), false);
+                    return (Some(self.motion.value()), false);
                 }
                 return (None, true);
             }
@@ -161,11 +254,7 @@ impl<T: Animatable> AnimatedPlayback<T> {
             return (None, true);
         }
         let (value, active) = match self.loop_mode {
-            LoopMode::Once => {
-                let value = self.animation.update(dt);
-                let active = self.animation.running && !self.animation.is_finished();
-                (value, active)
-            }
+            LoopMode::Once => self.advance_once(dt),
             LoopMode::Count(total_plays) => self.advance_counted(dt, total_plays),
             LoopMode::Forever => self.advance_repeating(dt, false),
             LoopMode::Alternate => self.advance_repeating(dt, true),
@@ -173,29 +262,42 @@ impl<T: Animatable> AnimatedPlayback<T> {
         (Some(value), active)
     }
 
+    fn advance_once(&mut self, dt: f64) -> (T, bool) {
+        let value = self.motion.update(dt);
+        let active = self.motion.is_running() && !self.motion.is_finished();
+        (value, active)
+    }
+
     fn advance_counted(&mut self, dt: f64, total_plays: u64) -> (T, bool) {
+        if !self.motion.is_timed() {
+            return self.advance_once(dt);
+        }
         let remaining_plays = total_plays.saturating_sub(self.completed_plays);
         if remaining_plays == 0 {
             self.finish_forward(total_plays);
-            return (self.animation.value(), false);
+            return (self.motion.value(), false);
         }
 
-        let duration = self.animation.duration;
-        let elapsed = self.animation.elapsed + dt;
+        let (duration, elapsed) = match &self.motion {
+            AnimatedMotion::Timed(animation) => (animation.duration, animation.elapsed + dt),
+            AnimatedMotion::Spring(_) => return self.advance_once(dt),
+        };
         if elapsed >= duration * remaining_plays as f64 {
             self.finish_forward(total_plays);
-            return (self.animation.value(), false);
+            return (self.motion.value(), false);
         }
 
         let crossed = (elapsed / duration).floor() as u64;
         self.completed_plays = self.completed_plays.saturating_add(crossed);
         self.set_leg(self.original_from, self.original_to, elapsed % duration);
-        (self.animation.value(), true)
+        (self.motion.value(), true)
     }
 
     fn advance_repeating(&mut self, dt: f64, alternate: bool) -> (T, bool) {
-        let duration = self.animation.duration;
-        let elapsed = self.animation.elapsed + dt;
+        let (duration, elapsed) = match &self.motion {
+            AnimatedMotion::Timed(animation) => (animation.duration, animation.elapsed + dt),
+            AnimatedMotion::Spring(_) => return self.advance_once(dt),
+        };
         let crossed = (elapsed / duration).floor() as u64;
         self.completed_plays = self.completed_plays.saturating_add(crossed);
         let reverse_leg = alternate && self.completed_plays % 2 == 1;
@@ -204,21 +306,28 @@ impl<T: Animatable> AnimatedPlayback<T> {
         } else {
             self.set_leg(self.original_from, self.original_to, elapsed % duration);
         }
-        (self.animation.value(), true)
+        (self.motion.value(), true)
     }
 
     fn set_leg(&mut self, from: T, to: T, elapsed: f64) {
-        self.animation.from = from;
-        self.animation.to = to;
-        self.animation.elapsed = elapsed;
-        self.animation.running = true;
+        if let AnimatedMotion::Timed(animation) = &mut self.motion {
+            animation.from = from;
+            animation.to = to;
+            animation.elapsed = elapsed;
+            animation.running = true;
+        }
     }
 
     fn finish_forward(&mut self, completed_plays: u64) {
-        self.animation.from = self.original_from;
-        self.animation.to = self.original_to;
-        self.animation.elapsed = self.animation.duration;
-        self.animation.running = false;
+        match &mut self.motion {
+            AnimatedMotion::Timed(animation) => {
+                animation.from = self.original_from;
+                animation.to = self.original_to;
+                animation.elapsed = animation.duration;
+                animation.running = false;
+            }
+            AnimatedMotion::Spring(animation) => animation.stop(),
+        }
         self.completed_plays = completed_plays;
     }
 
@@ -227,30 +336,40 @@ impl<T: Animatable> AnimatedPlayback<T> {
         if matches!(self.loop_mode, LoopMode::Count(0)) {
             self.finish_forward(0);
         } else {
-            self.set_leg(self.original_from, self.original_to, 0.0);
+            if self.motion.is_timed() {
+                self.set_leg(self.original_from, self.original_to, 0.0);
+            } else {
+                self.motion.restart();
+            }
             self.arm_delay(now);
         }
     }
 
     fn reverse(&mut self, now: Instant) {
         std::mem::swap(&mut self.original_from, &mut self.original_to);
-        self.restart(now);
+        self.completed_plays = 0;
+        if self.motion.is_timed() {
+            self.set_leg(self.original_from, self.original_to, 0.0);
+        } else {
+            self.motion.reverse();
+        }
+        self.arm_delay(now);
     }
 
     fn configure_loop(&mut self, loop_mode: LoopMode, now: Instant) -> Option<T> {
+        if !self.motion.is_timed() {
+            return None;
+        }
         self.loop_mode = loop_mode;
         self.completed_plays = 0;
         if matches!(loop_mode, LoopMode::Count(0)) {
             self.delay_state = DelayState::None;
             self.finish_forward(0);
-            return Some(self.animation.value());
+            return Some(self.motion.value());
         }
-        if self.animation.duration > 0.0
-            && matches!(self.delay_state, DelayState::None)
-            && self.animation.is_finished()
-        {
+        if matches!(self.delay_state, DelayState::None) && self.motion.is_finished() {
             self.restart(now);
-            return Some(self.animation.value());
+            return Some(self.motion.value());
         }
         None
     }
@@ -259,19 +378,23 @@ impl<T: Animatable> AnimatedPlayback<T> {
         if let DelayState::Waiting(deadline) = self.delay_state {
             self.delay_state = DelayState::Paused(deadline.saturating_duration_since(now));
         }
-        self.animation.pause();
+        self.motion.pause();
     }
 
     fn resume(&mut self, now: Instant) {
         if let DelayState::Paused(remaining) = self.delay_state {
             self.delay_state = DelayState::Waiting(deadline_after(now, remaining));
         }
-        self.animation.resume();
+        self.motion.resume();
     }
 
     fn stop(&mut self) {
         self.delay_state = DelayState::None;
-        self.animation.stop();
+        self.motion.stop();
+    }
+
+    fn value(&self) -> T {
+        self.motion.value()
     }
 
     fn arm_delay(&mut self, now: Instant) {
@@ -360,7 +483,7 @@ impl<T: Animatable + Sync> AnimatedSource for AnimatedInner<T> {
     }
 }
 
-/// A fixed-duration animation value advanced by the owning window's frame loop.
+/// A timed or spring animation value advanced by the owning window's frame loop.
 ///
 /// Reading [`value`](Self::value) while building `App::root` registers the value
 /// with that window. Clones share one transition and one current value.
@@ -394,6 +517,12 @@ impl<T: Animatable + Sync> Animated<T> {
         self
     }
 
+    /// 使用弹簧物理参数启动单次过渡，并返回同一共享句柄。
+    pub fn to_spring(self, target: T, spring: Spring) -> Self {
+        self.animate_to_spring(target, spring);
+        self
+    }
+
     /// Retargets the shared value from its current position.
     pub fn animate_to(&self, target: T, duration: f64, easing: Easing) {
         self.replace_playback(target, duration, easing, Duration::ZERO);
@@ -402,6 +531,25 @@ impl<T: Animatable + Sync> Animated<T> {
     /// 在 `delay` 秒后从当前值开始过渡；等待期只登记 deadline，不申请动画帧。
     pub fn animate_to_after(&self, delay: f64, target: T, duration: f64, easing: Easing) {
         self.replace_playback(target, duration, easing, normalized_delay(delay));
+    }
+
+    /// 从当前值重新定向到一个单次弹簧过渡。
+    pub fn animate_to_spring(&self, target: T, spring: Spring) {
+        let from = self.inner.current.get_untracked();
+        let next = SpringAnimation::new(from, target, spring);
+        let finished = next.is_finished();
+        let value = next.value();
+        *self
+            .inner
+            .playback
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+            Some(AnimatedPlayback::new_spring(next));
+        if finished {
+            self.inner.current.set(value);
+        } else {
+            self.inner.touch();
+        }
     }
 
     fn replace_playback(&self, target: T, duration: f64, easing: Easing, delay: Duration) {
@@ -434,19 +582,19 @@ impl<T: Animatable + Sync> Animated<T> {
         }
     }
 
-    /// Repeats the forward transition indefinitely.
+    /// Repeats a fixed-duration transition indefinitely; Spring remains single-play.
     pub fn loop_forever(self) -> Self {
         self.configure_loop(LoopMode::Forever);
         self
     }
 
-    /// Alternates forward and reverse transitions indefinitely.
+    /// Alternates a fixed-duration transition indefinitely; Spring remains single-play.
     pub fn loop_alternate(self) -> Self {
         self.configure_loop(LoopMode::Alternate);
         self
     }
 
-    /// Plays the forward transition `count` times in total.
+    /// Plays a fixed-duration transition `count` times in total; Spring remains single-play.
     ///
     /// A count of zero commits the target immediately without frame work.
     pub fn loop_count(self, count: u64) -> Self {
@@ -524,7 +672,7 @@ impl<T: Animatable + Sync> Animated<T> {
                 return;
             };
             playback.stop();
-            playback.animation.value()
+            playback.value()
         };
         self.inner.current.set(value);
     }
@@ -541,7 +689,7 @@ impl<T: Animatable + Sync> Animated<T> {
                 return;
             };
             playback.restart(Instant::now());
-            playback.animation.value()
+            playback.value()
         };
         self.inner.current.set(value);
     }
@@ -558,7 +706,7 @@ impl<T: Animatable + Sync> Animated<T> {
                 return;
             };
             playback.reverse(Instant::now());
-            playback.animation.value()
+            playback.value()
         };
         self.inner.current.set(value);
     }

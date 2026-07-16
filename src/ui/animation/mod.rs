@@ -1,14 +1,15 @@
 //! UIX Animation — 动画模块。
 //!
-//! 提供声明式动画值 `Animated<T>`、泛型动画 `Animation<T>`、缓动曲线
+//! 提供声明式动画值 `Animated<T>`、泛型动画 `Animation<T>`、Spring、缓动曲线
 //! `Easing`（含 antd 5 预设），以及进出场过渡系统。
 //!
 //! ## 架构
 //!
 //! - `Easing` — 缓动函数，支持 cubic-bezier、弹性和经典预设。
 //! - `Animatable` trait — 定义可插值类型（f32, f64, Color, Point, Rect）。
-//! - `Animated<T>` — 由所属窗口自动推进的固定时长声明式单值过渡、deadline 延迟与循环播放。
+//! - `Animated<T>` — 由所属窗口自动推进的固定时长 / Spring 声明式单值过渡、deadline 延迟与循环播放。
 //! - `Animation<T>` — 泛型动画实例，驱动单值从 from→to 的插值。
+//! - `SpringAnimation<T>` — 使用阻尼谐振子解析解收敛到目标的单次动画。
 //! - `AnimationConfig` — 进出场动画公开配置（淡入/滑入/缩放等）。
 //! - `TransitionPlayer` — 过渡播放器，见控 widget 的单次进出场动画。
 //!
@@ -24,11 +25,13 @@
 pub mod animated;
 pub mod core;
 pub mod easing;
+pub mod spring;
 pub mod transition;
 
 pub use animated::*;
 pub use core::*;
 pub use easing::*;
+pub use spring::*;
 pub use transition::*;
 
 // Animatable trait 已迁移至 ui::traits::animation，通过 ui::traits 统一导出。
