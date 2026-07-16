@@ -18,6 +18,7 @@ pub(crate) enum ActiveWorkKind {
 #[derive(Debug, Default)]
 pub(crate) struct ActiveWorkRegistry {
     entries: BTreeMap<ActiveWorkKind, Option<Instant>>,
+    managed_animated_sources: BTreeSet<NodeId>,
     managed_timers: BTreeSet<TimerId>,
     managed_app_timers: BTreeSet<TimerId>,
 }
@@ -36,6 +37,9 @@ impl ActiveWorkRegistry {
     }
 
     pub(crate) fn unregister(&mut self, kind: ActiveWorkKind) -> bool {
+        if let ActiveWorkKind::Animation(id) = kind {
+            self.managed_animated_sources.remove(&id);
+        }
         if let ActiveWorkKind::Timer(id) = kind {
             self.managed_timers.remove(&id);
         }
@@ -43,6 +47,34 @@ impl ActiveWorkRegistry {
             self.managed_app_timers.remove(&id);
         }
         self.entries.remove(&kind).is_some()
+    }
+
+    pub(crate) fn sync_animated_sources<I>(&mut self, registrations: I)
+    where
+        I: IntoIterator<Item = (NodeId, Option<Instant>)>,
+    {
+        let desired: BTreeMap<NodeId, Option<Instant>> = registrations.into_iter().collect();
+        self.entries.retain(|kind, _| match kind {
+            ActiveWorkKind::Animation(id) if self.managed_animated_sources.contains(id) => {
+                desired.contains_key(id)
+            }
+            _ => true,
+        });
+        self.managed_animated_sources
+            .retain(|id| desired.contains_key(id));
+        for (id, deadline) in desired {
+            self.entries.insert(ActiveWorkKind::Animation(id), deadline);
+            self.managed_animated_sources.insert(id);
+        }
+    }
+
+    pub(crate) fn park_animated_deadlines(&mut self) {
+        let managed = &self.managed_animated_sources;
+        for (kind, deadline) in &mut self.entries {
+            if matches!(kind, ActiveWorkKind::Animation(id) if managed.contains(id)) {
+                *deadline = None;
+            }
+        }
     }
 
     pub(crate) fn next_deadline(&self) -> Option<Instant> {
@@ -72,10 +104,12 @@ impl ActiveWorkRegistry {
     }
 
     pub(crate) fn animation_ids(&self) -> impl Iterator<Item = NodeId> + '_ {
-        self.entries.keys().filter_map(|kind| match *kind {
-            ActiveWorkKind::Animation(id) => Some(id),
-            _ => None,
-        })
+        self.entries
+            .iter()
+            .filter_map(|(kind, deadline)| match *kind {
+                ActiveWorkKind::Animation(id) if deadline.is_none() => Some(id),
+                _ => None,
+            })
     }
 
     pub(crate) fn len(&self) -> usize {

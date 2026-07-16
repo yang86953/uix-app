@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 static NEXT_ANIMATED_ID: AtomicUsize = AtomicUsize::new(1);
 
@@ -20,8 +21,15 @@ pub(crate) trait AnimatedSource: Send + Sync {
     fn work_id(&self) -> ComponentId;
     fn bind_owner(&self, tree_scope: u64) -> bool;
     fn unbind_owner(&self, tree_scope: u64);
-    fn is_active(&self) -> bool;
-    fn advance(&self, dt: f64) -> bool;
+    fn registration(&self) -> AnimatedRegistration;
+    fn advance(&self, now: Instant, dt: f64) -> bool;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AnimatedRegistration {
+    Inactive,
+    Open,
+    Deadline(Instant),
 }
 
 pub(crate) fn begin_animated_capture() {
@@ -70,6 +78,13 @@ enum LoopMode {
     Alternate,
 }
 
+#[derive(Clone, Copy, Debug)]
+enum DelayState {
+    None,
+    Waiting(Instant),
+    Paused(Duration),
+}
+
 #[derive(Debug)]
 struct AnimatedPlayback<T: Animatable> {
     animation: Animation<T>,
@@ -77,29 +92,75 @@ struct AnimatedPlayback<T: Animatable> {
     original_to: T,
     loop_mode: LoopMode,
     completed_plays: u64,
+    delay: Duration,
+    delay_state: DelayState,
 }
 
 impl<T: Animatable> AnimatedPlayback<T> {
-    fn new(animation: Animation<T>, loop_mode: LoopMode) -> Self {
-        Self {
+    fn new(animation: Animation<T>, loop_mode: LoopMode, delay: Duration, now: Instant) -> Self {
+        let mut playback = Self {
             original_from: animation.from,
             original_to: animation.to,
             animation,
             loop_mode,
             completed_plays: 0,
-        }
+            delay,
+            delay_state: DelayState::None,
+        };
+        playback.arm_delay(now);
+        playback
     }
 
     fn is_active(&self) -> bool {
-        self.animation.running
+        matches!(self.delay_state, DelayState::None)
+            && self.animation.running
             && self.animation.duration > 0.0
             && !matches!(self.loop_mode, LoopMode::Count(0))
             && !self.animation.is_finished()
     }
 
-    fn advance(&mut self, dt: f64) -> (T, bool) {
+    fn registration(&self) -> AnimatedRegistration {
+        match self.delay_state {
+            DelayState::Waiting(deadline) => AnimatedRegistration::Deadline(deadline),
+            DelayState::None if self.is_active() => AnimatedRegistration::Open,
+            DelayState::None | DelayState::Paused(_) => AnimatedRegistration::Inactive,
+        }
+    }
+
+    fn is_finished(&self) -> bool {
+        matches!(self.delay_state, DelayState::None) && self.animation.is_finished()
+    }
+
+    fn progress(&self) -> f64 {
+        match self.delay_state {
+            DelayState::None => self.animation.progress(),
+            DelayState::Waiting(_) | DelayState::Paused(_) => 0.0,
+        }
+    }
+
+    fn advance(&mut self, now: Instant, dt: f64) -> (Option<T>, bool) {
+        match self.delay_state {
+            DelayState::Waiting(deadline) if deadline > now => return (None, false),
+            DelayState::Waiting(_) => {
+                self.delay_state = DelayState::None;
+                self.animation.running = true;
+                if self.animation.duration <= 0.0 {
+                    self.finish_forward(self.completed_plays);
+                    return (Some(self.animation.value()), false);
+                }
+                return (None, true);
+            }
+            DelayState::Paused(_) => return (None, false),
+            DelayState::None => {}
+        }
+        if !self.is_active() {
+            return (None, false);
+        }
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
-        match self.loop_mode {
+        if dt <= 0.0 {
+            return (None, true);
+        }
+        let (value, active) = match self.loop_mode {
             LoopMode::Once => {
                 let value = self.animation.update(dt);
                 let active = self.animation.running && !self.animation.is_finished();
@@ -108,7 +169,8 @@ impl<T: Animatable> AnimatedPlayback<T> {
             LoopMode::Count(total_plays) => self.advance_counted(dt, total_plays),
             LoopMode::Forever => self.advance_repeating(dt, false),
             LoopMode::Alternate => self.advance_repeating(dt, true),
-        }
+        };
+        (Some(value), active)
     }
 
     fn advance_counted(&mut self, dt: f64, total_plays: u64) -> (T, bool) {
@@ -160,33 +222,85 @@ impl<T: Animatable> AnimatedPlayback<T> {
         self.completed_plays = completed_plays;
     }
 
-    fn restart(&mut self) {
+    fn restart(&mut self, now: Instant) {
         self.completed_plays = 0;
         if matches!(self.loop_mode, LoopMode::Count(0)) {
             self.finish_forward(0);
         } else {
             self.set_leg(self.original_from, self.original_to, 0.0);
+            self.arm_delay(now);
         }
     }
 
-    fn reverse(&mut self) {
+    fn reverse(&mut self, now: Instant) {
         std::mem::swap(&mut self.original_from, &mut self.original_to);
-        self.restart();
+        self.restart(now);
     }
 
-    fn configure_loop(&mut self, loop_mode: LoopMode) -> Option<T> {
+    fn configure_loop(&mut self, loop_mode: LoopMode, now: Instant) -> Option<T> {
         self.loop_mode = loop_mode;
         self.completed_plays = 0;
         if matches!(loop_mode, LoopMode::Count(0)) {
+            self.delay_state = DelayState::None;
             self.finish_forward(0);
             return Some(self.animation.value());
         }
-        if self.animation.duration > 0.0 && self.animation.is_finished() {
-            self.restart();
+        if self.animation.duration > 0.0
+            && matches!(self.delay_state, DelayState::None)
+            && self.animation.is_finished()
+        {
+            self.restart(now);
             return Some(self.animation.value());
         }
         None
     }
+
+    fn pause(&mut self, now: Instant) {
+        if let DelayState::Waiting(deadline) = self.delay_state {
+            self.delay_state = DelayState::Paused(deadline.saturating_duration_since(now));
+        }
+        self.animation.pause();
+    }
+
+    fn resume(&mut self, now: Instant) {
+        if let DelayState::Paused(remaining) = self.delay_state {
+            self.delay_state = DelayState::Waiting(deadline_after(now, remaining));
+        }
+        self.animation.resume();
+    }
+
+    fn stop(&mut self) {
+        self.delay_state = DelayState::None;
+        self.animation.stop();
+    }
+
+    fn arm_delay(&mut self, now: Instant) {
+        self.delay_state = if self.delay.is_zero() {
+            DelayState::None
+        } else {
+            DelayState::Waiting(deadline_after(now, self.delay))
+        };
+    }
+}
+
+fn normalized_delay(seconds: f64) -> Duration {
+    if seconds.is_nan() || seconds <= 0.0 {
+        return Duration::ZERO;
+    }
+    Duration::try_from_secs_f64(seconds).unwrap_or(Duration::MAX)
+}
+
+fn deadline_after(now: Instant, delay: Duration) -> Instant {
+    now.checked_add(delay).unwrap_or_else(|| {
+        // `Instant` 没有公开最大值；极端输入取当前平台仍可表达的最远时刻。
+        let mut candidate = delay;
+        loop {
+            candidate /= 2;
+            if let Some(deadline) = now.checked_add(candidate) {
+                return deadline;
+            }
+        }
+    })
 }
 
 impl<T: Animatable + Sync> AnimatedSource for AnimatedInner<T> {
@@ -218,15 +332,17 @@ impl<T: Animatable + Sync> AnimatedSource for AnimatedInner<T> {
         }
     }
 
-    fn is_active(&self) -> bool {
+    fn registration(&self) -> AnimatedRegistration {
         self.playback
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .as_ref()
-            .is_some_and(AnimatedPlayback::is_active)
+            .map_or(AnimatedRegistration::Inactive, |playback| {
+                playback.registration()
+            })
     }
 
-    fn advance(&self, dt: f64) -> bool {
+    fn advance(&self, now: Instant, dt: f64) -> bool {
         let (value, active) = {
             let mut playback = self
                 .playback
@@ -235,15 +351,11 @@ impl<T: Animatable + Sync> AnimatedSource for AnimatedInner<T> {
             let Some(playback) = playback.as_mut() else {
                 return false;
             };
-            if !playback.is_active() {
-                return false;
-            }
-            if !dt.is_finite() || dt <= 0.0 {
-                return true;
-            }
-            playback.advance(dt)
+            playback.advance(now, dt)
         };
-        self.current.set(value);
+        if let Some(value) = value {
+            self.current.set(value);
+        }
         active
     }
 }
@@ -276,11 +388,26 @@ impl<T: Animatable + Sync> Animated<T> {
         self
     }
 
+    /// 在 `delay` 秒后启动过渡，并返回同一共享句柄。
+    pub fn to_after(self, delay: f64, target: T, duration: f64, easing: Easing) -> Self {
+        self.animate_to_after(delay, target, duration, easing);
+        self
+    }
+
     /// Retargets the shared value from its current position.
     pub fn animate_to(&self, target: T, duration: f64, easing: Easing) {
+        self.replace_playback(target, duration, easing, Duration::ZERO);
+    }
+
+    /// 在 `delay` 秒后从当前值开始过渡；等待期只登记 deadline，不申请动画帧。
+    pub fn animate_to_after(&self, delay: f64, target: T, duration: f64, easing: Easing) {
+        self.replace_playback(target, duration, easing, normalized_delay(delay));
+    }
+
+    fn replace_playback(&self, target: T, duration: f64, easing: Easing, delay: Duration) {
         let from = self.inner.current.get_untracked();
         let mut next = Animation::new(from, target, duration).easing(easing);
-        let immediate = next.duration <= 0.0;
+        let immediate = delay.is_zero() && next.duration <= 0.0;
         if immediate {
             next.stop();
         }
@@ -293,7 +420,12 @@ impl<T: Animatable + Sync> Animated<T> {
         let loop_mode = playback
             .as_ref()
             .map_or(LoopMode::Once, |playback| playback.loop_mode);
-        *playback = Some(AnimatedPlayback::new(next, loop_mode));
+        *playback = Some(AnimatedPlayback::new(
+            next,
+            loop_mode,
+            delay,
+            Instant::now(),
+        ));
         drop(playback);
         if immediate {
             self.inner.current.set(value);
@@ -337,7 +469,7 @@ impl<T: Animatable + Sync> Animated<T> {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .as_ref()
-            .map_or(1.0, |playback| playback.animation.progress())
+            .map_or(1.0, AnimatedPlayback::progress)
     }
 
     /// Returns whether the current transition is at rest.
@@ -349,7 +481,7 @@ impl<T: Animatable + Sync> Animated<T> {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .as_ref()
-            .is_none_or(|playback| playback.animation.is_finished())
+            .is_none_or(AnimatedPlayback::is_finished)
     }
 
     /// Pauses at the current value and stops requesting animation frames.
@@ -361,7 +493,7 @@ impl<T: Animatable + Sync> Animated<T> {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .as_mut()
         {
-            playback.animation.pause();
+            playback.pause(Instant::now());
         }
         self.inner.touch();
     }
@@ -375,7 +507,7 @@ impl<T: Animatable + Sync> Animated<T> {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .as_mut()
         {
-            playback.animation.resume();
+            playback.resume(Instant::now());
         }
         self.inner.touch();
     }
@@ -391,7 +523,7 @@ impl<T: Animatable + Sync> Animated<T> {
             let Some(playback) = playback.as_mut() else {
                 return;
             };
-            playback.animation.stop();
+            playback.stop();
             playback.animation.value()
         };
         self.inner.current.set(value);
@@ -408,7 +540,7 @@ impl<T: Animatable + Sync> Animated<T> {
             let Some(playback) = playback.as_mut() else {
                 return;
             };
-            playback.restart();
+            playback.restart(Instant::now());
             playback.animation.value()
         };
         self.inner.current.set(value);
@@ -425,7 +557,7 @@ impl<T: Animatable + Sync> Animated<T> {
             let Some(playback) = playback.as_mut() else {
                 return;
             };
-            playback.reverse();
+            playback.reverse(Instant::now());
             playback.animation.value()
         };
         self.inner.current.set(value);
@@ -438,7 +570,7 @@ impl<T: Animatable + Sync> Animated<T> {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .as_mut()
-            .and_then(|playback| playback.configure_loop(loop_mode));
+            .and_then(|playback| playback.configure_loop(loop_mode, Instant::now()));
         if let Some(value) = value {
             self.inner.current.set(value);
         }

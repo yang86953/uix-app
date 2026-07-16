@@ -657,6 +657,60 @@ fn declarative_animated_uses_the_window_frame_registration() {
 }
 
 #[test]
+fn delayed_declarative_animation_waits_on_deadline_before_requesting_frames() {
+    let start = Instant::now();
+    let clock = TestClock::new(start);
+    let animated = Animated::new(0.0_f32).to_after(30.0, 1.0, 1.0, Easing::linear);
+    let root_animated = animated.clone();
+    let mut platform = FakePlatform::new();
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600).with_native_frame_requests();
+    let mut session = WindowSession::from_root_factory_for_window(
+        WindowId::new(1),
+        move || label("delayed").opacity(root_animated.value()),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop_with_clock(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        clock,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        |_| None,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    let deadline = session
+        .active_work()
+        .next_deadline()
+        .expect("delayed animation deadline");
+    assert_eq!(
+        platform.event_source.state.dispatch_timeout_durations,
+        vec![deadline.duration_since(start)]
+    );
+    assert!(window.state.native_frame_requests.is_empty());
+    assert_eq!(animated.value(), 0.0);
+    assert_eq!(session.loop_state(), WindowLoopState::RegisteredActive);
+}
+
+#[test]
 fn native_frame_callback_advances_animation_before_fallback_deadline() {
     let start = Instant::now();
     let clock = TestClock::new(start);

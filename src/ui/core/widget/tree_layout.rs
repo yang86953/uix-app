@@ -1,7 +1,9 @@
 use super::super::*;
 use super::WidgetTree;
 use crate::core::{Constraints, Rect, Size};
+use crate::ui::animation::AnimatedRegistration;
 use std::collections::HashSet;
+use std::time::Instant;
 
 #[cfg(test)]
 use super::LAYOUT_TRACE_PHASE;
@@ -897,13 +899,18 @@ impl WidgetTree {
     }
 
     pub(crate) fn update_animations(&mut self, dt: f64) -> Vec<(WidgetId, bool)> {
-        let ids = self.animation_node_ids();
-        self.update_animation_nodes(ids, dt)
+        self.update_animations_at(Instant::now(), dt)
     }
 
-    pub(crate) fn update_animations_except<I>(
+    pub(crate) fn update_animations_at(&mut self, now: Instant, dt: f64) -> Vec<(WidgetId, bool)> {
+        let ids = self.animation_node_ids();
+        self.update_animation_nodes_at(ids, now, dt)
+    }
+
+    pub(crate) fn update_animations_except_at<I>(
         &mut self,
         excluded_ids: I,
+        now: Instant,
         dt: f64,
     ) -> Vec<(WidgetId, bool)>
     where
@@ -915,7 +922,7 @@ impl WidgetTree {
             .into_iter()
             .filter(|id| !excluded_ids.contains(id))
             .collect();
-        self.update_animation_nodes(ids, dt)
+        self.update_animation_nodes_at(ids, now, dt)
     }
 
     fn animation_node_ids(&self) -> Vec<WidgetId> {
@@ -928,10 +935,27 @@ impl WidgetTree {
         ids.extend(
             self.animated_sources
                 .iter()
-                .filter(|(_, source)| source.source.is_active())
+                .filter(|(_, source)| {
+                    source.source.registration() != AnimatedRegistration::Inactive
+                })
                 .map(|(id, _)| *id),
         );
         ids
+    }
+
+    pub(crate) fn has_animated_source(&self, id: WidgetId) -> bool {
+        self.animated_sources.contains_key(&id)
+    }
+
+    pub(crate) fn animated_source_registrations(&self) -> Vec<(WidgetId, Option<Instant>)> {
+        self.animated_sources
+            .iter()
+            .filter_map(|(&id, source)| match source.source.registration() {
+                AnimatedRegistration::Inactive => None,
+                AnimatedRegistration::Open => Some((id, None)),
+                AnimatedRegistration::Deadline(deadline) => Some((id, Some(deadline))),
+            })
+            .collect()
     }
 
     fn active_animation_frame(&self, id: WidgetId) -> Option<Rect> {
@@ -944,7 +968,20 @@ impl WidgetTree {
         .then_some(node.frame())
     }
 
+    #[cfg(test)]
     pub(crate) fn update_animation_nodes<I>(&mut self, ids: I, dt: f64) -> Vec<(WidgetId, bool)>
+    where
+        I: IntoIterator<Item = WidgetId>,
+    {
+        self.update_animation_nodes_at(ids, Instant::now(), dt)
+    }
+
+    pub(crate) fn update_animation_nodes_at<I>(
+        &mut self,
+        ids: I,
+        now: Instant,
+        dt: f64,
+    ) -> Vec<(WidgetId, bool)>
     where
         I: IntoIterator<Item = WidgetId>,
     {
@@ -952,7 +989,7 @@ impl WidgetTree {
         let mut widget_overlays_changed = false;
         for id in ids {
             if let Some(source) = self.animated_sources.get(&id) {
-                updates.push((id, source.source.advance(dt)));
+                updates.push((id, source.source.advance(now, dt)));
                 continue;
             }
             let Some(frame) = self.active_animation_frame(id) else {

@@ -39,16 +39,17 @@ pub(super) fn dispatch_due_active_work(
 pub(super) fn update_scheduled_and_discovered_animations(
     tree: &mut WidgetTree,
     scheduled_animation_ids: &[NodeId],
+    now: Instant,
     dt: f64,
     discover_animation_work: bool,
 ) -> Vec<(NodeId, bool)> {
     let mut updates = if scheduled_animation_ids.is_empty() {
         Vec::new()
     } else {
-        tree.update_animation_nodes(scheduled_animation_ids.iter().copied(), dt)
+        tree.update_animation_nodes_at(scheduled_animation_ids.iter().copied(), now, dt)
     };
     if discover_animation_work {
-        updates.extend(tree.update_animations_except(scheduled_animation_ids.to_vec(), dt));
+        updates.extend(tree.update_animations_except_at(scheduled_animation_ids.to_vec(), now, dt));
     }
     updates
 }
