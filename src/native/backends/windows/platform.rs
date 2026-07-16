@@ -66,6 +66,7 @@ pub struct WindowsPlatform {
     pub(crate) console_subsys: WindowsConsole,
     pub(crate) system_info_subsys: WindowsSystemInfo,
     pub(crate) single_shot_timers: Arc<Mutex<HashSet<u32>>>,
+    system_dark_mode: bool,
     window_handles: BTreeMap<WindowId, usize>,
     next_window_id: u64,
 }
@@ -81,6 +82,8 @@ impl WindowsPlatform {
         let timer_subsys = WindowsTimer::new();
         let single_shot = timer_subsys.non_repeating_set();
         let event_queue = Arc::new(Mutex::new(VecDeque::new()));
+        let display_subsys = WindowsDisplay::new();
+        let system_dark_mode = WindowsDisplay::detect_os_theme();
         Self {
             event_queue: Arc::clone(&event_queue),
             hwnd: std::ptr::null_mut(),
@@ -90,7 +93,7 @@ impl WindowsPlatform {
             next_window_id: 1,
             clipboard_subsys: WindowsClipboard::new(),
             cursor_subsys: WindowsCursor::new(),
-            display_subsys: WindowsDisplay::new(),
+            display_subsys,
             file_dialog_subsys: WindowsFileDialog::new(),
             file_system_subsys: WindowsFileSystem::new(),
             keyboard_subsys: WindowsKeyboard::new(),
@@ -100,6 +103,7 @@ impl WindowsPlatform {
             event_bus: EventBus::new(),
             console_subsys: WindowsConsole::new(),
             system_info_subsys: WindowsSystemInfo::new(),
+            system_dark_mode,
             window_handles: BTreeMap::new(),
         }
     }
@@ -108,6 +112,15 @@ impl WindowsPlatform {
         self.event_queue
             .lock()
             .unwrap_or_else(|error| error.into_inner())
+    }
+
+    pub(crate) fn route_system_theme_change(&mut self, window_id: WindowId, is_dark: bool) -> bool {
+        if self.system_dark_mode == is_dark {
+            return false;
+        }
+        self.system_dark_mode = is_dark;
+        self.push_event(window_id, UiEvent::theme_changed(is_dark));
+        true
     }
 
     pub(crate) fn select_window(&mut self, hwnd: *mut std::ffi::c_void) {

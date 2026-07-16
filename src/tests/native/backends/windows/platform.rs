@@ -2,8 +2,10 @@ use crate::app::window_actions::configure_custom_title_bar;
 use crate::native::backends::windows::consts::{
     GWL_EXSTYLE, GWL_STYLE, HTCAPTION, MONITOR_DEFAULTTONEAREST, SIZE_RESTORED, WM_CHAR,
     WM_DPICHANGED, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_LBUTTONDBLCLK, WM_LBUTTONUP,
-    WM_NCRBUTTONUP, WM_SIZE, WS_CAPTION, WS_EX_LAYERED, WS_THICKFRAME,
+    WM_NCRBUTTONUP, WM_SETTINGCHANGE, WM_SIZE, WM_THEMECHANGED, WS_CAPTION, WS_EX_LAYERED,
+    WS_THICKFRAME,
 };
+use crate::native::backends::windows::display::WindowsDisplay;
 use crate::native::backends::windows::dpi::{
     dpi_for_window, logical_extent_to_physical, outer_size_for_logical_client,
     physical_extent_to_logical,
@@ -56,6 +58,55 @@ fn native_event_queue_recovers_after_lock_poisoning() {
         .expect("poisoned event queue must remain usable");
     assert_eq!(event.window_id, Some(window_id));
     assert_eq!(event.type_, UiEventType::WindowClose);
+}
+
+#[test]
+fn native_theme_messages_emit_one_app_wide_change_across_windows() {
+    let mut platform = WindowsPlatform::new();
+    let mut first = platform
+        .create_window("UIX theme route A", 200, 120)
+        .expect("first native window");
+    let mut second = platform
+        .create_window("UIX theme route B", 200, 120)
+        .expect("second native window");
+    platform.dispatch_pending();
+    while platform.next_event().is_some() {}
+
+    let actual_is_dark = WindowsDisplay::detect_os_theme();
+    assert!(platform.route_system_theme_change(first.window_id(), !actual_is_dark));
+    while platform.next_event().is_some() {}
+
+    unsafe {
+        SendMessageW(
+            HWND(first.native_handle().native_window()),
+            WM_THEMECHANGED,
+            Some(WPARAM(0)),
+            Some(LPARAM(0)),
+        );
+        SendMessageW(
+            HWND(second.native_handle().native_window()),
+            WM_SETTINGCHANGE,
+            Some(WPARAM(0)),
+            Some(LPARAM(0)),
+        );
+    }
+
+    let events = std::iter::from_fn(|| platform.next_event())
+        .filter(|event| event.type_ == UiEventType::ThemeChanged)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        events.len(),
+        1,
+        "theme broadcasts from multiple HWNDs must deduplicate"
+    );
+    assert_eq!(events[0].window_id, Some(first.window_id()));
+    assert!(matches!(
+        events[0].payload,
+        UiEventPayload::ThemeChanged(ref data) if data.is_dark == actual_is_dark
+    ));
+
+    second.close().expect("close second window");
+    first.close().expect("close first window");
 }
 
 #[test]
