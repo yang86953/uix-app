@@ -45,6 +45,7 @@ pub struct ViewNode {
     pub(crate) style: Style,
     pub(crate) visual_transform: ViewTransform,
     pub(crate) enter_animation: Option<crate::ui::animation::AnimationConfig>,
+    pub(crate) leave_animation: Option<crate::ui::animation::AnimationConfig>,
     /// DSL 显式设置的 flex_grow（含 0.0）；与 Style::default 区分，避免被 apply 吞掉。
     pub(crate) flex_grow_override: Option<f32>,
     /// DSL 显式设置的 flex_shrink（含 1.0）。
@@ -80,6 +81,7 @@ impl ViewNode {
             style: Style::default(),
             visual_transform: ViewTransform::default(),
             enter_animation: None,
+            leave_animation: None,
             flex_grow_override: None,
             flex_shrink_override: None,
             z_index: 0,
@@ -103,6 +105,7 @@ impl ViewNode {
             style: Style::default(),
             visual_transform: ViewTransform::default(),
             enter_animation: None,
+            leave_animation: None,
             flex_grow_override: None,
             flex_shrink_override: None,
             z_index: 0,
@@ -228,6 +231,16 @@ impl ViewNode {
             "enter_animation requires fade_in, slide_in, or zoom_in"
         );
         self.enter_animation = Some(animation);
+        self
+    }
+
+    /// Retains this node for a one-shot visual transition after keyed removal.
+    pub fn leave_animation(mut self, animation: crate::ui::animation::AnimationConfig) -> Self {
+        assert!(
+            animation.is_exit(),
+            "leave_animation requires fade_out, slide_out, or zoom_out"
+        );
+        self.leave_animation = Some(animation);
         self
     }
 
@@ -729,6 +742,10 @@ impl<T: Into<ViewNode>> AccessibilityExt for T {}
 pub trait TransitionExt: Into<ViewNode> + Sized {
     fn enter_animation(self, animation: crate::ui::animation::AnimationConfig) -> ViewNode {
         self.into().enter_animation(animation)
+    }
+
+    fn leave_animation(self, animation: crate::ui::animation::AnimationConfig) -> ViewNode {
+        self.into().leave_animation(animation)
     }
 }
 

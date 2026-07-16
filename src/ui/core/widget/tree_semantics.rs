@@ -14,6 +14,9 @@ impl WidgetTree {
     }
 
     pub fn dispatch_semantic_event(&mut self, event: &mut SemanticEvent) -> EventResult {
+        if self.is_pending_removal_subtree(event.target) {
+            return EventResult::NotHandled;
+        }
         let path = self.semantic_path_to_root(event.target);
         let result = self.handler_table.dispatch_path(&path, event);
         self.apply_modal_context_requests(&path);

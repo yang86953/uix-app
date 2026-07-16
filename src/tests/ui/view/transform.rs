@@ -5,7 +5,7 @@ use crate::draw::compositor::LayerTree;
 use crate::tests::common::*;
 use crate::ui::animation::AnimationConfig;
 use crate::ui::core::widget::WidgetCore;
-use crate::ui::view::{canvas, label, ViewAdapter};
+use crate::ui::view::{canvas, column, label, ViewAdapter};
 use crate::ui::{EventResult, Placement, SystemEvent};
 
 #[test]
@@ -143,6 +143,12 @@ fn mount_transition_rejects_exit_presets() {
 }
 
 #[test]
+#[should_panic(expected = "leave_animation requires fade_out, slide_out, or zoom_out")]
+fn leave_transition_rejects_enter_presets() {
+    let _ = label("invalid").leave_animation(AnimationConfig::fade_in(0.2));
+}
+
+#[test]
 fn mount_transition_does_not_restart_when_the_keyed_node_reconciles() {
     let view = || {
         label("stable")
@@ -166,6 +172,196 @@ fn mount_transition_does_not_restart_when_the_keyed_node_reconciles() {
         tree.update_animation_nodes([root], 0.75),
         vec![(root, false)]
     );
+}
+
+#[test]
+fn keyed_removal_leaves_visually_then_removes_and_requests_layout() {
+    let item = || {
+        label("leaving")
+            .key("item")
+            .width(40.0)
+            .height(20.0)
+            .leave_animation(AnimationConfig::fade_out(1.0))
+    };
+    let mut tree = ViewAdapter::build(column(vec![item()]));
+    tree.layout();
+    let root = tree.root_id().expect("root");
+    let child = tree.get(root).unwrap().children()[0];
+    let frame = tree.get(child).unwrap().frame();
+    let center = Point::new(frame.x + frame.w * 0.5, frame.y + frame.h * 0.5);
+    assert_eq!(tree.hit_test(center), Some(child));
+
+    ViewAdapter::reconcile(&mut tree, column(Vec::<crate::ui::view::ViewNode>::new()));
+
+    assert!(tree.get(child).unwrap().pending_removal());
+    assert_eq!(tree.get(root).unwrap().children(), &[child]);
+    assert_ne!(tree.hit_test(center), Some(child));
+    assert!(tree
+        .semantic_snapshot_body()
+        .nodes
+        .iter()
+        .all(|node| node.id != child));
+    assert_eq!(tree.active_view_transition_ids(), vec![child]);
+
+    assert_eq!(
+        tree.update_animation_nodes([child], 0.5),
+        vec![(child, true)]
+    );
+    let opacity = tree.get(child).unwrap().view_transition_opacity();
+    assert!(opacity > 0.0 && opacity < 1.0);
+    assert_eq!(
+        tree.update_animation_nodes([child], 0.5),
+        vec![(child, false)]
+    );
+    assert!(tree.get(child).is_none());
+    assert!(tree.get(root).unwrap().children().is_empty());
+    assert!(tree
+        .invalidation()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .has_layout());
+}
+
+#[test]
+fn leaving_subtree_releases_focus_immediately() {
+    let item = || {
+        label("focusable")
+            .key("item")
+            .focusable(true)
+            .leave_animation(AnimationConfig::fade_out(1.0))
+    };
+    let mut tree = ViewAdapter::build(column(vec![item()]));
+    let root = tree.root_id().expect("root");
+    let child = tree.get(root).unwrap().children()[0];
+    tree.set_focus(Some(child));
+    assert_eq!(tree.managers().focus.focused_component(), Some(child));
+
+    ViewAdapter::reconcile(&mut tree, column(Vec::<crate::ui::view::ViewNode>::new()));
+
+    assert_eq!(tree.managers().focus.focused_component(), None);
+    assert!(!tree.collect_focusable().contains(&child));
+    assert!(tree.get(child).is_some());
+}
+
+#[test]
+fn leaving_subtree_releases_timer_and_overlay_work_immediately() {
+    use crate::ui::widgets::Tooltip;
+
+    let item = || {
+        crate::ui::view::ViewNode::leaf(Tooltip::new("Help").delay_ms(300).timer_id(42))
+            .key("item")
+            .leave_animation(AnimationConfig::fade_out(1.0))
+    };
+    let mut tree = ViewAdapter::build(column(vec![item()]));
+    let root = tree.root_id().expect("root");
+    let child = tree.get(root).unwrap().children()[0];
+    assert_eq!(
+        tree.dispatch_to(child, &SystemEvent::PointerEnter),
+        EventResult::Handled
+    );
+    let timer = tree
+        .active_timers()
+        .into_iter()
+        .find(|(id, _)| *id == crate::ui::core::widget::WidgetTree::timer_work_key(child, 42))
+        .expect("tooltip timer");
+    assert_eq!(tree.dispatch_timer_work(timer.0), EventResult::Handled);
+    assert!(tree
+        .overlay_stack()
+        .iter()
+        .any(|entry| entry.owner() == child));
+
+    ViewAdapter::reconcile(&mut tree, column(Vec::<crate::ui::view::ViewNode>::new()));
+
+    assert!(tree.active_timers().is_empty());
+    assert_eq!(
+        tree.dispatch_to(child, &SystemEvent::Timer { id: 42 }),
+        EventResult::NotHandled
+    );
+    assert!(tree
+        .overlay_stack()
+        .iter()
+        .all(|entry| entry.owner() != child));
+    assert!(tree.get(child).is_some());
+
+    ViewAdapter::reconcile(&mut tree, column(vec![item()]));
+
+    assert_eq!(tree.get(root).unwrap().children(), &[child]);
+    assert!(tree
+        .overlay_stack()
+        .iter()
+        .any(|entry| entry.owner() == child));
+}
+
+#[test]
+fn keyed_reappearance_cancels_leave_and_reuses_the_same_node() {
+    let item = || {
+        label("stable")
+            .key("item")
+            .leave_animation(AnimationConfig::zoom_out(1.0))
+    };
+    let mut tree = ViewAdapter::build(column(vec![item()]));
+    tree.layout();
+    let root = tree.root_id().expect("root");
+    let child = tree.get(root).unwrap().children()[0];
+
+    ViewAdapter::reconcile(&mut tree, column(Vec::<crate::ui::view::ViewNode>::new()));
+    assert_eq!(
+        tree.update_animation_nodes([child], 0.25),
+        vec![(child, true)]
+    );
+    assert!(tree.get(child).unwrap().view_transition_opacity() < 1.0);
+
+    ViewAdapter::reconcile(&mut tree, column(vec![item()]));
+
+    assert_eq!(tree.get(root).unwrap().children(), &[child]);
+    assert!(!tree.get(child).unwrap().pending_removal());
+    assert!(!tree.get(child).unwrap().view_transition_active());
+    assert_eq!(tree.get(child).unwrap().view_transition_opacity(), 1.0);
+}
+
+#[test]
+fn leave_started_during_enter_preserves_the_current_visual_state() {
+    let item = || {
+        label("handoff")
+            .key("item")
+            .width(40.0)
+            .height(20.0)
+            .enter_animation(AnimationConfig::slide_in(Placement::Right, 1.0))
+            .leave_animation(AnimationConfig::fade_out(1.0))
+    };
+    let mut tree = ViewAdapter::build(column(vec![item()]));
+    tree.layout();
+    let root = tree.root_id().expect("root");
+    let child = tree.get(root).unwrap().children()[0];
+    assert_eq!(
+        tree.update_animation_nodes([child], 0.25),
+        vec![(child, true)]
+    );
+    let frame = tree.get(child).unwrap().frame();
+    let before_rect = tree.node_visual_rect(child, frame);
+    let before_opacity = tree.get(child).unwrap().view_transition_opacity();
+
+    ViewAdapter::reconcile(&mut tree, column(Vec::<crate::ui::view::ViewNode>::new()));
+
+    assert_eq!(tree.node_visual_rect(child, frame), before_rect);
+    assert_eq!(
+        tree.get(child).unwrap().view_transition_opacity(),
+        before_opacity
+    );
+}
+
+#[test]
+fn zero_duration_leave_removes_the_keyed_node_immediately() {
+    let mut tree = ViewAdapter::build(column(vec![label("instant")
+        .key("item")
+        .leave_animation(AnimationConfig::fade_out(0.0))]));
+    let root = tree.root_id().expect("root");
+    let child = tree.get(root).unwrap().children()[0];
+
+    ViewAdapter::reconcile(&mut tree, column(Vec::<crate::ui::view::ViewNode>::new()));
+
+    assert!(tree.get(child).is_none());
+    assert!(tree.get(root).unwrap().children().is_empty());
 }
 
 #[test]

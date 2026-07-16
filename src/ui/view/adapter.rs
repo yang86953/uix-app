@@ -114,6 +114,7 @@ impl ViewAdapter {
             style: Style,
             visual_transform: crate::ui::view_transform::ViewTransform,
             enter_animation: Option<crate::ui::animation::AnimationConfig>,
+            leave_animation: Option<crate::ui::animation::AnimationConfig>,
             flex_grow_override: Option<f32>,
             flex_shrink_override: Option<f32>,
             provider_context: crate::ui::foundation::provider_context::ProviderContext,
@@ -140,6 +141,7 @@ impl ViewAdapter {
                 style,
                 visual_transform,
                 enter_animation,
+                leave_animation,
                 flex_grow_override,
                 flex_shrink_override,
                 z_index,
@@ -158,6 +160,7 @@ impl ViewAdapter {
                 style,
                 visual_transform,
                 enter_animation,
+                leave_animation,
                 flex_grow_override,
                 flex_shrink_override,
                 provider_context,
@@ -216,6 +219,9 @@ impl ViewAdapter {
             }
             if let Some(animation) = frame.enter_animation {
                 wnode = wnode.with_enter_animation(animation);
+            }
+            if let Some(animation) = frame.leave_animation {
+                wnode = wnode.with_leave_animation(animation);
             }
             if !frame.handlers.is_empty() {
                 wnode = wnode.with_handlers(frame.handlers);
@@ -342,6 +348,7 @@ impl ViewAdapter {
             style,
             visual_transform,
             enter_animation: _,
+            leave_animation,
             flex_grow_override,
             flex_shrink_override,
             z_index,
@@ -359,6 +366,7 @@ impl ViewAdapter {
             .is_none_or(|current| current.provider_context() != &provider_context);
         if let Some(current) = tree.get_mut(id) {
             current.set_provider_context(provider_context);
+            current.set_leave_animation(leave_animation);
         }
         if !style.visible {
             tree.set_node_visibility(id, false);
@@ -620,6 +628,7 @@ impl ViewAdapter {
             let child_id = if let Some(child_id) = candidate {
                 used_old.insert(child_id);
                 if Self::can_reuse(tree, child_id, &child) {
+                    tree.cancel_pending_removal(child_id);
                     Self::reconcile_existing(tree, child_id, child);
                     child_id
                 } else {
@@ -634,10 +643,14 @@ impl ViewAdapter {
             new_order.push(child_id);
         }
 
-        for child_id in old_children {
+        for (old_index, child_id) in old_children.iter().copied().enumerate() {
             if !used_old.contains(&child_id) && tree.get(child_id).is_some() {
                 structure_changed = true;
-                tree.remove(child_id);
+                if tree.start_leave_transition(child_id) {
+                    new_order.insert(old_index.min(new_order.len()), child_id);
+                } else {
+                    tree.remove(child_id);
+                }
             }
         }
 
