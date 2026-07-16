@@ -656,11 +656,13 @@ impl WidgetTree {
             self.pending_window_actions.push(action);
         }
         self.apply_event_layout_request(id);
-        if self.refresh_table_expand_component(id) {
+        let dynamic_children_changed =
+            self.refresh_table_expand_component(id) | self.refresh_table_cell_component(id);
+        if dynamic_children_changed {
             self.push_layout_invalidation(id);
             self.propagate_layout_invalidation(id);
         }
-        if !self.register_scroll_composite(id) {
+        if dynamic_children_changed || !self.register_scroll_composite(id) {
             self.invalidate_paint(id);
         }
         let semantic = self.get(id).and_then(|node| node.semantic_event(id, event));

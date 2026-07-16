@@ -227,6 +227,22 @@ fn user_table(rows: Vec<UserRow>) -> DataTable<UserRow> {
         .virtual_scroll(true)
 }
 
+fn interactive_user_table(rows: Vec<UserRow>, clicks: Rc<Cell<usize>>) -> DataTable<UserRow> {
+    Table::data(rows, |row| row.id.to_string())
+        .expect("user ids should be unique")
+        .columns(vec![
+            TableColumn::new("Name", 120.0).bind(|row: &UserRow| row.name.clone()),
+            TableColumn::new("Action", 100.0)
+                .bind(|row: &UserRow| format!("Edit {}", row.name))
+                .render(move |row: &UserRow| {
+                    let clicks = Rc::clone(&clicks);
+                    crate::ui::view::button(format!("Edit {}", row.name)).on_click_fn(move || {
+                        clicks.set(clicks.get() + 1);
+                    })
+                }),
+        ])
+}
+
 #[test]
 fn typed_table_rows_project_text_and_publish_stable_keys() {
     let tree = ViewAdapter::build(user_table(vec![
@@ -343,4 +359,211 @@ fn typed_table_rejects_duplicate_row_keys_before_build() {
         Err(error) => assert_eq!(error, TableDataError::DuplicateRowKey("10".to_string())),
         Ok(_) => panic!("duplicate row key should fail"),
     }
+}
+
+#[test]
+fn typed_table_view_cell_materializes_interactive_keyed_child() {
+    use crate::ui::widgets::Button;
+
+    let clicks = Rc::new(Cell::new(0));
+    let mut tree = ViewAdapter::build(interactive_user_table(
+        vec![UserRow {
+            id: 10,
+            name: "Ada".to_string(),
+            age: 28,
+        }],
+        Rc::clone(&clicks),
+    ));
+    let root = tree.root_id().expect("typed table root");
+    tree.get_mut(root)
+        .expect("typed table node")
+        .set_frame(Rect::new(0.0, 0.0, 220.0, 100.0));
+    tree.layout();
+
+    assert!(tree.has_table_cell_renderer(root));
+    let child = tree
+        .get(root)
+        .expect("typed table node")
+        .children()
+        .first()
+        .copied()
+        .expect("view cell child");
+    let child_node = tree.get(child).expect("view cell node");
+    assert_eq!(child_node.key(), Some("table-cell:10:1"));
+    assert_eq!(
+        child_node
+            .component()
+            .as_any()
+            .downcast_ref::<Button>()
+            .expect("button cell")
+            .text(),
+        "Edit Ada"
+    );
+    assert_eq!(child_node.frame(), Rect::new(120.0, 33.0, 100.0, 28.0));
+    assert!(matches!(
+        tree.get(root)
+            .expect("typed table node")
+            .component()
+            .snapshot_fields(),
+        SnapshotFields::Table {
+            rows,
+            view_columns,
+            ..
+        } if rows == vec![vec!["Ada".to_string(), "Edit Ada".to_string()]]
+            && view_columns == vec![1]
+    ));
+
+    let position = Point::new(160.0, 45.0);
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: position,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerUp {
+            pos: position,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(clicks.get(), 1);
+}
+
+#[test]
+fn typed_table_view_cells_reconcile_by_row_key_after_reorder() {
+    use crate::ui::widgets::Button;
+
+    let clicks = Rc::new(Cell::new(0));
+    let mut tree = ViewAdapter::build(interactive_user_table(
+        vec![
+            UserRow {
+                id: 10,
+                name: "Ada".to_string(),
+                age: 28,
+            },
+            UserRow {
+                id: 20,
+                name: "Grace".to_string(),
+                age: 35,
+            },
+        ],
+        Rc::clone(&clicks),
+    ));
+    let root = tree.root_id().expect("typed table root");
+    let original = tree
+        .get(root)
+        .expect("typed table node")
+        .children()
+        .to_vec();
+    assert_eq!(original.len(), 2);
+
+    ViewAdapter::reconcile(
+        &mut tree,
+        interactive_user_table(
+            vec![
+                UserRow {
+                    id: 20,
+                    name: "Grace Hopper".to_string(),
+                    age: 36,
+                },
+                UserRow {
+                    id: 10,
+                    name: "Ada".to_string(),
+                    age: 28,
+                },
+            ],
+            clicks,
+        ),
+    );
+
+    let reordered = tree
+        .get(root)
+        .expect("reconciled typed table")
+        .children()
+        .to_vec();
+    assert_eq!(reordered, vec![original[1], original[0]]);
+    assert_eq!(
+        tree.get(reordered[0])
+            .expect("reused Grace cell")
+            .component()
+            .as_any()
+            .downcast_ref::<Button>()
+            .expect("button cell")
+            .text(),
+        "Edit Grace Hopper"
+    );
+}
+
+#[test]
+fn typed_table_view_cells_follow_fixed_column_zones_while_scrolling() {
+    let table = Table::data(
+        vec![UserRow {
+            id: 10,
+            name: "Ada".to_string(),
+            age: 28,
+        }],
+        |row| row.id.to_string(),
+    )
+    .expect("row id is unique")
+    .columns(vec![
+        TableColumn::new("Name", 80.0)
+            .fixed(Fixed::Left)
+            .bind(|row: &UserRow| row.name.clone()),
+        TableColumn::new("Age", 100.0)
+            .bind(|row: &UserRow| row.age.to_string())
+            .render(|row: &UserRow| crate::ui::view::button(row.age.to_string())),
+        TableColumn::new("Details", 100.0)
+            .bind(|row: &UserRow| row.name.clone())
+            .render(|row: &UserRow| crate::ui::view::button(row.name.clone())),
+        TableColumn::new("Action", 80.0)
+            .fixed(Fixed::Right)
+            .bind(|row: &UserRow| format!("Edit {}", row.name))
+            .render(|row: &UserRow| crate::ui::view::button(format!("Edit {}", row.name))),
+    ]);
+    let mut tree = ViewAdapter::build(table);
+    let root = tree.root_id().expect("typed table root");
+    tree.get_mut(root)
+        .expect("typed table node")
+        .set_frame(Rect::new(0.0, 0.0, 240.0, 100.0));
+    tree.layout();
+    let children = tree
+        .get(root)
+        .expect("typed table node")
+        .children()
+        .to_vec();
+    assert_eq!(children.len(), 3);
+    assert_eq!(tree.get(children[0]).expect("age cell").frame().w, 80.0);
+    assert_eq!(tree.get(children[1]).expect("details cell").frame().w, 0.0);
+    assert_eq!(
+        tree.get(children[2]).expect("fixed action cell").frame(),
+        Rect::new(160.0, 33.0, 80.0, 28.0)
+    );
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::Wheel {
+            pos: Point::new(120.0, 45.0),
+            delta: Point::new(-2.0, 0.0),
+        }),
+        EventResult::Handled
+    );
+    tree.layout();
+
+    assert_eq!(
+        tree.get(children[0]).expect("scrolled age cell").frame().w,
+        20.0
+    );
+    assert_eq!(
+        tree.get(children[1])
+            .expect("scrolled details cell")
+            .frame(),
+        Rect::new(100.0, 33.0, 60.0, 28.0)
+    );
+    assert_eq!(
+        tree.get(children[2]).expect("fixed action cell").frame(),
+        Rect::new(160.0, 33.0, 80.0, 28.0)
+    );
 }

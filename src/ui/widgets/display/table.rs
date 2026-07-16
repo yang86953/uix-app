@@ -12,6 +12,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
+use std::rc::Rc;
 
 mod config;
 pub(crate) mod geometry;
@@ -78,6 +79,7 @@ impl TableColumn {
         TableDataColumn {
             column: self,
             accessor: Box::new(accessor),
+            renderer: None,
         }
     }
 }
@@ -116,9 +118,26 @@ struct ColumnGroupRange {
 pub type TableRow = Vec<String>;
 
 /// typed 行数据的一列文本投影。
+type TypedCellViewRenderer<R> = Box<dyn Fn(&R) -> crate::ui::view::ViewNode>;
+
 pub struct TableDataColumn<R> {
     column: TableColumn,
     accessor: Box<dyn Fn(&R) -> String>,
+    renderer: Option<TypedCellViewRenderer<R>>,
+}
+
+impl<R> TableDataColumn<R> {
+    /// Render this column as an arbitrary View while retaining the bound text
+    /// as its deterministic snapshot and non-View fallback value.
+    pub fn render<V>(mut self, renderer: impl Fn(&R) -> V + 'static) -> Self
+    where
+        V: crate::ui::view::View,
+    {
+        self.renderer = Some(Box::new(move |row| {
+            crate::ui::view::View::build(renderer(row))
+        }));
+        self
+    }
 }
 
 /// typed 表格行键校验错误。
@@ -148,6 +167,9 @@ pub struct DataTable<R> {
 /// 扩展行视图工厂；按当前行数据构建普通 View 子树。
 pub type ExpandRenderer = Box<dyn Fn(&TableRow) -> crate::ui::view::ViewNode>;
 
+/// Type-erased typed-row cell factory kept in the render-handler sidecar.
+pub(crate) type TableCellRenderer = Box<dyn Fn(usize, usize) -> crate::ui::view::ViewNode>;
+
 /// 变更事件。
 #[derive(Debug, Clone)]
 pub struct TableChange {
@@ -169,6 +191,8 @@ component! {
         column_groups: Vec<ColumnGroupRange>,
         pub(crate) rows: Vec<TableRow>,
         row_keys: Vec<String>,
+        view_columns: Vec<usize>,
+        materialized_cell_range: Cell<Option<(usize, usize)>>,
         pub(crate) row_h: f32,
         header_h: f32,
         selected_row: Cell<Option<usize>>,
@@ -195,6 +219,7 @@ component! {
         horizontal_scroll_requires_paint: Cell<bool>,
         scroll_delta_strip: Cell<(f32, f32)>,
         pub(crate) last_frame: Cell<Option<Rect>>,
+        layout_requested: Cell<bool>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -206,6 +231,11 @@ component! {
     }
 
     scroll_delta_for_dirty => (&self) -> Option<(f32, f32)> {
+        if !self.view_columns.is_empty() {
+            self.horizontal_scroll_requires_paint.set(false);
+            self.scroll_delta_strip.set((0.0, 0.0));
+            return None;
+        }
         if self.horizontal_scroll_requires_paint.replace(false) {
             self.scroll_delta_strip.set((0.0, 0.0));
             return None;
@@ -253,6 +283,9 @@ component! {
                     self.push_scroll_delta(0.0, dy);
                 }
                 if dx.abs() > 0.01 || dy.abs() > 0.01 {
+                    if !self.view_columns.is_empty() {
+                        self.layout_requested.set(true);
+                    }
                     EventResult::Handled
                 } else {
                     EventResult::NotHandled
@@ -337,6 +370,10 @@ component! {
     }
 
     wants_continuous_pointer_move => (&self) -> bool { true }
+
+    take_layout_request => (&mut self) -> bool {
+        self.layout_requested.replace(false)
+    }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.last_frame.set(Some(frame));
@@ -438,12 +475,14 @@ component! {
                     .iter()
                     .filter(|column| column.zone == zone)
                 {
-                    let cell = row
-                        .get(laid_out.index)
-                        .map(String::as_str)
-                        .unwrap_or("");
-                    let tc = if is_selected { primary } else { text_color };
-                    ctx.draw_text(cell, Point::new(laid_out.x + 8.0, cell_y), tc, 12.0);
+                    if !self.view_columns.contains(&laid_out.index) {
+                        let cell = row
+                            .get(laid_out.index)
+                            .map(String::as_str)
+                            .unwrap_or("");
+                        let tc = if is_selected { primary } else { text_color };
+                        ctx.draw_text(cell, Point::new(laid_out.x + 8.0, cell_y), tc, 12.0);
+                    }
                     if self.bordered {
                         ctx.fill_rect(
                             Rect::new(
@@ -500,6 +539,48 @@ component! {
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
+        self.last_frame.set(Some(frame));
+        if !self.view_columns.is_empty() {
+            let (start, end) = self
+                .materialized_cell_range
+                .get()
+                .unwrap_or_else(|| self.visible_row_range(self.body_viewport_height()));
+            let column_geometry = self.column_geometry(frame.x, frame.w);
+            let body_top = frame.y + self.total_header_height() + 1.0;
+            let mut positions = Vec::with_capacity(children.len());
+            for (local_index, child) in children.iter().enumerate() {
+                let column_count = self.view_columns.len();
+                let row = start + local_index / column_count;
+                if row >= end {
+                    break;
+                }
+                let column_index = self.view_columns[local_index % column_count];
+                let Some(column) = column_geometry
+                    .columns
+                    .iter()
+                    .find(|column| column.index == column_index)
+                else {
+                    continue;
+                };
+                let expanded_offset = if self.expanded_row.get().is_some_and(|expanded| row > expanded)
+                {
+                    self.expand_height
+                } else {
+                    0.0
+                };
+                let row_y = body_top + row as f32 * self.row_h + expanded_offset
+                    - self.body_scroll.scroll_offset();
+                let cell = Rect::new(column.x, row_y, column.width, self.row_h);
+                positions.push((
+                    child.id,
+                    column_geometry
+                        .clip_for(column.zone, row_y, self.row_h)
+                        .and_then(|zone_clip| cell.intersect(&zone_clip))
+                        .unwrap_or_else(|| Rect::new(cell.x, cell.y, 0.0, 0.0)),
+                ));
+            }
+            return positions;
+        }
         let Some(expanded_row) = self.expanded_row.get() else {
             return Vec::new();
         };
@@ -548,6 +629,8 @@ impl Table {
             column_groups: Vec::new(),
             rows: Vec::new(),
             row_keys: Vec::new(),
+            view_columns: Vec::new(),
+            materialized_cell_range: Cell::new(None),
             row_h: 28.0,
             header_h: 32.0,
             selected_row: Cell::new(None),
@@ -570,6 +653,7 @@ impl Table {
             horizontal_scroll_requires_paint: Cell::new(false),
             scroll_delta_strip: Cell::new((0.0, 0.0)),
             last_frame: Cell::new(None),
+            layout_requested: Cell::new(false),
         }
     }
     pub fn columns(mut self, cols: Vec<TableColumn>) -> Self {
@@ -865,6 +949,7 @@ impl Table {
                 .collect(),
             rows: self.rows.clone(),
             row_keys: self.row_keys.clone(),
+            view_columns: self.view_columns.clone(),
             row_h: self.row_h,
             header_h: self.header_h,
             expandable: self.expandable,
@@ -900,6 +985,8 @@ impl Table {
         self.column_groups = next.column_groups;
         self.rows = next.rows;
         self.row_keys = next.row_keys;
+        self.view_columns = next.view_columns;
+        self.materialized_cell_range.set(None);
         self.row_h = next.row_h;
         self.header_h = next.header_h;
         self.expandable = next.expandable;
@@ -934,6 +1021,36 @@ impl Table {
                 .get()
                 .min(self.horizontal_max_scroll()),
         );
+    }
+
+    pub(crate) fn cell_view_range_for_frame(&self, frame: Rect) -> (usize, usize) {
+        let viewport_height = (frame.h - self.total_header_height() - 1.0).max(self.row_h);
+        self.visible_row_range(viewport_height)
+    }
+
+    pub(crate) fn view_columns(&self) -> &[usize] {
+        &self.view_columns
+    }
+
+    pub(crate) fn row_keys(&self) -> &[String] {
+        &self.row_keys
+    }
+
+    pub(crate) fn needs_cell_refresh(
+        &self,
+        range: (usize, usize),
+        mounted_children: usize,
+    ) -> bool {
+        self.materialized_cell_range.get() != Some(range)
+            || mounted_children
+                != range
+                    .1
+                    .saturating_sub(range.0)
+                    .saturating_mul(self.view_columns.len())
+    }
+
+    pub(crate) fn mark_cells_materialized(&self, range: (usize, usize)) {
+        self.materialized_cell_range.set(Some(range));
     }
 }
 
@@ -990,7 +1107,10 @@ impl<R> DataTable<R> {
         self
     }
 
-    fn into_table(self) -> Table {
+    fn into_parts(self) -> (Table, Option<RenderHandlerRegistration>)
+    where
+        R: 'static,
+    {
         let Self {
             mut table,
             rows,
@@ -1009,19 +1129,48 @@ impl<R> DataTable<R> {
             })
             .collect();
         table.row_keys = row_keys;
-        table
+        table.view_columns = columns
+            .iter()
+            .enumerate()
+            .filter_map(|(index, column)| column.renderer.is_some().then_some(index))
+            .collect();
+
+        if table.view_columns.is_empty() {
+            return (table, None);
+        }
+
+        let rows = Rc::new(rows);
+        let renderers = columns
+            .into_iter()
+            .filter_map(|column| column.renderer)
+            .collect::<Vec<_>>();
+        let renderer: TableCellRenderer = Box::new(move |row, renderer_index| {
+            let row = &rows[row];
+            (renderers[renderer_index])(row)
+        });
+        (table, Some(RenderHandlerRegistration::TableCells(renderer)))
     }
 }
 
 impl<R: 'static> crate::ui::view::View for DataTable<R> {
     fn build(self) -> crate::ui::view::ViewNode {
-        crate::ui::view::View::build(self.into_table())
+        let (table, handler) = self.into_parts();
+        let mut node = crate::ui::view::View::build(table);
+        if let Some(handler) = handler {
+            node.render_handlers.push(handler);
+        }
+        node
     }
 }
 
 impl<R: 'static> crate::ui::IntoWidgetNode for DataTable<R> {
     fn into_node(self) -> crate::ui::core::widget::WidgetNode {
-        crate::ui::IntoWidgetNode::into_node(self.into_table())
+        let (table, handler) = self.into_parts();
+        let mut node = crate::ui::IntoWidgetNode::into_node(table);
+        if let Some(handler) = handler {
+            node.render_handlers.push(handler);
+        }
+        node
     }
 }
 

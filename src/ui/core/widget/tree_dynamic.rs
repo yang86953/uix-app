@@ -2,6 +2,7 @@ use super::tree_core::WidgetTree;
 use super::WidgetCore;
 use crate::core::ComponentId;
 use crate::ui::foundation::virtual_scroll::VirtualScroll;
+use crate::ui::view::ViewAdapter;
 use crate::ui::widgets::display::table::Table;
 
 impl WidgetTree {
@@ -102,8 +103,49 @@ impl WidgetTree {
         true
     }
 
+    pub(crate) fn refresh_table_cell_component(&mut self, id: ComponentId) -> bool {
+        if !self.render_handler_table.contains_table_cells(id) {
+            return false;
+        }
+
+        let Some((range, needs_refresh, row_keys, view_columns)) = self.get(id).and_then(|node| {
+            let table = node.component().as_any().downcast_ref::<Table>()?;
+            let range = table.cell_view_range_for_frame(node.frame());
+            Some((
+                range,
+                table.needs_cell_refresh(range, node.children().len()),
+                table.row_keys().to_vec(),
+                table.view_columns().to_vec(),
+            ))
+        }) else {
+            return false;
+        };
+        if !needs_refresh {
+            return false;
+        }
+
+        let children = self
+            .render_handler_table
+            .render_table_cells(id, range, &row_keys, &view_columns)
+            .unwrap_or_default();
+        let changed = ViewAdapter::reconcile_dynamic_children(self, id, children);
+        if let Some(table) = self
+            .get(id)
+            .and_then(|node| node.component().as_any().downcast_ref::<Table>())
+        {
+            table.mark_cells_materialized(range);
+        }
+        self.bind_orphan_pending_states();
+        self.bind_pending_effects();
+        changed
+    }
+
     pub(crate) fn has_table_expand_renderer(&self, id: ComponentId) -> bool {
         self.render_handler_table.contains_table_expand(id)
+    }
+
+    pub(crate) fn has_table_cell_renderer(&self, id: ComponentId) -> bool {
+        self.render_handler_table.contains_table_cells(id)
     }
 
     #[cfg(test)]
