@@ -27,6 +27,7 @@ component! {
         name: String,
         required: bool,
         status: ValidateStatus,
+        status_controlled: bool,
         help: String,
         label_width: f32,
         layout: FormLayout,
@@ -167,6 +168,7 @@ impl FormItem {
             name: String::new(),
             required: false,
             status: ValidateStatus::None,
+            status_controlled: false,
             help: String::new(),
             label_width: 80.0,
             layout: FormLayout::Horizontal,
@@ -185,6 +187,12 @@ impl FormItem {
 
     pub fn status(mut self, s: ValidateStatus) -> Self {
         self.status = s;
+        self
+    }
+
+    pub(crate) fn controlled_status(mut self, status: ValidateStatus) -> Self {
+        self.status = status;
+        self.status_controlled = true;
         self
     }
 
@@ -226,6 +234,10 @@ impl FormItem {
         self.label = next.label;
         self.name = next.name;
         self.required = next.required;
+        if next.status_controlled {
+            self.status = next.status;
+        }
+        self.status_controlled = next.status_controlled;
         self.help = next.help;
         self.label_width = next.label_width;
         self.layout = next.layout;
@@ -425,6 +437,14 @@ impl Form {
     pub fn layout(mut self, l: FormLayout) -> Self {
         self.layout = l;
         self
+    }
+
+    pub(crate) fn item_layout(&self) -> FormLayout {
+        self.layout
+    }
+
+    pub(crate) fn item_label_width(&self) -> f32 {
+        self.label_width
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {

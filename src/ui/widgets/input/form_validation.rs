@@ -5,9 +5,12 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::ops::RangeInclusive;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use regex::Regex;
+
+use crate::ui::{FocusHandle, FocusHandleError, State};
 
 use super::form::Form;
 
@@ -70,6 +73,13 @@ impl StoredValue {
 
     fn is_empty(&self) -> bool {
         self.text.trim().is_empty()
+    }
+
+    fn is_string(&self, value: &str) -> bool {
+        self.typed
+            .as_ref()
+            .downcast_ref::<String>()
+            .is_some_and(|current| current == value)
     }
 }
 
@@ -321,32 +331,51 @@ impl FormBuilder {
     }
 }
 
-/// 应用侧表单模型；自定义校验闭包不会进入 widget component。
-pub struct FormModel {
+struct FormModelInner {
     layout: Form,
     fields: Vec<FormField>,
-    active_errors: RefCell<Vec<Option<FieldError>>>,
+    values: RefCell<Vec<StoredValue>>,
+    active_errors: State<Vec<Option<FieldError>>>,
+    focus_handles: RefCell<BTreeMap<String, FocusHandle>>,
+}
+
+/// 应用侧表单模型；克隆后仍共享字段值、校验状态与字段焦点句柄。
+///
+/// 自定义校验闭包只保留在这个应用侧句柄中，不进入 widget component。
+#[derive(Clone)]
+pub struct FormModel {
+    inner: Rc<FormModelInner>,
 }
 
 impl FormModel {
     pub(crate) fn from_fields(layout: Form, fields: Vec<FormField>) -> Self {
+        let values = fields.iter().map(|field| field.value.clone()).collect();
+        let field_count = fields.len();
         Self {
-            layout,
-            active_errors: RefCell::new(vec![None; fields.len()]),
-            fields,
+            inner: Rc::new(FormModelInner {
+                layout,
+                fields,
+                values: RefCell::new(values),
+                active_errors: State::new(vec![None; field_count]),
+                focus_handles: RefCell::new(BTreeMap::new()),
+            }),
         }
     }
 
     /// 校验全部字段；每个字段返回首个错误，字段间按声明顺序收集。
     pub fn validate(&self) -> Result<Values, Vec<FieldError>> {
-        let values = values_from_fields(&self.fields);
+        let current_values = self.inner.values.borrow();
+        let values = values_from_fields(&self.inner.fields, &current_values);
         let field_errors: Vec<Option<FieldError>> = self
+            .inner
             .fields
             .iter()
-            .map(|field| validate_field(field, &values))
+            .zip(current_values.iter())
+            .map(|(field, value)| validate_field(field, value, &values))
             .collect();
         let errors = field_errors.iter().flatten().cloned().collect::<Vec<_>>();
-        *self.active_errors.borrow_mut() = field_errors;
+        drop(current_values);
+        self.publish_errors(field_errors);
         if !errors.is_empty() {
             return Err(errors);
         }
@@ -354,47 +383,63 @@ impl FormModel {
     }
 
     /// 更新字段值；字段不存在时返回 `false`。
-    pub fn set_value<V: IntoFormValue>(&mut self, field: &str, value: V) -> bool {
-        let Some(index) = self.fields.iter().position(|item| item.name == field) else {
+    pub fn set_value<V: IntoFormValue>(&self, field: &str, value: V) -> bool {
+        let Some(index) = self.inner.fields.iter().position(|item| item.name == field) else {
             return false;
         };
-        self.fields[index].value = StoredValue::new(value);
-        let values = values_from_fields(&self.fields);
-        let error = (self.fields[index].trigger == Trigger::OnChange)
-            .then(|| validate_field(&self.fields[index], &values))
+        let mut current_values = self.inner.values.borrow_mut();
+        current_values[index] = StoredValue::new(value);
+        let values = values_from_fields(&self.inner.fields, &current_values);
+        let error = (self.inner.fields[index].trigger == Trigger::OnChange)
+            .then(|| validate_field(&self.inner.fields[index], &current_values[index], &values))
             .flatten();
-        {
-            let mut active_errors = self.active_errors.borrow_mut();
-            active_errors[index] = error;
-            for dependent in dependent_indices(&self.fields, index) {
-                active_errors[dependent] = validate_field(&self.fields[dependent], &values);
-            }
+        let dependents = dependent_indices(&self.inner.fields, index);
+        let mut active_errors = self.inner.active_errors.get_untracked();
+        active_errors[index] = error;
+        for dependent in dependents {
+            active_errors[dependent] = validate_field(
+                &self.inner.fields[dependent],
+                &current_values[dependent],
+                &values,
+            );
         }
+        drop(current_values);
+        self.publish_errors(active_errors);
         true
     }
 
     /// 通知字段失焦；仅 `OnBlur` 字段会在此时执行规则。
-    pub fn blur(&mut self, field: &str) -> bool {
-        let Some(index) = self.fields.iter().position(|item| item.name == field) else {
+    pub fn blur(&self, field: &str) -> bool {
+        let Some(index) = self.inner.fields.iter().position(|item| item.name == field) else {
             return false;
         };
-        if self.fields[index].trigger == Trigger::OnBlur {
-            let values = values_from_fields(&self.fields);
-            self.active_errors.borrow_mut()[index] = validate_field(&self.fields[index], &values);
+        if self.inner.fields[index].trigger == Trigger::OnBlur {
+            let current_values = self.inner.values.borrow();
+            let values = values_from_fields(&self.inner.fields, &current_values);
+            let error = validate_field(&self.inner.fields[index], &current_values[index], &values);
+            drop(current_values);
+            let mut active_errors = self.inner.active_errors.get_untracked();
+            active_errors[index] = error;
+            self.publish_errors(active_errors);
         }
         true
     }
 
     /// 返回当前已激活的字段错误。
     pub fn field_error(&self, field: &str) -> Option<FieldError> {
-        let index = self.fields.iter().position(|item| item.name == field)?;
-        self.active_errors.borrow()[index].clone()
+        let index = self
+            .inner
+            .fields
+            .iter()
+            .position(|item| item.name == field)?;
+        self.inner.active_errors.get().get(index).cloned().flatten()
     }
 
     /// 按字段声明顺序返回当前已激活的错误。
     pub fn errors(&self) -> Vec<FieldError> {
-        self.active_errors
-            .borrow()
+        self.inner
+            .active_errors
+            .get()
             .iter()
             .flatten()
             .cloned()
@@ -402,18 +447,85 @@ impl FormModel {
     }
 
     pub fn field_label(&self, field: &str) -> Option<&str> {
-        self.fields
+        self.inner
+            .fields
             .iter()
             .find(|item| item.name == field)
             .map(|item| item.label.as_str())
     }
 
     pub fn layout(&self) -> &Form {
-        &self.layout
+        &self.inner.layout
     }
 
     pub fn into_layout(self) -> Form {
-        self.layout
+        self.inner.layout.clone()
+    }
+
+    /// 校验整表；失败时尽力把焦点登记到首个错误字段。
+    pub fn submit(&self) -> Result<Values, Vec<FieldError>> {
+        let result = self.validate();
+        if result.is_err() {
+            let _ = self.focus_first_error();
+        }
+        result
+    }
+
+    /// 把焦点登记到首个错误字段；当前无错误时返回 `Ok(None)`。
+    pub fn focus_first_error(&self) -> Result<Option<String>, FocusHandleError> {
+        let Some(error) = self.errors().into_iter().next() else {
+            return Ok(None);
+        };
+        let field = error.field().to_string();
+        let handle = self
+            .inner
+            .focus_handles
+            .borrow()
+            .get(&field)
+            .cloned()
+            .ok_or(FocusHandleError::Unbound)?;
+        handle.focus()?;
+        Ok(Some(field))
+    }
+
+    pub(crate) fn has_field(&self, field: &str) -> bool {
+        self.inner.fields.iter().any(|item| item.name == field)
+    }
+
+    pub(crate) fn field_is_required(&self, field: &str) -> bool {
+        self.inner
+            .fields
+            .iter()
+            .find(|item| item.name == field)
+            .is_some_and(|item| {
+                item.rules
+                    .iter()
+                    .any(|rule| matches!(rule, FieldRule::Required(_)))
+            })
+    }
+
+    pub(crate) fn sync_text_value(&self, field: &str, value: &str) -> bool {
+        let Some(index) = self.inner.fields.iter().position(|item| item.name == field) else {
+            return false;
+        };
+        if self.inner.values.borrow()[index].is_string(value) {
+            return true;
+        }
+        self.set_value(field, value.to_string())
+    }
+
+    pub(crate) fn focus_handle_for(&self, field: &str) -> Option<FocusHandle> {
+        if !self.has_field(field) {
+            return None;
+        }
+        let mut handles = self.inner.focus_handles.borrow_mut();
+        Some(handles.entry(field.to_string()).or_default().clone())
+    }
+
+    fn publish_errors(&self, errors: Vec<Option<FieldError>>) {
+        if self.inner.active_errors.get_untracked() != errors {
+            self.inner.active_errors.set(errors);
+        }
     }
 }
 
@@ -424,10 +536,11 @@ impl Form {
     }
 }
 
-fn values_from_fields(fields: &[FormField]) -> Values {
+fn values_from_fields(fields: &[FormField], values: &[StoredValue]) -> Values {
     let entries = fields
         .iter()
-        .map(|field| (field.name.clone(), Arc::clone(&field.value.typed)))
+        .zip(values)
+        .map(|(field, value)| (field.name.clone(), Arc::clone(&value.typed)))
         .collect();
     Values { entries }
 }
@@ -463,22 +576,19 @@ impl FormField {
     }
 }
 
-fn validate_field(field: &FormField, values: &Values) -> Option<FieldError> {
+fn validate_field(field: &FormField, current: &StoredValue, values: &Values) -> Option<FieldError> {
     for rule in &field.rules {
         let failed_message = match rule {
-            FieldRule::Required(message) if field.value.is_empty() => Some(message.clone()),
-            FieldRule::Email(message)
-                if !field.value.is_empty() && !is_valid_email(&field.value.text) =>
-            {
+            FieldRule::Required(message) if current.is_empty() => Some(message.clone()),
+            FieldRule::Email(message) if !current.is_empty() && !is_valid_email(&current.text) => {
                 Some(message.clone())
             }
             FieldRule::Range {
                 start,
                 end,
                 message,
-            } if !field.value.is_empty()
-                && field
-                    .value
+            } if !current.is_empty()
+                && current
                     .text
                     .parse::<f64>()
                     .ok()
@@ -491,8 +601,8 @@ fn validate_field(field: &FormField, values: &Values) -> Option<FieldError> {
                 start,
                 end,
                 message,
-            } if !field.value.is_empty()
-                && !(*start..=*end).contains(&field.value.text.chars().count()) =>
+            } if !current.is_empty()
+                && !(*start..=*end).contains(&current.text.chars().count()) =>
             {
                 Some(message.clone())
             }
@@ -503,11 +613,9 @@ fn validate_field(field: &FormField, values: &Values) -> Option<FieldError> {
             FieldRule::Pattern {
                 matcher: Some(matcher),
                 message,
-            } if !field.value.is_empty() && !matcher.is_match(&field.value.text) => {
-                Some(message.clone())
-            }
-            FieldRule::Custom(validator) => validator(&field.value.text).err(),
-            FieldRule::Dependency { validator, .. } => validator(&field.value.text, values).err(),
+            } if !current.is_empty() && !matcher.is_match(&current.text) => Some(message.clone()),
+            FieldRule::Custom(validator) => validator(&current.text).err(),
+            FieldRule::Dependency { validator, .. } => validator(&current.text, values).err(),
             _ => None,
         };
         if let Some(message) = failed_message {
