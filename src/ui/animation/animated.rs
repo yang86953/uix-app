@@ -1,6 +1,8 @@
 //! Declarative, runtime-driven animation values.
 
-use super::{Animation, Easing, Spring, SpringAnimation};
+use super::{
+    Animation, Easing, Keyframe, KeyframeAnimation, KeyframeError, Spring, SpringAnimation,
+};
 use crate::core::ComponentId;
 use crate::ui::foundation::state::State;
 use crate::ui::traits::Animatable;
@@ -88,6 +90,7 @@ enum DelayState {
 #[derive(Debug)]
 enum AnimatedMotion<T: Animatable> {
     Timed(Animation<T>),
+    Keyframes(KeyframeAnimation<T>),
     Spring(SpringAnimation<T>),
 }
 
@@ -95,6 +98,7 @@ impl<T: Animatable> AnimatedMotion<T> {
     fn value(&self) -> T {
         match self {
             Self::Timed(animation) => animation.value(),
+            Self::Keyframes(animation) => animation.value(),
             Self::Spring(animation) => animation.value(),
         }
     }
@@ -102,6 +106,7 @@ impl<T: Animatable> AnimatedMotion<T> {
     fn update(&mut self, dt: f64) -> T {
         match self {
             Self::Timed(animation) => animation.update(dt),
+            Self::Keyframes(animation) => animation.update(dt),
             Self::Spring(animation) => animation.update(dt),
         }
     }
@@ -109,6 +114,7 @@ impl<T: Animatable> AnimatedMotion<T> {
     fn progress(&self) -> f64 {
         match self {
             Self::Timed(animation) => animation.progress(),
+            Self::Keyframes(animation) => animation.progress(),
             Self::Spring(animation) => animation.progress(),
         }
     }
@@ -116,6 +122,7 @@ impl<T: Animatable> AnimatedMotion<T> {
     fn is_running(&self) -> bool {
         match self {
             Self::Timed(animation) => animation.running,
+            Self::Keyframes(animation) => animation.is_running(),
             Self::Spring(animation) => animation.is_running(),
         }
     }
@@ -123,6 +130,7 @@ impl<T: Animatable> AnimatedMotion<T> {
     fn is_finished(&self) -> bool {
         match self {
             Self::Timed(animation) => animation.is_finished(),
+            Self::Keyframes(animation) => animation.is_finished(),
             Self::Spring(animation) => animation.is_finished(),
         }
     }
@@ -130,6 +138,7 @@ impl<T: Animatable> AnimatedMotion<T> {
     fn pause(&mut self) {
         match self {
             Self::Timed(animation) => animation.pause(),
+            Self::Keyframes(animation) => animation.pause(),
             Self::Spring(animation) => animation.pause(),
         }
     }
@@ -137,6 +146,7 @@ impl<T: Animatable> AnimatedMotion<T> {
     fn resume(&mut self) {
         match self {
             Self::Timed(animation) => animation.resume(),
+            Self::Keyframes(animation) => animation.resume(),
             Self::Spring(animation) => animation.resume(),
         }
     }
@@ -144,6 +154,7 @@ impl<T: Animatable> AnimatedMotion<T> {
     fn stop(&mut self) {
         match self {
             Self::Timed(animation) => animation.stop(),
+            Self::Keyframes(animation) => animation.stop(),
             Self::Spring(animation) => animation.stop(),
         }
     }
@@ -151,6 +162,7 @@ impl<T: Animatable> AnimatedMotion<T> {
     fn restart(&mut self) {
         match self {
             Self::Timed(animation) => animation.restart(),
+            Self::Keyframes(animation) => animation.restart(),
             Self::Spring(animation) => animation.restart(),
         }
     }
@@ -158,11 +170,12 @@ impl<T: Animatable> AnimatedMotion<T> {
     fn reverse(&mut self) {
         match self {
             Self::Timed(animation) => animation.reverse(),
+            Self::Keyframes(animation) => animation.reverse(),
             Self::Spring(animation) => animation.reverse(),
         }
     }
 
-    fn is_timed(&self) -> bool {
+    fn supports_loops(&self) -> bool {
         matches!(self, Self::Timed(_))
     }
 }
@@ -198,6 +211,18 @@ impl<T: Animatable> AnimatedPlayback<T> {
             original_from: animation.from,
             original_to: animation.to,
             motion: AnimatedMotion::Spring(animation),
+            loop_mode: LoopMode::Once,
+            completed_plays: 0,
+            delay: Duration::ZERO,
+            delay_state: DelayState::None,
+        }
+    }
+
+    fn new_keyframes(animation: KeyframeAnimation<T>) -> Self {
+        Self {
+            original_from: animation.value(),
+            original_to: animation.frames()[animation.frames().len() - 1].value,
+            motion: AnimatedMotion::Keyframes(animation),
             loop_mode: LoopMode::Once,
             completed_plays: 0,
             delay: Duration::ZERO,
@@ -269,7 +294,7 @@ impl<T: Animatable> AnimatedPlayback<T> {
     }
 
     fn advance_counted(&mut self, dt: f64, total_plays: u64) -> (T, bool) {
-        if !self.motion.is_timed() {
+        if !self.motion.supports_loops() {
             return self.advance_once(dt);
         }
         let remaining_plays = total_plays.saturating_sub(self.completed_plays);
@@ -280,7 +305,9 @@ impl<T: Animatable> AnimatedPlayback<T> {
 
         let (duration, elapsed) = match &self.motion {
             AnimatedMotion::Timed(animation) => (animation.duration, animation.elapsed + dt),
-            AnimatedMotion::Spring(_) => return self.advance_once(dt),
+            AnimatedMotion::Keyframes(_) | AnimatedMotion::Spring(_) => {
+                return self.advance_once(dt);
+            }
         };
         if elapsed >= duration * remaining_plays as f64 {
             self.finish_forward(total_plays);
@@ -296,7 +323,9 @@ impl<T: Animatable> AnimatedPlayback<T> {
     fn advance_repeating(&mut self, dt: f64, alternate: bool) -> (T, bool) {
         let (duration, elapsed) = match &self.motion {
             AnimatedMotion::Timed(animation) => (animation.duration, animation.elapsed + dt),
-            AnimatedMotion::Spring(_) => return self.advance_once(dt),
+            AnimatedMotion::Keyframes(_) | AnimatedMotion::Spring(_) => {
+                return self.advance_once(dt);
+            }
         };
         let crossed = (elapsed / duration).floor() as u64;
         self.completed_plays = self.completed_plays.saturating_add(crossed);
@@ -326,6 +355,7 @@ impl<T: Animatable> AnimatedPlayback<T> {
                 animation.elapsed = animation.duration;
                 animation.running = false;
             }
+            AnimatedMotion::Keyframes(animation) => animation.stop(),
             AnimatedMotion::Spring(animation) => animation.stop(),
         }
         self.completed_plays = completed_plays;
@@ -336,7 +366,7 @@ impl<T: Animatable> AnimatedPlayback<T> {
         if matches!(self.loop_mode, LoopMode::Count(0)) {
             self.finish_forward(0);
         } else {
-            if self.motion.is_timed() {
+            if self.motion.supports_loops() {
                 self.set_leg(self.original_from, self.original_to, 0.0);
             } else {
                 self.motion.restart();
@@ -348,7 +378,7 @@ impl<T: Animatable> AnimatedPlayback<T> {
     fn reverse(&mut self, now: Instant) {
         std::mem::swap(&mut self.original_from, &mut self.original_to);
         self.completed_plays = 0;
-        if self.motion.is_timed() {
+        if self.motion.supports_loops() {
             self.set_leg(self.original_from, self.original_to, 0.0);
         } else {
             self.motion.reverse();
@@ -357,7 +387,7 @@ impl<T: Animatable> AnimatedPlayback<T> {
     }
 
     fn configure_loop(&mut self, loop_mode: LoopMode, now: Instant) -> Option<T> {
-        if !self.motion.is_timed() {
+        if !self.motion.supports_loops() {
             return None;
         }
         self.loop_mode = loop_mode;
@@ -523,6 +553,16 @@ impl<T: Animatable + Sync> Animated<T> {
         self
     }
 
+    /// 启动单次 typed keyframe 序列，并返回同一共享句柄。
+    pub fn to_keyframes(
+        self,
+        frames: impl IntoIterator<Item = Keyframe<T>>,
+        duration: f64,
+    ) -> Result<Self, KeyframeError> {
+        self.animate_keyframes(frames, duration)?;
+        Ok(self)
+    }
+
     /// Retargets the shared value from its current position.
     pub fn animate_to(&self, target: T, duration: f64, easing: Easing) {
         self.replace_playback(target, duration, easing, Duration::ZERO);
@@ -550,6 +590,25 @@ impl<T: Animatable + Sync> Animated<T> {
         } else {
             self.inner.touch();
         }
+    }
+
+    /// 从 keyframe 序列首值启动单次过渡；缺少 offset 0 时从当前值补齐。
+    pub fn animate_keyframes(
+        &self,
+        frames: impl IntoIterator<Item = Keyframe<T>>,
+        duration: f64,
+    ) -> Result<(), KeyframeError> {
+        let current = self.inner.current.get_untracked();
+        let next = KeyframeAnimation::from_current(current, frames, duration)?;
+        let value = next.value();
+        *self
+            .inner
+            .playback
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+            Some(AnimatedPlayback::new_keyframes(next));
+        self.inner.current.set(value);
+        Ok(())
     }
 
     fn replace_playback(&self, target: T, duration: f64, easing: Easing, delay: Duration) {
