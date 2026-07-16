@@ -16,7 +16,7 @@
 | 反馈 Overlay | 通过 | Modal 打开 → Escape 关闭 → 重开，以及 Drawer 打开均正常，未出现裁切或无法重开的回归。 |
 | 窗口尺寸事件 | 通过 | 主窗口最大化后客户区完整绘制，随后还原到原尺寸，无黑边或崩溃。 |
 | CLI demo | 通过 | `cargo run --bin uix-demo -- --cli` 退出 0，输出“全部演示完成”。 |
-| 自动化与文档门禁 | 通过 | `cargo test --all-targets`：lib **1183/1183**、demo **23/23**；`cargo test --doc`：**3 passed / 24 ignored**；`cargo clippy --all-targets`、`python scripts/check_docs_links.py`、`git diff --check` 均退出 0。Clippy 仅保留既有非阻断 warning。 |
+| 自动化与文档门禁 | 通过 | `cargo test --all-targets`：lib **1183/1183**、demo **23/23**；`cargo test --doc`：**3 passed / 24 ignored**；Clippy 静态检查、`python scripts/check_docs_links.py`、`git diff --check` 均退出 0。Clippy 仅保留既有非阻断 warning。 |
 
 ## 发现、修复与回归
 

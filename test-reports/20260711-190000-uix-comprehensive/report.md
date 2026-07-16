@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | 自动化全量回归 | 通过 | `cargo test --all-targets`：lib **1181/1181**、demo **23/23**。本轮新增 Tab→文本输入、实际 glyph 跨 Typography 选择/复制、640×480 Other 页纵向滑块交互，以及 7 项公开边界回归。 |
 | 公开参数与终态边界 | 通过 | Pagination/Descriptions 的 0 与极值、Image 零目标、VirtualList 的 `NaN`/无穷/极大 offset、Timer 自取消/queue teardown/zero interval、WindowSession teardown、AppRuntime root shutdown 均有最小回归。 |
-| 文档、静态与差异门禁 | 通过 | `cargo test --doc`：**3 passed / 24 ignored**；`cargo clippy --all-targets`、`git diff --check`、`python scripts/check_docs_links.py` 均退出 0。Clippy 保留既有非阻塞 warning。 |
+| 文档、静态与差异门禁 | 通过 | `cargo test --doc`：**3 passed / 24 ignored**；Clippy 静态检查、`git diff --check`、`python scripts/check_docs_links.py` 均退出 0。Clippy 保留既有非阻塞 warning。 |
 | 后端真实窗口矩阵 | 通过（Windows 单机） | D3D11 9 项真实 HWND/context 测试、D3D12 WARP 3 项、WGL/OpenGL ES 4 项通过；显式 D3D11、D3D12、OpenGL ES、Auto 启动均创建窗口并正常退出；`--no-default-features` demo 构建通过。 |
 | D3D11 动态帧与主/副窗 | 通过（范围内） | 先前 39 秒 15 帧采样首/中/末完整：[01](evidence/d3d11-long-01.png)、[08](evidence/d3d11-long-08.png)、[15](evidence/d3d11-long-15.png)；本轮动态页面在相隔 10 秒的计时值 803/822 均为完整帧。 |
 | OpenGL ES 动态帧与副窗 | 通过（范围内） | 显式 OpenGL ES 动态页连续采样 tick 33、44、56 均完整；打开“主题联动窗口”后，独立 `UIX Theme Window` 正常渲染，未见黑块或空白帧。 |
