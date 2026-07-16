@@ -11,7 +11,7 @@
 //! - `Animation<T>` — 泛型动画实例，驱动单值从 from→to 的插值。
 //! - `KeyframeAnimation<T>` — 固定时长的 typed 单值分段插值。
 //! - `keyframe!` — 生成逐字段 `Animatable` 聚合类型，让多项属性共享一个 source 与时钟。
-//! - `AnimationGroup` — 在不新增 frame registration 的前提下编排有限并行 / 串行 source。
+//! - `AnimationGroup` — 在不新增 frame registration 的前提下编排有限并行 / 串行 / stagger source。
 //! - `SpringAnimation<T>` — 使用阻尼谐振子解析解收敛到目标的单次动画。
 //! - `AnimationConfig` — 进出场动画公开配置（淡入/滑入/缩放等）。
 //! - `TransitionPlayer` — 过渡播放器，见控 widget 的单次进出场动画。

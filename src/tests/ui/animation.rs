@@ -174,6 +174,77 @@ fn sequential_animation_group_consumes_large_delta_across_delay() {
 }
 
 #[test]
+fn staggered_animation_group_offsets_existing_source_deadlines() {
+    let first = Animated::new(0.0_f32).to(1.0, 1.0, Easing::linear);
+    let second = Animated::new(0.0_f32).to(1.0, 1.0, Easing::linear);
+    let third = Animated::new(0.0_f32).to(1.0, 1.0, Easing::linear);
+    let group = AnimationGroup::stagger(
+        [first.group_item(), second.group_item(), third.group_item()],
+        0.25,
+    )
+    .expect("finite sources should form a staggered group");
+    assert_eq!(group.duration(), 1.5);
+    assert!(group.progress().abs() < 1e-6);
+
+    let root_group = group.clone();
+    let mut tree = ViewAdapter::build_nodes(ViewAdapter::capture_root(move || {
+        let _ = root_group.progress();
+        label("stagger")
+    }));
+    let registrations = tree.animated_source_registrations();
+    assert_eq!(registrations.len(), 3);
+    assert_eq!(
+        registrations
+            .iter()
+            .filter(|(_, due)| due.is_none())
+            .count(),
+        1
+    );
+    assert_eq!(
+        registrations
+            .iter()
+            .filter(|(_, due)| due.is_some())
+            .count(),
+        2
+    );
+    let last_deadline = registrations
+        .iter()
+        .filter_map(|(_, due)| *due)
+        .max()
+        .expect("staggered children should have deadlines");
+
+    let updates = tree.update_animations_at(last_deadline, 0.5);
+    assert_eq!(updates.len(), 3);
+    assert!(first.value() >= 0.49 && first.value() <= 0.51);
+    assert!(second.value() >= 0.24 && second.value() <= 0.26);
+    assert!(third.value().abs() < 1e-6);
+    assert!(group.progress() >= 0.32 && group.progress() <= 0.34);
+
+    let _ = tree.update_animations_at(last_deadline + Duration::from_secs(2), 2.0);
+    assert!(group.is_finished());
+    assert_eq!(group.progress(), 1.0);
+}
+
+#[test]
+fn counted_animation_group_progress_spans_all_plays() {
+    let repeated = Animated::new(0.0_f32)
+        .to(1.0, 1.0, Easing::linear)
+        .loop_count(3);
+    let group = AnimationGroup::parallel([repeated.group_item()])
+        .expect("counted playback has a finite group duration");
+    assert_eq!(group.duration(), 3.0);
+
+    let root_group = group.clone();
+    let mut tree = ViewAdapter::build_nodes(ViewAdapter::capture_root(move || {
+        let _ = root_group.progress();
+        label("counted")
+    }));
+    assert_eq!(tree.update_animations(1.5).len(), 1);
+    assert!((repeated.value() - 0.5).abs() < 1e-6);
+    assert!((group.progress() - 0.5).abs() < 1e-6);
+}
+
+#[test]
 fn animation_group_rejects_non_finite_timeline_items() {
     assert_eq!(
         AnimationGroup::parallel([]).expect_err("empty group should fail"),
@@ -226,6 +297,18 @@ fn animation_group_rejects_non_finite_timeline_items() {
     assert_eq!(group.duration(), 0.0);
     assert_eq!(group.progress(), 1.0);
     assert!(group.is_finished());
+
+    let zero_interval_first = Animated::new(0.0_f32).to(1.0, 1.0, Easing::linear);
+    let zero_interval_second = Animated::new(0.0_f32).to(1.0, 2.0, Easing::linear);
+    let normalized = AnimationGroup::stagger(
+        [
+            zero_interval_first.group_item(),
+            zero_interval_second.group_item(),
+        ],
+        f64::INFINITY,
+    )
+    .expect("non-finite stagger interval normalizes to zero");
+    assert_eq!(normalized.duration(), 2.0);
 }
 
 #[test]
