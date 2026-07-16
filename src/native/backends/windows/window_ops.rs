@@ -452,10 +452,11 @@ impl WindowOps for WindowsWindowOps {
             GWL_STYLE,
             "os_set_resizable: GetWindowLongW failed",
         )? as u32;
+        let resize_style = WS_THICKFRAME | WS_MAXIMIZEBOX;
         let new_style = if resizable {
-            style | WS_THICKFRAME
+            style | resize_style
         } else {
-            style & !WS_THICKFRAME
+            style & !resize_style
         };
         set_window_long_checked(
             self.hwnd,
