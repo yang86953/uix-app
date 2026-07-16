@@ -125,6 +125,11 @@ impl ViewNode {
         self
     }
 
+    /// Binds the background to an existing declarative animation source.
+    pub fn bg_animated(self, color: &crate::ui::animation::Animated<Color>) -> Self {
+        self.bg(color.value())
+    }
+
     /// 设置指针悬停时的背景色；未设置时沿用普通背景。
     pub fn bg_hover(mut self, color: impl Into<ColorValue>) -> Self {
         self.style.background_hover = Some(color.into());
@@ -172,9 +177,19 @@ impl ViewNode {
         self
     }
 
+    /// Binds width to an existing declarative animation source.
+    pub fn width_animated(self, width: &crate::ui::animation::Animated<f32>) -> Self {
+        self.width(width.value())
+    }
+
     pub fn height(mut self, h: f32) -> Self {
         self.style.height = Some(h);
         self
+    }
+
+    /// Binds height to an existing declarative animation source.
+    pub fn height_animated(self, height: &crate::ui::animation::Animated<f32>) -> Self {
+        self.height(height.value())
     }
 
     pub fn flex_grow(mut self, g: f32) -> Self {
@@ -233,9 +248,24 @@ impl ViewNode {
         self
     }
 
+    /// Binds corner radius to an existing declarative animation source.
+    pub fn radius_animated(self, radius: &crate::ui::animation::Animated<f32>) -> Self {
+        self.radius(radius.value())
+    }
+
     pub fn opacity(mut self, o: f32) -> Self {
         self.style.opacity = o;
         self
+    }
+
+    /// Binds opacity to an existing declarative animation source.
+    pub fn opacity_animated(self, opacity: &crate::ui::animation::Animated<f32>) -> Self {
+        self.opacity(opacity.value())
+    }
+
+    /// Binds foreground/text color to an existing declarative animation source.
+    pub fn color_animated(self, color: &crate::ui::animation::Animated<Color>) -> Self {
+        self.color(color.value())
     }
 
     /// 保留节点身份，但让整棵子树退出布局、绘制、命中与焦点候选。
@@ -680,6 +710,10 @@ pub trait StyleExt: Into<ViewNode> + Sized {
         self.into().bg(color)
     }
 
+    fn bg_animated(self, color: &crate::ui::animation::Animated<Color>) -> ViewNode {
+        self.into().bg_animated(color)
+    }
+
     /// 设置指针悬停时的背景色；未设置时沿用普通背景。
     fn bg_hover(self, color: impl Into<ColorValue>) -> ViewNode {
         self.into().bg_hover(color)
@@ -707,8 +741,16 @@ pub trait StyleExt: Into<ViewNode> + Sized {
         self.into().width(w)
     }
 
+    fn width_animated(self, width: &crate::ui::animation::Animated<f32>) -> ViewNode {
+        self.into().width_animated(width)
+    }
+
     fn height(self, h: f32) -> ViewNode {
         self.into().height(h)
+    }
+
+    fn height_animated(self, height: &crate::ui::animation::Animated<f32>) -> ViewNode {
+        self.into().height_animated(height)
     }
 
     fn flex_grow(self, g: f32) -> ViewNode {
@@ -752,8 +794,20 @@ pub trait StyleExt: Into<ViewNode> + Sized {
         self.into().radius(r)
     }
 
+    fn radius_animated(self, radius: &crate::ui::animation::Animated<f32>) -> ViewNode {
+        self.into().radius_animated(radius)
+    }
+
     fn opacity(self, o: f32) -> ViewNode {
         self.into().opacity(o)
+    }
+
+    fn opacity_animated(self, opacity: &crate::ui::animation::Animated<f32>) -> ViewNode {
+        self.into().opacity_animated(opacity)
+    }
+
+    fn color_animated(self, color: &crate::ui::animation::Animated<Color>) -> ViewNode {
+        self.into().color_animated(color)
     }
 
     /// 保留节点身份，但让整棵子树退出布局、绘制、命中与焦点候选。
