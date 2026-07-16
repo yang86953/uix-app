@@ -32,15 +32,16 @@ pub use crate::ui::{
     ColorPicker, Content, Date, DatePicker, DateRangePicker, Descriptions, DescriptionsItem,
     Divider, DividerDirection, DividerOrientation, Drawer, DrawerPlacement, Dropdown, Empty,
     FieldError, FloatButton, FloatButtonBackTop, Footer, Form, FormBuilder, FormCheckboxItem,
-    FormInputItem, FormInputNumberItem, FormItem, FormLayout, FormListBuilder, FormListError,
-    FormListFieldError, FormListFields, FormListItemId, FormListModel, FormListValues, FormModel,
-    FormRadioItem, FormRateItem, FormSegmentedItem, FormSelectItem, FormSliderItem, FormSwitchItem,
-    Grid, Header, Icon, Image, Input, InputNumber, InputNumberValue, IntoFormValue, Label, Layout,
-    LineChart, LineData, List, Mentions, Menu, MenuItem, MenuMode, Message, MessageItem, Modal,
-    ModalBuilder, ModalContext, NavGroup, NavItem, Navigation, Notification, NotificationItem,
-    OptGroup, Pagination, PickerMode, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover,
-    PopoverPlacement, PopoverTrigger, PresetDate, ProgressBar, ProgressMode, ProgressType, QRCode,
-    Radio, RadioDirection, Rate, ResultType, ResultView, RichText, RichTextSegment, RichTextStyle,
+    FormColorPickerItem, FormDatePickerItem, FormInputItem, FormInputNumberItem, FormItem,
+    FormLayout, FormListBuilder, FormListError, FormListFieldError, FormListFields, FormListItemId,
+    FormListModel, FormListValues, FormModel, FormRadioItem, FormRateItem, FormSegmentedItem,
+    FormSelectItem, FormSliderItem, FormSwitchItem, FormTimePickerItem, Grid, Header, Icon, Image,
+    Input, InputNumber, InputNumberValue, IntoFormValue, Label, Layout, LineChart, LineData, List,
+    Mentions, Menu, MenuItem, MenuMode, Message, MessageItem, Modal, ModalBuilder, ModalContext,
+    NavGroup, NavItem, Navigation, Notification, NotificationItem, OptGroup, Pagination,
+    PickerMode, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement,
+    PopoverTrigger, PresetDate, ProgressBar, ProgressMode, ProgressType, QRCode, Radio,
+    RadioDirection, Rate, ResultType, ResultView, RichText, RichTextSegment, RichTextStyle,
     ScrollView, Segmented, Select, SelectableItem, SelectableList, SharedActive, Sider, Skeleton,
     SkeletonShape, Slider, SortDirection, Space, SpaceSize, Spin, SpinSize, Splitter, Step,
     StepStatus, Steps, Switch, Tab, TabPosition, Table, TableBuilder, TableChange, TableColumn,
@@ -215,6 +216,8 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<FieldError>();
     assert_exported::<FormBuilder>();
     assert_exported::<FormCheckboxItem>();
+    assert_exported::<FormColorPickerItem>();
+    assert_exported::<FormDatePickerItem>();
     assert_exported::<FormInputItem>();
     assert_exported::<FormInputNumberItem<i32>>();
     assert_exported::<FormSelectItem<HashSet<String>>>();
@@ -234,9 +237,13 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<FormSegmentedItem>();
     assert_exported::<FormSelectItem>();
     assert_exported::<FormSliderItem>();
+    assert_exported::<FormTimePickerItem>();
     assert_exported::<Trigger>();
+    assert_form_value::<Color>();
+    assert_form_value::<Date>();
     assert_form_value::<HashSet<String>>();
     assert_form_value::<String>();
+    assert_form_value::<Time>();
     assert_exported::<LineData>();
     assert_exported::<MenuItem>();
     assert_exported::<MenuMode>();
