@@ -135,7 +135,9 @@ impl WidgetTree {
                     id,
                     automation_id: node.automation_id().map(str::to_owned),
                     parent: node.parent(),
-                    frame: node.frame(),
+                    frame: self
+                        .node_visual_rect(id, node.frame())
+                        .unwrap_or_else(|| node.frame()),
                     visible_bounds: self.visible_rect_for(id),
                     focused: focused == Some(id),
                     accessibility,

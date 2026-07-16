@@ -120,6 +120,20 @@ impl Transform {
     }
 
     pub fn transform_rect(self, rect: Rect) -> Rect {
+        let [a, b, tx, c, d, ty] = self.m;
+        if b == 0.0 && c == 0.0 {
+            let x = if a >= 0.0 {
+                a * rect.x + tx
+            } else {
+                a * (rect.x + rect.w) + tx
+            };
+            let y = if d >= 0.0 {
+                d * rect.y + ty
+            } else {
+                d * (rect.y + rect.h) + ty
+            };
+            return Rect::new(x, y, a.abs() * rect.w, d.abs() * rect.h);
+        }
         let top_left = self.transform_point(Point::new(rect.x, rect.y));
         let top_right = self.transform_point(Point::new(rect.x + rect.w, rect.y));
         let bottom_left = self.transform_point(Point::new(rect.x, rect.y + rect.h));

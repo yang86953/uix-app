@@ -269,7 +269,8 @@ impl WidgetTree {
             Some(frame)
         } else {
             None
-        };
+        }
+        .and_then(|rect| self.node_visual_rect(id, rect));
         app_state.register(
             id,
             node.component_snapshot(id),
@@ -512,10 +513,7 @@ impl WidgetTree {
     pub fn remove(&mut self, id: ComponentId) {
         self.tree_version += 1;
 
-        let old_frame = self
-            .get(id)
-            .map(|n| n.frame())
-            .filter(|f| f.w > 0.0 && f.h > 0.0);
+        let old_visual_bounds = self.visual_subtree_bounds(id);
 
         let Some(slot) = self.node_slot_for(id) else {
             return;
@@ -562,9 +560,9 @@ impl WidgetTree {
             }
         }
 
-        if let Some(frame) = old_frame {
+        if let Some(rect) = old_visual_bounds {
             if let Some(pid) = parent_id {
-                self.invalidate_paint_rect(pid, frame);
+                self.push_paint_invalidation(pid, Some(rect));
             }
         }
         if let Some(pid) = parent_id {
@@ -725,21 +723,25 @@ impl WidgetTree {
     }
 
     fn apply_frame_paint(&mut self, id: ComponentId, new_frame: Rect) -> bool {
-        let old = match self.get(id) {
+        match self.get(id) {
             Some(w) => {
                 let old = w.frame();
                 if old == new_frame {
                     return false;
                 }
-                old
             }
             None => return false,
-        };
+        }
+        let old_visual_bounds = self.visual_subtree_bounds(id);
         if let Some(w) = self.get_mut(id) {
             w.set_frame(new_frame);
         }
-        self.invalidate_paint_rect(id, old);
-        self.invalidate_paint(id);
+        let new_visual_bounds = self.visual_subtree_bounds(id);
+        for rect in [old_visual_bounds, new_visual_bounds].into_iter().flatten() {
+            if rect.w > 0.0 && rect.h > 0.0 {
+                self.push_paint_invalidation(id, Some(rect));
+            }
+        }
         true
     }
 

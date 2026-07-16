@@ -43,6 +43,12 @@ impl ScenePaint for WidgetTree {
         self.get(id).map(|n| n.z_index()).unwrap_or(0)
     }
 
+    fn node_transform(&self, id: NodeId) -> crate::draw::Transform {
+        self.get(id)
+            .map(|node| node.visual_transform_matrix())
+            .unwrap_or_else(crate::draw::Transform::identity)
+    }
+
     fn node_children(&self, id: NodeId) -> &[NodeId] {
         static EMPTY: &[NodeId] = &[];
         self.get(id).map(|n| n.children()).unwrap_or(EMPTY)
@@ -109,7 +115,9 @@ impl ScenePaint for WidgetTree {
         if let Some(node) = self.get(id) {
             if node.visible() {
                 let dirty = node.dirty_rect(frame);
-                let paint_rect = (dirty.w > 0.0 && dirty.h > 0.0).then_some(dirty);
+                let paint_rect = (dirty.w > 0.0 && dirty.h > 0.0)
+                    .then_some(dirty)
+                    .and_then(|rect| self.node_visual_rect(id, rect));
                 begin_state_bind_capture(id, self.invalidation_handle(), paint_rect);
                 set_current_paint_widget(Some(id));
                 node.render(frame, ctx, self);

@@ -24,6 +24,7 @@ pub(crate) mod system_event_handler;
 pub mod theme;
 pub mod traits;
 pub mod view;
+pub(crate) mod view_transform;
 pub mod widgets;
 pub mod window_chrome;
 

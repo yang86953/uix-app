@@ -14,6 +14,7 @@ use crate::ui::foundation::provider_context::{
 };
 use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::system_event_handler::SystemEventHandlerRegistration;
+use crate::ui::view_transform::ViewTransform;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventResult {
@@ -35,6 +36,7 @@ pub struct WidgetNode {
     pub children: Vec<WidgetNode>,
     pub(crate) provider_context: ProviderContext,
     pub(crate) visible: bool,
+    pub(crate) visual_transform: ViewTransform,
     pub z_index: i32,
     pub key: Option<Box<str>>,
     pub automation_id: Option<Box<str>>,
@@ -53,6 +55,7 @@ impl WidgetNode {
             children,
             provider_context: current_provider_context(),
             visible: true,
+            visual_transform: ViewTransform::default(),
             z_index: 0,
             key: None,
             automation_id: None,
@@ -78,6 +81,7 @@ impl WidgetNode {
             children: vec![],
             provider_context: current_provider_context(),
             visible: true,
+            visual_transform: ViewTransform::default(),
             z_index: 0,
             key: None,
             automation_id: None,
@@ -95,6 +99,10 @@ impl WidgetNode {
     }
     pub(crate) fn with_visibility(mut self, visible: bool) -> Self {
         self.visible = visible;
+        self
+    }
+    pub(crate) fn with_visual_transform(mut self, transform: ViewTransform) -> Self {
+        self.visual_transform = transform;
         self
     }
     /// 设置 Tab 键导航顺序索引（> 0 表示可通过 Tab 获取焦点）。
@@ -202,6 +210,7 @@ pub struct BoxedWidget {
     automation_id: Option<Box<str>>,
     frame: Rect,
     visible: bool,
+    visual_transform: ViewTransform,
     attached: bool,
     mounted: bool,
     active: bool,
@@ -241,6 +250,7 @@ impl BoxedWidget {
             automation_id: None,
             frame: Rect::zero(),
             visible: true,
+            visual_transform: ViewTransform::default(),
             attached: false,
             mounted: false,
             active: false,
@@ -351,6 +361,18 @@ impl BoxedWidget {
         accessibility_override: Option<AccessibilityOverride>,
     ) {
         self.accessibility_override = accessibility_override;
+    }
+
+    pub(crate) fn visual_transform(&self) -> ViewTransform {
+        self.visual_transform
+    }
+
+    pub(crate) fn set_visual_transform(&mut self, transform: ViewTransform) {
+        self.visual_transform = transform;
+    }
+
+    pub(crate) fn visual_transform_matrix(&self) -> crate::draw::Transform {
+        self.visual_transform.matrix(self.frame)
     }
 
     pub(crate) fn accessibility(&self) -> AccessibilitySnapshot {
@@ -764,4 +786,5 @@ pub(crate) mod tree_dirty;
 pub(crate) mod tree_dynamic;
 pub(crate) mod tree_events;
 mod tree_semantics;
+mod tree_transform;
 pub use tree_core::WidgetTree;

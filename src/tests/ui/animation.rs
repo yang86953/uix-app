@@ -65,6 +65,9 @@ fn animated_style_bindings_capture_sources_without_wrapper_nodes() {
     let width = Animated::new(40.0_f32).to(80.0, 1.0, Easing::linear);
     let height = Animated::new(20.0_f32).to(60.0, 1.0, Easing::linear);
     let radius = Animated::new(0.0_f32).to(8.0, 1.0, Easing::linear);
+    let offset =
+        Animated::new(Point::new(0.0, 0.0)).to(Point::new(20.0, 10.0), 1.0, Easing::linear);
+    let scale = Animated::new(1.0_f32).to(1.5, 1.0, Easing::linear);
 
     let build = || {
         ViewAdapter::capture_root(|| {
@@ -75,31 +78,37 @@ fn animated_style_bindings_capture_sources_without_wrapper_nodes() {
                 .width_animated(&width)
                 .height_animated(&height)
                 .radius_animated(&radius)
+                .offset_animated(&offset)
+                .scale_animated(&scale)
         })
     };
     let root = build();
-    assert_eq!(root.animated_sources.len(), 6);
+    assert_eq!(root.animated_sources.len(), 8);
     assert_eq!(root.style.opacity, 0.0);
     assert_eq!(root.style.background, Some(background.value().into()));
     assert_eq!(root.style.color, foreground.value().into());
     assert_eq!(root.style.width, Some(40.0));
     assert_eq!(root.style.height, Some(20.0));
     assert_eq!(root.style.border_radius, 0.0);
+    assert_eq!(root.visual_transform.offset, Point::new(0.0, 0.0));
+    assert_eq!(root.visual_transform.scale, 1.0);
 
     let mut tree = ViewAdapter::build_nodes(root);
     let root_id = tree.root_id().expect("animated style root");
     assert_eq!(tree.traverse().len(), 1);
-    assert_eq!(tree.animated_source_registrations().len(), 6);
-    assert_eq!(tree.update_animations(0.5).len(), 6);
+    assert_eq!(tree.animated_source_registrations().len(), 8);
+    assert_eq!(tree.update_animations(0.5).len(), 8);
 
     let next = build();
-    assert_eq!(next.animated_sources.len(), 6);
+    assert_eq!(next.animated_sources.len(), 8);
     assert!((next.style.opacity - 0.5).abs() < 1e-6);
     assert_eq!(next.style.background, Some(background.value().into()));
     assert_eq!(next.style.color, foreground.value().into());
     assert_eq!(next.style.width, Some(60.0));
     assert_eq!(next.style.height, Some(40.0));
     assert_eq!(next.style.border_radius, 4.0);
+    assert_eq!(next.visual_transform.offset, Point::new(10.0, 5.0));
+    assert!((next.visual_transform.scale - 1.25).abs() < 1e-6);
     ViewAdapter::reconcile_nodes(&mut tree, next);
     assert_eq!(tree.root_id(), Some(root_id));
     assert_eq!(tree.traverse().len(), 1);

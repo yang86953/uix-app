@@ -2,6 +2,7 @@ use crate::draw::engine::cpu::canvas_2d::CpuCanvas2D;
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
+use crate::ui::view_transform::ViewTransform;
 use crate::ui::widgets::other::scroll_view::scrollbar::{ScrollBar, ScrollbarOrientation};
 use crate::ui::widgets::other::scroll_view::*;
 use crate::ui::widgets::Container;
@@ -808,6 +809,61 @@ fn scrollview_wheel_registers_composite_scroll_strip() {
     assert_eq!(dx, 0.0);
     assert_eq!(dy, 50.0);
 
+    let sv = tree
+        .get(sv_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<ScrollView>()
+        .unwrap();
+    assert!(sv.scroll_delta_for_dirty().is_none());
+}
+
+#[test]
+fn transformed_scrollview_repaints_without_retaining_a_composite_delta() {
+    let mut tree = WidgetTree::new();
+    let sv_id = tree.set_root(Box::new(
+        ScrollView::new(ScrollDirection::Vertical).size(300.0, 200.0),
+    ));
+    tree.add_child(
+        sv_id,
+        Box::new(FixedWidget {
+            size: Size::new(300.0, 600.0),
+            id: ComponentId::new(1),
+        }),
+    );
+
+    tree.layout();
+    tree.get_mut(sv_id)
+        .unwrap()
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<ScrollView>()
+        .unwrap()
+        .last_frame
+        .set(Some(Rect::new(0.0, 0.0, 300.0, 200.0)));
+    tree.set_visual_transform(
+        sv_id,
+        ViewTransform {
+            offset: Point::new(0.0, 0.0),
+            scale: 2.0,
+        },
+    );
+    tree.reset_invalidation();
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::Wheel {
+            pos: Point::new(20.0, 20.0),
+            delta: Point::new(0.0, 1.0),
+        }),
+        EventResult::Handled
+    );
+
+    assert_eq!(
+        tree.dirty_region().bounds(),
+        Rect::new(-150.0, -100.0, 600.0, 400.0)
+    );
+    assert!(tree.scroll_region_moves().is_none());
     let sv = tree
         .get(sv_id)
         .unwrap()

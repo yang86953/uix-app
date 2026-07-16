@@ -355,23 +355,14 @@ impl WidgetTree {
 
     fn frame_local_pointer(&self, id: WidgetId, screen_pos: Point) -> Point {
         let frame = self.get(id).map(|n| n.frame()).unwrap_or_else(Rect::zero);
-        let mut local = Point::new(screen_pos.x - frame.x, screen_pos.y - frame.y);
-        if let Some((sx, sy)) = self.cumulative_scroll_offset(id) {
-            local = Point::new(local.x + sx, local.y + sy);
-        }
-        local
+        self.point_to_node_layout(id, screen_pos)
+            .map(|point| Point::new(point.x - frame.x, point.y - frame.y))
+            .unwrap_or_default()
     }
 
-    /// hit-test / 指针比较用的 viewport 空间 frame（扣除祖先 scroll）。
+    /// hit-test / 指针比较用的 visual viewport 空间 frame。
     fn viewport_frame_for_hit(&self, id: WidgetId, content_frame: Rect) -> Rect {
-        match self.cumulative_scroll_offset(id) {
-            Some((sx, sy)) => Rect::new(
-                content_frame.x - sx,
-                content_frame.y - sy,
-                content_frame.w,
-                content_frame.h,
-            ),
-            None => content_frame,
-        }
+        self.node_visual_rect(id, content_frame)
+            .unwrap_or(content_frame)
     }
 }
