@@ -135,6 +135,21 @@ fn native_window_icon_loads_both_sizes_and_preserves_them_on_failure() {
 }
 
 #[test]
+fn native_window_flash_requests_attention_and_rejects_destroyed_handles() {
+    let mut platform = WindowsPlatform::new();
+    let mut window = platform
+        .create_window("UIX native flash", 200, 120)
+        .expect("native window");
+
+    window.flash_window().expect("request taskbar attention");
+    window.close().expect("close native window");
+    let error = window
+        .flash_window()
+        .expect_err("destroyed HWND must reject attention request");
+    assert_eq!(error.code(), Errc::InvalidState);
+}
+
+#[test]
 fn native_theme_messages_emit_one_app_wide_change_across_windows() {
     let mut platform = WindowsPlatform::new();
     let mut first = platform

@@ -10,7 +10,8 @@
 #![allow(nonstandard_style)]
 
 use super::bindings::{
-    CANDIDATEFORM, COMPOSITIONFORM, MONITORINFO, MSG, POINT, RECT, WINDOWPLACEMENT, WNDCLASSEXW,
+    CANDIDATEFORM, COMPOSITIONFORM, FLASHWINFO, MONITORINFO, MSG, POINT, RECT, WINDOWPLACEMENT,
+    WNDCLASSEXW,
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -151,6 +152,7 @@ extern "system" {
         fuLoad: u32,
     ) -> *mut std::ffi::c_void;
     pub(crate) fn DestroyIcon(hIcon: *mut std::ffi::c_void) -> i32;
+    pub(super) fn FlashWindowEx(info: *const FLASHWINFO) -> i32;
     pub(crate) fn LoadCursorW(
         hInstance: *mut std::ffi::c_void,
         lpCursorName: *const u16,

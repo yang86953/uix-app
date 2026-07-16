@@ -111,6 +111,9 @@ pub(crate) const WS_EX_LAYERED: u32 = 0x00080000;
 
 pub(crate) const LWA_ALPHA: u32 = 0x00000002;
 
+pub(crate) const FLASHW_TRAY: u32 = 0x00000002;
+pub(crate) const FLASHW_TIMERNOFG: u32 = 0x0000000C;
+
 pub(crate) const COLOR_APPWORKSPACE: u32 = 1;
 
 pub(crate) const MONITOR_DEFAULTTONEAREST: u32 = 2;
