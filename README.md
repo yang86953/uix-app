@@ -4,14 +4,13 @@ Rust **跨平台 App 框架**。入口：`use uix::prelude::*;`。
 
 声明式 UI + 原生绘制 + 零闲置。全栈指 UI + 应用壳 + 本地 Settings，**不含**网络 / 同步。应用 API 为 Rust 门面，无独立 UI DSL。
 
-> **当前**：Windows 优先（P6 gate 推进中）；Linux / macOS 源码在树；移动端未做。默认 Vulkan 图形，结构化 adapter 诊断与失败 typed。→ [`产品`](docs/产品.md) · [`使用`](docs/使用.md) · [`架构`](docs/架构.md)
+> **当前**：Windows P6 基线已闭合；Linux / macOS 源码在树，移动端未做。默认 Vulkan 图形，结构化 adapter 诊断与失败 typed。→ [`产品`](docs/产品.md) · [`使用`](docs/使用.md) · [`架构`](docs/架构.md) · [`活跃缺口`](docs/进度.md)
 
 ## 快速开始
 
 ```bash
 cargo run --bin uix-demo              # GUI（11 页 80+ 组件）
 cargo run --bin uix-demo -- --cli     # CLI
-cargo test
 ```
 
 演示 → [`demo/README.md`](demo/README.md)
@@ -72,12 +71,8 @@ fn main() {
 
 ## 图形
 
-默认 Vulkan；失败按 typed 原因在同 API 内有界恢复，耗尽后回 Software(GDI)，仅显式 `Auto` 可跨 GPU API probe。失败终态 `TerminalFailure`，无静默换 API、无 busy retry。空闲真休眠；遮挡矩阵仍在 P6 gate。
+默认 Vulkan；失败按 typed 原因在同 API 内有界恢复，耗尽后回 Software(GDI)，仅显式 `Auto` 可跨 GPU API probe。失败终态 `TerminalFailure`，无静默换 API、无 busy retry。空闲真休眠；Windows P6 遮挡基线已闭合。
 
-## 测试
+## 验证
 
-```bash
-cargo test --all-targets                                              # 全量
-cargo test --features test-harness                                    # 无窗 TestApp + 选择器 + 语义快照
-cargo test --features agent-control --test agent_gui_windows -- --ignored  # 真窗验收（Windows）
-```
+日常改动按 [AGENTS.md](AGENTS.md#验证) 从受影响测试开始；无窗应用测试与语义快照见[测试指南](docs/使用指南/测试.md)。全仓、ignored 真窗、soak 与 device-reset 只属于明确选择的阶段验收，不是常规开发命令。
