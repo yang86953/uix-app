@@ -45,56 +45,97 @@ pub(crate) struct CachedRaster {
     pub(crate) bearing_y: f32,
 }
 
+#[derive(Debug, Default)]
+struct GlyphCacheState {
+    entries: HashMap<GlyphCacheKey, CachedRaster>,
+    retained_bytes: usize,
+}
+
 /// 统一字形光栅缓存。
 ///
 /// 由 FontService 统一持有，所有后端共享。后端自身不应再维护独立缓存。
 /// 默认最多缓存 8192 个字形的覆盖位图。
 #[derive(Debug)]
 pub struct GlyphCache {
-    inner: Mutex<HashMap<GlyphCacheKey, CachedRaster>>,
+    inner: Mutex<GlyphCacheState>,
     max_entries: usize,
+    max_bytes: usize,
 }
 
 impl GlyphCache {
     pub(crate) fn new() -> Self {
+        Self::with_limits(8192, 32 * 1024 * 1024)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_max_entries(max_entries: usize) -> Self {
+        Self::with_limits(max_entries, usize::MAX)
+    }
+
+    pub(crate) fn with_limits(max_entries: usize, max_bytes: usize) -> Self {
         Self {
-            inner: Mutex::new(HashMap::new()),
-            max_entries: 8192,
+            inner: Mutex::new(GlyphCacheState::default()),
+            max_entries: max_entries.max(1),
+            max_bytes,
         }
     }
 
     pub(crate) fn get(&self, key: &GlyphCacheKey) -> Option<CachedRaster> {
-        let map = self.inner.lock().ok()?;
-        map.get(key).cloned()
+        let state = self.inner.lock().ok()?;
+        state.entries.get(key).cloned()
     }
 
     pub(crate) fn insert(&self, key: GlyphCacheKey, raster: CachedRaster) {
-        if let Ok(mut map) = self.inner.lock() {
-            if map.len() >= self.max_entries {
-                map.clear();
+        let retained_bytes =
+            std::mem::size_of::<GlyphCacheKey>().saturating_add(raster.coverage.len());
+        if retained_bytes > self.max_bytes {
+            return;
+        }
+
+        if let Ok(mut state) = self.inner.lock() {
+            if let Some(previous) = state.entries.remove(&key) {
+                state.retained_bytes = state.retained_bytes.saturating_sub(
+                    std::mem::size_of::<GlyphCacheKey>().saturating_add(previous.coverage.len()),
+                );
             }
-            map.insert(key, raster);
+
+            while state.entries.len() >= self.max_entries
+                || state.retained_bytes > self.max_bytes.saturating_sub(retained_bytes)
+            {
+                // 单项淘汰可保留其余热字形，避免容量边界触发集中重光栅化。
+                let Some(evicted_key) = state.entries.keys().next().cloned() else {
+                    break;
+                };
+                if let Some(evicted) = state.entries.remove(&evicted_key) {
+                    state.retained_bytes = state.retained_bytes.saturating_sub(
+                        std::mem::size_of::<GlyphCacheKey>().saturating_add(evicted.coverage.len()),
+                    );
+                }
+            }
+
+            state.retained_bytes = state.retained_bytes.saturating_add(retained_bytes);
+            state.entries.insert(key, raster);
         }
     }
 
     pub(crate) fn clear(&self) {
-        if let Ok(mut map) = self.inner.lock() {
-            map.clear();
+        if let Ok(mut state) = self.inner.lock() {
+            state.entries.clear();
+            state.retained_bytes = 0;
         }
     }
 
     pub(crate) fn len(&self) -> usize {
-        self.inner.lock().map(|m| m.len()).unwrap_or(0)
+        self.inner
+            .lock()
+            .map(|state| state.entries.len())
+            .unwrap_or(0)
     }
 
     pub(crate) fn memory_usage(&self) -> usize {
         self.inner
             .lock()
-            .map(|map| {
-                map.values()
-                    .map(|r| std::mem::size_of::<GlyphCacheKey>() + r.width * r.height)
-                    .sum()
-            })
+            .map(|state| state.retained_bytes)
             .unwrap_or(0)
     }
 }

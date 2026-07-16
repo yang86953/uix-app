@@ -13,7 +13,7 @@ use super::{clip_to_int, put_pixel};
 pub fn blit_image(
     pixels: &mut [u32],
     surface_w: i32,
-    _surface_h: i32,
+    surface_h: i32,
     clip: Rect,
     opacity: f32,
     src: &[u32],
@@ -21,57 +21,88 @@ pub fn blit_image(
     src_rect: Rect,
     dst_rect: Rect,
 ) {
-    if src_w <= 0 || src.is_empty() {
+    if surface_w <= 0
+        || surface_h <= 0
+        || src_w <= 0
+        || src.is_empty()
+        || !src_rect.x.is_finite()
+        || !src_rect.y.is_finite()
+        || !src_rect.w.is_finite()
+        || !src_rect.h.is_finite()
+        || !dst_rect.x.is_finite()
+        || !dst_rect.y.is_finite()
+        || !dst_rect.w.is_finite()
+        || !dst_rect.h.is_finite()
+        || src_rect.w <= 0.0
+        || src_rect.h <= 0.0
+        || dst_rect.w <= 0.0
+        || dst_rect.h <= 0.0
+    {
         return;
     }
-    let src_h = (src.len() / src_w as usize) as i32;
-    if src_h <= 0 {
+    let Some(surface_len) = (surface_w as usize).checked_mul(surface_h as usize) else {
+        return;
+    };
+    if pixels.len() < surface_len {
         return;
     }
 
-    let sx = src_rect.x.max(0.0) as i32;
-    let sy = src_rect.y.max(0.0) as i32;
-    let sw = (src_rect.w as i32).min(src_w - sx);
-    let sh = (src_rect.h as i32).min(src_h - sy);
-    if sw <= 0 || sh <= 0 {
+    let src_w = src_w as usize;
+    let src_h = src.len() / src_w;
+    if src_h == 0 {
         return;
     }
 
-    let dx = dst_rect.x as i32;
-    let dy = dst_rect.y as i32;
-    let dw = dst_rect.w as i32;
-    let dh = dst_rect.h as i32;
-    // An empty destination has no pixels to rasterize.  Returning before the
-    // scaled source-coordinate calculation also avoids division by zero.
+    let sx0 = (src_rect.x as f64).clamp(0.0, src_w as f64) as usize;
+    let sy0 = (src_rect.y as f64).clamp(0.0, src_h as f64) as usize;
+    let sx1 = (src_rect.x as f64 + src_rect.w as f64).clamp(0.0, src_w as f64) as usize;
+    let sy1 = (src_rect.y as f64 + src_rect.h as f64).clamp(0.0, src_h as f64) as usize;
+    if sx0 >= sx1 || sy0 >= sy1 {
+        return;
+    }
+    let source_width = sx1 - sx0;
+    let source_height = sy1 - sy0;
+
+    let dx = (dst_rect.x as i32) as i64;
+    let dy = (dst_rect.y as i32) as i64;
+    let dw = (dst_rect.w as i32) as i64;
+    let dh = (dst_rect.h as i32) as i64;
     if dw <= 0 || dh <= 0 {
         return;
     }
     let (cx0, cy0, cx1, cy1) = clip_to_int(&clip);
-    let scaled = dw != sw || dh != sh;
+    let visible_x0 = dx.max(cx0.max(0) as i64);
+    let visible_y0 = dy.max(cy0.max(0) as i64);
+    let visible_x1 = (dx + dw).min(cx1.min(surface_w) as i64);
+    let visible_y1 = (dy + dh).min(cy1.min(surface_h) as i64);
+    if visible_x0 >= visible_x1 || visible_y0 >= visible_y1 {
+        return;
+    }
 
-    for row in 0..dh.max(sh) {
-        for col in 0..dw.max(sw) {
-            let (src_x, src_y) = if scaled {
-                (sx + (col * sw / dw), sy + (row * sh / dh))
-            } else {
-                (sx + col, sy + row)
-            };
-            let src_idx = (src_y * src_w + src_x) as usize;
-            if src_idx >= src.len() {
-                continue;
-            }
+    for target_y in visible_y0..visible_y1 {
+        let row = (target_y - dy) as u128;
+        let source_y = sy0 + (row * source_height as u128 / dh as u128) as usize;
+        let source_row = source_y * src_w;
+        for target_x in visible_x0..visible_x1 {
+            let col = (target_x - dx) as u128;
+            let source_x = sx0 + (col * source_width as u128 / dw as u128) as usize;
+            let source_pixel = src[source_row + source_x];
             let p = if opacity < 1.0 - 1e-6 {
-                super::apply_opacity(src[src_idx], opacity)
+                super::apply_opacity(source_pixel, opacity)
             } else {
-                src[src_idx]
+                source_pixel
             };
-            if scaled {
-                if row < dh && col < dw {
-                    put_pixel(pixels, surface_w, dx + col, dy + row, cx0, cy0, cx1, cy1, p);
-                }
-            } else if row < sh && col < sw {
-                put_pixel(pixels, surface_w, dx + col, dy + row, cx0, cy0, cx1, cy1, p);
-            }
+            put_pixel(
+                pixels,
+                surface_w,
+                target_x as i32,
+                target_y as i32,
+                cx0,
+                cy0,
+                cx1,
+                cy1,
+                p,
+            );
         }
     }
 }

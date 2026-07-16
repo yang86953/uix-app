@@ -345,13 +345,14 @@ impl ViewAdapter {
             }
         } else if tid == std::any::TypeId::of::<Button>() {
             if let Some(b) = widget.as_any_mut().downcast_mut::<Button>() {
-                b.style = style.clone();
+                let mut button_style = style.clone();
                 if let Some(g) = flex_grow_override {
-                    b.style.flex_grow = g;
+                    button_style.flex_grow = g;
                 }
                 if let Some(s) = flex_shrink_override {
-                    b.style.flex_shrink = s;
+                    button_style.flex_shrink = s;
                 }
+                b.style = button_style.into();
             }
         } else if tid == std::any::TypeId::of::<Grid>() {
             if let Some(g) = widget.as_any_mut().downcast_mut::<Grid>() {

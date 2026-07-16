@@ -19,10 +19,21 @@ pub struct CpuDrawSurface {
 }
 
 impl CpuDrawSurface {
+    /// 创建 CPU 绘制表面。
+    ///
+    /// # Panics
+    ///
+    /// 尺寸无法分配时 panic；运行时尺寸应使用 [`Self::try_new`]。
     pub fn new(width: i32, height: i32) -> Self {
         Self {
             canvas: CpuCanvas2D::new(PixelSurface::new(width, height)),
         }
+    }
+
+    pub fn try_new(width: i32, height: i32) -> Result<Self, Error> {
+        Ok(Self {
+            canvas: CpuCanvas2D::new(PixelSurface::try_new(width, height)?),
+        })
     }
 
     pub fn canvas_mut(&mut self) -> &mut CpuCanvas2D {
@@ -159,9 +170,10 @@ impl RenderBackend for CpuBackend {
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        self.width = width;
-        self.height = height;
-        self.main = CpuDrawSurface::new(width, height);
+        let main = CpuDrawSurface::try_new(width, height)?;
+        self.width = main.surface().width();
+        self.height = main.surface().height();
+        self.main = main;
         Ok(())
     }
 
@@ -400,7 +412,7 @@ impl CpuBackend {
 
     pub fn memory_usage(&self) -> usize {
         let surf = self.main.surface();
-        let main_bytes = (surf.width() * surf.height() * 4) as usize;
-        main_bytes + self.offscreens.memory_usage()
+        surf.memory_usage()
+            .saturating_add(self.offscreens.memory_usage())
     }
 }

@@ -78,6 +78,18 @@ fn native_gpu_canvas_defers_scroll_copy_failure_to_the_frame_boundary() {
 }
 
 #[test]
+fn native_gpu_soft_fallback_defers_allocation_failure_without_panicking() {
+    let mut canvas = NativeGpuCanvas2D::new(i32::MAX, i32::MAX, NativeRasterCaps::d3d11_full());
+
+    let soft = canvas.ensure_soft();
+    assert_eq!(soft.surface().surface_size(), Size::new(1.0, 1.0));
+    let error = canvas
+        .take_deferred_error()
+        .expect("soft fallback allocation failure must be retained");
+    assert_eq!(error.code(), Errc::GraphicsOutOfMemory);
+}
+
+#[test]
 fn native_gpu_checked_picture_flush_rejects_an_unimplemented_path_clip() {
     let RecordingFixture { mut backend, .. } = recording_backend(FailStage::None);
     backend.resize(16, 16).expect("resize native backend");

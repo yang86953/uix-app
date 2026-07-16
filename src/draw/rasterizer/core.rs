@@ -65,6 +65,17 @@ pub fn color_to_premul(r: u8, g: u8, b: u8, a: u8, opacity: f32) -> u32 {
 }
 
 #[inline]
+fn pixel_index(pixels_len: usize, stride: i32, x: i32, y: i32) -> Option<usize> {
+    if stride <= 0 || x < 0 || y < 0 {
+        return None;
+    }
+    (y as usize)
+        .checked_mul(stride as usize)?
+        .checked_add(x as usize)
+        .filter(|index| *index < pixels_len)
+}
+
+#[inline]
 pub fn put_pixel(
     pixels: &mut [u32],
     stride: i32,
@@ -79,10 +90,9 @@ pub fn put_pixel(
     if x < clip_x0 || y < clip_y0 || x >= clip_x1 || y >= clip_y1 {
         return;
     }
-    let idx = (y * stride + x) as usize;
-    if idx >= pixels.len() {
+    let Some(idx) = pixel_index(pixels.len(), stride, x, y) else {
         return;
-    }
+    };
     let src_a = (color >> 24) & 0xFF;
     if src_a == 0 {
         return;
@@ -148,10 +158,9 @@ pub fn put_pixel_aa(
     let src_b_p = (premul_color & 0xFF) as f32 * coverage;
     let src_a_s = src_a * coverage;
 
-    let idx = (y * stride + x) as usize;
-    if idx >= pixels.len() {
+    let Some(idx) = pixel_index(pixels.len(), stride, x, y) else {
         return;
-    }
+    };
     let dst = pixels[idx];
     let dst_a = ((dst >> 24) & 0xFF) as f32;
     let dst_r_p = ((dst >> 16) & 0xFF) as f32;
@@ -183,16 +192,18 @@ pub fn fill_span(
     clip_y1: i32,
     color: u32,
 ) {
-    let x_start = x0.max(clip_x0);
-    let x_end = x1.min(clip_x1);
-    if y < clip_y0 || y >= clip_y1 || x_start >= x_end {
+    let x_start = x0.max(clip_x0).max(0);
+    let x_end = x1.min(clip_x1).min(stride);
+    if y < clip_y0 || y >= clip_y1 || y < 0 || x_start >= x_end {
         return;
     }
     if (color >> 24) == 0xFF {
-        let start = (y * stride + x_start) as usize;
+        let Some(start) = pixel_index(pixels.len(), stride, x_start, y) else {
+            return;
+        };
         let len = (x_end - x_start) as usize;
-        if start + len <= pixels.len() {
-            pixels[start..start + len].fill(color);
+        if let Some(end) = start.checked_add(len).filter(|end| *end <= pixels.len()) {
+            pixels[start..end].fill(color);
         }
     } else {
         for x in x_start..x_end {
@@ -217,13 +228,27 @@ pub fn fill_rect_raw(
     clip_y1: i32,
     color: u32,
 ) {
-    for dy in 0..h {
+    if stride <= 0 || w <= 0 || h <= 0 {
+        return;
+    }
+    let surface_height = pixels.len() / stride as usize;
+    let x_start = (x as i64).max(clip_x0 as i64).max(0);
+    let x_end = (x as i64 + w as i64).min(clip_x1 as i64).min(stride as i64);
+    let y_start = (y as i64).max(clip_y0 as i64).max(0);
+    let y_end = (y as i64 + h as i64)
+        .min(clip_y1 as i64)
+        .min(surface_height as i64);
+    if x_start >= x_end || y_start >= y_end {
+        return;
+    }
+
+    for row in y_start..y_end {
         fill_span(
             pixels,
             stride,
-            x,
-            x + w,
-            y + dy,
+            x_start as i32,
+            x_end as i32,
+            row as i32,
             clip_x0,
             clip_y0,
             clip_x1,

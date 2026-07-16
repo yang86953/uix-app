@@ -111,10 +111,10 @@ impl GraphicsEngine for FrameRecordingEngine {
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        let width = width.max(1);
-        let height = height.max(1);
-        self.canvas.resize(width, height);
-        self.offscreens.resize(width, height)
+        let (width, height, scratch) = FrameRecordingCanvas::prepare_resize(width, height)?;
+        self.offscreens.resize(width, height)?;
+        self.canvas.commit_resize(width, height, scratch);
+        Ok(())
     }
 
     fn begin_frame(&mut self, _strategy: UpdateStrategy) -> RenderOutcome {
@@ -233,7 +233,7 @@ impl FrameRecordingCanvas {
         let width = width.max(1);
         let height = height.max(1);
         Self {
-            scratch: SharedRasterizer::new(PixelSurface::new(width, height)),
+            scratch: SharedRasterizer::new(PixelSurface::one_pixel()),
             encoder: None,
             blend_mode: BlendMode::default(),
             blend_stack: Vec::new(),
@@ -245,12 +245,17 @@ impl FrameRecordingCanvas {
         }
     }
 
-    fn resize(&mut self, width: i32, height: i32) {
+    fn prepare_resize(width: i32, height: i32) -> Result<(i32, i32, SharedRasterizer), Error> {
         let width = width.max(1);
         let height = height.max(1);
+        let scratch = SharedRasterizer::new(PixelSurface::try_new(width, height)?);
+        Ok((width, height, scratch))
+    }
+
+    fn commit_resize(&mut self, width: i32, height: i32, scratch: SharedRasterizer) {
         self.width = width;
         self.height = height;
-        self.scratch = SharedRasterizer::new(PixelSurface::new(width, height));
+        self.scratch = scratch;
         self.encoder = None;
         self.blend_mode = BlendMode::default();
         self.blend_stack.clear();
@@ -260,7 +265,7 @@ impl FrameRecordingCanvas {
     }
 
     fn begin_recording(&mut self, clear_target: bool) -> Result<(), Error> {
-        self.scratch = SharedRasterizer::new(PixelSurface::new(self.width, self.height));
+        self.scratch = SharedRasterizer::new(PixelSurface::try_new(self.width, self.height)?);
         self.blend_mode = BlendMode::default();
         self.blend_stack.clear();
         self.scratch_dirty = false;

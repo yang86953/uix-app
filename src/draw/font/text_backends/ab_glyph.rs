@@ -85,7 +85,7 @@ impl TextBackend for AbGlyphBackend {
             };
         };
         let f = &self.fonts[idx].font;
-        let fs = opts.font_size.max(1.0);
+        let fs = text_backend::bounded_font_size(opts.font_size);
         let sf = f.as_scaled(PxScale { x: fs, y: fs });
 
         let asc = sf.ascent();
@@ -188,15 +188,13 @@ impl TextBackend for AbGlyphBackend {
     }
 
     fn rasterize_glyph(&self, font: &FontHandle, glyph_id: u32, pixel_size: f32) -> GlyphRaster {
-        let Some(idx) = self.idx(font) else {
-            return GlyphRaster {
-                width: 0,
-                height: 0,
-                coverage: Arc::from([]),
-                bearing_x: 0.0,
-                bearing_y: 0.0,
-            };
+        let Some(pixel_size) = text_backend::normalized_raster_pixel_size(pixel_size) else {
+            return GlyphRaster::empty();
         };
+        let Some(idx) = self.idx(font) else {
+            return GlyphRaster::empty();
+        };
+        let pixel_size = pixel_size as f32;
         let gid = GlyphId(glyph_id as u16);
         let f = &self.fonts[idx].font;
         let glyph = gid.with_scale_and_position(pixel_size, point(0.0, 0.0));
@@ -206,8 +204,12 @@ impl TextBackend for AbGlyphBackend {
             let bh = (b.max.y - b.min.y).ceil() as usize;
             let bearing_x = b.min.x;
             let bearing_y = b.min.y;
-            if bw > 0 && bh > 0 {
-                let mut p = vec![0u8; bw * bh];
+            if let Some(pixel_count) = bw.checked_mul(bh).filter(|count| *count > 0) {
+                let mut p = Vec::new();
+                if p.try_reserve_exact(pixel_count).is_err() {
+                    return GlyphRaster::empty();
+                }
+                p.resize(pixel_count, 0u8);
                 o.draw(|x, y, cov| {
                     if (x as usize) < bw && (y as usize) < bh {
                         p[y as usize * bw + x as usize] = (cov * 255.0) as u8;
@@ -232,6 +234,7 @@ impl TextBackend for AbGlyphBackend {
 
     fn horizontal_line_metrics(&self, font: &FontHandle, pixel_size: f32) -> Option<LineMetrics> {
         let i = self.idx(font)?;
+        let pixel_size = text_backend::normalized_raster_pixel_size(pixel_size)? as f32;
         let sc = self.fonts[i].font.as_scaled(PxScale {
             x: pixel_size,
             y: pixel_size,

@@ -374,3 +374,20 @@ fn scroll_region_records_native_scroll_copy() {
         )
     }));
 }
+
+#[test]
+fn oversized_resize_is_typed_and_keeps_previous_recording_extent() {
+    let mut engine = FrameRecordingEngine::new();
+    engine.initialize(8, 6).expect("initialize recorder");
+
+    let error = engine
+        .resize(i32::MAX, i32::MAX)
+        .expect_err("oversized resize must fail");
+    assert_eq!(error.code(), Errc::GraphicsOutOfMemory);
+
+    engine
+        .begin_recording(true)
+        .expect("previous extent remains usable");
+    let encoder = engine.finish_recording().expect("finish recorder");
+    assert_eq!((encoder.width(), encoder.height()), (8, 6));
+}

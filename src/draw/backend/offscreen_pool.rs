@@ -29,6 +29,7 @@ impl CpuOffscreenPool {
         if width <= 0 || height <= 0 {
             return None;
         }
+        let surface = PixelSurface::try_new(width, height).ok()?;
         let id = if let Some(id) = self.free_ids.pop() {
             id
         } else {
@@ -40,7 +41,7 @@ impl CpuOffscreenPool {
         while self.offscreens.len() <= idx {
             self.offscreens.push(None);
         }
-        self.offscreens[idx] = Some(CpuCanvas2D::new(PixelSurface::new(width, height)));
+        self.offscreens[idx] = Some(CpuCanvas2D::new(surface));
         Some(ImageHandle(id))
     }
 
@@ -82,10 +83,10 @@ impl CpuOffscreenPool {
             .filter_map(|o| {
                 o.as_ref().map(|c| {
                     let s = c.surface();
-                    (s.width() * s.height() * 4) as usize
+                    s.memory_usage()
                 })
             })
-            .sum()
+            .fold(0usize, usize::saturating_add)
     }
 
     #[cfg(test)]

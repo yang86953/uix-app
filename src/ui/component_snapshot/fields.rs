@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::draw::spatial::PhysicalUnit;
 use crate::draw::Color;
 use crate::native::traits::input::{ControlSize, ScrollDirection};
@@ -36,8 +38,8 @@ pub enum SnapshotFields {
         text: String,
         disabled: bool,
         block: bool,
-        style_set: StyleSet,
-        style: Style,
+        style_set: Arc<StyleSet>,
+        style: Arc<Style>,
     },
     WindowControl {
         control: WindowControl,

@@ -180,8 +180,19 @@ impl NativeGpuCanvas2D {
     pub(crate) fn ensure_soft(&mut self) -> &mut SharedRasterizer {
         let width = self.surface_w;
         let height = self.surface_h;
-        self.soft_fallback
-            .get_or_insert_with(|| SharedRasterizer::new(PixelSurface::new(width, height)))
+        let deferred_error = &mut self.deferred_error;
+        self.soft_fallback.get_or_insert_with(|| {
+            let surface = match PixelSurface::try_new(width, height) {
+                Ok(surface) => surface,
+                Err(error) => {
+                    if deferred_error.is_none() {
+                        *deferred_error = Some(error);
+                    }
+                    PixelSurface::one_pixel()
+                }
+            };
+            SharedRasterizer::new(surface)
+        })
     }
 
     fn resize(&mut self, width: i32, height: i32) {

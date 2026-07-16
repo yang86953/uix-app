@@ -219,8 +219,8 @@ impl FontService {
             };
         }
 
-        let fs = opts.font_size.max(1.0);
-        let line_h = if opts.line_height > 0.0 {
+        let fs = tb::bounded_font_size(opts.font_size);
+        let line_h = if opts.line_height.is_finite() && opts.line_height > 0.0 {
             opts.line_height
         } else {
             fs * 1.5
@@ -234,6 +234,8 @@ impl FontService {
 
         let seg_opts = TextLayoutOptions {
             max_width: f32::MAX,
+            font_size: fs,
+            line_height: line_h,
             ..opts.clone()
         };
 

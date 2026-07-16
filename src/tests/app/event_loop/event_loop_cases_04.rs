@@ -284,6 +284,8 @@ fn registered_active_due_work_drains_without_timeout() {
 
 #[test]
 fn due_registry_timer_dispatches_system_timer_to_tree() {
+    let start = Instant::now();
+    let clock = TestClock::new(start);
     let mut platform = FakePlatform::new();
     platform.event_source.state.exit_after_blocking_calls = Some(1);
     platform.event_source.state.exit_after_timeout_calls = Some(1);
@@ -317,7 +319,7 @@ fn due_registry_timer_dispatches_system_timer_to_tree() {
     }
     session.active_work_mut().register(
         ActiveWorkKind::Timer(42),
-        Instant::now() - Duration::from_millis(1),
+        start - Duration::from_millis(1),
     );
 
     let font_service = FontService::new();
@@ -327,13 +329,14 @@ fn due_registry_timer_dispatches_system_timer_to_tree() {
     let cursor_pos = Cell::new(Point::default());
     let metrics = Cell::new(RenderMetrics::default());
 
-    let status = run_window_session_loop(
+    let status = run_window_session_loop_with_clock(
         &mut platform,
         &mut window,
         &mut session,
         &font_service,
         &image_service,
         &theme,
+        clock,
         &debug_mode,
         &cursor_pos,
         Some(&metrics),

@@ -5,7 +5,9 @@ use crate::draw::compositor::PicturePolicy;
 use crate::draw::spatial::{Ray3D, SpatialContext};
 pub use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::accessibility_override::AccessibilityOverride;
-use crate::ui::component_snapshot::{AccessibilitySnapshot, ComponentConfigSnapshot};
+use crate::ui::component_snapshot::{
+    AccessibilitySnapshot, ComponentConfigSnapshot, SnapshotFields,
+};
 pub use crate::ui::event::SystemEvent;
 use crate::ui::event::{HandlerRegistration, HandlerSignature};
 use crate::ui::focus_handle::FocusHandle;
@@ -535,17 +537,29 @@ impl BoxedWidget {
 
     pub(crate) fn accessibility(&self) -> AccessibilitySnapshot {
         let base = self.with_component_context(|component| {
-            let mut accessibility = component.snapshot_fields().accessibility();
-            if let Some(label) = component
-                .as_any()
-                .downcast_ref::<crate::ui::view::combinators::DynamicLabel>()
-            {
-                let text = label.semantic_text();
-                accessibility.role = crate::ui::AccessibilityRole::Text;
-                accessibility.name = (!text.is_empty()).then_some(text);
-            }
-            accessibility
+            let fields = component.snapshot_fields();
+            Self::component_accessibility(component, &fields)
         });
+        self.apply_accessibility_override(base)
+    }
+
+    fn component_accessibility(
+        component: &dyn WidgetComponent,
+        fields: &SnapshotFields,
+    ) -> AccessibilitySnapshot {
+        let mut accessibility = fields.accessibility();
+        if let Some(label) = component
+            .as_any()
+            .downcast_ref::<crate::ui::view::combinators::DynamicLabel>()
+        {
+            let text = label.semantic_text();
+            accessibility.role = crate::ui::AccessibilityRole::Text;
+            accessibility.name = (!text.is_empty()).then_some(text);
+        }
+        accessibility
+    }
+
+    fn apply_accessibility_override(&self, base: AccessibilitySnapshot) -> AccessibilitySnapshot {
         self.accessibility_override
             .as_ref()
             .map(|accessibility_override| accessibility_override.apply(base.clone()))
@@ -554,9 +568,12 @@ impl BoxedWidget {
 
     pub(crate) fn component_snapshot(&self, id: ComponentId) -> ComponentConfigSnapshot {
         self.with_component_context(|component| {
-            ComponentConfigSnapshot::from_component(id, component)
+            let fields = component.snapshot_fields();
+            let accessibility = self
+                .apply_accessibility_override(Self::component_accessibility(component, &fields));
+            ComponentConfigSnapshot::from_component_fields(id, component, fields)
+                .with_accessibility(accessibility)
         })
-        .with_accessibility(self.accessibility())
     }
 
     pub fn as_render(&self) -> Option<&dyn WidgetRender> {
