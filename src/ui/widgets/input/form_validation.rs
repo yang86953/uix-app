@@ -75,7 +75,17 @@ impl StoredValue {
         self.text.trim().is_empty()
     }
 
-    fn is_string(&self, value: &str) -> bool {
+    fn is_value<T>(&self, value: &T) -> bool
+    where
+        T: PartialEq + Send + Sync + 'static,
+    {
+        self.typed
+            .as_ref()
+            .downcast_ref::<T>()
+            .is_some_and(|current| current == value)
+    }
+
+    fn is_text(&self, value: &str) -> bool {
         self.typed
             .as_ref()
             .downcast_ref::<String>()
@@ -336,6 +346,7 @@ struct FormModelInner {
     fields: Vec<FormField>,
     values: RefCell<Vec<StoredValue>>,
     active_errors: State<Vec<Option<FieldError>>>,
+    validation_active: RefCell<Vec<bool>>,
     focus_handles: RefCell<BTreeMap<String, FocusHandle>>,
 }
 
@@ -357,6 +368,7 @@ impl FormModel {
                 fields,
                 values: RefCell::new(values),
                 active_errors: State::new(vec![None; field_count]),
+                validation_active: RefCell::new(vec![false; field_count]),
                 focus_handles: RefCell::new(BTreeMap::new()),
             }),
         }
@@ -375,6 +387,7 @@ impl FormModel {
             .collect();
         let errors = field_errors.iter().flatten().cloned().collect::<Vec<_>>();
         drop(current_values);
+        self.inner.validation_active.borrow_mut().fill(true);
         self.publish_errors(field_errors);
         if !errors.is_empty() {
             return Err(errors);
@@ -390,10 +403,20 @@ impl FormModel {
         let mut current_values = self.inner.values.borrow_mut();
         current_values[index] = StoredValue::new(value);
         let values = values_from_fields(&self.inner.fields, &current_values);
-        let error = (self.inner.fields[index].trigger == Trigger::OnChange)
+        let dependents = dependent_indices(&self.inner.fields, index);
+        let should_validate = {
+            let mut validation_active = self.inner.validation_active.borrow_mut();
+            if self.inner.fields[index].trigger == Trigger::OnChange {
+                validation_active[index] = true;
+            }
+            for dependent in &dependents {
+                validation_active[*dependent] = true;
+            }
+            validation_active[index]
+        };
+        let error = should_validate
             .then(|| validate_field(&self.inner.fields[index], &current_values[index], &values))
             .flatten();
-        let dependents = dependent_indices(&self.inner.fields, index);
         let mut active_errors = self.inner.active_errors.get_untracked();
         active_errors[index] = error;
         for dependent in dependents {
@@ -414,6 +437,7 @@ impl FormModel {
             return false;
         };
         if self.inner.fields[index].trigger == Trigger::OnBlur {
+            self.inner.validation_active.borrow_mut()[index] = true;
             let current_values = self.inner.values.borrow();
             let values = values_from_fields(&self.inner.fields, &current_values);
             let error = validate_field(&self.inner.fields[index], &current_values[index], &values);
@@ -508,10 +532,23 @@ impl FormModel {
         let Some(index) = self.inner.fields.iter().position(|item| item.name == field) else {
             return false;
         };
-        if self.inner.values.borrow()[index].is_string(value) {
+        if self.inner.values.borrow()[index].is_text(value) {
             return true;
         }
         self.set_value(field, value.to_string())
+    }
+
+    pub(crate) fn sync_typed_value<T>(&self, field: &str, value: &T) -> bool
+    where
+        T: Clone + PartialEq + Send + Sync + IntoFormValue<Stored = T> + 'static,
+    {
+        let Some(index) = self.inner.fields.iter().position(|item| item.name == field) else {
+            return false;
+        };
+        if self.inner.values.borrow()[index].is_value(value) {
+            return true;
+        }
+        self.set_value(field, value.clone())
     }
 
     pub(crate) fn focus_handle_for(&self, field: &str) -> Option<FocusHandle> {
