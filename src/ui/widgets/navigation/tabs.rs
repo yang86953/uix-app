@@ -4,11 +4,14 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
+use crate::ui::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
     WidgetTree,
 };
 use std::cell::RefCell;
+use std::fmt::Display;
+use std::rc::Rc;
 
 /// A single tab definition.
 #[derive(Debug, Clone, PartialEq)]
@@ -24,11 +27,41 @@ pub enum TabPosition {
     Bottom,
 }
 
+trait TabsValueBinding {
+    fn selected_index(&self) -> Option<usize>;
+    fn select_index(&self, index: usize);
+}
+
+struct StateTabsValueBinding<T> {
+    state: State<T>,
+    values: Vec<T>,
+}
+
+impl<T> TabsValueBinding for StateTabsValueBinding<T>
+where
+    T: Clone + PartialEq + Send + Sync + 'static,
+{
+    fn selected_index(&self) -> Option<usize> {
+        let selected = self.state.get();
+        self.values.iter().position(|value| value == &selected)
+    }
+
+    fn select_index(&self, index: usize) {
+        let Some(value) = self.values.get(index) else {
+            return;
+        };
+        if self.state.get() != *value {
+            self.state.set(value.clone());
+        }
+    }
+}
+
 component! {
     /// Tabs widget with a tab bar and content switching.
     pub struct Tabs {
         tabs: Vec<Tab>,
         active_index: usize,
+        value_binding: Option<Rc<dyn TabsValueBinding>>,
         position: TabPosition,
         tab_height: f32,
         fixed_width: Option<f32>,
@@ -46,6 +79,7 @@ component! {
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        self.sync_bound_value();
         match event {
             SystemEvent::PointerDown {
                 pos,
@@ -77,11 +111,21 @@ component! {
             }
             SystemEvent::KeyDown { key, .. } if !self.tabs.is_empty() => match key {
                 KeyCode::Right => {
-                    self.select_index((self.active_index + 1) % self.tabs.len());
+                    let next = if self.active_index < self.tabs.len() {
+                        (self.active_index + 1) % self.tabs.len()
+                    } else {
+                        0
+                    };
+                    self.select_index(next);
                     EventResult::Handled
                 }
                 KeyCode::Left => {
-                    self.select_index((self.active_index + self.tabs.len() - 1) % self.tabs.len());
+                    let previous = if self.active_index < self.tabs.len() {
+                        (self.active_index + self.tabs.len() - 1) % self.tabs.len()
+                    } else {
+                        self.tabs.len() - 1
+                    };
+                    self.select_index(previous);
                     EventResult::Handled
                 }
                 KeyCode::Home => {
@@ -106,6 +150,7 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        self.capture_bound_value_dependency();
         let bg_container = ctx.tokens().color_bg_container();
         let border_secondary = ctx.tokens().color_border_secondary();
         let primary = ctx.tokens().color_primary();
@@ -208,6 +253,7 @@ impl Tabs {
         Self {
             tabs: Vec::new(),
             active_index: 0,
+            value_binding: None,
             position: TabPosition::Top,
             tab_height: 40.0,
             fixed_width: None,
@@ -219,6 +265,7 @@ impl Tabs {
     }
 
     pub fn tab(mut self, label: &str, key: &str) -> Self {
+        self.value_binding = None;
         self.tabs.push(Tab {
             label: label.to_string(),
             key: key.to_string(),
@@ -226,18 +273,47 @@ impl Tabs {
         self
     }
     pub fn tabs(mut self, tabs: Vec<Tab>) -> Self {
+        self.value_binding = None;
         self.tabs = tabs;
         self
     }
     pub fn active(mut self, index: usize) -> Self {
+        self.value_binding = None;
         self.active_index = index.min(self.tabs.len().saturating_sub(1));
         self
     }
     pub fn active_index(&self) -> usize {
         self.active_index
     }
-    pub fn active_key(&self) -> Option<&str> {
+    pub fn current_key(&self) -> Option<&str> {
         self.tabs.get(self.active_index).map(|tab| tab.key.as_str())
+    }
+
+    /// 将字符串 tab key 双向绑定到外部 State；应在 `tab` / `tabs` 之后调用。
+    pub fn active_key(mut self, state: &State<String>) -> Self {
+        let values = self.tabs.iter().map(|tab| tab.key.clone()).collect();
+        self.bind_values(state, values);
+        self
+    }
+
+    /// 以同一种 typed key 构造受控 Tabs；`Display` 文本作为语义事件和快照 key。
+    pub fn controlled<K, I, L>(tabs: I, state: &State<K>) -> Self
+    where
+        K: Clone + PartialEq + Display + Send + Sync + 'static,
+        I: IntoIterator<Item = (L, K)>,
+        L: Into<String>,
+    {
+        let mut component = Self::new();
+        let mut values = Vec::new();
+        for (label, key) in tabs {
+            component.tabs.push(Tab {
+                label: label.into(),
+                key: key.to_string(),
+            });
+            values.push(key);
+        }
+        component.bind_values(state, values);
+        component
     }
     pub fn position(mut self, pos: TabPosition) -> Self {
         self.position = pos;
@@ -250,8 +326,19 @@ impl Tabs {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let previous_key = self.current_key().map(str::to_owned);
+        let controlled_index = next
+            .value_binding
+            .as_ref()
+            .map(|binding| binding.selected_index().unwrap_or(usize::MAX));
         self.tabs = next.tabs;
-        self.active_index = self.active_index.min(self.tabs.len().saturating_sub(1));
+        self.value_binding = next.value_binding;
+        self.active_index = controlled_index.unwrap_or_else(|| {
+            previous_key
+                .as_deref()
+                .and_then(|key| self.tabs.iter().position(|tab| tab.key == key))
+                .unwrap_or_else(|| self.active_index.min(self.tabs.len().saturating_sub(1)))
+        });
         self.position = next.position;
         self.tab_height = next.tab_height;
         self.fixed_width = next.fixed_width;
@@ -262,6 +349,7 @@ impl Tabs {
         SnapshotFields::Tabs {
             tabs: self.tabs.clone(),
             active_index: self.active_index,
+            active_key: self.current_key().map(str::to_owned),
             position: self.position,
             tab_height: self.tab_height,
             fixed_width: self.fixed_width,
@@ -275,7 +363,42 @@ impl Tabs {
         };
         if index != self.active_index {
             self.active_index = index;
+            if let Some(binding) = self.value_binding.as_ref() {
+                binding.select_index(index);
+            }
             self.pending_change.replace(Some(tab.key.clone()));
+        }
+    }
+
+    fn bind_values<T>(&mut self, state: &State<T>, values: Vec<T>)
+    where
+        T: Clone + PartialEq + Send + Sync + 'static,
+    {
+        let binding: Rc<dyn TabsValueBinding> = Rc::new(StateTabsValueBinding {
+            state: state.clone(),
+            values,
+        });
+        self.active_index = binding.selected_index().unwrap_or(usize::MAX);
+        self.value_binding = Some(binding);
+    }
+
+    fn sync_bound_value(&mut self) {
+        let Some(index) = self
+            .value_binding
+            .as_ref()
+            .and_then(|binding| binding.selected_index())
+        else {
+            if self.value_binding.is_some() {
+                self.active_index = usize::MAX;
+            }
+            return;
+        };
+        self.active_index = index;
+    }
+
+    fn capture_bound_value_dependency(&self) {
+        if let Some(binding) = self.value_binding.as_ref() {
+            let _ = binding.selected_index();
         }
     }
 }

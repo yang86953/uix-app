@@ -7,12 +7,14 @@
 //! 点击任一 NavItem 自动更新共享状态，其他项自动取消选中。
 
 use std::cell::{Cell, RefCell};
+use std::fmt::Display;
 use std::rc::Rc;
 
 use crate::component;
 use crate::core::{ComponentId, Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
+use crate::ui::state::State;
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
 };
@@ -49,6 +51,7 @@ fn paint_nav_item_bg(
 component! {
     pub struct NavItem {
         label: String,
+        key: String,
         icon: String,
         hovered: bool,
         fixed_width: f32,
@@ -57,7 +60,8 @@ component! {
         active_shared: SharedActive,
         compact: bool,
         focused: bool,
-        pending_change: RefCell<Option<usize>>,
+        value_binding: Option<Rc<dyn Fn()>>,
+        pending_change: RefCell<Option<String>>,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -100,7 +104,7 @@ component! {
         self.pending_change
             .borrow_mut()
             .take()
-            .map(|index| SemanticEvent::change(id, index.to_string()))
+            .map(|key| SemanticEvent::change(id, key))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -228,6 +232,7 @@ impl NavItem {
     pub fn new(label: &str, index: usize, active_shared: SharedActive) -> Self {
         Self {
             label: label.to_string(),
+            key: index.to_string(),
             icon: String::new(),
             hovered: false,
             fixed_width: 200.0,
@@ -236,8 +241,14 @@ impl NavItem {
             active_shared,
             compact: false,
             focused: false,
+            value_binding: None,
             pending_change: RefCell::new(None),
         }
+    }
+
+    pub fn key(mut self, key: impl Into<String>) -> Self {
+        self.key = key.into();
+        self
     }
 
     pub fn icon(mut self, icon: &str) -> Self {
@@ -247,6 +258,10 @@ impl NavItem {
 
     pub fn label_text(&self) -> &str {
         &self.label
+    }
+
+    pub fn nav_key(&self) -> &str {
+        &self.key
     }
 
     pub fn nav_index(&self) -> usize {
@@ -275,11 +290,13 @@ impl NavItem {
 
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.label = next.label;
+        self.key = next.key;
         self.icon = next.icon;
         self.fixed_width = next.fixed_width;
         self.fixed_height = next.fixed_height;
         self.index = next.index;
         self.compact = next.compact;
+        self.value_binding = next.value_binding;
         // 同步选中值（不替换 Rc），使 State 驱动的重建能刷新高亮。
         self.active_shared.set(next.active_shared.get());
     }
@@ -287,6 +304,7 @@ impl NavItem {
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::NavItem {
             label: self.label.clone(),
+            key: self.key.clone(),
             icon: self.icon.clone(),
             fixed_width: self.fixed_width,
             fixed_height: self.fixed_height,
@@ -299,7 +317,10 @@ impl NavItem {
     fn activate(&mut self) {
         if !self.is_active() {
             self.active_shared.set(self.index);
-            self.pending_change.replace(Some(self.index));
+            if let Some(binding) = self.value_binding.as_ref() {
+                binding();
+            }
+            self.pending_change.replace(Some(self.key.clone()));
         }
     }
 }
@@ -349,10 +370,12 @@ impl NavGroup {
 }
 
 /// Navigation — 侧边栏导航容器（全功能版）
-pub struct Navigation {
+pub struct Navigation<K = String> {
     title: String,
     active: SharedActive,
     items: Vec<NavItem>,
+    keys: Vec<K>,
+    page_binding: Option<State<K>>,
     width: f32,
     height: f32,
     show_version: bool,
@@ -360,12 +383,17 @@ pub struct Navigation {
     compact_items: bool,
 }
 
-impl Navigation {
+impl<K> Navigation<K>
+where
+    K: Clone + PartialEq + Display + Send + Sync + 'static,
+{
     pub fn new(title: &str) -> Self {
         Self {
             title: title.to_string(),
             active: Rc::new(Cell::new(0)),
             items: Vec::new(),
+            keys: Vec::new(),
+            page_binding: None,
             width: 200.0,
             height: 720.0,
             show_version: true,
@@ -374,19 +402,43 @@ impl Navigation {
         }
     }
 
-    pub fn item(mut self, label: &str, icon: &str) -> Self {
+    /// 添加带 typed key 的导航项；key 的 Display 文本用于语义事件和快照。
+    pub fn item(mut self, label: &str, key: K) -> Self {
         let index = self.items.len();
-        let mut item = NavItem::new(label, index, self.active.clone());
+        let item = NavItem::new(label, index, self.active.clone()).key(key.to_string());
+        self.items.push(item);
+        self.keys.push(key);
+        self.sync_page_binding();
+        self
+    }
+
+    pub fn item_with_icon(mut self, label: &str, key: K, icon: &str) -> Self {
+        let index = self.items.len();
+        let mut item = NavItem::new(label, index, self.active.clone()).key(key.to_string());
         if !icon.is_empty() {
             item = item.icon(icon);
         }
         self.items.push(item);
+        self.keys.push(key);
+        self.sync_page_binding();
         self
     }
 
-    pub fn active_index(self, index: usize) -> Self {
+    pub fn active_index(mut self, index: usize) -> Self {
+        self.page_binding = None;
         self.active.set(index);
         self
+    }
+
+    /// 将选中项双向绑定到外部页面 State；State 不匹配任何 key 时不选中项。
+    pub fn active_page(mut self, state: &State<K>) -> Self {
+        self.page_binding = Some(state.clone());
+        self.sync_page_binding();
+        self
+    }
+
+    pub fn active_key(&self) -> Option<&K> {
+        self.keys.get(self.active.get())
     }
 
     pub fn active(&self) -> &SharedActive {
@@ -421,9 +473,10 @@ impl Navigation {
     }
 
     pub fn build(
-        self,
+        mut self,
         tokens: &dyn crate::ui::traits::TokenProvider,
     ) -> crate::ui::core::widget::WidgetNode {
+        self.sync_page_binding();
         let loc = crate::ui::locale::use_locale();
         use crate::ui::widgets::{Container, Divider, Label};
         use crate::ui::IntoWidgetNode;
@@ -485,5 +538,27 @@ impl Navigation {
             ),
             children,
         )
+    }
+
+    fn sync_page_binding(&mut self) {
+        let Some(state) = self.page_binding.as_ref() else {
+            return;
+        };
+        let selected = state.get();
+        self.active.set(
+            self.keys
+                .iter()
+                .position(|key| key == &selected)
+                .unwrap_or(usize::MAX),
+        );
+        for (item, key) in self.items.iter_mut().zip(&self.keys) {
+            let state = state.clone();
+            let key = key.clone();
+            item.value_binding = Some(Rc::new(move || {
+                if state.get() != key {
+                    state.set(key.clone());
+                }
+            }));
+        }
     }
 }
