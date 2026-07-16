@@ -15,6 +15,7 @@ use crate::native::traits::*;
 
 use super::bindings::*;
 use super::consts::*;
+use super::display::WindowsDisplay;
 use super::ffi::*;
 use super::frame_pacer::{clear_pending_frame, complete_posted_frame};
 use super::ime_dispatch::{
@@ -130,6 +131,10 @@ impl WindowsPlatform {
             WM_DESTROY => {
                 self.forget_window(window_id);
                 0
+            }
+            WM_SETTINGCHANGE | WM_THEMECHANGED => {
+                self.route_system_theme_change(window_id, WindowsDisplay::detect_os_theme());
+                self.def_window_proc(hwnd, msg, wparam, lparam)
             }
             WM_GETMINMAXINFO => {
                 let default_result = self.def_window_proc(hwnd, msg, wparam, lparam);
