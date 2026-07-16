@@ -16,7 +16,9 @@ use crate::draw::pipeline::{
 };
 use crate::draw::primitives::path::{FillRule, Path};
 use crate::draw::primitives::stroker::StrokeOptions;
-use crate::draw::primitives::types::{BlendMode, GradientDirection, ImageHandle, Radius};
+use crate::draw::primitives::types::{
+    BlendMode, GradientDirection, ImageHandle, Radius, Transform,
+};
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
 use crate::draw::Color;
 
@@ -305,10 +307,11 @@ impl FrameRecordingCanvas {
     }
 
     fn note_scratch_bounds(&mut self, local: Rect, pad: f32) {
+        let mapped = self.scratch.map_rect(local);
         let Some(bounds) = surface_pack_bounds(
-            local,
+            mapped,
             pad,
-            self.scratch.offset(),
+            (0.0, 0.0),
             self.scratch.current_clip(),
             self.width,
             self.height,
@@ -399,6 +402,7 @@ impl FrameRecordingCanvas {
             && color.a == u8::MAX
             && self.blend_mode != BlendMode::Additive
             && self.scratch.offset() == (0.0, 0.0)
+            && self.scratch.current_transform().is_identity()
             && self.scratch.opacity() == 1.0
             && self.scratch.current_clip() == self.full_rect()
             && rect.x.fract() == 0.0
@@ -418,6 +422,7 @@ impl FrameRecordingCanvas {
     fn can_emit_native_additive_fill(&self, rect: Rect) -> bool {
         self.blend_mode == BlendMode::Additive
             && self.scratch.offset() == (0.0, 0.0)
+            && self.scratch.current_transform().is_identity()
             && self.scratch.opacity() == 1.0
             && self.scratch.current_clip() == self.full_rect()
             && rect.x.fract() == 0.0
@@ -435,6 +440,7 @@ impl FrameRecordingCanvas {
     fn direct_picture_rects(&self, src: Rect, dst: Rect) -> Option<(FrameRect, FrameRect)> {
         if self.blend_mode == BlendMode::Additive
             || self.scratch.offset() != (0.0, 0.0)
+            || !self.scratch.current_transform().is_identity()
             || self.scratch.opacity() != 1.0
         {
             return None;
@@ -485,6 +491,14 @@ impl FrameRecordingCanvas {
 }
 
 impl Canvas2D for FrameRecordingCanvas {
+    fn current_transform(&self) -> Transform {
+        self.scratch.current_transform()
+    }
+
+    fn set_transform(&mut self, transform: Transform) {
+        self.scratch.set_transform(transform);
+    }
+
     fn offset(&self) -> (f32, f32) {
         self.scratch.offset()
     }

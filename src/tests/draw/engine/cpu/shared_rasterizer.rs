@@ -1,5 +1,5 @@
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
-use crate::draw::primitives::types::BlendMode;
+use crate::draw::primitives::types::{BlendMode, Transform};
 use crate::draw::traits::Canvas2D;
 use crate::tests::common::*;
 
@@ -29,6 +29,42 @@ fn clip_rect_follows_canvas_offset() {
     );
     assert_eq!(at(14, 6), 0, "clip width must still be enforced");
     assert_eq!(at(13, 7), 0, "clip height must still be enforced");
+}
+
+#[test]
+fn affine_transform_scales_drawing_and_clip_in_surface_space() {
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(20, 16));
+    canvas.set_transform(Transform::translate(2.0, 1.0).concat(Transform::scale(2.0, 2.0)));
+    Canvas2D::push_clip(&mut canvas, Rect::new(1.0, 1.0, 2.0, 2.0));
+    canvas.fill_rect(Rect::new(0.0, 0.0, 5.0, 5.0), Color::red(), None);
+    canvas.pop_clip();
+
+    let pixels = canvas.surface().pixels();
+    let width = canvas.surface().width() as usize;
+    let at = |x: usize, y: usize| pixels[y * width + x];
+    assert_eq!(at(3, 3), 0, "transformed clip must reject its exterior");
+    assert_ne!(
+        at(4, 3),
+        0,
+        "transformed clip must retain its top-left pixel"
+    );
+    assert_ne!(at(7, 6), 0, "transformed clip must retain its interior");
+    assert_eq!(at(8, 6), 0, "transformed clip width must be enforced");
+    assert_eq!(at(7, 7), 0, "transformed clip height must be enforced");
+}
+
+#[test]
+fn save_restore_restores_the_affine_transform() {
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(8, 8));
+    let translated = Transform::translate(2.0, 3.0);
+    canvas.set_transform(translated);
+    canvas.save();
+    canvas.concat_transform(Transform::scale(2.0, 2.0));
+    assert_ne!(canvas.current_transform(), translated);
+
+    canvas.restore();
+
+    assert_eq!(canvas.current_transform(), translated);
 }
 
 #[test]

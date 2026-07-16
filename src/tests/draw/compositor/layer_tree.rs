@@ -349,8 +349,9 @@ fn overlay_children_are_detached_from_clipped_ancestor_layers() {
 struct LeakyClipCanvas {
     pixels: Vec<u32>,
     clip: Rect,
+    transform: crate::draw::Transform,
     clip_stack: Vec<Rect>,
-    state_stack: Vec<Rect>,
+    state_stack: Vec<(Rect, crate::draw::Transform)>,
 }
 
 impl LeakyClipCanvas {
@@ -358,6 +359,7 @@ impl LeakyClipCanvas {
         Self {
             pixels: vec![0; (width * height) as usize],
             clip: Rect::new(0.0, 0.0, width as f32, height as f32),
+            transform: crate::draw::Transform::identity(),
             clip_stack: Vec::new(),
             state_stack: Vec::new(),
         }
@@ -366,14 +368,16 @@ impl LeakyClipCanvas {
 
 impl crate::draw::traits::Canvas2D for LeakyClipCanvas {
     fn save(&mut self) {
-        self.state_stack.push(self.clip);
+        self.state_stack.push((self.clip, self.transform));
     }
 
     fn restore(&mut self) {
-        self.clip = self
+        let (clip, transform) = self
             .state_stack
             .pop()
             .expect("restore must follow a matching save");
+        self.clip = clip;
+        self.transform = transform;
     }
 
     fn push_clip(&mut self, rect: Rect) {
@@ -389,6 +393,14 @@ impl crate::draw::traits::Canvas2D for LeakyClipCanvas {
 
     fn opacity(&self) -> f32 {
         1.0
+    }
+
+    fn current_transform(&self) -> crate::draw::Transform {
+        self.transform
+    }
+
+    fn set_transform(&mut self, transform: crate::draw::Transform) {
+        self.transform = transform;
     }
 
     fn set_blend_mode(&mut self, _: crate::draw::BlendMode) {}

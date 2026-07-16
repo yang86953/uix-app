@@ -1,3 +1,5 @@
+use crate::core::{Point, Rect};
+
 /// Corner radii.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Radius {
@@ -87,6 +89,81 @@ impl Transform {
         Self {
             m: [sx, 0.0, 0.0, 0.0, sy, 0.0],
         }
+    }
+
+    /// Matrix product `self * rhs`: `rhs` is applied first, then `self`.
+    pub fn concat(self, rhs: Self) -> Self {
+        let [a, b, tx, c, d, ty] = self.m;
+        let [ra, rb, rtx, rc, rd, rty] = rhs.m;
+        Self {
+            m: [
+                a * ra + b * rc,
+                a * rb + b * rd,
+                a * rtx + b * rty + tx,
+                c * ra + d * rc,
+                c * rb + d * rd,
+                c * rtx + d * rty + ty,
+            ],
+        }
+    }
+
+    pub fn is_identity(self) -> bool {
+        self == Self::identity()
+    }
+
+    pub fn transform_point(self, point: Point) -> Point {
+        let [a, b, tx, c, d, ty] = self.m;
+        Point::new(
+            a * point.x + b * point.y + tx,
+            c * point.x + d * point.y + ty,
+        )
+    }
+
+    pub fn transform_rect(self, rect: Rect) -> Rect {
+        let top_left = self.transform_point(Point::new(rect.x, rect.y));
+        let top_right = self.transform_point(Point::new(rect.x + rect.w, rect.y));
+        let bottom_left = self.transform_point(Point::new(rect.x, rect.y + rect.h));
+        let bottom_right = self.transform_point(Point::new(rect.x + rect.w, rect.y + rect.h));
+        let min_x = top_left
+            .x
+            .min(top_right.x)
+            .min(bottom_left.x)
+            .min(bottom_right.x);
+        let min_y = top_left
+            .y
+            .min(top_right.y)
+            .min(bottom_left.y)
+            .min(bottom_right.y);
+        let max_x = top_left
+            .x
+            .max(top_right.x)
+            .max(bottom_left.x)
+            .max(bottom_right.x);
+        let max_y = top_left
+            .y
+            .max(top_right.y)
+            .max(bottom_left.y)
+            .max(bottom_right.y);
+        Rect::new(min_x, min_y, max_x - min_x, max_y - min_y)
+    }
+
+    pub fn inverse(self) -> Option<Self> {
+        let [a, b, tx, c, d, ty] = self.m;
+        let determinant = a * d - b * c;
+        if !determinant.is_finite() || determinant.abs() <= f32::EPSILON {
+            return None;
+        }
+        let inverse = 1.0 / determinant;
+        Some(Self {
+            m: [
+                d * inverse,
+                -b * inverse,
+                (b * ty - d * tx) * inverse,
+                -c * inverse,
+                a * inverse,
+                (c * tx - a * ty) * inverse,
+            ],
+        })
     }
 }
 

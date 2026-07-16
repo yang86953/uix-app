@@ -4,3 +4,4 @@ mod color;
 mod path;
 mod stroker;
 mod tessellator;
+mod transform;
