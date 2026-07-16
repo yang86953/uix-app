@@ -317,6 +317,16 @@ impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
         self.ops.os_lower()
     }
     fn set_window_icon(&mut self, icon_path: &str) -> Result<()> {
+        if icon_path.trim().is_empty() {
+            return Err(Error::invalid_arg(
+                "set_window_icon: path must not be empty",
+            ));
+        }
+        if icon_path.contains('\0') {
+            return Err(Error::invalid_arg(
+                "set_window_icon: path must not contain NUL",
+            ));
+        }
         self.ops.os_set_icon(icon_path)
     }
     fn flash_window(&mut self) -> Result<()> {

@@ -37,5 +37,6 @@ mod tsf_document;
 pub mod tsf_session;
 pub mod tsf_text_store;
 pub mod util;
+mod window_icon;
 pub mod window_ops;
 pub mod wnd_proc;

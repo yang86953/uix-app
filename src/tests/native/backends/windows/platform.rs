@@ -31,11 +31,48 @@ use windows::Win32::UI::HiDpi::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowRect, PeekMessageW, SendMessageW, SetWindowPos, MINMAXINFO, MSG, PM_REMOVE,
-    SWP_NOSIZE, SWP_NOZORDER, WM_GETMINMAXINFO,
+    SWP_NOSIZE, SWP_NOZORDER, WM_GETICON, WM_GETMINMAXINFO,
 };
 
 fn size_lparam(width: u16, height: u16) -> isize {
     (u32::from(width) | (u32::from(height) << 16)) as isize
+}
+
+fn write_test_icon() -> std::path::PathBuf {
+    const WIDTH: u32 = 16;
+    const HEIGHT: u32 = 16;
+    const XOR_BYTES: u32 = WIDTH * HEIGHT * 4;
+    const AND_BYTES: u32 = HEIGHT * 4;
+    const IMAGE_BYTES: u32 = 40 + XOR_BYTES + AND_BYTES;
+
+    let mut icon = Vec::with_capacity((22 + IMAGE_BYTES) as usize);
+    icon.extend_from_slice(&0u16.to_le_bytes());
+    icon.extend_from_slice(&1u16.to_le_bytes());
+    icon.extend_from_slice(&1u16.to_le_bytes());
+    icon.extend_from_slice(&[WIDTH as u8, HEIGHT as u8, 0, 0]);
+    icon.extend_from_slice(&1u16.to_le_bytes());
+    icon.extend_from_slice(&32u16.to_le_bytes());
+    icon.extend_from_slice(&IMAGE_BYTES.to_le_bytes());
+    icon.extend_from_slice(&22u32.to_le_bytes());
+    icon.extend_from_slice(&40u32.to_le_bytes());
+    icon.extend_from_slice(&(WIDTH as i32).to_le_bytes());
+    icon.extend_from_slice(&((HEIGHT * 2) as i32).to_le_bytes());
+    icon.extend_from_slice(&1u16.to_le_bytes());
+    icon.extend_from_slice(&32u16.to_le_bytes());
+    icon.extend_from_slice(&0u32.to_le_bytes());
+    icon.extend_from_slice(&XOR_BYTES.to_le_bytes());
+    icon.extend_from_slice(&0i32.to_le_bytes());
+    icon.extend_from_slice(&0i32.to_le_bytes());
+    icon.extend_from_slice(&0u32.to_le_bytes());
+    icon.extend_from_slice(&0u32.to_le_bytes());
+    for _ in 0..(WIDTH * HEIGHT) {
+        icon.extend_from_slice(&[0x20, 0x80, 0xF0, 0xFF]);
+    }
+    icon.resize((22 + IMAGE_BYTES) as usize, 0);
+
+    let path = std::env::temp_dir().join(format!("uix-window-icon-{}.ico", std::process::id()));
+    std::fs::write(&path, icon).expect("write temporary ICO");
+    path
 }
 
 const WS_EX_TOPMOST: u32 = 0x00000008;
@@ -58,6 +95,43 @@ fn native_event_queue_recovers_after_lock_poisoning() {
         .expect("poisoned event queue must remain usable");
     assert_eq!(event.window_id, Some(window_id));
     assert_eq!(event.type_, UiEventType::WindowClose);
+}
+
+#[test]
+fn native_window_icon_loads_both_sizes_and_preserves_them_on_failure() {
+    let icon_path = write_test_icon();
+    let missing_path = icon_path.with_file_name("uix-window-icon-missing.ico");
+    let mut platform = WindowsPlatform::new();
+    let mut window = platform
+        .create_window("UIX native icon", 200, 120)
+        .expect("native window");
+    let hwnd = HWND(window.native_handle().native_window());
+
+    window
+        .set_window_icon(icon_path.to_string_lossy().as_ref())
+        .expect("load native window icon");
+    let large = unsafe { SendMessageW(hwnd, WM_GETICON, Some(WPARAM(1)), Some(LPARAM(0))) };
+    let small = unsafe { SendMessageW(hwnd, WM_GETICON, Some(WPARAM(0)), Some(LPARAM(0))) };
+    assert_ne!(large.0, 0, "large HICON must be installed");
+    assert_ne!(small.0, 0, "small HICON must be installed");
+
+    let error = window
+        .set_window_icon(missing_path.to_string_lossy().as_ref())
+        .expect_err("missing icon must fail");
+    assert_eq!(error.code(), Errc::PlatformError);
+    assert_eq!(
+        unsafe { SendMessageW(hwnd, WM_GETICON, Some(WPARAM(1)), Some(LPARAM(0))) },
+        large,
+        "failed replacement must preserve the installed large icon"
+    );
+    assert_eq!(
+        unsafe { SendMessageW(hwnd, WM_GETICON, Some(WPARAM(0)), Some(LPARAM(0))) },
+        small,
+        "failed replacement must preserve the installed small icon"
+    );
+
+    window.close().expect("close native window");
+    std::fs::remove_file(icon_path).expect("remove temporary ICO");
 }
 
 #[test]

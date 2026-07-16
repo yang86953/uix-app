@@ -88,6 +88,12 @@ extern "system" {
         wparam: usize,
         lparam: isize,
     ) -> i32;
+    pub(crate) fn SendMessageW(
+        hwnd: *mut std::ffi::c_void,
+        msg: u32,
+        wparam: usize,
+        lparam: isize,
+    ) -> isize;
     /// 等待消息或超时。返回 WAIT_TIMEOUT 表示超时，WAIT_FAILED 表示失败。
     pub(crate) fn MsgWaitForMultipleObjects(
         nCount: u32,
@@ -136,6 +142,15 @@ extern "system" {
         hInstance: *mut std::ffi::c_void,
         lpIconName: *const u16,
     ) -> *mut std::ffi::c_void;
+    pub(crate) fn LoadImageW(
+        hInstance: *mut std::ffi::c_void,
+        name: *const u16,
+        r#type: u32,
+        cx: i32,
+        cy: i32,
+        fuLoad: u32,
+    ) -> *mut std::ffi::c_void;
+    pub(crate) fn DestroyIcon(hIcon: *mut std::ffi::c_void) -> i32;
     pub(crate) fn LoadCursorW(
         hInstance: *mut std::ffi::c_void,
         lpCursorName: *const u16,
