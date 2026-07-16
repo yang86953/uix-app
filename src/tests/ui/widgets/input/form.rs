@@ -2,7 +2,7 @@ use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::view::{column, ViewAdapter};
 use crate::ui::widgets::input::form::*;
-use crate::ui::{FieldError, Input, InputNumber, Select, State, Trigger};
+use crate::ui::{Checkbox, FieldError, Input, InputNumber, Select, State, Switch, Trigger};
 
 struct FixedChild(Size);
 
@@ -945,6 +945,120 @@ fn form_multi_select_item_activates_required_rule_on_blur() {
 }
 
 #[test]
+fn form_checkbox_item_binds_bool_state_and_reconciles_inline_error() {
+    let accepted = State::new(true);
+    let form = Form::new()
+        .field("accepted", "Terms")
+        .default(true)
+        .custom(|value| {
+            (value == "true")
+                .then_some(())
+                .ok_or_else(|| "Accept the terms".to_string())
+        })
+        .validate_trigger(Trigger::OnChange)
+        .build();
+    let mut tree = ViewAdapter::build(
+        form.checkbox_item("accepted", &accepted)
+            .expect("declared field should build a checkbox item")
+            .label("I accept"),
+    );
+    let root = tree.root_id().expect("checkbox form item root");
+    let checkbox = tree.get(root).expect("checkbox form item").children()[0];
+
+    assert_eq!(
+        tree.dispatch_to(
+            checkbox,
+            &SystemEvent::PointerDown {
+                pos: Point::new(10.0, 10.0),
+                button: MouseButton::Left,
+                mods: KeyMod::NONE,
+            },
+        ),
+        EventResult::Handled
+    );
+    assert!(!accepted.get());
+    assert_eq!(
+        form.field_error("accepted")
+            .as_ref()
+            .map(FieldError::message),
+        Some("Accept the terms")
+    );
+
+    accepted.set(true);
+    ViewAdapter::reconcile(
+        &mut tree,
+        form.checkbox_item("accepted", &accepted)
+            .expect("declared field should reconcile a checkbox item")
+            .label("I accept"),
+    );
+
+    assert!(form.field_error("accepted").is_none());
+    let checkbox = tree
+        .get(root)
+        .and_then(|node| node.children().first().copied())
+        .and_then(|id| tree.get(id))
+        .and_then(|node| node.component().as_any().downcast_ref::<Checkbox>())
+        .expect("bound checkbox child");
+    assert!(checkbox.is_checked());
+    let values = form.validate().expect("accepted value should pass");
+    assert_eq!(values.get::<bool>("accepted"), Some(&true));
+}
+
+#[test]
+fn form_switch_item_activates_bool_rule_on_blur() {
+    let enabled = State::new(true);
+    let form = Form::new()
+        .field("enabled", "Enabled")
+        .default(true)
+        .custom(|value| {
+            (value == "true")
+                .then_some(())
+                .ok_or_else(|| "Enable this option".to_string())
+        })
+        .validate_trigger(Trigger::OnBlur)
+        .build();
+    let mut tree = ViewAdapter::build(
+        form.switch_item("enabled", &enabled)
+            .expect("declared field should build a switch item"),
+    );
+    let root = tree.root_id().expect("switch form item root");
+    let switch = tree.get(root).expect("switch form item").children()[0];
+
+    let _ = tree.dispatch_to(
+        switch,
+        &SystemEvent::PointerDown {
+            pos: Point::new(10.0, 10.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        },
+    );
+    assert!(!enabled.get());
+    assert!(form.field_error("enabled").is_none());
+    let _ = tree.dispatch_to(switch, &SystemEvent::FocusOut);
+    assert_eq!(
+        form.field_error("enabled")
+            .as_ref()
+            .map(FieldError::message),
+        Some("Enable this option")
+    );
+
+    enabled.set(true);
+    ViewAdapter::reconcile(
+        &mut tree,
+        form.switch_item("enabled", &enabled)
+            .expect("declared field should reconcile a switch item"),
+    );
+    assert!(form.field_error("enabled").is_none());
+    let switch = tree
+        .get(root)
+        .and_then(|node| node.children().first().copied())
+        .and_then(|id| tree.get(id))
+        .and_then(|node| node.component().as_any().downcast_ref::<Switch>())
+        .expect("bound switch child");
+    assert!(switch.is_checked());
+}
+
+#[test]
 fn cloned_form_model_shares_values_and_rejects_unknown_input_items() {
     let value = State::new("ready".to_string());
     let form = Form::new().field("name", "Name").default("initial").build();
@@ -952,6 +1066,8 @@ fn cloned_form_model_shares_values_and_rejects_unknown_input_items() {
 
     assert!(form.input_item("missing", &value).is_none());
     assert!(form.select_item("missing", &value).is_none());
+    assert!(form.checkbox_item("missing", &State::new(false)).is_none());
+    assert!(form.switch_item("missing", &State::new(false)).is_none());
     assert!(cloned.set_value("name", "updated".to_string()));
 
     let values = form.validate().expect("shared value should remain valid");
@@ -1040,4 +1156,35 @@ fn form_submit_focuses_a_bound_select_error() {
     assert_eq!(errors[0].field(), "choice");
     assert!(tree.drain_app_state_focus_requests());
     assert_eq!(tree.managers().focus.focused_component(), Some(select));
+}
+
+#[test]
+fn form_submit_focuses_a_bound_checkbox_error() {
+    let accepted = State::new(false);
+    let form = Form::new()
+        .field("accepted", "Terms")
+        .default(false)
+        .custom(|value| {
+            (value == "true")
+                .then_some(())
+                .ok_or_else(|| "Accept the terms".to_string())
+        })
+        .build();
+    let mut tree = ViewAdapter::build(
+        form.checkbox_item("accepted", &accepted)
+            .expect("declared field should build a checkbox item")
+            .label("I accept"),
+    );
+    tree.set_app_state(AppState::new());
+    tree.layout();
+    let root = tree.root_id().expect("checkbox form item root");
+    let checkbox = tree.get(root).expect("checkbox form item").children()[0];
+
+    let errors = form
+        .submit()
+        .expect_err("unchecked consent should fail submit");
+
+    assert_eq!(errors[0].field(), "accepted");
+    assert!(tree.drain_app_state_focus_requests());
+    assert_eq!(tree.managers().focus.focused_component(), Some(checkbox));
 }

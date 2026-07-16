@@ -5,8 +5,8 @@ use crate::ui::view::{input, EventExt, View, ViewNode};
 use crate::ui::{EventResult, FocusHandle, SemanticKind, State, SystemEvent};
 
 use super::{
-    FormItem, FormModel, InputNumber, InputNumberValue, IntoFormValue, OptGroup, Select,
-    SelectValue, ValidateStatus,
+    Checkbox, FormItem, FormModel, InputNumber, InputNumberValue, IntoFormValue, OptGroup, Select,
+    SelectValue, Switch, ValidateStatus,
 };
 
 /// 一个已登记字段的声明式文本输入项。
@@ -128,27 +128,14 @@ where
     T: InputNumberValue + IntoFormValue<Stored = T>,
 {
     fn build(self) -> ViewNode {
-        let current = self.value.get();
-        self.model.sync_typed_value(&self.field, &current);
-
-        let change_model = self.model.clone();
-        let change_field = self.field.clone();
-        let change_value = self.value.clone();
-        let blur_model = self.model.clone();
-        let blur_field = self.field.clone();
         let input = ViewNode::leaf(self.input_number.value(&self.value));
-        let input = input
-            .on_semantic(SemanticKind::Change, move |_| {
-                let value = change_value.get();
-                change_model.sync_typed_value(&change_field, &value);
-            })
-            .on_focus(move |event| {
-                if matches!(event, SystemEvent::FocusOut) {
-                    blur_model.blur(&blur_field);
-                }
-                EventResult::NotHandled
-            })
-            .focus_handle(&self.focus_handle);
+        let input = bind_typed_control(
+            &self.model,
+            &self.field,
+            &self.value,
+            &self.focus_handle,
+            input,
+        );
 
         form_item_shell(&self.model, &self.field, self.show_error, input)
     }
@@ -231,9 +218,6 @@ where
     T: SelectValue + IntoFormValue<Stored = T>,
 {
     fn build(self) -> ViewNode {
-        let current = self.value.get();
-        self.model.sync_typed_value(&self.field, &current);
-
         let mut select = if self.searchable {
             Select::searchable()
         } else {
@@ -250,26 +234,157 @@ where
             select = select.size(size);
         }
 
-        let change_model = self.model.clone();
-        let change_field = self.field.clone();
-        let change_value = self.value.clone();
-        let blur_model = self.model.clone();
-        let blur_field = self.field.clone();
-        let input = ViewNode::leaf(select)
-            .on_semantic(SemanticKind::Change, move |_| {
-                let value = change_value.get();
-                change_model.sync_typed_value(&change_field, &value);
-            })
-            .on_focus(move |event| {
-                if matches!(event, SystemEvent::FocusOut) {
-                    blur_model.blur(&blur_field);
-                }
-                EventResult::NotHandled
-            })
-            .focus_handle(&self.focus_handle);
+        let input = bind_typed_control(
+            &self.model,
+            &self.field,
+            &self.value,
+            &self.focus_handle,
+            ViewNode::leaf(select),
+        );
 
         form_item_shell(&self.model, &self.field, self.show_error, input)
     }
+}
+
+/// 一个已登记字段的声明式复选输入项。
+pub struct FormCheckboxItem {
+    model: FormModel,
+    field: String,
+    value: State<bool>,
+    focus_handle: FocusHandle,
+    label: String,
+    disabled: Option<bool>,
+    size: Option<ControlSize>,
+    show_error: bool,
+}
+
+impl FormCheckboxItem {
+    /// 设置复选框自身的说明文本。
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.label = label.into();
+        self
+    }
+
+    /// 设置是否禁用输入。
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = Some(disabled);
+        self
+    }
+
+    /// 设置输入控件尺寸。
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.size = Some(size);
+        self
+    }
+
+    /// 控制是否在字段下方显示首条错误文本；错误状态仍会保留。
+    pub fn show_error(mut self, show_error: bool) -> Self {
+        self.show_error = show_error;
+        self
+    }
+}
+
+impl View for FormCheckboxItem {
+    fn build(self) -> ViewNode {
+        let mut checkbox = Checkbox::new(self.label).checked(&self.value);
+        if let Some(disabled) = self.disabled {
+            checkbox = checkbox.disabled(disabled);
+        }
+        if let Some(size) = self.size {
+            checkbox = checkbox.size(size);
+        }
+        let input = bind_typed_control(
+            &self.model,
+            &self.field,
+            &self.value,
+            &self.focus_handle,
+            ViewNode::leaf(checkbox),
+        );
+        form_item_shell(&self.model, &self.field, self.show_error, input)
+    }
+}
+
+/// 一个已登记字段的声明式开关输入项。
+pub struct FormSwitchItem {
+    model: FormModel,
+    field: String,
+    value: State<bool>,
+    focus_handle: FocusHandle,
+    disabled: Option<bool>,
+    size: Option<ControlSize>,
+    show_error: bool,
+}
+
+impl FormSwitchItem {
+    /// 设置是否禁用输入。
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = Some(disabled);
+        self
+    }
+
+    /// 设置输入控件尺寸。
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.size = Some(size);
+        self
+    }
+
+    /// 控制是否在字段下方显示首条错误文本；错误状态仍会保留。
+    pub fn show_error(mut self, show_error: bool) -> Self {
+        self.show_error = show_error;
+        self
+    }
+}
+
+impl View for FormSwitchItem {
+    fn build(self) -> ViewNode {
+        let mut switch = Switch::new().checked(&self.value);
+        if let Some(disabled) = self.disabled {
+            switch = switch.disabled(disabled);
+        }
+        if let Some(size) = self.size {
+            switch = switch.size(size);
+        }
+        let input = bind_typed_control(
+            &self.model,
+            &self.field,
+            &self.value,
+            &self.focus_handle,
+            ViewNode::leaf(switch),
+        );
+        form_item_shell(&self.model, &self.field, self.show_error, input)
+    }
+}
+
+fn bind_typed_control<T>(
+    model: &FormModel,
+    field: &str,
+    value: &State<T>,
+    focus_handle: &FocusHandle,
+    input: ViewNode,
+) -> ViewNode
+where
+    T: Clone + PartialEq + Send + Sync + IntoFormValue<Stored = T> + 'static,
+{
+    let current = value.get();
+    model.sync_typed_value(field, &current);
+
+    let change_model = model.clone();
+    let change_field = field.to_string();
+    let change_value = value.clone();
+    let blur_model = model.clone();
+    let blur_field = field.to_string();
+    input
+        .on_semantic(SemanticKind::Change, move |_| {
+            let value = change_value.get();
+            change_model.sync_typed_value(&change_field, &value);
+        })
+        .on_focus(move |event| {
+            if matches!(event, SystemEvent::FocusOut) {
+                blur_model.blur(&blur_field);
+            }
+            EventResult::NotHandled
+        })
+        .focus_handle(focus_handle)
 }
 
 fn form_item_shell(model: &FormModel, field: &str, show_error: bool, input: ViewNode) -> ViewNode {
@@ -365,6 +480,45 @@ impl FormModel {
             optgroups: Vec::new(),
             placeholder: String::new(),
             searchable: false,
+            disabled: None,
+            size: None,
+            show_error: true,
+        })
+    }
+
+    /// 把已声明的布尔字段绑定为 `FormItem + Checkbox` View。
+    pub fn checkbox_item(
+        &self,
+        field: impl AsRef<str>,
+        value: &State<bool>,
+    ) -> Option<FormCheckboxItem> {
+        let field = field.as_ref();
+        let focus_handle = self.focus_handle_for(field)?;
+        Some(FormCheckboxItem {
+            model: self.clone(),
+            field: field.to_string(),
+            value: value.clone(),
+            focus_handle,
+            label: String::new(),
+            disabled: None,
+            size: None,
+            show_error: true,
+        })
+    }
+
+    /// 把已声明的布尔字段绑定为 `FormItem + Switch` View。
+    pub fn switch_item(
+        &self,
+        field: impl AsRef<str>,
+        value: &State<bool>,
+    ) -> Option<FormSwitchItem> {
+        let field = field.as_ref();
+        let focus_handle = self.focus_handle_for(field)?;
+        Some(FormSwitchItem {
+            model: self.clone(),
+            field: field.to_string(),
+            value: value.clone(),
+            focus_handle,
             disabled: None,
             size: None,
             show_error: true,
