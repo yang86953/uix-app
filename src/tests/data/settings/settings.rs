@@ -132,6 +132,154 @@ fn set_get_has_and_remove_share_one_state_contract() {
 }
 
 #[test]
+fn typed_scalars_roundtrip_without_changing_the_storage_model() {
+    let settings = SettingsService::new();
+
+    settings.set_typed("launches", 42u32);
+    settings.set_typed("scale", 1.25f64);
+    settings.set_typed("enabled", true);
+    settings.set_typed("theme", "dark");
+
+    assert_eq!(settings.get("launches"), Some("42".to_string()));
+    assert_eq!(settings.get_typed::<u32>("launches").unwrap(), Some(42));
+    assert_eq!(settings.get_typed::<f64>("scale").unwrap(), Some(1.25));
+    assert_eq!(settings.get_typed::<bool>("enabled").unwrap(), Some(true));
+    assert_eq!(
+        settings.get_typed::<String>("theme").unwrap(),
+        Some("dark".to_string())
+    );
+}
+
+#[test]
+fn typed_reads_distinguish_absent_and_invalid_values() {
+    let settings = SettingsService::new();
+    settings.set("launches", "many");
+
+    assert_eq!(settings.get_typed::<u32>("missing").unwrap(), None);
+    assert_eq!(settings.get_typed_or("missing", 7u32).unwrap(), 7);
+
+    let invalid = settings.get_typed::<u32>("launches").unwrap_err();
+    assert_eq!(invalid.code(), Errc::ParseError);
+    assert!(invalid.message().contains("launches"));
+    assert!(invalid.message().contains("u32"));
+
+    let missing = settings.require_typed::<u32>("missing").unwrap_err();
+    assert_eq!(missing.code(), Errc::NotFound);
+}
+
+#[cfg(feature = "settings-serde")]
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+struct TestPreferences {
+    theme: String,
+    window_width: f64,
+    recent_files: Vec<String>,
+}
+
+#[cfg(feature = "settings-serde")]
+#[test]
+fn structured_values_roundtrip_inside_one_flat_string_entry() {
+    let settings = SettingsService::new();
+    let expected = TestPreferences {
+        theme: "dark".to_string(),
+        window_width: 1280.0,
+        recent_files: vec!["first.uix".to_string(), "second.uix".to_string()],
+    };
+
+    settings.set_struct("preferences", &expected).unwrap();
+
+    assert_eq!(settings.count(), 1);
+    assert!(settings
+        .get("preferences")
+        .is_some_and(|encoded| encoded.starts_with('{')));
+    assert_eq!(
+        settings
+            .get_struct::<TestPreferences>("preferences")
+            .unwrap(),
+        Some(expected)
+    );
+}
+
+#[cfg(feature = "settings-serde")]
+#[test]
+fn structured_reads_report_absent_and_invalid_values() {
+    let settings = SettingsService::new();
+    assert_eq!(
+        settings
+            .get_struct::<TestPreferences>("preferences")
+            .unwrap(),
+        None
+    );
+
+    let missing = settings
+        .require_struct::<TestPreferences>("preferences")
+        .unwrap_err();
+    assert_eq!(missing.code(), Errc::NotFound);
+
+    settings.set("preferences", "not-json");
+    let invalid = settings
+        .get_struct::<TestPreferences>("preferences")
+        .unwrap_err();
+    assert_eq!(invalid.code(), Errc::ParseError);
+    assert!(invalid.message().contains("preferences"));
+}
+
+#[cfg(feature = "settings-serde")]
+#[test]
+fn structured_values_survive_explicit_save_and_load() {
+    let path = temp_settings_path("structured-roundtrip");
+    remove_settings_artifacts(&path);
+    let path_string = path.to_string_lossy().to_string();
+    let expected = TestPreferences {
+        theme: "system".to_string(),
+        window_width: 1440.0,
+        recent_files: vec!["project.uix".to_string()],
+    };
+
+    let settings = SettingsService::new();
+    settings.load(&path_string).unwrap();
+    settings.set_struct("preferences", &expected).unwrap();
+    settings.save().unwrap();
+
+    let loaded = SettingsService::new();
+    loaded.load(&path_string).unwrap();
+    assert_eq!(
+        loaded
+            .require_struct::<TestPreferences>("preferences")
+            .unwrap(),
+        expected
+    );
+
+    remove_settings_artifacts(&path);
+}
+
+#[cfg(feature = "settings-serde")]
+struct RejectSerialization;
+
+#[cfg(feature = "settings-serde")]
+impl serde::Serialize for RejectSerialization {
+    fn serialize<S>(&self, _serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        Err(serde::ser::Error::custom("rejected by test codec"))
+    }
+}
+
+#[cfg(feature = "settings-serde")]
+#[test]
+fn failed_struct_serialization_keeps_the_previous_value() {
+    let settings = SettingsService::new();
+    settings.set("preferences", "stable");
+
+    let error = settings
+        .set_struct("preferences", &RejectSerialization)
+        .unwrap_err();
+
+    assert_eq!(error.code(), Errc::SerializationError);
+    assert_eq!(settings.get("preferences"), Some("stable".to_string()));
+}
+
+#[test]
 fn save_load_roundtrip_persists_values() {
     let path = temp_settings_path("roundtrip");
     remove_settings_artifacts(&path);
