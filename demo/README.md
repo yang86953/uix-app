@@ -101,8 +101,15 @@ demo/src/
 
 ## 测试
 
+日常只运行 demo 自身的构建 / 页面 smoke：
+
 ```bash
 cargo test --bin uix-demo
+```
+
+下列 ignored 真窗矩阵会创建原生窗口并切换图形 recipe，仅在任务明确选择 Windows Agent Bridge 阶段验收时手动运行，不跟随普通 demo 改动：
+
+```bash
 cargo test --features agent-control --test agent_gui_windows -- --ignored --nocapture
 ```
 
