@@ -7,9 +7,10 @@
 //!
 //! - `Easing` — 缓动函数，支持 cubic-bezier、弹性和经典预设。
 //! - `Animatable` trait — 定义可插值类型（f32, f64, Color, Point, Rect）。
-//! - `Animated<T>` — 由所属窗口自动推进的固定时长 / keyframe / Spring 声明式单值过渡、deadline 延迟与循环播放。
+//! - `Animated<T>` — 由所属窗口自动推进的固定时长 / keyframe / Spring 声明式 typed 值过渡、deadline 延迟与循环播放。
 //! - `Animation<T>` — 泛型动画实例，驱动单值从 from→to 的插值。
 //! - `KeyframeAnimation<T>` — 固定时长的 typed 单值分段插值。
+//! - `keyframe!` — 生成逐字段 `Animatable` 聚合类型，让多项属性共享一个 source 与时钟。
 //! - `SpringAnimation<T>` — 使用阻尼谐振子解析解收敛到目标的单次动画。
 //! - `AnimationConfig` — 进出场动画公开配置（淡入/滑入/缩放等）。
 //! - `TransitionPlayer` — 过渡播放器，见控 widget 的单次进出场动画。
