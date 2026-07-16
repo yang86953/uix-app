@@ -51,7 +51,9 @@ pub use crate::ui::{
     UploadFile, UploadStatus, ValidateStatus, Values, VirtualScroll, VirtualScrollBuilder,
     Watermark, Weekday,
 };
-pub use crate::ui::{Animation, Easing, Spring, SpringAnimation};
+pub use crate::ui::{
+    Animation, Easing, Keyframe, KeyframeAnimation, KeyframeError, Spring, SpringAnimation,
+};
 
 fn assert_input_number_value<T: InputNumberValue>() {}
 fn assert_form_value<T: IntoFormValue>() {}
@@ -240,6 +242,9 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<FormSelectItem>();
     assert_exported::<FormSliderItem>();
     assert_exported::<FormTimePickerItem>();
+    assert_exported::<Keyframe<f32>>();
+    assert_exported::<KeyframeAnimation<f32>>();
+    assert_exported::<KeyframeError>();
     assert_exported::<Spring>();
     assert_exported::<SpringAnimation<f32>>();
     assert_exported::<Trigger>();

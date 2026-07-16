@@ -6,7 +6,8 @@ use crate::app::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry};
 use crate::app::window_driver::sync_animation_registrations;
 use crate::core::Point;
 use crate::ui::animation::{
-    Animated, Animation, AnimationConfig, Easing, Spring, SpringAnimation, TransitionPlayer,
+    Animated, Animation, AnimationConfig, Easing, Keyframe, KeyframeAnimation, KeyframeError,
+    Spring, SpringAnimation, TransitionPlayer,
 };
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::view::{label, ViewAdapter, ViewNode};
@@ -254,6 +255,113 @@ fn animated_spring_retargets_from_the_current_value() {
     }
     assert!(animated.is_finished());
     assert_eq!(animated.value(), 2.0);
+}
+
+#[test]
+fn keyframes_sort_clamp_and_keep_the_last_duplicate_declaration() {
+    let animation = KeyframeAnimation::new(
+        [
+            Keyframe::new(1.0, 9.0_f64),
+            Keyframe::new(0.5, 5.0).easing(Easing::ease_in),
+            Keyframe::new(-1.0, 0.0),
+            Keyframe::new(0.5, 7.0).easing(Easing::ease_out),
+            Keyframe::new(2.0, 10.0),
+        ],
+        1.0,
+    )
+    .expect("finite non-empty keyframes should normalize");
+
+    assert_eq!(animation.frames().len(), 3);
+    assert_eq!(animation.frames()[0], Keyframe::new(0.0, 0.0));
+    assert_eq!(animation.frames()[1].offset, 0.5);
+    assert_eq!(animation.frames()[1].value, 7.0);
+    assert_eq!(animation.frames()[1].easing, Easing::ease_out);
+    assert_eq!(animation.frames()[2], Keyframe::new(1.0, 10.0));
+
+    assert_eq!(
+        KeyframeAnimation::<f32>::new([], 1.0).expect_err("empty sequence should fail"),
+        KeyframeError::Empty
+    );
+    assert_eq!(
+        KeyframeAnimation::new([Keyframe::new(f64::NAN, 0.0_f32)], 1.0)
+            .expect_err("non-finite offset should fail"),
+        KeyframeError::NonFiniteOffset
+    );
+}
+
+#[test]
+fn keyframe_animation_applies_segment_easing_and_large_delta_completion() {
+    let finished = Arc::new(AtomicUsize::new(0));
+    let callback_count = Arc::clone(&finished);
+    let mut animation = KeyframeAnimation::new(
+        [
+            Keyframe::new(0.0, 0.0_f64).easing(Easing::ease_in),
+            Keyframe::new(0.5, 10.0),
+            Keyframe::new(1.0, 20.0),
+        ],
+        1.0,
+    )
+    .expect("keyframe sequence")
+    .on_finish(move || {
+        callback_count.fetch_add(1, Ordering::SeqCst);
+    });
+
+    assert!((animation.update(0.25) - 2.5).abs() < 1e-9);
+    assert!((animation.update(0.5) - 15.0).abs() < 1e-9);
+    assert_eq!(animation.update(10.0), 20.0);
+    assert!(animation.is_finished());
+    assert_eq!(animation.progress(), 1.0);
+    assert_eq!(finished.load(Ordering::SeqCst), 1);
+    let _ = animation.update(1.0);
+    assert_eq!(finished.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn keyframe_animation_pause_resume_reverse_and_stop_preserve_direction() {
+    let mut animation =
+        KeyframeAnimation::new([Keyframe::new(0.0, 0.0_f32), Keyframe::new(1.0, 20.0)], 1.0)
+            .expect("keyframe sequence");
+
+    assert_eq!(animation.update(0.25), 5.0);
+    animation.pause();
+    assert_eq!(animation.update(10.0), 5.0);
+    assert!(!animation.is_finished());
+    animation.resume();
+    assert_eq!(animation.update(0.25), 10.0);
+
+    animation.reverse();
+    assert_eq!(animation.value(), 20.0);
+    assert_eq!(animation.update(0.25), 15.0);
+    animation.stop();
+    assert_eq!(animation.value(), 0.0);
+    assert!(animation.is_finished());
+}
+
+#[test]
+fn animated_keyframes_use_current_value_for_a_missing_zero_boundary() {
+    let animated = Animated::new(2.0_f32)
+        .to_keyframes([Keyframe::new(0.5, 10.0), Keyframe::new(1.0, 20.0)], 1.0)
+        .expect("keyframe sequence");
+    let mut tree = ViewAdapter::build_nodes(animated_root(&animated));
+
+    let updates = tree.update_animations(0.0);
+    assert_eq!(updates.len(), 1);
+    assert!(updates[0].1);
+    assert_eq!(animated.value(), 2.0);
+
+    let _ = tree.update_animations(0.25);
+    assert!((animated.value() - 6.0).abs() < 1e-6);
+    animated.pause();
+    assert!(tree.update_animations(1.0).is_empty());
+    assert!((animated.value() - 6.0).abs() < 1e-6);
+
+    animated.resume();
+    let updates = tree.update_animations(0.75);
+    assert_eq!(updates.len(), 1);
+    assert!(!updates[0].1);
+    assert_eq!(animated.value(), 20.0);
+    assert!(animated.is_finished());
+    assert!(tree.update_animations(0.1).is_empty());
 }
 
 #[test]
