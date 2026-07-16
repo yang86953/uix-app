@@ -34,20 +34,20 @@ pub use crate::ui::{
     FieldError, FloatButton, FloatButtonBackTop, Footer, Form, FormBuilder, FormCheckboxItem,
     FormInputItem, FormInputNumberItem, FormItem, FormLayout, FormListBuilder, FormListError,
     FormListFieldError, FormListFields, FormListItemId, FormListModel, FormListValues, FormModel,
-    FormSelectItem, FormSwitchItem, Grid, Header, Icon, Image, Input, InputNumber,
-    InputNumberValue, IntoFormValue, Label, Layout, LineChart, LineData, List, Mentions, Menu,
-    MenuItem, MenuMode, Message, MessageItem, Modal, ModalBuilder, ModalContext, NavGroup, NavItem,
-    Navigation, Notification, NotificationItem, OptGroup, Pagination, PickerMode, PieChart,
-    PieData, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger,
-    PresetDate, ProgressBar, ProgressMode, ProgressType, QRCode, Radio, RadioDirection, Rate,
-    ResultType, ResultView, RichText, RichTextSegment, RichTextStyle, ScrollView, Segmented,
-    Select, SelectableItem, SelectableList, SharedActive, Sider, Skeleton, SkeletonShape, Slider,
-    SortDirection, Space, SpaceSize, Spin, SpinSize, Splitter, Step, StepStatus, Steps, Switch,
-    Tab, TabPosition, Table, TableBuilder, TableChange, TableColumn, TableRow, Tabs, Tag, TagColor,
-    ThemeToggle, Time, TimePicker, Timeline, TimelineItem, Tooltip, TooltipPlacement, Transfer,
-    TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography, TypographyType, Upload,
-    UploadFile, UploadStatus, ValidateStatus, Values, VirtualScroll, VirtualScrollBuilder,
-    Watermark, Weekday,
+    FormRateItem, FormSelectItem, FormSliderItem, FormSwitchItem, Grid, Header, Icon, Image, Input,
+    InputNumber, InputNumberValue, IntoFormValue, Label, Layout, LineChart, LineData, List,
+    Mentions, Menu, MenuItem, MenuMode, Message, MessageItem, Modal, ModalBuilder, ModalContext,
+    NavGroup, NavItem, Navigation, Notification, NotificationItem, OptGroup, Pagination,
+    PickerMode, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement,
+    PopoverTrigger, PresetDate, ProgressBar, ProgressMode, ProgressType, QRCode, Radio,
+    RadioDirection, Rate, ResultType, ResultView, RichText, RichTextSegment, RichTextStyle,
+    ScrollView, Segmented, Select, SelectableItem, SelectableList, SharedActive, Sider, Skeleton,
+    SkeletonShape, Slider, SortDirection, Space, SpaceSize, Spin, SpinSize, Splitter, Step,
+    StepStatus, Steps, Switch, Tab, TabPosition, Table, TableBuilder, TableChange, TableColumn,
+    TableRow, Tabs, Tag, TagColor, ThemeToggle, Time, TimePicker, Timeline, TimelineItem, Tooltip,
+    TooltipPlacement, Transfer, TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography,
+    TypographyType, Upload, UploadFile, UploadStatus, ValidateStatus, Values, VirtualScroll,
+    VirtualScrollBuilder, Watermark, Weekday,
 };
 pub use crate::ui::{Animation, Easing};
 
@@ -229,7 +229,9 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<FormListModel>();
     assert_exported::<FormListValues>();
     assert_exported::<FormModel>();
+    assert_exported::<FormRateItem>();
     assert_exported::<FormSelectItem>();
+    assert_exported::<FormSliderItem>();
     assert_exported::<Trigger>();
     assert_form_value::<HashSet<String>>();
     assert_form_value::<String>();

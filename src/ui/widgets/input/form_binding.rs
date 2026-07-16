@@ -1,12 +1,14 @@
 //! `FormModel` 与声明式输入 View 的绑定。
 
+use std::ops::RangeInclusive;
+
 use crate::native::traits::input::ControlSize;
 use crate::ui::view::{input, EventExt, View, ViewNode};
 use crate::ui::{EventResult, FocusHandle, SemanticKind, State, SystemEvent};
 
 use super::{
-    Checkbox, FormItem, FormModel, InputNumber, InputNumberValue, IntoFormValue, OptGroup, Select,
-    SelectValue, Switch, ValidateStatus,
+    Checkbox, FormItem, FormModel, InputNumber, InputNumberValue, IntoFormValue, OptGroup, Rate,
+    Select, SelectValue, Slider, Switch, ValidateStatus,
 };
 
 /// 一个已登记字段的声明式文本输入项。
@@ -355,6 +357,143 @@ impl View for FormSwitchItem {
     }
 }
 
+/// 一个已登记字段的声明式滑块输入项。
+pub struct FormSliderItem {
+    model: FormModel,
+    field: String,
+    value: State<f64>,
+    focus_handle: FocusHandle,
+    range: RangeInclusive<f64>,
+    step: f64,
+    size: Option<ControlSize>,
+    show_error: bool,
+}
+
+impl FormSliderItem {
+    /// 设置滑块步进值。
+    pub fn step(mut self, step: f64) -> Self {
+        self.step = step;
+        self
+    }
+
+    /// 设置输入控件尺寸。
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.size = Some(size);
+        self
+    }
+
+    /// 控制是否在字段下方显示首条错误文本；错误状态仍会保留。
+    pub fn show_error(mut self, show_error: bool) -> Self {
+        self.show_error = show_error;
+        self
+    }
+}
+
+impl View for FormSliderItem {
+    fn build(self) -> ViewNode {
+        let mut slider = Slider::new(self.range).step(self.step).value(&self.value);
+        if let Some(size) = self.size {
+            slider = slider.size(size);
+        }
+        let input = bind_typed_control(
+            &self.model,
+            &self.field,
+            &self.value,
+            &self.focus_handle,
+            ViewNode::leaf(slider),
+        );
+        form_item_shell(&self.model, &self.field, self.show_error, input)
+    }
+}
+
+/// 一个已登记字段的声明式评分输入项。
+pub struct FormRateItem {
+    model: FormModel,
+    field: String,
+    value: State<u32>,
+    focus_handle: FocusHandle,
+    count: usize,
+    allow_half: bool,
+    disabled: Option<bool>,
+    clearable: bool,
+    character: String,
+    size: Option<ControlSize>,
+    show_error: bool,
+}
+
+impl FormRateItem {
+    /// 设置评分项数量。
+    pub fn count(mut self, count: usize) -> Self {
+        self.count = count;
+        self
+    }
+
+    /// 启用半星值；State 中一个单位表示半星。
+    pub fn allow_half(mut self) -> Self {
+        self.allow_half = true;
+        self
+    }
+
+    /// 设置是否禁用输入。
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = Some(disabled);
+        self
+    }
+
+    /// 允许再次选择当前值时清零。
+    pub fn clearable(mut self) -> Self {
+        self.clearable = true;
+        self
+    }
+
+    /// 设置评分字符。
+    pub fn character(mut self, character: impl Into<String>) -> Self {
+        self.character = character.into();
+        self
+    }
+
+    /// 设置输入控件尺寸。
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.size = Some(size);
+        self
+    }
+
+    /// 控制是否在字段下方显示首条错误文本；错误状态仍会保留。
+    pub fn show_error(mut self, show_error: bool) -> Self {
+        self.show_error = show_error;
+        self
+    }
+}
+
+impl View for FormRateItem {
+    fn build(self) -> ViewNode {
+        let mut rate = Rate::new().count(self.count);
+        if self.allow_half {
+            rate = rate.allow_half();
+        }
+        if let Some(disabled) = self.disabled {
+            rate = rate.disabled(disabled);
+        }
+        if self.clearable {
+            rate = rate.clearable();
+        }
+        if !self.character.is_empty() {
+            rate = rate.character(self.character);
+        }
+        if let Some(size) = self.size {
+            rate = rate.size(size);
+        }
+        let input = bind_typed_control(
+            &self.model,
+            &self.field,
+            &self.value,
+            &self.focus_handle,
+            ViewNode::leaf(rate.value(&self.value)),
+        );
+        form_item_shell(&self.model, &self.field, self.show_error, input)
+    }
+}
+
 fn bind_typed_control<T>(
     model: &FormModel,
     field: &str,
@@ -520,6 +659,46 @@ impl FormModel {
             value: value.clone(),
             focus_handle,
             disabled: None,
+            size: None,
+            show_error: true,
+        })
+    }
+
+    /// 把已声明的 `f64` 字段绑定为 `FormItem + Slider` View。
+    pub fn slider_item(
+        &self,
+        field: impl AsRef<str>,
+        value: &State<f64>,
+        range: RangeInclusive<f64>,
+    ) -> Option<FormSliderItem> {
+        let field = field.as_ref();
+        let focus_handle = self.focus_handle_for(field)?;
+        Some(FormSliderItem {
+            model: self.clone(),
+            field: field.to_string(),
+            value: value.clone(),
+            focus_handle,
+            range,
+            step: 1.0,
+            size: None,
+            show_error: true,
+        })
+    }
+
+    /// 把已声明的 `u32` 字段绑定为 `FormItem + Rate` View。
+    pub fn rate_item(&self, field: impl AsRef<str>, value: &State<u32>) -> Option<FormRateItem> {
+        let field = field.as_ref();
+        let focus_handle = self.focus_handle_for(field)?;
+        Some(FormRateItem {
+            model: self.clone(),
+            field: field.to_string(),
+            value: value.clone(),
+            focus_handle,
+            count: 5,
+            allow_half: false,
+            disabled: None,
+            clearable: false,
+            character: String::new(),
             size: None,
             show_error: true,
         })
