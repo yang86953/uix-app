@@ -7,7 +7,7 @@ use crate::draw::pipeline::EncodedPictureExecution;
 use crate::draw::pipeline::{EncodedFrameExecution, FrameRasterOp};
 #[cfg(feature = "d3d11")]
 use crate::draw::primitives::path::Path;
-use crate::draw::primitives::types::{BlendMode, GradientDirection, Radius};
+use crate::draw::primitives::types::{BlendMode, GradientDirection, Radius, Transform};
 use crate::draw::traits::Canvas2D;
 use crate::native::traits::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
@@ -29,6 +29,24 @@ fn soft_fallback_tile_is_tight_and_ignores_transparent_rgb() {
     assert_eq!(packed[0], 0xFF00_0001);
     assert_eq!(packed[11], 0x8000_0002);
     assert_eq!(pack_visible_soft_fallback_tile(&[0; 4], 2, 2), None);
+}
+
+#[test]
+fn transformed_native_canvas_routes_to_soft_fallback_with_surface_clip() {
+    let mut canvas = NativeGpuCanvas2D::new(16, 12, NativeRasterCaps::d3d11_full());
+    canvas.set_transform(Transform::translate(2.0, 1.0).concat(Transform::scale(2.0, 2.0)));
+    canvas.push_clip(Rect::new(1.0, 1.0, 2.0, 2.0));
+    canvas.fill_rect(Rect::new(0.0, 0.0, 5.0, 5.0), Color::red(), None);
+    canvas.pop_clip();
+
+    assert!(canvas.pending_native.is_empty());
+    let soft = canvas.soft_fallback.as_ref().expect("soft fallback");
+    let width = soft.surface().width() as usize;
+    let at = |x: usize, y: usize| soft.surface().pixels()[y * width + x];
+    assert_eq!(at(3, 3), 0);
+    assert_ne!(at(4, 3), 0);
+    assert_ne!(at(7, 6), 0);
+    assert_eq!(at(8, 6), 0);
 }
 
 #[test]

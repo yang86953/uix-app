@@ -84,6 +84,9 @@ impl RasterRenderer {
         self.transform = t;
         self.invert = Self::compute_inverse(&t);
     }
+    pub fn transform(&self) -> Transform {
+        self.transform
+    }
 
     // ═══ 状态管理 ═══
 
@@ -114,6 +117,10 @@ impl RasterRenderer {
     }
 
     pub fn push_clip(&mut self, rect: Rect) {
+        self.push_clip_surface(self.map_rect(rect));
+    }
+
+    pub fn push_clip_surface(&mut self, rect: Rect) {
         self.clip_stack.push(self.clip_rect);
         if let Some(intersection) = self.clip_rect.intersect(&rect) {
             self.clip_rect = intersection;
@@ -194,6 +201,15 @@ impl RasterRenderer {
         let max_x = x1.max(x2).max(x3).max(x4);
         let max_y = y1.max(y2).max(y3).max(y4);
         Rect::new(min_x, min_y, max_x - min_x, max_y - min_y)
+    }
+
+    pub(crate) fn map_rect(&self, rect: Rect) -> Rect {
+        self.transform_rect(&Rect::new(
+            rect.x + self.offset_x,
+            rect.y + self.offset_y,
+            rect.w,
+            rect.h,
+        ))
     }
 
     pub(crate) fn intersect_clip(&self, r: &Rect) -> Option<Rect> {

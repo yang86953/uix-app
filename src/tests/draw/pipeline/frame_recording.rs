@@ -1,6 +1,6 @@
 use crate::draw::pipeline::frame_recording::*;
 use crate::draw::pipeline::{FrameCommand, FrameRadius, FrameRasterOp};
-use crate::draw::primitives::types::{BlendMode, Radius};
+use crate::draw::primitives::types::{BlendMode, Radius, Transform};
 use crate::draw::traits::GraphicsEngine;
 use crate::tests::common::*;
 
@@ -60,6 +60,42 @@ fn recording_canvas_emits_native_cpu_and_picture_commands_in_painter_order() {
         encoder.commands()[4],
         crate::draw::pipeline::FrameCommand::Native { .. }
     ));
+}
+
+#[test]
+fn transformed_recording_uses_a_tight_cpu_segment_at_the_mapped_bounds() {
+    let mut engine = FrameRecordingEngine::new();
+    engine.initialize(20, 16).expect("initialize recorder");
+    engine.begin_recording(true).expect("begin recording");
+    engine
+        .canvas_2d()
+        .set_transform(Transform::translate(2.0, 1.0).concat(Transform::scale(2.0, 2.0)));
+    engine
+        .canvas_2d()
+        .fill_rect(Rect::new(1.0, 1.0, 2.0, 2.0), Color::red(), None);
+
+    let encoder = engine.finish_recording().expect("finish recorder");
+    let segment = encoder
+        .commands()
+        .iter()
+        .find_map(|command| match command {
+            FrameCommand::CpuSegment { image, dst, .. } => Some((image, dst)),
+            _ => None,
+        })
+        .expect("transformed CPU segment");
+    assert_eq!((segment.0.width(), segment.0.height()), (4, 4));
+    assert_eq!(*segment.1, FrameRect::new(4, 3, 4, 4));
+    let reference = encoder.render_reference();
+    assert_eq!(
+        reference.pixel(3, 3),
+        Some(Color::transparent().premultiplied())
+    );
+    assert_eq!(reference.pixel(4, 3), Some(Color::red().premultiplied()));
+    assert_eq!(reference.pixel(7, 6), Some(Color::red().premultiplied()));
+    assert_eq!(
+        reference.pixel(8, 6),
+        Some(Color::transparent().premultiplied())
+    );
 }
 
 #[test]

@@ -53,6 +53,9 @@ impl SharedRasterizer {
     pub fn set_transform(&mut self, t: Transform) {
         self.renderer.set_transform(t);
     }
+    pub fn current_transform(&self) -> Transform {
+        self.renderer.transform()
+    }
     pub fn reset_transform(&mut self) {
         self.renderer.set_transform(Transform::identity());
     }
@@ -73,12 +76,26 @@ impl SharedRasterizer {
         self.renderer.push_clip(rect);
     }
 
+    pub(crate) fn push_clip_surface(&mut self, rect: Rect) {
+        self.renderer.push_clip_surface(rect);
+    }
+
+    pub(crate) fn map_rect(&self, rect: Rect) -> Rect {
+        self.renderer.map_rect(rect)
+    }
+
     pub fn pop_clip(&mut self) {
         self.renderer.pop_clip();
     }
 }
 
 impl Canvas2D for SharedRasterizer {
+    fn current_transform(&self) -> Transform {
+        self.renderer.transform()
+    }
+    fn set_transform(&mut self, transform: Transform) {
+        self.renderer.set_transform(transform);
+    }
     fn offset(&self) -> (f32, f32) {
         self.renderer.offset()
     }
@@ -322,9 +339,7 @@ impl Canvas2D for SharedRasterizer {
         self.renderer.restore();
     }
     fn push_clip(&mut self, rect: Rect) {
-        let (ox, oy) = self.renderer.offset();
-        self.renderer
-            .push_clip(Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h));
+        self.renderer.push_clip(rect);
     }
     fn pop_clip(&mut self) {
         self.renderer.pop_clip();

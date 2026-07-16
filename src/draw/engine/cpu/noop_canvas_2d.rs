@@ -5,13 +5,17 @@ use crate::core::{Rect, Size};
 use crate::draw::primitives::color::Color;
 use crate::draw::primitives::path::{FillRule, Path};
 use crate::draw::primitives::stroker::StrokeOptions;
-use crate::draw::primitives::types::{BlendMode, GradientDirection, Radius};
+use crate::draw::primitives::types::{BlendMode, GradientDirection, Radius, Transform};
 use crate::draw::traits::Canvas2D;
 
 /// Canvas2D 空实现。
 pub struct NoopCanvas2D;
 
 impl Canvas2D for NoopCanvas2D {
+    fn current_transform(&self) -> Transform {
+        Transform::identity()
+    }
+    fn set_transform(&mut self, _: Transform) {}
     fn fill_rect(&mut self, _: Rect, _: Color, _: Option<Radius>) {}
     fn fill_circle(&mut self, _: f32, _: f32, _: f32, _: Color) {}
     fn fill_ellipse(&mut self, _: Rect, _: Color) {}

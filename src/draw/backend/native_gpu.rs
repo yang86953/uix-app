@@ -257,7 +257,7 @@ impl NativeGpuCanvas2D {
         self.sync_fallback_state();
         let clip = self.clip_rect;
         let soft = self.ensure_soft();
-        soft.push_clip(clip);
+        soft.push_clip_surface(clip);
         f(soft);
         soft.pop_clip();
     }
@@ -704,6 +704,14 @@ pub(crate) fn pack_visible_soft_fallback_tile(
 }
 
 impl Canvas2D for NativeGpuCanvas2D {
+    fn current_transform(&self) -> Transform {
+        self.transform
+    }
+
+    fn set_transform(&mut self, transform: Transform) {
+        self.transform = transform;
+    }
+
     fn offset(&self) -> (f32, f32) {
         (self.offset_x, self.offset_y)
     }
@@ -904,12 +912,12 @@ impl Canvas2D for NativeGpuCanvas2D {
     }
 
     fn push_clip(&mut self, rect: Rect) {
-        let rect = Rect::new(
+        let rect = self.transform.transform_rect(Rect::new(
             rect.x + self.offset_x,
             rect.y + self.offset_y,
             rect.w,
             rect.h,
-        );
+        ));
         self.clip_stack.push(self.clip_rect);
         if let Some(intersection) = self.clip_rect.intersect(&rect) {
             self.clip_rect = intersection;

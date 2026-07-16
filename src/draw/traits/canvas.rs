@@ -4,9 +4,20 @@ use crate::core::{Rect, Size};
 use crate::draw::primitives::color::Color;
 use crate::draw::primitives::path::{FillRule, Path};
 use crate::draw::primitives::stroker::StrokeOptions;
-use crate::draw::primitives::types::{BlendMode, GradientDirection, Radius};
+use crate::draw::primitives::types::{BlendMode, GradientDirection, Radius, Transform};
 
 pub trait Canvas2D {
+    // ── 仿射变换 ──
+
+    fn current_transform(&self) -> Transform;
+
+    fn set_transform(&mut self, transform: Transform);
+
+    /// Concatenates `transform` after the current local coordinates.
+    fn concat_transform(&mut self, transform: Transform) {
+        self.set_transform(self.current_transform().concat(transform));
+    }
+
     // ── 画布偏移（像素空间平移）──
 
     /// 当前像素偏移量（影响所有绘制操作的坐标）。
