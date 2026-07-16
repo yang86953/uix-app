@@ -3,7 +3,7 @@ use crate::native::backends::windows::consts::{
     GWL_EXSTYLE, GWL_STYLE, HTCAPTION, MONITOR_DEFAULTTONEAREST, SIZE_RESTORED, WM_CHAR,
     WM_DPICHANGED, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_LBUTTONDBLCLK, WM_LBUTTONUP,
     WM_NCRBUTTONUP, WM_SETTINGCHANGE, WM_SIZE, WM_THEMECHANGED, WS_CAPTION, WS_EX_LAYERED,
-    WS_THICKFRAME,
+    WS_MAXIMIZEBOX, WS_THICKFRAME,
 };
 use crate::native::backends::windows::display::WindowsDisplay;
 use crate::native::backends::windows::dpi::{
@@ -541,6 +541,47 @@ fn custom_title_bar_removes_caption_but_keeps_resize_frame_and_client_size() {
     assert_eq!(
         (window.properties().width(), window.properties().height()),
         (419, 263)
+    );
+
+    window.close().expect("close window");
+}
+
+#[test]
+fn native_resizable_toggle_controls_resize_frame_and_maximize_entry() {
+    let mut platform = WindowsPlatform::new();
+    let mut window = platform
+        .create_window("UIX resizable toggle", 320, 180)
+        .expect("native window");
+    let hwnd = window.native_handle().native_window();
+    let resize_style = WS_THICKFRAME | WS_MAXIMIZEBOX;
+
+    let initial_style = unsafe { GetWindowLongW(hwnd, GWL_STYLE) } as u32;
+    assert_eq!(
+        initial_style & resize_style,
+        resize_style,
+        "resizable windows must expose both resize paths"
+    );
+
+    window
+        .properties_mut()
+        .set_resizable(false)
+        .expect("disable native resize paths");
+    let fixed_style = unsafe { GetWindowLongW(hwnd, GWL_STYLE) } as u32;
+    assert_eq!(
+        fixed_style & resize_style,
+        0,
+        "fixed-size windows must reject both border drag and maximize resize"
+    );
+
+    window
+        .properties_mut()
+        .set_resizable(true)
+        .expect("restore native resize paths");
+    let restored_style = unsafe { GetWindowLongW(hwnd, GWL_STYLE) } as u32;
+    assert_eq!(
+        restored_style & resize_style,
+        resize_style,
+        "re-enabling resize must restore border drag and maximize"
     );
 
     window.close().expect("close window");
