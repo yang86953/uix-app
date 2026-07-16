@@ -274,6 +274,18 @@ impl TransitionPlayer {
         player
     }
 
+    pub(crate) fn hold_at_start(&mut self) {
+        self.opacity_progress = self.opacity_anim.from;
+        self.offset = self
+            .offset_anim
+            .as_ref()
+            .map_or_else(|| Point::new(0.0, 0.0), |animation| animation.from);
+        self.scale = self
+            .scale_anim
+            .as_ref()
+            .map_or(1.0, |animation| animation.from);
+    }
+
     /// 重置动画以重新播放。
     pub fn reset(&mut self) {
         self.opacity_anim = self.config.opacity_animation();

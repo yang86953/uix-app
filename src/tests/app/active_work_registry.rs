@@ -83,6 +83,25 @@ fn parking_managed_animation_deadline_blocks_until_source_resync() {
 }
 
 #[test]
+fn open_component_animation_takes_precedence_over_a_managed_deadline() {
+    let now = Instant::now();
+    let deadline = now + Duration::from_secs(5);
+    let id = NodeId::new(7);
+    let mut registry = ActiveWorkRegistry::new();
+    registry.sync_animated_sources([(id, Some(deadline))]);
+
+    registry.sync_component_animations([id]);
+
+    assert_eq!(registry.next_deadline(), None);
+    assert_eq!(registry.animation_ids().collect::<Vec<_>>(), vec![id]);
+
+    registry.sync_component_animations([]);
+
+    assert_eq!(registry.next_deadline(), Some(deadline));
+    assert!(registry.animation_ids().next().is_none());
+}
+
+#[test]
 fn drain_due_returns_only_due_work_and_keeps_future_work() {
     let now = Instant::now();
     let mut registry = ActiveWorkRegistry::new();

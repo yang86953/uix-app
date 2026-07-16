@@ -60,6 +60,7 @@ pub struct WidgetTree {
     pub(crate) reconcile_callback: Arc<dyn Fn() + Send + Sync>,
     pub(crate) effects: Vec<crate::ui::foundation::state::Effect>,
     animated_sources: BTreeMap<WidgetId, BoundAnimatedSource>,
+    active_component_animations: HashSet<WidgetId>,
     managers: WidgetManagers,
     app_state: Option<AppState>,
     focus_handles: HashMap<WidgetId, FocusHandle>,
@@ -115,6 +116,7 @@ impl Default for WidgetTree {
             reconcile_callback,
             effects: Vec::new(),
             animated_sources: BTreeMap::new(),
+            active_component_animations: HashSet::new(),
             managers: WidgetManagers::new(),
             app_state: None,
             focus_handles: HashMap::new(),
@@ -512,6 +514,7 @@ impl WidgetTree {
 
     pub fn remove(&mut self, id: ComponentId) {
         self.tree_version += 1;
+        self.active_component_animations.remove(&id);
 
         let old_visual_bounds = self.visual_subtree_bounds(id);
 
