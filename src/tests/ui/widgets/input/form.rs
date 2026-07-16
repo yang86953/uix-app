@@ -2,7 +2,9 @@ use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::view::{column, ViewAdapter};
 use crate::ui::widgets::input::form::*;
-use crate::ui::{Checkbox, FieldError, Input, InputNumber, Select, State, Switch, Trigger};
+use crate::ui::{
+    Checkbox, FieldError, Input, InputNumber, Rate, Select, Slider, State, Switch, Trigger,
+};
 
 struct FixedChild(Size);
 
@@ -1059,6 +1061,111 @@ fn form_switch_item_activates_bool_rule_on_blur() {
 }
 
 #[test]
+fn form_slider_item_binds_f64_state_and_reconciles_inline_error() {
+    let volume = State::new(6.0_f64);
+    let form = Form::new()
+        .field("volume", "Volume")
+        .default(6.0_f64)
+        .validate_range(5.0_f64..=10.0_f64, "Volume must be at least 5")
+        .validate_trigger(Trigger::OnChange)
+        .build();
+    let mut tree = ViewAdapter::build(
+        form.slider_item("volume", &volume, 0.0..=10.0)
+            .expect("declared field should build a slider item")
+            .step(2.0),
+    );
+    let root = tree.root_id().expect("slider form item root");
+    let slider = tree.get(root).expect("slider form item").children()[0];
+
+    let _ = tree.dispatch_to(
+        slider,
+        &SystemEvent::KeyDown {
+            key: KeyCode::Left,
+            mods: KeyMod::NONE,
+        },
+    );
+    assert_eq!(volume.get(), 4.0);
+    assert_eq!(
+        form.field_error("volume").as_ref().map(FieldError::message),
+        Some("Volume must be at least 5")
+    );
+
+    volume.set(8.0);
+    ViewAdapter::reconcile(
+        &mut tree,
+        form.slider_item("volume", &volume, 0.0..=10.0)
+            .expect("declared field should reconcile a slider item")
+            .step(2.0),
+    );
+
+    assert!(form.field_error("volume").is_none());
+    let slider = tree
+        .get(root)
+        .and_then(|node| node.children().first().copied())
+        .and_then(|id| tree.get(id))
+        .and_then(|node| node.component().as_any().downcast_ref::<Slider>())
+        .expect("bound slider child");
+    assert_eq!(slider.current_value(), 8.0);
+    let values = form
+        .validate()
+        .expect("replacement slider value should pass");
+    assert_eq!(values.get::<f64>("volume"), Some(&8.0));
+}
+
+#[test]
+fn form_rate_item_activates_u32_rule_on_blur() {
+    let rating = State::new(3_u32);
+    let form = Form::new()
+        .field("rating", "Rating")
+        .default(3_u32)
+        .validate_range(3_u32..=5_u32, "Rating must be at least 3")
+        .validate_trigger(Trigger::OnBlur)
+        .build();
+    let mut tree = ViewAdapter::build(
+        form.rate_item("rating", &rating)
+            .expect("declared field should build a rate item")
+            .count(5)
+            .clearable(),
+    );
+    let root = tree.root_id().expect("rate form item root");
+    let rate = tree.get(root).expect("rate form item").children()[0];
+
+    let _ = tree.dispatch_to(
+        rate,
+        &SystemEvent::KeyDown {
+            key: KeyCode::Left,
+            mods: KeyMod::NONE,
+        },
+    );
+    assert_eq!(rating.get(), 2);
+    assert!(form.field_error("rating").is_none());
+    let _ = tree.dispatch_to(rate, &SystemEvent::FocusOut);
+    assert_eq!(
+        form.field_error("rating").as_ref().map(FieldError::message),
+        Some("Rating must be at least 3")
+    );
+
+    rating.set(4);
+    ViewAdapter::reconcile(
+        &mut tree,
+        form.rate_item("rating", &rating)
+            .expect("declared field should reconcile a rate item")
+            .count(5)
+            .clearable(),
+    );
+    assert!(form.field_error("rating").is_none());
+    let rate = tree
+        .get(root)
+        .and_then(|node| node.children().first().copied())
+        .and_then(|id| tree.get(id))
+        .and_then(|node| node.component().as_any().downcast_ref::<Rate>())
+        .expect("bound rate child");
+    assert_eq!(rate.current_value(), 4);
+    let values = form.validate().expect("replacement rating should pass");
+    assert_eq!(values.get::<u32>("rating"), Some(&4));
+}
+
+#[test]
 fn cloned_form_model_shares_values_and_rejects_unknown_input_items() {
     let value = State::new("ready".to_string());
     let form = Form::new().field("name", "Name").default("initial").build();
@@ -1068,6 +1175,10 @@ fn cloned_form_model_shares_values_and_rejects_unknown_input_items() {
     assert!(form.select_item("missing", &value).is_none());
     assert!(form.checkbox_item("missing", &State::new(false)).is_none());
     assert!(form.switch_item("missing", &State::new(false)).is_none());
+    assert!(form
+        .slider_item("missing", &State::new(0.0), 0.0..=1.0)
+        .is_none());
+    assert!(form.rate_item("missing", &State::new(0_u32)).is_none());
     assert!(cloned.set_value("name", "updated".to_string()));
 
     let values = form.validate().expect("shared value should remain valid");
@@ -1187,4 +1298,28 @@ fn form_submit_focuses_a_bound_checkbox_error() {
     assert_eq!(errors[0].field(), "accepted");
     assert!(tree.drain_app_state_focus_requests());
     assert_eq!(tree.managers().focus.focused_component(), Some(checkbox));
+}
+
+#[test]
+fn form_submit_focuses_a_bound_slider_error() {
+    let volume = State::new(0.0_f64);
+    let form = Form::new()
+        .field("volume", "Volume")
+        .default(0.0_f64)
+        .validate_range(1.0_f64..=10.0_f64, "Volume must be positive")
+        .build();
+    let mut tree = ViewAdapter::build(
+        form.slider_item("volume", &volume, 0.0..=10.0)
+            .expect("declared field should build a slider item"),
+    );
+    tree.set_app_state(AppState::new());
+    tree.layout();
+    let root = tree.root_id().expect("slider form item root");
+    let slider = tree.get(root).expect("slider form item").children()[0];
+
+    let errors = form.submit().expect_err("zero volume should fail submit");
+
+    assert_eq!(errors[0].field(), "volume");
+    assert!(tree.drain_app_state_focus_requests());
+    assert_eq!(tree.managers().focus.focused_component(), Some(slider));
 }
