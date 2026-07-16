@@ -7,8 +7,8 @@ use crate::ui::view::{input, EventExt, View, ViewNode};
 use crate::ui::{EventResult, FocusHandle, SemanticKind, State, SystemEvent};
 
 use super::{
-    Checkbox, FormItem, FormModel, InputNumber, InputNumberValue, IntoFormValue, OptGroup, Rate,
-    Select, SelectValue, Slider, Switch, ValidateStatus,
+    Checkbox, FormItem, FormModel, InputNumber, InputNumberValue, IntoFormValue, OptGroup, Radio,
+    Rate, Segmented, Select, SelectValue, Slider, Switch, ValidateStatus,
 };
 
 /// 一个已登记字段的声明式文本输入项。
@@ -494,6 +494,165 @@ impl View for FormRateItem {
     }
 }
 
+/// 一个已登记字段的声明式单选组输入项。
+pub struct FormRadioItem {
+    model: FormModel,
+    field: String,
+    value: State<String>,
+    focus_handle: FocusHandle,
+    group_name: String,
+    options: Vec<String>,
+    disabled: Option<bool>,
+    size: Option<ControlSize>,
+    vertical: bool,
+    show_error: bool,
+}
+
+impl FormRadioItem {
+    /// 设置单选组名。
+    pub fn group_name(mut self, group_name: impl Into<String>) -> Self {
+        self.group_name = group_name.into();
+        self
+    }
+
+    /// 设置选项文本。
+    pub fn options<I, S>(mut self, options: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.options = options
+            .into_iter()
+            .map(|option| option.as_ref().to_string())
+            .collect();
+        self
+    }
+
+    /// 设置是否禁用输入。
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = Some(disabled);
+        self
+    }
+
+    /// 设置输入控件尺寸。
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.size = Some(size);
+        self
+    }
+
+    /// 使用纵向选项布局。
+    pub fn vertical(mut self) -> Self {
+        self.vertical = true;
+        self
+    }
+
+    /// 控制是否在字段下方显示首条错误文本；错误状态仍会保留。
+    pub fn show_error(mut self, show_error: bool) -> Self {
+        self.show_error = show_error;
+        self
+    }
+}
+
+impl View for FormRadioItem {
+    fn build(self) -> ViewNode {
+        let mut radio = Radio::group(self.group_name, self.options, &self.value);
+        if let Some(disabled) = self.disabled {
+            radio = radio.disabled(disabled);
+        }
+        if let Some(size) = self.size {
+            radio = radio.size(size);
+        }
+        if self.vertical {
+            radio = radio.vertical();
+        }
+        let input = bind_typed_control(
+            &self.model,
+            &self.field,
+            &self.value,
+            &self.focus_handle,
+            ViewNode::leaf(radio),
+        );
+        form_item_shell(&self.model, &self.field, self.show_error, input)
+    }
+}
+
+/// 一个已登记字段的声明式分段选择输入项。
+pub struct FormSegmentedItem {
+    model: FormModel,
+    field: String,
+    value: State<String>,
+    focus_handle: FocusHandle,
+    options: Vec<String>,
+    disabled: Option<bool>,
+    disabled_options: Vec<usize>,
+    size: Option<ControlSize>,
+    show_error: bool,
+}
+
+impl FormSegmentedItem {
+    /// 设置选项文本。
+    pub fn options<I, S>(mut self, options: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.options = options
+            .into_iter()
+            .map(|option| option.as_ref().to_string())
+            .collect();
+        self
+    }
+
+    /// 设置是否禁用输入。
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = Some(disabled);
+        self
+    }
+
+    /// 禁用一个选项索引；键盘与指针选择均会跳过它。
+    pub fn disable_option(mut self, index: usize) -> Self {
+        if !self.disabled_options.contains(&index) {
+            self.disabled_options.push(index);
+        }
+        self
+    }
+
+    /// 设置输入控件尺寸。
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.size = Some(size);
+        self
+    }
+
+    /// 控制是否在字段下方显示首条错误文本；错误状态仍会保留。
+    pub fn show_error(mut self, show_error: bool) -> Self {
+        self.show_error = show_error;
+        self
+    }
+}
+
+impl View for FormSegmentedItem {
+    fn build(self) -> ViewNode {
+        let mut segmented = Segmented::new(self.options).value(&self.value);
+        if let Some(disabled) = self.disabled {
+            segmented = segmented.disabled(disabled);
+        }
+        for index in self.disabled_options {
+            segmented = segmented.disable_option(index);
+        }
+        if let Some(size) = self.size {
+            segmented = segmented.size(size);
+        }
+        let input = bind_typed_control(
+            &self.model,
+            &self.field,
+            &self.value,
+            &self.focus_handle,
+            ViewNode::leaf(segmented),
+        );
+        form_item_shell(&self.model, &self.field, self.show_error, input)
+    }
+}
+
 fn bind_typed_control<T>(
     model: &FormModel,
     field: &str,
@@ -699,6 +858,49 @@ impl FormModel {
             disabled: None,
             clearable: false,
             character: String::new(),
+            size: None,
+            show_error: true,
+        })
+    }
+
+    /// 把已声明的字符串字段绑定为 `FormItem + Radio` View。
+    pub fn radio_item(
+        &self,
+        field: impl AsRef<str>,
+        value: &State<String>,
+    ) -> Option<FormRadioItem> {
+        let field = field.as_ref();
+        let focus_handle = self.focus_handle_for(field)?;
+        Some(FormRadioItem {
+            model: self.clone(),
+            field: field.to_string(),
+            value: value.clone(),
+            focus_handle,
+            group_name: field.to_string(),
+            options: Vec::new(),
+            disabled: None,
+            size: None,
+            vertical: false,
+            show_error: true,
+        })
+    }
+
+    /// 把已声明的字符串字段绑定为 `FormItem + Segmented` View。
+    pub fn segmented_item(
+        &self,
+        field: impl AsRef<str>,
+        value: &State<String>,
+    ) -> Option<FormSegmentedItem> {
+        let field = field.as_ref();
+        let focus_handle = self.focus_handle_for(field)?;
+        Some(FormSegmentedItem {
+            model: self.clone(),
+            field: field.to_string(),
+            value: value.clone(),
+            focus_handle,
+            options: Vec::new(),
+            disabled: None,
+            disabled_options: Vec::new(),
             size: None,
             show_error: true,
         })

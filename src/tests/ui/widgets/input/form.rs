@@ -3,7 +3,8 @@ use crate::ui::core::widget::WidgetCore;
 use crate::ui::view::{column, ViewAdapter};
 use crate::ui::widgets::input::form::*;
 use crate::ui::{
-    Checkbox, FieldError, Input, InputNumber, Rate, Select, Slider, State, Switch, Trigger,
+    Checkbox, FieldError, Input, InputNumber, Radio, Rate, Segmented, Select, Slider, State,
+    Switch, Trigger,
 };
 
 struct FixedChild(Size);
@@ -1166,6 +1167,126 @@ fn form_rate_item_activates_u32_rule_on_blur() {
 }
 
 #[test]
+fn form_radio_item_binds_string_state_and_reconciles_inline_error() {
+    let choice = State::new("Beta".to_string());
+    let form = Form::new()
+        .field("choice", "Choice")
+        .default("Beta")
+        .custom(|value| {
+            (value != "Alpha")
+                .then_some(())
+                .ok_or_else(|| "Alpha is unavailable".to_string())
+        })
+        .validate_trigger(Trigger::OnChange)
+        .build();
+    let options = ["Alpha", "Beta", "Gamma"];
+    let mut tree = ViewAdapter::build(
+        form.radio_item("choice", &choice)
+            .expect("declared field should build a radio item")
+            .options(options)
+            .group_name("plan")
+            .vertical(),
+    );
+    let root = tree.root_id().expect("radio form item root");
+    let radio = tree.get(root).expect("radio form item").children()[0];
+
+    let _ = tree.dispatch_to(
+        radio,
+        &SystemEvent::KeyDown {
+            key: KeyCode::Left,
+            mods: KeyMod::NONE,
+        },
+    );
+    assert_eq!(choice.get(), "Alpha");
+    assert_eq!(
+        form.field_error("choice").as_ref().map(FieldError::message),
+        Some("Alpha is unavailable")
+    );
+
+    choice.set("Gamma".to_string());
+    ViewAdapter::reconcile(
+        &mut tree,
+        form.radio_item("choice", &choice)
+            .expect("declared field should reconcile a radio item")
+            .options(options)
+            .group_name("plan")
+            .vertical(),
+    );
+
+    assert!(form.field_error("choice").is_none());
+    let radio = tree
+        .get(root)
+        .and_then(|node| node.children().first().copied())
+        .and_then(|id| tree.get(id))
+        .and_then(|node| node.component().as_any().downcast_ref::<Radio>())
+        .expect("bound radio child");
+    assert_eq!(radio.current_value().as_deref(), Some("Gamma"));
+    let values = form
+        .validate()
+        .expect("replacement radio value should pass");
+    assert_eq!(
+        values.get::<String>("choice").map(String::as_str),
+        Some("Gamma")
+    );
+}
+
+#[test]
+fn form_segmented_item_preserves_disabled_options_and_blur_rule() {
+    let choice = State::new("Alpha".to_string());
+    let form = Form::new()
+        .field("choice", "Choice")
+        .default("Alpha")
+        .custom(|value| {
+            (value != "Gamma")
+                .then_some(())
+                .ok_or_else(|| "Gamma needs approval".to_string())
+        })
+        .validate_trigger(Trigger::OnBlur)
+        .build();
+    let options = ["Alpha", "Beta", "Gamma"];
+    let mut tree = ViewAdapter::build(
+        form.segmented_item("choice", &choice)
+            .expect("declared field should build a segmented item")
+            .options(options)
+            .disable_option(1),
+    );
+    let root = tree.root_id().expect("segmented form item root");
+    let segmented = tree.get(root).expect("segmented form item").children()[0];
+
+    let _ = tree.dispatch_to(
+        segmented,
+        &SystemEvent::KeyDown {
+            key: KeyCode::Right,
+            mods: KeyMod::NONE,
+        },
+    );
+    assert_eq!(choice.get(), "Gamma");
+    assert!(form.field_error("choice").is_none());
+    let _ = tree.dispatch_to(segmented, &SystemEvent::FocusOut);
+    assert_eq!(
+        form.field_error("choice").as_ref().map(FieldError::message),
+        Some("Gamma needs approval")
+    );
+
+    choice.set("Alpha".to_string());
+    ViewAdapter::reconcile(
+        &mut tree,
+        form.segmented_item("choice", &choice)
+            .expect("declared field should reconcile a segmented item")
+            .options(options)
+            .disable_option(1),
+    );
+    assert!(form.field_error("choice").is_none());
+    let segmented = tree
+        .get(root)
+        .and_then(|node| node.children().first().copied())
+        .and_then(|id| tree.get(id))
+        .and_then(|node| node.component().as_any().downcast_ref::<Segmented>())
+        .expect("bound segmented child");
+    assert_eq!(segmented.current_value().as_deref(), Some("Alpha"));
+}
+
+#[test]
 fn cloned_form_model_shares_values_and_rejects_unknown_input_items() {
     let value = State::new("ready".to_string());
     let form = Form::new().field("name", "Name").default("initial").build();
@@ -1179,6 +1300,12 @@ fn cloned_form_model_shares_values_and_rejects_unknown_input_items() {
         .slider_item("missing", &State::new(0.0), 0.0..=1.0)
         .is_none());
     assert!(form.rate_item("missing", &State::new(0_u32)).is_none());
+    assert!(form
+        .radio_item("missing", &State::new(String::new()))
+        .is_none());
+    assert!(form
+        .segmented_item("missing", &State::new(String::new()))
+        .is_none());
     assert!(cloned.set_value("name", "updated".to_string()));
 
     let values = form.validate().expect("shared value should remain valid");
@@ -1322,4 +1449,29 @@ fn form_submit_focuses_a_bound_slider_error() {
     assert_eq!(errors[0].field(), "volume");
     assert!(tree.drain_app_state_focus_requests());
     assert_eq!(tree.managers().focus.focused_component(), Some(slider));
+}
+
+#[test]
+fn form_submit_focuses_a_bound_radio_error() {
+    let choice = State::new(String::new());
+    let form = Form::new()
+        .field("choice", "Choice")
+        .default("")
+        .required("Choose one")
+        .build();
+    let mut tree = ViewAdapter::build(
+        form.radio_item("choice", &choice)
+            .expect("declared field should build a radio item")
+            .options(["Alpha", "Beta"]),
+    );
+    tree.set_app_state(AppState::new());
+    tree.layout();
+    let root = tree.root_id().expect("radio form item root");
+    let radio = tree.get(root).expect("radio form item").children()[0];
+
+    let errors = form.submit().expect_err("empty choice should fail submit");
+
+    assert_eq!(errors[0].field(), "choice");
+    assert!(tree.drain_app_state_focus_requests());
+    assert_eq!(tree.managers().focus.focused_component(), Some(radio));
 }
