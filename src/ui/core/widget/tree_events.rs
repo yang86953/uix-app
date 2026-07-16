@@ -34,7 +34,7 @@ impl WidgetTree {
         spatial: &crate::draw::spatial::SpatialContext,
     ) -> Option<WidgetId> {
         let node = self.get(id)?;
-        if !node.visible() {
+        if !node.visible() || self.is_pending_removal_subtree(id) {
             return None;
         }
         let mut sorted: Vec<WidgetId> = node.children().to_vec();
@@ -58,7 +58,7 @@ impl WidgetTree {
 
     fn hit_test_internal(&self, id: WidgetId, pos: Point) -> Option<WidgetId> {
         let node = self.get(id)?;
-        if !node.visible() {
+        if !node.visible() || self.is_pending_removal_subtree(id) {
             return None;
         }
 
@@ -666,6 +666,9 @@ impl WidgetTree {
     }
 
     pub(crate) fn dispatch_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
+        if self.is_pending_removal_subtree(target) {
+            return EventResult::NotHandled;
+        }
         let mut current = Some(target);
         let secondary_drag_boundary = self.secondary_pointer_drag_boundary(target, event);
         // 每个冒泡节点都按自身的完整 visual/scroll 链反变换到局部坐标。

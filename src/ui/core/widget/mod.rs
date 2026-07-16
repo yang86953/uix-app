@@ -38,6 +38,7 @@ pub struct WidgetNode {
     pub(crate) visible: bool,
     pub(crate) visual_transform: ViewTransform,
     pub(crate) enter_animation: Option<crate::ui::animation::AnimationConfig>,
+    pub(crate) leave_animation: Option<crate::ui::animation::AnimationConfig>,
     pub z_index: i32,
     pub key: Option<Box<str>>,
     pub automation_id: Option<Box<str>>,
@@ -58,6 +59,7 @@ impl WidgetNode {
             visible: true,
             visual_transform: ViewTransform::default(),
             enter_animation: None,
+            leave_animation: None,
             z_index: 0,
             key: None,
             automation_id: None,
@@ -85,6 +87,7 @@ impl WidgetNode {
             visible: true,
             visual_transform: ViewTransform::default(),
             enter_animation: None,
+            leave_animation: None,
             z_index: 0,
             key: None,
             automation_id: None,
@@ -113,6 +116,13 @@ impl WidgetNode {
         animation: crate::ui::animation::AnimationConfig,
     ) -> Self {
         self.enter_animation = Some(animation);
+        self
+    }
+    pub(crate) fn with_leave_animation(
+        mut self,
+        animation: crate::ui::animation::AnimationConfig,
+    ) -> Self {
+        self.leave_animation = Some(animation);
         self
     }
     /// 设置 Tab 键导航顺序索引（> 0 表示可通过 Tab 获取焦点）。
@@ -222,6 +232,8 @@ pub struct BoxedWidget {
     visible: bool,
     visual_transform: ViewTransform,
     view_transition: Option<crate::ui::animation::TransitionPlayer>,
+    leave_animation: Option<crate::ui::animation::AnimationConfig>,
+    pending_removal: bool,
     attached: bool,
     mounted: bool,
     active: bool,
@@ -263,6 +275,8 @@ impl BoxedWidget {
             visible: true,
             visual_transform: ViewTransform::default(),
             view_transition: None,
+            leave_animation: None,
+            pending_removal: false,
             attached: false,
             mounted: false,
             active: false,
@@ -414,6 +428,53 @@ impl BoxedWidget {
         });
     }
 
+    pub(crate) fn set_leave_animation(
+        &mut self,
+        animation: Option<crate::ui::animation::AnimationConfig>,
+    ) {
+        self.leave_animation = animation;
+    }
+
+    pub(crate) fn start_leave_transition(&mut self) -> bool {
+        if self.pending_removal {
+            return self.view_transition_active();
+        }
+        let Some(animation) = self.leave_animation else {
+            return false;
+        };
+        let (opacity, offset, scale) = self
+            .view_transition
+            .as_ref()
+            .map_or((1.0, Point::new(0.0, 0.0), 1.0), |player| {
+                (player.opacity_progress, player.offset, player.scale)
+            });
+        let mut player = crate::ui::animation::TransitionPlayer::new_from_current(
+            animation, opacity, offset, scale,
+        );
+        if animation.duration() <= 0.0 {
+            player.update(0.0);
+        }
+        if player.finished {
+            return false;
+        }
+        self.view_transition = Some(player);
+        self.pending_removal = true;
+        true
+    }
+
+    pub(crate) fn cancel_pending_removal(&mut self) -> bool {
+        if !self.pending_removal {
+            return false;
+        }
+        self.pending_removal = false;
+        self.view_transition = None;
+        true
+    }
+
+    pub(crate) fn pending_removal(&self) -> bool {
+        self.pending_removal
+    }
+
     pub(crate) fn view_transition_active(&self) -> bool {
         self.view_transition
             .as_ref()
@@ -426,16 +487,17 @@ impl BoxedWidget {
             .map_or(1.0, |player| player.opacity_progress.clamp(0.0, 1.0))
     }
 
-    pub(crate) fn advance_view_transition(&mut self, dt: f64) -> bool {
+    pub(crate) fn advance_view_transition(&mut self, dt: f64) -> (bool, bool) {
         let Some(player) = self.view_transition.as_mut() else {
-            return false;
+            return (false, false);
         };
         player.update(dt);
         let still_active = !player.finished;
+        let remove_now = !still_active && self.pending_removal;
         if !still_active {
             self.view_transition = None;
         }
-        still_active
+        (still_active, remove_now)
     }
 
     pub(crate) fn accessibility(&self) -> AccessibilitySnapshot {
@@ -850,4 +912,5 @@ pub(crate) mod tree_dynamic;
 pub(crate) mod tree_events;
 mod tree_semantics;
 mod tree_transform;
+mod tree_transition;
 pub use tree_core::WidgetTree;

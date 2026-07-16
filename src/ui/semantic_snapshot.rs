@@ -87,6 +87,9 @@ pub(crate) struct SemanticSnapshotBody {
 
 impl WidgetTree {
     fn exposes_semantic_node(&self, id: ComponentId) -> bool {
+        if self.is_pending_removal_subtree(id) {
+            return false;
+        }
         if self
             .get(id)
             .is_none_or(|node| node.accessibility().role == crate::ui::AccessibilityRole::None)

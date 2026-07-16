@@ -307,7 +307,7 @@ impl WidgetTree {
             .iter()
             .copied()
             .filter_map(|id| {
-                if !self.is_effectively_visible(id) {
+                if !self.is_effectively_visible(id) || self.is_pending_removal_subtree(id) {
                     return None;
                 }
                 let node = self.get(id)?;
@@ -940,13 +940,15 @@ impl WidgetTree {
 
     fn active_animation_frame(&self, id: WidgetId) -> Option<Rect> {
         let node = self.get(id)?;
-        (self.is_effectively_visible(id)
-            && node.active()
-            && (node.view_transition_active()
-                || node
-                    .capabilities()
-                    .contains(crate::ui::traits::WidgetCapabilities::ANIMATION)))
-        .then_some(node.frame())
+        let visible_and_active = self.is_effectively_visible(id) && node.active();
+        let view_transition =
+            node.view_transition_active() && (node.pending_removal() || visible_and_active);
+        let component_animation = visible_and_active
+            && !self.is_pending_removal_subtree(id)
+            && node
+                .capabilities()
+                .contains(crate::ui::traits::WidgetCapabilities::ANIMATION);
+        (view_transition || component_animation).then_some(node.frame())
     }
 
     pub(crate) fn active_view_transition_ids(&self) -> Vec<WidgetId> {
@@ -956,7 +958,8 @@ impl WidgetTree {
             .filter(|&id| {
                 self.get(id)
                     .is_some_and(BoxedWidget::view_transition_active)
-                    && self.is_effectively_visible(id)
+                    && (self.get(id).is_some_and(BoxedWidget::pending_removal)
+                        || self.is_effectively_visible(id))
             })
             .collect()
     }
@@ -980,6 +983,7 @@ impl WidgetTree {
     {
         let mut updates = Vec::new();
         let mut widget_overlays_changed = false;
+        let mut completed_removals = Vec::new();
         for id in ids {
             if let Some(source) = self.animated_sources.get(&id) {
                 updates.push((id, source.source.advance(now, dt)));
@@ -996,10 +1000,12 @@ impl WidgetTree {
             let old_visual_bounds = view_was_active
                 .then(|| self.visual_subtree_bounds(id))
                 .flatten();
-            let view_still_active = view_was_active
-                && self
-                    .get_mut(id)
-                    .is_some_and(|node| node.advance_view_transition(dt));
+            let (view_still_active, remove_now) = if view_was_active {
+                self.get_mut(id)
+                    .map_or((false, false), |node| node.advance_view_transition(dt))
+            } else {
+                (false, false)
+            };
             let new_visual_bounds = view_was_active
                 .then(|| self.visual_subtree_bounds(id))
                 .flatten();
@@ -1024,6 +1030,15 @@ impl WidgetTree {
             }
             widget_overlays_changed |= !self.widget_overlay_is_current(id);
             updates.push((id, view_still_active || component_still_active));
+            if remove_now {
+                completed_removals.push(id);
+            }
+        }
+        for id in completed_removals {
+            if self.get(id).is_some() {
+                self.remove(id);
+                widget_overlays_changed = true;
+            }
         }
         self.cancel_hidden_interaction();
         if widget_overlays_changed || updates.iter().any(|(_, still_active)| !still_active) {
@@ -1033,8 +1048,7 @@ impl WidgetTree {
     }
 
     fn widget_overlay_is_current(&self, id: WidgetId) -> bool {
-        let desired = self
-            .is_effectively_visible(id)
+        let desired = (self.is_effectively_visible(id) && !self.is_pending_removal_subtree(id))
             .then(|| self.get(id))
             .flatten()
             .and_then(|node| node.overlay_entry(id, node.frame()));

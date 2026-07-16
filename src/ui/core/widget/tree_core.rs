@@ -636,6 +636,9 @@ impl WidgetTree {
         let mut timers = Vec::new();
         let ids: Vec<_> = self.traverse().iter().copied().collect();
         for id in ids {
+            if self.is_pending_removal_subtree(id) {
+                continue;
+            }
             if let Some((local_id, delay)) = self.get(id).and_then(|node| node.active_timer()) {
                 let Ok(local_timer_id) = u32::try_from(local_id) else {
                     continue;
@@ -657,7 +660,7 @@ impl WidgetTree {
 
     fn dispatch_timer_work_inner(&mut self, timer_id: u64) -> EventResult {
         if let Some((target, local_id)) = self.timer_routes.get(&timer_id).copied() {
-            if self.get(target).is_some() {
+            if self.get(target).is_some() && !self.is_pending_removal_subtree(target) {
                 let result = self.dispatch_to(target, &SystemEvent::Timer { id: local_id });
                 self.rebuild_widget_overlays();
                 return result;
@@ -873,11 +876,14 @@ impl WidgetTree {
     }
 
     fn is_tab_focus_candidate(&self, id: WidgetId) -> bool {
-        self.is_effectively_visible(id) && self.get(id).is_some_and(|node| node.is_focusable())
+        self.is_effectively_visible(id)
+            && !self.is_pending_removal_subtree(id)
+            && self.get(id).is_some_and(|node| node.is_focusable())
     }
 
     pub(crate) fn focus_target_available(&self, id: WidgetId) -> bool {
         self.is_effectively_visible(id)
+            && !self.is_pending_removal_subtree(id)
             && self
                 .get(id)
                 .is_some_and(|node| node.accepts_events() && node.is_interaction_enabled())
