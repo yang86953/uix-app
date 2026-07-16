@@ -1,6 +1,9 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
+use crate::app::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry};
+use crate::app::window_driver::sync_animation_registrations;
 use crate::core::Point;
 use crate::ui::animation::{Animated, Animation, AnimationConfig, Easing, TransitionPlayer};
 use crate::ui::core::widget::WidgetCore;
@@ -97,6 +100,92 @@ fn zero_duration_animated_value_commits_without_frame_work() {
     assert_eq!(animated.value(), 4.0);
     assert!(animated.is_finished());
     assert_eq!(animated.progress(), 1.0);
+}
+
+#[test]
+fn delayed_animated_waits_on_one_deadline_before_open_frame_work() {
+    let before_creation = Instant::now();
+    let animated = Animated::new(0.0_f32).to_after(5.0, 1.0, 1.0, Easing::linear);
+    let mut tree = ViewAdapter::build_nodes(animated_root(&animated));
+
+    let updates = tree.update_animations_at(before_creation, 1.0);
+    assert_eq!(updates.len(), 1);
+    assert!(!updates[0].1);
+    assert_eq!(animated.value(), 0.0);
+    assert_eq!(animated.progress(), 0.0);
+    assert!(!animated.is_finished());
+
+    let work_id = updates[0].0;
+    let mut active_work = ActiveWorkRegistry::new();
+    sync_animation_registrations(&mut active_work, &tree, &updates);
+    let deadline = active_work
+        .next_deadline()
+        .expect("delayed Animated deadline");
+    assert_eq!(active_work.next_deadline(), Some(deadline));
+
+    let before_deadline = deadline - Duration::from_nanos(1);
+    let updates = tree.update_animations_at(before_deadline, 1.0);
+    sync_animation_registrations(&mut active_work, &tree, &updates);
+    assert_eq!(animated.value(), 0.0);
+    assert_eq!(active_work.next_deadline(), Some(deadline));
+
+    assert_eq!(
+        active_work.drain_due(deadline),
+        vec![ActiveWorkKind::Animation(work_id)]
+    );
+    let updates = tree.update_animations_at(deadline, 0.0);
+    sync_animation_registrations(&mut active_work, &tree, &updates);
+    assert_eq!(updates, vec![(work_id, true)]);
+    assert_eq!(active_work.next_deadline(), None);
+    assert_eq!(
+        active_work.animation_ids().collect::<Vec<_>>(),
+        vec![work_id]
+    );
+
+    let _ = tree.update_animations_at(deadline + Duration::from_millis(500), 0.5);
+    assert!((animated.value() - 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn delayed_zero_duration_commits_only_when_its_deadline_is_due() {
+    let animated = Animated::new(2.0_f32).to_after(1.0, 4.0, 0.0, Easing::linear);
+    let mut tree = ViewAdapter::build_nodes(animated_root(&animated));
+    let pending = tree.update_animations(0.0);
+    let deadline = tree.animated_source_registrations()[0]
+        .1
+        .expect("delayed zero-duration deadline");
+
+    assert_eq!(animated.value(), 2.0);
+    assert!(!animated.is_finished());
+
+    let updates = tree.update_animations_at(deadline, 0.0);
+    assert_eq!(updates, vec![(pending[0].0, false)]);
+    assert_eq!(animated.value(), 4.0);
+    assert!(animated.is_finished());
+    assert_eq!(animated.progress(), 1.0);
+}
+
+#[test]
+fn delayed_pause_and_root_removal_cancel_managed_deadline_work() {
+    let animated = Animated::new(0.0_f32).to_after(5.0, 1.0, 1.0, Easing::linear);
+    let mut tree = ViewAdapter::build_nodes(animated_root(&animated));
+    let updates = tree.update_animations(0.0);
+    let mut active_work = ActiveWorkRegistry::new();
+    sync_animation_registrations(&mut active_work, &tree, &updates);
+    assert!(active_work.next_deadline().is_some());
+
+    animated.pause();
+    assert!(tree.update_animations(0.0).is_empty());
+    sync_animation_registrations(&mut active_work, &tree, &[]);
+    assert!(active_work.is_empty());
+
+    animated.resume();
+    sync_animation_registrations(&mut active_work, &tree, &[]);
+    assert!(active_work.next_deadline().is_some());
+
+    ViewAdapter::reconcile_nodes(&mut tree, ViewAdapter::capture_root(|| label("resting")));
+    sync_animation_registrations(&mut active_work, &tree, &[]);
+    assert!(active_work.is_empty());
 }
 
 #[test]

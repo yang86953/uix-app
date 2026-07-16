@@ -424,6 +424,9 @@ impl WindowDriver {
         active_work.sync_app_timers(app_timers.deadlines());
         let due_work = active_work.drain_due(now);
         let had_registered_work = !due_work.is_empty();
+        let had_due_animation_work = due_work
+            .iter()
+            .any(|work| matches!(work, ActiveWorkKind::Animation(_)));
         let had_due_widget_timer_work = with_platform_clipboard(&mut platform, || {
             dispatch_due_active_work(tree, app_timers, &due_work, now)
         });
@@ -470,6 +473,7 @@ impl WindowDriver {
             || pending_effects;
 
         if self.suspend_if_surface_unavailable(tree, platform_window) {
+            active_work.park_animated_deadlines();
             agent_commands.fail_not_presentable();
             *loop_state = next_loop_state(
                 tree,
@@ -497,6 +501,7 @@ impl WindowDriver {
                 }
                 Ok(PresentTestResult::Occluded) => {
                     self.frame_scheduler.occlusion_still_present(now);
+                    active_work.park_animated_deadlines();
                     let registered_deadline = earliest_deadline(
                         self.frame_scheduler.next_deadline(),
                         next_external_deadline,
@@ -519,6 +524,7 @@ impl WindowDriver {
                     ));
                     let failure = GraphicsFailure::from_error(error);
                     self.frame_scheduler.frame_failed(&failure, now);
+                    active_work.park_animated_deadlines();
                     let registered_deadline = earliest_deadline(
                         self.frame_scheduler.next_deadline(),
                         next_external_deadline,
@@ -537,6 +543,9 @@ impl WindowDriver {
             }
         }
 
+        if had_due_animation_work {
+            self.frame_scheduler.request_immediate(now);
+        }
         self.arm_visual_request(now, tree, pending_root, *reconcile_pending);
         let Some(opportunity) = self.frame_scheduler.take_due_opportunity(now) else {
             observe_agent_settle(
@@ -549,6 +558,9 @@ impl WindowDriver {
                 has_layout_work(tree),
                 true,
             );
+            if !self.frame_scheduler.is_renderable() {
+                active_work.park_animated_deadlines();
+            }
             let registered_deadline =
                 earliest_deadline(self.frame_scheduler.next_deadline(), next_external_deadline);
             *loop_state = next_loop_state(
@@ -588,13 +600,14 @@ impl WindowDriver {
         let animation_updates = update_scheduled_and_discovered_animations(
             tree,
             &scheduled_animation_ids,
+            frame_time,
             dt,
             discover_animation_work,
         );
         if animation_clock_should_advance(!scheduled_animation_ids.is_empty(), &animation_updates) {
             self.frame_scheduler.animation_advanced(frame_time);
         }
-        sync_animation_registrations(active_work, &animation_updates);
+        sync_animation_registrations(active_work, tree, &animation_updates);
         // Declarative animation sources publish their sampled value through
         // State. Consume that reconcile request in the same frame so the
         // sampled value is rendered without scheduling an immediate zero-dt
@@ -641,6 +654,9 @@ impl WindowDriver {
             *reconcile_pending = false;
             phase_reconcile_us = reconcile_t0.elapsed().as_micros();
         }
+        if reconcile_ran {
+            sync_animation_registrations(active_work, tree, &[]);
+        }
 
         let native_width = platform_window.properties().width();
         let native_height = platform_window.properties().height();
@@ -648,6 +664,7 @@ impl WindowDriver {
             self.cancel_outstanding_native_frame(platform_window);
             self.frame_scheduler
                 .suspend(SurfaceSuspendReason::ZeroExtent);
+            active_work.park_animated_deadlines();
             tree.mark_full_frame_dirty();
             agent_commands.fail_not_presentable();
             *loop_state = next_loop_state(
@@ -949,6 +966,10 @@ impl WindowDriver {
 
         self.arm_visual_request(frame_time, tree, pending_root, *reconcile_pending);
 
+        if !self.frame_scheduler.is_renderable() {
+            active_work.park_animated_deadlines();
+        }
+
         let registered_deadline =
             earliest_deadline(self.frame_scheduler.next_deadline(), next_external_deadline);
         *loop_state = next_loop_state(
@@ -963,11 +984,15 @@ impl WindowDriver {
     }
 }
 
-fn sync_animation_registrations(
+pub(crate) fn sync_animation_registrations(
     active_work: &mut ActiveWorkRegistry,
+    tree: &WidgetTree,
     animation_updates: &[(NodeId, bool)],
 ) {
     for &(id, animating) in animation_updates {
+        if tree.has_animated_source(id) {
+            continue;
+        }
         let kind = ActiveWorkKind::Animation(id);
         if animating {
             active_work.register_open(kind);
@@ -975,4 +1000,5 @@ fn sync_animation_registrations(
             active_work.unregister(kind);
         }
     }
+    active_work.sync_animated_sources(tree.animated_source_registrations());
 }
