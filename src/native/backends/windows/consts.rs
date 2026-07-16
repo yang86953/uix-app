@@ -14,6 +14,7 @@ pub(crate) const WM_APP: u32 = 0x8000;
 pub(crate) const WM_UIX_FRAME_OPPORTUNITY: u32 = WM_APP + 0x0051;
 
 pub(crate) const WM_NCCREATE: u32 = 0x0081;
+pub(crate) const WM_SETICON: u32 = 0x0080;
 pub(crate) const WM_NCLBUTTONDOWN: u32 = 0x00A1;
 pub(crate) const WM_NCRBUTTONUP: u32 = 0x00A5;
 pub(crate) const WM_DESTROY: u32 = 0x0002;
@@ -71,6 +72,10 @@ pub(crate) const WAIT_TIMEOUT: u32 = 0x00000102;
 pub(crate) const CW_USEDEFAULT: i32 = -2147483648;
 
 pub(crate) const IDI_APPLICATION: *const u16 = 32512 as *const u16;
+pub(crate) const IMAGE_ICON: u32 = 1;
+pub(crate) const LR_LOADFROMFILE: u32 = 0x0010;
+pub(crate) const ICON_SMALL: usize = 0;
+pub(crate) const ICON_BIG: usize = 1;
 
 pub(crate) const SWP_NOMOVE: u32 = 0x0002;
 pub(crate) const SWP_NOSIZE: u32 = 0x0001;
@@ -86,6 +91,11 @@ pub(crate) const HWND_NOTOPMOST: isize = -2;
 
 pub(crate) const GWL_STYLE: i32 = -16;
 pub(crate) const GWL_EXSTYLE: i32 = -20;
+
+pub(crate) const SM_CXICON: i32 = 11;
+pub(crate) const SM_CYICON: i32 = 12;
+pub(crate) const SM_CXSMICON: i32 = 49;
+pub(crate) const SM_CYSMICON: i32 = 50;
 
 pub(crate) const WS_OVERLAPPED: u32 = 0x00000000;
 pub(crate) const WS_POPUP: u32 = 0x80000000;

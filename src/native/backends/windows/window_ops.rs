@@ -14,6 +14,7 @@ use crate::native::traits::window::NativeFrameRequest;
 
 use super::frame_pacer::{SharedWindowsFramePacerState, WindowsFramePacer};
 use super::platform::WindowBinding;
+use super::window_icon::WindowIconState;
 
 fn screen_point_lparam(point: super::bindings::POINT) -> isize {
     let x = point.x as i16 as u16;
@@ -114,6 +115,7 @@ pub(crate) fn set_window_long_checked(
 /// 仅保留还原 Win32 原生属性所需的平台状态；逻辑状态由 PlatformWindowCore 管理。
 pub(crate) struct WindowsWindowOps {
     hwnd: *mut std::ffi::c_void,
+    icon_state: WindowIconState,
     _binding: Box<WindowBinding>,
     frame_pacer: WindowsFramePacer,
     opacity_layered_style_owned: bool,
@@ -128,6 +130,7 @@ impl WindowsWindowOps {
     ) -> Self {
         Self {
             hwnd,
+            icon_state: WindowIconState::new(hwnd),
             _binding: binding,
             frame_pacer: WindowsFramePacer::new(hwnd, frame_pacer_state),
             opacity_layered_style_owned: false,
@@ -263,6 +266,11 @@ impl WindowOps for WindowsWindowOps {
             ));
         }
         Ok(())
+    }
+
+    fn os_set_icon(&mut self, path: &str) -> Result<()> {
+        self.ensure_valid_window("os_set_icon")?;
+        self.icon_state.set_from_file(path)
     }
 
     fn os_center_on_screen(&mut self) -> Result<()> {

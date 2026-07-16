@@ -65,6 +65,35 @@ struct OpacityTrackingOps {
     calls: Rc<RefCell<Vec<f32>>>,
 }
 
+struct IconTrackingOps {
+    paths: Rc<RefCell<Vec<String>>>,
+}
+
+impl WindowOps for IconTrackingOps {
+    fn os_show(&mut self) -> Result<()> {
+        Ok(())
+    }
+    fn os_hide(&mut self) -> Result<()> {
+        Ok(())
+    }
+    fn os_close(&mut self) -> Result<()> {
+        Ok(())
+    }
+    fn os_set_title(&mut self, _title: &str) -> Result<()> {
+        Ok(())
+    }
+    fn os_set_size(&mut self, _w: i32, _h: i32) -> Result<()> {
+        Ok(())
+    }
+    fn os_set_icon(&mut self, path: &str) -> Result<()> {
+        self.paths.borrow_mut().push(path.to_string());
+        Ok(())
+    }
+    fn native_handle(&self) -> *mut std::ffi::c_void {
+        std::ptr::null_mut()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GeometryCall {
     Size(i32, i32),
@@ -265,6 +294,28 @@ fn window_opacity_rejects_invalid_values_before_platform_mutation() {
 
     assert!(calls.borrow().is_empty());
     assert_eq!(state.borrow().opacity, 1.0);
+}
+
+#[test]
+fn window_icon_rejects_invalid_paths_before_platform_mutation() {
+    let paths = Rc::new(RefCell::new(Vec::new()));
+    let mut window = PlatformWindowCore::new(
+        Rc::new(RefCell::new(WindowState::default())),
+        IconTrackingOps {
+            paths: Rc::clone(&paths),
+        },
+        Box::new(NullPresenter::new()),
+    );
+
+    for path in ["", "   ", "icon\0.ico"] {
+        assert_error_code(window.set_window_icon(path), Errc::InvalidArgument);
+    }
+    assert!(paths.borrow().is_empty());
+
+    window
+        .set_window_icon("assets/app.ico")
+        .expect("valid icon path");
+    assert_eq!(&*paths.borrow(), &["assets/app.ico"]);
 }
 
 #[test]
