@@ -199,12 +199,8 @@ impl WindowSession {
         F: Fn() -> ViewNode + Send + Sync + 'static,
     {
         let factory: ViewFactory = Arc::new(build_root);
-        let mut tree = WidgetTree::new();
         let root = ViewAdapter::capture_root(|| factory());
-        let wnode = ViewAdapter::expand(root);
-        tree.build(wnode);
-        tree.bind_orphan_pending_states();
-        tree.bind_pending_effects();
+        let mut tree = ViewAdapter::build_nodes(root);
         if let Some(r) = tree.root_mut() {
             r.set_frame(Rect::new(0.0, 0.0, width as f32, height as f32));
         }

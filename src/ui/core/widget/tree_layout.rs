@@ -919,11 +919,19 @@ impl WidgetTree {
     }
 
     fn animation_node_ids(&self) -> Vec<WidgetId> {
-        self.traverse()
+        let mut ids = self
+            .traverse()
             .iter()
             .copied()
             .filter(|&id| self.active_animation_frame(id).is_some())
-            .collect()
+            .collect::<Vec<_>>();
+        ids.extend(
+            self.animated_sources
+                .iter()
+                .filter(|(_, source)| source.source.is_active())
+                .map(|(id, _)| *id),
+        );
+        ids
     }
 
     fn active_animation_frame(&self, id: WidgetId) -> Option<Rect> {
@@ -943,6 +951,10 @@ impl WidgetTree {
         let mut updates = Vec::new();
         let mut widget_overlays_changed = false;
         for id in ids {
+            if let Some(source) = self.animated_sources.get(&id) {
+                updates.push((id, source.source.advance(dt)));
+                continue;
+            }
             let Some(frame) = self.active_animation_frame(id) else {
                 updates.push((id, false));
                 continue;

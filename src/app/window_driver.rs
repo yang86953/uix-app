@@ -595,6 +595,13 @@ impl WindowDriver {
             self.frame_scheduler.animation_advanced(frame_time);
         }
         sync_animation_registrations(active_work, &animation_updates);
+        // Declarative animation sources publish their sampled value through
+        // State. Consume that reconcile request in the same frame so the
+        // sampled value is rendered without scheduling an immediate zero-dt
+        // frame ahead of the already outstanding frame opportunity.
+        if tree.take_reconcile_requested() {
+            *reconcile_pending = true;
+        }
         active_work.sync_timers(tree.active_timers(), frame_time);
         active_work.sync_app_timers(app_timers.deadlines());
         let mut animation_frame_token = None;

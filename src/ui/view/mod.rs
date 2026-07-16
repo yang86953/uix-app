@@ -39,6 +39,7 @@ pub trait View: 'static {
 pub struct ViewNode {
     pub(crate) widget: Box<dyn WidgetComponent>,
     pub(crate) children: Vec<ViewNode>,
+    pub(crate) animated_sources: Vec<std::sync::Arc<dyn crate::ui::animation::AnimatedSource>>,
     pub(crate) provider_context: ProviderContext,
     pub(crate) style: Style,
     /// DSL 显式设置的 flex_grow（含 0.0）；与 Style::default 区分，避免被 apply 吞掉。
@@ -71,6 +72,7 @@ impl ViewNode {
         Self {
             widget: Box::new(widget),
             children: vec![],
+            animated_sources: Vec::new(),
             provider_context: current_provider_context(),
             style: Style::default(),
             flex_grow_override: None,
@@ -91,6 +93,7 @@ impl ViewNode {
         Self {
             widget: Box::new(widget),
             children,
+            animated_sources: Vec::new(),
             provider_context: current_provider_context(),
             style: Style::default(),
             flex_grow_override: None,
