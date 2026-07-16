@@ -72,7 +72,3 @@ fn main() {
 ## 图形
 
 默认 Vulkan；失败按 typed 原因在同 API 内有界恢复，耗尽后回 Software(GDI)，仅显式 `Auto` 可跨 GPU API probe。失败终态 `TerminalFailure`，无静默换 API、无 busy retry。空闲真休眠；Windows P6 遮挡基线已闭合。
-
-## 验证
-
-日常改动按 [AGENTS.md](AGENTS.md#验证) 从受影响测试开始；无窗应用测试与语义快照见[测试指南](docs/使用指南/测试.md)。全仓、ignored 真窗、soak 与 device-reset 只属于明确选择的阶段验收，不是常规开发命令。

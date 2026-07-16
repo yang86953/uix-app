@@ -14,7 +14,7 @@ cargo run --features agent-control --bin uix-demo -- --agent-control
 
 Linux GUI 需 Wayland。
 
-`--agent-control` 仅用于本机开发验收，必须与 `agent-control` feature 同时启用；它会按 [`使用 · Agent Bridge`](../docs/使用指南/Agent%20Bridge.md#agent-bridge-开发预览) 启动当前用户私有端点。该参数不能与 `--cli` 同时使用。
+`--agent-control` 仅用于本机开发预览，必须与 `agent-control` feature 同时启用；它会按 [`使用 · Agent Bridge`](../docs/使用指南/Agent%20Bridge.md#agent-bridge-开发预览) 启动当前用户私有端点。该参数不能与 `--cli` 同时使用。
 
 ## 目录结构
 
@@ -98,24 +98,3 @@ demo/src/
 ## CLI 演示项
 
 `cli/mod.rs` 顺序：`demo_core_types` · `demo_errors` · `demo_middleware` · `demo_state` · `demo_flex` · `demo_settings` · `demo_file_service` · `demo_theme` · `demo_graphics_engine` · `demo_di_container`
-
-## 测试
-
-日常只运行 demo 自身的构建 / 页面 smoke：
-
-```bash
-cargo test --bin uix-demo
-```
-
-下列 ignored 真窗矩阵会创建原生窗口并切换图形 recipe，仅在任务明确选择 Windows Agent Bridge 阶段验收时手动运行，不跟随普通 demo 改动：
-
-```bash
-cargo test --features agent-control --test agent_gui_windows -- --ignored --nocapture
-```
-
-- 全部 11 页 `build_page` smoke test
-- GUI 壳层 layout
-- Gallery 覆盖条目数量
-- 首页 build + 页面切换 reconcile
-- 首页 / 应用能力页局部 State 在根 reconcile 后保持
-- Windows 真窗 Agent Bridge：显式运行 ignored 测试，覆盖默认 Vulkan 与显式 D3D11 recipe 及其遮挡能力声明、认证、快照、语义动作、原生 HWND Tab、呈现/最小化恢复与正常退出清理
