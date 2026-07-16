@@ -10,9 +10,10 @@ use std::sync::Arc;
 
 use regex::Regex;
 
+use crate::draw::Color;
 use crate::ui::{FocusHandle, FocusHandleError, State};
 
-use super::form::Form;
+use super::{form::Form, Date, Time};
 
 /// 把公开默认值转换成可保留具体类型的表单值，并提供供文本规则使用的稳定投影。
 pub trait IntoFormValue {
@@ -81,6 +82,42 @@ impl IntoFormValue for HashSet<String> {
         let mut values = value.iter().map(String::as_str).collect::<Vec<_>>();
         values.sort_unstable();
         values.join("\n")
+    }
+}
+
+impl IntoFormValue for Date {
+    type Stored = Self;
+
+    fn into_form_value(self) -> Self::Stored {
+        self
+    }
+
+    fn form_text(value: &Self::Stored) -> String {
+        value.format()
+    }
+}
+
+impl IntoFormValue for Time {
+    type Stored = Self;
+
+    fn into_form_value(self) -> Self::Stored {
+        self
+    }
+
+    fn form_text(value: &Self::Stored) -> String {
+        value.format()
+    }
+}
+
+impl IntoFormValue for Color {
+    type Stored = Self;
+
+    fn into_form_value(self) -> Self::Stored {
+        self
+    }
+
+    fn form_text(value: &Self::Stored) -> String {
+        value.to_string()
     }
 }
 

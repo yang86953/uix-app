@@ -1,14 +1,17 @@
 //! `FormModel` 与声明式输入 View 的绑定。
 
 use std::ops::RangeInclusive;
+use std::sync::Arc;
 
+use crate::draw::Color;
 use crate::native::traits::input::ControlSize;
 use crate::ui::view::{input, EventExt, View, ViewNode};
 use crate::ui::{EventResult, FocusHandle, SemanticKind, State, SystemEvent};
 
 use super::{
-    Checkbox, FormItem, FormModel, InputNumber, InputNumberValue, IntoFormValue, OptGroup, Radio,
-    Rate, Segmented, Select, SelectValue, Slider, Switch, ValidateStatus,
+    Checkbox, ColorPicker, Date, DatePicker, FormItem, FormModel, InputNumber, InputNumberValue,
+    IntoFormValue, OptGroup, PickerMode, Radio, Rate, Segmented, Select, SelectValue, Slider,
+    Switch, Time, TimePicker, ValidateStatus,
 };
 
 /// 一个已登记字段的声明式文本输入项。
@@ -653,6 +656,168 @@ impl View for FormSegmentedItem {
     }
 }
 
+/// 一个已登记字段的声明式日期输入项。
+pub struct FormDatePickerItem {
+    model: FormModel,
+    field: String,
+    value: State<Date>,
+    focus_handle: FocusHandle,
+    placeholder: String,
+    mode: PickerMode,
+    disabled_date: Option<Arc<dyn Fn(Date) -> bool + Send + Sync>>,
+    size: Option<ControlSize>,
+    show_error: bool,
+}
+
+impl FormDatePickerItem {
+    /// 设置占位文本。
+    pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
+        self.placeholder = placeholder.into();
+        self
+    }
+
+    /// 设置日期选择粒度。
+    pub fn mode(mut self, mode: PickerMode) -> Self {
+        self.mode = mode;
+        self
+    }
+
+    /// 禁止选择满足谓词的日期。
+    pub fn disabled_date(
+        mut self,
+        predicate: impl Fn(Date) -> bool + Send + Sync + 'static,
+    ) -> Self {
+        self.disabled_date = Some(Arc::new(predicate));
+        self
+    }
+
+    /// 设置输入控件尺寸。
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.size = Some(size);
+        self
+    }
+
+    /// 控制是否在字段下方显示首条错误文本；错误状态仍会保留。
+    pub fn show_error(mut self, show_error: bool) -> Self {
+        self.show_error = show_error;
+        self
+    }
+}
+
+impl View for FormDatePickerItem {
+    fn build(self) -> ViewNode {
+        let mut picker = DatePicker::new()
+            .value(&self.value)
+            .placeholder(self.placeholder)
+            .mode(self.mode);
+        if let Some(predicate) = self.disabled_date {
+            picker = picker.disabled_date(move |date| predicate(date));
+        }
+        if let Some(size) = self.size {
+            picker = picker.size(size);
+        }
+        let input = bind_typed_control(
+            &self.model,
+            &self.field,
+            &self.value,
+            &self.focus_handle,
+            ViewNode::leaf(picker),
+        );
+        form_item_shell(&self.model, &self.field, self.show_error, input)
+    }
+}
+
+/// 一个已登记字段的声明式时间输入项。
+pub struct FormTimePickerItem {
+    model: FormModel,
+    field: String,
+    value: State<Time>,
+    focus_handle: FocusHandle,
+    placeholder: String,
+    size: Option<ControlSize>,
+    show_error: bool,
+}
+
+impl FormTimePickerItem {
+    /// 设置占位文本。
+    pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
+        self.placeholder = placeholder.into();
+        self
+    }
+
+    /// 设置输入控件尺寸。
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.size = Some(size);
+        self
+    }
+
+    /// 控制是否在字段下方显示首条错误文本；错误状态仍会保留。
+    pub fn show_error(mut self, show_error: bool) -> Self {
+        self.show_error = show_error;
+        self
+    }
+}
+
+impl View for FormTimePickerItem {
+    fn build(self) -> ViewNode {
+        let mut picker = TimePicker::new()
+            .value(&self.value)
+            .placeholder(self.placeholder);
+        if let Some(size) = self.size {
+            picker = picker.size(size);
+        }
+        let input = bind_typed_control(
+            &self.model,
+            &self.field,
+            &self.value,
+            &self.focus_handle,
+            ViewNode::leaf(picker),
+        );
+        form_item_shell(&self.model, &self.field, self.show_error, input)
+    }
+}
+
+/// 一个已登记字段的声明式颜色输入项。
+pub struct FormColorPickerItem {
+    model: FormModel,
+    field: String,
+    value: State<Color>,
+    focus_handle: FocusHandle,
+    size: Option<ControlSize>,
+    show_error: bool,
+}
+
+impl FormColorPickerItem {
+    /// 设置输入控件尺寸。
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.size = Some(size);
+        self
+    }
+
+    /// 控制是否在字段下方显示首条错误文本；错误状态仍会保留。
+    pub fn show_error(mut self, show_error: bool) -> Self {
+        self.show_error = show_error;
+        self
+    }
+}
+
+impl View for FormColorPickerItem {
+    fn build(self) -> ViewNode {
+        let mut picker = ColorPicker::new().value(&self.value);
+        if let Some(size) = self.size {
+            picker = picker.size(size);
+        }
+        let input = bind_typed_control(
+            &self.model,
+            &self.field,
+            &self.value,
+            &self.focus_handle,
+            ViewNode::leaf(picker),
+        );
+        form_item_shell(&self.model, &self.field, self.show_error, input)
+    }
+}
+
 fn bind_typed_control<T>(
     model: &FormModel,
     field: &str,
@@ -901,6 +1066,64 @@ impl FormModel {
             options: Vec::new(),
             disabled: None,
             disabled_options: Vec::new(),
+            size: None,
+            show_error: true,
+        })
+    }
+
+    /// 把已声明的 `Date` 字段绑定为 `FormItem + DatePicker` View。
+    pub fn date_picker_item(
+        &self,
+        field: impl AsRef<str>,
+        value: &State<Date>,
+    ) -> Option<FormDatePickerItem> {
+        let field = field.as_ref();
+        let focus_handle = self.focus_handle_for(field)?;
+        Some(FormDatePickerItem {
+            model: self.clone(),
+            field: field.to_string(),
+            value: value.clone(),
+            focus_handle,
+            placeholder: String::new(),
+            mode: PickerMode::Date,
+            disabled_date: None,
+            size: None,
+            show_error: true,
+        })
+    }
+
+    /// 把已声明的 `Time` 字段绑定为 `FormItem + TimePicker` View。
+    pub fn time_picker_item(
+        &self,
+        field: impl AsRef<str>,
+        value: &State<Time>,
+    ) -> Option<FormTimePickerItem> {
+        let field = field.as_ref();
+        let focus_handle = self.focus_handle_for(field)?;
+        Some(FormTimePickerItem {
+            model: self.clone(),
+            field: field.to_string(),
+            value: value.clone(),
+            focus_handle,
+            placeholder: String::new(),
+            size: None,
+            show_error: true,
+        })
+    }
+
+    /// 把已声明的 `Color` 字段绑定为 `FormItem + ColorPicker` View。
+    pub fn color_picker_item(
+        &self,
+        field: impl AsRef<str>,
+        value: &State<Color>,
+    ) -> Option<FormColorPickerItem> {
+        let field = field.as_ref();
+        let focus_handle = self.focus_handle_for(field)?;
+        Some(FormColorPickerItem {
+            model: self.clone(),
+            field: field.to_string(),
+            value: value.clone(),
+            focus_handle,
             size: None,
             show_error: true,
         })

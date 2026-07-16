@@ -3,8 +3,8 @@ use crate::ui::core::widget::WidgetCore;
 use crate::ui::view::{column, ViewAdapter};
 use crate::ui::widgets::input::form::*;
 use crate::ui::{
-    Checkbox, FieldError, Input, InputNumber, Radio, Rate, Segmented, Select, Slider, State,
-    Switch, Trigger,
+    Checkbox, ColorPicker, Date, DatePicker, FieldError, Input, InputNumber, PickerMode, Radio,
+    Rate, Segmented, Select, Slider, State, Switch, Time, TimePicker, Trigger,
 };
 
 struct FixedChild(Size);
@@ -1287,6 +1287,153 @@ fn form_segmented_item_preserves_disabled_options_and_blur_rule() {
 }
 
 #[test]
+fn form_date_picker_item_preserves_typed_value_and_stable_rule_text() {
+    let selected = State::new(Date::new(2026, 7, 1));
+    let form = Form::new()
+        .field("date", "Date")
+        .default(Date::new(2026, 7, 1))
+        .custom(|value| {
+            (value != "2026-07-02")
+                .then_some(())
+                .ok_or_else(|| "Date is unavailable".to_string())
+        })
+        .validate_trigger(Trigger::OnChange)
+        .build();
+    let mut tree = ViewAdapter::build(
+        form.date_picker_item("date", &selected)
+            .expect("declared field should build a date picker item")
+            .placeholder("Pick a date")
+            .mode(PickerMode::Month)
+            .disabled_date(|date| date == Date::new(2026, 7, 4)),
+    );
+    let root = tree.root_id().expect("date form item root");
+    let picker = tree.get(root).expect("date form item").children()[0];
+
+    selected.set(Date::new(2026, 7, 2));
+    let _ = tree.dispatch_semantic(SemanticEvent::change(picker, "2026-07-02"));
+    assert_eq!(
+        form.field_error("date").as_ref().map(FieldError::message),
+        Some("Date is unavailable")
+    );
+
+    selected.set(Date::new(2026, 7, 3));
+    ViewAdapter::reconcile(
+        &mut tree,
+        form.date_picker_item("date", &selected)
+            .expect("declared field should reconcile a date picker item")
+            .placeholder("Pick a date")
+            .mode(PickerMode::Month)
+            .disabled_date(|date| date == Date::new(2026, 7, 4)),
+    );
+
+    assert!(form.field_error("date").is_none());
+    let picker = tree
+        .get(root)
+        .and_then(|node| node.children().first().copied())
+        .and_then(|id| tree.get(id))
+        .and_then(|node| node.component().as_any().downcast_ref::<DatePicker>())
+        .expect("bound date picker child");
+    assert_eq!(picker.current_value(), Date::new(2026, 7, 3));
+    assert_eq!(picker.picker_mode(), PickerMode::Month);
+    let values = form.validate().expect("replacement date should pass");
+    assert_eq!(values.get::<Date>("date"), Some(&Date::new(2026, 7, 3)));
+}
+
+#[test]
+fn form_time_picker_item_activates_stable_time_rule_on_blur() {
+    let selected = State::new(Time::new(10, 0));
+    let form = Form::new()
+        .field("time", "Time")
+        .default(Time::new(10, 0))
+        .custom(|value| {
+            (value != "11:30")
+                .then_some(())
+                .ok_or_else(|| "Time is unavailable".to_string())
+        })
+        .validate_trigger(Trigger::OnBlur)
+        .build();
+    let mut tree = ViewAdapter::build(
+        form.time_picker_item("time", &selected)
+            .expect("declared field should build a time picker item")
+            .placeholder("Pick a time"),
+    );
+    let root = tree.root_id().expect("time form item root");
+    let picker = tree.get(root).expect("time form item").children()[0];
+
+    selected.set(Time::new(11, 30));
+    let _ = tree.dispatch_semantic(SemanticEvent::change(picker, "11:30"));
+    assert!(form.field_error("time").is_none());
+    let _ = tree.dispatch_to(picker, &SystemEvent::FocusOut);
+    assert_eq!(
+        form.field_error("time").as_ref().map(FieldError::message),
+        Some("Time is unavailable")
+    );
+
+    selected.set(Time::new(12, 45));
+    ViewAdapter::reconcile(
+        &mut tree,
+        form.time_picker_item("time", &selected)
+            .expect("declared field should reconcile a time picker item")
+            .placeholder("Pick a time"),
+    );
+    assert!(form.field_error("time").is_none());
+    let picker = tree
+        .get(root)
+        .and_then(|node| node.children().first().copied())
+        .and_then(|id| tree.get(id))
+        .and_then(|node| node.component().as_any().downcast_ref::<TimePicker>())
+        .expect("bound time picker child");
+    assert_eq!(picker.current_value(), Time::new(12, 45));
+    let values = form.validate().expect("replacement time should pass");
+    assert_eq!(values.get::<Time>("time"), Some(&Time::new(12, 45)));
+}
+
+#[test]
+fn form_color_picker_item_binds_color_state_and_reconciles_error() {
+    let selected = State::new(Color::blue());
+    let form = Form::new()
+        .field("color", "Color")
+        .default(Color::blue())
+        .custom(|value| {
+            (value != "#FF0000FF")
+                .then_some(())
+                .ok_or_else(|| "Red is unavailable".to_string())
+        })
+        .validate_trigger(Trigger::OnChange)
+        .build();
+    let mut tree = ViewAdapter::build(
+        form.color_picker_item("color", &selected)
+            .expect("declared field should build a color picker item"),
+    );
+    let root = tree.root_id().expect("color form item root");
+    let picker = tree.get(root).expect("color form item").children()[0];
+
+    selected.set(Color::red());
+    let _ = tree.dispatch_semantic(SemanticEvent::change(picker, "#FF0000FF"));
+    assert_eq!(
+        form.field_error("color").as_ref().map(FieldError::message),
+        Some("Red is unavailable")
+    );
+
+    selected.set(Color::green());
+    ViewAdapter::reconcile(
+        &mut tree,
+        form.color_picker_item("color", &selected)
+            .expect("declared field should reconcile a color picker item"),
+    );
+    assert!(form.field_error("color").is_none());
+    let picker = tree
+        .get(root)
+        .and_then(|node| node.children().first().copied())
+        .and_then(|id| tree.get(id))
+        .and_then(|node| node.component().as_any().downcast_ref::<ColorPicker>())
+        .expect("bound color picker child");
+    assert_eq!(picker.current_value(), Color::green());
+    let values = form.validate().expect("replacement color should pass");
+    assert_eq!(values.get::<Color>("color"), Some(&Color::green()));
+}
+
+#[test]
 fn cloned_form_model_shares_values_and_rejects_unknown_input_items() {
     let value = State::new("ready".to_string());
     let form = Form::new().field("name", "Name").default("initial").build();
@@ -1305,6 +1452,15 @@ fn cloned_form_model_shares_values_and_rejects_unknown_input_items() {
         .is_none());
     assert!(form
         .segmented_item("missing", &State::new(String::new()))
+        .is_none());
+    assert!(form
+        .date_picker_item("missing", &State::new(Date::default()))
+        .is_none());
+    assert!(form
+        .time_picker_item("missing", &State::new(Time::default()))
+        .is_none());
+    assert!(form
+        .color_picker_item("missing", &State::new(Color::default()))
         .is_none());
     assert!(cloned.set_value("name", "updated".to_string()));
 
@@ -1474,4 +1630,32 @@ fn form_submit_focuses_a_bound_radio_error() {
     assert_eq!(errors[0].field(), "choice");
     assert!(tree.drain_app_state_focus_requests());
     assert_eq!(tree.managers().focus.focused_component(), Some(radio));
+}
+
+#[test]
+fn form_submit_focuses_a_bound_date_picker_error() {
+    let selected = State::new(Date::default());
+    let form = Form::new()
+        .field("date", "Date")
+        .default(Date::default())
+        .custom(|value| {
+            (value != "0000-00-00")
+                .then_some(())
+                .ok_or_else(|| "Choose a date".to_string())
+        })
+        .build();
+    let mut tree = ViewAdapter::build(
+        form.date_picker_item("date", &selected)
+            .expect("declared field should build a date picker item"),
+    );
+    tree.set_app_state(AppState::new());
+    tree.layout();
+    let root = tree.root_id().expect("date form item root");
+    let picker = tree.get(root).expect("date form item").children()[0];
+
+    let errors = form.submit().expect_err("default date should fail submit");
+
+    assert_eq!(errors[0].field(), "date");
+    assert!(tree.drain_app_state_focus_requests());
+    assert_eq!(tree.managers().focus.focused_component(), Some(picker));
 }
