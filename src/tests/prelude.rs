@@ -215,6 +215,7 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<FormBuilder>();
     assert_exported::<FormInputItem>();
     assert_exported::<FormInputNumberItem<i32>>();
+    assert_exported::<FormSelectItem<HashSet<String>>>();
     assert_exported::<FormItem>();
     assert_exported::<FormLayout>();
     assert_exported::<FormListBuilder>();
@@ -227,6 +228,7 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<FormModel>();
     assert_exported::<FormSelectItem>();
     assert_exported::<Trigger>();
+    assert_form_value::<HashSet<String>>();
     assert_form_value::<String>();
     assert_exported::<LineData>();
     assert_exported::<MenuItem>();
