@@ -33,7 +33,7 @@ pub use crate::native::traits::input::{
     ControlSize, CursorType, KeyCode, KeyMod, MouseButton, ScrollDirection,
 };
 pub use crate::native::traits::system::StatusLevel;
-pub use animation::{Animated, Animation, AnimationConfig, Easing};
+pub use animation::{Animated, Animation, AnimationConfig, Easing, Spring, SpringAnimation};
 pub use app_state::AppState;
 pub use clipboard::{copy_to_clipboard, read_text_from_clipboard};
 pub use component_handle::ComponentHandle;

@@ -5,7 +5,9 @@ use std::time::{Duration, Instant};
 use crate::app::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry};
 use crate::app::window_driver::sync_animation_registrations;
 use crate::core::Point;
-use crate::ui::animation::{Animated, Animation, AnimationConfig, Easing, TransitionPlayer};
+use crate::ui::animation::{
+    Animated, Animation, AnimationConfig, Easing, Spring, SpringAnimation, TransitionPlayer,
+};
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::view::{label, ViewAdapter, ViewNode};
 use crate::ui::Placement;
@@ -100,6 +102,158 @@ fn zero_duration_animated_value_commits_without_frame_work() {
     assert_eq!(animated.value(), 4.0);
     assert!(animated.is_finished());
     assert_eq!(animated.progress(), 1.0);
+}
+
+#[test]
+fn spring_parameters_preserve_valid_values_and_reject_non_converging_inputs() {
+    let configured = Spring::custom()
+        .stiffness(200.0)
+        .damping(15.0)
+        .mass(2.0)
+        .velocity(-0.5)
+        .rest_speed(0.01)
+        .rest_displacement(0.02);
+    assert_eq!(configured.stiffness_value(), 200.0);
+    assert_eq!(configured.damping_value(), 15.0);
+    assert_eq!(configured.mass_value(), 2.0);
+    assert_eq!(configured.initial_velocity(), -0.5);
+    assert_eq!(configured.rest_speed_value(), 0.01);
+    assert_eq!(configured.rest_displacement_value(), 0.02);
+
+    let normalized = configured
+        .stiffness(-1.0)
+        .damping(0.0)
+        .mass(f64::INFINITY)
+        .velocity(f64::NAN)
+        .rest_speed(-1.0)
+        .rest_displacement(0.0);
+    assert_eq!(normalized, configured);
+
+    let critical = Spring::critical();
+    let ratio = critical.damping_value()
+        / (2.0 * (critical.stiffness_value() * critical.mass_value()).sqrt());
+    assert!((ratio - 1.0).abs() < 1e-12);
+}
+
+#[test]
+fn spring_animation_overshoots_then_converges_and_fires_finish_once() {
+    let finished = Arc::new(AtomicUsize::new(0));
+    let callback_count = Arc::clone(&finished);
+    let mut animation = SpringAnimation::new(0.0_f64, 1.0, Spring::bouncy()).on_finish(move || {
+        callback_count.fetch_add(1, Ordering::SeqCst);
+    });
+    let mut overshot = false;
+
+    for _ in 0..600 {
+        overshot |= animation.update(1.0 / 60.0) > 1.0;
+        if animation.is_finished() {
+            break;
+        }
+    }
+
+    assert!(overshot);
+    assert!(animation.is_finished());
+    assert_eq!(animation.value(), 1.0);
+    assert_eq!(animation.progress(), 1.0);
+    assert_eq!(animation.velocity(), 0.0);
+    assert_eq!(finished.load(Ordering::SeqCst), 1);
+    let _ = animation.update(1.0);
+    assert_eq!(finished.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn critical_spring_pauses_without_progress_and_converges_without_overshoot() {
+    let mut animation = SpringAnimation::new(0.0_f32, 100.0, Spring::critical());
+    let first = animation.update(0.05);
+    assert!(first > 0.0);
+    assert!(first < 100.0);
+
+    animation.pause();
+    assert_eq!(animation.update(10.0), first);
+    assert!(!animation.is_finished());
+
+    animation.resume();
+    let mut previous = first;
+    for _ in 0..600 {
+        let value = animation.update(1.0 / 60.0);
+        assert!(value + 1e-4 >= previous);
+        assert!(value <= 100.0 + 1e-4);
+        previous = value;
+        if animation.is_finished() {
+            break;
+        }
+    }
+
+    assert!(animation.is_finished());
+    assert_eq!(animation.value(), 100.0);
+}
+
+#[test]
+fn spring_animation_converges_for_descending_scalar_values() {
+    let mut animation = SpringAnimation::new(10.0_f64, -5.0, Spring::snappy());
+    assert!(!animation.is_finished());
+
+    for _ in 0..600 {
+        let _ = animation.update(1.0 / 60.0);
+        if animation.is_finished() {
+            break;
+        }
+    }
+
+    assert!(animation.is_finished());
+    assert_eq!(animation.value(), -5.0);
+}
+
+#[test]
+fn animated_spring_reuses_window_registration_and_stops_at_rest() {
+    let animated = Animated::new(0.0_f32).to_spring(1.0, Spring::snappy());
+    let mut tree = ViewAdapter::build_nodes(animated_root(&animated));
+
+    let updates = tree.update_animations(0.0);
+    assert_eq!(updates.len(), 1);
+    assert!(updates[0].1);
+    assert_eq!(animated.value(), 0.0);
+
+    let _ = tree.update_animations(0.05);
+    let before_pause = animated.value();
+    assert!(before_pause > 0.0);
+    animated.pause();
+    assert!(tree.update_animations(1.0).is_empty());
+    assert_eq!(animated.value(), before_pause);
+
+    animated.resume();
+    for _ in 0..600 {
+        let updates = tree.update_animations(1.0 / 60.0);
+        if updates.iter().any(|(_, active)| !active) {
+            break;
+        }
+    }
+
+    assert!(animated.is_finished());
+    assert_eq!(animated.value(), 1.0);
+    assert!(tree.update_animations(1.0 / 60.0).is_empty());
+}
+
+#[test]
+fn animated_spring_retargets_from_the_current_value() {
+    let animated = Animated::new(0.0_f32).to_spring(1.0, Spring::gentle());
+    let mut tree = ViewAdapter::build_nodes(animated_root(&animated));
+    let _ = tree.update_animations(0.1);
+    let current = animated.value();
+
+    animated.animate_to_spring(2.0, Spring::snappy());
+    assert_eq!(animated.value(), current);
+    let _ = tree.update_animations(0.05);
+    assert!(animated.value() > current);
+
+    for _ in 0..600 {
+        let updates = tree.update_animations(1.0 / 60.0);
+        if updates.iter().any(|(_, active)| !active) {
+            break;
+        }
+    }
+    assert!(animated.is_finished());
+    assert_eq!(animated.value(), 2.0);
 }
 
 #[test]
