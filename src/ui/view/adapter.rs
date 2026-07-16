@@ -7,7 +7,7 @@
 //! # Responsibilities
 //!
 //! 1. `ViewAdapter::build(root)` captures view context and builds a `WidgetTree`.
-//! 2. `expand(node)` recursively converts `ViewNode` into `WidgetNode`.
+//! 2. `expand(node)` iteratively converts `ViewNode` into `WidgetNode`.
 //! 3. `apply_style(widget, style)` applies declarative style to concrete widgets.
 //!
 //! # State Binding
@@ -210,20 +210,23 @@ impl ViewAdapter {
             wnode.with_provider_context(frame.provider_context)
         }
 
-        let mut stack: Vec<Frame> = vec![decompose(root)];
+        let mut stack: Vec<Frame> = Vec::new();
+        let mut current = decompose(root);
 
         loop {
-            let frame = stack.last_mut().expect("expand: empty stack");
-            if let Some(child) = frame.remaining_children.next() {
-                stack.push(decompose(child));
-            } else {
-                let frame = stack.pop().unwrap();
-                let wnode = build_widget(frame);
-                if let Some(parent) = stack.last_mut() {
+            if let Some(child) = current.remaining_children.next() {
+                stack.push(current);
+                current = decompose(child);
+                continue;
+            }
+
+            let wnode = build_widget(current);
+            match stack.pop() {
+                Some(mut parent) => {
                     parent.processed_children.push(wnode);
-                } else {
-                    return wnode;
+                    current = parent;
                 }
+                None => return wnode,
             }
         }
     }
