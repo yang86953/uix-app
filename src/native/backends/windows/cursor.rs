@@ -12,9 +12,45 @@ use std::ptr;
 
 use super::bindings::{POINT, RECT};
 use super::ffi::{
-    ClipCursor, GetCursorPos, GetWindowRect, LoadCursorW, ReleaseCapture, SetCapture, SetCursor,
-    SetCursorPos, ShowCursor,
+    ClientToScreen, ClipCursor, GetClientRect, GetCursorPos, LoadCursorW, ReleaseCapture,
+    SetCapture, SetCursor, SetCursorPos, ShowCursor,
 };
+
+pub(crate) fn client_area_screen_rect(hwnd: *mut std::ffi::c_void) -> Option<RECT> {
+    if hwnd.is_null() {
+        return None;
+    }
+    let mut client = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    // SAFETY: hwnd 来自存活平台窗口，client 在同步调用期间有效可写。
+    if unsafe { GetClientRect(hwnd, &mut client) } == 0 {
+        return None;
+    }
+    let mut top_left = POINT {
+        x: client.left,
+        y: client.top,
+    };
+    let mut bottom_right = POINT {
+        x: client.right,
+        y: client.bottom,
+    };
+    // SAFETY: 两个点均属于刚查询的客户区，并在同步调用期间有效可写。
+    if unsafe { ClientToScreen(hwnd, &mut top_left) } == 0
+        || unsafe { ClientToScreen(hwnd, &mut bottom_right) } == 0
+    {
+        return None;
+    }
+    Some(RECT {
+        left: top_left.x,
+        top: top_left.y,
+        right: bottom_right.x,
+        bottom: bottom_right.y,
+    })
+}
 
 pub struct WindowsCursor {
     hwnd: *mut std::ffi::c_void,
@@ -87,18 +123,14 @@ impl ICursor for WindowsCursor {
 
     fn confine_cursor(&mut self, confine: bool) {
         if confine {
-            unsafe {
-                let mut rect = RECT {
-                    left: 0,
-                    top: 0,
-                    right: 0,
-                    bottom: 0,
-                };
-                if GetWindowRect(self.hwnd, &mut rect) != 0 {
+            if let Some(rect) = client_area_screen_rect(self.hwnd) {
+                // SAFETY: rect 是当前客户区的有效 screen-space physical 矩形。
+                unsafe {
                     ClipCursor(&rect);
                 }
             }
         } else {
+            // SAFETY: 空指针按 Win32 契约解除光标约束。
             unsafe {
                 ClipCursor(ptr::null());
             }

@@ -188,6 +188,8 @@ extern "system" {
     pub(crate) fn KillTimer(hwnd: *mut std::ffi::c_void, uIDEvent: u32) -> i32;
 
     pub(super) fn GetWindowRect(hwnd: *mut std::ffi::c_void, lpRect: *mut RECT) -> i32;
+    pub(super) fn GetClientRect(hwnd: *mut std::ffi::c_void, lpRect: *mut RECT) -> i32;
+    pub(super) fn ClientToScreen(hwnd: *mut std::ffi::c_void, lpPoint: *mut POINT) -> i32;
     pub(crate) fn MonitorFromWindow(
         hwnd: *mut std::ffi::c_void,
         dwFlags: u32,
