@@ -409,6 +409,14 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
             .clone()
     }
 
+    pub(crate) fn get_untracked(&self) -> T {
+        self.inner
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .value
+            .clone()
+    }
+
     pub fn set(&self, value: T) {
         let watchers: Vec<Arc<dyn Fn(&T) + Send + Sync>>;
         let snapshot: T;

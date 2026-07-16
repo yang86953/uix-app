@@ -20,6 +20,7 @@
 //! - render 期读取的 State / Computed 绑定窄 Paint；DynamicLabel 还会在 layout 后
 //!   主动探测闭包依赖。
 use crate::ui::accessibility_override::AccessibilityOverride;
+use crate::ui::animation::{begin_animated_capture, end_animated_capture};
 use crate::ui::component_patch::{builtin_widget_runtime_changed, patch_builtin_widget};
 use crate::ui::component_snapshot::SnapshotFields;
 use crate::ui::core::widget::{WidgetCore, WidgetNode};
@@ -46,7 +47,9 @@ impl ViewAdapter {
     #[cfg(any(test, feature = "test-harness"))]
     pub fn capture_view(view: impl View) -> ViewNode {
         begin_state_capture();
-        let node = view.build();
+        begin_animated_capture();
+        let mut node = view.build();
+        node.animated_sources = end_animated_capture();
         end_state_capture();
         node
     }
@@ -57,7 +60,9 @@ impl ViewAdapter {
         F: FnOnce() -> ViewNode,
     {
         begin_state_capture();
-        let node = build_root();
+        begin_animated_capture();
+        let mut node = build_root();
+        node.animated_sources = end_animated_capture();
         end_state_capture();
         node
     }
@@ -69,8 +74,9 @@ impl ViewAdapter {
     }
 
     /// Builds an already expanded ViewNode tree into a WidgetTree.
-    pub fn build_nodes(root: ViewNode) -> WidgetTree {
+    pub fn build_nodes(mut root: ViewNode) -> WidgetTree {
         let mut tree = WidgetTree::new();
+        tree.sync_animated_sources(std::mem::take(&mut root.animated_sources));
         let wnode = Self::expand(root);
         tree.build(wnode);
         tree.bind_orphan_pending_states();
@@ -85,7 +91,8 @@ impl ViewAdapter {
     }
 
     /// Reconciles an already captured ViewNode tree into an existing WidgetTree.
-    pub fn reconcile_nodes(tree: &mut WidgetTree, root: ViewNode) {
+    pub fn reconcile_nodes(tree: &mut WidgetTree, mut root: ViewNode) {
+        tree.sync_animated_sources(std::mem::take(&mut root.animated_sources));
         match tree.root_id() {
             Some(root_id) if Self::can_reuse(tree, root_id, &root) => {
                 Self::reconcile_existing(tree, root_id, root);
@@ -126,6 +133,7 @@ impl ViewAdapter {
             let ViewNode {
                 widget,
                 children,
+                animated_sources: _,
                 provider_context,
                 style,
                 flex_grow_override,
@@ -317,6 +325,7 @@ impl ViewAdapter {
         let ViewNode {
             widget,
             children,
+            animated_sources: _,
             provider_context,
             style,
             flex_grow_override,

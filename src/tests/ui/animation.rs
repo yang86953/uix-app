@@ -2,8 +2,101 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use crate::core::Point;
-use crate::ui::animation::{Animation, AnimationConfig, Easing, TransitionPlayer};
+use crate::ui::animation::{Animated, Animation, AnimationConfig, Easing, TransitionPlayer};
+use crate::ui::core::widget::WidgetCore;
+use crate::ui::view::{label, ViewAdapter, ViewNode};
 use crate::ui::Placement;
+
+fn animated_root(animated: &Animated<f32>) -> ViewNode {
+    ViewAdapter::capture_root(|| label("fade").opacity(animated.value()))
+}
+
+#[test]
+fn animated_value_registers_without_adding_layout_nodes() {
+    let animated = Animated::new(0.0_f32).to(1.0, 1.0, Easing::linear);
+    let mut tree = ViewAdapter::build_nodes(animated_root(&animated));
+    let root = tree.root_id().expect("animated root");
+
+    assert!(tree
+        .get(root)
+        .expect("animated root node")
+        .children()
+        .is_empty());
+
+    let updates = tree.update_animations(0.0);
+    assert_eq!(updates.len(), 1);
+    assert!(updates[0].1);
+    assert_eq!(animated.value(), 0.0);
+    assert!(!tree.take_reconcile_requested());
+
+    let updates = tree.update_animations(0.5);
+    assert_eq!(updates.len(), 1);
+    assert!(updates[0].1);
+    assert!((animated.value() - 0.5).abs() < 1e-6);
+    assert!(tree.take_reconcile_requested());
+
+    let updates = tree.update_animations(0.5);
+    assert_eq!(updates.len(), 1);
+    assert!(!updates[0].1);
+    assert!((animated.value() - 1.0).abs() < 1e-6);
+    assert!(tree.update_animations(0.1).is_empty());
+}
+
+#[test]
+fn animated_controls_stop_and_restart_frame_work() {
+    let animated = Animated::new(0.0_f32).to(1.0, 1.0, Easing::linear);
+    let mut tree = ViewAdapter::build_nodes(animated_root(&animated));
+
+    let _ = tree.update_animations(0.25);
+    animated.pause();
+    assert!(tree.update_animations(0.25).is_empty());
+    assert!((animated.value() - 0.25).abs() < 1e-6);
+
+    animated.resume();
+    let updates = tree.update_animations(0.25);
+    assert_eq!(updates.len(), 1);
+    assert!(updates[0].1);
+    assert!((animated.value() - 0.5).abs() < 1e-6);
+
+    animated.stop();
+    assert!((animated.value() - 1.0).abs() < 1e-6);
+    assert!(tree.update_animations(0.25).is_empty());
+
+    animated.restart();
+    assert!((animated.value() - 0.0).abs() < 1e-6);
+    let _ = tree.update_animations(0.5);
+    assert!((animated.value() - 0.5).abs() < 1e-6);
+
+    animated.reverse();
+    assert!((animated.value() - 1.0).abs() < 1e-6);
+    let _ = tree.update_animations(0.25);
+    assert!((animated.value() - 0.75).abs() < 1e-6);
+}
+
+#[test]
+fn animated_value_has_one_driving_window() {
+    let animated = Animated::new(0.0_f32).to(1.0, 1.0, Easing::linear);
+    let mut owner = ViewAdapter::build_nodes(animated_root(&animated));
+    let mut observer = ViewAdapter::build_nodes(animated_root(&animated));
+
+    assert_eq!(owner.update_animations(0.5).len(), 1);
+    assert!(observer.update_animations(0.5).is_empty());
+    assert!((animated.value() - 0.5).abs() < 1e-6);
+
+    drop(owner);
+    animated.restart();
+    ViewAdapter::reconcile_nodes(&mut observer, animated_root(&animated));
+    assert_eq!(observer.update_animations(0.5).len(), 1);
+    assert!((animated.value() - 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn zero_duration_animated_value_commits_without_frame_work() {
+    let animated = Animated::new(2.0_f64).to(4.0, -1.0, Easing::linear);
+    assert_eq!(animated.value(), 4.0);
+    assert!(animated.is_finished());
+    assert_eq!(animated.progress(), 1.0);
+}
 
 #[test]
 fn documented_animation_surface_restarts_and_fires_finish_once() {

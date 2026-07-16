@@ -589,6 +589,72 @@ fn active_animation_arms_one_fallback_frame_request() {
 }
 
 #[test]
+fn declarative_animated_uses_the_window_frame_registration() {
+    let start = Instant::now();
+    let clock = TestClock::new(start);
+    let animated = Animated::new(0.0_f32).to(1.0, 0.005, Easing::linear);
+    let root_animated = animated.clone();
+    let root_builds = Arc::new(AtomicUsize::new(0));
+    let observed_root_builds = Arc::clone(&root_builds);
+    let token = FrameRequestToken::new(1, 2);
+    let mut platform = FakePlatform::new();
+    platform.event_source.state.timeout_events.push_back(
+        UiEvent::frame_opportunity(token, start + Duration::from_millis(10), None)
+            .for_window(WindowId::new(1)),
+    );
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+    platform.event_source.state.exit_after_timeout_calls = Some(4);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600).with_native_frame_requests();
+    let mut session = WindowSession::from_root_factory_for_window(
+        WindowId::new(1),
+        move || {
+            let builds = root_builds.fetch_add(1, Ordering::Relaxed);
+            assert!(builds < 8, "Animated caused an unbounded root reconcile loop");
+            label("fade").opacity(root_animated.value())
+        },
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop_with_clock(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        clock,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        |_| None,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert!((animated.value() - 1.0).abs() < 1e-6);
+    assert_eq!(
+        window.state.native_frame_requests,
+        vec![NativeFrameRequest::after_present(token)]
+    );
+    assert_eq!(window.state.native_frame_presented, vec![token]);
+    assert_eq!(platform.event_source.state.dispatch_timeout_calls, 1);
+    assert_eq!(platform.event_source.state.dispatch_blocking_calls, 1);
+    assert_eq!(metrics.get().present_calls, 2);
+    assert!(observed_root_builds.load(Ordering::Relaxed) <= 3);
+    assert!(session.active_work().is_empty());
+}
+
+#[test]
 fn native_frame_callback_advances_animation_before_fallback_deadline() {
     let start = Instant::now();
     let clock = TestClock::new(start);

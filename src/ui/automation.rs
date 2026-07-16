@@ -253,11 +253,8 @@ impl TestApp {
     {
         let viewport = (size.0.max(1.0), size.1.max(1.0));
         let build_root: Box<dyn Fn() -> ViewNode> = Box::new(build_root);
-        let mut tree = WidgetTree::new();
-        let root = capture_root(&tree, build_root.as_ref());
-        tree.build(ViewAdapter::expand(root));
-        tree.bind_orphan_pending_states();
-        tree.bind_pending_effects();
+        let root = capture_root(build_root.as_ref());
+        let mut tree = ViewAdapter::build_nodes(root);
         tree.set_app_state(crate::ui::AppState::new());
         set_root_frame(&mut tree, viewport);
         tree.layout();
@@ -448,7 +445,7 @@ impl TestApp {
                 return Ok(passes);
             }
             if reconcile_requested {
-                let root = capture_root(&self.tree, self.build_root.as_ref());
+                let root = capture_root(self.build_root.as_ref());
                 ViewAdapter::reconcile_nodes(&mut self.tree, root);
             }
             set_root_frame(&mut self.tree, self.viewport);
@@ -490,7 +487,7 @@ fn map_semantic_action_error(automation_id: String, error: SemanticActionError) 
     }
 }
 
-fn capture_root(_tree: &WidgetTree, build_root: &dyn Fn() -> ViewNode) -> ViewNode {
+fn capture_root(build_root: &dyn Fn() -> ViewNode) -> ViewNode {
     ViewAdapter::capture_root(build_root)
 }
 

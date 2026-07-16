@@ -2,6 +2,7 @@ use super::*;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::pipeline::{Invalidation, InvalidationQueueHandle};
 use crate::native::traits::input::{KeyCode, KeyMod};
+use crate::ui::animation::AnimatedSource;
 use crate::ui::app_state::AppState;
 use crate::ui::event::{HandlerTable, WindowAction};
 use crate::ui::focus_handle::FocusHandle;
@@ -14,6 +15,17 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 static NEXT_WIDGET_TREE_SCOPE: AtomicU64 = AtomicU64::new(1);
+
+struct BoundAnimatedSource {
+    tree_scope: u64,
+    source: Arc<dyn AnimatedSource>,
+}
+
+impl Drop for BoundAnimatedSource {
+    fn drop(&mut self) {
+        self.source.unbind_owner(self.tree_scope);
+    }
+}
 
 #[cfg(test)]
 thread_local! {
@@ -47,6 +59,7 @@ pub struct WidgetTree {
     pub(crate) reconcile_requested: Arc<AtomicBool>,
     pub(crate) reconcile_callback: Arc<dyn Fn() + Send + Sync>,
     pub(crate) effects: Vec<crate::ui::foundation::state::Effect>,
+    animated_sources: BTreeMap<WidgetId, BoundAnimatedSource>,
     managers: WidgetManagers,
     app_state: Option<AppState>,
     focus_handles: HashMap<WidgetId, FocusHandle>,
@@ -101,6 +114,7 @@ impl Default for WidgetTree {
             reconcile_requested,
             reconcile_callback,
             effects: Vec::new(),
+            animated_sources: BTreeMap::new(),
             managers: WidgetManagers::new(),
             app_state: None,
             focus_handles: HashMap::new(),
@@ -133,6 +147,29 @@ impl WidgetTree {
 
     pub fn tree_version(&self) -> u64 {
         self.tree_version
+    }
+
+    pub(crate) fn sync_animated_sources(&mut self, sources: Vec<Arc<dyn AnimatedSource>>) {
+        let mut previous = std::mem::take(&mut self.animated_sources);
+        let mut next = BTreeMap::new();
+        for source in sources {
+            let work_id = source.work_id();
+            if next.contains_key(&work_id) {
+                continue;
+            }
+            if let Some(bound) = previous.remove(&work_id) {
+                next.insert(work_id, bound);
+            } else if source.bind_owner(self.tree_scope) {
+                next.insert(
+                    work_id,
+                    BoundAnimatedSource {
+                        tree_scope: self.tree_scope,
+                        source,
+                    },
+                );
+            }
+        }
+        self.animated_sources = next;
     }
 
     pub(crate) fn take_window_actions(&mut self) -> Vec<WindowAction> {

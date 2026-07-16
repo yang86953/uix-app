@@ -132,6 +132,7 @@ fn adopt_widget_node(node: WidgetNode) -> ViewNode {
     ViewNode {
         widget: node.widget,
         children: children.into_iter().map(adopt_widget_node).collect(),
+        animated_sources: Vec::new(),
         provider_context,
         style: Style::default(),
         flex_grow_override: None,
