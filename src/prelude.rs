@@ -71,8 +71,8 @@ pub use crate::ui::{
     SystemEventKind, WidgetChildren, WidgetComponent, WindowControl,
 };
 pub use crate::ui::{
-    Animated, Animation, AnimationConfig, Easing, Keyframe, KeyframeAnimation, KeyframeError,
-    Spring, SpringAnimation,
+    Animated, Animation, AnimationConfig, AnimationGroup, AnimationGroupError, AnimationGroupItem,
+    Easing, Keyframe, KeyframeAnimation, KeyframeError, Spring, SpringAnimation,
 };
 // ui / components
 pub use crate::ui::{

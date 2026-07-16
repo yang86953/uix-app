@@ -1,7 +1,8 @@
 //! Declarative, runtime-driven animation values.
 
 use super::{
-    Animation, Easing, Keyframe, KeyframeAnimation, KeyframeError, Spring, SpringAnimation,
+    group::GroupItemTiming, Animation, AnimationGroupItem, Easing, Keyframe, KeyframeAnimation,
+    KeyframeError, Spring, SpringAnimation,
 };
 use crate::core::ComponentId;
 use crate::ui::foundation::state::State;
@@ -257,16 +258,17 @@ impl<T: Animatable> AnimatedPlayback<T> {
     }
 
     fn advance(&mut self, now: Instant, dt: f64) -> (Option<T>, bool) {
+        let mut dt = dt;
         match self.delay_state {
             DelayState::Waiting(deadline) if deadline > now => return (None, false),
-            DelayState::Waiting(_) => {
+            DelayState::Waiting(deadline) => {
                 self.delay_state = DelayState::None;
                 self.motion.resume();
                 if self.motion.is_finished() {
                     self.finish_forward(self.completed_plays);
                     return (Some(self.motion.value()), false);
                 }
-                return (None, true);
+                dt = now.saturating_duration_since(deadline).as_secs_f64();
             }
             DelayState::Paused(_) => return (None, false),
             DelayState::None => {}
@@ -563,6 +565,15 @@ impl<T: Animatable + Sync> Animated<T> {
         Ok(self)
     }
 
+    /// Erases the value type so this source can be scheduled by `AnimationGroup`.
+    pub fn group_item(&self) -> AnimationGroupItem {
+        self.into()
+    }
+
+    pub(crate) fn group_source_id(&self) -> ComponentId {
+        self.inner.work_id
+    }
+
     /// Retargets the shared value from its current position.
     pub fn animate_to(&self, target: T, duration: f64, easing: Easing) {
         self.replace_playback(target, duration, easing, Duration::ZERO);
@@ -693,6 +704,10 @@ impl<T: Animatable + Sync> Animated<T> {
 
     /// Pauses at the current value and stops requesting animation frames.
     pub fn pause(&self) {
+        self.group_pause_at(Instant::now());
+    }
+
+    pub(crate) fn group_pause_at(&self, now: Instant) {
         if let Some(playback) = self
             .inner
             .playback
@@ -700,13 +715,17 @@ impl<T: Animatable + Sync> Animated<T> {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .as_mut()
         {
-            playback.pause(Instant::now());
+            playback.pause(now);
         }
         self.inner.touch();
     }
 
     /// Resumes a paused, unfinished transition.
     pub fn resume(&self) {
+        self.group_resume_at(Instant::now());
+    }
+
+    pub(crate) fn group_resume_at(&self, now: Instant) {
         if let Some(playback) = self
             .inner
             .playback
@@ -714,7 +733,7 @@ impl<T: Animatable + Sync> Animated<T> {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .as_mut()
         {
-            playback.resume(Instant::now());
+            playback.resume(now);
         }
         self.inner.touch();
     }
@@ -738,6 +757,10 @@ impl<T: Animatable + Sync> Animated<T> {
 
     /// Restarts the current transition from its original start value.
     pub fn restart(&self) {
+        self.group_restart_at(Instant::now());
+    }
+
+    pub(crate) fn group_restart_at(&self, now: Instant) {
         let value = {
             let mut playback = self
                 .inner
@@ -747,7 +770,53 @@ impl<T: Animatable + Sync> Animated<T> {
             let Some(playback) = playback.as_mut() else {
                 return;
             };
-            playback.restart(Instant::now());
+            playback.restart(now);
+            playback.value()
+        };
+        self.inner.current.set(value);
+    }
+
+    pub(crate) fn group_timing(&self) -> GroupItemTiming {
+        let playback = self
+            .inner
+            .playback
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(playback) = playback.as_ref() else {
+            return GroupItemTiming::Inactive;
+        };
+        if !playback.delay.is_zero() {
+            return GroupItemTiming::Delayed;
+        }
+
+        let seconds = match (&playback.motion, playback.loop_mode) {
+            (AnimatedMotion::Timed(animation), LoopMode::Once) => animation.duration,
+            (AnimatedMotion::Timed(animation), LoopMode::Count(count)) => {
+                animation.duration * count as f64
+            }
+            (AnimatedMotion::Timed(_), LoopMode::Forever | LoopMode::Alternate) => {
+                return GroupItemTiming::Unbounded;
+            }
+            (AnimatedMotion::Keyframes(animation), _) => animation.duration(),
+            (AnimatedMotion::Spring(_), _) => return GroupItemTiming::Unbounded,
+        };
+        Duration::try_from_secs_f64(seconds)
+            .map(GroupItemTiming::Finite)
+            .unwrap_or(GroupItemTiming::Unbounded)
+    }
+
+    pub(crate) fn group_schedule_at(&self, delay: Duration, now: Instant) {
+        let value = {
+            let mut playback = self
+                .inner
+                .playback
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let Some(playback) = playback.as_mut() else {
+                return;
+            };
+            playback.delay = delay;
+            playback.restart(now);
             playback.value()
         };
         self.inner.current.set(value);

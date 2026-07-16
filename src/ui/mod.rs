@@ -34,8 +34,8 @@ pub use crate::native::traits::input::{
 };
 pub use crate::native::traits::system::StatusLevel;
 pub use animation::{
-    Animated, Animation, AnimationConfig, Easing, Keyframe, KeyframeAnimation, KeyframeError,
-    Spring, SpringAnimation,
+    Animated, Animation, AnimationConfig, AnimationGroup, AnimationGroupError, AnimationGroupItem,
+    Easing, Keyframe, KeyframeAnimation, KeyframeError, Spring, SpringAnimation,
 };
 pub use app_state::AppState;
 pub use clipboard::{copy_to_clipboard, read_text_from_clipboard};
