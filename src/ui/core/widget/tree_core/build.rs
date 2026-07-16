@@ -33,6 +33,7 @@ impl WidgetTree {
         self.handler_table.clear();
         self.render_handler_table.clear();
         self.overlay_stack.clear();
+        self.active_component_animations.clear();
         self.managers.clear_overrides();
         self.focus_handles.clear();
         self.reset_interaction_state();
@@ -159,6 +160,7 @@ impl WidgetTree {
             visible,
             visual_transform,
             enter_animation,
+            enter_deadline,
             leave_animation,
             z_index,
             key,
@@ -177,7 +179,7 @@ impl WidgetTree {
         if let Some(node) = self.get_mut(id) {
             node.set_visible(visible);
             node.set_visual_transform(visual_transform);
-            node.set_enter_animation(enter_animation);
+            node.set_enter_animation(enter_animation, enter_deadline);
             node.set_leave_animation(leave_animation);
             node.set_key(key);
             node.set_automation_id(automation_id);

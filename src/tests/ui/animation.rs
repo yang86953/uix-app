@@ -11,7 +11,7 @@ use crate::ui::animation::{
     KeyframeAnimation, KeyframeError, Spring, SpringAnimation, TransitionPlayer,
 };
 use crate::ui::core::widget::WidgetCore;
-use crate::ui::view::{label, ViewAdapter, ViewNode};
+use crate::ui::view::{column, label, ViewAdapter, ViewNode};
 use crate::ui::Placement;
 
 crate::keyframe! {
@@ -45,6 +45,172 @@ fn newly_reconciled_mount_transition_registers_without_an_extra_event() {
     sync_animation_registrations(&mut active_work, &tree, &updates);
     assert_eq!(updates, vec![(child, false)]);
     assert!(active_work.is_empty());
+}
+
+#[test]
+fn staggered_mount_transitions_wait_on_deadlines_without_open_frame_work() {
+    let mut tree = ViewAdapter::build(
+        column((label("first"), label("second"), label("third")))
+            .stagger_enter(0.5, AnimationConfig::fade_in(1.0)),
+    );
+    tree.layout();
+    let root = tree.root_id().expect("root");
+    let children = tree.get(root).unwrap().children().to_vec();
+    let registrations = tree.view_transition_registrations();
+    assert_eq!(registrations.len(), 3);
+    assert_eq!(registrations[0], (children[0], None));
+    let second_deadline = registrations[1].1.expect("second deadline");
+    let third_deadline = registrations[2].1.expect("third deadline");
+    assert_eq!(
+        third_deadline.duration_since(second_deadline),
+        Duration::from_millis(500)
+    );
+
+    let mut active_work = ActiveWorkRegistry::new();
+    sync_animation_registrations(&mut active_work, &tree, &[]);
+    assert_eq!(
+        active_work.animation_ids().collect::<Vec<_>>(),
+        vec![children[0]]
+    );
+    assert_eq!(active_work.next_deadline(), Some(second_deadline));
+
+    let updates = tree.update_animation_nodes_at(
+        [children[1]],
+        second_deadline - Duration::from_nanos(1),
+        1.0,
+    );
+    sync_animation_registrations(&mut active_work, &tree, &updates);
+    assert_eq!(updates, vec![(children[1], false)]);
+    assert_eq!(
+        tree.get(children[1]).unwrap().view_transition_opacity(),
+        0.0
+    );
+    assert_eq!(active_work.next_deadline(), Some(second_deadline));
+
+    assert_eq!(
+        active_work.drain_due(second_deadline),
+        vec![ActiveWorkKind::Animation(children[1])]
+    );
+    let updates = tree.update_animation_nodes_at([children[1]], second_deadline, 0.0);
+    sync_animation_registrations(&mut active_work, &tree, &updates);
+    assert_eq!(updates, vec![(children[1], true)]);
+    assert_eq!(active_work.next_deadline(), Some(third_deadline));
+    assert_eq!(
+        active_work.animation_ids().collect::<Vec<_>>(),
+        vec![children[0], children[1]]
+    );
+}
+
+#[test]
+fn staggered_mount_consumes_time_past_a_late_deadline() {
+    let mut tree = ViewAdapter::build(
+        column((label("first"), label("late"))).stagger_enter(1.0, AnimationConfig::fade_in(1.0)),
+    );
+    tree.layout();
+    let root = tree.root_id().expect("root");
+    let late = tree.get(root).unwrap().children()[1];
+    let deadline = tree
+        .view_transition_registrations()
+        .into_iter()
+        .find_map(|(id, deadline)| (id == late).then_some(deadline).flatten())
+        .expect("late deadline");
+
+    let updates =
+        tree.update_animation_nodes_at([late], deadline + Duration::from_millis(500), 0.0);
+
+    assert_eq!(updates, vec![(late, true)]);
+    let opacity = tree.get(late).unwrap().view_transition_opacity();
+    assert!(opacity > 0.0 && opacity < 1.0);
+    assert_eq!(
+        tree.view_transition_registrations()
+            .into_iter()
+            .find(|(id, _)| *id == late),
+        Some((late, None))
+    );
+}
+
+#[test]
+fn dynamic_stagger_only_schedules_new_mounts_and_keeps_their_deadline() {
+    let list = |items: &[&str]| {
+        column(
+            items
+                .iter()
+                .map(|item| label(*item).key(*item))
+                .collect::<Vec<_>>(),
+        )
+        .stagger_enter(0.25, AnimationConfig::slide_in(Placement::Bottom, 1.0))
+    };
+    let mut tree = ViewAdapter::build(list(&["stable"]));
+    tree.layout();
+    let root = tree.root_id().expect("root");
+    let stable = tree.get(root).unwrap().children()[0];
+    assert_eq!(
+        tree.update_animation_nodes([stable], 1.0),
+        vec![(stable, false)]
+    );
+
+    ViewAdapter::reconcile(&mut tree, list(&["stable", "new-a", "new-b"]));
+    tree.layout();
+
+    let children = tree.get(root).unwrap().children().to_vec();
+    assert_eq!(children[0], stable);
+    let registrations = tree.view_transition_registrations();
+    assert_eq!(registrations.len(), 2);
+    assert_eq!(registrations[0], (children[1], None));
+    let deadline = registrations[1].1.expect("second new mount deadline");
+
+    ViewAdapter::reconcile(&mut tree, list(&["stable", "new-a", "new-b"]));
+
+    assert_eq!(tree.get(root).unwrap().children(), children.as_slice());
+    assert_eq!(
+        tree.view_transition_registrations()
+            .into_iter()
+            .find(|(id, _)| *id == children[2]),
+        Some((children[2], Some(deadline)))
+    );
+}
+
+#[test]
+fn staggered_zero_duration_mount_commits_only_at_its_deadline() {
+    let mut tree = ViewAdapter::build(
+        column((label("first"), label("delayed")))
+            .stagger_enter(0.5, AnimationConfig::fade_in(0.0)),
+    );
+    tree.layout();
+    let root = tree.root_id().expect("root");
+    let delayed = tree.get(root).unwrap().children()[1];
+    let deadline = tree
+        .view_transition_registrations()
+        .into_iter()
+        .find_map(|(id, deadline)| (id == delayed).then_some(deadline).flatten())
+        .expect("zero-duration deadline");
+    assert_eq!(tree.get(delayed).unwrap().view_transition_opacity(), 0.0);
+
+    assert_eq!(
+        tree.update_animation_nodes_at([delayed], deadline, 0.0),
+        vec![(delayed, false)]
+    );
+    assert_eq!(tree.get(delayed).unwrap().view_transition_opacity(), 1.0);
+    assert!(tree.view_transition_registrations().is_empty());
+}
+
+#[test]
+#[should_panic(expected = "stagger_enter requires fade_in, slide_in, or zoom_in")]
+fn stagger_enter_rejects_exit_presets() {
+    let _ = column((label("invalid"),)).stagger_enter(0.1, AnimationConfig::fade_out(0.2));
+}
+
+#[test]
+fn non_finite_stagger_interval_starts_all_children_immediately() {
+    let tree = ViewAdapter::build(
+        column((label("first"), label("second")))
+            .stagger_enter(f64::NAN, AnimationConfig::fade_in(1.0)),
+    );
+
+    assert!(tree
+        .view_transition_registrations()
+        .into_iter()
+        .all(|(_, deadline)| deadline.is_none()));
 }
 
 #[test]

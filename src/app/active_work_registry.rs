@@ -18,7 +18,8 @@ pub(crate) enum ActiveWorkKind {
 #[derive(Debug, Default)]
 pub(crate) struct ActiveWorkRegistry {
     entries: BTreeMap<ActiveWorkKind, Option<Instant>>,
-    managed_animated_sources: BTreeSet<NodeId>,
+    managed_animation_registrations: BTreeMap<NodeId, Option<Instant>>,
+    open_component_animations: BTreeSet<NodeId>,
     managed_timers: BTreeSet<TimerId>,
     managed_app_timers: BTreeSet<TimerId>,
 }
@@ -38,7 +39,8 @@ impl ActiveWorkRegistry {
 
     pub(crate) fn unregister(&mut self, kind: ActiveWorkKind) -> bool {
         if let ActiveWorkKind::Animation(id) = kind {
-            self.managed_animated_sources.remove(&id);
+            self.managed_animation_registrations.remove(&id);
+            self.open_component_animations.remove(&id);
         }
         if let ActiveWorkKind::Timer(id) = kind {
             self.managed_timers.remove(&id);
@@ -54,24 +56,50 @@ impl ActiveWorkRegistry {
         I: IntoIterator<Item = (NodeId, Option<Instant>)>,
     {
         let desired: BTreeMap<NodeId, Option<Instant>> = registrations.into_iter().collect();
-        self.entries.retain(|kind, _| match kind {
-            ActiveWorkKind::Animation(id) if self.managed_animated_sources.contains(id) => {
-                desired.contains_key(id)
-            }
-            _ => true,
-        });
-        self.managed_animated_sources
-            .retain(|id| desired.contains_key(id));
-        for (id, deadline) in desired {
-            self.entries.insert(ActiveWorkKind::Animation(id), deadline);
-            self.managed_animated_sources.insert(id);
+        let affected: BTreeSet<_> = self
+            .managed_animation_registrations
+            .keys()
+            .chain(desired.keys())
+            .copied()
+            .collect();
+        self.managed_animation_registrations = desired;
+        for id in affected {
+            self.refresh_animation_entry(id);
+        }
+    }
+
+    pub(crate) fn sync_component_animations<I>(&mut self, ids: I)
+    where
+        I: IntoIterator<Item = NodeId>,
+    {
+        let desired: BTreeSet<_> = ids.into_iter().collect();
+        let affected: BTreeSet<_> = self
+            .open_component_animations
+            .iter()
+            .chain(desired.iter())
+            .copied()
+            .collect();
+        self.open_component_animations = desired;
+        for id in affected {
+            self.refresh_animation_entry(id);
+        }
+    }
+
+    fn refresh_animation_entry(&mut self, id: NodeId) {
+        let kind = ActiveWorkKind::Animation(id);
+        if self.open_component_animations.contains(&id) {
+            self.entries.insert(kind, None);
+        } else if let Some(deadline) = self.managed_animation_registrations.get(&id).copied() {
+            self.entries.insert(kind, deadline);
+        } else {
+            self.entries.remove(&kind);
         }
     }
 
     pub(crate) fn park_animated_deadlines(&mut self) {
-        let managed = &self.managed_animated_sources;
+        let managed = &self.managed_animation_registrations;
         for (kind, deadline) in &mut self.entries {
-            if matches!(kind, ActiveWorkKind::Animation(id) if managed.contains(id)) {
+            if matches!(kind, ActiveWorkKind::Animation(id) if managed.contains_key(id)) {
                 *deadline = None;
             }
         }

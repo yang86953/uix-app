@@ -43,6 +43,40 @@ use std::collections::{HashMap, HashSet};
 pub struct ViewAdapter;
 
 impl ViewAdapter {
+    fn stagger_deadline(
+        anchor: std::time::Instant,
+        interval_secs: f64,
+        rank: usize,
+    ) -> Option<std::time::Instant> {
+        if rank == 0 || interval_secs <= 0.0 {
+            return None;
+        }
+        let delay = std::time::Duration::try_from_secs_f64(interval_secs * rank as f64)
+            .unwrap_or(std::time::Duration::MAX);
+        anchor.checked_add(delay).or_else(|| {
+            let mut candidate = delay;
+            loop {
+                candidate /= 2;
+                if let Some(deadline) = anchor.checked_add(candidate) {
+                    break Some(deadline);
+                }
+            }
+        })
+    }
+
+    fn configure_staggered_child(
+        child: &mut ViewNode,
+        stagger: Option<(f64, crate::ui::animation::AnimationConfig)>,
+        anchor: std::time::Instant,
+        rank: usize,
+    ) {
+        let Some((interval_secs, animation)) = stagger else {
+            return;
+        };
+        child.enter_animation = Some(animation);
+        child.enter_deadline = Self::stagger_deadline(anchor, interval_secs, rank);
+    }
+
     /// Builds a View while capturing State bindings.
     #[cfg(any(test, feature = "test-harness"))]
     pub fn capture_view(view: impl View) -> ViewNode {
@@ -114,6 +148,7 @@ impl ViewAdapter {
             style: Style,
             visual_transform: crate::ui::view_transform::ViewTransform,
             enter_animation: Option<crate::ui::animation::AnimationConfig>,
+            enter_deadline: Option<std::time::Instant>,
             leave_animation: Option<crate::ui::animation::AnimationConfig>,
             flex_grow_override: Option<f32>,
             flex_shrink_override: Option<f32>,
@@ -135,13 +170,15 @@ impl ViewAdapter {
         fn decompose(node: ViewNode) -> Frame {
             let ViewNode {
                 widget,
-                children,
+                mut children,
                 animated_sources: _,
                 provider_context,
                 style,
                 visual_transform,
                 enter_animation,
+                enter_deadline,
                 leave_animation,
+                stagger_enter,
                 flex_grow_override,
                 flex_shrink_override,
                 z_index,
@@ -154,12 +191,17 @@ impl ViewAdapter {
                 system_event_handlers,
                 render_handlers,
             } = node;
+            let anchor = std::time::Instant::now();
+            for (rank, child) in children.iter_mut().enumerate() {
+                ViewAdapter::configure_staggered_child(child, stagger_enter, anchor, rank);
+            }
             let visible = style.visible;
             Frame {
                 widget,
                 style,
                 visual_transform,
                 enter_animation,
+                enter_deadline,
                 leave_animation,
                 flex_grow_override,
                 flex_shrink_override,
@@ -218,7 +260,7 @@ impl ViewAdapter {
                 wnode = wnode.with_visual_transform(frame.visual_transform);
             }
             if let Some(animation) = frame.enter_animation {
-                wnode = wnode.with_enter_animation(animation);
+                wnode = wnode.with_enter_animation(animation, frame.enter_deadline);
             }
             if let Some(animation) = frame.leave_animation {
                 wnode = wnode.with_leave_animation(animation);
@@ -348,7 +390,9 @@ impl ViewAdapter {
             style,
             visual_transform,
             enter_animation: _,
+            enter_deadline: _,
             leave_animation,
+            stagger_enter,
             flex_grow_override,
             flex_shrink_override,
             z_index,
@@ -441,11 +485,11 @@ impl ViewAdapter {
             tree.refresh_table_cell_component(id)
         } else if table_expand {
             let expanded = tree.table_expand_view(id).into_iter().collect();
-            let changed = Self::reconcile_children(tree, id, expanded);
+            let changed = Self::reconcile_children(tree, id, expanded, None);
             tree.mark_table_expand_materialized(id);
             changed
         } else {
-            Self::reconcile_children(tree, id, children)
+            Self::reconcile_children(tree, id, children, stagger_enter)
         };
         children_changed |= tree.refresh_virtual_scroll_component(id, None);
         if children_changed {
@@ -592,6 +636,7 @@ impl ViewAdapter {
         tree: &mut WidgetTree,
         parent_id: ComponentId,
         children: Vec<ViewNode>,
+        stagger_enter: Option<(f64, crate::ui::animation::AnimationConfig)>,
     ) -> bool {
         let old_children = tree
             .get(parent_id)
@@ -607,8 +652,10 @@ impl ViewAdapter {
         let mut used_old = HashSet::new();
         let mut new_order = Vec::with_capacity(children.len());
         let mut structure_changed = old_children.len() != children.len();
+        let stagger_anchor = std::time::Instant::now();
+        let mut mounted_rank = 0;
 
-        for (index, child) in children.into_iter().enumerate() {
+        for (index, mut child) in children.into_iter().enumerate() {
             let candidate = child
                 .key
                 .as_ref()
@@ -634,10 +681,24 @@ impl ViewAdapter {
                 } else {
                     tree.remove(child_id);
                     structure_changed = true;
+                    Self::configure_staggered_child(
+                        &mut child,
+                        stagger_enter,
+                        stagger_anchor,
+                        mounted_rank,
+                    );
+                    mounted_rank += 1;
                     tree.build_child_node(parent_id, Self::expand(child))
                 }
             } else {
                 structure_changed = true;
+                Self::configure_staggered_child(
+                    &mut child,
+                    stagger_enter,
+                    stagger_anchor,
+                    mounted_rank,
+                );
+                mounted_rank += 1;
                 tree.build_child_node(parent_id, Self::expand(child))
             };
             new_order.push(child_id);
@@ -672,6 +733,6 @@ impl ViewAdapter {
         parent_id: ComponentId,
         children: Vec<ViewNode>,
     ) -> bool {
-        Self::reconcile_children(tree, parent_id, children)
+        Self::reconcile_children(tree, parent_id, children, None)
     }
 }

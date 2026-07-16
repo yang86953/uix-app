@@ -38,6 +38,7 @@ pub struct WidgetNode {
     pub(crate) visible: bool,
     pub(crate) visual_transform: ViewTransform,
     pub(crate) enter_animation: Option<crate::ui::animation::AnimationConfig>,
+    pub(crate) enter_deadline: Option<std::time::Instant>,
     pub(crate) leave_animation: Option<crate::ui::animation::AnimationConfig>,
     pub z_index: i32,
     pub key: Option<Box<str>>,
@@ -59,6 +60,7 @@ impl WidgetNode {
             visible: true,
             visual_transform: ViewTransform::default(),
             enter_animation: None,
+            enter_deadline: None,
             leave_animation: None,
             z_index: 0,
             key: None,
@@ -87,6 +89,7 @@ impl WidgetNode {
             visible: true,
             visual_transform: ViewTransform::default(),
             enter_animation: None,
+            enter_deadline: None,
             leave_animation: None,
             z_index: 0,
             key: None,
@@ -114,8 +117,10 @@ impl WidgetNode {
     pub(crate) fn with_enter_animation(
         mut self,
         animation: crate::ui::animation::AnimationConfig,
+        deadline: Option<std::time::Instant>,
     ) -> Self {
         self.enter_animation = Some(animation);
+        self.enter_deadline = deadline;
         self
     }
     pub(crate) fn with_leave_animation(
@@ -232,6 +237,7 @@ pub struct BoxedWidget {
     visible: bool,
     visual_transform: ViewTransform,
     view_transition: Option<crate::ui::animation::TransitionPlayer>,
+    view_transition_deadline: Option<std::time::Instant>,
     leave_animation: Option<crate::ui::animation::AnimationConfig>,
     pending_removal: bool,
     attached: bool,
@@ -275,6 +281,7 @@ impl BoxedWidget {
             visible: true,
             visual_transform: ViewTransform::default(),
             view_transition: None,
+            view_transition_deadline: None,
             leave_animation: None,
             pending_removal: false,
             attached: false,
@@ -418,12 +425,18 @@ impl BoxedWidget {
     pub(crate) fn set_enter_animation(
         &mut self,
         animation: Option<crate::ui::animation::AnimationConfig>,
+        deadline: Option<std::time::Instant>,
     ) {
+        self.view_transition_deadline = None;
         self.view_transition = animation.and_then(|animation| {
             let mut player = crate::ui::animation::TransitionPlayer::new(animation);
-            if animation.duration() <= 0.0 {
+            if animation.duration() <= 0.0 && deadline.is_none() {
                 player.update(0.0);
             }
+            if animation.duration() <= 0.0 && deadline.is_some() {
+                player.hold_at_start();
+            }
+            self.view_transition_deadline = (!player.finished).then_some(deadline).flatten();
             (!player.finished).then_some(player)
         });
     }
@@ -442,6 +455,7 @@ impl BoxedWidget {
         let Some(animation) = self.leave_animation else {
             return false;
         };
+        self.view_transition_deadline = None;
         let (opacity, offset, scale) = self
             .view_transition
             .as_ref()
@@ -468,6 +482,7 @@ impl BoxedWidget {
         }
         self.pending_removal = false;
         self.view_transition = None;
+        self.view_transition_deadline = None;
         true
     }
 
@@ -481,21 +496,39 @@ impl BoxedWidget {
             .is_some_and(|player| !player.finished)
     }
 
+    pub(crate) fn view_transition_deadline(&self) -> Option<std::time::Instant> {
+        self.view_transition_active()
+            .then_some(self.view_transition_deadline)
+            .flatten()
+    }
+
     pub(crate) fn view_transition_opacity(&self) -> f32 {
         self.view_transition
             .as_ref()
             .map_or(1.0, |player| player.opacity_progress.clamp(0.0, 1.0))
     }
 
-    pub(crate) fn advance_view_transition(&mut self, dt: f64) -> (bool, bool) {
+    pub(crate) fn advance_view_transition(
+        &mut self,
+        now: std::time::Instant,
+        mut dt: f64,
+    ) -> (bool, bool) {
         let Some(player) = self.view_transition.as_mut() else {
             return (false, false);
         };
+        if let Some(deadline) = self.view_transition_deadline {
+            if deadline > now {
+                return (false, false);
+            }
+            self.view_transition_deadline = None;
+            dt = now.saturating_duration_since(deadline).as_secs_f64();
+        }
         player.update(dt);
         let still_active = !player.finished;
         let remove_now = !still_active && self.pending_removal;
         if !still_active {
             self.view_transition = None;
+            self.view_transition_deadline = None;
         }
         (still_active, remove_now)
     }

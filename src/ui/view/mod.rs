@@ -45,7 +45,9 @@ pub struct ViewNode {
     pub(crate) style: Style,
     pub(crate) visual_transform: ViewTransform,
     pub(crate) enter_animation: Option<crate::ui::animation::AnimationConfig>,
+    pub(crate) enter_deadline: Option<std::time::Instant>,
     pub(crate) leave_animation: Option<crate::ui::animation::AnimationConfig>,
+    pub(crate) stagger_enter: Option<(f64, crate::ui::animation::AnimationConfig)>,
     /// DSL 显式设置的 flex_grow（含 0.0）；与 Style::default 区分，避免被 apply 吞掉。
     pub(crate) flex_grow_override: Option<f32>,
     /// DSL 显式设置的 flex_shrink（含 1.0）。
@@ -81,7 +83,9 @@ impl ViewNode {
             style: Style::default(),
             visual_transform: ViewTransform::default(),
             enter_animation: None,
+            enter_deadline: None,
             leave_animation: None,
+            stagger_enter: None,
             flex_grow_override: None,
             flex_shrink_override: None,
             z_index: 0,
@@ -105,7 +109,9 @@ impl ViewNode {
             style: Style::default(),
             visual_transform: ViewTransform::default(),
             enter_animation: None,
+            enter_deadline: None,
             leave_animation: None,
+            stagger_enter: None,
             flex_grow_override: None,
             flex_shrink_override: None,
             z_index: 0,
@@ -231,6 +237,7 @@ impl ViewNode {
             "enter_animation requires fade_in, slide_in, or zoom_in"
         );
         self.enter_animation = Some(animation);
+        self.enter_deadline = None;
         self
     }
 
@@ -241,6 +248,25 @@ impl ViewNode {
             "leave_animation requires fade_out, slide_out, or zoom_out"
         );
         self.leave_animation = Some(animation);
+        self
+    }
+
+    /// Staggers one-shot enter transitions for immediate children.
+    pub fn stagger_enter(
+        mut self,
+        interval_secs: f64,
+        animation: crate::ui::animation::AnimationConfig,
+    ) -> Self {
+        assert!(
+            animation.is_enter(),
+            "stagger_enter requires fade_in, slide_in, or zoom_in"
+        );
+        let interval_secs = if interval_secs.is_finite() && interval_secs > 0.0 {
+            interval_secs
+        } else {
+            0.0
+        };
+        self.stagger_enter = Some((interval_secs, animation));
         self
     }
 
@@ -746,6 +772,14 @@ pub trait TransitionExt: Into<ViewNode> + Sized {
 
     fn leave_animation(self, animation: crate::ui::animation::AnimationConfig) -> ViewNode {
         self.into().leave_animation(animation)
+    }
+
+    fn stagger_enter(
+        self,
+        interval_secs: f64,
+        animation: crate::ui::animation::AnimationConfig,
+    ) -> ViewNode {
+        self.into().stagger_enter(interval_secs, animation)
     }
 }
 

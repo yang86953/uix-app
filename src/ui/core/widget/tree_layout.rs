@@ -923,10 +923,6 @@ impl WidgetTree {
         ids
     }
 
-    pub(crate) fn has_animated_source(&self, id: WidgetId) -> bool {
-        self.animated_sources.contains_key(&id)
-    }
-
     pub(crate) fn animated_source_registrations(&self) -> Vec<(WidgetId, Option<Instant>)> {
         self.animated_sources
             .iter()
@@ -951,6 +947,7 @@ impl WidgetTree {
         (view_transition || component_animation).then_some(node.frame())
     }
 
+    #[cfg(test)]
     pub(crate) fn active_view_transition_ids(&self) -> Vec<WidgetId> {
         self.traverse()
             .iter()
@@ -960,6 +957,19 @@ impl WidgetTree {
                     .is_some_and(BoxedWidget::view_transition_active)
                     && (self.get(id).is_some_and(BoxedWidget::pending_removal)
                         || self.is_effectively_visible(id))
+            })
+            .collect()
+    }
+
+    pub(crate) fn view_transition_registrations(&self) -> Vec<(WidgetId, Option<Instant>)> {
+        self.traverse()
+            .iter()
+            .copied()
+            .filter_map(|id| {
+                let node = self.get(id)?;
+                (node.view_transition_active()
+                    && (node.pending_removal() || self.is_effectively_visible(id)))
+                .then_some((id, node.view_transition_deadline()))
             })
             .collect()
     }
@@ -990,6 +1000,7 @@ impl WidgetTree {
                 continue;
             }
             let Some(frame) = self.active_animation_frame(id) else {
+                self.active_component_animations.remove(&id);
                 updates.push((id, false));
                 continue;
             };
@@ -997,16 +1008,20 @@ impl WidgetTree {
             let view_was_active = self
                 .get(id)
                 .is_some_and(BoxedWidget::view_transition_active);
-            let old_visual_bounds = view_was_active
+            let view_is_waiting = self
+                .get(id)
+                .and_then(BoxedWidget::view_transition_deadline)
+                .is_some_and(|deadline| deadline > now);
+            let old_visual_bounds = (view_was_active && !view_is_waiting)
                 .then(|| self.visual_subtree_bounds(id))
                 .flatten();
-            let (view_still_active, remove_now) = if view_was_active {
+            let (view_still_active, remove_now) = if view_was_active && !view_is_waiting {
                 self.get_mut(id)
-                    .map_or((false, false), |node| node.advance_view_transition(dt))
+                    .map_or((false, false), |node| node.advance_view_transition(now, dt))
             } else {
                 (false, false)
             };
-            let new_visual_bounds = view_was_active
+            let new_visual_bounds = (view_was_active && !view_is_waiting)
                 .then(|| self.visual_subtree_bounds(id))
                 .flatten();
             for rect in [old_visual_bounds, new_visual_bounds].into_iter().flatten() {
@@ -1024,6 +1039,11 @@ impl WidgetTree {
                     Some((still_active, dirty))
                 })
                 .unwrap_or((false, Rect::zero()));
+            if component_still_active {
+                self.active_component_animations.insert(id);
+            } else {
+                self.active_component_animations.remove(&id);
+            }
 
             if dirty.w > 0.0 && dirty.h > 0.0 {
                 self.invalidate_paint_rect(id, dirty);
@@ -1045,6 +1065,14 @@ impl WidgetTree {
             self.rebuild_widget_overlays();
         }
         updates
+    }
+
+    pub(crate) fn component_animation_ids(&self) -> Vec<WidgetId> {
+        self.active_component_animations
+            .iter()
+            .copied()
+            .filter(|id| self.get(*id).is_some())
+            .collect()
     }
 
     fn widget_overlay_is_current(&self, id: WidgetId) -> bool {

@@ -989,8 +989,16 @@ pub(crate) fn sync_animation_registrations(
     tree: &WidgetTree,
     animation_updates: &[(NodeId, bool)],
 ) {
+    let view_registrations = tree.view_transition_registrations();
+    let mut managed_registrations = tree.animated_source_registrations();
+    managed_registrations.extend(view_registrations.iter().copied());
+    let managed_ids: Vec<_> = managed_registrations.iter().map(|(id, _)| *id).collect();
+    active_work.sync_animated_sources(managed_registrations);
+    let component_ids = tree.component_animation_ids();
+    active_work.sync_component_animations(component_ids.iter().copied());
+
     for &(id, animating) in animation_updates {
-        if tree.has_animated_source(id) {
+        if managed_ids.contains(&id) || component_ids.contains(&id) {
             continue;
         }
         let kind = ActiveWorkKind::Animation(id);
@@ -1000,8 +1008,4 @@ pub(crate) fn sync_animation_registrations(
             active_work.unregister(kind);
         }
     }
-    for id in tree.active_view_transition_ids() {
-        active_work.register_open(ActiveWorkKind::Animation(id));
-    }
-    active_work.sync_animated_sources(tree.animated_source_registrations());
 }
