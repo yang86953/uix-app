@@ -9,9 +9,9 @@ use crate::ui::view::{input, EventExt, View, ViewNode};
 use crate::ui::{EventResult, FocusHandle, SemanticKind, State, SystemEvent};
 
 use super::{
-    Checkbox, ColorPicker, Date, DatePicker, FormItem, FormModel, InputNumber, InputNumberValue,
-    IntoFormValue, OptGroup, PickerMode, Radio, Rate, Segmented, Select, SelectValue, Slider,
-    Switch, Time, TimePicker, ValidateStatus,
+    Checkbox, ColorPicker, Date, DatePicker, DateRangePicker, FormItem, FormModel, InputNumber,
+    InputNumberValue, IntoFormValue, OptGroup, PickerMode, PresetDate, Radio, Rate, Segmented,
+    Select, SelectValue, Slider, Switch, Time, TimePicker, ValidateStatus,
 };
 
 /// 一个已登记字段的声明式文本输入项。
@@ -818,6 +818,124 @@ impl View for FormColorPickerItem {
     }
 }
 
+/// 两个已登记日期字段共享的声明式范围输入项。
+pub struct FormDateRangePickerItem {
+    model: FormModel,
+    start_field: String,
+    end_field: String,
+    start: State<Date>,
+    end: State<Date>,
+    focus_handle: FocusHandle,
+    label: Option<String>,
+    placeholder: String,
+    presets: Vec<(String, PresetDate)>,
+    disabled_date: Option<Arc<dyn Fn(Date) -> bool + Send + Sync>>,
+    size: Option<ControlSize>,
+    show_error: bool,
+}
+
+impl FormDateRangePickerItem {
+    /// 覆盖由起止字段标签组合出的表单项标签。
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    /// 设置占位文本。
+    pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
+        self.placeholder = placeholder.into();
+        self
+    }
+
+    /// 设置具名范围预设。
+    pub fn presets<I, L>(mut self, presets: I) -> Self
+    where
+        I: IntoIterator<Item = (L, PresetDate)>,
+        L: Into<String>,
+    {
+        self.presets = presets
+            .into_iter()
+            .map(|(label, preset)| (label.into(), preset))
+            .collect();
+        self
+    }
+
+    /// 禁止选择满足谓词的日期。
+    pub fn disabled_date(
+        mut self,
+        predicate: impl Fn(Date) -> bool + Send + Sync + 'static,
+    ) -> Self {
+        self.disabled_date = Some(Arc::new(predicate));
+        self
+    }
+
+    /// 设置输入控件尺寸。
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.size = Some(size);
+        self
+    }
+
+    /// 控制是否在字段下方显示首条错误文本；错误状态仍会保留。
+    pub fn show_error(mut self, show_error: bool) -> Self {
+        self.show_error = show_error;
+        self
+    }
+}
+
+impl View for FormDateRangePickerItem {
+    fn build(self) -> ViewNode {
+        let start = self.start.get();
+        let end = self.end.get();
+        self.model.sync_typed_value(&self.start_field, &start);
+        self.model.sync_typed_value(&self.end_field, &end);
+
+        let mut picker = DateRangePicker::new()
+            .start(&self.start)
+            .end(&self.end)
+            .placeholder(self.placeholder)
+            .presets(self.presets);
+        if let Some(predicate) = self.disabled_date {
+            picker = picker.disabled_date(move |date| predicate(date));
+        }
+        if let Some(size) = self.size {
+            picker = picker.size(size);
+        }
+
+        let change_model = self.model.clone();
+        let change_start_field = self.start_field.clone();
+        let change_end_field = self.end_field.clone();
+        let change_start = self.start.clone();
+        let change_end = self.end.clone();
+        let blur_model = self.model.clone();
+        let blur_start_field = self.start_field.clone();
+        let blur_end_field = self.end_field.clone();
+        let input = ViewNode::leaf(picker)
+            .on_semantic(SemanticKind::Change, move |_| {
+                let start = change_start.get();
+                let end = change_end.get();
+                change_model.sync_typed_value(&change_start_field, &start);
+                change_model.sync_typed_value(&change_end_field, &end);
+            })
+            .on_focus(move |event| {
+                if matches!(event, SystemEvent::FocusOut) {
+                    blur_model.blur(&blur_start_field);
+                    blur_model.blur(&blur_end_field);
+                }
+                EventResult::NotHandled
+            })
+            .focus_handle(&self.focus_handle);
+
+        form_range_item_shell(
+            &self.model,
+            &self.start_field,
+            &self.end_field,
+            self.label.as_deref(),
+            self.show_error,
+            input,
+        )
+    }
+}
+
 fn bind_typed_control<T>(
     model: &FormModel,
     field: &str,
@@ -869,6 +987,49 @@ fn form_item_shell(model: &FormModel, field: &str, show_error: bool, input: View
         FormItem::new(&label)
             .name(field.to_string())
             .required(model.field_is_required(field))
+            .controlled_status(status)
+            .help(&help)
+            .label_width(model.layout().item_label_width())
+            .layout(model.layout().item_layout()),
+        vec![input],
+    )
+}
+
+fn form_range_item_shell(
+    model: &FormModel,
+    start_field: &str,
+    end_field: &str,
+    label: Option<&str>,
+    show_error: bool,
+    input: ViewNode,
+) -> ViewNode {
+    let error = model
+        .field_error(start_field)
+        .or_else(|| model.field_error(end_field));
+    let status = if error.is_some() {
+        ValidateStatus::Error
+    } else {
+        ValidateStatus::None
+    };
+    let help = error
+        .as_ref()
+        .filter(|_| show_error)
+        .map_or_else(String::new, |error| error.message().to_string());
+    let default_label = || {
+        let start = model.field_label(start_field).unwrap_or(start_field);
+        let end = model.field_label(end_field).unwrap_or(end_field);
+        if start == end {
+            start.to_string()
+        } else {
+            format!("{start} – {end}")
+        }
+    };
+    let label = label.map_or_else(default_label, str::to_string);
+
+    ViewNode::new(
+        FormItem::new(&label)
+            .name(format!("{start_field}:{end_field}"))
+            .required(model.field_is_required(start_field) || model.field_is_required(end_field))
             .controlled_status(status)
             .help(&help)
             .label_width(model.layout().item_label_width())
@@ -1086,6 +1247,38 @@ impl FormModel {
             focus_handle,
             placeholder: String::new(),
             mode: PickerMode::Date,
+            disabled_date: None,
+            size: None,
+            show_error: true,
+        })
+    }
+
+    /// 把两个已声明的 `Date` 字段绑定为一个 `FormItem + DateRangePicker` View。
+    ///
+    /// 起止字段必须不同且都已登记；两者各自保留 typed `Date` 值、校验规则与提交错误。
+    pub fn date_range_picker_item(
+        &self,
+        start_field: impl AsRef<str>,
+        start: &State<Date>,
+        end_field: impl AsRef<str>,
+        end: &State<Date>,
+    ) -> Option<FormDateRangePickerItem> {
+        let start_field = start_field.as_ref();
+        let end_field = end_field.as_ref();
+        if start_field == end_field {
+            return None;
+        }
+        let focus_handle = self.shared_focus_handle_for(&[start_field, end_field])?;
+        Some(FormDateRangePickerItem {
+            model: self.clone(),
+            start_field: start_field.to_string(),
+            end_field: end_field.to_string(),
+            start: start.clone(),
+            end: end.clone(),
+            focus_handle,
+            label: None,
+            placeholder: String::new(),
+            presets: Vec::new(),
             disabled_date: None,
             size: None,
             show_error: true,
