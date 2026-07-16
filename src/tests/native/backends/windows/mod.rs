@@ -1,5 +1,6 @@
 // Auto-organized test modules. Tests live only under src/tests.
 
+mod clipboard;
 mod display;
 mod dpi;
 mod frame_pacer;

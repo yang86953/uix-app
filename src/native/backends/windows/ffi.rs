@@ -35,7 +35,9 @@ extern "system" {
     pub(crate) fn SetLastError(dwErrCode: u32);
 
     pub(crate) fn GlobalAlloc(uFlags: u32, dwBytes: usize) -> *mut std::ffi::c_void;
+    pub(crate) fn GlobalFree(hMem: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
     pub(crate) fn GlobalLock(hMem: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
+    pub(crate) fn GlobalSize(hMem: *mut std::ffi::c_void) -> usize;
     pub(crate) fn GlobalUnlock(hMem: *mut std::ffi::c_void) -> i32;
 
 }
