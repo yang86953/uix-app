@@ -311,7 +311,11 @@ impl WidgetTree {
                     return None;
                 }
                 let node = self.get(id)?;
-                node.overlay_entry(id, node.frame())
+                let mut entry = node.overlay_entry(id, node.frame())?;
+                if let Some(bounds) = entry.bounds_rect() {
+                    entry = entry.bounds(self.node_visual_rect(id, bounds)?);
+                }
+                Some(entry)
             })
             .collect();
         let widget_overlays_changed = previous_widget_overlays
@@ -406,43 +410,7 @@ impl WidgetTree {
     }
 
     pub(crate) fn visible_rect_for(&self, id: WidgetId) -> Option<Rect> {
-        if !self.is_effectively_visible(id) {
-            return None;
-        }
-        let node = self.get(id)?;
-        let frame = node.frame();
-        let is_overlay = node.overlay_entry(id, frame).is_some();
-        let mut rect = if frame.w > 0.0 && frame.h > 0.0 {
-            frame
-        } else {
-            node.hit_test_frame(frame)
-        };
-        if rect.w <= 0.0 || rect.h <= 0.0 {
-            return None;
-        }
-
-        // 零布局槽的浮动控件以真实命中区域作为语义边界；浮层本身不受祖先
-        // viewport 裁剪，否则视觉已提升到浮层而自动化边界仍会被内容区截断。
-        if is_overlay {
-            return Some(rect);
-        }
-
-        let mut current = id;
-        while let Some(parent_id) = self.get(current).and_then(|n| n.parent()) {
-            let parent = self.get(parent_id)?;
-            if !parent.visible() {
-                return None;
-            }
-            if let Some((sx, sy)) = parent.viewport_scroll_offset() {
-                rect = Rect::new(rect.x - sx, rect.y - sy, rect.w, rect.h);
-            }
-            if let Some(clip) = parent.children_clip(parent.frame()) {
-                rect = rect.intersect(&clip)?;
-            }
-            current = parent_id;
-        }
-
-        Some(rect)
+        self.visible_visual_rect_for(id)
     }
 
     /// 自下而上扩展：当子节点右侧/底部超出容器时，扩展容器宽度/高度。

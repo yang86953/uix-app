@@ -112,6 +112,7 @@ impl ViewAdapter {
         struct Frame {
             widget: Box<dyn WidgetComponent>,
             style: Style,
+            visual_transform: crate::ui::view_transform::ViewTransform,
             flex_grow_override: Option<f32>,
             flex_shrink_override: Option<f32>,
             provider_context: crate::ui::foundation::provider_context::ProviderContext,
@@ -136,6 +137,7 @@ impl ViewAdapter {
                 animated_sources: _,
                 provider_context,
                 style,
+                visual_transform,
                 flex_grow_override,
                 flex_shrink_override,
                 z_index,
@@ -152,6 +154,7 @@ impl ViewAdapter {
             Frame {
                 widget,
                 style,
+                visual_transform,
                 flex_grow_override,
                 flex_shrink_override,
                 provider_context,
@@ -204,6 +207,9 @@ impl ViewAdapter {
             }
             if !frame.visible {
                 wnode = wnode.with_visibility(false);
+            }
+            if frame.visual_transform != crate::ui::view_transform::ViewTransform::default() {
+                wnode = wnode.with_visual_transform(frame.visual_transform);
             }
             if !frame.handlers.is_empty() {
                 wnode = wnode.with_handlers(frame.handlers);
@@ -328,6 +334,7 @@ impl ViewAdapter {
             animated_sources: _,
             provider_context,
             style,
+            visual_transform,
             flex_grow_override,
             flex_shrink_override,
             z_index,
@@ -390,6 +397,9 @@ impl ViewAdapter {
 
         let mut paint_changed = widget_changed || context_changed;
         let mut layout_changed = widget_changed || context_changed;
+        if tree.set_visual_transform(id, visual_transform) {
+            paint_changed = true;
+        }
         if let Some(current) = tree.get_mut(id) {
             let next_key = key.map(Into::into);
             if current.key() != next_key.as_deref() {

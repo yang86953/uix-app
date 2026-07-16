@@ -135,6 +135,7 @@ fn adopt_widget_node(node: WidgetNode) -> ViewNode {
         animated_sources: Vec::new(),
         provider_context,
         style: Style::default(),
+        visual_transform: node.visual_transform,
         flex_grow_override: None,
         flex_shrink_override: None,
         z_index: node.z_index,

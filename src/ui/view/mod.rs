@@ -12,6 +12,7 @@ use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::style::{BoxShadowDef, ColorValue, Style, TypographyToken};
 use crate::ui::system_event_handler::{SystemEventFilter, SystemEventHandlerRegistration};
 use crate::ui::traits::WidgetComponent;
+use crate::ui::view_transform::ViewTransform;
 use crate::ui::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute, EventResult,
     FocusHandle, SystemEvent,
@@ -42,6 +43,7 @@ pub struct ViewNode {
     pub(crate) animated_sources: Vec<std::sync::Arc<dyn crate::ui::animation::AnimatedSource>>,
     pub(crate) provider_context: ProviderContext,
     pub(crate) style: Style,
+    pub(crate) visual_transform: ViewTransform,
     /// DSL 显式设置的 flex_grow（含 0.0）；与 Style::default 区分，避免被 apply 吞掉。
     pub(crate) flex_grow_override: Option<f32>,
     /// DSL 显式设置的 flex_shrink（含 1.0）。
@@ -75,6 +77,7 @@ impl ViewNode {
             animated_sources: Vec::new(),
             provider_context: current_provider_context(),
             style: Style::default(),
+            visual_transform: ViewTransform::default(),
             flex_grow_override: None,
             flex_shrink_override: None,
             z_index: 0,
@@ -96,6 +99,7 @@ impl ViewNode {
             animated_sources: Vec::new(),
             provider_context: current_provider_context(),
             style: Style::default(),
+            visual_transform: ViewTransform::default(),
             flex_grow_override: None,
             flex_shrink_override: None,
             z_index: 0,
@@ -190,6 +194,28 @@ impl ViewNode {
     /// Binds height to an existing declarative animation source.
     pub fn height_animated(self, height: &crate::ui::animation::Animated<f32>) -> Self {
         self.height(height.value())
+    }
+
+    /// Offsets this node's rendered subtree without changing its layout slot.
+    pub fn offset(mut self, offset: Point) -> Self {
+        self.visual_transform.offset = offset;
+        self
+    }
+
+    /// Binds the visual subtree offset to an existing animation source.
+    pub fn offset_animated(self, offset: &crate::ui::animation::Animated<Point>) -> Self {
+        self.offset(offset.value())
+    }
+
+    /// Scales this node's rendered subtree around its layout-frame center.
+    pub fn scale(mut self, scale: f32) -> Self {
+        self.visual_transform.scale = scale;
+        self
+    }
+
+    /// Binds the visual subtree scale to an existing animation source.
+    pub fn scale_animated(self, scale: &crate::ui::animation::Animated<f32>) -> Self {
+        self.scale(scale.value())
     }
 
     pub fn flex_grow(mut self, g: f32) -> Self {
@@ -751,6 +777,22 @@ pub trait StyleExt: Into<ViewNode> + Sized {
 
     fn height_animated(self, height: &crate::ui::animation::Animated<f32>) -> ViewNode {
         self.into().height_animated(height)
+    }
+
+    fn offset(self, offset: Point) -> ViewNode {
+        self.into().offset(offset)
+    }
+
+    fn offset_animated(self, offset: &crate::ui::animation::Animated<Point>) -> ViewNode {
+        self.into().offset_animated(offset)
+    }
+
+    fn scale(self, scale: f32) -> ViewNode {
+        self.into().scale(scale)
+    }
+
+    fn scale_animated(self, scale: &crate::ui::animation::Animated<f32>) -> ViewNode {
+        self.into().scale_animated(scale)
     }
 
     fn flex_grow(self, g: f32) -> ViewNode {

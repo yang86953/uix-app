@@ -166,6 +166,7 @@ impl WidgetTree {
         if self.get(id).is_none() {
             return;
         }
+        let transformed = self.path_has_visual_transform(id);
         let scroll = self.get(id).and_then(|node| {
             let frame = node.frame();
             node.scroll_delta_for_dirty().map(|(dx, dy)| {
@@ -173,9 +174,11 @@ impl WidgetTree {
                 (viewport, dx, dy)
             })
         });
-        if let Some((viewport, dx, dy)) = scroll {
-            if self.push_scroll_composite(viewport, dx, dy) {
-                return;
+        if !transformed {
+            if let Some((viewport, dx, dy)) = scroll {
+                if self.push_scroll_composite(viewport, dx, dy) {
+                    return;
+                }
             }
         }
         let rect = self.get(id).map(|node| {
@@ -187,7 +190,10 @@ impl WidgetTree {
                 frame
             }
         });
-        if let Some(r) = rect.filter(|r| r.w > 0.0 && r.h > 0.0) {
+        if let Some(r) = rect
+            .filter(|r| r.w > 0.0 && r.h > 0.0)
+            .and_then(|rect| self.node_visual_rect(id, rect))
+        {
             self.push_paint_invalidation(id, Some(r));
         }
     }
@@ -197,7 +203,10 @@ impl WidgetTree {
         if self.get(id).is_none() {
             return;
         }
-        if rect.w > 0.0 && rect.h > 0.0 {
+        if let Some(rect) = (rect.w > 0.0 && rect.h > 0.0)
+            .then(|| self.node_visual_rect(id, rect))
+            .flatten()
+        {
             self.push_paint_invalidation(id, Some(rect));
         }
     }
@@ -279,7 +288,7 @@ impl WidgetTree {
                         frame
                     };
                     if r.w > 0.0 && r.h > 0.0 {
-                        Some(r)
+                        self.node_visual_rect(id, r)
                     } else {
                         None
                     }

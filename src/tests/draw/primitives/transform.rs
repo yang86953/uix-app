@@ -26,3 +26,13 @@ fn affine_inverse_roundtrips_points_and_rejects_singular_matrices() {
     assert!((restored.y - point.y).abs() < 1e-5);
     assert!(Transform::scale(0.0, 1.0).inverse().is_none());
 }
+
+#[test]
+fn axis_aligned_rect_mapping_preserves_exact_extents() {
+    let rect = Rect::new(5.0880003, 6.0880003, 21.824, 21.824);
+    assert_eq!(Transform::identity().transform_rect(rect), rect);
+    assert_eq!(
+        Transform::translate(10.0, -2.0).transform_rect(rect),
+        Rect::new(rect.x + 10.0, rect.y - 2.0, rect.w, rect.h)
+    );
+}

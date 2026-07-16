@@ -56,30 +56,19 @@ impl WidgetTree {
         }
     }
 
-    /// 获取 viewport 容器的 scroll 偏移（用于 hit_test 补偿）。
-    fn get_scroll_offset(tree: &WidgetTree, id: WidgetId) -> Option<(f32, f32)> {
-        tree.get(id).and_then(|n| n.viewport_scroll_offset())
-    }
-
     fn hit_test_internal(&self, id: WidgetId, pos: Point) -> Option<WidgetId> {
         let node = self.get(id)?;
         if !node.visible() {
             return None;
         }
 
-        // 如果当前节点是 ScrollView，对其子节点做 scroll offset 补偿。
-        // ScrollView 的子节点按自然坐标布局，但渲染时通过 canvas translate(-sx, -sy) 偏移。
-        // hit_test 必须补偿这个偏移，否则滚动后点击会定位到错误位置。
-        let scroll_off = Self::get_scroll_offset(self, id);
-        let child_pos = match scroll_off {
-            Some((sx, sy)) => Point::new(pos.x + sx, pos.y + sy),
-            None => pos,
-        };
+        // Undo the same transform/scroll chain used by compositor painting.
+        let layout_pos = self.point_to_node_layout(id, pos)?;
 
         let can_hit_children = node.hit_test_children()
             && node
                 .children_clip(node.frame())
-                .is_none_or(|clip| clip.contains(pos));
+                .is_none_or(|clip| clip.contains(layout_pos));
         if can_hit_children {
             let mut sorted: Vec<WidgetId> = node.children().to_vec();
             sorted.sort_by(|&a, &b| {
@@ -99,7 +88,7 @@ impl WidgetTree {
                 start = end;
             }
             for &child_id in &sorted {
-                if let Some(hit) = self.hit_test_internal(child_id, child_pos) {
+                if let Some(hit) = self.hit_test_internal(child_id, pos) {
                     return Some(hit);
                 }
             }
@@ -107,7 +96,7 @@ impl WidgetTree {
         // 使用 widget 的 hit_test_frame 代替原始 frame，支持 overlay 模式
         let actual_frame = node.frame();
         let hit_frame = node.hit_test_frame(actual_frame);
-        if hit_frame.contains(pos) {
+        if hit_frame.contains(layout_pos) {
             Some(id)
         } else {
             None
@@ -520,58 +509,6 @@ impl WidgetTree {
         result
     }
 
-    /// 计算目标**祖先**链上所有 ScrollView 的累计滚动偏移。
-    ///
-    /// 从 parent 起算：目标自身若是 ScrollView，其 viewport 偏移只作用于子内容坐标，
-    /// 不应补偿到滑块命中/拖动（滑块在视口 gutter，非内容坐标系）。
-    pub(crate) fn cumulative_scroll_offset(&self, target: WidgetId) -> Option<(f32, f32)> {
-        let mut sx = 0.0f32;
-        let mut sy = 0.0f32;
-        let mut found = false;
-        let mut current = self.get(target).and_then(|n| n.parent());
-        while let Some(id) = current {
-            if let Some((ox, oy)) = Self::get_scroll_offset(self, id) {
-                sx += ox;
-                sy += oy;
-                found = true;
-            }
-            current = self.get(id).and_then(|n| n.parent());
-        }
-        if found {
-            Some((sx, sy))
-        } else {
-            None
-        }
-    }
-
-    /// 在 PointerDown/PointerUp/PointerMove 事件位置上增加偏移量。
-    fn add_offset_to_event(event: SystemEvent, sx: f32, sy: f32) -> SystemEvent {
-        match event {
-            SystemEvent::PointerDown { pos, button, mods } => SystemEvent::PointerDown {
-                pos: Point::new(pos.x + sx, pos.y + sy),
-                button,
-                mods,
-            },
-            SystemEvent::PointerDoubleClick { pos, button, mods } => {
-                SystemEvent::PointerDoubleClick {
-                    pos: Point::new(pos.x + sx, pos.y + sy),
-                    button,
-                    mods,
-                }
-            }
-            SystemEvent::PointerUp { pos, button, mods } => SystemEvent::PointerUp {
-                pos: Point::new(pos.x + sx, pos.y + sy),
-                button,
-                mods,
-            },
-            SystemEvent::PointerMove { pos, mods } => SystemEvent::PointerMove {
-                pos: Point::new(pos.x + sx, pos.y + sy),
-                mods,
-            },
-            other => other,
-        }
-    }
-
     /// 捕获阶段：从 root 到 target 的路径上依次分发事件（不含 target 自身）。
     /// 任意节点返回 `Handled` 则终止捕获并阻止后续冒泡阶段。
     /// 用于 Modal 外部点击拦截、ScrollView 滚动拦截、全局快捷键等场景。
@@ -583,11 +520,8 @@ impl WidgetTree {
             return false;
         }
 
-        let pos = match self.cumulative_scroll_offset(target) {
-            Some((sx, sy)) => Point::new(pos.x + sx, pos.y + sy),
-            None => pos,
-        };
-        node.hit_test_frame(node.frame()).contains(pos)
+        self.point_to_node_layout(target, pos)
+            .is_some_and(|pos| node.hit_test_frame(node.frame()).contains(pos))
     }
 
     fn capture_wheel_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
@@ -603,11 +537,9 @@ impl WidgetTree {
         }
 
         for id in path {
-            let frame = match self.get(id) {
-                Some(node) => node.frame(),
-                None => continue,
+            let Some(translated) = self.localize_spatial_event(id, event) else {
+                continue;
             };
-            let translated = Self::translate_pointer_event(event, frame);
             let result = {
                 let node = match self.get_mut(id) {
                     Some(node) => node,
@@ -623,28 +555,21 @@ impl WidgetTree {
     }
 
     fn dispatch_wheel_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
-        let scroll_off = self.cumulative_scroll_offset(target);
         let mut current = Some(target);
         while let Some(id) = current {
-            let frame = match self.get(id) {
-                Some(node) => node.frame(),
-                None => return EventResult::NotHandled,
-            };
-            let translated = Self::translate_pointer_event(event, frame);
-            let compensated = match scroll_off {
-                Some((sx, sy)) => Self::add_offset_to_event(translated, sx, sy),
-                None => translated,
+            let Some(localized) = self.localize_spatial_event(id, event) else {
+                return EventResult::NotHandled;
             };
             let (result, parent_id) = {
                 let node = match self.get_mut(id) {
                     Some(node) => node,
                     None => return EventResult::NotHandled,
                 };
-                let result = node.on_event(&compensated);
+                let result = node.on_event(&localized);
                 (result, node.parent())
             };
             if result == EventResult::Handled {
-                return self.finish_scroll_aware_dispatch(id, &compensated);
+                return self.finish_scroll_aware_dispatch(id, &localized);
             }
             current = parent_id;
         }
@@ -673,6 +598,7 @@ impl WidgetTree {
     }
 
     fn register_scroll_composite(&mut self, id: WidgetId) -> bool {
+        let transformed = self.path_has_visual_transform(id);
         let Some((viewport, dx, dy)) = self.get(id).and_then(|node| {
             let frame = node.frame();
             node.scroll_delta_for_dirty().map(|(dx, dy)| {
@@ -682,6 +608,9 @@ impl WidgetTree {
         }) else {
             return false;
         };
+        if transformed {
+            return false;
+        }
         self.push_scroll_composite(viewport, dx, dy)
     }
 
@@ -699,12 +628,15 @@ impl WidgetTree {
             if !self.get(id).is_some_and(|node| node.wants_capture_phase()) {
                 continue;
             }
+            let Some(localized) = self.localize_spatial_event(id, event) else {
+                continue;
+            };
             let handled = {
                 let node = match self.get_mut(id) {
                     Some(n) => n,
                     None => continue,
                 };
-                node.on_event(event) == EventResult::Handled
+                node.on_event(&localized) == EventResult::Handled
             };
             if handled {
                 self.on_widget_handled_in_capture(id);
@@ -736,24 +668,14 @@ impl WidgetTree {
     pub(crate) fn dispatch_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
         let mut current = Some(target);
         let secondary_drag_boundary = self.secondary_pointer_drag_boundary(target, event);
-        // ScrollView 的子节点框架是自然坐标（未含滚动偏移），
-        // 必须先计算目标路径上所有 ScrollView 的累计偏移量，
-        // 翻译事件后加上该偏移量，使事件坐标与视觉位置一致。
-        let scroll_off = self.cumulative_scroll_offset(target);
+        // 每个冒泡节点都按自身的完整 visual/scroll 链反变换到局部坐标。
         while let Some(id) = current {
             if secondary_drag_boundary == Some(id) {
                 return EventResult::Handled;
             }
-            // 先读取 frame（共享借用），传入 translate_pointer_event
-            // 再获取可变引用调用 on_event，确保 &mut self 借用不重叠
-            let frame = match self.get(id) {
-                Some(n) => n.frame(),
-                None => return EventResult::NotHandled,
-            };
-            let translated = Self::translate_pointer_event(event, frame);
-            let compensated = match scroll_off {
-                Some((sx, sy)) => Self::add_offset_to_event(translated, sx, sy),
-                None => translated,
+            // 先以共享借用生成局部事件，再获取可变节点调用 on_event。
+            let Some(localized) = self.localize_spatial_event(id, event) else {
+                return EventResult::NotHandled;
             };
 
             // 处理 widget 自身的 on_event
@@ -762,11 +684,11 @@ impl WidgetTree {
                     Some(n) => n,
                     None => return EventResult::NotHandled,
                 };
-                let r = node.on_event(&compensated);
+                let r = node.on_event(&localized);
                 (r, node.parent())
             };
             if result == EventResult::Handled {
-                return self.finish_scroll_aware_dispatch(id, &compensated);
+                return self.finish_scroll_aware_dispatch(id, &localized);
             }
 
             // Bubbled 或 NotHandled → 继续向父节点传播
@@ -777,15 +699,9 @@ impl WidgetTree {
 
     fn dispatch_double_click_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
         let mut current = Some(target);
-        let scroll_offset = self.cumulative_scroll_offset(target);
         while let Some(id) = current {
-            let Some(frame) = self.get(id).map(|node| node.frame()) else {
+            let Some(double_click) = self.localize_spatial_event(id, event) else {
                 return EventResult::NotHandled;
-            };
-            let translated = Self::translate_pointer_event(event, frame);
-            let double_click = match scroll_offset {
-                Some((sx, sy)) => Self::add_offset_to_event(translated, sx, sy),
-                None => translated,
             };
             let SystemEvent::PointerDoubleClick { pos, button, mods } = double_click else {
                 return EventResult::NotHandled;
@@ -813,31 +729,66 @@ impl WidgetTree {
         EventResult::NotHandled
     }
 
-    fn translate_pointer_event(event: &SystemEvent, frame: Rect) -> SystemEvent {
-        match *event {
+    fn localize_spatial_event(&self, id: WidgetId, event: &SystemEvent) -> Option<SystemEvent> {
+        let frame = self.get(id)?.frame();
+        let map_point = |point: Point| {
+            self.point_to_node_layout(id, point)
+                .map(|point| Point::new(point.x - frame.x, point.y - frame.y))
+        };
+        let map_delta = |delta: Point| {
+            let inverse = self.node_visual_transform(id)?.inverse()?;
+            let origin = inverse.transform_point(Point::new(0.0, 0.0));
+            let endpoint = inverse.transform_point(delta);
+            Some(Point::new(endpoint.x - origin.x, endpoint.y - origin.y))
+        };
+
+        Some(match event {
             SystemEvent::PointerDown { pos, button, mods } => SystemEvent::PointerDown {
-                pos: Point::new(pos.x - frame.x, pos.y - frame.y),
-                button,
-                mods,
+                pos: map_point(*pos)?,
+                button: *button,
+                mods: *mods,
             },
             SystemEvent::PointerDoubleClick { pos, button, mods } => {
                 SystemEvent::PointerDoubleClick {
-                    pos: Point::new(pos.x - frame.x, pos.y - frame.y),
-                    button,
-                    mods,
+                    pos: map_point(*pos)?,
+                    button: *button,
+                    mods: *mods,
                 }
             }
             SystemEvent::PointerUp { pos, button, mods } => SystemEvent::PointerUp {
-                pos: Point::new(pos.x - frame.x, pos.y - frame.y),
-                button,
-                mods,
+                pos: map_point(*pos)?,
+                button: *button,
+                mods: *mods,
             },
             SystemEvent::PointerMove { pos, mods } => SystemEvent::PointerMove {
-                pos: Point::new(pos.x - frame.x, pos.y - frame.y),
-                mods,
+                pos: map_point(*pos)?,
+                mods: *mods,
             },
-            ref other => other.clone(),
-        }
+            SystemEvent::Wheel { pos, delta } => SystemEvent::Wheel {
+                pos: map_point(*pos)?,
+                delta: map_delta(*delta)?,
+            },
+            SystemEvent::FileDrop { files, position } => SystemEvent::FileDrop {
+                files: files.clone(),
+                position: map_point(*position)?,
+            },
+            SystemEvent::DragStart { pos, button, mods } => SystemEvent::DragStart {
+                pos: map_point(*pos)?,
+                button: *button,
+                mods: *mods,
+            },
+            SystemEvent::DragMove { pos, delta, mods } => SystemEvent::DragMove {
+                pos: map_point(*pos)?,
+                delta: map_delta(*delta)?,
+                mods: *mods,
+            },
+            SystemEvent::DragEnd { pos, button, mods } => SystemEvent::DragEnd {
+                pos: map_point(*pos)?,
+                button: *button,
+                mods: *mods,
+            },
+            other => other.clone(),
+        })
     }
 
     pub(crate) fn set_focus(&mut self, new_focus: Option<WidgetId>) {
