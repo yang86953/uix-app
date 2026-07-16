@@ -10,9 +10,9 @@ pub fn page_nav(ctx: &DemoCtx<'_>) -> ViewNode {
     let tk = ctx.tk;
 
     let nav_items = Navigation::new("Demo Nav")
-        .item("首页", "home")
-        .item("组件", "grid")
-        .item("设置", "settings")
+        .item_with_icon("首页", "home", "home")
+        .item_with_icon("组件", "grid", "grid")
+        .item_with_icon("设置", "settings", "settings")
         .active_index(1)
         .width(180.0)
         .height(160.0)

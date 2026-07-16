@@ -372,6 +372,7 @@ pub enum SnapshotFields {
     Tabs {
         tabs: Vec<Tab>,
         active_index: usize,
+        active_key: Option<String>,
         position: TabPosition,
         tab_height: f32,
         fixed_width: Option<f32>,
@@ -384,6 +385,7 @@ pub enum SnapshotFields {
     },
     NavItem {
         label: String,
+        key: String,
         icon: String,
         fixed_width: f32,
         fixed_height: f32,

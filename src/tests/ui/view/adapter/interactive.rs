@@ -244,6 +244,7 @@ fn reconcile_nav_item_preserves_shared_active_and_syncs_config() {
         nav_item.snapshot_fields(),
         SnapshotFields::NavItem {
             label: "new".to_string(),
+            key: "3".to_string(),
             icon: "home".to_string(),
             fixed_width: 64.0,
             fixed_height: 40.0,
