@@ -113,6 +113,7 @@ impl ViewAdapter {
             widget: Box<dyn WidgetComponent>,
             style: Style,
             visual_transform: crate::ui::view_transform::ViewTransform,
+            enter_animation: Option<crate::ui::animation::AnimationConfig>,
             flex_grow_override: Option<f32>,
             flex_shrink_override: Option<f32>,
             provider_context: crate::ui::foundation::provider_context::ProviderContext,
@@ -138,6 +139,7 @@ impl ViewAdapter {
                 provider_context,
                 style,
                 visual_transform,
+                enter_animation,
                 flex_grow_override,
                 flex_shrink_override,
                 z_index,
@@ -155,6 +157,7 @@ impl ViewAdapter {
                 widget,
                 style,
                 visual_transform,
+                enter_animation,
                 flex_grow_override,
                 flex_shrink_override,
                 provider_context,
@@ -210,6 +213,9 @@ impl ViewAdapter {
             }
             if frame.visual_transform != crate::ui::view_transform::ViewTransform::default() {
                 wnode = wnode.with_visual_transform(frame.visual_transform);
+            }
+            if let Some(animation) = frame.enter_animation {
+                wnode = wnode.with_enter_animation(animation);
             }
             if !frame.handlers.is_empty() {
                 wnode = wnode.with_handlers(frame.handlers);
@@ -335,6 +341,7 @@ impl ViewAdapter {
             provider_context,
             style,
             visual_transform,
+            enter_animation: _,
             flex_grow_override,
             flex_shrink_override,
             z_index,

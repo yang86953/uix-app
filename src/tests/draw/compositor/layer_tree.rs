@@ -19,6 +19,7 @@ struct TestNode {
     clip: bool,
     scroll: bool,
     transform: Transform,
+    opacity: f32,
 }
 
 impl TestNode {
@@ -37,6 +38,7 @@ impl TestNode {
             clip: false,
             scroll: false,
             transform: Transform::identity(),
+            opacity: 1.0,
         }
     }
 }
@@ -107,6 +109,10 @@ impl ScenePaint for TestScene {
 
     fn node_transform(&self, id: NodeId) -> Transform {
         self.node(id).transform
+    }
+
+    fn node_opacity(&self, id: NodeId) -> f32 {
+        self.node(id).opacity
     }
 
     fn node_children(&self, id: NodeId) -> &[NodeId] {
@@ -293,7 +299,7 @@ fn picture_policy_requires_node_count_and_pixel_thresholds() {
 
 #[test]
 fn runtime_signals_force_picture_policy_never_for_subtree() {
-    let runtime_signals: [fn(&mut TestNode); 8] = [
+    let runtime_signals: [fn(&mut TestNode); 9] = [
         |node: &mut TestNode| node.has_handler = true,
         |node: &mut TestNode| node.dynamic = true,
         |node: &mut TestNode| node.interactive = true,
@@ -302,6 +308,7 @@ fn runtime_signals_force_picture_policy_never_for_subtree() {
         |node: &mut TestNode| node.focusable = true,
         |node: &mut TestNode| node.scroll = true,
         |node: &mut TestNode| node.transform = Transform::translate(1.0, 0.0),
+        |node: &mut TestNode| node.opacity = 0.5,
     ];
 
     for mark_runtime_signal in runtime_signals {
@@ -629,6 +636,57 @@ fn direct_layer_applies_scene_transform_to_widget_paint() {
     assert_ne!(at(6, 5), 0, "mapped top-left pixel must be painted");
     assert_ne!(at(9, 8), 0, "mapped lower-right pixel must be painted");
     assert_eq!(at(10, 8), 0, "mapped width must remain bounded");
+}
+
+fn paint_opacity_target(id: NodeId, ctx: &mut PaintContext<'_>) {
+    if id == NodeId::new(2) {
+        ctx.fill_rect(
+            Rect::new(1.0, 1.0, 2.0, 2.0),
+            crate::draw::Color::red(),
+            None,
+        );
+    }
+}
+
+#[test]
+fn direct_layers_multiply_parent_and_child_opacity() {
+    use crate::draw::painting::ThemeSnapshot;
+
+    let mut scene = TestScene::static_tree(2);
+    scene.node_mut(NodeId::new(1)).opacity = 0.5;
+    scene.node_mut(NodeId::new(2)).opacity = 0.5;
+    scene.dirty_ids.extend([NodeId::new(1), NodeId::new(2)]);
+    scene.paint = Some(paint_opacity_target);
+
+    let mut tree = LayerTree::new();
+    tree.build(&scene, false);
+    let mut engine = SoftwareEngine::new();
+    engine.initialize(8, 8).expect("software engine init");
+    let tokens = TestTokens;
+    let theme = ThemeSnapshot::new(&tokens);
+    let fonts = FontService::new();
+    let images = ImageService::new();
+
+    tree.render(
+        &mut engine,
+        &scene,
+        &DirtyRegion::full(),
+        &theme,
+        FontHandle::default(),
+        &fonts,
+        &images,
+        false,
+        None,
+        None,
+    )
+    .expect("opacity layer rendering");
+
+    let pixel = engine.canvas_2d().pixels_mut()[1 * 8 + 1];
+    let alpha = (pixel >> 24) & 0xff;
+    assert!(
+        (63..=64).contains(&alpha),
+        "nested 0.5 opacity should yield quarter alpha, got {alpha}"
+    );
 }
 
 #[test]

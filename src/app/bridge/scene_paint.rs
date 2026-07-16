@@ -49,6 +49,12 @@ impl ScenePaint for WidgetTree {
             .unwrap_or_else(crate::draw::Transform::identity)
     }
 
+    fn node_opacity(&self, id: NodeId) -> f32 {
+        self.get(id)
+            .map(|node| node.view_transition_opacity())
+            .unwrap_or(1.0)
+    }
+
     fn node_children(&self, id: NodeId) -> &[NodeId] {
         static EMPTY: &[NodeId] = &[];
         self.get(id).map(|n| n.children()).unwrap_or(EMPTY)
@@ -56,7 +62,13 @@ impl ScenePaint for WidgetTree {
 
     fn node_picture_policy(&self, id: NodeId) -> PicturePolicy {
         self.get(id)
-            .map(|n| n.picture_policy())
+            .map(|n| {
+                if n.view_transition_active() {
+                    PicturePolicy::Never
+                } else {
+                    n.picture_policy()
+                }
+            })
             .unwrap_or(PicturePolicy::Never)
     }
 

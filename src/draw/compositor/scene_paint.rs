@@ -28,6 +28,11 @@ pub trait ScenePaint {
         let _ = id;
         Transform::identity()
     }
+    /// Opacity multiplier for this node and its descendants.
+    fn node_opacity(&self, id: NodeId) -> f32 {
+        let _ = id;
+        1.0
+    }
     fn node_children(&self, id: NodeId) -> &[NodeId];
     fn node_picture_policy(&self, id: NodeId) -> PicturePolicy {
         let _ = id;

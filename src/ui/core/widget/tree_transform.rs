@@ -57,7 +57,7 @@ impl WidgetTree {
     pub(crate) fn path_has_visual_transform(&self, id: WidgetId) -> bool {
         self.visual_path(id).into_iter().any(|current_id| {
             self.get(current_id)
-                .is_some_and(|node| node.visual_transform() != ViewTransform::default())
+                .is_some_and(BoxedWidget::has_effective_visual_transform)
         })
     }
 

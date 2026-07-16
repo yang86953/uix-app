@@ -27,6 +27,27 @@ fn animated_root(animated: &Animated<f32>) -> ViewNode {
 }
 
 #[test]
+fn newly_reconciled_mount_transition_registers_without_an_extra_event() {
+    let mut tree = ViewAdapter::build(crate::ui::view::column(Vec::<ViewNode>::new()));
+    ViewAdapter::reconcile(
+        &mut tree,
+        crate::ui::view::column((label("new").enter_animation(AnimationConfig::fade_in(1.0)),)),
+    );
+    let root = tree.root_id().expect("root");
+    let child = tree.get(root).unwrap().children()[0];
+    let mut active_work = ActiveWorkRegistry::new();
+
+    sync_animation_registrations(&mut active_work, &tree, &[]);
+    assert_eq!(active_work.animation_ids().collect::<Vec<_>>(), vec![child]);
+
+    tree.layout();
+    let updates = tree.update_animation_nodes([child], 1.0);
+    sync_animation_registrations(&mut active_work, &tree, &updates);
+    assert_eq!(updates, vec![(child, false)]);
+    assert!(active_work.is_empty());
+}
+
+#[test]
 fn animated_value_registers_without_adding_layout_nodes() {
     let animated = Animated::new(0.0_f32).to(1.0, 1.0, Easing::linear);
     let mut tree = ViewAdapter::build_nodes(animated_root(&animated));

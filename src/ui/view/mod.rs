@@ -44,6 +44,7 @@ pub struct ViewNode {
     pub(crate) provider_context: ProviderContext,
     pub(crate) style: Style,
     pub(crate) visual_transform: ViewTransform,
+    pub(crate) enter_animation: Option<crate::ui::animation::AnimationConfig>,
     /// DSL 显式设置的 flex_grow（含 0.0）；与 Style::default 区分，避免被 apply 吞掉。
     pub(crate) flex_grow_override: Option<f32>,
     /// DSL 显式设置的 flex_shrink（含 1.0）。
@@ -78,6 +79,7 @@ impl ViewNode {
             provider_context: current_provider_context(),
             style: Style::default(),
             visual_transform: ViewTransform::default(),
+            enter_animation: None,
             flex_grow_override: None,
             flex_shrink_override: None,
             z_index: 0,
@@ -100,6 +102,7 @@ impl ViewNode {
             provider_context: current_provider_context(),
             style: Style::default(),
             visual_transform: ViewTransform::default(),
+            enter_animation: None,
             flex_grow_override: None,
             flex_shrink_override: None,
             z_index: 0,
@@ -216,6 +219,16 @@ impl ViewNode {
     /// Binds the visual subtree scale to an existing animation source.
     pub fn scale_animated(self, scale: &crate::ui::animation::Animated<f32>) -> Self {
         self.scale(scale.value())
+    }
+
+    /// Plays a one-shot visual transition when this node is first mounted.
+    pub fn enter_animation(mut self, animation: crate::ui::animation::AnimationConfig) -> Self {
+        assert!(
+            animation.is_enter(),
+            "enter_animation requires fade_in, slide_in, or zoom_in"
+        );
+        self.enter_animation = Some(animation);
+        self
     }
 
     pub fn flex_grow(mut self, g: f32) -> Self {
@@ -711,6 +724,15 @@ pub trait AccessibilityExt: Into<ViewNode> + Sized {
 }
 
 impl<T: Into<ViewNode>> AccessibilityExt for T {}
+
+/// 为所有可转换为 [`ViewNode`] 的 builder 提供挂载过渡。
+pub trait TransitionExt: Into<ViewNode> + Sized {
+    fn enter_animation(self, animation: crate::ui::animation::AnimationConfig) -> ViewNode {
+        self.into().enter_animation(animation)
+    }
+}
+
+impl<T: Into<ViewNode>> TransitionExt for T {}
 
 /// 为所有 `Into<ViewNode>` 类型提供样式链（[使用](docs/使用.md)）。
 ///
