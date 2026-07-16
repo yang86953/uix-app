@@ -4,6 +4,7 @@ mod clipboard;
 mod cursor;
 mod display;
 mod dpi;
+mod filesystem;
 mod frame_pacer;
 mod gdi_presenter;
 mod hardware_matrix;

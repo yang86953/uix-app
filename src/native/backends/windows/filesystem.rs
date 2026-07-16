@@ -45,14 +45,29 @@ impl SpecialDirProvider for WindowsSpecialDirs {
 // ════════════════════════════════════════════════════════════════════════════
 
 fn get_temp_dir() -> String {
-    unsafe {
-        let mut buf = [0u16; MAX_PATH + 1];
-        let len = GetTempPathW(MAX_PATH as u32, buf.as_mut_ptr());
-        if len > 0 {
-            to_utf8(&buf[..len as usize])
-        } else {
-            String::new()
+    read_variable_wide_path(|buffer| unsafe {
+        GetTempPathW(buffer.len() as u32, buffer.as_mut_ptr()) as usize
+    })
+}
+
+pub(crate) fn read_variable_wide_path(mut query: impl FnMut(&mut [u16]) -> usize) -> String {
+    let mut buffer = vec![0u16; MAX_PATH + 1];
+    loop {
+        let length = query(&mut buffer);
+        if length == 0 {
+            return String::new();
         }
+        if length < buffer.len() {
+            return to_utf8(&buffer[..length]);
+        }
+
+        let Some(next_capacity) = length.checked_add(1) else {
+            return String::new();
+        };
+        if next_capacity > MAX_WIN32_PATH_UNITS {
+            return String::new();
+        }
+        buffer.resize(next_capacity, 0);
     }
 }
 
@@ -134,6 +149,7 @@ const FOLDERID_DOWNLOADS: GUID = GUID {
 // ════════════════════════════════════════════════════════════════════════════
 
 const MAX_PATH: usize = 260;
+const MAX_WIN32_PATH_UNITS: usize = 32_768;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 原始 FFI
