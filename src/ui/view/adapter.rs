@@ -19,12 +19,16 @@
 //!   `State::get()` dependencies to reconcile (structural View updates).
 //! - render 期读取的 State / Computed 绑定窄 Paint；DynamicLabel 还会在 layout 后
 //!   主动探测闭包依赖。
+use crate::ui::accessibility_override::AccessibilityOverride;
 use crate::ui::component_patch::{builtin_widget_runtime_changed, patch_builtin_widget};
 use crate::ui::component_snapshot::SnapshotFields;
 use crate::ui::core::widget::{WidgetCore, WidgetNode};
 use crate::ui::event::{HandlerRegistration, HandlerSignature, SemanticKind};
+use crate::ui::focus_handle::FocusHandle;
 use crate::ui::foundation::state::{begin_state_capture, end_state_capture};
+use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::style::Style;
+use crate::ui::system_event_handler::SystemEventHandlerRegistration;
 use crate::ui::traits::WidgetComponent;
 #[cfg(any(test, feature = "test-harness"))]
 use crate::ui::view::View;
@@ -94,66 +98,134 @@ impl ViewAdapter {
         tree.bind_pending_effects();
     }
 
-    /// Expands a ViewNode recursively into a WidgetNode.
-    pub(crate) fn expand(node: ViewNode) -> WidgetNode {
-        let visible = node.style.visible;
-        let provider_context = node.provider_context;
-        let children: Vec<WidgetNode> = node.children.into_iter().map(Self::expand).collect();
-
-        let widget = Self::apply_style(
-            node.widget,
-            &node.style,
-            node.flex_grow_override,
-            node.flex_shrink_override,
-        );
-
-        let mut wnode = if children.is_empty() {
-            WidgetNode::leaf(widget)
-        } else {
-            WidgetNode::new(widget, children)
-        };
-
-        if let Some(key) = node.key {
-            wnode = wnode.key(&key);
+    /// Expands a ViewNode tree into a WidgetNode tree using explicit stack
+    /// traversal to avoid stack overflow on deep trees in debug builds.
+    pub(crate) fn expand(root: ViewNode) -> WidgetNode {
+        // Decompose a ViewNode to keep traversal state on the heap.
+        struct Frame {
+            widget: Box<dyn WidgetComponent>,
+            style: Style,
+            flex_grow_override: Option<f32>,
+            flex_shrink_override: Option<f32>,
+            provider_context: crate::ui::foundation::provider_context::ProviderContext,
+            visible: bool,
+            z_index: i32,
+            key: Option<String>,
+            automation_id: Option<String>,
+            tab_index: Option<i32>,
+            focus_handle: Option<FocusHandle>,
+            accessibility_override: Option<AccessibilityOverride>,
+            handlers: Vec<HandlerRegistration>,
+            system_event_handlers: Vec<SystemEventHandlerRegistration>,
+            render_handlers: Vec<RenderHandlerRegistration>,
+            remaining_children: std::vec::IntoIter<ViewNode>,
+            processed_children: Vec<WidgetNode>,
         }
 
-        if let Some(automation_id) = node.automation_id {
-            wnode = wnode.automation_id(&automation_id);
+        fn decompose(node: ViewNode) -> Frame {
+            let ViewNode {
+                widget,
+                children,
+                provider_context,
+                style,
+                flex_grow_override,
+                flex_shrink_override,
+                z_index,
+                key,
+                automation_id,
+                tab_index,
+                focus_handle,
+                accessibility_override,
+                handlers,
+                system_event_handlers,
+                render_handlers,
+            } = node;
+            let visible = style.visible;
+            Frame {
+                widget,
+                style,
+                flex_grow_override,
+                flex_shrink_override,
+                provider_context,
+                visible,
+                z_index,
+                key,
+                automation_id,
+                tab_index,
+                focus_handle,
+                accessibility_override,
+                handlers,
+                system_event_handlers,
+                render_handlers,
+                remaining_children: children.into_iter(),
+                processed_children: Vec::new(),
+            }
         }
 
-        if let Some(tab_index) = node.tab_index {
-            wnode = wnode.tab_index(tab_index);
+        fn build_widget(frame: Frame) -> WidgetNode {
+            let widget = ViewAdapter::apply_style(
+                frame.widget,
+                &frame.style,
+                frame.flex_grow_override,
+                frame.flex_shrink_override,
+            );
+
+            let mut wnode = if frame.processed_children.is_empty() {
+                WidgetNode::leaf(widget)
+            } else {
+                WidgetNode::new(widget, frame.processed_children)
+            };
+
+            if let Some(key) = frame.key {
+                wnode = wnode.key(&key);
+            }
+            if let Some(automation_id) = frame.automation_id {
+                wnode = wnode.automation_id(&automation_id);
+            }
+            if let Some(tab_index) = frame.tab_index {
+                wnode = wnode.tab_index(tab_index);
+            }
+            if let Some(focus_handle) = frame.focus_handle {
+                wnode = wnode.with_focus_handle(focus_handle);
+            }
+            if let Some(accessibility_override) = frame.accessibility_override {
+                wnode = wnode.with_accessibility_override(accessibility_override);
+            }
+            if frame.z_index != 0 {
+                wnode = wnode.z_index(frame.z_index);
+            }
+            if !frame.visible {
+                wnode = wnode.with_visibility(false);
+            }
+            if !frame.handlers.is_empty() {
+                wnode = wnode.with_handlers(frame.handlers);
+            }
+            if !frame.system_event_handlers.is_empty() {
+                wnode = wnode.with_system_event_handlers(frame.system_event_handlers);
+            }
+            if !frame.render_handlers.is_empty() {
+                wnode = wnode.with_render_handlers(frame.render_handlers);
+            }
+
+            wnode.with_provider_context(frame.provider_context)
         }
 
-        if let Some(focus_handle) = node.focus_handle {
-            wnode = wnode.with_focus_handle(focus_handle);
-        }
+        let mut stack: Vec<Frame> = vec![decompose(root)];
 
-        if let Some(accessibility_override) = node.accessibility_override {
-            wnode = wnode.with_accessibility_override(accessibility_override);
+        loop {
+            let frame = stack.last_mut().expect("expand: empty stack");
+            if let Some(child) = frame.remaining_children.next() {
+                stack.push(decompose(child));
+            } else {
+                let frame = stack.pop().unwrap();
+                let wnode = build_widget(frame);
+                if let Some(parent) = stack.last_mut() {
+                    parent.processed_children.push(wnode);
+                } else {
+                    return wnode;
+                }
+            }
         }
-
-        if node.z_index != 0 {
-            wnode = wnode.z_index(node.z_index);
-        }
-
-        if !visible {
-            wnode = wnode.with_visibility(false);
-        }
-
-        if !node.handlers.is_empty() {
-            wnode = wnode.with_handlers(node.handlers);
-        }
-
-        if !node.system_event_handlers.is_empty() {
-            wnode = wnode.with_system_event_handlers(node.system_event_handlers);
-        }
-
-        if !node.render_handlers.is_empty() {
-            wnode = wnode.with_render_handlers(node.render_handlers);
-        }
-
-        wnode.with_provider_context(provider_context)
     }
 
     pub(crate) fn apply_style(
