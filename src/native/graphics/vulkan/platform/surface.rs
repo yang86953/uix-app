@@ -4,14 +4,18 @@ use std::ffi::c_void;
 
 use ash::{vk, Entry};
 
-use crate::core::{Errc, Error, Result};
+use crate::core::Result;
+#[cfg(windows)]
+use crate::core::{Errc, Error};
 
 #[cfg(all(unix, not(target_os = "macos")))]
 use crate::native::graphics::platform::linux::WaylandSurfaceHandle;
 #[cfg(windows)]
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 
-use super::context::{invalid, vk_err};
+#[cfg(any(windows, target_os = "macos"))]
+use super::context::invalid;
+use super::context::vk_err;
 
 pub(super) fn destroy_failed_surface(
     surface_loader: &ash::khr::surface::Instance,
