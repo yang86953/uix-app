@@ -1,9 +1,9 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-const USAGE_DOC: &str = "docs/使用.md";
 const CARGO_MANIFEST: &str = "Cargo.toml";
 
 struct CompiledBlock {
+    source_path: String,
     id: String,
     feature: Option<String>,
     first_line: usize,
@@ -17,31 +17,46 @@ struct CompileTag {
 
 type OpenFence<'a> = (Option<(CompileTag, usize)>, Vec<&'a str>);
 
-pub fn generate(source: &str, manifest: &str) -> Result<String, String> {
-    let (total, blocks) = extract_compiled_blocks(source)?;
+pub fn generate_documents(documents: &[(&str, &str)], manifest: &str) -> Result<String, String> {
+    let mut total = 0;
+    let mut blocks = Vec::new();
+    let mut ids = HashMap::new();
+    for (source_path, source) in documents {
+        let (document_total, mut document_blocks) =
+            extract_compiled_blocks(source_path, source, &mut ids)?;
+        total += document_total;
+        blocks.append(&mut document_blocks);
+    }
     let declared_features = extract_declared_features(manifest)?;
     validate_block_features(&blocks, &declared_features)?;
     Ok(render_test_module(total, &blocks))
 }
 
-fn extract_compiled_blocks(source: &str) -> Result<(usize, Vec<CompiledBlock>), String> {
+fn extract_compiled_blocks(
+    source_path: &str,
+    source: &str,
+    ids: &mut HashMap<String, (String, usize)>,
+) -> Result<(usize, Vec<CompiledBlock>), String> {
     let mut total = 0;
     let mut current: Option<OpenFence<'_>> = None;
     let mut blocks = Vec::new();
-    let mut ids = HashSet::new();
 
     for (index, line) in source.lines().enumerate() {
         let line_number = index + 1;
         if let Some((tag, lines)) = current.as_mut() {
             if line.trim() == "```" {
                 if let Some((tag, first_line)) = tag.take() {
-                    if !ids.insert(tag.id.clone()) {
+                    let fence_line = first_line - 1;
+                    if let Some((first_path, first_line)) =
+                        ids.insert(tag.id.clone(), (source_path.to_string(), fence_line))
+                    {
                         return Err(format!(
-                            "duplicate uix-compile id `{}` in {USAGE_DOC}",
-                            tag.id
+                            "duplicate uix-compile id `{}` at {source_path}:{fence_line}; first declared at {first_path}:{first_line}",
+                            tag.id,
                         ));
                     }
                     blocks.push(CompiledBlock {
+                        source_path: source_path.to_string(),
                         id: tag.id,
                         feature: tag.feature,
                         first_line,
@@ -56,7 +71,7 @@ fn extract_compiled_blocks(source: &str) -> Result<(usize, Vec<CompiledBlock>), 
         }
 
         let trimmed = line.trim();
-        if let Some(tag) = parse_rust_fence(trimmed, line_number)? {
+        if let Some(tag) = parse_rust_fence(source_path, trimmed, line_number)? {
             total += 1;
             let tag = tag.map(|tag| (tag, line_number + 1));
             current = Some((tag, Vec::new()));
@@ -64,7 +79,7 @@ fn extract_compiled_blocks(source: &str) -> Result<(usize, Vec<CompiledBlock>), 
     }
 
     if current.is_some() {
-        return Err(format!("unterminated Rust fence in {USAGE_DOC}"));
+        return Err(format!("unterminated Rust fence in {source_path}"));
     }
     Ok((total, blocks))
 }
@@ -110,8 +125,9 @@ fn validate_block_features(
         if let Some(feature) = block.feature.as_ref() {
             if !declared_features.contains(feature) {
                 return Err(format!(
-                    "unknown uix-feature `{feature}` at line {} in {USAGE_DOC}",
-                    block.first_line - 1
+                    "unknown uix-feature `{feature}` at line {} in {}",
+                    block.first_line - 1,
+                    block.source_path,
                 ));
             }
         }
@@ -119,70 +135,80 @@ fn validate_block_features(
     Ok(())
 }
 
-fn parse_rust_fence(line: &str, line_number: usize) -> Result<Option<Option<CompileTag>>, String> {
+fn parse_rust_fence(
+    source_path: &str,
+    line: &str,
+    line_number: usize,
+) -> Result<Option<Option<CompileTag>>, String> {
     let Some(suffix) = line.strip_prefix("```rust") else {
         return Ok(None);
     };
     if suffix.is_empty() {
-        return Ok(Some(None));
+        return Err(format!(
+            "missing uix-compile metadata at line {line_number} in {source_path}"
+        ));
     }
     let Some(metadata) = suffix.strip_prefix(' ') else {
         return Err(format!(
-            "unsupported Rust fence metadata `{suffix}` at line {line_number} in {USAGE_DOC}"
+            "unsupported Rust fence metadata `{suffix}` at line {line_number} in {source_path}"
         ));
     };
     let mut fields = metadata.split_whitespace();
     let Some(id_field) = fields.next() else {
         return Err(format!(
-            "missing Rust fence metadata at line {line_number} in {USAGE_DOC}"
+            "missing Rust fence metadata at line {line_number} in {source_path}"
         ));
     };
     let Some(id) = id_field.strip_prefix("uix-compile=") else {
         return Err(format!(
-            "unsupported Rust fence metadata `{metadata}` at line {line_number} in {USAGE_DOC}"
+            "unsupported Rust fence metadata `{metadata}` at line {line_number} in {source_path}"
         ));
     };
     let mut feature = None;
     for field in fields {
         let Some(value) = field.strip_prefix("uix-feature=") else {
             return Err(format!(
-                "unsupported Rust fence metadata `{field}` at line {line_number} in {USAGE_DOC}"
+                "unsupported Rust fence metadata `{field}` at line {line_number} in {source_path}"
             ));
         };
         if feature.is_some() {
             return Err(format!(
-                "duplicate uix-feature metadata at line {line_number} in {USAGE_DOC}"
+                "duplicate uix-feature metadata at line {line_number} in {source_path}"
             ));
         }
-        feature = Some(sanitize_feature(value, line_number)?);
+        feature = Some(sanitize_feature(source_path, value, line_number)?);
     }
     Ok(Some(Some(CompileTag {
-        id: sanitize_id(id, line_number)?,
+        id: sanitize_id(source_path, id, line_number)?,
         feature,
     })))
 }
 
-fn sanitize_id(id: &str, line_number: usize) -> Result<String, String> {
+fn sanitize_id(source_path: &str, id: &str, line_number: usize) -> Result<String, String> {
     if id.is_empty()
         || !id.chars().all(|character| {
             character.is_ascii_alphanumeric() || character == '-' || character == '_'
         })
     {
         return Err(format!(
-            "invalid uix-compile id `{id}` at line {line_number} in {USAGE_DOC}"
+            "invalid uix-compile id `{id}` at line {line_number} in {source_path}"
         ));
     }
     Ok(id.replace('-', "_"))
 }
 
-fn sanitize_feature(feature: &str, line_number: usize) -> Result<String, String> {
+fn sanitize_feature(
+    source_path: &str,
+    feature: &str,
+    line_number: usize,
+) -> Result<String, String> {
     if feature.is_empty()
         || !feature.chars().all(|character| {
             character.is_ascii_alphanumeric() || character == '-' || character == '_'
         })
     {
         return Err(format!(
-            "invalid uix-feature `{feature}` at line {line_number} in {USAGE_DOC}"
+            "invalid uix-feature `{feature}` at line {line_number} in {source_path}"
         ));
     }
     Ok(feature.to_string())
@@ -214,7 +240,8 @@ fn render_test_module(total: usize, blocks: &[CompiledBlock]) -> String {
             .map(|feature| format!("    #[cfg(feature = \"{feature}\")]\n"))
             .unwrap_or_default();
         output.push_str(&format!(
-            "\n    // {USAGE_DOC}:{}\n{feature_gate}    fn {}() -> GuideResult {{\n        {{\n{}\n        }};\n        Ok(())\n    }}\n",
+            "\n    // {}:{}\n{feature_gate}    fn {}() -> GuideResult {{\n        {{\n{}\n        }};\n        Ok(())\n    }}\n",
+            block.source_path,
             block.first_line,
             block.id,
             indent(&block.code, 12),
@@ -267,7 +294,7 @@ mod tests {
         let source = "```rust uix-compile=same\nlet first = 1;\n```\n\
                       ```rust uix-compile=same\nlet second = 2;\n```\n";
 
-        let error = match generate(source, MANIFEST) {
+        let error = match generate_documents(&[("docs/使用.md", source)], MANIFEST) {
             Ok(_) => panic!("duplicate ID must fail"),
             Err(error) => error,
         };
@@ -276,10 +303,48 @@ mod tests {
     }
 
     #[test]
+    fn rejects_duplicate_compile_ids_across_usage_documents() {
+        let first = "```rust uix-compile=same\nlet first = 1;\n```\n";
+        let second = "```rust uix-compile=same\nlet second = 2;\n```\n";
+
+        let error = match generate_documents(
+            &[
+                ("docs/使用指南/first.md", first),
+                ("docs/使用指南/second.md", second),
+            ],
+            MANIFEST,
+        ) {
+            Ok(_) => panic!("cross-document duplicate ID must fail"),
+            Err(error) => error,
+        };
+
+        assert!(error.contains("docs/使用指南/second.md:1"));
+        assert!(error.contains("first declared at docs/使用指南/first.md:1"));
+    }
+
+    #[test]
+    fn combines_usage_documents_with_source_locations() {
+        let first = "```rust uix-compile=first\nlet first = 1;\n```\n";
+        let second = "```rust uix-compile=second\nlet second = 2;\n```\n";
+
+        let generated = match generate_documents(
+            &[("docs/使用.md", first), ("docs/使用指南/second.md", second)],
+            MANIFEST,
+        ) {
+            Ok(generated) => generated,
+            Err(error) => panic!("valid multi-document guide: {error}"),
+        };
+
+        assert!(generated.contains("USAGE_RUST_BLOCKS_TOTAL: usize = 2"));
+        assert!(generated.contains("// docs/使用.md:2"));
+        assert!(generated.contains("// docs/使用指南/second.md:2"));
+    }
+
+    #[test]
     fn rejects_unknown_documented_feature() {
         let source = "```rust uix-compile=example uix-feature=missing\nlet value = 1;\n```\n";
 
-        let error = match generate(source, MANIFEST) {
+        let error = match generate_documents(&[("docs/使用.md", source)], MANIFEST) {
             Ok(_) => panic!("unknown feature must fail"),
             Err(error) => error,
         };
@@ -288,21 +353,31 @@ mod tests {
     }
 
     #[test]
-    fn distinguishes_unmarked_and_feature_gated_blocks() {
-        let source = "```rust\nlet prose_only = 0;\n```\n\
-                      ```rust uix-compile=public\nlet public = 1;\n```\n\
+    fn rejects_unmarked_rust_fences() {
+        let source = "```rust\nlet prose_only = 0;\n```\n";
+
+        let error = match generate_documents(&[("docs/使用.md", source)], MANIFEST) {
+            Ok(_) => panic!("unmarked Rust fence must fail"),
+            Err(error) => error,
+        };
+
+        assert!(error.contains("missing uix-compile metadata"));
+    }
+
+    #[test]
+    fn counts_public_and_feature_gated_blocks() {
+        let source = "```rust uix-compile=public\nlet public = 1;\n```\n\
                       ```rust uix-compile=harness uix-feature=test-harness\nlet harness = 2;\n```\n";
 
-        let generated = match generate(source, MANIFEST) {
+        let generated = match generate_documents(&[("docs/使用.md", source)], MANIFEST) {
             Ok(generated) => generated,
             Err(error) => panic!("valid guide: {error}"),
         };
 
-        assert!(generated.contains("USAGE_RUST_BLOCKS_TOTAL: usize = 3"));
+        assert!(generated.contains("USAGE_RUST_BLOCKS_TOTAL: usize = 2"));
         assert!(generated.contains(
             "USAGE_RUST_BLOCKS_COMPILED: usize = 1 + cfg!(feature = \"test-harness\") as usize"
         ));
         assert!(generated.contains("USAGE_RUST_BLOCK_FEATURES: &[&str] = &[\"test-harness\"]"));
-        assert!(!generated.contains("prose_only"));
     }
 }

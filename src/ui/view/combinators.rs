@@ -411,6 +411,15 @@ pub fn dynamic_label<F: Fn() -> String + 'static>(f: F) -> ViewNode {
 }
 
 impl<T: Clone + Send + Sync + 'static> State<T> {
+    /// 由当前 State 值构建子视图；结构更新由根 View 构建期捕获的依赖触发。
+    pub fn map<F, V>(&self, f: F) -> ViewNode
+    where
+        F: FnOnce(&T) -> V,
+        V: View,
+    {
+        f(&self.get()).build()
+    }
+
     /// 由 State 生成响应式文本节点；内部 clone 句柄，调用方只保留一个名字。
     pub fn map_text<F>(&self, f: F) -> ViewNode
     where
@@ -418,6 +427,15 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
     {
         let state = self.clone();
         label(move || f(&state.get()))
+    }
+
+    /// 按当前 State 值构建可选子视图；`None` 使用空节点参与 reconcile。
+    pub fn map_opt<F, V>(&self, f: F) -> Option<ViewNode>
+    where
+        F: FnOnce(&T) -> Option<V>,
+        V: View,
+    {
+        f(&self.get()).map(View::build)
     }
 }
 
