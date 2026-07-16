@@ -49,10 +49,19 @@ impl ComponentConfigSnapshot {
         id: ComponentId,
         component: &dyn crate::ui::traits::WidgetComponent,
     ) -> Self {
+        let fields = component.snapshot_fields();
+        Self::from_component_fields(id, component, fields)
+    }
+
+    pub(crate) fn from_component_fields(
+        id: ComponentId,
+        component: &dyn crate::ui::traits::WidgetComponent,
+        fields: SnapshotFields,
+    ) -> Self {
         Self {
             id,
             widget_type: component.as_any().type_id(),
-            fields: component.snapshot_fields(),
+            fields,
             accessibility_override: None,
         }
     }

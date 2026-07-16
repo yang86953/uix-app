@@ -1,7 +1,9 @@
 use std::any::TypeId;
+use std::mem::size_of;
 
 use crate::component;
 use crate::tests::common::*;
+use crate::ui::core::widget::BoxedWidget;
 use crate::ui::widgets::{Button, Checkbox, Input, Label, QRCode, Slider};
 use crate::ui::{
     AccessibilityRole, AccessibilitySnapshot, AriaAttribute, ComponentConfigSnapshot,
@@ -81,6 +83,36 @@ component! {
     ) {}
 }
 
+struct CountingSnapshotProbe {
+    calls: Rc<Cell<usize>>,
+}
+
+impl WidgetComponent for CountingSnapshotProbe {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+
+    fn snapshot_fields(&self) -> SnapshotFields {
+        self.calls.set(self.calls.get() + 1);
+        SnapshotFields::Custom {
+            widget: "CountingSnapshotProbe",
+            fields: Vec::new(),
+        }
+    }
+
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::new()
+    }
+}
+
 #[test]
 fn component_config_snapshot_records_id_type_and_fields() {
     let label = Label::new("status").font_size(18.0).size(80.0, 20.0);
@@ -98,6 +130,56 @@ fn component_config_snapshot_records_id_type_and_fields() {
             ..
         } if text == "status"
     ));
+}
+
+#[test]
+fn component_snapshot_captures_fields_once_for_data_and_accessibility() {
+    let calls = Rc::new(Cell::new(0));
+    let node = BoxedWidget::new(Box::new(CountingSnapshotProbe {
+        calls: Rc::clone(&calls),
+    }));
+
+    let snapshot = node.component_snapshot(ComponentId::new(70));
+
+    assert_eq!(calls.get(), 1);
+    assert!(matches!(
+        snapshot.fields,
+        SnapshotFields::Custom {
+            widget: "CountingSnapshotProbe",
+            ..
+        }
+    ));
+}
+
+#[test]
+fn snapshot_fields_layout_does_not_regress_to_inline_button_styles() {
+    // AppState 为每个已挂载节点保留一份快照；上限防止单个大型分支再次放大整棵树。
+    assert!(
+        size_of::<SnapshotFields>() <= 320,
+        "SnapshotFields grew to {} bytes",
+        size_of::<SnapshotFields>()
+    );
+
+    let first = Button::new("First").snapshot_fields();
+    let second = Button::new("Second").snapshot_fields();
+    let (
+        SnapshotFields::Button {
+            style_set: first_set,
+            style: first_style,
+            ..
+        },
+        SnapshotFields::Button {
+            style_set: second_set,
+            style: second_style,
+            ..
+        },
+    ) = (first, second)
+    else {
+        panic!("expected button snapshot fields");
+    };
+
+    assert!(Arc::ptr_eq(&first_set, &second_set));
+    assert!(Arc::ptr_eq(&first_style, &second_style));
 }
 
 #[test]

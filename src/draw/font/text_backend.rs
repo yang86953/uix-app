@@ -3,6 +3,24 @@
 /// 缺字占位（tofu）字形 ID。后端无真实轮廓时由 `FontService::rasterize_glyph` 合成方框。
 pub const TOFU_GLYPH_ID: u32 = u32::MAX - 1;
 
+/// 单个字形的最大光栅化字号，限制异常输入导致的面积型内存增长。
+pub(crate) const MAX_RASTER_PIXEL_SIZE: f32 = 512.0;
+
+pub(crate) fn bounded_font_size(pixel_size: f32) -> f32 {
+    if pixel_size.is_finite() {
+        pixel_size.clamp(1.0, MAX_RASTER_PIXEL_SIZE)
+    } else {
+        1.0
+    }
+}
+
+pub(crate) fn normalized_raster_pixel_size(pixel_size: f32) -> Option<u32> {
+    if !pixel_size.is_finite() || pixel_size <= 0.0 {
+        return None;
+    }
+    Some(pixel_size.round().clamp(1.0, MAX_RASTER_PIXEL_SIZE) as u32)
+}
+
 /// A single glyph positioned by text layout.
 #[derive(Debug, Clone, Copy)]
 pub struct PositionedGlyph {
@@ -45,6 +63,18 @@ pub struct GlyphRaster {
     pub coverage: std::sync::Arc<[u8]>,
     pub bearing_x: f32,
     pub bearing_y: f32,
+}
+
+impl GlyphRaster {
+    pub(crate) fn empty() -> Self {
+        Self {
+            width: 0,
+            height: 0,
+            coverage: std::sync::Arc::from([]),
+            bearing_x: 0.0,
+            bearing_y: 0.0,
+        }
+    }
 }
 
 /// 字体水平度量。

@@ -22,6 +22,24 @@ fn create_offscreen_reuses_destroyed_ids() {
 }
 
 #[test]
+fn resize_normalizes_extent_and_preserves_surface_after_allocation_failure() {
+    let mut backend = CpuBackend::new();
+    backend.resize(8, 4).expect("initial resize");
+    assert_eq!(backend.memory_usage(), 8 * 4 * 4);
+
+    let error = backend
+        .resize(i32::MAX, i32::MAX)
+        .expect_err("oversized resize must fail");
+    assert_eq!(error.code(), Errc::GraphicsOutOfMemory);
+    assert_eq!((backend.width(), backend.height()), (8, 4));
+    assert_eq!(backend.memory_usage(), 8 * 4 * 4);
+
+    backend.resize(0, -1).expect("normalized resize");
+    assert_eq!((backend.width(), backend.height()), (1, 1));
+    assert_eq!(backend.memory_usage(), 4);
+}
+
+#[test]
 fn encoded_picture_replaces_cpu_offscreen_pixels_and_begin_clears_stale_content() {
     use crate::draw::pipeline::{EncodedPictureExecution, FrameEncoder, FrameRasterOp, FrameRect};
 

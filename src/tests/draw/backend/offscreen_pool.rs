@@ -23,3 +23,16 @@ fn pool_create_draw_copy_and_reuse() {
     assert_eq!(b.0, a.0);
     assert_eq!(pool.slot_len(), 1);
 }
+
+#[test]
+fn rejected_allocation_does_not_consume_a_slot_or_corrupt_memory_accounting() {
+    let mut pool = CpuOffscreenPool::new();
+
+    assert!(pool.create(i32::MAX, i32::MAX).is_none());
+    assert_eq!(pool.slot_len(), 0);
+    assert_eq!(pool.memory_usage(), 0);
+
+    let handle = pool.create(2, 3).expect("small surface");
+    assert_eq!(handle.0, 0);
+    assert_eq!(pool.memory_usage(), 2 * 3 * 4);
+}

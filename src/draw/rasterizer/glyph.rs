@@ -25,6 +25,19 @@ pub fn blit_glyph(
     height: usize,
     color: Color,
 ) {
+    if surface_w <= 0 || surface_h <= 0 || width == 0 || height == 0 {
+        return;
+    }
+    let Some(coverage_len) = width.checked_mul(height) else {
+        return;
+    };
+    let Some(surface_len) = (surface_w as usize).checked_mul(surface_h as usize) else {
+        return;
+    };
+    if coverage.len() < coverage_len || pixels.len() < surface_len {
+        return;
+    }
+
     let (cx0, cy0, cx1, cy1) = clip_to_int(&clip);
     let ca = (color.a as f32 * opacity) as u8;
     if ca == 0 {
@@ -39,17 +52,24 @@ pub fn blit_glyph(
         (ca as u32) << 24 | (r as u32) << 16 | (g as u32) << 8 | b as u32
     };
 
-    for row in 0..height {
-        let py = y + row as i32;
-        if py < cy0.max(0) || py >= cy1.min(surface_h) {
-            continue;
-        }
-        for col in 0..width {
-            let px = x + col as i32;
-            if px < cx0.max(0) || px >= cx1.min(surface_w) {
-                continue;
-            }
-            let cov = coverage[row * width + col];
+    let visible_x0 = (x as i128).max(cx0.max(0) as i128);
+    let visible_y0 = (y as i128).max(cy0.max(0) as i128);
+    let visible_x1 = (x as i128 + width as i128).min(cx1.min(surface_w) as i128);
+    let visible_y1 = (y as i128 + height as i128).min(cy1.min(surface_h) as i128);
+    if visible_x0 >= visible_x1 || visible_y0 >= visible_y1 {
+        return;
+    }
+
+    let col_start = (visible_x0 - x as i128) as usize;
+    let col_end = (visible_x1 - x as i128) as usize;
+    let row_start = (visible_y0 - y as i128) as usize;
+    let row_end = (visible_y1 - y as i128) as usize;
+    for row in row_start..row_end {
+        let py = (y as i128 + row as i128) as i32;
+        let coverage_row = row * width;
+        for col in col_start..col_end {
+            let px = (x as i128 + col as i128) as i32;
+            let cov = coverage[coverage_row + col];
             if cov == 0 {
                 continue;
             }

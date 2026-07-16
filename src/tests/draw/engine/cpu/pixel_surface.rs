@@ -1,4 +1,5 @@
 use crate::draw::engine::cpu::pixel_surface::*;
+use crate::draw::RenderingBackend;
 use crate::tests::common::*;
 
 #[test]
@@ -29,4 +30,37 @@ fn translucent_clear_color_is_written_premultiplied() {
         surface.pixels(),
         [clear.premultiplied(), clear.premultiplied()]
     );
+}
+
+#[test]
+fn oversized_surface_returns_typed_out_of_memory_without_allocating() {
+    let error = match PixelSurface::try_new(i32::MAX, i32::MAX) {
+        Ok(_) => panic!("oversized surface must be rejected"),
+        Err(error) => error,
+    };
+
+    assert_eq!(error.code(), Errc::GraphicsOutOfMemory);
+}
+
+#[test]
+fn extreme_clear_and_copy_coordinates_are_clipped_without_overflow() {
+    let mut surface = PixelSurface::new(3, 2);
+    surface.pixels_mut().copy_from_slice(&[1, 2, 3, 4, 5, 6]);
+
+    surface.clear_rect_raw(i32::MAX, i32::MAX, i32::MAX, i32::MAX);
+    assert_eq!(surface.pixels(), [1, 2, 3, 4, 5, 6]);
+
+    RenderingBackend::copy_region(
+        &mut surface,
+        Rect::new(i32::MAX as f32, 0.0, i32::MAX as f32, 1.0),
+        i32::MIN,
+        i32::MAX,
+    );
+    assert_eq!(surface.pixels(), [1, 2, 3, 4, 5, 6]);
+
+    surface.set_clear_color(Color::red());
+    surface.clear_rect_raw(-1, 0, i32::MAX, 1);
+    assert!(surface.pixels()[..3]
+        .iter()
+        .all(|&pixel| pixel == Color::red().premultiplied()));
 }

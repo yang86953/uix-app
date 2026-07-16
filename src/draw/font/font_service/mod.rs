@@ -17,7 +17,7 @@ use crate::draw::font::text_backend::{self as tb, GlyphRaster, TextLayoutOptions
 use crate::draw::FontHandle;
 use crate::draw::TextBackend;
 
-use font_cache::{CachedRaster, FontSlot, GlyphCacheKey};
+pub(crate) use font_cache::{CachedRaster, FontSlot, GlyphCacheKey};
 
 // ════════════════════════════════════════════════════════════════════════════
 // FontService — 字体管理器
@@ -500,7 +500,10 @@ impl FontService {
         if self.text_backend.is_valid(font) {
             let f = *font;
             let layout = self.layout_text(&f, text, opts);
-            Size::new(layout.width, layout.height.max(opts.font_size))
+            Size::new(
+                layout.width,
+                layout.height.max(tb::bounded_font_size(opts.font_size)),
+            )
         } else {
             // 回退到简单度量（无后端字体可用时）：按字符数，非字节
             let cw = 6.0;
@@ -517,22 +520,21 @@ impl FontService {
         glyph_id: u32,
         pixel_size: f32,
     ) -> GlyphRaster {
+        let Some(pixel_size) = tb::normalized_raster_pixel_size(pixel_size) else {
+            return GlyphRaster::empty();
+        };
+        let pixel_size = pixel_size as f32;
+
         // 缺字 tofu：合成空心方框，避免静默丢字。
         if glyph_id == tb::TOFU_GLYPH_ID {
             return Self::rasterize_tofu(pixel_size);
         }
 
         if !self.text_backend.is_valid(font) {
-            return GlyphRaster {
-                width: 0,
-                height: 0,
-                coverage: Arc::from([]),
-                bearing_x: 0.0,
-                bearing_y: 0.0,
-            };
+            return GlyphRaster::empty();
         }
 
-        let ps = pixel_size.round() as u32;
+        let ps = pixel_size as u32;
         let key = GlyphCacheKey {
             font_idx: font.0,
             glyph_id,
@@ -574,10 +576,17 @@ impl FontService {
 
     /// 合成缺字 tofu（空心方框），相对基线的 bearing 与常规字形一致。
     fn rasterize_tofu(pixel_size: f32) -> GlyphRaster {
-        let fs = pixel_size.max(1.0);
+        let fs = tb::bounded_font_size(pixel_size);
         let w = ((fs * 0.5).round() as usize).max(4);
         let h = ((fs * 0.7).round() as usize).max(5);
-        let mut coverage = vec![0u8; w * h];
+        let Some(pixel_count) = w.checked_mul(h) else {
+            return GlyphRaster::empty();
+        };
+        let mut coverage = Vec::new();
+        if coverage.try_reserve_exact(pixel_count).is_err() {
+            return GlyphRaster::empty();
+        }
+        coverage.resize(pixel_count, 0u8);
         for x in 0..w {
             coverage[x] = 220;
             coverage[(h - 1) * w + x] = 220;
@@ -669,6 +678,7 @@ impl FontService {
         font: &FontHandle,
         pixel_size: f32,
     ) -> Option<tb::LineMetrics> {
+        let pixel_size = tb::normalized_raster_pixel_size(pixel_size)? as f32;
         self.text_backend.horizontal_line_metrics(font, pixel_size)
     }
 
@@ -687,7 +697,7 @@ impl FontService {
     pub fn memory_usage(&self) -> usize {
         let backend_mem = self.text_backend.memory_usage();
         let cache_mem = self.glyph_cache.memory_usage();
-        backend_mem + cache_mem
+        backend_mem.saturating_add(cache_mem)
     }
 }
 

@@ -1,5 +1,7 @@
 //! Button — 纯文本按钮，外观由 StyleSet 预设驱动；点击反馈为 Material 风格 ripple。
 
+use std::sync::{Arc, OnceLock};
+
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
@@ -87,8 +89,8 @@ pub struct Button {
     pub(crate) ripple: Option<ButtonRipple>,
     /// 上一帧 `update_animation` 是否推进了 ripple（供窄标脏）。
     ripple_dirty: bool,
-    pub(crate) style_set: StyleSet,
-    pub(crate) style: Style,
+    pub(crate) style_set: Arc<StyleSet>,
+    pub(crate) style: Arc<Style>,
 }
 
 impl_widget_component!(Button; Layout, Render, Event, Animation; tab_index => 1);
@@ -277,13 +279,14 @@ impl Button {
             .overrides
             .button
             .style_set
-            .unwrap_or_else(StyleSet::button_default);
+            .map(Arc::new)
+            .unwrap_or_else(default_button_style_set);
         Self::assemble(text.into(), style_set, config.disabled, false, config.size)
     }
 
     pub(crate) fn assemble(
         text: String,
-        style_set: StyleSet,
+        style_set: Arc<StyleSet>,
         disabled: bool,
         block: bool,
         button_size: ControlSize,
@@ -299,12 +302,12 @@ impl Button {
             ripple: None,
             ripple_dirty: false,
             style_set,
-            style: Style::default(),
+            style: default_button_style(),
         }
     }
 
     pub fn style_set(mut self, style_set: StyleSet) -> Self {
-        self.style_set = style_set;
+        self.style_set = Arc::new(style_set);
         self
     }
 
@@ -314,7 +317,7 @@ impl Button {
     }
 
     pub fn style(mut self, style: Style) -> Self {
-        self.style = style;
+        self.style = Arc::new(style);
         self
     }
 
@@ -336,15 +339,24 @@ impl Button {
     }
 
     pub fn primary(self) -> Self {
-        self.style_set(StyleSet::button_primary())
+        Self {
+            style_set: primary_button_style_set(),
+            ..self
+        }
     }
 
     pub fn ghost(self) -> Self {
-        self.style_set(StyleSet::button_ghost())
+        Self {
+            style_set: ghost_button_style_set(),
+            ..self
+        }
     }
 
     pub fn danger(self) -> Self {
-        self.style_set(StyleSet::button_danger())
+        Self {
+            style_set: danger_button_style_set(),
+            ..self
+        }
     }
 
     pub fn disabled(mut self, disabled: bool) -> Self {
@@ -366,11 +378,15 @@ impl Button {
                 focused: self.focused && !self.pressed,
                 disabled: self.disabled,
             })
-            .apply(self.style.clone())
+            .apply(self.style.as_ref().clone())
     }
 
     fn intrinsic_size(&self) -> Size {
-        let base = self.style_set.normal.clone().apply(self.style.clone());
+        let base = self
+            .style_set
+            .normal
+            .clone()
+            .apply(self.style.as_ref().clone());
         let font_size = base.font_size.default_size().max(1.0);
         // 按钮外框高度由 Style 固定；文字行盒在 render 时于 content 内居中。
         let height = base
@@ -445,4 +461,29 @@ impl Button {
             Color::black().with_alpha(36)
         }
     }
+}
+
+fn default_button_style_set() -> Arc<StyleSet> {
+    static STYLE_SET: OnceLock<Arc<StyleSet>> = OnceLock::new();
+    Arc::clone(STYLE_SET.get_or_init(|| Arc::new(StyleSet::button_default())))
+}
+
+fn primary_button_style_set() -> Arc<StyleSet> {
+    static STYLE_SET: OnceLock<Arc<StyleSet>> = OnceLock::new();
+    Arc::clone(STYLE_SET.get_or_init(|| Arc::new(StyleSet::button_primary())))
+}
+
+fn ghost_button_style_set() -> Arc<StyleSet> {
+    static STYLE_SET: OnceLock<Arc<StyleSet>> = OnceLock::new();
+    Arc::clone(STYLE_SET.get_or_init(|| Arc::new(StyleSet::button_ghost())))
+}
+
+fn danger_button_style_set() -> Arc<StyleSet> {
+    static STYLE_SET: OnceLock<Arc<StyleSet>> = OnceLock::new();
+    Arc::clone(STYLE_SET.get_or_init(|| Arc::new(StyleSet::button_danger())))
+}
+
+fn default_button_style() -> Arc<Style> {
+    static STYLE: OnceLock<Arc<Style>> = OnceLock::new();
+    Arc::clone(STYLE.get_or_init(|| Arc::new(Style::default())))
 }

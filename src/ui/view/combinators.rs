@@ -727,7 +727,7 @@ impl ButtonBuilder {
         (
             Button::assemble(
                 self.text,
-                self.style_set,
+                self.style_set.into(),
                 self.disabled,
                 self.block,
                 self.size,
