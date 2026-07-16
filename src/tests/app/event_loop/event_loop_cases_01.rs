@@ -592,7 +592,9 @@ fn active_animation_arms_one_fallback_frame_request() {
 fn declarative_animated_uses_the_window_frame_registration() {
     let start = Instant::now();
     let clock = TestClock::new(start);
-    let animated = Animated::new(0.0_f32).to(1.0, 0.005, Easing::linear);
+    let animated = Animated::new(0.0_f32)
+        .to(1.0, 0.005, Easing::linear)
+        .loop_count(2);
     let root_animated = animated.clone();
     let root_builds = Arc::new(AtomicUsize::new(0));
     let observed_root_builds = Arc::clone(&root_builds);

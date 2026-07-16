@@ -52,13 +52,140 @@ fn capture_animated_source(source: Arc<dyn AnimatedSource>) {
 struct AnimatedInner<T: Animatable + Sync> {
     work_id: ComponentId,
     current: State<T>,
-    animation: Mutex<Option<Animation<T>>>,
+    playback: Mutex<Option<AnimatedPlayback<T>>>,
     owner_tree_scope: Mutex<Option<u64>>,
 }
 
 impl<T: Animatable + Sync> AnimatedInner<T> {
     fn touch(&self) {
         self.current.set(self.current.get_untracked());
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LoopMode {
+    Once,
+    Count(u64),
+    Forever,
+    Alternate,
+}
+
+#[derive(Debug)]
+struct AnimatedPlayback<T: Animatable> {
+    animation: Animation<T>,
+    original_from: T,
+    original_to: T,
+    loop_mode: LoopMode,
+    completed_plays: u64,
+}
+
+impl<T: Animatable> AnimatedPlayback<T> {
+    fn new(animation: Animation<T>, loop_mode: LoopMode) -> Self {
+        Self {
+            original_from: animation.from,
+            original_to: animation.to,
+            animation,
+            loop_mode,
+            completed_plays: 0,
+        }
+    }
+
+    fn is_active(&self) -> bool {
+        self.animation.running
+            && self.animation.duration > 0.0
+            && !matches!(self.loop_mode, LoopMode::Count(0))
+            && !self.animation.is_finished()
+    }
+
+    fn advance(&mut self, dt: f64) -> (T, bool) {
+        let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
+        match self.loop_mode {
+            LoopMode::Once => {
+                let value = self.animation.update(dt);
+                let active = self.animation.running && !self.animation.is_finished();
+                (value, active)
+            }
+            LoopMode::Count(total_plays) => self.advance_counted(dt, total_plays),
+            LoopMode::Forever => self.advance_repeating(dt, false),
+            LoopMode::Alternate => self.advance_repeating(dt, true),
+        }
+    }
+
+    fn advance_counted(&mut self, dt: f64, total_plays: u64) -> (T, bool) {
+        let remaining_plays = total_plays.saturating_sub(self.completed_plays);
+        if remaining_plays == 0 {
+            self.finish_forward(total_plays);
+            return (self.animation.value(), false);
+        }
+
+        let duration = self.animation.duration;
+        let elapsed = self.animation.elapsed + dt;
+        if elapsed >= duration * remaining_plays as f64 {
+            self.finish_forward(total_plays);
+            return (self.animation.value(), false);
+        }
+
+        let crossed = (elapsed / duration).floor() as u64;
+        self.completed_plays = self.completed_plays.saturating_add(crossed);
+        self.set_leg(self.original_from, self.original_to, elapsed % duration);
+        (self.animation.value(), true)
+    }
+
+    fn advance_repeating(&mut self, dt: f64, alternate: bool) -> (T, bool) {
+        let duration = self.animation.duration;
+        let elapsed = self.animation.elapsed + dt;
+        let crossed = (elapsed / duration).floor() as u64;
+        self.completed_plays = self.completed_plays.saturating_add(crossed);
+        let reverse_leg = alternate && self.completed_plays % 2 == 1;
+        if reverse_leg {
+            self.set_leg(self.original_to, self.original_from, elapsed % duration);
+        } else {
+            self.set_leg(self.original_from, self.original_to, elapsed % duration);
+        }
+        (self.animation.value(), true)
+    }
+
+    fn set_leg(&mut self, from: T, to: T, elapsed: f64) {
+        self.animation.from = from;
+        self.animation.to = to;
+        self.animation.elapsed = elapsed;
+        self.animation.running = true;
+    }
+
+    fn finish_forward(&mut self, completed_plays: u64) {
+        self.animation.from = self.original_from;
+        self.animation.to = self.original_to;
+        self.animation.elapsed = self.animation.duration;
+        self.animation.running = false;
+        self.completed_plays = completed_plays;
+    }
+
+    fn restart(&mut self) {
+        self.completed_plays = 0;
+        if matches!(self.loop_mode, LoopMode::Count(0)) {
+            self.finish_forward(0);
+        } else {
+            self.set_leg(self.original_from, self.original_to, 0.0);
+        }
+    }
+
+    fn reverse(&mut self) {
+        std::mem::swap(&mut self.original_from, &mut self.original_to);
+        self.restart();
+    }
+
+    fn configure_loop(&mut self, loop_mode: LoopMode) -> Option<T> {
+        self.loop_mode = loop_mode;
+        self.completed_plays = 0;
+        if matches!(loop_mode, LoopMode::Count(0)) {
+            self.finish_forward(0);
+            return Some(self.animation.value());
+        }
+        if self.animation.duration > 0.0 && self.animation.is_finished() {
+            self.restart();
+            return Some(self.animation.value());
+        }
+        None
     }
 }
 
@@ -92,31 +219,29 @@ impl<T: Animatable + Sync> AnimatedSource for AnimatedInner<T> {
     }
 
     fn is_active(&self) -> bool {
-        self.animation
+        self.playback
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .as_ref()
-            .is_some_and(|animation| animation.running && !animation.is_finished())
+            .is_some_and(AnimatedPlayback::is_active)
     }
 
     fn advance(&self, dt: f64) -> bool {
         let (value, active) = {
-            let mut animation = self
-                .animation
+            let mut playback = self
+                .playback
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            let Some(animation) = animation.as_mut() else {
+            let Some(playback) = playback.as_mut() else {
                 return false;
             };
-            if !animation.running {
+            if !playback.is_active() {
                 return false;
             }
-            if dt <= 0.0 {
+            if !dt.is_finite() || dt <= 0.0 {
                 return true;
             }
-            let value = animation.update(dt);
-            let active = animation.running && !animation.is_finished();
-            (value, active)
+            playback.advance(dt)
         };
         self.current.set(value);
         active
@@ -139,7 +264,7 @@ impl<T: Animatable + Sync> Animated<T> {
             inner: Arc::new(AnimatedInner {
                 work_id: ComponentId::new(NEXT_ANIMATED_ID.fetch_add(1, Ordering::Relaxed)),
                 current: State::new(initial),
-                animation: Mutex::new(None),
+                playback: Mutex::new(None),
                 owner_tree_scope: Mutex::new(None),
             }),
         }
@@ -160,16 +285,41 @@ impl<T: Animatable + Sync> Animated<T> {
             next.stop();
         }
         let value = next.value();
-        *self
+        let mut playback = self
             .inner
-            .animation
+            .playback
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(next);
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let loop_mode = playback
+            .as_ref()
+            .map_or(LoopMode::Once, |playback| playback.loop_mode);
+        *playback = Some(AnimatedPlayback::new(next, loop_mode));
+        drop(playback);
         if immediate {
             self.inner.current.set(value);
         } else {
             self.inner.touch();
         }
+    }
+
+    /// Repeats the forward transition indefinitely.
+    pub fn loop_forever(self) -> Self {
+        self.configure_loop(LoopMode::Forever);
+        self
+    }
+
+    /// Alternates forward and reverse transitions indefinitely.
+    pub fn loop_alternate(self) -> Self {
+        self.configure_loop(LoopMode::Alternate);
+        self
+    }
+
+    /// Plays the forward transition `count` times in total.
+    ///
+    /// A count of zero commits the target immediately without frame work.
+    pub fn loop_count(self, count: u64) -> Self {
+        self.configure_loop(LoopMode::Count(count));
+        self
     }
 
     /// Reads the current value and registers it with the active root build.
@@ -183,11 +333,11 @@ impl<T: Animatable + Sync> Animated<T> {
         capture_animated_source(self.inner.clone());
         let _ = self.inner.current.get();
         self.inner
-            .animation
+            .playback
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .as_ref()
-            .map_or(1.0, Animation::progress)
+            .map_or(1.0, |playback| playback.animation.progress())
     }
 
     /// Returns whether the current transition is at rest.
@@ -195,37 +345,37 @@ impl<T: Animatable + Sync> Animated<T> {
         capture_animated_source(self.inner.clone());
         let _ = self.inner.current.get();
         self.inner
-            .animation
+            .playback
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .as_ref()
-            .is_none_or(Animation::is_finished)
+            .is_none_or(|playback| playback.animation.is_finished())
     }
 
     /// Pauses at the current value and stops requesting animation frames.
     pub fn pause(&self) {
-        if let Some(animation) = self
+        if let Some(playback) = self
             .inner
-            .animation
+            .playback
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .as_mut()
         {
-            animation.pause();
+            playback.animation.pause();
         }
         self.inner.touch();
     }
 
     /// Resumes a paused, unfinished transition.
     pub fn resume(&self) {
-        if let Some(animation) = self
+        if let Some(playback) = self
             .inner
-            .animation
+            .playback
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .as_mut()
         {
-            animation.resume();
+            playback.animation.resume();
         }
         self.inner.touch();
     }
@@ -233,16 +383,16 @@ impl<T: Animatable + Sync> Animated<T> {
     /// Jumps to the target and stops requesting frames.
     pub fn stop(&self) {
         let value = {
-            let mut animation = self
+            let mut playback = self
                 .inner
-                .animation
+                .playback
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            let Some(animation) = animation.as_mut() else {
+            let Some(playback) = playback.as_mut() else {
                 return;
             };
-            animation.stop();
-            animation.value()
+            playback.animation.stop();
+            playback.animation.value()
         };
         self.inner.current.set(value);
     }
@@ -250,16 +400,16 @@ impl<T: Animatable + Sync> Animated<T> {
     /// Restarts the current transition from its original start value.
     pub fn restart(&self) {
         let value = {
-            let mut animation = self
+            let mut playback = self
                 .inner
-                .animation
+                .playback
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            let Some(animation) = animation.as_mut() else {
+            let Some(playback) = playback.as_mut() else {
                 return;
             };
-            animation.restart();
-            animation.value()
+            playback.restart();
+            playback.animation.value()
         };
         self.inner.current.set(value);
     }
@@ -267,18 +417,31 @@ impl<T: Animatable + Sync> Animated<T> {
     /// Swaps the current transition endpoints and restarts it.
     pub fn reverse(&self) {
         let value = {
-            let mut animation = self
+            let mut playback = self
                 .inner
-                .animation
+                .playback
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            let Some(animation) = animation.as_mut() else {
+            let Some(playback) = playback.as_mut() else {
                 return;
             };
-            animation.reverse();
-            animation.value()
+            playback.reverse();
+            playback.animation.value()
         };
         self.inner.current.set(value);
+    }
+
+    fn configure_loop(&self, loop_mode: LoopMode) {
+        let value = self
+            .inner
+            .playback
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .as_mut()
+            .and_then(|playback| playback.configure_loop(loop_mode));
+        if let Some(value) = value {
+            self.inner.current.set(value);
+        }
     }
 }
 
@@ -292,10 +455,10 @@ where
             .field("work_id", &self.inner.work_id)
             .field("value", &self.inner.current.get_untracked())
             .field(
-                "animation",
+                "playback",
                 &self
                     .inner
-                    .animation
+                    .playback
                     .lock()
                     .unwrap_or_else(|poisoned| poisoned.into_inner()),
             )

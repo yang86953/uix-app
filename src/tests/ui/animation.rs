@@ -51,6 +51,7 @@ fn animated_controls_stop_and_restart_frame_work() {
     animated.pause();
     assert!(tree.update_animations(0.25).is_empty());
     assert!((animated.value() - 0.25).abs() < 1e-6);
+    assert!(!animated.is_finished());
 
     animated.resume();
     let updates = tree.update_animations(0.25);
@@ -96,6 +97,99 @@ fn zero_duration_animated_value_commits_without_frame_work() {
     assert_eq!(animated.value(), 4.0);
     assert!(animated.is_finished());
     assert_eq!(animated.progress(), 1.0);
+}
+
+#[test]
+fn counted_animated_loop_consumes_large_deltas_and_stops_at_target() {
+    let animated = Animated::new(0.0_f32)
+        .to(1.0, 1.0, Easing::linear)
+        .loop_count(3);
+    let mut tree = ViewAdapter::build_nodes(animated_root(&animated));
+
+    let updates = tree.update_animations(2.5);
+    assert_eq!(updates.len(), 1);
+    assert!(updates[0].1);
+    assert!((animated.value() - 0.5).abs() < 1e-6);
+    assert!((animated.progress() - 0.5).abs() < 1e-6);
+    assert!(!animated.is_finished());
+
+    let updates = tree.update_animations(0.5);
+    assert_eq!(updates.len(), 1);
+    assert!(!updates[0].1);
+    assert_eq!(animated.value(), 1.0);
+    assert!(animated.is_finished());
+    assert!(tree.update_animations(1.0).is_empty());
+}
+
+#[test]
+fn forever_and_alternate_animated_loops_keep_constant_frame_work() {
+    let repeating = Animated::new(0.0_f32)
+        .to(1.0, 1.0, Easing::linear)
+        .loop_forever();
+    let alternating = Animated::new(0.0_f32)
+        .to(1.0, 1.0, Easing::linear)
+        .loop_alternate();
+    let mut tree = ViewAdapter::build_nodes(ViewAdapter::capture_root(|| {
+        crate::ui::view::column((
+            label("repeat").opacity(repeating.value()),
+            label("alternate").opacity(alternating.value()),
+        ))
+    }));
+
+    let updates = tree.update_animations(2.25);
+    assert_eq!(updates.len(), 2);
+    assert!(updates.iter().all(|(_, active)| *active));
+    assert!((repeating.value() - 0.25).abs() < 1e-6);
+    assert!((alternating.value() - 0.25).abs() < 1e-6);
+
+    let _ = tree.update_animations(1.0);
+    assert!((repeating.value() - 0.25).abs() < 1e-6);
+    assert!((alternating.value() - 0.75).abs() < 1e-6);
+    assert!(!repeating.is_finished());
+    assert!(!alternating.is_finished());
+
+    repeating.stop();
+    assert!(repeating.is_finished());
+    let updates = tree.update_animations(0.25);
+    assert_eq!(updates.len(), 1);
+    assert!(updates[0].1);
+}
+
+#[test]
+fn zero_count_animated_loop_commits_without_frame_work() {
+    let animated = Animated::new(0.0_f32)
+        .to(1.0, 1.0, Easing::linear)
+        .loop_count(0);
+    let mut tree = ViewAdapter::build_nodes(animated_root(&animated));
+
+    assert_eq!(animated.value(), 1.0);
+    assert!(animated.is_finished());
+    assert!(tree.update_animations(1.0).is_empty());
+}
+
+#[test]
+fn counted_loop_restart_and_reverse_reset_the_whole_sequence() {
+    let animated = Animated::new(0.0_f32)
+        .to(1.0, 1.0, Easing::linear)
+        .loop_count(2);
+    let mut tree = ViewAdapter::build_nodes(animated_root(&animated));
+
+    let _ = tree.update_animations(1.25);
+    assert!((animated.value() - 0.25).abs() < 1e-6);
+
+    animated.restart();
+    assert_eq!(animated.value(), 0.0);
+    let updates = tree.update_animations(2.0);
+    assert_eq!(updates.len(), 1);
+    assert!(!updates[0].1);
+    assert_eq!(animated.value(), 1.0);
+
+    animated.reverse();
+    assert_eq!(animated.value(), 1.0);
+    let updates = tree.update_animations(2.0);
+    assert_eq!(updates.len(), 1);
+    assert!(!updates[0].1);
+    assert_eq!(animated.value(), 0.0);
 }
 
 #[test]
