@@ -49,6 +49,15 @@ pub(super) struct WINDOWPLACEMENT {
 }
 
 #[repr(C)]
+pub(super) struct FLASHWINFO {
+    pub cbSize: u32,
+    pub hwnd: *mut std::ffi::c_void,
+    pub dwFlags: u32,
+    pub uCount: u32,
+    pub dwTimeout: u32,
+}
+
+#[repr(C)]
 pub(super) struct MINMAXINFO {
     pub ptReserved: POINT,
     pub ptMaxSize: POINT,

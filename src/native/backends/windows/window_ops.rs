@@ -273,6 +273,23 @@ impl WindowOps for WindowsWindowOps {
         self.icon_state.set_from_file(path)
     }
 
+    fn os_flash(&mut self) -> Result<()> {
+        self.ensure_valid_window("os_flash")?;
+        let info = super::bindings::FLASHWINFO {
+            cbSize: std::mem::size_of::<super::bindings::FLASHWINFO>() as u32,
+            hwnd: self.hwnd,
+            dwFlags: FLASHW_TRAY | FLASHW_TIMERNOFG,
+            uCount: 3,
+            dwTimeout: 0,
+        };
+        // SAFETY: info is a fully initialized FLASHWINFO for a live HWND. The
+        // BOOL result reports the previous active state, not call success.
+        unsafe {
+            FlashWindowEx(&info);
+        }
+        Ok(())
+    }
+
     fn os_center_on_screen(&mut self) -> Result<()> {
         self.ensure_valid_window("os_center_on_screen")?;
         unsafe {
