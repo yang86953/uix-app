@@ -301,6 +301,7 @@ fn system_theme_follow_mode_exposes_status_without_manual_toggle() {
         &home_count,
         &runtime_count,
         &theme_control,
+        None,
     );
     let mut tree = ViewAdapter::build(root);
     if let Some(root) = tree.root_mut() {
@@ -335,6 +336,55 @@ fn system_theme_follow_mode_exposes_status_without_manual_toggle() {
 }
 
 #[test]
+fn graphics_recovery_acceptance_exposes_stable_user_path() {
+    let active = State::new(PAGE_APP);
+    let timer_ticks = State::new(0u32);
+    let home_count = State::new(0i32);
+    let runtime_count = State::new(0i32);
+    let theme_control = ThemeControl::default();
+    let graphics_recovery_control = crate::demos::context::GraphicsRecoveryControl::new(true);
+    let root = app_shell_with_counters(
+        active,
+        timer_ticks,
+        &home_count,
+        &runtime_count,
+        &theme_control,
+        Some(&graphics_recovery_control),
+    );
+    let mut tree = ViewAdapter::build(root);
+    if let Some(root) = tree.root_mut() {
+        root.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+    }
+    tree.layout();
+
+    let node = |automation_id: &str| {
+        tree.traverse()
+            .iter()
+            .copied()
+            .find(|&id| {
+                tree.get(id)
+                    .and_then(|node| node.automation_id())
+                    .is_some_and(|actual| actual == automation_id)
+            })
+            .unwrap_or_else(|| panic!("missing automation node {automation_id}"))
+    };
+    let status_id = node("runtime-graphics-recovery-status");
+    assert!(tree.get(status_id).is_some_and(|node| node.frame().h > 0.0));
+    let snapshot = tree.automation_snapshot(WindowId::ROOT);
+    assert_eq!(
+        snapshot
+            .find("runtime-graphics-recovery-status")
+            .expect("graphics recovery status snapshot")
+            .accessibility
+            .name
+            .as_deref(),
+        Some(crate::demos::context::GRAPHICS_RECOVERY_READY)
+    );
+    let _ = node("runtime-inject-device-lost");
+    let _ = node("runtime-verify-recovered-interaction");
+}
+
+#[test]
 fn demo_local_counters_survive_root_reconcile() {
     use uix::core::Point;
     use uix::native::traits::input::{KeyMod, MouseButton};
@@ -352,6 +402,7 @@ fn demo_local_counters_survive_root_reconcile() {
             &home_count,
             &runtime_count,
             &theme_control,
+            None,
         )
     });
     let mut tree = ViewAdapter::build_nodes(root);
@@ -388,6 +439,7 @@ fn demo_local_counters_survive_root_reconcile() {
             &home_count,
             &runtime_count,
             &theme_control,
+            None,
         )
     });
     ViewAdapter::reconcile_nodes(&mut tree, next);
@@ -404,6 +456,7 @@ fn demo_local_counters_survive_root_reconcile() {
             &home_count,
             &runtime_count,
             &theme_control,
+            None,
         )
     });
     ViewAdapter::reconcile_nodes(&mut tree, runtime_root);

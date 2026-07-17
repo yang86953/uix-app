@@ -325,18 +325,40 @@ fn create_secondary_window(
         "secondary center_on_screen failed",
         platform_window.center_on_screen(),
     );
-    let engine =
-        match create_preferred_engine(platform_window.as_mut(), width, height, graphics_backend) {
-            Some(engine) => engine,
-            None => {
-                report_window_operation_error(
-                    "secondary engine failure cleanup close failed",
-                    platform_window.close(),
-                );
-                runtime.close_session(window_id);
-                return None;
-            }
-        };
+    #[cfg(feature = "test-harness")]
+    let graphics_faults = match runtime.graphics_fault_signal(window_id) {
+        Some(signal) => signal,
+        None => {
+            report_window_operation_error(
+                "secondary graphics test signal failure cleanup close failed",
+                platform_window.close(),
+            );
+            runtime.close_session(window_id);
+            return None;
+        }
+    };
+    #[cfg(feature = "test-harness")]
+    let preferred_engine = create_preferred_engine(
+        platform_window.as_mut(),
+        width,
+        height,
+        graphics_backend,
+        graphics_faults,
+    );
+    #[cfg(not(feature = "test-harness"))]
+    let preferred_engine =
+        create_preferred_engine(platform_window.as_mut(), width, height, graphics_backend);
+    let engine = match preferred_engine {
+        Some(engine) => engine,
+        None => {
+            report_window_operation_error(
+                "secondary engine failure cleanup close failed",
+                platform_window.close(),
+            );
+            runtime.close_session(window_id);
+            return None;
+        }
+    };
     // 与主窗一致：首帧 present 成功后再 show，避免空窗白屏。
 
     let notifications = container.resolve_clone::<AppNotificationState>();
@@ -455,6 +477,7 @@ pub(super) fn create_preferred_engine(
     width: i32,
     height: i32,
     graphics_backend: GraphicsBackend,
+    #[cfg(feature = "test-harness")] graphics_faults: GraphicsFaultSignal,
 ) -> Option<Box<dyn GraphicsEngine>> {
     // SAFETY: `PlatformWindow` 在同步窗口会话全程拥有该 surface；图形启动与恢复
     // 均在同一事件循环线程执行，且 `NativeSurfaceHandle` 是 !Send + !Sync。
@@ -475,6 +498,8 @@ pub(super) fn create_preferred_engine(
                 graphics_recovery_rebuilder(surface, graphics_backend, gpu.selected_recipe),
             )
             .with_extent(width, height);
+            #[cfg(feature = "test-harness")]
+            let engine = engine.with_test_fault_signal(graphics_faults);
             Some(Box::new(engine))
         }
         Err(report) => {

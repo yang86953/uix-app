@@ -5,6 +5,8 @@ use crate::app::main_thread_queue::MainThreadQueue;
 use crate::app::session_runtime::AppRuntime;
 use crate::app::window_config::WindowConfig;
 use crate::app::Container as DiContainer;
+#[cfg(feature = "test-harness")]
+use crate::draw::engine::graphics_test_harness::GraphicsFaultSignal;
 use crate::native::traits::event::EventLoopWaker;
 use crate::tests::common::*;
 use crate::ui::view::combinators::label;
@@ -146,6 +148,40 @@ fn app_handle_set_theme_rejects_closed_handles() {
 
     assert_eq!(error.code(), Errc::InvalidState);
     assert!(runtime.take_pending_theme().is_none());
+}
+
+#[cfg(feature = "test-harness")]
+#[test]
+fn app_handle_arms_one_device_lost_fault_for_its_window() {
+    let runtime = AppRuntime::new();
+    let alive = Arc::new(AtomicBool::new(true));
+    let graphics_faults = GraphicsFaultSignal::default();
+    graphics_faults.attach_recovering_engine();
+    runtime.register_session_with_graphics_faults(
+        WindowId::ROOT,
+        AppTimerQueue::new(),
+        MainThreadQueue::new(),
+        alive.clone(),
+        graphics_faults.clone(),
+    );
+    let handle = AppHandle::new(
+        WindowId::ROOT,
+        AppState::new(),
+        runtime,
+        DiContainer::new(),
+        alive,
+    );
+
+    handle
+        .inject_graphics_device_lost_for_test()
+        .expect("arm first device-lost fault");
+    let duplicate = handle
+        .inject_graphics_device_lost_for_test()
+        .expect_err("reject duplicate pending fault");
+
+    assert_eq!(duplicate.code(), Errc::InvalidState);
+    assert!(graphics_faults.take_device_lost());
+    assert!(!graphics_faults.take_device_lost());
 }
 
 #[test]

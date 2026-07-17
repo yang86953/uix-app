@@ -1,3 +1,5 @@
+#[cfg(feature = "test-harness")]
+use crate::draw::engine::graphics_test_harness::GraphicsFaultSignal;
 use crate::draw::engine::recovering::*;
 use crate::draw::engine::GraphicsFailure;
 use crate::draw::pipeline::EncodedFrameExecution;
@@ -220,6 +222,42 @@ fn frame_failure_is_retained_then_rebuilt_at_next_begin_boundary() {
         engine.end_frame(&DamageRegion::full()),
         RenderOutcome::Failed(GraphicsFailure::SurfaceLost(_))
     ));
+    assert!(matches!(
+        engine.begin_frame(UpdateStrategy::FullRedraw),
+        RenderOutcome::FrameReady(_)
+    ));
+    assert_eq!(
+        actions.borrow().as_slice(),
+        [RecoveryAction::RebuildSurface]
+    );
+}
+
+#[cfg(feature = "test-harness")]
+#[test]
+fn test_harness_device_loss_fails_one_frame_before_recovery_action() {
+    let actions = Rc::new(RefCell::new(Vec::new()));
+    let recorded_actions = Rc::clone(&actions);
+    let graphics_faults = GraphicsFaultSignal::default();
+    let mut engine = RecoveringGraphicsEngine::new(
+        Box::new(NullEngine::new()),
+        Box::new(move |action, _, _| {
+            recorded_actions.borrow_mut().push(action);
+            Ok(Box::new(NullEngine::new()))
+        }),
+    )
+    .with_test_fault_signal(graphics_faults.clone());
+    engine.initialize(4, 3).expect("initial engine");
+    graphics_faults
+        .arm_device_lost()
+        .expect("arm device-lost fault");
+
+    let first = engine.begin_frame(UpdateStrategy::FullRedraw);
+    let RenderOutcome::Failed(GraphicsFailure::DeviceLost(error)) = first else {
+        panic!("injected fault must fail the next real frame");
+    };
+    assert_eq!(error.code(), Errc::GraphicsDeviceLost);
+    assert!(actions.borrow().is_empty());
+
     assert!(matches!(
         engine.begin_frame(UpdateStrategy::FullRedraw),
         RenderOutcome::FrameReady(_)

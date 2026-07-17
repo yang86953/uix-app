@@ -7,6 +7,8 @@
 //                                      → GUI 跟随系统主题
 //   cargo run --features agent-control --bin uix-demo -- --agent-control
 //                                      → 启用 Agent Bridge 的 GUI
+//   cargo run --features test-harness --bin uix-demo -- --graphics-recovery-acceptance
+//                                      → 显示图形故障恢复验收路径
 // ============================================================================
 
 mod cli;
@@ -21,6 +23,7 @@ struct LaunchOptions {
     cli: bool,
     agent_control: bool,
     follow_system_theme: bool,
+    graphics_recovery_acceptance: bool,
 }
 
 fn parse_launch_options(args: impl IntoIterator<Item = String>) -> LaunchOptions {
@@ -30,6 +33,7 @@ fn parse_launch_options(args: impl IntoIterator<Item = String>) -> LaunchOptions
             "--cli" => options.cli = true,
             "--agent-control" => options.agent_control = true,
             "--follow-system-theme" => options.follow_system_theme = true,
+            "--graphics-recovery-acceptance" => options.graphics_recovery_acceptance = true,
             _ => {}
         }
     }
@@ -61,9 +65,20 @@ fn main() {
         eprintln!("--follow-system-theme 只适用于 GUI 模式，不能与 --cli 同时使用");
         std::process::exit(2);
     }
+    if options.cli && options.graphics_recovery_acceptance {
+        eprintln!("--graphics-recovery-acceptance 只适用于 GUI 模式，不能与 --cli 同时使用");
+        std::process::exit(2);
+    }
     #[cfg(not(feature = "agent-control"))]
     if options.agent_control {
         eprintln!("--agent-control 需要同时启用 Cargo feature：--features agent-control");
+        std::process::exit(2);
+    }
+    #[cfg(not(feature = "test-harness"))]
+    if options.graphics_recovery_acceptance {
+        eprintln!(
+            "--graphics-recovery-acceptance 需要同时启用 Cargo feature：--features test-harness"
+        );
         std::process::exit(2);
     }
 
@@ -75,7 +90,11 @@ fn main() {
         }
     } else {
         info_fn("UIX GUI 演示启动中...");
-        gui::run(options.agent_control, options.follow_system_theme);
+        gui::run(
+            options.agent_control,
+            options.follow_system_theme,
+            options.graphics_recovery_acceptance,
+        );
     }
 }
 
@@ -90,11 +109,13 @@ mod tests {
                 "--cli".to_owned(),
                 "--agent-control".to_owned(),
                 "--follow-system-theme".to_owned(),
+                "--graphics-recovery-acceptance".to_owned(),
             ]),
             LaunchOptions {
                 cli: true,
                 agent_control: true,
                 follow_system_theme: true,
+                graphics_recovery_acceptance: true,
             }
         );
         assert_eq!(

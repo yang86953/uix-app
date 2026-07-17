@@ -8,6 +8,8 @@ use crate::draw::backend::DamageRegion;
 pub mod bootstrap;
 pub mod cpu;
 pub mod factory;
+#[cfg(feature = "test-harness")]
+pub(crate) mod graphics_test_harness;
 pub mod present_upload;
 pub mod recovering;
 pub mod recovery;
