@@ -7,8 +7,28 @@ use crate::common::showcase::{flow_row, info_note, sample_block};
 use crate::common::widgets::{BounceBall, Counter, PulseRing};
 use crate::demos::context::DemoCtx;
 
+const OPEN_THEME_WINDOW_ID: &str = "runtime-open-theme-window";
+const MAIN_THEME_STATE_ID: &str = "runtime-theme-state";
+const CHILD_THEME_STATE_ID: &str = "theme-window-theme-state";
+const CHILD_THEME_TOGGLE_ID: &str = "theme-window-theme-toggle";
+const CHILD_WINDOW_CLOSE_ID: &str = "theme-window-close";
+
+fn theme_state(control: crate::demos::context::ThemeControl, automation_id: &str) -> ViewNode {
+    dynamic_label(move || {
+        if control.is_dark() {
+            "当前主题：暗色".to_string()
+        } else {
+            "当前主题：亮色".to_string()
+        }
+    })
+    .automation_id(automation_id)
+    .font_size(13.0)
+    .color(ColorValue::Neutral(NeutralRole::TextSecondary))
+}
+
 fn theme_window(control: crate::demos::context::ThemeControl) -> ViewNode {
     let toggle_control = control.clone();
+    let state_control = control.clone();
     column([
         row([
             embed(Icon::new("layers").size(24.0)),
@@ -16,13 +36,16 @@ fn theme_window(control: crate::demos::context::ThemeControl) -> ViewNode {
                 .font_size(22.0)
                 .color(ColorValue::Neutral(NeutralRole::Text)),
             label("").flex_grow(1.0),
-            embed(ThemeToggle::new().dark(control.is_dark())).on_click_fn(move || {
-                toggle_control.toggle();
-            }),
+            embed(ThemeToggle::new().dark(control.is_dark()))
+                .on_click_fn(move || {
+                    toggle_control.toggle();
+                })
+                .automation_id(CHILD_THEME_TOGGLE_ID),
         ])
         .align(AlignItems::Center)
         .gap(12.0),
-        label("此窗口拥有独立 WindowSession，与主窗共享 AppState 和 Theme。")
+        theme_state(state_control, CHILD_THEME_STATE_ID),
+        label("此窗口拥有独立 WindowSession，与主窗共享业务 State 和 App 主题。")
             .font_size(13.0)
             .color(ColorValue::Neutral(NeutralRole::TextSecondary)),
         column([
@@ -39,10 +62,22 @@ fn theme_window(control: crate::demos::context::ThemeControl) -> ViewNode {
         .border(1.0, ColorValue::Neutral(NeutralRole::BorderSecondary))
         .radius(8.0),
         label("").flex_grow(1.0),
-        label("AppHandle::open_window + AppHandle::set_theme")
-            .font_size(11.0)
-            .color(ColorValue::Neutral(NeutralRole::TextQuaternary)),
+        row([
+            label("AppHandle::open_window + AppHandle::set_theme")
+                .font_size(11.0)
+                .color(ColorValue::Neutral(NeutralRole::TextQuaternary)),
+            label("").flex_grow(1.0),
+            window_control_named(WindowControl::Close, "关闭主题联动窗口", label("关闭窗口"))
+                .automation_id(CHILD_WINDOW_CLOSE_ID)
+                .padding_h(12.0)
+                .height(32.0)
+                .bg_hover(ColorValue::Neutral(NeutralRole::FillSecondary))
+                .bg_focus(ColorValue::Neutral(NeutralRole::Fill))
+                .bg_active(ColorValue::Neutral(NeutralRole::FillTertiary)),
+        ])
+        .align(AlignItems::Center),
     ])
+    .automation_id("theme-window-root")
     .gap(18.0)
     .padding(EdgeInsets::uniform(24.0))
     .bg(ColorValue::Neutral(NeutralRole::BgLayout))
@@ -80,9 +115,13 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
                     handle.notify_error(&error);
                 }
             })
+            .automation_id(OPEN_THEME_WINDOW_ID)
             .build()
     } else {
-        button("打开主题联动窗口").disabled(true).build()
+        button("打开主题联动窗口")
+            .disabled(true)
+            .automation_id(OPEN_THEME_WINDOW_ID)
+            .build()
     };
 
     PageBuilder::new(tk)
@@ -117,6 +156,17 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
                     ))
                     .gap(10.0)
                 },
+            ])
+            .gap(12.0),
+        )
+        .block(
+            "多窗口 / 共享状态",
+            column_fit([
+                open_window,
+                info_note(
+                    tk,
+                    "open_window 创建独立 WindowSession；副窗主题操作通过共享 State 和 AppHandle 同步回主窗。",
+                ),
             ])
             .gap(12.0),
         )
@@ -181,6 +231,11 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
                 ])
                 .align(AlignItems::Center)
                 .gap(12.0),
+                if let Some(control) = ctx.theme_control() {
+                    theme_state(control.clone(), MAIN_THEME_STATE_ID)
+                } else {
+                    label("当前主题：亮色").automation_id(MAIN_THEME_STATE_ID)
+                },
                 info_note(
                     tk,
                     "follow_system_theme(true) 为 opt-in；本 Demo 默认 false。",
@@ -203,17 +258,6 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
                             "Card=静态",
                             Card::new().title("Card").elevation(1).size(120.0, 40.0),
                         )),
-                ),
-            ])
-            .gap(12.0),
-        )
-        .block(
-            "多窗口 / post_to_ui",
-            column_fit([
-                open_window,
-                info_note(
-                    tk,
-                    "open_window 独立 WindowSession；post_to_ui 仅入目标 session。",
                 ),
             ])
             .gap(12.0),
