@@ -66,6 +66,10 @@ component! {
         }
     }
 
+    viewport_scroll_offset => (&self) -> Option<(f32, f32)> {
+        Some((0.0, self.body_scroll.scroll_offset()))
+    }
+
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
             SystemEvent::Wheel { delta, .. } => {

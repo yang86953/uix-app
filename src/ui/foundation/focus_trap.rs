@@ -43,6 +43,12 @@ component! {
         constraints.clamp(Size::new(0.0, 0.0))
     }
 
+    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
+        -> Vec<(ComponentId, Rect)>
+    {
+        children.iter().map(|child| (child.id, frame)).collect()
+    }
+
     render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
 
     on_event => (&mut self, _event: &SystemEvent) -> EventResult {
@@ -68,6 +74,10 @@ impl FocusTrap {
     pub fn active(mut self, v: bool) -> Self {
         self.active = v;
         self
+    }
+
+    pub(crate) fn is_active(&self) -> bool {
+        self.active
     }
 
     /// Updates the focusable widget list after layout.

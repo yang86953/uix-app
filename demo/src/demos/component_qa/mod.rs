@@ -8,12 +8,11 @@ mod navigation_other;
 
 use uix::prelude::*;
 
-use crate::common::page::PageBuilder;
 use crate::demos::context::DemoCtx;
 
 pub use manifest::{ComponentVisualCase, COMPONENT_VISUAL_CASES};
 
-const CASE_VIEWPORT_WIDTH: f32 = 760.0;
+const CASE_VIEWPORT_WIDTH: f32 = 620.0;
 const CASE_VIEWPORT_HEIGHT: f32 = 390.0;
 
 pub(super) fn qa_target(node: impl IntoWidgetNode) -> ViewNode {
@@ -53,6 +52,11 @@ pub fn page_component_qa(ctx: &DemoCtx<'_>) -> ViewNode {
     let total = COMPONENT_VISUAL_CASES.len();
     let index = case_state.get().min(total.saturating_sub(1));
     let case = &COMPONENT_VISUAL_CASES[index];
+    let qa_tokens = if ctx.theme_control().is_some_and(|control| control.is_dark()) {
+        DesignTokens::antd_dark()
+    } else {
+        DesignTokens::antd_light()
+    };
 
     let reset_state = case_state.clone();
     let previous_state = case_state.clone();
@@ -107,7 +111,7 @@ pub fn page_component_qa(ctx: &DemoCtx<'_>) -> ViewNode {
     ])
     .gap(6.0);
 
-    let stage = column_fit([metadata, controls, build_case(case, ctx.tk)])
+    let stage = column_fit([metadata, controls, build_case(case, &qa_tokens)])
         .key(format!("component-qa-case-{}", case.id))
         .gap(16.0)
         .width(CASE_VIEWPORT_WIDTH)
@@ -115,13 +119,17 @@ pub fn page_component_qa(ctx: &DemoCtx<'_>) -> ViewNode {
         .padding(EdgeInsets::uniform(18.0))
         .bg(ColorValue::Neutral(NeutralRole::BgContainer))
         .border(1.0, ColorValue::Neutral(NeutralRole::BorderSecondary))
-        .radius(ctx.tk.border_radius_lg)
+        .radius(qa_tokens.border_radius_lg)
         .automation_id("component-qa-case");
 
-    PageBuilder::new(ctx.tk)
-        .gap()
-        .block("逐组件视觉状态矩阵", stage)
-        .build()
+    scroll(
+        column_fit([stage])
+            .padding((12.0, 8.0, 20.0, 12.0))
+            .overflow_content(),
+    )
+    .both()
+    .flex_grow(1.0)
+    .build()
 }
 
 #[cfg(test)]
@@ -131,6 +139,8 @@ mod tests {
     use std::collections::BTreeSet;
     use std::fs;
     use std::path::Path;
+    use uix::core::Rect;
+    use uix::ui::test_harness::{ViewAdapter, WidgetCore};
 
     fn collect_rs_files(path: &Path, output: &mut Vec<std::path::PathBuf>) {
         let Ok(entries) = fs::read_dir(path) else {
@@ -169,8 +179,10 @@ mod tests {
         files.push(root.join("src/ui/foundation/focus_trap.rs"));
         files.push(root.join("src/ui/foundation/virtual_scroll.rs"));
 
-        let pattern = Regex::new(r"(?s)component!\s*\{.*?pub struct\s+([A-Z][A-Za-z0-9_]*)")
-            .expect("component declaration regex");
+        let pattern = match Regex::new(r"(?s)component!\s*\{.*?pub struct\s+([A-Z][A-Za-z0-9_]*)") {
+            Ok(pattern) => pattern,
+            Err(error) => panic!("component declaration regex: {error}"),
+        };
         let mut declared = BTreeSet::new();
         for file in files {
             let source = fs::read_to_string(&file)
@@ -214,6 +226,43 @@ mod tests {
                 .or_else(|| display_feedback::build(case.id, &tokens))
                 .or_else(|| navigation_other::build(case.id, &tokens));
             assert!(rendered.is_some(), "missing builder for {}", case.name);
+        }
+    }
+
+    #[test]
+    fn every_component_visual_page_case_has_a_non_zero_target() {
+        let tokens = DesignTokens::antd_light();
+        let ticks = State::new(0u32);
+        let active = State::new(crate::common::page::PAGE_COMPONENT_QA);
+        let component_case = State::new(0usize);
+        for (index, case) in COMPONENT_VISUAL_CASES.iter().enumerate() {
+            component_case.set(index);
+            let ctx =
+                DemoCtx::new(&tokens, &ticks, Some(&active)).with_component_case(&component_case);
+            let mut tree = ViewAdapter::build(page_component_qa(&ctx));
+            if let Some(root) = tree.root_mut() {
+                root.set_frame(Rect::new(0.0, 0.0, 900.0, 640.0));
+            }
+            tree.layout();
+            let target = tree
+                .traverse()
+                .iter()
+                .copied()
+                .find(|id| {
+                    tree.get(*id)
+                        .and_then(|node| node.automation_id())
+                        .is_some_and(|automation_id| automation_id == "component-qa-target")
+                })
+                .unwrap_or_else(|| panic!("{} must expose a QA target", case.name));
+            let frame = tree
+                .get(target)
+                .unwrap_or_else(|| panic!("{} QA target node disappeared", case.name))
+                .frame();
+            assert!(
+                frame.w > 0.0 && frame.h > 0.0,
+                "{} target must have a non-zero frame: {frame:?}",
+                case.name
+            );
         }
     }
 }

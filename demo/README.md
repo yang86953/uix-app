@@ -9,6 +9,7 @@
 cargo run --bin uix-demo              # GUI（默认）
 cargo run --bin uix-demo -- --follow-system-theme
 cargo run --features test-harness --bin uix-demo -- --graphics-recovery-acceptance
+cargo run --features "test-harness agent-control" --bin uix-demo -- --component-qa
 cargo run --bin uix-demo -- --cli     # CLI
 RUST_LOG=debug cargo run --bin uix-demo
 cargo run --features agent-control --bin uix-demo -- --agent-control
@@ -16,7 +17,7 @@ cargo run --features agent-control --bin uix-demo -- --agent-control
 
 Linux GUI 需 Wayland。
 
-`--follow-system-theme` 通过公开 `App::follow_system_theme(true)` 让 GUI 初始主题和后续变化由 OS 托管；该模式显示“跟随系统”状态，不再提供会覆盖托管状态的手动主题开关。`--graphics-recovery-acceptance` 仅在 `test-harness` feature 下显示下一帧 typed `DeviceLost` 注入与恢复后交互路径，Demo 仍通过公开 `AppHandle::inject_graphics_device_lost_for_test()` 使用框架。`--agent-control` 仅用于本机开发预览，必须与 `agent-control` feature 同时启用；它会按 [`使用 · Agent Bridge`](../docs/使用指南/Agent%20Bridge.md#agent-bridge-开发预览) 启动当前用户私有端点。这些 GUI 参数都不能与 `--cli` 同时使用。
+`--follow-system-theme` 通过公开 `App::follow_system_theme(true)` 让 GUI 初始主题和后续变化由 OS 托管；该模式显示“跟随系统”状态，不再提供会覆盖托管状态的手动主题开关。`--graphics-recovery-acceptance` 仅在 `test-harness` feature 下显示下一帧 typed `DeviceLost` 注入与恢复后交互路径，Demo 仍通过公开 `AppHandle::inject_graphics_device_lost_for_test()` 使用框架。`--component-qa` 以隔离页面打开完整公开组件库存，供真实窗口逐组件视觉验收。`--agent-control` 仅用于本机开发预览，必须与 `agent-control` feature 同时启用；它会按 [`使用 · Agent Bridge`](../docs/使用指南/Agent%20Bridge.md#agent-bridge-开发预览) 启动当前用户私有端点。这些 GUI 参数都不能与 `--cli` 同时使用。
 
 ## 目录结构
 
@@ -52,6 +53,7 @@ demo/src/
 | **GUI（默认）** | `cargo run --bin uix-demo` | 12 页多页应用：80+ Widget + App / Provider 能力全景 |
 | **GUI + 系统主题** | `--bin uix-demo -- --follow-system-theme` | 显式 opt-in 系统主题初始值与 live 变化 |
 | **GUI + 图形恢复验收** | `--features test-harness --bin uix-demo -- --graphics-recovery-acceptance` | 下一次真实绘制帧 typed 失败，恢复后继续交互 |
+| **GUI + 逐组件视觉验收** | `--features "test-harness agent-control" --bin uix-demo -- --component-qa` | 隔离展示 88 个公开组件及其适用状态，供真实窗口自动取证 |
 | **GUI + Agent Bridge** | `--features agent-control --bin uix-demo -- --agent-control` | 显式启用本机 `uix.agent.v1` 端点 |
 | **CLI** | `--cli` | `core` / `native` / `draw` / `ui` / `app` / `data` 无 GUI API |
 
@@ -106,6 +108,7 @@ demo/src/
 | Windows 系统主题 live | 以 `--follow-system-theme` 启动 → UI 显示“跟随系统”且无手动开关 → OS 应用主题反转后窗口完成对应换色 → 恢复原 OS 设置后窗口恢复原配色 | 稳定 `automation_id` 断言模式；等待 `revision/presented_revision`；对真实前景窗口做桌面合成像素比较；测试始终恢复 `AppsUseLightTheme` |
 | Windows 图形故障恢复 | 以 `--graphics-recovery-acceptance` 启动 → 进入“应用能力” → 注入下一帧 `DeviceLost` → 状态在恢复后的真实 present 才可见 → 再执行一次用户操作并呈现“恢复后交互成功” | `test-harness` 只在恢复包装器边界注入 typed fault；稳定 `automation_id` 与 `presented_revision` 证明失败后恢复和继续交互；进程日志确认命中 fault，且 D3D11 同 recipe 重建成功 |
 | Provider 子树切换 | 主窗进入“框架能力” → 点击 `English` → 状态变为“当前语言：English”且空态文案变为 `No data`；同页可观察 Large/Small 优先级、构造覆盖和 typed token/统一空态 | 稳定 `automation_id`；`test-harness` 构建中文/英文子树并断言 `render_empty` 结果；真实窗口交互可由应用控制能力执行 |
+| 逐组件视觉矩阵 | 以 `--component-qa` 打开 88 项隔离库存 → 每项显示适用状态 → 浅色桌面、深色紧凑及真实交互逐项截图 | 公开导出精确比对；Agent Bridge 执行指针/键盘/滚动/主题/resize 并等待真实 present；输出 412 状态、316 张 PNG、CSV 与联系表 |
 
 以下 Windows 集成场景运行真实 `uix-demo --agent-control` 进程，需要可交互的 Windows 桌面：
 
@@ -114,9 +117,13 @@ cargo test --features agent-control --test agent_gui_windows real_demo_opens_the
 cargo test --features agent-control --test agent_gui_windows real_demo_follows_live_windows_system_theme_and_restores_preference -- --ignored --nocapture
 cargo test --features agent-control,test-harness --test agent_gui_windows real_demo_recovers_from_injected_device_loss_and_accepts_followup_interaction -- --ignored --nocapture
 cargo test --features agent-control,test-harness --test agent_gui_windows real_demo_switches_provider_locale_and_presents_framework_capabilities -- --ignored --nocapture
+cargo test --features agent-control,test-harness --test agent_gui_windows real_demo_captures_every_component_and_applicable_visual_state -- --ignored --nocapture
+cargo test --features agent-control,test-harness --test agent_gui_windows build_component_visual_contact_sheets -- --ignored --nocapture
 ```
 
 Provider 子树场景通过 Agent Bridge 执行页面导航、语言切换与滚动，等待每次真实 present 后断言语义树中的文案、Provider 尺寸优先级、typed token 与自定义空态；设置 `UIX_GUI_EVIDENCE_DIR` 可同时输出首页、中文、English 和滚动后四张 PNG。它使用 Vulkan pixel-upload 路径，以便现有桌面像素 oracle 对真实窗口进行严格取证；D3D11 swapchain 另由 WGC smoke 证据覆盖。
+
+逐组件矩阵使用 Demo 内建 `--component-qa` 页和固定 `automation_id`，原始证据写入 `target/debug-captures/uix-component-visual/`；仓库归档的组件/状态映射、联系表和结论见 [`逐组件视觉质量报告`](../test-reports/20260717-uix-component-visual/report.md)。
 
 另有快速的无窗口构建契约测试：
 

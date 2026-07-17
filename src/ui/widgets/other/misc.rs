@@ -511,7 +511,10 @@ component! {
         drag_hover: bool,
         max_count: usize,
         pending_change: RefCell<Option<String>>,
+        focused: bool,
     }
+
+    tab_index => (&self) -> i32 { 1 }
 
     measure => (&self, constraints: Constraints) -> Size {
         let list_h = self.file_list.len() as f32 * 32.0;
@@ -520,6 +523,14 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
+            SystemEvent::FocusIn => {
+                self.focused = true;
+                EventResult::Handled
+            }
+            SystemEvent::FocusOut => {
+                self.focused = false;
+                EventResult::Handled
+            }
             SystemEvent::FileDrop { files, .. } if self.drag => self.queue_dropped_files(files),
             _ => EventResult::NotHandled,
         }
@@ -546,6 +557,9 @@ component! {
 
         let drag_border = if self.drag_hover { primary } else { border };
         ctx.stroke_rect(upload_rect, drag_border, if self.drag && self.drag_hover { 2.0 } else { 1.0 }, r);
+        if self.focused {
+            ctx.stroke_rect(upload_rect, primary, 2.0, r);
+        }
         if self.drag && self.drag_hover {
             ctx.stroke_rect(Rect::new(frame.x + 4.0, frame.y + 4.0, frame.w - 8.0, 92.0), primary, 1.0, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
         }
@@ -610,6 +624,7 @@ impl Upload {
             drag_hover: false,
             max_count: 10,
             pending_change: RefCell::new(None),
+            focused: false,
         }
     }
     pub fn accept(mut self, a: &str) -> Self {

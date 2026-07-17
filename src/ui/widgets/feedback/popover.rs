@@ -5,7 +5,7 @@ use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
 use crate::ui::animation::{presets, AnimationConfig, TransitionPlayer};
 use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, MouseButton, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyCode, MouseButton, SystemEvent, WidgetTree};
 
 /// Popover placement.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -46,6 +46,7 @@ component! {
         transition: TransitionPlayer,
         closing: bool,
         transition_dirty: bool,
+        focused: bool,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -54,7 +55,34 @@ component! {
 
     hit_test_children => (&self) -> bool { false }
 
+    tab_index => (&self) -> i32 { 1 }
+
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        match event {
+            SystemEvent::FocusIn => {
+                self.focused = true;
+                return EventResult::Handled;
+            }
+            SystemEvent::FocusOut => {
+                self.focused = false;
+                return EventResult::Handled;
+            }
+            SystemEvent::KeyDown { key: KeyCode::Enter | KeyCode::Space, .. }
+                if self.trigger == PopoverTrigger::Click =>
+            {
+                if self.visible {
+                    self.close();
+                } else {
+                    self.open();
+                }
+                return EventResult::Handled;
+            }
+            SystemEvent::KeyDown { key: KeyCode::Escape, .. } if self.is_present() => {
+                self.close();
+                return EventResult::Handled;
+            }
+            _ => {}
+        }
         match self.trigger {
             PopoverTrigger::Click => {
                 if let SystemEvent::PointerDown {
@@ -109,7 +137,16 @@ component! {
         let text_secondary = ctx.tokens().color_text_secondary();
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
 
-        ctx.stroke_rect(frame, border, 1.0, r);
+        ctx.stroke_rect(
+            frame,
+            if self.focused {
+                ctx.tokens().color_primary()
+            } else {
+                border
+            },
+            if self.focused { 2.0 } else { 1.0 },
+            r,
+        );
         ctx.text_center("Popover", frame, text_secondary, 12.0);
 
         if self.is_present() {
@@ -204,6 +241,7 @@ impl Popover {
             transition: TransitionPlayer::new(presets::tooltip_enter()),
             closing: false,
             transition_dirty: false,
+            focused: false,
         }
     }
     pub fn title(mut self, t: impl Into<String>) -> Self {

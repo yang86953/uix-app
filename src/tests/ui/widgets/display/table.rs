@@ -1,6 +1,18 @@
 use crate::tests::common::*;
 use crate::ui::view::adapter::ViewAdapter;
 use crate::ui::widgets::display::table::*;
+
+#[test]
+fn populated_table_is_focusable_and_tracks_focus_state() {
+    let mut table = Table::new()
+        .columns(vec![TableColumn::new("Name", 120.0)])
+        .rows(vec![vec!["UIX".into()]]);
+
+    assert_eq!(WidgetComponent::tab_index(&table), 1);
+    assert_eq!(table.on_event(&SystemEvent::FocusIn), EventResult::Handled);
+    assert_eq!(table.on_event(&SystemEvent::FocusOut), EventResult::Handled);
+    assert_eq!(WidgetComponent::tab_index(&Table::new()), 0);
+}
 use crate::ui::SnapshotTableColumnGroup;
 
 fn click(x: f32, y: f32) -> SystemEvent {

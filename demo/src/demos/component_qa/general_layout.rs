@@ -156,7 +156,8 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 ])
                 .three_columns()
                 .gap(8.0)
-                .into(),
+                .width(340.0)
+                .height(68.0),
             ),
             label("三列在紧凑窗口中仍需保持对齐和安全间距")
                 .font_size(11.0)
@@ -165,7 +166,7 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
         .gap(12.0),
         "layout" => qa_target_view(embed(tree! { Layout::new().bg(tk.color_bg_layout) => [
             tree! { Header::new(42.0).bg(tk.color_primary_bg) => [Label::new("Header")]},
-            tree! { Container::new().size(620.0, 150.0).dir(FlexDirection::Row) => [
+            tree! { Container::new().size(560.0, 150.0).dir(FlexDirection::Row) => [
                 tree! { Sider::new(130.0).bg(tk.color_fill_secondary) => [Label::new("Sider")]},
                 tree! { Content::new().bg(tk.color_bg_container) => [Label::new("Content / 主内容区域")]},
             ]},
@@ -176,16 +177,22 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 Label::new("Header / 72 px").color(tk.color_primary),
             ]},
         )),
-        "sider" => qa_target_view(embed(
-            tree! { Sider::new(220.0).bg(tk.color_fill_secondary) => [
-                Label::new("Sider 220 px"),
-                Label::new("导航区域"),
-            ]},
-        )),
-        "content" => qa_target_view(embed(tree! { Content::new().bg(tk.color_bg_container) => [
-            Label::new("Content 主内容"),
-            Label::new("真实内容需要保持安全边距与清晰层级"),
-        ]})),
+        "sider" => qa_target_view(
+            column([embed(
+                tree! { Sider::new(220.0).bg(tk.color_fill_secondary) => [
+                    Label::new("Sider 220 px"),
+                    Label::new("导航区域"),
+                ]},
+            )])
+            .height(160.0),
+        ),
+        "content" => qa_target_view(
+            column([embed(tree! { Content::new().bg(tk.color_bg_container) => [
+                Label::new("Content 主内容"),
+                Label::new("真实内容需要保持安全边距与清晰层级"),
+            ]})])
+            .height(160.0),
+        ),
         "footer" => qa_target_view(embed(
             tree! { Footer::new(64.0).bg(tk.color_fill_tertiary) => [
                 Label::new("Footer / 64 px"),
@@ -221,7 +228,7 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
         ]),
         "scroll-view" => qa_target(
             ScrollView::new(ScrollDirection::Vertical)
-                .size(620.0, 190.0)
+                .size(560.0, 190.0)
                 .children(
                     (0..18)
                         .map(|index| {
@@ -235,7 +242,7 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
             VirtualScroll::new()
                 .item_count(1_000)
                 .item_height(30.0)
-                .size(620.0, 190.0)
+                .size(560.0, 190.0)
                 .render(|index| {
                     label(format!("Virtual row {index:04}"))
                         .height(30.0)

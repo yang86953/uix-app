@@ -27,11 +27,35 @@ impl WidgetTree {
                 }
                 return EventResult::NotHandled;
             }
+            if let Some(owner) = self
+                .managers()
+                .focus
+                .focused_component()
+                .and_then(|focused| self.active_focus_trap_ancestor(focused))
+            {
+                if let Some(next) = self.focus_next_in_scope(owner, forward) {
+                    self.set_focus(Some(next));
+                    return EventResult::Handled;
+                }
+                return EventResult::NotHandled;
+            }
             if let Some(next) = self.focus_next(forward) {
                 self.set_focus(Some(next));
                 return EventResult::Handled;
             }
             return EventResult::NotHandled;
+        }
+
+        // Escape is owned by the top overlay even when focus is still on the
+        // trigger behind it (for example a Drawer without an initial child).
+        // Route dismissal before the normal focused-node path so modal
+        // overlays cannot become keyboard-inaccessible.
+        if key == KeyCode::Escape {
+            if let Some(owner) = self.overlay_stack.top().map(|entry| entry.owner()) {
+                if self.dispatch_to(owner, event) == EventResult::Handled {
+                    return EventResult::Handled;
+                }
+            }
         }
 
         let Some(target) = self.managers().focus.focused_component() else {
@@ -57,6 +81,23 @@ impl WidgetTree {
             self.keyboard_activation = Some((target, key, mods));
         }
         result
+    }
+
+    fn active_focus_trap_ancestor(&self, target: WidgetId) -> Option<WidgetId> {
+        let mut current = Some(target);
+        while let Some(id) = current {
+            let node = self.get(id)?;
+            if node
+                .component()
+                .as_any()
+                .downcast_ref::<crate::ui::foundation::FocusTrap>()
+                .is_some_and(crate::ui::foundation::FocusTrap::is_active)
+            {
+                return Some(id);
+            }
+            current = node.parent();
+        }
+        None
     }
 
     pub(super) fn dispatch_key_up(&mut self, event: &SystemEvent, key: KeyCode) -> EventResult {

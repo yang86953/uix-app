@@ -786,7 +786,7 @@ fn scrollview_wheel_registers_composite_scroll_strip() {
     assert_eq!(
         tree.dispatch_event(&SystemEvent::Wheel {
             pos: Point::new(20.0, 20.0),
-            delta: Point::new(0.0, 1.0),
+            delta: Point::new(0.0, -1.0),
         }),
         EventResult::Handled
     );
@@ -854,7 +854,7 @@ fn transformed_scrollview_repaints_without_retaining_a_composite_delta() {
     assert_eq!(
         tree.dispatch_event(&SystemEvent::Wheel {
             pos: Point::new(20.0, 20.0),
-            delta: Point::new(0.0, 1.0),
+            delta: Point::new(0.0, -1.0),
         }),
         EventResult::Handled
     );
@@ -904,7 +904,7 @@ fn scrollview_wheel_at_scroll_boundary_does_not_fallback_invalidate() {
     assert_eq!(
         tree.dispatch_event(&SystemEvent::Wheel {
             pos: Point::new(20.0, 20.0),
-            delta: Point::new(0.0, 1.0),
+            delta: Point::new(0.0, -1.0),
         }),
         EventResult::NotHandled
     );

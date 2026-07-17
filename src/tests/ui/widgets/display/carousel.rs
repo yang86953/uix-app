@@ -129,6 +129,11 @@ fn carousel_change_requests_narrow_layout_and_swaps_real_child_frames() {
         .expect("carousel root")
         .set_frame(Rect::new(0.0, 0.0, 300.0, 200.0));
     tree.layout();
+    assert!(
+        tree.get(root).unwrap().is_focusable(),
+        "child-dependent tab_index must refresh after Carousel layout"
+    );
+    assert!(tree.collect_focusable().contains(&root));
     tree.set_focus(Some(root));
     tree.invalidation().lock().unwrap().clear();
 

@@ -24,6 +24,7 @@ struct LaunchOptions {
     agent_control: bool,
     follow_system_theme: bool,
     graphics_recovery_acceptance: bool,
+    component_qa: bool,
 }
 
 fn parse_launch_options(args: impl IntoIterator<Item = String>) -> LaunchOptions {
@@ -34,6 +35,7 @@ fn parse_launch_options(args: impl IntoIterator<Item = String>) -> LaunchOptions
             "--agent-control" => options.agent_control = true,
             "--follow-system-theme" => options.follow_system_theme = true,
             "--graphics-recovery-acceptance" => options.graphics_recovery_acceptance = true,
+            "--component-qa" => options.component_qa = true,
             _ => {}
         }
     }
@@ -53,6 +55,40 @@ fn parse_log_level() -> Level {
         .unwrap_or(Level::Info)
 }
 
+fn run_gui(options: LaunchOptions) {
+    let run = move || {
+        gui::run(
+            options.agent_control,
+            options.follow_system_theme,
+            options.graphics_recovery_acceptance,
+            options.component_qa,
+        );
+    };
+
+    #[cfg(windows)]
+    {
+        // Windows executable main threads default to a small stack. The component
+        // acceptance page intentionally constructs deeply nested, realistic view
+        // trees, so keep the Win32 message loop on a dedicated UI thread with a
+        // bounded stack large enough for build/reconcile/layout recursion.
+        const WINDOWS_GUI_STACK_BYTES: usize = 8 * 1024 * 1024;
+        let ui_thread = match std::thread::Builder::new()
+            .name("uix-demo-gui".to_string())
+            .stack_size(WINDOWS_GUI_STACK_BYTES)
+            .spawn(run)
+        {
+            Ok(ui_thread) => ui_thread,
+            Err(error) => panic!("spawn Windows UI thread: {error}"),
+        };
+        if let Err(payload) = ui_thread.join() {
+            std::panic::resume_unwind(payload);
+        }
+    }
+
+    #[cfg(not(windows))]
+    run();
+}
+
 fn main() {
     Logger::instance().set_level(parse_log_level());
     let options = parse_launch_options(std::env::args().skip(1));
@@ -67,6 +103,10 @@ fn main() {
     }
     if options.cli && options.graphics_recovery_acceptance {
         eprintln!("--graphics-recovery-acceptance 只适用于 GUI 模式，不能与 --cli 同时使用");
+        std::process::exit(2);
+    }
+    if options.cli && options.component_qa {
+        eprintln!("--component-qa 只适用于 GUI 模式，不能与 --cli 同时使用");
         std::process::exit(2);
     }
     #[cfg(not(feature = "agent-control"))]
@@ -90,11 +130,7 @@ fn main() {
         }
     } else {
         info_fn("UIX GUI 演示启动中...");
-        gui::run(
-            options.agent_control,
-            options.follow_system_theme,
-            options.graphics_recovery_acceptance,
-        );
+        run_gui(options);
     }
 }
 
@@ -110,12 +146,14 @@ mod tests {
                 "--agent-control".to_owned(),
                 "--follow-system-theme".to_owned(),
                 "--graphics-recovery-acceptance".to_owned(),
+                "--component-qa".to_owned(),
             ]),
             LaunchOptions {
                 cli: true,
                 agent_control: true,
                 follow_system_theme: true,
                 graphics_recovery_acceptance: true,
+                component_qa: true,
             }
         );
         assert_eq!(
