@@ -294,10 +294,12 @@ fn system_theme_follow_mode_exposes_status_without_manual_toggle() {
     let timer_ticks = State::new(0u32);
     let home_count = State::new(0i32);
     let runtime_count = State::new(0i32);
+    let component_case = State::new(0usize);
     let theme_control = ThemeControl::new(true);
     let root = app_shell_with_counters(
         active,
         timer_ticks,
+        &component_case,
         &home_count,
         &runtime_count,
         &theme_control,
@@ -341,11 +343,13 @@ fn graphics_recovery_acceptance_exposes_stable_user_path() {
     let timer_ticks = State::new(0u32);
     let home_count = State::new(0i32);
     let runtime_count = State::new(0i32);
+    let component_case = State::new(0usize);
     let theme_control = ThemeControl::default();
     let graphics_recovery_control = crate::demos::context::GraphicsRecoveryControl::new(true);
     let root = app_shell_with_counters(
         active,
         timer_ticks,
+        &component_case,
         &home_count,
         &runtime_count,
         &theme_control,
@@ -393,12 +397,14 @@ fn demo_local_counters_survive_root_reconcile() {
     let timer_ticks = State::new(0u32);
     let home_count = State::new(0i32);
     let runtime_count = State::new(0i32);
+    let component_case = State::new(0usize);
     let theme_control = ThemeControl::default();
 
     let root = ViewAdapter::capture_root(|| {
         app_shell_with_counters(
             active.clone(),
             timer_ticks.clone(),
+            &component_case,
             &home_count,
             &runtime_count,
             &theme_control,
@@ -436,6 +442,7 @@ fn demo_local_counters_survive_root_reconcile() {
         app_shell_with_counters(
             active.clone(),
             timer_ticks.clone(),
+            &component_case,
             &home_count,
             &runtime_count,
             &theme_control,
@@ -453,6 +460,7 @@ fn demo_local_counters_survive_root_reconcile() {
         app_shell_with_counters(
             active.clone(),
             timer_ticks.clone(),
+            &component_case,
             &home_count,
             &runtime_count,
             &theme_control,
@@ -505,6 +513,7 @@ fn framework_locale_click_survives_root_reconcile() {
     let timer_ticks = State::new(0u32);
     let home_count = State::new(0i32);
     let runtime_count = State::new(0i32);
+    let component_case = State::new(0usize);
     let theme_control = ThemeControl::default();
     let framework_control = crate::demos::context::FrameworkControl::default();
 
@@ -512,6 +521,7 @@ fn framework_locale_click_survives_root_reconcile() {
         app_shell_with_controls(
             active.clone(),
             timer_ticks.clone(),
+            &component_case,
             &home_count,
             &runtime_count,
             &theme_control,
@@ -562,6 +572,7 @@ fn framework_locale_click_survives_root_reconcile() {
         app_shell_with_controls(
             active.clone(),
             timer_ticks.clone(),
+            &component_case,
             &home_count,
             &runtime_count,
             &theme_control,

@@ -1,0 +1,292 @@
+use uix::prelude::*;
+
+use super::{qa_row, qa_target, qa_target_view, qa_variant};
+
+fn menu_item(key: &str, label: &str, icon: &str, disabled: bool) -> MenuItem {
+    MenuItem {
+        key: key.into(),
+        label: label.into(),
+        icon: icon.into(),
+        disabled,
+    }
+}
+
+pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
+    let view = match id {
+        "anchor" => qa_target(
+            Anchor::new(vec![
+                AnchorItem::new("组件库存", "#inventory"),
+                AnchorItem::new("视觉矩阵", "#visual"),
+                AnchorItem::new("回归结论", "#report"),
+            ])
+            .set_offset_top(8.0),
+        ),
+        "breadcrumb" => qa_target(
+            Breadcrumb::new()
+                .item(BreadcrumbItem::new("UIX"))
+                .item(BreadcrumbItem::new("组件"))
+                .item(BreadcrumbItem::new("视觉质量验收").active()),
+        ),
+        "dropdown" => qa_target(Dropdown::new("验收操作").items(vec![
+            "查看证据",
+            "重新执行",
+            "标记缺陷",
+            "导出报告",
+        ])),
+        "menu" => column_fit([
+            qa_variant(
+                "Horizontal / target",
+                qa_target(
+                    Menu::new()
+                        .add_item(menu_item("inventory", "库存", "grid", false))
+                        .add_item(menu_item("visual", "视觉", "eye", false))
+                        .add_item(menu_item("disabled", "禁用", "lock", true))
+                        .mode(MenuMode::Horizontal)
+                        .active_key("visual"),
+                ),
+            ),
+            qa_variant(
+                "Vertical",
+                embed(
+                    Menu::new()
+                        .add_item(menu_item("base", "基础", "home", false))
+                        .add_item(menu_item("state", "状态", "settings", false))
+                        .mode(MenuMode::Vertical)
+                        .active_key("base"),
+                ),
+            ),
+        ])
+        .gap(14.0),
+        "nav-item" => {
+            let shared = SharedActive::new(std::cell::Cell::new(1));
+            qa_row([
+                qa_variant(
+                    "Selected / target",
+                    qa_target(NavItem::new("组件验收", 1, shared.clone()).icon("eye")),
+                ),
+                qa_variant(
+                    "Compact",
+                    embed(NavItem::new("视觉", 2, shared).icon("grid").compact(true)),
+                ),
+            ])
+        }
+        "nav-group" => {
+            let items = NavGroup::new()
+                .item("组件库存", "grid")
+                .item("视觉矩阵", "eye")
+                .item("质量报告", "file-text")
+                .active_index(1)
+                .build();
+            qa_target(
+                Space::new()
+                    .size(SpaceSize::Small)
+                    .width(210.0)
+                    .height(150.0)
+                    .direction(FlexDirection::Column)
+                    .children(
+                        items
+                            .into_iter()
+                            .map(|item| Box::new(item) as Box<dyn WidgetComponent>)
+                            .collect(),
+                    ),
+            )
+        }
+        "navigation" => qa_target_view(embed(
+            Navigation::new("UIX Quality")
+                .item_with_icon("组件库存", "inventory", "grid")
+                .item_with_icon("视觉矩阵", "visual", "eye")
+                .item_with_icon("质量报告", "report", "file-text")
+                .active_index(1)
+                .width(220.0)
+                .height(190.0)
+                .show_version(false)
+                .build(tk),
+        )),
+        "pagination" => column_fit([
+            qa_variant(
+                "Middle / target",
+                qa_target(Pagination::new(185, 10).current(7).show_total(true)),
+            ),
+            qa_variant(
+                "Compact",
+                embed(Pagination::new(48, 10).current(1).item_size(24.0)),
+            ),
+        ])
+        .gap(14.0),
+        "steps" => qa_target(
+            Steps::new(vec![
+                Step::new("库存").status(StepStatus::Finish),
+                Step::new("执行")
+                    .description("真实窗口")
+                    .status(StepStatus::Process),
+                Step::new("修复").status(StepStatus::Wait),
+                Step::new("报告").status(StepStatus::Error),
+            ])
+            .current(1),
+        ),
+        "tabs" => qa_target_view(embed(tree! {
+            Tabs::new()
+                .tab("组件", "components")
+                .tab("状态", "states")
+                .tab("证据", "evidence")
+                .active(1)
+                .position(TabPosition::Top)
+                .size(560.0, 150.0) => [
+                    label("88 个组件"),
+                    label("逐组件适用状态矩阵"),
+                    label("Light / Dark / Compact"),
+                ]
+        })),
+        "bar-chart" => qa_target(
+            BarChart::new()
+                .width(560.0)
+                .height(190.0)
+                .show_value(true)
+                .data(vec![
+                    BarData::new("通用", 9.0, tk.color_primary),
+                    BarData::new("输入", 19.0, tk.color_success),
+                    BarData::new("展示", 18.0, tk.color_warning),
+                    BarData::new("反馈", 11.0, tk.color_error),
+                    BarData::new("导航", 10.0, tk.color_info),
+                ]),
+        ),
+        "line-chart" => qa_target(
+            LineChart::new()
+                .width(560.0)
+                .height(190.0)
+                .line_color(tk.color_primary)
+                .show_dots(true)
+                .show_grid(true)
+                .data(vec![
+                    LineData::new("库存", 88.0),
+                    LineData::new("基础", 88.0),
+                    LineData::new("暗色", 88.0),
+                    LineData::new("紧凑", 88.0),
+                ]),
+        ),
+        "pie-chart" => qa_row([
+            qa_variant(
+                "Pie / target",
+                qa_target(PieChart::new().size(180.0).data(vec![
+                    PieData::new("通过", 74.0, tk.color_success),
+                    PieData::new("复核", 10.0, tk.color_warning),
+                    PieData::new("失败", 4.0, tk.color_error),
+                ])),
+            ),
+            qa_variant(
+                "Donut",
+                embed(PieChart::new().size(180.0).donut(0.48).data(vec![
+                    PieData::new("Light", 1.0, tk.color_primary),
+                    PieData::new("Dark", 1.0, tk.color_success),
+                    PieData::new("Compact", 1.0, tk.color_warning),
+                ])),
+            ),
+        ]),
+        "qr-code" => qa_row([
+            qa_variant(
+                "Default / target",
+                qa_target(QRCode::new("https://uix.dev/quality").size(128.0)),
+            ),
+            qa_variant(
+                "Dense",
+                embed(QRCode::new("UIX-COMPONENT-VISUAL-QUALITY-GATE-2026-07-17").size(128.0)),
+            ),
+        ]),
+        "transfer" => qa_target(
+            Transfer::new()
+                .source(vec![
+                    TransferItem {
+                        key: "button".into(),
+                        title: "Button".into(),
+                        selected: false,
+                    },
+                    TransferItem {
+                        key: "input".into(),
+                        title: "Input".into(),
+                        selected: true,
+                    },
+                    TransferItem {
+                        key: "table".into(),
+                        title: "Table".into(),
+                        selected: false,
+                    },
+                ])
+                .target(vec![
+                    TransferItem {
+                        key: "modal".into(),
+                        title: "Modal".into(),
+                        selected: false,
+                    },
+                    TransferItem {
+                        key: "tabs".into(),
+                        title: "Tabs".into(),
+                        selected: false,
+                    },
+                ]),
+        ),
+        "upload" => {
+            let mut upload = Upload::new()
+                .accept(".png,.jpg")
+                .multiple(true)
+                .drag(true)
+                .max_count(4);
+            upload.add_file("button-light.png");
+            upload.add_file("input-dark.png");
+            upload.update_progress(0, 100.0);
+            upload.complete_file(0, true);
+            upload.update_progress(1, 62.0);
+            qa_target(upload)
+        }
+        "watermark" => qa_target_view(ViewNode::new(
+            Watermark::new("UIX QUALITY")
+                .opacity(0.14)
+                .rotate(-22.0)
+                .gap(120.0, 72.0),
+            vec![column_fit([
+                label("组件视觉质量报告").font_size(20.0),
+                label("每个组件都有独立状态矩阵与真实窗口证据。"),
+                label("Light / Dark / Desktop / Compact"),
+            ])
+            .gap(12.0)
+            .padding(EdgeInsets::uniform(24.0))
+            .width(560.0)
+            .height(170.0)],
+        )),
+        "config-provider" => qa_target_view(
+            ConfigProvider::new()
+                .component_size(ControlSize::Large)
+                .disabled(false)
+                .child(|| {
+                    column_fit([
+                        button("继承 Large").primary().build(),
+                        input().placeholder("继承 Large 的 Input").build(),
+                        ConfigProvider::new()
+                            .disabled(true)
+                            .child(|| button("嵌套 Provider 禁用"))
+                            .build(),
+                    ])
+                    .gap(10.0)
+                })
+                .build()
+                .automation_id("component-qa-target"),
+        ),
+        "locale-provider" => qa_target_view(
+            LocaleProvider::new(en_us())
+                .child(|| {
+                    column_fit([
+                        label(format!(
+                            "empty_description: {}",
+                            use_locale().empty_description
+                        )),
+                        embed(Empty::new().icon("inbox")),
+                        label(format!("ok_text: {}", use_locale().ok_text)),
+                    ])
+                    .gap(10.0)
+                })
+                .build()
+                .automation_id("component-qa-target"),
+        ),
+        _ => return None,
+    };
+    Some(view)
+}

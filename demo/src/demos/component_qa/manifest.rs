@@ -1,0 +1,662 @@
+//! 组件级视觉验收库存；每个条目必须有独立场景和证据。
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CaseKind {
+    Widget,
+    Composite,
+    Provider,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ComponentVisualCase {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub category: &'static str,
+    pub kind: CaseKind,
+    pub states: &'static [&'static str],
+}
+
+const fn widget(
+    id: &'static str,
+    name: &'static str,
+    category: &'static str,
+    states: &'static [&'static str],
+) -> ComponentVisualCase {
+    ComponentVisualCase {
+        id,
+        name,
+        category,
+        kind: CaseKind::Widget,
+        states,
+    }
+}
+
+const fn composite(
+    id: &'static str,
+    name: &'static str,
+    category: &'static str,
+    states: &'static [&'static str],
+) -> ComponentVisualCase {
+    ComponentVisualCase {
+        id,
+        name,
+        category,
+        kind: CaseKind::Composite,
+        states,
+    }
+}
+
+const fn provider(
+    id: &'static str,
+    name: &'static str,
+    states: &'static [&'static str],
+) -> ComponentVisualCase {
+    ComponentVisualCase {
+        id,
+        name,
+        category: "Provider",
+        kind: CaseKind::Provider,
+        states,
+    }
+}
+
+pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
+    widget(
+        "button",
+        "Button",
+        "通用",
+        &[
+            "default", "primary", "danger", "ghost", "disabled", "hover", "pressed", "focus",
+        ],
+    ),
+    widget("icon", "Icon", "通用", &["sizes", "semantic-color"]),
+    widget("label", "Label", "通用", &["text-roles", "long-content"]),
+    widget(
+        "typography",
+        "Typography",
+        "通用",
+        &["headings", "paragraph", "long-content"],
+    ),
+    widget("divider", "Divider", "通用", &["horizontal", "vertical"]),
+    widget(
+        "space",
+        "Space",
+        "通用",
+        &["small", "middle", "large", "horizontal", "vertical"],
+    ),
+    widget(
+        "float-button",
+        "FloatButton",
+        "通用",
+        &["default", "badge", "tooltip", "hover", "pressed", "focus"],
+    ),
+    composite(
+        "float-button-back-top",
+        "FloatButtonBackTop",
+        "通用",
+        &["default", "tooltip", "hover", "pressed", "focus"],
+    ),
+    widget(
+        "theme-toggle",
+        "ThemeToggle",
+        "通用",
+        &["light", "dark", "hover", "pressed", "focus"],
+    ),
+    widget(
+        "container",
+        "Container",
+        "布局",
+        &["row", "column", "border", "background"],
+    ),
+    widget(
+        "grid",
+        "Grid",
+        "布局",
+        &["two-column", "three-column", "responsive"],
+    ),
+    widget("layout", "Layout", "布局", &["nested", "background"]),
+    widget(
+        "header",
+        "Header",
+        "布局",
+        &["default", "custom-height", "background"],
+    ),
+    widget(
+        "sider",
+        "Sider",
+        "布局",
+        &["default", "custom-width", "background"],
+    ),
+    widget(
+        "content",
+        "Content",
+        "布局",
+        &["default", "background", "long-content"],
+    ),
+    widget(
+        "footer",
+        "Footer",
+        "布局",
+        &["default", "custom-height", "background"],
+    ),
+    widget(
+        "splitter",
+        "Splitter",
+        "布局",
+        &["horizontal", "vertical", "hover", "pressed"],
+    ),
+    widget("affix", "Affix", "布局", &["default", "fixed", "scrolled"]),
+    widget(
+        "back-top",
+        "BackTop",
+        "布局",
+        &["hidden", "visible", "hover", "pressed", "focus"],
+    ),
+    widget(
+        "scroll-view",
+        "ScrollView",
+        "布局",
+        &["overflow", "scrollbar", "scrolled"],
+    ),
+    widget(
+        "virtual-scroll",
+        "VirtualScroll",
+        "布局",
+        &["large-data", "scrollbar", "scrolled"],
+    ),
+    widget(
+        "input",
+        "Input",
+        "输入",
+        &[
+            "default",
+            "value",
+            "placeholder",
+            "disabled",
+            "hover",
+            "focus",
+        ],
+    ),
+    widget(
+        "input-number",
+        "InputNumber",
+        "输入",
+        &[
+            "default", "value", "min-max", "disabled", "hover", "pressed", "focus",
+        ],
+    ),
+    widget(
+        "select",
+        "Select",
+        "输入",
+        &[
+            "default", "selected", "multiple", "disabled", "open", "hover", "pressed", "focus",
+        ],
+    ),
+    widget(
+        "checkbox",
+        "Checkbox",
+        "输入",
+        &[
+            "unchecked",
+            "checked",
+            "disabled",
+            "hover",
+            "pressed",
+            "focus",
+        ],
+    ),
+    widget(
+        "radio",
+        "Radio",
+        "输入",
+        &[
+            "default", "selected", "disabled", "hover", "pressed", "focus",
+        ],
+    ),
+    widget(
+        "switch",
+        "Switch",
+        "输入",
+        &["off", "on", "disabled", "hover", "pressed", "focus"],
+    ),
+    widget(
+        "slider",
+        "Slider",
+        "输入",
+        &["minimum", "value", "hover", "pressed", "focus"],
+    ),
+    widget(
+        "rate",
+        "Rate",
+        "输入",
+        &[
+            "empty", "selected", "half", "disabled", "hover", "pressed", "focus",
+        ],
+    ),
+    widget(
+        "date-picker",
+        "DatePicker",
+        "输入",
+        &[
+            "empty",
+            "value",
+            "disabled-date",
+            "open",
+            "hover",
+            "pressed",
+            "focus",
+        ],
+    ),
+    widget(
+        "date-range-picker",
+        "DateRangePicker",
+        "输入",
+        &[
+            "empty",
+            "value",
+            "preset",
+            "disabled-date",
+            "open",
+            "hover",
+            "pressed",
+            "focus",
+        ],
+    ),
+    widget(
+        "time-picker",
+        "TimePicker",
+        "输入",
+        &["empty", "value", "open", "hover", "pressed", "focus"],
+    ),
+    widget(
+        "color-picker",
+        "ColorPicker",
+        "输入",
+        &["default", "value", "open", "hover", "pressed", "focus"],
+    ),
+    widget(
+        "cascader",
+        "Cascader",
+        "输入",
+        &["empty", "hierarchy", "open", "hover", "pressed", "focus"],
+    ),
+    widget(
+        "tree-select",
+        "TreeSelect",
+        "输入",
+        &["empty", "hierarchy", "open", "hover", "pressed", "focus"],
+    ),
+    widget(
+        "auto-complete",
+        "AutoComplete",
+        "输入",
+        &["default", "suggestions", "hover", "pressed", "focus"],
+    ),
+    widget(
+        "mentions",
+        "Mentions",
+        "输入",
+        &["default", "suggestions", "hover", "pressed", "focus"],
+    ),
+    widget(
+        "segmented",
+        "Segmented",
+        "输入",
+        &[
+            "default", "selected", "disabled", "hover", "pressed", "focus",
+        ],
+    ),
+    widget(
+        "form",
+        "Form",
+        "输入",
+        &["vertical", "horizontal", "success", "error"],
+    ),
+    widget(
+        "form-item",
+        "FormItem",
+        "输入",
+        &["required", "help", "success", "error"],
+    ),
+    widget(
+        "avatar",
+        "Avatar",
+        "数据展示",
+        &["text", "sizes", "custom-color"],
+    ),
+    widget(
+        "badge",
+        "Badge",
+        "数据展示",
+        &["count", "text", "status", "overflow"],
+    ),
+    widget(
+        "calendar",
+        "Calendar",
+        "数据展示",
+        &["month", "selected", "compact"],
+    ),
+    widget(
+        "card",
+        "Card",
+        "数据展示",
+        &["bordered", "elevation", "content"],
+    ),
+    widget(
+        "carousel",
+        "Carousel",
+        "数据展示",
+        &["default", "dots", "arrows", "hover", "pressed", "focus"],
+    ),
+    widget(
+        "collapse",
+        "Collapse",
+        "数据展示",
+        &[
+            "collapsed",
+            "expanded",
+            "accordion",
+            "hover",
+            "pressed",
+            "focus",
+        ],
+    ),
+    widget(
+        "descriptions",
+        "Descriptions",
+        "数据展示",
+        &["title", "columns", "long-content"],
+    ),
+    widget(
+        "empty",
+        "Empty",
+        "数据展示",
+        &["default", "custom-description"],
+    ),
+    widget(
+        "image",
+        "Image",
+        "数据展示",
+        &["loaded", "placeholder", "alt"],
+    ),
+    widget(
+        "list",
+        "List",
+        "数据展示",
+        &["data", "empty", "header", "footer"],
+    ),
+    widget(
+        "result-view",
+        "ResultView",
+        "数据展示",
+        &["success", "warning", "error", "hover", "pressed", "focus"],
+    ),
+    widget(
+        "selectable-list",
+        "SelectableList",
+        "数据展示",
+        &["default", "selected", "hover", "pressed", "focus"],
+    ),
+    widget(
+        "skeleton",
+        "Skeleton",
+        "数据展示",
+        &["rect", "circle", "loading"],
+    ),
+    widget(
+        "table",
+        "Table",
+        "数据展示",
+        &[
+            "data",
+            "empty",
+            "selected",
+            "sorted",
+            "scrollbar",
+            "scrolled",
+            "hover",
+            "pressed",
+            "focus",
+        ],
+    ),
+    widget(
+        "tag",
+        "Tag",
+        "数据展示",
+        &["default", "success", "warning", "error", "info"],
+    ),
+    widget(
+        "timeline",
+        "Timeline",
+        "数据展示",
+        &["items", "description", "semantic-color"],
+    ),
+    widget(
+        "tree",
+        "Tree",
+        "数据展示",
+        &[
+            "collapsed",
+            "expanded",
+            "selected",
+            "scrollbar",
+            "hover",
+            "pressed",
+            "focus",
+        ],
+    ),
+    widget(
+        "rich-text",
+        "RichText",
+        "数据展示",
+        &["text", "link", "styles", "long-content"],
+    ),
+    widget(
+        "alert",
+        "Alert",
+        "反馈",
+        &["success", "info", "warning", "error", "closable"],
+    ),
+    widget(
+        "drawer",
+        "Drawer",
+        "反馈",
+        &["closed", "open", "overlay", "focus"],
+    ),
+    widget(
+        "message",
+        "Message",
+        "反馈",
+        &["success", "info", "warning", "error", "overlay"],
+    ),
+    widget(
+        "modal",
+        "Modal",
+        "反馈",
+        &["closed", "open", "overlay", "focus-trap"],
+    ),
+    widget(
+        "notification",
+        "Notification",
+        "反馈",
+        &["success", "info", "warning", "error", "overlay"],
+    ),
+    widget(
+        "popconfirm",
+        "Popconfirm",
+        "反馈",
+        &["closed", "open", "confirm", "cancel", "focus"],
+    ),
+    widget(
+        "popover",
+        "Popover",
+        "反馈",
+        &["closed", "open", "title", "focus"],
+    ),
+    widget(
+        "progress-bar",
+        "ProgressBar",
+        "反馈",
+        &["line", "circle", "indeterminate", "success", "error"],
+    ),
+    widget(
+        "spin",
+        "Spin",
+        "反馈",
+        &["small", "middle", "large", "loading"],
+    ),
+    widget(
+        "tooltip",
+        "Tooltip",
+        "反馈",
+        &["closed", "open", "placements", "focus"],
+    ),
+    widget(
+        "focus-trap",
+        "FocusTrap",
+        "反馈",
+        &["default", "focus-cycle", "nested-controls"],
+    ),
+    widget(
+        "anchor",
+        "Anchor",
+        "导航",
+        &["default", "active", "hover", "pressed", "focus"],
+    ),
+    widget(
+        "breadcrumb",
+        "Breadcrumb",
+        "导航",
+        &["default", "active", "long-content"],
+    ),
+    widget(
+        "dropdown",
+        "Dropdown",
+        "导航",
+        &["closed", "open", "items", "hover", "pressed", "focus"],
+    ),
+    widget(
+        "menu",
+        "Menu",
+        "导航",
+        &[
+            "horizontal",
+            "vertical",
+            "active",
+            "disabled",
+            "hover",
+            "pressed",
+            "focus",
+        ],
+    ),
+    widget(
+        "nav-item",
+        "NavItem",
+        "导航",
+        &[
+            "default", "selected", "compact", "hover", "pressed", "focus",
+        ],
+    ),
+    composite(
+        "nav-group",
+        "NavGroup",
+        "导航",
+        &["items", "selected", "hover", "pressed", "focus"],
+    ),
+    composite(
+        "navigation",
+        "Navigation",
+        "导航",
+        &[
+            "default", "selected", "compact", "hover", "pressed", "focus",
+        ],
+    ),
+    widget(
+        "pagination",
+        "Pagination",
+        "导航",
+        &[
+            "default",
+            "active",
+            "disabled-edge",
+            "hover",
+            "pressed",
+            "focus",
+        ],
+    ),
+    widget(
+        "steps",
+        "Steps",
+        "导航",
+        &["wait", "process", "finish", "error"],
+    ),
+    widget(
+        "tabs",
+        "Tabs",
+        "导航",
+        &["top", "left", "active", "hover", "pressed", "focus"],
+    ),
+    widget(
+        "bar-chart",
+        "BarChart",
+        "图表与其他",
+        &["positive-data", "labels", "grid", "compact"],
+    ),
+    widget(
+        "line-chart",
+        "LineChart",
+        "图表与其他",
+        &["positive-data", "dots", "grid", "compact"],
+    ),
+    widget(
+        "pie-chart",
+        "PieChart",
+        "图表与其他",
+        &["pie", "donut", "legend", "compact"],
+    ),
+    widget(
+        "qr-code",
+        "QRCode",
+        "图表与其他",
+        &["default", "dense-data", "compact"],
+    ),
+    widget(
+        "transfer",
+        "Transfer",
+        "图表与其他",
+        &[
+            "source", "selected", "target", "empty", "hover", "pressed", "focus",
+        ],
+    ),
+    widget(
+        "upload",
+        "Upload",
+        "图表与其他",
+        &[
+            "button",
+            "drag",
+            "file-list",
+            "error",
+            "hover",
+            "pressed",
+            "focus",
+        ],
+    ),
+    widget(
+        "watermark",
+        "Watermark",
+        "图表与其他",
+        &["default", "long-content", "compact"],
+    ),
+    provider(
+        "config-provider",
+        "ConfigProvider",
+        &["inherited-size", "component-override", "empty-render"],
+    ),
+    provider(
+        "locale-provider",
+        "LocaleProvider",
+        &["zh-cn", "en-us", "fallback"],
+    ),
+];

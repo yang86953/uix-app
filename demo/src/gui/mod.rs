@@ -152,6 +152,7 @@ fn page_body(
     active: State<usize>,
     tk: &DesignTokens,
     timer_ticks: &State<u32>,
+    component_case: &State<usize>,
     home_count: &State<i32>,
     runtime_count: &State<i32>,
     theme_control: &ThemeControl,
@@ -164,6 +165,7 @@ fn page_body(
             active,
             tk,
             timer_ticks,
+            component_case,
             home_count,
             runtime_count,
             theme_control,
@@ -180,6 +182,7 @@ fn page_shell(
     active: &State<usize>,
     tk: &DesignTokens,
     timer_ticks: &State<u32>,
+    component_case: &State<usize>,
     home_count: &State<i32>,
     runtime_count: &State<i32>,
     theme_control: &ThemeControl,
@@ -188,6 +191,7 @@ fn page_shell(
 ) -> ViewNode {
     let (icon, title) = PAGE_TITLES[idx];
     let mut ctx = DemoCtx::new(tk, timer_ticks, Some(active))
+        .with_component_case(component_case)
         .with_counters(home_count, runtime_count)
         .with_theme_control(theme_control)
         .with_framework_control(framework_control);
@@ -209,6 +213,7 @@ fn page_content(
     active: State<usize>,
     tk: &DesignTokens,
     timer_ticks: &State<u32>,
+    component_case: &State<usize>,
     home_count: &State<i32>,
     runtime_count: &State<i32>,
     theme_control: &ThemeControl,
@@ -221,6 +226,7 @@ fn page_content(
         &active,
         tk,
         timer_ticks,
+        component_case,
         home_count,
         runtime_count,
         theme_control,
@@ -232,6 +238,7 @@ fn page_content(
 fn app_shell_with_controls(
     active: State<usize>,
     timer_ticks: State<u32>,
+    component_case: &State<usize>,
     home_count: &State<i32>,
     runtime_count: &State<i32>,
     theme_control: &ThemeControl,
@@ -246,6 +253,7 @@ fn app_shell_with_controls(
                 active,
                 &tk,
                 &timer_ticks,
+                component_case,
                 home_count,
                 runtime_count,
                 theme_control,
@@ -274,6 +282,7 @@ fn app_shell_with_controls(
 fn app_shell_with_counters(
     active: State<usize>,
     timer_ticks: State<u32>,
+    component_case: &State<usize>,
     home_count: &State<i32>,
     runtime_count: &State<i32>,
     theme_control: &ThemeControl,
@@ -282,6 +291,7 @@ fn app_shell_with_counters(
     app_shell_with_controls(
         active,
         timer_ticks,
+        component_case,
         home_count,
         runtime_count,
         theme_control,
@@ -294,9 +304,11 @@ fn app_shell_with_counters(
 fn app_shell(active: State<usize>, timer_ticks: State<u32>) -> ViewNode {
     let home_count = State::new(0i32);
     let runtime_count = State::new(0i32);
+    let component_case = State::new(0usize);
     app_shell_with_counters(
         active,
         timer_ticks,
+        &component_case,
         &home_count,
         &runtime_count,
         &ThemeControl::default(),
@@ -307,6 +319,7 @@ fn app_shell(active: State<usize>, timer_ticks: State<u32>) -> ViewNode {
 pub fn run(agent_control: bool, follow_system_theme: bool, graphics_recovery_acceptance: bool) {
     let active = State::new(0usize);
     let timer_ticks = State::new(0u32);
+    let component_case = State::new(0usize);
     let home_count = State::new(0i32);
     let runtime_count = State::new(0i32);
     let theme_control = ThemeControl::new(follow_system_theme);
@@ -397,6 +410,7 @@ pub fn run(agent_control: bool, follow_system_theme: bool, graphics_recovery_acc
     app.root(with_cloned!(
         active,
         timer_ticks,
+        component_case,
         home_count,
         runtime_count,
         theme_control,
@@ -406,6 +420,7 @@ pub fn run(agent_control: bool, follow_system_theme: bool, graphics_recovery_acc
             demo_window(app_shell_with_controls(
                 active,
                 timer_ticks,
+                &component_case,
                 &home_count,
                 &runtime_count,
                 &theme_control,

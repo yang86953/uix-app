@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn page_titles_match_modules() {
     assert_eq!(PAGE_TITLES.len(), PAGE_COUNT);
-    assert_eq!(PAGE_COUNT, 12);
+    assert_eq!(PAGE_COUNT, 13);
 }
 
 #[test]

@@ -44,7 +44,13 @@ const AGENT_SEMANTIC_ACTIONS: &[&str] = &[
     "decrement",
     "scroll",
 ];
-const AGENT_WINDOW_ACTIONS: &[&str] = &["press_key", "click_at"];
+const AGENT_WINDOW_ACTIONS: &[&str] = &[
+    "press_key",
+    "click_at",
+    "pointer_move",
+    "pointer_down",
+    "pointer_up",
+];
 const AGENT_KEY_MODIFIERS: &[&str] = &["shift", "ctrl", "alt", "super"];
 const AGENT_KEY_CODES: &[(&str, KeyCode)] = &[
     ("a", KeyCode::A),
@@ -646,6 +652,21 @@ fn parse_action(value: &Value) -> Result<ParsedAgentAction, WireError> {
         }
         "click_at" => {
             return Ok(ParsedAgentAction::Window(AgentWindowAction::ClickAt {
+                position: Point::new(required_f32(object, "x")?, required_f32(object, "y")?),
+            }))
+        }
+        "pointer_move" => {
+            return Ok(ParsedAgentAction::Window(AgentWindowAction::PointerMove {
+                position: Point::new(required_f32(object, "x")?, required_f32(object, "y")?),
+            }))
+        }
+        "pointer_down" => {
+            return Ok(ParsedAgentAction::Window(AgentWindowAction::PointerDown {
+                position: Point::new(required_f32(object, "x")?, required_f32(object, "y")?),
+            }))
+        }
+        "pointer_up" => {
+            return Ok(ParsedAgentAction::Window(AgentWindowAction::PointerUp {
                 position: Point::new(required_f32(object, "x")?, required_f32(object, "y")?),
             }))
         }

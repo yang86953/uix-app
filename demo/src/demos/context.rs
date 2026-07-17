@@ -191,6 +191,7 @@ pub struct DemoCtx<'a> {
     theme_control: Option<&'a ThemeControl>,
     graphics_recovery_control: Option<&'a GraphicsRecoveryControl>,
     framework_control: Option<&'a FrameworkControl>,
+    component_case: Option<&'a State<usize>>,
 }
 
 impl<'a> DemoCtx<'a> {
@@ -208,6 +209,7 @@ impl<'a> DemoCtx<'a> {
             theme_control: None,
             graphics_recovery_control: None,
             framework_control: None,
+            component_case: None,
         }
     }
 
@@ -239,6 +241,11 @@ impl<'a> DemoCtx<'a> {
         self
     }
 
+    pub fn with_component_case(mut self, component_case: &'a State<usize>) -> Self {
+        self.component_case = Some(component_case);
+        self
+    }
+
     pub fn home_count(&self) -> State<i32> {
         self.home_count.cloned().unwrap_or_else(|| State::new(0))
     }
@@ -257,5 +264,11 @@ impl<'a> DemoCtx<'a> {
 
     pub fn framework_control(&self) -> FrameworkControl {
         self.framework_control.cloned().unwrap_or_default()
+    }
+
+    pub fn component_case(&self) -> State<usize> {
+        self.component_case
+            .cloned()
+            .unwrap_or_else(|| State::new(0))
     }
 }

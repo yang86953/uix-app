@@ -1,6 +1,7 @@
 //! 组件库分类页面 — 对照 `src/ui/widgets/` 与 Gallery 覆盖矩阵。
 
 pub mod charts;
+pub mod component_qa;
 pub mod context;
 pub mod data;
 pub mod feedback;
@@ -17,6 +18,7 @@ pub mod runtime;
 use uix::prelude::*;
 
 pub use charts::page_charts;
+pub use component_qa::page_component_qa;
 pub use context::DemoCtx;
 pub use data::page_data;
 pub use feedback::page_feedback;
@@ -31,8 +33,8 @@ pub use other::page_other;
 pub use runtime::page_runtime;
 
 use crate::common::page::{
-    PAGE_APP, PAGE_CHARTS, PAGE_DATA, PAGE_FEEDBACK, PAGE_FRAMEWORK, PAGE_GALLERY, PAGE_GENERAL,
-    PAGE_HOME, PAGE_INPUT, PAGE_LAYOUT, PAGE_NAV, PAGE_OTHER,
+    PAGE_APP, PAGE_CHARTS, PAGE_COMPONENT_QA, PAGE_DATA, PAGE_FEEDBACK, PAGE_FRAMEWORK,
+    PAGE_GALLERY, PAGE_GENERAL, PAGE_HOME, PAGE_INPUT, PAGE_LAYOUT, PAGE_NAV, PAGE_OTHER,
 };
 
 /// 按侧边栏索引构建对应分类页。
@@ -50,6 +52,7 @@ pub fn build_page(page_index: usize, ctx: &DemoCtx<'_>) -> ViewNode {
         PAGE_OTHER => page_other(ctx),
         PAGE_FRAMEWORK => page_framework(ctx),
         PAGE_GALLERY => page_gallery(ctx),
+        PAGE_COMPONENT_QA => page_component_qa(ctx),
         _ => page_home(ctx),
     }
 }
