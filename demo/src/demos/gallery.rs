@@ -13,8 +13,8 @@ fn coverage_row(
     page: &str,
     ok: bool,
 ) -> ViewNode {
-    let mark = if ok { "✓" } else { "—" };
-    let line = format!("{mark} {name}  →  {page}");
+    let mark = if ok { "已展示" } else { "未展示" };
+    let line = format!("{mark} · {name}  →  {page}");
     let color = if ok {
         tk.color_text
     } else {
@@ -199,7 +199,7 @@ pub fn page_gallery(ctx: &DemoCtx<'_>) -> ViewNode {
         .push(info_note(
             tk,
             &format!(
-                "已展示 {shown}/{total} 项；点击 ✓ 行可跳转到对应演示页。CLI 域：`cargo run --bin uix-demo -- --cli`。"
+                "已展示 {shown}/{total} 项；点击“已展示”行可跳转到对应演示页。CLI 域：`cargo run --bin uix-demo -- --cli`。"
             ),
         ))
         .push(backlog_note(

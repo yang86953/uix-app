@@ -30,16 +30,22 @@ component! {
 
         // image preset
         if !self.image.is_empty() {
-            let icon_str = match self.image.as_str() {
-                "default" => "📦",
-                "search" => "🔍",
-                "file" => "📄",
-                "folder" => "📁",
-                "network" => "🌐",
-                _ => "📦",
+            let icon_name = match self.image.as_str() {
+                "default" => "package",
+                "search" => "search",
+                "file" => "file",
+                "folder" => "folder",
+                "network" => "globe",
+                _ => "package",
             };
             let icon_frame = Rect::new(frame.x, frame.y + 4.0, frame.w, frame.h * 0.4);
-            ctx.text_center(icon_str, icon_frame, text_tertiary, 36.0);
+            crate::ui::widgets::icon::paint_icon_in_frame(
+                ctx,
+                icon_name,
+                icon_frame,
+                text_tertiary,
+                32.0,
+            );
         }
 
         // 图标（25% 高度位置）

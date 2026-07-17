@@ -144,10 +144,10 @@ component! {
         }
         let checked_w = if self.checkable { 14.0 } else { 0.0 };
         if self.checkable && self.checked {
-            let check_y = ctx.visual_center_y(frame, 10.0);
-            ctx.draw_text(
-                "✓",
-                crate::core::Point::new(frame.x + 7.0, check_y),
+            crate::ui::widgets::icon::paint_icon_in_frame(
+                ctx,
+                "check",
+                Rect::new(frame.x + 4.0, frame.y, 14.0, frame.h),
                 fg,
                 10.0,
             );

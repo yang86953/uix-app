@@ -195,6 +195,8 @@ component! {
         materialized_cell_range: Cell<Option<(usize, usize)>>,
         pub(crate) row_h: f32,
         header_h: f32,
+        fixed_width: Option<f32>,
+        fixed_height: Option<f32>,
         selected_row: Cell<Option<usize>>,
         hover_row: Cell<Option<usize>>,
         /// 多选：选中行索引集合。
@@ -227,7 +229,10 @@ component! {
         let extra = if self.expandable && self.expanded_row.get().is_some() { self.expand_height } else { 0.0 };
         let body_h = self.rows.len() as f32 * self.row_h + extra;
         let h = self.total_header_height() + body_h;
-        constraints.clamp(Size::new(w, h.max(60.0)))
+        constraints.clamp(Size::new(
+            self.fixed_width.unwrap_or(w),
+            self.fixed_height.unwrap_or(h.max(60.0)),
+        ))
     }
 
     scroll_delta_for_dirty => (&self) -> Option<(f32, f32)> {
@@ -442,11 +447,11 @@ component! {
             let row_rect = Rect::new(frame.x, row_y, frame.w, self.row_h);
             ctx.fill_rect(row_rect, row_bg, None);
 
-            let check_y = ctx.visual_center_y(row_rect, 14.0);
             if self.selection {
-                ctx.draw_text(
-                    if is_checked { "☑" } else { "☐" },
-                    Point::new(frame.x + 8.0, check_y),
+                crate::ui::widgets::icon::paint_icon_in_frame(
+                    ctx,
+                    if is_checked { "check-square" } else { "square" },
+                    Rect::new(frame.x + 6.0, row_rect.y, 18.0, row_rect.h),
                     primary,
                     14.0,
                 );
@@ -633,6 +638,8 @@ impl Table {
             materialized_cell_range: Cell::new(None),
             row_h: 28.0,
             header_h: 32.0,
+            fixed_width: None,
+            fixed_height: None,
             selected_row: Cell::new(None),
             hover_row: Cell::new(None),
             checked_rows: Vec::new(),
@@ -709,6 +716,12 @@ impl Table {
     /// 是否绘制外框与单元格纵向边界。
     pub fn bordered(mut self, enabled: bool) -> Self {
         self.bordered = enabled;
+        self
+    }
+    /// 设置表格视口尺寸；数据超出高度时仅表体滚动，表头保持可见。
+    pub fn size(mut self, width: f32, height: f32) -> Self {
+        self.fixed_width = Some(width.max(0.0));
+        self.fixed_height = Some(height.max(0.0));
         self
     }
     pub fn row_height(mut self, h: f32) -> Self {
@@ -989,6 +1002,8 @@ impl Table {
         self.materialized_cell_range.set(None);
         self.row_h = next.row_h;
         self.header_h = next.header_h;
+        self.fixed_width = next.fixed_width;
+        self.fixed_height = next.fixed_height;
         self.expandable = next.expandable;
         self.expand_height = next.expand_height;
         self.sortable = next.sortable;
@@ -1079,6 +1094,13 @@ impl<R> DataTable<R> {
 
     pub fn bordered(mut self, enabled: bool) -> Self {
         self.table.bordered = enabled;
+        self
+    }
+
+    /// 设置表格视口尺寸；数据超出高度时仅表体滚动，表头保持可见。
+    pub fn size(mut self, width: f32, height: f32) -> Self {
+        self.table.fixed_width = Some(width.max(0.0));
+        self.table.fixed_height = Some(height.max(0.0));
         self
     }
 
@@ -1218,6 +1240,13 @@ impl TableBuilder {
     /// 是否绘制外框与单元格纵向边界。
     pub fn bordered(mut self, enabled: bool) -> Self {
         self.table.bordered = enabled;
+        self
+    }
+
+    /// 设置表格视口尺寸；数据超出高度时仅表体滚动，表头保持可见。
+    pub fn size(mut self, width: f32, height: f32) -> Self {
+        self.table.fixed_width = Some(width.max(0.0));
+        self.table.fixed_height = Some(height.max(0.0));
         self
     }
 

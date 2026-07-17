@@ -434,7 +434,25 @@ pub(super) fn capture_demo_client_png(demo: &DemoProcess, path: &Path) {
         image::ImageFormat::Png,
     )
     .expect("save GUI evidence PNG");
-    assert_meaningful_capture(&capture, "framework demo evidence");
+    assert_meaningful_capture(&capture, "demo visual evidence");
+}
+
+pub(super) fn resize_demo_window(demo: &DemoProcess, width: i32, height: i32) {
+    let window = demo.window_handle();
+    demo.raise_for_interaction();
+    // SAFETY: 仅调整仍存活测试窗口的外框尺寸，并保持现有前景测试约束。
+    unsafe {
+        SetWindowPos(
+            window,
+            Some(HWND_TOPMOST),
+            0,
+            0,
+            width,
+            height,
+            SWP_NOMOVE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+        )
+    }
+    .expect("resize demo window for visual acceptance");
 }
 
 fn flush_desktop_composition() {

@@ -2,7 +2,7 @@
 
 use uix::prelude::*;
 
-use crate::common::page::{demo_row, PageBuilder, INNER_W};
+use crate::common::page::{demo_row, PageBuilder};
 use crate::common::showcase::labeled_row;
 use crate::demos::context::DemoCtx;
 
@@ -186,13 +186,18 @@ pub fn page_input(ctx: &DemoCtx<'_>) -> ViewNode {
                 .child(Segmented::new(["每日", "每周", "每月", "每年"]).default_selected(2)),
         )
         .section("Form / FormItem")
-        .push(
-            tree! { Container::new().size(INNER_W, 200.0).dir(FlexDirection::Column).gap(8.0) => [
-                Form::new().label_width(80.0).gap(8.0).layout(FormLayout::Vertical).into_node(),
-                FormItem::new("用户名").name("user").required(true).help("必填").into_node(),
-                FormItem::new("邮箱").name("email").status(ValidateStatus::Success).into_node(),
-                FormItem::new("密码").name("pwd").status(ValidateStatus::Error).into_node(),
-            ]},
-        )
+        .push(tree! {
+            Form::new().label_width(80.0).gap(8.0).layout(FormLayout::Vertical) => [
+                tree! { FormItem::new("用户名").name("user").required(true).help("必填") => [
+                    Input::new("请输入用户名").into_node(),
+                ]},
+                tree! { FormItem::new("邮箱").name("email").status(ValidateStatus::Success) => [
+                    Input::new("name@example.com").into_node(),
+                ]},
+                tree! { FormItem::new("密码").name("pwd").status(ValidateStatus::Error) => [
+                    Input::new("请输入密码").into_node(),
+                ]},
+            ]
+        })
         .build()
 }

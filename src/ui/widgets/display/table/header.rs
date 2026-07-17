@@ -19,15 +19,18 @@ pub(super) fn paint(
     let text_secondary = ctx.tokens().color_text_secondary();
     let primary = ctx.tokens().color_primary();
     let radius = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
-    let locale = crate::ui::locale::use_locale();
 
     ctx.fill_rect(header_rect, header_bg, radius);
     if table.selection {
-        let checkbox_y = ctx.visual_center_y(header_rect, 14.0);
         let all_checked = table.checked_rows.len() == table.rows.len();
-        ctx.draw_text(
-            if all_checked { "☑" } else { "☐" },
-            Point::new(frame.x + 8.0, checkbox_y),
+        crate::ui::widgets::icon::paint_icon_in_frame(
+            ctx,
+            if all_checked {
+                "check-square"
+            } else {
+                "square"
+            },
+            Rect::new(frame.x + 6.0, header_rect.y, 18.0, header_rect.h),
             text_secondary,
             14.0,
         );
@@ -82,18 +85,23 @@ pub(super) fn paint(
             );
             if table.sortable || column.sortable {
                 let indicator = match column.sort_direction {
-                    SortDirection::Asc => locale.table_sort_asc,
-                    SortDirection::Desc => locale.table_sort_desc,
-                    SortDirection::None => locale.table_sort_unsorted,
+                    SortDirection::Asc => "chevron-up",
+                    SortDirection::Desc | SortDirection::None => "chevron-down",
                 };
                 let (color, font_size) = if column.sort_direction == SortDirection::None {
                     (text_secondary, 10.0)
                 } else {
                     (primary, 11.0)
                 };
-                ctx.draw_text(
+                crate::ui::widgets::icon::paint_icon_in_frame(
+                    ctx,
                     indicator,
-                    Point::new(laid_out.x + laid_out.width - 24.0, text_y),
+                    Rect::new(
+                        laid_out.x + laid_out.width - 24.0,
+                        leaf_rect.y,
+                        18.0,
+                        leaf_rect.h,
+                    ),
                     color,
                     font_size,
                 );

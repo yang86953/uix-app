@@ -67,31 +67,37 @@ fn sidebar_nav_item(
 
 fn sidebar(active: State<usize>, tk: &DesignTokens) -> ViewNode {
     let shared: SharedActive = Rc::new(Cell::new(active.get()));
-    let mut items = vec![sidebar_brand(tk), embed(Divider::new())];
+    let mut nav_items = Vec::new();
     for (group_name, indices) in SIDEBAR_GROUPS {
-        items.push(sidebar_group_label(tk, group_name));
+        nav_items.push(sidebar_group_label(tk, group_name));
         for &page_idx in *indices {
             let (icon, title) = PAGE_TITLES[page_idx];
-            items.push(sidebar_nav_item(&active, &shared, page_idx, icon, title));
+            nav_items.push(sidebar_nav_item(&active, &shared, page_idx, icon, title));
         }
     }
-    items.push(label("").flex_grow(1.0));
-    items.push(embed(Divider::new()));
-    items.push(
+    let navigation = scroll(column_fit(nav_items).overflow_content())
+        .vertical()
+        .flex_grow(1.0)
+        .build()
+        .automation_id("sidebar-scroll");
+    column([
+        sidebar_brand(tk),
+        embed(Divider::new()),
+        navigation,
+        embed(Divider::new()),
         label("cargo run --bin uix-demo")
             .font_size(10.0)
             .color(ColorValue::Neutral(NeutralRole::TextQuaternary))
             .padding(EdgeInsets::new(12.0, 16.0, 2.0, 8.0)),
-    );
-    items.push(
         label("UIX v0.1.0")
             .font_size(11.0)
             .color(ColorValue::Neutral(NeutralRole::TextQuaternary))
             .padding(EdgeInsets::new(2.0, 16.0, 16.0, 8.0)),
-    );
-    column_fit(items)
-        .width(SIDEBAR_W)
-        .bg(ColorValue::Neutral(NeutralRole::BgElevated))
+    ])
+    .width(SIDEBAR_W)
+    .flex_grow(0.0)
+    .flex_shrink(0.0)
+    .bg(ColorValue::Neutral(NeutralRole::BgElevated))
 }
 
 fn header_bar(
@@ -190,7 +196,9 @@ fn page_shell(
     }
     column([
         page_heading(icon, title.trim()).key(format!("heading-{idx}")),
-        build_page(idx, &ctx).key(format!("body-{idx}")),
+        build_page(idx, &ctx)
+            .key(format!("body-{idx}"))
+            .automation_id(format!("page-scroll-{idx}")),
     ])
     .key(format!("page-{idx}"))
     .flex_grow(1.0)
@@ -255,7 +263,8 @@ fn app_shell_with_controls(
         ])
         .padding(EdgeInsets::new(6.0, 12.0, 6.0, 12.0))
         .bg(ColorValue::Neutral(NeutralRole::FillTertiary))
-        .border(1.0, ColorValue::Neutral(NeutralRole::BorderSecondary)),
+        .border(1.0, ColorValue::Neutral(NeutralRole::BorderSecondary))
+        .automation_id("app-status-bar"),
     ])
     .flex_grow(1.0)
     .bg(ColorValue::Neutral(NeutralRole::BgLayout))

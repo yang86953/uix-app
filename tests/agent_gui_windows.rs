@@ -10,6 +10,8 @@ mod graphics_recovery;
 mod multi_window;
 #[path = "support/agent_gui_windows/system_theme.rs"]
 mod system_theme;
+#[path = "support/agent_gui_windows/visual.rs"]
+mod visual;
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
