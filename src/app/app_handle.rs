@@ -175,6 +175,23 @@ impl AppHandle {
         Ok(())
     }
 
+    /// 在目标窗口下一次真实绘制帧注入一次 `GraphicsDeviceLost`。
+    ///
+    /// 仅随 `test-harness` feature 提供，用于应用级恢复验收；失败帧仍由
+    /// 正常 `RecoveringGraphicsEngine` 边界处理，不会绕过或直接替换引擎。
+    /// 调用方应同时更新一个可观察 State，以保证下一帧确实需要呈现。
+    #[cfg(feature = "test-harness")]
+    pub fn inject_graphics_device_lost_for_test(&self) -> Result<()> {
+        if !self.alive.load(Ordering::Acquire) {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "cannot inject a graphics fault from a closed AppHandle",
+            ));
+        }
+        self.runtime
+            .inject_graphics_device_lost_for_test(self.window_id)
+    }
+
     pub fn notify_error(&self, error: &Error) -> Option<u64> {
         if !self.alive.load(Ordering::Acquire) {
             return None;

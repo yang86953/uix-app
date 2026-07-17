@@ -21,6 +21,8 @@ use crate::app::main_thread_queue::{MainThreadContext, MainThreadQueue};
 use crate::app::window_config::WindowConfig;
 use crate::app::window_session::TextInputCoordinator;
 use crate::core::WindowId;
+#[cfg(feature = "test-harness")]
+use crate::draw::engine::graphics_test_harness::GraphicsFaultSignal;
 use crate::native::traits::event::EventLoopWaker;
 use crate::ui::Theme;
 use std::collections::VecDeque;
@@ -45,6 +47,8 @@ pub(crate) struct SessionRuntime {
     main_thread_queue: MainThreadQueue,
     agent_commands: AgentCommandQueue,
     alive: Arc<AtomicBool>,
+    #[cfg(feature = "test-harness")]
+    graphics_faults: GraphicsFaultSignal,
 }
 
 #[allow(dead_code)]
@@ -72,6 +76,42 @@ impl AppRuntime {
         app_timers: AppTimerQueue,
         main_thread_queue: MainThreadQueue,
         alive: Arc<AtomicBool>,
+    ) {
+        self.register_session_inner(
+            window_id,
+            app_timers,
+            main_thread_queue,
+            alive,
+            #[cfg(feature = "test-harness")]
+            GraphicsFaultSignal::default(),
+        );
+    }
+
+    #[cfg(feature = "test-harness")]
+    pub(crate) fn register_session_with_graphics_faults(
+        &self,
+        window_id: WindowId,
+        app_timers: AppTimerQueue,
+        main_thread_queue: MainThreadQueue,
+        alive: Arc<AtomicBool>,
+        graphics_faults: GraphicsFaultSignal,
+    ) {
+        self.register_session_inner(
+            window_id,
+            app_timers,
+            main_thread_queue,
+            alive,
+            graphics_faults,
+        );
+    }
+
+    fn register_session_inner(
+        &self,
+        window_id: WindowId,
+        app_timers: AppTimerQueue,
+        main_thread_queue: MainThreadQueue,
+        alive: Arc<AtomicBool>,
+        #[cfg(feature = "test-harness")] graphics_faults: GraphicsFaultSignal,
     ) {
         self.reserve_after(window_id);
         let agent_commands = AgentCommandQueue::new();
@@ -101,6 +141,8 @@ impl AppRuntime {
                 main_thread_queue,
                 agent_commands,
                 alive,
+                #[cfg(feature = "test-harness")]
+                graphics_faults,
             },
         );
         if let Some(replaced) = replaced {
@@ -371,6 +413,28 @@ impl AppRuntime {
     pub(crate) fn agent_command_queue(&self, window_id: WindowId) -> Option<AgentCommandQueue> {
         self.session(window_id)
             .map(|session| session.agent_commands)
+    }
+
+    #[cfg(feature = "test-harness")]
+    pub(crate) fn graphics_fault_signal(&self, window_id: WindowId) -> Option<GraphicsFaultSignal> {
+        self.session(window_id)
+            .map(|session| session.graphics_faults)
+    }
+
+    #[cfg(feature = "test-harness")]
+    pub(crate) fn inject_graphics_device_lost_for_test(
+        &self,
+        window_id: WindowId,
+    ) -> crate::core::Result<()> {
+        let session = self.session(window_id).ok_or_else(|| {
+            crate::core::Error::new(
+                crate::core::Errc::NotFound,
+                "cannot inject a graphics fault into a closed window session",
+            )
+        })?;
+        session.graphics_faults.arm_device_lost()?;
+        self.wake_event_loop();
+        Ok(())
     }
 
     fn session(&self, window_id: WindowId) -> Option<SessionRuntime> {

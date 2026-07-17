@@ -72,6 +72,81 @@ impl ThemeControl {
     }
 }
 
+pub const GRAPHICS_RECOVERY_READY: &str = "图形恢复验收：等待注入";
+pub const GRAPHICS_RECOVERY_PENDING: &str = "图形恢复验收：已注入，等待恢复后交互";
+pub const GRAPHICS_RECOVERY_VERIFIED: &str = "图形恢复验收：恢复后交互成功";
+
+#[derive(Clone)]
+pub struct GraphicsRecoveryControl {
+    handle: Arc<Mutex<Option<AppHandle>>>,
+    status: State<String>,
+    enabled: bool,
+}
+
+impl GraphicsRecoveryControl {
+    pub fn new(enabled: bool) -> Self {
+        Self {
+            handle: Arc::new(Mutex::new(None)),
+            status: State::new(GRAPHICS_RECOVERY_READY.to_string()),
+            enabled,
+        }
+    }
+
+    pub fn set_handle(&self, handle: AppHandle) {
+        *self.handle.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
+    }
+
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    pub fn status(&self) -> State<String> {
+        self.status.clone()
+    }
+
+    pub fn can_inject(&self) -> bool {
+        self.status.get() == GRAPHICS_RECOVERY_READY
+    }
+
+    pub fn can_verify(&self) -> bool {
+        self.status.get() == GRAPHICS_RECOVERY_PENDING
+    }
+
+    pub fn inject_device_lost(&self) {
+        let Some(handle) = self
+            .handle
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+        else {
+            self.status
+                .set("图形恢复验收：注入失败（AppHandle 尚未就绪）".to_string());
+            return;
+        };
+
+        #[cfg(feature = "test-harness")]
+        match handle.inject_graphics_device_lost_for_test() {
+            Ok(()) => self.status.set(GRAPHICS_RECOVERY_PENDING.to_string()),
+            Err(error) => self
+                .status
+                .set(format!("图形恢复验收：注入失败（{}）", error.short_what())),
+        }
+
+        #[cfg(not(feature = "test-harness"))]
+        {
+            let _ = handle;
+            self.status
+                .set("图形恢复验收：注入失败（未启用 test-harness）".to_string());
+        }
+    }
+
+    pub fn verify_recovered_interaction(&self) {
+        if self.can_verify() {
+            self.status.set(GRAPHICS_RECOVERY_VERIFIED.to_string());
+        }
+    }
+}
+
 /// 传入各分类页的共享运行时 State。
 pub struct DemoCtx<'a> {
     pub tk: &'a DesignTokens,
@@ -81,6 +156,7 @@ pub struct DemoCtx<'a> {
     home_count: Option<&'a State<i32>>,
     runtime_count: Option<&'a State<i32>>,
     theme_control: Option<&'a ThemeControl>,
+    graphics_recovery_control: Option<&'a GraphicsRecoveryControl>,
 }
 
 impl<'a> DemoCtx<'a> {
@@ -96,6 +172,7 @@ impl<'a> DemoCtx<'a> {
             home_count: None,
             runtime_count: None,
             theme_control: None,
+            graphics_recovery_control: None,
         }
     }
 
@@ -114,6 +191,14 @@ impl<'a> DemoCtx<'a> {
         self
     }
 
+    pub fn with_graphics_recovery_control(
+        mut self,
+        graphics_recovery_control: &'a GraphicsRecoveryControl,
+    ) -> Self {
+        self.graphics_recovery_control = Some(graphics_recovery_control);
+        self
+    }
+
     pub fn home_count(&self) -> State<i32> {
         self.home_count.cloned().unwrap_or_else(|| State::new(0))
     }
@@ -124,5 +209,9 @@ impl<'a> DemoCtx<'a> {
 
     pub fn theme_control(&self) -> Option<&ThemeControl> {
         self.theme_control
+    }
+
+    pub fn graphics_recovery_control(&self) -> Option<&GraphicsRecoveryControl> {
+        self.graphics_recovery_control
     }
 }

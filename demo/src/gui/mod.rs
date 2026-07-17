@@ -6,7 +6,7 @@ use uix::core::log::info_fn;
 use uix::prelude::*;
 
 use crate::common::page::{page_heading, INIT_H, INIT_W, PAGE_TITLES, SIDEBAR_GROUPS, SIDEBAR_W};
-use crate::demos::context::ThemeControl;
+use crate::demos::context::{GraphicsRecoveryControl, ThemeControl};
 use crate::demos::{build_page, DemoCtx};
 use std::cell::Cell;
 use std::rc::Rc;
@@ -149,6 +149,7 @@ fn page_body(
     home_count: &State<i32>,
     runtime_count: &State<i32>,
     theme_control: &ThemeControl,
+    graphics_recovery_control: Option<&GraphicsRecoveryControl>,
 ) -> ViewNode {
     column([
         header_bar(&active, timer_ticks, theme_control),
@@ -159,6 +160,7 @@ fn page_body(
             home_count,
             runtime_count,
             theme_control,
+            graphics_recovery_control,
         ),
     ])
     .flex_grow(1.0)
@@ -173,11 +175,15 @@ fn page_shell(
     home_count: &State<i32>,
     runtime_count: &State<i32>,
     theme_control: &ThemeControl,
+    graphics_recovery_control: Option<&GraphicsRecoveryControl>,
 ) -> ViewNode {
     let (icon, title) = PAGE_TITLES[idx];
-    let ctx = DemoCtx::new(tk, timer_ticks, Some(active))
+    let mut ctx = DemoCtx::new(tk, timer_ticks, Some(active))
         .with_counters(home_count, runtime_count)
         .with_theme_control(theme_control);
+    if let Some(control) = graphics_recovery_control {
+        ctx = ctx.with_graphics_recovery_control(control);
+    }
     column([
         page_heading(icon, title.trim()).key(format!("heading-{idx}")),
         build_page(idx, &ctx).key(format!("body-{idx}")),
@@ -194,6 +200,7 @@ fn page_content(
     home_count: &State<i32>,
     runtime_count: &State<i32>,
     theme_control: &ThemeControl,
+    graphics_recovery_control: Option<&GraphicsRecoveryControl>,
 ) -> ViewNode {
     let idx = active.get();
     page_shell(
@@ -204,6 +211,7 @@ fn page_content(
         home_count,
         runtime_count,
         theme_control,
+        graphics_recovery_control,
     )
 }
 
@@ -213,6 +221,7 @@ fn app_shell_with_counters(
     home_count: &State<i32>,
     runtime_count: &State<i32>,
     theme_control: &ThemeControl,
+    graphics_recovery_control: Option<&GraphicsRecoveryControl>,
 ) -> ViewNode {
     let tk = DesignTokens::antd_light();
     column([
@@ -225,6 +234,7 @@ fn app_shell_with_counters(
                 home_count,
                 runtime_count,
                 theme_control,
+                graphics_recovery_control,
             ),
         ])
         .flex_grow(1.0),
@@ -253,15 +263,17 @@ fn app_shell(active: State<usize>, timer_ticks: State<u32>) -> ViewNode {
         &home_count,
         &runtime_count,
         &ThemeControl::default(),
+        None,
     )
 }
 
-pub fn run(agent_control: bool, follow_system_theme: bool) {
+pub fn run(agent_control: bool, follow_system_theme: bool, graphics_recovery_acceptance: bool) {
     let active = State::new(0usize);
     let timer_ticks = State::new(0u32);
     let home_count = State::new(0i32);
     let runtime_count = State::new(0i32);
     let theme_control = ThemeControl::new(follow_system_theme);
+    let graphics_recovery_control = GraphicsRecoveryControl::new(graphics_recovery_acceptance);
 
     let app = App::new()
         .title("UIX Demo")
@@ -269,66 +281,69 @@ pub fn run(agent_control: bool, follow_system_theme: bool) {
         .custom_title_bar(true)
         .theme(Theme::antd_light())
         .follow_system_theme(follow_system_theme)
-        .on_start(with_cloned!(theme_control, timer_ticks, active; |handle| {
-            theme_control.set_handle(handle.clone());
-            let ticks = timer_ticks.clone();
-            handle
-                .run_interval(Duration::from_secs(1), move || {
-                    ticks.update(|v| *v = v.wrapping_add(1));
-                })
-                .detach();
-            // 动画样例改走 WidgetAnimation（Spin 等）；不再全局 16ms 探活，
-            // 否则 RegisteredActive 永不 DeepIdle，且曾把 orphan State 绑成整树 reconcile。
-            if std::env::var_os("UIX_PERF_PROBE").is_some() {
-                info_fn("PERF_SCENARIO=startup scheduled");
-                let page = active.clone();
-                // Delays are wall-clock from on_start; first paint can take seconds,
-                // so keep later scenarios well after that cost settles.
+        .on_start(
+            with_cloned!(theme_control, graphics_recovery_control, timer_ticks, active; |handle| {
+                theme_control.set_handle(handle.clone());
+                graphics_recovery_control.set_handle(handle.clone());
+                let ticks = timer_ticks.clone();
                 handle
-                    .run_after(Duration::from_millis(5000), {
-                        let page = page.clone();
-                        move || {
-                            info_fn("PERF_SCENARIO=page_switch_general");
-                            page.set(2);
-                        }
+                    .run_interval(Duration::from_secs(1), move || {
+                        ticks.update(|v| *v = v.wrapping_add(1));
                     })
                     .detach();
-                handle
-                    .run_after(Duration::from_millis(9000), {
-                        let page = page.clone();
-                        move || {
-                            info_fn("PERF_SCENARIO=page_switch_input");
-                            page.set(5);
-                        }
-                    })
-                    .detach();
-                handle
-                    .run_after(Duration::from_millis(13000), {
-                        let page = page.clone();
-                        move || {
-                            info_fn("PERF_SCENARIO=page_switch_home");
-                            page.set(0);
-                        }
-                    })
-                    .detach();
-                handle
-                    .run_after(Duration::from_millis(16000), || {
-                        info_fn("PERF_SCENARIO=await_timer_tick");
-                    })
-                    .detach();
-                handle
-                    .run_after(Duration::from_millis(18500), || {
-                        info_fn("PERF_SCENARIO=idle_window_expect_no_frame");
-                    })
-                    .detach();
-                handle
-                    .run_after(Duration::from_millis(20000), || {
-                        info_fn("PERF_SCENARIO=done");
-                        std::process::exit(0);
-                    })
-                    .detach();
-            }
-        }));
+                // 动画样例改走 WidgetAnimation（Spin 等）；不再全局 16ms 探活，
+                // 否则 RegisteredActive 永不 DeepIdle，且曾把 orphan State 绑成整树 reconcile。
+                if std::env::var_os("UIX_PERF_PROBE").is_some() {
+                    info_fn("PERF_SCENARIO=startup scheduled");
+                    let page = active.clone();
+                    // Delays are wall-clock from on_start; first paint can take seconds,
+                    // so keep later scenarios well after that cost settles.
+                    handle
+                        .run_after(Duration::from_millis(5000), {
+                            let page = page.clone();
+                            move || {
+                                info_fn("PERF_SCENARIO=page_switch_general");
+                                page.set(2);
+                            }
+                        })
+                        .detach();
+                    handle
+                        .run_after(Duration::from_millis(9000), {
+                            let page = page.clone();
+                            move || {
+                                info_fn("PERF_SCENARIO=page_switch_input");
+                                page.set(5);
+                            }
+                        })
+                        .detach();
+                    handle
+                        .run_after(Duration::from_millis(13000), {
+                            let page = page.clone();
+                            move || {
+                                info_fn("PERF_SCENARIO=page_switch_home");
+                                page.set(0);
+                            }
+                        })
+                        .detach();
+                    handle
+                        .run_after(Duration::from_millis(16000), || {
+                            info_fn("PERF_SCENARIO=await_timer_tick");
+                        })
+                        .detach();
+                    handle
+                        .run_after(Duration::from_millis(18500), || {
+                            info_fn("PERF_SCENARIO=idle_window_expect_no_frame");
+                        })
+                        .detach();
+                    handle
+                        .run_after(Duration::from_millis(20000), || {
+                            info_fn("PERF_SCENARIO=done");
+                            std::process::exit(0);
+                        })
+                        .detach();
+                }
+            }),
+        );
     #[cfg(feature = "agent-control")]
     let app = if agent_control {
         app.enable_agent_control()
@@ -346,7 +361,8 @@ pub fn run(agent_control: bool, follow_system_theme: bool) {
         timer_ticks,
         home_count,
         runtime_count,
-        theme_control;
+        theme_control,
+        graphics_recovery_control;
         {
             demo_window(app_shell_with_counters(
                 active,
@@ -354,6 +370,7 @@ pub fn run(agent_control: bool, follow_system_theme: bool) {
                 &home_count,
                 &runtime_count,
                 &theme_control,
+                graphics_recovery_control.enabled().then_some(&graphics_recovery_control),
             ))
         }
     ))

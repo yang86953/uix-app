@@ -372,10 +372,15 @@ fn demo_default_entrypoint_stays_on_prelude_app_path() {
     let main = fs::read_to_string(root.join("demo/src/main.rs")).unwrap();
 
     assert!(
-        main.contains("gui::run(options.agent_control)")
+        main.contains("gui::run(")
+            && main.contains("options.agent_control,")
+            && main.contains("options.follow_system_theme,")
+            && main.contains("options.graphics_recovery_acceptance,")
             && main.contains("--cli")
-            && main.contains("--agent-control"),
-        "demo main should keep GUI as the default and expose only explicit CLI/agent-control modes"
+            && main.contains("--agent-control")
+            && main.contains("--follow-system-theme")
+            && main.contains("--graphics-recovery-acceptance"),
+        "demo main should keep GUI as the default and expose only explicit opt-in modes"
     );
     assert!(
         !main.contains("--dashboard"),

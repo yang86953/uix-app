@@ -7,6 +7,8 @@
 
 use crate::core::{Error, Rect};
 use crate::draw::backend::DamageRegion;
+#[cfg(feature = "test-harness")]
+use crate::draw::engine::graphics_test_harness::GraphicsFaultSignal;
 use crate::draw::engine::{GraphicsFailure, GraphicsRecovery, RecoveryAction, RenderOutcome};
 use crate::draw::pipeline::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::primitives::types::ImageHandle;
@@ -31,6 +33,8 @@ pub struct RecoveringGraphicsEngine {
     width: i32,
     height: i32,
     shutdown: bool,
+    #[cfg(feature = "test-harness")]
+    test_faults: Option<GraphicsFaultSignal>,
 }
 
 impl RecoveringGraphicsEngine {
@@ -44,6 +48,8 @@ impl RecoveringGraphicsEngine {
             width: 0,
             height: 0,
             shutdown: false,
+            #[cfg(feature = "test-harness")]
+            test_faults: None,
         }
     }
 
@@ -51,6 +57,13 @@ impl RecoveringGraphicsEngine {
     pub fn with_extent(mut self, width: i32, height: i32) -> Self {
         self.width = width.max(1);
         self.height = height.max(1);
+        self
+    }
+
+    #[cfg(feature = "test-harness")]
+    pub(crate) fn with_test_fault_signal(mut self, signal: GraphicsFaultSignal) -> Self {
+        signal.attach_recovering_engine();
+        self.test_faults = Some(signal);
         self
     }
 
@@ -150,6 +163,21 @@ impl GraphicsEngine for RecoveringGraphicsEngine {
     }
 
     fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {
+        #[cfg(feature = "test-harness")]
+        if self.pending_failure.is_none()
+            && self.terminal_failure.is_none()
+            && self
+                .test_faults
+                .as_ref()
+                .is_some_and(GraphicsFaultSignal::take_device_lost)
+        {
+            let failure = GraphicsFailure::DeviceLost(Error::new(
+                crate::core::Errc::GraphicsDeviceLost,
+                "test-harness injected graphics device loss",
+            ));
+            self.record_failure(failure.clone());
+            return RenderOutcome::Failed(failure);
+        }
         if let Some(outcome) = self.recover_before_frame() {
             return outcome;
         }

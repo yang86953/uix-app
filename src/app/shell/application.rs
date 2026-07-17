@@ -25,6 +25,8 @@ use crate::data::SettingsService;
 use crate::draw::engine::bootstrap::{
     assemble_graphics_engine, bootstrap_graphics_engine, ProbeReport,
 };
+#[cfg(feature = "test-harness")]
+use crate::draw::engine::graphics_test_harness::GraphicsFaultSignal;
 use crate::draw::engine::{GraphicsEngineRebuilder, RecoveringGraphicsEngine, RecoveryAction};
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
@@ -282,6 +284,8 @@ pub struct App {
     container: Container,
     settings_path: Option<String>,
     pub(crate) graphics_backend: Option<GraphicsBackend>,
+    #[cfg(feature = "test-harness")]
+    graphics_faults: GraphicsFaultSignal,
     #[cfg(feature = "agent-control")]
     agent_control_enabled: bool,
     exit_code: i32,
@@ -322,6 +326,8 @@ impl Default for App {
             container: Container::new(),
             settings_path: None,
             graphics_backend: None,
+            #[cfg(feature = "test-harness")]
+            graphics_faults: GraphicsFaultSignal::default(),
             #[cfg(feature = "agent-control")]
             agent_control_enabled: false,
             exit_code: 0,
@@ -604,8 +610,18 @@ impl App {
             "initial center_on_screen failed",
             platform_window.center_on_screen(),
         );
-        let engine = match create_preferred_engine(platform_window.as_mut(), w, h, graphics_backend)
-        {
+        #[cfg(feature = "test-harness")]
+        let preferred_engine = create_preferred_engine(
+            platform_window.as_mut(),
+            w,
+            h,
+            graphics_backend,
+            self.graphics_faults.clone(),
+        );
+        #[cfg(not(feature = "test-harness"))]
+        let preferred_engine =
+            create_preferred_engine(platform_window.as_mut(), w, h, graphics_backend);
+        let engine = match preferred_engine {
             Some(engine) => engine,
             None => {
                 report_window_operation_error(
@@ -682,6 +698,15 @@ impl App {
         session.set_app_state(self.app_state.clone());
         session.set_app_timers(self.app_timers.clone());
         session.set_main_thread_queue(self.main_thread_queue.clone());
+        #[cfg(feature = "test-harness")]
+        self.runtime.register_session_with_graphics_faults(
+            root_window_id,
+            self.app_timers.clone(),
+            self.main_thread_queue.clone(),
+            self.handle_alive.clone(),
+            self.graphics_faults.clone(),
+        );
+        #[cfg(not(feature = "test-harness"))]
         self.runtime.register_session(
             root_window_id,
             self.app_timers.clone(),

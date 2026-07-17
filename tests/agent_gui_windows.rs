@@ -2,6 +2,8 @@
 
 #[path = "support/agent_gui_windows/foreground.rs"]
 mod foreground;
+#[path = "support/agent_gui_windows/graphics_recovery.rs"]
+mod graphics_recovery;
 #[path = "support/agent_gui_windows/multi_window.rs"]
 mod multi_window;
 #[path = "support/agent_gui_windows/system_theme.rs"]
@@ -133,7 +135,7 @@ impl DemoProcess {
         }
     }
 
-    fn close_and_wait(&mut self) {
+    fn close_and_wait(&mut self) -> String {
         let deadline = Instant::now() + SHUTDOWN_TIMEOUT;
         let window = self.window_handle();
         unsafe {
@@ -178,6 +180,7 @@ impl DemoProcess {
             !output.contains("fallback=software_cpu"),
             "demo unexpectedly fell back to Software; output={output}"
         );
+        output
     }
 
     fn take_output(&mut self) -> String {

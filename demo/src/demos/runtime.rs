@@ -14,6 +14,9 @@ const CHILD_THEME_TOGGLE_ID: &str = "theme-window-theme-toggle";
 const CHILD_SYSTEM_THEME_STATUS_ID: &str = "theme-window-system-theme-follow-status";
 const CHILD_WINDOW_CLOSE_ID: &str = "theme-window-close";
 const RUNTIME_SYSTEM_THEME_STATUS_ID: &str = "runtime-system-theme-follow-status";
+const GRAPHICS_RECOVERY_INJECT_ID: &str = "runtime-inject-device-lost";
+const GRAPHICS_RECOVERY_VERIFY_ID: &str = "runtime-verify-recovered-interaction";
+const GRAPHICS_RECOVERY_STATUS_ID: &str = "runtime-graphics-recovery-status";
 
 fn theme_state(control: crate::demos::context::ThemeControl, automation_id: &str) -> ViewNode {
     if control.follows_system_theme() {
@@ -148,41 +151,79 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
             .build()
     };
 
-    PageBuilder::new(tk)
-        .gap()
-        .block(
-            "响应式 State",
+    let graphics_recovery_block = ctx
+        .graphics_recovery_control()
+        .filter(|control| control.enabled())
+        .map(|control| {
+            let inject_control = control.clone();
+            let verify_control = control.clone();
             column_fit([
+                control
+                    .status()
+                    .map_text(|status| status.clone())
+                    .automation_id(GRAPHICS_RECOVERY_STATUS_ID)
+                    .font_size(13.0)
+                    .color(ColorValue::Neutral(NeutralRole::TextSecondary)),
+                row([
+                    button("注入 DeviceLost")
+                        .primary()
+                        .disabled(!control.can_inject())
+                        .on_click_fn(move || inject_control.inject_device_lost())
+                        .automation_id(GRAPHICS_RECOVERY_INJECT_ID)
+                        .build(),
+                    button("验证恢复后交互")
+                        .disabled(!control.can_verify())
+                        .on_click_fn(move || verify_control.verify_recovered_interaction())
+                        .automation_id(GRAPHICS_RECOVERY_VERIFY_ID)
+                        .build(),
+                ])
+                .gap(8.0),
                 info_note(
                     tk,
-                    "State 变更触发 reconcile；label(闭包) / State::map_text 读取最新值。",
+                    "test-harness 只让下一次真实绘制返回 typed DeviceLost；窗口仍走生产恢复 FSM，恢复后须再次完成用户交互与 present。",
                 ),
-                {
-                    let counter = ctx.runtime_count();
-                    column_fit((
-                        counter
-                            .map_text(|n| format!("本地计数: {n}"))
-                            .font_size(22.0)
-                            .color(ColorValue::Palette(PaletteColor::Primary)),
-                        row((
-                            button("+1")
-                                .primary()
-                                .on_click(&counter, |c| c.update(|v| *v += 1)),
-                            button("-1").on_click(&counter, |c| {
-                                c.update(|v| {
-                                    if *v > 0 {
-                                        *v -= 1;
-                                    }
-                                });
-                            }),
-                        ))
-                        .gap(8.0),
-                    ))
-                    .gap(10.0)
-                },
             ])
-            .gap(12.0),
-        )
+            .gap(12.0)
+        });
+
+    let page = PageBuilder::new(tk).gap().block(
+        "响应式 State",
+        column_fit([
+            info_note(
+                tk,
+                "State 变更触发 reconcile；label(闭包) / State::map_text 读取最新值。",
+            ),
+            {
+                let counter = ctx.runtime_count();
+                column_fit((
+                    counter
+                        .map_text(|n| format!("本地计数: {n}"))
+                        .font_size(22.0)
+                        .color(ColorValue::Palette(PaletteColor::Primary)),
+                    row((
+                        button("+1")
+                            .primary()
+                            .on_click(&counter, |c| c.update(|v| *v += 1)),
+                        button("-1").on_click(&counter, |c| {
+                            c.update(|v| {
+                                if *v > 0 {
+                                    *v -= 1;
+                                }
+                            });
+                        }),
+                    ))
+                    .gap(8.0),
+                ))
+                .gap(10.0)
+            },
+        ])
+        .gap(12.0),
+    );
+    let page = match graphics_recovery_block {
+        Some(block) => page.block("图形故障 / 恢复验收", block),
+        None => page,
+    };
+    page
         .block(
             "多窗口 / 共享状态",
             column_fit([
