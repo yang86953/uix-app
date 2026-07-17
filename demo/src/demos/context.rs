@@ -1,4 +1,4 @@
-//! Dashboard 共享上下文 — 跨页 State（定时器 tick、动画 time）。
+//! Dashboard 共享上下文 — 跨页 State 与可执行验收控制。
 
 use std::sync::{Arc, Mutex};
 use uix::prelude::*;
@@ -147,6 +147,39 @@ impl GraphicsRecoveryControl {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FrameworkLocale {
+    #[default]
+    ZhCn,
+    EnUs,
+}
+
+#[derive(Clone)]
+pub struct FrameworkControl {
+    locale: State<FrameworkLocale>,
+}
+
+impl Default for FrameworkControl {
+    fn default() -> Self {
+        Self {
+            locale: State::new(FrameworkLocale::default()),
+        }
+    }
+}
+
+impl FrameworkControl {
+    pub fn locale_state(&self) -> State<FrameworkLocale> {
+        self.locale.clone()
+    }
+
+    pub fn locale(&self) -> Locale {
+        match self.locale.get() {
+            FrameworkLocale::ZhCn => zh_cn(),
+            FrameworkLocale::EnUs => en_us(),
+        }
+    }
+}
+
 /// 传入各分类页的共享运行时 State。
 pub struct DemoCtx<'a> {
     pub tk: &'a DesignTokens,
@@ -157,6 +190,7 @@ pub struct DemoCtx<'a> {
     runtime_count: Option<&'a State<i32>>,
     theme_control: Option<&'a ThemeControl>,
     graphics_recovery_control: Option<&'a GraphicsRecoveryControl>,
+    framework_control: Option<&'a FrameworkControl>,
 }
 
 impl<'a> DemoCtx<'a> {
@@ -173,6 +207,7 @@ impl<'a> DemoCtx<'a> {
             runtime_count: None,
             theme_control: None,
             graphics_recovery_control: None,
+            framework_control: None,
         }
     }
 
@@ -199,6 +234,11 @@ impl<'a> DemoCtx<'a> {
         self
     }
 
+    pub fn with_framework_control(mut self, framework_control: &'a FrameworkControl) -> Self {
+        self.framework_control = Some(framework_control);
+        self
+    }
+
     pub fn home_count(&self) -> State<i32> {
         self.home_count.cloned().unwrap_or_else(|| State::new(0))
     }
@@ -213,5 +253,9 @@ impl<'a> DemoCtx<'a> {
 
     pub fn graphics_recovery_control(&self) -> Option<&GraphicsRecoveryControl> {
         self.graphics_recovery_control
+    }
+
+    pub fn framework_control(&self) -> FrameworkControl {
+        self.framework_control.cloned().unwrap_or_default()
     }
 }

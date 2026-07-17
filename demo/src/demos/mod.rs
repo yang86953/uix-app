@@ -4,6 +4,7 @@ pub mod charts;
 pub mod context;
 pub mod data;
 pub mod feedback;
+pub mod framework;
 pub mod gallery;
 pub mod general;
 pub mod home;
@@ -19,6 +20,7 @@ pub use charts::page_charts;
 pub use context::DemoCtx;
 pub use data::page_data;
 pub use feedback::page_feedback;
+pub use framework::page_framework;
 pub use gallery::page_gallery;
 pub use general::page_general;
 pub use home::page_home;
@@ -29,8 +31,8 @@ pub use other::page_other;
 pub use runtime::page_runtime;
 
 use crate::common::page::{
-    PAGE_APP, PAGE_CHARTS, PAGE_DATA, PAGE_FEEDBACK, PAGE_GALLERY, PAGE_GENERAL, PAGE_HOME,
-    PAGE_INPUT, PAGE_LAYOUT, PAGE_NAV, PAGE_OTHER,
+    PAGE_APP, PAGE_CHARTS, PAGE_DATA, PAGE_FEEDBACK, PAGE_FRAMEWORK, PAGE_GALLERY, PAGE_GENERAL,
+    PAGE_HOME, PAGE_INPUT, PAGE_LAYOUT, PAGE_NAV, PAGE_OTHER,
 };
 
 /// 按侧边栏索引构建对应分类页。
@@ -46,6 +48,7 @@ pub fn build_page(page_index: usize, ctx: &DemoCtx<'_>) -> ViewNode {
         PAGE_FEEDBACK => page_feedback(ctx),
         PAGE_CHARTS => page_charts(ctx),
         PAGE_OTHER => page_other(ctx),
+        PAGE_FRAMEWORK => page_framework(ctx),
         PAGE_GALLERY => page_gallery(ctx),
         _ => page_home(ctx),
     }

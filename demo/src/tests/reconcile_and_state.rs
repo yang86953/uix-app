@@ -495,3 +495,103 @@ fn demo_local_counters_survive_root_reconcile() {
 
     assert_eq!(runtime_count.get(), 1);
 }
+
+#[test]
+fn framework_locale_click_survives_root_reconcile() {
+    use uix::core::Point;
+    use uix::native::traits::input::{KeyMod, MouseButton};
+
+    let active = State::new(crate::common::page::PAGE_FRAMEWORK);
+    let timer_ticks = State::new(0u32);
+    let home_count = State::new(0i32);
+    let runtime_count = State::new(0i32);
+    let theme_control = ThemeControl::default();
+    let framework_control = crate::demos::context::FrameworkControl::default();
+
+    let root = ViewAdapter::capture_root(|| {
+        app_shell_with_controls(
+            active.clone(),
+            timer_ticks.clone(),
+            &home_count,
+            &runtime_count,
+            &theme_control,
+            None,
+            &framework_control,
+        )
+    });
+    let mut tree = ViewAdapter::build_nodes(root);
+    if let Some(root) = tree.root_mut() {
+        root.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+    }
+    tree.layout();
+
+    let english_button = tree
+        .traverse()
+        .iter()
+        .copied()
+        .find(|&id| {
+            tree.get(id)
+                .and_then(|node| node.automation_id())
+                .is_some_and(|id| id == crate::demos::framework::LOCALE_EN_ID)
+        })
+        .expect("framework English button");
+    let frame = tree
+        .get(english_button)
+        .expect("framework English button node")
+        .frame();
+    assert!(frame.w > 0.0 && frame.h > 0.0);
+    let pos = Point::new(frame.x + frame.w * 0.5, frame.y + frame.h * 0.5);
+    let _ = tree.dispatch_event(&SystemEvent::PointerDown {
+        pos,
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    let _ = tree.dispatch_event(&SystemEvent::PointerUp {
+        pos,
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(
+        framework_control.locale_state().get(),
+        crate::demos::context::FrameworkLocale::EnUs
+    );
+    assert!(tree.take_reconcile_requested());
+
+    let next = ViewAdapter::capture_root(|| {
+        app_shell_with_controls(
+            active.clone(),
+            timer_ticks.clone(),
+            &home_count,
+            &runtime_count,
+            &theme_control,
+            None,
+            &framework_control,
+        )
+    });
+    ViewAdapter::reconcile_nodes(&mut tree, next);
+    if let Some(root) = tree.root_mut() {
+        root.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+    }
+    tree.layout();
+
+    let snapshot = tree.automation_snapshot(uix::core::WindowId::ROOT);
+    assert_eq!(
+        snapshot
+            .find(crate::demos::framework::LOCALE_STATUS_ID)
+            .expect("framework locale status")
+            .accessibility
+            .name
+            .as_deref(),
+        Some("当前语言：English")
+    );
+    assert_eq!(
+        snapshot
+            .find(crate::demos::framework::LOCALE_SAMPLE_ID)
+            .expect("framework locale sample")
+            .accessibility
+            .name
+            .as_deref(),
+        Some("Locale.empty_description：No data")
+    );
+}
