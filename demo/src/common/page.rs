@@ -23,6 +23,7 @@ pub const PAGE_CHARTS: usize = 8;
 pub const PAGE_OTHER: usize = 9;
 pub const PAGE_FRAMEWORK: usize = 10;
 pub const PAGE_GALLERY: usize = 11;
+pub const PAGE_COMPONENT_QA: usize = 12;
 
 pub const PAGE_TITLES: &[(&str, &str)] = &[
     ("home", " 首页"),
@@ -37,6 +38,7 @@ pub const PAGE_TITLES: &[(&str, &str)] = &[
     ("settings", " 其他"),
     ("sliders", " 框架能力"),
     ("list", " 覆盖清单"),
+    ("eye", " 组件验收"),
 ];
 
 pub const PAGE_COUNT: usize = PAGE_TITLES.len();
@@ -59,7 +61,7 @@ pub const SIDEBAR_GROUPS: &[(&str, &[usize])] = &[
             PAGE_OTHER,
         ],
     ),
-    ("参考", &[PAGE_GALLERY]),
+    ("参考", &[PAGE_GALLERY, PAGE_COMPONENT_QA]),
 ];
 
 /// 覆盖矩阵 / 文案中的页面名 → 侧边栏索引。
@@ -72,6 +74,7 @@ pub fn page_index_by_label(label: &str) -> Option<usize> {
             "运行时" | "App 能力" | "应用能力" => Some(PAGE_APP),
             "Provider" | "框架" | "框架能力" => Some(PAGE_FRAMEWORK),
             "目录" | "覆盖清单" => Some(PAGE_GALLERY),
+            "组件验收" | "组件 QA" => Some(PAGE_COMPONENT_QA),
             "数据" | "数据展示" => Some(PAGE_DATA),
             "--cli" => None,
             "—" | "-" => None,

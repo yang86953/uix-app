@@ -1,7 +1,7 @@
 use super::*;
 use std::path::Path;
 
-const PAGE_SLUGS: [&str; 12] = [
+const PAGE_SLUGS: [&str; 13] = [
     "home",
     "runtime",
     "general",
@@ -14,6 +14,7 @@ const PAGE_SLUGS: [&str; 12] = [
     "other",
     "framework",
     "gallery",
+    "component-qa",
 ];
 const COMPACT_PAGE_INDEXES: [usize; 7] = [0, 3, 5, 6, 7, 10, 11];
 const DEFAULT_WINDOW_SIZE: (i32, i32) = (1200, 800);

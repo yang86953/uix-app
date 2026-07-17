@@ -313,6 +313,60 @@ fn window_actions_share_system_events_fifo_and_the_settle_barrier() {
 }
 
 #[test]
+fn pointer_window_actions_preserve_hover_and_pressed_state_until_release() {
+    let mut tree = laid_out_button();
+    let root = tree.root_id().expect("button root");
+    let mut semantics = WindowSemanticState::new(WindowId::new(30));
+    assert!(semantics.enable(&tree));
+    let mut commands = WindowAgentState::new();
+
+    for (action, expected_hovered, expected_pressed) in [
+        (
+            AgentWindowAction::PointerMove {
+                position: Point::new(80.0, 20.0),
+            },
+            true,
+            false,
+        ),
+        (
+            AgentWindowAction::PointerDown {
+                position: Point::new(80.0, 20.0),
+            },
+            true,
+            true,
+        ),
+        (
+            AgentWindowAction::PointerUp {
+                position: Point::new(80.0, 20.0),
+            },
+            true,
+            false,
+        ),
+    ] {
+        let revision = semantics.snapshot().expect("semantic snapshot").revision;
+        let (ticket, _) = commands
+            .queue()
+            .submit(window_action_request(1, Some(revision), action))
+            .expect("queue pointer action");
+        assert!(commands.drain_ready(&mut tree, &mut semantics, true));
+
+        assert_eq!(tree.managers().interaction.hovered(), expected_hovered);
+        assert_eq!(tree.managers().interaction.pressed(), expected_pressed);
+        assert_eq!(
+            tree.managers().interaction.hovered_component(),
+            expected_hovered.then_some(root)
+        );
+
+        let _ = semantics.refresh(&tree);
+        assert!(commands.finish_or_defer(&semantics, false));
+        assert!(ticket
+            .recv_timeout(Duration::from_millis(20))
+            .expect("pointer response")
+            .is_ok());
+    }
+}
+
+#[test]
 fn window_input_settles_even_when_no_node_consumes_the_event() {
     let mut tree = laid_out_button();
     let root = tree.root_id().expect("button root");

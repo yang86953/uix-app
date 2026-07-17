@@ -104,7 +104,13 @@ fn protocol_requires_first_message_auth_and_returns_stable_typed_errors() {
     assert_eq!(value["ok"], true);
     assert_eq!(
         value["capabilities"]["window_actions"],
-        json!(["press_key", "click_at"])
+        json!([
+            "press_key",
+            "click_at",
+            "pointer_move",
+            "pointer_down",
+            "pointer_up"
+        ])
     );
     assert!(value["capabilities"]["key_names"]
         .as_array()

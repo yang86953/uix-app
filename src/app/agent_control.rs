@@ -29,6 +29,9 @@ pub(crate) const MAX_AGENT_SETTLE_PASSES: usize = 32;
 pub(crate) enum AgentWindowAction {
     PressKey { key: KeyCode, modifiers: KeyMod },
     ClickAt { position: Point },
+    PointerMove { position: Point },
+    PointerDown { position: Point },
+    PointerUp { position: Point },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -551,6 +554,26 @@ fn perform_window_action(
                 button: MouseButton::Left,
                 mods: KeyMod::NONE,
             });
+            let _ = tree.dispatch_event(&SystemEvent::PointerUp {
+                pos: position,
+                button: MouseButton::Left,
+                mods: KeyMod::NONE,
+            });
+        }
+        AgentWindowAction::PointerMove { position } => {
+            let _ = tree.dispatch_event(&SystemEvent::PointerMove {
+                pos: position,
+                mods: KeyMod::NONE,
+            });
+        }
+        AgentWindowAction::PointerDown { position } => {
+            let _ = tree.dispatch_event(&SystemEvent::PointerDown {
+                pos: position,
+                button: MouseButton::Left,
+                mods: KeyMod::NONE,
+            });
+        }
+        AgentWindowAction::PointerUp { position } => {
             let _ = tree.dispatch_event(&SystemEvent::PointerUp {
                 pos: position,
                 button: MouseButton::Left,
