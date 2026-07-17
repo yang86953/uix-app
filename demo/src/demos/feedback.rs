@@ -17,6 +17,7 @@ fn focus_trap_modal(tk: &DesignTokens) -> ViewNode {
                     .primary()
                     .automation_id("feedback-modal-confirm"),
             ])
+            .align(AlignItems::Center)
             .gap(8.0)],
         )
         .automation_id("feedback-focus-modal"),

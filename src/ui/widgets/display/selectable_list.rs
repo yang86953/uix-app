@@ -404,8 +404,10 @@ component! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.last_frame.set(Some(frame));
-        let bg = ctx.tokens().color_bg_layout();
-        let border = Color::from_rgb(40, 40, 45);
+        let bg = ctx.tokens().color_bg_container();
+        let border = ctx.tokens().color_border_secondary();
+        let fill = ctx.tokens().color_fill_secondary();
+        let fill_hover = ctx.tokens().color_fill();
         let t_sec = ctx.tokens().color_text_secondary();
         let t_ter = ctx.tokens().color_text_tertiary();
         let t_pri = ctx.tokens().color_primary();
@@ -418,9 +420,9 @@ component! {
         if !self.header_button_text.is_empty() {
             let btn_frame = Rect::new(frame.x + 8.0, y + 8.0, frame.w - 16.0, 32.0);
             let btn_bg = if self.hovered_header.get() {
-                Color::from_rgb(45, 45, 52)
+                fill_hover
             } else {
-                Color::from_rgb(35, 35, 42)
+                fill
             };
             ctx.fill_rect(btn_frame, btn_bg, Some(Radius::uniform(6.0)));
             ctx.draw_text("+", Point::new(btn_frame.x + 10.0, btn_frame.y + 7.0), t_sec, 15.0);
@@ -468,7 +470,7 @@ component! {
                     Some(Radius::uniform(1.5)),
                 );
             } else if is_hover {
-                ctx.fill_rect(item_frame, Color::from_rgb(42, 42, 48), Some(Radius::uniform(6.0)));
+                ctx.fill_rect(item_frame, fill_hover, Some(Radius::uniform(6.0)));
             }
 
             let icon = self.items[i].icon.as_deref().unwrap_or("");
@@ -478,7 +480,13 @@ component! {
                 item_frame.x + 32.0
             };
             if !icon.is_empty() {
-                ctx.draw_text(icon, Point::new(item_frame.x + 10.0, item_frame.y + 8.0), t_sec, 14.0);
+                crate::ui::widgets::general::icon::paint_icon_in_frame(
+                    ctx,
+                    icon,
+                    Rect::new(item_frame.x + 8.0, item_frame.y + 6.0, 18.0, 18.0),
+                    t_sec,
+                    14.0,
+                );
             }
 
             let color = if is_active { t_pri } else { t_sec };

@@ -169,8 +169,16 @@ pub fn page_general(ctx: &DemoCtx<'_>) -> ViewNode {
             "FloatButton",
             embed(
                 flow_row(56.0)
-                    .child(sample_block(tk, "FloatButton", FloatButton::new("+")))
-                    .child(sample_block(tk, "BackTop", FloatButtonBackTop::new())),
+                    .child(sample_block(
+                        tk,
+                        "FloatButton",
+                        FloatButton::new("+").reserve_layout_space(true),
+                    ))
+                    .child(sample_block(
+                        tk,
+                        "BackTop",
+                        FloatButtonBackTop::new().reserve_layout_space(true),
+                    )),
             ),
         )
         .build()

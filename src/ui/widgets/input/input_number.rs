@@ -5,7 +5,7 @@
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
-use crate::draw::{Color, Radius};
+use crate::draw::Radius;
 use crate::native::traits::input::ControlSize;
 use crate::ui::state::State;
 use crate::ui::SnapshotFields;
@@ -206,7 +206,7 @@ component! {
         let border_c = if self.focused { primary } else if self.hovered { primary_hover } else { border_color };
         let border_w = if self.focused { 2.0 } else { 1.0 };
 
-        ctx.fill_rect(input_frame, Color::white(), radius);
+        ctx.fill_rect(input_frame, ctx.tokens().color_bg_container(), radius);
         ctx.stroke_rect(input_frame, border_c, border_w, radius);
 
         let show = if self.value_configured {

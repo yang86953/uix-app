@@ -3,7 +3,7 @@
 use uix::prelude::*;
 
 use crate::common::page::{PageBuilder, INNER_W};
-use crate::common::showcase::labeled_row;
+use crate::common::showcase::{labeled_row, widget_caption};
 use crate::demos::context::DemoCtx;
 
 pub fn page_layout(ctx: &DemoCtx<'_>) -> ViewNode {
@@ -107,12 +107,24 @@ pub fn page_layout(ctx: &DemoCtx<'_>) -> ViewNode {
                 .child(Label::new("ScrollView 行 6").font_size(12.0)),
         )
         .section("Affix / BackTop")
-        .push(labeled_row(tk, 40.0, "Affix", Affix::new(12.0)))
-        .push(labeled_row(
-            tk,
-            40.0,
-            "BackTop",
-            BackTop::new().visibility_height(100.0),
-        ))
+        .push_view(
+            row([
+                embed(widget_caption(tk, "Affix（吸顶态）")),
+                ViewNode::new(
+                    Affix::new(12.0).scroll_y(180.0),
+                    vec![button("已吸顶").primary().into()],
+                ),
+            ])
+            .align(AlignItems::Center)
+            .height(40.0),
+        )
+        .push_view(
+            row([
+                embed(widget_caption(tk, "BackTop（可见态）")),
+                embed(BackTop::new().visibility_height(100.0).scroll_y(180.0)),
+            ])
+            .align(AlignItems::Center)
+            .height(40.0),
+        )
         .build()
 }

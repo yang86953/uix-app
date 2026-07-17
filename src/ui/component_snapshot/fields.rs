@@ -229,6 +229,7 @@ pub enum SnapshotFields {
         size: f32,
         x: f32,
         y: f32,
+        reserve_layout_space: bool,
     },
     Alert {
         message: String,
