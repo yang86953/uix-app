@@ -15,6 +15,8 @@ mod window_title_bar;
 
 use window_title_bar::demo_window;
 
+const SYSTEM_THEME_FOLLOW_STATUS_ID: &str = "system-theme-follow-status";
+
 fn sidebar_group_label(_tk: &DesignTokens, text: &str) -> ViewNode {
     label(text)
         .font_size(11.0)
@@ -99,6 +101,22 @@ fn header_bar(
 ) -> ViewNode {
     let active_for_title = active.clone();
     let ticks = timer_ticks.clone();
+    let theme_control_view = if theme_control.follows_system_theme() {
+        label("跟随系统")
+            .automation_id(SYSTEM_THEME_FOLLOW_STATUS_ID)
+            .font_size(12.0)
+            .color(ColorValue::Palette(PaletteColor::Primary))
+            .padding_h(8.0)
+    } else {
+        embed(ThemeToggle::new().dark(theme_control.is_dark()))
+            .on_click_fn({
+                let theme_control = theme_control.clone();
+                move || {
+                    theme_control.toggle();
+                }
+            })
+            .automation_id("theme-toggle")
+    };
     column_fit([
         row([
             dynamic_label(move || {
@@ -113,14 +131,7 @@ fn header_bar(
             dynamic_label(move || format!("{}s", ticks.get()))
                 .font_size(12.0)
                 .color(ColorValue::Neutral(NeutralRole::TextTertiary)),
-            embed(ThemeToggle::new().dark(theme_control.is_dark()))
-                .on_click_fn({
-                    let theme_control = theme_control.clone();
-                    move || {
-                        theme_control.toggle();
-                    }
-                })
-                .automation_id("theme-toggle"),
+            theme_control_view,
         ])
         .align(AlignItems::Center)
         .gap(12.0)
@@ -245,18 +256,19 @@ fn app_shell(active: State<usize>, timer_ticks: State<u32>) -> ViewNode {
     )
 }
 
-pub fn run(agent_control: bool) {
+pub fn run(agent_control: bool, follow_system_theme: bool) {
     let active = State::new(0usize);
     let timer_ticks = State::new(0u32);
     let home_count = State::new(0i32);
     let runtime_count = State::new(0i32);
-    let theme_control = ThemeControl::default();
+    let theme_control = ThemeControl::new(follow_system_theme);
 
     let app = App::new()
         .title("UIX Demo")
         .size(INIT_W, INIT_H)
         .custom_title_bar(true)
         .theme(Theme::antd_light())
+        .follow_system_theme(follow_system_theme)
         .on_start(with_cloned!(theme_control, timer_ticks, active; |handle| {
             theme_control.set_handle(handle.clone());
             let ticks = timer_ticks.clone();

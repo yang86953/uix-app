@@ -289,6 +289,52 @@ fn home_page_builds() {
 }
 
 #[test]
+fn system_theme_follow_mode_exposes_status_without_manual_toggle() {
+    let active = State::new(0usize);
+    let timer_ticks = State::new(0u32);
+    let home_count = State::new(0i32);
+    let runtime_count = State::new(0i32);
+    let theme_control = ThemeControl::new(true);
+    let root = app_shell_with_counters(
+        active,
+        timer_ticks,
+        &home_count,
+        &runtime_count,
+        &theme_control,
+    );
+    let mut tree = ViewAdapter::build(root);
+    if let Some(root) = tree.root_mut() {
+        root.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+    }
+    tree.layout();
+
+    let follow_status = tree
+        .traverse()
+        .iter()
+        .copied()
+        .find(|&id| {
+            tree.get(id)
+                .and_then(|node| node.automation_id())
+                .is_some_and(|automation_id| automation_id == "system-theme-follow-status")
+        })
+        .expect("system theme follow status");
+    let status = tree
+        .get(follow_status)
+        .and_then(|node| node.component().as_any().downcast_ref::<Label>())
+        .expect("system theme follow label");
+    assert_eq!(status.text(), "跟随系统");
+    assert!(tree.get(follow_status).is_some_and(|node| {
+        let frame = node.frame();
+        frame.w > 0.0 && frame.h > 0.0
+    }));
+    assert!(tree.traverse().iter().all(|&id| {
+        tree.get(id)
+            .and_then(|node| node.automation_id())
+            .is_none_or(|automation_id| automation_id != "theme-toggle")
+    }));
+}
+
+#[test]
 fn demo_local_counters_survive_root_reconcile() {
     use uix::core::Point;
     use uix::native::traits::input::{KeyMod, MouseButton};

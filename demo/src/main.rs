@@ -3,6 +3,8 @@
 // ============================================================================
 //   cargo run --bin uix-demo          → GUI 多页应用
 //   cargo run --bin uix-demo -- --cli → CLI 功能域演示
+//   cargo run --bin uix-demo -- --follow-system-theme
+//                                      → GUI 跟随系统主题
 //   cargo run --features agent-control --bin uix-demo -- --agent-control
 //                                      → 启用 Agent Bridge 的 GUI
 // ============================================================================
@@ -18,6 +20,7 @@ use uix::core::log::{info_fn, Level, Logger};
 struct LaunchOptions {
     cli: bool,
     agent_control: bool,
+    follow_system_theme: bool,
 }
 
 fn parse_launch_options(args: impl IntoIterator<Item = String>) -> LaunchOptions {
@@ -26,6 +29,7 @@ fn parse_launch_options(args: impl IntoIterator<Item = String>) -> LaunchOptions
         match argument.as_str() {
             "--cli" => options.cli = true,
             "--agent-control" => options.agent_control = true,
+            "--follow-system-theme" => options.follow_system_theme = true,
             _ => {}
         }
     }
@@ -53,6 +57,10 @@ fn main() {
         eprintln!("--agent-control 只适用于 GUI 模式，不能与 --cli 同时使用");
         std::process::exit(2);
     }
+    if options.cli && options.follow_system_theme {
+        eprintln!("--follow-system-theme 只适用于 GUI 模式，不能与 --cli 同时使用");
+        std::process::exit(2);
+    }
     #[cfg(not(feature = "agent-control"))]
     if options.agent_control {
         eprintln!("--agent-control 需要同时启用 Cargo feature：--features agent-control");
@@ -67,7 +75,7 @@ fn main() {
         }
     } else {
         info_fn("UIX GUI 演示启动中...");
-        gui::run(options.agent_control);
+        gui::run(options.agent_control, options.follow_system_theme);
     }
 }
 
@@ -76,12 +84,17 @@ mod tests {
     use super::{parse_launch_options, LaunchOptions};
 
     #[test]
-    fn launch_options_keep_cli_and_agent_control_explicit() {
+    fn launch_options_keep_gui_capabilities_explicit() {
         assert_eq!(
-            parse_launch_options(["--cli".to_owned(), "--agent-control".to_owned()]),
+            parse_launch_options([
+                "--cli".to_owned(),
+                "--agent-control".to_owned(),
+                "--follow-system-theme".to_owned(),
+            ]),
             LaunchOptions {
                 cli: true,
                 agent_control: true,
+                follow_system_theme: true,
             }
         );
         assert_eq!(

@@ -7,18 +7,24 @@ use uix::prelude::*;
 pub struct ThemeControl {
     handle: Arc<Mutex<Option<AppHandle>>>,
     dark: State<bool>,
+    follow_system_theme: bool,
 }
 
 impl Default for ThemeControl {
     fn default() -> Self {
-        Self {
-            handle: Arc::new(Mutex::new(None)),
-            dark: State::new(false),
-        }
+        Self::new(false)
     }
 }
 
 impl ThemeControl {
+    pub fn new(follow_system_theme: bool) -> Self {
+        Self {
+            handle: Arc::new(Mutex::new(None)),
+            dark: State::new(false),
+            follow_system_theme,
+        }
+    }
+
     pub fn set_handle(&self, handle: AppHandle) {
         *self.handle.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
     }
@@ -34,7 +40,14 @@ impl ThemeControl {
         self.dark.get()
     }
 
+    pub fn follows_system_theme(&self) -> bool {
+        self.follow_system_theme
+    }
+
     pub fn toggle(&self) -> bool {
+        if self.follow_system_theme {
+            return false;
+        }
         let next = !self.is_dark();
         let handle = self
             .handle
