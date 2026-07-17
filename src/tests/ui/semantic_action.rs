@@ -282,6 +282,40 @@ fn increment_decrement_and_scroll_use_the_existing_widget_event_contracts() {
 }
 
 #[test]
+fn semantic_scroll_targets_the_resolved_outer_viewport() {
+    let inner = ScrollView::new(ScrollDirection::Vertical)
+        .size(120.0, 320.0)
+        .child(Space::new().width(120.0).height(640.0));
+    let mut tree = laid_out_tree(embed(
+        ScrollView::new(ScrollDirection::Vertical)
+            .size(120.0, 80.0)
+            .child(inner),
+    ));
+    let outer = tree.root_id().unwrap();
+    let inner = tree.get(outer).unwrap().children()[0];
+
+    tree.perform_semantic_action(
+        outer,
+        &SemanticAction::Scroll {
+            delta: Point::new(0.0, 1.0),
+        },
+    )
+    .unwrap();
+
+    let scroll_y = |tree: &crate::ui::WidgetTree, id| {
+        tree.get(id)
+            .unwrap()
+            .component()
+            .as_any()
+            .downcast_ref::<ScrollView>()
+            .unwrap()
+            .scroll_y()
+    };
+    assert!(scroll_y(&tree, outer) > 0.0);
+    assert_eq!(scroll_y(&tree, inner), 0.0);
+}
+
+#[test]
 fn semantic_action_errors_distinguish_capability_interactivity_and_modal_blocking() {
     let mut tree = laid_out_tree(column([
         button("Outside").automation_id("outside"),

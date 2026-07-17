@@ -1,9 +1,12 @@
 use super::*;
 use crate::common::page::{
-    INIT_H, INIT_W, INNER_W, PAGE_APP, PAGE_COUNT, PAGE_FEEDBACK, PAGE_GENERAL, PAGE_OTHER,
-    PAGE_TITLES, SIDEBAR_W,
+    INIT_H, INIT_W, INNER_W, PAGE_APP, PAGE_COUNT, PAGE_DATA, PAGE_FEEDBACK, PAGE_GENERAL,
+    PAGE_INPUT, PAGE_OTHER, PAGE_TITLES, SIDEBAR_W,
 };
-use uix::prelude::{dynamic_label, Button, DesignTokens, Label, Rect, State, SystemEvent};
+use uix::prelude::{
+    dynamic_label, Button, DesignTokens, Form, FormItem, Input, Label, Rect, SelectableList, State,
+    SystemEvent, Table,
+};
 use uix::ui::test_harness::{ViewAdapter, WidgetCore};
 use uix::ui::traits::WidgetLayout;
 use uix::ui::widgets::ScrollView;

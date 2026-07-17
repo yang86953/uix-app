@@ -3,7 +3,7 @@
 use std::cell::Cell;
 
 use crate::component;
-use crate::core::{Constraints, Point, Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::traits::system::StatusLevel;
@@ -96,13 +96,19 @@ component! {
         let text_x = frame.x + if self.show_icon { 36.0 } else { 14.0 };
         let msg_y = ctx.visual_center_y(frame, 14.0);
         if self.show_icon {
-            let icon = match self.type_ {
-                StatusLevel::Success => "✓",
-                StatusLevel::Info => "i",
-                StatusLevel::Warning => "!",
-                StatusLevel::Error => "×",
+            let icon_name = match self.type_ {
+                StatusLevel::Success => "check-circle",
+                StatusLevel::Info => "info",
+                StatusLevel::Warning => "alert-triangle",
+                StatusLevel::Error => "x-circle",
             };
-            ctx.draw_text(icon, Point::new(frame.x + 14.0, msg_y), fg, 14.0);
+            crate::ui::widgets::icon::paint_icon_in_frame(
+                ctx,
+                icon_name,
+                Rect::new(frame.x + 10.0, frame.y, 20.0, frame.h),
+                fg,
+                14.0,
+            );
         }
         ctx.draw_text(&self.message, crate::core::Point::new(text_x, msg_y), fg, 14.0);
         if !self.description.is_empty() {
@@ -118,7 +124,6 @@ component! {
                 local_close.w,
                 local_close.h,
             );
-            let cy = ctx.visual_center_y(frame, 14.0);
             if self.focused {
                 ctx.stroke_rect(
                     Rect::new(
@@ -132,9 +137,10 @@ component! {
                     Some(Radius::uniform(ctx.tokens().border_radius_sm())),
                 );
             }
-            ctx.draw_text(
-                "✕",
-                Point::new(close.x + 12.0, cy),
+            crate::ui::widgets::icon::paint_icon_in_frame(
+                ctx,
+                "x",
+                Rect::new(close.x + 6.0, frame.y, 20.0, frame.h),
                 ctx.tokens().color_text_quaternary(),
                 14.0,
             );

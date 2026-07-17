@@ -8,7 +8,7 @@ use crate::demos::context::DemoCtx;
 
 fn focus_trap_modal(tk: &DesignTokens) -> ViewNode {
     row([
-        embed(widget_caption(tk, "Modal ✓")),
+        embed(widget_caption(tk, "Modal（可交互）")),
         ViewNode::new(
             Modal::new("系统键盘焦点陷阱").closable(true).overlay(true),
             vec![row([
@@ -40,7 +40,7 @@ pub fn page_feedback(ctx: &DemoCtx<'_>) -> ViewNode {
         .push(labeled_row(
             tk,
             36.0,
-            "Drawer ✓",
+            "Drawer（可交互）",
             Drawer::new("抽屉标题")
                 .closable(true)
                 .placement(DrawerPlacement::Right),
@@ -99,19 +99,19 @@ pub fn page_feedback(ctx: &DemoCtx<'_>) -> ViewNode {
         .push(labeled_row(
             tk,
             36.0,
-            "Tooltip ✓",
+            "Tooltip（可交互）",
             Tooltip::new("悬停提示").placement(TooltipPlacement::Top),
         ))
         .push(labeled_row(
             tk,
             36.0,
-            "Popover ✓",
+            "Popover（可交互）",
             Popover::new("气泡内容").title("标题"),
         ))
         .push(labeled_row(
             tk,
             36.0,
-            "Popconfirm ✓",
+            "Popconfirm（可交互）",
             Popconfirm::new().title("确定删除？"),
         ))
         .build()

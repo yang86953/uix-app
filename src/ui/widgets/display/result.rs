@@ -104,10 +104,10 @@ component! {
         let text_sec = ctx.tokens().color_text_secondary();
         let loc = crate::ui::locale::use_locale();
         let (icon, icon_color, main_title) = match self.type_ {
-            ResultType::Success => ("✓", ctx.tokens().color_success(), if self.title.is_empty() { loc.result_success } else { &self.title }),
-            ResultType::Error   => ("✗", ctx.tokens().color_error(), if self.title.is_empty() { loc.result_error } else { &self.title }),
-            ResultType::Info    => ("ℹ", ctx.tokens().color_info(), if self.title.is_empty() { loc.result_info } else { &self.title }),
-            ResultType::Warning => ("⚠", ctx.tokens().color_warning(), if self.title.is_empty() { loc.result_warning } else { &self.title }),
+            ResultType::Success => ("check", ctx.tokens().color_success(), if self.title.is_empty() { loc.result_success } else { &self.title }),
+            ResultType::Error   => ("x", ctx.tokens().color_error(), if self.title.is_empty() { loc.result_error } else { &self.title }),
+            ResultType::Info    => ("info", ctx.tokens().color_info(), if self.title.is_empty() { loc.result_info } else { &self.title }),
+            ResultType::Warning => ("alert-triangle", ctx.tokens().color_warning(), if self.title.is_empty() { loc.result_warning } else { &self.title }),
             ResultType::NotFound => ("404", ctx.tokens().color_text_quaternary(), if self.title.is_empty() { loc.result_404 } else { &self.title }),
             ResultType::Forbidden => ("403", ctx.tokens().color_warning(), if self.title.is_empty() { loc.result_403 } else { &self.title }),
             ResultType::ServerError => ("500", ctx.tokens().color_error(), if self.title.is_empty() { loc.result_500 } else { &self.title }),
@@ -123,8 +123,13 @@ component! {
             }
             _ => {
                 ctx.fill_circle(cx, cy - 30.0, 32.0, icon_color);
-                let icon_w = ctx.measure_text(icon, 24.0).w;
-                ctx.draw_text(icon, Point::new(cx - icon_w * 0.5, cy - 42.0 - 24.0 * 0.5), Color::white(), 24.0);
+                crate::ui::widgets::icon::paint_icon_in_frame(
+                    ctx,
+                    icon,
+                    Rect::new(cx - 24.0, cy - 54.0, 48.0, 48.0),
+                    Color::white(),
+                    24.0,
+                );
             }
         }
 

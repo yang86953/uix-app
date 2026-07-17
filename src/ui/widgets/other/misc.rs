@@ -549,7 +549,13 @@ component! {
         if self.drag && self.drag_hover {
             ctx.stroke_rect(Rect::new(frame.x + 4.0, frame.y + 4.0, frame.w - 8.0, 92.0), primary, 1.0, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
         }
-        ctx.draw_text("📁", Point::new(frame.x + frame.w * 0.5 - 12.0, frame.y + 24.0), text_sec, 24.0);
+        crate::ui::widgets::icon::paint_icon_in_frame(
+            ctx,
+            "upload",
+            Rect::new(frame.x + frame.w * 0.5 - 24.0, frame.y + 12.0, 48.0, 40.0),
+            text_sec,
+            24.0,
+        );
         let loc = crate::ui::locale::use_locale();
         ctx.draw_text(loc.upload_drag, Point::new(frame.x + frame.w * 0.5 - 48.0, frame.y + 60.0), text_sec, 13.0);
         if !self.accept.is_empty() && self.accept != "*" {
@@ -565,20 +571,32 @@ component! {
                 UploadStatus::Uploading => primary,
                 UploadStatus::Pending => text_sec,
             };
-            ctx.draw_text("📄", Point::new(frame.x + 8.0, y + 4.0), text_sec, 14.0);
+            crate::ui::widgets::icon::paint_icon_in_frame(
+                ctx,
+                "file",
+                Rect::new(frame.x + 6.0, y, 18.0, 24.0),
+                text_sec,
+                14.0,
+            );
             ctx.draw_text(&f.name, Point::new(frame.x + 28.0, y + 5.0), text, 12.0);
             if f.status == UploadStatus::Uploading {
                 let bar_w = (frame.w - 40.0).max(0.0);
                 let bar_rect = Rect::new(frame.x + 10.0, y + 20.0, bar_w * f.progress, 4.0);
                 ctx.fill_rect(bar_rect, primary, None);
             }
-            let status_str: &str = match f.status {
-                UploadStatus::Done => "✓",
-                UploadStatus::Error => "✗",
-                UploadStatus::Pending => "⏳",
-                UploadStatus::Uploading => "↻",
+            let status_icon = match f.status {
+                UploadStatus::Done => "check",
+                UploadStatus::Error => "x",
+                UploadStatus::Pending => "clock",
+                UploadStatus::Uploading => "refresh-cw",
             };
-            ctx.draw_text(status_str, Point::new(frame.x + frame.w - 20.0, y + 5.0), status_color, 12.0);
+            crate::ui::widgets::icon::paint_icon_in_frame(
+                ctx,
+                status_icon,
+                Rect::new(frame.x + frame.w - 24.0, y, 20.0, 24.0),
+                status_color,
+                12.0,
+            );
         }
     }
 }

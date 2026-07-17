@@ -149,25 +149,35 @@ pub fn page_data(ctx: &DemoCtx<'_>) -> ViewNode {
                 ),
         )
         .section("Table")
-        .push(tree! { Container::new().size(INNER_W, 200.0) => [
+        .push(
             Table::new()
                 .columns(vec![
                     TableColumn::new("姓名", 100.0),
                     TableColumn::new("角色", 120.0),
                     TableColumn::new("状态", 80.0).filterable(true),
                 ])
-                .rows((0..60).map(|i: usize| {
-                    vec![
-                        format!("User {i}"),
-                        if i % 3 == 0 { "Designer".into() } else { "Engineer".into() },
-                        "Active".into(),
-                    ]
-                }).collect())
+                .rows(
+                    (0..60)
+                        .map(|i: usize| {
+                            vec![
+                                format!("User {i}"),
+                                if i % 3 == 0 {
+                                    "Designer".into()
+                                } else {
+                                    "Engineer".into()
+                                },
+                                "Active".into(),
+                            ]
+                        })
+                        .collect(),
+                )
                 .sortable(true)
                 .selection(true)
                 .bordered(true)
-                .into_node(),
-        ]})
+                .size(INNER_W, 200.0)
+                .into_node()
+                .automation_id("data-table-demo"),
+        )
         .section("SelectableList")
         .push(labeled_row(tk, 140.0, "SelectableList", {
             let mut list = SelectableList::new();

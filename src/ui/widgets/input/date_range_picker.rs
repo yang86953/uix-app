@@ -267,12 +267,12 @@ component! {
                 14.0,
             );
         }
-        let icon_y = ctx.visual_center_y(frame, 12.0);
-        ctx.draw_text(
-            "📅",
-            Point::new(frame.x + frame.w - 24.0, icon_y),
+        crate::ui::widgets::icon::paint_icon_in_frame(
+            ctx,
+            "calendar",
+            Rect::new(frame.x + frame.w - 28.0, frame.y, 24.0, frame.h),
             text_secondary,
-            12.0,
+            14.0,
         );
 
         if self.open.get() {

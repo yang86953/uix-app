@@ -274,10 +274,15 @@ impl WidgetTree {
                 if delta.x == 0.0 && delta.y == 0.0 {
                     EventResult::Handled
                 } else {
-                    self.dispatch_event(&SystemEvent::Wheel {
-                        pos: center(visible_bounds),
-                        delta: *delta,
-                    })
+                    // 语义滚动必须命中已解析的目标；按坐标重新命中会被目标内部的
+                    // Table / ScrollView 截获，导致自动化滚动了错误的视口。
+                    self.dispatch_to(
+                        id,
+                        &SystemEvent::Wheel {
+                            pos: center(visible_bounds),
+                            delta: *delta,
+                        },
+                    )
                 }
             }
             SemanticAction::Select(value) => self.select_option(id, role, value)?,

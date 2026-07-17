@@ -153,9 +153,18 @@ component! {
                 }
                 ctx.canvas_2d().stroke_circle(cx, circle_y, circle_r, border_c, 2.0);
                 // 步骤编号/图标（在圆圈内居中）
-                let num = if step.status == StepStatus::Finish { "✓" } else { &(i + 1).to_string() };
                 let circle_rect = Rect::new(cx - circle_r, circle_y - circle_r, circle_r * 2.0, circle_r * 2.0);
-                ctx.text_center(num, circle_rect, text_c, 14.0);
+                if step.status == StepStatus::Finish {
+                    crate::ui::widgets::icon::paint_icon_in_frame(
+                        ctx,
+                        "check",
+                        circle_rect,
+                        text_c,
+                        14.0,
+                    );
+                } else {
+                    ctx.text_center(&(i + 1).to_string(), circle_rect, text_c, 14.0);
+                }
                 // 标题（在圆圈下方居中）
                 let title_c = if i <= self.current.get() { text } else { text_sec };
                 let title_rect = Rect::new(cx - step_w * 0.5, circle_y + circle_r + 4.0, step_w, 20.0);
@@ -196,22 +205,23 @@ component! {
                 }
                 ctx.canvas_2d()
                     .stroke_circle(circle_x, cy, circle_r, border_c, 2.0);
-                let number = if step.status == StepStatus::Finish {
-                    "✓".to_string()
-                } else {
-                    (i + 1).to_string()
-                };
-                ctx.text_center(
-                    &number,
-                    Rect::new(
-                        circle_x - circle_r,
-                        cy - circle_r,
-                        circle_r * 2.0,
-                        circle_r * 2.0,
-                    ),
-                    text_c,
-                    14.0,
+                let circle_rect = Rect::new(
+                    circle_x - circle_r,
+                    cy - circle_r,
+                    circle_r * 2.0,
+                    circle_r * 2.0,
                 );
+                if step.status == StepStatus::Finish {
+                    crate::ui::widgets::icon::paint_icon_in_frame(
+                        ctx,
+                        "check",
+                        circle_rect,
+                        text_c,
+                        14.0,
+                    );
+                } else {
+                    ctx.text_center(&(i + 1).to_string(), circle_rect, text_c, 14.0);
+                }
                 let title_color = if i <= self.current.get() { text } else { text_sec };
                 ctx.draw_text_in_frame(
                     &step.title,

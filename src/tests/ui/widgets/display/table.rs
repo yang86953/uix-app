@@ -12,6 +12,19 @@ fn click(x: f32, y: f32) -> SystemEvent {
 }
 
 #[test]
+fn fixed_viewport_size_bounds_long_table_measurement() {
+    let table = Table::new()
+        .columns(vec![TableColumn::new("Name", 120.0)])
+        .rows((0..60).map(|index| vec![format!("User {index}")]).collect())
+        .size(320.0, 200.0);
+
+    assert_eq!(
+        table.measure(Constraints::loose(Size::new(1000.0, 1000.0))),
+        Size::new(320.0, 200.0)
+    );
+}
+
+#[test]
 fn table_level_sorting_cycles_and_survives_reconcile() {
     let mut table = Table::new()
         .columns(vec![TableColumn::new("Name", 120.0)])

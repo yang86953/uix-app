@@ -36,6 +36,134 @@ fn gui_shell_layout() {
     );
 }
 
+#[test]
+fn compact_shell_keeps_sidebar_scroll_above_status_bar() {
+    let active = State::new(0usize);
+    let timer_ticks = State::new(0u32);
+    let root = app_shell(active, timer_ticks);
+    let mut tree = ViewAdapter::build(root);
+    if let Some(root) = tree.root_mut() {
+        root.set_frame(Rect::new(0.0, 0.0, 900.0, 640.0));
+    }
+    tree.layout();
+
+    let sidebar_scroll = tree
+        .traverse()
+        .iter()
+        .copied()
+        .find(|&id| {
+            tree.get(id)
+                .and_then(|node| node.automation_id())
+                .is_some_and(|automation_id| automation_id == "sidebar-scroll")
+        })
+        .expect("sidebar scroll");
+    let status_bar = tree
+        .traverse()
+        .iter()
+        .copied()
+        .find(|&id| {
+            tree.get(id)
+                .and_then(|node| node.automation_id())
+                .is_some_and(|automation_id| automation_id == "app-status-bar")
+        })
+        .expect("app status bar");
+    let scroll_frame = tree
+        .get(sidebar_scroll)
+        .expect("sidebar scroll node")
+        .frame();
+    let status_frame = tree.get(status_bar).expect("status bar node").frame();
+    let scroll = tree
+        .get(sidebar_scroll)
+        .expect("sidebar scroll node")
+        .component()
+        .as_any()
+        .downcast_ref::<ScrollView>()
+        .expect("sidebar ScrollView");
+
+    assert!((scroll_frame.w - SIDEBAR_W).abs() < 2.0);
+    assert!(
+        scroll_frame.y + scroll_frame.h <= status_frame.y + 0.5,
+        "sidebar scroll must stay above status bar: scroll={scroll_frame:?} status={status_frame:?}"
+    );
+    assert!(
+        scroll.max_scroll_y() > 0.0,
+        "compact sidebar must expose vertical navigation scroll"
+    );
+}
+
+#[test]
+fn data_table_demo_is_bounded_before_following_sections() {
+    let active = State::new(PAGE_DATA);
+    let timer_ticks = State::new(0u32);
+    let root = app_shell(active, timer_ticks);
+    let mut tree = ViewAdapter::build(root);
+    if let Some(root) = tree.root_mut() {
+        root.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+    }
+    tree.layout();
+
+    let table_frame = tree
+        .find_all_by_type::<Table>()
+        .into_iter()
+        .map(|(id, _)| tree.get(id).expect("table node").frame())
+        .next()
+        .expect("data demo Table");
+    let selectable_frame = tree
+        .find_all_by_type::<SelectableList>()
+        .into_iter()
+        .map(|(id, _)| tree.get(id).expect("selectable list node").frame())
+        .next()
+        .expect("data demo SelectableList");
+
+    assert!(
+        table_frame.w > 0.0 && table_frame.w <= INNER_W,
+        "{table_frame:?}"
+    );
+    assert!((table_frame.h - 200.0).abs() < 1.0, "{table_frame:?}");
+    assert!(
+        table_frame.y + table_frame.h <= selectable_frame.y,
+        "Table must not paint through following sections: table={table_frame:?} selectable={selectable_frame:?}"
+    );
+}
+
+#[test]
+fn input_demo_form_owns_and_contains_its_items() {
+    let active = State::new(PAGE_INPUT);
+    let timer_ticks = State::new(0u32);
+    let root = app_shell(active, timer_ticks);
+    let mut tree = ViewAdapter::build(root);
+    if let Some(root) = tree.root_mut() {
+        root.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+    }
+    tree.layout();
+
+    let (form_id, _) = tree
+        .find_all_by_type::<Form>()
+        .into_iter()
+        .next()
+        .expect("input demo Form");
+    let form_node = tree.get(form_id).expect("form node");
+    let form_frame = form_node.frame();
+    assert_eq!(form_node.children().len(), 3);
+    for child_id in form_node.children() {
+        let child = tree.get(*child_id).expect("form item node");
+        assert!(child.component().as_any().is::<FormItem>());
+        assert_eq!(child.children().len(), 1);
+        assert!(tree
+            .get(child.children()[0])
+            .expect("form input node")
+            .component()
+            .as_any()
+            .is::<Input>());
+        let item_frame = child.frame();
+        assert!(
+            item_frame.y >= form_frame.y
+                && item_frame.y + item_frame.h <= form_frame.y + form_frame.h + 0.5,
+            "FormItem must stay inside Form: form={form_frame:?} item={item_frame:?}"
+        );
+    }
+}
+
 /// 首页：放大后 ScrollView/内容列/提示条须跟窗口；section 色条不得吞满整行。
 /// 调试 overlay：紫框=壳层，蓝框=内容列——二者宽度应接近（不再卡 INNER_W）。
 #[test]
