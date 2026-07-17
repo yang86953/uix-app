@@ -4,6 +4,8 @@
 mod foreground;
 #[path = "support/agent_gui_windows/multi_window.rs"]
 mod multi_window;
+#[path = "support/agent_gui_windows/system_theme.rs"]
+mod system_theme;
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -61,6 +63,10 @@ struct DemoProcess {
 
 impl DemoProcess {
     fn spawn(graphics: GraphicsExpectation) -> Self {
+        Self::spawn_with_args(graphics, &[])
+    }
+
+    fn spawn_with_args(graphics: GraphicsExpectation, extra_args: &[&str]) -> Self {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system clock after Unix epoch")
@@ -76,6 +82,7 @@ impl DemoProcess {
         let mut command = Command::new(env!("CARGO_BIN_EXE_uix-demo"));
         command
             .arg("--agent-control")
+            .args(extra_args)
             .env("LOCALAPPDATA", &discovery_root)
             .env_remove("UIX_GRAPHICS_BACKEND")
             .env("RUST_LOG", "info")

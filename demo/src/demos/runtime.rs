@@ -11,9 +11,17 @@ const OPEN_THEME_WINDOW_ID: &str = "runtime-open-theme-window";
 const MAIN_THEME_STATE_ID: &str = "runtime-theme-state";
 const CHILD_THEME_STATE_ID: &str = "theme-window-theme-state";
 const CHILD_THEME_TOGGLE_ID: &str = "theme-window-theme-toggle";
+const CHILD_SYSTEM_THEME_STATUS_ID: &str = "theme-window-system-theme-follow-status";
 const CHILD_WINDOW_CLOSE_ID: &str = "theme-window-close";
+const RUNTIME_SYSTEM_THEME_STATUS_ID: &str = "runtime-system-theme-follow-status";
 
 fn theme_state(control: crate::demos::context::ThemeControl, automation_id: &str) -> ViewNode {
+    if control.follows_system_theme() {
+        return label("当前主题：跟随系统")
+            .automation_id(automation_id)
+            .font_size(13.0)
+            .color(ColorValue::Neutral(NeutralRole::TextSecondary));
+    }
     dynamic_label(move || {
         if control.is_dark() {
             "当前主题：暗色".to_string()
@@ -27,7 +35,20 @@ fn theme_state(control: crate::demos::context::ThemeControl, automation_id: &str
 }
 
 fn theme_window(control: crate::demos::context::ThemeControl) -> ViewNode {
-    let toggle_control = control.clone();
+    let theme_control = if control.follows_system_theme() {
+        label("跟随系统")
+            .automation_id(CHILD_SYSTEM_THEME_STATUS_ID)
+            .font_size(12.0)
+            .color(ColorValue::Palette(PaletteColor::Primary))
+            .padding_h(8.0)
+    } else {
+        let toggle_control = control.clone();
+        embed(ThemeToggle::new().dark(control.is_dark()))
+            .on_click_fn(move || {
+                toggle_control.toggle();
+            })
+            .automation_id(CHILD_THEME_TOGGLE_ID)
+    };
     let state_control = control.clone();
     column([
         row([
@@ -36,11 +57,7 @@ fn theme_window(control: crate::demos::context::ThemeControl) -> ViewNode {
                 .font_size(22.0)
                 .color(ColorValue::Neutral(NeutralRole::Text)),
             label("").flex_grow(1.0),
-            embed(ThemeToggle::new().dark(control.is_dark()))
-                .on_click_fn(move || {
-                    toggle_control.toggle();
-                })
-                .automation_id(CHILD_THEME_TOGGLE_ID),
+            theme_control,
         ])
         .align(AlignItems::Center)
         .gap(12.0),
@@ -89,13 +106,20 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
     let ticks = ctx.timer_ticks;
 
     let theme_toggle = if let Some(control) = ctx.theme_control() {
-        let toggle_control = control.clone();
-        embed(ThemeToggle::new().dark(control.is_dark())).on_semantic(
-            SemanticKind::Click,
-            move |_| {
-                toggle_control.toggle();
-            },
-        )
+        if control.follows_system_theme() {
+            label("系统主题跟随已启用")
+                .automation_id(RUNTIME_SYSTEM_THEME_STATUS_ID)
+                .color(ColorValue::Palette(PaletteColor::Primary))
+                .font_size(12.0)
+        } else {
+            let toggle_control = control.clone();
+            embed(ThemeToggle::new().dark(control.is_dark())).on_semantic(
+                SemanticKind::Click,
+                move |_| {
+                    toggle_control.toggle();
+                },
+            )
+        }
     } else {
         embed(ThemeToggle::new())
     };
@@ -238,7 +262,14 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
                 },
                 info_note(
                     tk,
-                    "follow_system_theme(true) 为 opt-in；本 Demo 默认 false。",
+                    if ctx
+                        .theme_control()
+                        .is_some_and(|control| control.follows_system_theme())
+                    {
+                        "App.follow_system_theme(true) 已启用；主题由 OS 变化信号托管。"
+                    } else {
+                        "follow_system_theme(true) 为 opt-in；本 Demo 默认 false。"
+                    },
                 ),
             ])
             .gap(12.0),

@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 use windows::core::BOOL;
-use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
+use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     BitBlt, ClientToScreen, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC,
     ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, CAPTUREBLT, DIB_RGB_COLORS,
@@ -21,7 +21,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     BringWindowToTop, EnumWindows, GetForegroundWindow, GetWindowRect, GetWindowThreadProcessId,
-    SetForegroundWindow, SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_SHOWWINDOW,
+    SendMessageW, SetForegroundWindow, SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE,
+    SWP_SHOWWINDOW, WM_SETTINGCHANGE,
 };
 
 use super::{assert_success, exchange, perform_until_presentable, DemoProcess, PRESENT_TIMEOUT_MS};
@@ -29,6 +30,155 @@ use super::{assert_success, exchange, perform_until_presentable, DemoProcess, PR
 #[link(name = "dwmapi")]
 extern "system" {
     fn DwmFlush() -> i32;
+}
+
+const HKEY_CURRENT_USER: *mut std::ffi::c_void = 0x8000_0001usize as *mut std::ffi::c_void;
+const KEY_QUERY_VALUE: u32 = 0x0001;
+const KEY_SET_VALUE: u32 = 0x0002;
+const REG_DWORD: u32 = 4;
+const PERSONALIZE_KEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize";
+const APPS_USE_LIGHT_THEME: &str = "AppsUseLightTheme";
+
+#[link(name = "advapi32")]
+extern "system" {
+    fn RegOpenKeyExW(
+        key: *mut std::ffi::c_void,
+        sub_key: *const u16,
+        options: u32,
+        access: u32,
+        result: *mut *mut std::ffi::c_void,
+    ) -> i32;
+    fn RegQueryValueExW(
+        key: *mut std::ffi::c_void,
+        value_name: *const u16,
+        reserved: *mut u32,
+        value_type: *mut u32,
+        data: *mut u8,
+        data_size: *mut u32,
+    ) -> i32;
+    fn RegSetValueExW(
+        key: *mut std::ffi::c_void,
+        value_name: *const u16,
+        reserved: u32,
+        value_type: u32,
+        data: *const u8,
+        data_size: u32,
+    ) -> i32;
+    fn RegCloseKey(key: *mut std::ffi::c_void) -> i32;
+}
+
+struct SystemThemePreference {
+    original: u32,
+    restored: bool,
+}
+
+impl SystemThemePreference {
+    fn capture() -> Result<Self, String> {
+        Ok(Self {
+            original: read_apps_use_light_theme()?,
+            restored: false,
+        })
+    }
+
+    fn toggle(&self) -> Result<u32, String> {
+        let next = u32::from(self.original == 0);
+        write_apps_use_light_theme(next)?;
+        let actual = read_apps_use_light_theme()?;
+        if actual != next {
+            return Err(format!(
+                "AppsUseLightTheme write was not observable: expected {next}, got {actual}"
+            ));
+        }
+        Ok(next)
+    }
+
+    fn restore(&mut self) -> Result<(), String> {
+        write_apps_use_light_theme(self.original)?;
+        let actual = read_apps_use_light_theme()?;
+        if actual != self.original {
+            return Err(format!(
+                "AppsUseLightTheme restore was not observable: expected {}, got {actual}",
+                self.original
+            ));
+        }
+        self.restored = true;
+        Ok(())
+    }
+}
+
+impl Drop for SystemThemePreference {
+    fn drop(&mut self) {
+        if !self.restored {
+            let _ = write_apps_use_light_theme(self.original);
+        }
+    }
+}
+
+fn wide(value: &str) -> Vec<u16> {
+    value.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+fn open_personalize_key(access: u32) -> Result<*mut std::ffi::c_void, String> {
+    let sub_key = wide(PERSONALIZE_KEY);
+    let mut key = std::ptr::null_mut();
+    // SAFETY: 伪句柄和 UTF-16 字符串在同步调用期间有效，输出指针指向局部句柄。
+    let status = unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, sub_key.as_ptr(), 0, access, &mut key) };
+    if status != 0 || key.is_null() {
+        Err(format!("RegOpenKeyExW Personalize failed: {status}"))
+    } else {
+        Ok(key)
+    }
+}
+
+fn read_apps_use_light_theme() -> Result<u32, String> {
+    let key = open_personalize_key(KEY_QUERY_VALUE)?;
+    let value_name = wide(APPS_USE_LIGHT_THEME);
+    let mut value = 0u32;
+    let mut value_type = 0u32;
+    let mut data_size = std::mem::size_of::<u32>() as u32;
+    // SAFETY: key 在本函数持有，所有输出缓冲在同步调用期间有效且长度正确。
+    let status = unsafe {
+        RegQueryValueExW(
+            key,
+            value_name.as_ptr(),
+            std::ptr::null_mut(),
+            &mut value_type,
+            (&mut value as *mut u32).cast::<u8>(),
+            &mut data_size,
+        )
+    };
+    // SAFETY: key 由本函数成功打开且尚未关闭。
+    let _ = unsafe { RegCloseKey(key) };
+    if status != 0 || value_type != REG_DWORD || data_size != 4 {
+        Err(format!(
+            "RegQueryValueExW AppsUseLightTheme failed: status={status}, type={value_type}, size={data_size}"
+        ))
+    } else {
+        Ok(value)
+    }
+}
+
+fn write_apps_use_light_theme(value: u32) -> Result<(), String> {
+    let key = open_personalize_key(KEY_SET_VALUE)?;
+    let value_name = wide(APPS_USE_LIGHT_THEME);
+    // SAFETY: key 在本函数持有，value 的四字节表示在同步调用期间有效。
+    let status = unsafe {
+        RegSetValueExW(
+            key,
+            value_name.as_ptr(),
+            0,
+            REG_DWORD,
+            (&value as *const u32).cast::<u8>(),
+            std::mem::size_of::<u32>() as u32,
+        )
+    };
+    // SAFETY: key 由本函数成功打开且尚未关闭。
+    let _ = unsafe { RegCloseKey(key) };
+    if status == 0 {
+        Ok(())
+    } else {
+        Err(format!("RegSetValueExW AppsUseLightTheme failed: {status}"))
+    }
 }
 
 pub(super) fn keyboard_input(vk: VIRTUAL_KEY, flags: KEYBD_EVENT_FLAGS) -> INPUT {
@@ -286,6 +436,21 @@ fn assert_meaningful_capture(capture: &ClientCapture, label: &str) {
     );
 }
 
+fn changed_pixel_ratio(left: &ClientCapture, right: &ClientCapture) -> f64 {
+    assert_eq!(
+        (left.width, left.height),
+        (right.width, right.height),
+        "pixel captures must have the same client extent"
+    );
+    let changed = left
+        .pixels
+        .iter()
+        .zip(&right.pixels)
+        .filter(|(left, right)| (*left ^ *right) & 0x00FF_FFFF != 0)
+        .count();
+    changed as f64 / left.pixels.len().max(1) as f64
+}
+
 fn wait_for_presented(
     connection: &mut BufReader<File>,
     window_id: u64,
@@ -307,6 +472,128 @@ fn wait_for_presented(
     );
     assert_success(&response, request_id);
     assert_eq!(response["outcome"], "presented");
+}
+
+fn wait_for_changed_and_presented(
+    connection: &mut BufReader<File>,
+    window_id: u64,
+    generation: u64,
+    after_revision: u64,
+    request_prefix: &str,
+) -> u64 {
+    let changed_id = format!("{request_prefix}-changed");
+    let changed = exchange(
+        connection,
+        json!({
+            "schema": "uix.agent.v1",
+            "request_id": changed_id,
+            "type": "wait",
+            "window_id": window_id,
+            "generation": generation,
+            "after_revision": after_revision,
+            "timeout_ms": PRESENT_TIMEOUT_MS,
+        }),
+    );
+    assert_success(&changed, &changed_id);
+    assert_eq!(changed["outcome"], "changed");
+    let revision = changed["window"]["revision"]
+        .as_u64()
+        .expect("changed revision");
+    wait_for_presented(
+        connection,
+        window_id,
+        generation,
+        revision,
+        &format!("{request_prefix}-presented"),
+    );
+    revision
+}
+
+fn current_revision(connection: &mut BufReader<File>, window_id: u64, request_id: &str) -> u64 {
+    let snapshot = exchange(
+        connection,
+        json!({
+            "schema": "uix.agent.v1",
+            "request_id": request_id,
+            "type": "snapshot",
+            "window_id": window_id,
+        }),
+    );
+    assert_success(&snapshot, request_id);
+    snapshot["snapshot"]["revision"]
+        .as_u64()
+        .expect("snapshot revision")
+}
+
+fn notify_system_theme_changed(window: HWND) {
+    // SAFETY: window 属于仍存活的测试进程；消息不携带借用指针，仅要求其重新读取系统主题。
+    unsafe { SendMessageW(window, WM_SETTINGCHANGE, Some(WPARAM(0)), Some(LPARAM(0))) };
+}
+
+pub(super) fn verify_system_theme_follow(
+    demo: &DemoProcess,
+    connection: &mut BufReader<File>,
+    window_id: u64,
+    generation: u64,
+) {
+    let window = demo.window_handle();
+    demo.raise_for_interaction();
+    request_foreground_focus(window);
+    flush_desktop_composition();
+    let baseline = capture_client(window);
+    assert_meaningful_capture(&baseline, "system theme baseline");
+
+    let mut preference = SystemThemePreference::capture().expect("read AppsUseLightTheme");
+    let original = preference.original;
+    let revision = current_revision(connection, window_id, "system-theme-before-toggle");
+    let toggled_value = preference.toggle().expect("toggle AppsUseLightTheme");
+    notify_system_theme_changed(window);
+    let toggled_revision = wait_for_changed_and_presented(
+        connection,
+        window_id,
+        generation,
+        revision,
+        "system-theme-toggle",
+    );
+    demo.raise_for_interaction();
+    request_foreground_focus(window);
+    flush_desktop_composition();
+    let toggled = capture_client(window);
+    assert_meaningful_capture(&toggled, "system theme toggled");
+    let toggled_ratio = changed_pixel_ratio(&baseline, &toggled);
+
+    preference.restore().expect("restore AppsUseLightTheme");
+    notify_system_theme_changed(window);
+    let _ = wait_for_changed_and_presented(
+        connection,
+        window_id,
+        generation,
+        toggled_revision,
+        "system-theme-restore",
+    );
+    demo.raise_for_interaction();
+    request_foreground_focus(window);
+    flush_desktop_composition();
+    let restored = capture_client(window);
+    assert_meaningful_capture(&restored, "system theme restored");
+    let restored_ratio = changed_pixel_ratio(&baseline, &restored);
+
+    assert!(
+        toggled_ratio >= 0.10,
+        "system theme signal changed only {:.2}% of foreground pixels",
+        toggled_ratio * 100.0
+    );
+    assert!(
+        restored_ratio <= 0.05 && restored_ratio < toggled_ratio * 0.5,
+        "restored system theme still differs by {:.2}% (toggle delta {:.2}%)",
+        restored_ratio * 100.0,
+        toggled_ratio * 100.0
+    );
+    println!(
+        "system theme capture: AppsUseLightTheme {original} -> {toggled_value} -> {original}; delta {:.2}%, restored {:.2}%",
+        toggled_ratio * 100.0,
+        restored_ratio * 100.0
+    );
 }
 
 fn resize_window(window: HWND) {

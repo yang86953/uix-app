@@ -7,6 +7,7 @@
 
 ```bash
 cargo run --bin uix-demo              # GUI（默认）
+cargo run --bin uix-demo -- --follow-system-theme
 cargo run --bin uix-demo -- --cli     # CLI
 RUST_LOG=debug cargo run --bin uix-demo
 cargo run --features agent-control --bin uix-demo -- --agent-control
@@ -14,7 +15,7 @@ cargo run --features agent-control --bin uix-demo -- --agent-control
 
 Linux GUI 需 Wayland。
 
-`--agent-control` 仅用于本机开发预览，必须与 `agent-control` feature 同时启用；它会按 [`使用 · Agent Bridge`](../docs/使用指南/Agent%20Bridge.md#agent-bridge-开发预览) 启动当前用户私有端点。该参数不能与 `--cli` 同时使用。
+`--follow-system-theme` 通过公开 `App::follow_system_theme(true)` 让 GUI 初始主题和后续变化由 OS 托管；该模式显示“跟随系统”状态，不再提供会覆盖托管状态的手动主题开关。`--agent-control` 仅用于本机开发预览，必须与 `agent-control` feature 同时启用；它会按 [`使用 · Agent Bridge`](../docs/使用指南/Agent%20Bridge.md#agent-bridge-开发预览) 启动当前用户私有端点。两者都不能与 `--cli` 同时使用。
 
 ## 目录结构
 
@@ -25,7 +26,7 @@ demo/src/
 ├── cli/             # core/native/draw/ui/app/data CLI
 ├── demos/           # 11 个内容页
 │   ├── home.rs      # 首页：入门 + 快捷导航
-│   ├── runtime.rs   # 应用能力（State/Timer/Theme/View DSL）
+│   ├── runtime.rs   # 应用能力（State/Timer/Theme/多窗口/View DSL）
 │   ├── general.rs   # 通用 widgets
 │   ├── layout.rs    # 布局 / 容器
 │   ├── nav.rs       # 导航 + Navigation/NavGroup
@@ -42,11 +43,12 @@ demo/src/
     └── widgets.rs   # Counter / PulseRing / BounceBall
 ```
 
-## 两种模式
+## 运行模式
 
 | 模式 | 命令 | 说明 |
 |------|------|------|
 | **GUI（默认）** | `cargo run --bin uix-demo` | 11 页多页应用：80+ Widget + App 能力全景 |
+| **GUI + 系统主题** | `--bin uix-demo -- --follow-system-theme` | 显式 opt-in 系统主题初始值与 live 变化 |
 | **GUI + Agent Bridge** | `--features agent-control --bin uix-demo -- --agent-control` | 显式启用本机 `uix.agent.v1` 端点 |
 | **CLI** | `--cli` | `core` / `native` / `draw` / `ui` / `app` / `data` 无 GUI API |
 
@@ -63,7 +65,7 @@ demo/src/
 | # | 页 | 文件 | 覆盖 widget / 特性 |
 |---|-----|------|-------------------|
 | 0 | 首页 | `home.rs` | 入门 State、Timer tick、快捷导航 |
-| 1 | 应用能力 | `runtime.rs` | State、dynamic_label、run_interval、ThemeToggle、多窗口主题联动、component!、动画 demo |
+| 1 | 应用能力 | `runtime.rs` | State、dynamic_label、run_interval、ThemeToggle、系统主题跟随、多窗口主题联动、component!、动画 demo |
 | 2 | 通用 | `general.rs` | Button、Icon、Typography、Label、Divider、Space、FloatButton、FloatButtonBackTop、Tag |
 | 3 | 布局 | `layout.rs` | Container、Grid、Layout/Header/Sider/Content/Footer、Splitter、ScrollView、Affix、BackTop |
 | 4 | 导航 | `nav.rs` | Navigation、NavGroup、Menu、Tabs、Dropdown、Breadcrumb、Anchor、Steps、Pagination |
@@ -96,16 +98,18 @@ demo/src/
 | 场景 | 用户路径与可观察结果 | 自动化 |
 |------|----------------------|--------|
 | Windows 多窗口主题联动 | 主窗进入“应用能力” → 打开 `UIX Theme Window` → 副窗切到暗色 → 两窗均显示“当前主题：暗色” → 独立关闭副窗 | 稳定 `automation_id` 定位；等待两窗 `presented_revision`；断言窗口标题、语义状态和窗口数量 |
+| Windows 系统主题 live | 以 `--follow-system-theme` 启动 → UI 显示“跟随系统”且无手动开关 → OS 应用主题反转后窗口完成对应换色 → 恢复原 OS 设置后窗口恢复原配色 | 稳定 `automation_id` 断言模式；等待 `revision/presented_revision`；对真实前景窗口做桌面合成像素比较；测试始终恢复 `AppsUseLightTheme` |
 
-该场景运行真实 `uix-demo --agent-control` 进程与 D3D11 窗口，需要可交互的 Windows 桌面：
+这些场景运行真实 `uix-demo --agent-control` 进程与 D3D11 窗口，需要可交互的 Windows 桌面：
 
 ```bash
 cargo test --features agent-control --test agent_gui_windows real_demo_opens_theme_window_and_syncs_observable_state -- --ignored --nocapture
+cargo test --features agent-control --test agent_gui_windows real_demo_follows_live_windows_system_theme_and_restores_preference -- --ignored --nocapture
 ```
 
 ## 验收 gap
 
-本 demo 仍缺：图形故障注入 / 恢复的 Demo 级用户路径、跨 OS `follow_system_theme` 实机切换。需要对应平台或硬件的框架矩阵 gap → [`进度`](../docs/进度.md)。
+本 demo 仍缺：图形故障注入 / 恢复的 Demo 级用户路径，以及 macOS / Wayland 的 `follow_system_theme` 实机切换。需要对应平台或硬件的框架矩阵 gap → [`进度`](../docs/进度.md)。
 
 ## CLI 演示项
 
