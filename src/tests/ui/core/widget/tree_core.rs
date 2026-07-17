@@ -2373,6 +2373,38 @@ fn drawer_focus_trap_tab_navigation_stays_inside_drawer_subtree() {
 }
 
 #[test]
+fn escape_is_routed_to_top_drawer_before_background_focus() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(300.0, 200.0, vec![])));
+    let background = tree.add_child(root, Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(1)));
+    let drawer = tree.add_child(root, Box::new(Drawer::new("Drawer").show()));
+    tree.get_mut(root)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 300.0, 200.0));
+    tree.layout();
+    tree.managers_mut()
+        .focus
+        .set_focused_component(Some(background));
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Escape,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    let drawer = tree
+        .get(drawer)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Drawer>()
+        .unwrap();
+    assert!(!drawer.is_visible());
+    assert!(drawer.is_present(), "leave animation remains present");
+}
+
+#[test]
 fn focus_manager_clears_removed_focused_component() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));

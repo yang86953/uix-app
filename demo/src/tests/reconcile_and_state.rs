@@ -606,3 +606,54 @@ fn framework_locale_click_survives_root_reconcile() {
         Some("Locale.empty_description：No data")
     );
 }
+
+#[test]
+fn component_visual_page_survives_root_reconcile() {
+    let active = State::new(crate::common::page::PAGE_HOME);
+    let timer_ticks = State::new(0u32);
+    let component_case = State::new(0usize);
+    let home_count = State::new(0i32);
+    let runtime_count = State::new(0i32);
+    let theme_control = ThemeControl::default();
+
+    let root = ViewAdapter::capture_root(|| {
+        app_shell_with_counters(
+            active.clone(),
+            timer_ticks.clone(),
+            &component_case,
+            &home_count,
+            &runtime_count,
+            &theme_control,
+            None,
+        )
+    });
+    let mut tree = ViewAdapter::build_nodes(root);
+    if let Some(root) = tree.root_mut() {
+        root.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+    }
+    tree.layout();
+
+    active.set(crate::common::page::PAGE_COMPONENT_QA);
+    let next = ViewAdapter::capture_root(|| {
+        app_shell_with_counters(
+            active.clone(),
+            timer_ticks.clone(),
+            &component_case,
+            &home_count,
+            &runtime_count,
+            &theme_control,
+            None,
+        )
+    });
+    ViewAdapter::reconcile_nodes(&mut tree, next);
+    if let Some(root) = tree.root_mut() {
+        root.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+    }
+    tree.layout();
+
+    assert!(tree.traverse().iter().copied().any(|id| {
+        tree.get(id)
+            .and_then(|node| node.automation_id())
+            .is_some_and(|automation_id| automation_id == "component-qa-target")
+    }));
+}

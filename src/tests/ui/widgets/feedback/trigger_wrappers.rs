@@ -2,7 +2,7 @@ use crate::tests::common::*;
 use crate::ui::widgets::{
     Button, Container, Popconfirm, Popover, PopoverTrigger, Tooltip, TriggerMode,
 };
-use crate::ui::AccessibilityRole;
+use crate::ui::{AccessibilityRole, LayoutChild};
 
 fn set_frame(tree: &mut WidgetTree, id: ComponentId, frame: Rect) {
     tree.get_mut(id).expect("widget").set_frame(frame);
@@ -53,6 +53,27 @@ fn tooltip_hover_trigger_owns_pointer_hit_over_child_button() {
         .get(wrapper)
         .and_then(|node| node.component().as_any().downcast_ref::<Tooltip>())
         .is_some_and(Tooltip::is_visible));
+}
+
+#[test]
+fn tooltip_lays_out_its_trigger_child_in_the_wrapper_frame() {
+    let tooltip = Tooltip::new("help");
+    let child = ComponentId::new(7);
+    let frame = Rect::new(24.0, 32.0, 96.0, 36.0);
+
+    assert_eq!(
+        tooltip.measure(Constraints::loose(Size::new(200.0, 100.0))),
+        Size::new(80.0, 28.0)
+    );
+
+    assert_eq!(
+        tooltip.layout_children(
+            frame,
+            &[LayoutChild::new(child, Size::new(80.0, 28.0))],
+            &WidgetTree::new(),
+        ),
+        vec![(child, frame)]
+    );
 }
 
 #[test]

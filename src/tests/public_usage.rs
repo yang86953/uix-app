@@ -266,7 +266,7 @@ fn documented_test_app_scroll_moves_content_through_the_viewport() {
         .expect("bottom row")
         .is_visible());
 
-    app.scroll("scroll.viewport", Point::new(0.0, 8.0))
+    app.scroll("scroll.viewport", Point::new(0.0, -8.0))
         .expect("scroll viewport");
 
     let after = app.snapshot();

@@ -1,7 +1,35 @@
 use crate::tests::common::*;
-use crate::ui::traits::{WidgetAnimation, WidgetRender};
+use crate::ui::traits::{EventHandler, WidgetAnimation, WidgetComponent, WidgetRender};
 use crate::ui::widgets::{Popover, PopoverPlacement};
 use crate::ui::{AnimationConfig, Placement};
+
+#[test]
+fn popover_is_focusable_and_keyboard_toggles_click_trigger() {
+    let mut popover = Popover::new("Details");
+
+    assert_eq!(WidgetComponent::tab_index(&popover), 1);
+    assert_eq!(
+        popover.on_event(&SystemEvent::FocusIn),
+        EventResult::Handled
+    );
+    assert_eq!(
+        popover.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(popover.is_visible());
+    assert_eq!(
+        popover.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Escape,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(!popover.is_visible());
+    assert!(popover.is_present(), "exit animation remains present");
+}
 
 #[test]
 fn popover_uses_custom_enter_and_leave_durations() {

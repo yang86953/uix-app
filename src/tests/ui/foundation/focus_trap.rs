@@ -1,5 +1,7 @@
+use crate::prelude::Button;
 use crate::tests::common::*;
 use crate::ui::foundation::focus_trap::*;
+use crate::ui::LayoutChild;
 
 #[test]
 fn next_focus_in_order_wraps_forward_and_backward() {
@@ -66,4 +68,50 @@ fn focus_trap_next_focus_uses_sorted_focusable_ids() {
             .next_focus(Some(ComponentId::new(2)), true),
         None
     );
+}
+
+#[test]
+fn focus_trap_lays_out_its_single_content_subtree_in_the_trap_frame() {
+    let trap = FocusTrap::new();
+    let child = ComponentId::new(11);
+    let frame = Rect::new(12.0, 18.0, 320.0, 52.0);
+
+    assert_eq!(
+        trap.layout_children(
+            frame,
+            &[LayoutChild::new(child, Size::new(280.0, 40.0))],
+            &WidgetTree::new(),
+        ),
+        vec![(child, frame)]
+    );
+}
+
+#[test]
+fn widget_tree_tabs_and_wraps_inside_standalone_focus_trap() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(FocusTrap::new()));
+    let first = tree.add_child(root, Box::new(Button::new("First")));
+    let second = tree.add_child(root, Box::new(Button::new("Second")));
+    tree.get_mut(root)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 40.0));
+    tree.layout();
+    tree.set_focus(Some(first));
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Tab,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(tree.managers().focus.focused_component(), Some(second));
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Tab,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(tree.managers().focus.focused_component(), Some(first));
 }

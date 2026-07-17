@@ -64,13 +64,13 @@ component! {
                     let view_h = view
                         .map(|f| f.h)
                         .unwrap_or(self.fixed_height.unwrap_or(200.0));
-                    dy = delta.y * view_h * 0.25;
+                    dy = -delta.y * view_h * 0.25;
                 }
                 if self.direction.can_scroll_x() && delta.x != 0.0 {
                     let view_w = view
                         .map(|f| f.w)
                         .unwrap_or(self.fixed_width.unwrap_or(300.0));
-                    dx = delta.x * view_w * 0.25;
+                    dx = -delta.x * view_w * 0.25;
                 }
 
                 if self.scroll_by(dx, dy) {

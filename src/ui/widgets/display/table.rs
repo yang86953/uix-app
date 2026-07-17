@@ -222,7 +222,10 @@ component! {
         scroll_delta_strip: Cell<(f32, f32)>,
         pub(crate) last_frame: Cell<Option<Rect>>,
         layout_requested: Cell<bool>,
+        focused: bool,
     }
+
+    tab_index => (&self) -> i32 { i32::from(!self.rows.is_empty()) }
 
     measure => (&self, constraints: Constraints) -> Size {
         let w: f32 = self.columns.iter().map(|c| c.width).sum::<f32>() + self.selection_width();
@@ -268,6 +271,14 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
+            SystemEvent::FocusIn => {
+                self.focused = true;
+                EventResult::Handled
+            }
+            SystemEvent::FocusOut => {
+                self.focused = false;
+                EventResult::Handled
+            }
             SystemEvent::Wheel { delta, .. } => {
                 let viewport_h = self.body_viewport_height();
                 let old_y = self.body_scroll.scroll_offset();
@@ -529,6 +540,9 @@ component! {
         if self.bordered {
             ctx.stroke_rect(frame, border, 1.0, r);
         }
+        if self.focused {
+            ctx.stroke_rect(frame, primary, 2.0, r);
+        }
     }
 
     children_clip => (&self, frame: Rect) -> Option<Rect> {
@@ -661,6 +675,7 @@ impl Table {
             scroll_delta_strip: Cell::new((0.0, 0.0)),
             last_frame: Cell::new(None),
             layout_requested: Cell::new(false),
+            focused: false,
         }
     }
     pub fn columns(mut self, cols: Vec<TableColumn>) -> Self {

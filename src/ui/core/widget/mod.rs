@@ -779,7 +779,10 @@ impl BoxedWidget {
             .and_then(|e| e.semantic_event(id, event))
     }
     pub fn is_focusable(&self) -> bool {
-        self.tab_idx > 0 && self.visible() && self.accepts_events() && self.is_interaction_enabled()
+        (self.tab_idx > 0 || self.component().tab_index() > 0)
+            && self.visible()
+            && self.accepts_events()
+            && self.is_interaction_enabled()
     }
 
     pub(crate) fn visibility_gate(&self) -> bool {

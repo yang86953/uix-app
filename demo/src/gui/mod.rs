@@ -5,7 +5,10 @@ use std::time::Duration;
 use uix::core::log::info_fn;
 use uix::prelude::*;
 
-use crate::common::page::{page_heading, INIT_H, INIT_W, PAGE_TITLES, SIDEBAR_GROUPS, SIDEBAR_W};
+use crate::common::page::{
+    page_heading, INIT_H, INIT_W, PAGE_COMPONENT_QA, PAGE_HOME, PAGE_TITLES, SIDEBAR_GROUPS,
+    SIDEBAR_W,
+};
 use crate::demos::context::{FrameworkControl, GraphicsRecoveryControl, ThemeControl};
 use crate::demos::{build_page, DemoCtx};
 use std::cell::Cell;
@@ -316,8 +319,17 @@ fn app_shell(active: State<usize>, timer_ticks: State<u32>) -> ViewNode {
     )
 }
 
-pub fn run(agent_control: bool, follow_system_theme: bool, graphics_recovery_acceptance: bool) {
-    let active = State::new(0usize);
+pub fn run(
+    agent_control: bool,
+    follow_system_theme: bool,
+    graphics_recovery_acceptance: bool,
+    component_qa: bool,
+) {
+    let active = State::new(if component_qa {
+        PAGE_COMPONENT_QA
+    } else {
+        PAGE_HOME
+    });
     let timer_ticks = State::new(0u32);
     let component_case = State::new(0usize);
     let home_count = State::new(0i32);

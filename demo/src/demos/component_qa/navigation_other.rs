@@ -91,17 +91,38 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                     ),
             )
         }
-        "navigation" => qa_target_view(embed(
-            Navigation::new("UIX Quality")
-                .item_with_icon("组件库存", "inventory", "grid")
-                .item_with_icon("视觉矩阵", "visual", "eye")
-                .item_with_icon("质量报告", "report", "file-text")
-                .active_index(1)
-                .width(220.0)
-                .height(190.0)
-                .show_version(false)
-                .build(tk),
-        )),
+        "navigation" => qa_row([
+            qa_variant(
+                "Default / target",
+                qa_target_view(embed(
+                    Navigation::new("UIX Quality")
+                        .item_with_icon("组件库存", "inventory", "grid")
+                        .item_with_icon("视觉矩阵", "visual", "eye")
+                        .item_with_icon("质量报告", "report", "file-text")
+                        .active_index(1)
+                        .width(220.0)
+                        .height(190.0)
+                        .show_version(false)
+                        .build(tk),
+                )),
+            ),
+            qa_variant(
+                "Compact",
+                embed(
+                    Navigation::new("UIX")
+                        .item_with_icon("库存", "inventory", "grid")
+                        .item_with_icon("视觉", "visual", "eye")
+                        .item_with_icon("报告", "report", "file-text")
+                        .active_index(1)
+                        .width(44.0)
+                        .height(190.0)
+                        .show_title(false)
+                        .show_version(false)
+                        .compact(true)
+                        .build(tk),
+                ),
+            ),
+        ]),
         "pagination" => column_fit([
             qa_variant(
                 "Middle / target",
@@ -124,19 +145,40 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
             ])
             .current(1),
         ),
-        "tabs" => qa_target_view(embed(tree! {
-            Tabs::new()
-                .tab("组件", "components")
-                .tab("状态", "states")
-                .tab("证据", "evidence")
-                .active(1)
-                .position(TabPosition::Top)
-                .size(560.0, 150.0) => [
-                    label("88 个组件"),
-                    label("逐组件适用状态矩阵"),
-                    label("Light / Dark / Compact"),
-                ]
-        })),
+        "tabs" => qa_row([
+            qa_variant(
+                "Top / target",
+                qa_target_view(embed(tree! {
+                    Tabs::new()
+                        .tab("组件", "components")
+                        .tab("状态", "states")
+                        .tab("证据", "evidence")
+                        .active(1)
+                        .position(TabPosition::Top)
+                        .size(300.0, 150.0) => [
+                            label("88 个组件"),
+                            label("逐组件适用状态矩阵"),
+                            label("Light / Dark / Compact"),
+                        ]
+                })),
+            ),
+            qa_variant(
+                "Bottom",
+                embed(tree! {
+                    Tabs::new()
+                        .tab("组件", "components")
+                        .tab("状态", "states")
+                        .tab("证据", "evidence")
+                        .active(0)
+                        .position(TabPosition::Bottom)
+                        .size(240.0, 150.0) => [
+                            label("组件"),
+                            label("状态"),
+                            label("证据"),
+                        ]
+                }),
+            ),
+        ]),
         "bar-chart" => qa_target(
             BarChart::new()
                 .width(560.0)
@@ -192,38 +234,45 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 embed(QRCode::new("UIX-COMPONENT-VISUAL-QUALITY-GATE-2026-07-17").size(128.0)),
             ),
         ]),
-        "transfer" => qa_target(
-            Transfer::new()
-                .source(vec![
-                    TransferItem {
-                        key: "button".into(),
-                        title: "Button".into(),
-                        selected: false,
-                    },
-                    TransferItem {
-                        key: "input".into(),
-                        title: "Input".into(),
-                        selected: true,
-                    },
-                    TransferItem {
-                        key: "table".into(),
-                        title: "Table".into(),
-                        selected: false,
-                    },
-                ])
-                .target(vec![
-                    TransferItem {
-                        key: "modal".into(),
-                        title: "Modal".into(),
-                        selected: false,
-                    },
-                    TransferItem {
-                        key: "tabs".into(),
-                        title: "Tabs".into(),
-                        selected: false,
-                    },
-                ]),
-        ),
+        "transfer" => qa_row([
+            qa_variant(
+                "Data / target",
+                qa_target(
+                    Transfer::new()
+                        .source(vec![
+                            TransferItem {
+                                key: "button".into(),
+                                title: "Button".into(),
+                                selected: false,
+                            },
+                            TransferItem {
+                                key: "input".into(),
+                                title: "Input".into(),
+                                selected: true,
+                            },
+                            TransferItem {
+                                key: "table".into(),
+                                title: "Table".into(),
+                                selected: false,
+                            },
+                        ])
+                        .target(vec![
+                            TransferItem {
+                                key: "modal".into(),
+                                title: "Modal".into(),
+                                selected: false,
+                            },
+                            TransferItem {
+                                key: "tabs".into(),
+                                title: "Tabs".into(),
+                                selected: false,
+                            },
+                        ]),
+                )
+                .width(380.0),
+            ),
+            qa_variant("Empty", embed(Transfer::new()).width(160.0)),
+        ]),
         "upload" => {
             let mut upload = Upload::new()
                 .accept(".png,.jpg")
@@ -232,59 +281,105 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 .max_count(4);
             upload.add_file("button-light.png");
             upload.add_file("input-dark.png");
+            upload.add_file("broken.png");
+            upload.add_file("pending.jpg");
             upload.update_progress(0, 100.0);
             upload.complete_file(0, true);
             upload.update_progress(1, 62.0);
+            upload.complete_file(2, false);
             qa_target(upload)
         }
-        "watermark" => qa_target_view(ViewNode::new(
-            Watermark::new("UIX QUALITY")
-                .opacity(0.14)
-                .rotate(-22.0)
-                .gap(120.0, 72.0),
-            vec![column_fit([
-                label("组件视觉质量报告").font_size(20.0),
-                label("每个组件都有独立状态矩阵与真实窗口证据。"),
-                label("Light / Dark / Desktop / Compact"),
-            ])
-            .gap(12.0)
-            .padding(EdgeInsets::uniform(24.0))
-            .width(560.0)
-            .height(170.0)],
-        )),
-        "config-provider" => qa_target_view(
-            ConfigProvider::new()
-                .component_size(ControlSize::Large)
-                .disabled(false)
-                .child(|| {
-                    column_fit([
-                        button("继承 Large").primary().build(),
-                        input().placeholder("继承 Large 的 Input").build(),
-                        ConfigProvider::new()
-                            .disabled(true)
-                            .child(|| button("嵌套 Provider 禁用"))
-                            .build(),
-                    ])
-                    .gap(10.0)
-                })
-                .build()
-                .automation_id("component-qa-target"),
+        "watermark" => qa_target_view(
+            column([ViewNode::new(
+                Watermark::new("UIX QUALITY")
+                    .opacity(0.14)
+                    .rotate(-22.0)
+                    .gap(120.0, 72.0),
+                vec![column_fit([
+                    label("组件视觉质量报告").font_size(20.0),
+                    label("每个组件都有独立状态矩阵与真实窗口证据。"),
+                    label("Light / Dark / Desktop / Compact"),
+                ])
+                .gap(12.0)
+                .padding(EdgeInsets::uniform(24.0))
+                .width(560.0)
+                .height(170.0)],
+            )
+            .flex_grow(1.0)])
+            .height(170.0),
         ),
+        "config-provider" => {
+            let mut overrides = ComponentOverrides::default();
+            overrides.input.prefix = Some("QA".into());
+            overrides.input.suffix = Some("PASS".into());
+            qa_target_view(
+                ConfigProvider::new()
+                    .component_size(ControlSize::Large)
+                    .overrides(overrides)
+                    .render_empty(|context| {
+                        label(format!("{} / 自定义空状态", context.component_name()))
+                            .color(ColorValue::Palette(PaletteColor::Primary))
+                    })
+                    .child(|| {
+                        column_fit([
+                            qa_row([
+                                button("继承 Large").primary().build(),
+                                ConfigProvider::new()
+                                    .disabled(true)
+                                    .child(|| button("嵌套禁用"))
+                                    .build(),
+                            ]),
+                            input().placeholder("构造覆盖：prefix / suffix").build(),
+                            List::new().build(),
+                        ])
+                        .gap(10.0)
+                    })
+                    .build()
+                    .automation_id("component-qa-target"),
+            )
+        }
         "locale-provider" => qa_target_view(
-            LocaleProvider::new(en_us())
-                .child(|| {
-                    column_fit([
-                        label(format!(
-                            "empty_description: {}",
-                            use_locale().empty_description
-                        )),
-                        embed(Empty::new().icon("inbox")),
-                        label(format!("ok_text: {}", use_locale().ok_text)),
-                    ])
-                    .gap(10.0)
-                })
-                .build()
-                .automation_id("component-qa-target"),
+            column_fit([
+                qa_row([
+                    qa_variant(
+                        "zh-CN",
+                        LocaleProvider::zh_cn()
+                            .child(|| {
+                                column_fit([
+                                    label(format!("empty: {}", use_locale().empty_description)),
+                                    label(format!("ok: {}", use_locale().ok_text)),
+                                ])
+                                .gap(6.0)
+                            })
+                            .build(),
+                    ),
+                    qa_variant(
+                        "en-US",
+                        LocaleProvider::en_us()
+                            .child(|| {
+                                column_fit([
+                                    label(format!("empty: {}", use_locale().empty_description)),
+                                    label(format!("ok: {}", use_locale().ok_text)),
+                                ])
+                                .gap(6.0)
+                            })
+                            .build(),
+                    ),
+                ]),
+                qa_variant(
+                    "Locale::default fallback",
+                    LocaleProvider::new(Locale::default())
+                        .child(|| {
+                            label(format!(
+                                "fallback empty: {}",
+                                use_locale().empty_description
+                            ))
+                        })
+                        .build(),
+                ),
+            ])
+            .gap(14.0)
+            .automation_id("component-qa-target"),
         ),
         _ => return None,
     };

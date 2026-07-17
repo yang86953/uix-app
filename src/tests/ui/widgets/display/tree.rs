@@ -69,6 +69,10 @@ fn tree_keyboard_navigation_skips_disabled_rows_and_reveals_selection() {
     assert_eq!(tree.selected_key(), "third");
     assert!(tree.body_scroll.scroll_offset() > 0.0);
     assert_eq!(
+        EventHandler::viewport_scroll_offset(&tree),
+        Some((0.0, tree.body_scroll.scroll_offset()))
+    );
+    assert_eq!(
         EventHandler::scroll_delta_for_dirty(&tree),
         Some((0.0, 28.0))
     );

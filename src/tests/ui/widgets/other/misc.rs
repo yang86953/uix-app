@@ -185,6 +185,19 @@ fn upload_queues_real_file_drops_and_reports_the_accepted_files() {
 }
 
 #[test]
+fn upload_drop_zone_is_focusable_without_inventing_click_files() {
+    let mut upload = Upload::new();
+
+    assert_eq!(WidgetComponent::tab_index(&upload), 1);
+    assert_eq!(upload.on_event(&SystemEvent::FocusIn), EventResult::Handled);
+    assert_eq!(
+        upload.on_event(&SystemEvent::FocusOut),
+        EventResult::Handled
+    );
+    assert!(upload.files().is_empty());
+}
+
+#[test]
 fn upload_does_not_invent_files_for_clicks_or_disabled_dragging() {
     let mut upload = Upload::new().drag(false);
     let click = SystemEvent::PointerDown {

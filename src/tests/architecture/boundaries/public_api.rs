@@ -182,10 +182,16 @@ fn agent_commands_stay_bounded_targeted_and_ui_thread_owned() {
             && commands.contains("tree.dispatch_event(&SystemEvent::KeyDown")
             && commands.contains("AgentWindowAction::ClickAt")
             && commands.contains("tree.dispatch_event(&SystemEvent::PointerDown")
-            && protocol
-                .contains("const AGENT_WINDOW_ACTIONS: &[&str] = &[\"press_key\", \"click_at\"]")
+            && commands.contains("AgentWindowAction::PointerMove")
+            && commands.contains("AgentWindowAction::PointerDown")
+            && commands.contains("AgentWindowAction::PointerUp")
+            && protocol.contains("\"press_key\",")
+            && protocol.contains("\"click_at\",")
+            && protocol.contains("\"pointer_move\",")
+            && protocol.contains("\"pointer_down\",")
+            && protocol.contains("\"pointer_up\",")
             && protocol.contains("window action must not include a target"),
-        "the two window-level fallbacks must share normal UI events and remain target-free"
+        "window-level keyboard and pointer fallbacks must share normal UI events and remain target-free"
     );
 
     let main_queue = driver

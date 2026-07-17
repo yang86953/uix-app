@@ -1,5 +1,7 @@
 #![cfg(all(windows, feature = "agent-control"))]
 
+#[path = "support/agent_gui_windows/component_visual.rs"]
+mod component_visual;
 #[path = "support/agent_gui_windows/foreground.rs"]
 mod foreground;
 #[path = "support/agent_gui_windows/framework.rs"]
@@ -318,12 +320,19 @@ impl DemoProcess {
 
 impl Drop for DemoProcess {
     fn drop(&mut self) {
+        let panicking = thread::panicking();
         if self.child.try_wait().ok().flatten().is_none() {
             let _ = self.child.kill();
             let _ = self.child.wait();
         }
+        let mut failure_output = String::new();
         for reader in std::mem::take(&mut self.output_readers) {
-            let _ = reader.join();
+            if let Ok(output) = reader.join() {
+                failure_output.push_str(&output);
+            }
+        }
+        if panicking && !failure_output.is_empty() {
+            eprintln!("uix-demo output during failed GUI test:\n{failure_output}");
         }
         let _ = fs::remove_dir_all(&self.discovery_root);
     }
@@ -364,6 +373,13 @@ fn connect(endpoint: &str, child: &mut Child) -> File {
 }
 
 fn exchange(connection: &mut BufReader<File>, request: Value) -> Value {
+    let trace = std::env::var_os("UIX_AGENT_TRACE_REQUESTS").is_some();
+    if trace {
+        eprintln!(
+            "agent request -> {}",
+            request["request_id"].as_str().unwrap_or("<missing>")
+        );
+    }
     let mut bytes = serde_json::to_vec(&request).expect("serialize protocol request");
     bytes.push(b'\n');
     connection
@@ -377,7 +393,11 @@ fn exchange(connection: &mut BufReader<File>, request: Value) -> Value {
         .read_line(&mut response)
         .expect("read protocol response");
     assert!(read > 0, "agent connection closed without a response");
-    serde_json::from_str(&response).expect("parse protocol response")
+    let response: Value = serde_json::from_str(&response).expect("parse protocol response");
+    if trace {
+        eprintln!("agent response <- {}", response["request_id"]);
+    }
+    response
 }
 
 fn assert_success(response: &Value, request_id: &str) {

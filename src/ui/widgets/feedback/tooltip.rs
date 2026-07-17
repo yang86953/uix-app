@@ -44,6 +44,12 @@ component! {
 
     hit_test_children => (&self) -> bool { false }
 
+    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
+        -> Vec<(crate::ui::ComponentId, Rect)>
+    {
+        children.iter().map(|child| (child.id, frame)).collect()
+    }
+
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match (self.trigger, event) {
             (TriggerMode::Hover, SystemEvent::PointerEnter) => {
@@ -363,7 +369,7 @@ impl Tooltip {
     }
 
     fn intrinsic_size(&self) -> Size {
-        Size::zero()
+        Size::new(80.0, 28.0)
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {

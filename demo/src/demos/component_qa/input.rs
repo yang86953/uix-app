@@ -253,19 +253,32 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 embed(Segmented::new(["甲", "乙", "丙"]).default_selected(1).disabled(true)),
             ),
         ]),
-        "form" => qa_target_view(embed(tree! {
-            Form::new().label_width(86.0).gap(8.0).layout(FormLayout::Vertical) => [
-                tree! { FormItem::new("用户名").name("user").required(true).help("必填") => [
-                    Input::new("请输入用户名").into_node(),
-                ]},
-                tree! { FormItem::new("邮箱").name("email").status(ValidateStatus::Success) => [
-                    Input::new("name@example.com").into_node(),
-                ]},
-                tree! { FormItem::new("密码").name("password").status(ValidateStatus::Error).help("至少 8 位") => [
-                    Input::new("请输入密码").into_node(),
-                ]},
-            ]
-        })),
+        "form" => column_fit([
+            qa_variant(
+                "Vertical / target",
+                qa_target_view(embed(tree! {
+                    Form::new().label_width(86.0).gap(8.0).layout(FormLayout::Vertical) => [
+                        tree! { FormItem::new("用户名").name("user").required(true).help("必填") => [
+                            Input::new("请输入用户名").into_node(),
+                        ]},
+                        tree! { FormItem::new("邮箱").name("email").status(ValidateStatus::Success) => [
+                            Input::new("name@example.com").into_node(),
+                        ]},
+                    ]
+                })),
+            ),
+            qa_variant(
+                "Horizontal / error",
+                embed(tree! {
+                    Form::new().label_width(86.0).gap(8.0).layout(FormLayout::Horizontal) => [
+                        tree! { FormItem::new("密码").name("password").status(ValidateStatus::Error).help("至少 8 位") => [
+                            Input::new("请输入密码").into_node(),
+                        ]},
+                    ]
+                }),
+            ),
+        ])
+        .gap(10.0),
         "form-item" => column_fit([
             qa_target_view(embed(tree! { FormItem::new("用户名").required(true).help("必填字段") => [
                 Input::new("请输入用户名").into_node(),
