@@ -1,6 +1,6 @@
 # UIX 演示程序
 
-> **角色**：能力全景（多页组件 / Timer / 主题 / View DSL），**不是**入门 starter。  
+> **角色**：能力全景 + 可执行验收场景（多页组件 / Timer / 主题 / 多窗口 / View DSL），**不是**入门 starter。
 > 最小应用请复制 [README · 示例](../README.md#示例)；门面速查 → [`使用`](../docs/使用.md)。
 
 ## 快速运行
@@ -63,7 +63,7 @@ demo/src/
 | # | 页 | 文件 | 覆盖 widget / 特性 |
 |---|-----|------|-------------------|
 | 0 | 首页 | `home.rs` | 入门 State、Timer tick、快捷导航 |
-| 1 | 应用能力 | `runtime.rs` | State、dynamic_label、run_interval、ThemeToggle、component!、动画 demo |
+| 1 | 应用能力 | `runtime.rs` | State、dynamic_label、run_interval、ThemeToggle、多窗口主题联动、component!、动画 demo |
 | 2 | 通用 | `general.rs` | Button、Icon、Typography、Label、Divider、Space、FloatButton、FloatButtonBackTop、Tag |
 | 3 | 布局 | `layout.rs` | Container、Grid、Layout/Header/Sider/Content/Footer、Splitter、ScrollView、Affix、BackTop |
 | 4 | 导航 | `nav.rs` | Navigation、NavGroup、Menu、Tabs、Dropdown、Breadcrumb、Anchor、Steps、Pagination |
@@ -88,12 +88,24 @@ demo/src/
 | 反馈 | 10/10 | Overlay 浮层集中在反馈页 |
 | 图表 | 3/3 | Bar / Line / Pie |
 | 其他 | 7/7 | Transfer、Upload、自定义 component! |
-| 应用能力 | 8/8 | Timer 在 `on_start` 注册；多窗口见覆盖清单说明 |
+| 应用能力 | 8/8 | Timer 在 `on_start` 注册；多窗口主题联动提供 live 用户路径 |
 | CLI | 10 项 | `--cli` 模式 |
 
-## 演示 gap
+## 可执行验收场景
 
-本 demo 缺：多窗口 live 演示页、故障注入页、跨 OS `follow_system_theme` 实机切换。框架 backlog → [`进度`](../docs/进度.md)。
+| 场景 | 用户路径与可观察结果 | 自动化 |
+|------|----------------------|--------|
+| Windows 多窗口主题联动 | 主窗进入“应用能力” → 打开 `UIX Theme Window` → 副窗切到暗色 → 两窗均显示“当前主题：暗色” → 独立关闭副窗 | 稳定 `automation_id` 定位；等待两窗 `presented_revision`；断言窗口标题、语义状态和窗口数量 |
+
+该场景运行真实 `uix-demo --agent-control` 进程与 D3D11 窗口，需要可交互的 Windows 桌面：
+
+```bash
+cargo test --features agent-control --test agent_gui_windows real_demo_opens_theme_window_and_syncs_observable_state -- --ignored --nocapture
+```
+
+## 验收 gap
+
+本 demo 仍缺：图形故障注入 / 恢复的 Demo 级用户路径、跨 OS `follow_system_theme` 实机切换。需要对应平台或硬件的框架矩阵 gap → [`进度`](../docs/进度.md)。
 
 ## CLI 演示项
 

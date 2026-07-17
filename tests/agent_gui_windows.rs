@@ -2,6 +2,8 @@
 
 #[path = "support/agent_gui_windows/foreground.rs"]
 mod foreground;
+#[path = "support/agent_gui_windows/multi_window.rs"]
+mod multi_window;
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};

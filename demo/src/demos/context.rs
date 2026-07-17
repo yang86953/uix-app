@@ -1,15 +1,21 @@
 //! Dashboard 共享上下文 — 跨页 State（定时器 tick、动画 time）。
 
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
-};
+use std::sync::{Arc, Mutex};
 use uix::prelude::*;
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct ThemeControl {
     handle: Arc<Mutex<Option<AppHandle>>>,
-    dark: Arc<AtomicBool>,
+    dark: State<bool>,
+}
+
+impl Default for ThemeControl {
+    fn default() -> Self {
+        Self {
+            handle: Arc::new(Mutex::new(None)),
+            dark: State::new(false),
+        }
+    }
 }
 
 impl ThemeControl {
@@ -25,7 +31,7 @@ impl ThemeControl {
     }
 
     pub fn is_dark(&self) -> bool {
-        self.dark.load(Ordering::Acquire)
+        self.dark.get()
     }
 
     pub fn toggle(&self) -> bool {
@@ -48,7 +54,7 @@ impl ThemeControl {
         {
             return false;
         }
-        self.dark.store(next, Ordering::Release);
+        self.dark.set(next);
         true
     }
 }
