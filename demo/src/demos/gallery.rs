@@ -144,6 +144,16 @@ pub const COVERAGE: &[(&str, &str, &str, bool)] = &[
     ("应用能力", "PicturePolicy (静态 vs 动画)", "应用能力", true),
     ("应用能力", "post_to_ui / on_start 句柄", "应用能力", true),
     ("应用能力", "多窗口 (API 说明)", "覆盖清单", true),
+    // ── 框架 Provider 能力 ──
+    ("框架能力", "LocaleProvider / Locale", "框架能力", true),
+    ("框架能力", "ConfigProvider / ControlSize", "框架能力", true),
+    ("框架能力", "ComponentOverrides", "框架能力", true),
+    (
+        "框架能力",
+        "typed component token / render_empty",
+        "框架能力",
+        true,
+    ),
     // ── CLI ──
     (
         "CLI",

@@ -25,7 +25,7 @@ demo/src/
 ├── main.rs          # 薄入口：gui | cli
 ├── gui/             # 多页 GUI 壳层：分组侧边栏、Timer、动画 time
 ├── cli/             # core/native/draw/ui/app/data CLI
-├── demos/           # 11 个内容页
+├── demos/           # 12 个内容页
 │   ├── home.rs      # 首页：入门 + 快捷导航
 │   ├── runtime.rs   # 应用能力（State/Timer/Theme/多窗口/View DSL）
 │   ├── general.rs   # 通用 widgets
@@ -36,6 +36,7 @@ demo/src/
 │   ├── feedback.rs  # 反馈 + Overlay 浮层
 │   ├── charts.rs    # 图表
 │   ├── other.rs     # Transfer/Upload/DesignTokens
+│   ├── framework.rs # LocaleProvider/ConfigProvider/构造覆盖/typed token/统一空态
 │   ├── gallery.rs   # 覆盖清单（参考）
 │   └── context.rs   # DemoCtx（共享 State）
 └── common/
@@ -48,7 +49,7 @@ demo/src/
 
 | 模式 | 命令 | 说明 |
 |------|------|------|
-| **GUI（默认）** | `cargo run --bin uix-demo` | 11 页多页应用：80+ Widget + App 能力全景 |
+| **GUI（默认）** | `cargo run --bin uix-demo` | 12 页多页应用：80+ Widget + App / Provider 能力全景 |
 | **GUI + 系统主题** | `--bin uix-demo -- --follow-system-theme` | 显式 opt-in 系统主题初始值与 live 变化 |
 | **GUI + 图形恢复验收** | `--features test-harness --bin uix-demo -- --graphics-recovery-acceptance` | 下一次真实绘制帧 typed 失败，恢复后继续交互 |
 | **GUI + Agent Bridge** | `--features agent-control --bin uix-demo -- --agent-control` | 显式启用本机 `uix.agent.v1` 端点 |
@@ -58,7 +59,7 @@ demo/src/
 
 | 分组 | 页面 |
 |------|------|
-| **入门** | 首页、应用能力 |
+| **入门** | 首页、应用能力、框架能力 |
 | **组件** | 通用、布局、导航、输入、数据展示、反馈、图表、其他 |
 | **参考** | 覆盖清单 |
 
@@ -76,7 +77,8 @@ demo/src/
 | 7 | 反馈 | `feedback.rs` | Alert、Message、Notification、ProgressBar、Spin、Modal、Drawer、Tooltip、Popover、Popconfirm |
 | 8 | 图表 | `charts.rs` | BarChart、LineChart、PieChart |
 | 9 | 其他 | `other.rs` | Transfer、Upload、QRCode、Watermark、DesignTokens |
-| 10 | 覆盖清单 | `gallery.rs` | 交互式覆盖矩阵；点击 ✓ 行跳转对应页 |
+| 10 | 框架能力 | `framework.rs` | LocaleProvider、ConfigProvider、ControlSize、ComponentOverrides、typed component token、统一空态 View |
+| 11 | 覆盖清单 | `gallery.rs` | 交互式覆盖矩阵；点击 ✓ 行跳转对应页 |
 
 机器可读矩阵 → [`demos/gallery.rs`](src/demos/gallery.rs) 中 `COVERAGE` 常量。
 
@@ -93,6 +95,7 @@ demo/src/
 | 图表 | 3/3 | Bar / Line / Pie |
 | 其他 | 7/7 | Transfer、Upload、自定义 component! |
 | 应用能力 | 8/8 + 验收路径 | Timer 在 `on_start` 注册；多窗口主题联动、系统主题与图形恢复提供 live 用户路径 |
+| 框架能力 | 4/4 | LocaleProvider、ConfigProvider/ControlSize、ComponentOverrides、typed token/render_empty 均有独立可观察样例 |
 | CLI | 10 项 | `--cli` 模式 |
 
 ## 可执行验收场景
@@ -102,13 +105,23 @@ demo/src/
 | Windows 多窗口主题联动 | 主窗进入“应用能力” → 打开 `UIX Theme Window` → 副窗切到暗色 → 两窗均显示“当前主题：暗色” → 独立关闭副窗 | 稳定 `automation_id` 定位；等待两窗 `presented_revision`；断言窗口标题、语义状态和窗口数量 |
 | Windows 系统主题 live | 以 `--follow-system-theme` 启动 → UI 显示“跟随系统”且无手动开关 → OS 应用主题反转后窗口完成对应换色 → 恢复原 OS 设置后窗口恢复原配色 | 稳定 `automation_id` 断言模式；等待 `revision/presented_revision`；对真实前景窗口做桌面合成像素比较；测试始终恢复 `AppsUseLightTheme` |
 | Windows 图形故障恢复 | 以 `--graphics-recovery-acceptance` 启动 → 进入“应用能力” → 注入下一帧 `DeviceLost` → 状态在恢复后的真实 present 才可见 → 再执行一次用户操作并呈现“恢复后交互成功” | `test-harness` 只在恢复包装器边界注入 typed fault；稳定 `automation_id` 与 `presented_revision` 证明失败后恢复和继续交互；进程日志确认命中 fault，且 D3D11 同 recipe 重建成功 |
+| Provider 子树切换 | 主窗进入“框架能力” → 点击 `English` → 状态变为“当前语言：English”且空态文案变为 `No data`；同页可观察 Large/Small 优先级、构造覆盖和 typed token/统一空态 | 稳定 `automation_id`；`test-harness` 构建中文/英文子树并断言 `render_empty` 结果；真实窗口交互可由应用控制能力执行 |
 
-这些场景运行真实 `uix-demo --agent-control` 进程与 D3D11 窗口，需要可交互的 Windows 桌面：
+以下 Windows 集成场景运行真实 `uix-demo --agent-control` 进程，需要可交互的 Windows 桌面：
 
 ```bash
 cargo test --features agent-control --test agent_gui_windows real_demo_opens_theme_window_and_syncs_observable_state -- --ignored --nocapture
 cargo test --features agent-control --test agent_gui_windows real_demo_follows_live_windows_system_theme_and_restores_preference -- --ignored --nocapture
 cargo test --features agent-control,test-harness --test agent_gui_windows real_demo_recovers_from_injected_device_loss_and_accepts_followup_interaction -- --ignored --nocapture
+cargo test --features agent-control,test-harness --test agent_gui_windows real_demo_switches_provider_locale_and_presents_framework_capabilities -- --ignored --nocapture
+```
+
+Provider 子树场景通过 Agent Bridge 执行页面导航、语言切换与滚动，等待每次真实 present 后断言语义树中的文案、Provider 尺寸优先级、typed token 与自定义空态；设置 `UIX_GUI_EVIDENCE_DIR` 可同时输出首页、中文、English 和滚动后四张 PNG。它使用 Vulkan pixel-upload 路径，以便现有桌面像素 oracle 对真实窗口进行严格取证；D3D11 swapchain 另由 WGC smoke 证据覆盖。
+
+另有快速的无窗口构建契约测试：
+
+```bash
+cargo test --features test-harness --bin uix-demo framework_
 ```
 
 ## 验收 gap

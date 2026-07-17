@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::BufReader;
+use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -407,6 +408,33 @@ fn capture_client(window: HWND) -> ClientCapture {
         height,
         pixels,
     }
+}
+
+pub(super) fn capture_demo_client_png(demo: &DemoProcess, path: &Path) {
+    let window = demo.window_handle();
+    demo.raise_for_interaction();
+    request_foreground_focus(window);
+    flush_desktop_composition();
+    let capture = capture_client(window);
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("create GUI evidence directory");
+    }
+    let mut rgba = Vec::with_capacity(capture.pixels.len().saturating_mul(4));
+    for &pixel in &capture.pixels {
+        let [blue, green, red, _] = pixel.to_le_bytes();
+        rgba.extend_from_slice(&[red, green, blue, 255]);
+    }
+    image::save_buffer_with_format(
+        path,
+        &rgba,
+        capture.width as u32,
+        capture.height as u32,
+        image::ColorType::Rgba8,
+        image::ImageFormat::Png,
+    )
+    .expect("save GUI evidence PNG");
+    assert_meaningful_capture(&capture, "framework demo evidence");
 }
 
 fn flush_desktop_composition() {

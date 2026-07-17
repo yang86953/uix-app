@@ -21,7 +21,8 @@ pub const PAGE_DATA: usize = 6;
 pub const PAGE_FEEDBACK: usize = 7;
 pub const PAGE_CHARTS: usize = 8;
 pub const PAGE_OTHER: usize = 9;
-pub const PAGE_GALLERY: usize = 10;
+pub const PAGE_FRAMEWORK: usize = 10;
+pub const PAGE_GALLERY: usize = 11;
 
 pub const PAGE_TITLES: &[(&str, &str)] = &[
     ("home", " 首页"),
@@ -34,6 +35,7 @@ pub const PAGE_TITLES: &[(&str, &str)] = &[
     ("alert-circle", " 反馈"),
     ("bar-chart", " 图表"),
     ("settings", " 其他"),
+    ("sliders", " 框架能力"),
     ("list", " 覆盖清单"),
 ];
 
@@ -43,7 +45,7 @@ const _: () = assert!(PAGE_COUNT > 0);
 
 /// 侧边栏分组：入门 | 组件（8 类）| 参考。
 pub const SIDEBAR_GROUPS: &[(&str, &[usize])] = &[
-    ("入门", &[PAGE_HOME, PAGE_APP]),
+    ("入门", &[PAGE_HOME, PAGE_APP, PAGE_FRAMEWORK]),
     (
         "组件",
         &[
@@ -68,6 +70,7 @@ pub fn page_index_by_label(label: &str) -> Option<usize> {
         .position(|(_, title)| title.trim() == key)
         .or_else(|| match key {
             "运行时" | "App 能力" | "应用能力" => Some(PAGE_APP),
+            "Provider" | "框架" | "框架能力" => Some(PAGE_FRAMEWORK),
             "目录" | "覆盖清单" => Some(PAGE_GALLERY),
             "数据" | "数据展示" => Some(PAGE_DATA),
             "--cli" => None,

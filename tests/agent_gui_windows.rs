@@ -2,6 +2,8 @@
 
 #[path = "support/agent_gui_windows/foreground.rs"]
 mod foreground;
+#[path = "support/agent_gui_windows/framework.rs"]
+mod framework;
 #[path = "support/agent_gui_windows/graphics_recovery.rs"]
 mod graphics_recovery;
 #[path = "support/agent_gui_windows/multi_window.rs"]

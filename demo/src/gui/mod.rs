@@ -6,7 +6,7 @@ use uix::core::log::info_fn;
 use uix::prelude::*;
 
 use crate::common::page::{page_heading, INIT_H, INIT_W, PAGE_TITLES, SIDEBAR_GROUPS, SIDEBAR_W};
-use crate::demos::context::{GraphicsRecoveryControl, ThemeControl};
+use crate::demos::context::{FrameworkControl, GraphicsRecoveryControl, ThemeControl};
 use crate::demos::{build_page, DemoCtx};
 use std::cell::Cell;
 use std::rc::Rc;
@@ -150,6 +150,7 @@ fn page_body(
     runtime_count: &State<i32>,
     theme_control: &ThemeControl,
     graphics_recovery_control: Option<&GraphicsRecoveryControl>,
+    framework_control: &FrameworkControl,
 ) -> ViewNode {
     column([
         header_bar(&active, timer_ticks, theme_control),
@@ -161,6 +162,7 @@ fn page_body(
             runtime_count,
             theme_control,
             graphics_recovery_control,
+            framework_control,
         ),
     ])
     .flex_grow(1.0)
@@ -176,11 +178,13 @@ fn page_shell(
     runtime_count: &State<i32>,
     theme_control: &ThemeControl,
     graphics_recovery_control: Option<&GraphicsRecoveryControl>,
+    framework_control: &FrameworkControl,
 ) -> ViewNode {
     let (icon, title) = PAGE_TITLES[idx];
     let mut ctx = DemoCtx::new(tk, timer_ticks, Some(active))
         .with_counters(home_count, runtime_count)
-        .with_theme_control(theme_control);
+        .with_theme_control(theme_control)
+        .with_framework_control(framework_control);
     if let Some(control) = graphics_recovery_control {
         ctx = ctx.with_graphics_recovery_control(control);
     }
@@ -201,6 +205,7 @@ fn page_content(
     runtime_count: &State<i32>,
     theme_control: &ThemeControl,
     graphics_recovery_control: Option<&GraphicsRecoveryControl>,
+    framework_control: &FrameworkControl,
 ) -> ViewNode {
     let idx = active.get();
     page_shell(
@@ -212,16 +217,18 @@ fn page_content(
         runtime_count,
         theme_control,
         graphics_recovery_control,
+        framework_control,
     )
 }
 
-fn app_shell_with_counters(
+fn app_shell_with_controls(
     active: State<usize>,
     timer_ticks: State<u32>,
     home_count: &State<i32>,
     runtime_count: &State<i32>,
     theme_control: &ThemeControl,
     graphics_recovery_control: Option<&GraphicsRecoveryControl>,
+    framework_control: &FrameworkControl,
 ) -> ViewNode {
     let tk = DesignTokens::antd_light();
     column([
@@ -235,6 +242,7 @@ fn app_shell_with_counters(
                 runtime_count,
                 theme_control,
                 graphics_recovery_control,
+                framework_control,
             ),
         ])
         .flex_grow(1.0),
@@ -251,6 +259,26 @@ fn app_shell_with_counters(
     ])
     .flex_grow(1.0)
     .bg(ColorValue::Neutral(NeutralRole::BgLayout))
+}
+
+#[cfg(all(test, feature = "test-harness"))]
+fn app_shell_with_counters(
+    active: State<usize>,
+    timer_ticks: State<u32>,
+    home_count: &State<i32>,
+    runtime_count: &State<i32>,
+    theme_control: &ThemeControl,
+    graphics_recovery_control: Option<&GraphicsRecoveryControl>,
+) -> ViewNode {
+    app_shell_with_controls(
+        active,
+        timer_ticks,
+        home_count,
+        runtime_count,
+        theme_control,
+        graphics_recovery_control,
+        &FrameworkControl::default(),
+    )
 }
 
 #[cfg(all(test, feature = "test-harness"))]
@@ -274,6 +302,7 @@ pub fn run(agent_control: bool, follow_system_theme: bool, graphics_recovery_acc
     let runtime_count = State::new(0i32);
     let theme_control = ThemeControl::new(follow_system_theme);
     let graphics_recovery_control = GraphicsRecoveryControl::new(graphics_recovery_acceptance);
+    let framework_control = FrameworkControl::default();
 
     let app = App::new()
         .title("UIX Demo")
@@ -362,15 +391,17 @@ pub fn run(agent_control: bool, follow_system_theme: bool, graphics_recovery_acc
         home_count,
         runtime_count,
         theme_control,
-        graphics_recovery_control;
+        graphics_recovery_control,
+        framework_control;
         {
-            demo_window(app_shell_with_counters(
+            demo_window(app_shell_with_controls(
                 active,
                 timer_ticks,
                 &home_count,
                 &runtime_count,
                 &theme_control,
                 graphics_recovery_control.enabled().then_some(&graphics_recovery_control),
+                &framework_control,
             ))
         }
     ))
