@@ -148,6 +148,14 @@ fn real_demo_captures_all_pages_for_visual_review() {
     navigate_to_page(&demo, &mut connection, window_id, generation, 0);
     scroll_page_to_top(&demo, &mut connection, window_id, generation, 0);
     capture(&demo, &evidence_root, "state-dark-home-top.png");
+    navigate_to_page(&demo, &mut connection, window_id, generation, 5);
+    scroll_page_to_top(&demo, &mut connection, window_id, generation, 5);
+    capture(&demo, &evidence_root, "state-dark-input-top.png");
+    scroll_page_to_bottom(&demo, &mut connection, window_id, generation, 5);
+    capture(&demo, &evidence_root, "state-dark-input-bottom.png");
+    navigate_to_page(&demo, &mut connection, window_id, generation, 6);
+    scroll_page_to_bottom(&demo, &mut connection, window_id, generation, 6);
+    capture(&demo, &evidence_root, "state-dark-data-bottom.png");
     capture_feedback_modal_states(
         &demo,
         &mut connection,

@@ -9,7 +9,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
-use crate::draw::Color;
 use crate::native::traits::input::ControlSize;
 use crate::ui::state::State;
 use crate::ui::widgets::input::date_calendar::{
@@ -299,7 +298,7 @@ component! {
 
         let val = self.value.get();
         let is_default = val == Date::default();
-        ctx.fill_rect(frame, Color::white(), radius);
+        ctx.fill_rect(frame, ctx.tokens().color_bg_container(), radius);
         ctx.stroke_rect(frame, if self.focused { primary } else { border_color },
             if self.focused { 2.0 } else { 1.0 }, radius);
 

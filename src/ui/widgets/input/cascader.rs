@@ -143,7 +143,7 @@ component! {
         let bg_elevated = ctx.tokens().color_bg_elevated();
         let radius = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
 
-        ctx.fill_rect(frame, Color::white(), radius);
+        ctx.fill_rect(frame, ctx.tokens().color_bg_container(), radius);
         ctx.stroke_rect(
             frame,
             if self.focused { primary } else { border_color },

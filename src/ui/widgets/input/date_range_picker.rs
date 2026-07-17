@@ -6,7 +6,6 @@ use std::sync::Arc;
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
-use crate::draw::Color;
 use crate::native::traits::input::ControlSize;
 use crate::ui::state::State;
 use crate::ui::widgets::input::date_calendar::{
@@ -244,7 +243,7 @@ component! {
         let text_tertiary = ctx.tokens().color_text_tertiary();
         let radius = Some(crate::draw::Radius::uniform(ctx.tokens().border_radius_sm()));
 
-        ctx.fill_rect(frame, Color::white(), radius);
+        ctx.fill_rect(frame, ctx.tokens().color_bg_container(), radius);
         ctx.stroke_rect(
             frame,
             if self.focused { primary } else { border_color },

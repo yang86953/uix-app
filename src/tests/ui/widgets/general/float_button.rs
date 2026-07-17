@@ -13,6 +13,15 @@ fn measure_preserves_float_button_zero_layout_footprint() {
 }
 
 #[test]
+fn reserved_layout_space_matches_the_button_diameter() {
+    let button = FloatButton::new("+").size(48.0).reserve_layout_space(true);
+    let measured = button.measure(Constraints::loose(Size::new(80.0, 80.0)));
+
+    assert_eq!(measured, Size::new(48.0, 48.0));
+    assert!(WidgetRender::overlay_entry(&button, ComponentId::new(5), Rect::zero()).is_none());
+}
+
+#[test]
 fn float_button_exposes_real_hit_damage_overlay_and_accessibility_bounds() {
     let button = FloatButton::new("+")
         .tooltip("新建")

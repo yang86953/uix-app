@@ -20,6 +20,7 @@ component! {
         size: f32,
         x: f32,
         y: f32,
+        reserve_layout_space: bool,
         hovered: bool,
         pressed: bool,
         focused: bool,
@@ -77,6 +78,9 @@ component! {
     }
 
     overlay_entry => (&self, id: crate::ui::ComponentId, frame: Rect) -> Option<OverlayEntry> {
+        if self.reserve_layout_space {
+            return None;
+        }
         Some(
             OverlayEntry::new(id, OverlayKind::Custom)
                 .bounds(self.button_rect(frame))
@@ -108,17 +112,23 @@ component! {
             ctx.stroke_rect(btn_rect, ctx.tokens().color_primary_border(), 2.0, Some(r));
         }
         let icon_fs = 16.0;
-        let tw = ctx.measure_text(&self.icon, icon_fs).w;
-        let th = ctx.line_box_height(icon_fs);
-        ctx.draw_text(
-            &self.icon,
-            Point::new(
-                btn_rect.x + (btn_rect.w - tw) * 0.5,
-                btn_rect.y + (btn_rect.h - th) * 0.5,
-            ),
-            white,
-            icon_fs,
-        );
+        if self.icon == "chevron-up" {
+            crate::ui::widgets::general::icon::paint_icon_in_frame(
+                ctx, &self.icon, btn_rect, white, icon_fs,
+            );
+        } else {
+            let tw = ctx.measure_text(&self.icon, icon_fs).w;
+            let th = ctx.line_box_height(icon_fs);
+            ctx.draw_text(
+                &self.icon,
+                Point::new(
+                    btn_rect.x + (btn_rect.w - tw) * 0.5,
+                    btn_rect.y + (btn_rect.h - th) * 0.5,
+                ),
+                white,
+                icon_fs,
+            );
+        }
         // Badge
         if self.badge_count > 0 {
             let badge_count = self.badge_count.to_string();
@@ -145,6 +155,7 @@ impl FloatButton {
             size: 40.0,
             x: 0.0,
             y: 0.0,
+            reserve_layout_space: false,
             hovered: false,
             pressed: false,
             focused: false,
@@ -169,8 +180,18 @@ impl FloatButton {
         self
     }
 
+    /// 为按钮锚点保留与直径相同的布局空间；默认浮动模式仍保持零占位。
+    pub fn reserve_layout_space(mut self, reserve: bool) -> Self {
+        self.reserve_layout_space = reserve;
+        self
+    }
+
     fn intrinsic_size(&self) -> Size {
-        Size::zero() // 不占用布局空间
+        if self.reserve_layout_space {
+            Size::new(self.size, self.size)
+        } else {
+            Size::zero()
+        }
     }
 
     fn button_rect(&self, frame: Rect) -> Rect {
@@ -211,6 +232,7 @@ impl FloatButton {
             size: self.size,
             x: self.x,
             y: self.y,
+            reserve_layout_space: self.reserve_layout_space,
         }
     }
 
@@ -221,6 +243,7 @@ impl FloatButton {
         self.size = next.size;
         self.x = next.x;
         self.y = next.y;
+        self.reserve_layout_space = next.reserve_layout_space;
     }
 }
 
@@ -236,7 +259,7 @@ pub struct FloatButtonBackTop;
 impl FloatButtonBackTop {
     #[allow(clippy::new_ret_no_self)]
     pub fn new() -> FloatButton {
-        FloatButton::new("↑").tooltip("回到顶部")
+        FloatButton::new("chevron-up").tooltip("回到顶部")
     }
 }
 

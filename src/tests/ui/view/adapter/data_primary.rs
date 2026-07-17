@@ -438,6 +438,7 @@ fn reconcile_float_button_patches_instance_and_syncs_config() {
             size: 48.0,
             x: 12.0,
             y: 24.0,
+            reserve_layout_space: false,
         }
     );
 }

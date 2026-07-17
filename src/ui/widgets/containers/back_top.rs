@@ -66,8 +66,13 @@ component! {
 
         ctx.fill_circle(cx, cy, r, primary);
         ctx.fill_circle(cx, cy, r - 2.0, bg_elevated);
-        // ↑ 箭头
-        ctx.text_center("↑", frame, primary, 14.0);
+        crate::ui::widgets::general::icon::paint_icon_in_frame(
+            ctx,
+            "chevron-up",
+            frame,
+            primary,
+            14.0,
+        );
         if self.focused {
             ctx.stroke_rect(
                 frame,
