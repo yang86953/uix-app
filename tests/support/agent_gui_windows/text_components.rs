@@ -1477,6 +1477,63 @@ fn real_demo_empty_keeps_content_readable_inside_constrained_frames() {
 }
 
 #[test]
+#[ignore = "requires an interactive Windows desktop and writes Image visual evidence"]
+fn real_demo_image_keeps_paint_inside_actual_frames() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(48, "image-layout");
+    let snapshot = session.snapshot("image-layout-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "image"
+    );
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "button");
+    assert_eq!(target["name"], "UIX demo");
+    assert_eq!(target["state"]["expanded"], false);
+    assert_eq!(target["visible_bounds"]["w"], 128.0);
+    assert_eq!(target["visible_bounds"]["h"], 88.0);
+
+    let fallback = node_by_automation_id(&snapshot, "component-qa-image-fallback");
+    assert_eq!(fallback["role"], "button");
+    assert_eq!(fallback["name"], "图片加载失败，请检查网络后重试");
+    assert_eq!(fallback["visible_bounds"]["w"], 128.0);
+    assert_eq!(fallback["visible_bounds"]["h"], 88.0);
+
+    let constrained = node_by_automation_id(&snapshot, "component-qa-image-constrained");
+    assert_eq!(constrained["role"], "image");
+    assert_eq!(constrained["name"], "受限图片");
+    assert_eq!(constrained["visible_bounds"]["w"], 72.0);
+    assert_eq!(constrained["visible_bounds"]["h"], 40.0);
+
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-image", "image-layout-light.png");
+
+    let opened = session.invoke("component-qa-target", "image-preview-open");
+    assert_eq!(
+        node_by_automation_id(&opened, "component-qa-target")["state"]["expanded"],
+        true
+    );
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-image", "image-preview-open.png");
+    let closed = session.press_key("escape", "image-preview-close");
+    assert_eq!(
+        node_by_automation_id(&closed, "component-qa-target")["state"]["expanded"],
+        false
+    );
+
+    let dark = session.invoke("theme-toggle", "image-dark-theme");
+    assert_eq!(
+        node_by_automation_id(&dark, "component-qa-image-constrained")["visible_bounds"]["w"],
+        72.0
+    );
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-image", "image-layout-dark.png");
+    session.close();
+}
+
+#[test]
 #[ignore = "requires an interactive Windows desktop and writes Checkbox CJK evidence"]
 fn real_demo_checkbox_uses_compact_cjk_width_and_toggles() {
     let _guard = REAL_GUI_LOCK

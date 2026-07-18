@@ -5,7 +5,7 @@
 use std::cell::Cell;
 
 use crate::component;
-use crate::core::{Constraints, Point, Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::draw::image::BitmapHandle;
 use crate::draw::painting::PaintContext;
 use crate::draw::pipeline::invalidate_paint_handle;
@@ -112,55 +112,77 @@ component! {
         let surface_h = ctx.canvas_2d().height() as f32;
         self.last_surface_w.set(surface_w);
         self.last_surface_h.set(surface_h);
+        let frame = Self::normalized_frame(frame);
         let fill = ctx.tokens().color_fill_tertiary();
-        let text_sec = ctx.tokens().color_text_quaternary();
-        let r = Some(Radius::uniform(self.radius));
+        let text_sec = ctx.tokens().color_text_secondary();
+        let radius = self.radius.min(frame.w.min(frame.h) * 0.5);
+        let r = Some(Radius::uniform(radius));
 
         let handle = self.resolve_handle(ctx, tree, frame);
-        let drew = if let Some(h) = handle {
-            ctx.fill_rect(frame, fill, r);
-            if self.fit {
-                ctx.draw_image(h, frame);
+        if frame.w > 0.0 && frame.h > 0.0 {
+            ctx.push_clip(frame);
+            let drew = if let Some(h) = handle {
+                ctx.fill_rect(frame, fill, r);
+                let device_scale = ctx.device_pixel_ratio().max(f32::EPSILON);
+                let target_width = (frame.w * device_scale).ceil().clamp(1.0, 4096.0) as u32;
+                let target_height = (frame.h * device_scale).ceil().clamp(1.0, 4096.0) as u32;
+                if let Some(drawable) = ctx.image_service().rounded_rect_sized(
+                    h,
+                    target_width,
+                    target_height,
+                    radius * device_scale,
+                    self.fit,
+                ) {
+                    ctx.draw_image_fill(drawable, frame);
+                } else if self.fit {
+                    ctx.draw_image(h, frame);
+                } else {
+                    ctx.draw_image_fill(h, frame);
+                }
+                true
             } else {
-                ctx.draw_image_fill(h, frame);
-            }
-            true
-        } else {
-            false
-        };
-
-        if !drew {
-            // 占位/错误态：灰色背景 + 图标
-            ctx.fill_rect(frame, fill, r);
-            ctx.stroke_rect(frame, ctx.tokens().color_border_secondary(), 1.0, r);
-            let load_failed = !self.src.is_empty() || self.slot.is_some();
-            let placeholder = if load_failed && !self.fallback.is_empty() {
-                &self.fallback
-            } else if !self.alt.is_empty() {
-                &self.alt
-            } else {
-                "🖼"
+                false
             };
-            ctx.text_center(placeholder, frame, text_sec, if load_failed { 13.0 } else { 24.0 });
-        }
 
-        // 预览图标叠加
-        if self.preview && drew {
-            let preview_icon = "🔍";
-            let icon_size = 20.0;
-            let icon_x = frame.x + frame.w - icon_size - 8.0;
-            let icon_y = frame.y + 8.0;
-            ctx.fill_circle(icon_x + icon_size * 0.5, icon_y + icon_size * 0.5, icon_size * 0.5, Color::from_rgba(0, 0, 0, 120));
-            ctx.draw_text(preview_icon, Point::new(icon_x + 2.0, icon_y + 2.0), Color::white(), 14.0);
-        }
+            if !drew {
+                ctx.fill_rect(frame, fill, r);
+                ctx.stroke_rect(frame, ctx.tokens().color_border_secondary(), 1.0, r);
+                let load_failed = !self.src.is_empty() || self.slot.is_some();
+                let placeholder = if load_failed && !self.fallback.is_empty() {
+                    &self.fallback
+                } else if !self.alt.is_empty() {
+                    &self.alt
+                } else {
+                    ""
+                };
+                if placeholder.is_empty() {
+                    let icon_size = 24.0_f32.min(frame.w.min(frame.h) * 0.45);
+                    crate::ui::widgets::icon::paint_icon_in_frame(
+                        ctx,
+                        "image",
+                        frame,
+                        text_sec,
+                        icon_size,
+                    );
+                } else {
+                    Self::paint_centered_label(ctx, placeholder, frame, text_sec, 13.0);
+                }
+            }
 
-        // 描述文字（底部）
-        if !self.alt.is_empty() && drew {
-            ctx.draw_text(&self.alt, Point::new(frame.x + 4.0, frame.y + frame.h + 4.0), text_sec, 11.0);
-        }
+            if self.preview && drew {
+                Self::paint_preview_indicator(ctx, frame);
+            }
 
-        if self.focused && self.preview {
-            ctx.stroke_rect(frame, ctx.tokens().color_primary(), 2.0, r);
+            if self.focused && self.preview {
+                let focus = Self::inset(frame, 1.0);
+                ctx.stroke_rect(
+                    focus,
+                    ctx.tokens().color_primary(),
+                    2.0,
+                    Some(Radius::uniform(radius.min(focus.w.min(focus.h) * 0.5))),
+                );
+            }
+            ctx.pop_clip();
         }
 
         if self.preview_open {
@@ -173,13 +195,32 @@ component! {
 }
 
 impl Image {
+    const PLACEHOLDER_PADDING: f32 = 8.0;
+
+    fn normalized_frame(frame: Rect) -> Rect {
+        Rect::new(
+            frame.x,
+            frame.y,
+            if frame.w.is_finite() {
+                frame.w.max(0.0)
+            } else {
+                0.0
+            },
+            if frame.h.is_finite() {
+                frame.h.max(0.0)
+            } else {
+                0.0
+            },
+        )
+    }
+
     pub fn new(w: f32, h: f32) -> Self {
         Self {
             src: String::new(),
             alt: String::new(),
             fallback: String::new(),
-            width: w,
-            height: h,
+            width: Self::finite_non_negative(w),
+            height: Self::finite_non_negative(h),
             radius: 6.0,
             preview: true,
             slot: None,
@@ -216,7 +257,7 @@ impl Image {
         self
     }
     pub fn radius(mut self, r: f32) -> Self {
-        self.radius = r;
+        self.radius = Self::finite_non_negative(r);
         self
     }
     pub fn preview(mut self, v: bool) -> Self {
@@ -249,6 +290,82 @@ impl Image {
 
     fn intrinsic_size(&self) -> Size {
         Size::new(self.width, self.height)
+    }
+
+    fn finite_non_negative(value: f32) -> f32 {
+        if value.is_finite() {
+            value.max(0.0)
+        } else {
+            0.0
+        }
+    }
+
+    fn inset(frame: Rect, amount: f32) -> Rect {
+        let amount = amount.min(frame.w * 0.5).min(frame.h * 0.5).max(0.0);
+        Rect::new(
+            frame.x + amount,
+            frame.y + amount,
+            (frame.w - amount * 2.0).max(0.0),
+            (frame.h - amount * 2.0).max(0.0),
+        )
+    }
+
+    fn paint_centered_label(
+        ctx: &mut PaintContext<'_>,
+        label: &str,
+        frame: Rect,
+        color: Color,
+        font_size: f32,
+    ) {
+        let content = Self::inset(frame, Self::PLACEHOLDER_PADDING);
+        if content.w <= 0.0 || content.h <= 0.0 {
+            return;
+        }
+        let metrics =
+            crate::draw::font::text_backend::estimate_text_metrics(label, content.w, font_size);
+        let line_height = font_size * 1.5;
+        let label_height = (metrics.line_count.max(1) as f32 * line_height).min(content.h);
+        let label_frame = Rect::new(
+            content.x,
+            content.y + (content.h - label_height) * 0.5,
+            content.w,
+            label_height,
+        );
+        ctx.push_clip(label_frame);
+        if metrics.line_count <= 1 {
+            ctx.text_center(label, label_frame, color, font_size);
+        } else {
+            ctx.draw_text_wrapped(label, label_frame, color, font_size);
+        }
+        ctx.pop_clip();
+    }
+
+    fn paint_preview_indicator(ctx: &mut PaintContext<'_>, frame: Rect) {
+        let shortest = frame.w.min(frame.h);
+        if shortest < 20.0 {
+            return;
+        }
+        let badge_size = 20.0_f32.min((shortest - 8.0).max(0.0));
+        let inset = 6.0_f32.min((shortest - badge_size).max(0.0) * 0.5);
+        let badge = Rect::new(
+            frame.x + frame.w - badge_size - inset,
+            frame.y + inset,
+            badge_size,
+            badge_size,
+        );
+        ctx.fill_circle(
+            badge.x + badge.w * 0.5,
+            badge.y + badge.h * 0.5,
+            badge_size * 0.5,
+            Color::from_rgba(0, 0, 0, 140),
+        );
+        crate::ui::widgets::icon::paint_icon_in_frame(
+            ctx,
+            "zoom-in",
+            badge,
+            Color::white(),
+            badge_size * 0.58,
+        );
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -339,7 +456,12 @@ impl Image {
         surface_w: f32,
         surface_h: f32,
     ) {
+        if !surface_w.is_finite() || !surface_h.is_finite() || surface_w <= 0.0 || surface_h <= 0.0
+        {
+            return;
+        }
         let surface = Rect::new(0.0, 0.0, surface_w, surface_h);
+        ctx.push_clip(surface);
         ctx.fill_rect(surface, Color::from_rgba(0, 0, 0, 204), None);
 
         let margin = 48.0_f32
@@ -362,7 +484,7 @@ impl Image {
             } else {
                 "图片不可用"
             };
-            ctx.text_center(label, preview_rect, Color::white(), 16.0);
+            Self::paint_centered_label(ctx, label, preview_rect, Color::white(), 16.0);
         }
 
         let close = Rect::new((surface_w - 52.0).max(4.0), 12.0, 40.0, 40.0);
@@ -372,6 +494,7 @@ impl Image {
             close.w * 0.5,
             Color::from_rgba(0, 0, 0, 180),
         );
-        ctx.text_center("×", close, Color::white(), 22.0);
+        crate::ui::widgets::icon::paint_icon_in_frame(ctx, "x", close, Color::white(), 20.0);
+        ctx.pop_clip();
     }
 }

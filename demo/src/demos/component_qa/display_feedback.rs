@@ -81,6 +81,15 @@ fn empty_frame(empty: Empty, width: f32, height: f32, automation_id: &'static st
         .align_self(AlignItems::Start)
 }
 
+fn image_frame(image: Image, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
+    grid([embed(image).automation_id(automation_id)])
+        .columns(vec![GridTrack::Fr(1.0)])
+        .rows(vec![GridTrack::Fr(1.0)])
+        .width(width)
+        .height(height)
+        .align_self(AlignItems::Start)
+}
+
 fn avatar_frame(avatar: Avatar, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
     grid([embed(avatar).automation_id(automation_id)])
         .columns(vec![GridTrack::Fr(1.0)])
@@ -586,15 +595,39 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
         "image" => qa_row([
             qa_variant(
                 "Loaded / target",
-                qa_target(
+                image_frame(
                     Image::new(128.0, 88.0)
                         .src("assets/images/demo.png")
                         .alt("UIX demo"),
+                    128.0,
+                    88.0,
+                    "component-qa-target",
                 ),
             ),
             qa_variant(
-                "Placeholder",
-                embed(Image::new(128.0, 88.0).alt("图片占位")),
+                "Load fallback",
+                image_frame(
+                    Image::new(128.0, 88.0)
+                        .src("assets/images/missing.png")
+                        .fallback("图片加载失败，请检查网络后重试"),
+                    128.0,
+                    88.0,
+                    "component-qa-image-fallback",
+                ),
+            ),
+            qa_variant(
+                "72×40 / static",
+                image_frame(
+                    Image::new(128.0, 88.0)
+                        .src("assets/images/demo.png")
+                        .alt("受限图片")
+                        .radius(10.0)
+                        .fit(false)
+                        .preview(false),
+                    72.0,
+                    40.0,
+                    "component-qa-image-constrained",
+                ),
             ),
         ]),
         "list" => qa_row([

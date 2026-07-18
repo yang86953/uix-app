@@ -31,6 +31,84 @@ fn render(image: &Image, canvas: &mut SharedRasterizer, frame: Rect) {
     WidgetRender::render(image, frame, &mut ctx, &tree);
 }
 
+fn render_display_list(image: &Image, frame: Rect, surface_size: (i32, i32)) -> String {
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(surface_size.0, surface_size.1));
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+    let mut display_list = crate::draw::painting::DisplayList::new();
+    {
+        let mut ctx = PaintContext::new_for_test(
+            &mut canvas,
+            font,
+            &fonts,
+            &images,
+            &tokens,
+            96.0,
+            1.0,
+            Orientation::YDown,
+            surface_size.0,
+            surface_size.1,
+        );
+        ctx.with_recorder(&mut display_list, |ctx| {
+            WidgetRender::render(image, frame, ctx, &tree);
+        });
+    }
+    format!("{display_list:?}")
+}
+
+#[test]
+fn loaded_image_clips_thumbnail_paint_and_keeps_alt_semantic_only() {
+    let image = Image::new(128.0, 88.0)
+        .src("assets/images/demo.png")
+        .alt("UIX demo");
+    let display_list = render_display_list(&image, Rect::new(10.0, 8.0, 72.0, 40.0), (120, 80));
+
+    assert!(
+        display_list.contains("PushClip { rect: Rect { x: 10.0, y: 8.0, w: 72.0, h: 40.0 } }"),
+        "thumbnail paint must be clipped to the actual frame: {display_list}"
+    );
+    assert!(display_list.contains("DrawImage"), "{display_list}");
+    assert!(
+        !display_list.contains("UIX demo"),
+        "alt text must not be painted below the image: {display_list}"
+    );
+    assert!(
+        !display_list.contains('🔍'),
+        "preview affordance must use the shared Lucide icon: {display_list}"
+    );
+}
+
+#[test]
+fn load_failure_wraps_readable_fallback_inside_constrained_frame() {
+    let image = Image::new(128.0, 88.0)
+        .src("assets/images/missing.png")
+        .fallback("图片加载失败，请检查网络后重试");
+    let display_list = render_display_list(&image, Rect::new(4.0, 3.0, 72.0, 40.0), (100, 64));
+
+    assert!(display_list.contains("DrawTextWrapped"), "{display_list}");
+    assert!(
+        !display_list.contains("w: -") && !display_list.contains("h: -"),
+        "{display_list}"
+    );
+}
+
+#[test]
+fn invalid_dimensions_and_radius_cannot_poison_layout_or_paint() {
+    let image = Image::new(f32::NAN, -40.0).radius(f32::INFINITY);
+    assert_eq!(
+        image.measure(Constraints::loose(Size::new(200.0, 200.0))),
+        Size::new(0.0, 0.0)
+    );
+
+    let display_list = render_display_list(&image, Rect::new(0.0, 0.0, f32::NAN, -10.0), (40, 40));
+    assert!(!display_list.contains("NaN"), "{display_list}");
+}
+
 #[test]
 fn preview_uses_full_surface_overlay_and_clears_it_after_close() {
     let frame = Rect::new(40.0, 30.0, 120.0, 80.0);
