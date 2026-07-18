@@ -18,7 +18,7 @@ use super::accessibility::{
     popconfirm_accessibility, progress_accessibility, result_accessibility,
     rich_text_accessibility, select_accessibility, selectable_list_accessibility,
     splitter_accessibility, steps_accessibility, tabs_accessibility, tag_accessibility,
-    theme_toggle_accessibility, timeline_accessibility, transfer_accessibility,
+    theme_toggle_accessibility, timeline_accessibility, transfer_accessibility, tree_accessibility,
     typography_accessibility, upload_accessibility,
 };
 use super::{
@@ -831,11 +831,12 @@ impl SnapshotFields {
                         ..AccessibilityState::default()
                     })
             }
-            Self::Tree { selected_key, .. } => AccessibilitySnapshot::new(AccessibilityRole::Tree)
-                .with_state(AccessibilityState {
-                    value_text: (!selected_key.is_empty()).then(|| selected_key.clone()),
-                    ..AccessibilityState::default()
-                }),
+            Self::Tree {
+                nodes,
+                selected_key,
+                expanded_keys,
+                ..
+            } => tree_accessibility(nodes, selected_key, expanded_keys),
             Self::Calendar {
                 year,
                 month,

@@ -9,6 +9,24 @@ use crate::ui::{
 use std::cell::{Cell, RefCell};
 
 pub(crate) const TREE_ROW_HEIGHT: f32 = 28.0;
+const TREE_SLOT_WIDTH: f32 = 20.0;
+const TREE_INDENT_WIDTH: f32 = 20.0;
+const TREE_MIN_TITLE_WIDTH: f32 = 24.0;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum TreePointerAction {
+    Check(String),
+    Toggle(String),
+    Select(String),
+}
+
+struct TreeRowGeometry {
+    row: Rect,
+    check: Option<Rect>,
+    toggle: Option<Rect>,
+    icon: Option<Rect>,
+    title: Rect,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TreeNode {
@@ -44,9 +62,12 @@ component! {
         expanded_keys: Vec<String>,
         multiple: bool,
         focused: bool,
+        hovered_action: Option<TreePointerAction>,
+        pressed_action: Option<TreePointerAction>,
         pending_change: RefCell<Option<String>>,
         pub(crate) body_scroll: VirtualListScroll,
         scroll_delta_strip: Cell<(f32, f32)>,
+        layout_requested: Cell<bool>,
         pub(crate) last_frame: Cell<Option<Rect>>,
     }
 
@@ -70,9 +91,16 @@ component! {
         Some((0.0, self.body_scroll.scroll_offset()))
     }
 
+    take_layout_request => (&mut self) -> bool {
+        self.layout_requested.replace(false)
+    }
+
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            SystemEvent::Wheel { delta, .. } => {
+            SystemEvent::Wheel { pos, delta } => {
+                if !self.local_frame().contains(*pos) {
+                    return EventResult::NotHandled;
+                }
                 let viewport_h = self.body_viewport_height();
                 let dy = self.body_scroll.scroll_by_wheel(
                     delta.y,
@@ -92,33 +120,45 @@ component! {
                 button: MouseButton::Left,
                 ..
             } => {
-                if let Some(idx) = self.row_index_at_y(pos.y) {
-                    let node_key = self.flat[idx].key.clone();
-                    let node_disabled = self.flat[idx].disabled;
-
-                    if node_disabled {
-                        return EventResult::NotHandled;
-                    }
-
-                    let indent = self.flat[idx].depth as f32 * 20.0;
-
-                    let check_x = indent;
-                    if self.flat[idx].checkable && pos.x >= check_x && pos.x < check_x + 20.0 {
-                        self.toggle_check(&node_key);
-                        self.pending_change.replace(Some(node_key));
-                        return EventResult::Handled;
-                    }
-
-                    let arrow_x = indent + 20.0;
-                    if pos.x >= arrow_x && pos.x < arrow_x + 20.0 && self.flat[idx].has_children {
-                        self.set_expanded(&node_key, !self.flat[idx].expanded);
-                        return EventResult::Handled;
-                    }
-
-                    self.select_from_pointer(node_key);
+                if let Some(action) = self.action_at_point(*pos) {
+                    self.hovered_action = Some(action.clone());
+                    self.pressed_action = Some(action);
                     return EventResult::Handled;
                 }
                 EventResult::NotHandled
+            }
+            SystemEvent::PointerUp {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
+                let Some(pressed) = self.pressed_action.take() else {
+                    return EventResult::NotHandled;
+                };
+                let released = self.action_at_point(*pos);
+                self.hovered_action.clone_from(&released);
+                if released.as_ref() == Some(&pressed) {
+                    self.commit_pointer_action(pressed);
+                }
+                EventResult::Handled
+            }
+            SystemEvent::PointerMove { pos, .. } => {
+                let hovered = self.action_at_point(*pos);
+                if hovered != self.hovered_action {
+                    self.hovered_action = hovered;
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
+            }
+            SystemEvent::PointerLeave => {
+                let changed = self.hovered_action.take().is_some()
+                    | self.pressed_action.take().is_some();
+                if changed {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
             }
             SystemEvent::FocusIn => {
                 self.focused = true;
@@ -126,6 +166,7 @@ component! {
             }
             SystemEvent::FocusOut => {
                 self.focused = false;
+                self.pressed_action = None;
                 EventResult::Handled
             }
             SystemEvent::KeyDown { key, .. } => match key {
@@ -163,17 +204,24 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        let frame = Self::normalized_frame(frame);
+        if frame.w <= 0.0 || frame.h <= 0.0 {
+            self.last_frame.set(Some(frame));
+            return;
+        }
         self.last_frame.set(Some(frame));
         let primary = ctx.tokens().color_primary();
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_secondary();
         let fill = ctx.tokens().color_fill_tertiary();
+        let hover_fill = ctx.tokens().color_fill_tertiary();
+        let pressed_fill = ctx.tokens().color_fill_secondary();
 
         let viewport_h = self.body_viewport_height();
         let (start, end) = self
             .body_scroll
             .scroll_range(self.flat.len(), TREE_ROW_HEIGHT, viewport_h);
-        ctx.canvas_2d().push_clip(frame);
+        ctx.push_clip(frame);
 
         for i in start..end {
             let node = &self.flat[i];
@@ -181,45 +229,75 @@ component! {
             if y + TREE_ROW_HEIGHT < frame.y || y > frame.y + viewport_h {
                 continue;
             }
-            let indent = node.depth as f32 * 20.0;
             let is_selected = self.multiple && self.selected_keys.contains(&node.key)
                 || (!self.multiple && node.key == self.selected_key);
+            let geometry = self.row_geometry(frame, i, y);
+            let action_matches_key = |action: &TreePointerAction| match action {
+                TreePointerAction::Check(key)
+                | TreePointerAction::Toggle(key)
+                | TreePointerAction::Select(key) => key == &node.key,
+            };
 
             if is_selected {
-                ctx.fill_rect(Rect::new(frame.x, y, frame.w, TREE_ROW_HEIGHT), fill, None);
+                ctx.fill_rect(geometry.row, fill, None);
+            }
+            if self
+                .hovered_action
+                .as_ref()
+                .is_some_and(action_matches_key)
+            {
+                ctx.fill_rect(geometry.row, hover_fill, None);
+            }
+            if self
+                .pressed_action
+                .as_ref()
+                .is_some_and(action_matches_key)
+            {
+                ctx.fill_rect(geometry.row, pressed_fill, None);
             }
 
-            let row_rect = Rect::new(frame.x, y, frame.w, TREE_ROW_HEIGHT);
             if self.focused && self.multiple && node.key == self.selected_key {
-                ctx.stroke_rect(row_rect, primary, 1.0, None);
+                let inset = 0.5_f32.min(geometry.row.w * 0.5).min(geometry.row.h * 0.5);
+                let focus = Rect::new(
+                    geometry.row.x + inset,
+                    geometry.row.y + inset,
+                    (geometry.row.w - inset * 2.0).max(0.0),
+                    (geometry.row.h - inset * 2.0).max(0.0),
+                );
+                if focus.w > 0.0 && focus.h > 0.0 {
+                    ctx.stroke_rect(focus, primary, 1.0, None);
+                }
             }
-            let mut cursor = frame.x + indent;
 
-            if node.checkable {
+            if let Some(check) = geometry.check {
                 let check_str = if node.checked { "[x]" } else { "[ ]" };
-                let check_y = ctx.visual_center_y(row_rect, 12.0);
-                ctx.draw_text(
+                Self::paint_single_line(
+                    ctx,
                     check_str,
-                    Point::new(cursor + 2.0, check_y),
+                    check,
                     if node.checked { primary } else { text_sec },
                     12.0,
                 );
-                cursor += 28.0;
             }
 
-            let row_y = ctx.visual_center_y(row_rect, 10.0);
-            if node.has_children {
-                let arrow = if node.expanded { "v" } else { ">" };
-                ctx.draw_text(arrow, Point::new(cursor + 4.0, row_y), text_sec, 10.0);
-            }
-            cursor += 20.0;
-
-            if !node.icon.is_empty() {
-                let icon_rect = Rect::new(cursor, row_rect.y, 16.0, row_rect.h);
+            if let Some(toggle) = geometry.toggle {
                 crate::ui::widgets::icon::paint_icon_in_frame(
-                    ctx, &node.icon, icon_rect, text_sec, 12.0,
+                    ctx,
+                    if node.expanded { "chevron-down" } else { "chevron-right" },
+                    toggle,
+                    text_sec,
+                    12.0_f32.min(toggle.h * 0.6),
                 );
-                cursor += 20.0;
+            }
+
+            if let Some(icon) = geometry.icon {
+                crate::ui::widgets::icon::paint_icon_in_frame(
+                    ctx,
+                    &node.icon,
+                    icon,
+                    text_sec,
+                    12.0_f32.min(icon.h * 0.6),
+                );
             }
 
             let tc = if node.disabled {
@@ -229,13 +307,21 @@ component! {
             } else {
                 text
             };
-            let title_y = ctx.visual_center_y(row_rect, 13.0);
-            ctx.draw_text(&node.title, Point::new(cursor, title_y), tc, 13.0);
+            Self::paint_single_line(ctx, &node.title, geometry.title, tc, 13.0);
         }
 
-        ctx.canvas_2d().pop_clip();
+        ctx.pop_clip();
         if self.focused {
-            ctx.stroke_rect(frame, primary, 1.5, None);
+            let inset = 0.75_f32.min(frame.w * 0.5).min(frame.h * 0.5);
+            let focus = Rect::new(
+                frame.x + inset,
+                frame.y + inset,
+                (frame.w - inset * 2.0).max(0.0),
+                (frame.h - inset * 2.0).max(0.0),
+            );
+            if focus.w > 0.0 && focus.h > 0.0 {
+                ctx.stroke_rect(focus, primary, 1.5, None);
+            }
         }
     }
 }
@@ -249,21 +335,161 @@ impl Tree {
     pub(crate) fn body_viewport_height(&self) -> f32 {
         self.last_frame
             .get()
-            .map(|f| f.h.max(TREE_ROW_HEIGHT))
+            .map(|f| Self::normalized_frame(f).h)
             .unwrap_or(300.0)
     }
 
-    fn row_index_at_y(&self, pos_y: f32) -> Option<usize> {
-        let local_y = pos_y + self.body_scroll.scroll_offset();
-        if local_y < 0.0 {
+    fn local_frame(&self) -> Rect {
+        self.last_frame
+            .get()
+            .map(|frame| Self::normalized_frame(Rect::new(0.0, 0.0, frame.w, frame.h)))
+            .unwrap_or_else(|| Rect::new(0.0, 0.0, 200.0, 300.0))
+    }
+
+    fn action_at_point(&self, point: Point) -> Option<TreePointerAction> {
+        let frame = self.local_frame();
+        if !frame.contains(point) {
             return None;
         }
-        let idx = (local_y / TREE_ROW_HEIGHT) as usize;
-        if idx < self.flat.len() {
-            Some(idx)
-        } else {
-            None
+        let content_y = point.y + self.body_scroll.scroll_offset();
+        if content_y < 0.0 {
+            return None;
         }
+        let index = (content_y / TREE_ROW_HEIGHT) as usize;
+        let node = self.flat.get(index)?;
+        if node.disabled {
+            return None;
+        }
+        let y = index as f32 * TREE_ROW_HEIGHT - self.body_scroll.scroll_offset();
+        let geometry = self.row_geometry(frame, index, y);
+        if geometry.check.is_some_and(|rect| rect.contains(point)) {
+            return Some(TreePointerAction::Check(node.key.clone()));
+        }
+        if geometry.toggle.is_some_and(|rect| rect.contains(point)) {
+            return Some(TreePointerAction::Toggle(node.key.clone()));
+        }
+        geometry
+            .row
+            .contains(point)
+            .then(|| TreePointerAction::Select(node.key.clone()))
+    }
+
+    fn row_geometry(&self, frame: Rect, index: usize, y: f32) -> TreeRowGeometry {
+        let node = &self.flat[index];
+        let visible_top = y.max(frame.y);
+        let visible_bottom = (y + TREE_ROW_HEIGHT).min(frame.y + frame.h);
+        let row = Rect::new(
+            frame.x,
+            visible_top,
+            frame.w,
+            (visible_bottom - visible_top).max(0.0),
+        );
+        let reserved_slots = usize::from(node.checkable)
+            + usize::from(node.has_children)
+            + usize::from(!node.icon.is_empty());
+        let max_indent =
+            (frame.w - reserved_slots as f32 * TREE_SLOT_WIDTH - TREE_MIN_TITLE_WIDTH).max(0.0);
+        let indent = (node.depth as f32 * TREE_INDENT_WIDTH).min(max_indent);
+        let mut cursor = frame.x + indent;
+        let mut take_slot = || {
+            let width = TREE_SLOT_WIDTH.min((frame.x + frame.w - cursor).max(0.0));
+            let slot = Rect::new(cursor, row.y, width, row.h);
+            cursor += width;
+            slot
+        };
+        let check = node
+            .checkable
+            .then(&mut take_slot)
+            .filter(|rect| rect.w > 0.0);
+        let toggle = node
+            .has_children
+            .then(&mut take_slot)
+            .filter(|rect| rect.w > 0.0);
+        let icon = (!node.icon.is_empty())
+            .then(&mut take_slot)
+            .filter(|rect| rect.w > 0.0);
+        let title = Rect::new(cursor, row.y, (frame.x + frame.w - cursor).max(0.0), row.h);
+        TreeRowGeometry {
+            row,
+            check,
+            toggle,
+            icon,
+            title,
+        }
+    }
+
+    fn normalized_frame(frame: Rect) -> Rect {
+        Rect::new(
+            frame.x,
+            frame.y,
+            if frame.w.is_finite() {
+                frame.w.max(0.0)
+            } else {
+                0.0
+            },
+            if frame.h.is_finite() {
+                frame.h.max(0.0)
+            } else {
+                0.0
+            },
+        )
+    }
+
+    fn paint_single_line(
+        ctx: &mut PaintContext<'_>,
+        value: &str,
+        frame: Rect,
+        color: crate::draw::Color,
+        font_size: f32,
+    ) {
+        if frame.w <= 0.0 || frame.h <= 0.0 {
+            return;
+        }
+        let Some(value) = Self::elide_single_line(ctx, value, font_size, frame.w) else {
+            return;
+        };
+        ctx.push_clip(frame);
+        ctx.draw_text_in_frame(&value, frame, color, font_size.min(frame.h * 0.65));
+        ctx.pop_clip();
+    }
+
+    fn elide_single_line(
+        ctx: &mut PaintContext<'_>,
+        value: &str,
+        font_size: f32,
+        max_width: f32,
+    ) -> Option<String> {
+        if !max_width.is_finite() || max_width <= 0.0 {
+            return None;
+        }
+        let value = value.replace(['\r', '\n'], " ");
+        if Self::text_width(ctx, &value, font_size) <= max_width {
+            return Some(value);
+        }
+        const ELLIPSIS: &str = "…";
+        if Self::text_width(ctx, ELLIPSIS, font_size) > max_width {
+            return None;
+        }
+        let mut visible = String::new();
+        for ch in value.chars() {
+            visible.push(ch);
+            visible.push_str(ELLIPSIS);
+            let fits = Self::text_width(ctx, &visible, font_size) <= max_width;
+            visible.pop();
+            if !fits {
+                visible.pop();
+                break;
+            }
+        }
+        visible.push_str(ELLIPSIS);
+        Some(visible)
+    }
+
+    fn text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
+        ctx.measure_text(value, font_size).w.max(
+            crate::draw::font::text_backend::estimate_text_metrics(value, f32::INFINITY, font_size)
+                .max_line_width,
+        )
     }
 
     fn push_scroll_delta(&self, dx: f32, dy: f32) {
@@ -284,9 +510,12 @@ impl Tree {
             expanded_keys: Vec::new(),
             multiple: false,
             focused: false,
+            hovered_action: None,
+            pressed_action: None,
             pending_change: RefCell::new(None),
             body_scroll: VirtualListScroll::new(),
             scroll_delta_strip: Cell::new((0.0, 0.0)),
+            layout_requested: Cell::new(false),
             last_frame: Cell::new(None),
         };
         tree.flatten();
@@ -320,6 +549,24 @@ impl Tree {
         if let Some(node) = self.find_node_mut(key) {
             node.checked = !node.checked;
             self.flatten();
+        }
+    }
+
+    fn commit_pointer_action(&mut self, action: TreePointerAction) {
+        match action {
+            TreePointerAction::Check(key) => {
+                self.toggle_check(&key);
+                self.pending_change.replace(Some(key));
+            }
+            TreePointerAction::Toggle(key) => {
+                let expanded = self
+                    .flat
+                    .iter()
+                    .find(|node| node.key == key)
+                    .is_some_and(|node| node.expanded);
+                self.set_expanded(&key, !expanded);
+            }
+            TreePointerAction::Select(key) => self.select_from_pointer(key),
         }
     }
 
@@ -440,6 +687,7 @@ impl Tree {
     }
 
     fn set_expanded(&mut self, key: &str, expanded: bool) {
+        let old_len = self.flat.len();
         if expanded {
             if !self.expanded_keys.iter().any(|candidate| candidate == key) {
                 self.expanded_keys.push(key.to_string());
@@ -448,6 +696,9 @@ impl Tree {
             self.expanded_keys.retain(|candidate| candidate != key);
         }
         self.flatten();
+        if self.flat.len() != old_len {
+            self.layout_requested.set(true);
+        }
         self.body_scroll.clamp_to_content(
             self.flat.len(),
             TREE_ROW_HEIGHT,
@@ -493,17 +744,22 @@ impl Tree {
     }
 
     fn flatten(&mut self) {
-        self.flat.clear();
-        let nodes = self.nodes.clone();
-        for node in &nodes {
-            self.flatten_node(node, 0);
+        let mut flat = Vec::new();
+        for node in &self.nodes {
+            Self::flatten_node(node, 0, &self.expanded_keys, &mut flat);
         }
+        self.flat = flat;
     }
 
-    fn flatten_node(&mut self, node: &TreeNode, depth: usize) {
-        let is_expanded = self.expanded_keys.contains(&node.key);
+    fn flatten_node(
+        node: &TreeNode,
+        depth: usize,
+        expanded_keys: &[String],
+        flat: &mut Vec<FlatNode>,
+    ) {
+        let is_expanded = expanded_keys.contains(&node.key);
         let has_children = !node.children.is_empty();
-        self.flat.push(FlatNode {
+        flat.push(FlatNode {
             title: node.title.clone(),
             key: node.key.clone(),
             icon: node.icon.clone(),
@@ -516,7 +772,7 @@ impl Tree {
         });
         if is_expanded {
             for child in &node.children {
-                self.flatten_node(child, depth + 1);
+                Self::flatten_node(child, depth + 1, expanded_keys, flat);
             }
         }
     }
@@ -536,6 +792,8 @@ impl Tree {
             .retain(|key| Self::contains_key(nodes, key));
         self.expanded_keys
             .retain(|key| Self::contains_key(nodes, key));
+        self.hovered_action = None;
+        self.pressed_action = None;
         self.flatten();
         self.body_scroll.clamp_to_content(
             self.flat.len(),

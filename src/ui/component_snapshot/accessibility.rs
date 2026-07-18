@@ -3,7 +3,10 @@ use crate::ui::widgets::{
     RichTextSegment, SelectableItem, Step, Tab, TimelineItem, UploadFile, UploadStatus,
 };
 
-use super::{AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotTransferItem};
+use super::{
+    AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotTransferItem,
+    SnapshotTreeNode,
+};
 
 pub(super) fn timeline_accessibility(
     items: &[TimelineItem],
@@ -32,6 +35,36 @@ pub(super) fn timeline_accessibility(
     }
     AccessibilitySnapshot::new(AccessibilityRole::List).with_state(AccessibilityState {
         value_text: (!entries.is_empty()).then(|| entries.join("; ")),
+        ..AccessibilityState::default()
+    })
+}
+
+pub(super) fn tree_accessibility(
+    nodes: &[SnapshotTreeNode],
+    selected_key: &str,
+    expanded_keys: &[String],
+) -> AccessibilitySnapshot {
+    fn append_visible<'a>(
+        nodes: &'a [SnapshotTreeNode],
+        expanded_keys: &[String],
+        visible: &mut Vec<&'a SnapshotTreeNode>,
+    ) {
+        for node in nodes {
+            visible.push(node);
+            if expanded_keys.iter().any(|key| key == &node.key) {
+                append_visible(&node.children, expanded_keys, visible);
+            }
+        }
+    }
+
+    let mut visible = Vec::new();
+    append_visible(nodes, expanded_keys, &mut visible);
+    let selected_index = visible.iter().position(|node| node.key == selected_key);
+    AccessibilitySnapshot::new(AccessibilityRole::Tree).with_state(AccessibilityState {
+        value_text: selected_index.map(|index| visible[index].title.clone()),
+        value_now: selected_index.map(|index| (index + 1) as f64),
+        value_min: (!visible.is_empty()).then_some(1.0),
+        value_max: (!visible.is_empty()).then_some(visible.len() as f64),
         ..AccessibilityState::default()
     })
 }

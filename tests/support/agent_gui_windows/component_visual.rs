@@ -335,10 +335,8 @@ fn capture_interactive_states(
         thread::sleep(Duration::from_millis(70));
         let file = format!("{:02}-{}-light-pressed.png", case.index, case.id);
         capture(demo, root, &file);
-        case.evidence.push(("pressed".into(), file.clone()));
-        if matches!(case.id.as_str(), "table" | "tree") {
-            case.evidence.push(("selected".into(), file));
-        }
+        case.evidence.push(("pressed".into(), file));
+        let commits_selection = matches!(case.id.as_str(), "table" | "tree");
         perform_pointer(
             demo,
             connection,
@@ -346,9 +344,15 @@ fn capture_interactive_states(
             generation,
             &format!("component-visual-{}-pressed-up", case.id),
             "pointer_up",
-            4.0,
-            4.0,
+            if commits_selection { x } else { 4.0 },
+            if commits_selection { y } else { 4.0 },
         );
+        if commits_selection {
+            thread::sleep(Duration::from_millis(70));
+            let file = format!("{:02}-{}-light-selected.png", case.index, case.id);
+            capture(demo, root, &file);
+            case.evidence.push(("selected".into(), file));
+        }
     }
 
     if case.states.iter().any(|state| state == "focus")

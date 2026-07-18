@@ -530,6 +530,11 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
             "hover",
             "pressed",
             "focus",
+            "long-title",
+            "constrained",
+            "release-commit",
+            "two-dimensional-hit",
+            "accessible-selection",
         ],
     ),
     widget(

@@ -3207,6 +3207,100 @@ fn real_demo_timeline_clips_long_rows_and_publishes_visual_order() {
 }
 
 #[test]
+#[ignore = "requires an interactive Windows desktop"]
+fn real_demo_tree_clips_scrolls_and_commits_on_matching_release() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(56, "tree-interaction");
+    let snapshot = session.snapshot("tree-interaction-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "tree"
+    );
+
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "tree");
+    assert_eq!(target["visible_bounds"]["w"], 200.0);
+    assert_eq!(target["visible_bounds"]["h"], 190.0);
+    assert_eq!(target["state"]["value_text"], Value::Null);
+    let constrained = node_by_automation_id(&snapshot, "component-qa-tree-constrained");
+    assert_eq!(constrained["role"], "tree");
+    assert_eq!(constrained["visible_bounds"]["w"], 132.0);
+    assert_eq!(constrained["visible_bounds"]["h"], 84.0);
+
+    let focused = session.focus("component-qa-target", "tree-focus");
+    assert_eq!(
+        node_by_automation_id(&focused, "component-qa-target")["state"]["value_text"],
+        Value::Null
+    );
+    let selected = session.press_key("down", "tree-select-root");
+    let target = node_by_automation_id(&selected, "component-qa-target");
+    assert_eq!(target["state"]["value_text"], "组件（展开后可滚动）");
+    assert_eq!(target["state"]["value_now"], 1.0);
+    assert_eq!(target["state"]["value_max"], 2.0);
+
+    let expanded = session.press_key("right", "tree-expand-root");
+    let target = node_by_automation_id(&expanded, "component-qa-target");
+    assert_eq!(target["state"]["value_max"], 34.0);
+    assert_eq!(target["visible_bounds"]["h"], 190.0);
+    let pressed = session.pointer_button_at_offset(
+        "component-qa-target",
+        0.5,
+        42.0,
+        "pointer_down",
+        "tree-child-down",
+    );
+    assert_eq!(
+        node_by_automation_id(&pressed, "component-qa-target")["state"]["value_text"],
+        "组件（展开后可滚动）"
+    );
+    if let Ok(hold_ms) = std::env::var("UIX_TREE_QA_HOLD_PRESSED_MS") {
+        let hold_ms = hold_ms
+            .parse::<u64>()
+            .expect("valid pressed Tree QA hold millis");
+        eprintln!("TREE_QA_PRESSED_READY hold_ms={hold_ms}");
+        thread::sleep(Duration::from_millis(hold_ms));
+    }
+    let released = session.pointer_button_at_offset(
+        "component-qa-target",
+        0.5,
+        42.0,
+        "pointer_up",
+        "tree-child-up",
+    );
+    let target = node_by_automation_id(&released, "component-qa-target");
+    assert_eq!(target["state"]["value_text"], "组件验收项 00");
+    assert_eq!(target["state"]["value_now"], 2.0);
+    for index in 0..12 {
+        session.press_key("down", &format!("tree-scroll-{index}"));
+    }
+    let scrolled = session.snapshot("tree-scrolled");
+    assert_eq!(
+        node_by_automation_id(&scrolled, "component-qa-target")["state"]["value_text"],
+        "组件验收项 12"
+    );
+    if let Ok(hold_ms) = std::env::var("UIX_TREE_QA_HOLD_LIGHT_MS") {
+        let hold_ms = hold_ms
+            .parse::<u64>()
+            .expect("valid light Tree QA hold millis");
+        eprintln!("TREE_QA_LIGHT_READY hold_ms={hold_ms}");
+        thread::sleep(Duration::from_millis(hold_ms));
+    }
+    let dark = session.invoke("theme-toggle", "tree-dark-theme");
+    assert_eq!(
+        node_by_automation_id(&dark, "component-qa-tree-constrained")["visible_bounds"]["w"],
+        132.0
+    );
+    if let Ok(hold_ms) = std::env::var("UIX_TREE_QA_HOLD_MS") {
+        let hold_ms = hold_ms.parse::<u64>().expect("valid Tree QA hold millis");
+        eprintln!("TREE_QA_DARK_READY hold_ms={hold_ms}");
+        thread::sleep(Duration::from_millis(hold_ms));
+    }
+    session.close();
+}
+
+#[test]
 #[ignore = "requires an interactive Windows desktop and writes Label multiline evidence"]
 fn real_demo_label_multiline_keeps_following_content_below_all_lines() {
     let _guard = REAL_GUI_LOCK
