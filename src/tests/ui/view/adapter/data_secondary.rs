@@ -693,6 +693,22 @@ fn reconcile_collapse_preserves_expanded_state_and_syncs_config() {
         ),
         EventResult::Handled
     );
+    assert_eq!(
+        crate::ui::EventHandler::on_event(
+            tree.get_mut(root_id)
+                .unwrap()
+                .component_mut()
+                .as_any_mut()
+                .downcast_mut::<Collapse>()
+                .unwrap(),
+            &SystemEvent::PointerUp {
+                pos: Point::new(1.0, 1.0),
+                button: MouseButton::Left,
+                mods: KeyMod::NONE,
+            },
+        ),
+        EventResult::Handled
+    );
 
     ViewAdapter::reconcile_nodes(
         &mut tree,
@@ -713,7 +729,7 @@ fn reconcile_collapse_preserves_expanded_state_and_syncs_config() {
     assert_eq!(collapse as *const Collapse, before_ptr);
     assert_eq!(
         collapse.measure(crate::core::Constraints::loose(Size::new(200.0, 200.0))),
-        Size::new(0.0, 70.0)
+        Size::new(200.0, 70.0)
     );
     assert!(matches!(
         collapse.snapshot_fields(),
@@ -727,6 +743,63 @@ fn reconcile_collapse_preserves_expanded_state_and_syncs_config() {
                 && panels[0].content == "new body"
                 && panels[0].expanded
     ));
+}
+
+#[test]
+fn reconcile_equal_collapse_ignores_runtime_snapshot_fields() {
+    use crate::ui::widgets::{Collapse, CollapsePanel};
+
+    fn view() -> ViewNode {
+        ViewNode::leaf(Collapse::new().panels(vec![
+            CollapsePanel::new("First", "one"),
+            CollapsePanel::new("Second", "two"),
+        ]))
+    }
+
+    let mut tree = ViewAdapter::build_nodes(view());
+    let root_id = tree.root_id().expect("collapse root should exist");
+    let collapse = tree
+        .get_mut(root_id)
+        .unwrap()
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<Collapse>()
+        .unwrap();
+    assert_eq!(
+        collapse.on_event(&SystemEvent::FocusIn),
+        EventResult::Handled
+    );
+    assert_eq!(
+        collapse.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Down,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        collapse.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Right,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    tree.invalidation().lock().unwrap().clear();
+
+    ViewAdapter::reconcile_nodes(&mut tree, view());
+
+    let collapse = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Collapse>()
+        .unwrap();
+    assert_eq!(collapse.focused_header(), 1);
+    assert_eq!(collapse.expanded_indices(), vec![1]);
+    assert!(
+        tree.invalidation().lock().unwrap().is_empty(),
+        "equal authored config must not invalidate because focus and expansion are runtime state"
+    );
 }
 
 #[test]

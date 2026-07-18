@@ -1,7 +1,7 @@
 //! Collapse widget — 折叠面板。
 
 use crate::component;
-use crate::core::{Constraints, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::ui::animation::{presets, TransitionPlayer};
@@ -10,6 +10,17 @@ use crate::ui::{
     SnapshotFields, SystemEvent, WidgetTree,
 };
 use std::cell::Cell;
+
+const HEADER_HEIGHT: f32 = 36.0;
+const HEADER_FONT_SIZE: f32 = 14.0;
+const CONTENT_FONT_SIZE: f32 = 12.0;
+const TEXT_LINE_HEIGHT: f32 = 1.5;
+const HEADER_ICON_SLOT: f32 = 28.0;
+const HEADER_RIGHT_PADDING: f32 = 12.0;
+const CONTENT_HORIZONTAL_PADDING: f32 = 16.0;
+const CONTENT_VERTICAL_PADDING: f32 = 8.0;
+const DEFAULT_WIDTH: f32 = 240.0;
+const MAX_INTRINSIC_WIDTH: f32 = 320.0;
 
 /// 单个折叠面板。
 #[derive(Debug, Clone)]
@@ -40,15 +51,21 @@ component! {
         accordion: bool,
         focused: bool,
         focused_header: usize,
+        hovered_header: Cell<Option<usize>>,
+        pressed_header: Cell<Option<usize>>,
+        last_frame: Cell<Option<Rect>>,
         pending_change: Cell<Option<usize>>,
         pub(crate) transitions: Vec<TransitionPlayer>,
         transition_dirty: bool,
+        layout_requested: Cell<bool>,
     }
 
     tab_index => (&self) -> i32 { i32::from(!self.panels.is_empty()) }
 
     measure => (&self, constraints: Constraints) -> Size {
-        constraints.clamp(self.intrinsic_size())
+        let preferred_width = self.preferred_width();
+        let width = constraints.clamp(Size::new(preferred_width, 0.0)).w;
+        constraints.clamp(Size::new(width, self.intrinsic_height(width)))
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -58,12 +75,41 @@ component! {
                 button: MouseButton::Left,
                 ..
             } => {
-                if let Some(index) = self.header_at_y(pos.y) {
+                if let Some(index) = self.header_at_point(*pos) {
                     self.focused_header = index;
-                    self.toggle_panel(index);
+                    self.pressed_header.set(Some(index));
                     return EventResult::Handled;
                 }
                 EventResult::NotHandled
+            }
+            SystemEvent::PointerUp {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
+                let pressed = self.pressed_header.replace(None);
+                if let Some(index) = pressed {
+                    if self.header_at_point(*pos) == Some(index) {
+                        self.focused_header = index;
+                        self.toggle_panel(index);
+                    }
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
+            }
+            SystemEvent::PointerMove { pos, .. } => {
+                let next = self.header_at_point(*pos);
+                if self.hovered_header.replace(next) != next {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
+            }
+            SystemEvent::PointerLeave => {
+                let changed = self.hovered_header.replace(None).is_some()
+                    | self.pressed_header.replace(None).is_some();
+                if changed { EventResult::Handled } else { EventResult::NotHandled }
             }
             SystemEvent::FocusIn => {
                 self.focused = true;
@@ -71,6 +117,7 @@ component! {
             }
             SystemEvent::FocusOut => {
                 self.focused = false;
+                self.pressed_header.set(None);
                 EventResult::Handled
             }
             SystemEvent::KeyDown { key, .. } => match key {
@@ -114,42 +161,122 @@ component! {
             .map(|idx| SemanticEvent::change(id, idx.to_string()))
     }
 
+    take_layout_request => (&mut self) -> bool {
+        self.layout_requested.replace(false)
+    }
+
+    wants_continuous_pointer_move => (&self) -> bool { true }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        let frame = Self::normalized_frame(frame);
+        self.last_frame
+            .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
+        if frame.w <= 0.0 || frame.h <= 0.0 {
+            return;
+        }
         let bg = ctx.tokens().color_bg_elevated();
+        let body_bg = ctx.tokens().color_bg_container();
         let border = ctx.tokens().color_border();
         let text_color = ctx.tokens().color_text();
         let text_secondary = ctx.tokens().color_text_secondary();
         let primary = ctx.tokens().color_primary();
+        let hover_bg = ctx.tokens().color_fill_quaternary();
+        let pressed_bg = ctx.tokens().color_fill_tertiary();
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
         let mut y = frame.y;
+        let frame_bottom = frame.y + frame.h;
+        ctx.push_clip(frame);
 
         for (idx, p) in self.panels.iter().enumerate() {
-            let header_rect = Rect::new(frame.x, y, frame.w, 36.0);
-            // header 背景
-            ctx.fill_rect(header_rect, bg, r);
+            if y >= frame_bottom {
+                break;
+            }
+            let header_rect = Rect::new(frame.x, y, frame.w, HEADER_HEIGHT.min(frame_bottom - y));
+            let header_bg = if self.pressed_header.get() == Some(idx) {
+                pressed_bg
+            } else if self.hovered_header.get() == Some(idx) {
+                hover_bg
+            } else {
+                bg
+            };
+            ctx.fill_rect(header_rect, header_bg, r);
             ctx.stroke_rect(header_rect, border, 1.0, r);
             if self.focused && idx == self.focused_header {
-                ctx.stroke_rect(header_rect, primary, 1.5, r);
+                let inset = 0.75_f32.min(header_rect.w * 0.5).min(header_rect.h * 0.5);
+                let focus_rect = Rect::new(
+                    header_rect.x + inset,
+                    header_rect.y + inset,
+                    (header_rect.w - inset * 2.0).max(0.0),
+                    (header_rect.h - inset * 2.0).max(0.0),
+                );
+                if focus_rect.w > 0.0 && focus_rect.h > 0.0 {
+                    ctx.stroke_rect(focus_rect, primary, 1.5, r);
+                }
             }
-            // 展开指示符
-            let arrow = if p.expanded { "▼" } else { "▶" };
-            let arrow_y = ctx.visual_center_y(header_rect, 12.0);
-            ctx.draw_text(arrow, crate::core::Point::new(frame.x + 10.0, arrow_y), text_secondary, 12.0);
-            let header_y = ctx.visual_center_y(header_rect, 14.0);
-            ctx.draw_text(&p.header, crate::core::Point::new(frame.x + 28.0, header_y), text_color, 14.0);
-            y += 36.0;
+            let icon_rect = Rect::new(header_rect.x + 4.0, header_rect.y, 24.0, header_rect.h);
+            crate::ui::widgets::icon::paint_icon_in_frame(
+                ctx,
+                if p.expanded { "chevron-down" } else { "chevron-right" },
+                icon_rect,
+                text_secondary,
+                12.0_f32.min(header_rect.h * 0.6),
+            );
+            let text_width = (header_rect.w - HEADER_ICON_SLOT - HEADER_RIGHT_PADDING).max(0.0);
+            if let Some(visible_header) = elide_single_line(
+                ctx,
+                &p.header,
+                HEADER_FONT_SIZE,
+                text_width,
+            ) {
+                let header_y = ctx.visual_center_y(header_rect, HEADER_FONT_SIZE);
+                let text_rect = Rect::new(
+                    header_rect.x + HEADER_ICON_SLOT,
+                    header_rect.y,
+                    text_width,
+                    header_rect.h,
+                );
+                ctx.push_clip(text_rect);
+                ctx.draw_text(
+                    &visible_header,
+                    Point::new(text_rect.x, header_y),
+                    text_color,
+                    HEADER_FONT_SIZE,
+                );
+                ctx.pop_clip();
+            }
+            y += HEADER_HEIGHT;
 
             if self.panel_present(idx, p) {
-                let content_y = y + 8.0;
+                let content_height = Self::content_height(&p.content, frame.w);
+                let body_height = content_height.min((frame_bottom - y).max(0.0));
+                let body_rect = Rect::new(frame.x, y, frame.w, body_height);
+                if body_rect.w > 0.0 && body_rect.h > 0.0 {
+                    ctx.fill_rect(body_rect, body_bg, r);
+                    ctx.stroke_rect(body_rect, border, 1.0, r);
+                }
                 let alpha = (text_secondary.a as f32 * self.panel_opacity(idx, p))
                     .round()
                     .clamp(0.0, 255.0) as u8;
-                if alpha > 0 {
-                    ctx.draw_text(&p.content, crate::core::Point::new(frame.x + 16.0, content_y), text_secondary.with_alpha(alpha), 12.0);
+                let text_rect = Rect::new(
+                    body_rect.x + CONTENT_HORIZONTAL_PADDING,
+                    body_rect.y + CONTENT_VERTICAL_PADDING,
+                    (body_rect.w - CONTENT_HORIZONTAL_PADDING * 2.0).max(0.0),
+                    (body_rect.h - CONTENT_VERTICAL_PADDING * 2.0).max(0.0),
+                );
+                if alpha > 0 && text_rect.w > 0.0 && text_rect.h > 0.0 {
+                    ctx.push_clip(text_rect);
+                    ctx.draw_text_wrapped(
+                        &p.content,
+                        text_rect,
+                        text_secondary.with_alpha(alpha),
+                        CONTENT_FONT_SIZE,
+                    );
+                    ctx.pop_clip();
                 }
-                y += Self::content_height(&p.content);
+                y += content_height;
             }
         }
+        ctx.pop_clip();
     }
 
     // NOTE(布局): dirty_rect 目前返回所有面板最大展开时的全量区域（frame），
@@ -167,11 +294,16 @@ component! {
         self.ensure_transition_count();
         let mut had_active = false;
         let mut still_active = false;
-        for transition in &mut self.transitions {
+        for (index, transition) in self.transitions.iter_mut().enumerate() {
             if !transition.finished {
                 had_active = true;
                 transition.update(dt);
                 still_active |= !transition.finished;
+                if transition.finished
+                    && self.panels.get(index).is_some_and(|panel| !panel.expanded)
+                {
+                    self.layout_requested.set(true);
+                }
             }
         }
         self.transition_dirty = had_active;
@@ -194,15 +326,39 @@ impl Default for Collapse {
 }
 
 impl Collapse {
-    fn intrinsic_size(&self) -> Size {
+    fn preferred_width(&self) -> f32 {
+        let mut width = DEFAULT_WIDTH;
+        for panel in &self.panels {
+            let header = single_line(&panel.header);
+            let header_width = crate::draw::font::text_backend::estimate_text_metrics(
+                &header,
+                f32::INFINITY,
+                HEADER_FONT_SIZE,
+            )
+            .max_line_width
+                + HEADER_ICON_SLOT
+                + HEADER_RIGHT_PADDING;
+            let content_width = crate::draw::font::text_backend::estimate_text_metrics(
+                &panel.content,
+                f32::INFINITY,
+                CONTENT_FONT_SIZE,
+            )
+            .max_line_width
+                + CONTENT_HORIZONTAL_PADDING * 2.0;
+            width = width.max(header_width).max(content_width);
+        }
+        width.min(MAX_INTRINSIC_WIDTH)
+    }
+
+    fn intrinsic_height(&self, width: f32) -> f32 {
         let mut h = 0.0f32;
         for (idx, p) in self.panels.iter().enumerate() {
-            h += 36.0;
+            h += HEADER_HEIGHT;
             if self.panel_present(idx, p) {
-                h += Self::content_height(&p.content);
+                h += Self::content_height(&p.content, width);
             }
         }
-        Size::new(0.0, h)
+        h
     }
 
     pub fn new() -> Self {
@@ -211,9 +367,13 @@ impl Collapse {
             accordion: false,
             focused: false,
             focused_header: 0,
+            hovered_header: Cell::new(None),
+            pressed_header: Cell::new(None),
+            last_frame: Cell::new(None),
             pending_change: Cell::new(None),
             transitions: Vec::new(),
             transition_dirty: false,
+            layout_requested: Cell::new(false),
         }
     }
     pub fn panels(mut self, ps: Vec<CollapsePanel>) -> Self {
@@ -241,15 +401,26 @@ impl Collapse {
             .collect()
     }
 
-    fn content_height(content: &str) -> f32 {
-        let line_count = content.lines().count().max(1) as f32;
-        line_count * 12.0 * 1.5 + 16.0
+    fn normalized_frame(frame: Rect) -> Rect {
+        Rect::new(frame.x, frame.y, frame.w.max(0.0), frame.h.max(0.0))
+    }
+
+    fn content_height(content: &str, width: f32) -> f32 {
+        let text_width = (width - CONTENT_HORIZONTAL_PADDING * 2.0).max(1.0);
+        let line_count = crate::draw::font::text_backend::estimate_text_metrics(
+            content,
+            text_width,
+            CONTENT_FONT_SIZE,
+        )
+        .line_count
+        .max(1) as f32;
+        line_count * CONTENT_FONT_SIZE * TEXT_LINE_HEIGHT + CONTENT_VERTICAL_PADDING * 2.0
     }
 
     fn full_dirty_rect(&self, frame: Rect) -> Rect {
         let mut h = self.panels.len() as f32 * 36.0;
         for panel in &self.panels {
-            h += Self::content_height(&panel.content);
+            h += Self::content_height(&panel.content, frame.w);
         }
         Rect::new(frame.x, frame.y, frame.w, h)
     }
@@ -281,11 +452,17 @@ impl Collapse {
     fn start_panel_transition(&mut self, idx: usize, expanded: bool) {
         self.ensure_transition_count();
         if let Some(transition) = self.transitions.get_mut(idx) {
-            *transition = if expanded {
-                TransitionPlayer::new(presets::collapse_expand())
+            let config = if expanded {
+                presets::collapse_expand()
             } else {
-                TransitionPlayer::new(presets::collapse_collapse())
+                presets::collapse_collapse()
             };
+            *transition = TransitionPlayer::new_from_current(
+                config,
+                transition.opacity_progress,
+                transition.offset,
+                transition.scale,
+            );
             self.transition_dirty = true;
         }
     }
@@ -306,33 +483,91 @@ impl Collapse {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
-        let expanded_before_sync = self
-            .panels
-            .iter()
-            .map(|panel| panel.expanded)
-            .collect::<Vec<_>>();
+        let current_panels = std::mem::take(&mut self.panels);
+        let current_transitions = std::mem::take(&mut self.transitions);
+        let focused_header = current_panels
+            .get(self.focused_header)
+            .map(|panel| panel.header.clone());
         let mut panels = next.panels;
+        let same_len = current_panels.len() == panels.len();
+        let next_header_is_unique = panels
+            .iter()
+            .map(|panel| {
+                panels
+                    .iter()
+                    .filter(|candidate| candidate.header == panel.header)
+                    .count()
+                    == 1
+            })
+            .collect::<Vec<_>>();
+        let mut used = vec![false; current_panels.len()];
+        let mut transitions = Vec::with_capacity(panels.len());
         for (idx, panel) in panels.iter_mut().enumerate() {
-            if let Some(current) = self.panels.get(idx) {
-                panel.expanded = current.expanded;
+            let header_is_unique = current_panels
+                .iter()
+                .filter(|current| current.header == panel.header)
+                .count()
+                == 1
+                && next_header_is_unique[idx];
+            let matched = header_is_unique
+                .then(|| {
+                    current_panels
+                        .iter()
+                        .enumerate()
+                        .find(|(current_idx, current)| {
+                            !used[*current_idx] && current.header == panel.header
+                        })
+                        .map(|(current_idx, _)| current_idx)
+                })
+                .flatten()
+                .or_else(|| same_len.then_some(idx).filter(|index| !used[*index]));
+            if let Some(current_idx) = matched {
+                used[current_idx] = true;
+                panel.expanded = current_panels[current_idx].expanded;
+                transitions.push(
+                    current_transitions
+                        .get(current_idx)
+                        .cloned()
+                        .unwrap_or_else(|| Self::settled_transition(panel.expanded)),
+                );
+            } else {
+                transitions.push(Self::settled_transition(panel.expanded));
             }
         }
         self.panels = panels;
         self.accordion = next.accordion;
-        self.normalize_accordion();
-        self.focused_header = self.focused_header.min(self.panels.len().saturating_sub(1));
-        self.transitions = self
+        let expanded_before_normalize = self
             .panels
             .iter()
+            .map(|panel| panel.expanded)
+            .collect::<Vec<_>>();
+        self.normalize_accordion();
+        self.focused_header = focused_header
+            .as_ref()
+            .and_then(|header| {
+                (self
+                    .panels
+                    .iter()
+                    .filter(|panel| &panel.header == header)
+                    .count()
+                    == 1)
+                    .then(|| self.panels.iter().position(|panel| &panel.header == header))
+                    .flatten()
+            })
+            .unwrap_or_else(|| self.focused_header.min(self.panels.len().saturating_sub(1)));
+        self.hovered_header.set(None);
+        self.pressed_header.set(None);
+        self.last_frame.set(None);
+        self.transitions = transitions
+            .into_iter()
             .enumerate()
-            .map(|(index, panel)| {
-                if expanded_before_sync.get(index) == Some(&panel.expanded) {
-                    self.transitions
-                        .get(index)
-                        .cloned()
-                        .unwrap_or_else(|| Self::settled_transition(panel.expanded))
+            .map(|(index, transition)| {
+                if expanded_before_normalize.get(index)
+                    == self.panels.get(index).map(|panel| &panel.expanded)
+                {
+                    transition
                 } else {
-                    Self::settled_transition(panel.expanded)
+                    Self::settled_transition(self.panels[index].expanded)
                 }
             })
             .collect();
@@ -368,18 +603,22 @@ impl Collapse {
         }
     }
 
-    fn header_at_y(&self, y: f32) -> Option<usize> {
-        if y < 0.0 {
+    fn header_at_point(&self, point: Point) -> Option<usize> {
+        let frame = self.last_frame.get().unwrap_or_else(|| {
+            let width = self.preferred_width();
+            Rect::new(0.0, 0.0, width, self.intrinsic_height(width))
+        });
+        if !frame.contains(point) {
             return None;
         }
         let mut cursor = 0.0;
         for (index, panel) in self.panels.iter().enumerate() {
-            if y >= cursor && y < cursor + 36.0 {
+            if point.y >= cursor && point.y < cursor + HEADER_HEIGHT {
                 return Some(index);
             }
-            cursor += 36.0;
+            cursor += HEADER_HEIGHT;
             if self.panel_present(index, panel) {
-                cursor += Self::content_height(&panel.content);
+                cursor += Self::content_height(&panel.content, frame.w);
             }
         }
         None
@@ -434,10 +673,54 @@ impl Collapse {
         for (panel_index, panel_expanded) in changed {
             self.start_panel_transition(panel_index, panel_expanded);
         }
+        self.layout_requested.set(true);
         self.pending_change.set(Some(index));
         crate::core::log::debug_fn(format!(
             "[Collapse] 面板 \"{name}\" 切换 expanded: {} → {expanded}",
             !expanded
         ));
     }
+}
+
+fn single_line(text: &str) -> String {
+    text.replace(['\r', '\n'], " ")
+}
+
+fn conservative_text_width(ctx: &mut PaintContext<'_>, text: &str, font_size: f32) -> f32 {
+    ctx.measure_text(text, font_size).w.max(
+        crate::draw::font::text_backend::estimate_text_metrics(text, f32::INFINITY, font_size)
+            .max_line_width,
+    )
+}
+
+fn elide_single_line(
+    ctx: &mut PaintContext<'_>,
+    text: &str,
+    font_size: f32,
+    max_width: f32,
+) -> Option<String> {
+    if !max_width.is_finite() || max_width <= 0.0 {
+        return None;
+    }
+    let text = single_line(text);
+    if conservative_text_width(ctx, &text, font_size) <= max_width {
+        return Some(text);
+    }
+    const ELLIPSIS: &str = "…";
+    if conservative_text_width(ctx, ELLIPSIS, font_size) > max_width {
+        return None;
+    }
+    let mut visible = String::new();
+    for ch in text.chars() {
+        visible.push(ch);
+        visible.push_str(ELLIPSIS);
+        let fits = conservative_text_width(ctx, &visible, font_size) <= max_width;
+        visible.pop();
+        if !fits {
+            visible.pop();
+            break;
+        }
+    }
+    visible.push_str(ELLIPSIS);
+    Some(visible)
 }
