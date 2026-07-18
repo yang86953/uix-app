@@ -41,7 +41,7 @@ pub(crate) struct LayoutLine {
 #[derive(Debug, Clone)]
 pub(crate) struct CodeCopyRegion {
     pub rect: Rect,
-    pub content: String,
+    pub segment_idx: usize,
 }
 
 // ══════════════════════════════════════════════════════════════════

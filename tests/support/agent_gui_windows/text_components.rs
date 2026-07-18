@@ -3301,6 +3301,80 @@ fn real_demo_tree_clips_scrolls_and_commits_on_matching_release() {
 }
 
 #[test]
+#[ignore = "requires an interactive Windows desktop"]
+fn real_demo_rich_text_clips_wraps_and_exposes_link_semantics() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(57, "rich-text-layout");
+    let snapshot = session.snapshot("rich-text-layout-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "rich-text"
+    );
+
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "button");
+    assert_eq!(target["name"], "质量报告");
+    assert_eq!(target["state"]["value_text"], "https://uix.dev/quality");
+    let target_width = target["visible_bounds"]["w"]
+        .as_f64()
+        .expect("RichText target width");
+    assert!(
+        (280.0..=320.0).contains(&target_width),
+        "RichText target must keep a useful wrapped width: {target_width}"
+    );
+    assert_eq!(target["visible_bounds"]["h"], 82.0);
+
+    let constrained = node_by_automation_id(&snapshot, "component-qa-rich-text-constrained");
+    assert_eq!(constrained["role"], "button");
+    assert_eq!(constrained["name"], "可访问链接");
+    assert_eq!(
+        constrained["state"]["value_text"],
+        "https://uix.dev/constrained"
+    );
+    let constrained_width = constrained["visible_bounds"]["w"]
+        .as_f64()
+        .expect("constrained RichText width");
+    assert!(
+        (110.0..=132.0).contains(&constrained_width),
+        "constrained RichText must preserve a narrow readable width: {constrained_width}"
+    );
+    assert_eq!(constrained["visible_bounds"]["h"], 64.0);
+
+    let focused = session.focus("component-qa-target", "rich-text-focus");
+    assert_eq!(
+        node_by_automation_id(&focused, "component-qa-target")["focused"],
+        true
+    );
+    let last_link = session.press_key("end", "rich-text-last-link");
+    let target = node_by_automation_id(&last_link, "component-qa-target");
+    assert_eq!(target["name"], "使用指南");
+    assert_eq!(target["state"]["value_text"], "https://uix.dev/guide");
+
+    if let Ok(hold_ms) = std::env::var("UIX_RICH_TEXT_QA_HOLD_LIGHT_MS") {
+        let hold_ms = hold_ms
+            .parse::<u64>()
+            .expect("valid light RichText QA hold millis");
+        eprintln!("RICH_TEXT_QA_LIGHT_READY hold_ms={hold_ms}");
+        thread::sleep(Duration::from_millis(hold_ms));
+    }
+    let dark = session.invoke("theme-toggle", "rich-text-dark-theme");
+    assert_eq!(
+        node_by_automation_id(&dark, "component-qa-rich-text-constrained")["visible_bounds"]["h"],
+        64.0
+    );
+    if let Ok(hold_ms) = std::env::var("UIX_RICH_TEXT_QA_HOLD_MS") {
+        let hold_ms = hold_ms
+            .parse::<u64>()
+            .expect("valid RichText QA hold millis");
+        eprintln!("RICH_TEXT_QA_DARK_READY hold_ms={hold_ms}");
+        thread::sleep(Duration::from_millis(hold_ms));
+    }
+    session.close();
+}
+
+#[test]
 #[ignore = "requires an interactive Windows desktop and writes Label multiline evidence"]
 fn real_demo_label_multiline_keeps_following_content_below_all_lines() {
     let _guard = REAL_GUI_LOCK
