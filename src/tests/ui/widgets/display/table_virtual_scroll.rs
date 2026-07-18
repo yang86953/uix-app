@@ -293,12 +293,18 @@ fn table_expand_view_is_materialized_once_and_remains_interactive() {
     let frame = Rect::new(0.0, 0.0, 320.0, 120.0);
     tree.get_mut(id).expect("table node").set_frame(frame);
     tree.layout();
-    let toggle = SystemEvent::PointerDown {
+    let toggle_down = SystemEvent::PointerDown {
         pos: Point::new(310.0, 40.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     };
-    assert_eq!(tree.dispatch_event(&toggle), EventResult::Handled);
+    let toggle_up = SystemEvent::PointerUp {
+        pos: Point::new(310.0, 40.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    };
+    assert_eq!(tree.dispatch_event(&toggle_down), EventResult::Handled);
+    assert_eq!(tree.dispatch_event(&toggle_up), EventResult::Handled);
     assert_eq!(calls.get(), 1);
     tree.layout();
 
@@ -356,6 +362,7 @@ fn table_expand_view_is_materialized_once_and_remains_interactive() {
     );
     assert_eq!(clicks.get(), 1);
 
-    assert_eq!(tree.dispatch_event(&toggle), EventResult::Handled);
+    assert_eq!(tree.dispatch_event(&toggle_down), EventResult::Handled);
+    assert_eq!(tree.dispatch_event(&toggle_up), EventResult::Handled);
     assert!(tree.get(id).expect("table node").children().is_empty());
 }

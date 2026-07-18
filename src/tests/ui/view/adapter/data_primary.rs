@@ -37,6 +37,17 @@ fn reconcile_table_preserves_runtime_selection_and_syncs_config() {
             ),
             EventResult::Handled
         );
+        assert_eq!(
+            crate::ui::EventHandler::on_event(
+                table,
+                &SystemEvent::PointerUp {
+                    pos: Point::new(8.0, 34.0),
+                    button: MouseButton::Left,
+                    mods: KeyMod::NONE,
+                },
+            ),
+            EventResult::Handled
+        );
     }
     let before_ptr = tree
         .get(root_id)
@@ -164,12 +175,18 @@ fn table_expand_affordance_materializes_and_reconciles_view_child() {
         .set_frame(Rect::new(0.0, 0.0, 120.0, 120.0));
     tree.layout();
 
-    let toggle = SystemEvent::PointerDown {
+    let toggle_down = SystemEvent::PointerDown {
         pos: Point::new(112.0, 40.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     };
-    assert_eq!(tree.dispatch_event(&toggle), EventResult::Handled);
+    let toggle_up = SystemEvent::PointerUp {
+        pos: Point::new(112.0, 40.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    };
+    assert_eq!(tree.dispatch_event(&toggle_down), EventResult::Handled);
+    assert_eq!(tree.dispatch_event(&toggle_up), EventResult::Handled);
     tree.layout();
     let child = tree
         .get(root)
@@ -215,7 +232,8 @@ fn table_expand_affordance_materializes_and_reconciles_view_child() {
             .text(),
         "Grace"
     );
-    assert_eq!(tree.dispatch_event(&toggle), EventResult::Handled);
+    assert_eq!(tree.dispatch_event(&toggle_down), EventResult::Handled);
+    assert_eq!(tree.dispatch_event(&toggle_up), EventResult::Handled);
     assert!(tree
         .get_mut(root)
         .expect("table node")

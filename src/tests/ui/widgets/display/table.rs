@@ -103,7 +103,10 @@ fn table_does_not_hit_rows_outside_the_actual_body_viewport() {
     table.last_frame.set(Some(Rect::new(0.0, 0.0, 120.0, 20.0)));
 
     assert_eq!(table.body_viewport_height(), 0.0);
-    assert_eq!(table.on_event(&click(20.0, 40.0)), EventResult::NotHandled);
+    assert_eq!(
+        table.on_event(&pointer_down(20.0, 40.0)),
+        EventResult::NotHandled
+    );
     assert_eq!(table.selected_row(), None);
 }
 
@@ -120,12 +123,36 @@ fn populated_table_is_focusable_and_tracks_focus_state() {
 }
 use crate::ui::SnapshotTableColumnGroup;
 
-fn click(x: f32, y: f32) -> SystemEvent {
+fn pointer_down(x: f32, y: f32) -> SystemEvent {
     SystemEvent::PointerDown {
         pos: Point::new(x, y),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     }
+}
+
+fn pointer_up(x: f32, y: f32) -> SystemEvent {
+    SystemEvent::PointerUp {
+        pos: Point::new(x, y),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    }
+}
+
+fn click(table: &mut Table, x: f32, y: f32) -> EventResult {
+    let down = table.on_event(&pointer_down(x, y));
+    if down == EventResult::NotHandled {
+        return down;
+    }
+    table.on_event(&pointer_up(x, y))
+}
+
+fn click_tree_to(tree: &mut WidgetTree, target: ComponentId, x: f32, y: f32) -> EventResult {
+    let down = tree.dispatch_to(target, &pointer_down(x, y));
+    if down == EventResult::NotHandled {
+        return down;
+    }
+    tree.dispatch_to(target, &pointer_up(x, y))
 }
 
 #[test]
@@ -148,7 +175,7 @@ fn table_level_sorting_cycles_and_survives_reconcile() {
         .rows(vec![vec!["Ada".to_owned()]])
         .sortable(true);
 
-    assert_eq!(table.on_event(&click(10.0, 10.0)), EventResult::Handled);
+    assert_eq!(click(&mut table, 10.0, 10.0), EventResult::Handled);
     assert!(matches!(
         table.snapshot_fields(),
         SnapshotFields::Table { columns, .. }
@@ -167,7 +194,7 @@ fn table_level_sorting_cycles_and_survives_reconcile() {
             if columns[0].sort_direction == SortDirection::Asc
     ));
 
-    let _ = table.on_event(&click(10.0, 10.0));
+    let _ = click(&mut table, 10.0, 10.0);
     assert!(matches!(
         table.snapshot_fields(),
         SnapshotFields::Table { columns, .. }
@@ -179,17 +206,113 @@ fn table_level_sorting_cycles_and_survives_reconcile() {
 fn row_checkboxes_are_opt_in_and_header_toggles_all_rows() {
     let rows = vec![vec!["Ada".to_owned()], vec!["Grace".to_owned()]];
     let mut plain = Table::new().rows(rows.clone());
-    assert_eq!(plain.on_event(&click(8.0, 40.0)), EventResult::Handled);
+    assert_eq!(click(&mut plain, 8.0, 40.0), EventResult::Handled);
     assert_eq!(plain.selected_row(), Some(0));
     assert!(plain.checked_rows().is_empty());
 
     let mut selectable = Table::new().rows(rows).selection(true);
-    assert_eq!(selectable.on_event(&click(8.0, 40.0)), EventResult::Handled);
+    assert_eq!(click(&mut selectable, 8.0, 40.0), EventResult::Handled);
     assert_eq!(selectable.checked_rows(), &[0]);
-    let _ = selectable.on_event(&click(8.0, 10.0));
+    let _ = click(&mut selectable, 8.0, 10.0);
     assert_eq!(selectable.checked_rows(), &[0, 1]);
-    let _ = selectable.on_event(&click(8.0, 10.0));
+    let _ = click(&mut selectable, 8.0, 10.0);
     assert!(selectable.checked_rows().is_empty());
+}
+
+#[test]
+fn table_pointer_actions_commit_only_after_matching_release() {
+    let mut table = Table::new()
+        .columns(vec![TableColumn::new("Name", 120.0).sortable(true)])
+        .rows(vec![vec!["Ada".into()]])
+        .sortable(true)
+        .selection(true)
+        .size(180.0, 100.0);
+    table
+        .last_frame
+        .set(Some(Rect::new(0.0, 0.0, 180.0, 100.0)));
+
+    assert_eq!(
+        table.on_event(&pointer_down(60.0, 10.0)),
+        EventResult::Handled
+    );
+    assert!(matches!(
+        table.snapshot_fields(),
+        SnapshotFields::Table { columns, .. }
+            if columns[0].sort_direction == SortDirection::None
+    ));
+    assert_eq!(
+        table.on_event(&pointer_up(190.0, 10.0)),
+        EventResult::Handled
+    );
+    assert!(matches!(
+        table.snapshot_fields(),
+        SnapshotFields::Table { columns, .. }
+            if columns[0].sort_direction == SortDirection::None
+    ));
+
+    assert_eq!(
+        table.on_event(&pointer_down(8.0, 44.0)),
+        EventResult::Handled
+    );
+    assert!(table.checked_rows().is_empty());
+    assert_eq!(table.on_event(&pointer_up(8.0, 44.0)), EventResult::Handled);
+    assert_eq!(table.checked_rows(), &[0]);
+
+    assert_eq!(
+        table.on_event(&pointer_down(60.0, 44.0)),
+        EventResult::Handled
+    );
+    assert_eq!(table.selected_row(), None);
+    assert_eq!(
+        table.on_event(&SystemEvent::PointerLeave),
+        EventResult::Handled
+    );
+    assert_eq!(
+        table.on_event(&pointer_up(60.0, 44.0)),
+        EventResult::NotHandled
+    );
+    assert_eq!(table.selected_row(), None);
+}
+
+#[test]
+fn table_hover_and_wheel_are_limited_to_the_actual_body_viewport() {
+    let mut table = Table::new()
+        .columns(vec![TableColumn::new("Name", 120.0)])
+        .rows((0..20).map(|index| vec![format!("Row {index}")]).collect())
+        .size(120.0, 100.0)
+        .virtual_scroll(true);
+    table
+        .last_frame
+        .set(Some(Rect::new(0.0, 0.0, 120.0, 100.0)));
+
+    let header_wheel = SystemEvent::Wheel {
+        pos: Point::new(60.0, 10.0),
+        delta: Point::new(0.0, -1.0),
+    };
+    assert_eq!(table.on_event(&header_wheel), EventResult::NotHandled);
+    assert_eq!(table.body_scroll.scroll_offset(), 0.0);
+
+    let body_wheel = SystemEvent::Wheel {
+        pos: Point::new(60.0, 60.0),
+        delta: Point::new(0.0, -1.0),
+    };
+    assert_eq!(table.on_event(&body_wheel), EventResult::Handled);
+    assert!(table.body_scroll.scroll_offset() > 0.0);
+
+    let move_over_row = SystemEvent::PointerMove {
+        pos: Point::new(60.0, 44.0),
+        mods: KeyMod::NONE,
+    };
+    assert_eq!(table.on_event(&move_over_row), EventResult::Handled);
+    assert_eq!(table.on_event(&move_over_row), EventResult::NotHandled);
+    assert_eq!(
+        table.on_event(&SystemEvent::PointerLeave),
+        EventResult::Handled
+    );
+    assert_eq!(
+        table.on_event(&SystemEvent::PointerLeave),
+        EventResult::NotHandled
+    );
 }
 
 #[test]
@@ -284,7 +407,7 @@ fn fixed_columns_stay_hittable_after_horizontal_scroll() {
     assert_eq!(table.horizontal_scroll_offset(), 80.0);
     assert_eq!(EventHandler::scroll_delta_for_dirty(&table), None);
 
-    assert_eq!(table.on_event(&click(220.0, 10.0)), EventResult::Handled);
+    assert_eq!(click(&mut table, 220.0, 10.0), EventResult::Handled);
     assert!(matches!(
         table.snapshot_fields(),
         SnapshotFields::Table { columns, .. }
@@ -309,10 +432,10 @@ fn column_groups_create_two_level_headers_and_keep_leaf_sorting() {
         ])
         .rows(vec![vec!["Ada".into(), "36".into(), "Research".into()]]);
 
-    assert_eq!(table.on_event(&click(20.0, 10.0)), EventResult::NotHandled);
-    assert_eq!(table.on_event(&click(20.0, 42.0)), EventResult::Handled);
-    assert_eq!(table.on_event(&click(200.0, 10.0)), EventResult::Handled);
-    assert_eq!(table.on_event(&click(20.0, 70.0)), EventResult::Handled);
+    assert_eq!(click(&mut table, 20.0, 10.0), EventResult::NotHandled);
+    assert_eq!(click(&mut table, 20.0, 42.0), EventResult::Handled);
+    assert_eq!(click(&mut table, 200.0, 10.0), EventResult::Handled);
+    assert_eq!(click(&mut table, 20.0, 70.0), EventResult::Handled);
     assert_eq!(table.selected_row(), Some(0));
 
     assert!(matches!(
@@ -426,11 +549,11 @@ fn typed_table_reconcile_preserves_selection_by_row_key_after_reorder() {
     ]));
     let root = tree.root_id().expect("typed table root");
     assert_eq!(
-        tree.dispatch_to(root, &click(8.0, 70.0)),
+        click_tree_to(&mut tree, root, 8.0, 70.0),
         EventResult::Handled
     );
     assert_eq!(
-        tree.dispatch_to(root, &click(48.0, 70.0)),
+        click_tree_to(&mut tree, root, 48.0, 70.0),
         EventResult::Handled
     );
 
