@@ -11,7 +11,40 @@ use crate::ui::widgets::{
     TreeSelect, Typography, Upload, Watermark,
 };
 use crate::ui::window_chrome::WindowInteractionRegion;
+use crate::ui::SnapshotFields;
 use crate::ui::WidgetComponent;
+
+/// Compare authored configuration for widgets whose public snapshot also
+/// contains runtime state. `None` falls back to ordinary snapshot equality.
+pub(crate) fn builtin_widget_config_changed(
+    current: &dyn WidgetComponent,
+    next: &dyn WidgetComponent,
+) -> Option<bool> {
+    match (current.snapshot_fields(), next.snapshot_fields()) {
+        (
+            SnapshotFields::Carousel {
+                show_dots: current_dots,
+                show_arrows: current_arrows,
+                fixed_width: current_width,
+                fixed_height: current_height,
+                ..
+            },
+            SnapshotFields::Carousel {
+                show_dots: next_dots,
+                show_arrows: next_arrows,
+                fixed_width: next_width,
+                fixed_height: next_height,
+                ..
+            },
+        ) => Some(
+            current_dots != next_dots
+                || current_arrows != next_arrows
+                || current_width != next_width
+                || current_height != next_height,
+        ),
+        _ => None,
+    }
+}
 
 pub(crate) fn builtin_widget_runtime_changed(
     current: &dyn WidgetComponent,

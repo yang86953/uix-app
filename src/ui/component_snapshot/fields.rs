@@ -419,6 +419,8 @@ pub enum SnapshotFields {
     Carousel {
         show_dots: bool,
         show_arrows: bool,
+        fixed_width: Option<f32>,
+        fixed_height: Option<f32>,
         current: usize,
         slide_count: usize,
     },

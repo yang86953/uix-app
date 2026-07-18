@@ -16,6 +16,17 @@ use crate::ui::{
 const ARROW_HIT_WIDTH: f32 = 30.0;
 const DOT_SLOT_WIDTH: f32 = 18.0;
 const DOT_HIT_HEIGHT: f32 = 16.0;
+const DOT_HEIGHT: f32 = 6.0;
+const DOT_BOTTOM_INSET: f32 = 8.0;
+const ARROW_ICON_SIZE: f32 = 16.0;
+
+#[derive(Clone, Copy)]
+struct DotStrip {
+    hit_rect: Rect,
+    slot_width: f32,
+    dot_y: f32,
+    dot_height: f32,
+}
 
 component! {
     /// Displays one child at a time with dot and arrow controls.
@@ -25,6 +36,8 @@ component! {
         child_count: Cell<usize>,
         show_dots: bool,
         show_arrows: bool,
+        fixed_width: Option<f32>,
+        fixed_height: Option<f32>,
         focused: bool,
         pending_change: Cell<Option<usize>>,
         layout_requested: Cell<bool>,
@@ -34,10 +47,16 @@ component! {
     tab_index => (&self) -> i32 { i32::from(self.child_count.get() > 1) }
 
     measure => (&self, constraints: Constraints) -> Size {
-        constraints.clamp(self.intrinsic_size())
+        let intrinsic = self.intrinsic_size();
+        constraints.clamp(Size::new(
+            self.fixed_width.unwrap_or(intrinsic.w),
+            self.fixed_height.unwrap_or(intrinsic.h),
+        ))
     }
 
-    flex_grow => (&self) -> f32 { 1.0 }
+    flex_grow => (&self) -> f32 {
+        if self.fixed_width.is_some() || self.fixed_height.is_some() { 0.0 } else { 1.0 }
+    }
 
     build => (&self) -> Vec<Box<dyn WidgetComponent>> {
         let children = self.children.take();
@@ -62,11 +81,12 @@ component! {
 
                     let count = self.child_count.get();
                     if self.show_arrows && count > 1 && frame.contains(*pos) {
-                        if pos.x - frame.x < ARROW_HIT_WIDTH {
+                        let (left, right) = Self::arrow_frames(frame);
+                        if pos.x < left.x + left.w {
                             self.select(self.previous_index());
                             return EventResult::Handled;
                         }
-                        if frame.x + frame.w - pos.x < ARROW_HIT_WIDTH {
+                        if pos.x >= right.x {
                             self.select(self.next_index());
                             return EventResult::Handled;
                         }
@@ -82,7 +102,8 @@ component! {
                 self.focused = false;
                 EventResult::Handled
             }
-            SystemEvent::KeyDown { key, .. } if self.child_count.get() > 1 => match key {
+            SystemEvent::KeyDown { key, .. }
+                if self.focused && self.child_count.get() > 1 => match key {
                 KeyCode::Left | KeyCode::Up => {
                     self.select(self.previous_index());
                     EventResult::Handled
@@ -105,6 +126,8 @@ component! {
         }
     }
 
+    wants_capture_phase => (&self) -> bool { true }
+
     semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .take()
@@ -116,41 +139,63 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        let frame = Self::normalized_frame(frame);
         self.last_frame
             .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
         let bg = ctx.tokens().color_bg_container();
         if ctx.paint_pass() == PaintPass::Content {
-            ctx.fill_rect(frame, bg, None);
+            if frame.w > 0.0 && frame.h > 0.0 {
+                ctx.fill_rect(frame, bg, None);
+            }
             return;
         }
 
         let count = self.child_count.get();
-        if count == 0 {
+        if count == 0 || frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
         let idx = self.current.get().min(count - 1);
         let primary = ctx.tokens().color_primary();
         let dot_color = ctx.tokens().color_text_quaternary();
+        ctx.push_clip(frame);
 
         if self.show_arrows && count > 1 {
-            let arrow_y = ctx.visual_center_y(frame, 14.0);
-            ctx.draw_text("<", Point::new(frame.x + 10.0, arrow_y), ctx.tokens().color_text(), 14.0);
-            ctx.draw_text(">", Point::new(frame.x + frame.w - 22.0, arrow_y), ctx.tokens().color_text(), 14.0);
+            let (left, right) = Self::arrow_frames(frame);
+            let icon_size = ARROW_ICON_SIZE
+                .min(left.w * 0.6)
+                .min(frame.h * 0.6);
+            if icon_size >= 1.0 {
+                crate::ui::widgets::icon::paint_icon_in_frame(
+                    ctx,
+                    "chevron-left",
+                    left,
+                    ctx.tokens().color_text(),
+                    icon_size,
+                );
+                crate::ui::widgets::icon::paint_icon_in_frame(
+                    ctx,
+                    "chevron-right",
+                    right,
+                    ctx.tokens().color_text(),
+                    icon_size,
+                );
+            }
         }
 
         if self.show_dots && count > 1 {
-            let dot_y = frame.y + frame.h - 14.0;
-            let total_dot_w = count as f32 * DOT_SLOT_WIDTH;
-            let start_x = frame.x + (frame.w - total_dot_w) * 0.5;
-
+            let strip = Self::dot_strip(frame, count);
             for i in 0..count {
                 let is_active = i == idx;
-                let dot_width = if is_active { 16.0 } else { 8.0 };
+                let preferred_width: f32 = if is_active { 16.0 } else { 8.0 };
+                let fill_ratio: f32 = if is_active { 0.88 } else { 0.45 };
+                let dot_width = preferred_width.min(strip.slot_width * fill_ratio);
                 let dot_rect = Rect::new(
-                    start_x + i as f32 * DOT_SLOT_WIDTH + (DOT_SLOT_WIDTH - dot_width) * 0.5,
-                    dot_y,
+                    strip.hit_rect.x
+                        + i as f32 * strip.slot_width
+                        + (strip.slot_width - dot_width) * 0.5,
+                    strip.dot_y,
                     dot_width,
-                    6.0,
+                    strip.dot_height,
                 );
                 ctx.fill_rect(
                     dot_rect,
@@ -160,18 +205,29 @@ component! {
             }
         }
         if self.focused {
-            ctx.stroke_rect(
-                frame,
-                primary,
-                1.5,
-                Some(crate::draw::Radius::uniform(ctx.tokens().border_radius_sm())),
+            let inset = 0.75_f32.min(frame.w * 0.5).min(frame.h * 0.5);
+            let focus_rect = Rect::new(
+                frame.x + inset,
+                frame.y + inset,
+                (frame.w - inset * 2.0).max(0.0),
+                (frame.h - inset * 2.0).max(0.0),
             );
+            if focus_rect.w > 0.0 && focus_rect.h > 0.0 {
+                ctx.stroke_rect(
+                    focus_rect,
+                    primary,
+                    1.5,
+                    Some(crate::draw::Radius::uniform(ctx.tokens().border_radius_sm())),
+                );
+            }
         }
+        ctx.pop_clip();
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
+        let frame = Self::normalized_frame(frame);
         self.last_frame
             .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
         self.set_child_count(children.len());
@@ -190,6 +246,10 @@ component! {
             .collect()
     }
 
+    child_visible => (&self, index: usize) -> bool {
+        index == self.current.get()
+    }
+
     children_clip => (&self, frame: Rect) -> Option<Rect> {
         Some(frame)
     }
@@ -206,6 +266,41 @@ impl Carousel {
         Size::new(300.0, 200.0)
     }
 
+    fn normalized_frame(frame: Rect) -> Rect {
+        Rect::new(frame.x, frame.y, frame.w.max(0.0), frame.h.max(0.0))
+    }
+
+    fn arrow_frames(frame: Rect) -> (Rect, Rect) {
+        let width = ARROW_HIT_WIDTH.min(frame.w * 0.5);
+        (
+            Rect::new(frame.x, frame.y, width, frame.h),
+            Rect::new(frame.x + frame.w - width, frame.y, width, frame.h),
+        )
+    }
+
+    fn dot_strip(frame: Rect, count: usize) -> DotStrip {
+        let count_f = count.max(1) as f32;
+        let total_width = (count_f * DOT_SLOT_WIDTH).min(frame.w);
+        let slot_width = total_width / count_f;
+        let dot_height = DOT_HEIGHT.min(frame.h).min((slot_width * 0.75).max(1.0));
+        let bottom_inset = DOT_BOTTOM_INSET.min((frame.h - dot_height).max(0.0));
+        let dot_y = frame.y + frame.h - bottom_inset - dot_height;
+        let hit_height = DOT_HIT_HEIGHT.min(frame.h);
+        let hit_y = (dot_y + dot_height * 0.5 - hit_height * 0.5)
+            .clamp(frame.y, frame.y + frame.h - hit_height);
+        DotStrip {
+            hit_rect: Rect::new(
+                frame.x + (frame.w - total_width) * 0.5,
+                hit_y,
+                total_width,
+                hit_height,
+            ),
+            slot_width,
+            dot_y,
+            dot_height,
+        }
+    }
+
     pub fn new() -> Self {
         Self {
             children: WidgetChildren::new(),
@@ -213,6 +308,8 @@ impl Carousel {
             child_count: Cell::new(0),
             show_dots: true,
             show_arrows: true,
+            fixed_width: None,
+            fixed_height: None,
             focused: false,
             pending_change: Cell::new(None),
             layout_requested: Cell::new(false),
@@ -230,6 +327,13 @@ impl Carousel {
         self
     }
 
+    /// Sets the preferred Carousel viewport size.
+    pub fn size(mut self, width: f32, height: f32) -> Self {
+        self.fixed_width = Some(width.max(0.0));
+        self.fixed_height = Some(height.max(0.0));
+        self
+    }
+
     pub fn current_index(&self) -> usize {
         self.current.get()
     }
@@ -241,12 +345,16 @@ impl Carousel {
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.show_dots = next.show_dots;
         self.show_arrows = next.show_arrows;
+        self.fixed_width = next.fixed_width;
+        self.fixed_height = next.fixed_height;
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Carousel {
             show_dots: self.show_dots,
             show_arrows: self.show_arrows,
+            fixed_width: self.fixed_width,
+            fixed_height: self.fixed_height,
             current: self.current.get(),
             slide_count: self.child_count.get(),
         }
@@ -296,17 +404,16 @@ impl Carousel {
         if !self.show_dots || count <= 1 || !frame.contains(pos) {
             return None;
         }
-        let total_width = count as f32 * DOT_SLOT_WIDTH;
-        let start_x = frame.x + (frame.w - total_width) * 0.5;
-        let start_y = frame.y + frame.h - 19.0;
-        if pos.x < start_x
-            || pos.x >= start_x + total_width
-            || pos.y < start_y
-            || pos.y >= start_y + DOT_HIT_HEIGHT
+        let strip = Self::dot_strip(frame, count);
+        if strip.slot_width <= 0.0
+            || pos.x < strip.hit_rect.x
+            || pos.x >= strip.hit_rect.x + strip.hit_rect.w
+            || pos.y < strip.hit_rect.y
+            || pos.y >= strip.hit_rect.y + strip.hit_rect.h
         {
             return None;
         }
-        let index = ((pos.x - start_x) / DOT_SLOT_WIDTH) as usize;
+        let index = ((pos.x - strip.hit_rect.x) / strip.slot_width) as usize;
         (index < count).then_some(index)
     }
 }

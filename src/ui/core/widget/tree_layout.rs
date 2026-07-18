@@ -201,10 +201,17 @@ impl WidgetTree {
             let mut any_change = false;
             let mut pass_expand_sig: Vec<(WidgetId, i32, i32, i32, i32)> = Vec::new();
 
+            if self.sync_parent_child_visibility(&order) {
+                any_change = true;
+            }
+
             // Phase 1: Top-down — 父容器根据当前 frame 为子节点分配位置
             #[cfg(test)]
             LAYOUT_TRACE_PHASE.with(|p| p.set(1));
             for &id in &order {
+                if !self.is_effectively_visible(id) {
+                    continue;
+                }
                 let positions: Vec<(WidgetId, Rect)> = {
                     let node = match self.get(id) {
                         Some(n) => n,
@@ -222,6 +229,9 @@ impl WidgetTree {
                         any_change = true;
                     }
                 }
+            }
+            if self.sync_parent_child_visibility(&order) {
+                any_change = true;
             }
             #[cfg(test)]
             LAYOUT_TRACE_PHASE.with(|p| p.set(0));
@@ -277,6 +287,45 @@ impl WidgetTree {
         self.reconcile_lifecycle_after_layout();
         self.sync_app_state_registry();
         crate::core::log::debug_fn("[Layout] layout() done");
+    }
+
+    /// Synchronize parent-owned child visibility without overwriting a
+    /// child's authored `visible` gate. A tree-version bump is required
+    /// because the compositor omits invisible subtrees while building layers.
+    fn sync_parent_child_visibility(&mut self, order: &[WidgetId]) -> bool {
+        let mut changes = Vec::new();
+        for &parent_id in order {
+            let Some(parent) = self.get(parent_id) else {
+                continue;
+            };
+            for (index, &child_id) in parent.children().iter().enumerate() {
+                let desired = parent.child_visible(index);
+                if self
+                    .get(child_id)
+                    .is_some_and(|child| child.parent_visibility_gate() != desired)
+                {
+                    changes.push((child_id, desired));
+                }
+            }
+        }
+
+        for (child_id, visible) in &changes {
+            let old_bounds = self.visual_subtree_bounds(*child_id);
+            if !visible {
+                self.cancel_subtree_interaction(*child_id);
+            }
+            if let Some(child) = self.get_mut(*child_id) {
+                child.set_parent_visible(*visible);
+            }
+            self.tree_version = self.tree_version.wrapping_add(1);
+            let new_bounds = self.visual_subtree_bounds(*child_id);
+            for rect in [old_bounds, new_bounds].into_iter().flatten() {
+                if rect.w > 0.0 && rect.h > 0.0 {
+                    self.push_paint_invalidation(*child_id, Some(rect));
+                }
+            }
+        }
+        !changes.is_empty()
     }
 
     pub(crate) fn rebuild_widget_overlays(&mut self) {
@@ -425,6 +474,9 @@ impl WidgetTree {
         // 收集本趟中被扩展过的子节点，用于触发其父容器重排
         let mut resized_children = std::collections::HashSet::new();
         for &id in rev_order {
+            if !self.is_effectively_visible(id) {
+                continue;
+            }
             // 根已有确定客户区高度时不得被内容撑开（窗口缩小场景）；
             // bootstrap（高度仍 ≤1）仍允许 expand，以便无窗口尺寸时由子项撑开。
             if self.root_id == Some(id) {
@@ -622,6 +674,9 @@ impl WidgetTree {
     /// 只触发 content_bounds 副作用，不移动子节点位置。
     fn layout_viewports(&mut self, order: &[WidgetId]) {
         for &id in order {
+            if !self.is_effectively_visible(id) {
+                continue;
+            }
             if let Some(node) = self.get(id) {
                 if node.children_clip(node.frame()).is_none() {
                     continue;
@@ -721,6 +776,9 @@ impl WidgetTree {
             let mut ops: Vec<ShrinkOp> = Vec::new();
 
             for &id in rev_order {
+                if !self.is_effectively_visible(id) {
+                    continue;
+                }
                 // 根 frame 由窗口客户区锁定，shrink 同样不得改写。
                 if self.root_id == Some(id) {
                     continue;
