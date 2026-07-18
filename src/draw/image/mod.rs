@@ -239,6 +239,7 @@ impl ImageService {
         if let Some(derived) = square {
             self.invalidate_slot(derived);
         }
+        self.compact();
     }
 
     fn invalidate_slot(&self, handle: BitmapHandle) {
@@ -267,7 +268,7 @@ impl ImageService {
 
     fn insert_slot(&self, mut slot: ImageSlot) -> BitmapHandle {
         let mut slots = self.slots.borrow_mut();
-        // 复用已释放槽位，递增 generation 使旧句柄失效
+        // Reuse freed slots, bumping generation to invalidate old handles.
         for (i, s) in slots.iter_mut().enumerate() {
             if !s.valid {
                 slot.generation = s.generation.wrapping_add(1);
@@ -280,6 +281,15 @@ impl ImageService {
         let idx = slots.len();
         slots.push(slot);
         BitmapHandle::pack(idx as u32, generation)
+    }
+
+    /// Compact the slot array by truncating trailing invalid slots.
+    /// This preserves all existing BitmapHandle indices.
+    pub fn compact(&self) {
+        let mut slots = self.slots.borrow_mut();
+        while slots.last().is_some_and(|s| !s.valid) {
+            slots.pop();
+        }
     }
 }
 

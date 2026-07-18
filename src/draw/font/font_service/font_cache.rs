@@ -64,7 +64,7 @@ pub struct GlyphCache {
 
 impl GlyphCache {
     pub(crate) fn new() -> Self {
-        Self::with_limits(8192, 32 * 1024 * 1024)
+        Self::with_limits(2048, 8 * 1024 * 1024)
     }
 
     #[cfg(test)]
@@ -102,7 +102,6 @@ impl GlyphCache {
             while state.entries.len() >= self.max_entries
                 || state.retained_bytes > self.max_bytes.saturating_sub(retained_bytes)
             {
-                // 单项淘汰可保留其余热字形，避免容量边界触发集中重光栅化。
                 let Some(evicted_key) = state.entries.keys().next().cloned() else {
                     break;
                 };
