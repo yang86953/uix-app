@@ -9,8 +9,54 @@ use crate::ui::widgets::feedback::drawer::*;
 use crate::ui::widgets::other::scroll_view::ScrollView;
 use crate::ui::AnimationConfig;
 
+fn render_drawer(drawer: &Drawer, frame: Rect, surface_size: (i32, i32)) -> String {
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(surface_size.0, surface_size.1));
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+    let mut display_list = crate::draw::painting::DisplayList::new();
+    {
+        let mut ctx = PaintContext::new_for_test(
+            &mut canvas,
+            font,
+            &fonts,
+            &images,
+            &tokens,
+            96.0,
+            1.0,
+            Orientation::YDown,
+            surface_size.0,
+            surface_size.1,
+        );
+        ctx.with_recorder(&mut display_list, |ctx| {
+            WidgetRender::render(drawer, frame, ctx, &tree);
+        });
+    }
+    format!("{display_list:?}")
+}
+
+fn pointer(kind: &str, pos: Point) -> SystemEvent {
+    match kind {
+        "down" => SystemEvent::PointerDown {
+            pos,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        },
+        "up" => SystemEvent::PointerUp {
+            pos,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        },
+        _ => unreachable!("unsupported pointer kind"),
+    }
+}
+
 #[test]
-fn closed_drawer_trigger_opens_via_widget_tree_pointer_down() {
+fn closed_drawer_trigger_opens_on_matching_pointer_release() {
     let mut tree = WidgetTree::new();
     let id = tree.set_root(Box::new(Drawer::new("Drawer")));
     tree.get_mut(id)
@@ -25,6 +71,29 @@ fn closed_drawer_trigger_opens_via_widget_tree_pointer_down() {
         }),
         EventResult::Handled
     );
+    assert!(!tree
+        .get(id)
+        .expect("drawer root")
+        .component()
+        .as_any()
+        .downcast_ref::<Drawer>()
+        .expect("drawer component")
+        .is_present());
+    tree.get_mut(id)
+        .expect("drawer root")
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<Drawer>()
+        .expect("drawer component")
+        .sync_from(Drawer::new("Drawer"));
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerUp {
+            pos: Point::new(48.0, 16.0),
+            button: crate::ui::MouseButton::Left,
+            mods: crate::native::traits::input::KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
     assert!(tree
         .get(id)
         .expect("drawer root")
@@ -33,6 +102,75 @@ fn closed_drawer_trigger_opens_via_widget_tree_pointer_down() {
         .downcast_ref::<Drawer>()
         .expect("drawer component")
         .is_present());
+}
+
+#[test]
+fn stretched_closed_drawer_centers_its_visible_trigger_and_hit_target() {
+    let mut drawer = Drawer::new("Drawer");
+    let frame = Rect::new(0.0, 0.0, 300.0, 32.0);
+    let commands = render_drawer(&drawer, frame, (320, 64));
+    assert!(commands.contains("x: 102.0"));
+    assert_eq!(
+        EventHandler::hit_test_frame(&drawer, frame),
+        Rect::new(102.0, 0.0, 96.0, 32.0)
+    );
+    assert_eq!(
+        drawer.on_event(&pointer("down", Point::new(150.0, 16.0))),
+        EventResult::Handled
+    );
+    assert_eq!(
+        drawer.on_event(&pointer("up", Point::new(150.0, 16.0))),
+        EventResult::Handled
+    );
+    assert!(drawer.is_present());
+}
+
+#[test]
+fn closed_drawer_trigger_is_keyboard_accessible_on_matching_release() {
+    let mut drawer = Drawer::new("Drawer");
+    assert_eq!(WidgetComponent::tab_index(&drawer), 1);
+    let closed_accessibility = drawer.snapshot_fields().accessibility();
+    assert_eq!(
+        closed_accessibility.role,
+        crate::ui::AccessibilityRole::Button
+    );
+    assert_eq!(closed_accessibility.name.as_deref(), Some("打开 Drawer"));
+    assert_eq!(closed_accessibility.state.expanded, Some(false));
+    assert_eq!(
+        drawer.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(!drawer.is_present());
+    assert_eq!(
+        drawer.on_event(&SystemEvent::KeyUp {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(drawer.is_present());
+    assert_eq!(WidgetComponent::tab_index(&drawer), 0);
+    let open_accessibility = drawer.snapshot_fields().accessibility();
+    assert_eq!(
+        open_accessibility.role,
+        crate::ui::AccessibilityRole::Dialog
+    );
+    assert_eq!(open_accessibility.name.as_deref(), Some("Drawer"));
+    assert_eq!(open_accessibility.state.expanded, Some(true));
+
+    let mut untitled = Drawer::new("");
+    assert_eq!(
+        untitled.snapshot_fields().accessibility().name.as_deref(),
+        Some("打开 Drawer")
+    );
+    untitled.open();
+    assert_eq!(
+        untitled.snapshot_fields().accessibility().name.as_deref(),
+        Some("Drawer")
+    );
 }
 
 #[test]
@@ -145,6 +283,14 @@ fn masked_drawer_animation_marks_its_surface_dirty_through_layer_tree() {
 
     assert_eq!(
         tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(168.0, 96.0),
+            button: crate::ui::MouseButton::Left,
+            mods: crate::native::traits::input::KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerUp {
             pos: Point::new(168.0, 96.0),
             button: crate::ui::MouseButton::Left,
             mods: crate::native::traits::input::KeyMod::NONE,
@@ -340,7 +486,15 @@ fn closed_drawer_hides_its_retained_child_subtree() {
 
     assert_eq!(
         tree.dispatch_event(&SystemEvent::PointerDown {
-            pos: Point::new(16.0, 16.0),
+            pos: Point::new(400.0, 16.0),
+            button: crate::ui::MouseButton::Left,
+            mods: crate::native::traits::input::KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerUp {
+            pos: Point::new(400.0, 16.0),
             button: crate::ui::MouseButton::Left,
             mods: crate::native::traits::input::KeyMod::NONE,
         }),
@@ -371,4 +525,97 @@ fn drawer_uses_custom_enter_and_leave_animations() {
     assert!(drawer.is_present());
     assert!(!WidgetAnimation::update_animation(&mut drawer, 0.1));
     assert!(!drawer.is_present());
+}
+
+#[test]
+fn drawer_close_button_requires_matching_release_and_cancels_on_leave() {
+    let mut drawer = Drawer::new("Drawer").size(200.0, 180.0).show();
+    assert!(!WidgetAnimation::update_animation(&mut drawer, 1.0));
+    render_drawer(&drawer, Rect::zero(), (320, 240));
+    let close = Point::new(176.0, 24.0);
+
+    assert_eq!(
+        drawer.on_event(&pointer("down", close)),
+        EventResult::Handled
+    );
+    assert!(drawer.is_visible(), "PointerDown must not close Drawer");
+    assert_eq!(
+        drawer.on_event(&pointer("up", Point::new(20.0, 80.0))),
+        EventResult::Handled
+    );
+    assert!(drawer.is_visible(), "release outside must cancel close");
+
+    assert_eq!(
+        drawer.on_event(&pointer("down", close)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        drawer.on_event(&SystemEvent::PointerLeave),
+        EventResult::Handled
+    );
+    assert_eq!(drawer.on_event(&pointer("up", close)), EventResult::Handled);
+    assert!(drawer.is_visible(), "PointerLeave must cancel close");
+
+    assert_eq!(
+        drawer.on_event(&pointer("down", close)),
+        EventResult::Handled
+    );
+    assert_eq!(drawer.on_event(&pointer("up", close)), EventResult::Handled);
+    assert!(!drawer.is_visible());
+    assert!(drawer.is_present(), "leave transition must remain present");
+}
+
+#[test]
+fn drawer_mask_reconcile_cancels_an_armed_close() {
+    let mut drawer = Drawer::new("Drawer").size(200.0, 180.0).show();
+    assert!(!WidgetAnimation::update_animation(&mut drawer, 1.0));
+    render_drawer(&drawer, Rect::zero(), (320, 240));
+    let close = Point::new(176.0, 24.0);
+
+    assert_eq!(
+        drawer.on_event(&pointer("down", close)),
+        EventResult::Handled
+    );
+    drawer.sync_from(Drawer::new("Drawer").size(200.0, 180.0).mask(false));
+    assert_eq!(drawer.on_event(&pointer("up", close)), EventResult::Handled);
+    assert!(
+        drawer.is_visible(),
+        "changing overlay coordinates must cancel the armed close"
+    );
+}
+
+#[test]
+fn oversized_drawer_clamps_to_surface_and_clips_header_footer_and_children() {
+    let mut drawer = Drawer::new("超长 Drawer 标题 mixed title")
+        .size(500.0, 500.0)
+        .extra("超长 extra action")
+        .footer_visible(true)
+        .show();
+    assert!(!WidgetAnimation::update_animation(&mut drawer, 1.0));
+    let display_list = render_drawer(&drawer, Rect::zero(), (132, 90));
+
+    assert!(
+        display_list.contains("PushClip { rect: Rect { x: 0.0, y: 0.0, w: 132.0, h: 90.0 } }"),
+        "Drawer panel must clamp and clip to the real surface: {display_list}"
+    );
+    assert!(
+        display_list.contains('…'),
+        "long Drawer header text must elide: {display_list}"
+    );
+    assert!(!display_list.contains("w: -") && !display_list.contains("h: -"));
+    assert_eq!(
+        WidgetRender::children_clip(&drawer, Rect::zero()),
+        Some(Rect::new(0.0, 48.0, 132.0, 0.0)),
+        "header and footer exhaust this compact panel without negative body geometry"
+    );
+
+    let invalid = Drawer::new("invalid").size(f32::NAN, f32::NEG_INFINITY);
+    assert!(matches!(
+        invalid.snapshot_fields(),
+        SnapshotFields::Drawer {
+            width: 0.0,
+            height: 0.0,
+            ..
+        }
+    ));
 }

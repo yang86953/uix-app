@@ -292,6 +292,7 @@ pub enum SnapshotFields {
     },
     Drawer {
         title: String,
+        open: bool,
         width: f32,
         height: f32,
         drawer_size: ControlSize,
@@ -801,8 +802,28 @@ impl SnapshotFields {
                 popconfirm.visible,
                 popconfirm.focused_action,
             ),
-            Self::Modal { title, .. } | Self::Drawer { title, .. } => {
+            Self::Modal { title, .. } => {
                 AccessibilitySnapshot::named(AccessibilityRole::Dialog, title.clone())
+            }
+            Self::Drawer { title, open, .. } => {
+                let role = if *open {
+                    AccessibilityRole::Dialog
+                } else {
+                    AccessibilityRole::Button
+                };
+                let name = if *open && title.is_empty() {
+                    "Drawer".to_owned()
+                } else if *open {
+                    title.clone()
+                } else if title.is_empty() {
+                    "打开 Drawer".to_owned()
+                } else {
+                    format!("打开 {title}")
+                };
+                AccessibilitySnapshot::named(role, name).with_state(AccessibilityState {
+                    expanded: Some(*open),
+                    ..AccessibilityState::default()
+                })
             }
             Self::Pagination {
                 current,
