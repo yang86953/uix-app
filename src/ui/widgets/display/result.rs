@@ -6,7 +6,7 @@
 use std::cell::Cell;
 
 use crate::component;
-use crate::core::{Constraints, Point, Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::ui::{EventResult, KeyCode, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
@@ -21,6 +21,40 @@ pub enum ResultType {
     NotFound,    // 404
     Forbidden,   // 403
     ServerError, // 500
+}
+
+impl ResultType {
+    pub(crate) fn localized_title(self) -> &'static str {
+        let loc = crate::ui::locale::use_locale();
+        match self {
+            Self::Success => loc.result_success,
+            Self::Error => loc.result_error,
+            Self::Info => loc.result_info,
+            Self::Warning => loc.result_warning,
+            Self::NotFound => loc.result_404,
+            Self::Forbidden => loc.result_403,
+            Self::ServerError => loc.result_500,
+        }
+    }
+
+    pub(crate) fn localized_subtitle(self) -> &'static str {
+        let loc = crate::ui::locale::use_locale();
+        match self {
+            Self::NotFound => loc.result_404_desc,
+            Self::Forbidden => loc.result_403_desc,
+            Self::ServerError => loc.result_500_desc,
+            _ => "",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ResultGeometry {
+    frame: Rect,
+    icon: Rect,
+    title: Rect,
+    subtitle: Rect,
+    action: Rect,
 }
 
 // ResultView — 结果页组件。
@@ -45,7 +79,9 @@ component! {
         if self.extra_text.is_empty() {
             frame
         } else {
-            let action = self.action_rect_local();
+            let local_frame = Rect::new(0.0, 0.0, frame.w, frame.h);
+            let action = self.layout(local_frame).action;
+            self.last_action_rect.set(action);
             Rect::new(
                 frame.x + action.x,
                 frame.y + action.y,
@@ -66,11 +102,16 @@ component! {
                 self.pressed = true;
                 EventResult::Handled
             }
-            SystemEvent::PointerUp { button: MouseButton::Left, .. } if self.pressed => {
+            SystemEvent::PointerUp { pos, button: MouseButton::Left, .. } if self.pressed => {
+                let activated = self.action_rect_local().contains(*pos);
                 self.pressed = false;
-                EventResult::Handled
+                if activated {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
             }
-            SystemEvent::PointerLeave => {
+            SystemEvent::PointerLeave if self.pressed => {
                 self.pressed = false;
                 EventResult::Handled
             }
@@ -100,70 +141,58 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        let geometry = self.layout(frame);
+        if geometry.frame.w <= 0.0 || geometry.frame.h <= 0.0 {
+            self.last_action_rect.set(Rect::zero());
+            return;
+        }
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_secondary();
-        let loc = crate::ui::locale::use_locale();
-        let (icon, icon_color, main_title) = match self.type_ {
-            ResultType::Success => ("check", ctx.tokens().color_success(), if self.title.is_empty() { loc.result_success } else { &self.title }),
-            ResultType::Error   => ("x", ctx.tokens().color_error(), if self.title.is_empty() { loc.result_error } else { &self.title }),
-            ResultType::Info    => ("info", ctx.tokens().color_info(), if self.title.is_empty() { loc.result_info } else { &self.title }),
-            ResultType::Warning => ("alert-triangle", ctx.tokens().color_warning(), if self.title.is_empty() { loc.result_warning } else { &self.title }),
-            ResultType::NotFound => ("404", ctx.tokens().color_text_quaternary(), if self.title.is_empty() { loc.result_404 } else { &self.title }),
-            ResultType::Forbidden => ("403", ctx.tokens().color_warning(), if self.title.is_empty() { loc.result_403 } else { &self.title }),
-            ResultType::ServerError => ("500", ctx.tokens().color_error(), if self.title.is_empty() { loc.result_500 } else { &self.title }),
+        let (main_title, sub) = self.effective_content();
+        let (icon, icon_color) = match self.type_ {
+            ResultType::Success => ("check", ctx.tokens().color_success()),
+            ResultType::Error => ("x", ctx.tokens().color_error()),
+            ResultType::Info => ("info", ctx.tokens().color_info()),
+            ResultType::Warning => ("alert-triangle", ctx.tokens().color_warning()),
+            ResultType::NotFound => ("404", text_sec),
+            ResultType::Forbidden => ("403", ctx.tokens().color_warning()),
+            ResultType::ServerError => ("500", ctx.tokens().color_error()),
         };
-        let cx = frame.x + frame.w * 0.5;
-        let cy = frame.y + frame.h * 0.4;
 
-        // 大图标（使用 em-box 高度精确居中）
+        ctx.push_clip(geometry.frame);
         match self.type_ {
             ResultType::NotFound | ResultType::Forbidden | ResultType::ServerError => {
-                let icon_w = ctx.measure_text(icon, 48.0).w;
-                ctx.draw_text(icon, Point::new(cx - icon_w * 0.5, cy - 50.0 - 48.0 * 0.5), icon_color, 48.0);
+                let font_size = 48.0_f32.min(geometry.icon.h * 0.82);
+                ctx.text_center(icon, geometry.icon, icon_color, font_size);
             }
             _ => {
-                ctx.fill_circle(cx, cy - 30.0, 32.0, icon_color);
+                let radius = geometry.icon.w.min(geometry.icon.h) * 0.5;
+                let center_x = geometry.icon.x + geometry.icon.w * 0.5;
+                let center_y = geometry.icon.y + geometry.icon.h * 0.5;
+                ctx.fill_circle(center_x, center_y, radius, icon_color);
                 crate::ui::widgets::icon::paint_icon_in_frame(
                     ctx,
                     icon,
-                    Rect::new(cx - 24.0, cy - 54.0, 48.0, 48.0),
+                    geometry.icon,
                     Color::white(),
-                    24.0,
+                    (radius * 0.8).max(1.0),
                 );
             }
         }
 
-        // 标题（使用精确测量水平居中，em-box 高度垂直定位）
-        let title_w = ctx.measure_text(main_title, 20.0).w;
-        ctx.draw_text(main_title, Point::new(cx - title_w * 0.5, cy + 10.0), text, 20.0);
+        Self::paint_text_block(ctx, main_title, geometry.title, text, 20.0);
+        Self::paint_text_block(ctx, sub, geometry.subtitle, text_sec, 13.0);
 
-        // 副标题（使用精确测量水平居中）
-        let sub = if self.subtitle.is_empty() {
-            match self.type_ {
-                ResultType::NotFound => loc.result_404_desc,
-                ResultType::Forbidden => loc.result_403_desc,
-                ResultType::ServerError => loc.result_500_desc,
-                _ => "",
-            }
-        } else { &self.subtitle };
-        if !sub.is_empty() {
-            let sub_w = ctx.measure_text(sub, 13.0).w;
-            ctx.draw_text(sub, Point::new(cx - sub_w * 0.5, cy + 40.0), text_sec, 13.0);
-        }
-
-        // 额外按钮文字
         if !self.extra_text.is_empty() {
-            let btn_w = ctx.measure_text(&self.extra_text, 14.0).w + 32.0;
-            let btn_x = cx - btn_w * 0.5;
-            let btn_y = cy + 70.0;
-            let btn_rect = Rect::new(btn_x, btn_y, btn_w, 36.0);
+            let btn_rect = geometry.action;
             self.last_action_rect.set(Rect::new(
-                btn_rect.x - frame.x,
-                btn_rect.y - frame.y,
+                btn_rect.x - geometry.frame.x,
+                btn_rect.y - geometry.frame.y,
                 btn_rect.w,
                 btn_rect.h,
             ));
-            let radius = Some(crate::draw::Radius::uniform(6.0));
+            let radius_value = 6.0_f32.min(btn_rect.w.min(btn_rect.h) * 0.5);
+            let radius = Some(crate::draw::Radius::uniform(radius_value));
             let background = if self.pressed {
                 ctx.tokens().color_primary_active()
             } else {
@@ -171,11 +200,21 @@ component! {
             };
             ctx.fill_rect(btn_rect, background, radius);
             if self.focused {
-                ctx.stroke_rect(btn_rect, ctx.tokens().color_primary_border(), 2.0, radius);
+                let focus = Self::inset(btn_rect, 2.0);
+                ctx.stroke_rect(
+                    focus,
+                    Color::white(),
+                    2.0,
+                    Some(crate::draw::Radius::uniform(
+                        radius_value.min(focus.w.min(focus.h) * 0.5),
+                    )),
+                );
             }
-            let btn_text_y = ctx.visual_center_y(btn_rect, 14.0);
-            ctx.draw_text(&self.extra_text, Point::new(btn_x + 16.0, btn_text_y), Color::white(), 14.0);
+            Self::paint_action_text(ctx, &self.extra_text, btn_rect);
+        } else {
+            self.last_action_rect.set(Rect::zero());
         }
+        ctx.pop_clip();
     }
 }
 
@@ -204,6 +243,257 @@ impl ResultView {
         self
     }
 
+    fn effective_content(&self) -> (&str, &str) {
+        let title = if self.title.is_empty() {
+            self.type_.localized_title()
+        } else {
+            &self.title
+        };
+        let subtitle = if self.subtitle.is_empty() {
+            self.type_.localized_subtitle()
+        } else {
+            &self.subtitle
+        };
+        (title, subtitle)
+    }
+
+    fn layout(&self, frame: Rect) -> ResultGeometry {
+        let frame = Self::normalized_frame(frame);
+        if frame.w <= 0.0 || frame.h <= 0.0 {
+            return ResultGeometry {
+                frame,
+                icon: Rect::zero(),
+                title: Rect::zero(),
+                subtitle: Rect::zero(),
+                action: Rect::zero(),
+            };
+        }
+
+        let horizontal_padding = 12.0_f32.min(frame.w * 0.1);
+        let vertical_padding = 12.0_f32.min(frame.h * 0.08);
+        let inner = Rect::new(
+            frame.x + horizontal_padding,
+            frame.y + vertical_padding,
+            (frame.w - horizontal_padding * 2.0).max(0.0),
+            (frame.h - vertical_padding * 2.0).max(0.0),
+        );
+        let has_action = !self.extra_text.is_empty();
+        let action_height = if has_action {
+            36.0_f32.min(inner.h)
+        } else {
+            0.0
+        };
+        let action_gap = if has_action {
+            12.0_f32.min((inner.h - action_height).max(0.0) * 0.12)
+        } else {
+            0.0
+        };
+        let content_height = (inner.h - action_height - action_gap).max(0.0);
+        let (title, subtitle) = self.effective_content();
+        let has_subtitle = !subtitle.is_empty();
+        let icon_fraction = if has_subtitle { 0.35 } else { 0.45 };
+        let icon_size = 64.0_f32
+            .min(inner.w * 0.45)
+            .min(content_height * icon_fraction)
+            .max(0.0);
+        let icon_title_gap = 10.0_f32.min((content_height - icon_size).max(0.0) * 0.16);
+        let text_height = (content_height - icon_size - icon_title_gap).max(0.0);
+        let title_desired = Self::estimated_text_height(title, inner.w, 20.0, 2);
+        let subtitle_desired = Self::estimated_text_height(subtitle, inner.w, 13.0, 3);
+        let subtitle_gap = if has_subtitle {
+            6.0_f32.min(text_height * 0.1)
+        } else {
+            0.0
+        };
+        let available_text = (text_height - subtitle_gap).max(0.0);
+        let (title_height, subtitle_height) = if has_subtitle {
+            let minimum_title = (20.0_f32 * 1.5).min(available_text).min(title_desired);
+            let minimum_subtitle = (13.0_f32 * 1.5)
+                .min((available_text - minimum_title).max(0.0))
+                .min(subtitle_desired);
+            let remaining = (available_text - minimum_title - minimum_subtitle).max(0.0);
+            let extra_title = (title_desired - minimum_title)
+                .max(0.0)
+                .min(remaining * 0.35);
+            let title_height = minimum_title + extra_title;
+            let subtitle_height = minimum_subtitle
+                + (subtitle_desired - minimum_subtitle)
+                    .max(0.0)
+                    .min(remaining - extra_title);
+            (title_height, subtitle_height)
+        } else {
+            (available_text.min(title_desired), 0.0)
+        };
+
+        let used_height = icon_size
+            + icon_title_gap
+            + title_height
+            + subtitle_gap
+            + subtitle_height
+            + action_gap
+            + action_height;
+        let mut y = inner.y + (inner.h - used_height).max(0.0) * 0.5;
+        let icon = Rect::new(
+            inner.x + (inner.w - icon_size) * 0.5,
+            y,
+            icon_size,
+            icon_size,
+        );
+        y += icon_size + icon_title_gap;
+        let title = Rect::new(inner.x, y, inner.w, title_height);
+        y += title_height + subtitle_gap;
+        let subtitle = Rect::new(inner.x, y, inner.w, subtitle_height);
+        y += subtitle_height + action_gap;
+        let action = if has_action {
+            let action_width =
+                (Self::estimated_text_width(&self.extra_text, 14.0) + 32.0).clamp(0.0, inner.w);
+            Rect::new(
+                inner.x + (inner.w - action_width) * 0.5,
+                y,
+                action_width,
+                action_height,
+            )
+        } else {
+            Rect::zero()
+        };
+
+        ResultGeometry {
+            frame,
+            icon,
+            title,
+            subtitle,
+            action,
+        }
+    }
+
+    fn normalized_frame(frame: Rect) -> Rect {
+        Rect::new(
+            frame.x,
+            frame.y,
+            if frame.w.is_finite() {
+                frame.w.max(0.0)
+            } else {
+                0.0
+            },
+            if frame.h.is_finite() {
+                frame.h.max(0.0)
+            } else {
+                0.0
+            },
+        )
+    }
+
+    fn inset(frame: Rect, amount: f32) -> Rect {
+        let amount = amount.min(frame.w * 0.5).min(frame.h * 0.5).max(0.0);
+        Rect::new(
+            frame.x + amount,
+            frame.y + amount,
+            (frame.w - amount * 2.0).max(0.0),
+            (frame.h - amount * 2.0).max(0.0),
+        )
+    }
+
+    fn estimated_text_width(value: &str, font_size: f32) -> f32 {
+        crate::draw::font::text_backend::estimate_text_metrics(
+            &value.replace(['\r', '\n'], " "),
+            f32::INFINITY,
+            font_size,
+        )
+        .max_line_width
+    }
+
+    fn estimated_text_height(value: &str, width: f32, font_size: f32, max_lines: usize) -> f32 {
+        if value.is_empty() || width <= 0.0 {
+            return 0.0;
+        }
+        let line_count =
+            crate::draw::font::text_backend::estimate_text_metrics(value, width, font_size)
+                .line_count
+                .clamp(1, max_lines);
+        line_count as f32 * font_size * 1.5
+    }
+
+    fn paint_text_block(
+        ctx: &mut PaintContext<'_>,
+        value: &str,
+        frame: Rect,
+        color: Color,
+        font_size: f32,
+    ) {
+        if value.is_empty() || frame.w <= 0.0 || frame.h <= 0.0 {
+            return;
+        }
+        let line_height = font_size * 1.5;
+        let visible_lines = (frame.h / line_height).floor() as usize;
+        if visible_lines == 0 {
+            return;
+        }
+        let metrics =
+            crate::draw::font::text_backend::estimate_text_metrics(value, frame.w, font_size);
+        ctx.push_clip(frame);
+        if metrics.line_count <= 1 {
+            ctx.text_center(value, frame, color, font_size);
+        } else if visible_lines >= 2 {
+            ctx.draw_text_wrapped(value, frame, color, font_size);
+        } else if let Some(value) = Self::elide_single_line(ctx, value, font_size, frame.w) {
+            ctx.text_center(&value, frame, color, font_size);
+        }
+        ctx.pop_clip();
+    }
+
+    fn paint_action_text(ctx: &mut PaintContext<'_>, value: &str, frame: Rect) {
+        let horizontal_padding = 16.0_f32.min(frame.w * 0.25);
+        let content = Rect::new(
+            frame.x + horizontal_padding,
+            frame.y,
+            (frame.w - horizontal_padding * 2.0).max(0.0),
+            frame.h,
+        );
+        if let Some(value) = Self::elide_single_line(ctx, value, 14.0, content.w) {
+            ctx.push_clip(content);
+            ctx.text_center(&value, content, Color::white(), 14.0);
+            ctx.pop_clip();
+        }
+    }
+
+    fn elide_single_line(
+        ctx: &mut PaintContext<'_>,
+        value: &str,
+        font_size: f32,
+        max_width: f32,
+    ) -> Option<String> {
+        if !max_width.is_finite() || max_width <= 0.0 {
+            return None;
+        }
+        let value = value.replace(['\r', '\n'], " ");
+        if Self::conservative_text_width(ctx, &value, font_size) <= max_width {
+            return Some(value);
+        }
+        const ELLIPSIS: &str = "…";
+        if Self::conservative_text_width(ctx, ELLIPSIS, font_size) > max_width {
+            return None;
+        }
+        let mut visible = String::new();
+        for ch in value.chars() {
+            visible.push(ch);
+            visible.push_str(ELLIPSIS);
+            let fits = Self::conservative_text_width(ctx, &visible, font_size) <= max_width;
+            visible.pop();
+            if !fits {
+                visible.pop();
+                break;
+            }
+        }
+        visible.push_str(ELLIPSIS);
+        Some(visible)
+    }
+
+    fn conservative_text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
+        ctx.measure_text(value, font_size)
+            .w
+            .max(Self::estimated_text_width(value, font_size))
+    }
+
     fn intrinsic_size(&self) -> Size {
         Size::new(400.0, 300.0)
     }
@@ -214,8 +504,7 @@ impl ResultView {
             return rendered;
         }
         let size = self.intrinsic_size();
-        let width = (self.extra_text.chars().count() as f32 * 8.0 + 32.0).max(32.0);
-        Rect::new((size.w - width) * 0.5, size.h * 0.4 + 70.0, width, 36.0)
+        self.layout(Rect::new(0.0, 0.0, size.w, size.h)).action
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {

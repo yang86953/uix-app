@@ -1039,11 +1039,12 @@ impl SnapshotFields {
                 },
             ),
             Self::Result {
+                result_type,
                 title,
                 subtitle,
                 extra_text,
                 ..
-            } => result_accessibility(title, subtitle, extra_text),
+            } => result_accessibility(*result_type, title, subtitle, extra_text),
             Self::Spin { tip, .. } => {
                 AccessibilitySnapshot::named(AccessibilityRole::Status, tip.clone())
             }
