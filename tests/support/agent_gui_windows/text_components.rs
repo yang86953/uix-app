@@ -1134,6 +1134,106 @@ fn real_demo_calendar_localizes_scales_and_keeps_pointer_keyboard_geometry_align
 }
 
 #[test]
+#[ignore = "requires an interactive Windows desktop and writes Card layout evidence"]
+fn real_demo_card_fits_text_clips_content_and_exposes_keyboard_actions() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(43, "card-layout");
+    let snapshot = session.snapshot("card-layout-snapshot");
+    let target_body_bounds = snapshot["nodes"]
+        .as_array()
+        .expect("card snapshot nodes")
+        .iter()
+        .find(|node| node["name"] == "正文层级与安全边距")
+        .map(|node| node["visible_bounds"].clone())
+        .unwrap_or_else(|| panic!("missing Card body label in snapshot: {snapshot}"));
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "card"
+    );
+
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "group");
+    assert_eq!(target["name"], "质量卡片");
+    assert_eq!(target["visible_bounds"]["w"], 210.0);
+    assert_eq!(target["visible_bounds"]["h"], 128.0);
+
+    let long = node_by_automation_id(&snapshot, "component-qa-card-long");
+    assert_eq!(long["name"], "A very long title must fit safely");
+    assert_eq!(long["visible_bounds"]["w"], 180.0);
+    assert_eq!(long["visible_bounds"]["h"], 110.0);
+
+    let constrained = node_by_automation_id(&snapshot, "component-qa-card-constrained");
+    assert_eq!(constrained["visible_bounds"]["w"], 120.0);
+    assert_eq!(constrained["visible_bounds"]["h"], 64.0);
+    let padded = node_by_automation_id(&snapshot, "component-qa-card-padding");
+    assert_eq!(padded["visible_bounds"]["w"], 92.0);
+    assert_eq!(padded["visible_bounds"]["h"], 72.0);
+
+    let actions = node_by_automation_id(&snapshot, "component-qa-card-actions");
+    assert_eq!(actions["role"], "group");
+    assert_eq!(actions["name"], "Deployment");
+    assert_eq!(actions["state"]["value_text"], "Open detailed settings");
+    assert!(actions["actions"]
+        .as_array()
+        .is_some_and(|available| available.contains(&json!("focus"))));
+
+    thread::sleep(Duration::from_millis(300));
+    let light_path = session.capture("uix-card", "card-layout-light.png");
+    let light_image = image::open(&light_path)
+        .expect("open Card light evidence")
+        .to_rgba8();
+    let body_x = target_body_bounds["x"].as_f64().expect("Card body x") as u32;
+    let body_y = target_body_bounds["y"].as_f64().expect("Card body y") as u32;
+    let body_w = target_body_bounds["w"].as_f64().expect("Card body width") as u32;
+    let body_h = target_body_bounds["h"].as_f64().expect("Card body height") as u32;
+    let body_ink = (body_y..body_y + body_h)
+        .flat_map(|y| (body_x..body_x + body_w).map(move |x| (x, y)))
+        .filter(|(x, y)| {
+            let pixel = light_image.get_pixel(*x, *y);
+            u16::from(pixel[0]) + u16::from(pixel[1]) + u16::from(pixel[2]) < 600
+        })
+        .count();
+    assert!(
+        body_ink > 0,
+        "Card body text must remain visible after the clipped child pass"
+    );
+    let hovered = session.move_pointer_to("component-qa-card-hover", "card-hover");
+    assert_eq!(
+        node_by_automation_id(&hovered, "component-qa-card-hover")["name"],
+        "Elevation 2"
+    );
+    session.capture("uix-card", "card-layout-hover.png");
+
+    let focused = session.focus("component-qa-card-actions", "card-actions-focus");
+    assert_eq!(
+        node_by_automation_id(&focused, "component-qa-card-actions")["focused"],
+        true
+    );
+    let moved = session.press_key("right", "card-actions-right");
+    assert_eq!(
+        node_by_automation_id(&moved, "component-qa-card-actions")["state"]["value_text"],
+        "Cancel operation"
+    );
+    let submitted = session.press_key("enter", "card-actions-submit");
+    assert_eq!(
+        node_by_automation_id(&submitted, "component-qa-card-actions")["state"]["value_text"],
+        "Cancel operation"
+    );
+    session.capture("uix-card", "card-layout-keyboard.png");
+
+    let dark = session.invoke("theme-toggle", "card-dark-theme");
+    assert_eq!(
+        node_by_automation_id(&dark, "component-qa-card-constrained")["visible_bounds"]["h"],
+        64.0
+    );
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-card", "card-layout-dark.png");
+    session.close();
+}
+
+#[test]
 #[ignore = "requires an interactive Windows desktop and writes Checkbox CJK evidence"]
 fn real_demo_checkbox_uses_compact_cjk_width_and_toggles() {
     let _guard = REAL_GUI_LOCK

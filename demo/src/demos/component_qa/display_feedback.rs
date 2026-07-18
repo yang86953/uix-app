@@ -47,6 +47,15 @@ fn calendar_frame(
         .align_self(AlignItems::Start)
 }
 
+fn card_frame(card: Card, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
+    grid([embed(card).automation_id(automation_id)])
+        .columns(vec![GridTrack::Fr(1.0)])
+        .rows(vec![GridTrack::Fr(1.0)])
+        .width(width)
+        .height(height)
+        .align_self(AlignItems::Start)
+}
+
 pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
     let view = match id {
         "avatar" => column_fit([
@@ -235,28 +244,91 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
             ]),
         ])
         .gap(14.0),
-        "card" => qa_row([
-            qa_variant(
-                "Bordered / target",
-                qa_target(
-                    Card::new()
-                        .title("质量卡片")
-                        .bordered(true)
-                        .size(210.0, 128.0)
-                        .child(Label::new("正文层级与安全边距")),
+        "card" => column_fit([
+            qa_row([
+                qa_variant(
+                    "Bordered / target",
+                    card_frame(
+                        Card::new()
+                            .title("质量卡片")
+                            .bordered(true)
+                            .size(210.0, 128.0)
+                            .child(Label::new("正文层级与安全边距")),
+                        210.0,
+                        128.0,
+                        "component-qa-target",
+                    ),
                 ),
-            ),
-            qa_variant(
-                "Elevation",
-                embed(
-                    Card::new()
-                        .title("Elevation 2")
-                        .elevation(2)
-                        .size(210.0, 128.0)
-                        .child(Label::new("阴影与背景对比")),
+                qa_variant(
+                    "Long title / clipped body",
+                    card_frame(
+                        Card::new()
+                            .title("A very long title must fit safely")
+                            .size(180.0, 110.0)
+                            .child(Label::new("Body stays safe")),
+                        180.0,
+                        110.0,
+                        "component-qa-card-long",
+                    ),
                 ),
-            ),
-        ]),
+                qa_variant(
+                    "Elevation / hover",
+                    card_frame(
+                        Card::new()
+                            .title("Elevation 2")
+                            .elevation(2)
+                            .hoverable()
+                            .size(180.0, 110.0)
+                            .child(Label::new("Hover ready")),
+                        180.0,
+                        110.0,
+                        "component-qa-card-hover",
+                    ),
+                ),
+            ]),
+            qa_row([
+                qa_variant(
+                    "Actions / keyboard",
+                    card_frame(
+                        Card::new()
+                            .title("Deployment")
+                            .actions(vec!["Open detailed settings", "Cancel operation"])
+                            .size(210.0, 128.0)
+                            .child(Label::new("Keyboard ready")),
+                        210.0,
+                        128.0,
+                        "component-qa-card-actions",
+                    ),
+                ),
+                qa_variant(
+                    "120x64 / constrained",
+                    card_frame(
+                        Card::new()
+                            .title("Tight title")
+                            .actions(vec!["Confirm", "Cancel"])
+                            .size(120.0, 64.0),
+                        120.0,
+                        64.0,
+                        "component-qa-card-constrained",
+                    ),
+                ),
+                qa_variant(
+                    "92x72 / large padding",
+                    card_frame(
+                        Card::new()
+                            .title("Safe")
+                            .padding(60.0)
+                            .elevation(2)
+                            .size(92.0, 72.0)
+                            .child(Label::new("clipped")),
+                        92.0,
+                        72.0,
+                        "component-qa-card-padding",
+                    ),
+                ),
+            ]),
+        ])
+        .gap(14.0),
         "carousel" => qa_target_view(
             ViewNode::new(
                 Carousel::new().show_dots(true).show_arrows(true),

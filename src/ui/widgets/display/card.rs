@@ -5,7 +5,7 @@ use std::cell::{Cell, RefCell};
 
 use crate::component;
 use crate::core::{Constraints, EdgeInsets, Point, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::painting::{PaintContext, PaintPass};
 use crate::draw::{Color, Radius};
 use crate::ui::children::WidgetChildren;
 use crate::ui::layout::{
@@ -122,7 +122,11 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        self.last_frame.set(Some(Rect::new(0.0, 0.0, frame.w.max(0.0), frame.h.max(0.0))));
+        if ctx.paint_pass() != PaintPass::Content {
+            return;
+        }
+        let frame = Rect::new(frame.x, frame.y, frame.w.max(0.0), frame.h.max(0.0));
+        self.last_frame.set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
         let border_radius_lg = ctx.tokens().border_radius_lg();
         let bg_container = ctx.tokens().color_bg_container();
         let bg_elevated = ctx.tokens().color_bg_elevated();
@@ -130,12 +134,16 @@ component! {
         let border_secondary = ctx.tokens().color_border_secondary();
         let text = ctx.tokens().color_text();
 
-        let card_radius = Some(Radius::uniform(border_radius_lg));
+        let card_radius = Some(Radius::uniform(
+            border_radius_lg.min(frame.w * 0.5).min(frame.h * 0.5).max(0.0),
+        ));
 
         // 阴影绘制由图形引擎内部处理 clip 绕过。
         // 引擎的 draw_box_shadow 会自动恢复到脏区域 clip，
         // 绕过父级 children_clip 但保持在脏区域内。
         draw_elevation_shadow(ctx, frame, self.elevation);
+
+        ctx.push_clip(frame);
 
         // Background
         let bg = if self.hovered {
@@ -151,8 +159,17 @@ component! {
 
         // Top accent line
         if self.elevation > 1 {
-            let accent_rect = Rect::new(frame.x + 24.0, frame.y, frame.w - 48.0, 3.0);
-            ctx.fill_rect(accent_rect, primary, Some(Radius::uniform(1.5)));
+            let inset = 24.0f32.min(frame.w * 0.5);
+            let accent_w = (frame.w - inset * 2.0).max(0.0);
+            let accent_h = 3.0f32.min(frame.h);
+            if accent_w > 0.0 && accent_h > 0.0 {
+                let accent_rect = Rect::new(frame.x + inset, frame.y, accent_w, accent_h);
+                ctx.fill_rect(
+                    accent_rect,
+                    primary,
+                    Some(Radius::uniform((accent_h * 0.5).min(accent_w * 0.5))),
+                );
+            }
         }
 
         // Border
@@ -162,11 +179,29 @@ component! {
 
         // Title
         if let Some(ref title) = self.title {
-            let title_rect = Rect::new(frame.x + self.padding, frame.y, frame.w - self.padding * 2.0, 44.0);
-            let title_y = ctx.visual_center_y(title_rect, 15.0);
-            ctx.draw_text(title, Point::new(frame.x + self.padding, title_y), text, 15.0);
-            let sep_y = frame.y + 44.0 + 4.0;
-            ctx.fill_rect(Rect::new(frame.x + self.padding, sep_y, frame.w - self.padding * 2.0, 1.0), border_secondary, None);
+            if let Some(title_rect) = self.title_text_rect(frame) {
+                if let Some((visible_title, font_size)) = fitted_text(
+                    ctx,
+                    title,
+                    Self::TITLE_FONT_SIZE,
+                    Self::TITLE_MIN_FONT_SIZE,
+                    title_rect.w,
+                    (title_rect.h - Self::TITLE_VERTICAL_INSET * 2.0).max(0.0),
+                ) {
+                    let title_y = ctx.visual_center_y(title_rect, font_size);
+                    ctx.push_clip(title_rect);
+                    ctx.draw_text(
+                        &visible_title,
+                        Point::new(title_rect.x, title_y),
+                        text,
+                        font_size,
+                    );
+                    ctx.pop_clip();
+                }
+            }
+            if let Some(separator) = self.title_separator_rect(frame) {
+                ctx.fill_rect(separator, border_secondary, None);
+            }
         }
 
         // Actions
@@ -185,11 +220,38 @@ component! {
                     ctx.fill_rect(btn_rect, ctx.tokens().color_fill_tertiary(), None);
                 }
                 if self.focused && self.focused_action == i {
-                    ctx.stroke_rect(btn_rect, primary, 2.0, None);
+                    let inset = 1.0f32.min(btn_rect.w * 0.5).min(btn_rect.h * 0.5);
+                    ctx.stroke_rect(
+                        Rect::new(
+                            btn_rect.x + inset,
+                            btn_rect.y + inset,
+                            (btn_rect.w - inset * 2.0).max(0.0),
+                            (btn_rect.h - inset * 2.0).max(0.0),
+                        ),
+                        primary,
+                        2.0,
+                        None,
+                    );
                 }
-                let ay = ctx.visual_center_y(btn_rect, 13.0);
-                let text_w = ctx.measure_text(action, 13.0).w;
-                ctx.draw_text(action, Point::new(btn_rect.x + (btn_w - text_w) * 0.5, ay), primary, 13.0);
+                if let Some((visible_action, font_size)) = fitted_text(
+                    ctx,
+                    action,
+                    Self::ACTION_FONT_SIZE,
+                    Self::ACTION_MIN_FONT_SIZE,
+                    (btn_rect.w - Self::ACTION_HORIZONTAL_INSET * 2.0).max(0.0),
+                    (btn_rect.h - Self::ACTION_VERTICAL_INSET * 2.0).max(0.0),
+                ) {
+                    let ay = ctx.visual_center_y(btn_rect, font_size);
+                    let text_w = ctx.measure_text(&visible_action, font_size).w;
+                    ctx.push_clip(btn_rect);
+                    ctx.draw_text(
+                        &visible_action,
+                        Point::new(btn_rect.x + (btn_w - text_w) * 0.5, ay),
+                        primary,
+                        font_size,
+                    );
+                    ctx.pop_clip();
+                }
                 if i < self.actions.len() - 1 {
                     let divider_h = (action_rect.h - 16.0).max(0.0);
                     ctx.fill_rect(
@@ -205,6 +267,7 @@ component! {
                 }
             }
         }
+        ctx.pop_clip();
     }
 
     // 扩展脏区域覆盖完整阴影渲染范围。
@@ -289,6 +352,10 @@ component! {
             .map(|(child, rect)| (child.id, rect))
             .collect()
     }
+
+    children_clip => (&self, frame: Rect) -> Option<Rect> {
+        Some(self.body_rect(frame))
+    }
 }
 
 /// Render a multi-layer elevation shadow with directional and ambient layers.
@@ -372,15 +439,30 @@ impl Default for Card {
 
 impl Card {
     const ACTION_HEIGHT: f32 = 40.0;
+    const ACTION_FONT_SIZE: f32 = 13.0;
+    const ACTION_HORIZONTAL_INSET: f32 = 6.0;
+    const ACTION_MIN_FONT_SIZE: f32 = 10.0;
+    const ACTION_VERTICAL_INSET: f32 = 2.0;
     const DEFAULT_WIDTH: f32 = 200.0;
     const DEFAULT_HEIGHT: f32 = 120.0;
+    const TITLE_BLOCK_HEIGHT: f32 = 56.0;
+    const TITLE_FONT_SIZE: f32 = 15.0;
+    const TITLE_MIN_FONT_SIZE: f32 = 11.0;
+    const TITLE_SEPARATOR_OFFSET: f32 = 48.0;
+    const TITLE_TEXT_HEIGHT: f32 = 44.0;
+    const TITLE_VERTICAL_INSET: f32 = 2.0;
 
     fn body_rect(&self, frame: Rect) -> Rect {
         // 标题和 actions 为固定区，body 只使用二者之间的剩余空间。
         let frame_w = frame.w.max(0.0);
         let frame_h = frame.h.max(0.0);
         let padding = self.padding.max(0.0);
-        let title_offset = if self.title.is_some() { 56.0 } else { padding }.min(frame_h);
+        let title_offset = if self.title.is_some() {
+            Self::TITLE_BLOCK_HEIGHT
+        } else {
+            padding
+        }
+        .min(frame_h);
         let action_top = self
             .action_rect(frame)
             .map(|rect| rect.y)
@@ -395,6 +477,48 @@ impl Card {
             (frame_w - left_padding - right_padding).max(0.0),
             (action_top - body_y - bottom_padding).max(0.0),
         )
+    }
+
+    fn padded_horizontal_rect(&self, frame: Rect, y: f32, height: f32) -> Rect {
+        let frame_w = frame.w.max(0.0);
+        let padding = self.padding.max(0.0);
+        let left_padding = padding.min(frame_w);
+        let right_padding = padding.min((frame_w - left_padding).max(0.0));
+        Rect::new(
+            frame.x + left_padding,
+            y,
+            (frame_w - left_padding - right_padding).max(0.0),
+            height.max(0.0),
+        )
+    }
+
+    fn title_available_height(&self, frame: Rect) -> f32 {
+        let frame_h = frame.h.max(0.0);
+        let action_top = self
+            .action_rect(frame)
+            .map(|rect| rect.y)
+            .unwrap_or(frame.y + frame_h);
+        (action_top - frame.y)
+            .max(0.0)
+            .min(Self::TITLE_BLOCK_HEIGHT)
+    }
+
+    fn title_text_rect(&self, frame: Rect) -> Option<Rect> {
+        self.title.as_ref()?;
+        let height = self
+            .title_available_height(frame)
+            .min(Self::TITLE_TEXT_HEIGHT);
+        (height > 0.0).then(|| self.padded_horizontal_rect(frame, frame.y, height))
+    }
+
+    fn title_separator_rect(&self, frame: Rect) -> Option<Rect> {
+        self.title.as_ref()?;
+        let available_height = self.title_available_height(frame);
+        if available_height < Self::TITLE_SEPARATOR_OFFSET + 1.0 {
+            return None;
+        }
+        let rect = self.padded_horizontal_rect(frame, frame.y + Self::TITLE_SEPARATOR_OFFSET, 1.0);
+        (rect.w > 0.0).then_some(rect)
     }
 
     pub(crate) fn action_rect(&self, frame: Rect) -> Option<Rect> {
@@ -567,4 +691,86 @@ impl Card {
             frame.h.max(0.0),
         )));
     }
+}
+
+fn fitted_text(
+    ctx: &mut PaintContext<'_>,
+    text: &str,
+    base_size: f32,
+    min_size: f32,
+    max_width: f32,
+    max_height: f32,
+) -> Option<(String, f32)> {
+    if !base_size.is_finite()
+        || base_size <= 0.0
+        || !min_size.is_finite()
+        || min_size <= 0.0
+        || !max_width.is_finite()
+        || max_width <= 0.0
+        || !max_height.is_finite()
+        || max_height <= 0.0
+    {
+        return None;
+    }
+    let visible = text.replace(['\r', '\n'], " ");
+    let base_height = conservative_text_height(ctx, &visible, base_size);
+    let height_scale = if base_height > 0.0 {
+        (max_height / base_height).clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    let font_size = (base_size * height_scale).min(base_size);
+    let minimum = min_size.min(base_size);
+    let font_size = if font_size >= minimum {
+        font_size
+    } else if conservative_text_height(ctx, &visible, minimum) <= max_height {
+        minimum
+    } else {
+        return None;
+    };
+    let visible = elide_text_to_width(ctx, &visible, font_size, max_width)?;
+    Some((visible, font_size))
+}
+
+fn conservative_text_width(ctx: &mut PaintContext<'_>, text: &str, font_size: f32) -> f32 {
+    let measured = ctx.measure_text(text, font_size).w;
+    let estimated =
+        crate::draw::font::text_backend::estimate_text_metrics(text, f32::INFINITY, font_size)
+            .max_line_width;
+    measured.max(estimated)
+}
+
+fn conservative_text_height(ctx: &mut PaintContext<'_>, text: &str, font_size: f32) -> f32 {
+    ctx.measure_text(text, font_size)
+        .h
+        .max(ctx.line_box_height(font_size))
+}
+
+fn elide_text_to_width(
+    ctx: &mut PaintContext<'_>,
+    text: &str,
+    font_size: f32,
+    max_width: f32,
+) -> Option<String> {
+    if conservative_text_width(ctx, text, font_size) <= max_width {
+        return Some(text.to_string());
+    }
+
+    const ELLIPSIS: &str = "…";
+    if conservative_text_width(ctx, ELLIPSIS, font_size) > max_width {
+        return None;
+    }
+    let mut visible = String::new();
+    for ch in text.chars() {
+        visible.push(ch);
+        visible.push_str(ELLIPSIS);
+        let fits = conservative_text_width(ctx, &visible, font_size) <= max_width;
+        visible.pop();
+        if !fits {
+            visible.pop();
+            break;
+        }
+    }
+    visible.push_str(ELLIPSIS);
+    Some(visible)
 }

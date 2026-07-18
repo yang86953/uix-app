@@ -1,7 +1,68 @@
+use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::painting::PaintPass;
+use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::widgets::display::card::*;
 use crate::ui::AccessibilityRole;
+
+fn render_card_in(card: &Card, frame: Rect, surface_size: (i32, i32)) -> String {
+    render_card_in_pass(card, frame, surface_size, PaintPass::Content)
+}
+
+fn render_card_in_pass(
+    card: &Card,
+    frame: Rect,
+    surface_size: (i32, i32),
+    paint_pass: PaintPass,
+) -> String {
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(surface_size.0, surface_size.1));
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+    let mut display_list = crate::draw::painting::DisplayList::new();
+    {
+        let mut ctx = PaintContext::new_for_test(
+            &mut canvas,
+            font,
+            &fonts,
+            &images,
+            &tokens,
+            96.0,
+            1.0,
+            Orientation::YDown,
+            surface_size.0,
+            surface_size.1,
+        );
+        ctx.set_paint_pass(paint_pass);
+        ctx.with_recorder(&mut display_list, |ctx| {
+            WidgetRender::render(card, frame, ctx, &tree);
+        });
+    }
+    format!("{display_list:?}")
+}
+
+fn recorded_text_font_sizes(display_list: &str) -> Vec<f32> {
+    let marker = "font_size: ";
+    display_list
+        .match_indices(marker)
+        .map(|(start, _)| {
+            let start = start + marker.len();
+            let end = display_list[start..]
+                .find([' ', '}', ']'])
+                .map_or(display_list.len(), |offset| start + offset);
+            display_list[start..end]
+                .trim_end_matches(',')
+                .parse()
+                .expect("recorded Card font size")
+        })
+        .collect()
+}
 
 struct FixedChild(Size);
 
@@ -126,6 +187,87 @@ fn action_rect_stays_inside_short_card() {
         card.action_rect(Rect::new(4.0, 6.0, 80.0, 24.0)),
         Some(Rect::new(4.0, 6.0, 80.0, 24.0))
     );
+}
+
+#[test]
+fn card_children_are_clipped_to_the_body_rect() {
+    let card = Card::new()
+        .title("Profile")
+        .actions(vec!["Save"])
+        .padding(16.0);
+
+    assert_eq!(
+        WidgetRender::children_clip(&card, Rect::new(4.0, 6.0, 120.0, 120.0)),
+        Some(Rect::new(20.0, 62.0, 88.0, 8.0))
+    );
+
+    let exhausted = Card::new()
+        .title("Profile")
+        .actions(vec!["Save"])
+        .padding(80.0);
+    assert_eq!(
+        WidgetRender::children_clip(&exhausted, Rect::new(0.0, 0.0, 60.0, 40.0)),
+        Some(Rect::new(60.0, 0.0, 0.0, 0.0))
+    );
+}
+
+#[test]
+fn card_render_elides_long_title_and_action_labels_at_readable_sizes() {
+    let card = Card::new()
+        .title("A very long card title that must remain inside")
+        .actions(vec!["Open detailed settings", "Cancel operation"])
+        .elevation(0);
+    let display_list = render_card_in(&card, Rect::new(0.0, 0.0, 120.0, 96.0), (120, 96));
+    let font_sizes = recorded_text_font_sizes(&display_list);
+
+    assert_eq!(font_sizes.len(), 3, "title and two actions should render");
+    assert_eq!(font_sizes, vec![15.0, 13.0, 13.0]);
+    assert_eq!(
+        display_list.matches('…').count(),
+        3,
+        "long labels should elide instead of becoming unreadably small: {display_list}"
+    );
+    assert!(
+        display_list.matches("PushClip").count() >= 4,
+        "card, title, and action slots should be clipped: {display_list}"
+    );
+}
+
+#[test]
+fn card_render_omits_exhausted_title_and_never_records_negative_geometry() {
+    let card = Card::new()
+        .title("Hidden title")
+        .actions(vec!["Action"])
+        .padding(80.0)
+        .elevation(2);
+    let display_list = render_card_in(&card, Rect::new(0.0, 0.0, 30.0, 24.0), (30, 24));
+
+    assert!(
+        !display_list.contains("Hidden title"),
+        "actions consume the whole short card, so the title must not paint: {display_list}"
+    );
+    assert!(
+        display_list.contains('…'),
+        "the short card should keep a readable elided action: {display_list}"
+    );
+    assert!(!display_list.contains("w: -"), "{display_list}");
+    assert!(!display_list.contains("h: -"), "{display_list}");
+}
+
+#[test]
+fn card_after_children_pass_does_not_cover_body_content() {
+    let card = Card::new()
+        .title("Profile")
+        .actions(vec!["Save"])
+        .child(FixedChild(Size::new(20.0, 20.0)));
+    let display_list = render_card_in_pass(
+        &card,
+        Rect::new(0.0, 0.0, 120.0, 96.0),
+        (120, 96),
+        PaintPass::AfterChildren,
+    );
+
+    assert_eq!(display_list, "DisplayList { ops: [] }");
 }
 
 #[test]
