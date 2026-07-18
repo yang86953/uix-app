@@ -89,6 +89,19 @@ impl CpuOffscreenPool {
             .fold(0usize, usize::saturating_add)
     }
 
+    /// Compact the slot array by truncating trailing `None` entries.
+    /// Also removes free IDs that now point beyond the compacted length.
+    pub fn compact(&mut self) {
+        while self.offscreens.last().is_some_and(|s| s.is_none()) {
+            self.offscreens.pop();
+        }
+        // Recompute next_id as max(used_id) + 1 to avoid gaps.
+        // Retain free_ids that still point within bounds.
+        self.free_ids
+            .retain(|id| (*id as usize) < self.offscreens.len());
+        self.next_id = self.offscreens.len() as u32;
+    }
+
     #[cfg(test)]
     pub(crate) fn slot_len(&self) -> usize {
         self.offscreens.len()

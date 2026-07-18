@@ -199,6 +199,7 @@ impl RenderBackend for CpuBackend {
             self.active_offscreen = None;
         }
         self.offscreens.destroy(handle);
+        self.offscreens.compact();
     }
 
     fn offscreen_canvas(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {
