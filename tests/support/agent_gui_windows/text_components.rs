@@ -1054,6 +1054,86 @@ fn real_demo_avatar_scales_cjk_text_and_clips_constrained_geometry() {
 }
 
 #[test]
+#[ignore = "requires an interactive Windows desktop and writes Calendar layout evidence"]
+fn real_demo_calendar_localizes_scales_and_keeps_pointer_keyboard_geometry_aligned() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(42, "calendar-layout");
+    let snapshot = session.snapshot("calendar-layout-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "calendar"
+    );
+
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "group");
+    assert_eq!(target["visible_bounds"]["w"], 154.0);
+    assert_eq!(target["visible_bounds"]["h"], 172.0);
+    assert_eq!(
+        target["state"]["value_text"],
+        "2026-07-15; focused 2026-07-15"
+    );
+    let english = node_by_automation_id(&snapshot, "component-qa-calendar-english");
+    assert_eq!(english["visible_bounds"]["w"], 140.0);
+    assert_eq!(english["visible_bounds"]["h"], 160.0);
+    assert_eq!(
+        english["state"]["value_text"],
+        "2026-09-30; focused 2026-09-30"
+    );
+    let constrained = node_by_automation_id(&snapshot, "component-qa-calendar-constrained");
+    assert_eq!(constrained["visible_bounds"]["w"], 140.0);
+    assert_eq!(constrained["visible_bounds"]["h"], 100.0);
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-calendar-year-jump")["state"]["value_text"],
+        "9999-12-31; focused 9999-12-31"
+    );
+
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-calendar", "calendar-layout-light.png");
+    let focused = session.focus("component-qa-target", "calendar-focus");
+    assert_eq!(
+        node_by_automation_id(&focused, "component-qa-target")["focused"],
+        true
+    );
+    let moved = session.press_key("right", "calendar-keyboard-right");
+    assert_eq!(
+        node_by_automation_id(&moved, "component-qa-target")["state"]["value_text"],
+        "2026-07-15; focused 2026-07-16"
+    );
+    let committed = session.press_key("enter", "calendar-keyboard-commit");
+    assert_eq!(
+        node_by_automation_id(&committed, "component-qa-target")["state"]["value_text"],
+        "2026-07-16; focused 2026-07-16"
+    );
+    let previous = session.click_at_fraction(
+        "component-qa-target",
+        0.05,
+        0.04,
+        "calendar-pointer-previous",
+    );
+    assert_eq!(
+        node_by_automation_id(&previous, "component-qa-target")["state"]["value_text"],
+        "2026-07-16; focused 2026-06-16"
+    );
+    let restored = session.press_key("page_down", "calendar-restore-month");
+    assert_eq!(
+        node_by_automation_id(&restored, "component-qa-target")["state"]["value_text"],
+        "2026-07-16; focused 2026-07-16"
+    );
+    session.capture("uix-calendar", "calendar-layout-keyboard.png");
+
+    let dark = session.invoke("theme-toggle", "calendar-dark-theme");
+    assert_eq!(
+        node_by_automation_id(&dark, "component-qa-calendar-constrained")["visible_bounds"]["h"],
+        100.0
+    );
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-calendar", "calendar-layout-dark.png");
+    session.close();
+}
+
+#[test]
 #[ignore = "requires an interactive Windows desktop and writes Checkbox CJK evidence"]
 fn real_demo_checkbox_uses_compact_cjk_width_and_toggles() {
     let _guard = REAL_GUI_LOCK

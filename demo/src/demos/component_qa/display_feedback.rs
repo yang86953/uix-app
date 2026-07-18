@@ -33,6 +33,20 @@ fn avatar_frame(avatar: Avatar, width: f32, height: f32, automation_id: &'static
         .align_self(AlignItems::Start)
 }
 
+fn calendar_frame(
+    calendar: Calendar,
+    width: f32,
+    height: f32,
+    automation_id: &'static str,
+) -> ViewNode {
+    grid([embed(calendar).automation_id(automation_id)])
+        .columns(vec![GridTrack::Fr(1.0)])
+        .rows(vec![GridTrack::Fr(1.0)])
+        .width(width)
+        .height(height)
+        .align_self(AlignItems::Start)
+}
+
 pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
     let view = match id {
         "avatar" => column_fit([
@@ -158,7 +172,69 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
             ]),
         ])
         .gap(14.0),
-        "calendar" => qa_target(Calendar::new().cell_size(26.0)),
+        "calendar" => column_fit([
+            qa_row([
+                qa_variant(
+                    "Selected / target",
+                    calendar_frame(
+                        Calendar::new()
+                            .cell_size(22.0)
+                            .default_date(Date::new(2026, 7, 15)),
+                        154.0,
+                        172.0,
+                        "component-qa-target",
+                    ),
+                ),
+                qa_variant(
+                    "en-US / compact",
+                    LocaleProvider::en_us()
+                        .child(|| {
+                            calendar_frame(
+                                Calendar::new()
+                                    .cell_size(20.0)
+                                    .default_date(Date::new(2026, 9, 30)),
+                                140.0,
+                                160.0,
+                                "component-qa-calendar-english",
+                            )
+                        })
+                        .build(),
+                ),
+                qa_variant(
+                    "Year jump / 9999",
+                    calendar_frame(
+                        Calendar::new()
+                            .cell_size(20.0)
+                            .default_date(Date::new(9999, 12, 31))
+                            .year_jump(true),
+                        140.0,
+                        160.0,
+                        "component-qa-calendar-year-jump",
+                    ),
+                ),
+            ]),
+            qa_row([
+                qa_variant(
+                    "140x100 / constrained",
+                    calendar_frame(
+                        Calendar::new().cell_size(40.0).default_displayed(2026, 7),
+                        140.0,
+                        100.0,
+                        "component-qa-calendar-constrained",
+                    ),
+                ),
+                qa_variant(
+                    "Compact / empty",
+                    calendar_frame(
+                        Calendar::new().cell_size(20.0).default_displayed(2026, 2),
+                        140.0,
+                        160.0,
+                        "component-qa-calendar-empty",
+                    ),
+                ),
+            ]),
+        ])
+        .gap(14.0),
         "card" => qa_row([
             qa_variant(
                 "Bordered / target",

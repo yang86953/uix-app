@@ -587,7 +587,17 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
         "calendar",
         "Calendar",
         "数据展示",
-        &["month", "selected", "compact"],
+        &[
+            "month",
+            "selected",
+            "compact",
+            "localized",
+            "constrained",
+            "keyboard",
+            "pointer-navigation",
+            "year-jump",
+            "focus",
+        ],
     ),
     widget(
         "card",
