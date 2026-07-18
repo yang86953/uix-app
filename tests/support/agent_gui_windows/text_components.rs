@@ -3375,6 +3375,96 @@ fn real_demo_rich_text_clips_wraps_and_exposes_link_semantics() {
 }
 
 #[test]
+#[ignore = "requires an interactive Windows desktop and writes Alert layout evidence"]
+fn real_demo_alert_clips_long_content_and_commits_close_on_release() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(58, "alert-layout");
+    let snapshot = session.snapshot("alert-layout-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "alert"
+    );
+
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "alert");
+    assert_eq!(target["name"], "成功：组件视觉符合基线");
+    assert_eq!(
+        target["state"]["value_text"],
+        "完整释放关闭，说明也进入可访问值"
+    );
+    assert_eq!(target["visible_bounds"]["w"], 240.0);
+    assert_eq!(target["visible_bounds"]["h"], 54.0);
+    let constrained = node_by_automation_id(&snapshot, "component-qa-alert-constrained");
+    assert_eq!(constrained["visible_bounds"]["w"], 132.0);
+    assert_eq!(constrained["visible_bounds"]["h"], 54.0);
+    session.capture("uix-alert", "alert-layout-light.png");
+
+    if let Ok(hold_ms) = std::env::var("UIX_ALERT_QA_HOLD_LIGHT_MS") {
+        let hold_ms = hold_ms
+            .parse::<u64>()
+            .expect("valid light Alert QA hold millis");
+        eprintln!("ALERT_QA_LIGHT_READY hold_ms={hold_ms}");
+        thread::sleep(Duration::from_millis(hold_ms));
+    }
+    let dark = session.invoke("theme-toggle", "alert-dark-theme");
+    assert_eq!(
+        node_by_automation_id(&dark, "component-qa-alert-constrained")["visible_bounds"]["w"],
+        132.0
+    );
+    session.capture("uix-alert", "alert-layout-dark.png");
+    if let Ok(hold_ms) = std::env::var("UIX_ALERT_QA_HOLD_MS") {
+        let hold_ms = hold_ms.parse::<u64>().expect("valid Alert QA hold millis");
+        eprintln!("ALERT_QA_DARK_READY hold_ms={hold_ms}");
+        thread::sleep(Duration::from_millis(hold_ms));
+    }
+
+    let focused = session.focus("component-qa-target", "alert-focus");
+    assert_eq!(
+        node_by_automation_id(&focused, "component-qa-target")["focused"],
+        true
+    );
+    let pressed = session.pointer_button_at_offset(
+        "component-qa-target",
+        0.95,
+        27.0,
+        "pointer_down",
+        "alert-pressed",
+    );
+    assert_eq!(
+        node_by_automation_id(&pressed, "component-qa-target")["name"],
+        "成功：组件视觉符合基线",
+        "pointer down must not close Alert"
+    );
+    if let Ok(hold_ms) = std::env::var("UIX_ALERT_QA_PRESSED_HOLD_MS") {
+        let hold_ms = hold_ms
+            .parse::<u64>()
+            .expect("valid pressed Alert QA hold millis");
+        eprintln!("ALERT_QA_PRESSED_READY hold_ms={hold_ms}");
+        thread::sleep(Duration::from_millis(hold_ms));
+    }
+    let released = session.pointer_button_at_offset(
+        "component-qa-target",
+        0.95,
+        27.0,
+        "pointer_up",
+        "alert-released",
+    );
+    let closed_target = node_by_automation_id(&released, "component-qa-target");
+    assert_eq!(
+        closed_target["visible_bounds"],
+        Value::Null,
+        "matching pointer up must hide Alert: {closed_target}"
+    );
+    assert_eq!(
+        closed_target["frame"]["w"], 0.0,
+        "hidden Alert must report zero measured width inside the fixed QA shell: {closed_target}"
+    );
+    session.close();
+}
+
+#[test]
 #[ignore = "requires an interactive Windows desktop and writes Label multiline evidence"]
 fn real_demo_label_multiline_keeps_following_content_below_all_lines() {
     let _guard = REAL_GUI_LOCK

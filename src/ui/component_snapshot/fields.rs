@@ -785,9 +785,15 @@ impl SnapshotFields {
                 ..
             } => badge_accessibility(*count, *max, *dot, *status, *show_zero, text),
             Self::ProgressBar { mode, .. } => progress_accessibility(*mode),
-            Self::Alert { message, .. } => {
-                AccessibilitySnapshot::named(AccessibilityRole::Alert, message.clone())
-            }
+            Self::Alert {
+                message,
+                description,
+                ..
+            } => AccessibilitySnapshot::named(AccessibilityRole::Alert, message.clone())
+                .with_state(AccessibilityState {
+                    value_text: (!description.is_empty()).then(|| description.clone()),
+                    ..AccessibilityState::default()
+                }),
             Self::Popconfirm(popconfirm) => popconfirm_accessibility(
                 &popconfirm.title,
                 &popconfirm.confirm_text,

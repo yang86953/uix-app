@@ -190,6 +190,18 @@ fn rich_text_frame(
     .align_self(AlignItems::Start)
 }
 
+fn alert_frame(alert: Alert, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
+    grid([embed(alert)
+        .width(width)
+        .height(height)
+        .automation_id(automation_id)])
+    .columns(vec![GridTrack::Fr(1.0)])
+    .rows(vec![GridTrack::Fr(1.0)])
+    .width(width)
+    .height(height)
+    .align_self(AlignItems::Start)
+}
+
 fn avatar_frame(avatar: Avatar, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
     grid([embed(avatar).automation_id(automation_id)])
         .columns(vec![GridTrack::Fr(1.0)])
@@ -1149,13 +1161,33 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
         ])
         .gap(14.0),
         "alert" => column_fit([
-            qa_target(Alert::new("成功：组件视觉符合基线").type_(StatusLevel::Success)),
-            embed(Alert::new("信息：保留可追溯证据").type_(StatusLevel::Info)),
-            embed(Alert::new("警告：需要人工复核").type_(StatusLevel::Warning)),
-            embed(
-                Alert::new("错误：发现阻断缺陷")
-                    .type_(StatusLevel::Error)
+            alert_frame(
+                Alert::new("成功：组件视觉符合基线")
+                    .description("完整释放关闭，说明也进入可访问值")
+                    .type_(StatusLevel::Success)
                     .closable(),
+                240.0,
+                54.0,
+                "component-qa-target",
+            ),
+            alert_frame(
+                Alert::new("信息：无图标状态仍保持正文对比")
+                    .type_(StatusLevel::Info)
+                    .show_icon(false),
+                240.0,
+                36.0,
+                "component-qa-alert-no-icon",
+            ),
+            embed(Alert::new("警告：需要人工复核").type_(StatusLevel::Warning)),
+            embed(Alert::new("错误：发现阻断缺陷").type_(StatusLevel::Error)),
+            alert_frame(
+                Alert::new("受限：超长中英文 mixed alert message")
+                    .description("说明不会覆盖关闭按钮或越过 frame")
+                    .type_(StatusLevel::Warning)
+                    .closable(),
+                132.0,
+                54.0,
+                "component-qa-alert-constrained",
             ),
         ])
         .gap(8.0),
