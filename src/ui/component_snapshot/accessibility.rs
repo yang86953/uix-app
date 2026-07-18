@@ -1,5 +1,5 @@
 use crate::ui::widgets::{
-    AnchorItem, BadgeStatus, BreadcrumbItem, Date, MenuItem, OptGroup, ProgressMode,
+    AnchorItem, BadgeStatus, BreadcrumbItem, Date, MenuItem, OptGroup, ProgressMode, ResultType,
     RichTextSegment, SelectableItem, Step, Tab, UploadFile, UploadStatus,
 };
 
@@ -479,12 +479,22 @@ pub(super) fn input_number_accessibility(
 }
 
 pub(super) fn result_accessibility(
+    result_type: ResultType,
     title: &str,
     subtitle: &str,
     extra_text: &str,
 ) -> AccessibilitySnapshot {
+    let title = if title.is_empty() {
+        result_type.localized_title()
+    } else {
+        title
+    };
+    let subtitle = if subtitle.is_empty() {
+        result_type.localized_subtitle()
+    } else {
+        subtitle
+    };
     let action = !extra_text.is_empty();
-    let summary = first_non_empty([title, subtitle]);
     AccessibilitySnapshot::named(
         if action {
             AccessibilityRole::Button
@@ -494,11 +504,22 @@ pub(super) fn result_accessibility(
         if action {
             extra_text.to_owned()
         } else {
-            summary.clone()
+            title.to_owned()
         },
     )
     .with_state(AccessibilityState {
-        value_text: (action && !summary.is_empty()).then_some(summary),
+        value_text: if action {
+            Some(
+                [title, subtitle]
+                    .into_iter()
+                    .filter(|value| !value.is_empty())
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            )
+            .filter(|value| !value.is_empty())
+        } else {
+            (!subtitle.is_empty()).then(|| subtitle.to_owned())
+        },
         ..AccessibilityState::default()
     })
 }

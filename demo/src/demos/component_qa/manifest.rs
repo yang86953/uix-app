@@ -691,7 +691,16 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
         "result-view",
         "ResultView",
         "数据展示",
-        &["success", "warning", "error", "pressed", "focus"],
+        &[
+            "success",
+            "warning",
+            "error",
+            "subtitle",
+            "localized-default",
+            "constrained",
+            "pressed",
+            "focus",
+        ],
     ),
     widget(
         "selectable-list",

@@ -1575,6 +1575,57 @@ fn real_demo_list_keeps_rows_inside_constrained_frames() {
 }
 
 #[test]
+#[ignore = "requires an interactive Windows desktop and writes ResultView visual evidence"]
+fn real_demo_result_view_keeps_status_and_action_inside_constrained_frames() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(50, "result-layout");
+    let snapshot = session.snapshot("result-layout-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "result-view"
+    );
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "button");
+    assert_eq!(target["name"], "查看证据");
+    assert_eq!(target["visible_bounds"]["w"], 172.0);
+    assert_eq!(target["visible_bounds"]["h"], 190.0);
+
+    let warning = node_by_automation_id(&snapshot, "component-qa-result-warning");
+    assert_eq!(warning["role"], "status");
+    assert_eq!(warning["name"], "需要复核");
+    assert_eq!(warning["visible_bounds"]["w"], 172.0);
+    assert_eq!(warning["visible_bounds"]["h"], 190.0);
+
+    let constrained = node_by_automation_id(&snapshot, "component-qa-result-constrained");
+    assert_eq!(constrained["role"], "button");
+    assert_eq!(constrained["name"], "查看完整质量核验报告");
+    assert_eq!(constrained["visible_bounds"]["w"], 140.0);
+    assert_eq!(constrained["visible_bounds"]["h"], 180.0);
+
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-result", "result-layout-light.png");
+
+    let focused = session.focus("component-qa-target", "result-focus");
+    assert_eq!(
+        node_by_automation_id(&focused, "component-qa-target")["focused"],
+        true
+    );
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-result", "result-layout-focus.png");
+
+    let dark = session.invoke("theme-toggle", "result-dark-theme");
+    assert_eq!(
+        node_by_automation_id(&dark, "component-qa-result-constrained")["visible_bounds"]["w"],
+        140.0
+    );
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-result", "result-layout-dark.png");
+    session.close();
+}
+
+#[test]
 #[ignore = "requires an interactive Windows desktop and writes Checkbox CJK evidence"]
 fn real_demo_checkbox_uses_compact_cjk_width_and_toggles() {
     let _guard = REAL_GUI_LOCK

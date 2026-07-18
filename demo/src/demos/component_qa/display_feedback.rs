@@ -99,6 +99,20 @@ fn list_frame(list: List, width: f32, height: f32, automation_id: &'static str) 
         .align_self(AlignItems::Start)
 }
 
+fn result_frame(
+    result: ResultView,
+    width: f32,
+    height: f32,
+    automation_id: &'static str,
+) -> ViewNode {
+    grid([embed(result).automation_id(automation_id)])
+        .columns(vec![GridTrack::Fr(1.0)])
+        .rows(vec![GridTrack::Fr(1.0)])
+        .width(width)
+        .height(height)
+        .align_self(AlignItems::Start)
+}
+
 fn avatar_frame(avatar: Avatar, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
     grid([embed(avatar).automation_id(automation_id)])
         .columns(vec![GridTrack::Fr(1.0)])
@@ -676,29 +690,46 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
         "result-view" => qa_row([
             qa_variant(
                 "Success / target",
-                qa_target(
+                result_frame(
                     ResultView::new(ResultType::Success)
                         .title("验收通过")
+                        .subtitle("所有关键检查已通过")
                         .extra_text("查看证据"),
-                )
-                .width(172.0)
-                .height(190.0),
-            )
-            .width(172.0),
+                    172.0,
+                    190.0,
+                    "component-qa-target",
+                ),
+            ),
             qa_variant(
                 "Warning",
-                embed(ResultView::new(ResultType::Warning).title("需要复核"))
-                    .width(172.0)
-                    .height(190.0),
-            )
-            .width(172.0),
+                result_frame(
+                    ResultView::new(ResultType::Warning).title("需要复核"),
+                    172.0,
+                    190.0,
+                    "component-qa-result-warning",
+                ),
+            ),
             qa_variant(
                 "Error",
-                embed(ResultView::new(ResultType::Error).title("存在缺陷"))
-                    .width(172.0)
-                    .height(190.0),
-            )
-            .width(172.0),
+                result_frame(
+                    ResultView::new(ResultType::Error).title("存在缺陷"),
+                    172.0,
+                    190.0,
+                    "component-qa-result-error",
+                ),
+            ),
+            qa_variant(
+                "140×180 / constrained",
+                result_frame(
+                    ResultView::new(ResultType::Warning)
+                        .title("当前发布仍有需要人工确认的质量风险")
+                        .subtitle("请检查兼容性、可访问性与回归证据后再继续。")
+                        .extra_text("查看完整质量核验报告"),
+                    140.0,
+                    180.0,
+                    "component-qa-result-constrained",
+                ),
+            ),
         ]),
         "selectable-list" => qa_target(
             SelectableList::new()
