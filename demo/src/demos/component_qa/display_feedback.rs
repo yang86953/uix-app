@@ -24,6 +24,26 @@ fn carousel_slide(text: &str, color: ColorValue) -> ViewNode {
         .bg(color)
 }
 
+fn carousel_compact_slide(text: &str, color: ColorValue) -> ViewNode {
+    column([label(text).font_size(14.0).padding_v(28.0)])
+        .align(AlignItems::Center)
+        .bg(color)
+}
+
+fn carousel_frame(
+    carousel: ViewNode,
+    width: f32,
+    height: f32,
+    automation_id: &'static str,
+) -> ViewNode {
+    grid([carousel.automation_id(automation_id)])
+        .columns(vec![GridTrack::Fr(1.0)])
+        .rows(vec![GridTrack::Fr(1.0)])
+        .width(width)
+        .height(height)
+        .align_self(AlignItems::Start)
+}
+
 fn avatar_frame(avatar: Avatar, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
     grid([embed(avatar).automation_id(automation_id)])
         .columns(vec![GridTrack::Fr(1.0)])
@@ -329,27 +349,104 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
             ]),
         ])
         .gap(14.0),
-        "carousel" => qa_target_view(
-            ViewNode::new(
-                Carousel::new().show_dots(true).show_arrows(true),
-                vec![
-                    carousel_slide(
-                        "Slide 1 / 默认",
-                        ColorValue::Palette(PaletteColor::PrimaryBg),
+        "carousel" => column_fit([
+            qa_variant(
+                "Default / target",
+                carousel_frame(
+                    ViewNode::new(
+                        Carousel::new()
+                            .show_dots(true)
+                            .show_arrows(true)
+                            .size(560.0, 190.0),
+                        vec![
+                            carousel_slide(
+                                "Slide 1 / 默认",
+                                ColorValue::Palette(PaletteColor::PrimaryBg),
+                            )
+                            .automation_id("component-qa-carousel-slide-1"),
+                            carousel_slide(
+                                "Slide 2 / 切换",
+                                ColorValue::Palette(PaletteColor::SuccessBg),
+                            )
+                            .automation_id("component-qa-carousel-slide-2"),
+                            carousel_slide(
+                                "Slide 3 / 回归",
+                                ColorValue::Palette(PaletteColor::WarningBg),
+                            )
+                            .automation_id("component-qa-carousel-slide-3"),
+                        ],
                     ),
-                    carousel_slide(
-                        "Slide 2 / 切换",
-                        ColorValue::Palette(PaletteColor::SuccessBg),
+                    560.0,
+                    190.0,
+                    "component-qa-target",
+                ),
+            ),
+            qa_row([
+                qa_variant(
+                    "140x88 / constrained",
+                    carousel_frame(
+                        ViewNode::new(
+                            Carousel::new().size(140.0, 88.0),
+                            (1..=8)
+                                .map(|index| {
+                                    carousel_compact_slide(
+                                        &format!("Compact {index}"),
+                                        ColorValue::Palette(PaletteColor::PrimaryBg),
+                                    )
+                                })
+                                .collect(),
+                        ),
+                        140.0,
+                        88.0,
+                        "component-qa-carousel-constrained",
                     ),
-                    carousel_slide(
-                        "Slide 3 / 回归",
-                        ColorValue::Palette(PaletteColor::WarningBg),
+                ),
+                qa_variant(
+                    "No controls / three slides",
+                    carousel_frame(
+                        ViewNode::new(
+                            Carousel::new()
+                                .show_dots(false)
+                                .show_arrows(false)
+                                .size(180.0, 88.0),
+                            vec![
+                                carousel_compact_slide(
+                                    "Quiet 1",
+                                    ColorValue::Palette(PaletteColor::SuccessBg),
+                                ),
+                                carousel_compact_slide(
+                                    "Quiet 2",
+                                    ColorValue::Palette(PaletteColor::WarningBg),
+                                ),
+                                carousel_compact_slide(
+                                    "Quiet 3",
+                                    ColorValue::Palette(PaletteColor::PrimaryBg),
+                                ),
+                            ],
+                        ),
+                        180.0,
+                        88.0,
+                        "component-qa-carousel-hidden-controls",
                     ),
-                ],
-            )
-            .width(560.0)
-            .height(190.0),
-        ),
+                ),
+                qa_variant(
+                    "Single slide",
+                    carousel_frame(
+                        ViewNode::new(
+                            Carousel::new().size(120.0, 88.0),
+                            vec![carousel_compact_slide(
+                                "Only",
+                                ColorValue::Palette(PaletteColor::WarningBg),
+                            )],
+                        ),
+                        120.0,
+                        88.0,
+                        "component-qa-carousel-single",
+                    ),
+                ),
+            ]),
+        ])
+        .gap(14.0),
         "collapse" => qa_row([
             qa_variant(
                 "Default / target",

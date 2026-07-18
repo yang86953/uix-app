@@ -619,7 +619,16 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
         "carousel",
         "Carousel",
         "数据展示",
-        &["default", "dots", "arrows", "changed", "focus"],
+        &[
+            "default",
+            "dots",
+            "arrows",
+            "changed",
+            "focus",
+            "constrained",
+            "hidden-controls",
+            "single",
+        ],
     ),
     widget(
         "collapse",

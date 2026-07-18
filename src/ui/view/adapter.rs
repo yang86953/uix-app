@@ -21,7 +21,9 @@
 //!   主动探测闭包依赖。
 use crate::ui::accessibility_override::AccessibilityOverride;
 use crate::ui::animation::{begin_animated_capture, end_animated_capture};
-use crate::ui::component_patch::{builtin_widget_runtime_changed, patch_builtin_widget};
+use crate::ui::component_patch::{
+    builtin_widget_config_changed, builtin_widget_runtime_changed, patch_builtin_widget,
+};
 use crate::ui::component_snapshot::SnapshotFields;
 use crate::ui::core::widget::{WidgetCore, WidgetNode};
 use crate::ui::event::{HandlerRegistration, HandlerSignature, SemanticKind};
@@ -620,7 +622,8 @@ impl ViewAdapter {
 
         let runtime_changed = builtin_widget_runtime_changed(current.component(), widget.as_ref());
         let next_fields = widget.snapshot_fields();
-        let config_changed = current.component().snapshot_fields() != next_fields
+        let config_changed = builtin_widget_config_changed(current.component(), widget.as_ref())
+            .unwrap_or_else(|| current.component().snapshot_fields() != next_fields)
             || next_fields == SnapshotFields::Unknown
             || runtime_changed;
         match patch_builtin_widget(current.component_mut(), widget) {

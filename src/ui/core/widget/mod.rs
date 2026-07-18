@@ -237,6 +237,7 @@ pub struct BoxedWidget {
     automation_id: Option<Box<str>>,
     frame: Rect,
     visible: bool,
+    parent_visible: bool,
     visual_transform: ViewTransform,
     view_transition: Option<crate::ui::animation::TransitionPlayer>,
     view_transition_deadline: Option<std::time::Instant>,
@@ -281,6 +282,7 @@ impl BoxedWidget {
             automation_id: None,
             frame: Rect::zero(),
             visible: true,
+            parent_visible: true,
             visual_transform: ViewTransform::default(),
             view_transition: None,
             view_transition_deadline: None,
@@ -789,6 +791,22 @@ impl BoxedWidget {
         self.visible
     }
 
+    pub(crate) fn parent_visibility_gate(&self) -> bool {
+        self.parent_visible
+    }
+
+    pub(crate) fn set_parent_visible(&mut self, visible: bool) {
+        self.parent_visible = visible;
+    }
+
+    pub(crate) fn child_visible(&self, index: usize) -> bool {
+        self.with_component_context(|component| {
+            component
+                .as_layout()
+                .is_none_or(|layout| layout.child_visible(index))
+        })
+    }
+
     pub(crate) fn accepts_events(&self) -> bool {
         self.component.as_event().is_some() || !self.system_event_handlers.is_empty()
     }
@@ -939,7 +957,7 @@ impl WidgetCore for BoxedWidget {
         self.frame = rect;
     }
     fn visible(&self) -> bool {
-        self.visible && self.with_component_context(WidgetComponent::visible)
+        self.visible && self.parent_visible && self.with_component_context(WidgetComponent::visible)
     }
     fn set_visible(&mut self, v: bool) {
         self.visible = v;

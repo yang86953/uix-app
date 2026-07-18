@@ -762,8 +762,40 @@ fn reconcile_carousel_patches_instance_and_syncs_config() {
         SnapshotFields::Carousel {
             show_dots: false,
             show_arrows: false,
+            fixed_width: None,
+            fixed_height: None,
             current: 0,
             slide_count: 0,
         }
+    );
+}
+
+#[test]
+fn reconcile_nonempty_carousel_ignores_runtime_snapshot_fields() {
+    use crate::ui::widgets::{Carousel, Label};
+
+    fn view() -> ViewNode {
+        ViewNode::new(
+            Carousel::new(),
+            vec![
+                ViewNode::leaf(Label::new("First")),
+                ViewNode::leaf(Label::new("Second")),
+            ],
+        )
+    }
+
+    let mut tree = ViewAdapter::build_nodes(view());
+    let root_id = tree.root_id().expect("carousel root should exist");
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 300.0, 200.0));
+    tree.layout();
+    tree.invalidation().lock().unwrap().clear();
+
+    ViewAdapter::reconcile_nodes(&mut tree, view());
+
+    assert!(
+        tree.invalidation().lock().unwrap().is_empty(),
+        "equal authored config must not invalidate because slide_count is runtime state"
     );
 }

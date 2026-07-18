@@ -469,7 +469,7 @@ impl WidgetTree {
         } else {
             event
         };
-        if self.capture_to(target, capture_event) == EventResult::Handled {
+        if let Some(capture_target) = self.capture_to(target, capture_event) {
             if begins_pointer {
                 let _ = self
                     .managers_mut()
@@ -478,6 +478,13 @@ impl WidgetTree {
                 if self.managers().drag.is_gesture_button(button) {
                     self.managers_mut().drag.end_drag();
                 }
+            }
+            if button != MouseButton::Right
+                && self
+                    .get(capture_target)
+                    .is_some_and(|node| node.is_focusable())
+            {
+                self.set_focus(Some(capture_target));
             }
             self.rebuild_widget_overlays();
             return EventResult::Handled;
@@ -614,7 +621,7 @@ impl WidgetTree {
         self.push_scroll_composite(viewport, dx, dy)
     }
 
-    fn capture_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
+    fn capture_to(&mut self, target: WidgetId, event: &SystemEvent) -> Option<WidgetId> {
         // 收集从 root 到 target 的祖先路径（不含 target）
         let mut path = Vec::new();
         let mut current = self.get(target).and_then(|n| n.parent());
@@ -640,10 +647,16 @@ impl WidgetTree {
             };
             if handled {
                 self.on_widget_handled_in_capture(id);
-                return EventResult::Handled;
+                let semantic = self
+                    .get(id)
+                    .and_then(|node| node.semantic_event(id, &localized));
+                if let Some(event) = semantic {
+                    let _ = self.dispatch_semantic(event);
+                }
+                return Some(id);
             }
         }
-        EventResult::NotHandled
+        None
     }
 
     /// capture 阶段拦截事件后：标记拦截节点重绘。

@@ -73,7 +73,7 @@ impl WidgetTree {
             return EventResult::Handled;
         }
         // 捕获阶段：root → target，用于全局快捷键。
-        if self.capture_to(target, event) == EventResult::Handled {
+        if self.capture_to(target, event).is_some() {
             return EventResult::Handled;
         }
         let result = self.dispatch_to(target, event);
@@ -143,7 +143,7 @@ impl WidgetTree {
         };
         self.invalidate_paint(target);
         // 捕获阶段：root → target。
-        if self.capture_to(target, event) == EventResult::Handled {
+        if self.capture_to(target, event).is_some() {
             return EventResult::Handled;
         }
         self.dispatch_to(target, event)

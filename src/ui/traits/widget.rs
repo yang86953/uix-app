@@ -173,6 +173,12 @@ pub trait WidgetLayout: WidgetComponent {
     fn child_overflow_expands_parent(&self) -> bool {
         true
     }
+    /// Whether the direct child at `index` participates in this layout
+    /// container's visible subtree. This does not overwrite the child's
+    /// authored visibility.
+    fn child_visible(&self, _index: usize) -> bool {
+        true
+    }
     /// Prepare a pass-local measurement snapshot for the next child arrange.
     ///
     /// Exact-fill containers keep the default zero-sized descriptors so they do

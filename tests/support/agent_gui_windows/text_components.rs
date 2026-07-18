@@ -1234,6 +1234,99 @@ fn real_demo_card_fits_text_clips_content_and_exposes_keyboard_actions() {
 }
 
 #[test]
+#[ignore = "requires an interactive Windows desktop and writes Carousel visual evidence"]
+fn real_demo_carousel_hides_stale_slides_and_keeps_controls_reachable() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(44, "carousel-layout");
+    let snapshot = session.snapshot("carousel-layout-snapshot");
+    let is_visible_automation_id = |snapshot: &Value, automation_id: &str| {
+        snapshot["nodes"]
+            .as_array()
+            .expect("carousel snapshot nodes")
+            .iter()
+            .any(|node| node["automation_id"] == automation_id && !node["visible_bounds"].is_null())
+    };
+
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "group");
+    assert_eq!(target["state"]["value_text"], "Slide 1 of 3");
+    assert_eq!(target["visible_bounds"]["w"], 560.0);
+    assert_eq!(target["visible_bounds"]["h"], 190.0);
+    assert!(is_visible_automation_id(
+        &snapshot,
+        "component-qa-carousel-slide-1"
+    ));
+    assert!(!is_visible_automation_id(
+        &snapshot,
+        "component-qa-carousel-slide-2"
+    ));
+    assert!(!is_visible_automation_id(
+        &snapshot,
+        "component-qa-carousel-slide-3"
+    ));
+
+    let constrained = node_by_automation_id(&snapshot, "component-qa-carousel-constrained");
+    assert_eq!(constrained["state"]["value_text"], "Slide 1 of 8");
+    assert_eq!(constrained["visible_bounds"]["w"], 140.0);
+    assert_eq!(constrained["visible_bounds"]["h"], 88.0);
+    let hidden = node_by_automation_id(&snapshot, "component-qa-carousel-hidden-controls");
+    assert_eq!(hidden["state"]["value_text"], "Slide 1 of 3");
+    let single = node_by_automation_id(&snapshot, "component-qa-carousel-single");
+    assert_eq!(single["state"]["value_text"], "Slide 1 of 1");
+
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-carousel", "carousel-layout-light.png");
+
+    let changed = session.click_right_slot("component-qa-target", "carousel-pointer-next");
+    let changed_target = node_by_automation_id(&changed, "component-qa-target");
+    assert_eq!(changed_target["state"]["value_text"], "Slide 2 of 3");
+    assert_eq!(changed_target["focused"], true);
+    assert!(!is_visible_automation_id(
+        &changed,
+        "component-qa-carousel-slide-1"
+    ));
+    assert!(is_visible_automation_id(
+        &changed,
+        "component-qa-carousel-slide-2"
+    ));
+    assert!(!is_visible_automation_id(
+        &changed,
+        "component-qa-carousel-slide-3"
+    ));
+    session.capture("uix-carousel", "carousel-layout-pointer.png");
+
+    let ended = session.press_key("end", "carousel-keyboard-end");
+    assert_eq!(
+        node_by_automation_id(&ended, "component-qa-target")["state"]["value_text"],
+        "Slide 3 of 3"
+    );
+    assert!(!is_visible_automation_id(
+        &ended,
+        "component-qa-carousel-slide-1"
+    ));
+    assert!(!is_visible_automation_id(
+        &ended,
+        "component-qa-carousel-slide-2"
+    ));
+    assert!(is_visible_automation_id(
+        &ended,
+        "component-qa-carousel-slide-3"
+    ));
+    session.capture("uix-carousel", "carousel-layout-keyboard.png");
+
+    let dark = session.invoke("theme-toggle", "carousel-dark-theme");
+    assert_eq!(
+        node_by_automation_id(&dark, "component-qa-carousel-constrained")["visible_bounds"]["w"],
+        140.0
+    );
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-carousel", "carousel-layout-dark.png");
+    session.close();
+}
+
+#[test]
 #[ignore = "requires an interactive Windows desktop and writes Checkbox CJK evidence"]
 fn real_demo_checkbox_uses_compact_cjk_width_and_toggles() {
     let _guard = REAL_GUI_LOCK
