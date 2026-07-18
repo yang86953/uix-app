@@ -30,9 +30,64 @@ fn render_tag(tag: &Tag) -> Vec<u32> {
     canvas.surface().pixels().to_vec()
 }
 
+fn render_tag_display(tag: &Tag, frame: Rect, surface_size: (i32, i32)) -> String {
+    let mut canvas = crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer::new(
+        crate::draw::engine::cpu::pixel_surface::PixelSurface::new(surface_size.0, surface_size.1),
+    );
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+    let mut display_list = crate::draw::painting::DisplayList::new();
+    {
+        let mut ctx = PaintContext::new_for_test(
+            &mut canvas,
+            font,
+            &fonts,
+            &images,
+            &tokens,
+            96.0,
+            1.0,
+            crate::draw::spatial::Orientation::YDown,
+            surface_size.0,
+            surface_size.1,
+        );
+        ctx.with_recorder(&mut display_list, |ctx| {
+            WidgetRender::render(tag, frame, ctx, &tree);
+        });
+    }
+    format!("{display_list:?}")
+}
+
 fn key(key: KeyCode) -> SystemEvent {
     SystemEvent::KeyDown {
         key,
+        mods: KeyMod::NONE,
+    }
+}
+
+fn key_up(key: KeyCode) -> SystemEvent {
+    SystemEvent::KeyUp {
+        key,
+        mods: KeyMod::NONE,
+    }
+}
+
+fn pointer_down(pos: Point) -> SystemEvent {
+    SystemEvent::PointerDown {
+        pos,
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    }
+}
+
+fn pointer_up(pos: Point) -> SystemEvent {
+    SystemEvent::PointerUp {
+        pos,
+        button: MouseButton::Left,
         mods: KeyMod::NONE,
     }
 }
@@ -96,26 +151,29 @@ fn invalid_tag_font_sizes_fall_back_in_measure_and_render() {
 #[test]
 fn checkable_tag_toggles_from_pointer_and_keyboard_with_change_payloads() {
     let mut tag = Tag::new("发布").checkable(true);
-    let pointer = SystemEvent::PointerDown {
-        pos: Point::new(8.0, 8.0),
-        button: MouseButton::Left,
-        mods: KeyMod::NONE,
-    };
+    let pointer = pointer_down(Point::new(8.0, 8.0));
+    let pointer_release = pointer_up(Point::new(8.0, 8.0));
 
     assert_eq!(WidgetComponent::tab_index(&tag), 1);
     assert_eq!(tag.on_event(&pointer), EventResult::Handled);
+    assert!(!tag.is_checked());
+    assert!(tag.semantic_event(ComponentId::new(2), &pointer).is_none());
+    assert_eq!(tag.on_event(&pointer_release), EventResult::Handled);
     assert!(tag.is_checked());
     assert_eq!(
-        tag.semantic_event(ComponentId::new(2), &pointer)
+        tag.semantic_event(ComponentId::new(2), &pointer_release)
             .and_then(|event| event.text_payload().map(str::to_owned)),
         Some("checked".into())
     );
 
     let space = key(KeyCode::Space);
     assert_eq!(tag.on_event(&space), EventResult::Handled);
+    assert!(tag.is_checked());
+    let space_up = key_up(KeyCode::Space);
+    assert_eq!(tag.on_event(&space_up), EventResult::Handled);
     assert!(!tag.is_checked());
     assert_eq!(
-        tag.semantic_event(ComponentId::new(2), &space)
+        tag.semantic_event(ComponentId::new(2), &space_up)
             .and_then(|event| event.text_payload().map(str::to_owned)),
         Some("unchecked".into())
     );
@@ -127,25 +185,20 @@ fn checkable_tag_toggles_from_pointer_and_keyboard_with_change_payloads() {
 #[test]
 fn closable_tag_separates_body_from_close_region_and_can_reopen() {
     let mut tag = Tag::new("临时").closable();
-    let body = SystemEvent::PointerDown {
-        pos: Point::new(4.0, 4.0),
-        button: MouseButton::Left,
-        mods: KeyMod::NONE,
-    };
-    let close = SystemEvent::PointerDown {
-        pos: Point::new(52.0, 4.0),
-        button: MouseButton::Left,
-        mods: KeyMod::NONE,
-    };
+    let body = pointer_down(Point::new(4.0, 4.0));
+    let close = pointer_down(Point::new(52.0, 4.0));
+    let close_release = pointer_up(Point::new(52.0, 4.0));
 
     assert_eq!(tag.on_event(&body), EventResult::NotHandled);
     assert!(tag.is_visible());
     assert_eq!(tag.on_event(&close), EventResult::Handled);
+    assert!(tag.is_visible());
+    assert_eq!(tag.on_event(&close_release), EventResult::Handled);
     assert!(!tag.is_visible());
     assert!(EventHandler::take_layout_request(&mut tag));
     assert_eq!(WidgetComponent::tab_index(&tag), 0);
     assert_eq!(
-        tag.semantic_event(ComponentId::new(3), &close)
+        tag.semantic_event(ComponentId::new(3), &close_release)
             .and_then(|event| event.text_payload().map(str::to_owned)),
         Some("closed".into())
     );
@@ -155,7 +208,121 @@ fn closable_tag_separates_body_from_close_region_and_can_reopen() {
     assert!(EventHandler::take_layout_request(&mut tag));
     assert_eq!(WidgetComponent::tab_index(&tag), 1);
     assert_eq!(tag.on_event(&key(KeyCode::Enter)), EventResult::Handled);
+    assert!(tag.is_visible());
+    assert_eq!(tag.on_event(&key_up(KeyCode::Enter)), EventResult::Handled);
     assert!(!tag.is_visible());
+}
+
+#[test]
+fn tag_requires_matching_pointer_and_key_release_before_committing() {
+    let mut tag = Tag::new("选择项").checkable(true);
+
+    assert_eq!(
+        tag.on_event(&pointer_down(Point::new(8.0, 8.0))),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tag.on_event(&SystemEvent::PointerLeave),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tag.on_event(&pointer_up(Point::new(8.0, 8.0))),
+        EventResult::NotHandled
+    );
+    assert!(!tag.is_checked());
+
+    assert_eq!(
+        tag.on_event(&pointer_down(Point::new(8.0, 8.0))),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tag.on_event(&pointer_up(Point::new(200.0, 8.0))),
+        EventResult::Handled
+    );
+    assert!(!tag.is_checked());
+
+    assert_eq!(tag.on_event(&key(KeyCode::Space)), EventResult::Handled);
+    assert_eq!(tag.on_event(&SystemEvent::FocusOut), EventResult::Handled);
+    assert_eq!(
+        tag.on_event(&key_up(KeyCode::Space)),
+        EventResult::NotHandled
+    );
+    assert!(!tag.is_checked());
+
+    assert_eq!(tag.on_event(&key(KeyCode::Space)), EventResult::Handled);
+    assert_eq!(tag.on_event(&key(KeyCode::Space)), EventResult::Handled);
+    assert_eq!(
+        tag.on_event(&key_up(KeyCode::Enter)),
+        EventResult::NotHandled
+    );
+    assert!(!tag.is_checked());
+    assert_eq!(
+        tag.on_event(&key_up(KeyCode::Space)),
+        EventResult::NotHandled
+    );
+    assert!(!tag.is_checked());
+
+    assert_eq!(tag.on_event(&key(KeyCode::Space)), EventResult::Handled);
+    assert_eq!(tag.on_event(&key_up(KeyCode::Space)), EventResult::Handled);
+    assert!(tag.is_checked());
+}
+
+#[test]
+fn closable_tag_hit_testing_matches_the_visible_twenty_pixel_slot() {
+    let mut tag = Tag::new("临时").closable();
+    let _ = render_tag_display(&tag, Rect::new(0.0, 0.0, 72.0, 20.0), (80, 28));
+
+    assert_eq!(
+        tag.on_event(&pointer_down(Point::new(51.0, 10.0))),
+        EventResult::NotHandled
+    );
+    assert_eq!(
+        tag.on_event(&pointer_down(Point::new(52.0, 10.0))),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tag.on_event(&pointer_up(Point::new(51.0, 10.0))),
+        EventResult::Handled
+    );
+    assert!(tag.is_visible());
+}
+
+#[test]
+fn constrained_tag_clips_elides_and_uses_contrasting_custom_foreground() {
+    let constrained = Tag::new("很长的中英文混合标签 mixed value")
+        .checkable(true)
+        .default_checked(true)
+        .closable();
+    let display_list =
+        render_tag_display(&constrained, Rect::new(10.0, 6.0, 80.0, 16.0), (100, 32));
+    assert!(
+        display_list.contains("PushClip { rect: Rect { x: 10.0, y: 6.0, w: 80.0, h: 16.0 } }"),
+        "{display_list}"
+    );
+    assert!(display_list.contains('…'), "{display_list}");
+    assert!(!display_list.contains("NaN"), "{display_list}");
+    assert!(
+        !display_list.contains("w: -") && !display_list.contains("h: -"),
+        "{display_list}"
+    );
+
+    let invalid = render_tag_display(
+        &Tag::new("invalid").closable(),
+        Rect::new(0.0, 0.0, f32::NAN, -10.0),
+        (20, 20),
+    );
+    assert!(!invalid.contains("NaN"), "{invalid}");
+    assert!(!invalid.contains("w: -") && !invalid.contains("h: -"));
+
+    let light = render_tag_display(
+        &Tag::new("可读").custom_color(Color::white()),
+        Rect::new(0.0, 0.0, 48.0, 20.0),
+        (56, 28),
+    );
+    assert!(
+        light.contains("color: Color { r: 0, g: 0, b: 0, a: 255 }"),
+        "{light}"
+    );
 }
 
 #[test]
@@ -207,6 +374,12 @@ fn tree_clears_interaction_when_tag_hides_itself() {
         mods: KeyMod::NONE,
     });
     tree.dispatch_event(&SystemEvent::PointerDown {
+        pos: Point::new(60.0, 16.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    assert!(tree.get(tag).expect("tag").visible());
+    tree.dispatch_event(&SystemEvent::PointerUp {
         pos: Point::new(60.0, 16.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,

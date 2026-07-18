@@ -3085,8 +3085,8 @@ fn real_demo_tooltip_uses_compact_cjk_bubble_width() {
 }
 
 #[test]
-#[ignore = "requires an interactive Windows desktop and writes Tag CJK evidence"]
-fn real_demo_tag_uses_compact_cjk_width_with_action_regions() {
+#[ignore = "requires an interactive Windows desktop and writes Tag interaction evidence"]
+fn real_demo_tag_clips_and_commits_complete_pointer_interactions() {
     let _guard = REAL_GUI_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -3099,7 +3099,61 @@ fn real_demo_tag_uses_compact_cjk_width_with_action_regions() {
     let target = &node_by_automation_id(&snapshot, "component-qa-target")["visible_bounds"];
     assert_eq!(target["w"].as_f64(), Some(72.0));
     assert_eq!(target["h"].as_f64(), Some(20.0));
-    session.capture("uix-tag-cjk", "tag-cjk-light-desktop.png");
+    let checked = node_by_automation_id(&snapshot, "component-qa-tag-checked");
+    assert_eq!(checked["role"], "checkbox");
+    assert_eq!(checked["state"]["checked"], true);
+    let constrained =
+        &node_by_automation_id(&snapshot, "component-qa-tag-constrained")["visible_bounds"];
+    assert_eq!(constrained["w"].as_f64(), Some(80.0));
+    assert_eq!(constrained["h"].as_f64(), Some(16.0));
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-tag-light-custom")["visible_bounds"]["h"],
+        20.0
+    );
+
+    session.capture("uix-tag", "tag-layout-light.png");
+
+    session.move_pointer_to("component-qa-tag-checked", "tag-hover");
+    session.capture("uix-tag", "tag-layout-hover.png");
+    let pressed = session.pointer_button_at_offset(
+        "component-qa-tag-checked",
+        0.5,
+        10.0,
+        "pointer_down",
+        "tag-pressed",
+    );
+    assert_eq!(
+        node_by_automation_id(&pressed, "component-qa-tag-checked")["state"]["checked"],
+        true,
+        "pointer down must not commit the checkable tag"
+    );
+    session.capture("uix-tag", "tag-layout-pressed.png");
+    let released = session.pointer_button_at_offset(
+        "component-qa-tag-checked",
+        0.5,
+        10.0,
+        "pointer_up",
+        "tag-released",
+    );
+    assert_eq!(
+        node_by_automation_id(&released, "component-qa-tag-checked")["state"]["checked"],
+        false,
+        "matching pointer up must commit exactly once"
+    );
+
+    let focused = session.focus("component-qa-tag-checked", "tag-focus");
+    assert_eq!(
+        node_by_automation_id(&focused, "component-qa-tag-checked")["focused"],
+        true
+    );
+    session.capture("uix-tag", "tag-layout-focus.png");
+
+    let dark = session.invoke("theme-toggle", "tag-dark-theme");
+    assert_eq!(
+        node_by_automation_id(&dark, "component-qa-tag-constrained")["visible_bounds"]["w"],
+        80.0
+    );
+    session.capture("uix-tag", "tag-layout-dark.png");
     session.close();
 }
 

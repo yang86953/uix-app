@@ -141,6 +141,15 @@ fn skeleton_frame(
         .align_self(AlignItems::Start)
 }
 
+fn tag_frame(tag: Tag, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
+    grid([embed(tag).automation_id(automation_id)])
+        .columns(vec![GridTrack::Fr(1.0)])
+        .rows(vec![GridTrack::Fr(1.0)])
+        .width(width)
+        .height(height)
+        .align_self(AlignItems::Start)
+}
+
 fn avatar_frame(avatar: Avatar, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
     grid([embed(avatar).automation_id(automation_id)])
         .columns(vec![GridTrack::Fr(1.0)])
@@ -931,9 +940,20 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 ),
                 qa_variant(
                     "CJK checked",
-                    embed(Tag::new("已选择").default_checked(true)),
+                    embed(Tag::new("已选择").default_checked(true))
+                        .automation_id("component-qa-tag-checked"),
                 ),
-                qa_variant("Custom 20px", embed(Tag::new("重要").font_size(20.0))),
+                qa_variant(
+                    "80×16 / constrained",
+                    tag_frame(
+                        Tag::new("很长的中英文混合标签 mixed value")
+                            .default_checked(true)
+                            .closable(),
+                        80.0,
+                        16.0,
+                        "component-qa-tag-constrained",
+                    ),
+                ),
             ]),
             qa_row([
                 qa_variant("Default", embed(Tag::new("默认"))),
@@ -941,7 +961,16 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 qa_variant("Warning", embed(Tag::new("警告").color(TagColor::Warning))),
                 qa_variant("Error", embed(Tag::new("错误").color(TagColor::Error))),
                 qa_variant("Info", embed(Tag::new("信息").color(TagColor::Info))),
+                qa_variant(
+                    "Light custom",
+                    embed(Tag::new("可读").custom_color(Color::white()))
+                        .automation_id("component-qa-tag-light-custom"),
+                ),
             ]),
+            qa_row([qa_variant(
+                "Custom 20px",
+                embed(Tag::new("重要").font_size(20.0)),
+            )]),
         ])
         .gap(14.0),
         "timeline" => qa_target(
