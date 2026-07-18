@@ -150,6 +150,20 @@ fn tag_frame(tag: Tag, width: f32, height: f32, automation_id: &'static str) -> 
         .align_self(AlignItems::Start)
 }
 
+fn timeline_frame(
+    timeline: Timeline,
+    width: f32,
+    height: f32,
+    automation_id: &'static str,
+) -> ViewNode {
+    grid([embed(timeline).automation_id(automation_id)])
+        .columns(vec![GridTrack::Fr(1.0)])
+        .rows(vec![GridTrack::Fr(1.0)])
+        .width(width)
+        .height(height)
+        .align_self(AlignItems::Start)
+}
+
 fn avatar_frame(avatar: Avatar, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
     grid([embed(avatar).automation_id(automation_id)])
         .columns(vec![GridTrack::Fr(1.0)])
@@ -973,12 +987,60 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
             )]),
         ])
         .gap(14.0),
-        "timeline" => qa_target(
-            Timeline::new()
-                .add(TimelineItem::new("库存完成").description("88 个组件"))
-                .add(TimelineItem::new("视觉执行").description("真实原生窗口"))
-                .add(TimelineItem::new("质量门禁").description("逐组件可追溯")),
-        ),
+        "timeline" => column_fit([
+            qa_row([
+                qa_variant(
+                    "220×150 / target",
+                    timeline_frame(
+                        Timeline::new()
+                            .add(TimelineItem::new("库存完成").description("88 个组件"))
+                            .add(
+                                TimelineItem::new("视觉执行")
+                                    .description("真实原生窗口")
+                                    .color(Color::green()),
+                            )
+                            .add(TimelineItem::new("质量门禁").description("逐组件可追溯")),
+                        220.0,
+                        150.0,
+                        "component-qa-target",
+                    ),
+                ),
+                qa_variant(
+                    "132×120 / constrained",
+                    timeline_frame(
+                        Timeline::new()
+                            .add(
+                                TimelineItem::new("第一条很长的中英文时间轴标题 mixed value")
+                                    .description("第一条很长的说明 description"),
+                            )
+                            .add(
+                                TimelineItem::new("第二条很长的时间轴标题")
+                                    .description("第二条很长的说明"),
+                            )
+                            .add(TimelineItem::new("第三条很长的时间轴标题"))
+                            .pending(true),
+                        132.0,
+                        120.0,
+                        "component-qa-timeline-constrained",
+                    ),
+                ),
+            ]),
+            qa_row([qa_variant(
+                "Reverse + pending",
+                timeline_frame(
+                    Timeline::new()
+                        .add(TimelineItem::new("第一步").description("准备"))
+                        .add(TimelineItem::new("第二步").description("执行"))
+                        .add(TimelineItem::new("第三步").description("验证"))
+                        .pending(true)
+                        .reverse(true),
+                    220.0,
+                    120.0,
+                    "component-qa-timeline-reverse-pending",
+                ),
+            )]),
+        ])
+        .gap(14.0),
         "tree" => qa_target_view(
             ViewNode::leaf(Tree::new(sample_tree()))
                 .width(560.0)
