@@ -27,7 +27,18 @@ fn reconcile_tree_preserves_selection_and_syncs_nodes() {
             crate::ui::EventHandler::on_event(
                 tree_widget,
                 &SystemEvent::PointerDown {
-                    pos: Point::new(25.0, 1.0),
+                    pos: Point::new(10.0, 1.0),
+                    button: MouseButton::Left,
+                    mods: KeyMod::NONE,
+                },
+            ),
+            EventResult::Handled
+        );
+        assert_eq!(
+            crate::ui::EventHandler::on_event(
+                tree_widget,
+                &SystemEvent::PointerUp {
+                    pos: Point::new(10.0, 1.0),
                     button: MouseButton::Left,
                     mods: KeyMod::NONE,
                 },

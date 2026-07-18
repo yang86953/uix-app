@@ -164,6 +164,15 @@ fn timeline_frame(
         .align_self(AlignItems::Start)
 }
 
+fn tree_frame(tree: Tree, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
+    grid([embed(tree).automation_id(automation_id)])
+        .columns(vec![GridTrack::Fr(1.0)])
+        .rows(vec![GridTrack::Fr(1.0)])
+        .width(width)
+        .height(height)
+        .align_self(AlignItems::Start)
+}
+
 fn avatar_frame(avatar: Avatar, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
     grid([embed(avatar).automation_id(automation_id)])
         .columns(vec![GridTrack::Fr(1.0)])
@@ -1041,11 +1050,33 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
             )]),
         ])
         .gap(14.0),
-        "tree" => qa_target_view(
-            ViewNode::leaf(Tree::new(sample_tree()))
-                .width(560.0)
-                .height(190.0),
-        ),
+        "tree" => qa_row([
+            qa_variant(
+                "Scrollable hierarchy",
+                tree_frame(
+                    Tree::new(sample_tree()),
+                    390.0,
+                    190.0,
+                    "component-qa-target",
+                ),
+            ),
+            qa_variant(
+                "Constrained + long title",
+                tree_frame(
+                    Tree::new(vec![
+                        TreeNode::new(
+                            "很长的中英文根节点标题 mixed identifier",
+                            "constrained-root",
+                        )
+                        .checkable(true),
+                        TreeNode::new("禁用节点", "disabled").disabled(true),
+                    ]),
+                    132.0,
+                    84.0,
+                    "component-qa-tree-constrained",
+                ),
+            ),
+        ]),
         "rich-text" => qa_target(RichText::new().content(vec![
             RichTextSegment::Text {
                 content: "UIX 组件视觉验收 ".to_string(),
