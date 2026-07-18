@@ -1815,9 +1815,37 @@ fn real_demo_table_clips_long_headers_cells_and_empty_state() {
     );
     session.capture("uix-table", "table-layout-focus.png");
 
-    session.click_at_offset("component-qa-target", 0.5, 50.0, "table-select-row");
+    session.pointer_button_at_offset(
+        "component-qa-target",
+        0.5,
+        50.0,
+        "pointer_down",
+        "table-row-pressed",
+    );
+    session.capture("uix-table", "table-layout-pressed.png");
+    session.pointer_button_at_offset(
+        "component-qa-target",
+        0.5,
+        50.0,
+        "pointer_up",
+        "table-select-row",
+    );
     session.capture("uix-table", "table-layout-selected.png");
-    session.click_at_offset("component-qa-target", 0.2, 16.0, "table-sort-column");
+    session.pointer_button_at_offset(
+        "component-qa-target",
+        0.2,
+        16.0,
+        "pointer_down",
+        "table-sort-pressed",
+    );
+    session.capture("uix-table", "table-layout-sort-pressed.png");
+    session.pointer_button_at_offset(
+        "component-qa-target",
+        0.2,
+        16.0,
+        "pointer_up",
+        "table-sort-column",
+    );
     session.capture("uix-table", "table-layout-sorted.png");
 
     let dark = session.invoke("theme-toggle", "table-dark-theme");

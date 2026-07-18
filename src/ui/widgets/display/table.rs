@@ -187,6 +187,15 @@ pub struct TableChange {
     pub page_size: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TablePointerAction {
+    ToggleAll,
+    ToggleRow(usize),
+    SortColumn(usize),
+    ToggleExpand(usize),
+    SelectRow(usize),
+}
+
 /// 声明式表格构建器；展开 View factory 保存在组件外。
 pub struct TableBuilder {
     table: Table,
@@ -231,6 +240,7 @@ component! {
         pub(crate) last_frame: Cell<Option<Rect>>,
         layout_requested: Cell<bool>,
         focused: bool,
+        pressed_action: Cell<Option<TablePointerAction>>,
     }
 
     tab_index => (&self) -> i32 { i32::from(!self.rows.is_empty()) }
@@ -290,9 +300,13 @@ component! {
             }
             SystemEvent::FocusOut => {
                 self.focused = false;
+                self.pressed_action.set(None);
                 EventResult::Handled
             }
-            SystemEvent::Wheel { delta, .. } => {
+            SystemEvent::Wheel { pos, delta } => {
+                if !self.body_contains(*pos) {
+                    return EventResult::NotHandled;
+                }
                 let viewport_h = self.body_viewport_height();
                 let old_y = self.body_scroll.scroll_offset();
                 let max = (self.body_content_height() - viewport_h).max(0.0);
@@ -325,67 +339,45 @@ component! {
                 button: crate::ui::MouseButton::Left,
                 ..
             } => {
-                if self.selection && pos.x < self.selection_width() {
-                    if pos.y < self.total_header_height() {
-                        if self.checked_rows.len() == self.rows.len() {
-                            self.checked_rows.clear();
-                        } else {
-                            self.checked_rows = (0..self.rows.len()).collect();
-                        }
-                        return EventResult::Handled;
-                    }
-                    if let Some(row) = self.row_index_at_y(pos.y) {
-                        if let Some(index) = self.checked_rows.iter().position(|&item| item == row) {
-                            self.checked_rows.remove(index);
-                        } else {
-                            self.checked_rows.push(row);
-                        }
-                        return EventResult::Handled;
-                    }
+                if let Some(action) = self.action_at_point(*pos) {
+                    self.pressed_action.set(Some(action));
+                    self.hover_row.set(Self::action_row(action));
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
                 }
-                if self.leaf_header_contains(pos.y, self.column_at_x(pos.x)) {
-                    if let Some(ci) = self.column_at_x(pos.x) {
-                        let col = &self.columns[ci];
-                        if self.sortable || col.sortable {
-                            let new_dir = match col.sort_direction {
-                                SortDirection::None => SortDirection::Asc,
-                                SortDirection::Asc => SortDirection::Desc,
-                                SortDirection::Desc => SortDirection::None,
-                            };
-                            for c in &mut self.columns { c.sort_direction = SortDirection::None; }
-                            self.columns[ci].sort_direction = new_dir;
-                            let change = TableChange {
-                                sort_column: Some(ci),
-                                sort_direction: new_dir,
-                                page: self.current_page.get(),
-                                page_size: self.page_size,
-                            };
-                            self.pending_change.replace(Some(change.payload()));
-                            return EventResult::Handled;
-                        }
-                    }
+            }
+            SystemEvent::PointerUp {
+                pos,
+                button: crate::ui::MouseButton::Left,
+                ..
+            } => {
+                let Some(pressed) = self.pressed_action.replace(None) else {
+                    return EventResult::NotHandled;
+                };
+                let released = self.action_at_point(*pos);
+                self.hover_row.set(released.and_then(Self::action_row));
+                if released == Some(pressed) {
+                    self.commit_pointer_action(pressed);
                 }
-                if pos.y >= self.total_header_height() {
-                    if let Some(row) = self.row_index_at_y(pos.y) {
-                        if self.expandable && self.expand_toggle_hit(pos.x) {
-                            let next = (self.expanded_row.get() != Some(row)).then_some(row);
-                            self.expanded_row.set(next);
-                        }
-                        self.selected_row.set(Some(row));
-                        return EventResult::Handled;
-                    }
-                }
-                self.selected_row.set(None);
-                EventResult::NotHandled
+                EventResult::Handled
             }
             SystemEvent::PointerMove { pos, .. } => {
-                if pos.y >= self.total_header_height() {
-                    let row = self.row_index_at_y(pos.y);
-                    self.hover_row.set(row.filter(|&r| r < self.rows.len()));
+                let next = self.action_at_point(*pos).and_then(Self::action_row);
+                if self.hover_row.replace(next) != next {
+                    EventResult::Handled
                 } else {
-                    self.hover_row.set(None);
+                    EventResult::NotHandled
                 }
-                EventResult::NotHandled
+            }
+            SystemEvent::PointerLeave => {
+                let changed = self.hover_row.replace(None).is_some()
+                    | self.pressed_action.replace(None).is_some();
+                if changed {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
             }
             _ => EventResult::NotHandled,
         }
@@ -397,8 +389,6 @@ component! {
             .take()
             .map(|value| SemanticEvent::change(id, value))
     }
-
-    wants_continuous_pointer_move => (&self) -> bool { true }
 
     take_layout_request => (&mut self) -> bool {
         self.layout_requested.replace(false)
@@ -475,6 +465,12 @@ component! {
             let is_hovered = hover == Some(actual_ri);
             let is_checked = self.checked_rows.contains(&actual_ri);
             let is_expanded = expanded == Some(actual_ri);
+            let is_pressed = self
+                .pressed_action
+                .get()
+                .and_then(Self::action_row)
+                == Some(actual_ri)
+                && is_hovered;
 
             let expanded_offset = if expanded.is_some_and(|expanded_row| actual_ri > expanded_row)
             {
@@ -488,7 +484,17 @@ component! {
                 continue;
             }
 
-            let row_bg = if is_selected { sel_bg } else if is_hovered { hover_bg } else if actual_ri.is_multiple_of(2) { bg } else { ctx.tokens().color_bg_container() };
+            let row_bg = if is_pressed {
+                ctx.tokens().color_fill_secondary()
+            } else if is_selected {
+                sel_bg
+            } else if is_hovered {
+                hover_bg
+            } else if actual_ri.is_multiple_of(2) {
+                bg
+            } else {
+                ctx.tokens().color_bg_container()
+            };
             let row_rect = Rect::new(frame.x, row_y, frame.w, self.row_h);
             ctx.fill_rect(row_rect, row_bg, None);
 
@@ -759,6 +765,7 @@ impl Table {
             last_frame: Cell::new(None),
             layout_requested: Cell::new(false),
             focused: false,
+            pressed_action: Cell::new(None),
         }
     }
 
@@ -841,6 +848,139 @@ impl Table {
             crate::draw::font::text_backend::estimate_text_metrics(value, f32::INFINITY, font_size)
                 .max_line_width,
         )
+    }
+
+    fn local_frame(&self) -> Rect {
+        let size = self.last_frame.get().map_or_else(
+            || {
+                let content_width = self
+                    .columns
+                    .iter()
+                    .map(|column| finite_nonnegative(column.width))
+                    .sum::<f32>()
+                    + self.selection_width();
+                Size::new(
+                    self.fixed_width.unwrap_or(content_width.max(400.0)),
+                    self.total_header_height() + self.rows.len() as f32 * self.row_h + 1.0,
+                )
+            },
+            |frame| Size::new(finite_nonnegative(frame.w), finite_nonnegative(frame.h)),
+        );
+        Rect::new(0.0, 0.0, size.w, size.h)
+    }
+
+    fn body_contains(&self, point: crate::core::Point) -> bool {
+        let frame = self.local_frame();
+        Rect::new(
+            frame.x,
+            self.total_header_height() + 1.0,
+            frame.w,
+            self.body_viewport_height(),
+        )
+        .contains(point)
+    }
+
+    fn action_at_point(&self, point: crate::core::Point) -> Option<TablePointerAction> {
+        if !self.local_frame().contains(point) {
+            return None;
+        }
+        if self.selection && point.x < self.selection_width() {
+            if point.y < self.total_header_height() {
+                return (!self.rows.is_empty()).then_some(TablePointerAction::ToggleAll);
+            }
+            return self
+                .row_index_at_y(point.y)
+                .map(TablePointerAction::ToggleRow);
+        }
+
+        let column = self.column_at_x(point.x);
+        if self.leaf_header_contains(point.y, column) {
+            if let Some(index) = column.filter(|index| {
+                self.sortable
+                    || self
+                        .columns
+                        .get(*index)
+                        .is_some_and(|column| column.sortable)
+            }) {
+                return Some(TablePointerAction::SortColumn(index));
+            }
+        }
+
+        let row = self.row_index_at_y(point.y)?;
+        if self.expandable && self.expand_toggle_hit(point.x) {
+            Some(TablePointerAction::ToggleExpand(row))
+        } else {
+            Some(TablePointerAction::SelectRow(row))
+        }
+    }
+
+    fn action_row(action: TablePointerAction) -> Option<usize> {
+        match action {
+            TablePointerAction::ToggleRow(row)
+            | TablePointerAction::ToggleExpand(row)
+            | TablePointerAction::SelectRow(row) => Some(row),
+            TablePointerAction::ToggleAll | TablePointerAction::SortColumn(_) => None,
+        }
+    }
+
+    fn commit_pointer_action(&mut self, action: TablePointerAction) {
+        match action {
+            TablePointerAction::ToggleAll => {
+                if self.checked_rows.len() == self.rows.len() {
+                    self.checked_rows.clear();
+                } else {
+                    self.checked_rows = (0..self.rows.len()).collect();
+                }
+            }
+            TablePointerAction::ToggleRow(row) => {
+                if let Some(index) = self.checked_rows.iter().position(|&item| item == row) {
+                    self.checked_rows.remove(index);
+                } else {
+                    self.checked_rows.push(row);
+                }
+            }
+            TablePointerAction::SortColumn(index) => {
+                let Some(column) = self.columns.get(index) else {
+                    return;
+                };
+                let sort_direction = match column.sort_direction {
+                    SortDirection::None => SortDirection::Asc,
+                    SortDirection::Asc => SortDirection::Desc,
+                    SortDirection::Desc => SortDirection::None,
+                };
+                for column in &mut self.columns {
+                    column.sort_direction = SortDirection::None;
+                }
+                self.columns[index].sort_direction = sort_direction;
+                self.pending_change.replace(Some(
+                    TableChange {
+                        sort_column: Some(index),
+                        sort_direction,
+                        page: self.current_page.get(),
+                        page_size: self.page_size,
+                    }
+                    .payload(),
+                ));
+            }
+            TablePointerAction::ToggleExpand(row) => {
+                let next = (self.expanded_row.get() != Some(row)).then_some(row);
+                self.expanded_row.set(next);
+                self.selected_row.set(Some(row));
+                self.layout_requested.set(true);
+            }
+            TablePointerAction::SelectRow(row) => self.selected_row.set(Some(row)),
+        }
+    }
+
+    pub(super) fn header_selection_pressed(&self) -> bool {
+        self.pressed_action.get() == Some(TablePointerAction::ToggleAll)
+    }
+
+    pub(super) fn pressed_sort_column(&self) -> Option<usize> {
+        match self.pressed_action.get() {
+            Some(TablePointerAction::SortColumn(index)) => Some(index),
+            _ => None,
+        }
     }
 
     pub fn columns(mut self, cols: Vec<TableColumn>) -> Self {
@@ -1212,6 +1352,7 @@ impl Table {
         self.expanded_row
             .set(expanded_key.and_then(|key| self.row_keys.iter().position(|item| item == &key)));
         self.hover_row.set(None);
+        self.pressed_action.set(None);
         self.expanded_child_row.set(None);
         let max = (self.body_content_height() - self.body_viewport_height()).max(0.0);
         self.body_scroll

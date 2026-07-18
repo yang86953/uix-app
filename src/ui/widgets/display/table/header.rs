@@ -22,6 +22,18 @@ pub(super) fn paint(
 
     ctx.fill_rect(header_rect, header_bg, radius);
     if table.selection {
+        if table.header_selection_pressed() {
+            ctx.fill_rect(
+                Rect::new(
+                    header_rect.x,
+                    header_rect.y,
+                    table.selection_width().min(header_rect.w),
+                    header_rect.h,
+                ),
+                ctx.tokens().color_fill_secondary(),
+                None,
+            );
+        }
         let all_checked = table.checked_rows.len() == table.rows.len();
         crate::ui::widgets::icon::paint_icon_in_frame(
             ctx,
@@ -76,6 +88,14 @@ pub(super) fn paint(
                 header_rect
             };
             let column = &table.columns[laid_out.index];
+            if table.pressed_sort_column() == Some(laid_out.index) {
+                if let Some(pressed_frame) =
+                    Rect::new(laid_out.x, leaf_rect.y, laid_out.width, leaf_rect.h)
+                        .intersect(&zone_clip)
+                {
+                    ctx.fill_rect(pressed_frame, ctx.tokens().color_fill_secondary(), None);
+                }
+            }
             let sort_slot = if table.sortable || column.sortable {
                 24.0_f32.min(laid_out.width * 0.4)
             } else {
