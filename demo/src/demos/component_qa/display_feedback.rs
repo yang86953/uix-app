@@ -58,6 +58,20 @@ fn collapse_frame(
         .align_self(AlignItems::Start)
 }
 
+fn descriptions_frame(
+    descriptions: Descriptions,
+    width: f32,
+    height: f32,
+    automation_id: &'static str,
+) -> ViewNode {
+    grid([embed(descriptions).automation_id(automation_id)])
+        .columns(vec![GridTrack::Fr(1.0)])
+        .rows(vec![GridTrack::Fr(1.0)])
+        .width(width)
+        .height(height)
+        .align_self(AlignItems::Start)
+}
+
 fn avatar_frame(avatar: Avatar, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
     grid([embed(avatar).automation_id(automation_id)])
         .columns(vec![GridTrack::Fr(1.0)])
@@ -489,18 +503,49 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 ),
             ),
         ]),
-        "descriptions" => qa_target(
-            Descriptions::new()
-                .title("组件验收信息")
-                .column(3)
-                .add(DescriptionsItem::new("状态", "执行中"))
-                .add(DescriptionsItem::new("平台", "Windows 原生窗口"))
-                .add(DescriptionsItem::new("证据", "Light / Dark / Compact"))
-                .add(DescriptionsItem::new(
-                    "长内容",
-                    "Component Visual Quality Gate",
-                )),
-        ),
+        "descriptions" => qa_row([
+            qa_variant(
+                "Bordered / target",
+                descriptions_frame(
+                    Descriptions::new()
+                        .title("组件验收信息")
+                        .column(2)
+                        .bordered(true)
+                        .add(DescriptionsItem::new("状态", "执行中"))
+                        .add(DescriptionsItem::new("平台", "Windows 原生窗口"))
+                        .add(
+                            DescriptionsItem::new(
+                                "证据",
+                                "Light / Dark / Compact visual quality gate",
+                            )
+                            .span(2),
+                        ),
+                    360.0,
+                    130.0,
+                    "component-qa-target",
+                ),
+            ),
+            qa_variant(
+                "220px / responsive",
+                descriptions_frame(
+                    Descriptions::new()
+                        .title("很长的描述列表标题需要省略并保持在窄边界内")
+                        .column(3)
+                        .bordered(true)
+                        .add(DescriptionsItem::new(
+                            "负责人和联系方式",
+                            "贝露丹迪 · owner@example.com",
+                        ))
+                        .add(DescriptionsItem::new(
+                            "说明",
+                            "窄宽度下自动改为单列并换行，不覆盖相邻内容。",
+                        )),
+                    220.0,
+                    180.0,
+                    "component-qa-descriptions-constrained",
+                ),
+            ),
+        ]),
         "empty" => qa_row([
             qa_variant("Default / target", qa_target(Empty::new())),
             qa_variant(

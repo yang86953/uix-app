@@ -828,6 +828,20 @@ impl SnapshotFields {
                 focused_day,
                 ..
             } => calendar_accessibility(*year, *month, *selected, *focused_day),
+            Self::Descriptions { title, items, .. } => {
+                AccessibilitySnapshot::named(AccessibilityRole::Group, title.clone()).with_state(
+                    AccessibilityState {
+                        value_text: (!items.is_empty()).then(|| {
+                            items
+                                .iter()
+                                .map(|item| format!("{}: {}", item.label, item.value))
+                                .collect::<Vec<_>>()
+                                .join("; ")
+                        }),
+                        ..AccessibilityState::default()
+                    },
+                )
+            }
             Self::Collapse {
                 panels,
                 focused_header,
