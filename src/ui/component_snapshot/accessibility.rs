@@ -1,9 +1,40 @@
 use crate::ui::widgets::{
     AnchorItem, BadgeStatus, BreadcrumbItem, Date, MenuItem, OptGroup, ProgressMode, ResultType,
-    RichTextSegment, SelectableItem, Step, Tab, UploadFile, UploadStatus,
+    RichTextSegment, SelectableItem, Step, Tab, TimelineItem, UploadFile, UploadStatus,
 };
 
 use super::{AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotTransferItem};
+
+pub(super) fn timeline_accessibility(
+    items: &[TimelineItem],
+    pending: bool,
+    reverse: bool,
+) -> AccessibilitySnapshot {
+    let mut entries = Vec::with_capacity(items.len() + usize::from(pending));
+    for index in 0..items.len() {
+        let item = if reverse {
+            &items[items.len() - 1 - index]
+        } else {
+            &items[index]
+        };
+        let label = item.label.trim();
+        let description = item.description.trim();
+        let entry = match (label.is_empty(), description.is_empty()) {
+            (false, false) => format!("{label}: {description}"),
+            (false, true) => label.to_string(),
+            (true, false) => description.to_string(),
+            (true, true) => continue,
+        };
+        entries.push(entry);
+    }
+    if pending {
+        entries.push(crate::ui::locale::use_locale().timeline_pending.to_string());
+    }
+    AccessibilitySnapshot::new(AccessibilityRole::List).with_state(AccessibilityState {
+        value_text: (!entries.is_empty()).then(|| entries.join("; ")),
+        ..AccessibilityState::default()
+    })
+}
 
 pub(super) fn chart_accessibility<'a>(
     name: &'static str,

@@ -18,8 +18,8 @@ use super::accessibility::{
     popconfirm_accessibility, progress_accessibility, result_accessibility,
     rich_text_accessibility, select_accessibility, selectable_list_accessibility,
     splitter_accessibility, steps_accessibility, tabs_accessibility, tag_accessibility,
-    theme_toggle_accessibility, transfer_accessibility, typography_accessibility,
-    upload_accessibility,
+    theme_toggle_accessibility, timeline_accessibility, transfer_accessibility,
+    typography_accessibility, upload_accessibility,
 };
 use super::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotCollapsePanel,
@@ -766,6 +766,11 @@ impl SnapshotFields {
                 checked,
                 ..
             } => tag_accessibility(text, *closable, *checkable, *checked),
+            Self::Timeline {
+                items,
+                pending,
+                reverse,
+            } => timeline_accessibility(items, *pending, *reverse),
             Self::FloatButton { icon, tooltip, .. } => AccessibilitySnapshot::named(
                 AccessibilityRole::Button,
                 first_non_empty([tooltip.as_str(), icon.as_str()]),

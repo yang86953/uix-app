@@ -3158,6 +3158,55 @@ fn real_demo_tag_clips_and_commits_complete_pointer_interactions() {
 }
 
 #[test]
+#[ignore = "requires an interactive Windows desktop and writes Timeline layout evidence"]
+fn real_demo_timeline_clips_long_rows_and_publishes_visual_order() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(55, "timeline-layout");
+    let snapshot = session.snapshot("timeline-layout-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "timeline"
+    );
+
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "list");
+    assert_eq!(target["visible_bounds"]["w"], 220.0);
+    assert_eq!(target["visible_bounds"]["h"], 150.0);
+    assert_eq!(
+        target["state"]["value_text"],
+        "库存完成: 88 个组件; 视觉执行: 真实原生窗口; 质量门禁: 逐组件可追溯"
+    );
+
+    let constrained = node_by_automation_id(&snapshot, "component-qa-timeline-constrained");
+    assert_eq!(constrained["role"], "list");
+    assert_eq!(constrained["visible_bounds"]["w"], 132.0);
+    assert_eq!(constrained["visible_bounds"]["h"], 120.0);
+
+    let reverse = node_by_automation_id(&snapshot, "component-qa-timeline-reverse-pending");
+    assert_eq!(reverse["role"], "list");
+    assert!(
+        reverse["state"]["value_text"]
+            .as_str()
+            .is_some_and(|value| value.starts_with("第三步: 验证; 第二步: 执行; 第一步: 准备; ")),
+        "reverse semantics must follow the rendered order: {reverse}"
+    );
+
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-timeline", "timeline-layout-light.png");
+
+    let dark = session.invoke("theme-toggle", "timeline-dark-theme");
+    assert_eq!(
+        node_by_automation_id(&dark, "component-qa-timeline-constrained")["visible_bounds"]["w"],
+        132.0
+    );
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-timeline", "timeline-layout-dark.png");
+    session.close();
+}
+
+#[test]
 #[ignore = "requires an interactive Windows desktop and writes Label multiline evidence"]
 fn real_demo_label_multiline_keeps_following_content_below_all_lines() {
     let _guard = REAL_GUI_LOCK

@@ -764,7 +764,16 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
         "timeline",
         "Timeline",
         "数据展示",
-        &["items", "description", "semantic-color"],
+        &[
+            "items",
+            "description",
+            "semantic-color",
+            "cjk",
+            "reverse",
+            "pending",
+            "constrained",
+            "semantic-list",
+        ],
     ),
     widget(
         "tree",
