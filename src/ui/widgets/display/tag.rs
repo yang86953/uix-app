@@ -37,6 +37,27 @@ enum TagAction {
     Unchecked,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TagTarget {
+    Body,
+    Close,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TagPress {
+    Pointer(TagTarget),
+    Key(KeyCode),
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TagGeometry {
+    frame: Rect,
+    body: Rect,
+    close: Option<Rect>,
+    check: Option<Rect>,
+    text: Rect,
+}
+
 component! {
     pub struct Tag {
         text: String,
@@ -51,6 +72,8 @@ component! {
         last_size: Cell<Size>,
         layout_requested: Cell<bool>,
         pending_action: Cell<Option<TagAction>>,
+        hovered_target: Cell<Option<TagTarget>>,
+        pressed: Cell<Option<TagPress>>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -72,26 +95,77 @@ component! {
             return EventResult::NotHandled;
         }
         match event {
-            SystemEvent::PointerDown { pos, button: MouseButton::Left, .. }
-                if self.closable && self.close_rect().contains(*pos) =>
-            {
-                self.dismiss();
-                EventResult::Handled
-            }
-            SystemEvent::PointerDown { button: MouseButton::Left, .. } if self.checkable => {
-                self.toggle_checked();
-                EventResult::Handled
-            }
-            SystemEvent::KeyDown {
-                key: KeyCode::Enter | KeyCode::Space,
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
                 ..
             } => {
-                if self.checkable {
-                    self.toggle_checked();
+                if let Some(target) = self.target_at(*pos) {
+                    self.hovered_target.set(Some(target));
+                    self.pressed.set(Some(TagPress::Pointer(target)));
+                    EventResult::Handled
                 } else {
-                    self.dismiss();
+                    EventResult::NotHandled
+                }
+            }
+            SystemEvent::PointerUp {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
+                let Some(TagPress::Pointer(pressed)) = self.pressed.replace(None) else {
+                    return EventResult::NotHandled;
+                };
+                let released = self.target_at(*pos);
+                self.hovered_target.set(released);
+                if released == Some(pressed) {
+                    self.commit_target(pressed);
                 }
                 EventResult::Handled
+            }
+            SystemEvent::PointerMove { pos, .. } => {
+                let next = self.target_at(*pos);
+                if self.hovered_target.replace(next) != next {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
+            }
+            SystemEvent::PointerLeave => {
+                let pointer_pressed = matches!(self.pressed.get(), Some(TagPress::Pointer(_)));
+                if pointer_pressed {
+                    self.pressed.set(None);
+                }
+                let changed = self.hovered_target.replace(None).is_some() | pointer_pressed;
+                if changed {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
+            }
+            SystemEvent::KeyDown {
+                key: key @ (KeyCode::Enter | KeyCode::Space),
+                ..
+            } => {
+                if self.pressed.get().is_none() {
+                    self.pressed.set(Some(TagPress::Key(*key)));
+                }
+                EventResult::Handled
+            }
+            SystemEvent::KeyUp {
+                key: key @ (KeyCode::Enter | KeyCode::Space),
+                ..
+            } => {
+                if self.pressed.replace(None) == Some(TagPress::Key(*key)) {
+                    self.commit_target(if self.checkable {
+                        TagTarget::Body
+                    } else {
+                        TagTarget::Close
+                    });
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
             }
             SystemEvent::KeyDown {
                 key: KeyCode::Delete | KeyCode::Escape,
@@ -106,6 +180,7 @@ component! {
             }
             SystemEvent::FocusOut => {
                 self.focused = false;
+                self.pressed.set(None);
                 EventResult::Handled
             }
             _ => EventResult::NotHandled,
@@ -132,10 +207,15 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        let geometry = Self::geometry(frame, self.checkable, self.closable);
+        let frame = geometry.frame;
         self.last_size.set(Size::new(frame.w, frame.h));
+        if frame.w <= 0.0 || frame.h <= 0.0 {
+            return;
+        }
         let font_size = normalized_tag_font_size(self.font_size);
         let (bg, fg) = if let Some(cc) = self.custom_color {
-            (cc, Color::white())
+            (cc, if cc.is_light() { Color::black() } else { Color::white() })
         } else {
             match self.color {
                 TagColor::Default => (ctx.tokens().color_fill_tertiary(), ctx.tokens().color_text()),
@@ -145,50 +225,89 @@ component! {
                 TagColor::Error   => (ctx.tokens().color_error_bg(), ctx.tokens().color_error()),
             }
         };
-        let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
+        let radius = ctx
+            .tokens()
+            .border_radius_sm()
+            .min(frame.w.min(frame.h) * 0.5);
+        let r = Some(Radius::uniform(radius));
+        ctx.push_clip(frame);
         ctx.fill_rect(frame, bg, r);
+        let visual_target = match self.pressed.get() {
+            Some(TagPress::Pointer(target)) if self.hovered_target.get() == Some(target) => {
+                Some((target, true))
+            }
+            Some(TagPress::Key(_)) => Some((
+                if self.checkable {
+                    TagTarget::Body
+                } else {
+                    TagTarget::Close
+                },
+                true,
+            )),
+            _ => self.hovered_target.get().map(|target| (target, false)),
+        };
+        if let Some((target, pressed)) = visual_target {
+            let target_frame = match target {
+                TagTarget::Body => geometry.body,
+                TagTarget::Close => geometry.close.unwrap_or(geometry.frame),
+            };
+            let overlay = if bg.is_light() {
+                Color::from_rgba(0, 0, 0, if pressed { 28 } else { 14 })
+            } else {
+                Color::from_rgba(255, 255, 255, if pressed { 32 } else { 16 })
+            };
+            ctx.fill_rect(target_frame, overlay, None);
+        }
         if self.checked {
-            ctx.stroke_rect(frame, fg, 1.5, r);
-        }
-        if self.focused {
-            ctx.stroke_rect(frame, ctx.tokens().color_primary(), 2.0, r);
-        }
-        let checked_w = if self.checkable { 14.0 } else { 0.0 };
-        if self.checkable && self.checked {
-            crate::ui::widgets::icon::paint_icon_in_frame(
-                ctx,
-                "check",
-                Rect::new(frame.x + 4.0, frame.y, 14.0, frame.h),
+            let inset = 0.75_f32.min(frame.w * 0.5).min(frame.h * 0.5);
+            ctx.stroke_rect(
+                Rect::new(
+                    frame.x + inset,
+                    frame.y + inset,
+                    (frame.w - inset * 2.0).max(0.0),
+                    (frame.h - inset * 2.0).max(0.0),
+                ),
                 fg,
-                10.0,
+                1.5,
+                Some(Radius::uniform(radius)),
             );
         }
-        let text_x = frame.x + 8.0 + checked_w;
-        let text_w = frame.w - 16.0 - checked_w - if self.closable { 20.0 } else { 0.0 };
-        let content = Rect::new(text_x, frame.y, text_w, frame.h);
-        let tw = ctx.measure_text(&self.text, font_size).w;
-        let th = ctx.line_box_height(font_size);
-        let text_rect = Rect::new(
-            content.x + (content.w - tw) * 0.5,
-            content.y + (content.h - th) * 0.5,
-            tw.max(0.0),
-            th.max(0.0),
-        );
-        ctx.draw_text(
-            &self.text,
-            crate::core::Point::new(text_rect.x, text_rect.y),
-            fg,
-            font_size,
-        );
-        if self.closable {
+        if self.focused {
+            let inset = 1.0_f32.min(frame.w * 0.5).min(frame.h * 0.5);
+            ctx.stroke_rect(
+                Rect::new(
+                    frame.x + inset,
+                    frame.y + inset,
+                    (frame.w - inset * 2.0).max(0.0),
+                    (frame.h - inset * 2.0).max(0.0),
+                ),
+                ctx.tokens().color_primary(),
+                2.0,
+                Some(Radius::uniform(radius)),
+            );
+        }
+        if self.checked {
+            if let Some(check) = geometry.check {
+                crate::ui::widgets::icon::paint_icon_in_frame(
+                    ctx,
+                    "check",
+                    check,
+                    fg,
+                    10.0,
+                );
+            }
+        }
+        Self::paint_single_line(ctx, &self.text, geometry.text, fg, font_size);
+        if let Some(close) = geometry.close {
             crate::ui::widgets::icon::paint_icon_in_frame(
                 ctx,
                 "x",
-                Rect::new(frame.x + frame.w - 20.0, frame.y, 20.0, frame.h),
+                close,
                 fg,
                 10.0,
             );
         }
+        ctx.pop_clip();
     }
 }
 
@@ -213,6 +332,8 @@ impl Tag {
             last_size: Cell::new(Size::zero()),
             layout_requested: Cell::new(false),
             pending_action: Cell::new(None),
+            hovered_target: Cell::new(None),
+            pressed: Cell::new(None),
         }
     }
     pub fn color(mut self, c: TagColor) -> Self {
@@ -260,6 +381,145 @@ impl Tag {
         Size::new(w, font_size + 8.0)
     }
 
+    fn geometry(frame: Rect, checkable: bool, closable: bool) -> TagGeometry {
+        let frame = Rect::new(
+            frame.x,
+            frame.y,
+            if frame.w.is_finite() {
+                frame.w.max(0.0)
+            } else {
+                0.0
+            },
+            if frame.h.is_finite() {
+                frame.h.max(0.0)
+            } else {
+                0.0
+            },
+        );
+        let close_width = if closable && frame.w > 0.0 {
+            20.0_f32.min(frame.w)
+        } else {
+            0.0
+        };
+        let close = (close_width > 0.0).then(|| {
+            Rect::new(
+                frame.x + frame.w - close_width,
+                frame.y,
+                close_width,
+                frame.h,
+            )
+        });
+        let body = Rect::new(frame.x, frame.y, (frame.w - close_width).max(0.0), frame.h);
+        let horizontal_padding = 8.0_f32.min(body.w * 0.25);
+        let check_width = if checkable {
+            14.0_f32.min((body.w - horizontal_padding * 2.0).max(0.0))
+        } else {
+            0.0
+        };
+        let check = (checkable && check_width > 0.0)
+            .then(|| Rect::new(body.x + horizontal_padding, body.y, check_width, body.h));
+        let reserved_check = if check.is_some() { check_width } else { 0.0 };
+        let text_x = body.x + horizontal_padding + reserved_check;
+        let text = Rect::new(
+            text_x,
+            body.y,
+            (body.x + body.w - horizontal_padding - text_x).max(0.0),
+            body.h,
+        );
+        TagGeometry {
+            frame,
+            body,
+            close,
+            check,
+            text,
+        }
+    }
+
+    fn paint_single_line(
+        ctx: &mut PaintContext<'_>,
+        value: &str,
+        frame: Rect,
+        color: Color,
+        font_size: f32,
+    ) {
+        if frame.w <= 0.0 || frame.h <= 0.0 {
+            return;
+        }
+        let Some(value) = Self::elide_single_line(ctx, value, font_size, frame.w) else {
+            return;
+        };
+        ctx.push_clip(frame);
+        ctx.draw_text_in_frame(&value, frame, color, font_size);
+        ctx.pop_clip();
+    }
+
+    fn elide_single_line(
+        ctx: &mut PaintContext<'_>,
+        value: &str,
+        font_size: f32,
+        max_width: f32,
+    ) -> Option<String> {
+        if !max_width.is_finite() || max_width <= 0.0 {
+            return None;
+        }
+        let value = value.replace(['\r', '\n'], " ");
+        if Self::text_width(ctx, &value, font_size) <= max_width {
+            return Some(value);
+        }
+        const ELLIPSIS: &str = "…";
+        if Self::text_width(ctx, ELLIPSIS, font_size) > max_width {
+            return None;
+        }
+        let mut visible = String::new();
+        for ch in value.chars() {
+            visible.push(ch);
+            visible.push_str(ELLIPSIS);
+            let fits = Self::text_width(ctx, &visible, font_size) <= max_width;
+            visible.pop();
+            if !fits {
+                visible.pop();
+                break;
+            }
+        }
+        visible.push_str(ELLIPSIS);
+        Some(visible)
+    }
+
+    fn text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
+        ctx.measure_text(value, font_size).w.max(
+            crate::draw::font::text_backend::estimate_text_metrics(value, f32::INFINITY, font_size)
+                .max_line_width,
+        )
+    }
+
+    fn target_at(&self, point: crate::core::Point) -> Option<TagTarget> {
+        let size = self.last_size.get();
+        let size = if size.w > 0.0 && size.h > 0.0 {
+            size
+        } else {
+            self.intrinsic_size()
+        };
+        let geometry = Self::geometry(
+            Rect::new(0.0, 0.0, size.w, size.h),
+            self.checkable,
+            self.closable,
+        );
+        if self.closable && geometry.close.is_some_and(|close| close.contains(point)) {
+            Some(TagTarget::Close)
+        } else if self.checkable && geometry.body.contains(point) {
+            Some(TagTarget::Body)
+        } else {
+            None
+        }
+    }
+
+    fn commit_target(&mut self, target: TagTarget) {
+        match target {
+            TagTarget::Body => self.toggle_checked(),
+            TagTarget::Close => self.dismiss(),
+        }
+    }
+
     pub fn is_visible(&self) -> bool {
         self.visible
     }
@@ -278,6 +538,8 @@ impl Tag {
         if self.visible {
             self.visible = false;
             self.focused = false;
+            self.hovered_target.set(None);
+            self.pressed.set(None);
             self.layout_requested.set(true);
         }
     }
@@ -318,6 +580,8 @@ impl Tag {
         } else {
             next.checked
         };
+        self.hovered_target.set(None);
+        self.pressed.set(None);
     }
 
     fn dismiss(&mut self) {
@@ -332,15 +596,5 @@ impl Tag {
         } else {
             TagAction::Unchecked
         }));
-    }
-
-    fn close_rect(&self) -> Rect {
-        let size = self.last_size.get();
-        let size = if size.w > 0.0 && size.h > 0.0 {
-            size
-        } else {
-            self.intrinsic_size()
-        };
-        Rect::new((size.w - 28.0).max(0.0), 0.0, size.w.min(28.0), size.h)
     }
 }

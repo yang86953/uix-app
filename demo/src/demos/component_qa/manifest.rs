@@ -753,6 +753,11 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
             "closable",
             "checkable",
             "custom-font-size",
+            "custom-color-contrast",
+            "hover",
+            "pressed",
+            "focus",
+            "constrained",
         ],
     ),
     widget(
