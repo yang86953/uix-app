@@ -44,6 +44,20 @@ fn carousel_frame(
         .align_self(AlignItems::Start)
 }
 
+fn collapse_frame(
+    collapse: Collapse,
+    width: f32,
+    height: f32,
+    automation_id: &'static str,
+) -> ViewNode {
+    grid([embed(collapse).automation_id(automation_id)])
+        .columns(vec![GridTrack::Fr(1.0)])
+        .rows(vec![GridTrack::Fr(1.0)])
+        .width(width)
+        .height(height)
+        .align_self(AlignItems::Start)
+}
+
 fn avatar_frame(avatar: Avatar, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
     grid([embed(avatar).automation_id(automation_id)])
         .columns(vec![GridTrack::Fr(1.0)])
@@ -457,14 +471,21 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 ])),
             ),
             qa_variant(
-                "Accordion",
-                embed(
+                "140px / accordion",
+                collapse_frame(
                     Collapse::new()
                         .panels(vec![
-                            CollapsePanel::new("手风琴 A", "仅一个面板保持展开").expanded(),
-                            CollapsePanel::new("手风琴 B", "折叠内容"),
+                            CollapsePanel::new(
+                                "很长的手风琴标题需要省略",
+                                "窄宽度下的中文正文需要自动换行，并始终留在面板边界内。",
+                            )
+                            .expanded(),
+                            CollapsePanel::new("第二个面板", "切换后仍只展开一个面板。"),
                         ])
                         .accordion(),
+                    140.0,
+                    180.0,
+                    "component-qa-collapse-constrained",
                 ),
             ),
         ]),

@@ -1327,6 +1327,70 @@ fn real_demo_carousel_hides_stale_slides_and_keeps_controls_reachable() {
 }
 
 #[test]
+#[ignore = "requires an interactive Windows desktop and writes Collapse visual evidence"]
+fn real_demo_collapse_wraps_constrained_content_and_exposes_interaction_states() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(45, "collapse-layout");
+    let snapshot = session.snapshot("collapse-layout-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "collapse"
+    );
+
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "button");
+    assert_eq!(target["name"], "已展开");
+    assert_eq!(target["state"]["expanded"], true);
+    assert_eq!(target["visible_bounds"]["w"], 240.0);
+    assert_eq!(target["visible_bounds"]["h"], 142.0);
+
+    let constrained = node_by_automation_id(&snapshot, "component-qa-collapse-constrained");
+    assert_eq!(constrained["role"], "button");
+    assert_eq!(constrained["state"]["expanded"], true);
+    assert_eq!(constrained["visible_bounds"]["w"], 140.0);
+    assert_eq!(constrained["visible_bounds"]["h"], 180.0);
+
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-collapse", "collapse-layout-light.png");
+
+    let hovered =
+        session.move_pointer_to_offset("component-qa-target", 0.5, 88.0, "collapse-second-hover");
+    assert_eq!(
+        node_by_automation_id(&hovered, "component-qa-target")["name"],
+        "已展开"
+    );
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-collapse", "collapse-layout-hover.png");
+
+    let expanded =
+        session.click_at_offset("component-qa-target", 0.5, 88.0, "collapse-second-expand");
+    let target = node_by_automation_id(&expanded, "component-qa-target");
+    assert_eq!(target["name"], "已折叠");
+    assert_eq!(target["state"]["expanded"], true);
+    assert_eq!(target["focused"], true);
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-collapse", "collapse-layout-expanded.png");
+
+    let collapsed = session.press_key("left", "collapse-keyboard-collapse");
+    let target = node_by_automation_id(&collapsed, "component-qa-target");
+    assert_eq!(target["name"], "已折叠");
+    assert_eq!(target["state"]["expanded"], false);
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-collapse", "collapse-layout-keyboard.png");
+
+    let dark = session.invoke("theme-toggle", "collapse-dark-theme");
+    assert_eq!(
+        node_by_automation_id(&dark, "component-qa-collapse-constrained")["visible_bounds"]["w"],
+        140.0
+    );
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-collapse", "collapse-layout-dark.png");
+    session.close();
+}
+
+#[test]
 #[ignore = "requires an interactive Windows desktop and writes Checkbox CJK evidence"]
 fn real_demo_checkbox_uses_compact_cjk_width_and_toggles() {
     let _guard = REAL_GUI_LOCK

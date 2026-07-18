@@ -22,6 +22,27 @@ pub(crate) fn builtin_widget_config_changed(
 ) -> Option<bool> {
     match (current.snapshot_fields(), next.snapshot_fields()) {
         (
+            SnapshotFields::Collapse {
+                panels: current_panels,
+                accordion: current_accordion,
+                ..
+            },
+            SnapshotFields::Collapse {
+                panels: next_panels,
+                accordion: next_accordion,
+                ..
+            },
+        ) => Some(
+            current_accordion != next_accordion
+                || current_panels.len() != next_panels.len()
+                || current_panels
+                    .iter()
+                    .zip(&next_panels)
+                    .any(|(current, next)| {
+                        current.header != next.header || current.content != next.content
+                    }),
+        ),
+        (
             SnapshotFields::Carousel {
                 show_dots: current_dots,
                 show_arrows: current_arrows,

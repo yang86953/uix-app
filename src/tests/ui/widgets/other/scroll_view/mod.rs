@@ -1460,6 +1460,11 @@ fn collapse_expand_updates_scrollview_content_bounds() {
         button: crate::ui::MouseButton::Left,
         mods: crate::native::traits::input::KeyMod::NONE,
     });
+    tree.dispatch_event(&SystemEvent::PointerUp {
+        pos: Point::new(50.0, 45.0),
+        button: crate::ui::MouseButton::Left,
+        mods: crate::native::traits::input::KeyMod::NONE,
+    });
     tree.layout();
     let max_after = tree
         .get(sv_id)

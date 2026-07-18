@@ -1097,6 +1097,13 @@ impl WidgetTree {
                     Some((still_active, dirty))
                 })
                 .unwrap_or((false, Rect::zero()));
+            let animation_layout_requested = self
+                .get_mut(id)
+                .is_some_and(|node| node.take_layout_request());
+            if animation_layout_requested {
+                self.push_layout_invalidation(id);
+                self.propagate_layout_invalidation(id);
+            }
             if component_still_active {
                 self.active_component_animations.insert(id);
             } else {

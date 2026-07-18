@@ -832,15 +832,22 @@ impl SnapshotFields {
                 panels,
                 focused_header,
                 ..
-            } => AccessibilitySnapshot::new(AccessibilityRole::Group).with_state(
-                AccessibilityState {
+            } => {
+                let focused_panel = panels.get(*focused_header);
+                AccessibilitySnapshot::named(
+                    AccessibilityRole::Button,
+                    focused_panel
+                        .map(|panel| panel.header.clone())
+                        .unwrap_or_default(),
+                )
+                .with_state(AccessibilityState {
                     value_text: panels
                         .get(*focused_header)
                         .map(|panel| panel.header.clone()),
-                    expanded: panels.get(*focused_header).map(|panel| panel.expanded),
+                    expanded: focused_panel.map(|panel| panel.expanded),
                     ..AccessibilityState::default()
-                },
-            ),
+                })
+            }
             Self::Carousel {
                 current,
                 slide_count,
