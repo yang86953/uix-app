@@ -603,7 +603,17 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
         "card",
         "Card",
         "数据展示",
-        &["bordered", "elevation", "content"],
+        &[
+            "bordered",
+            "elevation",
+            "content",
+            "long-text",
+            "actions",
+            "constrained",
+            "focus",
+            "hover",
+            "dark",
+        ],
     ),
     widget(
         "carousel",
