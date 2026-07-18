@@ -720,7 +720,7 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
         "skeleton",
         "Skeleton",
         "数据展示",
-        &["rect", "circle", "loading"],
+        &["rect", "circle", "text", "loading", "constrained"],
     ),
     widget(
         "table",
