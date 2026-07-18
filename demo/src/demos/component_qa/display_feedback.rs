@@ -113,6 +113,20 @@ fn result_frame(
         .align_self(AlignItems::Start)
 }
 
+fn selectable_list_frame(
+    list: SelectableList,
+    width: f32,
+    height: f32,
+    automation_id: &'static str,
+) -> ViewNode {
+    grid([embed(list).automation_id(automation_id)])
+        .columns(vec![GridTrack::Fr(1.0)])
+        .rows(vec![GridTrack::Fr(1.0)])
+        .width(width)
+        .height(height)
+        .align_self(AlignItems::Start)
+}
+
 fn avatar_frame(avatar: Avatar, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
     grid([embed(avatar).automation_id(automation_id)])
         .columns(vec![GridTrack::Fr(1.0)])
@@ -731,17 +745,61 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 ),
             ),
         ]),
-        "selectable-list" => qa_target(
-            SelectableList::new()
-                .items(vec![
-                    SelectableItem::new("visual", "视觉质量").icon("eye"),
-                    SelectableItem::new("semantic", "语义质量").icon("file-text"),
-                    SelectableItem::new("interaction", "交互质量").icon("mouse-pointer"),
-                ])
-                .active(1)
-                .header_button("全选")
-                .footer("3 个验收维度"),
-        ),
+        "selectable-list" => qa_row([
+            qa_variant(
+                "Selected / target",
+                selectable_list_frame(
+                    SelectableList::new()
+                        .items(vec![
+                            SelectableItem::new("visual", "视觉质量").icon("eye"),
+                            SelectableItem::new("semantic", "语义质量").icon("file-text"),
+                            SelectableItem::new("interaction", "交互质量").icon("mouse-pointer"),
+                        ])
+                        .active(1)
+                        .header_button("全选")
+                        .footer("3 个验收维度"),
+                    220.0,
+                    190.0,
+                    "component-qa-target",
+                ),
+            ),
+            qa_variant(
+                "132×120 / constrained",
+                selectable_list_frame(
+                    SelectableList::new()
+                        .items(vec![
+                            SelectableItem::new("visual", "视觉质量与主题一致性验收").icon("eye"),
+                            SelectableItem::new("semantic", "Semantic accessibility regression")
+                                .icon("file-text"),
+                        ])
+                        .header_button("选择全部质量检查项")
+                        .footer("共 2 个超长验收维度"),
+                    132.0,
+                    120.0,
+                    "component-qa-selectable-constrained",
+                ),
+            ),
+            qa_variant(
+                "Long / scroll",
+                selectable_list_frame(
+                    SelectableList::new()
+                        .items(
+                            (0..12)
+                                .map(|index| {
+                                    SelectableItem::new(
+                                        format!("check-{index}"),
+                                        format!("质量检查项 {index:02}"),
+                                    )
+                                })
+                                .collect(),
+                        )
+                        .footer("12 个检查项"),
+                    180.0,
+                    150.0,
+                    "component-qa-selectable-scroll",
+                ),
+            ),
+        ]),
         "skeleton" => qa_row([
             qa_variant(
                 "Rect / target",
