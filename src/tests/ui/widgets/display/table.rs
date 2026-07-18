@@ -1,6 +1,111 @@
+use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
 use crate::ui::view::adapter::ViewAdapter;
 use crate::ui::widgets::display::table::*;
+
+fn render_table(table: &Table, frame: Rect, surface_size: (i32, i32)) -> String {
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(surface_size.0, surface_size.1));
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+    let mut display_list = crate::draw::painting::DisplayList::new();
+    {
+        let mut ctx = PaintContext::new_for_test(
+            &mut canvas,
+            font,
+            &fonts,
+            &images,
+            &tokens,
+            96.0,
+            1.0,
+            Orientation::YDown,
+            surface_size.0,
+            surface_size.1,
+        );
+        ctx.with_recorder(&mut display_list, |ctx| {
+            WidgetRender::render(table, frame, ctx, &tree);
+        });
+    }
+    format!("{display_list:?}")
+}
+
+#[test]
+fn table_normalizes_invalid_dimensions_and_row_heights() {
+    let mut invalid_column = TableColumn::new("Invalid", 40.0);
+    invalid_column.width = f32::NAN;
+    let table = Table::new()
+        .columns(vec![invalid_column])
+        .rows(vec![vec!["Value".into()]])
+        .row_height(f32::NAN)
+        .size(f32::INFINITY, -20.0);
+
+    assert_eq!(
+        table.measure(Constraints::loose(Size::new(500.0, 500.0))),
+        Size::zero()
+    );
+    assert!(matches!(
+        table.snapshot_fields(),
+        SnapshotFields::Table { columns, row_h, .. }
+            if columns[0].width == 0.0 && row_h == 28.0
+    ));
+
+    let one_pixel_rows = Table::new().row_height(-4.0);
+    assert!(matches!(
+        one_pixel_rows.snapshot_fields(),
+        SnapshotFields::Table { row_h, .. } if row_h == 1.0
+    ));
+}
+
+#[test]
+fn constrained_table_clips_and_elides_headers_cells_and_empty_text() {
+    let table = Table::new()
+        .columns(vec![
+            TableColumn::new("一个很长的可排序组件标题", 74.0).sortable(true),
+            TableColumn::new("Semantic identifier heading", 76.0),
+        ])
+        .rows(vec![vec![
+            "一段很长的中英文单元格内容 mixed value".into(),
+            "another very long table cell value".into(),
+        ]])
+        .bordered(true);
+    let display_list = render_table(&table, Rect::new(10.0, 8.0, 150.0, 64.0), (180, 90));
+
+    assert!(
+        display_list.contains("PushClip { rect: Rect { x: 10.0, y: 8.0, w: 150.0, h: 64.0 } }"),
+        "{display_list}"
+    );
+    assert!(display_list.contains('…'), "{display_list}");
+    assert!(
+        !display_list.contains("w: -") && !display_list.contains("h: -"),
+        "{display_list}"
+    );
+
+    let empty = Table::new()
+        .empty_text("这里是一段很长的自定义空表提示")
+        .bordered(true);
+    let empty_display = render_table(&empty, Rect::new(0.0, 0.0, 80.0, 24.0), (100, 40));
+    assert!(empty_display.contains('…'), "{empty_display}");
+    assert!(!empty_display.contains("NaN"), "{empty_display}");
+}
+
+#[test]
+fn table_does_not_hit_rows_outside_the_actual_body_viewport() {
+    let mut table = Table::new()
+        .columns(vec![TableColumn::new("Name", 120.0)])
+        .rows(vec![vec!["Ada".into()]])
+        .size(120.0, 20.0);
+    table.last_frame.set(Some(Rect::new(0.0, 0.0, 120.0, 20.0)));
+
+    assert_eq!(table.body_viewport_height(), 0.0);
+    assert_eq!(table.on_event(&click(20.0, 40.0)), EventResult::NotHandled);
+    assert_eq!(table.selected_row(), None);
+}
 
 #[test]
 fn populated_table_is_focusable_and_tracks_focus_state() {

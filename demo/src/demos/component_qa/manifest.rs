@@ -736,6 +736,7 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
             "hover",
             "pressed",
             "focus",
+            "constrained",
         ],
     ),
     widget(

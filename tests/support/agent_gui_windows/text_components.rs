@@ -1782,6 +1782,55 @@ fn real_demo_skeleton_uses_actual_rect_circle_and_text_frames() {
 }
 
 #[test]
+#[ignore = "requires an interactive Windows desktop and writes Table visual evidence"]
+fn real_demo_table_clips_long_headers_cells_and_empty_state() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(53, "table-layout");
+    let snapshot = session.snapshot("table-layout-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "table"
+    );
+
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "table");
+    assert_eq!(target["visible_bounds"]["w"], 405.0);
+    assert_eq!(target["visible_bounds"]["h"], 190.0);
+    let empty = node_by_automation_id(&snapshot, "component-qa-table-empty");
+    assert_eq!(empty["visible_bounds"]["w"], 135.0);
+    assert_eq!(empty["visible_bounds"]["h"], 190.0);
+    let constrained = node_by_automation_id(&snapshot, "component-qa-table-constrained");
+    assert_eq!(constrained["visible_bounds"]["w"], 150.0);
+    assert_eq!(constrained["visible_bounds"]["h"], 90.0);
+
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-table", "table-layout-light.png");
+
+    let focused = session.focus("component-qa-target", "table-focus");
+    assert_eq!(
+        node_by_automation_id(&focused, "component-qa-target")["focused"],
+        true
+    );
+    session.capture("uix-table", "table-layout-focus.png");
+
+    session.click_at_offset("component-qa-target", 0.5, 50.0, "table-select-row");
+    session.capture("uix-table", "table-layout-selected.png");
+    session.click_at_offset("component-qa-target", 0.2, 16.0, "table-sort-column");
+    session.capture("uix-table", "table-layout-sorted.png");
+
+    let dark = session.invoke("theme-toggle", "table-dark-theme");
+    assert_eq!(
+        node_by_automation_id(&dark, "component-qa-table-constrained")["visible_bounds"]["w"],
+        150.0
+    );
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-table", "table-layout-dark.png");
+    session.close();
+}
+
+#[test]
 #[ignore = "requires an interactive Windows desktop and writes Checkbox CJK evidence"]
 fn real_demo_checkbox_uses_compact_cjk_width_and_toggles() {
     let _guard = REAL_GUI_LOCK

@@ -37,7 +37,8 @@ impl TableColumnGeometry {
         selection_width: f32,
         scroll_x: f32,
     ) -> Self {
-        let viewport_width = viewport_width.max(0.0);
+        let viewport_width = finite_nonnegative(viewport_width);
+        let selection_width = finite_nonnegative(selection_width).min(viewport_width);
         let left_width = zone_width(columns, Some(Fixed::Left));
         let right_width = zone_width(columns, Some(Fixed::Right));
         let middle_width = zone_width(columns, None);
@@ -53,7 +54,7 @@ impl TableColumnGeometry {
         let mut right_x = origin_x + viewport_width - right_width;
 
         for (index, column) in columns.iter().enumerate() {
-            let width = column.width.max(0.0);
+            let width = finite_nonnegative(column.width);
             let (x, zone) = match column.fixed {
                 Some(Fixed::Left) => {
                     let x = left_x;
@@ -134,6 +135,14 @@ fn zone_width(columns: &[TableColumn], fixed: Option<Fixed>) -> f32 {
     columns
         .iter()
         .filter(|column| column.fixed == fixed)
-        .map(|column| column.width.max(0.0))
+        .map(|column| finite_nonnegative(column.width))
         .sum()
+}
+
+fn finite_nonnegative(value: f32) -> f32 {
+    if value.is_finite() {
+        value.max(0.0)
+    } else {
+        0.0
+    }
 }

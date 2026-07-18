@@ -1,4 +1,4 @@
-use crate::core::{Point, Rect};
+use crate::core::Rect;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 
@@ -76,13 +76,22 @@ pub(super) fn paint(
                 header_rect
             };
             let column = &table.columns[laid_out.index];
-            let text_y = ctx.visual_center_y(leaf_rect, 13.0);
-            ctx.draw_text(
-                &column.title,
-                Point::new(laid_out.x + 8.0, text_y),
-                text_color,
-                13.0,
-            );
+            let sort_slot = if table.sortable || column.sortable {
+                24.0_f32.min(laid_out.width * 0.4)
+            } else {
+                0.0
+            };
+            let horizontal_inset = 8.0_f32.min(laid_out.width * 0.25);
+            if let Some(text_frame) = Rect::new(
+                laid_out.x + horizontal_inset,
+                leaf_rect.y,
+                (laid_out.width - horizontal_inset * 2.0 - sort_slot).max(0.0),
+                leaf_rect.h,
+            )
+            .intersect(&zone_clip)
+            {
+                Table::paint_single_line(ctx, &column.title, text_frame, text_color, 13.0);
+            }
             if table.sortable || column.sortable {
                 let indicator = match column.sort_direction {
                     SortDirection::Asc => "chevron-up",
@@ -93,18 +102,23 @@ pub(super) fn paint(
                 } else {
                     (primary, 11.0)
                 };
-                crate::ui::widgets::icon::paint_icon_in_frame(
-                    ctx,
-                    indicator,
-                    Rect::new(
-                        laid_out.x + laid_out.width - 24.0,
-                        leaf_rect.y,
-                        18.0,
-                        leaf_rect.h,
-                    ),
-                    color,
-                    font_size,
-                );
+                let icon_width = 18.0_f32.min(sort_slot).min(laid_out.width);
+                if icon_width > 0.0 {
+                    crate::ui::widgets::icon::paint_icon_in_frame(
+                        ctx,
+                        indicator,
+                        Rect::new(
+                            laid_out.x + laid_out.width
+                                - icon_width
+                                - 4.0_f32.min(sort_slot * 0.25),
+                            leaf_rect.y,
+                            icon_width,
+                            leaf_rect.h,
+                        ),
+                        color,
+                        font_size,
+                    );
+                }
             }
             if table.bordered {
                 ctx.fill_rect(
@@ -132,8 +146,6 @@ fn paint_group_titles(
     let border = ctx.tokens().color_border();
     let text_color = ctx.tokens().color_text();
     let group_rect = Rect::new(header_rect.x, header_rect.y, header_rect.w, table.header_h);
-    let text_y = ctx.visual_center_y(group_rect, 13.0);
-
     for group in &table.column_groups {
         let Some(title) = group.title.as_deref() else {
             continue;
@@ -162,7 +174,19 @@ fn paint_group_titles(
                 continue;
             };
             ctx.canvas_2d().push_clip(segment);
-            ctx.draw_text(title, Point::new(segment.x + 8.0, text_y), text_color, 13.0);
+            let horizontal_inset = 8.0_f32.min(segment.w * 0.25);
+            Table::paint_single_line(
+                ctx,
+                title,
+                Rect::new(
+                    segment.x + horizontal_inset,
+                    segment.y,
+                    (segment.w - horizontal_inset * 2.0).max(0.0),
+                    segment.h,
+                ),
+                text_color,
+                13.0,
+            );
             ctx.fill_rect(
                 Rect::new(segment.x, segment.y + segment.h - 1.0, segment.w, 1.0),
                 border,
