@@ -615,6 +615,7 @@ fn reconcile_message_preserves_queue_and_syncs_placement() {
         message.snapshot_fields(),
         SnapshotFields::Message {
             placement: Placement::TopRight,
+            contents: vec!["kept".to_owned()],
         }
     );
 }

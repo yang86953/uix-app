@@ -3524,6 +3524,39 @@ fn real_demo_drawer_opens_accessibly_and_traps_focus_in_light_and_dark() {
 }
 
 #[test]
+#[ignore = "requires an interactive Windows desktop and writes Message layout evidence"]
+fn real_demo_message_clips_stack_and_commits_close_on_release() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(60, "message-layout");
+    thread::sleep(Duration::from_millis(300));
+    let snapshot = session.snapshot("message-layout-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "message"
+    );
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "alert");
+    let original_name = target["name"].as_str().expect("Message accessible name");
+    assert!(original_name.contains("正在归档超长中英文 mixed Message evidence"));
+
+    session.capture("uix-message", "message-layout-light.png");
+
+    let released =
+        session.click_at_offset("component-qa-target", 0.827, 32.0, "message-close-light");
+    let released_name = node_by_automation_id(&released, "component-qa-target")["name"]
+        .as_str()
+        .expect("remaining Message accessible name");
+    assert!(!released_name.contains("正在归档超长中英文 mixed Message evidence"));
+
+    session.invoke("theme-toggle", "message-dark-theme");
+    thread::sleep(Duration::from_millis(220));
+    session.capture("uix-message", "message-layout-dark.png");
+    session.close();
+}
+
+#[test]
 #[ignore = "requires an interactive Windows desktop and writes Label multiline evidence"]
 fn real_demo_label_multiline_keeps_following_content_below_all_lines() {
     let _guard = REAL_GUI_LOCK
