@@ -895,9 +895,32 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                     Table::new()
                         .columns(vec![TableColumn::new("空表", 115.0)])
                         .rows(Vec::new())
+                        .empty_text("当前没有符合质量条件的数据")
                         .bordered(true)
                         .size(135.0, 190.0),
-                ),
+                )
+                .automation_id("component-qa-table-empty"),
+            ),
+            qa_variant(
+                "150×90 / constrained",
+                embed(
+                    Table::new()
+                        .columns(vec![
+                            TableColumn::new("超长可排序组件标题", 74.0).sortable(true),
+                            TableColumn::new("Semantic identifier heading", 76.0),
+                        ])
+                        .rows(vec![
+                            vec![
+                                "中英文混合单元格 mixed value".into(),
+                                "long semantic value".into(),
+                            ],
+                            vec!["第二个质量检查项".into(), "another long value".into()],
+                        ])
+                        .sortable(true)
+                        .bordered(true)
+                        .size(150.0, 90.0),
+                )
+                .automation_id("component-qa-table-constrained"),
             ),
         ]),
         "tag" => column_fit([

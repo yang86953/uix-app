@@ -1,5 +1,5 @@
 use crate::component;
-use crate::core::{Constraints, Point, Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::ui::foundation::virtual_scroll::VirtualListScroll;
@@ -20,6 +20,14 @@ mod header;
 
 use config::{flatten_column_groups, merge_table_columns};
 use geometry::{ColumnZone, TableColumnGeometry};
+
+fn finite_nonnegative(value: f32) -> f32 {
+    if value.is_finite() {
+        value.max(0.0)
+    } else {
+        0.0
+    }
+}
 
 /// 排序方向。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,7 +60,7 @@ impl TableColumn {
     pub fn new(title: impl Into<String>, width: f32) -> Self {
         Self {
             title: title.into(),
-            width,
+            width: finite_nonnegative(width),
             sortable: false,
             sort_direction: SortDirection::None,
             filterable: false,
@@ -228,7 +236,12 @@ component! {
     tab_index => (&self) -> i32 { i32::from(!self.rows.is_empty()) }
 
     measure => (&self, constraints: Constraints) -> Size {
-        let w: f32 = self.columns.iter().map(|c| c.width).sum::<f32>() + self.selection_width();
+        let w: f32 = self
+            .columns
+            .iter()
+            .map(|column| finite_nonnegative(column.width))
+            .sum::<f32>()
+            + self.selection_width();
         let extra = if self.expandable && self.expanded_row.get().is_some() { self.expand_height } else { 0.0 };
         let body_h = self.rows.len() as f32 * self.row_h + extra;
         let h = self.total_header_height() + body_h;
@@ -392,7 +405,11 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        let frame = Self::normalized_frame(frame);
         self.last_frame.set(Some(frame));
+        if frame.w <= 0.0 || frame.h <= 0.0 {
+            return;
+        }
         let bg = ctx.tokens().color_bg_elevated();
         let border = ctx.tokens().color_border();
         let text_color = ctx.tokens().color_text();
@@ -400,22 +417,39 @@ component! {
         let primary = ctx.tokens().color_primary();
         let hover_bg = ctx.tokens().color_fill_quaternary();
         let sel_bg = ctx.tokens().color_primary_bg();
-        let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
+        let radius = ctx
+            .tokens()
+            .border_radius_sm()
+            .min(frame.w.min(frame.h) * 0.5);
+        let r = Some(Radius::uniform(radius));
         let mut y = frame.y;
         let sel = self.selected_row.get();
         let hover = self.hover_row.get();
         let expanded = self.expanded_row.get();
         let column_geometry = self.column_geometry(frame.x, frame.w);
+        ctx.push_clip(frame);
 
         // 空状态
         if self.rows.is_empty() {
             let loc = crate::ui::locale::use_locale();
             let empty = if self.empty_text.is_empty() { loc.empty_data } else { &self.empty_text };
-            let ey = ctx.visual_center_y(frame, 14.0);
-            ctx.draw_text(empty, Point::new(frame.x + 16.0, ey), text_sec, 14.0);
+            let horizontal_inset = 16.0_f32.min(frame.w * 0.25);
+            Self::paint_single_line(
+                ctx,
+                empty,
+                Rect::new(
+                    frame.x + horizontal_inset,
+                    frame.y,
+                    (frame.w - horizontal_inset * 2.0).max(0.0),
+                    frame.h,
+                ),
+                text_sec,
+                14.0,
+            );
             if self.bordered {
                 ctx.stroke_rect(frame, border, 1.0, r);
             }
+            ctx.pop_clip();
             return;
         }
 
@@ -431,7 +465,7 @@ component! {
         let body_viewport_h = self.body_viewport_height();
         let (start, end) = self.visible_row_range(body_viewport_h);
         let body_clip = Rect::new(frame.x, body_top, frame.w, body_viewport_h);
-        ctx.canvas_2d().push_clip(body_clip);
+        ctx.push_clip(body_clip);
 
         for actual_ri in start..end {
             let Some(row) = self.rows.get(actual_ri) else {
@@ -480,7 +514,6 @@ component! {
                 }
             }
 
-            let cell_y = ctx.visual_center_y(row_rect, 12.0);
             for zone in [ColumnZone::Middle, ColumnZone::Left, ColumnZone::Right] {
                 let Some(clip) = column_geometry.clip_for(zone, row_rect.y, row_rect.h) else {
                     continue;
@@ -497,7 +530,27 @@ component! {
                             .map(String::as_str)
                             .unwrap_or("");
                         let tc = if is_selected { primary } else { text_color };
-                        ctx.draw_text(cell, Point::new(laid_out.x + 8.0, cell_y), tc, 12.0);
+                        let cell_frame = Rect::new(
+                            laid_out.x,
+                            row_rect.y,
+                            laid_out.width,
+                            row_rect.h,
+                        );
+                        if let Some(cell_frame) = cell_frame.intersect(&clip) {
+                            let horizontal_inset = 8.0_f32.min(cell_frame.w * 0.25);
+                            Self::paint_single_line(
+                                ctx,
+                                cell,
+                                Rect::new(
+                                    cell_frame.x + horizontal_inset,
+                                    cell_frame.y,
+                                    (cell_frame.w - horizontal_inset * 2.0).max(0.0),
+                                    cell_frame.h,
+                                ),
+                                tc,
+                                12.0,
+                            );
+                        }
                     }
                     if self.bordered {
                         ctx.fill_rect(
@@ -517,7 +570,23 @@ component! {
 
             // 扩展行箭头
             if self.expandable {
-                ctx.draw_text(if is_expanded { "▲" } else { "▼" }, Point::new(frame.x + frame.w - 20.0, cell_y), text_sec, 10.0);
+                let icon_size = 18.0_f32.min(row_rect.h).min(frame.w);
+                crate::ui::widgets::icon::paint_icon_in_frame(
+                    ctx,
+                    if is_expanded {
+                        "chevron-up"
+                    } else {
+                        "chevron-down"
+                    },
+                    Rect::new(
+                        frame.x + (frame.w - icon_size - 6.0).max(0.0),
+                        row_rect.y + (row_rect.h - icon_size) * 0.5,
+                        icon_size,
+                        icon_size,
+                    ),
+                    text_sec,
+                    10.0,
+                );
             }
 
             if actual_ri + 1 < end || is_expanded {
@@ -536,13 +605,27 @@ component! {
             }
         }
 
-        ctx.canvas_2d().pop_clip();
+        ctx.pop_clip();
         if self.bordered {
             ctx.stroke_rect(frame, border, 1.0, r);
         }
         if self.focused {
-            ctx.stroke_rect(frame, primary, 2.0, r);
+            let inset = 1.0_f32.min(frame.w * 0.5).min(frame.h * 0.5);
+            ctx.stroke_rect(
+                Rect::new(
+                    frame.x + inset,
+                    frame.y + inset,
+                    (frame.w - inset * 2.0).max(0.0),
+                    (frame.h - inset * 2.0).max(0.0),
+                ),
+                primary,
+                2.0,
+                Some(Radius::uniform(
+                    radius.min((frame.w - inset * 2.0).min(frame.h - inset * 2.0) * 0.5),
+                )),
+            );
         }
+        ctx.pop_clip();
     }
 
     children_clip => (&self, frame: Rect) -> Option<Rect> {
@@ -678,14 +761,97 @@ impl Table {
             focused: false,
         }
     }
+
+    fn normalized_columns(mut columns: Vec<TableColumn>) -> Vec<TableColumn> {
+        for column in &mut columns {
+            column.width = finite_nonnegative(column.width);
+        }
+        columns
+    }
+
+    fn normalized_row_height(height: f32) -> f32 {
+        if height.is_finite() {
+            height.max(1.0)
+        } else {
+            28.0
+        }
+    }
+
+    fn normalized_frame(frame: Rect) -> Rect {
+        Rect::new(
+            frame.x,
+            frame.y,
+            finite_nonnegative(frame.w),
+            finite_nonnegative(frame.h),
+        )
+    }
+
+    pub(super) fn paint_single_line(
+        ctx: &mut PaintContext<'_>,
+        value: &str,
+        frame: Rect,
+        color: crate::draw::Color,
+        font_size: f32,
+    ) {
+        if frame.w <= 0.0 || frame.h <= 0.0 {
+            return;
+        }
+        let Some(value) = Self::elide_single_line(ctx, value, font_size, frame.w) else {
+            return;
+        };
+        ctx.push_clip(frame);
+        ctx.draw_text_in_frame(&value, frame, color, font_size);
+        ctx.pop_clip();
+    }
+
+    fn elide_single_line(
+        ctx: &mut PaintContext<'_>,
+        value: &str,
+        font_size: f32,
+        max_width: f32,
+    ) -> Option<String> {
+        if !max_width.is_finite() || max_width <= 0.0 {
+            return None;
+        }
+        let value = value.replace(['\r', '\n'], " ");
+        if Self::text_width(ctx, &value, font_size) <= max_width {
+            return Some(value);
+        }
+        const ELLIPSIS: &str = "…";
+        if Self::text_width(ctx, ELLIPSIS, font_size) > max_width {
+            return None;
+        }
+        let mut visible = String::new();
+        for ch in value.chars() {
+            visible.push(ch);
+            visible.push_str(ELLIPSIS);
+            let fits = Self::text_width(ctx, &visible, font_size) <= max_width;
+            visible.pop();
+            if !fits {
+                visible.pop();
+                break;
+            }
+        }
+        visible.push_str(ELLIPSIS);
+        Some(visible)
+    }
+
+    fn text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
+        ctx.measure_text(value, font_size).w.max(
+            crate::draw::font::text_backend::estimate_text_metrics(value, f32::INFINITY, font_size)
+                .max_line_width,
+        )
+    }
+
     pub fn columns(mut self, cols: Vec<TableColumn>) -> Self {
-        self.columns = cols;
+        self.columns = Self::normalized_columns(cols);
         self.column_groups.clear();
         self
     }
     /// 使用分组定义替换当前列；`TableColumnGroup::column` 声明跨两层表头的单列。
     pub fn column_groups(mut self, groups: Vec<TableColumnGroup>) -> Self {
         (self.columns, self.column_groups) = flatten_column_groups(groups);
+        self.columns = Self::normalized_columns(self.columns);
         self
     }
     pub fn rows(mut self, rows: Vec<TableRow>) -> Self {
@@ -735,12 +901,12 @@ impl Table {
     }
     /// 设置表格视口尺寸；数据超出高度时仅表体滚动，表头保持可见。
     pub fn size(mut self, width: f32, height: f32) -> Self {
-        self.fixed_width = Some(width.max(0.0));
-        self.fixed_height = Some(height.max(0.0));
+        self.fixed_width = Some(finite_nonnegative(width));
+        self.fixed_height = Some(finite_nonnegative(height));
         self
     }
     pub fn row_height(mut self, h: f32) -> Self {
-        self.row_h = h;
+        self.row_h = Self::normalized_row_height(h);
         self
     }
     /// 是否仅遍历表体视口及 overscan 范围内的行。
@@ -750,7 +916,7 @@ impl Table {
     }
     /// 设置虚拟滚动使用的固定行高；不会隐式开启虚拟滚动。
     pub fn virtual_row_height(mut self, height: f32) -> Self {
-        self.row_h = height;
+        self.row_h = Self::normalized_row_height(height);
         self
     }
     pub fn selected_row(&self) -> Option<usize> {
@@ -791,7 +957,7 @@ impl Table {
         V: crate::ui::view::View,
     {
         self.expandable = true;
-        self.expand_height = height.max(0.0);
+        self.expand_height = finite_nonnegative(height);
         TableBuilder {
             table: self,
             expand_renderer: Box::new(move |row| crate::ui::view::View::build(renderer(row))),
@@ -870,7 +1036,7 @@ impl Table {
     pub(crate) fn body_viewport_height(&self) -> f32 {
         self.last_frame
             .get()
-            .map(|f| (f.h - self.total_header_height() - 1.0).max(self.row_h))
+            .map(|f| (finite_nonnegative(f.h) - self.total_header_height() - 1.0).max(0.0))
             .unwrap_or(300.0)
     }
 
@@ -884,10 +1050,11 @@ impl Table {
 
     fn row_index_at_y(&self, pos_y: f32) -> Option<usize> {
         let header_height = self.total_header_height();
-        if pos_y < header_height {
+        let viewport_height = self.body_viewport_height();
+        if pos_y < header_height || pos_y >= header_height + 1.0 + viewport_height {
             return None;
         }
-        let mut local_y = pos_y - header_height + self.body_scroll.scroll_offset();
+        let mut local_y = pos_y - header_height - 1.0 + self.body_scroll.scroll_offset();
         if local_y < 0.0 {
             return None;
         }
@@ -1010,17 +1177,20 @@ impl Table {
             .and_then(|row| self.row_keys.get(row))
             .cloned();
         self.columns = merge_table_columns(self.columns.as_slice(), next.columns, next.sortable);
+        for column in &mut self.columns {
+            column.width = finite_nonnegative(column.width);
+        }
         self.column_groups = next.column_groups;
         self.rows = next.rows;
         self.row_keys = next.row_keys;
         self.view_columns = next.view_columns;
         self.materialized_cell_range.set(None);
-        self.row_h = next.row_h;
+        self.row_h = Self::normalized_row_height(next.row_h);
         self.header_h = next.header_h;
         self.fixed_width = next.fixed_width;
         self.fixed_height = next.fixed_height;
         self.expandable = next.expandable;
-        self.expand_height = next.expand_height;
+        self.expand_height = finite_nonnegative(next.expand_height);
         self.sortable = next.sortable;
         self.selection = next.selection;
         self.bordered = next.bordered;
@@ -1054,7 +1224,8 @@ impl Table {
     }
 
     pub(crate) fn cell_view_range_for_frame(&self, frame: Rect) -> (usize, usize) {
-        let viewport_height = (frame.h - self.total_header_height() - 1.0).max(self.row_h);
+        let viewport_height =
+            (finite_nonnegative(frame.h) - self.total_header_height() - 1.0).max(0.0);
         self.visible_row_range(viewport_height)
     }
 
@@ -1114,13 +1285,13 @@ impl<R> DataTable<R> {
 
     /// 设置表格视口尺寸；数据超出高度时仅表体滚动，表头保持可见。
     pub fn size(mut self, width: f32, height: f32) -> Self {
-        self.table.fixed_width = Some(width.max(0.0));
-        self.table.fixed_height = Some(height.max(0.0));
+        self.table.fixed_width = Some(finite_nonnegative(width));
+        self.table.fixed_height = Some(finite_nonnegative(height));
         self
     }
 
     pub fn row_height(mut self, height: f32) -> Self {
-        self.table.row_h = height;
+        self.table.row_h = Table::normalized_row_height(height);
         self
     }
 
@@ -1130,7 +1301,7 @@ impl<R> DataTable<R> {
     }
 
     pub fn virtual_row_height(mut self, height: f32) -> Self {
-        self.table.row_h = height;
+        self.table.row_h = Table::normalized_row_height(height);
         self
     }
 
@@ -1154,7 +1325,8 @@ impl<R> DataTable<R> {
             row_keys,
             columns,
         } = self;
-        table.columns = columns.iter().map(|column| column.column.clone()).collect();
+        table.columns =
+            Table::normalized_columns(columns.iter().map(|column| column.column.clone()).collect());
         table.column_groups.clear();
         table.rows = rows
             .iter()
@@ -1220,7 +1392,7 @@ impl TableBuilder {
     }
 
     pub fn columns(mut self, columns: Vec<TableColumn>) -> Self {
-        self.table.columns = columns;
+        self.table.columns = Table::normalized_columns(columns);
         self.table.column_groups.clear();
         self
     }
@@ -1228,6 +1400,7 @@ impl TableBuilder {
     /// 使用分组定义替换当前列；`TableColumnGroup::column` 声明跨两层表头的单列。
     pub fn column_groups(mut self, groups: Vec<TableColumnGroup>) -> Self {
         (self.table.columns, self.table.column_groups) = flatten_column_groups(groups);
+        self.table.columns = Table::normalized_columns(self.table.columns);
         self
     }
 
@@ -1260,13 +1433,13 @@ impl TableBuilder {
 
     /// 设置表格视口尺寸；数据超出高度时仅表体滚动，表头保持可见。
     pub fn size(mut self, width: f32, height: f32) -> Self {
-        self.table.fixed_width = Some(width.max(0.0));
-        self.table.fixed_height = Some(height.max(0.0));
+        self.table.fixed_width = Some(finite_nonnegative(width));
+        self.table.fixed_height = Some(finite_nonnegative(height));
         self
     }
 
     pub fn row_height(mut self, height: f32) -> Self {
-        self.table.row_h = height;
+        self.table.row_h = Table::normalized_row_height(height);
         self
     }
 
@@ -1278,7 +1451,7 @@ impl TableBuilder {
 
     /// 设置虚拟滚动使用的固定行高；不会隐式开启虚拟滚动。
     pub fn virtual_row_height(mut self, height: f32) -> Self {
-        self.table.row_h = height;
+        self.table.row_h = Table::normalized_row_height(height);
         self
     }
 
