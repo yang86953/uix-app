@@ -127,6 +127,20 @@ fn selectable_list_frame(
         .align_self(AlignItems::Start)
 }
 
+fn skeleton_frame(
+    skeleton: Skeleton,
+    width: f32,
+    height: f32,
+    automation_id: &'static str,
+) -> ViewNode {
+    grid([embed(skeleton).automation_id(automation_id)])
+        .columns(vec![GridTrack::Fr(1.0)])
+        .rows(vec![GridTrack::Fr(1.0)])
+        .width(width)
+        .height(height)
+        .align_self(AlignItems::Start)
+}
+
 fn avatar_frame(avatar: Avatar, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
     grid([embed(avatar).automation_id(automation_id)])
         .columns(vec![GridTrack::Fr(1.0)])
@@ -803,14 +817,40 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
         "skeleton" => qa_row([
             qa_variant(
                 "Rect / target",
-                qa_target(Skeleton::new().shape(SkeletonShape::Rect).size(240.0, 18.0)),
+                skeleton_frame(
+                    Skeleton::new().shape(SkeletonShape::Rect).size(240.0, 18.0),
+                    240.0,
+                    18.0,
+                    "component-qa-target",
+                ),
             ),
             qa_variant(
                 "Circle",
-                embed(
+                skeleton_frame(
                     Skeleton::new()
                         .shape(SkeletonShape::Circle)
                         .size(48.0, 48.0),
+                    48.0,
+                    48.0,
+                    "component-qa-skeleton-circle",
+                ),
+            ),
+            qa_variant(
+                "Text",
+                skeleton_frame(
+                    Skeleton::new().shape(SkeletonShape::Text).size(200.0, 48.0),
+                    200.0,
+                    48.0,
+                    "component-qa-skeleton-text",
+                ),
+            ),
+            qa_variant(
+                "72×12 / constrained",
+                skeleton_frame(
+                    Skeleton::new().shape(SkeletonShape::Text).size(240.0, 80.0),
+                    72.0,
+                    12.0,
+                    "component-qa-skeleton-constrained",
                 ),
             ),
         ]),

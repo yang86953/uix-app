@@ -13,6 +13,7 @@ mod list;
 mod result;
 mod selectable_list;
 mod selectable_list_virtual_scroll;
+mod skeleton;
 mod table;
 mod table_geometry;
 mod table_virtual_scroll;

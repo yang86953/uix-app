@@ -1741,6 +1741,47 @@ fn real_demo_selectable_list_clips_interacts_and_scrolls_inside_actual_frames() 
 }
 
 #[test]
+#[ignore = "requires an interactive Windows desktop and writes Skeleton visual evidence"]
+fn real_demo_skeleton_uses_actual_rect_circle_and_text_frames() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(52, "skeleton-layout");
+    let snapshot = session.snapshot("skeleton-layout-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "skeleton"
+    );
+
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "generic");
+    assert_eq!(target["visible_bounds"]["w"], 240.0);
+    assert_eq!(target["visible_bounds"]["h"], 18.0);
+
+    let circle = node_by_automation_id(&snapshot, "component-qa-skeleton-circle");
+    assert_eq!(circle["visible_bounds"]["w"], 48.0);
+    assert_eq!(circle["visible_bounds"]["h"], 48.0);
+    let text = node_by_automation_id(&snapshot, "component-qa-skeleton-text");
+    assert_eq!(text["visible_bounds"]["w"], 200.0);
+    assert_eq!(text["visible_bounds"]["h"], 48.0);
+    let constrained = node_by_automation_id(&snapshot, "component-qa-skeleton-constrained");
+    assert_eq!(constrained["visible_bounds"]["w"], 72.0);
+    assert_eq!(constrained["visible_bounds"]["h"], 12.0);
+
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-skeleton", "skeleton-layout-light.png");
+
+    let dark = session.invoke("theme-toggle", "skeleton-dark-theme");
+    assert_eq!(
+        node_by_automation_id(&dark, "component-qa-skeleton-constrained")["visible_bounds"]["h"],
+        12.0
+    );
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-skeleton", "skeleton-layout-dark.png");
+    session.close();
+}
+
+#[test]
 #[ignore = "requires an interactive Windows desktop and writes Checkbox CJK evidence"]
 fn real_demo_checkbox_uses_compact_cjk_width_and_toggles() {
     let _guard = REAL_GUI_LOCK
