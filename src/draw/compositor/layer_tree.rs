@@ -231,15 +231,16 @@ impl LayerTree {
     /// 注意：build 后未复用的旧离屏缓冲句柄暂存在 `orphaned_handles` 中，
     /// 调用者需在合适的时机调用 `sweep_orphaned_offscreens` 释放。
     pub fn build(&mut self, scene: &impl ScenePaint, supports_offscreen: bool) {
-        // 收集旧 Picture 节点的离屏缓冲与 DisplayList（按 node_id 索引）
+        // Take ownership of old Picture nodes' display lists and offscreen handles
+        // to avoid cloning in the hot path.
         let mut old_cache: std::collections::HashMap<
             NodeId,
             (Rect, Option<ImageHandle>, Option<DisplayList>),
         > = std::collections::HashMap::new();
-        if let Some(ref root) = self.root {
+        if let Some(ref mut root) = self.root {
             Self::collect_picture_handles(root, &mut old_cache);
         }
-        for overlay in &self.overlays {
+        for overlay in &mut self.overlays {
             Self::collect_picture_handles(overlay, &mut old_cache);
         }
 
@@ -252,12 +253,12 @@ impl LayerTree {
             .root_id()
             .filter(|id| !scene.node_is_overlay(*id))
             .and_then(|root_id| {
-                Self::build_node_cached(scene, root_id, 0, &old_cache, supports_offscreen)
+                Self::build_node_cached(scene, root_id, 0, &mut old_cache, supports_offscreen)
             });
         self.overlays = overlay_ids
             .into_iter()
             .filter_map(|id| {
-                Self::build_overlay_node_cached(scene, id, 0, &old_cache, supports_offscreen)
+                Self::build_overlay_node_cached(scene, id, 0, &mut old_cache, supports_offscreen)
             })
             .collect();
         self.overlays
@@ -496,10 +497,11 @@ impl LayerTree {
 
     // ── 内部 ──
 
-    /// 从旧 LayerTree 中收集所有 Picture 节点的离屏缓冲句柄。
-    /// 同时重置 retry_count 为 0（rebuild 意味着新的尝试机会）。
+    /// Take ownership of old Picture nodes' display lists and offscreen handles
+    /// (avoiding clone). The old tree is discarded after build, so moving out is
+    /// safe.
     fn collect_picture_handles(
-        node: &LayerNode,
+        node: &mut LayerNode,
         cache: &mut std::collections::HashMap<
             NodeId,
             (Rect, Option<ImageHandle>, Option<DisplayList>),
@@ -513,7 +515,7 @@ impl LayerTree {
                 display_list,
                 ..
             } => {
-                cache.insert(*node_id, (*bounds, *offscreen_handle, display_list.clone()));
+                cache.insert(*node_id, (*bounds, *offscreen_handle, display_list.take()));
             }
             LayerNode::ClipRect { children, .. } | LayerNode::Direct { children, .. } => {
                 for child in children {
@@ -544,7 +546,10 @@ impl LayerTree {
         scene: &impl ScenePaint,
         id: NodeId,
         depth: usize,
-        cache: &std::collections::HashMap<NodeId, (Rect, Option<ImageHandle>, Option<DisplayList>)>,
+        cache: &mut std::collections::HashMap<
+            NodeId,
+            (Rect, Option<ImageHandle>, Option<DisplayList>),
+        >,
         supports_offscreen: bool,
     ) -> Option<LayerNode> {
         if !scene.node_visible(id) {
@@ -560,12 +565,12 @@ impl LayerTree {
         if supports_offscreen && stats.eligible() {
             // frame 是绝对坐标，直接用作 bounds
             let bounds = frame;
-            // 检查旧缓存：如果 bounds 相同，复用离屏句柄
+            // Take ownership from cache (remove instead of get+clone)
             let (offscreen_handle, display_list) = cache
-                .get(&id)
+                .remove(&id)
                 .map(|(old_bounds, old_handle, old_list)| {
-                    if *old_bounds == bounds {
-                        (*old_handle, old_list.clone())
+                    if old_bounds == bounds {
+                        (old_handle, old_list)
                     } else {
                         (None, None)
                     }
@@ -612,7 +617,10 @@ impl LayerTree {
         scene: &impl ScenePaint,
         id: NodeId,
         depth: usize,
-        cache: &std::collections::HashMap<NodeId, (Rect, Option<ImageHandle>, Option<DisplayList>)>,
+        cache: &mut std::collections::HashMap<
+            NodeId,
+            (Rect, Option<ImageHandle>, Option<DisplayList>),
+        >,
         supports_offscreen: bool,
     ) -> Option<LayerNode> {
         if !scene.node_visible(id) {
@@ -674,7 +682,10 @@ impl LayerTree {
         scene: &impl ScenePaint,
         id: NodeId,
         depth: usize,
-        cache: &std::collections::HashMap<NodeId, (Rect, Option<ImageHandle>, Option<DisplayList>)>,
+        cache: &mut std::collections::HashMap<
+            NodeId,
+            (Rect, Option<ImageHandle>, Option<DisplayList>),
+        >,
         supports_offscreen: bool,
     ) -> Vec<LayerNode> {
         let mut children: Vec<LayerNode> = scene
