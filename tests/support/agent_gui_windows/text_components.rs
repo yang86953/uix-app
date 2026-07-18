@@ -1391,6 +1391,50 @@ fn real_demo_collapse_wraps_constrained_content_and_exposes_interaction_states()
 }
 
 #[test]
+#[ignore = "requires an interactive Windows desktop and writes Descriptions visual evidence"]
+fn real_demo_descriptions_reflows_long_content_without_overflow() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(46, "descriptions-layout");
+    let snapshot = session.snapshot("descriptions-layout-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "descriptions"
+    );
+
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "group");
+    assert_eq!(target["name"], "组件验收信息");
+    assert_eq!(target["visible_bounds"]["w"], 360.0);
+    assert_eq!(target["visible_bounds"]["h"], 130.0);
+    assert!(target["state"]["value_text"]
+        .as_str()
+        .is_some_and(|value| value.contains("平台: Windows 原生窗口")));
+
+    let constrained = node_by_automation_id(&snapshot, "component-qa-descriptions-constrained");
+    assert_eq!(constrained["role"], "group");
+    assert_eq!(constrained["visible_bounds"]["w"], 220.0);
+    assert_eq!(constrained["visible_bounds"]["h"], 180.0);
+    assert!(constrained["state"]["value_text"]
+        .as_str()
+        .is_some_and(|value| value.contains("窄宽度下自动改为单列")));
+
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-descriptions", "descriptions-layout-light.png");
+
+    let dark = session.invoke("theme-toggle", "descriptions-dark-theme");
+    assert_eq!(
+        node_by_automation_id(&dark, "component-qa-descriptions-constrained")["visible_bounds"]
+            ["w"],
+        220.0
+    );
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-descriptions", "descriptions-layout-dark.png");
+    session.close();
+}
+
+#[test]
 #[ignore = "requires an interactive Windows desktop and writes Checkbox CJK evidence"]
 fn real_demo_checkbox_uses_compact_cjk_width_and_toggles() {
     let _guard = REAL_GUI_LOCK
