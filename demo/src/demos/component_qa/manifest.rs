@@ -653,7 +653,13 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
         "empty",
         "Empty",
         "数据展示",
-        &["default", "custom-description"],
+        &[
+            "default",
+            "custom-description",
+            "icon",
+            "image",
+            "constrained",
+        ],
     ),
     widget(
         "image",

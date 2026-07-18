@@ -1435,6 +1435,48 @@ fn real_demo_descriptions_reflows_long_content_without_overflow() {
 }
 
 #[test]
+#[ignore = "requires an interactive Windows desktop and writes Empty visual evidence"]
+fn real_demo_empty_keeps_content_readable_inside_constrained_frames() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(47, "empty-layout");
+    let snapshot = session.snapshot("empty-layout-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "empty"
+    );
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "status");
+    assert_eq!(target["name"], "暂无数据");
+    assert_eq!(target["visible_bounds"]["w"], 160.0);
+    assert_eq!(target["visible_bounds"]["h"], 100.0);
+
+    let icon = node_by_automation_id(&snapshot, "component-qa-empty-icon");
+    assert_eq!(icon["role"], "status");
+    assert_eq!(icon["name"], "当前筛选条件下没有组件");
+    assert_eq!(icon["visible_bounds"]["w"], 160.0);
+    assert_eq!(icon["visible_bounds"]["h"], 120.0);
+
+    let constrained = node_by_automation_id(&snapshot, "component-qa-empty-constrained");
+    assert_eq!(constrained["role"], "status");
+    assert_eq!(constrained["visible_bounds"]["w"], 120.0);
+    assert_eq!(constrained["visible_bounds"]["h"], 150.0);
+
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-empty", "empty-layout-light.png");
+
+    let dark = session.invoke("theme-toggle", "empty-dark-theme");
+    assert_eq!(
+        node_by_automation_id(&dark, "component-qa-empty-constrained")["visible_bounds"]["w"],
+        120.0
+    );
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-empty", "empty-layout-dark.png");
+    session.close();
+}
+
+#[test]
 #[ignore = "requires an interactive Windows desktop and writes Checkbox CJK evidence"]
 fn real_demo_checkbox_uses_compact_cjk_width_and_toggles() {
     let _guard = REAL_GUI_LOCK

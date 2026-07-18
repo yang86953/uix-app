@@ -741,6 +741,16 @@ impl SnapshotFields {
                 disabled,
                 ..
             } => input_number_accessibility(*value, *min, *max, placeholder, *disabled),
+            Self::Empty { description, .. } => AccessibilitySnapshot::named(
+                AccessibilityRole::Status,
+                if description.is_empty() {
+                    crate::ui::locale::use_locale()
+                        .empty_description
+                        .to_string()
+                } else {
+                    description.clone()
+                },
+            ),
             Self::Image {
                 alt,
                 fallback,
