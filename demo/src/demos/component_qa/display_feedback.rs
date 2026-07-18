@@ -24,19 +24,114 @@ fn carousel_slide(text: &str, color: ColorValue) -> ViewNode {
         .bg(color)
 }
 
+fn avatar_frame(avatar: Avatar, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
+    grid([embed(avatar).automation_id(automation_id)])
+        .columns(vec![GridTrack::Fr(1.0)])
+        .rows(vec![GridTrack::Fr(1.0)])
+        .width(width)
+        .height(height)
+        .align_self(AlignItems::Start)
+}
+
 pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
     let view = match id {
-        "avatar" => qa_row([
-            qa_variant("32 / target", qa_target(Avatar::new("UI").size(32.0))),
-            qa_variant(
-                "48",
-                embed(Avatar::new("贝").size(48.0).bg(tk.color_primary)),
-            ),
-            qa_variant(
-                "64",
-                embed(Avatar::new("QA").size(64.0).bg(tk.color_success)),
-            ),
-        ]),
+        "avatar" => column_fit([
+            qa_row([
+                qa_variant(
+                    "32 / target",
+                    avatar_frame(
+                        Avatar::new("UI").size(32.0),
+                        32.0,
+                        32.0,
+                        "component-qa-target",
+                    ),
+                ),
+                qa_variant(
+                    "48 / CJK",
+                    avatar_frame(
+                        Avatar::new("贝")
+                            .size(48.0)
+                            .bg(tk.color_primary)
+                            .text_color(Color::white()),
+                        48.0,
+                        48.0,
+                        "component-qa-avatar-cjk",
+                    ),
+                ),
+                qa_variant(
+                    "64 / custom",
+                    avatar_frame(
+                        Avatar::new("QA")
+                            .size(64.0)
+                            .bg(tk.color_success)
+                            .text_color(tk.color_text),
+                        64.0,
+                        64.0,
+                        "component-qa-avatar-large",
+                    ),
+                ),
+                qa_variant(
+                    "Square",
+                    avatar_frame(
+                        Avatar::new("方").size(48.0).square(true),
+                        48.0,
+                        48.0,
+                        "component-qa-avatar-square",
+                    ),
+                ),
+            ]),
+            qa_row([
+                qa_variant(
+                    "Long / fitted",
+                    avatar_frame(
+                        Avatar::new("研发中心").size(48.0),
+                        48.0,
+                        48.0,
+                        "component-qa-avatar-long",
+                    ),
+                ),
+                qa_variant(
+                    "Invalid / fallback",
+                    avatar_frame(
+                        Avatar::new("回退").size(48.0).src("missing-avatar.png"),
+                        48.0,
+                        48.0,
+                        "component-qa-avatar-fallback",
+                    ),
+                ),
+                qa_variant(
+                    "1px / masked",
+                    avatar_frame(
+                        Avatar::new("图").size(48.0).src("assets/images/demo.png"),
+                        48.0,
+                        48.0,
+                        "component-qa-avatar-image",
+                    ),
+                ),
+                qa_variant(
+                    "Square / image",
+                    avatar_frame(
+                        Avatar::new("图")
+                            .size(48.0)
+                            .square(true)
+                            .src("assets/images/demo.png"),
+                        48.0,
+                        48.0,
+                        "component-qa-avatar-square-image",
+                    ),
+                ),
+                qa_variant(
+                    "64x24 / constrained",
+                    avatar_frame(
+                        Avatar::new("约").size(64.0),
+                        64.0,
+                        24.0,
+                        "component-qa-avatar-constrained",
+                    ),
+                ),
+            ]),
+        ])
+        .gap(14.0),
         "badge" => column_fit([
             qa_row([
                 qa_variant(

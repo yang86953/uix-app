@@ -216,6 +216,11 @@ impl<'a> PaintContext<'a> {
         self.spatial.dpi()
     }
 
+    /// 当前绘制表面的设备像素比；供需要按目标像素生成派生资源的组件使用。
+    pub(crate) fn device_pixel_ratio(&self) -> f32 {
+        self.spatial.device_pixel_ratio()
+    }
+
     /// 当前绘制表面的逻辑尺寸；只读查询不会使 DisplayList 录制失效。
     pub(crate) fn logical_surface_size(&self) -> Size {
         let (width, height) = self.spatial.surface_size();

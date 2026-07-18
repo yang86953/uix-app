@@ -28,6 +28,77 @@ fn path_cache_returns_same_handle() {
 }
 
 #[test]
+fn unloaded_slots_increment_generation_across_multiple_reuses() {
+    let service = ImageService::new();
+    let first = service.load_from_bytes(RED_PNG).expect("first load");
+    service.unload(first);
+    let second = service.load_from_bytes(RED_PNG).expect("second load");
+    service.unload(second);
+    let third = service.load_from_bytes(RED_PNG).expect("third load");
+
+    assert_ne!(first, second);
+    assert_ne!(second, third);
+    assert_ne!(first, third);
+    assert!(!service.is_valid(first));
+    assert!(!service.is_valid(second));
+    assert!(service.is_valid(third));
+}
+
+#[test]
+fn target_sized_avatar_masks_cover_low_resolution_sources_and_cache_by_shape() {
+    let service = ImageService::new();
+    let original = service
+        .load_from_bytes(RED_PNG)
+        .expect("decode source image");
+
+    let circular = service
+        .circular_crop_sized(original, 32)
+        .expect("target-sized circular crop");
+    assert_eq!(service.circular_crop_sized(original, 32), Some(circular));
+    let rounded = service
+        .rounded_square_crop_sized(original, 32, 4.0)
+        .expect("target-sized rounded crop");
+    assert_eq!(
+        service.rounded_square_crop_sized(original, 32, 4.0),
+        Some(rounded)
+    );
+    let smaller_circle = service
+        .circular_crop_sized(original, 16)
+        .expect("second circular size");
+    let rounder_square = service
+        .rounded_square_crop_sized(original, 32, 8.0)
+        .expect("second corner radius");
+    assert_ne!(smaller_circle, circular);
+    assert_ne!(rounder_square, rounded);
+
+    for derived in [circular, rounded] {
+        service
+            .with_slot(derived, |slot| {
+                assert_eq!((slot.width(), slot.height()), (32, 32));
+                assert_eq!(slot.pixels()[0], 0);
+                assert_eq!(slot.pixels()[16 * 32 + 16], Color::red().premultiplied());
+            })
+            .expect("derived avatar slot");
+    }
+    service
+        .with_slot(circular, |slot| {
+            assert_eq!(slot.pixels()[3 * 32 + 3], 0);
+            assert_ne!(
+                slot.pixels()[16],
+                0,
+                "anti-aliased circle edge should remain visible"
+            );
+        })
+        .expect("circular slot");
+
+    service.unload(original);
+    assert!(!service.is_valid(circular));
+    assert!(!service.is_valid(rounded));
+    assert!(!service.is_valid(smaller_circle));
+    assert!(!service.is_valid(rounder_square));
+}
+
+#[test]
 fn circular_crop_centers_masks_caches_and_unloads_with_source() {
     let source = image::RgbaImage::from_fn(6, 4, |x, _| {
         if x < 3 {
@@ -52,8 +123,8 @@ fn circular_crop_centers_masks_caches_and_unloads_with_source() {
     service
         .with_slot(cropped, |slot| {
             assert_eq!((slot.width(), slot.height()), (4, 4));
-            assert_eq!(slot.pixels()[0], 0);
-            assert_eq!(slot.pixels()[3], 0);
+            assert_ne!(slot.pixels()[0], Color::red().premultiplied());
+            assert_ne!(slot.pixels()[3], Color::blue().premultiplied());
             assert_ne!(slot.pixels()[5], 0);
             assert_ne!(slot.pixels()[6], 0);
         })
