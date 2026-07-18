@@ -1534,6 +1534,47 @@ fn real_demo_image_keeps_paint_inside_actual_frames() {
 }
 
 #[test]
+#[ignore = "requires an interactive Windows desktop and writes List visual evidence"]
+fn real_demo_list_keeps_rows_inside_constrained_frames() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(49, "list-layout");
+    let snapshot = session.snapshot("list-layout-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "list"
+    );
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "list");
+    assert_eq!(target["name"], "质量清单");
+    assert_eq!(target["visible_bounds"]["w"], 260.0);
+    assert_eq!(target["visible_bounds"]["h"], 200.0);
+
+    let empty = node_by_automation_id(&snapshot, "component-qa-list-empty");
+    assert_eq!(empty["role"], "status");
+    assert_eq!(empty["name"], "暂无数据");
+
+    let constrained = node_by_automation_id(&snapshot, "component-qa-list-constrained");
+    assert_eq!(constrained["role"], "list");
+    assert_eq!(constrained["name"], "这是一段很长的质量核验清单标题");
+    assert_eq!(constrained["visible_bounds"]["w"], 150.0);
+    assert_eq!(constrained["visible_bounds"]["h"], 120.0);
+
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-list", "list-layout-light.png");
+
+    let dark = session.invoke("theme-toggle", "list-dark-theme");
+    assert_eq!(
+        node_by_automation_id(&dark, "component-qa-list-constrained")["visible_bounds"]["w"],
+        150.0
+    );
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-list", "list-layout-dark.png");
+    session.close();
+}
+
+#[test]
 #[ignore = "requires an interactive Windows desktop and writes Checkbox CJK evidence"]
 fn real_demo_checkbox_uses_compact_cjk_width_and_toggles() {
     let _guard = REAL_GUI_LOCK
