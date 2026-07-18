@@ -308,6 +308,27 @@ impl ComponentQaSession {
         self.snapshot(&format!("{request_prefix}-after"))
     }
 
+    fn invoke(&mut self, automation_id: &str, request_prefix: &str) -> Value {
+        let changed = perform_until_presentable(
+            &self.demo,
+            &mut self.connection,
+            self.window_id,
+            self.generation,
+            request_prefix,
+            Some(json!({ "automation_id": automation_id })),
+            json!({ "kind": "invoke" }),
+        );
+        let revision = changed["revision"].as_u64().expect("invoke revision");
+        wait_for_revision(
+            &mut self.connection,
+            request_prefix,
+            self.window_id,
+            self.generation,
+            revision,
+        );
+        self.snapshot(&format!("{request_prefix}-after"))
+    }
+
     fn click_right_slot(&mut self, automation_id: &str, request_prefix: &str) -> Value {
         self.move_pointer_to(automation_id, &format!("{request_prefix}-hover"));
         let snapshot = self.snapshot(&format!("{request_prefix}-bounds"));
@@ -963,6 +984,72 @@ fn real_demo_form_renders_vertical_and_horizontal_items() {
 
     thread::sleep(Duration::from_millis(300));
     session.capture("uix-form", "form-layout.png");
+    session.close();
+}
+
+#[test]
+#[ignore = "requires an interactive Windows desktop and writes Avatar text-layout evidence"]
+fn real_demo_avatar_scales_cjk_text_and_clips_constrained_geometry() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(40, "avatar-text-layout");
+    let snapshot = session.snapshot("avatar-text-layout-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "avatar"
+    );
+
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "image");
+    assert_eq!(target["name"], "UI");
+    assert_eq!(target["visible_bounds"]["w"], 32.0);
+    assert_eq!(target["visible_bounds"]["h"], 32.0);
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-avatar-cjk")["visible_bounds"]["w"],
+        48.0
+    );
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-avatar-large")["visible_bounds"]["w"],
+        64.0
+    );
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-avatar-square")["visible_bounds"]["h"],
+        48.0
+    );
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-avatar-long")["name"],
+        "研发中心"
+    );
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-avatar-fallback")["name"],
+        "回退"
+    );
+    let image = node_by_automation_id(&snapshot, "component-qa-avatar-image");
+    assert_eq!(image["name"], "图");
+    assert_eq!(image["visible_bounds"]["w"], 48.0);
+    assert_eq!(image["visible_bounds"]["h"], 48.0);
+    let square_image = node_by_automation_id(&snapshot, "component-qa-avatar-square-image");
+    assert_eq!(square_image["name"], "图");
+    assert_eq!(square_image["visible_bounds"]["w"], 48.0);
+    assert_eq!(square_image["visible_bounds"]["h"], 48.0);
+    let constrained = node_by_automation_id(&snapshot, "component-qa-avatar-constrained");
+    assert_eq!(constrained["visible_bounds"]["w"], 64.0);
+    assert_eq!(constrained["visible_bounds"]["h"], 24.0);
+
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-avatar", "avatar-text-layout-light.png");
+    let dark = session.invoke("theme-toggle", "avatar-dark-theme");
+    assert_eq!(
+        node_by_automation_id(&dark, "component-qa-id")["name"],
+        "avatar"
+    );
+    assert_eq!(
+        node_by_automation_id(&dark, "component-qa-avatar-constrained")["visible_bounds"]["h"],
+        24.0
+    );
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-avatar", "avatar-text-layout-dark.png");
     session.close();
 }
 

@@ -44,13 +44,13 @@ component! {
             side,
         );
         let primary_bg = ctx.tokens().color_primary_bg();
-        let primary = ctx.tokens().color_primary();
         let bg = self.bg_color.unwrap_or(primary_bg);
-        let tc = self.text_color.unwrap_or(primary);
+        let tc = self
+            .text_color
+            .unwrap_or_else(|| ctx.tokens().color_text());
+        let corner_radius = ctx.tokens().border_radius_sm().min(side * 0.5);
         let r = if self.square {
-            Some(crate::draw::Radius::uniform(
-                ctx.tokens().border_radius_sm().min(side * 0.5),
-            ))
+            Some(crate::draw::Radius::uniform(corner_radius))
         } else {
             None
         };
@@ -67,10 +67,17 @@ component! {
 
         let handle = self.resolve_handle(ctx, tree, control);
         let drew_image = if let Some(handle) = handle {
+            let device_scale = ctx.device_pixel_ratio().max(f32::EPSILON);
+            let target_side = (side * device_scale).ceil().clamp(1.0, 4096.0) as u32;
             let drawable = if self.square {
-                ctx.image_service().square_crop(handle)
+                ctx.image_service().rounded_square_crop_sized(
+                    handle,
+                    target_side,
+                    corner_radius * device_scale,
+                )
             } else {
-                ctx.image_service().circular_crop(handle)
+                ctx.image_service()
+                    .circular_crop_sized(handle, target_side)
             };
             if let Some(drawable) = drawable {
                 ctx.draw_image_fill(drawable, control);

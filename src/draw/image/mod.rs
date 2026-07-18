@@ -80,9 +80,11 @@ impl ImageSlot {
 /// 图片服务 — 解码缓存与路径索引。
 pub struct ImageService {
     slots: RefCell<Vec<ImageSlot>>,
+    slot_generations: RefCell<Vec<u32>>,
     pub(crate) path_cache: RefCell<HashMap<String, BitmapHandle>>,
     square_cache: RefCell<HashMap<BitmapHandle, BitmapHandle>>,
-    circular_cache: RefCell<HashMap<BitmapHandle, BitmapHandle>>,
+    circular_cache: RefCell<HashMap<(BitmapHandle, u32), BitmapHandle>>,
+    rounded_square_cache: RefCell<HashMap<(BitmapHandle, u32, u32), BitmapHandle>>,
 }
 
 impl Default for ImageService {
@@ -95,9 +97,11 @@ impl ImageService {
     pub fn new() -> Self {
         Self {
             slots: RefCell::new(Vec::new()),
+            slot_generations: RefCell::new(Vec::new()),
             path_cache: RefCell::new(HashMap::new()),
             square_cache: RefCell::new(HashMap::new()),
             circular_cache: RefCell::new(HashMap::new()),
+            rounded_square_cache: RefCell::new(HashMap::new()),
         }
     }
 
@@ -156,7 +160,8 @@ impl ImageService {
     }
 
     /// 返回源位图的居中正方形裁切，结果按源句柄缓存。
-    pub fn square_crop(&self, handle: BitmapHandle) -> Option<BitmapHandle> {
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn square_crop(&self, handle: BitmapHandle) -> Option<BitmapHandle> {
         let cached = self.square_cache.borrow().get(&handle).copied();
         if let Some(cached) = cached {
             if self.is_valid(cached) {
@@ -173,15 +178,29 @@ impl ImageService {
 
     /// 返回源位图的居中正方形圆形裁切；透明角已预乘，结果按源句柄缓存。
     pub fn circular_crop(&self, handle: BitmapHandle) -> Option<BitmapHandle> {
-        let cached = self.circular_cache.borrow().get(&handle).copied();
+        let source_side = self
+            .with_slot(handle, |slot| slot.width.min(slot.height).max(0) as u32)
+            .filter(|side| *side > 0)?;
+        self.circular_crop_sized(handle, source_side)
+    }
+
+    /// 按目标物理像素生成居中裁切的圆形派生图，避免低分辨率源图放大后遮罩失真。
+    pub(crate) fn circular_crop_sized(
+        &self,
+        handle: BitmapHandle,
+        target_side: u32,
+    ) -> Option<BitmapHandle> {
+        let target_side = target_side.clamp(1, 4096);
+        let key = (handle, target_side);
+        let cached = self.circular_cache.borrow().get(&key).copied();
         if let Some(cached) = cached {
             if self.is_valid(cached) {
                 return Some(cached);
             }
-            self.circular_cache.borrow_mut().remove(&handle);
+            self.circular_cache.borrow_mut().remove(&key);
         }
 
-        let (side, mut pixels) = self.centered_square_pixels(handle)?;
+        let (side, mut pixels) = self.resized_center_square_pixels(handle, target_side)?;
 
         let radius = side as f32 * 0.5;
         let center = radius;
@@ -189,17 +208,67 @@ impl ImageService {
             for x in 0..side as usize {
                 let dx = x as f32 + 0.5 - center;
                 let dy = y as f32 + 0.5 - center;
-                if dx * dx + dy * dy > radius * radius {
-                    pixels[y * side as usize + x] = 0;
+                let distance = (dx * dx + dy * dy).sqrt();
+                let coverage = (radius + 0.5 - distance).clamp(0.0, 1.0);
+                let pixel = &mut pixels[y * side as usize + x];
+                *pixel = apply_pixel_coverage(*pixel, coverage);
+            }
+        }
+
+        let cropped = self.insert_slot(ImageSlot::from_decoded(side, side, pixels, None));
+        self.circular_cache.borrow_mut().insert(key, cropped);
+        Some(cropped)
+    }
+
+    /// 按目标物理像素生成带圆角遮罩的居中正方形派生图。
+    pub(crate) fn rounded_square_crop_sized(
+        &self,
+        handle: BitmapHandle,
+        target_side: u32,
+        corner_radius: f32,
+    ) -> Option<BitmapHandle> {
+        let target_side = target_side.clamp(1, 4096);
+        let corner_radius = if corner_radius.is_finite() {
+            corner_radius.clamp(0.0, target_side as f32 * 0.5)
+        } else {
+            0.0
+        };
+        let radius_key = (corner_radius * 64.0).round() as u32;
+        let key = (handle, target_side, radius_key);
+        let cached = self.rounded_square_cache.borrow().get(&key).copied();
+        if let Some(cached) = cached {
+            if self.is_valid(cached) {
+                return Some(cached);
+            }
+            self.rounded_square_cache.borrow_mut().remove(&key);
+        }
+
+        let (side, mut pixels) = self.resized_center_square_pixels(handle, target_side)?;
+        let radius = radius_key as f32 / 64.0;
+        if radius > 0.0 {
+            let half = side as f32 * 0.5;
+            for y in 0..side as usize {
+                for x in 0..side as usize {
+                    let px = (x as f32 + 0.5 - half).abs();
+                    let py = (y as f32 + 0.5 - half).abs();
+                    let qx = px - (half - radius);
+                    let qy = py - (half - radius);
+                    let outside = qx.max(0.0).hypot(qy.max(0.0));
+                    let inside = qx.max(qy).min(0.0);
+                    let distance = outside + inside - radius;
+                    let coverage = (0.5 - distance).clamp(0.0, 1.0);
+                    let pixel = &mut pixels[y * side as usize + x];
+                    *pixel = apply_pixel_coverage(*pixel, coverage);
                 }
             }
         }
 
         let cropped = self.insert_slot(ImageSlot::from_decoded(side, side, pixels, None));
-        self.circular_cache.borrow_mut().insert(handle, cropped);
+        self.rounded_square_cache.borrow_mut().insert(key, cropped);
         Some(cropped)
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     fn centered_square_pixels(&self, handle: BitmapHandle) -> Option<(i32, Vec<u32>)> {
         self.with_slot(handle, |slot| {
             let side = slot.width.min(slot.height).max(0);
@@ -218,25 +287,50 @@ impl ImageService {
         .filter(|(side, _)| *side > 0)
     }
 
+    fn resized_center_square_pixels(
+        &self,
+        handle: BitmapHandle,
+        target_side: u32,
+    ) -> Option<(i32, Vec<u32>)> {
+        let target_side = i32::try_from(target_side).ok()?.max(1);
+        self.with_slot(handle, |slot| {
+            let source_side = slot.width.min(slot.height).max(0);
+            if source_side <= 0 {
+                return None;
+            }
+            let offset_x = (slot.width - source_side) / 2;
+            let offset_y = (slot.height - source_side) / 2;
+            let target = target_side as usize;
+            let source_side = source_side as usize;
+            let source_width = slot.width as usize;
+            let mut pixels = Vec::with_capacity(target.saturating_mul(target));
+            for y in 0..target {
+                let source_y = offset_y as usize + y * source_side / target;
+                for x in 0..target {
+                    let source_x = offset_x as usize + x * source_side / target;
+                    pixels.push(slot.pixels[source_y * source_width + source_x]);
+                }
+            }
+            Some((target_side, pixels))
+        })?
+    }
+
     /// 卸载位图并清除路径缓存引用。
     pub fn unload(&self, handle: BitmapHandle) {
         let circular = {
             let mut cache = self.circular_cache.borrow_mut();
-            let derived = cache.remove(&handle);
-            cache.retain(|_, value| *value != handle);
-            derived
+            take_derived_handles(&mut cache, handle, |key| key.0)
+        };
+        let rounded_square = {
+            let mut cache = self.rounded_square_cache.borrow_mut();
+            take_derived_handles(&mut cache, handle, |key| key.0)
         };
         let square = {
             let mut cache = self.square_cache.borrow_mut();
-            let derived = cache.remove(&handle);
-            cache.retain(|_, value| *value != handle);
-            derived
+            take_derived_handles(&mut cache, handle, |key| *key)
         };
         self.invalidate_slot(handle);
-        if let Some(derived) = circular {
-            self.invalidate_slot(derived);
-        }
-        if let Some(derived) = square {
+        for derived in circular.into_iter().chain(rounded_square).chain(square) {
             self.invalidate_slot(derived);
         }
         self.compact();
@@ -252,45 +346,92 @@ impl ImageService {
             if let Some(ref path) = slot.path {
                 self.path_cache.borrow_mut().remove(path);
             }
-            *slot = ImageSlot::default();
+            let generation = slot.generation;
+            *slot = ImageSlot {
+                generation,
+                ..ImageSlot::default()
+            };
         }
     }
 
     /// 近似内存占用（字节）。
     pub fn memory_usage(&self) -> usize {
-        self.slots
+        let slot_usage = self
+            .slots
             .borrow()
             .iter()
             .filter(|s| s.valid)
             .map(|s| s.pixels.len() * 4 + std::mem::size_of::<ImageSlot>())
-            .sum()
+            .sum::<usize>();
+        slot_usage + self.slot_generations.borrow().len() * std::mem::size_of::<u32>()
     }
 
     fn insert_slot(&self, mut slot: ImageSlot) -> BitmapHandle {
         let mut slots = self.slots.borrow_mut();
+        let mut generations = self.slot_generations.borrow_mut();
         // Reuse freed slots, bumping generation to invalidate old handles.
         for (i, s) in slots.iter_mut().enumerate() {
             if !s.valid {
-                slot.generation = s.generation.wrapping_add(1);
+                let generation = generations[i].wrapping_add(1);
+                generations[i] = generation;
+                slot.generation = generation;
                 *s = slot;
                 return BitmapHandle::pack(i as u32, s.generation);
             }
         }
-        let generation = 0;
-        slot.generation = generation;
         let idx = slots.len();
+        let generation = if let Some(generation) = generations.get_mut(idx) {
+            *generation = generation.wrapping_add(1);
+            *generation
+        } else {
+            debug_assert_eq!(idx, generations.len());
+            generations.push(0);
+            0
+        };
+        slot.generation = generation;
         slots.push(slot);
         BitmapHandle::pack(idx as u32, generation)
     }
 
     /// Compact the slot array by truncating trailing invalid slots.
-    /// This preserves all existing BitmapHandle indices.
+    /// Generation 历史单独保留，因此截断后的索引复用不会让旧句柄重新生效。
     pub fn compact(&self) {
         let mut slots = self.slots.borrow_mut();
         while slots.last().is_some_and(|s| !s.valid) {
             slots.pop();
         }
     }
+}
+
+fn apply_pixel_coverage(pixel: u32, coverage: f32) -> u32 {
+    if coverage >= 1.0 {
+        return pixel;
+    }
+    if coverage <= 0.0 {
+        return 0;
+    }
+    let scale = |channel: u32| ((channel as f32 * coverage).round() as u32).min(255);
+    let a = scale((pixel >> 24) & 0xFF);
+    let r = scale((pixel >> 16) & 0xFF);
+    let g = scale((pixel >> 8) & 0xFF);
+    let b = scale(pixel & 0xFF);
+    (a << 24) | (r << 16) | (g << 8) | b
+}
+
+fn take_derived_handles<K: Eq + std::hash::Hash>(
+    cache: &mut HashMap<K, BitmapHandle>,
+    source: BitmapHandle,
+    source_of: impl Fn(&K) -> BitmapHandle,
+) -> Vec<BitmapHandle> {
+    let mut derived = Vec::new();
+    cache.retain(|key, value| {
+        let from_source = source_of(key) == source;
+        if from_source {
+            derived.push(*value);
+        }
+        !from_source && *value != source
+    });
+    derived
 }
 
 /// 将解码位图 blit 到 canvas（`fit=true` 时保持宽高比居中）。

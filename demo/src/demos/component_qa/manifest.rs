@@ -556,7 +556,17 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
         "avatar",
         "Avatar",
         "数据展示",
-        &["text", "sizes", "custom-color"],
+        &[
+            "text",
+            "sizes",
+            "custom-color",
+            "square",
+            "long-text",
+            "constrained",
+            "image-fallback",
+            "image-success",
+            "square-image",
+        ],
     ),
     widget(
         "badge",
