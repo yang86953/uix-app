@@ -105,6 +105,13 @@ impl RichTextStyle {
 // ════════════════════════════════════════════════════════════════════════════
 mod rich_text_layout;
 pub(crate) use rich_text_layout::*;
+mod rich_text_interaction;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RichTextPointerAction {
+    Link(usize),
+    CopyCode(usize),
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // Widget
@@ -123,8 +130,9 @@ component! {
         /// 默认字体大小（物理单位，可选，优先级高于 default_font_size）
         pub default_font_size_unit: Option<PhysicalUnit>,
 
-        /// 默认文字颜色
+        /// 显式文字颜色；未调用 `color()` 时绘制使用主题正文色
         pub default_color: Color,
+        use_theme_color: bool,
 
         /// 布局行缓存
         layout_lines: RefCell<Vec<LayoutLine>>,
@@ -138,6 +146,9 @@ component! {
         /// 上次布局使用的宽度（用于 measure 复用估计值）
         last_layout_width: Cell<f32>,
 
+        /// 上次真实布局解析出的默认色（主题切换时使缓存失效）
+        last_layout_color: Cell<Option<Color>>,
+
         /// 是否需要重新布局
         layout_dirty: Cell<bool>,
 
@@ -148,6 +159,7 @@ component! {
 
         // ── 链接交互 ──
         hovered_link: Cell<Option<usize>>,
+        pressed_action: Option<RichTextPointerAction>,
         focused: bool,
         focused_link: usize,
         pending_submit: RefCell<Option<String>>,
@@ -155,6 +167,7 @@ component! {
         // ── 代码块复制 ──
         code_regions: RefCell<Vec<CodeCopyRegion>>,
         hovered_code: Cell<Option<usize>>,
+        last_frame: Cell<Option<Rect>>,
         /// 待复制的代码内容（外部主循环拉取）
         pub pending_copy: Arc<Mutex<Option<String>>>,
     }
@@ -165,20 +178,24 @@ component! {
             default_font_size: 14.0,
             default_font_size_unit: None,
             default_color: Color::from_rgb(200, 200, 200),
+            use_theme_color: true,
             layout_lines: RefCell::new(Vec::new()),
             layout_height: Cell::new(0.0),
             content_width: Cell::new(0.0),
             last_layout_width: Cell::new(0.0),
+            last_layout_color: Cell::new(None),
             layout_dirty: Cell::new(true),
             selection: Cell::new(None),
             sel_anchor: Cell::new(0),
             sel_dragging: Cell::new(false),
             hovered_link: Cell::new(None),
+            pressed_action: None,
             focused: false,
             focused_link: 0,
             pending_submit: RefCell::new(None),
             code_regions: RefCell::new(Vec::new()),
             hovered_code: Cell::new(None),
+            last_frame: Cell::new(None),
             pending_copy: Arc::new(Mutex::new(None)),
         }
     }
@@ -216,27 +233,21 @@ component! {
                 button: MouseButton::Left,
                 ..
             } => {
-                // 代码块复制按钮点击
-                for region in self.code_regions.borrow().iter() {
-                    if region.rect.contains(*pos) {
-                        if let Ok(mut pc) = self.pending_copy.lock() {
-                            *pc = Some(region.content.clone());
-                        }
-                        return EventResult::Handled;
+                if let Some(action) = self.pointer_action_at(*pos) {
+                    if let RichTextPointerAction::Link(segment_idx) = action {
+                        self.focused = true;
+                        self.focused_link = self.link_ordinal(segment_idx).unwrap_or(0);
                     }
-                }
-
-                // 链接点击
-                if let Some((segment_idx, url)) = self.link_at_pos(*pos) {
-                    self.focused = true;
-                    self.focused_link = self.link_ordinal(segment_idx).unwrap_or(0);
-                    self.pending_submit.replace(Some(url));
+                    self.pressed_action = Some(action);
                     self.selection.set(None);
                     self.sel_dragging.set(false);
                     return EventResult::Handled;
                 }
 
                 // 文字选择
+                if !self.local_frame().contains(*pos) {
+                    return EventResult::NotHandled;
+                }
                 let lines = self.layout_lines.borrow();
                 let char_idx = self.char_at_pos(*pos, &lines);
                 self.selection.set(None);
@@ -247,23 +258,29 @@ component! {
 
             SystemEvent::PointerMove { pos, .. } => {
                 let lines = self.layout_lines.borrow();
-
-                // 代码块悬停
                 let old_code = self.hovered_code.get();
-                let mut new_code: Option<usize> = None;
-                for (i, region) in self.code_regions.borrow().iter().enumerate() {
-                    if region.rect.contains(*pos) { new_code = Some(i); break; }
-                }
+                let action = self.pointer_action_at(*pos);
+                let new_code = match action {
+                    Some(RichTextPointerAction::CopyCode(segment_idx)) => Some(segment_idx),
+                    _ => None,
+                };
                 self.hovered_code.set(new_code);
-                if new_code != old_code { return EventResult::Handled; }
-
                 let old_link = self.hovered_link.get();
-                let new_link = self.link_at_pos(*pos).map(|(segment_idx, _)| segment_idx);
+                let new_link = match action {
+                    Some(RichTextPointerAction::Link(segment_idx)) => Some(segment_idx),
+                    _ => None,
+                };
                 self.hovered_link.set(new_link);
-                if new_link != old_link { return EventResult::Handled; }
+                let hover_changed = new_code != old_code || new_link != old_link;
 
                 // 选择拖拽
-                if !self.sel_dragging.get() { return EventResult::NotHandled; }
+                if !self.sel_dragging.get() {
+                    return if hover_changed {
+                        EventResult::Handled
+                    } else {
+                        EventResult::NotHandled
+                    };
+                }
                 let char_idx = self.char_at_pos(*pos, &lines);
                 let anchor = self.sel_anchor.get();
                 self.set_selection_range(anchor, char_idx);
@@ -271,9 +288,20 @@ component! {
             }
 
             SystemEvent::PointerUp {
+                pos,
                 button: MouseButton::Left,
                 ..
             } => {
+                if let Some(pressed) = self.pressed_action.take() {
+                    let released = self.pointer_action_at(*pos);
+                    if released == Some(pressed) {
+                        self.commit_pointer_action(pressed);
+                    }
+                    return EventResult::Handled;
+                }
+                if !self.sel_dragging.get() {
+                    return EventResult::NotHandled;
+                }
                 self.sel_dragging.set(false);
                 if let Some((s, e)) = self.selection.get() {
                     if s == e { self.selection.set(None); }
@@ -282,7 +310,9 @@ component! {
             }
 
             SystemEvent::PointerLeave => {
-                let changed = self.hovered_code.get().is_some() || self.hovered_link.get().is_some();
+                let changed = self.hovered_code.get().is_some()
+                    || self.hovered_link.get().is_some()
+                    || self.pressed_action.take().is_some();
                 self.hovered_code.set(None);
                 self.hovered_link.set(None);
                 if changed { EventResult::Handled } else { EventResult::NotHandled }
@@ -299,6 +329,7 @@ component! {
                 self.focused = false;
                 self.selection.set(None);
                 self.sel_dragging.set(false);
+                self.pressed_action = None;
                 EventResult::Handled
             }
 
@@ -366,17 +397,29 @@ component! {
     flex_grow => (&self) -> f32 { 1.0 }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        let max_w = frame.w.max(1.0);
+        let frame = Self::normalized_frame(frame);
+        self.last_frame.set(Some(frame));
+        self.code_regions.borrow_mut().clear();
+        if frame.w <= 0.0 || frame.h <= 0.0 {
+            return;
+        }
+        let max_w = frame.w;
+        let resolved_default_color = if self.use_theme_color {
+            ctx.tokens().color_text()
+        } else {
+            self.default_color
+        };
 
         // 布局缓存：仅在内容或宽度变化时重新布局，否则复用上次结果
         let need_relayout = self.layout_dirty.get()
-            || (self.last_layout_width.get() - max_w).abs() > 0.5;
+            || (self.last_layout_width.get() - max_w).abs() > 0.5
+            || self.last_layout_color.get() != Some(resolved_default_color);
 
         let (layout_lines, _total_h, _max_line_w) = if need_relayout {
             let font = *ctx.font();
             let fs = self.resolved_font_size_px(ctx.dpi());
             let (lines, h, w) = layout_rich_text_real(
-                &self.segments, max_w, fs, self.default_color,
+                &self.segments, max_w, fs, resolved_default_color,
                 ctx.font_service(), &font,
             );
             let mut lines = lines;
@@ -386,6 +429,7 @@ component! {
             self.layout_height.set(h);
             self.content_width.set(w);
             self.last_layout_width.set(max_w);
+            self.last_layout_color.set(Some(resolved_default_color));
             self.layout_dirty.set(false);
             (lines, h, w)
         } else {
@@ -403,7 +447,7 @@ component! {
         }
 
         let mut code_regions = self.code_regions.borrow_mut();
-        code_regions.clear();
+        ctx.push_clip(frame);
 
         // ── 逐行绘制 ──
         for line in &layout_lines {
@@ -438,11 +482,17 @@ component! {
                 };
                 let focused_link = self.focused
                     && self.link_segment_at_ordinal(self.focused_link) == Some(glyph.segment_idx);
-                let active_link = self.hovered_link.get() == Some(glyph.segment_idx) || focused_link;
+                let pressed_link = self.pressed_action
+                    == Some(RichTextPointerAction::Link(glyph.segment_idx));
+                let active_link = self.hovered_link.get() == Some(glyph.segment_idx)
+                    || focused_link
+                    || pressed_link;
                 if active_link {
                     ctx.fill_rect(
                         Rect::new(gx, gy, glyph.width, glyph.font_size),
-                        ctx.tokens().color_primary().with_alpha(24),
+                        ctx.tokens()
+                            .color_primary()
+                            .with_alpha(if pressed_link { 48 } else { 24 }),
                         None,
                     );
                 }
@@ -484,7 +534,9 @@ component! {
                 let focused_link = self.focused
                     && self.link_segment_at_ordinal(self.focused_link) == Some(segment_idx);
                 let color = if first.is_link
-                    && (self.hovered_link.get() == Some(segment_idx) || focused_link)
+                    && (self.hovered_link.get() == Some(segment_idx)
+                        || focused_link
+                        || self.pressed_action == Some(RichTextPointerAction::Link(segment_idx)))
                 {
                     ctx.tokens().color_primary()
                 } else {
@@ -503,7 +555,7 @@ component! {
 
         // 每个代码段只登记一个复制按钮，折行时锚定最后一个可见字形。
         for (segment_idx, segment) in self.segments.iter().enumerate() {
-            let RichTextSegment::Code { content } = segment else { continue; };
+            let RichTextSegment::Code { .. } = segment else { continue; };
             let last = layout_lines.iter().rev().find_map(|line| {
                 line.glyphs
                     .iter()
@@ -514,23 +566,48 @@ component! {
             if let Some((line, glyph)) = last {
                 let gx = frame.x + glyph.x + glyph.width;
                 let gy = line.y + (line.height - glyph.font_size) * 0.5 + 2.0;
-                let btn = Rect::new(gx - 4.0, gy, 24.0, 16.0);
-                let cidx = code_regions.len();
-                if self.hovered_code.get() == Some(cidx) {
-                    ctx.fill_rect(btn, Color::from_rgb(55, 55, 62), Some(Radius::uniform(3.0)));
-                    ctx.draw_text(
-                        "📋",
-                        Point::new(btn.x + 5.0, btn.y + 1.0),
-                        Color::from_rgb(200, 200, 200),
-                        10.0,
-                    );
+                let btn_width = 24.0_f32.min(frame.w);
+                let btn = Rect::new(
+                    (gx - 4.0).min(frame.x + frame.w - btn_width).max(frame.x),
+                    gy,
+                    btn_width,
+                    16.0,
+                );
+                if let Some(visible_btn) = btn.intersect(&frame) {
+                    let hovered = self.hovered_code.get() == Some(segment_idx);
+                    let pressed = self.pressed_action
+                        == Some(RichTextPointerAction::CopyCode(segment_idx));
+                    if hovered || pressed {
+                        ctx.fill_rect(
+                            visible_btn,
+                            if pressed {
+                                Color::from_rgb(35, 35, 40)
+                            } else {
+                                Color::from_rgb(55, 55, 62)
+                            },
+                            Some(Radius::uniform(3.0)),
+                        );
+                        crate::ui::widgets::icon::paint_icon_in_frame(
+                            ctx,
+                            "copy",
+                            visible_btn,
+                            Color::from_rgb(200, 200, 200),
+                            10.0_f32.min(visible_btn.h * 0.65),
+                        );
+                    }
+                    code_regions.push(CodeCopyRegion {
+                        rect: Rect::new(
+                            visible_btn.x - frame.x,
+                            visible_btn.y - frame.y,
+                            visible_btn.w,
+                            visible_btn.h,
+                        ),
+                        segment_idx,
+                    });
                 }
-                code_regions.push(CodeCopyRegion {
-                    rect: Rect::new(btn.x - frame.x, btn.y - frame.y, btn.w, btn.h),
-                    content: content.clone(),
-                });
             }
         }
+        ctx.pop_clip();
     }
 }
 
@@ -582,6 +659,7 @@ impl RichText {
     /// 设置默认文字颜色
     pub fn color(mut self, c: Color) -> Self {
         self.default_color = c;
+        self.use_theme_color = false;
         self.layout_dirty.set(true);
         self
     }
@@ -591,18 +669,21 @@ impl RichText {
         let layout_config_changed = segments_changed
             || self.default_font_size != next.default_font_size
             || self.default_font_size_unit != next.default_font_size_unit
-            || self.default_color != next.default_color;
+            || self.default_color != next.default_color
+            || self.use_theme_color != next.use_theme_color;
 
         self.segments = next.segments;
         self.default_font_size = next.default_font_size;
         self.default_font_size_unit = next.default_font_size_unit;
         self.default_color = next.default_color;
+        self.use_theme_color = next.use_theme_color;
 
         if layout_config_changed {
             self.layout_lines.borrow_mut().clear();
             self.layout_height.set(0.0);
             self.content_width.set(0.0);
             self.last_layout_width.set(0.0);
+            self.last_layout_color.set(None);
             self.code_regions.borrow_mut().clear();
             self.hovered_code.set(None);
             self.layout_dirty.set(true);
@@ -612,7 +693,11 @@ impl RichText {
             self.sel_anchor.set(0);
             self.sel_dragging.set(false);
             self.hovered_link.set(None);
+            self.pressed_action = None;
             self.pending_submit.borrow_mut().take();
+            if let Ok(mut pending_copy) = self.pending_copy.lock() {
+                pending_copy.take();
+            }
             self.focused_link = if self.link_count() == 0 {
                 0
             } else {
@@ -706,154 +791,6 @@ impl RichText {
                 .find(|glyph| glyph.segment_idx == segment_idx)
                 .map(|glyph| Point::new(glyph.x + glyph.width * 0.5, line.y + line.height * 0.5))
         })
-    }
-
-    // ── 内部 ──
-
-    fn char_at_pos(&self, pos: Point, lines: &[LayoutLine]) -> usize {
-        for line in lines {
-            // 精确匹配当前行
-            if pos.y < line.y || pos.y >= line.y + line.height {
-                continue;
-            }
-            for glyph in &line.glyphs {
-                let gx = glyph.x;
-                if pos.x < gx + glyph.width * 0.5 {
-                    return glyph.global_char_idx;
-                }
-            }
-            if let Some(last) = line.glyphs.last() {
-                return last.global_char_idx + 1;
-            }
-        }
-        // 点在行间空白区域：找到最近的行
-        if lines.is_empty() {
-            return 0;
-        }
-        let mut best_line = 0;
-        let mut best_dist = f32::MAX;
-        for (i, line) in lines.iter().enumerate() {
-            let closest_y = if pos.y < line.y {
-                line.y
-            } else {
-                line.y + line.height
-            };
-            let dist = (pos.y - closest_y).abs();
-            if dist < best_dist {
-                best_dist = dist;
-                best_line = i;
-            }
-        }
-        // 返回最近行的末尾字符索引
-        lines[best_line]
-            .glyphs
-            .last()
-            .map(|g| g.global_char_idx + if pos.x > g.x + g.width * 0.5 { 1 } else { 0 })
-            .unwrap_or(0)
-    }
-
-    fn link_count(&self) -> usize {
-        self.segments
-            .iter()
-            .filter(|segment| {
-                matches!(segment, RichTextSegment::Link { url, .. } if !url.trim().is_empty())
-            })
-            .count()
-    }
-
-    fn link_at_ordinal(&self, ordinal: usize) -> Option<(&str, &str)> {
-        self.segments
-            .iter()
-            .filter_map(|segment| match segment {
-                RichTextSegment::Link { content, url } if !url.trim().is_empty() => {
-                    Some((content.as_str(), url.as_str()))
-                }
-                _ => None,
-            })
-            .nth(ordinal)
-    }
-
-    fn link_segment_at_ordinal(&self, ordinal: usize) -> Option<usize> {
-        self.segments
-            .iter()
-            .enumerate()
-            .filter_map(|(index, segment)| match segment {
-                RichTextSegment::Link { url, .. } if !url.trim().is_empty() => Some(index),
-                _ => None,
-            })
-            .nth(ordinal)
-    }
-
-    fn link_ordinal(&self, segment_idx: usize) -> Option<usize> {
-        self.segments
-            .iter()
-            .enumerate()
-            .filter(|(_, segment)| {
-                matches!(segment, RichTextSegment::Link { url, .. } if !url.trim().is_empty())
-            })
-            .position(|(index, _)| index == segment_idx)
-    }
-
-    fn link_at_pos(&self, pos: Point) -> Option<(usize, String)> {
-        let lines = self.layout_lines.borrow();
-        for line in lines.iter() {
-            if pos.y < line.y || pos.y >= line.y + line.height {
-                continue;
-            }
-            for glyph in &line.glyphs {
-                if glyph.is_link && pos.x >= glyph.x && pos.x < glyph.x + glyph.width {
-                    if let Some(url) = glyph
-                        .link_url
-                        .as_deref()
-                        .filter(|url| !url.trim().is_empty())
-                    {
-                        return Some((glyph.segment_idx, url.to_string()));
-                    }
-                }
-            }
-        }
-        None
-    }
-
-    fn set_selection_range(&self, a: usize, b: usize) {
-        if a == b {
-            self.selection.set(None);
-        } else {
-            self.selection.set(Some((a.min(b), a.max(b))));
-        }
-    }
-
-    fn extract_text_range(&self, start: usize, end: usize) -> String {
-        let mut result = String::new();
-        let mut offset: usize = 0;
-        for segment in &self.segments {
-            let seg_len = match segment {
-                RichTextSegment::NewLine => 1,
-                RichTextSegment::Text { content, .. } => content.chars().count(),
-                RichTextSegment::Code { content } => content.chars().count(),
-                RichTextSegment::Link { content, .. } => content.chars().count(),
-            };
-            let seg_start = offset;
-            let seg_end = offset + seg_len;
-            if seg_end > start && seg_start < end {
-                let local_start = start.saturating_sub(seg_start);
-                let local_end = if end < seg_end {
-                    end - seg_start
-                } else {
-                    seg_len
-                };
-                let chars: Vec<char> = match segment {
-                    RichTextSegment::NewLine => vec!['\n'],
-                    RichTextSegment::Text { content, .. } => content.chars().collect(),
-                    RichTextSegment::Code { content } => content.chars().collect(),
-                    RichTextSegment::Link { content, .. } => content.chars().collect(),
-                };
-                let s: String = chars[local_start..local_end].iter().collect();
-                result.push_str(&s);
-            }
-            offset = seg_end;
-        }
-        result
     }
 }
 

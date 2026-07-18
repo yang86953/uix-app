@@ -173,6 +173,23 @@ fn tree_frame(tree: Tree, width: f32, height: f32, automation_id: &'static str) 
         .align_self(AlignItems::Start)
 }
 
+fn rich_text_frame(
+    rich_text: RichText,
+    width: f32,
+    height: f32,
+    automation_id: &'static str,
+) -> ViewNode {
+    grid([embed(rich_text)
+        .width(width)
+        .height(height)
+        .automation_id(automation_id)])
+    .columns(vec![GridTrack::Fr(1.0)])
+    .rows(vec![GridTrack::Fr(1.0)])
+    .width(width)
+    .height(height)
+    .align_self(AlignItems::Start)
+}
+
 fn avatar_frame(avatar: Avatar, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
     grid([embed(avatar).automation_id(automation_id)])
         .columns(vec![GridTrack::Fr(1.0)])
@@ -1077,20 +1094,60 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 ),
             ),
         ]),
-        "rich-text" => qa_target(RichText::new().content(vec![
-            RichTextSegment::Text {
-                content: "UIX 组件视觉验收 ".to_string(),
-                style: RichTextStyle::default(),
-            },
-            RichTextSegment::Link {
-                content: "质量报告".to_string(),
-                url: "https://uix.dev/quality".to_string(),
-            },
-            RichTextSegment::Text {
-                content: " — Light / Dark / Compact".to_string(),
-                style: RichTextStyle::default(),
-            },
-        ])),
+        "rich-text" => column_fit([
+            qa_variant(
+                "Wrapped links + code",
+                rich_text_frame(
+                    RichText::new().content(vec![
+                        RichTextSegment::Link {
+                            content: "质量报告".to_string(),
+                            url: "https://uix.dev/quality".to_string(),
+                        },
+                        RichTextSegment::Text {
+                            content: " 展示中英文折行 mixed content 与 ".to_string(),
+                            style: RichTextStyle {
+                                bold: true,
+                                ..RichTextStyle::default()
+                            },
+                        },
+                        RichTextSegment::Link {
+                            content: "使用指南".to_string(),
+                            url: "https://uix.dev/guide".to_string(),
+                        },
+                        RichTextSegment::NewLine,
+                        RichTextSegment::Code {
+                            content: "cargo test --features test-harness".to_string(),
+                        },
+                    ]),
+                    320.0,
+                    82.0,
+                    "component-qa-target",
+                ),
+            ),
+            qa_variant(
+                "Constrained clipping",
+                rich_text_frame(
+                    RichText::new().content(vec![
+                        RichTextSegment::Text {
+                            content: "极窄富文本 mixed ".to_string(),
+                            style: RichTextStyle::default(),
+                        },
+                        RichTextSegment::Link {
+                            content: "可访问链接".to_string(),
+                            url: "https://uix.dev/constrained".to_string(),
+                        },
+                        RichTextSegment::NewLine,
+                        RichTextSegment::Code {
+                            content: "cargo test --lib".to_string(),
+                        },
+                    ]),
+                    132.0,
+                    64.0,
+                    "component-qa-rich-text-constrained",
+                ),
+            ),
+        ])
+        .gap(14.0),
         "alert" => column_fit([
             qa_target(Alert::new("成功：组件视觉符合基线").type_(StatusLevel::Success)),
             embed(Alert::new("信息：保留可追溯证据").type_(StatusLevel::Info)),
