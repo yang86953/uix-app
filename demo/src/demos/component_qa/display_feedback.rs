@@ -1192,15 +1192,17 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
         ])
         .gap(8.0),
         "drawer" => qa_target_view(ViewNode::new(
-            Drawer::new("抽屉标题")
+            Drawer::new("抽屉标题：超长中英文 mixed title 会在关闭按钮前省略")
                 .placement(DrawerPlacement::Right)
+                .size(360.0, 640.0)
+                .extra("辅助操作")
                 .closable(true),
-            vec![qa_row([
+            vec![column_fit([qa_row([
                 button("取消").automation_id("component-qa-drawer-cancel"),
                 button("保存")
                     .primary()
                     .automation_id("component-qa-drawer-save"),
-            ])],
+            ])])],
         )),
         "message" => {
             let message = Message::new().placement(Placement::Top);

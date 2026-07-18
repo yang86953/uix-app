@@ -743,6 +743,7 @@ fn reconcile_drawer_preserves_present_state_and_syncs_config() {
         drawer.snapshot_fields(),
         SnapshotFields::Drawer {
             title,
+            open: true,
             width: 680.0,
             height: 460.0,
             drawer_size: ControlSize::Large,

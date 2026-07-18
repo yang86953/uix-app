@@ -835,7 +835,15 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
         "drawer",
         "Drawer",
         "反馈",
-        &["closed", "open", "overlay", "focus"],
+        &[
+            "closed",
+            "open",
+            "overlay",
+            "focus",
+            "constrained-title",
+            "release-commit",
+            "accessible-trigger",
+        ],
     ),
     widget(
         "message",

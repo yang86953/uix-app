@@ -3465,6 +3465,65 @@ fn real_demo_alert_clips_long_content_and_commits_close_on_release() {
 }
 
 #[test]
+#[ignore = "requires an interactive Windows desktop and writes Drawer layout evidence"]
+fn real_demo_drawer_opens_accessibly_and_traps_focus_in_light_and_dark() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(59, "drawer-layout");
+    let snapshot = session.snapshot("drawer-layout-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "drawer"
+    );
+    let closed = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(closed["role"], "button");
+    assert_eq!(closed["state"]["expanded"], false);
+    assert!(closed["name"]
+        .as_str()
+        .is_some_and(|name| name.starts_with("打开 抽屉标题")));
+
+    let opened = session.click_at_fraction("component-qa-target", 0.5, 0.5, "drawer-open-light");
+    let target = node_by_automation_id(&opened, "component-qa-target");
+    assert_eq!(target["role"], "dialog");
+    assert_eq!(target["state"]["expanded"], true);
+    let focused = session.focus("component-qa-drawer-cancel", "drawer-focus-light");
+    assert_eq!(
+        node_by_automation_id(&focused, "component-qa-drawer-cancel")["focused"],
+        true
+    );
+    session.capture("uix-drawer", "drawer-layout-light-open.png");
+
+    session.press_key("escape", "drawer-close-light");
+    let mut drawer_closed = false;
+    for attempt in 0..40 {
+        thread::sleep(Duration::from_millis(50));
+        let closing = session.snapshot(&format!("drawer-close-light-settle-{attempt}"));
+        if node_by_automation_id(&closing, "component-qa-target")["state"]["expanded"] == false {
+            drawer_closed = true;
+            break;
+        }
+    }
+    assert!(
+        drawer_closed,
+        "Drawer leave transition must finish within 2s"
+    );
+    let dark = session.invoke("theme-toggle", "drawer-dark-theme");
+    assert_eq!(
+        node_by_automation_id(&dark, "component-qa-target")["state"]["expanded"],
+        false
+    );
+    let reopened = session.click_at_fraction("component-qa-target", 0.5, 0.5, "drawer-open-dark");
+    assert_eq!(
+        node_by_automation_id(&reopened, "component-qa-target")["role"],
+        "dialog"
+    );
+    session.capture("uix-drawer", "drawer-layout-dark-open.png");
+    session.press_key("escape", "drawer-close-dark");
+    session.close();
+}
+
+#[test]
 #[ignore = "requires an interactive Windows desktop and writes Label multiline evidence"]
 fn real_demo_label_multiline_keeps_following_content_below_all_lines() {
     let _guard = REAL_GUI_LOCK
