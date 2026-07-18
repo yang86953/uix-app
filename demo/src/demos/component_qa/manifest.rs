@@ -849,7 +849,16 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
         "message",
         "Message",
         "反馈",
-        &["success", "info", "warning", "error", "overlay"],
+        &[
+            "success",
+            "info",
+            "warning",
+            "error",
+            "overlay",
+            "constrained-stack",
+            "release-commit",
+            "accessible-alert",
+        ],
     ),
     widget(
         "modal",

@@ -202,6 +202,24 @@ fn alert_frame(alert: Alert, width: f32, height: f32, automation_id: &'static st
     .align_self(AlignItems::Start)
 }
 
+fn message_frame(
+    message: Message,
+    width: f32,
+    height: f32,
+    automation_id: &'static str,
+) -> ViewNode {
+    ViewNode::new(
+        Grid::new()
+            .columns(vec![GridTrack::Fr(1.0)])
+            .rows(vec![GridTrack::Fr(1.0)])
+            .justify(JustifyContent::Stretch),
+        vec![embed(message).automation_id(automation_id)],
+    )
+    .width(width)
+    .height(height)
+    .align_self(AlignItems::Start)
+}
+
 fn avatar_frame(avatar: Avatar, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
     grid([embed(avatar).automation_id(automation_id)])
         .columns(vec![GridTrack::Fr(1.0)])
@@ -1208,7 +1226,10 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
             let message = Message::new().placement(Placement::Top);
             for (type_, content) in [
                 (StatusLevel::Success, "视觉基线已通过"),
-                (StatusLevel::Info, "正在归档证据"),
+                (
+                    StatusLevel::Info,
+                    "正在归档超长中英文 mixed Message evidence，关闭槽前必须省略",
+                ),
                 (StatusLevel::Warning, "一项需要复核"),
                 (StatusLevel::Error, "一项存在缺陷"),
             ] {
@@ -1219,7 +1240,7 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                     closable: true,
                 });
             }
-            qa_target_view(column([embed(message)]).width(520.0).height(160.0))
+            message_frame(message, 520.0, 160.0, "component-qa-target")
         }
         "modal" => qa_target_view(ViewNode::new(
             Modal::new("组件质量确认").closable(true).overlay(true),

@@ -240,6 +240,7 @@ pub enum SnapshotFields {
     },
     Message {
         placement: Placement,
+        contents: Vec<String>,
     },
     Notification {
         placement: Placement,
@@ -795,6 +796,22 @@ impl SnapshotFields {
                     value_text: (!description.is_empty()).then(|| description.clone()),
                     ..AccessibilityState::default()
                 }),
+            Self::Message { contents, .. } if !contents.is_empty() => {
+                let name = contents
+                    .iter()
+                    .filter(|content| !content.is_empty())
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join("；");
+                AccessibilitySnapshot::named(
+                    AccessibilityRole::Alert,
+                    if name.is_empty() {
+                        "Message".to_owned()
+                    } else {
+                        name
+                    },
+                )
+            }
             Self::Popconfirm(popconfirm) => popconfirm_accessibility(
                 &popconfirm.title,
                 &popconfirm.confirm_text,
