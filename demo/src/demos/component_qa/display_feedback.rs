@@ -90,6 +90,15 @@ fn image_frame(image: Image, width: f32, height: f32, automation_id: &'static st
         .align_self(AlignItems::Start)
 }
 
+fn list_frame(list: List, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
+    grid([embed(list).automation_id(automation_id)])
+        .columns(vec![GridTrack::Fr(1.0)])
+        .rows(vec![GridTrack::Fr(1.0)])
+        .width(width)
+        .height(height)
+        .align_self(AlignItems::Start)
+}
+
 fn avatar_frame(avatar: Avatar, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
     grid([embed(avatar).automation_id(automation_id)])
         .columns(vec![GridTrack::Fr(1.0)])
@@ -633,14 +642,36 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
         "list" => qa_row([
             qa_variant(
                 "Data / target",
-                qa_target(
+                list_frame(
                     List::new()
                         .header("质量清单")
                         .items(vec!["视觉基线", "语义断言", "交互回归"])
                         .footer("共 3 项"),
+                    260.0,
+                    200.0,
+                    "component-qa-target",
                 ),
             ),
-            qa_variant("Empty", embed(List::new())),
+            qa_variant(
+                "Empty",
+                List::new().build().automation_id("component-qa-list-empty"),
+            ),
+            qa_variant(
+                "150×120 / constrained",
+                list_frame(
+                    List::new()
+                        .header("这是一段很长的质量核验清单标题")
+                        .items(vec![
+                            "第一项包含很长的中英文 mixed content and identifier",
+                            "第二项继续验证窄宽度下不会覆盖相邻内容",
+                        ])
+                        .footer("长页脚也必须保持在边界内")
+                        .load_more("加载更多质量检查项"),
+                    150.0,
+                    120.0,
+                    "component-qa-list-constrained",
+                ),
+            ),
         ]),
         "result-view" => qa_row([
             qa_variant(

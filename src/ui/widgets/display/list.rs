@@ -3,7 +3,7 @@
 //! 支持列表项渲染、header/footer、bordered、size 等选项。
 
 use crate::component;
-use crate::core::{Constraints, EdgeInsets, Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::traits::input::ControlSize;
@@ -38,62 +38,180 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        let frame = Self::normalized_frame(frame);
+        if frame.w <= 0.0 || frame.h <= 0.0 {
+            return;
+        }
         let bg = ctx.tokens().color_bg_container();
         let border = ctx.tokens().color_border_secondary();
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_secondary();
         let item_h = list_item_height(self.list_size);
-        let r = Radius::uniform(ctx.tokens().border_radius());
+        let radius = ctx.tokens().border_radius().min(frame.w.min(frame.h) * 0.5);
+        let r = Radius::uniform(radius);
         let mut y = frame.y;
+        let horizontal_padding = 16.0_f32.min(frame.w * 0.25);
 
-        // 主体背景
+        ctx.push_clip(frame);
         ctx.fill_rect(frame, bg, Some(r));
         if self.bordered {
-            ctx.stroke_rect(frame, border, 1.0, Some(r));
+            let border_frame = Self::inset(frame, 0.5);
+            ctx.stroke_rect(
+                border_frame,
+                border,
+                1.0,
+                Some(Radius::uniform(
+                    radius.min(border_frame.w.min(border_frame.h) * 0.5),
+                )),
+            );
         }
 
-        // Header
         if !self.header.is_empty() {
-            let header_rect = Rect::new(frame.x, y, frame.w, item_h)
-                .inset(EdgeInsets::new(16.0, 0.0, 16.0, 0.0));
-            ctx.draw_text_in_frame(&self.header, header_rect, text_sec, 13.0);
+            let header_rect = Self::row_content_rect(frame, y, item_h, horizontal_padding);
+            Self::paint_single_line(ctx, &self.header, header_rect, text_sec, 13.0);
             ctx.fill_rect(Rect::new(frame.x, y + item_h, frame.w, 1.0), border, None);
             y += item_h;
         }
 
-        // Items
         for (i, item) in self.items.iter().enumerate() {
-            let item_rect = Rect::new(frame.x, y, frame.w, item_h)
-                .inset(EdgeInsets::new(16.0, 0.0, 16.0, 0.0));
-            ctx.draw_text_in_frame(item, item_rect, text, 14.0);
+            let item_rect = Self::row_content_rect(frame, y, item_h, horizontal_padding);
+            Self::paint_single_line(ctx, item, item_rect, text, 14.0);
             if i < self.items.len() - 1 {
-                ctx.fill_rect(Rect::new(frame.x + 16.0, y + item_h - 1.0, frame.w - 32.0, 1.0), border, None);
+                ctx.fill_rect(
+                    Rect::new(
+                        frame.x + horizontal_padding,
+                        y + item_h - 1.0,
+                        (frame.w - horizontal_padding * 2.0).max(0.0),
+                        1.0,
+                    ),
+                    border,
+                    None,
+                );
             }
             y += item_h;
         }
 
-        // Footer
         if !self.footer.is_empty() {
             if !self.items.is_empty() {
                 ctx.fill_rect(Rect::new(frame.x, y, frame.w, 1.0), border, None);
             }
-            let footer_rect = Rect::new(frame.x, y, frame.w, item_h)
-                .inset(EdgeInsets::new(16.0, 0.0, 16.0, 0.0));
-            ctx.draw_text_in_frame(&self.footer, footer_rect, text_sec, 13.0);
+            let footer_rect = Self::row_content_rect(frame, y, item_h, horizontal_padding);
+            Self::paint_single_line(ctx, &self.footer, footer_rect, text_sec, 13.0);
             y += item_h;
         }
 
-        // Load more
         if !self.load_more_text.is_empty() {
             let load_rect = Rect::new(frame.x, y, frame.w, 40.0);
             ctx.fill_rect(load_rect, bg, None);
             ctx.stroke_rect(load_rect, border, 1.0, Some(r));
-            ctx.text_center(&self.load_more_text, load_rect, ctx.tokens().color_primary(), 14.0);
+            let load_content = Self::row_content_rect(frame, y, 40.0, horizontal_padding);
+            let primary = ctx.tokens().color_primary();
+            Self::paint_single_line(
+                ctx,
+                &self.load_more_text,
+                load_content,
+                primary,
+                14.0,
+            );
         }
+        ctx.pop_clip();
     }
 }
 
 impl List {
+    fn normalized_frame(frame: Rect) -> Rect {
+        Rect::new(
+            frame.x,
+            frame.y,
+            if frame.w.is_finite() {
+                frame.w.max(0.0)
+            } else {
+                0.0
+            },
+            if frame.h.is_finite() {
+                frame.h.max(0.0)
+            } else {
+                0.0
+            },
+        )
+    }
+
+    fn inset(frame: Rect, amount: f32) -> Rect {
+        let amount = amount.min(frame.w * 0.5).min(frame.h * 0.5).max(0.0);
+        Rect::new(
+            frame.x + amount,
+            frame.y + amount,
+            (frame.w - amount * 2.0).max(0.0),
+            (frame.h - amount * 2.0).max(0.0),
+        )
+    }
+
+    fn row_content_rect(frame: Rect, y: f32, height: f32, horizontal_padding: f32) -> Rect {
+        Rect::new(
+            frame.x + horizontal_padding,
+            y,
+            (frame.w - horizontal_padding * 2.0).max(0.0),
+            height.max(0.0),
+        )
+    }
+
+    fn paint_single_line(
+        ctx: &mut PaintContext<'_>,
+        value: &str,
+        frame: Rect,
+        color: crate::draw::Color,
+        font_size: f32,
+    ) {
+        if frame.w <= 0.0 || frame.h <= 0.0 {
+            return;
+        }
+        let Some(value) = Self::elide_single_line(ctx, value, font_size, frame.w) else {
+            return;
+        };
+        ctx.push_clip(frame);
+        ctx.draw_text_in_frame(&value, frame, color, font_size);
+        ctx.pop_clip();
+    }
+
+    fn elide_single_line(
+        ctx: &mut PaintContext<'_>,
+        value: &str,
+        font_size: f32,
+        max_width: f32,
+    ) -> Option<String> {
+        if !max_width.is_finite() || max_width <= 0.0 {
+            return None;
+        }
+        let value = value.replace(['\r', '\n'], " ");
+        if Self::text_width(ctx, &value, font_size) <= max_width {
+            return Some(value);
+        }
+        const ELLIPSIS: &str = "…";
+        if Self::text_width(ctx, ELLIPSIS, font_size) > max_width {
+            return None;
+        }
+        let mut visible = String::new();
+        for ch in value.chars() {
+            visible.push(ch);
+            visible.push_str(ELLIPSIS);
+            let fits = Self::text_width(ctx, &visible, font_size) <= max_width;
+            visible.pop();
+            if !fits {
+                visible.pop();
+                break;
+            }
+        }
+        visible.push_str(ELLIPSIS);
+        Some(visible)
+    }
+
+    fn text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
+        ctx.measure_text(value, font_size).w.max(
+            crate::draw::font::text_backend::estimate_text_metrics(value, f32::INFINITY, font_size)
+                .max_line_width,
+        )
+    }
+
     fn intrinsic_size(&self) -> Size {
         let item_h = list_item_height(self.list_size);
         let h = self.items.len() as f32 * item_h
@@ -175,6 +293,7 @@ impl crate::ui::view::View for List {
             if let Some(empty) = crate::ui::config::render_empty_for::<Self>() {
                 return empty;
             }
+            return crate::ui::view::ViewNode::leaf(crate::ui::widgets::display::Empty::new());
         }
         crate::ui::view::ViewNode::leaf(self)
     }

@@ -678,7 +678,14 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
         "list",
         "List",
         "数据展示",
-        &["data", "empty", "header", "footer"],
+        &[
+            "data",
+            "empty",
+            "header",
+            "footer",
+            "load-more",
+            "constrained",
+        ],
     ),
     widget(
         "result-view",

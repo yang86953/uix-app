@@ -893,7 +893,14 @@ impl SnapshotFields {
                 active_index,
                 ..
             } => selectable_list_accessibility(items, *active_index),
-            Self::List { .. } => AccessibilitySnapshot::new(AccessibilityRole::List),
+            Self::List { header, items, .. } => {
+                AccessibilitySnapshot::named(AccessibilityRole::List, header.clone()).with_state(
+                    AccessibilityState {
+                        value_text: (!items.is_empty()).then(|| items.join("; ")),
+                        ..AccessibilityState::default()
+                    },
+                )
+            }
             Self::Card {
                 title,
                 actions,
