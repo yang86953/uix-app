@@ -26,5 +26,8 @@ nul
 # Python cache
 __pycache__/
 
+# Test reports
+test-reports/
+
 # Rust documentation build
 # target/ already covers target/doc/
