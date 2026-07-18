@@ -6,6 +6,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
+use crate::ui::locale::Locale;
 use crate::ui::widgets::input::date_picker::{days_in_month, first_weekday, Date};
 use crate::ui::SnapshotFields;
 use crate::ui::{
@@ -14,10 +15,135 @@ use crate::ui::{
 use std::cell::Cell;
 
 const HEADER_HEIGHT: f32 = 40.0;
+const TITLE_HEIGHT: f32 = 24.0;
+const WEEKDAY_HEIGHT: f32 = HEADER_HEIGHT - TITLE_HEIGHT;
 const DEFAULT_CELL_SIZE: f32 = 40.0;
 const MIN_CELL_SIZE: f32 = 20.0;
 const MIN_YEAR: i32 = 1;
 const MAX_YEAR: i32 = 9999;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CalendarGeometry {
+    control: Rect,
+    title_row: Rect,
+    weekday_row: Rect,
+    grid: Rect,
+    cell_size: f32,
+    navigation_width: f32,
+    scale: f32,
+}
+
+impl CalendarGeometry {
+    fn new(frame: Rect, preferred_cell_size: f32) -> Option<Self> {
+        let frame = Rect::new(frame.x, frame.y, frame.w.max(0.0), frame.h.max(0.0));
+        let intrinsic_width = preferred_cell_size * 7.0;
+        let intrinsic_height = preferred_cell_size * 6.0 + HEADER_HEIGHT;
+        if frame.w <= 0.0 || frame.h <= 0.0 || intrinsic_width <= 0.0 || intrinsic_height <= 0.0 {
+            return None;
+        }
+
+        let scale = (frame.w / intrinsic_width)
+            .min(frame.h / intrinsic_height)
+            .min(1.0);
+        if !scale.is_finite() || scale <= 0.0 {
+            return None;
+        }
+
+        let control_width = intrinsic_width * scale;
+        let control_height = intrinsic_height * scale;
+        let control = Rect::new(
+            frame.x + (frame.w - control_width) * 0.5,
+            frame.y + (frame.h - control_height) * 0.5,
+            control_width,
+            control_height,
+        );
+        let title_height = TITLE_HEIGHT * scale;
+        let weekday_height = WEEKDAY_HEIGHT * scale;
+        let title_row = Rect::new(control.x, control.y, control.w, title_height);
+        let weekday_row = Rect::new(
+            control.x,
+            title_row.y + title_row.h,
+            control.w,
+            weekday_height,
+        );
+        let grid = Rect::new(
+            control.x,
+            weekday_row.y + weekday_row.h,
+            control.w,
+            preferred_cell_size * 6.0 * scale,
+        );
+
+        Some(Self {
+            control,
+            title_row,
+            weekday_row,
+            grid,
+            cell_size: preferred_cell_size * scale,
+            navigation_width: (TITLE_HEIGHT * scale).min(control.w / 3.0),
+            scale,
+        })
+    }
+
+    fn offset(self, dx: f32, dy: f32) -> Self {
+        let translate = |rect: Rect| Rect::new(rect.x + dx, rect.y + dy, rect.w, rect.h);
+        Self {
+            control: translate(self.control),
+            title_row: translate(self.title_row),
+            weekday_row: translate(self.weekday_row),
+            grid: translate(self.grid),
+            ..self
+        }
+    }
+
+    fn previous_navigation(self) -> Rect {
+        Rect::new(
+            self.title_row.x,
+            self.title_row.y,
+            self.navigation_width,
+            self.title_row.h,
+        )
+    }
+
+    fn next_navigation(self) -> Rect {
+        Rect::new(
+            self.title_row.x + self.title_row.w - self.navigation_width,
+            self.title_row.y,
+            self.navigation_width,
+            self.title_row.h,
+        )
+    }
+
+    fn cell_rect(self, year: i32, month: usize, day: usize) -> Option<Rect> {
+        if day == 0 || day > days_in_month(year, month) {
+            return None;
+        }
+        let slot = first_weekday(year, month) + day - 1;
+        let row = slot / 7;
+        let column = slot % 7;
+        Some(Rect::new(
+            self.grid.x + column as f32 * self.cell_size,
+            self.grid.y + row as f32 * self.cell_size,
+            self.cell_size,
+            self.cell_size,
+        ))
+    }
+
+    fn day_at(self, position: Point, year: i32, month: usize) -> Option<usize> {
+        if position.x < self.grid.x
+            || position.x >= self.grid.x + self.grid.w
+            || position.y < self.grid.y
+            || position.y >= self.grid.y + self.grid.h
+        {
+            return None;
+        }
+        let column = ((position.x - self.grid.x) / self.cell_size) as usize;
+        let row = ((position.y - self.grid.y) / self.cell_size) as usize;
+        let slot = row * 7 + column;
+        let first = first_weekday(year, month);
+        let day = slot.checked_sub(first)? + 1;
+        (day <= days_in_month(year, month)).then_some(day)
+    }
+}
 
 // Calendar — 日历组件。
 component! {
@@ -30,6 +156,7 @@ component! {
         year_jump: bool,
         focused: bool,
         pending_change: Cell<Option<Date>>,
+        last_geometry: Cell<Option<CalendarGeometry>>,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -45,22 +172,24 @@ component! {
                 button: MouseButton::Left,
                 ..
             } => {
-                let width = self.cell_size * 7.0;
-                if pos.x < 0.0 || pos.x >= width || pos.y < 0.0 {
+                let Some(geometry) = self.interaction_geometry() else {
+                    return EventResult::NotHandled;
+                };
+                if !geometry.control.contains(*pos) {
                     return EventResult::NotHandled;
                 }
-                if pos.y < HEADER_HEIGHT {
-                    if pos.x < HEADER_HEIGHT {
+                if geometry.title_row.contains(*pos) {
+                    if geometry.previous_navigation().contains(*pos) {
                         self.shift_months(-self.navigation_month_delta());
                         return EventResult::Handled;
                     }
-                    if pos.x >= width - HEADER_HEIGHT {
+                    if geometry.next_navigation().contains(*pos) {
                         self.shift_months(self.navigation_month_delta());
                         return EventResult::Handled;
                     }
                     return EventResult::NotHandled;
                 }
-                if let Some(day) = self.day_at(*pos) {
+                if let Some(day) = geometry.day_at(*pos, self.year.get(), self.month.get()) {
                     self.focused_day.set(day);
                     self.commit_selection();
                     EventResult::Handled
@@ -127,68 +256,164 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        let frame = Rect::new(frame.x, frame.y, frame.w.max(0.0), frame.h.max(0.0));
+        let local_frame = Rect::new(0.0, 0.0, frame.w, frame.h);
+        let Some(local_geometry) = CalendarGeometry::new(local_frame, self.cell_size) else {
+            self.last_geometry.set(None);
+            return;
+        };
+        self.last_geometry.set(Some(local_geometry));
+        let geometry = local_geometry.offset(frame.x, frame.y);
         let primary = ctx.tokens().color_primary();
         let text = ctx.tokens().color_text();
-        let text_sec = ctx.tokens().color_text_quaternary();
+        let text_sec = ctx.tokens().color_text_secondary();
         let border = ctx.tokens().color_border_secondary();
-        let _fill = ctx.tokens().color_fill_tertiary();
-        let _bg = ctx.tokens().color_bg_container();
-        let cs = self.cell_size;
-        let y = frame.y;
-        let x = frame.x;
+        let bg = ctx.tokens().color_bg_container();
         let selected = self.selected_date.get();
         let focused_day = self.focused_day.get();
         let cur_year = self.year.get();
         let cur_month = self.month.get();
+        let radius = ctx.tokens().border_radius_sm() * geometry.scale;
 
-        // 标题行
-        let title = format!("{}年{}月", cur_year, cur_month);
-        let header_rect = Rect::new(x, y, cs * 7.0, 40.0);
-        let arrow_y = ctx.visual_center_y(header_rect, 14.0);
-        let title_y = ctx.visual_center_y(header_rect, 15.0);
-        ctx.draw_text(&title, Point::new(x + cs * 3.0 - 24.0, title_y), text, 15.0);
-        ctx.draw_text("◀", Point::new(x + 10.0, arrow_y), primary, 14.0);
-        ctx.draw_text("▶", Point::new(x + cs * 7.0 - 28.0, arrow_y), primary, 14.0);
+        ctx.push_clip(frame);
+        ctx.fill_rect(
+            geometry.control,
+            bg,
+            Some(Radius::uniform(radius)),
+        );
+        ctx.stroke_rect(
+            geometry.control,
+            border,
+            geometry.scale.max(0.5),
+            Some(Radius::uniform(radius)),
+        );
 
-        // 星期行
         let loc = crate::ui::locale::use_locale();
+        let title = localized_month_title(&loc, cur_year, cur_month);
+        let title_width = (geometry.title_row.w - geometry.navigation_width * 2.0
+            - 8.0 * geometry.scale)
+            .max(0.0);
+        let title_font = fitted_font_size(
+            ctx,
+            &title,
+            15.0 * geometry.scale,
+            title_width,
+            geometry.title_row.h * 0.8,
+        );
+        if title_font > 0.0 {
+            let measured = ctx.measure_text(&title, title_font);
+            let title_y = ctx.visual_center_y(geometry.title_row, title_font);
+            ctx.draw_text(
+                &title,
+                Point::new(
+                    geometry.title_row.x + (geometry.title_row.w - measured.w) * 0.5,
+                    title_y,
+                ),
+                text,
+                title_font,
+            );
+        }
+        crate::ui::widgets::icon::paint_icon_in_frame(
+            ctx,
+            "chevron-left",
+            geometry.previous_navigation(),
+            primary,
+            12.0 * geometry.scale,
+        );
+        crate::ui::widgets::icon::paint_icon_in_frame(
+            ctx,
+            "chevron-right",
+            geometry.next_navigation(),
+            primary,
+            12.0 * geometry.scale,
+        );
+
         let weekdays = loc.weekdays_short;
-        for (i, wd) in weekdays.iter().enumerate() {
-            ctx.draw_text(wd, Point::new(x + i as f32 * cs + cs * 0.5 - 5.0, y + 28.0), text_sec, 11.0);
+        let weekday_font = weekdays.iter().fold(11.0 * geometry.scale, |font, weekday| {
+            font.min(fitted_font_size(
+                ctx,
+                weekday,
+                11.0 * geometry.scale,
+                geometry.cell_size * 0.82,
+                geometry.weekday_row.h * 0.8,
+            ))
+        });
+        let weekday_y = ctx.visual_center_y(geometry.weekday_row, weekday_font);
+        for (index, weekday) in weekdays.iter().enumerate() {
+            let measured = ctx.measure_text(weekday, weekday_font);
+            ctx.draw_text(
+                weekday,
+                Point::new(
+                    geometry.weekday_row.x
+                        + index as f32 * geometry.cell_size
+                        + (geometry.cell_size - measured.w) * 0.5,
+                    weekday_y,
+                ),
+                text_sec,
+                weekday_font,
+            );
         }
 
-        // 日期网格
-        let dim = days_in_month(cur_year, cur_month);
-        let wd = first_weekday(cur_year, cur_month);
-        let grid_y = y + 40.0;
-        for d in 1..=dim {
-            let col = (wd + d - 1) % 7;
-            let row = (wd + d - 1) / 7;
-            let cx = x + col as f32 * cs;
-            let cy = grid_y + row as f32 * cs;
-            let cell_rect = Rect::new(cx, cy, cs, cs);
-            let date = Date::new(cur_year, cur_month, d);
-            let is_sel = selected == Some(date);
-            let is_focused = self.focused && focused_day == d;
-            let is_weekend = col >= 5;
-            let tc = if is_sel { Color::white() } else if is_weekend { ctx.tokens().color_error() } else { text };
-            if is_sel {
-                ctx.fill_rect(cell_rect, primary, Some(Radius::uniform(4.0)));
-            }
-            if is_focused {
-                ctx.stroke_rect(
+        let first = first_weekday(cur_year, cur_month);
+        for day in 1..=days_in_month(cur_year, cur_month) {
+            let Some(cell_rect) = geometry.cell_rect(cur_year, cur_month, day) else {
+                continue;
+            };
+            let column = (first + day - 1) % 7;
+            let date = Date::new(cur_year, cur_month, day);
+            let is_selected = selected == Some(date);
+            let is_focused = self.focused && focused_day == day;
+            let is_weekend = column >= 5;
+            let text_color = if is_selected {
+                Color::white()
+            } else if is_weekend {
+                ctx.tokens().color_error()
+            } else {
+                text
+            };
+            if is_selected {
+                ctx.fill_rect(
                     cell_rect,
                     primary,
-                    1.5,
-                    Some(Radius::uniform(4.0)),
+                    Some(Radius::uniform(4.0 * geometry.scale)),
                 );
             }
-            let cell_text_y = ctx.visual_center_y(cell_rect, 13.0);
-            ctx.draw_text(&d.to_string(), Point::new(cx + cs * 0.5 - 6.0, cell_text_y), tc, 13.0);
-            if row > 0 || col > 0 {
-                ctx.stroke_rect(cell_rect, border, 0.5, None);
+            if is_focused {
+                let inset = geometry.scale.max(0.5);
+                let focus_color = if is_selected { Color::white() } else { primary };
+                ctx.stroke_rect(
+                    Rect::new(
+                        cell_rect.x + inset,
+                        cell_rect.y + inset,
+                        (cell_rect.w - inset * 2.0).max(0.0),
+                        (cell_rect.h - inset * 2.0).max(0.0),
+                    ),
+                    focus_color,
+                    1.5 * geometry.scale,
+                    Some(Radius::uniform(4.0 * geometry.scale)),
+                );
             }
+            let day_text = day.to_string();
+            let day_font = fitted_font_size(
+                ctx,
+                &day_text,
+                13.0 * geometry.scale,
+                cell_rect.w * 0.8,
+                cell_rect.h * 0.8,
+            );
+            if day_font > 0.0 {
+                let measured = ctx.measure_text(&day_text, day_font);
+                let text_y = ctx.visual_center_y(cell_rect, day_font);
+                ctx.draw_text(
+                    &day_text,
+                    Point::new(cell_rect.x + (cell_rect.w - measured.w) * 0.5, text_y),
+                    text_color,
+                    day_font,
+                );
+            }
+            ctx.stroke_rect(cell_rect, border, 0.5 * geometry.scale, None);
         }
+        ctx.pop_clip();
     }
 }
 
@@ -203,6 +428,7 @@ impl Calendar {
             year_jump: false,
             focused: false,
             pending_change: Cell::new(None),
+            last_geometry: Cell::new(None),
         }
     }
     pub fn cell_size(mut self, s: f32) -> Self {
@@ -257,7 +483,11 @@ impl Calendar {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
-        self.cell_size = Self::normalize_cell_size(next.cell_size);
+        let next_cell_size = Self::normalize_cell_size(next.cell_size);
+        if self.cell_size != next_cell_size {
+            self.last_geometry.set(None);
+        }
+        self.cell_size = next_cell_size;
         self.year_jump = next.year_jump;
     }
 
@@ -281,20 +511,14 @@ impl Calendar {
         }
     }
 
-    fn day_at(&self, pos: Point) -> Option<usize> {
-        let grid_height = self.cell_size * 6.0;
-        if pos.y < HEADER_HEIGHT || pos.y >= HEADER_HEIGHT + grid_height {
-            return None;
-        }
-        let column = (pos.x / self.cell_size) as usize;
-        let row = ((pos.y - HEADER_HEIGHT) / self.cell_size) as usize;
-        if column >= 7 || row >= 6 {
-            return None;
-        }
-        let weekday = first_weekday(self.year.get(), self.month.get());
-        let ordinal = row * 7 + column;
-        let day = ordinal.checked_sub(weekday)? + 1;
-        (day <= days_in_month(self.year.get(), self.month.get())).then_some(day)
+    fn interaction_geometry(&self) -> Option<CalendarGeometry> {
+        self.last_geometry.get().or_else(|| {
+            let intrinsic = self.intrinsic_size();
+            CalendarGeometry::new(
+                Rect::new(0.0, 0.0, intrinsic.w, intrinsic.h),
+                self.cell_size,
+            )
+        })
     }
 
     fn shift_months(&self, delta: i32) {
@@ -363,6 +587,76 @@ impl Calendar {
             self.pending_change.set(Some(date));
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn control_rect_for_test(&self) -> Option<Rect> {
+        self.interaction_geometry().map(|geometry| geometry.control)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn day_center_for_test(&self, day: usize) -> Option<Point> {
+        self.interaction_geometry()?
+            .cell_rect(self.year.get(), self.month.get(), day)
+            .map(|rect| Point::new(rect.x + rect.w * 0.5, rect.y + rect.h * 0.5))
+    }
+}
+
+fn localized_month_title(locale: &Locale, year: i32, month: usize) -> String {
+    let month_index = month.saturating_sub(1).min(11);
+    let numeric_month = (month_index + 1).to_string();
+    let year = year.to_string();
+    let affixed_numeric = locale.year_format != "{0}" || locale.month_format != "{0}";
+    let (first, second) = if affixed_numeric {
+        (year.as_str(), numeric_month.as_str())
+    } else {
+        (locale.months_long[month_index], year.as_str())
+    };
+    replace_two_placeholders(locale.month_year_format, first, second).unwrap_or_else(|| {
+        if affixed_numeric {
+            format!("{year}-{:02}", month_index + 1)
+        } else {
+            format!("{} {year}", locale.months_long[month_index])
+        }
+    })
+}
+
+fn replace_two_placeholders(pattern: &str, first: &str, second: &str) -> Option<String> {
+    let with_first = pattern.replacen("{}", first, 1);
+    if with_first == pattern {
+        return None;
+    }
+    let with_second = with_first.replacen("{}", second, 1);
+    (with_second != with_first).then_some(with_second)
+}
+
+fn fitted_font_size(
+    ctx: &mut PaintContext<'_>,
+    text: &str,
+    base_size: f32,
+    max_width: f32,
+    max_height: f32,
+) -> f32 {
+    if !base_size.is_finite()
+        || base_size <= 0.0
+        || !max_width.is_finite()
+        || max_width <= 0.0
+        || !max_height.is_finite()
+        || max_height <= 0.0
+    {
+        return 0.0;
+    }
+    let measured = ctx.measure_text(text, base_size);
+    let width_scale = if measured.w > 0.0 {
+        max_width / measured.w
+    } else {
+        1.0
+    };
+    let height_scale = if measured.h > 0.0 {
+        max_height / measured.h
+    } else {
+        1.0
+    };
+    base_size * width_scale.min(height_scale).clamp(0.0, 1.0)
 }
 
 impl Default for Calendar {
