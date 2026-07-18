@@ -18,6 +18,22 @@ enum SelectableListAction {
     Row(usize),
 }
 
+const DEFAULT_WIDTH: f32 = 220.0;
+const DEFAULT_HEIGHT: f32 = 500.0;
+const HEADER_HEIGHT: f32 = 48.0;
+const HEADER_INSET: f32 = 8.0;
+const HEADER_BUTTON_HEIGHT: f32 = 32.0;
+const FOOTER_HEIGHT: f32 = 28.0;
+const ROW_HORIZONTAL_INSET: f32 = 8.0;
+
+#[derive(Debug, Clone, Copy)]
+struct SelectableListGeometry {
+    frame: Rect,
+    header_button: Option<Rect>,
+    body: Rect,
+    footer: Option<Rect>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SelectableItem {
     pub id: String,
@@ -46,39 +62,40 @@ impl SelectableList {
         self.item_height + 2.0
     }
 
-    fn list_body_top(&self) -> f32 {
-        if self.header_button_text.is_empty() {
-            0.0
-        } else {
-            48.0
-        }
-    }
-
     pub(crate) fn list_body_viewport_height(&self) -> f32 {
         let frame = self
             .last_frame
             .get()
-            .unwrap_or_else(|| Rect::new(0.0, 0.0, 220.0, 500.0));
-        let footer = if self.footer_text.is_empty() {
-            0.0
-        } else {
-            28.0
-        };
-        (frame.h - self.list_body_top() - footer).max(self.item_stride())
+            .unwrap_or_else(|| Rect::new(0.0, 0.0, DEFAULT_WIDTH, DEFAULT_HEIGHT));
+        self.geometry(frame).body.h
     }
 
+    #[cfg(test)]
     pub(crate) fn row_index_at_y(&self, pos_y: f32) -> Option<usize> {
-        let list_top = self.list_body_top();
-        let viewport_height = self.list_body_viewport_height();
-        if pos_y < list_top || pos_y >= list_top + viewport_height {
+        let frame = self
+            .last_frame
+            .get()
+            .unwrap_or_else(|| Rect::new(0.0, 0.0, DEFAULT_WIDTH, DEFAULT_HEIGHT));
+        let geometry = self.local_geometry(frame);
+        self.row_index_in_geometry(Point::new(geometry.body.x, pos_y), geometry)
+    }
+
+    fn row_index_in_geometry(
+        &self,
+        point: Point,
+        geometry: SelectableListGeometry,
+    ) -> Option<usize> {
+        if !geometry.body.contains(point) {
             return None;
         }
-        let local_y = pos_y - list_top + self.body_scroll.scroll_offset();
+        let local_y = point.y - geometry.body.y + self.body_scroll.scroll_offset();
         if local_y < 0.0 {
             return None;
         }
-        let row = (local_y / self.item_stride()) as usize;
-        if row < self.items.len() {
+        let stride = self.item_stride();
+        let row = (local_y / stride) as usize;
+        let y_in_row = local_y - row as f32 * stride;
+        if row < self.items.len() && y_in_row < self.item_height {
             Some(row)
         } else {
             None
@@ -94,9 +111,21 @@ impl SelectableList {
             .set((current.0 + dx, current.1 + dy));
     }
 
-    fn header_button_rect(&self) -> Rect {
-        let width = self.last_frame.get().map_or(220.0, |frame| frame.w);
-        Rect::new(8.0, 8.0, (width - 16.0).max(0.0), 32.0)
+    fn action_at_point(&self, point: Point) -> Option<SelectableListAction> {
+        let frame = self
+            .last_frame
+            .get()
+            .unwrap_or_else(|| Rect::new(0.0, 0.0, DEFAULT_WIDTH, DEFAULT_HEIGHT));
+        let geometry = self.local_geometry(frame);
+        if geometry
+            .header_button
+            .is_some_and(|button| button.contains(point))
+        {
+            Some(SelectableListAction::Header)
+        } else {
+            self.row_index_in_geometry(point, geometry)
+                .map(SelectableListAction::Row)
+        }
     }
 
     fn select(&mut self, index: usize, activate_unchanged: bool) {
@@ -187,15 +216,15 @@ impl SelectableList {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let selected_id = self.selected_id().map(str::to_owned);
         self.items = next.items;
         self.header_button_text = next.header_button_text;
         self.footer_text = next.footer_text;
         self.item_height = next.item_height;
-        if self.items.is_empty() {
-            self.active_index = 0;
-        } else {
-            self.active_index = self.active_index.min(self.items.len() - 1);
-        }
+        self.active_index = selected_id
+            .as_deref()
+            .and_then(|id| self.items.iter().position(|item| item.id == id))
+            .unwrap_or_else(|| next.active_index.min(self.items.len().saturating_sub(1)));
         self.body_scroll.clamp_to_content(
             self.items.len(),
             self.item_stride(),
@@ -206,6 +235,120 @@ impl SelectableList {
                 .get()
                 .filter(|idx| *idx < self.items.len()),
         );
+        self.pressed_action.set(None);
+    }
+
+    fn geometry(&self, frame: Rect) -> SelectableListGeometry {
+        let frame = Self::normalized_frame(frame);
+        let header_height = if self.header_button_text.is_empty() {
+            0.0
+        } else {
+            HEADER_HEIGHT.min(frame.h)
+        };
+        let remaining = (frame.h - header_height).max(0.0);
+        let footer_height = if self.footer_text.is_empty() {
+            0.0
+        } else {
+            FOOTER_HEIGHT.min(remaining)
+        };
+        let body_height = (remaining - footer_height).max(0.0);
+        let header_button = (!self.header_button_text.is_empty()).then(|| {
+            let horizontal_inset = HEADER_INSET.min(frame.w * 0.5);
+            let vertical_inset = HEADER_INSET.min(header_height * 0.5);
+            Rect::new(
+                frame.x + horizontal_inset,
+                frame.y + vertical_inset,
+                (frame.w - horizontal_inset * 2.0).max(0.0),
+                HEADER_BUTTON_HEIGHT.min((header_height - vertical_inset * 2.0).max(0.0)),
+            )
+        });
+        let body = Rect::new(frame.x, frame.y + header_height, frame.w, body_height);
+        let footer = (!self.footer_text.is_empty() && footer_height > 0.0)
+            .then(|| Rect::new(frame.x, body.y + body.h, frame.w, footer_height));
+        SelectableListGeometry {
+            frame,
+            header_button,
+            body,
+            footer,
+        }
+    }
+
+    fn local_geometry(&self, frame: Rect) -> SelectableListGeometry {
+        self.geometry(Rect::new(0.0, 0.0, frame.w, frame.h))
+    }
+
+    fn normalized_frame(frame: Rect) -> Rect {
+        Rect::new(
+            frame.x,
+            frame.y,
+            if frame.w.is_finite() {
+                frame.w.max(0.0)
+            } else {
+                0.0
+            },
+            if frame.h.is_finite() {
+                frame.h.max(0.0)
+            } else {
+                0.0
+            },
+        )
+    }
+
+    fn paint_single_line(
+        ctx: &mut PaintContext<'_>,
+        value: &str,
+        frame: Rect,
+        color: Color,
+        font_size: f32,
+    ) {
+        if frame.w <= 0.0 || frame.h <= 0.0 {
+            return;
+        }
+        let Some(value) = Self::elide_single_line(ctx, value, font_size, frame.w) else {
+            return;
+        };
+        ctx.push_clip(frame);
+        ctx.draw_text_in_frame(&value, frame, color, font_size);
+        ctx.pop_clip();
+    }
+
+    fn elide_single_line(
+        ctx: &mut PaintContext<'_>,
+        value: &str,
+        font_size: f32,
+        max_width: f32,
+    ) -> Option<String> {
+        if !max_width.is_finite() || max_width <= 0.0 {
+            return None;
+        }
+        let value = value.replace(['\r', '\n'], " ");
+        if Self::text_width(ctx, &value, font_size) <= max_width {
+            return Some(value);
+        }
+        const ELLIPSIS: &str = "…";
+        if Self::text_width(ctx, ELLIPSIS, font_size) > max_width {
+            return None;
+        }
+        let mut visible = String::new();
+        for ch in value.chars() {
+            visible.push(ch);
+            visible.push_str(ELLIPSIS);
+            let fits = Self::text_width(ctx, &visible, font_size) <= max_width;
+            visible.pop();
+            if !fits {
+                visible.pop();
+                break;
+            }
+        }
+        visible.push_str(ELLIPSIS);
+        Some(visible)
+    }
+
+    fn text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
+        ctx.measure_text(value, font_size).w.max(
+            crate::draw::font::text_backend::estimate_text_metrics(value, f32::INFINITY, font_size)
+                .max_line_width,
+        )
     }
 }
 
@@ -235,6 +378,7 @@ component! {
 
         hovered_index: Cell<Option<usize>>,
         hovered_header: Cell<bool>,
+        pressed_action: Cell<Option<SelectableListAction>>,
         focused: bool,
         pub(crate) body_scroll: VirtualListScroll,
         scroll_delta_strip: Cell<(f32, f32)>,
@@ -251,6 +395,7 @@ component! {
             item_height: 36.0,
             hovered_index: Cell::new(None),
             hovered_header: Cell::new(false),
+            pressed_action: Cell::new(None),
             focused: false,
             body_scroll: VirtualListScroll::new(),
             scroll_delta_strip: Cell::new((0.0, 0.0)),
@@ -282,13 +427,41 @@ component! {
                 button: MouseButton::Left,
                 ..
             } => {
-                if !self.header_button_text.is_empty() && self.header_button_rect().contains(*pos) {
-                    self.pending_action.set(Some(SelectableListAction::Header));
+                if let Some(action) = self.action_at_point(*pos) {
+                    self.hovered_header
+                        .set(action == SelectableListAction::Header);
+                    self.hovered_index.set(match action {
+                        SelectableListAction::Row(index) => Some(index),
+                        SelectableListAction::Header => None,
+                    });
+                    self.pressed_action.set(Some(action));
                     return EventResult::Handled;
                 }
+                EventResult::NotHandled
+            }
 
-                if let Some(i) = self.row_index_at_y(pos.y) {
-                    self.select(i, true);
+            SystemEvent::PointerUp {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
+                let pressed = self.pressed_action.replace(None);
+                if let Some(action) = pressed {
+                    let released = self.action_at_point(*pos);
+                    self.hovered_header
+                        .set(released == Some(SelectableListAction::Header));
+                    self.hovered_index.set(match released {
+                        Some(SelectableListAction::Row(index)) => Some(index),
+                        _ => None,
+                    });
+                    if released == Some(action) {
+                        match action {
+                            SelectableListAction::Header => {
+                                self.pending_action.set(Some(SelectableListAction::Header));
+                            }
+                            SelectableListAction::Row(index) => self.select(index, true),
+                        }
+                    }
                     return EventResult::Handled;
                 }
                 EventResult::NotHandled
@@ -298,12 +471,12 @@ component! {
                 let old_hover = self.hovered_index.get();
                 let old_btn = self.hovered_header.get();
 
-                let new_btn = if !self.header_button_text.is_empty() {
-                    self.header_button_rect().contains(*pos)
-                } else {
-                    false
+                let action = self.action_at_point(*pos);
+                let new_btn = action == Some(SelectableListAction::Header);
+                let new_hover = match action {
+                    Some(SelectableListAction::Row(index)) => Some(index),
+                    _ => None,
                 };
-                let new_hover = self.row_index_at_y(pos.y);
 
                 self.hovered_index.set(new_hover);
                 self.hovered_header.set(new_btn);
@@ -314,7 +487,14 @@ component! {
                 }
             }
 
-            SystemEvent::Wheel { delta, .. } => {
+            SystemEvent::Wheel { pos, delta } => {
+                let frame = self
+                    .last_frame
+                    .get()
+                    .unwrap_or_else(|| Rect::new(0.0, 0.0, DEFAULT_WIDTH, DEFAULT_HEIGHT));
+                if !self.local_geometry(frame).body.contains(*pos) {
+                    return EventResult::NotHandled;
+                }
                 let viewport_h = self.list_body_viewport_height();
                 let dy = self.body_scroll.scroll_by_wheel(
                     delta.y,
@@ -331,9 +511,14 @@ component! {
             }
 
             SystemEvent::PointerLeave => {
-                self.hovered_index.set(None);
-                self.hovered_header.set(false);
-                EventResult::Handled
+                let changed = self.hovered_index.replace(None).is_some()
+                    | self.hovered_header.replace(false)
+                    | self.pressed_action.replace(None).is_some();
+                if changed {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
             }
 
             SystemEvent::FocusIn => {
@@ -343,6 +528,7 @@ component! {
 
             SystemEvent::FocusOut => {
                 self.focused = false;
+                self.pressed_action.set(None);
                 EventResult::Handled
             }
 
@@ -390,8 +576,6 @@ component! {
         }
     }
 
-    wants_continuous_pointer_move => (&self) -> bool { true }
-
     scroll_delta_for_dirty => (&self) -> Option<(f32, f32)> {
         let delta = self.scroll_delta_strip.get();
         if delta.0.abs() > 0.01 || delta.1.abs() > 0.01 {
@@ -403,7 +587,12 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        let geometry = self.geometry(frame);
+        let frame = geometry.frame;
         self.last_frame.set(Some(frame));
+        if frame.w <= 0.0 || frame.h <= 0.0 {
+            return;
+        }
         let bg = ctx.tokens().color_bg_container();
         let border = ctx.tokens().color_border_secondary();
         let fill = ctx.tokens().color_fill_secondary();
@@ -412,60 +601,101 @@ component! {
         let t_ter = ctx.tokens().color_text_tertiary();
         let t_pri = ctx.tokens().color_primary();
 
+        ctx.push_clip(frame);
         ctx.fill_rect(frame, bg, None);
-        ctx.fill_rect(Rect::new(frame.x + frame.w - 1.0, frame.y, 1.0, frame.h), border, None);
+        if frame.w >= 1.0 {
+            ctx.fill_rect(
+                Rect::new(frame.x + frame.w - 1.0, frame.y, 1.0, frame.h),
+                border,
+                None,
+            );
+        }
 
-        let mut y = frame.y;
-
-        if !self.header_button_text.is_empty() {
-            let btn_frame = Rect::new(frame.x + 8.0, y + 8.0, frame.w - 16.0, 32.0);
-            let btn_bg = if self.hovered_header.get() {
+        if let Some(btn_frame) = geometry.header_button {
+            let pressed = self.pressed_action.get() == Some(SelectableListAction::Header)
+                && self.hovered_header.get();
+            let btn_bg = if pressed {
+                Color::from_rgba(55, 110, 255, 38)
+            } else if self.hovered_header.get() {
                 fill_hover
             } else {
                 fill
             };
             ctx.fill_rect(btn_frame, btn_bg, Some(Radius::uniform(6.0)));
-            ctx.draw_text("+", Point::new(btn_frame.x + 10.0, btn_frame.y + 7.0), t_sec, 15.0);
-            ctx.draw_text(
-                &self.header_button_text,
-                Point::new(btn_frame.x + 28.0, btn_frame.y + 8.0),
-                t_sec,
-                13.0,
+            let icon_size = 18.0_f32.min(btn_frame.h);
+            let icon_frame = Rect::new(
+                btn_frame.x + 8.0_f32.min(btn_frame.w * 0.25),
+                btn_frame.y + (btn_frame.h - icon_size) * 0.5,
+                icon_size,
+                icon_size,
             );
-            ctx.fill_rect(
-                Rect::new(frame.x + 8.0, btn_frame.y + btn_frame.h + 8.0, frame.w - 16.0, 1.0),
-                border,
-                None,
+            crate::ui::widgets::general::icon::paint_icon_in_frame(
+                ctx, "plus", icon_frame, t_sec, 14.0,
             );
-            y = btn_frame.y + btn_frame.h + 16.0;
+            let text_frame = Rect::new(
+                icon_frame.x + icon_frame.w + 4.0,
+                btn_frame.y,
+                (btn_frame.x + btn_frame.w - icon_frame.x - icon_frame.w - 10.0).max(0.0),
+                btn_frame.h,
+            );
+            Self::paint_single_line(ctx, &self.header_button_text, text_frame, t_sec, 13.0);
+            let separator_width = (frame.w - HEADER_INSET * 2.0).max(0.0);
+            if separator_width > 0.0 && geometry.body.y > frame.y {
+                ctx.fill_rect(
+                    Rect::new(
+                        frame.x + HEADER_INSET.min(frame.w * 0.5),
+                        (geometry.body.y - 1.0).max(frame.y),
+                        separator_width,
+                        1.0,
+                    ),
+                    border,
+                    None,
+                );
+            }
         }
 
-        let list_top = y;
-        let footer_h = if self.footer_text.is_empty() { 0.0 } else { 28.0 };
-        let list_viewport_h = frame.h - (list_top - frame.y) - footer_h;
-        let list_clip = Rect::new(frame.x, list_top, frame.w, list_viewport_h);
-        ctx.canvas_2d().push_clip(list_clip);
+        let list_clip = geometry.body;
+        ctx.push_clip(list_clip);
 
         let stride = self.item_stride();
         let scroll_offset = self.body_scroll.scroll_offset();
         let (start, end) = self
             .body_scroll
-            .scroll_range(self.items.len(), stride, list_viewport_h);
+            .scroll_range(self.items.len(), stride, list_clip.h);
 
         for i in start..end {
-            let iy = list_top + i as f32 * stride - scroll_offset;
-            if iy + self.item_height < list_top || iy > list_top + list_viewport_h {
+            let iy = list_clip.y + i as f32 * stride - scroll_offset;
+            if iy + self.item_height < list_clip.y || iy > list_clip.y + list_clip.h {
                 continue;
             }
 
             let is_active = i == self.active_index;
             let is_hover = self.hovered_index.get() == Some(i);
-            let item_frame = Rect::new(frame.x + 8.0, iy, frame.w - 16.0, self.item_height);
+            let horizontal_inset = ROW_HORIZONTAL_INSET.min(frame.w * 0.5);
+            let item_frame = Rect::new(
+                frame.x + horizontal_inset,
+                iy,
+                (frame.w - horizontal_inset * 2.0).max(0.0),
+                self.item_height.min(list_clip.h.max(0.0)),
+            );
+            let is_pressed = self.pressed_action.get() == Some(SelectableListAction::Row(i))
+                && is_hover;
 
-            if is_active {
+            if is_pressed {
+                ctx.fill_rect(
+                    item_frame,
+                    Color::from_rgba(55, 110, 255, 45),
+                    Some(Radius::uniform(6.0)),
+                );
+            } else if is_active {
                 ctx.fill_rect(item_frame, Color::from_rgba(55, 110, 255, 25), Some(Radius::uniform(6.0)));
                 ctx.fill_rect(
-                    Rect::new(item_frame.x, item_frame.y + 6.0, 3.0, self.item_height - 12.0),
+                    Rect::new(
+                        item_frame.x,
+                        item_frame.y + 6.0_f32.min(item_frame.h * 0.5),
+                        3.0_f32.min(item_frame.w),
+                        (item_frame.h - 12.0).max(0.0),
+                    ),
                     t_pri,
                     Some(Radius::uniform(1.5)),
                 );
@@ -474,38 +704,70 @@ component! {
             }
 
             let icon = self.items[i].icon.as_deref().unwrap_or("");
+            let icon_slot = if icon.is_empty() { 0.0 } else { 26.0_f32.min(item_frame.w) };
             let text_x = if icon.is_empty() {
-                item_frame.x + 14.0
+                item_frame.x + 14.0_f32.min(item_frame.w * 0.25)
             } else {
-                item_frame.x + 32.0
+                item_frame.x + icon_slot + 6.0_f32.min(item_frame.w * 0.1)
             };
             if !icon.is_empty() {
+                let icon_size = 18.0_f32.min(item_frame.h);
                 crate::ui::widgets::general::icon::paint_icon_in_frame(
                     ctx,
                     icon,
-                    Rect::new(item_frame.x + 8.0, item_frame.y + 6.0, 18.0, 18.0),
+                    Rect::new(
+                        item_frame.x + 8.0_f32.min(item_frame.w * 0.2),
+                        item_frame.y + (item_frame.h - icon_size) * 0.5,
+                        icon_size,
+                        icon_size,
+                    ),
                     t_sec,
                     14.0,
                 );
             }
 
             let color = if is_active { t_pri } else { t_sec };
-            ctx.draw_text(&self.items[i].text, Point::new(text_x, item_frame.y + 9.0), color, 13.0);
+            let text_frame = Rect::new(
+                text_x,
+                item_frame.y,
+                (item_frame.x + item_frame.w - text_x - 10.0).max(0.0),
+                item_frame.h,
+            );
+            Self::paint_single_line(ctx, &self.items[i].text, text_frame, color, 13.0);
         }
 
-        ctx.canvas_2d().pop_clip();
+        ctx.pop_clip();
 
-        if !self.footer_text.is_empty() {
-            let fy = frame.y + frame.h - 24.0;
-            ctx.draw_text(&self.footer_text, Point::new(frame.x + 12.0, fy), t_ter, 11.0);
+        if let Some(footer) = geometry.footer {
+            let horizontal_inset = 12.0_f32.min(footer.w * 0.25);
+            Self::paint_single_line(
+                ctx,
+                &self.footer_text,
+                Rect::new(
+                    footer.x + horizontal_inset,
+                    footer.y,
+                    (footer.w - horizontal_inset * 2.0).max(0.0),
+                    footer.h,
+                ),
+                t_ter,
+                11.0,
+            );
         }
         if self.focused {
+            let inset = 1.0_f32.min(frame.w * 0.5).min(frame.h * 0.5);
+            let focus_frame = Rect::new(
+                frame.x + inset,
+                frame.y + inset,
+                (frame.w - inset * 2.0).max(0.0),
+                (frame.h - inset * 2.0).max(0.0),
+            );
             ctx.stroke_rect(
-                frame,
+                focus_frame,
                 t_pri,
                 1.5,
                 Some(Radius::uniform(ctx.tokens().border_radius_sm())),
             );
         }
+        ctx.pop_clip();
     }
 }

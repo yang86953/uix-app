@@ -423,6 +423,39 @@ impl ComponentQaSession {
         self.snapshot(&format!("{request_prefix}-after"))
     }
 
+    fn pointer_button_at_offset(
+        &mut self,
+        automation_id: &str,
+        x_fraction: f64,
+        y_offset: f64,
+        kind: &str,
+        request_prefix: &str,
+    ) -> Value {
+        let snapshot = self.snapshot(&format!("{request_prefix}-bounds"));
+        let bounds = &node_by_automation_id(&snapshot, automation_id)["visible_bounds"];
+        let x = bounds["x"].as_f64().expect("bounds x")
+            + bounds["w"].as_f64().expect("bounds width") * x_fraction;
+        let y = bounds["y"].as_f64().expect("bounds y") + y_offset;
+        let changed = perform_until_presentable(
+            &self.demo,
+            &mut self.connection,
+            self.window_id,
+            self.generation,
+            request_prefix,
+            None,
+            json!({ "kind": kind, "x": x, "y": y }),
+        );
+        let revision = changed["revision"].as_u64().expect("pointer revision");
+        wait_for_revision(
+            &mut self.connection,
+            request_prefix,
+            self.window_id,
+            self.generation,
+            revision,
+        );
+        self.snapshot(&format!("{request_prefix}-after"))
+    }
+
     fn close(mut self) {
         drop(self.connection);
         self.demo.close_and_wait();
@@ -1622,6 +1655,88 @@ fn real_demo_result_view_keeps_status_and_action_inside_constrained_frames() {
     );
     thread::sleep(Duration::from_millis(300));
     session.capture("uix-result", "result-layout-dark.png");
+    session.close();
+}
+
+#[test]
+#[ignore = "requires an interactive Windows desktop and writes SelectableList visual evidence"]
+fn real_demo_selectable_list_clips_interacts_and_scrolls_inside_actual_frames() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(51, "selectable-list-layout");
+    let snapshot = session.snapshot("selectable-list-layout-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "selectable-list"
+    );
+
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "list");
+    assert_eq!(target["state"]["value_text"], "语义质量");
+    assert_eq!(target["state"]["value_now"], 2.0);
+    assert_eq!(target["visible_bounds"]["w"], 220.0);
+    assert_eq!(target["visible_bounds"]["h"], 190.0);
+
+    let constrained = node_by_automation_id(&snapshot, "component-qa-selectable-constrained");
+    assert_eq!(constrained["visible_bounds"]["w"], 132.0);
+    assert_eq!(constrained["visible_bounds"]["h"], 120.0);
+    let scroll = node_by_automation_id(&snapshot, "component-qa-selectable-scroll");
+    assert_eq!(scroll["visible_bounds"]["w"], 180.0);
+    assert_eq!(scroll["visible_bounds"]["h"], 150.0);
+
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-selectable-list", "selectable-list-light.png");
+
+    session.move_pointer_to_offset("component-qa-target", 0.5, 142.0, "selectable-list-hover");
+    session.capture("uix-selectable-list", "selectable-list-hover.png");
+
+    let pressed = session.pointer_button_at_offset(
+        "component-qa-target",
+        0.5,
+        142.0,
+        "pointer_down",
+        "selectable-list-pressed",
+    );
+    assert_eq!(
+        node_by_automation_id(&pressed, "component-qa-target")["state"]["value_text"],
+        "语义质量"
+    );
+    session.capture("uix-selectable-list", "selectable-list-pressed.png");
+    let selected = session.pointer_button_at_offset(
+        "component-qa-target",
+        0.5,
+        142.0,
+        "pointer_up",
+        "selectable-list-selected",
+    );
+    assert_eq!(
+        node_by_automation_id(&selected, "component-qa-target")["state"]["value_text"],
+        "交互质量"
+    );
+
+    let focused = session.focus(
+        "component-qa-selectable-scroll",
+        "selectable-list-scroll-focus",
+    );
+    assert_eq!(
+        node_by_automation_id(&focused, "component-qa-selectable-scroll")["focused"],
+        true
+    );
+    let scrolled = session.press_key("end", "selectable-list-scroll-end");
+    let scroll = node_by_automation_id(&scrolled, "component-qa-selectable-scroll");
+    assert_eq!(scroll["state"]["value_text"], "质量检查项 11");
+    assert_eq!(scroll["state"]["value_now"], 12.0);
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-selectable-list", "selectable-list-scrolled-focus.png");
+
+    let dark = session.invoke("theme-toggle", "selectable-list-dark-theme");
+    assert_eq!(
+        node_by_automation_id(&dark, "component-qa-selectable-constrained")["visible_bounds"]["w"],
+        132.0
+    );
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-selectable-list", "selectable-list-dark.png");
     session.close();
 }
 

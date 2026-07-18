@@ -706,7 +706,15 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
         "selectable-list",
         "SelectableList",
         "数据展示",
-        &["default", "selected", "hover", "pressed", "focus"],
+        &[
+            "default",
+            "selected",
+            "hover",
+            "pressed",
+            "focus",
+            "constrained",
+            "scrolled",
+        ],
     ),
     widget(
         "skeleton",
