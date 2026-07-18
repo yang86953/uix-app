@@ -183,10 +183,7 @@ component! {
             } => {
                 self.focused = true;
                 if !self.open.get() {
-                    self.open.set(true);
-                    let val = self.selected_or_today();
-                    self.view_year.set(val.year);
-                    self.view_month.set(val.month);
+                    self.open_popup();
                     return EventResult::Handled;
                 }
 
@@ -202,6 +199,7 @@ component! {
                             self.view_year.set(y); self.view_month.set(m);
                             }
                         }
+                        self.hover_date.set(None);
                         return EventResult::Handled;
                     }
 
@@ -213,7 +211,7 @@ component! {
                     ) {
                         if !self.is_date_disabled(hit_date) {
                             self.commit_value(self.mode.normalize(hit_date));
-                            self.open.set(false);
+                            self.close_popup();
                         }
                     }
                 }
@@ -222,47 +220,63 @@ component! {
             SystemEvent::PointerMove { pos, .. } => {
                 if self.open.get() {
                     if let Some(frame) = self.last_frame.get() {
-                        if let Some(hit_date) = hit_calendar_date(
+                        let hover = hit_calendar_date(
                             frame,
                             *pos,
                             self.view_year.get(),
                             self.view_month.get(),
-                        ) {
-                            if !self.is_date_disabled(hit_date) {
-                                self.hover_date.set(Some(hit_date));
-                                return EventResult::Handled;
-                            }
+                        )
+                        .filter(|date| !self.is_date_disabled(*date));
+                        if self.hover_date.replace(hover) != hover {
+                            return EventResult::Handled;
                         }
-                        self.hover_date.set(None);
                     }
                 }
                 EventResult::NotHandled
             }
-            SystemEvent::PointerLeave => { self.hover_date.set(None); EventResult::NotHandled }
-            SystemEvent::FocusOut => { self.focused = false; self.open.set(false); EventResult::Handled }
+            SystemEvent::PointerLeave => {
+                if self.hover_date.replace(None).is_some() {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
+            }
+            SystemEvent::FocusIn => {
+                self.focused = true;
+                EventResult::Handled
+            }
+            SystemEvent::FocusOut => {
+                self.focused = false;
+                self.close_popup();
+                EventResult::Handled
+            }
             SystemEvent::KeyDown { key, .. } => {
                 if self.open.get() {
                     match key {
-                        KeyCode::Escape => { self.open.set(false); }
+                        KeyCode::Escape => {
+                            self.close_popup();
+                            EventResult::Handled
+                        }
                         KeyCode::Left => {
                             let (y, m) = prev_month(self.view_year.get(), self.view_month.get());
                             self.view_year.set(y); self.view_month.set(m);
+                            self.hover_date.set(None);
+                            EventResult::Handled
                         }
                         KeyCode::Right => {
                             let (y, m) = next_month(self.view_year.get(), self.view_month.get());
                             self.view_year.set(y); self.view_month.set(m);
+                            self.hover_date.set(None);
+                            EventResult::Handled
                         }
-                        _ => {}
+                        _ => EventResult::NotHandled,
                     }
+                } else if *key == KeyCode::Space || *key == KeyCode::Enter {
+                    self.open_popup();
+                    EventResult::Handled
                 } else {
-                    if *key == KeyCode::Space || *key == KeyCode::Enter {
-                        self.open.set(true);
-                        let val = self.selected_or_today();
-                        self.view_year.set(val.year);
-                        self.view_month.set(val.month);
-                    }
+                    EventResult::NotHandled
                 }
-                EventResult::Handled
             }
             _ => EventResult::NotHandled,
         }
@@ -298,29 +312,64 @@ component! {
 
         let val = self.value.get();
         let is_default = val == Date::default();
+        let nominal_height = crate::ui::config::control_height(self.picker_size);
+        let scale = if nominal_height > 0.0 {
+            (frame.h / nominal_height).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let font_size = 14.0 * scale;
+        let horizontal_padding = 12.0 * scale;
+        let icon_gap = 4.0 * scale;
+        let icon_slot_width = 24.0 * scale;
+        let icon_right_inset = 4.0 * scale;
+
+        ctx.push_clip(frame);
         ctx.fill_rect(frame, ctx.tokens().color_bg_container(), radius);
         ctx.stroke_rect(frame, if self.focused { primary } else { border_color },
             if self.focused { 2.0 } else { 1.0 }, radius);
 
-        let input_text_y = ctx.visual_center_y(frame, 14.0);
-        if is_default {
-            ctx.draw_text(&self.placeholder,
-                Point::new(frame.x + 12.0, input_text_y),
-                text_tertiary, 14.0);
-        } else {
-            let formatted = val.format();
-            ctx.draw_text(&formatted,
-                Point::new(frame.x + 12.0, input_text_y),
-                text_color, 14.0);
-        }
+        if font_size > 0.0 && frame.w > 0.0 {
+            let icon_frame = Rect::new(
+                frame.x + frame.w - icon_right_inset - icon_slot_width,
+                frame.y,
+                icon_slot_width,
+                frame.h,
+            );
+            let text_left = frame.x + horizontal_padding;
+            let text_right = (icon_frame.x - icon_gap).max(text_left);
+            let text_area = Rect::new(text_left, frame.y, text_right - text_left, frame.h);
+            let input_text_y = ctx.visual_center_y(frame, font_size);
+            if text_area.w > 0.0 {
+                ctx.push_clip(text_area);
+                if is_default {
+                    ctx.draw_text(
+                        &self.placeholder,
+                        Point::new(text_left, input_text_y),
+                        text_tertiary,
+                        font_size,
+                    );
+                } else {
+                    let formatted = val.format();
+                    ctx.draw_text(
+                        &formatted,
+                        Point::new(text_left, input_text_y),
+                        text_color,
+                        font_size,
+                    );
+                }
+                ctx.pop_clip();
+            }
 
-        crate::ui::widgets::icon::paint_icon_in_frame(
-            ctx,
-            "calendar",
-            Rect::new(frame.x + frame.w - 28.0, frame.y, 24.0, frame.h),
-            text_secondary,
-            14.0,
-        );
+            crate::ui::widgets::icon::paint_icon_in_frame(
+                ctx,
+                "calendar",
+                icon_frame,
+                text_secondary,
+                font_size,
+            );
+        }
+        ctx.pop_clip();
 
         if self.open.get() {
             draw_calendar_panel(
@@ -340,6 +389,14 @@ component! {
 
     dirty_rect => (&self, frame: Rect) -> Rect {
         picker_bounds(frame)
+    }
+
+    overlay_entry => (&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+        self.open.get().then(|| {
+            crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
+                .bounds(picker_bounds(frame))
+                .z_index(900)
+        })
     }
 }
 
@@ -426,6 +483,7 @@ impl DatePicker {
         SnapshotFields::DatePicker {
             placeholder: self.placeholder.clone(),
             value: (value != Date::default()).then(|| value.format()),
+            open: self.open.get(),
         }
     }
 
@@ -448,6 +506,19 @@ impl DatePicker {
         } else {
             value
         }
+    }
+
+    fn open_popup(&self) {
+        let value = self.selected_or_today();
+        self.view_year.set(value.year);
+        self.view_month.set(value.month);
+        self.hover_date.set(None);
+        self.open.set(true);
+    }
+
+    fn close_popup(&self) {
+        self.open.set(false);
+        self.hover_date.set(None);
     }
 
     fn sync_bound_value(&self) {

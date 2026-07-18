@@ -58,6 +58,17 @@ fn paint_none_expands_full_frame() {
 }
 
 #[test]
+fn full_composite_expands_frame_without_dirtying_scene_nodes() {
+    let mut q = InvalidationQueue::new();
+    q.push(Invalidation::FullComposite);
+
+    assert!(q.has_paint_or_composite());
+    assert!(q.dirty_region().full_frame);
+    assert!(!q.needs_full_frame());
+    assert!(!q.node_needs_paint(NodeId::new(1)));
+}
+
+#[test]
 fn composite_scroll_extract() {
     let mut q = InvalidationQueue::new();
     let frame = Rect::new(0.0, 0.0, 100.0, 200.0);

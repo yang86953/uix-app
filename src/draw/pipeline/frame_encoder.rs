@@ -9,6 +9,7 @@ use crate::core::Rect;
 use crate::draw::engine::cpu::raster_renderer::RasterRenderer;
 use crate::draw::primitives::types::{BlendMode, Radius};
 use crate::draw::Color;
+use std::sync::Arc;
 
 /// Integer pixel rectangle used by the API-neutral frame command model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,7 +82,7 @@ impl Eq for FrameRadius {}
 pub struct FrameImage {
     width: i32,
     height: i32,
-    pixels: Vec<u32>,
+    pixels: Arc<[u32]>,
 }
 
 impl FrameImage {
@@ -97,7 +98,7 @@ impl FrameImage {
         Ok(Self {
             width,
             height,
-            pixels,
+            pixels: pixels.into(),
         })
     }
 
@@ -105,7 +106,7 @@ impl FrameImage {
         Ok(Self {
             width,
             height,
-            pixels: vec![color.premultiplied(); pixel_len(width, height)?],
+            pixels: vec![color.premultiplied(); pixel_len(width, height)?].into(),
         })
     }
 
@@ -359,7 +360,7 @@ impl FrameEncoder {
             image: FrameImage {
                 width: image.width,
                 height: image.height,
-                pixels: image.pixels,
+                pixels: image.pixels.into(),
             },
             src: full,
             dst: full,
@@ -406,18 +407,36 @@ impl FrameEncoder {
             self.pixel_count,
             "FrameEncoder target must match its recorded extent"
         );
+        let mut target_is_transparent = false;
         for command in &self.commands {
             match command {
                 // Clear is a replace operation, never transparent source-over.
-                FrameCommand::Clear { color } => pixels.fill(color.premultiplied()),
+                FrameCommand::Clear { color } => {
+                    let clear = color.premultiplied();
+                    pixels.fill(clear);
+                    target_is_transparent = clear == 0;
+                }
                 FrameCommand::Native { operation } => {
-                    apply_raster_op_pixels(self.width, self.height, pixels, operation)
+                    apply_raster_op_pixels(self.width, self.height, pixels, operation);
+                    target_is_transparent = false;
                 }
                 FrameCommand::CpuSegment { image, src, dst } => {
-                    blit_image_pixels(self.width, self.height, pixels, image, *src, *dst)
+                    blit_image_pixels(self.width, self.height, pixels, image, *src, *dst);
+                    target_is_transparent = false;
                 }
                 FrameCommand::PictureBlit { image, src, dst } => {
-                    blit_image_pixels(self.width, self.height, pixels, image, *src, *dst)
+                    if target_is_transparent
+                        && full_frame_image_blit(self.width, self.height, image, *src, *dst)
+                    {
+                        // Source-over onto a transparent target is exactly the
+                        // premultiplied source. Retained backdrop restores use
+                        // this ordered shape, avoiding one alpha branch and
+                        // blend decision per full-surface pixel.
+                        pixels.copy_from_slice(image.pixels());
+                    } else {
+                        blit_image_pixels(self.width, self.height, pixels, image, *src, *dst);
+                    }
+                    target_is_transparent = false;
                 }
             }
         }
@@ -463,6 +482,19 @@ impl FrameEncoder {
     pub fn present<P: FramePresenter>(self, presenter: &mut P) -> Result<PresentOutcome, P::Error> {
         presenter.present(&self.render_reference())
     }
+}
+
+fn full_frame_image_blit(
+    width: i32,
+    height: i32,
+    image: &FrameImage,
+    src: FrameRect,
+    dst: FrameRect,
+) -> bool {
+    image.width == width
+        && image.height == height
+        && src == FrameRect::new(0, 0, width, height)
+        && dst == FrameRect::new(0, 0, width, height)
 }
 
 fn pixel_len(width: i32, height: i32) -> Result<usize, FrameEncoderError> {

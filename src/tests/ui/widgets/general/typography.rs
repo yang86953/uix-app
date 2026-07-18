@@ -42,6 +42,35 @@ fn paragraph_measure_accounts_for_wrapped_lines() {
 }
 
 #[test]
+fn paragraph_measure_accounts_for_cjk_width_and_explicit_line_breaks() {
+    let cjk = Typography::paragraph("界界界界界界界界");
+    let cjk_size = cjk.measure(Constraints::loose(Size::new(28.0, 300.0)));
+    assert_eq!(cjk_size, Size::new(28.0, 84.0));
+
+    let multiline = Typography::paragraph("一\n二\n三");
+    let multiline_size = multiline.measure(Constraints::loose(Size::new(200.0, 300.0)));
+    assert_eq!(multiline_size.h, 63.0);
+}
+
+#[test]
+fn paragraph_render_places_wrapped_glyphs_on_later_lines() {
+    let pixels = render_typography(
+        &Typography::paragraph("WWWWWWWW"),
+        Rect::new(20.0, 20.0, 40.0, 100.0),
+    );
+    let later_line_pixels = pixels
+        .iter()
+        .enumerate()
+        .filter(|(index, pixel)| **pixel != 0 && index / 320 >= 40)
+        .count();
+
+    assert!(
+        later_line_pixels > 0,
+        "wrapped paragraph must paint glyphs below the first line"
+    );
+}
+
+#[test]
 fn typography_style_flags_produce_visible_decoration_pixels() {
     let plain = render_typography(
         &Typography::text("Status"),

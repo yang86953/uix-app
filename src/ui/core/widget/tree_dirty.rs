@@ -268,6 +268,13 @@ impl WidgetTree {
         }
     }
 
+    /// Forces one full compositor pass without claiming that the ordinary
+    /// widget tree changed. Overlay membership has already been resolved by
+    /// layout; only the root-level composition topology is new.
+    pub(crate) fn mark_full_frame_composite(&mut self) {
+        self.push_invalidation(Invalidation::FullComposite);
+    }
+
     /// 绑定响应式 widget（DynamicLabel 等）的 State → Paint 失效。
     pub fn bind_reactive_widget_states(&mut self) {
         use crate::ui::foundation::state::{begin_state_bind_capture, end_state_bind_capture};

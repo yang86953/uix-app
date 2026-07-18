@@ -2,6 +2,7 @@
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
+use crate::draw::font::text_backend::estimate_text_metrics;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::traits::input::ControlSize;
@@ -26,6 +27,7 @@ component! {
         pending_change: Cell<Option<usize>>,
         character: String,
         rate_size: ControlSize,
+        control_rect: Cell<Rect>,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -44,39 +46,19 @@ component! {
                 button: MouseButton::Left,
                 ..
             } => {
-                let cell_width = self.cell_width();
-                let star_idx = (pos.x / cell_width) as usize;
-                if star_idx < self.count {
-                    let new_val = if self.half {
-                        let in_star_x = pos.x - star_idx as f32 * cell_width;
-                        star_idx * 2 + if in_star_x < cell_width * 0.5 { 1 } else { 2 }
-                    } else {
-                        star_idx + 1
-                    };
-                    // clearable: 点击同一个值取消
-                    if self.clearable && new_val == self.value {
-                        self.set_value(0);
-                    } else {
-                        self.set_value(new_val);
-                    }
-                    return EventResult::Handled;
+                let Some(new_value) = self.value_at(*pos) else {
+                    return EventResult::NotHandled;
+                };
+                // clearable: 点击同一个值取消
+                if self.clearable && new_value == self.value {
+                    self.set_value(0);
+                } else {
+                    self.set_value(new_value);
                 }
-                EventResult::NotHandled
+                EventResult::Handled
             }
             SystemEvent::PointerMove { pos, .. } => {
-                let cell_width = self.cell_width();
-                let star_idx = (pos.x / cell_width) as usize;
-                if star_idx < self.count {
-                    if self.half {
-                        let in_star_x = pos.x - star_idx as f32 * cell_width;
-                        self.hover_value = star_idx * 2
-                            + if in_star_x < cell_width * 0.5 { 1 } else { 2 };
-                    } else {
-                        self.hover_value = star_idx + 1;
-                    }
-                } else {
-                    self.hover_value = 0;
-                }
+                self.hover_value = self.value_at(*pos).unwrap_or(0);
                 EventResult::Handled
             }
             SystemEvent::PointerLeave => { self.hover_value = 0; EventResult::Handled }
@@ -114,57 +96,80 @@ component! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.capture_bound_value_dependency();
+        let control_height = frame.h.max(0.0).min(self.control_height());
+        let control_rect = Rect::new(frame.x, frame.y, frame.w.max(0.0), control_height);
+        self.control_rect
+            .set(Rect::new(0.0, 0.0, control_rect.w, control_rect.h));
+        if control_rect.w <= 0.0 || control_rect.h <= 0.0 || self.count == 0 {
+            return;
+        }
+
         let warning = ctx.tokens().color_warning();
         let fill_tertiary = ctx.tokens().color_fill_tertiary();
         let text_quaternary = ctx.tokens().color_text_quaternary();
-        let bg = ctx.tokens().color_bg_container();
-        let ch = if self.character.is_empty() { "★" } else { &self.character };
+        let ch = self.display_character();
 
         // hover 预览值优先于选中值
         let display_val = if self.hover_value > 0 { self.hover_value } else { self.value };
-        let cell_width = self.cell_width();
-        let font_size = self.font_size();
-        let text_inset = 2.0 * self.visual_scale();
+        let cell_width = self.cell_width_for_height(control_rect.h);
+        let font_size = self.font_size_for_height(control_rect.h);
+        let active_color = if self.disabled {
+            ctx.tokens().color_warning_border()
+        } else {
+            warning
+        };
+        let empty_color = if self.disabled {
+            text_quaternary
+        } else {
+            fill_tertiary
+        };
 
+        ctx.push_clip(control_rect);
         for i in 0..self.count {
-            let sx = frame.x + i as f32 * cell_width;
-            let star_rect = Rect::new(sx, frame.y, cell_width, frame.h);
-            let sy = ctx.visual_center_y(star_rect, font_size);
+            let sx = control_rect.x + i as f32 * cell_width;
+            if sx >= control_rect.x + control_rect.w {
+                break;
+            }
+            let star_rect = Rect::new(sx, control_rect.y, cell_width, control_rect.h);
             let filled = if self.half {
                 display_val >= i * 2 + 2
             } else {
                 display_val > i
             };
 
-            let star_color = if self.disabled {
-                if filled { ctx.tokens().color_warning_border() } else { text_quaternary }
-            } else if filled {
-                warning
+            if filled {
+                ctx.text_center(ch, star_rect, active_color, font_size);
+            } else if self.half && display_val == i * 2 + 1 {
+                let half_width = star_rect.w * 0.5;
+                ctx.push_clip(Rect::new(
+                    star_rect.x,
+                    star_rect.y,
+                    half_width,
+                    star_rect.h,
+                ));
+                ctx.text_center(ch, star_rect, active_color, font_size);
+                ctx.pop_clip();
+                ctx.push_clip(Rect::new(
+                    star_rect.x + half_width,
+                    star_rect.y,
+                    star_rect.w - half_width,
+                    star_rect.h,
+                ));
+                ctx.text_center(ch, star_rect, empty_color, font_size);
+                ctx.pop_clip();
             } else {
-                fill_tertiary
-            };
-
-            ctx.draw_text(ch, Point::new(sx + text_inset, sy), star_color, font_size);
-
-            // 半星支持：左半填充
-            if self.half && display_val == i * 2 + 1 {
-                ctx.draw_text(ch, Point::new(sx + text_inset, sy), star_color, font_size);
-                let mask_x = sx + cell_width * 0.5 + text_inset;
-                ctx.fill_rect(
-                    Rect::new(mask_x, sy, (sx + cell_width - mask_x).max(0.0), font_size),
-                    bg,
-                    None,
-                );
+                ctx.text_center(ch, star_rect, empty_color, font_size);
             }
         }
         if self.focused {
             ctx.stroke_rect(
-                frame,
+                control_rect,
                 ctx.tokens().color_primary(),
                 1.5,
                 Some(Radius::uniform(ctx.tokens().border_radius_sm())),
             );
         }
+        ctx.pop_clip();
     }
 }
 
@@ -175,6 +180,28 @@ impl Default for Rate {
 }
 
 impl Rate {
+    fn value_at(&self, pos: Point) -> Option<usize> {
+        let frame = self.control_rect.get();
+        if !frame.contains(pos) || self.count == 0 {
+            return None;
+        }
+        let cell_width = self.cell_width_for_height(frame.h);
+        if !cell_width.is_finite() || cell_width <= 0.0 {
+            return None;
+        }
+        let relative_x = pos.x - frame.x;
+        let star_idx = (relative_x / cell_width).floor() as usize;
+        if star_idx >= self.count {
+            return None;
+        }
+        if self.half {
+            let in_star_x = relative_x - star_idx as f32 * cell_width;
+            Some(star_idx * 2 + usize::from(in_star_x >= cell_width * 0.5) + 1)
+        } else {
+            Some(star_idx + 1)
+        }
+    }
+
     fn set_value(&mut self, value: usize) {
         let value = value.min(self.max_value());
         if self.value == value {
@@ -233,6 +260,7 @@ impl Rate {
             pending_change: Cell::new(None),
             character: String::new(),
             rate_size: config.size,
+            control_rect: Cell::new(Rect::zero()),
         }
     }
     pub fn count(mut self, n: usize) -> Self {
@@ -290,10 +318,19 @@ impl Rate {
     }
 
     fn intrinsic_size(&self) -> Size {
-        Size::new(
-            self.count as f32 * self.cell_width(),
-            crate::ui::config::control_height(self.rate_size),
-        )
+        Size::new(self.count as f32 * self.cell_width(), self.control_height())
+    }
+
+    fn control_height(&self) -> f32 {
+        crate::ui::config::control_height(self.rate_size)
+    }
+
+    fn display_character(&self) -> &str {
+        if self.character.is_empty() {
+            "★"
+        } else {
+            &self.character
+        }
     }
 
     fn visual_scale(&self) -> f32 {
@@ -305,11 +342,31 @@ impl Rate {
     }
 
     fn cell_width(&self) -> f32 {
-        24.0 * self.visual_scale()
+        self.cell_width_for_height(self.control_height())
     }
 
-    fn font_size(&self) -> f32 {
-        18.0 * self.visual_scale()
+    fn visual_scale_for_height(&self, height: f32) -> f32 {
+        if self.control_height() > 0.0 {
+            self.visual_scale() * (height / self.control_height()).clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+
+    fn cell_width_for_height(&self, height: f32) -> f32 {
+        let scale = self.visual_scale_for_height(height);
+        let base_width = 24.0 * scale;
+        if self.character.is_empty() {
+            return base_width;
+        }
+        let font_size = 18.0 * scale;
+        let text_width = estimate_text_metrics(self.display_character(), f32::INFINITY, font_size)
+            .max_line_width;
+        base_width.max(text_width + 4.0 * scale)
+    }
+
+    fn font_size_for_height(&self, height: f32) -> f32 {
+        18.0 * self.visual_scale_for_height(height)
     }
 }
 

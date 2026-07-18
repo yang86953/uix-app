@@ -1,10 +1,16 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
+use crate::draw::font::text_backend::estimate_text_metrics;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, MouseButton, SystemEvent, WidgetTree};
+
+const TOOLTIP_FONT_SIZE: f32 = 12.0;
+const TOOLTIP_HORIZONTAL_PADDING: f32 = 16.0;
+const TOOLTIP_HEIGHT: f32 = 26.0;
+const TOOLTIP_ARROW_SIZE: f32 = 6.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TooltipPlacement {
@@ -125,10 +131,11 @@ component! {
         let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
         let bg = fade_color(self.bg_color.unwrap_or(Color::from_rgba(50, 50, 50, 230)), opacity);
         let txt_color = fade_color(self.text_color.unwrap_or(Color::white()), opacity);
-        let text_w = self.text.len() as f32 * 7.5 + 16.0;
-        let text_h = 26.0;
-        let arrow_sz = 6.0;
-        let gap = if self.arrow { arrow_sz + 2.0 } else { 4.0 };
+        let bubble = tooltip_bubble_size(&self.text);
+        let text_w = bubble.w;
+        let text_h = bubble.h;
+        let arrow_sz = TOOLTIP_ARROW_SIZE;
+        let gap = tooltip_gap(self.arrow);
         let r = Some(Radius::uniform(4.0));
 
         let (tx, ty) = tooltip_origin(frame, self.placement, text_w, text_h, gap);
@@ -165,7 +172,7 @@ component! {
             draw_arrow(ctx, ax, ay, aw, ah, self.placement, bg);
         }
 
-        ctx.text_center(&self.text, tip_frame, txt_color, 12.0);
+        ctx.text_center(&self.text, tip_frame, txt_color, TOOLTIP_FONT_SIZE);
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
@@ -177,10 +184,10 @@ component! {
             return None;
         }
 
-        let text_w = self.text.len() as f32 * 7.5 + 16.0;
-        let text_h = 26.0;
-        let arrow_sz = 6.0;
-        let gap = if self.arrow { arrow_sz + 2.0 } else { 4.0 };
+        let bubble = tooltip_bubble_size(&self.text);
+        let text_w = bubble.w;
+        let text_h = bubble.h;
+        let gap = tooltip_gap(self.arrow);
         let (tx, ty) = tooltip_origin(frame, self.placement, text_w, text_h, gap);
         Some(
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Tooltip)
@@ -243,11 +250,25 @@ fn tooltip_origin(
 }
 
 fn tooltip_dirty_rect(text: &str, arrow: bool, placement: TooltipPlacement, frame: Rect) -> Rect {
-    let text_w = text.len() as f32 * 7.5 + 20.0;
-    let text_h = 26.0;
-    let gap = if arrow { 8.0 } else { 4.0 };
+    let bubble = tooltip_bubble_size(text);
+    let text_w = bubble.w;
+    let text_h = bubble.h;
+    let gap = tooltip_gap(arrow);
     let (tx, ty) = tooltip_origin(frame, placement, text_w, text_h, gap);
     frame.union(&Rect::new(tx, ty, text_w, text_h))
+}
+
+fn tooltip_bubble_size(text: &str) -> Size {
+    let text_width = estimate_text_metrics(text, f32::INFINITY, TOOLTIP_FONT_SIZE).max_line_width;
+    Size::new(text_width + TOOLTIP_HORIZONTAL_PADDING, TOOLTIP_HEIGHT)
+}
+
+fn tooltip_gap(arrow: bool) -> f32 {
+    if arrow {
+        TOOLTIP_ARROW_SIZE + 2.0
+    } else {
+        4.0
+    }
 }
 
 fn draw_arrow(

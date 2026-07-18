@@ -50,6 +50,14 @@ impl SharedRasterizer {
         &mut self.surface
     }
 
+    /// Resets all transient canvas state while retaining the already-sized
+    /// pixel allocation. Callers remain responsible for ensuring the surface
+    /// pixels are clean before starting a new transparent recording.
+    pub(crate) fn reset_state(&mut self) {
+        self.renderer = RasterRenderer::new(self.surface.width(), self.surface.height());
+        self.deferred_error = None;
+    }
+
     pub fn set_transform(&mut self, t: Transform) {
         self.renderer.set_transform(t);
     }

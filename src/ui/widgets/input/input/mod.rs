@@ -9,6 +9,7 @@ use std::cell::{Cell, RefCell};
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
+use crate::draw::font::text_backend::estimate_text_metrics;
 use crate::draw::painting::PaintContext;
 use crate::native::traits::input::ControlSize;
 use crate::ui::clipboard;
@@ -29,6 +30,28 @@ pub fn input_height(size: ControlSize) -> f32 {
 pub(crate) const PAD: f32 = 12.0;
 pub(crate) const FONT_SIZE: f32 = 14.0;
 const LINE_HEIGHT: f32 = 22.0;
+const ADDON_FONT_SIZE: f32 = 13.0;
+const ADDON_HORIZONTAL_PADDING: f32 = 16.0;
+
+fn logical_lines(text: &str) -> Vec<&str> {
+    text.split('\n').collect()
+}
+
+fn normalize_newlines(text: &str) -> Cow<'_, str> {
+    if !text.contains('\r') {
+        return Cow::Borrowed(text);
+    }
+    Cow::Owned(text.replace("\r\n", "\n").replace('\r', "\n"))
+}
+
+fn addon_width(text: &str) -> f32 {
+    if text.is_empty() {
+        0.0
+    } else {
+        estimate_text_metrics(text, f32::INFINITY, ADDON_FONT_SIZE).max_line_width
+            + ADDON_HORIZONTAL_PADDING
+    }
+}
 
 component! {
     pub struct Input {
@@ -70,6 +93,8 @@ component! {
         max_length: Option<usize>,
         pending_change: RefCell<Option<String>>,
         pending_submit: RefCell<Option<String>>,
+        /// 清除按钮区域（用于命中检测）。
+        pub(crate) clear_icon_rect: Cell<Rect>,
         /// 密码眼睛图标区域（用于命中检测）
         pub(crate) pwd_icon_rect: Cell<Rect>,
     }
@@ -94,6 +119,14 @@ component! {
                 button: MouseButton::Left,
                 mods,
             } => {
+                if self.clearable
+                    && !self.value.is_empty()
+                    && self.clear_icon_rect.get().contains(*pos)
+                {
+                    self.replace_value(String::new());
+                    self.publish_change();
+                    return EventResult::Handled;
+                }
                 // 密码眼睛图标命中
                 if self.password && self.pwd_icon_rect.get().contains(*pos) {
                     self.password_visible = !self.password_visible;
@@ -104,7 +137,8 @@ component! {
                 } else {
                     let text_x = pos.x - PAD + self.scroll_offset_x.get();
                     self.char_at_x(text_x)
-                };
+                }
+                .min(self.value.chars().count());
                 self.cursor_char = ci;
                 if mods.contains(KeyMod::SHIFT) {
                     let anchor = self.sel_anchor.get();
@@ -123,7 +157,8 @@ component! {
                 } else {
                     let text_x = pos.x - PAD + self.scroll_offset_x.get();
                     self.char_at_x(text_x)
-                };
+                }
+                .min(self.value.chars().count());
                 self.cursor_char = ci;
                 let anchor = self.sel_anchor.get();
                 self.set_selection_range(anchor, ci);
@@ -342,11 +377,25 @@ mod input_render;
 impl Input {
     fn intrinsic_size(&self) -> Size {
         if self.textarea {
-            let line_count = self.value.lines().count().max(self.textarea_rows);
+            let line_count = logical_lines(&self.value).len().max(self.textarea_rows);
             let h = (line_count as f32 * LINE_HEIGHT + 16.0).max(48.0);
             Size::new(80.0, h)
         } else {
-            Size::new(80.0, input_height(self.input_size))
+            let prefix_w = if self.prefix.is_empty() { 0.0 } else { 20.0 };
+            let suffix_w = if self.suffix.is_empty() { 0.0 } else { 20.0 };
+            let clear_w = if self.clearable { 20.0 } else { 0.0 };
+            let password_w = if self.password { 24.0 } else { 0.0 };
+            let search_w = if self.search { 24.0 } else { 0.0 };
+            Size::new(
+                80.0 + addon_width(&self.addon_before)
+                    + addon_width(&self.addon_after)
+                    + prefix_w
+                    + suffix_w
+                    + clear_w
+                    + password_w
+                    + search_w,
+                input_height(self.input_size),
+            )
         }
     }
 
@@ -384,6 +433,7 @@ impl Input {
             max_length: None,
             pending_change: RefCell::new(None),
             pending_submit: RefCell::new(None),
+            clear_icon_rect: Cell::new(Rect::zero()),
             pwd_icon_rect: Cell::new(Rect::zero()),
         }
     }
@@ -431,7 +481,11 @@ impl Input {
         self.write_bound_value();
     }
     fn replace_value(&mut self, value: String) {
-        self.value = value;
+        self.value = if self.textarea {
+            normalize_newlines(&value).into_owned()
+        } else {
+            value
+        };
         self.composition.clear();
         self.cursor_char = self.value.chars().count();
         self.scroll_offset_x.set(0.0);
@@ -471,11 +525,16 @@ impl Input {
         // 未绑定时保留 reconcile 前的文本、光标与焦点；controlled 模式仅在外部值
         // 真正变化时替换文本，避免无关重建打断编辑位置。
         let controlled_value = next.value_binding.as_ref().map(|_| next.value.clone());
+        let textarea_changed = self.textarea != next.textarea;
+        self.textarea = next.textarea;
         self.value_binding = next.value_binding;
         if let Some(value) = controlled_value {
             if value != self.value {
                 self.replace_value(value);
             }
+        } else if textarea_changed && self.textarea && self.value.contains('\r') {
+            let normalized = normalize_newlines(&self.value).into_owned();
+            self.replace_value(normalized);
         }
         self.placeholder = next.placeholder;
         self.input_size = next.input_size;
@@ -484,11 +543,13 @@ impl Input {
         self.suffix = next.suffix;
         self.addon_before = next.addon_before;
         self.addon_after = next.addon_after;
+        let remained_password = self.password && next.password;
         self.password = next.password;
-        self.password_visible = next.password_visible;
+        if !remained_password {
+            self.password_visible = false;
+        }
         self.clearable = next.clearable;
         self.search = next.search;
-        self.textarea = next.textarea;
         self.textarea_rows = next.textarea_rows;
         self.max_length = next.max_length;
     }
@@ -522,6 +583,10 @@ impl Input {
     pub fn rows(mut self, rows: usize) -> Self {
         self.textarea = true;
         self.textarea_rows = rows.max(1);
+        if self.value.contains('\r') {
+            let normalized = normalize_newlines(&self.value).into_owned();
+            self.replace_value(normalized);
+        }
         self
     }
     pub fn max_length(mut self, max_length: usize) -> Self {
@@ -544,6 +609,49 @@ impl Input {
         value.push_str(&self.composition);
         value.push_str(&self.value[byte_pos..]);
         Cow::Owned(value)
+    }
+
+    fn display_value_with_composition(&self) -> Cow<'_, str> {
+        if !self.password || self.password_visible {
+            return self.value_with_composition();
+        }
+
+        let byte_pos = self
+            .value
+            .char_indices()
+            .nth(self.cursor_char)
+            .map(|(index, _)| index)
+            .unwrap_or(self.value.len());
+        let masked = |text: &str| {
+            text.chars()
+                .map(|ch| if ch == '\n' { '\n' } else { '\u{2022}' })
+                .collect::<String>()
+        };
+        let mut value = String::with_capacity(self.value.len() + self.composition.len());
+        value.push_str(&masked(&self.value[..byte_pos]));
+        value.push_str(&self.composition);
+        value.push_str(&masked(&self.value[byte_pos..]));
+        Cow::Owned(value)
+    }
+
+    fn visual_text_before_cursor(&self) -> Cow<'_, str> {
+        let byte_pos = self
+            .value
+            .char_indices()
+            .nth(self.cursor_char)
+            .map(|(index, _)| index)
+            .unwrap_or(self.value.len());
+        let before = &self.value[..byte_pos];
+        if !self.password || self.password_visible {
+            Cow::Borrowed(before)
+        } else {
+            Cow::Owned(
+                before
+                    .chars()
+                    .map(|ch| if ch == '\n' { '\n' } else { '\u{2022}' })
+                    .collect(),
+            )
+        }
     }
     // ── 内部：光标移动 ──
 
@@ -595,7 +703,7 @@ impl Input {
         if line == 0 {
             return;
         }
-        let lines: Vec<&str> = self.value.lines().collect();
+        let lines = logical_lines(&self.value);
         let prev_line = lines[line - 1];
         let col = col.min(prev_line.chars().count());
         // 计算光标位置：之前所有行的字符数 + 换行符数 + col
@@ -607,7 +715,7 @@ impl Input {
 
     fn move_cursor_down(&mut self) {
         let (line, col) = self.cursor_line_col();
-        let lines: Vec<&str> = self.value.lines().collect();
+        let lines = logical_lines(&self.value);
         if line + 1 >= lines.len() {
             return;
         }
@@ -621,7 +729,7 @@ impl Input {
 
     /// 返回 (行号, 列号) 对应 cursor_char 的位置
     fn cursor_line_col(&self) -> (usize, usize) {
-        let lines: Vec<&str> = self.value.lines().collect();
+        let lines = logical_lines(&self.value);
         let mut remaining = self.cursor_char;
         for (i, line) in lines.iter().enumerate() {
             let line_len = line.chars().count();
@@ -649,12 +757,18 @@ impl Input {
     }
 
     fn insert_text_at_cursor(&mut self, text: &str) -> bool {
+        let normalized = if self.textarea {
+            normalize_newlines(text)
+        } else {
+            Cow::Borrowed(text)
+        };
         let mut chars: Vec<char> = if self.textarea {
-            text.chars()
+            normalized
+                .chars()
                 .filter(|&c| c >= ' ' || c == '\n' || c == '\r')
                 .collect()
         } else {
-            text.chars().filter(|c| !c.is_control()).collect()
+            normalized.chars().filter(|c| !c.is_control()).collect()
         };
         if chars.is_empty() {
             return false;
@@ -698,10 +812,7 @@ impl Input {
 
     /// 多行模式下根据 (x, y) 找字符索引
     fn char_at_xy(&self, x: f32, y: f32) -> usize {
-        let lines: Vec<&str> = self.value.lines().collect();
-        if lines.is_empty() {
-            return 0;
-        }
+        let lines = logical_lines(&self.value);
         // y < 6.0 时（点击顶部 padding 区）映射到第 0 行，防止负数转 usize panic
         if y < 6.0 {
             return self.x_to_char_on_line(0, &lines, x);

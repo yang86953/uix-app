@@ -3,7 +3,7 @@
 //! 预设色板选择，点击触发弹出面板。
 
 use crate::component;
-use crate::core::{Constraints, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::traits::input::ControlSize;
@@ -20,6 +20,10 @@ const PRESET_COLORS: &[u32] = &[
     0xEB2F96, 0xFF85C0, 0xFFEC3D, 0x95DE64, 0x5CDBD3, 0x85A5FF, 0xB37FEB, 0xF0F0F0, 0xD9D9D9,
     0xBFBFBF, 0x8C8C8C, 0x434343, 0x262626, 0x1F1F1F, 0x141414,
 ];
+const PANEL_GAP: f32 = 4.0;
+const PANEL_COLUMNS: usize = 8;
+const PANEL_CELL: f32 = 24.0;
+const PANEL_PADDING: f32 = 8.0;
 
 // ColorPicker — 颜色选择器。
 component! {
@@ -32,9 +36,10 @@ component! {
         transition_dirty: bool,
         preset_colors: Vec<Color>,
         hovered: bool,
-        hovered_idx: Option<usize>,
+        highlighted_idx: Option<usize>,
         focused: bool,
         picker_size: ControlSize,
+        last_frame: Cell<Option<Rect>>,
         pending_change: Cell<Option<Color>>,
     }
 
@@ -53,7 +58,8 @@ component! {
                 button: MouseButton::Left,
                 ..
             } => {
-                if pos.y >= 0.0 && pos.y <= self.control_height() {
+                let frame = self.interaction_frame();
+                if frame.contains(*pos) {
                     if self.open {
                         self.close();
                     } else {
@@ -62,72 +68,107 @@ component! {
                     self.focused = true;
                     return EventResult::Handled;
                 }
-                if self.is_present() && pos.y > self.control_height() {
-                    let cols = 8;
-                    let cell = 24.0;
-                    let pad = 8.0;
-                    let panel_x = pos.x;
-                    let panel_y = pos.y - self.panel_offset();
-                    let panel_w = cols as f32 * cell + pad * 2.0;
-                    let rows = self.preset_colors.len().div_ceil(cols);
-                    let panel_h = rows as f32 * cell + pad * 2.0;
-                    if panel_x >= pad
-                        && panel_x < panel_w - pad
-                        && panel_y >= pad
-                        && panel_y < panel_h - pad
-                    {
-                        let ci = ((panel_x - pad) / cell) as usize;
-                        let ri = ((panel_y - pad) / cell) as usize;
-                        let idx = ri * cols + ci;
-                        if idx < self.preset_colors.len() {
-                            let next = self.preset_colors[idx];
-                            self.commit_value(next);
-                            self.close();
-                            return EventResult::Handled;
-                        }
+                if self.open {
+                    if let Some(index) = color_index_at(
+                        frame,
+                        *pos,
+                        self.preset_colors.len(),
+                    ) {
+                        self.highlighted_idx = Some(index);
+                        self.commit_value(self.preset_colors[index]);
+                        self.close();
+                        return EventResult::Handled;
                     }
-                    self.close();
-                    return EventResult::Handled;
+                    if color_panel_rect(frame, self.preset_colors.len()).contains(*pos) {
+                        self.close();
+                        return EventResult::Handled;
+                    }
                 }
                 EventResult::NotHandled
             }
             SystemEvent::PointerMove { pos, .. } => {
-                if self.is_present() && pos.y > self.panel_offset() {
-                    let cols = 8;
-                    let cell = 24.0;
-                    let pad = 8.0;
-                    let panel_x = pos.x;
-                    let panel_y = pos.y - self.panel_offset();
-                    let ci = ((panel_x - pad) / cell) as usize;
-                    let ri = ((panel_y - pad) / cell) as usize;
-                    let idx = ri * cols + ci;
-                    if idx < self.preset_colors.len() && panel_x >= pad && panel_y >= pad {
-                        self.hovered_idx = Some(idx);
-                    } else {
-                        self.hovered_idx = None;
-                    }
+                let frame = self.interaction_frame();
+                let old_hovered = self.hovered;
+                let old_highlight = self.highlighted_idx;
+                if self.open {
+                    self.hovered = frame.contains(*pos);
+                    self.highlighted_idx = color_index_at(
+                        frame,
+                        *pos,
+                        self.preset_colors.len(),
+                    )
+                    .or_else(|| self.default_highlight());
                 } else {
-                    self.hovered = pos.y >= 0.0 && pos.y <= self.control_height();
-                    self.hovered_idx = None;
+                    self.hovered = frame.contains(*pos);
+                    self.highlighted_idx = None;
                 }
-                EventResult::Handled
+                if self.hovered != old_hovered || self.highlighted_idx != old_highlight {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
             }
-            SystemEvent::PointerLeave => { self.hovered = false; self.hovered_idx = None; EventResult::Handled }
+            SystemEvent::PointerLeave => {
+                let old_hovered = self.hovered;
+                let old_highlight = self.highlighted_idx;
+                self.hovered = false;
+                self.highlighted_idx = if self.open {
+                    self.default_highlight()
+                } else {
+                    None
+                };
+                if self.hovered != old_hovered || self.highlighted_idx != old_highlight {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
+            }
             SystemEvent::FocusIn => { self.focused = true; EventResult::Handled }
             SystemEvent::FocusOut => { self.close(); self.focused = false; EventResult::Handled }
             SystemEvent::KeyDown { key, .. } => {
-                if *key == KeyCode::Escape
-                    && self.open { self.close(); return EventResult::Handled; }
-                if *key == KeyCode::Space || *key == KeyCode::Enter {
-                    if self.open {
+                match key {
+                    KeyCode::Escape if self.is_present() => {
                         self.close();
-                    } else {
-                        self.open();
+                        EventResult::Handled
                     }
-                    self.focused = true;
-                    return EventResult::Handled;
+                    KeyCode::Space | KeyCode::Enter if self.open => {
+                        if let Some(index) = self.highlighted_idx {
+                            self.commit_value(self.preset_colors[index]);
+                        }
+                        self.close();
+                        EventResult::Handled
+                    }
+                    KeyCode::Space | KeyCode::Enter => {
+                        self.open();
+                        self.focused = true;
+                        EventResult::Handled
+                    }
+                    KeyCode::Left if self.open => {
+                        self.move_highlight(ColorMove::Previous);
+                        EventResult::Handled
+                    }
+                    KeyCode::Right if self.open => {
+                        self.move_highlight(ColorMove::Next);
+                        EventResult::Handled
+                    }
+                    KeyCode::Up if self.open => {
+                        self.move_highlight(ColorMove::PreviousRow);
+                        EventResult::Handled
+                    }
+                    KeyCode::Down if self.open => {
+                        self.move_highlight(ColorMove::NextRow);
+                        EventResult::Handled
+                    }
+                    KeyCode::Home if self.open && !self.preset_colors.is_empty() => {
+                        self.highlighted_idx = Some(0);
+                        EventResult::Handled
+                    }
+                    KeyCode::End if self.open && !self.preset_colors.is_empty() => {
+                        self.highlighted_idx = Some(self.preset_colors.len() - 1);
+                        EventResult::Handled
+                    }
+                    _ => EventResult::NotHandled,
                 }
-                EventResult::NotHandled
             }
             _ => EventResult::NotHandled,
         }
@@ -151,71 +192,110 @@ component! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.sync_bound_value();
+        self.last_frame
+            .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
         let border = ctx.tokens().color_border();
         let primary = ctx.tokens().color_primary();
-        let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
-        let swatch_inset = 4.0;
-        let swatch_size = (frame.h - swatch_inset * 2.0).max(8.0);
-        let swatch = Rect::new(
-            frame.x,
-            frame.y + swatch_inset,
-            swatch_size,
-            swatch_size,
-        );
-        ctx.fill_rect(swatch, self.value.get(), r);
-        let border_c = if self.hovered || self.focused { primary } else { border };
-        ctx.stroke_rect(swatch, border_c, 1.5, r);
+        let nominal_height = self.control_height();
+        let scale = if nominal_height > 0.0 {
+            (frame.h.min(frame.w) / nominal_height).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let available = frame.w.min(frame.h).max(0.0);
+        let swatch_inset = (4.0 * scale).min(available * 0.5);
+        let swatch_size = (available - swatch_inset * 2.0).max(0.0);
 
-        if self.focused {
-            ctx.stroke_rect(
-                Rect::new(
-                    swatch.x - 1.0,
-                    swatch.y - 1.0,
-                    swatch.w + 2.0,
-                    swatch.h + 2.0,
-                ),
-                primary,
-                1.0,
-                None,
+        ctx.push_clip(frame);
+        if swatch_size > 0.0 {
+            let swatch = Rect::new(
+                frame.x + swatch_inset,
+                frame.y + swatch_inset,
+                swatch_size,
+                swatch_size,
             );
+            let radius = Some(Radius::uniform(
+                (ctx.tokens().border_radius_sm() * scale).min(swatch_size * 0.5),
+            ));
+            paint_transparency_checkerboard(ctx, swatch, scale);
+            ctx.fill_rect(swatch, self.value.get(), radius);
+            let border_c = if self.hovered || self.focused { primary } else { border };
+            ctx.stroke_rect(swatch, border_c, 1.5 * scale, radius);
+
+            if self.focused {
+                let focus_outset = scale.min(swatch_inset);
+                ctx.stroke_rect(
+                    Rect::new(
+                        swatch.x - focus_outset,
+                        swatch.y - focus_outset,
+                        swatch.w + focus_outset * 2.0,
+                        swatch.h + focus_outset * 2.0,
+                    ),
+                    primary,
+                    scale,
+                    radius,
+                );
+            }
         }
+        ctx.pop_clip();
 
         if self.is_present() {
             let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
-            let cols = 8;
-            let cell = 24.0;
-            let pad = 8.0;
-            let panel_w = cols as f32 * cell + pad * 2.0;
-            let rows = self.preset_colors.len().div_ceil(cols);
-            let panel_h = rows as f32 * cell + pad * 2.0;
-            let panel_x = frame.x;
-            let panel_y = frame.y + frame.h + 4.0;
             let bg = fade_color(ctx.tokens().color_bg_elevated(), opacity);
             let border = fade_color(border, opacity);
-            let panel_rect = Rect::new(panel_x, panel_y, panel_w, panel_h);
+            let panel_rect = color_panel_rect(frame, self.preset_colors.len());
             let panel_radius = Some(Radius::uniform(ctx.tokens().border_radius()));
+            ctx.push_clip(panel_rect);
             ctx.fill_rect(panel_rect, bg, panel_radius);
             ctx.stroke_rect(panel_rect, border, 1.0, panel_radius);
 
             for (i, c) in self.preset_colors.iter().enumerate() {
-                let cx = panel_x + pad + (i % cols) as f32 * cell;
-                let cy = panel_y + pad + (i / cols) as f32 * cell;
-                let cell_rect = Rect::new(cx + 1.0, cy + 1.0, cell - 2.0, cell - 2.0);
+                let cx = panel_rect.x + PANEL_PADDING + (i % PANEL_COLUMNS) as f32 * PANEL_CELL;
+                let cy = panel_rect.y + PANEL_PADDING + (i / PANEL_COLUMNS) as f32 * PANEL_CELL;
+                let cell_rect = Rect::new(cx + 1.0, cy + 1.0, PANEL_CELL - 2.0, PANEL_CELL - 2.0);
                 ctx.fill_rect(cell_rect, fade_color(*c, opacity), Some(Radius::uniform(2.0)));
-                if self.hovered_idx == Some(i) {
+                if self.highlighted_idx == Some(i) {
+                    let highlight_color = if c.is_light() {
+                        Color::black()
+                    } else {
+                        Color::white()
+                    };
                     ctx.stroke_rect(
                         cell_rect,
-                        fade_color(Color::white(), opacity),
-                        1.5,
+                        fade_color(highlight_color, opacity),
+                        2.0,
                         Some(Radius::uniform(2.0)),
                     );
                 }
+                if self.value.get() == *c {
+                    let icon_color = if c.is_light() {
+                        Color::black()
+                    } else {
+                        Color::white()
+                    };
+                    crate::ui::widgets::icon::paint_icon_in_frame(
+                        ctx,
+                        "check",
+                        cell_rect,
+                        fade_color(icon_color, opacity),
+                        12.0,
+                    );
+                }
             }
+            ctx.pop_clip();
         }
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
         color_picker_dirty_rect(frame, self.preset_colors.len())
+    }
+
+    overlay_entry => (&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+        self.is_present().then(|| {
+            crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
+                .bounds(color_picker_dirty_rect(frame, self.preset_colors.len()))
+                .z_index(900)
+        })
     }
 
     update_animation => (&mut self, dt: f64) -> bool {
@@ -230,6 +310,7 @@ component! {
         if self.closing && self.transition.finished {
             self.open = false;
             self.closing = false;
+            self.highlighted_idx = None;
         }
 
         self.is_present() && !self.transition.finished
@@ -270,9 +351,10 @@ impl ColorPicker {
                 })
                 .collect(),
             hovered: false,
-            hovered_idx: None,
+            highlighted_idx: None,
             focused: false,
             picker_size: config.size,
+            last_frame: Cell::new(None),
             pending_change: Cell::new(None),
         }
     }
@@ -311,6 +393,7 @@ impl ColorPicker {
     pub fn open(&mut self) {
         self.open = true;
         self.closing = false;
+        self.highlighted_idx = self.default_highlight();
         self.transition = TransitionPlayer::new(presets::tooltip_enter());
         self.transition_dirty = true;
     }
@@ -325,6 +408,7 @@ impl ColorPicker {
 
         self.open = false;
         self.closing = true;
+        self.highlighted_idx = self.selected_index();
         self.transition = TransitionPlayer::new(presets::tooltip_exit());
         self.transition_dirty = true;
     }
@@ -333,6 +417,7 @@ impl ColorPicker {
         SnapshotFields::ColorPicker {
             value: self.value.get(),
             preset_colors: self.preset_colors.clone(),
+            open: self.open,
         }
     }
 
@@ -343,6 +428,9 @@ impl ColorPicker {
         self.picker_size = next.picker_size;
         if let Some(value) = controlled_value {
             self.value.set(value);
+        }
+        if self.open {
+            self.highlighted_idx = self.default_highlight();
         }
     }
 
@@ -369,8 +457,35 @@ impl ColorPicker {
         crate::ui::config::control_height(self.picker_size)
     }
 
-    fn panel_offset(&self) -> f32 {
-        self.control_height() + 4.0
+    fn interaction_frame(&self) -> Rect {
+        self.last_frame.get().unwrap_or_else(|| {
+            Rect::new(0.0, 0.0, self.intrinsic_size().w, self.intrinsic_size().h)
+        })
+    }
+
+    fn selected_index(&self) -> Option<usize> {
+        let value = self.value.get();
+        self.preset_colors.iter().position(|color| *color == value)
+    }
+
+    fn default_highlight(&self) -> Option<usize> {
+        self.selected_index()
+            .or_else(|| (!self.preset_colors.is_empty()).then_some(0))
+    }
+
+    fn move_highlight(&mut self, direction: ColorMove) {
+        let Some(last) = self.preset_colors.len().checked_sub(1) else {
+            self.highlighted_idx = None;
+            return;
+        };
+        let current = self.highlighted_idx.unwrap_or(0).min(last);
+        let next = match direction {
+            ColorMove::Previous => current.saturating_sub(1),
+            ColorMove::Next => (current + 1).min(last),
+            ColorMove::PreviousRow => current.saturating_sub(PANEL_COLUMNS),
+            ColorMove::NextRow => (current + PANEL_COLUMNS).min(last),
+        };
+        self.highlighted_idx = Some(next);
     }
 }
 
@@ -381,14 +496,35 @@ impl Default for ColorPicker {
 }
 
 fn color_picker_dirty_rect(frame: Rect, color_count: usize) -> Rect {
-    let cols = 8usize;
-    let cell = 24.0;
-    let pad = 8.0;
-    let panel_w = cols as f32 * cell + pad * 2.0;
-    let rows = color_count.div_ceil(cols);
-    let panel_h = rows as f32 * cell + pad * 2.0;
-    let panel = Rect::new(frame.x, frame.y + frame.h + 4.0, panel_w, panel_h);
-    frame.union(&panel)
+    frame.union(&color_panel_rect(frame, color_count))
+}
+
+fn color_panel_rect(frame: Rect, color_count: usize) -> Rect {
+    let panel_w = PANEL_COLUMNS as f32 * PANEL_CELL + PANEL_PADDING * 2.0;
+    let rows = color_count.div_ceil(PANEL_COLUMNS);
+    let panel_h = rows as f32 * PANEL_CELL + PANEL_PADDING * 2.0;
+    Rect::new(frame.x, frame.y + frame.h + PANEL_GAP, panel_w, panel_h)
+}
+
+fn color_index_at(frame: Rect, pos: Point, color_count: usize) -> Option<usize> {
+    let panel = color_panel_rect(frame, color_count);
+    let content = Rect::new(
+        panel.x + PANEL_PADDING,
+        panel.y + PANEL_PADDING,
+        PANEL_COLUMNS as f32 * PANEL_CELL,
+        color_count.div_ceil(PANEL_COLUMNS) as f32 * PANEL_CELL,
+    );
+    if pos.x < content.x
+        || pos.x >= content.x + content.w
+        || pos.y < content.y
+        || pos.y >= content.y + content.h
+    {
+        return None;
+    }
+    let column = ((pos.x - content.x) / PANEL_CELL).floor() as usize;
+    let row = ((pos.y - content.y) / PANEL_CELL).floor() as usize;
+    let index = row * PANEL_COLUMNS + column;
+    (index < color_count).then_some(index)
 }
 
 fn fade_color(color: Color, opacity: f32) -> Color {
@@ -396,4 +532,37 @@ fn fade_color(color: Color, opacity: f32) -> Color {
         .round()
         .clamp(0.0, 255.0) as u8;
     color.with_alpha(alpha)
+}
+
+fn paint_transparency_checkerboard(ctx: &mut PaintContext<'_>, frame: Rect, scale: f32) {
+    let tile = (4.0 * scale).max(1.0);
+    let columns = (frame.w / tile).ceil() as usize;
+    let rows = (frame.h / tile).ceil() as usize;
+    ctx.push_clip(frame);
+    ctx.fill_rect(frame, Color::white(), None);
+    for row in 0..rows {
+        for column in 0..columns {
+            if (row + column) % 2 == 0 {
+                ctx.fill_rect(
+                    Rect::new(
+                        frame.x + column as f32 * tile,
+                        frame.y + row as f32 * tile,
+                        tile,
+                        tile,
+                    ),
+                    Color::from_rgb(0xD9, 0xD9, 0xD9),
+                    None,
+                );
+            }
+        }
+    }
+    ctx.pop_clip();
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ColorMove {
+    Previous,
+    Next,
+    PreviousRow,
+    NextRow,
 }

@@ -294,6 +294,68 @@ fn drawer_close_finishes_exit_transition_before_internal_hide() {
 }
 
 #[test]
+fn closed_drawer_hides_its_retained_child_subtree() {
+    use crate::ui::view::{button, ViewAdapter, ViewNode};
+
+    let mut tree = ViewAdapter::build(ViewNode::new(
+        Drawer::new("Drawer").visible(true),
+        vec![button("Cancel").into()],
+    ));
+    let drawer = tree.root_id().expect("drawer root");
+    tree.get_mut(drawer)
+        .expect("drawer node")
+        .set_frame(Rect::new(0.0, 0.0, 800.0, 600.0));
+    tree.get_mut(drawer).expect("drawer node").set_active(true);
+    tree.layout();
+    assert!(!tree.update(1.0));
+    tree.layout();
+
+    let child = tree
+        .get(drawer)
+        .expect("drawer node")
+        .children()
+        .first()
+        .copied()
+        .expect("drawer child");
+    assert!(tree.visible_rect_for(child).is_some());
+
+    tree.get_mut(drawer)
+        .expect("drawer node")
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<Drawer>()
+        .expect("Drawer component")
+        .close();
+    assert!(!tree.update(1.0));
+
+    assert!(
+        tree.visible_rect_for(child).is_none(),
+        "a closed Drawer must not expose stale child geometry"
+    );
+    assert_ne!(
+        tree.hit_test(Point::new(650.0, 100.0)),
+        Some(child),
+        "a closed Drawer child must not remain hittable"
+    );
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(16.0, 16.0),
+            button: crate::ui::MouseButton::Left,
+            mods: crate::native::traits::input::KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    tree.layout();
+    assert!(!tree.update(1.0));
+    tree.layout();
+    assert!(
+        tree.visible_rect_for(child).is_some(),
+        "reopening a Drawer must relayout and reveal its retained child subtree"
+    );
+}
+
+#[test]
 fn drawer_uses_custom_enter_and_leave_animations() {
     let mut drawer = Drawer::new("Drawer")
         .placement(DrawerPlacement::Left)

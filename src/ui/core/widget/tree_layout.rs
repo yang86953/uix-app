@@ -356,7 +356,7 @@ impl WidgetTree {
         if widget_overlays_changed {
             // Overlay membership changes the compositor's clipping/cache topology.
             self.tree_version = self.tree_version.wrapping_add(1);
-            self.mark_full_frame_dirty();
+            self.mark_full_frame_composite();
         }
     }
 

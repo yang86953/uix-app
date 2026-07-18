@@ -16,6 +16,16 @@ use crate::ui::style::Style;
 use crate::ui::{EventResult, KeyCode, KeyMod, MouseButton, SystemEvent, WidgetTree};
 use crate::ui::{SnapshotFields, SnapshotSource};
 
+const DEFAULT_LABEL_FONT_SIZE: f32 = 12.0;
+
+fn normalized_label_font_size(size: f32) -> f32 {
+    if size.is_finite() && size > 0.0 {
+        size
+    } else {
+        DEFAULT_LABEL_FONT_SIZE
+    }
+}
+
 component! {
     pub struct Label {
         pub text: String,
@@ -163,6 +173,7 @@ component! {
         } else {
             self.font_size
         };
+        let fs = normalized_label_font_size(fs);
 
         // 单次布局：同时用于 hit-test 缓存、选中背景和文字绘制
         let opts = TextLayoutOptions {
@@ -266,7 +277,7 @@ impl Label {
         let t = text.into();
         Self {
             text: t,
-            font_size: 12.0,
+            font_size: DEFAULT_LABEL_FONT_SIZE,
             font_size_unit: None,
             color: None,
             fixed_width: None,
@@ -332,7 +343,7 @@ impl Label {
     }
 
     pub fn font_size(mut self, s: f32) -> Self {
-        self.font_size = s;
+        self.font_size = normalized_label_font_size(s);
         self.font_size_unit = None;
         self
     }
@@ -394,21 +405,28 @@ impl Label {
         if let (Some(w), Some(h)) = (w, h) {
             Size::new(w, h)
         } else {
-            let char_count = self.text.chars().count() as f32;
-            let fs = self
-                .style
-                .as_ref()
-                .map(|s| match s.font_size {
-                    crate::ui::style::TypographyToken::Custom(v) => v,
-                    _ => self.font_size,
-                })
+            let raw_font_size = self
+                .font_size_unit
+                .map(|unit| unit.to_dip(96.0))
+                .or_else(|| self.style.as_ref().map(|s| s.font_size.default_size()))
                 .unwrap_or(self.font_size);
+            let fs = normalized_label_font_size(raw_font_size);
+            let estimated = crate::draw::font::text_backend::estimate_text_metrics(
+                &self.text,
+                f32::INFINITY,
+                fs,
+            );
             // 单行固有高度 = 行盒（≈ ascent+descent）；与顶对齐绘制一致。
             // 与 Icon 同行时由父级 AlignItems::Center 对齐，勿在 paint 里二次居中。
-            // 宽度按字符数估算（非 UTF-8 字节），避免 CJK 量宽偏大。
+            // 显式多行保留完整 line box，禁止后继节点压到实际字形上。
+            let text_height = if estimated.line_count == 1 {
+                fs * 1.2
+            } else {
+                fs * 1.5 * estimated.line_count as f32
+            };
             Size::new(
-                w.unwrap_or(char_count * fs * 0.6 + pad.horizontal()),
-                h.unwrap_or(fs * 1.2 + pad.vertical()),
+                w.unwrap_or(estimated.max_line_width + pad.horizontal()),
+                h.unwrap_or(text_height + pad.vertical()),
             )
         }
     }

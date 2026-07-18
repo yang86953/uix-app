@@ -23,6 +23,7 @@ pub struct PaintProbeSample {
     pub execute_us: u128,
     pub end_frame_us: u128,
     pub strategy_full: u8,
+    pub backdrop_restore: u8,
     // record sub-stages (accumulated during layer_tree.render)
     pub picture_raster_us: u128,
     pub picture_blit_us: u128,
@@ -53,6 +54,7 @@ thread_local! {
         execute_us: 0,
         end_frame_us: 0,
         strategy_full: 0,
+        backdrop_restore: 0,
         picture_raster_us: 0,
         picture_blit_us: 0,
         direct_paint_us: 0,
@@ -71,6 +73,7 @@ thread_local! {
         execute_us: 0,
         end_frame_us: 0,
         strategy_full: 0,
+        backdrop_restore: 0,
         picture_raster_us: 0,
         picture_blit_us: 0,
         direct_paint_us: 0,

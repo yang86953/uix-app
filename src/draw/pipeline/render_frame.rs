@@ -11,7 +11,8 @@ use crate::draw::font::text::TextRenderService;
 use crate::draw::image::ImageService;
 use crate::draw::painting::ThemeSnapshot;
 use crate::draw::pipeline::{
-    frame_recording::FrameRecordingEngine, EncodedFrameExecution, InvalidationSource, RenderMetrics,
+    frame_recording::FrameRecordingEngine, EncodedFrameExecution, FrameImage, InvalidationSource,
+    RenderMetrics,
 };
 use crate::draw::traits::{GraphicsEngine, ScrollCopy, UpdateStrategy};
 use crate::draw::{Color, FontHandle, RenderOutcome};
@@ -49,6 +50,14 @@ pub struct FrameRenderer {
     /// submission boundary.
     recording_engine: FrameRecordingEngine,
     recording_extent: Option<(i32, i32)>,
+    /// Clean retained main surface captured immediately before the first
+    /// root-level overlay frame clears it. Cloning FrameImage is cheap because
+    /// its immutable pixels are shared.
+    overlay_backdrop: Option<FrameImage>,
+    /// Once the normal tree changes while an overlay is present, the current
+    /// real surface already contains overlay pixels and can no longer become a
+    /// clean backdrop. Wait for every overlay to leave before capturing again.
+    overlay_backdrop_blocked: bool,
 }
 
 impl FrameRenderer {
@@ -59,6 +68,8 @@ impl FrameRenderer {
             last_tree_version: 0,
             recording_engine: FrameRecordingEngine::new(),
             recording_extent: None,
+            overlay_backdrop: None,
+            overlay_backdrop_blocked: false,
         }
     }
 
@@ -82,6 +93,13 @@ impl FrameRenderer {
         input: FrameRenderInput<'_>,
     ) -> FrameRenderOutput {
         let cur_version = scene.tree_version();
+        let has_overlay = scene
+            .root_id()
+            .is_some_and(|root| Self::scene_has_overlay(scene, root));
+        if !has_overlay {
+            self.overlay_backdrop = None;
+            self.overlay_backdrop_blocked = false;
+        }
         if input.rendered_first && input.dirty_region.is_empty() && input.scroll_move.is_none() {
             return FrameRenderOutput {
                 outcome: RenderOutcome::Idle,
@@ -137,6 +155,25 @@ impl FrameRenderer {
             || input.dirty_region.full_frame
             || dirty_for_paint.is_empty()
             || !frame_start_caps.supports_partial_redraw();
+        let normal_tree_dirty = has_overlay
+            && scene
+                .root_id()
+                .is_some_and(|root| Self::scene_normal_tree_dirty(scene, root));
+        if has_overlay && normal_tree_dirty {
+            self.overlay_backdrop = None;
+            self.overlay_backdrop_blocked = true;
+        } else if has_overlay && self.overlay_backdrop.is_none() && !self.overlay_backdrop_blocked {
+            // This boundary still exposes the previous committed main surface;
+            // after begin_frame/overlay paint it would already contain the mask.
+            if input.rendered_first && !input.debug_mode {
+                self.overlay_backdrop = engine
+                    .copy_frame_pixels()
+                    .and_then(|(pixels, width)| Self::frame_image(pixels, width));
+                self.overlay_backdrop_blocked = self.overlay_backdrop.is_none();
+            } else {
+                self.overlay_backdrop_blocked = true;
+            }
+        }
         let requested_present_damage = compute_present_damage(
             &dirty_with_scroll,
             input.dirty_region.full_frame,
@@ -238,6 +275,19 @@ impl FrameRenderer {
                 tree_version: cur_version,
             };
         }
+        let backdrop_extent_matches = self
+            .overlay_backdrop
+            .as_ref()
+            .is_some_and(|image| image.width() == recording_w && image.height() == recording_h);
+        if self.overlay_backdrop.is_some() && !backdrop_extent_matches {
+            self.overlay_backdrop = None;
+            self.overlay_backdrop_blocked = true;
+        }
+        let use_overlay_backdrop = has_overlay
+            && region.full_frame
+            && !input.debug_mode
+            && !normal_tree_dirty
+            && backdrop_extent_matches;
 
         let layer_t0 = std::time::Instant::now();
         if self.last_tree_version != cur_version || !self.layer_tree.is_ready() {
@@ -278,6 +328,22 @@ impl FrameRenderer {
                 tree_version: cur_version,
             };
         }
+        if use_overlay_backdrop {
+            let image = self
+                .overlay_backdrop
+                .as_ref()
+                .expect("validated overlay backdrop")
+                .clone();
+            if let Err(error) = self.recording_engine.record_main_image(image) {
+                return FrameRenderOutput {
+                    outcome: RenderOutcome::Failed(
+                        crate::draw::engine::GraphicsFailure::from_error(error),
+                    ),
+                    inv_source: InvalidationSource::None,
+                    tree_version: cur_version,
+                };
+            }
+        }
         // Dirty frames: clip recording to the damage AABB. begin_frame already
         // cleared only that AABB on the retained CPU canvas, but FrameEncoder
         // execution bypasses the real surface clip — without this, a parent
@@ -295,18 +361,33 @@ impl FrameRenderer {
         } else {
             None
         };
-        let render_result = self.layer_tree.render(
-            &mut self.recording_engine,
-            scene,
-            &paint_region,
-            &input.theme,
-            input.font,
-            input.font_service,
-            input.image_service,
-            input.debug_mode,
-            input.hover_pos,
-            render_objects,
-        );
+        let render_result = if use_overlay_backdrop {
+            self.layer_tree.render_overlays(
+                &mut self.recording_engine,
+                scene,
+                &paint_region,
+                &input.theme,
+                input.font,
+                input.font_service,
+                input.image_service,
+                input.debug_mode,
+                input.hover_pos,
+                render_objects,
+            )
+        } else {
+            self.layer_tree.render(
+                &mut self.recording_engine,
+                scene,
+                &paint_region,
+                &input.theme,
+                input.font,
+                input.font_service,
+                input.image_service,
+                input.debug_mode,
+                input.hover_pos,
+                render_objects,
+            )
+        };
         if damage_clip.is_some() {
             self.recording_engine.canvas_2d().pop_clip();
         }
@@ -388,6 +469,7 @@ impl FrameRenderer {
         paint_sample.execute_us = execute_us;
         paint_sample.end_frame_us = end_frame_us;
         paint_sample.strategy_full = strategy_full;
+        paint_sample.backdrop_restore = u8::from(use_overlay_backdrop);
         crate::core::perf_probe::record_paint(paint_sample);
         let outcome = match end_outcome {
             RenderOutcome::Present(_) if caps.uses_external_presenter() => {
@@ -426,6 +508,39 @@ impl FrameRenderer {
             inv_source,
             tree_version: cur_version,
         }
+    }
+
+    fn scene_has_overlay(scene: &impl ScenePaint, id: crate::draw::pipeline::NodeId) -> bool {
+        if !scene.node_visible(id) {
+            return false;
+        }
+        scene.node_is_overlay(id)
+            || scene
+                .node_children(id)
+                .iter()
+                .copied()
+                .any(|child| Self::scene_has_overlay(scene, child))
+    }
+
+    fn scene_normal_tree_dirty(scene: &impl ScenePaint, id: crate::draw::pipeline::NodeId) -> bool {
+        if !scene.node_visible(id) || scene.node_is_overlay(id) {
+            return false;
+        }
+        scene.node_dirty(id)
+            || scene
+                .node_children(id)
+                .iter()
+                .copied()
+                .any(|child| Self::scene_normal_tree_dirty(scene, child))
+    }
+
+    fn frame_image(pixels: Vec<u32>, width: i32) -> Option<FrameImage> {
+        let width_usize = usize::try_from(width).ok().filter(|width| *width > 0)?;
+        if pixels.is_empty() || pixels.len() % width_usize != 0 {
+            return None;
+        }
+        let height = i32::try_from(pixels.len() / width_usize).ok()?;
+        FrameImage::new(width, height, pixels).ok()
     }
 
     fn reference_extent<S: ScenePaint>(engine: &mut dyn GraphicsEngine, scene: &S) -> (i32, i32) {

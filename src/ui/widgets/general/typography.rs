@@ -62,11 +62,18 @@ component! {
             let (fs, _) = self.compute_font_style();
             let copy_space = if self.copyable { 28.0 } else { 0.0 };
             let text_width = (constraints.max.w - copy_space).max(1.0);
-            let estimated_text_width = self.content.chars().count() as f32 * fs * 0.6;
-            let line_count = (estimated_text_width / text_width).ceil().max(1.0);
+            let estimated = crate::draw::font::text_backend::estimate_text_metrics(
+                &self.content,
+                text_width,
+                fs,
+            );
             intrinsic = Size::new(
-                estimated_text_width.min(text_width) + copy_space,
-                fs * 1.5 * line_count,
+                if estimated.width_wrapped {
+                    text_width + copy_space
+                } else {
+                    estimated.max_line_width.min(text_width) + copy_space
+                },
+                fs * 1.5 * estimated.line_count as f32,
             );
         }
         constraints.clamp(intrinsic)

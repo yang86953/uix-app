@@ -79,14 +79,48 @@ impl RasterRenderer {
             let y0 = cr.y as i32;
             let x1 = (cr.x + cr.w) as i32;
             let y1 = (cr.y + cr.h) as i32;
+            let split = ((rect.x + rect.w * 0.5 - 0.5).ceil() as i32).clamp(x0, x1);
+            let optimized = [rad.tl, rad.tr, rad.br, rad.bl]
+                .iter()
+                .all(|radius| radius.is_finite() && *radius >= 0.0);
             for py in y0..y1 {
-                for px in x0..x1 {
+                if !optimized {
+                    for px in x0..x1 {
+                        let ux = px as f32 + 0.5;
+                        let uy = py as f32 + 0.5;
+                        let sd = Self::rounded_rect_sdf(ux, uy, &rect, &rad);
+                        let coverage = Self::sdf_to_coverage(sd.abs() - h);
+                        if coverage > 0.0 {
+                            self.put_pixel_aa(pixels, surface_w, surface_h, px, py, c, coverage);
+                        }
+                    }
+                    continue;
+                }
+
+                let uy = py as f32 + 0.5;
+                let mut saw_coverage = false;
+                for px in x0..split {
                     let ux = px as f32 + 0.5;
-                    let uy = py as f32 + 0.5;
                     let sd = Self::rounded_rect_sdf(ux, uy, &rect, &rad);
                     let coverage = Self::sdf_to_coverage(sd.abs() - h);
                     if coverage > 0.0 {
+                        saw_coverage = true;
                         self.put_pixel_aa(pixels, surface_w, surface_h, px, py, c, coverage);
+                    } else if saw_coverage {
+                        break;
+                    }
+                }
+
+                let mut saw_coverage = false;
+                for px in (split..x1).rev() {
+                    let ux = px as f32 + 0.5;
+                    let sd = Self::rounded_rect_sdf(ux, uy, &rect, &rad);
+                    let coverage = Self::sdf_to_coverage(sd.abs() - h);
+                    if coverage > 0.0 {
+                        saw_coverage = true;
+                        self.put_pixel_aa(pixels, surface_w, surface_h, px, py, c, coverage);
+                    } else if saw_coverage {
+                        break;
                     }
                 }
             }

@@ -311,7 +311,7 @@ pub(super) fn log_frame_metrics(
 ) {
     if crate::core::perf_probe::perf_probe_enabled() {
         crate::core::log::info_fn(format!(
-            "frame_us={} input={} reconcile={} layout={} paint_cpu={} present={} events={} reconcile={} layouts={} dirty_full={} strategy_full={} pixels={} layer_build={} record={} execute={} end_frame={} pic_raster={} pic_blit={} pics={} pic_px={} widgets={} text_us={} texts={} cpu_flush={} flushes={} upload_copy={} fence_wait={} submit_present={} present_skipped={}",
+            "frame_us={} input={} reconcile={} layout={} paint_cpu={} present={} events={} reconcile={} layouts={} dirty_full={} strategy_full={} backdrop_restore={} pixels={} layer_build={} record={} execute={} end_frame={} pic_raster={} pic_blit={} direct_paint={} pics={} pic_px={} widgets={} text_us={} texts={} cpu_flush={} flushes={} upload_copy={} fence_wait={} submit_present={} present_skipped={}",
             frame_us,
             input_us,
             reconcile_us,
@@ -323,6 +323,7 @@ pub(super) fn log_frame_metrics(
             layout_calls,
             u8::from(dirty_full),
             paint_probe.strategy_full,
+            paint_probe.backdrop_restore,
             present_probe.pixels,
             paint_probe.layer_build_us,
             paint_probe.record_us,
@@ -330,6 +331,7 @@ pub(super) fn log_frame_metrics(
             paint_probe.end_frame_us,
             paint_probe.picture_raster_us,
             paint_probe.picture_blit_us,
+            paint_probe.direct_paint_us,
             paint_probe.pictures_rasterized,
             paint_probe.picture_pixels,
             paint_probe.widgets_painted,

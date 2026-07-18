@@ -14,6 +14,22 @@ use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
 };
 
+fn decimal_places(value: f64) -> i32 {
+    if !value.is_finite() || value == 0.0 {
+        return 0;
+    }
+    let text = value.abs().to_string();
+    let (mantissa, exponent) = text
+        .split_once(['e', 'E'])
+        .map_or((text.as_str(), 0), |(mantissa, exponent)| {
+            (mantissa, exponent.parse::<i32>().unwrap_or(0))
+        });
+    let fraction = mantissa
+        .split_once('.')
+        .map_or(0, |(_, fraction)| fraction.len() as i32);
+    (fraction - exponent).max(0)
+}
+
 component! {
     /// Horizontal slider.
     pub struct Slider {
@@ -45,32 +61,43 @@ component! {
                 button: MouseButton::Left,
                 ..
             } => {
+                let Some(frame) = self.last_frame.get() else {
+                    return EventResult::NotHandled;
+                };
+                if !frame.contains(*pos) || self.max <= self.min {
+                    return EventResult::NotHandled;
+                }
                 self.dragging = true;
                 self.focused = true;
-                if let Some(frame) = self.last_frame.get() {
-                    self.update_from_pos(pos.x, frame);
-                }
+                self.update_from_pos(pos.x, frame);
                 EventResult::Handled
             }
             SystemEvent::PointerMove { pos, .. } => {
+                if let Some(frame) = self.last_frame.get() {
+                    if self.dragging {
+                        self.update_from_pos(pos.x, frame);
+                    }
+                    self.hovered = frame.contains(*pos);
+                } else {
+                    self.hovered = false;
+                }
+                EventResult::Handled
+            }
+            SystemEvent::PointerUp {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
                 if self.dragging {
                     if let Some(frame) = self.last_frame.get() {
                         self.update_from_pos(pos.x, frame);
                     }
                 }
-                self.hovered = true;
-                EventResult::Handled
-            }
-            SystemEvent::PointerUp {
-                button: MouseButton::Left,
-                ..
-            } => {
                 self.dragging = false;
                 EventResult::Handled
             }
             SystemEvent::PointerLeave => {
                 self.hovered = false;
-                self.dragging = false;
                 EventResult::Handled
             }
             SystemEvent::FocusIn => {
@@ -83,11 +110,11 @@ component! {
             }
             SystemEvent::KeyDown { key, .. } => match key {
                 KeyCode::Right | KeyCode::Up => {
-                    self.set_value((self.value + self.step).min(self.max));
+                    self.step_by(1.0);
                     EventResult::Handled
                 }
                 KeyCode::Left | KeyCode::Down => {
-                    self.set_value((self.value - self.step).max(self.min));
+                    self.step_by(-1.0);
                     EventResult::Handled
                 }
                 _ => EventResult::NotHandled,
@@ -104,23 +131,26 @@ component! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.capture_bound_value_dependency();
+        let control_height = frame.h.max(0.0).min(self.control_height());
+        let control_rect = Rect::new(frame.x, frame.y, frame.w.max(0.0), control_height);
         self.last_frame
-            .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
-        if frame.w <= 0.0 || self.max <= self.min {
+            .set(Some(Rect::new(0.0, 0.0, control_rect.w, control_rect.h)));
+        if control_rect.w <= 0.0 || control_rect.h <= 0.0 || self.max <= self.min {
             return;
         }
 
         let primary = ctx.tokens().color_primary();
         let primary_hover = ctx.tokens().color_primary_hover();
         let fill = ctx.tokens().color_fill_tertiary();
-        let track_h = self.track_height();
-        let thumb_r = self.thumb_radius();
-        let cy = frame.y + frame.h * 0.5;
+        let track_h = self.track_height(control_rect);
+        let thumb_r = self.thumb_radius(control_rect);
+        let cy = control_rect.y + control_rect.h * 0.5;
 
         let pct = ((self.value - self.min) / (self.max - self.min)).clamp(0.0, 1.0) as f32;
-        let (track_x, track_w) = self.track_span(frame);
+        let (track_x, track_w) = self.track_span(control_rect);
         let thumb_x = track_x + pct * track_w;
 
+        ctx.push_clip(control_rect);
         ctx.fill_rect(
             Rect::new(track_x, cy - track_h * 0.5, track_w, track_h),
             fill,
@@ -147,21 +177,59 @@ component! {
         );
 
         if self.focused {
-            ctx.stroke_rect(frame, primary, 1.5, Some(Radius::uniform(4.0)));
+            ctx.stroke_rect(control_rect, primary, 1.5, Some(Radius::uniform(4.0)));
         }
+        ctx.pop_clip();
     }
 }
 
 impl Slider {
     fn update_from_pos(&mut self, px: f32, frame: Rect) {
         let (track_x, track_w) = self.track_span(frame);
-        let pct = f64::from(((px - track_x) / track_w).clamp(0.0, 1.0));
+        let pct = if track_w > 0.0 {
+            f64::from(((px - track_x) / track_w).clamp(0.0, 1.0))
+        } else if px <= track_x {
+            0.0
+        } else {
+            1.0
+        };
         let raw = self.min + pct * (self.max - self.min);
         if self.step > 0.0 {
             let stepped = self.min + ((raw - self.min) / self.step).round() * self.step;
-            self.set_value(stepped);
+            self.set_value(self.normalize_step_value(stepped));
         } else {
             self.set_value(raw);
+        }
+    }
+
+    fn step_by(&mut self, direction: f64) {
+        if self.step <= 0.0 {
+            return;
+        }
+
+        let position = (self.value - self.min) / self.step;
+        let nearest = position.round();
+        let on_grid = (position - nearest).abs() <= 1e-9 * position.abs().max(1.0);
+        let index = if on_grid {
+            nearest + direction.signum()
+        } else if direction > 0.0 {
+            position.ceil()
+        } else {
+            position.floor()
+        };
+        self.set_value(self.normalize_step_value(self.min + index * self.step));
+    }
+
+    fn normalize_step_value(&self, value: f64) -> f64 {
+        let precision = decimal_places(self.min)
+            .max(decimal_places(self.step))
+            .min(15);
+        let factor = 10.0f64.powi(precision);
+        let scaled = value * factor;
+        if factor.is_finite() && scaled.is_finite() {
+            scaled.round() / factor
+        } else {
+            value
         }
     }
 
@@ -206,25 +274,38 @@ impl Slider {
         crate::ui::config::control_height(self.slider_size)
     }
 
-    fn track_height(&self) -> f32 {
-        match self.slider_size {
+    fn track_height(&self, frame: Rect) -> f32 {
+        let nominal = match self.slider_size {
             ControlSize::Small => 3.0,
             ControlSize::Medium => 4.0,
             ControlSize::Large => 5.0,
-        }
+        };
+        (nominal * self.visual_scale(frame)).min(frame.h)
     }
 
-    fn thumb_radius(&self) -> f32 {
-        match self.slider_size {
+    fn thumb_radius(&self, frame: Rect) -> f32 {
+        let nominal = match self.slider_size {
             ControlSize::Small => 5.0,
             ControlSize::Medium => 6.0,
             ControlSize::Large => 7.5,
+        };
+        (nominal * self.visual_scale(frame))
+            .min(frame.w * 0.5)
+            .min(frame.h * 0.5)
+            .max(0.0)
+    }
+
+    fn visual_scale(&self, frame: Rect) -> f32 {
+        if self.control_height() > 0.0 {
+            (frame.h / self.control_height()).clamp(0.0, 1.0)
+        } else {
+            0.0
         }
     }
 
     fn track_span(&self, frame: Rect) -> (f32, f32) {
-        let inset = self.thumb_radius();
-        (frame.x + inset, (frame.w - inset * 2.0).max(1.0))
+        let inset = self.thumb_radius(frame);
+        (frame.x + inset, (frame.w - inset * 2.0).max(0.0))
     }
 }
 

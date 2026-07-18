@@ -47,6 +47,8 @@ fn circular_crop_centers_masks_caches_and_unloads_with_source() {
 
     let cropped = service.circular_crop(original).expect("circular crop");
     assert_eq!(service.circular_crop(original), Some(cropped));
+    let square = service.square_crop(original).expect("square crop");
+    assert_eq!(service.square_crop(original), Some(square));
     service
         .with_slot(cropped, |slot| {
             assert_eq!((slot.width(), slot.height()), (4, 4));
@@ -56,8 +58,16 @@ fn circular_crop_centers_masks_caches_and_unloads_with_source() {
             assert_ne!(slot.pixels()[6], 0);
         })
         .expect("cropped slot");
+    service
+        .with_slot(square, |slot| {
+            assert_eq!((slot.width(), slot.height()), (4, 4));
+            assert_eq!(slot.pixels()[0], Color::red().premultiplied());
+            assert_eq!(slot.pixels()[3], Color::blue().premultiplied());
+        })
+        .expect("square slot");
 
     service.unload(original);
     assert!(!service.is_valid(original));
     assert!(!service.is_valid(cropped));
+    assert!(!service.is_valid(square));
 }

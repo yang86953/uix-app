@@ -51,6 +51,7 @@ component! {
         pub(crate) transition: TransitionPlayer,
         closing: bool,
         pub(crate) transition_dirty: bool,
+        layout_requested: Cell<bool>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -126,15 +127,15 @@ component! {
         let border_secondary = ctx.tokens().color_border_secondary();
         let text_color = ctx.tokens().color_text();
         let text_secondary = ctx.tokens().color_text_secondary();
+        let surface_w = ctx.canvas_2d().width() as f32;
+        let surface_h = ctx.canvas_2d().height() as f32;
 
         let dialog = if self.overlay {
-            let win_w = ctx.canvas_2d().width() as f32;
-            let win_h = ctx.canvas_2d().height() as f32;
-            self.last_win_w.set(win_w);
-            self.last_win_h.set(win_h);
+            self.last_win_w.set(surface_w);
+            self.last_win_h.set(surface_h);
             Rect::new(
-                (win_w - self.width) * 0.5,
-                (win_h - self.height) * 0.5,
+                (surface_w - self.width) * 0.5,
+                (surface_h - self.height) * 0.5,
                 self.width,
                 self.height,
             )
@@ -152,7 +153,7 @@ component! {
         let overlay_alpha = (128.0 * self.transition_opacity()).round().clamp(0.0, 128.0) as u8;
 
         ctx.fill_rect(
-            Rect::new(-2000.0, -2000.0, 4000.0, 4000.0),
+            Rect::new(0.0, 0.0, surface_w, surface_h),
             Color::from_rgba(0, 0, 0, overlay_alpha),
             None,
         );
@@ -247,6 +248,14 @@ component! {
             .collect()
     }
 
+    children_clip => (&self, _frame: Rect) -> Option<Rect> {
+        (!self.is_present()).then(Rect::zero)
+    }
+
+    take_layout_request => (&mut self) -> bool {
+        self.layout_requested.replace(false)
+    }
+
     update_animation => (&mut self, dt: f64) -> bool {
         if !self.is_present() || self.transition.finished {
             self.transition_dirty = false;
@@ -301,6 +310,7 @@ impl Modal {
             transition: TransitionPlayer::new(presets::modal_enter()),
             closing: false,
             transition_dirty: false,
+            layout_requested: Cell::new(false),
         }
         .modal_size(size)
     }
@@ -410,6 +420,7 @@ impl Modal {
         self.closing = false;
         self.transition = TransitionPlayer::new(self.enter_animation);
         self.transition_dirty = true;
+        self.layout_requested.set(true);
     }
 
     pub fn close(&mut self) {
@@ -423,6 +434,7 @@ impl Modal {
         self.closing = true;
         self.transition = TransitionPlayer::new(self.leave_animation);
         self.transition_dirty = true;
+        self.layout_requested.set(true);
     }
 
     pub fn confirm(&mut self) {

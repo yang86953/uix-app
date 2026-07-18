@@ -1,3 +1,6 @@
+use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::view::{column, ViewAdapter};
@@ -7,6 +10,40 @@ use crate::ui::{
     PickerMode, PresetDate, Radio, Rate, Segmented, Select, Slider, State, Switch, Time,
     TimePicker, Trigger,
 };
+
+fn render_form_item(item: &FormItem, frame: Rect, surface_size: (i32, i32)) -> (Vec<u32>, String) {
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(surface_size.0, surface_size.1));
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+    let mut display_list = crate::draw::painting::DisplayList::new();
+
+    {
+        let mut ctx = PaintContext::new_for_test(
+            &mut canvas,
+            font,
+            &fonts,
+            &images,
+            &tokens,
+            96.0,
+            1.0,
+            Orientation::YDown,
+            surface_size.0,
+            surface_size.1,
+        );
+        ctx.with_recorder(&mut display_list, |ctx| {
+            WidgetRender::render(item, frame, ctx, &tree);
+        });
+    }
+    (
+        canvas.surface().pixels().to_vec(),
+        format!("{display_list:?}"),
+    )
+}
 
 struct FixedChild(Size);
 
@@ -140,6 +177,27 @@ fn form_layout_children_keep_all_items_within_narrow_frame() {
 }
 
 #[test]
+fn form_normalizes_invalid_gaps_instead_of_overlapping_or_dropping_items() {
+    let frame = Rect::new(0.0, 0.0, 100.0, 100.0);
+    for gap in [-8.0, f32::NAN, f32::INFINITY] {
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(
+            Form::new().layout(FormLayout::Horizontal).gap(gap),
+        ));
+        let first = tree.add_child(root, Box::new(FixedChild(Size::new(10.0, 10.0))));
+        let second = tree.add_child(root, Box::new(FixedChild(Size::new(10.0, 10.0))));
+        let widget = tree.get(root).unwrap().as_layout().unwrap();
+        let measured = widget.measure_children(frame, &[first, second], &tree);
+        let placements = widget.layout_children(frame, &measured, &tree);
+
+        assert_eq!(placements[1].1.y, placements[0].1.y + placements[0].1.h);
+        assert!(placements.iter().all(|(_, rect)| {
+            rect.x.is_finite() && rect.y.is_finite() && rect.w.is_finite() && rect.h.is_finite()
+        }));
+    }
+}
+
+#[test]
 fn form_item_layout_children_clamp_label_padding_and_status_regions() {
     let frame = Rect::new(10.0, 20.0, 40.0, 10.0);
     for layout in [
@@ -158,6 +216,125 @@ fn form_item_layout_children_clamp_label_padding_and_status_regions() {
         assert_eq!(placements.len(), 1);
         assert_rect_within(frame, placements[0].1);
     }
+}
+
+#[test]
+fn form_item_paint_is_clipped_to_its_frame() {
+    let frame = Rect::new(20.0, 10.0, 100.0, 30.0);
+    let item = FormItem::new("A label that is much wider than its field")
+        .required(true)
+        .status(ValidateStatus::Error)
+        .help("A help message that must remain inside the field");
+    let (pixels, display_list) = render_form_item(&item, frame, (260, 80));
+
+    assert!(
+        display_list.contains("PushClip { rect: Rect { x: 20.0, y: 10.0, w: 100.0, h: 30.0 } }"),
+        "FormItem must establish an outer frame clip: {display_list}"
+    );
+
+    assert!(
+        (0..80).all(|y| (0..20).all(|x| pixels[y * 260 + x] == 0)),
+        "FormItem paint must not escape through the left edge"
+    );
+    assert!(
+        (0..80).all(|y| (120..260).all(|x| pixels[y * 260 + x] == 0)),
+        "FormItem paint must not escape through the right edge"
+    );
+    assert!(
+        (0..10).all(|y| (0..260).all(|x| pixels[y * 260 + x] == 0)),
+        "FormItem paint must not escape through the top edge"
+    );
+    assert!(
+        (40..80).all(|y| (0..260).all(|x| pixels[y * 260 + x] == 0)),
+        "FormItem paint must not escape through the bottom edge"
+    );
+}
+
+#[test]
+fn horizontal_form_item_clips_long_label_to_the_label_slot() {
+    let item = FormItem::new("This label must never overlap the input control")
+        .label_width(80.0)
+        .layout(FormLayout::Horizontal);
+    let (pixels, display_list) =
+        render_form_item(&item, Rect::new(0.0, 0.0, 200.0, 44.0), (200, 44));
+
+    assert!(
+        display_list.contains("PushClip { rect: Rect { x: 8.0, y: 0.0, w: 72.0, h: 44.0 } }"),
+        "horizontal label must establish a clip before the content slot: {display_list}"
+    );
+
+    assert!(
+        (0..44).all(|y| (88..200).all(|x| pixels[y * 200 + x] == 0)),
+        "label paint must stay before the content slot"
+    );
+}
+
+#[test]
+fn form_item_reserves_help_height_only_when_help_is_present() {
+    let frame = Rect::new(0.0, 0.0, 200.0, 56.0);
+    let child_rect = |item: FormItem| {
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(item));
+        let child = tree.add_child(root, Box::new(FixedChild(Size::new(100.0, 32.0))));
+        let widget = tree.get(root).unwrap().as_layout().unwrap();
+        let measured = widget.measure_children(frame, &[child], &tree);
+        widget.layout_children(frame, &measured, &tree)[0].1
+    };
+
+    assert_eq!(
+        child_rect(
+            FormItem::new("Name")
+                .layout(FormLayout::Vertical)
+                .help("Required")
+        ),
+        Rect::new(0.0, 18.0, 200.0, 22.0)
+    );
+    assert_eq!(
+        child_rect(FormItem::new("Name").layout(FormLayout::Vertical)),
+        Rect::new(0.0, 18.0, 200.0, 38.0)
+    );
+    assert_eq!(
+        child_rect(FormItem::new("Name").layout(FormLayout::Horizontal)),
+        Rect::new(88.0, 2.0, 112.0, 54.0)
+    );
+    assert_eq!(
+        FormItem::new("Name")
+            .layout(FormLayout::Horizontal)
+            .measure(Constraints::unconstrained()),
+        Size::new(400.0, 44.0)
+    );
+    assert_eq!(
+        FormItem::new("Name")
+            .layout(FormLayout::Horizontal)
+            .help("Required")
+            .measure(Constraints::unconstrained()),
+        Size::new(400.0, 60.0)
+    );
+    assert_eq!(
+        FormItem::new("Name")
+            .layout(FormLayout::Vertical)
+            .help("Required")
+            .measure(Constraints::unconstrained()),
+        Size::new(400.0, 72.0)
+    );
+}
+
+#[test]
+fn inline_form_item_renders_status_and_help_in_the_reserved_region() {
+    let item = FormItem::new("")
+        .layout(FormLayout::Inline)
+        .status(ValidateStatus::Error)
+        .help("Required");
+    let (pixels, _) = render_form_item(&item, Rect::new(0.0, 0.0, 200.0, 44.0), (200, 44));
+
+    assert!(
+        (0..44).any(|y| pixels[y * 200] != 0),
+        "inline status strip must be rendered"
+    );
+    assert!(
+        (28..44).any(|y| (0..200).any(|x| pixels[y * 200 + x] != 0)),
+        "inline help text must be rendered below the content row"
+    );
 }
 
 #[test]
@@ -203,7 +380,7 @@ fn form_item_arrange_uses_precomputed_measurements() {
     let placements = widget.layout_children(frame, &measured, &tree);
 
     assert_eq!(calls.get(), 1, "arrange must not measure children again");
-    assert_eq!(placements[0].1, Rect::new(88.0, 2.0, 12.0, 26.0));
+    assert_eq!(placements[0].1, Rect::new(88.0, 2.0, 12.0, 42.0));
 }
 
 #[test]

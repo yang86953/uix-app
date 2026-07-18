@@ -3,6 +3,133 @@
 /// 缺字占位（tofu）字形 ID。后端无真实轮廓时由 `FontService::rasterize_glyph` 合成方框。
 pub const TOFU_GLYPH_ID: u32 = u32::MAX - 1;
 
+pub(crate) fn prohibited_at_line_start(ch: char) -> bool {
+    matches!(
+        ch,
+        '，' | '。'
+            | '、'
+            | '；'
+            | '：'
+            | '！'
+            | '？'
+            | '）'
+            | '】'
+            | '》'
+            | '〉'
+            | '〕'
+            | '］'
+            | '｝'
+            | '”'
+            | '’'
+            | '…'
+            | '—'
+            | ','
+            | '.'
+            | ';'
+            | ':'
+            | '!'
+            | '?'
+            | ')'
+            | ']'
+            | '}'
+    )
+}
+
+fn is_wide_scalar(ch: char) -> bool {
+    matches!(ch,
+        '\u{1100}'..='\u{11ff}'
+        | '\u{2e80}'..='\u{a4cf}'
+        | '\u{ac00}'..='\u{d7af}'
+        | '\u{f900}'..='\u{faff}'
+        | '\u{fe10}'..='\u{fe6f}'
+        | '\u{ff00}'..='\u{ffef}'
+        | '\u{1f000}'..='\u{1faff}'
+        | '\u{20000}'..='\u{3ffff}'
+    )
+}
+
+fn estimated_scalar_width(ch: char, font_size: f32) -> f32 {
+    let factor = match ch {
+        '\n' | '\r' => 0.0,
+        ' ' => 0.35,
+        '\t' => 2.0,
+        'm' | 'M' | 'W' | 'w' => 0.7,
+        'i' | 'I' | 'l' | '1' | '.' | ',' | ':' | ';' | '\'' => 0.3,
+        c if is_wide_scalar(c) => 1.0,
+        _ => 0.55,
+    };
+    font_size * factor
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct EstimatedTextMetrics {
+    pub max_line_width: f32,
+    pub line_count: usize,
+    pub width_wrapped: bool,
+}
+
+/// 无字体上下文时使用的文本尺寸估算；显式换行与 CJK 行首禁则须与真实布局一致。
+pub(crate) fn estimate_text_metrics(
+    text: &str,
+    max_width: f32,
+    font_size: f32,
+) -> EstimatedTextMetrics {
+    let mut line_width = 0.0f32;
+    let mut widest_line = 0.0f32;
+    let mut line_count = 1usize;
+    let mut width_wrapped = false;
+    let mut line_char_count = 0usize;
+    let mut last_width = 0.0f32;
+    let wraps = max_width.is_finite() && max_width > 0.0;
+
+    for ch in text.chars() {
+        if ch == '\n' {
+            widest_line = widest_line.max(line_width);
+            line_width = 0.0;
+            line_count += 1;
+            line_char_count = 0;
+            last_width = 0.0;
+            continue;
+        }
+        if ch == '\r' {
+            continue;
+        }
+        let width = estimated_scalar_width(ch, font_size);
+        if wraps && line_width > 0.0 && line_width + width > max_width {
+            if prohibited_at_line_start(ch) && line_char_count > 1 {
+                line_width -= last_width;
+                widest_line = widest_line.max(line_width);
+                line_width = last_width + width;
+                line_char_count = 2;
+                last_width = width;
+                line_count += 1;
+                width_wrapped = true;
+            } else if prohibited_at_line_start(ch) {
+                line_width += width;
+                line_char_count += 1;
+                last_width = width;
+            } else {
+                widest_line = widest_line.max(line_width);
+                line_width = width;
+                line_char_count = 1;
+                last_width = width;
+                line_count += 1;
+                width_wrapped = true;
+            }
+        } else {
+            line_width += width;
+            line_char_count += 1;
+            last_width = width;
+        }
+    }
+
+    EstimatedTextMetrics {
+        max_line_width: widest_line.max(line_width),
+        line_count,
+        width_wrapped,
+    }
+}
+
 /// 单个字形的最大光栅化字号，限制异常输入导致的面积型内存增长。
 pub(crate) const MAX_RASTER_PIXEL_SIZE: f32 = 512.0;
 

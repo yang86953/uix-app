@@ -457,19 +457,23 @@ pub enum SnapshotFields {
     ColorPicker {
         value: Color,
         preset_colors: Vec<Color>,
+        open: bool,
     },
     DatePicker {
         placeholder: String,
         value: Option<String>,
+        open: bool,
     },
     DateRangePicker {
         placeholder: String,
         start: Option<String>,
         end: Option<String>,
+        open: bool,
     },
     TimePicker {
         placeholder: String,
         value: Option<String>,
+        open: bool,
     },
     Mentions {
         placeholder: String,
@@ -711,6 +715,7 @@ impl SnapshotFields {
             Self::Rate {
                 count,
                 value,
+                half,
                 disabled,
                 ..
             } => AccessibilitySnapshot::new(AccessibilityRole::Slider).with_state(
@@ -718,7 +723,11 @@ impl SnapshotFields {
                     disabled: *disabled,
                     value_now: Some(*value as f64),
                     value_min: Some(0.0),
-                    value_max: Some(*count as f64),
+                    value_max: Some(if *half {
+                        count.saturating_mul(2) as f64
+                    } else {
+                        *count as f64
+                    }),
                     ..AccessibilityState::default()
                 },
             ),
@@ -902,30 +911,38 @@ impl SnapshotFields {
                 *open,
                 search_query,
             ),
-            Self::DatePicker { placeholder, value } => {
-                AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
-                    .with_state(AccessibilityState {
-                        value_text: value.clone(),
-                        ..AccessibilityState::default()
-                    })
-            }
+            Self::DatePicker {
+                placeholder,
+                value,
+                open,
+            } => AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
+                .with_state(AccessibilityState {
+                    expanded: Some(*open),
+                    value_text: value.clone(),
+                    ..AccessibilityState::default()
+                }),
             Self::DateRangePicker {
                 placeholder,
                 start,
                 end,
-            } => date_range_accessibility(placeholder, start.as_ref(), end.as_ref()),
-            Self::TimePicker { placeholder, value } => {
-                AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
-                    .with_state(AccessibilityState {
-                        value_text: value.clone(),
-                        ..AccessibilityState::default()
-                    })
-            }
-            Self::ColorPicker { value, .. } => AccessibilitySnapshot::new(
+                open,
+            } => date_range_accessibility(placeholder, start.as_ref(), end.as_ref(), *open),
+            Self::TimePicker {
+                placeholder,
+                value,
+                open,
+            } => AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
+                .with_state(AccessibilityState {
+                    value_text: value.clone(),
+                    expanded: Some(*open),
+                    ..AccessibilityState::default()
+                }),
+            Self::ColorPicker { value, open, .. } => AccessibilitySnapshot::new(
                 AccessibilityRole::Combobox,
             )
             .with_state(AccessibilityState {
                 value_text: Some(value.to_string()),
+                expanded: Some(*open),
                 ..AccessibilityState::default()
             }),
             Self::AutoComplete {

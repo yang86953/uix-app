@@ -26,6 +26,25 @@ fn clear_picture_native_draw_follows_painter_order() {
 }
 
 #[test]
+fn full_picture_after_transparent_clear_restores_exact_premultiplied_pixels() {
+    let source = vec![
+        Color::from_rgba(200, 40, 20, 128).premultiplied(),
+        Color::transparent().premultiplied(),
+        Color::from_rgba(10, 220, 80, 64).premultiplied(),
+        Color::white().premultiplied(),
+    ];
+    let mut encoder = FrameEncoder::new(2, 2).unwrap();
+    encoder.clear(Color::transparent());
+    encoder.blit_picture(
+        FrameImage::new(2, 2, source.clone()).unwrap(),
+        FrameRect::new(0, 0, 2, 2),
+        FrameRect::new(0, 0, 2, 2),
+    );
+
+    assert_eq!(encoder.render_reference().pixels(), source);
+}
+
+#[test]
 fn native_draw_picture_blit_follows_painter_order() {
     let mut encoder = FrameEncoder::new(4, 4).unwrap();
     encoder.clear(Color::black());

@@ -356,7 +356,9 @@ pub fn run(
                     .detach();
                 // 动画样例改走 WidgetAnimation（Spin 等）；不再全局 16ms 探活，
                 // 否则 RegisteredActive 永不 DeepIdle，且曾把 orphan State 绑成整树 reconcile。
-                if std::env::var_os("UIX_PERF_PROBE").is_some() {
+                // Component QA owns page navigation for deterministic real-window
+                // tests; the standalone startup scenario must not replace its page.
+                if !component_qa && std::env::var_os("UIX_PERF_PROBE").is_some() {
                     info_fn("PERF_SCENARIO=startup scheduled");
                     let page = active.clone();
                     // Delays are wall-clock from on_start; first paint can take seconds,

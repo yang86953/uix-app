@@ -2,6 +2,7 @@
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
+use crate::draw::font::text_backend::estimate_text_metrics;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::traits::input::ControlSize;
@@ -67,24 +68,14 @@ component! {
             SystemEvent::KeyDown { key, .. } => {
             match key {
                 KeyCode::Right | KeyCode::Down => {
-                    let next = if self.selected < self.options.len() {
-                        self.selected.saturating_add(1)
-                    } else {
-                        0
-                    };
-                    if next < self.options.len() {
+                    if let Some(next) = self.adjacent_index(true) {
                         self.select_index(next);
                     }
                     EventResult::Handled
                 }
                 KeyCode::Left | KeyCode::Up => {
-                        if self.selected == usize::MAX {
-                            if let Some(last) = self.options.len().checked_sub(1) {
-                                self.select_index(last);
-                            }
-                        } else if self.selected > 0 {
-                            let prev = self.selected - 1;
-                            self.select_index(prev);
+                        if let Some(previous) = self.adjacent_index(false) {
+                            self.select_index(previous);
                         }
                         EventResult::Handled
                     }
@@ -128,6 +119,23 @@ component! {
 }
 
 impl Radio {
+    fn adjacent_index(&self, forward: bool) -> Option<usize> {
+        let len = self.options.len();
+        if len == 0 {
+            return None;
+        }
+        if self.selected >= len {
+            return Some(if forward { 0 } else { len - 1 });
+        }
+        Some(if forward {
+            (self.selected + 1) % len
+        } else if self.selected == 0 {
+            len - 1
+        } else {
+            self.selected - 1
+        })
+    }
+
     fn select_index(&mut self, index: usize) {
         if index >= self.options.len() || self.selected == index {
             return;
@@ -223,7 +231,7 @@ impl Radio {
         opt: &str,
         x: f32,
         cy: f32,
-        _seg_w: f32,
+        segment_width: f32,
     ) {
         let scale = self.visual_scale();
         let r = 6.0 * scale;
@@ -257,8 +265,23 @@ impl Radio {
             )
         };
 
-        // 外圈
         let circle_rect = Rect::new(x + scale, cy - r, r * 2.0, r * 2.0);
+        if self.focused && selected {
+            let focus_outset = 2.0 * scale;
+            ctx.stroke_rect(
+                Rect::new(
+                    circle_rect.x - focus_outset,
+                    circle_rect.y - focus_outset,
+                    circle_rect.w + focus_outset * 2.0,
+                    circle_rect.h + focus_outset * 2.0,
+                ),
+                ctx.tokens().color_primary_border(),
+                1.5,
+                Some(Radius::uniform(r + focus_outset)),
+            );
+        }
+
+        // 外圈
         ctx.stroke_rect(circle_rect, ring_color, 1.5, Some(Radius::uniform(r)));
 
         // 选中填充点
@@ -266,7 +289,7 @@ impl Radio {
             ctx.fill_circle(x + r + scale, cy, dot_r, dot_color);
         }
         // 使用 em-box 高度（font_size）垂直居中，而非字体度量高度
-        let row_rect = Rect::new(x, cy - self.item_h * 0.5, _seg_w, self.item_h);
+        let row_rect = Rect::new(x, cy - self.item_h * 0.5, segment_width, self.item_h);
         let font_size = self.font_size();
         let text_y = ctx.visual_center_y(row_rect, font_size);
         ctx.draw_text(opt, Point::new(x + 20.0 * scale, text_y), text_c, font_size);
@@ -368,7 +391,7 @@ impl Radio {
 
     fn item_width(&self, option: &str) -> f32 {
         let scale = self.visual_scale();
-        option.len() as f32 * 9.0 * scale.sqrt() + 30.0 * scale
+        estimate_text_metrics(option, f32::INFINITY, self.font_size()).max_line_width + 30.0 * scale
     }
 }
 

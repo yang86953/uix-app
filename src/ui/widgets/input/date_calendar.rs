@@ -5,9 +5,13 @@ use crate::draw::painting::PaintContext;
 use crate::ui::widgets::input::date_picker::{days_in_month, first_weekday, Date, DisabledDate};
 
 pub(crate) const CALENDAR_PANEL_HEIGHT: f32 = 250.0;
+const CALENDAR_PANEL_MIN_WIDTH: f32 = 160.0;
 const HEADER_HEIGHT: f32 = 32.0;
+const WEEKDAY_HEIGHT: f32 = 24.0;
 const CELL_HEIGHT: f32 = 30.0;
 const HORIZONTAL_INSET: f32 = 8.0;
+const NAVIGATION_WIDTH: f32 = 32.0;
+const GRID_TOP: f32 = HEADER_HEIGHT + WEEKDAY_HEIGHT;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MonthNavigation {
@@ -39,7 +43,7 @@ pub(crate) fn calendar_popup_rect(frame: Rect) -> Rect {
     Rect::new(
         frame.x,
         frame.y + frame.h + 2.0,
-        frame.w,
+        frame.w.max(CALENDAR_PANEL_MIN_WIDTH),
         CALENDAR_PANEL_HEIGHT,
     )
 }
@@ -47,13 +51,13 @@ pub(crate) fn calendar_popup_rect(frame: Rect) -> Rect {
 pub(crate) fn hit_month_navigation(frame: Rect, position: Point) -> Option<MonthNavigation> {
     let popup = calendar_popup_rect(frame);
     let relative = Point::new(position.x - popup.x, position.y - popup.y);
-    if !(0.0..HEADER_HEIGHT).contains(&relative.y) {
+    if !(0.0..popup.w).contains(&relative.x) || !(0.0..HEADER_HEIGHT).contains(&relative.y) {
         return None;
     }
-    if relative.x > frame.w * 0.5 && relative.x < frame.w * 0.5 + 40.0 {
-        Some(MonthNavigation::Next)
-    } else if relative.x > frame.w * 0.5 - 50.0 && relative.x < frame.w * 0.5 - 10.0 {
+    if relative.x < NAVIGATION_WIDTH {
         Some(MonthNavigation::Previous)
+    } else if relative.x >= popup.w - NAVIGATION_WIDTH {
+        Some(MonthNavigation::Next)
     } else {
         None
     }
@@ -67,19 +71,19 @@ pub(crate) fn hit_calendar_date(
 ) -> Option<Date> {
     let popup = calendar_popup_rect(frame);
     let relative = Point::new(position.x - popup.x, position.y - popup.y);
-    if relative.y < HEADER_HEIGHT
-        || relative.y >= CALENDAR_PANEL_HEIGHT
+    if relative.y < GRID_TOP
+        || relative.y >= GRID_TOP + CELL_HEIGHT * 6.0
         || relative.x < HORIZONTAL_INSET
-        || relative.x >= frame.w - HORIZONTAL_INSET
+        || relative.x >= popup.w - HORIZONTAL_INSET
     {
         return None;
     }
 
-    let cell_width = (frame.w - 2.0 * HORIZONTAL_INSET) / 7.0;
+    let cell_width = (popup.w - 2.0 * HORIZONTAL_INSET) / 7.0;
     if cell_width <= 0.0 {
         return None;
     }
-    let row = ((relative.y - HEADER_HEIGHT) / CELL_HEIGHT) as usize;
+    let row = ((relative.y - GRID_TOP) / CELL_HEIGHT) as usize;
     let column = ((relative.x - HORIZONTAL_INSET) / cell_width) as usize;
     if row >= 6 || column >= 7 {
         return None;
@@ -112,42 +116,58 @@ pub(crate) fn draw_calendar_panel(
     ));
     let popup = calendar_popup_rect(frame);
 
+    ctx.push_clip(popup);
     ctx.fill_rect(popup, bg_elevated, radius);
     ctx.stroke_rect(popup, border_color, 1.0, radius);
 
     let title = format!("{}年{:02}月", state.year, state.month);
     let header_rect = Rect::new(popup.x, popup.y, popup.w, HEADER_HEIGHT);
-    let arrow_y = ctx.visual_center_y(header_rect, 12.0);
     let title_y = ctx.visual_center_y(header_rect, 14.0);
+    let title_width = ctx.measure_text(&title, 14.0).w;
     ctx.draw_text(
         &title,
-        Point::new(popup.x + popup.w * 0.5 - 28.0, title_y),
+        Point::new(popup.x + (popup.w - title_width) * 0.5, title_y),
         text_color,
         14.0,
     );
-    ctx.draw_text(
-        "◀",
-        Point::new(popup.x + popup.w * 0.5 - 50.0, arrow_y),
+    crate::ui::widgets::icon::paint_icon_in_frame(
+        ctx,
+        "chevron-left",
+        Rect::new(popup.x, popup.y, NAVIGATION_WIDTH, HEADER_HEIGHT),
         text_secondary,
         12.0,
     );
-    ctx.draw_text(
-        "▶",
-        Point::new(popup.x + popup.w * 0.5 + 30.0, arrow_y),
+    crate::ui::widgets::icon::paint_icon_in_frame(
+        ctx,
+        "chevron-right",
+        Rect::new(
+            popup.x + popup.w - NAVIGATION_WIDTH,
+            popup.y,
+            NAVIGATION_WIDTH,
+            HEADER_HEIGHT,
+        ),
         text_secondary,
         12.0,
     );
 
-    let cell_width = (frame.w - 2.0 * HORIZONTAL_INSET) / 7.0;
+    let cell_width = (popup.w - 2.0 * HORIZONTAL_INSET) / 7.0;
+    let weekday_row = Rect::new(
+        popup.x + HORIZONTAL_INSET,
+        popup.y + HEADER_HEIGHT,
+        popup.w - HORIZONTAL_INSET * 2.0,
+        WEEKDAY_HEIGHT,
+    );
+    let weekday_text_y = ctx.visual_center_y(weekday_row, 10.0);
     for (index, weekday) in crate::ui::locale::use_locale()
         .weekdays_short
         .iter()
         .enumerate()
     {
         let x = popup.x + HORIZONTAL_INSET + index as f32 * cell_width;
+        let text_width = ctx.measure_text(weekday, 10.0).w;
         ctx.draw_text(
             weekday,
-            Point::new(x + cell_width * 0.3, popup.y + 34.0),
+            Point::new(x + (cell_width - text_width) * 0.5, weekday_text_y),
             text_tertiary,
             10.0,
         );
@@ -160,10 +180,9 @@ pub(crate) fn draw_calendar_panel(
         let row = slot / 7;
         let column = slot % 7;
         let x = popup.x + HORIZONTAL_INSET + column as f32 * cell_width;
-        let y = popup.y + HEADER_HEIGHT + 4.0 + row as f32 * CELL_HEIGHT + 16.0;
         let cell_rect = Rect::new(
-            x - 2.0,
-            y - CELL_HEIGHT * 0.5 + 2.0,
+            x,
+            popup.y + GRID_TOP + row as f32 * CELL_HEIGHT,
             cell_width,
             CELL_HEIGHT,
         );
@@ -185,12 +204,15 @@ pub(crate) fn draw_calendar_panel(
         } else {
             text_color
         };
+        let day_text = day.to_string();
+        let text_width = ctx.measure_text(&day_text, 12.0).w;
         let text_y = ctx.visual_center_y(cell_rect, 12.0);
         ctx.draw_text(
-            &day.to_string(),
-            Point::new(x + cell_width * 0.3, text_y),
+            &day_text,
+            Point::new(x + (cell_width - text_width) * 0.5, text_y),
             color,
             12.0,
         );
     }
+    ctx.pop_clip();
 }

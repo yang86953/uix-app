@@ -7,25 +7,28 @@ use crate::ui::view::{ViewAdapter, ViewNode};
 use crate::ui::widgets::Slider;
 use crate::ui::{with_config, ComponentConfig};
 
-fn render_slider(slider: &Slider, frame: Rect) {
+fn render_slider(slider: &Slider, frame: Rect) -> Vec<u32> {
     let mut canvas = CpuCanvas2D::new(PixelSurface::new(240, 64));
     let fonts = FontService::new();
     let images = ImageService::new();
     let tokens = DesignTokens::antd_light();
     let tree = WidgetTree::new();
-    let mut ctx = PaintContext::new_for_test(
-        &mut canvas,
-        FontHandle::default(),
-        &fonts,
-        &images,
-        &tokens,
-        96.0,
-        1.0,
-        Orientation::YDown,
-        240,
-        64,
-    );
-    WidgetRender::render(slider, frame, &mut ctx, &tree);
+    {
+        let mut ctx = PaintContext::new_for_test(
+            &mut canvas,
+            FontHandle::default(),
+            &fonts,
+            &images,
+            &tokens,
+            96.0,
+            1.0,
+            Orientation::YDown,
+            240,
+            64,
+        );
+        WidgetRender::render(slider, frame, &mut ctx, &tree);
+    }
+    canvas.surface().pixels().to_vec()
 }
 
 #[test]
@@ -116,4 +119,104 @@ fn provider_size_and_explicit_override_drive_slider_track_geometry() {
 
     let small = with_config(&large, || Slider::new(0.0..=1.0).size(ControlSize::Small));
     assert_eq!(small.measure(max).h, 24.0);
+}
+
+#[test]
+fn keyboard_step_aligns_to_range_start_without_decimal_tail() {
+    let mut off_grid = Slider::new(1.0..=10.0).step(2.0).default_value(2.0);
+    let _ = off_grid.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Right,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(off_grid.current_value(), 3.0);
+    let _ = off_grid.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Left,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(off_grid.current_value(), 1.0);
+
+    let mut decimal = Slider::new(0.0..=1.0).step(0.1);
+    for _ in 0..3 {
+        let _ = decimal.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Right,
+            mods: KeyMod::NONE,
+        });
+    }
+    assert_eq!(decimal.current_value(), 0.3);
+}
+
+#[test]
+fn pointer_step_snaps_without_decimal_tail() {
+    let mut slider = Slider::new(0.0..=1.0).step(0.1);
+    let _ = render_slider(&slider, Rect::new(0.0, 0.0, 200.0, 32.0));
+
+    let result = slider.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(62.4, 16.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(result, EventResult::Handled);
+    assert_eq!(slider.current_value(), 0.3);
+}
+
+#[test]
+fn constrained_slider_paint_stays_inside_actual_frame() {
+    let mut slider = Slider::new(0.0..=100.0)
+        .size(ControlSize::Large)
+        .default_value(50.0);
+    let _ = slider.on_event(&SystemEvent::FocusIn);
+    let frame = Rect::new(0.0, 0.0, 8.0, 10.0);
+    let pixels = render_slider(&slider, frame);
+
+    for y in 0..64 {
+        for x in 0..240 {
+            if x >= frame.w as usize || y >= frame.h as usize {
+                assert_eq!(pixels[y * 240 + x], 0, "paint leaked at ({x}, {y})");
+            }
+        }
+    }
+}
+
+#[test]
+fn pointer_down_rejects_points_outside_the_rendered_frame() {
+    let mut slider = Slider::new(0.0..=100.0).default_value(25.0);
+    let _ = render_slider(&slider, Rect::new(0.0, 0.0, 80.0, 10.0));
+
+    let result = slider.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(10.0, 12.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(result, EventResult::NotHandled);
+    assert_eq!(slider.current_value(), 25.0);
+}
+
+#[test]
+fn captured_drag_continues_after_pointer_leave_until_release() {
+    let mut slider = Slider::new(0.0..=100.0);
+    let _ = render_slider(&slider, Rect::new(0.0, 0.0, 200.0, 32.0));
+    let _ = slider.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(6.0, 16.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    let _ = slider.on_event(&SystemEvent::PointerLeave);
+    let _ = slider.on_event(&SystemEvent::PointerMove {
+        pos: Point::new(194.0, 16.0),
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(slider.current_value(), 100.0);
+
+    let _ = slider.on_event(&SystemEvent::PointerUp {
+        pos: Point::new(194.0, 16.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    let _ = slider.on_event(&SystemEvent::PointerMove {
+        pos: Point::new(6.0, 16.0),
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(slider.current_value(), 100.0);
 }

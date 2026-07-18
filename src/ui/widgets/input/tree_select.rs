@@ -14,6 +14,7 @@ use std::cell::{Cell, RefCell};
 const DROPDOWN_ROW_HEIGHT: f32 = 28.0;
 const DROPDOWN_TRIGGER_HEIGHT: f32 = 32.0;
 const MAX_DROPDOWN_VIEWPORT_HEIGHT: f32 = 280.0;
+const MIN_DROPDOWN_WIDTH: f32 = 200.0;
 
 component! {
     pub struct TreeSelect {
@@ -27,9 +28,11 @@ component! {
         transition_dirty: bool,
         focused: bool,
         hovered_option: Option<String>,
+        highlighted_option: Option<String>,
         pending_change: RefCell<Option<String>>,
         pub(crate) dropdown_scroll: VirtualListScroll,
         scroll_delta_strip: Cell<(f32, f32)>,
+        last_frame: Cell<Option<Rect>>,
     }
 
 
@@ -56,7 +59,8 @@ component! {
                 ..
             } => {
                 self.focused = true;
-                if pos.y >= 0.0 && pos.y <= DROPDOWN_TRIGGER_HEIGHT {
+                let frame = self.interaction_frame();
+                if point_in_half_open_rect(frame, *pos) {
                     if self.open {
                         self.close();
                     } else {
@@ -64,7 +68,7 @@ component! {
                     }
                     return EventResult::Handled;
                 }
-                if self.is_present() && pos.y > DROPDOWN_TRIGGER_HEIGHT {
+                if self.open && point_in_half_open_rect(self.dropdown_local_rect(), *pos) {
                     if let Some(idx) = self.dropdown_row_at_y(pos.y) {
                         let flat = self.flatten_nodes();
                         if flat.get(idx).is_some_and(|(_, _, _, disabled)| *disabled) {
@@ -74,26 +78,42 @@ component! {
                             return EventResult::Handled;
                         }
                     }
+                    return EventResult::Handled;
                 }
                 self.close();
                 EventResult::NotHandled
             }
             SystemEvent::PointerMove { pos, .. } => {
-                if self.is_present() && pos.y > DROPDOWN_TRIGGER_HEIGHT {
+                if !self.open {
+                    return EventResult::NotHandled;
+                }
+                let next = if point_in_half_open_rect(self.dropdown_local_rect(), *pos) {
                     let idx = self.dropdown_row_at_y(pos.y);
                     let flat = self.flatten_nodes();
-                    self.hovered_option = idx.and_then(|i| {
+                    idx.and_then(|i| {
                         flat.get(i).and_then(|(key, _, _, disabled)| {
                             (!disabled).then(|| key.clone())
                         })
-                    });
+                    })
                 } else {
-                    self.hovered_option = None;
+                    None
+                };
+                if self.hovered_option != next {
+                    self.hovered_option = next;
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
                 }
-                EventResult::Handled
+            }
+            SystemEvent::PointerLeave => {
+                if self.hovered_option.take().is_some() {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
             }
             SystemEvent::Wheel { delta, pos, .. } => {
-                if self.is_present() && pos.y > DROPDOWN_TRIGGER_HEIGHT {
+                if self.open && point_in_half_open_rect(self.dropdown_local_rect(), *pos) {
                     let row_count = self.flatten_nodes().len();
                     let viewport_h = self.dropdown_viewport_height(row_count);
                     let dy = self.dropdown_scroll.scroll_by_wheel(
@@ -137,6 +157,14 @@ component! {
                         self.move_highlight(false);
                         EventResult::Handled
                     }
+                    KeyCode::Home => {
+                        self.move_to_edge(true);
+                        EventResult::Handled
+                    }
+                    KeyCode::End => {
+                        self.move_to_edge(false);
+                        EventResult::Handled
+                    }
                     KeyCode::Enter | KeyCode::Space => {
                         self.select_highlighted();
                         EventResult::Handled
@@ -170,23 +198,79 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        self.last_frame
+            .set(Some(Rect::new(0.0, 0.0, frame.w.max(0.0), frame.h.max(0.0))));
         let bg = ctx.tokens().color_bg_container();
         let border = ctx.tokens().color_border();
         let primary = ctx.tokens().color_primary();
         let text = ctx.tokens().color_text();
-        let text_sec = ctx.tokens().color_text_quaternary();
+        let text_secondary = ctx.tokens().color_text_secondary();
+        let text_tertiary = ctx.tokens().color_text_quaternary();
         let fill = ctx.tokens().color_fill_tertiary();
-        let r = Some(Radius::uniform(ctx.tokens().border_radius()));
-        let input_rect = Rect::new(frame.x, frame.y, frame.w, DROPDOWN_TRIGGER_HEIGHT);
+        let scale = (frame.h / DROPDOWN_TRIGGER_HEIGHT).clamp(0.0, 1.0);
+        let font_size = 13.0 * scale;
+        let left_padding = 10.0 * scale;
+        let arrow_slot = 28.0 * scale;
+        let radius = Some(Radius::uniform(
+            (ctx.tokens().border_radius_sm() * scale).min(frame.h.max(0.0) * 0.5),
+        ));
+        let input_rect = Rect::new(frame.x, frame.y, frame.w.max(0.0), frame.h.max(0.0));
         let bc = if self.open || self.focused { primary } else { border };
-        ctx.fill_rect(input_rect, bg, r);
-        ctx.stroke_rect(input_rect, bc, if self.open || self.focused { 2.0 } else { 1.0 }, r);
-        let display = if self.value.is_empty() { &self.placeholder } else { &self.value };
-        let input_y = ctx.visual_center_y(input_rect, 13.0);
-        let disp_color = if self.value.is_empty() { text_sec } else { text };
-        ctx.draw_text(display, Point::new(frame.x + 10.0, input_y), disp_color, 13.0);
-        let arrow_y = ctx.visual_center_y(input_rect, 10.0);
-        ctx.draw_text(if self.open { "▲" } else { "▼" }, Point::new(frame.x + frame.w - 18.0, arrow_y), text_sec, 10.0);
+        ctx.push_clip(input_rect);
+        ctx.fill_rect(input_rect, bg, radius);
+        ctx.stroke_rect(
+            input_rect,
+            bc,
+            if self.open || self.focused { 2.0 } else { 1.0 },
+            radius,
+        );
+        if font_size > 0.0 && input_rect.w > 0.0 {
+            let arrow_rect = Rect::new(
+                input_rect.x + (input_rect.w - arrow_slot).max(0.0),
+                input_rect.y,
+                arrow_slot.min(input_rect.w),
+                input_rect.h,
+            );
+            let text_area = Rect::new(
+                input_rect.x + left_padding,
+                input_rect.y,
+                (arrow_rect.x - input_rect.x - left_padding).max(0.0),
+                input_rect.h,
+            );
+            if text_area.w > 0.0 {
+                let display = if self.value.is_empty() {
+                    &self.placeholder
+                } else {
+                    &self.value
+                };
+                let display_color = if self.value.is_empty() {
+                    text_tertiary
+                } else {
+                    text
+                };
+                let input_y = ctx.visual_center_y(text_area, font_size);
+                ctx.push_clip(text_area);
+                ctx.draw_text(
+                    display,
+                    Point::new(text_area.x, input_y),
+                    display_color,
+                    font_size,
+                );
+                ctx.pop_clip();
+            }
+            crate::ui::widgets::icon::paint_icon_in_frame(
+                ctx,
+                if self.is_present() {
+                    "chevron-up"
+                } else {
+                    "chevron-down"
+                },
+                arrow_rect,
+                text_secondary,
+                12.0 * scale,
+            );
+        }
+        ctx.pop_clip();
 
         if !self.is_present() {
             return;
@@ -199,37 +283,62 @@ component! {
         let text = fade_color(text, opacity);
         let fill = fade_color(fill, opacity);
         let primary_bg = fade_color(ctx.tokens().color_primary_bg(), opacity);
+        let text_tertiary = fade_color(text_tertiary, opacity);
         let flat = self.flatten_nodes();
-        let row_count = flat.len();
-        if row_count == 0 {
+        let display_row_count = flat.len().max(1);
+        let list_rect = tree_select_popup_rect(frame, flat.len());
+        let panel_radius = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
+        ctx.push_clip(list_rect);
+        ctx.fill_rect(list_rect, bg, panel_radius);
+        ctx.stroke_rect(list_rect, border, 1.0, panel_radius);
+
+        if flat.is_empty() {
+            let text_area = Rect::new(
+                list_rect.x + 10.0,
+                list_rect.y,
+                (list_rect.w - 20.0).max(0.0),
+                list_rect.h,
+            );
+            let row_y = ctx.visual_center_y(text_area, 13.0);
+            ctx.push_clip(text_area);
+            ctx.draw_text(
+                crate::ui::locale::use_locale().no_data,
+                Point::new(text_area.x, row_y),
+                text_tertiary,
+                13.0,
+            );
+            ctx.pop_clip();
+            ctx.pop_clip();
             return;
         }
 
-        let list_h = self.dropdown_viewport_height(row_count);
-        let list_y = frame.y + DROPDOWN_TRIGGER_HEIGHT;
-        let list_rect = Rect::new(frame.x, list_y, frame.w, list_h);
-        ctx.fill_rect(list_rect, bg, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
-        ctx.stroke_rect(list_rect, border, 1.0, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
-
         let scroll_offset = self.dropdown_scroll.scroll_offset();
         let (start, end) = self.dropdown_scroll.scroll_range(
-            row_count,
+            display_row_count,
             DROPDOWN_ROW_HEIGHT,
-            list_h,
+            list_rect.h,
         );
-        ctx.canvas_2d().push_clip(list_rect);
 
         for (i, (key, title, depth, disabled)) in flat.iter().enumerate().take(end).skip(start) {
-            let item_y = list_y + i as f32 * DROPDOWN_ROW_HEIGHT - scroll_offset;
-            if item_y + DROPDOWN_ROW_HEIGHT < list_y || item_y > list_y + list_h {
+            let item_y = list_rect.y + i as f32 * DROPDOWN_ROW_HEIGHT - scroll_offset;
+            if item_y + DROPDOWN_ROW_HEIGHT <= list_rect.y
+                || item_y >= list_rect.y + list_rect.h
+            {
                 continue;
             }
-            let item_rect = Rect::new(frame.x, item_y, frame.w, DROPDOWN_ROW_HEIGHT);
-            let indent = *depth as f32 * 20.0 + 8.0;
+            let item_rect = Rect::new(
+                list_rect.x,
+                item_y,
+                list_rect.w,
+                DROPDOWN_ROW_HEIGHT,
+            );
+            let indent = (*depth as f32 * 20.0 + 8.0)
+                .min((item_rect.w - 34.0).max(8.0));
             let is_hovered = !disabled && self.hovered_option.as_ref() == Some(key);
+            let is_highlighted = !disabled && self.highlighted_option.as_ref() == Some(key);
             let is_selected = *key == self.value_key;
 
-            if is_hovered || is_selected {
+            if is_hovered || is_highlighted {
                 ctx.fill_rect(item_rect, fill, None);
             }
             if is_selected {
@@ -238,24 +347,53 @@ component! {
 
             let row_y = ctx.visual_center_y(item_rect, 13.0);
             let tc = if *disabled {
-                text_sec
+                text_tertiary
             } else if is_selected {
                 primary
             } else {
                 text
             };
-            ctx.draw_text(title, Point::new(frame.x + indent, row_y), tc, 13.0);
+            let text_area = Rect::new(
+                item_rect.x + indent,
+                item_rect.y,
+                (item_rect.w - indent - 10.0).max(0.0),
+                item_rect.h,
+            );
+            if text_area.w > 0.0 {
+                ctx.push_clip(text_area);
+                ctx.draw_text(title, Point::new(text_area.x, row_y), tc, 13.0);
+                ctx.pop_clip();
+            }
         }
 
-        ctx.canvas_2d().pop_clip();
+        ctx.pop_clip();
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
         tree_select_dirty_rect(frame, self.flatten_nodes().len())
     }
 
+    overlay_entry => (&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+        self.is_present().then(|| {
+            crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
+                .bounds(tree_select_dirty_rect(frame, self.flatten_nodes().len()))
+                .z_index(900)
+        })
+    }
+
     update_animation => (&mut self, dt: f64) -> bool {
-        if !self.is_present() || self.transition.finished {
+        if !self.is_present() {
+            self.transition_dirty = false;
+            return false;
+        }
+
+        if self.transition.finished {
+            if self.closing {
+                self.closing = false;
+                self.hovered_option = None;
+                self.highlighted_option = None;
+                self.dropdown_scroll.set_scroll_offset(0.0);
+            }
             self.transition_dirty = false;
             return false;
         }
@@ -264,8 +402,10 @@ component! {
         self.transition_dirty = true;
 
         if self.closing && self.transition.finished {
-            self.open = false;
             self.closing = false;
+            self.hovered_option = None;
+            self.highlighted_option = None;
+            self.dropdown_scroll.set_scroll_offset(0.0);
         }
 
         self.is_present() && !self.transition.finished
@@ -286,14 +426,15 @@ impl TreeSelect {
     }
 
     pub(crate) fn dropdown_viewport_height(&self, row_count: usize) -> f32 {
-        (row_count as f32 * DROPDOWN_ROW_HEIGHT).min(MAX_DROPDOWN_VIEWPORT_HEIGHT)
+        (row_count.max(1) as f32 * DROPDOWN_ROW_HEIGHT).min(MAX_DROPDOWN_VIEWPORT_HEIGHT)
     }
 
     pub(crate) fn dropdown_row_at_y(&self, pos_y: f32) -> Option<usize> {
-        if pos_y <= DROPDOWN_TRIGGER_HEIGHT {
+        let popup = self.dropdown_local_rect();
+        if pos_y < popup.y || pos_y >= popup.y + popup.h {
             return None;
         }
-        let local_y = pos_y - DROPDOWN_TRIGGER_HEIGHT + self.dropdown_scroll.scroll_offset();
+        let local_y = pos_y - popup.y + self.dropdown_scroll.scroll_offset();
         if local_y < 0.0 {
             return None;
         }
@@ -304,6 +445,23 @@ impl TreeSelect {
         } else {
             None
         }
+    }
+
+    fn interaction_frame(&self) -> Rect {
+        self.last_frame.get().unwrap_or_else(|| {
+            let size = self.intrinsic_size();
+            Rect::new(0.0, 0.0, size.w, size.h)
+        })
+    }
+
+    fn dropdown_local_rect(&self) -> Rect {
+        let frame = self.interaction_frame();
+        Rect::new(
+            0.0,
+            frame.h,
+            frame.w.max(MIN_DROPDOWN_WIDTH),
+            self.dropdown_viewport_height(self.flatten_nodes().len()),
+        )
     }
 
     fn push_scroll_delta(&self, dx: f32, dy: f32) {
@@ -347,9 +505,11 @@ impl TreeSelect {
             transition_dirty: false,
             focused: false,
             hovered_option: None,
+            highlighted_option: None,
             pending_change: RefCell::new(None),
             dropdown_scroll: VirtualListScroll::new(),
             scroll_delta_strip: Cell::new((0.0, 0.0)),
+            last_frame: Cell::new(None),
         }
     }
     pub fn placeholder(mut self, p: &str) -> Self {
@@ -380,11 +540,16 @@ impl TreeSelect {
         self.closing = false;
         self.dropdown_scroll.set_scroll_offset(0.0);
         let flat = self.flatten_nodes();
-        self.hovered_option = flat
+        self.hovered_option = None;
+        let highlighted_index = flat
             .iter()
-            .find(|(key, _, _, disabled)| key == &self.value_key && !disabled)
-            .or_else(|| flat.iter().find(|(_, _, _, disabled)| !disabled))
-            .map(|(key, _, _, _)| key.clone());
+            .position(|(key, _, _, disabled)| key == &self.value_key && !disabled)
+            .or_else(|| flat.iter().position(|(_, _, _, disabled)| !disabled));
+        self.highlighted_option = highlighted_index.map(|index| flat[index].0.clone());
+        if let Some(index) = highlighted_index {
+            self.reveal_index(index, flat.len());
+        }
+        self.scroll_delta_strip.set((0.0, 0.0));
         self.transition = TransitionPlayer::new(presets::tooltip_enter());
         self.transition_dirty = true;
     }
@@ -400,7 +565,6 @@ impl TreeSelect {
         self.open = false;
         self.closing = true;
         self.hovered_option = None;
-        self.dropdown_scroll.set_scroll_offset(0.0);
         self.transition = TransitionPlayer::new(presets::tooltip_exit());
         self.transition_dirty = true;
     }
@@ -420,6 +584,7 @@ impl TreeSelect {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let nodes_changed = self.nodes != next.nodes;
         self.placeholder = next.placeholder;
         self.nodes = next.nodes;
         let row_count = self.flatten_nodes().len();
@@ -428,9 +593,10 @@ impl TreeSelect {
             DROPDOWN_ROW_HEIGHT,
             self.dropdown_viewport_height(row_count),
         );
-        if self.is_present() {
+        if self.is_present() && nodes_changed {
             let flat = self.flatten_nodes();
-            self.hovered_option = flat
+            self.hovered_option = None;
+            self.highlighted_option = flat
                 .iter()
                 .find(|(key, _, _, disabled)| key == &self.value_key && !disabled)
                 .or_else(|| flat.iter().find(|(_, _, _, disabled)| !disabled))
@@ -439,7 +605,7 @@ impl TreeSelect {
     }
 
     fn select_highlighted(&mut self) {
-        let Some(key) = self.hovered_option.as_deref() else {
+        let Some(key) = self.highlighted_option.as_deref() else {
             return;
         };
         let flat = self.flatten_nodes();
@@ -477,7 +643,7 @@ impl TreeSelect {
             return;
         }
         let current = self
-            .hovered_option
+            .highlighted_option
             .as_ref()
             .and_then(|key| enabled.iter().position(|index| flat[*index].0 == *key));
         let position = match (current, forward) {
@@ -487,7 +653,21 @@ impl TreeSelect {
             (None, false) => enabled.len() - 1,
         };
         let index = enabled[position];
-        self.hovered_option = Some(flat[index].0.clone());
+        self.highlighted_option = Some(flat[index].0.clone());
+        self.reveal_index(index, flat.len());
+    }
+
+    fn move_to_edge(&mut self, first: bool) {
+        let flat = self.flatten_nodes();
+        let index = if first {
+            flat.iter().position(|(_, _, _, disabled)| !disabled)
+        } else {
+            flat.iter().rposition(|(_, _, _, disabled)| !disabled)
+        };
+        let Some(index) = index else {
+            return;
+        };
+        self.highlighted_option = Some(flat[index].0.clone());
         self.reveal_index(index, flat.len());
     }
 
@@ -514,9 +694,21 @@ impl TreeSelect {
 }
 
 fn tree_select_dirty_rect(frame: Rect, item_count: usize) -> Rect {
-    let list_h = (item_count as f32 * DROPDOWN_ROW_HEIGHT).min(MAX_DROPDOWN_VIEWPORT_HEIGHT);
-    let list = Rect::new(frame.x, frame.y + DROPDOWN_TRIGGER_HEIGHT, frame.w, list_h);
-    frame.union(&list)
+    frame.union(&tree_select_popup_rect(frame, item_count))
+}
+
+fn tree_select_popup_rect(frame: Rect, item_count: usize) -> Rect {
+    let list_h = (item_count.max(1) as f32 * DROPDOWN_ROW_HEIGHT).min(MAX_DROPDOWN_VIEWPORT_HEIGHT);
+    Rect::new(
+        frame.x,
+        frame.y + frame.h,
+        frame.w.max(MIN_DROPDOWN_WIDTH),
+        list_h,
+    )
+}
+
+fn point_in_half_open_rect(rect: Rect, point: Point) -> bool {
+    point.x >= rect.x && point.x < rect.x + rect.w && point.y >= rect.y && point.y < rect.y + rect.h
 }
 
 fn fade_color(color: Color, opacity: f32) -> Color {

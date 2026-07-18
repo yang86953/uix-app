@@ -6,8 +6,11 @@ use crate::ui::widgets::Avatar;
 use crate::ui::AccessibilityRole;
 
 fn avatar_test_image() -> (std::path::PathBuf, String) {
-    let image = image::RgbaImage::from_fn(6, 4, |x, _| {
-        if x < 3 {
+    static NEXT_FIXTURE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let image = image::RgbaImage::from_fn(8, 4, |x, _| {
+        if x < 2 || x >= 6 {
+            image::Rgba([255, 255, 0, 255])
+        } else if x < 4 {
             image::Rgba([255, 0, 0, 255])
         } else {
             image::Rgba([0, 0, 255, 255])
@@ -21,34 +24,76 @@ fn avatar_test_image() -> (std::path::PathBuf, String) {
         .duration_since(std::time::UNIX_EPOCH)
         .expect("system clock after epoch")
         .as_nanos();
-    let path = std::env::temp_dir().join(format!("uix-avatar-{}-{nonce}.png", std::process::id()));
+    let sequence = NEXT_FIXTURE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!(
+        "uix-avatar-{}-{nonce}-{sequence}.png",
+        std::process::id()
+    ));
     std::fs::write(&path, bytes.into_inner()).expect("write avatar fixture");
     let source = path.to_string_lossy().into_owned();
     (path, source)
 }
 
-fn render_avatar(avatar: &Avatar, images: &ImageService) -> Vec<u32> {
-    let mut canvas = SharedRasterizer::new(PixelSurface::new(32, 32));
+fn render_avatar_in(
+    avatar: &Avatar,
+    images: &ImageService,
+    frame: Rect,
+    surface_size: (i32, i32),
+) -> (Vec<u32>, String) {
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(surface_size.0, surface_size.1));
     let mut fonts = FontService::new();
     let font = fonts
         .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
         .expect("load deterministic test font");
     let tokens = DesignTokens::antd_light();
     let tree = WidgetTree::new();
-    let mut ctx = PaintContext::new_for_test(
-        &mut canvas,
-        font,
-        &fonts,
+    let mut display_list = crate::draw::painting::DisplayList::new();
+    {
+        let mut ctx = PaintContext::new_for_test(
+            &mut canvas,
+            font,
+            &fonts,
+            images,
+            &tokens,
+            96.0,
+            1.0,
+            Orientation::YDown,
+            surface_size.0,
+            surface_size.1,
+        );
+        ctx.with_recorder(&mut display_list, |ctx| {
+            WidgetRender::render(avatar, frame, ctx, &tree);
+        });
+    }
+    (
+        canvas.surface().pixels().to_vec(),
+        format!("{display_list:?}"),
+    )
+}
+
+fn render_avatar(avatar: &Avatar, images: &ImageService) -> Vec<u32> {
+    render_avatar_in(
+        avatar,
         images,
-        &tokens,
-        96.0,
-        1.0,
-        Orientation::YDown,
-        32,
-        32,
-    );
-    WidgetRender::render(avatar, Rect::new(0.0, 0.0, 32.0, 32.0), &mut ctx, &tree);
-    canvas.surface().pixels().to_vec()
+        Rect::new(0.0, 0.0, 32.0, 32.0),
+        (32, 32),
+    )
+    .0
+}
+
+fn recorded_text_font_size(display_list: &str) -> f32 {
+    let marker = "font_size: ";
+    let start = display_list
+        .rfind(marker)
+        .expect("avatar fallback should record text")
+        + marker.len();
+    let end = display_list[start..]
+        .find([' ', '}', ']'])
+        .map_or(display_list.len(), |offset| start + offset);
+    display_list[start..end]
+        .trim_end_matches(',')
+        .parse()
+        .expect("recorded Avatar font size")
 }
 
 #[test]
@@ -79,4 +124,60 @@ fn avatar_normalizes_size_and_exposes_image_semantics() {
     let accessibility = avatar.snapshot_fields().accessibility();
     assert_eq!(accessibility.role, AccessibilityRole::Image);
     assert_eq!(accessibility.name.as_deref(), Some("Ada"));
+}
+
+#[test]
+fn constrained_avatar_uses_a_centered_square_and_actual_frame_font_size() {
+    let images = ImageService::new();
+    let avatar = Avatar::new("X").size(64.0);
+    let (_, display_list) = render_avatar_in(
+        &avatar,
+        &images,
+        Rect::new(10.0, 5.0, 40.0, 20.0),
+        (80, 40),
+    );
+
+    assert!(
+        display_list
+            .contains("PushClip { rect: Rect { x: 10.0, y: 5.0, w: 40.0, h: 20.0 } }"),
+        "Avatar must clip all paint to the assigned frame: {display_list}"
+    );
+    assert!(
+        display_list.contains(
+            "TextCenter { text: \"X\", rect: Rect { x: 20.0, y: 5.0, w: 20.0, h: 20.0 }"
+        ),
+        "Avatar fallback must use the centered square control: {display_list}"
+    );
+    assert_eq!(recorded_text_font_size(&display_list), 9.0);
+}
+
+#[test]
+fn avatar_scales_long_fallback_text_to_the_available_inner_width() {
+    let images = ImageService::new();
+    let avatar = Avatar::new("ABCDEFGHIJ");
+    let (_, display_list) = render_avatar_in(
+        &avatar,
+        &images,
+        Rect::new(0.0, 0.0, 32.0, 32.0),
+        (64, 40),
+    );
+
+    let font_size = recorded_text_font_size(&display_list);
+    assert!(
+        font_size < 8.0,
+        "long initials must be measured and reduced, got {font_size}: {display_list}"
+    );
+}
+
+#[test]
+fn square_avatar_center_crops_wide_sources_instead_of_stretching_them() {
+    let (path, source) = avatar_test_image();
+    let images = ImageService::new();
+    let avatar = Avatar::new("AB").square(true).src(&source);
+
+    let pixels = render_avatar(&avatar, &images);
+    assert_eq!(pixels[16 * 32 + 1], Color::red().premultiplied());
+    assert_eq!(pixels[16 * 32 + 30], Color::blue().premultiplied());
+
+    std::fs::remove_file(path).expect("remove avatar fixture");
 }

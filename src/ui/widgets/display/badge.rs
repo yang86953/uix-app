@@ -19,6 +19,14 @@ pub enum BadgeStatus {
     Warning,
 }
 
+fn finite_badge_offset(value: f32) -> f32 {
+    if value.is_finite() {
+        value
+    } else {
+        0.0
+    }
+}
+
 component! {
     pub struct Badge {
         count: i32,
@@ -53,6 +61,7 @@ component! {
         } else {
             (self.offset_x, self.offset_y)
         };
+        let (off_x, off_y) = (finite_badge_offset(off_x), finite_badge_offset(off_y));
         let actual_frame = Rect::new(frame.x + off_x, frame.y + off_y, frame.w, frame.h);
 
         if let Some(status) = self.status {
@@ -73,11 +82,10 @@ component! {
             return;
         }
         if self.count == 0 && !self.show_zero && self.text.is_empty() { return; }
-        let display = self.count.min(self.max);
         if !self.text.is_empty() {
             let r = Some(Radius::uniform(actual_frame.h * 0.5));
             ctx.fill_rect(actual_frame, bg, r);
-            let fs = 11.0;
+            let fs = Self::PILL_FONT_SIZE;
             let tw = ctx.measure_text(&self.text, fs).w;
             let th = ctx.line_box_height(fs);
             ctx.draw_text(
@@ -92,10 +100,8 @@ component! {
         } else {
             let r = Some(Radius::uniform(actual_frame.h * 0.5));
             ctx.fill_rect(actual_frame, bg, r);
-            let text = format!("{}", display);
-            let over = if self.count > self.max { "+" } else { "" };
-            let label = format!("{}{}", text, over);
-            let fs = 11.0;
+            let label = self.count_label();
+            let fs = Self::PILL_FONT_SIZE;
             let tw = ctx.measure_text(&label, fs).w;
             let th = ctx.line_box_height(fs);
             ctx.draw_text(
@@ -121,6 +127,8 @@ impl Badge {
     const MARKER_DIAMETER: f32 = 10.0;
     const MARKER_TEXT_GAP: f32 = 8.0;
     const PILL_HEIGHT: f32 = 20.0;
+    const PILL_FONT_SIZE: f32 = 11.0;
+    const MARKER_LABEL_FONT_SIZE: f32 = 13.0;
     const TEXT_HORIZONTAL_PADDING: f32 = 12.0;
 
     fn intrinsic_size(&self) -> Size {
@@ -131,17 +139,17 @@ impl Badge {
                 Size::new(
                     Self::MARKER_DIAMETER
                         + Self::MARKER_TEXT_GAP
-                        + Self::estimated_text_width(&self.text),
+                        + Self::estimated_text_width(&self.text, Self::MARKER_LABEL_FONT_SIZE),
                     Self::PILL_HEIGHT,
                 )
             }
-        } else if self.count > 0 || (self.count == 0 && self.show_zero) {
-            let text = format!("{}", self.count.min(self.max));
-            let overflow = usize::from(self.count > self.max);
-            let w = (text.chars().count() + overflow) as f32 * 7.0 + Self::TEXT_HORIZONTAL_PADDING;
-            Size::new(w.max(Self::PILL_HEIGHT), Self::PILL_HEIGHT)
         } else if !self.text.is_empty() {
-            let w = Self::estimated_text_width(&self.text) + Self::TEXT_HORIZONTAL_PADDING;
+            let w = Self::estimated_text_width(&self.text, Self::PILL_FONT_SIZE)
+                + Self::TEXT_HORIZONTAL_PADDING;
+            Size::new(w.max(Self::PILL_HEIGHT), Self::PILL_HEIGHT)
+        } else if self.count > 0 || (self.count == 0 && self.show_zero) {
+            let w = Self::estimated_text_width(&self.count_label(), Self::PILL_FONT_SIZE)
+                + Self::TEXT_HORIZONTAL_PADDING;
             Size::new(w.max(Self::PILL_HEIGHT), Self::PILL_HEIGHT)
         } else {
             Size::zero()
@@ -194,8 +202,8 @@ impl Badge {
 
     /// 像素偏移。
     pub fn offset(mut self, x: f32, y: f32) -> Self {
-        self.offset_x = x;
-        self.offset_y = y;
+        self.offset_x = finite_badge_offset(x);
+        self.offset_y = finite_badge_offset(y);
         self
     }
 
@@ -214,8 +222,8 @@ impl Badge {
         self.status = next.status;
         self.show_zero = next.show_zero;
         self.text = next.text;
-        self.offset_x = next.offset_x;
-        self.offset_y = next.offset_y;
+        self.offset_x = finite_badge_offset(next.offset_x);
+        self.offset_y = finite_badge_offset(next.offset_y);
         self.offset_unit = next.offset_unit;
     }
 
@@ -240,7 +248,7 @@ impl Badge {
         let center_y = frame.y + frame.h * 0.5;
         ctx.fill_circle(frame.x + radius, center_y, radius, marker_color);
         if !self.text.is_empty() {
-            let font_size = 13.0;
+            let font_size = Self::MARKER_LABEL_FONT_SIZE;
             let text_y = ctx.visual_center_y(frame, font_size);
             ctx.draw_text(
                 &self.text,
@@ -254,9 +262,16 @@ impl Badge {
         }
     }
 
-    fn estimated_text_width(text: &str) -> f32 {
-        text.chars()
-            .map(|ch| if ch.is_ascii() { 7.0 } else { 14.0 })
-            .sum()
+    fn count_label(&self) -> String {
+        format!(
+            "{}{}",
+            self.count.min(self.max),
+            if self.count > self.max { "+" } else { "" }
+        )
+    }
+
+    fn estimated_text_width(text: &str, font_size: f32) -> f32 {
+        crate::draw::font::text_backend::estimate_text_metrics(text, f32::INFINITY, font_size)
+            .max_line_width
     }
 }

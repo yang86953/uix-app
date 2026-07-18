@@ -1,11 +1,99 @@
+use crate::draw::compositor::ScenePaint;
+use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
 use crate::ui::state::State;
 use crate::ui::view::{ViewAdapter, ViewNode};
 use crate::ui::widgets::input::select::*;
 
+fn render_select(
+    select: &Select,
+    frame: Rect,
+    surface_size: (i32, i32),
+    measure_text: &str,
+) -> (Vec<u32>, f32) {
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(surface_size.0, surface_size.1));
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+
+    let measured;
+    {
+        let mut ctx = PaintContext::new_for_test(
+            &mut canvas,
+            font,
+            &fonts,
+            &images,
+            &tokens,
+            96.0,
+            1.0,
+            Orientation::YDown,
+            surface_size.0,
+            surface_size.1,
+        );
+        measured = ctx.measure_text(measure_text, 13.0).w;
+        WidgetRender::render(select, frame, &mut ctx, &tree);
+    }
+    (canvas.surface().pixels().to_vec(), measured)
+}
+
+fn pixel_region(pixels: &[u32], surface_width: usize, rect: Rect) -> Vec<u32> {
+    let x0 = rect.x.max(0.0) as usize;
+    let y0 = rect.y.max(0.0) as usize;
+    let x1 = (rect.x + rect.w).max(0.0) as usize;
+    let y1 = (rect.y + rect.h).max(0.0) as usize;
+    let mut region = Vec::new();
+    for y in y0..y1 {
+        let row = y * surface_width;
+        region.extend_from_slice(&pixels[row + x0..row + x1]);
+    }
+    region
+}
+
 fn large_select() -> Select {
     let opts: Vec<String> = (0..100).map(|i| format!("Option {i}")).collect();
     Select::new().options(opts)
+}
+
+#[test]
+fn open_select_is_promoted_to_the_overlay_layer() {
+    let select = Select::new().options(["Alpha", "Beta", "Gamma"]);
+    let _ = render_select(&select, Rect::new(20.0, 40.0, 160.0, 32.0), (240, 200), "");
+    let mut tree = WidgetTree::new();
+    let id = tree.set_root(Box::new(select));
+    tree.get_mut(id)
+        .expect("select root")
+        .set_frame(Rect::new(20.0, 40.0, 160.0, 32.0));
+
+    assert!(!ScenePaint::node_is_overlay(&tree, id));
+    tree.get_mut(id)
+        .expect("select root")
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<Select>()
+        .expect("select component")
+        .open();
+
+    assert!(
+        ScenePaint::node_is_overlay(&tree, id),
+        "an open Select must paint after ordinary sibling content"
+    );
+    let overlay = tree
+        .get(id)
+        .expect("select root")
+        .overlay_entry(id, Rect::new(20.0, 40.0, 160.0, 32.0))
+        .expect("select popup overlay");
+    assert_eq!(overlay.kind(), crate::ui::OverlayKind::Popover);
+    assert_eq!(overlay.z_index_value(), 900);
+    assert_eq!(
+        overlay.bounds_rect(),
+        Some(Rect::new(20.0, 72.0, 160.0, 84.0))
+    );
 }
 
 #[test]
@@ -302,4 +390,240 @@ fn plain_select_does_not_request_platform_text_input() {
         .as_text_input()
         .expect("searchable Select text capability")
         .accepts_text_input());
+}
+
+#[test]
+fn searchable_arrow_navigation_does_not_commit_until_enter() {
+    let selected = State::new(String::new());
+    let mut select = Select::searchable()
+        .options(["Alpha", "Alpine", "Beta"])
+        .value(&selected);
+    select.open();
+    let _ = select.on_event(&SystemEvent::TextInput {
+        text: "al".to_owned(),
+    });
+
+    let _ = select.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Down,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(selected.get(), "", "navigation must not publish a value");
+
+    let _ = select.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Enter,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(selected.get(), "Alpine");
+}
+
+#[test]
+fn empty_select_opening_reserves_a_localized_no_data_row() {
+    let mut select = Select::new().placeholder("请选择");
+    select.open();
+
+    assert_eq!(select.dropdown_row_count(), 1);
+    assert!(
+        EventHandler::hit_test_frame(&select, Rect::new(0.0, 0.0, 120.0, 32.0))
+            .contains(Point::new(10.0, 46.0))
+    );
+}
+
+#[test]
+fn dropdown_row_hit_rejects_points_below_the_visible_viewport() {
+    let mut select = large_select();
+    select.open();
+
+    assert_eq!(select.dropdown_row_at_y(32.0 + 280.0 + 1.0), None);
+}
+
+#[test]
+fn constrained_large_select_uses_the_rendered_control_height_for_pointer_hits() {
+    let mut select = Select::new()
+        .options(["Alpha", "Beta"])
+        .default_selected(1)
+        .size(ControlSize::Large);
+    select.open();
+    let _ = render_select(&select, Rect::new(0.0, 0.0, 120.0, 20.0), (180, 120), "");
+
+    assert_eq!(
+        select.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(10.0, 25.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(select.current_value().as_deref(), Some("Alpha"));
+}
+
+#[test]
+fn popup_flips_above_near_the_surface_bottom_and_remains_interactive() {
+    let mut select = Select::new()
+        .options(["Alpha", "Beta", "Gamma"])
+        .default_selected(2);
+    select.open();
+    let frame = Rect::new(20.0, 280.0, 120.0, 32.0);
+    let _ = render_select(&select, frame, (180, 320), "");
+
+    let hit = EventHandler::hit_test_frame(&select, frame);
+    assert!(
+        hit.y < frame.y,
+        "upward popup must expand hit testing: {hit:?}"
+    );
+    assert_eq!(
+        select.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(10.0, -70.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(select.current_value().as_deref(), Some("Alpha"));
+}
+
+#[test]
+fn search_cursor_uses_measured_text_and_the_rendered_control_height() {
+    let mut select = Select::searchable()
+        .options(["测试", "其他"])
+        .size(ControlSize::Large);
+    let _ = select.on_event(&SystemEvent::FocusIn);
+    select.open();
+    let _ = select.on_event(&SystemEvent::TextInput {
+        text: "测".to_owned(),
+    });
+    let (_, measured) = render_select(&select, Rect::new(0.0, 0.0, 200.0, 40.0), (240, 160), "测");
+    let cursor = select
+        .as_text_input()
+        .expect("searchable Select text capability")
+        .text_input_cursor_rect();
+
+    assert!((cursor.x - (10.0 + measured)).abs() < 0.6, "{cursor:?}");
+    assert_eq!(cursor.y, 4.0);
+    assert_eq!(cursor.h, 32.0);
+}
+
+#[test]
+fn intrinsic_width_uses_unicode_text_metrics_instead_of_utf8_bytes() {
+    let label = "超长中文选项用于宽度测量";
+    let select = Select::new().options([label]);
+    let measured = WidgetLayout::measure(&select, Constraints::unconstrained());
+    let expected =
+        crate::draw::font::text_backend::estimate_text_metrics(label, f32::INFINITY, 13.0)
+            .max_line_width
+            + 40.0;
+
+    assert!(
+        (measured.w - expected.max(120.0)).abs() < 0.01,
+        "{measured:?}"
+    );
+}
+
+#[test]
+fn trigger_text_is_clipped_before_the_arrow_slot() {
+    let long = Select::new().options(["MMMMMMMMMMMMMMMMMMMMMMMM"]);
+    let empty = Select::new();
+    let frame = Rect::new(0.0, 0.0, 120.0, 32.0);
+    let (long_pixels, _) = render_select(&long, frame, (160, 64), "");
+    let (empty_pixels, _) = render_select(&empty, frame, (160, 64), "");
+    let arrow_slot = Rect::new(94.0, 2.0, 24.0, 28.0);
+
+    assert_eq!(
+        pixel_region(&long_pixels, 160, arrow_slot),
+        pixel_region(&empty_pixels, 160, arrow_slot),
+        "selected text must not paint underneath the arrow"
+    );
+}
+
+#[test]
+fn multiple_tags_never_paint_outside_the_control_frame() {
+    let labels = [
+        "Very long selected option Alpha",
+        "Very long selected option Beta",
+    ];
+    let selected = State::new(HashSet::from(labels.map(str::to_owned)));
+    let select = Select::multiple().options(labels).value(&selected);
+    let (pixels, _) = render_select(&select, Rect::new(0.0, 0.0, 120.0, 32.0), (320, 64), "");
+
+    assert!(
+        pixel_region(&pixels, 320, Rect::new(121.0, 0.0, 190.0, 40.0))
+            .iter()
+            .all(|pixel| *pixel == 0),
+        "tag text must be clipped to the Select control"
+    );
+}
+
+#[test]
+fn reopening_during_close_starts_with_a_fresh_search_query() {
+    let mut select = Select::searchable().options(["Alpha", "Beta"]);
+    select.open();
+    let _ = select.on_event(&SystemEvent::TextInput {
+        text: "alp".to_owned(),
+    });
+    select.close();
+    select.open();
+
+    assert_eq!(select.visible_option_indices(), vec![0, 1]);
+    assert!(matches!(
+        select.snapshot_fields(),
+        SnapshotFields::Select { search_query, .. } if search_query.is_empty()
+    ));
+}
+
+#[test]
+fn multiple_tag_close_slot_removes_the_value_without_opening() {
+    let label = "Very long selected option Alpha";
+    let selected = State::new(HashSet::from([label.to_owned()]));
+    let mut select = Select::multiple().options([label]).value(&selected);
+    let _ = render_select(&select, Rect::new(0.0, 0.0, 120.0, 32.0), (180, 80), "");
+    let close = select
+        .first_multi_remove_rect()
+        .expect("rendered selected tag close slot");
+
+    assert_eq!(
+        select.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(close.x + close.w * 0.5, close.y + close.h * 0.5),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(selected.get().is_empty());
+    assert!(!select.is_open());
+}
+
+#[test]
+fn multiple_keyboard_navigation_toggles_the_highlight_without_closing() {
+    let selected = State::new(HashSet::<String>::new());
+    let mut select = Select::multiple()
+        .options(["Alpha", "Beta"])
+        .value(&selected);
+    select.open();
+    let _ = select.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Down,
+        mods: KeyMod::NONE,
+    });
+    let _ = select.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Space,
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(selected.get(), HashSet::from(["Beta".to_owned()]));
+    assert!(select.is_open());
+}
+
+#[test]
+fn rendered_pointer_hits_reject_the_shadow_margin_outside_the_control_width() {
+    let mut select = Select::new().options(["Alpha", "Beta"]);
+    select.open();
+    let _ = render_select(&select, Rect::new(0.0, 0.0, 120.0, 32.0), (180, 120), "");
+
+    assert_eq!(
+        select.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(-4.0, 16.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::NotHandled
+    );
+    assert!(!select.is_open());
 }

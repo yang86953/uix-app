@@ -88,6 +88,19 @@ impl FontService {
             char_end: usize,
         }
 
+        let flush_line = |lines: &mut Vec<LineAccum>,
+                          line: &mut LineAccum,
+                          width: f32,
+                          y: f32,
+                          height: f32,
+                          char_end: usize| {
+            line.width = width.max(line.width);
+            line.height = height;
+            line.y = y;
+            line.char_end = char_end;
+            lines.push(std::mem::take(line));
+        };
+
         let mut lines: Vec<LineAccum> = Vec::new();
         let mut line = LineAccum::default();
         let mut cx = 0.0f32;
@@ -100,17 +113,14 @@ impl FontService {
             }
 
             if text.as_bytes()[seg.byte_start] == b'\n' {
-                if !line.glyphs.is_empty() || lines.is_empty() {
-                    line.width = cx.max(line.width);
-                    line.height = line_h;
-                    line.y = cy;
-                    line.char_end = char_idx;
-                    lines.push(line);
+                if line.glyphs.is_empty() {
+                    line.char_start = char_idx;
                 }
-                line = LineAccum::default();
+                flush_line(&mut lines, &mut line, cx, cy, line_h, char_idx);
                 cx = 0.0;
                 cy += line_h;
                 char_idx += 1;
+                line.char_start = char_idx;
                 continue;
             }
 
@@ -120,46 +130,74 @@ impl FontService {
             // 用 &str 切片代替 String 分配
             let seg_text = &text[seg.byte_start..seg.byte_end];
             let seg_layout = self.text_backend.layout_text(&seg.font, seg_text, seg_opts);
-            let seg_width = seg_layout.width;
             let seg_char_count = seg_text.chars().count();
-
-            if do_wrap && cx > 0.0 && cx + seg_width > max_w {
-                line.width = cx.max(line.width);
-                line.height = line_h;
-                line.y = cy;
-                line.char_end = char_idx;
-                lines.push(line);
-                line = LineAccum::default();
-                cx = 0.0;
-                cy += line_h;
-            }
-
-            if line.glyphs.is_empty() {
-                line.char_start = char_idx;
-            }
-
             let baseline_offset = primary_ascent - seg_ascent;
+            let mut chunk_source_x = 0.0f32;
+            let mut chunk_target_x = cx;
+            let mut source_chars = seg_text.chars().enumerate().peekable();
 
-            // 后端 layout 的 char_index 是段内相对值，合并时映射到全文下标。
+            // 后端 layout 的 char_index 是段内相对值。这里按字形推进，保证
+            // 同一字体形成的长段也能在 max_width 内折行，而不是只能在字体段之间换行。
             for mut g in seg_layout.glyphs {
-                g.x += cx;
+                while source_chars
+                    .peek()
+                    .is_some_and(|(index, _)| *index < g.char_index)
+                {
+                    source_chars.next();
+                }
+                let source_char = source_chars
+                    .peek()
+                    .filter(|(index, _)| *index == g.char_index)
+                    .map_or('\0', |(_, ch)| *ch);
+                let global_char_index = char_idx + g.char_index;
+                let mut target_x = chunk_target_x + (g.x - chunk_source_x);
+                if do_wrap && !line.glyphs.is_empty() && target_x + g.width > max_w {
+                    if tb::prohibited_at_line_start(source_char) && line.glyphs.len() > 1 {
+                        let mut previous = line.glyphs.pop().expect("checked non-empty line");
+                        let previous_char_index = previous.char_index;
+                        cx = line
+                            .glyphs
+                            .iter()
+                            .fold(0.0f32, |width, glyph| width.max(glyph.x + glyph.width));
+                        flush_line(&mut lines, &mut line, cx, cy, line_h, previous_char_index);
+                        cy += line_h;
+                        previous.x = 0.0;
+                        previous.y += line_h;
+                        cx = previous.width;
+                        line.char_start = previous_char_index;
+                        line.char_end = previous_char_index + 1;
+                        line.glyphs.push(previous);
+                        chunk_source_x = g.x;
+                        chunk_target_x = cx;
+                        target_x = cx;
+                    } else if !tb::prohibited_at_line_start(source_char) {
+                        flush_line(&mut lines, &mut line, cx, cy, line_h, global_char_index);
+                        cx = 0.0;
+                        cy += line_h;
+                        chunk_source_x = g.x;
+                        chunk_target_x = 0.0;
+                        target_x = 0.0;
+                    }
+                }
+
+                if line.glyphs.is_empty() {
+                    line.char_start = global_char_index;
+                }
+                g.x = target_x;
                 g.y += cy + baseline_offset;
-                g.char_index += char_idx;
+                g.char_index = global_char_index;
                 g.font = seg.font;
+                cx = cx.max(g.x + g.width);
+                line.char_end = global_char_index + 1;
                 line.glyphs.push(g);
             }
-
-            cx += seg_width;
             char_idx += seg_char_count;
         }
 
-        if !line.glyphs.is_empty() || lines.is_empty() {
-            line.width = cx.max(line.width);
-            line.height = line_h;
-            line.y = cy;
-            line.char_end = char_idx;
-            lines.push(line);
+        if line.glyphs.is_empty() {
+            line.char_start = char_idx;
         }
+        flush_line(&mut lines, &mut line, cx, cy, line_h, char_idx);
 
         // 水平对齐：以 max_width（如果有限）或最大行宽度为容器
         let container_w = if max_w.is_finite() && max_w > 0.0 {

@@ -2,6 +2,7 @@
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
+use crate::draw::font::text_backend::estimate_text_metrics;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::native::traits::input::ControlSize;
@@ -77,7 +78,7 @@ component! {
 
         let box_size = self.box_size();
         let scale = self.visual_scale();
-        let gap = 6.0 * scale;
+        let gap = self.label_gap();
         let font_size = self.font_size();
         let box_x = frame.x;
         let box_y = frame.y + (frame.h - box_size) * 0.5;
@@ -172,11 +173,20 @@ impl Checkbox {
     }
 
     fn intrinsic_size(&self) -> Size {
-        let text_w = self.label.len() as f32 * self.font_size() * 0.62;
+        let text_w =
+            estimate_text_metrics(&self.label, f32::INFINITY, self.font_size()).max_line_width;
         Size::new(
-            self.box_size() + 6.0 * self.visual_scale() + text_w,
+            self.box_size() + self.label_gap() + text_w,
             crate::ui::config::control_height(self.checkbox_size),
         )
+    }
+
+    fn label_gap(&self) -> f32 {
+        if self.label.is_empty() {
+            0.0
+        } else {
+            6.0 * self.visual_scale()
+        }
     }
 
     fn visual_scale(&self) -> f32 {

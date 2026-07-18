@@ -67,6 +67,20 @@ impl FrameRecordingEngine {
         self.canvas.finish_recording()
     }
 
+    /// Restores one immutable retained main-surface snapshot at the start of
+    /// an otherwise full frame. The image is recorded in painter order so
+    /// subsequent root-level overlays compose over the clean backdrop.
+    pub(crate) fn record_main_image(&mut self, image: FrameImage) -> Result<(), Error> {
+        if self.active_offscreen.is_some() {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "main-surface image cannot be recorded while a Picture target is active",
+            ));
+        }
+        let rect = Rect::new(0.0, 0.0, image.width() as f32, image.height() as f32);
+        self.canvas.record_picture_blit(image, rect, rect)
+    }
+
     fn record_main_picture_blit(
         &mut self,
         handle: &ImageHandle,
@@ -265,7 +279,14 @@ impl FrameRecordingCanvas {
     }
 
     fn begin_recording(&mut self, clear_target: bool) -> Result<(), Error> {
-        self.scratch = SharedRasterizer::new(PixelSurface::try_new(self.width, self.height)?);
+        // A successful flush clears every touched scratch pixel. Reuse that
+        // allocation instead of reallocating and zeroing the full window each
+        // frame. An abandoned recording may have unflushed pixels, so only
+        // that recovery boundary pays for a conservative full clear.
+        if self.encoder.is_some() || self.scratch_dirty || self.deferred_error.is_some() {
+            self.scratch.surface_mut().clear_all();
+        }
+        self.scratch.reset_state();
         self.blend_mode = BlendMode::default();
         self.blend_stack.clear();
         self.scratch_dirty = false;
@@ -402,9 +423,8 @@ impl FrameRecordingCanvas {
         }
     }
 
-    fn can_emit_native_rect(&self, rect: Rect, color: Color, radius: Option<Radius>) -> bool {
+    fn can_emit_native_rect(&self, rect: Rect, radius: Option<Radius>) -> bool {
         radius.is_none()
-            && color.a == u8::MAX
             && self.blend_mode != BlendMode::Additive
             && self.scratch.offset() == (0.0, 0.0)
             && self.scratch.current_transform().is_identity()
@@ -547,7 +567,7 @@ impl Canvas2D for FrameRecordingCanvas {
             }
             return;
         }
-        if self.can_emit_native_rect(rect, color, radius) {
+        if self.can_emit_native_rect(rect, radius) {
             if let Err(error) = self.flush_scratch().and_then(|()| {
                 self.encoder_mut()?.native(FrameRasterOp::FillRect {
                     rect: FrameRect::new(

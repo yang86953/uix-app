@@ -32,30 +32,48 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
+        let frame = Rect::new(frame.x, frame.y, frame.w.max(0.0), frame.h.max(0.0));
+        let side = frame.w.min(frame.h);
+        if side <= 0.0 {
+            return;
+        }
+        let control = Rect::new(
+            frame.x + (frame.w - side) * 0.5,
+            frame.y + (frame.h - side) * 0.5,
+            side,
+            side,
+        );
         let primary_bg = ctx.tokens().color_primary_bg();
         let primary = ctx.tokens().color_primary();
         let bg = self.bg_color.unwrap_or(primary_bg);
         let tc = self.text_color.unwrap_or(primary);
-        let r = if self.square { Some(crate::draw::Radius::uniform(ctx.tokens().border_radius_sm())) } else { None };
-
-        if self.square {
-            ctx.fill_rect(frame, bg, r);
+        let r = if self.square {
+            Some(crate::draw::Radius::uniform(
+                ctx.tokens().border_radius_sm().min(side * 0.5),
+            ))
         } else {
-            let cx = frame.x + frame.w * 0.5;
-            let cy = frame.y + frame.h * 0.5;
-            let cr = frame.w.min(frame.h) * 0.5;
+            None
+        };
+
+        ctx.push_clip(frame);
+        if self.square {
+            ctx.fill_rect(control, bg, r);
+        } else {
+            let cx = control.x + side * 0.5;
+            let cy = control.y + side * 0.5;
+            let cr = side * 0.5;
             ctx.fill_circle(cx, cy, cr, bg);
         }
 
-        let handle = self.resolve_handle(ctx, tree, frame);
+        let handle = self.resolve_handle(ctx, tree, control);
         let drew_image = if let Some(handle) = handle {
             let drawable = if self.square {
-                Some(handle)
+                ctx.image_service().square_crop(handle)
             } else {
                 ctx.image_service().circular_crop(handle)
             };
             if let Some(drawable) = drawable {
-                ctx.draw_image_fill(drawable, frame);
+                ctx.draw_image_fill(drawable, control);
                 true
             } else {
                 false
@@ -65,9 +83,27 @@ component! {
         };
 
         if !drew_image && !self.text.is_empty() {
-            let font_size = self.size * 0.45;
-            ctx.text_center(&self.text, frame, tc, font_size);
+            let base_font_size = side * 0.45;
+            let measured = ctx.measure_text(&self.text, base_font_size);
+            let inner_side = side * if self.square { 0.78 } else { 0.68 };
+            let width_scale = if measured.w > 0.0 {
+                inner_side / measured.w
+            } else {
+                1.0
+            };
+            let height_scale = if measured.h > 0.0 {
+                inner_side / measured.h
+            } else {
+                1.0
+            };
+            let font_size = base_font_size * width_scale.min(height_scale).clamp(0.0, 1.0);
+            if font_size > 0.0 {
+                ctx.push_clip(control);
+                ctx.text_center(&self.text, control, tc, font_size);
+                ctx.pop_clip();
+            }
         }
+        ctx.pop_clip();
     }
 }
 
