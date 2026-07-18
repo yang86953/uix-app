@@ -665,7 +665,14 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
         "image",
         "Image",
         "数据展示",
-        &["loaded", "placeholder", "alt"],
+        &[
+            "loaded",
+            "load-fallback",
+            "alt",
+            "preview",
+            "static",
+            "constrained",
+        ],
     ),
     widget(
         "list",

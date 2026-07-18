@@ -85,6 +85,7 @@ pub struct ImageService {
     square_cache: RefCell<HashMap<BitmapHandle, BitmapHandle>>,
     circular_cache: RefCell<HashMap<(BitmapHandle, u32), BitmapHandle>>,
     rounded_square_cache: RefCell<HashMap<(BitmapHandle, u32, u32), BitmapHandle>>,
+    rounded_rect_cache: RefCell<HashMap<(BitmapHandle, u32, u32, u32, bool), BitmapHandle>>,
 }
 
 impl Default for ImageService {
@@ -102,6 +103,7 @@ impl ImageService {
             square_cache: RefCell::new(HashMap::new()),
             circular_cache: RefCell::new(HashMap::new()),
             rounded_square_cache: RefCell::new(HashMap::new()),
+            rounded_rect_cache: RefCell::new(HashMap::new()),
         }
     }
 
@@ -246,26 +248,59 @@ impl ImageService {
         let (side, mut pixels) = self.resized_center_square_pixels(handle, target_side)?;
         let radius = radius_key as f32 / 64.0;
         if radius > 0.0 {
-            let half = side as f32 * 0.5;
-            for y in 0..side as usize {
-                for x in 0..side as usize {
-                    let px = (x as f32 + 0.5 - half).abs();
-                    let py = (y as f32 + 0.5 - half).abs();
-                    let qx = px - (half - radius);
-                    let qy = py - (half - radius);
-                    let outside = qx.max(0.0).hypot(qy.max(0.0));
-                    let inside = qx.max(qy).min(0.0);
-                    let distance = outside + inside - radius;
-                    let coverage = (0.5 - distance).clamp(0.0, 1.0);
-                    let pixel = &mut pixels[y * side as usize + x];
-                    *pixel = apply_pixel_coverage(*pixel, coverage);
-                }
-            }
+            apply_rounded_rect_mask(&mut pixels, side as usize, side as usize, radius);
         }
 
         let cropped = self.insert_slot(ImageSlot::from_decoded(side, side, pixels, None));
         self.rounded_square_cache.borrow_mut().insert(key, cropped);
         Some(cropped)
+    }
+
+    /// 按目标物理像素生成带圆角遮罩的矩形派生图，并保留 fit / stretch 契约。
+    pub(crate) fn rounded_rect_sized(
+        &self,
+        handle: BitmapHandle,
+        target_width: u32,
+        target_height: u32,
+        corner_radius: f32,
+        fit: bool,
+    ) -> Option<BitmapHandle> {
+        let target_width = target_width.clamp(1, 4096);
+        let target_height = target_height.clamp(1, 4096);
+        let corner_radius = if corner_radius.is_finite() {
+            corner_radius.clamp(0.0, target_width.min(target_height) as f32 * 0.5)
+        } else {
+            0.0
+        };
+        let radius_key = (corner_radius * 64.0).round() as u32;
+        let key = (handle, target_width, target_height, radius_key, fit);
+        let cached = self.rounded_rect_cache.borrow().get(&key).copied();
+        if let Some(cached) = cached {
+            if self.is_valid(cached) {
+                return Some(cached);
+            }
+            self.rounded_rect_cache.borrow_mut().remove(&key);
+        }
+
+        let mut pixels = self.resized_rect_pixels(handle, target_width, target_height, fit)?;
+        let radius = radius_key as f32 / 64.0;
+        if radius > 0.0 {
+            apply_rounded_rect_mask(
+                &mut pixels,
+                target_width as usize,
+                target_height as usize,
+                radius,
+            );
+        }
+
+        let derived = self.insert_slot(ImageSlot::from_decoded(
+            target_width as i32,
+            target_height as i32,
+            pixels,
+            None,
+        ));
+        self.rounded_rect_cache.borrow_mut().insert(key, derived);
+        Some(derived)
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
@@ -315,6 +350,51 @@ impl ImageService {
         })?
     }
 
+    fn resized_rect_pixels(
+        &self,
+        handle: BitmapHandle,
+        target_width: u32,
+        target_height: u32,
+        fit: bool,
+    ) -> Option<Vec<u32>> {
+        self.with_slot(handle, |slot| {
+            if slot.width <= 0 || slot.height <= 0 {
+                return None;
+            }
+            let target_width = target_width as usize;
+            let target_height = target_height as usize;
+            let pixel_count = target_width.checked_mul(target_height)?;
+            let mut pixels = Vec::new();
+            pixels.try_reserve_exact(pixel_count).ok()?;
+            pixels.resize(pixel_count, 0);
+            let (draw_width, draw_height) = if fit {
+                let scale = (target_width as f32 / slot.width as f32)
+                    .min(target_height as f32 / slot.height as f32);
+                (
+                    (slot.width as f32 * scale).round().max(1.0) as usize,
+                    (slot.height as f32 * scale).round().max(1.0) as usize,
+                )
+            } else {
+                (target_width, target_height)
+            };
+            let draw_width = draw_width.min(target_width);
+            let draw_height = draw_height.min(target_height);
+            let offset_x = (target_width - draw_width) / 2;
+            let offset_y = (target_height - draw_height) / 2;
+            let source_width = slot.width as usize;
+            let source_height = slot.height as usize;
+            for y in 0..draw_height {
+                let source_y = y * source_height / draw_height;
+                for x in 0..draw_width {
+                    let source_x = x * source_width / draw_width;
+                    pixels[(offset_y + y) * target_width + offset_x + x] =
+                        slot.pixels[source_y * source_width + source_x];
+                }
+            }
+            Some(pixels)
+        })?
+    }
+
     /// 卸载位图并清除路径缓存引用。
     pub fn unload(&self, handle: BitmapHandle) {
         let circular = {
@@ -325,12 +405,21 @@ impl ImageService {
             let mut cache = self.rounded_square_cache.borrow_mut();
             take_derived_handles(&mut cache, handle, |key| key.0)
         };
+        let rounded_rect = {
+            let mut cache = self.rounded_rect_cache.borrow_mut();
+            take_derived_handles(&mut cache, handle, |key| key.0)
+        };
         let square = {
             let mut cache = self.square_cache.borrow_mut();
             take_derived_handles(&mut cache, handle, |key| *key)
         };
         self.invalidate_slot(handle);
-        for derived in circular.into_iter().chain(rounded_square).chain(square) {
+        for derived in circular
+            .into_iter()
+            .chain(rounded_square)
+            .chain(rounded_rect)
+            .chain(square)
+        {
             self.invalidate_slot(derived);
         }
         self.compact();
@@ -416,6 +505,25 @@ fn apply_pixel_coverage(pixel: u32, coverage: f32) -> u32 {
     let g = scale((pixel >> 8) & 0xFF);
     let b = scale(pixel & 0xFF);
     (a << 24) | (r << 16) | (g << 8) | b
+}
+
+fn apply_rounded_rect_mask(pixels: &mut [u32], width: usize, height: usize, radius: f32) {
+    let half_width = width as f32 * 0.5;
+    let half_height = height as f32 * 0.5;
+    for y in 0..height {
+        for x in 0..width {
+            let px = (x as f32 + 0.5 - half_width).abs();
+            let py = (y as f32 + 0.5 - half_height).abs();
+            let qx = px - (half_width - radius);
+            let qy = py - (half_height - radius);
+            let outside = qx.max(0.0).hypot(qy.max(0.0));
+            let inside = qx.max(qy).min(0.0);
+            let distance = outside + inside - radius;
+            let coverage = (0.5 - distance).clamp(0.0, 1.0);
+            let pixel = &mut pixels[y * width + x];
+            *pixel = apply_pixel_coverage(*pixel, coverage);
+        }
+    }
 }
 
 fn take_derived_handles<K: Eq + std::hash::Hash>(

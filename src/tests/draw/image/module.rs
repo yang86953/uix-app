@@ -99,6 +99,38 @@ fn target_sized_avatar_masks_cover_low_resolution_sources_and_cache_by_shape() {
 }
 
 #[test]
+fn target_sized_image_rounds_rectangles_and_tracks_fit_cache_lifetime() {
+    let service = ImageService::new();
+    let original = service
+        .load_from_bytes(RED_PNG)
+        .expect("decode source image");
+
+    let stretched = service
+        .rounded_rect_sized(original, 32, 20, 6.0, false)
+        .expect("target-sized rounded rectangle");
+    assert_eq!(
+        service.rounded_rect_sized(original, 32, 20, 6.0, false),
+        Some(stretched)
+    );
+    let fitted = service
+        .rounded_rect_sized(original, 32, 20, 6.0, true)
+        .expect("fit-specific rounded rectangle");
+    assert_ne!(fitted, stretched);
+
+    service
+        .with_slot(stretched, |slot| {
+            assert_eq!((slot.width(), slot.height()), (32, 20));
+            assert_eq!(slot.pixels()[0], 0);
+            assert_eq!(slot.pixels()[10 * 32 + 16], Color::red().premultiplied());
+        })
+        .expect("rounded rectangle slot");
+
+    service.unload(original);
+    assert!(!service.is_valid(stretched));
+    assert!(!service.is_valid(fitted));
+}
+
+#[test]
 fn circular_crop_centers_masks_caches_and_unloads_with_source() {
     let source = image::RgbaImage::from_fn(6, 4, |x, _| {
         if x < 3 {
