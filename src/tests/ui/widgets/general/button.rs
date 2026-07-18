@@ -1,11 +1,72 @@
 use crate::tests::common::*;
 use crate::ui::widgets::general::button::*;
 
+fn render_button(button: &Button) -> Vec<u32> {
+    let mut canvas = crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer::new(
+        crate::draw::engine::cpu::pixel_surface::PixelSurface::new(180, 48),
+    );
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+    let mut ctx = PaintContext::new_for_test(
+        &mut canvas,
+        font,
+        &fonts,
+        &images,
+        &tokens,
+        96.0,
+        1.0,
+        crate::draw::spatial::Orientation::YDown,
+        180,
+        48,
+    );
+    WidgetRender::render(button, Rect::new(4.0, 8.0, 172.0, 32.0), &mut ctx, &tree);
+    canvas.surface().pixels().to_vec()
+}
+
 #[test]
 fn measure_clamps_button_size() {
     let measured = Button::new("abcdef").measure(Constraints::loose(Size::new(40.0, 24.0)));
 
     assert_eq!(measured, Size::new(40.0, 24.0));
+}
+
+#[test]
+fn measure_reserves_full_width_for_cjk_button_text() {
+    let measured = Button::new("保存所有更改").measure(Constraints::unconstrained());
+
+    assert_eq!(measured.w, 114.0);
+}
+
+#[test]
+fn measure_uses_custom_style_font_size_for_cjk_button_text() {
+    let measured = Button::new("保存所有更改")
+        .style(Style::default().with_font_size(20.0))
+        .measure(Constraints::unconstrained());
+
+    assert_eq!(measured.w, 150.0);
+}
+
+#[test]
+fn invalid_style_font_sizes_fall_back_in_measure_and_render() {
+    let expected_size = Button::new("保存所有更改").measure(Constraints::unconstrained());
+    let expected_pixels = render_button(&Button::new("Status"));
+
+    for invalid in [f32::NAN, f32::INFINITY, 0.0, -4.0] {
+        let invalid_style = Style::default().with_font_size(invalid);
+        let measured = Button::new("保存所有更改")
+            .style(invalid_style.clone())
+            .measure(Constraints::unconstrained());
+        assert_eq!(measured, expected_size);
+        assert_eq!(
+            render_button(&Button::new("Status").style(invalid_style)),
+            expected_pixels
+        );
+    }
 }
 
 #[test]

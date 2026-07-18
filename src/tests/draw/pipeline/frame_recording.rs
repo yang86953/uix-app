@@ -158,7 +158,11 @@ fn recording_canvas_retains_compact_cpu_segment_tiles() {
     let color = Color::from_rgba(20, 40, 60, 128);
     engine
         .canvas_2d()
+        .push_clip(Rect::new(700.0, 502.0, 5.0, 4.0));
+    engine
+        .canvas_2d()
         .fill_rect(Rect::new(701.0, 503.0, 3.0, 2.0), color, None);
+    engine.canvas_2d().pop_clip();
 
     let encoder = engine.finish_recording().expect("finish recorder");
     let cpu_segment = encoder
@@ -263,6 +267,49 @@ fn additive_rounded_fill_rejects_invalid_radius_before_recording() {
         .finish_recording()
         .expect_err("invalid rounded Additive radius must remain typed");
     assert_eq!(error.code(), Errc::InvalidState);
+}
+
+#[test]
+fn full_surface_translucent_rect_records_native_src_over() {
+    let mut engine = FrameRecordingEngine::new();
+    engine.initialize(8, 6).expect("initialize recorder");
+    engine.begin_recording(true).expect("begin recording");
+    engine
+        .canvas_2d()
+        .fill_rect(Rect::new(0.0, 0.0, 8.0, 6.0), Color::white(), None);
+    let mask = Color::from_rgba(0, 0, 0, 128);
+    engine
+        .canvas_2d()
+        .fill_rect(Rect::new(0.0, 0.0, 8.0, 6.0), mask, None);
+
+    let encoder = engine
+        .finish_recording()
+        .expect("translucent full-surface fill must remain recordable");
+    assert_eq!(
+        encoder
+            .commands()
+            .iter()
+            .filter(|command| matches!(command, FrameCommand::CpuSegment { .. }))
+            .count(),
+        0,
+        "an axis-aligned translucent rectangle must not allocate a CPU image segment"
+    );
+    assert!(encoder.commands().iter().any(|command| {
+        matches!(
+            command,
+            FrameCommand::Native {
+                operation: FrameRasterOp::FillRect { rect, color }
+            } if *rect == FrameRect::new(0, 0, 8, 6) && *color == mask
+        )
+    }));
+    assert!(
+        encoder
+            .render_reference()
+            .pixels()
+            .iter()
+            .all(|pixel| *pixel == 0xFF7F_7F7F),
+        "native translucent fill must preserve exact SrcOver pixels"
+    );
 }
 
 #[test]

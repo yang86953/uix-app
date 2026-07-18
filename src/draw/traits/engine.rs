@@ -227,6 +227,14 @@ pub trait GraphicsEngine: 'static {
         None
     }
 
+    /// Copies the current retained main-surface pixels before the next
+    /// `begin_frame` may clear them. Engines without a readable retained CPU
+    /// surface leave this unsupported so callers preserve the full-redraw
+    /// path.
+    fn copy_frame_pixels(&self) -> Option<(Vec<u32>, i32)> {
+        None
+    }
+
     /// Executes a lossless API-neutral encoded Picture on a backend that
     /// explicitly supports it. `Unsupported` is a normal fallback result;
     /// compositor code then uses full DisplayList replay.

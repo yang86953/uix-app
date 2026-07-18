@@ -225,6 +225,7 @@ struct EncodedSoftwareEngine {
     inner: SoftwareEngine,
     encoded_picture_executions: usize,
     encoded_frame_executions: usize,
+    encoded_frames: Vec<Vec<crate::draw::pipeline::FrameCommand>>,
 }
 
 impl EncodedSoftwareEngine {
@@ -233,6 +234,7 @@ impl EncodedSoftwareEngine {
             inner: SoftwareEngine::new(),
             encoded_picture_executions: 0,
             encoded_frame_executions: 0,
+            encoded_frames: Vec::new(),
         }
     }
 }
@@ -264,6 +266,10 @@ impl GraphicsEngine for EncodedSoftwareEngine {
 
     fn capabilities(&self) -> GraphicsCapabilities {
         self.inner.capabilities()
+    }
+
+    fn copy_frame_pixels(&self) -> Option<(Vec<u32>, i32)> {
+        self.inner.copy_frame_pixels()
     }
 
     fn create_offscreen(&mut self, width: i32, height: i32) -> Option<crate::draw::ImageHandle> {
@@ -318,6 +324,7 @@ impl GraphicsEngine for EncodedSoftwareEngine {
         &mut self,
         encoder: &crate::draw::pipeline::FrameEncoder,
     ) -> Result<crate::draw::pipeline::EncodedFrameExecution, Error> {
+        self.encoded_frames.push(encoder.commands().to_vec());
         let result = self.inner.try_execute_encoded_frame(encoder)?;
         if matches!(
             result,
@@ -2730,4 +2737,382 @@ fn scroll_move_without_memmove_capability_repaints_the_viewport() {
         }
         _ => panic!("unsupported scroll copy must fall back to viewport DirtyRects"),
     }
+}
+
+const BACKDROP_ROOT: crate::draw::pipeline::NodeId = crate::draw::pipeline::NodeId::new(1);
+const BACKDROP_OVERLAY: crate::draw::pipeline::NodeId = crate::draw::pipeline::NodeId::new(2);
+
+struct OverlayBackdropScene {
+    children: [crate::draw::pipeline::NodeId; 1],
+    version: Cell<u64>,
+    overlay_visible: Cell<bool>,
+    root_dirty: Cell<bool>,
+    overlay_dirty: Cell<bool>,
+    root_paints: Cell<usize>,
+    overlay_paints: Cell<usize>,
+    root_color: Cell<Color>,
+    overlay_alpha: Cell<u8>,
+}
+
+impl OverlayBackdropScene {
+    fn new() -> Self {
+        Self {
+            children: [BACKDROP_OVERLAY],
+            version: Cell::new(1),
+            overlay_visible: Cell::new(false),
+            root_dirty: Cell::new(true),
+            overlay_dirty: Cell::new(false),
+            root_paints: Cell::new(0),
+            overlay_paints: Cell::new(0),
+            root_color: Cell::new(Color::from_rgb(20, 80, 180)),
+            overlay_alpha: Cell::new(128),
+        }
+    }
+
+    fn show_overlay(&self) {
+        self.version.set(self.version.get() + 1);
+        self.overlay_visible.set(true);
+        self.overlay_dirty.set(true);
+    }
+}
+
+impl ScenePaint for OverlayBackdropScene {
+    fn root_id(&self) -> Option<crate::draw::pipeline::NodeId> {
+        Some(BACKDROP_ROOT)
+    }
+
+    fn tree_version(&self) -> u64 {
+        self.version.get()
+    }
+
+    fn dirty_region(&self) -> DirtyRegion {
+        DirtyRegion::full()
+    }
+
+    fn node_visible(&self, id: crate::draw::pipeline::NodeId) -> bool {
+        id == BACKDROP_ROOT || (id == BACKDROP_OVERLAY && self.overlay_visible.get())
+    }
+
+    fn node_frame(&self, _: crate::draw::pipeline::NodeId) -> Rect {
+        Rect::new(0.0, 0.0, 4.0, 4.0)
+    }
+
+    fn node_dirty(&self, id: crate::draw::pipeline::NodeId) -> bool {
+        match id {
+            BACKDROP_ROOT => self.root_dirty.get(),
+            BACKDROP_OVERLAY => self.overlay_dirty.get(),
+            _ => false,
+        }
+    }
+
+    fn node_z_index(&self, id: crate::draw::pipeline::NodeId) -> i32 {
+        if id == BACKDROP_OVERLAY {
+            1_000
+        } else {
+            0
+        }
+    }
+
+    fn node_children(&self, id: crate::draw::pipeline::NodeId) -> &[crate::draw::pipeline::NodeId] {
+        if id == BACKDROP_ROOT {
+            &self.children
+        } else {
+            &[]
+        }
+    }
+
+    fn node_is_overlay(&self, id: crate::draw::pipeline::NodeId) -> bool {
+        id == BACKDROP_OVERLAY && self.overlay_visible.get()
+    }
+
+    fn children_clip(&self, _: crate::draw::pipeline::NodeId, _: Rect) -> Option<Rect> {
+        None
+    }
+
+    fn dirty_rect(&self, _: crate::draw::pipeline::NodeId, frame: Rect) -> Rect {
+        frame
+    }
+
+    fn scroll_offset(&self, _: crate::draw::pipeline::NodeId) -> Option<(f32, f32)> {
+        None
+    }
+
+    fn focused_node(&self) -> Option<crate::draw::pipeline::NodeId> {
+        None
+    }
+
+    fn node_focusable(&self, _: crate::draw::pipeline::NodeId) -> bool {
+        false
+    }
+
+    fn hit_test(&self, _: Point) -> Option<crate::draw::pipeline::NodeId> {
+        None
+    }
+
+    fn parent(&self, id: crate::draw::pipeline::NodeId) -> Option<crate::draw::pipeline::NodeId> {
+        (id == BACKDROP_OVERLAY).then_some(BACKDROP_ROOT)
+    }
+
+    fn paint(&self, id: crate::draw::pipeline::NodeId, frame: Rect, ctx: &mut PaintContext<'_>) {
+        if id == BACKDROP_ROOT {
+            self.root_paints.set(self.root_paints.get() + 1);
+            ctx.fill_rect(frame, self.root_color.get(), None);
+        } else if id == BACKDROP_OVERLAY {
+            self.overlay_paints.set(self.overlay_paints.get() + 1);
+            ctx.fill_rect(
+                frame,
+                Color::from_rgba(0, 0, 0, self.overlay_alpha.get()),
+                None,
+            );
+        }
+    }
+}
+
+fn render_overlay_backdrop_test_frame(
+    renderer: &mut FrameRenderer,
+    engine: &mut dyn GraphicsEngine,
+    scene: &OverlayBackdropScene,
+    rendered_first: bool,
+    tokens: &MockTokens,
+    fonts: &FontService,
+    images: &ImageService,
+) -> FrameRenderOutput {
+    let dirty = DirtyRegion::full();
+    renderer.render_frame(
+        engine,
+        scene,
+        FrameRenderInput {
+            rendered_first,
+            dirty_region: &dirty,
+            tree_version: scene.version.get(),
+            scroll_move: None,
+            theme: ThemeSnapshot::new(tokens),
+            font: FontHandle::default(),
+            font_service: fonts,
+            image_service: images,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    )
+}
+
+fn expected_masked_pixel(background: Color, alpha: u8) -> u32 {
+    use crate::draw::pipeline::{FrameEncoder, FrameRasterOp, FrameRect};
+
+    let mut encoder = FrameEncoder::new(1, 1).expect("reference encoder");
+    encoder.clear(background);
+    encoder.native(FrameRasterOp::FillRect {
+        rect: FrameRect::new(0, 0, 1, 1),
+        color: Color::from_rgba(0, 0, 0, alpha),
+    });
+    encoder
+        .render_reference()
+        .pixel(0, 0)
+        .expect("reference pixel")
+}
+
+#[test]
+fn full_overlay_frames_restore_clean_backdrop_without_repainting_normal_tree() {
+    let tokens = MockTokens;
+    let fonts = FontService::new();
+    let images = ImageService::new();
+    let scene = OverlayBackdropScene::new();
+    let mut renderer = FrameRenderer::new();
+    let mut engine = EncodedSoftwareEngine::new();
+    engine.initialize(4, 4).expect("software init");
+
+    let first = render_overlay_backdrop_test_frame(
+        &mut renderer,
+        &mut engine,
+        &scene,
+        false,
+        &tokens,
+        &fonts,
+        &images,
+    );
+    assert!(matches!(first.outcome, RenderOutcome::PresentPending(_)));
+    assert_eq!(scene.root_paints.get(), 1);
+
+    scene.root_dirty.set(false);
+    scene.show_overlay();
+    let opened = render_overlay_backdrop_test_frame(
+        &mut renderer,
+        &mut engine,
+        &scene,
+        true,
+        &tokens,
+        &fonts,
+        &images,
+    );
+    assert!(matches!(opened.outcome, RenderOutcome::PresentPending(_)));
+    assert_eq!(
+        scene.root_paints.get(),
+        1,
+        "opening must reuse the backdrop"
+    );
+    assert_eq!(scene.overlay_paints.get(), 1);
+    assert!(engine.encoded_frames.last().is_some_and(|commands| {
+        commands.iter().any(|command| {
+            matches!(
+                command,
+                crate::draw::pipeline::FrameCommand::PictureBlit { .. }
+            )
+        })
+    }));
+    assert_eq!(
+        engine
+            .inner
+            .session()
+            .cpu_backend()
+            .expect("CPU backend")
+            .pixels()[0],
+        expected_masked_pixel(scene.root_color.get(), 128)
+    );
+
+    scene.overlay_alpha.set(64);
+    let animated = render_overlay_backdrop_test_frame(
+        &mut renderer,
+        &mut engine,
+        &scene,
+        true,
+        &tokens,
+        &fonts,
+        &images,
+    );
+    assert!(matches!(animated.outcome, RenderOutcome::PresentPending(_)));
+    assert_eq!(scene.root_paints.get(), 1);
+    assert_eq!(scene.overlay_paints.get(), 2);
+    assert_eq!(
+        engine
+            .inner
+            .session()
+            .cpu_backend()
+            .expect("CPU backend")
+            .pixels()[0],
+        expected_masked_pixel(scene.root_color.get(), 64),
+        "each animation frame must compose from the original clean backdrop"
+    );
+}
+
+#[test]
+fn dirty_normal_tree_blocks_overlay_backdrop_until_overlays_leave() {
+    let tokens = MockTokens;
+    let fonts = FontService::new();
+    let images = ImageService::new();
+    let scene = OverlayBackdropScene::new();
+    let mut renderer = FrameRenderer::new();
+    let mut engine = EncodedSoftwareEngine::new();
+    engine.initialize(4, 4).expect("software init");
+
+    let _ = render_overlay_backdrop_test_frame(
+        &mut renderer,
+        &mut engine,
+        &scene,
+        false,
+        &tokens,
+        &fonts,
+        &images,
+    );
+    scene.show_overlay();
+    scene.root_color.set(Color::from_rgb(20, 180, 80));
+    let changed = render_overlay_backdrop_test_frame(
+        &mut renderer,
+        &mut engine,
+        &scene,
+        true,
+        &tokens,
+        &fonts,
+        &images,
+    );
+    assert!(matches!(changed.outcome, RenderOutcome::PresentPending(_)));
+    assert_eq!(scene.root_paints.get(), 2, "dirty base must be repainted");
+    assert!(engine.encoded_frames.last().is_some_and(|commands| {
+        !commands.iter().any(|command| {
+            matches!(
+                command,
+                crate::draw::pipeline::FrameCommand::PictureBlit { .. }
+            )
+        })
+    }));
+    assert_eq!(
+        engine
+            .inner
+            .session()
+            .cpu_backend()
+            .expect("CPU backend")
+            .pixels()[0],
+        expected_masked_pixel(scene.root_color.get(), 128)
+    );
+
+    scene.root_dirty.set(false);
+    scene.overlay_alpha.set(64);
+    let next = render_overlay_backdrop_test_frame(
+        &mut renderer,
+        &mut engine,
+        &scene,
+        true,
+        &tokens,
+        &fonts,
+        &images,
+    );
+    assert!(matches!(next.outcome, RenderOutcome::PresentPending(_)));
+    assert!(
+        engine.encoded_frames.last().is_some_and(|commands| {
+            !commands.iter().any(|command| {
+                matches!(
+                    command,
+                    crate::draw::pipeline::FrameCommand::PictureBlit { .. }
+                )
+            })
+        }),
+        "a surface that already contains overlay pixels cannot become a later backdrop"
+    );
+    assert_eq!(
+        engine
+            .inner
+            .session()
+            .cpu_backend()
+            .expect("CPU backend")
+            .pixels()[0],
+        expected_masked_pixel(scene.root_color.get(), 64)
+    );
+}
+
+#[test]
+fn engine_without_readable_frame_pixels_keeps_full_overlay_repaint() {
+    let tokens = MockTokens;
+    let fonts = FontService::new();
+    let images = ImageService::new();
+    let scene = OverlayBackdropScene::new();
+    let mut renderer = FrameRenderer::new();
+    let mut engine = RecordingEngine::new();
+
+    let _ = render_overlay_backdrop_test_frame(
+        &mut renderer,
+        &mut engine,
+        &scene,
+        false,
+        &tokens,
+        &fonts,
+        &images,
+    );
+    scene.root_dirty.set(false);
+    scene.show_overlay();
+    let _ = render_overlay_backdrop_test_frame(
+        &mut renderer,
+        &mut engine,
+        &scene,
+        true,
+        &tokens,
+        &fonts,
+        &images,
+    );
+
+    assert_eq!(
+        scene.root_paints.get(),
+        2,
+        "unsupported engines must preserve the established full-redraw path"
+    );
+    assert_eq!(scene.overlay_paints.get(), 1);
 }

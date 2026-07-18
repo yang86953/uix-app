@@ -9,6 +9,32 @@ use crate::ui::foundation::clipboard;
 use crate::ui::state::State;
 use crate::ui::widgets::input::input::*;
 
+fn render_input_geometry(input: &Input, frame: Rect, surface_size: (i32, i32)) -> Vec<u32> {
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(surface_size.0, surface_size.1));
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+
+    let mut ctx = PaintContext::new_for_test(
+        &mut canvas,
+        font,
+        &fonts,
+        &images,
+        &tokens,
+        96.0,
+        1.0,
+        Orientation::YDown,
+        surface_size.0,
+        surface_size.1,
+    );
+    WidgetRender::render(input, frame, &mut ctx, &tree);
+    canvas.surface().pixels().to_vec()
+}
+
 #[test]
 fn sync_from_preserves_runtime_value() {
     let mut input = Input::new("old").with_value("kept");
@@ -17,6 +43,36 @@ fn sync_from_preserves_runtime_value() {
     assert_eq!(input.current_value(), "kept");
     assert_eq!(input.placeholder, "new");
     assert_eq!(input.cursor_char, 2);
+}
+
+#[test]
+fn sync_from_preserves_password_visibility_while_password_mode_remains_active() {
+    let mut input = Input::password().with_value("秘密");
+    render_input_geometry(&input, Rect::new(240.0, 160.0, 180.0, 32.0), (440, 200));
+    input.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(168.0, 16.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    input.sync_from(Input::password().placeholder("新提示"));
+    assert!(matches!(
+        input.snapshot_fields(),
+        SnapshotFields::Input {
+            password_visible: true,
+            ..
+        }
+    ));
+
+    input.sync_from(Input::new("普通输入"));
+    assert!(matches!(
+        input.snapshot_fields(),
+        SnapshotFields::Input {
+            password: false,
+            password_visible: false,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -116,6 +172,154 @@ fn paste_event_replaces_selection() {
 
     assert_eq!(result, EventResult::Handled);
     assert_eq!(input.current_value(), "aXYd");
+}
+
+#[test]
+fn textarea_preserves_trailing_empty_line_for_measurement_and_caret() {
+    let mut input = Input::textarea().rows(1).with_value("甲\n");
+    input.on_event(&SystemEvent::FocusIn);
+
+    let measured = input.measure(Constraints::loose(Size::new(200.0, 200.0)));
+    assert_eq!(
+        measured.h, 60.0,
+        "trailing newline must reserve a second row"
+    );
+
+    render_input_geometry(&input, Rect::new(0.0, 0.0, 160.0, 60.0), (160, 64));
+    assert!(
+        input.caret_rect.get().y >= 28.0,
+        "caret after a trailing newline must render on the empty second row: {:?}",
+        input.caret_rect.get()
+    );
+}
+
+#[test]
+fn textarea_normalizes_windows_newlines_before_editing() {
+    let mut input = Input::textarea();
+
+    assert_eq!(
+        input.on_event(&SystemEvent::Paste {
+            text: "甲\r\n乙\r丙".to_string(),
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(input.current_value(), "甲\n乙\n丙");
+    assert_eq!(input.cursor_char, 5);
+}
+
+#[test]
+fn textarea_scrolled_pointer_hit_uses_the_visible_logical_line() {
+    let mut input = Input::textarea().rows(2).with_value("aa\nbb\ncc\ndd");
+    input.on_event(&SystemEvent::FocusIn);
+    render_input_geometry(&input, Rect::new(0.0, 0.0, 140.0, 56.0), (140, 60));
+    assert_eq!(
+        input.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(100.0, 10.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        input.cursor_char, 8,
+        "clicking the right side of visible line `cc` must land at its end"
+    );
+}
+
+#[test]
+fn clicking_an_empty_placeholder_keeps_the_cursor_in_value_bounds() {
+    let mut input = Input::new("请输入内容");
+    render_input_geometry(&input, Rect::new(0.0, 0.0, 160.0, 32.0), (160, 40));
+
+    input.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(100.0, 16.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(input.cursor_char, 0);
+
+    input.on_event(&SystemEvent::TextInput {
+        text: "中".to_string(),
+    });
+    assert_eq!(input.current_value(), "中");
+    assert_eq!(input.cursor_char, 1);
+}
+
+#[test]
+fn clearable_input_clears_from_its_rendered_action_slot() {
+    let mut input = Input::new("").with_value("待清除").clearable(true);
+    input.on_event(&SystemEvent::FocusIn);
+    render_input_geometry(&input, Rect::new(240.0, 160.0, 180.0, 32.0), (440, 200));
+
+    input.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(170.0, 16.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(input.current_value(), "");
+    assert_eq!(input.cursor_char, 0);
+}
+
+#[test]
+fn password_visibility_action_uses_local_coordinates_after_translation() {
+    let mut input = Input::password().with_value("秘密");
+    render_input_geometry(&input, Rect::new(240.0, 160.0, 180.0, 32.0), (440, 200));
+
+    input.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(168.0, 16.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    assert!(matches!(
+        input.snapshot_fields(),
+        SnapshotFields::Input {
+            password_visible: true,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn cjk_addon_uses_visible_text_width_instead_of_utf8_byte_width() {
+    let baseline =
+        render_input_geometry(&Input::new(""), Rect::new(0.0, 0.0, 180.0, 32.0), (180, 40));
+    let with_addon = render_input_geometry(
+        &Input::new("").addon_before("中文"),
+        Rect::new(0.0, 0.0, 180.0, 32.0),
+        (180, 40),
+    );
+
+    let sample = 16 * 180 + 50;
+    assert_eq!(
+        with_addon[sample], baseline[sample],
+        "x=50 must already belong to the input body for a two-character CJK addon"
+    );
+}
+
+#[test]
+fn hidden_password_caret_tracks_the_masked_prefix_and_inline_preedit() {
+    const GLYPH: &str = "\u{E151}";
+    let mut password = Input::password().with_value(GLYPH.repeat(4));
+    password.cursor_char = 2;
+    password.composition = "A".to_string();
+    password.on_event(&SystemEvent::FocusIn);
+    render_input_geometry(&password, Rect::new(0.0, 0.0, 220.0, 32.0), (220, 40));
+
+    let mut visual_equivalent = Input::new("").with_value("\u{2022}\u{2022}A\u{2022}\u{2022}");
+    visual_equivalent.cursor_char = 3;
+    visual_equivalent.on_event(&SystemEvent::FocusIn);
+    render_input_geometry(
+        &visual_equivalent,
+        Rect::new(0.0, 0.0, 220.0, 32.0),
+        (220, 40),
+    );
+
+    assert!(
+        (password.caret_rect.get().x - visual_equivalent.caret_rect.get().x).abs() < 0.01,
+        "masked password caret must follow two bullets plus inline preedit: password={:?}, expected={:?}",
+        password.caret_rect.get(),
+        visual_equivalent.caret_rect.get()
+    );
 }
 
 #[test]

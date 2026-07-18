@@ -61,6 +61,22 @@ impl_input_number_integer!(i8, i16, i32, i64, isize, u8, u16, u32, u64, usize);
 type ReadNumber = Box<dyn Fn() -> f64 + Send + Sync>;
 type WriteNumber = Box<dyn Fn(f64) -> f64 + Send + Sync>;
 
+fn decimal_places(value: f64) -> i32 {
+    if !value.is_finite() || value == 0.0 {
+        return 0;
+    }
+    let text = value.abs().to_string();
+    let (mantissa, exponent) = text
+        .split_once(['e', 'E'])
+        .map_or((text.as_str(), 0), |(mantissa, exponent)| {
+            (mantissa, exponent.parse::<i32>().unwrap_or(0))
+        });
+    let fraction = mantissa
+        .split_once('.')
+        .map_or(0, |(_, fraction)| fraction.len() as i32);
+    (fraction - exponent).max(0)
+}
+
 struct InputNumberValueBinding {
     read: ReadNumber,
     write: WriteNumber,
@@ -105,7 +121,7 @@ component! {
         text_buffer: String,
         pending_change: Cell<Option<f64>>,
         cursor_rect: Cell<Rect>,
-        rendered_width: Cell<f32>,
+        step_button_rect: Cell<Rect>,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -128,14 +144,14 @@ component! {
                 button: MouseButton::Left,
                 ..
             } => {
-                let control_height = crate::ui::config::control_height(self.input_size);
-                let step_left = self.rendered_width.get() - control_height;
-                if pos.x >= step_left {
-                    if pos.y < control_height * 0.5 {
-                        self.set_value(self.value + self.step);
+                let step_rect = self.step_button_rect.get();
+                if step_rect.contains(*pos) {
+                    let direction = if pos.y < step_rect.y + step_rect.h * 0.5 {
+                        1.0
                     } else {
-                        self.set_value(self.value - self.step);
-                    }
+                        -1.0
+                    };
+                    self.step_by(direction);
                     return EventResult::Handled;
                 }
                 self.begin_editing();
@@ -155,11 +171,11 @@ component! {
             SystemEvent::KeyDown { key, .. } => {
                 match key {
                     KeyCode::Up => {
-                        self.set_value(self.value + self.step);
+                        self.step_by(1.0);
                         EventResult::Handled
                     }
                     KeyCode::Down => {
-                        self.set_value(self.value - self.step);
+                        self.step_by(-1.0);
                         EventResult::Handled
                     }
                     KeyCode::Enter => {
@@ -190,24 +206,55 @@ component! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.capture_bound_value_dependency();
-        let step_width = crate::ui::config::control_height(self.input_size);
-        self.rendered_width.set(frame.w);
-        let input_frame = Rect::new(frame.x, frame.y, frame.w - step_width, frame.h);
+        let control_height = crate::ui::config::control_height(self.input_size).min(frame.h);
+        let control_frame = Rect::new(frame.x, frame.y, frame.w, control_height);
+        let step_width = control_height.min(control_frame.w);
+        let input_frame = Rect::new(
+            control_frame.x,
+            control_frame.y,
+            (control_frame.w - step_width).max(0.0),
+            control_frame.h,
+        );
+        let btn_area = Rect::new(
+            control_frame.x + control_frame.w - step_width,
+            control_frame.y,
+            step_width,
+            control_frame.h,
+        );
+        self.step_button_rect.set(Rect::new(
+            btn_area.x - control_frame.x,
+            btn_area.y - control_frame.y,
+            btn_area.w,
+            btn_area.h,
+        ));
         let primary = ctx.tokens().color_primary();
         let primary_hover = ctx.tokens().color_primary_hover();
         let border_color = ctx.tokens().color_border();
         let text_color = ctx.tokens().color_text();
         let text_tertiary = ctx.tokens().color_text_tertiary();
+        let text_quaternary = ctx.tokens().color_text_quaternary();
         let text_secondary = ctx.tokens().color_text_secondary();
-        let bg_elevated = ctx.tokens().color_bg_elevated();
+        let fill_tertiary = ctx.tokens().color_fill_tertiary();
         let border_radius_sm = ctx.tokens().border_radius_sm();
         let radius = Some(Radius::uniform(border_radius_sm));
 
-        let border_c = if self.focused { primary } else if self.hovered { primary_hover } else { border_color };
+        let border_c = if self.disabled {
+            border_color
+        } else if self.focused {
+            primary
+        } else if self.hovered {
+            primary_hover
+        } else {
+            border_color
+        };
         let border_w = if self.focused { 2.0 } else { 1.0 };
+        let control_bg = if self.disabled {
+            fill_tertiary
+        } else {
+            ctx.tokens().color_bg_container()
+        };
 
-        ctx.fill_rect(input_frame, ctx.tokens().color_bg_container(), radius);
-        ctx.stroke_rect(input_frame, border_c, border_w, radius);
+        ctx.fill_rect(control_frame, control_bg, radius);
 
         let show = if self.value_configured {
             self.format_value()
@@ -219,34 +266,96 @@ component! {
         } else {
             &show
         };
-
-        let draw_y = ctx.visual_center_y(input_frame, 14.0);
-        ctx.draw_text(display,
-            Point::new(input_frame.x + 12.0, draw_y),
-            if self.focused || self.value_configured { text_color } else { text_tertiary }, 14.0);
-        let cursor_x = (input_frame.x + 12.0 + self.text_buffer.chars().count() as f32 * 7.0)
-            .min(input_frame.x + input_frame.w - 8.0);
-        let cursor_rect = Rect::new(cursor_x, input_frame.y + 7.0, 1.0, 18.0);
-        self.cursor_rect.set(cursor_rect);
-        if self.focused {
-            ctx.fill_rect(cursor_rect, primary, None);
-        }
-
-        let btn_area = Rect::new(
-            frame.x + frame.w - step_width,
-            frame.y,
-            step_width,
-            frame.h,
+        let showing_placeholder = !self.focused && !self.value_configured;
+        let display_color = if self.disabled {
+            text_quaternary
+        } else if showing_placeholder {
+            text_tertiary
+        } else {
+            text_color
+        };
+        let text_area = Rect::new(
+            input_frame.x + 12.0,
+            input_frame.y,
+            (input_frame.w - 20.0).max(0.0),
+            input_frame.h,
         );
-        ctx.fill_rect(btn_area, bg_elevated, None);
+        let display_width = if display.is_empty() {
+            0.0
+        } else {
+            ctx.measure_text(display, 14.0).w
+        };
+        let draw_x = if !showing_placeholder && display_width > text_area.w {
+            text_area.x + text_area.w - display_width
+        } else {
+            text_area.x
+        };
+        let draw_y = ctx.visual_center_y(text_area, 14.0);
+        if text_area.w > 0.0 {
+            ctx.push_clip(text_area);
+            ctx.draw_text(
+                display,
+                Point::new(draw_x, draw_y),
+                display_color,
+                14.0,
+            );
+            let cursor_x = (draw_x + if self.focused { display_width } else { 0.0 })
+                .clamp(text_area.x, text_area.x + text_area.w);
+            let cursor_rect = Rect::new(
+                cursor_x,
+                input_frame.y + 4.0,
+                1.0,
+                (input_frame.h - 8.0).max(0.0),
+            );
+            self.cursor_rect.set(cursor_rect);
+            if self.focused {
+                ctx.fill_rect(cursor_rect, primary, None);
+            }
+            ctx.pop_clip();
+        } else {
+            self.cursor_rect.set(Rect::zero());
+        }
 
         let up_rect = Rect::new(btn_area.x, btn_area.y, btn_area.w, btn_area.h * 0.5);
         let dn_rect = Rect::new(btn_area.x, btn_area.y + btn_area.h * 0.5, btn_area.w, btn_area.h * 0.5);
-        let up_y = ctx.visual_center_y(up_rect, 10.0);
-        let dn_y = ctx.visual_center_y(dn_rect, 10.0);
-        let step_x = btn_area.x + (step_width - 10.0) * 0.5;
-        ctx.draw_text("▲", Point::new(step_x, up_y), text_secondary, 10.0);
-        ctx.draw_text("▼", Point::new(step_x, dn_y), text_secondary, 10.0);
+        let step_color = if self.disabled {
+            text_quaternary
+        } else {
+            text_secondary
+        };
+        if btn_area.w > 0.0 && btn_area.h > 0.0 {
+            ctx.draw_line(
+                btn_area.x,
+                btn_area.y + 1.0,
+                btn_area.x,
+                btn_area.y + btn_area.h - 1.0,
+                border_color,
+                1.0,
+            );
+            ctx.draw_line(
+                btn_area.x,
+                btn_area.y + btn_area.h * 0.5,
+                btn_area.x + btn_area.w - 1.0,
+                btn_area.y + btn_area.h * 0.5,
+                border_color,
+                1.0,
+            );
+            crate::ui::widgets::icon::paint_icon_in_frame(
+                ctx,
+                "chevron-up",
+                up_rect,
+                step_color,
+                10.0,
+            );
+            crate::ui::widgets::icon::paint_icon_in_frame(
+                ctx,
+                "chevron-down",
+                dn_rect,
+                step_color,
+                10.0,
+            );
+        }
+        ctx.stroke_rect(control_frame, border_c, border_w, radius);
     }
 }
 
@@ -268,7 +377,7 @@ impl InputNumber {
             text_buffer: String::new(),
             pending_change: Cell::new(None),
             cursor_rect: Cell::new(Rect::zero()),
-            rendered_width: Cell::new(80.0),
+            step_button_rect: Cell::new(Rect::new(80.0, 0.0, 32.0, 32.0)),
         }
     }
 
@@ -339,10 +448,14 @@ impl InputNumber {
     }
 
     fn intrinsic_size(&self) -> Size {
-        Size::new(80.0, crate::ui::config::control_height(self.input_size))
+        let height = crate::ui::config::control_height(self.input_size);
+        Size::new(80.0 + height, height)
     }
 
     fn begin_editing(&mut self) {
+        if self.focused {
+            return;
+        }
         self.focused = true;
         self.text_buffer = if self.value_configured {
             self.format_value()
@@ -390,6 +503,24 @@ impl InputNumber {
         }
     }
 
+    fn step_by(&mut self, direction: f64) {
+        if self.focused {
+            self.commit_buffer();
+        }
+        let raw = self.value + self.step * direction;
+        let precision = decimal_places(self.value)
+            .max(decimal_places(self.step))
+            .min(15);
+        let factor = 10.0f64.powi(precision);
+        let scaled = raw * factor;
+        let stepped = if factor.is_finite() && scaled.is_finite() {
+            scaled.round() / factor
+        } else {
+            raw
+        };
+        self.set_value(stepped);
+    }
+
     fn clamp_value(&self, value: f64) -> f64 {
         let value = if value.is_nan() { 0.0 } else { value };
         value.clamp(self.min, self.max)
@@ -404,10 +535,10 @@ impl InputNumber {
     }
 
     fn format_value(&self) -> String {
-        if self.value == self.value.trunc() {
-            format!("{:.0}", self.value)
+        if self.value == 0.0 {
+            "0".to_string()
         } else {
-            format!("{:.2}", self.value)
+            self.value.to_string()
         }
     }
 

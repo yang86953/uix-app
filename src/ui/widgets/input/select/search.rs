@@ -85,12 +85,7 @@ impl Select {
     }
 
     pub(crate) fn dropdown_row_count(&self) -> usize {
-        let count = self.visible_rows().len();
-        if self.search && !self.search_query.is_empty() {
-            count.max(1)
-        } else {
-            count
-        }
+        self.visible_rows().len().max(1)
     }
 
     pub(super) fn dropdown_damage_row_count(&self) -> usize {
@@ -110,14 +105,13 @@ impl Select {
     }
 
     pub(crate) fn dropdown_row_at_y(&self, pos_y: f32) -> Option<usize> {
-        if pos_y <= self.control_height() {
+        let popup = self.dropdown_rect.get();
+        let visible_y = pos_y - popup.y;
+        if visible_y < 0.0 || visible_y >= popup.h {
             return None;
         }
-        let local_y = pos_y - self.control_height() + self.dropdown_scroll.scroll_offset();
-        if local_y < 0.0 {
-            return None;
-        }
-        let index = (local_y / DROPDOWN_ROW_HEIGHT) as usize;
+        let content_y = visible_y + self.dropdown_scroll.scroll_offset();
+        let index = (content_y / DROPDOWN_ROW_HEIGHT) as usize;
         (index < self.dropdown_row_count()).then_some(index)
     }
 

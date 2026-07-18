@@ -48,45 +48,27 @@ impl Input {
         );
         ctx.push_clip(text_area);
 
-        let composed_value = self.value_with_composition();
         let has_composition = !self.composition.is_empty();
-        let display_text: String =
-            if self.password && !self.password_visible && !self.value.is_empty() {
-                if has_composition {
-                    format!(
-                        "{}{}",
-                        "\u{2022}".repeat(self.value.chars().count()),
-                        &self.composition
-                    )
-                } else {
-                    "\u{2022}".repeat(self.value.chars().count())
-                }
-            } else if self.value.is_empty() && !has_composition && !self.focused {
-                self.placeholder.to_string()
-            } else {
-                composed_value.to_string()
-            };
-        let disp_color = if self.value.is_empty() && !has_composition && !self.focused {
+        let showing_placeholder = self.value.is_empty() && !has_composition;
+        let display_text = if showing_placeholder {
+            Cow::Borrowed(self.placeholder.as_str())
+        } else {
+            self.display_value_with_composition()
+        };
+        let disp_color = if showing_placeholder {
             text_tertiary
         } else {
             text_color
         };
 
-        let lines: Vec<String> = if !self.password || self.password_visible {
-            if display_text == self.placeholder {
-                vec![self.placeholder.clone()]
-            } else {
-                display_text.lines().map(String::from).collect()
-            }
-        } else {
-            display_text.lines().map(String::from).collect()
-        };
+        let lines = logical_lines(&display_text);
+        let value_lines = logical_lines(&self.value);
 
         // 计算光标所在行
         let cursor_line = self.cursor_line_col().0;
 
         // 垂直滚动：确保光标行可见
-        let vis_lines = (text_area.h / LINE_HEIGHT) as usize;
+        let vis_lines = ((text_area.h / LINE_HEIGHT) as usize).max(1);
         let scroll_line = self.scroll_line.get();
         let adj_scroll = if cursor_line >= scroll_line + vis_lines {
             cursor_line.saturating_sub(vis_lines).saturating_add(1)
@@ -102,18 +84,23 @@ impl Input {
         let mut y = text_area.y;
         let mut line_glyph_xs = self.line_glyph_xs.borrow_mut();
         line_glyph_xs.clear();
+        line_glyph_xs.resize_with(lines.len(), Vec::new);
         for (li, line) in lines.iter().enumerate() {
             if li < adj_scroll {
                 continue;
             }
-            if y + line_h > text_area.y + text_area.h {
+            if y >= text_area.y + text_area.h {
                 break;
             }
             // 计算该行的字符范围
-            let line_start: usize = lines[..li].iter().map(|s| s.chars().count()).sum();
+            let line_start: usize = value_lines[..li.min(value_lines.len())]
+                .iter()
+                .map(|s| s.chars().count())
+                .sum();
             // 加上换行符的数量
             let line_start = line_start + li; // each '\n' adds 1 char
-            let line_end = line_start + line.chars().count();
+            let value_line = value_lines.get(li).copied().unwrap_or("");
+            let line_end = line_start + value_line.chars().count();
 
             // 选中高亮
             if !has_composition {
@@ -123,7 +110,7 @@ impl Input {
                         let sel_in_line_end = if sel_e < line_end {
                             sel_e - line_start
                         } else {
-                            line.chars().count()
+                            value_line.chars().count()
                         };
                         // 估算选中区域的 x 位置
                         let before_sel: String = line.chars().take(sel_in_line_start).collect();
@@ -149,14 +136,15 @@ impl Input {
             ctx.draw_text(line, Point::new(text_area.x, text_y), disp_color, FONT_SIZE);
 
             // 收集该行每个字符的 x 坐标（用于 char_at_xy 命中）
-            let mut xs = Vec::with_capacity(line.chars().count());
+            let hit_text = if showing_placeholder { "" } else { *line };
+            let mut xs = Vec::with_capacity(hit_text.chars().count() + 1);
             let mut prefix = String::new();
-            xs.push(text_area.x); // cursor before first char
-            for ch in line.chars() {
+            xs.push(0.0); // 相对 text area 的行首光标
+            for ch in hit_text.chars() {
                 prefix.push(ch);
-                xs.push(text_area.x + ctx.measure_text(&prefix, FONT_SIZE).w);
+                xs.push(ctx.measure_text(&prefix, FONT_SIZE).w);
             }
-            line_glyph_xs.push(xs);
+            line_glyph_xs[li] = xs;
 
             if li == cursor_line {
                 let col = self.cursor_line_col().1;
@@ -223,16 +211,8 @@ impl Input {
         let border_radius_sm = ctx.tokens().border_radius_sm();
         let text_sec = ctx.tokens().color_text_secondary();
 
-        let addon_left_w = if self.addon_before.is_empty() {
-            0.0
-        } else {
-            self.addon_before.len() as f32 * 8.0 + 16.0
-        };
-        let addon_right_w = if self.addon_after.is_empty() {
-            0.0
-        } else {
-            self.addon_after.len() as f32 * 8.0 + 16.0
-        };
+        let addon_left_w = addon_width(&self.addon_before);
+        let addon_right_w = addon_width(&self.addon_after);
 
         if !self.addon_before.is_empty() {
             let addon_rect = Rect::new(input_frame.x, input_frame.y, addon_left_w, input_frame.h);
@@ -241,12 +221,12 @@ impl Input {
                 fill_tertiary,
                 Some(Radius::uniform(border_radius_sm)),
             );
-            let ay = ctx.visual_center_y(addon_rect, 13.0);
+            let ay = ctx.visual_center_y(addon_rect, ADDON_FONT_SIZE);
             ctx.draw_text(
                 &self.addon_before,
                 Point::new(addon_rect.x + 8.0, ay),
                 text_sec,
-                13.0,
+                ADDON_FONT_SIZE,
             );
         }
         if !self.addon_after.is_empty() {
@@ -261,12 +241,12 @@ impl Input {
                 fill_tertiary,
                 Some(Radius::uniform(border_radius_sm)),
             );
-            let ay = ctx.visual_center_y(addon_rect, 13.0);
+            let ay = ctx.visual_center_y(addon_rect, ADDON_FONT_SIZE);
             ctx.draw_text(
                 &self.addon_after,
                 Point::new(addon_rect.x + 8.0, ay),
                 text_sec,
-                13.0,
+                ADDON_FONT_SIZE,
             );
         }
 
@@ -279,11 +259,7 @@ impl Input {
 
         let prefix_w = if self.prefix.is_empty() { 0.0 } else { 20.0 };
         let suffix_w = if self.suffix.is_empty() { 0.0 } else { 20.0 };
-        let clear_w = if self.clearable && !self.value.is_empty() {
-            20.0
-        } else {
-            0.0
-        };
+        let clear_w = if self.clearable { 20.0 } else { 0.0 };
         let pwd_w = if self.password { 24.0 } else { 0.0 };
         let search_w = if self.search { 24.0 } else { 0.0 };
         let right_extra = suffix_w + clear_w + pwd_w + search_w;
@@ -316,48 +292,73 @@ impl Input {
         );
 
         if !self.prefix.is_empty() {
-            let px = inner_frame.x + 6.0;
-            let py = ctx.visual_center_y(inner_frame, 12.0);
-            let icon_str = crate::ui::widgets::icon::icon_char(&self.prefix);
-            let saved = *ctx.font();
-            if let Some(fh) = crate::ui::widgets::icon::lucide_handle() {
-                ctx.set_font(fh);
-            }
-            ctx.draw_text(icon_str, Point::new(px, py), text_sec, 12.0);
-            ctx.set_font(saved);
+            crate::ui::widgets::icon::paint_icon_in_frame(
+                ctx,
+                &self.prefix,
+                Rect::new(inner_frame.x + 2.0, inner_frame.y, prefix_w, inner_frame.h),
+                text_sec,
+                12.0,
+            );
         }
 
-        if !self.suffix.is_empty() {
-            let sx = inner_frame.x + inner_frame.w - suffix_w - right_extra + 4.0 + suffix_w;
-            let sy = ctx.visual_center_y(inner_frame, 12.0);
-            let icon_str = crate::ui::widgets::icon::icon_char(&self.suffix);
-            let saved = *ctx.font();
-            if let Some(fh) = crate::ui::widgets::icon::lucide_handle() {
-                ctx.set_font(fh);
-            }
-            ctx.draw_text(icon_str, Point::new(sx, sy), text_sec, 12.0);
-            ctx.set_font(saved);
+        let mut accessory_right = inner_frame.x + inner_frame.w;
+        let search_rect = if self.search {
+            accessory_right -= search_w;
+            Some(Rect::new(
+                accessory_right,
+                inner_frame.y,
+                search_w,
+                inner_frame.h,
+            ))
+        } else {
+            None
+        };
+        let password_rect = if self.password {
+            accessory_right -= pwd_w;
+            Some(Rect::new(
+                accessory_right,
+                inner_frame.y,
+                pwd_w,
+                inner_frame.h,
+            ))
+        } else {
+            None
+        };
+        let clear_rect = if clear_w > 0.0 {
+            accessory_right -= clear_w;
+            Some(Rect::new(
+                accessory_right,
+                inner_frame.y,
+                clear_w,
+                inner_frame.h,
+            ))
+        } else {
+            None
+        };
+        let suffix_rect = if !self.suffix.is_empty() {
+            accessory_right -= suffix_w;
+            Some(Rect::new(
+                accessory_right,
+                inner_frame.y,
+                suffix_w,
+                inner_frame.h,
+            ))
+        } else {
+            None
+        };
+
+        if let Some(rect) = suffix_rect {
+            crate::ui::widgets::icon::paint_icon_in_frame(ctx, &self.suffix, rect, text_sec, 12.0);
         }
 
-        let composed_value = self.value_with_composition();
         let has_composition = !self.composition.is_empty();
-        let display_text: String =
-            if self.password && !self.password_visible && !self.value.is_empty() {
-                if has_composition {
-                    format!(
-                        "{}{}",
-                        "\u{2022}".repeat(self.value.chars().count()),
-                        &self.composition
-                    )
-                } else {
-                    "\u{2022}".repeat(self.value.chars().count())
-                }
-            } else if self.value.is_empty() && !has_composition {
-                self.placeholder.to_string()
-            } else {
-                composed_value.to_string()
-            };
-        let disp_color = if self.value.is_empty() && !has_composition && !self.focused {
+        let showing_placeholder = self.value.is_empty() && !has_composition;
+        let display_text = if showing_placeholder {
+            Cow::Borrowed(self.placeholder.as_str())
+        } else {
+            self.display_value_with_composition()
+        };
+        let disp_color = if showing_placeholder {
             text_tertiary
         } else {
             text_color
@@ -378,15 +379,9 @@ impl Input {
             0.0
         };
 
-        let cursor_byte_pos = self
-            .value
-            .char_indices()
-            .nth(self.cursor_char)
-            .map(|(i, _)| i)
-            .unwrap_or(self.value.len());
-        let text_before = &self.value[..cursor_byte_pos];
+        let text_before = self.visual_text_before_cursor();
         let text_before_w = if !text_before.is_empty() {
-            ctx.measure_text(text_before, FONT_SIZE).w
+            ctx.measure_text(&text_before, FONT_SIZE).w
         } else {
             0.0
         };
@@ -430,8 +425,10 @@ impl Input {
             {
                 let mut xs = self.glyph_xs.borrow_mut();
                 xs.clear();
-                for g in &layout.glyphs {
-                    xs.push(g.x);
+                if !showing_placeholder {
+                    for g in &layout.glyphs {
+                        xs.push(g.x);
+                    }
                 }
             }
             self.line_glyph_xs.borrow_mut().clear();
@@ -493,29 +490,45 @@ impl Input {
             ctx.fill_rect(caret, primary, None);
         }
 
-        if self.clearable && !self.value.is_empty() && self.focused {
-            let cx = inner_frame.x + inner_frame.w - 20.0;
-            let cy = ctx.visual_center_y(inner_frame, 12.0);
-            ctx.draw_text("✕", Point::new(cx, cy), text_sec, 12.0);
+        let clear_visible =
+            self.clearable && !self.value.is_empty() && (self.focused || self.hovered);
+        if clear_visible {
+            let rect = clear_rect.unwrap_or(Rect::zero());
+            self.clear_icon_rect.set(Rect::new(
+                rect.x - input_frame.x,
+                rect.y - input_frame.y,
+                rect.w,
+                rect.h,
+            ));
+            crate::ui::widgets::icon::paint_icon_in_frame(ctx, "x", rect, text_sec, 12.0);
+        } else {
+            self.clear_icon_rect.set(Rect::zero());
         }
 
-        if self.password {
-            let px = inner_frame.x + inner_frame.w - pwd_w;
-            let py = ctx.visual_center_y(inner_frame, 12.0);
-            self.pwd_icon_rect
-                .set(Rect::new(px, inner_frame.y, pwd_w, inner_frame.h));
-            ctx.draw_text(
-                if self.password_visible { "◎" } else { "◉" },
-                Point::new(px, py),
+        if let Some(rect) = password_rect {
+            self.pwd_icon_rect.set(Rect::new(
+                rect.x - input_frame.x,
+                rect.y - input_frame.y,
+                rect.w,
+                rect.h,
+            ));
+            crate::ui::widgets::icon::paint_icon_in_frame(
+                ctx,
+                if self.password_visible {
+                    "eye"
+                } else {
+                    "eye-off"
+                },
+                rect,
                 text_sec,
                 14.0,
             );
+        } else {
+            self.pwd_icon_rect.set(Rect::zero());
         }
 
-        if self.search {
-            let sx = inner_frame.x + inner_frame.w - search_w;
-            let sy = ctx.visual_center_y(inner_frame, 12.0);
-            ctx.draw_text("🔍", Point::new(sx, sy), text_sec, 12.0);
+        if let Some(rect) = search_rect {
+            crate::ui::widgets::icon::paint_icon_in_frame(ctx, "search", rect, text_sec, 12.0);
         }
     }
 }

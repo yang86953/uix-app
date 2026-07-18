@@ -161,3 +161,85 @@ fn glyph_rasterization_rejects_non_finite_sizes_and_bounds_huge_tofu() {
     assert!(raster.height <= 512);
     assert_eq!(raster.coverage.len(), raster.width * raster.height);
 }
+
+#[test]
+fn layout_text_wraps_a_single_font_run_within_the_requested_width() {
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let opts = crate::draw::font::text_backend::TextLayoutOptions {
+        max_width: 40.0,
+        max_height: 0.0,
+        line_height: 21.0,
+        word_wrap: true,
+        h_align: crate::draw::HAlign::Left,
+        v_align: crate::draw::VAlign::Top,
+        font_size: 14.0,
+    };
+
+    let layout = fonts.layout_text(&font, "WWWWWWWW", &opts);
+
+    assert!(
+        layout.lines.len() > 1,
+        "a single-font paragraph must wrap instead of overflowing: {layout:?}"
+    );
+    assert!(
+        layout.lines.iter().all(|line| line.width <= 40.01),
+        "every wrapped line must stay within max_width: {:?}",
+        layout.lines
+    );
+    assert_eq!(layout.height, layout.lines.len() as f32 * 21.0);
+}
+
+#[test]
+fn layout_text_keeps_closing_punctuation_with_the_previous_character() {
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let opts = crate::draw::font::text_backend::TextLayoutOptions {
+        max_width: 31.0,
+        max_height: 0.0,
+        line_height: 21.0,
+        word_wrap: true,
+        h_align: crate::draw::HAlign::Left,
+        v_align: crate::draw::VAlign::Top,
+        font_size: 14.0,
+    };
+
+    let layout = fonts.layout_text(&font, "WWWW，", &opts);
+
+    assert_eq!(layout.lines.len(), 2);
+    assert_eq!(layout.lines[0].end_char, 3);
+    assert_eq!(layout.lines[1].start_char, 3);
+    assert_eq!(
+        layout.glyphs[layout.lines[1].glyph_start].char_index, 3,
+        "the second line must start with the character before the punctuation"
+    );
+    assert!(layout.lines.iter().all(|line| line.width <= 31.01));
+}
+
+#[test]
+fn layout_text_preserves_consecutive_and_trailing_explicit_lines() {
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let opts = crate::draw::font::text_backend::TextLayoutOptions {
+        max_width: 200.0,
+        max_height: 0.0,
+        line_height: 21.0,
+        word_wrap: true,
+        h_align: crate::draw::HAlign::Left,
+        v_align: crate::draw::VAlign::Top,
+        font_size: 14.0,
+    };
+
+    let layout = fonts.layout_text(&font, "A\n\nB\n", &opts);
+
+    assert_eq!(layout.lines.len(), 4);
+    assert_eq!(layout.lines[1].glyph_count, 0);
+    assert_eq!(layout.lines[3].glyph_count, 0);
+    assert_eq!(layout.height, 84.0);
+}

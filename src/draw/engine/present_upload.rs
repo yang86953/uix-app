@@ -257,6 +257,11 @@ impl GraphicsEngine for PresentUploadEngine {
         self.session.cpu_backend()?.copy_offscreen_pixels(handle)
     }
 
+    fn copy_frame_pixels(&self) -> Option<(Vec<u32>, i32)> {
+        let cpu = self.session.cpu_backend()?;
+        Some((cpu.pixels().to_vec(), cpu.width()))
+    }
+
     fn try_execute_encoded_picture(
         &mut self,
         handle: &ImageHandle,

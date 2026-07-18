@@ -216,6 +216,13 @@ impl<'a> PaintContext<'a> {
         self.spatial.dpi()
     }
 
+    /// 当前绘制表面的逻辑尺寸；只读查询不会使 DisplayList 录制失效。
+    pub(crate) fn logical_surface_size(&self) -> Size {
+        let (width, height) = self.spatial.surface_size();
+        let scale = self.spatial.device_pixel_ratio().max(f32::EPSILON);
+        Size::new(width as f32 / scale, height as f32 / scale)
+    }
+
     // ════════════════════════════════════════════════════════════════════
     // 2D 零成本绘制路径（直接委托 Canvas2D）
     // ════════════════════════════════════════════════════════════════════

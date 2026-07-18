@@ -13,6 +13,16 @@ use crate::ui::traits::{EventHandler, WidgetAnimation, WidgetLayout, WidgetRende
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 use crate::ui::{SnapshotFields, SnapshotSource};
 
+const DEFAULT_BUTTON_FONT_SIZE: f32 = 14.0;
+
+fn normalized_button_font_size(size: f32) -> f32 {
+    if size.is_finite() && size > 0.0 {
+        size
+    } else {
+        DEFAULT_BUTTON_FONT_SIZE
+    }
+}
+
 /// Material 风格水波纹：从触点扩大到盖住按钮，松手后淡出收束。
 pub(crate) struct ButtonRipple {
     /// 按钮局部坐标原点（相对 frame 左上角）。
@@ -216,7 +226,7 @@ impl WidgetRender for Button {
         self.paint_ripple(frame, ctx, &style);
         if !self.text.is_empty() {
             let content = frame.inset(style.padding);
-            let font_size = style.resolve_font_size(ctx.tokens());
+            let font_size = normalized_button_font_size(style.resolve_font_size(ctx.tokens()));
             let color = style.resolve_color(ctx.tokens());
             // 布局职责：在 content 内交叉轴居中行盒；绘制只顶对齐 blit。
             let text_w = ctx.measure_text(&self.text, font_size).w;
@@ -387,13 +397,18 @@ impl Button {
             .normal
             .clone()
             .apply(self.style.as_ref().clone());
-        let font_size = base.font_size.default_size().max(1.0);
+        let font_size = normalized_button_font_size(base.font_size.default_size());
         // 按钮外框高度由 Style 固定；文字行盒在 render 时于 content 内居中。
         let height = base
             .height
             .unwrap_or_else(|| crate::ui::config::control_height(self.button_size));
-        // 无 FontService 时用字符估算宽；真实宽在 paint 用 measure_text。
-        let text_w = self.text.chars().count() as f32 * font_size * 0.55;
+        // 无 FontService 时使用共享宽字符估算；真实宽在 paint 用 measure_text。
+        let text_w = crate::draw::font::text_backend::estimate_text_metrics(
+            &self.text,
+            f32::INFINITY,
+            font_size,
+        )
+        .max_line_width;
         let width = base
             .width
             .unwrap_or(text_w + base.padding.horizontal())

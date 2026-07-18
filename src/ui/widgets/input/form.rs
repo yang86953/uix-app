@@ -39,51 +39,20 @@ component! {
 
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        let frame = Rect::new(frame.x, frame.y, frame.w.max(0.0), frame.h.max(0.0));
+        if frame.w <= 0.0 || frame.h <= 0.0 {
+            return;
+        }
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_secondary();
         let error = ctx.tokens().color_error();
         let warning = ctx.tokens().color_warning();
         let success = ctx.tokens().color_success();
 
-        match self.layout {
-            FormLayout::Vertical => {
-                if !self.label.is_empty() {
-                    let lx = frame.x;
-                    let ly = frame.y;
-                    if self.required {
-                        ctx.draw_text("*", Point::new(lx, ly), error, 14.0);
-                        ctx.draw_text(&self.label, Point::new(lx + 10.0, ly), text, 14.0);
-                    } else {
-                        ctx.draw_text(&self.label, Point::new(lx, ly), text, 14.0);
-                    }
-                }
-                self.render_status(ctx, frame, text_sec, error, warning, success);
-            }
-            FormLayout::Inline => {
-                if !self.label.is_empty() {
-                    let ly = ctx.visual_center_y(frame, 14.0);
-                    if self.required {
-                        ctx.draw_text("*", Point::new(frame.x, ly), error, 14.0);
-                        ctx.draw_text(&self.label, Point::new(frame.x + 10.0, ly), text, 14.0);
-                    } else {
-                        ctx.draw_text(&self.label, Point::new(frame.x, ly), text, 14.0);
-                    }
-                }
-            }
-            FormLayout::Horizontal => {
-                if !self.label.is_empty() {
-                    let lx = frame.x + 8.0;
-                    let ly = frame.y + 4.0;
-                    if self.required {
-                        ctx.draw_text("*", Point::new(lx, ly), error, 14.0);
-                        ctx.draw_text(&self.label, Point::new(lx + 10.0, ly), text, 14.0);
-                    } else {
-                        ctx.draw_text(&self.label, Point::new(lx, ly), text, 14.0);
-                    }
-                }
-                self.render_status(ctx, frame, text_sec, error, warning, success);
-            }
-        }
+        ctx.push_clip(frame);
+        self.render_label(ctx, frame, text, error);
+        self.render_status(ctx, frame, text_sec, error, warning, success);
+        ctx.pop_clip();
     }
 
     measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
@@ -110,56 +79,127 @@ component! {
 }
 
 impl FormItem {
+    const LABEL_HEIGHT: f32 = 18.0;
+    const HELP_HEIGHT: f32 = 16.0;
+    const CONTENT_TOP_INSET: f32 = 2.0;
+    const LABEL_GAP: f32 = 8.0;
+    const INLINE_LABEL_WIDTH: f32 = 60.0;
+
+    fn help_height(&self, frame_h: f32) -> f32 {
+        if self.help.is_empty() {
+            0.0
+        } else {
+            Self::HELP_HEIGHT.min(frame_h.max(0.0))
+        }
+    }
+
+    fn main_height(&self, frame_h: f32) -> f32 {
+        (frame_h.max(0.0) - self.help_height(frame_h)).max(0.0)
+    }
+
+    fn label_width_for_frame(&self, frame_w: f32) -> f32 {
+        if self.label.is_empty() {
+            0.0
+        } else {
+            match self.layout {
+                FormLayout::Vertical => frame_w.max(0.0),
+                FormLayout::Inline => Self::INLINE_LABEL_WIDTH.min(frame_w.max(0.0)),
+                FormLayout::Horizontal => self.label_width.max(60.0).min(frame_w.max(0.0)),
+            }
+        }
+    }
+
+    fn label_rect(&self, frame: Rect) -> Rect {
+        let frame_w = frame.w.max(0.0);
+        let frame_h = frame.h.max(0.0);
+        let main_h = self.main_height(frame_h);
+        match self.layout {
+            FormLayout::Vertical => {
+                Rect::new(frame.x, frame.y, frame_w, Self::LABEL_HEIGHT.min(main_h))
+            }
+            FormLayout::Inline | FormLayout::Horizontal => Rect::new(
+                frame.x,
+                frame.y,
+                self.label_width_for_frame(frame_w),
+                main_h,
+            ),
+        }
+    }
+
+    fn label_text_rect(&self, frame: Rect) -> Rect {
+        let label = self.label_rect(frame);
+        if self.layout == FormLayout::Horizontal {
+            let inset = Self::LABEL_GAP.min(label.w.max(0.0));
+            Rect::new(
+                label.x + inset,
+                label.y,
+                (label.w - inset).max(0.0),
+                label.h,
+            )
+        } else {
+            label
+        }
+    }
+
+    fn help_rect(&self, frame: Rect) -> Rect {
+        let help_h = self.help_height(frame.h);
+        Rect::new(
+            frame.x,
+            frame.y + (frame.h.max(0.0) - help_h).max(0.0),
+            frame.w.max(0.0),
+            help_h,
+        )
+    }
+
     fn content_rect(&self, frame: Rect) -> Rect {
         let frame_w = frame.w.max(0.0);
         let frame_h = frame.h.max(0.0);
+        let main_h = self.main_height(frame_h);
         match self.layout {
             FormLayout::Vertical => {
-                let label_h = 18.0f32.min(frame_h);
+                let label_h = Self::LABEL_HEIGHT.min(main_h);
                 Rect::new(
                     frame.x,
                     frame.y + label_h,
                     frame_w,
-                    (frame_h - label_h).max(0.0),
+                    (main_h - label_h).max(0.0),
                 )
             }
             FormLayout::Inline => {
-                let label_w = if self.label.is_empty() {
-                    0.0
-                } else {
-                    60.0f32.min(frame_w)
-                };
-                let pad = 8.0f32.min((frame_w - label_w).max(0.0));
+                let label_w = self.label_width_for_frame(frame_w);
+                let pad = Self::LABEL_GAP.min((frame_w - label_w).max(0.0));
+                let top = Self::CONTENT_TOP_INSET.min(main_h);
                 Rect::new(
                     frame.x + label_w + pad,
-                    frame.y + 2.0f32.min(frame_h),
+                    frame.y + top,
                     (frame_w - label_w - pad).max(0.0),
-                    (frame_h - 4.0).max(0.0),
+                    (main_h - top).max(0.0),
                 )
             }
             FormLayout::Horizontal => {
-                let label_w = if self.label.is_empty() {
-                    0.0
-                } else {
-                    self.label_width.max(60.0).min(frame_w)
-                };
-                let pad = 8.0f32.min((frame_w - label_w).max(0.0));
+                let label_w = self.label_width_for_frame(frame_w);
+                let pad = Self::LABEL_GAP.min((frame_w - label_w).max(0.0));
+                let top = Self::CONTENT_TOP_INSET.min(main_h);
                 Rect::new(
                     frame.x + label_w + pad,
-                    frame.y + 2.0f32.min(frame_h),
+                    frame.y + top,
                     (frame_w - label_w - pad).max(0.0),
-                    (frame_h - 18.0).max(0.0),
+                    (main_h - top).max(0.0),
                 )
             }
         }
     }
 
     fn intrinsic_size(&self) -> Size {
-        match self.layout {
+        let mut size = match self.layout {
             FormLayout::Vertical => Size::new(400.0, 56.0),
             FormLayout::Inline => Size::new(200.0, 44.0),
             FormLayout::Horizontal => Size::new(400.0, 44.0),
+        };
+        if !self.help.is_empty() {
+            size.h += Self::HELP_HEIGHT;
         }
+        size
     }
 
     pub fn new(label: &str) -> Self {
@@ -260,7 +300,7 @@ impl FormItem {
         };
         if status_color.a > 0 {
             ctx.fill_rect(
-                Rect::new(frame.x, frame.y, 2.0, frame.h),
+                Rect::new(frame.x, frame.y, 2.0f32.min(frame.w.max(0.0)), frame.h),
                 status_color,
                 None,
             );
@@ -272,13 +312,38 @@ impl FormItem {
                 ValidateStatus::Success => success,
                 _ => text_sec,
             };
-            ctx.draw_text(
-                &self.help,
-                Point::new(frame.x + 8.0, frame.y + frame.h - 16.0),
-                hc,
-                11.0,
-            );
+            let help = self.help_rect(frame);
+            let inset = Self::LABEL_GAP.min(help.w.max(0.0));
+            let text_rect = Rect::new(help.x + inset, help.y, (help.w - inset).max(0.0), help.h);
+            let font_size = 11.0 * (text_rect.h / Self::HELP_HEIGHT).clamp(0.0, 1.0);
+            if text_rect.w > 0.0 && font_size > 0.0 {
+                let y = ctx.visual_center_y(text_rect, font_size);
+                ctx.push_clip(text_rect);
+                ctx.draw_text(&self.help, Point::new(text_rect.x, y), hc, font_size);
+                ctx.pop_clip();
+            }
         }
+    }
+
+    fn render_label(&self, ctx: &mut PaintContext, frame: Rect, text: Color, error: Color) {
+        if self.label.is_empty() {
+            return;
+        }
+        let label = self.label_text_rect(frame);
+        let font_size = 14.0 * (label.h / Self::LABEL_HEIGHT).clamp(0.0, 1.0);
+        if label.w <= 0.0 || font_size <= 0.0 {
+            return;
+        }
+        let y = ctx.visual_center_y(label, font_size);
+        ctx.push_clip(label);
+        if self.required {
+            ctx.draw_text("*", Point::new(label.x, y), error, font_size);
+            let gap = (10.0 * (font_size / 14.0)).min(label.w);
+            ctx.draw_text(&self.label, Point::new(label.x + gap, y), text, font_size);
+        } else {
+            ctx.draw_text(&self.label, Point::new(label.x, y), text, font_size);
+        }
+        ctx.pop_clip();
     }
 }
 
@@ -430,7 +495,7 @@ impl Form {
     }
 
     pub fn gap(mut self, g: f32) -> Self {
-        self.gap = g;
+        self.gap = if g.is_finite() { g.max(0.0) } else { 0.0 };
         self
     }
 

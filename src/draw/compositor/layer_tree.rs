@@ -315,7 +315,68 @@ impl LayerTree {
         image_service: &ImageService,
         debug_mode: bool,
         hover_pos: Option<Point>,
+        render_objects: Option<&mut RenderObjectTree>,
+    ) -> Result<(), crate::core::Error> {
+        self.render_scope(
+            engine,
+            scene,
+            paint_region,
+            theme,
+            font,
+            font_service,
+            image_service,
+            debug_mode,
+            hover_pos,
+            render_objects,
+            true,
+        )
+    }
+
+    /// Replays only root-level overlays. FrameRenderer uses this after it has
+    /// restored a proven clean retained backdrop for a full overlay frame.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn render_overlays(
+        &mut self,
+        engine: &mut dyn GraphicsEngine,
+        scene: &impl ScenePaint,
+        paint_region: &DirtyRegion,
+        theme: &ThemeSnapshot<'_>,
+        font: FontHandle,
+        font_service: &FontService,
+        image_service: &ImageService,
+        debug_mode: bool,
+        hover_pos: Option<Point>,
+        render_objects: Option<&mut RenderObjectTree>,
+    ) -> Result<(), crate::core::Error> {
+        self.render_scope(
+            engine,
+            scene,
+            paint_region,
+            theme,
+            font,
+            font_service,
+            image_service,
+            debug_mode,
+            hover_pos,
+            render_objects,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_scope(
+        &mut self,
+        engine: &mut dyn GraphicsEngine,
+        scene: &impl ScenePaint,
+        paint_region: &DirtyRegion,
+        theme: &ThemeSnapshot<'_>,
+        font: FontHandle,
+        font_service: &FontService,
+        image_service: &ImageService,
+        debug_mode: bool,
+        hover_pos: Option<Point>,
         mut render_objects: Option<&mut RenderObjectTree>,
+        render_root: bool,
     ) -> Result<(), crate::core::Error> {
         let dpi = engine.dpi();
         let dpr = engine.device_pixel_ratio();
@@ -349,27 +410,29 @@ impl LayerTree {
             None
         };
 
-        if let Some(ref mut root) = self.root {
-            // The normal tree may establish viewport clips or scroll translations.
-            // Root-level overlays must start from the frame's original canvas state,
-            // even if a backend retains state after the normal-tree traversal.
-            engine.canvas_2d().save();
-            let render_result = Self::render_node(
-                root,
-                engine,
-                scene,
-                paint_region,
-                &env,
-                surface_w,
-                surface_h,
-                debug_mode,
-                &debug_hover,
-                0,
-                render_objects.as_deref_mut(),
-            );
-            engine.canvas_2d().restore();
-            render_result?;
-            root.mark_clean();
+        if render_root {
+            if let Some(ref mut root) = self.root {
+                // The normal tree may establish viewport clips or scroll translations.
+                // Root-level overlays must start from the frame's original canvas state,
+                // even if a backend retains state after the normal-tree traversal.
+                engine.canvas_2d().save();
+                let render_result = Self::render_node(
+                    root,
+                    engine,
+                    scene,
+                    paint_region,
+                    &env,
+                    surface_w,
+                    surface_h,
+                    debug_mode,
+                    &debug_hover,
+                    0,
+                    render_objects.as_deref_mut(),
+                );
+                engine.canvas_2d().restore();
+                render_result?;
+                root.mark_clean();
+            }
         }
         for overlay in &mut self.overlays {
             // Isolate sibling overlays too: one overlay cannot clip or translate
@@ -936,16 +999,19 @@ impl LayerTree {
         let frame = scene.node_frame(id);
         ctx.set_paint_pass(pass);
         ctx.save();
+        let paint_t0 = std::time::Instant::now();
         if pass == PaintPass::Content {
             if let Some(ro) = render_objects {
                 ro.paint_content(id, frame, scene, ctx);
                 ctx.restore();
+                crate::core::perf_probe::add_direct_paint(paint_t0.elapsed().as_micros());
                 crate::core::perf_probe::add_widget_painted();
                 return;
             }
         }
         scene.paint(id, frame, ctx);
         ctx.restore();
+        crate::core::perf_probe::add_direct_paint(paint_t0.elapsed().as_micros());
         crate::core::perf_probe::add_widget_painted();
     }
 

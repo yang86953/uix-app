@@ -1,7 +1,45 @@
+use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
 use crate::ui::state::State;
 use crate::ui::view::{ViewAdapter, ViewNode};
 use crate::ui::widgets::InputNumber;
+
+fn render_input_number(
+    input: &InputNumber,
+    frame: Rect,
+    surface_size: (i32, i32),
+    measure_text: &str,
+) -> (Vec<u32>, f32) {
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(surface_size.0, surface_size.1));
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+
+    let measured;
+    {
+        let mut ctx = PaintContext::new_for_test(
+            &mut canvas,
+            font,
+            &fonts,
+            &images,
+            &tokens,
+            96.0,
+            1.0,
+            Orientation::YDown,
+            surface_size.0,
+            surface_size.1,
+        );
+        measured = ctx.measure_text(measure_text, 14.0).w;
+        WidgetRender::render(input, frame, &mut ctx, &tree);
+    }
+    (canvas.surface().pixels().to_vec(), measured)
+}
 
 #[test]
 fn bound_integer_value_writes_keyboard_changes_and_reads_external_updates() {
@@ -169,7 +207,7 @@ fn input_number_focus_out_commits_and_invalid_text_preserves_value() {
 fn input_number_pointer_step_buttons_use_the_configured_step() {
     let value = State::new(4i32);
     let mut input = InputNumber::new().step(2.0).value(&value);
-    let button_x = 60.0;
+    let button_x = 100.0;
 
     assert_eq!(
         input.on_event(&SystemEvent::PointerDown {
@@ -203,4 +241,161 @@ fn disabled_input_number_does_not_request_text_input_or_handle_steps() {
         }),
         EventResult::NotHandled
     );
+}
+
+#[test]
+fn input_number_preserves_more_than_two_fraction_digits_across_focus_commit() {
+    let mut input = InputNumber::new().default_value(1.2345f64);
+
+    input.on_event(&SystemEvent::FocusIn);
+    input.on_event(&SystemEvent::FocusOut);
+
+    assert_eq!(input.current_value(), 1.2345);
+}
+
+#[test]
+fn repeated_decimal_steps_do_not_accumulate_binary_display_artifacts() {
+    let mut input = InputNumber::new().default_value(0.0f64).step(0.1);
+
+    for _ in 0..3 {
+        input.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Up,
+            mods: KeyMod::NONE,
+        });
+    }
+
+    assert_eq!(input.current_value(), 0.3);
+}
+
+#[test]
+fn repeated_pointer_focus_keeps_the_in_progress_numeric_buffer() {
+    let mut input = InputNumber::new().default_value(4.0f64);
+    input.on_event(&SystemEvent::FocusIn);
+    input.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Backspace,
+        mods: KeyMod::NONE,
+    });
+    input.on_event(&SystemEvent::TextInput {
+        text: "7".to_string(),
+    });
+
+    input.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(12.0, 16.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    input.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Enter,
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(input.current_value(), 7.0);
+}
+
+#[test]
+fn keyboard_step_commits_the_edit_buffer_before_incrementing() {
+    let mut input = InputNumber::new().default_value(4.0f64);
+    input.on_event(&SystemEvent::FocusIn);
+    input.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Backspace,
+        mods: KeyMod::NONE,
+    });
+    input.on_event(&SystemEvent::TextInput {
+        text: "7".to_string(),
+    });
+
+    input.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Up,
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(input.current_value(), 8.0);
+}
+
+#[test]
+fn constrained_large_step_buttons_split_the_rendered_height() {
+    let mut input = InputNumber::new()
+        .default_value(4.0f64)
+        .size(ControlSize::Large);
+    render_input_number(&input, Rect::new(240.0, 160.0, 100.0, 24.0), (360, 200), "");
+
+    input.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(90.0, 18.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(input.current_value(), 3.0);
+}
+
+#[test]
+fn focused_input_number_draws_the_outer_border_around_the_step_area() {
+    let normal = InputNumber::new().default_value(42.0f64);
+    let (normal_pixels, _) =
+        render_input_number(&normal, Rect::new(0.0, 0.0, 100.0, 32.0), (104, 36), "");
+    let mut focused = InputNumber::new().default_value(42.0f64);
+    focused.on_event(&SystemEvent::FocusIn);
+    let (focused_pixels, _) =
+        render_input_number(&focused, Rect::new(0.0, 0.0, 100.0, 32.0), (104, 36), "");
+
+    let right_edge_center = 16 * 104 + 99;
+    assert_ne!(
+        normal_pixels[right_edge_center], focused_pixels[right_edge_center],
+        "focus border must include the right edge of the step area"
+    );
+}
+
+#[test]
+fn disabled_input_number_uses_a_distinct_control_background() {
+    let enabled = InputNumber::new();
+    let (enabled_pixels, _) =
+        render_input_number(&enabled, Rect::new(0.0, 0.0, 100.0, 32.0), (104, 36), "");
+    let disabled = InputNumber::new().disabled(true);
+    let (disabled_pixels, _) =
+        render_input_number(&disabled, Rect::new(0.0, 0.0, 100.0, 32.0), (104, 36), "");
+
+    let input_background = 16 * 104 + 20;
+    assert_ne!(
+        enabled_pixels[input_background], disabled_pixels[input_background],
+        "disabled input body must not reuse the enabled background"
+    );
+}
+
+#[test]
+fn input_number_caret_uses_the_rendered_font_width() {
+    let mut input = InputNumber::new().default_value(111.11f64);
+    input.on_event(&SystemEvent::FocusIn);
+    let (_, measured) = render_input_number(
+        &input,
+        Rect::new(0.0, 0.0, 160.0, 32.0),
+        (164, 36),
+        "111.11",
+    );
+    let caret = input
+        .as_text_input()
+        .expect("InputNumber text input capability")
+        .text_input_cursor_rect();
+
+    assert!(
+        (caret.x - (12.0 + measured)).abs() < 0.01,
+        "caret must follow actual glyph advance: caret={caret:?}, measured={measured}"
+    );
+    assert_eq!(caret.y, 4.0);
+    assert_eq!(caret.h, 24.0);
+}
+
+#[test]
+fn every_input_number_size_preserves_the_text_body_beside_its_square_step_area() {
+    for (size, expected) in [
+        (ControlSize::Small, Size::new(104.0, 24.0)),
+        (ControlSize::Medium, Size::new(112.0, 32.0)),
+        (ControlSize::Large, Size::new(120.0, 40.0)),
+    ] {
+        assert_eq!(
+            InputNumber::new()
+                .size(size)
+                .measure(Constraints::loose(Size::new(200.0, 80.0))),
+            expected
+        );
+    }
 }

@@ -11,6 +11,8 @@ use crate::ui::{
 };
 use std::cell::Cell;
 
+const THUMB_INSET: f32 = 2.0;
+
 component! {
     pub struct Switch {
         checked: bool,
@@ -79,8 +81,12 @@ component! {
         let track_x = frame.x;
         let track_y = frame.y + (frame.h - h) * 0.5;
         let track_r = h * 0.5;
-        let thumb_r = track_r - 3.0;
-        let thumb_x = if self.checked { track_x + w - 2.0 - thumb_r * 2.0 } else { track_x + 2.0 };
+        let thumb_r = track_r - THUMB_INSET;
+        let thumb_x = if self.checked {
+            track_x + w - THUMB_INSET - thumb_r * 2.0
+        } else {
+            track_x + THUMB_INSET
+        };
 
         let track_c = if self.checked {
             if self.disabled { primary_border } else if self.hovered { primary_hover } else { primary }
@@ -91,7 +97,12 @@ component! {
 
         let radius = Some(crate::draw::Radius::uniform(track_r));
         ctx.fill_rect(Rect::new(track_x, track_y, w, h), track_c, radius);
-        let thumb = Rect::new(thumb_x, track_y + 2.0, thumb_r * 2.0, thumb_r * 2.0);
+        let thumb = Rect::new(
+            thumb_x,
+            track_y + THUMB_INSET,
+            thumb_r * 2.0,
+            thumb_r * 2.0,
+        );
         ctx.fill_rect(thumb, thumb_c, Some(crate::draw::Radius::uniform(thumb_r)));
 
         if self.focused {

@@ -17,6 +17,18 @@ use crate::ui::{
 
 const POPUP_GAP: f32 = 2.0;
 const POPUP_HEIGHT: f32 = 200.0;
+const POPUP_MIN_WIDTH: f32 = 120.0;
+const ITEM_HEIGHT: f32 = 32.0;
+const HOUR_COUNT: usize = 24;
+const MINUTE_COUNT: usize = 60;
+const WHEEL_STEP: f32 = 40.0;
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+enum TimeColumn {
+    #[default]
+    Hour,
+    Minute,
+}
 
 /// 时间结构
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -60,6 +72,7 @@ component! {
         /// 小时滚动偏移（行号）
         scroll_hour: Cell<f32>,
         scroll_min: Cell<f32>,
+        active_column: Cell<TimeColumn>,
         picker_size: ControlSize,
         last_frame: Cell<Option<Rect>>,
         pending_change: Cell<Option<Time>>,
@@ -82,44 +95,27 @@ component! {
             } => {
                 self.focused = true;
                 if !self.open.get() {
-                    self.open.set(true);
-                    let val = self.value.get();
-                    self.hover_hour.set(val.hour as usize);
-                    self.hover_minute.set(val.minute as usize);
+                    self.open_popup();
                     return EventResult::Handled;
                 }
 
                 if let Some(frame) = self.last_frame.get() {
-                    let popup_y = frame.y + frame.h + POPUP_GAP;
-                    let rel_x = pos.x - frame.x;
-                    let rel_y = pos.y - popup_y;
-
-                    if (0.0..POPUP_HEIGHT).contains(&rel_y) {
-                        let col_w = frame.w * 0.5;
-                        if rel_x < col_w {
-                            let item_h = 32.0;
-                            let idx = ((rel_y + self.scroll_hour.get()) / item_h) as usize;
-                            if idx < 24 {
-                                self.hover_hour.set(idx);
-                                let val = self.value.get();
-                                let new_val = Time::new(idx as u32, val.minute);
-                                self.commit_value(new_val);
-                                self.open.set(false);
-                                return EventResult::Handled;
+                    if let Some((column, index)) = self.item_at(frame, *pos) {
+                        self.active_column.set(column);
+                        let value = self.value.get();
+                        let next = match column {
+                            TimeColumn::Hour => {
+                                self.hover_hour.set(index);
+                                Time::new(index as u32, value.minute)
                             }
-                        } else {
-                            let item_h = 32.0;
-                            let idx = ((rel_y + self.scroll_min.get()) / item_h) as usize;
-                            if idx < 12 {
-                                let minute = idx * 5;
-                                self.hover_minute.set(idx);
-                                let val = self.value.get();
-                                let new_val = Time::new(val.hour, minute as u32);
-                                self.commit_value(new_val);
-                                self.open.set(false);
-                                return EventResult::Handled;
+                            TimeColumn::Minute => {
+                                self.hover_minute.set(index);
+                                Time::new(value.hour, index as u32)
                             }
-                        }
+                        };
+                        self.commit_value(next);
+                        self.close_popup();
+                        return EventResult::Handled;
                     }
                 }
                 EventResult::Handled
@@ -127,55 +123,102 @@ component! {
             SystemEvent::PointerMove { pos, .. } => {
                 if self.open.get() {
                     if let Some(frame) = self.last_frame.get() {
-                        let popup_y = frame.y + frame.h + POPUP_GAP;
-                        let rel_x = pos.x - frame.x;
-                        let rel_y = pos.y - popup_y;
-
-                        if (0.0..POPUP_HEIGHT).contains(&rel_y) {
-                            let col_w = frame.w * 0.5;
-                            let item_h = 32.0;
-                            if rel_x < col_w {
-                                let idx = ((rel_y + self.scroll_hour.get()) / item_h) as usize;
-                                if idx < 24 {
-                                    self.hover_hour.set(idx);
-                                }
+                        if let Some((column, index)) = self.item_at(frame, *pos) {
+                            self.active_column.set(column);
+                            let changed = match column {
+                                TimeColumn::Hour => self.hover_hour.replace(index) != index,
+                                TimeColumn::Minute => self.hover_minute.replace(index) != index,
+                            };
+                            return if changed {
+                                EventResult::Handled
                             } else {
-                                let idx = ((rel_y + self.scroll_min.get()) / item_h) as usize;
-                                if idx < 12 {
-                                    self.hover_minute.set(idx);
-                                }
-                            }
+                                EventResult::NotHandled
+                            };
+                        }
+                        if self.reset_highlight_to_value() {
                             return EventResult::Handled;
                         }
                     }
                 }
                 EventResult::NotHandled
             }
-            SystemEvent::PointerLeave => EventResult::NotHandled,
-            SystemEvent::FocusOut => { self.focused = false; self.open.set(false); EventResult::Handled }
+            SystemEvent::PointerLeave => {
+                if self.open.get() && self.reset_highlight_to_value() {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
+            }
+            SystemEvent::FocusIn => {
+                self.focused = true;
+                EventResult::Handled
+            }
+            SystemEvent::FocusOut => {
+                self.focused = false;
+                self.close_popup();
+                EventResult::Handled
+            }
+            SystemEvent::Wheel { pos, delta } => {
+                if !self.open.get() || !delta.y.is_finite() {
+                    return EventResult::NotHandled;
+                }
+                if let Some(frame) = self.last_frame.get() {
+                    let popup = time_popup_rect(frame);
+                    if popup.contains(*pos) {
+                        let column = if pos.x < popup.x + popup.w * 0.5 {
+                            TimeColumn::Hour
+                        } else {
+                            TimeColumn::Minute
+                        };
+                        self.active_column.set(column);
+                        if self.scroll_column(column, -delta.y * WHEEL_STEP) {
+                            return EventResult::Handled;
+                        }
+                    }
+                }
+                EventResult::NotHandled
+            }
             SystemEvent::KeyDown { key, .. } => {
                 if self.open.get() {
                     match key {
-                        KeyCode::Escape => { self.open.set(false); }
+                        KeyCode::Escape => {
+                            self.close_popup();
+                            EventResult::Handled
+                        }
+                        KeyCode::Left => {
+                            self.active_column.set(TimeColumn::Hour);
+                            self.ensure_highlight_visible(TimeColumn::Hour);
+                            EventResult::Handled
+                        }
+                        KeyCode::Right => {
+                            self.active_column.set(TimeColumn::Minute);
+                            self.ensure_highlight_visible(TimeColumn::Minute);
+                            EventResult::Handled
+                        }
                         KeyCode::Up => {
-                            let hrs = self.scroll_hour.get();
-                            self.scroll_hour.set((hrs - 32.0).max(0.0));
+                            self.move_highlight(-1);
+                            EventResult::Handled
                         }
                         KeyCode::Down => {
-                            let hrs = self.scroll_hour.get();
-                            self.scroll_hour.set((hrs + 32.0).min((24 * 32) as f32 - 200.0).max(0.0));
+                            self.move_highlight(1);
+                            EventResult::Handled
                         }
-                        _ => {}
+                        KeyCode::Enter => {
+                            self.commit_value(Time::new(
+                                self.hover_hour.get() as u32,
+                                self.hover_minute.get() as u32,
+                            ));
+                            self.close_popup();
+                            EventResult::Handled
+                        }
+                        _ => EventResult::NotHandled,
                     }
+                } else if *key == KeyCode::Space || *key == KeyCode::Enter {
+                    self.open_popup();
+                    EventResult::Handled
                 } else {
-                    if *key == KeyCode::Space || *key == KeyCode::Enter {
-                        self.open.set(true);
-                        let val = self.value.get();
-                        self.hover_hour.set(val.hour as usize);
-                        self.hover_minute.set(val.minute as usize);
-                    }
+                    EventResult::NotHandled
                 }
-                EventResult::Handled
             }
             _ => EventResult::NotHandled,
         }
@@ -212,91 +255,153 @@ component! {
         let radius = Some(crate::draw::Radius::uniform(border_radius_sm));
 
         let val = self.value.get();
+        let nominal_height = crate::ui::config::control_height(self.picker_size);
+        let scale = if nominal_height > 0.0 {
+            (frame.h / nominal_height).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let font_size = 14.0 * scale;
+        let horizontal_padding = 12.0 * scale;
+        let icon_gap = 4.0 * scale;
+        let icon_slot_width = 24.0 * scale;
+        let icon_right_inset = 4.0 * scale;
+
+        ctx.push_clip(frame);
         ctx.fill_rect(frame, ctx.tokens().color_bg_container(), radius);
         ctx.stroke_rect(frame, if self.focused { primary } else { border_color },
             if self.focused { 2.0 } else { 1.0 }, radius);
 
-        let input_text_y = ctx.visual_center_y(frame, 14.0);
-        if !self.value_configured.get() {
-            ctx.draw_text(&self.placeholder,
-                Point::new(frame.x + 12.0, input_text_y),
-                text_tertiary, 14.0);
-        } else {
-            let formatted = val.format();
-            ctx.draw_text(&formatted,
-                Point::new(frame.x + 12.0, input_text_y),
-                text_color, 14.0);
-        }
+        if font_size > 0.0 && frame.w > 0.0 {
+            let icon_frame = Rect::new(
+                frame.x + frame.w - icon_right_inset - icon_slot_width,
+                frame.y,
+                icon_slot_width,
+                frame.h,
+            );
+            let text_left = frame.x + horizontal_padding;
+            let text_right = (icon_frame.x - icon_gap).max(text_left);
+            let text_area = Rect::new(text_left, frame.y, text_right - text_left, frame.h);
+            let input_text_y = ctx.visual_center_y(frame, font_size);
+            if text_area.w > 0.0 {
+                ctx.push_clip(text_area);
+                if !self.value_configured.get() {
+                    ctx.draw_text(
+                        &self.placeholder,
+                        Point::new(text_left, input_text_y),
+                        text_tertiary,
+                        font_size,
+                    );
+                } else {
+                    let formatted = val.format();
+                    ctx.draw_text(
+                        &formatted,
+                        Point::new(text_left, input_text_y),
+                        text_color,
+                        font_size,
+                    );
+                }
+                ctx.pop_clip();
+            }
 
-        crate::ui::widgets::icon::paint_icon_in_frame(
-            ctx,
-            "clock",
-            Rect::new(frame.x + frame.w - 28.0, frame.y, 24.0, frame.h),
-            text_secondary,
-            14.0,
-        );
+            crate::ui::widgets::icon::paint_icon_in_frame(
+                ctx,
+                "clock",
+                icon_frame,
+                text_secondary,
+                font_size,
+            );
+        }
+        ctx.pop_clip();
 
         if self.open.get() {
-            let popup = Rect::new(
-                frame.x,
-                frame.y + frame.h + POPUP_GAP,
-                frame.w,
-                POPUP_HEIGHT,
-            );
+            let popup = time_popup_rect(frame);
+            ctx.push_clip(popup);
             ctx.fill_rect(popup, bg_elevated, radius);
             ctx.stroke_rect(popup, border_color, 1.0, radius);
 
             let col_w = popup.w * 0.5;
-            let item_h = 32.0;
             let hover_h = self.hover_hour.get();
             let hover_m = self.hover_minute.get();
 
             let hour_scroll = self.scroll_hour.get();
             let min_scroll = self.scroll_min.get();
 
-            for i in 0..24 {
-                let y = popup.y + i as f32 * item_h - hour_scroll;
-                if y + item_h <= popup.y || y >= popup.y + popup.h { continue; }
+            for i in 0..HOUR_COUNT {
+                let y = popup.y + i as f32 * ITEM_HEIGHT - hour_scroll;
+                if y + ITEM_HEIGHT <= popup.y || y >= popup.y + popup.h { continue; }
                 let is_hover = i == hover_h;
                 if is_hover {
-                    ctx.fill_rect(Rect::new(popup.x, y, col_w, item_h), primary_bg, None);
+                    ctx.fill_rect(Rect::new(popup.x, y, col_w, ITEM_HEIGHT), primary_bg, None);
                 }
-                let item_rect = Rect::new(popup.x, y, col_w, item_h);
+                let item_rect = Rect::new(popup.x, y, col_w, ITEM_HEIGHT);
                 let text_y = ctx.visual_center_y(item_rect, 14.0);
-                ctx.draw_text(&format!("{:02}", i),
-                    Point::new(popup.x + 16.0, text_y),
-                    if is_hover { primary } else { text_color }, 14.0);
+                let label = format!("{:02}", i);
+                let text_width = ctx.measure_text(&label, 14.0).w;
+                ctx.draw_text(
+                    &label,
+                    Point::new(item_rect.x + (item_rect.w - text_width) * 0.5, text_y),
+                    if is_hover { primary } else { text_color },
+                    14.0,
+                );
             }
 
-            for i in 0..12 {
-                let y = popup.y + i as f32 * item_h - min_scroll;
-                if y + item_h <= popup.y || y >= popup.y + popup.h { continue; }
-                let minute = i * 5;
+            for i in 0..MINUTE_COUNT {
+                let y = popup.y + i as f32 * ITEM_HEIGHT - min_scroll;
+                if y + ITEM_HEIGHT <= popup.y || y >= popup.y + popup.h { continue; }
                 let is_hover = i == hover_m;
                 if is_hover {
-                    ctx.fill_rect(Rect::new(popup.x + col_w, y, col_w, item_h), primary_bg, None);
+                    ctx.fill_rect(
+                        Rect::new(popup.x + col_w, y, col_w, ITEM_HEIGHT),
+                        primary_bg,
+                        None,
+                    );
                 }
-                let item_rect = Rect::new(popup.x + col_w, y, col_w, item_h);
+                let item_rect = Rect::new(popup.x + col_w, y, col_w, ITEM_HEIGHT);
                 let text_y = ctx.visual_center_y(item_rect, 14.0);
-                ctx.draw_text(&format!("{:02}", minute),
-                    Point::new(popup.x + col_w + 16.0, text_y),
-                    if is_hover { primary } else { text_color }, 14.0);
+                let label = format!("{:02}", i);
+                let text_width = ctx.measure_text(&label, 14.0).w;
+                ctx.draw_text(
+                    &label,
+                    Point::new(item_rect.x + (item_rect.w - text_width) * 0.5, text_y),
+                    if is_hover { primary } else { text_color },
+                    14.0,
+                );
             }
+
+            ctx.fill_rect(
+                Rect::new(popup.x + col_w - 0.5, popup.y, 1.0, popup.h),
+                border_color,
+                None,
+            );
+            ctx.pop_clip();
         }
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
         picker_bounds(frame)
     }
+
+    overlay_entry => (&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+        self.open.get().then(|| {
+            crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
+                .bounds(picker_bounds(frame))
+                .z_index(900)
+        })
+    }
 }
 
 fn picker_bounds(frame: Rect) -> Rect {
-    frame.union(&Rect::new(
+    frame.union(&time_popup_rect(frame))
+}
+
+fn time_popup_rect(frame: Rect) -> Rect {
+    Rect::new(
         frame.x,
         frame.y + frame.h + POPUP_GAP,
-        frame.w,
+        frame.w.max(POPUP_MIN_WIDTH),
         POPUP_HEIGHT,
-    ))
+    )
 }
 
 impl TimePicker {
@@ -313,6 +418,7 @@ impl TimePicker {
             hover_minute: Cell::new(0),
             scroll_hour: Cell::new(0.0),
             scroll_min: Cell::new(0.0),
+            active_column: Cell::new(TimeColumn::Hour),
             picker_size: config.size,
             last_frame: Cell::new(None),
             pending_change: Cell::new(None),
@@ -365,6 +471,7 @@ impl TimePicker {
                 .value_configured
                 .get()
                 .then(|| self.value.get().format()),
+            open: self.open.get(),
         }
     }
 
@@ -374,6 +481,9 @@ impl TimePicker {
         if let Some(value) = controlled_value {
             self.value.set(value);
             self.value_configured.set(true);
+            if self.open.get() {
+                self.sync_highlight_to_value(true);
+            }
         }
         self.placeholder = next.placeholder;
         self.picker_size = next.picker_size;
@@ -381,8 +491,12 @@ impl TimePicker {
 
     fn sync_bound_value(&self) {
         if let Some(state) = self.value_binding.as_ref() {
-            self.value.set(state.get());
+            let value = state.get();
+            let changed = self.value.replace(value) != value;
             self.value_configured.set(true);
+            if changed && self.open.get() {
+                self.sync_highlight_to_value(true);
+            }
         }
     }
 
@@ -404,6 +518,135 @@ impl TimePicker {
             }
         }
         self.pending_change.set(Some(value));
+    }
+
+    fn open_popup(&self) {
+        self.sync_bound_value();
+        self.active_column.set(TimeColumn::Hour);
+        self.sync_highlight_to_value(true);
+        self.open.set(true);
+    }
+
+    fn close_popup(&self) {
+        self.open.set(false);
+    }
+
+    fn item_at(&self, frame: Rect, pos: Point) -> Option<(TimeColumn, usize)> {
+        let popup = time_popup_rect(frame);
+        if !popup.contains(pos) {
+            return None;
+        }
+        let column = if pos.x < popup.x + popup.w * 0.5 {
+            TimeColumn::Hour
+        } else {
+            TimeColumn::Minute
+        };
+        let scroll = self.scroll_offset(column);
+        let index = ((pos.y - popup.y + scroll) / ITEM_HEIGHT).floor();
+        if !index.is_finite() || index < 0.0 {
+            return None;
+        }
+        let index = index as usize;
+        (index < Self::row_count(column)).then_some((column, index))
+    }
+
+    fn row_count(column: TimeColumn) -> usize {
+        match column {
+            TimeColumn::Hour => HOUR_COUNT,
+            TimeColumn::Minute => MINUTE_COUNT,
+        }
+    }
+
+    fn max_scroll(column: TimeColumn) -> f32 {
+        (Self::row_count(column) as f32 * ITEM_HEIGHT - POPUP_HEIGHT).max(0.0)
+    }
+
+    fn centered_scroll(column: TimeColumn, index: usize) -> f32 {
+        let centered = index as f32 * ITEM_HEIGHT - (POPUP_HEIGHT - ITEM_HEIGHT) * 0.5;
+        centered.clamp(0.0, Self::max_scroll(column))
+    }
+
+    fn scroll_offset(&self, column: TimeColumn) -> f32 {
+        match column {
+            TimeColumn::Hour => self.scroll_hour.get(),
+            TimeColumn::Minute => self.scroll_min.get(),
+        }
+    }
+
+    fn set_scroll_offset(&self, column: TimeColumn, offset: f32) {
+        match column {
+            TimeColumn::Hour => self.scroll_hour.set(offset),
+            TimeColumn::Minute => self.scroll_min.set(offset),
+        }
+    }
+
+    fn scroll_column(&self, column: TimeColumn, delta: f32) -> bool {
+        if !delta.is_finite() {
+            return false;
+        }
+        let current = self.scroll_offset(column);
+        let next = (current + delta).clamp(0.0, Self::max_scroll(column));
+        if (next - current).abs() <= f32::EPSILON {
+            false
+        } else {
+            self.set_scroll_offset(column, next);
+            true
+        }
+    }
+
+    fn ensure_highlight_visible(&self, column: TimeColumn) {
+        let index = match column {
+            TimeColumn::Hour => self.hover_hour.get(),
+            TimeColumn::Minute => self.hover_minute.get(),
+        };
+        let current = self.scroll_offset(column);
+        let row_top = index as f32 * ITEM_HEIGHT;
+        let row_bottom = row_top + ITEM_HEIGHT;
+        let next = if row_top < current {
+            row_top
+        } else if row_bottom > current + POPUP_HEIGHT {
+            row_bottom - POPUP_HEIGHT
+        } else {
+            current
+        };
+        self.set_scroll_offset(column, next.clamp(0.0, Self::max_scroll(column)));
+    }
+
+    fn move_highlight(&self, delta: i32) {
+        let column = self.active_column.get();
+        let count = Self::row_count(column) as i32;
+        let current = match column {
+            TimeColumn::Hour => self.hover_hour.get(),
+            TimeColumn::Minute => self.hover_minute.get(),
+        } as i32;
+        let next = (current + delta).clamp(0, count - 1) as usize;
+        match column {
+            TimeColumn::Hour => self.hover_hour.set(next),
+            TimeColumn::Minute => self.hover_minute.set(next),
+        }
+        self.ensure_highlight_visible(column);
+    }
+
+    fn reset_highlight_to_value(&self) -> bool {
+        let value = self.value.get();
+        let hour_changed = self.hover_hour.replace(value.hour as usize) != value.hour as usize;
+        let minute_changed =
+            self.hover_minute.replace(value.minute as usize) != value.minute as usize;
+        hour_changed || minute_changed
+    }
+
+    fn sync_highlight_to_value(&self, center: bool) {
+        let value = self.value.get();
+        self.hover_hour.set(value.hour as usize);
+        self.hover_minute.set(value.minute as usize);
+        if center {
+            self.scroll_hour
+                .set(Self::centered_scroll(TimeColumn::Hour, value.hour as usize));
+            self.scroll_min.set(Self::centered_scroll(
+                TimeColumn::Minute,
+                value.minute as usize,
+            ));
+        }
     }
 }
 

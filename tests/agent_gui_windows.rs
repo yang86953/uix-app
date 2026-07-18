@@ -10,8 +10,12 @@ mod framework;
 mod graphics_recovery;
 #[path = "support/agent_gui_windows/multi_window.rs"]
 mod multi_window;
+#[path = "support/agent_gui_windows/overlay_performance.rs"]
+mod overlay_performance;
 #[path = "support/agent_gui_windows/system_theme.rs"]
 mod system_theme;
+#[path = "support/agent_gui_windows/text_components.rs"]
+mod text_components;
 #[path = "support/agent_gui_windows/visual.rs"]
 mod visual;
 

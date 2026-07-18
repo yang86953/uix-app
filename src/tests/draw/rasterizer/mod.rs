@@ -4,3 +4,4 @@ mod core;
 mod glyph;
 mod image;
 mod polygon;
+mod rounded_rect;

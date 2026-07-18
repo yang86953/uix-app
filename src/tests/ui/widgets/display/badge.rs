@@ -1,6 +1,7 @@
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
 use crate::draw::spatial::Orientation;
+use crate::draw::PhysicalUnit;
 use crate::tests::common::*;
 use crate::ui::widgets::{Badge, BadgeStatus};
 use crate::ui::{AccessibilityRole, WidgetRender};
@@ -24,14 +25,94 @@ fn render(badge: &Badge, canvas: &mut SharedRasterizer, fonts: &FontService, fon
     WidgetRender::render(badge, Rect::new(0.0, 0.0, 100.0, 20.0), &mut ctx, &tree);
 }
 
+fn render_pixels(badge: &Badge) -> Vec<u32> {
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(100, 24));
+    render(badge, &mut canvas, &fonts, font);
+    canvas.surface().pixels().to_vec()
+}
+
+fn assert_pixels_equal(actual: Vec<u32>, expected: &[u32]) {
+    let actual_nonzero = actual.iter().filter(|pixel| **pixel != 0).count();
+    let expected_nonzero = expected.iter().filter(|pixel| **pixel != 0).count();
+    assert!(
+        actual == expected,
+        "pixel output differs: actual_nonzero={actual_nonzero}, expected_nonzero={expected_nonzero}"
+    );
+}
+
+fn assert_size_close(actual: Size, expected: Size) {
+    assert!(
+        (actual.w - expected.w).abs() < 0.001 && (actual.h - expected.h).abs() < 0.001,
+        "expected {expected:?}, got {actual:?}"
+    );
+}
+
+#[test]
+fn text_badge_measure_matches_render_precedence_and_cjk_font_size() {
+    let constraints = Constraints::unconstrained();
+
+    assert_size_close(
+        Badge::new().text("新消息").measure(constraints),
+        Size::new(45.0, 20.0),
+    );
+    assert_size_close(
+        Badge::new().count(8).text("新消息").measure(constraints),
+        Size::new(45.0, 20.0),
+    );
+    assert_size_close(
+        Badge::new()
+            .status(BadgeStatus::Success)
+            .text("新消息")
+            .measure(constraints),
+        Size::new(57.0, 20.0),
+    );
+    assert_size_close(
+        Badge::new().dot().text("新消息").measure(constraints),
+        Size::new(57.0, 20.0),
+    );
+}
+
+#[test]
+fn overflow_count_measure_uses_the_rendered_label() {
+    assert_size_close(
+        Badge::new()
+            .count(120)
+            .max(99)
+            .measure(Constraints::unconstrained()),
+        Size::new(30.15, 20.0),
+    );
+}
+
+#[test]
+fn non_finite_offsets_fall_back_to_zero_in_rendering() {
+    let expected = render_pixels(&Badge::new().dot());
+
+    assert_pixels_equal(
+        render_pixels(&Badge::new().dot().offset(f32::NAN, f32::INFINITY)),
+        &expected,
+    );
+    assert_pixels_equal(
+        render_pixels(
+            &Badge::new()
+                .dot()
+                .offset_unit(PhysicalUnit::Px(f32::NAN), PhysicalUnit::Mm(f32::INFINITY)),
+        ),
+        &expected,
+    );
+}
+
 #[test]
 fn status_and_dot_text_participate_in_measurement_and_accessibility() {
     let constraints = Constraints::loose(Size::new(300.0, 100.0));
     let status = Badge::new().status(BadgeStatus::Success).text("Ready");
     let dot = Badge::new().dot().text("新消息");
 
-    assert_eq!(status.measure(constraints), Size::new(53.0, 20.0));
-    assert_eq!(dot.measure(constraints), Size::new(60.0, 20.0));
+    assert_size_close(status.measure(constraints), Size::new(53.75, 20.0));
+    assert_size_close(dot.measure(constraints), Size::new(57.0, 20.0));
     let accessibility = status.snapshot_fields().accessibility();
     assert_eq!(accessibility.role, AccessibilityRole::Status);
     assert_eq!(accessibility.name.as_deref(), Some("Ready"));

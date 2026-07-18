@@ -673,6 +673,7 @@ fn reconcile_color_picker_preserves_open_state_and_syncs_controlled_color() {
         SnapshotFields::ColorPicker {
             value,
             preset_colors,
+            ..
         } if value == Color::green() && !preset_colors.is_empty()
     ));
 }
@@ -862,7 +863,9 @@ fn reconcile_time_picker_preserves_open_value_and_syncs_placeholder() {
     assert_eq!(time_picker.current_value(), Time::new(10, 45));
     assert!(matches!(
         time_picker.snapshot_fields(),
-        SnapshotFields::TimePicker { placeholder, value }
+        SnapshotFields::TimePicker {
+            placeholder, value, ..
+        }
             if placeholder == "new" && value.as_deref() == Some("10:45")
     ));
 }

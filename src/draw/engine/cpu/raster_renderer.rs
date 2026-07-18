@@ -323,7 +323,7 @@ impl RasterRenderer {
             | (out_b_p.round() as u32).min(255);
     }
 
-    fn fill_span(
+    pub(crate) fn fill_span(
         &self,
         pixels: &mut [u32],
         w: i32,

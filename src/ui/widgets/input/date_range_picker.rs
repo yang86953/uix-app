@@ -141,6 +141,7 @@ component! {
                         };
                         self.view_year.set(year);
                         self.view_month.set(month);
+                        self.hover_date.set(None);
                         return EventResult::Handled;
                     }
                     if let Some(date) = hit_calendar_date(
@@ -172,8 +173,7 @@ component! {
                             self.view_month.get(),
                         )
                         .filter(|date| !self.is_date_disabled(*date));
-                        self.hover_date.set(hit);
-                        if hit.is_some() {
+                        if self.hover_date.replace(hit) != hit {
                             return EventResult::Handled;
                         }
                     }
@@ -181,8 +181,15 @@ component! {
                 EventResult::NotHandled
             }
             SystemEvent::PointerLeave => {
-                self.hover_date.set(None);
-                EventResult::NotHandled
+                if self.hover_date.replace(None).is_some() {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
+            }
+            SystemEvent::FocusIn => {
+                self.focused = true;
+                EventResult::Handled
             }
             SystemEvent::FocusOut => {
                 self.focused = false;
@@ -192,25 +199,34 @@ component! {
             SystemEvent::KeyDown { key, .. } => {
                 if self.open.get() {
                     match key {
-                        KeyCode::Escape => self.close_popup(),
+                        KeyCode::Escape => {
+                            self.close_popup();
+                            EventResult::Handled
+                        }
                         KeyCode::Left => {
                             let (year, month) =
                                 prev_month(self.view_year.get(), self.view_month.get());
                             self.view_year.set(year);
                             self.view_month.set(month);
+                            self.hover_date.set(None);
+                            EventResult::Handled
                         }
                         KeyCode::Right => {
                             let (year, month) =
                                 next_month(self.view_year.get(), self.view_month.get());
                             self.view_year.set(year);
                             self.view_month.set(month);
+                            self.hover_date.set(None);
+                            EventResult::Handled
                         }
-                        _ => {}
+                        _ => EventResult::NotHandled,
                     }
                 } else if *key == KeyCode::Space || *key == KeyCode::Enter {
                     self.open_from_current_value();
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
                 }
-                EventResult::Handled
             }
             _ => EventResult::NotHandled,
         }
@@ -243,6 +259,19 @@ component! {
         let text_tertiary = ctx.tokens().color_text_tertiary();
         let radius = Some(crate::draw::Radius::uniform(ctx.tokens().border_radius_sm()));
 
+        let nominal_height = crate::ui::config::control_height(self.picker_size);
+        let scale = if nominal_height > 0.0 {
+            (frame.h / nominal_height).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let font_size = 14.0 * scale;
+        let horizontal_padding = 12.0 * scale;
+        let icon_gap = 4.0 * scale;
+        let icon_slot_width = 24.0 * scale;
+        let icon_right_inset = 4.0 * scale;
+
+        ctx.push_clip(frame);
         ctx.fill_rect(frame, ctx.tokens().color_bg_container(), radius);
         ctx.stroke_rect(
             frame,
@@ -250,29 +279,45 @@ component! {
             if self.focused { 2.0 } else { 1.0 },
             radius,
         );
-        let text_y = ctx.visual_center_y(frame, 14.0);
-        if let Some((start, end)) = self.current_range() {
-            ctx.draw_text(
-                &format!("{}  →  {}", start.format(), end.format()),
-                Point::new(frame.x + 12.0, text_y),
-                text_color,
-                14.0,
+        if font_size > 0.0 && frame.w > 0.0 {
+            let icon_frame = Rect::new(
+                frame.x + frame.w - icon_right_inset - icon_slot_width,
+                frame.y,
+                icon_slot_width,
+                frame.h,
             );
-        } else {
-            ctx.draw_text(
-                &self.placeholder,
-                Point::new(frame.x + 12.0, text_y),
-                text_tertiary,
-                14.0,
+            let text_left = frame.x + horizontal_padding;
+            let text_right = (icon_frame.x - icon_gap).max(text_left);
+            let text_area = Rect::new(text_left, frame.y, text_right - text_left, frame.h);
+            let text_y = ctx.visual_center_y(frame, font_size);
+            if text_area.w > 0.0 {
+                ctx.push_clip(text_area);
+                if let Some((start, end)) = self.current_range() {
+                    ctx.draw_text(
+                        &format!("{}  →  {}", start.format(), end.format()),
+                        Point::new(text_left, text_y),
+                        text_color,
+                        font_size,
+                    );
+                } else {
+                    ctx.draw_text(
+                        &self.placeholder,
+                        Point::new(text_left, text_y),
+                        text_tertiary,
+                        font_size,
+                    );
+                }
+                ctx.pop_clip();
+            }
+            crate::ui::widgets::icon::paint_icon_in_frame(
+                ctx,
+                "calendar",
+                icon_frame,
+                text_secondary,
+                font_size,
             );
         }
-        crate::ui::widgets::icon::paint_icon_in_frame(
-            ctx,
-            "calendar",
-            Rect::new(frame.x + frame.w - 28.0, frame.y, 24.0, frame.h),
-            text_secondary,
-            14.0,
-        );
+        ctx.pop_clip();
 
         if self.open.get() {
             let pending = self.pending_start.get();
@@ -297,6 +342,14 @@ component! {
 
     dirty_rect => (&self, frame: Rect) -> Rect {
         self.popup_bounds(frame)
+    }
+
+    overlay_entry => (&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+        self.open.get().then(|| {
+            crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
+                .bounds(self.popup_bounds(frame))
+                .z_index(900)
+        })
     }
 }
 
@@ -398,6 +451,7 @@ impl DateRangePicker {
             placeholder: self.placeholder.clone(),
             start,
             end,
+            open: self.open.get(),
         }
     }
 
@@ -520,6 +574,7 @@ impl DateRangePicker {
         let radius = Some(crate::draw::Radius::uniform(
             ctx.tokens().border_radius_sm(),
         ));
+        ctx.push_clip(footer);
         ctx.fill_rect(footer, ctx.tokens().color_bg_elevated(), radius);
         ctx.stroke_rect(footer, ctx.tokens().color_border(), 1.0, radius);
         let primary = ctx.tokens().color_primary();
@@ -531,8 +586,11 @@ impl DateRangePicker {
                 PRESET_ROW_HEIGHT,
             );
             let text_y = ctx.visual_center_y(row, 12.0);
+            ctx.push_clip(row);
             ctx.draw_text(label, Point::new(row.x, text_y), primary, 12.0);
+            ctx.pop_clip();
         }
+        ctx.pop_clip();
     }
 }
 

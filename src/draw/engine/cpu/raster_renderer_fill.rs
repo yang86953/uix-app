@@ -75,12 +75,63 @@ impl RasterRenderer {
                     let y0 = cr.y as i32;
                     let x1 = (cr.x + cr.w) as i32;
                     let y1 = (cr.y + cr.h) as i32;
+                    let split = ((rect.x + rect.w * 0.5 - 0.5).ceil() as i32).clamp(x0, x1);
+                    let optimized = [rad.tl, rad.tr, rad.br, rad.bl]
+                        .iter()
+                        .all(|radius| radius.is_finite() && *radius >= 0.0);
                     for py in y0..y1 {
-                        for px in x0..x1 {
+                        if !optimized {
+                            for px in x0..x1 {
+                                let ux = px as f32 + 0.5;
+                                let uy = py as f32 + 0.5;
+                                let coverage = Self::sdf_to_coverage(Self::rounded_rect_sdf(
+                                    ux, uy, &rect, &rad,
+                                ));
+                                if coverage > 0.0 {
+                                    self.put_pixel_aa(
+                                        pixels, surface_w, surface_h, px, py, c, coverage,
+                                    );
+                                }
+                            }
+                            continue;
+                        }
+
+                        let uy = py as f32 + 0.5;
+                        let mut px = x0;
+                        while px < split {
                             let ux = px as f32 + 0.5;
-                            let uy = py as f32 + 0.5;
                             let sd = Self::rounded_rect_sdf(ux, uy, &rect, &rad);
                             let coverage = Self::sdf_to_coverage(sd);
+                            if coverage >= 1.0 - 1e-6 {
+                                self.fill_span(pixels, surface_w, surface_h, px, py, split - px, c);
+                                break;
+                            }
+                            if coverage > 0.0 {
+                                self.put_pixel_aa(
+                                    pixels, surface_w, surface_h, px, py, c, coverage,
+                                );
+                            }
+                            px += 1;
+                        }
+
+                        let mut px = x1;
+                        while px > split {
+                            px -= 1;
+                            let ux = px as f32 + 0.5;
+                            let sd = Self::rounded_rect_sdf(ux, uy, &rect, &rad);
+                            let coverage = Self::sdf_to_coverage(sd);
+                            if coverage >= 1.0 - 1e-6 {
+                                self.fill_span(
+                                    pixels,
+                                    surface_w,
+                                    surface_h,
+                                    split,
+                                    py,
+                                    px + 1 - split,
+                                    c,
+                                );
+                                break;
+                            }
                             if coverage > 0.0 {
                                 self.put_pixel_aa(
                                     pixels, surface_w, surface_h, px, py, c, coverage,

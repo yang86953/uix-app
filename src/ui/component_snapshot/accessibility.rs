@@ -447,9 +447,11 @@ pub(super) fn date_range_accessibility(
     placeholder: &str,
     start: Option<&String>,
     end: Option<&String>,
+    open: bool,
 ) -> AccessibilitySnapshot {
     AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder).with_state(
         AccessibilityState {
+            expanded: Some(open),
             value_text: start
                 .zip(end)
                 .map(|(start, end)| format!("{start} / {end}")),

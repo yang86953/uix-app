@@ -37,18 +37,32 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 embed(Avatar::new("QA").size(64.0).bg(tk.color_success)),
             ),
         ]),
-        "badge" => qa_row([
-            qa_variant("Count / target", qa_target(Badge::new().count(8))),
-            qa_variant("Overflow", embed(Badge::new().count(120).max(99))),
-            qa_variant(
-                "Success",
-                embed(Badge::new().status(BadgeStatus::Success).text("通过")),
-            ),
-            qa_variant(
-                "Error",
-                embed(Badge::new().status(BadgeStatus::Error).text("失败")),
-            ),
-        ]),
+        "badge" => column_fit([
+            qa_row([
+                qa_variant(
+                    "CJK text over count / target",
+                    row([qa_target(Badge::new().count(8).text("新消息"))]),
+                ),
+                qa_variant(
+                    "Overflow 99+",
+                    row([embed(Badge::new().count(120).max(99))
+                        .automation_id("component-qa-badge-overflow")]),
+                ),
+                qa_variant("Show zero", embed(Badge::new().show_zero(true))),
+            ]),
+            qa_row([
+                qa_variant(
+                    "Success status",
+                    embed(Badge::new().status(BadgeStatus::Success).text("已同步")),
+                ),
+                qa_variant("Dot text", embed(Badge::new().dot().text("新消息"))),
+                qa_variant(
+                    "Error status",
+                    embed(Badge::new().status(BadgeStatus::Error).text("失败")),
+                ),
+            ]),
+        ])
+        .gap(14.0),
         "calendar" => qa_target(Calendar::new().cell_size(26.0)),
         "card" => qa_row([
             qa_variant(
@@ -257,19 +271,27 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 ),
             ),
         ]),
-        "tag" => qa_row([
-            qa_variant("Default / target", qa_target(Tag::new("Default"))),
-            qa_variant(
-                "Success",
-                embed(Tag::new("Success").color(TagColor::Success)),
-            ),
-            qa_variant(
-                "Warning",
-                embed(Tag::new("Warning").color(TagColor::Warning)),
-            ),
-            qa_variant("Error", embed(Tag::new("Error").color(TagColor::Error))),
-            qa_variant("Info", embed(Tag::new("Info").color(TagColor::Info))),
-        ]),
+        "tag" => column_fit([
+            qa_row([
+                qa_variant(
+                    "CJK closable / target",
+                    row([qa_target(Tag::new("管理员").closable())]),
+                ),
+                qa_variant(
+                    "CJK checked",
+                    embed(Tag::new("已选择").default_checked(true)),
+                ),
+                qa_variant("Custom 20px", embed(Tag::new("重要").font_size(20.0))),
+            ]),
+            qa_row([
+                qa_variant("Default", embed(Tag::new("默认"))),
+                qa_variant("Success", embed(Tag::new("成功").color(TagColor::Success))),
+                qa_variant("Warning", embed(Tag::new("警告").color(TagColor::Warning))),
+                qa_variant("Error", embed(Tag::new("错误").color(TagColor::Error))),
+                qa_variant("Info", embed(Tag::new("信息").color(TagColor::Info))),
+            ]),
+        ])
+        .gap(14.0),
         "timeline" => qa_target(
             Timeline::new()
                 .add(TimelineItem::new("库存完成").description("88 个组件"))
@@ -412,28 +434,28 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
         "tooltip" => column_fit([
             row([
                 ViewNode::new(
-                    Tooltip::new("Top 提示").placement(TooltipPlacement::Top),
+                    Tooltip::new("顶部提示").placement(TooltipPlacement::Top),
                     vec![button("Top").into()],
                 )
                 .width(100.0)
                 .height(36.0)
                 .automation_id("component-qa-target"),
                 ViewNode::new(
-                    Tooltip::new("Bottom 提示").placement(TooltipPlacement::Bottom),
+                    Tooltip::new("底部提示").placement(TooltipPlacement::Bottom),
                     vec![button("Bottom").into()],
                 )
                 .width(100.0)
                 .height(36.0)
                 .automation_id("component-qa-tooltip-bottom"),
                 ViewNode::new(
-                    Tooltip::new("Left 提示").placement(TooltipPlacement::Left),
+                    Tooltip::new("左侧提示").placement(TooltipPlacement::Left),
                     vec![button("Left").into()],
                 )
                 .width(100.0)
                 .height(36.0)
                 .automation_id("component-qa-tooltip-left"),
                 ViewNode::new(
-                    Tooltip::new("Right 提示").placement(TooltipPlacement::Right),
+                    Tooltip::new("右侧提示").placement(TooltipPlacement::Right),
                     vec![button("Right").into()],
                 )
                 .width(100.0)
@@ -444,7 +466,7 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
             .gap(16.0)
             .height(60.0),
             ViewNode::new(
-                Tooltip::new("Focus 提示").trigger(TriggerMode::Focus),
+                Tooltip::new("焦点提示").trigger(TriggerMode::Focus),
                 vec![button("Focus").automation_id("component-qa-tooltip-focus")],
             )
             .width(120.0)

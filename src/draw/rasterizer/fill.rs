@@ -11,8 +11,8 @@ use crate::draw::primitives::types::Radius;
 use crate::draw::rasterizer::polygon;
 
 use super::{
-    clip_to_int, color_to_premul, fill_rect_raw, intersect_rect, put_pixel_aa, rect_to_pixels,
-    rounded_rect_sdf, sdf_to_coverage,
+    clip_to_int, color_to_premul, fill_rect_raw, fill_span, intersect_rect, put_pixel_aa,
+    rect_to_pixels, rounded_rect_sdf, sdf_to_coverage,
 };
 
 /// 纯函数：填充矩形，可选圆角。
@@ -37,12 +37,53 @@ pub fn fill_rect(
                 let y0 = cr.y as i32;
                 let x1 = (cr.x + cr.w) as i32;
                 let y1 = (cr.y + cr.h) as i32;
+                let split = ((rect.x + rect.w * 0.5 - 0.5).ceil() as i32).clamp(x0, x1);
+                let optimized = [rad.tl, rad.tr, rad.br, rad.bl]
+                    .iter()
+                    .all(|radius| radius.is_finite() && *radius >= 0.0);
                 for py in y0..y1 {
-                    for px in x0..x1 {
+                    if !optimized {
+                        for px in x0..x1 {
+                            let ux = px as f32 + 0.5;
+                            let uy = py as f32 + 0.5;
+                            let coverage = sdf_to_coverage(rounded_rect_sdf(ux, uy, &rect, &rad));
+                            if coverage > 0.0 {
+                                put_pixel_aa(
+                                    pixels, surface_w, px, py, cx0, cy0, cx1, cy1, c, coverage,
+                                );
+                            }
+                        }
+                        continue;
+                    }
+
+                    let uy = py as f32 + 0.5;
+                    let mut px = x0;
+                    while px < split {
                         let ux = px as f32 + 0.5;
-                        let uy = py as f32 + 0.5;
                         let sd = rounded_rect_sdf(ux, uy, &rect, &rad);
                         let coverage = sdf_to_coverage(sd);
+                        if coverage >= 1.0 - 1e-6 {
+                            fill_span(pixels, surface_w, px, split, py, cx0, cy0, cx1, cy1, c);
+                            break;
+                        }
+                        if coverage > 0.0 {
+                            put_pixel_aa(
+                                pixels, surface_w, px, py, cx0, cy0, cx1, cy1, c, coverage,
+                            );
+                        }
+                        px += 1;
+                    }
+
+                    let mut px = x1;
+                    while px > split {
+                        px -= 1;
+                        let ux = px as f32 + 0.5;
+                        let sd = rounded_rect_sdf(ux, uy, &rect, &rad);
+                        let coverage = sdf_to_coverage(sd);
+                        if coverage >= 1.0 - 1e-6 {
+                            fill_span(pixels, surface_w, split, px + 1, py, cx0, cy0, cx1, cy1, c);
+                            break;
+                        }
                         if coverage > 0.0 {
                             put_pixel_aa(
                                 pixels, surface_w, px, py, cx0, cy0, cx1, cy1, c, coverage,

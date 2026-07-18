@@ -10,6 +10,16 @@ use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
 use crate::ui::{ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent};
 
+const DEFAULT_TAG_FONT_SIZE: f32 = 12.0;
+
+fn normalized_tag_font_size(size: f32) -> f32 {
+    if size.is_finite() && size > 0.0 {
+        size
+    } else {
+        DEFAULT_TAG_FONT_SIZE
+    }
+}
+
 /// 预设标签类型。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TagColor {
@@ -123,6 +133,7 @@ component! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.last_size.set(Size::new(frame.w, frame.h));
+        let font_size = normalized_tag_font_size(self.font_size);
         let (bg, fg) = if let Some(cc) = self.custom_color {
             (cc, Color::white())
         } else {
@@ -155,8 +166,8 @@ component! {
         let text_x = frame.x + 8.0 + checked_w;
         let text_w = frame.w - 16.0 - checked_w - if self.closable { 20.0 } else { 0.0 };
         let content = Rect::new(text_x, frame.y, text_w, frame.h);
-        let tw = ctx.measure_text(&self.text, self.font_size).w;
-        let th = ctx.line_box_height(self.font_size);
+        let tw = ctx.measure_text(&self.text, font_size).w;
+        let th = ctx.line_box_height(font_size);
         let text_rect = Rect::new(
             content.x + (content.w - tw) * 0.5,
             content.y + (content.h - th) * 0.5,
@@ -167,13 +178,16 @@ component! {
             &self.text,
             crate::core::Point::new(text_rect.x, text_rect.y),
             fg,
-            self.font_size,
+            font_size,
         );
         if self.closable {
-            let cx = frame.x + frame.w - 14.0;
-            let close_h = ctx.line_box_height(10.0);
-            let cy = frame.y + (frame.h - close_h) * 0.5;
-            ctx.draw_text("✕", crate::core::Point::new(cx, cy), fg, 10.0);
+            crate::ui::widgets::icon::paint_icon_in_frame(
+                ctx,
+                "x",
+                Rect::new(frame.x + frame.w - 20.0, frame.y, 20.0, frame.h),
+                fg,
+                10.0,
+            );
         }
     }
 }
@@ -190,7 +204,7 @@ impl Tag {
             text: text.into(),
             color: TagColor::Default,
             closable: false,
-            font_size: 12.0,
+            font_size: DEFAULT_TAG_FONT_SIZE,
             custom_color: None,
             checkable: false,
             checked: false,
@@ -227,16 +241,23 @@ impl Tag {
         self
     }
     pub fn font_size(mut self, s: f32) -> Self {
-        self.font_size = s;
+        self.font_size = normalized_tag_font_size(s);
         self
     }
 
     fn intrinsic_size(&self) -> Size {
-        let w = self.text.len() as f32 * (self.font_size * 0.6)
+        let font_size = normalized_tag_font_size(self.font_size);
+        let text_width = crate::draw::font::text_backend::estimate_text_metrics(
+            &self.text,
+            f32::INFINITY,
+            font_size,
+        )
+        .max_line_width;
+        let w = text_width
             + 16.0
             + if self.checkable { 14.0 } else { 0.0 }
             + if self.closable { 20.0 } else { 0.0 };
-        Size::new(w, self.font_size + 8.0)
+        Size::new(w, font_size + 8.0)
     }
 
     pub fn is_visible(&self) -> bool {

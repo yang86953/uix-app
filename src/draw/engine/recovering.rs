@@ -292,6 +292,10 @@ impl GraphicsEngine for RecoveringGraphicsEngine {
         self.engine.copy_offscreen_pixels(handle)
     }
 
+    fn copy_frame_pixels(&self) -> Option<(Vec<u32>, i32)> {
+        self.engine.copy_frame_pixels()
+    }
+
     fn try_execute_encoded_picture(
         &mut self,
         handle: &ImageHandle,

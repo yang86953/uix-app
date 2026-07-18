@@ -3,10 +3,93 @@ use crate::ui::core::widget::WidgetCore;
 use crate::ui::widgets::Tag;
 use crate::ui::{AccessibilityRole, EventHandler, WidgetComponent};
 
+fn render_tag(tag: &Tag) -> Vec<u32> {
+    let mut canvas = crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer::new(
+        crate::draw::engine::cpu::pixel_surface::PixelSurface::new(120, 36),
+    );
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+    let mut ctx = PaintContext::new_for_test(
+        &mut canvas,
+        font,
+        &fonts,
+        &images,
+        &tokens,
+        96.0,
+        1.0,
+        crate::draw::spatial::Orientation::YDown,
+        120,
+        36,
+    );
+    WidgetRender::render(tag, Rect::new(4.0, 8.0, 112.0, 20.0), &mut ctx, &tree);
+    canvas.surface().pixels().to_vec()
+}
+
 fn key(key: KeyCode) -> SystemEvent {
     SystemEvent::KeyDown {
         key,
         mods: KeyMod::NONE,
+    }
+}
+
+#[test]
+fn tag_measure_counts_cjk_scalars_and_reserved_action_regions() {
+    assert_eq!(
+        Tag::new("管理员").measure(Constraints::unconstrained()),
+        Size::new(52.0, 20.0)
+    );
+    assert_eq!(
+        Tag::new("管理员")
+            .closable()
+            .measure(Constraints::unconstrained()),
+        Size::new(72.0, 20.0)
+    );
+    assert_eq!(
+        Tag::new("管理员")
+            .checkable(true)
+            .measure(Constraints::unconstrained()),
+        Size::new(66.0, 20.0)
+    );
+    assert_eq!(
+        Tag::new("管理员")
+            .closable()
+            .checkable(true)
+            .measure(Constraints::unconstrained()),
+        Size::new(86.0, 20.0)
+    );
+}
+
+#[test]
+fn tag_measure_uses_custom_font_size_for_cjk_text() {
+    assert_eq!(
+        Tag::new("管理员")
+            .font_size(20.0)
+            .measure(Constraints::unconstrained()),
+        Size::new(76.0, 28.0)
+    );
+}
+
+#[test]
+fn invalid_tag_font_sizes_fall_back_in_measure_and_render() {
+    let expected_size = Tag::new("管理员").measure(Constraints::unconstrained());
+    let expected_pixels = render_tag(&Tag::new("Status").closable());
+
+    for invalid in [f32::NAN, f32::INFINITY, 0.0, -4.0] {
+        assert_eq!(
+            Tag::new("管理员")
+                .font_size(invalid)
+                .measure(Constraints::unconstrained()),
+            expected_size
+        );
+        assert_eq!(
+            render_tag(&Tag::new("Status").closable().font_size(invalid)),
+            expected_pixels
+        );
     }
 }
 

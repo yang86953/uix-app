@@ -38,11 +38,13 @@ fn closed_modal_trigger_opens_via_widget_tree_pointer_down() {
         tree.tree_version() > closed_tree_version,
         "opening an overlay must rebuild the compositor layer tree"
     );
-    assert!(tree
-        .invalidation()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .needs_full_frame());
+    assert!(
+        tree.invalidation()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .dirty_region()
+            .full_frame
+    );
 }
 
 #[test]
@@ -114,6 +116,68 @@ fn modal_close_finishes_exit_transition_before_internal_hide() {
     assert!(!WidgetAnimation::update_animation(&mut modal, 1.0));
     assert!(!modal.is_present());
     assert!(modal.transition_dirty);
+}
+
+#[test]
+fn closed_modal_hides_its_retained_child_subtree() {
+    use crate::ui::view::{button, ViewAdapter, ViewNode};
+
+    let mut tree = ViewAdapter::build(ViewNode::new(
+        Modal::new("Dialog").visible(true).overlay(true),
+        vec![button("Cancel").into()],
+    ));
+    let modal = tree.root_id().expect("modal root");
+    tree.get_mut(modal)
+        .expect("modal node")
+        .set_frame(Rect::new(0.0, 0.0, 800.0, 600.0));
+    tree.get_mut(modal).expect("modal node").set_active(true);
+    tree.layout();
+    assert!(!tree.update(1.0));
+    tree.layout();
+
+    let child = tree
+        .get(modal)
+        .expect("modal node")
+        .children()
+        .first()
+        .copied()
+        .expect("modal child");
+    assert!(tree.visible_rect_for(child).is_some());
+
+    tree.get_mut(modal)
+        .expect("modal node")
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<Modal>()
+        .expect("Modal component")
+        .close();
+    assert!(!tree.update(1.0));
+
+    assert!(
+        tree.visible_rect_for(child).is_none(),
+        "a closed Modal must not expose stale child geometry"
+    );
+    assert_ne!(
+        tree.hit_test(Point::new(300.0, 250.0)),
+        Some(child),
+        "a closed Modal child must not remain hittable"
+    );
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(16.0, 16.0),
+            button: crate::ui::MouseButton::Left,
+            mods: crate::native::traits::input::KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    tree.layout();
+    assert!(!tree.update(1.0));
+    tree.layout();
+    assert!(
+        tree.visible_rect_for(child).is_some(),
+        "reopening a Modal must relayout and reveal its retained child subtree"
+    );
 }
 
 #[test]

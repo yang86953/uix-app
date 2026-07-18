@@ -37,6 +37,7 @@ component! {
         pub(crate) transition: TransitionPlayer,
         closing: bool,
         pub(crate) transition_dirty: bool,
+        layout_requested: Cell<bool>,
         last_surface_w: Cell<f32>,
         last_surface_h: Cell<f32>,
     }
@@ -110,9 +111,17 @@ component! {
         }
 
         let mask_alpha = (96.0 * self.transition_opacity()).round().clamp(0.0, 96.0) as u8;
-        if self.mask {
+        let surface_extent = self.mask.then(|| {
+            (
+                ctx.canvas_2d().width() as f32,
+                ctx.canvas_2d().height() as f32,
+            )
+        });
+        if let Some((surface_w, surface_h)) = surface_extent {
+            self.last_surface_w.set(surface_w);
+            self.last_surface_h.set(surface_h);
             ctx.fill_rect(
-                Rect::new(-2000.0, -2000.0, 4000.0, 4000.0),
+                Rect::new(0.0, 0.0, surface_w, surface_h),
                 Color::from_rgba(0, 0, 0, mask_alpha),
                 None,
             );
@@ -124,11 +133,7 @@ component! {
         let text_sec = ctx.tokens().color_text_secondary();
         let r = Radius::uniform(ctx.tokens().border_radius_lg());
 
-        let drawer_rect = if self.mask {
-            let surface_w = ctx.canvas_2d().width() as f32;
-            let surface_h = ctx.canvas_2d().height() as f32;
-            self.last_surface_w.set(surface_w);
-            self.last_surface_h.set(surface_h);
+        let drawer_rect = if let Some((surface_w, surface_h)) = surface_extent {
             self.overlay_rect_for_surface(surface_w, surface_h)
         } else {
             match self.placement {
@@ -257,6 +262,14 @@ component! {
             .collect()
     }
 
+    children_clip => (&self, _frame: Rect) -> Option<Rect> {
+        (!self.is_present()).then(Rect::zero)
+    }
+
+    take_layout_request => (&mut self) -> bool {
+        self.layout_requested.replace(false)
+    }
+
     update_animation => (&mut self, dt: f64) -> bool {
         if !self.is_present() || self.transition.finished {
             self.transition_dirty = false;
@@ -312,6 +325,7 @@ impl Drawer {
             )),
             closing: false,
             transition_dirty: false,
+            layout_requested: Cell::new(false),
             last_surface_w: Cell::new(0.0),
             last_surface_h: Cell::new(0.0),
         }
@@ -416,6 +430,7 @@ impl Drawer {
         self.closing = false;
         self.transition = TransitionPlayer::new(self.resolved_enter_animation());
         self.transition_dirty = true;
+        self.layout_requested.set(true);
     }
 
     pub fn close(&mut self) {
@@ -429,6 +444,7 @@ impl Drawer {
         self.closing = true;
         self.transition = TransitionPlayer::new(self.resolved_leave_animation());
         self.transition_dirty = true;
+        self.layout_requested.set(true);
     }
 
     pub fn set_visible(&mut self, v: bool) {

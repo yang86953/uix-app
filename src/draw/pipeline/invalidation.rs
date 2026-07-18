@@ -36,6 +36,11 @@ pub enum Invalidation {
         rect: Rect,
         scroll: Option<ScrollDelta>,
     },
+    /// The compositor topology changed and the whole target must be rebuilt,
+    /// while no ordinary scene node should be reported as paint-dirty. Root
+    /// overlay membership changes use this to avoid conflating z-order work
+    /// with normal-tree content changes.
+    FullComposite,
 }
 
 /// 失效队列：合并重复 Paint、判定 0 帧。
@@ -101,7 +106,9 @@ impl InvalidationQueue {
         self.items.iter().any(|i| {
             matches!(
                 i,
-                Invalidation::Paint { .. } | Invalidation::Composite { .. }
+                Invalidation::Paint { .. }
+                    | Invalidation::Composite { .. }
+                    | Invalidation::FullComposite
             )
         })
     }
@@ -144,6 +151,7 @@ impl InvalidationQueue {
             match item {
                 Invalidation::Paint { rect: Some(r), .. } => region.add_rect(*r),
                 Invalidation::Composite { rect, .. } => region.add_rect(*rect),
+                Invalidation::FullComposite => return DirtyRegion::full(),
                 Invalidation::Layout(_) => {}
                 Invalidation::Paint { rect: None, .. } => {
                     return DirtyRegion::full();

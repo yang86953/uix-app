@@ -13,16 +13,25 @@ fn swatch(text: &str, color: ColorValue) -> ViewNode {
 
 pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
     let view = match id {
-        "button" => qa_row([
-            qa_variant(
-                "Primary / target",
-                qa_target(button("主要操作").primary().widget()),
-            ),
-            qa_variant("Default", embed(button("默认").widget())),
-            qa_variant("Danger", embed(button("危险").danger().widget())),
-            qa_variant("Ghost", embed(button("幽灵").ghost().widget())),
-            qa_variant("Disabled", embed(button("禁用").disabled(true).widget())),
-        ]),
+        "button" => column_fit([
+            qa_row([
+                qa_variant(
+                    "Long CJK / target",
+                    qa_target(button("保存所有更改").primary().widget()),
+                ),
+                qa_variant("Default", embed(button("默认").widget())),
+                qa_variant("Danger", embed(button("危险").danger().widget())),
+            ]),
+            qa_row([
+                qa_variant("Ghost", embed(button("幽灵").ghost().widget())),
+                qa_variant("Disabled", embed(button("禁用").disabled(true).widget())),
+                qa_variant(
+                    "Custom 20px",
+                    embed(Button::new("自定义字号").style(Style::default().with_font_size(20.0))),
+                ),
+            ]),
+        ])
+        .gap(14.0),
         "icon" => qa_row([
             qa_variant("16", qa_target(Icon::new("search").size(16.0))),
             qa_variant("24", embed(Icon::new("home").size(24.0))),
@@ -35,28 +44,38 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
         "label" => column_fit([
             qa_variant(
                 "Primary",
-                qa_target(Label::new("主要文字 Aa 0123").color(tk.color_text)),
+                embed(Label::new("主要文字 Aa 0123").color(tk.color_text)),
             ),
             qa_variant(
                 "Secondary",
                 embed(Label::new("次要文字与中文标点，。").color(tk.color_text_secondary)),
             ),
             qa_variant(
-                "Long content",
-                embed(
-                    Label::new("较长标签仍应完整显示：UIX Component Visual Quality Gate")
+                "Multiline CJK / long content",
+                qa_target(
+                    Label::new("第一行：中文标签\n第二行：English 0123\n第三行：收尾文字")
                         .color(tk.color_text_tertiary),
                 ),
             ),
+            label("多行标签后的相邻内容")
+                .font_size(12.0)
+                .automation_id("component-qa-label-after"),
         ])
         .gap(14.0),
         "typography" => column_fit([
-            qa_target(Typography::heading("Heading 1 / 一级标题", 1)),
+            embed(Typography::heading("Heading 1 / 一级标题", 1)),
             embed(Typography::heading("Heading 2 / 二级标题", 2)),
             embed(Typography::heading("Heading 3 / 三级标题", 3)),
-            embed(Typography::paragraph(
-                "正文需要保持舒适行高、清晰层级，并正确处理 English、中文和 0123456789。",
-            )),
+            qa_variant(
+                "Narrow CJK paragraph",
+                row([column_fit([qa_target(Typography::paragraph(
+                    "中文段落需要正确换行，并为后续组件保留完整布局空间。English 0123456789。",
+                ))])
+                .width(112.0)]),
+            ),
+            label("换行后的相邻内容")
+                .font_size(12.0)
+                .automation_id("component-qa-typography-after"),
         ])
         .gap(10.0),
         "divider" => column_fit([

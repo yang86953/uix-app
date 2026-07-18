@@ -1,7 +1,7 @@
 use crate::component;
-use crate::core::{Constraints, Point, Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
-use crate::draw::{Color, Radius};
+use crate::draw::Color;
 use crate::native::traits::input::ControlSize;
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::foundation::virtual_scroll::VirtualListScroll;
@@ -13,6 +13,7 @@ use crate::ui::{
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 
+mod render;
 mod search;
 
 use self::search::VisibleRow;
@@ -138,11 +139,15 @@ component! {
         transition_dirty: bool,
         placeholder: String,
         hovered_option: Option<usize>,
+        highlighted_option: Option<usize>,
         pending_change: RefCell<Option<String>>,
         multiple: bool,
         search: bool,
         search_query: String,
         search_cursor_rect: Cell<Rect>,
+        control_rect: Cell<Rect>,
+        dropdown_rect: Cell<Rect>,
+        multi_remove_rects: RefCell<Vec<(usize, Rect)>>,
         pub(crate) dropdown_scroll: VirtualListScroll,
         scroll_delta_strip: Cell<(f32, f32)>,
     }
@@ -180,7 +185,25 @@ component! {
                 button: MouseButton::Left,
                 ..
             } => {
-                if pos.y >= 0.0 && pos.y <= self.control_height() {
+                if self.control_rect.get().contains(*pos) {
+                    if self.multiple {
+                        let remove = self
+                            .multi_remove_rects
+                            .borrow()
+                            .iter()
+                            .find_map(|(index, rect)| rect.contains(*pos).then_some(*index));
+                        if let Some(index) = remove {
+                            if let Some(position) = self
+                                .selected_multi
+                                .iter()
+                                .position(|selected| *selected == index)
+                            {
+                                self.selected_multi.remove(position);
+                                self.publish_multi_change();
+                            }
+                            return EventResult::Handled;
+                        }
+                    }
                     if self.open {
                         self.close();
                     } else {
@@ -190,9 +213,10 @@ component! {
                     return EventResult::Handled;
                 }
 
-                if self.is_present() && pos.y > self.control_height() {
+                if self.is_present() && self.dropdown_rect.get().contains(*pos) {
                     if let Some(flat_idx) = self.dropdown_row_at_y(pos.y) {
                         if let Some(opt_idx) = self.flat_row_option_index(flat_idx) {
+                            self.highlighted_option = Some(opt_idx);
                             if self.multiple {
                                 if let Some(multi_idx) =
                                     self.selected_multi.iter().position(|&i| i == opt_idx)
@@ -209,18 +233,19 @@ component! {
                             return EventResult::Handled;
                         }
                     }
+                    return EventResult::Handled;
                 }
 
                 self.close();
                 EventResult::NotHandled
             }
             SystemEvent::PointerMove { pos, .. } => {
-                if self.is_present() && pos.y > self.control_height() {
+                if self.is_present() && self.dropdown_rect.get().contains(*pos) {
                     self.hovered_option = self.dropdown_row_at_y(pos.y);
                 } else {
                     self.hovered_option = None;
                 }
-                self.hovered = pos.y >= 0.0 && pos.y <= self.control_height();
+                self.hovered = self.control_rect.get().contains(*pos);
                 EventResult::Handled
             }
             SystemEvent::PointerEnter => {
@@ -242,7 +267,7 @@ component! {
                 EventResult::Handled
             }
             SystemEvent::Wheel { delta, pos, .. } => {
-                if self.is_present() && pos.y > self.control_height() {
+                if self.is_present() && self.dropdown_rect.get().contains(*pos) {
                     let row_count = self.dropdown_row_count();
                     let viewport_h = self.dropdown_viewport_height(row_count);
                     let dy = self.dropdown_scroll.scroll_by_wheel(
@@ -261,18 +286,18 @@ component! {
             SystemEvent::KeyDown { key, .. } => match key {
                 KeyCode::Down => {
                     if self.open {
-                        let position = visible_options
-                            .iter()
-                            .position(|index| *index == self.selected);
-                        let next = match position {
-                            Some(position) => visible_options.get(position + 1),
-                            None => visible_options.first(),
-                        }
-                        .copied();
-                        if let Some(next) = next {
-                            if self.multiple {
-                                self.selected = next;
-                            } else {
+                        if self.search || self.multiple {
+                            self.move_highlight(true);
+                        } else {
+                            let position = visible_options
+                                .iter()
+                                .position(|index| *index == self.selected);
+                            let next = match position {
+                                Some(position) => visible_options.get(position + 1),
+                                None => visible_options.first(),
+                            }
+                            .copied();
+                            if let Some(next) = next {
                                 self.select_single(next);
                             }
                         }
@@ -283,20 +308,20 @@ component! {
                 }
                 KeyCode::Up => {
                     if self.open && !visible_options.is_empty() {
-                        let position = visible_options
-                            .iter()
-                            .position(|index| *index == self.selected);
-                        let prev = match position {
-                            Some(position) => {
-                                visible_options.get(position.saturating_sub(1))
-                            }
-                            None => visible_options.last(),
-                        }
-                        .copied()
-                        .unwrap_or(self.selected);
-                        if self.multiple {
-                            self.selected = prev;
+                        if self.search || self.multiple {
+                            self.move_highlight(false);
                         } else {
+                            let position = visible_options
+                                .iter()
+                                .position(|index| *index == self.selected);
+                            let prev = match position {
+                                Some(position) => {
+                                    visible_options.get(position.saturating_sub(1))
+                                }
+                                None => visible_options.last(),
+                            }
+                            .copied()
+                            .unwrap_or(self.selected);
                             self.select_single(prev);
                         }
                     }
@@ -304,17 +329,20 @@ component! {
                 }
                 KeyCode::Enter => {
                     if self.open {
-                        if self.search && !self.multiple {
-                            let selection = visible_options
-                                .iter()
-                                .find(|index| **index == self.selected)
-                                .or_else(|| visible_options.first())
-                                .copied();
-                            if let Some(selection) = selection {
-                                self.select_single(selection);
+                        if self.multiple {
+                            self.toggle_highlighted_multi();
+                        } else if self.search {
+                            let selection = self
+                                .highlighted_option
+                                .filter(|index| visible_options.contains(index))
+                                .or_else(|| visible_options.first().copied());
+                            if let Some(index) = selection {
+                                self.select_single(index);
                             }
+                            self.close();
+                        } else {
+                            self.close();
                         }
-                        self.close();
                     } else {
                         self.open();
                     }
@@ -323,7 +351,11 @@ component! {
                 KeyCode::Space if self.search => EventResult::NotHandled,
                 KeyCode::Space => {
                     if self.open {
-                        self.close();
+                        if self.multiple {
+                            self.toggle_highlighted_multi();
+                        } else {
+                            self.close();
+                        }
                     } else {
                         self.open();
                     }
@@ -368,199 +400,29 @@ component! {
 
     hit_test_frame => (&self, frame: Rect) -> Rect {
         if self.is_present() {
-            select_dirty_rect(
-                frame,
-                self.dropdown_damage_row_count(),
-                self.control_height(),
-            )
+            select_dirty_rect(frame, self.dropdown_damage_rect())
         } else {
             frame
         }
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        self.capture_bound_value_dependency();
-        let bg = ctx.tokens().color_bg_elevated();
-        let border = ctx.tokens().color_border();
-        let text_color = ctx.tokens().color_text();
-        let text_secondary = ctx.tokens().color_text_secondary();
-        let primary = ctx.tokens().color_primary();
-        let fill_quaternary = ctx.tokens().color_fill_quaternary();
-        let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
-
-        let box_rect = Rect::new(frame.x, frame.y, frame.w, self.control_height());
-        let box_bg = if self.disabled {
-            fill_quaternary
-        } else if self.hovered || self.open {
-            ctx.tokens().color_bg_container()
-        } else {
-            bg
-        };
-        ctx.fill_rect(box_rect, box_bg, r);
-        let border_color = if self.focused {
-            primary
-        } else if self.disabled {
-            ctx.tokens().color_border_secondary()
-        } else {
-            border
-        };
-        ctx.stroke_rect(box_rect, border_color, if self.focused { 2.0 } else { 1.0 }, r);
-
-        let box_rect_v = Rect::new(frame.x, frame.y, frame.w, self.control_height());
-        let draw_y = ctx.visual_center_y(box_rect_v, 13.0);
-        let showing_query = self.search && self.open && !self.search_query.is_empty();
-        if showing_query {
-            ctx.draw_text(
-                &self.search_query,
-                Point::new(frame.x + 10.0, draw_y),
-                text_color,
-                13.0,
-            );
-        } else if self.multiple && !self.selected_multi.is_empty() {
-            let all_opts: Vec<&str> = self.all_options();
-            let mut x = frame.x + 8.0;
-            for &idx in &self.selected_multi {
-                if idx < all_opts.len() {
-                    let tag = all_opts[idx];
-                    let tag_w = tag.len() as f32 * 7.0 + 16.0;
-                    ctx.fill_rect(
-                        Rect::new(x, frame.y + 4.0, tag_w, 24.0),
-                        ctx.tokens().color_fill_tertiary(),
-                        Some(Radius::uniform(4.0)),
-                    );
-                    ctx.draw_text(tag, Point::new(x + 4.0, draw_y), text_color, 12.0);
-                    ctx.draw_text(
-                        "✕",
-                        Point::new(x + tag_w - 14.0, draw_y),
-                        text_secondary,
-                        10.0,
-                    );
-                    x += tag_w + 4.0;
-                }
-            }
-        } else {
-            let display_text = if self.selected < self.all_options().len() {
-                self.all_options()[self.selected]
-            } else {
-                ""
-            };
-            let (disp, color) = if display_text.is_empty() && !self.placeholder.is_empty() {
-                (&self.placeholder as &str, text_secondary)
-            } else if display_text.is_empty() {
-                ("", text_secondary)
-            } else {
-                (display_text, text_color)
-            };
-            ctx.draw_text(disp, Point::new(frame.x + 10.0, draw_y), color, 13.0);
-        }
-
-        let cursor_x = (frame.x + 10.0 + self.search_query.chars().count() as f32 * 7.0)
-            .min(frame.x + frame.w - 26.0);
-        let cursor_rect = Rect::new(cursor_x, frame.y + 7.0, 1.0, 18.0);
-        self.search_cursor_rect.set(cursor_rect);
-        if self.search && self.focused && self.open {
-            ctx.fill_rect(cursor_rect, primary, None);
-        }
-
-        let arrow = if self.is_present() { "▲" } else { "▼" };
-        let arrow_y = ctx.visual_center_y(box_rect_v, 10.0);
-        ctx.draw_text(
-            arrow,
-            Point::new(frame.x + frame.w - 18.0, arrow_y),
-            text_secondary,
-            10.0,
-        );
-
-        if !self.is_present() {
-            return;
-        }
-
-        let visible_rows = self.visible_rows();
-        let no_matches = self.search && !self.search_query.is_empty() && visible_rows.is_empty();
-        if self.all_options().is_empty() && !no_matches {
-            return;
-        }
-
-        let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
-        let bg = fade_color(ctx.tokens().color_bg_elevated(), opacity);
-        let border = fade_color(ctx.tokens().color_border(), opacity);
-        let text_color = fade_color(ctx.tokens().color_text(), opacity);
-        let primary = fade_color(ctx.tokens().color_primary(), opacity);
-        let primary_bg = fade_color(ctx.tokens().color_primary_bg(), opacity);
-        let fill_tertiary = fade_color(ctx.tokens().color_fill_tertiary(), opacity);
-        let text_sec = fade_color(ctx.tokens().color_text_secondary(), opacity);
-        let group_header = fade_color(ctx.tokens().color_fill_quaternary(), opacity);
-
-        let row_count = self.dropdown_row_count();
-        let list_y = frame.y + self.control_height();
-        let list_h = self.dropdown_viewport_height(row_count);
-        let list_rect = Rect::new(frame.x, list_y, frame.w, list_h);
-        let shadow = ctx.tokens().box_shadow_secondary();
-        ctx.draw_box_shadow(
-            list_rect,
-            shadow.layer_1.2,
-            shadow.layer_1.0,
-            shadow.layer_1.1,
-            shadow.layer_1.3,
-            Some(Radius::uniform(ctx.tokens().border_radius_sm())),
-        );
-        ctx.fill_rect(list_rect, bg, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
-        ctx.stroke_rect(
-            list_rect,
-            border,
-            1.0,
-            Some(Radius::uniform(ctx.tokens().border_radius_sm())),
-        );
-
-        let scroll_offset = self.dropdown_scroll.scroll_offset();
-        let (start, end) = self.dropdown_scroll.scroll_range(
-            row_count,
-            DROPDOWN_ROW_HEIGHT,
-            list_h,
-        );
-        ctx.canvas_2d().push_clip(list_rect);
-
-        for flat_idx in start..end {
-            let item_y = list_y + flat_idx as f32 * DROPDOWN_ROW_HEIGHT - scroll_offset;
-            if item_y + DROPDOWN_ROW_HEIGHT < list_y || item_y > list_y + list_h {
-                continue;
-            }
-
-            if no_matches {
-                let no_data = crate::ui::locale::use_locale().no_data;
-                let item_rect = Rect::new(frame.x, item_y, frame.w, DROPDOWN_ROW_HEIGHT);
-                let draw_y = ctx.visual_center_y(item_rect, 13.0);
-                ctx.draw_text(
-                    no_data,
-                    Point::new(frame.x + 10.0, draw_y),
-                    text_sec,
-                    13.0,
-                );
-            } else if let Some(row) = visible_rows.get(flat_idx).copied() {
-                self.render_visible_row(
-                    frame,
-                    item_y,
-                    flat_idx,
-                    row,
-                    ctx,
-                    text_color,
-                    primary,
-                    primary_bg,
-                    fill_tertiary,
-                    text_sec,
-                    group_header,
-                );
-            }
-        }
-
-        ctx.canvas_2d().pop_clip();
+        self.render_select(frame, ctx);
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        select_dirty_rect(
-            frame,
-            self.dropdown_damage_row_count(),
-            self.control_height(),
+        select_dirty_rect(frame, self.dropdown_damage_rect())
+    }
+
+    overlay_entry => (&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+        if !self.is_present() {
+            return None;
+        }
+
+        Some(
+            crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
+                .bounds(select_popup_rect(frame, self.dropdown_damage_rect()))
+                .z_index(900),
         )
     }
 
@@ -575,6 +437,7 @@ component! {
                 self.open = false;
                 self.closing = false;
                 self.search_query.clear();
+                self.highlighted_option = None;
             }
             self.transition_dirty = false;
             return false;
@@ -587,6 +450,7 @@ component! {
             self.open = false;
             self.closing = false;
             self.search_query.clear();
+            self.highlighted_option = None;
         }
 
         self.is_present() && !self.transition.finished
@@ -594,11 +458,7 @@ component! {
 
     dirty_bounds => (&self, frame: Rect) -> Rect {
         if self.transition_dirty {
-            select_dirty_rect(
-                frame,
-                self.dropdown_damage_row_count(),
-                self.control_height(),
-            )
+            select_dirty_rect(frame, self.dropdown_damage_rect())
         } else {
             Rect::zero()
         }
@@ -611,61 +471,39 @@ impl Select {
     }
 
     fn intrinsic_size(&self) -> Size {
-        if self.options.is_empty() && self.optgroups.is_empty() {
-            return Size::new(120.0, self.control_height());
+        let mut max_text_width = crate::draw::font::text_backend::estimate_text_metrics(
+            &self.placeholder,
+            f32::INFINITY,
+            13.0,
+        )
+        .max_line_width;
+        for option in &self.options {
+            max_text_width = max_text_width.max(
+                crate::draw::font::text_backend::estimate_text_metrics(option, f32::INFINITY, 13.0)
+                    .max_line_width,
+            );
         }
-
-        let all_opts: Vec<&str> = self.all_options();
-        let w = all_opts
-            .iter()
-            .map(|o| o.len() as f32 * 9.0 + 32.0)
-            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .unwrap_or(150.0)
-            .max(120.0);
-        Size::new(w, self.control_height())
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn render_visible_row(
-        &self,
-        frame: Rect,
-        item_y: f32,
-        flat_idx: usize,
-        row: VisibleRow,
-        ctx: &mut PaintContext,
-        text_color: Color,
-        primary: Color,
-        primary_bg: Color,
-        fill_tertiary: Color,
-        text_sec: Color,
-        group_header: Color,
-    ) {
-        match row {
-            VisibleRow::Group(group_index) => {
-                let item_rect = Rect::new(frame.x, item_y, frame.w, DROPDOWN_ROW_HEIGHT);
-                ctx.fill_rect(item_rect, group_header, None);
-                let gy = ctx.visual_center_y(item_rect, 12.0);
-                if let Some(label) = self.group_label(group_index) {
-                    ctx.draw_text(label, Point::new(frame.x + 10.0, gy), text_sec, 12.0);
-                }
-            }
-            VisibleRow::Option(option_index) => {
-                if let Some(label) = self.option_label(option_index) {
-                    self.render_option(
-                        frame,
-                        item_y,
-                        flat_idx,
-                        label,
-                        option_index,
-                        ctx,
-                        text_color,
-                        primary,
-                        primary_bg,
-                        fill_tertiary,
-                    );
-                }
+        for group in &self.optgroups {
+            max_text_width = max_text_width.max(
+                crate::draw::font::text_backend::estimate_text_metrics(
+                    &group.label,
+                    f32::INFINITY,
+                    12.0,
+                )
+                .max_line_width,
+            );
+            for option in &group.options {
+                max_text_width = max_text_width.max(
+                    crate::draw::font::text_backend::estimate_text_metrics(
+                        option,
+                        f32::INFINITY,
+                        13.0,
+                    )
+                    .max_line_width,
+                );
             }
         }
+        Size::new((max_text_width + 40.0).max(120.0), self.control_height())
     }
 
     fn push_scroll_delta(&self, dx: f32, dy: f32) {
@@ -680,56 +518,11 @@ impl Select {
     fn refresh_search_results(&mut self) {
         self.hovered_option = None;
         self.dropdown_scroll.set_scroll_offset(0.0);
+        self.highlighted_option = self.visible_option_indices().first().copied();
         if !self.open {
             self.open();
         } else {
             self.transition_dirty = true;
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn render_option(
-        &self,
-        frame: Rect,
-        item_y: f32,
-        flat_idx: usize,
-        label: &str,
-        opt_idx: usize,
-        ctx: &mut PaintContext,
-        text_color: Color,
-        primary: Color,
-        primary_bg: Color,
-        fill_tertiary: Color,
-    ) {
-        let item_rect = Rect::new(frame.x, item_y, frame.w, DROPDOWN_ROW_HEIGHT);
-        let is_hovered = self.hovered_option == Some(flat_idx);
-        let is_selected = if self.multiple {
-            self.selected_multi.contains(&opt_idx)
-        } else {
-            opt_idx == self.selected
-        };
-
-        if is_hovered || is_selected {
-            let highlight = if is_hovered {
-                fill_tertiary
-            } else {
-                primary_bg
-            };
-            ctx.fill_rect(item_rect, highlight, None);
-        }
-
-        let tc = if is_selected { primary } else { text_color };
-        let draw_y = ctx.visual_center_y(item_rect, 13.0);
-        if self.multiple {
-            let check = if is_selected { "☑ " } else { "☐ " };
-            ctx.draw_text(
-                &format!("{}{}", check, label),
-                Point::new(frame.x + 10.0, draw_y),
-                tc,
-                13.0,
-            );
-        } else {
-            ctx.draw_text(label, Point::new(frame.x + 10.0, draw_y), tc, 13.0);
         }
     }
 
@@ -776,6 +569,7 @@ impl Select {
     }
 
     fn select_single(&mut self, index: usize) {
+        self.highlighted_option = Some(index);
         if self.selected == index {
             return;
         }
@@ -789,6 +583,86 @@ impl Select {
         self.pending_change
             .replace(Some(self.selected_multi_payload()));
     }
+
+    fn move_highlight(&mut self, forward: bool) {
+        let visible = self.visible_option_indices();
+        if visible.is_empty() {
+            self.highlighted_option = None;
+            return;
+        }
+        let current = self
+            .highlighted_option
+            .and_then(|index| visible.iter().position(|visible| *visible == index));
+        let position = match (current, forward) {
+            (Some(position), true) => (position + 1).min(visible.len() - 1),
+            (Some(position), false) => position.saturating_sub(1),
+            (None, true) => 0,
+            (None, false) => visible.len() - 1,
+        };
+        let option_index = visible[position];
+        self.highlighted_option = Some(option_index);
+        self.reveal_option(option_index);
+    }
+
+    fn toggle_highlighted_multi(&mut self) {
+        let Some(option_index) = self
+            .highlighted_option
+            .or_else(|| self.visible_option_indices().first().copied())
+        else {
+            return;
+        };
+        if let Some(position) = self
+            .selected_multi
+            .iter()
+            .position(|selected| *selected == option_index)
+        {
+            self.selected_multi.remove(position);
+        } else {
+            self.selected_multi.push(option_index);
+        }
+        self.highlighted_option = Some(option_index);
+        self.publish_multi_change();
+    }
+
+    fn reveal_option(&mut self, option_index: usize) {
+        let visible_rows = self.visible_rows();
+        let Some(row_index) = visible_rows
+            .iter()
+            .position(|row| matches!(row, VisibleRow::Option(index) if *index == option_index))
+        else {
+            return;
+        };
+        let row_count = self.dropdown_row_count();
+        let viewport_height = self.dropdown_viewport_height(row_count);
+        let old_offset = self.dropdown_scroll.scroll_offset();
+        let row_top = row_index as f32 * DROPDOWN_ROW_HEIGHT;
+        let row_bottom = row_top + DROPDOWN_ROW_HEIGHT;
+        let new_offset = if row_top < old_offset {
+            row_top
+        } else if row_bottom > old_offset + viewport_height {
+            row_bottom - viewport_height
+        } else {
+            old_offset
+        };
+        self.dropdown_scroll.set_scroll_offset(new_offset);
+        self.dropdown_scroll
+            .clamp_to_content(row_count, DROPDOWN_ROW_HEIGHT, viewport_height);
+        let applied = self.dropdown_scroll.scroll_offset() - old_offset;
+        if applied.abs() > 0.01 {
+            self.push_scroll_delta(0.0, applied);
+        }
+    }
+
+    fn dropdown_damage_rect(&self) -> Rect {
+        let control = self.control_rect.get();
+        let height = self.dropdown_viewport_height(self.dropdown_damage_row_count());
+        let y = if self.dropdown_rect.get().y < 0.0 {
+            -height
+        } else {
+            control.h
+        };
+        Rect::new(0.0, y, control.w, height)
+    }
 }
 
 impl Default for Select {
@@ -800,6 +674,7 @@ impl Default for Select {
 impl Select {
     pub fn new() -> Self {
         let config = crate::ui::config::use_config();
+        let control_height = crate::ui::config::control_height(config.size);
         Self {
             options: Vec::new(),
             optgroups: Vec::new(),
@@ -816,11 +691,15 @@ impl Select {
             transition_dirty: false,
             placeholder: String::new(),
             hovered_option: None,
+            highlighted_option: None,
             pending_change: RefCell::new(None),
             multiple: false,
             search: config.overrides.select.allow_search.unwrap_or(false),
             search_query: String::new(),
             search_cursor_rect: Cell::new(Rect::zero()),
+            control_rect: Cell::new(Rect::new(0.0, 0.0, 120.0, control_height)),
+            dropdown_rect: Cell::new(Rect::zero()),
+            multi_remove_rects: RefCell::new(Vec::new()),
             dropdown_scroll: VirtualListScroll::new(),
             scroll_delta_strip: Cell::new((0.0, 0.0)),
         }
@@ -886,6 +765,13 @@ impl Select {
 
     pub fn size(mut self, size: ControlSize) -> Self {
         self.select_size = size;
+        let control = self.control_rect.get();
+        self.control_rect.set(Rect::new(
+            control.x,
+            control.y,
+            control.w,
+            self.control_height(),
+        ));
         self
     }
 
@@ -912,10 +798,35 @@ impl Select {
             .collect()
     }
 
+    #[cfg(test)]
+    pub(crate) fn first_multi_remove_rect(&self) -> Option<Rect> {
+        self.multi_remove_rects
+            .borrow()
+            .first()
+            .map(|(_, rect)| *rect)
+    }
+
     pub fn open(&mut self) {
+        if self.closing {
+            self.search_query.clear();
+            self.hovered_option = None;
+        }
         self.open = true;
         self.closing = false;
         self.dropdown_scroll.set_scroll_offset(0.0);
+        let control = self.control_rect.get();
+        let row_count = self.dropdown_row_count();
+        self.dropdown_rect.set(Rect::new(
+            0.0,
+            control.h,
+            control.w,
+            self.dropdown_viewport_height(row_count),
+        ));
+        let visible = self.visible_option_indices();
+        self.highlighted_option = visible
+            .contains(&self.selected)
+            .then_some(self.selected)
+            .or_else(|| visible.first().copied());
         self.transition = TransitionPlayer::new(presets::tooltip_enter());
         self.transition_dirty = true;
     }
@@ -976,12 +887,30 @@ impl Select {
             DROPDOWN_ROW_HEIGHT,
             self.dropdown_viewport_height(row_count),
         );
+        let popup = self.dropdown_rect.get();
+        let popup_height = self.dropdown_viewport_height(row_count);
+        self.dropdown_rect.set(Rect::new(
+            0.0,
+            if popup.y < 0.0 {
+                -popup_height
+            } else {
+                self.control_rect.get().h
+            },
+            self.control_rect.get().w,
+            popup_height,
+        ));
+        let visible = self.visible_option_indices();
+        if self
+            .highlighted_option
+            .is_some_and(|index| !visible.contains(&index))
+        {
+            self.highlighted_option = visible.first().copied();
+        }
     }
 }
 
-fn select_dirty_rect(frame: Rect, row_count: usize, trigger_height: f32) -> Rect {
-    let list_h = (row_count as f32 * DROPDOWN_ROW_HEIGHT).min(MAX_DROPDOWN_VIEWPORT_HEIGHT);
-    let list = Rect::new(frame.x, frame.y + trigger_height, frame.w, list_h);
+fn select_dirty_rect(frame: Rect, popup: Rect) -> Rect {
+    let list = select_popup_rect(frame, popup);
     let expanded = frame.union(&list);
     let expand = 8.0;
     Rect::new(
@@ -990,6 +919,10 @@ fn select_dirty_rect(frame: Rect, row_count: usize, trigger_height: f32) -> Rect
         expanded.w + expand * 2.0,
         expanded.h + expand * 2.0,
     )
+}
+
+fn select_popup_rect(frame: Rect, popup: Rect) -> Rect {
+    Rect::new(frame.x + popup.x, frame.y + popup.y, popup.w, popup.h)
 }
 
 fn fade_color(color: Color, opacity: f32) -> Color {
