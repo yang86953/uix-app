@@ -6,6 +6,16 @@ use crate::draw::painting::PaintContext;
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
 
+const MIN_WIDTH: f32 = 160.0;
+const MAX_WIDTH: f32 = 320.0;
+const MIN_HEIGHT: f32 = 100.0;
+const TEXT_FONT_SIZE: f32 = 13.0;
+const TEXT_LINE_HEIGHT: f32 = 1.5;
+const HORIZONTAL_PADDING: f32 = 16.0;
+const VERTICAL_PADDING: f32 = 12.0;
+const ICON_SIZE: f32 = 32.0;
+const ICON_TEXT_GAP: f32 = 12.0;
+
 component! {
     /// Empty — 空状态展示。
     pub struct Empty {
@@ -15,7 +25,16 @@ component! {
     }
 
     measure => (&self, constraints: Constraints) -> Size {
-        constraints.clamp(self.intrinsic_size())
+        let loc = crate::ui::locale::use_locale();
+        let description = if self.description.is_empty() {
+            loc.empty_description
+        } else {
+            &self.description
+        };
+        let width = constraints
+            .clamp(Size::new(self.preferred_width(description), 0.0))
+            .w;
+        constraints.clamp(Size::new(width, self.intrinsic_height(description, width)))
     }
 
     picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
@@ -23,45 +42,62 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        let frame = Rect::new(frame.x, frame.y, frame.w.max(0.0), frame.h.max(0.0));
+        if frame.w <= 0.0 || frame.h <= 0.0 {
+            return;
+        }
         let loc = crate::ui::locale::use_locale();
         let desc = if self.description.is_empty() { loc.empty_description } else { &self.description };
-        let text_secondary = ctx.tokens().color_text_quaternary();
-        let text_tertiary = ctx.tokens().color_text_tertiary();
+        let text_color = ctx.tokens().color_text_secondary();
+        let icon_color = ctx.tokens().color_text_tertiary();
+        let icon_name = self.visual_icon_name();
+        let text_width = (frame.w - HORIZONTAL_PADDING * 2.0).max(1.0);
+        let text_height = Self::description_height(desc, text_width);
+        let icon_size = icon_name
+            .map(|_| {
+                ICON_SIZE
+                    .min((frame.w - HORIZONTAL_PADDING * 2.0).max(0.0))
+                    .min(frame.h * 0.4)
+            })
+            .unwrap_or(0.0);
+        let gap = if icon_size > 0.0 {
+            ICON_TEXT_GAP.min((frame.h - icon_size).max(0.0))
+        } else {
+            0.0
+        };
+        let content_height = icon_size + gap + text_height;
+        let mut y = frame.y + ((frame.h - content_height).max(0.0) * 0.5);
 
-        // image preset
-        if !self.image.is_empty() {
-            let icon_name = match self.image.as_str() {
-                "default" => "package",
-                "search" => "search",
-                "file" => "file",
-                "folder" => "folder",
-                "network" => "globe",
-                _ => "package",
-            };
-            let icon_frame = Rect::new(frame.x, frame.y + 4.0, frame.w, frame.h * 0.4);
+        ctx.push_clip(frame);
+        if let Some(icon_name) = icon_name.filter(|_| icon_size > 0.0) {
+            let icon_frame = Rect::new(frame.x, y, frame.w, icon_size);
             crate::ui::widgets::icon::paint_icon_in_frame(
                 ctx,
                 icon_name,
                 icon_frame,
-                text_tertiary,
-                32.0,
+                icon_color,
+                icon_size,
             );
+            y += icon_size + gap;
         }
 
-        // 图标（25% 高度位置）
-        if !self.icon_name.is_empty() && self.image.is_empty() {
-            let icon_str = crate::ui::widgets::icon::icon_char(&self.icon_name);
-            let saved = *ctx.font();
-            if let Some(fh) = crate::ui::widgets::icon::lucide_handle() {
-                ctx.set_font(fh);
+        let text_frame = Rect::new(
+            frame.x + HORIZONTAL_PADDING,
+            y,
+            text_width,
+            text_height.min((frame.y + frame.h - y).max(0.0)),
+        );
+        let line_count = Self::description_line_count(desc, text_width);
+        if text_frame.h > 0.0 {
+            if line_count <= 1 {
+                ctx.text_center(desc, text_frame, text_color, TEXT_FONT_SIZE);
+            } else {
+                ctx.push_clip(text_frame);
+                ctx.draw_text_wrapped(desc, text_frame, text_color, TEXT_FONT_SIZE);
+                ctx.pop_clip();
             }
-            let icon_frame = Rect::new(frame.x, frame.y + 8.0, frame.w, frame.h * 0.35);
-            ctx.text_center(icon_str, icon_frame, text_secondary, 28.0);
-            ctx.set_font(saved);
         }
-        // 描述文字（图标下方居中）
-        let desc_frame = Rect::new(frame.x, frame.y + frame.h * 0.45, frame.w, frame.h * 0.5);
-        ctx.text_center(desc, desc_frame, text_secondary, 13.0);
+        ctx.pop_clip();
     }
 }
 
@@ -92,8 +128,56 @@ impl Empty {
         self
     }
 
-    fn intrinsic_size(&self) -> Size {
-        Size::new(160.0, 100.0)
+    fn preferred_width(&self, description: &str) -> f32 {
+        let text_width = crate::draw::font::text_backend::estimate_text_metrics(
+            description,
+            f32::INFINITY,
+            TEXT_FONT_SIZE,
+        )
+        .max_line_width;
+        (text_width + HORIZONTAL_PADDING * 2.0).clamp(MIN_WIDTH, MAX_WIDTH)
+    }
+
+    fn intrinsic_height(&self, description: &str, width: f32) -> f32 {
+        let text_width = (width - HORIZONTAL_PADDING * 2.0).max(1.0);
+        let visual_height = if self.visual_icon_name().is_some() {
+            ICON_SIZE + ICON_TEXT_GAP
+        } else {
+            0.0
+        };
+        (VERTICAL_PADDING * 2.0 + visual_height + Self::description_height(description, text_width))
+            .max(MIN_HEIGHT)
+    }
+
+    fn description_height(description: &str, width: f32) -> f32 {
+        Self::description_line_count(description, width) as f32 * TEXT_FONT_SIZE * TEXT_LINE_HEIGHT
+    }
+
+    fn description_line_count(description: &str, width: f32) -> usize {
+        crate::draw::font::text_backend::estimate_text_metrics(
+            description,
+            width.max(1.0),
+            TEXT_FONT_SIZE,
+        )
+        .line_count
+        .max(1)
+    }
+
+    fn visual_icon_name(&self) -> Option<&str> {
+        if !self.image.is_empty() {
+            Some(match self.image.as_str() {
+                "default" => "package",
+                "search" => "search",
+                "file" => "file",
+                "folder" => "folder",
+                "network" => "globe",
+                _ => "package",
+            })
+        } else if self.icon_name.is_empty() {
+            None
+        } else {
+            Some(&self.icon_name)
+        }
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {

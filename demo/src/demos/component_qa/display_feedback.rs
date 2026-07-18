@@ -72,6 +72,15 @@ fn descriptions_frame(
         .align_self(AlignItems::Start)
 }
 
+fn empty_frame(empty: Empty, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
+    grid([embed(empty).automation_id(automation_id)])
+        .columns(vec![GridTrack::Fr(1.0)])
+        .rows(vec![GridTrack::Fr(1.0)])
+        .width(width)
+        .height(height)
+        .align_self(AlignItems::Start)
+}
+
 fn avatar_frame(avatar: Avatar, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
     grid([embed(avatar).automation_id(automation_id)])
         .columns(vec![GridTrack::Fr(1.0)])
@@ -547,10 +556,31 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
             ),
         ]),
         "empty" => qa_row([
-            qa_variant("Default / target", qa_target(Empty::new())),
             qa_variant(
-                "Custom",
-                embed(Empty::new().description("当前筛选条件下没有组件")),
+                "Default / target",
+                empty_frame(Empty::new(), 160.0, 100.0, "component-qa-target"),
+            ),
+            qa_variant(
+                "Custom icon",
+                empty_frame(
+                    Empty::new()
+                        .icon("inbox")
+                        .description("当前筛选条件下没有组件"),
+                    160.0,
+                    120.0,
+                    "component-qa-empty-icon",
+                ),
+            ),
+            qa_variant(
+                "120px / image preset",
+                empty_frame(
+                    Empty::new()
+                        .image("search")
+                        .description("没有找到匹配结果，请调整关键词或筛选条件后重试。"),
+                    120.0,
+                    150.0,
+                    "component-qa-empty-constrained",
+                ),
             ),
         ]),
         "image" => qa_row([
