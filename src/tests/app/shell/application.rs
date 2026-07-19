@@ -310,10 +310,10 @@ fn app_builder_sets_graphics_backend() {
 }
 
 #[test]
-fn app_graphics_backend_defaults_to_vulkan() {
+fn app_graphics_backend_defaults_to_auto_gpu_native_selection() {
     assert_eq!(
         resolve_graphics_backend(None, None, None),
-        GraphicsBackend::Vulkan
+        GraphicsBackend::Auto
     );
 }
 

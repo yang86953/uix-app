@@ -27,7 +27,7 @@ pub(crate) fn resolve_graphics_backend(
         }
     }
 
-    GraphicsBackend::Vulkan
+    GraphicsBackend::Auto
 }
 
 fn parse_graphics_backend_config(source: &str, value: &str) -> Option<GraphicsBackend> {

@@ -162,8 +162,17 @@ pub(crate) fn active_recipes_by_priority(
         .iter()
         .filter(|entry| matches_probe_request(entry, requested))
         .collect::<Vec<_>>();
-    // Stable sort preserves declaration order for equal priorities.
-    entries.sort_by_key(|entry| std::cmp::Reverse(entry.priority));
+    // GPU-native raster is the primary rendering tier.  A CPU raster recipe
+    // may still use a GPU for presentation, but it must remain behind every
+    // usable native raster candidate so Auto never selects PixelUpload merely
+    // because that API has a higher platform priority. Stable sort preserves
+    // declaration order for equal priorities inside the same tier.
+    entries.sort_by_key(|entry| {
+        (
+            entry.raster != RasterMode::GpuNative,
+            std::cmp::Reverse(entry.priority),
+        )
+    });
     entries
         .into_iter()
         .map(GraphicsBackendEntry::recipe)
