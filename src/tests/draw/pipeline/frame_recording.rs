@@ -1173,6 +1173,87 @@ fn fractional_stroke_rect_geometry_keeps_the_exact_cpu_fallback() {
 }
 
 #[test]
+fn integral_stroke_circle_keeps_offset_clip_and_opacity_native_with_cpu_parity() {
+    use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+    use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+
+    let background = Color::from_rgb(18, 32, 56);
+    let color = Color::from_rgba(211, 47, 129, 149);
+    let opacity = 0.37;
+    let (cx, cy, radius) = (7.5, 7.5, 3.5);
+    let line_width = 1.5;
+    let offset = (2.0, 1.0);
+    let local_clip = Rect::new(5.0, 4.0, 5.0, 6.0);
+
+    let mut engine = FrameRecordingEngine::new();
+    engine.initialize(24, 18).expect("initialize recorder");
+    engine.begin_recording(true).expect("begin recording");
+    engine
+        .canvas_2d()
+        .fill_rect(Rect::new(0.0, 0.0, 24.0, 18.0), background, None);
+    engine.canvas_2d().set_offset(offset.0, offset.1);
+    engine.canvas_2d().push_clip(local_clip);
+    engine.canvas_2d().set_opacity(opacity);
+    engine
+        .canvas_2d()
+        .stroke_circle(cx, cy, radius, color, line_width);
+    let encoder = engine.finish_recording().expect("finish recorder");
+
+    let expected_color = crate::draw::rasterizer::apply_opacity(color.premultiplied(), opacity);
+    assert!(encoder.commands().iter().any(|command| matches!(
+        command,
+        FrameCommand::Native {
+            operation: FrameRasterOp::StrokeRoundedRects {
+                strokes,
+                clip,
+            }
+        } if matches!(strokes.as_slice(), [stroke]
+            if stroke.rect() == FrameRect::new(6, 5, 7, 7)
+                && stroke.color().premultiplied() == expected_color
+                && stroke.radius()
+                    == FrameRadius::new(Radius::uniform(radius)).expect("valid radius")
+                && stroke.line_width().value() == line_width)
+            && *clip == FrameRect::new(7, 5, 5, 6)
+    )));
+    assert!(!encoder
+        .commands()
+        .iter()
+        .any(|command| matches!(command, FrameCommand::CpuSegment { .. })));
+    assert_eq!(engine.scratch_surface_size(), (1, 1));
+
+    let mut cpu = SharedRasterizer::new(PixelSurface::new(24, 18));
+    cpu.fill_rect(Rect::new(0.0, 0.0, 24.0, 18.0), background, None);
+    cpu.set_offset(offset.0, offset.1);
+    cpu.push_clip(local_clip);
+    cpu.set_opacity(opacity);
+    cpu.stroke_circle(cx, cy, radius, color, line_width);
+    assert_eq!(encoder.render_reference().pixels(), cpu.surface().pixels());
+}
+
+#[test]
+fn fractional_stroke_circle_bounds_keep_the_exact_cpu_fallback() {
+    let mut engine = FrameRecordingEngine::new();
+    engine.initialize(16, 12).expect("initialize recorder");
+    engine.begin_recording(true).expect("begin recording");
+    engine
+        .canvas_2d()
+        .stroke_circle(6.25, 6.0, 3.0, Color::from_rgba(40, 120, 220, 176), 2.0);
+
+    assert_eq!(engine.scratch_surface_size(), (16, 12));
+    let encoder = engine.finish_recording().expect("finish recorder");
+    assert!(encoder
+        .commands()
+        .iter()
+        .any(|command| matches!(command, FrameCommand::CpuSegment { .. })));
+    assert!(!encoder.commands().iter().any(|command| matches!(
+        command,
+        FrameCommand::Native {
+            operation: FrameRasterOp::StrokeRoundedRects { .. }
+        }
+    )));
+}
+
+#[test]
 fn rounded_src_over_non_exact_geometries_remain_cpu_fallbacks() {
     let mut engine = FrameRecordingEngine::new();
     engine.initialize(64, 48).expect("initialize recorder");
