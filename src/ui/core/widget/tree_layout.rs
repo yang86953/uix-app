@@ -220,11 +220,11 @@ impl WidgetTree {
                         None => continue,
                     };
                     let frame = node.frame();
-                    let children: Vec<WidgetId> = node.children().to_vec();
+                    let children = node.children();
                     if children.is_empty() {
                         continue;
                     }
-                    node.layout_children(frame, &children, self)
+                    node.layout_children(frame, children, self)
                 };
                 for (child_id, rect) in positions {
                     if self.set_layout_frame(child_id, rect) {
@@ -477,6 +477,7 @@ impl WidgetTree {
         let mut any_resized = false;
         // 收集本趟中被扩展过的子节点，用于触发其父容器重排
         resized_children.clear();
+        let mut children = Vec::new();
         for &id in order.iter().rev() {
             if !self.is_effectively_visible(id) {
                 continue;
@@ -489,12 +490,15 @@ impl WidgetTree {
                     continue;
                 }
             }
-            let (children, prevents_child_expansion, node_frame) = match self.get(id) {
-                Some(n) if !n.children().is_empty() => (
-                    n.children().to_vec(),
-                    n.children_clip(n.frame()).is_some() || !n.child_overflow_expands_parent(),
-                    n.frame(),
-                ),
+            let (prevents_child_expansion, node_frame) = match self.get(id) {
+                Some(n) if !n.children().is_empty() => {
+                    children.clear();
+                    children.extend_from_slice(n.children());
+                    (
+                        n.children_clip(n.frame()).is_some() || !n.child_overflow_expands_parent(),
+                        n.frame(),
+                    )
+                }
                 _ => continue,
             };
             // Viewport 与显式定位容器不由视觉溢出的子树反向撑开。
@@ -686,7 +690,7 @@ impl WidgetTree {
                     continue;
                 }
                 let frame = node.frame();
-                let children = node.children().to_vec();
+                let children = node.children();
                 if children.is_empty() {
                     continue;
                 }
@@ -700,7 +704,7 @@ impl WidgetTree {
                     children.len(),
                 ));
                 // 仅触发 content_bounds 副作用，丢弃返回的 child rects
-                let _ = node.layout_children(frame, &children, self);
+                let _ = node.layout_children(frame, children, self);
             }
         }
     }
@@ -750,13 +754,13 @@ impl WidgetTree {
     fn parent_allocated_frame(&self, id: WidgetId) -> Option<Rect> {
         let parent_id = self.get(id).and_then(|n| n.parent())?;
         let parent_frame = self.get(parent_id)?.frame();
-        let children = self.get(parent_id)?.children().to_vec();
+        let children = self.get(parent_id)?.children();
         if children.is_empty() {
             return None;
         }
         let positions = self
             .get(parent_id)?
-            .layout_children(parent_frame, &children, self);
+            .layout_children(parent_frame, children, self);
         positions
             .into_iter()
             .find(|(cid, _)| *cid == id)
@@ -776,6 +780,8 @@ impl WidgetTree {
 
         let mut any_changed = false;
         let mut ops = Vec::new();
+        let mut children = Vec::new();
+        let mut parent_children = Vec::new();
         for _pass in 0..3 {
             let mut pass_changed = false;
             // Phase A: 收集需要收缩的容器
@@ -804,10 +810,13 @@ impl WidgetTree {
                 }
                 // layout_viewports（Phase 3）会在收缩后更新 content_bounds。
 
-                let children: Vec<WidgetId> = match self.get(id) {
-                    Some(n) if !n.children().is_empty() => n.children().to_vec(),
+                children.clear();
+                match self.get(id) {
+                    Some(n) if !n.children().is_empty() => {
+                        children.extend_from_slice(n.children());
+                    }
                     _ => continue,
-                };
+                }
 
                 // 先按当前 frame 重新布局子节点（兄弟组件靠拢/张开）
                 let Some(frame) = self.get(id).map(|n| n.frame()) else {
@@ -895,10 +904,10 @@ impl WidgetTree {
                         self.layout_shrink_ops
                             .set(self.layout_shrink_ops.get().wrapping_add(1));
                     }
-                    let children: Vec<WidgetId> = self
-                        .get(op.id)
-                        .map(|n| n.children().to_vec())
-                        .unwrap_or_default();
+                    children.clear();
+                    if let Some(node) = self.get(op.id) {
+                        children.extend_from_slice(node.children());
+                    }
                     let new_frame = Rect::new(old_frame.x, old_frame.y, old_frame.w, op.needed_h);
                     // 收缩后重新布局子节点
                     let new_positions = self
@@ -911,10 +920,10 @@ impl WidgetTree {
                     // 重新布局父容器，让兄弟组件靠拢
                     if let Some(pid) = self.get(op.id).and_then(|n| n.parent()) {
                         let parent_frame = self.get(pid).map(|n| n.frame()).unwrap_or_default();
-                        let parent_children: Vec<WidgetId> = self
-                            .get(pid)
-                            .map(|n| n.children().to_vec())
-                            .unwrap_or_default();
+                        parent_children.clear();
+                        if let Some(parent) = self.get(pid) {
+                            parent_children.extend_from_slice(parent.children());
+                        }
                         if !parent_children.is_empty() {
                             let parent_positions = self
                                 .get(pid)
