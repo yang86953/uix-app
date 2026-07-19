@@ -537,6 +537,7 @@ component! {
         max_size: Option<u64>,
         show_upload_list: bool,
         preview_image: bool,
+        manual: bool,
         last_width: Cell<f32>,
         layout_requested: Cell<bool>,
         pending_change: RefCell<Option<String>>,
@@ -713,6 +714,7 @@ impl Upload {
             max_size: None,
             show_upload_list: true,
             preview_image: false,
+            manual: false,
             last_width: Cell::new(0.0),
             layout_requested: Cell::new(false),
             pending_change: RefCell::new(None),
@@ -750,6 +752,11 @@ impl Upload {
     /// Render decodable real local image files as list thumbnails.
     pub fn preview_image(mut self, preview: bool) -> Self {
         self.preview_image = preview;
+        self
+    }
+    /// Require an explicit [`Upload::upload`] call to produce an application-side upload batch.
+    pub fn manual(mut self, manual: bool) -> Self {
+        self.manual = manual;
         self
     }
     pub fn add_file(&mut self, name: &str) {
@@ -822,6 +829,23 @@ impl Upload {
     }
     pub fn files(&self) -> &[UploadFile] {
         &self.file_list
+    }
+
+    /// Mark pending manual entries as uploading and return this call's application-side batch.
+    pub fn upload(&mut self) -> Vec<UploadFile> {
+        if !self.manual {
+            return Vec::new();
+        }
+        let mut batch = Vec::new();
+        for file in &mut self.file_list {
+            if file.status != UploadStatus::Pending {
+                continue;
+            }
+            file.status = UploadStatus::Uploading;
+            file.progress = 0.0;
+            batch.push(file.clone());
+        }
+        batch
     }
 
     fn remove_file_at(&mut self, pos: Point) -> EventResult {
@@ -933,6 +957,7 @@ impl Upload {
         self.max_size = next.max_size;
         self.show_upload_list = next.show_upload_list;
         self.preview_image = next.preview_image;
+        self.manual = next.manual;
         let old_len = self.file_list.len();
         if self.file_list.len() > self.max_count {
             self.file_list.truncate(self.max_count);
@@ -951,6 +976,7 @@ impl Upload {
             max_size: self.max_size,
             show_upload_list: self.show_upload_list,
             preview_image: self.preview_image,
+            manual: self.manual,
             files: self.file_list.clone(),
         }
     }

@@ -251,6 +251,7 @@ fn real_demo_captures_upload_list_visual() {
             assert_eq!(case.name, "Upload");
             assert!(case.states.iter().any(|state| state == "file-list"));
             assert!(case.states.iter().any(|state| state == "image-preview"));
+            assert!(case.states.iter().any(|state| state == "manual"));
             break;
         }
         invoke_and_wait(

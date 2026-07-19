@@ -311,6 +311,34 @@ fn upload_image_preview_uses_real_file_path_and_preserves_fallback_icon() {
 }
 
 #[test]
+fn upload_manual_batch_transitions_pending_files_once_without_executing_io() {
+    let mut manual = Upload::dragger().manual(true).multiple(true);
+    assert!(manual.try_add_file("first.png"));
+    assert!(manual.try_add_file("second.png"));
+    manual.complete_file(1, false);
+
+    let batch = manual.upload();
+    assert_eq!(batch.len(), 1);
+    assert_eq!(batch[0].name, "first.png");
+    assert_eq!(batch[0].status, UploadStatus::Uploading);
+    assert_eq!(manual.files()[0].status, UploadStatus::Uploading);
+    assert_eq!(manual.files()[1].status, UploadStatus::Error);
+    assert!(
+        manual.upload().is_empty(),
+        "the same pending item is not dispatched twice"
+    );
+
+    let mut automatic = Upload::dragger();
+    automatic.add_file("automatic.png");
+    assert!(automatic.upload().is_empty());
+    assert_eq!(automatic.files()[0].status, UploadStatus::Pending);
+    assert!(matches!(
+        manual.snapshot_fields(),
+        SnapshotFields::Upload { manual: true, .. }
+    ));
+}
+
+#[test]
 fn upload_does_not_invent_files_for_clicks_or_disabled_dragging() {
     let mut upload = Upload::new().drag(false);
     let click = SystemEvent::PointerDown {
