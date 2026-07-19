@@ -42,6 +42,9 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     if let Some(slider) = component.downcast_ref::<Slider>() {
         return slider.snapshot_fields();
     }
+    if let Some(slider) = component.downcast_ref::<RangeSlider>() {
+        return slider.snapshot_fields();
+    }
     if let Some(rate) = component.downcast_ref::<Rate>() {
         return rate.snapshot_fields();
     }

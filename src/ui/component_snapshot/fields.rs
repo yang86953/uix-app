@@ -136,6 +136,15 @@ pub enum SnapshotFields {
         marks: Vec<(f64, String)>,
         tooltip: Option<crate::ui::widgets::TooltipPlacement>,
     },
+    RangeSlider {
+        min: f64,
+        max: f64,
+        step: f64,
+        start: f64,
+        end: f64,
+        active_thumb: RangeSliderThumb,
+        size: ControlSize,
+    },
     Rate {
         count: usize,
         value: usize,
@@ -737,6 +746,25 @@ impl SnapshotFields {
                     value_now: Some(*value),
                     value_min: Some(*min),
                     value_max: Some(*max),
+                    ..AccessibilityState::default()
+                },
+            ),
+            Self::RangeSlider {
+                min,
+                max,
+                start,
+                end,
+                active_thumb,
+                ..
+            } => AccessibilitySnapshot::new(AccessibilityRole::Slider).with_state(
+                AccessibilityState {
+                    value_now: Some(match active_thumb {
+                        RangeSliderThumb::Start => *start,
+                        RangeSliderThumb::End => *end,
+                    }),
+                    value_min: Some(*min),
+                    value_max: Some(*max),
+                    value_text: Some(format!("{start}..{end}")),
                     ..AccessibilityState::default()
                 },
             ),

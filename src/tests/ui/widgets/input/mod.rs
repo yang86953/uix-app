@@ -14,6 +14,7 @@ mod mentions;
 mod popup_hit_test;
 mod primary_pointer;
 mod radio;
+mod range_slider;
 mod rate;
 mod segmented;
 mod select;

@@ -16,7 +16,7 @@ use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
 };
 
-fn decimal_places(value: f64) -> i32 {
+pub(super) fn decimal_places(value: f64) -> i32 {
     if !value.is_finite() || value == 0.0 {
         return 0;
     }
@@ -472,6 +472,11 @@ impl Default for Slider {
 }
 
 impl Slider {
+    /// Create a two-thumb slider bound with [`RangeSlider::start`] and [`RangeSlider::end`].
+    pub fn range(range: RangeInclusive<f64>) -> super::RangeSlider {
+        super::RangeSlider::new(range)
+    }
+
     pub fn new(range: RangeInclusive<f64>) -> Self {
         let (min, max) = Self::normalize_range(range);
         let config = crate::ui::config::use_config();
