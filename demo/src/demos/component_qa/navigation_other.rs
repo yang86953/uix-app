@@ -278,9 +278,10 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 .accept(".png,.jpg")
                 .multiple(true)
                 .max_count(4)
-                .show_upload_list(true);
+                .show_upload_list(true)
+                .preview_image(true);
             upload.add_file("button-light.png");
-            upload.add_file("input-dark.png");
+            upload.add_file("assets/images/demo.png");
             upload.add_file("broken.png");
             upload.add_file("pending.jpg");
             upload.update_progress(0, 100.0);

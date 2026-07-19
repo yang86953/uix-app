@@ -512,6 +512,8 @@ impl Default for Transfer {
 #[derive(Debug, Clone, PartialEq)]
 pub struct UploadFile {
     pub name: String,
+    /// Original path for a real local file; synthetic queue entries keep `None`.
+    pub source_path: Option<String>,
     pub size: u64,
     pub progress: f32,
     pub status: UploadStatus,
@@ -534,6 +536,7 @@ component! {
         max_count: usize,
         max_size: Option<u64>,
         show_upload_list: bool,
+        preview_image: bool,
         last_width: Cell<f32>,
         layout_requested: Cell<bool>,
         pending_change: RefCell<Option<String>>,
@@ -629,25 +632,49 @@ component! {
                 UploadStatus::Uploading => primary,
                 UploadStatus::Pending => text_sec,
             };
-            crate::ui::widgets::icon::paint_icon_in_frame(
-                ctx,
-                "file",
-                Rect::new(frame.x + 6.0, y, 18.0, 24.0),
-                text_sec,
-                14.0,
-            );
-            let file_text_clip = Rect::new(frame.x + 28.0, y, (frame.w - 84.0).max(0.0), 32.0);
+            let thumbnail = Rect::new(frame.x + 4.0, y + 4.0, 24.0, 24.0);
+            let drew_preview = self.preview_image
+                && f.source_path.as_deref().is_some_and(|path| {
+                    let Some(handle) = ctx.image_service().ensure_loaded(path) else {
+                        return false;
+                    };
+                    let device_scale = ctx.device_pixel_ratio().max(f32::EPSILON);
+                    let target_side = (24.0 * device_scale).ceil().clamp(1.0, 4096.0) as u32;
+                    let drawable = ctx
+                        .image_service()
+                        .rounded_rect_sized(
+                            handle,
+                            target_side,
+                            target_side,
+                            2.0 * device_scale,
+                            true,
+                        )
+                        .unwrap_or(handle);
+                    ctx.draw_image_fill(drawable, thumbnail);
+                    true
+                });
+            if !drew_preview {
+                crate::ui::widgets::icon::paint_icon_in_frame(
+                    ctx,
+                    "file",
+                    Rect::new(frame.x + 6.0, y, 18.0, 24.0),
+                    text_sec,
+                    14.0,
+                );
+            }
+            let text_x = frame.x + if drew_preview { 34.0 } else { 28.0 };
+            let file_text_clip = Rect::new(text_x, y, (frame.x + frame.w - 56.0 - text_x).max(0.0), 32.0);
             ctx.push_clip(file_text_clip);
-            ctx.draw_text(&f.name, Point::new(frame.x + 28.0, y + 2.0), text, 12.0);
+            ctx.draw_text(&f.name, Point::new(text_x, y + 2.0), text, 12.0);
             ctx.draw_text(
                 &Self::format_file_size(f.size),
-                Point::new(frame.x + 28.0, y + 17.0),
+                Point::new(text_x, y + 17.0),
                 text_sec,
                 10.0,
             );
             if f.status == UploadStatus::Uploading {
-                let bar_w = (frame.w - 84.0).max(0.0);
-                let bar_rect = Rect::new(frame.x + 28.0, y + 28.0, bar_w * f.progress, 3.0);
+                let bar_w = (frame.x + frame.w - 56.0 - text_x).max(0.0);
+                let bar_rect = Rect::new(text_x, y + 28.0, bar_w * f.progress, 3.0);
                 ctx.fill_rect(bar_rect, primary, None);
             }
             ctx.pop_clip();
@@ -685,6 +712,7 @@ impl Upload {
             max_count: 10,
             max_size: None,
             show_upload_list: true,
+            preview_image: false,
             last_width: Cell::new(0.0),
             layout_requested: Cell::new(false),
             pending_change: RefCell::new(None),
@@ -719,6 +747,11 @@ impl Upload {
         self.show_upload_list = show;
         self
     }
+    /// Render decodable real local image files as list thumbnails.
+    pub fn preview_image(mut self, preview: bool) -> Self {
+        self.preview_image = preview;
+        self
+    }
     pub fn add_file(&mut self, name: &str) {
         let _ = self.try_add_file(name);
     }
@@ -737,7 +770,11 @@ impl Upload {
         {
             return false;
         }
-        self.push_file(Self::display_name(path), size.unwrap_or(0))
+        self.push_file(
+            Self::display_name(path),
+            size.unwrap_or(0),
+            size.map(|_| path.to_string()),
+        )
     }
     pub fn remove_file(&mut self, index: usize) -> Option<UploadFile> {
         if index >= self.file_list.len() {
@@ -841,12 +878,13 @@ impl Upload {
         EventResult::Handled
     }
 
-    fn push_file(&mut self, name: &str, size: u64) -> bool {
+    fn push_file(&mut self, name: &str, size: u64, source_path: Option<String>) -> bool {
         if self.file_list.len() >= self.max_count {
             return false;
         }
         self.file_list.push(UploadFile {
             name: name.to_string(),
+            source_path,
             size,
             progress: 0.0,
             status: UploadStatus::Pending,
@@ -894,6 +932,7 @@ impl Upload {
         self.max_count = next.max_count;
         self.max_size = next.max_size;
         self.show_upload_list = next.show_upload_list;
+        self.preview_image = next.preview_image;
         let old_len = self.file_list.len();
         if self.file_list.len() > self.max_count {
             self.file_list.truncate(self.max_count);
@@ -911,6 +950,7 @@ impl Upload {
             max_count: self.max_count,
             max_size: self.max_size,
             show_upload_list: self.show_upload_list,
+            preview_image: self.preview_image,
             files: self.file_list.clone(),
         }
     }
