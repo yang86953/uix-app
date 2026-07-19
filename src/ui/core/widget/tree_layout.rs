@@ -1187,21 +1187,20 @@ impl WidgetTree {
             .then(|| self.get(id))
             .flatten()
             .and_then(|node| node.overlay_entry(id, node.frame()));
-        let current: Vec<_> = self
+        let mut current = self
             .overlay_stack
             .iter()
-            .filter(|entry| !entry.is_managed() && entry.owner() == id)
-            .collect();
+            .filter(|entry| !entry.is_managed() && entry.owner() == id);
 
-        match (desired, current.as_slice()) {
-            (None, []) => true,
-            (Some(desired), [current]) => {
-                desired.kind() == current.kind()
-                    && desired.bounds_rect() == current.bounds_rect()
-                    && desired.z_index_value() == current.z_index_value()
-                    && desired.is_modal() == current.is_modal()
-                    && desired.dismisses_on_outside() == current.dismisses_on_outside()
-                    && desired.traps_focus() == current.traps_focus()
+        match (desired, current.next()) {
+            (None, None) => true,
+            (Some(desired), Some(current_entry)) if current.next().is_none() => {
+                desired.kind() == current_entry.kind()
+                    && desired.bounds_rect() == current_entry.bounds_rect()
+                    && desired.z_index_value() == current_entry.z_index_value()
+                    && desired.is_modal() == current_entry.is_modal()
+                    && desired.dismisses_on_outside() == current_entry.dismisses_on_outside()
+                    && desired.traps_focus() == current_entry.traps_focus()
             }
             _ => false,
         }
