@@ -1,5 +1,7 @@
 use crate::tests::common::*;
+use crate::ui::view::View;
 use crate::ui::widgets::general::button::*;
+use crate::ui::widgets::general::ButtonGroup;
 
 fn render_button(button: &Button) -> Vec<u32> {
     let mut canvas = crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer::new(
@@ -207,4 +209,66 @@ fn keyboard_activation_starts_centered_ripple() {
     let ripple = btn.ripple.as_ref().expect("ripple");
     assert_eq!(ripple.origin, Button::CENTER_ORIGIN);
     assert!(btn.pressed);
+}
+
+#[test]
+fn loading_button_animates_only_while_loading_and_rejects_input() {
+    let mut button = Button::new("Save").loading(true);
+    let frame = Rect::new(0.0, 0.0, 80.0, 32.0);
+
+    assert_eq!(
+        button.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::NotHandled
+    );
+    let before = render_button(&button);
+    assert!(button.update_animation(0.1));
+    assert_eq!(button.dirty_bounds(frame), frame);
+    assert_ne!(render_button(&button), before);
+
+    button.sync_from(Button::new("Save"));
+    assert!(!button.update_animation(0.1));
+    assert_eq!(button.dirty_bounds(frame), Rect::zero());
+}
+
+#[test]
+fn icon_button_is_square_and_uses_icon_as_accessible_name() {
+    let button = Button::icon("settings");
+    let size = button.measure(Constraints::unconstrained());
+    assert_eq!(size.w, size.h);
+
+    let accessibility = button.snapshot_fields().accessibility();
+    assert_eq!(accessibility.name.as_deref(), Some("settings"));
+}
+
+#[test]
+fn button_group_marks_connected_positions_and_builds_one_row() {
+    let buttons = ButtonGroup::new()
+        .buttons(vec![Button::new("A"), Button::new("B"), Button::new("C")])
+        .into_positioned_buttons();
+    let positions = buttons
+        .iter()
+        .map(|button| match button.snapshot_fields() {
+            SnapshotFields::Button { group_position, .. } => group_position,
+            _ => unreachable!(),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        positions,
+        vec![
+            Some(ButtonGroupPosition::Left),
+            Some(ButtonGroupPosition::Middle),
+            Some(ButtonGroupPosition::Right),
+        ]
+    );
+    assert!(buttons[0].resolve_style().border_width.left > 0.0);
+    assert_eq!(buttons[1].resolve_style().border_width.left, 0.0);
+    assert_eq!(buttons[2].resolve_style().border_width.left, 0.0);
+
+    let node = ButtonGroup::new()
+        .buttons(vec![Button::new("A"), Button::new("B")])
+        .build();
+    assert_eq!(node.children.len(), 2);
 }

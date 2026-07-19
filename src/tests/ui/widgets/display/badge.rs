@@ -3,7 +3,7 @@ use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
 use crate::draw::spatial::Orientation;
 use crate::draw::PhysicalUnit;
 use crate::tests::common::*;
-use crate::ui::widgets::{Badge, BadgeStatus};
+use crate::ui::widgets::{Badge, BadgeColor, BadgeStatus};
 use crate::ui::{AccessibilityRole, WidgetRender};
 
 fn render(badge: &Badge, canvas: &mut SharedRasterizer, fonts: &FontService, font: FontHandle) {
@@ -159,5 +159,47 @@ fn hidden_zero_badge_is_excluded_from_accessibility() {
     assert_eq!(
         badge.snapshot_fields().accessibility().role,
         AccessibilityRole::None
+    );
+}
+
+#[test]
+fn preset_color_uses_adaptive_foreground_while_raw_color_stays_compatible() {
+    let preset = Badge::new().text("New").color(BadgeColor::Orange);
+    assert!(matches!(
+        preset.snapshot_fields(),
+        SnapshotFields::Badge {
+            color: Some(color),
+            adaptive_foreground: true,
+            ribbon: false,
+            ..
+        } if color == BadgeColor::Orange.to_color()
+    ));
+
+    let raw = Badge::new().text("New").color(Color::blue());
+    assert!(matches!(
+        raw.snapshot_fields(),
+        SnapshotFields::Badge {
+            adaptive_foreground: false,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn ribbon_is_a_distinct_taller_badge_mode() {
+    let ribbon = Badge::ribbon("Beta", BadgeColor::Purple);
+    assert_eq!(ribbon.measure(Constraints::unconstrained()).h, 24.0);
+    assert!(matches!(
+        ribbon.snapshot_fields(),
+        SnapshotFields::Badge {
+            ribbon: true,
+            adaptive_foreground: true,
+            ref text,
+            ..
+        } if text == "Beta"
+    ));
+    assert_ne!(
+        render_pixels(&ribbon),
+        render_pixels(&Badge::new().text("Beta"))
     );
 }

@@ -3,6 +3,7 @@
 //! 标记各按钮在组中的位置（左/中/右/单独），
 //! 供 View 层 `row()` + gap(0.0) 组合时各按钮自行调整圆角。
 
+use crate::ui::view::{row, View, ViewNode};
 use crate::ui::widgets::general::button::{Button, ButtonGroupPosition};
 
 /// 视觉连体按钮组。将多个 Button 标记位置后返回，由 View 层组合布局。
@@ -47,5 +48,22 @@ impl ButtonGroup {
 impl Default for ButtonGroup {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl View for ButtonGroup {
+    fn build(self) -> ViewNode {
+        let children = self
+            .into_positioned_buttons()
+            .into_iter()
+            .map(ViewNode::leaf)
+            .collect::<Vec<_>>();
+        row(children).gap(0.0)
+    }
+}
+
+impl From<ButtonGroup> for ViewNode {
+    fn from(group: ButtonGroup) -> Self {
+        group.build()
     }
 }

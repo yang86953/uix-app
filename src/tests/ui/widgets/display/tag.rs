@@ -1,6 +1,6 @@
 use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
-use crate::ui::widgets::Tag;
+use crate::ui::widgets::{Tag, TagColor};
 use crate::ui::{AccessibilityRole, EventHandler, WidgetComponent};
 
 fn render_tag(tag: &Tag) -> Vec<u32> {
@@ -389,4 +389,24 @@ fn tree_clears_interaction_when_tag_hides_itself() {
     assert_eq!(tree.managers().interaction.pressed_component(), None);
     assert!(!tree.managers().drag.is_potential());
     assert_eq!(tree.managers().focus.focused_component(), None);
+}
+
+#[test]
+fn extended_color_and_icon_participate_in_snapshot_and_measurement() {
+    let plain = Tag::new("Admin").color(TagColor::Geekblue);
+    let icon = Tag::new("Admin")
+        .color(TagColor::Geekblue)
+        .icon("star");
+    assert!(
+        icon.measure(Constraints::unconstrained()).w
+            > plain.measure(Constraints::unconstrained()).w
+    );
+    assert!(matches!(
+        icon.snapshot_fields(),
+        SnapshotFields::Tag {
+            color: TagColor::Geekblue,
+            ref icon,
+            ..
+        } if icon == "star"
+    ));
 }
