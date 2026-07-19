@@ -282,6 +282,10 @@ pub trait EventHandler: WidgetComponent {
     fn viewport_scroll_offset(&self) -> Option<(f32, f32)> {
         None
     }
+    /// 为显露后代节点而滚动指定距离；非 viewport 返回 `false`。
+    fn scroll_descendant_by(&mut self, _dx: f32, _dy: f32) -> bool {
+        false
+    }
     fn active_timer(&self) -> Option<(u64, Duration)> {
         None
     }

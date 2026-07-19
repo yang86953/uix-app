@@ -157,6 +157,13 @@ impl StoredValue {
             .downcast_ref::<String>()
             .is_some_and(|current| current == value)
     }
+
+    fn cloned<T>(&self) -> Option<T>
+    where
+        T: Clone + Send + Sync + 'static,
+    {
+        self.typed.as_ref().downcast_ref::<T>().cloned()
+    }
 }
 
 /// 一次成功校验得到的具名 typed values。
@@ -241,6 +248,12 @@ pub enum Trigger {
     OnChange,
 }
 
+impl Trigger {
+    /// 只在整表提交校验时激活；与 [`Trigger::OnSubmit`] 等价。
+    #[allow(non_upper_case_globals)]
+    pub const Submit: Self = Self::OnSubmit;
+}
+
 type CustomValidator = Arc<dyn Fn(&str) -> Result<(), String> + 'static>;
 type DependencyValidator = Arc<dyn Fn(&str, &Values) -> Result<(), String> + 'static>;
 
@@ -295,26 +308,52 @@ pub struct FormBuilder {
     layout: Form,
     fields: Vec<FormField>,
     current: FormField,
+    initial_values: BTreeMap<String, StoredValue>,
 }
 
 impl FormBuilder {
     pub(crate) fn new(layout: Form, name: impl Into<String>, label: impl Into<String>) -> Self {
+        Self::with_initial_values(layout, BTreeMap::new(), name, label)
+    }
+
+    fn with_initial_values(
+        layout: Form,
+        initial_values: BTreeMap<String, StoredValue>,
+        name: impl Into<String>,
+        label: impl Into<String>,
+    ) -> Self {
+        let name = name.into();
+        let mut current = FormField::new(name.clone(), label);
+        if let Some(value) = initial_values.get(&name) {
+            current.value = value.clone();
+        }
         Self {
             layout,
             fields: Vec::new(),
-            current: FormField::new(name, label),
+            current,
+            initial_values,
         }
     }
 
     pub fn field(mut self, name: impl Into<String>, label: impl Into<String>) -> Self {
-        let next = FormField::new(name, label);
+        let name = name.into();
+        let mut next = FormField::new(name.clone(), label);
+        if let Some(value) = self.initial_values.get(&name) {
+            next.value = value.clone();
+        }
         self.fields.push(std::mem::replace(&mut self.current, next));
         self
     }
 
-    pub fn default<V: IntoFormValue>(mut self, value: V) -> Self {
+    /// 设置当前字段的初始值；[`FormModel::reset`] 会恢复到该值。
+    pub fn initial<V: IntoFormValue>(mut self, value: V) -> Self {
         self.current.value = StoredValue::new(value);
         self
+    }
+
+    /// [`FormBuilder::initial`] 的兼容别名。
+    pub fn default<V: IntoFormValue>(self, value: V) -> Self {
+        self.initial(value)
     }
 
     pub fn required(mut self, message: impl Into<String>) -> Self {
@@ -371,8 +410,33 @@ impl FormBuilder {
         self
     }
 
-    /// 声明当前字段依赖另一个字段；依赖源变化后会级联重验当前字段。
-    pub fn depends_on(
+    /// 声明当前字段依赖另一个 typed 字段；依赖源变化后会级联重验当前字段。
+    pub fn depends_on<T>(
+        mut self,
+        field: impl Into<String>,
+        validator: impl Fn(&T) -> Result<(), String> + 'static,
+    ) -> Self
+    where
+        T: Send + Sync + 'static,
+    {
+        let field = field.into();
+        let dependency = field.clone();
+        self.current.rules.push(FieldRule::Dependency {
+            field,
+            validator: Arc::new(move |_, values| {
+                let value = values.get::<T>(&dependency).ok_or_else(|| {
+                    format!(
+                        "dependency field `{dependency}` is missing or has an incompatible type"
+                    )
+                })?;
+                validator(value)
+            }),
+        });
+        self
+    }
+
+    /// 声明需要当前字段文本与整表 typed values 的高级依赖规则。
+    pub fn depends_on_with_values(
         mut self,
         field: impl Into<String>,
         validator: impl Fn(&str, &Values) -> Result<(), String> + 'static,
@@ -414,6 +478,7 @@ struct FormModelInner {
     active_errors: State<Vec<Option<FieldError>>>,
     validation_active: RefCell<Vec<bool>>,
     focus_handles: RefCell<BTreeMap<String, FocusHandle>>,
+    reset_bindings: RefCell<BTreeMap<String, Rc<dyn Fn()>>>,
 }
 
 /// 应用侧表单模型；克隆后仍共享字段值、校验状态与字段焦点句柄。
@@ -436,6 +501,7 @@ impl FormModel {
                 active_errors: State::new(vec![None; field_count]),
                 validation_active: RefCell::new(vec![false; field_count]),
                 focus_handles: RefCell::new(BTreeMap::new()),
+                reset_bindings: RefCell::new(BTreeMap::new()),
             }),
         }
     }
@@ -552,17 +618,49 @@ impl FormModel {
         self.inner.layout.clone()
     }
 
-    /// 校验整表；失败时尽力把焦点登记到首个错误字段。
+    /// 校验整表；失败时尽力聚焦并显露首个错误字段。
     pub fn submit(&self) -> Result<Values, Vec<FieldError>> {
         let result = self.validate();
         if result.is_err() {
-            let _ = self.focus_first_error();
+            let _ = self.scroll_to_first_error();
         }
         result
     }
 
+    /// 恢复全部字段的声明初始值，清除已激活错误并同步已绑定的外部 State。
+    pub fn reset(&self) {
+        *self.inner.values.borrow_mut() = self
+            .inner
+            .fields
+            .iter()
+            .map(|field| field.value.clone())
+            .collect();
+        self.inner.validation_active.borrow_mut().fill(false);
+        self.publish_errors(vec![None; self.inner.fields.len()]);
+
+        let bindings = self
+            .inner
+            .reset_bindings
+            .borrow()
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        for reset in bindings {
+            reset();
+        }
+    }
+
     /// 把焦点登记到首个错误字段；当前无错误时返回 `Ok(None)`。
     pub fn focus_first_error(&self) -> Result<Option<String>, FocusHandleError> {
+        self.request_first_error_focus(false)
+    }
+
+    /// 聚焦首个错误字段，并请求所有支持显露的祖先 viewport 滚动到该字段。
+    pub fn scroll_to_first_error(&self) -> Result<Option<String>, FocusHandleError> {
+        self.request_first_error_focus(true)
+    }
+
+    fn request_first_error_focus(&self, reveal: bool) -> Result<Option<String>, FocusHandleError> {
         let Some(error) = self.errors().into_iter().next() else {
             return Ok(None);
         };
@@ -574,7 +672,11 @@ impl FormModel {
             .get(&field)
             .cloned()
             .ok_or(FocusHandleError::Unbound)?;
-        handle.focus()?;
+        if reveal {
+            handle.focus_and_reveal()?;
+        } else {
+            handle.focus()?;
+        }
         Ok(Some(field))
     }
 
@@ -640,6 +742,28 @@ impl FormModel {
         Some(handle)
     }
 
+    pub(crate) fn register_reset_state<T>(&self, field: &str, state: &State<T>) -> bool
+    where
+        T: Clone + PartialEq + Send + Sync + 'static,
+    {
+        let Some(index) = self.inner.fields.iter().position(|item| item.name == field) else {
+            return false;
+        };
+        let Some(initial) = self.inner.fields[index].value.cloned::<T>() else {
+            return false;
+        };
+        let state = state.clone();
+        self.inner.reset_bindings.borrow_mut().insert(
+            field.to_string(),
+            Rc::new(move || {
+                if state.get() != initial {
+                    state.set(initial.clone());
+                }
+            }),
+        );
+        true
+    }
+
     fn publish_errors(&self, errors: Vec<Option<FieldError>>) {
         if self.inner.active_errors.get_untracked() != errors {
             self.inner.active_errors.set(errors);
@@ -651,6 +775,35 @@ impl Form {
     /// 开始声明应用侧字段校验模型。
     pub fn field(self, name: impl Into<String>, label: impl Into<String>) -> FormBuilder {
         FormBuilder::new(self, name, label)
+    }
+
+    /// 预置一组同类型字段初始值，再开始字段声明。
+    pub fn initial_values<I, K, V>(self, values: I) -> FormInitialValues
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: Into<String>,
+        V: IntoFormValue,
+    {
+        let values = values
+            .into_iter()
+            .map(|(field, value)| (field.into(), StoredValue::new(value)))
+            .collect();
+        FormInitialValues {
+            layout: self,
+            values,
+        }
+    }
+}
+
+/// `Form::initial_values` 返回的字段声明入口。
+pub struct FormInitialValues {
+    layout: Form,
+    values: BTreeMap<String, StoredValue>,
+}
+
+impl FormInitialValues {
+    pub fn field(self, name: impl Into<String>, label: impl Into<String>) -> FormBuilder {
+        FormBuilder::with_initial_values(self.layout, self.values, name, label)
     }
 }
 

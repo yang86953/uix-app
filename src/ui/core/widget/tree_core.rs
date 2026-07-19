@@ -238,6 +238,12 @@ impl WidgetTree {
                         self.set_focus(Some(id));
                     }
                 }
+                crate::ui::app_state::FocusRequest::FocusAndReveal => {
+                    if self.focus_target_available(id) {
+                        self.set_focus(Some(id));
+                        self.reveal_focused_target(id);
+                    }
+                }
                 crate::ui::app_state::FocusRequest::Blur => {
                     if self.managers.focus.focused_component() == Some(id) {
                         self.set_focus(None);

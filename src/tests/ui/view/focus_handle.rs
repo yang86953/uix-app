@@ -1,6 +1,10 @@
 use crate::tests::common::*;
-use crate::ui::view::{column, embed, input, label, EventExt, View, ViewAdapter};
-use crate::ui::{Button, FocusHandle, FocusHandleError, Input};
+use crate::ui::view::{
+    column, column_fit, embed, input, label, EventExt, View, ViewAdapter, ViewNode,
+};
+use crate::ui::{
+    Button, Container, FocusHandle, FocusHandleError, Input, ScrollDirection, ScrollView,
+};
 
 #[test]
 fn focus_handle_routes_focus_and_blur_through_app_state() {
@@ -20,6 +24,41 @@ fn focus_handle_routes_focus_and_blur_through_app_state() {
     assert_eq!(handle.blur(), Ok(()));
     assert!(tree.drain_app_state_focus_requests());
     assert_eq!(tree.managers().focus.focused_component(), None);
+}
+
+#[test]
+fn focus_and_reveal_scrolls_the_nearest_viewport_to_the_target() {
+    let handle = FocusHandle::new();
+    let content = column_fit((
+        embed(Container::new().size(120.0, 240.0)),
+        input().focus_handle(&handle),
+    ));
+    let root = ViewNode::new(
+        ScrollView::new(ScrollDirection::Vertical).size(120.0, 80.0),
+        vec![content],
+    );
+    let mut tree = ViewAdapter::build(root);
+    tree.set_app_state(AppState::new());
+    tree.layout();
+    let viewport = tree.root_id().expect("scroll viewport");
+    let content = tree.get(viewport).expect("scroll viewport node").children()[0];
+    let target = tree.get(content).expect("content column").children()[1];
+
+    assert_eq!(
+        tree.get(viewport)
+            .and_then(|node| node.component().as_any().downcast_ref::<ScrollView>())
+            .map(ScrollView::scroll_y),
+        Some(0.0)
+    );
+    assert_eq!(handle.focus_and_reveal(), Ok(()));
+    assert!(tree.drain_app_state_focus_requests());
+
+    assert_eq!(tree.managers().focus.focused_component(), Some(target));
+    assert!(tree
+        .get(viewport)
+        .and_then(|node| node.component().as_any().downcast_ref::<ScrollView>())
+        .is_some_and(|scroll| scroll.scroll_y() > 0.0));
+    assert!(tree.visible_visual_rect_for(target).is_some());
 }
 
 #[test]

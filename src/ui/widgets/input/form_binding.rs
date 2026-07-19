@@ -1049,6 +1049,7 @@ impl FormModel {
     ) -> Option<FormInputItem> {
         let field = field.as_ref();
         let focus_handle = self.focus_handle_for(field)?;
+        self.register_reset_state(field, value);
         Some(FormInputItem {
             model: self.clone(),
             field: field.to_string(),
@@ -1072,6 +1073,7 @@ impl FormModel {
     {
         let field = field.as_ref();
         let focus_handle = self.focus_handle_for(field)?;
+        self.register_reset_state(field, value);
         Some(FormInputNumberItem {
             model: self.clone(),
             field: field.to_string(),
@@ -1095,6 +1097,7 @@ impl FormModel {
     {
         let field = field.as_ref();
         let focus_handle = self.focus_handle_for(field)?;
+        self.register_reset_state(field, value);
         Some(FormSelectItem {
             model: self.clone(),
             field: field.to_string(),
@@ -1118,6 +1121,7 @@ impl FormModel {
     ) -> Option<FormCheckboxItem> {
         let field = field.as_ref();
         let focus_handle = self.focus_handle_for(field)?;
+        self.register_reset_state(field, value);
         Some(FormCheckboxItem {
             model: self.clone(),
             field: field.to_string(),
@@ -1138,6 +1142,7 @@ impl FormModel {
     ) -> Option<FormSwitchItem> {
         let field = field.as_ref();
         let focus_handle = self.focus_handle_for(field)?;
+        self.register_reset_state(field, value);
         Some(FormSwitchItem {
             model: self.clone(),
             field: field.to_string(),
@@ -1158,6 +1163,7 @@ impl FormModel {
     ) -> Option<FormSliderItem> {
         let field = field.as_ref();
         let focus_handle = self.focus_handle_for(field)?;
+        self.register_reset_state(field, value);
         Some(FormSliderItem {
             model: self.clone(),
             field: field.to_string(),
@@ -1174,6 +1180,7 @@ impl FormModel {
     pub fn rate_item(&self, field: impl AsRef<str>, value: &State<u32>) -> Option<FormRateItem> {
         let field = field.as_ref();
         let focus_handle = self.focus_handle_for(field)?;
+        self.register_reset_state(field, value);
         Some(FormRateItem {
             model: self.clone(),
             field: field.to_string(),
@@ -1197,6 +1204,7 @@ impl FormModel {
     ) -> Option<FormRadioItem> {
         let field = field.as_ref();
         let focus_handle = self.focus_handle_for(field)?;
+        self.register_reset_state(field, value);
         Some(FormRadioItem {
             model: self.clone(),
             field: field.to_string(),
@@ -1219,6 +1227,7 @@ impl FormModel {
     ) -> Option<FormSegmentedItem> {
         let field = field.as_ref();
         let focus_handle = self.focus_handle_for(field)?;
+        self.register_reset_state(field, value);
         Some(FormSegmentedItem {
             model: self.clone(),
             field: field.to_string(),
@@ -1240,6 +1249,7 @@ impl FormModel {
     ) -> Option<FormDatePickerItem> {
         let field = field.as_ref();
         let focus_handle = self.focus_handle_for(field)?;
+        self.register_reset_state(field, value);
         Some(FormDatePickerItem {
             model: self.clone(),
             field: field.to_string(),
@@ -1269,6 +1279,8 @@ impl FormModel {
             return None;
         }
         let focus_handle = self.shared_focus_handle_for(&[start_field, end_field])?;
+        self.register_reset_state(start_field, start);
+        self.register_reset_state(end_field, end);
         Some(FormDateRangePickerItem {
             model: self.clone(),
             start_field: start_field.to_string(),
@@ -1293,6 +1305,7 @@ impl FormModel {
     ) -> Option<FormTimePickerItem> {
         let field = field.as_ref();
         let focus_handle = self.focus_handle_for(field)?;
+        self.register_reset_state(field, value);
         Some(FormTimePickerItem {
             model: self.clone(),
             field: field.to_string(),
@@ -1312,6 +1325,7 @@ impl FormModel {
     ) -> Option<FormColorPickerItem> {
         let field = field.as_ref();
         let focus_handle = self.focus_handle_for(field)?;
+        self.register_reset_state(field, value);
         Some(FormColorPickerItem {
             model: self.clone(),
             field: field.to_string(),
