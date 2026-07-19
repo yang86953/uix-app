@@ -208,11 +208,13 @@ where
     }
 
     for candidate in candidates {
-        crate::core::log::info_fn(format!("Graphics bootstrap: probing recipe {candidate}"));
+        crate::core::log::info_fn(format_args!(
+            "Graphics bootstrap: probing recipe {candidate}"
+        ));
         let context = match try_create(candidate) {
             Ok(context) => context,
             Err(err) => {
-                crate::core::log::warn_fn(format!(
+                crate::core::log::warn_fn(format_args!(
                     "Graphics bootstrap: recipe {candidate} unavailable: {}",
                     err.what()
                 ));
@@ -227,7 +229,7 @@ where
         let engine = match assemble_graphics_engine(context, width, height) {
             Ok(engine) => engine,
             Err(failure) => {
-                crate::core::log::warn_fn(format!(
+                crate::core::log::warn_fn(format_args!(
                     "Graphics bootstrap: engine assembly for recipe {selected} unavailable: {}",
                     failure.error.what()
                 ));
@@ -240,7 +242,7 @@ where
                 continue;
             }
         };
-        crate::core::log::info_fn(format!(
+        crate::core::log::info_fn(format_args!(
             "Graphics bootstrap: selected recipe {selected}; present_occlusion={present_occlusion}"
         ));
         return Ok(GpuBootstrap {

@@ -129,7 +129,7 @@ impl IClipboard for WaylandBackend {
                                 .lock()
                                 .unwrap_or_else(|error| error.into_inner())
                                 .push(write),
-                            Err(error) => crate::core::log::error_fn(format!(
+                            Err(error) => crate::core::log::error_fn(format_args!(
                                 "Wayland clipboard send setup failed: {error}"
                             )),
                         }

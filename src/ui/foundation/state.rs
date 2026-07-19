@@ -130,7 +130,7 @@ pub fn end_state_bind_capture(component_id: ComponentId) {
             return;
         };
         if id != component_id {
-            crate::core::log::warn_fn(format!(
+            crate::core::log::warn_fn(format_args!(
                 "State 绑定探测 component_id 不一致: 期望 {component_id}, 实际 {id}"
             ));
         }

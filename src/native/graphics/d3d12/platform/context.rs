@@ -84,7 +84,7 @@ impl D3d12Context {
         ) {
             Ok(context) => Ok(context),
             Err(hardware_error) => {
-                crate::core::log::warn_fn(format!(
+                crate::core::log::warn_fn(format_args!(
                     "D3d12Context: hardware device unavailable; retrying with WARP: {}",
                     hardware_error.what()
                 ));
@@ -241,7 +241,7 @@ impl D3d12Context {
             shutdown: false,
         };
         context.rebuild_back_buffers()?;
-        crate::core::log::info_fn(format!(
+        crate::core::log::info_fn(format_args!(
             "D3d12Context: created {}x{} flip-discard swapchain; {}",
             drawable.width,
             drawable.height,
@@ -1007,7 +1007,7 @@ impl IGraphicsContext for D3d12Context {
 impl Drop for D3d12Context {
     fn drop(&mut self) {
         if let Err(error) = self.shutdown_result() {
-            crate::core::log::error_fn(format!(
+            crate::core::log::error_fn(format_args!(
                 "D3d12Context: undrained Drop retained GPU COM objects: {}",
                 error.short_what()
             ));

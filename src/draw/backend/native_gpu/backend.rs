@@ -880,7 +880,7 @@ impl RenderBackend for NativeGpuBackend {
             .gpu_ctx
             .create_offscreen_target(width, height)
             .inspect_err(|err| {
-                crate::core::log::warn_fn(format!(
+                crate::core::log::warn_fn(format_args!(
                     "NativeGpuBackend: create_offscreen_target failed: {}",
                     err.short_what()
                 ));
@@ -1255,7 +1255,7 @@ impl RenderBackend for NativeGpuBackend {
 impl Drop for NativeGpuBackend {
     fn drop(&mut self) {
         if let Err(error) = self.try_shutdown() {
-            crate::core::log::error_fn(format!(
+            crate::core::log::error_fn(format_args!(
                 "NativeGpuBackend: checked shutdown failed: {}",
                 error.short_what()
             ));

@@ -125,7 +125,7 @@ impl AgentTransportHandle {
             })
             .map_err(AgentTransportError::ListenerThread)?;
 
-        crate::core::log::info_fn(format!(
+        crate::core::log::info_fn(format_args!(
             "agent bridge ready discovery={}",
             info.discovery_path.display()
         ));
@@ -175,7 +175,7 @@ fn listener_loop(
             Ok(accepted) => accepted,
             Err(error) => {
                 if !shutdown.load(Ordering::Acquire) {
-                    crate::core::log::error_fn(format!(
+                    crate::core::log::error_fn(format_args!(
                         "agent listener stopped after accept failure: {error}"
                     ));
                 }
@@ -210,7 +210,7 @@ fn listener_loop(
             .spawn(move || {
                 if let Err(error) = serve_connection(stream, worker_bridge, worker_token) {
                     if !worker_shutdown.load(Ordering::Acquire) {
-                        crate::core::log::error_fn(format!(
+                        crate::core::log::error_fn(format_args!(
                             "agent connection ended after I/O failure: {error}"
                         ));
                     }
@@ -229,7 +229,7 @@ fn listener_loop(
                     .lock()
                     .unwrap_or_else(|lock_error| lock_error.into_inner())
                     .remove(&connection_id);
-                crate::core::log::error_fn(format!(
+                crate::core::log::error_fn(format_args!(
                     "agent connection thread failed to start: {error}"
                 ));
             }

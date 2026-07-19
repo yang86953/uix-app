@@ -146,7 +146,7 @@ pub(crate) fn graphics_failure_diagnostic(failure: &GraphicsFailure) -> String {
 
 pub(super) fn report_graphics_frame_failure(failure: &GraphicsFailure) {
     if graphics_failure_is_error(failure) {
-        crate::core::log::error_fn(format!(
+        crate::core::log::error_fn(format_args!(
             "[WindowDriver] graphics frame failed: {}",
             graphics_failure_diagnostic(failure)
         ));
@@ -159,7 +159,7 @@ pub(super) fn report_graphics_frame_failure(failure: &GraphicsFailure) {
 
 pub(super) fn report_window_operation_error(context: &str, result: crate::core::Result<()>) {
     if let Err(error) = result {
-        crate::core::log::warn_fn(format!("{context}: {}", error.short_what()));
+        crate::core::log::warn_fn(format_args!("{context}: {}", error.short_what()));
     }
 }
 
@@ -167,7 +167,7 @@ pub(super) fn report_graphics_resize_error(context: &str, result: crate::core::R
     match result {
         Ok(()) => true,
         Err(error) => {
-            crate::core::log::warn_fn(format!("{context}: {}", error.what()));
+            crate::core::log::warn_fn(format_args!("{context}: {}", error.what()));
             false
         }
     }
@@ -310,7 +310,7 @@ pub(super) fn log_frame_metrics(
     present_probe: crate::core::perf_probe::PresentProbeSample,
 ) {
     if crate::core::perf_probe::perf_probe_enabled() {
-        crate::core::log::info_fn(format!(
+        crate::core::log::info_fn(format_args!(
             "frame_us={} input={} reconcile={} layout={} paint_cpu={} present={} events={} reconcile={} layouts={} dirty_full={} strategy_full={} backdrop_restore={} pixels={} layer_build={} record={} execute={} end_frame={} pic_raster={} pic_blit={} direct_paint={} pics={} pic_px={} widgets={} text_us={} texts={} cpu_flush={} flushes={} upload_copy={} fence_wait={} submit_present={} present_skipped={}",
             frame_us,
             input_us,
@@ -345,7 +345,7 @@ pub(super) fn log_frame_metrics(
             present_probe.skipped,
         ));
     } else {
-        crate::core::log::info_fn(format!(
+        crate::core::log::info_fn(format_args!(
             "frame_us={} input={} reconcile={} layout={} paint_cpu={} present={} events={} reconcile={} layouts={} dirty_full={}",
             frame_us,
             input_us,

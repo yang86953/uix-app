@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::thread::ThreadId;
 
@@ -75,38 +75,40 @@ impl AppState {
             .set_event_loop_waker(waker);
     }
 
-    pub(crate) fn drain_semantic_events_for(
+    pub(crate) fn drain_semantic_events_for_scope_into(
         &self,
-        targets: &HashSet<ComponentId>,
-    ) -> Vec<(ComponentId, SemanticEvent)> {
+        tree_scope: u64,
+        matched: &mut Vec<(ComponentId, SemanticEvent)>,
+    ) {
         self.inner
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .drain_semantic_events_for(targets)
+            .drain_semantic_events_for_scope_into(tree_scope, matched);
     }
 
-    pub(crate) fn has_semantic_events_for(&self, targets: &HashSet<ComponentId>) -> bool {
+    pub(crate) fn has_semantic_events_for_scope(&self, tree_scope: u64) -> bool {
         self.inner
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .has_semantic_events_for(targets)
+            .has_semantic_events_for_scope(tree_scope)
     }
 
-    pub(crate) fn drain_focus_requests_for(
+    pub(crate) fn drain_focus_requests_for_scope_into(
         &self,
-        targets: &HashSet<ComponentId>,
-    ) -> Vec<(ComponentId, FocusRequest)> {
+        tree_scope: u64,
+        matched: &mut Vec<(ComponentId, FocusRequest)>,
+    ) {
         self.inner
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .drain_focus_requests_for(targets)
+            .drain_focus_requests_for_scope_into(tree_scope, matched);
     }
 
-    pub(crate) fn has_focus_requests_for(&self, targets: &HashSet<ComponentId>) -> bool {
+    pub(crate) fn has_focus_requests_for_scope(&self, tree_scope: u64) -> bool {
         self.inner
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .has_focus_requests_for(targets)
+            .has_focus_requests_for_scope(tree_scope)
     }
 
     pub fn get_snapshot(&self, id: ComponentId) -> Option<ComponentConfigSnapshot> {
@@ -132,6 +134,15 @@ impl AppState {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .is_empty()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pending_semantic_event_count(&self) -> usize {
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .semantic_events
+            .len()
     }
 }
 
@@ -176,6 +187,7 @@ impl AppStateInner {
     fn unregister(&mut self, id: ComponentId) {
         self.assert_owner_thread();
         self.components.remove(&id);
+        self.semantic_events.retain(|(target, _)| *target != id);
         self.focus_requests.retain(|(target, _)| *target != id);
     }
 
@@ -226,66 +238,58 @@ impl AppStateInner {
         Some(self.event_loop_waker.clone())
     }
 
-    fn drain_semantic_events_for(
+    fn drain_semantic_events_for_scope_into(
         &mut self,
-        targets: &HashSet<ComponentId>,
-    ) -> Vec<(ComponentId, SemanticEvent)> {
+        tree_scope: u64,
+        matched: &mut Vec<(ComponentId, SemanticEvent)>,
+    ) {
         self.assert_owner_thread();
-        if targets.is_empty() || self.semantic_events.is_empty() {
-            return Vec::new();
-        }
-
-        let mut matched = Vec::new();
-        let mut retained = VecDeque::new();
-        while let Some((id, event)) = self.semantic_events.pop_front() {
-            if targets.contains(&id) {
+        matched.clear();
+        let pending = self.semantic_events.len();
+        for _ in 0..pending {
+            let Some((id, event)) = self.semantic_events.pop_front() else {
+                break;
+            };
+            if id.tree_scope() == tree_scope {
                 matched.push((id, event));
             } else {
-                retained.push_back((id, event));
+                self.semantic_events.push_back((id, event));
             }
         }
-        self.semantic_events = retained;
-        matched
     }
 
-    fn has_semantic_events_for(&self, targets: &HashSet<ComponentId>) -> bool {
+    fn has_semantic_events_for_scope(&self, tree_scope: u64) -> bool {
         self.assert_owner_thread();
-        !targets.is_empty()
-            && self
-                .semantic_events
-                .iter()
-                .any(|(id, _)| targets.contains(id))
+        self.semantic_events
+            .iter()
+            .any(|(id, _)| id.tree_scope() == tree_scope)
     }
 
-    fn drain_focus_requests_for(
+    fn drain_focus_requests_for_scope_into(
         &mut self,
-        targets: &HashSet<ComponentId>,
-    ) -> Vec<(ComponentId, FocusRequest)> {
+        tree_scope: u64,
+        matched: &mut Vec<(ComponentId, FocusRequest)>,
+    ) {
         self.assert_owner_thread();
-        if targets.is_empty() || self.focus_requests.is_empty() {
-            return Vec::new();
-        }
-
-        let mut matched = Vec::new();
-        let mut retained = VecDeque::new();
-        while let Some((id, request)) = self.focus_requests.pop_front() {
-            if targets.contains(&id) {
+        matched.clear();
+        let pending = self.focus_requests.len();
+        for _ in 0..pending {
+            let Some((id, request)) = self.focus_requests.pop_front() else {
+                break;
+            };
+            if id.tree_scope() == tree_scope {
                 matched.push((id, request));
             } else {
-                retained.push_back((id, request));
+                self.focus_requests.push_back((id, request));
             }
         }
-        self.focus_requests = retained;
-        matched
     }
 
-    fn has_focus_requests_for(&self, targets: &HashSet<ComponentId>) -> bool {
+    fn has_focus_requests_for_scope(&self, tree_scope: u64) -> bool {
         self.assert_owner_thread();
-        !targets.is_empty()
-            && self
-                .focus_requests
-                .iter()
-                .any(|(id, _)| targets.contains(id))
+        self.focus_requests
+            .iter()
+            .any(|(id, _)| id.tree_scope() == tree_scope)
     }
 
     pub(crate) fn contains(&self, id: ComponentId) -> bool {

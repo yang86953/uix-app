@@ -81,7 +81,7 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
     if !ensure_offscreen(engine, offscreen_handle, w, h)? {
         *retry_count = retry_count.saturating_add(1);
         if *retry_count == MAX_OFFSCREEN_RETRY {
-            crate::core::log::warn_fn(format!(
+            crate::core::log::warn_fn(format_args!(
                 "Picture 离屏创建失败已达 {MAX_OFFSCREEN_RETRY} 次，改走直绘，node_id={node_id}"
             ));
         }

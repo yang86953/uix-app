@@ -70,7 +70,7 @@ impl WaylandBackend {
                                     .lock()
                                     .unwrap_or_else(|error| error.into_inner()) = Some(read);
                             }
-                            Err(error) => crate::core::log::error_fn(format!(
+                            Err(error) => crate::core::log::error_fn(format_args!(
                                 "Wayland clipboard pipe creation failed: {error}"
                             )),
                         }

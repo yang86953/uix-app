@@ -92,7 +92,7 @@ impl EglContext {
                 format!("EglContext: eglInitialize 失败: {e:?}"),
             )
         })?;
-        crate::core::log::info_fn(format!("EglContext: EGL {major}.{minor}"));
+        crate::core::log::info_fn(format_args!("EglContext: EGL {major}.{minor}"));
 
         // 3. 绑定 API 到 OpenGL ES
         if let Err(e) = egl.bind_api(egl::OPENGL_ES_API) {

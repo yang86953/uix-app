@@ -190,7 +190,7 @@ impl NotificationService {
             cb();
         }
 
-        crate::core::log::info_fn(format!(
+        crate::core::log::info_fn(format_args!(
             "[Notification] {:?}: {} — {}",
             level, title, message
         ));

@@ -3,8 +3,8 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::pipeline::{Invalidation, InvalidationQueueHandle};
 use crate::native::traits::input::{KeyCode, KeyMod};
 use crate::ui::animation::AnimatedSource;
-use crate::ui::app_state::AppState;
-use crate::ui::event::{HandlerTable, WindowAction};
+use crate::ui::app_state::{AppState, FocusRequest};
+use crate::ui::event::{HandlerTable, SemanticEvent, WindowAction};
 use crate::ui::focus_handle::FocusHandle;
 use crate::ui::foundation::focus_trap::next_focus_in_order;
 use crate::ui::managers::WidgetManagers;
@@ -63,6 +63,9 @@ pub struct WidgetTree {
     active_component_animations: HashSet<WidgetId>,
     animation_ids_scratch: Vec<WidgetId>,
     lifecycle_states_scratch: Vec<(WidgetId, bool)>,
+    layout_scratch: tree_layout::LayoutFrameScratch,
+    app_state_semantic_events_scratch: Vec<(WidgetId, SemanticEvent)>,
+    app_state_focus_requests_scratch: Vec<(WidgetId, FocusRequest)>,
     managers: WidgetManagers,
     app_state: Option<AppState>,
     focus_handles: HashMap<WidgetId, FocusHandle>,
@@ -122,6 +125,9 @@ impl Default for WidgetTree {
             active_component_animations: HashSet::new(),
             animation_ids_scratch: Vec::new(),
             lifecycle_states_scratch: Vec::new(),
+            layout_scratch: tree_layout::LayoutFrameScratch::default(),
+            app_state_semantic_events_scratch: Vec::new(),
+            app_state_focus_requests_scratch: Vec::new(),
             managers: WidgetManagers::new(),
             app_state: None,
             focus_handles: HashMap::new(),
@@ -219,18 +225,20 @@ impl WidgetTree {
         let Some(app_state) = self.app_state.clone() else {
             return false;
         };
-        let targets: HashSet<_> = self.traverse().iter().copied().collect();
-        let events = app_state.drain_semantic_events_for(&targets);
+        let mut events = std::mem::take(&mut self.app_state_semantic_events_scratch);
+        app_state.drain_semantic_events_for_scope_into(self.tree_scope, &mut events);
         if events.is_empty() {
+            self.app_state_semantic_events_scratch = events;
             return false;
         }
-        for (id, mut event) in events {
+        for (id, mut event) in events.drain(..) {
             if self.get(id).is_some() {
                 event.target = id;
                 event.current_target = id;
                 let _ = self.dispatch_semantic(event);
             }
         }
+        self.app_state_semantic_events_scratch = events;
         true
     }
 
@@ -238,20 +246,20 @@ impl WidgetTree {
         let Some(app_state) = self.app_state.as_ref() else {
             return false;
         };
-        let targets: HashSet<_> = self.traverse().iter().copied().collect();
-        app_state.has_semantic_events_for(&targets)
+        app_state.has_semantic_events_for_scope(self.tree_scope)
     }
 
     pub(crate) fn drain_app_state_focus_requests(&mut self) -> bool {
         let Some(app_state) = self.app_state.clone() else {
             return false;
         };
-        let targets: HashSet<_> = self.traverse().iter().copied().collect();
-        let requests = app_state.drain_focus_requests_for(&targets);
+        let mut requests = std::mem::take(&mut self.app_state_focus_requests_scratch);
+        app_state.drain_focus_requests_for_scope_into(self.tree_scope, &mut requests);
         if requests.is_empty() {
+            self.app_state_focus_requests_scratch = requests;
             return false;
         }
-        for (id, request) in requests {
+        for (id, request) in requests.drain(..) {
             match request {
                 crate::ui::app_state::FocusRequest::Focus => {
                     if self.focus_target_available(id) {
@@ -273,6 +281,7 @@ impl WidgetTree {
                 }
             }
         }
+        self.app_state_focus_requests_scratch = requests;
         true
     }
 
@@ -280,8 +289,7 @@ impl WidgetTree {
         let Some(app_state) = self.app_state.as_ref() else {
             return false;
         };
-        let targets: HashSet<_> = self.traverse().iter().copied().collect();
-        app_state.has_focus_requests_for(&targets)
+        app_state.has_focus_requests_for_scope(self.tree_scope)
     }
 
     pub(crate) fn register_app_state_snapshot(&self, id: WidgetId) {

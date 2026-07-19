@@ -123,7 +123,7 @@ pub(super) fn configure_instance(
     let loader_version = match unsafe { entry.try_enumerate_instance_version() } {
         Ok(version) => version,
         Err(error) => {
-            crate::core::log::warn_fn(format!(
+            crate::core::log::warn_fn(format_args!(
                 "VulkanContext: vkEnumerateInstanceVersion failed; device fault diagnostics disabled: {error:?}"
             ));
             None
@@ -397,7 +397,7 @@ fn instance_has_extension(entry: &Entry, name: &CStr) -> bool {
     let extensions = match unsafe { entry.enumerate_instance_extension_properties(None) } {
         Ok(extensions) => extensions,
         Err(error) => {
-            crate::core::log::warn_fn(format!(
+            crate::core::log::warn_fn(format_args!(
                 "VulkanContext: vkEnumerateInstanceExtensionProperties failed; optional device fault diagnostics disabled: {error:?}"
             ));
             return false;

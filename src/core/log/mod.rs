@@ -195,40 +195,50 @@ pub fn flush() {
 // 自由函数 — 使用 #[track_caller] 自动捕获调用者位置
 // ════════════════════════════════════════════════════════════════════════════
 
+pub(crate) fn render_message_if_enabled(
+    handler: &dyn LogHandler,
+    level: Level,
+    msg: impl fmt::Display,
+) -> Option<String> {
+    (level >= handler.level()).then(|| msg.to_string())
+}
+
+fn emit(level: Level, msg: impl fmt::Display, loc: &'static std::panic::Location<'static>) {
+    let handler = handler();
+    let Some(message) = render_message_if_enabled(handler.as_ref(), level, msg) else {
+        return;
+    };
+    handler.handle(level, &message, loc.file(), loc.line());
+}
+
 #[track_caller]
 pub fn trace_fn(msg: impl fmt::Display) {
-    let loc = std::panic::Location::caller();
-    handler().handle(Level::Trace, &msg.to_string(), loc.file(), loc.line());
+    emit(Level::Trace, msg, std::panic::Location::caller());
 }
 
 #[track_caller]
 pub fn debug_fn(msg: impl fmt::Display) {
-    let loc = std::panic::Location::caller();
-    handler().handle(Level::Debug, &msg.to_string(), loc.file(), loc.line());
+    emit(Level::Debug, msg, std::panic::Location::caller());
 }
 
 #[track_caller]
 pub fn info_fn(msg: impl fmt::Display) {
-    let loc = std::panic::Location::caller();
-    handler().handle(Level::Info, &msg.to_string(), loc.file(), loc.line());
+    emit(Level::Info, msg, std::panic::Location::caller());
 }
 
 #[track_caller]
 pub fn warn_fn(msg: impl fmt::Display) {
-    let loc = std::panic::Location::caller();
-    handler().handle(Level::Warn, &msg.to_string(), loc.file(), loc.line());
+    emit(Level::Warn, msg, std::panic::Location::caller());
 }
 
 #[track_caller]
 pub fn error_fn(msg: impl fmt::Display) {
-    let loc = std::panic::Location::caller();
-    handler().handle(Level::Error, &msg.to_string(), loc.file(), loc.line());
+    emit(Level::Error, msg, std::panic::Location::caller());
 }
 
 #[track_caller]
 pub fn fatal_fn(msg: impl fmt::Display) {
-    let loc = std::panic::Location::caller();
-    handler().handle(Level::Fatal, &msg.to_string(), loc.file(), loc.line());
+    emit(Level::Fatal, msg, std::panic::Location::caller());
 }
 
 pub(crate) fn format_error_message(error: &Error) -> String {

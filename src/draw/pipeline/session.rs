@@ -120,7 +120,7 @@ impl RenderSession {
 
     pub fn shutdown(&mut self) {
         if let Err(error) = self.try_shutdown() {
-            crate::core::log::error_fn(format!("RenderSession: {}", error.short_what()));
+            crate::core::log::error_fn(format_args!("RenderSession: {}", error.short_what()));
         }
     }
 

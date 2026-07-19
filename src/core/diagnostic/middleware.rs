@@ -119,14 +119,14 @@ impl Middleware for LogMiddleware {
         next(ctx);
         let elapsed = start.elapsed();
         if ctx.succeeded {
-            crate::core::log::info_fn(format!(
+            crate::core::log::info_fn(format_args!(
                 "[OK] {} {} — {}ms",
                 ctx.service_name,
                 ctx.operation,
                 elapsed.as_millis()
             ));
         } else {
-            crate::core::log::warn_fn(format!(
+            crate::core::log::warn_fn(format_args!(
                 "[FAIL] {} {} — {}ms: {}",
                 ctx.service_name,
                 ctx.operation,
@@ -179,7 +179,7 @@ impl Middleware for RetryMiddleware {
                 return;
             }
 
-            crate::core::log::debug_fn(format!(
+            crate::core::log::debug_fn(format_args!(
                 "[RETRY] {} attempt {} failed, retrying...",
                 ctx.service_name,
                 attempt + 1

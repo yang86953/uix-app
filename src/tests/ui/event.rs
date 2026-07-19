@@ -601,6 +601,31 @@ fn app_state_lookup_emit_is_retained_for_target_widget_tree() {
 }
 
 #[test]
+fn app_state_unregister_discards_queued_semantic_events() {
+    let app_state = AppState::new();
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Button::new("root")));
+    let child = tree.add_child(root, Box::new(Button::new("child")));
+    tree.layout();
+    tree.set_app_state(app_state.clone());
+
+    let handle = app_state
+        .get_handle(child)
+        .expect("child should be registered");
+    assert_eq!(
+        handle.emit(SemanticEvent::change(child, "queued-before-remove")),
+        EventResult::Handled
+    );
+    assert_eq!(app_state.pending_semantic_event_count(), 1);
+
+    tree.remove(child);
+
+    assert_eq!(app_state.pending_semantic_event_count(), 0);
+    assert!(!tree.has_app_state_semantic_events());
+    assert!(!tree.drain_app_state_semantic_events());
+}
+
+#[test]
 fn app_state_get_handle_reads_snapshot_off_owner_thread() {
     let mut tree = WidgetTree::new();
     let app_state = AppState::new();
