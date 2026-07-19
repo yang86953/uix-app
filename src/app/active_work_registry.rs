@@ -121,22 +121,33 @@ impl ActiveWorkRegistry {
         self.entries.values().filter_map(|deadline| *deadline).min()
     }
 
+    #[cfg(test)]
     pub(crate) fn drain_due(&mut self, now: Instant) -> Vec<ActiveWorkKind> {
-        let due: Vec<_> = self
-            .entries
-            .iter()
-            .filter_map(|(&kind, &deadline)| deadline.is_some_and(|d| d <= now).then_some(kind))
-            .collect();
-        for kind in &due {
-            self.entries.remove(kind);
-            if let ActiveWorkKind::Timer(id) = kind {
-                self.managed_timers.remove(id);
-            }
-            if let ActiveWorkKind::AppTimer(id) = kind {
-                self.managed_app_timers.remove(id);
-            }
-        }
+        let mut due = Vec::new();
+        self.drain_due_into(now, &mut due);
         due
+    }
+
+    pub(crate) fn drain_due_into(&mut self, now: Instant, due: &mut Vec<ActiveWorkKind>) {
+        due.clear();
+        let managed_timers = &mut self.managed_timers;
+        let managed_app_timers = &mut self.managed_app_timers;
+        self.entries.retain(|kind, deadline| {
+            if !deadline.is_some_and(|deadline| deadline <= now) {
+                return true;
+            }
+            due.push(*kind);
+            match *kind {
+                ActiveWorkKind::Timer(id) => {
+                    managed_timers.remove(&id);
+                }
+                ActiveWorkKind::AppTimer(id) => {
+                    managed_app_timers.remove(&id);
+                }
+                _ => {}
+            }
+            false
+        });
     }
 
     pub(crate) fn is_empty(&self) -> bool {

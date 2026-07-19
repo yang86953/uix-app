@@ -131,7 +131,8 @@ fn drain_due_returns_only_due_work_and_keeps_future_work() {
     registry.register(ActiveWorkKind::Timer(2), now);
     registry.register(ActiveWorkKind::AppTimer(3), now + Duration::from_millis(1));
 
-    let due = registry.drain_due(now);
+    let mut due = vec![ActiveWorkKind::GraphicsMaintenance];
+    registry.drain_due_into(now, &mut due);
 
     assert_eq!(
         due,
