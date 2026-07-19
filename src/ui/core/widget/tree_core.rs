@@ -663,10 +663,10 @@ impl WidgetTree {
     }
 
     pub fn active_timers(&mut self) -> Vec<(u64, std::time::Duration)> {
-        self.timer_routes.clear();
+        let mut timer_routes = std::mem::take(&mut self.timer_routes);
+        timer_routes.clear();
         let mut timers = Vec::new();
-        let ids: Vec<_> = self.traverse().iter().copied().collect();
-        for id in ids {
+        for &id in self.traverse().iter() {
             if self.is_pending_removal_subtree(id) {
                 continue;
             }
@@ -675,10 +675,11 @@ impl WidgetTree {
                     continue;
                 };
                 let key = Self::timer_work_key(id, local_id);
-                self.timer_routes.insert(key, (id, local_timer_id));
+                timer_routes.insert(key, (id, local_timer_id));
                 timers.push((key, delay));
             }
         }
+        self.timer_routes = timer_routes;
         timers
     }
 
