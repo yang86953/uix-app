@@ -8,7 +8,7 @@
 mod availability;
 mod support;
 
-use crate::app::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry};
+use crate::app::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry, TimerId};
 use crate::app::agent_control::WindowAgentState;
 use crate::app::app_timer::AppTimerQueue;
 use crate::app::frame_scheduler::{FrameScheduler, SurfaceSuspendReason};
@@ -91,6 +91,7 @@ pub(crate) struct WindowDriver {
     deferred_show: bool,
     started_at: Option<Instant>,
     scheduled_animation_ids_scratch: Vec<NodeId>,
+    app_timer_deadlines_scratch: Vec<(TimerId, Instant)>,
 }
 
 impl WindowDriver {
@@ -105,11 +106,21 @@ impl WindowDriver {
             deferred_show,
             started_at: None,
             scheduled_animation_ids_scratch: Vec::new(),
+            app_timer_deadlines_scratch: Vec::new(),
         }
     }
 
     pub(crate) fn last_frame(&self) -> Option<Instant> {
         self.last_frame
+    }
+
+    pub(crate) fn sync_app_timers(
+        &mut self,
+        active_work: &mut ActiveWorkRegistry,
+        app_timers: &AppTimerQueue,
+    ) {
+        app_timers.deadlines_into(&mut self.app_timer_deadlines_scratch);
+        active_work.sync_app_timers(self.app_timer_deadlines_scratch.iter().copied());
     }
 
     /// Applies the shared native window lifecycle portion of an event.
@@ -322,7 +333,7 @@ impl WindowDriver {
         pending_root: &Option<crate::ui::view::ViewNode>,
         reconcile_pending: &mut bool,
     ) -> bool {
-        active_work.sync_app_timers(app_timers.deadlines());
+        self.sync_app_timers(active_work, app_timers);
         if tree.take_reconcile_requested() {
             *reconcile_pending = true;
         }
@@ -353,7 +364,7 @@ impl WindowDriver {
         pending_root: &Option<crate::ui::view::ViewNode>,
         reconcile_pending: bool,
     ) -> Option<Instant> {
-        active_work.sync_app_timers(app_timers.deadlines());
+        self.sync_app_timers(active_work, app_timers);
         if tree.take_reconcile_requested() {
             self.arm_visual_request(now, tree, pending_root, true);
         } else {
@@ -423,7 +434,7 @@ impl WindowDriver {
         self.publish_agent_window_availability(semantic_state, platform_window);
 
         active_work.sync_timers(tree.active_timers(), now);
-        active_work.sync_app_timers(app_timers.deadlines());
+        self.sync_app_timers(active_work, app_timers);
         let due_work = active_work.drain_due(now);
         let had_registered_work = !due_work.is_empty();
         if due_work.contains(&ActiveWorkKind::GraphicsMaintenance) {
@@ -450,7 +461,7 @@ impl WindowDriver {
         let had_app_state_semantic_work =
             with_platform_clipboard(&mut platform, || tree.drain_app_state_semantic_events());
         active_work.sync_timers(tree.active_timers(), now);
-        active_work.sync_app_timers(app_timers.deadlines());
+        self.sync_app_timers(active_work, app_timers);
         if let Some(platform) = platform.as_deref_mut() {
             on_runtime_tasks(platform, tree);
         }
@@ -462,7 +473,7 @@ impl WindowDriver {
         if pending_effects {
             let _effects_ran = with_platform_clipboard(&mut platform, || tree.tick_effects());
             active_work.sync_timers(tree.active_timers(), now);
-            active_work.sync_app_timers(app_timers.deadlines());
+            self.sync_app_timers(active_work, app_timers);
         }
         if tree.take_reconcile_requested() {
             *reconcile_pending = true;
@@ -625,7 +636,7 @@ impl WindowDriver {
             *reconcile_pending = true;
         }
         active_work.sync_timers(tree.active_timers(), frame_time);
-        active_work.sync_app_timers(app_timers.deadlines());
+        self.sync_app_timers(active_work, app_timers);
         let mut animation_frame_token = None;
         if self.frame_scheduler.is_renderable()
             && !self.frame_scheduler.has_outstanding_request()

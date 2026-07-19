@@ -374,7 +374,7 @@ where
     let mut fallback_loop_state = WindowLoopState::Active;
 
     let running = Cell::new(true);
-    active_work.sync_app_timers(app_timers.deadlines());
+    driver.sync_app_timers(active_work, &app_timers);
 
     let collect = |ev: &UiEvent| {
         if ev.window_id.is_some_and(|target| target != window_id) {

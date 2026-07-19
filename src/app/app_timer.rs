@@ -95,14 +95,22 @@ impl AppTimerQueue {
         self.insert(interval, Some(interval), f)
     }
 
+    #[cfg(test)]
     pub(crate) fn deadlines(&self) -> Vec<(TimerId, Instant)> {
-        self.inner
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .entries
-            .iter()
-            .map(|(&id, entry)| (id, entry.deadline))
-            .collect()
+        let mut deadlines = Vec::new();
+        self.deadlines_into(&mut deadlines);
+        deadlines
+    }
+
+    pub(crate) fn deadlines_into(&self, deadlines: &mut Vec<(TimerId, Instant)>) {
+        deadlines.clear();
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        deadlines.extend(
+            inner
+                .entries
+                .iter()
+                .map(|(&id, entry)| (id, entry.deadline)),
+        );
     }
 
     pub(crate) fn cancel_all(&self) {
