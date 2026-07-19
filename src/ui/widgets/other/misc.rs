@@ -223,7 +223,7 @@ component! {
             .map(|keys| SemanticEvent::change(id, keys))
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         self.last_frame
             .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
         let bg = ctx.tokens().color_bg_container();
@@ -239,7 +239,14 @@ component! {
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
         let left_rect = Rect::new(frame.x, frame.y, half, frame.h);
         ctx.fill_rect(left_rect, bg, r);
-        let left_border = if self.focused && self.active_pane == TransferPane::Source { primary } else { border };
+        let left_border = if self.focused
+            && tree.keyboard_focus_visible()
+            && self.active_pane == TransferPane::Source
+        {
+            primary
+        } else {
+            border
+        };
         ctx.stroke_rect(left_rect, left_border, if left_border == primary { 1.5 } else { 1.0 }, r);
         let loc = crate::ui::locale::use_locale();
         ctx.draw_text(&format!("{} ({}项)", loc.transfer_source, self.source.len()), Point::new(frame.x + 8.0, frame.y + 6.0), text_sec, 12.0);
@@ -248,7 +255,11 @@ component! {
             let row_rect = Rect::new(frame.x, y, half, item_h);
             let row_y = ctx.visual_center_y(row_rect, 13.0);
             if item.selected { ctx.fill_rect(row_rect, fill, None); }
-            if self.focused && self.active_pane == TransferPane::Source && self.active_index == i {
+            if self.focused
+                && tree.keyboard_focus_visible()
+                && self.active_pane == TransferPane::Source
+                && self.active_index == i
+            {
                 ctx.stroke_rect(row_rect, primary, 1.0, None);
             }
             ctx.draw_text(if item.selected { "☑" } else { "☐" }, Point::new(frame.x + 8.0, row_y), text, 12.0);
@@ -264,7 +275,14 @@ component! {
         let right_x = frame.x + half + BTN_COL_W;
         let right_rect = Rect::new(right_x, frame.y, half, frame.h);
         ctx.fill_rect(right_rect, bg, r);
-        let right_border = if self.focused && self.active_pane == TransferPane::Target { primary } else { border };
+        let right_border = if self.focused
+            && tree.keyboard_focus_visible()
+            && self.active_pane == TransferPane::Target
+        {
+            primary
+        } else {
+            border
+        };
         ctx.stroke_rect(right_rect, right_border, if right_border == primary { 1.5 } else { 1.0 }, r);
         ctx.draw_text(&format!("{} ({}项)", loc.transfer_target, self.target.len()), Point::new(right_x + 8.0, frame.y + 6.0), text_sec, 12.0);
         for (i, item) in self.target.iter().enumerate() {
@@ -272,7 +290,11 @@ component! {
             let row_rect = Rect::new(right_x, y, half, item_h);
             let row_y = ctx.visual_center_y(row_rect, 13.0);
             if item.selected { ctx.fill_rect(row_rect, fill, None); }
-            if self.focused && self.active_pane == TransferPane::Target && self.active_index == i {
+            if self.focused
+                && tree.keyboard_focus_visible()
+                && self.active_pane == TransferPane::Target
+                && self.active_index == i
+            {
                 ctx.stroke_rect(row_rect, primary, 1.0, None);
             }
             ctx.draw_text(if item.selected { "☑" } else { "☐" }, Point::new(right_x + 8.0, row_y), text, 12.0);
@@ -544,7 +566,7 @@ component! {
             .map(|value| SemanticEvent::change(id, value))
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let bg = ctx.tokens().color_bg_container();
         let border = ctx.tokens().color_border();
         let text_sec = ctx.tokens().color_text_quaternary();
@@ -558,7 +580,7 @@ component! {
 
         let drag_border = if self.drag_hover { primary } else { border };
         ctx.stroke_rect(upload_rect, drag_border, if self.drag && self.drag_hover { 2.0 } else { 1.0 }, r);
-        if self.focused {
+        if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(upload_rect, primary, 2.0, r);
         }
         if self.drag && self.drag_hover {

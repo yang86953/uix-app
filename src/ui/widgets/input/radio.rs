@@ -94,7 +94,7 @@ component! {
 
     wants_continuous_pointer_move => (&self) -> bool { true }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         self.capture_bound_value_dependency();
         let cy = frame.y + self.item_h * 0.5;
 
@@ -103,7 +103,7 @@ component! {
                 let mut x = frame.x;
                 for (i, opt) in self.options.iter().enumerate() {
                     let w = self.item_width(opt);
-                    self.render_radio_item(ctx, i, opt, x, cy, w);
+                    self.render_radio_item(ctx, i, opt, x, cy, w, tree.keyboard_focus_visible());
                     x += w;
                 }
             }
@@ -111,7 +111,15 @@ component! {
                 for (i, opt) in self.options.iter().enumerate() {
                     let y = frame.y + i as f32 * self.item_h + self.item_h * 0.5;
                     let w = frame.w;
-                    self.render_radio_item(ctx, i, opt, frame.x, y, w);
+                    self.render_radio_item(
+                        ctx,
+                        i,
+                        opt,
+                        frame.x,
+                        y,
+                        w,
+                        tree.keyboard_focus_visible(),
+                    );
                 }
             }
         }
@@ -232,6 +240,7 @@ impl Radio {
         x: f32,
         cy: f32,
         segment_width: f32,
+        focus_visible: bool,
     ) {
         let scale = self.visual_scale();
         let r = 6.0 * scale;
@@ -266,7 +275,7 @@ impl Radio {
         };
 
         let circle_rect = Rect::new(x + scale, cy - r, r * 2.0, r * 2.0);
-        if self.focused && selected {
+        if self.focused && focus_visible && selected {
             let focus_outset = 2.0 * scale;
             ctx.stroke_rect(
                 Rect::new(

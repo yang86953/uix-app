@@ -11,6 +11,7 @@ impl WidgetTree {
         key: KeyCode,
         mods: KeyMod,
     ) -> EventResult {
+        self.set_keyboard_focus_visible(true);
         // Tab 键焦点导航（在捕获和冒泡之前处理）。
         if key == KeyCode::Tab {
             let forward = !mods.contains(KeyMod::SHIFT);

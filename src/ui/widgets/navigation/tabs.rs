@@ -149,7 +149,7 @@ component! {
             .map(|key| SemanticEvent::change(id, key))
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         self.capture_bound_value_dependency();
         let bg_container = ctx.tokens().color_bg_container();
         let border_secondary = ctx.tokens().color_border_secondary();
@@ -206,7 +206,7 @@ component! {
             TabPosition::Bottom => frame.y,
         };
         ctx.fill_rect(Rect::new(frame.x, content_y, frame.w, frame.h - tab_bar_h), bg_container, None);
-        if self.focused {
+        if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(
                 Rect::new(frame.x, tab_bar_y, frame.w, tab_bar_h),
                 primary,

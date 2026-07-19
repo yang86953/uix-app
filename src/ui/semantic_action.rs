@@ -251,6 +251,7 @@ impl WidgetTree {
                 }
             }
             SemanticAction::Focus => {
+                self.set_keyboard_focus_visible(true);
                 self.set_focus(Some(id));
                 if self.managers().focus.focused_component() == Some(id) {
                     EventResult::Handled

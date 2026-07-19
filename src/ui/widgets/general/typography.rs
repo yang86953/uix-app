@@ -175,7 +175,7 @@ component! {
             .then(|| SemanticEvent::submit(id, "copied"))
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let (fs, fw) = self.compute_font_style();
         let text_c = self.color_override.unwrap_or_else(|| {
             if self.disabled { ctx.tokens().color_text_quaternary() } else { ctx.tokens().color_text() }
@@ -323,7 +323,7 @@ component! {
                 24.0,
                 20.0,
             )));
-            if self.focused {
+            if self.focused && tree.keyboard_focus_visible() {
                 ctx.stroke_rect(
                     Rect::new(copy_x - 2.0, copy_y - 2.0, 24.0, 20.0),
                     ctx.tokens().color_primary(),

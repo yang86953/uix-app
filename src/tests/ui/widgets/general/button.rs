@@ -1,9 +1,14 @@
 use crate::tests::common::*;
+use crate::ui::style::{ColorValue, StyleSet};
 use crate::ui::view::View;
 use crate::ui::widgets::general::button::*;
 use crate::ui::widgets::general::ButtonGroup;
 
 fn render_button(button: &Button) -> Vec<u32> {
+    render_button_with_focus_visibility(button, true)
+}
+
+fn render_button_with_focus_visibility(button: &Button, focus_visible: bool) -> Vec<u32> {
     let mut canvas = crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer::new(
         crate::draw::engine::cpu::pixel_surface::PixelSurface::new(180, 48),
     );
@@ -13,7 +18,8 @@ fn render_button(button: &Button) -> Vec<u32> {
         .expect("load deterministic test font");
     let images = ImageService::new();
     let tokens = DesignTokens::antd_light();
-    let tree = WidgetTree::new();
+    let mut tree = WidgetTree::new();
+    tree.set_keyboard_focus_visible(focus_visible);
     let mut ctx = PaintContext::new_for_test(
         &mut canvas,
         font,
@@ -28,6 +34,31 @@ fn render_button(button: &Button) -> Vec<u32> {
     );
     WidgetRender::render(button, Rect::new(4.0, 8.0, 172.0, 32.0), &mut ctx, &tree);
     canvas.surface().pixels().to_vec()
+}
+
+#[test]
+fn custom_focus_style_only_renders_for_keyboard_visible_focus() {
+    let base = Style::button_default();
+    let focused = Style {
+        border_color: Some(ColorValue::custom(Color::from_rgb(255, 0, 0))),
+        border_width: EdgeInsets::uniform(3.0),
+        ..Style::default()
+    };
+    let style_set = StyleSet::new(base).focused(focused);
+    let idle = Button::new("Action").style_set(style_set.clone());
+    let mut focused = Button::new("Action").style_set(style_set);
+    focused.on_event(&SystemEvent::FocusIn);
+
+    assert_eq!(
+        render_button_with_focus_visibility(&focused, false),
+        render_button(&idle),
+        "pointer focus must keep the idle button border"
+    );
+    assert_ne!(
+        render_button_with_focus_visibility(&focused, true),
+        render_button(&idle),
+        "keyboard focus must retain the custom focus border"
+    );
 }
 
 #[test]

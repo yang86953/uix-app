@@ -66,7 +66,7 @@ component! {
             .map(|checked| SemanticEvent::change(id, checked.to_string()))
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         self.capture_bound_checked_dependency();
         let primary = ctx.tokens().color_primary();
         let primary_hover = ctx.tokens().color_primary_hover();
@@ -97,7 +97,7 @@ component! {
             ctx.stroke_rect(box_r, border, 1.5, corner);
         }
 
-        if self.focused {
+        if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(Rect::new(box_x - scale, box_y - scale, box_size + 2.0 * scale, box_size + 2.0 * scale), primary, 1.5, Some(crate::draw::Radius::uniform(4.0 * scale)));
         }
 

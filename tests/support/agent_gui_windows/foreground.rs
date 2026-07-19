@@ -787,6 +787,120 @@ pub(super) fn verify_theme_and_resize_capture(
     );
 }
 
+pub(super) fn verify_pointer_and_keyboard_focus_visuals(
+    demo: &DemoProcess,
+    connection: &mut BufReader<File>,
+    window_id: u64,
+    generation: u64,
+    snapshot: &Value,
+) {
+    let window = demo.window_handle();
+    let bounds = &node_by_automation_id(snapshot, "sidebar-page-0")["visible_bounds"];
+    let x = bounds["x"].as_f64().expect("home nav x");
+    let y = bounds["y"].as_f64().expect("home nav y");
+    let w = bounds["w"].as_f64().expect("home nav width");
+    let h = bounds["h"].as_f64().expect("home nav height");
+    let region = (x, y, w, h);
+
+    demo.raise_for_interaction();
+    request_foreground_focus(window);
+    flush_desktop_composition();
+    let idle = capture_client(window);
+
+    let pointer = perform_until_presentable(
+        demo,
+        connection,
+        window_id,
+        generation,
+        "focus-visual-pointer",
+        None,
+        json!({ "kind": "click_at", "x": x + w * 0.5, "y": y + h * 0.5 }),
+    );
+    wait_for_presented(
+        connection,
+        window_id,
+        generation,
+        pointer["revision"].as_u64().expect("pointer revision"),
+        "focus-visual-pointer-presented",
+    );
+    demo.raise_for_interaction();
+    request_foreground_focus(window);
+    flush_desktop_composition();
+    let pointer_focused = capture_client(window);
+    let pointer_delta = capture_region_change_ratio(&idle, &pointer_focused, region);
+    assert!(
+        pointer_delta <= 0.02,
+        "pointer focus changed {:.2}% of the active navigation item; no focus ring was expected",
+        pointer_delta * 100.0
+    );
+
+    let keyboard = perform_until_presentable(
+        demo,
+        connection,
+        window_id,
+        generation,
+        "focus-visual-keyboard",
+        Some(json!({ "automation_id": "sidebar-page-0" })),
+        json!({ "kind": "focus" }),
+    );
+    wait_for_presented(
+        connection,
+        window_id,
+        generation,
+        keyboard["revision"].as_u64().expect("keyboard revision"),
+        "focus-visual-keyboard-presented",
+    );
+    demo.raise_for_interaction();
+    request_foreground_focus(window);
+    flush_desktop_composition();
+    let keyboard_focused = capture_client(window);
+    let keyboard_delta = capture_region_change_ratio(&pointer_focused, &keyboard_focused, region);
+    assert!(
+        keyboard_delta >= 0.02,
+        "keyboard focus changed only {:.2}% of the navigation item; focus ring must remain visible",
+        keyboard_delta * 100.0
+    );
+    println!(
+        "focus visual capture: pointer delta {:.2}% -> keyboard delta {:.2}%",
+        pointer_delta * 100.0,
+        keyboard_delta * 100.0
+    );
+}
+
+fn capture_region_change_ratio(
+    left: &ClientCapture,
+    right: &ClientCapture,
+    region: (f64, f64, f64, f64),
+) -> f64 {
+    assert_eq!(
+        (left.width, left.height),
+        (right.width, right.height),
+        "regional captures must have the same client extent"
+    );
+    let x0 = region.0.floor().max(0.0) as usize;
+    let y0 = region.1.floor().max(0.0) as usize;
+    let x1 = (region.0 + region.2).ceil().max(0.0) as usize;
+    let y1 = (region.1 + region.3).ceil().max(0.0) as usize;
+    let width = left.width.max(1) as usize;
+    let height = left.height.max(1) as usize;
+    let x1 = x1.min(width);
+    let y1 = y1.min(height);
+    assert!(x0 < x1 && y0 < y1, "focus region must be visible");
+
+    let mut changed = 0usize;
+    let mut total = 0usize;
+    for y in y0.min(height)..y1 {
+        let row = y * width;
+        for x in x0.min(width)..x1 {
+            total += 1;
+            if (left.pixels[row + x] ^ right.pixels[row + x]) & 0x00FF_FFFF != 0 {
+                changed += 1;
+            }
+        }
+    }
+    changed as f64 / total.max(1) as f64
+}
+
 fn assert_shell_fills_snapshot(snapshot: &Value, label: &str) -> (f64, f64, f64, f64) {
     let nodes = snapshot["nodes"]
         .as_array()

@@ -118,13 +118,13 @@ component! {
 
     wants_continuous_pointer_move => (&self) -> bool { self.open }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
 
         let btn_rect = Rect::new(frame.x, frame.y, frame.w, 32.0);
         ctx.fill_rect(btn_rect, ctx.tokens().color_primary(), r);
         ctx.text_center(&self.label, btn_rect, crate::draw::Color::white(), 13.0);
-        if self.focused {
+        if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(btn_rect, ctx.tokens().color_primary_active(), 1.5, r);
         }
 

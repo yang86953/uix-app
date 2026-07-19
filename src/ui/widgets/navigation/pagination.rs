@@ -97,7 +97,7 @@ component! {
         })
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let loc = crate::ui::locale::use_locale();
         let total_pages = self.total.div_ceil(self.page_size);
         if total_pages == 0 && !self.show_total && !self.show_size_changer {
@@ -179,7 +179,7 @@ component! {
             );
         }
 
-        if self.focused {
+        if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(frame, primary, 1.5, Some(radius));
         }
     }

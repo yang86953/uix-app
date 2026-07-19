@@ -102,7 +102,7 @@ component! {
         Some(SemanticEvent::change(id, href))
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         // 背景
         if let Some(bg) = self.bg_color {
             ctx.fill_rect(frame, bg, None);
@@ -134,7 +134,7 @@ component! {
             ctx.draw_text(&item.label, Point::new(label_x, label_y), color, 14.0);
         }
 
-        if self.focused {
+        if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(
                 frame,
                 primary,

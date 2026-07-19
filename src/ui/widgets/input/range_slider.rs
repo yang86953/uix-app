@@ -132,7 +132,7 @@ component! {
         })
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         self.capture_bound_value_dependencies();
         let control_rect = Rect::new(
             frame.x,
@@ -197,7 +197,7 @@ component! {
             );
         }
 
-        if self.focused {
+        if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(control_rect, primary, 1.5, Some(Radius::uniform(4.0)));
         }
         ctx.pop_clip();

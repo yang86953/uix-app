@@ -53,7 +53,7 @@ component! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         if !self.visible { return; }
 
         let primary = ctx.tokens().color_primary();
@@ -73,7 +73,7 @@ component! {
             primary,
             14.0,
         );
-        if self.focused {
+        if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(
                 frame,
                 primary,

@@ -67,6 +67,7 @@ pub struct WidgetTree {
     timer_routes: BTreeMap<u64, (WidgetId, u32)>,
     focus_trap_restore: Vec<(WidgetId, Option<WidgetId>)>,
     pub(crate) window_focused: bool,
+    keyboard_focus_visible: bool,
     pub(crate) keyboard_activation: Option<(WidgetId, KeyCode, KeyMod)>,
     #[cfg(feature = "test-harness")]
     pub(crate) automation_recorder: Option<crate::ui::automation::AutomationRecorder>,
@@ -123,6 +124,7 @@ impl Default for WidgetTree {
             timer_routes: BTreeMap::new(),
             focus_trap_restore: Vec::new(),
             window_focused: true,
+            keyboard_focus_visible: true,
             keyboard_activation: None,
             #[cfg(feature = "test-harness")]
             automation_recorder: None,
@@ -142,6 +144,20 @@ impl Default for WidgetTree {
 
 impl WidgetTree {
     pub(crate) const ROOT_BOOTSTRAP_SIZE: Size = Size { w: 800.0, h: 600.0 };
+
+    pub(crate) fn keyboard_focus_visible(&self) -> bool {
+        self.window_focused && self.keyboard_focus_visible
+    }
+
+    pub(crate) fn set_keyboard_focus_visible(&mut self, visible: bool) {
+        if self.keyboard_focus_visible == visible {
+            return;
+        }
+        self.keyboard_focus_visible = visible;
+        if let Some(focused) = self.managers.focus.focused_component() {
+            self.invalidate_paint(focused);
+        }
+    }
 
     pub fn new() -> Self {
         Self::default()
@@ -235,11 +251,13 @@ impl WidgetTree {
             match request {
                 crate::ui::app_state::FocusRequest::Focus => {
                     if self.focus_target_available(id) {
+                        self.set_keyboard_focus_visible(true);
                         self.set_focus(Some(id));
                     }
                 }
                 crate::ui::app_state::FocusRequest::FocusAndReveal => {
                     if self.focus_target_available(id) {
+                        self.set_keyboard_focus_visible(true);
                         self.set_focus(Some(id));
                         self.reveal_focused_target(id);
                     }
