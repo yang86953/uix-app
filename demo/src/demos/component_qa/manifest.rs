@@ -1087,6 +1087,7 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
             "drop-zone",
             "drag",
             "file-list",
+            "image-preview",
             "pending",
             "uploading",
             "done",

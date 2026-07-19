@@ -250,6 +250,7 @@ fn real_demo_captures_upload_list_visual() {
             upload_index = Some(index);
             assert_eq!(case.name, "Upload");
             assert!(case.states.iter().any(|state| state == "file-list"));
+            assert!(case.states.iter().any(|state| state == "image-preview"));
             break;
         }
         invoke_and_wait(
@@ -284,6 +285,10 @@ fn real_demo_captures_upload_list_visual() {
         .as_str()
         .expect("upload queue value");
     assert!(!value.contains("button-light.png"), "removed row: {value}");
+    assert!(
+        value.contains("demo.png"),
+        "preview row should remain: {value}"
+    );
     capture(&demo, &evidence_root, "upload-list-light-removed.png");
 
     invoke_and_wait(

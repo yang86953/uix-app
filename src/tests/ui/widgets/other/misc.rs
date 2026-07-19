@@ -4,7 +4,7 @@ use crate::tests::common::*;
 use crate::ui::widgets::{QRCode, Transfer, TransferItem, Upload, UploadStatus, Watermark};
 use crate::ui::{AccessibilityRole, SnapshotTransferItem};
 
-fn render_upload(upload: &Upload, frame: Rect) {
+fn render_upload(upload: &Upload, frame: Rect) -> Vec<u32> {
     let mut canvas = SharedRasterizer::new(PixelSurface::new(
         frame.w.ceil().max(1.0) as i32,
         frame.h.ceil().max(1.0) as i32,
@@ -31,6 +31,8 @@ fn render_upload(upload: &Upload, frame: Rect) {
         surface_h,
     );
     upload.render(frame, &mut ctx, &tree);
+    drop(ctx);
+    canvas.surface().pixels().to_vec()
 }
 
 #[test]
@@ -239,7 +241,7 @@ fn upload_list_can_be_hidden_and_pointer_remove_reports_change() {
     );
     assert!(upload.take_layout_request());
 
-    render_upload(&upload, Rect::new(0.0, 0.0, 300.0, 164.0));
+    let _ = render_upload(&upload, Rect::new(0.0, 0.0, 300.0, 164.0));
     let remove = SystemEvent::PointerDown {
         pos: Point::new(286.0, 116.0),
         button: MouseButton::Left,
@@ -262,7 +264,7 @@ fn upload_list_can_be_hidden_and_pointer_remove_reports_change() {
         hidden.measure(Constraints::unconstrained()),
         Size::new(300.0, 100.0)
     );
-    render_upload(&hidden, Rect::new(0.0, 0.0, 300.0, 100.0));
+    let _ = render_upload(&hidden, Rect::new(0.0, 0.0, 300.0, 100.0));
     assert_eq!(hidden.on_event(&remove), EventResult::NotHandled);
     assert_eq!(hidden.file_count(), 1);
     assert!(matches!(
@@ -273,6 +275,39 @@ fn upload_list_can_be_hidden_and_pointer_remove_reports_change() {
             ..
         }
     ));
+}
+
+#[test]
+fn upload_image_preview_uses_real_file_path_and_preserves_fallback_icon() {
+    let image_path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/images/demo.png");
+    let frame = Rect::new(0.0, 0.0, 300.0, 164.0);
+
+    let mut plain = Upload::dragger().preview_image(false);
+    assert!(plain.try_add_file(image_path));
+    let plain_pixels = render_upload(&plain, frame);
+
+    let mut preview = Upload::dragger().preview_image(true);
+    assert!(preview.try_add_file(image_path));
+    assert_eq!(preview.files()[0].source_path.as_deref(), Some(image_path));
+    let preview_pixels = render_upload(&preview, frame);
+    let changed_thumbnail_pixels = (108_usize..132)
+        .flat_map(|y| (4_usize..28).map(move |x| y * 300 + x))
+        .filter(|&index| plain_pixels[index] != preview_pixels[index])
+        .count();
+    assert!(
+        changed_thumbnail_pixels >= 64,
+        "decoded preview should replace the generic file icon"
+    );
+
+    let mut unavailable = Upload::dragger().preview_image(true);
+    assert!(unavailable.try_add_file("missing.png"));
+    assert!(unavailable.files()[0].source_path.is_none());
+    let mut plain_unavailable = Upload::dragger().preview_image(false);
+    plain_unavailable.add_file("missing.png");
+    assert_eq!(
+        render_upload(&unavailable, frame),
+        render_upload(&plain_unavailable, frame)
+    );
 }
 
 #[test]

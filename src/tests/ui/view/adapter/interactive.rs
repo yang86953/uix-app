@@ -462,7 +462,8 @@ fn reconcile_upload_preserves_files_and_syncs_config() {
                 .drag(false)
                 .max_count(5)
                 .max_size(1024)
-                .show_upload_list(false),
+                .show_upload_list(false)
+                .preview_image(true),
         ),
     );
 
@@ -484,8 +485,10 @@ fn reconcile_upload_preserves_files_and_syncs_config() {
             max_count: 5,
             max_size: Some(1024),
             show_upload_list: false,
+            preview_image: true,
             files: vec![UploadFile {
                 name: "kept.txt".to_string(),
+                source_path: None,
                 size: 0,
                 progress: 0.5,
                 status: UploadStatus::Uploading,
