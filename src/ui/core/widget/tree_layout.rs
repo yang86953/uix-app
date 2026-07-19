@@ -195,6 +195,7 @@ impl WidgetTree {
         let mut pass_expand_sig = Vec::new();
         let mut has_prev_expand_sig = false;
         let mut resized_children = HashSet::new();
+        let mut visibility_changes = Vec::new();
         for _converge_pass in 0..max_passes {
             #[cfg(test)]
             {
@@ -203,7 +204,7 @@ impl WidgetTree {
             let mut any_change = false;
             pass_expand_sig.clear();
 
-            if self.sync_parent_child_visibility(&order) {
+            if self.sync_parent_child_visibility(&order, &mut visibility_changes) {
                 any_change = true;
             }
 
@@ -232,7 +233,7 @@ impl WidgetTree {
                     }
                 }
             }
-            if self.sync_parent_child_visibility(&order) {
+            if self.sync_parent_child_visibility(&order, &mut visibility_changes) {
                 any_change = true;
             }
             #[cfg(test)]
@@ -295,8 +296,12 @@ impl WidgetTree {
     /// Synchronize parent-owned child visibility without overwriting a
     /// child's authored `visible` gate. A tree-version bump is required
     /// because the compositor omits invisible subtrees while building layers.
-    fn sync_parent_child_visibility(&mut self, order: &[WidgetId]) -> bool {
-        let mut changes = Vec::new();
+    fn sync_parent_child_visibility(
+        &mut self,
+        order: &[WidgetId],
+        changes: &mut Vec<(WidgetId, bool)>,
+    ) -> bool {
+        changes.clear();
         for &parent_id in order {
             let Some(parent) = self.get(parent_id) else {
                 continue;
@@ -312,7 +317,7 @@ impl WidgetTree {
             }
         }
 
-        for (child_id, visible) in &changes {
+        for (child_id, visible) in changes.iter() {
             let old_bounds = self.visual_subtree_bounds(*child_id);
             if !visible {
                 self.cancel_subtree_interaction(*child_id);
