@@ -329,13 +329,19 @@ impl NativeGpuBackend {
                 }
                 FrameCommand::CpuSegment { image, src, dst } => {
                     self.ensure_frame_encoder_target(&mut target_initialized)?;
-                    let source = encoder.cpu_segment_reference(image, *src, *dst);
-                    self.alpha_blit_frame_encoder_source(&source)?;
+                    if let Some((source, destination)) =
+                        encoder.cpu_segment_reference_tile(image, *src, *dst)
+                    {
+                        self.alpha_blit_frame_encoder_source(&source, destination)?;
+                    }
                 }
                 FrameCommand::PictureBlit { image, src, dst } => {
                     self.ensure_frame_encoder_target(&mut target_initialized)?;
-                    let source = encoder.picture_blit_reference(image, *src, *dst);
-                    self.alpha_blit_frame_encoder_source(&source)?;
+                    if let Some((source, destination)) =
+                        encoder.picture_blit_reference_tile(image, *src, *dst)
+                    {
+                        self.alpha_blit_frame_encoder_source(&source, destination)?;
+                    }
                 }
             }
         }
@@ -671,10 +677,30 @@ impl NativeGpuBackend {
             })
     }
 
-    fn alpha_blit_frame_encoder_source(&mut self, source: &ReferenceFrame) -> Result<(), Error> {
+    fn alpha_blit_frame_encoder_source(
+        &mut self,
+        source: &ReferenceFrame,
+        destination: FrameRect,
+    ) -> Result<(), Error> {
         if let Some((pixels, tile)) =
             pack_visible_soft_fallback_tile(source.pixels(), source.width(), source.height())
         {
+            let tile = SoftFallbackTile::at_destination(
+                destination.x.checked_add(tile.dst_x).ok_or_else(|| {
+                    Error::new(
+                        Errc::InvalidState,
+                        "FrameEncoder soft tile destination x overflowed",
+                    )
+                })?,
+                destination.y.checked_add(tile.dst_y).ok_or_else(|| {
+                    Error::new(
+                        Errc::InvalidState,
+                        "FrameEncoder soft tile destination y overflowed",
+                    )
+                })?,
+                tile.width,
+                tile.height,
+            );
             self.gpu_ctx.blit_soft_fallback_tile(&pixels, tile)?;
             self.surface.canvas.last_soft_upload_bytes =
                 pixels.len().saturating_mul(std::mem::size_of::<u32>());

@@ -753,31 +753,59 @@ impl FrameEncoder {
         }
     }
 
-    /// Rasterizes one image segment into a transparent frame-sized source.
-    /// Native executors alpha-blit this exact segment at its recorded point in
-    /// the command order instead of uploading the completed frame.
-    pub(crate) fn cpu_segment_reference(
+    /// Rasterizes one image segment directly into its visible destination
+    /// tile. Native executors alpha-blit this exact segment at its recorded
+    /// point without allocating or scanning a transparent frame-sized source.
+    pub(crate) fn cpu_segment_reference_tile(
         &self,
         image: &FrameImage,
         src: FrameRect,
         dst: FrameRect,
-    ) -> ReferenceFrame {
-        let mut frame = self.transparent_reference();
-        blit_image_pixels(self.width, self.height, &mut frame.pixels, image, src, dst);
-        frame
+    ) -> Option<(ReferenceFrame, FrameRect)> {
+        self.image_blit_reference_tile(image, src, dst)
     }
 
-    /// Rasterizes one Picture blit into a transparent frame-sized source for
-    /// API-native execution at its exact painter-order boundary.
-    pub(crate) fn picture_blit_reference(
+    /// Rasterizes one Picture blit directly into its visible destination tile
+    /// for API-native execution at its exact painter-order boundary.
+    pub(crate) fn picture_blit_reference_tile(
         &self,
         image: &FrameImage,
         src: FrameRect,
         dst: FrameRect,
-    ) -> ReferenceFrame {
-        let mut frame = self.transparent_reference();
-        blit_image_pixels(self.width, self.height, &mut frame.pixels, image, src, dst);
-        frame
+    ) -> Option<(ReferenceFrame, FrameRect)> {
+        self.image_blit_reference_tile(image, src, dst)
+    }
+
+    fn image_blit_reference_tile(
+        &self,
+        image: &FrameImage,
+        src: FrameRect,
+        dst: FrameRect,
+    ) -> Option<(ReferenceFrame, FrameRect)> {
+        let visible = dst.intersection(FrameRect::new(0, 0, self.width, self.height))?;
+        let pixel_count =
+            usize::try_from(i64::from(visible.width).checked_mul(i64::from(visible.height))?)
+                .ok()?;
+        let local_dst = FrameRect::new(
+            dst.x.checked_sub(visible.x)?,
+            dst.y.checked_sub(visible.y)?,
+            dst.width,
+            dst.height,
+        );
+        let mut frame = ReferenceFrame {
+            width: visible.width,
+            height: visible.height,
+            pixels: vec![Color::transparent().premultiplied(); pixel_count],
+        };
+        blit_image_pixels(
+            visible.width,
+            visible.height,
+            &mut frame.pixels,
+            image,
+            src,
+            local_dst,
+        );
+        Some((frame, visible))
     }
 
     fn transparent_reference(&self) -> ReferenceFrame {

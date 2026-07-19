@@ -60,6 +60,49 @@ fn full_picture_after_transparent_clear_restores_exact_premultiplied_pixels() {
 }
 
 #[test]
+fn image_command_reference_tiles_match_full_frame_without_allocating_its_extent() {
+    let source = (0..16)
+        .map(|index| {
+            Color::from_rgba(
+                20 + index * 7,
+                220 - index * 5,
+                40 + index * 3,
+                96 + index * 9,
+            )
+            .premultiplied()
+        })
+        .collect::<Vec<_>>();
+    let image = FrameImage::new(4, 4, source).unwrap();
+    let src = FrameRect::new(0, 0, 4, 4);
+    let dst = FrameRect::new(-2, 5, 8, 8);
+    let encoder = FrameEncoder::new(100, 80).unwrap();
+
+    let (picture_tile, picture_bounds) = encoder
+        .picture_blit_reference_tile(&image, src, dst)
+        .expect("partially visible Picture tile");
+    let (segment_tile, segment_bounds) = encoder
+        .cpu_segment_reference_tile(&image, src, dst)
+        .expect("partially visible CPU segment tile");
+    assert_eq!(picture_bounds, FrameRect::new(0, 5, 6, 8));
+    assert_eq!(segment_bounds, picture_bounds);
+    assert_eq!((picture_tile.width(), picture_tile.height()), (6, 8));
+    assert_eq!(segment_tile, picture_tile);
+
+    let mut full = FrameEncoder::new(100, 80).unwrap();
+    full.blit_picture(image, src, dst);
+    let full = full.render_reference();
+    for y in 0..picture_tile.height() {
+        for x in 0..picture_tile.width() {
+            assert_eq!(
+                picture_tile.pixel(x, y),
+                full.pixel(picture_bounds.x + x, picture_bounds.y + y),
+                "tight tile must preserve scaled sampling at {x},{y}"
+            );
+        }
+    }
+}
+
+#[test]
 fn picture_splice_accepts_disjoint_src_over_and_rejects_quantizing_overlap() {
     let mut disjoint = FrameEncoder::new(16, 8).unwrap();
     disjoint.clear(Color::transparent());
