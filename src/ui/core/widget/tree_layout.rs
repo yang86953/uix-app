@@ -145,8 +145,8 @@ impl WidgetTree {
             }
         }
 
-        self.refresh_table_cell_children();
         let mut order = Vec::new();
+        self.refresh_table_cell_children(&mut order);
         let mut traversal_scratch = LayoutTraversalScratch::default();
         self.fill_layout_traversal(&mut order, &mut traversal_scratch);
         if order.is_empty() {
@@ -283,8 +283,8 @@ impl WidgetTree {
 
         // 最终更新 viewport（确保收敛结束后的 content_bounds 正确）
         self.layout_viewports(&order);
-        self.refresh_virtual_scroll_children();
-        self.refresh_table_cell_children();
+        self.refresh_virtual_scroll_children(&mut order);
+        self.refresh_table_cell_children(&mut order);
         // Phase 6：layout 完成后用最新 frame 绑定 State → Paint rect
         self.bind_reactive_widget_states();
         self.rebuild_widget_overlays();
@@ -715,9 +715,10 @@ impl WidgetTree {
     }
 
     /// Rebuild VirtualScroll child windows when layout frame or scroll offset changes.
-    fn refresh_virtual_scroll_children(&mut self) {
-        let ids: Vec<_> = self.traverse().iter().copied().collect();
-        for id in ids {
+    fn refresh_virtual_scroll_children(&mut self, ids: &mut Vec<WidgetId>) {
+        ids.clear();
+        ids.extend(self.traverse().iter().copied());
+        for id in ids.iter().copied() {
             let viewport_h = self.get(id).map(|node| node.frame().h).unwrap_or(0.0);
             if viewport_h <= 0.0 {
                 continue;
@@ -726,9 +727,10 @@ impl WidgetTree {
         }
     }
 
-    fn refresh_table_cell_children(&mut self) {
-        let ids: Vec<_> = self.traverse().iter().copied().collect();
-        for id in ids {
+    fn refresh_table_cell_children(&mut self, ids: &mut Vec<WidgetId>) {
+        ids.clear();
+        ids.extend(self.traverse().iter().copied());
+        for id in ids.iter().copied() {
             if self.refresh_table_cell_component(id) {
                 self.push_layout_invalidation(id);
                 self.propagate_layout_invalidation(id);
