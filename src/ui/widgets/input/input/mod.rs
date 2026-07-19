@@ -32,6 +32,14 @@ pub(crate) const FONT_SIZE: f32 = 14.0;
 const LINE_HEIGHT: f32 = 22.0;
 const ADDON_FONT_SIZE: f32 = 13.0;
 const ADDON_HORIZONTAL_PADDING: f32 = 16.0;
+const STATUS_MESSAGE_HEIGHT: f32 = 18.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputStatus {
+    Success,
+    Warning,
+    Error,
+}
 
 fn logical_lines(text: &str) -> Vec<&str> {
     text.split('\n').collect()
@@ -85,6 +93,8 @@ component! {
         password_visible: bool,
         clearable: bool,
         search: bool,
+        status: Option<InputStatus>,
+        status_message: String,
         /// 多行模式
         textarea: bool,
         /// 默认显示行数
@@ -360,11 +370,23 @@ component! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.capture_bound_value_dependency();
-        if self.textarea {
-            self.render_textarea(frame, ctx);
+        let message_height = if self.status_message.is_empty() {
+            0.0
         } else {
-            self.render_singleline(frame, ctx);
+            STATUS_MESSAGE_HEIGHT.min(frame.h.max(0.0))
+        };
+        let control_height = if self.textarea {
+            (frame.h - message_height).max(0.0)
+        } else {
+            input_height(self.input_size).min((frame.h - message_height).max(0.0))
+        };
+        let control_frame = Rect::new(frame.x, frame.y, frame.w, control_height);
+        if self.textarea {
+            self.render_textarea(control_frame, ctx);
+        } else {
+            self.render_singleline(control_frame, ctx);
         }
+        self.render_status_message(frame, control_height, ctx);
     }
 }
 
@@ -378,7 +400,8 @@ impl Input {
     fn intrinsic_size(&self) -> Size {
         if self.textarea {
             let line_count = logical_lines(&self.value).len().max(self.textarea_rows);
-            let h = (line_count as f32 * LINE_HEIGHT + 16.0).max(48.0);
+            let h =
+                (line_count as f32 * LINE_HEIGHT + 16.0).max(48.0) + self.status_message_height();
             Size::new(80.0, h)
         } else {
             let prefix_w = if self.prefix.is_empty() { 0.0 } else { 20.0 };
@@ -394,7 +417,7 @@ impl Input {
                     + clear_w
                     + password_w
                     + search_w,
-                input_height(self.input_size),
+                input_height(self.input_size) + self.status_message_height(),
             )
         }
     }
@@ -428,6 +451,8 @@ impl Input {
             password_visible: false,
             clearable: false,
             search: false,
+            status: None,
+            status_message: String::new(),
             textarea: false,
             textarea_rows: 3,
             max_length: None,
@@ -450,10 +475,15 @@ impl Input {
         input
     }
     /// 创建搜索输入框（带搜索图标，Enter 触发搜索）。
-    pub fn search_input() -> Self {
+    pub fn search() -> Self {
         let mut input = Self::new("");
         input.search = true;
         input
+    }
+    /// 兼容早期预览名称；新代码使用 [`Input::search`].
+    #[deprecated(note = "use Input::search()")]
+    pub fn search_input() -> Self {
+        Self::search()
     }
     pub fn with_value(mut self, value: impl Into<String>) -> Self {
         self.value_binding = None;
@@ -556,6 +586,8 @@ impl Input {
         }
         self.clearable = next.clearable;
         self.search = next.search;
+        self.status = next.status;
+        self.status_message = next.status_message;
         self.textarea_rows = next.textarea_rows;
         self.max_length = next.max_length;
     }
@@ -582,8 +614,21 @@ impl Input {
         self.clearable = v;
         self
     }
-    pub fn search(mut self, v: bool) -> Self {
+    pub fn search_enabled(mut self, v: bool) -> Self {
         self.search = v;
+        self
+    }
+    pub fn status(mut self, status: InputStatus) -> Self {
+        self.status = Some(status);
+        self
+    }
+    pub fn message(mut self, message: impl Into<String>) -> Self {
+        self.status_message = message.into();
+        self
+    }
+    pub fn clear_status(mut self) -> Self {
+        self.status = None;
+        self.status_message.clear();
         self
     }
     pub fn rows(mut self, rows: usize) -> Self {
@@ -615,6 +660,14 @@ impl Input {
         value.push_str(&self.composition);
         value.push_str(&self.value[byte_pos..]);
         Cow::Owned(value)
+    }
+
+    fn status_message_height(&self) -> f32 {
+        if self.status_message.is_empty() {
+            0.0
+        } else {
+            STATUS_MESSAGE_HEIGHT
+        }
     }
 
     fn display_value_with_composition(&self) -> Cow<'_, str> {
@@ -896,9 +949,22 @@ impl SnapshotSource for Input {
             password_visible: self.password_visible,
             clearable: self.clearable,
             search: self.search,
+            status: self.status,
+            status_message: self.status_message.clone(),
             textarea: self.textarea,
             textarea_rows: self.textarea_rows,
             max_length: self.max_length,
         }
+    }
+}
+
+/// Compatibility extension for the former `.search(bool)` builder.
+pub trait InputSearchExt: Sized {
+    fn search(self, enabled: bool) -> Self;
+}
+
+impl InputSearchExt for Input {
+    fn search(self, enabled: bool) -> Self {
+        self.search_enabled(enabled)
     }
 }

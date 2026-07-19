@@ -69,6 +69,8 @@ pub enum SnapshotFields {
         password_visible: bool,
         clearable: bool,
         search: bool,
+        status: Option<InputStatus>,
+        status_message: String,
         textarea: bool,
         textarea_rows: usize,
         max_length: Option<usize>,
@@ -161,6 +163,8 @@ pub enum SnapshotFields {
         max: i32,
         dot: bool,
         color: Option<Color>,
+        adaptive_foreground: bool,
+        ribbon: bool,
         size: f32,
         status: Option<BadgeStatus>,
         show_zero: bool,
@@ -639,10 +643,17 @@ pub enum SnapshotFields {
 impl SnapshotFields {
     pub fn accessibility(&self) -> AccessibilitySnapshot {
         match self {
-            Self::Button { text, disabled, .. } => {
-                AccessibilitySnapshot::named(AccessibilityRole::Button, text.clone())
-                    .with_state(AccessibilityState::disabled(*disabled))
-            }
+            Self::Button {
+                text,
+                icon,
+                disabled,
+                loading,
+                ..
+            } => AccessibilitySnapshot::named(
+                AccessibilityRole::Button,
+                first_non_empty([text.as_str(), icon.as_str()]),
+            )
+            .with_state(AccessibilityState::disabled(*disabled || *loading)),
             Self::WindowControl {
                 accessible_name, ..
             } => AccessibilitySnapshot::named(AccessibilityRole::Button, accessible_name.clone()),

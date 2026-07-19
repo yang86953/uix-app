@@ -8,6 +8,7 @@ use crate::tests::common::*;
 use crate::ui::foundation::clipboard;
 use crate::ui::state::State;
 use crate::ui::widgets::input::input::*;
+use crate::ui::widgets::input::InputGroup;
 
 fn render_input_geometry(input: &Input, frame: Rect, surface_size: (i32, i32)) -> Vec<u32> {
     let mut canvas = SharedRasterizer::new(PixelSurface::new(surface_size.0, surface_size.1));
@@ -139,6 +140,73 @@ fn documented_input_factories_and_unicode_max_length_are_enforced() {
             max_length: Some(3),
             ..
         }
+    ));
+}
+
+#[test]
+fn search_factory_and_compatibility_builder_share_the_same_contract() {
+    let factory = Input::search().placeholder("Search");
+    let builder = Input::new("Search").search(true);
+
+    assert!(matches!(
+        factory.snapshot_fields(),
+        SnapshotFields::Input { search: true, .. }
+    ));
+    assert!(matches!(
+        builder.snapshot_fields(),
+        SnapshotFields::Input { search: true, .. }
+    ));
+}
+
+#[test]
+fn input_group_applies_addons_without_extra_widget_state() {
+    let input = InputGroup::new()
+        .addon_before("https://")
+        .input(Input::new("Domain"))
+        .addon_after(".com")
+        .into_input();
+
+    assert!(matches!(
+        input.snapshot_fields(),
+        SnapshotFields::Input {
+            ref placeholder,
+            ref addon_before,
+            ref addon_after,
+            ..
+        } if placeholder == "Domain" && addon_before == "https://" && addon_after == ".com"
+    ));
+}
+
+#[test]
+fn status_message_reserves_height_and_survives_reconciliation() {
+    let mut input = Input::new("Email")
+        .status(InputStatus::Error)
+        .message("Invalid format");
+    assert_eq!(
+        input.measure(Constraints::unconstrained()).h,
+        input_height(ControlSize::Medium) + 18.0
+    );
+    assert!(matches!(
+        input.snapshot_fields(),
+        SnapshotFields::Input {
+            status: Some(InputStatus::Error),
+            ref status_message,
+            ..
+        } if status_message == "Invalid format"
+    ));
+
+    input.sync_from(
+        Input::new("Email")
+            .status(InputStatus::Success)
+            .message("Available"),
+    );
+    assert!(matches!(
+        input.snapshot_fields(),
+        SnapshotFields::Input {
+            status: Some(InputStatus::Success),
+            ref status_message,
+            ..
+        } if status_message == "Available"
     ));
 }
 

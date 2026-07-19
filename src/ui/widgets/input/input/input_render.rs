@@ -4,12 +4,50 @@ use super::*;
 
 use crate::core::{Point, Rect};
 use crate::draw::painting::PaintContext;
-use crate::draw::Radius;
+use crate::draw::{Color, Radius};
 // ════════════════════════════════════════════════════════════════════════════
 // 多行渲染
 // ════════════════════════════════════════════════════════════════════════════
 
 impl Input {
+    fn status_color(&self, ctx: &PaintContext<'_>) -> Option<Color> {
+        self.status.map(|status| match status {
+            InputStatus::Success => ctx.tokens().color_success(),
+            InputStatus::Warning => ctx.tokens().color_warning(),
+            InputStatus::Error => ctx.tokens().color_error(),
+        })
+    }
+
+    pub(super) fn render_status_message(
+        &self,
+        frame: Rect,
+        control_height: f32,
+        ctx: &mut PaintContext<'_>,
+    ) {
+        if self.status_message.is_empty() || frame.h <= control_height {
+            return;
+        }
+        let message_frame = Rect::new(
+            frame.x,
+            frame.y + control_height,
+            frame.w,
+            (frame.h - control_height).min(STATUS_MESSAGE_HEIGHT),
+        );
+        ctx.push_clip(message_frame);
+        let color = self
+            .status_color(ctx)
+            .unwrap_or_else(|| ctx.tokens().color_text_secondary());
+        let font_size = 12.0;
+        let y = ctx.visual_center_y(message_frame, font_size);
+        ctx.draw_text(
+            &self.status_message,
+            Point::new(message_frame.x, y),
+            color,
+            font_size,
+        );
+        ctx.pop_clip();
+    }
+
     pub(super) fn render_textarea(&self, frame: Rect, ctx: &mut PaintContext) {
         let fill_tertiary = ctx.tokens().color_fill_tertiary();
         let border_color = ctx.tokens().color_border();
@@ -21,8 +59,11 @@ impl Input {
 
         let inner_frame = Rect::new(frame.x, frame.y, frame.w, frame.h);
 
+        let status_border = self.status_color(ctx);
         let (bg, border) = if self.disabled {
             (fill_tertiary, border_color)
+        } else if let Some(status_border) = status_border {
+            (ctx.tokens().color_bg_elevated(), status_border)
         } else if self.focused {
             (ctx.tokens().color_bg_elevated(), primary)
         } else if self.hovered {
@@ -264,8 +305,15 @@ impl Input {
         let search_w = if self.search { 24.0 } else { 0.0 };
         let right_extra = suffix_w + clear_w + pwd_w + search_w;
 
+        let status_border = self.status_color(ctx);
         let (bg, border, text_color) = if self.disabled {
             (fill_tertiary, border_color, text_quaternary)
+        } else if let Some(status_border) = status_border {
+            (
+                ctx.tokens().color_bg_elevated(),
+                status_border,
+                text_color_token,
+            )
         } else if self.focused {
             (ctx.tokens().color_bg_elevated(), primary, text_color_token)
         } else if self.hovered {

@@ -6,7 +6,7 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::spatial::PhysicalUnit;
-use crate::draw::{Color, Radius};
+use crate::draw::{Color, FillRule, PathBuilder, Radius};
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
 
@@ -42,6 +42,23 @@ impl BadgeColor {
     }
 }
 
+/// 可用于 [`Badge::color`] 的颜色输入。
+pub trait IntoBadgeColor {
+    fn into_badge_color(self) -> (Color, bool);
+}
+
+impl IntoBadgeColor for Color {
+    fn into_badge_color(self) -> (Color, bool) {
+        (self, false)
+    }
+}
+
+impl IntoBadgeColor for BadgeColor {
+    fn into_badge_color(self) -> (Color, bool) {
+        (self.to_color(), true)
+    }
+}
+
 fn finite_badge_offset(value: f32) -> f32 {
     if value.is_finite() {
         value
@@ -56,6 +73,8 @@ component! {
         max: i32,
         dot: bool,
         color: Option<Color>,
+        adaptive_foreground: bool,
+        ribbon: bool,
         status: Option<BadgeStatus>,
         show_zero: bool,
         text: String,
@@ -100,6 +119,15 @@ component! {
         }
 
         let bg = self.color.unwrap_or(ctx.tokens().color_error());
+        let foreground = if self.adaptive_foreground && bg.is_light() {
+            Color::black()
+        } else {
+            Color::white()
+        };
+        if self.ribbon {
+            self.render_ribbon(ctx, actual_frame, bg, foreground);
+            return;
+        }
         if self.dot {
             self.render_marker_label(ctx, actual_frame, bg);
             return;
@@ -117,7 +145,7 @@ component! {
                     actual_frame.x + (actual_frame.w - tw) * 0.5,
                     actual_frame.y + (actual_frame.h - th) * 0.5,
                 ),
-                Color::white(),
+                foreground,
                 fs,
             );
         } else {
@@ -133,7 +161,7 @@ component! {
                     actual_frame.x + (actual_frame.w - tw) * 0.5,
                     actual_frame.y + (actual_frame.h - th) * 0.5,
                 ),
-                Color::white(),
+                foreground,
                 fs,
             );
         }
@@ -153,6 +181,8 @@ impl Badge {
     const PILL_FONT_SIZE: f32 = 11.0;
     const MARKER_LABEL_FONT_SIZE: f32 = 13.0;
     const TEXT_HORIZONTAL_PADDING: f32 = 12.0;
+    const RIBBON_HEIGHT: f32 = 24.0;
+    const RIBBON_HORIZONTAL_PADDING: f32 = 24.0;
 
     fn intrinsic_size(&self) -> Size {
         if self.dot || self.status.is_some() {
@@ -166,6 +196,10 @@ impl Badge {
                     Self::PILL_HEIGHT,
                 )
             }
+        } else if self.ribbon {
+            let w = Self::estimated_text_width(&self.text, Self::PILL_FONT_SIZE)
+                + Self::RIBBON_HORIZONTAL_PADDING;
+            Size::new(w.max(Self::RIBBON_HEIGHT), Self::RIBBON_HEIGHT)
         } else if !self.text.is_empty() {
             let w = Self::estimated_text_width(&self.text, Self::PILL_FONT_SIZE)
                 + Self::TEXT_HORIZONTAL_PADDING;
@@ -185,6 +219,8 @@ impl Badge {
             max: 99,
             dot: false,
             color: None,
+            adaptive_foreground: false,
+            ribbon: false,
             status: None,
             show_zero: false,
             text: String::new(),
@@ -206,20 +242,24 @@ impl Badge {
         self.count = 1;
         self
     }
-    pub fn color(mut self, c: Color) -> Self {
-        self.color = Some(c);
+    pub fn color(mut self, c: impl IntoBadgeColor) -> Self {
+        let (color, adaptive_foreground) = c.into_badge_color();
+        self.color = Some(color);
+        self.adaptive_foreground = adaptive_foreground;
         self
     }
 
     /// 使用预设颜色变体设置徽章颜色。
-    pub fn preset_color(mut self, c: BadgeColor) -> Self {
-        self.color = Some(c.to_color());
-        self
+    pub fn preset_color(self, c: BadgeColor) -> Self {
+        self.color(c)
     }
 
     /// 创建角标丝带（绝对定位，不参与父级正常布局流）。
     pub fn ribbon(text: impl Into<String>, color: BadgeColor) -> Self {
-        Self::new().text(&text.into()).preset_color(color)
+        let text = text.into();
+        let mut badge = Self::new().color(color).text(&text);
+        badge.ribbon = true;
+        badge
     }
     pub fn status(mut self, s: BadgeStatus) -> Self {
         self.status = Some(s);
@@ -253,6 +293,8 @@ impl Badge {
         self.max = next.max.max(1);
         self.dot = next.dot;
         self.color = next.color;
+        self.adaptive_foreground = next.adaptive_foreground;
+        self.ribbon = next.ribbon;
         self.status = next.status;
         self.show_zero = next.show_zero;
         self.text = next.text;
@@ -267,6 +309,8 @@ impl Badge {
             max: self.max,
             dot: self.dot,
             color: self.color,
+            adaptive_foreground: self.adaptive_foreground,
+            ribbon: self.ribbon,
             size: self.intrinsic_size().h,
             status: self.status,
             show_zero: self.show_zero,
@@ -294,6 +338,36 @@ impl Badge {
                 font_size,
             );
         }
+    }
+
+    fn render_ribbon(
+        &self,
+        ctx: &mut PaintContext<'_>,
+        frame: Rect,
+        background: Color,
+        foreground: Color,
+    ) {
+        let slant = (frame.h * 0.22).min(frame.w * 0.2);
+        let mut path = PathBuilder::new();
+        path.move_to(frame.x + slant, frame.y)
+            .line_to(frame.x + frame.w, frame.y)
+            .line_to(frame.x + frame.w - slant, frame.y + frame.h)
+            .line_to(frame.x, frame.y + frame.h)
+            .close();
+        ctx.fill_path(&path.build(), background, FillRule::NonZero);
+
+        let font_size = Self::PILL_FONT_SIZE;
+        let text_width = ctx.measure_text(&self.text, font_size).w;
+        let text_height = ctx.line_box_height(font_size);
+        ctx.draw_text(
+            &self.text,
+            crate::core::Point::new(
+                frame.x + (frame.w - text_width) * 0.5,
+                frame.y + (frame.h - text_height) * 0.5,
+            ),
+            foreground,
+            font_size,
+        );
     }
 
     fn count_label(&self) -> String {

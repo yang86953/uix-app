@@ -104,6 +104,8 @@ pub struct Button {
     disabled: bool,
     block: bool,
     loading: bool,
+    loading_phase: f32,
+    loading_dirty: bool,
     /// 图标名称（Lucide），纯图标按钮时 text 为空。
     icon: String,
     /// ButtonGroup 中的位置，控制视觉圆角。
@@ -275,9 +277,17 @@ impl WidgetRender for Button {
 
 impl WidgetAnimation for Button {
     fn update_animation(&mut self, dt: f64) -> bool {
+        self.loading_dirty = false;
+        if self.loading {
+            let before = self.loading_phase;
+            self.loading_phase = (self.loading_phase
+                + (dt.max(0.0) as f32 * std::f32::consts::TAU / 0.8))
+                .rem_euclid(std::f32::consts::TAU);
+            self.loading_dirty = (self.loading_phase - before).abs() > f32::EPSILON;
+        }
         let Some(ripple) = self.ripple.as_mut() else {
             self.ripple_dirty = false;
-            return false;
+            return self.loading;
         };
         let before_expand = ripple.expand.value();
         let before_fade = ripple.fade.value();
@@ -289,11 +299,11 @@ impl WidgetAnimation for Button {
             self.ripple_dirty = true;
             return false;
         }
-        active
+        active || self.loading
     }
 
     fn dirty_bounds(&self, frame: Rect) -> Rect {
-        if self.ripple_dirty {
+        if self.ripple_dirty || self.loading_dirty {
             frame
         } else {
             Rect::zero()
@@ -329,6 +339,8 @@ impl Button {
             disabled,
             block,
             loading: false,
+            loading_phase: 0.0,
+            loading_dirty: false,
             icon: String::new(),
             group_position: None,
             hovered: false,
@@ -370,6 +382,10 @@ impl Button {
         self.disabled = next.disabled;
         self.block = next.block;
         self.loading = next.loading;
+        if !self.loading {
+            self.loading_phase = 0.0;
+            self.loading_dirty = false;
+        }
         self.icon = next.icon;
         self.group_position = next.group_position;
         self.style_set = next.style_set;
@@ -440,7 +456,8 @@ impl Button {
     }
 
     pub(crate) fn resolve_style(&self) -> Style {
-        self.style_set
+        let mut style = self
+            .style_set
             .resolve(StyleState {
                 hovered: self.hovered,
                 pressed: self.pressed,
@@ -448,7 +465,19 @@ impl Button {
                 focused: self.focused && !self.pressed,
                 disabled: self.disabled,
             })
-            .apply(self.style.as_ref().clone())
+            .apply(self.style.as_ref().clone());
+        if let Some(position) = self.group_position {
+            if position != ButtonGroupPosition::Single {
+                style.border_radius = 0.0;
+                if matches!(
+                    position,
+                    ButtonGroupPosition::Middle | ButtonGroupPosition::Right
+                ) {
+                    style.border_width.left = 0.0;
+                }
+            }
+        }
+        style
     }
 
     fn intrinsic_size(&self) -> Size {
@@ -530,14 +559,26 @@ impl Button {
         paint_icon_in_frame(ctx, &self.icon, icon_rect, color, icon_size);
     }
 
-    /// 绘制加载旋转器（复用 Lucide "loader" 图标）。
+    /// 绘制加载旋转器；只在 loading 状态登记动画帧。
     fn paint_loading_spinner(&self, frame: Rect, ctx: &mut PaintContext<'_>, style: &Style) {
         let color = style.resolve_color(ctx.tokens());
         let content = frame.inset(style.padding);
         let font_size = normalized_button_font_size(style.resolve_font_size(ctx.tokens()));
-        let icon_size = font_size * 1.1;
-        let icon_rect = Rect::new(content.x, content.y, content.w, content.h);
-        paint_icon_in_frame(ctx, "loader", icon_rect, color, icon_size);
+        let radius = (font_size * 0.42).min(content.w.min(content.h) * 0.35);
+        if radius <= 0.0 {
+            return;
+        }
+        let cx = content.x + content.w * 0.5;
+        let cy = content.y + content.h * 0.5;
+        ctx.stroke_arc(
+            cx,
+            cy,
+            radius,
+            self.loading_phase,
+            self.loading_phase + std::f32::consts::PI * 1.45,
+            color,
+            1.8,
+        );
     }
 
     fn ripple_ink_color(style: &Style, ctx: &PaintContext<'_>) -> Color {

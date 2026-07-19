@@ -13,6 +13,7 @@ pub mod form_list;
 pub mod form_validation;
 #[allow(clippy::module_inception)]
 pub mod input;
+pub mod input_group;
 pub mod input_number;
 pub mod mentions;
 pub mod radio;
@@ -35,6 +36,7 @@ pub use form_binding::*;
 pub use form_list::*;
 pub use form_validation::*;
 pub use input::*;
+pub use input_group::*;
 pub use input_number::*;
 pub use mentions::*;
 pub use radio::*;
