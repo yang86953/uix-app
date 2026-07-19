@@ -508,7 +508,7 @@ impl WglContext {
                     return Err(error);
                 }
             };
-            crate::core::log::info_fn(format!(
+            crate::core::log::info_fn(format_args!(
                 "WglContext: OpenGL ES context created ({}x{} drawable, logical {}x{}, pixel_format={pixel_format}, flags={pixel_format_flags:#010X})",
                 drawable.width, drawable.height, drawable.logical_width, drawable.logical_height,
             ));

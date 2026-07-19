@@ -418,6 +418,7 @@ component! {
         if self.closing && self.transition.finished {
             self.visible = false;
             self.closing = false;
+            self.layout_requested.set(true);
         }
 
         self.is_present() && !self.transition.finished

@@ -142,7 +142,7 @@ impl GraphicsEngine for PresentUploadEngine {
                         skipped: 1,
                     },
                 );
-                crate::core::log::info_fn(format!(
+                crate::core::log::info_fn(format_args!(
                     "present_upload_us=0 pixels={} damage_full={} backend={} skipped=1",
                     pixels,
                     if damage_full { 1 } else { 0 },
@@ -167,7 +167,7 @@ impl GraphicsEngine for PresentUploadEngine {
                 sample.damage_full = if damage_full { 1 } else { 0 };
                 sample.skipped = 0;
                 crate::core::perf_probe::record_present(sample);
-                crate::core::log::info_fn(format!(
+                crate::core::log::info_fn(format_args!(
                     "present_upload_us={} upload_copy_us={} fence_wait_us={} submit_present_us={} pixels={} damage_full={} backend={}",
                     present_us,
                     sample.upload_copy_us,
@@ -327,7 +327,7 @@ impl GraphicsEngine for PresentUploadEngine {
 impl Drop for PresentUploadEngine {
     fn drop(&mut self) {
         if let Err(error) = self.try_shutdown() {
-            crate::core::log::error_fn(format!(
+            crate::core::log::error_fn(format_args!(
                 "PresentUploadEngine {} checked shutdown failed: {}",
                 self.backend_name(),
                 error.short_what()

@@ -438,10 +438,15 @@ fn drawer_close_finishes_exit_transition_before_internal_hide() {
     drawer.close();
     assert!(!drawer.is_visible());
     assert!(drawer.is_present());
+    assert!(drawer.take_layout_request());
 
     assert!(!WidgetAnimation::update_animation(&mut drawer, 1.0));
     assert!(!drawer.is_present());
     assert!(drawer.transition_dirty);
+    assert!(
+        drawer.take_layout_request(),
+        "finishing the overlay leave transition must restore the closed trigger slot"
+    );
 }
 
 #[test]

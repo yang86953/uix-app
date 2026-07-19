@@ -262,7 +262,7 @@ impl FontService {
             if let Some(path) = fallback_paths.first() {
                 if let Ok(data) = std::fs::read(path) {
                     if self.load_raw_font(data, size).is_some() {
-                        crate::core::log::info_fn(format!(
+                        crate::core::log::info_fn(format_args!(
                             "Configured font '{}' not found, fallback: {}",
                             self.primary_family, path
                         ));
@@ -289,7 +289,7 @@ impl FontService {
                                 }
                                 primary_loaded = true;
                                 self.loaded_font_handle = handle;
-                                crate::core::log::info_fn(format!(
+                                crate::core::log::info_fn(format_args!(
                                     "Loaded system default font: {} (handle={:?})",
                                     path, handle
                                 ));
@@ -297,7 +297,7 @@ impl FontService {
                             }
                         }
                         Err(e) => {
-                            crate::core::log::info_fn(format!(
+                            crate::core::log::info_fn(format_args!(
                                 "Failed to read font file {}: {}",
                                 path, e
                             ));
@@ -327,7 +327,7 @@ impl FontService {
                         self.registry[idx].face.family = self.primary_family.clone();
                         self.registry[idx].face.path = Some(path.clone());
                     }
-                    crate::core::log::info_fn(format!(
+                    crate::core::log::info_fn(format_args!(
                         "Loaded fallback font (random scan): {} (handle={:?})",
                         path, handle
                     ));
@@ -370,20 +370,20 @@ impl FontService {
                     if let Some(handle) = self.load_raw_font(data, size) {
                         if !self.fallback_handles.iter().any(|h| h.0 == handle.0) {
                             self.fallback_handles.push(handle);
-                            crate::core::log::info_fn(format!(
+                            crate::core::log::info_fn(format_args!(
                                 "Loaded CJK fallback font: {}",
                                 path
                             ));
                         }
                         return;
                     }
-                    crate::core::log::info_fn(format!(
+                    crate::core::log::info_fn(format_args!(
                         "CJK font '{}' found but failed to load (unsupported format)",
                         path
                     ));
                 }
                 Err(e) => {
-                    crate::core::log::info_fn(format!(
+                    crate::core::log::info_fn(format_args!(
                         "Failed to read CJK font file {}: {}",
                         path, e
                     ));
@@ -408,7 +408,10 @@ impl FontService {
                         self.registry[idx].face.family = family.to_owned();
                         self.registry[idx].face.path = Some(p.clone());
                     }
-                    crate::core::log::info_fn(format!("Loaded family font '{}': {}", family, p));
+                    crate::core::log::info_fn(format_args!(
+                        "Loaded family font '{}': {}",
+                        family, p
+                    ));
                     return Some(());
                 }
             }

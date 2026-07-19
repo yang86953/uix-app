@@ -31,7 +31,10 @@ impl SoftwareEngine {
         let session = match RenderSession::new(BackendKind::Cpu) {
             Ok(s) => s,
             Err(e) => {
-                crate::core::log::error_fn(format!("RenderSession 创建失败: {}", e.short_what()));
+                crate::core::log::error_fn(format_args!(
+                    "RenderSession 创建失败: {}",
+                    e.short_what()
+                ));
                 RenderSession::with_backend(Box::new(CpuBackend::new()))
             }
         };
@@ -204,7 +207,7 @@ impl GraphicsEngine for SoftwareEngine {
     }
 
     fn diagnose_memory(&self) {
-        crate::core::log::info_fn(format!(
+        crate::core::log::info_fn(format_args!(
             "SoftwareEngine memory: {} bytes",
             self.memory_usage()
         ));

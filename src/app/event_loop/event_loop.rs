@@ -526,7 +526,7 @@ where
                     tree.dispatch_event(&we);
                 });
                 if let Err(error) = apply_pending_window_actions(tree, platform_window) {
-                    crate::core::log::error_fn(format!(
+                    crate::core::log::error_fn(format_args!(
                         "window action failed: {}",
                         error.short_what()
                     ));
@@ -587,7 +587,7 @@ where
             on_frame: &on_frame,
         });
         if let Err(error) = apply_pending_window_actions(tree, platform_window) {
-            crate::core::log::error_fn(format!(
+            crate::core::log::error_fn(format_args!(
                 "window action failed after runtime work: {}",
                 error.short_what()
             ));

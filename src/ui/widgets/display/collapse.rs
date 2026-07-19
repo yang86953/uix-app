@@ -675,7 +675,7 @@ impl Collapse {
         }
         self.layout_requested.set(true);
         self.pending_change.set(Some(index));
-        crate::core::log::debug_fn(format!(
+        crate::core::log::debug_fn(format_args!(
             "[Collapse] 面板 \"{name}\" 切换 expanded: {} → {expanded}",
             !expanded
         ));

@@ -40,15 +40,19 @@ fn real_demo_modal_and_drawer_first_frame_latency_does_not_accumulate() {
         let overlay_automation_id = format!("component-qa-{component_id}-cancel");
         let mut first_frame_latencies = Vec::with_capacity(CYCLES);
         for cycle in 0..CYCLES {
-            let current = snapshot(
+            let current = wait_for_automation_state(
                 &mut connection,
                 window_id,
+                "component-qa-target",
+                true,
                 &format!("{component_id}-{cycle}-closed"),
             );
             let target = node_by_automation_id(&current, "component-qa-target");
             let bounds = &target["visible_bounds"];
-            let x = bounds["x"].as_f64().expect("target x") + 48.0;
-            let y = bounds["y"].as_f64().expect("target y") + 16.0;
+            let x = bounds["x"].as_f64().expect("target x")
+                + bounds["w"].as_f64().expect("target width") * 0.5;
+            let y = bounds["y"].as_f64().expect("target y")
+                + bounds["h"].as_f64().expect("target height") * 0.5;
 
             let started = Instant::now();
             perform_and_wait(

@@ -30,7 +30,7 @@ impl WaylandBackend {
             return false;
         }
         if let Err(e) = self.event_queue.dispatch_pending(&mut (), |_, _, _| {}) {
-            crate::core::log::error_fn(format!("Wayland dispatch_pending error: {}", e));
+            crate::core::log::error_fn(format_args!("Wayland dispatch_pending error: {}", e));
             self.closed = true;
             return false;
         }
@@ -155,7 +155,7 @@ impl WaylandBackend {
             if error.kind() == std::io::ErrorKind::Interrupted {
                 return true;
             }
-            crate::core::log::error_fn(format!("Wayland {} poll error: {}", context, error));
+            crate::core::log::error_fn(format_args!("Wayland {} poll error: {}", context, error));
             self.closed = true;
             return false;
         }
@@ -166,13 +166,16 @@ impl WaylandBackend {
             self.drain_wake_pipe();
         }
         if (wayland_revents & (POLLERR | POLLHUP | POLLNVAL)) != 0 {
-            crate::core::log::error_fn(format!("Wayland {} fd error", context));
+            crate::core::log::error_fn(format_args!("Wayland {} fd error", context));
             self.closed = true;
             return false;
         }
         if (wayland_revents & POLLIN) != 0 {
             if let Err(e) = self.event_queue.dispatch(&mut (), |_, _, _| {}) {
-                crate::core::log::error_fn(format!("Wayland {} dispatch error: {}", context, e));
+                crate::core::log::error_fn(format_args!(
+                    "Wayland {} dispatch error: {}",
+                    context, e
+                ));
                 self.closed = true;
                 return false;
             }
@@ -328,7 +331,7 @@ impl WaylandBackend {
                     String::from_utf8_lossy(&bytes).into_owned();
             }
             Some(Err(error)) => {
-                crate::core::log::error_fn(format!("Wayland clipboard read failed: {error}"));
+                crate::core::log::error_fn(format_args!("Wayland clipboard read failed: {error}"));
             }
             None => {}
         }
@@ -361,7 +364,7 @@ impl WaylandBackend {
             }
             Err(error) => {
                 writes.swap_remove(index);
-                crate::core::log::error_fn(format!("Wayland clipboard send failed: {error}"));
+                crate::core::log::error_fn(format_args!("Wayland clipboard send failed: {error}"));
                 0
             }
         }

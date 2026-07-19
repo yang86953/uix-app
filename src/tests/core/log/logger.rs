@@ -1,5 +1,7 @@
 use crate::core::log::logger::*;
-use crate::core::log::{CallbackSink, HandlerSlot, LogHandler, Record, Sink};
+use crate::core::log::{
+    render_message_if_enabled, CallbackSink, HandlerSlot, LogHandler, Record, Sink,
+};
 use crate::core::{Errc, Error};
 use crate::tests::common::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -17,6 +19,12 @@ struct CountingHandler {
 
 struct PanickingSink;
 
+struct ThresholdHandler(Level);
+
+struct FormatProbe {
+    calls: Arc<AtomicUsize>,
+}
+
 #[derive(Default)]
 struct CountingSink {
     writes: AtomicUsize,
@@ -26,6 +34,21 @@ struct CountingSink {
 impl LogHandler for CountingHandler {
     fn handle(&self, _level: Level, _message: &str, _file: &'static str, _line: u32) {
         self.calls.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+impl LogHandler for ThresholdHandler {
+    fn handle(&self, _level: Level, _message: &str, _file: &'static str, _line: u32) {}
+
+    fn level(&self) -> Level {
+        self.0
+    }
+}
+
+impl std::fmt::Display for FormatProbe {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        f.write_str("formatted")
     }
 }
 
@@ -101,6 +124,35 @@ fn default_console_obeys_the_global_logger_level() {
     assert_eq!(logger.get_level(), Level::Warn);
     assert_eq!(inner.sinks.len(), 1);
     assert_eq!(inner.sinks[0].level(), Level::Trace);
+}
+
+#[test]
+fn disabled_log_message_is_not_formatted() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let handler = ThresholdHandler(Level::Warn);
+
+    assert_eq!(
+        render_message_if_enabled(
+            &handler,
+            Level::Debug,
+            FormatProbe {
+                calls: Arc::clone(&calls),
+            },
+        ),
+        None
+    );
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        render_message_if_enabled(
+            &handler,
+            Level::Error,
+            FormatProbe {
+                calls: Arc::clone(&calls),
+            },
+        ),
+        Some("formatted".to_owned())
+    );
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
 }
 
 #[test]

@@ -34,7 +34,7 @@ fn parse_graphics_backend_config(source: &str, value: &str) -> Option<GraphicsBa
     match value.parse::<GraphicsBackend>() {
         Ok(backend) => Some(backend),
         Err(err) => {
-            crate::core::log::warn_fn(format!(
+            crate::core::log::warn_fn(format_args!(
                 "graphics backend config {source} ignored: {}",
                 err.short_what()
             ));
@@ -284,7 +284,7 @@ fn create_secondary_window(
         Ok(window) => window,
         Err(e) => {
             runtime.close_session(window_id);
-            crate::core::log::error_fn(format!(
+            crate::core::log::error_fn(format_args!(
                 "open_window create_window failed: {}",
                 e.short_what()
             ));
@@ -298,7 +298,7 @@ fn create_secondary_window(
             platform_window.close(),
         );
         runtime.close_session(window_id);
-        crate::core::log::error_fn(format!(
+        crate::core::log::error_fn(format_args!(
             "open_window window_id mismatch: reserved={}, native={}",
             window_id.raw(),
             actual.raw()
@@ -313,7 +313,7 @@ fn create_secondary_window(
                 platform_window.close(),
             );
             runtime.close_session(window_id);
-            crate::core::log::error_fn(format!(
+            crate::core::log::error_fn(format_args!(
                 "open_window custom title bar failed: {}",
                 error.short_what()
             ));
@@ -485,9 +485,12 @@ pub(super) fn create_preferred_engine(
     match bootstrap_graphics_engine(surface, width, height, graphics_backend) {
         Ok(gpu) => {
             if gpu.report.failures.is_empty() {
-                crate::core::log::info_fn(format!("GPU engine initialized ({})", gpu.selected));
+                crate::core::log::info_fn(format_args!(
+                    "GPU engine initialized ({})",
+                    gpu.selected
+                ));
             } else {
-                crate::core::log::warn_fn(format!(
+                crate::core::log::warn_fn(format_args!(
                     "GPU engine initialized after probe fallback; selected={}; failures=[{}]",
                     gpu.selected,
                     format_probe_failures(&gpu.report)
@@ -513,7 +516,10 @@ pub(super) fn create_preferred_engine(
                 }
                 Err(e) => {
                     let _ = engine.try_shutdown();
-                    crate::core::log::error_fn(format!("SoftwareEngine 初始化失败: {}", e.what()));
+                    crate::core::log::error_fn(format_args!(
+                        "SoftwareEngine 初始化失败: {}",
+                        e.what()
+                    ));
                     None
                 }
             }

@@ -19,6 +19,26 @@ struct LayoutTraversalScratch {
     stack: Vec<(WidgetId, bool)>,
 }
 
+#[derive(Clone, Copy)]
+struct ShrinkOp {
+    id: WidgetId,
+    needed_h: f32,
+}
+
+#[derive(Default)]
+pub(super) struct LayoutFrameScratch {
+    order: Vec<WidgetId>,
+    traversal: LayoutTraversalScratch,
+    prev_expand_sig: Vec<(WidgetId, i32, i32, i32, i32)>,
+    pass_expand_sig: Vec<(WidgetId, i32, i32, i32, i32)>,
+    resized_children: HashSet<WidgetId>,
+    visibility_changes: Vec<(WidgetId, bool)>,
+    expand_children: Vec<WidgetId>,
+    shrink_ops: Vec<ShrinkOp>,
+    shrink_children: Vec<WidgetId>,
+    shrink_parent_children: Vec<WidgetId>,
+}
+
 impl WidgetTree {
     /// 返回最近 viewport 祖先允许内容溢出的轴。
     ///
@@ -145,10 +165,27 @@ impl WidgetTree {
             }
         }
 
-        let mut order = Vec::new();
-        self.refresh_table_cell_children(&mut order);
-        let mut traversal_scratch = LayoutTraversalScratch::default();
-        self.fill_layout_traversal(&mut order, &mut traversal_scratch);
+        let mut scratch = std::mem::take(&mut self.layout_scratch);
+        self.layout_with_scratch(&mut scratch);
+        self.layout_scratch = scratch;
+    }
+
+    fn layout_with_scratch(&mut self, scratch: &mut LayoutFrameScratch) {
+        let LayoutFrameScratch {
+            order,
+            traversal,
+            prev_expand_sig,
+            pass_expand_sig,
+            resized_children,
+            visibility_changes,
+            expand_children,
+            shrink_ops,
+            shrink_children,
+            shrink_parent_children,
+        } = scratch;
+
+        self.refresh_table_cell_children(order);
+        self.fill_layout_traversal(order, traversal);
         if order.is_empty() {
             // 根节点已有有效 frame 但子树尚未布局时（如 bind_invalidation / reset 清空队列），
             // 只要仍有可见节点 frame 为 0 就重新标脏，避免组件堆叠在 (0,0)。
@@ -174,7 +211,7 @@ impl WidgetTree {
             if let Some(root_id) = self.root_id {
                 self.push_layout_invalidation(root_id);
             }
-            self.fill_layout_traversal(&mut order, &mut traversal_scratch);
+            self.fill_layout_traversal(order, traversal);
             if order.is_empty() {
                 return;
             }
@@ -191,11 +228,11 @@ impl WidgetTree {
         let mut converge_passes = 0u32;
         // 安全网：若连续两轮 Phase 2 扩展签名完全相同（同 id、同 before/after），
         // 视为无 progress，停止空转（根因仍应在 measure；此处防止打满 max_passes）。
-        let mut prev_expand_sig = Vec::new();
-        let mut pass_expand_sig = Vec::new();
+        prev_expand_sig.clear();
+        pass_expand_sig.clear();
         let mut has_prev_expand_sig = false;
-        let mut resized_children = HashSet::new();
-        let mut visibility_changes = Vec::new();
+        resized_children.clear();
+        visibility_changes.clear();
         for _converge_pass in 0..max_passes {
             #[cfg(test)]
             {
@@ -204,14 +241,14 @@ impl WidgetTree {
             let mut any_change = false;
             pass_expand_sig.clear();
 
-            if self.sync_parent_child_visibility(&order, &mut visibility_changes) {
+            if self.sync_parent_child_visibility(order, visibility_changes) {
                 any_change = true;
             }
 
             // Phase 1: Top-down — 父容器根据当前 frame 为子节点分配位置
             #[cfg(test)]
             LAYOUT_TRACE_PHASE.with(|p| p.set(1));
-            for &id in &order {
+            for &id in order.iter() {
                 if !self.is_effectively_visible(id) {
                     continue;
                 }
@@ -233,7 +270,7 @@ impl WidgetTree {
                     }
                 }
             }
-            if self.sync_parent_child_visibility(&order, &mut visibility_changes) {
+            if self.sync_parent_child_visibility(order, visibility_changes) {
                 any_change = true;
             }
             #[cfg(test)]
@@ -244,10 +281,11 @@ impl WidgetTree {
                 #[cfg(test)]
                 LAYOUT_TRACE_PHASE.with(|p| p.set(2));
                 let expanded =
-                    self.layout_expand(&order, &mut pass_expand_sig, &mut resized_children);
+                    self.layout_expand(order, pass_expand_sig, resized_children, expand_children);
                 #[cfg(test)]
                 LAYOUT_TRACE_PHASE.with(|p| p.set(4));
-                let shrunk = self.layout_shrink(&order);
+                let shrunk =
+                    self.layout_shrink(order, shrink_ops, shrink_children, shrink_parent_children);
                 #[cfg(test)]
                 LAYOUT_TRACE_PHASE.with(|p| p.set(0));
                 if expanded || shrunk {
@@ -259,7 +297,7 @@ impl WidgetTree {
             }
 
             // Phase 3: 更新 viewport 容器的 content_bounds
-            self.layout_viewports(&order);
+            self.layout_viewports(order);
 
             if !pass_expand_sig.is_empty() {
                 if has_prev_expand_sig && prev_expand_sig == pass_expand_sig {
@@ -268,7 +306,7 @@ impl WidgetTree {
                     );
                     break;
                 }
-                std::mem::swap(&mut prev_expand_sig, &mut pass_expand_sig);
+                std::mem::swap(prev_expand_sig, pass_expand_sig);
                 has_prev_expand_sig = true;
             }
 
@@ -282,9 +320,9 @@ impl WidgetTree {
         }
 
         // 最终更新 viewport（确保收敛结束后的 content_bounds 正确）
-        self.layout_viewports(&order);
-        self.refresh_virtual_scroll_children(&mut order);
-        self.refresh_table_cell_children(&mut order);
+        self.layout_viewports(order);
+        self.refresh_virtual_scroll_children(order);
+        self.refresh_table_cell_children(order);
         // Phase 6：layout 完成后用最新 frame 绑定 State → Paint rect
         self.bind_reactive_widget_states();
         self.rebuild_widget_overlays();
@@ -488,11 +526,11 @@ impl WidgetTree {
         order: &[WidgetId],
         expand_sig: &mut Vec<(WidgetId, i32, i32, i32, i32)>,
         resized_children: &mut HashSet<WidgetId>,
+        children: &mut Vec<WidgetId>,
     ) -> bool {
         let mut any_resized = false;
         // 收集本趟中被扩展过的子节点，用于触发其父容器重排
         resized_children.clear();
-        let mut children = Vec::new();
         for &id in order.iter().rev() {
             if !self.is_effectively_visible(id) {
                 continue;
@@ -527,7 +565,7 @@ impl WidgetTree {
             // 取所有可见子节点的最大右/下边界
             let mut max_right = node_frame.x + node_frame.w;
             let mut max_bottom = node_frame.y + node_frame.h;
-            for &cid in &children {
+            for &cid in children.iter() {
                 if let Some(child) = self.get(cid) {
                     if child.visible() {
                         let cf = child.frame();
@@ -600,7 +638,7 @@ impl WidgetTree {
                 let expanded_w = effective_w > node_frame.w + 0.5;
                 let expanded_h = effective_h > node_frame.h + 0.5;
                 if expanded_w || expanded_h {
-                    crate::core::log::debug_fn(format!(
+                    crate::core::log::debug_fn(format_args!(
                         "[Layout] Phase 2: id={} frame ({:.0},{:.0}) → ({:.0},{:.0}) (child right/bottom=({:.0},{:.0}))",
                         id,
                         node_frame.w,
@@ -630,7 +668,7 @@ impl WidgetTree {
                         }
                     }
                 } else if has_resized_child {
-                    crate::core::log::debug_fn(format!(
+                    crate::core::log::debug_fn(format_args!(
                         "[Layout] Phase 2: id={} re-layout siblings (child resized, frame=({:.0},{:.0}))",
                         id, node_frame.w, node_frame.h,
                     ));
@@ -709,7 +747,7 @@ impl WidgetTree {
                 if children.is_empty() {
                     continue;
                 }
-                crate::core::log::debug_fn(format!(
+                crate::core::log::debug_fn(format_args!(
                     "[Layout] Phase 3: viewport id={} frame=({:.0},{:.0},{:.0},{:.0}) {} children",
                     id,
                     frame.x,
@@ -788,17 +826,14 @@ impl WidgetTree {
     /// 显著小于容器当前高度，且子节点延伸到可见区域时，收缩容器。
     /// 每轮先重新布局子节点（确保兄弟组件靠拢），再检查是否需要收缩。
     /// 返回是否有任何容器被收缩。
-    fn layout_shrink(&mut self, order: &[WidgetId]) -> bool {
-        #[derive(Clone)]
-        struct ShrinkOp {
-            id: WidgetId,
-            needed_h: f32,
-        }
-
+    fn layout_shrink(
+        &mut self,
+        order: &[WidgetId],
+        ops: &mut Vec<ShrinkOp>,
+        children: &mut Vec<WidgetId>,
+        parent_children: &mut Vec<WidgetId>,
+    ) -> bool {
         let mut any_changed = false;
-        let mut ops = Vec::new();
-        let mut children = Vec::new();
-        let mut parent_children = Vec::new();
         for _pass in 0..3 {
             let mut pass_changed = false;
             // Phase A: 收集需要收缩的容器
@@ -857,7 +892,7 @@ impl WidgetTree {
                 };
                 let mut max_child_bottom = f32::MIN;
                 let mut has_visible = false;
-                for &cid in &children {
+                for &cid in children.iter() {
                     if let Some(child) = self.get(cid) {
                         if child.visible() {
                             let cf = child.frame();
@@ -891,7 +926,7 @@ impl WidgetTree {
                 let parent_floor_h = self.parent_allocated_frame(id).map(|r| r.h).unwrap_or(0.0);
                 let effective_needed = min_h.max(parent_floor_h);
                 if node_frame.h - effective_needed > 0.5 {
-                    crate::core::log::debug_fn(format!(
+                    crate::core::log::debug_fn(format_args!(
                         "[Layout] Phase 4: id={} shrink {:.0}px {:.0}→{:.0} (needed={:.0} pref={:.0} floor={:.0})",
                         id,
                         node_frame.h - effective_needed,
@@ -908,7 +943,7 @@ impl WidgetTree {
                 }
             }
             // Phase B: 执行收缩
-            for op in &ops {
+            for op in ops.iter() {
                 if let Some(old_frame) = self.get(op.id).map(|n| n.frame()) {
                     if !self.set_layout_frame(
                         op.id,

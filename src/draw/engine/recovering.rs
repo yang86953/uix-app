@@ -374,7 +374,7 @@ impl GraphicsEngine for RecoveringGraphicsEngine {
 impl Drop for RecoveringGraphicsEngine {
     fn drop(&mut self) {
         if let Err(error) = self.try_shutdown() {
-            crate::core::log::error_fn(format!(
+            crate::core::log::error_fn(format_args!(
                 "RecoveringGraphicsEngine checked shutdown failed: {}",
                 error.short_what()
             ));

@@ -180,10 +180,15 @@ fn modal_close_finishes_exit_transition_before_internal_hide() {
     modal.close();
     assert!(!modal.is_visible());
     assert!(modal.is_present());
+    assert!(modal.take_layout_request());
 
     assert!(!WidgetAnimation::update_animation(&mut modal, 1.0));
     assert!(!modal.is_present());
     assert!(modal.transition_dirty);
+    assert!(
+        modal.take_layout_request(),
+        "finishing the overlay leave transition must restore the closed trigger slot"
+    );
 }
 
 #[test]
