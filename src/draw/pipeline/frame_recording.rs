@@ -1250,6 +1250,12 @@ impl Canvas2D for FrameRecordingCanvas {
 
     fn fill_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
         let bounds = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
+        if r.is_finite() && r > 0.0 && self.native_src_over_fill_rects(bounds).is_some() {
+            // A circle is exactly the shared rounded-rect SDF with a square
+            // extent and every corner radius equal to half that extent.
+            self.fill_rect(bounds, color, Some(Radius::uniform(r)));
+            return;
+        }
         self.draw_cpu(bounds, 1.0, |scratch| scratch.fill_circle(cx, cy, r, color));
     }
 
