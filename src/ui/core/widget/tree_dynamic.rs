@@ -109,14 +109,12 @@ impl WidgetTree {
             return false;
         }
 
-        let Some((range, needs_refresh, row_keys, view_columns)) = self.get(id).and_then(|node| {
+        let Some((range, needs_refresh)) = self.get(id).and_then(|node| {
             let table = node.component().as_any().downcast_ref::<Table>()?;
             let range = table.cell_view_range_for_frame(node.frame());
             Some((
                 range,
                 table.needs_cell_refresh(range, node.children().len()),
-                table.row_keys().to_vec(),
-                table.view_columns().to_vec(),
             ))
         }) else {
             return false;
@@ -124,6 +122,13 @@ impl WidgetTree {
         if !needs_refresh {
             return false;
         }
+
+        let Some((row_keys, view_columns)) = self.get(id).and_then(|node| {
+            let table = node.component().as_any().downcast_ref::<Table>()?;
+            Some((table.row_keys().to_vec(), table.view_columns().to_vec()))
+        }) else {
+            return false;
+        };
 
         let children = self
             .render_handler_table
