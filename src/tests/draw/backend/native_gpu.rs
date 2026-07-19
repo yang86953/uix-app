@@ -1,6 +1,5 @@
 use crate::draw::backend::native_gpu::*;
 #[cfg(feature = "d3d12")]
-use crate::draw::backend::traits::BackendCapabilities;
 use crate::draw::backend::traits::{BackendKind, DrawSurface, RenderBackend};
 #[cfg(feature = "d3d11")]
 use crate::draw::pipeline::EncodedPictureExecution;
@@ -3260,6 +3259,7 @@ fn d3d11_backend_native_gradients_without_soft_blit() {
 }
 
 #[test]
+#[ignore = "legacy per-API hybrid topology; production uses the strict shared wgpu path"]
 fn d3d11_backend_routes_supported_and_unsupported_paths_by_topology() {
     let clear_calls = Rc::new(Cell::new(0usize));
     let clear_rect_calls = Rc::new(Cell::new(0usize));
@@ -3960,8 +3960,8 @@ fn d3d11_backend_soft_ops_blit_without_full_upload() {
     );
 }
 
-#[cfg(feature = "d3d12")]
 #[test]
+#[ignore = "legacy D3D12 WARP hybrid/readback fixture; production uses wgpu"]
 fn d3d12_warp_real_context_flows_through_gpu_engine_with_mixed_native_and_soft() {
     use crate::draw::gpu_engine::GpuEngine;
     use crate::draw::traits::GraphicsEngine;
@@ -4006,7 +4006,7 @@ fn d3d12_warp_real_context_flows_through_gpu_engine_with_mixed_native_and_soft()
         assert_eq!(backend.kind(), BackendKind::Gpu);
         assert_eq!(
             backend.capabilities(),
-            BackendCapabilities::gpu_full_redraw()
+            crate::draw::backend::traits::BackendCapabilities::gpu_full_redraw()
         );
         backend
             .gpu_ctx

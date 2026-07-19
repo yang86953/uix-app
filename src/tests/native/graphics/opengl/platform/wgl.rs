@@ -76,7 +76,7 @@ fn factory_create_wgl_gpu_native_swapchain_on_real_window() {
 
 #[cfg(feature = "opengles")]
 #[test]
-fn wgl_exposes_only_the_native_raster_operations_it_implements() {
+fn opengles_factory_uses_the_complete_shared_wgpu_raster_baseline() {
     if std::env::consts::OS != "windows" {
         return;
     }
@@ -95,19 +95,8 @@ fn wgl_exposes_only_the_native_raster_operations_it_implements() {
     .expect("WglContext via factory");
 
     let caps = context.native_raster_caps();
-    assert!(caps.clear_target);
-    assert!(caps.clear_rects);
-    assert!(caps.soft_blit);
-    assert!(caps.solid_rects);
-    assert!(caps.offscreen_targets);
-    assert!(!caps.stroke_rects);
-    assert!(caps.glyphs);
-    assert!(!caps.linear_gradients);
-    assert!(!caps.radial_gradients);
-    assert!(!caps.solid_meshes);
-    assert!(!caps.box_shadows);
-
-    assert!(caps.has_hybrid_baseline());
+    assert_eq!(caps, NativeRasterCaps::wgpu_full());
+    assert!(caps.has_gpu_only_baseline());
     context.try_shutdown().expect("WGL checked shutdown");
     window.close().expect("close native window");
 }

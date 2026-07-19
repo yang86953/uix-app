@@ -9,3 +9,4 @@ mod opengl;
 mod platform;
 #[cfg(feature = "vulkan")]
 mod vulkan;
+mod wgpu_backend;

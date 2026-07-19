@@ -28,9 +28,9 @@ pub(crate) struct Rect {
 #[link(name = "user32")]
 extern "system" {
     fn GetClientRect(hwnd: *mut c_void, lp_rect: *mut Rect) -> i32;
-    #[cfg(feature = "opengles")]
+    #[cfg(all(test, feature = "opengles"))]
     fn GetDC(hwnd: *mut c_void) -> *mut c_void;
-    #[cfg(feature = "opengles")]
+    #[cfg(all(test, feature = "opengles"))]
     fn ReleaseDC(hwnd: *mut c_void, hdc: *mut c_void) -> i32;
 }
 
@@ -159,12 +159,12 @@ pub(crate) fn drawable_size(hwnd: *mut c_void, fallback_w: i32, fallback_h: i32)
     drawable_size_from_hdc(hwnd, std::ptr::null_mut(), fallback_w, fallback_h)
 }
 
-#[cfg(feature = "opengles")]
+#[cfg(all(test, feature = "opengles"))]
 pub(crate) unsafe fn device_context(hwnd: *mut c_void) -> *mut c_void {
     GetDC(hwnd)
 }
 
-#[cfg(feature = "opengles")]
+#[cfg(all(test, feature = "opengles"))]
 pub(crate) unsafe fn release_device_context(hwnd: *mut c_void, hdc: *mut c_void) {
     let _ = ReleaseDC(hwnd, hdc);
 }
@@ -172,7 +172,7 @@ pub(crate) unsafe fn release_device_context(hwnd: *mut c_void, hdc: *mut c_void)
 /// Checked release used by a `Result`-returning graphics lifecycle path.
 /// Callers retain the HDC on failure so teardown can report and retry rather
 /// than silently discarding the last native error.
-#[cfg(feature = "opengles")]
+#[cfg(all(test, feature = "opengles"))]
 pub(crate) unsafe fn release_device_context_checked(hwnd: *mut c_void, hdc: *mut c_void) -> bool {
     ReleaseDC(hwnd, hdc) != 0
 }

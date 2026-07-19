@@ -4,40 +4,30 @@ use crate::native::factory::registry::{BackendStatus, GraphicsBackendEntry};
 use crate::native::traits::present::{GraphicsBackend, PresentMode, RasterMode};
 
 #[cfg(any(
-    not(feature = "d3d11"),
     not(feature = "d3d12"),
     not(feature = "opengles"),
     not(feature = "vulkan")
 ))]
 use crate::core::{Errc, Error};
 #[cfg(any(
-    not(feature = "d3d11"),
     not(feature = "d3d12"),
     not(feature = "opengles"),
     not(feature = "vulkan")
 ))]
 use crate::native::traits::present::IGraphicsContext;
 #[cfg(any(
-    not(feature = "d3d11"),
     not(feature = "d3d12"),
     not(feature = "opengles"),
     not(feature = "vulkan")
 ))]
 use std::ffi::c_void;
 
-#[cfg(feature = "d3d11")]
-use crate::native::graphics::d3d11::create as create_d3d11;
 #[cfg(feature = "d3d12")]
-use crate::native::graphics::d3d12::create as create_d3d12;
+use crate::native::graphics::wgpu_backend::create_d3d12;
 #[cfg(feature = "opengles")]
-use crate::native::graphics::opengl::create as create_opengles;
+use crate::native::graphics::wgpu_backend::create_opengl as create_opengles;
 #[cfg(feature = "vulkan")]
-use crate::native::graphics::vulkan::create as create_vulkan;
-
-#[cfg(not(feature = "d3d11"))]
-fn create_d3d11(_: *mut c_void, _: i32, _: i32) -> Result<Box<dyn IGraphicsContext>, Error> {
-    Err(feature_disabled("d3d11"))
-}
+use crate::native::graphics::wgpu_backend::create_vulkan;
 
 #[cfg(not(feature = "d3d12"))]
 fn create_d3d12(_: *mut c_void, _: i32, _: i32) -> Result<Box<dyn IGraphicsContext>, Error> {
@@ -55,7 +45,6 @@ fn create_vulkan(_: *mut c_void, _: i32, _: i32) -> Result<Box<dyn IGraphicsCont
 }
 
 #[cfg(any(
-    not(feature = "d3d11"),
     not(feature = "d3d12"),
     not(feature = "opengles"),
     not(feature = "vulkan")
@@ -68,12 +57,6 @@ fn feature_disabled(feature: &str) -> Error {
 }
 
 const D3D12_STATUS: BackendStatus = if cfg!(feature = "d3d12") {
-    BackendStatus::Active
-} else {
-    BackendStatus::Disabled
-};
-
-const D3D11_STATUS: BackendStatus = if cfg!(feature = "d3d11") {
     BackendStatus::Active
 } else {
     BackendStatus::Disabled
@@ -96,26 +79,17 @@ pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
         id: GraphicsBackend::Vulkan,
         priority: 30,
         status: VULKAN_STATUS,
-        raster: RasterMode::Cpu,
-        present: PresentMode::PixelUpload,
+        raster: RasterMode::GpuNative,
+        present: PresentMode::Swapchain,
         create: create_vulkan,
     },
     GraphicsBackendEntry {
         id: GraphicsBackend::D3d12,
-        // First native slice stays behind the established D3D11/WGL paths.
-        priority: 5,
+        priority: 20,
         status: D3D12_STATUS,
         raster: RasterMode::GpuNative,
         present: PresentMode::Swapchain,
         create: create_d3d12,
-    },
-    GraphicsBackendEntry {
-        id: GraphicsBackend::D3d11,
-        priority: 20,
-        status: D3D11_STATUS,
-        raster: RasterMode::GpuNative,
-        present: PresentMode::Swapchain,
-        create: create_d3d11,
     },
     GraphicsBackendEntry {
         id: GraphicsBackend::OpenGlEs,

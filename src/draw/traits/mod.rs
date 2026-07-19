@@ -10,7 +10,7 @@ pub use backend::{
 };
 pub use canvas::Canvas2D;
 pub use engine::{
-    GraphicsCapabilities, GraphicsEngine, PresentationMode, RenderOutcome, ScrollCopy,
-    UpdateStrategy,
+    GraphicsCapabilities, GraphicsEngine, PresentationMode, RasterPipeline, RenderOutcome,
+    ScrollCopy, UpdateStrategy,
 };
 pub use text::TextBackend;

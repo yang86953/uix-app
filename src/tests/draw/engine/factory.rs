@@ -12,13 +12,7 @@ impl IGraphicsContext for FakeGpuNative {
 
     fn native_raster_caps(&self) -> NativeRasterCaps {
         if self.0 == GraphicsBackend::D3d12 {
-            NativeRasterCaps {
-                clear_target: true,
-                soft_blit: true,
-                solid_rects: true,
-                glyphs: true,
-                ..NativeRasterCaps::default()
-            }
+            NativeRasterCaps::wgpu_full()
         } else {
             NativeRasterCaps::d3d11_full()
         }

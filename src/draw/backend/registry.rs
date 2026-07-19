@@ -22,15 +22,12 @@ pub(crate) fn create_native_raster_backend(
     }
 
     match ctx.caps().backend {
-        GraphicsBackend::OpenGlEs | GraphicsBackend::D3d11 | GraphicsBackend::D3d12 => {
-            NativeGpuBackend::new(ctx).map(|backend| Box::new(backend) as _)
-        }
-        GraphicsBackend::Metal => {
-            ctx.try_shutdown()?;
-            Err(Error::new(
-                Errc::NotImplemented,
-                "RenderBackendRegistry: Metal native raster is planned (use Cpu × PixelUpload context)",
-            ))
+        GraphicsBackend::OpenGlEs
+        | GraphicsBackend::D3d11
+        | GraphicsBackend::D3d12
+        | GraphicsBackend::Vulkan
+        | GraphicsBackend::Metal => {
+            NativeGpuBackend::new_gpu_only(ctx).map(|backend| Box::new(backend) as _)
         }
         other => {
             ctx.try_shutdown()?;

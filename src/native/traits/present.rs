@@ -141,6 +141,23 @@ pub struct NativeRasterCaps {
 }
 
 impl NativeRasterCaps {
+    /// Shared production baseline implemented once by the wgpu renderer.
+    pub const fn wgpu_full() -> Self {
+        Self {
+            clear_target: true,
+            clear_rects: false,
+            soft_blit: false,
+            solid_rects: true,
+            stroke_rects: true,
+            glyphs: true,
+            linear_gradients: true,
+            radial_gradients: true,
+            solid_meshes: true,
+            box_shadows: true,
+            offscreen_targets: false,
+        }
+    }
+
     /// Complete capability set currently implemented by the D3D11 context.
     pub const fn d3d11_full() -> Self {
         Self {
@@ -160,6 +177,17 @@ impl NativeRasterCaps {
 
     pub const fn has_hybrid_baseline(self) -> bool {
         self.clear_target && self.soft_blit
+    }
+
+    pub const fn has_gpu_only_baseline(self) -> bool {
+        self.clear_target
+            && self.solid_rects
+            && self.stroke_rects
+            && self.glyphs
+            && self.linear_gradients
+            && self.radial_gradients
+            && self.solid_meshes
+            && self.box_shadows
     }
 }
 

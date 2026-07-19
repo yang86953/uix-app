@@ -20,6 +20,7 @@ fn null_surface() -> NativeSurfaceHandle {
 
 struct ShutdownTrackingContext {
     shutdown_called: Rc<Cell<bool>>,
+    backend: GraphicsBackend,
     raster: RasterMode,
     present: PresentMode,
 }
@@ -27,7 +28,7 @@ struct ShutdownTrackingContext {
 impl IGraphicsContext for ShutdownTrackingContext {
     fn caps(&self) -> GraphicsContextCaps {
         GraphicsContextCaps {
-            backend: GraphicsBackend::D3d11,
+            backend: self.backend,
             raster: self.raster,
             present: self.present,
             present_occlusion: PresentOcclusionSupport::Unsupported,
@@ -91,6 +92,7 @@ fn create_graphics_engine_shuts_down_context_on_cpu_presenter() {
     let shutdown_called = Rc::new(Cell::new(false));
     let context = ShutdownTrackingContext {
         shutdown_called: Rc::clone(&shutdown_called),
+        backend: GraphicsBackend::D3d11,
         raster: RasterMode::Cpu,
         present: PresentMode::CpuPresenter,
     };
@@ -108,6 +110,7 @@ fn create_graphics_engine_shuts_down_context_on_cpu_presenter() {
 fn caps_axes_drive_supports_helpers() {
     let context = ShutdownTrackingContext {
         shutdown_called: Rc::new(Cell::new(false)),
+        backend: GraphicsBackend::D3d11,
         raster: RasterMode::Cpu,
         present: PresentMode::PixelUpload,
     };
@@ -123,10 +126,11 @@ fn bootstrap_shuts_down_context_when_engine_creation_fails() {
         null_surface(),
         640,
         480,
-        GraphicsBackend::D3d11,
+        GraphicsBackend::D3d12,
         |_candidate| {
             Ok(Box::new(ShutdownTrackingContext {
                 shutdown_called: Rc::clone(&shutdown_called),
+                backend: GraphicsBackend::D3d12,
                 raster: RasterMode::Cpu,
                 present: PresentMode::CpuPresenter,
             }) as Box<dyn IGraphicsContext>)
@@ -136,11 +140,11 @@ fn bootstrap_shuts_down_context_when_engine_creation_fails() {
         Err(report) => {
             assert!(shutdown_called.get());
             let failure = report.failures.first().expect("engine failure");
-            assert_eq!(failure.backend, GraphicsBackend::D3d11);
+            assert_eq!(failure.backend, GraphicsBackend::D3d12);
             assert!(failure.message.contains("stage=engine_create"));
             assert!(failure
                 .message
-                .contains("selected=backend=d3d11; raster=cpu; present=cpu_presenter"));
+                .contains("selected=backend=d3d12; raster=cpu; present=cpu_presenter"));
             assert!(failure.message.contains("CpuPresenter"));
         }
     }
@@ -156,7 +160,7 @@ struct MakeCurrentFailingNativeContext {
 impl IGraphicsContext for MakeCurrentFailingNativeContext {
     fn caps(&self) -> GraphicsContextCaps {
         GraphicsContextCaps::gpu_native_swapchain(
-            GraphicsBackend::D3d11,
+            GraphicsBackend::D3d12,
             PresentCoherency::FullOnly,
             1.0,
         )
@@ -236,7 +240,7 @@ fn bootstrap_shuts_down_context_when_engine_initialize_fails() {
         null_surface(),
         640,
         480,
-        GraphicsBackend::D3d11,
+        GraphicsBackend::D3d12,
         |_candidate| {
             Ok(Box::new(MakeCurrentFailingNativeContext {
                 shutdown_called: Rc::clone(&shutdown_called),
@@ -248,11 +252,11 @@ fn bootstrap_shuts_down_context_when_engine_initialize_fails() {
         Err(report) => {
             assert!(shutdown_called.get());
             let failure = report.failures.first().expect("init failure");
-            assert_eq!(failure.backend, GraphicsBackend::D3d11);
+            assert_eq!(failure.backend, GraphicsBackend::D3d12);
             assert!(failure.message.contains("stage=engine_initialize"));
             assert!(failure
                 .message
-                .contains("selected=backend=d3d11; raster=gpu_native; present=swapchain"));
+                .contains("selected=backend=d3d12; raster=gpu_native; present=swapchain"));
             assert!(failure.message.contains("make-current failed for test"));
         }
     }
@@ -267,7 +271,7 @@ fn bootstrap_preserves_initialize_failure_when_checked_teardown_fails() {
         null_surface(),
         640,
         480,
-        GraphicsBackend::D3d11,
+        GraphicsBackend::D3d12,
         |_candidate| {
             Ok(Box::new(MakeCurrentFailingNativeContext {
                 shutdown_called: Rc::clone(&shutdown_called),
@@ -299,13 +303,7 @@ impl IGraphicsContext for BootstrapD3d12Context {
     }
 
     fn native_raster_caps(&self) -> NativeRasterCaps {
-        NativeRasterCaps {
-            clear_target: true,
-            soft_blit: true,
-            solid_rects: true,
-            glyphs: true,
-            ..NativeRasterCaps::default()
-        }
+        NativeRasterCaps::wgpu_full()
     }
 
     fn initialize(&mut self, _native_window: *mut c_void, _width: i32, _height: i32) -> Result<()> {
@@ -439,6 +437,7 @@ fn same_api_recipe_probe_falls_through_to_later_recipe() {
             }
             Ok(Box::new(ShutdownTrackingContext {
                 shutdown_called: Rc::new(Cell::new(false)),
+                backend: GraphicsBackend::D3d11,
                 raster: RasterMode::Cpu,
                 present: PresentMode::PixelUpload,
             }) as Box<dyn IGraphicsContext>)

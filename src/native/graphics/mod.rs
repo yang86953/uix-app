@@ -1,17 +1,17 @@
-//! Peer GPU API implementations (`IGraphicsContext`).
+//! GPU graphics contexts.
 //!
-//! OS-specific surface binding lives under each API's `platform/` submodule or
-//! shared helpers in `platform/`. Factory/registry code is the only upstream
-//! consumer of these modules (#164).
+//! Production uses one shared wgpu renderer. The former per-API implementations
+//! remain test-only until their low-level regression fixtures are retired.
 
-#[cfg(feature = "d3d11")]
+#[cfg(all(test, feature = "d3d11"))]
 pub mod d3d11;
-#[cfg(feature = "d3d12")]
+#[cfg(all(test, feature = "d3d12"))]
 pub mod d3d12;
-#[cfg(feature = "metal")]
+#[cfg(all(test, feature = "metal"))]
 pub mod metal;
-#[cfg(feature = "opengles")]
+#[cfg(all(test, feature = "opengles"))]
 pub mod opengl;
 pub mod platform;
-#[cfg(feature = "vulkan")]
+#[cfg(all(test, feature = "vulkan"))]
 pub mod vulkan;
+pub(crate) mod wgpu_backend;

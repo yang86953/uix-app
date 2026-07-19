@@ -142,13 +142,18 @@ impl IGraphicsContext for FakeD3d12GpuNative {
 }
 
 #[test]
-fn creates_shared_native_backend_for_d3d12_hybrid_caps() {
+fn creates_shared_native_backend_for_complete_d3d12_gpu_caps() {
     let shutdowns = Rc::new(Cell::new(0));
     let backend = create_native_raster_backend(Box::new(FakeD3d12GpuNative {
         caps: NativeRasterCaps {
             clear_target: true,
-            soft_blit: true,
             solid_rects: true,
+            stroke_rects: true,
+            glyphs: true,
+            linear_gradients: true,
+            radial_gradients: true,
+            solid_meshes: true,
+            box_shadows: true,
             ..NativeRasterCaps::default()
         },
         shutdowns: Rc::clone(&shutdowns),
@@ -160,7 +165,7 @@ fn creates_shared_native_backend_for_d3d12_hybrid_caps() {
 }
 
 #[test]
-fn rejects_d3d12_without_soft_blit_and_shuts_down_once() {
+fn rejects_incomplete_d3d12_gpu_baseline_and_shuts_down_once() {
     let shutdowns = Rc::new(Cell::new(0));
     let error = match create_native_raster_backend(Box::new(FakeD3d12GpuNative {
         caps: NativeRasterCaps {
@@ -170,7 +175,7 @@ fn rejects_d3d12_without_soft_blit_and_shuts_down_once() {
         },
         shutdowns: Rc::clone(&shutdowns),
     })) {
-        Ok(_) => panic!("missing soft blit must reject D3D12 native backend"),
+        Ok(_) => panic!("incomplete GPU baseline must reject D3D12 native backend"),
         Err(error) => error,
     };
     assert_eq!(error.code(), Errc::InvalidArgument);

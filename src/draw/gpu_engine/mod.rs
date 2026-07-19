@@ -9,7 +9,9 @@ use crate::draw::engine::{GraphicsFailure, RenderOutcome};
 use crate::draw::pipeline::{
     EncodedFrameExecution, EncodedPictureExecution, FrameEncoder, RenderSession,
 };
-use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
+use crate::draw::traits::{
+    Canvas2D, GraphicsCapabilities, GraphicsEngine, RasterPipeline, UpdateStrategy,
+};
 use crate::native::traits::present::{IGraphicsContext, PresentTestResult};
 use std::time::Instant;
 
@@ -105,6 +107,10 @@ impl GraphicsEngine for GpuEngine {
         self.session.graphics_capabilities()
     }
 
+    fn raster_pipeline(&self) -> RasterPipeline {
+        RasterPipeline::GpuNative
+    }
+
     fn device_pixel_ratio(&self) -> f32 {
         self.session.backend().device_pixel_ratio()
     }
@@ -134,6 +140,12 @@ impl GraphicsEngine for GpuEngine {
         handle: &crate::draw::ImageHandle,
         encoder: &FrameEncoder,
     ) -> Result<EncodedPictureExecution, Error> {
+        encoder.validate_gpu_native().map_err(|error| {
+            Error::new(
+                crate::core::Errc::InvalidState,
+                format!("GpuEngine rejected non-native Picture: {error}"),
+            )
+        })?;
         self.session
             .backend_mut()
             .try_execute_encoded_picture(handle, encoder)
@@ -143,6 +155,12 @@ impl GraphicsEngine for GpuEngine {
         &mut self,
         encoder: &FrameEncoder,
     ) -> Result<EncodedFrameExecution, Error> {
+        encoder.validate_gpu_native().map_err(|error| {
+            Error::new(
+                crate::core::Errc::InvalidState,
+                format!("GpuEngine rejected non-native frame: {error}"),
+            )
+        })?;
         self.session
             .backend_mut()
             .try_execute_encoded_frame(encoder)
