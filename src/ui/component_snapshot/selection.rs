@@ -22,6 +22,7 @@ impl SnapshotFields {
                 selected_multi,
                 multiple,
                 open,
+                loading,
                 ..
             } => {
                 let options = if optgroups.is_empty() {
@@ -44,10 +45,15 @@ impl SnapshotFields {
                         .into_iter()
                         .collect()
                 };
+                let disabled_indices = if *loading {
+                    (0..options.len()).collect()
+                } else {
+                    Vec::new()
+                };
                 Some(SelectionSnapshot {
                     options,
                     selected_indices,
-                    disabled_indices: Vec::new(),
+                    disabled_indices,
                     multiple: *multiple,
                     expanded: *open,
                 })

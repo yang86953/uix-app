@@ -19,6 +19,10 @@ impl Select {
     }
 
     pub(super) fn visible_rows(&self) -> Vec<VisibleRow> {
+        if self.loading {
+            return Vec::new();
+        }
+
         let query = self.search_query.to_lowercase();
         let matches = |option: &str| {
             !self.search || query.is_empty() || option.to_lowercase().contains(&query)

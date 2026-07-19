@@ -445,6 +445,7 @@ pub enum SnapshotFields {
         selected_multi: Vec<usize>,
         open: bool,
         disabled: bool,
+        loading: bool,
         placeholder: String,
         multiple: bool,
         search: bool,
