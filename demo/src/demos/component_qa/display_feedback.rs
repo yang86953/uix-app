@@ -220,6 +220,37 @@ fn message_frame(
     .align_self(AlignItems::Start)
 }
 
+fn notification_frame(
+    notification: Notification,
+    width: f32,
+    height: f32,
+    automation_id: &'static str,
+) -> ViewNode {
+    ViewNode::new(
+        Grid::new()
+            .columns(vec![GridTrack::Fr(1.0)])
+            .rows(vec![GridTrack::Fr(1.0)])
+            .justify(JustifyContent::Stretch),
+        vec![embed(notification).automation_id(automation_id)],
+    )
+    .width(width)
+    .height(height)
+    .align_self(AlignItems::Start)
+}
+
+fn spin_frame(spin: Spin, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
+    ViewNode::new(
+        Grid::new()
+            .columns(vec![GridTrack::Fr(1.0)])
+            .rows(vec![GridTrack::Fr(1.0)])
+            .justify(JustifyContent::Stretch),
+        vec![embed(spin).automation_id(automation_id)],
+    )
+    .width(width)
+    .height(height)
+    .align_self(AlignItems::Start)
+}
+
 fn avatar_frame(avatar: Avatar, width: f32, height: f32, automation_id: &'static str) -> ViewNode {
     grid([embed(avatar).automation_id(automation_id)])
         .columns(vec![GridTrack::Fr(1.0)])
@@ -1243,7 +1274,11 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
             message_frame(message, 520.0, 160.0, "component-qa-target")
         }
         "modal" => qa_target_view(ViewNode::new(
-            Modal::new("组件质量确认").closable(true).overlay(true),
+            Modal::new("Modal 超长中英文 mixed title 会在关闭按钮前安全省略")
+                .size(360.0, 220.0)
+                .closable(true)
+                .footer_visible(false)
+                .overlay(true),
             vec![qa_row([
                 button("取消").automation_id("component-qa-modal-cancel"),
                 button("确认")
@@ -1260,7 +1295,11 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                     "Button 已符合全部适用状态",
                 ),
                 (StatusLevel::Info, "证据归档", "Light / Dark / Compact"),
-                (StatusLevel::Warning, "需要复核", "检查文本截断"),
+                (
+                    StatusLevel::Warning,
+                    "需要复核超长中英文 mixed Notification title",
+                    "检查说明文字 description 在关闭槽前安全省略",
+                ),
                 (StatusLevel::Error, "验收失败", "存在视觉阻断问题"),
             ] {
                 notification.add(NotificationItem {
@@ -1271,21 +1310,35 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                     closable: true,
                 });
             }
-            qa_target_view(column([embed(notification)]).width(520.0).height(180.0))
+            notification_frame(notification, 520.0, 180.0, "component-qa-target")
         }
-        "popconfirm" => qa_target(Popconfirm::new().title("确认删除这条视觉基线？")),
-        "popover" => qa_target(Popover::new("逐组件证据与状态矩阵").title("质量详情")),
+        "popconfirm" => qa_target(
+            Popconfirm::new()
+                .title("确认删除这条超长中英文 mixed visual baseline evidence？")
+                .confirm_text("确认并永久删除")
+                .cancel_text("取消并保留全部内容"),
+        ),
+        "popover" => qa_target(
+            Popover::new("逐组件证据与状态矩阵 mixed popover content must stay inside the surface")
+                .title("质量详情与超长中英文 mixed title")
+                .placement(PopoverPlacement::Top),
+        ),
         "progress-bar" => column_fit([
             qa_variant(
-                "45% / target",
-                qa_target(ProgressBar::new().progress(45.0).size(520.0, 14.0)),
+                "45% square / target",
+                qa_target(
+                    ProgressBar::new()
+                        .progress(0.45)
+                        .round(false)
+                        .size(520.0, 14.0),
+                ),
             ),
             qa_row([
                 qa_variant(
                     "Success",
                     embed(
                         ProgressBar::new()
-                            .progress(100.0)
+                            .progress(1.0)
                             .stroke_color(tk.color_success)
                             .size(250.0, 10.0),
                     ),
@@ -1294,7 +1347,7 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                     "Error",
                     embed(
                         ProgressBar::new()
-                            .progress(64.0)
+                            .progress(0.64)
                             .stroke_color(tk.color_error)
                             .size(250.0, 10.0),
                     ),
@@ -1312,11 +1365,27 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
             ]),
         ])
         .gap(10.0),
-        "spin" => qa_row([
-            qa_variant("Small", qa_target(Spin::new().small())),
-            qa_variant("Middle", embed(Spin::new())),
-            qa_variant("Large", embed(Spin::new().large())),
-        ]),
+        "spin" => column_fit([
+            qa_variant(
+                "Wrapper / target",
+                spin_frame(
+                    Spin::new()
+                        .large()
+                        .tip("正在加载超长中英文 mixed loading status")
+                        .wrapper_mode(),
+                    320.0,
+                    88.0,
+                    "component-qa-target",
+                ),
+            ),
+            qa_row([
+                qa_variant("Small", embed(Spin::new().small())),
+                qa_variant("Middle", embed(Spin::new())),
+                qa_variant("Large", embed(Spin::new().large())),
+                qa_variant("Stopped", embed(Spin::new().spinning(false))),
+            ]),
+        ])
+        .gap(10.0),
         "tooltip" => column_fit([
             row([
                 ViewNode::new(

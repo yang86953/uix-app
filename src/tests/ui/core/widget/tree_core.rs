@@ -73,6 +73,38 @@ impl EventHandler for SpyWidget {
     }
 }
 
+#[test]
+fn tab_focus_uses_live_component_default_unless_the_node_overrides_it() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(1)));
+    assert_eq!(tree.collect_focusable(), vec![root]);
+
+    tree.get_mut(root)
+        .expect("root")
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<SpyWidget>()
+        .expect("spy")
+        .tab_index = 0;
+    assert!(tree.collect_focusable().is_empty());
+
+    tree.get_mut(root)
+        .expect("root")
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<SpyWidget>()
+        .expect("spy")
+        .tab_index = 1;
+    assert_eq!(tree.collect_focusable(), vec![root]);
+
+    let mut overridden = WidgetTree::new();
+    let root = overridden.build(
+        WidgetNode::leaf(Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(1))).tab_index(0),
+    );
+    assert!(overridden.collect_focusable().is_empty());
+    assert!(!overridden.get(root).expect("root").is_focusable());
+}
+
 struct ScrollCompositeViewportProbe {
     pending_delta: Cell<Option<(f32, f32)>>,
     viewport: Rect,

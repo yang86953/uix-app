@@ -33,6 +33,41 @@ impl FrameRect {
     fn is_empty(self) -> bool {
         self.width <= 0 || self.height <= 0
     }
+
+    pub(crate) fn intersection(self, other: Self) -> Option<Self> {
+        let left = i64::from(self.x).max(i64::from(other.x));
+        let top = i64::from(self.y).max(i64::from(other.y));
+        let right = (i64::from(self.x) + i64::from(self.width))
+            .min(i64::from(other.x) + i64::from(other.width));
+        let bottom = (i64::from(self.y) + i64::from(self.height))
+            .min(i64::from(other.y) + i64::from(other.height));
+        if left >= right || top >= bottom {
+            return None;
+        }
+        Some(Self::new(
+            left as i32,
+            top as i32,
+            (right - left) as i32,
+            (bottom - top) as i32,
+        ))
+    }
+
+    fn translated(self, dx: i32, dy: i32) -> Option<Self> {
+        Some(Self::new(
+            self.x.checked_add(dx)?,
+            self.y.checked_add(dy)?,
+            self.width,
+            self.height,
+        ))
+    }
+
+    pub(crate) fn is_within(self, width: i32, height: i32) -> bool {
+        if self.is_empty() || self.x < 0 || self.y < 0 {
+            return false;
+        }
+        i64::from(self.x) + i64::from(self.width) <= i64::from(width)
+            && i64::from(self.y) + i64::from(self.height) <= i64::from(height)
+    }
 }
 
 /// 帧命令使用的已验证圆角半径。
@@ -45,6 +80,17 @@ pub struct FrameRadius {
 }
 
 impl FrameRadius {
+    pub(crate) const fn zero() -> Self {
+        Self {
+            value: Radius {
+                tl: 0.0,
+                tr: 0.0,
+                br: 0.0,
+                bl: 0.0,
+            },
+        }
+    }
+
     pub fn new(value: Radius) -> Result<Self, FrameEncoderError> {
         for (corner, radius) in [
             ("top-left", value.tl),
@@ -73,6 +119,84 @@ impl FrameRadius {
 }
 
 impl Eq for FrameRadius {}
+
+/// One validated integer-positioned glyph coverage blit.
+///
+/// The coverage allocation is retained by the command stream, so a recorded
+/// frame stays valid even when the font cache evicts the glyph before submit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrameGlyphBlit {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    color: Color,
+    coverage: Arc<[u8]>,
+}
+
+impl FrameGlyphBlit {
+    pub fn new(
+        x: i32,
+        y: i32,
+        coverage: Arc<[u8]>,
+        width: usize,
+        height: usize,
+        color: Color,
+    ) -> Result<Self, FrameEncoderError> {
+        let width_u32 =
+            u32::try_from(width).map_err(|_| FrameEncoderError::InvalidGlyphCoverage {
+                width,
+                height,
+                actual: coverage.len(),
+            })?;
+        let height_u32 =
+            u32::try_from(height).map_err(|_| FrameEncoderError::InvalidGlyphCoverage {
+                width,
+                height,
+                actual: coverage.len(),
+            })?;
+        let required = width.checked_mul(height).filter(|required| *required > 0);
+        if required.is_none_or(|required| coverage.len() < required) {
+            return Err(FrameEncoderError::InvalidGlyphCoverage {
+                width,
+                height,
+                actual: coverage.len(),
+            });
+        }
+        Ok(Self {
+            x,
+            y,
+            width: width_u32,
+            height: height_u32,
+            color,
+            coverage,
+        })
+    }
+
+    pub const fn x(&self) -> i32 {
+        self.x
+    }
+
+    pub const fn y(&self) -> i32 {
+        self.y
+    }
+
+    pub const fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub const fn height(&self) -> u32 {
+        self.height
+    }
+
+    pub const fn color(&self) -> Color {
+        self.color
+    }
+
+    pub fn coverage(&self) -> &Arc<[u8]> {
+        &self.coverage
+    }
+}
 
 /// A self-contained premultiplied-AARRGGBB CPU image used to model a
 /// Picture/offscreen result. This matches the software rasterizer's pixel
@@ -135,6 +259,25 @@ pub enum FrameRasterOp {
     FillRect {
         rect: FrameRect,
         color: Color,
+    },
+    /// 使用共享 SDF coverage 对圆角区域执行普通 SrcOver 填充。
+    FillRoundedRect {
+        rect: FrameRect,
+        color: Color,
+        radius: FrameRadius,
+    },
+    /// 使用原始圆角几何，仅以整数 surface-space 矩形硬裁剪 SrcOver 覆盖。
+    /// `radius == 0` 时同时承载普通矩形的 clipped fast path。
+    FillRoundedRectClipped {
+        rect: FrameRect,
+        color: Color,
+        radius: FrameRadius,
+        clip: FrameRect,
+    },
+    /// Ordered SrcOver glyph coverage blits sharing one integer surface clip.
+    BlitGlyphs {
+        glyphs: Vec<FrameGlyphBlit>,
+        clip: FrameRect,
     },
     /// Channel-wise saturating add into the destination (CPU Additive blend).
     FillRectAdditive {
@@ -258,6 +401,12 @@ pub enum FrameEncoderError {
     InvalidRadius {
         corner: &'static str,
     },
+    InvalidGlyphCoverage {
+        width: usize,
+        height: usize,
+        actual: usize,
+    },
+    CommandAllocationFailed,
 }
 
 impl std::fmt::Display for FrameEncoderError {
@@ -283,6 +432,18 @@ impl std::fmt::Display for FrameEncoderError {
                 f,
                 "frame radius {corner} must be finite and non-negative"
             ),
+            Self::InvalidGlyphCoverage {
+                width,
+                height,
+                actual,
+            } => write!(
+                f,
+                "glyph {width}x{height} requires a non-empty coverage payload of at least {} bytes, got {actual}",
+                width.saturating_mul(*height)
+            ),
+            Self::CommandAllocationFailed => {
+                write!(f, "frame command allocation exceeded available memory")
+            }
         }
     }
 }
@@ -324,11 +485,149 @@ impl FrameEncoder {
         &self.commands
     }
 
+    /// Conservative retained payload size used to keep a recorded Picture no
+    /// larger than its former full BGRA surface. Shared allocations may be
+    /// counted more than once; over-counting deliberately selects the bounded
+    /// materialized fallback instead of retaining unbounded command payloads.
+    pub(crate) fn retained_memory_usage(&self) -> usize {
+        let mut bytes = self
+            .commands
+            .capacity()
+            .saturating_mul(std::mem::size_of::<FrameCommand>());
+        for command in &self.commands {
+            bytes = bytes.saturating_add(match command {
+                FrameCommand::Native {
+                    operation: FrameRasterOp::BlitGlyphs { glyphs, .. },
+                } => glyphs
+                    .capacity()
+                    .saturating_mul(std::mem::size_of::<FrameGlyphBlit>())
+                    .saturating_add(
+                        glyphs
+                            .iter()
+                            .map(|glyph| glyph.coverage.len())
+                            .fold(0usize, usize::saturating_add),
+                    ),
+                FrameCommand::CpuSegment { image, .. }
+                | FrameCommand::PictureBlit { image, .. } => image
+                    .pixels
+                    .len()
+                    .saturating_mul(std::mem::size_of::<u32>()),
+                FrameCommand::Clear { .. } | FrameCommand::Native { .. } => 0,
+            });
+        }
+        bytes
+    }
+
+    /// Produces a translated copy of the transparent SrcOver-only command
+    /// subset. This is the algebraically safe Picture splice: writes are either
+    /// disjoint or every quantizing overlap is fully backed by a gap-free union
+    /// of proven-opaque regions, so transparent-intermediate composition remains
+    /// equivalent to issuing the commands directly in the parent stream.
+    ///
+    /// Validation is atomic. Unsupported clears, destination-dependent ops,
+    /// out-of-bounds payloads, or coordinate overflow return `None` before the
+    /// parent encoder is mutated.
+    pub(crate) fn translated_source_over_commands(
+        &self,
+        dx: i32,
+        dy: i32,
+        target_width: i32,
+        target_height: i32,
+    ) -> Option<Vec<FrameCommand>> {
+        self.translated_source_over_commands_in(
+            FrameRect::new(0, 0, self.width, self.height),
+            dx,
+            dy,
+            target_width,
+            target_height,
+        )
+    }
+
+    /// Produces an integer-translated, 1:1 crop of the transparent
+    /// SrcOver-only command subset. Geometry that crosses `source` keeps its
+    /// original shape and gains an exact integer clip; fully invisible
+    /// commands are omitted. Image commands retain only the corresponding
+    /// source sub-rectangle.
+    ///
+    /// Like the full-Picture form above, this method builds a complete
+    /// temporary command list before the caller can append anything.
+    pub(crate) fn translated_source_over_commands_in(
+        &self,
+        source: FrameRect,
+        dx: i32,
+        dy: i32,
+        target_width: i32,
+        target_height: i32,
+    ) -> Option<Vec<FrameCommand>> {
+        if !source.is_within(self.width, self.height) {
+            return None;
+        }
+        let (first, commands) = self.commands.split_first()?;
+        if !matches!(first, FrameCommand::Clear { color } if color.premultiplied() == 0) {
+            return None;
+        }
+        if !source_over_commands_have_safe_grouping(commands, self.width, self.height) {
+            return None;
+        }
+        let translation = PictureCropTranslation {
+            source_width: self.width,
+            source_height: self.height,
+            source_crop: source,
+            dx,
+            dy,
+            target_width,
+            target_height,
+        };
+        let mut translated = Vec::new();
+        translated.try_reserve_exact(commands.len()).ok()?;
+        for command in commands {
+            match crop_and_translate_source_over_command(command, &translation) {
+                Ok(Some(command)) => translated.push(command),
+                Ok(None) => {}
+                Err(()) => return None,
+            }
+        }
+        Some(translated)
+    }
+
+    pub(crate) fn append_validated_commands(
+        &mut self,
+        commands: Vec<FrameCommand>,
+    ) -> Result<(), FrameEncoderError> {
+        self.commands
+            .try_reserve(commands.len())
+            .map_err(|_| FrameEncoderError::CommandAllocationFailed)?;
+        self.commands.extend(commands);
+        Ok(())
+    }
+
     pub fn clear(&mut self, color: Color) {
         self.commands.push(FrameCommand::Clear { color });
     }
 
     pub fn native(&mut self, operation: FrameRasterOp) {
+        if let FrameRasterOp::BlitGlyphs { glyphs, clip } = operation {
+            if glyphs.is_empty() || clip.is_empty() {
+                return;
+            }
+            if let Some(FrameCommand::Native {
+                operation:
+                    FrameRasterOp::BlitGlyphs {
+                        glyphs: previous,
+                        clip: previous_clip,
+                    },
+            }) = self.commands.last_mut()
+            {
+                if *previous_clip == clip {
+                    previous.extend(glyphs);
+                    return;
+                }
+            }
+            self.commands.push(FrameCommand::Native {
+                operation: FrameRasterOp::BlitGlyphs { glyphs, clip },
+            });
+            return;
+        }
         self.commands.push(FrameCommand::Native { operation });
     }
 
@@ -344,7 +643,10 @@ impl FrameEncoder {
             return Ok(());
         }
         if let Some(operation) = operations.iter().find_map(|operation| match operation {
-            FrameRasterOp::FillRect { .. } => None,
+            FrameRasterOp::FillRect { .. }
+            | FrameRasterOp::FillRoundedRect { .. }
+            | FrameRasterOp::FillRoundedRectClipped { .. }
+            | FrameRasterOp::BlitGlyphs { .. } => None,
             FrameRasterOp::FillRectAdditive { .. } => Some("FillRectAdditive"),
             FrameRasterOp::FillRoundedRectAdditive { .. } => Some("FillRoundedRectAdditive"),
             FrameRasterOp::ScrollCopy { .. } => Some("ScrollCopy"),
@@ -392,6 +694,15 @@ impl FrameEncoder {
         let mut frame = self.transparent_reference();
         self.execute_into_pixels(&mut frame.pixels);
         frame
+    }
+
+    pub(crate) fn render_image(&self) -> FrameImage {
+        let frame = self.render_reference();
+        FrameImage {
+            width: frame.width,
+            height: frame.height,
+            pixels: frame.pixels.into(),
+        }
     }
 
     /// Executes the ordered command stream into a CPU target of this
@@ -484,6 +795,386 @@ impl FrameEncoder {
     }
 }
 
+#[derive(Clone, Copy)]
+struct SourceOverWrite {
+    rect: FrameRect,
+}
+
+fn source_over_commands_have_safe_grouping(
+    commands: &[FrameCommand],
+    width: i32,
+    height: i32,
+) -> bool {
+    let mut writes = Vec::new();
+    let mut opaque_covers = Vec::new();
+    for command in commands {
+        match command {
+            FrameCommand::Clear { .. } => return false,
+            FrameCommand::Native { operation } => match operation {
+                FrameRasterOp::FillRect { rect, color } => {
+                    let opaque = color.a == u8::MAX;
+                    if !push_source_over_write(&mut writes, *rect, width, height) {
+                        return false;
+                    }
+                    if opaque {
+                        push_opaque_cover(&mut opaque_covers, *rect);
+                    }
+                }
+                FrameRasterOp::FillRoundedRect {
+                    rect,
+                    color,
+                    radius,
+                } => {
+                    if !push_source_over_write(&mut writes, *rect, width, height) {
+                        return false;
+                    }
+                    if color.a == u8::MAX {
+                        if let Some(inner) = rounded_rect_opaque_inner(*rect, *radius) {
+                            push_opaque_cover(&mut opaque_covers, inner);
+                        }
+                    }
+                }
+                FrameRasterOp::FillRoundedRectClipped {
+                    rect,
+                    color,
+                    radius,
+                    clip,
+                } => {
+                    let Some(visible) = rect.intersection(*clip) else {
+                        continue;
+                    };
+                    if !push_source_over_write(&mut writes, visible, width, height) {
+                        return false;
+                    }
+                    if color.a == u8::MAX {
+                        if let Some(inner) = rounded_rect_opaque_inner(*rect, *radius)
+                            .and_then(|inner| inner.intersection(*clip))
+                        {
+                            push_opaque_cover(&mut opaque_covers, inner);
+                        }
+                    }
+                }
+                FrameRasterOp::BlitGlyphs { glyphs, clip } => {
+                    if !clip.is_within(width, height) {
+                        return false;
+                    }
+                    for glyph in glyphs {
+                        let (Ok(glyph_width), Ok(glyph_height)) =
+                            (i32::try_from(glyph.width), i32::try_from(glyph.height))
+                        else {
+                            return false;
+                        };
+                        let Some(visible) =
+                            FrameRect::new(glyph.x, glyph.y, glyph_width, glyph_height)
+                                .intersection(*clip)
+                        else {
+                            continue;
+                        };
+                        if !push_source_over_write(&mut writes, visible, width, height) {
+                            return false;
+                        }
+                    }
+                }
+                FrameRasterOp::FillRectAdditive { .. }
+                | FrameRasterOp::FillRoundedRectAdditive { .. }
+                | FrameRasterOp::ScrollCopy { .. } => return false,
+            },
+            FrameCommand::CpuSegment { image, src, dst }
+            | FrameCommand::PictureBlit { image, src, dst } => {
+                if src.width != dst.width
+                    || src.height != dst.height
+                    || !src.is_within(image.width, image.height)
+                    || !push_source_over_write(&mut writes, *dst, width, height)
+                {
+                    return false;
+                }
+            }
+        }
+    }
+
+    for (index, write) in writes.iter().enumerate() {
+        for previous in &writes[..index] {
+            if let Some(overlap) = previous.rect.intersection(write.rect) {
+                if !opaque_covers_rect(&opaque_covers, overlap) {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+fn push_opaque_cover(covers: &mut Vec<FrameRect>, rect: FrameRect) {
+    if covers.try_reserve(1).is_ok() {
+        covers.push(rect);
+    }
+}
+
+fn opaque_covers_rect(covers: &[FrameRect], target: FrameRect) -> bool {
+    if covers
+        .iter()
+        .any(|cover| cover.intersection(target) == Some(target))
+    {
+        return true;
+    }
+
+    let target_left = i64::from(target.x);
+    let target_top = i64::from(target.y);
+    let target_right = target_left + i64::from(target.width);
+    let target_bottom = target_top + i64::from(target.height);
+    let mut x = target_left;
+    while x < target_right {
+        let mut next_x = target_right;
+        for cover in covers {
+            let Some(clipped) = cover.intersection(target) else {
+                continue;
+            };
+            let clipped_left = i64::from(clipped.x);
+            let clipped_right = clipped_left + i64::from(clipped.width);
+            for boundary in [clipped_left, clipped_right] {
+                if boundary > x {
+                    next_x = next_x.min(boundary);
+                }
+            }
+        }
+
+        let mut y = target_top;
+        while y < target_bottom {
+            let mut covered_until = y;
+            for cover in covers {
+                let cover_left = i64::from(cover.x);
+                let cover_top = i64::from(cover.y);
+                let cover_right = cover_left + i64::from(cover.width);
+                let cover_bottom = cover_top + i64::from(cover.height);
+                if cover_left <= x && cover_right >= next_x && cover_top <= y && cover_bottom > y {
+                    covered_until = covered_until.max(cover_bottom.min(target_bottom));
+                }
+            }
+            if covered_until == y {
+                return false;
+            }
+            y = covered_until;
+        }
+        x = next_x;
+    }
+    true
+}
+
+fn rounded_rect_opaque_inner(rect: FrameRect, radius: FrameRadius) -> Option<FrameRect> {
+    let radius = radius.to_radius();
+    let inset = |value: f32| value.ceil() as i64;
+    let left = inset(radius.tl.max(radius.bl));
+    let right = inset(radius.tr.max(radius.br));
+    let top = inset(radius.tl.max(radius.tr));
+    let bottom = inset(radius.bl.max(radius.br));
+    let inner_width = i64::from(rect.width)
+        .checked_sub(left)?
+        .checked_sub(right)?;
+    let inner_height = i64::from(rect.height)
+        .checked_sub(top)?
+        .checked_sub(bottom)?;
+    if inner_width <= 0 || inner_height <= 0 {
+        return None;
+    }
+    Some(FrameRect::new(
+        i32::try_from(i64::from(rect.x).checked_add(left)?).ok()?,
+        i32::try_from(i64::from(rect.y).checked_add(top)?).ok()?,
+        i32::try_from(inner_width).ok()?,
+        i32::try_from(inner_height).ok()?,
+    ))
+}
+
+fn push_source_over_write(
+    writes: &mut Vec<SourceOverWrite>,
+    rect: FrameRect,
+    width: i32,
+    height: i32,
+) -> bool {
+    if !rect.is_within(width, height) || writes.try_reserve(1).is_err() {
+        return false;
+    }
+    writes.push(SourceOverWrite { rect });
+    true
+}
+
+#[derive(Clone, Copy)]
+struct PictureCropTranslation {
+    source_width: i32,
+    source_height: i32,
+    source_crop: FrameRect,
+    dx: i32,
+    dy: i32,
+    target_width: i32,
+    target_height: i32,
+}
+
+fn crop_and_translate_source_over_command(
+    command: &FrameCommand,
+    translation: &PictureCropTranslation,
+) -> Result<Option<FrameCommand>, ()> {
+    let translate_original = |rect: FrameRect| {
+        if !rect.is_within(translation.source_width, translation.source_height) {
+            return Err(());
+        }
+        rect.translated(translation.dx, translation.dy).ok_or(())
+    };
+    let translate_visible = |rect: FrameRect| {
+        if !rect.is_within(translation.source_width, translation.source_height) {
+            return Err(());
+        }
+        let Some(visible) = rect.intersection(translation.source_crop) else {
+            return Ok(None);
+        };
+        let translated = visible
+            .translated(translation.dx, translation.dy)
+            .ok_or(())?;
+        if !translated.is_within(translation.target_width, translation.target_height) {
+            return Err(());
+        }
+        Ok(Some((visible, translated)))
+    };
+
+    Ok(Some(match command {
+        FrameCommand::Clear { .. } => return Err(()),
+        FrameCommand::Native { operation } => {
+            let operation = match operation {
+                FrameRasterOp::FillRect { rect, color } => {
+                    let Some((_, rect)) = translate_visible(*rect)? else {
+                        return Ok(None);
+                    };
+                    FrameRasterOp::FillRect {
+                        rect,
+                        color: *color,
+                    }
+                }
+                FrameRasterOp::FillRoundedRect {
+                    rect,
+                    color,
+                    radius,
+                } => {
+                    let Some((visible, translated_visible)) = translate_visible(*rect)? else {
+                        return Ok(None);
+                    };
+                    let translated_rect = translate_original(*rect)?;
+                    if visible == *rect {
+                        FrameRasterOp::FillRoundedRect {
+                            rect: translated_rect,
+                            color: *color,
+                            radius: *radius,
+                        }
+                    } else {
+                        FrameRasterOp::FillRoundedRectClipped {
+                            rect: translated_rect,
+                            color: *color,
+                            radius: *radius,
+                            clip: translated_visible,
+                        }
+                    }
+                }
+                FrameRasterOp::FillRoundedRectClipped {
+                    rect,
+                    color,
+                    radius,
+                    clip,
+                } => {
+                    let Some((_, translated_clip)) = translate_visible(*clip)? else {
+                        return Ok(None);
+                    };
+                    if rect
+                        .intersection(*clip)
+                        .and_then(|visible| visible.intersection(translation.source_crop))
+                        .is_none()
+                    {
+                        return Ok(None);
+                    }
+                    FrameRasterOp::FillRoundedRectClipped {
+                        rect: translate_original(*rect)?,
+                        color: *color,
+                        radius: *radius,
+                        clip: translated_clip,
+                    }
+                }
+                FrameRasterOp::BlitGlyphs { glyphs, clip } => {
+                    let Some((visible_clip, translated_clip)) = translate_visible(*clip)? else {
+                        return Ok(None);
+                    };
+                    let mut translated_glyphs = Vec::new();
+                    translated_glyphs
+                        .try_reserve_exact(glyphs.len())
+                        .map_err(|_| ())?;
+                    for glyph in glyphs {
+                        let width = i32::try_from(glyph.width).map_err(|_| ())?;
+                        let height = i32::try_from(glyph.height).map_err(|_| ())?;
+                        if FrameRect::new(glyph.x, glyph.y, width, height)
+                            .intersection(visible_clip)
+                            .is_none()
+                        {
+                            continue;
+                        }
+                        translated_glyphs.push(FrameGlyphBlit {
+                            x: glyph.x.checked_add(translation.dx).ok_or(())?,
+                            y: glyph.y.checked_add(translation.dy).ok_or(())?,
+                            width: glyph.width,
+                            height: glyph.height,
+                            color: glyph.color,
+                            coverage: Arc::clone(&glyph.coverage),
+                        });
+                    }
+                    if translated_glyphs.is_empty() {
+                        return Ok(None);
+                    }
+                    FrameRasterOp::BlitGlyphs {
+                        glyphs: translated_glyphs,
+                        clip: translated_clip,
+                    }
+                }
+                FrameRasterOp::FillRectAdditive { .. }
+                | FrameRasterOp::FillRoundedRectAdditive { .. }
+                | FrameRasterOp::ScrollCopy { .. } => return Err(()),
+            };
+            FrameCommand::Native { operation }
+        }
+        FrameCommand::CpuSegment { image, src, dst }
+        | FrameCommand::PictureBlit { image, src, dst } => {
+            if src.width != dst.width
+                || src.height != dst.height
+                || !src.is_within(image.width, image.height)
+            {
+                return Err(());
+            }
+            let Some((visible_dst, translated_dst)) = translate_visible(*dst)? else {
+                return Ok(None);
+            };
+            let source_x = src
+                .x
+                .checked_add(visible_dst.x.checked_sub(dst.x).ok_or(())?)
+                .ok_or(())?;
+            let source_y = src
+                .y
+                .checked_add(visible_dst.y.checked_sub(dst.y).ok_or(())?)
+                .ok_or(())?;
+            let translated_src =
+                FrameRect::new(source_x, source_y, visible_dst.width, visible_dst.height);
+            if !translated_src.is_within(image.width, image.height) {
+                return Err(());
+            }
+            match command {
+                FrameCommand::CpuSegment { .. } => FrameCommand::CpuSegment {
+                    image: image.clone(),
+                    src: translated_src,
+                    dst: translated_dst,
+                },
+                FrameCommand::PictureBlit { .. } => FrameCommand::PictureBlit {
+                    image: image.clone(),
+                    src: translated_src,
+                    dst: translated_dst,
+                },
+                _ => unreachable!(),
+            }
+        }
+    }))
+}
+
 fn full_frame_image_blit(
     width: i32,
     height: i32,
@@ -509,6 +1200,46 @@ fn apply_raster_op_pixels(width: i32, height: i32, pixels: &mut [u32], operation
     match operation {
         FrameRasterOp::FillRect { rect, color } => {
             fill_rect_pixels(width, height, pixels, *rect, *color)
+        }
+        FrameRasterOp::FillRoundedRect {
+            rect,
+            color,
+            radius,
+        } => fill_rounded_rect_pixels(width, height, pixels, *rect, *color, *radius),
+        FrameRasterOp::FillRoundedRectClipped {
+            rect,
+            color,
+            radius,
+            clip,
+        } => {
+            if let Some(clip) = clip.intersection(FrameRect::new(0, 0, width, height)) {
+                fill_rounded_rect_pixels_clipped(
+                    width, height, pixels, *rect, *color, *radius, clip,
+                )
+            }
+        }
+        FrameRasterOp::BlitGlyphs { glyphs, clip } => {
+            let clip = Rect::new(
+                clip.x as f32,
+                clip.y as f32,
+                clip.width as f32,
+                clip.height as f32,
+            );
+            for glyph in glyphs {
+                crate::draw::rasterizer::glyph::blit_glyph(
+                    pixels,
+                    width,
+                    height,
+                    clip,
+                    1.0,
+                    glyph.x,
+                    glyph.y,
+                    glyph.coverage.as_ref(),
+                    glyph.width as usize,
+                    glyph.height as usize,
+                    glyph.color,
+                );
+            }
         }
         FrameRasterOp::FillRectAdditive { rect, color } => {
             fill_rect_additive_pixels(width, height, pixels, *rect, *color)
@@ -607,6 +1338,67 @@ fn fill_rounded_rect_additive_pixels(
     }
     let mut renderer = RasterRenderer::new(width, height);
     renderer.set_blend_mode(BlendMode::Additive);
+    renderer.fill_rect(
+        pixels,
+        width,
+        height,
+        Rect::new(
+            rect.x as f32,
+            rect.y as f32,
+            rect.width as f32,
+            rect.height as f32,
+        ),
+        color,
+        Some(radius.to_radius()),
+    );
+}
+
+fn fill_rounded_rect_pixels(
+    width: i32,
+    height: i32,
+    pixels: &mut [u32],
+    rect: FrameRect,
+    color: Color,
+    radius: FrameRadius,
+) {
+    if rect.is_empty() {
+        return;
+    }
+    let renderer = RasterRenderer::new(width, height);
+    renderer.fill_rect(
+        pixels,
+        width,
+        height,
+        Rect::new(
+            rect.x as f32,
+            rect.y as f32,
+            rect.width as f32,
+            rect.height as f32,
+        ),
+        color,
+        Some(radius.to_radius()),
+    );
+}
+
+fn fill_rounded_rect_pixels_clipped(
+    width: i32,
+    height: i32,
+    pixels: &mut [u32],
+    rect: FrameRect,
+    color: Color,
+    radius: FrameRadius,
+    clip: FrameRect,
+) {
+    if rect.is_empty() || clip.is_empty() {
+        return;
+    }
+    let mut renderer = RasterRenderer::new(width, height);
+    renderer.push_clip_surface(Rect::new(
+        clip.x as f32,
+        clip.y as f32,
+        clip.width as f32,
+        clip.height as f32,
+    ));
     renderer.fill_rect(
         pixels,
         width,

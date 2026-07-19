@@ -16,6 +16,7 @@ impl IGraphicsContext for FakeGpuNative {
                 clear_target: true,
                 soft_blit: true,
                 solid_rects: true,
+                glyphs: true,
                 ..NativeRasterCaps::default()
             }
         } else {

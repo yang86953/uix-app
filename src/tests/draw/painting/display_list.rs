@@ -104,6 +104,72 @@ fn complete_picture_encoder_preserves_local_painter_order() {
 }
 
 #[test]
+fn cached_picture_encoder_preserves_glyph_ir_and_shared_coverage() {
+    use crate::draw::backend::cpu::CpuDrawSurface;
+    use crate::draw::font::text_backend::{PositionedGlyph, TextLayout};
+    use crate::draw::pipeline::{FrameCommand, FrameRasterOp, FrameRect};
+    use crate::draw::traits::Canvas2D;
+
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic glyph font");
+    let glyph_id = 65;
+    let font_size = 18.0;
+    let raster = fonts.rasterize_glyph(&font, glyph_id, font_size);
+    assert!(raster.width > 0 && raster.height > 0);
+    let layout = TextLayout {
+        glyphs: vec![PositionedGlyph {
+            x: 0.0,
+            y: 0.0,
+            width: raster.width as f32,
+            height: raster.height as f32,
+            glyph_id,
+            char_index: 0,
+            font,
+        }],
+        lines: Vec::new(),
+        width: raster.width as f32,
+        height: raster.height as f32,
+    };
+    let origin = Point::new(16.0, 8.0);
+    let pos = Point::new(22.0, 12.0);
+    let color = Color::from_rgba(220, 96, 40, 160);
+    let mut list = DisplayList::new();
+    list.push(PaintOp::BlitGlyphLayout {
+        layout,
+        pos,
+        color,
+        font_size,
+    });
+
+    let images = ImageService::new();
+    let encoder = encode_cached_picture(&list, 64, 32, origin, font, &fonts, &images)
+        .expect("cached glyph Picture");
+    let glyphs = encoder
+        .commands()
+        .iter()
+        .find_map(|command| match command {
+            FrameCommand::Native {
+                operation: FrameRasterOp::BlitGlyphs { glyphs, clip },
+            } if *clip == FrameRect::new(0, 0, 64, 32) => Some(glyphs),
+            _ => None,
+        })
+        .expect("cached Picture must keep glyph IR");
+    assert_eq!(glyphs.len(), 1);
+    assert!(Arc::ptr_eq(glyphs[0].coverage(), &raster.coverage));
+    assert!(!encoder.commands().iter().any(|command| matches!(
+        command,
+        FrameCommand::PictureBlit { .. } | FrameCommand::CpuSegment { .. }
+    )));
+
+    let mut cpu = CpuDrawSurface::new(64, 32);
+    cpu.canvas_mut().translate(-origin.x, -origin.y);
+    list.replay_canvas(cpu.canvas_mut(), font, &fonts, Some(&images), 64.0);
+    assert_eq!(encoder.render_reference().pixels(), cpu.surface().pixels());
+}
+
+#[test]
 fn complete_picture_encoder_preserves_clip_and_rounded_operations() {
     let mut clip = DisplayList::new();
     clip.push(PaintOp::PushClip {

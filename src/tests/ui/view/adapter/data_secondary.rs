@@ -658,6 +658,8 @@ fn reconcile_notification_preserves_queue_and_syncs_placement() {
         notification.snapshot_fields(),
         SnapshotFields::Notification {
             placement: Placement::BottomLeft,
+            titles: vec!["kept".to_owned()],
+            descriptions: vec!["body".to_owned()],
         }
     );
 }

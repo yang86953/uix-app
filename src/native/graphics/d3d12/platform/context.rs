@@ -11,8 +11,8 @@ use std::ffi::c_void;
 use crate::core::{Errc, Error, Result};
 use crate::native::graphics::platform::windows as win_surface;
 use crate::native::traits::present::{
-    GpuSolidRect, GraphicsBackend, GraphicsContextCaps, IGraphicsContext, NativeRasterCaps,
-    PresentCoherency, PresentDamage, PresentFrame, SoftFallbackTile,
+    GpuGlyphBlit, GpuSolidRect, GraphicsBackend, GraphicsContextCaps, IGraphicsContext,
+    NativeRasterCaps, PresentCoherency, PresentDamage, PresentFrame, SoftFallbackTile,
 };
 use ::windows::core::Interface;
 use ::windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, WAIT_OBJECT_0};
@@ -119,6 +119,20 @@ impl D3d12Context {
         let factory: IDXGIFactory4 = unsafe { CreateDXGIFactory2(DXGI_CREATE_FACTORY_FLAGS(0)) }
             .map_err(|error| d3d12_error("CreateDXGIFactory2", error))?;
         Self::create_with_factory(native_window, width, height, factory, driver)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn glyph_atlas_upload_count(&self) -> usize {
+        self.pipeline
+            .as_ref()
+            .map_or(0, D3d12Pipeline::glyph_atlas_upload_count)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn glyph_atlas_extent(&self) -> Option<(u32, u32)> {
+        self.pipeline
+            .as_ref()
+            .and_then(D3d12Pipeline::glyph_atlas_extent)
     }
 
     fn create_with_factory(
@@ -716,6 +730,7 @@ impl IGraphicsContext for D3d12Context {
             clear_target: true,
             soft_blit: true,
             solid_rects: true,
+            glyphs: true,
             ..NativeRasterCaps::default()
         }
     }
@@ -793,6 +808,31 @@ impl IGraphicsContext for D3d12Context {
             .as_ref()
             .ok_or_else(|| platform_error("D3d12Context: raster pipeline is shut down"))?
             .draw_solid_rects(&self.command_list, viewport_w, viewport_h, scissor, rects)
+    }
+
+    fn draw_glyphs(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        glyphs: &[GpuGlyphBlit],
+    ) -> Result<()> {
+        if glyphs.is_empty() {
+            return Ok(());
+        }
+        self.begin_commands()?;
+        self.pipeline
+            .as_mut()
+            .ok_or_else(|| platform_error("D3d12Context: raster pipeline is shut down"))?
+            .draw_glyphs(
+                &self.device,
+                &self.command_list,
+                self.frame_index,
+                viewport_w,
+                viewport_h,
+                scissor,
+                glyphs,
+            )
     }
 
     fn blit_soft_fallback(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<()> {

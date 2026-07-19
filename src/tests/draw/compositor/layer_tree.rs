@@ -76,6 +76,55 @@ impl TestScene {
         tree.build(self, true);
         tree
     }
+
+    fn picture_budget_tree(branches: &[(usize, usize)]) -> Self {
+        let branch_roots = branches
+            .iter()
+            .map(|(first_id, _)| NodeId::new(*first_id))
+            .collect::<Vec<_>>();
+        let mut root = TestNode::eligible(NodeId::new(1), branch_roots);
+        root.policy = PicturePolicy::Never;
+        root.frame = Rect::new(0.0, 0.0, 1.0, 1.0);
+
+        let mut nodes = vec![root];
+        for (first_id, node_count) in branches {
+            let children = ((*first_id + 1)..(*first_id + *node_count))
+                .map(NodeId::new)
+                .collect::<Vec<_>>();
+            let mut branch = TestNode::eligible(NodeId::new(*first_id), children);
+            branch.frame = Rect::new(0.0, 0.0, 2048.0, 2048.0);
+            nodes.push(branch);
+            for id in (*first_id + 1)..(*first_id + *node_count) {
+                let mut leaf = TestNode::eligible(NodeId::new(id), Vec::new());
+                leaf.frame = Rect::new(0.0, 0.0, 2048.0, 2048.0);
+                nodes.push(leaf);
+            }
+        }
+
+        Self {
+            nodes,
+            dirty_ids: HashSet::new(),
+            paint: None,
+        }
+    }
+}
+
+fn collect_picture_ids(node: &LayerNode, ids: &mut Vec<NodeId>) {
+    match node {
+        LayerNode::Picture {
+            node_id, children, ..
+        } => {
+            ids.push(*node_id);
+            for child in children {
+                collect_picture_ids(child, ids);
+            }
+        }
+        LayerNode::ClipRect { children, .. } | LayerNode::Direct { children, .. } => {
+            for child in children {
+                collect_picture_ids(child, ids);
+            }
+        }
+    }
 }
 
 impl ScenePaint for TestScene {
@@ -295,6 +344,40 @@ fn picture_policy_requires_node_count_and_pixel_thresholds() {
         small_pixels.root_node(),
         Some(LayerNode::Direct { node_id, .. }) if *node_id == NodeId::new(1)
     ));
+}
+
+#[test]
+fn picture_budget_caps_total_retained_targets_deterministically() {
+    let scene = TestScene::picture_budget_tree(&[(2, 8), (10, 8), (18, 8)]);
+    let tree = scene.build_layer_tree();
+    let mut picture_ids = Vec::new();
+    collect_picture_ids(tree.root_node().unwrap(), &mut picture_ids);
+
+    assert_eq!(picture_ids, vec![NodeId::new(2), NodeId::new(10)]);
+}
+
+#[test]
+fn picture_budget_prefers_estimated_repaint_work_and_evicts_old_cache() {
+    let initial_scene = TestScene::picture_budget_tree(&[(2, 8)]);
+    let mut tree = initial_scene.build_layer_tree();
+    let Some(LayerNode::Direct { children, .. }) = tree.root_node_mut() else {
+        panic!("budget test root must remain direct");
+    };
+    let Some(LayerNode::Picture {
+        offscreen_handle, ..
+    }) = children.first_mut()
+    else {
+        panic!("initial eligible branch must be retained as Picture");
+    };
+    *offscreen_handle = Some(ImageHandle(91));
+
+    let expanded_scene = TestScene::picture_budget_tree(&[(2, 8), (10, 9), (19, 10)]);
+    tree.build(&expanded_scene, true);
+
+    let mut picture_ids = Vec::new();
+    collect_picture_ids(tree.root_node().unwrap(), &mut picture_ids);
+    assert_eq!(picture_ids, vec![NodeId::new(10), NodeId::new(19)]);
+    assert_eq!(tree.orphaned_handles(), &[ImageHandle(91)]);
 }
 
 #[test]

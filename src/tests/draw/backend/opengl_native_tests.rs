@@ -3,8 +3,10 @@
 use crate::draw::backend::RenderBackend;
 use crate::draw::engine::GraphicsFailure;
 use crate::draw::gpu_engine::GpuEngine;
-use crate::draw::pipeline::{EncodedPictureExecution, FrameRasterOp};
-use crate::draw::{BlendMode, GraphicsEngine, UpdateStrategy};
+use crate::draw::pipeline::{
+    EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameRasterOp,
+};
+use crate::draw::{BlendMode, GraphicsEngine, Radius, UpdateStrategy};
 use crate::tests::common::*;
 
 fn open_engine(
@@ -80,6 +82,308 @@ fn opengles_native_path_keeps_order_and_bounded_soft_upload() {
         crate::draw::RenderOutcome::Present(_)
     ));
     engine.destroy_offscreen(picture);
+    engine.try_shutdown().expect("checked shutdown");
+    window.close().expect("close native window");
+}
+
+#[test]
+fn opengles_encoded_glyph_ir_uses_native_atlas_without_soft_upload() {
+    if std::env::consts::OS != "windows" {
+        return;
+    }
+
+    let (_platform, mut window, mut engine) = open_engine("native GL glyph IR", 128, 64);
+    let _ = engine.begin_frame(UpdateStrategy::FullRedraw);
+    let (width, height) = {
+        let size = engine
+            .session_mut()
+            .native_gpu_backend_mut()
+            .expect("OpenGL ES NativeGpu backend")
+            .surface()
+            .size();
+        (size.w as i32, size.h as i32)
+    };
+    let mut encoder = FrameEncoder::new(width, height).expect("glyph encoder");
+    encoder.clear(Color::from_rgb(12, 24, 48));
+    let coverage: std::sync::Arc<[u8]> = vec![0, 64, 128, 255, 255, 128, 64, 0].into();
+    let glyph = crate::draw::pipeline::FrameGlyphBlit::new(
+        8,
+        6,
+        coverage,
+        4,
+        2,
+        Color::from_rgba(220, 96, 40, 160),
+    )
+    .expect("validated glyph");
+    encoder.native(FrameRasterOp::BlitGlyphs {
+        glyphs: vec![glyph],
+        clip: FrameRect::new(9, 6, 3, 2),
+    });
+    let reference = encoder.render_reference();
+
+    let backend = engine
+        .session_mut()
+        .native_gpu_backend_mut()
+        .expect("OpenGL ES NativeGpu backend");
+    assert_eq!(
+        backend
+            .try_execute_encoded_frame(&encoder)
+            .expect("execute native glyph IR"),
+        EncodedFrameExecution::Executed
+    );
+    assert_eq!(
+        backend.last_soft_upload_bytes(),
+        0,
+        "native glyph IR must not upload a BGRA fallback tile"
+    );
+    let pixels = backend.try_readback().expect("glyph IR readback");
+    let stride = width as usize;
+    for (x, y) in [(8usize, 6usize), (9, 6), (10, 6), (11, 6), (12, 6), (10, 7)] {
+        let expected = reference.pixel(x as i32, y as i32).unwrap();
+        let observed = wgl_rgba_to_aarrggbb(pixels[(height as usize - 1 - y) * stride + x]);
+        for shift in [24, 16, 8, 0] {
+            let expected_channel = ((expected >> shift) & 0xFF) as i16;
+            let observed_channel = ((observed >> shift) & 0xFF) as i16;
+            assert!(
+                (expected_channel - observed_channel).abs() <= 1,
+                "probe ({x},{y}), channel {shift}: expected {expected:#010X}, got {observed:#010X}"
+            );
+        }
+    }
+
+    engine.try_shutdown().expect("checked shutdown");
+    window.close().expect("close native window");
+}
+
+#[test]
+fn opengles_picture_producer_glyph_ir_matches_reference_without_soft_upload() {
+    use crate::draw::pipeline::frame_recording::FrameRecordingEngine;
+
+    if std::env::consts::OS != "windows" {
+        return;
+    }
+    let (_platform, mut window, mut engine) = open_engine("Picture glyph IR", 96, 48);
+    let _ = engine.begin_frame(UpdateStrategy::FullRedraw);
+    let (width, height) = {
+        let size = engine
+            .session_mut()
+            .native_gpu_backend_mut()
+            .expect("OpenGL ES NativeGpu backend")
+            .surface()
+            .size();
+        (size.w as i32, size.h as i32)
+    };
+
+    let mut recorder = FrameRecordingEngine::new();
+    recorder
+        .initialize(width, height)
+        .expect("initialize Picture recorder");
+    let picture = recorder.create_offscreen(32, 16).expect("Picture");
+    let coverage: std::sync::Arc<[u8]> = vec![0, 1, 127, 255, 255, 128, 64, 0].into();
+    recorder
+        .try_begin_offscreen_paint(&picture)
+        .expect("begin Picture");
+    {
+        let canvas = recorder.offscreen_canvas(&picture).expect("Picture canvas");
+        canvas.translate(-8.0, -4.0);
+        canvas.fill_rect(
+            Rect::new(8.0, 4.0, 32.0, 16.0),
+            Color::from_rgb(24, 48, 72),
+            Some(Radius::uniform(4.0)),
+        );
+        canvas.fill_rect(
+            Rect::new(20.0, 4.0, 4.0, 4.0),
+            Color::from_rgb(72, 48, 24),
+            None,
+        );
+        canvas.fill_rect(
+            Rect::new(24.0, 4.0, 4.0, 4.0),
+            Color::from_rgb(24, 72, 48),
+            None,
+        );
+        canvas.set_opacity(0.37);
+        canvas.blit_glyph_shared(
+            21,
+            5,
+            std::sync::Arc::clone(&coverage),
+            4,
+            2,
+            Color::from_rgba(220, 96, 40, 160),
+        );
+        canvas.blit_glyph_shared(
+            23,
+            5,
+            std::sync::Arc::clone(&coverage),
+            4,
+            2,
+            Color::from_rgba(40, 180, 220, 192),
+        );
+    }
+    recorder.try_end_offscreen_paint().expect("commit Picture");
+    recorder.begin_recording(true).expect("begin main frame");
+    recorder.canvas_2d().fill_rect(
+        Rect::new(0.0, 0.0, width as f32, height as f32),
+        Color::from_rgb(12, 24, 48),
+        None,
+    );
+    recorder
+        .try_blit_offscreen_src(
+            &picture,
+            Rect::new(0.0, 0.0, 32.0, 16.0),
+            Rect::new(8.0, 4.0, 32.0, 16.0),
+        )
+        .expect("splice Picture glyph IR");
+    let encoder = recorder.finish_recording().expect("finish main frame");
+    assert!(!encoder.commands().iter().any(|command| matches!(
+        command,
+        FrameCommand::CpuSegment { .. } | FrameCommand::PictureBlit { .. }
+    )));
+    let reference = encoder.render_reference();
+
+    let backend = engine
+        .session_mut()
+        .native_gpu_backend_mut()
+        .expect("OpenGL ES NativeGpu backend");
+    assert_eq!(
+        backend
+            .try_execute_encoded_frame(&encoder)
+            .expect("execute Picture glyph IR"),
+        EncodedFrameExecution::Executed
+    );
+    assert_eq!(backend.last_soft_upload_bytes(), 0);
+    let pixels = backend.try_readback().expect("Picture glyph readback");
+    let stride = width as usize;
+    for (x, y) in [
+        (9usize, 6usize),
+        (10, 6),
+        (11, 6),
+        (21, 5),
+        (23, 5),
+        (24, 6),
+        (26, 6),
+        (40, 20),
+    ] {
+        let expected = reference.pixel(x as i32, y as i32).unwrap();
+        let observed = wgl_rgba_to_aarrggbb(pixels[(height as usize - 1 - y) * stride + x]);
+        for shift in [24, 16, 8, 0] {
+            let expected_channel = ((expected >> shift) & 0xff) as i16;
+            let observed_channel = ((observed >> shift) & 0xff) as i16;
+            assert!(
+                (expected_channel - observed_channel).abs() <= 1,
+                "probe ({x},{y}), channel {shift}: expected {expected:#010X}, got {observed:#010X}"
+            );
+        }
+    }
+
+    engine.try_shutdown().expect("checked shutdown");
+    window.close().expect("close native window");
+}
+
+#[test]
+fn opengles_encoded_fill_opacity_ir_matches_reference_without_soft_upload() {
+    use crate::draw::pipeline::frame_recording::FrameRecordingEngine;
+
+    if std::env::consts::OS != "windows" {
+        return;
+    }
+
+    let (_platform, mut window, mut engine) = open_engine("native GL fill opacity IR", 64, 40);
+    let _ = engine.begin_frame(UpdateStrategy::FullRedraw);
+    let (width, height) = {
+        let size = engine
+            .session_mut()
+            .native_gpu_backend_mut()
+            .expect("OpenGL ES NativeGpu backend")
+            .surface()
+            .size();
+        (size.w as i32, size.h as i32)
+    };
+    let mut recorder = FrameRecordingEngine::new();
+    recorder
+        .initialize(width, height)
+        .expect("initialize opacity recorder");
+    recorder
+        .begin_recording(true)
+        .expect("begin opacity recording");
+    recorder.canvas_2d().fill_rect(
+        Rect::new(0.0, 0.0, width as f32, height as f32),
+        Color::from_rgb(24, 48, 72),
+        None,
+    );
+    recorder.canvas_2d().set_opacity(0.37);
+    recorder.canvas_2d().fill_rect(
+        Rect::new(4.0, 4.0, 24.0, 12.0),
+        Color::from_rgba(220, 80, 40, 160),
+        None,
+    );
+    recorder
+        .canvas_2d()
+        .push_clip(Rect::new(18.0, 10.0, 20.0, 16.0));
+    recorder.canvas_2d().fill_rect(
+        Rect::new(16.0, 8.0, 28.0, 22.0),
+        Color::from_rgba(40, 180, 220, 192),
+        Some(Radius {
+            tl: 7.0,
+            tr: 3.0,
+            br: 18.0,
+            bl: 0.0,
+        }),
+    );
+    let encoder = recorder
+        .finish_recording()
+        .expect("finish opacity recording");
+    assert_eq!(recorder.scratch_surface_size(), (1, 1));
+    assert!(!encoder
+        .commands()
+        .iter()
+        .any(|command| matches!(command, FrameCommand::CpuSegment { .. })));
+    let reference = encoder.render_reference();
+
+    let backend = engine
+        .session_mut()
+        .native_gpu_backend_mut()
+        .expect("OpenGL ES NativeGpu backend");
+    assert_eq!(
+        backend
+            .try_execute_encoded_frame(&encoder)
+            .expect("execute fill opacity IR"),
+        EncodedFrameExecution::Executed
+    );
+    assert_eq!(
+        backend.last_soft_upload_bytes(),
+        0,
+        "eligible opacity fills must not upload a BGRA fallback tile"
+    );
+    let pixels = backend.try_readback().expect("fill opacity IR readback");
+    let stride = width as usize;
+    for (x, y) in [
+        (2usize, 2usize),
+        (6, 6),
+        (17, 9),
+        (18, 10),
+        (24, 14),
+        (37, 24),
+        (38, 24),
+    ] {
+        let expected = reference.pixel(x as i32, y as i32).unwrap();
+        let observed = wgl_rgba_to_aarrggbb(pixels[(height as usize - 1 - y) * stride + x]);
+        // These two probes stack the rounded fill over the opacity sharp fill,
+        // so two independently UNORM-quantized blends may each contribute 1.
+        let tolerance = if matches!((x, y), (18, 10) | (24, 14)) {
+            2
+        } else {
+            1
+        };
+        for shift in [24, 16, 8, 0] {
+            let expected_channel = ((expected >> shift) & 0xff) as i16;
+            let observed_channel = ((observed >> shift) & 0xff) as i16;
+            assert!(
+                (expected_channel - observed_channel).abs() <= tolerance,
+                "probe ({x},{y}), channel {shift}, tolerance {tolerance}: expected {expected:#010X}, got {observed:#010X}"
+            );
+        }
+    }
+
     engine.try_shutdown().expect("checked shutdown");
     window.close().expect("close native window");
 }

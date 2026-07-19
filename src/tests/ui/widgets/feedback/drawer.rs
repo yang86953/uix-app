@@ -62,6 +62,7 @@ fn closed_drawer_trigger_opens_on_matching_pointer_release() {
     tree.get_mut(id)
         .expect("drawer root")
         .set_frame(Rect::new(0.0, 0.0, 96.0, 32.0));
+    assert_eq!(tree.collect_focusable(), vec![id]);
 
     assert_eq!(
         tree.dispatch_event(&SystemEvent::PointerDown {
@@ -102,6 +103,10 @@ fn closed_drawer_trigger_opens_on_matching_pointer_release() {
         .downcast_ref::<Drawer>()
         .expect("drawer component")
         .is_present());
+    assert!(
+        tree.collect_focusable().is_empty(),
+        "an open Drawer owner must leave the Tab order reserved for its focus-trapped content"
+    );
 }
 
 #[test]

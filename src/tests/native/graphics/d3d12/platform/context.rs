@@ -3,7 +3,7 @@ use crate::native::graphics::d3d12::platform::context::D3d12Context;
 use crate::native::graphics::d3d12::platform::error::d3d12_hresult_code;
 use crate::native::graphics::d3d12::platform::transfer::copy_mapped_bgra_rows;
 use crate::native::graphics::platform::windows as win_surface;
-use crate::native::traits::present::GpuSolidRect;
+use crate::native::traits::present::{GpuGlyphBlit, GpuSolidRect, SoftFallbackTile};
 use crate::tests::common::*;
 use ::windows::Win32::Graphics::Dxgi::{
     CreateDXGIFactory2, IDXGIFactory4, DXGI_CREATE_FACTORY_FLAGS,
@@ -56,6 +56,134 @@ fn d3d12_rejects_null_hwnd() {
 }
 
 #[test]
+fn d3d12_warp_glyph_coverage_clip_overlap_and_cross_present_cache_match_cpu() {
+    let _warp_guard = d3d12_warp_test_guard();
+    let mut platform = crate::native::create_platform().expect("platform");
+    let window = platform
+        .window_manager()
+        .create_window("D3D12 glyph WARP", 40, 16)
+        .expect("window");
+    let mut context =
+        D3d12Context::new_with_driver(window.native_surface_ptr(), 40, 16, D3d12DriverKind::Warp)
+            .expect("D3D12 WARP context");
+    let width = context.width();
+    let height = context.height();
+    let base = Color::from_rgb(30, 60, 90);
+    let color = Color::from_rgba(220, 80, 40, 144);
+    let coverage: std::sync::Arc<[u8]> = vec![0, 1, 64, 127, 128, 192, 254, 255].into();
+    let glyph = |x| GpuGlyphBlit {
+        x: x as f32,
+        y: 3.0,
+        w: 8.0,
+        h: 1.0,
+        rgba: [
+            color.r as f32 / 255.0,
+            color.g as f32 / 255.0,
+            color.b as f32 / 255.0,
+            color.a as f32 / 255.0,
+        ],
+        coverage: std::sync::Arc::clone(&coverage),
+        cov_w: 8,
+        cov_h: 1,
+    };
+    let clear = |context: &mut D3d12Context| {
+        context
+            .clear_render_target(
+                base.r as f32 / 255.0,
+                base.g as f32 / 255.0,
+                base.b as f32 / 255.0,
+                1.0,
+            )
+            .expect("clear glyph target");
+    };
+    let assert_matches_cpu = |actual: &[u32], expected: &[u32], phase: &str| {
+        for (index, (actual, expected)) in actual.iter().zip(expected).enumerate() {
+            for shift in [0, 8, 16, 24] {
+                let actual = ((actual >> shift) & 0xff) as i16;
+                let expected = ((expected >> shift) & 0xff) as i16;
+                assert!(
+                    (actual - expected).abs() <= 1,
+                    "{phase} glyph pixel {index} channel {shift} differs: actual={actual} expected={expected}"
+                );
+            }
+        }
+    };
+
+    clear(&mut context);
+    context
+        .blit_soft_fallback_tile(&[0xFF11_22CC], SoftFallbackTile::at_destination(0, 0, 1, 1))
+        .expect("soft draw before glyph descriptor switch");
+    let scissor = Some((4, 3, 14, 1));
+    context
+        .draw_glyphs(width as f32, height as f32, scissor, &[glyph(2), glyph(7)])
+        .expect("overlapping glyph draw");
+    context
+        .blit_soft_fallback_tile(
+            &[0xFFCC_2211],
+            SoftFallbackTile::at_destination(width - 1, height - 1, 1, 1),
+        )
+        .expect("soft draw after glyph descriptor switch");
+    assert_eq!(context.glyph_atlas_extent(), Some((2048, 2048)));
+    assert_eq!(context.glyph_atlas_upload_count(), 1);
+    let actual = context
+        .read_pixels(0, 0, width, height)
+        .expect("first glyph readback");
+    let mut expected = vec![base.premultiplied(); (width * height) as usize];
+    expected[0] = 0xFF11_22CC;
+    expected[(width * height - 1) as usize] = 0xFFCC_2211;
+    for x in [2, 7] {
+        crate::draw::rasterizer::glyph::blit_glyph(
+            &mut expected,
+            width,
+            height,
+            Rect::new(4.0, 3.0, 14.0, 1.0),
+            1.0,
+            x,
+            3,
+            coverage.as_ref(),
+            8,
+            1,
+            color,
+        );
+    }
+    assert_matches_cpu(&actual, &expected, "first frame");
+    context
+        .present(&PresentFrame::Swapchain {
+            damage: PresentDamage::Full,
+        })
+        .expect("present between cached glyph draws");
+
+    clear(&mut context);
+    context
+        .draw_glyphs(width as f32, height as f32, None, &[glyph(12)])
+        .expect("cross-present cached glyph draw");
+    assert_eq!(
+        context.glyph_atlas_upload_count(),
+        1,
+        "the same retained coverage allocation must survive a real present without re-upload"
+    );
+    let actual = context
+        .read_pixels(0, 0, width, height)
+        .expect("second glyph readback");
+    let mut expected = vec![base.premultiplied(); (width * height) as usize];
+    crate::draw::rasterizer::glyph::blit_glyph(
+        &mut expected,
+        width,
+        height,
+        Rect::new(0.0, 0.0, width as f32, height as f32),
+        1.0,
+        12,
+        3,
+        coverage.as_ref(),
+        8,
+        1,
+        color,
+    );
+    assert_matches_cpu(&actual, &expected, "second frame");
+    context.try_shutdown().expect("shutdown");
+}
+
+#[test]
 fn d3d12_context_clear_readback_present_resize_and_shutdown_on_real_window() {
     let _warp_guard = d3d12_warp_test_guard();
     let mut platform = crate::native::create_platform().expect("platform");
@@ -90,6 +218,7 @@ fn d3d12_context_clear_readback_present_resize_and_shutdown_on_real_window() {
             clear_target: true,
             soft_blit: true,
             solid_rects: true,
+            glyphs: true,
             ..NativeRasterCaps::default()
         }
     );
@@ -338,6 +467,7 @@ fn d3d12_context_clear_readback_present_resize_and_shutdown_on_real_window() {
                     clear_target: true,
                     soft_blit: true,
                     solid_rects: true,
+                    glyphs: true,
                     ..NativeRasterCaps::default()
                 }
             );

@@ -244,6 +244,8 @@ pub enum SnapshotFields {
     },
     Notification {
         placement: Placement,
+        titles: Vec<String>,
+        descriptions: Vec<String>,
     },
     ProgressBar {
         progress: f32,
@@ -278,10 +280,12 @@ pub enum SnapshotFields {
         placement: PopoverPlacement,
         trigger: PopoverTrigger,
         arrow: bool,
+        visible: bool,
     },
     Popconfirm(SnapshotPopconfirm),
     Modal {
         title: String,
+        open: bool,
         width: f32,
         height: f32,
         modal_size: ControlSize,
@@ -812,6 +816,50 @@ impl SnapshotFields {
                     },
                 )
             }
+            Self::Notification {
+                titles,
+                descriptions,
+                ..
+            } if !titles.is_empty() || !descriptions.is_empty() => {
+                let name = titles
+                    .iter()
+                    .filter(|title| !title.is_empty())
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join("；");
+                let value_text = descriptions
+                    .iter()
+                    .filter(|description| !description.is_empty())
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join("；");
+                AccessibilitySnapshot::named(
+                    AccessibilityRole::Alert,
+                    if name.is_empty() {
+                        "Notification".to_owned()
+                    } else {
+                        name
+                    },
+                )
+                .with_state(AccessibilityState {
+                    value_text: (!value_text.is_empty()).then_some(value_text),
+                    ..AccessibilityState::default()
+                })
+            }
+            Self::Popover {
+                title,
+                content,
+                visible,
+                ..
+            } => AccessibilitySnapshot::named(
+                AccessibilityRole::Button,
+                first_non_empty([title, content, "Popover"]),
+            )
+            .with_state(AccessibilityState {
+                expanded: Some(*visible),
+                value_text: (!content.is_empty()).then_some(content.clone()),
+                ..AccessibilityState::default()
+            }),
             Self::Popconfirm(popconfirm) => popconfirm_accessibility(
                 &popconfirm.title,
                 &popconfirm.confirm_text,
@@ -819,8 +867,25 @@ impl SnapshotFields {
                 popconfirm.visible,
                 popconfirm.focused_action,
             ),
-            Self::Modal { title, .. } => {
-                AccessibilitySnapshot::named(AccessibilityRole::Dialog, title.clone())
+            Self::Modal { title, open, .. } => {
+                let role = if *open {
+                    AccessibilityRole::Dialog
+                } else {
+                    AccessibilityRole::Button
+                };
+                let name = if *open && title.is_empty() {
+                    "Modal".to_owned()
+                } else if *open {
+                    title.clone()
+                } else if title.is_empty() {
+                    "打开 Modal".to_owned()
+                } else {
+                    format!("打开 {title}")
+                };
+                AccessibilitySnapshot::named(role, name).with_state(AccessibilityState {
+                    expanded: Some(*open),
+                    ..AccessibilityState::default()
+                })
             }
             Self::Drawer { title, open, .. } => {
                 let role = if *open {
@@ -1095,9 +1160,14 @@ impl SnapshotFields {
                 extra_text,
                 ..
             } => result_accessibility(*result_type, title, subtitle, extra_text),
-            Self::Spin { tip, .. } => {
-                AccessibilitySnapshot::named(AccessibilityRole::Status, tip.clone())
-            }
+            Self::Spin { tip, spinning, .. } => AccessibilitySnapshot::named(
+                AccessibilityRole::Status,
+                if tip.is_empty() {
+                    if *spinning { "加载中" } else { "加载" }.to_string()
+                } else {
+                    tip.clone()
+                },
+            ),
             Self::ThemeToggle { dark } => theme_toggle_accessibility(*dark),
             Self::BackTop { visible, .. } => back_top_accessibility(*visible),
             _ => AccessibilitySnapshot::new(AccessibilityRole::Generic),

@@ -213,3 +213,16 @@ fn raw_handler_node_enters_and_leaves_tab_order_during_reconcile() {
     assert!(tree.collect_focusable().is_empty());
     assert_eq!(tree.managers().focus.focused_component(), Some(root));
 }
+
+#[test]
+fn explicit_zero_tab_index_overrides_component_default_across_reconcile() {
+    let mut tree = ViewAdapter::build(button("disabled tab stop").focusable(false));
+    let root = tree.root_id().expect("root");
+    assert!(tree.collect_focusable().is_empty());
+
+    ViewAdapter::reconcile(&mut tree, button("still disabled").focusable(false));
+    assert!(tree.collect_focusable().is_empty());
+
+    ViewAdapter::reconcile(&mut tree, button("component default restored"));
+    assert_eq!(tree.collect_focusable(), vec![root]);
+}

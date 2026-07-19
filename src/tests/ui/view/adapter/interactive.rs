@@ -584,6 +584,7 @@ fn reconcile_popover_preserves_visibility_and_syncs_config() {
             placement: PopoverPlacement::BottomRight,
             trigger: PopoverTrigger::Hover,
             arrow: false,
+            visible: true,
         } if title == "new title" && content == "new"
     ));
 
@@ -690,6 +691,7 @@ fn reconcile_modal_preserves_present_state_and_syncs_config() {
         modal.snapshot_fields(),
         SnapshotFields::Modal {
             title,
+            open: true,
             width: 640.0,
             height: 360.0,
             modal_size: ControlSize::Large,

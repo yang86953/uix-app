@@ -1,7 +1,42 @@
+use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::painting::PaintPass;
+use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::widgets::ProgressMode;
 use crate::ui::{AccessibilityRole, ProgressBar};
+
+fn render_progress(progress: &ProgressBar, frame: Rect, pass: PaintPass) -> String {
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(160, 80));
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+    let mut display_list = crate::draw::painting::DisplayList::new();
+    {
+        let mut ctx = PaintContext::new_for_test(
+            &mut canvas,
+            font,
+            &fonts,
+            &images,
+            &tokens,
+            96.0,
+            1.0,
+            Orientation::YDown,
+            160,
+            80,
+        );
+        ctx.set_paint_pass(pass);
+        ctx.with_recorder(&mut display_list, |ctx| {
+            WidgetRender::render(progress, frame, ctx, &tree);
+        });
+    }
+    format!("{display_list:?}")
+}
 
 #[test]
 fn progress_bar_advertises_animation_capability() {
@@ -103,4 +138,48 @@ fn indeterminate_accessibility_does_not_invent_a_numeric_value() {
         .is_some_and(|value| (value - 0.65).abs() < 1.0e-6));
     assert_eq!(accessibility.state.value_min, Some(0.0));
     assert_eq!(accessibility.state.value_max, Some(1.0));
+}
+
+#[test]
+fn determinate_line_uses_fractional_width_square_corners_and_one_paint_pass() {
+    let progress = ProgressBar::new().progress(0.45).round(false);
+    let display = render_progress(
+        &progress,
+        Rect::new(2.0, 3.0, 100.0, 10.0),
+        PaintPass::Content,
+    );
+
+    assert!(display.contains("PushClip { rect: Rect { x: 2.0, y: 3.0, w: 100.0, h: 10.0 } }"));
+    assert!(display.contains("w: 45.0, h: 10.0"), "{display}");
+    assert!(display.matches("radius: None").count() >= 2, "{display}");
+    assert_eq!(
+        render_progress(
+            &progress,
+            Rect::new(2.0, 3.0, 100.0, 10.0),
+            PaintPass::AfterChildren,
+        ),
+        "DisplayList { ops: [] }"
+    );
+}
+
+#[test]
+fn progress_normalizes_and_clips_actual_render_geometry() {
+    let invalid = render_progress(
+        &ProgressBar::new().indeterminate().circle(),
+        Rect::new(f32::INFINITY, f32::NEG_INFINITY, f32::NAN, -12.0),
+        PaintPass::Content,
+    );
+    assert_eq!(invalid, "DisplayList { ops: [] }");
+
+    let frame = Rect::new(8.0, 9.0, 12.0, 4.0);
+    let display = render_progress(
+        &ProgressBar::new().indeterminate(),
+        frame,
+        PaintPass::Content,
+    );
+    assert!(display.contains("PushClip { rect: Rect { x: 8.0, y: 9.0, w: 12.0, h: 4.0 } }"));
+    let dirty = WidgetAnimation::dirty_bounds(&ProgressBar::new().indeterminate(), frame);
+    assert!(dirty.x >= frame.x && dirty.y >= frame.y);
+    assert!(dirty.x + dirty.w <= frame.x + frame.w);
+    assert!(dirty.y + dirty.h <= frame.y + frame.h);
 }

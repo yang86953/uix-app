@@ -14,6 +14,7 @@ use crate::draw::pipeline::{EncodedFrameExecution, EncodedPictureExecution, Fram
 use crate::draw::primitives::types::ImageHandle;
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
 use crate::native::traits::present::PresentTestResult;
+use std::time::Instant;
 
 /// Recreates one initialized engine for a permitted recovery action.
 ///
@@ -223,6 +224,18 @@ impl GraphicsEngine for RecoveringGraphicsEngine {
     fn external_present_failed(&mut self, error: Error) {
         self.engine.external_present_failed(error.clone());
         self.record_failure(GraphicsFailure::from_error(error));
+    }
+
+    fn note_presented_at(&mut self, now: Instant) {
+        self.engine.note_presented_at(now);
+    }
+
+    fn idle_resource_deadline(&self) -> Option<Instant> {
+        self.engine.idle_resource_deadline()
+    }
+
+    fn release_idle_resources(&mut self, now: Instant) {
+        self.engine.release_idle_resources(now);
     }
 
     fn has_terminal_failure(&self) -> bool {

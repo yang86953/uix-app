@@ -283,11 +283,14 @@ impl FrameRenderer {
             self.overlay_backdrop = None;
             self.overlay_backdrop_blocked = true;
         }
-        let use_overlay_backdrop = has_overlay
+        let overlay_backdrop = (has_overlay
             && region.full_frame
             && !input.debug_mode
             && !normal_tree_dirty
-            && backdrop_extent_matches;
+            && backdrop_extent_matches)
+            .then(|| self.overlay_backdrop.clone())
+            .flatten();
+        let use_overlay_backdrop = overlay_backdrop.is_some();
 
         let layer_t0 = std::time::Instant::now();
         if self.last_tree_version != cur_version || !self.layer_tree.is_ready() {
@@ -328,12 +331,7 @@ impl FrameRenderer {
                 tree_version: cur_version,
             };
         }
-        if use_overlay_backdrop {
-            let image = self
-                .overlay_backdrop
-                .as_ref()
-                .expect("validated overlay backdrop")
-                .clone();
+        if let Some(image) = overlay_backdrop {
             if let Err(error) = self.recording_engine.record_main_image(image) {
                 return FrameRenderOutput {
                     outcome: RenderOutcome::Failed(

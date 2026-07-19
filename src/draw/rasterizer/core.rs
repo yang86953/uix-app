@@ -1,6 +1,7 @@
 //! Shared rasterizer helpers used by the software renderer and raster modules.
 
 use crate::core::Rect;
+use crate::draw::primitives::color::Color;
 use crate::draw::primitives::types::Radius;
 
 #[inline]
@@ -49,6 +50,37 @@ pub fn apply_opacity(color: u32, opacity: f32) -> u32 {
         | ((r as u32).min(255) << 16)
         | ((g as u32).min(255) << 8)
         | (b as u32).min(255)
+}
+
+/// Encodes the CPU fill path's premultiplied opacity result back into a
+/// straight-alpha color whose [`Color::premultiplied`] value is bit-exact.
+#[inline]
+pub fn color_with_premultiplied_opacity(color: Color, opacity: f32) -> Color {
+    if opacity >= 1.0 - 1e-6 {
+        return color;
+    }
+    let premultiplied = apply_opacity(color.premultiplied(), opacity);
+    let alpha = (premultiplied >> 24) & 0xff;
+    if alpha == 0 {
+        return Color::transparent();
+    }
+    let to_straight = |channel: u32| ((channel * 255 + alpha - 1) / alpha).min(255) as u8;
+    Color::from_rgba(
+        to_straight((premultiplied >> 16) & 0xff),
+        to_straight((premultiplied >> 8) & 0xff),
+        to_straight(premultiplied & 0xff),
+        alpha as u8,
+    )
+}
+
+/// Folds Canvas opacity into a glyph's straight alpha before premultiplication.
+///
+/// Glyph rasterization intentionally quantizes `color.a * opacity` first and
+/// only then applies premultiplication and coverage. Keeping that order avoids
+/// the one-bit drift produced by scaling an already-premultiplied color.
+#[inline]
+pub fn color_with_glyph_opacity(color: Color, opacity: f32) -> Color {
+    Color::from_rgba(color.r, color.g, color.b, (color.a as f32 * opacity) as u8)
 }
 
 #[inline]

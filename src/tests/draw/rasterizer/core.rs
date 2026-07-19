@@ -1,4 +1,60 @@
-use crate::draw::rasterizer::core::{fill_rect_raw, put_pixel, put_pixel_aa};
+use crate::draw::rasterizer::core::{
+    apply_opacity, color_with_glyph_opacity, color_with_premultiplied_opacity, fill_rect_raw,
+    put_pixel, put_pixel_aa,
+};
+use crate::draw::Color;
+
+#[test]
+fn straight_surrogate_round_trips_every_premultiplied_channel_after_opacity() {
+    for opacity in [
+        f32::NAN,
+        0.0,
+        1.0 / 255.0,
+        0.37,
+        0.5,
+        0.999_998,
+        0.999_999,
+        1.0,
+    ] {
+        for alpha in 0..=u8::MAX {
+            for channel in 0..=u8::MAX {
+                let color =
+                    Color::from_rgba(channel, u8::MAX - channel, channel.wrapping_mul(73), alpha);
+                let encoded = color_with_premultiplied_opacity(color, opacity);
+                assert_eq!(
+                    encoded.premultiplied(),
+                    apply_opacity(color.premultiplied(), opacity),
+                    "opacity={opacity:?}, alpha={alpha}, channel={channel}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn glyph_opacity_preserves_rgb_and_quantizes_alpha_before_coverage() {
+    for opacity in [
+        f32::NAN,
+        0.0,
+        1.0 / 255.0,
+        0.37,
+        0.5,
+        0.999_998,
+        0.999_999,
+        1.0,
+    ] {
+        for alpha in 0..=u8::MAX {
+            let color = Color::from_rgba(17, 83, 201, alpha);
+            let encoded = color_with_glyph_opacity(color, opacity);
+            assert_eq!((encoded.r, encoded.g, encoded.b), (17, 83, 201));
+            assert_eq!(
+                encoded.a,
+                (alpha as f32 * opacity) as u8,
+                "opacity={opacity:?}, alpha={alpha}"
+            );
+        }
+    }
+}
 
 #[test]
 fn pixel_writes_reject_negative_and_overflowing_indices() {

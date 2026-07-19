@@ -11,6 +11,7 @@ use crate::draw::pipeline::{
 };
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
 use crate::native::traits::present::{IGraphicsContext, PresentTestResult};
+use std::time::Instant;
 
 /// GPU 渲染引擎 — 委托 `RenderSession` + `RenderBackend`（GL / D3D11 / …）。
 pub struct GpuEngine {
@@ -76,6 +77,24 @@ impl GraphicsEngine for GpuEngine {
 
     fn test_present(&mut self) -> Result<PresentTestResult, Error> {
         self.session.backend_mut().test_present()
+    }
+
+    fn note_presented_at(&mut self, now: Instant) {
+        if let Some(backend) = self.session.native_gpu_backend_mut() {
+            backend.note_presented_at(now);
+        }
+    }
+
+    fn idle_resource_deadline(&self) -> Option<Instant> {
+        self.session
+            .native_gpu_backend()
+            .and_then(|backend| backend.idle_resource_deadline())
+    }
+
+    fn release_idle_resources(&mut self, now: Instant) {
+        if let Some(backend) = self.session.native_gpu_backend_mut() {
+            backend.release_idle_resources(now);
+        }
     }
 
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D {

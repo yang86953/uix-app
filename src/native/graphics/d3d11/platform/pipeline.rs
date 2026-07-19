@@ -10,7 +10,7 @@
 
 #![allow(nonstandard_style)]
 
-use std::{ffi::CStr, mem::size_of};
+use std::{collections::HashMap, ffi::CStr, mem::size_of, sync::Arc};
 
 use crate::core::{Errc, Error, Result};
 use crate::native::traits::present::{
@@ -84,25 +84,6 @@ VSOut VSMain(VSIn input)
     return o;
 }
 
-float corner_mask(float2 p, float r)
-{
-    return 1.0 - smoothstep(r - 1.0, r + 1.0, length(p));
-}
-
-float rounded_rect_mask(float2 local, float2 size, float4 radius)
-{
-    float m = 1.0;
-    if (radius.x > 0.0 && local.x < radius.x && local.y < radius.x)
-        m *= corner_mask(local - float2(radius.x, radius.x), radius.x);
-    if (radius.y > 0.0 && local.x > size.x - radius.y && local.y < radius.y)
-        m *= corner_mask(local - float2(size.x - radius.y, radius.y), radius.y);
-    if (radius.z > 0.0 && local.x > size.x - radius.z && local.y > size.y - radius.z)
-        m *= corner_mask(local - float2(size.x - radius.z, size.y - radius.z), radius.z);
-    if (radius.w > 0.0 && local.x < radius.w && local.y > size.y - radius.w)
-        m *= corner_mask(local - float2(radius.w, size.y - radius.w), radius.w);
-    return m;
-}
-
 // Port of CPU `rounded_rect_sdf` (center-relative, per-corner radius).
 float rounded_rect_sdf(float2 local, float2 size, float4 radius)
 {
@@ -133,12 +114,18 @@ float4 PSMain(VSOut input) : SV_Target
     }
     else
     {
-        mask = rounded_rect_mask(input.local, input.rect_size, u_radius);
+        // Same 1px linear AA coverage as CPU `sdf_to_coverage`.
+        mask = any(u_radius > 0.0)
+            ? saturate(0.5 - rounded_rect_sdf(input.local, input.rect_size, u_radius))
+            : 1.0;
     }
     if (mask <= 0.0)
         discard;
-    // Straight-alpha output for SRC_ALPHA blend (do not premul RGB by mask).
-    return float4(u_color.rgb, u_color.a * mask);
+    // Match CPU fill/stroke: quantize the 8-bit straight color, premultiply
+    // once, then apply analytic coverage before premultiplied SrcOver blend.
+    float4 color = floor(saturate(u_color) * 255.0 + 0.5);
+    float3 premul = floor(color.rgb * color.a / 255.0);
+    return float4(premul * mask, color.a * mask) / 255.0;
 }
 "#;
 
@@ -212,10 +199,15 @@ VSOut VSMain(VSIn input)
 
 float4 PSMain(VSOut input) : SV_Target
 {
-    float a = u_atlas.Sample(u_samp, input.uv);
-    // Coverage modulates alpha only — RGB stays straight for SRC_ALPHA blend.
-    // Premul (`color * a`) washed glyphs out to near-invisible gray.
-    return float4(input.color.rgb, input.color.a * a);
+    // Match the CPU glyph path's two integer truncation steps before the
+    // premultiplied SrcOver blend. Keeping this quantization in the shader
+    // avoids the 2-channel drift caused by a straight-alpha hardware multiply.
+    float coverage = floor(saturate(u_atlas.Sample(u_samp, input.uv)) * 255.0 + 0.5);
+    float4 color = floor(saturate(input.color) * 255.0 + 0.5);
+    float alpha = floor(color.a * coverage / 255.0);
+    float3 premul = floor(color.rgb * color.a / 255.0);
+    float3 rgb = floor(premul * coverage / 255.0);
+    return float4(rgb, alpha) / 255.0;
 }
 "#;
 
@@ -495,6 +487,32 @@ struct AtlasCursor {
     row_h: u32,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct GlyphAtlasKey {
+    allocation: usize,
+    len: usize,
+    width: u32,
+    height: u32,
+}
+
+impl GlyphAtlasKey {
+    fn new(coverage: &Arc<[u8]>, width: u32, height: u32) -> Self {
+        Self {
+            allocation: Arc::as_ptr(coverage) as *const u8 as usize,
+            len: coverage.len(),
+            width,
+            height,
+        }
+    }
+}
+
+struct GlyphAtlasEntry {
+    /// Retaining the allocation prevents an evicted font-cache buffer from
+    /// being freed and reusing the pointer while this atlas entry is live.
+    _coverage: Arc<[u8]>,
+    uv: (f32, f32, f32, f32),
+}
+
 struct RasterState {
     viewports: Vec<D3D11_VIEWPORT>,
     scissors: Vec<RECT>,
@@ -725,6 +743,12 @@ pub struct D3d11Pipeline {
     atlas_w: u32,
     atlas_h: u32,
     atlas_cursor: AtlasCursor,
+    /// Cross-call/cross-frame entries for the live atlas texture. Coverage is
+    /// shared, not copied, and total retained exact glyph bytes are bounded by
+    /// the atlas packing capacity.
+    atlas_cache: HashMap<GlyphAtlasKey, GlyphAtlasEntry>,
+    #[cfg(test)]
+    atlas_upload_count: usize,
     /// Scratch for packing coverage into atlas rows (R8).
     atlas_upload: Vec<u8>,
     /// Scratch glyph vertices for Map/Draw.
@@ -1281,6 +1305,9 @@ impl D3d11Pipeline {
                 y: 0,
                 row_h: 0,
             },
+            atlas_cache: HashMap::new(),
+            #[cfg(test)]
+            atlas_upload_count: 0,
             atlas_upload: Vec::new(),
             glyph_verts: Vec::new(),
         })
@@ -1405,20 +1432,17 @@ impl D3d11Pipeline {
         self.atlas_srv = Some(srv);
         self.atlas_w = w;
         self.atlas_h = h;
-        self.atlas_cursor = AtlasCursor {
-            x: 0,
-            y: 0,
-            row_h: 0,
-        };
+        self.reset_atlas();
         Ok(())
     }
 
-    fn reset_atlas_cursor(&mut self) {
+    fn reset_atlas(&mut self) {
         self.atlas_cursor = AtlasCursor {
             x: 0,
             y: 0,
             row_h: 0,
         };
+        self.atlas_cache.clear();
     }
 
     fn ensure_glyph_vb(&mut self, device: &ID3D11Device, glyph_count: usize) -> Result<()> {
@@ -1512,6 +1536,10 @@ impl D3d11Pipeline {
                 gw,
                 0,
             );
+        }
+        #[cfg(test)]
+        {
+            self.atlas_upload_count = self.atlas_upload_count.saturating_add(1);
         }
 
         self.atlas_cursor.x = ax + gw + 1;
@@ -1662,7 +1690,7 @@ impl D3d11Pipeline {
             context.PSSetShaderResources(0, Some(&[Some(srv.clone())]));
             context.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
             context.RSSetState(&self.rasterizer);
-            context.OMSetBlendState(&self.blend_alpha, None, 0xffff_ffff);
+            context.OMSetBlendState(&self.blend_premultiplied, None, 0xffff_ffff);
             context.RSSetScissorRects(Some(&[rect]));
             context.Draw(self.glyph_verts.len() as u32, 0);
             context.PSSetShaderResources(0, Some(&[None]));
@@ -1684,7 +1712,6 @@ impl D3d11Pipeline {
             return Ok(());
         }
         self.glyph_verts.clear();
-        self.reset_atlas_cursor();
 
         for g in glyphs {
             if g.w <= 0.0 || g.h <= 0.0 || g.cov_w == 0 || g.cov_h == 0 {
@@ -1697,6 +1724,31 @@ impl D3d11Pipeline {
                     Errc::InvalidArgument,
                     format!("D3d11Pipeline: glyph {gw}x{gh} exceeds atlas max {ATLAS_MAX}"),
                 ));
+            }
+
+            // Only exact payloads enter the persistent cache. This keeps the
+            // retained CPU allocation bounded by packed atlas area even for
+            // arbitrary Canvas callers that append unused coverage bytes.
+            let cache_key = (g.coverage.len() == (gw as usize).saturating_mul(gh as usize))
+                .then(|| GlyphAtlasKey::new(&g.coverage, g.cov_w, g.cov_h));
+            if let Some(uv) = cache_key
+                .as_ref()
+                .and_then(|key| self.atlas_cache.get(key))
+                .map(|entry| entry.uv)
+            {
+                Self::push_glyph_quad(
+                    &mut self.glyph_verts,
+                    g.x,
+                    g.y,
+                    g.w,
+                    g.h,
+                    uv.0,
+                    uv.1,
+                    uv.2,
+                    uv.3,
+                    g.rgba,
+                );
+                continue;
             }
 
             if self.atlas_tex.is_none() {
@@ -1719,7 +1771,7 @@ impl D3d11Pipeline {
                 if grow_h > self.atlas_h || grow_w > self.atlas_w {
                     self.ensure_atlas(device, grow_w, grow_h)?;
                 }
-                self.reset_atlas_cursor();
+                self.reset_atlas();
                 if !self.atlas_can_fit(gw, gh) {
                     return Err(Error::new(
                         Errc::PlatformError,
@@ -1729,6 +1781,15 @@ impl D3d11Pipeline {
             }
 
             let uv = self.pack_glyph_unchecked(context, &g.coverage, g.cov_w, g.cov_h)?;
+            if let Some(cache_key) = cache_key {
+                self.atlas_cache.insert(
+                    cache_key,
+                    GlyphAtlasEntry {
+                        _coverage: Arc::clone(&g.coverage),
+                        uv,
+                    },
+                );
+            }
             Self::push_glyph_quad(
                 &mut self.glyph_verts,
                 g.x,
@@ -1743,6 +1804,11 @@ impl D3d11Pipeline {
             );
         }
         self.flush_glyph_batch(device, context, viewport_w, viewport_h, scissor)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn glyph_atlas_upload_count(&self) -> usize {
+        self.atlas_upload_count
     }
 
     fn bind_rect_pipeline(
@@ -1773,7 +1839,7 @@ impl D3d11Pipeline {
             if replace_blend {
                 context.OMSetBlendState(&self.blend_replace, None, 0xffff_ffff);
             } else {
-                context.OMSetBlendState(&self.blend_alpha, None, 0xffff_ffff);
+                context.OMSetBlendState(&self.blend_premultiplied, None, 0xffff_ffff);
             }
             let (sx, sy, sw, sh) =
                 scissor.unwrap_or((0, 0, viewport_w.ceil() as i32, viewport_h.ceil() as i32));

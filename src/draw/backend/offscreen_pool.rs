@@ -1,4 +1,4 @@
-//! CPU 像素离屏池 — 仅供 CPU / PresentUpload 栅格路径的 Picture 缓存。
+//! CPU 像素离屏池 — 供 CPU / PresentUpload 与 API-neutral recorder 的 Picture 缓存。
 //!
 //! GPU 后端使用各自的 RT/FBO，不得挂接本池。
 

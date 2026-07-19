@@ -1,9 +1,62 @@
+use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::spatial::Orientation;
 use crate::native::notification::NotificationService;
 use crate::native::notification::ToastEntry;
 use crate::tests::common::*;
 use crate::ui::traits::{EventHandler, WidgetAnimation};
 use crate::ui::widgets::feedback::notification::*;
-use crate::ui::{AnimationConfig, EventResult, Placement, SystemEvent};
+use crate::ui::{AccessibilityRole, AnimationConfig, EventResult, Placement, SystemEvent};
+
+fn render_notification(
+    notification: &Notification,
+    frame: Rect,
+    surface_size: (i32, i32),
+) -> String {
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(surface_size.0, surface_size.1));
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+    let mut display_list = crate::draw::painting::DisplayList::new();
+    {
+        let mut ctx = PaintContext::new_for_test(
+            &mut canvas,
+            font,
+            &fonts,
+            &images,
+            &tokens,
+            96.0,
+            1.0,
+            Orientation::YDown,
+            surface_size.0,
+            surface_size.1,
+        );
+        ctx.with_recorder(&mut display_list, |ctx| {
+            WidgetRender::render(notification, frame, ctx, &tree);
+        });
+    }
+    format!("{display_list:?}")
+}
+
+fn pointer(kind: &str, pos: Point) -> SystemEvent {
+    match kind {
+        "down" => SystemEvent::PointerDown {
+            pos,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        },
+        "up" => SystemEvent::PointerUp {
+            pos,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        },
+        _ => unreachable!("unsupported pointer kind"),
+    }
+}
 
 #[test]
 fn measure_preserves_notification_zero_layout_footprint() {
@@ -206,6 +259,152 @@ fn handle_dismisses_persistent_notification_after_leave() {
     assert!(handle.is_empty());
     assert!(WidgetAnimation::update_animation(&mut notification, 0.1));
     assert!(!WidgetAnimation::update_animation(&mut notification, 0.1));
+}
+
+#[test]
+fn close_hit_requires_matching_release_before_starting_leave() {
+    let mut notification = Notification::new().leave_animation(AnimationConfig::fade_out(0.2));
+    let id = notification.add(NotificationItem {
+        type_: StatusLevel::Info,
+        title: "Persistent".into(),
+        description: "manual close".into(),
+        duration_ms: 0,
+        closable: true,
+    });
+    assert!(!WidgetAnimation::update_animation(&mut notification, 0.2));
+    let frame = Rect::new(100.0, 50.0, 520.0, 180.0);
+    let bounds = notification
+        .hit_bounds(frame)
+        .expect("visible notification");
+    let close = Point::new(
+        bounds.x + bounds.w - 8.0 - frame.x,
+        bounds.y + bounds.h * 0.5 - frame.y,
+    );
+
+    assert_eq!(
+        notification.on_event(&pointer("down", close)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        notification.items().len(),
+        1,
+        "PointerDown must not dismiss"
+    );
+    assert_eq!(
+        notification.on_event(&pointer(
+            "up",
+            Point::new(bounds.x + 20.0 - frame.x, bounds.y + 20.0 - frame.y),
+        )),
+        EventResult::Handled
+    );
+    assert_eq!(notification.items().len(), 1, "release outside must cancel");
+
+    assert_eq!(
+        notification.on_event(&pointer("down", close)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        notification.on_event(&SystemEvent::PointerLeave),
+        EventResult::Handled
+    );
+    assert_eq!(
+        notification.on_event(&pointer("up", close)),
+        EventResult::NotHandled
+    );
+    assert_eq!(notification.items().len(), 1, "PointerLeave must cancel");
+
+    assert_eq!(
+        notification.on_event(&pointer("down", close)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        notification.on_event(&SystemEvent::FocusOut),
+        EventResult::Handled
+    );
+    assert_eq!(
+        notification.on_event(&pointer("up", close)),
+        EventResult::NotHandled
+    );
+    assert_eq!(notification.items().len(), 1, "FocusOut must cancel");
+
+    assert_eq!(
+        notification.on_event(&pointer("down", close)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        notification.on_event(&pointer("up", close)),
+        EventResult::Handled
+    );
+    assert!(
+        !notification.dismiss(id),
+        "matching release removes the queue item once"
+    );
+    assert!(notification.hit_bounds(frame).is_some());
+    assert!(!WidgetAnimation::update_animation(&mut notification, 0.2));
+    assert!(notification.hit_bounds(frame).is_none());
+}
+
+#[test]
+fn constrained_notification_stack_elides_and_keeps_visible_bounds_inside_surface() {
+    let mut notification = Notification::new();
+    for (title, description) in [
+        ("hidden oldest", "hidden body"),
+        ("second hidden", "hidden body"),
+        (
+            "超长中英文 mixed Notification title 必须在关闭按钮前省略",
+            "超长说明 description 也必须在卡片边界内省略",
+        ),
+        ("latest", ""),
+    ] {
+        notification.add(NotificationItem {
+            type_: StatusLevel::Info,
+            title: title.to_owned(),
+            description: description.to_owned(),
+            duration_ms: 0,
+            closable: true,
+        });
+    }
+    assert!(!WidgetAnimation::update_animation(&mut notification, 1.0));
+    let frame = Rect::new(0.0, 0.0, 132.0, 132.0);
+    let commands = render_notification(&notification, frame, (132, 132));
+    let bounds = notification
+        .hit_bounds(frame)
+        .expect("visible constrained notifications");
+
+    assert!(frame.contains(Point::new(bounds.x, bounds.y)));
+    assert!(frame.contains(Point::new(bounds.x + bounds.w, bounds.y + bounds.h)));
+    assert_eq!(bounds.h, 126.0, "only the latest two notifications fit");
+    assert!(commands.contains("PushClip { rect: Rect { x: 0.0, y: 0.0, w: 132.0, h: 132.0 } }"));
+    assert!(
+        commands.contains('…'),
+        "visible text must elide: {commands}"
+    );
+    assert!(!commands.contains("hidden oldest"));
+    assert!(!commands.contains("second hidden"));
+    assert!(!commands.contains("w: -") && !commands.contains("h: -"));
+    assert_eq!(
+        Notification::new().hit_bounds(Rect::new(f32::NAN, 0.0, -10.0, f32::INFINITY)),
+        None
+    );
+}
+
+#[test]
+fn notification_snapshot_exposes_alert_content_only_while_queue_is_nonempty() {
+    let notification = Notification::new();
+    assert_eq!(
+        notification.snapshot_fields().accessibility().role,
+        AccessibilityRole::Generic
+    );
+
+    notification.info("正在保存", "请稍候");
+    notification.error("保存失败", "磁盘只读");
+    let accessibility = notification.snapshot_fields().accessibility();
+    assert_eq!(accessibility.role, AccessibilityRole::Alert);
+    assert_eq!(accessibility.name.as_deref(), Some("正在保存；保存失败"));
+    assert_eq!(
+        accessibility.state.value_text.as_deref(),
+        Some("请稍候；磁盘只读")
+    );
 }
 
 #[test]

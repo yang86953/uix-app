@@ -4,16 +4,16 @@ use crate::core::{Errc, Error, Point, Rect};
 
 use super::layer_tree::{LayerNode, LayerTree};
 use crate::core::DirtyRegion;
-use crate::draw::backend::cpu::CpuDrawSurface;
 use crate::draw::compositor::viewport_transform::needs_paint;
 use crate::draw::compositor::ScenePaint;
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
 use crate::draw::painting::{DisplayList, PaintContext, PaintSurfaceConfig, ThemeTokens};
-use crate::draw::pipeline::{FrameEncoder, FrameEncoderError, FrameImage, FrameRect, NodeId};
+use crate::draw::pipeline::frame_recording::FrameRecordingEngine;
+use crate::draw::pipeline::{FrameEncoder, NodeId};
 use crate::draw::primitives::types::ImageHandle;
 use crate::draw::spatial::Orientation;
-use crate::draw::traits::{Canvas2D, GraphicsEngine};
+use crate::draw::traits::GraphicsEngine;
 use crate::draw::FontHandle;
 
 /// 离屏创建连续失败上限（超过后放弃离屏、改走直绘；仅 WARN 一次）。
@@ -105,35 +105,34 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
     };
     let mut fresh_list_complete = true;
 
-    // A cached Picture always becomes one complete, API-neutral FrameEncoder
-    // before it reaches a backend. The CPU raster pass preserves every
-    // DisplayList operation as premultiplied pixels; native backends consume
-    // that ordered image instead of silently selecting a separate replay path.
-    let encoded_cached_picture = if fresh_list.is_none() {
-        if let Some(cached) = display_list.as_ref() {
-            match encode_cached_picture(
-                cached,
-                w,
-                h,
-                Point::new(bounds.x, bounds.y),
-                env.font,
-                env.font_service,
-                env.image_service,
-            ) {
-                Ok(encoder) => matches!(
-                    engine.try_execute_encoded_picture(&handle, &encoder)?,
-                    crate::draw::pipeline::EncodedPictureExecution::Executed
-                ),
-                Err(_) => false,
+    let raster_result = (|| -> Result<(), Error> {
+        // Cached and fresh paints use the same recorder. Keep cached execution
+        // inside the checked paint lifetime so every error still reaches the
+        // end/abort boundary below and cannot publish a partial Picture.
+        let encoded_cached_picture = if fresh_list.is_none() {
+            if let Some(cached) = display_list.as_ref() {
+                match encode_cached_picture(
+                    cached,
+                    w,
+                    h,
+                    Point::new(bounds.x, bounds.y),
+                    env.font,
+                    env.font_service,
+                    env.image_service,
+                ) {
+                    Ok(encoder) => matches!(
+                        engine.try_execute_encoded_picture(&handle, &encoder)?,
+                        crate::draw::pipeline::EncodedPictureExecution::Executed
+                    ),
+                    Err(_) => false,
+                }
+            } else {
+                false
             }
         } else {
             false
-        }
-    } else {
-        false
-    };
+        };
 
-    let raster_result = (|| -> Result<(), Error> {
         let Some(off_canvas) = engine.offscreen_canvas(&handle) else {
             return Err(Error::new(
                 Errc::InvalidState,
@@ -219,17 +218,23 @@ pub(crate) fn ensure_offscreen(
                 return Ok(true);
             }
         }
-        engine.try_destroy_offscreen(hdl)?;
-        *handle = None;
+        let Some(replacement) = engine.create_offscreen(w, h) else {
+            return Ok(false);
+        };
+        if let Err(error) = engine.try_destroy_offscreen(hdl) {
+            let _ = engine.try_destroy_offscreen(replacement);
+            return Err(error);
+        }
+        *handle = Some(replacement);
+        return Ok(true);
     }
     *handle = engine.create_offscreen(w, h);
     Ok(handle.is_some())
 }
 
-/// Turns a complete cached DisplayList into the only actual Picture submission
-/// format. The temporary CPU surface is deliberately private: it is a
-/// reference raster step, while CPU and native backends both receive the same
-/// `FrameEncoder` and retain one ordered write into the bound Picture target.
+/// Turns a complete cached DisplayList into the same API-neutral command stream
+/// used by a fresh Picture paint. Eligible glyph/solid operations retain their
+/// shared IR; unsupported states become bounded CPU segments inside the stream.
 pub(crate) fn encode_cached_picture(
     list: &DisplayList,
     width: i32,
@@ -238,11 +243,12 @@ pub(crate) fn encode_cached_picture(
     font: FontHandle,
     font_service: &FontService,
     image_service: &ImageService,
-) -> Result<FrameEncoder, FrameEncoderError> {
-    let mut encoder = FrameEncoder::new(width, height)?;
-    let mut source = CpuDrawSurface::new(width, height);
+) -> Result<FrameEncoder, Error> {
+    let mut recorder = FrameRecordingEngine::new();
+    recorder.initialize(width, height)?;
+    recorder.begin_recording(true)?;
     {
-        let canvas = source.canvas_mut();
+        let canvas = recorder.canvas_2d();
         canvas.translate(-origin.x, -origin.y);
         list.replay_canvas(
             canvas,
@@ -252,12 +258,7 @@ pub(crate) fn encode_cached_picture(
             width as f32,
         );
     }
-
-    let image = FrameImage::new(width, height, source.surface().pixels().to_vec())?;
-    let full = FrameRect::new(0, 0, width, height);
-    encoder.clear(crate::draw::Color::transparent());
-    encoder.blit_picture(image, full, full);
-    Ok(encoder)
+    recorder.finish_recording()
 }
 
 fn prepare_nested_pictures<S: ScenePaint>(

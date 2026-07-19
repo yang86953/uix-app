@@ -446,12 +446,7 @@ impl ViewAdapter {
         if style.visible {
             tree.set_node_visibility(id, true);
         }
-        let resolved_tab_index = tab_index.unwrap_or_else(|| {
-            tree.get(id)
-                .map(|current| current.component().tab_index())
-                .unwrap_or(0)
-        });
-        tree.set_tab_index(id, resolved_tab_index);
+        tree.set_tab_index_override(id, tab_index);
         tree.set_focus_handle(id, focus_handle);
         if let Some(current) = tree.get_mut(id) {
             current.set_accessibility_override(accessibility_override);

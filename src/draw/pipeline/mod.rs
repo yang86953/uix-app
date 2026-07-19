@@ -13,8 +13,8 @@ pub use animation_registry::AnimationRegistry;
 pub use frame::{begin_frame, end_frame, normalize_strategy};
 pub use frame_encoder::{
     EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameEncoder, FrameEncoderError,
-    FrameImage, FramePresenter, FrameRadius, FrameRasterOp, FrameRect, PresentOutcome,
-    ReferenceFrame,
+    FrameGlyphBlit, FrameImage, FramePresenter, FrameRadius, FrameRasterOp, FrameRect,
+    PresentOutcome, ReferenceFrame,
 };
 pub use invalidation::{
     invalidate_paint_handle, Invalidation, InvalidationQueue, InvalidationQueueHandle, NodeId,

@@ -30,6 +30,13 @@ impl ModalContext {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ModalPointerTarget {
+    Trigger,
+    Close,
+    Mask,
+}
+
 component! {
     /// Modal dialog.
     pub struct Modal {
@@ -52,15 +59,33 @@ component! {
         closing: bool,
         pub(crate) transition_dirty: bool,
         layout_requested: Cell<bool>,
+        last_frame: Cell<Rect>,
+        last_trigger_rect: Cell<Rect>,
+        last_dialog_rect: Cell<Rect>,
+        close_hovered: Cell<bool>,
+        pressed_target: Cell<Option<ModalPointerTarget>>,
+        activation_key: Cell<Option<crate::ui::KeyCode>>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
     }
 
+    tab_index => (&self) -> i32 { i32::from(!self.is_present()) }
+
     hit_test_frame => (&self, actual_frame: Rect) -> Rect {
+        self.last_frame.set(Self::normalize_frame(actual_frame));
         if self.overlay && self.is_present() {
             Rect::new(0.0, 0.0, self.last_win_w.get(), self.last_win_h.get())
+        } else if !self.is_present() {
+            let trigger = Self::trigger_rect_for_size(actual_frame.w, actual_frame.h);
+            self.last_trigger_rect.set(trigger);
+            Rect::new(
+                actual_frame.x + trigger.x,
+                actual_frame.y + trigger.y,
+                trigger.w,
+                trigger.h,
+            )
         } else {
             actual_frame
         }
@@ -68,19 +93,58 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if !self.is_present() {
-            // Gallery / demo: closed Modal still exposes a clickable trigger.
-            if let SystemEvent::PointerDown {
-                pos,
-                button: MouseButton::Left,
-                ..
-            } = event
-            {
-                if pos.x >= 0.0 && pos.x <= 96.0 && pos.y >= 0.0 && pos.y <= 32.0 {
-                    self.open();
-                    return EventResult::Handled;
+            let trigger = self.trigger_rect_local();
+            return match event {
+                SystemEvent::PointerDown {
+                    pos,
+                    button: MouseButton::Left,
+                    ..
+                } if trigger.contains(*pos) => {
+                    self.close_hovered.set(true);
+                    self.pressed_target.set(Some(ModalPointerTarget::Trigger));
+                    EventResult::Handled
                 }
-            }
-            return EventResult::NotHandled;
+                SystemEvent::PointerUp {
+                    pos,
+                    button: MouseButton::Left,
+                    ..
+                } if self.pressed_target.replace(None) == Some(ModalPointerTarget::Trigger) => {
+                    let released_inside = trigger.contains(*pos);
+                    self.close_hovered.set(released_inside);
+                    if released_inside {
+                        self.open();
+                    }
+                    EventResult::Handled
+                }
+                SystemEvent::PointerMove { pos, .. } => {
+                    let hovered = trigger.contains(*pos);
+                    if self.close_hovered.replace(hovered) != hovered {
+                        EventResult::Handled
+                    } else {
+                        EventResult::NotHandled
+                    }
+                }
+                SystemEvent::PointerLeave | SystemEvent::FocusOut => {
+                    self.cancel_interaction();
+                    EventResult::Handled
+                }
+                SystemEvent::KeyDown {
+                    key: key @ (crate::ui::KeyCode::Enter | crate::ui::KeyCode::Space),
+                    ..
+                } => {
+                    self.activation_key.set(Some(*key));
+                    EventResult::Handled
+                }
+                SystemEvent::KeyUp {
+                    key: key @ (crate::ui::KeyCode::Enter | crate::ui::KeyCode::Space),
+                    ..
+                } if self.activation_key.replace(None) == Some(*key) => {
+                    self.open();
+                    EventResult::Handled
+                }
+                SystemEvent::FocusIn => EventResult::Handled,
+                _ => EventResult::NotHandled,
+            };
         }
 
         match event {
@@ -89,17 +153,39 @@ component! {
                 button: MouseButton::Left,
                 ..
             } => {
-                let dlg_rect = self.dialog_rect_for_event();
-                let close_rect = Rect::new(dlg_rect.x + dlg_rect.w - 48.0, dlg_rect.y, 48.0, 48.0);
-
-                if self.closable && close_rect.contains(*pos) {
-                    self.close();
+                let target = self.pointer_target_at(*pos);
+                self.close_hovered
+                    .set(target == Some(ModalPointerTarget::Close));
+                self.pressed_target.set(target);
+                if target.is_some() {
                     return EventResult::Handled;
                 }
-                if self.mask_closable && !dlg_rect.contains(*pos) {
+                EventResult::Handled
+            }
+            SystemEvent::PointerUp {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
+                let armed = self.pressed_target.replace(None);
+                let target = self.pointer_target_at(*pos);
+                self.close_hovered
+                    .set(target == Some(ModalPointerTarget::Close));
+                if armed.is_some() && armed == target {
                     self.close();
-                    return EventResult::Handled;
                 }
+                EventResult::Handled
+            }
+            SystemEvent::PointerMove { pos, .. } => {
+                let hovered = self.pointer_target_at(*pos) == Some(ModalPointerTarget::Close);
+                if self.close_hovered.replace(hovered) != hovered {
+                    EventResult::Handled
+                } else {
+                    EventResult::Handled
+                }
+            }
+            SystemEvent::PointerLeave | SystemEvent::FocusOut => {
+                self.cancel_interaction();
                 EventResult::Handled
             }
             SystemEvent::KeyDown { key, .. } => {
@@ -114,11 +200,33 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        let frame = Self::normalize_frame(frame);
+        self.last_frame.set(frame);
         if !self.is_present() {
-            let primary = ctx.tokens().color_primary();
-            let trigger = Rect::new(frame.x, frame.y, 96.0, 32.0);
+            let local_trigger = Self::trigger_rect_for_size(frame.w, frame.h);
+            self.last_trigger_rect.set(local_trigger);
+            let primary = if self.pressed_target.get() == Some(ModalPointerTarget::Trigger)
+                || self.activation_key.get().is_some()
+            {
+                ctx.tokens().color_primary_active()
+            } else if self.close_hovered.get() {
+                ctx.tokens().color_primary_hover()
+            } else {
+                ctx.tokens().color_primary()
+            };
+            let trigger = Rect::new(
+                frame.x + local_trigger.x,
+                frame.y + local_trigger.y,
+                local_trigger.w,
+                local_trigger.h,
+            );
+            if trigger.w <= 0.0 || trigger.h <= 0.0 {
+                return;
+            }
+            ctx.push_clip(trigger);
             ctx.fill_rect(trigger, primary, Some(Radius::uniform(ctx.tokens().border_radius())));
             ctx.text_center("打开 Modal", trigger, Color::white(), 13.0);
+            ctx.pop_clip();
             return;
         }
 
@@ -127,58 +235,97 @@ component! {
         let border_secondary = ctx.tokens().color_border_secondary();
         let text_color = ctx.tokens().color_text();
         let text_secondary = ctx.tokens().color_text_secondary();
-        let surface_w = ctx.canvas_2d().width() as f32;
-        let surface_h = ctx.canvas_2d().height() as f32;
-
+        let surface = Rect::new(
+            0.0,
+            0.0,
+            ctx.canvas_2d().width() as f32,
+            ctx.canvas_2d().height() as f32,
+        );
         let dialog = if self.overlay {
-            self.last_win_w.set(surface_w);
-            self.last_win_h.set(surface_h);
-            Rect::new(
-                (surface_w - self.width) * 0.5,
-                (surface_h - self.height) * 0.5,
-                self.width,
-                self.height,
-            )
-        } else if self.centered {
-            Rect::new(
-                frame.x + (frame.w - self.width) * 0.5,
-                frame.y + (frame.h - self.height) * 0.5,
-                self.width,
-                self.height,
-            )
+            self.last_win_w.set(surface.w);
+            self.last_win_h.set(surface.h);
+            self.dialog_rect_for_surface(surface)
         } else {
-            Rect::new(frame.x, frame.y, self.width, self.height)
+            self.dialog_rect_for_surface(frame)
         };
         let dialog = self.apply_transition_to_dialog(dialog);
+        self.last_dialog_rect.set(dialog);
         let overlay_alpha = (128.0 * self.transition_opacity()).round().clamp(0.0, 128.0) as u8;
 
         ctx.fill_rect(
-            Rect::new(0.0, 0.0, surface_w, surface_h),
+            surface,
             Color::from_rgba(0, 0, 0, overlay_alpha),
             None,
         );
 
+        if dialog.w <= 0.0 || dialog.h <= 0.0 {
+            return;
+        }
+        ctx.push_clip(dialog);
         let radius = Some(Radius::uniform(border_radius_lg));
         ctx.fill_rect(dialog, bg_container, radius);
         ctx.stroke_rect(dialog, border_secondary, 1.0, radius);
 
-        let title_h = 56.0;
-        let footer_h = if self.footer_visible { 56.0 } else { 0.0 };
-        let title_rect = Rect::new(dialog.x, dialog.y, dialog.w, title_h);
-        let ty = ctx.visual_center_y(title_rect, 16.0);
-        ctx.draw_text(&self.title, Point::new(dialog.x + 24.0, ty), text_color, 16.0);
-        ctx.fill_rect(Rect::new(dialog.x, dialog.y + title_h, dialog.w, 1.0), border_secondary, None);
+        let title_h = dialog.h.min(56.0);
+        let footer_h = if self.footer_visible {
+            (dialog.h - title_h).clamp(0.0, 56.0)
+        } else {
+            0.0
+        };
+        let close_w = if self.closable { dialog.w.min(48.0) } else { 0.0 };
+        let title_x = dialog.x + 24.0_f32.min(dialog.w);
+        let title_content = Rect::new(
+            title_x,
+            dialog.y,
+            (dialog.x + dialog.w - close_w - title_x).max(0.0),
+            title_h,
+        );
+        Self::paint_elided_text(ctx, &self.title, title_content, text_color, 16.0);
+        if title_h < dialog.h {
+            ctx.fill_rect(
+                Rect::new(dialog.x, dialog.y + title_h, dialog.w, 1.0),
+                border_secondary,
+                None,
+            );
+        }
 
         if self.closable {
-            ctx.draw_text("x", Point::new(dialog.x + dialog.w - 36.0, ty), text_secondary, 16.0);
+            let close_rect = Rect::new(
+                dialog.x + dialog.w - close_w,
+                dialog.y,
+                close_w,
+                title_h,
+            );
+            let close_button = Self::inset_rect(close_rect, 8.0);
+            if self.pressed_target.get() == Some(ModalPointerTarget::Close) {
+                ctx.fill_rect(
+                    close_button,
+                    ctx.tokens().color_fill_secondary(),
+                    Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                );
+            } else if self.close_hovered.get() {
+                ctx.fill_rect(
+                    close_button,
+                    ctx.tokens().color_fill_tertiary(),
+                    Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                );
+            }
+            crate::ui::widgets::icon::paint_icon_in_frame(
+                ctx,
+                "x",
+                close_button,
+                text_secondary,
+                16.0,
+            );
         }
-        if self.footer_visible {
+        if footer_h > 0.0 {
             ctx.fill_rect(
                 Rect::new(dialog.x, dialog.y + dialog.h - footer_h, dialog.w, 1.0),
                 border_secondary,
                 None,
             );
         }
+        ctx.pop_clip();
     }
 
     overlay_entry => (&self, id: crate::ui::ComponentId, _frame: Rect) -> Option<crate::ui::OverlayEntry> {
@@ -199,38 +346,37 @@ component! {
         if !self.is_present() || children.is_empty() {
             return Vec::new();
         }
+        let frame = Self::normalize_frame(frame);
+        self.last_frame.set(frame);
 
         let dialog = if self.overlay {
             let (win_w, win_h) = tree
                 .root_id()
                 .and_then(|rid| tree.get(rid))
                 .map(|root| (root.frame().w, root.frame().h))
+                .map(|(w, h)| (Self::normalize_dimension(w), Self::normalize_dimension(h)))
                 .filter(|(w, h)| *w > 0.0 && *h > 0.0)
                 .unwrap_or((1200.0, 760.0));
             self.last_win_w.set(win_w);
             self.last_win_h.set(win_h);
-            Rect::new(
-                (win_w - self.width) * 0.5,
-                (win_h - self.height) * 0.5,
-                self.width,
-                self.height,
-            )
-        } else if self.centered {
-            Rect::new(
-                frame.x + (frame.w - self.width) * 0.5,
-                frame.y + (frame.h - self.height) * 0.5,
-                self.width,
-                self.height,
-            )
+            self.dialog_rect_for_surface(Rect::new(0.0, 0.0, win_w, win_h))
         } else {
-            Rect::new(frame.x, frame.y, self.width, self.height)
+            self.dialog_rect_for_surface(frame)
         };
-        let dialog = self.apply_transition_to_dialog(dialog);
+        // Keep child layout on the final dialog geometry. The zoom transition
+        // advances through paint-only invalidation, so baking its transient
+        // scale into child frames would leave the subtree pinned to the first
+        // animation sample without a matching layout pass.
+        self.last_dialog_rect.set(dialog);
 
-        let title_h = 56.0;
-        let footer_h = if self.footer_visible { 56.0 } else { 0.0 };
+        let title_h = dialog.h.min(56.0);
+        let footer_h = if self.footer_visible {
+            (dialog.h - title_h).clamp(0.0, 56.0)
+        } else {
+            0.0
+        };
         let body_y = dialog.y + title_h;
-        let body_h = dialog.h - title_h - footer_h;
+        let body_h = (dialog.h - title_h - footer_h).max(0.0);
         let padding = 24.0;
         children
             .iter()
@@ -240,8 +386,8 @@ component! {
                     Rect::new(
                         dialog.x + padding,
                         body_y + padding,
-                        dialog.w - padding * 2.0,
-                        body_h - padding * 2.0,
+                        (dialog.w - padding * 2.0).max(0.0),
+                        (body_h - padding * 2.0).max(0.0),
                     ),
                 )
             })
@@ -249,7 +395,11 @@ component! {
     }
 
     children_clip => (&self, _frame: Rect) -> Option<Rect> {
-        (!self.is_present()).then(Rect::zero)
+        if self.is_present() {
+            Some(self.body_rect(self.last_dialog_rect.get()))
+        } else {
+            Some(Rect::zero())
+        }
     }
 
     take_layout_request => (&mut self) -> bool {
@@ -311,6 +461,12 @@ impl Modal {
             closing: false,
             transition_dirty: false,
             layout_requested: Cell::new(false),
+            last_frame: Cell::new(Rect::zero()),
+            last_trigger_rect: Cell::new(Rect::new(0.0, 0.0, 96.0, 32.0)),
+            last_dialog_rect: Cell::new(Rect::zero()),
+            close_hovered: Cell::new(false),
+            pressed_target: Cell::new(None),
+            activation_key: Cell::new(None),
         }
         .modal_size(size)
     }
@@ -334,8 +490,8 @@ impl Modal {
     }
 
     pub fn size(mut self, w: f32, h: f32) -> Self {
-        self.width = w;
-        self.height = h;
+        self.width = Self::normalize_dimension(w);
+        self.height = Self::normalize_dimension(h);
         self
     }
 
@@ -416,6 +572,7 @@ impl Modal {
     }
 
     pub fn open(&mut self) {
+        self.cancel_interaction();
         self.visible = true;
         self.closing = false;
         self.transition = TransitionPlayer::new(self.enter_animation);
@@ -424,6 +581,7 @@ impl Modal {
     }
 
     pub fn close(&mut self) {
+        self.cancel_interaction();
         if !self.is_present() {
             self.visible = false;
             self.closing = false;
@@ -442,6 +600,12 @@ impl Modal {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let interaction_geometry_changed = self.width != next.width
+            || self.height != next.height
+            || self.closable != next.closable
+            || self.mask_closable != next.mask_closable
+            || self.centered != next.centered
+            || self.overlay != next.overlay;
         self.title = next.title;
         self.width = next.width;
         self.height = next.height;
@@ -454,19 +618,186 @@ impl Modal {
         self.context_close_requested = next.context_close_requested;
         self.enter_animation = next.enter_animation;
         self.leave_animation = next.leave_animation;
+        if interaction_geometry_changed {
+            self.cancel_interaction();
+        }
     }
 
-    fn dialog_rect_for_event(&self) -> Rect {
-        if self.overlay {
-            Rect::new(
-                (self.last_win_w.get() - self.width) * 0.5,
-                (self.last_win_h.get() - self.height) * 0.5,
-                self.width,
-                self.height,
+    fn dialog_rect_for_surface(&self, surface: Rect) -> Rect {
+        let surface = Self::normalize_frame(surface);
+        let width = Self::normalize_dimension(self.width).min(surface.w);
+        let height = Self::normalize_dimension(self.height).min(surface.h);
+        let (x, y) = if self.centered || self.overlay {
+            (
+                surface.x + (surface.w - width) * 0.5,
+                surface.y + (surface.h - height) * 0.5,
             )
         } else {
-            Rect::new(0.0, 0.0, self.width, self.height)
+            (surface.x, surface.y)
+        };
+        Rect::new(x, y, width, height)
+    }
+
+    fn trigger_rect_for_size(frame_w: f32, frame_h: f32) -> Rect {
+        let frame_w = Self::normalize_dimension(frame_w);
+        let frame_h = Self::normalize_dimension(frame_h);
+        let width = frame_w.min(96.0);
+        Rect::new((frame_w - width) * 0.5, 0.0, width, frame_h.min(32.0))
+    }
+
+    fn trigger_rect_local(&self) -> Rect {
+        let trigger = self.last_trigger_rect.get();
+        if trigger.w > 0.0 && trigger.h > 0.0 {
+            trigger
+        } else {
+            Rect::new(0.0, 0.0, 96.0, 32.0)
         }
+    }
+
+    fn dialog_rect_local(&self) -> Rect {
+        let frame = self.last_frame.get();
+        let dialog = self.last_dialog_rect.get();
+        let dialog = if dialog.w > 0.0 && dialog.h > 0.0 {
+            dialog
+        } else if self.overlay {
+            self.dialog_rect_for_surface(Rect::new(
+                0.0,
+                0.0,
+                self.last_win_w.get(),
+                self.last_win_h.get(),
+            ))
+        } else {
+            self.dialog_rect_for_surface(frame)
+        };
+        Rect::new(dialog.x - frame.x, dialog.y - frame.y, dialog.w, dialog.h)
+    }
+
+    fn close_rect_local(&self) -> Rect {
+        let dialog = self.dialog_rect_local();
+        let width = dialog.w.min(48.0);
+        Rect::new(
+            dialog.x + dialog.w - width,
+            dialog.y,
+            width,
+            dialog.h.min(56.0),
+        )
+    }
+
+    fn pointer_target_at(&self, pos: Point) -> Option<ModalPointerTarget> {
+        if self.closable && self.close_rect_local().contains(pos) {
+            Some(ModalPointerTarget::Close)
+        } else if self.mask_closable && !self.dialog_rect_local().contains(pos) {
+            Some(ModalPointerTarget::Mask)
+        } else {
+            None
+        }
+    }
+
+    fn cancel_interaction(&self) {
+        self.close_hovered.set(false);
+        self.pressed_target.set(None);
+        self.activation_key.set(None);
+    }
+
+    fn body_rect(&self, dialog: Rect) -> Rect {
+        let header_h = dialog.h.min(56.0);
+        let footer_h = if self.footer_visible {
+            (dialog.h - header_h).clamp(0.0, 56.0)
+        } else {
+            0.0
+        };
+        Rect::new(
+            dialog.x,
+            dialog.y + header_h,
+            dialog.w.max(0.0),
+            (dialog.h - header_h - footer_h).max(0.0),
+        )
+    }
+
+    fn normalize_frame(frame: Rect) -> Rect {
+        Rect::new(
+            if frame.x.is_finite() { frame.x } else { 0.0 },
+            if frame.y.is_finite() { frame.y } else { 0.0 },
+            Self::normalize_dimension(frame.w),
+            Self::normalize_dimension(frame.h),
+        )
+    }
+
+    fn normalize_dimension(value: f32) -> f32 {
+        if value.is_finite() {
+            value.max(0.0)
+        } else {
+            0.0
+        }
+    }
+
+    fn inset_rect(frame: Rect, inset: f32) -> Rect {
+        let inset_x = inset.min(frame.w * 0.5);
+        let inset_y = inset.min(frame.h * 0.5);
+        Rect::new(
+            frame.x + inset_x,
+            frame.y + inset_y,
+            (frame.w - inset_x * 2.0).max(0.0),
+            (frame.h - inset_y * 2.0).max(0.0),
+        )
+    }
+
+    fn paint_elided_text(
+        ctx: &mut PaintContext<'_>,
+        value: &str,
+        frame: Rect,
+        color: Color,
+        font_size: f32,
+    ) {
+        let Some(value) = Self::elide_single_line(ctx, value, font_size, frame.w) else {
+            return;
+        };
+        if frame.h <= 0.0 {
+            return;
+        }
+        ctx.push_clip(frame);
+        let y = ctx.visual_center_y(frame, font_size);
+        ctx.draw_text(&value, Point::new(frame.x, y), color, font_size);
+        ctx.pop_clip();
+    }
+
+    fn elide_single_line(
+        ctx: &mut PaintContext<'_>,
+        value: &str,
+        font_size: f32,
+        max_width: f32,
+    ) -> Option<String> {
+        if !max_width.is_finite() || max_width <= 0.0 {
+            return None;
+        }
+        let value = value.replace(['\r', '\n'], " ");
+        if Self::text_width(ctx, &value, font_size) <= max_width {
+            return Some(value);
+        }
+        const ELLIPSIS: &str = "…";
+        if Self::text_width(ctx, ELLIPSIS, font_size) > max_width {
+            return None;
+        }
+        let mut visible = String::new();
+        for ch in value.chars() {
+            visible.push(ch);
+            visible.push_str(ELLIPSIS);
+            let fits = Self::text_width(ctx, &visible, font_size) <= max_width;
+            visible.pop();
+            if !fits {
+                visible.pop();
+                break;
+            }
+        }
+        visible.push_str(ELLIPSIS);
+        Some(visible)
+    }
+
+    fn text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
+        ctx.measure_text(value, font_size).w.max(
+            crate::draw::font::text_backend::estimate_text_metrics(value, f32::INFINITY, font_size)
+                .max_line_width,
+        )
     }
 
     pub(crate) fn is_present(&self) -> bool {
@@ -500,7 +831,10 @@ impl Modal {
             if self.overlay {
                 Size::zero()
             } else {
-                Size::new(self.width, self.height)
+                Size::new(
+                    Self::normalize_dimension(self.width),
+                    Self::normalize_dimension(self.height),
+                )
             }
         } else {
             // Closed: reserve a trigger slot for gallery / live demos.
@@ -511,6 +845,7 @@ impl Modal {
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Modal {
             title: self.title.clone(),
+            open: self.is_present(),
             width: self.width,
             height: self.height,
             modal_size: self.modal_size,
@@ -536,18 +871,18 @@ impl ModalBuilder {
     }
 
     pub fn width(mut self, width: f32) -> Self {
-        self.modal.width = width.max(0.0);
+        self.modal.width = Modal::normalize_dimension(width);
         self
     }
 
     pub fn height(mut self, height: f32) -> Self {
-        self.modal.height = height.max(0.0);
+        self.modal.height = Modal::normalize_dimension(height);
         self
     }
 
     pub fn size(mut self, width: f32, height: f32) -> Self {
-        self.modal.width = width.max(0.0);
-        self.modal.height = height.max(0.0);
+        self.modal.width = Modal::normalize_dimension(width);
+        self.modal.height = Modal::normalize_dimension(height);
         self
     }
 

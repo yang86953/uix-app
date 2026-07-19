@@ -2,7 +2,7 @@
 //!
 //! 通过 ScenePaint trait 读取场景结构并下发绘制，不依赖 ui 域。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::core::{Point, Rect};
 
@@ -187,12 +187,24 @@ pub struct LayerTree {
 
 const PICTURE_CACHE_MIN_NODES: usize = 8;
 const PICTURE_CACHE_MIN_PIXELS: f32 = 65_536.0;
+/// Hard ceiling for Picture render-target residency owned by one LayerTree.
+/// 32 MiB retains one 4K BGRA target or four 1080p targets while preventing
+/// an unbounded number of otherwise eligible static subtrees from accumulating.
+const PICTURE_CACHE_BUDGET_BYTES: usize = 32 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy)]
 struct PictureSubtreeStats {
     node_count: usize,
     estimated_pixels: f32,
     cacheable: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PictureCandidate {
+    node_id: NodeId,
+    retained_bytes: usize,
+    estimated_repaint_work: u64,
+    reusable: bool,
 }
 
 impl PictureSubtreeStats {
@@ -233,10 +245,8 @@ impl LayerTree {
     pub fn build(&mut self, scene: &impl ScenePaint, supports_offscreen: bool) {
         // Take ownership of old Picture nodes' display lists and offscreen handles
         // to avoid cloning in the hot path.
-        let mut old_cache: std::collections::HashMap<
-            NodeId,
-            (Rect, Option<ImageHandle>, Option<DisplayList>),
-        > = std::collections::HashMap::new();
+        let mut old_cache: HashMap<NodeId, (Rect, Option<ImageHandle>, Option<DisplayList>)> =
+            HashMap::new();
         if let Some(ref mut root) = self.root {
             Self::collect_picture_handles(root, &mut old_cache);
         }
@@ -249,16 +259,38 @@ impl LayerTree {
             Self::collect_overlay_node_ids(scene, root_id, &mut overlay_ids);
         }
 
+        let selected_pictures = Self::select_picture_candidates(
+            scene,
+            scene.root_id().filter(|id| !scene.node_is_overlay(*id)),
+            &overlay_ids,
+            supports_offscreen,
+            &old_cache,
+        );
+
         self.root = scene
             .root_id()
             .filter(|id| !scene.node_is_overlay(*id))
             .and_then(|root_id| {
-                Self::build_node_cached(scene, root_id, 0, &mut old_cache, supports_offscreen)
+                Self::build_node_cached(
+                    scene,
+                    root_id,
+                    0,
+                    &mut old_cache,
+                    supports_offscreen,
+                    &selected_pictures,
+                )
             });
         self.overlays = overlay_ids
             .into_iter()
             .filter_map(|id| {
-                Self::build_overlay_node_cached(scene, id, 0, &mut old_cache, supports_offscreen)
+                Self::build_overlay_node_cached(
+                    scene,
+                    id,
+                    0,
+                    &mut old_cache,
+                    supports_offscreen,
+                    &selected_pictures,
+                )
             })
             .collect();
         self.overlays
@@ -502,10 +534,7 @@ impl LayerTree {
     /// safe.
     fn collect_picture_handles(
         node: &mut LayerNode,
-        cache: &mut std::collections::HashMap<
-            NodeId,
-            (Rect, Option<ImageHandle>, Option<DisplayList>),
-        >,
+        cache: &mut HashMap<NodeId, (Rect, Option<ImageHandle>, Option<DisplayList>)>,
     ) {
         match node {
             LayerNode::Picture {
@@ -546,11 +575,9 @@ impl LayerTree {
         scene: &impl ScenePaint,
         id: NodeId,
         depth: usize,
-        cache: &mut std::collections::HashMap<
-            NodeId,
-            (Rect, Option<ImageHandle>, Option<DisplayList>),
-        >,
+        cache: &mut HashMap<NodeId, (Rect, Option<ImageHandle>, Option<DisplayList>)>,
         supports_offscreen: bool,
+        selected_pictures: &HashSet<NodeId>,
     ) -> Option<LayerNode> {
         if !scene.node_visible(id) {
             return None;
@@ -560,9 +587,7 @@ impl LayerTree {
         let opacity = scene.node_opacity(id).clamp(0.0, 1.0);
         let descendants_support_offscreen = supports_offscreen && transform.is_identity();
 
-        let stats = Self::picture_subtree_stats(scene, id);
-
-        if supports_offscreen && stats.eligible() {
+        if supports_offscreen && selected_pictures.contains(&id) {
             // frame 是绝对坐标，直接用作 bounds
             let bounds = frame;
             // Take ownership from cache (remove instead of get+clone)
@@ -576,8 +601,14 @@ impl LayerTree {
                     }
                 })
                 .unwrap_or((None, None));
-            let children =
-                Self::build_children_cached(scene, id, depth, cache, descendants_support_offscreen);
+            let children = Self::build_children_cached(
+                scene,
+                id,
+                depth,
+                cache,
+                descendants_support_offscreen,
+                selected_pictures,
+            );
             Some(LayerNode::Picture {
                 node_id: id,
                 bounds,
@@ -592,8 +623,14 @@ impl LayerTree {
         } else if let Some(clip) = scene.children_clip(id, frame) {
             // clip 由 children_clip 基于 frame（绝对坐标）计算，直接使用
             let adj = Rect::new(clip.x, clip.y, clip.w, clip.h);
-            let children =
-                Self::build_children_cached(scene, id, depth, cache, descendants_support_offscreen);
+            let children = Self::build_children_cached(
+                scene,
+                id,
+                depth,
+                cache,
+                descendants_support_offscreen,
+                selected_pictures,
+            );
             Some(LayerNode::ClipRect {
                 node_id: id,
                 rect: adj,
@@ -602,8 +639,14 @@ impl LayerTree {
                 children,
             })
         } else {
-            let children =
-                Self::build_children_cached(scene, id, depth, cache, descendants_support_offscreen);
+            let children = Self::build_children_cached(
+                scene,
+                id,
+                depth,
+                cache,
+                descendants_support_offscreen,
+                selected_pictures,
+            );
             Some(LayerNode::Direct {
                 node_id: id,
                 transform,
@@ -617,11 +660,9 @@ impl LayerTree {
         scene: &impl ScenePaint,
         id: NodeId,
         depth: usize,
-        cache: &mut std::collections::HashMap<
-            NodeId,
-            (Rect, Option<ImageHandle>, Option<DisplayList>),
-        >,
+        cache: &mut HashMap<NodeId, (Rect, Option<ImageHandle>, Option<DisplayList>)>,
         supports_offscreen: bool,
+        selected_pictures: &HashSet<NodeId>,
     ) -> Option<LayerNode> {
         if !scene.node_visible(id) {
             return None;
@@ -638,8 +679,133 @@ impl LayerTree {
                 depth,
                 cache,
                 supports_offscreen && transform.is_identity(),
+                selected_pictures,
             ),
         })
+    }
+
+    fn select_picture_candidates(
+        scene: &impl ScenePaint,
+        root_id: Option<NodeId>,
+        overlay_ids: &[NodeId],
+        supports_offscreen: bool,
+        cache: &HashMap<NodeId, (Rect, Option<ImageHandle>, Option<DisplayList>)>,
+    ) -> HashSet<NodeId> {
+        if !supports_offscreen {
+            return HashSet::new();
+        }
+
+        let mut candidates = Vec::new();
+        if let Some(root_id) = root_id {
+            Self::collect_picture_candidates(scene, root_id, true, true, cache, &mut candidates);
+        }
+        // Overlay roots are always direct, but their normal descendants retain
+        // the same Picture eligibility as before.
+        for overlay_id in overlay_ids {
+            Self::collect_picture_candidates(
+                scene,
+                *overlay_id,
+                true,
+                false,
+                cache,
+                &mut candidates,
+            );
+        }
+
+        candidates.sort_by(|left, right| {
+            let left_weighted =
+                (left.estimated_repaint_work as u128).saturating_mul(right.retained_bytes as u128);
+            let right_weighted =
+                (right.estimated_repaint_work as u128).saturating_mul(left.retained_bytes as u128);
+            right_weighted
+                .cmp(&left_weighted)
+                .then_with(|| {
+                    right
+                        .estimated_repaint_work
+                        .cmp(&left.estimated_repaint_work)
+                })
+                .then_with(|| right.reusable.cmp(&left.reusable))
+                .then_with(|| left.node_id.cmp(&right.node_id))
+        });
+
+        let mut retained_bytes = 0usize;
+        let mut selected = HashSet::new();
+        for candidate in candidates {
+            let Some(next_retained_bytes) = retained_bytes.checked_add(candidate.retained_bytes)
+            else {
+                continue;
+            };
+            if next_retained_bytes > PICTURE_CACHE_BUDGET_BYTES {
+                continue;
+            }
+            retained_bytes = next_retained_bytes;
+            selected.insert(candidate.node_id);
+        }
+        selected
+    }
+
+    fn collect_picture_candidates(
+        scene: &impl ScenePaint,
+        id: NodeId,
+        supports_offscreen: bool,
+        allow_self: bool,
+        cache: &HashMap<NodeId, (Rect, Option<ImageHandle>, Option<DisplayList>)>,
+        candidates: &mut Vec<PictureCandidate>,
+    ) {
+        if !scene.node_visible(id) {
+            return;
+        }
+
+        let frame = scene.node_frame(id);
+        let transform = scene.node_transform(id);
+        if allow_self && supports_offscreen {
+            let stats = Self::picture_subtree_stats(scene, id);
+            if stats.eligible() {
+                if let Some(retained_bytes) = Self::picture_retained_bytes(frame) {
+                    let estimated_pixels = if stats.estimated_pixels.is_finite() {
+                        stats.estimated_pixels.max(0.0).ceil() as u64
+                    } else {
+                        u64::MAX
+                    };
+                    let reusable = cache
+                        .get(&id)
+                        .is_some_and(|(bounds, handle, _)| *bounds == frame && handle.is_some());
+                    candidates.push(PictureCandidate {
+                        node_id: id,
+                        retained_bytes,
+                        estimated_repaint_work: estimated_pixels,
+                        reusable,
+                    });
+                }
+            }
+        }
+
+        let descendants_support_offscreen = supports_offscreen && transform.is_identity();
+        for child in scene.node_children(id) {
+            if scene.node_is_overlay(*child) {
+                continue;
+            }
+            Self::collect_picture_candidates(
+                scene,
+                *child,
+                descendants_support_offscreen,
+                true,
+                cache,
+                candidates,
+            );
+        }
+    }
+
+    fn picture_retained_bytes(frame: Rect) -> Option<usize> {
+        if !frame.w.is_finite() || !frame.h.is_finite() || frame.w <= 0.0 || frame.h <= 0.0 {
+            return None;
+        }
+        let width = frame.w.ceil() as u64;
+        let height = frame.h.ceil() as u64;
+        let bytes = width
+            .checked_mul(height)?
+            .checked_mul(std::mem::size_of::<u32>() as u64)?;
+        usize::try_from(bytes).ok()
     }
 
     fn picture_subtree_stats(scene: &impl ScenePaint, id: NodeId) -> PictureSubtreeStats {
@@ -682,11 +848,9 @@ impl LayerTree {
         scene: &impl ScenePaint,
         id: NodeId,
         depth: usize,
-        cache: &mut std::collections::HashMap<
-            NodeId,
-            (Rect, Option<ImageHandle>, Option<DisplayList>),
-        >,
+        cache: &mut HashMap<NodeId, (Rect, Option<ImageHandle>, Option<DisplayList>)>,
         supports_offscreen: bool,
+        selected_pictures: &HashSet<NodeId>,
     ) -> Vec<LayerNode> {
         let mut children: Vec<LayerNode> = scene
             .node_children(id)
@@ -694,7 +858,14 @@ impl LayerTree {
             .copied()
             .filter(|cid| !scene.node_is_overlay(*cid))
             .filter_map(|cid| {
-                Self::build_node_cached(scene, cid, depth + 1, cache, supports_offscreen)
+                Self::build_node_cached(
+                    scene,
+                    cid,
+                    depth + 1,
+                    cache,
+                    supports_offscreen,
+                    selected_pictures,
+                )
             })
             .collect();
         // 预排序：render 时无需再排序
@@ -1144,6 +1315,11 @@ impl LayerTree {
     #[cfg(test)]
     pub(crate) fn root_node(&self) -> Option<&LayerNode> {
         self.root.as_ref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn root_node_mut(&mut self) -> Option<&mut LayerNode> {
+        self.root.as_mut()
     }
 
     #[cfg(test)]

@@ -424,6 +424,10 @@ impl WindowDriver {
         active_work.sync_app_timers(app_timers.deadlines());
         let due_work = active_work.drain_due(now);
         let had_registered_work = !due_work.is_empty();
+        if due_work.contains(&ActiveWorkKind::GraphicsMaintenance) {
+            engine.release_idle_resources(now);
+            sync_graphics_maintenance(active_work, engine);
+        }
         let had_due_animation_work = due_work
             .iter()
             .any(|work| matches!(work, ActiveWorkKind::Animation(_)));
@@ -875,6 +879,8 @@ impl WindowDriver {
 
         if frame_committed {
             semantic_state.mark_presented();
+            engine.note_presented_at(frame_time);
+            sync_graphics_maintenance(active_work, engine);
             self.frame_scheduler
                 .presented(frame_time, target_present_time.is_some());
             if let Some(token) = animation_frame_token
@@ -981,6 +987,17 @@ impl WindowDriver {
             agent_commands.has_work(),
         );
         WindowFrameResult { did_work: true }
+    }
+}
+
+pub(crate) fn sync_graphics_maintenance(
+    active_work: &mut ActiveWorkRegistry,
+    engine: &dyn GraphicsEngine,
+) {
+    if let Some(deadline) = engine.idle_resource_deadline() {
+        active_work.register(ActiveWorkKind::GraphicsMaintenance, deadline);
+    } else {
+        active_work.unregister(ActiveWorkKind::GraphicsMaintenance);
     }
 }
 

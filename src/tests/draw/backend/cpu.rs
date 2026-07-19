@@ -87,3 +87,52 @@ fn encoded_picture_replaces_cpu_offscreen_pixels_and_begin_clears_stale_content(
     );
     assert_eq!(pixels[0], Color::transparent().premultiplied());
 }
+
+#[test]
+fn offscreen_begin_resets_canvas_state_and_end_propagates_deferred_error() {
+    use crate::draw::primitives::path::PathBuilder;
+    use crate::draw::primitives::types::Transform;
+
+    let mut backend = CpuBackend::new();
+    let handle = backend.create_offscreen(4, 3).expect("Picture target");
+    backend
+        .try_begin_offscreen_paint(&handle)
+        .expect("begin first Picture paint");
+    {
+        let canvas = backend.offscreen_canvas(&handle).expect("offscreen canvas");
+        canvas.save();
+        canvas.set_transform(Transform::translate(2.0, 1.0));
+        canvas.push_clip(Rect::new(0.0, 0.0, 1.0, 1.0));
+        canvas.set_opacity(0.5);
+        canvas.push_clip_path(&PathBuilder::new().build());
+    }
+    let error = backend
+        .try_end_offscreen_paint()
+        .expect_err("end must surface an unflushed deferred error");
+    assert_eq!(error.code(), Errc::NotImplemented);
+
+    backend
+        .try_begin_offscreen_paint(&handle)
+        .expect("begin reused Picture paint");
+    {
+        let canvas = backend.offscreen_canvas(&handle).expect("reused canvas");
+        canvas.restore();
+        assert!(canvas.current_transform().is_identity());
+        assert_eq!(canvas.offset(), (0.0, 0.0));
+        assert_eq!(canvas.opacity(), 1.0);
+        assert_eq!(canvas.current_clip(), Rect::new(0.0, 0.0, 4.0, 3.0));
+        canvas.fill_rect(Rect::new(0.0, 0.0, 4.0, 3.0), Color::green(), None);
+    }
+    backend
+        .try_flush_offscreen_paint(&handle)
+        .expect("flush reused Picture paint");
+    backend
+        .try_end_offscreen_paint()
+        .expect("end reused Picture paint");
+    assert!(backend
+        .copy_offscreen_pixels(&handle)
+        .expect("reused pixels")
+        .0
+        .iter()
+        .all(|pixel| *pixel == Color::green().premultiplied()));
+}

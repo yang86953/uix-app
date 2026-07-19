@@ -13,6 +13,7 @@ pub(crate) enum ActiveWorkKind {
     Timer(TimerId),
     AppTimer(TimerId),
     ImeSession(NodeId),
+    GraphicsMaintenance,
 }
 
 #[derive(Debug, Default)]

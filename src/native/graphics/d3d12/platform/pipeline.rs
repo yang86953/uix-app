@@ -2,17 +2,22 @@
 
 #![allow(nonstandard_style)]
 
+use std::collections::HashMap;
 use std::ffi::c_void;
-use std::mem::ManuallyDrop;
+use std::mem::{size_of, ManuallyDrop};
+use std::sync::Arc;
 
 use crate::core::{Errc, Error, Result};
-use crate::native::traits::present::{GpuSolidRect, SoftFallbackTile};
+use crate::native::traits::present::{GpuGlyphBlit, GpuSolidRect, SoftFallbackTile};
 use ::windows::core::PCSTR;
 use ::windows::Win32::Foundation::{FALSE, RECT, TRUE};
 use ::windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use ::windows::Win32::Graphics::Direct3D::{ID3DBlob, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST};
 use ::windows::Win32::Graphics::Direct3D12::*;
-use ::windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC};
+use ::windows::Win32::Graphics::Dxgi::Common::{
+    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32_FLOAT,
+    DXGI_FORMAT_R8_UNORM, DXGI_SAMPLE_DESC,
+};
 
 use super::transfer::{
     record_transition, release_copy_location, texture_copy_location_footprint,
@@ -20,6 +25,11 @@ use super::transfer::{
 };
 
 const RECT_ROOT_DWORDS: u32 = 20;
+const GLYPH_ATLAS_SIZE: u32 = 2048;
+const GLYPH_RETAINED_UPLOAD_LIMIT: usize = 8 * 1024 * 1024;
+const SOFT_SRV_SLOT: usize = 0;
+const GLYPH_SRV_SLOT: usize = 1;
+const SRV_DESCRIPTOR_COUNT: u32 = 2;
 
 const RECT_HLSL: &str = r#"
 cbuffer RectCB : register(b0)
@@ -56,31 +66,34 @@ VSOut VSMain(uint vertex_id : SV_VertexID)
     return o;
 }
 
-float corner_mask(float2 p, float r)
+// Port of CPU `rounded_rect_sdf` (center-relative, per-corner radius).
+float rounded_rect_sdf(float2 local, float2 size, float4 radius)
 {
-    return 1.0 - smoothstep(r - 1.0, r + 1.0, length(p));
-}
-
-float rounded_rect_mask(float2 local, float2 size, float4 radius)
-{
-    float m = 1.0;
-    if (radius.x > 0.0 && local.x < radius.x && local.y < radius.x)
-        m *= corner_mask(local - float2(radius.x, radius.x), radius.x);
-    if (radius.y > 0.0 && local.x > size.x - radius.y && local.y < radius.y)
-        m *= corner_mask(local - float2(size.x - radius.y, radius.y), radius.y);
-    if (radius.z > 0.0 && local.x > size.x - radius.z && local.y > size.y - radius.z)
-        m *= corner_mask(local - float2(size.x - radius.z, size.y - radius.z), radius.z);
-    if (radius.w > 0.0 && local.x < radius.w && local.y > size.y - radius.w)
-        m *= corner_mask(local - float2(radius.w, size.y - radius.w), radius.w);
-    return m;
+    float2 half_size = size * 0.5;
+    float2 q = local - half_size;
+    float cr;
+    if (q.x < 0.0)
+        cr = (q.y < 0.0) ? radius.x : radius.w;
+    else
+        cr = (q.y < 0.0) ? radius.y : radius.z;
+    float2 d = abs(q) - half_size + cr;
+    float outside = length(max(d, 0.0));
+    float inside = min(max(d.x, d.y), 0.0);
+    return outside + inside - cr;
 }
 
 float4 PSMain(VSOut input) : SV_Target
 {
-    float mask = rounded_rect_mask(input.local, input.rect_size, u_radius);
+    float mask = any(u_radius > 0.0)
+        ? saturate(0.5 - rounded_rect_sdf(input.local, input.rect_size, u_radius))
+        : 1.0;
     if (mask <= 0.0)
         discard;
-    return float4(u_color.rgb, u_color.a * mask);
+    // Match CPU solid fill: 8-bit premultiply first, then apply analytic
+    // coverage and use the premultiplied SrcOver PSO.
+    float4 color = floor(saturate(u_color) * 255.0 + 0.5);
+    float3 premul = floor(color.rgb * color.a / 255.0);
+    return float4(premul * mask, color.a * mask) / 255.0;
 }
 "#;
 
@@ -119,6 +132,52 @@ float4 PSMain(VSOut input) : SV_Target
 }
 "#;
 
+const GLYPH_HLSL: &str = r#"
+cbuffer GlyphCB : register(b0)
+{
+    float2 u_viewport;
+    float2 _pad0;
+};
+
+Texture2D<float> u_atlas : register(t0);
+SamplerState u_samp : register(s0);
+
+struct VSIn {
+    float2 pos : POSITION;
+    float2 uv : TEXCOORD0;
+    float4 color : COLOR0;
+};
+
+struct VSOut {
+    float4 pos : SV_POSITION;
+    float2 uv : TEXCOORD0;
+    float4 color : COLOR0;
+};
+
+VSOut VSMain(VSIn input)
+{
+    VSOut o;
+    float2 ndc = (input.pos / u_viewport) * 2.0 - 1.0;
+    ndc.y = -ndc.y;
+    o.pos = float4(ndc, 0.0, 1.0);
+    o.uv = input.uv;
+    o.color = input.color;
+    return o;
+}
+
+float4 PSMain(VSOut input) : SV_Target
+{
+    // Match the CPU glyph path's two integer truncation steps before the
+    // premultiplied SrcOver blend.
+    float coverage = floor(saturate(u_atlas.Sample(u_samp, input.uv)) * 255.0 + 0.5);
+    float4 color = floor(saturate(input.color) * 255.0 + 0.5);
+    float alpha = floor(color.a * coverage / 255.0);
+    float3 premul = floor(color.rgb * color.a / 255.0);
+    float3 rgb = floor(premul * coverage / 255.0);
+    return float4(rgb, alpha) / 255.0;
+}
+"#;
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct RectConstants {
@@ -130,6 +189,132 @@ struct RectConstants {
     stroke: [f32; 4],
 }
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct GlyphConstants {
+    viewport: [f32; 2],
+    _pad0: [f32; 2],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct GlyphVertex {
+    pos: [f32; 2],
+    uv: [f32; 2],
+    color: [f32; 4],
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct GlyphAtlasKey {
+    allocation: usize,
+    len: usize,
+    width: u32,
+    height: u32,
+}
+
+impl GlyphAtlasKey {
+    fn new(coverage: &Arc<[u8]>, width: u32, height: u32) -> Self {
+        Self {
+            allocation: Arc::as_ptr(coverage) as *const u8 as usize,
+            len: coverage.len(),
+            width,
+            height,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct GlyphAtlasPlacement {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+}
+
+impl GlyphAtlasPlacement {
+    fn uv(self) -> (f32, f32, f32, f32) {
+        let inverse = 1.0 / GLYPH_ATLAS_SIZE as f32;
+        (
+            self.x as f32 * inverse,
+            self.y as f32 * inverse,
+            (self.x + self.width) as f32 * inverse,
+            (self.y + self.height) as f32 * inverse,
+        )
+    }
+}
+
+struct GlyphAtlasEntry {
+    // Retaining the allocation prevents pointer reuse while this cache entry is live.
+    _coverage: Arc<[u8]>,
+    placement: GlyphAtlasPlacement,
+}
+
+#[derive(Default)]
+pub(crate) struct GlyphAtlasState {
+    x: u32,
+    y: u32,
+    row_height: u32,
+    cache: HashMap<GlyphAtlasKey, GlyphAtlasEntry>,
+}
+
+impl GlyphAtlasState {
+    pub(crate) fn reset(&mut self) {
+        self.x = 0;
+        self.y = 0;
+        self.row_height = 0;
+        self.cache.clear();
+    }
+
+    pub(crate) fn can_fit(&self, width: u32, height: u32) -> bool {
+        let mut x = self.x;
+        let mut y = self.y;
+        let mut row_height = self.row_height;
+        if x.saturating_add(width) > GLYPH_ATLAS_SIZE {
+            x = 0;
+            y = y.saturating_add(row_height);
+            row_height = 0;
+        }
+        x.saturating_add(width) <= GLYPH_ATLAS_SIZE
+            && y.saturating_add(height) <= GLYPH_ATLAS_SIZE
+            && row_height.max(height) <= GLYPH_ATLAS_SIZE
+    }
+
+    pub(crate) fn pack(&mut self, width: u32, height: u32) -> Option<GlyphAtlasPlacement> {
+        if self.x.saturating_add(width) > GLYPH_ATLAS_SIZE {
+            self.x = 0;
+            self.y = self.y.saturating_add(self.row_height);
+            self.row_height = 0;
+        }
+        if !self.can_fit(width, height) {
+            return None;
+        }
+        let placement = GlyphAtlasPlacement {
+            x: self.x,
+            y: self.y,
+            width,
+            height,
+        };
+        self.x = self.x.saturating_add(width).saturating_add(1);
+        self.row_height = self.row_height.max(height.saturating_add(1));
+        Some(placement)
+    }
+}
+
+struct PendingGlyphUpload {
+    placement: GlyphAtlasPlacement,
+    coverage: Arc<[u8]>,
+}
+
+#[derive(Default)]
+struct GlyphSegment {
+    uploads: Vec<PendingGlyphUpload>,
+    vertices: Vec<GlyphVertex>,
+    texture_upload_offset: usize,
+    texture_upload_height: u32,
+    vertex_offset: usize,
+    vertex_bytes: usize,
+}
+
 struct UploadBuffer {
     resource: ID3D12Resource,
     capacity: usize,
@@ -138,6 +323,7 @@ struct UploadBuffer {
 #[derive(Default)]
 struct FrameUploads {
     buffers: Vec<UploadBuffer>,
+    transient: Vec<ID3D12Resource>,
     used: usize,
 }
 
@@ -145,11 +331,18 @@ pub(super) struct D3d12Pipeline {
     root_signature: ID3D12RootSignature,
     solid_pso: ID3D12PipelineState,
     soft_pso: ID3D12PipelineState,
+    glyph_pso: ID3D12PipelineState,
     srv_heap: ID3D12DescriptorHeap,
+    srv_stride: u32,
     soft_texture: Option<ID3D12Resource>,
     soft_texture_state: D3D12_RESOURCE_STATES,
     soft_width: i32,
     soft_height: i32,
+    glyph_atlas: Option<ID3D12Resource>,
+    glyph_atlas_state: D3D12_RESOURCE_STATES,
+    glyph_state: GlyphAtlasState,
+    #[cfg(test)]
+    glyph_atlas_upload_count: usize,
     frame_uploads: Vec<FrameUploads>,
 }
 
@@ -331,6 +524,7 @@ fn create_pso(
     root_signature: &ID3D12RootSignature,
     vs: &ID3DBlob,
     ps: &ID3DBlob,
+    input_layout: &[D3D12_INPUT_ELEMENT_DESC],
     premultiplied_source: bool,
     label: &str,
 ) -> Result<ID3D12PipelineState> {
@@ -343,6 +537,14 @@ fn create_pso(
         PS: D3D12_SHADER_BYTECODE {
             pShaderBytecode: unsafe { ps.GetBufferPointer() },
             BytecodeLength: unsafe { ps.GetBufferSize() },
+        },
+        InputLayout: D3D12_INPUT_LAYOUT_DESC {
+            pInputElementDescs: if input_layout.is_empty() {
+                std::ptr::null()
+            } else {
+                input_layout.as_ptr()
+            },
+            NumElements: input_layout.len() as u32,
         },
         BlendState: alpha_blend_desc(premultiplied_source),
         SampleMask: u32::MAX,
@@ -483,6 +685,102 @@ fn create_soft_texture(device: &ID3D12Device, width: i32, height: i32) -> Result
     })
 }
 
+fn create_glyph_atlas(device: &ID3D12Device) -> Result<ID3D12Resource> {
+    let heap = default_heap_properties();
+    let desc = D3D12_RESOURCE_DESC {
+        Dimension: D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+        Alignment: 0,
+        Width: GLYPH_ATLAS_SIZE as u64,
+        Height: GLYPH_ATLAS_SIZE,
+        DepthOrArraySize: 1,
+        MipLevels: 1,
+        Format: DXGI_FORMAT_R8_UNORM,
+        SampleDesc: DXGI_SAMPLE_DESC {
+            Count: 1,
+            Quality: 0,
+        },
+        Layout: D3D12_TEXTURE_LAYOUT_UNKNOWN,
+        Flags: D3D12_RESOURCE_FLAG_NONE,
+    };
+    let mut resource = None;
+    unsafe {
+        device.CreateCommittedResource(
+            &heap,
+            D3D12_HEAP_FLAG_NONE,
+            &desc,
+            D3D12_RESOURCE_STATE_COPY_DEST,
+            None,
+            &mut resource,
+        )
+    }
+    .map_err(|error| pipeline_error("CreateCommittedResource(glyph atlas)", error))?;
+    resource.ok_or_else(|| {
+        Error::new(
+            Errc::PlatformError,
+            "D3d12Pipeline: glyph atlas was not created",
+        )
+    })
+}
+
+fn checked_align_up(value: usize, alignment: usize, label: &str) -> Result<usize> {
+    debug_assert!(alignment.is_power_of_two());
+    value
+        .checked_add(alignment - 1)
+        .map(|value| value & !(alignment - 1))
+        .ok_or_else(|| invalid_input(format!("D3d12Pipeline: {label} alignment overflow")))
+}
+
+pub(crate) fn validated_glyph_layout(
+    width: u32,
+    height: u32,
+    coverage_len: usize,
+) -> Result<(usize, usize)> {
+    if width == 0 || height == 0 || width > GLYPH_ATLAS_SIZE || height > GLYPH_ATLAS_SIZE {
+        return Err(invalid_input(format!(
+            "D3d12Pipeline: glyph dimensions must be within 1..={GLYPH_ATLAS_SIZE}, got {width}x{height}"
+        )));
+    }
+    let expected = (width as usize)
+        .checked_mul(height as usize)
+        .ok_or_else(|| invalid_input("D3d12Pipeline: glyph coverage size overflow"))?;
+    if coverage_len < expected {
+        return Err(invalid_input(format!(
+            "D3d12Pipeline: glyph coverage buffer too small, got {coverage_len}, need {expected}"
+        )));
+    }
+    let row_pitch = checked_align_up(
+        width as usize,
+        D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as usize,
+        "glyph row pitch",
+    )?;
+    let total_bytes = row_pitch
+        .checked_mul(height as usize)
+        .ok_or_else(|| invalid_input("D3d12Pipeline: glyph upload size overflow"))?;
+    Ok((row_pitch, total_bytes))
+}
+
+pub(crate) fn glyph_segment_staging_bytes(upload_height: u32) -> Result<usize> {
+    if upload_height > GLYPH_ATLAS_SIZE {
+        return Err(invalid_input(format!(
+            "D3d12Pipeline: glyph staging height {upload_height} exceeds {GLYPH_ATLAS_SIZE}"
+        )));
+    }
+    (GLYPH_ATLAS_SIZE as usize)
+        .checked_mul(upload_height as usize)
+        .ok_or_else(|| invalid_input("D3d12Pipeline: glyph staging size overflow"))
+}
+
+pub(crate) fn glyph_upload_fits_retained_budget(
+    retained_capacity: Option<usize>,
+    current_slot_capacity: usize,
+    total_bytes: usize,
+) -> bool {
+    current_slot_capacity >= total_bytes
+        || retained_capacity
+            .and_then(|total| total.checked_add(total_bytes.saturating_sub(current_slot_capacity)))
+            .is_some_and(|total| total <= GLYPH_RETAINED_UPLOAD_LIMIT)
+}
+
 pub(crate) fn validated_soft_layout(
     width: i32,
     height: i32,
@@ -542,12 +840,44 @@ impl D3d12Pipeline {
         let rect_ps = compile_shader(RECT_HLSL, b"PSMain\0", b"ps_5_0\0")?;
         let blit_vs = compile_shader(BLIT_HLSL, b"VSMain\0", b"vs_5_0\0")?;
         let blit_ps = compile_shader(BLIT_HLSL, b"PSMain\0", b"ps_5_0\0")?;
+        let glyph_vs = compile_shader(GLYPH_HLSL, b"VSMain\0", b"vs_5_0\0")?;
+        let glyph_ps = compile_shader(GLYPH_HLSL, b"PSMain\0", b"ps_5_0\0")?;
+        let glyph_input_layout = [
+            D3D12_INPUT_ELEMENT_DESC {
+                SemanticName: PCSTR(b"POSITION\0".as_ptr()),
+                SemanticIndex: 0,
+                Format: DXGI_FORMAT_R32G32_FLOAT,
+                InputSlot: 0,
+                AlignedByteOffset: 0,
+                InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+                InstanceDataStepRate: 0,
+            },
+            D3D12_INPUT_ELEMENT_DESC {
+                SemanticName: PCSTR(b"TEXCOORD\0".as_ptr()),
+                SemanticIndex: 0,
+                Format: DXGI_FORMAT_R32G32_FLOAT,
+                InputSlot: 0,
+                AlignedByteOffset: 8,
+                InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+                InstanceDataStepRate: 0,
+            },
+            D3D12_INPUT_ELEMENT_DESC {
+                SemanticName: PCSTR(b"COLOR\0".as_ptr()),
+                SemanticIndex: 0,
+                Format: DXGI_FORMAT_R32G32B32A32_FLOAT,
+                InputSlot: 0,
+                AlignedByteOffset: 16,
+                InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+                InstanceDataStepRate: 0,
+            },
+        ];
         let solid_pso = create_pso(
             device,
             &root_signature,
             &rect_vs,
             &rect_ps,
-            false,
+            &[],
+            true,
             "CreateGraphicsPipelineState(solid)",
         )?;
         let soft_pso = create_pso(
@@ -555,34 +885,67 @@ impl D3d12Pipeline {
             &root_signature,
             &blit_vs,
             &blit_ps,
+            &[],
             true,
             "CreateGraphicsPipelineState(soft blit)",
         )?;
+        let glyph_pso = create_pso(
+            device,
+            &root_signature,
+            &glyph_vs,
+            &glyph_ps,
+            &glyph_input_layout,
+            true,
+            "CreateGraphicsPipelineState(glyph)",
+        )?;
         let heap_desc = D3D12_DESCRIPTOR_HEAP_DESC {
             Type: D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-            NumDescriptors: 1,
+            NumDescriptors: SRV_DESCRIPTOR_COUNT,
             Flags: D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
             NodeMask: 0,
         };
         let srv_heap = unsafe { device.CreateDescriptorHeap(&heap_desc) }
             .map_err(|error| pipeline_error("CreateDescriptorHeap(SRV)", error))?;
+        let srv_stride = unsafe {
+            device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
+        };
         Ok(Self {
             root_signature,
             solid_pso,
             soft_pso,
+            glyph_pso,
             srv_heap,
+            srv_stride,
             soft_texture: None,
             soft_texture_state: D3D12_RESOURCE_STATE_COPY_DEST,
             soft_width: 0,
             soft_height: 0,
+            glyph_atlas: None,
+            glyph_atlas_state: D3D12_RESOURCE_STATE_COPY_DEST,
+            glyph_state: GlyphAtlasState::default(),
+            #[cfg(test)]
+            glyph_atlas_upload_count: 0,
             frame_uploads: (0..frame_count).map(|_| FrameUploads::default()).collect(),
         })
     }
 
     pub(super) fn begin_frame(&mut self, frame_index: usize) {
         if let Some(frame) = self.frame_uploads.get_mut(frame_index) {
+            frame.transient.clear();
             frame.used = 0;
         }
+    }
+
+    fn srv_cpu_handle(&self, slot: usize) -> D3D12_CPU_DESCRIPTOR_HANDLE {
+        let mut handle = unsafe { self.srv_heap.GetCPUDescriptorHandleForHeapStart() };
+        handle.ptr += slot * self.srv_stride as usize;
+        handle
+    }
+
+    fn srv_gpu_handle(&self, slot: usize) -> D3D12_GPU_DESCRIPTOR_HANDLE {
+        let mut handle = unsafe { self.srv_heap.GetGPUDescriptorHandleForHeapStart() };
+        handle.ptr += (slot * self.srv_stride as usize) as u64;
+        handle
     }
 
     pub(super) fn draw_solid_rects(
@@ -670,7 +1033,7 @@ impl D3d12Pipeline {
             device.CreateShaderResourceView(
                 &texture,
                 Some(&srv_desc),
-                self.srv_heap.GetCPUDescriptorHandleForHeapStart(),
+                self.srv_cpu_handle(SOFT_SRV_SLOT),
             );
         }
         self.soft_texture = Some(texture);
@@ -678,6 +1041,183 @@ impl D3d12Pipeline {
         self.soft_width = width;
         self.soft_height = height;
         Ok(())
+    }
+
+    fn ensure_glyph_atlas(&mut self, device: &ID3D12Device) -> Result<()> {
+        if self.glyph_atlas.is_some() {
+            return Ok(());
+        }
+        let texture = create_glyph_atlas(device)?;
+        let srv_desc = D3D12_SHADER_RESOURCE_VIEW_DESC {
+            Format: DXGI_FORMAT_R8_UNORM,
+            ViewDimension: D3D12_SRV_DIMENSION_TEXTURE2D,
+            Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+            Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
+                Texture2D: D3D12_TEX2D_SRV {
+                    MostDetailedMip: 0,
+                    MipLevels: 1,
+                    PlaneSlice: 0,
+                    ResourceMinLODClamp: 0.0,
+                },
+            },
+        };
+        unsafe {
+            device.CreateShaderResourceView(
+                &texture,
+                Some(&srv_desc),
+                self.srv_cpu_handle(GLYPH_SRV_SLOT),
+            );
+        }
+        self.glyph_atlas = Some(texture);
+        self.glyph_atlas_state = D3D12_RESOURCE_STATE_COPY_DEST;
+        self.glyph_state.reset();
+        Ok(())
+    }
+
+    fn push_glyph_quad(
+        vertices: &mut Vec<GlyphVertex>,
+        glyph: &GpuGlyphBlit,
+        placement: GlyphAtlasPlacement,
+    ) {
+        let (u0, v0, u1, v1) = placement.uv();
+        let x0 = glyph.x;
+        let y0 = glyph.y;
+        let x1 = glyph.x + glyph.w;
+        let y1 = glyph.y + glyph.h;
+        let make = |pos, uv| GlyphVertex {
+            pos,
+            uv,
+            color: glyph.rgba,
+        };
+        vertices.extend_from_slice(&[
+            make([x0, y0], [u0, v0]),
+            make([x1, y0], [u1, v0]),
+            make([x0, y1], [u0, v1]),
+            make([x0, y1], [u0, v1]),
+            make([x1, y0], [u1, v0]),
+            make([x1, y1], [u1, v1]),
+        ]);
+    }
+
+    fn plan_glyph_segments(&mut self, glyphs: &[GpuGlyphBlit]) -> Result<Vec<GlyphSegment>> {
+        let mut segments = Vec::new();
+        let mut current = GlyphSegment::default();
+        for glyph in glyphs {
+            if glyph.w <= 0.0 || glyph.h <= 0.0 || glyph.cov_w == 0 || glyph.cov_h == 0 {
+                continue;
+            }
+            let expected = (glyph.cov_w as usize)
+                .checked_mul(glyph.cov_h as usize)
+                .ok_or_else(|| invalid_input("D3d12Pipeline: glyph coverage size overflow"))?;
+            validated_glyph_layout(glyph.cov_w, glyph.cov_h, glyph.coverage.len())?;
+            let cache_key = (glyph.coverage.len() == expected)
+                .then(|| GlyphAtlasKey::new(&glyph.coverage, glyph.cov_w, glyph.cov_h));
+            if let Some(placement) = cache_key
+                .as_ref()
+                .and_then(|key| self.glyph_state.cache.get(key))
+                .map(|entry| entry.placement)
+            {
+                Self::push_glyph_quad(&mut current.vertices, glyph, placement);
+                continue;
+            }
+
+            if !self.glyph_state.can_fit(glyph.cov_w, glyph.cov_h) {
+                if !current.vertices.is_empty() {
+                    segments.push(std::mem::take(&mut current));
+                }
+                self.glyph_state.reset();
+            }
+            let placement = self
+                .glyph_state
+                .pack(glyph.cov_w, glyph.cov_h)
+                .ok_or_else(|| {
+                    Error::new(
+                        Errc::PlatformError,
+                        "D3d12Pipeline: glyph does not fit after atlas reset",
+                    )
+                })?;
+            current.uploads.push(PendingGlyphUpload {
+                placement,
+                coverage: Arc::clone(&glyph.coverage),
+            });
+            if let Some(cache_key) = cache_key {
+                self.glyph_state.cache.insert(
+                    cache_key,
+                    GlyphAtlasEntry {
+                        _coverage: Arc::clone(&glyph.coverage),
+                        placement,
+                    },
+                );
+            }
+            Self::push_glyph_quad(&mut current.vertices, glyph, placement);
+        }
+        if !current.vertices.is_empty() {
+            segments.push(current);
+        }
+        Ok(segments)
+    }
+
+    fn layout_glyph_upload(segments: &mut [GlyphSegment]) -> Result<usize> {
+        let mut cursor = 0usize;
+        for segment in segments {
+            if !segment.uploads.is_empty() {
+                cursor = checked_align_up(
+                    cursor,
+                    D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT as usize,
+                    "glyph footprint",
+                )?;
+                segment.texture_upload_offset = cursor;
+                segment.texture_upload_height = segment
+                    .uploads
+                    .iter()
+                    .map(|upload| upload.placement.y.saturating_add(upload.placement.height))
+                    .max()
+                    .unwrap_or(0);
+                let byte_count = glyph_segment_staging_bytes(segment.texture_upload_height)?;
+                cursor = cursor
+                    .checked_add(byte_count)
+                    .ok_or_else(|| invalid_input("D3d12Pipeline: glyph upload offset overflow"))?;
+            }
+            cursor = checked_align_up(cursor, 16, "glyph vertex buffer")?;
+            segment.vertex_offset = cursor;
+            segment.vertex_bytes = segment
+                .vertices
+                .len()
+                .checked_mul(size_of::<GlyphVertex>())
+                .ok_or_else(|| invalid_input("D3d12Pipeline: glyph vertex size overflow"))?;
+            cursor = cursor
+                .checked_add(segment.vertex_bytes)
+                .ok_or_else(|| invalid_input("D3d12Pipeline: glyph vertex offset overflow"))?;
+        }
+        Ok(cursor)
+    }
+
+    fn acquire_glyph_upload(
+        &mut self,
+        device: &ID3D12Device,
+        frame_index: usize,
+        total_bytes: usize,
+    ) -> Result<ID3D12Resource> {
+        let frame = self.frame_uploads.get(frame_index).ok_or_else(|| {
+            invalid_input(format!(
+                "D3d12Pipeline: invalid glyph upload frame index {frame_index}"
+            ))
+        })?;
+        let slot = frame.used;
+        let retained_capacity = frame
+            .buffers
+            .iter()
+            .try_fold(0usize, |total, buffer| total.checked_add(buffer.capacity));
+        let current_slot_capacity = frame.buffers.get(slot).map_or(0, |buffer| buffer.capacity);
+        if glyph_upload_fits_retained_budget(retained_capacity, current_slot_capacity, total_bytes)
+        {
+            return self.acquire_upload(device, frame_index, total_bytes);
+        }
+        let resource = create_upload_buffer(device, total_bytes)?;
+        self.frame_uploads[frame_index]
+            .transient
+            .push(resource.clone());
+        Ok(resource)
     }
 
     fn acquire_upload(
@@ -710,6 +1250,231 @@ impl D3d12Pipeline {
         }
         frame.used += 1;
         Ok(frame.buffers[slot].resource.clone())
+    }
+
+    pub(super) fn draw_glyphs(
+        &mut self,
+        device: &ID3D12Device,
+        list: &ID3D12GraphicsCommandList,
+        frame_index: usize,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        glyphs: &[GpuGlyphBlit],
+    ) -> Result<()> {
+        let result = self.draw_glyphs_inner(
+            device,
+            list,
+            frame_index,
+            viewport_w,
+            viewport_h,
+            scissor,
+            glyphs,
+        );
+        if result.is_err() {
+            // Planning updates the persistent cache before command recording.
+            // On any failure, discard it so a later frame never samples an
+            // entry whose upload may not have reached the queue.
+            self.glyph_state.reset();
+        }
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_glyphs_inner(
+        &mut self,
+        device: &ID3D12Device,
+        list: &ID3D12GraphicsCommandList,
+        frame_index: usize,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        glyphs: &[GpuGlyphBlit],
+    ) -> Result<()> {
+        if glyphs.is_empty() || viewport_w <= 0.0 || viewport_h <= 0.0 {
+            return Ok(());
+        }
+        if !viewport_w.is_finite() || !viewport_h.is_finite() {
+            return Err(invalid_input("D3d12Pipeline: viewport must be finite"));
+        }
+        let viewport = D3D12_VIEWPORT {
+            TopLeftX: 0.0,
+            TopLeftY: 0.0,
+            Width: viewport_w,
+            Height: viewport_h,
+            MinDepth: 0.0,
+            MaxDepth: 1.0,
+        };
+        let scissor = scissor_rect(viewport_w, viewport_h, scissor);
+        if scissor.right <= scissor.left || scissor.bottom <= scissor.top {
+            return Ok(());
+        }
+
+        self.ensure_glyph_atlas(device)?;
+        let mut segments = self.plan_glyph_segments(glyphs)?;
+        if segments.is_empty() {
+            return Ok(());
+        }
+        let total_bytes = Self::layout_glyph_upload(&mut segments)?;
+        for segment in &segments {
+            u32::try_from(segment.vertices.len()).map_err(|_| {
+                invalid_input("D3d12Pipeline: glyph vertex count exceeds D3D12 range")
+            })?;
+            u32::try_from(segment.vertex_bytes).map_err(|_| {
+                invalid_input("D3d12Pipeline: glyph vertex bytes exceed D3D12 range")
+            })?;
+        }
+        let upload = self.acquire_glyph_upload(device, frame_index, total_bytes)?;
+
+        let empty_read = D3D12_RANGE { Begin: 0, End: 0 };
+        let mut mapped = std::ptr::null_mut();
+        unsafe { upload.Map(0, Some(&empty_read), Some(&mut mapped)) }
+            .map_err(|error| pipeline_error("ID3D12Resource::Map(glyph upload)", error))?;
+        if mapped.is_null() {
+            unsafe { upload.Unmap(0, None) };
+            return Err(Error::new(
+                Errc::PlatformError,
+                "D3d12Pipeline: glyph upload Map returned null",
+            ));
+        }
+        for segment in &segments {
+            for pending in &segment.uploads {
+                let row_bytes = pending.placement.width as usize;
+                for row in 0..pending.placement.height as usize {
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(
+                            pending.coverage.as_ptr().add(row * row_bytes),
+                            mapped.cast::<u8>().add(
+                                segment.texture_upload_offset
+                                    + (pending.placement.y as usize + row)
+                                        * GLYPH_ATLAS_SIZE as usize
+                                    + pending.placement.x as usize,
+                            ),
+                            row_bytes,
+                        );
+                    }
+                }
+            }
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    segment.vertices.as_ptr().cast::<u8>(),
+                    mapped.cast::<u8>().add(segment.vertex_offset),
+                    segment.vertex_bytes,
+                );
+            }
+        }
+        let written = D3D12_RANGE {
+            Begin: 0,
+            End: total_bytes,
+        };
+        unsafe { upload.Unmap(0, Some(&written)) };
+
+        let atlas = self.glyph_atlas.as_ref().cloned().ok_or_else(|| {
+            Error::new(
+                Errc::PlatformError,
+                "D3d12Pipeline: glyph atlas missing after creation",
+            )
+        })?;
+        let constants = GlyphConstants {
+            viewport: [viewport_w, viewport_h],
+            _pad0: [0.0; 2],
+        };
+        let gpu_handle = self.srv_gpu_handle(GLYPH_SRV_SLOT);
+        unsafe {
+            list.SetDescriptorHeaps(&[Some(self.srv_heap.clone())]);
+            list.SetGraphicsRootSignature(&self.root_signature);
+            list.SetGraphicsRootDescriptorTable(1, gpu_handle);
+            list.SetGraphicsRoot32BitConstants(
+                0,
+                (size_of::<GlyphConstants>() / size_of::<u32>()) as u32,
+                (&constants as *const GlyphConstants).cast::<c_void>(),
+                0,
+            );
+            list.SetPipelineState(&self.glyph_pso);
+            list.RSSetViewports(&[viewport]);
+            list.RSSetScissorRects(&[scissor]);
+            list.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        }
+
+        for segment in &segments {
+            if !segment.uploads.is_empty() {
+                record_transition(
+                    list,
+                    &atlas,
+                    self.glyph_atlas_state,
+                    D3D12_RESOURCE_STATE_COPY_DEST,
+                );
+                self.glyph_atlas_state = D3D12_RESOURCE_STATE_COPY_DEST;
+                for pending in &segment.uploads {
+                    let footprint = D3D12_PLACED_SUBRESOURCE_FOOTPRINT {
+                        Offset: segment.texture_upload_offset as u64,
+                        Footprint: D3D12_SUBRESOURCE_FOOTPRINT {
+                            Format: DXGI_FORMAT_R8_UNORM,
+                            Width: GLYPH_ATLAS_SIZE,
+                            Height: segment.texture_upload_height,
+                            Depth: 1,
+                            RowPitch: GLYPH_ATLAS_SIZE,
+                        },
+                    };
+                    let mut destination = texture_copy_location_subresource(&atlas);
+                    let mut source = texture_copy_location_footprint(&upload, footprint);
+                    let source_box = D3D12_BOX {
+                        left: pending.placement.x,
+                        top: pending.placement.y,
+                        front: 0,
+                        right: pending.placement.x + pending.placement.width,
+                        bottom: pending.placement.y + pending.placement.height,
+                        back: 1,
+                    };
+                    unsafe {
+                        list.CopyTextureRegion(
+                            &destination,
+                            pending.placement.x,
+                            pending.placement.y,
+                            0,
+                            &source,
+                            Some(&source_box),
+                        );
+                    }
+                    release_copy_location(&mut destination);
+                    release_copy_location(&mut source);
+                    #[cfg(test)]
+                    {
+                        self.glyph_atlas_upload_count += 1;
+                    }
+                }
+                record_transition(
+                    list,
+                    &atlas,
+                    D3D12_RESOURCE_STATE_COPY_DEST,
+                    D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                );
+                self.glyph_atlas_state = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+            }
+            let view = D3D12_VERTEX_BUFFER_VIEW {
+                BufferLocation: unsafe { upload.GetGPUVirtualAddress() }
+                    + segment.vertex_offset as u64,
+                SizeInBytes: segment.vertex_bytes as u32,
+                StrideInBytes: size_of::<GlyphVertex>() as u32,
+            };
+            unsafe {
+                list.IASetVertexBuffers(0, Some(std::slice::from_ref(&view)));
+                list.DrawInstanced(segment.vertices.len() as u32, 1, 0, 0);
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn glyph_atlas_upload_count(&self) -> usize {
+        self.glyph_atlas_upload_count
+    }
+
+    #[cfg(test)]
+    pub(crate) fn glyph_atlas_extent(&self) -> Option<(u32, u32)> {
+        self.glyph_atlas
+            .as_ref()
+            .map(|_| (GLYPH_ATLAS_SIZE, GLYPH_ATLAS_SIZE))
     }
 
     pub(super) fn blit_soft_fallback(
@@ -867,7 +1632,7 @@ impl D3d12Pipeline {
             right: tile.dst_x + tile.width,
             bottom: tile.dst_y + tile.height,
         };
-        let gpu_handle = unsafe { self.srv_heap.GetGPUDescriptorHandleForHeapStart() };
+        let gpu_handle = self.srv_gpu_handle(SOFT_SRV_SLOT);
         unsafe {
             list.SetDescriptorHeaps(&[Some(self.srv_heap.clone())]);
             list.SetGraphicsRootSignature(&self.root_signature);
@@ -897,13 +1662,20 @@ impl D3d12Pipeline {
         std::mem::forget(self.root_signature.clone());
         std::mem::forget(self.solid_pso.clone());
         std::mem::forget(self.soft_pso.clone());
+        std::mem::forget(self.glyph_pso.clone());
         std::mem::forget(self.srv_heap.clone());
         if let Some(texture) = self.soft_texture.as_ref() {
+            std::mem::forget(texture.clone());
+        }
+        if let Some(texture) = self.glyph_atlas.as_ref() {
             std::mem::forget(texture.clone());
         }
         for frame in &self.frame_uploads {
             for upload in &frame.buffers {
                 std::mem::forget(upload.resource.clone());
+            }
+            for upload in &frame.transient {
+                std::mem::forget(upload.clone());
             }
         }
     }

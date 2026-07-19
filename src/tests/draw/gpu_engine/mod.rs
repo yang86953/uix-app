@@ -59,6 +59,28 @@ impl IGraphicsContext for FactoryInitializedNativeContext {
         Ok(Vec::new())
     }
 
+    fn clear_render_target(
+        &mut self,
+        _r: f32,
+        _g: f32,
+        _b: f32,
+        _a: f32,
+    ) -> crate::core::Result<()> {
+        Ok(())
+    }
+
+    fn blit_soft_fallback_tile(
+        &mut self,
+        _pixels: &[u32],
+        _tile: SoftFallbackTile,
+    ) -> crate::core::Result<()> {
+        Ok(())
+    }
+
+    fn present(&mut self, _frame: &PresentFrame<'_>) -> crate::core::Result<()> {
+        Ok(())
+    }
+
     fn width(&self) -> i32 {
         self.width
     }
@@ -92,4 +114,39 @@ fn gpu_native_engine_uses_factory_drawable_without_initial_resize() {
         (engine.session().width(), engine.session().height()),
         (8, 6)
     );
+}
+
+#[test]
+fn gpu_engine_forwards_idle_resource_deadline_and_release_to_native_backend() {
+    let resize_calls = Rc::new(Cell::new(0));
+    let context = FactoryInitializedNativeContext {
+        resize_calls,
+        width: 64,
+        height: 64,
+    };
+    let mut engine = GpuEngine::new(Box::new(context)).expect("GpuNative engine");
+    engine.initialize(64, 64).expect("engine initialization");
+    engine
+        .canvas_2d()
+        .fill_ellipse(Rect::new(1.0, 1.0, 8.0, 8.0), Color::white());
+    engine
+        .session_mut()
+        .backend_mut()
+        .present(&DamageRegion::full())
+        .expect("soft frame present");
+
+    let presented_at = Instant::now();
+    engine.note_presented_at(presented_at);
+    let deadline = engine
+        .idle_resource_deadline()
+        .expect("idle resource deadline");
+    assert!(deadline > presented_at);
+
+    engine.release_idle_resources(deadline);
+
+    assert_eq!(engine.idle_resource_deadline(), None);
+    assert!(engine
+        .session()
+        .native_gpu_backend()
+        .is_some_and(|backend| backend.surface.canvas.soft_fallback.is_none()));
 }

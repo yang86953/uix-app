@@ -303,6 +303,7 @@ impl IGraphicsContext for BootstrapD3d12Context {
             clear_target: true,
             soft_blit: true,
             solid_rects: true,
+            glyphs: true,
             ..NativeRasterCaps::default()
         }
     }
