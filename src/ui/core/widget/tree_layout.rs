@@ -963,8 +963,10 @@ impl WidgetTree {
     }
 
     pub(crate) fn update_animations_at(&mut self, now: Instant, dt: f64) -> Vec<(WidgetId, bool)> {
-        let ids = self.animation_node_ids();
-        self.update_animation_nodes_at(ids, now, dt)
+        let ids = self.take_animation_node_ids();
+        let updates = self.update_animation_nodes_at(ids.iter().copied(), now, dt);
+        self.animation_ids_scratch = ids;
+        updates
     }
 
     pub(crate) fn update_animations_except_at(
@@ -973,21 +975,22 @@ impl WidgetTree {
         now: Instant,
         dt: f64,
     ) -> Vec<(WidgetId, bool)> {
-        let ids: Vec<_> = self
-            .animation_node_ids()
-            .into_iter()
-            .filter(|id| !excluded_ids.contains(id))
-            .collect();
-        self.update_animation_nodes_at(ids, now, dt)
+        let mut ids = self.take_animation_node_ids();
+        ids.retain(|id| !excluded_ids.contains(id));
+        let updates = self.update_animation_nodes_at(ids.iter().copied(), now, dt);
+        self.animation_ids_scratch = ids;
+        updates
     }
 
-    fn animation_node_ids(&self) -> Vec<WidgetId> {
-        let mut ids = self
-            .traverse()
-            .iter()
-            .copied()
-            .filter(|&id| self.active_animation_frame(id).is_some())
-            .collect::<Vec<_>>();
+    fn take_animation_node_ids(&mut self) -> Vec<WidgetId> {
+        let mut ids = std::mem::take(&mut self.animation_ids_scratch);
+        ids.clear();
+        ids.extend(
+            self.traverse()
+                .iter()
+                .copied()
+                .filter(|&id| self.active_animation_frame(id).is_some()),
+        );
         ids.extend(
             self.animated_sources
                 .iter()
