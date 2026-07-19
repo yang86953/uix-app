@@ -120,6 +120,44 @@ impl FrameRadius {
 
 impl Eq for FrameRadius {}
 
+/// Canonical post-composition opacity for a materialized Picture command.
+///
+/// Storing the normalized `f32` bits preserves the CPU rasterizer's exact
+/// per-channel truncation while keeping the ordered command model `Eq`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameOpacity(u32);
+
+impl FrameOpacity {
+    pub const fn opaque() -> Self {
+        Self(1.0f32.to_bits())
+    }
+
+    pub fn from_canvas(opacity: f32) -> Self {
+        let opacity = if opacity.is_nan() {
+            0.0
+        } else {
+            opacity.clamp(0.0, 1.0)
+        };
+        Self(if opacity == 0.0 {
+            0.0f32.to_bits()
+        } else {
+            opacity.to_bits()
+        })
+    }
+
+    pub const fn value(self) -> f32 {
+        f32::from_bits(self.0)
+    }
+
+    pub fn is_opaque(self) -> bool {
+        self.value() >= 1.0 - 1e-6
+    }
+
+    pub const fn is_transparent(self) -> bool {
+        self.0 == 0.0f32.to_bits()
+    }
+}
+
 /// One validated integer-positioned glyph coverage blit.
 ///
 /// The coverage allocation is retained by the command stream, so a recorded
@@ -317,6 +355,7 @@ pub enum FrameCommand {
         image: FrameImage,
         src: FrameRect,
         dst: FrameRect,
+        opacity: FrameOpacity,
     },
 }
 
@@ -682,8 +721,22 @@ impl FrameEncoder {
     }
 
     pub fn blit_picture(&mut self, image: FrameImage, src: FrameRect, dst: FrameRect) {
-        self.commands
-            .push(FrameCommand::PictureBlit { image, src, dst });
+        self.blit_picture_with_opacity(image, src, dst, FrameOpacity::opaque());
+    }
+
+    pub(crate) fn blit_picture_with_opacity(
+        &mut self,
+        image: FrameImage,
+        src: FrameRect,
+        dst: FrameRect,
+        opacity: FrameOpacity,
+    ) {
+        self.commands.push(FrameCommand::PictureBlit {
+            image,
+            src,
+            dst,
+            opacity,
+        });
     }
 
     /// Executes this deliberately small reference subset in memory.
@@ -735,8 +788,17 @@ impl FrameEncoder {
                     blit_image_pixels(self.width, self.height, pixels, image, *src, *dst);
                     target_is_transparent = false;
                 }
-                FrameCommand::PictureBlit { image, src, dst } => {
+                FrameCommand::PictureBlit {
+                    image,
+                    src,
+                    dst,
+                    opacity,
+                } => {
+                    if opacity.is_transparent() {
+                        continue;
+                    }
                     if target_is_transparent
+                        && opacity.is_opaque()
                         && full_frame_image_blit(self.width, self.height, image, *src, *dst)
                     {
                         // Source-over onto a transparent target is exactly the
@@ -745,7 +807,15 @@ impl FrameEncoder {
                         // blend decision per full-surface pixel.
                         pixels.copy_from_slice(image.pixels());
                     } else {
-                        blit_image_pixels(self.width, self.height, pixels, image, *src, *dst);
+                        blit_image_pixels_with_opacity(
+                            self.width,
+                            self.height,
+                            pixels,
+                            image,
+                            *src,
+                            *dst,
+                            opacity.value(),
+                        );
                     }
                     target_is_transparent = false;
                 }
@@ -762,7 +832,7 @@ impl FrameEncoder {
         src: FrameRect,
         dst: FrameRect,
     ) -> Option<(ReferenceFrame, FrameRect)> {
-        self.image_blit_reference_tile(image, src, dst)
+        self.image_blit_reference_tile(image, src, dst, 1.0)
     }
 
     /// Rasterizes one Picture blit directly into its visible destination tile
@@ -772,8 +842,12 @@ impl FrameEncoder {
         image: &FrameImage,
         src: FrameRect,
         dst: FrameRect,
+        opacity: FrameOpacity,
     ) -> Option<(ReferenceFrame, FrameRect)> {
-        self.image_blit_reference_tile(image, src, dst)
+        if opacity.is_transparent() {
+            return None;
+        }
+        self.image_blit_reference_tile(image, src, dst, opacity.value())
     }
 
     fn image_blit_reference_tile(
@@ -781,6 +855,7 @@ impl FrameEncoder {
         image: &FrameImage,
         src: FrameRect,
         dst: FrameRect,
+        opacity: f32,
     ) -> Option<(ReferenceFrame, FrameRect)> {
         let visible = dst.intersection(FrameRect::new(0, 0, self.width, self.height))?;
         let pixel_count =
@@ -797,13 +872,14 @@ impl FrameEncoder {
             height: visible.height,
             pixels: vec![Color::transparent().premultiplied(); pixel_count],
         };
-        blit_image_pixels(
+        blit_image_pixels_with_opacity(
             visible.width,
             visible.height,
             &mut frame.pixels,
             image,
             src,
             local_dst,
+            opacity,
         );
         Some((frame, visible))
     }
@@ -908,7 +984,9 @@ fn source_over_commands_have_safe_grouping(
                 | FrameRasterOp::ScrollCopy { .. } => return false,
             },
             FrameCommand::CpuSegment { image, src, dst }
-            | FrameCommand::PictureBlit { image, src, dst } => {
+            | FrameCommand::PictureBlit {
+                image, src, dst, ..
+            } => {
                 if src.width != dst.width
                     || src.height != dst.height
                     || !src.is_within(image.width, image.height)
@@ -1163,7 +1241,9 @@ fn crop_and_translate_source_over_command(
             FrameCommand::Native { operation }
         }
         FrameCommand::CpuSegment { image, src, dst }
-        | FrameCommand::PictureBlit { image, src, dst } => {
+        | FrameCommand::PictureBlit {
+            image, src, dst, ..
+        } => {
             if src.width != dst.width
                 || src.height != dst.height
                 || !src.is_within(image.width, image.height)
@@ -1192,10 +1272,11 @@ fn crop_and_translate_source_over_command(
                     src: translated_src,
                     dst: translated_dst,
                 },
-                FrameCommand::PictureBlit { .. } => FrameCommand::PictureBlit {
+                FrameCommand::PictureBlit { opacity, .. } => FrameCommand::PictureBlit {
                     image: image.clone(),
                     src: translated_src,
                     dst: translated_dst,
+                    opacity: *opacity,
                 },
                 _ => unreachable!(),
             }
@@ -1499,11 +1580,41 @@ fn blit_image_pixels(
     src: FrameRect,
     dst: FrameRect,
 ) {
+    blit_image_pixels_impl::<false>(width, height, pixels, image, src, dst, 1.0);
+}
+
+fn blit_image_pixels_with_opacity(
+    width: i32,
+    height: i32,
+    pixels: &mut [u32],
+    image: &FrameImage,
+    src: FrameRect,
+    dst: FrameRect,
+    opacity: f32,
+) {
+    if opacity >= 1.0 - 1e-6 {
+        blit_image_pixels_impl::<false>(width, height, pixels, image, src, dst, 1.0);
+    } else {
+        blit_image_pixels_impl::<true>(width, height, pixels, image, src, dst, opacity);
+    }
+}
+
+fn blit_image_pixels_impl<const APPLY_OPACITY: bool>(
+    width: i32,
+    height: i32,
+    pixels: &mut [u32],
+    image: &FrameImage,
+    src: FrameRect,
+    dst: FrameRect,
+    opacity: f32,
+) {
     if src.is_empty() || dst.is_empty() {
         return;
     }
     if src.width == dst.width && src.height == dst.height {
-        blit_unscaled_image_pixels(width, height, pixels, image, src, dst);
+        blit_unscaled_image_pixels::<APPLY_OPACITY>(
+            width, height, pixels, image, src, dst, opacity,
+        );
         return;
     }
     let x0 = dst.x.max(0);
@@ -1524,19 +1635,25 @@ fn blit_image_pixels(
                 continue;
             }
             let source = image.pixels[source_y as usize * image.width as usize + source_x as usize];
+            let source = if APPLY_OPACITY {
+                crate::draw::rasterizer::apply_opacity(source, opacity)
+            } else {
+                source
+            };
             let index = y as usize * width as usize + x as usize;
             pixels[index] = blend_pixel_src_over(source, pixels[index]);
         }
     }
 }
 
-fn blit_unscaled_image_pixels(
+fn blit_unscaled_image_pixels<const APPLY_OPACITY: bool>(
     width: i32,
     height: i32,
     pixels: &mut [u32],
     image: &FrameImage,
     src: FrameRect,
     dst: FrameRect,
+    opacity: f32,
 ) {
     // CPU segment 与大多数 Picture blit 都是同尺寸搬运；先同时裁目标与源，
     // 再按连续行处理，避免热路径逐像素整数除法与边界判断。
@@ -1565,6 +1682,11 @@ fn blit_unscaled_image_pixels(
         let source_row = &image.pixels[source_start..source_start + copy_width];
         let destination_row = &mut pixels[destination_start..destination_start + copy_width];
         for (&source, destination) in source_row.iter().zip(destination_row) {
+            let source = if APPLY_OPACITY {
+                crate::draw::rasterizer::apply_opacity(source, opacity)
+            } else {
+                source
+            };
             match source >> 24 {
                 0 => {}
                 0xff => *destination = source,

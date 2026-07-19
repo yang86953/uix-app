@@ -335,10 +335,15 @@ impl NativeGpuBackend {
                         self.alpha_blit_frame_encoder_source(&source, destination)?;
                     }
                 }
-                FrameCommand::PictureBlit { image, src, dst } => {
+                FrameCommand::PictureBlit {
+                    image,
+                    src,
+                    dst,
+                    opacity,
+                } => {
                     self.ensure_frame_encoder_target(&mut target_initialized)?;
                     if let Some((source, destination)) =
-                        encoder.picture_blit_reference_tile(image, *src, *dst)
+                        encoder.picture_blit_reference_tile(image, *src, *dst, *opacity)
                     {
                         self.alpha_blit_frame_encoder_source(&source, destination)?;
                     }
