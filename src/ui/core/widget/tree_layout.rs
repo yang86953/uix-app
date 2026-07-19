@@ -415,20 +415,22 @@ impl WidgetTree {
 
     pub(crate) fn reconcile_lifecycle_after_layout(&mut self) {
         self.cancel_hidden_interaction();
-        let states: Vec<(WidgetId, bool)> = self
-            .traverse()
-            .iter()
-            .copied()
-            .filter(|&id| self.get(id).is_some())
-            .map(|id| {
-                (
-                    id,
-                    self.visible_rect_for(id).is_some() || self.focus_affects_active(id),
-                )
-            })
-            .collect();
+        let mut states = std::mem::take(&mut self.lifecycle_states_scratch);
+        states.clear();
+        states.extend(
+            self.traverse()
+                .iter()
+                .copied()
+                .filter(|&id| self.get(id).is_some())
+                .map(|id| {
+                    (
+                        id,
+                        self.visible_rect_for(id).is_some() || self.focus_affects_active(id),
+                    )
+                }),
+        );
 
-        for (id, should_be_active) in states {
+        for (id, should_be_active) in states.iter().copied() {
             let mut mounted_now = false;
             if let Some(node) = self.get_mut(id) {
                 if !node.mounted() {
@@ -449,6 +451,7 @@ impl WidgetTree {
                 self.register_app_state_snapshot(id);
             }
         }
+        self.lifecycle_states_scratch = states;
     }
 
     fn focus_affects_active(&self, id: WidgetId) -> bool {
