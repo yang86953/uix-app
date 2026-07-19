@@ -80,6 +80,10 @@ fn parking_managed_animation_deadline_blocks_until_source_resync() {
     registry.sync_animated_sources([(id, Some(deadline))]);
     assert_eq!(registry.next_deadline(), Some(deadline));
     assert!(registry.animation_ids().next().is_none());
+
+    let later_deadline = deadline + Duration::from_secs(1);
+    registry.sync_animated_sources([(id, Some(later_deadline))]);
+    assert_eq!(registry.next_deadline(), Some(later_deadline));
 }
 
 #[test]
@@ -99,6 +103,13 @@ fn open_component_animation_takes_precedence_over_a_managed_deadline() {
 
     assert_eq!(registry.next_deadline(), Some(deadline));
     assert!(registry.animation_ids().next().is_none());
+
+    registry.sync_component_animations([id]);
+    assert_eq!(registry.next_deadline(), None);
+    assert_eq!(registry.animation_ids().collect::<Vec<_>>(), vec![id]);
+
+    registry.sync_component_animations([]);
+    assert_eq!(registry.next_deadline(), Some(deadline));
 }
 
 #[test]
