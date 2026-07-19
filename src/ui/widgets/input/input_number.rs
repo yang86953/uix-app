@@ -60,6 +60,7 @@ impl_input_number_integer!(i8, i16, i32, i64, isize, u8, u16, u32, u64, usize);
 
 type ReadNumber = Box<dyn Fn() -> f64 + Send + Sync>;
 type WriteNumber = Box<dyn Fn(f64) -> f64 + Send + Sync>;
+type NumberFormatter = Box<dyn Fn(f64) -> String + Send + Sync>;
 
 fn decimal_places(value: f64) -> i32 {
     if !value.is_finite() || value == 0.0 {
@@ -118,6 +119,7 @@ component! {
         hovered: bool,
         disabled: bool,
         keyboard: bool,
+        formatter: Option<NumberFormatter>,
         input_size: ControlSize,
         text_buffer: String,
         pending_change: Cell<Option<f64>>,
@@ -275,7 +277,7 @@ component! {
         ctx.fill_rect(control_frame, control_bg, radius);
 
         let show = if self.value_configured {
-            self.format_value()
+            self.display_value_text()
         } else {
             self.placeholder.clone()
         };
@@ -394,6 +396,7 @@ impl InputNumber {
             hovered: false,
             disabled: config.disabled,
             keyboard: true,
+            formatter: None,
             input_size: config.size,
             text_buffer: String::new(),
             pending_change: Cell::new(None),
@@ -407,7 +410,7 @@ impl InputNumber {
         let binding = InputNumberValueBinding::new(state);
         self.value = self.clamp_value((binding.read)());
         self.value_configured = true;
-        self.text_buffer = self.format_value();
+        self.text_buffer = self.raw_value_text();
         self.value_binding = Some(binding);
         self
     }
@@ -417,7 +420,7 @@ impl InputNumber {
         self.value_binding = None;
         self.value = self.clamp_value(value.to_f64());
         self.value_configured = true;
-        self.text_buffer = self.format_value();
+        self.text_buffer = self.raw_value_text();
         self
     }
 
@@ -463,12 +466,18 @@ impl InputNumber {
         self.keyboard = enabled;
         if !enabled {
             self.text_buffer = if self.value_configured {
-                self.format_value()
+                self.raw_value_text()
             } else {
                 String::new()
             };
             self.cursor_rect.set(Rect::zero());
         }
+        self
+    }
+
+    /// 自定义非编辑态的显示文本；编辑、State 与 Change 始终使用原始数值。
+    pub fn formatter(mut self, formatter: impl Fn(f64) -> String + Send + Sync + 'static) -> Self {
+        self.formatter = Some(Box::new(formatter));
         self
     }
 
@@ -493,7 +502,7 @@ impl InputNumber {
         }
         self.focused = true;
         self.text_buffer = if self.value_configured {
-            self.format_value()
+            self.raw_value_text()
         } else {
             String::new()
         };
@@ -520,7 +529,7 @@ impl InputNumber {
             self.set_value(v);
         }
         self.text_buffer = if self.value_configured {
-            self.format_value()
+            self.raw_value_text()
         } else {
             String::new()
         };
@@ -532,7 +541,7 @@ impl InputNumber {
         let changed = !self.value_configured || value != self.value;
         self.value = value;
         self.value_configured = true;
-        self.text_buffer = self.format_value();
+        self.text_buffer = self.raw_value_text();
         if changed {
             self.pending_change.set(Some(value));
         }
@@ -566,15 +575,21 @@ impl InputNumber {
             return;
         }
         self.value = self.clamp_value(self.value);
-        self.text_buffer = self.format_value();
+        self.text_buffer = self.raw_value_text();
     }
 
-    fn format_value(&self) -> String {
+    fn raw_value_text(&self) -> String {
         if self.value == 0.0 {
             "0".to_string()
         } else {
             self.value.to_string()
         }
+    }
+
+    fn display_value_text(&self) -> String {
+        self.formatter
+            .as_ref()
+            .map_or_else(|| self.raw_value_text(), |formatter| formatter(self.value))
     }
 
     fn sync_bound_value(&mut self) {
@@ -585,7 +600,7 @@ impl InputNumber {
         if !self.value_configured || self.value != value {
             self.value = value;
             self.value_configured = true;
-            self.text_buffer = self.format_value();
+            self.text_buffer = self.raw_value_text();
         }
     }
 
@@ -618,6 +633,8 @@ impl InputNumber {
             placeholder: self.placeholder.clone(),
             disabled: self.disabled,
             keyboard: self.keyboard,
+            formatted: self.formatter.is_some(),
+            display_value: self.value_configured.then(|| self.display_value_text()),
         }
     }
 
@@ -629,6 +646,7 @@ impl InputNumber {
         self.placeholder = next.placeholder;
         self.disabled = next.disabled;
         self.keyboard = next.keyboard;
+        self.formatter = next.formatter;
         self.input_size = next.input_size;
         self.value_binding = next.value_binding;
         if self.disabled {
@@ -642,12 +660,12 @@ impl InputNumber {
         if self.value != next_value {
             self.value = next_value;
             if self.value_configured {
-                self.text_buffer = self.format_value();
+                self.text_buffer = self.raw_value_text();
             }
         }
         if !self.keyboard {
             self.text_buffer = if self.value_configured {
-                self.format_value()
+                self.raw_value_text()
             } else {
                 String::new()
             };
