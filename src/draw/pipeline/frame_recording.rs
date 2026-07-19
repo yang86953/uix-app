@@ -275,11 +275,7 @@ impl FrameRecordingEngine {
         let RecordedPicturePayload::Encoder(encoder) = picture.committed.as_ref()? else {
             return None;
         };
-        let src = rect_to_frame(src_rect).ok()?;
-        let dst = rect_to_frame(dst_rect).ok()?;
-        if target.direct_picture_rects(src_rect, dst_rect)? != (src, dst) {
-            return None;
-        }
+        let (src, dst) = target.direct_picture_rects(src_rect, dst_rect)?;
         if !src.is_within(encoder.width(), encoder.height())
             || dst.width != src.width
             || dst.height != src.height
@@ -996,15 +992,20 @@ impl FrameRecordingCanvas {
     }
 
     fn direct_picture_rects(&self, src: Rect, dst: Rect) -> Option<(FrameRect, FrameRect)> {
+        let (offset_x, offset_y) = self.scratch.offset();
         if self.blend_mode == BlendMode::Additive
-            || self.scratch.offset() != (0.0, 0.0)
+            || !offset_x.is_finite()
+            || !offset_y.is_finite()
+            || offset_x.fract() != 0.0
+            || offset_y.fract() != 0.0
             || !self.scratch.current_transform().is_identity()
             || self.scratch.opacity() != 1.0
         {
             return None;
         }
         let src = rect_to_frame(src).ok()?;
-        let dst = rect_to_frame(dst).ok()?;
+        let dst =
+            rect_to_frame(Rect::new(dst.x + offset_x, dst.y + offset_y, dst.w, dst.h)).ok()?;
         let clip = self.scratch.current_clip();
         if clip == self.full_rect() {
             return Some((src, dst));

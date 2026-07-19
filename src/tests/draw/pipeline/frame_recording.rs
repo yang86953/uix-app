@@ -1178,11 +1178,69 @@ fn recording_canvas_emits_native_cpu_and_picture_commands_in_painter_order() {
 }
 
 #[test]
-fn offset_picture_fallback_allocates_lazy_scratch() {
+fn integral_offset_picture_splices_native_ir_without_allocating_scratch() {
     let mut engine = FrameRecordingEngine::new();
-    engine.initialize(12, 8).expect("initialize recorder");
+    engine.initialize(24, 16).expect("initialize recorder");
     engine.begin_recording(true).expect("begin recording");
-    let picture = engine.create_offscreen(2, 2).expect("Picture");
+    let picture = engine.create_offscreen(16, 8).expect("Picture");
+    let coverage: Arc<[u8]> = vec![0, 64, 128, 255, 255, 128, 64, 0].into();
+    engine
+        .try_begin_offscreen_paint(&picture)
+        .expect("begin Picture");
+    {
+        let canvas = engine.offscreen_canvas(&picture).expect("Picture canvas");
+        canvas.fill_rect(Rect::new(0.0, 0.0, 2.0, 2.0), Color::green(), None);
+        canvas.blit_glyph_shared(5, 1, Arc::clone(&coverage), 4, 2, Color::white());
+    }
+    engine
+        .try_end_offscreen_paint()
+        .expect("end Picture target");
+    engine.canvas_2d().set_offset(3.0, 2.0);
+
+    engine
+        .try_blit_offscreen_src(
+            &picture,
+            Rect::new(0.0, 0.0, 16.0, 8.0),
+            Rect::new(0.0, 0.0, 16.0, 8.0),
+        )
+        .expect("record offset Picture blit");
+    assert_eq!(engine.scratch_surface_size(), (1, 1));
+
+    let encoder = engine.finish_recording().expect("finish recorder");
+    assert!(encoder.commands().iter().any(|command| matches!(
+        command,
+        FrameCommand::Native {
+            operation: FrameRasterOp::FillRect { rect, .. }
+        } if *rect == FrameRect::new(3, 2, 2, 2)
+    )));
+    assert!(!encoder.commands().iter().any(|command| matches!(
+        command,
+        FrameCommand::PictureBlit { .. } | FrameCommand::CpuSegment { .. }
+    )));
+    let glyphs = encoder
+        .commands()
+        .iter()
+        .find_map(|command| match command {
+            FrameCommand::Native {
+                operation: FrameRasterOp::BlitGlyphs { glyphs, .. },
+            } => Some(glyphs),
+            _ => None,
+        })
+        .expect("offset Picture glyphs stay native");
+    assert_eq!((glyphs[0].x(), glyphs[0].y()), (8, 3));
+    assert!(Arc::ptr_eq(glyphs[0].coverage(), &coverage));
+    assert_eq!(
+        encoder.render_reference().pixel(3, 2),
+        Some(Color::green().premultiplied())
+    );
+}
+
+#[test]
+fn fractional_offset_picture_keeps_exact_cpu_fallback() {
+    let mut engine = FrameRecordingEngine::new();
+    engine.initialize(24, 16).expect("initialize recorder");
+    engine.begin_recording(true).expect("begin recording");
+    let picture = engine.create_offscreen(16, 8).expect("Picture");
     engine
         .try_begin_offscreen_paint(&picture)
         .expect("begin Picture");
@@ -1193,26 +1251,22 @@ fn offset_picture_fallback_allocates_lazy_scratch() {
     engine
         .try_end_offscreen_paint()
         .expect("end Picture target");
-    engine.canvas_2d().set_offset(3.0, 2.0);
+    engine.canvas_2d().set_offset(0.5, 0.0);
 
     engine
         .try_blit_offscreen_src(
             &picture,
-            Rect::new(0.0, 0.0, 2.0, 2.0),
-            Rect::new(0.0, 0.0, 2.0, 2.0),
+            Rect::new(0.0, 0.0, 16.0, 8.0),
+            Rect::new(0.0, 0.0, 16.0, 8.0),
         )
-        .expect("record offset Picture blit");
-    assert_eq!(engine.scratch_surface_size(), (12, 8));
+        .expect("record fractional-offset Picture blit");
+    assert_eq!(engine.scratch_surface_size(), (24, 16));
 
     let encoder = engine.finish_recording().expect("finish recorder");
     assert!(encoder
         .commands()
         .iter()
         .any(|command| matches!(command, FrameCommand::CpuSegment { .. })));
-    assert_eq!(
-        encoder.render_reference().pixel(3, 2),
-        Some(Color::green().premultiplied())
-    );
 }
 
 #[test]
@@ -1440,11 +1494,11 @@ fn transformed_recording_uses_a_tight_cpu_segment_at_the_mapped_bounds() {
 }
 
 #[test]
-fn clipped_unscaled_picture_stays_a_direct_picture_command() {
+fn clipped_unscaled_picture_splices_native_ir_without_materializing() {
     let mut engine = FrameRecordingEngine::new();
-    engine.initialize(12, 8).expect("initialize recorder");
+    engine.initialize(16, 10).expect("initialize recorder");
     engine.begin_recording(true).expect("begin recording");
-    let picture = engine.create_offscreen(6, 4).expect("Picture");
+    let picture = engine.create_offscreen(16, 8).expect("Picture");
     engine
         .try_begin_offscreen_paint(&picture)
         .expect("begin Picture");
@@ -1459,25 +1513,24 @@ fn clipped_unscaled_picture_stays_a_direct_picture_command() {
     engine
         .try_blit_offscreen_src(
             &picture,
-            Rect::new(0.0, 0.0, 6.0, 4.0),
-            Rect::new(2.0, 1.0, 6.0, 4.0),
+            Rect::new(0.0, 0.0, 16.0, 8.0),
+            Rect::new(2.0, 1.0, 16.0, 8.0),
         )
         .expect("record clipped Picture blit");
     engine.canvas_2d().pop_clip();
 
     let encoder = engine.finish_recording().expect("finish recorder");
-    assert!(encoder.commands().iter().any(|command| {
-        matches!(
-            command,
-            FrameCommand::PictureBlit { src, dst, .. }
-                if *src == FrameRect::new(2, 1, 3, 2)
-                    && *dst == FrameRect::new(4, 2, 3, 2)
-        )
-    }));
-    assert!(!encoder
-        .commands()
-        .iter()
-        .any(|command| matches!(command, FrameCommand::CpuSegment { .. })));
+    assert!(encoder.commands().iter().any(|command| matches!(
+        command,
+        FrameCommand::Native {
+            operation: FrameRasterOp::FillRect { rect, .. }
+        } if *rect == FrameRect::new(4, 2, 3, 2)
+    )));
+    assert!(!encoder.commands().iter().any(|command| matches!(
+        command,
+        FrameCommand::PictureBlit { .. } | FrameCommand::CpuSegment { .. }
+    )));
+    assert_eq!(engine.scratch_surface_size(), (1, 1));
     let reference = encoder.render_reference();
     assert_eq!(
         reference.pixel(3, 2),
