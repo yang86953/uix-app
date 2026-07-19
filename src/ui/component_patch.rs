@@ -5,9 +5,9 @@ use crate::ui::widgets::{
     DatePicker, DateRangePicker, Descriptions, Divider, Drawer, Dropdown, Empty, FloatButton,
     Footer, Form, FormItem, Grid, Header, Icon, Image, Input, InputNumber, Label, Layout,
     LineChart, List, Mentions, Menu, Message, Modal, NavItem, Notification, Pagination, PieChart,
-    Popconfirm, Popover, ProgressBar, QRCode, Radio, Rate, ResultView, RichText, ScrollView,
-    Segmented, Select, SelectableList, Sider, Skeleton, Slider, Space, Spin, Splitter, Steps,
-    Switch, Table, Tabs, Tag, ThemeToggle, TimePicker, Timeline, Tooltip, Transfer, Tree,
+    Popconfirm, Popover, ProgressBar, QRCode, Radio, RangeSlider, Rate, ResultView, RichText,
+    ScrollView, Segmented, Select, SelectableList, Sider, Skeleton, Slider, Space, Spin, Splitter,
+    Steps, Switch, Table, Tabs, Tag, ThemeToggle, TimePicker, Timeline, Tooltip, Transfer, Tree,
     TreeSelect, Typography, Upload, Watermark,
 };
 use crate::ui::window_chrome::WindowInteractionRegion;
@@ -121,6 +121,7 @@ pub(crate) fn patch_builtin_widget(
     patch_as!(Radio);
     patch_as!(Switch);
     patch_as!(Slider);
+    patch_as!(RangeSlider);
     patch_as!(InputNumber);
     patch_as!(Rate);
     patch_as!(Segmented);
