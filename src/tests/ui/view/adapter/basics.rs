@@ -606,6 +606,7 @@ fn reconcile_slider_patches_instance_and_syncs_snapshot_fields() {
             max: 10.0,
             step: 0.5,
             value: 3.0,
+            marks: vec![],
         }
     );
 }
