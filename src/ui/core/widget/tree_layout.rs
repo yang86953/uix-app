@@ -189,17 +189,19 @@ impl WidgetTree {
         let max_passes = 10;
         #[cfg(test)]
         let mut converge_passes = 0u32;
-        let rev_order: Vec<WidgetId> = order.iter().rev().copied().collect();
         // 安全网：若连续两轮 Phase 2 扩展签名完全相同（同 id、同 before/after），
         // 视为无 progress，停止空转（根因仍应在 measure；此处防止打满 max_passes）。
-        let mut prev_expand_sig: Option<Vec<(WidgetId, i32, i32, i32, i32)>> = None;
+        let mut prev_expand_sig = Vec::new();
+        let mut pass_expand_sig = Vec::new();
+        let mut has_prev_expand_sig = false;
+        let mut resized_children = HashSet::new();
         for _converge_pass in 0..max_passes {
             #[cfg(test)]
             {
                 converge_passes += 1;
             }
             let mut any_change = false;
-            let mut pass_expand_sig: Vec<(WidgetId, i32, i32, i32, i32)> = Vec::new();
+            pass_expand_sig.clear();
 
             if self.sync_parent_child_visibility(&order) {
                 any_change = true;
@@ -240,11 +242,11 @@ impl WidgetTree {
             for _inner_pass in 0..3 {
                 #[cfg(test)]
                 LAYOUT_TRACE_PHASE.with(|p| p.set(2));
-                let (expanded, sig) = self.layout_expand(&rev_order);
-                pass_expand_sig.extend(sig);
+                let expanded =
+                    self.layout_expand(&order, &mut pass_expand_sig, &mut resized_children);
                 #[cfg(test)]
                 LAYOUT_TRACE_PHASE.with(|p| p.set(4));
-                let shrunk = self.layout_shrink(&rev_order);
+                let shrunk = self.layout_shrink(&order);
                 #[cfg(test)]
                 LAYOUT_TRACE_PHASE.with(|p| p.set(0));
                 if expanded || shrunk {
@@ -259,13 +261,14 @@ impl WidgetTree {
             self.layout_viewports(&order);
 
             if !pass_expand_sig.is_empty() {
-                if prev_expand_sig.as_ref() == Some(&pass_expand_sig) {
+                if has_prev_expand_sig && prev_expand_sig == pass_expand_sig {
                     crate::core::log::debug_fn(
                         "[Layout] Phase 2: identical expand signature — stop (no progress)",
                     );
                     break;
                 }
-                prev_expand_sig = Some(pass_expand_sig);
+                std::mem::swap(&mut prev_expand_sig, &mut pass_expand_sig);
+                has_prev_expand_sig = true;
             }
 
             if !any_change {
@@ -464,16 +467,17 @@ impl WidgetTree {
 
     /// 自下而上扩展：当子节点右侧/底部超出容器时，扩展容器宽度/高度。
     /// 后序遍历确保子节点先扩展、父节点后扩展。
-    /// 返回 (是否有任何容器被扩展, 本趟扩展签名)。
+    /// 返回是否有任何容器被扩展，并把本趟签名追加到调用方复用缓冲。
     fn layout_expand(
         &mut self,
-        rev_order: &[WidgetId],
-    ) -> (bool, Vec<(WidgetId, i32, i32, i32, i32)>) {
+        order: &[WidgetId],
+        expand_sig: &mut Vec<(WidgetId, i32, i32, i32, i32)>,
+        resized_children: &mut HashSet<WidgetId>,
+    ) -> bool {
         let mut any_resized = false;
-        let mut expand_sig: Vec<(WidgetId, i32, i32, i32, i32)> = Vec::new();
         // 收集本趟中被扩展过的子节点，用于触发其父容器重排
-        let mut resized_children = std::collections::HashSet::new();
-        for &id in rev_order {
+        resized_children.clear();
+        for &id in order.iter().rev() {
             if !self.is_effectively_visible(id) {
                 continue;
             }
@@ -624,7 +628,7 @@ impl WidgetTree {
                     id,
                     relayout_frame,
                     &children,
-                    &resized_children,
+                    resized_children,
                 );
                 let mut child_moved = false;
                 for (child_id, rect) in new_positions {
@@ -640,7 +644,7 @@ impl WidgetTree {
                 }
             }
         }
-        (any_resized, expand_sig)
+        any_resized
     }
 
     /// Phase 2 重排：对已扩展子节点，measure 结果不得低于当前 frame。
@@ -763,19 +767,21 @@ impl WidgetTree {
     /// 显著小于容器当前高度，且子节点延伸到可见区域时，收缩容器。
     /// 每轮先重新布局子节点（确保兄弟组件靠拢），再检查是否需要收缩。
     /// 返回是否有任何容器被收缩。
-    fn layout_shrink(&mut self, rev_order: &[WidgetId]) -> bool {
+    fn layout_shrink(&mut self, order: &[WidgetId]) -> bool {
+        #[derive(Clone)]
+        struct ShrinkOp {
+            id: WidgetId,
+            needed_h: f32,
+        }
+
         let mut any_changed = false;
+        let mut ops = Vec::new();
         for _pass in 0..3 {
             let mut pass_changed = false;
             // Phase A: 收集需要收缩的容器
-            #[derive(Clone)]
-            struct ShrinkOp {
-                id: WidgetId,
-                needed_h: f32,
-            }
-            let mut ops: Vec<ShrinkOp> = Vec::new();
+            ops.clear();
 
-            for &id in rev_order {
+            for &id in order.iter().rev() {
                 if !self.is_effectively_visible(id) {
                     continue;
                 }
