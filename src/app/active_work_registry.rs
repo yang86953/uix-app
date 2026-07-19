@@ -21,8 +21,10 @@ pub(crate) struct ActiveWorkRegistry {
     entries: BTreeMap<ActiveWorkKind, Option<Instant>>,
     managed_animation_registrations: BTreeMap<NodeId, Option<Instant>>,
     open_component_animations: BTreeSet<NodeId>,
-    managed_timers: BTreeSet<TimerId>,
-    managed_app_timers: BTreeSet<TimerId>,
+    managed_timers: BTreeMap<TimerId, bool>,
+    managed_app_timers: BTreeMap<TimerId, bool>,
+    timer_sync_marker: bool,
+    app_timer_sync_marker: bool,
 }
 
 impl ActiveWorkRegistry {
@@ -158,39 +160,44 @@ impl ActiveWorkRegistry {
     where
         I: IntoIterator<Item = (TimerId, Duration)>,
     {
-        let desired: BTreeMap<TimerId, Duration> = timers.into_iter().collect();
-        self.entries.retain(|kind, _| match kind {
-            ActiveWorkKind::Timer(id) if self.managed_timers.contains(id) => {
-                desired.contains_key(id)
-            }
-            _ => true,
-        });
-        self.managed_timers.retain(|id| desired.contains_key(id));
-        for (id, delay) in desired {
+        self.timer_sync_marker = !self.timer_sync_marker;
+        let marker = self.timer_sync_marker;
+        for (id, delay) in timers {
             self.entries
                 .entry(ActiveWorkKind::Timer(id))
                 .or_insert(Some(now + delay));
-            self.managed_timers.insert(id);
+            self.managed_timers.insert(id, marker);
         }
+        let entries = &mut self.entries;
+        self.managed_timers.retain(|&id, seen_marker| {
+            if *seen_marker == marker {
+                true
+            } else {
+                entries.remove(&ActiveWorkKind::Timer(id));
+                false
+            }
+        });
     }
 
     pub(crate) fn sync_app_timers<I>(&mut self, timers: I)
     where
         I: IntoIterator<Item = (TimerId, Instant)>,
     {
-        let desired: BTreeMap<TimerId, Instant> = timers.into_iter().collect();
-        self.entries.retain(|kind, _| match kind {
-            ActiveWorkKind::AppTimer(id) if self.managed_app_timers.contains(id) => {
-                desired.contains_key(id)
-            }
-            _ => true,
-        });
-        self.managed_app_timers
-            .retain(|id| desired.contains_key(id));
-        for (id, deadline) in desired {
+        self.app_timer_sync_marker = !self.app_timer_sync_marker;
+        let marker = self.app_timer_sync_marker;
+        for (id, deadline) in timers {
             self.entries
                 .insert(ActiveWorkKind::AppTimer(id), Some(deadline));
-            self.managed_app_timers.insert(id);
+            self.managed_app_timers.insert(id, marker);
         }
+        let entries = &mut self.entries;
+        self.managed_app_timers.retain(|&id, seen_marker| {
+            if *seen_marker == marker {
+                true
+            } else {
+                entries.remove(&ActiveWorkKind::AppTimer(id));
+                false
+            }
+        });
     }
 }

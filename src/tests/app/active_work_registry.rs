@@ -226,4 +226,25 @@ fn sync_app_timers_replaces_managed_app_timer_deadlines() {
         registry.next_deadline(),
         Some(now + Duration::from_millis(30))
     );
+
+    registry.sync_app_timers(vec![(2, now + Duration::from_millis(40))]);
+
+    assert_eq!(
+        registry.next_deadline(),
+        Some(now + Duration::from_millis(40))
+    );
+}
+
+#[test]
+fn sync_app_timers_does_not_remove_external_app_timer_entries() {
+    let now = Instant::now();
+    let mut registry = ActiveWorkRegistry::new();
+    registry.register(ActiveWorkKind::AppTimer(1), now + Duration::from_millis(10));
+
+    registry.sync_app_timers(Vec::new());
+
+    assert_eq!(
+        registry.next_deadline(),
+        Some(now + Duration::from_millis(10))
+    );
 }
