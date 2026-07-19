@@ -7,7 +7,7 @@ use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use serde_json::json;
+use serde_json::{json, Value};
 use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
@@ -26,7 +26,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SWP_SHOWWINDOW, WM_SETTINGCHANGE,
 };
 
-use super::{assert_success, exchange, perform_until_presentable, DemoProcess, PRESENT_TIMEOUT_MS};
+use super::{
+    assert_success, exchange, node_by_automation_id, perform_until_presentable, DemoProcess,
+    PRESENT_TIMEOUT_MS,
+};
 
 #[link(name = "dwmapi")]
 extern "system" {
@@ -732,6 +735,7 @@ pub(super) fn verify_theme_and_resize_capture(
         }),
     );
     assert_success(&snapshot, "capture-before-resize");
+    let before_layout = assert_shell_fills_snapshot(&snapshot["snapshot"], "before resize");
     let presented_revision = snapshot["snapshot"]["presented_revision"]
         .as_u64()
         .expect("presented revision");
@@ -752,6 +756,27 @@ pub(super) fn verify_theme_and_resize_capture(
         (resized.width, resized.height),
         (themed.width, themed.height)
     );
+    let resized_snapshot = exchange(
+        connection,
+        json!({
+            "schema": "uix.agent.v1",
+            "request_id": "capture-after-resize",
+            "type": "snapshot",
+            "window_id": window_id,
+        }),
+    );
+    assert_success(&resized_snapshot, "capture-after-resize");
+    let resized_layout = assert_shell_fills_snapshot(&resized_snapshot["snapshot"], "after resize");
+    assert_ne!(
+        (before_layout.0, before_layout.1),
+        (resized_layout.0, resized_layout.1),
+        "root logical viewport must change after the native client resize"
+    );
+    assert_ne!(
+        (before_layout.2, before_layout.3),
+        (resized_layout.2, resized_layout.3),
+        "page scroll viewport must reflow after the native client resize"
+    );
     println!(
         "foreground capture: {}x{} -> theme delta {:.2}% -> {}x{}",
         before.width,
@@ -760,4 +785,46 @@ pub(super) fn verify_theme_and_resize_capture(
         resized.width,
         resized.height
     );
+}
+
+fn assert_shell_fills_snapshot(snapshot: &Value, label: &str) -> (f64, f64, f64, f64) {
+    let nodes = snapshot["nodes"]
+        .as_array()
+        .expect("semantic snapshot nodes");
+    let root = nodes
+        .iter()
+        .find(|node| node["parent"].is_null())
+        .expect("semantic root node");
+    let root_bounds = &root["visible_bounds"];
+    let root_w = root_bounds["w"].as_f64().expect("root visible width");
+    let root_h = root_bounds["h"].as_f64().expect("root visible height");
+    assert!(root_w > 0.0 && root_h > 0.0, "{label}: empty root bounds");
+    assert_eq!(root_bounds["x"].as_f64(), Some(0.0), "{label}: root x");
+    assert_eq!(root_bounds["y"].as_f64(), Some(0.0), "{label}: root y");
+
+    let title_bar = &node_by_automation_id(snapshot, "window-titlebar")["visible_bounds"];
+    assert_eq!(title_bar["x"].as_f64(), Some(0.0), "{label}: title x");
+    assert_eq!(title_bar["y"].as_f64(), Some(0.0), "{label}: title y");
+    assert!(
+        (title_bar["w"].as_f64().expect("title width") - root_w).abs() < 0.5,
+        "{label}: title bar must span root width"
+    );
+    assert!(
+        title_bar["h"].as_f64().expect("title height") > 0.0,
+        "{label}: empty title bar"
+    );
+
+    let status = &node_by_automation_id(snapshot, "app-status-bar")["visible_bounds"];
+    let status_bottom =
+        status["y"].as_f64().expect("status y") + status["h"].as_f64().expect("status height");
+    assert!(
+        (status_bottom - root_h).abs() < 0.5,
+        "{label}: status bar bottom {status_bottom} must meet root bottom {root_h}"
+    );
+
+    let page = &node_by_automation_id(snapshot, "page-scroll-0")["visible_bounds"];
+    let page_w = page["w"].as_f64().expect("page visible width");
+    let page_h = page["h"].as_f64().expect("page visible height");
+    assert!(page_w > 0.0 && page_h > 0.0, "{label}: empty page viewport");
+    (root_w, root_h, page_w, page_h)
 }
