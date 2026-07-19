@@ -289,7 +289,7 @@ impl WidgetTree {
         self.bind_reactive_widget_states();
         self.rebuild_widget_overlays();
         self.reconcile_lifecycle_after_layout();
-        self.sync_app_state_registry();
+        self.sync_app_state_registry_from_lifecycle_states();
         crate::core::log::debug_fn("[Layout] layout() done");
     }
 
@@ -452,6 +452,17 @@ impl WidgetTree {
             }
         }
         self.lifecycle_states_scratch = states;
+    }
+
+    fn sync_app_state_registry_from_lifecycle_states(&self) {
+        if self.app_state.is_none() {
+            return;
+        }
+        for &(id, _) in &self.lifecycle_states_scratch {
+            if self.get(id).is_some_and(|node| node.mounted()) {
+                self.register_app_state_snapshot(id);
+            }
+        }
     }
 
     fn focus_affects_active(&self, id: WidgetId) -> bool {
