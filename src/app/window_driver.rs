@@ -90,6 +90,7 @@ pub(crate) struct WindowDriver {
     initial_size: (i32, i32),
     deferred_show: bool,
     started_at: Option<Instant>,
+    scheduled_animation_ids_scratch: Vec<NodeId>,
 }
 
 impl WindowDriver {
@@ -103,6 +104,7 @@ impl WindowDriver {
             initial_size: (width, height),
             deferred_show,
             started_at: None,
+            scheduled_animation_ids_scratch: Vec::new(),
         }
     }
 
@@ -594,7 +596,10 @@ impl WindowDriver {
         let target_present_time = opportunity.target_present_time();
         self.last_frame = Some(frame_time);
 
-        let scheduled_animation_ids: Vec<_> = active_work.animation_ids().collect();
+        self.scheduled_animation_ids_scratch.clear();
+        self.scheduled_animation_ids_scratch
+            .extend(active_work.animation_ids());
+        let scheduled_animation_ids = self.scheduled_animation_ids_scratch.as_slice();
         let discover_animation_work =
             event_work || !self.rendered_first || *reconcile_pending || has_invalidation_work(tree);
         let dt = self
@@ -603,7 +608,7 @@ impl WindowDriver {
             .as_secs_f64();
         let animation_updates = update_scheduled_and_discovered_animations(
             tree,
-            &scheduled_animation_ids,
+            scheduled_animation_ids,
             frame_time,
             dt,
             discover_animation_work,
