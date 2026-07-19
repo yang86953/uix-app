@@ -394,9 +394,7 @@ fn tree_clears_interaction_when_tag_hides_itself() {
 #[test]
 fn extended_color_and_icon_participate_in_snapshot_and_measurement() {
     let plain = Tag::new("Admin").color(TagColor::Geekblue);
-    let icon = Tag::new("Admin")
-        .color(TagColor::Geekblue)
-        .icon("star");
+    let icon = Tag::new("Admin").color(TagColor::Geekblue).icon("star");
     assert!(
         icon.measure(Constraints::unconstrained()).w
             > plain.measure(Constraints::unconstrained()).w

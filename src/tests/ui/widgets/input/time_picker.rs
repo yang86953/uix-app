@@ -212,7 +212,7 @@ fn minute_column_wheel_reaches_the_last_minute() {
     assert_eq!(
         picker.on_event(&SystemEvent::Wheel {
             pos: Point::new(90.0, 100.0),
-            delta: Point::new(0.0, -100.0),
+            delta: Point::new(0.0, 100.0),
         }),
         EventResult::Handled
     );

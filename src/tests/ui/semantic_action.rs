@@ -264,7 +264,7 @@ fn increment_decrement_and_scroll_use_the_existing_widget_event_contracts() {
         .perform_semantic_action(
             scroll,
             &SemanticAction::Scroll {
-                delta: Point::new(0.0, -1.0),
+                delta: Point::new(0.0, 1.0),
             },
         )
         .unwrap();
@@ -297,7 +297,7 @@ fn semantic_scroll_targets_the_resolved_outer_viewport() {
     tree.perform_semantic_action(
         outer,
         &SemanticAction::Scroll {
-            delta: Point::new(0.0, -1.0),
+            delta: Point::new(0.0, 1.0),
         },
     )
     .unwrap();

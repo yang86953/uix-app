@@ -206,10 +206,10 @@ fn virtual_list_range_clamps_invalid_offsets_and_overscan_overflow() {
 fn virtual_list_scroll_wheel_delta_clamps_to_content() {
     let mut scroll = VirtualListScroll::new();
 
-    assert_eq!(scroll.scroll_by_wheel(-10.0, 5, 20.0, 40.0), 60.0);
+    assert_eq!(scroll.scroll_by_wheel(10.0, 5, 20.0, 40.0), 60.0);
     assert_eq!(scroll.scroll_offset(), 60.0);
-    assert_eq!(scroll.scroll_by_wheel(-1.0, 5, 20.0, 40.0), 0.0);
-    assert_eq!(scroll.scroll_by_wheel(10.0, 5, 20.0, 40.0), -60.0);
+    assert_eq!(scroll.scroll_by_wheel(1.0, 5, 20.0, 40.0), 0.0);
+    assert_eq!(scroll.scroll_by_wheel(-10.0, 5, 20.0, 40.0), -60.0);
     assert_eq!(scroll.scroll_offset(), 0.0);
 
     scroll.set_scroll_offset(80.0);
@@ -254,7 +254,7 @@ fn wheel_scroll_records_delta_for_composite() {
     vs.last_frame.set(Some(Rect::new(0.0, 0.0, 300.0, 96.0)));
     let handled = vs.on_event(&SystemEvent::Wheel {
         pos: crate::core::Point::new(0.0, 0.0),
-        delta: crate::core::Point::new(0.0, -1.0),
+        delta: crate::core::Point::new(0.0, 1.0),
     });
     assert_eq!(handled, EventResult::Handled);
     assert!(vs.scroll_offset() > 0.0);
@@ -277,7 +277,7 @@ fn same_type_reconcile_preserves_virtual_scroll_offset() {
     assert_eq!(
         tree.dispatch_event(&SystemEvent::Wheel {
             pos: crate::core::Point::new(10.0, 10.0),
-            delta: crate::core::Point::new(0.0, -1.0),
+            delta: crate::core::Point::new(0.0, 1.0),
         }),
         EventResult::Handled
     );

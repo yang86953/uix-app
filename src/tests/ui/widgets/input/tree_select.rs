@@ -75,7 +75,7 @@ fn tree_select_dropdown_wheel_records_composite_delta() {
             &mut tree_select,
             &SystemEvent::Wheel {
                 pos: Point::new(10.0, 50.0),
-                delta: Point::new(0.0, -1.0),
+                delta: Point::new(0.0, 1.0),
             },
         ),
         EventResult::Handled
@@ -350,7 +350,7 @@ fn tree_select_close_preserves_scroll_during_exit_animation() {
     tree_select.open();
     let _ = tree_select.on_event(&SystemEvent::Wheel {
         pos: Point::new(10.0, 50.0),
-        delta: Point::new(0.0, -3.0),
+        delta: Point::new(0.0, 3.0),
     });
     let before_close = tree_select.dropdown_scroll.scroll_offset();
     assert!(before_close > 0.0);

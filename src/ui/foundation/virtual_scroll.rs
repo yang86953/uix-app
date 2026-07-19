@@ -109,6 +109,7 @@ impl VirtualListScroll {
         new - old
     }
 
+    /// Applies a normalized wheel delta; positive values move the viewport down.
     pub fn scroll_by_wheel(
         &mut self,
         wheel_delta_y: f32,
@@ -117,7 +118,7 @@ impl VirtualListScroll {
         viewport_height: f32,
     ) -> f32 {
         self.scroll_by(
-            -wheel_delta_y * self.wheel_step,
+            wheel_delta_y * self.wheel_step,
             item_count,
             item_height,
             viewport_height,
@@ -172,7 +173,7 @@ component! {
         if let SystemEvent::Wheel { delta, .. } = event {
             let view_h = self.viewport_height();
             let max_offset = (self.total_height() - view_h).max(0.0);
-            let new_offset = (self.scroll_offset - delta.y * 40.0).clamp(0.0, max_offset);
+            let new_offset = (self.scroll_offset + delta.y * 40.0).clamp(0.0, max_offset);
             if (new_offset - self.scroll_offset).abs() > 0.5 {
                 let old = self.scroll_offset;
                 self.scroll_offset = new_offset;

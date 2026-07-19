@@ -35,7 +35,7 @@ fn tree_wheel_records_composite_delta() {
             &mut tree,
             &SystemEvent::Wheel {
                 pos: Point::new(10.0, 60.0),
-                delta: Point::new(0.0, -1.0),
+                delta: Point::new(0.0, 1.0),
             },
         ),
         EventResult::Handled
@@ -62,7 +62,7 @@ fn tree_wheel_registers_composite_scroll_strip() {
     assert_eq!(
         widget_tree.dispatch_event(&SystemEvent::Wheel {
             pos: Point::new(20.0, 60.0),
-            delta: Point::new(0.0, -1.0),
+            delta: Point::new(0.0, 1.0),
         }),
         EventResult::Handled
     );

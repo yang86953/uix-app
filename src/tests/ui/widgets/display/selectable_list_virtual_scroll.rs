@@ -35,7 +35,7 @@ fn selectable_list_wheel_records_composite_delta() {
             &mut list,
             &SystemEvent::Wheel {
                 pos: Point::new(10.0, 10.0),
-                delta: Point::new(0.0, -1.0),
+                delta: Point::new(0.0, 1.0),
             },
         ),
         EventResult::Handled
@@ -64,7 +64,7 @@ fn selectable_list_wheel_at_scroll_boundary_does_not_record_delta() {
             &mut list,
             &SystemEvent::Wheel {
                 pos: Point::new(10.0, 10.0),
-                delta: Point::new(0.0, -1.0),
+                delta: Point::new(0.0, 1.0),
             },
         ),
         EventResult::NotHandled
@@ -87,7 +87,7 @@ fn selectable_list_wheel_registers_composite_scroll_strip() {
     assert_eq!(
         tree.dispatch_event(&SystemEvent::Wheel {
             pos: Point::new(20.0, 20.0),
-            delta: Point::new(0.0, -1.0),
+            delta: Point::new(0.0, 1.0),
         }),
         EventResult::Handled
     );

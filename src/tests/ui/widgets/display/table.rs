@@ -287,14 +287,14 @@ fn table_hover_and_wheel_are_limited_to_the_actual_body_viewport() {
 
     let header_wheel = SystemEvent::Wheel {
         pos: Point::new(60.0, 10.0),
-        delta: Point::new(0.0, -1.0),
+        delta: Point::new(0.0, 1.0),
     };
     assert_eq!(table.on_event(&header_wheel), EventResult::NotHandled);
     assert_eq!(table.body_scroll.scroll_offset(), 0.0);
 
     let body_wheel = SystemEvent::Wheel {
         pos: Point::new(60.0, 60.0),
-        delta: Point::new(0.0, -1.0),
+        delta: Point::new(0.0, 1.0),
     };
     assert_eq!(table.on_event(&body_wheel), EventResult::Handled);
     assert!(table.body_scroll.scroll_offset() > 0.0);
@@ -400,7 +400,7 @@ fn fixed_columns_stay_hittable_after_horizontal_scroll() {
     assert_eq!(
         table.on_event(&SystemEvent::Wheel {
             pos: Point::new(120.0, 80.0),
-            delta: Point::new(-2.0, 0.0),
+            delta: Point::new(2.0, 0.0),
         }),
         EventResult::Handled
     );
@@ -799,7 +799,7 @@ fn typed_table_view_cells_follow_fixed_column_zones_while_scrolling() {
     assert_eq!(
         tree.dispatch_event(&SystemEvent::Wheel {
             pos: Point::new(120.0, 45.0),
-            delta: Point::new(-2.0, 0.0),
+            delta: Point::new(2.0, 0.0),
         }),
         EventResult::Handled
     );

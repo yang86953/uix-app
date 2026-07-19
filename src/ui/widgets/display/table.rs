@@ -310,12 +310,12 @@ component! {
                 let viewport_h = self.body_viewport_height();
                 let old_y = self.body_scroll.scroll_offset();
                 let max = (self.body_content_height() - viewport_h).max(0.0);
-                let next_y = (old_y - delta.y * 40.0).clamp(0.0, max);
+                let next_y = (old_y + delta.y * 40.0).clamp(0.0, max);
                 self.body_scroll.set_scroll_offset(next_y);
                 let dy = next_y - old_y;
 
                 let old_x = self.horizontal_scroll.get();
-                let next_x = (old_x - delta.x * 40.0)
+                let next_x = (old_x + delta.x * 40.0)
                     .clamp(0.0, self.horizontal_max_scroll());
                 self.horizontal_scroll.set(next_x);
                 let dx = next_x - old_x;

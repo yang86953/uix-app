@@ -121,7 +121,7 @@ fn select_dropdown_wheel_records_composite_delta() {
             &mut select,
             &SystemEvent::Wheel {
                 pos: Point::new(10.0, 50.0),
-                delta: Point::new(0.0, -1.0),
+                delta: Point::new(0.0, 1.0),
             },
         ),
         EventResult::Handled
