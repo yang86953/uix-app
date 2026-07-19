@@ -533,6 +533,9 @@ component! {
         drag_hover: bool,
         max_count: usize,
         max_size: Option<u64>,
+        show_upload_list: bool,
+        last_width: Cell<f32>,
+        layout_requested: Cell<bool>,
         pending_change: RefCell<Option<String>>,
         focused: bool,
     }
@@ -540,7 +543,11 @@ component! {
     tab_index => (&self) -> i32 { 1 }
 
     measure => (&self, constraints: Constraints) -> Size {
-        let list_h = self.file_list.len() as f32 * 32.0;
+        let list_h = if self.show_upload_list {
+            self.file_list.len() as f32 * 32.0
+        } else {
+            0.0
+        };
         constraints.clamp(Size::new(300.0, 100.0 + list_h))
     }
 
@@ -554,6 +561,11 @@ component! {
                 self.focused = false;
                 EventResult::Handled
             }
+            SystemEvent::PointerDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => self.remove_file_at(*pos),
             SystemEvent::FileDrop { files, .. } if self.drag => self.queue_dropped_files(files),
             _ => EventResult::NotHandled,
         }
@@ -566,7 +578,12 @@ component! {
             .map(|value| SemanticEvent::change(id, value))
     }
 
+    take_layout_request => (&mut self) -> bool {
+        self.layout_requested.replace(false)
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
+        self.last_width.set(frame.w.max(0.0));
         let bg = ctx.tokens().color_bg_container();
         let border = ctx.tokens().color_border();
         let text_sec = ctx.tokens().color_text_quaternary();
@@ -600,6 +617,10 @@ component! {
             ctx.draw_text(&suffix, Point::new(frame.x + frame.w * 0.5 - 36.0, frame.y + 78.0), text_sec, 10.0);
         }
 
+        if !self.show_upload_list {
+            return;
+        }
+
         for (i, f) in self.file_list.iter().enumerate() {
             let y = frame.y + 104.0 + i as f32 * 32.0;
             let status_color = match f.status {
@@ -615,12 +636,21 @@ component! {
                 text_sec,
                 14.0,
             );
-            ctx.draw_text(&f.name, Point::new(frame.x + 28.0, y + 5.0), text, 12.0);
+            let file_text_clip = Rect::new(frame.x + 28.0, y, (frame.w - 84.0).max(0.0), 32.0);
+            ctx.push_clip(file_text_clip);
+            ctx.draw_text(&f.name, Point::new(frame.x + 28.0, y + 2.0), text, 12.0);
+            ctx.draw_text(
+                &Self::format_file_size(f.size),
+                Point::new(frame.x + 28.0, y + 17.0),
+                text_sec,
+                10.0,
+            );
             if f.status == UploadStatus::Uploading {
-                let bar_w = (frame.w - 40.0).max(0.0);
-                let bar_rect = Rect::new(frame.x + 10.0, y + 20.0, bar_w * f.progress, 4.0);
+                let bar_w = (frame.w - 84.0).max(0.0);
+                let bar_rect = Rect::new(frame.x + 28.0, y + 28.0, bar_w * f.progress, 3.0);
                 ctx.fill_rect(bar_rect, primary, None);
             }
+            ctx.pop_clip();
             let status_icon = match f.status {
                 UploadStatus::Done => "check",
                 UploadStatus::Error => "x",
@@ -630,8 +660,15 @@ component! {
             crate::ui::widgets::icon::paint_icon_in_frame(
                 ctx,
                 status_icon,
-                Rect::new(frame.x + frame.w - 24.0, y, 20.0, 24.0),
+                Rect::new(frame.x + frame.w - 48.0, y + 4.0, 20.0, 24.0),
                 status_color,
+                12.0,
+            );
+            crate::ui::widgets::icon::paint_icon_in_frame(
+                ctx,
+                "x",
+                Rect::new(frame.x + frame.w - 24.0, y + 4.0, 20.0, 24.0),
+                text_sec,
                 12.0,
             );
         }
@@ -647,9 +684,15 @@ impl Upload {
             drag_hover: false,
             max_count: 10,
             max_size: None,
+            show_upload_list: true,
+            last_width: Cell::new(0.0),
+            layout_requested: Cell::new(false),
             pending_change: RefCell::new(None),
             focused: false,
         }
+    }
+    pub fn dragger() -> Self {
+        Self::new().drag(true)
     }
     pub fn accept(mut self, a: &str) -> Self {
         self.accept = a.to_string();
@@ -670,6 +713,10 @@ impl Upload {
     /// Limit newly queued real files to at most `bytes` bytes.
     pub fn max_size(mut self, bytes: u64) -> Self {
         self.max_size = Some(bytes);
+        self
+    }
+    pub fn show_upload_list(mut self, show: bool) -> Self {
+        self.show_upload_list = show;
         self
     }
     pub fn add_file(&mut self, name: &str) {
@@ -693,10 +740,23 @@ impl Upload {
         self.push_file(Self::display_name(path), size.unwrap_or(0))
     }
     pub fn remove_file(&mut self, index: usize) -> Option<UploadFile> {
-        (index < self.file_list.len()).then(|| self.file_list.remove(index))
+        if index >= self.file_list.len() {
+            return None;
+        }
+        let removed = self.file_list.remove(index);
+        if self.show_upload_list {
+            self.layout_requested.set(true);
+        }
+        Some(removed)
     }
     pub fn clear_files(&mut self) {
+        if self.file_list.is_empty() {
+            return;
+        }
         self.file_list.clear();
+        if self.show_upload_list {
+            self.layout_requested.set(true);
+        }
     }
     pub fn update_progress(&mut self, idx: usize, progress: f32) {
         if idx < self.file_list.len() {
@@ -725,6 +785,35 @@ impl Upload {
     }
     pub fn files(&self) -> &[UploadFile] {
         &self.file_list
+    }
+
+    fn remove_file_at(&mut self, pos: Point) -> EventResult {
+        if !self.show_upload_list || self.file_list.is_empty() {
+            return EventResult::NotHandled;
+        }
+        let width = self.last_width.get();
+        if width <= 0.0 || pos.x < (width - 28.0).max(0.0) || pos.x > width || pos.y < 104.0 {
+            return EventResult::NotHandled;
+        }
+        let index = ((pos.y - 104.0) / 32.0).floor() as usize;
+        let Some(removed) = self.remove_file(index) else {
+            return EventResult::NotHandled;
+        };
+        self.pending_change
+            .replace(Some(format!("{}:removed", removed.name)));
+        EventResult::Handled
+    }
+
+    fn format_file_size(bytes: u64) -> String {
+        const KIB: f64 = 1024.0;
+        const MIB: f64 = KIB * 1024.0;
+        if bytes >= MIB as u64 {
+            format!("{:.1} MiB", bytes as f64 / MIB)
+        } else if bytes >= KIB as u64 {
+            format!("{:.1} KiB", bytes as f64 / KIB)
+        } else {
+            format!("{bytes} B")
+        }
     }
 
     fn queue_dropped_files(&mut self, files: &[String]) -> EventResult {
@@ -762,6 +851,9 @@ impl Upload {
             progress: 0.0,
             status: UploadStatus::Pending,
         });
+        if self.show_upload_list {
+            self.layout_requested.set(true);
+        }
         true
     }
 
@@ -795,13 +887,19 @@ impl Upload {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let list_visibility_changed = self.show_upload_list != next.show_upload_list;
         self.accept = next.accept;
         self.multiple = next.multiple;
         self.drag = next.drag;
         self.max_count = next.max_count;
         self.max_size = next.max_size;
+        self.show_upload_list = next.show_upload_list;
+        let old_len = self.file_list.len();
         if self.file_list.len() > self.max_count {
             self.file_list.truncate(self.max_count);
+        }
+        if list_visibility_changed || old_len != self.file_list.len() {
+            self.layout_requested.set(true);
         }
     }
 
@@ -812,6 +910,7 @@ impl Upload {
             drag: self.drag,
             max_count: self.max_count,
             max_size: self.max_size,
+            show_upload_list: self.show_upload_list,
             files: self.file_list.clone(),
         }
     }

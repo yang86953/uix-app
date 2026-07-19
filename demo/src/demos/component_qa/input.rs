@@ -1003,6 +1003,35 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
         ])
         .width(620.0)
         .gap(14.0),
+        "range-slider" => {
+            let start = State::new(25.0);
+            let end = State::new(70.0);
+            column_fit([
+                qa_variant(
+                    "25–70 / target",
+                    qa_target(
+                        Slider::range(0.0..=100.0)
+                            .step(5.0)
+                            .start(&start)
+                            .end(&end),
+                    ),
+                ),
+                qa_row([
+                    qa_variant(
+                        "Small",
+                        embed(Slider::range(0.0..=100.0).size(ControlSize::Small))
+                            .automation_id("component-qa-range-slider-small"),
+                    ),
+                    qa_variant(
+                        "Large",
+                        embed(Slider::range(0.0..=100.0).size(ControlSize::Large))
+                            .automation_id("component-qa-range-slider-large"),
+                    ),
+                ]),
+            ])
+            .width(620.0)
+            .gap(14.0)
+        }
         "rate" => build_rate_case(),
         "date-picker" => build_date_picker_case(),
         "date-range-picker" => build_date_range_picker_case(),
