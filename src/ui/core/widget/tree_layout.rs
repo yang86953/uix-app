@@ -1041,17 +1041,23 @@ impl WidgetTree {
             .collect()
     }
 
+    #[cfg(test)]
     pub(crate) fn view_transition_registrations(&self) -> Vec<(WidgetId, Option<Instant>)> {
-        self.traverse()
-            .iter()
-            .copied()
-            .filter_map(|id| {
-                let node = self.get(id)?;
-                (node.view_transition_active()
-                    && (node.pending_removal() || self.is_effectively_visible(id)))
-                .then_some((id, node.view_transition_deadline()))
-            })
-            .collect()
+        let mut registrations = Vec::new();
+        self.extend_view_transition_registrations(&mut registrations);
+        registrations
+    }
+
+    pub(crate) fn extend_view_transition_registrations(
+        &self,
+        registrations: &mut Vec<(WidgetId, Option<Instant>)>,
+    ) {
+        registrations.extend(self.traverse().iter().copied().filter_map(|id| {
+            let node = self.get(id)?;
+            (node.view_transition_active()
+                && (node.pending_removal() || self.is_effectively_visible(id)))
+            .then_some((id, node.view_transition_deadline()))
+        }));
     }
 
     #[cfg(test)]

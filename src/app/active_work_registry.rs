@@ -86,6 +86,11 @@ impl ActiveWorkRegistry {
         }
     }
 
+    pub(crate) fn manages_animation(&self, id: NodeId) -> bool {
+        self.managed_animation_registrations.contains_key(&id)
+            || self.open_component_animations.contains(&id)
+    }
+
     fn refresh_animation_entry(&mut self, id: NodeId) {
         let kind = ActiveWorkKind::Animation(id);
         if self.open_component_animations.contains(&id) {
