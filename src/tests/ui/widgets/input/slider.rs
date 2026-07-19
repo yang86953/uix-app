@@ -4,7 +4,7 @@ use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
 use crate::ui::state::State;
 use crate::ui::view::{ViewAdapter, ViewNode};
-use crate::ui::widgets::Slider;
+use crate::ui::widgets::{Slider, TooltipPlacement};
 use crate::ui::{with_config, ComponentConfig};
 
 fn render_slider(slider: &Slider, frame: Rect) -> Vec<u32> {
@@ -137,6 +137,69 @@ fn marks_paint_a_tick_outside_the_plain_track_without_expanding_hit_geometry() {
         EventResult::NotHandled,
         "the label band is presentation-only"
     );
+}
+
+#[test]
+fn tooltip_is_only_present_during_drag_and_covers_old_and_new_damage() {
+    let frame = Rect::new(20.0, 30.0, 200.0, 32.0);
+    let mut slider = Slider::new(0.0..=100.0)
+        .default_value(50.0)
+        .tooltip(TooltipPlacement::Top);
+
+    let idle_pixels = render_slider(&slider, frame);
+    assert!(WidgetRender::overlay_entry(&slider, ComponentId::new(7), frame).is_none());
+    assert!(idle_pixels[..30 * 240].iter().all(|pixel| *pixel == 0));
+
+    let _ = slider.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(100.0, 16.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    let old_overlay = WidgetRender::overlay_entry(&slider, ComponentId::new(7), frame)
+        .expect("dragging slider tooltip overlay");
+    let old_bounds = old_overlay.bounds_rect().expect("old tooltip bounds");
+    let dragging_pixels = render_slider(&slider, frame);
+    assert!(dragging_pixels[..30 * 240].iter().any(|pixel| *pixel != 0));
+    assert!(matches!(
+        slider.snapshot_fields(),
+        SnapshotFields::Slider {
+            tooltip: Some(TooltipPlacement::Top),
+            ..
+        }
+    ));
+
+    let _ = slider.on_event(&SystemEvent::PointerMove {
+        pos: Point::new(180.0, 16.0),
+        mods: KeyMod::NONE,
+    });
+    let new_overlay = WidgetRender::overlay_entry(&slider, ComponentId::new(7), frame)
+        .expect("moved slider tooltip overlay");
+    let new_bounds = new_overlay.bounds_rect().expect("new tooltip bounds");
+    let dirty = WidgetRender::dirty_rect(&slider, frame);
+    assert!(dirty.contains(Point::new(
+        old_bounds.x + old_bounds.w * 0.5,
+        old_bounds.y + old_bounds.h * 0.5,
+    )));
+    assert!(dirty.contains(Point::new(
+        new_bounds.x + new_bounds.w * 0.5,
+        new_bounds.y + new_bounds.h * 0.5,
+    )));
+
+    let _ = render_slider(&slider, frame);
+    let _ = slider.on_event(&SystemEvent::PointerUp {
+        pos: Point::new(180.0, 16.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    assert!(WidgetRender::overlay_entry(&slider, ComponentId::new(7), frame).is_none());
+    assert!(
+        WidgetRender::dirty_rect(&slider, frame).contains(Point::new(
+            new_bounds.x + new_bounds.w * 0.5,
+            new_bounds.y + new_bounds.h * 0.5,
+        ))
+    );
+    let released_pixels = render_slider(&slider, frame);
+    assert!(released_pixels[..30 * 240].iter().all(|pixel| *pixel == 0));
 }
 
 #[test]
