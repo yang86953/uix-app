@@ -28,6 +28,16 @@ pub enum TagColor {
     Info,
     Warning,
     Error,
+    Blue,
+    Cyan,
+    Geekblue,
+    Purple,
+    Magenta,
+    Red,
+    Orange,
+    Gold,
+    Lime,
+    Green,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,6 +79,8 @@ component! {
         checked: bool,
         visible: bool,
         focused: bool,
+        /// Lucide 图标名称，绘制在文字之前。
+        icon: String,
         last_size: Cell<Size>,
         layout_requested: Cell<bool>,
         pending_action: Cell<Option<TagAction>>,
@@ -223,6 +235,16 @@ component! {
                 TagColor::Info    => (ctx.tokens().color_info_bg(), ctx.tokens().color_info()),
                 TagColor::Warning => (ctx.tokens().color_warning_bg(), ctx.tokens().color_warning()),
                 TagColor::Error   => (ctx.tokens().color_error_bg(), ctx.tokens().color_error()),
+                TagColor::Blue    => (Color::hex("#e6f4ff"), Color::hex("#1677ff")),
+                TagColor::Cyan   => (Color::hex("#e6fffb"), Color::hex("#13c2c2")),
+                TagColor::Geekblue => (Color::hex("#f0f5ff"), Color::hex("#2f54eb")),
+                TagColor::Purple => (Color::hex("#f9f0ff"), Color::hex("#722ed1")),
+                TagColor::Magenta => (Color::hex("#fff0f6"), Color::hex("#eb2f96")),
+                TagColor::Red    => (Color::hex("#fff1f0"), Color::hex("#f5222d")),
+                TagColor::Orange => (Color::hex("#fff7e6"), Color::hex("#fa8c16")),
+                TagColor::Gold   => (Color::hex("#fffbe6"), Color::hex("#faad14")),
+                TagColor::Lime   => (Color::hex("#fcffe6"), Color::hex("#a0d911")),
+                TagColor::Green  => (Color::hex("#f6ffed"), Color::hex("#52c41a")),
             }
         };
         let radius = ctx
@@ -297,7 +319,32 @@ component! {
                 );
             }
         }
-        Self::paint_single_line(ctx, &self.text, geometry.text, fg, font_size);
+        // 图标绘制（在文字之前）
+        if !self.icon.is_empty() {
+            let icon_size = font_size * 0.85;
+            let icon_rect = Rect::new(
+                geometry.text.x,
+                geometry.text.y,
+                icon_size.min(geometry.text.w),
+                geometry.text.h,
+            );
+            crate::ui::widgets::icon::paint_icon_in_frame(
+                ctx,
+                &self.icon,
+                icon_rect,
+                fg,
+                icon_size,
+            );
+            let remaining = Rect::new(
+                icon_rect.x + icon_rect.w + 4.0,
+                geometry.text.y,
+                (geometry.text.x + geometry.text.w - icon_rect.x - icon_rect.w - 4.0).max(0.0),
+                geometry.text.h,
+            );
+            Self::paint_single_line(ctx, &self.text, remaining, fg, font_size);
+        } else {
+            Self::paint_single_line(ctx, &self.text, geometry.text, fg, font_size);
+        }
         if let Some(close) = geometry.close {
             crate::ui::widgets::icon::paint_icon_in_frame(
                 ctx,
@@ -329,6 +376,7 @@ impl Tag {
             checked: false,
             visible: true,
             focused: false,
+            icon: String::new(),
             last_size: Cell::new(Size::zero()),
             layout_requested: Cell::new(false),
             pending_action: Cell::new(None),
@@ -366,6 +414,12 @@ impl Tag {
         self
     }
 
+    /// 在文字前显示 Lucide 图标。
+    pub fn icon(mut self, name: impl Into<String>) -> Self {
+        self.icon = name.into();
+        self
+    }
+
     fn intrinsic_size(&self) -> Size {
         let font_size = normalized_tag_font_size(self.font_size);
         let text_width = crate::draw::font::text_backend::estimate_text_metrics(
@@ -374,7 +428,13 @@ impl Tag {
             font_size,
         )
         .max_line_width;
+        let icon_width = if !self.icon.is_empty() {
+            font_size + 4.0
+        } else {
+            0.0
+        };
         let w = text_width
+            + icon_width
             + 16.0
             + if self.checkable { 14.0 } else { 0.0 }
             + if self.closable { 20.0 } else { 0.0 };
@@ -561,6 +621,7 @@ impl Tag {
             checkable: self.checkable,
             checked: self.checked,
             visible: self.visible,
+            icon: self.icon.clone(),
         }
     }
 
@@ -573,6 +634,7 @@ impl Tag {
         self.font_size = next.font_size;
         self.custom_color = next.custom_color;
         self.checkable = next.checkable;
+        self.icon = next.icon;
         self.checked = if !self.checkable {
             false
         } else if was_checkable {

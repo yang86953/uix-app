@@ -38,6 +38,9 @@ pub enum SnapshotFields {
         text: String,
         disabled: bool,
         block: bool,
+        loading: bool,
+        icon: String,
+        group_position: Option<ButtonGroupPosition>,
         style_set: Arc<StyleSet>,
         style: Arc<Style>,
     },
@@ -203,6 +206,7 @@ pub enum SnapshotFields {
         checkable: bool,
         checked: bool,
         visible: bool,
+        icon: String,
     },
     Timeline {
         items: Vec<TimelineItem>,

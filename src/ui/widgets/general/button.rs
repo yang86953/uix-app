@@ -2,6 +2,7 @@
 
 use std::sync::{Arc, OnceLock};
 
+use super::icon::paint_icon_in_frame;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
@@ -75,6 +76,15 @@ impl ButtonRipple {
     }
 }
 
+/// 按钮在 ButtonGroup 中的位置，控制视觉圆角连接。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ButtonGroupPosition {
+    Left,
+    Middle,
+    Right,
+    Single,
+}
+
 pub(crate) fn cover_radius(origin: Point, size: Size) -> f32 {
     let corners = [(0.0, 0.0), (size.w, 0.0), (0.0, size.h), (size.w, size.h)];
     corners
@@ -93,6 +103,11 @@ pub struct Button {
     button_size: ControlSize,
     disabled: bool,
     block: bool,
+    loading: bool,
+    /// 图标名称（Lucide），纯图标按钮时 text 为空。
+    icon: String,
+    /// ButtonGroup 中的位置，控制视觉圆角。
+    group_position: Option<ButtonGroupPosition>,
     hovered: bool,
     pub(crate) pressed: bool,
     pub(crate) focused: bool,
@@ -111,6 +126,9 @@ impl SnapshotSource for Button {
             text: self.text.clone(),
             disabled: self.disabled,
             block: self.block,
+            loading: self.loading,
+            icon: self.icon.clone(),
+            group_position: self.group_position,
             style_set: self.style_set.clone(),
             style: self.style.clone(),
         }
@@ -153,7 +171,7 @@ impl WidgetLayout for Button {
 
 impl EventHandler for Button {
     fn on_event(&mut self, event: &SystemEvent) -> EventResult {
-        if self.disabled {
+        if self.disabled || self.loading {
             return EventResult::NotHandled;
         }
 
@@ -224,7 +242,11 @@ impl WidgetRender for Button {
         let style = self.resolve_style();
         apply_style(ctx, frame, &style);
         self.paint_ripple(frame, ctx, &style);
-        if !self.text.is_empty() {
+        if self.loading {
+            self.paint_loading_spinner(frame, ctx, &style);
+        } else if !self.icon.is_empty() && self.text.is_empty() {
+            self.paint_icon(frame, ctx, &style);
+        } else if !self.text.is_empty() {
             let content = frame.inset(style.padding);
             let font_size = normalized_button_font_size(style.resolve_font_size(ctx.tokens()));
             let color = style.resolve_color(ctx.tokens());
@@ -306,6 +328,9 @@ impl Button {
             button_size,
             disabled,
             block,
+            loading: false,
+            icon: String::new(),
+            group_position: None,
             hovered: false,
             pressed: false,
             focused: false,
@@ -344,6 +369,9 @@ impl Button {
         self.button_size = next.button_size;
         self.disabled = next.disabled;
         self.block = next.block;
+        self.loading = next.loading;
+        self.icon = next.icon;
+        self.group_position = next.group_position;
         self.style_set = next.style_set;
         self.style = next.style;
     }
@@ -379,6 +407,38 @@ impl Button {
         self
     }
 
+    /// 显示加载旋转器并禁用交互；保持文本宽度不变。
+    pub fn loading(mut self, loading: bool) -> Self {
+        self.loading = loading;
+        self
+    }
+
+    /// 创建纯图标按钮。
+    pub fn icon(name: impl Into<String>) -> Self {
+        let config = crate::ui::config::use_config();
+        let style_set = config
+            .overrides
+            .button
+            .style_set
+            .map(Arc::new)
+            .unwrap_or_else(default_button_style_set);
+        let mut btn = Self::assemble(
+            String::new(),
+            style_set,
+            config.disabled,
+            false,
+            config.size,
+        );
+        btn.icon = name.into();
+        btn
+    }
+
+    /// 设置 ButtonGroup 中的位置，控制视觉圆角连接。
+    pub fn group_position(mut self, pos: ButtonGroupPosition) -> Self {
+        self.group_position = Some(pos);
+        self
+    }
+
     pub(crate) fn resolve_style(&self) -> Style {
         self.style_set
             .resolve(StyleState {
@@ -402,17 +462,21 @@ impl Button {
         let height = base
             .height
             .unwrap_or_else(|| crate::ui::config::control_height(self.button_size));
-        // 无 FontService 时使用共享宽字符估算；真实宽在 paint 用 measure_text。
-        let text_w = crate::draw::font::text_backend::estimate_text_metrics(
-            &self.text,
-            f32::INFINITY,
-            font_size,
-        )
-        .max_line_width;
-        let width = base
-            .width
-            .unwrap_or(text_w + base.padding.horizontal())
-            .max(32.0);
+        // 纯图标按钮使用正方形尺寸。
+        let width = if !self.icon.is_empty() && self.text.is_empty() {
+            height
+        } else {
+            // 无 FontService 时使用共享宽字符估算；真实宽在 paint 用 measure_text。
+            let text_w = crate::draw::font::text_backend::estimate_text_metrics(
+                &self.text,
+                f32::INFINITY,
+                font_size,
+            )
+            .max_line_width;
+            base.width
+                .unwrap_or(text_w + base.padding.horizontal())
+                .max(32.0)
+        };
         if self.block {
             Size::new(f32::MAX, height)
         } else {
@@ -454,6 +518,26 @@ impl Button {
             ink.with_alpha(alpha),
         );
         ctx.pop_clip();
+    }
+
+    /// 绘制纯图标按钮中的 Lucide 图标（复用 icon 模块基础设施）。
+    fn paint_icon(&self, frame: Rect, ctx: &mut PaintContext<'_>, style: &Style) {
+        let color = style.resolve_color(ctx.tokens());
+        let content = frame.inset(style.padding);
+        let font_size = normalized_button_font_size(style.resolve_font_size(ctx.tokens()));
+        let icon_size = font_size * 1.2;
+        let icon_rect = Rect::new(content.x, content.y, content.w, content.h);
+        paint_icon_in_frame(ctx, &self.icon, icon_rect, color, icon_size);
+    }
+
+    /// 绘制加载旋转器（复用 Lucide "loader" 图标）。
+    fn paint_loading_spinner(&self, frame: Rect, ctx: &mut PaintContext<'_>, style: &Style) {
+        let color = style.resolve_color(ctx.tokens());
+        let content = frame.inset(style.padding);
+        let font_size = normalized_button_font_size(style.resolve_font_size(ctx.tokens()));
+        let icon_size = font_size * 1.1;
+        let icon_rect = Rect::new(content.x, content.y, content.w, content.h);
+        paint_icon_in_frame(ctx, "loader", icon_rect, color, icon_size);
     }
 
     fn ripple_ink_color(style: &Style, ctx: &PaintContext<'_>) -> Color {
