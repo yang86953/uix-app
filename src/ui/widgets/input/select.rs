@@ -7,8 +7,8 @@ use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::foundation::virtual_scroll::VirtualListScroll;
 use crate::ui::state::State;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
-    WidgetTree,
+    ComponentId, EventResult, KeyCode, LayoutChild, MouseButton, SemanticEvent, SnapshotFields,
+    SystemEvent, WidgetTree,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
@@ -20,6 +20,8 @@ use self::search::VisibleRow;
 
 const DROPDOWN_ROW_HEIGHT: f32 = 28.0;
 const MAX_DROPDOWN_VIEWPORT_HEIGHT: f32 = 280.0;
+
+pub(crate) type SelectOptionRenderer = Box<dyn Fn(&str) -> crate::ui::view::ViewNode>;
 
 /// 选项组。
 #[derive(Debug, Clone, PartialEq)]
@@ -181,6 +183,8 @@ component! {
         multiple: bool,
         search: bool,
         search_query: String,
+        custom_option_views: bool,
+        materialized_custom_options: RefCell<Vec<usize>>,
         search_cursor_rect: Cell<Rect>,
         control_rect: Cell<Rect>,
         dropdown_rect: Cell<Rect>,
@@ -198,6 +202,45 @@ component! {
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
     }
+
+    layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
+        -> Vec<(ComponentId, Rect)>
+    {
+        let rows = self.visible_rows();
+        let popup = self.dropdown_damage_rect();
+        let list_y = frame.y + popup.y;
+        let text_left = if self.multiple { 32.0 } else { 10.0 };
+        let content_width = (frame.w - text_left - 32.0).max(0.0);
+        let indices = self.materialized_custom_options.borrow();
+        children
+            .iter()
+            .zip(indices.iter().copied())
+            .filter_map(|(child, option_index)| {
+                let row_index = rows.iter().position(
+                    |row| matches!(row, VisibleRow::Option(index) if *index == option_index),
+                )?;
+                Some((
+                    child.id,
+                    Rect::new(
+                        frame.x + text_left,
+                        list_y + row_index as f32 * DROPDOWN_ROW_HEIGHT
+                            - self.dropdown_scroll.scroll_offset(),
+                        content_width,
+                        DROPDOWN_ROW_HEIGHT,
+                    ),
+                ))
+            })
+            .collect()
+    }
+
+    children_clip => (&self, frame: Rect) -> Option<Rect> {
+        (self.custom_option_views && self.is_present()).then(|| {
+            let popup = self.dropdown_damage_rect();
+            Rect::new(frame.x + popup.x, frame.y + popup.y, popup.w, popup.h)
+        })
+    }
+
+    hit_test_children => (&self) -> bool { false }
 
     scroll_delta_for_dirty => (&self) -> Option<(f32, f32)> {
         let delta = self.scroll_delta_strip.get();
@@ -713,6 +756,49 @@ impl Select {
         };
         Rect::new(0.0, y, control.w, height)
     }
+
+    pub(crate) fn custom_option_indices(&self) -> Vec<usize> {
+        if !self.custom_option_views || !self.is_present() || self.loading {
+            return Vec::new();
+        }
+        let rows = self.visible_rows();
+        let row_count = self.dropdown_row_count();
+        let viewport_height = self.dropdown_viewport_height(row_count);
+        let (start, end) =
+            self.dropdown_scroll
+                .scroll_range(row_count, DROPDOWN_ROW_HEIGHT, viewport_height);
+        rows[start.min(rows.len())..end.min(rows.len())]
+            .iter()
+            .filter_map(|row| match row {
+                VisibleRow::Option(index) => Some(*index),
+                VisibleRow::Group(_) => None,
+            })
+            .collect()
+    }
+
+    pub(crate) fn custom_option_labels(&self, indices: &[usize]) -> Vec<String> {
+        indices
+            .iter()
+            .filter_map(|index| self.option_label(*index).map(str::to_owned))
+            .collect()
+    }
+
+    pub(crate) fn needs_custom_option_refresh(
+        &self,
+        indices: &[usize],
+        child_count: usize,
+    ) -> bool {
+        self.materialized_custom_options.borrow().as_slice() != indices
+            || child_count != indices.len()
+    }
+
+    pub(crate) fn mark_custom_options_materialized(&self, indices: Vec<usize>) {
+        *self.materialized_custom_options.borrow_mut() = indices;
+    }
+
+    pub(crate) fn invalidate_custom_option_materialization(&self) {
+        self.materialized_custom_options.borrow_mut().clear();
+    }
 }
 
 impl Default for Select {
@@ -749,6 +835,8 @@ impl Select {
             multiple: false,
             search: config.overrides.select.allow_search.unwrap_or(false),
             search_query: String::new(),
+            custom_option_views: false,
+            materialized_custom_options: RefCell::new(Vec::new()),
             search_cursor_rect: Cell::new(Rect::zero()),
             control_rect: Cell::new(Rect::new(0.0, 0.0, 120.0, control_height)),
             dropdown_rect: Cell::new(Rect::zero()),
@@ -783,6 +871,19 @@ impl Select {
             .collect();
         self.sync_bound_selection();
         self
+    }
+
+    /// Render each dropdown option with an arbitrary View while preserving Select interaction.
+    pub fn render_option<F, V>(mut self, renderer: F) -> SelectOptionView
+    where
+        F: Fn(&str) -> V + 'static,
+        V: crate::ui::view::View,
+    {
+        self.custom_option_views = true;
+        SelectOptionView {
+            select: self,
+            renderer: Box::new(move |option| crate::ui::view::View::build(renderer(option))),
+        }
     }
 
     pub fn optgroups(mut self, groups: Vec<OptGroup>) -> Self {
@@ -935,6 +1036,7 @@ impl Select {
             multiple: self.multiple,
             search: self.search,
             search_query: self.search_query.clone(),
+            custom_options: self.custom_option_views,
         }
     }
 
@@ -958,6 +1060,10 @@ impl Select {
         self.placeholder = next.placeholder;
         self.multiple = next.multiple;
         self.search = next.search;
+        self.custom_option_views = next.custom_option_views;
+        if !self.custom_option_views {
+            self.materialized_custom_options.borrow_mut().clear();
+        }
         if !self.search {
             self.search_query.clear();
         }
@@ -990,6 +1096,34 @@ impl Select {
         {
             self.highlighted_option = visible.first().copied();
         }
+    }
+}
+
+/// Select builder returned by [`Select::render_option`].
+pub struct SelectOptionView {
+    select: Select,
+    renderer: SelectOptionRenderer,
+}
+
+impl crate::ui::view::View for SelectOptionView {
+    fn build(self) -> crate::ui::view::ViewNode {
+        let mut node = crate::ui::view::ViewNode::leaf(self.select);
+        node.render_handlers.push(
+            crate::ui::render_handler::RenderHandlerRegistration::SelectOptions(self.renderer),
+        );
+        node
+    }
+}
+
+impl From<SelectOptionView> for crate::ui::view::ViewNode {
+    fn from(view: SelectOptionView) -> Self {
+        crate::ui::view::View::build(view)
+    }
+}
+
+impl crate::ui::IntoWidgetNode for SelectOptionView {
+    fn into_node(self) -> crate::ui::core::widget::WidgetNode {
+        crate::ui::IntoWidgetNode::into_node(crate::ui::view::View::build(self))
     }
 }
 

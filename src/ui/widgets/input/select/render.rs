@@ -434,7 +434,9 @@ impl Select {
                         (row_rect.w - 42.0).max(0.0),
                         row_rect.h,
                     );
-                    self.draw_clipped_row_text(label, content, ctx, text_color);
+                    if !self.custom_option_views {
+                        self.draw_clipped_row_text(label, content, ctx, text_color);
+                    }
                 } else {
                     let content = Rect::new(
                         row_rect.x + 10.0,
@@ -442,7 +444,9 @@ impl Select {
                         (row_rect.w - 42.0).max(0.0),
                         row_rect.h,
                     );
-                    self.draw_clipped_row_text(label, content, ctx, text_color);
+                    if !self.custom_option_views {
+                        self.draw_clipped_row_text(label, content, ctx, text_color);
+                    }
                     if selected {
                         crate::ui::widgets::icon::paint_icon_in_frame(
                             ctx,

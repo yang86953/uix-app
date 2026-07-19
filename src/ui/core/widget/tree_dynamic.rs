@@ -4,6 +4,7 @@ use crate::core::ComponentId;
 use crate::ui::foundation::virtual_scroll::VirtualScroll;
 use crate::ui::view::ViewAdapter;
 use crate::ui::widgets::display::table::Table;
+use crate::ui::widgets::input::Select;
 
 impl WidgetTree {
     pub(crate) fn table_expand_view(&self, id: ComponentId) -> Option<crate::ui::view::ViewNode> {
@@ -140,12 +141,59 @@ impl WidgetTree {
         changed
     }
 
+    pub(crate) fn refresh_select_option_component(&mut self, id: ComponentId) -> bool {
+        if !self.render_handler_table.contains_select_options(id) {
+            return false;
+        }
+
+        let Some((indices, labels, needs_refresh)) = self.get(id).and_then(|node| {
+            let select = node.component().as_any().downcast_ref::<Select>()?;
+            let indices = select.custom_option_indices();
+            let labels = select.custom_option_labels(&indices);
+            let needs_refresh = select.needs_custom_option_refresh(&indices, node.children().len());
+            Some((indices, labels, needs_refresh))
+        }) else {
+            return false;
+        };
+        if !needs_refresh {
+            return false;
+        }
+
+        let children = self
+            .render_handler_table
+            .render_select_options(id, &indices, &labels)
+            .unwrap_or_default();
+        let changed = ViewAdapter::reconcile_dynamic_children(self, id, children);
+        if let Some(select) = self
+            .get(id)
+            .and_then(|node| node.component().as_any().downcast_ref::<Select>())
+        {
+            select.mark_custom_options_materialized(indices);
+        }
+        self.bind_orphan_pending_states();
+        self.bind_pending_effects();
+        changed
+    }
+
+    pub(crate) fn invalidate_select_option_component(&self, id: ComponentId) {
+        if let Some(select) = self
+            .get(id)
+            .and_then(|node| node.component().as_any().downcast_ref::<Select>())
+        {
+            select.invalidate_custom_option_materialization();
+        }
+    }
+
     pub(crate) fn has_table_expand_renderer(&self, id: ComponentId) -> bool {
         self.render_handler_table.contains_table_expand(id)
     }
 
     pub(crate) fn has_table_cell_renderer(&self, id: ComponentId) -> bool {
         self.render_handler_table.contains_table_cells(id)
+    }
+
+    pub(crate) fn has_select_option_renderer(&self, id: ComponentId) -> bool {
+        self.render_handler_table.contains_select_options(id)
     }
 
     #[cfg(test)]

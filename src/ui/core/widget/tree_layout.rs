@@ -1097,6 +1097,12 @@ impl WidgetTree {
                     Some((still_active, dirty))
                 })
                 .unwrap_or((false, Rect::zero()));
+            let dynamic_children_changed = self.refresh_select_option_component(id);
+            if dynamic_children_changed {
+                self.push_layout_invalidation(id);
+                self.propagate_layout_invalidation(id);
+                self.invalidate_paint(id);
+            }
             let animation_layout_requested = self
                 .get_mut(id)
                 .is_some_and(|node| node.take_layout_request());

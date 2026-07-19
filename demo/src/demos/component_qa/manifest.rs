@@ -229,6 +229,7 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
             "large",
             "long-value-clipped",
             "multiple-tags-clipped",
+            "custom-option-view",
             "flip-above",
         ],
     ),

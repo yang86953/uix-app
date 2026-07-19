@@ -814,6 +814,16 @@ fn real_demo_select_preserves_search_commit_clips_text_and_flips_popup() {
         true
     );
 
+    let custom_open =
+        session.click_at_fraction("component-qa-select-custom", 0.5, 0.5, "select-custom-open");
+    assert_eq!(
+        node_by_automation_id(&custom_open, "component-qa-select-custom")["selection"]["expanded"],
+        true
+    );
+    thread::sleep(Duration::from_millis(300));
+    session.capture("uix-select", "select-custom-option-open.png");
+    session.press_key("escape", "select-custom-close");
+
     session.focus("component-qa-target", "select-focus");
     let queried = session.insert_text("component-qa-target", "al", "select-query");
     let queried_target = node_by_automation_id(&queried, "component-qa-target");

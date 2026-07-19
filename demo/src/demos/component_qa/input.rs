@@ -798,26 +798,42 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                     ),
                 ),
             ]),
-                qa_row([qa_variant(
-                    "Bottom edge / flip above",
-                    embed(
+                qa_row([
+                    qa_variant(
+                        "Custom option View",
                         Select::new()
-                            .options([
-                                "选项一",
-                                "选项二",
-                                "选项三",
-                                "选项四",
-                                "选项五",
-                                "选项六",
-                                "选项七",
-                                "选项八",
-                                "选项九",
-                                "选项十",
-                            ])
-                            .default_selected(0),
-                    )
-                    .automation_id("component-qa-select-bottom"),
-                )]),
+                            .options(["设计", "研发", "测试"])
+                            .render_option(|option| {
+                                row([
+                                    label("◆").font_size(10.0),
+                                    label(option.to_owned()).font_size(12.0),
+                                ])
+                                .gap(6.0)
+                                .align(AlignItems::Center)
+                            })
+                            .automation_id("component-qa-select-custom"),
+                    ),
+                    qa_variant(
+                        "Bottom edge / flip above",
+                        embed(
+                            Select::new()
+                                .options([
+                                    "选项一",
+                                    "选项二",
+                                    "选项三",
+                                    "选项四",
+                                    "选项五",
+                                    "选项六",
+                                    "选项七",
+                                    "选项八",
+                                    "选项九",
+                                    "选项十",
+                                ])
+                                .default_selected(0),
+                        )
+                        .automation_id("component-qa-select-bottom"),
+                    ),
+                ]),
             ],
         ),
         "checkbox" => column_fit([
