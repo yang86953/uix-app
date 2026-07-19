@@ -109,6 +109,8 @@ pub use crate::ui::{
 pub use crate::app::Container as DiContainer;
 pub use crate::app::{map_ui_event, App, AppHandle, AppMode, TimerHandle, WindowConfig};
 
+pub use crate::ui::{layout_rich_text_segments, parse_rich_text};
+
 // view
 
 pub use crate::ui::view::{
