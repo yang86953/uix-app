@@ -446,6 +446,71 @@ fn successful_validation_returns_typed_values() {
 }
 
 #[test]
+fn initial_values_and_field_initials_seed_typed_form_values() {
+    let form = Form::new()
+        .initial_values(std::collections::HashMap::from([
+            ("user", "Ada".to_string()),
+            ("city", "London".to_string()),
+        ]))
+        .field("user", "User")
+        .field("city", "City")
+        .initial("Paris")
+        .field("age", "Age")
+        .initial(42_i32)
+        .build();
+
+    let values = form.validate().expect("initial values should be valid");
+    assert_eq!(
+        values.get::<String>("user").map(String::as_str),
+        Some("Ada")
+    );
+    assert_eq!(
+        values.get::<String>("city").map(String::as_str),
+        Some("Paris"),
+        "a field-local initial should override the bulk value"
+    );
+    assert_eq!(values.get::<i32>("age"), Some(&42));
+}
+
+#[test]
+fn reset_restores_model_and_bound_states_and_clears_active_errors() {
+    let name = State::new("Ada".to_string());
+    let age = State::new(42_i32);
+    let form = Form::new()
+        .field("name", "Name")
+        .initial("Ada")
+        .required("Name is required")
+        .validate_trigger(Trigger::OnChange)
+        .field("age", "Age")
+        .initial(42_i32)
+        .validate_range(1_i32..=120_i32, "Age is invalid")
+        .validate_trigger(Trigger::OnChange)
+        .build();
+    let _name_item = form.input_item("name", &name).expect("bound name field");
+    let _age_item = form
+        .input_number_item("age", &age)
+        .expect("bound age field");
+
+    name.set(String::new());
+    age.set(0);
+    assert!(form.set_value("name", name.get()));
+    assert!(form.set_value("age", age.get()));
+    assert_eq!(form.errors().len(), 2);
+
+    form.reset();
+
+    assert_eq!(name.get(), "Ada");
+    assert_eq!(age.get(), 42);
+    assert!(form.errors().is_empty());
+    let values = form.validate().expect("reset values should be valid");
+    assert_eq!(
+        values.get::<String>("name").map(String::as_str),
+        Some("Ada")
+    );
+    assert_eq!(values.get::<i32>("age"), Some(&42));
+}
+
+#[test]
 fn set_value_revalidates_without_rebuilding_rules() {
     let form = Form::new()
         .field("user", "User")
@@ -509,6 +574,7 @@ fn validation_triggers_activate_only_at_the_declared_boundary() {
         .field("submit", "Submit")
         .default("")
         .required("submit required")
+        .validate_trigger(Trigger::Submit)
         .field("change", "Change")
         .default("ready")
         .required("change required")
@@ -543,6 +609,55 @@ fn validation_triggers_activate_only_at_the_declared_boundary() {
     let errors = form.validate().expect_err("submit validates every field");
     assert_eq!(errors.len(), 3);
     assert_eq!(errors[0].field(), "submit");
+}
+
+#[test]
+fn simplified_dependency_receives_the_typed_source_value() {
+    let form = Form::new()
+        .field("minimum", "Minimum")
+        .initial(10_i32)
+        .field("maximum", "Maximum")
+        .initial(20_i32)
+        .depends_on("minimum", |minimum: &i32| {
+            (*minimum <= 20)
+                .then_some(())
+                .ok_or_else(|| "minimum is too large".to_string())
+        })
+        .build();
+
+    form.validate().expect("initial dependency should pass");
+    assert!(form.set_value("minimum", 30_i32));
+    assert_eq!(
+        form.field_error("maximum")
+            .as_ref()
+            .map(FieldError::message),
+        Some("minimum is too large")
+    );
+}
+
+#[test]
+fn simplified_dependency_reports_missing_or_incompatible_source_types() {
+    let form = Form::new()
+        .field("count", "Count")
+        .initial(3_i32)
+        .field("summary", "Summary")
+        .initial("ready")
+        .depends_on("count", |_: &String| Ok(()))
+        .field("orphan", "Orphan")
+        .initial("ready")
+        .depends_on("missing", |_: &String| Ok(()))
+        .build();
+
+    let errors = form
+        .validate()
+        .expect_err("invalid dependency schemas should be field errors");
+    assert_eq!(
+        errors.iter().map(FieldError::field).collect::<Vec<_>>(),
+        vec!["summary", "orphan"]
+    );
+    assert!(errors.iter().all(|error| error
+        .message()
+        .contains("missing or has an incompatible type")));
 }
 
 #[test]
@@ -584,7 +699,7 @@ fn dependent_validator_reads_typed_values_and_runs_on_submit() {
         .default("secret")
         .field("confirm", "Confirm")
         .default("different")
-        .depends_on("password", |value, values| {
+        .depends_on_with_values("password", |value, values| {
             (values.get::<String>("password").map(String::as_str) == Some(value))
                 .then_some(())
                 .ok_or_else(|| "passwords differ".to_string())
@@ -612,7 +727,7 @@ fn changing_a_dependency_cascades_in_declaration_order() {
         .default("EU")
         .field("region", "Region")
         .default("EU")
-        .depends_on("country", move |value, values| {
+        .depends_on_with_values("country", move |value, values| {
             region_counter.set(region_counter.get() + 1);
             (values.get::<String>("country").map(String::as_str) == Some(value))
                 .then_some(())
@@ -620,7 +735,7 @@ fn changing_a_dependency_cascades_in_declaration_order() {
         })
         .field("code", "Code")
         .default("EU-1")
-        .depends_on("region", move |value, values| {
+        .depends_on_with_values("region", move |value, values| {
             code_counter.set(code_counter.get() + 1);
             value
                 .starts_with(
@@ -659,13 +774,13 @@ fn cyclic_dependencies_are_revalidated_once_per_change() {
     let form = Form::new()
         .field("left", "Left")
         .default("same")
-        .depends_on("right", move |_, _| {
+        .depends_on_with_values("right", move |_, _| {
             left_counter.set(left_counter.get() + 1);
             Ok(())
         })
         .field("right", "Right")
         .default("same")
-        .depends_on("left", move |_, _| {
+        .depends_on_with_values("left", move |_, _| {
             right_counter.set(right_counter.get() + 1);
             Ok(())
         })
@@ -1526,7 +1641,7 @@ fn form_date_range_picker_item_syncs_both_typed_fields_and_cross_field_rules() {
         .default(Date::new(2026, 7, 1))
         .field("end", "End")
         .default(Date::new(2026, 7, 5))
-        .depends_on("start", |_, values| {
+        .depends_on_with_values("start", |_, values| {
             let start = values
                 .get::<Date>("start")
                 .copied()

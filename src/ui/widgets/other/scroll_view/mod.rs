@@ -242,6 +242,10 @@ component! {
         Some((self.scroll_x, self.scroll_y))
     }
 
+    scroll_descendant_by => (&mut self, dx: f32, dy: f32) -> bool {
+        self.scroll_by(dx, dy)
+    }
+
     children_clip => (&self, frame: Rect) -> Option<Rect> {
         // 裁剪/命中子项时扣除滚动条 gutter，避免点滑块落到内容子树上。
         let need_v = self.needs_v_scrollbar(frame, &[]);

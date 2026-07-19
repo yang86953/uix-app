@@ -56,6 +56,11 @@ impl FocusHandle {
         self.request(FocusRequest::Focus)
     }
 
+    /// 将焦点请求登记到目标窗口，并请求祖先 viewport 显露目标节点。
+    pub fn focus_and_reveal(&self) -> Result<(), FocusHandleError> {
+        self.request(FocusRequest::FocusAndReveal)
+    }
+
     /// 仅当目标节点当前持有焦点时，在所属窗口清除焦点。
     pub fn blur(&self) -> Result<(), FocusHandleError> {
         self.request(FocusRequest::Blur)

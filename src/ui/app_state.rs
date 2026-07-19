@@ -25,6 +25,7 @@ pub(crate) struct AppStateInner {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FocusRequest {
     Focus,
+    FocusAndReveal,
     Blur,
 }
 

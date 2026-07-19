@@ -694,6 +694,11 @@ impl BoxedWidget {
             .as_event()
             .and_then(|e| e.viewport_scroll_offset())
     }
+    pub fn scroll_descendant_by(&mut self, dx: f32, dy: f32) -> bool {
+        self.component_mut()
+            .as_event_mut()
+            .is_some_and(|event| event.scroll_descendant_by(dx, dy))
+    }
     pub fn active_timer(&self) -> Option<(u64, std::time::Duration)> {
         self.component().as_event().and_then(|e| e.active_timer())
     }

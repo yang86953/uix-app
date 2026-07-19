@@ -621,6 +621,59 @@ impl WidgetTree {
         self.push_scroll_composite(viewport, dx, dy)
     }
 
+    pub(crate) fn reveal_focused_target(&mut self, target: WidgetId) -> bool {
+        let mut ancestors = Vec::new();
+        let mut current = self.get(target).and_then(|node| node.parent());
+        while let Some(id) = current {
+            ancestors.push(id);
+            current = self.get(id).and_then(|node| node.parent());
+        }
+
+        let mut changed = false;
+        for viewport_id in ancestors {
+            let Some((target_frame, viewport_frame)) = self.get(target).and_then(|target_node| {
+                let target_visual = self.node_visual_rect(target, target_node.frame())?;
+                let viewport_node = self.get(viewport_id)?;
+                viewport_node.viewport_scroll_offset()?;
+                let viewport_clip = viewport_node
+                    .children_clip(viewport_node.frame())
+                    .unwrap_or_else(|| viewport_node.frame());
+                let inverse = self.node_visual_transform(viewport_id)?.inverse()?;
+                Some((inverse.transform_rect(target_visual), viewport_clip))
+            }) else {
+                continue;
+            };
+
+            let dx = reveal_axis_delta(
+                target_frame.x,
+                target_frame.x + target_frame.w,
+                viewport_frame.x,
+                viewport_frame.x + viewport_frame.w,
+            );
+            let dy = reveal_axis_delta(
+                target_frame.y,
+                target_frame.y + target_frame.h,
+                viewport_frame.y,
+                viewport_frame.y + viewport_frame.h,
+            );
+            if dx.abs() <= 0.01 && dy.abs() <= 0.01 {
+                continue;
+            }
+
+            let scrolled = self
+                .get_mut(viewport_id)
+                .is_some_and(|node| node.scroll_descendant_by(dx, dy));
+            if !scrolled {
+                continue;
+            }
+            changed = true;
+            if !self.register_scroll_composite(viewport_id) {
+                self.invalidate_paint(viewport_id);
+            }
+        }
+        changed
+    }
+
     fn capture_to(&mut self, target: WidgetId, event: &SystemEvent) -> Option<WidgetId> {
         // 收集从 root 到 target 的祖先路径（不含 target）
         let mut path = Vec::new();
@@ -878,5 +931,15 @@ impl WidgetTree {
         if let Some(parent) = self.get(clicked).and_then(|n| n.parent()) {
             self.invalidate_paint_subtree(parent);
         }
+    }
+}
+
+fn reveal_axis_delta(target_start: f32, target_end: f32, view_start: f32, view_end: f32) -> f32 {
+    if target_start < view_start {
+        target_start - view_start
+    } else if target_end > view_end {
+        target_end - view_end
+    } else {
+        0.0
     }
 }
