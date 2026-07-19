@@ -269,6 +269,61 @@ fn upload_programmatic_queue_honors_filter_limits_and_removal() {
 }
 
 #[test]
+fn upload_max_size_rejects_oversized_real_files_without_change() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_FILE: AtomicU64 = AtomicU64::new(0);
+    let path = std::env::temp_dir().join(format!(
+        "uix-upload-max-size-{}-{}.png",
+        std::process::id(),
+        NEXT_FILE.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::write(&path, [1_u8, 2, 3, 4, 5]).expect("write upload size fixture");
+    let path_text = path.to_string_lossy();
+    let drop = SystemEvent::FileDrop {
+        files: vec![path_text.to_string()],
+        position: Point::zero(),
+    };
+
+    let mut rejected = Upload::new().accept(".png").max_size(4);
+    assert_eq!(rejected.on_event(&drop), EventResult::NotHandled);
+    assert!(rejected.files().is_empty());
+    assert!(rejected
+        .semantic_event(ComponentId::new(8), &drop)
+        .is_none());
+
+    let mut accepted = Upload::new().accept(".png").max_size(5);
+    assert_eq!(accepted.on_event(&drop), EventResult::Handled);
+    assert_eq!(accepted.files()[0].size, 5);
+    assert!(accepted
+        .semantic_event(ComponentId::new(8), &drop)
+        .is_some());
+    assert!(matches!(
+        accepted.snapshot_fields(),
+        SnapshotFields::Upload {
+            max_size: Some(5),
+            ..
+        }
+    ));
+
+    let directory = path.with_extension("folder.png");
+    std::fs::create_dir(&directory).expect("create upload directory fixture");
+    let directory_drop = SystemEvent::FileDrop {
+        files: vec![directory.to_string_lossy().to_string()],
+        position: Point::zero(),
+    };
+    let mut directories_rejected = Upload::new().accept(".png").max_size(u64::MAX);
+    assert_eq!(
+        directories_rejected.on_event(&directory_drop),
+        EventResult::NotHandled
+    );
+    assert!(directories_rejected.files().is_empty());
+
+    std::fs::remove_file(path).expect("remove upload size fixture");
+    std::fs::remove_dir(directory).expect("remove upload directory fixture");
+}
+
+#[test]
 fn upload_measure_respects_parent_constraints() {
     let upload = Upload::new();
     assert_eq!(

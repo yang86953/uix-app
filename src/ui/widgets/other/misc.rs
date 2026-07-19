@@ -510,6 +510,7 @@ component! {
         drag: bool,
         drag_hover: bool,
         max_count: usize,
+        max_size: Option<u64>,
         pending_change: RefCell<Option<String>>,
         focused: bool,
     }
@@ -623,6 +624,7 @@ impl Upload {
             drag: true,
             drag_hover: false,
             max_count: 10,
+            max_size: None,
             pending_change: RefCell::new(None),
             focused: false,
         }
@@ -643,6 +645,11 @@ impl Upload {
         self.max_count = n;
         self
     }
+    /// Limit newly queued real files to at most `bytes` bytes.
+    pub fn max_size(mut self, bytes: u64) -> Self {
+        self.max_size = Some(bytes);
+        self
+    }
     pub fn add_file(&mut self, name: &str) {
         let _ = self.try_add_file(name);
     }
@@ -650,7 +657,18 @@ impl Upload {
         if !self.accepts_file(path) {
             return false;
         }
-        self.push_file(Self::display_name(path))
+        let size = match std::fs::metadata(path) {
+            Ok(metadata) if metadata.is_file() => Some(metadata.len()),
+            Ok(_) => return false,
+            Err(_) => None,
+        };
+        if self
+            .max_size
+            .is_some_and(|max_size| size.is_some_and(|size| size > max_size))
+        {
+            return false;
+        }
+        self.push_file(Self::display_name(path), size.unwrap_or(0))
     }
     pub fn remove_file(&mut self, index: usize) -> Option<UploadFile> {
         (index < self.file_list.len()).then(|| self.file_list.remove(index))
@@ -712,13 +730,13 @@ impl Upload {
         EventResult::Handled
     }
 
-    fn push_file(&mut self, name: &str) -> bool {
+    fn push_file(&mut self, name: &str, size: u64) -> bool {
         if self.file_list.len() >= self.max_count {
             return false;
         }
         self.file_list.push(UploadFile {
             name: name.to_string(),
-            size: 0,
+            size,
             progress: 0.0,
             status: UploadStatus::Pending,
         });
@@ -759,6 +777,7 @@ impl Upload {
         self.multiple = next.multiple;
         self.drag = next.drag;
         self.max_count = next.max_count;
+        self.max_size = next.max_size;
         if self.file_list.len() > self.max_count {
             self.file_list.truncate(self.max_count);
         }
@@ -770,6 +789,7 @@ impl Upload {
             multiple: self.multiple,
             drag: self.drag,
             max_count: self.max_count,
+            max_size: self.max_size,
             files: self.file_list.clone(),
         }
     }
