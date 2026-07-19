@@ -460,7 +460,8 @@ fn reconcile_upload_preserves_files_and_syncs_config() {
                 .accept(".png")
                 .multiple(true)
                 .drag(false)
-                .max_count(5),
+                .max_count(5)
+                .max_size(1024),
         ),
     );
 
@@ -480,6 +481,7 @@ fn reconcile_upload_preserves_files_and_syncs_config() {
             multiple: true,
             drag: false,
             max_count: 5,
+            max_size: Some(1024),
             files: vec![UploadFile {
                 name: "kept.txt".to_string(),
                 size: 0,
