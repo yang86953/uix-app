@@ -150,6 +150,8 @@ pub enum SnapshotFields {
         placeholder: String,
         disabled: bool,
         keyboard: bool,
+        formatted: bool,
+        display_value: Option<String>,
     },
     Avatar {
         text: String,
@@ -766,8 +768,24 @@ impl SnapshotFields {
                 max,
                 placeholder,
                 disabled,
+                formatted,
+                display_value,
                 ..
-            } => input_number_accessibility(*value, *min, *max, placeholder, *disabled),
+            } => {
+                let accessible_display = if *formatted {
+                    display_value.as_deref()
+                } else {
+                    None
+                };
+                input_number_accessibility(
+                    *value,
+                    *min,
+                    *max,
+                    placeholder,
+                    *disabled,
+                    accessible_display,
+                )
+            }
             Self::Empty { description, .. } => AccessibilitySnapshot::named(
                 AccessibilityRole::Status,
                 if description.is_empty() {

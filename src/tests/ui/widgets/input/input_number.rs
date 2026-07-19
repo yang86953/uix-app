@@ -181,6 +181,114 @@ fn input_number_accepts_platform_text_and_enter_commits_the_buffer() {
 }
 
 #[test]
+fn formatter_changes_display_and_accessibility_without_polluting_numeric_editing() {
+    let mut input = InputNumber::new()
+        .default_value(12.5f64)
+        .formatter(|value| format!("{value:.1} %"));
+    assert!(matches!(
+        input.snapshot_fields(),
+        SnapshotFields::InputNumber {
+            formatted: true,
+            display_value: Some(display_value),
+            ..
+        } if display_value == "12.5 %"
+    ));
+    let accessibility = input.snapshot_fields().accessibility();
+    assert_eq!(accessibility.state.value_now, Some(12.5));
+    assert_eq!(accessibility.state.value_text.as_deref(), Some("12.5 %"));
+
+    let _ = input.on_event(&SystemEvent::FocusIn);
+    let (_, measured) =
+        render_input_number(&input, Rect::new(0.0, 0.0, 160.0, 32.0), (164, 36), "12.5");
+    let caret = input
+        .as_text_input()
+        .expect("InputNumber text input capability")
+        .text_input_cursor_rect();
+    assert!(
+        (caret.x - (12.0 + measured)).abs() < 0.01,
+        "editing must expose the raw parseable number instead of the formatted projection"
+    );
+
+    let _ = input.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Backspace,
+        mods: KeyMod::NONE,
+    });
+    let _ = input.on_event(&SystemEvent::TextInput {
+        text: "75".to_owned(),
+    });
+    let _ = input.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Enter,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(input.current_value(), 12.75);
+    assert_eq!(
+        input
+            .semantic_event(ComponentId::new(21), &SystemEvent::FocusIn)
+            .expect("formatted input commit must retain numeric Change semantics")
+            .text_payload(),
+        Some("12.75")
+    );
+    assert!(matches!(
+        input.snapshot_fields(),
+        SnapshotFields::InputNumber {
+            display_value: Some(display_value),
+            ..
+        } if display_value == "12.8 %"
+    ));
+}
+
+#[test]
+fn formatter_reconcile_preserves_the_uncommitted_buffer_and_pointer_only_steps() {
+    let mut input = InputNumber::new()
+        .default_value(4.0f64)
+        .formatter(|value| format!("${value}"));
+    let _ = input.on_event(&SystemEvent::FocusIn);
+    let _ = input.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Backspace,
+        mods: KeyMod::NONE,
+    });
+    let _ = input.on_event(&SystemEvent::TextInput {
+        text: "7".to_owned(),
+    });
+
+    input.sync_from(InputNumber::new().formatter(|value| format!("{value} kg")));
+    let _ = input.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Enter,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(input.current_value(), 7.0);
+    assert!(matches!(
+        input.snapshot_fields(),
+        SnapshotFields::InputNumber {
+            display_value: Some(display_value),
+            ..
+        } if display_value == "7 kg"
+    ));
+
+    input.sync_from(
+        InputNumber::new()
+            .keyboard(false)
+            .formatter(|value| format!("{value} kg")),
+    );
+    assert_eq!(
+        input.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(100.0, 5.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(matches!(
+        input.snapshot_fields(),
+        SnapshotFields::InputNumber {
+            keyboard: false,
+            display_value: Some(display_value),
+            ..
+        } if display_value == "8 kg"
+    ));
+}
+
+#[test]
 fn input_number_focus_out_commits_and_invalid_text_preserves_value() {
     let value = State::new(2.0f64);
     let mut input = InputNumber::new().value(&value);

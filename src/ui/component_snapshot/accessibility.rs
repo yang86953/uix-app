@@ -530,6 +530,7 @@ pub(super) fn input_number_accessibility(
     max: f64,
     placeholder: &str,
     disabled: bool,
+    display_value: Option<&str>,
 ) -> AccessibilitySnapshot {
     AccessibilitySnapshot::named(AccessibilityRole::SpinButton, placeholder).with_state(
         AccessibilityState {
@@ -537,6 +538,7 @@ pub(super) fn input_number_accessibility(
             value_now: Some(value),
             value_min: Some(min),
             value_max: Some(max),
+            value_text: display_value.map(str::to_owned),
             ..AccessibilityState::default()
         },
     )
