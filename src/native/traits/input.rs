@@ -130,6 +130,8 @@ impl KeyMod {
     pub const CTRL: Self = Self(1 << 1);
     pub const ALT: Self = Self(1 << 2);
     pub const SUPER: Self = Self(1 << 3);
+    /// 框架内部合成的按键事件；平台 backend 不得设置。
+    pub(crate) const SYNTHETIC: Self = Self(1 << 31);
 
     pub const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0

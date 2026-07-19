@@ -6,7 +6,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
-use crate::native::traits::input::ControlSize;
+use crate::native::traits::input::{ControlSize, KeyMod};
 use crate::ui::state::State;
 use crate::ui::SnapshotFields;
 use crate::ui::{
@@ -117,6 +117,7 @@ component! {
         focused: bool,
         hovered: bool,
         disabled: bool,
+        keyboard: bool,
         input_size: ControlSize,
         text_buffer: String,
         pending_change: Cell<Option<f64>>,
@@ -126,7 +127,7 @@ component! {
 
     tab_index => (&self) -> i32 { 1 }
 
-    accepts_text_input => (&self) -> bool { !self.disabled }
+    accepts_text_input => (&self) -> bool { !self.disabled && self.keyboard }
 
     text_input_cursor_rect => (&self) -> Rect { self.cursor_rect.get() }
 
@@ -154,21 +155,36 @@ component! {
                     self.step_by(direction);
                     return EventResult::Handled;
                 }
-                self.begin_editing();
+                if self.keyboard {
+                    self.begin_editing();
+                } else {
+                    self.focused = true;
+                }
                 EventResult::Handled
             }
             SystemEvent::PointerEnter => { self.hovered = true; EventResult::Handled }
             SystemEvent::PointerLeave => { self.hovered = false; EventResult::Handled }
             SystemEvent::FocusIn => {
-                self.begin_editing();
+                if self.keyboard {
+                    self.begin_editing();
+                } else {
+                    self.focused = true;
+                }
                 EventResult::Handled
             }
             SystemEvent::FocusOut => {
-                self.commit_buffer();
+                if self.keyboard {
+                    self.commit_buffer();
+                }
                 self.focused = false;
                 EventResult::Handled
             }
-            SystemEvent::KeyDown { key, .. } => {
+            SystemEvent::KeyDown { key, mods } => {
+                let semantic_step = mods.contains(KeyMod::SYNTHETIC)
+                    && matches!(key, KeyCode::Up | KeyCode::Down);
+                if !self.keyboard && !semantic_step {
+                    return EventResult::NotHandled;
+                }
                 match key {
                     KeyCode::Up => {
                         self.step_by(1.0);
@@ -192,6 +208,8 @@ component! {
                     _ => EventResult::NotHandled,
                 }
             }
+            SystemEvent::TextInput { .. } | SystemEvent::Paste { .. } if !self.keyboard =>
+                EventResult::NotHandled,
             SystemEvent::TextInput { text } | SystemEvent::Paste { text } =>
                 self.append_numeric_text(text),
             _ => EventResult::NotHandled,
@@ -261,12 +279,13 @@ component! {
         } else {
             self.placeholder.clone()
         };
-        let display = if self.focused {
+        let editing = self.focused && self.keyboard;
+        let display = if editing {
             &self.text_buffer
         } else {
             &show
         };
-        let showing_placeholder = !self.focused && !self.value_configured;
+        let showing_placeholder = !editing && !self.value_configured;
         let display_color = if self.disabled {
             text_quaternary
         } else if showing_placeholder {
@@ -299,7 +318,7 @@ component! {
                 display_color,
                 14.0,
             );
-            let cursor_x = (draw_x + if self.focused { display_width } else { 0.0 })
+            let cursor_x = (draw_x + if editing { display_width } else { 0.0 })
                 .clamp(text_area.x, text_area.x + text_area.w);
             let cursor_rect = Rect::new(
                 cursor_x,
@@ -307,8 +326,9 @@ component! {
                 1.0,
                 (input_frame.h - 8.0).max(0.0),
             );
-            self.cursor_rect.set(cursor_rect);
-            if self.focused {
+            self.cursor_rect
+                .set(if editing { cursor_rect } else { Rect::zero() });
+            if editing {
                 ctx.fill_rect(cursor_rect, primary, None);
             }
             ctx.pop_clip();
@@ -373,6 +393,7 @@ impl InputNumber {
             focused: false,
             hovered: false,
             disabled: config.disabled,
+            keyboard: true,
             input_size: config.size,
             text_buffer: String::new(),
             pending_change: Cell::new(None),
@@ -434,6 +455,20 @@ impl InputNumber {
 
     pub fn disabled(mut self, v: bool) -> Self {
         self.disabled = v;
+        self
+    }
+
+    /// 控制实体键盘、文本输入与粘贴；关闭后仅保留指针步进按钮和语义步进。
+    pub fn keyboard(mut self, enabled: bool) -> Self {
+        self.keyboard = enabled;
+        if !enabled {
+            self.text_buffer = if self.value_configured {
+                self.format_value()
+            } else {
+                String::new()
+            };
+            self.cursor_rect.set(Rect::zero());
+        }
         self
     }
 
@@ -504,7 +539,7 @@ impl InputNumber {
     }
 
     fn step_by(&mut self, direction: f64) {
-        if self.focused {
+        if self.focused && self.keyboard {
             self.commit_buffer();
         }
         let raw = self.value + self.step * direction;
@@ -582,6 +617,7 @@ impl InputNumber {
             step: self.step,
             placeholder: self.placeholder.clone(),
             disabled: self.disabled,
+            keyboard: self.keyboard,
         }
     }
 
@@ -592,6 +628,7 @@ impl InputNumber {
         self.step = next.step;
         self.placeholder = next.placeholder;
         self.disabled = next.disabled;
+        self.keyboard = next.keyboard;
         self.input_size = next.input_size;
         self.value_binding = next.value_binding;
         if self.disabled {
@@ -607,6 +644,14 @@ impl InputNumber {
             if self.value_configured {
                 self.text_buffer = self.format_value();
             }
+        }
+        if !self.keyboard {
+            self.text_buffer = if self.value_configured {
+                self.format_value()
+            } else {
+                String::new()
+            };
+            self.cursor_rect.set(Rect::zero());
         }
     }
 }

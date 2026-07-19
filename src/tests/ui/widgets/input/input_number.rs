@@ -228,6 +228,97 @@ fn input_number_pointer_step_buttons_use_the_configured_step() {
 }
 
 #[test]
+fn keyboard_false_keeps_only_pointer_and_semantic_step_inputs() {
+    let mut input = InputNumber::new()
+        .default_value(4.0f64)
+        .step(2.0)
+        .keyboard(false);
+
+    assert!(!input
+        .as_text_input()
+        .expect("InputNumber text input capability")
+        .accepts_text_input());
+    assert_eq!(input.on_event(&SystemEvent::FocusIn), EventResult::Handled);
+    assert_eq!(
+        input.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Up,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::NotHandled
+    );
+    assert_eq!(
+        input.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Backspace,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::NotHandled
+    );
+    assert_eq!(
+        input.on_event(&SystemEvent::TextInput {
+            text: "7".to_owned(),
+        }),
+        EventResult::NotHandled
+    );
+    assert_eq!(
+        input.on_event(&SystemEvent::Paste {
+            text: "8".to_owned(),
+        }),
+        EventResult::NotHandled
+    );
+    assert_eq!(input.current_value(), 4.0);
+
+    let _ = render_input_number(&input, Rect::new(0.0, 0.0, 112.0, 32.0), (120, 40), "4");
+    assert_eq!(
+        input
+            .as_text_input()
+            .expect("InputNumber text input capability")
+            .text_input_cursor_rect(),
+        Rect::zero()
+    );
+    assert!(matches!(
+        input.snapshot_fields(),
+        SnapshotFields::InputNumber {
+            keyboard: false,
+            ..
+        }
+    ));
+
+    assert_eq!(
+        input.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(100.0, 5.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(input.current_value(), 6.0);
+}
+
+#[test]
+fn disabling_keyboard_during_reconcile_discards_the_uncommitted_buffer() {
+    let mut input = InputNumber::new().default_value(4.0f64);
+    let _ = input.on_event(&SystemEvent::FocusIn);
+    let _ = input.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Backspace,
+        mods: KeyMod::NONE,
+    });
+    let _ = input.on_event(&SystemEvent::TextInput {
+        text: "7".to_owned(),
+    });
+
+    input.sync_from(InputNumber::new().keyboard(false));
+    assert_eq!(
+        input.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(100.0, 5.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(input.current_value(), 5.0);
+}
+
+#[test]
 fn disabled_input_number_does_not_request_text_input_or_handle_steps() {
     let mut input = InputNumber::new().disabled(true);
     assert!(!input

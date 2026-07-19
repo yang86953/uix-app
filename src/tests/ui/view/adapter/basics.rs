@@ -665,6 +665,7 @@ fn reconcile_input_number_patches_instance_and_syncs_snapshot_fields() {
             step: 0.25,
             placeholder: "new".to_string(),
             disabled: true,
+            keyboard: true,
         }
     );
 }

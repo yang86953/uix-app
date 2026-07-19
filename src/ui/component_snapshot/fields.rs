@@ -149,6 +149,7 @@ pub enum SnapshotFields {
         step: f64,
         placeholder: String,
         disabled: bool,
+        keyboard: bool,
     },
     Avatar {
         text: String,
