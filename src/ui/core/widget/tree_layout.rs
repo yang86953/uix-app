@@ -967,16 +967,12 @@ impl WidgetTree {
         self.update_animation_nodes_at(ids, now, dt)
     }
 
-    pub(crate) fn update_animations_except_at<I>(
+    pub(crate) fn update_animations_except_at(
         &mut self,
-        excluded_ids: I,
+        excluded_ids: &[WidgetId],
         now: Instant,
         dt: f64,
-    ) -> Vec<(WidgetId, bool)>
-    where
-        I: IntoIterator<Item = WidgetId>,
-    {
-        let excluded_ids: Vec<_> = excluded_ids.into_iter().collect();
+    ) -> Vec<(WidgetId, bool)> {
         let ids: Vec<_> = self
             .animation_node_ids()
             .into_iter()
@@ -1166,12 +1162,11 @@ impl WidgetTree {
         updates
     }
 
-    pub(crate) fn component_animation_ids(&self) -> Vec<WidgetId> {
+    pub(crate) fn component_animation_ids(&self) -> impl Iterator<Item = WidgetId> + '_ {
         self.active_component_animations
             .iter()
             .copied()
             .filter(|id| self.get(*id).is_some())
-            .collect()
     }
 
     fn widget_overlay_is_current(&self, id: WidgetId) -> bool {

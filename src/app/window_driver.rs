@@ -1009,8 +1009,7 @@ pub(crate) fn sync_animation_registrations(
     let mut managed_registrations = tree.animated_source_registrations();
     tree.extend_view_transition_registrations(&mut managed_registrations);
     active_work.sync_animated_sources(managed_registrations);
-    let component_ids = tree.component_animation_ids();
-    active_work.sync_component_animations(component_ids.iter().copied());
+    active_work.sync_component_animations(tree.component_animation_ids());
 
     for &(id, animating) in animation_updates {
         if active_work.manages_animation(id) {

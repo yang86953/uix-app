@@ -49,7 +49,7 @@ pub(super) fn update_scheduled_and_discovered_animations(
         tree.update_animation_nodes_at(scheduled_animation_ids.iter().copied(), now, dt)
     };
     if discover_animation_work {
-        updates.extend(tree.update_animations_except_at(scheduled_animation_ids.to_vec(), now, dt));
+        updates.extend(tree.update_animations_except_at(scheduled_animation_ids, now, dt));
     }
     updates
 }
