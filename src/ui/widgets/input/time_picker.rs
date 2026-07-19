@@ -171,7 +171,7 @@ component! {
                             TimeColumn::Minute
                         };
                         self.active_column.set(column);
-                        if self.scroll_column(column, -delta.y * WHEEL_STEP) {
+                        if self.scroll_column(column, delta.y * WHEEL_STEP) {
                             return EventResult::Handled;
                         }
                     }

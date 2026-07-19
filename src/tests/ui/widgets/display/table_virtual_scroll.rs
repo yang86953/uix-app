@@ -106,7 +106,7 @@ fn typed_view_cells_materialize_only_the_virtual_row_window() {
     assert_eq!(
         tree.dispatch_event(&SystemEvent::Wheel {
             pos: Point::new(80.0, 80.0),
-            delta: Point::new(0.0, -10.0),
+            delta: Point::new(0.0, 10.0),
         }),
         EventResult::Handled
     );
@@ -146,7 +146,7 @@ fn table_wheel_records_composite_delta() {
             &mut table,
             &SystemEvent::Wheel {
                 pos: Point::new(10.0, 80.0),
-                delta: Point::new(0.0, -1.0),
+                delta: Point::new(0.0, 1.0),
             },
         ),
         EventResult::Handled
@@ -175,7 +175,7 @@ fn table_wheel_registers_composite_scroll_strip() {
     assert_eq!(
         tree.dispatch_event(&SystemEvent::Wheel {
             pos: Point::new(20.0, 80.0),
-            delta: Point::new(0.0, -1.0),
+            delta: Point::new(0.0, 1.0),
         }),
         EventResult::Handled
     );
@@ -217,7 +217,7 @@ fn grouped_table_scroll_excludes_both_header_rows_from_composite() {
     assert_eq!(
         tree.dispatch_event(&SystemEvent::Wheel {
             pos: Point::new(20.0, 100.0),
-            delta: Point::new(0.0, -1.0),
+            delta: Point::new(0.0, 1.0),
         }),
         EventResult::Handled
     );
@@ -254,7 +254,7 @@ fn table_horizontal_wheel_falls_back_to_table_paint() {
     assert_eq!(
         tree.dispatch_event(&SystemEvent::Wheel {
             pos: Point::new(120.0, 80.0),
-            delta: Point::new(-1.0, 0.0),
+            delta: Point::new(1.0, 0.0),
         }),
         EventResult::Handled
     );

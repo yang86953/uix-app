@@ -243,7 +243,7 @@ fn autocomplete_long_dropdown_wheels_and_selects_visible_rows() {
     assert_eq!(
         autocomplete.on_event(&SystemEvent::Wheel {
             pos: Point::new(10.0, 50.0),
-            delta: Point::new(0.0, -3.0),
+            delta: Point::new(0.0, 3.0),
         }),
         EventResult::Handled
     );

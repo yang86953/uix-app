@@ -160,7 +160,7 @@ component! {
                 }
                 let column_width = cascader_column_width(frame);
                 let level = ((pos.x - popup.x) / column_width).floor() as usize;
-                if self.scroll_level(level, -delta.y * WHEEL_STEP) {
+                if self.scroll_level(level, delta.y * WHEEL_STEP) {
                     EventResult::Handled
                 } else {
                     EventResult::NotHandled

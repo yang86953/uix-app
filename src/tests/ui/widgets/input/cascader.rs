@@ -340,7 +340,7 @@ fn wheel_reaches_options_below_the_initial_popup_viewport() {
     assert_eq!(
         cascader.on_event(&SystemEvent::Wheel {
             pos: Point::new(20.0, 100.0),
-            delta: Point::new(0.0, -100.0),
+            delta: Point::new(0.0, 100.0),
         }),
         EventResult::Handled
     );
