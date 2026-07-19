@@ -472,6 +472,9 @@ pub enum SnapshotFields {
         selected_values: Vec<String>,
         open: bool,
         loading_children: Vec<String>,
+        searchable: bool,
+        search_query: String,
+        search_results: Vec<CascaderValue>,
     },
     ColorPicker {
         value: Color,

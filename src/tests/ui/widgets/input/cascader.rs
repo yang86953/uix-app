@@ -3,7 +3,7 @@ use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
 use crate::ui::view::{ViewAdapter, ViewNode};
-use crate::ui::widgets::{Cascader, CascaderOption};
+use crate::ui::widgets::{Cascader, CascaderOption, CascaderValue};
 
 fn render_cascader(cascader: &Cascader, frame: Rect) {
     let _ = render_cascader_pixels(cascader, frame);
@@ -237,6 +237,177 @@ fn loading_leaf_does_not_submit_or_close() {
     assert!(widget
         .semantic_event(ComponentId::new(9), &SystemEvent::FocusIn)
         .is_none());
+}
+
+#[test]
+fn searchable_filters_leaf_paths_and_commits_the_full_value_path() {
+    let mut widget = cascader().searchable(true);
+    assert!(widget.as_text_input().is_some());
+    assert!(matches!(
+        widget.snapshot_fields(),
+        SnapshotFields::Cascader {
+            searchable: true,
+            search_query,
+            search_results,
+            ..
+        } if search_query.is_empty() && search_results.is_empty()
+    ));
+
+    widget.open();
+    widget.select_option(0, 1);
+    assert_eq!(
+        EventHandler::hit_test_frame(&widget, Rect::new(0.0, 0.0, 120.0, 32.0)).w,
+        400.0
+    );
+    let _ = widget.on_event(&SystemEvent::FocusIn);
+    assert_eq!(
+        widget.on_event(&SystemEvent::TextInput {
+            text: "bei".to_owned(),
+        }),
+        EventResult::Handled
+    );
+    assert!(widget.is_open());
+    assert!(matches!(
+        widget.snapshot_fields(),
+        SnapshotFields::Cascader {
+            search_query,
+            search_results,
+            ..
+        } if search_query == "bei"
+            && search_results == [CascaderValue {
+                labels: vec!["China".to_owned(), "Beijing".to_owned()],
+                values: vec!["china".to_owned(), "beijing".to_owned()],
+            }]
+    ));
+    assert_eq!(
+        EventHandler::hit_test_frame(&widget, Rect::new(0.0, 0.0, 120.0, 32.0)).w,
+        200.0,
+        "search results use one path-projection column"
+    );
+    assert_eq!(
+        WidgetRender::dirty_rect(&widget, Rect::new(0.0, 0.0, 120.0, 32.0)).w,
+        400.0,
+        "search projection damage must clear the previously visible child column"
+    );
+    assert!(widget
+        .semantic_event(ComponentId::new(10), &SystemEvent::FocusIn)
+        .is_none());
+
+    render_cascader(&widget, Rect::new(0.0, 0.0, 120.0, 32.0));
+    assert_eq!(click(&mut widget, 20.0, 50.0), EventResult::Handled);
+    assert_eq!(widget.selected().values, ["china", "beijing"]);
+    assert!(!widget.is_open());
+    assert_eq!(
+        widget
+            .semantic_event(ComponentId::new(10), &SystemEvent::FocusIn)
+            .expect("a search result commit must emit the full value path")
+            .text_payload(),
+        Some("china/beijing")
+    );
+}
+
+#[test]
+fn searchable_result_wheel_reaches_paths_below_the_viewport() {
+    let options = (0..10)
+        .map(|index| {
+            CascaderOption::new(format!("Region {index}"), format!("region-{index}")).children(
+                vec![CascaderOption::new(
+                    format!("City {index}"),
+                    format!("city-{index}"),
+                )],
+            )
+        })
+        .collect();
+    let mut widget = Cascader::new(options, "Region").searchable(true);
+    render_cascader(&widget, Rect::new(0.0, 0.0, 120.0, 32.0));
+    let _ = widget.on_event(&SystemEvent::FocusIn);
+    let _ = widget.on_event(&SystemEvent::TextInput {
+        text: "city".to_owned(),
+    });
+    assert_eq!(
+        widget.on_event(&SystemEvent::Wheel {
+            pos: Point::new(20.0, 100.0),
+            delta: Point::new(0.0, 100.0),
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(click(&mut widget, 20.0, 220.0), EventResult::Handled);
+    assert_eq!(widget.selected().values, ["region-9", "city-9"]);
+}
+
+#[test]
+fn searchable_query_edits_unicode_at_the_measured_cursor() {
+    let mut widget =
+        Cascader::new(vec![CascaderOption::new("测试", "test")], "Region").searchable(true);
+    let _ = widget.on_event(&SystemEvent::FocusIn);
+    let _ = widget.on_event(&SystemEvent::TextInput {
+        text: "测试".to_owned(),
+    });
+    render_cascader(&widget, Rect::new(0.0, 0.0, 200.0, 32.0));
+    let cursor = widget
+        .as_text_input()
+        .expect("searchable Cascader text input capability")
+        .text_input_cursor_rect();
+    assert!(cursor.x > 12.0, "cursor must follow measured query text");
+
+    let _ = widget.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Left,
+        mods: KeyMod::NONE,
+    });
+    let _ = widget.on_event(&SystemEvent::TextInput {
+        text: "A".to_owned(),
+    });
+    assert!(matches!(
+        widget.snapshot_fields(),
+        SnapshotFields::Cascader { search_query, .. } if search_query == "测A试"
+    ));
+
+    render_cascader(&widget, Rect::new(0.0, 0.0, 200.0, 32.0));
+    assert_eq!(click(&mut widget, 12.0, 16.0), EventResult::Handled);
+    assert!(
+        widget.is_open(),
+        "clicking the search input must not close it"
+    );
+    let _ = widget.on_event(&SystemEvent::TextInput {
+        text: "B".to_owned(),
+    });
+    assert!(matches!(
+        widget.snapshot_fields(),
+        SnapshotFields::Cascader { search_query, .. } if search_query == "B测A试"
+    ));
+}
+
+#[test]
+fn searchable_reconcile_preserves_query_and_replaces_loading_paths() {
+    let mut widget = cascader().searchable(true).loading_child("china", true);
+    let _ = widget.on_event(&SystemEvent::TextInput {
+        text: "china".to_owned(),
+    });
+    let _ = widget.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Enter,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(widget.selected().values, ["china"]);
+    assert!(widget.is_open());
+    assert!(widget
+        .semantic_event(ComponentId::new(11), &SystemEvent::FocusIn)
+        .is_none());
+
+    widget.sync_from(cascader().searchable(true));
+    assert!(matches!(
+        widget.snapshot_fields(),
+        SnapshotFields::Cascader {
+            search_query,
+            search_results,
+            ..
+        } if search_query == "china" && search_results.len() == 2
+    ));
+    let _ = widget.on_event(&SystemEvent::KeyDown {
+        key: KeyCode::Enter,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(widget.selected().values, ["china", "beijing"]);
+    assert!(!widget.is_open());
 }
 
 #[test]
