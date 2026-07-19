@@ -243,6 +243,9 @@ component! {
         sortable: bool,
         selection: bool,
         bordered: bool,
+        loading: bool,
+        loading_phase: f32,
+        loading_dirty: bool,
         /// 空状态文案。
         empty_text: String,
         /// 当前分页。
@@ -262,7 +265,7 @@ component! {
         hover_resize_column: Cell<Option<usize>>,
     }
 
-    tab_index => (&self) -> i32 { i32::from(!self.rows.is_empty()) }
+    tab_index => (&self) -> i32 { i32::from(!self.loading && !self.rows.is_empty()) }
 
     measure => (&self, constraints: Constraints) -> Size {
         let w: f32 = self
@@ -307,6 +310,28 @@ component! {
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        if self.loading {
+            let changed = self.pressed_action.replace(None).is_some()
+                | self.hover_row.replace(None).is_some()
+                | self.hover_resize_column.replace(None).is_some()
+                | self.cancel_column_resize();
+            if matches!(event, SystemEvent::FocusOut) {
+                self.focused = false;
+            }
+            let blocks_interaction = match event {
+                SystemEvent::PointerDown { pos, .. }
+                | SystemEvent::PointerUp { pos, .. }
+                | SystemEvent::PointerMove { pos, .. }
+                | SystemEvent::Wheel { pos, .. } => self.local_frame().contains(*pos),
+                SystemEvent::KeyDown { .. } => self.focused,
+                _ => false,
+            };
+            return if changed || blocks_interaction || matches!(event, SystemEvent::FocusOut) {
+                EventResult::Handled
+            } else {
+                EventResult::NotHandled
+            };
+        }
         match event {
             SystemEvent::FocusIn => {
                 self.focused = true;
@@ -480,7 +505,7 @@ component! {
         ctx.push_clip(frame);
 
         // 空状态
-        if self.rows.is_empty() {
+        if self.rows.is_empty() && !self.loading {
             let loc = crate::ui::locale::use_locale();
             let empty = if self.empty_text.is_empty() { loc.empty_data } else { &self.empty_text };
             let horizontal_inset = 16.0_f32.min(frame.w * 0.25);
@@ -672,6 +697,9 @@ component! {
         }
 
         ctx.pop_clip();
+        if self.loading {
+            self.paint_loading_overlay(frame, ctx);
+        }
         if self.bordered {
             ctx.stroke_rect(frame, border, 1.0, r);
         }
@@ -692,6 +720,27 @@ component! {
             );
         }
         ctx.pop_clip();
+    }
+
+    update_animation => (&mut self, dt: f64) -> bool {
+        self.loading_dirty = false;
+        if !self.loading {
+            return false;
+        }
+        let before = self.loading_phase;
+        self.loading_phase = (self.loading_phase
+            + dt.max(0.0) as f32 * std::f32::consts::TAU / 0.8)
+            .rem_euclid(std::f32::consts::TAU);
+        self.loading_dirty = (self.loading_phase - before).abs() > f32::EPSILON;
+        true
+    }
+
+    dirty_bounds => (&self, frame: Rect) -> Rect {
+        if self.loading_dirty {
+            self.loading_spinner_bounds(Self::normalized_frame(frame))
+        } else {
+            Rect::zero()
+        }
     }
 
     children_clip => (&self, frame: Rect) -> Option<Rect> {
@@ -815,6 +864,9 @@ impl Table {
             sortable: false,
             selection: false,
             bordered: false,
+            loading: false,
+            loading_phase: 0.0,
+            loading_dirty: false,
             empty_text: String::new(),
             current_page: Cell::new(0),
             page_size: 20,
@@ -1110,6 +1162,15 @@ impl Table {
         self.bordered = enabled;
         self
     }
+    /// 在表体上方显示加载遮罩，并暂时阻止表格交互。
+    pub fn loading(mut self, enabled: bool) -> Self {
+        self.loading = enabled;
+        if !enabled {
+            self.loading_phase = 0.0;
+            self.loading_dirty = false;
+        }
+        self
+    }
     /// 设置表格视口尺寸；数据超出高度时仅表体滚动，表头保持可见。
     pub fn size(mut self, width: f32, height: f32) -> Self {
         self.fixed_width = Some(finite_nonnegative(width));
@@ -1184,6 +1245,55 @@ impl Table {
             32.0
         } else {
             0.0
+        }
+    }
+
+    fn loading_body_rect(&self, frame: Rect) -> Rect {
+        let header_height = (self.total_header_height() + 1.0).min(frame.h);
+        Rect::new(
+            frame.x,
+            frame.y + header_height,
+            frame.w,
+            (frame.h - header_height).max(0.0),
+        )
+    }
+
+    fn loading_spinner_bounds(&self, frame: Rect) -> Rect {
+        let body = self.loading_body_rect(frame);
+        let radius = 10.0_f32.min(body.w.min(body.h) * 0.3);
+        let dot_radius = radius * 0.18;
+        let extent = radius + dot_radius + 1.0;
+        Rect::new(
+            body.x + body.w * 0.5 - extent,
+            body.y + body.h * 0.5 - extent,
+            extent * 2.0,
+            extent * 2.0,
+        )
+    }
+
+    fn paint_loading_overlay(&self, frame: Rect, ctx: &mut PaintContext<'_>) {
+        let body = self.loading_body_rect(frame);
+        if body.w <= 0.0 || body.h <= 0.0 {
+            return;
+        }
+        ctx.fill_rect(body, ctx.tokens().color_text().with_alpha(30), None);
+        let radius = 10.0_f32.min(body.w.min(body.h) * 0.3);
+        if radius <= 0.0 {
+            return;
+        }
+        let cx = body.x + body.w * 0.5;
+        let cy = body.y + body.h * 0.5;
+        let dot_radius = radius * 0.18;
+        let primary = ctx.tokens().color_primary();
+        for index in 0..8 {
+            let angle = self.loading_phase + index as f32 * std::f32::consts::TAU / 8.0;
+            let opacity = 0.25 + index as f32 / 8.0 * 0.75;
+            ctx.fill_circle(
+                cx + angle.cos() * radius,
+                cy + angle.sin() * radius,
+                dot_radius,
+                primary.with_alpha((primary.a as f32 * opacity) as u8),
+            );
         }
     }
 
@@ -1437,6 +1547,7 @@ impl Table {
             sortable: self.sortable,
             selection: self.selection,
             bordered: self.bordered,
+            loading: self.loading,
             selected_row: self.selected_row.get(),
             checked_rows: self.checked_rows.clone(),
             empty_text: self.empty_text.clone(),
@@ -1575,6 +1686,11 @@ impl<R> DataTable<R> {
 
     pub fn bordered(mut self, enabled: bool) -> Self {
         self.table.bordered = enabled;
+        self
+    }
+
+    pub fn loading(mut self, enabled: bool) -> Self {
+        self.table = self.table.loading(enabled);
         self
     }
 
@@ -1726,6 +1842,11 @@ impl TableBuilder {
         self
     }
 
+    pub fn loading(mut self, enabled: bool) -> Self {
+        self.table = self.table.loading(enabled);
+        self
+    }
+
     /// 设置表格视口尺寸；数据超出高度时仅表体滚动，表头保持可见。
     pub fn size(mut self, width: f32, height: f32) -> Self {
         self.table.fixed_width = Some(finite_nonnegative(width));
@@ -1772,7 +1893,7 @@ impl crate::ui::IntoWidgetNode for TableBuilder {
 impl crate::ui::view::View for TableBuilder {
     fn build(self) -> crate::ui::view::ViewNode {
         let (table, handler) = self.into_parts();
-        if table.rows.is_empty() {
+        if table.rows.is_empty() && !table.loading {
             if let Some(empty) = crate::ui::config::render_empty_for::<Table>() {
                 return empty;
             }
@@ -1785,7 +1906,7 @@ impl crate::ui::view::View for TableBuilder {
 
 impl crate::ui::view::View for Table {
     fn build(self) -> crate::ui::view::ViewNode {
-        if self.rows.is_empty() {
+        if self.rows.is_empty() && !self.loading {
             if let Some(empty) = crate::ui::config::render_empty_for::<Self>() {
                 return empty;
             }

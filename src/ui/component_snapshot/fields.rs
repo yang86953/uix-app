@@ -563,6 +563,7 @@ pub enum SnapshotFields {
         sortable: bool,
         selection: bool,
         bordered: bool,
+        loading: bool,
         selected_row: Option<usize>,
         checked_rows: Vec<usize>,
         empty_text: String,

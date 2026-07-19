@@ -108,6 +108,7 @@ fn reconcile_table_preserves_runtime_selection_and_syncs_config() {
             sortable: true,
             selection: true,
             bordered: true,
+            loading: false,
             selected_row: Some(1),
             checked_rows: vec![0],
             empty_text: "No rows".to_string(),
