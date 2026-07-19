@@ -10,6 +10,7 @@ use crate::ui::{
     WidgetTree,
 };
 use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 
 const TRIGGER_HEIGHT: f32 = 32.0;
 const POPUP_GAP: f32 = 2.0;
@@ -65,6 +66,9 @@ component! {
         transition: TransitionPlayer,
         closing: bool,
         transition_dirty: bool,
+        loading_children: HashSet<String>,
+        loading_phase: f32,
+        loading_dirty: bool,
         placeholder: String,
         focused: bool,
         last_frame: Cell<Option<Rect>>,
@@ -335,7 +339,12 @@ component! {
                     ctx.fill_rect(row, primary_bg, None);
                 }
 
-                let arrow_width = if option.children.is_empty() { 0.0 } else { 24.0 };
+                let loading = self.loading_children.contains(&option.value);
+                let arrow_width = if option.children.is_empty() && !loading {
+                    0.0
+                } else {
+                    24.0
+                };
                 let text_area = Rect::new(
                     row.x + 12.0,
                     row.y,
@@ -353,7 +362,21 @@ component! {
                     );
                     ctx.pop_clip();
                 }
-                if !option.children.is_empty() {
+                if loading {
+                    let slot = Rect::new(row.x + row.w - 24.0, row.y, 24.0, row.h);
+                    let radius = 4.5_f32.min(slot.w.min(slot.h) * 0.25);
+                    if radius > 0.0 {
+                        ctx.stroke_arc(
+                            slot.x + slot.w * 0.5,
+                            slot.y + slot.h * 0.5,
+                            radius,
+                            self.loading_phase,
+                            self.loading_phase + std::f32::consts::PI * 1.45,
+                            text_secondary,
+                            1.6,
+                        );
+                    }
+                } else if !option.children.is_empty() {
                     let arrow = Rect::new(row.x + row.w - 24.0, row.y, 24.0, row.h);
                     ctx.text_center(loc.cascader_arrow, arrow, text_secondary, 14.0);
                 }
@@ -392,24 +415,42 @@ component! {
     }
 
     update_animation => (&mut self, dt: f64) -> bool {
-        if !self.is_present() || self.transition.finished {
+        if !self.is_present() {
             self.transition_dirty = false;
+            self.loading_dirty = false;
             return false;
         }
 
-        self.transition.update(dt);
-        self.transition_dirty = true;
+        let transition_active = if self.transition.finished {
+            self.transition_dirty = false;
+            false
+        } else {
+            self.transition.update(dt);
+            self.transition_dirty = true;
 
-        if self.closing && self.transition.finished {
-            self.open = false;
-            self.closing = false;
+            if self.closing && self.transition.finished {
+                self.open = false;
+                self.closing = false;
+            }
+
+            self.is_present() && !self.transition.finished
+        };
+
+        self.loading_dirty = false;
+        let loading_active = self.is_present() && self.has_visible_loading_child();
+        if loading_active {
+            let before = self.loading_phase;
+            self.loading_phase = (self.loading_phase
+                + dt.max(0.0) as f32 * std::f32::consts::TAU / 0.8)
+                .rem_euclid(std::f32::consts::TAU);
+            self.loading_dirty = (self.loading_phase - before).abs() > f32::EPSILON;
         }
 
-        self.is_present() && !self.transition.finished
+        transition_active || loading_active
     }
 
     dirty_bounds => (&self, frame: Rect) -> Rect {
-        if self.transition_dirty {
+        if self.transition_dirty || self.loading_dirty {
             cascader_dirty_rect(frame, self.current_levels.len())
         } else {
             Rect::zero()
@@ -437,6 +478,9 @@ impl Cascader {
             transition: TransitionPlayer::new(presets::tooltip_enter()),
             closing: false,
             transition_dirty: false,
+            loading_children: HashSet::new(),
+            loading_phase: 0.0,
+            loading_dirty: false,
             placeholder: placeholder.into(),
             focused: false,
             last_frame: Cell::new(None),
@@ -476,6 +520,9 @@ impl Cascader {
         self.selected.values.push(opt.value.clone());
 
         self.current_levels.truncate(level + 1);
+        if self.loading_children.contains(&opt.value) {
+            return;
+        }
         if !opt.children.is_empty() {
             let child_highlight = first_enabled_index(&opt.children).unwrap_or(0);
             self.current_levels.push(opt.children);
@@ -533,6 +580,21 @@ impl Cascader {
         self
     }
 
+    /// 标记指定 value 的子级正在加载；加载项保留高亮与路径，但不进入或提交。
+    pub fn loading_child(mut self, value: impl Into<String>, loading: bool) -> Self {
+        let value = value.into();
+        if loading {
+            self.loading_children.insert(value);
+        } else {
+            self.loading_children.remove(&value);
+            if self.loading_children.is_empty() {
+                self.loading_phase = 0.0;
+                self.loading_dirty = false;
+            }
+        }
+        self
+    }
+
     pub fn is_open(&self) -> bool {
         self.open
     }
@@ -566,12 +628,15 @@ impl Cascader {
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        let mut loading_children = self.loading_children.iter().cloned().collect::<Vec<_>>();
+        loading_children.sort();
         SnapshotFields::Cascader {
             options: self.options.clone(),
             placeholder: self.placeholder.clone(),
             selected_labels: self.selected.labels.clone(),
             selected_values: self.selected.values.clone(),
             open: self.open,
+            loading_children,
         }
     }
 
@@ -579,9 +644,21 @@ impl Cascader {
         let options_changed = self.options != next.options;
         self.options = next.options;
         self.placeholder = next.placeholder;
+        self.loading_children = next.loading_children;
+        if self.loading_children.is_empty() {
+            self.loading_phase = 0.0;
+            self.loading_dirty = false;
+        }
         if self.is_present() && options_changed {
             self.init_levels();
         }
+    }
+
+    fn has_visible_loading_child(&self) -> bool {
+        self.current_levels
+            .iter()
+            .flatten()
+            .any(|option| self.loading_children.contains(&option.value))
     }
 
     fn interaction_frame(&self) -> Rect {
