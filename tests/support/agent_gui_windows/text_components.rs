@@ -1836,7 +1836,7 @@ fn real_demo_table_clips_long_headers_cells_and_empty_state() {
     let _guard = REAL_GUI_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut session = ComponentQaSession::open(53, "table-layout");
+    let mut session = ComponentQaSession::open(54, "table-layout");
     let snapshot = session.snapshot("table-layout-snapshot");
     assert_eq!(
         node_by_automation_id(&snapshot, "component-qa-id")["name"],
@@ -1863,6 +1863,37 @@ fn real_demo_table_clips_long_headers_cells_and_empty_state() {
         true
     );
     session.capture("uix-table", "table-layout-focus.png");
+
+    let first_column_edge = 172.0 / 405.0;
+    let resized_first_column_edge = 202.0 / 405.0;
+    session.move_pointer_to_offset(
+        "component-qa-target",
+        first_column_edge,
+        16.0,
+        "table-resize-hover",
+    );
+    session.capture("uix-table", "table-layout-resize-hover.png");
+    session.pointer_button_at_offset(
+        "component-qa-target",
+        first_column_edge,
+        16.0,
+        "pointer_down",
+        "table-resize-down",
+    );
+    session.move_pointer_to_offset(
+        "component-qa-target",
+        resized_first_column_edge,
+        16.0,
+        "table-resize-move",
+    );
+    session.pointer_button_at_offset(
+        "component-qa-target",
+        resized_first_column_edge,
+        16.0,
+        "pointer_up",
+        "table-resize-up",
+    );
+    session.capture("uix-table", "table-layout-resized.png");
 
     session.pointer_button_at_offset(
         "component-qa-target",

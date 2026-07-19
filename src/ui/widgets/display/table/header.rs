@@ -152,6 +152,20 @@ pub(super) fn paint(
                     None,
                 );
             }
+            if column.resizable {
+                let active = table.resize_indicator_column() == Some(laid_out.index);
+                let indicator_width = if active { 2.0 } else { 1.0 };
+                ctx.fill_rect(
+                    Rect::new(
+                        laid_out.x + laid_out.width - indicator_width * 0.5,
+                        leaf_rect.y,
+                        indicator_width,
+                        leaf_rect.h,
+                    ),
+                    if active { primary } else { border },
+                    None,
+                );
+            }
         }
         ctx.canvas_2d().pop_clip();
     }

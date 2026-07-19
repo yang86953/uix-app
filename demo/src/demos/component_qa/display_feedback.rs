@@ -970,7 +970,9 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 qa_target(
                     Table::new()
                         .columns(vec![
-                            TableColumn::new("组件", 140.0).sortable(true),
+                            TableColumn::new("组件", 140.0)
+                                .sortable(true)
+                                .resizable(true),
                             TableColumn::new("主题", 100.0),
                             TableColumn::new("状态", 90.0),
                         ])

@@ -21,6 +21,9 @@ mod header;
 use config::{flatten_column_groups, merge_table_columns};
 use geometry::{ColumnZone, TableColumnGeometry};
 
+const COLUMN_RESIZE_HANDLE_HALF_WIDTH: f32 = 4.0;
+const MIN_RESIZABLE_COLUMN_WIDTH: f32 = 32.0;
+
 fn finite_nonnegative(value: f32) -> f32 {
     if value.is_finite() {
         value.max(0.0)
@@ -54,6 +57,7 @@ pub struct TableColumn {
     pub filterable: bool,
     pub filters: Vec<(String, bool)>, // (label, active)
     pub fixed: Option<Fixed>,
+    pub resizable: bool,
 }
 
 impl TableColumn {
@@ -66,6 +70,7 @@ impl TableColumn {
             filterable: false,
             filters: Vec::new(),
             fixed: None,
+            resizable: false,
         }
     }
     pub fn sortable(mut self, v: bool) -> Self {
@@ -74,6 +79,11 @@ impl TableColumn {
     }
     pub fn filterable(mut self, v: bool) -> Self {
         self.filterable = v;
+        self
+    }
+    /// 允许从表头右边缘拖拽调整列宽。
+    pub fn resizable(mut self, enabled: bool) -> Self {
+        self.resizable = enabled;
         self
     }
     /// 将列固定在表格视口左侧或右侧。
@@ -196,6 +206,13 @@ enum TablePointerAction {
     SelectRow(usize),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TableResizeDrag {
+    column: usize,
+    start_x: f32,
+    start_width: f32,
+}
+
 /// 声明式表格构建器；展开 View factory 保存在组件外。
 pub struct TableBuilder {
     table: Table,
@@ -241,6 +258,8 @@ component! {
         layout_requested: Cell<bool>,
         focused: bool,
         pressed_action: Cell<Option<TablePointerAction>>,
+        resize_drag: Cell<Option<TableResizeDrag>>,
+        hover_resize_column: Cell<Option<usize>>,
     }
 
     tab_index => (&self) -> i32 { i32::from(!self.rows.is_empty()) }
@@ -301,6 +320,8 @@ component! {
             SystemEvent::FocusOut => {
                 self.focused = false;
                 self.pressed_action.set(None);
+                self.cancel_column_resize();
+                self.hover_resize_column.set(None);
                 EventResult::Handled
             }
             SystemEvent::Wheel { pos, delta } => {
@@ -339,6 +360,17 @@ component! {
                 button: crate::ui::MouseButton::Left,
                 ..
             } => {
+                if let Some(column) = self.resize_handle_at_point(*pos) {
+                    let start_width = self.columns[column].width;
+                    self.resize_drag.set(Some(TableResizeDrag {
+                        column,
+                        start_x: pos.x,
+                        start_width,
+                    }));
+                    self.hover_resize_column.set(Some(column));
+                    self.pressed_action.set(None);
+                    return EventResult::Handled;
+                }
                 if let Some(action) = self.action_at_point(*pos) {
                     self.pressed_action.set(Some(action));
                     self.hover_row.set(Self::action_row(action));
@@ -352,6 +384,18 @@ component! {
                 button: crate::ui::MouseButton::Left,
                 ..
             } => {
+                if let Some(drag) = self.resize_drag.replace(None) {
+                    let valid_release = self.local_frame().contains(*pos)
+                        && self.leaf_header_contains(pos.y, Some(drag.column));
+                    if !valid_release {
+                        self.restore_column_width(drag);
+                    } else {
+                        self.clamp_horizontal_scroll();
+                    }
+                    self.hover_resize_column
+                        .set(valid_release.then_some(drag.column));
+                    return EventResult::Handled;
+                }
                 let Some(pressed) = self.pressed_action.replace(None) else {
                     return EventResult::NotHandled;
                 };
@@ -363,8 +407,25 @@ component! {
                 EventResult::Handled
             }
             SystemEvent::PointerMove { pos, .. } => {
-                let next = self.action_at_point(*pos).and_then(Self::action_row);
-                if self.hover_row.replace(next) != next {
+                if let Some(drag) = self.resize_drag.get() {
+                    if !self.local_frame().contains(*pos)
+                        || !self.leaf_header_contains(pos.y, Some(drag.column))
+                    {
+                        self.cancel_column_resize();
+                        self.hover_resize_column.set(None);
+                    } else {
+                        self.resize_column_to_pointer(drag, pos.x);
+                        self.hover_resize_column.set(Some(drag.column));
+                    }
+                    return EventResult::Handled;
+                }
+                let resize_column = self.resize_handle_at_point(*pos);
+                let resize_changed = self.hover_resize_column.replace(resize_column) != resize_column;
+                let next = resize_column
+                    .is_none()
+                    .then(|| self.action_at_point(*pos).and_then(Self::action_row))
+                    .flatten();
+                if resize_changed | (self.hover_row.replace(next) != next) {
                     EventResult::Handled
                 } else {
                     EventResult::NotHandled
@@ -372,7 +433,9 @@ component! {
             }
             SystemEvent::PointerLeave => {
                 let changed = self.hover_row.replace(None).is_some()
-                    | self.pressed_action.replace(None).is_some();
+                    | self.pressed_action.replace(None).is_some()
+                    | self.hover_resize_column.replace(None).is_some()
+                    | self.cancel_column_resize();
                 if changed {
                     EventResult::Handled
                 } else {
@@ -393,6 +456,8 @@ component! {
     take_layout_request => (&mut self) -> bool {
         self.layout_requested.replace(false)
     }
+
+    wants_continuous_pointer_move => (&self) -> bool { self.resize_drag.get().is_some() }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let frame = Self::normalized_frame(frame);
@@ -766,6 +831,8 @@ impl Table {
             layout_requested: Cell::new(false),
             focused: false,
             pressed_action: Cell::new(None),
+            resize_drag: Cell::new(None),
+            hover_resize_column: Cell::new(None),
         }
     }
 
@@ -983,6 +1050,13 @@ impl Table {
         }
     }
 
+    pub(super) fn resize_indicator_column(&self) -> Option<usize> {
+        self.resize_drag
+            .get()
+            .map(|drag| drag.column)
+            .or(self.hover_resize_column.get())
+    }
+
     pub fn columns(mut self, cols: Vec<TableColumn>) -> Self {
         self.columns = Self::normalized_columns(cols);
         self.column_groups.clear();
@@ -1159,6 +1233,80 @@ impl Table {
             .map(|frame| frame.w)
             .unwrap_or_else(|| self.columns.iter().map(|column| column.width).sum());
         self.column_geometry(0.0, width).column_at(x)
+    }
+
+    fn resize_handle_at_point(&self, point: crate::core::Point) -> Option<usize> {
+        let frame = self.local_frame();
+        if !frame.contains(point) {
+            return None;
+        }
+        let geometry = self.column_geometry(0.0, frame.w);
+        geometry
+            .columns
+            .iter()
+            .filter(|laid_out| {
+                self.columns
+                    .get(laid_out.index)
+                    .is_some_and(|column| column.resizable)
+                    && self.leaf_header_contains(point.y, Some(laid_out.index))
+                    && geometry
+                        .clip_for(laid_out.zone, point.y, 1.0)
+                        .is_some_and(|clip| {
+                            let edge = laid_out.x + laid_out.width;
+                            edge >= clip.x
+                                && edge <= clip.x + clip.w
+                                && (point.x - edge).abs() <= COLUMN_RESIZE_HANDLE_HALF_WIDTH
+                        })
+            })
+            .min_by(|left, right| {
+                let left_distance = (point.x - (left.x + left.width)).abs();
+                let right_distance = (point.x - (right.x + right.width)).abs();
+                left_distance.total_cmp(&right_distance)
+            })
+            .map(|column| column.index)
+    }
+
+    fn resize_column_to_pointer(&mut self, drag: TableResizeDrag, pointer_x: f32) {
+        let Some(column) = self.columns.get_mut(drag.column) else {
+            self.resize_drag.set(None);
+            return;
+        };
+        let width = (drag.start_width + pointer_x - drag.start_x).max(MIN_RESIZABLE_COLUMN_WIDTH);
+        if (column.width - width).abs() <= 0.01 {
+            return;
+        }
+        column.width = width;
+        self.horizontal_scroll_requires_paint.set(true);
+        self.layout_requested.set(true);
+    }
+
+    fn restore_column_width(&mut self, drag: TableResizeDrag) {
+        let Some(column) = self.columns.get_mut(drag.column) else {
+            return;
+        };
+        if (column.width - drag.start_width).abs() <= 0.01 {
+            return;
+        }
+        column.width = drag.start_width;
+        self.clamp_horizontal_scroll();
+        self.horizontal_scroll_requires_paint.set(true);
+        self.layout_requested.set(true);
+    }
+
+    fn cancel_column_resize(&mut self) -> bool {
+        let Some(drag) = self.resize_drag.replace(None) else {
+            return false;
+        };
+        self.restore_column_width(drag);
+        true
+    }
+
+    fn clamp_horizontal_scroll(&self) {
+        self.horizontal_scroll.set(
+            self.horizontal_scroll
+                .get()
+                .min(self.horizontal_max_scroll()),
+        );
     }
 
     fn horizontal_max_scroll(&self) -> f32 {
@@ -1353,6 +1501,15 @@ impl Table {
             .set(expanded_key.and_then(|key| self.row_keys.iter().position(|item| item == &key)));
         self.hover_row.set(None);
         self.pressed_action.set(None);
+        self.hover_resize_column.set(None);
+        if self.resize_drag.get().is_some_and(|drag| {
+            !self
+                .columns
+                .get(drag.column)
+                .is_some_and(|column| column.resizable)
+        }) {
+            self.resize_drag.set(None);
+        }
         self.expanded_child_row.set(None);
         let max = (self.body_content_height() - self.body_viewport_height()).max(0.0);
         self.body_scroll

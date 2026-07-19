@@ -63,6 +63,113 @@ fn table_normalizes_invalid_dimensions_and_row_heights() {
 }
 
 #[test]
+fn resizable_column_drag_updates_snapshot_width_and_survives_reconcile() {
+    let mut table = Table::new()
+        .columns(vec![
+            TableColumn::new("Name", 100.0).resizable(true),
+            TableColumn::new("Role", 80.0),
+        ])
+        .rows(vec![vec!["Ada".into(), "Engineer".into()]])
+        .size(180.0, 100.0);
+    table
+        .last_frame
+        .set(Some(Rect::new(0.0, 0.0, 180.0, 100.0)));
+
+    assert_eq!(
+        table.on_event(&pointer_down(100.0, 16.0)),
+        EventResult::Handled
+    );
+    assert!(EventHandler::wants_continuous_pointer_move(&table));
+    assert_eq!(
+        table.on_event(&SystemEvent::PointerMove {
+            pos: Point::new(132.0, 16.0),
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(EventHandler::take_layout_request(&mut table));
+    assert_eq!(
+        table.on_event(&pointer_up(132.0, 16.0)),
+        EventResult::Handled
+    );
+    assert!(!EventHandler::wants_continuous_pointer_move(&table));
+    assert!(matches!(
+        table.snapshot_fields(),
+        SnapshotFields::Table { columns, .. }
+            if columns[0].resizable && columns[0].width == 132.0
+    ));
+
+    table.sync_from(
+        Table::new()
+            .columns(vec![
+                TableColumn::new("Name", 100.0).resizable(true),
+                TableColumn::new("Role", 80.0),
+            ])
+            .rows(vec![vec!["Ada".into(), "Engineer".into()]])
+            .size(180.0, 100.0),
+    );
+    assert!(matches!(
+        table.snapshot_fields(),
+        SnapshotFields::Table { columns, .. } if columns[0].width == 132.0
+    ));
+}
+
+#[test]
+fn resizable_column_drag_cancels_on_leave_and_clamps_to_a_usable_minimum() {
+    let mut table = Table::new()
+        .columns(vec![TableColumn::new("Name", 100.0).resizable(true)])
+        .rows(vec![vec!["Ada".into()]])
+        .size(140.0, 100.0);
+    table
+        .last_frame
+        .set(Some(Rect::new(0.0, 0.0, 140.0, 100.0)));
+
+    assert_eq!(
+        table.on_event(&pointer_down(100.0, 16.0)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        table.on_event(&SystemEvent::PointerMove {
+            pos: Point::new(120.0, 16.0),
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        table.on_event(&SystemEvent::PointerLeave),
+        EventResult::Handled
+    );
+    assert!(matches!(
+        table.snapshot_fields(),
+        SnapshotFields::Table { columns, .. } if columns[0].width == 100.0
+    ));
+
+    assert_eq!(
+        table.on_event(&pointer_down(100.0, 16.0)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        table.on_event(&SystemEvent::PointerMove {
+            pos: Point::new(10.0, 16.0),
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(matches!(
+        table.snapshot_fields(),
+        SnapshotFields::Table { columns, .. } if columns[0].width == 32.0
+    ));
+    assert_eq!(
+        table.on_event(&pointer_up(32.0, 16.0)),
+        EventResult::Handled
+    );
+    assert!(matches!(
+        table.snapshot_fields(),
+        SnapshotFields::Table { columns, .. } if columns[0].width == 32.0
+    ));
+}
+
+#[test]
 fn constrained_table_clips_and_elides_headers_cells_and_empty_text() {
     let table = Table::new()
         .columns(vec![

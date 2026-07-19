@@ -354,6 +354,7 @@ pub struct SnapshotTableColumn {
     pub filterable: bool,
     pub filters: Vec<String>,
     pub fixed: Option<Fixed>,
+    pub resizable: bool,
 }
 
 impl SnapshotTableColumn {
@@ -370,6 +371,7 @@ impl SnapshotTableColumn {
                 .map(|(label, _active)| label.clone())
                 .collect(),
             fixed: column.fixed,
+            resizable: column.resizable,
         }
     }
 }

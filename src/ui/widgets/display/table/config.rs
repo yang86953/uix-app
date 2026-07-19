@@ -9,6 +9,9 @@ pub(super) fn merge_table_columns(
         .enumerate()
         .map(|(idx, mut next_col)| {
             if let Some(current_col) = current.get(idx) {
+                if current_col.resizable && next_col.resizable {
+                    next_col.width = current_col.width;
+                }
                 if table_sortable || next_col.sortable {
                     next_col.sort_direction = current_col.sort_direction;
                 }
