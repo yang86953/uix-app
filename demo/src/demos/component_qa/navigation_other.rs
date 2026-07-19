@@ -279,7 +279,8 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 .multiple(true)
                 .max_count(4)
                 .show_upload_list(true)
-                .preview_image(true);
+                .preview_image(true)
+                .manual(true);
             upload.add_file("button-light.png");
             upload.add_file("assets/images/demo.png");
             upload.add_file("broken.png");

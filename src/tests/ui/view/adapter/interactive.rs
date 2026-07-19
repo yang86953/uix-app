@@ -463,7 +463,8 @@ fn reconcile_upload_preserves_files_and_syncs_config() {
                 .max_count(5)
                 .max_size(1024)
                 .show_upload_list(false)
-                .preview_image(true),
+                .preview_image(true)
+                .manual(true),
         ),
     );
 
@@ -486,6 +487,7 @@ fn reconcile_upload_preserves_files_and_syncs_config() {
             max_size: Some(1024),
             show_upload_list: false,
             preview_image: true,
+            manual: true,
             files: vec![UploadFile {
                 name: "kept.txt".to_string(),
                 source_path: None,
