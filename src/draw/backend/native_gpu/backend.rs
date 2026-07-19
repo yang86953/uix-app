@@ -321,11 +321,7 @@ impl NativeGpuBackend {
                 }
                 FrameCommand::Native { operation } => {
                     self.ensure_frame_encoder_target(&mut target_initialized)?;
-                    self.execute_native_frame_operation(
-                        encoder.width(),
-                        encoder.height(),
-                        operation,
-                    )?;
+                    self.execute_native_frame_operation(encoder, operation)?;
                 }
                 FrameCommand::CpuSegment { image, src, dst } => {
                     self.ensure_frame_encoder_target(&mut target_initialized)?;
@@ -375,10 +371,11 @@ impl NativeGpuBackend {
 
     fn execute_native_frame_operation(
         &mut self,
-        target_width: i32,
-        target_height: i32,
+        encoder: &FrameEncoder,
         operation: &FrameRasterOp,
     ) -> Result<(), Error> {
+        let target_width = encoder.width();
+        let target_height = encoder.height();
         match operation {
             FrameRasterOp::FillRect { rect, color } => self.draw_frame_solid_rect(
                 target_width,
@@ -426,6 +423,38 @@ impl NativeGpuBackend {
             }
             FrameRasterOp::BlitGlyphs { glyphs, clip } => {
                 self.draw_frame_glyphs(target_width, target_height, glyphs, *clip)
+            }
+            FrameRasterOp::StrokeRoundedRects { strokes, clip } => {
+                let Some(clip) =
+                    clip.intersection(FrameRect::new(0, 0, target_width, target_height))
+                else {
+                    return Ok(());
+                };
+                if self.surface.native_caps.stroke_rects {
+                    return self.draw_frame_stroke_rects(
+                        target_width,
+                        target_height,
+                        strokes,
+                        clip,
+                    );
+                }
+                let tile = encoder
+                    .stroke_rects_reference_tile(strokes, clip)
+                    .map_err(|error| {
+                        let code = if matches!(error, FrameEncoderError::CommandAllocationFailed) {
+                            Errc::GraphicsOutOfMemory
+                        } else {
+                            Errc::InvalidState
+                        };
+                        Error::new(
+                            code,
+                            format!("could not rasterize compact frame stroke tile: {error}"),
+                        )
+                    })?;
+                if let Some((source, destination)) = tile {
+                    self.alpha_blit_frame_encoder_source(&source, destination)?;
+                }
+                Ok(())
             }
             FrameRasterOp::FillRectAdditive { .. }
             | FrameRasterOp::FillRoundedRectAdditive { .. }
@@ -624,6 +653,56 @@ impl NativeGpuBackend {
                 ],
                 radius,
             }],
+        )
+    }
+
+    fn draw_frame_stroke_rects(
+        &mut self,
+        target_width: i32,
+        target_height: i32,
+        strokes: &[FrameStrokeRect],
+        clip: FrameRect,
+    ) -> Result<(), Error> {
+        let mut rects = Vec::new();
+        rects.try_reserve_exact(strokes.len()).map_err(|error| {
+            Error::new(
+                Errc::GraphicsOutOfMemory,
+                format!(
+                    "native frame stroke batch allocation for {} items failed: {error}",
+                    strokes.len()
+                ),
+            )
+        })?;
+        for stroke in strokes {
+            let rect = stroke.rect();
+            if rect.width <= 0 || rect.height <= 0 {
+                continue;
+            }
+            let color = stroke.color();
+            let radius = stroke.radius().to_radius();
+            rects.push(GpuStrokeRect {
+                x: rect.x as f32,
+                y: rect.y as f32,
+                w: rect.width as f32,
+                h: rect.height as f32,
+                rgba: [
+                    color.r as f32 / 255.0,
+                    color.g as f32 / 255.0,
+                    color.b as f32 / 255.0,
+                    color.a as f32 / 255.0,
+                ],
+                radius: [radius.tl, radius.tr, radius.br, radius.bl],
+                line_width: stroke.line_width().value(),
+            });
+        }
+        if rects.is_empty() {
+            return Ok(());
+        }
+        self.gpu_ctx.draw_stroke_rects(
+            target_width as f32,
+            target_height as f32,
+            Some((clip.x, clip.y, clip.width, clip.height)),
+            &rects,
         )
     }
 
