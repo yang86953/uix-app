@@ -92,6 +92,7 @@ pub(crate) struct WindowDriver {
     started_at: Option<Instant>,
     scheduled_animation_ids_scratch: Vec<NodeId>,
     app_timer_deadlines_scratch: Vec<(TimerId, Instant)>,
+    due_work_scratch: Vec<ActiveWorkKind>,
 }
 
 impl WindowDriver {
@@ -107,6 +108,7 @@ impl WindowDriver {
             started_at: None,
             scheduled_animation_ids_scratch: Vec::new(),
             app_timer_deadlines_scratch: Vec::new(),
+            due_work_scratch: Vec::new(),
         }
     }
 
@@ -435,7 +437,8 @@ impl WindowDriver {
 
         active_work.sync_timers(tree.active_timers(), now);
         self.sync_app_timers(active_work, app_timers);
-        let due_work = active_work.drain_due(now);
+        active_work.drain_due_into(now, &mut self.due_work_scratch);
+        let due_work = self.due_work_scratch.as_slice();
         let had_registered_work = !due_work.is_empty();
         if due_work.contains(&ActiveWorkKind::GraphicsMaintenance) {
             engine.release_idle_resources(now);
@@ -445,7 +448,7 @@ impl WindowDriver {
             .iter()
             .any(|work| matches!(work, ActiveWorkKind::Animation(_)));
         let had_due_widget_timer_work = with_platform_clipboard(&mut platform, || {
-            dispatch_due_active_work(tree, app_timers, &due_work, now)
+            dispatch_due_active_work(tree, app_timers, due_work, now)
         });
 
         let mut main_thread_context = MainThreadContext::new(pending_root, reconcile_pending);
