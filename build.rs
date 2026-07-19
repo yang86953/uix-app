@@ -7,7 +7,7 @@ use std::path::PathBuf;
 mod usage_markdown;
 
 const USAGE_DOC: &str = "docs/使用.md";
-const USAGE_GUIDE_DIR: &str = "docs/使用指南";
+const USAGE_GUIDE_DIR: &str = "docs/使用";
 const CARGO_MANIFEST: &str = "Cargo.toml";
 
 fn main() {

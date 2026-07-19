@@ -56,6 +56,18 @@ pub use crate::ui::{
     Animation, Easing, Keyframe, KeyframeAnimation, KeyframeError, Spring, SpringAnimation,
 };
 
+mod prelude_only {
+    use crate::prelude::*;
+
+    #[test]
+    fn exports_components_used_by_the_public_demo() {
+        fn assert_exported<T>() {}
+
+        assert_exported::<Affix>();
+        assert_exported::<Alert>();
+    }
+}
+
 fn assert_input_number_value<T: InputNumberValue>() {}
 fn assert_form_value<T: IntoFormValue>() {}
 
