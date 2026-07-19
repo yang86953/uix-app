@@ -17,7 +17,7 @@ cargo run --features agent-control --bin uix-demo -- --agent-control
 
 Linux GUI 需 Wayland。
 
-`--follow-system-theme` 通过公开 `App::follow_system_theme(true)` 让 GUI 初始主题和后续变化由 OS 托管；该模式显示“跟随系统”状态，不再提供会覆盖托管状态的手动主题开关。`--graphics-recovery-acceptance` 仅在 `test-harness` feature 下显示下一帧 typed `DeviceLost` 注入与恢复后交互路径，Demo 仍通过公开 `AppHandle::inject_graphics_device_lost_for_test()` 使用框架。`--component-qa` 以隔离页面打开完整公开组件库存，供真实窗口逐组件视觉验收。`--agent-control` 仅用于本机开发预览，必须与 `agent-control` feature 同时启用；它会按 [`使用 · Agent Bridge`](../docs/使用指南/Agent%20Bridge.md#agent-bridge-开发预览) 启动当前用户私有端点。这些 GUI 参数都不能与 `--cli` 同时使用。
+`--follow-system-theme` 通过公开 `App::follow_system_theme(true)` 让 GUI 初始主题和后续变化由 OS 托管；该模式显示“跟随系统”状态，不再提供会覆盖托管状态的手动主题开关。`--graphics-recovery-acceptance` 仅在 `test-harness` feature 下显示下一帧 typed `DeviceLost` 注入与恢复后交互路径，Demo 仍通过公开 `AppHandle::inject_graphics_device_lost_for_test()` 使用框架。`--component-qa` 以隔离页面打开完整公开组件库存，供真实窗口逐组件视觉验收。`--agent-control` 仅用于本机开发预览，必须与 `agent-control` feature 同时启用；它会按 [`使用 · Agent Bridge`](../docs/使用/Agent%20Bridge.md#agent-bridge-开发预览) 启动当前用户私有端点。这些 GUI 参数都不能与 `--cli` 同时使用。
 
 ## 目录结构
 
