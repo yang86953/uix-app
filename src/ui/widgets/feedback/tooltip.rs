@@ -131,48 +131,15 @@ component! {
         let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
         let bg = fade_color(self.bg_color.unwrap_or(Color::from_rgba(50, 50, 50, 230)), opacity);
         let txt_color = fade_color(self.text_color.unwrap_or(Color::white()), opacity);
-        let bubble = tooltip_bubble_size(&self.text);
-        let text_w = bubble.w;
-        let text_h = bubble.h;
-        let arrow_sz = TOOLTIP_ARROW_SIZE;
-        let gap = tooltip_gap(self.arrow);
-        let r = Some(Radius::uniform(4.0));
-
-        let (tx, ty) = tooltip_origin(frame, self.placement, text_w, text_h, gap);
-        let tip_frame = Rect::new(tx, ty, text_w, text_h);
-        ctx.fill_rect(tip_frame, bg, r);
-
-        if self.arrow {
-            let (ax, ay, aw, ah) = match self.placement {
-                TooltipPlacement::Top => (
-                    tx + text_w * 0.5 - arrow_sz,
-                    ty + text_h - 1.0,
-                    arrow_sz * 2.0,
-                    arrow_sz,
-                ),
-                TooltipPlacement::Bottom => (
-                    tx + text_w * 0.5 - arrow_sz,
-                    ty - arrow_sz + 1.0,
-                    arrow_sz * 2.0,
-                    arrow_sz,
-                ),
-                TooltipPlacement::Left => (
-                    tx + text_w - 1.0,
-                    ty + text_h * 0.5 - arrow_sz,
-                    arrow_sz,
-                    arrow_sz * 2.0,
-                ),
-                TooltipPlacement::Right => (
-                    tx - arrow_sz + 1.0,
-                    ty + text_h * 0.5 - arrow_sz,
-                    arrow_sz,
-                    arrow_sz * 2.0,
-                ),
-            };
-            draw_arrow(ctx, ax, ay, aw, ah, self.placement, bg);
-        }
-
-        ctx.text_center(&self.text, tip_frame, txt_color, TOOLTIP_FONT_SIZE);
+        paint_tooltip_bubble(
+            ctx,
+            &self.text,
+            frame,
+            self.placement,
+            bg,
+            txt_color,
+            self.arrow,
+        );
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
@@ -184,14 +151,14 @@ component! {
             return None;
         }
 
-        let bubble = tooltip_bubble_size(&self.text);
-        let text_w = bubble.w;
-        let text_h = bubble.h;
-        let gap = tooltip_gap(self.arrow);
-        let (tx, ty) = tooltip_origin(frame, self.placement, text_w, text_h, gap);
         Some(
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Tooltip)
-                .bounds(Rect::new(tx, ty, text_w, text_h))
+                .bounds(tooltip_bubble_rect(
+                    &self.text,
+                    self.arrow,
+                    self.placement,
+                    frame,
+                ))
                 .z_index(1100),
         )
     }
@@ -249,13 +216,74 @@ fn tooltip_origin(
     }
 }
 
-fn tooltip_dirty_rect(text: &str, arrow: bool, placement: TooltipPlacement, frame: Rect) -> Rect {
+pub(crate) fn tooltip_dirty_rect(
+    text: &str,
+    arrow: bool,
+    placement: TooltipPlacement,
+    frame: Rect,
+) -> Rect {
+    frame.union(&tooltip_bubble_rect(text, arrow, placement, frame))
+}
+
+pub(crate) fn tooltip_bubble_rect(
+    text: &str,
+    arrow: bool,
+    placement: TooltipPlacement,
+    frame: Rect,
+) -> Rect {
     let bubble = tooltip_bubble_size(text);
     let text_w = bubble.w;
     let text_h = bubble.h;
     let gap = tooltip_gap(arrow);
     let (tx, ty) = tooltip_origin(frame, placement, text_w, text_h, gap);
-    frame.union(&Rect::new(tx, ty, text_w, text_h))
+    Rect::new(tx, ty, text_w, text_h)
+}
+
+pub(crate) fn paint_tooltip_bubble(
+    ctx: &mut PaintContext,
+    text: &str,
+    frame: Rect,
+    placement: TooltipPlacement,
+    bg: Color,
+    text_color: Color,
+    arrow: bool,
+) -> Rect {
+    let tip_frame = tooltip_bubble_rect(text, arrow, placement, frame);
+    ctx.fill_rect(tip_frame, bg, Some(Radius::uniform(4.0)));
+
+    if arrow {
+        let arrow_sz = TOOLTIP_ARROW_SIZE;
+        let (ax, ay, aw, ah) = match placement {
+            TooltipPlacement::Top => (
+                tip_frame.x + tip_frame.w * 0.5 - arrow_sz,
+                tip_frame.y + tip_frame.h - 1.0,
+                arrow_sz * 2.0,
+                arrow_sz,
+            ),
+            TooltipPlacement::Bottom => (
+                tip_frame.x + tip_frame.w * 0.5 - arrow_sz,
+                tip_frame.y - arrow_sz + 1.0,
+                arrow_sz * 2.0,
+                arrow_sz,
+            ),
+            TooltipPlacement::Left => (
+                tip_frame.x + tip_frame.w - 1.0,
+                tip_frame.y + tip_frame.h * 0.5 - arrow_sz,
+                arrow_sz,
+                arrow_sz * 2.0,
+            ),
+            TooltipPlacement::Right => (
+                tip_frame.x - arrow_sz + 1.0,
+                tip_frame.y + tip_frame.h * 0.5 - arrow_sz,
+                arrow_sz,
+                arrow_sz * 2.0,
+            ),
+        };
+        draw_arrow(ctx, ax, ay, aw, ah, placement, bg);
+    }
+
+    ctx.text_center(text, tip_frame, text_color, TOOLTIP_FONT_SIZE);
+    tip_frame
 }
 
 fn tooltip_bubble_size(text: &str) -> Size {

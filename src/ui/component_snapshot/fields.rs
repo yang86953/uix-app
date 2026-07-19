@@ -134,6 +134,7 @@ pub enum SnapshotFields {
         step: f64,
         value: f64,
         marks: Vec<(f64, String)>,
+        tooltip: Option<crate::ui::widgets::TooltipPlacement>,
     },
     Rate {
         count: usize,

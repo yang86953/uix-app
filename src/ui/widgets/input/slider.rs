@@ -9,6 +9,8 @@ use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::traits::input::ControlSize;
 use crate::ui::state::State;
+use crate::ui::widgets::feedback::tooltip::{paint_tooltip_bubble, tooltip_bubble_rect};
+use crate::ui::widgets::TooltipPlacement;
 use crate::ui::SnapshotFields;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
@@ -42,8 +44,10 @@ component! {
         hovered: bool,
         focused: bool,
         marks: Vec<(f64, String)>,
+        tooltip: Option<TooltipPlacement>,
         slider_size: ControlSize,
         last_frame: Cell<Option<Rect>>,
+        last_tooltip_rect: Cell<Option<Rect>>,
         pending_change: Cell<Option<f64>>,
     }
 
@@ -136,6 +140,7 @@ component! {
         let control_rect = Rect::new(frame.x, frame.y, frame.w.max(0.0), control_height);
         self.last_frame
             .set(Some(Rect::new(0.0, 0.0, control_rect.w, control_rect.h)));
+        self.last_tooltip_rect.set(None);
         if control_rect.w <= 0.0 || control_rect.h <= 0.0 || self.max <= self.min {
             return;
         }
@@ -240,6 +245,50 @@ component! {
             }
             ctx.pop_clip();
         }
+
+        let tooltip_rect = self.tooltip_target(control_rect).map(|(placement, target)| {
+            let text = self.value.to_string();
+            paint_tooltip_bubble(
+                ctx,
+                &text,
+                target,
+                placement,
+                Color::from_rgba(50, 50, 50, 230),
+                Color::white(),
+                true,
+            )
+        });
+        self.last_tooltip_rect.set(tooltip_rect);
+    }
+
+    dirty_rect => (&self, frame: Rect) -> Rect {
+        let mut dirty = frame;
+        if let Some(previous) = self.last_tooltip_rect.get() {
+            dirty = dirty.union(&previous);
+        }
+        if let Some((placement, target)) = self.tooltip_target(frame) {
+            dirty = dirty.union(&tooltip_bubble_rect(
+                &self.value.to_string(),
+                true,
+                placement,
+                target,
+            ));
+        }
+        dirty
+    }
+
+    overlay_entry => (&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+        let (placement, target) = self.tooltip_target(frame)?;
+        Some(
+            crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Tooltip)
+                .bounds(tooltip_bubble_rect(
+                    &self.value.to_string(),
+                    true,
+                    placement,
+                    target,
+                ))
+                .z_index(1100),
+        )
     }
 }
 
@@ -367,6 +416,28 @@ impl Slider {
         let inset = self.thumb_radius(frame);
         (frame.x + inset, (frame.w - inset * 2.0).max(0.0))
     }
+
+    fn tooltip_target(&self, frame: Rect) -> Option<(TooltipPlacement, Rect)> {
+        let placement = self.tooltip.filter(|_| self.dragging)?;
+        let control_height = frame.h.max(0.0).min(self.control_height());
+        let control_rect = Rect::new(frame.x, frame.y, frame.w.max(0.0), control_height);
+        if control_rect.w <= 0.0 || control_rect.h <= 0.0 || self.max <= self.min {
+            return None;
+        }
+        let (track_x, track_w) = self.track_span(control_rect);
+        let pct = ((self.value - self.min) / (self.max - self.min)).clamp(0.0, 1.0) as f32;
+        let thumb_x = track_x + pct * track_w;
+        let thumb_r = self.thumb_radius(control_rect);
+        Some((
+            placement,
+            Rect::new(
+                thumb_x - thumb_r,
+                control_rect.y + control_rect.h * 0.5 - thumb_r,
+                thumb_r * 2.0,
+                thumb_r * 2.0,
+            ),
+        ))
+    }
 }
 
 impl Slider {
@@ -377,6 +448,7 @@ impl Slider {
             step: self.step,
             value: self.value,
             marks: self.marks.clone(),
+            tooltip: self.tooltip,
         }
     }
 
@@ -386,6 +458,7 @@ impl Slider {
         self.max = next.max;
         self.step = next.step;
         self.marks = next.marks;
+        self.tooltip = next.tooltip;
         self.value_binding = next.value_binding;
         self.value = controlled_value.unwrap_or_else(|| self.clamp_value(self.value));
         self.slider_size = next.slider_size;
@@ -412,8 +485,10 @@ impl Slider {
             hovered: false,
             focused: false,
             marks: Vec::new(),
+            tooltip: None,
             slider_size: config.size,
             last_frame: Cell::new(None),
+            last_tooltip_rect: Cell::new(None),
             pending_change: Cell::new(None),
         }
     }
@@ -473,6 +548,12 @@ impl Slider {
         }
         normalized.sort_by(|left, right| left.0.total_cmp(&right.0));
         self.marks = normalized;
+        self
+    }
+
+    /// 配置拖动期间显示当前值的提示位置。
+    pub fn tooltip(mut self, placement: TooltipPlacement) -> Self {
+        self.tooltip = Some(placement);
         self
     }
 

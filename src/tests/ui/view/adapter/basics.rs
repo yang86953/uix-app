@@ -569,7 +569,7 @@ fn reconcile_radio_patches_instance_and_syncs_snapshot_fields() {
 #[test]
 fn reconcile_slider_patches_instance_and_syncs_snapshot_fields() {
     use crate::ui::state::State;
-    use crate::ui::widgets::Slider;
+    use crate::ui::widgets::{Slider, TooltipPlacement};
 
     let value = State::new(10.0);
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
@@ -587,7 +587,12 @@ fn reconcile_slider_patches_instance_and_syncs_snapshot_fields() {
     value.set(3.0);
     ViewAdapter::reconcile_nodes(
         &mut tree,
-        ViewNode::leaf(Slider::new(-10.0..=10.0).step(0.5).value(&value)),
+        ViewNode::leaf(
+            Slider::new(-10.0..=10.0)
+                .step(0.5)
+                .value(&value)
+                .tooltip(TooltipPlacement::Right),
+        ),
     );
 
     let slider = tree
@@ -607,6 +612,7 @@ fn reconcile_slider_patches_instance_and_syncs_snapshot_fields() {
             step: 0.5,
             value: 3.0,
             marks: vec![],
+            tooltip: Some(TooltipPlacement::Right),
         }
     );
 }
