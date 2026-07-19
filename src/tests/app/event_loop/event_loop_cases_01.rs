@@ -321,6 +321,60 @@ fn retained_dirty_is_presented_after_recovery_deadline() {
 }
 
 #[test]
+fn idle_graphics_maintenance_releases_without_an_extra_frame_or_present() {
+    let start = Instant::now();
+    let clock = SteppingClock::new(start, Duration::from_millis(250));
+    let present_notes = Arc::new(AtomicUsize::new(0));
+    let release_calls = Arc::new(AtomicUsize::new(0));
+    let end_calls = Arc::new(AtomicUsize::new(0));
+    let mut platform = FakePlatform::new();
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Container::new()),
+        Box::new(IdleResourceMaintenanceEngine::new(
+            Arc::clone(&present_notes),
+            Arc::clone(&release_calls),
+            Arc::clone(&end_calls),
+        )),
+        800,
+        600,
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop_with_clock(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        clock,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        |_| None,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(present_notes.load(Ordering::Relaxed), 1);
+    assert_eq!(release_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(end_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(metrics.get().present_calls, 1);
+    assert_eq!(platform.event_source.state.dispatch_timeout_calls, 0);
+    assert_eq!(platform.event_source.state.dispatch_blocking_calls, 1);
+    assert_eq!(session.loop_state(), WindowLoopState::DeepIdle);
+}
+
+#[test]
 fn occluded_frame_waits_for_probe_deadline_without_visual_retry() {
     let start = Instant::now();
     let clock = TestClock::new(start);

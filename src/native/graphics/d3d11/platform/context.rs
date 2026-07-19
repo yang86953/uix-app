@@ -157,6 +157,13 @@ pub struct D3d11Context {
     bound_offscreen: Option<u32>,
 }
 
+#[cfg(test)]
+impl D3d11Context {
+    pub(crate) fn glyph_atlas_upload_count(&self) -> usize {
+        self.pipeline.glyph_atlas_upload_count()
+    }
+}
+
 impl D3d11Context {
     pub(crate) fn new(native_window: *mut c_void, width: i32, height: i32) -> Result<Self> {
         if native_window.is_null() {

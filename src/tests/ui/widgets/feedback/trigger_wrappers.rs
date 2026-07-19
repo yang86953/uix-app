@@ -31,6 +31,18 @@ fn popover_click_trigger_owns_pointer_hit_over_child_button() {
     assert!(tree
         .get(wrapper)
         .and_then(|node| node.component().as_any().downcast_ref::<Popover>())
+        .is_some_and(|popover| !popover.is_visible()));
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerUp {
+            pos: pointer,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(tree
+        .get(wrapper)
+        .and_then(|node| node.component().as_any().downcast_ref::<Popover>())
         .is_some_and(Popover::is_visible));
 }
 
@@ -98,6 +110,18 @@ fn popconfirm_trigger_owns_pointer_hit_and_confirm_emits_submit() {
     assert!(tree
         .get(wrapper)
         .and_then(|node| node.component().as_any().downcast_ref::<Popconfirm>())
+        .is_some_and(|popconfirm| !popconfirm.is_visible()));
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerUp {
+            pos: pointer,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(tree
+        .get(wrapper)
+        .and_then(|node| node.component().as_any().downcast_ref::<Popconfirm>())
         .is_some_and(Popconfirm::is_visible));
 
     let confirm = SystemEvent::PointerDown {
@@ -114,8 +138,15 @@ fn popconfirm_trigger_owns_pointer_hit_and_confirm_emits_submit() {
         })
         .expect("popconfirm");
     assert_eq!(popconfirm.on_event(&confirm), EventResult::Handled);
+    assert!(popconfirm.semantic_event(wrapper, &confirm).is_none());
+    let confirm_release = SystemEvent::PointerUp {
+        pos: Point::new(20.0, -40.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    };
+    assert_eq!(popconfirm.on_event(&confirm_release), EventResult::Handled);
     let semantic = popconfirm
-        .semantic_event(wrapper, &confirm)
+        .semantic_event(wrapper, &confirm_release)
         .expect("confirm submit");
     assert_eq!(semantic.kind, SemanticKind::Submit);
     assert_eq!(semantic.text_payload(), Some("confirm"));
@@ -136,6 +167,14 @@ fn popconfirm_keyboard_selects_cancel_or_emits_confirm_submit() {
     );
     assert_eq!(
         popconfirm.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(popconfirm.focused_action(), None);
+    assert_eq!(
+        popconfirm.on_event(&SystemEvent::KeyUp {
             key: KeyCode::Enter,
             mods: KeyMod::NONE,
         }),
@@ -164,6 +203,14 @@ fn popconfirm_keyboard_selects_cancel_or_emits_confirm_submit() {
         }),
         EventResult::Handled
     );
+    assert!(popconfirm.is_visible());
+    assert_eq!(
+        popconfirm.on_event(&SystemEvent::KeyUp {
+            key: KeyCode::Space,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
     assert!(!popconfirm.is_visible());
     assert!(popconfirm
         .semantic_event(
@@ -183,7 +230,7 @@ fn popconfirm_keyboard_selects_cancel_or_emits_confirm_submit() {
         }),
         EventResult::Handled
     );
-    let semantic = popconfirm
+    assert!(popconfirm
         .semantic_event(
             id,
             &SystemEvent::KeyDown {
@@ -191,6 +238,14 @@ fn popconfirm_keyboard_selects_cancel_or_emits_confirm_submit() {
                 mods: KeyMod::NONE,
             },
         )
+        .is_none());
+    let confirm_key_up = SystemEvent::KeyUp {
+        key: KeyCode::Enter,
+        mods: KeyMod::NONE,
+    };
+    assert_eq!(popconfirm.on_event(&confirm_key_up), EventResult::Handled);
+    let semantic = popconfirm
+        .semantic_event(id, &confirm_key_up)
         .expect("confirm submit");
     assert_eq!(semantic.kind, SemanticKind::Submit);
     assert_eq!(semantic.text_payload(), Some("confirm"));

@@ -50,12 +50,21 @@ impl SharedRasterizer {
         &mut self.surface
     }
 
-    /// Resets all transient canvas state while retaining the already-sized
-    /// pixel allocation. Callers remain responsible for ensuring the surface
-    /// pixels are clean before starting a new transparent recording.
-    pub(crate) fn reset_state(&mut self) {
-        self.renderer = RasterRenderer::new(self.surface.width(), self.surface.height());
+    /// Replaces only the pixel target while retaining all canvas state. This
+    /// lets lazy callers allocate after transforms and clips are configured.
+    pub(crate) fn replace_surface_preserving_state(&mut self, surface: PixelSurface) {
+        self.surface = surface;
+    }
+
+    /// Resets all transient canvas state for a logical extent while retaining
+    /// the current pixel allocation. The allocation may be a lazy placeholder.
+    pub(crate) fn reset_state_for_extent(&mut self, width: i32, height: i32) {
+        self.renderer = RasterRenderer::new(width, height);
         self.deferred_error = None;
+    }
+
+    pub(crate) fn memory_usage(&self) -> usize {
+        self.surface.memory_usage()
     }
 
     pub fn set_transform(&mut self, t: Transform) {

@@ -153,23 +153,24 @@ impl FontService {
                 let mut target_x = chunk_target_x + (g.x - chunk_source_x);
                 if do_wrap && !line.glyphs.is_empty() && target_x + g.width > max_w {
                     if tb::prohibited_at_line_start(source_char) && line.glyphs.len() > 1 {
-                        let mut previous = line.glyphs.pop().expect("checked non-empty line");
-                        let previous_char_index = previous.char_index;
-                        cx = line
-                            .glyphs
-                            .iter()
-                            .fold(0.0f32, |width, glyph| width.max(glyph.x + glyph.width));
-                        flush_line(&mut lines, &mut line, cx, cy, line_h, previous_char_index);
-                        cy += line_h;
-                        previous.x = 0.0;
-                        previous.y += line_h;
-                        cx = previous.width;
-                        line.char_start = previous_char_index;
-                        line.char_end = previous_char_index + 1;
-                        line.glyphs.push(previous);
-                        chunk_source_x = g.x;
-                        chunk_target_x = cx;
-                        target_x = cx;
+                        if let Some(mut previous) = line.glyphs.pop() {
+                            let previous_char_index = previous.char_index;
+                            cx = line
+                                .glyphs
+                                .iter()
+                                .fold(0.0f32, |width, glyph| width.max(glyph.x + glyph.width));
+                            flush_line(&mut lines, &mut line, cx, cy, line_h, previous_char_index);
+                            cy += line_h;
+                            previous.x = 0.0;
+                            previous.y += line_h;
+                            cx = previous.width;
+                            line.char_start = previous_char_index;
+                            line.char_end = previous_char_index + 1;
+                            line.glyphs.push(previous);
+                            chunk_source_x = g.x;
+                            chunk_target_x = cx;
+                            target_x = cx;
+                        }
                     } else if !tb::prohibited_at_line_start(source_char) {
                         flush_line(&mut lines, &mut line, cx, cy, line_h, global_char_index);
                         cx = 0.0;

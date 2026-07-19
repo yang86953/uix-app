@@ -101,13 +101,116 @@ fn wgl_exposes_only_the_native_raster_operations_it_implements() {
     assert!(caps.solid_rects);
     assert!(caps.offscreen_targets);
     assert!(!caps.stroke_rects);
-    assert!(!caps.glyphs);
+    assert!(caps.glyphs);
     assert!(!caps.linear_gradients);
     assert!(!caps.radial_gradients);
     assert!(!caps.solid_meshes);
     assert!(!caps.box_shadows);
 
     assert!(caps.has_hybrid_baseline());
+    context.try_shutdown().expect("WGL checked shutdown");
+    window.close().expect("close native window");
+}
+
+#[cfg(feature = "opengles")]
+#[test]
+fn wgl_glyph_atlas_reuses_coverage_and_matches_cpu_premultiplied_blend() {
+    if std::env::consts::OS != "windows" {
+        return;
+    }
+
+    let mut platform = crate::native::create_platform().expect("platform");
+    let mut window = platform
+        .window_manager()
+        .create_window("WGL glyph atlas parity", 128, 64)
+        .expect("window");
+    let mut context = WglContext::new(window.native_surface_ptr(), 128, 64).expect("WGL context");
+    let width = context.width();
+    let height = context.height();
+    let base = Color::from_rgb(18, 36, 72);
+    let color = Color::from_rgba(220, 96, 40, 160);
+    context
+        .clear_render_target(
+            base.r as f32 / 255.0,
+            base.g as f32 / 255.0,
+            base.b as f32 / 255.0,
+            1.0,
+        )
+        .expect("clear glyph target");
+
+    let coverage: std::sync::Arc<[u8]> =
+        vec![0, 1, 64, 127, 128, 254, 255, 255, 254, 128, 127, 64, 1, 0].into();
+    let glyph = |x| crate::native::traits::present::GpuGlyphBlit {
+        x: x as f32,
+        y: 3.0,
+        w: 7.0,
+        h: 2.0,
+        rgba: [
+            color.r as f32 / 255.0,
+            color.g as f32 / 255.0,
+            color.b as f32 / 255.0,
+            color.a as f32 / 255.0,
+        ],
+        coverage: std::sync::Arc::clone(&coverage),
+        cov_w: 7,
+        cov_h: 2,
+    };
+    let scissor = Some((4, 3, 16, 2));
+    context
+        .draw_glyphs(width as f32, height as f32, scissor, &[glyph(2)])
+        .expect("first glyph draw");
+    assert_eq!(context.glyph_atlas_upload_count(), 1);
+    context
+        .draw_glyphs(width as f32, height as f32, scissor, &[glyph(13)])
+        .expect("reused glyph draw");
+    assert_eq!(
+        context.glyph_atlas_upload_count(),
+        1,
+        "the same retained coverage allocation must not be uploaded twice"
+    );
+    assert!(
+        !context.has_soft_texture(),
+        "glyph-only drawing must not allocate the full-target RGBA soft texture"
+    );
+
+    let actual = context
+        .read_pixels(0, 0, width, height)
+        .expect("glyph readback");
+    let mut expected = vec![base.premultiplied(); (width * height) as usize];
+    for x in [2, 13] {
+        crate::draw::rasterizer::glyph::blit_glyph(
+            &mut expected,
+            width,
+            height,
+            Rect::new(4.0, 3.0, 16.0, 2.0),
+            1.0,
+            x,
+            3,
+            coverage.as_ref(),
+            7,
+            2,
+            color,
+        );
+    }
+    for y in 3..5usize {
+        for x in 0..22usize {
+            let expected_pixel = expected[y * width as usize + x];
+            let raw = actual[(height as usize - 1 - y) * width as usize + x];
+            let observed = (raw & 0xFF00_0000)
+                | ((raw & 0x0000_00FF) << 16)
+                | (raw & 0x0000_FF00)
+                | ((raw & 0x00FF_0000) >> 16);
+            for shift in [24, 16, 8, 0] {
+                let expected_channel = ((expected_pixel >> shift) & 0xFF) as i16;
+                let observed_channel = ((observed >> shift) & 0xFF) as i16;
+                assert!(
+                    (expected_channel - observed_channel).abs() <= 1,
+                    "({x},{y}), channel={shift}: expected {expected_pixel:#010X}, got {observed:#010X}"
+                );
+            }
+        }
+    }
+
     context.try_shutdown().expect("WGL checked shutdown");
     window.close().expect("close native window");
 }

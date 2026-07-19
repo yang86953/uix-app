@@ -152,6 +152,8 @@ component! {
         last_frame: Cell<Rect>,
         motion_dirty: Cell<bool>,
         motion_dirty_bounds: Cell<Rect>,
+        hovered_close: Cell<Option<super::toast_motion::ToastKey>>,
+        pressed_close: Cell<Option<super::toast_motion::ToastKey>>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -166,20 +168,45 @@ component! {
                 button: MouseButton::Left,
                 ..
             } => {
-                let frame = self.last_frame.get();
-                let clicked = {
-                    let motion = self.motion.borrow();
-                    let clicked = self.toast_rects(frame, motion.entries()).find_map(
-                        |(rect, entry)| {
-                            (entry.item().closable && Self::close_rect(rect).contains(*pos))
-                                .then_some(entry.key())
-                        },
-                    );
-                    clicked
-                };
-                if let Some(key) = clicked {
-                    self.queue.remove_keys(&[key]);
-                    self.sync_motion();
+                let target = self.close_target_at(*pos);
+                self.hovered_close.set(target);
+                self.pressed_close.set(target);
+                if target.is_some() {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
+            }
+            SystemEvent::PointerUp {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
+                let armed = self.pressed_close.replace(None);
+                let target = self.close_target_at(*pos);
+                self.hovered_close.set(target);
+                if let Some(key) = armed {
+                    if target == Some(key) {
+                        self.queue.remove_keys(&[key]);
+                        self.sync_motion();
+                    }
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
+            }
+            SystemEvent::PointerMove { pos, .. } => {
+                let target = self.close_target_at(*pos);
+                if self.hovered_close.replace(target) != target {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
+            }
+            SystemEvent::PointerLeave | SystemEvent::FocusOut => {
+                let changed = self.hovered_close.replace(None).is_some()
+                    | self.pressed_close.replace(None).is_some();
+                if changed {
                     EventResult::Handled
                 } else {
                     EventResult::NotHandled
@@ -207,72 +234,99 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        self.last_frame.set(frame);
+        let frame = self.remember_frame(frame);
         self.sync_motion();
         let motion = self.motion.borrow();
-        if motion.is_empty() {
+        if motion.is_empty() || frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
 
         let radius = Some(Radius::uniform(ctx.tokens().border_radius_lg()));
-        for (base_rect, entry) in self.toast_rects(frame, motion.entries()) {
+        let shadow = ctx.tokens().box_shadow();
+        ctx.push_clip(frame);
+        for (base_rect, entry) in self.notification_rects(frame, motion.entries()) {
             let opacity = entry.opacity().clamp(0.0, 1.0);
             let notif_rect = transitioned_rect(base_rect, entry.offset(), entry.scale());
+            if notif_rect.w <= 0.0 || notif_rect.h <= 0.0 {
+                continue;
+            }
             let item = entry.item();
             let bg = fade_color(ctx.tokens().color_bg_elevated(), opacity);
             let border = fade_color(ctx.tokens().color_border_secondary(), opacity);
             let text = fade_color(ctx.tokens().color_text(), opacity);
             let text_secondary = fade_color(ctx.tokens().color_text_secondary(), opacity);
             let (icon, accent) = match item.type_ {
-                StatusLevel::Success => ("+", ctx.tokens().color_success()),
-                StatusLevel::Info => ("i", ctx.tokens().color_info()),
-                StatusLevel::Warning => ("!", ctx.tokens().color_warning()),
-                StatusLevel::Error => ("x", ctx.tokens().color_error()),
+                StatusLevel::Success => ("check-circle", ctx.tokens().color_success()),
+                StatusLevel::Info => ("info", ctx.tokens().color_info()),
+                StatusLevel::Warning => ("alert-triangle", ctx.tokens().color_warning()),
+                StatusLevel::Error => ("x-circle", ctx.tokens().color_error()),
             };
             let accent = fade_color(accent, opacity);
-            ctx.draw_box_shadow(
-                notif_rect,
-                8.0,
-                0.0,
-                4.0,
-                Color::from_rgba(0, 0, 0, (40.0 * opacity).round() as u8),
-                radius,
-            );
+            if shadow.layer_1.2 > 0.0 {
+                ctx.draw_box_shadow(
+                    notif_rect,
+                    shadow.layer_1.2,
+                    shadow.layer_1.0,
+                    shadow.layer_1.1,
+                    fade_color(shadow.layer_1.3, opacity),
+                    radius,
+                );
+            }
             ctx.fill_rect(notif_rect, bg, radius);
             ctx.stroke_rect(notif_rect, border, 1.0, radius);
             ctx.fill_rect(
-                Rect::new(notif_rect.x, notif_rect.y + 6.0, 3.0, notif_rect.h - 12.0),
+                Rect::new(
+                    notif_rect.x,
+                    notif_rect.y + 6.0_f32.min(notif_rect.h * 0.5),
+                    notif_rect.w.min(3.0),
+                    (notif_rect.h - 12.0).max(0.0),
+                ),
                 accent,
                 Some(Radius::uniform(1.5)),
             );
-
-            let icon_y = ctx.visual_center_y(notif_rect, 16.0);
-            ctx.draw_text(icon, Point::new(notif_rect.x + 16.0, icon_y), accent, 16.0);
-            let title_y = ctx.visual_center_y(notif_rect, 14.0);
-            ctx.draw_text(
-                &item.title,
-                Point::new(notif_rect.x + 42.0, title_y),
-                text,
-                14.0,
+            let geometry = Self::item_geometry(notif_rect, item);
+            crate::ui::widgets::icon::paint_icon_in_frame(
+                ctx,
+                icon,
+                geometry.icon,
+                accent,
+                16.0,
             );
+            Self::paint_elided_text(ctx, &item.title, geometry.title, text, 14.0);
             if !item.description.is_empty() {
-                ctx.draw_text(
+                Self::paint_elided_text(
+                    ctx,
                     &item.description,
-                    Point::new(notif_rect.x + 42.0, notif_rect.y + 28.0),
+                    geometry.description,
                     text_secondary,
                     12.0,
                 );
             }
             if item.closable {
-                let close_y = ctx.visual_center_y(notif_rect, 12.0);
-                ctx.draw_text(
+                let close_button = Self::inset_rect(geometry.close, 6.0);
+                if self.pressed_close.get() == Some(entry.key()) {
+                    ctx.fill_rect(
+                        close_button,
+                        fade_color(ctx.tokens().color_fill_secondary(), opacity),
+                        Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                    );
+                } else if self.hovered_close.get() == Some(entry.key()) {
+                    ctx.fill_rect(
+                        close_button,
+                        fade_color(ctx.tokens().color_fill_tertiary(), opacity),
+                        Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                    );
+                }
+                crate::ui::widgets::icon::paint_icon_in_frame(
+                    ctx,
                     "x",
-                    Point::new(notif_rect.x + notif_rect.w - 22.0, close_y),
-                    text_secondary,
-                    12.0,
+                    close_button,
+                    fade_color(ctx.tokens().color_text_quaternary(), opacity),
+                    13.0,
                 );
             }
         }
+        ctx.pop_clip();
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
@@ -285,7 +339,7 @@ component! {
     }
 
     overlay_entry => (&self, id: crate::ui::ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
-        self.last_frame.set(frame);
+        let frame = self.remember_frame(frame);
         self.sync_motion();
         let bounds = self.motion_paint_bounds(frame);
         (bounds.w > 0.0 && bounds.h > 0.0).then(|| {
@@ -346,6 +400,8 @@ impl Notification {
             last_frame: Cell::new(Rect::zero()),
             motion_dirty: Cell::new(false),
             motion_dirty_bounds: Cell::new(Rect::zero()),
+            hovered_close: Cell::new(None),
+            pressed_close: Cell::new(None),
         }
     }
 
@@ -462,15 +518,27 @@ impl Notification {
     fn sync_motion(&self) -> bool {
         let frame = self.last_frame.get();
         let before = self.motion_paint_bounds(frame);
-        let changed = self.motion.borrow_mut().sync(
+        let mut motion = self.motion.borrow_mut();
+        let changed = motion.sync(
             &self.queue,
             self.resolved_enter_animation(),
             self.resolved_leave_animation(),
         );
         if changed {
-            let after = self.motion_paint_bounds(frame);
+            let after = self.motion_paint_bounds_for_entries(frame, motion.entries());
             self.motion_dirty.set(true);
             self.motion_dirty_bounds.set(union_nonempty(before, after));
+        }
+        for interaction in [&self.hovered_close, &self.pressed_close] {
+            if interaction.get().is_some_and(|key| {
+                !self
+                    .notification_rects(frame, motion.entries())
+                    .any(|(_, entry)| {
+                        entry.key() == key && entry.item().closable && !entry.is_leaving()
+                    })
+            }) {
+                interaction.set(None);
+            }
         }
         changed
     }
@@ -479,13 +547,16 @@ impl Notification {
         Size::zero()
     }
 
-    fn toast_rects<'a>(
+    fn notification_rects<'a>(
         &self,
         frame: Rect,
         entries: &'a [ToastMotionEntry<NotificationItem>],
     ) -> impl Iterator<Item = (Rect, &'a ToastMotionEntry<NotificationItem>)> + 'a {
-        let width = (frame.w - Self::HORIZONTAL_INSET * 2.0).clamp(0.0, Self::WIDTH);
-        let stack_height = Self::stack_height(entries);
+        let frame = Self::normalize_frame(frame);
+        let width = frame.w.clamp(0.0, Self::WIDTH);
+        let visible_start = Self::visible_start(frame.h, entries);
+        let visible = &entries[visible_start..];
+        let stack_height = Self::stack_height(visible, frame.h);
         let start_x = frame.x
             + self
                 .placement
@@ -495,18 +566,21 @@ impl Notification {
                 .placement
                 .vertical_start(frame.h, stack_height, Self::VERTICAL_INSET);
 
-        entries.iter().map(move |entry| {
-            let height = Self::toast_height(entry.item());
+        visible.iter().map(move |entry| {
+            let height = Self::toast_height(entry.item()).min(frame.h);
             let rect = Rect::new(start_x, y, width, height);
             y += height + Self::GAP;
             (rect, entry)
         })
     }
 
-    fn stack_height(entries: &[ToastMotionEntry<NotificationItem>]) -> f32 {
+    fn stack_height(entries: &[ToastMotionEntry<NotificationItem>], frame_height: f32) -> f32 {
+        if entries.is_empty() || frame_height <= 0.0 {
+            return 0.0;
+        }
         entries
             .iter()
-            .map(|entry| Self::toast_height(entry.item()))
+            .map(|entry| Self::toast_height(entry.item()).min(frame_height))
             .sum::<f32>()
             + entries.len().saturating_sub(1) as f32 * Self::GAP
     }
@@ -521,17 +595,27 @@ impl Notification {
 
     fn motion_paint_bounds(&self, frame: Rect) -> Rect {
         let motion = self.motion.borrow();
+        self.motion_paint_bounds_for_entries(frame, motion.entries())
+    }
+
+    fn motion_paint_bounds_for_entries(
+        &self,
+        frame: Rect,
+        entries: &[ToastMotionEntry<NotificationItem>],
+    ) -> Rect {
+        let frame = Self::normalize_frame(frame);
         let mut bounds: Option<Rect> = None;
-        for (rect, entry) in self.toast_rects(frame, motion.entries()) {
+        for (rect, entry) in self.notification_rects(frame, entries) {
             let (from, to) = entry.offset_endpoints();
             let sweep = rect
                 .union(&translated_rect(rect, from))
                 .union(&translated_rect(rect, to));
             bounds = Some(bounds.map_or(sweep, |current| current.union(&sweep)));
         }
-        bounds.map_or_else(Rect::zero, |bounds| {
-            expand_rect(bounds, Self::SHADOW_MARGIN)
-        })
+        bounds
+            .map(|bounds| expand_rect(bounds, Self::SHADOW_MARGIN))
+            .and_then(|bounds| bounds.intersect(&frame))
+            .unwrap_or_else(Rect::zero)
     }
 
     fn close_rect(rect: Rect) -> Rect {
@@ -539,25 +623,212 @@ impl Notification {
     }
 
     pub(crate) fn hit_bounds(&self, frame: Rect) -> Option<Rect> {
-        self.last_frame.set(frame);
+        let frame = self.remember_frame(frame);
         self.sync_motion();
         let motion = self.motion.borrow();
-        self.toast_rects(frame, motion.entries())
+        self.notification_rects(frame, motion.entries())
             .map(|(rect, entry)| transitioned_rect(rect, entry.offset(), entry.scale()))
             .reduce(|acc, rect| acc.union(&rect))
+            .and_then(|bounds| bounds.intersect(&frame))
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        if self.placement != next.placement {
+            self.hovered_close.set(None);
+            self.pressed_close.set(None);
+        }
         self.placement = next.placement;
         self.enter_animation = next.enter_animation;
         self.leave_animation = next.leave_animation;
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        let items = self.queue.values();
         SnapshotFields::Notification {
             placement: self.placement,
+            titles: items.iter().map(|item| item.title.clone()).collect(),
+            descriptions: items.iter().map(|item| item.description.clone()).collect(),
         }
     }
+
+    fn visible_start(frame_height: f32, entries: &[ToastMotionEntry<NotificationItem>]) -> usize {
+        let frame_height = Self::normalize_dimension(frame_height);
+        if entries.is_empty() || frame_height <= 0.0 {
+            return entries.len();
+        }
+        let mut start = entries.len();
+        let mut height = 0.0;
+        for index in (0..entries.len()).rev() {
+            let item_height = Self::toast_height(entries[index].item()).min(frame_height);
+            let candidate = if start == entries.len() {
+                item_height
+            } else {
+                item_height + Self::GAP + height
+            };
+            if candidate > frame_height && start < entries.len() {
+                break;
+            }
+            start = index;
+            height = candidate;
+        }
+        start
+    }
+
+    fn remember_frame(&self, frame: Rect) -> Rect {
+        let frame = Self::normalize_frame(frame);
+        let previous = self.last_frame.replace(frame);
+        if previous != Rect::zero() && previous != frame {
+            self.hovered_close.set(None);
+            self.pressed_close.set(None);
+        }
+        frame
+    }
+
+    fn normalize_frame(frame: Rect) -> Rect {
+        Rect::new(
+            if frame.x.is_finite() { frame.x } else { 0.0 },
+            if frame.y.is_finite() { frame.y } else { 0.0 },
+            Self::normalize_dimension(frame.w),
+            Self::normalize_dimension(frame.h),
+        )
+    }
+
+    fn normalize_dimension(value: f32) -> f32 {
+        if value.is_finite() {
+            value.max(0.0)
+        } else {
+            0.0
+        }
+    }
+
+    fn close_target_at(&self, local_pos: Point) -> Option<super::toast_motion::ToastKey> {
+        let frame = self.last_frame.get();
+        let pos = Point::new(local_pos.x + frame.x, local_pos.y + frame.y);
+        let motion = self.motion.borrow();
+        let target = self
+            .notification_rects(frame, motion.entries())
+            .find_map(|(rect, entry)| {
+                let rect = transitioned_rect(rect, entry.offset(), entry.scale());
+                (entry.item().closable
+                    && !entry.is_leaving()
+                    && Self::close_rect(rect).contains(pos))
+                .then_some(entry.key())
+            });
+        target
+    }
+
+    fn item_geometry(rect: Rect, item: &NotificationItem) -> NotificationGeometry {
+        let close = if item.closable {
+            Self::close_rect(rect)
+        } else {
+            Rect::new(rect.x + rect.w, rect.y, 0.0, rect.h)
+        };
+        let icon_x = rect.x + 10.0_f32.min(rect.w);
+        let icon_width = (close.x - icon_x).clamp(0.0, 24.0);
+        let icon = Rect::new(icon_x, rect.y, icon_width, rect.h);
+        let content_x = (icon.x + icon.w + 8.0).min(close.x);
+        let content_width = (close.x - 8.0_f32.min(rect.w) - content_x).max(0.0);
+        let (title, description) = if item.description.is_empty() {
+            (
+                Rect::new(content_x, rect.y, content_width, rect.h),
+                Rect::zero(),
+            )
+        } else {
+            let title_height = rect.h.min(30.0);
+            (
+                Rect::new(content_x, rect.y + 4.0, content_width, title_height),
+                Rect::new(
+                    content_x,
+                    rect.y + title_height,
+                    content_width,
+                    (rect.h - title_height).max(0.0),
+                ),
+            )
+        };
+        NotificationGeometry {
+            icon,
+            title,
+            description,
+            close,
+        }
+    }
+
+    fn inset_rect(frame: Rect, inset: f32) -> Rect {
+        let inset_x = inset.min(frame.w * 0.5);
+        let inset_y = inset.min(frame.h * 0.5);
+        Rect::new(
+            frame.x + inset_x,
+            frame.y + inset_y,
+            (frame.w - inset_x * 2.0).max(0.0),
+            (frame.h - inset_y * 2.0).max(0.0),
+        )
+    }
+
+    fn paint_elided_text(
+        ctx: &mut PaintContext<'_>,
+        value: &str,
+        frame: Rect,
+        color: Color,
+        font_size: f32,
+    ) {
+        let Some(value) = Self::elide_single_line(ctx, value, font_size, frame.w) else {
+            return;
+        };
+        if frame.h <= 0.0 {
+            return;
+        }
+        ctx.push_clip(frame);
+        let y = ctx.visual_center_y(frame, font_size);
+        ctx.draw_text(&value, Point::new(frame.x, y), color, font_size);
+        ctx.pop_clip();
+    }
+
+    fn elide_single_line(
+        ctx: &mut PaintContext<'_>,
+        value: &str,
+        font_size: f32,
+        max_width: f32,
+    ) -> Option<String> {
+        if !max_width.is_finite() || max_width <= 0.0 {
+            return None;
+        }
+        let value = value.replace(['\r', '\n'], " ");
+        if Self::text_width(ctx, &value, font_size) <= max_width {
+            return Some(value);
+        }
+        const ELLIPSIS: &str = "…";
+        if Self::text_width(ctx, ELLIPSIS, font_size) > max_width {
+            return None;
+        }
+        let mut visible = String::new();
+        for ch in value.chars() {
+            visible.push(ch);
+            visible.push_str(ELLIPSIS);
+            let fits = Self::text_width(ctx, &visible, font_size) <= max_width;
+            visible.pop();
+            if !fits {
+                visible.pop();
+                break;
+            }
+        }
+        visible.push_str(ELLIPSIS);
+        Some(visible)
+    }
+
+    fn text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
+        ctx.measure_text(value, font_size).w.max(
+            crate::draw::font::text_backend::estimate_text_metrics(value, f32::INFINITY, font_size)
+                .max_line_width,
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct NotificationGeometry {
+    icon: Rect,
+    title: Rect,
+    description: Rect,
+    close: Rect,
 }
 
 fn transitioned_rect(rect: Rect, offset: Point, scale: f32) -> Rect {

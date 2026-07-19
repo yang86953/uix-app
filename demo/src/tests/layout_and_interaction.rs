@@ -448,12 +448,27 @@ fn feedback_modal_traps_keyboard_focus_between_automation_targets() {
         modal_frame.w > 0.0 && modal_frame.h > 0.0,
         "closed modal trigger must be visible on the initial feedback viewport"
     );
+    let modal_click = Point::new(
+        modal_frame.x + modal_frame.w * 0.5,
+        modal_frame.y + modal_frame.h * 0.5,
+    );
     assert_eq!(
         tree.dispatch_event(&SystemEvent::PointerDown {
-            pos: Point::new(
-                modal_frame.x + modal_frame.w * 0.5,
-                modal_frame.y + modal_frame.h * 0.5,
-            ),
+            pos: modal_click,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(
+        tree.overlay_stack()
+            .top()
+            .is_none_or(|entry| entry.owner() != modal),
+        "PointerDown alone must not activate the Modal focus trap"
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerUp {
+            pos: modal_click,
             button: MouseButton::Left,
             mods: KeyMod::NONE,
         }),

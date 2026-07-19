@@ -808,9 +808,9 @@ impl WidgetTree {
         }
     }
 
-    pub(crate) fn set_tab_index(&mut self, id: ComponentId, tab_index: i32) {
+    pub(crate) fn set_tab_index_override(&mut self, id: ComponentId, tab_index: Option<i32>) {
         if let Some(node) = self.get_mut(id) {
-            node.set_tab_index(tab_index.max(0));
+            node.set_tab_index_override(tab_index);
         }
         self.register_focusable(id);
     }

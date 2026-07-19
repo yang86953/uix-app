@@ -131,6 +131,62 @@ struct OccludedEngine {
     probes: Rc<std::cell::Cell<usize>>,
 }
 
+struct MaintenanceProbeEngine {
+    inner: NullEngine,
+    deadline: Option<Instant>,
+    notes: Rc<std::cell::Cell<usize>>,
+    releases: Rc<std::cell::Cell<usize>>,
+}
+
+impl GraphicsEngine for MaintenanceProbeEngine {
+    fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.inner.initialize(width, height)
+    }
+
+    fn try_shutdown(&mut self) -> Result<(), Error> {
+        self.inner.try_shutdown()
+    }
+
+    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.inner.resize(width, height)
+    }
+
+    fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {
+        self.inner.begin_frame(strategy)
+    }
+
+    fn end_frame(&mut self, damage: &DamageRegion) -> RenderOutcome {
+        self.inner.end_frame(damage)
+    }
+
+    fn note_presented_at(&mut self, now: Instant) {
+        self.notes.set(self.notes.get() + 1);
+        self.deadline = Some(now + Duration::from_millis(250));
+    }
+
+    fn idle_resource_deadline(&self) -> Option<Instant> {
+        self.deadline
+    }
+
+    fn release_idle_resources(&mut self, now: Instant) {
+        if self.deadline.is_some_and(|deadline| deadline <= now) {
+            self.releases.set(self.releases.get() + 1);
+            self.deadline = None;
+        }
+    }
+
+    fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
+        self.inner.canvas_2d()
+    }
+
+    fn try_execute_encoded_frame(
+        &mut self,
+        encoder: &FrameEncoder,
+    ) -> Result<EncodedFrameExecution, Error> {
+        self.inner.try_execute_encoded_frame(encoder)
+    }
+}
+
 impl GraphicsEngine for OccludedEngine {
     fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.inner.initialize(width, height)
@@ -203,6 +259,31 @@ fn occlusion_keeps_the_healthy_engine_and_delegates_idle_probe() {
     ));
     assert_eq!(probes.get(), 1);
     assert!(actions.borrow().is_empty());
+}
+
+#[test]
+fn recovering_engine_delegates_idle_resource_maintenance() {
+    let notes = Rc::new(std::cell::Cell::new(0));
+    let releases = Rc::new(std::cell::Cell::new(0));
+    let mut engine = RecoveringGraphicsEngine::new(
+        Box::new(MaintenanceProbeEngine {
+            inner: NullEngine::new(),
+            deadline: None,
+            notes: Rc::clone(&notes),
+            releases: Rc::clone(&releases),
+        }),
+        Box::new(|_, _, _| Ok(Box::new(NullEngine::new()))),
+    );
+    let presented_at = Instant::now();
+    engine.note_presented_at(presented_at);
+    let deadline = presented_at + Duration::from_millis(250);
+    assert_eq!(engine.idle_resource_deadline(), Some(deadline));
+
+    engine.release_idle_resources(deadline);
+
+    assert_eq!(notes.get(), 1);
+    assert_eq!(releases.get(), 1);
+    assert_eq!(engine.idle_resource_deadline(), None);
 }
 
 #[test]

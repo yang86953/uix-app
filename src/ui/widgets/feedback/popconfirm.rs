@@ -11,6 +11,18 @@ use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
 };
 
+const POPCONFIRM_WIDTH: f32 = 200.0;
+const POPCONFIRM_HEIGHT: f32 = 110.0;
+const TRIGGER_WIDTH: f32 = 80.0;
+const TRIGGER_HEIGHT: f32 = 28.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PopconfirmTarget {
+    Trigger,
+    Confirm,
+    Cancel,
+}
+
 /// Popconfirm 弹出位置。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PopconfirmPlacement {
@@ -37,6 +49,12 @@ component! {
         focused: bool,
         focused_action: usize,
         pending_submit: Cell<bool>,
+        hovered_target: Option<PopconfirmTarget>,
+        pressed_target: Option<PopconfirmTarget>,
+        pressed_key: Option<KeyCode>,
+        last_frame: Cell<Rect>,
+        popup_rect: Cell<Rect>,
+        surface_rect: Cell<Rect>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -44,6 +62,12 @@ component! {
     }
 
     hit_test_children => (&self) -> bool { false }
+
+    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
+        -> Vec<(crate::ui::ComponentId, Rect)>
+    {
+        children.iter().map(|child| (child.id, Self::normalize_frame(frame))).collect()
+    }
 
     tab_index => (&self) -> i32 { 1 }
 
@@ -54,35 +78,64 @@ component! {
                 button: MouseButton::Left,
                 ..
             } => {
-                if self.trigger_rect().contains(*pos) {
+                if let Some(target) = self.target_at(*pos) {
                     self.focused = true;
-                    if self.visible {
-                        self.close();
-                    } else {
-                        self.open();
-                    }
+                    self.pressed_target = Some(target);
+                    self.focused_action = match target {
+                        PopconfirmTarget::Cancel => 1,
+                        _ => 0,
+                    };
                     return EventResult::Handled;
                 }
-                if self.visible {
-                    let (confirm_rect, cancel_rect) = self.button_rects();
-                    if confirm_rect.contains(*pos) {
-                        self.focused = true;
-                        self.focused_action = 0;
-                        self.confirm();
-                        return EventResult::Handled;
-                    }
-                    if cancel_rect.contains(*pos) {
-                        self.focused = true;
-                        self.focused_action = 1;
-                        self.close();
-                        return EventResult::Handled;
-                    }
-                    if !self.popup_rect().contains(*pos) {
-                        self.close();
-                        return EventResult::Handled;
-                    }
+                if self.is_present() && self.popup_rect.get().contains(*pos) {
+                    return EventResult::Handled;
+                }
+                if self.is_present() {
+                    self.cancel_pending_activation();
+                    self.close();
+                    return EventResult::Handled;
                 }
                 EventResult::NotHandled
+            }
+            SystemEvent::PointerUp {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
+                let pressed = self.pressed_target.take();
+                if let Some(pressed) = pressed.filter(|pressed| Some(*pressed) == self.target_at(*pos)) {
+                    match pressed {
+                        PopconfirmTarget::Trigger => {
+                            if self.is_present() && !self.closing {
+                                self.close();
+                            } else {
+                                self.open();
+                            }
+                        }
+                        PopconfirmTarget::Confirm => self.confirm(),
+                        PopconfirmTarget::Cancel => self.close(),
+                    }
+                }
+                EventResult::Handled
+            }
+            SystemEvent::PointerMove { pos, .. } => {
+                let hovered = self.target_at(*pos);
+                if self.hovered_target != hovered {
+                    self.hovered_target = hovered;
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
+            }
+            SystemEvent::PointerLeave => {
+                let changed = self.hovered_target.is_some() || self.pressed_target.is_some();
+                self.hovered_target = None;
+                self.pressed_target = None;
+                if changed {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
             }
             SystemEvent::FocusIn => {
                 self.focused = true;
@@ -90,6 +143,7 @@ component! {
             }
             SystemEvent::FocusOut => {
                 self.focused = false;
+                self.cancel_pending_activation();
                 EventResult::Handled
             }
             SystemEvent::KeyDown { key, .. } if self.visible => match key {
@@ -102,11 +156,7 @@ component! {
                     EventResult::Handled
                 }
                 KeyCode::Enter | KeyCode::Space => {
-                    if self.focused_action == 0 {
-                        self.confirm();
-                    } else {
-                        self.close();
-                    }
+                    self.pressed_key = Some(*key);
                     EventResult::Handled
                 }
                 KeyCode::Escape => {
@@ -116,10 +166,28 @@ component! {
                 _ => EventResult::NotHandled,
             },
             SystemEvent::KeyDown {
-                key: KeyCode::Enter | KeyCode::Space,
+                key: key @ (KeyCode::Enter | KeyCode::Space),
                 ..
             } => {
-                self.open();
+                self.pressed_key = Some(*key);
+                EventResult::Handled
+            }
+            SystemEvent::KeyUp {
+                key: key @ (KeyCode::Enter | KeyCode::Space),
+                ..
+            } => {
+                let matches = self.pressed_key.take() == Some(*key);
+                if matches {
+                    if self.visible {
+                        if self.focused_action == 0 {
+                            self.confirm();
+                        } else {
+                            self.close();
+                        }
+                    } else {
+                        self.open();
+                    }
+                }
                 EventResult::Handled
             }
             _ => EventResult::NotHandled,
@@ -128,6 +196,9 @@ component! {
 
     on_focus_within => (&mut self, focused: bool) -> EventResult {
         self.focused = focused;
+        if !focused {
+            self.cancel_pending_activation();
+        }
         if !focused && self.visible {
             self.close();
         }
@@ -141,10 +212,30 @@ component! {
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        popconfirm_dirty_rect(self.placement, self.arrow, frame)
+        self.dirty_rect_for_frame(frame)
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        let frame = Self::normalize_frame(frame);
+        let surface_size = ctx.logical_surface_size();
+        let surface = Self::normalize_frame(Rect::new(0.0, 0.0, surface_size.w, surface_size.h));
+        self.last_frame.set(frame);
+        self.surface_rect.set(surface);
+        let popup_geometry = resolve_popconfirm_geometry(
+            frame,
+            surface,
+            self.placement,
+            self.arrow,
+            POPCONFIRM_WIDTH,
+            POPCONFIRM_HEIGHT,
+        );
+        self.popup_rect.set(Rect::new(
+            popup_geometry.popup.x - frame.x,
+            popup_geometry.popup.y - frame.y,
+            popup_geometry.popup.w,
+            popup_geometry.popup.h,
+        ));
+
         let loc = crate::ui::locale::use_locale();
         let bg = ctx.tokens().color_bg_elevated();
         let border = ctx.tokens().color_border();
@@ -152,49 +243,152 @@ component! {
         let primary = ctx.tokens().color_primary();
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
 
-        let trigger_y = ctx.visual_center_y(frame, 13.0);
-        ctx.draw_text(loc.delete_text, Point::new(frame.x + 20.0, trigger_y),
-            ctx.tokens().color_error(), 13.0);
+        ctx.push_clip(surface);
+        if self.hovered_target == Some(PopconfirmTarget::Trigger)
+            || self.pressed_target == Some(PopconfirmTarget::Trigger)
+        {
+            ctx.fill_rect(
+                frame,
+                if self.pressed_target == Some(PopconfirmTarget::Trigger) {
+                    ctx.tokens().color_fill_secondary()
+                } else {
+                    ctx.tokens().color_fill_tertiary()
+                },
+                r,
+            );
+        }
+        Self::paint_elided_text(
+            ctx,
+            loc.delete_text,
+            frame,
+            ctx.tokens().color_error(),
+            13.0,
+            true,
+        );
         if self.focused {
             ctx.stroke_rect(frame, primary, 2.0, r);
         }
 
-        if self.is_present() {
+        if self.is_present() && popup_geometry.popup.w > 0.0 && popup_geometry.popup.h > 0.0 {
             let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
             let popup_bg = fade_color(bg, opacity);
             let popup_border = fade_color(border, opacity);
             let popup_text = fade_color(text_color, opacity);
             let popup_primary = fade_color(primary, opacity);
             let popup_warning = fade_color(ctx.tokens().color_warning(), opacity);
-            let (pw, ph) = (200.0, 110.0);
-            let (px, py) = self.popup_pos(pw, ph);
-            let pop_rect = Rect::new(px, py, pw, ph);
+            let pop_rect = popup_geometry.popup;
+            let shadow = ctx.tokens().box_shadow_secondary();
+            ctx.draw_box_shadow(
+                pop_rect,
+                shadow.layer_1.2,
+                shadow.layer_1.0,
+                shadow.layer_1.1,
+                fade_color(shadow.layer_1.3, opacity),
+                r,
+            );
             ctx.fill_rect(pop_rect, popup_bg, r);
             ctx.stroke_rect(pop_rect, popup_border, 1.0, r);
 
             if self.arrow {
-                draw_popconfirm_arrow(ctx, frame, pop_rect, self.placement, popup_bg);
+                draw_popconfirm_arrow(
+                    ctx,
+                    frame,
+                    pop_rect,
+                    popup_geometry.placement,
+                    popup_bg,
+                );
             }
 
-            // 图标 + 标题
-            let title_x = if self.icon { px + 36.0 } else { px + 12.0 };
-            if self.icon {
-                ctx.draw_text("⚠", Point::new(px + 12.0, py + 14.0), popup_warning, 16.0);
-            }
             let loc = crate::ui::locale::use_locale();
-            let title = if self.title.is_empty() { loc.popconfirm_title } else { &self.title };
-            ctx.draw_text(title, Point::new(title_x, py + 16.0), popup_text, 13.0);
+            let title = if self.title.is_empty() {
+                loc.popconfirm_title
+            } else {
+                &self.title
+            };
+            let inset = 12.0_f32.min(pop_rect.w * 0.5);
+            let (confirm_rect, cancel_rect) = button_rects_for_popup(pop_rect);
+            let title_bottom = if confirm_rect.h > 0.0 {
+                (confirm_rect.y - 6.0).max(pop_rect.y)
+            } else {
+                pop_rect.y + pop_rect.h
+            };
+            let icon_width = if self.icon && pop_rect.w >= 48.0 {
+                20.0
+            } else {
+                0.0
+            };
+            if icon_width > 0.0 {
+                crate::ui::widgets::icon::paint_icon_in_frame(
+                    ctx,
+                    "alert-triangle",
+                    Rect::new(
+                        pop_rect.x + inset,
+                        pop_rect.y + 8.0,
+                        icon_width,
+                        (title_bottom - pop_rect.y - 8.0).max(0.0),
+                    ),
+                    popup_warning,
+                    16.0,
+                );
+            }
+            let title_rect = Rect::new(
+                pop_rect.x + inset + icon_width,
+                pop_rect.y + 6.0,
+                (pop_rect.w - inset * 2.0 - icon_width).max(0.0),
+                (title_bottom - pop_rect.y - 6.0).max(0.0),
+            );
+            Self::paint_elided_text(ctx, title, title_rect, popup_text, 13.0, false);
 
-            // 确认按钮
             let btn_r = Some(Radius::uniform(4.0));
-            let (confirm_rect, cancel_rect) = self.button_rects();
-            ctx.fill_rect(confirm_rect, popup_primary, btn_r);
-            let confirm = if self.confirm_text.is_empty() { loc.popconfirm_ok } else { &self.confirm_text };
-            ctx.text_center(confirm, confirm_rect, fade_color(Color::white(), opacity), 12.0);
+            if self.hovered_target == Some(PopconfirmTarget::Confirm)
+                || self.pressed_target == Some(PopconfirmTarget::Confirm)
+            {
+                ctx.fill_rect(
+                    confirm_rect,
+                    if self.pressed_target == Some(PopconfirmTarget::Confirm) {
+                        fade_color(ctx.tokens().color_primary_active(), opacity)
+                    } else {
+                        fade_color(ctx.tokens().color_primary_hover(), opacity)
+                    },
+                    btn_r,
+                );
+            } else {
+                ctx.fill_rect(confirm_rect, popup_primary, btn_r);
+            }
+            let confirm = if self.confirm_text.is_empty() {
+                loc.popconfirm_ok
+            } else {
+                &self.confirm_text
+            };
+            Self::paint_elided_text(
+                ctx,
+                confirm,
+                confirm_rect,
+                fade_color(Color::white(), opacity),
+                12.0,
+                true,
+            );
 
+            if self.hovered_target == Some(PopconfirmTarget::Cancel)
+                || self.pressed_target == Some(PopconfirmTarget::Cancel)
+            {
+                ctx.fill_rect(
+                    cancel_rect,
+                    if self.pressed_target == Some(PopconfirmTarget::Cancel) {
+                        fade_color(ctx.tokens().color_fill_secondary(), opacity)
+                    } else {
+                        fade_color(ctx.tokens().color_fill_tertiary(), opacity)
+                    },
+                    btn_r,
+                );
+            }
             ctx.stroke_rect(cancel_rect, popup_border, 1.0, btn_r);
-            let cancel = if self.cancel_text.is_empty() { loc.popconfirm_cancel } else { &self.cancel_text };
-            ctx.text_center(cancel, cancel_rect, popup_text, 12.0);
+            let cancel = if self.cancel_text.is_empty() {
+                loc.popconfirm_cancel
+            } else {
+                &self.cancel_text
+            };
+            Self::paint_elided_text(ctx, cancel, cancel_rect, popup_text, 12.0, true);
             if self.focused && self.visible {
                 let (focus_rect, focus_color) = if self.focused_action == 0 {
                     (confirm_rect, fade_color(Color::white(), opacity))
@@ -204,6 +398,7 @@ component! {
                 ctx.stroke_rect(focus_rect, focus_color, 2.0, btn_r);
             }
         }
+        ctx.pop_clip();
     }
 
     overlay_entry => (&self, id: crate::ui::ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
@@ -211,11 +406,13 @@ component! {
             return None;
         }
 
-        let (pw, ph) = (200.0, 110.0);
-        let (px, py) = popconfirm_position(frame, self.placement, self.arrow, pw, ph);
+        let frame = Self::normalize_frame(frame);
+        let popup = expand_popconfirm_rect(self.absolute_popup_rect(frame), 12.0)
+            .intersect(&self.surface_or_fallback(frame))
+            .unwrap_or(Rect::zero());
         Some(
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
-                .bounds(Rect::new(px, py, pw, ph))
+                .bounds(popup)
                 .z_index(950),
         )
     }
@@ -239,7 +436,7 @@ component! {
 
     dirty_bounds => (&self, frame: Rect) -> Rect {
         if self.transition_dirty {
-            popconfirm_dirty_rect(self.placement, self.arrow, frame)
+            self.dirty_rect_for_frame(frame)
         } else {
             Rect::zero()
         }
@@ -268,6 +465,17 @@ impl Popconfirm {
             focused: false,
             focused_action: 0,
             pending_submit: Cell::new(false),
+            hovered_target: None,
+            pressed_target: None,
+            pressed_key: None,
+            last_frame: Cell::new(Rect::zero()),
+            popup_rect: Cell::new(Rect::new(
+                0.0,
+                -POPCONFIRM_HEIGHT - 10.0,
+                POPCONFIRM_WIDTH,
+                POPCONFIRM_HEIGHT,
+            )),
+            surface_rect: Cell::new(Rect::zero()),
         }
     }
     pub fn title(mut self, t: impl Into<String>) -> Self {
@@ -304,6 +512,7 @@ impl Popconfirm {
     }
 
     pub fn open(&mut self) {
+        self.cancel_pending_activation();
         self.pending_submit.set(false);
         self.focused_action = 0;
         self.visible = true;
@@ -317,6 +526,7 @@ impl Popconfirm {
     }
 
     pub fn close(&mut self) {
+        self.cancel_pending_activation();
         if !self.is_present() {
             self.visible = false;
             self.closing = false;
@@ -330,35 +540,57 @@ impl Popconfirm {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let geometry_changed = self.placement != next.placement || self.arrow != next.arrow;
         self.title = next.title;
         self.confirm_text = next.confirm_text;
         self.cancel_text = next.cancel_text;
         self.placement = next.placement;
         self.arrow = next.arrow;
         self.icon = next.icon;
+        if geometry_changed {
+            self.cancel_pending_activation();
+        }
     }
 
     fn trigger_rect(&self) -> Rect {
-        Rect::new(0.0, 0.0, 80.0, 28.0)
-    }
-
-    fn popup_rect(&self) -> Rect {
-        let (pw, ph) = (200.0, 110.0);
-        let (px, py) = self.popup_pos(pw, ph);
-        Rect::new(px, py, pw, ph)
+        let frame = self.last_frame.get();
+        let width = if frame.w > 0.0 {
+            frame.w
+        } else {
+            TRIGGER_WIDTH
+        };
+        let height = if frame.h > 0.0 {
+            frame.h
+        } else {
+            TRIGGER_HEIGHT
+        };
+        Rect::new(0.0, 0.0, width, height)
     }
 
     fn button_rects(&self) -> (Rect, Rect) {
-        let popup = self.popup_rect();
-        (
-            Rect::new(popup.x + 12.0, popup.y + popup.h - 36.0, 80.0, 26.0),
-            Rect::new(
-                popup.x + popup.w - 92.0,
-                popup.y + popup.h - 36.0,
-                80.0,
-                26.0,
-            ),
-        )
+        button_rects_for_popup(self.popup_rect.get())
+    }
+
+    fn target_at(&self, pos: Point) -> Option<PopconfirmTarget> {
+        if self.trigger_rect().contains(pos) {
+            return Some(PopconfirmTarget::Trigger);
+        }
+        if !self.visible {
+            return None;
+        }
+        let (confirm, cancel) = self.button_rects();
+        if confirm.contains(pos) {
+            Some(PopconfirmTarget::Confirm)
+        } else if cancel.contains(pos) {
+            Some(PopconfirmTarget::Cancel)
+        } else {
+            None
+        }
+    }
+
+    fn cancel_pending_activation(&mut self) {
+        self.pressed_target = None;
+        self.pressed_key = None;
     }
 
     fn confirm(&mut self) {
@@ -366,18 +598,8 @@ impl Popconfirm {
         self.close();
     }
 
-    fn popup_pos(&self, _pw: f32, ph: f32) -> (f32, f32) {
-        popconfirm_position(
-            Rect::new(0.0, 0.0, 80.0, 28.0),
-            self.placement,
-            self.arrow,
-            200.0,
-            ph,
-        )
-    }
-
     fn intrinsic_size(&self) -> Size {
-        Size::new(80.0, 28.0)
+        Size::new(TRIGGER_WIDTH, TRIGGER_HEIGHT)
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -392,6 +614,216 @@ impl Popconfirm {
             focused_action: self.focused_action(),
         })
     }
+
+    fn absolute_popup_rect(&self, frame: Rect) -> Rect {
+        if self.last_frame.get() == frame && self.popup_rect.get().w >= 0.0 {
+            let popup = self.popup_rect.get();
+            Rect::new(frame.x + popup.x, frame.y + popup.y, popup.w, popup.h)
+        } else {
+            resolve_popconfirm_geometry(
+                frame,
+                self.surface_or_fallback(frame),
+                self.placement,
+                self.arrow,
+                POPCONFIRM_WIDTH,
+                POPCONFIRM_HEIGHT,
+            )
+            .popup
+        }
+    }
+
+    fn surface_or_fallback(&self, frame: Rect) -> Rect {
+        let surface = self.surface_rect.get();
+        if surface.w > 0.0 && surface.h > 0.0 {
+            surface
+        } else {
+            frame.union(&Rect::new(
+                frame.x - POPCONFIRM_WIDTH * 2.0,
+                frame.y - POPCONFIRM_HEIGHT * 2.0,
+                POPCONFIRM_WIDTH * 5.0 + frame.w,
+                POPCONFIRM_HEIGHT * 5.0 + frame.h,
+            ))
+        }
+    }
+
+    fn dirty_rect_for_frame(&self, frame: Rect) -> Rect {
+        let frame = Self::normalize_frame(frame);
+        frame
+            .union(&expand_popconfirm_rect(
+                self.absolute_popup_rect(frame),
+                12.0,
+            ))
+            .intersect(&self.surface_or_fallback(frame))
+            .unwrap_or(Rect::zero())
+    }
+
+    fn normalize_frame(frame: Rect) -> Rect {
+        Rect::new(
+            if frame.x.is_finite() { frame.x } else { 0.0 },
+            if frame.y.is_finite() { frame.y } else { 0.0 },
+            if frame.w.is_finite() {
+                frame.w.max(0.0)
+            } else {
+                0.0
+            },
+            if frame.h.is_finite() {
+                frame.h.max(0.0)
+            } else {
+                0.0
+            },
+        )
+    }
+
+    fn paint_elided_text(
+        ctx: &mut PaintContext<'_>,
+        value: &str,
+        frame: Rect,
+        color: Color,
+        font_size: f32,
+        centered: bool,
+    ) {
+        let Some(value) = Self::elide_single_line(ctx, value, font_size, frame.w) else {
+            return;
+        };
+        if frame.h <= 0.0 {
+            return;
+        }
+        ctx.push_clip(frame);
+        if centered {
+            ctx.text_center(&value, frame, color, font_size);
+        } else {
+            let y = ctx.visual_center_y(frame, font_size);
+            ctx.draw_text(&value, Point::new(frame.x, y), color, font_size);
+        }
+        ctx.pop_clip();
+    }
+
+    fn elide_single_line(
+        ctx: &mut PaintContext<'_>,
+        value: &str,
+        font_size: f32,
+        max_width: f32,
+    ) -> Option<String> {
+        if !max_width.is_finite() || max_width <= 0.0 {
+            return None;
+        }
+        let value = value.replace(['\r', '\n'], " ");
+        if Self::text_width(ctx, &value, font_size) <= max_width {
+            return Some(value);
+        }
+        const ELLIPSIS: &str = "…";
+        if Self::text_width(ctx, ELLIPSIS, font_size) > max_width {
+            return None;
+        }
+        let mut visible = String::new();
+        for ch in value.chars() {
+            visible.push(ch);
+            visible.push_str(ELLIPSIS);
+            let fits = Self::text_width(ctx, &visible, font_size) <= max_width;
+            visible.pop();
+            if !fits {
+                visible.pop();
+                break;
+            }
+        }
+        visible.push_str(ELLIPSIS);
+        Some(visible)
+    }
+
+    fn text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
+        ctx.measure_text(value, font_size).w.max(
+            crate::draw::font::text_backend::estimate_text_metrics(value, f32::INFINITY, font_size)
+                .max_line_width,
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PopconfirmGeometry {
+    popup: Rect,
+    placement: PopconfirmPlacement,
+}
+
+fn resolve_popconfirm_geometry(
+    trigger: Rect,
+    surface: Rect,
+    placement: PopconfirmPlacement,
+    arrow: bool,
+    preferred_width: f32,
+    preferred_height: f32,
+) -> PopconfirmGeometry {
+    let width = preferred_width.min(surface.w).max(0.0);
+    let height = preferred_height.min(surface.h).max(0.0);
+    if width <= 0.0 || height <= 0.0 {
+        return PopconfirmGeometry {
+            popup: Rect::zero(),
+            placement,
+        };
+    }
+    let flipped = match placement {
+        PopconfirmPlacement::Top => PopconfirmPlacement::Bottom,
+        PopconfirmPlacement::TopLeft => PopconfirmPlacement::BottomLeft,
+        PopconfirmPlacement::TopRight => PopconfirmPlacement::BottomRight,
+        PopconfirmPlacement::Bottom => PopconfirmPlacement::Top,
+        PopconfirmPlacement::BottomLeft => PopconfirmPlacement::TopLeft,
+        PopconfirmPlacement::BottomRight => PopconfirmPlacement::TopRight,
+    };
+    let authored = rect_for_popconfirm_placement(trigger, placement, arrow, width, height);
+    let alternate = rect_for_popconfirm_placement(trigger, flipped, arrow, width, height);
+    let (candidate, resolved) = if popconfirm_overflow_score(alternate, surface)
+        < popconfirm_overflow_score(authored, surface)
+    {
+        (alternate, flipped)
+    } else {
+        (authored, placement)
+    };
+    let max_x = surface.x + surface.w - width;
+    let max_y = surface.y + surface.h - height;
+    PopconfirmGeometry {
+        popup: Rect::new(
+            candidate.x.clamp(surface.x, max_x),
+            candidate.y.clamp(surface.y, max_y),
+            width,
+            height,
+        ),
+        placement: resolved,
+    }
+}
+
+fn rect_for_popconfirm_placement(
+    frame: Rect,
+    placement: PopconfirmPlacement,
+    arrow: bool,
+    width: f32,
+    height: f32,
+) -> Rect {
+    let (x, y) = popconfirm_position(frame, placement, arrow, width, height);
+    Rect::new(x, y, width, height)
+}
+
+fn popconfirm_overflow_score(rect: Rect, surface: Rect) -> f32 {
+    (surface.x - rect.x).max(0.0)
+        + (surface.y - rect.y).max(0.0)
+        + (rect.x + rect.w - surface.x - surface.w).max(0.0)
+        + (rect.y + rect.h - surface.y - surface.h).max(0.0)
+}
+
+fn button_rects_for_popup(popup: Rect) -> (Rect, Rect) {
+    let inset = 12.0_f32.min(popup.w * 0.5);
+    let gap = 8.0_f32.min(popup.w);
+    let available = (popup.w - inset * 2.0 - gap).max(0.0);
+    let button_width = available * 0.5;
+    let button_height = 26.0_f32.min((popup.h - 10.0).max(0.0));
+    let y = (popup.y + popup.h - 10.0 - button_height).max(popup.y);
+    (
+        Rect::new(popup.x + inset, y, button_width, button_height),
+        Rect::new(
+            popup.x + inset + button_width + gap,
+            y,
+            button_width,
+            button_height,
+        ),
+    )
 }
 
 fn popconfirm_position(
@@ -412,12 +844,6 @@ fn popconfirm_position(
     }
 }
 
-fn popconfirm_dirty_rect(placement: PopconfirmPlacement, arrow: bool, frame: Rect) -> Rect {
-    let (pw, ph) = (200.0, 110.0);
-    let (px, py) = popconfirm_position(frame, placement, arrow, pw, ph);
-    frame.union(&Rect::new(px, py, pw, ph))
-}
-
 fn fade_color(color: Color, opacity: f32) -> Color {
     let alpha = (color.a as f32 * opacity.clamp(0.0, 1.0))
         .round()
@@ -425,9 +851,22 @@ fn fade_color(color: Color, opacity: f32) -> Color {
     color.with_alpha(alpha)
 }
 
+fn expand_popconfirm_rect(rect: Rect, amount: f32) -> Rect {
+    if rect.w <= 0.0 || rect.h <= 0.0 {
+        Rect::zero()
+    } else {
+        Rect::new(
+            rect.x - amount,
+            rect.y - amount,
+            rect.w + amount * 2.0,
+            rect.h + amount * 2.0,
+        )
+    }
+}
+
 fn draw_popconfirm_arrow(
     ctx: &mut PaintContext,
-    _trigger: Rect,
+    trigger: Rect,
     popup: Rect,
     placement: PopconfirmPlacement,
     color: Color,
@@ -435,7 +874,8 @@ fn draw_popconfirm_arrow(
     let arrow_sz = 6.0;
     let (x1, y1, x2, y2, x3, y3) = match placement {
         PopconfirmPlacement::Top | PopconfirmPlacement::TopLeft | PopconfirmPlacement::TopRight => {
-            let cx = popup.x + popup.w / 2.0;
+            let cx =
+                popconfirm_arrow_anchor(trigger.x + trigger.w * 0.5, popup.x, popup.w, arrow_sz);
             (
                 cx - arrow_sz,
                 popup.y + popup.h,
@@ -448,7 +888,8 @@ fn draw_popconfirm_arrow(
         PopconfirmPlacement::Bottom
         | PopconfirmPlacement::BottomLeft
         | PopconfirmPlacement::BottomRight => {
-            let cx = popup.x + popup.w / 2.0;
+            let cx =
+                popconfirm_arrow_anchor(trigger.x + trigger.w * 0.5, popup.x, popup.w, arrow_sz);
             (
                 cx - arrow_sz,
                 popup.y,
@@ -465,4 +906,12 @@ fn draw_popconfirm_arrow(
     pb.line_to(x3, y3);
     pb.close();
     ctx.fill_path(&pb.build(), color, FillRule::NonZero);
+}
+
+fn popconfirm_arrow_anchor(desired: f32, start: f32, length: f32, inset: f32) -> f32 {
+    if length <= inset * 2.0 {
+        start + length * 0.5
+    } else {
+        desired.clamp(start + inset, start + length - inset)
+    }
 }

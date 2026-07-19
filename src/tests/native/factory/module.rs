@@ -82,6 +82,7 @@ fn d3d12_explicit_factory_creates_active_real_window_context() {
             clear_target: true,
             soft_blit: true,
             solid_rects: true,
+            glyphs: true,
             ..NativeRasterCaps::default()
         }
     );

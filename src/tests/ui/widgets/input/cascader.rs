@@ -2,8 +2,7 @@ use crate::draw::engine::cpu::canvas_2d::CpuCanvas2D;
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
-use crate::ui::test_harness::ViewAdapter;
-use crate::ui::view::ViewNode;
+use crate::ui::view::{ViewAdapter, ViewNode};
 use crate::ui::widgets::{Cascader, CascaderOption};
 
 fn render_cascader(cascader: &Cascader, frame: Rect) {

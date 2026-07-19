@@ -1,16 +1,14 @@
 //! 绘图层会话 — Pipeline + Backend 组合入口（Phase 1 骨架）。
 
 use crate::core::Error;
-use crate::native::traits::present::IGraphicsContext;
-use std::thread::ThreadId;
-
-#[cfg(all(test, feature = "opengles"))]
 use crate::draw::backend::NativeGpuBackend;
 use crate::draw::backend::{
     create_backend, BackendCapabilities, BackendKind, CpuBackend, NullBackend, RenderBackend,
 };
 use crate::draw::engine::RenderOutcome;
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, UpdateStrategy};
+use crate::native::traits::present::IGraphicsContext;
+use std::thread::ThreadId;
 
 /// 绘图层会话：持有可切换后端与共享帧逻辑。
 pub struct RenderSession {
@@ -219,7 +217,10 @@ impl RenderSession {
         self.backend.as_any_mut().downcast_mut()
     }
 
-    #[cfg(all(test, feature = "opengles"))]
+    pub(crate) fn native_gpu_backend(&self) -> Option<&NativeGpuBackend> {
+        self.backend.as_any().downcast_ref()
+    }
+
     pub(crate) fn native_gpu_backend_mut(&mut self) -> Option<&mut NativeGpuBackend> {
         self.backend.as_any_mut().downcast_mut()
     }

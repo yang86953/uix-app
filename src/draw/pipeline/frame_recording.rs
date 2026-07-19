@@ -1,18 +1,18 @@
 //! Private, API-neutral producer for one ordered main [`FrameEncoder`].
 //!
 //! The compositor paints into this engine instead of a real presentation
-//! surface. Every visual operation is either lowered to a proven native rect,
-//! or immediately rasterized into one transparent CPU segment. Picture
-//! offscreens remain private CPU targets and are recorded as ordered blits.
+//! surface. Every visual operation is either lowered to a proven native op or
+//! rasterized into one transparent CPU segment. Picture offscreens retain the
+//! same API-neutral stream while it stays within the former BGRA memory budget;
+//! unsafe mappings materialize that stream lazily as one ordered image blit.
 
 use crate::core::{DamageRegion, Errc, Error, Rect};
-use crate::draw::backend::{CpuBackend, RenderBackend};
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
 use crate::draw::engine::RenderOutcome;
 use crate::draw::pipeline::{
-    EncodedFrameExecution, EncodedPictureExecution, FrameEncoder, FrameEncoderError, FrameImage,
-    FrameRadius, FrameRasterOp, FrameRect,
+    EncodedFrameExecution, EncodedPictureExecution, FrameEncoder, FrameEncoderError,
+    FrameGlyphBlit, FrameImage, FrameRadius, FrameRasterOp, FrameRect,
 };
 use crate::draw::primitives::path::{FillRule, Path};
 use crate::draw::primitives::stroker::StrokeOptions;
@@ -21,14 +21,148 @@ use crate::draw::primitives::types::{
 };
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
 use crate::draw::Color;
+use std::sync::Arc;
 
 /// The only producer used by [`super::render_frame::FrameRenderer`]. It owns
 /// no API object and cannot present; its output is consumed exactly once by
 /// the caller's real graphics engine.
 pub(crate) struct FrameRecordingEngine {
     canvas: FrameRecordingCanvas,
-    offscreens: CpuBackend,
-    active_offscreen: Option<ImageHandle>,
+    offscreens: RecordedPicturePool,
+    active_offscreen: Option<ActiveOffscreen>,
+}
+
+#[derive(Clone, Copy)]
+struct ActiveOffscreen {
+    handle: ImageHandle,
+    failed: bool,
+}
+
+enum RecordedPicturePayload {
+    Encoder(FrameEncoder),
+    Image(FrameImage),
+}
+
+struct RecordedPicture {
+    canvas: FrameRecordingCanvas,
+    committed: Option<RecordedPicturePayload>,
+}
+
+impl RecordedPicture {
+    fn new(width: i32, height: i32) -> Self {
+        Self {
+            canvas: FrameRecordingCanvas::new(width, height),
+            committed: None,
+        }
+    }
+
+    fn commit(&mut self, encoder: FrameEncoder) {
+        let pixel_budget = (encoder.width() as usize)
+            .saturating_mul(encoder.height() as usize)
+            .saturating_mul(std::mem::size_of::<u32>());
+        self.committed = Some(if encoder.retained_memory_usage() <= pixel_budget {
+            RecordedPicturePayload::Encoder(encoder)
+        } else {
+            RecordedPicturePayload::Image(encoder.render_image())
+        });
+    }
+
+    fn copy_pixels(&self) -> Option<(Vec<u32>, i32)> {
+        match self.committed.as_ref()? {
+            RecordedPicturePayload::Encoder(encoder) => {
+                let image = encoder.render_image();
+                Some((image.pixels().to_vec(), image.width()))
+            }
+            RecordedPicturePayload::Image(image) => Some((image.pixels().to_vec(), image.width())),
+        }
+    }
+
+    fn materialized_image(&mut self) -> Option<FrameImage> {
+        let payload = self.committed.take()?;
+        let image = match payload {
+            RecordedPicturePayload::Encoder(encoder) => encoder.render_image(),
+            RecordedPicturePayload::Image(image) => image,
+        };
+        self.committed = Some(RecordedPicturePayload::Image(image.clone()));
+        Some(image)
+    }
+
+    fn memory_usage(&self) -> usize {
+        let working = self.canvas.retained_memory_usage();
+        working.saturating_add(match &self.committed {
+            Some(RecordedPicturePayload::Encoder(encoder)) => encoder.retained_memory_usage(),
+            Some(RecordedPicturePayload::Image(image)) => image
+                .pixels()
+                .len()
+                .saturating_mul(std::mem::size_of::<u32>()),
+            None => 0,
+        })
+    }
+}
+
+#[derive(Default)]
+struct RecordedPicturePool {
+    slots: Vec<Option<RecordedPicture>>,
+    free_ids: Vec<u32>,
+    next_id: u32,
+}
+
+impl RecordedPicturePool {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn clear(&mut self) {
+        self.slots.clear();
+        self.free_ids.clear();
+        self.next_id = 0;
+    }
+
+    fn create(&mut self, width: i32, height: i32) -> Option<ImageHandle> {
+        let (width, height) = FrameRecordingCanvas::prepare_resize(width, height).ok()?;
+        let id = self.free_ids.pop().unwrap_or_else(|| {
+            let id = self.next_id;
+            self.next_id = self.next_id.saturating_add(1);
+            id
+        });
+        let index = id as usize;
+        while self.slots.len() <= index {
+            self.slots.push(None);
+        }
+        self.slots[index] = Some(RecordedPicture::new(width, height));
+        Some(ImageHandle(id))
+    }
+
+    fn destroy(&mut self, handle: ImageHandle) {
+        let index = handle.0 as usize;
+        if index < self.slots.len() && self.slots[index].take().is_some() {
+            self.free_ids.push(handle.0);
+        }
+    }
+
+    fn get(&self, handle: &ImageHandle) -> Option<&RecordedPicture> {
+        self.slots.get(handle.0 as usize)?.as_ref()
+    }
+
+    fn get_mut(&mut self, handle: &ImageHandle) -> Option<&mut RecordedPicture> {
+        self.slots.get_mut(handle.0 as usize)?.as_mut()
+    }
+
+    fn compact(&mut self) {
+        while self.slots.last().is_some_and(Option::is_none) {
+            self.slots.pop();
+        }
+        self.free_ids.retain(|id| (*id as usize) < self.slots.len());
+        self.next_id = self.slots.len() as u32;
+    }
+
+    fn memory_usage(&self) -> usize {
+        self.slots
+            .iter()
+            .filter_map(Option::as_ref)
+            .map(RecordedPicture::memory_usage)
+            .fold(0usize, usize::saturating_add)
+    }
 }
 
 impl Default for FrameRecordingEngine {
@@ -41,7 +175,7 @@ impl FrameRecordingEngine {
     pub(crate) fn new() -> Self {
         Self {
             canvas: FrameRecordingCanvas::new(1, 1),
-            offscreens: CpuBackend::new(),
+            offscreens: RecordedPicturePool::new(),
             active_offscreen: None,
         }
     }
@@ -53,7 +187,12 @@ impl FrameRecordingEngine {
     /// omit it — the real surface already cleared only the damage AABB, and
     /// undamaged pixels must survive.
     pub(crate) fn begin_recording(&mut self, clear_target: bool) -> Result<(), Error> {
-        self.active_offscreen = None;
+        if self.active_offscreen.is_some() {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "main FrameEncoder recording cannot begin while a Picture target is active",
+            ));
+        }
         self.canvas.begin_recording(clear_target)
     }
 
@@ -81,36 +220,81 @@ impl FrameRecordingEngine {
         self.canvas.record_picture_blit(image, rect, rect)
     }
 
+    #[cfg(test)]
+    pub(crate) fn scratch_surface_size(&self) -> (i32, i32) {
+        (
+            self.canvas.scratch.surface().width(),
+            self.canvas.scratch.surface().height(),
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn offscreen_scratch_surface_size(
+        &self,
+        handle: &ImageHandle,
+    ) -> Option<(i32, i32)> {
+        let picture = self.offscreens.get(handle)?;
+        Some((
+            picture.canvas.scratch.surface().width(),
+            picture.canvas.scratch.surface().height(),
+        ))
+    }
+
     fn record_main_picture_blit(
         &mut self,
         handle: &ImageHandle,
         src_rect: Rect,
         dst_rect: Rect,
     ) -> Result<(), Error> {
-        let (pixels, width) = self
+        if let Some(commands) =
+            self.translated_picture_commands(handle, src_rect, dst_rect, &self.canvas)
+        {
+            return self.canvas.record_validated_commands(commands);
+        }
+        let image = self
             .offscreens
-            .copy_offscreen_pixels(handle)
+            .get_mut(handle)
+            .and_then(RecordedPicture::materialized_image)
             .ok_or_else(|| {
                 Error::new(
                     Errc::InvalidState,
-                    "Picture offscreen pixels disappeared before FrameEncoder recording",
+                    "Picture offscreen content disappeared before FrameEncoder recording",
                 )
             })?;
-        let width = width.max(1);
-        let height = i32::try_from(pixels.len() / width as usize).map_err(|_| {
-            Error::new(
-                Errc::InvalidState,
-                "Picture offscreen extent overflows FrameEncoder image",
-            )
-        })?;
-        if pixels.len() != width as usize * height as usize {
-            return Err(Error::new(
-                Errc::InvalidState,
-                "Picture offscreen pixels do not match their reported row width",
-            ));
-        }
-        let image = FrameImage::new(width, height, pixels).map_err(frame_encoder_error)?;
         self.canvas.record_picture_blit(image, src_rect, dst_rect)
+    }
+
+    fn translated_picture_commands(
+        &self,
+        handle: &ImageHandle,
+        src_rect: Rect,
+        dst_rect: Rect,
+        target: &FrameRecordingCanvas,
+    ) -> Option<Vec<crate::draw::pipeline::FrameCommand>> {
+        let picture = self.offscreens.get(handle)?;
+        let RecordedPicturePayload::Encoder(encoder) = picture.committed.as_ref()? else {
+            return None;
+        };
+        let src = rect_to_frame(src_rect).ok()?;
+        let dst = rect_to_frame(dst_rect).ok()?;
+        if target.direct_picture_rects(src_rect, dst_rect)? != (src, dst) {
+            return None;
+        }
+        if !src.is_within(encoder.width(), encoder.height())
+            || dst.width != src.width
+            || dst.height != src.height
+        {
+            return None;
+        }
+        let dx = dst.x.checked_sub(src.x)?;
+        let dy = dst.y.checked_sub(src.y)?;
+        encoder.translated_source_over_commands_in(src, dx, dy, target.width, target.height)
+    }
+
+    fn mark_active_failed(&mut self) {
+        if let Some(active) = self.active_offscreen.as_mut() {
+            active.failed = true;
+        }
     }
 }
 
@@ -121,13 +305,14 @@ impl GraphicsEngine for FrameRecordingEngine {
 
     fn try_shutdown(&mut self) -> Result<(), Error> {
         self.active_offscreen = None;
-        self.offscreens.try_shutdown()
+        self.offscreens.clear();
+        self.canvas.commit_resize(1, 1);
+        Ok(())
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        let (width, height, scratch) = FrameRecordingCanvas::prepare_resize(width, height)?;
-        self.offscreens.resize(width, height)?;
-        self.canvas.commit_resize(width, height, scratch);
+        let (width, height) = FrameRecordingCanvas::prepare_resize(width, height)?;
+        self.canvas.commit_resize(width, height);
         Ok(())
     }
 
@@ -153,22 +338,28 @@ impl GraphicsEngine for FrameRecordingEngine {
     }
 
     fn create_offscreen(&mut self, width: i32, height: i32) -> Option<ImageHandle> {
-        self.offscreens.create_offscreen(width, height)
+        self.offscreens.create(width, height)
     }
 
     fn destroy_offscreen(&mut self, handle: ImageHandle) {
-        if self.active_offscreen == Some(handle) {
+        if self
+            .active_offscreen
+            .is_some_and(|active| active.handle == handle)
+        {
             self.active_offscreen = None;
         }
-        self.offscreens.destroy_offscreen(handle);
+        self.offscreens.destroy(handle);
+        self.offscreens.compact();
     }
 
     fn offscreen_canvas(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {
-        self.offscreens.offscreen_canvas(handle)
+        self.offscreens
+            .get_mut(handle)
+            .map(|picture| &mut picture.canvas as &mut dyn Canvas2D)
     }
 
     fn copy_offscreen_pixels(&self, handle: &ImageHandle) -> Option<(Vec<u32>, i32)> {
-        self.offscreens.copy_offscreen_pixels(handle)
+        self.offscreens.get(handle)?.copy_pixels()
     }
 
     fn try_execute_encoded_picture(
@@ -176,7 +367,54 @@ impl GraphicsEngine for FrameRecordingEngine {
         handle: &ImageHandle,
         encoder: &FrameEncoder,
     ) -> Result<EncodedPictureExecution, Error> {
-        self.offscreens.try_execute_encoded_picture(handle, encoder)
+        let result = (|| {
+            let active = self.active_offscreen.ok_or_else(|| {
+                Error::new(
+                    Errc::InvalidState,
+                    "Picture encoder execution requires an active Picture target",
+                )
+            })?;
+            if active.handle != *handle {
+                return Err(Error::new(
+                    Errc::InvalidState,
+                    "Picture encoder target does not match the active Picture",
+                ));
+            }
+            let target = self.offscreens.get_mut(handle).ok_or_else(|| {
+                Error::new(
+                    Errc::InvalidState,
+                    "Picture offscreen target disappeared before FrameEncoder execution",
+                )
+            })?;
+            if target.canvas.width != encoder.width() || target.canvas.height != encoder.height() {
+                return Err(Error::new(
+                    Errc::InvalidState,
+                    format!(
+                        "FrameEncoder {}x{} does not match Picture target {}x{}",
+                        encoder.width(),
+                        encoder.height(),
+                        target.canvas.width,
+                        target.canvas.height
+                    ),
+                ));
+            }
+            let commands = encoder
+                .translated_source_over_commands(0, 0, target.canvas.width, target.canvas.height)
+                .unwrap_or_else(|| {
+                    let full = FrameRect::new(0, 0, encoder.width(), encoder.height());
+                    vec![crate::draw::pipeline::FrameCommand::PictureBlit {
+                        image: encoder.render_image(),
+                        src: full,
+                        dst: full,
+                    }]
+                });
+            target.canvas.record_validated_commands(commands)?;
+            Ok(EncodedPictureExecution::Executed)
+        })();
+        if result.is_err() {
+            self.mark_active_failed();
+        }
+        result
     }
 
     fn try_execute_encoded_frame(
@@ -190,19 +428,80 @@ impl GraphicsEngine for FrameRecordingEngine {
     }
 
     fn try_begin_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
-        self.offscreens.try_begin_offscreen_paint(handle)?;
-        self.active_offscreen = Some(*handle);
+        if self.active_offscreen.is_some() {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "a Picture target is already active",
+            ));
+        }
+        let picture = self.offscreens.get_mut(handle).ok_or_else(|| {
+            Error::new(
+                Errc::InvalidState,
+                "Picture offscreen target does not exist",
+            )
+        })?;
+        picture.canvas.begin_recording(true)?;
+        self.active_offscreen = Some(ActiveOffscreen {
+            handle: *handle,
+            failed: false,
+        });
         Ok(())
     }
 
     fn try_flush_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
-        self.offscreens.try_flush_offscreen_paint(handle)
+        let result = (|| {
+            let active = self.active_offscreen.ok_or_else(|| {
+                Error::new(
+                    Errc::InvalidState,
+                    "no Picture target is active before flush",
+                )
+            })?;
+            if active.handle != *handle {
+                return Err(Error::new(
+                    Errc::InvalidState,
+                    "Picture flush target does not match the active Picture",
+                ));
+            }
+            let picture = self.offscreens.get_mut(handle).ok_or_else(|| {
+                Error::new(
+                    Errc::InvalidState,
+                    "Picture offscreen target disappeared before flush",
+                )
+            })?;
+            picture.canvas.flush_recording()
+        })();
+        if result.is_err() {
+            self.mark_active_failed();
+        }
+        result
     }
 
     fn try_end_offscreen_paint(&mut self) -> Result<(), Error> {
-        self.offscreens.try_end_offscreen_paint()?;
-        self.active_offscreen = None;
-        Ok(())
+        let active = self.active_offscreen.take();
+        let Some(active) = active else {
+            return Ok(());
+        };
+        let picture = self.offscreens.get_mut(&active.handle).ok_or_else(|| {
+            Error::new(
+                Errc::InvalidState,
+                "active Picture target disappeared before end",
+            )
+        })?;
+        if active.failed {
+            picture.canvas.abandon_recording();
+            return Ok(());
+        }
+        match picture.canvas.finish_recording() {
+            Ok(encoder) => {
+                picture.canvas.release_scratch_allocation();
+                picture.commit(encoder);
+                Ok(())
+            }
+            Err(error) => {
+                picture.canvas.abandon_recording();
+                Err(error)
+            }
+        }
     }
 
     fn try_blit_offscreen_src(
@@ -211,16 +510,76 @@ impl GraphicsEngine for FrameRecordingEngine {
         src_rect: Rect,
         dst_rect: Rect,
     ) -> Result<(), Error> {
-        if self.active_offscreen.is_some() {
-            return self
-                .offscreens
-                .try_blit_offscreen_src(handle, src_rect, dst_rect);
+        if self.offscreens.get(handle).is_none() {
+            self.mark_active_failed();
+            return Err(Error::new(
+                Errc::InvalidState,
+                "Picture offscreen target does not exist before blit",
+            ));
+        }
+        if let Some(active) = self.active_offscreen {
+            let dst_handle = active.handle;
+            if dst_handle == *handle {
+                self.mark_active_failed();
+                return Err(Error::new(
+                    Errc::InvalidArgument,
+                    "Picture offscreen target cannot blit into itself",
+                ));
+            }
+            let commands = {
+                let target = self.offscreens.get(&dst_handle).ok_or_else(|| {
+                    Error::new(
+                        Errc::InvalidState,
+                        "active Picture offscreen target disappeared before blit",
+                    )
+                })?;
+                self.translated_picture_commands(handle, src_rect, dst_rect, &target.canvas)
+            };
+            let result = if let Some(commands) = commands {
+                self.offscreens
+                    .get_mut(&dst_handle)
+                    .ok_or_else(|| {
+                        Error::new(
+                            Errc::InvalidState,
+                            "active Picture offscreen target disappeared before command splice",
+                        )
+                    })?
+                    .canvas
+                    .record_validated_commands(commands)
+            } else {
+                let image = self
+                    .offscreens
+                    .get_mut(handle)
+                    .and_then(RecordedPicture::materialized_image)
+                    .ok_or_else(|| {
+                        Error::new(
+                            Errc::InvalidState,
+                            "Picture offscreen content disappeared before nested blit",
+                        )
+                    })?;
+                self.offscreens
+                    .get_mut(&dst_handle)
+                    .ok_or_else(|| {
+                        Error::new(
+                            Errc::InvalidState,
+                            "active Picture offscreen target disappeared before image blit",
+                        )
+                    })?
+                    .canvas
+                    .record_picture_blit(image, src_rect, dst_rect)
+            };
+            if result.is_err() {
+                self.mark_active_failed();
+            }
+            return result;
         }
         self.record_main_picture_blit(handle, src_rect, dst_rect)
     }
 
     fn memory_usage(&self) -> usize {
-        self.offscreens.memory_usage()
+        self.offscreens
+            .memory_usage()
+            .saturating_add(self.canvas.scratch.memory_usage())
     }
 }
 
@@ -246,8 +605,10 @@ impl FrameRecordingCanvas {
     fn new(width: i32, height: i32) -> Self {
         let width = width.max(1);
         let height = height.max(1);
+        let mut scratch = SharedRasterizer::new(PixelSurface::one_pixel());
+        scratch.reset_state_for_extent(width, height);
         Self {
-            scratch: SharedRasterizer::new(PixelSurface::one_pixel()),
+            scratch,
             encoder: None,
             blend_mode: BlendMode::default(),
             blend_stack: Vec::new(),
@@ -259,17 +620,19 @@ impl FrameRecordingCanvas {
         }
     }
 
-    fn prepare_resize(width: i32, height: i32) -> Result<(i32, i32, SharedRasterizer), Error> {
+    fn prepare_resize(width: i32, height: i32) -> Result<(i32, i32), Error> {
         let width = width.max(1);
         let height = height.max(1);
-        let scratch = SharedRasterizer::new(PixelSurface::try_new(width, height)?);
-        Ok((width, height, scratch))
+        PixelSurface::validate_extent(width, height)?;
+        Ok((width, height))
     }
 
-    fn commit_resize(&mut self, width: i32, height: i32, scratch: SharedRasterizer) {
+    fn commit_resize(&mut self, width: i32, height: i32) {
         self.width = width;
         self.height = height;
-        self.scratch = scratch;
+        self.scratch
+            .replace_surface_preserving_state(PixelSurface::one_pixel());
+        self.scratch.reset_state_for_extent(width, height);
         self.encoder = None;
         self.blend_mode = BlendMode::default();
         self.blend_stack.clear();
@@ -286,7 +649,7 @@ impl FrameRecordingCanvas {
         if self.encoder.is_some() || self.scratch_dirty || self.deferred_error.is_some() {
             self.scratch.surface_mut().clear_all();
         }
-        self.scratch.reset_state();
+        self.scratch.reset_state_for_extent(self.width, self.height);
         self.blend_mode = BlendMode::default();
         self.blend_stack.clear();
         self.scratch_dirty = false;
@@ -314,6 +677,65 @@ impl FrameRecordingCanvas {
         })
     }
 
+    fn flush_recording(&mut self) -> Result<(), Error> {
+        self.flush_scratch()?;
+        if let Some(error) = self.deferred_error.take() {
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    fn abandon_recording(&mut self) {
+        if (
+            self.scratch.surface().width(),
+            self.scratch.surface().height(),
+        ) == (1, 1)
+            && (self.scratch_dirty || self.encoder.is_some() || self.deferred_error.is_some())
+        {
+            self.scratch.surface_mut().clear_all();
+        }
+        self.scratch.reset_state_for_extent(self.width, self.height);
+        self.encoder = None;
+        self.blend_mode = BlendMode::default();
+        self.blend_stack.clear();
+        self.scratch_dirty = false;
+        self.scratch_pack_bounds = None;
+        self.deferred_error = None;
+        self.release_scratch_allocation();
+    }
+
+    fn release_scratch_allocation(&mut self) {
+        if (
+            self.scratch.surface().width(),
+            self.scratch.surface().height(),
+        ) != (1, 1)
+        {
+            self.scratch
+                .replace_surface_preserving_state(PixelSurface::one_pixel());
+        }
+        self.scratch.reset_state_for_extent(self.width, self.height);
+    }
+
+    fn retained_memory_usage(&self) -> usize {
+        self.scratch.memory_usage().saturating_add(
+            self.encoder
+                .as_ref()
+                .map(FrameEncoder::retained_memory_usage)
+                .unwrap_or(0),
+        )
+    }
+
+    fn record_validated_commands(
+        &mut self,
+        commands: Vec<crate::draw::pipeline::FrameCommand>,
+    ) -> Result<(), Error> {
+        self.flush_scratch()?;
+        self.encoder_mut()?
+            .append_validated_commands(commands)
+            .map_err(frame_encoder_error)?;
+        Ok(())
+    }
+
     fn record_picture_blit(
         &mut self,
         image: FrameImage,
@@ -325,6 +747,7 @@ impl FrameRecordingCanvas {
             self.encoder_mut()?.blit_picture(image, src, dst);
             return Ok(());
         }
+        self.ensure_scratch()?;
         self.scratch
             .blit_image(image.pixels(), image.width(), src, dst);
         self.note_scratch_bounds(dst, 1.0);
@@ -358,6 +781,10 @@ impl FrameRecordingCanvas {
         // against prior commands; only Native FillRectAdditive is equivalent.
         if self.blend_mode == BlendMode::Additive {
             self.unsupported_state("destination-dependent Additive blend via CPU segment");
+            return;
+        }
+        if let Err(error) = self.ensure_scratch() {
+            self.remember_error(error);
             return;
         }
         draw(&mut self.scratch);
@@ -408,6 +835,19 @@ impl FrameRecordingCanvas {
         Ok(())
     }
 
+    fn ensure_scratch(&mut self) -> Result<(), Error> {
+        if (
+            self.scratch.surface().width(),
+            self.scratch.surface().height(),
+        ) == (self.width, self.height)
+        {
+            return Ok(());
+        }
+        let surface = PixelSurface::try_new(self.width, self.height)?;
+        self.scratch.replace_surface_preserving_state(surface);
+        Ok(())
+    }
+
     fn encoder_mut(&mut self) -> Result<&mut FrameEncoder, Error> {
         self.encoder.as_mut().ok_or_else(|| {
             Error::new(
@@ -423,23 +863,116 @@ impl FrameRecordingCanvas {
         }
     }
 
-    fn can_emit_native_rect(&self, rect: Rect, radius: Option<Radius>) -> bool {
-        radius.is_none()
-            && self.blend_mode != BlendMode::Additive
-            && self.scratch.offset() == (0.0, 0.0)
-            && self.scratch.current_transform().is_identity()
-            && self.scratch.opacity() == 1.0
-            && self.scratch.current_clip() == self.full_rect()
-            && rect.x.fract() == 0.0
-            && rect.y.fract() == 0.0
-            && rect.w.fract() == 0.0
-            && rect.h.fract() == 0.0
-            && rect.x >= 0.0
-            && rect.y >= 0.0
-            && rect.w > 0.0
-            && rect.h > 0.0
-            && rect.x + rect.w <= self.width as f32
-            && rect.y + rect.h <= self.height as f32
+    fn native_src_over_fill_rects(&self, rect: Rect) -> Option<(FrameRect, FrameRect)> {
+        if !self.scratch.current_transform().is_identity() {
+            return None;
+        }
+
+        // Match RasterRenderer's identity-transform fill path exactly: offset
+        // changes x/y only, while width/height retain their original f32 values.
+        let (offset_x, offset_y) = self.scratch.offset();
+        let mapped = Rect::new(rect.x + offset_x, rect.y + offset_y, rect.w, rect.h);
+        let right = f64::from(mapped.x) + f64::from(mapped.w);
+        let bottom = f64::from(mapped.y) + f64::from(mapped.h);
+        if !mapped.x.is_finite()
+            || !mapped.y.is_finite()
+            || !mapped.w.is_finite()
+            || !mapped.h.is_finite()
+            || mapped.x.fract() != 0.0
+            || mapped.y.fract() != 0.0
+            || mapped.w.fract() != 0.0
+            || mapped.h.fract() != 0.0
+            || mapped.x < 0.0
+            || mapped.y < 0.0
+            || mapped.w <= 0.0
+            || mapped.h <= 0.0
+            || right > f64::from(self.width)
+            || bottom > f64::from(self.height)
+        {
+            return None;
+        }
+        Some((
+            rect_to_frame(mapped).ok()?,
+            self.native_src_over_fill_clip()?,
+        ))
+    }
+
+    fn native_src_over_glyph(&self, x: i32, y: i32) -> Option<(FrameRect, i32, i32)> {
+        if !self.scratch.current_transform().is_identity() {
+            return None;
+        }
+        let (offset_x, offset_y) = self.scratch.offset();
+        if !offset_x.is_finite()
+            || !offset_y.is_finite()
+            || offset_x.fract() != 0.0
+            || offset_y.fract() != 0.0
+        {
+            return None;
+        }
+        let x = (x as f32 + offset_x) as i32;
+        let y = (y as f32 + offset_y) as i32;
+        Some((self.native_src_over_fill_clip()?, x, y))
+    }
+
+    fn native_src_over_fill_clip(&self) -> Option<FrameRect> {
+        if !matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver) {
+            return None;
+        }
+        let clip = rect_to_frame(self.scratch.current_clip()).ok()?;
+        Some(
+            clip.intersection(FrameRect::new(0, 0, self.width, self.height))
+                .unwrap_or(FrameRect::new(0, 0, 0, 0)),
+        )
+    }
+
+    fn record_glyph_shared(
+        &mut self,
+        x: i32,
+        y: i32,
+        coverage: Arc<[u8]>,
+        width: usize,
+        height: usize,
+        color: Color,
+    ) {
+        if let Some((clip, native_x, native_y)) = self.native_src_over_glyph(x, y) {
+            let native_color =
+                crate::draw::rasterizer::color_with_glyph_opacity(color, self.scratch.opacity());
+            if native_color.a == 0 {
+                return;
+            }
+            let Ok(glyph) = FrameGlyphBlit::new(
+                native_x,
+                native_y,
+                Arc::clone(&coverage),
+                width,
+                height,
+                native_color,
+            ) else {
+                // The historical void Canvas API treats empty or malformed
+                // glyph coverage as a no-op; promotion must preserve it.
+                return;
+            };
+            if clip.width <= 0 || clip.height <= 0 {
+                return;
+            }
+            if let Err(error) = self.flush_scratch().and_then(|()| {
+                self.encoder_mut()?.native(FrameRasterOp::BlitGlyphs {
+                    glyphs: vec![glyph],
+                    clip,
+                });
+                Ok(())
+            }) {
+                self.remember_error(error);
+            }
+            return;
+        }
+        let Ok(glyph) = FrameGlyphBlit::new(x, y, coverage, width, height, color) else {
+            return;
+        };
+        let bounds = Rect::new(x as f32, y as f32, width as f32, height as f32);
+        self.draw_cpu(bounds, 1.0, move |scratch| {
+            scratch.blit_glyph(x, y, glyph.coverage().as_ref(), width, height, color)
+        });
     }
 
     /// Additive 填充依赖目标像素，因此只能进入 Native 命令。几何约束与
@@ -567,17 +1100,60 @@ impl Canvas2D for FrameRecordingCanvas {
             }
             return;
         }
-        if self.can_emit_native_rect(rect, radius) {
+        if let Some((native_rect, clip)) = self.native_src_over_fill_rects(rect) {
+            let native_color = crate::draw::rasterizer::color_with_premultiplied_opacity(
+                color,
+                self.scratch.opacity(),
+            );
+            let native_radius = match radius.map(FrameRadius::new).transpose() {
+                Ok(radius) => radius,
+                Err(_) => {
+                    // 普通 blend 的非法半径历史上由 CPU rasterizer 处理；
+                    // 这里只拒绝提升，不把既有 void API 改成 deferred typed failure。
+                    self.draw_cpu(rect, 1.0, |scratch| scratch.fill_rect(rect, color, radius));
+                    return;
+                }
+            };
+            if clip.width <= 0 || clip.height <= 0 {
+                return;
+            }
             if let Err(error) = self.flush_scratch().and_then(|()| {
-                self.encoder_mut()?.native(FrameRasterOp::FillRect {
-                    rect: FrameRect::new(
-                        rect.x as i32,
-                        rect.y as i32,
-                        rect.w as i32,
-                        rect.h as i32,
-                    ),
-                    color,
-                });
+                let full_clip = FrameRect::new(0, 0, self.width, self.height);
+                let operation = if clip == full_clip {
+                    match native_radius {
+                        Some(radius) => {
+                            let value = radius.to_radius();
+                            if value.tl != 0.0
+                                || value.tr != 0.0
+                                || value.br != 0.0
+                                || value.bl != 0.0
+                            {
+                                FrameRasterOp::FillRoundedRect {
+                                    rect: native_rect,
+                                    color: native_color,
+                                    radius,
+                                }
+                            } else {
+                                FrameRasterOp::FillRect {
+                                    rect: native_rect,
+                                    color: native_color,
+                                }
+                            }
+                        }
+                        None => FrameRasterOp::FillRect {
+                            rect: native_rect,
+                            color: native_color,
+                        },
+                    }
+                } else {
+                    FrameRasterOp::FillRoundedRectClipped {
+                        rect: native_rect,
+                        color: native_color,
+                        radius: native_radius.unwrap_or_else(FrameRadius::zero),
+                        clip,
+                    }
+                };
+                self.encoder_mut()?.native(operation);
                 Ok(())
             }) {
                 self.remember_error(error);
@@ -718,10 +1294,19 @@ impl Canvas2D for FrameRecordingCanvas {
         height: usize,
         color: Color,
     ) {
-        let bounds = Rect::new(x as f32, y as f32, width as f32, height as f32);
-        self.draw_cpu(bounds, 1.0, |scratch| {
-            scratch.blit_glyph(x, y, coverage, width, height, color)
-        });
+        self.record_glyph_shared(x, y, Arc::from(coverage), width, height, color);
+    }
+
+    fn blit_glyph_shared(
+        &mut self,
+        x: i32,
+        y: i32,
+        coverage: Arc<[u8]>,
+        width: usize,
+        height: usize,
+        color: Color,
+    ) {
+        self.record_glyph_shared(x, y, coverage, width, height, color);
     }
 
     fn save(&mut self) {
@@ -762,12 +1347,16 @@ impl Canvas2D for FrameRecordingCanvas {
     }
 
     fn pixels_mut(&mut self) -> &mut [u32] {
+        if let Err(error) = self.ensure_scratch() {
+            self.remember_error(error);
+            return self.scratch.pixels_mut();
+        }
         self.scratch_dirty = true;
         self.scratch.pixels_mut()
     }
 
     fn surface_size(&self) -> crate::core::Size {
-        self.scratch.surface_size()
+        crate::core::Size::new(self.width as f32, self.height as f32)
     }
 
     fn current_clip(&self) -> Rect {

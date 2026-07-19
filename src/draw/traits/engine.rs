@@ -7,6 +7,7 @@ use crate::core::{Error, Point, Rect};
 use crate::draw::pipeline::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::primitives::types::ImageHandle;
 use crate::native::traits::present::PresentTestResult;
+use std::time::Instant;
 
 /// 一次保留缓冲内的滚动像素移动。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -171,6 +172,21 @@ pub trait GraphicsEngine: 'static {
     /// is intentionally inert; recovery wrappers record this typed failure at
     /// the next frame boundary while ordinary software engines retain dirty.
     fn external_present_failed(&mut self, _error: Error) {}
+
+    /// Records the successful final presentation time used to arm optional
+    /// non-visual resource maintenance. Implementations must not request a
+    /// frame merely to service this deadline.
+    fn note_presented_at(&mut self, _now: Instant) {}
+
+    /// Earliest one-shot deadline for releasing idle, recreatable resources.
+    fn idle_resource_deadline(&self) -> Option<Instant> {
+        None
+    }
+
+    /// Releases idle resources whose deadline is due. This is non-visual
+    /// maintenance: it must not draw, submit, present, or change retained UI
+    /// state.
+    fn release_idle_resources(&mut self, _now: Instant) {}
 
     /// 恢复包装器是否已耗尽全部动作；窗口调度器据此进入无 deadline 终态。
     fn has_terminal_failure(&self) -> bool {

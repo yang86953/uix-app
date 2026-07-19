@@ -10,14 +10,15 @@
 
 use std::any::Any;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use crate::core::{DamageRegion, Errc, Error, Point, PresentDamageTracker, Rect};
 use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
 use crate::draw::pipeline::{
-    EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameEncoder, FrameRasterOp,
-    ReferenceFrame,
+    EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameEncoder, FrameGlyphBlit,
+    FrameRasterOp, FrameRect, ReferenceFrame,
 };
 use crate::draw::primitives::color::Color;
 use crate::draw::primitives::path::{FillRule, Path};
@@ -32,6 +33,9 @@ use crate::native::traits::present::{
     GpuSolidRect, GpuStrokeRect, IGraphicsContext, NativeRasterCaps, OffscreenTargetId,
     PresentFrame, PresentMode, PresentTestResult, RasterMode, SoftFallbackTile,
 };
+
+const SOFT_FALLBACK_IDLE_PRESENT_GRACE: u8 = 2;
+pub(crate) const SOFT_FALLBACK_IDLE_TIME_GRACE: Duration = Duration::from_millis(250);
 
 #[derive(Clone)]
 pub(crate) struct StateSnapshot {
@@ -123,6 +127,13 @@ pub struct NativeGpuCanvas2D {
     pub(crate) soft_fallback: Option<SharedRasterizer>,
     /// Soft buffer has content that must be composited (until full clear).
     pub(crate) soft_has_content: bool,
+    /// At least one soft operation contributed to the current swapchain frame.
+    /// Segment commits do not reset this: ordered Picture boundaries may split
+    /// one frame into several submissions before the final present.
+    soft_used_since_present: bool,
+    /// Successful swapchain presents since this canvas last used its soft
+    /// fallback. A short grace avoids allocation churn in alternating frames.
+    soft_idle_presents: u8,
     /// Destination-dependent blend cannot be faithfully composed from a
     /// transparent CPU segment over native output.
     soft_uses_destination_blend: bool,
@@ -152,6 +163,8 @@ impl NativeGpuCanvas2D {
             native_caps,
             soft_fallback: None,
             soft_has_content: false,
+            soft_used_since_present: false,
+            soft_idle_presents: 0,
             soft_uses_destination_blend: false,
             deferred_error: None,
             pending_native: Vec::new(),
@@ -207,6 +220,8 @@ impl NativeGpuCanvas2D {
         // Drop soft buffer on resize; recreate lazily at the new size.
         self.soft_fallback = None;
         self.soft_has_content = false;
+        self.soft_used_since_present = false;
+        self.soft_idle_presents = 0;
         self.soft_uses_destination_blend = false;
         self.deferred_error = None;
     }
@@ -222,6 +237,35 @@ impl NativeGpuCanvas2D {
 
     fn mark_soft(&mut self) {
         self.soft_has_content = true;
+        self.soft_used_since_present = true;
+        self.soft_idle_presents = 0;
+    }
+
+    pub(crate) fn reset_for_repaint(&mut self) {
+        let fallback_extent_mismatch = self.soft_fallback.as_ref().is_some_and(|soft| {
+            soft.surface().width() != self.surface_w || soft.surface().height() != self.surface_h
+        });
+        if fallback_extent_mismatch {
+            // Allocation failure installs a 1×1 safety surface. Do not let a
+            // later repaint mistake that placeholder for a valid full target:
+            // dropping it makes the next soft draw retry the typed allocation.
+            self.soft_fallback = None;
+        } else if let Some(soft) = self.soft_fallback.as_mut() {
+            soft.surface_mut().clear_all();
+            soft.reset_state_for_extent(self.surface_w, self.surface_h);
+        }
+        self.soft_has_content = false;
+        self.soft_uses_destination_blend = false;
+        self.deferred_error = None;
+        self.pending_native.clear();
+        self.clip_rect = Rect::new(0.0, 0.0, self.surface_w as f32, self.surface_h as f32);
+        self.clip_stack.clear();
+        self.opacity = 1.0;
+        self.offset_x = 0.0;
+        self.offset_y = 0.0;
+        self.transform = Transform::identity();
+        self.blend_mode = BlendMode::default();
+        self.state_stack.clear();
     }
 
     pub(crate) fn take_deferred_error(&mut self) -> Option<Error> {
@@ -297,7 +341,7 @@ impl NativeGpuCanvas2D {
                     y: rect.y + self.offset_y,
                     w: rect.w,
                     h: rect.h,
-                    rgba: self.rgba(color),
+                    rgba: self.solid_rgba(color),
                     radius: r,
                 },
                 scissor,
@@ -525,6 +569,16 @@ impl NativeGpuCanvas2D {
         ]
     }
 
+    fn solid_rgba(&self, color: Color) -> [f32; 4] {
+        let color = crate::draw::rasterizer::color_with_premultiplied_opacity(color, self.opacity);
+        [
+            color.r as f32 / 255.0,
+            color.g as f32 / 255.0,
+            color.b as f32 / 255.0,
+            color.a as f32 / 255.0,
+        ]
+    }
+
     fn scissor_aabb(&self) -> (i32, i32, i32, i32) {
         let c = self.clip_rect;
         if c.w <= 0.0 || c.h <= 0.0 {
@@ -666,6 +720,55 @@ impl NativeGpuCanvas2D {
             self.soft_has_content = false;
             self.soft_uses_destination_blend = false;
         }
+    }
+
+    /// Completes one successful swapchain present, then ages this canvas's idle
+    /// full-size soft allocation.
+    pub(crate) fn finish_presented_frame(&mut self) -> bool {
+        self.commit_presented_frame();
+        self.age_soft_fallback_after_present()
+    }
+
+    /// Ages an offscreen canvas at the final swapchain success boundary without
+    /// committing any unflushed Picture commands.
+    pub(crate) fn age_soft_fallback_after_present(&mut self) -> bool {
+        if self.soft_used_since_present {
+            self.soft_used_since_present = false;
+            self.soft_idle_presents = 0;
+            return true;
+        }
+        if self.soft_fallback.is_none() || self.soft_has_content || self.deferred_error.is_some() {
+            return false;
+        }
+        self.soft_idle_presents = self.soft_idle_presents.saturating_add(1);
+        if self.soft_idle_presents >= SOFT_FALLBACK_IDLE_PRESENT_GRACE {
+            self.soft_fallback = None;
+            self.soft_idle_presents = 0;
+        }
+        false
+    }
+
+    fn release_idle_soft_fallback(&mut self) {
+        if self.soft_has_content || self.soft_used_since_present || self.deferred_error.is_some() {
+            return;
+        }
+        self.soft_fallback = None;
+        self.soft_idle_presents = 0;
+    }
+
+    /// A successful Picture flush has copied every soft pixel into its durable
+    /// GPU render target. Unlike the swapchain canvas, an eligible Picture is
+    /// static by policy, so keeping a second full-size CPU surface for a future
+    /// repaint is not worth the resident memory.
+    fn release_committed_picture_staging(&mut self) {
+        if self.soft_has_content || !self.pending_native.is_empty() || self.deferred_error.is_some()
+        {
+            return;
+        }
+        self.soft_fallback = None;
+        self.soft_used_since_present = false;
+        self.soft_idle_presents = 0;
+        self.soft_uses_destination_blend = false;
     }
 }
 

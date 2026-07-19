@@ -388,6 +388,90 @@ fn d3d11_soft_blit_ignores_a_previous_native_scissor() {
 }
 
 #[test]
+fn d3d11_warp_glyph_coverage_clip_and_reused_atlas_match_cpu() {
+    let mut platform = crate::native::create_platform().expect("platform");
+    let window = platform
+        .window_manager()
+        .create_window("D3D11 glyph WARP", 32, 16)
+        .expect("window");
+    let mut ctx = create_with_driver(
+        window.native_surface_ptr(),
+        32,
+        16,
+        &D3D11_FEATURE_LEVELS,
+        D3d11DriverKind::Warp,
+    )
+    .expect("WARP context");
+    let base = Color::from_rgb(30, 60, 90);
+    let color = Color::from_rgba(220, 80, 40, 144);
+    ctx.clear_render_target(
+        base.r as f32 / 255.0,
+        base.g as f32 / 255.0,
+        base.b as f32 / 255.0,
+        base.a as f32 / 255.0,
+    )
+    .expect("clear");
+    let coverage: std::sync::Arc<[u8]> = vec![0, 1, 127, 128, 254, 255].into();
+    let gpu_glyph = |x| GpuGlyphBlit {
+        x: x as f32,
+        y: 3.0,
+        w: 6.0,
+        h: 1.0,
+        rgba: [
+            color.r as f32 / 255.0,
+            color.g as f32 / 255.0,
+            color.b as f32 / 255.0,
+            color.a as f32 / 255.0,
+        ],
+        coverage: std::sync::Arc::clone(&coverage),
+        cov_w: 6,
+        cov_h: 1,
+    };
+    let scissor = Some((4, 3, 14, 1));
+    ctx.draw_glyphs(32.0, 16.0, scissor, &[gpu_glyph(2)])
+        .expect("first glyph draw");
+    assert_eq!(ctx.glyph_atlas_upload_count(), 1);
+    // The same Arc on a separate draw call must reuse the persistent atlas
+    // entry while preserving painter-order overlap.
+    ctx.draw_glyphs(32.0, 16.0, scissor, &[gpu_glyph(12)])
+        .expect("reused glyph draw");
+    assert_eq!(
+        ctx.glyph_atlas_upload_count(),
+        1,
+        "the same retained coverage allocation must not be uploaded twice"
+    );
+
+    let actual = ctx.read_pixels(0, 0, 32, 16).expect("readback");
+    let mut expected = vec![base.premultiplied(); 32 * 16];
+    for x in [2, 12] {
+        crate::draw::rasterizer::glyph::blit_glyph(
+            &mut expected,
+            32,
+            16,
+            Rect::new(4.0, 3.0, 14.0, 1.0),
+            1.0,
+            x,
+            3,
+            coverage.as_ref(),
+            6,
+            1,
+            color,
+        );
+    }
+    for (index, (actual, expected)) in actual.iter().zip(&expected).enumerate() {
+        for shift in [0, 8, 16, 24] {
+            let actual = ((actual >> shift) & 0xff) as i16;
+            let expected = ((expected >> shift) & 0xff) as i16;
+            assert!(
+                (actual - expected).abs() <= 1,
+                "glyph pixel {index} channel {shift} differs: actual={actual} expected={expected}"
+            );
+        }
+    }
+    ctx.try_shutdown().expect("shutdown");
+}
+
+#[test]
 fn d3d11_soft_blit_does_not_resample_a_prior_partial_segment() {
     let mut platform = crate::native::create_platform().expect("platform");
     let window = platform

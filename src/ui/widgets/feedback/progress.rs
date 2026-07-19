@@ -3,6 +3,7 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
+use crate::draw::painting::PaintPass;
 use crate::draw::{Color, Radius};
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
@@ -45,16 +46,25 @@ component! {
 
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        if ctx.paint_pass() != PaintPass::Content {
+            return;
+        }
+        let frame = Self::normalize_frame(frame);
+        if frame.w <= 0.0 || frame.h <= 0.0 {
+            return;
+        }
         let tokens = ctx.tokens();
 
         let track_c = self.track_color.unwrap_or(tokens.color_fill_tertiary());
         let stroke_c = self.stroke_color.unwrap_or(tokens.color_primary());
 
+        ctx.push_clip(frame);
         if self.progress_type == ProgressType::Circle {
             let cx = frame.x + frame.w * 0.5;
             let cy = frame.y + frame.h * 0.5;
             let r = frame.w.min(frame.h) * 0.4;
             if r <= 0.0 {
+                ctx.pop_clip();
                 return;
             }
             let track_width = (r * 0.25).clamp(1.0, 8.0).min(r);
@@ -88,14 +98,11 @@ component! {
                     ctx.canvas_2d().draw_line(x1, y1, x2, y2, stroke_c, track_width);
                 }
             }
+            ctx.pop_clip();
             return;
         }
 
-        let radius = if self.round {
-            Some(Radius::uniform(frame.h * 0.5))
-        } else {
-            Some(Radius::uniform(tokens.border_radius_sm()))
-        };
+        let radius = self.line_radius(frame);
 
         // Track (background)
         ctx.fill_rect(frame, track_c, radius);
@@ -105,7 +112,7 @@ component! {
                 let fill_w = frame.w * p;
                 if fill_w > 0.0 {
                     let fill_rect = Rect::new(frame.x, frame.y, fill_w, frame.h);
-                    ctx.fill_rect(fill_rect, stroke_c, radius);
+                    ctx.fill_rect(fill_rect, stroke_c, self.line_radius(fill_rect));
                 }
             }
             ProgressMode::Indeterminate => {
@@ -115,6 +122,7 @@ component! {
                 ctx.fill_rect(bar_rect, stroke_c, radius);
             }
         }
+        ctx.pop_clip();
     }
 
     update_animation => (&mut self, dt: f64) -> bool {
@@ -130,6 +138,7 @@ component! {
     }
 
     dirty_bounds => (&self, frame: Rect) -> Rect {
+        let frame = Self::normalize_frame(frame);
         match self.mode {
             ProgressMode::Indeterminate if self.progress_type == ProgressType::Circle => {
                 self.circle_indeterminate_bounds(frame)
@@ -218,7 +227,10 @@ impl ProgressBar {
     fn line_indeterminate_bounds(&self, frame: Rect) -> Rect {
         let previous = self.indeterminate_bar_rect(frame, self.previous_indeterminate_phase);
         let current = self.indeterminate_bar_rect(frame, self.indeterminate_phase);
-        previous.union(&current)
+        previous
+            .union(&current)
+            .intersect(&frame)
+            .unwrap_or(Rect::zero())
     }
 
     fn indeterminate_bar_rect(&self, frame: Rect, phase: f32) -> Rect {
@@ -232,6 +244,22 @@ impl ProgressBar {
         let cx = frame.x + frame.w * 0.5;
         let cy = frame.y + frame.h * 0.5;
         Rect::new(cx - r, cy - r, r * 2.0, r * 2.0)
+            .intersect(&frame)
+            .unwrap_or(Rect::zero())
+    }
+
+    fn line_radius(&self, rect: Rect) -> Option<Radius> {
+        self.round
+            .then(|| Radius::uniform(rect.w.min(rect.h) * 0.5))
+    }
+
+    fn normalize_frame(frame: Rect) -> Rect {
+        Rect::new(
+            if frame.x.is_finite() { frame.x } else { 0.0 },
+            if frame.y.is_finite() { frame.y } else { 0.0 },
+            Self::normalize_dimension(frame.w),
+            Self::normalize_dimension(frame.h),
+        )
     }
 
     fn intrinsic_size(&self) -> Size {

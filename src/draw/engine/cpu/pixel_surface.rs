@@ -113,6 +113,29 @@ fn copy_region_within(
 }
 
 impl PixelSurface {
+    fn checked_extent(width: i32, height: i32) -> Result<(i32, i32, usize), Error> {
+        let w = width.max(1);
+        let h = height.max(1);
+        let pixel_count = (w as usize).checked_mul(h as usize).ok_or_else(|| {
+            Error::new(
+                Errc::GraphicsOutOfMemory,
+                format!("PixelSurface extent {w}x{h} exceeds addressable memory"),
+            )
+        })?;
+        if pixel_count > (isize::MAX as usize) / std::mem::size_of::<u32>() {
+            return Err(Error::new(
+                Errc::GraphicsOutOfMemory,
+                format!("PixelSurface extent {w}x{h} exceeds addressable memory"),
+            ));
+        }
+        Ok((w, h, pixel_count))
+    }
+
+    /// Validates that an extent is addressable without reserving its pixels.
+    pub(crate) fn validate_extent(width: i32, height: i32) -> Result<(), Error> {
+        Self::checked_extent(width, height).map(|_| ())
+    }
+
     /// 创建指定尺寸的像素表面。
     ///
     /// # Panics
@@ -127,14 +150,7 @@ impl PixelSurface {
 
     /// 创建指定尺寸的像素表面，并把容量溢出或分配失败转换为 typed OOM。
     pub fn try_new(width: i32, height: i32) -> Result<Self, Error> {
-        let w = width.max(1);
-        let h = height.max(1);
-        let pixel_count = (w as usize).checked_mul(h as usize).ok_or_else(|| {
-            Error::new(
-                Errc::GraphicsOutOfMemory,
-                format!("PixelSurface extent {w}x{h} exceeds addressable memory"),
-            )
-        })?;
+        let (w, h, pixel_count) = Self::checked_extent(width, height)?;
         let mut pixels = Vec::new();
         pixels.try_reserve_exact(pixel_count).map_err(|error| {
             Error::new(

@@ -456,6 +456,45 @@ impl ComponentQaSession {
         self.snapshot(&format!("{request_prefix}-after"))
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn pointer_button_at_centered_rect_offset(
+        &mut self,
+        automation_id: &str,
+        rect_width: f64,
+        rect_height: f64,
+        x_offset: f64,
+        y_offset: f64,
+        kind: &str,
+        request_prefix: &str,
+    ) -> Value {
+        let snapshot = self.snapshot(&format!("{request_prefix}-bounds"));
+        let bounds = &node_by_automation_id(&snapshot, automation_id)["visible_bounds"];
+        let x = bounds["x"].as_f64().expect("bounds x")
+            + (bounds["w"].as_f64().expect("bounds width") - rect_width) * 0.5
+            + x_offset;
+        let y = bounds["y"].as_f64().expect("bounds y")
+            + (bounds["h"].as_f64().expect("bounds height") - rect_height) * 0.5
+            + y_offset;
+        let changed = perform_until_presentable(
+            &self.demo,
+            &mut self.connection,
+            self.window_id,
+            self.generation,
+            request_prefix,
+            None,
+            json!({ "kind": kind, "x": x, "y": y }),
+        );
+        let revision = changed["revision"].as_u64().expect("pointer revision");
+        wait_for_revision(
+            &mut self.connection,
+            request_prefix,
+            self.window_id,
+            self.generation,
+            revision,
+        );
+        self.snapshot(&format!("{request_prefix}-after"))
+    }
+
     fn close(mut self) {
         drop(self.connection);
         self.demo.close_and_wait();
@@ -3553,6 +3592,361 @@ fn real_demo_message_clips_stack_and_commits_close_on_release() {
     session.invoke("theme-toggle", "message-dark-theme");
     thread::sleep(Duration::from_millis(220));
     session.capture("uix-message", "message-layout-dark.png");
+    session.close();
+}
+
+#[test]
+#[ignore = "requires an interactive Windows desktop and writes Modal layout evidence"]
+fn real_demo_modal_constrains_content_and_commits_close_on_release() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(61, "modal-layout");
+    let snapshot = session.snapshot("modal-layout-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "modal"
+    );
+    let closed = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(closed["role"], "button");
+    assert_eq!(closed["state"]["expanded"], false);
+    assert!(closed["name"]
+        .as_str()
+        .is_some_and(|name| name.starts_with("打开 Modal 超长中英文 mixed title")));
+
+    let pressed = session.pointer_button_at_offset(
+        "component-qa-target",
+        0.5,
+        16.0,
+        "pointer_down",
+        "modal-trigger-pressed-light",
+    );
+    assert_eq!(
+        node_by_automation_id(&pressed, "component-qa-target")["state"]["expanded"],
+        false,
+        "pointer down must not open Modal"
+    );
+    let opened = session.pointer_button_at_offset(
+        "component-qa-target",
+        0.5,
+        16.0,
+        "pointer_up",
+        "modal-trigger-released-light",
+    );
+    let target = node_by_automation_id(&opened, "component-qa-target");
+    assert_eq!(target["role"], "dialog");
+    assert_eq!(target["state"]["expanded"], true);
+    assert!(target["visible_bounds"]["w"]
+        .as_f64()
+        .is_some_and(|width| width >= 360.0));
+    assert!(target["visible_bounds"]["h"]
+        .as_f64()
+        .is_some_and(|height| height >= 220.0));
+
+    let focused = session.focus("component-qa-modal-cancel", "modal-focus-cancel-light");
+    assert_eq!(
+        node_by_automation_id(&focused, "component-qa-modal-cancel")["focused"],
+        true
+    );
+    for attempt in 0..5 {
+        let next = session.press_key("tab", &format!("modal-focus-trap-light-{attempt}"));
+        let remains_in_modal = [
+            "component-qa-target",
+            "component-qa-modal-cancel",
+            "component-qa-modal-confirm",
+        ]
+        .into_iter()
+        .any(|id| node_by_automation_id(&next, id)["focused"] == true);
+        assert!(remains_in_modal, "Tab must remain inside Modal focus trap");
+    }
+    session.capture("uix-modal", "modal-layout-light-open.png");
+
+    let close_pressed = session.pointer_button_at_centered_rect_offset(
+        "component-qa-target",
+        360.0,
+        220.0,
+        336.0,
+        28.0,
+        "pointer_down",
+        "modal-close-pressed-light",
+    );
+    assert_eq!(
+        node_by_automation_id(&close_pressed, "component-qa-target")["state"]["expanded"],
+        true,
+        "close pointer down must not close Modal"
+    );
+    session.pointer_button_at_centered_rect_offset(
+        "component-qa-target",
+        360.0,
+        220.0,
+        336.0,
+        28.0,
+        "pointer_up",
+        "modal-close-released-light",
+    );
+    let mut modal_closed = false;
+    for attempt in 0..40 {
+        thread::sleep(Duration::from_millis(50));
+        let closing = session.snapshot(&format!("modal-close-light-settle-{attempt}"));
+        if node_by_automation_id(&closing, "component-qa-target")["state"]["expanded"] == false {
+            modal_closed = true;
+            break;
+        }
+    }
+    assert!(modal_closed, "Modal leave transition must finish within 2s");
+
+    let dark = session.invoke("theme-toggle", "modal-dark-theme");
+    assert_eq!(
+        node_by_automation_id(&dark, "component-qa-target")["state"]["expanded"],
+        false
+    );
+    let reopened = session.click_at_fraction("component-qa-target", 0.5, 0.5, "modal-open-dark");
+    assert_eq!(
+        node_by_automation_id(&reopened, "component-qa-target")["role"],
+        "dialog"
+    );
+    session.capture("uix-modal", "modal-layout-dark-open.png");
+    session.press_key("escape", "modal-close-dark");
+    let mut modal_closed = false;
+    for attempt in 0..40 {
+        thread::sleep(Duration::from_millis(50));
+        let closing = session.snapshot(&format!("modal-close-dark-settle-{attempt}"));
+        if node_by_automation_id(&closing, "component-qa-target")["state"]["expanded"] == false {
+            modal_closed = true;
+            break;
+        }
+    }
+    assert!(
+        modal_closed,
+        "Escape must close Modal and finish the leave transition within 2s"
+    );
+    session.close();
+}
+
+#[test]
+#[ignore = "requires an interactive Windows desktop and writes Notification layout evidence"]
+fn real_demo_notification_clips_stack_and_commits_close_on_release() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(62, "notification-layout");
+    thread::sleep(Duration::from_millis(300));
+    let snapshot = session.snapshot("notification-layout-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "notification"
+    );
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "alert");
+    let original_name = target["name"]
+        .as_str()
+        .expect("Notification accessible name");
+    assert!(original_name.contains("需要复核超长中英文 mixed Notification title"));
+    assert!(target["state"]["value_text"]
+        .as_str()
+        .is_some_and(|value| value.contains("检查说明文字 description")));
+    session.capture("uix-notification", "notification-layout-light.png");
+
+    let pressed = session.pointer_button_at_offset(
+        "component-qa-target",
+        0.94,
+        33.0,
+        "pointer_down",
+        "notification-close-pressed-light",
+    );
+    assert_eq!(
+        node_by_automation_id(&pressed, "component-qa-target")["name"],
+        original_name,
+        "pointer down must not close Notification"
+    );
+    let released = session.pointer_button_at_offset(
+        "component-qa-target",
+        0.94,
+        33.0,
+        "pointer_up",
+        "notification-close-released-light",
+    );
+    let released_name = node_by_automation_id(&released, "component-qa-target")["name"]
+        .as_str()
+        .expect("remaining Notification accessible name");
+    assert!(!released_name.contains("需要复核超长中英文 mixed Notification title"));
+
+    session.invoke("theme-toggle", "notification-dark-theme");
+    thread::sleep(Duration::from_millis(220));
+    session.capture("uix-notification", "notification-layout-dark.png");
+    session.close();
+}
+
+#[test]
+#[ignore = "requires an interactive Windows desktop and writes Popconfirm layout evidence"]
+fn real_demo_popconfirm_flips_elides_and_commits_only_on_release() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(63, "popconfirm-layout");
+    let snapshot = session.snapshot("popconfirm-layout-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "popconfirm"
+    );
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "button");
+    assert_eq!(target["state"]["expanded"], false);
+    assert!(target["name"]
+        .as_str()
+        .is_some_and(|name| name.contains("超长中英文 mixed visual baseline")));
+
+    let pressed = session.pointer_button_at_offset(
+        "component-qa-target",
+        0.5,
+        14.0,
+        "pointer_down",
+        "popconfirm-trigger-pressed-light",
+    );
+    assert_eq!(
+        node_by_automation_id(&pressed, "component-qa-target")["state"]["expanded"],
+        false,
+        "pointer down must not open Popconfirm"
+    );
+    let opened = session.pointer_button_at_offset(
+        "component-qa-target",
+        0.5,
+        14.0,
+        "pointer_up",
+        "popconfirm-trigger-released-light",
+    );
+    let opened_target = node_by_automation_id(&opened, "component-qa-target");
+    assert_eq!(opened_target["state"]["expanded"], true);
+    assert_eq!(opened_target["state"]["value_text"], "确认并永久删除");
+    session.capture("uix-popconfirm", "popconfirm-layout-light-open.png");
+
+    session.press_key("right", "popconfirm-focus-cancel-light");
+    let focused_cancel = session.snapshot("popconfirm-cancel-snapshot-light");
+    assert_eq!(
+        node_by_automation_id(&focused_cancel, "component-qa-target")["state"]["value_text"],
+        "取消并保留全部内容"
+    );
+    session.press_key("enter", "popconfirm-cancel-light");
+    let closed = session.snapshot("popconfirm-closed-light");
+    assert_eq!(
+        node_by_automation_id(&closed, "component-qa-target")["state"]["expanded"],
+        false
+    );
+
+    session.invoke("theme-toggle", "popconfirm-dark-theme");
+    let reopened =
+        session.click_at_fraction("component-qa-target", 0.5, 0.5, "popconfirm-open-dark");
+    assert_eq!(
+        node_by_automation_id(&reopened, "component-qa-target")["state"]["expanded"],
+        true
+    );
+    session.capture("uix-popconfirm", "popconfirm-layout-dark-open.png");
+    session.press_key("escape", "popconfirm-close-dark");
+    session.close();
+}
+
+#[test]
+#[ignore = "requires an interactive Windows desktop and writes Popover layout evidence"]
+fn real_demo_popover_flips_elides_and_exposes_expanded_content() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(64, "popover-layout");
+    let snapshot = session.snapshot("popover-layout-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "popover"
+    );
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "button");
+    assert_eq!(target["state"]["expanded"], false);
+    assert!(target["name"]
+        .as_str()
+        .is_some_and(|name| name.contains("质量详情与超长中英文 mixed title")));
+    assert!(target["state"]["value_text"]
+        .as_str()
+        .is_some_and(|value| value.contains("mixed popover content")));
+
+    let opened = session.click_at_fraction(
+        "component-qa-target",
+        0.5,
+        0.5,
+        "popover-trigger-click-light",
+    );
+    assert_eq!(
+        node_by_automation_id(&opened, "component-qa-target")["state"]["expanded"],
+        true
+    );
+    session.capture("uix-popover", "popover-layout-light-open.png");
+
+    session.press_key("escape", "popover-close-light");
+    let closed = session.snapshot("popover-closed-light");
+    assert_eq!(
+        node_by_automation_id(&closed, "component-qa-target")["state"]["expanded"],
+        false
+    );
+    session.invoke("theme-toggle", "popover-dark-theme");
+    let reopened = session.click_at_fraction("component-qa-target", 0.5, 0.5, "popover-open-dark");
+    assert_eq!(
+        node_by_automation_id(&reopened, "component-qa-target")["state"]["expanded"],
+        true
+    );
+    session.capture("uix-popover", "popover-layout-dark-open.png");
+    session.press_key("escape", "popover-close-dark");
+    session.close();
+}
+
+#[test]
+#[ignore = "requires an interactive Windows desktop and writes ProgressBar layout evidence"]
+fn real_demo_progress_bar_exposes_fractional_value_and_square_track() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(65, "progress-bar-layout");
+    let snapshot = session.snapshot("progress-bar-layout-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "progress-bar"
+    );
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "progress_bar");
+    assert!(target["state"]["value_now"]
+        .as_f64()
+        .is_some_and(|value| (value - 0.45).abs() < 1.0e-6));
+    assert_eq!(target["state"]["value_min"].as_f64(), Some(0.0));
+    assert_eq!(target["state"]["value_max"].as_f64(), Some(1.0));
+    assert!(target["visible_bounds"]["w"]
+        .as_f64()
+        .is_some_and(|width| (520.0..=900.0).contains(&width)));
+    assert_eq!(target["visible_bounds"]["h"].as_f64(), Some(14.0));
+    session.capture("uix-progress-bar", "progress-bar-layout-light.png");
+
+    session.invoke("theme-toggle", "progress-bar-dark-theme");
+    session.capture("uix-progress-bar", "progress-bar-layout-dark.png");
+    session.close();
+}
+
+#[test]
+#[ignore = "requires an interactive Windows desktop and writes Spin layout evidence"]
+fn real_demo_spin_wrapper_exposes_status_and_keeps_tip_inside_frame() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut session = ComponentQaSession::open(66, "spin-layout");
+    let snapshot = session.snapshot("spin-layout-snapshot");
+    assert_eq!(
+        node_by_automation_id(&snapshot, "component-qa-id")["name"],
+        "spin"
+    );
+    let target = node_by_automation_id(&snapshot, "component-qa-target");
+    assert_eq!(target["role"], "status");
+    assert_eq!(target["name"], "正在加载超长中英文 mixed loading status");
+    assert_eq!(target["visible_bounds"]["w"].as_f64(), Some(320.0));
+    assert_eq!(target["visible_bounds"]["h"].as_f64(), Some(88.0));
+    session.capture("uix-spin", "spin-layout-light.png");
+
+    session.invoke("theme-toggle", "spin-dark-theme");
+    session.capture("uix-spin", "spin-layout-dark.png");
     session.close();
 }
 

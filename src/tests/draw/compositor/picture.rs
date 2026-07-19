@@ -159,6 +159,7 @@ struct CountingEngine {
     inner: SoftwareEngine,
     encoded_picture_executions: usize,
     destroy_error: Option<Error>,
+    fail_create: bool,
 }
 
 impl CountingEngine {
@@ -167,6 +168,7 @@ impl CountingEngine {
             inner: SoftwareEngine::new(),
             encoded_picture_executions: 0,
             destroy_error: None,
+            fail_create: false,
         }
     }
 }
@@ -198,6 +200,9 @@ impl GraphicsEngine for CountingEngine {
     }
 
     fn create_offscreen(&mut self, width: i32, height: i32) -> Option<ImageHandle> {
+        if self.fail_create {
+            return None;
+        }
         self.inner.create_offscreen(width, height)
     }
 
@@ -275,6 +280,11 @@ fn picture_resize_preserves_its_handle_when_checked_destroy_fails() {
     engine.initialize(16, 16).expect("software engine");
     let original = engine.create_offscreen(4, 4).expect("initial Picture");
     let mut handle = Some(original);
+    engine.fail_create = true;
+    assert!(!ensure_offscreen(&mut engine, &mut handle, 8, 8).expect("failed replacement create"));
+    assert_eq!(handle, Some(original));
+    assert!(engine.inner.offscreen_canvas(&original).is_some());
+    engine.fail_create = false;
     engine.destroy_error = Some(Error::new(
         Errc::GraphicsDeviceLost,
         "injected Picture destroy failure",
@@ -358,4 +368,106 @@ fn cached_complete_picture_is_executed_by_the_production_compositor() {
         pixels[8 * stride as usize + 8],
         crate::draw::Color::red().premultiplied()
     );
+}
+
+#[test]
+fn production_compositor_flattens_cached_picture_glyph_ir_into_main_frame() {
+    use crate::draw::font::text_backend::{PositionedGlyph, TextLayout};
+    use crate::draw::pipeline::frame_recording::FrameRecordingEngine;
+    use crate::draw::pipeline::{FrameCommand, FrameRasterOp, FrameRect};
+    use std::sync::Arc;
+
+    let mut engine = FrameRecordingEngine::new();
+    engine.initialize(96, 48).expect("recorder engine");
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic glyph font");
+    let font_size = 18.0;
+    let glyph_id = 65;
+    let raster = fonts.rasterize_glyph(&font, glyph_id, font_size);
+    assert!(raster.width > 0 && raster.height > 0);
+    let mut list = DisplayList::new();
+    list.push(PaintOp::BlitGlyphLayout {
+        layout: TextLayout {
+            glyphs: vec![PositionedGlyph {
+                x: 0.0,
+                y: 0.0,
+                width: raster.width as f32,
+                height: raster.height as f32,
+                glyph_id,
+                char_index: 0,
+                font,
+            }],
+            lines: Vec::new(),
+            width: raster.width as f32,
+            height: raster.height as f32,
+        },
+        pos: Point::new(16.0, 12.0),
+        color: crate::draw::Color::from_rgba(220, 96, 40, 160),
+        font_size,
+    });
+
+    let images = ImageService::new();
+    let tokens = TestTokens;
+    let env = LayerRenderEnv {
+        font,
+        font_service: &fonts,
+        image_service: &images,
+        tokens: &tokens,
+        dpi: 96.0,
+        dpr: 1.0,
+        orientation: Orientation::YDown,
+    };
+    let scene = CachedPictureScene;
+    let bounds = Rect::new(10.0, 8.0, 64.0, 32.0);
+    let mut offscreen = None;
+    let mut display_list = Some(list);
+    let mut children = [];
+    let mut is_dirty = true;
+    let mut retry_count = 0;
+    rasterize_picture_to_offscreen(
+        &mut engine,
+        NodeId::new(1),
+        &bounds,
+        &mut offscreen,
+        &mut display_list,
+        &mut children,
+        &mut is_dirty,
+        &scene,
+        &DirtyRegion::full(),
+        64,
+        32,
+        &mut retry_count,
+        &env,
+    )
+    .expect("rasterize cached glyph Picture");
+    assert!(!is_dirty);
+
+    engine.begin_recording(true).expect("begin main frame");
+    blit_picture_cache(
+        &mut engine,
+        &offscreen.expect("Picture handle"),
+        &bounds,
+        64,
+        32,
+    )
+    .expect("flatten Picture cache");
+    let encoder = engine.finish_recording().expect("finish main frame");
+    let glyphs = encoder
+        .commands()
+        .iter()
+        .find_map(|command| match command {
+            FrameCommand::Native {
+                operation: FrameRasterOp::BlitGlyphs { glyphs, clip },
+            } if *clip == FrameRect::new(10, 8, 64, 32) => Some(glyphs),
+            _ => None,
+        })
+        .expect("Picture glyph must reach the final main encoder");
+    assert_eq!(glyphs.len(), 1);
+    assert!(Arc::ptr_eq(glyphs[0].coverage(), &raster.coverage));
+    assert!(!encoder.commands().iter().any(|command| matches!(
+        command,
+        FrameCommand::CpuSegment { .. } | FrameCommand::PictureBlit { .. }
+    )));
 }

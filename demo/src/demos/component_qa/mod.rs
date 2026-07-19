@@ -132,7 +132,7 @@ pub fn page_component_qa(ctx: &DemoCtx<'_>) -> ViewNode {
     .build()
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "test-harness"))]
 mod tests {
     use super::*;
     use regex::Regex;

@@ -46,6 +46,7 @@ pub struct WidgetNode {
     pub key: Option<Box<str>>,
     pub automation_id: Option<Box<str>>,
     pub tab_idx: i32,
+    pub(crate) tab_index_override: Option<i32>,
     pub(crate) focus_handle: Option<FocusHandle>,
     pub(crate) accessibility_override: Option<AccessibilityOverride>,
     pub handlers: Vec<HandlerRegistration>,
@@ -68,6 +69,7 @@ impl WidgetNode {
             key: None,
             automation_id: None,
             tab_idx: 0,
+            tab_index_override: None,
             focus_handle: None,
             accessibility_override: None,
             handlers: Vec::new(),
@@ -97,6 +99,7 @@ impl WidgetNode {
             key: None,
             automation_id: None,
             tab_idx: 0,
+            tab_index_override: None,
             focus_handle: None,
             accessibility_override: None,
             handlers: Vec::new(),
@@ -134,7 +137,9 @@ impl WidgetNode {
     }
     /// 设置 Tab 键导航顺序索引（> 0 表示可通过 Tab 获取焦点）。
     pub fn tab_index(mut self, idx: i32) -> Self {
+        let idx = idx.max(0);
         self.tab_idx = idx;
+        self.tab_index_override = Some(idx);
         self
     }
     pub(crate) fn with_focus_handle(mut self, handle: FocusHandle) -> Self {
@@ -249,7 +254,7 @@ pub struct BoxedWidget {
     destroyed: bool,
     z: i32,
     /// Tab 键导航顺序（0=不可通过 Tab 导航聚焦）。
-    tab_idx: i32,
+    tab_index_override: Option<i32>,
     handler_signatures: Vec<HandlerSignature>,
     system_event_handlers: Vec<SystemEventHandlerRegistration>,
     accessibility_override: Option<AccessibilityOverride>,
@@ -293,7 +298,7 @@ impl BoxedWidget {
             active: false,
             destroyed: false,
             z: 0,
-            tab_idx: 0,
+            tab_index_override: None,
             handler_signatures: Vec::new(),
             system_event_handlers: Vec::new(),
             accessibility_override: None,
@@ -781,10 +786,14 @@ impl BoxedWidget {
             .and_then(|e| e.semantic_event(id, event))
     }
     pub fn is_focusable(&self) -> bool {
-        (self.tab_idx > 0 || self.component().tab_index() > 0)
+        self.tab_index() > 0
             && self.visible()
             && self.accepts_events()
             && self.is_interaction_enabled()
+    }
+
+    pub(crate) fn set_tab_index_override(&mut self, tab_index: Option<i32>) {
+        self.tab_index_override = tab_index.map(|index| index.max(0));
     }
 
     pub(crate) fn visibility_gate(&self) -> bool {
@@ -969,10 +978,11 @@ impl WidgetCore for BoxedWidget {
         self.z = v;
     }
     fn tab_index(&self) -> i32 {
-        self.tab_idx
+        self.tab_index_override
+            .unwrap_or_else(|| self.with_component_context(WidgetComponent::tab_index))
     }
     fn set_tab_index(&mut self, v: i32) {
-        self.tab_idx = v;
+        self.set_tab_index_override(Some(v));
     }
 }
 

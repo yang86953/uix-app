@@ -67,11 +67,11 @@ pub fn page_feedback(ctx: &DemoCtx<'_>) -> ViewNode {
                 .child(Spin::new().large()),
         )
         .section("ProgressBar — 线形 / 圆形 / 不确定")
-        .push(demo_row(24.0).child(ProgressBar::new().progress(45.0)))
+        .push(demo_row(24.0).child(ProgressBar::new().progress(0.45)))
         .push(
             demo_row(24.0).child(
                 ProgressBar::new()
-                    .progress(78.0)
+                    .progress(0.78)
                     .stroke_color(tk.color_success),
             ),
         )

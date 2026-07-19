@@ -244,6 +244,84 @@ impl GraphicsEngine for OccludeFirstPresentEngine {
     }
 }
 
+struct IdleResourceMaintenanceEngine {
+    inner: NullEngine,
+    deadline: Option<Instant>,
+    present_notes: Arc<AtomicUsize>,
+    release_calls: Arc<AtomicUsize>,
+    end_calls: Arc<AtomicUsize>,
+}
+
+impl IdleResourceMaintenanceEngine {
+    fn new(
+        present_notes: Arc<AtomicUsize>,
+        release_calls: Arc<AtomicUsize>,
+        end_calls: Arc<AtomicUsize>,
+    ) -> Self {
+        Self {
+            inner: NullEngine::new(),
+            deadline: None,
+            present_notes,
+            release_calls,
+            end_calls,
+        }
+    }
+}
+
+impl GraphicsEngine for IdleResourceMaintenanceEngine {
+    fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.inner.initialize(width, height)
+    }
+
+    fn try_shutdown(&mut self) -> Result<(), Error> {
+        self.inner.try_shutdown()
+    }
+
+    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.inner.resize(width, height)
+    }
+
+    fn begin_frame(&mut self, strategy: crate::draw::traits::UpdateStrategy) -> RenderOutcome {
+        self.inner.begin_frame(strategy)
+    }
+
+    fn end_frame(&mut self, damage: &DamageRegion) -> RenderOutcome {
+        self.end_calls.fetch_add(1, Ordering::Relaxed);
+        self.inner.end_frame(damage)
+    }
+
+    fn note_presented_at(&mut self, now: Instant) {
+        self.present_notes.fetch_add(1, Ordering::Relaxed);
+        self.deadline = Some(now + Duration::from_millis(250));
+    }
+
+    fn idle_resource_deadline(&self) -> Option<Instant> {
+        self.deadline
+    }
+
+    fn release_idle_resources(&mut self, now: Instant) {
+        if self.deadline.is_some_and(|deadline| deadline <= now) {
+            self.release_calls.fetch_add(1, Ordering::Relaxed);
+            self.deadline = None;
+        }
+    }
+
+    fn canvas_2d(&mut self) -> &mut dyn crate::draw::traits::Canvas2D {
+        self.inner.canvas_2d()
+    }
+
+    fn capabilities(&self) -> crate::draw::traits::GraphicsCapabilities {
+        self.inner.capabilities()
+    }
+
+    fn try_execute_encoded_frame(
+        &mut self,
+        encoder: &FrameEncoder,
+    ) -> Result<crate::draw::pipeline::EncodedFrameExecution, Error> {
+        self.inner.try_execute_encoded_frame(encoder)
+    }
+}
+
 #[derive(Debug)]
 struct SteppingClock {
     now: Mutex<Instant>,

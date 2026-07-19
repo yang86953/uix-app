@@ -43,7 +43,6 @@ impl WidgetTree {
         let id = self.alloc_id();
         let mut boxed = BoxedWidget::new_with_context(widget, provider_context.clone());
         boxed.set_id(id);
-        boxed.set_tab_index(boxed.component().tab_index());
         // Root has no parent content rect yet; window/session layout overwrites this
         // natural fallback once a real viewport is available.
         let ps = boxed.measure(Self::root_bootstrap_constraints());
@@ -87,7 +86,6 @@ impl WidgetTree {
         let mut boxed = BoxedWidget::new_with_context(child, provider_context.clone());
         boxed.set_id(child_id);
         boxed.set_parent(Some(parent_id));
-        boxed.set_tab_index(boxed.component().tab_index());
         let child_slot = child_id.slot();
         if self.nodes.len() <= child_slot {
             self.nodes.resize_with(child_slot + 1, || None);
@@ -166,6 +164,7 @@ impl WidgetTree {
             key,
             automation_id,
             tab_idx,
+            tab_index_override,
             focus_handle,
             accessibility_override,
             handlers,
@@ -184,12 +183,9 @@ impl WidgetTree {
             node.set_key(key);
             node.set_automation_id(automation_id);
             node.set_z_index(z_index);
-            let tab_index = if tab_idx != 0 {
-                tab_idx
-            } else {
-                node.component().tab_index()
-            };
-            node.set_tab_index(tab_index);
+            let tab_index_override =
+                tab_index_override.or_else(|| (tab_idx != 0).then_some(tab_idx));
+            node.set_tab_index_override(tab_index_override);
             node.set_accessibility_override(accessibility_override);
         }
         self.register_focusable(id);

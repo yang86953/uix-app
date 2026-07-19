@@ -272,7 +272,10 @@ impl RenderBackend for CpuBackend {
         // Picture rasterization is replace semantics even for transparent
         // pixels. Filling with transparent through Canvas2D would be an
         // alpha-over no-op and could retain stale cached content.
+        let width = canvas.surface().width();
+        let height = canvas.surface().height();
         canvas.surface_mut().clear_all();
+        canvas.reset_state_for_extent(width, height);
         self.active_offscreen = Some(handle.0);
         Ok(())
     }
@@ -297,7 +300,15 @@ impl RenderBackend for CpuBackend {
     }
 
     fn try_end_offscreen_paint(&mut self) -> Result<(), Error> {
-        self.active_offscreen = None;
+        let active = self.active_offscreen.take();
+        if let Some(id) = active {
+            let handle = ImageHandle(id);
+            if let Some(canvas) = self.offscreens.get_mut(&handle) {
+                if let Some(error) = canvas.take_deferred_error() {
+                    return Err(error);
+                }
+            }
+        }
         Ok(())
     }
 

@@ -4,16 +4,17 @@ use crate::draw::backend::traits::BackendCapabilities;
 use crate::draw::backend::traits::{BackendKind, DrawSurface, RenderBackend};
 #[cfg(feature = "d3d11")]
 use crate::draw::pipeline::EncodedPictureExecution;
-use crate::draw::pipeline::{EncodedFrameExecution, FrameRasterOp};
+use crate::draw::pipeline::{EncodedFrameExecution, FrameCommand, FrameRasterOp};
 #[cfg(feature = "d3d11")]
 use crate::draw::primitives::path::Path;
 use crate::draw::primitives::types::{BlendMode, GradientDirection, Radius, Transform};
-use crate::draw::traits::Canvas2D;
+use crate::draw::traits::{Canvas2D, GraphicsEngine};
 use crate::native::traits::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
     GpuSolidRect, GpuStrokeRect, OffscreenTargetId,
 };
 use crate::tests::common::*;
+use std::sync::Arc;
 
 #[test]
 fn soft_fallback_tile_is_tight_and_ignores_transparent_rgb() {
@@ -87,6 +88,23 @@ fn native_gpu_soft_fallback_defers_allocation_failure_without_panicking() {
         .take_deferred_error()
         .expect("soft fallback allocation failure must be retained");
     assert_eq!(error.code(), Errc::GraphicsOutOfMemory);
+
+    canvas.reset_for_repaint();
+    assert!(
+        canvas.soft_fallback.is_none(),
+        "Picture repaint must discard an extent-mismatched OOM placeholder"
+    );
+    assert_eq!(
+        canvas.ensure_soft().surface().surface_size(),
+        Size::new(1.0, 1.0)
+    );
+    assert_eq!(
+        canvas
+            .take_deferred_error()
+            .expect("repaint must retry the full allocation")
+            .code(),
+        Errc::GraphicsOutOfMemory
+    );
 }
 
 #[test]
@@ -572,6 +590,11 @@ enum FailStage {
 struct RecordingContext {
     fail_stage: Rc<Cell<FailStage>>,
     stages: Rc<RefCell<Vec<&'static str>>>,
+    solid_rects: Rc<RefCell<Vec<GpuSolidRect>>>,
+    solid_scissors: Rc<RefCell<Vec<Option<(i32, i32, i32, i32)>>>>,
+    glyph_batches: Rc<RefCell<Vec<(Option<(i32, i32, i32, i32)>, Vec<GpuGlyphBlit>)>>>,
+    soft_tiles: Rc<RefCell<Vec<(SoftFallbackTile, Vec<u32>)>>>,
+    native_caps: NativeRasterCaps,
     shutdown_calls: Rc<Cell<usize>>,
     make_current_calls: Rc<Cell<usize>>,
     active_offscreen: bool,
@@ -606,7 +629,7 @@ impl IGraphicsContext for RecordingContext {
     }
 
     fn native_raster_caps(&self) -> NativeRasterCaps {
-        NativeRasterCaps::d3d11_full()
+        self.native_caps
     }
 
     fn initialize(
@@ -685,10 +708,12 @@ impl IGraphicsContext for RecordingContext {
         &mut self,
         _viewport_w: f32,
         _viewport_h: f32,
-        _scissor: Option<(i32, i32, i32, i32)>,
-        _rects: &[GpuSolidRect],
+        scissor: Option<(i32, i32, i32, i32)>,
+        rects: &[GpuSolidRect],
     ) -> crate::core::Result<()> {
         self.record("solid");
+        self.solid_scissors.borrow_mut().push(scissor);
+        self.solid_rects.borrow_mut().extend_from_slice(rects);
         self.fail_if(FailStage::Native)
     }
 
@@ -707,10 +732,13 @@ impl IGraphicsContext for RecordingContext {
         &mut self,
         _viewport_w: f32,
         _viewport_h: f32,
-        _scissor: Option<(i32, i32, i32, i32)>,
-        _glyphs: &[GpuGlyphBlit],
+        scissor: Option<(i32, i32, i32, i32)>,
+        glyphs: &[GpuGlyphBlit],
     ) -> crate::core::Result<()> {
         self.record("glyph");
+        self.glyph_batches
+            .borrow_mut()
+            .push((scissor, glyphs.to_vec()));
         Ok(())
     }
 
@@ -770,10 +798,11 @@ impl IGraphicsContext for RecordingContext {
 
     fn blit_soft_fallback_tile(
         &mut self,
-        _pixels: &[u32],
-        _tile: SoftFallbackTile,
+        pixels: &[u32],
+        tile: SoftFallbackTile,
     ) -> crate::core::Result<()> {
         self.record("soft");
+        self.soft_tiles.borrow_mut().push((tile, pixels.to_vec()));
         self.fail_if(FailStage::Soft)
     }
 
@@ -820,12 +849,22 @@ impl IGraphicsContext for RecordingContext {
 fn recording_context(
     fail_stage: &Rc<Cell<FailStage>>,
     stages: &Rc<RefCell<Vec<&'static str>>>,
+    solid_rects: &Rc<RefCell<Vec<GpuSolidRect>>>,
+    solid_scissors: &Rc<RefCell<Vec<Option<(i32, i32, i32, i32)>>>>,
+    glyph_batches: &Rc<RefCell<Vec<(Option<(i32, i32, i32, i32)>, Vec<GpuGlyphBlit>)>>>,
+    soft_tiles: &Rc<RefCell<Vec<(SoftFallbackTile, Vec<u32>)>>>,
+    native_caps: NativeRasterCaps,
     shutdown_calls: &Rc<Cell<usize>>,
     make_current_calls: &Rc<Cell<usize>>,
 ) -> RecordingContext {
     RecordingContext {
         fail_stage: Rc::clone(fail_stage),
         stages: Rc::clone(stages),
+        solid_rects: Rc::clone(solid_rects),
+        solid_scissors: Rc::clone(solid_scissors),
+        glyph_batches: Rc::clone(glyph_batches),
+        soft_tiles: Rc::clone(soft_tiles),
+        native_caps,
         shutdown_calls: Rc::clone(shutdown_calls),
         make_current_calls: Rc::clone(make_current_calls),
         active_offscreen: false,
@@ -838,18 +877,35 @@ struct RecordingFixture {
     backend: NativeGpuBackend,
     fail_stage: Rc<Cell<FailStage>>,
     stages: Rc<RefCell<Vec<&'static str>>>,
+    solid_rects: Rc<RefCell<Vec<GpuSolidRect>>>,
+    solid_scissors: Rc<RefCell<Vec<Option<(i32, i32, i32, i32)>>>>,
+    glyph_batches: Rc<RefCell<Vec<(Option<(i32, i32, i32, i32)>, Vec<GpuGlyphBlit>)>>>,
+    soft_tiles: Rc<RefCell<Vec<(SoftFallbackTile, Vec<u32>)>>>,
     shutdown_calls: Rc<Cell<usize>>,
     make_current_calls: Rc<Cell<usize>>,
 }
 
 fn recording_backend(fail: FailStage) -> RecordingFixture {
+    recording_backend_with_caps(fail, NativeRasterCaps::d3d11_full())
+}
+
+fn recording_backend_with_caps(fail: FailStage, native_caps: NativeRasterCaps) -> RecordingFixture {
     let fail_stage = Rc::new(Cell::new(fail));
     let stages = Rc::new(RefCell::new(Vec::new()));
+    let solid_rects = Rc::new(RefCell::new(Vec::new()));
+    let solid_scissors = Rc::new(RefCell::new(Vec::new()));
+    let glyph_batches = Rc::new(RefCell::new(Vec::new()));
+    let soft_tiles = Rc::new(RefCell::new(Vec::new()));
     let shutdown_calls = Rc::new(Cell::new(0));
     let make_current_calls = Rc::new(Cell::new(0));
     let backend = NativeGpuBackend::new(Box::new(recording_context(
         &fail_stage,
         &stages,
+        &solid_rects,
+        &solid_scissors,
+        &glyph_batches,
+        &soft_tiles,
+        native_caps,
         &shutdown_calls,
         &make_current_calls,
     )))
@@ -858,6 +914,10 @@ fn recording_backend(fail: FailStage) -> RecordingFixture {
         backend,
         fail_stage,
         stages,
+        solid_rects,
+        solid_scissors,
+        glyph_batches,
+        soft_tiles,
         shutdown_calls,
         make_current_calls,
     }
@@ -1267,15 +1327,106 @@ fn native_gpu_backend_offscreen_create_bind_blit_when_caps_prove_support() {
             Color::from_rgb(10, 20, 30),
             None,
         );
+        canvas.fill_ellipse(Rect::new(2.0, 2.0, 4.0, 4.0), Color::white());
     }
+    assert!(
+        backend.offscreens[handle.0 as usize]
+            .as_ref()
+            .is_some_and(|off| off.canvas.soft_fallback.is_some()),
+        "soft Picture paint allocates CPU staging"
+    );
     backend.flush_offscreen_paint(&handle);
+    assert!(
+        backend.offscreens[handle.0 as usize]
+            .as_ref()
+            .is_some_and(|off| off.canvas.soft_fallback.is_some()),
+        "segment flush keeps staging until the Picture paint ends"
+    );
     backend.end_offscreen_paint();
+    assert!(
+        backend.offscreens[handle.0 as usize]
+            .as_ref()
+            .is_some_and(|off| off.canvas.soft_fallback.is_none()),
+        "successful Picture target restore releases reconstructible CPU staging"
+    );
     backend.blit_offscreen_src(
         &handle,
         Rect::new(0.0, 0.0, 16.0, 16.0),
         Rect::new(1.0, 2.0, 16.0, 16.0),
     );
     assert_eq!(blits.get(), 1);
+    backend
+        .present(&DamageRegion::full())
+        .expect("present the Picture soft frame");
+    assert!(
+        backend.offscreens[handle.0 as usize]
+            .as_ref()
+            .is_some_and(|off| off.canvas.soft_fallback.is_none()),
+        "presenting the retained GPU Picture must not recreate CPU staging"
+    );
+    backend
+        .present(&DamageRegion::full())
+        .expect("first Picture idle present");
+    assert!(
+        backend.offscreens[handle.0 as usize]
+            .as_ref()
+            .is_some_and(|off| off.canvas.soft_fallback.is_none()),
+        "soft-free presents keep Picture staging released"
+    );
+    backend
+        .present(&DamageRegion::full())
+        .expect("second Picture idle present");
+    assert!(
+        backend.offscreens[handle.0 as usize]
+            .as_ref()
+            .is_some_and(|off| off.canvas.soft_fallback.is_none()),
+        "additional soft-free presents keep Picture CPU staging released"
+    );
+    presents.set(0);
+
+    backend
+        .try_begin_offscreen_paint(&handle)
+        .expect("idle-cleanup Picture begin");
+    {
+        let canvas = backend.offscreen_canvas(&handle).expect("canvas");
+        canvas.fill_ellipse(Rect::new(3.0, 3.0, 5.0, 5.0), Color::white());
+    }
+    backend
+        .try_flush_offscreen_paint(&handle)
+        .expect("idle-cleanup Picture flush");
+    backend
+        .try_end_offscreen_paint()
+        .expect("idle-cleanup Picture end");
+    backend
+        .try_blit_offscreen_src(
+            &handle,
+            Rect::new(0.0, 0.0, 16.0, 16.0),
+            Rect::new(1.0, 2.0, 16.0, 16.0),
+        )
+        .expect("idle-cleanup Picture blit");
+    backend
+        .present(&DamageRegion::full())
+        .expect("idle-cleanup Picture present");
+    let idle_presented_at = Instant::now();
+    backend.note_presented_at(idle_presented_at);
+    backend.release_idle_resources(idle_presented_at + SOFT_FALLBACK_IDLE_TIME_GRACE);
+    assert!(
+        backend.offscreens[handle.0 as usize]
+            .as_ref()
+            .is_some_and(|off| off.canvas.soft_fallback.is_none()),
+        "idle cleanup releases only the Picture CPU staging"
+    );
+    assert!(backend.offscreens[handle.0 as usize].is_some());
+    let blits_before_retained_reuse = blits.get();
+    backend
+        .try_blit_offscreen_src(
+            &handle,
+            Rect::new(0.0, 0.0, 16.0, 16.0),
+            Rect::new(2.0, 3.0, 16.0, 16.0),
+        )
+        .expect("retained GPU Picture remains reusable");
+    assert_eq!(blits.get(), blits_before_retained_reuse + 1);
+    presents.set(0);
 
     // The checked production boundary must surface this failure before
     // FrameRenderer reaches end_frame/final present. The old void method
@@ -1290,6 +1441,7 @@ fn native_gpu_backend_offscreen_create_bind_blit_when_caps_prove_support() {
             Color::from_rgb(30, 20, 10),
             None,
         );
+        canvas.fill_ellipse(Rect::new(3.0, 3.0, 2.0, 2.0), Color::white());
     }
     fail_native.set(true);
     let error = backend
@@ -1306,11 +1458,25 @@ fn native_gpu_backend_offscreen_create_bind_blit_when_caps_prove_support() {
             .is_some_and(|off| !off.canvas.pending_native.is_empty()),
         "failed offscreen commands must remain uncommitted for recovery"
     );
+    assert!(
+        backend.offscreens[handle.0 as usize]
+            .as_ref()
+            .is_some_and(|off| off.canvas.soft_fallback.is_some() && off.canvas.soft_has_content),
+        "a failed Picture flush must retain its uncommitted CPU source"
+    );
 
     // Legacy callers still retain the failure until final present, rather
     // than silently dropping the Picture contents.
     fail_native.set(false);
     assert!(backend.begin_offscreen_paint(&handle));
+    backend
+        .offscreen_canvas(&handle)
+        .expect("legacy offscreen canvas")
+        .fill_rect(
+            Rect::new(3.0, 3.0, 4.0, 4.0),
+            Color::from_rgb(20, 30, 10),
+            None,
+        );
     fail_native.set(true);
     backend.flush_offscreen_paint(&handle);
     backend.end_offscreen_paint();
@@ -1339,8 +1505,49 @@ fn native_gpu_backend_offscreen_create_bind_blit_when_caps_prove_support() {
     backend
         .try_destroy_offscreen(handle)
         .expect("a retained target must be destroyable on retry");
-    assert!(backend.offscreens[handle.0 as usize].is_none());
-    assert!(backend.free_offscreen_ids.contains(&handle.0));
+    assert!(
+        backend.offscreens.is_empty(),
+        "destroying the final target must compact its trailing slot"
+    );
+    assert!(
+        backend.free_offscreen_ids.is_empty(),
+        "compaction must discard free IDs beyond the new slot length"
+    );
+
+    let first = backend.create_offscreen(8, 8).expect("first target");
+    let middle = backend.create_offscreen(8, 8).expect("middle target");
+    let tail = backend.create_offscreen(8, 8).expect("tail target");
+    assert_eq!((first.0, middle.0, tail.0), (0, 1, 2));
+
+    backend
+        .try_destroy_offscreen(middle)
+        .expect("destroy interior target");
+    assert_eq!(backend.offscreens.len(), 3);
+    assert_eq!(backend.free_offscreen_ids, vec![1]);
+
+    backend
+        .try_destroy_offscreen(tail)
+        .expect("destroy trailing target");
+    assert_eq!(
+        backend.offscreens.len(),
+        1,
+        "trailing compaction must cross an adjacent interior hole"
+    );
+    assert!(backend.free_offscreen_ids.is_empty());
+
+    let reused_tail = backend
+        .create_offscreen(8, 8)
+        .expect("target after compacted tail");
+    assert_eq!(reused_tail.0, 1);
+    assert_eq!(backend.offscreens.len(), 2);
+    backend
+        .try_destroy_offscreen(reused_tail)
+        .expect("destroy reused tail");
+    backend
+        .try_destroy_offscreen(first)
+        .expect("destroy remaining first target");
+    assert!(backend.offscreens.is_empty());
+    assert!(backend.free_offscreen_ids.is_empty());
 }
 
 #[test]
@@ -1542,6 +1749,197 @@ fn native_gpu_soft_fallback_is_lazy_until_first_soft_op() {
 }
 
 #[test]
+fn native_gpu_soft_fallback_reuses_consecutive_soft_frames_then_releases() {
+    let mut canvas = NativeGpuCanvas2D::new(128, 128, NativeRasterCaps::d3d11_full());
+    canvas.fill_ellipse(Rect::new(0.0, 0.0, 8.0, 8.0), Color::white());
+    let first_allocation = canvas
+        .soft_fallback
+        .as_ref()
+        .expect("first soft frame allocation")
+        .surface()
+        .pixels()
+        .as_ptr();
+
+    canvas.finish_presented_frame();
+    assert!(
+        canvas.soft_fallback.is_some(),
+        "a successful soft frame keeps its allocation for a consecutive soft frame"
+    );
+
+    canvas.fill_ellipse(Rect::new(1.0, 1.0, 8.0, 8.0), Color::white());
+    assert_eq!(
+        canvas
+            .soft_fallback
+            .as_ref()
+            .expect("reused soft allocation")
+            .surface()
+            .pixels()
+            .as_ptr(),
+        first_allocation,
+        "consecutive soft frames must not reallocate the full-size buffer"
+    );
+    canvas.finish_presented_frame();
+
+    canvas.fill_rect(
+        Rect::new(0.0, 0.0, 10.0, 10.0),
+        Color::from_rgb(1, 2, 3),
+        None,
+    );
+    canvas.finish_presented_frame();
+    assert!(
+        canvas.soft_fallback.is_some(),
+        "one soft-free present is retained as an allocation-churn grace"
+    );
+    canvas.finish_presented_frame();
+    assert!(
+        canvas.soft_fallback.is_none(),
+        "the second subsequent soft-free frame releases the idle CPU buffer"
+    );
+}
+
+#[test]
+fn native_gpu_soft_fallback_releases_at_idle_deadline_without_presenting() {
+    let RecordingFixture {
+        mut backend,
+        stages,
+        ..
+    } = recording_backend(FailStage::None);
+    backend.resize(128, 128).expect("resize");
+    backend
+        .surface
+        .canvas
+        .fill_ellipse(Rect::new(0.0, 0.0, 8.0, 8.0), Color::white());
+    backend
+        .present(&DamageRegion::full())
+        .expect("soft frame present");
+
+    let presented_at = Instant::now();
+    backend.note_presented_at(presented_at);
+    let deadline = presented_at + SOFT_FALLBACK_IDLE_TIME_GRACE;
+    assert_eq!(backend.idle_resource_deadline(), Some(deadline));
+    assert!(backend.surface.canvas.soft_fallback.is_some());
+    let presents_before_release = stages
+        .borrow()
+        .iter()
+        .filter(|stage| **stage == "present")
+        .count();
+
+    backend.release_idle_resources(deadline - Duration::from_millis(1));
+    assert!(backend.surface.canvas.soft_fallback.is_some());
+    backend.release_idle_resources(deadline);
+    assert!(backend.surface.canvas.soft_fallback.is_none());
+    assert_eq!(backend.idle_resource_deadline(), None);
+    assert_eq!(
+        stages
+            .borrow()
+            .iter()
+            .filter(|stage| **stage == "present")
+            .count(),
+        presents_before_release,
+        "idle cleanup must not submit or present"
+    );
+}
+
+#[test]
+fn idle_deadline_preserves_uncommitted_soft_retry_source() {
+    let RecordingFixture { mut backend, .. } = recording_backend(FailStage::None);
+    backend.resize(64, 64).expect("resize");
+    backend
+        .surface
+        .canvas
+        .fill_ellipse(Rect::new(0.0, 0.0, 8.0, 8.0), Color::white());
+    backend
+        .present(&DamageRegion::full())
+        .expect("first soft frame");
+    let presented_at = Instant::now();
+    backend.note_presented_at(presented_at);
+
+    backend
+        .surface
+        .canvas
+        .fill_ellipse(Rect::new(2.0, 2.0, 8.0, 8.0), Color::white());
+    backend.release_idle_resources(presented_at + SOFT_FALLBACK_IDLE_TIME_GRACE);
+    assert!(backend.surface.canvas.soft_fallback.is_some());
+    assert!(backend.surface.canvas.soft_has_content);
+    assert_eq!(
+        backend.idle_resource_deadline(),
+        None,
+        "an overdue unsafe cleanup must be consumed instead of busy-looping"
+    );
+
+    backend
+        .present(&DamageRegion::full())
+        .expect("retry source present");
+    let retry_presented_at = presented_at + Duration::from_secs(1);
+    backend.note_presented_at(retry_presented_at);
+    assert_eq!(
+        backend.idle_resource_deadline(),
+        Some(retry_presented_at + SOFT_FALLBACK_IDLE_TIME_GRACE)
+    );
+}
+
+#[test]
+fn native_gpu_picture_repaint_resets_soft_pixels_and_canvas_state() {
+    let mut canvas = NativeGpuCanvas2D::new(32, 32, NativeRasterCaps::d3d11_full());
+    canvas.set_transform(Transform::translate(8.0, 8.0));
+    canvas.set_offset(4.0, 4.0);
+    canvas.set_opacity(0.25);
+    canvas.set_blend_mode(BlendMode::Additive);
+    canvas.push_clip(Rect::new(0.0, 0.0, 2.0, 2.0));
+    canvas.save();
+    canvas.fill_ellipse(Rect::new(0.0, 0.0, 8.0, 8.0), Color::white());
+    assert!(canvas.soft_has_content);
+
+    canvas.reset_for_repaint();
+    assert!(!canvas.soft_has_content);
+    assert!(
+        canvas
+            .soft_fallback
+            .as_ref()
+            .expect("reused Picture soft allocation")
+            .surface()
+            .pixels()
+            .iter()
+            .all(|pixel| *pixel == 0),
+        "Picture repaint must start from transparent CPU staging"
+    );
+    canvas.restore();
+    assert_eq!(canvas.current_transform().m, Transform::identity().m);
+
+    canvas.fill_ellipse(Rect::new(0.0, 0.0, 8.0, 8.0), Color::white());
+    let pixels = canvas
+        .soft_fallback
+        .as_ref()
+        .expect("reset Picture soft allocation")
+        .surface()
+        .pixels();
+    assert_eq!(pixels[4 * 32 + 4] >> 24, 0xFF);
+
+    let fail_stage = Rc::new(Cell::new(FailStage::None));
+    let stages = Rc::new(RefCell::new(Vec::new()));
+    let solid_rects = Rc::new(RefCell::new(Vec::new()));
+    let solid_scissors = Rc::new(RefCell::new(Vec::new()));
+    let glyph_batches = Rc::new(RefCell::new(Vec::new()));
+    let soft_tiles = Rc::new(RefCell::new(Vec::new()));
+    let shutdown_calls = Rc::new(Cell::new(0));
+    let make_current_calls = Rc::new(Cell::new(0));
+    let mut context = recording_context(
+        &fail_stage,
+        &stages,
+        &solid_rects,
+        &solid_scissors,
+        &glyph_batches,
+        &soft_tiles,
+        NativeRasterCaps::d3d11_full(),
+        &shutdown_calls,
+        &make_current_calls,
+    );
+    canvas
+        .submit_soft(&mut context)
+        .expect("repaint reset must restore source-over blend");
+}
+
+#[test]
 fn d3d11_soft_clear_is_transparent_so_blit_does_not_wipe_native() {
     // Soft fallback PixelSurface must clear to A=0; opaque black would
     // SRC_ALPHA-overwrite GPU-native fills/glyphs on blit.
@@ -1678,9 +2076,23 @@ fn soft_fallback_applies_canvas_offset_exactly_once() {
 fn native_gpu_canvas_flushes_native_operations_in_recorded_order() {
     let fail_stage = Rc::new(Cell::new(FailStage::None));
     let stages = Rc::new(RefCell::new(Vec::new()));
+    let solid_rects = Rc::new(RefCell::new(Vec::new()));
+    let solid_scissors = Rc::new(RefCell::new(Vec::new()));
+    let glyph_batches = Rc::new(RefCell::new(Vec::new()));
+    let soft_tiles = Rc::new(RefCell::new(Vec::new()));
     let shutdown_calls = Rc::new(Cell::new(0));
     let make_current_calls = Rc::new(Cell::new(0));
-    let mut context = recording_context(&fail_stage, &stages, &shutdown_calls, &make_current_calls);
+    let mut context = recording_context(
+        &fail_stage,
+        &stages,
+        &solid_rects,
+        &solid_scissors,
+        &glyph_batches,
+        &soft_tiles,
+        NativeRasterCaps::d3d11_full(),
+        &shutdown_calls,
+        &make_current_calls,
+    );
     let mut canvas = NativeGpuCanvas2D::new(32, 32, NativeRasterCaps::d3d11_full());
     canvas.stroke_rect(Rect::new(1.0, 1.0, 8.0, 8.0), Color::white(), 1.0, None);
     canvas.fill_rect(Rect::new(2.0, 2.0, 8.0, 8.0), Color::white(), None);
@@ -1786,6 +2198,10 @@ fn native_gpu_backend_propagates_each_present_stage_error() {
     assert!(backend.surface.needs_gpu_clear);
     assert_eq!(backend.surface.canvas.pending_native.len(), 1);
     assert!(backend.surface.canvas.soft_has_content);
+    assert!(
+        backend.surface.canvas.soft_fallback.is_some(),
+        "failed soft submission must retain its retry source"
+    );
     fail_stage.set(FailStage::None);
     stages.borrow_mut().clear();
     backend
@@ -1797,6 +2213,25 @@ fn native_gpu_backend_propagates_each_present_stage_error() {
     );
     assert!(backend.surface.canvas.pending_native.is_empty());
     assert!(!backend.surface.canvas.soft_has_content);
+    assert!(
+        backend.surface.canvas.soft_fallback.is_some(),
+        "successful soft frame keeps the allocation for a consecutive soft frame"
+    );
+    stages.borrow_mut().clear();
+    backend
+        .present(&DamageRegion::full())
+        .expect("first soft-free frame after retry");
+    assert!(
+        backend.surface.canvas.soft_fallback.is_some(),
+        "one soft-free present is retained as an allocation-churn grace"
+    );
+    backend
+        .present(&DamageRegion::full())
+        .expect("second soft-free frame after retry");
+    assert!(
+        backend.surface.canvas.soft_fallback.is_none(),
+        "the second successful soft-free present releases the idle allocation"
+    );
 
     let RecordingFixture {
         mut backend,
@@ -1936,6 +2371,402 @@ fn main_frame_encoder_executes_each_command_at_its_recorded_boundary() {
         ["clear", "solid", "soft", "soft"],
         "each encoded command must reach its matching native boundary in painter order"
     );
+    assert_eq!(
+        backend.last_soft_upload_bytes(),
+        2 * 2 * std::mem::size_of::<u32>(),
+        "FrameEncoder Picture blits must update the same soft-upload diagnostic as Canvas fallback"
+    );
+}
+
+#[test]
+fn main_frame_encoder_forwards_rounded_rect_geometry_to_native_gpu() {
+    use crate::draw::pipeline::{FrameRadius, FrameRect};
+
+    let RecordingFixture {
+        mut backend,
+        solid_rects,
+        ..
+    } = recording_backend(FailStage::None);
+    backend.resize(32, 24).expect("resize");
+    let radius = Radius {
+        tl: 6.0,
+        tr: 4.0,
+        br: 3.0,
+        bl: 2.0,
+    };
+    let color = Color::from_rgba(40, 120, 220, 160);
+    let mut encoder = FrameEncoder::new(32, 24).expect("encoder");
+    encoder.native(FrameRasterOp::FillRoundedRect {
+        rect: FrameRect::new(3, 5, 18, 12),
+        color,
+        radius: FrameRadius::new(radius).expect("valid radius"),
+    });
+
+    assert_eq!(
+        backend
+            .try_execute_encoded_frame(&encoder)
+            .expect("execute rounded native op"),
+        EncodedFrameExecution::Executed
+    );
+    assert_eq!(
+        solid_rects.borrow().as_slice(),
+        &[GpuSolidRect {
+            x: 3.0,
+            y: 5.0,
+            w: 18.0,
+            h: 12.0,
+            rgba: [
+                color.r as f32 / 255.0,
+                color.g as f32 / 255.0,
+                color.b as f32 / 255.0,
+                color.a as f32 / 255.0,
+            ],
+            radius: [6.0, 4.0, 3.0, 2.0],
+        }]
+    );
+}
+
+#[test]
+fn clipped_rounded_ir_normalizes_scissor_without_changing_geometry() {
+    use crate::draw::pipeline::{FrameRadius, FrameRect};
+
+    let RecordingFixture {
+        mut backend,
+        stages,
+        solid_rects,
+        solid_scissors,
+        ..
+    } = recording_backend(FailStage::None);
+    backend.resize(16, 16).expect("resize");
+    let radius = Radius {
+        tl: 3.0,
+        tr: 8.0,
+        br: 20.0,
+        bl: 0.0,
+    };
+    let color = Color::from_rgba(40, 120, 220, 160);
+    let mut encoder = FrameEncoder::new(16, 16).expect("encoder");
+    encoder.clear(Color::black());
+    encoder
+        .cpu_segment([FrameRasterOp::FillRect {
+            rect: FrameRect::new(0, 0, 1, 1),
+            color: Color::red(),
+        }])
+        .unwrap();
+    encoder.native(FrameRasterOp::FillRoundedRectClipped {
+        rect: FrameRect::new(2, 1, 20, 14),
+        color,
+        radius: FrameRadius::new(radius).unwrap(),
+        clip: FrameRect::new(-3, 4, 30, 20),
+    });
+    encoder
+        .cpu_segment([FrameRasterOp::FillRect {
+            rect: FrameRect::new(15, 15, 1, 1),
+            color: Color::blue(),
+        }])
+        .unwrap();
+    encoder.native(FrameRasterOp::FillRoundedRectClipped {
+        rect: FrameRect::new(0, 0, 8, 8),
+        color: Color::white(),
+        radius: FrameRadius::new(Radius::uniform(2.0)).unwrap(),
+        clip: FrameRect::new(i32::MAX - 4, 0, 100, 10),
+    });
+
+    backend
+        .try_execute_encoded_frame(&encoder)
+        .expect("execute clipped rounded IR");
+    assert_eq!(
+        stages.borrow().as_slice(),
+        ["clear", "soft", "solid", "soft"]
+    );
+    assert_eq!(solid_scissors.borrow().as_slice(), [Some((0, 4, 16, 12))]);
+    assert_eq!(
+        solid_rects.borrow().as_slice(),
+        &[GpuSolidRect {
+            x: 2.0,
+            y: 1.0,
+            w: 20.0,
+            h: 14.0,
+            rgba: [
+                color.r as f32 / 255.0,
+                color.g as f32 / 255.0,
+                color.b as f32 / 255.0,
+                color.a as f32 / 255.0,
+            ],
+            radius: [3.0, 8.0, 20.0, 0.0],
+        }]
+    );
+}
+
+#[test]
+fn main_frame_glyph_ir_forwards_one_native_batch_with_integral_scissor() {
+    use crate::draw::pipeline::{FrameGlyphBlit, FrameRect};
+
+    let RecordingFixture {
+        mut backend,
+        stages,
+        glyph_batches,
+        soft_tiles,
+        ..
+    } = recording_backend(FailStage::None);
+    backend.resize(40, 20).expect("resize");
+    let coverage: Arc<[u8]> = vec![0, 1, 127, 128, 254, 255, 64, 192].into();
+    let mut encoder = FrameEncoder::new(40, 20).expect("encoder");
+    encoder.clear(Color::from_rgb(10, 20, 30));
+    encoder.native(FrameRasterOp::BlitGlyphs {
+        glyphs: vec![
+            FrameGlyphBlit::new(
+                3,
+                4,
+                Arc::clone(&coverage),
+                4,
+                2,
+                Color::from_rgba(220, 80, 40, 144),
+            )
+            .unwrap(),
+            FrameGlyphBlit::new(9, 4, Arc::clone(&coverage), 4, 2, Color::white()).unwrap(),
+        ],
+        clip: FrameRect::new(2, 3, 20, 8),
+    });
+
+    backend
+        .try_execute_encoded_frame(&encoder)
+        .expect("execute glyph IR");
+    assert_eq!(stages.borrow().as_slice(), ["clear", "glyph"]);
+    assert!(soft_tiles.borrow().is_empty());
+    let batches = glyph_batches.borrow();
+    assert_eq!(batches.len(), 1);
+    assert_eq!(batches[0].0, Some((2, 3, 20, 8)));
+    assert_eq!(batches[0].1.len(), 2);
+    assert!(Arc::ptr_eq(&batches[0].1[0].coverage, &coverage));
+}
+
+fn recorded_picture_glyph_frame_encoder(
+    width: i32,
+    height: i32,
+) -> (crate::draw::pipeline::FrameEncoder, Arc<[u8]>) {
+    use crate::draw::pipeline::frame_recording::FrameRecordingEngine;
+
+    let mut recorder = FrameRecordingEngine::new();
+    recorder
+        .initialize(width, height)
+        .expect("initialize Picture glyph recorder");
+    let picture = recorder.create_offscreen(32, 16).expect("Picture");
+    let coverage: Arc<[u8]> = vec![0, 1, 127, 255, 255, 128, 64, 0].into();
+    recorder
+        .try_begin_offscreen_paint(&picture)
+        .expect("begin Picture");
+    {
+        let canvas = recorder.offscreen_canvas(&picture).expect("Picture canvas");
+        canvas.translate(-8.0, -4.0);
+        canvas.fill_rect(
+            Rect::new(8.0, 4.0, 32.0, 16.0),
+            Color::from_rgb(24, 48, 72),
+            Some(Radius::uniform(4.0)),
+        );
+        canvas.fill_rect(
+            Rect::new(20.0, 4.0, 4.0, 4.0),
+            Color::from_rgb(72, 48, 24),
+            None,
+        );
+        canvas.fill_rect(
+            Rect::new(24.0, 4.0, 4.0, 4.0),
+            Color::from_rgb(24, 72, 48),
+            None,
+        );
+        canvas.set_opacity(0.37);
+        canvas.blit_glyph_shared(
+            21,
+            5,
+            Arc::clone(&coverage),
+            4,
+            2,
+            Color::from_rgba(220, 96, 40, 160),
+        );
+        canvas.blit_glyph_shared(
+            23,
+            5,
+            Arc::clone(&coverage),
+            4,
+            2,
+            Color::from_rgba(40, 180, 220, 192),
+        );
+    }
+    recorder.try_end_offscreen_paint().expect("commit Picture");
+    recorder.begin_recording(true).expect("begin main frame");
+    recorder.canvas_2d().fill_rect(
+        Rect::new(0.0, 0.0, width as f32, height as f32),
+        Color::from_rgb(12, 24, 48),
+        None,
+    );
+    recorder
+        .try_blit_offscreen_src(
+            &picture,
+            Rect::new(0.0, 0.0, 32.0, 16.0),
+            Rect::new(8.0, 4.0, 32.0, 16.0),
+        )
+        .expect("splice Picture glyphs");
+    let encoder = recorder.finish_recording().expect("finish main frame");
+    assert!(!encoder.commands().iter().any(|command| matches!(
+        command,
+        FrameCommand::CpuSegment { .. } | FrameCommand::PictureBlit { .. }
+    )));
+    (encoder, coverage)
+}
+
+#[test]
+fn picture_producer_glyph_ir_reaches_native_backend_without_soft_tiles() {
+    let RecordingFixture {
+        mut backend,
+        stages,
+        glyph_batches,
+        soft_tiles,
+        ..
+    } = recording_backend(FailStage::None);
+    backend.resize(96, 48).expect("resize");
+    let (encoder, coverage) = recorded_picture_glyph_frame_encoder(96, 48);
+
+    backend
+        .try_execute_encoded_frame(&encoder)
+        .expect("execute Picture-produced glyph IR");
+    assert_eq!(
+        stages.borrow().as_slice(),
+        ["clear", "solid", "solid", "solid", "solid", "glyph"]
+    );
+    assert!(soft_tiles.borrow().is_empty());
+    let batches = glyph_batches.borrow();
+    assert_eq!(batches.len(), 1);
+    assert_eq!(batches[0].0, Some((8, 4, 32, 16)));
+    assert_eq!(batches[0].1.len(), 2);
+    assert_eq!(
+        batches[0].1[0].rgba[3],
+        ((160.0_f32 * 0.37) as u8) as f32 / 255.0
+    );
+    assert_eq!(
+        batches[0].1[1].rgba[3],
+        ((192.0_f32 * 0.37) as u8) as f32 / 255.0
+    );
+    assert!(Arc::ptr_eq(&batches[0].1[0].coverage, &coverage));
+    assert!(Arc::ptr_eq(&batches[0].1[1].coverage, &coverage));
+}
+
+#[test]
+fn glyph_incapable_backend_uses_sparse_bounded_soft_clusters_in_order() {
+    use crate::draw::pipeline::FrameRect;
+
+    let mut caps = NativeRasterCaps::d3d11_full();
+    caps.glyphs = false;
+    let RecordingFixture {
+        mut backend,
+        stages,
+        glyph_batches,
+        soft_tiles,
+        ..
+    } = recording_backend_with_caps(FailStage::None, caps);
+    backend.resize(1200, 800).expect("resize");
+    let coverage: Arc<[u8]> = vec![0, 64, 192, 255, 255, 192, 64, 0].into();
+    let glyph = |x| {
+        crate::draw::pipeline::FrameGlyphBlit::new(
+            x,
+            20,
+            Arc::clone(&coverage),
+            4,
+            2,
+            Color::from_rgba(220, 80, 40, 144),
+        )
+        .unwrap()
+    };
+    let mut encoder = FrameEncoder::new(1200, 800).expect("encoder");
+    encoder.clear(Color::black());
+    encoder.native(FrameRasterOp::BlitGlyphs {
+        glyphs: vec![glyph(10), glyph(16), glyph(1100)],
+        clip: FrameRect::new(0, 0, 1200, 800),
+    });
+
+    backend
+        .try_execute_encoded_frame(&encoder)
+        .expect("compact glyph fallback");
+    assert!(glyph_batches.borrow().is_empty());
+    assert_eq!(stages.borrow().as_slice(), ["clear", "soft", "soft"]);
+    let tiles = soft_tiles.borrow();
+    assert_eq!(
+        tiles.len(),
+        2,
+        "distant text must split before a near-window union"
+    );
+    assert!(tiles.iter().all(|(tile, pixels)| {
+        tile.width <= 10
+            && tile.height <= 2
+            && pixels.len() == tile.required_pixels().expect("valid tile")
+    }));
+    assert!(tiles[0].0.dst_x < tiles[1].0.dst_x);
+}
+
+#[test]
+fn oversized_single_glyph_fallback_is_tiled_to_the_hard_bound() {
+    use crate::draw::pipeline::{FrameGlyphBlit, FrameRect};
+
+    let mut caps = NativeRasterCaps::d3d11_full();
+    caps.glyphs = false;
+    let RecordingFixture {
+        mut backend,
+        glyph_batches,
+        soft_tiles,
+        ..
+    } = recording_backend_with_caps(FailStage::None, caps);
+    backend.resize(1400, 4).expect("resize");
+    let mut encoder = FrameEncoder::new(1400, 4).expect("encoder");
+    encoder.native(FrameRasterOp::BlitGlyphs {
+        glyphs: vec![
+            FrameGlyphBlit::new(10, 1, vec![255; 1025].into(), 1025, 1, Color::white()).unwrap(),
+        ],
+        clip: FrameRect::new(0, 0, 1400, 4),
+    });
+
+    backend
+        .try_execute_encoded_frame(&encoder)
+        .expect("tiled glyph fallback");
+    assert!(glyph_batches.borrow().is_empty());
+    let tiles = soft_tiles.borrow();
+    assert_eq!(tiles.len(), 2);
+    assert_eq!(tiles[0].0, SoftFallbackTile::at_destination(10, 1, 1024, 1));
+    assert_eq!(tiles[1].0, SoftFallbackTile::at_destination(1034, 1, 1, 1));
+}
+
+#[test]
+fn glyph_capable_backend_preflights_atlas_limit_and_tiles_without_native_call() {
+    use crate::draw::pipeline::{FrameGlyphBlit, FrameRect};
+
+    let RecordingFixture {
+        mut backend,
+        glyph_batches,
+        soft_tiles,
+        ..
+    } = recording_backend(FailStage::None);
+    backend.resize(2300, 4).expect("resize");
+    let mut encoder = FrameEncoder::new(2300, 4).expect("encoder");
+    encoder.native(FrameRasterOp::BlitGlyphs {
+        glyphs: vec![
+            FrameGlyphBlit::new(10, 1, vec![255; 2049].into(), 2049, 1, Color::white()).unwrap(),
+        ],
+        clip: FrameRect::new(0, 0, 2300, 4),
+    });
+
+    backend
+        .try_execute_encoded_frame(&encoder)
+        .expect("oversized glyph compact fallback");
+    assert!(
+        glyph_batches.borrow().is_empty(),
+        "the native call must not begin after the atlas limit is known to be exceeded"
+    );
+    let tiles = soft_tiles.borrow();
+    assert_eq!(tiles.len(), 3);
+    assert_eq!(tiles[0].0, SoftFallbackTile::at_destination(10, 1, 1024, 1));
+    assert_eq!(
+        tiles[1].0,
+        SoftFallbackTile::at_destination(1034, 1, 1024, 1)
+    );
+    assert_eq!(tiles[2].0, SoftFallbackTile::at_destination(2058, 1, 1, 1));
 }
 
 #[test]
@@ -2988,6 +3819,7 @@ fn d3d12_warp_real_context_flows_through_gpu_engine_with_mixed_native_and_soft()
             clear_target: true,
             soft_blit: true,
             solid_rects: true,
+            glyphs: true,
             ..NativeRasterCaps::default()
         }
     );
@@ -3092,6 +3924,16 @@ fn record_common_hybrid_clip_scene(canvas: &mut dyn Canvas2D) {
         Color::from_rgba(255, 0, 0, 255),
         None,
     );
+    canvas.fill_rect(
+        Rect::new(68.0, 8.0, 20.0, 20.0),
+        Color::from_rgba(220, 140, 40, 192),
+        Some(Radius {
+            tl: 6.0,
+            tr: 12.0,
+            br: 14.0,
+            bl: 3.0,
+        }),
+    );
     canvas.push_clip(Rect::new(28.0, 18.0, 24.0, 20.0));
     canvas.fill_ellipse(
         Rect::new(20.0, 10.0, 40.0, 40.0),
@@ -3102,10 +3944,20 @@ fn record_common_hybrid_clip_scene(canvas: &mut dyn Canvas2D) {
 
 #[cfg(feature = "d3d11")]
 fn common_hybrid_probes(pixels: &[u32], stride: usize) -> Vec<u32> {
-    [(4usize, 4usize), (20, 16), (22, 12), (40, 28), (85, 55)]
-        .into_iter()
-        .map(|(x, y)| pixels[y * stride + x])
-        .collect()
+    [
+        (4usize, 4usize),
+        (20, 16),
+        (22, 12),
+        (40, 28),
+        (69, 9),
+        (78, 14),
+        (84, 11),
+        (85, 22),
+        (85, 55),
+    ]
+    .into_iter()
+    .map(|(x, y)| pixels[y * stride + x])
+    .collect()
 }
 
 #[cfg(any(feature = "d3d11", feature = "d3d12"))]
@@ -3121,6 +3973,217 @@ fn assert_premultiplied_probes_match(reference: &[u32], actual: &[u32], label: &
             );
         }
     }
+}
+
+#[cfg(any(feature = "d3d11", feature = "d3d12"))]
+fn clipped_rounded_frame_encoder(width: i32, height: i32) -> FrameEncoder {
+    use crate::draw::pipeline::frame_recording::FrameRecordingEngine;
+
+    let mut recorder = FrameRecordingEngine::new();
+    recorder
+        .initialize(width, height)
+        .expect("initialize clipped rounded recorder");
+    recorder
+        .begin_recording(true)
+        .expect("begin clipped rounded recording");
+    recorder.canvas_2d().fill_rect(
+        Rect::new(0.0, 0.0, width as f32, height as f32),
+        Color::from_rgb(24, 48, 72),
+        None,
+    );
+    recorder.canvas_2d().set_opacity(0.37);
+    recorder
+        .canvas_2d()
+        .push_clip(Rect::new(5.0, 5.0, 16.0, 14.0));
+    recorder.canvas_2d().fill_rect(
+        Rect::new(4.0, 4.0, 24.0, 20.0),
+        Color::from_rgba(220, 80, 40, 160),
+        Some(Radius {
+            tl: 7.0,
+            tr: 3.0,
+            br: 18.0,
+            bl: 0.0,
+        }),
+    );
+    recorder.canvas_2d().pop_clip();
+    recorder
+        .canvas_2d()
+        .push_clip(Rect::new(36.0, 7.0, 17.0, 17.0));
+    recorder.canvas_2d().fill_rect(
+        Rect::new(34.0, 5.0, 22.0, 22.0),
+        Color::from_rgba(40, 180, 220, 192),
+        Some(Radius {
+            tl: 20.0,
+            tr: 4.0,
+            br: 30.0,
+            bl: 8.0,
+        }),
+    );
+    let encoder = recorder
+        .finish_recording()
+        .expect("finish clipped rounded recording");
+    assert_eq!(recorder.scratch_surface_size(), (1, 1));
+    assert!(!encoder
+        .commands()
+        .iter()
+        .any(|command| matches!(command, FrameCommand::CpuSegment { .. })));
+    encoder
+}
+
+#[cfg(any(feature = "d3d11", feature = "d3d12"))]
+fn verify_clipped_rounded_native_backend(native: &mut NativeGpuBackend, label: &str) {
+    let encoder = clipped_rounded_frame_encoder(native.gpu_ctx.width(), native.gpu_ctx.height());
+    assert_eq!(
+        native
+            .try_execute_encoded_frame(&encoder)
+            .expect("execute clipped rounded frame"),
+        EncodedFrameExecution::Executed
+    );
+    let reference = encoder.render_reference();
+    let stride = native.gpu_ctx.width() as usize;
+    let pixels = native.try_readback().expect("clipped rounded readback");
+    let probes = [
+        (4usize, 5usize), // outside first clip
+        (5, 5),           // clip intersects TL AA
+        (10, 10),         // first interior
+        (20, 12),         // first right edge inside
+        (21, 12),         // first right edge outside
+        (40, 8),          // oversized-radius AA
+        (45, 14),         // second interior
+        (52, 20),         // second right/bottom inside
+        (53, 20),         // second right edge outside
+        (45, 24),         // second bottom edge outside
+    ];
+    let expected = probes
+        .iter()
+        .map(|(x, y)| reference.pixel(*x as i32, *y as i32).unwrap())
+        .collect::<Vec<_>>();
+    let actual = probes
+        .iter()
+        .map(|(x, y)| pixels[y * stride + x])
+        .collect::<Vec<_>>();
+    assert_premultiplied_probes_match(&expected, &actual, label);
+}
+
+#[cfg(any(feature = "d3d11", feature = "d3d12"))]
+fn verify_picture_glyph_native_backend(native: &mut NativeGpuBackend, label: &str) {
+    let (encoder, _) =
+        recorded_picture_glyph_frame_encoder(native.gpu_ctx.width(), native.gpu_ctx.height());
+    let reference = encoder.render_reference();
+    assert_eq!(
+        native
+            .try_execute_encoded_frame(&encoder)
+            .expect("execute Picture glyph frame"),
+        EncodedFrameExecution::Executed
+    );
+    assert_eq!(native.last_soft_upload_bytes(), 0);
+    let pixels = native.try_readback().expect("Picture glyph readback");
+    let stride = native.gpu_ctx.width() as usize;
+    let probes = [
+        (9usize, 6usize),
+        (10, 6),
+        (11, 6),
+        (21, 5),
+        (23, 5),
+        (24, 6),
+        (26, 6),
+        (40, 20),
+    ];
+    let expected = probes
+        .iter()
+        .map(|(x, y)| reference.pixel(*x as i32, *y as i32).unwrap())
+        .collect::<Vec<_>>();
+    let actual = probes
+        .iter()
+        .map(|(x, y)| pixels[y * stride + x])
+        .collect::<Vec<_>>();
+    assert_premultiplied_probes_match(&expected, &actual, label);
+}
+
+#[cfg(feature = "d3d11")]
+#[test]
+fn d3d11_warp_clipped_rounded_opacity_ir_matches_reference() {
+    if !crate::native::factory::d3d11_warp_test_context_available() {
+        return;
+    }
+    let mut platform = crate::native::create_platform().expect("platform");
+    let mut window = platform
+        .window_manager()
+        .create_window("clipped rounded D3D11 WARP", 64, 40)
+        .expect("window");
+    let context =
+        crate::native::factory::create_d3d11_warp_test_context(window.native_surface_ptr(), 64, 40)
+            .expect("D3D11 WARP context");
+    let mut native = NativeGpuBackend::new(context).expect("native backend");
+    native.resize(64, 40).expect("resize");
+    verify_clipped_rounded_native_backend(&mut native, "D3D11 WARP clipped rounded opacity IR");
+    native.try_shutdown().expect("shutdown");
+    window.close().expect("close window");
+}
+
+#[cfg(feature = "d3d12")]
+#[test]
+fn d3d12_warp_clipped_rounded_opacity_ir_matches_reference() {
+    let _warp_guard = d3d12_warp_test_guard();
+    if !crate::native::factory::d3d12_warp_test_context_available() {
+        return;
+    }
+    let mut platform = crate::native::create_platform().expect("platform");
+    let mut window = platform
+        .window_manager()
+        .create_window("clipped rounded D3D12 WARP", 64, 40)
+        .expect("window");
+    let context =
+        crate::native::factory::create_d3d12_warp_test_context(window.native_surface_ptr(), 64, 40)
+            .expect("D3D12 WARP context");
+    let mut native = NativeGpuBackend::new(context).expect("native backend");
+    native.resize(64, 40).expect("resize");
+    verify_clipped_rounded_native_backend(&mut native, "D3D12 WARP clipped rounded opacity IR");
+    native.try_shutdown().expect("shutdown");
+    window.close().expect("close window");
+}
+
+#[cfg(feature = "d3d11")]
+#[test]
+fn d3d11_warp_picture_glyph_ir_matches_reference_without_soft_fallback() {
+    if !crate::native::factory::d3d11_warp_test_context_available() {
+        return;
+    }
+    let mut platform = crate::native::create_platform().expect("platform");
+    let mut window = platform
+        .window_manager()
+        .create_window("Picture glyph D3D11 WARP", 96, 48)
+        .expect("window");
+    let context =
+        crate::native::factory::create_d3d11_warp_test_context(window.native_surface_ptr(), 96, 48)
+            .expect("D3D11 WARP context");
+    let mut native = NativeGpuBackend::new(context).expect("native backend");
+    native.resize(96, 48).expect("resize");
+    verify_picture_glyph_native_backend(&mut native, "D3D11 WARP Picture glyph IR");
+    native.try_shutdown().expect("shutdown");
+    window.close().expect("close window");
+}
+
+#[cfg(feature = "d3d12")]
+#[test]
+fn d3d12_warp_picture_glyph_ir_matches_reference_without_soft_fallback() {
+    let _warp_guard = d3d12_warp_test_guard();
+    if !crate::native::factory::d3d12_warp_test_context_available() {
+        return;
+    }
+    let mut platform = crate::native::create_platform().expect("platform");
+    let mut window = platform
+        .window_manager()
+        .create_window("Picture glyph D3D12 WARP", 96, 48)
+        .expect("window");
+    let context =
+        crate::native::factory::create_d3d12_warp_test_context(window.native_surface_ptr(), 96, 48)
+            .expect("D3D12 WARP context");
+    let mut native = NativeGpuBackend::new(context).expect("native backend");
+    native.resize(96, 48).expect("resize");
+    verify_picture_glyph_native_backend(&mut native, "D3D12 WARP Picture glyph IR");
+    native.try_shutdown().expect("shutdown");
+    window.close().expect("close window");
 }
 
 #[cfg(feature = "d3d11")]
@@ -3273,7 +4336,7 @@ fn d3d11_warp_executes_encoded_picture_in_its_bound_offscreen_target() {
 #[cfg(feature = "d3d11")]
 #[test]
 fn d3d11_warp_executes_main_frame_encoder_before_its_only_present() {
-    use crate::draw::pipeline::{FrameImage, FrameRasterOp, FrameRect};
+    use crate::draw::pipeline::{FrameImage, FrameRadius, FrameRasterOp, FrameRect};
 
     if !crate::native::factory::d3d11_warp_test_context_available() {
         return;
@@ -3296,6 +4359,17 @@ fn d3d11_warp_executes_main_frame_encoder_before_its_only_present() {
     encoder.native(FrameRasterOp::FillRect {
         rect: FrameRect::new(8, 8, 12, 12),
         color: Color::from_rgba(40, 220, 80, 255),
+    });
+    encoder.native(FrameRasterOp::FillRoundedRect {
+        rect: FrameRect::new(60, 8, 20, 20),
+        color: Color::from_rgba(220, 140, 40, 192),
+        radius: FrameRadius::new(Radius {
+            tl: 6.0,
+            tr: 5.0,
+            br: 4.0,
+            bl: 3.0,
+        })
+        .expect("valid rounded radius"),
     });
     encoder
         .cpu_segment([FrameRasterOp::FillRect {
@@ -3322,12 +4396,16 @@ fn d3d11_warp_executes_main_frame_encoder_before_its_only_present() {
         &[
             reference.pixel(4, 4).expect("background probe"),
             reference.pixel(10, 10).expect("native probe"),
+            reference.pixel(61, 9).expect("rounded AA edge probe"),
+            reference.pixel(70, 14).expect("rounded interior probe"),
             reference.pixel(40, 28).expect("fill probe"),
             reference.pixel(72, 48).expect("Picture probe"),
         ],
         &[
             pixels[4 * stride + 4],
             pixels[10 * stride + 10],
+            pixels[9 * stride + 61],
+            pixels[14 * stride + 70],
             pixels[28 * stride + 40],
             pixels[48 * stride + 72],
         ],

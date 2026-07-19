@@ -2,7 +2,7 @@
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::painting::{PaintContext, PaintPass};
 use crate::draw::Color;
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
@@ -29,34 +29,50 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
+    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
+        -> Vec<(crate::ui::ComponentId, Rect)>
+    {
+        if !self.wrapper_mode {
+            return Vec::new();
+        }
+        let frame = Self::normalize_frame(frame);
+        children.iter().map(|child| (child.id, frame)).collect()
+    }
+
+    children_clip => (&self, frame: Rect) -> Option<Rect> {
+        self.wrapper_mode.then(|| Self::normalize_frame(frame))
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        if !self.spinning && !self.wrapper_mode {
+        let expected_pass = if self.wrapper_mode {
+            PaintPass::AfterChildren
+        } else {
+            PaintPass::Content
+        };
+        if ctx.paint_pass() != expected_pass || !self.spinning {
             return;
         }
 
+        let frame = Self::normalize_frame(frame);
+        if frame.w <= 0.0 || frame.h <= 0.0 {
+            return;
+        }
         let c = self.color.unwrap_or(ctx.tokens().color_primary());
-        let d = self.diameter();
-        let cx = frame.x + frame.w * 0.5;
-        let cy = frame.y + frame.h * 0.5;
+        let (cx, cy, d, tip_frame) = self.content_geometry(frame);
 
-        if self.wrapper_mode && self.spinning {
-            ctx.fill_rect(frame, Color::from_rgba(0, 0, 0, 30), None);
+        ctx.push_clip(frame);
+        if self.wrapper_mode {
+            ctx.fill_rect(frame, ctx.tokens().color_text().with_alpha(30), None);
         }
 
-        if self.spinning {
+        if d > 0.0 {
             self.render_dots(ctx, cx, cy, d * 0.35, c);
         }
 
-        if self.wrapper_mode && !self.tip.is_empty() {
-            let tip_y = cy + d * 0.5 + 8.0;
-            let tip_w = ctx.measure_text(&self.tip, 13.0).w;
-            ctx.draw_text(
-                &self.tip,
-                Point::new(cx - tip_w * 0.5, tip_y),
-                ctx.tokens().color_text_secondary(),
-                13.0,
-            );
+        if let Some(tip_frame) = tip_frame {
+            self.render_tip(ctx, tip_frame);
         }
+        ctx.pop_clip();
     }
 
     update_animation => (&mut self, dt: f64) -> bool {
@@ -71,7 +87,10 @@ component! {
 
     dirty_bounds => (&self, frame: Rect) -> Rect {
         if self.spinning {
+            let frame = Self::normalize_frame(frame);
             self.spinner_bounds(frame)
+                .intersect(&frame)
+                .unwrap_or(Rect::zero())
         } else {
             Rect::zero()
         }
@@ -107,13 +126,106 @@ impl Spin {
     }
 
     fn spinner_bounds(&self, frame: Rect) -> Rect {
-        let d = self.diameter();
+        let (cx, cy, d, _) = self.content_geometry(frame);
         let orbit_r = d * 0.35;
         let dot_r = orbit_r * 0.18;
         let extent = orbit_r + dot_r + 1.0;
-        let cx = frame.x + frame.w * 0.5;
-        let cy = frame.y + frame.h * 0.5;
         Rect::new(cx - extent, cy - extent, extent * 2.0, extent * 2.0)
+    }
+
+    fn content_geometry(&self, frame: Rect) -> (f32, f32, f32, Option<Rect>) {
+        const TIP_GAP: f32 = 8.0;
+        const TIP_HEIGHT: f32 = 18.0;
+        let has_tip = self.wrapper_mode && !self.tip.is_empty() && frame.h >= TIP_HEIGHT;
+        let reserved_tip_height = if has_tip { TIP_GAP + TIP_HEIGHT } else { 0.0 };
+        let d = self
+            .diameter()
+            .min(frame.w)
+            .min((frame.h - reserved_tip_height).max(0.0));
+        let content_height = d + reserved_tip_height;
+        let top = frame.y + (frame.h - content_height) * 0.5;
+        let cx = frame.x + frame.w * 0.5;
+        let cy = top + d * 0.5;
+        let tip_frame = has_tip.then(|| {
+            Rect::new(
+                frame.x,
+                top + d + TIP_GAP,
+                frame.w,
+                TIP_HEIGHT.min(frame.y + frame.h - (top + d + TIP_GAP)),
+            )
+        });
+        (cx, cy, d, tip_frame)
+    }
+
+    fn render_tip(&self, ctx: &mut PaintContext<'_>, frame: Rect) {
+        const FONT_SIZE: f32 = 13.0;
+        let Some(text) = Self::elide_single_line(ctx, &self.tip, FONT_SIZE, frame.w) else {
+            return;
+        };
+        let text_width = Self::text_width(ctx, &text, FONT_SIZE);
+        let y = ctx.visual_center_y(frame, FONT_SIZE);
+        ctx.draw_text(
+            &text,
+            Point::new(frame.x + (frame.w - text_width) * 0.5, y),
+            ctx.tokens().color_text_secondary(),
+            FONT_SIZE,
+        );
+    }
+
+    fn elide_single_line(
+        ctx: &mut PaintContext<'_>,
+        value: &str,
+        font_size: f32,
+        max_width: f32,
+    ) -> Option<String> {
+        if !max_width.is_finite() || max_width <= 0.0 {
+            return None;
+        }
+        let value = value.replace(['\r', '\n'], " ");
+        if Self::text_width(ctx, &value, font_size) <= max_width {
+            return Some(value);
+        }
+        const ELLIPSIS: &str = "…";
+        if Self::text_width(ctx, ELLIPSIS, font_size) > max_width {
+            return None;
+        }
+        let mut visible = String::new();
+        for ch in value.chars() {
+            visible.push(ch);
+            visible.push_str(ELLIPSIS);
+            let fits = Self::text_width(ctx, &visible, font_size) <= max_width;
+            visible.pop();
+            if !fits {
+                visible.pop();
+                break;
+            }
+        }
+        visible.push_str(ELLIPSIS);
+        Some(visible)
+    }
+
+    fn text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
+        ctx.measure_text(value, font_size).w.max(
+            crate::draw::font::text_backend::estimate_text_metrics(value, f32::INFINITY, font_size)
+                .max_line_width,
+        )
+    }
+
+    fn normalize_frame(frame: Rect) -> Rect {
+        Rect::new(
+            if frame.x.is_finite() { frame.x } else { 0.0 },
+            if frame.y.is_finite() { frame.y } else { 0.0 },
+            Self::normalize_dimension(frame.w),
+            Self::normalize_dimension(frame.h),
+        )
+    }
+
+    fn normalize_dimension(value: f32) -> f32 {
+        if value.is_finite() {
+            value.max(0.0)
+        } else {
+            0.0
+        }
     }
 }
 

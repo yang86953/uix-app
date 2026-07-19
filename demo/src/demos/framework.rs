@@ -173,7 +173,7 @@ pub fn page_framework(ctx: &DemoCtx<'_>) -> ViewNode {
         .automation_id(FRAMEWORK_SCROLL_ID)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "test-harness"))]
 mod tests {
     use super::*;
     use crate::demos::context::FrameworkControl;

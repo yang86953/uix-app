@@ -3,10 +3,15 @@
 //! `draw` sends only `IGraphicsContext` DTOs.  This module owns every GL
 //! program, buffer, texture and framebuffer used to execute them.
 
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use glow::HasContext as _;
 
 use crate::core::{Errc, Error, Rect, Result};
-use crate::native::traits::present::{GpuSolidRect, OffscreenTargetId, SoftFallbackTile};
+use crate::native::traits::present::{
+    GpuGlyphBlit, GpuSolidRect, OffscreenTargetId, SoftFallbackTile,
+};
 
 use super::{shaders, NativeOpenGlRuntime};
 
@@ -62,6 +67,51 @@ struct OffscreenTarget {
     height: i32,
 }
 
+const GLYPH_ATLAS_MIN: u32 = 256;
+const GLYPH_ATLAS_MAX: u32 = 2048;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct GlyphVertex {
+    pos: [f32; 2],
+    uv: [f32; 2],
+    color: [f32; 4],
+}
+
+#[derive(Default)]
+struct GlyphAtlasCursor {
+    x: u32,
+    y: u32,
+    row_h: u32,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct GlyphAtlasKey {
+    allocation: usize,
+    len: usize,
+    width: u32,
+    height: u32,
+}
+
+impl GlyphAtlasKey {
+    fn new(coverage: &Arc<[u8]>, width: u32, height: u32) -> Self {
+        Self {
+            allocation: Arc::as_ptr(coverage) as *const u8 as usize,
+            len: coverage.len(),
+            width,
+            height,
+        }
+    }
+}
+
+struct GlyphAtlasEntry {
+    // Keep the allocation alive so its pointer cannot be reused while this
+    // atlas entry is valid. Exact payloads keep retained bytes bounded by the
+    // packed atlas area.
+    _coverage: Arc<[u8]>,
+    uv: (f32, f32, f32, f32),
+}
+
 /// Native OpenGL ES pipeline for the current graphics context.
 pub(crate) struct OpenGlRasterPipeline {
     runtime: NativeOpenGlRuntime,
@@ -72,6 +122,19 @@ pub(crate) struct OpenGlRasterPipeline {
     rect_rect: Option<glow::UniformLocation>,
     rect_color: Option<glow::UniformLocation>,
     rect_radius: Option<glow::UniformLocation>,
+    glyph_vao: glow::VertexArray,
+    glyph_vbo: glow::Buffer,
+    glyph_program: glow::Program,
+    glyph_viewport: Option<glow::UniformLocation>,
+    glyph_texture_uniform: Option<glow::UniformLocation>,
+    glyph_atlas_texture: Option<glow::Texture>,
+    glyph_atlas_width: u32,
+    glyph_atlas_height: u32,
+    glyph_atlas_cursor: GlyphAtlasCursor,
+    glyph_atlas_cache: HashMap<GlyphAtlasKey, GlyphAtlasEntry>,
+    glyph_vertices: Vec<GlyphVertex>,
+    #[cfg(test)]
+    glyph_atlas_upload_count: usize,
     blit_vao: glow::VertexArray,
     blit_vbo: glow::Buffer,
     blit_bgra_program: glow::Program,
@@ -80,7 +143,7 @@ pub(crate) struct OpenGlRasterPipeline {
     blit_rgba_program: glow::Program,
     blit_rgba_texture: Option<glow::UniformLocation>,
     blit_rgba_uv: Option<glow::UniformLocation>,
-    soft_texture: glow::Texture,
+    soft_texture: Option<glow::Texture>,
     soft_width: i32,
     soft_height: i32,
     swapchain: TargetState,
@@ -103,6 +166,9 @@ impl OpenGlRasterPipeline {
         let rect_program =
             unsafe { compile_program(gl, shaders::RECT_VERT, shaders::RECT_FRAG, "rect")? };
         let (rect_vao, rect_vbo) = unsafe { create_quad(gl, &RECT_VERTICES)? };
+        let glyph_program =
+            unsafe { compile_program(gl, shaders::GLYPH_VERT, shaders::GLYPH_FRAG, "glyph")? };
+        let (glyph_vao, glyph_vbo) = unsafe { create_glyph_buffer(gl)? };
         let blit_bgra_program = unsafe {
             compile_program(
                 gl,
@@ -120,7 +186,6 @@ impl OpenGlRasterPipeline {
             )?
         };
         let (blit_vao, blit_vbo) = unsafe { create_quad(gl, &FULLSCREEN_VERTICES)? };
-        let soft_texture = unsafe { create_texture(gl, logical_width, logical_height)? };
         let swapchain = TargetState::swapchain(
             logical_width,
             logical_height,
@@ -136,6 +201,19 @@ impl OpenGlRasterPipeline {
             rect_rect: unsafe { gl.get_uniform_location(rect_program, "u_rect") },
             rect_color: unsafe { gl.get_uniform_location(rect_program, "u_color") },
             rect_radius: unsafe { gl.get_uniform_location(rect_program, "u_radius") },
+            glyph_vao,
+            glyph_vbo,
+            glyph_program,
+            glyph_viewport: unsafe { gl.get_uniform_location(glyph_program, "u_viewport") },
+            glyph_texture_uniform: unsafe { gl.get_uniform_location(glyph_program, "u_atlas") },
+            glyph_atlas_texture: None,
+            glyph_atlas_width: 0,
+            glyph_atlas_height: 0,
+            glyph_atlas_cursor: GlyphAtlasCursor::default(),
+            glyph_atlas_cache: HashMap::new(),
+            glyph_vertices: Vec::new(),
+            #[cfg(test)]
+            glyph_atlas_upload_count: 0,
             blit_vao,
             blit_vbo,
             blit_bgra_program,
@@ -144,9 +222,11 @@ impl OpenGlRasterPipeline {
             blit_rgba_program,
             blit_rgba_texture: unsafe { gl.get_uniform_location(blit_rgba_program, "u_tex") },
             blit_rgba_uv: unsafe { gl.get_uniform_location(blit_rgba_program, "u_uv_rect") },
-            soft_texture,
-            soft_width: logical_width.max(1),
-            soft_height: logical_height.max(1),
+            // Glyph-only/native-only frames must not retain an unused
+            // full-target RGBA soft-upload texture.
+            soft_texture: None,
+            soft_width: 0,
+            soft_height: 0,
             runtime,
             swapchain,
             current: swapchain,
@@ -238,8 +318,12 @@ impl OpenGlRasterPipeline {
         self.apply_scissor(scissor);
         unsafe {
             self.gl().enable(glow::BLEND);
-            self.gl()
-                .blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
+            self.gl().blend_func_separate(
+                glow::ONE,
+                glow::ONE_MINUS_SRC_ALPHA,
+                glow::ONE,
+                glow::ONE_MINUS_SRC_ALPHA,
+            );
             self.gl().use_program(Some(self.rect_program));
             self.gl().uniform_2_f32(
                 self.rect_viewport.as_ref(),
@@ -274,6 +358,289 @@ impl OpenGlRasterPipeline {
         self.check_gl_error("draw_solid_rects")
     }
 
+    pub(crate) fn draw_glyphs(
+        &mut self,
+        viewport_width: f32,
+        viewport_height: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        glyphs: &[GpuGlyphBlit],
+    ) -> Result<()> {
+        if glyphs.is_empty() || viewport_width <= 0.0 || viewport_height <= 0.0 {
+            return Ok(());
+        }
+        self.glyph_vertices.clear();
+
+        for glyph in glyphs {
+            if glyph.w <= 0.0 || glyph.h <= 0.0 || glyph.cov_w == 0 || glyph.cov_h == 0 {
+                continue;
+            }
+            let width = glyph.cov_w;
+            let height = glyph.cov_h;
+            if width > GLYPH_ATLAS_MAX || height > GLYPH_ATLAS_MAX {
+                return Err(Error::new(
+                    Errc::InvalidArgument,
+                    format!("OpenGL glyph {width}x{height} exceeds atlas max {GLYPH_ATLAS_MAX}"),
+                ));
+            }
+
+            // Only exact payloads enter the persistent cache. Retaining an
+            // arbitrary trailing payload could exceed the bounded atlas area.
+            let expected = (width as usize).saturating_mul(height as usize);
+            let cache_key = (glyph.coverage.len() == expected)
+                .then(|| GlyphAtlasKey::new(&glyph.coverage, width, height));
+            if let Some(uv) = cache_key
+                .as_ref()
+                .and_then(|key| self.glyph_atlas_cache.get(key))
+                .map(|entry| entry.uv)
+            {
+                Self::push_glyph_quad(&mut self.glyph_vertices, glyph, uv);
+                continue;
+            }
+
+            if self.glyph_atlas_texture.is_none() {
+                self.ensure_glyph_atlas(width, height)?;
+            }
+            let wanted_width = next_power_of_two(width).clamp(GLYPH_ATLAS_MIN, GLYPH_ATLAS_MAX);
+            let wanted_height = next_power_of_two(height).clamp(GLYPH_ATLAS_MIN, GLYPH_ATLAS_MAX);
+            if wanted_width > self.glyph_atlas_width || wanted_height > self.glyph_atlas_height {
+                self.flush_glyph_batch(viewport_width, viewport_height, scissor)?;
+                self.ensure_glyph_atlas(width, height)?;
+            }
+
+            if !self.glyph_atlas_can_fit(width, height) {
+                self.flush_glyph_batch(viewport_width, viewport_height, scissor)?;
+                let grown_width = next_power_of_two(self.glyph_atlas_width.max(width))
+                    .clamp(GLYPH_ATLAS_MIN, GLYPH_ATLAS_MAX);
+                let grown_height =
+                    next_power_of_two(self.glyph_atlas_height.saturating_add(height))
+                        .clamp(GLYPH_ATLAS_MIN, GLYPH_ATLAS_MAX);
+                if grown_width > self.glyph_atlas_width || grown_height > self.glyph_atlas_height {
+                    self.ensure_glyph_atlas(grown_width, grown_height)?;
+                }
+                self.reset_glyph_atlas();
+                if !self.glyph_atlas_can_fit(width, height) {
+                    return Err(Error::new(
+                        Errc::PlatformError,
+                        "OpenGL glyph does not fit in atlas after grow",
+                    ));
+                }
+            }
+
+            let uv = self.pack_glyph(&glyph.coverage, width, height)?;
+            if let Some(cache_key) = cache_key {
+                self.glyph_atlas_cache.insert(
+                    cache_key,
+                    GlyphAtlasEntry {
+                        _coverage: Arc::clone(&glyph.coverage),
+                        uv,
+                    },
+                );
+            }
+            Self::push_glyph_quad(&mut self.glyph_vertices, glyph, uv);
+        }
+
+        self.flush_glyph_batch(viewport_width, viewport_height, scissor)
+    }
+
+    fn ensure_glyph_atlas(&mut self, needed_width: u32, needed_height: u32) -> Result<()> {
+        let width = next_power_of_two(self.glyph_atlas_width.max(needed_width))
+            .clamp(GLYPH_ATLAS_MIN, GLYPH_ATLAS_MAX);
+        let height = next_power_of_two(self.glyph_atlas_height.max(needed_height))
+            .clamp(GLYPH_ATLAS_MIN, GLYPH_ATLAS_MAX);
+        if self.glyph_atlas_texture.is_some()
+            && width <= self.glyph_atlas_width
+            && height <= self.glyph_atlas_height
+        {
+            return Ok(());
+        }
+
+        let texture = unsafe { create_r8_texture(self.gl(), width, height)? };
+        if let Some(previous) = self.glyph_atlas_texture.replace(texture) {
+            unsafe { self.gl().delete_texture(previous) };
+        }
+        self.glyph_atlas_width = width;
+        self.glyph_atlas_height = height;
+        self.reset_glyph_atlas();
+        Ok(())
+    }
+
+    fn reset_glyph_atlas(&mut self) {
+        self.glyph_atlas_cursor = GlyphAtlasCursor::default();
+        self.glyph_atlas_cache.clear();
+    }
+
+    fn glyph_atlas_can_fit(&self, width: u32, height: u32) -> bool {
+        if self.glyph_atlas_texture.is_none()
+            || self.glyph_atlas_width == 0
+            || self.glyph_atlas_height == 0
+        {
+            return false;
+        }
+        let mut x = self.glyph_atlas_cursor.x;
+        let mut y = self.glyph_atlas_cursor.y;
+        let mut row_height = self.glyph_atlas_cursor.row_h;
+        if x.saturating_add(width) > self.glyph_atlas_width {
+            x = 0;
+            y = y.saturating_add(row_height);
+            row_height = 0;
+        }
+        x.saturating_add(width) <= self.glyph_atlas_width
+            && y.saturating_add(height) <= self.glyph_atlas_height
+            && row_height.max(height) <= self.glyph_atlas_height
+    }
+
+    fn pack_glyph(
+        &mut self,
+        coverage: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<(f32, f32, f32, f32)> {
+        if self.glyph_atlas_cursor.x.saturating_add(width) > self.glyph_atlas_width {
+            self.glyph_atlas_cursor.x = 0;
+            self.glyph_atlas_cursor.y = self
+                .glyph_atlas_cursor
+                .y
+                .saturating_add(self.glyph_atlas_cursor.row_h);
+            self.glyph_atlas_cursor.row_h = 0;
+        }
+        if !self.glyph_atlas_can_fit(width, height) {
+            return Err(Error::new(
+                Errc::PlatformError,
+                "OpenGL pack_glyph called without atlas space",
+            ));
+        }
+        let expected = (width as usize)
+            .checked_mul(height as usize)
+            .ok_or_else(|| Error::new(Errc::InvalidArgument, "OpenGL glyph extent overflows"))?;
+        if coverage.len() < expected {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                format!(
+                    "OpenGL glyph coverage too small, got {}, need {expected}",
+                    coverage.len()
+                ),
+            ));
+        }
+        let texture = self.glyph_atlas_texture.ok_or_else(|| {
+            Error::new(Errc::PlatformError, "OpenGL glyph atlas texture is missing")
+        })?;
+        let x = self.glyph_atlas_cursor.x;
+        let y = self.glyph_atlas_cursor.y;
+        unsafe {
+            self.gl().active_texture(glow::TEXTURE0);
+            self.gl().bind_texture(glow::TEXTURE_2D, Some(texture));
+            self.gl().pixel_store_i32(glow::UNPACK_ALIGNMENT, 1);
+            self.gl().tex_sub_image_2d(
+                glow::TEXTURE_2D,
+                0,
+                x as i32,
+                y as i32,
+                width as i32,
+                height as i32,
+                glow::RED,
+                glow::UNSIGNED_BYTE,
+                glow::PixelUnpackData::Slice(Some(&coverage[..expected])),
+            );
+            self.gl().pixel_store_i32(glow::UNPACK_ALIGNMENT, 4);
+            self.gl().bind_texture(glow::TEXTURE_2D, None);
+        }
+        #[cfg(test)]
+        {
+            self.glyph_atlas_upload_count = self.glyph_atlas_upload_count.saturating_add(1);
+        }
+        self.glyph_atlas_cursor.x = x.saturating_add(width).saturating_add(1);
+        self.glyph_atlas_cursor.row_h = self.glyph_atlas_cursor.row_h.max(height.saturating_add(1));
+
+        let inverse_width = 1.0 / self.glyph_atlas_width as f32;
+        let inverse_height = 1.0 / self.glyph_atlas_height as f32;
+        Ok((
+            x as f32 * inverse_width,
+            y as f32 * inverse_height,
+            x.saturating_add(width) as f32 * inverse_width,
+            y.saturating_add(height) as f32 * inverse_height,
+        ))
+    }
+
+    fn push_glyph_quad(
+        vertices: &mut Vec<GlyphVertex>,
+        glyph: &GpuGlyphBlit,
+        (u0, v0, u1, v1): (f32, f32, f32, f32),
+    ) {
+        let x0 = glyph.x;
+        let y0 = glyph.y;
+        let x1 = glyph.x + glyph.w;
+        let y1 = glyph.y + glyph.h;
+        for (pos, uv) in [
+            ([x0, y0], [u0, v0]),
+            ([x1, y0], [u1, v0]),
+            ([x0, y1], [u0, v1]),
+            ([x0, y1], [u0, v1]),
+            ([x1, y0], [u1, v0]),
+            ([x1, y1], [u1, v1]),
+        ] {
+            vertices.push(GlyphVertex {
+                pos,
+                uv,
+                color: glyph.rgba,
+            });
+        }
+    }
+
+    fn flush_glyph_batch(
+        &mut self,
+        viewport_width: f32,
+        viewport_height: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+    ) -> Result<()> {
+        if self.glyph_vertices.is_empty() {
+            return Ok(());
+        }
+        let texture = self.glyph_atlas_texture.ok_or_else(|| {
+            Error::new(Errc::PlatformError, "OpenGL glyph atlas texture is missing")
+        })?;
+        self.apply_scissor(scissor);
+        unsafe {
+            self.gl().enable(glow::BLEND);
+            self.gl().blend_func(glow::ONE, glow::ONE_MINUS_SRC_ALPHA);
+            self.gl().use_program(Some(self.glyph_program));
+            self.gl().uniform_2_f32(
+                self.glyph_viewport.as_ref(),
+                viewport_width.max(1.0),
+                viewport_height.max(1.0),
+            );
+            self.gl()
+                .uniform_1_i32(self.glyph_texture_uniform.as_ref(), 0);
+            self.gl().active_texture(glow::TEXTURE0);
+            self.gl().bind_texture(glow::TEXTURE_2D, Some(texture));
+            self.gl().bind_vertex_array(Some(self.glyph_vao));
+            self.gl()
+                .bind_buffer(glow::ARRAY_BUFFER, Some(self.glyph_vbo));
+            let bytes = std::slice::from_raw_parts(
+                self.glyph_vertices.as_ptr().cast::<u8>(),
+                std::mem::size_of_val(self.glyph_vertices.as_slice()),
+            );
+            self.gl()
+                .buffer_data_u8_slice(glow::ARRAY_BUFFER, bytes, glow::STREAM_DRAW);
+            self.gl()
+                .draw_arrays(glow::TRIANGLES, 0, self.glyph_vertices.len() as i32);
+            self.gl().bind_vertex_array(None);
+            self.gl().bind_texture(glow::TEXTURE_2D, None);
+        }
+        let result = self.check_gl_error("draw_glyphs");
+        self.glyph_vertices.clear();
+        result
+    }
+
+    #[cfg(test)]
+    pub(crate) fn glyph_atlas_upload_count(&self) -> usize {
+        self.glyph_atlas_upload_count
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_soft_texture(&self) -> bool {
+        self.soft_texture.is_some()
+    }
+
     pub(crate) fn blit_soft_fallback_tile(
         &mut self,
         pixels: &[u32],
@@ -286,8 +653,7 @@ impl OpenGlRasterPipeline {
         unsafe {
             self.gl().disable(glow::SCISSOR_TEST);
             self.gl().active_texture(glow::TEXTURE0);
-            self.gl()
-                .bind_texture(glow::TEXTURE_2D, Some(self.soft_texture));
+            self.gl().bind_texture(glow::TEXTURE_2D, self.soft_texture);
             // GLES has no portable unpack-row-length state. The compact
             // API-neutral tile is therefore uploaded one row at a time; its
             // BGRA bytes are swizzled by BLIT_FRAG.
@@ -374,8 +740,7 @@ impl OpenGlRasterPipeline {
             self.gl().disable(glow::SCISSOR_TEST);
             self.gl().disable(glow::BLEND);
             self.gl().active_texture(glow::TEXTURE0);
-            self.gl()
-                .bind_texture(glow::TEXTURE_2D, Some(self.soft_texture));
+            self.gl().bind_texture(glow::TEXTURE_2D, self.soft_texture);
             for row in 0..tile.height {
                 let start = row as usize * tile.width as usize;
                 let end = start + tile.width as usize;
@@ -633,21 +998,32 @@ impl OpenGlRasterPipeline {
             self.gl().delete_vertex_array(self.rect_vao);
             self.gl().delete_buffer(self.rect_vbo);
             self.gl().delete_program(self.rect_program);
+            self.gl().delete_vertex_array(self.glyph_vao);
+            self.gl().delete_buffer(self.glyph_vbo);
+            self.gl().delete_program(self.glyph_program);
+            if let Some(texture) = self.glyph_atlas_texture.take() {
+                self.gl().delete_texture(texture);
+            }
             self.gl().delete_vertex_array(self.blit_vao);
             self.gl().delete_buffer(self.blit_vbo);
             self.gl().delete_program(self.blit_bgra_program);
             self.gl().delete_program(self.blit_rgba_program);
-            self.gl().delete_texture(self.soft_texture);
+            if let Some(texture) = self.soft_texture.take() {
+                self.gl().delete_texture(texture);
+            }
         }
+        self.glyph_atlas_cache.clear();
+        self.glyph_vertices.clear();
     }
 
     fn ensure_soft_texture(&mut self, width: i32, height: i32) -> Result<()> {
-        if self.soft_width == width && self.soft_height == height {
+        if self.soft_texture.is_some() && self.soft_width == width && self.soft_height == height {
             return Ok(());
         }
         let texture = unsafe { create_texture(self.gl(), width, height)? };
-        unsafe { self.gl().delete_texture(self.soft_texture) };
-        self.soft_texture = texture;
+        if let Some(previous) = self.soft_texture.replace(texture) {
+            unsafe { self.gl().delete_texture(previous) };
+        }
         self.soft_width = width;
         self.soft_height = height;
         Ok(())
@@ -701,13 +1077,32 @@ pub(crate) fn logical_scissor_to_drawable(
     target: TargetState,
     (x, y, width, height): (i32, i32, i32, i32),
 ) -> (i32, i32, i32, i32) {
-    let dpr = target.dpr.max(1.0);
-    let logical_height = height.max(0);
-    let x = (x as f32 * dpr).floor() as i32;
-    let width = (width.max(0) as f32 * dpr).ceil() as i32;
-    let height = (logical_height as f32 * dpr).ceil() as i32;
-    let y = ((target.logical_height - y - logical_height).max(0) as f32 * dpr).floor() as i32;
-    (x, y, width, height)
+    let dpr = f64::from(target.dpr.max(1.0));
+    let logical_right = i64::from(x).saturating_add(i64::from(width.max(0)));
+    let logical_bottom = i64::from(y).saturating_add(i64::from(height.max(0)));
+    let left = i64::from(x).clamp(0, i64::from(target.logical_width));
+    let top = i64::from(y).clamp(0, i64::from(target.logical_height));
+    let right = logical_right.clamp(left, i64::from(target.logical_width));
+    let bottom = logical_bottom.clamp(top, i64::from(target.logical_height));
+
+    // Convert both endpoints, then subtract. Independent `ceil(width * dpr)`
+    // loses or gains a drawable pixel when the logical origin is fractional
+    // in drawable space (for example x=1,w=2 at DPR 1.5).
+    let drawable_left =
+        ((left as f64 * dpr).floor() as i64).clamp(0, i64::from(target.drawable_width));
+    let drawable_right =
+        ((right as f64 * dpr).ceil() as i64).clamp(drawable_left, i64::from(target.drawable_width));
+    let drawable_top =
+        ((top as f64 * dpr).floor() as i64).clamp(0, i64::from(target.drawable_height));
+    let drawable_bottom = ((bottom as f64 * dpr).ceil() as i64)
+        .clamp(drawable_top, i64::from(target.drawable_height));
+
+    (
+        drawable_left as i32,
+        (i64::from(target.drawable_height) - drawable_bottom) as i32,
+        (drawable_right - drawable_left) as i32,
+        (drawable_bottom - drawable_top) as i32,
+    )
 }
 
 impl Drop for OpenGlRasterPipeline {
@@ -720,6 +1115,75 @@ impl Drop for OpenGlRasterPipeline {
 
 const RECT_VERTICES: [f32; 12] = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0];
 const FULLSCREEN_VERTICES: [f32; 8] = [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0];
+
+fn next_power_of_two(value: u32) -> u32 {
+    value.max(1).checked_next_power_of_two().unwrap_or(u32::MAX)
+}
+
+unsafe fn create_glyph_buffer(gl: &glow::Context) -> Result<(glow::VertexArray, glow::Buffer)> {
+    let vao = gl
+        .create_vertex_array()
+        .map_err(|error| gl_error("create glyph vertex array", error))?;
+    let vbo = match gl.create_buffer() {
+        Ok(vbo) => vbo,
+        Err(error) => {
+            gl.delete_vertex_array(vao);
+            return Err(gl_error("create glyph buffer", error));
+        }
+    };
+    let stride = std::mem::size_of::<GlyphVertex>() as i32;
+    gl.bind_vertex_array(Some(vao));
+    gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
+    gl.vertex_attrib_pointer_f32(0, 2, glow::FLOAT, false, stride, 0);
+    gl.enable_vertex_attrib_array(0);
+    gl.vertex_attrib_pointer_f32(1, 2, glow::FLOAT, false, stride, 2 * 4);
+    gl.enable_vertex_attrib_array(1);
+    gl.vertex_attrib_pointer_f32(2, 4, glow::FLOAT, false, stride, 4 * 4);
+    gl.enable_vertex_attrib_array(2);
+    gl.bind_vertex_array(None);
+    gl.bind_buffer(glow::ARRAY_BUFFER, None);
+    Ok((vao, vbo))
+}
+
+unsafe fn create_r8_texture(gl: &glow::Context, width: u32, height: u32) -> Result<glow::Texture> {
+    let texture = gl
+        .create_texture()
+        .map_err(|error| gl_error("create glyph atlas texture", error))?;
+    gl.bind_texture(glow::TEXTURE_2D, Some(texture));
+    gl.tex_image_2d(
+        glow::TEXTURE_2D,
+        0,
+        glow::R8 as i32,
+        width as i32,
+        height as i32,
+        0,
+        glow::RED,
+        glow::UNSIGNED_BYTE,
+        glow::PixelUnpackData::Slice(None),
+    );
+    gl.tex_parameter_i32(
+        glow::TEXTURE_2D,
+        glow::TEXTURE_MIN_FILTER,
+        glow::NEAREST as i32,
+    );
+    gl.tex_parameter_i32(
+        glow::TEXTURE_2D,
+        glow::TEXTURE_MAG_FILTER,
+        glow::NEAREST as i32,
+    );
+    gl.tex_parameter_i32(
+        glow::TEXTURE_2D,
+        glow::TEXTURE_WRAP_S,
+        glow::CLAMP_TO_EDGE as i32,
+    );
+    gl.tex_parameter_i32(
+        glow::TEXTURE_2D,
+        glow::TEXTURE_WRAP_T,
+        glow::CLAMP_TO_EDGE as i32,
+    );
+    gl.bind_texture(glow::TEXTURE_2D, None);
+    Ok(texture)
+}
 
 unsafe fn create_quad(
     gl: &glow::Context,

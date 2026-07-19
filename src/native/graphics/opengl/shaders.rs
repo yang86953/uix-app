@@ -38,29 +38,78 @@ uniform vec4 u_radius;
 
 out vec4 fragColor;
 
-float corner_mask(vec2 p, float r) {
-    return 1.0 - smoothstep(r - 1.0, r + 1.0, length(p));
-}
-
-float rounded_rect_mask(vec2 local, vec2 size, vec4 radius) {
-    float m = 1.0;
-    if (radius.x > 0.0 && local.x < radius.x && local.y < radius.x)
-        m *= corner_mask(local - vec2(radius.x), radius.x);
-    if (radius.y > 0.0 && local.x > size.x - radius.y && local.y < radius.y)
-        m *= corner_mask(local - vec2(size.x - radius.y, radius.y), radius.y);
-    if (radius.z > 0.0 && local.x > size.x - radius.z && local.y > size.y - radius.z)
-        m *= corner_mask(local - vec2(size.x - radius.z, size.y - radius.z), radius.z);
-    if (radius.w > 0.0 && local.x < radius.w && local.y > size.y - radius.w)
-        m *= corner_mask(local - vec2(radius.w, size.y - radius.w), radius.w);
-    return m;
+// Port of CPU `rounded_rect_sdf` (center-relative, per-corner radius).
+float rounded_rect_sdf(vec2 local, vec2 size, vec4 radius) {
+    vec2 half_size = size * 0.5;
+    vec2 q = local - half_size;
+    float cr;
+    if (q.x < 0.0)
+        cr = (q.y < 0.0) ? radius.x : radius.w;
+    else
+        cr = (q.y < 0.0) ? radius.y : radius.z;
+    vec2 d = abs(q) - half_size + cr;
+    float outside = length(max(d, vec2(0.0)));
+    float inside = min(max(d.x, d.y), 0.0);
+    return outside + inside - cr;
 }
 
 void main() {
     vec2 size = v_rect_size;
-    float mask = rounded_rect_mask(v_local, size, u_radius);
+    float mask = any(greaterThan(u_radius, vec4(0.0)))
+        ? clamp(0.5 - rounded_rect_sdf(v_local, size, u_radius), 0.0, 1.0)
+        : 1.0;
     if (mask <= 0.0) discard;
 
-    fragColor = u_color * mask;
+    // Match CPU solid fill: quantize the 8-bit straight color, premultiply
+    // once, then apply analytic coverage before premultiplied SrcOver blend.
+    vec4 color = floor(clamp(u_color, 0.0, 1.0) * 255.0 + 0.5);
+    vec3 premul = floor(color.rgb * color.a / 255.0);
+    fragColor = vec4(premul * mask, color.a * mask) / 255.0;
+}
+"#;
+
+/// Batched glyph quad vertex shader. Coverage stays in a bounded R8 atlas;
+/// color is carried per vertex so one draw can preserve glyph painter order.
+pub const GLYPH_VERT: &str = r#"#version 300 es
+precision highp float;
+
+layout(location = 0) in vec2 a_pos;
+layout(location = 1) in vec2 a_uv;
+layout(location = 2) in vec4 a_color;
+
+uniform vec2 u_viewport;
+
+out vec2 v_uv;
+out vec4 v_color;
+
+void main() {
+    vec2 ndc = (a_pos / u_viewport) * 2.0 - 1.0;
+    ndc.y = -ndc.y;
+    gl_Position = vec4(ndc, 0.0, 1.0);
+    v_uv = a_uv;
+    v_color = a_color;
+}
+"#;
+
+/// R8 glyph coverage shader matching the CPU path's two integer truncation
+/// stages before premultiplied SrcOver blending.
+pub const GLYPH_FRAG: &str = r#"#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+in vec4 v_color;
+
+uniform sampler2D u_atlas;
+
+out vec4 fragColor;
+
+void main() {
+    float coverage = floor(clamp(texture(u_atlas, v_uv).r, 0.0, 1.0) * 255.0 + 0.5);
+    vec4 color = floor(clamp(v_color, 0.0, 1.0) * 255.0 + 0.5);
+    float alpha = floor(color.a * coverage / 255.0);
+    vec3 premul = floor(color.rgb * color.a / 255.0);
+    vec3 rgb = floor(premul * coverage / 255.0);
+    fragColor = vec4(rgb, alpha) / 255.0;
 }
 "#;
 

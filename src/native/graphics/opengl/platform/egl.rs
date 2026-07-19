@@ -12,8 +12,8 @@ use std::ptr;
 
 use crate::native::graphics::opengl::raster::OpenGlRasterPipeline;
 use crate::native::traits::present::{
-    GpuSolidRect, IGraphicsContext, NativeRasterCaps, OffscreenTargetId, PresentCoherency,
-    PresentDamage, SoftFallbackTile,
+    GpuGlyphBlit, GpuSolidRect, IGraphicsContext, NativeRasterCaps, OffscreenTargetId,
+    PresentCoherency, PresentDamage, SoftFallbackTile,
 };
 use crate::native::{Errc, Error};
 
@@ -334,6 +334,7 @@ impl IGraphicsContext for EglContext {
             clear_rects: true,
             soft_blit: true,
             solid_rects: true,
+            glyphs: true,
             offscreen_targets: true,
             ..NativeRasterCaps::default()
         }
@@ -440,6 +441,18 @@ impl IGraphicsContext for EglContext {
         self.make_current()?;
         self.pipeline
             .draw_solid_rects(viewport_w, viewport_h, scissor, rects)
+    }
+
+    fn draw_glyphs(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        glyphs: &[GpuGlyphBlit],
+    ) -> Result<(), Error> {
+        self.make_current()?;
+        self.pipeline
+            .draw_glyphs(viewport_w, viewport_h, scissor, glyphs)
     }
 
     fn blit_soft_fallback_tile(
