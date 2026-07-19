@@ -5,6 +5,36 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 #[test]
+fn deadline_snapshot_revision_changes_only_with_the_queue() {
+    let timers = AppTimerQueue::new();
+    let mut deadlines = Vec::new();
+    let initial_revision = timers
+        .deadlines_into_if_changed(None, &mut deadlines)
+        .expect("initial revision");
+    assert!(deadlines.is_empty());
+    assert_eq!(
+        timers.deadlines_into_if_changed(Some(initial_revision), &mut deadlines),
+        None
+    );
+
+    let handle = timers.run_after(Duration::from_secs(1), || {});
+    let registered_revision = timers
+        .deadlines_into_if_changed(Some(initial_revision), &mut deadlines)
+        .expect("registered timer revision");
+    assert_eq!(deadlines.len(), 1);
+    assert_eq!(
+        timers.deadlines_into_if_changed(Some(registered_revision), &mut deadlines),
+        None
+    );
+
+    drop(handle);
+    assert!(timers
+        .deadlines_into_if_changed(Some(registered_revision), &mut deadlines)
+        .is_some());
+    assert!(deadlines.is_empty());
+}
+
+#[test]
 fn run_after_fires_once_and_unregisters() {
     let timers = AppTimerQueue::new();
     let fired = Arc::new(AtomicUsize::new(0));

@@ -17,6 +17,7 @@ pub(crate) struct AppTimerQueue {
 struct AppTimerQueueInner {
     next_id: TimerId,
     cancellation_epoch: u64,
+    deadline_revision: u64,
     entries: BTreeMap<TimerId, AppTimerEntry>,
     removal_waker: Option<Arc<dyn Fn() + Send + Sync>>,
 }
@@ -26,6 +27,7 @@ impl Default for AppTimerQueueInner {
         Self {
             next_id: 1,
             cancellation_epoch: 0,
+            deadline_revision: 0,
             entries: BTreeMap::new(),
             removal_waker: None,
         }
@@ -98,19 +100,28 @@ impl AppTimerQueue {
     #[cfg(test)]
     pub(crate) fn deadlines(&self) -> Vec<(TimerId, Instant)> {
         let mut deadlines = Vec::new();
-        self.deadlines_into(&mut deadlines);
+        self.deadlines_into_if_changed(None, &mut deadlines)
+            .expect("initial timer deadline snapshot");
         deadlines
     }
 
-    pub(crate) fn deadlines_into(&self, deadlines: &mut Vec<(TimerId, Instant)>) {
-        deadlines.clear();
+    pub(crate) fn deadlines_into_if_changed(
+        &self,
+        known_revision: Option<u64>,
+        deadlines: &mut Vec<(TimerId, Instant)>,
+    ) -> Option<u64> {
         let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if known_revision == Some(inner.deadline_revision) {
+            return None;
+        }
+        deadlines.clear();
         deadlines.extend(
             inner
                 .entries
                 .iter()
                 .map(|(&id, entry)| (id, entry.deadline)),
         );
+        Some(inner.deadline_revision)
     }
 
     pub(crate) fn cancel_all(&self) {
@@ -119,13 +130,20 @@ impl AppTimerQueue {
         for entry in inner.entries.values() {
             entry.active.store(false, Ordering::Release);
         }
-        inner.entries.clear();
+        if !inner.entries.is_empty() {
+            inner.entries.clear();
+            inner.deadline_revision = inner.deadline_revision.wrapping_add(1);
+        }
     }
 
     pub(crate) fn fire(&self, id: TimerId, now: Instant) -> bool {
         let mut entry = {
             let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-            inner.entries.remove(&id)
+            let entry = inner.entries.remove(&id);
+            if entry.is_some() {
+                inner.deadline_revision = inner.deadline_revision.wrapping_add(1);
+            }
+            entry
         };
 
         let Some(mut entry) = entry.take() else {
@@ -141,6 +159,7 @@ impl AppTimerQueue {
                 && entry.cancellation_epoch == inner.cancellation_epoch
             {
                 inner.entries.insert(id, entry);
+                inner.deadline_revision = inner.deadline_revision.wrapping_add(1);
             }
         }
 
@@ -175,6 +194,7 @@ impl AppTimerQueue {
                 active: active.clone(),
             },
         );
+        inner.deadline_revision = inner.deadline_revision.wrapping_add(1);
         TimerHandle {
             id,
             queue: Arc::downgrade(&self.inner),
@@ -218,6 +238,7 @@ impl TimerHandle {
         let removal_waker = self.queue.upgrade().and_then(|queue| {
             let mut inner = queue.lock().unwrap_or_else(|e| e.into_inner());
             if inner.entries.remove(&self.id).is_some() {
+                inner.deadline_revision = inner.deadline_revision.wrapping_add(1);
                 inner.removal_waker.clone()
             } else {
                 None

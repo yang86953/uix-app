@@ -92,6 +92,7 @@ pub(crate) struct WindowDriver {
     started_at: Option<Instant>,
     scheduled_animation_ids_scratch: Vec<NodeId>,
     app_timer_deadlines_scratch: Vec<(TimerId, Instant)>,
+    app_timer_deadline_revision: Option<u64>,
     due_work_scratch: Vec<ActiveWorkKind>,
 }
 
@@ -108,6 +109,7 @@ impl WindowDriver {
             started_at: None,
             scheduled_animation_ids_scratch: Vec::new(),
             app_timer_deadlines_scratch: Vec::new(),
+            app_timer_deadline_revision: None,
             due_work_scratch: Vec::new(),
         }
     }
@@ -121,8 +123,14 @@ impl WindowDriver {
         active_work: &mut ActiveWorkRegistry,
         app_timers: &AppTimerQueue,
     ) {
-        app_timers.deadlines_into(&mut self.app_timer_deadlines_scratch);
+        let Some(revision) = app_timers.deadlines_into_if_changed(
+            self.app_timer_deadline_revision,
+            &mut self.app_timer_deadlines_scratch,
+        ) else {
+            return;
+        };
         active_work.sync_app_timers(self.app_timer_deadlines_scratch.iter().copied());
+        self.app_timer_deadline_revision = Some(revision);
     }
 
     /// Applies the shared native window lifecycle portion of an event.
