@@ -102,6 +102,24 @@ fn open_component_animation_takes_precedence_over_a_managed_deadline() {
 }
 
 #[test]
+fn managed_source_removal_keeps_the_overlapping_component_animation_open() {
+    let now = Instant::now();
+    let id = NodeId::new(7);
+    let mut registry = ActiveWorkRegistry::new();
+    registry.sync_animated_sources([(id, Some(now + Duration::from_secs(5)))]);
+    registry.sync_component_animations([id]);
+
+    registry.sync_animated_sources([]);
+
+    assert_eq!(registry.next_deadline(), None);
+    assert_eq!(registry.animation_ids().collect::<Vec<_>>(), vec![id]);
+
+    registry.sync_component_animations([]);
+
+    assert!(registry.is_empty());
+}
+
+#[test]
 fn drain_due_returns_only_due_work_and_keeps_future_work() {
     let now = Instant::now();
     let mut registry = ActiveWorkRegistry::new();
