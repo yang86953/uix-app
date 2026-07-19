@@ -378,7 +378,15 @@ fn auto_falls_through_established_backends_to_low_priority_d3d12() {
         },
     )
     .expect("D3D12 should be selected after established candidates fail");
-    assert_eq!(calls.borrow().as_slice(), expected.as_slice());
+    let selected_index = expected
+        .iter()
+        .position(|recipe| recipe.backend == GraphicsBackend::D3d12)
+        .expect("D3D12 candidate");
+    assert_eq!(
+        calls.borrow().as_slice(),
+        &expected[..=selected_index],
+        "probing must stop at the first usable GPU-native recipe before reaching CPU raster fallbacks"
+    );
     assert_eq!(bootstrap.selected, GraphicsBackend::D3d12);
     assert_eq!(
         bootstrap.selected_recipe,
@@ -388,7 +396,7 @@ fn auto_falls_through_established_backends_to_low_priority_d3d12() {
             PresentMode::Swapchain
         )
     );
-    let expected_failures = expected.len().saturating_sub(1);
+    let expected_failures = selected_index;
     assert_eq!(bootstrap.report.failures.len(), expected_failures);
     for (index, recipe) in expected.iter().take(expected_failures).enumerate() {
         assert_eq!(bootstrap.report.failures[index].backend, recipe.backend);

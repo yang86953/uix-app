@@ -51,13 +51,18 @@ fn create_d3d11_identity(
 }
 
 #[test]
-fn auto_candidates_follow_registry_priority_order() {
+fn auto_candidates_follow_gpu_native_then_registry_priority_order() {
     let candidates = gpu_probe_candidates(GraphicsBackend::Auto);
     let mut entries: Vec<_> = active_entries()
         .iter()
         .filter(|entry| entry.is_probe_candidate())
         .collect();
-    entries.sort_by_key(|entry| std::cmp::Reverse(entry.priority));
+    entries.sort_by_key(|entry| {
+        (
+            entry.raster != RasterMode::GpuNative,
+            std::cmp::Reverse(entry.priority),
+        )
+    });
     assert_eq!(
         candidates,
         entries
@@ -68,7 +73,7 @@ fn auto_candidates_follow_registry_priority_order() {
 }
 
 #[test]
-fn recipe_candidate_sort_uses_numeric_priority_and_is_stable_for_ties() {
+fn recipe_candidate_sort_prefers_gpu_native_before_cpu_then_uses_priority() {
     let entries = [
         GraphicsBackendEntry {
             id: GraphicsBackend::D3d12,
@@ -112,11 +117,6 @@ fn recipe_candidate_sort_uses_numeric_priority_and_is_stable_for_ties() {
                 PresentMode::Swapchain
             ),
             GraphicsRecipe::new(
-                GraphicsBackend::Vulkan,
-                RasterMode::Cpu,
-                PresentMode::PixelUpload
-            ),
-            GraphicsRecipe::new(
                 GraphicsBackend::OpenGlEs,
                 RasterMode::GpuNative,
                 PresentMode::Swapchain
@@ -125,6 +125,11 @@ fn recipe_candidate_sort_uses_numeric_priority_and_is_stable_for_ties() {
                 GraphicsBackend::D3d12,
                 RasterMode::GpuNative,
                 PresentMode::Swapchain
+            ),
+            GraphicsRecipe::new(
+                GraphicsBackend::Vulkan,
+                RasterMode::Cpu,
+                PresentMode::PixelUpload
             ),
         ]
     );
@@ -326,9 +331,6 @@ fn auto_backend_uses_platform_default_order() {
     #[cfg(windows)]
     {
         let mut expected = Vec::new();
-        if cfg!(feature = "vulkan") {
-            expected.push(GraphicsBackend::Vulkan);
-        }
         if cfg!(feature = "d3d11") {
             expected.push(GraphicsBackend::D3d11);
         }
@@ -338,13 +340,16 @@ fn auto_backend_uses_platform_default_order() {
         if cfg!(feature = "d3d12") {
             expected.push(GraphicsBackend::D3d12);
         }
+        if cfg!(feature = "vulkan") {
+            expected.push(GraphicsBackend::Vulkan);
+        }
         assert_eq!(candidates, expected);
     }
 
     #[cfg(all(unix, not(target_os = "macos")))]
     assert_eq!(
         candidates,
-        vec![GraphicsBackend::Vulkan, GraphicsBackend::OpenGlEs]
+        vec![GraphicsBackend::OpenGlEs, GraphicsBackend::Vulkan]
     );
 
     #[cfg(target_os = "macos")]
