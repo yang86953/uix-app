@@ -253,7 +253,7 @@ component! {
             }
 
             // 绘制文本（使用同一布局）
-            ctx.blit_glyph_layout(&layout, abs_pos, c, fs);
+            ctx.blit_owned_glyph_layout(layout, abs_pos, c, fs);
         }
     }
 }

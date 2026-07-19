@@ -170,6 +170,34 @@ fn cached_picture_encoder_preserves_glyph_ir_and_shared_coverage() {
 }
 
 #[test]
+fn display_list_clone_shares_all_operation_storage_until_mutated() {
+    let layout = crate::draw::font::text_backend::TextLayout {
+        glyphs: Vec::with_capacity(128),
+        lines: Vec::with_capacity(16),
+        width: 0.0,
+        height: 0.0,
+    };
+    let mut list = DisplayList::new();
+    list.push(PaintOp::BlitGlyphLayout {
+        layout,
+        pos: Point::new(0.0, 0.0),
+        color: Color::black(),
+        font_size: 12.0,
+    });
+    let mut cloned = list.clone();
+    assert!(list.shares_operation_storage_with(&cloned));
+
+    cloned.push(PaintOp::FillRect {
+        rect: Rect::new(0.0, 0.0, 1.0, 1.0),
+        color: Color::transparent(),
+        radius: None,
+    });
+    assert!(!list.shares_operation_storage_with(&cloned));
+    assert_eq!(list.len(), 1);
+    assert_eq!(cloned.len(), 2);
+}
+
+#[test]
 fn complete_picture_encoder_preserves_clip_and_rounded_operations() {
     let mut clip = DisplayList::new();
     clip.push(PaintOp::PushClip {

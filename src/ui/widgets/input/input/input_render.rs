@@ -512,7 +512,7 @@ impl Input {
                     }
                 }
             }
-            ctx.blit_glyph_layout(&layout, abs_pos, disp_color, FONT_SIZE);
+            ctx.blit_owned_glyph_layout(layout, abs_pos, disp_color, FONT_SIZE);
         }
 
         if has_composition {

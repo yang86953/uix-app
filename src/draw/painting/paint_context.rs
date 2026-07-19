@@ -730,7 +730,7 @@ impl<'a> PaintContext<'a> {
         color: Color,
         font_size: f32,
     ) {
-        self.record_op(PaintOp::BlitGlyphLayout {
+        self.record_op_lazy(|| PaintOp::BlitGlyphLayout {
             layout: layout.clone(),
             pos,
             color,
@@ -738,6 +738,25 @@ impl<'a> PaintContext<'a> {
         });
         self.text
             .blit_to(self.spatial.canvas_2d(), layout, pos, color, font_size);
+    }
+
+    /// 绘制并录制 owned glyph layout；只绘制一次的内置组件用它把新布局
+    /// 直接移交给 DisplayList，避免录制时复制 glyph / line 缓冲。
+    pub(crate) fn blit_owned_glyph_layout(
+        &mut self,
+        layout: crate::draw::font::text_backend::TextLayout,
+        pos: Point,
+        color: Color,
+        font_size: f32,
+    ) {
+        self.text
+            .blit_to(self.spatial.canvas_2d(), &layout, pos, color, font_size);
+        self.record_op_lazy(|| PaintOp::BlitGlyphLayout {
+            layout,
+            pos,
+            color,
+            font_size,
+        });
     }
 
     // ── 访问器 ──

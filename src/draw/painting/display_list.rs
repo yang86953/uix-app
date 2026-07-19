@@ -174,7 +174,7 @@ pub enum PaintOp {
 /// 可重放的绘制指令列表。
 #[derive(Debug, Clone, Default)]
 pub struct DisplayList {
-    ops: Vec<PaintOp>,
+    ops: Arc<Vec<PaintOp>>,
 }
 
 impl DisplayList {
@@ -191,7 +191,12 @@ impl DisplayList {
     }
 
     pub fn push(&mut self, op: PaintOp) {
-        self.ops.push(op);
+        Arc::make_mut(&mut self.ops).push(op);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn shares_operation_storage_with(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.ops, &other.ops)
     }
 
     /// 重放到 `PaintContext`（不再二次录制）。
@@ -200,7 +205,7 @@ impl DisplayList {
     }
 
     fn replay_unrecorded(&self, ctx: &mut PaintContext<'_>) {
-        for op in &self.ops {
+        for op in self.ops.iter() {
             match op {
                 PaintOp::FillRect {
                     rect,
@@ -381,7 +386,7 @@ impl DisplayList {
         surface_w: f32,
     ) {
         let mut text = TextRenderService::new(font, font_service, surface_w);
-        for op in &self.ops {
+        for op in self.ops.iter() {
             match op {
                 PaintOp::FillRect {
                     rect,
