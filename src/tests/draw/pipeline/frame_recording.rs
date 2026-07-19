@@ -988,6 +988,84 @@ fn fill_opacity_stays_native_and_preserves_exact_cpu_premultiplied_sources() {
 }
 
 #[test]
+fn integral_circle_bounds_keep_offset_clip_and_opacity_native_with_cpu_parity() {
+    use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+    use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+
+    let background = Color::from_rgb(18, 32, 56);
+    let color = Color::from_rgba(211, 47, 129, 149);
+    let opacity = 0.37;
+    let (cx, cy, radius) = (7.5, 7.5, 3.5);
+    let offset = (2.0, 1.0);
+    let local_clip = Rect::new(5.0, 4.0, 5.0, 6.0);
+
+    let mut engine = FrameRecordingEngine::new();
+    engine.initialize(24, 18).expect("initialize recorder");
+    engine.begin_recording(true).expect("begin recording");
+    engine
+        .canvas_2d()
+        .fill_rect(Rect::new(0.0, 0.0, 24.0, 18.0), background, None);
+    engine.canvas_2d().set_offset(offset.0, offset.1);
+    engine.canvas_2d().push_clip(local_clip);
+    engine.canvas_2d().set_opacity(opacity);
+    engine.canvas_2d().fill_circle(cx, cy, radius, color);
+    let encoder = engine.finish_recording().expect("finish recorder");
+
+    let expected_color = crate::draw::rasterizer::apply_opacity(color.premultiplied(), opacity);
+    assert!(encoder.commands().iter().any(|command| matches!(
+        command,
+        FrameCommand::Native {
+            operation: FrameRasterOp::FillRoundedRectClipped {
+                rect,
+                color: recorded_color,
+                radius: recorded_radius,
+                clip,
+            }
+        } if *rect == FrameRect::new(6, 5, 7, 7)
+            && recorded_color.premultiplied() == expected_color
+            && *recorded_radius == FrameRadius::new(Radius::uniform(radius)).expect("valid radius")
+            && *clip == FrameRect::new(7, 5, 5, 6)
+    )));
+    assert!(!encoder
+        .commands()
+        .iter()
+        .any(|command| matches!(command, FrameCommand::CpuSegment { .. })));
+    assert_eq!(engine.scratch_surface_size(), (1, 1));
+
+    let mut cpu = SharedRasterizer::new(PixelSurface::new(24, 18));
+    cpu.fill_rect(Rect::new(0.0, 0.0, 24.0, 18.0), background, None);
+    cpu.set_offset(offset.0, offset.1);
+    cpu.push_clip(local_clip);
+    cpu.set_opacity(opacity);
+    cpu.fill_circle(cx, cy, radius, color);
+    assert_eq!(encoder.render_reference().pixels(), cpu.surface().pixels());
+}
+
+#[test]
+fn fractional_circle_bounds_keep_the_exact_cpu_fallback() {
+    let mut engine = FrameRecordingEngine::new();
+    engine.initialize(16, 12).expect("initialize recorder");
+    engine.begin_recording(true).expect("begin recording");
+    engine
+        .canvas_2d()
+        .fill_circle(6.25, 6.0, 3.0, Color::from_rgba(40, 120, 220, 176));
+
+    assert_eq!(engine.scratch_surface_size(), (16, 12));
+    let encoder = engine.finish_recording().expect("finish recorder");
+    assert!(encoder
+        .commands()
+        .iter()
+        .any(|command| matches!(command, FrameCommand::CpuSegment { .. })));
+    assert!(!encoder.commands().iter().any(|command| matches!(
+        command,
+        FrameCommand::Native {
+            operation: FrameRasterOp::FillRoundedRect { .. }
+                | FrameRasterOp::FillRoundedRectClipped { .. }
+        }
+    )));
+}
+
+#[test]
 fn rounded_src_over_non_exact_geometries_remain_cpu_fallbacks() {
     let mut engine = FrameRecordingEngine::new();
     engine.initialize(64, 48).expect("initialize recorder");
@@ -1109,7 +1187,9 @@ fn first_cpu_draw_allocates_scratch_and_resize_or_shutdown_releases_it() {
     );
 
     engine.begin_recording(true).expect("begin after resize");
-    engine.canvas_2d().fill_circle(4.0, 4.0, 2.0, Color::blue());
+    engine
+        .canvas_2d()
+        .fill_circle(4.25, 4.0, 2.0, Color::blue());
     engine.finish_recording().expect("finish after resize");
     assert_eq!(engine.scratch_surface_size(), (12, 10));
     engine.try_shutdown().expect("shutdown recorder");
