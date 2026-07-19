@@ -714,3 +714,220 @@ fn rendered_pointer_hits_reject_the_shadow_margin_outside_the_control_width() {
     );
     assert!(!select.is_open());
 }
+
+#[test]
+fn custom_option_views_materialize_in_visible_rows_without_stealing_selection_hits() {
+    use crate::ui::view::label;
+    use crate::ui::widgets::Label;
+
+    let selected = State::new(String::new());
+    let mut tree = ViewAdapter::build(
+        Select::new()
+            .options(["Alpha", "Beta"])
+            .value(&selected)
+            .render_option(|option| label(format!("★ {option}"))),
+    );
+    let root = tree.root_id().expect("custom Select root");
+    tree.get_mut(root)
+        .expect("custom Select node")
+        .set_frame(Rect::new(100.0, 200.0, 160.0, 32.0));
+    tree.layout();
+    assert!(tree.has_select_option_renderer(root));
+    assert!(tree.get(root).expect("Select node").children().is_empty());
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(120.0, 216.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    tree.layout();
+
+    let children = tree.get(root).expect("Select node").children().to_vec();
+    assert_eq!(children.len(), 2);
+    let first = tree.get(children[0]).expect("first custom option");
+    assert_eq!(first.key(), Some("select-option:0"));
+    assert_eq!(
+        first
+            .component()
+            .as_any()
+            .downcast_ref::<Label>()
+            .expect("custom Label")
+            .text(),
+        "★ Alpha"
+    );
+    assert_eq!(first.frame(), Rect::new(110.0, 232.0, 118.0, 28.0));
+    assert!(!tree.get(root).expect("Select node").hit_test_children());
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(120.0, 274.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(selected.get(), "Beta");
+    assert!(matches!(
+        tree.get(root)
+            .expect("Select node")
+            .component()
+            .snapshot_fields(),
+        SnapshotFields::Select {
+            custom_options: true,
+            ..
+        }
+    ));
+
+    let _ = tree.update_animation_nodes([root], 1.0);
+    assert!(
+        tree.get(root)
+            .expect("closed Select node")
+            .children()
+            .is_empty(),
+        "custom option views are removed when the close transition completes"
+    );
+}
+
+#[test]
+fn custom_option_views_virtualize_and_reconcile_the_renderer_by_stable_option_key() {
+    use crate::ui::view::label;
+    use crate::ui::widgets::Label;
+
+    let options = (0..30).map(|index| format!("Option {index}"));
+    let mut tree = ViewAdapter::build(
+        Select::new()
+            .options(options)
+            .render_option(|option| label(format!("before:{option}"))),
+    );
+    let root = tree.root_id().expect("custom Select root");
+    tree.get_mut(root)
+        .expect("custom Select node")
+        .set_frame(Rect::new(0.0, 0.0, 180.0, 32.0));
+    tree.layout();
+    let _ = tree.dispatch_event(&SystemEvent::PointerDown {
+        pos: Point::new(20.0, 16.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    tree.layout();
+
+    let first_window = tree.get(root).expect("Select node").children().to_vec();
+    assert_eq!(
+        first_window.len(),
+        12,
+        "only the visible option window plus virtual-scroll overscan is materialized"
+    );
+    assert_eq!(
+        tree.get(first_window[0]).expect("first option").key(),
+        Some("select-option:0")
+    );
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::Wheel {
+            pos: Point::new(20.0, 60.0),
+            delta: Point::new(0.0, 1.0),
+        }),
+        EventResult::Handled
+    );
+    tree.layout();
+    let scrolled_window = tree.get(root).expect("Select node").children().to_vec();
+    assert!(
+        (10..30).contains(&scrolled_window.len()),
+        "scrolling keeps a bounded visible window instead of materializing all options"
+    );
+    assert!(
+        scrolled_window.iter().any(|id| {
+            tree.get(*id)
+                .is_some_and(|node| node.key() == Some("select-option:12"))
+        }),
+        "scrolling materializes options beyond the initial visible window"
+    );
+
+    let preserved = scrolled_window
+        .iter()
+        .copied()
+        .find(|id| {
+            tree.get(*id)
+                .is_some_and(|node| node.key() == Some("select-option:1"))
+        })
+        .expect("stable option inside both virtual windows");
+    ViewAdapter::reconcile(
+        &mut tree,
+        Select::new()
+            .options((0..30).map(|index| format!("Option {index}")))
+            .render_option(|option| label(format!("after:{option}"))),
+    );
+    tree.layout();
+    let reconciled = tree.get(root).expect("Select node").children().to_vec();
+    let reconciled_option = reconciled
+        .iter()
+        .copied()
+        .find(|id| {
+            tree.get(*id)
+                .is_some_and(|node| node.key() == Some("select-option:1"))
+        })
+        .expect("reconciled option one");
+    assert_eq!(
+        reconciled_option, preserved,
+        "stable option key preserves child identity"
+    );
+    assert_eq!(
+        tree.get(reconciled_option)
+            .expect("reconciled option")
+            .component()
+            .as_any()
+            .downcast_ref::<Label>()
+            .expect("custom Label")
+            .text(),
+        "after:Option 1"
+    );
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Down,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(matches!(
+        tree.get(root)
+            .expect("selected custom Select")
+            .component()
+            .snapshot_fields(),
+        SnapshotFields::Select { selected: 1, .. }
+    ));
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        crate::ui::view::ViewNode::leaf(
+            Select::new().options((0..30).map(|index| format!("Option {index}"))),
+        ),
+    );
+    assert!(
+        tree.get(root)
+            .expect("plain Select node")
+            .children()
+            .is_empty(),
+        "removing render_option removes its materialized option views"
+    );
+    assert!(matches!(
+        tree.get(root)
+            .expect("plain Select node")
+            .component()
+            .snapshot_fields(),
+        SnapshotFields::Select {
+            custom_options: false,
+            ..
+        }
+    ));
+}

@@ -479,6 +479,10 @@ impl ViewAdapter {
         tree.replace_render_handlers(id, render_handlers);
         let table_cells = tree.has_table_cell_renderer(id);
         let table_expand = tree.has_table_expand_renderer(id);
+        let select_options = tree.has_select_option_renderer(id);
+        if select_options {
+            tree.invalidate_select_option_component(id);
+        }
         let mut children_changed = if table_cells {
             tree.refresh_table_cell_component(id)
         } else if table_expand {
@@ -486,6 +490,8 @@ impl ViewAdapter {
             let changed = Self::reconcile_children(tree, id, expanded, None);
             tree.mark_table_expand_materialized(id);
             changed
+        } else if select_options {
+            tree.refresh_select_option_component(id)
         } else {
             Self::reconcile_children(tree, id, children, stagger_enter)
         };

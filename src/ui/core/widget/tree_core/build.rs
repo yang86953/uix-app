@@ -209,6 +209,7 @@ impl WidgetTree {
         self.refresh_virtual_scroll_component(id, None);
         self.refresh_table_cell_component(id);
         self.refresh_table_expand_component(id);
+        self.refresh_select_option_component(id);
         id
     }
 }

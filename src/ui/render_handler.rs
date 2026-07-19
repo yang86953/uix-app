@@ -7,10 +7,12 @@ use crate::ui::core::widget::WidgetNode;
 use crate::ui::foundation::virtual_scroll::VirtualScrollRenderer;
 use crate::ui::view::{ViewAdapter, ViewNode};
 use crate::ui::widgets::display::table::{ExpandRenderer, TableCellRenderer, TableRow};
+use crate::ui::widgets::input::select::SelectOptionRenderer;
 
 pub(crate) enum RenderHandlerRegistration {
     TableExpand(ExpandRenderer),
     TableCells(TableCellRenderer),
+    SelectOptions(SelectOptionRenderer),
     VirtualScrollItem(VirtualScrollRenderer),
 }
 
@@ -18,6 +20,7 @@ pub(crate) enum RenderHandlerRegistration {
 pub(crate) struct RenderHandlerTable {
     table_expand: HashMap<ComponentId, ExpandRenderer>,
     table_cells: HashMap<ComponentId, TableCellRenderer>,
+    select_options: HashMap<ComponentId, SelectOptionRenderer>,
     virtual_scroll_item: HashMap<ComponentId, VirtualScrollRenderer>,
 }
 
@@ -35,6 +38,9 @@ impl RenderHandlerTable {
                 }
                 RenderHandlerRegistration::TableCells(renderer) => {
                     self.table_cells.insert(component, renderer);
+                }
+                RenderHandlerRegistration::SelectOptions(renderer) => {
+                    self.select_options.insert(component, renderer);
                 }
                 RenderHandlerRegistration::VirtualScrollItem(renderer) => {
                     self.virtual_scroll_item.insert(component, renderer);
@@ -102,15 +108,34 @@ impl RenderHandlerTable {
         Some(cells)
     }
 
+    pub(crate) fn render_select_options(
+        &self,
+        component: ComponentId,
+        indices: &[usize],
+        labels: &[String],
+    ) -> Option<Vec<ViewNode>> {
+        let renderer = self.select_options.get(&component)?;
+        Some(
+            labels
+                .iter()
+                .map(|label| ViewAdapter::capture_root(|| renderer(label)))
+                .zip(indices)
+                .map(|(view, index)| view.key(format!("select-option:{index}")))
+                .collect(),
+        )
+    }
+
     pub(crate) fn clear_component(&mut self, component: ComponentId) {
         self.table_expand.remove(&component);
         self.table_cells.remove(&component);
+        self.select_options.remove(&component);
         self.virtual_scroll_item.remove(&component);
     }
 
     pub(crate) fn clear(&mut self) {
         self.table_expand.clear();
         self.table_cells.clear();
+        self.select_options.clear();
         self.virtual_scroll_item.clear();
     }
 
@@ -124,5 +149,9 @@ impl RenderHandlerTable {
 
     pub(crate) fn contains_table_cells(&self, component: ComponentId) -> bool {
         self.table_cells.contains_key(&component)
+    }
+
+    pub(crate) fn contains_select_options(&self, component: ComponentId) -> bool {
+        self.select_options.contains_key(&component)
     }
 }

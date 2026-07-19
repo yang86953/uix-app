@@ -464,6 +464,7 @@ pub enum SnapshotFields {
         multiple: bool,
         search: bool,
         search_query: String,
+        custom_options: bool,
     },
     AutoComplete {
         placeholder: String,
