@@ -41,6 +41,7 @@ component! {
         dragging: bool,
         hovered: bool,
         focused: bool,
+        marks: Vec<(f64, String)>,
         slider_size: ControlSize,
         last_frame: Cell<Option<Rect>>,
         pending_change: Cell<Option<f64>>,
@@ -161,6 +162,30 @@ component! {
             primary,
             Some(Radius::uniform(track_h * 0.5)),
         );
+        let mark_radius = (3.0 * self.visual_scale(control_rect))
+            .min(control_rect.h * 0.5)
+            .max(0.0);
+        for (mark, _) in &self.marks {
+            let mark_pct = ((*mark - self.min) / (self.max - self.min)).clamp(0.0, 1.0) as f32;
+            let mark_x = track_x + mark_pct * track_w;
+            ctx.fill_circle(
+                mark_x,
+                cy,
+                mark_radius,
+                if *mark <= self.value { primary } else { fill },
+            );
+            ctx.stroke_rect(
+                Rect::new(
+                    mark_x - mark_radius,
+                    cy - mark_radius,
+                    mark_radius * 2.0,
+                    mark_radius * 2.0,
+                ),
+                primary,
+                1.0,
+                Some(Radius::uniform(mark_radius)),
+            );
+        }
         let thumb_color = if self.dragging {
             primary_hover
         } else if self.hovered {
@@ -180,6 +205,41 @@ component! {
             ctx.stroke_rect(control_rect, primary, 1.5, Some(Radius::uniform(4.0)));
         }
         ctx.pop_clip();
+
+        let label_height = (frame.h - control_rect.h).max(0.0);
+        if label_height > 0.0 && !self.marks.is_empty() {
+            let label_color = ctx.tokens().color_text_secondary();
+            let label_top = control_rect.y + control_rect.h;
+            let font_size = (10.0 * self.visual_scale(control_rect)).min(label_height);
+            ctx.push_clip(frame);
+            for (index, (mark, label)) in self.marks.iter().enumerate() {
+                let pct = ((*mark - self.min) / (self.max - self.min)).clamp(0.0, 1.0) as f32;
+                let center = track_x + pct * track_w;
+                let left = if index == 0 {
+                    frame.x
+                } else {
+                    let previous = self.marks[index - 1].0;
+                    let previous_pct =
+                        ((previous - self.min) / (self.max - self.min)).clamp(0.0, 1.0) as f32;
+                    (track_x + previous_pct * track_w + center) * 0.5
+                };
+                let right = if index + 1 == self.marks.len() {
+                    frame.x + frame.w
+                } else {
+                    let next = self.marks[index + 1].0;
+                    let next_pct =
+                        ((next - self.min) / (self.max - self.min)).clamp(0.0, 1.0) as f32;
+                    (center + track_x + next_pct * track_w) * 0.5
+                };
+                let label_rect = Rect::new(left, label_top, (right - left).max(0.0), label_height);
+                if label_rect.w > 0.0 && font_size > 0.0 {
+                    ctx.push_clip(label_rect);
+                    ctx.text_center(label, label_rect, label_color, font_size);
+                    ctx.pop_clip();
+                }
+            }
+            ctx.pop_clip();
+        }
     }
 }
 
@@ -316,6 +376,7 @@ impl Slider {
             max: self.max,
             step: self.step,
             value: self.value,
+            marks: self.marks.clone(),
         }
     }
 
@@ -324,6 +385,7 @@ impl Slider {
         self.min = next.min;
         self.max = next.max;
         self.step = next.step;
+        self.marks = next.marks;
         self.value_binding = next.value_binding;
         self.value = controlled_value.unwrap_or_else(|| self.clamp_value(self.value));
         self.slider_size = next.slider_size;
@@ -349,6 +411,7 @@ impl Slider {
             dragging: false,
             hovered: false,
             focused: false,
+            marks: Vec::new(),
             slider_size: config.size,
             last_frame: Cell::new(None),
             pending_change: Cell::new(None),
@@ -387,6 +450,32 @@ impl Slider {
         self
     }
 
+    /// 配置轨道刻度；区间外与非有限值忽略，重复值以后配置的标签为准。
+    pub fn marks<L>(mut self, marks: Vec<(f64, L)>) -> Self
+    where
+        L: Into<String>,
+    {
+        let mut normalized: Vec<(f64, String)> = Vec::new();
+        for (value, label) in marks {
+            if !value.is_finite() || value < self.min || value > self.max {
+                continue;
+            }
+            let value = if value == 0.0 { 0.0 } else { value };
+            let label = label.into();
+            if let Some(existing) = normalized
+                .iter_mut()
+                .find(|(existing, _)| *existing == value)
+            {
+                existing.1 = label;
+            } else {
+                normalized.push((value, label));
+            }
+        }
+        normalized.sort_by(|left, right| left.0.total_cmp(&right.0));
+        self.marks = normalized;
+        self
+    }
+
     fn normalize_range(range: RangeInclusive<f64>) -> (f64, f64) {
         let (start, end) = range.into_inner();
         let start = if start.is_finite() { start } else { 0.0 };
@@ -399,6 +488,7 @@ impl Slider {
     }
 
     fn intrinsic_size(&self) -> Size {
-        Size::new(200.0, self.control_height())
+        let marks_height = if self.marks.is_empty() { 0.0 } else { 18.0 };
+        Size::new(200.0, self.control_height() + marks_height)
     }
 }

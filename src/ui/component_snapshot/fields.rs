@@ -133,6 +133,7 @@ pub enum SnapshotFields {
         max: f64,
         step: f64,
         value: f64,
+        marks: Vec<(f64, String)>,
     },
     Rate {
         count: usize,
