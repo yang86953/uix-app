@@ -471,6 +471,7 @@ pub enum SnapshotFields {
         selected_labels: Vec<String>,
         selected_values: Vec<String>,
         open: bool,
+        loading_children: Vec<String>,
     },
     ColorPicker {
         value: Color,

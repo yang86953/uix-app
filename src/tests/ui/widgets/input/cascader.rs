@@ -165,6 +165,81 @@ fn cascader_identical_reconcile_preserves_open_child_level() {
 }
 
 #[test]
+fn loading_child_keeps_the_path_open_and_resumes_after_reconcile() {
+    let mut widget = cascader()
+        .loading_child("singapore", true)
+        .loading_child("china", true);
+    assert!(matches!(
+        widget.snapshot_fields(),
+        SnapshotFields::Cascader {
+            loading_children,
+            ..
+        } if loading_children == ["china", "singapore"]
+    ));
+    assert!(!WidgetAnimation::update_animation(&mut widget, 0.1));
+
+    widget.open();
+    widget.select_option(0, 1);
+    assert_eq!(widget.selected().values, ["china"]);
+    assert!(widget.is_open());
+    assert_eq!(
+        EventHandler::hit_test_frame(&widget, Rect::new(0.0, 0.0, 120.0, 32.0)).w,
+        200.0,
+        "a loading branch must not expose stale child columns"
+    );
+    assert!(widget
+        .semantic_event(ComponentId::new(8), &SystemEvent::FocusIn)
+        .is_none());
+
+    assert!(WidgetAnimation::update_animation(&mut widget, 1.0));
+    let (spinner_before, _) = render_cascader_pixels(&widget, Rect::new(0.0, 0.0, 120.0, 32.0));
+    assert!(WidgetAnimation::update_animation(&mut widget, 0.1));
+    assert_ne!(
+        WidgetAnimation::dirty_bounds(&widget, Rect::new(0.0, 0.0, 120.0, 32.0)),
+        Rect::zero()
+    );
+    let (spinner_after, _) = render_cascader_pixels(&widget, Rect::new(0.0, 0.0, 120.0, 32.0));
+    assert_ne!(
+        spinner_before, spinner_after,
+        "the visible loading child must paint its advancing spinner phase"
+    );
+
+    widget.sync_from(cascader());
+    assert!(matches!(
+        widget.snapshot_fields(),
+        SnapshotFields::Cascader {
+            loading_children,
+            ..
+        } if loading_children.is_empty()
+    ));
+    assert_eq!(
+        widget.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        EventHandler::hit_test_frame(&widget, Rect::new(0.0, 0.0, 120.0, 32.0)).w,
+        400.0
+    );
+    assert!(!WidgetAnimation::update_animation(&mut widget, 0.1));
+}
+
+#[test]
+fn loading_leaf_does_not_submit_or_close() {
+    let mut widget = cascader().loading_child("singapore", true);
+    widget.open();
+    widget.select_option(0, 2);
+
+    assert_eq!(widget.selected().values, ["singapore"]);
+    assert!(widget.is_open());
+    assert!(widget
+        .semantic_event(ComponentId::new(9), &SystemEvent::FocusIn)
+        .is_none());
+}
+
+#[test]
 fn cascader_identical_view_reconcile_preserves_keyboard_child_level() {
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(cascader()));
     let root = tree.root_id().expect("cascader root");
