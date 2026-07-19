@@ -203,7 +203,7 @@ component! {
             .map(|key| SemanticEvent::change(id, key))
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let frame = Self::normalized_frame(frame);
         if frame.w <= 0.0 || frame.h <= 0.0 {
             self.last_frame.set(Some(frame));
@@ -256,7 +256,11 @@ component! {
                 ctx.fill_rect(geometry.row, pressed_fill, None);
             }
 
-            if self.focused && self.multiple && node.key == self.selected_key {
+            if self.focused
+                && tree.keyboard_focus_visible()
+                && self.multiple
+                && node.key == self.selected_key
+            {
                 let inset = 0.5_f32.min(geometry.row.w * 0.5).min(geometry.row.h * 0.5);
                 let focus = Rect::new(
                     geometry.row.x + inset,
@@ -311,7 +315,7 @@ component! {
         }
 
         ctx.pop_clip();
-        if self.focused {
+        if self.focused && tree.keyboard_focus_visible() {
             let inset = 0.75_f32.min(frame.w * 0.5).min(frame.h * 0.5);
             let focus = Rect::new(
                 frame.x + inset,

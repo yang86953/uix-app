@@ -110,7 +110,7 @@ component! {
 
     wants_continuous_pointer_move => (&self) -> bool { true }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let primary = ctx.tokens().color_primary();
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_secondary();
@@ -167,7 +167,7 @@ component! {
             }
         }
 
-        if self.focused {
+        if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(frame, primary, 1.5, Some(r));
         }
     }

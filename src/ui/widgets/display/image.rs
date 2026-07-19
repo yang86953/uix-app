@@ -173,7 +173,7 @@ component! {
                 Self::paint_preview_indicator(ctx, frame);
             }
 
-            if self.focused && self.preview {
+            if self.focused && tree.keyboard_focus_visible() && self.preview {
                 let focus = Self::inset(frame, 1.0);
                 ctx.stroke_rect(
                     focus,

@@ -200,7 +200,7 @@ component! {
     }
 
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let frame = Self::normalize_frame(frame);
         let surface_size = ctx.logical_surface_size();
         let surface = Self::normalize_frame(Rect::new(0.0, 0.0, surface_size.w, surface_size.h));
@@ -241,12 +241,12 @@ component! {
         }
         ctx.stroke_rect(
             frame,
-            if self.focused {
+            if self.focused && tree.keyboard_focus_visible() {
                 ctx.tokens().color_primary()
             } else {
                 border
             },
-            if self.focused { 2.0 } else { 1.0 },
+            if self.focused && tree.keyboard_focus_visible() { 2.0 } else { 1.0 },
             r,
         );
         Self::paint_elided_text(ctx, "Popover", frame, text_secondary, 12.0, true);

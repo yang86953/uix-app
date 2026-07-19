@@ -121,7 +121,7 @@ component! {
             .map(|action| SemanticEvent::submit(id, action))
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         if ctx.paint_pass() != PaintPass::Content {
             return;
         }
@@ -219,7 +219,7 @@ component! {
                 if self.hovered_action.get() == Some(i) {
                     ctx.fill_rect(btn_rect, ctx.tokens().color_fill_tertiary(), None);
                 }
-                if self.focused && self.focused_action == i {
+                if self.focused && tree.keyboard_focus_visible() && self.focused_action == i {
                     let inset = 1.0f32.min(btn_rect.w * 0.5).min(btn_rect.h * 0.5);
                     ctx.stroke_rect(
                         Rect::new(

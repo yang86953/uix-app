@@ -429,6 +429,9 @@ impl WidgetTree {
         button: MouseButton,
         mods: KeyMod,
     ) -> EventResult {
+        if button != MouseButton::Right {
+            self.set_keyboard_focus_visible(false);
+        }
         if let Some(result) = self.intercept_top_overlay_outside_pointer_down(pos) {
             return result;
         }

@@ -138,7 +138,7 @@ component! {
         self.layout_requested.replace(false)
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let frame = Self::normalized_frame(frame);
         self.last_frame
             .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
@@ -204,7 +204,7 @@ component! {
                 );
             }
         }
-        if self.focused {
+        if self.focused && tree.keyboard_focus_visible() {
             let inset = 0.75_f32.min(frame.w * 0.5).min(frame.h * 0.5);
             let focus_rect = Rect::new(
                 frame.x + inset,

@@ -2250,6 +2250,43 @@ fn focus_by_type_uses_the_shared_focus_transition_path() {
 }
 
 #[test]
+fn pointer_focus_hides_action_focus_visual_until_keyboard_input() {
+    let mut tree = WidgetTree::new();
+    let button = tree.set_root(Box::new(Button::new("Action")));
+    tree.get_mut(button)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 32.0));
+
+    assert!(tree.keyboard_focus_visible());
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(20.0, 16.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(tree.managers().focus.focused_component(), Some(button));
+    assert!(!tree.keyboard_focus_visible());
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Space,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(tree.keyboard_focus_visible());
+
+    let _ = tree.dispatch_event(&SystemEvent::PointerDown {
+        pos: Point::new(20.0, 16.0),
+        button: MouseButton::Right,
+        mods: KeyMod::NONE,
+    });
+    assert!(tree.keyboard_focus_visible());
+}
+
+#[test]
 fn focus_trap_tab_navigation_stays_inside_top_overlay_owner_subtree() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(PassThroughContainer::new(300.0, 200.0, vec![])));

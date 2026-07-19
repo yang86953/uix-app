@@ -94,7 +94,7 @@ component! {
 
     wants_continuous_pointer_move => (&self) -> bool { true }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         self.capture_bound_value_dependency();
         let control_height = frame.h.max(0.0).min(self.control_height());
         let control_rect = Rect::new(frame.x, frame.y, frame.w.max(0.0), control_height);
@@ -161,7 +161,7 @@ component! {
                 ctx.text_center(ch, star_rect, empty_color, font_size);
             }
         }
-        if self.focused {
+        if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(
                 control_rect,
                 ctx.tokens().color_primary(),

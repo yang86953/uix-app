@@ -693,6 +693,13 @@ fn run_real_gui_scenario(graphics: GraphicsExpectation) {
         "计数: 0"
     );
     if graphics.backend_override.is_none() {
+        foreground::verify_pointer_and_keyboard_focus_visuals(
+            &demo,
+            &mut connection,
+            window_id,
+            generation,
+            &before["snapshot"],
+        );
         foreground::verify_theme_and_resize_capture(&demo, &mut connection, window_id, generation);
     }
 

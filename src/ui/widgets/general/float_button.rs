@@ -88,7 +88,7 @@ component! {
         )
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let loc = crate::ui::locale::use_locale();
         let primary = ctx.tokens().color_primary();
         let primary_hover = ctx.tokens().color_primary_hover();
@@ -108,7 +108,7 @@ component! {
         // 阴影
         ctx.draw_box_shadow(btn_rect, 8.0, 0.0, 4.0, Color::from_rgba(0, 0, 0, 40), Some(r));
         ctx.fill_rect(btn_rect, bg, Some(r));
-        if self.focused {
+        if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(btn_rect, ctx.tokens().color_primary_border(), 2.0, Some(r));
         }
         let icon_fs = 16.0;

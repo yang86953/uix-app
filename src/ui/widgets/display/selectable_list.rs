@@ -586,7 +586,7 @@ component! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let geometry = self.geometry(frame);
         let frame = geometry.frame;
         self.last_frame.set(Some(frame));
@@ -753,7 +753,7 @@ component! {
                 11.0,
             );
         }
-        if self.focused {
+        if self.focused && tree.keyboard_focus_visible() {
             let inset = 1.0_f32.min(frame.w * 0.5).min(frame.h * 0.5);
             let focus_frame = Rect::new(
                 frame.x + inset,

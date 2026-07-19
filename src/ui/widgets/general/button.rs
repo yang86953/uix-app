@@ -240,8 +240,12 @@ impl EventHandler for Button {
 }
 
 impl WidgetRender for Button {
-    fn render(&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        let style = self.resolve_style();
+    fn render(&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
+        let style = if tree.keyboard_focus_visible() {
+            self.resolve_style()
+        } else {
+            self.resolve_style_with_focus_visibility(false)
+        };
         apply_style(ctx, frame, &style);
         self.paint_ripple(frame, ctx, &style);
         if self.loading {
@@ -456,13 +460,17 @@ impl Button {
     }
 
     pub(crate) fn resolve_style(&self) -> Style {
+        self.resolve_style_with_focus_visibility(true)
+    }
+
+    fn resolve_style_with_focus_visibility(&self, focus_visible: bool) -> Style {
         let mut style = self
             .style_set
             .resolve(StyleState {
                 hovered: self.hovered,
                 pressed: self.pressed,
                 // focused/pressed 预设无色变（#176）；仍传 flags 供自定义 StyleSet。
-                focused: self.focused && !self.pressed,
+                focused: self.focused && focus_visible && !self.pressed,
                 disabled: self.disabled,
             })
             .apply(self.style.as_ref().clone());

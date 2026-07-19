@@ -103,7 +103,7 @@ component! {
             .map(|item| SemanticEvent::change(id, item.title.clone()))
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let text_secondary = ctx.tokens().color_text_secondary();
         let text_color = ctx.tokens().color_text();
         let mut x = frame.x;
@@ -119,7 +119,7 @@ component! {
                 x += sep_w;
             }
         }
-        if self.focused {
+        if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(
                 frame,
                 ctx.tokens().color_primary(),

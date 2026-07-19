@@ -59,7 +59,7 @@ component! {
         })
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let icon = if self.dark.get() { "sun" } else { "moon" };
         let icon_str = crate::ui::widgets::icon::icon_char(icon);
         let text_color = ctx.tokens().color_text();
@@ -69,7 +69,7 @@ component! {
         }
         ctx.text_center(icon_str, frame, text_color, 18.0);
         ctx.set_font(saved);
-        if self.focused {
+        if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(
                 frame,
                 ctx.tokens().color_primary(),

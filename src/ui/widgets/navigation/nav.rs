@@ -107,7 +107,7 @@ component! {
             .map(|key| SemanticEvent::change(id, key))
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let active = self.index == self.active_shared.get();
         let primary = ctx.tokens().color_primary();
         let primary_bg = ctx.tokens().color_primary_bg();
@@ -134,7 +134,7 @@ component! {
             };
             paint_nav_item_bg(ctx, item_frame, base, overlay);
 
-            if self.focused {
+            if self.focused && tree.keyboard_focus_visible() {
                 ctx.stroke_rect(
                     item_frame,
                     primary,
@@ -213,7 +213,7 @@ component! {
         let label_w = (frame.x + frame.w - cursor_x).max(0.0);
         let label_area = Rect::new(cursor_x, frame.y, label_w, row_h);
         ctx.draw_text_in_frame(&self.label, label_area, label_color, 14.0);
-        if self.focused {
+        if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(
                 item_frame,
                 primary,

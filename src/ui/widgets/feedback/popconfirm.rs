@@ -215,7 +215,7 @@ component! {
         self.dirty_rect_for_frame(frame)
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let frame = Self::normalize_frame(frame);
         let surface_size = ctx.logical_surface_size();
         let surface = Self::normalize_frame(Rect::new(0.0, 0.0, surface_size.w, surface_size.h));
@@ -265,7 +265,7 @@ component! {
             13.0,
             true,
         );
-        if self.focused {
+        if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(frame, primary, 2.0, r);
         }
 
@@ -389,7 +389,7 @@ component! {
                 &self.cancel_text
             };
             Self::paint_elided_text(ctx, cancel, cancel_rect, popup_text, 12.0, true);
-            if self.focused && self.visible {
+            if self.focused && tree.keyboard_focus_visible() && self.visible {
                 let (focus_rect, focus_color) = if self.focused_action == 0 {
                     (confirm_rect, fade_color(Color::white(), opacity))
                 } else {

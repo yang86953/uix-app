@@ -218,7 +218,7 @@ component! {
         crate::draw::compositor::PicturePolicy::Eligible
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let geometry = Self::geometry(frame, self.checkable, self.closable);
         let frame = geometry.frame;
         self.last_size.set(Size::new(frame.w, frame.h));
@@ -294,7 +294,7 @@ component! {
                 Some(Radius::uniform(radius)),
             );
         }
-        if self.focused {
+        if self.focused && tree.keyboard_focus_visible() {
             let inset = 1.0_f32.min(frame.w * 0.5).min(frame.h * 0.5);
             ctx.stroke_rect(
                 Rect::new(

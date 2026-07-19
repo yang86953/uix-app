@@ -140,7 +140,7 @@ component! {
         crate::draw::compositor::PicturePolicy::Eligible
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let geometry = self.layout(frame);
         if geometry.frame.w <= 0.0 || geometry.frame.h <= 0.0 {
             self.last_action_rect.set(Rect::zero());
@@ -199,7 +199,7 @@ component! {
                 ctx.tokens().color_primary()
             };
             ctx.fill_rect(btn_rect, background, radius);
-            if self.focused {
+            if self.focused && tree.keyboard_focus_visible() {
                 let focus = Self::inset(btn_rect, 2.0);
                 ctx.stroke_rect(
                     focus,

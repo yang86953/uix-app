@@ -100,7 +100,7 @@ component! {
 
     wants_continuous_pointer_move => (&self) -> bool { true }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         self.capture_bound_value_dependency();
         let control_height = frame.h.max(0.0).min(self.control_height());
         let control_rect = Rect::new(frame.x, frame.y, frame.w.max(0.0), control_height);
@@ -186,7 +186,7 @@ component! {
         ctx.pop_clip();
 
         // focus 边框指示
-        if self.focused {
+        if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(control_rect, primary, 1.5, r);
         }
     }

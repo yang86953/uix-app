@@ -109,7 +109,7 @@ component! {
             .map(|idx| SemanticEvent::change(id, idx.to_string()))
     }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let primary = ctx.tokens().color_primary();
         let _success = ctx.tokens().color_success();
         let error = ctx.tokens().color_error();
@@ -240,7 +240,7 @@ component! {
             }
         }
 
-        if self.focused {
+        if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(
                 frame,
                 primary,

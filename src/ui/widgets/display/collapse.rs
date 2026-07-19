@@ -167,7 +167,7 @@ component! {
 
     wants_continuous_pointer_move => (&self) -> bool { true }
 
-    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let frame = Self::normalized_frame(frame);
         self.last_frame
             .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
@@ -201,7 +201,7 @@ component! {
             };
             ctx.fill_rect(header_rect, header_bg, r);
             ctx.stroke_rect(header_rect, border, 1.0, r);
-            if self.focused && idx == self.focused_header {
+            if self.focused && tree.keyboard_focus_visible() && idx == self.focused_header {
                 let inset = 0.75_f32.min(header_rect.w * 0.5).min(header_rect.h * 0.5);
                 let focus_rect = Rect::new(
                     header_rect.x + inset,
