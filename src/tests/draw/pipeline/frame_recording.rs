@@ -1,6 +1,6 @@
 use crate::draw::pipeline::frame_recording::*;
 use crate::draw::pipeline::{
-    EncodedPictureExecution, FrameCommand, FrameEncoder, FrameRadius, FrameRasterOp,
+    EncodedPictureExecution, FrameCommand, FrameEncoder, FrameOpacity, FrameRadius, FrameRasterOp,
 };
 use crate::draw::primitives::types::{BlendMode, Radius, Transform};
 use crate::draw::traits::{Canvas2D, GraphicsEngine};
@@ -1267,6 +1267,107 @@ fn fractional_offset_picture_keeps_exact_cpu_fallback() {
         .commands()
         .iter()
         .any(|command| matches!(command, FrameCommand::CpuSegment { .. })));
+}
+
+#[test]
+fn picture_group_opacity_records_one_direct_blit_without_allocating_main_scratch() {
+    use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+    use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+
+    let mut engine = FrameRecordingEngine::new();
+    engine.initialize(24, 16).expect("initialize recorder");
+    let picture = engine.create_offscreen(16, 8).expect("Picture");
+    let first = Color::from_rgba(220, 60, 40, 160);
+    let second = Color::from_rgba(40, 100, 230, 176);
+    engine
+        .try_begin_offscreen_paint(&picture)
+        .expect("begin Picture");
+    {
+        let canvas = engine.offscreen_canvas(&picture).expect("Picture canvas");
+        canvas.fill_rect(Rect::new(0.0, 0.0, 9.0, 6.0), first, None);
+        canvas.fill_rect(Rect::new(5.0, 2.0, 9.0, 6.0), second, None);
+    }
+    engine.try_end_offscreen_paint().expect("commit Picture");
+
+    let background = Color::from_rgb(12, 24, 48);
+    let opacity = 0.37;
+    engine.begin_recording(true).expect("begin main frame");
+    engine
+        .canvas_2d()
+        .fill_rect(Rect::new(0.0, 0.0, 24.0, 16.0), background, None);
+    engine.canvas_2d().set_opacity(opacity);
+    engine
+        .try_blit_offscreen_src(
+            &picture,
+            Rect::new(0.0, 0.0, 16.0, 8.0),
+            Rect::new(4.0, 3.0, 16.0, 8.0),
+        )
+        .expect("record Picture group opacity");
+    let encoder = engine.finish_recording().expect("finish main frame");
+
+    assert_eq!(engine.scratch_surface_size(), (1, 1));
+    assert!(encoder.commands().iter().any(|command| matches!(
+        command,
+        FrameCommand::PictureBlit { opacity: actual, .. }
+            if *actual == FrameOpacity::from_canvas(opacity)
+    )));
+    assert!(!encoder
+        .commands()
+        .iter()
+        .any(|command| matches!(command, FrameCommand::CpuSegment { .. })));
+
+    let mut source = SharedRasterizer::new(PixelSurface::new(16, 8));
+    source.fill_rect(Rect::new(0.0, 0.0, 9.0, 6.0), first, None);
+    source.fill_rect(Rect::new(5.0, 2.0, 9.0, 6.0), second, None);
+    let mut expected = SharedRasterizer::new(PixelSurface::new(24, 16));
+    expected.fill_rect(Rect::new(0.0, 0.0, 24.0, 16.0), background, None);
+    expected.set_opacity(opacity);
+    expected.blit_image(
+        source.surface().pixels(),
+        16,
+        Rect::new(0.0, 0.0, 16.0, 8.0),
+        Rect::new(4.0, 3.0, 16.0, 8.0),
+    );
+    assert_eq!(
+        encoder.render_reference().pixels(),
+        expected.surface().pixels()
+    );
+}
+
+#[test]
+fn zero_picture_group_opacity_is_a_noop_without_materializing_or_allocating_scratch() {
+    let mut engine = FrameRecordingEngine::new();
+    engine.initialize(24, 16).expect("initialize recorder");
+    let picture = engine.create_offscreen(16, 8).expect("Picture");
+    engine
+        .try_begin_offscreen_paint(&picture)
+        .expect("begin Picture");
+    engine
+        .offscreen_canvas(&picture)
+        .expect("Picture canvas")
+        .fill_rect(Rect::new(0.0, 0.0, 12.0, 6.0), Color::red(), None);
+    engine.try_end_offscreen_paint().expect("commit Picture");
+
+    engine.begin_recording(true).expect("begin main frame");
+    engine.canvas_2d().set_opacity(0.0);
+    engine
+        .try_blit_offscreen_src(
+            &picture,
+            Rect::new(0.0, 0.0, 16.0, 8.0),
+            Rect::new(4.0, 3.0, 16.0, 8.0),
+        )
+        .expect("zero-opacity Picture is a no-op");
+    let encoder = engine.finish_recording().expect("finish main frame");
+
+    assert_eq!(engine.scratch_surface_size(), (1, 1));
+    assert_eq!(
+        engine.offscreen_scratch_surface_size(&picture),
+        Some((1, 1))
+    );
+    assert!(!encoder.commands().iter().any(|command| matches!(
+        command,
+        FrameCommand::PictureBlit { .. } | FrameCommand::CpuSegment { .. }
+    )));
 }
 
 #[test]

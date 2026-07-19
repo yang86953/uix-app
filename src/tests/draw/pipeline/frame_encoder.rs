@@ -60,6 +60,46 @@ fn full_picture_after_transparent_clear_restores_exact_premultiplied_pixels() {
 }
 
 #[test]
+fn picture_opacity_matches_cpu_post_composition_channel_quantization() {
+    let opacity = 0.37;
+    let source = vec![
+        Color::from_rgba(200, 40, 20, 128).premultiplied(),
+        Color::transparent().premultiplied(),
+        Color::from_rgba(10, 220, 80, 64).premultiplied(),
+        Color::white().premultiplied(),
+    ];
+    let image = FrameImage::new(2, 2, source.clone()).unwrap();
+    let mut encoder = FrameEncoder::new(4, 4).unwrap();
+    let background = Color::from_rgb(12, 24, 48);
+    encoder.clear(background);
+    encoder.blit_picture_with_opacity(
+        image,
+        FrameRect::new(0, 0, 2, 2),
+        FrameRect::new(1, 1, 2, 2),
+        FrameOpacity::from_canvas(opacity),
+    );
+
+    let mut expected = vec![background.premultiplied(); 16];
+    crate::draw::rasterizer::image::blit_image(
+        &mut expected,
+        4,
+        4,
+        Rect::new(0.0, 0.0, 4.0, 4.0),
+        opacity,
+        &source,
+        2,
+        Rect::new(0.0, 0.0, 2.0, 2.0),
+        Rect::new(1.0, 1.0, 2.0, 2.0),
+    );
+    assert_eq!(encoder.render_reference().pixels(), expected);
+    assert!(matches!(
+        &encoder.commands()[1],
+        FrameCommand::PictureBlit { opacity: actual, .. }
+            if *actual == FrameOpacity::from_canvas(opacity)
+    ));
+}
+
+#[test]
 fn image_command_reference_tiles_match_full_frame_without_allocating_its_extent() {
     let source = (0..16)
         .map(|index| {
@@ -78,7 +118,7 @@ fn image_command_reference_tiles_match_full_frame_without_allocating_its_extent(
     let encoder = FrameEncoder::new(100, 80).unwrap();
 
     let (picture_tile, picture_bounds) = encoder
-        .picture_blit_reference_tile(&image, src, dst)
+        .picture_blit_reference_tile(&image, src, dst, FrameOpacity::opaque())
         .expect("partially visible Picture tile");
     let (segment_tile, segment_bounds) = encoder
         .cpu_segment_reference_tile(&image, src, dst)

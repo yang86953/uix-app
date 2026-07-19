@@ -12,7 +12,7 @@ use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
 use crate::draw::engine::RenderOutcome;
 use crate::draw::pipeline::{
     EncodedFrameExecution, EncodedPictureExecution, FrameEncoder, FrameEncoderError,
-    FrameGlyphBlit, FrameImage, FrameRadius, FrameRasterOp, FrameRect,
+    FrameGlyphBlit, FrameImage, FrameOpacity, FrameRadius, FrameRasterOp, FrameRect,
 };
 use crate::draw::primitives::path::{FillRule, Path};
 use crate::draw::primitives::stroker::StrokeOptions;
@@ -246,6 +246,9 @@ impl FrameRecordingEngine {
         src_rect: Rect,
         dst_rect: Rect,
     ) -> Result<(), Error> {
+        if FrameOpacity::from_canvas(self.canvas.scratch.opacity()).is_transparent() {
+            return Ok(());
+        }
         if let Some(commands) =
             self.translated_picture_commands(handle, src_rect, dst_rect, &self.canvas)
         {
@@ -402,6 +405,7 @@ impl GraphicsEngine for FrameRecordingEngine {
                         image: encoder.render_image(),
                         src: full,
                         dst: full,
+                        opacity: crate::draw::pipeline::FrameOpacity::opaque(),
                     }]
                 });
             target.canvas.record_validated_commands(commands)?;
@@ -521,6 +525,11 @@ impl GraphicsEngine for FrameRecordingEngine {
                     Errc::InvalidArgument,
                     "Picture offscreen target cannot blit into itself",
                 ));
+            }
+            if self.offscreens.get(&dst_handle).is_some_and(|target| {
+                FrameOpacity::from_canvas(target.canvas.scratch.opacity()).is_transparent()
+            }) {
+                return Ok(());
             }
             let commands = {
                 let target = self.offscreens.get(&dst_handle).ok_or_else(|| {
@@ -739,8 +748,10 @@ impl FrameRecordingCanvas {
         dst: Rect,
     ) -> Result<(), Error> {
         self.flush_scratch()?;
-        if let Some((src, dst)) = self.direct_picture_rects(src, dst) {
-            self.encoder_mut()?.blit_picture(image, src, dst);
+        if let Some((src, dst)) = self.direct_picture_geometry(src, dst) {
+            let opacity = FrameOpacity::from_canvas(self.scratch.opacity());
+            self.encoder_mut()?
+                .blit_picture_with_opacity(image, src, dst, opacity);
             return Ok(());
         }
         self.ensure_scratch()?;
@@ -992,6 +1003,13 @@ impl FrameRecordingCanvas {
     }
 
     fn direct_picture_rects(&self, src: Rect, dst: Rect) -> Option<(FrameRect, FrameRect)> {
+        if self.scratch.opacity() != 1.0 {
+            return None;
+        }
+        self.direct_picture_geometry(src, dst)
+    }
+
+    fn direct_picture_geometry(&self, src: Rect, dst: Rect) -> Option<(FrameRect, FrameRect)> {
         let (offset_x, offset_y) = self.scratch.offset();
         if self.blend_mode == BlendMode::Additive
             || !offset_x.is_finite()
@@ -999,7 +1017,6 @@ impl FrameRecordingCanvas {
             || offset_x.fract() != 0.0
             || offset_y.fract() != 0.0
             || !self.scratch.current_transform().is_identity()
-            || self.scratch.opacity() != 1.0
         {
             return None;
         }

@@ -2384,6 +2384,74 @@ fn main_frame_encoder_executes_each_command_at_its_recorded_boundary() {
 }
 
 #[test]
+fn picture_blit_group_opacity_is_quantized_before_the_bounded_soft_upload() {
+    use crate::draw::pipeline::{FrameImage, FrameOpacity, FrameRect};
+
+    let RecordingFixture {
+        mut backend,
+        stages,
+        soft_tiles,
+        ..
+    } = recording_backend(FailStage::None);
+    backend.resize(16, 16).expect("resize");
+    let source = vec![
+        Color::from_rgba(220, 80, 40, 160).premultiplied(),
+        Color::from_rgba(40, 180, 240, 208).premultiplied(),
+    ];
+    let opacity = 0.37;
+    let mut encoder = FrameEncoder::new(16, 16).expect("encoder");
+    encoder.clear(Color::from_rgb(12, 24, 48));
+    encoder.blit_picture_with_opacity(
+        FrameImage::new(2, 1, source.clone()).expect("Picture image"),
+        FrameRect::new(0, 0, 2, 1),
+        FrameRect::new(7, 9, 2, 1),
+        FrameOpacity::from_canvas(opacity),
+    );
+
+    backend
+        .try_execute_encoded_frame(&encoder)
+        .expect("execute Picture opacity");
+    assert_eq!(stages.borrow().as_slice(), ["clear", "soft"]);
+    let tiles = soft_tiles.borrow();
+    assert_eq!(tiles.len(), 1);
+    assert_eq!(tiles[0].0, SoftFallbackTile::at_destination(7, 9, 2, 1));
+    assert_eq!(
+        tiles[0].1,
+        source
+            .into_iter()
+            .map(|pixel| crate::draw::rasterizer::apply_opacity(pixel, opacity))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn zero_opacity_picture_blit_does_not_issue_an_empty_soft_upload() {
+    use crate::draw::pipeline::{FrameImage, FrameOpacity, FrameRect};
+
+    let RecordingFixture {
+        mut backend,
+        stages,
+        soft_tiles,
+        ..
+    } = recording_backend(FailStage::None);
+    backend.resize(16, 16).expect("resize");
+    let mut encoder = FrameEncoder::new(16, 16).expect("encoder");
+    encoder.clear(Color::black());
+    encoder.blit_picture_with_opacity(
+        FrameImage::solid(2, 2, Color::white()).expect("Picture image"),
+        FrameRect::new(0, 0, 2, 2),
+        FrameRect::new(7, 9, 2, 2),
+        FrameOpacity::from_canvas(0.0),
+    );
+
+    backend
+        .try_execute_encoded_frame(&encoder)
+        .expect("execute transparent Picture");
+    assert_eq!(stages.borrow().as_slice(), ["clear"]);
+    assert!(soft_tiles.borrow().is_empty());
+}
+
+#[test]
 fn main_frame_encoder_forwards_rounded_rect_geometry_to_native_gpu() {
     use crate::draw::pipeline::{FrameRadius, FrameRect};
 
