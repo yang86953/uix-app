@@ -762,6 +762,73 @@ impl FrameRecordingCanvas {
         self.flush_scratch()
     }
 
+    fn record_direct_image_blit(
+        &mut self,
+        pixels: &[u32],
+        source_width: i32,
+        source_rect: Rect,
+        destination_rect: Rect,
+    ) -> Result<bool, Error> {
+        let canvas_opacity = self.scratch.opacity();
+        if !canvas_opacity.is_finite() {
+            return Ok(false);
+        }
+        let opacity = FrameOpacity::from_canvas(canvas_opacity);
+        if opacity.is_transparent() {
+            return Ok(true);
+        }
+        let Ok(source_stride) = usize::try_from(source_width) else {
+            return Ok(false);
+        };
+        if source_stride == 0 {
+            return Ok(false);
+        }
+        let Ok(source_height) = i32::try_from(pixels.len() / source_stride) else {
+            return Ok(false);
+        };
+        let Some((source, destination)) =
+            self.direct_picture_geometry(source_rect, destination_rect)
+        else {
+            return Ok(false);
+        };
+        if source.width != destination.width
+            || source.height != destination.height
+            || !source.is_within(source_width, source_height)
+        {
+            return Ok(false);
+        }
+
+        let pixel_count = usize::try_from(i64::from(source.width) * i64::from(source.height))
+            .map_err(|_| {
+                Error::new(
+                    Errc::GraphicsOutOfMemory,
+                    "direct image blit crop exceeds addressable memory",
+                )
+            })?;
+        let mut retained = Vec::new();
+        retained.try_reserve_exact(pixel_count).map_err(|error| {
+            Error::new(
+                Errc::GraphicsOutOfMemory,
+                format!(
+                    "direct image blit crop {}x{} allocation failed: {error}",
+                    source.width, source.height
+                ),
+            )
+        })?;
+        let copy_width = source.width as usize;
+        for y in source.y..source.y + source.height {
+            let row = y as usize * source_stride + source.x as usize;
+            retained.extend_from_slice(&pixels[row..row + copy_width]);
+        }
+        let image =
+            FrameImage::new(source.width, source.height, retained).map_err(frame_encoder_error)?;
+        let retained_source = FrameRect::new(0, 0, source.width, source.height);
+        self.flush_scratch()?;
+        self.encoder_mut()?
+            .blit_picture_with_opacity(image, retained_source, destination, opacity);
+        Ok(true)
+    }
+
     fn note_scratch_bounds(&mut self, local: Rect, pad: f32) {
         let mapped = self.scratch.map_rect(local);
         let Some(bounds) = surface_pack_bounds(
@@ -1024,7 +1091,7 @@ impl FrameRecordingCanvas {
         let dst =
             rect_to_frame(Rect::new(dst.x + offset_x, dst.y + offset_y, dst.w, dst.h)).ok()?;
         let clip = self.scratch.current_clip();
-        if clip == self.full_rect() {
+        if clip == self.full_rect() && dst.is_within(self.width, self.height) {
             return Some((src, dst));
         }
         if src.width != dst.width || src.height != dst.height {
@@ -1298,6 +1365,17 @@ impl Canvas2D for FrameRecordingCanvas {
     }
 
     fn blit_image(&mut self, src: &[u32], src_w: i32, src_rect: Rect, dst_rect: Rect) {
+        if self.deferred_error.is_some() {
+            return;
+        }
+        match self.record_direct_image_blit(src, src_w, src_rect, dst_rect) {
+            Ok(true) => return,
+            Ok(false) => {}
+            Err(error) => {
+                self.remember_error(error);
+                return;
+            }
+        }
         self.draw_cpu(dst_rect, 1.0, |scratch| {
             scratch.blit_image(src, src_w, src_rect, dst_rect)
         });
