@@ -1326,6 +1326,12 @@ impl Canvas2D for FrameRecordingCanvas {
 
     fn stroke_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color, width: f32) {
         let bounds = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
+        if r.is_finite() && r > 0.0 && self.native_src_over_rects(bounds).is_some() {
+            // A circle stroke is the shared rounded-rect stroke SDF over a
+            // square whose four radii equal half the extent.
+            self.stroke_rect(bounds, color, width, Some(Radius::uniform(r)));
+            return;
+        }
         self.draw_cpu(bounds, width.max(1.0), |scratch| {
             scratch.stroke_circle(cx, cy, r, color, width)
         });
