@@ -309,8 +309,8 @@ mod tests {
 
         let error = match generate_documents(
             &[
-                ("docs/使用指南/first.md", first),
-                ("docs/使用指南/second.md", second),
+                ("docs/使用/first.md", first),
+                ("docs/使用/second.md", second),
             ],
             MANIFEST,
         ) {
@@ -318,8 +318,8 @@ mod tests {
             Err(error) => error,
         };
 
-        assert!(error.contains("docs/使用指南/second.md:1"));
-        assert!(error.contains("first declared at docs/使用指南/first.md:1"));
+        assert!(error.contains("docs/使用/second.md:1"));
+        assert!(error.contains("first declared at docs/使用/first.md:1"));
     }
 
     #[test]
@@ -328,7 +328,7 @@ mod tests {
         let second = "```rust uix-compile=second\nlet second = 2;\n```\n";
 
         let generated = match generate_documents(
-            &[("docs/使用.md", first), ("docs/使用指南/second.md", second)],
+            &[("docs/使用.md", first), ("docs/使用/second.md", second)],
             MANIFEST,
         ) {
             Ok(generated) => generated,
@@ -337,7 +337,7 @@ mod tests {
 
         assert!(generated.contains("USAGE_RUST_BLOCKS_TOTAL: usize = 2"));
         assert!(generated.contains("// docs/使用.md:2"));
-        assert!(generated.contains("// docs/使用指南/second.md:2"));
+        assert!(generated.contains("// docs/使用/second.md:2"));
     }
 
     #[test]

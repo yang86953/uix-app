@@ -13,4 +13,4 @@
 {"type":"perform","window_id":1,"generation":1,"action":{"kind":"pointer_up","x":320,"y":180}}
 ```
 
-详见[架构](../架构.md#大模型控制协议)；缺口 → [`AGENT-R1`](../进度.md#其他活跃差距)。
+详见[架构](../架构.md#大模型控制协议)；缺口 → [`AGENT-R1`](../进度/平台与硬件.md#agent-附能力)。
