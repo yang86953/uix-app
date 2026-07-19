@@ -38,6 +38,7 @@ fn open_engine(
 }
 
 #[test]
+#[ignore = "legacy WGL hybrid fixture; production uses the strict shared wgpu path"]
 fn opengles_native_path_keeps_order_and_bounded_soft_upload() {
     if std::env::consts::OS != "windows" {
         return;
@@ -87,6 +88,7 @@ fn opengles_native_path_keeps_order_and_bounded_soft_upload() {
 }
 
 #[test]
+#[ignore = "legacy WGL hybrid fixture; production uses the strict shared wgpu path"]
 fn opengles_encoded_glyph_ir_uses_native_atlas_without_soft_upload() {
     if std::env::consts::OS != "windows" {
         return;
@@ -156,6 +158,7 @@ fn opengles_encoded_glyph_ir_uses_native_atlas_without_soft_upload() {
 }
 
 #[test]
+#[ignore = "legacy WGL hybrid fixture; production uses the strict shared wgpu path"]
 fn opengles_picture_producer_glyph_ir_matches_reference_without_soft_upload() {
     use crate::draw::pipeline::frame_recording::FrameRecordingEngine;
 
@@ -280,6 +283,7 @@ fn opengles_picture_producer_glyph_ir_matches_reference_without_soft_upload() {
 }
 
 #[test]
+#[ignore = "legacy WGL hybrid fixture; production uses the strict shared wgpu path"]
 fn opengles_encoded_fill_opacity_ir_matches_reference_without_soft_upload() {
     use crate::draw::pipeline::frame_recording::FrameRecordingEngine;
 
@@ -429,6 +433,7 @@ fn wgl_rgba_to_aarrggbb(pixel: u32) -> u32 {
 }
 
 #[test]
+#[ignore = "legacy WGL hybrid fixture; production uses the strict shared wgpu path"]
 fn opengles_native_path_matches_software_for_hybrid_clip_and_bounded_tile() {
     if std::env::consts::OS != "windows" {
         return;
@@ -484,6 +489,7 @@ fn opengles_native_path_matches_software_for_hybrid_clip_and_bounded_tile() {
 }
 
 #[test]
+#[ignore = "legacy WGL hybrid fixture; production uses the strict shared wgpu path"]
 fn opengles_native_path_matches_software_for_premultiplied_soft_tile() {
     if std::env::consts::OS != "windows" {
         return;
@@ -527,6 +533,7 @@ fn opengles_native_path_matches_software_for_premultiplied_soft_tile() {
 }
 
 #[test]
+#[ignore = "legacy WGL offscreen fixture; production uses the shared wgpu path"]
 fn opengles_native_path_executes_encoded_cached_picture_in_bound_offscreen() {
     if std::env::consts::OS != "windows" {
         return;
@@ -589,6 +596,7 @@ fn opengles_native_path_executes_encoded_cached_picture_in_bound_offscreen() {
 }
 
 #[test]
+#[ignore = "legacy WGL offscreen fixture; production uses the shared wgpu path"]
 fn opengles_native_path_honors_picture_source_crop() {
     if std::env::consts::OS != "windows" {
         return;
@@ -638,6 +646,7 @@ fn opengles_native_path_honors_picture_source_crop() {
 }
 
 #[test]
+#[ignore = "legacy WGL offscreen fixture; production uses the shared wgpu path"]
 fn opengles_native_path_keeps_order_when_a_picture_blits_into_an_active_picture() {
     if std::env::consts::OS != "windows" {
         return;
@@ -699,6 +708,7 @@ fn opengles_native_path_keeps_order_when_a_picture_blits_into_an_active_picture(
 }
 
 #[test]
+#[ignore = "legacy WGL hybrid fixture; production uses the strict shared wgpu path"]
 fn opengles_native_path_rejects_additive_cpu_fallback() {
     if std::env::consts::OS != "windows" {
         return;

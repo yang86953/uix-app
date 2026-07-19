@@ -29,7 +29,7 @@ fn d3d12_explicit_request_reports_build_state_or_surface_error() {
     };
 
     #[cfg(all(windows, feature = "d3d12"))]
-    assert!(err.message().contains("native window handle is null"));
+    assert!(err.message().contains("wgpu native surface is null"));
 
     #[cfg(all(windows, not(feature = "d3d12")))]
     assert!(err.message().contains("disabled"));
@@ -80,9 +80,13 @@ fn d3d12_explicit_factory_creates_active_real_window_context() {
         context.native_raster_caps(),
         NativeRasterCaps {
             clear_target: true,
-            soft_blit: true,
             solid_rects: true,
+            stroke_rects: true,
             glyphs: true,
+            linear_gradients: true,
+            radial_gradients: true,
+            solid_meshes: true,
+            box_shadows: true,
             ..NativeRasterCaps::default()
         }
     );
@@ -106,6 +110,7 @@ fn vulkan_candidate_is_real_linux_backend_or_platform_specific_error() {
     #[cfg(windows)]
     assert!(
         err.message().contains("HWND")
+            || err.message().contains("wgpu native surface is null")
             || err.message().contains("native_surface")
             || err.message().contains("load Vulkan")
             || err.message().contains("vkCreate")

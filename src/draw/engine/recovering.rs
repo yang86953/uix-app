@@ -254,6 +254,10 @@ impl GraphicsEngine for RecoveringGraphicsEngine {
         self.engine.capabilities()
     }
 
+    fn raster_pipeline(&self) -> crate::draw::traits::RasterPipeline {
+        self.engine.raster_pipeline()
+    }
+
     fn dpi(&self) -> f32 {
         self.engine.dpi()
     }

@@ -14,7 +14,8 @@ pub use frame::{begin_frame, end_frame, normalize_strategy};
 pub use frame_encoder::{
     EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameEncoder, FrameEncoderError,
     FrameGlyphBlit, FrameImage, FrameOpacity, FramePresenter, FrameRadius, FrameRasterOp,
-    FrameRect, FrameStrokeRect, FrameStrokeWidth, PresentOutcome, ReferenceFrame,
+    FrameRect, FrameStrokeRect, FrameStrokeWidth, GpuFrameAudit, GpuFrameViolationKind,
+    PresentOutcome, ReferenceFrame,
 };
 pub use invalidation::{
     invalidate_paint_handle, Invalidation, InvalidationQueue, InvalidationQueueHandle, NodeId,

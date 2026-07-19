@@ -130,6 +130,15 @@ impl GraphicsCapabilities {
     }
 }
 
+/// Raster provenance selected for the live engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RasterPipeline {
+    Cpu,
+    /// Every final UI pixel is produced by native GPU draw commands. CPU work
+    /// is limited to scene construction, layout, decoding and tessellation.
+    GpuNative,
+}
+
 /// 图形引擎 — 帧生命周期与离屏缓冲管理。
 pub trait GraphicsEngine: 'static {
     fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error>;
@@ -195,6 +204,10 @@ pub trait GraphicsEngine: 'static {
 
     fn capabilities(&self) -> GraphicsCapabilities {
         GraphicsCapabilities::cpu_pixels()
+    }
+
+    fn raster_pipeline(&self) -> RasterPipeline {
+        RasterPipeline::Cpu
     }
 
     fn dpi(&self) -> f32 {

@@ -89,6 +89,8 @@ fn gpu_factory_rejects_opengles_context_without_native_hybrid_baseline() {
         Err(error) => error,
     };
 
-    assert!(error.message().contains("requires GpuNative"));
+    assert!(error
+        .message()
+        .contains("complete \"GPU-only\" raster baseline"));
     assert_eq!(shutdowns.load(Ordering::SeqCst), 1);
 }

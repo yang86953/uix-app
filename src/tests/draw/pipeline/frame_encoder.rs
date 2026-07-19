@@ -9,6 +9,62 @@ fn rect(x: i32, y: i32, width: i32, height: i32, color: Color) -> FrameRasterOp 
     }
 }
 
+#[test]
+fn gpu_native_audit_accepts_vector_commands_and_rejects_cpu_raster_payloads() {
+    let mut native = FrameEncoder::new(16, 16).unwrap();
+    native.clear(Color::transparent());
+    native.native(rect(1, 2, 3, 4, Color::red()));
+    assert!(native.gpu_native_audit().is_gpu_native());
+    assert_eq!(native.validate_gpu_native(), Ok(()));
+
+    let mut cpu = FrameEncoder::new(16, 16).unwrap();
+    cpu.cpu_segment([rect(1, 2, 3, 4, Color::red())]).unwrap();
+    let audit = cpu.gpu_native_audit();
+    assert_eq!(audit.cpu_raster_segments, 1);
+    assert!(audit.cpu_raster_bytes > 0);
+    assert!(matches!(
+        cpu.validate_gpu_native(),
+        Err(FrameEncoderError::GpuNativeViolation {
+            kind: GpuFrameViolationKind::CpuRasterSegment,
+            ..
+        })
+    ));
+
+    let mut glyph = FrameEncoder::new(16, 16).unwrap();
+    glyph.native(FrameRasterOp::BlitGlyphs {
+        glyphs: vec![
+            FrameGlyphBlit::new(0, 0, Arc::from([255_u8; 4]), 2, 2, Color::white()).unwrap(),
+        ],
+        clip: FrameRect::new(0, 0, 16, 16),
+    });
+    let audit = glyph.gpu_native_audit();
+    assert_eq!((audit.cpu_glyphs, audit.cpu_glyph_bytes), (1, 4));
+    assert!(matches!(
+        glyph.validate_gpu_native(),
+        Err(FrameEncoderError::GpuNativeViolation {
+            kind: GpuFrameViolationKind::CpuGlyphCoverage,
+            payload_bytes: 4,
+        })
+    ));
+
+    let mut picture = FrameEncoder::new(16, 16).unwrap();
+    picture.blit_picture(
+        FrameImage::solid(2, 2, Color::blue()).unwrap(),
+        FrameRect::new(0, 0, 2, 2),
+        FrameRect::new(4, 4, 2, 2),
+    );
+    let audit = picture.gpu_native_audit();
+    assert_eq!(audit.materialized_pictures, 1);
+    assert_eq!(audit.materialized_picture_bytes, 16);
+    assert!(matches!(
+        picture.validate_gpu_native(),
+        Err(FrameEncoderError::GpuNativeViolation {
+            kind: GpuFrameViolationKind::MaterializedPicture,
+            payload_bytes: 16,
+        })
+    ));
+}
+
 fn assert_premultiplied_pixels_within_one(expected: &[u32], actual: &[u32]) {
     assert_eq!(expected.len(), actual.len());
     for (index, (&expected, &actual)) in expected.iter().zip(actual).enumerate() {

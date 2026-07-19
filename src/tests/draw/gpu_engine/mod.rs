@@ -117,7 +117,7 @@ fn gpu_native_engine_uses_factory_drawable_without_initial_resize() {
 }
 
 #[test]
-fn gpu_engine_forwards_idle_resource_deadline_and_release_to_native_backend() {
+fn gpu_engine_rejects_cpu_raster_without_allocating_soft_resources() {
     let resize_calls = Rc::new(Cell::new(0));
     let context = FactoryInitializedNativeContext {
         resize_calls,
@@ -129,21 +129,13 @@ fn gpu_engine_forwards_idle_resource_deadline_and_release_to_native_backend() {
     engine
         .canvas_2d()
         .fill_ellipse(Rect::new(1.0, 1.0, 8.0, 8.0), Color::white());
-    engine
+    let error = engine
         .session_mut()
         .backend_mut()
         .present(&DamageRegion::full())
-        .expect("soft frame present");
+        .expect_err("GPU-only engine must reject CPU raster fallback");
 
-    let presented_at = Instant::now();
-    engine.note_presented_at(presented_at);
-    let deadline = engine
-        .idle_resource_deadline()
-        .expect("idle resource deadline");
-    assert!(deadline > presented_at);
-
-    engine.release_idle_resources(deadline);
-
+    assert_eq!(error.code(), Errc::NotImplemented);
     assert_eq!(engine.idle_resource_deadline(), None);
     assert!(engine
         .session()

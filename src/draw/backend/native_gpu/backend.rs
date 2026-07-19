@@ -91,6 +91,7 @@ pub struct NativeGpuBackend {
     present_damage_tracker: PresentDamageTracker,
     soft_fallback_idle_deadline: Option<Instant>,
     soft_used_in_last_present: bool,
+    gpu_only: bool,
     pub(crate) shutdown: bool,
 }
 
@@ -116,12 +117,29 @@ fn logical_extent_from_context(gpu_ctx: &dyn IGraphicsContext) -> (i32, i32) {
 }
 
 impl NativeGpuBackend {
-    pub(crate) fn new(mut gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn new(gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
+        Self::new_with_mode(gpu_ctx, false)
+    }
+
+    pub(crate) fn new_gpu_only(gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
+        Self::new_with_mode(gpu_ctx, true)
+    }
+
+    fn new_with_mode(
+        mut gpu_ctx: Box<dyn IGraphicsContext>,
+        gpu_only: bool,
+    ) -> Result<Self, Error> {
         let caps = gpu_ctx.caps();
         let native_caps = gpu_ctx.native_raster_caps();
+        let raster_baseline = if gpu_only {
+            native_caps.has_gpu_only_baseline()
+        } else {
+            native_caps.has_hybrid_baseline()
+        };
         if caps.raster != RasterMode::GpuNative
             || caps.present != PresentMode::Swapchain
-            || !native_caps.has_hybrid_baseline()
+            || !raster_baseline
         {
             let backend = caps.backend;
             let raster = caps.raster;
@@ -130,7 +148,8 @@ impl NativeGpuBackend {
             return Err(Error::new(
                 Errc::InvalidArgument,
                 format!(
-                    "NativeGpuBackend requires GpuNative × Swapchain plus clear/soft-blit baseline, got {backend} raster={raster} present={present} native={native_caps:?}"
+                    "NativeGpuBackend requires a complete {:?} raster baseline, got {backend} raster={raster} present={present} native={native_caps:?}",
+                    if gpu_only { "GPU-only" } else { "hybrid" }
                 ),
             ));
         }
@@ -149,8 +168,13 @@ impl NativeGpuBackend {
             present_damage_tracker: PresentDamageTracker::new(),
             soft_fallback_idle_deadline: None,
             soft_used_in_last_present: false,
+            gpu_only,
             surface: NativeGpuDrawSurface {
-                canvas: NativeGpuCanvas2D::new(logical_w, logical_h, native_caps),
+                canvas: if gpu_only {
+                    NativeGpuCanvas2D::new_gpu_only(logical_w, logical_h, native_caps)
+                } else {
+                    NativeGpuCanvas2D::new(logical_w, logical_h, native_caps)
+                },
                 native_caps,
                 width: logical_w,
                 height: logical_h,
@@ -899,7 +923,11 @@ impl RenderBackend for NativeGpuBackend {
         }
         self.offscreens[idx] = Some(NativeGpuOffscreen {
             target,
-            canvas: NativeGpuCanvas2D::new(width, height, self.surface.native_caps),
+            canvas: if self.gpu_only {
+                NativeGpuCanvas2D::new_gpu_only(width, height, self.surface.native_caps)
+            } else {
+                NativeGpuCanvas2D::new(width, height, self.surface.native_caps)
+            },
             width,
             height,
         });

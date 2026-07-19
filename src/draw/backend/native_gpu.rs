@@ -120,9 +120,11 @@ impl PendingNativeOp {
     }
 }
 
-/// Hybrid Canvas2D: native solid/stroke/glyphs/gradients/paths/shadows + soft fallback.
+/// Native Canvas2D. Compatibility callers may retain the historical soft
+/// fallback; production GPU engines construct it in strict GPU-only mode.
 pub struct NativeGpuCanvas2D {
     native_caps: NativeRasterCaps,
+    gpu_only: bool,
     /// Allocated on first soft-path use (#105) — pure-native frames keep no CPU framebuffer.
     pub(crate) soft_fallback: Option<SharedRasterizer>,
     /// Soft buffer has content that must be composited (until full clear).
@@ -140,6 +142,9 @@ pub struct NativeGpuCanvas2D {
     /// Immediate Canvas2D calls that have no `Result` return channel record
     /// an error here. The frame boundary consumes it before any present.
     deferred_error: Option<Error>,
+    /// Zero-length return target for the legacy `pixels_mut` method in strict
+    /// GPU mode; it preserves the trait contract without allocating a CPU surface.
+    rejected_pixels: [u32; 0],
     pub(crate) pending_native: Vec<PendingNativeOp>,
     clip_rect: Rect,
     clip_stack: Vec<Rect>,
@@ -157,16 +162,31 @@ pub struct NativeGpuCanvas2D {
 
 impl NativeGpuCanvas2D {
     pub(crate) fn new(width: i32, height: i32, native_caps: NativeRasterCaps) -> Self {
+        Self::new_with_mode(width, height, native_caps, false)
+    }
+
+    pub(crate) fn new_gpu_only(width: i32, height: i32, native_caps: NativeRasterCaps) -> Self {
+        Self::new_with_mode(width, height, native_caps, true)
+    }
+
+    fn new_with_mode(
+        width: i32,
+        height: i32,
+        native_caps: NativeRasterCaps,
+        gpu_only: bool,
+    ) -> Self {
         let w = width.max(1);
         let h = height.max(1);
         Self {
             native_caps,
+            gpu_only,
             soft_fallback: None,
             soft_has_content: false,
             soft_used_since_present: false,
             soft_idle_presents: 0,
             soft_uses_destination_blend: false,
             deferred_error: None,
+            rejected_pixels: [],
             pending_native: Vec::new(),
             clip_rect: Rect::new(0.0, 0.0, w as f32, h as f32),
             clip_stack: Vec::new(),
@@ -236,6 +256,10 @@ impl NativeGpuCanvas2D {
     }
 
     fn mark_soft(&mut self) {
+        if self.gpu_only {
+            self.reject_unsupported("CPU soft raster fallback in GPU-only mode");
+            return;
+        }
         self.soft_has_content = true;
         self.soft_used_since_present = true;
         self.soft_idle_presents = 0;
@@ -292,6 +316,10 @@ impl NativeGpuCanvas2D {
     }
 
     fn sync_fallback_state(&mut self) {
+        if self.gpu_only {
+            self.reject_unsupported("CPU soft raster fallback in GPU-only mode");
+            return;
+        }
         let transform = self.transform;
         let opacity = self.opacity;
         let blend_mode = self.blend_mode;
@@ -309,6 +337,10 @@ impl NativeGpuCanvas2D {
     where
         F: FnOnce(&mut SharedRasterizer),
     {
+        if self.gpu_only {
+            self.reject_unsupported("CPU soft raster fallback in GPU-only mode");
+            return;
+        }
         self.sync_fallback_state();
         let clip = self.clip_rect;
         let soft = self.ensure_soft();
@@ -456,6 +488,10 @@ impl NativeGpuCanvas2D {
         let identity = self.transform.m == Transform::identity().m;
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
         if self.soft_has_content || !self.native_caps.solid_meshes || !identity || !native_blend {
+            if self.gpu_only {
+                self.reject_unsupported("transformed path or destination-dependent path blend");
+                return;
+            }
             self.sync_fallback_state();
             let _soft_clip = self.clip_rect;
             self.ensure_soft().push_clip(_soft_clip);
@@ -481,6 +517,10 @@ impl NativeGpuCanvas2D {
             tessellator::tessellate_fill(path_for_tess, fill_rule)
         };
         let Some(verts) = verts else {
+            if self.gpu_only {
+                self.reject_unsupported("path tessellation failure");
+                return;
+            }
             self.sync_fallback_state();
             let _soft_clip = self.clip_rect;
             self.ensure_soft().push_clip(_soft_clip);
@@ -522,6 +562,10 @@ impl NativeGpuCanvas2D {
         let identity = self.transform.m == Transform::identity().m;
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
         if self.soft_has_content || !self.native_caps.box_shadows || !identity || !native_blend {
+            if self.gpu_only {
+                self.reject_unsupported("transformed shadow or destination-dependent shadow blend");
+                return;
+            }
             self.sync_fallback_state();
             let _soft_clip = self.clip_rect;
             self.ensure_soft().push_clip(_soft_clip);
@@ -845,6 +889,10 @@ impl Canvas2D for NativeGpuCanvas2D {
     }
 
     fn fill_ellipse(&mut self, rect: Rect, color: Color) {
+        if self.gpu_only {
+            self.reject_unsupported("ellipse GPU primitive");
+            return;
+        }
         self.sync_fallback_state();
         let _soft_clip = self.clip_rect;
         self.ensure_soft().push_clip(_soft_clip);
@@ -854,6 +902,10 @@ impl Canvas2D for NativeGpuCanvas2D {
     }
 
     fn fill_sector(&mut self, cx: f32, cy: f32, r: f32, sa: f32, ea: f32, color: Color) {
+        if self.gpu_only {
+            self.reject_unsupported("sector GPU primitive");
+            return;
+        }
         self.sync_fallback_state();
         let _soft_clip = self.clip_rect;
         self.ensure_soft().push_clip(_soft_clip);
@@ -898,6 +950,10 @@ impl Canvas2D for NativeGpuCanvas2D {
             self.queue_solid_rect(rect, color, None);
             return;
         }
+        if self.gpu_only {
+            self.reject_unsupported("diagonal line GPU primitive");
+            return;
+        }
         self.sync_fallback_state();
         let _soft_clip = self.clip_rect;
         self.ensure_soft().push_clip(_soft_clip);
@@ -939,6 +995,10 @@ impl Canvas2D for NativeGpuCanvas2D {
     }
 
     fn blit_image(&mut self, src: &[u32], src_w: i32, src_rect: Rect, dst_rect: Rect) {
+        if self.gpu_only {
+            self.reject_unsupported("image GPU texture blit");
+            return;
+        }
         self.sync_fallback_state();
         let _soft_clip = self.clip_rect;
         self.ensure_soft().push_clip(_soft_clip);
@@ -971,6 +1031,10 @@ impl Canvas2D for NativeGpuCanvas2D {
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
         // Soft path for transforms / exotic blend; identity solid text → atlas.
         if self.soft_has_content || !self.native_caps.glyphs || !identity || !native_blend {
+            if self.gpu_only {
+                self.reject_unsupported("transformed glyph or destination-dependent glyph blend");
+                return;
+            }
             self.sync_fallback_state();
             let _soft_clip = self.clip_rect;
             self.ensure_soft().push_clip(_soft_clip);
@@ -1059,6 +1123,10 @@ impl Canvas2D for NativeGpuCanvas2D {
     }
 
     fn pixels_mut(&mut self) -> &mut [u32] {
+        if self.gpu_only {
+            self.reject_unsupported("direct CPU pixel access in GPU-only mode");
+            return &mut self.rejected_pixels;
+        }
         self.mark_soft();
         self.soft_uses_destination_blend |= matches!(self.blend_mode, BlendMode::Additive);
         self.ensure_soft().pixels_mut()

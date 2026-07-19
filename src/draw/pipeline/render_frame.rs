@@ -14,7 +14,7 @@ use crate::draw::pipeline::{
     frame_recording::FrameRecordingEngine, EncodedFrameExecution, FrameImage, InvalidationSource,
     RenderMetrics,
 };
-use crate::draw::traits::{GraphicsEngine, ScrollCopy, UpdateStrategy};
+use crate::draw::traits::{GraphicsEngine, RasterPipeline, ScrollCopy, UpdateStrategy};
 use crate::draw::{Color, FontHandle, RenderOutcome};
 
 /// 单帧渲染输入。
@@ -58,6 +58,9 @@ pub struct FrameRenderer {
     /// real surface already contains overlay pixels and can no longer become a
     /// clean backdrop. Wait for every overlay to leave before capturing again.
     overlay_backdrop_blocked: bool,
+    /// Prevents Picture handles created by one raster owner from being reused
+    /// after bounded recovery switches the live engine.
+    raster_pipeline: Option<RasterPipeline>,
 }
 
 impl FrameRenderer {
@@ -70,6 +73,7 @@ impl FrameRenderer {
             recording_extent: None,
             overlay_backdrop: None,
             overlay_backdrop_blocked: false,
+            raster_pipeline: None,
         }
     }
 
@@ -264,6 +268,18 @@ impl FrameRenderer {
 
         // 恢复包装器可在 begin_frame 内切换到 Software，后续呈现协议须读取新引擎能力。
         let caps = engine.capabilities();
+        let raster_pipeline = engine.raster_pipeline();
+        if self.raster_pipeline != Some(raster_pipeline) {
+            // The previous engine owns any native Picture handles. Its
+            // shutdown reclaims them; never pass those opaque ids to the new
+            // engine after recovery.
+            self.layer_tree = LayerTree::new();
+            self.render_object_tree = RenderObjectTree::new();
+            self.last_tree_version = 0;
+            self.overlay_backdrop = None;
+            self.overlay_backdrop_blocked = has_overlay;
+            self.raster_pipeline = Some(raster_pipeline);
+        }
 
         let (recording_w, recording_h) = Self::reference_extent(engine, scene);
         if let Err(error) = self.ensure_recording_surface(recording_w, recording_h) {
@@ -294,14 +310,17 @@ impl FrameRenderer {
 
         let layer_t0 = std::time::Instant::now();
         if self.last_tree_version != cur_version || !self.layer_tree.is_ready() {
-            // The private producer owns CPU Picture targets, so cached and
-            // direct paths are both included before the one real main-surface
-            // FrameEncoder is executed.
-            self.layer_tree.build(scene, true);
-            if let Err(error) = self
-                .layer_tree
-                .sweep_orphaned_offscreens(&mut self.recording_engine)
-            {
+            self.layer_tree.build(
+                scene,
+                raster_pipeline == RasterPipeline::GpuNative || caps.supports_offscreen(),
+            );
+            let sweep_result = if raster_pipeline == RasterPipeline::GpuNative {
+                self.layer_tree.sweep_orphaned_offscreens(engine)
+            } else {
+                self.layer_tree
+                    .sweep_orphaned_offscreens(&mut self.recording_engine)
+            };
+            if let Err(error) = sweep_result {
                 return FrameRenderOutput {
                     outcome: RenderOutcome::Failed(
                         crate::draw::engine::GraphicsFailure::from_error(error),
@@ -315,6 +334,19 @@ impl FrameRenderer {
         self.layer_tree.update_dirty(scene);
         self.render_object_tree.sync(scene);
         let layer_build_us = layer_t0.elapsed().as_micros();
+
+        if raster_pipeline == RasterPipeline::GpuNative {
+            return self.render_gpu_native(
+                engine,
+                scene,
+                input,
+                cur_version,
+                region,
+                damage,
+                strategy_full,
+                layer_build_us,
+            );
+        }
 
         // Paint prune uses the same region as begin_frame clear. Full frames
         // keep DirtyRegion::full(); dirty frames omit the recording Clear so
@@ -508,6 +540,92 @@ impl FrameRenderer {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn render_gpu_native<S: ScenePaint>(
+        &mut self,
+        engine: &mut dyn GraphicsEngine,
+        scene: &S,
+        input: FrameRenderInput<'_>,
+        cur_version: u64,
+        region: DirtyRegion,
+        damage: DamageRegion,
+        strategy_full: u8,
+        layer_build_us: u128,
+    ) -> FrameRenderOutput {
+        let paint_region = region.clone();
+        let damage_clip = (!region.full_frame)
+            .then(|| region.bounds())
+            .filter(|bounds| bounds.w > 0.0 && bounds.h > 0.0);
+        if let Some(bounds) = damage_clip {
+            engine.canvas_2d().push_clip(bounds);
+        }
+
+        let render_objects = if input.rendered_first {
+            Some(&mut self.render_object_tree)
+        } else {
+            None
+        };
+        crate::core::perf_probe::begin_record_acc();
+        let execute_t0 = std::time::Instant::now();
+        let render_result = self.layer_tree.render(
+            engine,
+            scene,
+            &paint_region,
+            &input.theme,
+            input.font,
+            input.font_service,
+            input.image_service,
+            input.debug_mode,
+            input.hover_pos,
+            render_objects,
+        );
+        if damage_clip.is_some() {
+            engine.canvas_2d().pop_clip();
+        }
+        if let Err(error) = render_result {
+            self.layer_tree.invalidate();
+            return FrameRenderOutput {
+                outcome: RenderOutcome::Failed(crate::draw::engine::GraphicsFailure::from_error(
+                    error,
+                )),
+                inv_source: InvalidationSource::None,
+                tree_version: cur_version,
+            };
+        }
+        if input.debug_mode {
+            draw_debug_telemetry(engine, input.metrics, input.font, input.font_service);
+        }
+        let execute_us = execute_t0.elapsed().as_micros();
+
+        let end_t0 = std::time::Instant::now();
+        let end_outcome = engine.end_frame(&damage);
+        let end_frame_us = end_t0.elapsed().as_micros();
+        let mut paint_sample = crate::core::perf_probe::take_record_acc();
+        paint_sample.layer_build_us = layer_build_us;
+        paint_sample.record_us = 0;
+        paint_sample.execute_us = execute_us;
+        paint_sample.end_frame_us = end_frame_us;
+        paint_sample.strategy_full = strategy_full;
+        paint_sample.backdrop_restore = 0;
+        crate::core::perf_probe::record_paint(paint_sample);
+
+        let caps = engine.capabilities();
+        let outcome = normalize_end_outcome(end_outcome, caps, damage);
+        let inv_source = match outcome {
+            RenderOutcome::Present(_) | RenderOutcome::PresentPending(_) => {
+                classify_invalidation(input.rendered_first, &region)
+            }
+            RenderOutcome::Idle | RenderOutcome::FrameReady(_) | RenderOutcome::Failed(_) => {
+                InvalidationSource::None
+            }
+        };
+        FrameRenderOutput {
+            outcome,
+            inv_source,
+            tree_version: cur_version,
+        }
+    }
+
     fn scene_has_overlay(scene: &impl ScenePaint, id: crate::draw::pipeline::NodeId) -> bool {
         if !scene.node_visible(id) {
             return false;
@@ -614,6 +732,36 @@ fn draw_debug_telemetry(
             Color::from_rgba(220, 220, 220, 255),
             11.0,
         );
+    }
+}
+
+fn normalize_end_outcome(
+    end_outcome: RenderOutcome,
+    caps: crate::draw::traits::GraphicsCapabilities,
+    damage: DamageRegion,
+) -> RenderOutcome {
+    match end_outcome {
+        RenderOutcome::Present(_) if caps.uses_external_presenter() => {
+            RenderOutcome::PresentPending(damage)
+        }
+        RenderOutcome::Present(_) => RenderOutcome::Present(damage),
+        RenderOutcome::PresentPending(_) if caps.uses_external_presenter() => {
+            RenderOutcome::PresentPending(damage)
+        }
+        RenderOutcome::PresentPending(_) => RenderOutcome::Failed(
+            crate::draw::engine::GraphicsFailure::from_error(Error::new(
+                Errc::InvalidState,
+                "engine-managed backend returned an external presentation pending result",
+            )),
+        ),
+        RenderOutcome::FrameReady(_) => RenderOutcome::Failed(
+            crate::draw::engine::GraphicsFailure::from_error(Error::new(
+                Errc::InvalidState,
+                "end_frame returned FrameReady instead of final presentation",
+            )),
+        ),
+        RenderOutcome::Idle => RenderOutcome::Idle,
+        RenderOutcome::Failed(error) => RenderOutcome::Failed(error),
     }
 }
 

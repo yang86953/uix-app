@@ -11,9 +11,9 @@ use crate::native::traits::present::IGraphicsContext;
 use std::ffi::c_void;
 
 #[cfg(feature = "opengles")]
-use crate::native::graphics::opengl::create as create_opengles;
+use crate::native::graphics::wgpu_backend::create_opengl as create_opengles;
 #[cfg(feature = "vulkan")]
-use crate::native::graphics::vulkan::create as create_vulkan;
+use crate::native::graphics::wgpu_backend::create_vulkan;
 
 #[cfg(not(feature = "opengles"))]
 fn create_opengles(_: *mut c_void, _: i32, _: i32) -> Result<Box<dyn IGraphicsContext>, Error> {
@@ -50,8 +50,8 @@ pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
         id: GraphicsBackend::Vulkan,
         priority: 20,
         status: VULKAN_STATUS,
-        raster: RasterMode::Cpu,
-        present: PresentMode::PixelUpload,
+        raster: RasterMode::GpuNative,
+        present: PresentMode::Swapchain,
         create: create_vulkan,
     },
     GraphicsBackendEntry {

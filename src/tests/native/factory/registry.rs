@@ -331,17 +331,14 @@ fn auto_backend_uses_platform_default_order() {
     #[cfg(windows)]
     {
         let mut expected = Vec::new();
-        if cfg!(feature = "d3d11") {
-            expected.push(GraphicsBackend::D3d11);
-        }
-        if cfg!(feature = "opengles") {
-            expected.push(GraphicsBackend::OpenGlEs);
+        if cfg!(feature = "vulkan") {
+            expected.push(GraphicsBackend::Vulkan);
         }
         if cfg!(feature = "d3d12") {
             expected.push(GraphicsBackend::D3d12);
         }
-        if cfg!(feature = "vulkan") {
-            expected.push(GraphicsBackend::Vulkan);
+        if cfg!(feature = "opengles") {
+            expected.push(GraphicsBackend::OpenGlEs);
         }
         assert_eq!(candidates, expected);
     }
@@ -349,7 +346,7 @@ fn auto_backend_uses_platform_default_order() {
     #[cfg(all(unix, not(target_os = "macos")))]
     assert_eq!(
         candidates,
-        vec![GraphicsBackend::OpenGlEs, GraphicsBackend::Vulkan]
+        vec![GraphicsBackend::Vulkan, GraphicsBackend::OpenGlEs]
     );
 
     #[cfg(target_os = "macos")]
@@ -369,17 +366,13 @@ fn auto_backend_uses_platform_default_order() {
 fn registry_rows_declare_orthogonal_axes() {
     for entry in active_entries() {
         match entry.id {
-            GraphicsBackend::OpenGlEs => {
+            GraphicsBackend::OpenGlEs
+            | GraphicsBackend::D3d11
+            | GraphicsBackend::D3d12
+            | GraphicsBackend::Vulkan
+            | GraphicsBackend::Metal => {
                 assert_eq!(entry.raster, RasterMode::GpuNative);
                 assert_eq!(entry.present, PresentMode::Swapchain);
-            }
-            GraphicsBackend::D3d11 | GraphicsBackend::D3d12 => {
-                assert_eq!(entry.raster, RasterMode::GpuNative);
-                assert_eq!(entry.present, PresentMode::Swapchain);
-            }
-            GraphicsBackend::Vulkan | GraphicsBackend::Metal => {
-                assert_eq!(entry.raster, RasterMode::Cpu);
-                assert_eq!(entry.present, PresentMode::PixelUpload);
             }
             GraphicsBackend::Auto => {}
         }
