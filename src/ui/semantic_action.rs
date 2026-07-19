@@ -306,11 +306,11 @@ impl WidgetTree {
     fn press_key(&mut self, key: KeyCode) -> EventResult {
         let down = self.dispatch_event(&SystemEvent::KeyDown {
             key,
-            mods: KeyMod::NONE,
+            mods: KeyMod::SYNTHETIC,
         });
         let up = self.dispatch_event(&SystemEvent::KeyUp {
             key,
-            mods: KeyMod::NONE,
+            mods: KeyMod::SYNTHETIC,
         });
         if down == EventResult::Handled || up == EventResult::Handled {
             EventResult::Handled

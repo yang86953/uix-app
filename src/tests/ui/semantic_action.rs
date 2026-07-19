@@ -272,6 +272,26 @@ fn increment_decrement_and_scroll_use_the_existing_widget_event_contracts() {
         4.0
     );
 
+    let value = State::new(4.0f64);
+    let mut pointer_only_tree =
+        laid_out_tree(embed(InputNumber::new().value(&value).keyboard(false)));
+    let pointer_only = pointer_only_tree.root_id().unwrap();
+    let pointer_only_changes = Rc::new(RefCell::new(Vec::<String>::new()));
+    let changes_for_handler = pointer_only_changes.clone();
+    pointer_only_tree
+        .handler_table()
+        .on_change(pointer_only, move |next| {
+            changes_for_handler.borrow_mut().push(next.to_owned())
+        });
+    let actions = pointer_only_tree.supported_semantic_actions(pointer_only);
+    assert!(!actions.contains(&SemanticActionKind::InsertText));
+    assert!(actions.contains(&SemanticActionKind::Increment));
+    pointer_only_tree
+        .perform_semantic_action(pointer_only, &SemanticAction::Increment)
+        .unwrap();
+    assert_eq!(value.get(), 5.0);
+    assert_eq!(&*pointer_only_changes.borrow(), &["5".to_owned()]);
+
     let mut scroll_tree = laid_out_tree(embed(
         ScrollView::new(ScrollDirection::Vertical)
             .size(120.0, 80.0)
