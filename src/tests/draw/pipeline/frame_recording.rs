@@ -1270,6 +1270,116 @@ fn fractional_offset_picture_keeps_exact_cpu_fallback() {
 }
 
 #[test]
+fn integral_image_blit_retains_only_the_visible_crop_with_offset_clip_and_opacity() {
+    use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+    use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+
+    let source = (0u8..32)
+        .map(|index| {
+            Color::from_rgba(
+                20 + index * 5,
+                220 - index * 4,
+                40 + index * 3,
+                96 + index * 4,
+            )
+            .premultiplied()
+        })
+        .collect::<Vec<_>>();
+    let source_rect = Rect::new(1.0, 1.0, 6.0, 2.0);
+    let destination_rect = Rect::new(4.0, 2.0, 6.0, 2.0);
+    let local_clip = Rect::new(5.0, 2.0, 3.0, 2.0);
+    let opacity = 0.37;
+    let background = Color::from_rgb(12, 24, 48);
+
+    let mut engine = FrameRecordingEngine::new();
+    engine.initialize(24, 16).expect("initialize recorder");
+    engine.begin_recording(true).expect("begin recording");
+    engine
+        .canvas_2d()
+        .fill_rect(Rect::new(0.0, 0.0, 24.0, 16.0), background, None);
+    engine.canvas_2d().set_offset(3.0, 2.0);
+    engine.canvas_2d().push_clip(local_clip);
+    engine.canvas_2d().set_opacity(opacity);
+    engine
+        .canvas_2d()
+        .blit_image(&source, 8, source_rect, destination_rect);
+    engine.canvas_2d().pop_clip();
+    let encoder = engine.finish_recording().expect("finish recorder");
+
+    assert_eq!(engine.scratch_surface_size(), (1, 1));
+    let command = encoder
+        .commands()
+        .iter()
+        .find_map(|command| match command {
+            FrameCommand::PictureBlit {
+                image,
+                src,
+                dst,
+                opacity,
+            } => Some((image, src, dst, opacity)),
+            _ => None,
+        })
+        .expect("integer image blit stays a compact image command");
+    assert_eq!((command.0.width(), command.0.height()), (3, 2));
+    assert_eq!(*command.1, FrameRect::new(0, 0, 3, 2));
+    assert_eq!(*command.2, FrameRect::new(8, 4, 3, 2));
+    assert_eq!(*command.3, FrameOpacity::from_canvas(opacity));
+    assert_eq!(
+        command.0.pixels(),
+        &[
+            source[8 + 2],
+            source[8 + 3],
+            source[8 + 4],
+            source[16 + 2],
+            source[16 + 3],
+            source[16 + 4],
+        ]
+    );
+    assert!(!encoder
+        .commands()
+        .iter()
+        .any(|command| matches!(command, FrameCommand::CpuSegment { .. })));
+
+    let mut expected = SharedRasterizer::new(PixelSurface::new(24, 16));
+    expected.fill_rect(Rect::new(0.0, 0.0, 24.0, 16.0), background, None);
+    expected.set_offset(3.0, 2.0);
+    expected.push_clip(local_clip);
+    expected.set_opacity(opacity);
+    expected.blit_image(&source, 8, source_rect, destination_rect);
+    assert_eq!(
+        encoder.render_reference().pixels(),
+        expected.surface().pixels()
+    );
+}
+
+#[test]
+fn scaled_or_fractional_image_blits_keep_the_exact_cpu_fallback() {
+    let source = vec![Color::from_rgba(40, 120, 220, 176).premultiplied(); 32];
+    for (source_rect, destination_rect) in [
+        (Rect::new(0.0, 0.0, 6.0, 4.0), Rect::new(2.0, 2.0, 3.0, 4.0)),
+        (Rect::new(0.5, 0.0, 6.0, 4.0), Rect::new(2.0, 2.0, 6.0, 4.0)),
+    ] {
+        let mut engine = FrameRecordingEngine::new();
+        engine.initialize(24, 16).expect("initialize recorder");
+        engine.begin_recording(true).expect("begin recording");
+        engine
+            .canvas_2d()
+            .blit_image(&source, 8, source_rect, destination_rect);
+
+        assert_eq!(engine.scratch_surface_size(), (24, 16));
+        let encoder = engine.finish_recording().expect("finish recorder");
+        assert!(encoder
+            .commands()
+            .iter()
+            .any(|command| matches!(command, FrameCommand::CpuSegment { .. })));
+        assert!(!encoder
+            .commands()
+            .iter()
+            .any(|command| matches!(command, FrameCommand::PictureBlit { .. })));
+    }
+}
+
+#[test]
 fn picture_group_opacity_records_one_direct_blit_without_allocating_main_scratch() {
     use crate::draw::engine::cpu::pixel_surface::PixelSurface;
     use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
