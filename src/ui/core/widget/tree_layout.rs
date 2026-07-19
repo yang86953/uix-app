@@ -375,22 +375,20 @@ impl WidgetTree {
                 Some(entry)
             })
             .collect();
-        let widget_overlays_changed = previous_widget_overlays
-            != entries
-                .iter()
-                .filter(|entry| !entry.is_managed())
-                .map(|entry| {
-                    (
-                        entry.owner(),
-                        entry.kind(),
-                        entry.bounds_rect(),
-                        entry.z_index_value(),
-                        entry.is_modal(),
-                        entry.dismisses_on_outside(),
-                        entry.traps_focus(),
-                    )
-                })
-                .collect::<Vec<_>>();
+        let widget_overlays_changed = !previous_widget_overlays.iter().copied().eq(entries
+            .iter()
+            .filter(|entry| !entry.is_managed())
+            .map(|entry| {
+                (
+                    entry.owner(),
+                    entry.kind(),
+                    entry.bounds_rect(),
+                    entry.z_index_value(),
+                    entry.is_modal(),
+                    entry.dismisses_on_outside(),
+                    entry.traps_focus(),
+                )
+            }));
 
         self.overlay_stack
             .retain_entries(|entry| entry.is_managed());
@@ -398,14 +396,12 @@ impl WidgetTree {
             self.overlay_stack.push_entry(entry);
         }
 
-        let active_trap_owners: Vec<_> = self
-            .overlay_stack
-            .iter()
-            .filter(|entry| entry.traps_focus())
-            .map(|entry| entry.owner())
-            .collect();
         for owner in previous_trap_owners {
-            if !active_trap_owners.contains(&owner) {
+            if !self
+                .overlay_stack
+                .iter()
+                .any(|entry| entry.traps_focus() && entry.owner() == owner)
+            {
                 self.restore_focus_after_trap_owner(owner);
             }
         }
