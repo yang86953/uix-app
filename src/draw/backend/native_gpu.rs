@@ -17,8 +17,8 @@ use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
 use crate::draw::pipeline::{
-    EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameEncoder, FrameGlyphBlit,
-    FrameRasterOp, FrameRect, ReferenceFrame,
+    EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameEncoder, FrameEncoderError,
+    FrameGlyphBlit, FrameRasterOp, FrameRect, FrameStrokeRect, ReferenceFrame,
 };
 use crate::draw::primitives::color::Color;
 use crate::draw::primitives::path::{FillRule, Path};

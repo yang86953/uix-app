@@ -830,6 +830,135 @@ fn clipped_rounded_src_over_matches_shared_cpu_sdf_and_transparent_segment() {
 }
 
 #[test]
+fn clipped_stroke_rect_ir_matches_shared_cpu_and_compact_reference_tile() {
+    use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+    use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+    use crate::draw::primitives::types::Radius;
+    use crate::draw::traits::Canvas2D;
+
+    let base = Color::from_rgba(36, 72, 108, 180);
+    let stroke = Color::from_rgba(220, 80, 40, 144);
+    let radius = Radius {
+        tl: 3.0,
+        tr: 1.0,
+        br: 4.0,
+        bl: 0.0,
+    };
+    let rect = FrameRect::new(4, 3, 10, 7);
+    let clip = FrameRect::new(2, 2, 13, 9);
+    let line_width = FrameStrokeWidth::new(2.5).unwrap();
+    let stroke_command =
+        FrameStrokeRect::new(rect, stroke, FrameRadius::new(radius).unwrap(), line_width);
+    let operation = FrameRasterOp::StrokeRoundedRects {
+        strokes: vec![stroke_command],
+        clip,
+    };
+    let mut encoder = FrameEncoder::new(18, 14).unwrap();
+    encoder.clear(base);
+    encoder.native(operation.clone());
+
+    let mut cpu = SharedRasterizer::new(PixelSurface::new(18, 14));
+    cpu.surface_mut().set_clear_color(base);
+    cpu.surface_mut().clear_all();
+    cpu.push_clip(Rect::new(2.0, 2.0, 13.0, 9.0));
+    cpu.stroke_rect(Rect::new(4.0, 3.0, 10.0, 7.0), stroke, 2.5, Some(radius));
+    assert_eq!(encoder.render_reference().pixels(), cpu.surface().pixels());
+
+    let transparent = FrameEncoder::new(18, 14).unwrap();
+    let (tile, destination) = transparent
+        .stroke_rects_reference_tile(&[stroke_command], clip)
+        .expect("allocate compact stroke tile")
+        .expect("visible stroke tile");
+    assert!(tile.width() < 18 || tile.height() < 14);
+    let mut tiled = FrameEncoder::new(18, 14).unwrap();
+    tiled.cpu_image_segment(
+        FrameImage::new(tile.width(), tile.height(), tile.pixels().to_vec()).unwrap(),
+        FrameRect::new(0, 0, tile.width(), tile.height()),
+        destination,
+    );
+    let mut direct = FrameEncoder::new(18, 14).unwrap();
+    direct.native(operation);
+    assert_eq!(tiled.render_reference(), direct.render_reference());
+}
+
+#[test]
+fn frame_stroke_width_rejects_zero_negative_and_non_finite_values() {
+    for invalid in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+        assert_eq!(
+            FrameStrokeWidth::new(invalid),
+            Err(FrameEncoderError::InvalidStrokeWidth)
+        );
+    }
+    assert_eq!(FrameStrokeWidth::new(2.5).unwrap().value(), 2.5);
+}
+
+#[test]
+fn adjacent_strokes_batch_within_sparse_union_bounds_and_split_beyond_them() {
+    let radius = FrameRadius::new(crate::draw::Radius::uniform(2.0)).unwrap();
+    let line_width = FrameStrokeWidth::new(1.0).unwrap();
+    let clip = FrameRect::new(0, 0, 2000, 100);
+    let operation = |rect| FrameRasterOp::StrokeRoundedRects {
+        strokes: vec![FrameStrokeRect::new(
+            rect,
+            Color::white(),
+            radius,
+            line_width,
+        )],
+        clip,
+    };
+    let mut encoder = FrameEncoder::new(2000, 100).unwrap();
+    encoder.native(operation(FrameRect::new(10, 10, 20, 20)));
+    encoder.native(operation(FrameRect::new(35, 10, 20, 20)));
+    encoder.native(operation(FrameRect::new(1800, 10, 20, 20)));
+
+    assert!(matches!(
+        encoder.commands(),
+        [
+            FrameCommand::Native {
+                operation: FrameRasterOp::StrokeRoundedRects { strokes: first, .. }
+            },
+            FrameCommand::Native {
+                operation: FrameRasterOp::StrokeRoundedRects { strokes: second, .. }
+            }
+        ] if first.len() == 2 && second.len() == 1
+    ));
+    let mut control = FrameEncoder::new(2000, 100).unwrap();
+    control.native(rect(0, 0, 1, 1, Color::white()));
+    control.native(rect(2, 0, 1, 1, Color::white()));
+    assert!(
+        encoder.retained_memory_usage()
+            >= control
+                .retained_memory_usage()
+                .saturating_add(3 * std::mem::size_of::<FrameStrokeRect>()),
+        "Picture budget accounting must include retained stroke batch payloads"
+    );
+
+    let mut overlap = FrameEncoder::new(2000, 100).unwrap();
+    overlap.native(FrameRasterOp::StrokeRoundedRects {
+        strokes: vec![
+            FrameStrokeRect::new(
+                FrameRect::new(10, 10, 20, 20),
+                Color::white(),
+                radius,
+                line_width,
+            ),
+            FrameStrokeRect::new(
+                FrameRect::new(20, 10, 20, 20),
+                Color::white(),
+                radius,
+                line_width,
+            ),
+        ],
+        clip,
+    });
+    assert_eq!(
+        overlap.commands().len(),
+        2,
+        "conservative overlap must preserve separate 8-bit SrcOver boundaries"
+    );
+}
+
+#[test]
 fn frame_radius_rejects_non_finite_and_negative_corners() {
     assert_eq!(
         FrameRadius::new(crate::draw::primitives::types::Radius {

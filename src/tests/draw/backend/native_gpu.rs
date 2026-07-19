@@ -2500,6 +2500,103 @@ fn main_frame_encoder_forwards_rounded_rect_geometry_to_native_gpu() {
 }
 
 #[test]
+fn main_frame_encoder_forwards_stroke_rect_ir_when_capability_is_available() {
+    use crate::draw::pipeline::{FrameRadius, FrameRect, FrameStrokeRect, FrameStrokeWidth};
+
+    let RecordingFixture {
+        mut backend,
+        stages,
+        soft_tiles,
+        ..
+    } = recording_backend(FailStage::None);
+    backend.resize(32, 24).expect("resize");
+    let mut encoder = FrameEncoder::new(32, 24).expect("encoder");
+    encoder.clear(Color::from_rgb(12, 24, 48));
+    encoder.native(FrameRasterOp::StrokeRoundedRects {
+        strokes: vec![FrameStrokeRect::new(
+            FrameRect::new(3, 5, 18, 12),
+            Color::from_rgba(40, 120, 220, 160),
+            FrameRadius::new(Radius::uniform(4.0)).expect("valid radius"),
+            FrameStrokeWidth::new(2.5).expect("valid width"),
+        )],
+        clip: FrameRect::new(2, 4, 30, 16),
+    });
+    encoder.native(FrameRasterOp::StrokeRoundedRects {
+        strokes: vec![FrameStrokeRect::new(
+            FrameRect::new(25, 7, 5, 6),
+            Color::from_rgba(220, 80, 40, 192),
+            FrameRadius::new(Radius::uniform(2.0)).expect("valid radius"),
+            FrameStrokeWidth::new(1.0).expect("valid width"),
+        )],
+        clip: FrameRect::new(2, 4, 30, 16),
+    });
+
+    backend
+        .try_execute_encoded_frame(&encoder)
+        .expect("execute native stroke op");
+    assert_eq!(stages.borrow().as_slice(), ["clear", "stroke"]);
+    assert!(soft_tiles.borrow().is_empty());
+}
+
+#[test]
+fn unsupported_frame_stroke_capability_uploads_only_an_exact_compact_tile() {
+    use crate::draw::pipeline::{FrameRadius, FrameRect, FrameStrokeRect, FrameStrokeWidth};
+
+    let RecordingFixture {
+        mut backend,
+        stages,
+        soft_tiles,
+        ..
+    } = recording_backend_with_caps(
+        FailStage::None,
+        NativeRasterCaps {
+            clear_target: true,
+            soft_blit: true,
+            ..NativeRasterCaps::default()
+        },
+    );
+    let width = 40;
+    let height = 30;
+    backend.resize(width, height).expect("resize");
+    let mut encoder = FrameEncoder::new(width, height).expect("encoder");
+    encoder.native(FrameRasterOp::StrokeRoundedRects {
+        strokes: vec![FrameStrokeRect::new(
+            FrameRect::new(10, 8, 14, 9),
+            Color::from_rgba(40, 120, 220, 160),
+            FrameRadius::new(Radius::uniform(3.0)).expect("valid radius"),
+            FrameStrokeWidth::new(2.5).expect("valid width"),
+        )],
+        clip: FrameRect::new(6, 5, 30, 18),
+    });
+    encoder.native(FrameRasterOp::StrokeRoundedRects {
+        strokes: vec![FrameStrokeRect::new(
+            FrameRect::new(28, 10, 6, 6),
+            Color::from_rgba(220, 80, 40, 192),
+            FrameRadius::new(Radius::uniform(2.0)).expect("valid radius"),
+            FrameStrokeWidth::new(1.0).expect("valid width"),
+        )],
+        clip: FrameRect::new(6, 5, 30, 18),
+    });
+
+    backend
+        .try_execute_encoded_frame(&encoder)
+        .expect("execute compact stroke fallback");
+    assert_eq!(stages.borrow().as_slice(), ["clear", "soft"]);
+    let tiles = soft_tiles.borrow();
+    assert_eq!(tiles.len(), 1);
+    let (tile, pixels) = &tiles[0];
+    assert!(i64::from(tile.width) * i64::from(tile.height) < i64::from(width) * i64::from(height));
+    let mut reconstructed = vec![0; width as usize * height as usize];
+    for row in 0..tile.height as usize {
+        let source = row * tile.width as usize;
+        let destination = (tile.dst_y as usize + row) * width as usize + tile.dst_x as usize;
+        reconstructed[destination..destination + tile.width as usize]
+            .copy_from_slice(&pixels[source..source + tile.width as usize]);
+    }
+    assert_eq!(reconstructed, encoder.render_reference().pixels());
+}
+
+#[test]
 fn clipped_rounded_ir_normalizes_scissor_without_changing_geometry() {
     use crate::draw::pipeline::{FrameRadius, FrameRect};
 

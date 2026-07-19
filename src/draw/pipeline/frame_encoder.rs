@@ -120,6 +120,64 @@ impl FrameRadius {
 
 impl Eq for FrameRadius {}
 
+/// Validated finite positive stroke width retained by frame commands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameStrokeWidth(u32);
+
+impl FrameStrokeWidth {
+    pub fn new(value: f32) -> Result<Self, FrameEncoderError> {
+        if !value.is_finite() || value <= 0.0 {
+            return Err(FrameEncoderError::InvalidStrokeWidth);
+        }
+        Ok(Self(value.to_bits()))
+    }
+
+    pub const fn value(self) -> f32 {
+        f32::from_bits(self.0)
+    }
+}
+
+/// One validated rectangle stroke retained by a batched frame operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameStrokeRect {
+    rect: FrameRect,
+    color: Color,
+    radius: FrameRadius,
+    line_width: FrameStrokeWidth,
+}
+
+impl FrameStrokeRect {
+    pub const fn new(
+        rect: FrameRect,
+        color: Color,
+        radius: FrameRadius,
+        line_width: FrameStrokeWidth,
+    ) -> Self {
+        Self {
+            rect,
+            color,
+            radius,
+            line_width,
+        }
+    }
+
+    pub const fn rect(&self) -> FrameRect {
+        self.rect
+    }
+
+    pub const fn color(&self) -> Color {
+        self.color
+    }
+
+    pub const fn radius(&self) -> FrameRadius {
+        self.radius
+    }
+
+    pub const fn line_width(&self) -> FrameStrokeWidth {
+        self.line_width
+    }
+}
+
 /// Canonical post-composition opacity for a materialized Picture command.
 ///
 /// Storing the normalized `f32` bits preserves the CPU rasterizer's exact
@@ -317,6 +375,11 @@ pub enum FrameRasterOp {
         glyphs: Vec<FrameGlyphBlit>,
         clip: FrameRect,
     },
+    /// Ordered centered SrcOver rectangle strokes sharing one surface clip.
+    StrokeRoundedRects {
+        strokes: Vec<FrameStrokeRect>,
+        clip: FrameRect,
+    },
     /// Channel-wise saturating add into the destination (CPU Additive blend).
     FillRectAdditive {
         rect: FrameRect,
@@ -440,6 +503,7 @@ pub enum FrameEncoderError {
     InvalidRadius {
         corner: &'static str,
     },
+    InvalidStrokeWidth,
     InvalidGlyphCoverage {
         width: usize,
         height: usize,
@@ -471,6 +535,9 @@ impl std::fmt::Display for FrameEncoderError {
                 f,
                 "frame radius {corner} must be finite and non-negative"
             ),
+            Self::InvalidStrokeWidth => {
+                write!(f, "frame stroke width must be finite and positive")
+            }
             Self::InvalidGlyphCoverage {
                 width,
                 height,
@@ -546,6 +613,11 @@ impl FrameEncoder {
                             .map(|glyph| glyph.coverage.len())
                             .fold(0usize, usize::saturating_add),
                     ),
+                FrameCommand::Native {
+                    operation: FrameRasterOp::StrokeRoundedRects { strokes, .. },
+                } => strokes
+                    .capacity()
+                    .saturating_mul(std::mem::size_of::<FrameStrokeRect>()),
                 FrameCommand::CpuSegment { image, .. }
                 | FrameCommand::PictureBlit { image, .. } => image
                     .pixels
@@ -667,6 +739,44 @@ impl FrameEncoder {
             });
             return;
         }
+        if let FrameRasterOp::StrokeRoundedRects { strokes, clip } = operation {
+            if clip.is_empty() {
+                return;
+            }
+            for stroke in strokes {
+                if stroke_visible_bounds(stroke, clip, self.width, self.height).is_none() {
+                    continue;
+                }
+                if let Some(FrameCommand::Native {
+                    operation:
+                        FrameRasterOp::StrokeRoundedRects {
+                            strokes: previous,
+                            clip: previous_clip,
+                        },
+                }) = self.commands.last_mut()
+                {
+                    if *previous_clip == clip
+                        && stroke_batches_can_merge(
+                            previous,
+                            std::slice::from_ref(&stroke),
+                            clip,
+                            self.width,
+                            self.height,
+                        )
+                    {
+                        previous.push(stroke);
+                        continue;
+                    }
+                }
+                self.commands.push(FrameCommand::Native {
+                    operation: FrameRasterOp::StrokeRoundedRects {
+                        strokes: vec![stroke],
+                        clip,
+                    },
+                });
+            }
+            return;
+        }
         self.commands.push(FrameCommand::Native { operation });
     }
 
@@ -685,7 +795,8 @@ impl FrameEncoder {
             FrameRasterOp::FillRect { .. }
             | FrameRasterOp::FillRoundedRect { .. }
             | FrameRasterOp::FillRoundedRectClipped { .. }
-            | FrameRasterOp::BlitGlyphs { .. } => None,
+            | FrameRasterOp::BlitGlyphs { .. }
+            | FrameRasterOp::StrokeRoundedRects { .. } => None,
             FrameRasterOp::FillRectAdditive { .. } => Some("FillRectAdditive"),
             FrameRasterOp::FillRoundedRectAdditive { .. } => Some("FillRoundedRectAdditive"),
             FrameRasterOp::ScrollCopy { .. } => Some("ScrollCopy"),
@@ -884,6 +995,59 @@ impl FrameEncoder {
         Some((frame, visible))
     }
 
+    /// Rasterizes one retained rectangle stroke into its conservative visible
+    /// tile for backends without native stroke-rect capability.
+    pub(crate) fn stroke_rects_reference_tile(
+        &self,
+        strokes: &[FrameStrokeRect],
+        clip: FrameRect,
+    ) -> Result<Option<(ReferenceFrame, FrameRect)>, FrameEncoderError> {
+        let Some((visible, _)) = stroke_batch_bounds(strokes, clip, self.width, self.height) else {
+            return Ok(None);
+        };
+        let pixel_count = pixel_len(visible.width, visible.height)?;
+        let mut pixels = Vec::new();
+        pixels
+            .try_reserve_exact(pixel_count)
+            .map_err(|_| FrameEncoderError::CommandAllocationFailed)?;
+        pixels.resize(pixel_count, Color::transparent().premultiplied());
+        let local_clip = FrameRect::new(0, 0, visible.width, visible.height);
+        for stroke in strokes {
+            let local_rect =
+                FrameRect::new(
+                    stroke.rect.x.checked_sub(visible.x).ok_or(
+                        FrameEncoderError::InvalidExtent {
+                            width: self.width,
+                            height: self.height,
+                        },
+                    )?,
+                    stroke.rect.y.checked_sub(visible.y).ok_or(
+                        FrameEncoderError::InvalidExtent {
+                            width: self.width,
+                            height: self.height,
+                        },
+                    )?,
+                    stroke.rect.width,
+                    stroke.rect.height,
+                );
+            apply_stroke_rect_pixels(
+                visible.width,
+                visible.height,
+                &mut pixels,
+                FrameStrokeRect::new(local_rect, stroke.color, stroke.radius, stroke.line_width),
+                local_clip,
+            );
+        }
+        Ok(Some((
+            ReferenceFrame {
+                width: visible.width,
+                height: visible.height,
+                pixels,
+            },
+            visible,
+        )))
+    }
+
     fn transparent_reference(&self) -> ReferenceFrame {
         ReferenceFrame {
             width: self.width,
@@ -902,6 +1066,101 @@ impl FrameEncoder {
 #[derive(Clone, Copy)]
 struct SourceOverWrite {
     rect: FrameRect,
+}
+
+fn stroke_visible_bounds(
+    stroke: FrameStrokeRect,
+    clip: FrameRect,
+    width: i32,
+    height: i32,
+) -> Option<FrameRect> {
+    if stroke.rect.is_empty() {
+        return None;
+    }
+    let clip = clip.intersection(FrameRect::new(0, 0, width, height))?;
+    let expand = stroke.line_width.value() * 0.5 + 1.0;
+    let left = ((stroke.rect.x as f32 - expand).max(clip.x as f32)) as i32;
+    let top = ((stroke.rect.y as f32 - expand).max(clip.y as f32)) as i32;
+    let right = ((stroke.rect.x.saturating_add(stroke.rect.width) as f32 + expand)
+        .min(clip.x.saturating_add(clip.width) as f32)) as i32;
+    let bottom = ((stroke.rect.y.saturating_add(stroke.rect.height) as f32 + expand)
+        .min(clip.y.saturating_add(clip.height) as f32)) as i32;
+    (left < right && top < bottom).then(|| FrameRect::new(left, top, right - left, bottom - top))
+}
+
+fn stroke_batch_bounds(
+    strokes: &[FrameStrokeRect],
+    clip: FrameRect,
+    width: i32,
+    height: i32,
+) -> Option<(FrameRect, i64)> {
+    let mut union = None;
+    let mut covered_area = 0i64;
+    for stroke in strokes {
+        let Some(bounds) = stroke_visible_bounds(*stroke, clip, width, height) else {
+            continue;
+        };
+        covered_area = covered_area
+            .saturating_add(i64::from(bounds.width).saturating_mul(i64::from(bounds.height)));
+        union = Some(union.map_or(bounds, |previous| {
+            union_nonempty_frame_rect(previous, bounds)
+        }));
+    }
+    union.map(|bounds| (bounds, covered_area))
+}
+
+fn stroke_batches_can_merge(
+    previous: &[FrameStrokeRect],
+    next: &[FrameStrokeRect],
+    clip: FrameRect,
+    width: i32,
+    height: i32,
+) -> bool {
+    const MAX_CLUSTER_ITEMS: usize = 2048;
+    const MAX_CLUSTER_PIXELS: i64 = 1024 * 1024;
+    const MAX_UNION_INFLATION: i64 = 4;
+    if previous.len().saturating_add(next.len()) > MAX_CLUSTER_ITEMS {
+        return false;
+    }
+    let Some((previous_bounds, previous_area)) = stroke_batch_bounds(previous, clip, width, height)
+    else {
+        return true;
+    };
+    let Some((next_bounds, next_area)) = stroke_batch_bounds(next, clip, width, height) else {
+        return true;
+    };
+    for previous_stroke in previous {
+        let Some(previous_visible) = stroke_visible_bounds(*previous_stroke, clip, width, height)
+        else {
+            continue;
+        };
+        for next_stroke in next {
+            if stroke_visible_bounds(*next_stroke, clip, width, height)
+                .and_then(|next_visible| previous_visible.intersection(next_visible))
+                .is_some()
+            {
+                return false;
+            }
+        }
+    }
+    let union = union_nonempty_frame_rect(previous_bounds, next_bounds);
+    let union_area = i64::from(union.width).saturating_mul(i64::from(union.height));
+    let covered_area = previous_area.saturating_add(next_area);
+    union_area <= MAX_CLUSTER_PIXELS
+        && union_area <= covered_area.saturating_mul(MAX_UNION_INFLATION)
+}
+
+fn union_nonempty_frame_rect(a: FrameRect, b: FrameRect) -> FrameRect {
+    let left = a.x.min(b.x);
+    let top = a.y.min(b.y);
+    let right = (i64::from(a.x) + i64::from(a.width)).max(i64::from(b.x) + i64::from(b.width));
+    let bottom = (i64::from(a.y) + i64::from(a.height)).max(i64::from(b.y) + i64::from(b.height));
+    FrameRect::new(
+        left,
+        top,
+        (right - i64::from(left)) as i32,
+        (bottom - i64::from(top)) as i32,
+    )
 }
 
 fn source_over_commands_have_safe_grouping(
@@ -979,6 +1238,7 @@ fn source_over_commands_have_safe_grouping(
                         }
                     }
                 }
+                FrameRasterOp::StrokeRoundedRects { .. } => return false,
                 FrameRasterOp::FillRectAdditive { .. }
                 | FrameRasterOp::FillRoundedRectAdditive { .. }
                 | FrameRasterOp::ScrollCopy { .. } => return false,
@@ -1234,6 +1494,7 @@ fn crop_and_translate_source_over_command(
                         clip: translated_clip,
                     }
                 }
+                FrameRasterOp::StrokeRoundedRects { .. } => return Err(()),
                 FrameRasterOp::FillRectAdditive { .. }
                 | FrameRasterOp::FillRoundedRectAdditive { .. }
                 | FrameRasterOp::ScrollCopy { .. } => return Err(()),
@@ -1305,6 +1566,39 @@ fn pixel_len(width: i32, height: i32) -> Result<usize, FrameEncoderError> {
     usize::try_from(pixels).map_err(|_| FrameEncoderError::InvalidExtent { width, height })
 }
 
+fn apply_stroke_rect_pixels(
+    width: i32,
+    height: i32,
+    pixels: &mut [u32],
+    stroke: FrameStrokeRect,
+    clip: FrameRect,
+) {
+    if stroke.rect.is_empty() {
+        return;
+    }
+    crate::draw::rasterizer::stroke::stroke_rect(
+        pixels,
+        width,
+        height,
+        Rect::new(
+            clip.x as f32,
+            clip.y as f32,
+            clip.width as f32,
+            clip.height as f32,
+        ),
+        1.0,
+        Rect::new(
+            stroke.rect.x as f32,
+            stroke.rect.y as f32,
+            stroke.rect.width as f32,
+            stroke.rect.height as f32,
+        ),
+        stroke.color,
+        stroke.line_width.value(),
+        Some(stroke.radius.to_radius()),
+    );
+}
+
 fn apply_raster_op_pixels(width: i32, height: i32, pixels: &mut [u32], operation: &FrameRasterOp) {
     match operation {
         FrameRasterOp::FillRect { rect, color } => {
@@ -1348,6 +1642,11 @@ fn apply_raster_op_pixels(width: i32, height: i32, pixels: &mut [u32], operation
                     glyph.height as usize,
                     glyph.color,
                 );
+            }
+        }
+        FrameRasterOp::StrokeRoundedRects { strokes, clip } => {
+            for stroke in strokes {
+                apply_stroke_rect_pixels(width, height, pixels, *stroke, *clip);
             }
         }
         FrameRasterOp::FillRectAdditive { rect, color } => {

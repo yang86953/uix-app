@@ -13,6 +13,7 @@ use crate::draw::engine::RenderOutcome;
 use crate::draw::pipeline::{
     EncodedFrameExecution, EncodedPictureExecution, FrameEncoder, FrameEncoderError,
     FrameGlyphBlit, FrameImage, FrameOpacity, FrameRadius, FrameRasterOp, FrameRect,
+    FrameStrokeRect, FrameStrokeWidth,
 };
 use crate::draw::primitives::path::{FillRule, Path};
 use crate::draw::primitives::stroker::StrokeOptions;
@@ -937,7 +938,7 @@ impl FrameRecordingCanvas {
         }
     }
 
-    fn native_src_over_fill_rects(&self, rect: Rect) -> Option<(FrameRect, FrameRect)> {
+    fn native_src_over_rects(&self, rect: Rect) -> Option<(FrameRect, FrameRect)> {
         if !self.scratch.current_transform().is_identity() {
             return None;
         }
@@ -1185,7 +1186,7 @@ impl Canvas2D for FrameRecordingCanvas {
             }
             return;
         }
-        if let Some((native_rect, clip)) = self.native_src_over_fill_rects(rect) {
+        if let Some((native_rect, clip)) = self.native_src_over_rects(rect) {
             let native_color = crate::draw::rasterizer::color_with_premultiplied_opacity(
                 color,
                 self.scratch.opacity(),
@@ -1250,7 +1251,7 @@ impl Canvas2D for FrameRecordingCanvas {
 
     fn fill_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
         let bounds = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
-        if r.is_finite() && r > 0.0 && self.native_src_over_fill_rects(bounds).is_some() {
+        if r.is_finite() && r > 0.0 && self.native_src_over_rects(bounds).is_some() {
             // A circle is exactly the shared rounded-rect SDF with a square
             // extent and every corner radius equal to half that extent.
             self.fill_rect(bounds, color, Some(Radius::uniform(r)));
@@ -1280,6 +1281,44 @@ impl Canvas2D for FrameRecordingCanvas {
     }
 
     fn stroke_rect(&mut self, rect: Rect, color: Color, width: f32, radius: Option<Radius>) {
+        if let Some((native_rect, clip)) = self.native_src_over_rects(rect) {
+            let native_radius = radius.unwrap_or_default();
+            let (Ok(native_radius), Ok(line_width)) = (
+                FrameRadius::new(native_radius),
+                FrameStrokeWidth::new(width),
+            ) else {
+                self.draw_cpu(rect, width.max(1.0), |scratch| {
+                    scratch.stroke_rect(rect, color, width, radius)
+                });
+                return;
+            };
+            if clip.width <= 0 || clip.height <= 0 {
+                return;
+            }
+            let native_color = crate::draw::rasterizer::color_with_premultiplied_opacity(
+                color,
+                self.scratch.opacity(),
+            );
+            if native_color.a == 0 {
+                return;
+            }
+            if let Err(error) = self.flush_scratch().and_then(|()| {
+                self.encoder_mut()?
+                    .native(FrameRasterOp::StrokeRoundedRects {
+                        strokes: vec![FrameStrokeRect::new(
+                            native_rect,
+                            native_color,
+                            native_radius,
+                            line_width,
+                        )],
+                        clip,
+                    });
+                Ok(())
+            }) {
+                self.remember_error(error);
+            }
+            return;
+        }
         self.draw_cpu(rect, width.max(1.0), |scratch| {
             scratch.stroke_rect(rect, color, width, radius)
         });
