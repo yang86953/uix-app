@@ -301,6 +301,12 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
         ],
     ),
     widget(
+        "range-slider",
+        "RangeSlider",
+        "输入",
+        &["range", "pointer", "keyboard", "small", "large"],
+    ),
+    widget(
         "rate",
         "Rate",
         "输入",

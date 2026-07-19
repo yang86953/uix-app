@@ -274,11 +274,11 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
             qa_variant("Empty", embed(Transfer::new()).width(160.0)),
         ]),
         "upload" => {
-            let mut upload = Upload::new()
+            let mut upload = Upload::dragger()
                 .accept(".png,.jpg")
                 .multiple(true)
-                .drag(true)
-                .max_count(4);
+                .max_count(4)
+                .show_upload_list(true);
             upload.add_file("button-light.png");
             upload.add_file("input-dark.png");
             upload.add_file("broken.png");

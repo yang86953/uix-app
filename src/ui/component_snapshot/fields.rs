@@ -637,6 +637,7 @@ pub enum SnapshotFields {
         drag: bool,
         max_count: usize,
         max_size: Option<u64>,
+        show_upload_list: bool,
         files: Vec<UploadFile>,
     },
     Watermark {

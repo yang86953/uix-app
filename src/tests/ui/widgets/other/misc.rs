@@ -1,6 +1,37 @@
+use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
 use crate::tests::common::*;
 use crate::ui::widgets::{QRCode, Transfer, TransferItem, Upload, UploadStatus, Watermark};
 use crate::ui::{AccessibilityRole, SnapshotTransferItem};
+
+fn render_upload(upload: &Upload, frame: Rect) {
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(
+        frame.w.ceil().max(1.0) as i32,
+        frame.h.ceil().max(1.0) as i32,
+    ));
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic upload font");
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+    let surface_w = frame.w.ceil().max(1.0) as i32;
+    let surface_h = frame.h.ceil().max(1.0) as i32;
+    let mut ctx = PaintContext::new_for_test(
+        &mut canvas,
+        font,
+        &fonts,
+        &images,
+        &tokens,
+        96.0,
+        1.0,
+        crate::draw::spatial::Orientation::YDown,
+        surface_w,
+        surface_h,
+    );
+    upload.render(frame, &mut ctx, &tree);
+}
 
 #[test]
 fn qrcode_builds_standard_matrix_with_three_finder_patterns() {
@@ -195,6 +226,53 @@ fn upload_drop_zone_is_focusable_without_inventing_click_files() {
         EventResult::Handled
     );
     assert!(upload.files().is_empty());
+}
+
+#[test]
+fn upload_list_can_be_hidden_and_pointer_remove_reports_change() {
+    let mut upload = Upload::dragger().multiple(true).show_upload_list(true);
+    assert!(upload.try_add_file("first.png"));
+    assert!(upload.try_add_file("second.png"));
+    assert_eq!(
+        upload.measure(Constraints::unconstrained()),
+        Size::new(300.0, 164.0)
+    );
+    assert!(upload.take_layout_request());
+
+    render_upload(&upload, Rect::new(0.0, 0.0, 300.0, 164.0));
+    let remove = SystemEvent::PointerDown {
+        pos: Point::new(286.0, 116.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    };
+    assert_eq!(upload.on_event(&remove), EventResult::Handled);
+    assert_eq!(upload.file_count(), 1);
+    assert_eq!(upload.files()[0].name, "second.png");
+    assert_eq!(
+        upload
+            .semantic_event(ComponentId::new(9), &remove)
+            .and_then(|event| event.text_payload().map(str::to_owned)),
+        Some("first.png:removed".to_string())
+    );
+    assert!(upload.take_layout_request());
+
+    let mut hidden = Upload::dragger().show_upload_list(false);
+    assert!(hidden.try_add_file("hidden.png"));
+    assert_eq!(
+        hidden.measure(Constraints::unconstrained()),
+        Size::new(300.0, 100.0)
+    );
+    render_upload(&hidden, Rect::new(0.0, 0.0, 300.0, 100.0));
+    assert_eq!(hidden.on_event(&remove), EventResult::NotHandled);
+    assert_eq!(hidden.file_count(), 1);
+    assert!(matches!(
+        hidden.snapshot_fields(),
+        SnapshotFields::Upload {
+            drag: true,
+            show_upload_list: false,
+            ..
+        }
+    ));
 }
 
 #[test]

@@ -2,7 +2,7 @@ use super::*;
 use image::{GenericImage, Rgba, RgbaImage};
 use std::path::{Path, PathBuf};
 
-const COMPONENT_COUNT: usize = 88;
+const COMPONENT_COUNT: usize = 89;
 const DEFAULT_WINDOW_SIZE: (i32, i32) = (1200, 800);
 const COMPACT_WINDOW_SIZE: (i32, i32) = (900, 640);
 
@@ -202,6 +202,114 @@ fn real_demo_captures_every_component_and_applicable_visual_state() {
         observed.len(),
         total_declared_states
     );
+}
+
+#[test]
+#[ignore = "requires an interactive Windows desktop and writes Upload visual evidence"]
+fn real_demo_captures_upload_list_visual() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let evidence_root = evidence_root();
+    fs::create_dir_all(&evidence_root).expect("create component visual evidence root");
+
+    let mut demo = DemoProcess::spawn_with_args(DEFAULT_VULKAN_GRAPHICS, &["--component-qa"]);
+    let descriptor = demo.wait_for_descriptor();
+    let endpoint = descriptor["endpoint"]
+        .as_str()
+        .expect("descriptor endpoint");
+    let token = descriptor["token"].as_str().expect("descriptor token");
+    let stream = connect(endpoint, &mut demo.child);
+    let mut connection = BufReader::new(stream);
+    let hello = exchange(
+        &mut connection,
+        json!({
+            "schema": "uix.agent.v1",
+            "request_id": "upload-visual-hello",
+            "type": "hello",
+            "token": token,
+            "client": { "name": "uix-upload-visual-quality-gate" },
+        }),
+    );
+    assert_success(&hello, "upload-visual-hello");
+    let listed = list_windows(&mut connection, "upload-visual-list");
+    let window_id = listed[0]["window_id"].as_u64().expect("window id");
+    let generation = listed[0]["generation"].as_u64().expect("generation");
+    wait_for_presented(
+        &mut connection,
+        "upload-visual-first-present",
+        window_id,
+        generation,
+        1,
+    );
+
+    let mut upload_index = None;
+    for index in 0..COMPONENT_COUNT {
+        let case = inspect_case(&mut connection, window_id, index);
+        if case.id == "upload" {
+            upload_index = Some(index);
+            assert_eq!(case.name, "Upload");
+            assert!(case.states.iter().any(|state| state == "file-list"));
+            break;
+        }
+        invoke_and_wait(
+            &demo,
+            &mut connection,
+            window_id,
+            generation,
+            "component-qa-next",
+            &format!("upload-visual-next-{index:02}"),
+        );
+    }
+    let upload_index = upload_index.expect("Upload component case");
+    capture(&demo, &evidence_root, "upload-list-light-desktop.png");
+
+    let before = snapshot(&mut connection, "upload-visual-before-remove", window_id);
+    let target = node_by_automation_id(&before, "component-qa-target");
+    let bounds = &target["visible_bounds"];
+    let x = bounds["x"].as_f64().expect("upload x") + bounds["w"].as_f64().expect("upload width")
+        - 14.0;
+    let y = bounds["y"].as_f64().expect("upload y") + 116.0;
+    perform_and_wait(
+        &demo,
+        &mut connection,
+        window_id,
+        generation,
+        "upload-visual-remove",
+        None,
+        json!({ "kind": "click_at", "x": x, "y": y }),
+    );
+    let after = snapshot(&mut connection, "upload-visual-after-remove", window_id);
+    let value = node_by_automation_id(&after, "component-qa-target")["state"]["value_text"]
+        .as_str()
+        .expect("upload queue value");
+    assert!(!value.contains("button-light.png"), "removed row: {value}");
+    capture(&demo, &evidence_root, "upload-list-light-removed.png");
+
+    invoke_and_wait(
+        &demo,
+        &mut connection,
+        window_id,
+        generation,
+        "theme-toggle",
+        "upload-visual-dark-theme",
+    );
+    resize_and_wait(
+        &demo,
+        &mut connection,
+        window_id,
+        generation,
+        COMPACT_WINDOW_SIZE,
+        "upload-visual-compact",
+    );
+    assert_eq!(
+        inspect_case(&mut connection, window_id, upload_index).id,
+        "upload"
+    );
+    capture(&demo, &evidence_root, "upload-list-dark-compact.png");
+
+    drop(connection);
+    demo.close_and_wait();
 }
 
 fn inspect_case(
