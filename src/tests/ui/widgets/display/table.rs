@@ -36,6 +36,46 @@ fn render_table(table: &Table, frame: Rect, surface_size: (i32, i32)) -> String 
 }
 
 #[test]
+fn loading_table_keeps_header_visible_animates_and_rejects_interaction() {
+    let mut table = Table::new()
+        .columns(vec![TableColumn::new("Name", 120.0)])
+        .rows(vec![vec!["Ada".into()]])
+        .selection(true)
+        .bordered(true)
+        .loading(true)
+        .size(120.0, 96.0);
+    table.last_frame.set(Some(Rect::new(0.0, 0.0, 120.0, 96.0)));
+
+    assert_eq!(WidgetComponent::tab_index(&table), 0);
+    assert_eq!(
+        table.on_event(&pointer_down(12.0, 48.0)),
+        EventResult::Handled
+    );
+    assert!(table.checked_rows().is_empty());
+    assert!(matches!(
+        table.snapshot_fields(),
+        SnapshotFields::Table { loading: true, .. }
+    ));
+
+    assert!(WidgetAnimation::update_animation(&mut table, 0.1));
+    let dirty = WidgetAnimation::dirty_bounds(&table, Rect::new(0.0, 0.0, 120.0, 96.0));
+    assert!(dirty.w > 0.0 && dirty.h > 0.0);
+    let display = render_table(&table, Rect::new(0.0, 0.0, 120.0, 96.0), (120, 96));
+    assert!(
+        display.contains("Name"),
+        "header must remain recorded: {display}"
+    );
+    assert!(
+        display.matches("FillCircle").count() >= 8,
+        "spinner must record eight circle ops: {display}"
+    );
+
+    let mut ready = table.loading(false);
+    assert_eq!(WidgetComponent::tab_index(&ready), 1);
+    assert!(!WidgetAnimation::update_animation(&mut ready, 0.1));
+}
+
+#[test]
 fn table_normalizes_invalid_dimensions_and_row_heights() {
     let mut invalid_column = TableColumn::new("Invalid", 40.0);
     invalid_column.width = f32::NAN;
@@ -430,7 +470,8 @@ fn expandable_builder_forwards_documented_table_flags() {
             .expandable(48.0, |_row| crate::ui::view::label("Details"))
             .sortable(true)
             .selection(true)
-            .bordered(true),
+            .bordered(true)
+            .loading(true),
     );
     let root = tree.root_id().expect("table root");
     let table = tree
@@ -447,9 +488,41 @@ fn expandable_builder_forwards_documented_table_flags() {
             sortable: true,
             selection: true,
             bordered: true,
+            loading: true,
             virtual_scroll: false,
             ..
         }
+    ));
+}
+
+#[test]
+fn typed_table_forwards_loading_state() {
+    let tree = ViewAdapter::build(
+        Table::data(
+            vec![UserRow {
+                id: 10,
+                name: "Ada".to_string(),
+                age: 28,
+            }],
+            |row| row.id.to_string(),
+        )
+        .expect("unique row")
+        .columns(vec![
+            TableColumn::new("Name", 120.0).bind(|row: &UserRow| row.name.clone())
+        ])
+        .loading(true),
+    );
+    let root = tree.root_id().expect("typed table root");
+    let table = tree
+        .get(root)
+        .expect("typed table node")
+        .component()
+        .as_any()
+        .downcast_ref::<Table>()
+        .expect("Table component");
+    assert!(matches!(
+        table.snapshot_fields(),
+        SnapshotFields::Table { loading: true, .. }
     ));
 }
 
