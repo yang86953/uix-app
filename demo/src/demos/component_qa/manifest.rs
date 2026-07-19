@@ -743,6 +743,7 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
             "empty",
             "selected",
             "sorted",
+            "resizable-column",
             "scrollbar",
             "scrolled",
             "hover",

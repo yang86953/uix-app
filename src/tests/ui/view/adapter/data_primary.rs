@@ -95,6 +95,7 @@ fn reconcile_table_preserves_runtime_selection_and_syncs_config() {
                 filterable: true,
                 filters: Vec::new(),
                 fixed: None,
+                resizable: false,
             }],
             column_groups: Vec::new(),
             rows: vec![vec!["Paris".to_string()], vec!["London".to_string()]],
