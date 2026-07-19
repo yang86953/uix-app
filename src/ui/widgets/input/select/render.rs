@@ -258,7 +258,7 @@ impl Select {
 
     fn render_dropdown(&self, frame: Rect, control_rect: Rect, ctx: &mut PaintContext<'_>) {
         let visible_rows = self.visible_rows();
-        let no_data = visible_rows.is_empty();
+        let no_data = !self.loading && visible_rows.is_empty();
         let row_count = self.dropdown_row_count();
         let list_height = self.dropdown_viewport_height(row_count);
         let surface_height = ctx.logical_surface_size().h;
@@ -309,7 +309,21 @@ impl Select {
             if item_y + DROPDOWN_ROW_HEIGHT < list_y || item_y > list_y + list_height {
                 continue;
             }
-            if no_data {
+            if self.loading {
+                let row = Rect::new(frame.x, item_y, frame.w, DROPDOWN_ROW_HEIGHT);
+                let radius = 5.0_f32.min(row.w.min(row.h) * 0.25);
+                if radius > 0.0 {
+                    ctx.stroke_arc(
+                        row.x + row.w * 0.5,
+                        row.y + row.h * 0.5,
+                        radius,
+                        self.loading_phase,
+                        self.loading_phase + std::f32::consts::PI * 1.45,
+                        primary,
+                        1.8,
+                    );
+                }
+            } else if no_data {
                 let row = Rect::new(frame.x, item_y, frame.w, DROPDOWN_ROW_HEIGHT);
                 let content = Rect::new(row.x + 10.0, row.y, (row.w - 20.0).max(0.0), row.h);
                 let y = ctx.visual_center_y(content, TEXT_SIZE);

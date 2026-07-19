@@ -42,6 +42,40 @@ impl OptGroup {
     }
 }
 
+/// 使用一次性选项集合构造的 `Select` 分组。
+///
+/// 这是推荐的公开入口；`OptGroup` 保留给已有的逐项 `.add(...)` 写法。
+#[derive(Debug, Clone, PartialEq)]
+pub struct SelectOptionGroup {
+    pub label: String,
+    pub options: Vec<String>,
+}
+
+impl SelectOptionGroup {
+    pub fn new<I, S>(label: impl Into<String>, options: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        Self {
+            label: label.into(),
+            options: options
+                .into_iter()
+                .map(|option| option.as_ref().to_owned())
+                .collect(),
+        }
+    }
+}
+
+impl From<SelectOptionGroup> for OptGroup {
+    fn from(group: SelectOptionGroup) -> Self {
+        Self {
+            label: group.label,
+            options: group.options,
+        }
+    }
+}
+
 /// 可绑定到 `Select` 的外部值类型。
 pub trait SelectValue: Clone + PartialEq + Send + Sync + 'static {
     const MULTIPLE: bool;
@@ -131,6 +165,9 @@ component! {
         value_binding: Option<SelectValueBinding>,
         open: bool,
         disabled: bool,
+        loading: bool,
+        loading_phase: f32,
+        loading_dirty: bool,
         select_size: ControlSize,
         hovered: bool,
         focused: bool,
@@ -429,10 +466,11 @@ component! {
     update_animation => (&mut self, dt: f64) -> bool {
         if !self.is_present() {
             self.transition_dirty = false;
+            self.loading_dirty = false;
             return false;
         }
 
-        if self.transition.finished {
+        let transition_active = if self.transition.finished {
             if self.closing {
                 self.open = false;
                 self.closing = false;
@@ -440,24 +478,36 @@ component! {
                 self.highlighted_option = None;
             }
             self.transition_dirty = false;
-            return false;
+            false
+        } else {
+            self.transition.update(dt);
+            self.transition_dirty = true;
+
+            if self.closing && self.transition.finished {
+                self.open = false;
+                self.closing = false;
+                self.search_query.clear();
+                self.highlighted_option = None;
+            }
+
+            self.is_present() && !self.transition.finished
+        };
+
+        self.loading_dirty = false;
+        let loading_active = self.loading && self.is_present();
+        if loading_active {
+            let before = self.loading_phase;
+            self.loading_phase = (self.loading_phase
+                + dt.max(0.0) as f32 * std::f32::consts::TAU / 0.8)
+                .rem_euclid(std::f32::consts::TAU);
+            self.loading_dirty = (self.loading_phase - before).abs() > f32::EPSILON;
         }
 
-        self.transition.update(dt);
-        self.transition_dirty = true;
-
-        if self.closing && self.transition.finished {
-            self.open = false;
-            self.closing = false;
-            self.search_query.clear();
-            self.highlighted_option = None;
-        }
-
-        self.is_present() && !self.transition.finished
+        transition_active || loading_active
     }
 
     dirty_bounds => (&self, frame: Rect) -> Rect {
-        if self.transition_dirty {
+        if self.transition_dirty || self.loading_dirty {
             select_dirty_rect(frame, self.dropdown_damage_rect())
         } else {
             Rect::zero()
@@ -683,6 +733,9 @@ impl Select {
             value_binding: None,
             open: false,
             disabled: config.disabled,
+            loading: false,
+            loading_phase: 0.0,
+            loading_dirty: false,
             select_size: config.size,
             hovered: false,
             focused: false,
@@ -735,6 +788,29 @@ impl Select {
     pub fn optgroups(mut self, groups: Vec<OptGroup>) -> Self {
         self.optgroups = groups;
         self.sync_bound_selection();
+        self
+    }
+
+    /// 设置分组选项；组标题不可选择，组内选项按声明顺序形成值索引。
+    pub fn option_groups<I>(mut self, groups: I) -> Self
+    where
+        I: IntoIterator<Item = SelectOptionGroup>,
+    {
+        self.optgroups = groups.into_iter().map(OptGroup::from).collect();
+        self.sync_bound_selection();
+        self
+    }
+
+    /// 下拉展开时用加载旋转器替代候选项，并暂停选项提交。
+    pub fn loading(mut self, loading: bool) -> Self {
+        self.loading = loading;
+        if loading {
+            self.hovered_option = None;
+            self.highlighted_option = None;
+        } else {
+            self.loading_phase = 0.0;
+            self.loading_dirty = false;
+        }
         self
     }
 
@@ -854,6 +930,7 @@ impl Select {
             selected_multi: self.selected_multi.clone(),
             open: self.open,
             disabled: self.disabled,
+            loading: self.loading,
             placeholder: self.placeholder.clone(),
             multiple: self.multiple,
             search: self.search,
@@ -870,6 +947,13 @@ impl Select {
         self.optgroups = next.optgroups;
         self.value_binding = next.value_binding;
         self.disabled = next.disabled;
+        self.loading = next.loading;
+        if self.loading {
+            self.hovered_option = None;
+        } else {
+            self.loading_phase = 0.0;
+            self.loading_dirty = false;
+        }
         self.select_size = next.select_size;
         self.placeholder = next.placeholder;
         self.multiple = next.multiple;

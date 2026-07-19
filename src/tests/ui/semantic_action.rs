@@ -211,6 +211,27 @@ fn select_exposes_one_index_contract_and_reuses_keyboard_change_events() {
         })
     );
 
+    let mut loading_select_tree = laid_out_tree(embed(
+        Select::new().options(["Alpha", "Beta"]).loading(true),
+    ));
+    let loading_select = loading_select_tree.root_id().unwrap();
+    let loading_snapshot = ComponentConfigSnapshot::from_component(
+        loading_select,
+        loading_select_tree.get(loading_select).unwrap().component(),
+    );
+    assert_eq!(
+        loading_snapshot.selection().unwrap().disabled_indices,
+        vec![0, 1]
+    );
+    assert_eq!(
+        loading_select_tree
+            .perform_semantic_action(loading_select, &SemanticAction::Select("0".to_owned()),),
+        Err(SemanticActionError::SelectionDisabled {
+            target: loading_select,
+            index: 0,
+        })
+    );
+
     let multiple_tree = laid_out_tree(embed(Select::multiple().options(vec!["Alpha", "Beta"])));
     let multiple = multiple_tree.root_id().unwrap();
     assert!(!multiple_tree

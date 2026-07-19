@@ -380,6 +380,93 @@ fn grouped_search_maps_duplicate_labels_to_their_original_indices() {
 }
 
 #[test]
+fn option_groups_constructor_preserves_group_and_option_order() {
+    let selected = State::new(String::new());
+    let mut select = Select::new()
+        .option_groups([
+            SelectOptionGroup::new("Fruit", ["Apple", "Pear"]),
+            SelectOptionGroup::new("Vegetable", ["Carrot"]),
+        ])
+        .value(&selected);
+
+    assert_eq!(select.visible_option_indices(), vec![0, 1, 2]);
+    assert_eq!(select.dropdown_row_count(), 5);
+    assert!(matches!(
+        select.snapshot_fields(),
+        SnapshotFields::Select { optgroups, .. }
+            if optgroups.iter().map(|group| group.label.as_str()).collect::<Vec<_>>()
+                == ["Fruit", "Vegetable"]
+    ));
+
+    select.open();
+    assert_eq!(
+        select.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(10.0, 32.0 + 4.0 * 28.0 + 1.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(selected.get(), "Carrot");
+}
+
+#[test]
+fn loading_select_replaces_options_and_keeps_selection_inert() {
+    let selected = State::new("Beta".to_owned());
+    let mut select = Select::new()
+        .options(["Alpha", "Beta"])
+        .value(&selected)
+        .loading(true);
+    select.open();
+
+    assert!(select.visible_option_indices().is_empty());
+    assert_eq!(select.dropdown_row_count(), 1);
+    assert!(matches!(
+        select.snapshot_fields(),
+        SnapshotFields::Select { loading: true, .. }
+    ));
+    assert_eq!(
+        select.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(10.0, 40.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(selected.get(), "Beta");
+
+    assert!(WidgetAnimation::update_animation(&mut select, 1.0));
+    let (spinner_before, _) =
+        render_select(&select, Rect::new(0.0, 0.0, 120.0, 32.0), (180, 100), "");
+    assert!(WidgetAnimation::update_animation(&mut select, 0.1));
+    assert_ne!(
+        WidgetAnimation::dirty_bounds(&select, Rect::new(0.0, 0.0, 120.0, 32.0)),
+        Rect::zero(),
+        "loading spinner must request a repaint after its phase advances"
+    );
+    let (spinner_after, _) =
+        render_select(&select, Rect::new(0.0, 0.0, 120.0, 32.0), (180, 100), "");
+    assert_ne!(
+        pixel_region(&spinner_before, 180, Rect::new(50.0, 36.0, 20.0, 20.0),),
+        pixel_region(&spinner_after, 180, Rect::new(50.0, 36.0, 20.0, 20.0),),
+        "the loading row must paint the advancing spinner phase"
+    );
+
+    select.sync_from(
+        Select::new()
+            .options(["Alpha", "Beta"])
+            .value(&selected)
+            .loading(false),
+    );
+    assert_eq!(select.visible_option_indices(), vec![0, 1]);
+    assert_eq!(select.current_value().as_deref(), Some("Beta"));
+    assert!(!WidgetAnimation::update_animation(&mut select, 0.1));
+
+    let mut closed_loading = Select::new().loading(true);
+    assert!(!WidgetAnimation::update_animation(&mut closed_loading, 0.1));
+}
+
+#[test]
 fn plain_select_does_not_request_platform_text_input() {
     assert!(!Select::new()
         .as_text_input()
