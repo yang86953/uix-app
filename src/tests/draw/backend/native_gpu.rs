@@ -2338,6 +2338,7 @@ fn main_frame_encoder_executes_each_command_at_its_recorded_boundary() {
     let RecordingFixture {
         mut backend,
         stages,
+        soft_tiles,
         ..
     } = recording_backend(FailStage::None);
     backend.resize(16, 16).expect("resize");
@@ -2376,6 +2377,10 @@ fn main_frame_encoder_executes_each_command_at_its_recorded_boundary() {
         2 * 2 * std::mem::size_of::<u32>(),
         "FrameEncoder Picture blits must update the same soft-upload diagnostic as Canvas fallback"
     );
+    let tiles = soft_tiles.borrow();
+    assert_eq!(tiles.len(), 2);
+    assert_eq!(tiles[0].0, SoftFallbackTile::at_destination(5, 6, 3, 4));
+    assert_eq!(tiles[1].0, SoftFallbackTile::at_destination(9, 10, 2, 2));
 }
 
 #[test]
