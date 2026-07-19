@@ -597,6 +597,10 @@ impl WidgetTree {
         if dynamic_children_changed {
             self.push_layout_invalidation(id);
             self.propagate_layout_invalidation(id);
+            // A rebuilt dynamic subtree invalidates the old viewport pixels.
+            // Consume any queued delta so a later stable scroll cannot replay
+            // movement that was already covered by this conservative repaint.
+            let _ = self.get(id).and_then(|node| node.scroll_delta_for_dirty());
         }
         if dynamic_children_changed || !self.register_scroll_composite(id) {
             self.invalidate_paint(id);

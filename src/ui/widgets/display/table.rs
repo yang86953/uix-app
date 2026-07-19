@@ -281,11 +281,6 @@ component! {
     }
 
     scroll_delta_for_dirty => (&self) -> Option<(f32, f32)> {
-        if !self.view_columns.is_empty() {
-            self.horizontal_scroll_requires_paint.set(false);
-            self.scroll_delta_strip.set((0.0, 0.0));
-            return None;
-        }
         if self.horizontal_scroll_requires_paint.replace(false) {
             self.scroll_delta_strip.set((0.0, 0.0));
             return None;
@@ -347,7 +342,7 @@ component! {
                     self.push_scroll_delta(0.0, dy);
                 }
                 if dx.abs() > 0.01 || dy.abs() > 0.01 {
-                    if !self.view_columns.is_empty() {
+                    if dx.abs() > 0.01 && !self.view_columns.is_empty() {
                         self.layout_requested.set(true);
                     }
                     EventResult::Handled
@@ -741,8 +736,10 @@ component! {
                 } else {
                     0.0
                 };
-                let row_y = body_top + row as f32 * self.row_h + expanded_offset
-                    - self.body_scroll.scroll_offset();
+                // View children stay in content coordinates. The compositor and
+                // hit-test path apply the viewport scroll offset, so unchanged
+                // cells do not need new frames for every vertical wheel event.
+                let row_y = body_top + row as f32 * self.row_h + expanded_offset;
                 let cell = Rect::new(column.x, row_y, column.width, self.row_h);
                 positions.push((
                     child.id,

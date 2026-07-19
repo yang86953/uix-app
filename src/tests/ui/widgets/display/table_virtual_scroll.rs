@@ -110,27 +110,81 @@ fn typed_view_cells_materialize_only_the_virtual_row_window() {
         }),
         EventResult::Handled
     );
-    tree.layout();
-
-    let node = tree.get(root).expect("scrolled typed table node");
-    let table = node
-        .component()
-        .as_any()
-        .downcast_ref::<Table>()
-        .expect("Table component");
-    let scrolled_range = table.cell_view_range_for_frame(node.frame());
-    assert!(scrolled_range.0 > range.0);
-    assert_eq!(node.children().len(), scrolled_range.1 - scrolled_range.0);
-    let next_key = node
-        .children()
-        .first()
-        .and_then(|id| tree.get(*id))
-        .and_then(|node| node.key())
-        .expect("first scrolled cell key");
-    assert_ne!(next_key, first_key);
     assert!(
         tree.scroll_region_moves().is_none(),
         "a changed View subtree must conservatively repaint instead of composite-copying"
+    );
+    assert!(
+        tree.get(root)
+            .and_then(|node| node.component().as_any().downcast_ref::<Table>())
+            .and_then(EventHandler::scroll_delta_for_dirty)
+            .is_none(),
+        "the repaint fallback must consume the superseded scroll delta"
+    );
+    tree.layout();
+
+    let (scrolled_range, stable_child, stable_frame) = {
+        let node = tree.get(root).expect("scrolled typed table node");
+        let table = node
+            .component()
+            .as_any()
+            .downcast_ref::<Table>()
+            .expect("Table component");
+        let scrolled_range = table.cell_view_range_for_frame(node.frame());
+        assert!(scrolled_range.0 > range.0);
+        assert_eq!(node.children().len(), scrolled_range.1 - scrolled_range.0);
+        let next_key = node
+            .children()
+            .first()
+            .and_then(|id| tree.get(*id))
+            .and_then(|node| node.key())
+            .expect("first scrolled cell key");
+        assert_ne!(next_key, first_key);
+        let stable_child = node.children()[3];
+        let stable_frame = tree.get(stable_child).expect("stable View cell").frame();
+        (scrolled_range, stable_child, stable_frame)
+    };
+
+    tree.reset_invalidation();
+    let calls_before_stable_scroll = calls.get();
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::Wheel {
+            pos: Point::new(80.0, 80.0),
+            delta: Point::new(0.0, 0.1),
+        }),
+        EventResult::Handled
+    );
+
+    assert_eq!(calls.get(), calls_before_stable_scroll);
+    assert!(!tree.invalidation().lock().unwrap().has_layout());
+    assert_eq!(
+        tree.scroll_region_moves(),
+        Some(vec![(Rect::new(0.0, 33.0, 160.0, 87.0), 0.0, 4.0)])
+    );
+    assert_eq!(
+        tree.get(stable_child).expect("stable View cell").frame(),
+        stable_frame,
+        "stable vertical scroll must keep View cells in content coordinates"
+    );
+    let (stable_range, scroll_offset) = {
+        let node = tree.get(root).expect("stable scrolled typed table node");
+        let table = node
+            .component()
+            .as_any()
+            .downcast_ref::<Table>()
+            .expect("Table component");
+        (
+            table.cell_view_range_for_frame(node.frame()),
+            table.body_scroll.scroll_offset(),
+        )
+    };
+    assert_eq!(stable_range, scrolled_range);
+    assert_eq!(
+        tree.hit_test(Point::new(
+            stable_frame.x + stable_frame.w * 0.5,
+            stable_frame.y - scroll_offset + stable_frame.h * 0.5,
+        )),
+        Some(stable_child)
     );
 }
 
