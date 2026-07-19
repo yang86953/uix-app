@@ -449,6 +449,12 @@ impl Input {
         input.password = true;
         input
     }
+    /// 创建搜索输入框（带搜索图标，Enter 触发搜索）。
+    pub fn search_input() -> Self {
+        let mut input = Self::new("");
+        input.search = true;
+        input
+    }
     pub fn with_value(mut self, value: impl Into<String>) -> Self {
         self.value_binding = None;
         self.replace_value(value.into());

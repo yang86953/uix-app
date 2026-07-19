@@ -19,6 +19,29 @@ pub enum BadgeStatus {
     Warning,
 }
 
+/// 预设徽章颜色。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BadgeColor {
+    Blue,
+    Green,
+    Orange,
+    Red,
+    Purple,
+}
+
+impl BadgeColor {
+    /// 映射为对应的 `Color`。
+    pub fn to_color(self) -> Color {
+        match self {
+            BadgeColor::Blue => Color::hex("#1677ff"),
+            BadgeColor::Green => Color::hex("#52c41a"),
+            BadgeColor::Orange => Color::hex("#fa8c16"),
+            BadgeColor::Red => Color::hex("#f5222d"),
+            BadgeColor::Purple => Color::hex("#722ed1"),
+        }
+    }
+}
+
 fn finite_badge_offset(value: f32) -> f32 {
     if value.is_finite() {
         value
@@ -186,6 +209,17 @@ impl Badge {
     pub fn color(mut self, c: Color) -> Self {
         self.color = Some(c);
         self
+    }
+
+    /// 使用预设颜色变体设置徽章颜色。
+    pub fn preset_color(mut self, c: BadgeColor) -> Self {
+        self.color = Some(c.to_color());
+        self
+    }
+
+    /// 创建角标丝带（绝对定位，不参与父级正常布局流）。
+    pub fn ribbon(text: impl Into<String>, color: BadgeColor) -> Self {
+        Self::new().text(&text.into()).preset_color(color)
     }
     pub fn status(mut self, s: BadgeStatus) -> Self {
         self.status = Some(s);

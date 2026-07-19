@@ -587,6 +587,7 @@ fn reconcile_tag_patches_instance_and_syncs_config() {
             checkable: true,
             checked: false,
             visible: true,
+            icon: String::new(),
         }
     );
 }
