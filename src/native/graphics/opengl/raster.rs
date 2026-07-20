@@ -883,7 +883,17 @@ impl OpenGlRasterPipeline {
         id: OffscreenTargetId,
         src: Rect,
         dst: Rect,
+        opacity: f32,
     ) -> Result<()> {
+        if !opacity.is_finite() || opacity <= 0.0 {
+            return Ok(());
+        }
+        if opacity < 1.0 - 1e-6 {
+            return Err(Error::new(
+                Errc::NotImplemented,
+                "OpenGL blit_offscreen_target opacity < 1 requires wgpu",
+            ));
+        }
         let source = self
             .offscreens
             .get(id.0 as usize)

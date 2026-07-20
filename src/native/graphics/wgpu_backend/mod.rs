@@ -1,6 +1,10 @@
 //! Shared `wgpu` graphics context. All native GPU APIs execute the same UIX
 //! renderer; backend selection changes only wgpu's adapter implementation.
 
+pub(crate) mod blur;
+pub(crate) mod draw_stream;
+pub(crate) mod glyph_batch;
+pub(crate) mod glyph_cover;
 pub(crate) mod renderer;
 #[path = "platform/surface.rs"]
 mod surface;
@@ -11,14 +15,15 @@ use std::sync::{
     Arc,
 };
 
-use crate::core::{Errc, Error, Result};
+use crate::core::{Errc, Error, Rect, Result};
 use crate::native::traits::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
+    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
     GpuSolidRect, GpuStrokeRect, GraphicsBackend, GraphicsContextCaps, IGraphicsContext,
-    NativeRasterCaps, PresentCoherency, PresentDamage, PresentTestResult,
+    NativeRasterCaps, OffscreenTargetId, PresentCoherency, PresentDamage, PresentTestResult,
 };
 
-use renderer::WgpuRenderer;
+use blur::SeparableBlur;
+use renderer::{ActiveTarget, WgpuRenderer};
 
 pub(crate) fn create_vulkan(
     surface: *mut c_void,
@@ -59,6 +64,16 @@ pub(crate) fn create_metal(
         .map(|context| Box::new(context) as _)
 }
 
+struct OffscreenSlot {
+    /// 保持纹理存活；采样与 RT / 模糊共用同一 allocation。
+    #[allow(dead_code)]
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    bind_group: wgpu::BindGroup,
+    width: i32,
+    height: i32,
+}
+
 pub struct WgpuContext {
     _instance: wgpu::Instance,
     surface: wgpu::Surface<'static>,
@@ -75,6 +90,11 @@ pub struct WgpuContext {
     height: i32,
     device_lost: Arc<AtomicBool>,
     shutdown: bool,
+    offscreens: Vec<Option<OffscreenSlot>>,
+    free_offscreen_ids: Vec<u32>,
+    next_offscreen_id: u32,
+    bound_offscreen: Option<u32>,
+    separable_blur: SeparableBlur,
 }
 
 impl WgpuContext {
@@ -160,7 +180,7 @@ impl WgpuContext {
         let drawable_width = extent.width;
         let drawable_height = extent.height;
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
             format,
             width: drawable_width,
             height: drawable_height,
@@ -172,6 +192,7 @@ impl WgpuContext {
         };
         surface.configure(&device, &config);
         let renderer = WgpuRenderer::new(&device, &queue, format)?;
+        let separable_blur = SeparableBlur::new(&device, format)?;
         crate::core::log::info_fn(format_args!(
             "WgpuContext: backend={requested}; adapter=\"{}\"; type={:?}; driver=\"{}\"; {}x{}",
             info.name, info.device_type, info.driver, drawable_width, drawable_height
@@ -192,6 +213,11 @@ impl WgpuContext {
             height: drawable_height as i32,
             device_lost,
             shutdown: false,
+            offscreens: Vec::new(),
+            free_offscreen_ids: Vec::new(),
+            next_offscreen_id: 0,
+            bound_offscreen: None,
+            separable_blur,
         })
     }
 
@@ -206,6 +232,37 @@ impl WgpuContext {
         } else {
             Ok(())
         }
+    }
+
+    fn flush_bound_offscreen(&mut self) -> Result<()> {
+        let Some(id) = self.bound_offscreen else {
+            return Ok(());
+        };
+        let slot = self
+            .offscreens
+            .get(id as usize)
+            .and_then(Option::as_ref)
+            .ok_or_else(|| {
+                Error::new(
+                    Errc::InvalidState,
+                    "wgpu bound offscreen target disappeared before flush",
+                )
+            })?;
+        let width = slot.width.max(1) as u32;
+        let height = slot.height.max(1) as u32;
+        // view 与 texture 同寿；先克隆尺寸再借 view，避免同时借 mut self 两次。
+        let view = slot.view.clone();
+        self.renderer
+            .flush_offscreen_to_view(&self.device, &self.queue, &view, width, height)
+    }
+
+    fn current_target_size(&self) -> (f32, f32) {
+        if let Some(id) = self.bound_offscreen {
+            if let Some(Some(slot)) = self.offscreens.get(id as usize) {
+                return (slot.width.max(1) as f32, slot.height.max(1) as f32);
+            }
+        }
+        (self.width.max(1) as f32, self.height.max(1) as f32)
     }
 }
 
@@ -239,6 +296,7 @@ impl IGraphicsContext for WgpuContext {
         self.config.width = extent.width;
         self.config.height = extent.height;
         self.surface.configure(&self.device, &self.config);
+        self.renderer.invalidate_retained_color();
         Ok(())
     }
 
@@ -248,6 +306,11 @@ impl IGraphicsContext for WgpuContext {
 
     fn swap_buffers(&mut self, _damage: PresentDamage) -> Result<()> {
         self.ensure_active()?;
+        if self.bound_offscreen.is_some() {
+            self.flush_bound_offscreen()?;
+            self.bound_offscreen = None;
+            self.renderer.set_active_target(ActiveTarget::Swapchain);
+        }
         match self.renderer.present(
             &self.device,
             &self.queue,
@@ -258,6 +321,7 @@ impl IGraphicsContext for WgpuContext {
             Ok(()) => Ok(()),
             Err(error) if error.code() == Errc::GraphicsSurfaceLost => {
                 self.surface.configure(&self.device, &self.config);
+                self.renderer.invalidate_retained_color();
                 Err(error)
             }
             Err(error) => Err(error),
@@ -268,6 +332,9 @@ impl IGraphicsContext for WgpuContext {
         if self.shutdown {
             return Ok(());
         }
+        self.offscreens.clear();
+        self.free_offscreen_ids.clear();
+        self.bound_offscreen = None;
         let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
         self.shutdown = true;
         Ok(())
@@ -300,7 +367,20 @@ impl IGraphicsContext for WgpuContext {
     }
 
     fn clear_render_target(&mut self, r: f32, g: f32, b: f32, a: f32) -> Result<()> {
+        self.ensure_active()?;
         self.renderer.begin_frame([r, g, b, a]);
+        Ok(())
+    }
+
+    fn clear_rects(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        rects: &[GpuSolidRect],
+    ) -> Result<()> {
+        self.ensure_active()?;
+        self.renderer
+            .clear_rects((viewport_w, viewport_h), rects);
         Ok(())
     }
 
@@ -311,6 +391,7 @@ impl IGraphicsContext for WgpuContext {
         scissor: Option<(i32, i32, i32, i32)>,
         rects: &[GpuSolidRect],
     ) -> Result<()> {
+        self.ensure_active()?;
         self.renderer
             .solid_rects((viewport_w, viewport_h), scissor, rects);
         Ok(())
@@ -323,6 +404,7 @@ impl IGraphicsContext for WgpuContext {
         scissor: Option<(i32, i32, i32, i32)>,
         rects: &[GpuStrokeRect],
     ) -> Result<()> {
+        self.ensure_active()?;
         self.renderer
             .stroke_rects((viewport_w, viewport_h), scissor, rects);
         Ok(())
@@ -335,6 +417,7 @@ impl IGraphicsContext for WgpuContext {
         scissor: Option<(i32, i32, i32, i32)>,
         glyphs: &[GpuGlyphBlit],
     ) -> Result<()> {
+        self.ensure_active()?;
         self.renderer
             .glyphs((viewport_w, viewport_h), scissor, glyphs)
     }
@@ -346,6 +429,7 @@ impl IGraphicsContext for WgpuContext {
         scissor: Option<(i32, i32, i32, i32)>,
         rects: &[GpuLinearGradientRect],
     ) -> Result<()> {
+        self.ensure_active()?;
         self.renderer
             .linear_gradients((viewport_w, viewport_h), scissor, rects);
         Ok(())
@@ -358,6 +442,7 @@ impl IGraphicsContext for WgpuContext {
         scissor: Option<(i32, i32, i32, i32)>,
         gradients: &[GpuRadialGradient],
     ) -> Result<()> {
+        self.ensure_active()?;
         self.renderer
             .radial_gradients((viewport_w, viewport_h), scissor, gradients);
         Ok(())
@@ -370,6 +455,7 @@ impl IGraphicsContext for WgpuContext {
         scissor: Option<(i32, i32, i32, i32)>,
         meshes: &[GpuSolidMesh],
     ) -> Result<()> {
+        self.ensure_active()?;
         self.renderer
             .solid_meshes((viewport_w, viewport_h), scissor, meshes);
         Ok(())
@@ -382,13 +468,262 @@ impl IGraphicsContext for WgpuContext {
         scissor: Option<(i32, i32, i32, i32)>,
         shadows: &[GpuBoxShadow],
     ) -> Result<()> {
+        self.ensure_active()?;
         self.renderer
             .box_shadows((viewport_w, viewport_h), scissor, shadows);
         Ok(())
     }
 
+    fn draw_image_blits(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        blits: &[GpuImageBlit],
+    ) -> Result<()> {
+        self.ensure_active()?;
+        self.renderer.image_blits(
+            &self.device,
+            &self.queue,
+            (viewport_w, viewport_h),
+            scissor,
+            blits,
+        )
+    }
+
+    fn create_offscreen_target(
+        &mut self,
+        width: i32,
+        height: i32,
+    ) -> Result<OffscreenTargetId, Error> {
+        self.ensure_active()?;
+        let w = width.max(1) as u32;
+        let h = height.max(1) as u32;
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("uix-offscreen-rt"),
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.renderer.surface_format(),
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let bind_group = self
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("uix-offscreen-sample"),
+                layout: self.renderer.texture_bind_layout(),
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(self.renderer.texture_sampler()),
+                    },
+                ],
+            });
+        let id = if let Some(id) = self.free_offscreen_ids.pop() {
+            id
+        } else {
+            let id = self.next_offscreen_id;
+            self.next_offscreen_id = self.next_offscreen_id.saturating_add(1);
+            id
+        };
+        let idx = id as usize;
+        while self.offscreens.len() <= idx {
+            self.offscreens.push(None);
+        }
+        self.offscreens[idx] = Some(OffscreenSlot {
+            texture,
+            view,
+            bind_group,
+            width: w as i32,
+            height: h as i32,
+        });
+        Ok(OffscreenTargetId(id))
+    }
+
+    fn try_destroy_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<(), Error> {
+        self.ensure_active()?;
+        self.bind_swapchain_target()?;
+        let idx = id.0 as usize;
+        if idx < self.offscreens.len() && self.offscreens[idx].take().is_some() {
+            self.free_offscreen_ids.push(id.0);
+        }
+        Ok(())
+    }
+
+    fn destroy_offscreen_target(&mut self, id: OffscreenTargetId) {
+        if let Err(error) = self.try_destroy_offscreen_target(id) {
+            crate::core::log::error_fn(format_args!(
+                "WgpuContext: destroy offscreen target failed: {}",
+                error.short_what()
+            ));
+        }
+    }
+
+    fn bind_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<(), Error> {
+        self.ensure_active()?;
+        let idx = id.0 as usize;
+        if self.offscreens.get(idx).and_then(|o| o.as_ref()).is_none() {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                format!("WgpuContext: bind_offscreen_target unknown id {}", id.0),
+            ));
+        }
+        if self.bound_offscreen != Some(id.0) {
+            self.flush_bound_offscreen()?;
+        }
+        self.bound_offscreen = Some(id.0);
+        self.renderer.set_active_target(ActiveTarget::Offscreen);
+        Ok(())
+    }
+
     fn bind_swapchain_target(&mut self) -> Result<()> {
-        self.ensure_active()
+        self.ensure_active()?;
+        self.flush_bound_offscreen()?;
+        self.bound_offscreen = None;
+        self.renderer.set_active_target(ActiveTarget::Swapchain);
+        Ok(())
+    }
+
+    fn blit_offscreen_target(
+        &mut self,
+        id: OffscreenTargetId,
+        src: Rect,
+        dst: Rect,
+        opacity: f32,
+        additive: bool,
+    ) -> Result<(), Error> {
+        self.ensure_active()?;
+        if !opacity.is_finite() || opacity <= 0.0 {
+            return Ok(());
+        }
+        let idx = id.0 as usize;
+        let Some(Some(slot)) = self.offscreens.get(idx) else {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                format!("WgpuContext: blit_offscreen_target unknown id {}", id.0),
+            ));
+        };
+        if self.bound_offscreen == Some(id.0) {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "WgpuContext: cannot blit offscreen while it is the bound RT",
+            ));
+        }
+        // 若源刚画完但仍挂在 offscreen 流上，先落到纹理再采样。
+        if self.renderer.active_target() == ActiveTarget::Offscreen {
+            // 当前绑定的是别的 offscreen；源纹理应已在先前 bind_swapchain/flush 时提交。
+        }
+        let source_w = slot.width as f32;
+        let source_h = slot.height as f32;
+        let bind_group = slot.bind_group.clone();
+        let (viewport_w, viewport_h) = self.current_target_size();
+        let opacity = opacity.clamp(0.0, 1.0);
+        if self.bound_offscreen.is_some() {
+            // 画到另一个 offscreen：先把目标已有命令 flush（Load），再立刻把 blit
+            // 合入 offscreen 流并再次 flush，保持与 D3D11「立即 blit」同序。
+            self.flush_bound_offscreen()?;
+            self.renderer.set_active_target(ActiveTarget::Offscreen);
+            self.renderer.queue_sampled_blit(
+                (viewport_w, viewport_h),
+                None,
+                bind_group,
+                src,
+                (source_w, source_h),
+                dst,
+                opacity,
+                additive,
+            );
+            self.flush_bound_offscreen()?;
+        } else {
+            self.renderer.set_active_target(ActiveTarget::Swapchain);
+            self.renderer.queue_sampled_blit(
+                (viewport_w, viewport_h),
+                None,
+                bind_group,
+                src,
+                (source_w, source_h),
+                dst,
+                opacity,
+                additive,
+            );
+        }
+        Ok(())
+    }
+
+    fn blur_offscreen_target(
+        &mut self,
+        id: OffscreenTargetId,
+        region: Rect,
+        radius: f32,
+    ) -> Result<(), Error> {
+        self.ensure_active()?;
+        if !radius.is_finite() || radius < 0.5 {
+            return Ok(());
+        }
+        let idx = id.0 as usize;
+        if self.offscreens.get(idx).and_then(|o| o.as_ref()).is_none() {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                format!("WgpuContext: blur_offscreen_target unknown id {}", id.0),
+            ));
+        }
+        // 若该目标正作为绑定 RT 或刚画完，先把命令落到纹理再采样。
+        if self.bound_offscreen == Some(id.0) || self.renderer.active_target() == ActiveTarget::Offscreen
+        {
+            self.flush_bound_offscreen()?;
+        }
+        let (view, width, height) = {
+            let slot = self.offscreens[idx].as_ref().ok_or_else(|| {
+                Error::new(
+                    Errc::InvalidArgument,
+                    format!("WgpuContext: blur_offscreen_target unknown id {}", id.0),
+                )
+            })?;
+            (slot.view.clone(), slot.width as u32, slot.height as u32)
+        };
+        self.separable_blur.blur_target(
+            &self.device,
+            &self.queue,
+            &view,
+            width,
+            height,
+            region,
+            radius,
+        )
+    }
+
+    fn snapshot_overlay_backdrop(&mut self) -> Result<(), Error> {
+        self.ensure_active()?;
+        // 上一帧 present 已把主路径写入保留色缓冲；此处仅 GPU 纹理复制。
+        self.renderer
+            .snapshot_overlay_backdrop(&self.device, &self.queue)
+    }
+
+    fn restore_overlay_backdrop(&mut self) -> Result<(), Error> {
+        self.ensure_active()?;
+        self.renderer
+            .restore_overlay_backdrop(&self.device, &self.queue)
+    }
+
+    fn release_overlay_backdrop(&mut self) {
+        self.renderer.release_overlay_backdrop();
+    }
+
+    fn has_overlay_backdrop(&self) -> bool {
+        self.renderer.has_overlay_backdrop()
     }
 }
 

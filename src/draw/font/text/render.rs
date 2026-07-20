@@ -76,14 +76,29 @@ impl<'a> TextRenderService<'a> {
             }
             let gx = (pos.x + gp.x + raster.bearing_x) as i32;
             let gy = (pos.y + gp.y + raster.bearing_y) as i32;
-            canvas.blit_glyph_shared(
-                gx,
-                gy,
-                std::sync::Arc::clone(&raster.coverage),
-                raster.width,
-                raster.height,
-                color,
-            );
+            if let Some(mesh) = raster
+                .outline_mesh
+                .as_ref()
+                .filter(|m| crate::draw::font::glyph_outline::is_outline_edges(m))
+            {
+                canvas.blit_glyph_outline(
+                    gx,
+                    gy,
+                    std::sync::Arc::clone(mesh),
+                    raster.width,
+                    raster.height,
+                    color,
+                );
+            } else if !raster.coverage.is_empty() {
+                canvas.blit_glyph_shared(
+                    gx,
+                    gy,
+                    std::sync::Arc::clone(&raster.coverage),
+                    raster.width,
+                    raster.height,
+                    color,
+                );
+            }
         }
     }
 

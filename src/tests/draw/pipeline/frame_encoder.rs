@@ -131,7 +131,7 @@ fn picture_opacity_matches_cpu_post_composition_channel_quantization() {
     encoder.blit_picture_with_opacity(
         image,
         FrameRect::new(0, 0, 2, 2),
-        FrameRect::new(1, 1, 2, 2),
+        crate::draw::pipeline::FrameSampledRect::from_integer(FrameRect::new(1, 1, 2, 2)),
         FrameOpacity::from_canvas(opacity),
     );
 
@@ -174,7 +174,12 @@ fn image_command_reference_tiles_match_full_frame_without_allocating_its_extent(
     let encoder = FrameEncoder::new(100, 80).unwrap();
 
     let (picture_tile, picture_bounds) = encoder
-        .picture_blit_reference_tile(&image, src, dst, FrameOpacity::opaque())
+        .picture_blit_reference_tile(
+            &image,
+            src,
+            crate::draw::pipeline::FrameSampledRect::from_integer(dst),
+            FrameOpacity::opaque(),
+        )
         .expect("partially visible Picture tile");
     let (segment_tile, segment_bounds) = encoder
         .cpu_segment_reference_tile(&image, src, dst)
@@ -196,6 +201,32 @@ fn image_command_reference_tiles_match_full_frame_without_allocating_its_extent(
             );
         }
     }
+}
+
+#[test]
+fn picture_splice_accepts_disjoint_additive_fill() {
+    let mut source = FrameEncoder::new(16, 8).unwrap();
+    source.clear(Color::transparent());
+    source.native(rect(1, 1, 3, 3, Color::from_rgba(220, 40, 20, 255)));
+    source.native(FrameRasterOp::FillRectAdditive {
+        rect: FrameRect::new(8, 1, 3, 3),
+        color: Color::from_rgba(20, 180, 220, 80),
+    });
+    let translated = source
+        .translated_source_over_commands(2, 3, 32, 24)
+        .expect("disjoint Additive write remains spliceable");
+    assert!(matches!(
+        translated.as_slice(),
+        [
+            FrameCommand::Native {
+                operation: FrameRasterOp::FillRect { rect: first, .. }
+            },
+            FrameCommand::Native {
+                operation: FrameRasterOp::FillRectAdditive { rect: second, .. }
+            }
+        ] if *first == FrameRect::new(3, 4, 3, 3)
+            && *second == FrameRect::new(10, 4, 3, 3)
+    ));
 }
 
 #[test]
@@ -471,6 +502,78 @@ fn picture_splice_uses_only_the_guaranteed_opaque_interior_of_a_rounded_rect() {
             .translated_source_over_commands(0, 0, 24, 16)
             .is_some(),
         "a clipped rounded fill exposes only the intersection of clip and guaranteed opaque interior"
+    );
+}
+
+#[test]
+fn picture_splice_accepts_overlapping_writes_inside_an_opaque_image() {
+    let mut source = FrameEncoder::new(16, 8).unwrap();
+    source.clear(Color::transparent());
+    source.cpu_image_segment(
+        FrameImage::solid(16, 8, Color::from_rgb(24, 48, 72)).unwrap(),
+        FrameRect::new(0, 0, 16, 8),
+        FrameRect::new(0, 0, 16, 8),
+    );
+    let coverage: Arc<[u8]> = vec![0, 96, 192, 255, 255, 192, 96, 0].into();
+    source.native(FrameRasterOp::BlitGlyphs {
+        glyphs: vec![
+            FrameGlyphBlit::new(
+                3,
+                2,
+                Arc::clone(&coverage),
+                4,
+                2,
+                Color::from_rgba(240, 80, 40, 192),
+            )
+            .unwrap(),
+            FrameGlyphBlit::new(
+                5,
+                2,
+                Arc::clone(&coverage),
+                4,
+                2,
+                Color::from_rgba(40, 200, 240, 160),
+            )
+            .unwrap(),
+        ],
+        clip: FrameRect::new(0, 0, 16, 8),
+    });
+    source.native(rect(4, 1, 4, 4, Color::from_rgba(220, 200, 40, 96)));
+
+    let translated = source
+        .translated_source_over_commands(2, 1, 24, 16)
+        .expect("opaque image cover makes covered group overlap exact");
+    let parent_background = Color::from_rgb(96, 24, 12);
+    let mut direct = FrameEncoder::new(24, 16).unwrap();
+    direct.clear(parent_background);
+    direct.append_validated_commands(translated).unwrap();
+    let mut materialized = FrameEncoder::new(24, 16).unwrap();
+    materialized.clear(parent_background);
+    materialized.blit_picture(
+        source.render_image(),
+        FrameRect::new(0, 0, 16, 8),
+        FrameRect::new(2, 1, 16, 8),
+    );
+    assert_eq!(
+        direct.render_reference().pixels(),
+        materialized.render_reference().pixels(),
+        "opaque image-backed grouping must be bit-exact"
+    );
+
+    let mut translucent_barrier = FrameEncoder::new(16, 8).unwrap();
+    translucent_barrier.clear(Color::transparent());
+    translucent_barrier.cpu_image_segment(
+        FrameImage::solid(16, 8, Color::from_rgba(24, 48, 72, 200)).unwrap(),
+        FrameRect::new(0, 0, 16, 8),
+        FrameRect::new(0, 0, 16, 8),
+    );
+    translucent_barrier.native(rect(2, 1, 8, 4, Color::from_rgba(220, 40, 20, 128)));
+    translucent_barrier.native(rect(6, 2, 6, 4, Color::from_rgba(20, 180, 220, 160)));
+    assert!(
+        translucent_barrier
+            .translated_source_over_commands(0, 0, 16, 8)
+            .is_none(),
+        "translucent image pixels must not prove opaque cover"
     );
 }
 

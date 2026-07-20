@@ -76,6 +76,7 @@ fn d3d12_warp_glyph_coverage_clip_overlap_and_cross_present_cache_match_cpu() {
         y: 3.0,
         w: 8.0,
         h: 1.0,
+        corners: GpuGlyphBlit::axis_aligned_corners(x as f32, 3.0, 8.0, 1.0),
         rgba: [
             color.r as f32 / 255.0,
             color.g as f32 / 255.0,
@@ -85,6 +86,7 @@ fn d3d12_warp_glyph_coverage_clip_overlap_and_cross_present_cache_match_cpu() {
         coverage: std::sync::Arc::clone(&coverage),
         cov_w: 8,
         cov_h: 1,
+        outline_mesh: None,
     };
     let clear = |context: &mut D3d12Context| {
         context

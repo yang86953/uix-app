@@ -349,24 +349,34 @@ impl NativeGpuBackend {
                 }
                 FrameCommand::CpuSegment { image, src, dst } => {
                     self.ensure_frame_encoder_target(&mut target_initialized)?;
-                    if let Some((source, destination)) =
-                        encoder.cpu_segment_reference_tile(image, *src, *dst)
-                    {
-                        self.alpha_blit_frame_encoder_source(&source, destination)?;
-                    }
+                    self.execute_frame_image_blit(
+                        encoder,
+                        image,
+                        *src,
+                        crate::draw::pipeline::FrameSampledRect::from_integer(*dst),
+                        1.0,
+                        false,
+                    )?;
                 }
                 FrameCommand::PictureBlit {
                     image,
                     src,
                     dst,
                     opacity,
+                    additive,
                 } => {
                     self.ensure_frame_encoder_target(&mut target_initialized)?;
-                    if let Some((source, destination)) =
-                        encoder.picture_blit_reference_tile(image, *src, *dst, *opacity)
-                    {
-                        self.alpha_blit_frame_encoder_source(&source, destination)?;
+                    if opacity.is_transparent() {
+                        continue;
                     }
+                    self.execute_frame_image_blit(
+                        encoder,
+                        image,
+                        *src,
+                        *dst,
+                        opacity.value(),
+                        *additive,
+                    )?;
                 }
             }
         }
@@ -509,20 +519,28 @@ impl NativeGpuBackend {
         if can_draw_native {
             let glyphs = glyphs
                 .iter()
-                .map(|glyph| GpuGlyphBlit {
-                    x: glyph.x() as f32,
-                    y: glyph.y() as f32,
-                    w: glyph.width() as f32,
-                    h: glyph.height() as f32,
-                    rgba: [
-                        glyph.color().r as f32 / 255.0,
-                        glyph.color().g as f32 / 255.0,
-                        glyph.color().b as f32 / 255.0,
-                        glyph.color().a as f32 / 255.0,
-                    ],
-                    coverage: Arc::clone(glyph.coverage()),
-                    cov_w: glyph.width(),
-                    cov_h: glyph.height(),
+                .map(|glyph| {
+                    let x = glyph.x() as f32;
+                    let y = glyph.y() as f32;
+                    let w = glyph.width() as f32;
+                    let h = glyph.height() as f32;
+                    GpuGlyphBlit {
+                        x,
+                        y,
+                        w,
+                        h,
+                        corners: GpuGlyphBlit::axis_aligned_corners(x, y, w, h),
+                        rgba: [
+                            glyph.color().r as f32 / 255.0,
+                            glyph.color().g as f32 / 255.0,
+                            glyph.color().b as f32 / 255.0,
+                            glyph.color().a as f32 / 255.0,
+                        ],
+                        coverage: Arc::clone(glyph.coverage()),
+                        cov_w: glyph.width(),
+                        cov_h: glyph.height(),
+                        outline_mesh: None,
+                    }
                 })
                 .collect::<Vec<_>>();
             return self.gpu_ctx.draw_glyphs(
@@ -785,6 +803,90 @@ impl NativeGpuBackend {
             })
     }
 
+    fn execute_frame_image_blit(
+        &mut self,
+        encoder: &FrameEncoder,
+        image: &crate::draw::pipeline::FrameImage,
+        src: FrameRect,
+        dst: crate::draw::pipeline::FrameSampledRect,
+        opacity: f32,
+        additive: bool,
+    ) -> Result<(), Error> {
+        if !opacity.is_finite() || opacity <= 0.0 {
+            return Ok(());
+        }
+        // Additive 必须走 GPU 纹理 pipeline；soft tile 上传是 SrcOver，不能冒充。
+        if self.surface.native_caps.soft_blit && !additive {
+            let frame_opacity = crate::draw::pipeline::FrameOpacity::from_canvas(opacity);
+            if let Some((source, destination)) =
+                encoder.picture_blit_reference_tile(image, src, dst, frame_opacity)
+            {
+                return self.alpha_blit_frame_encoder_source(&source, destination);
+            }
+            return Ok(());
+        }
+        // 严格 GPU：整块源 crop 上传为纹理四边形，目标可为亚像素 / 缩放。
+        self.gpu_texture_blit_frame_image(image, src, dst, opacity, additive)
+    }
+
+    fn gpu_texture_blit_frame_image(
+        &mut self,
+        image: &crate::draw::pipeline::FrameImage,
+        src: FrameRect,
+        dst: crate::draw::pipeline::FrameSampledRect,
+        opacity: f32,
+        additive: bool,
+    ) -> Result<(), Error> {
+        if src.width <= 0
+            || src.height <= 0
+            || dst.width() <= 0.0
+            || dst.height() <= 0.0
+            || !src.is_within(image.width(), image.height())
+        {
+            return Ok(());
+        }
+        let pixel_count =
+            usize::try_from(i64::from(src.width).saturating_mul(i64::from(src.height))).map_err(
+                |_| {
+                    Error::new(
+                        Errc::GraphicsOutOfMemory,
+                        "FrameEncoder GPU image blit crop exceeds addressable memory",
+                    )
+                },
+            )?;
+        let mut retained = Vec::new();
+        retained.try_reserve_exact(pixel_count).map_err(|error| {
+            Error::new(
+                Errc::GraphicsOutOfMemory,
+                format!("FrameEncoder GPU image blit crop allocation failed: {error}"),
+            )
+        })?;
+        let stride = image.width() as usize;
+        let copy_width = src.width as usize;
+        let pixels = image.pixels();
+        for y in src.y..src.y + src.height {
+            let row = y as usize * stride + src.x as usize;
+            retained.extend_from_slice(&pixels[row..row + copy_width]);
+        }
+        let viewport_w = self.surface.width as f32;
+        let viewport_h = self.surface.height as f32;
+        let blit = GpuImageBlit {
+            x: dst.x(),
+            y: dst.y(),
+            w: dst.width(),
+            h: dst.height(),
+            opacity: opacity.clamp(0.0, 1.0),
+            additive,
+            pixels: std::sync::Arc::<[u32]>::from(retained),
+            pixel_w: src.width as u32,
+            pixel_h: src.height as u32,
+        };
+        self.gpu_ctx
+            .draw_image_blits(viewport_w, viewport_h, None, &[blit])?;
+        self.surface.canvas.last_soft_upload_bytes = 0;
+        Ok(())
+    }
+
     fn alpha_blit_frame_encoder_source(
         &mut self,
         source: &ReferenceFrame,
@@ -849,10 +951,13 @@ impl RenderBackend for NativeGpuBackend {
     }
 
     fn capabilities(&self) -> BackendCapabilities {
-        // Swapchain image repair is planned at the final present boundary.
-        // Until acquisition moves before draw, render the complete GPU frame;
-        // narrow compositor damage remains available without stale pixels.
-        let mut caps = BackendCapabilities::gpu_full_redraw();
+        // 保留主色缓冲证明绘制侧可局部更新；present 仍 FullOnly（全幅 blit）。
+        // 未声明 retained_framebuffer 的后端继续全帧绘制，避免 swapchain 未定义像素。
+        let mut caps = if self.surface.native_caps.retained_framebuffer {
+            BackendCapabilities::gpu_with_offscreen()
+        } else {
+            BackendCapabilities::gpu_full_redraw()
+        };
         caps.offscreen = self.surface.native_caps.offscreen_targets;
         caps
     }
@@ -1170,6 +1275,30 @@ impl RenderBackend for NativeGpuBackend {
             ));
         };
         let target = off.target;
+        let opacity = if let Some(active) = self.active_offscreen {
+            self.offscreens
+                .get(active as usize)
+                .and_then(|slot| slot.as_ref())
+                .map(|slot| slot.canvas.opacity())
+                .unwrap_or(1.0)
+        } else {
+            self.surface.canvas.opacity()
+        };
+        let additive = if let Some(active) = self.active_offscreen {
+            self.offscreens
+                .get(active as usize)
+                .and_then(|slot| slot.as_ref())
+                .map(|slot| matches!(slot.canvas.current_blend_mode(), BlendMode::Additive))
+                .unwrap_or(false)
+        } else {
+            matches!(
+                self.surface.canvas.current_blend_mode(),
+                BlendMode::Additive
+            )
+        };
+        if !opacity.is_finite() || opacity <= 0.0 {
+            return Ok(());
+        }
         if let Some(active) = self.active_offscreen {
             if active == handle.0 {
                 return Err(Error::new(
@@ -1191,8 +1320,110 @@ impl RenderBackend for NativeGpuBackend {
             // same final present.
             self.flush_main_segment_before_ordered_boundary()?;
         }
-        self.gpu_ctx
-            .blit_offscreen_target(target, src_rect, dst_rect)
+        self.gpu_ctx.blit_offscreen_target(
+            target,
+            src_rect,
+            dst_rect,
+            opacity.clamp(0.0, 1.0),
+            additive,
+        )
+    }
+
+    fn try_blur_offscreen(
+        &mut self,
+        handle: &ImageHandle,
+        region: Rect,
+        radius: f32,
+    ) -> Result<(), Error> {
+        if !self.surface.native_caps.offscreen_targets {
+            return Err(Error::new(
+                Errc::NotImplemented,
+                "native GPU backend lacks offscreen targets required for separable blur",
+            ));
+        }
+        if !radius.is_finite() || radius < 0.5 {
+            return Ok(());
+        }
+        let idx = handle.0 as usize;
+        let Some(Some(off)) = self.offscreens.get(idx) else {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "Picture offscreen target does not exist before blur",
+            ));
+        };
+        let target = off.target;
+        // 模糊前必须把挂起的绘制落到纹理，且不能在绑定为目标时采样。
+        if self.active_offscreen == Some(handle.0) {
+            self.try_flush_offscreen_paint(handle)?;
+            self.try_end_offscreen_paint()?;
+        } else if self.active_offscreen.is_some() {
+            // 另一离屏正绑定：先 flush 当前绑定，避免命令落错目标。
+            if let Some(active) = self.active_offscreen {
+                self.try_flush_offscreen_paint(&ImageHandle(active))?;
+            }
+        } else {
+            self.flush_main_segment_before_ordered_boundary()?;
+        }
+        self.gpu_ctx.blur_offscreen_target(target, region, radius)
+    }
+
+    fn snapshot_overlay_backdrop(&mut self) -> bool {
+        if !self.surface.native_caps.retained_framebuffer {
+            return false;
+        }
+        if let Err(err) = self.gpu_ctx.make_current() {
+            crate::core::log::warn_fn(format_args!(
+                "NativeGpuBackend: snapshot_overlay_backdrop make_current failed: {}",
+                err.short_what()
+            ));
+            return false;
+        }
+        match self.gpu_ctx.snapshot_overlay_backdrop() {
+            Ok(()) => true,
+            Err(err) => {
+                crate::core::log::warn_fn(format_args!(
+                    "NativeGpuBackend: snapshot_overlay_backdrop failed: {}",
+                    err.short_what()
+                ));
+                false
+            }
+        }
+    }
+
+    fn restore_overlay_backdrop(&mut self) -> bool {
+        if !self.gpu_ctx.has_overlay_backdrop() {
+            return false;
+        }
+        if let Err(err) = self.gpu_ctx.make_current() {
+            crate::core::log::warn_fn(format_args!(
+                "NativeGpuBackend: restore_overlay_backdrop make_current failed: {}",
+                err.short_what()
+            ));
+            return false;
+        }
+        match self.gpu_ctx.restore_overlay_backdrop() {
+            Ok(()) => {
+                // 快照已写入保留缓冲：取消 begin_frame 挂起的全幅 clear。
+                self.surface.needs_gpu_clear = false;
+                self.surface.pending_clear_rects.clear();
+                true
+            }
+            Err(err) => {
+                crate::core::log::warn_fn(format_args!(
+                    "NativeGpuBackend: restore_overlay_backdrop failed: {}",
+                    err.short_what()
+                ));
+                false
+            }
+        }
+    }
+
+    fn release_overlay_backdrop(&mut self) {
+        self.gpu_ctx.release_overlay_backdrop();
+    }
+
+    fn has_overlay_backdrop(&self) -> bool {
+        self.gpu_ctx.has_overlay_backdrop()
     }
 
     fn present(&mut self, damage: &DamageRegion) -> Result<(), Error> {

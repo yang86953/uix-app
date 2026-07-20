@@ -1,6 +1,7 @@
 use crate::draw::pipeline::frame_recording::*;
 use crate::draw::pipeline::{
-    EncodedPictureExecution, FrameCommand, FrameEncoder, FrameOpacity, FrameRadius, FrameRasterOp,
+    EncodedPictureExecution, FrameCommand, FrameEncoder, FrameImage, FrameOpacity, FrameRadius,
+    FrameRasterOp, FrameRect,
 };
 use crate::draw::primitives::types::{BlendMode, Radius, Transform};
 use crate::draw::traits::{Canvas2D, GraphicsEngine};
@@ -1504,7 +1505,7 @@ fn integral_offset_picture_splices_native_ir_without_allocating_scratch() {
 }
 
 #[test]
-fn fractional_offset_picture_keeps_exact_cpu_fallback() {
+fn fractional_offset_picture_keeps_sampled_picture_blit() {
     let mut engine = FrameRecordingEngine::new();
     engine.initialize(24, 16).expect("initialize recorder");
     engine.begin_recording(true).expect("begin recording");
@@ -1528,10 +1529,21 @@ fn fractional_offset_picture_keeps_exact_cpu_fallback() {
             Rect::new(0.0, 0.0, 16.0, 8.0),
         )
         .expect("record fractional-offset Picture blit");
-    assert_eq!(engine.scratch_surface_size(), (24, 16));
+    assert_eq!(
+        engine.scratch_surface_size(),
+        (1, 1),
+        "fractional Picture destination must stay on sampled IR, not scratch"
+    );
 
     let encoder = engine.finish_recording().expect("finish recorder");
-    assert!(encoder
+    assert!(encoder.commands().iter().any(|command| {
+        matches!(
+            command,
+            FrameCommand::PictureBlit { dst, .. }
+                if (dst.x() - 0.5).abs() < 1e-6 && dst.y() == 0.0
+        )
+    }));
+    assert!(!encoder
         .commands()
         .iter()
         .any(|command| matches!(command, FrameCommand::CpuSegment { .. })));
@@ -1584,13 +1596,17 @@ fn integral_image_blit_retains_only_the_visible_crop_with_offset_clip_and_opacit
                 src,
                 dst,
                 opacity,
+                additive: false,
             } => Some((image, src, dst, opacity)),
             _ => None,
         })
         .expect("integer image blit stays a compact image command");
     assert_eq!((command.0.width(), command.0.height()), (3, 2));
     assert_eq!(*command.1, FrameRect::new(0, 0, 3, 2));
-    assert_eq!(*command.2, FrameRect::new(8, 4, 3, 2));
+    assert_eq!(
+        *command.2,
+        crate::draw::pipeline::FrameSampledRect::from_integer(FrameRect::new(8, 4, 3, 2))
+    );
     assert_eq!(*command.3, FrameOpacity::from_canvas(opacity));
     assert_eq!(
         command.0.pixels(),
@@ -2084,6 +2100,31 @@ fn additive_axis_aligned_fill_records_native_additive_op() {
             command,
             crate::draw::pipeline::FrameCommand::Native {
                 operation: FrameRasterOp::FillRectAdditive { .. }
+            }
+        )
+    }));
+}
+
+#[test]
+fn additive_sampled_picture_blit_records_additive_flag() {
+    use crate::draw::pipeline::{FrameOpacity, FrameSampledRect};
+
+    let pixels = vec![Color::from_rgba(30, 60, 90, 180).premultiplied(); 6];
+    let image = FrameImage::new(3, 2, pixels).expect("picture pixels");
+    let mut encoder = FrameEncoder::new(16, 16).expect("encoder");
+    encoder.blit_picture_with_opacity_blend(
+        image,
+        FrameRect::new(0, 0, 3, 2),
+        FrameSampledRect::from_parts(1.5, 2.25, 6.0, 4.0).expect("sampled"),
+        FrameOpacity::opaque(),
+        true,
+    );
+    assert!(encoder.commands().iter().any(|command| {
+        matches!(
+            command,
+            FrameCommand::PictureBlit {
+                additive: true,
+                ..
             }
         )
     }));

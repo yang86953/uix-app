@@ -13,7 +13,7 @@ use crate::draw::engine::RenderOutcome;
 use crate::draw::pipeline::{
     EncodedFrameExecution, EncodedPictureExecution, FrameEncoder, FrameEncoderError,
     FrameGlyphBlit, FrameImage, FrameOpacity, FrameRadius, FrameRasterOp, FrameRect,
-    FrameStrokeRect, FrameStrokeWidth,
+    FrameSampledRect, FrameStrokeRect, FrameStrokeWidth,
 };
 use crate::draw::primitives::path::{FillRule, Path};
 use crate::draw::primitives::stroker::StrokeOptions;
@@ -405,8 +405,9 @@ impl GraphicsEngine for FrameRecordingEngine {
                     vec![crate::draw::pipeline::FrameCommand::PictureBlit {
                         image: encoder.render_image(),
                         src: full,
-                        dst: full,
+                        dst: FrameSampledRect::from_integer(full),
                         opacity: crate::draw::pipeline::FrameOpacity::opaque(),
+                        additive: false,
                     }]
                 });
             target.canvas.record_validated_commands(commands)?;
@@ -749,11 +750,22 @@ impl FrameRecordingCanvas {
         dst: Rect,
     ) -> Result<(), Error> {
         self.flush_scratch()?;
-        if let Some((src, dst)) = self.direct_picture_geometry(src, dst) {
+        if let Some((src, dst)) = self.sampled_picture_geometry(src, dst) {
             let opacity = FrameOpacity::from_canvas(self.scratch.opacity());
-            self.encoder_mut()?
-                .blit_picture_with_opacity(image, src, dst, opacity);
+            let additive = self.blend_mode == BlendMode::Additive;
+            self.encoder_mut()?.blit_picture_with_opacity_blend(
+                image, src, dst, opacity, additive,
+            );
             return Ok(());
+        }
+        // Additive 下不得走透明 scratch 再 SrcOver 上传。
+        if self.blend_mode == BlendMode::Additive {
+            let error = Error::new(
+                Errc::NotImplemented,
+                "FrameEncoder recording cannot faithfully lower destination-dependent Additive Picture blit geometry",
+            );
+            self.remember_error(error.clone());
+            return Err(error);
         }
         self.ensure_scratch()?;
         self.scratch
@@ -826,7 +838,7 @@ impl FrameRecordingCanvas {
         let retained_source = FrameRect::new(0, 0, source.width, source.height);
         self.flush_scratch()?;
         self.encoder_mut()?
-            .blit_picture_with_opacity(image, retained_source, destination, opacity);
+            .blit_picture_integer_with_opacity(image, retained_source, destination, opacity);
         Ok(true)
     }
 
@@ -1077,6 +1089,9 @@ impl FrameRecordingCanvas {
         self.direct_picture_geometry(src, dst)
     }
 
+    /// 整数 1:1 splice 几何（仍要求整像素 src/dst）。
+    ///
+    /// Additive 不参与 splice 收窄；采样路径见 [`Self::sampled_picture_geometry`]。
     fn direct_picture_geometry(&self, src: Rect, dst: Rect) -> Option<(FrameRect, FrameRect)> {
         let (offset_x, offset_y) = self.scratch.offset();
         if self.blend_mode == BlendMode::Additive
@@ -1120,6 +1135,68 @@ impl FrameRecordingCanvas {
             clipped_dst.height,
         );
         Some((clipped_src, clipped_dst))
+    }
+
+    /// GPU 纹理采样路径：整数源 crop + 浮点目标（允许亚像素 / 缩放）。
+    ///
+    /// Additive 父 blend 亦允许：命令携带 `additive`，严格 GPU 用 One+One
+    /// 纹理 pipeline；hybrid soft 仍会在执行端走参考 tile（需可读目标）。
+    fn sampled_picture_geometry(
+        &self,
+        src: Rect,
+        dst: Rect,
+    ) -> Option<(FrameRect, FrameSampledRect)> {
+        let (offset_x, offset_y) = self.scratch.offset();
+        if !offset_x.is_finite()
+            || !offset_y.is_finite()
+            || !self.scratch.current_transform().is_identity()
+        {
+            return None;
+        }
+        // Additive 下跳过依赖 SrcOver splice 的整数裁剪分支，整块源 crop
+        // 交给执行端 Additive 纹理四边形 / 参考采样。
+        let allow_integer_clip = self.blend_mode != BlendMode::Additive;
+        let src = rect_to_frame(src).ok()?;
+        if src.width <= 0 || src.height <= 0 {
+            return None;
+        }
+        let dest_x = dst.x + offset_x;
+        let dest_y = dst.y + offset_y;
+        if !dest_x.is_finite()
+            || !dest_y.is_finite()
+            || !dst.w.is_finite()
+            || !dst.h.is_finite()
+            || dst.w <= 0.0
+            || dst.h <= 0.0
+        {
+            return None;
+        }
+        // 整数 1:1 且 clip 可精确裁剪时优先收窄，便于 soft tile / splice 复用。
+        let one_to_one = dst.w == src.width as f32 && dst.h == src.height as f32;
+        let integer_placement = offset_x.fract() == 0.0
+            && offset_y.fract() == 0.0
+            && dest_x.fract() == 0.0
+            && dest_y.fract() == 0.0
+            && dst.w.fract() == 0.0
+            && dst.h.fract() == 0.0;
+        if allow_integer_clip && one_to_one && integer_placement {
+            if let Some((clipped_src, clipped_dst)) = self.direct_picture_geometry(
+                Rect::new(src.x as f32, src.y as f32, src.width as f32, src.height as f32),
+                Rect::new(dst.x, dst.y, dst.w, dst.h),
+            ) {
+                return Some((clipped_src, FrameSampledRect::from_integer(clipped_dst)));
+            }
+        }
+        // 亚像素落点或缩放：整块源 crop，裁剪交给执行端 scissor / 采样。
+        if dest_x + dst.w <= 0.0
+            || dest_y + dst.h <= 0.0
+            || dest_x >= self.width as f32
+            || dest_y >= self.height as f32
+        {
+            return None;
+        }
+        let sampled = FrameSampledRect::from_parts(dest_x, dest_y, dst.w, dst.h).ok()?;
+        Some((src, sampled))
     }
 
     fn full_rect(&self) -> Rect {

@@ -1639,7 +1639,7 @@ fn rendered_frame_with_partial_dirty_outputs_padded_partial_damage() {
 }
 
 #[test]
-fn multi_rect_dirty_expands_to_union_for_paint_and_damage() {
+fn multi_rect_dirty_keeps_split_rects_for_paint_and_damage() {
     let mut renderer = FrameRenderer::new();
     let mut engine = NullEngine::new();
     let _ = engine.initialize(64, 64);
@@ -1648,7 +1648,7 @@ fn multi_rect_dirty_expands_to_union_for_paint_and_damage() {
     let fs = FontService::new();
     let img = ImageService::new();
     let mut region = DirtyRegion::empty();
-    // 悬停项 + 远处定时器标脏 → 并集须覆盖中间侧栏项
+    // 悬停项 + 远处定时器标脏 → 拆分后各自 pad，空隙不进入 present damage
     region.add_rect(Rect::new(0.0, 0.0, 20.0, 20.0));
     region.add_rect(Rect::new(0.0, 80.0, 20.0, 20.0));
 
@@ -1670,12 +1670,13 @@ fn multi_rect_dirty_expands_to_union_for_paint_and_damage() {
         },
     );
 
-    // for_paint_clear → [0,0,20,100]，再 pad ±1
+    // 各 dirty rect pad ±1，不再并集为 [0,0,20,100]
     assert_eq!(
         out.outcome,
-        RenderOutcome::PresentPending(DamageRegion::partial(vec![Rect::new(
-            0.0, 0.0, 22.0, 102.0
-        )]))
+        RenderOutcome::PresentPending(DamageRegion::partial(vec![
+            Rect::new(0.0, 0.0, 22.0, 22.0),
+            Rect::new(0.0, 79.0, 22.0, 22.0),
+        ]))
     );
 }
 
@@ -3115,4 +3116,167 @@ fn engine_without_readable_frame_pixels_keeps_full_overlay_repaint() {
         "unsupported engines must preserve the established full-redraw path"
     );
     assert_eq!(scene.overlay_paints.get(), 1);
+}
+
+/// GpuNative 引擎：以保留色缓冲快照代替 CPU readback，验证只重放浮层。
+struct GpuOverlayBackdropEngine {
+    canvas: NoopCanvas2D,
+    width: i32,
+    height: i32,
+    has_backdrop: bool,
+    snapshots: usize,
+    restores: usize,
+    releases: usize,
+}
+
+impl GpuOverlayBackdropEngine {
+    fn new() -> Self {
+        Self {
+            canvas: NoopCanvas2D,
+            width: 4,
+            height: 4,
+            has_backdrop: false,
+            snapshots: 0,
+            restores: 0,
+            releases: 0,
+        }
+    }
+}
+
+impl GraphicsEngine for GpuOverlayBackdropEngine {
+    fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.width = width.max(1);
+        self.height = height.max(1);
+        Ok(())
+    }
+
+    fn try_shutdown(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.width = width.max(1);
+        self.height = height.max(1);
+        self.has_backdrop = false;
+        Ok(())
+    }
+
+    fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {
+        let damage = match strategy {
+            UpdateStrategy::FullRedraw => DamageRegion::full(),
+            UpdateStrategy::DirtyRects(rects) | UpdateStrategy::ScrollCopies { dirty_rects: rects, .. } => {
+                if rects.is_empty() {
+                    DamageRegion::full()
+                } else {
+                    DamageRegion::partial(rects)
+                }
+            }
+        };
+        RenderOutcome::FrameReady(damage)
+    }
+
+    fn end_frame(&mut self, _damage: &DamageRegion) -> RenderOutcome {
+        RenderOutcome::Present(DamageRegion::full())
+    }
+
+    fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
+        &mut self.canvas
+    }
+
+    fn capabilities(&self) -> GraphicsCapabilities {
+        GraphicsCapabilities {
+            presentation_mode: crate::draw::traits::PresentationMode::EngineManaged,
+            partial_redraw: true,
+            offscreen: true,
+            scroll_memmove: false,
+        }
+    }
+
+    fn raster_pipeline(&self) -> crate::draw::traits::RasterPipeline {
+        crate::draw::traits::RasterPipeline::GpuNative
+    }
+
+    fn snapshot_overlay_backdrop(&mut self) -> bool {
+        self.snapshots += 1;
+        self.has_backdrop = true;
+        true
+    }
+
+    fn restore_overlay_backdrop(&mut self) -> bool {
+        if !self.has_backdrop {
+            return false;
+        }
+        self.restores += 1;
+        true
+    }
+
+    fn release_overlay_backdrop(&mut self) {
+        self.releases += 1;
+        self.has_backdrop = false;
+    }
+
+    fn has_overlay_backdrop(&self) -> bool {
+        self.has_backdrop
+    }
+}
+
+#[test]
+fn gpu_native_overlay_frames_restore_retained_backdrop_without_repainting_normal_tree() {
+    let tokens = MockTokens;
+    let fonts = FontService::new();
+    let images = ImageService::new();
+    let scene = OverlayBackdropScene::new();
+    let mut renderer = FrameRenderer::new();
+    let mut engine = GpuOverlayBackdropEngine::new();
+    engine.initialize(4, 4).expect("gpu backdrop engine init");
+
+    let first = render_overlay_backdrop_test_frame(
+        &mut renderer,
+        &mut engine,
+        &scene,
+        false,
+        &tokens,
+        &fonts,
+        &images,
+    );
+    assert!(matches!(first.outcome, RenderOutcome::Present(_)));
+    assert_eq!(scene.root_paints.get(), 1);
+    assert_eq!(engine.snapshots, 0, "first frame has no prior retained surface to snapshot");
+
+    scene.root_dirty.set(false);
+    scene.show_overlay();
+    let opened = render_overlay_backdrop_test_frame(
+        &mut renderer,
+        &mut engine,
+        &scene,
+        true,
+        &tokens,
+        &fonts,
+        &images,
+    );
+    assert!(matches!(opened.outcome, RenderOutcome::Present(_)));
+    assert_eq!(engine.snapshots, 1);
+    assert_eq!(engine.restores, 1);
+    assert_eq!(
+        scene.root_paints.get(),
+        1,
+        "GPU overlay open must reuse retained-color backdrop"
+    );
+    assert_eq!(scene.overlay_paints.get(), 1);
+
+    scene.overlay_alpha.set(64);
+    let animated = render_overlay_backdrop_test_frame(
+        &mut renderer,
+        &mut engine,
+        &scene,
+        true,
+        &tokens,
+        &fonts,
+        &images,
+    );
+    assert!(matches!(animated.outcome, RenderOutcome::Present(_)));
+    assert_eq!(engine.snapshots, 1, "snapshot once for the overlay lifetime");
+    assert_eq!(engine.restores, 2);
+    assert_eq!(scene.root_paints.get(), 1);
+    assert_eq!(scene.overlay_paints.get(), 2);
 }

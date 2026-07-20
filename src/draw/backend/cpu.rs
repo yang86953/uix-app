@@ -377,6 +377,28 @@ impl RenderBackend for CpuBackend {
         Ok(())
     }
 
+    fn try_blur_offscreen(
+        &mut self,
+        handle: &ImageHandle,
+        region: Rect,
+        radius: f32,
+    ) -> Result<(), Error> {
+        if !radius.is_finite() || radius < 0.5 {
+            return Ok(());
+        }
+        let canvas = self.offscreens.get_mut(handle).ok_or_else(|| {
+            Error::new(
+                crate::core::Errc::InvalidState,
+                "Picture offscreen target does not exist before blur",
+            )
+        })?;
+        let width = canvas.surface().width();
+        let height = canvas.surface().height();
+        let pixels = canvas.surface_mut().pixels_mut();
+        crate::draw::primitives::blur::gaussian_blur(pixels, width, height, region, radius);
+        Ok(())
+    }
+
     fn present(&mut self, _damage: &DamageRegion) -> Result<(), Error> {
         if let Some(error) = self.main.take_deferred_error() {
             return Err(error);

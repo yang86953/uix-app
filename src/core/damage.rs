@@ -57,6 +57,10 @@ impl DirtyRegion {
         if rect.w <= 0.0 || rect.h <= 0.0 || self.full_frame {
             return;
         }
+        // 滚动 exposed strip 常与上游 dirty 同矩形；拆分路径不再并集，须跳过精确重复。
+        if self.rects.iter().any(|existing| *existing == rect) {
+            return;
+        }
         self.clear_required = true;
         if self.rects.len() >= DIRTY_MERGE_THRESHOLD - 1 {
             let bounds = self.bounds().union(&rect);
@@ -78,19 +82,13 @@ impl DirtyRegion {
         bounds
     }
 
-    /// 绘制/清屏用脏区：多块 dirty 时升为并集 AABB。
+    /// 绘制/清屏用脏区：保留离散矩形，供逐矩形 clear 与父背景重绘。
     ///
-    /// `begin_frame` 的 clip 已是并集；若仍按离散 rect 清屏与剪枝，
-    /// 父节点背景会画进中间空隙而子节点不重绘（悬停 + 定时器双脏区时侧栏项消失）。
+    /// 历史上多块 dirty 会升为并集 AABB，以避免「只清离散条带、父背景却画进
+    /// 空隙而子节点不重绘」。拆分路径改为每个脏矩形独立清屏，并在该矩形 clip
+    /// 内先绘祖先背景再绘脏控件，因此不再并集。
     pub fn for_paint_clear(&self) -> DirtyRegion {
-        if self.full_frame || self.rects.len() <= 1 {
-            return self.clone();
-        }
-        let bounds = self.bounds();
-        if bounds.w <= 0.0 || bounds.h <= 0.0 {
-            return DirtyRegion::empty();
-        }
-        DirtyRegion::area(bounds)
+        self.clone()
     }
 
     pub fn intersects(&self, rect: Rect) -> bool {

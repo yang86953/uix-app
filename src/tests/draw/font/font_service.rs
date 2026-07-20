@@ -95,6 +95,7 @@ fn cached_raster(bytes: usize) -> CachedRaster {
         coverage: Arc::from(vec![7; bytes]),
         bearing_x: 0.0,
         bearing_y: 0.0,
+        outline_mesh: None,
     }
 }
 

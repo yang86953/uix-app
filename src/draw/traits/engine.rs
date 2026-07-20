@@ -264,6 +264,25 @@ pub trait GraphicsEngine: 'static {
         None
     }
 
+    /// GPU 保留色缓冲快照为 overlay 干净背景（无 CPU readback）。
+    /// 成功后 [`Self::has_overlay_backdrop`] 为 true；不支持时返回 false。
+    fn snapshot_overlay_backdrop(&mut self) -> bool {
+        false
+    }
+
+    /// 将 overlay 背景写回主表面并取消本帧全幅 clear。
+    fn restore_overlay_backdrop(&mut self) -> bool {
+        false
+    }
+
+    /// 释放引擎持有的 overlay 背景快照。
+    fn release_overlay_backdrop(&mut self) {}
+
+    /// 是否持有有效的 overlay 背景快照（CPU `FrameImage` 路径不经此查询）。
+    fn has_overlay_backdrop(&self) -> bool {
+        false
+    }
+
     /// Executes a lossless API-neutral encoded Picture on a backend that
     /// explicitly supports it. `Unsupported` is a normal fallback result;
     /// compositor code then uses full DisplayList replay.
@@ -335,6 +354,22 @@ pub trait GraphicsEngine: 'static {
     ) -> Result<(), Error> {
         self.blit_offscreen_src(handle, src_rect, dst_rect);
         Ok(())
+    }
+
+    /// 对 Picture 离屏目标做可分离高斯模糊。
+    ///
+    /// GPU 路径须走原生 RT 模糊（`RenderBackend::try_blur_offscreen`），禁止
+    /// PixelUpload 冒充；半径语义同 CPU `gaussian_blur`（`sigma = radius / 3`）。
+    fn try_blur_offscreen(
+        &mut self,
+        _handle: &ImageHandle,
+        _region: Rect,
+        _radius: f32,
+    ) -> Result<(), Error> {
+        Err(Error::new(
+            crate::core::Errc::NotImplemented,
+            "graphics engine does not support offscreen separable blur",
+        ))
     }
 
     fn memory_usage(&self) -> usize {

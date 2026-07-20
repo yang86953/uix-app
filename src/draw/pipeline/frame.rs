@@ -60,6 +60,7 @@ pub fn begin_frame(
             if rects.is_empty() {
                 surface.push_clip(full);
             } else {
+                // 外层 clip 仍取并集，收紧到全部脏区；逐矩形绘制时再 push 子 clip。
                 let mut bounds = rects[0];
                 for r in &rects[1..] {
                     bounds = bounds.union(r);
@@ -91,19 +92,17 @@ pub fn begin_frame(
             | UpdateStrategy::ScrollCopies {
                 dirty_rects: rects, ..
             } => {
-                // 与 push_clip 一致：清并集 AABB，避免只清离散条带而父背景画满空隙
-                let mut bounds = rects[0];
-                for r in &rects[1..] {
-                    bounds = bounds.union(r);
-                }
-                let x0 = (bounds.x + 0.5).floor().max(0.0) as i32;
-                let y0 = (bounds.y + 0.5).floor().max(0.0) as i32;
-                let x1 = (bounds.x + bounds.w + 0.5).floor().max(0.0) as i32;
-                let y1 = (bounds.y + bounds.h + 0.5).floor().max(0.0) as i32;
-                let cw = (x1 - x0).min(w - x0).max(0);
-                let ch = (y1 - y0).min(h - y0).max(0);
-                if cw > 0 && ch > 0 {
-                    surface.clear_rect_raw(x0, y0, cw, ch);
+                // 逐矩形清屏：空隙保留旧像素，由各矩形内的父背景重绘填补。
+                for bounds in rects {
+                    let x0 = (bounds.x + 0.5).floor().max(0.0) as i32;
+                    let y0 = (bounds.y + 0.5).floor().max(0.0) as i32;
+                    let x1 = (bounds.x + bounds.w + 0.5).floor().max(0.0) as i32;
+                    let y1 = (bounds.y + bounds.h + 0.5).floor().max(0.0) as i32;
+                    let cw = (x1 - x0).min(w - x0).max(0);
+                    let ch = (y1 - y0).min(h - y0).max(0);
+                    if cw > 0 && ch > 0 {
+                        surface.clear_rect_raw(x0, y0, cw, ch);
+                    }
                 }
             }
         }

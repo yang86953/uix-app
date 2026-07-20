@@ -37,22 +37,36 @@ pub struct GpuStrokeRect {
     pub line_width: f32,
 }
 
-/// CPU-rasterized glyph coverage blit for GPU-native text (#169).
+/// Glyph coverage blit for GPU-native text (#169).
 ///
-/// `coverage` is a row-major `cov_w * cov_h` alpha mask (0..255), matching
-/// soft `blit_glyph`. Dest `(x,y,w,h)` is logical top-left; typically
-/// `w == cov_w as f32` and `h == cov_h as f32`. Context packs into a glyph
-/// atlas and draws textured quads — not full GPU shaping.
+/// Destination is the device-space quad `corners = [TL, TR, BR, BL]`；
+/// 轴对齐时与 `(x,y,w,h)` AABB 一致，旋转 / 剪切时 coverage 经仿射四边形采样。
+///
+/// Coverage 来源二选一：
+/// - `outline_mesh`：本地像素边列表 `[ax,ay,bx,by,…]`，由共享 wgpu MSDF cover pass
+///   写入 RGBA8 atlas，采样时 `median(r,g,b)` → coverage（严格 GPU 路径）
+/// - `coverage`：CPU mask（soft / 遗留后端 / tofu）→ R8 atlas
 #[derive(Debug, Clone)]
 pub struct GpuGlyphBlit {
     pub x: f32,
     pub y: f32,
     pub w: f32,
     pub h: f32,
+    /// 设备坐标四角：左上、右上、右下、左下。
+    pub corners: [[f32; 2]; 4],
     pub rgba: [f32; 4],
     pub coverage: std::sync::Arc<[u8]>,
     pub cov_w: u32,
     pub cov_h: u32,
+    /// NonZero 轮廓边列表（相对 glyph 本地原点）；优先于 `coverage`，走 MSDF atlas。
+    pub outline_mesh: Option<std::sync::Arc<[f32]>>,
+}
+
+impl GpuGlyphBlit {
+    /// 由轴对齐 AABB 构造四角（identity / 纯平移缩放常用）。
+    pub fn axis_aligned_corners(x: f32, y: f32, w: f32, h: f32) -> [[f32; 2]; 4] {
+        [[x, y], [x + w, y], [x + w, y + h], [x, y + h]]
+    }
 }
 
 /// Axis-aligned linear gradient fill for GPU-native Canvas2D (#169).
@@ -97,12 +111,12 @@ pub struct GpuSolidMesh {
     pub rgba: [f32; 4],
 }
 
-/// Axis-aligned box / drop shadow for GPU-native Canvas2D (#169).
+/// Axis-aligned or affine-mapped box / drop shadow for GPU-native Canvas2D (#169).
 ///
-/// Matches CPU `draw_box_shadow` / `draw_box_shadow_ambient`: shadow is drawn
-/// at `(x+offset_x, y+offset_y)` with the same size / corner radii, soft edge
-/// via SDF coverage (`blur`). `rgba` is straight (non-premultiplied) 0..1.
-/// Non-identity transforms and exotic blends soft-fallback.
+/// Matches CPU `draw_box_shadow` / `draw_box_shadow_ambient`: shadow body is
+/// sized `(w,h)` with corner radii；软边经 SDF。`blur_x` / `blur_y` 支持各向异性。
+/// `corners` 为扩展后阴影四边形的设备坐标（TL/TR/BR/BL），可承载旋转 / 剪切；
+/// 局部 SDF 仍在逻辑扩展矩形空间计算。`rgba` is straight (non-premultiplied) 0..1。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GpuBoxShadow {
     pub x: f32,
@@ -111,11 +125,35 @@ pub struct GpuBoxShadow {
     pub h: f32,
     pub offset_x: f32,
     pub offset_y: f32,
-    pub blur: f32,
+    pub blur_x: f32,
+    pub blur_y: f32,
     pub rgba: [f32; 4],
     pub radius: [f32; 4],
     /// `true` → ambient (softer) coverage curve.
     pub ambient: bool,
+    /// 扩展后阴影四边形设备坐标角（TL/TR/BR/BL）。
+    pub corners: [[f32; 2]; 4],
+}
+
+/// BGRA image blit for GPU-native Canvas2D（支持 1:1 与缩放）。
+///
+/// `pixels` is a tightly cropped row-major BGRA premultiplied buffer of
+/// `pixel_w * pixel_h` texels. Destination `(x,y,w,h)` is logical top-left;
+/// `w`/`h` may differ from the crop size（GPU 纹理采样缩放），`x`/`y` may be
+/// fractional. `opacity` is the canvas opacity already folded for SrcOver。
+/// `additive` 为 true 时走通道相加（与 CPU `BlendMode::Additive` 对齐），
+/// 否则 premultiplied SrcOver。
+#[derive(Debug, Clone)]
+pub struct GpuImageBlit {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub opacity: f32,
+    pub additive: bool,
+    pub pixels: std::sync::Arc<[u32]>,
+    pub pixel_w: u32,
+    pub pixel_h: u32,
 }
 
 /// Fine-grained native raster capabilities exposed by a GPU context.
@@ -138,6 +176,9 @@ pub struct NativeRasterCaps {
     pub box_shadows: bool,
     /// GPU texture RT + blit（Picture 离屏）；非 CPU 像素池。
     pub offscreen_targets: bool,
+    /// 主色缓冲在提交间保留像素，允许绘制侧 partial redraw；
+    /// 与 present coherency（仍可为 FullOnly）正交。
+    pub retained_framebuffer: bool,
 }
 
 impl NativeRasterCaps {
@@ -145,7 +186,7 @@ impl NativeRasterCaps {
     pub const fn wgpu_full() -> Self {
         Self {
             clear_target: true,
-            clear_rects: false,
+            clear_rects: true,
             soft_blit: false,
             solid_rects: true,
             stroke_rects: true,
@@ -154,7 +195,9 @@ impl NativeRasterCaps {
             radial_gradients: true,
             solid_meshes: true,
             box_shadows: true,
-            offscreen_targets: false,
+            offscreen_targets: true,
+            // 主路径经保留色缓冲绘制，再全幅 blit 到 swapchain。
+            retained_framebuffer: true,
         }
     }
 
@@ -172,6 +215,7 @@ impl NativeRasterCaps {
             solid_meshes: true,
             box_shadows: true,
             offscreen_targets: true,
+            retained_framebuffer: false,
         }
     }
 
@@ -850,6 +894,28 @@ pub trait IGraphicsContext {
         ))
     }
 
+    /// Upload tightly cropped BGRA images and draw textured quads.
+    ///
+    /// Same scissor convention as [`Self::draw_solid_rects`]. Production wgpu
+    /// implements SrcOver blits with optional destination scaling; fractional
+    /// destination origin is allowed. Non-identity canvas transforms stay at
+    /// the Canvas2D boundary.
+    fn draw_image_blits(
+        &mut self,
+        _viewport_w: f32,
+        _viewport_h: f32,
+        _scissor: Option<(i32, i32, i32, i32)>,
+        _blits: &[GpuImageBlit],
+    ) -> Result<(), Error> {
+        Err(Error::new(
+            crate::core::error::Errc::NotImplemented,
+            format!(
+                "GraphicsBackend {} does not support draw_image_blits",
+                self.graphics_backend()
+            ),
+        ))
+    }
+
     fn blit_soft_fallback(
         &mut self,
         _pixels: &[u32],
@@ -947,15 +1013,20 @@ pub trait IGraphicsContext {
         Ok(())
     }
 
-    /// Sample offscreen SRV into the **current** RT as an alpha-blended textured quad.
+    /// Sample offscreen SRV into the **current** RT as a textured quad.
     ///
     /// `src` / `dst` are in logical pixels (top-left origin), relative to the
-    /// offscreen and current target respectively.
+    /// offscreen and current target respectively. `opacity` scales the sampled
+    /// premultiplied color (group / parent canvas opacity)；values ≤ 0 are a
+    /// no-op, values ≥ 1 leave the sample unchanged。`additive` 为 true 时
+    /// 使用通道相加 blend（父画布 `BlendMode::Additive`），否则 SrcOver。
     fn blit_offscreen_target(
         &mut self,
         _id: OffscreenTargetId,
         _src: crate::core::Rect,
         _dst: crate::core::Rect,
+        _opacity: f32,
+        _additive: bool,
     ) -> Result<(), Error> {
         Err(Error::new(
             crate::core::error::Errc::NotImplemented,
@@ -964,5 +1035,58 @@ pub trait IGraphicsContext {
                 self.graphics_backend()
             ),
         ))
+    }
+
+    /// 对离屏颜色目标做可分离高斯模糊（水平→垂直；大半径可降采样）。
+    ///
+    /// `region` 为逻辑像素矩形；半径语义与 CPU `gaussian_blur` 一致
+    ///（`sigma = radius / 3`）。默认未实现；生产 wgpu 路径提供原生实现，
+    /// 禁止用 CPU PixelUpload 冒充。
+    fn blur_offscreen_target(
+        &mut self,
+        _id: OffscreenTargetId,
+        _region: crate::core::Rect,
+        _radius: f32,
+    ) -> Result<(), Error> {
+        Err(Error::new(
+            crate::core::error::Errc::NotImplemented,
+            format!(
+                "GraphicsBackend {} does not support blur_offscreen_target",
+                self.graphics_backend()
+            ),
+        ))
+    }
+
+    /// 将保留主色缓冲快照为 overlay 干净背景（GPU 纹理复制，无 CPU readback）。
+    ///
+    /// 仅 `retained_framebuffer` 后端可实现；默认未实现。须在 `begin_frame`
+    /// 清除之前调用。
+    fn snapshot_overlay_backdrop(&mut self) -> Result<(), Error> {
+        Err(Error::new(
+            crate::core::error::Errc::NotImplemented,
+            format!(
+                "GraphicsBackend {} does not support snapshot_overlay_backdrop",
+                self.graphics_backend()
+            ),
+        ))
+    }
+
+    /// 将 overlay 背景快照写回保留主色缓冲，供随后只绘制浮层。
+    fn restore_overlay_backdrop(&mut self) -> Result<(), Error> {
+        Err(Error::new(
+            crate::core::error::Errc::NotImplemented,
+            format!(
+                "GraphicsBackend {} does not support restore_overlay_backdrop",
+                self.graphics_backend()
+            ),
+        ))
+    }
+
+    /// 释放 overlay 背景快照。
+    fn release_overlay_backdrop(&mut self) {}
+
+    /// 是否持有有效的 overlay 背景快照。
+    fn has_overlay_backdrop(&self) -> bool {
+        false
     }
 }

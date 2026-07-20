@@ -313,6 +313,22 @@ impl GraphicsEngine for RecoveringGraphicsEngine {
         self.engine.copy_frame_pixels()
     }
 
+    fn snapshot_overlay_backdrop(&mut self) -> bool {
+        self.engine.snapshot_overlay_backdrop()
+    }
+
+    fn restore_overlay_backdrop(&mut self) -> bool {
+        self.engine.restore_overlay_backdrop()
+    }
+
+    fn release_overlay_backdrop(&mut self) {
+        self.engine.release_overlay_backdrop();
+    }
+
+    fn has_overlay_backdrop(&self) -> bool {
+        self.engine.has_overlay_backdrop()
+    }
+
     fn try_execute_encoded_picture(
         &mut self,
         handle: &ImageHandle,
@@ -364,6 +380,15 @@ impl GraphicsEngine for RecoveringGraphicsEngine {
     ) -> Result<(), Error> {
         self.engine
             .try_blit_offscreen_src(handle, src_rect, dst_rect)
+    }
+
+    fn try_blur_offscreen(
+        &mut self,
+        handle: &ImageHandle,
+        region: Rect,
+        radius: f32,
+    ) -> Result<(), Error> {
+        self.engine.try_blur_offscreen(handle, region, radius)
     }
 
     fn memory_usage(&self) -> usize {
