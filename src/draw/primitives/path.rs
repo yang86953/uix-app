@@ -4,6 +4,8 @@
 
 use crate::core::Point;
 
+use super::types::Transform;
+
 /// 填充规则。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FillRule {
@@ -72,6 +74,25 @@ impl Path {
                     Point::new(c2.x + dx, c2.y + dy),
                     Point::new(e.x + dx, e.y + dy),
                 ),
+                PathSegment::Close => PathSegment::Close,
+            })
+            .collect();
+        Path { segments }
+    }
+
+    /// 返回仿射变换后的新路径（控制点与端点同变换）。
+    pub fn transformed(&self, transform: Transform) -> Self {
+        let map = |p: Point| transform.transform_point(p);
+        let segments = self
+            .segments
+            .iter()
+            .map(|seg| match seg {
+                PathSegment::MoveTo(p) => PathSegment::MoveTo(map(*p)),
+                PathSegment::LineTo(p) => PathSegment::LineTo(map(*p)),
+                PathSegment::QuadTo(c, e) => PathSegment::QuadTo(map(*c), map(*e)),
+                PathSegment::CubicTo(c1, c2, e) => {
+                    PathSegment::CubicTo(map(*c1), map(*c2), map(*e))
+                }
                 PathSegment::Close => PathSegment::Close,
             })
             .collect();

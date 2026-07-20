@@ -16,6 +16,9 @@ use std::sync::Arc;
 const MAX_BLUR_RADIUS: f32 = 256.0;
 const MAX_CACHED_KERNELS: usize = 32;
 
+/// GPU 单次可分离卷积的最大内核半径；更大半径走 2× 降采样路径。
+pub(crate) const MAX_GPU_BLUR_KERNEL_RADIUS: usize = 32;
+
 thread_local! {
     /// 小型 LRU：key 使用规范化半径的完整位编码，避免小数半径错误复用。
     static KERNEL_CACHE: RefCell<VecDeque<(u32, Arc<[f32]>)>> = const { RefCell::new(VecDeque::new()) };

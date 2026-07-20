@@ -217,10 +217,12 @@ fn factory_create_d3d11_gpu_native_swapchain_on_real_window() {
             y: 160.0,
             w: 8.0,
             h: 8.0,
+            corners: GpuGlyphBlit::axis_aligned_corners(40.0, 160.0, 8.0, 8.0),
             rgba: [1.0, 1.0, 1.0, 1.0],
             coverage: cov,
             cov_w: 8,
             cov_h: 8,
+            outline_mesh: None,
         }],
     )
     .expect("draw_glyphs");
@@ -276,10 +278,12 @@ fn factory_create_d3d11_gpu_native_swapchain_on_real_window() {
                 h: 32.0,
                 offset_x: 4.0,
                 offset_y: 6.0,
-                blur: 8.0,
+                blur_x: 8.0,
+                blur_y: 8.0,
                 rgba: [0.0, 0.0, 0.0, 0.45],
                 radius: [6.0, 6.0, 6.0, 6.0],
                 ambient: false,
+                corners: GpuGlyphBlit::axis_aligned_corners(36.0, 98.0, 80.0, 48.0),
             },
             GpuBoxShadow {
                 x: 200.0,
@@ -288,10 +292,12 @@ fn factory_create_d3d11_gpu_native_swapchain_on_real_window() {
                 h: 48.0,
                 offset_x: 0.0,
                 offset_y: 0.0,
-                blur: 12.0,
+                blur_x: 12.0,
+                blur_y: 12.0,
                 rgba: [0.0, 0.0, 0.0, 0.3],
                 radius: [24.0, 24.0, 24.0, 24.0],
                 ambient: true,
+                corners: GpuGlyphBlit::axis_aligned_corners(188.0, 88.0, 72.0, 72.0),
             },
         ],
     )
@@ -417,6 +423,7 @@ fn d3d11_warp_glyph_coverage_clip_and_reused_atlas_match_cpu() {
         y: 3.0,
         w: 6.0,
         h: 1.0,
+        corners: GpuGlyphBlit::axis_aligned_corners(x as f32, 3.0, 6.0, 1.0),
         rgba: [
             color.r as f32 / 255.0,
             color.g as f32 / 255.0,
@@ -426,6 +433,7 @@ fn d3d11_warp_glyph_coverage_clip_and_reused_atlas_match_cpu() {
         coverage: std::sync::Arc::clone(&coverage),
         cov_w: 6,
         cov_h: 1,
+        outline_mesh: None,
     };
     let scissor = Some((4, 3, 14, 1));
     ctx.draw_glyphs(32.0, 16.0, scissor, &[gpu_glyph(2)])
@@ -614,6 +622,8 @@ fn d3d11_offscreen_target_create_bind_clear_blit_destroy() {
         id,
         crate::core::Rect::new(0.0, 0.0, 32.0, 24.0),
         crate::core::Rect::new(8.0, 8.0, 32.0, 24.0),
+        1.0,
+        false,
     )
     .expect("blit offscreen");
     ctx.destroy_offscreen_target(id);
@@ -686,6 +696,8 @@ fn d3d11_warp_offscreen_crop_ignores_and_restores_previous_raster_state() {
         offscreen,
         crate::core::Rect::new(16.0, 8.0, 16.0, 16.0),
         crate::core::Rect::new(48.0, 24.0, 16.0, 16.0),
+        1.0,
+        false,
     )
     .expect("blit nonzero source crop");
 

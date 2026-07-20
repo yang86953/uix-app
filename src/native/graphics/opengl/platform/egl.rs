@@ -516,9 +516,17 @@ impl IGraphicsContext for EglContext {
         id: OffscreenTargetId,
         src: crate::core::Rect,
         dst: crate::core::Rect,
+        opacity: f32,
+        additive: bool,
     ) -> Result<(), Error> {
+        if additive {
+            return Err(Error::new(
+                Errc::NotImplemented,
+                "EglContext: Additive blit_offscreen_target requires wgpu",
+            ));
+        }
         self.make_current()?;
-        self.pipeline.blit_offscreen_target(id, src, dst)
+        self.pipeline.blit_offscreen_target(id, src, dst, opacity)
     }
 }
 

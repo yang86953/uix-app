@@ -10,15 +10,16 @@ fn for_paint_clear_keeps_single_rect() {
 }
 
 #[test]
-fn for_paint_clear_unions_disjoint_rects() {
+fn for_paint_clear_keeps_disjoint_rects_for_split_redraw() {
     let mut region = DirtyRegion::empty();
     region.add_rect(Rect::new(0.0, 0.0, 10.0, 10.0));
     region.add_rect(Rect::new(0.0, 90.0, 10.0, 10.0));
     let paint = region.for_paint_clear();
-    assert_eq!(paint.rects().len(), 1);
-    assert_eq!(paint.rects()[0], Rect::new(0.0, 0.0, 10.0, 100.0));
-    // 并集覆盖中间空隙，子节点剪枝与清屏一致
-    assert!(paint.intersects(Rect::new(0.0, 40.0, 10.0, 10.0)));
+    assert_eq!(paint.rects().len(), 2);
+    assert_eq!(paint.rects()[0], Rect::new(0.0, 0.0, 10.0, 10.0));
+    assert_eq!(paint.rects()[1], Rect::new(0.0, 90.0, 10.0, 10.0));
+    // 空隙不在 dirty 集合内：逐矩形 clip 绘制时父背景不得填入中间干净像素
+    assert!(!paint.intersects(Rect::new(0.0, 40.0, 10.0, 10.0)));
 }
 
 fn present_surface(dpr: f32) -> PresentSurface {

@@ -1,12 +1,14 @@
 //! API-neutral non-GL GPU-native raster backend.
 //!
 //! Hot Canvas2D paths (`fill_rect` / `fill_circle` / `stroke_rect` /
-//! `stroke_circle`, axis-aligned `draw_line`, identity solid `blit_glyph`,
-//! identity linear/radial gradients, identity fill-rule-aware `fill_path`,
-//! cap/join-aware `stroke_path`, and identity box/ambient shadow) draw via
-//! [`IGraphicsContext`] operations advertised by [`NativeRasterCaps`]. Every
-//! unsupported operation deterministically soft-rasterizes into a CPU buffer
-//! and alpha-blits at present.
+//! `stroke_circle`, axis-aligned `draw_line`, solid `blit_glyph`,
+//! linear/radial gradients, fill-rule-aware `fill_path`,
+//! cap/join-aware `stroke_path`, box/ambient shadow, and scaled image blit)
+//! draw via [`IGraphicsContext`] operations advertised by [`NativeRasterCaps`].
+//! Axis-aligned transforms are folded into device geometry; general affine
+//! sharp fills use solid meshes. Every unsupported operation deterministically
+//! soft-rasterizes into a CPU buffer and alpha-blits at present (or typed-fails
+//! in GPU-only mode).
 
 use std::any::Any;
 use std::sync::Arc;
@@ -29,7 +31,7 @@ use crate::draw::primitives::types::{
 };
 use crate::draw::traits::Canvas2D;
 use crate::native::traits::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
+    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
     GpuSolidRect, GpuStrokeRect, IGraphicsContext, NativeRasterCaps, OffscreenTargetId,
     PresentFrame, PresentMode, PresentTestResult, RasterMode, SoftFallbackTile,
 };
@@ -48,39 +50,44 @@ pub(crate) struct StateSnapshot {
 }
 
 pub(crate) struct PendingNativeRect {
-    rect: GpuSolidRect,
+    pub(crate) rect: GpuSolidRect,
     /// Logical scissor AABB (x, y, w, h).
-    scissor: (i32, i32, i32, i32),
+    pub(crate) scissor: (i32, i32, i32, i32),
 }
 
 pub(crate) struct PendingNativeStroke {
-    rect: GpuStrokeRect,
-    scissor: (i32, i32, i32, i32),
+    pub(crate) rect: GpuStrokeRect,
+    pub(crate) scissor: (i32, i32, i32, i32),
 }
 
 pub(crate) struct PendingNativeGlyph {
-    glyph: GpuGlyphBlit,
-    scissor: (i32, i32, i32, i32),
+    pub(crate) glyph: GpuGlyphBlit,
+    pub(crate) scissor: (i32, i32, i32, i32),
 }
 
 pub(crate) struct PendingNativeLinearGrad {
-    rect: GpuLinearGradientRect,
-    scissor: (i32, i32, i32, i32),
+    pub(crate) rect: GpuLinearGradientRect,
+    pub(crate) scissor: (i32, i32, i32, i32),
 }
 
 pub(crate) struct PendingNativeRadialGrad {
-    grad: GpuRadialGradient,
-    scissor: (i32, i32, i32, i32),
+    pub(crate) grad: GpuRadialGradient,
+    pub(crate) scissor: (i32, i32, i32, i32),
 }
 
 pub(crate) struct PendingNativeMesh {
-    mesh: GpuSolidMesh,
-    scissor: (i32, i32, i32, i32),
+    pub(crate) mesh: GpuSolidMesh,
+    pub(crate) scissor: (i32, i32, i32, i32),
 }
 
 pub(crate) struct PendingNativeShadow {
-    shadow: GpuBoxShadow,
-    scissor: (i32, i32, i32, i32),
+    pub(crate) shadow: GpuBoxShadow,
+    pub(crate) scissor: (i32, i32, i32, i32),
+}
+
+pub(crate) struct PendingNativeImage {
+    pub(crate) blit: GpuImageBlit,
+    pub(crate) scissor: (i32, i32, i32, i32),
 }
 
 pub(crate) enum PendingNativeOp {
@@ -91,6 +98,7 @@ pub(crate) enum PendingNativeOp {
     RadialGradient(PendingNativeRadialGrad),
     SolidMesh(PendingNativeMesh),
     BoxShadow(PendingNativeShadow),
+    ImageBlit(PendingNativeImage),
 }
 
 impl PendingNativeOp {
@@ -103,6 +111,7 @@ impl PendingNativeOp {
             Self::RadialGradient(op) => op.scissor,
             Self::SolidMesh(op) => op.scissor,
             Self::BoxShadow(op) => op.scissor,
+            Self::ImageBlit(op) => op.scissor,
         }
     }
 
@@ -116,6 +125,7 @@ impl PendingNativeOp {
                 | (Self::RadialGradient(_), Self::RadialGradient(_))
                 | (Self::SolidMesh(_), Self::SolidMesh(_))
                 | (Self::BoxShadow(_), Self::BoxShadow(_))
+                | (Self::ImageBlit(_), Self::ImageBlit(_))
         )
     }
 }
@@ -353,31 +363,54 @@ impl NativeGpuCanvas2D {
         if rect.w <= 0.0 || rect.h <= 0.0 {
             return;
         }
-        // Unsupported capability/state routes to soft fallback before enqueue.
-        let identity = self.transform.m == Transform::identity().m;
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
-        if self.soft_has_content || !self.native_caps.solid_rects || !identity || !native_blend {
+        if self.soft_has_content || !self.native_caps.solid_rects || !native_blend {
             self.with_soft_clip(|soft| soft.fill_rect(rect, color, radius));
             self.mark_soft();
             return;
         }
-        let r = match radius {
-            Some(rad) => [rad.tl, rad.tr, rad.br, rad.bl],
-            None => [0.0; 4],
-        };
         let scissor = self.scissor_aabb();
-        self.pending_native
-            .push(PendingNativeOp::SolidRect(PendingNativeRect {
-                rect: GpuSolidRect {
-                    x: rect.x + self.offset_x,
-                    y: rect.y + self.offset_y,
-                    w: rect.w,
-                    h: rect.h,
-                    rgba: self.solid_rgba(color),
-                    radius: r,
-                },
-                scissor,
-            }));
+        let has_radius = radius.is_some_and(|rad| {
+            rad.tl != 0.0 || rad.tr != 0.0 || rad.br != 0.0 || rad.bl != 0.0
+        });
+        if let Some((device, scale)) = self.try_axis_aligned_device_rect(rect) {
+            if device.w <= 0.0 || device.h <= 0.0 {
+                return;
+            }
+            // 轴对齐各向异性：设备空间圆角用几何平均近似椭圆角，避免 typed 失败。
+            let r = scaled_corner_radii(radius, scale);
+            self.pending_native
+                .push(PendingNativeOp::SolidRect(PendingNativeRect {
+                    rect: GpuSolidRect {
+                        x: device.x,
+                        y: device.y,
+                        w: device.w,
+                        h: device.h,
+                        rgba: self.solid_rgba(color),
+                        radius: r,
+                    },
+                    scissor,
+                }));
+            return;
+        }
+        // 一般仿射：直角矩形走三角形网格；圆角 SDF 不支持旋转/剪切。
+        if !has_radius && self.native_caps.solid_meshes {
+            let mesh = solid_mesh_from_affine_rect(
+                rect,
+                self.transform,
+                self.offset_x,
+                self.offset_y,
+                self.solid_rgba(color),
+            );
+            self.pending_native
+                .push(PendingNativeOp::SolidMesh(PendingNativeMesh { mesh, scissor }));
+            return;
+        }
+        self.soft_or_reject_transform("transformed rounded rect");
+        if !self.gpu_only {
+            self.with_soft_clip(|soft| soft.fill_rect(rect, color, radius));
+            self.mark_soft();
+        }
     }
 
     fn queue_stroke_rect(
@@ -391,30 +424,37 @@ impl NativeGpuCanvas2D {
         if rect.w <= 0.0 || rect.h <= 0.0 || lw <= 0.0 {
             return;
         }
-        let identity = self.transform.m == Transform::identity().m;
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
-        if self.soft_has_content || !self.native_caps.stroke_rects || !identity || !native_blend {
+        if self.soft_has_content || !self.native_caps.stroke_rects || !native_blend {
             self.with_soft_clip(|soft| soft.stroke_rect(rect, color, lw, radius));
             self.mark_soft();
             return;
         }
-        let r = match radius {
-            Some(rad) => [rad.tl, rad.tr, rad.br, rad.bl],
-            None => [0.0; 4],
+        let Some((device, scale)) = self.try_axis_aligned_device_rect(rect) else {
+            self.soft_or_reject_transform("non-axis-aligned stroke rect transform");
+            if !self.gpu_only {
+                self.with_soft_clip(|soft| soft.stroke_rect(rect, color, lw, radius));
+                self.mark_soft();
+            }
+            return;
         };
-        let scissor = self.scissor_aabb();
+        if device.w <= 0.0 || device.h <= 0.0 {
+            return;
+        }
+        let r = scaled_corner_radii(radius, scale);
+        let stroke_w = lw * ((scale.0.abs() * scale.1.abs()).sqrt());
         self.pending_native
             .push(PendingNativeOp::StrokeRect(PendingNativeStroke {
                 rect: GpuStrokeRect {
-                    x: rect.x + self.offset_x,
-                    y: rect.y + self.offset_y,
-                    w: rect.w,
-                    h: rect.h,
+                    x: device.x,
+                    y: device.y,
+                    w: device.w,
+                    h: device.h,
                     rgba: self.rgba(color),
                     radius: r,
-                    line_width: lw,
+                    line_width: stroke_w,
                 },
-                scissor,
+                scissor: self.scissor_aabb(),
             }));
     }
 
@@ -422,12 +462,21 @@ impl NativeGpuCanvas2D {
         if rect.w <= 0.0 || rect.h <= 0.0 {
             return;
         }
-        let identity = self.transform.m == Transform::identity().m;
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
-        if self.soft_has_content || !self.native_caps.linear_gradients || !identity || !native_blend
-        {
+        if self.soft_has_content || !self.native_caps.linear_gradients || !native_blend {
             self.with_soft_clip(|soft| soft.fill_linear_gradient(rect, ca, cb, dir));
             self.mark_soft();
+            return;
+        }
+        let Some((device, _)) = self.try_axis_aligned_device_rect(rect) else {
+            self.soft_or_reject_transform("non-axis-aligned linear gradient transform");
+            if !self.gpu_only {
+                self.with_soft_clip(|soft| soft.fill_linear_gradient(rect, ca, cb, dir));
+                self.mark_soft();
+            }
+            return;
+        };
+        if device.w <= 0.0 || device.h <= 0.0 {
             return;
         }
         let dir_u = match dir {
@@ -439,10 +488,10 @@ impl NativeGpuCanvas2D {
         self.pending_native
             .push(PendingNativeOp::LinearGradient(PendingNativeLinearGrad {
                 rect: GpuLinearGradientRect {
-                    x: rect.x + self.offset_x,
-                    y: rect.y + self.offset_y,
-                    w: rect.w,
-                    h: rect.h,
+                    x: device.x,
+                    y: device.y,
+                    w: device.w,
+                    h: device.h,
                     color_a: self.rgba(ca),
                     color_b: self.rgba(cb),
                     dir: dir_u,
@@ -455,21 +504,58 @@ impl NativeGpuCanvas2D {
         if or <= 0.0 {
             return;
         }
-        let identity = self.transform.m == Transform::identity().m;
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
-        if self.soft_has_content || !self.native_caps.radial_gradients || !identity || !native_blend
-        {
+        if self.soft_has_content || !self.native_caps.radial_gradients || !native_blend {
             self.with_soft_clip(|soft| soft.fill_radial_gradient(cx, cy, ir, or, ic, oc));
             self.mark_soft();
             return;
         }
+        let identity = self.transform.m == Transform::identity().m;
+        if identity {
+            self.pending_native
+                .push(PendingNativeOp::RadialGradient(PendingNativeRadialGrad {
+                    grad: GpuRadialGradient {
+                        cx: cx + self.offset_x,
+                        cy: cy + self.offset_y,
+                        inner_r: ir.max(0.0),
+                        outer_r: or,
+                        color_inner: self.rgba(ic),
+                        color_outer: self.rgba(oc),
+                    },
+                    scissor: self.scissor_aabb(),
+                }));
+            return;
+        }
+        // 径向在 GPU 上是圆；仅均匀轴对齐缩放可保持圆语义。
+        let bb = Rect::new(cx - or, cy - or, or * 2.0, or * 2.0);
+        let Some((_, scale)) = self.try_axis_aligned_device_rect(bb) else {
+            self.soft_or_reject_transform("non-axis-aligned radial gradient transform");
+            if !self.gpu_only {
+                self.with_soft_clip(|soft| soft.fill_radial_gradient(cx, cy, ir, or, ic, oc));
+                self.mark_soft();
+            }
+            return;
+        };
+        if !scales_are_uniform(scale) {
+            self.soft_or_reject_transform("anisotropic radial gradient transform");
+            if !self.gpu_only {
+                self.with_soft_clip(|soft| soft.fill_radial_gradient(cx, cy, ir, or, ic, oc));
+                self.mark_soft();
+            }
+            return;
+        }
+        let center = self.transform.transform_point(Point::new(
+            cx + self.offset_x,
+            cy + self.offset_y,
+        ));
+        let s = scale.0.abs();
         self.pending_native
             .push(PendingNativeOp::RadialGradient(PendingNativeRadialGrad {
                 grad: GpuRadialGradient {
-                    cx: cx + self.offset_x,
-                    cy: cy + self.offset_y,
-                    inner_r: ir.max(0.0),
-                    outer_r: or,
+                    cx: center.x,
+                    cy: center.y,
+                    inner_r: ir.max(0.0) * s,
+                    outer_r: or * s,
                     color_inner: self.rgba(ic),
                     color_outer: self.rgba(oc),
                 },
@@ -485,9 +571,8 @@ impl NativeGpuCanvas2D {
         fill_rule: FillRule,
         stroke: Option<&StrokeOptions>,
     ) {
-        let identity = self.transform.m == Transform::identity().m;
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
-        if self.soft_has_content || !self.native_caps.solid_meshes || !identity || !native_blend {
+        if self.soft_has_content || !self.native_caps.solid_meshes || !native_blend {
             if self.gpu_only {
                 self.reject_unsupported("transformed path or destination-dependent path blend");
                 return;
@@ -505,14 +590,20 @@ impl NativeGpuCanvas2D {
             return;
         }
         let (ox, oy) = (self.offset_x, self.offset_y);
-        let translated = if ox != 0.0 || oy != 0.0 {
+        let identity = self.transform.m == Transform::identity().m;
+        let path_for_tess = if identity && ox == 0.0 && oy == 0.0 {
+            None
+        } else if identity {
             Some(path.translated(ox, oy))
         } else {
-            None
+            let composed = self.transform.concat(Transform::translate(ox, oy));
+            Some(path.transformed(composed))
         };
-        let path_for_tess = translated.as_ref().unwrap_or(path);
+        let path_for_tess = path_for_tess.as_ref().unwrap_or(path);
         let verts = if let Some(opts) = stroke {
-            tessellator::tessellate_stroke(path_for_tess, opts)
+            // 均匀轴对齐缩放时把线宽折进 stroke options；各向异性 / 旋转由路径变换近似。
+            let scaled_opts = stroke_options_for_transform(opts, self.transform);
+            tessellator::tessellate_stroke(path_for_tess, &scaled_opts)
         } else {
             tessellator::tessellate_fill(path_for_tess, fill_rule)
         };
@@ -559,11 +650,10 @@ impl NativeGpuCanvas2D {
         if rect.w <= 0.0 || rect.h <= 0.0 || color.a == 0 {
             return;
         }
-        let identity = self.transform.m == Transform::identity().m;
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
-        if self.soft_has_content || !self.native_caps.box_shadows || !identity || !native_blend {
+        if self.soft_has_content || !self.native_caps.box_shadows || !native_blend {
             if self.gpu_only {
-                self.reject_unsupported("transformed shadow or destination-dependent shadow blend");
+                self.reject_unsupported("destination-dependent shadow blend");
                 return;
             }
             self.sync_fallback_state();
@@ -580,28 +670,191 @@ impl NativeGpuCanvas2D {
             self.mark_soft();
             return;
         }
-        let r = match rad {
-            Some(radius) => [radius.tl, radius.tr, radius.br, radius.bl],
-            None => [0.0; 4],
+        let identity = self.transform.m == Transform::identity().m;
+        let axis_aligned = if identity {
+            Some((
+                Rect::new(
+                    rect.x + self.offset_x,
+                    rect.y + self.offset_y,
+                    rect.w,
+                    rect.h,
+                ),
+                ox,
+                oy,
+                blur.max(0.0),
+                blur.max(0.0),
+                rad,
+            ))
+        } else if let Some((device_rect, (sx, sy))) = self.try_axis_aligned_device_rect(rect) {
+            if sx.is_finite() && sy.is_finite() && sx != 0.0 && sy != 0.0 {
+                let mapped_rad = rad.map(|radius| {
+                    let scaled = scaled_corner_radii(Some(radius), (sx, sy));
+                    Radius {
+                        tl: scaled[0],
+                        tr: scaled[1],
+                        br: scaled[2],
+                        bl: scaled[3],
+                    }
+                });
+                Some((
+                    device_rect,
+                    ox * sx,
+                    oy * sy,
+                    blur.max(0.0) * sx.abs(),
+                    blur.max(0.0) * sy.abs(),
+                    mapped_rad,
+                ))
+            } else {
+                None
+            }
+        } else {
+            None
         };
-        // Apply canvas offset to the source rect (shadow offset is separate).
-        let (cox, coy) = (self.offset_x, self.offset_y);
+        let shadow = if let Some((
+            device_rect,
+            mapped_ox,
+            mapped_oy,
+            mapped_blur_x,
+            mapped_blur_y,
+            mapped_rad,
+        )) = axis_aligned
+        {
+            let r = match mapped_rad {
+                Some(radius) => [radius.tl, radius.tr, radius.br, radius.bl],
+                None => [0.0; 4],
+            };
+            let expanded = Rect::new(
+                device_rect.x + mapped_ox - mapped_blur_x,
+                device_rect.y + mapped_oy - mapped_blur_y,
+                device_rect.w + mapped_blur_x * 2.0,
+                device_rect.h + mapped_blur_y * 2.0,
+            );
+            GpuBoxShadow {
+                x: device_rect.x,
+                y: device_rect.y,
+                w: device_rect.w,
+                h: device_rect.h,
+                offset_x: mapped_ox,
+                offset_y: mapped_oy,
+                blur_x: mapped_blur_x,
+                blur_y: mapped_blur_y,
+                rgba: self.rgba(color),
+                radius: r,
+                ambient,
+                corners: GpuGlyphBlit::axis_aligned_corners(
+                    expanded.x,
+                    expanded.y,
+                    expanded.w,
+                    expanded.h,
+                ),
+            }
+        } else {
+            // 旋转 / 剪切：逻辑空间 SDF，设备四角经仿射映射。
+            let [a, b, _, c, d, _] = self.transform.m;
+            if !a.is_finite()
+                || !b.is_finite()
+                || !c.is_finite()
+                || !d.is_finite()
+                || (a * d - b * c).abs() < 1e-12
+            {
+                if self.gpu_only {
+                    self.reject_unsupported("non-invertible shadow transform");
+                    return;
+                }
+                self.sync_fallback_state();
+                let _soft_clip = self.clip_rect;
+                self.ensure_soft().push_clip(_soft_clip);
+                if ambient {
+                    self.ensure_soft()
+                        .draw_box_shadow_ambient(rect, blur, ox, oy, color, rad);
+                } else {
+                    self.ensure_soft()
+                        .draw_box_shadow(rect, blur, ox, oy, color, rad);
+                }
+                self.ensure_soft().pop_clip();
+                self.mark_soft();
+                return;
+            }
+            let blur = blur.max(0.0);
+            let body = Rect::new(
+                rect.x + self.offset_x,
+                rect.y + self.offset_y,
+                rect.w,
+                rect.h,
+            );
+            let expanded = Rect::new(
+                body.x + ox - blur,
+                body.y + oy - blur,
+                body.w + blur * 2.0,
+                body.h + blur * 2.0,
+            );
+            let map = |x: f32, y: f32| {
+                let point = self.transform.transform_point(Point::new(x, y));
+                [point.x, point.y]
+            };
+            let corners = [
+                map(expanded.x, expanded.y),
+                map(expanded.x + expanded.w, expanded.y),
+                map(expanded.x + expanded.w, expanded.y + expanded.h),
+                map(expanded.x, expanded.y + expanded.h),
+            ];
+            let r = match rad {
+                Some(radius) => [radius.tl, radius.tr, radius.br, radius.bl],
+                None => [0.0; 4],
+            };
+            GpuBoxShadow {
+                x: body.x,
+                y: body.y,
+                w: body.w,
+                h: body.h,
+                offset_x: ox,
+                offset_y: oy,
+                blur_x: blur,
+                blur_y: blur,
+                rgba: self.rgba(color),
+                radius: r,
+                ambient,
+                corners,
+            }
+        };
         self.pending_native
             .push(PendingNativeOp::BoxShadow(PendingNativeShadow {
-                shadow: GpuBoxShadow {
-                    x: rect.x + cox,
-                    y: rect.y + coy,
-                    w: rect.w,
-                    h: rect.h,
-                    offset_x: ox,
-                    offset_y: oy,
-                    blur: blur.max(0.0),
-                    rgba: self.rgba(color),
-                    radius: r,
-                    ambient,
-                },
+                shadow,
                 scissor: self.scissor_aabb(),
             }));
+    }
+
+    /// 轴对齐（无剪切/旋转）变换下把逻辑矩形映射到设备空间。
+    fn try_axis_aligned_device_rect(&self, rect: Rect) -> Option<(Rect, (f32, f32))> {
+        let [a, b, _, c, d, _] = self.transform.m;
+        if b != 0.0 || c != 0.0 || !a.is_finite() || !d.is_finite() || a == 0.0 || d == 0.0 {
+            return None;
+        }
+        let offset = Rect::new(
+            rect.x + self.offset_x,
+            rect.y + self.offset_y,
+            rect.w,
+            rect.h,
+        );
+        let device = if self.transform.m == Transform::identity().m {
+            offset
+        } else {
+            self.transform.transform_rect(offset)
+        };
+        if !device.x.is_finite()
+            || !device.y.is_finite()
+            || !device.w.is_finite()
+            || !device.h.is_finite()
+        {
+            return None;
+        }
+        Some((device, (a, d)))
+    }
+
+    fn soft_or_reject_transform(&mut self, operation: &str) {
+        if self.gpu_only {
+            self.reject_unsupported(operation);
+        }
     }
 
     fn rgba(&self, color: Color) -> [f32; 4] {
@@ -635,6 +888,174 @@ impl NativeGpuCanvas2D {
                 c.h.ceil() as i32,
             )
         }
+    }
+
+    /// 严格 GPU 路径：整数像素源 crop；目标可 1:1 或缩放；位置允许亚像素。
+    /// SrcOver 与 Additive 均可入队（Additive 由纹理 pipeline One+One 执行）。
+    fn try_queue_direct_image_blit(
+        &self,
+        pixels: &[u32],
+        source_width: i32,
+        source_rect: Rect,
+        destination_rect: Rect,
+    ) -> Option<GpuImageBlit> {
+        if !self.opacity.is_finite() || self.opacity <= 0.0 {
+            return None;
+        }
+        let identity = self.transform.m == Transform::identity().m;
+        let native_blend = matches!(
+            self.blend_mode,
+            BlendMode::Alpha | BlendMode::SrcOver | BlendMode::Additive
+        );
+        if !identity || !native_blend {
+            return None;
+        }
+        if !self.offset_x.is_finite() || !self.offset_y.is_finite() {
+            return None;
+        }
+        let Ok(source_stride) = usize::try_from(source_width) else {
+            return None;
+        };
+        if source_stride == 0 {
+            return None;
+        }
+        let Ok(source_height) = i32::try_from(pixels.len() / source_stride) else {
+            return None;
+        };
+        let source = rect_to_integer_frame(source_rect)?;
+        if source.width <= 0
+            || source.height <= 0
+            || !frame_within(source, source_width, source_height)
+        {
+            return None;
+        }
+        if !destination_rect.w.is_finite()
+            || !destination_rect.h.is_finite()
+            || destination_rect.w <= 0.0
+            || destination_rect.h <= 0.0
+        {
+            return None;
+        }
+        let dest_x = destination_rect.x + self.offset_x;
+        let dest_y = destination_rect.y + self.offset_y;
+        if !dest_x.is_finite() || !dest_y.is_finite() {
+            return None;
+        }
+
+        let one_to_one = destination_rect.w == source.width as f32
+            && destination_rect.h == source.height as f32;
+        let (blit_x, blit_y, blit_w, blit_h, crop) = if one_to_one {
+            let integer_placement = self.offset_x.fract() == 0.0
+                && self.offset_y.fract() == 0.0
+                && dest_x.fract() == 0.0
+                && dest_y.fract() == 0.0;
+            if integer_placement {
+                let destination = IntegerFrame {
+                    x: dest_x as i32,
+                    y: dest_y as i32,
+                    width: source.width,
+                    height: source.height,
+                };
+                if !frame_within(destination, self.surface_w, self.surface_h) {
+                    return None;
+                }
+                if let Some(clip) = rect_to_integer_frame(self.clip_rect) {
+                    let left = destination.x.max(clip.x);
+                    let top = destination.y.max(clip.y);
+                    let right = destination
+                        .x
+                        .saturating_add(destination.width)
+                        .min(clip.x.saturating_add(clip.width));
+                    let bottom = destination
+                        .y
+                        .saturating_add(destination.height)
+                        .min(clip.y.saturating_add(clip.height));
+                    if left >= right || top >= bottom {
+                        return None;
+                    }
+                    let clipped_dst = IntegerFrame {
+                        x: left,
+                        y: top,
+                        width: right - left,
+                        height: bottom - top,
+                    };
+                    let clipped_src = IntegerFrame {
+                        x: source.x.saturating_add(left - destination.x),
+                        y: source.y.saturating_add(top - destination.y),
+                        width: clipped_dst.width,
+                        height: clipped_dst.height,
+                    };
+                    (
+                        clipped_dst.x as f32,
+                        clipped_dst.y as f32,
+                        clipped_dst.width as f32,
+                        clipped_dst.height as f32,
+                        clipped_src,
+                    )
+                } else {
+                    // 非整数 clip：整块上传，交给 scissor。
+                    (
+                        dest_x,
+                        dest_y,
+                        source.width as f32,
+                        source.height as f32,
+                        source,
+                    )
+                }
+            } else {
+                // 亚像素落点：保留完整源 crop，裁剪交给 GPU scissor。
+                if dest_x + source.width as f32 <= 0.0
+                    || dest_y + source.height as f32 <= 0.0
+                    || dest_x >= self.surface_w as f32
+                    || dest_y >= self.surface_h as f32
+                {
+                    return None;
+                }
+                (
+                    dest_x,
+                    dest_y,
+                    source.width as f32,
+                    source.height as f32,
+                    source,
+                )
+            }
+        } else {
+            // 缩放：上传完整源 crop，目标尺寸由 GPU 纹理采样；裁剪交给 scissor。
+            if dest_x + destination_rect.w <= 0.0
+                || dest_y + destination_rect.h <= 0.0
+                || dest_x >= self.surface_w as f32
+                || dest_y >= self.surface_h as f32
+            {
+                return None;
+            }
+            (
+                dest_x,
+                dest_y,
+                destination_rect.w,
+                destination_rect.h,
+                source,
+            )
+        };
+
+        let pixel_count = usize::try_from(i64::from(crop.width) * i64::from(crop.height)).ok()?;
+        let mut retained = Vec::new();
+        retained.try_reserve_exact(pixel_count).ok()?;
+        let copy_width = crop.width as usize;
+        for y in crop.y..crop.y + crop.height {
+            let row = y as usize * source_stride + crop.x as usize;
+            retained.extend_from_slice(&pixels[row..row + copy_width]);
+        }
+        Some(GpuImageBlit {
+            x: blit_x,
+            y: blit_y,
+            w: blit_w,
+            h: blit_h,
+            opacity: self.opacity.clamp(0.0, 1.0),
+            additive: matches!(self.blend_mode, BlendMode::Additive),
+            pixels: Arc::<[u32]>::from(retained),
+            pixel_w: crop.width as u32,
+            pixel_h: crop.height as u32,
+        })
     }
 
     pub(crate) fn submit_native(
@@ -725,10 +1146,24 @@ impl NativeGpuCanvas2D {
                         .collect::<Vec<_>>();
                     gpu_ctx.draw_box_shadows(vw, vh, Some(scissor), &batch)?;
                 }
+                PendingNativeOp::ImageBlit(_) => {
+                    let batch = self.pending_native[start..end]
+                        .iter()
+                        .map(|op| match op {
+                            PendingNativeOp::ImageBlit(op) => op.blit.clone(),
+                            _ => unreachable!("native batch kind changed"),
+                        })
+                        .collect::<Vec<_>>();
+                    gpu_ctx.draw_image_blits(vw, vh, Some(scissor), &batch)?;
+                }
             }
             start = end;
         }
         Ok(())
+    }
+
+    pub(crate) fn current_blend_mode(&self) -> BlendMode {
+        self.blend_mode
     }
 
     pub(crate) fn submit_soft(&mut self, gpu_ctx: &mut dyn IGraphicsContext) -> Result<(), Error> {
@@ -936,19 +1371,68 @@ impl Canvas2D for NativeGpuCanvas2D {
         if lw <= 0.0 {
             return;
         }
-        let identity = self.transform.m == Transform::identity().m;
-        // Axis-aligned lines → solid fill rect (matches CPU fast path).
-        if identity && (x1 - x2).abs() < 1e-6 {
-            let half = lw * 0.5;
-            let rect = Rect::new(x1 - half, y1.min(y2), lw, (y1 - y2).abs());
-            self.queue_solid_rect(rect, color, None);
-            return;
+        let p1 = self
+            .transform
+            .transform_point(Point::new(x1 + self.offset_x, y1 + self.offset_y));
+        let p2 = self
+            .transform
+            .transform_point(Point::new(x2 + self.offset_x, y2 + self.offset_y));
+        let stroke_scale = uniform_transform_scale(self.transform).unwrap_or(1.0);
+        let stroke_w = lw * stroke_scale;
+        let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
+        let axis_aligned_vertical = (p1.x - p2.x).abs() < 1e-6;
+        let axis_aligned_horizontal = (p1.y - p2.y).abs() < 1e-6;
+        if (axis_aligned_vertical || axis_aligned_horizontal)
+            && !self.soft_has_content
+            && self.native_caps.solid_rects
+            && native_blend
+        {
+            let half = stroke_w * 0.5;
+            let rect = if axis_aligned_vertical {
+                Rect::new(p1.x - half, p1.y.min(p2.y), stroke_w, (p1.y - p2.y).abs())
+            } else {
+                Rect::new(p1.x.min(p2.x), p1.y - half, (p1.x - p2.x).abs(), stroke_w)
+            };
+            if rect.w > 0.0 && rect.h > 0.0 {
+                self.pending_native
+                    .push(PendingNativeOp::SolidRect(PendingNativeRect {
+                        rect: GpuSolidRect {
+                            x: rect.x,
+                            y: rect.y,
+                            w: rect.w,
+                            h: rect.h,
+                            rgba: self.solid_rgba(color),
+                            radius: [0.0; 4],
+                        },
+                        scissor: self.scissor_aabb(),
+                    }));
+                return;
+            }
         }
-        if identity && (y1 - y2).abs() < 1e-6 {
-            let half = lw * 0.5;
-            let rect = Rect::new(x1.min(x2), y1 - half, (x1 - x2).abs(), lw);
-            self.queue_solid_rect(rect, color, None);
-            return;
+        // 对角线：以设备坐标线段为中轴构造描边四边形网格。
+        if !self.soft_has_content && self.native_caps.solid_meshes && native_blend {
+            let dx = p2.x - p1.x;
+            let dy = p2.y - p1.y;
+            let len = (dx * dx + dy * dy).sqrt();
+            if len > 1e-6 && stroke_w > 0.0 {
+                let nx = -dy / len * stroke_w * 0.5;
+                let ny = dx / len * stroke_w * 0.5;
+                let (x0, y0) = (p1.x + nx, p1.y + ny);
+                let (x1, y1) = (p1.x - nx, p1.y - ny);
+                let (x2, y2) = (p2.x - nx, p2.y - ny);
+                let (x3, y3) = (p2.x + nx, p2.y + ny);
+                self.pending_native
+                    .push(PendingNativeOp::SolidMesh(PendingNativeMesh {
+                        mesh: GpuSolidMesh {
+                            vertices: Arc::<[f32]>::from(vec![
+                                x0, y0, x1, y1, x2, y2, x0, y0, x2, y2, x3, y3,
+                            ]),
+                            rgba: self.solid_rgba(color),
+                        },
+                        scissor: self.scissor_aabb(),
+                    }));
+                return;
+            }
         }
         if self.gpu_only {
             self.reject_unsupported("diagonal line GPU primitive");
@@ -995,6 +1479,16 @@ impl Canvas2D for NativeGpuCanvas2D {
     }
 
     fn blit_image(&mut self, src: &[u32], src_w: i32, src_rect: Rect, dst_rect: Rect) {
+        if !self.soft_has_content {
+            if let Some(blit) = self.try_queue_direct_image_blit(src, src_w, src_rect, dst_rect) {
+                self.pending_native
+                    .push(PendingNativeOp::ImageBlit(PendingNativeImage {
+                        blit,
+                        scissor: self.scissor_aabb(),
+                    }));
+                return;
+            }
+        }
         if self.gpu_only {
             self.reject_unsupported("image GPU texture blit");
             return;
@@ -1027,12 +1521,11 @@ impl Canvas2D for NativeGpuCanvas2D {
         if w == 0 || h == 0 || coverage.is_empty() {
             return;
         }
-        let identity = self.transform.m == Transform::identity().m;
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
-        // Soft path for transforms / exotic blend; identity solid text → atlas.
-        if self.soft_has_content || !self.native_caps.glyphs || !identity || !native_blend {
+        // Soft path for exotic blend；任意仿射仍可走 atlas 纹理四边形。
+        if self.soft_has_content || !self.native_caps.glyphs || !native_blend {
             if self.gpu_only {
-                self.reject_unsupported("transformed glyph or destination-dependent glyph blend");
+                self.reject_unsupported("destination-dependent glyph blend");
                 return;
             }
             self.sync_fallback_state();
@@ -1044,20 +1537,80 @@ impl Canvas2D for NativeGpuCanvas2D {
             self.mark_soft();
             return;
         }
-        let (ox, oy) = (self.offset_x, self.offset_y);
-        let dx = x as f32 + ox;
-        let dy = y as f32 + oy;
+        let local = Rect::new(x as f32, y as f32, w as f32, h as f32);
+        let corners = glyph_device_corners(local, self.transform, self.offset_x, self.offset_y);
+        let (min_x, min_y, max_x, max_y) = quad_aabb(corners);
+        let device_w = max_x - min_x;
+        let device_h = max_y - min_y;
+        if !device_w.is_finite() || !device_h.is_finite() || device_w <= 0.0 || device_h <= 0.0 {
+            return;
+        }
         self.pending_native
             .push(PendingNativeOp::Glyph(PendingNativeGlyph {
                 glyph: GpuGlyphBlit {
-                    x: dx,
-                    y: dy,
-                    w: w as f32,
-                    h: h as f32,
+                    x: min_x,
+                    y: min_y,
+                    w: device_w,
+                    h: device_h,
+                    corners,
                     rgba: self.rgba(color),
                     coverage,
                     cov_w: w as u32,
                     cov_h: h as u32,
+                    outline_mesh: None,
+                },
+                scissor: self.scissor_aabb(),
+            }));
+    }
+
+    fn blit_glyph_outline(
+        &mut self,
+        x: i32,
+        y: i32,
+        mesh: std::sync::Arc<[f32]>,
+        w: usize,
+        h: usize,
+        color: Color,
+    ) {
+        if w == 0 || h == 0 || !crate::draw::font::glyph_outline::is_outline_edges(mesh.as_ref()) {
+            return;
+        }
+        let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
+        if self.soft_has_content || !self.native_caps.glyphs || !native_blend {
+            if self.gpu_only {
+                self.reject_unsupported("destination-dependent glyph blend");
+                return;
+            }
+            // soft：默认实现把边列表栅格成解析 AA coverage（1:1 契约）。
+            self.sync_fallback_state();
+            let _soft_clip = self.clip_rect;
+            self.ensure_soft().push_clip(_soft_clip);
+            self.ensure_soft().blit_glyph_outline(x, y, mesh, w, h, color);
+            self.ensure_soft().pop_clip();
+            self.mark_soft();
+            return;
+        }
+        let local = Rect::new(x as f32, y as f32, w as f32, h as f32);
+        let corners = glyph_device_corners(local, self.transform, self.offset_x, self.offset_y);
+        let (min_x, min_y, max_x, max_y) = quad_aabb(corners);
+        let device_w = max_x - min_x;
+        let device_h = max_y - min_y;
+        if !device_w.is_finite() || !device_h.is_finite() || device_w <= 0.0 || device_h <= 0.0 {
+            return;
+        }
+        self.pending_native
+            .push(PendingNativeOp::Glyph(PendingNativeGlyph {
+                glyph: GpuGlyphBlit {
+                    x: min_x,
+                    y: min_y,
+                    w: device_w,
+                    h: device_h,
+                    corners,
+                    rgba: self.rgba(color),
+                    coverage: std::sync::Arc::from([]),
+                    cov_w: w as u32,
+                    cov_h: h as u32,
+                    outline_mesh: Some(mesh),
                 },
                 scissor: self.scissor_aabb(),
             }));
@@ -1144,6 +1697,13 @@ impl Canvas2D for NativeGpuCanvas2D {
         self.reject_unsupported("scroll-region copy");
     }
 }
+
+mod geometry;
+use geometry::{
+    frame_within, glyph_device_corners, quad_aabb, rect_to_integer_frame, scaled_corner_radii,
+    scales_are_uniform, solid_mesh_from_affine_rect, stroke_options_for_transform,
+    uniform_transform_scale, IntegerFrame,
+};
 
 mod backend;
 

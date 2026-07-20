@@ -198,6 +198,32 @@ impl TextBackend for AbGlyphBackend {
         let gid = GlyphId(glyph_id as u16);
         let f = &self.fonts[idx].font;
         let glyph = gid.with_scale_and_position(pixel_size, point(0.0, 0.0));
+        let scale_factor = f
+            .as_scaled(PxScale {
+                x: pixel_size,
+                y: pixel_size,
+            })
+            .scale_factor();
+        // 优先：轮廓 → 边列表，供共享 wgpu atlas 解析 AA coverage（跳过 ab_glyph CPU draw）。
+        if let Some(outline) = f.outline(gid) {
+            let px_bounds = outline.px_bounds(scale_factor, glyph.position);
+            if let Some((w, h, bx, by, mesh)) = crate::draw::font::glyph_outline::mesh_from_outline(
+                &outline,
+                scale_factor,
+                px_bounds,
+                glyph.position,
+            ) {
+                return GlyphRaster {
+                    width: w,
+                    height: h,
+                    coverage: Arc::<[u8]>::from([]),
+                    bearing_x: bx,
+                    bearing_y: by,
+                    outline_mesh: Some(mesh),
+                };
+            }
+        }
+        // 回退：无轮廓或展平失败时仍走 ab_glyph CPU coverage。
         let (w, h, data, bx, by) = if let Some(o) = f.outline_glyph(glyph) {
             let b = o.px_bounds();
             let bw = (b.max.x - b.min.x).ceil() as usize;
@@ -229,6 +255,7 @@ impl TextBackend for AbGlyphBackend {
             coverage: Arc::<[u8]>::from(data),
             bearing_x: bx,
             bearing_y: by,
+            outline_mesh: None,
         }
     }
 

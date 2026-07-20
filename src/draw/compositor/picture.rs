@@ -45,6 +45,19 @@ pub(crate) fn blit_picture_cache(
     result
 }
 
+/// 对已栅格化的 Picture 离屏做可分离高斯模糊（GPU RT 或 CPU 像素）。
+///
+/// 供 Modal / Drawer 等毛玻璃消费方在 blit 前调用；半径语义同
+/// [`crate::draw::primitives::blur::gaussian_blur`]。
+pub fn blur_picture_region(
+    engine: &mut dyn GraphicsEngine,
+    handle: &ImageHandle,
+    region: Rect,
+    radius: f32,
+) -> Result<(), Error> {
+    engine.try_blur_offscreen(handle, region, radius)
+}
+
 /// 将脏 Picture 栅格化到离屏缓冲。
 pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
     engine: &mut dyn GraphicsEngine,

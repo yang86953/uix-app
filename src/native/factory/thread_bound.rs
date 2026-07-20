@@ -22,7 +22,7 @@ use std::thread::{self, ThreadId};
 
 use crate::core::{Errc, Error, Result};
 use crate::native::traits::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
+    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
     GpuSolidRect, GpuStrokeRect, GraphicsContextCaps, IGraphicsContext, NativeRasterCaps,
     OffscreenTargetId, PresentDamage, PresentFrame, PresentTestResult, SoftFallbackTile,
 };
@@ -226,6 +226,7 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
     forward_result!(draw_radial_gradients(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, grads: &[GpuRadialGradient]) -> ());
     forward_result!(draw_solid_meshes(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, meshes: &[GpuSolidMesh]) -> ());
     forward_result!(draw_box_shadows(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, shadows: &[GpuBoxShadow]) -> ());
+    forward_result!(draw_image_blits(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, blits: &[GpuImageBlit]) -> ());
     forward_result!(blit_soft_fallback(pixels: &[u32], width: i32, height: i32) -> ());
     forward_result!(blit_soft_fallback_tile(pixels: &[u32], tile: SoftFallbackTile) -> ());
     forward_result!(clear_rects(viewport_w: f32, viewport_h: f32, rects: &[GpuSolidRect]) -> ());
@@ -245,5 +246,5 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
 
     forward_result!(bind_offscreen_target(id: OffscreenTargetId) -> ());
     forward_result!(bind_swapchain_target() -> ());
-    forward_result!(blit_offscreen_target(id: OffscreenTargetId, src: crate::core::Rect, dst: crate::core::Rect) -> ());
+    forward_result!(blit_offscreen_target(id: OffscreenTargetId, src: crate::core::Rect, dst: crate::core::Rect, opacity: f32, additive: bool) -> ());
 }

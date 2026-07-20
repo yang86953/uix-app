@@ -134,6 +134,9 @@ fn wgl_glyph_atlas_reuses_coverage_and_matches_cpu_premultiplied_blend() {
         y: 3.0,
         w: 7.0,
         h: 2.0,
+        corners: crate::native::traits::present::GpuGlyphBlit::axis_aligned_corners(
+            x as f32, 3.0, 7.0, 2.0,
+        ),
         rgba: [
             color.r as f32 / 255.0,
             color.g as f32 / 255.0,
@@ -143,6 +146,7 @@ fn wgl_glyph_atlas_reuses_coverage_and_matches_cpu_premultiplied_blend() {
         coverage: std::sync::Arc::clone(&coverage),
         cov_w: 7,
         cov_h: 2,
+        outline_mesh: None,
     };
     let scissor = Some((4, 3, 16, 2));
     context

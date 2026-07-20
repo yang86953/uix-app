@@ -9,7 +9,7 @@ use crate::draw::primitives::path::Path;
 use crate::draw::primitives::types::{BlendMode, GradientDirection, Radius, Transform};
 use crate::draw::traits::{Canvas2D, GraphicsEngine};
 use crate::native::traits::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
+    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
     GpuSolidRect, GpuStrokeRect, OffscreenTargetId,
 };
 use crate::tests::common::*;
@@ -32,21 +32,63 @@ fn soft_fallback_tile_is_tight_and_ignores_transparent_rgb() {
 }
 
 #[test]
-fn transformed_native_canvas_routes_to_soft_fallback_with_surface_clip() {
+fn transformed_native_canvas_queues_axis_aligned_scale_on_gpu() {
     let mut canvas = NativeGpuCanvas2D::new(16, 12, NativeRasterCaps::d3d11_full());
     canvas.set_transform(Transform::translate(2.0, 1.0).concat(Transform::scale(2.0, 2.0)));
     canvas.push_clip(Rect::new(1.0, 1.0, 2.0, 2.0));
     canvas.fill_rect(Rect::new(0.0, 0.0, 5.0, 5.0), Color::red(), None);
     canvas.pop_clip();
 
-    assert!(canvas.pending_native.is_empty());
-    let soft = canvas.soft_fallback.as_ref().expect("soft fallback");
-    let width = soft.surface().width() as usize;
-    let at = |x: usize, y: usize| soft.surface().pixels()[y * width + x];
-    assert_eq!(at(3, 3), 0);
-    assert_ne!(at(4, 3), 0);
-    assert_ne!(at(7, 6), 0);
-    assert_eq!(at(8, 6), 0);
+    assert!(canvas.soft_fallback.is_none());
+    assert_eq!(canvas.pending_native.len(), 1);
+    match canvas.pending_native.first() {
+        Some(PendingNativeOp::SolidRect(op)) => {
+            assert_eq!(op.rect.x, 2.0);
+            assert_eq!(op.rect.y, 1.0);
+            assert_eq!(op.rect.w, 10.0);
+            assert_eq!(op.rect.h, 10.0);
+        }
+        _ => panic!("expected SolidRect after axis-aligned transform"),
+    }
+}
+
+#[test]
+fn rotated_sharp_rect_queues_solid_mesh_on_gpu() {
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(32, 32, NativeRasterCaps::wgpu_full());
+    // 90° 旋转近似：剪切矩阵 [[0,-1],[1,0]] 映射 (x,y) → (-y, x)
+    canvas.set_transform(Transform {
+        m: [0.0, -1.0, 16.0, 1.0, 0.0, 8.0],
+    });
+    canvas.fill_rect(Rect::new(0.0, 0.0, 4.0, 2.0), Color::from_rgb(1, 2, 3), None);
+    assert!(canvas.take_deferred_error().is_none());
+    assert_eq!(canvas.pending_native.len(), 1);
+    assert!(matches!(
+        canvas.pending_native.first(),
+        Some(PendingNativeOp::SolidMesh(_))
+    ));
+}
+
+#[test]
+fn gpu_only_transformed_path_queues_solid_mesh() {
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(32, 32, NativeRasterCaps::wgpu_full());
+    canvas.set_transform(Transform::translate(4.0, 2.0).concat(Transform::scale(2.0, 2.0)));
+    let mut builder = crate::draw::primitives::path::PathBuilder::new();
+    builder
+        .move_to(0.0, 0.0)
+        .line_to(4.0, 0.0)
+        .line_to(4.0, 3.0)
+        .close();
+    canvas.fill_path(
+        &builder.build(),
+        Color::from_rgb(10, 20, 30),
+        crate::draw::primitives::path::FillRule::NonZero,
+    );
+    assert!(canvas.take_deferred_error().is_none());
+    assert_eq!(canvas.pending_native.len(), 1);
+    assert!(matches!(
+        canvas.pending_native.first(),
+        Some(PendingNativeOp::SolidMesh(_))
+    ));
 }
 
 #[test]
@@ -593,6 +635,10 @@ struct RecordingContext {
     solid_scissors: Rc<RefCell<Vec<Option<(i32, i32, i32, i32)>>>>,
     glyph_batches: Rc<RefCell<Vec<(Option<(i32, i32, i32, i32)>, Vec<GpuGlyphBlit>)>>>,
     soft_tiles: Rc<RefCell<Vec<(SoftFallbackTile, Vec<u32>)>>>,
+    image_blits: Rc<RefCell<Vec<GpuImageBlit>>>,
+    picture_blit_opacity: Rc<Cell<f32>>,
+    blur_calls: Rc<Cell<usize>>,
+    blur_radius: Rc<Cell<f32>>,
     native_caps: NativeRasterCaps,
     shutdown_calls: Rc<Cell<usize>>,
     make_current_calls: Rc<Cell<usize>>,
@@ -834,9 +880,45 @@ impl IGraphicsContext for RecordingContext {
         _id: OffscreenTargetId,
         _src: Rect,
         _dst: Rect,
+        opacity: f32,
+        _additive: bool,
     ) -> crate::core::Result<()> {
+        if !opacity.is_finite() || opacity <= 0.0 {
+            return Ok(());
+        }
+        self.picture_blit_opacity.set(opacity);
         self.record("picture");
         self.fail_if(FailStage::Picture)
+    }
+
+    fn blur_offscreen_target(
+        &mut self,
+        _id: OffscreenTargetId,
+        _region: Rect,
+        radius: f32,
+    ) -> crate::core::Result<()> {
+        if !radius.is_finite() || radius < 0.5 {
+            return Ok(());
+        }
+        self.blur_calls.set(self.blur_calls.get() + 1);
+        self.blur_radius.set(radius);
+        self.record("blur");
+        Ok(())
+    }
+
+    fn draw_image_blits(
+        &mut self,
+        _viewport_w: f32,
+        _viewport_h: f32,
+        _scissor: Option<(i32, i32, i32, i32)>,
+        blits: &[GpuImageBlit],
+    ) -> crate::core::Result<()> {
+        if blits.is_empty() {
+            return Ok(());
+        }
+        self.image_blits.borrow_mut().extend(blits.iter().cloned());
+        self.record("image");
+        Ok(())
     }
 
     fn present(&mut self, _frame: &PresentFrame) -> crate::core::Result<()> {
@@ -852,6 +934,10 @@ fn recording_context(
     solid_scissors: &Rc<RefCell<Vec<Option<(i32, i32, i32, i32)>>>>,
     glyph_batches: &Rc<RefCell<Vec<(Option<(i32, i32, i32, i32)>, Vec<GpuGlyphBlit>)>>>,
     soft_tiles: &Rc<RefCell<Vec<(SoftFallbackTile, Vec<u32>)>>>,
+    image_blits: &Rc<RefCell<Vec<GpuImageBlit>>>,
+    picture_blit_opacity: &Rc<Cell<f32>>,
+    blur_calls: &Rc<Cell<usize>>,
+    blur_radius: &Rc<Cell<f32>>,
     native_caps: NativeRasterCaps,
     shutdown_calls: &Rc<Cell<usize>>,
     make_current_calls: &Rc<Cell<usize>>,
@@ -863,6 +949,10 @@ fn recording_context(
         solid_scissors: Rc::clone(solid_scissors),
         glyph_batches: Rc::clone(glyph_batches),
         soft_tiles: Rc::clone(soft_tiles),
+        image_blits: Rc::clone(image_blits),
+        picture_blit_opacity: Rc::clone(picture_blit_opacity),
+        blur_calls: Rc::clone(blur_calls),
+        blur_radius: Rc::clone(blur_radius),
         native_caps,
         shutdown_calls: Rc::clone(shutdown_calls),
         make_current_calls: Rc::clone(make_current_calls),
@@ -880,12 +970,62 @@ struct RecordingFixture {
     solid_scissors: Rc<RefCell<Vec<Option<(i32, i32, i32, i32)>>>>,
     glyph_batches: Rc<RefCell<Vec<(Option<(i32, i32, i32, i32)>, Vec<GpuGlyphBlit>)>>>,
     soft_tiles: Rc<RefCell<Vec<(SoftFallbackTile, Vec<u32>)>>>,
+    image_blits: Rc<RefCell<Vec<GpuImageBlit>>>,
+    picture_blit_opacity: Rc<Cell<f32>>,
+    blur_calls: Rc<Cell<usize>>,
+    blur_radius: Rc<Cell<f32>>,
     shutdown_calls: Rc<Cell<usize>>,
     make_current_calls: Rc<Cell<usize>>,
 }
 
 fn recording_backend(fail: FailStage) -> RecordingFixture {
     recording_backend_with_caps(fail, NativeRasterCaps::d3d11_full())
+}
+
+fn recording_gpu_only_backend(fail: FailStage) -> RecordingFixture {
+    let fail_stage = Rc::new(Cell::new(fail));
+    let stages = Rc::new(RefCell::new(Vec::new()));
+    let solid_rects = Rc::new(RefCell::new(Vec::new()));
+    let solid_scissors = Rc::new(RefCell::new(Vec::new()));
+    let glyph_batches = Rc::new(RefCell::new(Vec::new()));
+    let soft_tiles = Rc::new(RefCell::new(Vec::new()));
+    let image_blits = Rc::new(RefCell::new(Vec::new()));
+    let picture_blit_opacity = Rc::new(Cell::new(1.0));
+    let blur_calls = Rc::new(Cell::new(0));
+    let blur_radius = Rc::new(Cell::new(0.0));
+    let shutdown_calls = Rc::new(Cell::new(0));
+    let make_current_calls = Rc::new(Cell::new(0));
+    let backend = NativeGpuBackend::new_gpu_only(Box::new(recording_context(
+        &fail_stage,
+        &stages,
+        &solid_rects,
+        &solid_scissors,
+        &glyph_batches,
+        &soft_tiles,
+        &image_blits,
+        &picture_blit_opacity,
+        &blur_calls,
+        &blur_radius,
+        NativeRasterCaps::wgpu_full(),
+        &shutdown_calls,
+        &make_current_calls,
+    )))
+    .expect("recording gpu-only native backend");
+    RecordingFixture {
+        backend,
+        fail_stage,
+        stages,
+        solid_rects,
+        solid_scissors,
+        glyph_batches,
+        soft_tiles,
+        image_blits,
+        picture_blit_opacity,
+        blur_calls,
+        blur_radius,
+        shutdown_calls,
+        make_current_calls,
+    }
 }
 
 fn recording_backend_with_caps(fail: FailStage, native_caps: NativeRasterCaps) -> RecordingFixture {
@@ -895,6 +1035,10 @@ fn recording_backend_with_caps(fail: FailStage, native_caps: NativeRasterCaps) -
     let solid_scissors = Rc::new(RefCell::new(Vec::new()));
     let glyph_batches = Rc::new(RefCell::new(Vec::new()));
     let soft_tiles = Rc::new(RefCell::new(Vec::new()));
+    let image_blits = Rc::new(RefCell::new(Vec::new()));
+    let picture_blit_opacity = Rc::new(Cell::new(1.0));
+    let blur_calls = Rc::new(Cell::new(0));
+    let blur_radius = Rc::new(Cell::new(0.0));
     let shutdown_calls = Rc::new(Cell::new(0));
     let make_current_calls = Rc::new(Cell::new(0));
     let backend = NativeGpuBackend::new(Box::new(recording_context(
@@ -904,6 +1048,10 @@ fn recording_backend_with_caps(fail: FailStage, native_caps: NativeRasterCaps) -
         &solid_scissors,
         &glyph_batches,
         &soft_tiles,
+        &image_blits,
+        &picture_blit_opacity,
+        &blur_calls,
+        &blur_radius,
         native_caps,
         &shutdown_calls,
         &make_current_calls,
@@ -917,6 +1065,10 @@ fn recording_backend_with_caps(fail: FailStage, native_caps: NativeRasterCaps) -
         solid_scissors,
         glyph_batches,
         soft_tiles,
+        image_blits,
+        picture_blit_opacity,
+        blur_calls,
+        blur_radius,
         shutdown_calls,
         make_current_calls,
     }
@@ -1141,6 +1293,770 @@ fn native_gpu_backend_offscreen_follows_native_caps() {
 }
 
 #[test]
+fn gpu_only_canvas_queues_integer_image_blit_without_soft_fallback() {
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(32, 32, NativeRasterCaps::wgpu_full());
+    let pixels = vec![0xFF00_00FFu32; 4];
+    canvas.blit_image(
+        &pixels,
+        2,
+        Rect::new(0.0, 0.0, 2.0, 2.0),
+        Rect::new(4.0, 6.0, 2.0, 2.0),
+    );
+    assert!(canvas.take_deferred_error().is_none());
+    assert!(canvas.soft_fallback.is_none());
+    assert_eq!(canvas.pending_native.len(), 1);
+    assert!(matches!(
+        canvas.pending_native.first(),
+        Some(PendingNativeOp::ImageBlit(_))
+    ));
+}
+
+#[test]
+fn gpu_only_canvas_queues_scaled_image_blit() {
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(32, 32, NativeRasterCaps::wgpu_full());
+    let pixels = vec![0xFF00_00FFu32; 4];
+    canvas.blit_image(
+        &pixels,
+        2,
+        Rect::new(0.0, 0.0, 2.0, 2.0),
+        Rect::new(4.0, 6.0, 4.0, 4.0),
+    );
+    assert!(canvas.take_deferred_error().is_none());
+    assert!(canvas.soft_fallback.is_none());
+    assert_eq!(canvas.pending_native.len(), 1);
+    match canvas.pending_native.first() {
+        Some(PendingNativeOp::ImageBlit(op)) => {
+            assert_eq!(op.blit.x, 4.0);
+            assert_eq!(op.blit.y, 6.0);
+            assert_eq!(op.blit.w, 4.0);
+            assert_eq!(op.blit.h, 4.0);
+            assert_eq!(op.blit.pixel_w, 2);
+            assert_eq!(op.blit.pixel_h, 2);
+        }
+        _ => panic!("expected scaled ImageBlit"),
+    }
+}
+
+#[test]
+fn gpu_only_canvas_queues_fractional_position_image_blit() {
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(32, 32, NativeRasterCaps::wgpu_full());
+    let pixels = vec![0xFF00_00FFu32; 4];
+    canvas.blit_image(
+        &pixels,
+        2,
+        Rect::new(0.0, 0.0, 2.0, 2.0),
+        Rect::new(4.5, 6.25, 2.0, 2.0),
+    );
+    assert!(canvas.take_deferred_error().is_none());
+    assert_eq!(canvas.pending_native.len(), 1);
+    assert!(matches!(
+        canvas.pending_native.first(),
+        Some(PendingNativeOp::ImageBlit(_))
+    ));
+}
+
+#[test]
+fn gpu_only_canvas_queues_fractional_identity_fill_rect() {
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(32, 32, NativeRasterCaps::wgpu_full());
+    canvas.fill_rect(
+        Rect::new(1.5, 2.25, 8.5, 4.0),
+        Color::from_rgb(10, 20, 30),
+        None,
+    );
+    assert!(canvas.take_deferred_error().is_none());
+    assert!(canvas.soft_fallback.is_none());
+    assert_eq!(canvas.pending_native.len(), 1);
+    assert!(matches!(
+        canvas.pending_native.first(),
+        Some(PendingNativeOp::SolidRect(_))
+    ));
+}
+
+#[test]
+fn gpu_only_diagonal_line_queues_solid_mesh() {
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(32, 32, NativeRasterCaps::wgpu_full());
+    canvas.draw_line(2.0, 2.0, 10.0, 8.0, Color::from_rgb(1, 2, 3), 2.0);
+    assert!(canvas.take_deferred_error().is_none());
+    assert_eq!(canvas.pending_native.len(), 1);
+    match canvas.pending_native.first() {
+        Some(PendingNativeOp::SolidMesh(op)) => {
+            assert_eq!(op.mesh.vertices.len(), 12);
+        }
+        _ => panic!("expected diagonal line SolidMesh"),
+    }
+}
+
+#[test]
+fn gpu_only_picture_blit_with_opacity_uses_texture_blit() {
+    use crate::draw::pipeline::{FrameEncoder, FrameImage, FrameOpacity, FrameRect};
+
+    let RecordingFixture {
+        mut backend,
+        stages,
+        image_blits,
+        soft_tiles,
+        ..
+    } = recording_gpu_only_backend(FailStage::None);
+    backend.resize(16, 16).expect("resize");
+    let source = vec![
+        Color::from_rgba(220, 80, 40, 160).premultiplied(),
+        Color::from_rgba(40, 180, 240, 208).premultiplied(),
+    ];
+    let opacity = 0.37;
+    let mut encoder = FrameEncoder::new(16, 16).expect("encoder");
+    encoder.clear(Color::from_rgb(12, 24, 48));
+    encoder.blit_picture_with_opacity(
+        FrameImage::new(2, 1, source).expect("Picture image"),
+        FrameRect::new(0, 0, 2, 1),
+        crate::draw::pipeline::FrameSampledRect::from_integer(FrameRect::new(7, 9, 2, 1)),
+        FrameOpacity::from_canvas(opacity),
+    );
+
+    backend
+        .try_execute_encoded_frame(&encoder)
+        .expect("execute Picture opacity on gpu-only");
+    assert_eq!(stages.borrow().as_slice(), ["clear", "image"]);
+    assert!(soft_tiles.borrow().is_empty());
+    let blits = image_blits.borrow();
+    assert_eq!(blits.len(), 1);
+    assert!((blits[0].opacity - opacity).abs() < 1e-6);
+    assert_eq!(blits[0].x, 7.0);
+    assert_eq!(blits[0].y, 9.0);
+    assert_eq!(blits[0].pixel_w, 2);
+    assert_eq!(blits[0].pixel_h, 1);
+}
+
+#[test]
+fn gpu_only_blur_offscreen_reaches_graphics_context() {
+    let RecordingFixture {
+        mut backend,
+        stages,
+        blur_calls,
+        blur_radius,
+        soft_tiles,
+        ..
+    } = recording_gpu_only_backend(FailStage::None);
+    backend.resize(32, 24).expect("resize");
+    let handle = backend
+        .create_offscreen(16, 12)
+        .expect("create picture offscreen");
+    assert!(backend.begin_offscreen_paint(&handle));
+    backend.end_offscreen_paint();
+    backend
+        .try_blur_offscreen(&handle, Rect::new(1.0, 2.0, 10.0, 8.0), 4.5)
+        .expect("gpu-only separable blur");
+    assert_eq!(blur_calls.get(), 1);
+    assert!((blur_radius.get() - 4.5).abs() < 1e-6);
+    assert!(
+        stages.borrow().iter().any(|stage| *stage == "blur"),
+        "blur must reach the graphics context without soft fallback"
+    );
+    assert!(soft_tiles.borrow().is_empty());
+}
+
+#[test]
+fn gpu_only_uniform_scale_shadow_queues_native() {
+    use crate::draw::primitives::types::Transform;
+
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(64, 64, NativeRasterCaps::wgpu_full());
+    canvas.set_transform(Transform::scale(2.0, 2.0));
+    canvas.draw_box_shadow(
+        Rect::new(4.0, 4.0, 8.0, 8.0),
+        3.0,
+        1.0,
+        2.0,
+        Color::from_rgba(0, 0, 0, 80),
+        Some(Radius::uniform(2.0)),
+    );
+    assert!(canvas.take_deferred_error().is_none());
+    assert_eq!(canvas.pending_native.len(), 1);
+    match canvas.pending_native.first() {
+        Some(PendingNativeOp::BoxShadow(op)) => {
+            assert!((op.shadow.x - 8.0).abs() < 1e-5);
+            assert!((op.shadow.y - 8.0).abs() < 1e-5);
+            assert!((op.shadow.w - 16.0).abs() < 1e-5);
+            assert!((op.shadow.h - 16.0).abs() < 1e-5);
+            assert!((op.shadow.blur_x - 6.0).abs() < 1e-5);
+            assert!((op.shadow.blur_y - 6.0).abs() < 1e-5);
+            assert!((op.shadow.offset_x - 2.0).abs() < 1e-5);
+            assert!((op.shadow.offset_y - 4.0).abs() < 1e-5);
+            assert!((op.shadow.radius[0] - 4.0).abs() < 1e-5);
+        }
+        _ => panic!("expected uniform-scale BoxShadow"),
+    }
+}
+
+#[test]
+fn gpu_only_anisotropic_shadow_queues_native() {
+    use crate::draw::primitives::types::Transform;
+
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(64, 64, NativeRasterCaps::wgpu_full());
+    canvas.set_transform(Transform::scale(2.0, 1.0));
+    canvas.draw_box_shadow(
+        Rect::new(4.0, 4.0, 8.0, 8.0),
+        3.0,
+        0.0,
+        0.0,
+        Color::from_rgba(0, 0, 0, 80),
+        None,
+    );
+    assert!(canvas.take_deferred_error().is_none());
+    assert_eq!(canvas.pending_native.len(), 1);
+    match canvas.pending_native.first() {
+        Some(PendingNativeOp::BoxShadow(op)) => {
+            assert!((op.shadow.w - 16.0).abs() < 1e-5);
+            assert!((op.shadow.h - 8.0).abs() < 1e-5);
+            assert!((op.shadow.blur_x - 6.0).abs() < 1e-5);
+            assert!((op.shadow.blur_y - 3.0).abs() < 1e-5);
+        }
+        _ => panic!("expected anisotropic BoxShadow"),
+    }
+}
+
+#[test]
+fn gpu_only_anisotropic_rounded_rect_queues_native() {
+    use crate::draw::primitives::types::Transform;
+
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(64, 64, NativeRasterCaps::wgpu_full());
+    canvas.set_transform(Transform::scale(2.0, 1.0));
+    canvas.fill_rect(
+        Rect::new(4.0, 4.0, 8.0, 8.0),
+        Color::red(),
+        Some(Radius::uniform(2.0)),
+    );
+    assert!(canvas.take_deferred_error().is_none());
+    assert_eq!(canvas.pending_native.len(), 1);
+    match canvas.pending_native.first() {
+        Some(PendingNativeOp::SolidRect(op)) => {
+            assert!((op.rect.w - 16.0).abs() < 1e-5);
+            assert!((op.rect.h - 8.0).abs() < 1e-5);
+            // 几何平均 √(2·1)=√2 ≈ 2.828 倍圆角
+            assert!((op.rect.radius[0] - 2.0 * (2.0f32).sqrt()).abs() < 1e-4);
+        }
+        _ => panic!("expected anisotropic rounded SolidRect"),
+    }
+}
+
+#[test]
+fn gpu_only_axis_aligned_scaled_glyph_queues_atlas() {
+    use crate::draw::primitives::types::Transform;
+    use std::sync::Arc;
+
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(64, 64, NativeRasterCaps::wgpu_full());
+    canvas.set_transform(Transform::scale(2.0, 1.5));
+    let coverage: Arc<[u8]> = vec![255; 8].into();
+    canvas.blit_glyph_shared(3, 4, coverage, 4, 2, Color::white());
+    assert!(canvas.take_deferred_error().is_none());
+    assert_eq!(canvas.pending_native.len(), 1);
+    match canvas.pending_native.first() {
+        Some(PendingNativeOp::Glyph(op)) => {
+            assert!((op.glyph.x - 6.0).abs() < 1e-5);
+            assert!((op.glyph.y - 6.0).abs() < 1e-5);
+            assert!((op.glyph.w - 8.0).abs() < 1e-5);
+            assert!((op.glyph.h - 3.0).abs() < 1e-5);
+            assert_eq!(op.glyph.cov_w, 4);
+            assert_eq!(op.glyph.cov_h, 2);
+            assert!((op.glyph.corners[0][0] - 6.0).abs() < 1e-5);
+            assert!((op.glyph.corners[1][0] - 14.0).abs() < 1e-5);
+            assert!((op.glyph.corners[2][1] - 9.0).abs() < 1e-5);
+        }
+        _ => panic!("expected axis-aligned scaled Glyph"),
+    }
+}
+
+#[test]
+fn gpu_only_rotated_glyph_queues_affine_corners() {
+    use crate::draw::primitives::types::Transform;
+    use std::sync::Arc;
+
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(64, 64, NativeRasterCaps::wgpu_full());
+    canvas.set_transform(Transform {
+        m: [0.0, 1.0, 0.0, -1.0, 0.0, 0.0],
+    });
+    canvas.set_offset(10.0, 20.0);
+    let coverage: Arc<[u8]> = vec![255; 8].into();
+    canvas.blit_glyph_shared(0, 0, coverage, 4, 2, Color::white());
+    assert!(canvas.take_deferred_error().is_none());
+    assert_eq!(canvas.pending_native.len(), 1);
+    match canvas.pending_native.first() {
+        Some(PendingNativeOp::Glyph(op)) => {
+            // TL=(10,20) → (20,-10)；TR=(14,20) → (20,-14)；BR=(14,22) → (22,-14)；BL=(10,22) → (22,-10)
+            assert!((op.glyph.corners[0][0] - 20.0).abs() < 1e-4);
+            assert!((op.glyph.corners[0][1] - (-10.0)).abs() < 1e-4);
+            assert!((op.glyph.corners[1][0] - 20.0).abs() < 1e-4);
+            assert!((op.glyph.corners[1][1] - (-14.0)).abs() < 1e-4);
+            assert!((op.glyph.corners[2][0] - 22.0).abs() < 1e-4);
+            assert!((op.glyph.corners[2][1] - (-14.0)).abs() < 1e-4);
+            assert!((op.glyph.corners[3][0] - 22.0).abs() < 1e-4);
+            assert!((op.glyph.corners[3][1] - (-10.0)).abs() < 1e-4);
+        }
+        _ => panic!("expected rotated Glyph with affine corners"),
+    }
+}
+
+#[test]
+fn gpu_only_sheared_glyph_queues_affine_corners() {
+    use crate::draw::primitives::types::Transform;
+    use std::sync::Arc;
+
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(64, 64, NativeRasterCaps::wgpu_full());
+    canvas.set_transform(Transform {
+        m: [1.0, 0.5, 0.0, 0.0, 1.0, 0.0],
+    });
+    let coverage: Arc<[u8]> = vec![255; 4].into();
+    canvas.blit_glyph_shared(2, 4, coverage, 2, 2, Color::white());
+    assert!(canvas.take_deferred_error().is_none());
+    match canvas.pending_native.first() {
+        Some(PendingNativeOp::Glyph(op)) => {
+            // shear x' = x + 0.5 y
+            assert!((op.glyph.corners[0][0] - 4.0).abs() < 1e-4); // 2+0.5*4
+            assert!((op.glyph.corners[0][1] - 4.0).abs() < 1e-4);
+            assert!((op.glyph.corners[1][0] - 6.0).abs() < 1e-4); // 4+0.5*4
+            assert!((op.glyph.corners[2][0] - 7.0).abs() < 1e-4); // 4+0.5*6
+            assert!((op.glyph.corners[3][0] - 5.0).abs() < 1e-4); // 2+0.5*6
+        }
+        _ => panic!("expected sheared Glyph"),
+    }
+}
+
+#[test]
+fn gpu_only_outline_glyph_queues_gpu_cover_mesh() {
+    use std::sync::Arc;
+
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(64, 64, NativeRasterCaps::wgpu_full());
+    // 两个三角形覆盖 4×4 本地像素 → 改为矩形四边（解析 AA 边列表）。
+    let mesh: Arc<[f32]> = vec![
+        0.0, 0.0, 4.0, 0.0, //
+        4.0, 0.0, 4.0, 4.0, //
+        4.0, 4.0, 0.0, 4.0, //
+        0.0, 4.0, 0.0, 0.0,
+    ]
+    .into();
+    canvas.blit_glyph_outline(1, 2, mesh, 4, 4, Color::from_rgba(255, 255, 255, 200));
+    assert!(canvas.take_deferred_error().is_none());
+    assert_eq!(canvas.pending_native.len(), 1);
+    match canvas.pending_native.first() {
+        Some(PendingNativeOp::Glyph(op)) => {
+            assert!(op.glyph.coverage.is_empty());
+            assert_eq!(op.glyph.cov_w, 4);
+            assert_eq!(op.glyph.cov_h, 4);
+            let mesh = op.glyph.outline_mesh.as_ref().expect("outline edges");
+            assert_eq!(mesh.len(), 16);
+            assert!((op.glyph.x - 1.0).abs() < 1e-5);
+            assert!((op.glyph.y - 2.0).abs() < 1e-5);
+        }
+        _ => panic!("expected outline Glyph"),
+    }
+}
+
+#[test]
+fn gpu_only_rotated_shadow_queues_oriented_corners() {
+    use crate::draw::primitives::types::Transform;
+
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(128, 128, NativeRasterCaps::wgpu_full());
+    // 90° 旋转：x' = y, y' = -x（与字形旋转测试同矩阵）再平移。
+    canvas.set_transform(Transform {
+        m: [0.0, 1.0, 0.0, -1.0, 0.0, 0.0],
+    });
+    canvas.set_offset(20.0, 10.0);
+    canvas.draw_box_shadow(
+        Rect::new(0.0, 0.0, 8.0, 4.0),
+        2.0,
+        0.0,
+        0.0,
+        Color::from_rgba(0, 0, 0, 80),
+        None,
+    );
+    assert!(canvas.take_deferred_error().is_none());
+    assert_eq!(canvas.pending_native.len(), 1);
+    match canvas.pending_native.first() {
+        Some(PendingNativeOp::BoxShadow(op)) => {
+            // expanded 逻辑 = (-2,-2,12,8)；offset 后 (18,8,12,8)；旋转后角点。
+            let c = op.shadow.corners;
+            assert!((c[0][0] - 8.0).abs() < 1e-3, "TL.x {:?}", c[0]);
+            assert!((c[0][1] - (-18.0)).abs() < 1e-3, "TL.y {:?}", c[0]);
+            assert!((c[1][0] - 8.0).abs() < 1e-3, "TR.x {:?}", c[1]);
+            assert!((c[1][1] - (-30.0)).abs() < 1e-3, "TR.y {:?}", c[1]);
+            assert!((op.shadow.blur_x - 2.0).abs() < 1e-5);
+            assert!((op.shadow.blur_y - 2.0).abs() < 1e-5);
+            assert!((op.shadow.w - 8.0).abs() < 1e-5);
+            assert!((op.shadow.h - 4.0).abs() < 1e-5);
+        }
+        _ => panic!("expected rotated BoxShadow"),
+    }
+}
+
+#[test]
+fn gpu_only_fractional_picture_blit_uses_texture_blit() {
+    use crate::draw::pipeline::{
+        FrameEncoder, FrameImage, FrameOpacity, FrameRect, FrameSampledRect,
+    };
+
+    let RecordingFixture {
+        mut backend,
+        stages,
+        image_blits,
+        soft_tiles,
+        ..
+    } = recording_gpu_only_backend(FailStage::None);
+    backend.resize(16, 16).expect("resize");
+    let source = vec![
+        Color::from_rgba(220, 80, 40, 160).premultiplied(),
+        Color::from_rgba(40, 180, 240, 208).premultiplied(),
+    ];
+    let mut encoder = FrameEncoder::new(16, 16).expect("encoder");
+    encoder.clear(Color::from_rgb(12, 24, 48));
+    encoder.blit_picture_with_opacity(
+        FrameImage::new(2, 1, source).expect("Picture image"),
+        FrameRect::new(0, 0, 2, 1),
+        FrameSampledRect::from_parts(3.5, 4.25, 6.0, 3.0).expect("sampled dest"),
+        FrameOpacity::opaque(),
+    );
+
+    backend
+        .try_execute_encoded_frame(&encoder)
+        .expect("execute fractional Picture on gpu-only");
+    assert_eq!(stages.borrow().as_slice(), ["clear", "image"]);
+    assert!(soft_tiles.borrow().is_empty());
+    let blits = image_blits.borrow();
+    assert_eq!(blits.len(), 1);
+    assert!((blits[0].x - 3.5).abs() < 1e-6);
+    assert!((blits[0].y - 4.25).abs() < 1e-6);
+    assert!((blits[0].w - 6.0).abs() < 1e-6);
+    assert!((blits[0].h - 3.0).abs() < 1e-6);
+    assert_eq!(blits[0].pixel_w, 2);
+    assert_eq!(blits[0].pixel_h, 1);
+    assert!(!blits[0].additive);
+}
+
+#[test]
+fn gpu_only_additive_picture_blit_uses_additive_texture_blit() {
+    use crate::draw::pipeline::{
+        FrameEncoder, FrameImage, FrameOpacity, FrameRect, FrameSampledRect,
+    };
+
+    let RecordingFixture {
+        mut backend,
+        stages,
+        image_blits,
+        soft_tiles,
+        ..
+    } = recording_gpu_only_backend(FailStage::None);
+    backend.resize(16, 16).expect("resize");
+    let source = vec![Color::from_rgba(80, 40, 20, 128).premultiplied(); 4];
+    let mut encoder = FrameEncoder::new(16, 16).expect("encoder");
+    encoder.clear(Color::from_rgb(10, 20, 30));
+    encoder.blit_picture_with_opacity_blend(
+        FrameImage::new(2, 2, source).expect("Picture image"),
+        FrameRect::new(0, 0, 2, 2),
+        FrameSampledRect::from_parts(1.5, 2.25, 4.0, 3.0).expect("sampled dest"),
+        FrameOpacity::opaque(),
+        true,
+    );
+
+    backend
+        .try_execute_encoded_frame(&encoder)
+        .expect("execute Additive Picture on gpu-only");
+    assert_eq!(stages.borrow().as_slice(), ["clear", "image"]);
+    assert!(soft_tiles.borrow().is_empty());
+    let blits = image_blits.borrow();
+    assert_eq!(blits.len(), 1);
+    assert!(blits[0].additive);
+    assert!((blits[0].x - 1.5).abs() < 1e-6);
+    assert!((blits[0].w - 4.0).abs() < 1e-6);
+}
+
+#[test]
+fn gpu_only_additive_image_blit_queues_native() {
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(32, 32, NativeRasterCaps::wgpu_full());
+    canvas.set_blend_mode(BlendMode::Additive);
+    let pixels = vec![Color::from_rgba(40, 80, 120, 200).premultiplied(); 4];
+    canvas.blit_image(
+        &pixels,
+        2,
+        Rect::new(0.0, 0.0, 2.0, 2.0),
+        Rect::new(4.0, 6.0, 2.0, 2.0),
+    );
+    assert!(canvas.take_deferred_error().is_none());
+    match canvas.pending_native.first() {
+        Some(PendingNativeOp::ImageBlit(op)) => {
+            assert!(op.blit.additive);
+            assert!((op.blit.x - 4.0).abs() < 1e-5);
+            assert_eq!(op.blit.pixel_w, 2);
+        }
+        _ => panic!("expected Additive ImageBlit"),
+    }
+}
+
+#[test]
+fn gpu_only_blur_reaches_engine_via_compositor_helper() {
+    use crate::draw::compositor::blur_picture_region;
+    use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
+    use crate::draw::engine::RenderOutcome;
+    use crate::draw::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
+
+    struct BlurEngine {
+        backend: NativeGpuBackend,
+        noop: NoopCanvas2D,
+    }
+
+    impl GraphicsEngine for BlurEngine {
+        fn initialize(&mut self, w: i32, h: i32) -> Result<(), crate::core::Error> {
+            self.backend.resize(w, h)
+        }
+        fn try_shutdown(&mut self) -> Result<(), crate::core::Error> {
+            Ok(())
+        }
+        fn resize(&mut self, w: i32, h: i32) -> Result<(), crate::core::Error> {
+            self.backend.resize(w, h)
+        }
+        fn begin_frame(&mut self, _: UpdateStrategy) -> RenderOutcome {
+            RenderOutcome::Idle
+        }
+        fn end_frame(
+            &mut self,
+            _: &crate::draw::backend::DamageRegion,
+        ) -> RenderOutcome {
+            RenderOutcome::Idle
+        }
+        fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
+            &mut self.noop
+        }
+        fn try_blur_offscreen(
+            &mut self,
+            handle: &crate::draw::ImageHandle,
+            region: Rect,
+            radius: f32,
+        ) -> Result<(), crate::core::Error> {
+            self.backend.try_blur_offscreen(handle, region, radius)
+        }
+    }
+
+    let RecordingFixture {
+        backend,
+        stages,
+        blur_calls,
+        blur_radius,
+        soft_tiles,
+        ..
+    } = recording_gpu_only_backend(FailStage::None);
+    let mut engine = BlurEngine {
+        backend,
+        noop: NoopCanvas2D,
+    };
+    engine.resize(32, 24).expect("resize");
+    let handle = engine
+        .backend
+        .create_offscreen(16, 12)
+        .expect("create picture offscreen");
+    assert!(engine.backend.begin_offscreen_paint(&handle));
+    engine.backend.end_offscreen_paint();
+
+    blur_picture_region(
+        &mut engine,
+        &handle,
+        Rect::new(0.0, 0.0, 16.0, 12.0),
+        3.0,
+    )
+    .expect("compositor blur helper");
+    assert_eq!(blur_calls.get(), 1);
+    assert!((blur_radius.get() - 3.0).abs() < 1e-6);
+    assert!(stages.borrow().iter().any(|stage| *stage == "blur"));
+    assert!(soft_tiles.borrow().is_empty());
+}
+
+#[test]
+fn picture_offscreen_blit_forwards_canvas_opacity() {
+    let RecordingFixture {
+        mut backend,
+        picture_blit_opacity,
+        stages,
+        ..
+    } = recording_backend(FailStage::None);
+    backend.resize(32, 24).expect("resize");
+    let handle = backend
+        .create_offscreen(16, 12)
+        .expect("create picture offscreen");
+    assert!(backend.begin_offscreen_paint(&handle));
+    backend.end_offscreen_paint();
+    backend.surface.canvas.set_opacity(0.5);
+    backend.blit_offscreen_src(
+        &handle,
+        Rect::new(0.0, 0.0, 16.0, 12.0),
+        Rect::new(4.0, 6.0, 16.0, 12.0),
+    );
+    assert!(
+        stages.borrow().iter().any(|stage| *stage == "picture"),
+        "picture blit must reach the graphics context"
+    );
+    assert!(
+        (picture_blit_opacity.get() - 0.5).abs() < 1e-6,
+        "parent canvas opacity must reach blit_offscreen_target"
+    );
+}
+
+#[test]
+fn wgpu_full_caps_advertise_offscreen_targets() {
+    let caps = NativeRasterCaps::wgpu_full();
+    assert!(caps.offscreen_targets);
+    assert!(caps.clear_rects);
+    assert!(caps.retained_framebuffer);
+    assert!(!caps.soft_blit);
+}
+
+#[test]
+fn wgpu_retained_framebuffer_unlocks_draw_side_partial_redraw_caps() {
+    use crate::draw::backend::traits::BackendCapabilities;
+
+    let caps = NativeRasterCaps::wgpu_full();
+    assert!(caps.retained_framebuffer);
+    // 与 NativeGpuBackend::capabilities 同一路由：保留色缓冲 ⇒ 绘制侧 partial。
+    let mut backend_caps = if caps.retained_framebuffer {
+        BackendCapabilities::gpu_with_offscreen()
+    } else {
+        BackendCapabilities::gpu_full_redraw()
+    };
+    backend_caps.offscreen = caps.offscreen_targets;
+    assert!(backend_caps.partial_redraw);
+    assert!(backend_caps.offscreen);
+    assert!(!NativeRasterCaps::d3d11_full().retained_framebuffer);
+}
+
+#[test]
+fn retained_backend_snapshots_and_restores_overlay_backdrop_without_cpu_readback() {
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    struct BackdropFake {
+        width: i32,
+        height: i32,
+        has_backdrop: Cell<bool>,
+        snapshots: Rc<Cell<usize>>,
+        restores: Rc<Cell<usize>>,
+        releases: Rc<Cell<usize>>,
+    }
+
+    impl IGraphicsContext for BackdropFake {
+        fn caps(&self) -> GraphicsContextCaps {
+            GraphicsContextCaps::gpu_native_swapchain(
+                GraphicsBackend::Vulkan,
+                PresentCoherency::FullOnly,
+                1.0,
+            )
+        }
+        fn native_raster_caps(&self) -> NativeRasterCaps {
+            NativeRasterCaps::wgpu_full()
+        }
+        fn initialize(
+            &mut self,
+            _: *mut std::ffi::c_void,
+            w: i32,
+            h: i32,
+        ) -> crate::core::Result<()> {
+            self.width = w.max(1);
+            self.height = h.max(1);
+            Ok(())
+        }
+        fn resize(&mut self, w: i32, h: i32) -> crate::core::Result<()> {
+            self.width = w.max(1);
+            self.height = h.max(1);
+            self.has_backdrop.set(false);
+            Ok(())
+        }
+        fn make_current(&mut self) -> crate::core::Result<()> {
+            Ok(())
+        }
+        fn swap_buffers(&mut self, _: PresentDamage) -> crate::core::Result<()> {
+            Ok(())
+        }
+        fn try_shutdown(&mut self) -> crate::core::Result<()> {
+            Ok(())
+        }
+        fn read_pixels(
+            &mut self,
+            _: i32,
+            _: i32,
+            _: i32,
+            _: i32,
+        ) -> crate::core::Result<Vec<u32>> {
+            Err(Error::new(
+                Errc::NotImplemented,
+                "backdrop fake has no CPU readback",
+            ))
+        }
+        fn width(&self) -> i32 {
+            self.width
+        }
+        fn height(&self) -> i32 {
+            self.height
+        }
+        fn clear_render_target(
+            &mut self,
+            _: f32,
+            _: f32,
+            _: f32,
+            _: f32,
+        ) -> crate::core::Result<()> {
+            Ok(())
+        }
+        fn snapshot_overlay_backdrop(&mut self) -> crate::core::Result<()> {
+            self.snapshots.set(self.snapshots.get() + 1);
+            self.has_backdrop.set(true);
+            Ok(())
+        }
+        fn restore_overlay_backdrop(&mut self) -> crate::core::Result<()> {
+            if !self.has_backdrop.get() {
+                return Err(Error::new(
+                    Errc::InvalidState,
+                    "no overlay backdrop to restore",
+                ));
+            }
+            self.restores.set(self.restores.get() + 1);
+            Ok(())
+        }
+        fn release_overlay_backdrop(&mut self) {
+            self.releases.set(self.releases.get() + 1);
+            self.has_backdrop.set(false);
+        }
+        fn has_overlay_backdrop(&self) -> bool {
+            self.has_backdrop.get()
+        }
+    }
+
+    let snapshots = Rc::new(Cell::new(0));
+    let restores = Rc::new(Cell::new(0));
+    let releases = Rc::new(Cell::new(0));
+    let mut backend = NativeGpuBackend::new_gpu_only(Box::new(BackdropFake {
+        width: 64,
+        height: 48,
+        has_backdrop: Cell::new(false),
+        snapshots: Rc::clone(&snapshots),
+        restores: Rc::clone(&restores),
+        releases: Rc::clone(&releases),
+    }))
+    .expect("gpu-only backend with retained caps");
+
+    assert!(backend.snapshot_overlay_backdrop());
+    assert!(backend.has_overlay_backdrop());
+    assert_eq!(snapshots.get(), 1);
+    assert!(backend.restore_overlay_backdrop());
+    assert_eq!(restores.get(), 1);
+    assert!(backend.has_overlay_backdrop());
+    backend.release_overlay_backdrop();
+    assert!(!backend.has_overlay_backdrop());
+    assert_eq!(releases.get(), 1);
+    assert!(!backend.restore_overlay_backdrop());
+}
+
+#[test]
+fn hybrid_backend_without_retained_framebuffer_rejects_overlay_backdrop_snapshot() {
+    let RecordingFixture { mut backend, .. } =
+        recording_backend_with_caps(FailStage::None, NativeRasterCaps::d3d11_full());
+    assert!(!backend.snapshot_overlay_backdrop());
+    assert!(!backend.has_overlay_backdrop());
+}
+
+#[test]
 fn native_gpu_backend_offscreen_create_bind_blit_when_caps_prove_support() {
     struct OffscreenFake {
         next_id: Cell<u32>,
@@ -1279,7 +2195,12 @@ fn native_gpu_backend_offscreen_create_bind_blit_when_caps_prove_support() {
             id: OffscreenTargetId,
             _src: Rect,
             _dst: Rect,
+            opacity: f32,
+            _additive: bool,
         ) -> Result<(), Error> {
+            if !opacity.is_finite() || opacity <= 0.0 {
+                return Ok(());
+            }
             if self
                 .targets
                 .borrow()
@@ -1920,6 +2841,10 @@ fn native_gpu_picture_repaint_resets_soft_pixels_and_canvas_state() {
     let solid_scissors = Rc::new(RefCell::new(Vec::new()));
     let glyph_batches = Rc::new(RefCell::new(Vec::new()));
     let soft_tiles = Rc::new(RefCell::new(Vec::new()));
+    let image_blits = Rc::new(RefCell::new(Vec::new()));
+    let picture_blit_opacity = Rc::new(Cell::new(1.0));
+    let blur_calls = Rc::new(Cell::new(0));
+    let blur_radius = Rc::new(Cell::new(0.0));
     let shutdown_calls = Rc::new(Cell::new(0));
     let make_current_calls = Rc::new(Cell::new(0));
     let mut context = recording_context(
@@ -1929,6 +2854,10 @@ fn native_gpu_picture_repaint_resets_soft_pixels_and_canvas_state() {
         &solid_scissors,
         &glyph_batches,
         &soft_tiles,
+        &image_blits,
+        &picture_blit_opacity,
+        &blur_calls,
+        &blur_radius,
         NativeRasterCaps::d3d11_full(),
         &shutdown_calls,
         &make_current_calls,
@@ -2079,6 +3008,10 @@ fn native_gpu_canvas_flushes_native_operations_in_recorded_order() {
     let solid_scissors = Rc::new(RefCell::new(Vec::new()));
     let glyph_batches = Rc::new(RefCell::new(Vec::new()));
     let soft_tiles = Rc::new(RefCell::new(Vec::new()));
+    let image_blits = Rc::new(RefCell::new(Vec::new()));
+    let picture_blit_opacity = Rc::new(Cell::new(1.0));
+    let blur_calls = Rc::new(Cell::new(0));
+    let blur_radius = Rc::new(Cell::new(0.0));
     let shutdown_calls = Rc::new(Cell::new(0));
     let make_current_calls = Rc::new(Cell::new(0));
     let mut context = recording_context(
@@ -2088,6 +3021,10 @@ fn native_gpu_canvas_flushes_native_operations_in_recorded_order() {
         &solid_scissors,
         &glyph_batches,
         &soft_tiles,
+        &image_blits,
+        &picture_blit_opacity,
+        &blur_calls,
+        &blur_radius,
         NativeRasterCaps::d3d11_full(),
         &shutdown_calls,
         &make_current_calls,
@@ -2403,7 +3340,7 @@ fn picture_blit_group_opacity_is_quantized_before_the_bounded_soft_upload() {
     encoder.blit_picture_with_opacity(
         FrameImage::new(2, 1, source.clone()).expect("Picture image"),
         FrameRect::new(0, 0, 2, 1),
-        FrameRect::new(7, 9, 2, 1),
+        crate::draw::pipeline::FrameSampledRect::from_integer(FrameRect::new(7, 9, 2, 1)),
         FrameOpacity::from_canvas(opacity),
     );
 
@@ -2439,7 +3376,7 @@ fn zero_opacity_picture_blit_does_not_issue_an_empty_soft_upload() {
     encoder.blit_picture_with_opacity(
         FrameImage::solid(2, 2, Color::white()).expect("Picture image"),
         FrameRect::new(0, 0, 2, 2),
-        FrameRect::new(7, 9, 2, 2),
+        crate::draw::pipeline::FrameSampledRect::from_integer(FrameRect::new(7, 9, 2, 2)),
         FrameOpacity::from_canvas(0.0),
     );
 
@@ -3937,14 +4874,15 @@ fn d3d11_backend_soft_ops_blit_without_full_upload() {
     {
         let canvas = backend.surface().canvas();
         canvas.fill_rect(Rect::new(0.0, 0.0, 8.0, 8.0), Color::white(), None);
-        // Diagonal line stays soft.
+        // 对角线线段走 SolidMesh，不再 soft blit。
         canvas.draw_line(0.0, 0.0, 10.0, 10.0, Color::black(), 1.0);
     }
     backend.present(&DamageRegion::full()).expect("present");
     assert_eq!(draw_calls.get(), 1);
     assert_eq!(stroke_calls.get(), 0);
     assert_eq!(glyph_calls.get(), 0);
-    assert_eq!(blit_calls.get(), 1);
+    assert_eq!(mesh_calls.get(), 1);
+    assert_eq!(blit_calls.get(), 0);
     assert_eq!(upload_calls.get(), 0);
     assert_eq!(present_calls.get(), 1);
     let _ = (
@@ -3953,7 +4891,6 @@ fn d3d11_backend_soft_ops_blit_without_full_upload() {
         last_draw_count.get(),
         last_stroke_count.get(),
         last_glyph_count.get(),
-        mesh_calls.get(),
         last_mesh_count.get(),
         shadow_calls.get(),
         last_shadow_count.get(),

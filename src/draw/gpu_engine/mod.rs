@@ -221,4 +221,31 @@ impl GraphicsEngine for GpuEngine {
             .backend_mut()
             .try_blit_offscreen_src(handle, src_rect, dst_rect)
     }
+
+    fn try_blur_offscreen(
+        &mut self,
+        handle: &crate::draw::ImageHandle,
+        region: crate::core::Rect,
+        radius: f32,
+    ) -> Result<(), Error> {
+        self.session
+            .backend_mut()
+            .try_blur_offscreen(handle, region, radius)
+    }
+
+    fn snapshot_overlay_backdrop(&mut self) -> bool {
+        self.session.backend_mut().snapshot_overlay_backdrop()
+    }
+
+    fn restore_overlay_backdrop(&mut self) -> bool {
+        self.session.backend_mut().restore_overlay_backdrop()
+    }
+
+    fn release_overlay_backdrop(&mut self) {
+        self.session.backend_mut().release_overlay_backdrop();
+    }
+
+    fn has_overlay_backdrop(&self) -> bool {
+        self.session.backend().has_overlay_backdrop()
+    }
 }

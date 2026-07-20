@@ -43,6 +43,7 @@ pub(crate) struct CachedRaster {
     pub(crate) coverage: Arc<[u8]>,
     pub(crate) bearing_x: f32,
     pub(crate) bearing_y: f32,
+    pub(crate) outline_mesh: Option<Arc<[f32]>>,
 }
 
 #[derive(Debug, Default)]
@@ -86,16 +87,29 @@ impl GlyphCache {
     }
 
     pub(crate) fn insert(&self, key: GlyphCacheKey, raster: CachedRaster) {
-        let retained_bytes =
-            std::mem::size_of::<GlyphCacheKey>().saturating_add(raster.coverage.len());
+        let mesh_bytes = raster
+            .outline_mesh
+            .as_ref()
+            .map(|mesh| mesh.len().saturating_mul(std::mem::size_of::<f32>()))
+            .unwrap_or(0);
+        let retained_bytes = std::mem::size_of::<GlyphCacheKey>()
+            .saturating_add(raster.coverage.len())
+            .saturating_add(mesh_bytes);
         if retained_bytes > self.max_bytes {
             return;
         }
 
         if let Ok(mut state) = self.inner.lock() {
             if let Some(previous) = state.entries.remove(&key) {
+                let previous_mesh = previous
+                    .outline_mesh
+                    .as_ref()
+                    .map(|mesh| mesh.len().saturating_mul(std::mem::size_of::<f32>()))
+                    .unwrap_or(0);
                 state.retained_bytes = state.retained_bytes.saturating_sub(
-                    std::mem::size_of::<GlyphCacheKey>().saturating_add(previous.coverage.len()),
+                    std::mem::size_of::<GlyphCacheKey>()
+                        .saturating_add(previous.coverage.len())
+                        .saturating_add(previous_mesh),
                 );
             }
 
@@ -106,8 +120,15 @@ impl GlyphCache {
                     break;
                 };
                 if let Some(evicted) = state.entries.remove(&evicted_key) {
+                    let evicted_mesh = evicted
+                        .outline_mesh
+                        .as_ref()
+                        .map(|mesh| mesh.len().saturating_mul(std::mem::size_of::<f32>()))
+                        .unwrap_or(0);
                     state.retained_bytes = state.retained_bytes.saturating_sub(
-                        std::mem::size_of::<GlyphCacheKey>().saturating_add(evicted.coverage.len()),
+                        std::mem::size_of::<GlyphCacheKey>()
+                            .saturating_add(evicted.coverage.len())
+                            .saturating_add(evicted_mesh),
                     );
                 }
             }

@@ -923,7 +923,25 @@ impl IGraphicsContext for D3d11Context {
         id: OffscreenTargetId,
         src: crate::core::Rect,
         dst: crate::core::Rect,
+        opacity: f32,
+        additive: bool,
     ) -> Result<(), Error> {
+        if additive {
+            return Err(Error::new(
+                Errc::NotImplemented,
+                "D3d11Context: Additive blit_offscreen_target requires wgpu",
+            ));
+        }
+        if !opacity.is_finite() || opacity <= 0.0 {
+            return Ok(());
+        }
+        if opacity < 1.0 - 1e-6 {
+            // 遗留 D3D11 路径无组 opacity 着色器；严格 GPU 走 wgpu。
+            return Err(Error::new(
+                Errc::NotImplemented,
+                "D3d11Context: blit_offscreen_target opacity < 1 requires wgpu",
+            ));
+        }
         let idx = id.0 as usize;
         let Some(Some(target)) = self.offscreens.get(idx) else {
             return Err(Error::new(

@@ -102,6 +102,7 @@ impl FrameRenderer {
             .is_some_and(|root| Self::scene_has_overlay(scene, root));
         if !has_overlay {
             self.overlay_backdrop = None;
+            engine.release_overlay_backdrop();
             self.overlay_backdrop_blocked = false;
         }
         if input.rendered_first && input.dirty_region.is_empty() && input.scroll_move.is_none() {
@@ -165,15 +166,25 @@ impl FrameRenderer {
                 .is_some_and(|root| Self::scene_normal_tree_dirty(scene, root));
         if has_overlay && normal_tree_dirty {
             self.overlay_backdrop = None;
+            engine.release_overlay_backdrop();
             self.overlay_backdrop_blocked = true;
-        } else if has_overlay && self.overlay_backdrop.is_none() && !self.overlay_backdrop_blocked {
+        } else if has_overlay
+            && self.overlay_backdrop.is_none()
+            && !engine.has_overlay_backdrop()
+            && !self.overlay_backdrop_blocked
+        {
             // This boundary still exposes the previous committed main surface;
             // after begin_frame/overlay paint it would already contain the mask.
             if input.rendered_first && !input.debug_mode {
+                // CPU 可读路径优先；否则走保留色缓冲 GPU 纹理快照（无 readback）。
                 self.overlay_backdrop = engine
                     .copy_frame_pixels()
                     .and_then(|(pixels, width)| Self::frame_image(pixels, width));
-                self.overlay_backdrop_blocked = self.overlay_backdrop.is_none();
+                if self.overlay_backdrop.is_none() {
+                    let _ = engine.snapshot_overlay_backdrop();
+                }
+                self.overlay_backdrop_blocked =
+                    self.overlay_backdrop.is_none() && !engine.has_overlay_backdrop();
             } else {
                 self.overlay_backdrop_blocked = true;
             }
@@ -277,6 +288,7 @@ impl FrameRenderer {
             self.render_object_tree = RenderObjectTree::new();
             self.last_tree_version = 0;
             self.overlay_backdrop = None;
+            engine.release_overlay_backdrop();
             self.overlay_backdrop_blocked = has_overlay;
             self.raster_pipeline = Some(raster_pipeline);
         }
@@ -306,7 +318,14 @@ impl FrameRenderer {
             && backdrop_extent_matches)
             .then(|| self.overlay_backdrop.clone())
             .flatten();
-        let use_overlay_backdrop = overlay_backdrop.is_some();
+        let use_cpu_overlay_backdrop = overlay_backdrop.is_some();
+        // GPU 快照由引擎持有；尺寸变化时 renderer 已释放，此处只查有效性。
+        let use_gpu_overlay_backdrop = has_overlay
+            && region.full_frame
+            && !input.debug_mode
+            && !normal_tree_dirty
+            && engine.has_overlay_backdrop();
+        let use_overlay_backdrop = use_cpu_overlay_backdrop || use_gpu_overlay_backdrop;
 
         let layer_t0 = std::time::Instant::now();
         if self.last_tree_version != cur_version || !self.layer_tree.is_ready() {
@@ -345,6 +364,7 @@ impl FrameRenderer {
                 damage,
                 strategy_full,
                 layer_build_us,
+                use_gpu_overlay_backdrop,
             );
         }
 
@@ -374,53 +394,112 @@ impl FrameRenderer {
                 };
             }
         }
-        // Dirty frames: clip recording to the damage AABB. begin_frame already
-        // cleared only that AABB on the retained CPU canvas, but FrameEncoder
-        // execution bypasses the real surface clip — without this, a parent
-        // background FillRect would wipe siblings outside the dirty hole
-        // (hover/timer → blank UI except the invalidated widget).
-        let damage_clip = (!region.full_frame)
-            .then(|| region.bounds())
-            .filter(|bounds| bounds.w > 0.0 && bounds.h > 0.0);
-        if let Some(bounds) = damage_clip {
-            self.recording_engine.canvas_2d().push_clip(bounds);
-        }
-        // 首帧绕过 DisplayList 缓存，避免空缓存重放导致侧栏等节点漏绘
-        let render_objects = if input.rendered_first {
-            Some(&mut self.render_object_tree)
+        // 多块脏区：逐矩形 clip + 以该矩形为 dirty 剪枝重绘，父背景只填当前洞，
+        // 不污染空隙中的干净像素。单矩形仍走一次 clip（与 begin_frame 外层并集 clip 叠加）。
+        let split_rects: Vec<Rect> = if !region.full_frame && region.rects().len() > 1 {
+            region
+                .rects()
+                .iter()
+                .copied()
+                .filter(|r| r.w > 0.0 && r.h > 0.0)
+                .collect()
         } else {
-            None
+            Vec::new()
         };
-        let render_result = if use_overlay_backdrop {
-            self.layer_tree.render_overlays(
-                &mut self.recording_engine,
-                scene,
-                &paint_region,
-                &input.theme,
-                input.font,
-                input.font_service,
-                input.image_service,
-                input.debug_mode,
-                input.hover_pos,
-                render_objects,
-            )
+        let render_result = if !split_rects.is_empty() {
+            let mut first = true;
+            let mut result = Ok(());
+            for rect in &split_rects {
+                self.recording_engine.canvas_2d().push_clip(*rect);
+                let sub_region = DirtyRegion::area(*rect);
+                let render_objects = if first && input.rendered_first {
+                    first = false;
+                    Some(&mut self.render_object_tree)
+                } else {
+                    first = false;
+                    None
+                };
+                let pass = if use_overlay_backdrop {
+                    self.layer_tree.render_overlays(
+                        &mut self.recording_engine,
+                        scene,
+                        &sub_region,
+                        &input.theme,
+                        input.font,
+                        input.font_service,
+                        input.image_service,
+                        input.debug_mode,
+                        input.hover_pos,
+                        render_objects,
+                    )
+                } else {
+                    self.layer_tree.render(
+                        &mut self.recording_engine,
+                        scene,
+                        &sub_region,
+                        &input.theme,
+                        input.font,
+                        input.font_service,
+                        input.image_service,
+                        input.debug_mode,
+                        input.hover_pos,
+                        render_objects,
+                    )
+                };
+                self.recording_engine.canvas_2d().pop_clip();
+                if let Err(error) = pass {
+                    result = Err(error);
+                    break;
+                }
+            }
+            result
         } else {
-            self.layer_tree.render(
-                &mut self.recording_engine,
-                scene,
-                &paint_region,
-                &input.theme,
-                input.font,
-                input.font_service,
-                input.image_service,
-                input.debug_mode,
-                input.hover_pos,
-                render_objects,
-            )
+            // Dirty frames: clip recording to the damage AABB when a single hole
+            // remains. begin_frame already cleared that rect on the retained CPU
+            // canvas, but FrameEncoder execution bypasses the real surface clip.
+            let damage_clip = (!region.full_frame)
+                .then(|| region.bounds())
+                .filter(|bounds| bounds.w > 0.0 && bounds.h > 0.0);
+            if let Some(bounds) = damage_clip {
+                self.recording_engine.canvas_2d().push_clip(bounds);
+            }
+            let render_objects = if input.rendered_first {
+                Some(&mut self.render_object_tree)
+            } else {
+                None
+            };
+            let render_result = if use_overlay_backdrop {
+                self.layer_tree.render_overlays(
+                    &mut self.recording_engine,
+                    scene,
+                    &paint_region,
+                    &input.theme,
+                    input.font,
+                    input.font_service,
+                    input.image_service,
+                    input.debug_mode,
+                    input.hover_pos,
+                    render_objects,
+                )
+            } else {
+                self.layer_tree.render(
+                    &mut self.recording_engine,
+                    scene,
+                    &paint_region,
+                    &input.theme,
+                    input.font,
+                    input.font_service,
+                    input.image_service,
+                    input.debug_mode,
+                    input.hover_pos,
+                    render_objects,
+                )
+            };
+            if damage_clip.is_some() {
+                self.recording_engine.canvas_2d().pop_clip();
+            }
+            render_result
         };
-        if damage_clip.is_some() {
-            self.recording_engine.canvas_2d().pop_clip();
-        }
         if let Err(error) = render_result {
             // An offscreen bind/flush/blit failure occurred while recording.
             // Do not call end_frame: that could submit a partial frame or turn
@@ -551,37 +630,120 @@ impl FrameRenderer {
         damage: DamageRegion,
         strategy_full: u8,
         layer_build_us: u128,
+        use_overlay_backdrop: bool,
     ) -> FrameRenderOutput {
-        let paint_region = region.clone();
-        let damage_clip = (!region.full_frame)
-            .then(|| region.bounds())
-            .filter(|bounds| bounds.w > 0.0 && bounds.h > 0.0);
-        if let Some(bounds) = damage_clip {
-            engine.canvas_2d().push_clip(bounds);
+        let mut use_overlay_backdrop = use_overlay_backdrop;
+        if use_overlay_backdrop && !engine.restore_overlay_backdrop() {
+            // 恢复失败时退回整树重绘，并阻塞后续快照直至浮层离场。
+            use_overlay_backdrop = false;
+            engine.release_overlay_backdrop();
+            self.overlay_backdrop_blocked = true;
         }
 
-        let render_objects = if input.rendered_first {
-            Some(&mut self.render_object_tree)
+        let paint_region = region.clone();
+        let split_rects: Vec<Rect> = if !region.full_frame && region.rects().len() > 1 {
+            region
+                .rects()
+                .iter()
+                .copied()
+                .filter(|r| r.w > 0.0 && r.h > 0.0)
+                .collect()
         } else {
-            None
+            Vec::new()
         };
         crate::core::perf_probe::begin_record_acc();
         let execute_t0 = std::time::Instant::now();
-        let render_result = self.layer_tree.render(
-            engine,
-            scene,
-            &paint_region,
-            &input.theme,
-            input.font,
-            input.font_service,
-            input.image_service,
-            input.debug_mode,
-            input.hover_pos,
-            render_objects,
-        );
-        if damage_clip.is_some() {
-            engine.canvas_2d().pop_clip();
-        }
+        let render_result = if !split_rects.is_empty() {
+            let mut first = true;
+            let mut result = Ok(());
+            for rect in &split_rects {
+                engine.canvas_2d().push_clip(*rect);
+                let sub_region = DirtyRegion::area(*rect);
+                let render_objects = if first && input.rendered_first {
+                    first = false;
+                    Some(&mut self.render_object_tree)
+                } else {
+                    first = false;
+                    None
+                };
+                let pass = if use_overlay_backdrop {
+                    self.layer_tree.render_overlays(
+                        engine,
+                        scene,
+                        &sub_region,
+                        &input.theme,
+                        input.font,
+                        input.font_service,
+                        input.image_service,
+                        input.debug_mode,
+                        input.hover_pos,
+                        render_objects,
+                    )
+                } else {
+                    self.layer_tree.render(
+                        engine,
+                        scene,
+                        &sub_region,
+                        &input.theme,
+                        input.font,
+                        input.font_service,
+                        input.image_service,
+                        input.debug_mode,
+                        input.hover_pos,
+                        render_objects,
+                    )
+                };
+                engine.canvas_2d().pop_clip();
+                if let Err(error) = pass {
+                    result = Err(error);
+                    break;
+                }
+            }
+            result
+        } else {
+            let damage_clip = (!region.full_frame)
+                .then(|| region.bounds())
+                .filter(|bounds| bounds.w > 0.0 && bounds.h > 0.0);
+            if let Some(bounds) = damage_clip {
+                engine.canvas_2d().push_clip(bounds);
+            }
+            let render_objects = if input.rendered_first {
+                Some(&mut self.render_object_tree)
+            } else {
+                None
+            };
+            let render_result = if use_overlay_backdrop {
+                self.layer_tree.render_overlays(
+                    engine,
+                    scene,
+                    &paint_region,
+                    &input.theme,
+                    input.font,
+                    input.font_service,
+                    input.image_service,
+                    input.debug_mode,
+                    input.hover_pos,
+                    render_objects,
+                )
+            } else {
+                self.layer_tree.render(
+                    engine,
+                    scene,
+                    &paint_region,
+                    &input.theme,
+                    input.font,
+                    input.font_service,
+                    input.image_service,
+                    input.debug_mode,
+                    input.hover_pos,
+                    render_objects,
+                )
+            };
+            if damage_clip.is_some() {
+                engine.canvas_2d().pop_clip();
+            }
+            render_result
+        };
         if let Err(error) = render_result {
             self.layer_tree.invalidate();
             return FrameRenderOutput {
@@ -606,7 +768,7 @@ impl FrameRenderer {
         paint_sample.execute_us = execute_us;
         paint_sample.end_frame_us = end_frame_us;
         paint_sample.strategy_full = strategy_full;
-        paint_sample.backdrop_restore = 0;
+        paint_sample.backdrop_restore = u8::from(use_overlay_backdrop);
         crate::core::perf_probe::record_paint(paint_sample);
 
         let caps = engine.capabilities();

@@ -2288,7 +2288,7 @@ impl D3d11Pipeline {
             if shadow.w <= 0.0 || shadow.h <= 0.0 || shadow.rgba[3] <= 0.0 {
                 continue;
             }
-            let blur = shadow.blur.max(0.0);
+            let blur = shadow.blur_x.max(shadow.blur_y).max(0.0);
             let constants = ShadowConstants {
                 viewport: [viewport_w, viewport_h],
                 _pad0: [0.0, 0.0],

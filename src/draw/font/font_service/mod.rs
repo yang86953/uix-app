@@ -552,6 +552,7 @@ impl FontService {
                 coverage: cached.coverage,
                 bearing_x: cached.bearing_x,
                 bearing_y: cached.bearing_y,
+                outline_mesh: cached.outline_mesh,
             };
         }
 
@@ -570,6 +571,7 @@ impl FontService {
                     coverage: Arc::clone(&raster.coverage),
                     bearing_x: raster.bearing_x,
                     bearing_y: raster.bearing_y,
+                    outline_mesh: raster.outline_mesh.clone(),
                 },
             );
         }
@@ -605,6 +607,7 @@ impl FontService {
             bearing_x: (fs * 0.05).max(0.0),
             // 相对布局 y（≈ ascent）：方框顶落在 ascent 下方一点
             bearing_y: -(fs * 0.75),
+            outline_mesh: None,
         }
     }
 

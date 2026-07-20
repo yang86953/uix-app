@@ -1,4 +1,4 @@
-use crate::native::graphics::wgpu_backend::renderer::grow_zeroed;
+use crate::native::graphics::wgpu_backend::draw_stream::grow_zeroed;
 
 #[test]
 fn glyph_staging_never_shrinks_when_shorter_glyphs_share_a_row() {

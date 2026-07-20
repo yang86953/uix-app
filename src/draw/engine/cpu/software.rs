@@ -199,6 +199,17 @@ impl GraphicsEngine for SoftwareEngine {
             .try_blit_offscreen_src(handle, src_rect, dst_rect)
     }
 
+    fn try_blur_offscreen(
+        &mut self,
+        handle: &ImageHandle,
+        region: Rect,
+        radius: f32,
+    ) -> Result<(), Error> {
+        self.session
+            .backend_mut()
+            .try_blur_offscreen(handle, region, radius)
+    }
+
     fn memory_usage(&self) -> usize {
         self.session
             .cpu_backend()

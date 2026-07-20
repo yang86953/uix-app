@@ -183,6 +183,9 @@ pub struct TextLayout {
 }
 
 /// 光栅化字形数据。
+///
+/// `outline_mesh` 为 NonZero 边列表 `[ax,ay,bx,by,…]`（本地像素，含 1px AA fringe）；
+/// 严格 GPU 路径优先用它在共享 RGBA8 MSDF atlas 上生成多通道距离场，避免 `ab_glyph` CPU draw。
 #[derive(Debug, Clone)]
 pub struct GlyphRaster {
     pub width: usize,
@@ -190,6 +193,8 @@ pub struct GlyphRaster {
     pub coverage: std::sync::Arc<[u8]>,
     pub bearing_x: f32,
     pub bearing_y: f32,
+    /// GPU atlas 覆盖边列表；`None` 时回退 CPU `coverage`。
+    pub outline_mesh: Option<std::sync::Arc<[f32]>>,
 }
 
 impl GlyphRaster {
@@ -200,6 +205,7 @@ impl GlyphRaster {
             coverage: std::sync::Arc::from([]),
             bearing_x: 0.0,
             bearing_y: 0.0,
+            outline_mesh: None,
         }
     }
 }

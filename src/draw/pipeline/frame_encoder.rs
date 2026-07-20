@@ -70,6 +70,95 @@ impl FrameRect {
     }
 }
 
+/// 采样目标矩形：允许亚像素落点与非 1:1 缩放，用 `f32` bits 保持命令模型 `Eq`。
+///
+/// 整数源 crop 仍用 [`FrameRect`]；仅 destination 进入本类型，供 GPU 纹理四边形采样。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameSampledRect {
+    x_bits: u32,
+    y_bits: u32,
+    width_bits: u32,
+    height_bits: u32,
+}
+
+impl FrameSampledRect {
+    pub fn from_integer(rect: FrameRect) -> Self {
+        Self::from_parts(rect.x as f32, rect.y as f32, rect.width as f32, rect.height as f32)
+            .unwrap_or_else(|_| Self {
+                x_bits: 0.0f32.to_bits(),
+                y_bits: 0.0f32.to_bits(),
+                width_bits: 0.0f32.to_bits(),
+                height_bits: 0.0f32.to_bits(),
+            })
+    }
+
+    pub fn from_parts(
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    ) -> Result<Self, FrameEncoderError> {
+        if !x.is_finite()
+            || !y.is_finite()
+            || !width.is_finite()
+            || !height.is_finite()
+            || width <= 0.0
+            || height <= 0.0
+        {
+            return Err(FrameEncoderError::InvalidSampledRect);
+        }
+        Ok(Self {
+            x_bits: x.to_bits(),
+            y_bits: y.to_bits(),
+            width_bits: width.to_bits(),
+            height_bits: height.to_bits(),
+        })
+    }
+
+    pub const fn x(self) -> f32 {
+        f32::from_bits(self.x_bits)
+    }
+
+    pub const fn y(self) -> f32 {
+        f32::from_bits(self.y_bits)
+    }
+
+    pub const fn width(self) -> f32 {
+        f32::from_bits(self.width_bits)
+    }
+
+    pub const fn height(self) -> f32 {
+        f32::from_bits(self.height_bits)
+    }
+
+    /// 当坐标均为整数像素时返回 [`FrameRect`]，供 splice / 精确裁剪使用。
+    pub fn as_integer(self) -> Option<FrameRect> {
+        let x = self.x();
+        let y = self.y();
+        let width = self.width();
+        let height = self.height();
+        if x.fract() != 0.0
+            || y.fract() != 0.0
+            || width.fract() != 0.0
+            || height.fract() != 0.0
+            || width <= 0.0
+            || height <= 0.0
+        {
+            return None;
+        }
+        Some(FrameRect::new(
+            x as i32,
+            y as i32,
+            width as i32,
+            height as i32,
+        ))
+    }
+
+    pub fn to_rect(self) -> Rect {
+        Rect::new(self.x(), self.y(), self.width(), self.height())
+    }
+}
+
 /// 帧命令使用的已验证圆角半径。
 ///
 /// 构造时排除 NaN、无穷大与负值，并把 `-0.0` 规范化为 `0.0`，因此该类型
@@ -417,8 +506,10 @@ pub enum FrameCommand {
     PictureBlit {
         image: FrameImage,
         src: FrameRect,
-        dst: FrameRect,
+        dst: FrameSampledRect,
         opacity: FrameOpacity,
+        /// 父画布 Additive 时为 true；严格 GPU 走 One+One 纹理 pipeline。
+        additive: bool,
     },
 }
 
@@ -555,6 +646,7 @@ pub enum FrameEncoderError {
         corner: &'static str,
     },
     InvalidStrokeWidth,
+    InvalidSampledRect,
     InvalidGlyphCoverage {
         width: usize,
         height: usize,
@@ -592,6 +684,12 @@ impl std::fmt::Display for FrameEncoderError {
             ),
             Self::InvalidStrokeWidth => {
                 write!(f, "frame stroke width must be finite and positive")
+            }
+            Self::InvalidSampledRect => {
+                write!(
+                    f,
+                    "sampled picture destination must be finite with positive width/height"
+                )
             }
             Self::InvalidGlyphCoverage {
                 width,
@@ -953,22 +1051,50 @@ impl FrameEncoder {
     }
 
     pub fn blit_picture(&mut self, image: FrameImage, src: FrameRect, dst: FrameRect) {
-        self.blit_picture_with_opacity(image, src, dst, FrameOpacity::opaque());
+        self.blit_picture_with_opacity(
+            image,
+            src,
+            FrameSampledRect::from_integer(dst),
+            FrameOpacity::opaque(),
+        );
     }
 
     pub(crate) fn blit_picture_with_opacity(
         &mut self,
         image: FrameImage,
         src: FrameRect,
-        dst: FrameRect,
+        dst: FrameSampledRect,
         opacity: FrameOpacity,
+    ) {
+        self.blit_picture_with_opacity_blend(image, src, dst, opacity, false);
+    }
+
+    pub(crate) fn blit_picture_with_opacity_blend(
+        &mut self,
+        image: FrameImage,
+        src: FrameRect,
+        dst: FrameSampledRect,
+        opacity: FrameOpacity,
+        additive: bool,
     ) {
         self.commands.push(FrameCommand::PictureBlit {
             image,
             src,
             dst,
             opacity,
+            additive,
         });
+    }
+
+    /// 整数目标兼容入口；fractional / 缩放目标请用 [`Self::blit_picture_with_opacity`]。
+    pub(crate) fn blit_picture_integer_with_opacity(
+        &mut self,
+        image: FrameImage,
+        src: FrameRect,
+        dst: FrameRect,
+        opacity: FrameOpacity,
+    ) {
+        self.blit_picture_with_opacity(image, src, FrameSampledRect::from_integer(dst), opacity);
     }
 
     /// Executes this deliberately small reference subset in memory.
@@ -1025,21 +1151,37 @@ impl FrameEncoder {
                     src,
                     dst,
                     opacity,
+                    additive,
                 } => {
                     if opacity.is_transparent() {
                         continue;
                     }
-                    if target_is_transparent
-                        && opacity.is_opaque()
-                        && full_frame_image_blit(self.width, self.height, image, *src, *dst)
-                    {
-                        // Source-over onto a transparent target is exactly the
-                        // premultiplied source. Retained backdrop restores use
-                        // this ordered shape, avoiding one alpha branch and
-                        // blend decision per full-surface pixel.
-                        pixels.copy_from_slice(image.pixels());
+                    if let Some(integer_dst) = dst.as_integer() {
+                        if !*additive
+                            && target_is_transparent
+                            && opacity.is_opaque()
+                            && full_frame_image_blit(self.width, self.height, image, *src, integer_dst)
+                        {
+                            // Source-over onto a transparent target is exactly the
+                            // premultiplied source. Retained backdrop restores use
+                            // this ordered shape, avoiding one alpha branch and
+                            // blend decision per full-surface pixel.
+                            pixels.copy_from_slice(image.pixels());
+                        } else {
+                            blit_image_pixels_with_opacity_blend(
+                                self.width,
+                                self.height,
+                                pixels,
+                                image,
+                                *src,
+                                integer_dst,
+                                opacity.value(),
+                                *additive,
+                            );
+                        }
                     } else {
-                        blit_image_pixels_with_opacity(
+                        // 亚像素 / 缩放：走浮点采样 blit，与 GPU 纹理四边形语义对齐。
+                        blit_sampled_image_pixels_with_opacity_blend(
                             self.width,
                             self.height,
                             pixels,
@@ -1047,6 +1189,7 @@ impl FrameEncoder {
                             *src,
                             *dst,
                             opacity.value(),
+                            *additive,
                         );
                     }
                     target_is_transparent = false;
@@ -1073,13 +1216,59 @@ impl FrameEncoder {
         &self,
         image: &FrameImage,
         src: FrameRect,
-        dst: FrameRect,
+        dst: FrameSampledRect,
         opacity: FrameOpacity,
     ) -> Option<(ReferenceFrame, FrameRect)> {
         if opacity.is_transparent() {
             return None;
         }
-        self.image_blit_reference_tile(image, src, dst, opacity.value())
+        let Some(integer_dst) = dst.as_integer() else {
+            // 亚像素目标：覆盖整数 AABB 内做浮点采样参考。
+            return self.sampled_picture_blit_reference_tile(image, src, dst, opacity.value());
+        };
+        self.image_blit_reference_tile(image, src, integer_dst, opacity.value())
+    }
+
+    fn sampled_picture_blit_reference_tile(
+        &self,
+        image: &FrameImage,
+        src: FrameRect,
+        dst: FrameSampledRect,
+        opacity: f32,
+    ) -> Option<(ReferenceFrame, FrameRect)> {
+        let x0 = dst.x().floor().max(0.0) as i32;
+        let y0 = dst.y().floor().max(0.0) as i32;
+        let x1 = (dst.x() + dst.width()).ceil().min(self.width as f32) as i32;
+        let y1 = (dst.y() + dst.height()).ceil().min(self.height as f32) as i32;
+        if x0 >= x1 || y0 >= y1 {
+            return None;
+        }
+        let visible = FrameRect::new(x0, y0, x1 - x0, y1 - y0);
+        let pixel_count =
+            usize::try_from(i64::from(visible.width).checked_mul(i64::from(visible.height))?)
+                .ok()?;
+        let mut frame = ReferenceFrame {
+            width: visible.width,
+            height: visible.height,
+            pixels: vec![Color::transparent().premultiplied(); pixel_count],
+        };
+        let local_dst = FrameSampledRect::from_parts(
+            dst.x() - visible.x as f32,
+            dst.y() - visible.y as f32,
+            dst.width(),
+            dst.height(),
+        )
+        .ok()?;
+        blit_sampled_image_pixels_with_opacity(
+            visible.width,
+            visible.height,
+            &mut frame.pixels,
+            image,
+            src,
+            local_dst,
+            opacity,
+        );
+        Some((frame, visible))
     }
 
     fn image_blit_reference_tile(
@@ -1360,20 +1549,59 @@ fn source_over_commands_have_safe_grouping(
                     }
                 }
                 FrameRasterOp::StrokeRoundedRects { .. } => return false,
-                FrameRasterOp::FillRectAdditive { .. }
-                | FrameRasterOp::FillRoundedRectAdditive { .. }
-                | FrameRasterOp::ScrollCopy { .. } => return false,
+                FrameRasterOp::FillRectAdditive { rect, .. } => {
+                    // Additive 是目标相关 blend，但仍可作写区参与重叠证明：
+                    // 与其它写区互不覆盖（或被不透明 cover 完整覆盖）时允许 splice。
+                    if !push_source_over_write(&mut writes, *rect, width, height) {
+                        return false;
+                    }
+                }
+                FrameRasterOp::FillRoundedRectAdditive {
+                    rect,
+                    radius,
+                    ..
+                } => {
+                    if !push_source_over_write(&mut writes, *rect, width, height) {
+                        return false;
+                    }
+                    let _ = radius;
+                }
+                FrameRasterOp::ScrollCopy { .. } => return false,
             },
-            FrameCommand::CpuSegment { image, src, dst }
-            | FrameCommand::PictureBlit {
-                image, src, dst, ..
-            } => {
+            FrameCommand::CpuSegment { image, src, dst } => {
                 if src.width != dst.width
                     || src.height != dst.height
                     || !src.is_within(image.width, image.height)
                     || !push_source_over_write(&mut writes, *dst, width, height)
                 {
                     return false;
+                }
+                if image_src_is_fully_opaque(image, *src) {
+                    push_opaque_cover(&mut opaque_covers, *dst);
+                }
+            }
+            FrameCommand::PictureBlit {
+                image,
+                src,
+                dst,
+                opacity,
+                additive,
+            } => {
+                let Some(integer_dst) = dst.as_integer() else {
+                    // 亚像素 / 非整数缩放目标不能进入代数 splice。
+                    return false;
+                };
+                // Additive Picture 依赖目标，不能参与 SrcOver splice 证明。
+                if *additive
+                    || src.width != integer_dst.width
+                    || src.height != integer_dst.height
+                    || !src.is_within(image.width, image.height)
+                    || !push_source_over_write(&mut writes, integer_dst, width, height)
+                {
+                    return false;
+                }
+                if opacity.is_opaque() && image_src_is_fully_opaque(image, *src) {
+                    push_opaque_cover(&mut opaque_covers, integer_dst);
                 }
             }
         }
@@ -1395,6 +1623,28 @@ fn push_opaque_cover(covers: &mut Vec<FrameRect>, rect: FrameRect) {
     if covers.try_reserve(1).is_ok() {
         covers.push(rect);
     }
+}
+
+/// 判定 image 的 `src` 子矩形是否逐像素 alpha=255（premultiplied AARRGGBB）。
+fn image_src_is_fully_opaque(image: &FrameImage, src: FrameRect) -> bool {
+    if src.is_empty() || !src.is_within(image.width, image.height) {
+        return false;
+    }
+    let pixels = image.pixels();
+    let width = image.width as usize;
+    let x0 = src.x as usize;
+    let y0 = src.y as usize;
+    let x1 = x0 + src.width as usize;
+    let y1 = y0 + src.height as usize;
+    for y in y0..y1 {
+        let row = y * width;
+        for x in x0..x1 {
+            if pixels.get(row + x).copied().unwrap_or(0) >> 24 != 255 {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 fn opaque_covers_rect(covers: &[FrameRect], target: FrameRect) -> bool {
@@ -1616,16 +1866,34 @@ fn crop_and_translate_source_over_command(
                     }
                 }
                 FrameRasterOp::StrokeRoundedRects { .. } => return Err(()),
-                FrameRasterOp::FillRectAdditive { .. }
-                | FrameRasterOp::FillRoundedRectAdditive { .. }
-                | FrameRasterOp::ScrollCopy { .. } => return Err(()),
+                FrameRasterOp::FillRectAdditive { rect, color } => {
+                    let Some((_, translated)) = translate_visible(*rect)? else {
+                        return Ok(None);
+                    };
+                    FrameRasterOp::FillRectAdditive {
+                        rect: translated,
+                        color: *color,
+                    }
+                }
+                FrameRasterOp::FillRoundedRectAdditive {
+                    rect,
+                    color,
+                    radius,
+                } => {
+                    let Some((_, translated)) = translate_visible(*rect)? else {
+                        return Ok(None);
+                    };
+                    FrameRasterOp::FillRoundedRectAdditive {
+                        rect: translated,
+                        color: *color,
+                        radius: *radius,
+                    }
+                }
+                FrameRasterOp::ScrollCopy { .. } => return Err(()),
             };
             FrameCommand::Native { operation }
         }
-        FrameCommand::CpuSegment { image, src, dst }
-        | FrameCommand::PictureBlit {
-            image, src, dst, ..
-        } => {
+        FrameCommand::CpuSegment { image, src, dst } => {
             if src.width != dst.width
                 || src.height != dst.height
                 || !src.is_within(image.width, image.height)
@@ -1648,19 +1916,50 @@ fn crop_and_translate_source_over_command(
             if !translated_src.is_within(image.width, image.height) {
                 return Err(());
             }
-            match command {
-                FrameCommand::CpuSegment { .. } => FrameCommand::CpuSegment {
-                    image: image.clone(),
-                    src: translated_src,
-                    dst: translated_dst,
-                },
-                FrameCommand::PictureBlit { opacity, .. } => FrameCommand::PictureBlit {
-                    image: image.clone(),
-                    src: translated_src,
-                    dst: translated_dst,
-                    opacity: *opacity,
-                },
-                _ => unreachable!(),
+            FrameCommand::CpuSegment {
+                image: image.clone(),
+                src: translated_src,
+                dst: translated_dst,
+            }
+        }
+        FrameCommand::PictureBlit {
+            image,
+            src,
+            dst,
+            opacity,
+            additive,
+        } => {
+            let Some(integer_dst) = dst.as_integer() else {
+                return Err(());
+            };
+            if src.width != integer_dst.width
+                || src.height != integer_dst.height
+                || !src.is_within(image.width, image.height)
+            {
+                return Err(());
+            }
+            let Some((visible_dst, translated_dst)) = translate_visible(integer_dst)? else {
+                return Ok(None);
+            };
+            let source_x = src
+                .x
+                .checked_add(visible_dst.x.checked_sub(integer_dst.x).ok_or(())?)
+                .ok_or(())?;
+            let source_y = src
+                .y
+                .checked_add(visible_dst.y.checked_sub(integer_dst.y).ok_or(())?)
+                .ok_or(())?;
+            let translated_src =
+                FrameRect::new(source_x, source_y, visible_dst.width, visible_dst.height);
+            if !translated_src.is_within(image.width, image.height) {
+                return Err(());
+            }
+            FrameCommand::PictureBlit {
+                image: image.clone(),
+                src: translated_src,
+                dst: FrameSampledRect::from_integer(translated_dst),
+                opacity: *opacity,
+                additive: *additive,
             }
         }
     }))
@@ -2012,10 +2311,154 @@ fn blit_image_pixels_with_opacity(
     dst: FrameRect,
     opacity: f32,
 ) {
+    blit_image_pixels_with_opacity_blend(width, height, pixels, image, src, dst, opacity, false);
+}
+
+fn blit_image_pixels_with_opacity_blend(
+    width: i32,
+    height: i32,
+    pixels: &mut [u32],
+    image: &FrameImage,
+    src: FrameRect,
+    dst: FrameRect,
+    opacity: f32,
+    additive: bool,
+) {
+    if additive {
+        blit_image_pixels_additive(width, height, pixels, image, src, dst, opacity);
+        return;
+    }
     if opacity >= 1.0 - 1e-6 {
         blit_image_pixels_impl::<false>(width, height, pixels, image, src, dst, 1.0);
     } else {
         blit_image_pixels_impl::<true>(width, height, pixels, image, src, dst, opacity);
+    }
+}
+
+/// 亚像素 / 缩放 Picture 目标的 CPU 参考采样（最近邻），与 GPU 纹理四边形落点对齐。
+fn blit_sampled_image_pixels_with_opacity(
+    width: i32,
+    height: i32,
+    pixels: &mut [u32],
+    image: &FrameImage,
+    src: FrameRect,
+    dst: FrameSampledRect,
+    opacity: f32,
+) {
+    blit_sampled_image_pixels_with_opacity_blend(
+        width, height, pixels, image, src, dst, opacity, false,
+    );
+}
+
+fn blit_sampled_image_pixels_with_opacity_blend(
+    width: i32,
+    height: i32,
+    pixels: &mut [u32],
+    image: &FrameImage,
+    src: FrameRect,
+    dst: FrameSampledRect,
+    opacity: f32,
+    additive: bool,
+) {
+    if src.is_empty() || dst.width() <= 0.0 || dst.height() <= 0.0 {
+        return;
+    }
+    let apply_opacity = opacity < 1.0 - 1e-6;
+    let x0 = dst.x().floor().max(0.0) as i32;
+    let y0 = dst.y().floor().max(0.0) as i32;
+    let x1 = (dst.x() + dst.width()).ceil().min(width as f32) as i32;
+    let y1 = (dst.y() + dst.height()).ceil().min(height as f32) as i32;
+    if x0 >= x1 || y0 >= y1 {
+        return;
+    }
+    let inv_w = 1.0 / dst.width();
+    let inv_h = 1.0 / dst.height();
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let u = ((x as f32 + 0.5) - dst.x()) * inv_w;
+            let v = ((y as f32 + 0.5) - dst.y()) * inv_h;
+            if u < 0.0 || v < 0.0 || u >= 1.0 || v >= 1.0 {
+                continue;
+            }
+            let source_x = src.x + (u * src.width as f32).floor() as i32;
+            let source_y = src.y + (v * src.height as f32).floor() as i32;
+            if source_x < 0
+                || source_y < 0
+                || source_x >= image.width
+                || source_y >= image.height
+                || source_x >= src.x + src.width
+                || source_y >= src.y + src.height
+            {
+                continue;
+            }
+            let mut source =
+                image.pixels[source_y as usize * image.width as usize + source_x as usize];
+            if apply_opacity {
+                source = crate::draw::rasterizer::apply_opacity(source, opacity);
+            }
+            let index = y as usize * width as usize + x as usize;
+            pixels[index] = if additive {
+                blend_pixel_additive(source, pixels[index])
+            } else {
+                blend_pixel_src_over(source, pixels[index])
+            };
+        }
+    }
+}
+
+fn blit_image_pixels_additive(
+    width: i32,
+    height: i32,
+    pixels: &mut [u32],
+    image: &FrameImage,
+    src: FrameRect,
+    dst: FrameRect,
+    opacity: f32,
+) {
+    if src.is_empty() || dst.is_empty() {
+        return;
+    }
+    let apply_opacity = opacity < 1.0 - 1e-6;
+    let x0 = dst.x.max(0);
+    let y0 = dst.y.max(0);
+    let x1 = dst.x.saturating_add(dst.width).min(width);
+    let y1 = dst.y.saturating_add(dst.height).min(height);
+    if x0 >= x1 || y0 >= y1 {
+        return;
+    }
+    // Additive 参考路径只保证 1:1；缩放走采样路径。
+    if src.width != dst.width || src.height != dst.height {
+        blit_sampled_image_pixels_with_opacity_blend(
+            width,
+            height,
+            pixels,
+            image,
+            src,
+            FrameSampledRect::from_integer(dst),
+            opacity,
+            true,
+        );
+        return;
+    }
+    for y in y0..y1 {
+        let source_y = src.y + (y - dst.y);
+        for x in x0..x1 {
+            let source_x = src.x + (x - dst.x);
+            if source_x < src.x
+                || source_y < src.y
+                || source_x >= src.x + src.width
+                || source_y >= src.y + src.height
+            {
+                continue;
+            }
+            let mut source =
+                image.pixels[source_y as usize * image.width as usize + source_x as usize];
+            if apply_opacity {
+                source = crate::draw::rasterizer::apply_opacity(source, opacity);
+            }
+            let index = y as usize * width as usize + x as usize;
+            pixels[index] = blend_pixel_additive(source, pixels[index]);
+        }
     }
 }
 

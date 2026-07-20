@@ -294,6 +294,40 @@ pub trait RenderBackend {
         Ok(())
     }
 
+    /// 对 Picture 离屏目标做可分离高斯模糊。默认未实现。
+    ///
+    /// GPU 路径须走原生 RT 模糊，禁止 PixelUpload 冒充；半径语义同 CPU
+    /// `gaussian_blur`（`sigma = radius / 3`）。
+    fn try_blur_offscreen(
+        &mut self,
+        _handle: &ImageHandle,
+        _region: Rect,
+        _radius: f32,
+    ) -> Result<(), Error> {
+        Err(Error::new(
+            crate::core::Errc::NotImplemented,
+            "render backend does not support offscreen separable blur",
+        ))
+    }
+
+    /// 捕获保留主色缓冲为 overlay 干净背景（GPU 优先，无 CPU readback）。
+    fn snapshot_overlay_backdrop(&mut self) -> bool {
+        false
+    }
+
+    /// 恢复 overlay 背景到主表面，并取消本帧全幅 clear。
+    fn restore_overlay_backdrop(&mut self) -> bool {
+        false
+    }
+
+    /// 释放 overlay 背景快照。
+    fn release_overlay_backdrop(&mut self) {}
+
+    /// 是否持有有效的 overlay 背景快照。
+    fn has_overlay_backdrop(&self) -> bool {
+        false
+    }
+
     fn present(&mut self, damage: &DamageRegion) -> Result<(), Error> {
         let _ = damage;
         Ok(())

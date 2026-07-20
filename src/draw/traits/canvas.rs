@@ -362,6 +362,28 @@ pub trait Canvas2D {
         self.blit_glyph(x, y, coverage.as_ref(), width, height, color);
     }
 
+    /// GPU 优先：轮廓边列表 → RGBA8 MSDF atlas；默认在 CPU 上栅格成解析 AA mask 再 blit。
+    /// soft 保持 1:1 解析 AA（与 PixelUpload 契约一致）；严格 GPU 走多通道距离场以改善缩放。
+    fn blit_glyph_outline(
+        &mut self,
+        x: i32,
+        y: i32,
+        mesh: std::sync::Arc<[f32]>,
+        width: usize,
+        height: usize,
+        color: Color,
+    ) {
+        if width == 0 || height == 0 {
+            return;
+        }
+        let Some(coverage) =
+            crate::draw::font::glyph_outline::coverage_from_edges(mesh.as_ref(), width, height)
+        else {
+            return;
+        };
+        self.blit_glyph_shared(x, y, std::sync::Arc::<[u8]>::from(coverage), width, height, color);
+    }
+
     // ── 渲染状态栈（必须自行实现）──
     fn save(&mut self);
     fn restore(&mut self);

@@ -769,9 +769,17 @@ impl IGraphicsContext for WglContext {
         id: OffscreenTargetId,
         src: crate::core::Rect,
         dst: crate::core::Rect,
+        opacity: f32,
+        additive: bool,
     ) -> Result<(), Error> {
+        if additive {
+            return Err(Error::new(
+                Errc::NotImplemented,
+                "WglContext: Additive blit_offscreen_target requires wgpu",
+            ));
+        }
         self.make_current_result()?;
-        self.pipeline.blit_offscreen_target(id, src, dst)
+        self.pipeline.blit_offscreen_target(id, src, dst, opacity)
     }
 
     fn device_pixel_ratio(&self) -> f32 {

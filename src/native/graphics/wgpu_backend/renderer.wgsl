@@ -80,10 +80,17 @@ fn shape_fs(input: ShapeOut) -> @location(0) vec4<f32> {
         let t = clamp((distance - input.params0.x) / span, 0.0, 1.0);
         return premul(mix(input.color_a, input.color_b, t), 1.0);
     }
-    let distance = rounded_distance(input.local, input.params0.xy, input.params1);
-    let blur = max(input.params0.z, 0.5);
-    var coverage = smoothstep(blur, -blur, distance);
-    if input.params0.w > 0.5 { coverage = coverage * coverage; }
+    // mode 5 = drop shadow, mode 6 = ambient；params0 = (exp_w, exp_h, blur_x, blur_y)
+    // 将局部坐标缩放到单位 blur 空间，使各向异性模糊仍可用圆形 SDF。
+    let blur_x = max(input.params0.z, 0.5);
+    let blur_y = max(input.params0.w, 0.5);
+    let scale = vec2<f32>(1.0 / blur_x, 1.0 / blur_y);
+    let local = input.local * scale;
+    let size = input.params0.xy * scale;
+    let radii = input.params1 * vec4<f32>(scale.x, scale.x, scale.y, scale.y);
+    let distance = rounded_distance(local, size, radii);
+    var coverage = smoothstep(1.0, -1.0, distance);
+    if input.mode == 6u { coverage = coverage * coverage; }
     return premul(input.color_a, coverage);
 }
 
@@ -116,4 +123,49 @@ fn glyph_fs(input: GlyphOut) -> @location(0) vec4<f32> {
     let coverage = textureSample(glyph_texture, glyph_sampler, input.uv).r;
     let alpha = input.color.a * coverage;
     return vec4<f32>(input.color.rgb * alpha, alpha);
+}
+
+fn median3(a: f32, b: f32, c: f32) -> f32 {
+    return max(min(a, b), min(max(a, b), c));
+}
+
+@fragment
+fn glyph_msdf_fs(input: GlyphOut) -> @location(0) vec4<f32> {
+    let sample = textureSample(glyph_texture, glyph_sampler, input.uv);
+    let m = median3(sample.r, sample.g, sample.b);
+    // m=0.5+sd/RANGE；fwidth(m)≈1/RANGE（1:1）或随缩放变化 → 屏幕空间 AA。
+    let w = max(fwidth(m), 1e-5);
+    let coverage = clamp(0.5 - (m - 0.5) / w, 0.0, 1.0);
+    let alpha = input.color.a * coverage;
+    return vec4<f32>(input.color.rgb * alpha, alpha);
+}
+
+struct TextureIn {
+    @location(0) position: vec2<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) opacity: f32,
+}
+
+struct TextureOut {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) opacity: f32,
+}
+
+@vertex
+fn texture_vs(input: TextureIn) -> TextureOut {
+    var out: TextureOut;
+    out.position = vec4<f32>(input.position, 0.0, 1.0);
+    out.uv = input.uv;
+    out.opacity = input.opacity;
+    return out;
+}
+
+@group(0) @binding(0) var color_texture: texture_2d<f32>;
+@group(0) @binding(1) var color_sampler: sampler;
+
+@fragment
+fn texture_fs(input: TextureOut) -> @location(0) vec4<f32> {
+    // Source pixels are BGRA premultiplied; opacity scales the whole premul color.
+    return textureSample(color_texture, color_sampler, input.uv) * input.opacity;
 }
