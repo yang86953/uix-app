@@ -71,11 +71,18 @@ pub(crate) fn outer_size_for_logical_client(
         ));
     }
     let dpi = valid_dpi(dpi);
+    let physical_width = logical_extent_to_physical(logical_width, dpi);
+    let physical_height = logical_extent_to_physical(logical_height, dpi);
+    // 自定义标题栏扩展客户区后，外窗与客户区同尺寸；再走 AdjustWindowRect
+    // 会把已“吃掉”的 THICKFRAME 边框重复计入，导致窗口偏大。
+    if super::custom_chrome::outer_matches_client_when_extended(style) {
+        return Ok((physical_width, physical_height));
+    }
     let mut rect = RECT {
         left: 0,
         top: 0,
-        right: logical_extent_to_physical(logical_width, dpi),
-        bottom: logical_extent_to_physical(logical_height, dpi),
+        right: physical_width,
+        bottom: physical_height,
     };
     // SAFETY: rect 在同步调用期间有效，style/ex_style 来自同一 Win32 窗口配置。
     if unsafe { AdjustWindowRectExForDpi(&mut rect, style, FALSE, ex_style, dpi) } == 0 {

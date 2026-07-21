@@ -85,6 +85,13 @@ pub(crate) struct PendingNativeShadow {
     pub(crate) scissor: (i32, i32, i32, i32),
 }
 
+/// 严格 GPU image blit 规划结果：可见入队 / 不可见跳过 / 需 soft 或 typed 失败。
+enum DirectImageBlit {
+    Ready(GpuImageBlit),
+    Culled,
+    Unsupported,
+}
+
 pub(crate) struct PendingNativeImage {
     pub(crate) blit: GpuImageBlit,
     pub(crate) scissor: (i32, i32, i32, i32),
@@ -891,60 +898,73 @@ impl NativeGpuCanvas2D {
     }
 
     /// 严格 GPU 路径：整数像素源 crop；目标可 1:1 或缩放；位置允许亚像素。
-    /// SrcOver 与 Additive 均可入队（Additive 由纹理 pipeline One+One 执行）。
+    /// 轴对齐仿射（平移/缩放，无旋转/剪切）经 [`Self::try_axis_aligned_device_rect`]
+    /// 映射到设备空间；裁剪交给 scissor。SrcOver 与 Additive 均可入队。
+    ///
+    /// `Culled` 表示完全不可见（屏外 / 空 clip），gpu-only 必须 no-op，不得当成未实现。
     fn try_queue_direct_image_blit(
         &self,
         pixels: &[u32],
         source_width: i32,
         source_rect: Rect,
         destination_rect: Rect,
-    ) -> Option<GpuImageBlit> {
+    ) -> DirectImageBlit {
         if !self.opacity.is_finite() || self.opacity <= 0.0 {
-            return None;
+            return DirectImageBlit::Culled;
         }
-        let identity = self.transform.m == Transform::identity().m;
         let native_blend = matches!(
             self.blend_mode,
             BlendMode::Alpha | BlendMode::SrcOver | BlendMode::Additive
         );
-        if !identity || !native_blend {
-            return None;
-        }
-        if !self.offset_x.is_finite() || !self.offset_y.is_finite() {
-            return None;
+        if !native_blend {
+            return DirectImageBlit::Unsupported;
         }
         let Ok(source_stride) = usize::try_from(source_width) else {
-            return None;
+            return DirectImageBlit::Unsupported;
         };
         if source_stride == 0 {
-            return None;
+            return DirectImageBlit::Culled;
         }
         let Ok(source_height) = i32::try_from(pixels.len() / source_stride) else {
-            return None;
+            return DirectImageBlit::Unsupported;
         };
-        let source = rect_to_integer_frame(source_rect)?;
-        if source.width <= 0
-            || source.height <= 0
-            || !frame_within(source, source_width, source_height)
-        {
-            return None;
+        let Some(source) = rect_to_integer_frame(source_rect) else {
+            return DirectImageBlit::Unsupported;
+        };
+        if source.width <= 0 || source.height <= 0 {
+            return DirectImageBlit::Culled;
+        }
+        if !frame_within(source, source_width, source_height) {
+            return DirectImageBlit::Unsupported;
         }
         if !destination_rect.w.is_finite()
             || !destination_rect.h.is_finite()
             || destination_rect.w <= 0.0
             || destination_rect.h <= 0.0
         {
-            return None;
+            return DirectImageBlit::Culled;
         }
-        let dest_x = destination_rect.x + self.offset_x;
-        let dest_y = destination_rect.y + self.offset_y;
-        if !dest_x.is_finite() || !dest_y.is_finite() {
-            return None;
+        let Some((device_dst, _)) = self.try_axis_aligned_device_rect(destination_rect) else {
+            return DirectImageBlit::Unsupported;
+        };
+        if device_dst.w <= 0.0 || device_dst.h <= 0.0 {
+            return DirectImageBlit::Culled;
+        }
+        if device_dst.x + device_dst.w <= 0.0
+            || device_dst.y + device_dst.h <= 0.0
+            || device_dst.x >= self.surface_w as f32
+            || device_dst.y >= self.surface_h as f32
+        {
+            // 完全落在表面外：跳过上传，不是能力缺口。
+            return DirectImageBlit::Culled;
         }
 
+        let identity = self.transform.m == Transform::identity().m;
         let one_to_one = destination_rect.w == source.width as f32
             && destination_rect.h == source.height as f32;
-        let (blit_x, blit_y, blit_w, blit_h, crop) = if one_to_one {
+        let (blit_x, blit_y, blit_w, blit_h, crop) = if identity && one_to_one {
+            let dest_x = device_dst.x;
+            let dest_y = device_dst.y;
             let integer_placement = self.offset_x.fract() == 0.0
                 && self.offset_y.fract() == 0.0
                 && dest_x.fract() == 0.0
@@ -956,61 +976,47 @@ impl NativeGpuCanvas2D {
                     width: source.width,
                     height: source.height,
                 };
-                if !frame_within(destination, self.surface_w, self.surface_h) {
-                    return None;
-                }
+                // 与 clip 求交；表面边界一并收窄，避免部分越界被误判为未实现。
+                let mut left = destination.x.max(0);
+                let mut top = destination.y.max(0);
+                let mut right = destination
+                    .x
+                    .saturating_add(destination.width)
+                    .min(self.surface_w);
+                let mut bottom = destination
+                    .y
+                    .saturating_add(destination.height)
+                    .min(self.surface_h);
                 if let Some(clip) = rect_to_integer_frame(self.clip_rect) {
-                    let left = destination.x.max(clip.x);
-                    let top = destination.y.max(clip.y);
-                    let right = destination
-                        .x
-                        .saturating_add(destination.width)
-                        .min(clip.x.saturating_add(clip.width));
-                    let bottom = destination
-                        .y
-                        .saturating_add(destination.height)
-                        .min(clip.y.saturating_add(clip.height));
-                    if left >= right || top >= bottom {
-                        return None;
-                    }
-                    let clipped_dst = IntegerFrame {
-                        x: left,
-                        y: top,
-                        width: right - left,
-                        height: bottom - top,
-                    };
-                    let clipped_src = IntegerFrame {
-                        x: source.x.saturating_add(left - destination.x),
-                        y: source.y.saturating_add(top - destination.y),
-                        width: clipped_dst.width,
-                        height: clipped_dst.height,
-                    };
-                    (
-                        clipped_dst.x as f32,
-                        clipped_dst.y as f32,
-                        clipped_dst.width as f32,
-                        clipped_dst.height as f32,
-                        clipped_src,
-                    )
-                } else {
-                    // 非整数 clip：整块上传，交给 scissor。
-                    (
-                        dest_x,
-                        dest_y,
-                        source.width as f32,
-                        source.height as f32,
-                        source,
-                    )
+                    left = left.max(clip.x);
+                    top = top.max(clip.y);
+                    right = right.min(clip.x.saturating_add(clip.width));
+                    bottom = bottom.min(clip.y.saturating_add(clip.height));
                 }
+                if left >= right || top >= bottom {
+                    return DirectImageBlit::Culled;
+                }
+                let clipped_dst = IntegerFrame {
+                    x: left,
+                    y: top,
+                    width: right - left,
+                    height: bottom - top,
+                };
+                let clipped_src = IntegerFrame {
+                    x: source.x.saturating_add(left - destination.x),
+                    y: source.y.saturating_add(top - destination.y),
+                    width: clipped_dst.width,
+                    height: clipped_dst.height,
+                };
+                (
+                    clipped_dst.x as f32,
+                    clipped_dst.y as f32,
+                    clipped_dst.width as f32,
+                    clipped_dst.height as f32,
+                    clipped_src,
+                )
             } else {
                 // 亚像素落点：保留完整源 crop，裁剪交给 GPU scissor。
-                if dest_x + source.width as f32 <= 0.0
-                    || dest_y + source.height as f32 <= 0.0
-                    || dest_x >= self.surface_w as f32
-                    || dest_y >= self.surface_h as f32
-                {
-                    return None;
-                }
                 (
                     dest_x,
                     dest_y,
@@ -1020,32 +1026,30 @@ impl NativeGpuCanvas2D {
                 )
             }
         } else {
-            // 缩放：上传完整源 crop，目标尺寸由 GPU 纹理采样；裁剪交给 scissor。
-            if dest_x + destination_rect.w <= 0.0
-                || dest_y + destination_rect.h <= 0.0
-                || dest_x >= self.surface_w as f32
-                || dest_y >= self.surface_h as f32
-            {
-                return None;
-            }
+            // 缩放或轴对齐 view 变换：上传完整源 crop，设备尺寸由 GPU 纹理采样。
             (
-                dest_x,
-                dest_y,
-                destination_rect.w,
-                destination_rect.h,
+                device_dst.x,
+                device_dst.y,
+                device_dst.w,
+                device_dst.h,
                 source,
             )
         };
 
-        let pixel_count = usize::try_from(i64::from(crop.width) * i64::from(crop.height)).ok()?;
+        let Some(pixel_count) = usize::try_from(i64::from(crop.width) * i64::from(crop.height)).ok()
+        else {
+            return DirectImageBlit::Unsupported;
+        };
         let mut retained = Vec::new();
-        retained.try_reserve_exact(pixel_count).ok()?;
+        if retained.try_reserve_exact(pixel_count).is_err() {
+            return DirectImageBlit::Unsupported;
+        }
         let copy_width = crop.width as usize;
         for y in crop.y..crop.y + crop.height {
             let row = y as usize * source_stride + crop.x as usize;
             retained.extend_from_slice(&pixels[row..row + copy_width]);
         }
-        Some(GpuImageBlit {
+        DirectImageBlit::Ready(GpuImageBlit {
             x: blit_x,
             y: blit_y,
             w: blit_w,
@@ -1479,14 +1483,21 @@ impl Canvas2D for NativeGpuCanvas2D {
     }
 
     fn blit_image(&mut self, src: &[u32], src_w: i32, src_rect: Rect, dst_rect: Rect) {
+        if !self.opacity.is_finite() || self.opacity <= 0.0 {
+            return;
+        }
         if !self.soft_has_content {
-            if let Some(blit) = self.try_queue_direct_image_blit(src, src_w, src_rect, dst_rect) {
-                self.pending_native
-                    .push(PendingNativeOp::ImageBlit(PendingNativeImage {
-                        blit,
-                        scissor: self.scissor_aabb(),
-                    }));
-                return;
+            match self.try_queue_direct_image_blit(src, src_w, src_rect, dst_rect) {
+                DirectImageBlit::Ready(blit) => {
+                    self.pending_native
+                        .push(PendingNativeOp::ImageBlit(PendingNativeImage {
+                            blit,
+                            scissor: self.scissor_aabb(),
+                        }));
+                    return;
+                }
+                DirectImageBlit::Culled => return,
+                DirectImageBlit::Unsupported => {}
             }
         }
         if self.gpu_only {

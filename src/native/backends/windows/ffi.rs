@@ -65,6 +65,7 @@ extern "system" {
     ) -> *mut std::ffi::c_void;
     pub(crate) fn DestroyWindow(hwnd: *mut std::ffi::c_void) -> i32;
     pub(crate) fn IsWindow(hwnd: *mut std::ffi::c_void) -> i32;
+    pub(crate) fn IsZoomed(hwnd: *mut std::ffi::c_void) -> i32;
     pub(super) fn AdjustWindowRectExForDpi(
         lpRect: *mut RECT,
         dwStyle: u32,
@@ -187,7 +188,7 @@ extern "system" {
     ) -> usize;
     pub(crate) fn KillTimer(hwnd: *mut std::ffi::c_void, uIDEvent: u32) -> i32;
 
-    pub(super) fn GetWindowRect(hwnd: *mut std::ffi::c_void, lpRect: *mut RECT) -> i32;
+    pub(crate) fn GetWindowRect(hwnd: *mut std::ffi::c_void, lpRect: *mut RECT) -> i32;
     pub(super) fn GetClientRect(hwnd: *mut std::ffi::c_void, lpRect: *mut RECT) -> i32;
     pub(super) fn ClientToScreen(hwnd: *mut std::ffi::c_void, lpPoint: *mut POINT) -> i32;
     pub(crate) fn MonitorFromWindow(

@@ -685,6 +685,7 @@ fn frame_renderer_d3d11_warp_executes_direct_and_picture_recordings_before_prese
 
 #[test]
 #[ignore = "legacy WGL readback fixture; production frame rendering uses wgpu"]
+#[cfg(feature = "opengles")]
 fn frame_renderer_wgl_executes_direct_and_picture_recordings_before_present() {
     use crate::draw::gpu_engine::GpuEngine;
 

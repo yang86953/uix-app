@@ -101,9 +101,9 @@ impl RenderSession {
 
     pub fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.require_owner("initialize")?;
-        self.width = width;
-        self.height = height;
-        self.backend.resize(width, height)
+        self.backend.resize(width, height)?;
+        self.sync_extent_from_surface();
+        Ok(())
     }
 
     /// Starts a session on a native target the factory has already prepared.
@@ -112,9 +112,8 @@ impl RenderSession {
     /// swapchain/client extent.
     pub(crate) fn initialize_prepared(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.require_owner("initialize_prepared")?;
-        let (actual_width, actual_height) = self.backend.initialize_prepared(width, height)?;
-        self.width = actual_width.max(1);
-        self.height = actual_height.max(1);
+        let _ = self.backend.initialize_prepared(width, height)?;
+        self.sync_extent_from_surface();
         Ok(())
     }
 
@@ -144,11 +143,19 @@ impl RenderSession {
     pub fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.require_owner("resize")?;
         self.backend.resize(width, height)?;
-        self.width = width;
-        self.height = height;
+        // Native GPU 后端会按 HWND 实际客户区校正 drawable；帧 clip 必须跟
+        // surface 一致，否则 begin_frame 会在更大 swapchain 上只绘制较小区域。
+        self.sync_extent_from_surface();
         // swapchain/缓冲 resize 后内容丢失，下一帧须全帧重绘。
         self.force_full_frame = true;
         Ok(())
+    }
+
+    /// 将会话 extent 与后端 surface 对齐（initialize_prepared / resize 后调用）。
+    fn sync_extent_from_surface(&mut self) {
+        let size = self.backend.surface().size();
+        self.width = size.w.round().max(1.0) as i32;
+        self.height = size.h.round().max(1.0) as i32;
     }
 
     /// 运行时切换后端；下一帧将强制 FullRedraw。
@@ -167,6 +174,7 @@ impl RenderSession {
         self.backend = replacement;
         if self.width > 0 && self.height > 0 {
             self.backend.resize(self.width, self.height)?;
+            self.sync_extent_from_surface();
         }
         self.force_full_frame = true;
         Ok(())

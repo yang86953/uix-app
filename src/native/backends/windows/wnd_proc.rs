@@ -123,6 +123,26 @@ impl WindowsPlatform {
     ) -> isize {
         let window_id = window.borrow().window_id;
         match msg {
+            WM_NCCALCSIZE => {
+                let state_maximized = window.borrow().maximized;
+                let maximized =
+                    super::custom_chrome::is_effectively_maximized(hwnd, state_maximized);
+                if let Some(result) =
+                    unsafe { super::custom_chrome::handle_nc_calc_size(hwnd, wparam, lparam, maximized) }
+                {
+                    return result;
+                }
+                self.def_window_proc(hwnd, msg, wparam, lparam)
+            }
+            WM_NCHITTEST => {
+                let resizable = window.borrow().resizable;
+                if let Some(result) =
+                    unsafe { super::custom_chrome::handle_nc_hit_test(hwnd, lparam, resizable) }
+                {
+                    return result;
+                }
+                self.def_window_proc(hwnd, msg, wparam, lparam)
+            }
             WM_CLOSE => {
                 // 先交给 app 关闭 engine/GL 资源；PlatformWindow::close 再销毁 HWND。
                 self.push_event(window_id, UiEvent::close());
@@ -168,6 +188,7 @@ impl WindowsPlatform {
                     state.width = w;
                     state.height = h;
                     let mut acts = Vec::new();
+                    let mut refresh_extended_frame = false;
                     match wparam {
                         SIZE_MINIMIZED => {
                             state.minimized = true;
@@ -187,12 +208,22 @@ impl WindowsPlatform {
                             if was_min || was_max {
                                 acts.push(SizeAction::Restored);
                             }
+                            // 最大化期 NCCALCSIZE 内缩边框；还原后需 FRAMECHANGED
+                            // 才能把客户区重新扩到外窗，否则四周透出桌面。
+                            refresh_extended_frame = was_max;
                             acts.push(SizeAction::Resized);
                         }
                         _ => {
                             acts.push(SizeAction::Resized);
                         }
                     }
+                    drop(state);
+                    if refresh_extended_frame {
+                        super::custom_chrome::refresh_extended_client_frame(hwnd);
+                    }
+                    let maximized = matches!(wparam, SIZE_MAXIMIZED)
+                        || super::custom_chrome::is_effectively_maximized(hwnd, false);
+                    super::custom_chrome::apply_dwm_frame_effects(hwnd, maximized);
                     acts
                 };
                 for action in actions {

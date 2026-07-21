@@ -149,7 +149,104 @@ fn present_upload_engine_uses_factory_initialized_context_without_second_initial
 
     assert_eq!(initialize_calls.load(Ordering::SeqCst), 0);
     assert_eq!((engine.session.width(), engine.session.height()), (7, 5));
-    assert_eq!(engine.logical_extent(), (64, 48));
+    assert_eq!(engine.logical_extent(), (7, 5));
+}
+
+#[test]
+fn present_upload_engine_logical_extent_follows_adopted_gpu_client_rect() {
+    #[derive(Default)]
+    struct AdoptedClientContext {
+        width: i32,
+        height: i32,
+        logical_width: i32,
+        logical_height: i32,
+    }
+
+    impl IGraphicsContext for AdoptedClientContext {
+        fn caps(&self) -> GraphicsContextCaps {
+            GraphicsContextCaps::cpu_pixel_upload(GraphicsBackend::D3d11, 1.0)
+        }
+
+        fn graphics_backend(&self) -> GraphicsBackend {
+            GraphicsBackend::D3d11
+        }
+
+        fn initialize(
+            &mut self,
+            _native_window: *mut std::ffi::c_void,
+            _width: i32,
+            _height: i32,
+        ) -> Result<()> {
+            Ok(())
+        }
+
+        fn resize(&mut self, width: i32, height: i32) -> Result<()> {
+            self.logical_width = width.max(1);
+            self.logical_height = height.max(1);
+            self.width = self.logical_width + 120;
+            self.height = self.logical_height + 80;
+            Ok(())
+        }
+
+        fn make_current(&mut self) -> Result<()> {
+            Ok(())
+        }
+
+        fn swap_buffers(&mut self, _damage: PresentDamage) -> Result<()> {
+            Ok(())
+        }
+
+        fn try_shutdown(&mut self) -> Result<()> {
+            Ok(())
+        }
+
+        fn read_pixels(
+            &mut self,
+            _x: i32,
+            _y: i32,
+            _w: i32,
+            _h: i32,
+        ) -> Result<Vec<u32>> {
+            Ok(Vec::new())
+        }
+
+        fn width(&self) -> i32 {
+            self.width
+        }
+
+        fn height(&self) -> i32 {
+            self.height
+        }
+
+        fn device_pixel_ratio(&self) -> f32 {
+            self.width as f32 / self.logical_width.max(1) as f32
+        }
+
+        fn present_pixels(
+            &mut self,
+            _pixels: &[u32],
+            _width: i32,
+            _height: i32,
+            _damage: PresentDamage,
+        ) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    let mut engine = PresentUploadEngine::new(Box::new(AdoptedClientContext {
+        width: 800,
+        height: 600,
+        logical_width: 800,
+        logical_height: 600,
+    }))
+    .unwrap();
+    engine.initialize(800, 600).unwrap();
+    assert_eq!(engine.logical_extent(), (800, 600));
+    assert_eq!((engine.session.width(), engine.session.height()), (800, 600));
+
+    engine.resize(800, 600).unwrap();
+    assert_eq!(engine.logical_extent(), (920, 680));
+    assert_eq!((engine.session.width(), engine.session.height()), (920, 680));
 }
 
 #[test]

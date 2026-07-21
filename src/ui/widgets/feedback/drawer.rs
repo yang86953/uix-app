@@ -18,6 +18,13 @@ pub enum DrawerPlacement {
     Bottom,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DrawerPointerTarget {
+    Trigger,
+    Close,
+    Mask,
+}
+
 component! {
     /// Sliding drawer panel.
     pub struct Drawer {
@@ -38,12 +45,13 @@ component! {
         closing: bool,
         pub(crate) transition_dirty: bool,
         layout_requested: Cell<bool>,
+        last_frame: Cell<Rect>,
         last_surface_w: Cell<f32>,
         last_surface_h: Cell<f32>,
         last_trigger_rect: Cell<Rect>,
         last_panel_rect: Cell<Rect>,
         close_hovered: Cell<bool>,
-        close_pressed: Cell<bool>,
+        pressed_target: Cell<Option<DrawerPointerTarget>>,
         activation_key: Cell<Option<crate::ui::KeyCode>>,
     }
 
@@ -53,13 +61,21 @@ component! {
 
     tab_index => (&self) -> i32 { i32::from(!self.is_present()) }
 
-    hit_test_frame => (&self, frame: Rect) -> Rect {
-        if self.is_present() {
-            frame
-        } else {
-            let trigger = Self::trigger_rect_for_size(frame.w, frame.h);
+    hit_test_frame => (&self, actual_frame: Rect) -> Rect {
+        self.last_frame.set(Self::normalize_frame(actual_frame));
+        if self.mask && self.is_present() {
+            Rect::new(0.0, 0.0, self.last_surface_w.get(), self.last_surface_h.get())
+        } else if !self.is_present() {
+            let trigger = Self::trigger_rect_for_size(actual_frame.w, actual_frame.h);
             self.last_trigger_rect.set(trigger);
-            Rect::new(frame.x + trigger.x, frame.y + trigger.y, trigger.w, trigger.h)
+            Rect::new(
+                actual_frame.x + trigger.x,
+                actual_frame.y + trigger.y,
+                trigger.w,
+                trigger.h,
+            )
+        } else {
+            actual_frame
         }
     }
 
@@ -73,14 +89,14 @@ component! {
                     ..
                 } if trigger.contains(*pos) => {
                     self.close_hovered.set(true);
-                    self.close_pressed.set(true);
+                    self.pressed_target.set(Some(DrawerPointerTarget::Trigger));
                     EventResult::Handled
                 }
                 SystemEvent::PointerUp {
                     pos,
                     button: MouseButton::Left,
                     ..
-                } if self.close_pressed.replace(false) => {
+                } if self.pressed_target.replace(None) == Some(DrawerPointerTarget::Trigger) => {
                     let released_inside = trigger.contains(*pos);
                     self.close_hovered.set(released_inside);
                     if released_inside {
@@ -97,9 +113,7 @@ component! {
                     }
                 }
                 SystemEvent::PointerLeave | SystemEvent::FocusOut => {
-                    self.close_hovered.set(false);
-                    self.close_pressed.set(false);
-                    self.activation_key.set(None);
+                    self.cancel_interaction();
                     EventResult::Handled
                 }
                 SystemEvent::KeyDown {
@@ -127,59 +141,61 @@ component! {
                 button: MouseButton::Left,
                 ..
             } => {
-                if self.mask_closable && self.pointer_is_outside_panel(*pos) {
-                    self.close();
+                let target = self.pointer_target_at(*pos);
+                self.close_hovered
+                    .set(target == Some(DrawerPointerTarget::Close));
+                self.pressed_target.set(target);
+                if target.is_some() {
                     return EventResult::Handled;
                 }
-                if self.closable && self.close_rect_local().contains(*pos) {
-                    self.close_hovered.set(true);
-                    self.close_pressed.set(true);
-                    return EventResult::Handled;
-                }
+                EventResult::Handled
             }
             SystemEvent::PointerUp {
                 pos,
                 button: MouseButton::Left,
                 ..
-            } if self.close_pressed.replace(false) => {
-                let released_inside = self.close_rect_local().contains(*pos);
-                self.close_hovered.set(released_inside);
-                if released_inside {
+            } => {
+                let armed = self.pressed_target.replace(None);
+                let target = self.pointer_target_at(*pos);
+                self.close_hovered
+                    .set(target == Some(DrawerPointerTarget::Close));
+                if armed.is_some() && armed == target {
                     self.close();
                 }
-                return EventResult::Handled;
+                EventResult::Handled
             }
-            SystemEvent::PointerMove { pos, .. } if self.closable => {
-                let hovered = self.close_rect_local().contains(*pos);
+            SystemEvent::PointerMove { pos, .. } => {
+                let hovered = self.pointer_target_at(*pos) == Some(DrawerPointerTarget::Close);
                 if self.close_hovered.replace(hovered) != hovered {
-                    return EventResult::Handled;
+                    EventResult::Handled
+                } else {
+                    EventResult::Handled
                 }
             }
             SystemEvent::PointerLeave | SystemEvent::FocusOut => {
-                let changed = self.close_hovered.replace(false) | self.close_pressed.replace(false);
-                if changed {
+                self.cancel_interaction();
+                EventResult::Handled
+            }
+            SystemEvent::KeyDown { key, .. } => {
+                if *key == crate::ui::KeyCode::Escape && self.closable {
+                    self.close();
                     return EventResult::Handled;
                 }
+                EventResult::Handled
             }
-            _ => {}
+            _ => EventResult::Handled,
         }
-
-        if let SystemEvent::KeyDown { key, .. } = event {
-            if *key == crate::ui::KeyCode::Escape && self.closable {
-                self.close();
-                return EventResult::Handled;
-            }
-        }
-
-        EventResult::Handled
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        self.last_frame.set(Self::normalize_frame(frame));
         let loc = crate::ui::locale::use_locale();
         if !self.is_present() {
             let local_trigger = Self::trigger_rect_for_size(frame.w, frame.h);
             self.last_trigger_rect.set(local_trigger);
-            let primary = if self.close_pressed.get() || self.activation_key.get().is_some() {
+            let primary = if self.pressed_target.get() == Some(DrawerPointerTarget::Trigger)
+                || self.activation_key.get().is_some()
+            {
                 ctx.tokens().color_primary_active()
             } else if self.close_hovered.get() {
                 ctx.tokens().color_primary_hover()
@@ -295,7 +311,7 @@ component! {
                 (close_rect.w - inset_x * 2.0).max(0.0),
                 (close_rect.h - inset_y * 2.0).max(0.0),
             );
-            if self.close_pressed.get() {
+            if self.pressed_target.get() == Some(DrawerPointerTarget::Close) {
                 ctx.fill_rect(
                     close_button,
                     ctx.tokens().color_fill_secondary(),
@@ -372,16 +388,21 @@ component! {
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], tree: &WidgetTree)
         -> Vec<(crate::ui::ComponentId, Rect)>
     {
-        if !self.is_present() || children.is_empty() {
+        if !self.is_present() {
             return Vec::new();
         }
+        let frame = Self::normalize_frame(frame);
+        self.last_frame.set(frame);
         let drawer_rect = if self.mask {
             let (surface_w, surface_h) = tree
                 .root_id()
                 .and_then(|root_id| tree.get(root_id))
                 .map(|root| (root.frame().w, root.frame().h))
                 .filter(|(w, h)| *w > 0.0 && *h > 0.0)
+                .map(|(w, h)| (Self::normalize_dimension(w), Self::normalize_dimension(h)))
                 .unwrap_or((1200.0, 760.0));
+            self.last_surface_w.set(surface_w);
+            self.last_surface_h.set(surface_h);
             self.overlay_rect_for_surface(surface_w, surface_h)
         } else {
             match self.placement {
@@ -393,6 +414,10 @@ component! {
                 }
             }
         };
+        self.last_panel_rect.set(drawer_rect);
+        if children.is_empty() {
+            return Vec::new();
+        }
         let drawer_rect = self.apply_transition_to_rect(drawer_rect);
         self.last_panel_rect.set(drawer_rect);
         let drawer_x = drawer_rect.x;
@@ -489,12 +514,13 @@ impl Drawer {
             closing: false,
             transition_dirty: false,
             layout_requested: Cell::new(false),
+            last_frame: Cell::new(Rect::zero()),
             last_surface_w: Cell::new(0.0),
             last_surface_h: Cell::new(0.0),
             last_trigger_rect: Cell::new(Rect::new(0.0, 0.0, 96.0, 32.0)),
             last_panel_rect: Cell::new(Rect::zero()),
             close_hovered: Cell::new(false),
-            close_pressed: Cell::new(false),
+            pressed_target: Cell::new(None),
             activation_key: Cell::new(None),
         }
         .drawer_size(size)
@@ -538,8 +564,7 @@ impl Drawer {
     pub fn placement(mut self, p: DrawerPlacement) -> Self {
         self.placement = p;
         if self.visible && !self.closing {
-            self.transition = TransitionPlayer::new(self.resolved_enter_animation());
-            self.transition_dirty = true;
+            self.restart_enter_transition();
         }
         self
     }
@@ -573,8 +598,7 @@ impl Drawer {
     pub fn enter_animation(mut self, animation: AnimationConfig) -> Self {
         self.enter_animation = Some(animation);
         if self.visible && !self.closing {
-            self.transition = TransitionPlayer::new(animation);
-            self.transition_dirty = true;
+            self.restart_enter_transition();
         }
         self
     }
@@ -594,20 +618,15 @@ impl Drawer {
     }
 
     pub fn open(&mut self) {
-        self.close_hovered.set(false);
-        self.close_pressed.set(false);
-        self.activation_key.set(None);
+        self.cancel_interaction();
         self.visible = true;
         self.closing = false;
-        self.transition = TransitionPlayer::new(self.resolved_enter_animation());
-        self.transition_dirty = true;
+        self.restart_enter_transition();
         self.layout_requested.set(true);
     }
 
     pub fn close(&mut self) {
-        self.close_hovered.set(false);
-        self.close_pressed.set(false);
-        self.activation_key.set(None);
+        self.cancel_interaction();
         if !self.is_present() {
             self.visible = false;
             self.closing = false;
@@ -652,10 +671,78 @@ impl Drawer {
         self.enter_animation = next.enter_animation;
         self.leave_animation = next.leave_animation;
         if interaction_geometry_changed {
-            self.close_hovered.set(false);
-            self.close_pressed.set(false);
-            self.activation_key.set(None);
+            self.cancel_interaction();
         }
+    }
+
+    fn restart_enter_transition(&mut self) {
+        let animation = self.resolved_enter_animation();
+        let mut transition = TransitionPlayer::new(animation);
+        // 与 View 进出场一致：零时长动画在创建后立即完成，避免登记多余帧。
+        if animation.duration() <= 0.0 {
+            transition.update(0.0);
+        }
+        self.transition = transition;
+        self.transition_dirty = true;
+    }
+
+    fn panel_rect_local(&self) -> Rect {
+        let frame = self.last_frame.get();
+        let panel = self.last_panel_rect.get();
+        let panel = if panel.w > 0.0 && panel.h > 0.0 {
+            panel
+        } else if self.mask {
+            self.overlay_rect_for_surface(
+                self.last_surface_w.get().max(1200.0),
+                self.last_surface_h.get().max(760.0),
+            )
+        } else {
+            match self.placement {
+                DrawerPlacement::Right | DrawerPlacement::Left => {
+                    Rect::new(frame.x, frame.y, self.width, frame.h)
+                }
+                DrawerPlacement::Top | DrawerPlacement::Bottom => {
+                    Rect::new(frame.x, frame.y, frame.w, self.height)
+                }
+            }
+        };
+        Rect::new(panel.x - frame.x, panel.y - frame.y, panel.w, panel.h)
+    }
+
+    fn close_rect_local(&self) -> Rect {
+        let panel = self.panel_rect_local();
+        let close_width = panel.w.min(48.0);
+        Rect::new(
+            panel.x + panel.w - close_width,
+            panel.y,
+            close_width,
+            panel.h.min(48.0),
+        )
+    }
+
+    fn pointer_target_at(&self, pos: Point) -> Option<DrawerPointerTarget> {
+        if self.closable && self.close_rect_local().contains(pos) {
+            Some(DrawerPointerTarget::Close)
+        } else if self.mask_closable && !self.panel_rect_local().contains(pos) {
+            Some(DrawerPointerTarget::Mask)
+        } else {
+            None
+        }
+    }
+
+    fn cancel_interaction(&self) {
+        self.close_hovered.set(false);
+        self.pressed_target.set(None);
+        self.activation_key.set(None);
+    }
+
+    fn normalize_frame(frame: Rect) -> Rect {
+        Rect::new(
+            if frame.x.is_finite() { frame.x } else { 0.0 },
+            if frame.y.is_finite() { frame.y } else { 0.0 },
+            Self::normalize_dimension(frame.w),
+            Self::normalize_dimension(frame.h),
+        )
     }
 
     fn transition_opacity(&self) -> f32 {
@@ -697,47 +784,6 @@ impl Drawer {
             trigger
         } else {
             Rect::new(0.0, 0.0, 96.0, 32.0)
-        }
-    }
-
-    fn close_rect_local(&self) -> Rect {
-        let panel = self.last_panel_rect.get();
-        let width = if panel.w > 0.0 {
-            panel.w
-        } else {
-            Self::normalize_dimension(self.width)
-        };
-        let height = if panel.h > 0.0 {
-            panel.h
-        } else {
-            Self::normalize_dimension(self.height)
-        };
-        let close_width = width.min(48.0);
-        Rect::new(
-            (width - close_width).max(0.0),
-            0.0,
-            close_width,
-            height.min(48.0),
-        )
-    }
-
-    fn pointer_is_outside_panel(&self, pos: Point) -> bool {
-        let panel = self.last_panel_rect.get();
-        let width = if panel.w > 0.0 {
-            panel.w
-        } else {
-            Self::normalize_dimension(self.width)
-        };
-        let height = if panel.h > 0.0 {
-            panel.h
-        } else {
-            Self::normalize_dimension(self.height)
-        };
-        match self.placement {
-            DrawerPlacement::Right => pos.x < 0.0,
-            DrawerPlacement::Left => pos.x >= width,
-            DrawerPlacement::Top => pos.y >= height,
-            DrawerPlacement::Bottom => pos.y < 0.0,
         }
     }
 
