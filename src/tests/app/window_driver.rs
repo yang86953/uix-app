@@ -144,3 +144,76 @@ fn asymmetric_dpi_rounding_does_not_trigger_repeated_resize() {
     ));
     assert_eq!(engine.resize_calls, 0);
 }
+
+struct AdoptedClientRectEngine {
+    logical_width: i32,
+    logical_height: i32,
+    resize_calls: usize,
+}
+
+impl AdoptedClientRectEngine {
+    fn new(logical_width: i32, logical_height: i32) -> Self {
+        Self {
+            logical_width,
+            logical_height,
+            resize_calls: 0,
+        }
+    }
+}
+
+impl GraphicsEngine for AdoptedClientRectEngine {
+    fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.logical_width = width.max(1);
+        self.logical_height = height.max(1);
+        Ok(())
+    }
+
+    fn try_shutdown(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.resize_calls += 1;
+        self.logical_width = width.max(1) + 120;
+        self.logical_height = height.max(1) + 80;
+        Ok(())
+    }
+
+    fn begin_frame(&mut self, _strategy: UpdateStrategy) -> RenderOutcome {
+        RenderOutcome::Idle
+    }
+
+    fn end_frame(&mut self, _damage: &DamageRegion) -> RenderOutcome {
+        RenderOutcome::Idle
+    }
+
+    fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
+        panic!("AdoptedClientRectEngine is not used for drawing in this test")
+    }
+
+    fn logical_extent(&mut self) -> (i32, i32) {
+        (self.logical_width, self.logical_height)
+    }
+}
+
+#[test]
+fn surface_reconciliation_skips_resize_when_engine_already_covers_client_rect() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(Container::new()));
+    tree.get_mut(root_id)
+        .expect("root")
+        .set_frame(Rect::new(0.0, 0.0, 800.0, 600.0));
+    let mut engine = AdoptedClientRectEngine::new(920, 680);
+
+    assert!(!ensure_surface_matches_window(
+        &mut tree,
+        &mut engine,
+        800,
+        600
+    ));
+    assert_eq!(engine.resize_calls, 0);
+    assert_eq!(
+        tree.get(root_id).expect("root").frame(),
+        Rect::new(0.0, 0.0, 920.0, 680.0)
+    );
+}

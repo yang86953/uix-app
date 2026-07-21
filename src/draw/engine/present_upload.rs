@@ -60,10 +60,23 @@ impl PresentUploadEngine {
         self.sync_clear_color();
         self.session.cpu_backend_mut()
     }
+
+    /// 与 NativeGpuBackend 一致：layout 必须跟 factory 校正后的 logical 客户区对齐。
+    fn sync_logical_extent_from_gpu(&mut self) {
+        let dpr = self.gpu_ctx.device_pixel_ratio();
+        let dpr = if dpr.is_finite() && dpr > 0.0 {
+            dpr
+        } else {
+            1.0
+        };
+        let logical = |physical: i32| ((physical.max(1) as f32 / dpr).round() as i32).max(1);
+        self.logical_width = logical(self.gpu_ctx.width());
+        self.logical_height = logical(self.gpu_ctx.height());
+    }
 }
 
 impl GraphicsEngine for PresentUploadEngine {
-    fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+    fn initialize(&mut self, _width: i32, _height: i32) -> Result<(), Error> {
         // The native factory owns creation against the real surface. Calling
         // `IGraphicsContext::initialize` here would reinitialize a live
         // context with a null surface, so this stage only creates the CPU
@@ -72,8 +85,7 @@ impl GraphicsEngine for PresentUploadEngine {
         let actual_h = self.gpu_ctx.height().max(1);
         self.sync_clear_color();
         self.session.initialize(actual_w, actual_h)?;
-        self.logical_width = width.max(1);
-        self.logical_height = height.max(1);
+        self.sync_logical_extent_from_gpu();
         Ok(())
     }
 
@@ -96,8 +108,7 @@ impl GraphicsEngine for PresentUploadEngine {
         let actual_h = self.gpu_ctx.height().max(1);
         self.sync_clear_color();
         self.session.resize(actual_w, actual_h)?;
-        self.logical_width = logical_w;
-        self.logical_height = logical_h;
+        self.sync_logical_extent_from_gpu();
         Ok(())
     }
 

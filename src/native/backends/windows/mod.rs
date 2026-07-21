@@ -18,6 +18,7 @@ pub mod clipboard;
 pub mod console;
 pub mod consts;
 pub mod cursor;
+pub(crate) mod custom_chrome;
 pub mod display;
 pub(crate) mod dpi;
 pub(crate) mod ffi;

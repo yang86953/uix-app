@@ -531,12 +531,26 @@ fn custom_title_bar_removes_caption_but_keeps_resize_frame_and_client_size() {
     );
 
     let client = unsafe { query_client_rect(hwnd) }.expect("custom title bar client rect");
+    let mut outer = RECT::default();
+    assert!(
+        unsafe { GetWindowRect(HWND(hwnd), &mut outer) }.is_ok(),
+        "GetWindowRect must succeed"
+    );
+    let client_w = client.right - client.left;
+    let client_h = client.bottom - client.top;
+    let outer_w = outer.right - outer.left;
+    let outer_h = outer.bottom - outer.top;
     assert_eq!(
-        (client.right - client.left, client.bottom - client.top),
+        (client_w, client_h),
         (
             logical_extent_to_physical(419, dpi),
             logical_extent_to_physical(263, dpi),
         )
+    );
+    assert_eq!(
+        (client_w, client_h),
+        (outer_w, outer_h),
+        "extended client must fill the outer window so content is not inset by THICKFRAME"
     );
     assert_eq!(
         (window.properties().width(), window.properties().height()),

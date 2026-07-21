@@ -180,13 +180,31 @@ pub struct DataTable<R> {
     rows: Vec<R>,
     row_keys: Vec<String>,
     columns: Vec<TableDataColumn<R>>,
+    empty_renderer: Option<TableEmptyRenderer>,
 }
 
 /// 扩展行视图工厂；按当前行数据构建普通 View 子树。
 pub type ExpandRenderer = Box<dyn Fn(&TableRow) -> crate::ui::view::ViewNode>;
 
+/// 空态 View 工厂；仅在 build 边界消费，接收当前列数，不进入 Table 组件。
+pub type TableEmptyRenderer = Box<dyn Fn(usize) -> crate::ui::view::ViewNode>;
+
 /// Type-erased typed-row cell factory kept in the render-handler sidecar.
 pub(crate) type TableCellRenderer = Box<dyn Fn(usize, usize) -> crate::ui::view::ViewNode>;
+
+/// 空行且非加载时解析空态 View：表级 `.empty` 优先于 ConfigProvider。
+fn resolve_table_empty_view(
+    table: &Table,
+    empty_renderer: Option<&TableEmptyRenderer>,
+) -> Option<crate::ui::view::ViewNode> {
+    if !table.rows.is_empty() || table.loading {
+        return None;
+    }
+    if let Some(renderer) = empty_renderer {
+        return Some(renderer(table.columns.len()));
+    }
+    crate::ui::config::render_empty_for::<Table>()
+}
 
 /// 变更事件。
 #[derive(Debug, Clone)]
@@ -213,10 +231,11 @@ struct TableResizeDrag {
     start_width: f32,
 }
 
-/// 声明式表格构建器；展开 View factory 保存在组件外。
+/// 声明式表格构建器；展开 / 空态 View factory 保存在组件外。
 pub struct TableBuilder {
     table: Table,
-    expand_renderer: ExpandRenderer,
+    expand_renderer: Option<ExpandRenderer>,
+    empty_renderer: Option<TableEmptyRenderer>,
 }
 
 component! {
@@ -1142,6 +1161,7 @@ impl Table {
             rows,
             row_keys,
             columns: Vec::new(),
+            empty_renderer: None,
         })
     }
     /// 是否让所有列头参与排序交互；列级 `TableColumn::sortable` 仍可单独启用。
@@ -1219,6 +1239,21 @@ impl Table {
         self.empty_text = t.into();
         self
     }
+    /// 数据为空且非加载时，用自定义 View 替换默认空态；工厂接收当前列数。
+    ///
+    /// 闭包只在 build 边界消费，不进入 Table 组件；优先于 ConfigProvider 空态。
+    pub fn empty<V>(self, renderer: impl Fn(usize) -> V + 'static) -> TableBuilder
+    where
+        V: crate::ui::view::View,
+    {
+        TableBuilder {
+            table: self,
+            expand_renderer: None,
+            empty_renderer: Some(Box::new(move |column_count| {
+                crate::ui::view::View::build(renderer(column_count))
+            })),
+        }
+    }
     /// 为展开行声明普通 View 子树；闭包接收当前 `TableRow`。
     pub fn expandable<V>(
         mut self,
@@ -1232,7 +1267,10 @@ impl Table {
         self.expand_height = finite_nonnegative(height);
         TableBuilder {
             table: self,
-            expand_renderer: Box::new(move |row| crate::ui::view::View::build(renderer(row))),
+            expand_renderer: Some(Box::new(move |row| {
+                crate::ui::view::View::build(renderer(row))
+            })),
+            empty_renderer: None,
         }
     }
     pub fn page_size(mut self, n: usize) -> Self {
@@ -1721,12 +1759,23 @@ impl<R> DataTable<R> {
         self
     }
 
+    /// 数据为空且非加载时，用自定义 View 替换默认空态；工厂接收当前列数。
+    pub fn empty<V>(mut self, renderer: impl Fn(usize) -> V + 'static) -> Self
+    where
+        V: crate::ui::view::View,
+    {
+        self.empty_renderer = Some(Box::new(move |column_count| {
+            crate::ui::view::View::build(renderer(column_count))
+        }));
+        self
+    }
+
     pub fn page_size(mut self, size: usize) -> Self {
         self.table.page_size = size;
         self
     }
 
-    fn into_parts(self) -> (Table, Option<RenderHandlerRegistration>)
+    fn into_parts(self) -> (Table, Option<RenderHandlerRegistration>, Option<TableEmptyRenderer>)
     where
         R: 'static,
     {
@@ -1735,6 +1784,7 @@ impl<R> DataTable<R> {
             rows,
             row_keys,
             columns,
+            empty_renderer,
         } = self;
         table.columns =
             Table::normalized_columns(columns.iter().map(|column| column.column.clone()).collect());
@@ -1756,7 +1806,7 @@ impl<R> DataTable<R> {
             .collect();
 
         if table.view_columns.is_empty() {
-            return (table, None);
+            return (table, None, empty_renderer);
         }
 
         let rows = Rc::new(rows);
@@ -1768,13 +1818,20 @@ impl<R> DataTable<R> {
             let row = &rows[row];
             (renderers[renderer_index])(row)
         });
-        (table, Some(RenderHandlerRegistration::TableCells(renderer)))
+        (
+            table,
+            Some(RenderHandlerRegistration::TableCells(renderer)),
+            empty_renderer,
+        )
     }
 }
 
 impl<R: 'static> crate::ui::view::View for DataTable<R> {
     fn build(self) -> crate::ui::view::ViewNode {
-        let (table, handler) = self.into_parts();
+        let (table, handler, empty_renderer) = self.into_parts();
+        if let Some(empty) = resolve_table_empty_view(&table, empty_renderer.as_ref()) {
+            return empty;
+        }
         let mut node = crate::ui::view::View::build(table);
         if let Some(handler) = handler {
             node.render_handlers.push(handler);
@@ -1785,7 +1842,10 @@ impl<R: 'static> crate::ui::view::View for DataTable<R> {
 
 impl<R: 'static> crate::ui::IntoWidgetNode for DataTable<R> {
     fn into_node(self) -> crate::ui::core::widget::WidgetNode {
-        let (table, handler) = self.into_parts();
+        let (table, handler, empty_renderer) = self.into_parts();
+        if let Some(empty) = resolve_table_empty_view(&table, empty_renderer.as_ref()) {
+            return crate::ui::IntoWidgetNode::into_node(empty);
+        }
         let mut node = crate::ui::IntoWidgetNode::into_node(table);
         if let Some(handler) = handler {
             node.render_handlers.push(handler);
@@ -1795,11 +1855,40 @@ impl<R: 'static> crate::ui::IntoWidgetNode for DataTable<R> {
 }
 
 impl TableBuilder {
-    fn into_parts(self) -> (Table, RenderHandlerRegistration) {
-        (
-            self.table,
-            RenderHandlerRegistration::TableExpand(self.expand_renderer),
-        )
+    fn into_parts(self) -> (Table, Vec<RenderHandlerRegistration>, Option<TableEmptyRenderer>) {
+        let mut handlers = Vec::new();
+        if let Some(expand) = self.expand_renderer {
+            handlers.push(RenderHandlerRegistration::TableExpand(expand));
+        }
+        (self.table, handlers, self.empty_renderer)
+    }
+
+    /// 数据为空且非加载时，用自定义 View 替换默认空态；工厂接收当前列数。
+    pub fn empty<V>(mut self, renderer: impl Fn(usize) -> V + 'static) -> Self
+    where
+        V: crate::ui::view::View,
+    {
+        self.empty_renderer = Some(Box::new(move |column_count| {
+            crate::ui::view::View::build(renderer(column_count))
+        }));
+        self
+    }
+
+    /// 为展开行声明普通 View 子树；可与 `.empty` 组合。
+    pub fn expandable<V>(
+        mut self,
+        height: f32,
+        renderer: impl Fn(&TableRow) -> V + 'static,
+    ) -> Self
+    where
+        V: crate::ui::view::View,
+    {
+        self.table.expandable = true;
+        self.table.expand_height = finite_nonnegative(height);
+        self.expand_renderer = Some(Box::new(move |row| {
+            crate::ui::view::View::build(renderer(row))
+        }));
+        self
     }
 
     pub fn columns(mut self, columns: Vec<TableColumn>) -> Self {
@@ -1884,39 +1973,37 @@ impl TableBuilder {
 
 impl crate::ui::IntoWidgetNode for TableBuilder {
     fn into_node(self) -> crate::ui::core::widget::WidgetNode {
-        let (table, handler) = self.into_parts();
-        crate::ui::core::widget::WidgetNode::leaf(Box::new(table))
-            .with_render_handlers(vec![handler])
+        let (table, handlers, empty_renderer) = self.into_parts();
+        if let Some(empty) = resolve_table_empty_view(&table, empty_renderer.as_ref()) {
+            return crate::ui::IntoWidgetNode::into_node(empty);
+        }
+        crate::ui::core::widget::WidgetNode::leaf(Box::new(table)).with_render_handlers(handlers)
     }
 }
 
 impl crate::ui::view::View for TableBuilder {
     fn build(self) -> crate::ui::view::ViewNode {
-        let (table, handler) = self.into_parts();
-        if table.rows.is_empty() && !table.loading {
-            if let Some(empty) = crate::ui::config::render_empty_for::<Table>() {
-                return empty;
-            }
+        let (table, handlers, empty_renderer) = self.into_parts();
+        if let Some(empty) = resolve_table_empty_view(&table, empty_renderer.as_ref()) {
+            return empty;
         }
         let mut node = crate::ui::view::ViewNode::leaf(table);
-        node.render_handlers.push(handler);
+        node.render_handlers.extend(handlers);
         node
-    }
-}
-
-impl crate::ui::view::View for Table {
-    fn build(self) -> crate::ui::view::ViewNode {
-        if self.rows.is_empty() && !self.loading {
-            if let Some(empty) = crate::ui::config::render_empty_for::<Self>() {
-                return empty;
-            }
-        }
-        crate::ui::view::ViewNode::leaf(self)
     }
 }
 
 impl From<TableBuilder> for crate::ui::view::ViewNode {
     fn from(builder: TableBuilder) -> Self {
         crate::ui::view::View::build(builder)
+    }
+}
+
+impl crate::ui::view::View for Table {
+    fn build(self) -> crate::ui::view::ViewNode {
+        if let Some(empty) = resolve_table_empty_view(&self, None) {
+            return empty;
+        }
+        crate::ui::view::ViewNode::leaf(self)
     }
 }

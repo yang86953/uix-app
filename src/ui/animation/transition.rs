@@ -183,7 +183,8 @@ pub mod presets {
     use super::*;
 
     pub fn modal_enter() -> AnimationConfig {
-        AnimationConfig::zoom_in(0.2)
+        // Modal 默认瞬时出现；需要缩放进场时由调用方显式配置 duration。
+        AnimationConfig::zoom_in(0.0)
     }
 
     pub fn modal_exit() -> AnimationConfig {
@@ -191,7 +192,8 @@ pub mod presets {
     }
 
     pub fn drawer_enter(placement: Placement) -> AnimationConfig {
-        AnimationConfig::slide_in(placement, 0.25).with_distance(180.0)
+        // Drawer 默认瞬时滑入到终态；需要过渡时由调用方显式配置 duration。
+        AnimationConfig::slide_in(placement, 0.0).with_distance(180.0)
     }
 
     pub fn drawer_exit(placement: Placement) -> AnimationConfig {

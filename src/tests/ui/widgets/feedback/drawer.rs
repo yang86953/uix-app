@@ -221,7 +221,12 @@ fn masked_drawer_animation_marks_its_surface_dirty_through_layer_tree() {
     let scroll = tree.set_root(Box::new(
         ScrollView::new(ScrollDirection::Vertical).size(800.0, 600.0),
     ));
-    let drawer = tree.add_child(scroll, Box::new(Drawer::new("Drawer")));
+    let drawer = tree.add_child(scroll, Box::new(
+        Drawer::new("Drawer").enter_animation(AnimationConfig::slide_in(
+            crate::ui::Placement::Right,
+            0.25,
+        )),
+    ));
     tree.get_mut(scroll)
         .expect("scroll root")
         .set_frame(Rect::new(0.0, 0.0, 800.0, 600.0));
@@ -407,8 +412,23 @@ fn drawer_advertises_animation_capability() {
 }
 
 #[test]
-fn drawer_enter_transition_advances_and_marks_paint_dirty() {
+fn drawer_default_enter_transition_is_immediately_at_rest() {
     let mut drawer = Drawer::new("Drawer").show();
+
+    assert!(drawer.transition.finished);
+    assert_eq!(drawer.transition.opacity_progress, 1.0);
+    assert_eq!(drawer.transition.offset, Point::new(0.0, 0.0));
+    assert!(!WidgetAnimation::update_animation(&mut drawer, 0.05));
+}
+
+#[test]
+fn drawer_enter_transition_advances_and_marks_paint_dirty() {
+    let mut drawer = Drawer::new("Drawer")
+        .enter_animation(AnimationConfig::slide_in(
+            crate::ui::Placement::Right,
+            0.25,
+        ))
+        .show();
     let initial_offset = drawer.transition.offset;
 
     assert!(WidgetAnimation::update_animation(&mut drawer, 0.05));
@@ -542,7 +562,8 @@ fn drawer_close_button_requires_matching_release_and_cancels_on_leave() {
     let mut drawer = Drawer::new("Drawer").size(200.0, 180.0).show();
     assert!(!WidgetAnimation::update_animation(&mut drawer, 1.0));
     render_drawer(&drawer, Rect::zero(), (320, 240));
-    let close = Point::new(176.0, 24.0);
+    // Right drawer on 320x240 surface: panel x=120, close slot x=272..320.
+    let close = Point::new(296.0, 24.0);
 
     assert_eq!(
         drawer.on_event(&pointer("down", close)),
@@ -576,11 +597,142 @@ fn drawer_close_button_requires_matching_release_and_cancels_on_leave() {
 }
 
 #[test]
+fn masked_drawer_closes_via_escape_close_button_and_mask_in_widget_tree() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(
+        ScrollView::new(ScrollDirection::Vertical).size(800.0, 600.0),
+    ));
+    let drawer_id = tree.add_child(root, Box::new(Drawer::new("Drawer")));
+    tree.get_mut(root)
+        .expect("scroll root")
+        .set_frame(Rect::new(0.0, 0.0, 800.0, 600.0));
+    tree.get_mut(drawer_id)
+        .expect("drawer child")
+        .set_frame(Rect::new(120.0, 80.0, 96.0, 32.0));
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(168.0, 96.0),
+            button: crate::ui::MouseButton::Left,
+            mods: crate::native::traits::input::KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerUp {
+            pos: Point::new(168.0, 96.0),
+            button: crate::ui::MouseButton::Left,
+            mods: crate::native::traits::input::KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    tree.layout();
+    assert!(!tree.update(1.0), "default enter must finish immediately");
+
+    fn drawer_is_visible(tree: &WidgetTree, drawer_id: crate::ui::ComponentId) -> bool {
+        tree.get(drawer_id)
+            .expect("drawer child")
+            .component()
+            .as_any()
+            .downcast_ref::<Drawer>()
+            .expect("drawer component")
+            .is_visible()
+    }
+
+    fn drawer_is_present(tree: &WidgetTree, drawer_id: crate::ui::ComponentId) -> bool {
+        tree.get(drawer_id)
+            .expect("drawer child")
+            .component()
+            .as_any()
+            .downcast_ref::<Drawer>()
+            .expect("drawer component")
+            .is_present()
+    }
+
+    assert!(drawer_is_visible(&tree, drawer_id));
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Escape,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(!drawer_is_visible(&tree, drawer_id));
+    assert!(drawer_is_present(&tree, drawer_id));
+    assert!(!tree.update(1.0));
+    assert!(!drawer_is_present(&tree, drawer_id));
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(168.0, 96.0),
+            button: crate::ui::MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerUp {
+            pos: Point::new(168.0, 96.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    tree.layout();
+    assert!(drawer_is_visible(&tree, drawer_id));
+
+    // Right drawer width 378 on 800 surface → panel x=422, close slot center ≈ (770, 24).
+    assert_eq!(
+        tree.dispatch_event(&pointer("down", Point::new(770.0, 24.0))),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&pointer("up", Point::new(770.0, 24.0))),
+        EventResult::Handled
+    );
+    assert!(!drawer_is_visible(&tree, drawer_id));
+    assert!(!tree.update(1.0));
+    assert!(!drawer_is_present(&tree, drawer_id));
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(168.0, 96.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerUp {
+            pos: Point::new(168.0, 96.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    tree.layout();
+    assert!(drawer_is_visible(&tree, drawer_id));
+
+    assert_eq!(
+        tree.dispatch_event(&pointer("down", Point::new(200.0, 300.0))),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&pointer("up", Point::new(200.0, 300.0))),
+        EventResult::Handled
+    );
+    assert!(!drawer_is_visible(&tree, drawer_id));
+    assert!(!tree.update(1.0));
+    assert!(!drawer_is_present(&tree, drawer_id));
+}
+
+#[test]
 fn drawer_mask_reconcile_cancels_an_armed_close() {
     let mut drawer = Drawer::new("Drawer").size(200.0, 180.0).show();
     assert!(!WidgetAnimation::update_animation(&mut drawer, 1.0));
     render_drawer(&drawer, Rect::zero(), (320, 240));
-    let close = Point::new(176.0, 24.0);
+    let close = Point::new(296.0, 24.0);
 
     assert_eq!(
         drawer.on_event(&pointer("down", close)),

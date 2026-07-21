@@ -544,8 +544,7 @@ impl Modal {
     pub fn enter_animation(mut self, animation: AnimationConfig) -> Self {
         self.enter_animation = animation;
         if self.visible && !self.closing {
-            self.transition = TransitionPlayer::new(animation);
-            self.transition_dirty = true;
+            self.restart_enter_transition();
         }
         self
     }
@@ -576,8 +575,7 @@ impl Modal {
         self.cancel_interaction();
         self.visible = true;
         self.closing = false;
-        self.transition = TransitionPlayer::new(self.enter_animation);
-        self.transition_dirty = true;
+        self.restart_enter_transition();
         self.layout_requested.set(true);
     }
 
@@ -809,6 +807,16 @@ impl Modal {
         self.context_close_requested
             .as_ref()
             .is_some_and(|requested| requested.replace(false))
+    }
+
+    fn restart_enter_transition(&mut self) {
+        let mut transition = TransitionPlayer::new(self.enter_animation);
+        // 与 View 进出场一致：零时长动画在创建后立即完成，避免登记多余帧。
+        if self.enter_animation.duration() <= 0.0 {
+            transition.update(0.0);
+        }
+        self.transition = transition;
+        self.transition_dirty = true;
     }
 
     fn transition_opacity(&self) -> f32 {

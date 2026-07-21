@@ -1,5 +1,4 @@
 use crate::draw::backend::native_gpu::*;
-#[cfg(feature = "d3d12")]
 use crate::draw::backend::traits::{BackendKind, DrawSurface, RenderBackend};
 #[cfg(feature = "d3d11")]
 use crate::draw::pipeline::EncodedPictureExecution;
@@ -1169,6 +1168,34 @@ fn native_gpu_resize_aligns_canvas_to_actual_gpu_client_size() {
 }
 
 #[test]
+fn render_session_resize_follows_adopted_native_gpu_surface() {
+    use crate::draw::pipeline::RenderSession;
+
+    let backend = NativeGpuBackend::new(Box::new(ClientRectLargerContext {
+        width: 800,
+        height: 600,
+        bias_w: 120,
+        bias_h: 80,
+        dpr: 1.0,
+    }))
+    .expect("backend");
+    let mut session = RenderSession::with_backend(Box::new(backend));
+    session
+        .initialize_prepared(800, 600)
+        .expect("initialize prepared");
+    assert_eq!((session.width(), session.height()), (920, 680));
+    session.resize(800, 600).expect("resize");
+    assert_eq!((session.width(), session.height()), (920, 680));
+    assert_eq!(
+        (
+            session.canvas_2d().width(),
+            session.canvas_2d().height()
+        ),
+        (920, 680)
+    );
+}
+
+#[test]
 fn native_gpu_canvas_uses_logical_extent_when_drawable_has_dpr() {
     let backend = NativeGpuBackend::new(Box::new(ClientRectLargerContext {
         width: 1600,
@@ -1353,6 +1380,93 @@ fn gpu_only_canvas_queues_fractional_position_image_blit() {
         canvas.pending_native.first(),
         Some(PendingNativeOp::ImageBlit(_))
     ));
+}
+
+#[test]
+fn gpu_only_canvas_queues_axis_aligned_transform_image_blit() {
+    use crate::draw::Transform;
+
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(64, 64, NativeRasterCaps::wgpu_full());
+    canvas.set_transform(
+        Transform::translate(8.0, 6.0).concat(Transform::scale(0.5, 0.5)),
+    );
+    let pixels = vec![0xFF00_00FFu32; 4];
+    canvas.blit_image(
+        &pixels,
+        2,
+        Rect::new(0.0, 0.0, 2.0, 2.0),
+        Rect::new(4.0, 6.0, 2.0, 2.0),
+    );
+    assert!(canvas.take_deferred_error().is_none());
+    assert_eq!(canvas.pending_native.len(), 1);
+    match canvas.pending_native.first() {
+        Some(PendingNativeOp::ImageBlit(op)) => {
+            assert_eq!(op.blit.x, 10.0);
+            assert_eq!(op.blit.y, 9.0);
+            assert_eq!(op.blit.w, 1.0);
+            assert_eq!(op.blit.h, 1.0);
+            assert_eq!(op.blit.pixel_w, 2);
+            assert_eq!(op.blit.pixel_h, 2);
+        }
+        _ => panic!("expected axis-aligned transform ImageBlit"),
+    }
+}
+
+#[test]
+fn gpu_only_zero_opacity_image_blit_is_a_noop() {
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(32, 32, NativeRasterCaps::wgpu_full());
+    canvas.set_opacity(0.0);
+    canvas.blit_image(
+        &[0xFF00_00FFu32; 4],
+        2,
+        Rect::new(0.0, 0.0, 2.0, 2.0),
+        Rect::new(4.0, 6.0, 2.0, 2.0),
+    );
+    assert!(canvas.take_deferred_error().is_none());
+    assert!(canvas.pending_native.is_empty());
+}
+
+#[test]
+fn gpu_only_fully_offscreen_image_blit_is_a_noop() {
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(32, 32, NativeRasterCaps::wgpu_full());
+    let pixels = vec![0xFF00_00FFu32; 4];
+    canvas.blit_image(
+        &pixels,
+        2,
+        Rect::new(0.0, 0.0, 2.0, 2.0),
+        Rect::new(4.0, 40.0, 2.0, 2.0),
+    );
+    assert!(
+        canvas.take_deferred_error().is_none(),
+        "屏外 image 必须 no-op，不能 typed 失败拖垮整帧"
+    );
+    assert!(canvas.pending_native.is_empty());
+    assert!(canvas.soft_fallback.is_none());
+}
+
+#[test]
+fn gpu_only_partially_offscreen_one_to_one_image_blit_clips() {
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(32, 32, NativeRasterCaps::wgpu_full());
+    let pixels = vec![0xFF00_00FFu32; 16];
+    canvas.blit_image(
+        &pixels,
+        4,
+        Rect::new(0.0, 0.0, 4.0, 4.0),
+        Rect::new(30.0, 30.0, 4.0, 4.0),
+    );
+    assert!(canvas.take_deferred_error().is_none());
+    assert!(canvas.soft_fallback.is_none());
+    match canvas.pending_native.first() {
+        Some(PendingNativeOp::ImageBlit(op)) => {
+            assert_eq!(op.blit.x, 30.0);
+            assert_eq!(op.blit.y, 30.0);
+            assert_eq!(op.blit.w, 2.0);
+            assert_eq!(op.blit.h, 2.0);
+            assert_eq!(op.blit.pixel_w, 2);
+            assert_eq!(op.blit.pixel_h, 2);
+        }
+        _ => panic!("expected clipped ImageBlit for partially offscreen 1:1 image"),
+    }
 }
 
 #[test]
@@ -5023,6 +5137,7 @@ fn d3d11_backend_soft_ops_blit_without_full_upload() {
     );
 }
 
+#[cfg(feature = "d3d12")]
 #[test]
 #[ignore = "legacy D3D12 WARP hybrid/readback fixture; production uses wgpu"]
 fn d3d12_warp_real_context_flows_through_gpu_engine_with_mixed_native_and_soft() {

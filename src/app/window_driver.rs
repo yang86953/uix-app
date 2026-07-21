@@ -39,7 +39,8 @@ use std::cell::{Cell, RefCell};
 use std::time::Instant;
 pub(crate) use support::{
     animation_clock_should_advance, ensure_surface_matches_window, has_invalidation_work,
-    sync_root_frame_exactly_to_engine, sync_root_frame_to_engine, WindowFrameResult,
+    native_client_logical_extent, sync_root_frame_exactly_to_engine, sync_root_frame_to_engine,
+    WindowFrameResult,
 };
 use support::{
     dispatch_due_active_work, earliest_deadline, has_layout_work, log_frame_metrics,
@@ -689,8 +690,7 @@ impl WindowDriver {
             sync_animation_registrations(active_work, tree, &[]);
         }
 
-        let native_width = platform_window.properties().width();
-        let native_height = platform_window.properties().height();
+        let (native_width, native_height) = native_client_logical_extent(platform_window);
         if native_width <= 0 || native_height <= 0 {
             self.cancel_outstanding_native_frame(platform_window);
             self.frame_scheduler

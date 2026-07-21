@@ -178,6 +178,22 @@ fn engine_logical_extent(engine: &mut dyn GraphicsEngine) -> Option<(f32, f32)> 
     (width > 0 && height > 0).then_some((width as f32, height as f32))
 }
 
+/// 以 HWND 实际客户区为准；properties 在样式/DPI 变更窗口期可能滞后。
+pub(crate) fn native_client_logical_extent(platform_window: &dyn PlatformWindow) -> (i32, i32) {
+    let cached_width = platform_window.properties().width();
+    let cached_height = platform_window.properties().height();
+    #[cfg(windows)]
+    {
+        use crate::native::graphics::platform::windows::drawable_size;
+        let hwnd = platform_window.native_handle().native_window();
+        if !hwnd.is_null() {
+            let drawable = drawable_size(hwnd, cached_width, cached_height);
+            return (drawable.logical_width, drawable.logical_height);
+        }
+    }
+    (cached_width, cached_height)
+}
+
 pub(crate) fn ensure_surface_matches_window(
     tree: &mut WidgetTree,
     engine: &mut dyn GraphicsEngine,
@@ -191,18 +207,25 @@ pub(crate) fn ensure_surface_matches_window(
         return false;
     };
     let mut changed = false;
-    if canvas_width != native_width as f32 || canvas_height != native_height as f32 {
-        if !report_graphics_resize_error(
+    let engine_smaller_or_uninitialized = canvas_width <= 1.0
+        || canvas_height <= 1.0
+        || canvas_width + 0.5 < native_width as f32
+        || canvas_height + 0.5 < native_height as f32;
+    if engine_smaller_or_uninitialized
+        && ((canvas_width - native_width as f32).abs() > 0.5
+            || (canvas_height - native_height as f32).abs() > 0.5)
+    {
+        if report_graphics_resize_error(
             "window graphics size reconciliation failed",
             engine.resize(native_width, native_height),
         ) {
+            changed = true;
+        } else {
             tree.mark_full_frame_dirty();
-            return false;
         }
-        changed = true;
     }
     let Some((engine_width, engine_height)) = engine_logical_extent(engine) else {
-        return false;
+        return changed;
     };
     let root_mismatch = tree
         .root_id()

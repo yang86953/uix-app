@@ -201,7 +201,7 @@ impl NativeGpuBackend {
         self.gpu_ctx.read_pixels(0, 0, width, height)
     }
 
-    #[cfg(all(test, any(feature = "opengles", feature = "d3d11", feature = "d3d12")))]
+    #[cfg(test)]
     pub(crate) fn last_soft_upload_bytes(&self) -> usize {
         self.surface.canvas.last_soft_upload_bytes
     }

@@ -57,6 +57,16 @@ pub(crate) const SIZE_MAXIMIZED: usize = 2;
 
 pub(crate) const HTCLIENT: u32 = 1;
 pub(crate) const HTCAPTION: usize = 2;
+pub(crate) const HTLEFT: u32 = 10;
+pub(crate) const HTRIGHT: u32 = 11;
+pub(crate) const HTTOP: u32 = 12;
+pub(crate) const HTTOPLEFT: u32 = 13;
+pub(crate) const HTTOPRIGHT: u32 = 14;
+pub(crate) const HTBOTTOM: u32 = 15;
+pub(crate) const HTBOTTOMLEFT: u32 = 16;
+pub(crate) const HTBOTTOMRIGHT: u32 = 17;
+pub(crate) const WM_NCCALCSIZE: u32 = 0x0083;
+pub(crate) const WM_NCHITTEST: u32 = 0x0084;
 
 pub(crate) const SW_HIDE: i32 = 0;
 pub(crate) const SW_SHOWNORMAL: i32 = 1;
@@ -106,6 +116,7 @@ pub(crate) const WS_MAXIMIZEBOX: u32 = 0x00010000;
 pub(crate) const WS_OVERLAPPEDWINDOW: u32 =
     WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
 pub(crate) const WS_THICKFRAME: u32 = 0x00040000;
+pub(crate) const WS_MAXIMIZE: u32 = 0x01000000;
 pub(crate) const WS_EX_APPWINDOW: u32 = 0x00040000;
 pub(crate) const WS_EX_LAYERED: u32 = 0x00080000;
 

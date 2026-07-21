@@ -1000,3 +1000,63 @@ fn typed_table_view_cells_follow_fixed_column_zones_while_scrolling() {
         Rect::new(160.0, 33.0, 80.0, 28.0)
     );
 }
+
+#[test]
+fn table_empty_factory_builds_custom_view_with_column_count() {
+    use crate::ui::view::{label, View};
+
+    let view = Table::new()
+        .columns(vec![
+            TableColumn::new("姓名", 120.0),
+            TableColumn::new("年龄", 80.0),
+        ])
+        .rows(vec![])
+        .empty(|column_count| label(format!("暂无数据，共 {column_count} 列")))
+        .build();
+
+    assert_eq!(view.widget_type_id(), std::any::TypeId::of::<crate::ui::Label>());
+}
+
+#[test]
+fn table_empty_factory_yields_to_loading_and_populated_rows() {
+    use crate::ui::view::{label, View};
+
+    let loading = Table::new()
+        .columns(vec![TableColumn::new("姓名", 120.0)])
+        .rows(vec![])
+        .loading(true)
+        .empty(|column_count| label(format!("should-not-build:{column_count}")))
+        .build();
+    assert_eq!(loading.widget_type_id(), std::any::TypeId::of::<Table>());
+
+    let populated = Table::new()
+        .columns(vec![TableColumn::new("姓名", 120.0)])
+        .rows(vec![vec!["Ada".into()]])
+        .empty(|column_count| label(format!("should-not-build:{column_count}")))
+        .build();
+    assert_eq!(populated.widget_type_id(), std::any::TypeId::of::<Table>());
+}
+
+#[test]
+fn table_empty_factory_takes_priority_over_config_provider() {
+    use crate::ui::foundation::config::ConfigProvider;
+    use crate::ui::view::label;
+
+    let tree = ViewAdapter::build(
+        ConfigProvider::new()
+            .render_empty(|_| label("from-config"))
+            .child(|| {
+                Table::new()
+                    .columns(vec![TableColumn::new("姓名", 120.0)])
+                    .rows(vec![])
+                    .empty(|column_count| label(format!("from-table:{column_count}")))
+            }),
+    );
+    assert!(tree.find_by_type::<Table>().is_none());
+    assert_eq!(
+        tree.find_all_by_type::<crate::ui::Label>()
+            .first()
+            .map(|(_, label)| label.text()),
+        Some("from-table:1")
+    );
+}

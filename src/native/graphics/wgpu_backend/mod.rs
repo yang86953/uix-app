@@ -25,6 +25,69 @@ use crate::native::traits::present::{
 use blur::SeparableBlur;
 use renderer::{ActiveTarget, WgpuRenderer};
 
+/// Prefer opaque composition so uncleared / partial-alpha pixels do not show the
+/// desktop through a normal HWND swapchain. Premultiplied remains the fallback.
+pub(crate) fn choose_surface_alpha_mode(
+    modes: &[wgpu::CompositeAlphaMode],
+) -> Option<wgpu::CompositeAlphaMode> {
+    modes
+        .iter()
+        .copied()
+        .find(|mode| *mode == wgpu::CompositeAlphaMode::Opaque)
+        .or_else(|| {
+            modes
+                .iter()
+                .copied()
+                .find(|mode| *mode == wgpu::CompositeAlphaMode::PreMultiplied)
+        })
+        .or_else(|| modes.first().copied())
+}
+
+/// Swapchain draws use logical viewport for NDC; offscreen slots already store
+/// their logical extent.
+pub(crate) fn logical_draw_viewport(
+    bound_offscreen: Option<(i32, i32)>,
+    logical_width: i32,
+    logical_height: i32,
+) -> (f32, f32) {
+    if let Some((width, height)) = bound_offscreen {
+        return (width.max(1) as f32, height.max(1) as f32);
+    }
+    (logical_width.max(1) as f32, logical_height.max(1) as f32)
+}
+
+/// 在 downlevel 基线上抬高 2D 纹理上限，以覆盖桌面最大化 / 高分屏 swapchain。
+///
+/// `Limits::downlevel_defaults()` 的 `max_texture_dimension_2d` 仅为 2048；在
+/// 1440p+ 显示器上最大化窗口会让 `Surface::configure` 失败，随后
+/// `get_current_texture` 以 fatal panic 退出进程。
+pub(crate) fn device_limits_for_adapter(adapter_limits: &wgpu::Limits) -> wgpu::Limits {
+    let mut limits = wgpu::Limits::downlevel_defaults();
+    limits.max_texture_dimension_2d = adapter_limits
+        .max_texture_dimension_2d
+        .max(limits.max_texture_dimension_2d);
+    limits
+}
+
+/// 配置前校验 surface / retained 纹理尺寸，避免非法 configure 把 swapchain 留在未配置态。
+pub(crate) fn ensure_surface_extent(
+    width: u32,
+    height: u32,
+    max_texture_dimension_2d: u32,
+) -> Result<(u32, u32)> {
+    let width = width.max(1);
+    let height = height.max(1);
+    if width > max_texture_dimension_2d || height > max_texture_dimension_2d {
+        return Err(Error::new(
+            Errc::GraphicsOutOfMemory,
+            format!(
+                "wgpu surface {width}x{height} exceeds device max_texture_dimension_2d {max_texture_dimension_2d}"
+            ),
+        ));
+    }
+    Ok((width, height))
+}
+
 pub(crate) fn create_vulkan(
     surface: *mut c_void,
     width: i32,
@@ -88,6 +151,7 @@ pub struct WgpuContext {
     logical_height: i32,
     width: i32,
     height: i32,
+    max_texture_dimension_2d: u32,
     device_lost: Arc<AtomicBool>,
     shutdown: bool,
     offscreens: Vec<Option<OffscreenSlot>>,
@@ -132,10 +196,12 @@ impl WgpuContext {
                 ),
             ));
         }
+        let required_limits = device_limits_for_adapter(&adapter.limits());
+        let max_texture_dimension_2d = required_limits.max_texture_dimension_2d;
         let descriptor = wgpu::DeviceDescriptor {
             label: Some("uix-wgpu-device"),
             required_features: wgpu::Features::empty(),
-            required_limits: wgpu::Limits::downlevel_defaults(),
+            required_limits,
             memory_hints: wgpu::MemoryHints::MemoryUsage,
             ..Default::default()
         };
@@ -169,16 +235,12 @@ impl WgpuContext {
             .find(|mode| *mode == wgpu::PresentMode::Fifo)
             .or_else(|| capabilities.present_modes.first().copied())
             .ok_or_else(|| Error::new(Errc::PlatformError, "wgpu surface has no present modes"))?;
-        let alpha_mode = capabilities
-            .alpha_modes
-            .iter()
-            .copied()
-            .find(|mode| *mode == wgpu::CompositeAlphaMode::PreMultiplied)
-            .or_else(|| capabilities.alpha_modes.first().copied())
-            .ok_or_else(|| Error::new(Errc::PlatformError, "wgpu surface has no alpha modes"))?;
+        let alpha_mode = choose_surface_alpha_mode(&capabilities.alpha_modes).ok_or_else(|| {
+            Error::new(Errc::PlatformError, "wgpu surface has no alpha modes")
+        })?;
         let extent = surface::drawable_extent(native_surface, width, height);
-        let drawable_width = extent.width;
-        let drawable_height = extent.height;
+        let (drawable_width, drawable_height) =
+            ensure_surface_extent(extent.width, extent.height, max_texture_dimension_2d)?;
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
             format,
@@ -211,6 +273,7 @@ impl WgpuContext {
             logical_height: extent.logical_height,
             width: drawable_width as i32,
             height: drawable_height as i32,
+            max_texture_dimension_2d,
             device_lost,
             shutdown: false,
             offscreens: Vec::new(),
@@ -257,12 +320,13 @@ impl WgpuContext {
     }
 
     fn current_target_size(&self) -> (f32, f32) {
-        if let Some(id) = self.bound_offscreen {
-            if let Some(Some(slot)) = self.offscreens.get(id as usize) {
-                return (slot.width.max(1) as f32, slot.height.max(1) as f32);
-            }
-        }
-        (self.width.max(1) as f32, self.height.max(1) as f32)
+        let bound = self.bound_offscreen.and_then(|id| {
+            self.offscreens
+                .get(id as usize)
+                .and_then(|slot| slot.as_ref())
+                .map(|slot| (slot.width, slot.height))
+        });
+        logical_draw_viewport(bound, self.logical_width, self.logical_height)
     }
 }
 
@@ -289,12 +353,17 @@ impl IGraphicsContext for WgpuContext {
             return Ok(());
         }
         let extent = surface::drawable_extent(self.native_surface, width, height);
+        let (drawable_width, drawable_height) = ensure_surface_extent(
+            extent.width,
+            extent.height,
+            self.max_texture_dimension_2d,
+        )?;
         self.logical_width = extent.logical_width;
         self.logical_height = extent.logical_height;
-        self.width = extent.width as i32;
-        self.height = extent.height as i32;
-        self.config.width = extent.width;
-        self.config.height = extent.height;
+        self.width = drawable_width as i32;
+        self.height = drawable_height as i32;
+        self.config.width = drawable_width;
+        self.config.height = drawable_height;
         self.surface.configure(&self.device, &self.config);
         self.renderer.invalidate_retained_color();
         Ok(())

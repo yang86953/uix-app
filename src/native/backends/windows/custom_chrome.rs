@@ -1,0 +1,298 @@
+//! 自定义标题栏客户区扩展：去掉系统标题栏后仍保留 `WS_THICKFRAME`，
+//! 但默认非客户区缩放边框会在 HWND 四周留下未绘制空隙（桌面/宿主背景透出）。
+//! 通过 `WM_NCCALCSIZE` 把客户区扩到外窗，并用 `WM_NCHITTEST` 在边缘恢复缩放命中。
+//!
+//! 客户区扩满后 DWM 不再有标准非客户区可绘阴影/圆角；需
+//! `DwmExtendFrameIntoClientArea`（1px 底边）与 `DWMWA_WINDOW_CORNER_PREFERENCE` 恢复。
+
+#![cfg(windows)]
+
+use std::ffi::c_void;
+
+use windows::Win32::Foundation::HWND;
+use windows::Win32::Graphics::Dwm::{
+    DwmExtendFrameIntoClientArea, DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE,
+    DWMWCP_DONOTROUND, DWMWCP_ROUND, DWM_WINDOW_CORNER_PREFERENCE,
+};
+use windows::Win32::UI::Controls::MARGINS;
+use windows::Win32::UI::HiDpi::GetSystemMetricsForDpi;
+use windows::Win32::UI::WindowsAndMessaging::{
+    SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME,
+};
+
+use super::bindings::RECT;
+use super::consts::{
+    HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT,
+    GWL_STYLE, WS_CAPTION, WS_MAXIMIZE, WS_THICKFRAME,
+};
+use super::dpi::{dpi_for_window, logical_extent_to_physical, BASE_DPI};
+use super::ffi::{GetWindowLongW, GetWindowRect, IsZoomed};
+
+#[repr(C)]
+pub(crate) struct NcCalcSizeParams {
+    pub rgrc: [RECT; 3],
+    pub lppos: *mut c_void,
+}
+
+/// 无系统标题栏、仍保留粗边框时，客户区应铺满外窗。
+pub(crate) fn uses_extended_client(style: u32) -> bool {
+    (style & WS_CAPTION) == 0 && (style & WS_THICKFRAME) != 0
+}
+
+pub(crate) fn window_style(hwnd: *mut c_void) -> u32 {
+    if hwnd.is_null() {
+        return 0;
+    }
+    // SAFETY: 仅读取样式位；无效 HWND 时 Win32 返回 0。
+    unsafe { GetWindowLongW(hwnd, GWL_STYLE) as u32 }
+}
+
+/// 最大化判定需覆盖 `WM_NCCALCSIZE` 过渡期（此时 `WindowState.maximized` 可能尚未更新）。
+pub(crate) fn is_effectively_maximized(hwnd: *mut c_void, state_maximized: bool) -> bool {
+    if state_maximized {
+        return true;
+    }
+    let style = window_style(hwnd);
+    if style & WS_MAXIMIZE != 0 {
+        return true;
+    }
+    if hwnd.is_null() {
+        return false;
+    }
+    // SAFETY: IsZoomed 只查询 HWND 最大化状态。
+    unsafe { IsZoomed(hwnd) != 0 }
+}
+
+/// 还原后强制重算非客户区；否则最大化期的边框内缩会残留，客户区小于外窗。
+pub(crate) fn refresh_extended_client_frame(hwnd: *mut c_void) {
+    if hwnd.is_null() || !uses_extended_client(window_style(hwnd)) {
+        return;
+    }
+    use super::consts::{SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER};
+    use super::ffi::SetWindowPos;
+    // SAFETY: 仅触发帧重算；不改位置/尺寸/Z 序。
+    unsafe {
+        SetWindowPos(
+            hwnd,
+            std::ptr::null_mut(),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
+        );
+    }
+}
+
+/// 扩展客户区下恢复 DWM 阴影与 Win11 圆角；最大化时关闭圆角。
+///
+/// 失败只记日志：旧系统或缺 DWM 时不应阻断窗口创建。
+pub(crate) fn apply_dwm_frame_effects(hwnd: *mut c_void, maximized: bool) {
+    if hwnd.is_null() {
+        return;
+    }
+    let handle = HWND(hwnd);
+    if !uses_extended_client(window_style(hwnd)) {
+        let zero = MARGINS {
+            cxLeftWidth: 0,
+            cxRightWidth: 0,
+            cyTopHeight: 0,
+            cyBottomHeight: 0,
+        };
+        // SAFETY: HWND 来自当前窗口；清掉扩展边距，交还系统默认帧合成。
+        if let Err(error) = unsafe { DwmExtendFrameIntoClientArea(handle, &zero) } {
+            crate::core::log::warn_fn(format_args!(
+                "DwmExtendFrameIntoClientArea(reset) failed: {error}"
+            ));
+        }
+        return;
+    }
+    // 1px 底边足以让 DWM 继续画阴影，又不会露出标准边框。
+    let margins = MARGINS {
+        cxLeftWidth: 0,
+        cxRightWidth: 0,
+        cyTopHeight: 0,
+        cyBottomHeight: 1,
+    };
+    // SAFETY: 同步 DWM 调用；margins 在调用期间有效。
+    if let Err(error) = unsafe { DwmExtendFrameIntoClientArea(handle, &margins) } {
+        crate::core::log::warn_fn(format_args!(
+            "DwmExtendFrameIntoClientArea(shadow) failed: {error}"
+        ));
+    }
+    let preference: DWM_WINDOW_CORNER_PREFERENCE = if maximized {
+        DWMWCP_DONOTROUND
+    } else {
+        DWMWCP_ROUND
+    };
+    // SAFETY: attribute 缓冲与枚举同寿，长度匹配 DWMWA_WINDOW_CORNER_PREFERENCE。
+    if let Err(error) = unsafe {
+        DwmSetWindowAttribute(
+            handle,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            (&preference as *const DWM_WINDOW_CORNER_PREFERENCE).cast::<c_void>(),
+            std::mem::size_of_val(&preference) as u32,
+        )
+    } {
+        crate::core::log::warn_fn(format_args!(
+            "DwmSetWindowAttribute(corner) failed: {error}"
+        ));
+    }
+}
+
+/// 当前 DPI 下单侧缩放边框厚度（physical pixels）。
+pub(crate) fn resize_border_thickness(hwnd: *mut c_void) -> i32 {
+    let dpi = dpi_for_window(hwnd);
+    // SAFETY: GetSystemMetricsForDpi 只按指标与 DPI 返回系统度量。
+    let frame_x = unsafe { GetSystemMetricsForDpi(SM_CXFRAME, dpi) };
+    let frame_y = unsafe { GetSystemMetricsForDpi(SM_CYFRAME, dpi) };
+    let padded = unsafe { GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi) };
+    let thickness = frame_x.max(frame_y).saturating_add(padded);
+    if thickness > 0 {
+        thickness
+    } else {
+        // 极端环境下度量失败时，按 96DPI 的常见 8px 边框回退并随 DPI 缩放。
+        logical_extent_to_physical(8, dpi.max(BASE_DPI))
+    }
+}
+
+/// 自定义标题栏下外窗尺寸等于目标客户区（客户区已扩满外窗）。
+pub(crate) fn outer_matches_client_when_extended(style: u32) -> bool {
+    uses_extended_client(style)
+}
+
+/// 处理 `WM_NCCALCSIZE`：扩展客户区；最大化时内缩边框以免盖住任务栏。
+///
+/// # Safety
+/// `lparam` 必须指向当前同步消息期间有效的 `RECT` 或 [`NcCalcSizeParams`]。
+pub(crate) unsafe fn handle_nc_calc_size(
+    hwnd: *mut c_void,
+    wparam: usize,
+    lparam: isize,
+    maximized: bool,
+) -> Option<isize> {
+    if lparam == 0 || !uses_extended_client(window_style(hwnd)) {
+        return None;
+    }
+    if wparam == 0 {
+        // lParam 为建议窗口矩形；返回 0 表示客户区 = 该矩形。
+        return Some(0);
+    }
+    let params = lparam as *mut NcCalcSizeParams;
+    if params.is_null() {
+        return None;
+    }
+    if maximized {
+        let border = resize_border_thickness(hwnd);
+        let rect = &mut (*params).rgrc[0];
+        rect.left = rect.left.saturating_add(border);
+        rect.top = rect.top.saturating_add(border);
+        rect.right = rect.right.saturating_sub(border);
+        rect.bottom = rect.bottom.saturating_sub(border);
+    }
+    Some(0)
+}
+
+fn screen_point_from_lparam(lparam: isize) -> (i32, i32) {
+    let x = (lparam & 0xFFFF) as i16 as i32;
+    let y = ((lparam >> 16) & 0xFFFF) as i16 as i32;
+    (x, y)
+}
+
+/// 在扩展客户区模式下，把外窗边缘命中映射回标准 `HT*` 缩放结果。
+///
+/// # Safety
+/// `hwnd` 必须是当前消息所属窗口。
+pub(crate) unsafe fn handle_nc_hit_test(
+    hwnd: *mut c_void,
+    lparam: isize,
+    resizable: bool,
+) -> Option<isize> {
+    if !uses_extended_client(window_style(hwnd)) {
+        return None;
+    }
+    if !resizable {
+        return Some(HTCLIENT as isize);
+    }
+    let mut window_rect = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    if GetWindowRect(hwnd, &mut window_rect) == 0 {
+        return Some(HTCLIENT as isize);
+    }
+    let (x, y) = screen_point_from_lparam(lparam);
+    let border = resize_border_thickness(hwnd).max(1);
+    let left = x - window_rect.left < border;
+    let right = window_rect.right - x <= border;
+    let top = y - window_rect.top < border;
+    let bottom = window_rect.bottom - y <= border;
+    let hit = match (left, right, top, bottom) {
+        (true, false, true, false) => HTTOPLEFT,
+        (false, true, true, false) => HTTOPRIGHT,
+        (true, false, false, true) => HTBOTTOMLEFT,
+        (false, true, false, true) => HTBOTTOMRIGHT,
+        (true, false, false, false) => HTLEFT,
+        (false, true, false, false) => HTRIGHT,
+        (false, false, true, false) => HTTOP,
+        (false, false, false, true) => HTBOTTOM,
+        _ => HTCLIENT,
+    };
+    Some(hit as isize)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::native::backends::windows::dpi::outer_size_for_logical_client;
+
+    #[test]
+    fn extended_client_requires_thick_frame_without_caption() {
+        assert!(uses_extended_client(WS_THICKFRAME));
+        assert!(!uses_extended_client(WS_CAPTION | WS_THICKFRAME));
+        assert!(!uses_extended_client(0));
+        assert!(outer_matches_client_when_extended(WS_THICKFRAME));
+    }
+
+    #[test]
+    fn screen_point_decodes_signed_coordinates() {
+        let packed = ((-2i16 as u16 as isize) << 16) | (-3i16 as u16 as isize);
+        assert_eq!(screen_point_from_lparam(packed), (-3, -2));
+    }
+
+    #[test]
+    fn outer_size_skips_frame_inflation_for_extended_client() {
+        let extended = outer_size_for_logical_client(400, 300, WS_THICKFRAME, 0, BASE_DPI)
+            .expect("extended outer size");
+        assert_eq!(extended, (400, 300));
+
+        let with_caption =
+            outer_size_for_logical_client(400, 300, WS_CAPTION | WS_THICKFRAME, 0, BASE_DPI)
+                .expect("caption outer size");
+        assert!(
+            with_caption.0 > 400 || with_caption.1 > 300,
+            "caption path must still inflate for non-client chrome"
+        );
+    }
+
+    #[test]
+    fn maximize_detection_honors_style_bit() {
+        assert!(is_effectively_maximized(std::ptr::null_mut(), true));
+        assert!(!is_effectively_maximized(std::ptr::null_mut(), false));
+    }
+
+    #[test]
+    fn refresh_extended_client_frame_ignores_null_and_captioned_windows() {
+        refresh_extended_client_frame(std::ptr::null_mut());
+        // 有系统标题栏时不应改帧；空操作即可。
+        assert!(!uses_extended_client(WS_CAPTION | WS_THICKFRAME));
+    }
+
+    #[test]
+    fn apply_dwm_frame_effects_ignores_null_hwnd() {
+        apply_dwm_frame_effects(std::ptr::null_mut(), false);
+        apply_dwm_frame_effects(std::ptr::null_mut(), true);
+    }
+}

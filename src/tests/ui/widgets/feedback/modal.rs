@@ -149,8 +149,20 @@ fn modal_advertises_animation_capability() {
 }
 
 #[test]
-fn modal_enter_transition_advances_and_marks_paint_dirty() {
+fn modal_default_enter_transition_is_immediately_at_rest() {
     let mut modal = Modal::new("Dialog").visible(true);
+
+    assert!(modal.transition.finished);
+    assert_eq!(modal.transition.opacity_progress, 1.0);
+    assert_eq!(modal.transition.scale, 1.0);
+    assert!(!WidgetAnimation::update_animation(&mut modal, 0.05));
+}
+
+#[test]
+fn modal_enter_transition_advances_and_marks_paint_dirty() {
+    let mut modal = Modal::new("Dialog")
+        .enter_animation(AnimationConfig::zoom_in(0.2))
+        .visible(true);
     let initial_opacity = modal.transition.opacity_progress;
 
     assert!(WidgetAnimation::update_animation(&mut modal, 0.05));
