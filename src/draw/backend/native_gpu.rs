@@ -888,12 +888,13 @@ impl NativeGpuCanvas2D {
         if c.w <= 0.0 || c.h <= 0.0 {
             (0, 0, 0, 0)
         } else {
-            (
-                c.x.floor() as i32,
-                c.y.floor() as i32,
-                c.w.ceil() as i32,
-                c.h.ceil() as i32,
-            )
+            let x0 = c.x.floor() as i32;
+            let y0 = c.y.floor() as i32;
+            // 宽高必须由绝对远端计算；亚像素起点下直接 ceil(w/h)
+            // 会少包一行/列，使局部清屏后的远边界无法重绘。
+            let x1 = (c.x + c.w).ceil() as i32;
+            let y1 = (c.y + c.h).ceil() as i32;
+            (x0, y0, x1.saturating_sub(x0), y1.saturating_sub(y0))
         }
     }
 
