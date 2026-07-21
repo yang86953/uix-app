@@ -3250,6 +3250,18 @@ fn native_gpu_canvas_flushes_native_operations_in_recorded_order() {
 }
 
 #[test]
+fn native_gpu_fractional_clip_scissor_covers_far_edge_pixels() {
+    let mut canvas = NativeGpuCanvas2D::new(64, 64, NativeRasterCaps::d3d11_full());
+    canvas.push_clip(Rect::new(10.5, 20.5, 30.0, 12.0));
+    canvas.fill_rect(Rect::new(0.0, 0.0, 64.0, 64.0), Color::white(), None);
+
+    let Some(PendingNativeOp::SolidRect(op)) = canvas.pending_native.first() else {
+        panic!("expected one native solid rect");
+    };
+    assert_eq!(op.scissor, (10, 20, 31, 13));
+}
+
+#[test]
 fn native_gpu_backend_propagates_each_present_stage_error() {
     let RecordingFixture {
         mut backend,

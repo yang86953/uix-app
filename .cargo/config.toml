@@ -1,0 +1,6 @@
+# 避免大型调试/测试图长期累积数 GiB 增量缓存；项目配置覆盖用户级配置。
+[profile.dev]
+incremental = false
+
+[profile.test]
+incremental = false
