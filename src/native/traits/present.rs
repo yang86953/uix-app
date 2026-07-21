@@ -44,8 +44,8 @@ pub struct GpuStrokeRect {
 ///
 /// Coverage 来源二选一：
 /// - `outline_mesh`：本地像素边列表 `[ax,ay,bx,by,…]`，由共享 wgpu MSDF cover pass
-///   写入 RGBA8 atlas，采样时 `median(r,g,b)` → coverage（严格 GPU 路径）
-/// - `coverage`：CPU mask（soft / 遗留后端 / tofu）→ R8 atlas
+///   写入 RGBA8 atlas（缩放 / 仿射字形）；近 1:1 UI 字不走此路径
+/// - `coverage`：解析 AA / soft / tofu mask → R8 atlas（含严格 GPU 近 1:1 outline）
 #[derive(Debug, Clone)]
 pub struct GpuGlyphBlit {
     pub x: f32,

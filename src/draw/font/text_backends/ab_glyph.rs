@@ -204,7 +204,7 @@ impl TextBackend for AbGlyphBackend {
                 y: pixel_size,
             })
             .scale_factor();
-        // 优先：轮廓 → 边列表，供共享 wgpu atlas 解析 AA coverage（跳过 ab_glyph CPU draw）。
+        // 优先：轮廓 → 边列表；同时缓存解析 AA，供近 1:1 R8 路径复用（atlas 键稳定）。
         if let Some(outline) = f.outline(gid) {
             let px_bounds = outline.px_bounds(scale_factor, glyph.position);
             if let Some((w, h, bx, by, mesh)) = crate::draw::font::glyph_outline::mesh_from_outline(
@@ -213,10 +213,14 @@ impl TextBackend for AbGlyphBackend {
                 px_bounds,
                 glyph.position,
             ) {
+                let coverage =
+                    crate::draw::font::glyph_outline::coverage_from_edges(mesh.as_ref(), w, h)
+                        .map(Arc::<[u8]>::from)
+                        .unwrap_or_else(|| Arc::<[u8]>::from([]));
                 return GlyphRaster {
                     width: w,
                     height: h,
-                    coverage: Arc::<[u8]>::from([]),
+                    coverage,
                     bearing_x: bx,
                     bearing_y: by,
                     outline_mesh: Some(mesh),

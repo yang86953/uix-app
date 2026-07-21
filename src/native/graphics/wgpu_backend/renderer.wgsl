@@ -129,13 +129,20 @@ fn median3(a: f32, b: f32, c: f32) -> f32 {
     return max(min(a, b), min(max(a, b), c));
 }
 
+const MSDF_RANGE: f32 = 4.0;
+
 @fragment
 fn glyph_msdf_fs(input: GlyphOut) -> @location(0) vec4<f32> {
     let sample = textureSample(glyph_texture, glyph_sampler, input.uv);
     let m = median3(sample.r, sample.g, sample.b);
-    // m=0.5+sd/RANGE；fwidth(m)≈1/RANGE（1:1）或随缩放变化 → 屏幕空间 AA。
-    let w = max(fwidth(m), 1e-5);
-    let coverage = clamp(0.5 - (m - 0.5) / w, 0.0, 1.0);
+    // Chlumsky：用 UV 的屏幕导数换算 atlas 中 MSDF_RANGE 对应多少屏幕像素。
+    // 勿对 m 做 fwidth——平坦区域导数≈0 会导致 coverage 抖成碎边/糊团。
+    let atlas_size = vec2<f32>(textureDimensions(glyph_texture, 0));
+    let unit_range = vec2<f32>(MSDF_RANGE) / atlas_size;
+    let screen_tex_size = vec2<f32>(1.0) / max(fwidth(input.uv), vec2<f32>(1e-5));
+    let screen_px_range = max(0.5 * dot(unit_range, screen_tex_size), 1.0);
+    // 编码约定：m<0.5 为字形内部（sd<0）。
+    let coverage = clamp(0.5 - screen_px_range * (m - 0.5), 0.0, 1.0);
     let alpha = input.color.a * coverage;
     return vec4<f32>(input.color.rgb * alpha, alpha);
 }

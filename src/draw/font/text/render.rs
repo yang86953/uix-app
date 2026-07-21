@@ -81,10 +81,17 @@ impl<'a> TextRenderService<'a> {
                 .as_ref()
                 .filter(|m| crate::draw::font::glyph_outline::is_outline_edges(m))
             {
-                canvas.blit_glyph_outline(
+                let analytic =
+                    if raster.coverage.len() >= raster.width.saturating_mul(raster.height) {
+                        Some(std::sync::Arc::clone(&raster.coverage))
+                    } else {
+                        None
+                    };
+                canvas.blit_glyph_outline_shared(
                     gx,
                     gy,
                     std::sync::Arc::clone(mesh),
+                    analytic,
                     raster.width,
                     raster.height,
                     color,

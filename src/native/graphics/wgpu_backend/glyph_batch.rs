@@ -96,8 +96,8 @@ pub(super) fn record_glyphs(
                     });
                     stream.glyph_mesh_sources.push(mesh);
                 }
-                stream.msdf_cursor_x = stream.msdf_cursor_x.saturating_add(glyph.cov_w + 1);
-                stream.msdf_row_height = stream.msdf_row_height.max(glyph.cov_h + 1);
+                stream.msdf_cursor_x = stream.msdf_cursor_x.saturating_add(glyph.cov_w + 2);
+                stream.msdf_row_height = stream.msdf_row_height.max(glyph.cov_h + 2);
                 stream.msdf_used_height = stream.msdf_used_height.max(location.1 + glyph.cov_h);
                 stream.msdf_locations.insert(key, location);
                 location
