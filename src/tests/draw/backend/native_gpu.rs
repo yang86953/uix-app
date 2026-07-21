@@ -1620,11 +1620,90 @@ fn gpu_only_sheared_glyph_queues_affine_corners() {
 }
 
 #[test]
-fn gpu_only_outline_glyph_queues_gpu_cover_mesh() {
+fn gpu_only_outline_glyph_at_identity_reuses_cached_analytic_arc() {
     use std::sync::Arc;
 
     let mut canvas = NativeGpuCanvas2D::new_gpu_only(64, 64, NativeRasterCaps::wgpu_full());
-    // 两个三角形覆盖 4×4 本地像素 → 改为矩形四边（解析 AA 边列表）。
+    let mesh: Arc<[f32]> = vec![
+        0.0, 0.0, 4.0, 0.0, //
+        4.0, 0.0, 4.0, 4.0, //
+        4.0, 4.0, 0.0, 4.0, //
+        0.0, 4.0, 0.0, 0.0,
+    ]
+    .into();
+    let cached: Arc<[u8]> =
+        crate::draw::font::glyph_outline::coverage_from_edges(mesh.as_ref(), 4, 4)
+            .expect("analytic")
+            .into();
+    canvas.blit_glyph_outline_shared(
+        1,
+        2,
+        mesh,
+        Some(Arc::clone(&cached)),
+        4,
+        4,
+        Color::from_rgba(255, 255, 255, 200),
+    );
+    assert!(canvas.take_deferred_error().is_none());
+    match canvas.pending_native.first() {
+        Some(PendingNativeOp::Glyph(op)) => {
+            assert!(op.glyph.outline_mesh.is_none());
+            assert!(
+                Arc::ptr_eq(&op.glyph.coverage, &cached),
+                "1:1 path must reuse cached analytic Arc for atlas dedup"
+            );
+        }
+        _ => panic!("expected analytic R8 Glyph"),
+    }
+}
+
+#[test]
+fn gpu_only_outline_glyph_at_identity_queues_analytic_r8() {
+    use std::sync::Arc;
+
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(64, 64, NativeRasterCaps::wgpu_full());
+    // 矩形四边（解析 AA 边列表）；identity 1:1 应走 R8，避免 MSDF 发虚。
+    let mesh: Arc<[f32]> = vec![
+        0.0, 0.0, 4.0, 0.0, //
+        4.0, 0.0, 4.0, 4.0, //
+        4.0, 4.0, 0.0, 4.0, //
+        0.0, 4.0, 0.0, 0.0,
+    ]
+    .into();
+    canvas.blit_glyph_outline(1, 2, mesh, 4, 4, Color::from_rgba(255, 255, 255, 200));
+    assert!(canvas.take_deferred_error().is_none());
+    assert_eq!(canvas.pending_native.len(), 1);
+    match canvas.pending_native.first() {
+        Some(PendingNativeOp::Glyph(op)) => {
+            assert!(
+                op.glyph.outline_mesh.is_none(),
+                "1:1 must not queue MSDF mesh"
+            );
+            assert_eq!(op.glyph.coverage.len(), 16);
+            assert_eq!(op.glyph.cov_w, 4);
+            assert_eq!(op.glyph.cov_h, 4);
+            // 矩形内部像素应接近满覆盖。
+            const INTERIOR_AT_1_1: usize = 5;
+            assert!(
+                op.glyph.coverage[INTERIOR_AT_1_1] >= 200,
+                "interior coverage={}",
+                op.glyph.coverage[INTERIOR_AT_1_1]
+            );
+            assert!((op.glyph.x - 1.0).abs() < 1e-5);
+            assert!((op.glyph.y - 2.0).abs() < 1e-5);
+        }
+        _ => panic!("expected analytic R8 Glyph"),
+    }
+}
+
+#[test]
+fn gpu_only_outline_glyph_at_scale_queues_msdf_mesh() {
+    use std::sync::Arc;
+
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(64, 64, NativeRasterCaps::wgpu_full());
+    canvas.set_transform(Transform {
+        m: [2.0, 0.0, 0.0, 0.0, 2.0, 0.0],
+    });
     let mesh: Arc<[f32]> = vec![
         0.0, 0.0, 4.0, 0.0, //
         4.0, 0.0, 4.0, 4.0, //
@@ -1640,12 +1719,17 @@ fn gpu_only_outline_glyph_queues_gpu_cover_mesh() {
             assert!(op.glyph.coverage.is_empty());
             assert_eq!(op.glyph.cov_w, 4);
             assert_eq!(op.glyph.cov_h, 4);
-            let mesh = op.glyph.outline_mesh.as_ref().expect("outline edges");
+            let mesh = op
+                .glyph
+                .outline_mesh
+                .as_ref()
+                .expect("scaled outline → MSDF");
             assert_eq!(mesh.len(), 16);
-            assert!((op.glyph.x - 1.0).abs() < 1e-5);
-            assert!((op.glyph.y - 2.0).abs() < 1e-5);
+            // 2× 缩放后设备 AABB 约 8×8。
+            assert!((op.glyph.w - 8.0).abs() < 1e-4, "device_w={}", op.glyph.w);
+            assert!((op.glyph.h - 8.0).abs() < 1e-4, "device_h={}", op.glyph.h);
         }
-        _ => panic!("expected outline Glyph"),
+        _ => panic!("expected MSDF outline Glyph"),
     }
 }
 
@@ -3317,6 +3401,48 @@ fn main_frame_encoder_executes_each_command_at_its_recorded_boundary() {
     assert_eq!(tiles.len(), 2);
     assert_eq!(tiles[0].0, SoftFallbackTile::at_destination(5, 6, 3, 4));
     assert_eq!(tiles[1].0, SoftFallbackTile::at_destination(9, 10, 2, 2));
+}
+
+#[test]
+fn retained_partial_frame_encoder_preserves_clean_pixels() {
+    use crate::draw::pipeline::FrameRect;
+
+    let RecordingFixture {
+        mut backend,
+        stages,
+        ..
+    } = recording_gpu_only_backend(FailStage::None);
+    backend.resize(16, 16).expect("resize");
+
+    let mut first = FrameEncoder::new(16, 16).expect("first encoder");
+    first.clear(Color::black());
+    first.native(FrameRasterOp::FillRect {
+        rect: FrameRect::new(0, 0, 16, 16),
+        color: Color::from_rgb(12, 24, 48),
+    });
+    backend
+        .try_execute_encoded_frame(&first)
+        .expect("prime retained target");
+    backend
+        .present(&DamageRegion::full())
+        .expect("present priming frame");
+
+    stages.borrow_mut().clear();
+    backend.surface.clear_rect_raw(4, 5, 6, 7);
+    let mut partial = FrameEncoder::new(16, 16).expect("partial encoder");
+    partial.native(FrameRasterOp::FillRect {
+        rect: FrameRect::new(4, 5, 6, 7),
+        color: Color::white(),
+    });
+
+    backend
+        .try_execute_encoded_frame(&partial)
+        .expect("execute retained partial frame");
+    assert_eq!(
+        stages.borrow().as_slice(),
+        ["clear_rects", "solid"],
+        "a partial encoded frame must clear only its damage and load the retained target"
+    );
 }
 
 #[test]

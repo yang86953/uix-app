@@ -335,8 +335,11 @@ impl NativeGpuBackend {
     /// blits produce isolated transparent sources and are alpha-uploaded at
     /// their original painter-order position. This deliberately does not
     /// upload a completed `render_reference()` frame.
-    fn execute_frame_encoder(&mut self, encoder: &FrameEncoder) -> Result<(), Error> {
-        let mut target_initialized = false;
+    fn execute_frame_encoder(
+        &mut self,
+        encoder: &FrameEncoder,
+        mut target_initialized: bool,
+    ) -> Result<(), Error> {
         for command in encoder.commands() {
             match command {
                 FrameCommand::Clear { color } => {
@@ -384,6 +387,34 @@ impl NativeGpuBackend {
             self.clear_frame_encoder_target(Color::transparent())?;
         }
         Ok(())
+    }
+
+    /// Prepares the retained main target for an encoded partial frame.
+    ///
+    /// A recording without a leading `Clear` intentionally represents a
+    /// partial update. Initializing it through `clear_render_target` would
+    /// discard every clean pixel while the encoder only repaints its damage.
+    /// Apply the damage clears queued by `begin_frame` and let the native
+    /// command stream load the retained target instead.
+    fn prepare_main_frame_encoder_target(&mut self, encoder: &FrameEncoder) -> Result<bool, Error> {
+        if matches!(encoder.commands().first(), Some(FrameCommand::Clear { .. })) {
+            return Ok(false);
+        }
+        if self.surface.needs_gpu_clear {
+            self.clear_frame_encoder_target(Color::transparent())?;
+            self.surface.needs_gpu_clear = false;
+            self.surface.pending_clear_rects.clear();
+            return Ok(true);
+        }
+        if !self.surface.pending_clear_rects.is_empty() {
+            self.gpu_ctx.clear_rects(
+                self.surface.width as f32,
+                self.surface.height as f32,
+                &self.surface.pending_clear_rects,
+            )?;
+            self.surface.pending_clear_rects.clear();
+        }
+        Ok(true)
     }
 
     fn ensure_frame_encoder_target(&mut self, target_initialized: &mut bool) -> Result<(), Error> {
@@ -1108,7 +1139,7 @@ impl RenderBackend for NativeGpuBackend {
         let target = target.target;
 
         self.gpu_ctx.bind_offscreen_target(target)?;
-        self.execute_frame_encoder(encoder)?;
+        self.execute_frame_encoder(encoder, false)?;
         Ok(EncodedPictureExecution::Executed)
     }
 
@@ -1138,7 +1169,8 @@ impl RenderBackend for NativeGpuBackend {
         let execute = (|| {
             self.gpu_ctx.make_current()?;
             self.gpu_ctx.bind_swapchain_target()?;
-            self.execute_frame_encoder(encoder)
+            let target_initialized = self.prepare_main_frame_encoder_target(encoder)?;
+            self.execute_frame_encoder(encoder, target_initialized)
         })();
         if let Err(error) = execute {
             self.surface.needs_gpu_clear = true;

@@ -11,7 +11,7 @@ use crate::draw::font::glyph_outline::{
 use crate::draw::font::text_backend::TOFU_GLYPH_ID;
 
 #[test]
-fn rasterize_glyph_prefers_outline_edges_without_cpu_coverage() {
+fn rasterize_glyph_prefers_outline_edges_with_analytic_coverage() {
     let mut fonts = FontService::new();
     let handle = fonts
         .load_font(include_bytes!("../../../../assets/fonts/lucide.ttf"))
@@ -26,17 +26,48 @@ fn rasterize_glyph_prefers_outline_edges_without_cpu_coverage() {
                 .as_ref()
                 .expect("outlined glyph should expose edges for GPU coverage");
             assert!(is_outline_edges(mesh));
-            assert!(
-                raster.coverage.is_empty(),
-                "GPU outline path must skip ab_glyph CPU coverage pixels"
+            assert_eq!(
+                raster.coverage.len(),
+                raster.width.saturating_mul(raster.height),
+                "outline glyphs cache analytic R8 for 1:1 crisp path"
             );
-            // 缓存命中仍保留边列表。
+            // 槽位 fringe 须覆盖 MSDF_RANGE，否则距离场裁切会糊成叠字观感。
+            let min_pad = (MSDF_RANGE as usize).saturating_add(1);
+            assert!(
+                raster.width >= min_pad.saturating_mul(2).saturating_add(1)
+                    && raster.height >= min_pad.saturating_mul(2).saturating_add(1),
+                "outline slot {}x{} too small for MSDF_RANGE fringe",
+                raster.width,
+                raster.height
+            );
+            let (mut min_x, mut min_y) = (f32::INFINITY, f32::INFINITY);
+            let (mut max_x, mut max_y) = (f32::NEG_INFINITY, f32::NEG_INFINITY);
+            for edge in mesh.chunks_exact(4) {
+                for (x, y) in [(edge[0], edge[1]), (edge[2], edge[3])] {
+                    min_x = min_x.min(x);
+                    min_y = min_y.min(y);
+                    max_x = max_x.max(x);
+                    max_y = max_y.max(y);
+                }
+            }
+            let min_pad = min_pad as f32;
+            assert!(
+                min_x >= min_pad
+                    && min_y >= min_pad
+                    && raster.width as f32 - max_x >= min_pad
+                    && raster.height as f32 - max_y >= min_pad,
+                "outline fringe left={min_x}, top={min_y}, right={}, bottom={} must all be >= {min_pad}",
+                raster.width as f32 - max_x,
+                raster.height as f32 - max_y,
+            );
+            // 缓存命中仍保留边列表与 coverage。
             let again = fonts.rasterize_glyph(&handle, glyph_id, 24.0);
             assert!(again.outline_mesh.is_some());
             assert!(Arc::ptr_eq(
                 mesh,
                 again.outline_mesh.as_ref().expect("cached edges")
             ));
+            assert!(Arc::ptr_eq(&raster.coverage, &again.coverage));
             return;
         }
         glyph_id += 1;
@@ -84,18 +115,14 @@ fn colorize_edges_assigns_dual_channel_colors_at_rect_corners() {
     let colors = colorize_edges(&edges).expect("colorize");
     assert_eq!(colors.len(), 4);
     for &c in &colors {
-        let channels = (c & EDGE_RED != 0) as u8
-            + (c & EDGE_GREEN != 0) as u8
-            + (c & EDGE_BLUE != 0) as u8;
+        let channels =
+            (c & EDGE_RED != 0) as u8 + (c & EDGE_GREEN != 0) as u8 + (c & EDGE_BLUE != 0) as u8;
         assert!(
             channels >= 2,
             "Chlumsky edge color {c:#x} must enable ≥2 channels"
         );
         assert!(
-            matches!(
-                c,
-                EDGE_YELLOW | EDGE_CYAN | EDGE_MAGENTA | EDGE_WHITE
-            ),
+            matches!(c, EDGE_YELLOW | EDGE_CYAN | EDGE_MAGENTA | EDGE_WHITE),
             "unexpected edge color {c:#x}"
         );
     }
@@ -126,10 +153,7 @@ fn msdf_from_edges_encodes_interior_and_samples_to_coverage() {
         "interior MSDF rgb=({r},{g},{b}) expected < 0.5"
     );
     let cov = msdf_encoded_to_coverage(r, g, b);
-    assert!(
-        cov > 0.95,
-        "interior MSDF coverage={cov}, expected near 1"
-    );
+    assert!(cov > 0.95, "interior MSDF coverage={cov}, expected near 1");
     // 角落在外：编码 > 0.5，coverage≈0。
     let outside = msdf_encoded_to_coverage(
         msdf[0] as f32 / 255.0,

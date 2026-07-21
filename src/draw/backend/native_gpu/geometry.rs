@@ -140,3 +140,27 @@ pub(super) fn quad_aabb(corners: [[f32; 2]; 4]) -> (f32, f32, f32, f32) {
     }
     (min_x, min_y, max_x, max_y)
 }
+
+/// 近 1:1、无旋转/剪切时用解析 AA R8；明显缩放或仿射留给 MSDF。
+///
+/// UI 默认 identity 字号下 MSDF + 线性采样会把边缘洗成发虚；解析 coverage
+/// 与 soft 路径同契约，采样 `glyph_fs` 即可保持锐利。
+pub(super) fn outline_uses_analytic_r8(
+    transform: Transform,
+    device_w: f32,
+    device_h: f32,
+    cov_w: usize,
+    cov_h: usize,
+) -> bool {
+    let [a, b, _, c, d, _] = transform.m;
+    if b != 0.0 || c != 0.0 || !a.is_finite() || !d.is_finite() {
+        return false;
+    }
+    // 约 1% 容差；超过则保留 MSDF 以保缩放/大字号角点。
+    if (a.abs() - 1.0).abs() > 0.01 || (d.abs() - 1.0).abs() > 0.01 {
+        return false;
+    }
+    let cw = cov_w as f32;
+    let ch = cov_h as f32;
+    (device_w - cw).abs() <= 0.51 && (device_h - ch).abs() <= 0.51
+}

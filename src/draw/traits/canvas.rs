@@ -362,8 +362,8 @@ pub trait Canvas2D {
         self.blit_glyph(x, y, coverage.as_ref(), width, height, color);
     }
 
-    /// GPU 优先：轮廓边列表 → RGBA8 MSDF atlas；默认在 CPU 上栅格成解析 AA mask 再 blit。
-    /// soft 保持 1:1 解析 AA（与 PixelUpload 契约一致）；严格 GPU 走多通道距离场以改善缩放。
+    /// GPU 优先：轮廓边列表 → coverage atlas。
+    /// soft / 严格 GPU 近 1:1 均用解析 AA（R8）；明显缩放或仿射才走 RGBA8 MSDF。
     fn blit_glyph_outline(
         &mut self,
         x: i32,
@@ -373,15 +373,38 @@ pub trait Canvas2D {
         height: usize,
         color: Color,
     ) {
+        self.blit_glyph_outline_shared(x, y, mesh, None, width, height, color);
+    }
+
+    /// 与 [`blit_glyph_outline`] 相同，可携带缓存的解析 AA（近 1:1 时复用，稳定 atlas 键）。
+    fn blit_glyph_outline_shared(
+        &mut self,
+        x: i32,
+        y: i32,
+        mesh: std::sync::Arc<[f32]>,
+        analytic_coverage: Option<std::sync::Arc<[u8]>>,
+        width: usize,
+        height: usize,
+        color: Color,
+    ) {
         if width == 0 || height == 0 {
             return;
         }
-        let Some(coverage) =
-            crate::draw::font::glyph_outline::coverage_from_edges(mesh.as_ref(), width, height)
-        else {
-            return;
+        let coverage = analytic_coverage.filter(|c| c.len() >= width.saturating_mul(height));
+        let coverage = match coverage {
+            Some(c) => c,
+            None => {
+                let Some(generated) = crate::draw::font::glyph_outline::coverage_from_edges(
+                    mesh.as_ref(),
+                    width,
+                    height,
+                ) else {
+                    return;
+                };
+                std::sync::Arc::<[u8]>::from(generated)
+            }
         };
-        self.blit_glyph_shared(x, y, std::sync::Arc::<[u8]>::from(coverage), width, height, color);
+        self.blit_glyph_shared(x, y, coverage, width, height, color);
     }
 
     // ── 渲染状态栈（必须自行实现）──

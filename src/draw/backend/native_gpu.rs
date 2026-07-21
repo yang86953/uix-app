@@ -1572,6 +1572,19 @@ impl Canvas2D for NativeGpuCanvas2D {
         h: usize,
         color: Color,
     ) {
+        self.blit_glyph_outline_shared(x, y, mesh, None, w, h, color);
+    }
+
+    fn blit_glyph_outline_shared(
+        &mut self,
+        x: i32,
+        y: i32,
+        mesh: std::sync::Arc<[f32]>,
+        analytic_coverage: Option<std::sync::Arc<[u8]>>,
+        w: usize,
+        h: usize,
+        color: Color,
+    ) {
         if w == 0 || h == 0 || !crate::draw::font::glyph_outline::is_outline_edges(mesh.as_ref()) {
             return;
         }
@@ -1581,11 +1594,19 @@ impl Canvas2D for NativeGpuCanvas2D {
                 self.reject_unsupported("destination-dependent glyph blend");
                 return;
             }
-            // soft：默认实现把边列表栅格成解析 AA coverage（1:1 契约）。
+            // soft：解析 AA coverage（1:1 契约）；优先复用缓存。
             self.sync_fallback_state();
             let _soft_clip = self.clip_rect;
             self.ensure_soft().push_clip(_soft_clip);
-            self.ensure_soft().blit_glyph_outline(x, y, mesh, w, h, color);
+            self.ensure_soft().blit_glyph_outline_shared(
+                x,
+                y,
+                mesh,
+                analytic_coverage,
+                w,
+                h,
+                color,
+            );
             self.ensure_soft().pop_clip();
             self.mark_soft();
             return;
@@ -1596,6 +1617,36 @@ impl Canvas2D for NativeGpuCanvas2D {
         let device_w = max_x - min_x;
         let device_h = max_y - min_y;
         if !device_w.is_finite() || !device_h.is_finite() || device_w <= 0.0 || device_h <= 0.0 {
+            return;
+        }
+        // 近 1:1：解析 AA → R8 atlas（与 soft 同锐利度）；缩放/仿射仍走 MSDF。
+        if outline_uses_analytic_r8(self.transform, device_w, device_h, w, h) {
+            let expected = w.saturating_mul(h);
+            let coverage = analytic_coverage
+                .filter(|c| c.len() >= expected)
+                .or_else(|| {
+                    crate::draw::font::glyph_outline::coverage_from_edges(mesh.as_ref(), w, h)
+                        .map(std::sync::Arc::<[u8]>::from)
+                });
+            let Some(coverage) = coverage else {
+                return;
+            };
+            self.pending_native
+                .push(PendingNativeOp::Glyph(PendingNativeGlyph {
+                    glyph: GpuGlyphBlit {
+                        x: min_x,
+                        y: min_y,
+                        w: device_w,
+                        h: device_h,
+                        corners,
+                        rgba: self.rgba(color),
+                        coverage,
+                        cov_w: w as u32,
+                        cov_h: h as u32,
+                        outline_mesh: None,
+                    },
+                    scissor: self.scissor_aabb(),
+                }));
             return;
         }
         self.pending_native
@@ -1700,9 +1751,9 @@ impl Canvas2D for NativeGpuCanvas2D {
 
 mod geometry;
 use geometry::{
-    frame_within, glyph_device_corners, quad_aabb, rect_to_integer_frame, scaled_corner_radii,
-    scales_are_uniform, solid_mesh_from_affine_rect, stroke_options_for_transform,
-    uniform_transform_scale, IntegerFrame,
+    frame_within, glyph_device_corners, outline_uses_analytic_r8, quad_aabb, rect_to_integer_frame,
+    scaled_corner_radii, scales_are_uniform, solid_mesh_from_affine_rect,
+    stroke_options_for_transform, uniform_transform_scale, IntegerFrame,
 };
 
 mod backend;
