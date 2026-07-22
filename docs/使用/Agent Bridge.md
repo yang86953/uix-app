@@ -1,6 +1,9 @@
 # Agent Bridge (开发预览)
 
-→ [使用总览](../使用.md)
+[← 返回使用 索引](../使用.md)
+
+> 分类：Agent 控制  
+> 权威范围：agent-control 启用、端点协议、动作与安全限制
 
 双门禁启用：`agent-control` feature + `.enable_agent_control()`。启用后发布本机端点，供同用户进程通过 JSON Lines 协议枚举窗口、读语义树、执行动作。空闲无轮询，敏感值不导出。
 

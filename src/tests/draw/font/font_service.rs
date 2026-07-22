@@ -9,6 +9,8 @@ struct CountingSystemInfo {
     inner: FakeSystemInfo,
     cjk_probe_calls: Cell<usize>,
     default_paths: Vec<String>,
+    family_path: Option<String>,
+    cjk_paths: Vec<String>,
 }
 
 impl CountingSystemInfo {
@@ -17,6 +19,22 @@ impl CountingSystemInfo {
             inner: FakeSystemInfo::new(),
             cjk_probe_calls: Cell::new(0),
             default_paths: paths,
+            family_path: None,
+            cjk_paths: Vec::new(),
+        }
+    }
+
+    fn with_family_path(path: String) -> Self {
+        Self {
+            family_path: Some(path),
+            ..Self::with_paths(Vec::new())
+        }
+    }
+
+    fn with_default_and_cjk_paths(default_path: String, cjk_path: String) -> Self {
+        Self {
+            cjk_paths: vec![cjk_path],
+            ..Self::with_paths(vec![default_path])
         }
     }
 }
@@ -55,7 +73,11 @@ impl ISystemInfo for CountingSystemInfo {
 
     fn probe_cjk_font_paths(&self) -> Vec<String> {
         self.cjk_probe_calls.set(self.cjk_probe_calls.get() + 1);
-        Vec::new()
+        self.cjk_paths.clone()
+    }
+
+    fn probe_family_font_path(&self, _family: &str) -> Option<String> {
+        self.family_path.clone()
     }
 }
 
@@ -76,6 +98,56 @@ fn load_default_system_font_stops_after_first_primary_and_probes_cjk_once() {
     assert_eq!(info.cjk_probe_calls.get(), 1);
     // 主字体 1 + 未装 CJK；不得把重复路径再装成 fallback。
     assert_eq!(fonts.font_count(), 1);
+    assert_eq!(fonts.fallback_count(), 0);
+}
+
+#[test]
+fn configured_family_replaces_an_auxiliary_font_as_the_primary_handle() {
+    let lucide = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/fonts/lucide.ttf");
+    let info = CountingSystemInfo::with_family_path(lucide.to_owned());
+    let mut fonts = FontService::new();
+    let auxiliary = fonts
+        .load_font(include_bytes!("../../../../assets/fonts/lucide.ttf"))
+        .expect("load auxiliary font");
+
+    fonts.set_font_family("Configured UI Font");
+    fonts.load_default_system_font(14.0, &info);
+
+    assert_ne!(fonts.loaded_font_handle, auxiliary);
+    assert_eq!(
+        fonts.font_family(&fonts.loaded_font_handle),
+        Some("Configured UI Font")
+    );
+    assert_eq!(fonts.font_path(&fonts.loaded_font_handle), Some(lucide));
+    assert_eq!(info.cjk_probe_calls.get(), 1);
+}
+
+#[test]
+fn missing_configured_family_tries_each_default_font_candidate() {
+    let lucide = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/fonts/lucide.ttf");
+    let info = CountingSystemInfo::with_paths(vec![
+        concat!(env!("CARGO_MANIFEST_DIR"), "/assets/fonts/missing.ttf").to_owned(),
+        lucide.to_owned(),
+    ]);
+    let mut fonts = FontService::new();
+    fonts.set_font_family("Missing Family");
+
+    fonts.load_default_system_font(14.0, &info);
+
+    assert!(fonts.is_valid(&fonts.loaded_font_handle));
+    assert_eq!(fonts.font_path(&fonts.loaded_font_handle), Some(lucide));
+    assert_eq!(info.inner.default_font_calls.get(), 1);
+}
+
+#[test]
+fn cjk_probe_rejects_a_candidate_without_the_required_glyphs() {
+    let lucide = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/fonts/lucide.ttf").to_owned();
+    let info = CountingSystemInfo::with_default_and_cjk_paths(lucide.clone(), lucide);
+    let mut fonts = FontService::new();
+
+    fonts.load_default_system_font(14.0, &info);
+
+    assert_eq!(info.cjk_probe_calls.get(), 1);
     assert_eq!(fonts.fallback_count(), 0);
 }
 
@@ -107,11 +179,16 @@ fn glyph_cache_evicts_one_entry_at_capacity_instead_of_clearing_everything() {
     let third = cache_key(3);
     cache.insert(first.clone(), cached_raster(3));
     cache.insert(second.clone(), cached_raster(5));
+    assert!(cache.get(&first).is_some(), "first becomes the hot entry");
     cache.insert(third.clone(), cached_raster(7));
 
     assert_eq!(cache.len(), 2);
     assert!(cache.get(&third).is_some());
-    assert_ne!(cache.get(&first).is_some(), cache.get(&second).is_some());
+    assert!(cache.get(&first).is_some());
+    assert!(
+        cache.get(&second).is_none(),
+        "least-recently-used entry evicted"
+    );
 }
 
 #[test]
@@ -194,6 +271,202 @@ fn layout_text_wraps_a_single_font_run_within_the_requested_width() {
 }
 
 #[test]
+fn layout_text_prefers_a_word_boundary_before_splitting_a_latin_word() {
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let mut opts = crate::draw::font::text_backend::TextLayoutOptions {
+        max_width: f32::MAX,
+        max_height: 0.0,
+        line_height: 21.0,
+        word_wrap: false,
+        h_align: crate::draw::HAlign::Left,
+        v_align: crate::draw::VAlign::Top,
+        font_size: 14.0,
+    };
+    let unwrapped = fonts.layout_text(&font, "WWWW WWWW", &opts);
+    let second_word = unwrapped
+        .glyphs
+        .iter()
+        .find(|glyph| glyph.char_index == 5)
+        .expect("second word start glyph");
+    let prefix_width = second_word.x;
+    let word_width = unwrapped.width - second_word.x;
+    opts.max_width = prefix_width.max(word_width) + 0.01;
+    opts.word_wrap = true;
+
+    let wrapped = fonts.layout_text(&font, "WWWW WWWW", &opts);
+
+    assert_eq!(wrapped.lines.len(), 2, "unexpected wrapping: {wrapped:?}");
+    assert_eq!(wrapped.lines[0].end_char, 5);
+    assert_eq!(wrapped.lines[1].start_char, 5);
+    assert_eq!(
+        wrapped.glyphs[wrapped.lines[1].glyph_start].char_index, 5,
+        "the second line must start at the whole word, not inside it"
+    );
+    assert!(wrapped
+        .lines
+        .iter()
+        .all(|line| line.width <= opts.max_width + 0.01));
+}
+
+#[test]
+fn layout_text_collapses_whitespace_at_an_automatic_line_boundary() {
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let mut opts = crate::draw::font::text_backend::TextLayoutOptions {
+        max_width: f32::MAX,
+        max_height: 0.0,
+        line_height: 21.0,
+        word_wrap: false,
+        h_align: crate::draw::HAlign::Left,
+        v_align: crate::draw::VAlign::Top,
+        font_size: 14.0,
+    };
+    let text = "WWWW     WWWW";
+    let unwrapped = fonts.layout_text(&font, text, &opts);
+    let whitespace_start = unwrapped
+        .glyphs
+        .iter()
+        .find(|glyph| glyph.char_index == 4)
+        .expect("whitespace start")
+        .x;
+    let second_word = unwrapped
+        .glyphs
+        .iter()
+        .find(|glyph| glyph.char_index == 9)
+        .expect("second word start");
+    opts.max_width = second_word.x.max(unwrapped.width - second_word.x) + 0.01;
+    opts.word_wrap = true;
+
+    let wrapped = fonts.layout_text(&font, text, &opts);
+
+    assert_eq!(wrapped.lines.len(), 2, "unexpected wrapping: {wrapped:?}");
+    assert!(
+        (wrapped.lines[0].width - whitespace_start).abs() < 0.01,
+        "trailing wrap whitespace must not enlarge the visible line: {:?}",
+        wrapped.lines
+    );
+    let second_line = wrapped.lines[1];
+    let second_line_word = wrapped.glyphs[second_line.glyph_start..]
+        .iter()
+        .find(|glyph| glyph.char_index == 9)
+        .expect("second-line word");
+    assert!(second_line_word.x.abs() < 0.01);
+}
+
+#[test]
+fn layout_text_does_not_create_a_whitespace_only_line_after_wrapping() {
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let mut opts = crate::draw::font::text_backend::TextLayoutOptions {
+        max_width: f32::MAX,
+        max_height: 0.0,
+        line_height: 21.0,
+        word_wrap: false,
+        h_align: crate::draw::HAlign::Left,
+        v_align: crate::draw::VAlign::Top,
+        font_size: 14.0,
+    };
+    let text = "WWWW     W";
+    let unwrapped = fonts.layout_text(&font, text, &opts);
+    opts.max_width = unwrapped
+        .glyphs
+        .iter()
+        .find(|glyph| glyph.char_index == 4)
+        .expect("whitespace start")
+        .x
+        + 0.01;
+    opts.word_wrap = true;
+
+    let wrapped = fonts.layout_text(&font, text, &opts);
+
+    assert_eq!(wrapped.lines.len(), 2, "unexpected wrapping: {wrapped:?}");
+    assert!(wrapped.lines.iter().all(|line| line.glyph_count > 0));
+    let final_word = wrapped
+        .glyphs
+        .iter()
+        .find(|glyph| glyph.char_index == 9)
+        .expect("final word");
+    assert!(final_word.x.abs() < 0.01);
+}
+
+#[test]
+fn layout_text_normalizes_crlf_and_lone_carriage_returns_to_line_breaks() {
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let opts = crate::draw::font::text_backend::TextLayoutOptions {
+        max_width: 200.0,
+        max_height: 0.0,
+        line_height: 21.0,
+        word_wrap: true,
+        h_align: crate::draw::HAlign::Left,
+        v_align: crate::draw::VAlign::Top,
+        font_size: 14.0,
+    };
+
+    let layout = fonts.layout_text(&font, "A\r\nB\rC", &opts);
+
+    assert_eq!(layout.lines.len(), 3);
+    assert_eq!(layout.lines[0].start_char, 0);
+    assert_eq!(layout.lines[0].end_char, 1);
+    assert_eq!(layout.lines[1].start_char, 3);
+    assert_eq!(layout.lines[1].end_char, 4);
+    assert_eq!(layout.lines[2].start_char, 5);
+    assert_eq!(layout.lines[2].end_char, 6);
+    assert_eq!(
+        layout
+            .glyphs
+            .iter()
+            .map(|glyph| glyph.char_index)
+            .collect::<Vec<_>>(),
+        vec![0, 3, 5]
+    );
+}
+
+#[test]
+fn layout_text_keeps_opening_punctuation_with_the_following_character() {
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let mut opts = crate::draw::font::text_backend::TextLayoutOptions {
+        max_width: f32::MAX,
+        max_height: 0.0,
+        line_height: 21.0,
+        word_wrap: false,
+        h_align: crate::draw::HAlign::Left,
+        v_align: crate::draw::VAlign::Top,
+        font_size: 14.0,
+    };
+    let unwrapped = fonts.layout_text(&font, "WW(A", &opts);
+    let final_glyph = unwrapped
+        .glyphs
+        .iter()
+        .find(|glyph| glyph.char_index == 3)
+        .expect("final glyph");
+    opts.max_width = final_glyph.x + final_glyph.width * 0.5;
+    opts.word_wrap = true;
+
+    let wrapped = fonts.layout_text(&font, "WW(A", &opts);
+
+    assert_eq!(wrapped.lines.len(), 2, "unexpected wrapping: {wrapped:?}");
+    assert_eq!(wrapped.lines[0].end_char, 2);
+    assert_eq!(wrapped.lines[1].start_char, 2);
+    assert_eq!(
+        wrapped.glyphs[wrapped.lines[1].glyph_start].char_index, 2,
+        "an opening parenthesis must move with the following character"
+    );
+}
+
+#[test]
 fn layout_text_keeps_closing_punctuation_with_the_previous_character() {
     let mut fonts = FontService::new();
     let font = fonts
@@ -243,4 +516,28 @@ fn layout_text_preserves_consecutive_and_trailing_explicit_lines() {
     assert_eq!(layout.lines[1].glyph_count, 0);
     assert_eq!(layout.lines[3].glyph_count, 0);
     assert_eq!(layout.height, 84.0);
+}
+
+#[test]
+fn layout_text_applies_vertical_alignment_once_to_the_complete_layout() {
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let opts = crate::draw::font::text_backend::TextLayoutOptions {
+        max_width: 200.0,
+        max_height: 100.0,
+        line_height: 20.0,
+        word_wrap: false,
+        h_align: crate::draw::HAlign::Left,
+        v_align: crate::draw::VAlign::Bottom,
+        font_size: 14.0,
+    };
+
+    let layout = fonts.layout_text(&font, "AB", &opts);
+
+    assert_eq!(layout.height, 100.0);
+    assert_eq!(layout.lines.len(), 1);
+    assert!((layout.lines[0].y - 80.0).abs() < 0.01);
+    assert!(layout.glyphs.iter().all(|glyph| glyph.y >= 80.0));
 }

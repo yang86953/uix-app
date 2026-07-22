@@ -151,23 +151,15 @@ fn gpu_only_sector_supports_full_turn_wrapped_angles_and_donut_composition() {
     assert!(canvas.take_deferred_error().is_none());
     assert!(canvas.soft_fallback.is_none());
     assert_eq!(canvas.pending_native.len(), 2);
-    let Some(PendingNativeOp::SolidMesh(op)) = canvas.pending_native.first() else {
-        panic!("full sector must be a solid mesh");
+    let Some(PendingNativeOp::Sector(op)) = canvas.pending_native.first() else {
+        panic!("full sector must use the analytic sector primitive");
     };
-    let mut xs = op.mesh.vertices.iter().step_by(2).copied();
-    let first_x = xs.next().expect("full sector x vertices");
-    let (min_x, max_x) = xs.fold((first_x, first_x), |(min_x, max_x), x| {
-        (min_x.min(x), max_x.max(x))
-    });
-    let mut ys = op.mesh.vertices.iter().skip(1).step_by(2).copied();
-    let first_y = ys.next().expect("full sector y vertices");
-    let (min_y, max_y) = ys.fold((first_y, first_y), |(min_y, max_y), y| {
-        (min_y.min(y), max_y.max(y))
-    });
-    assert!((min_x - 14.0).abs() < 0.05);
-    assert!((max_x - 34.0).abs() < 0.05);
-    assert!((min_y - 18.0).abs() < 0.05);
-    assert!((max_y - 38.0).abs() < 0.05);
+    assert_eq!(
+        (op.sector.cx, op.sector.cy, op.sector.radius),
+        (24.0, 28.0, 10.0)
+    );
+    assert!((op.sector.start_angle - std::f32::consts::FRAC_PI_2 * 3.0).abs() < 1e-6);
+    assert!((op.sector.sweep_angle - std::f32::consts::TAU).abs() < 1e-6);
     assert!(matches!(
         canvas.pending_native.get(1),
         Some(PendingNativeOp::SolidRect(_))
@@ -185,14 +177,11 @@ fn gpu_only_sector_preserves_positive_wrapped_sweep_and_empty_input_is_noop() {
         std::f32::consts::FRAC_PI_2,
         Color::green(),
     );
-    let Some(PendingNativeOp::SolidMesh(op)) = canvas.pending_native.first() else {
-        panic!("wrapped sector must be a solid mesh");
+    let Some(PendingNativeOp::Sector(op)) = canvas.pending_native.first() else {
+        panic!("wrapped sector must use the analytic sector primitive");
     };
-    assert!(op
-        .mesh
-        .vertices
-        .chunks_exact(2)
-        .all(|xy| xy[0] >= 20.0 - 1e-3));
+    assert!((op.sector.start_angle - std::f32::consts::FRAC_PI_2 * 3.0).abs() < 1e-6);
+    assert!((op.sector.sweep_angle - std::f32::consts::PI).abs() < 1e-6);
 
     canvas.pending_native.clear();
     canvas.fill_sector(20.0, 20.0, 8.0, 1.0, 1.0, Color::green());

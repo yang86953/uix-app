@@ -100,6 +100,20 @@ pub struct GpuRadialGradient {
     pub color_outer: [f32; 4],
 }
 
+/// Analytically antialiased solid circular sector for GPU-native Canvas2D.
+///
+/// `start_angle` is normalized to `[0, TAU)` and `sweep_angle` is in
+/// `(0, TAU]`, advancing clockwise in the top-left-origin canvas space.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GpuSector {
+    pub cx: f32,
+    pub cy: f32,
+    pub radius: f32,
+    pub start_angle: f32,
+    pub sweep_angle: f32,
+    pub rgba: [f32; 4],
+}
+
 /// Solid-color triangle mesh for GPU-native path fills/strokes (#169).
 ///
 /// `vertices` is an interleaved xy triangle-list in logical (dip) top-left
@@ -172,6 +186,7 @@ pub struct NativeRasterCaps {
     pub glyphs: bool,
     pub linear_gradients: bool,
     pub radial_gradients: bool,
+    pub sectors: bool,
     pub solid_meshes: bool,
     pub box_shadows: bool,
     /// GPU texture RT + blit（Picture 离屏）；非 CPU 像素池。
@@ -193,6 +208,7 @@ impl NativeRasterCaps {
             glyphs: true,
             linear_gradients: true,
             radial_gradients: true,
+            sectors: true,
             solid_meshes: true,
             box_shadows: true,
             offscreen_targets: true,
@@ -212,6 +228,7 @@ impl NativeRasterCaps {
             glyphs: true,
             linear_gradients: true,
             radial_gradients: true,
+            sectors: false,
             solid_meshes: true,
             box_shadows: true,
             offscreen_targets: true,
@@ -850,6 +867,25 @@ pub trait IGraphicsContext {
             crate::core::error::Errc::NotImplemented,
             format!(
                 "GraphicsBackend {} does not support draw_radial_gradients",
+                self.graphics_backend()
+            ),
+        ))
+    }
+
+    /// Draw analytically antialiased circular sectors into the current RTV.
+    ///
+    /// Same scissor convention as [`Self::draw_solid_rects`].
+    fn draw_sectors(
+        &mut self,
+        _viewport_w: f32,
+        _viewport_h: f32,
+        _scissor: Option<(i32, i32, i32, i32)>,
+        _sectors: &[GpuSector],
+    ) -> Result<(), Error> {
+        Err(Error::new(
+            crate::core::error::Errc::NotImplemented,
+            format!(
+                "GraphicsBackend {} does not support draw_sectors",
                 self.graphics_backend()
             ),
         ))

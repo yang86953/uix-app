@@ -171,6 +171,91 @@ fn window_resize_updates_root_and_flex_content() {
 }
 
 #[test]
+fn consecutive_window_resizes_are_coalesced_without_crossing_event_barriers() {
+    let window_id = WindowId::new(7);
+    let mut events = Vec::new();
+
+    push_coalesced_event(
+        &mut events,
+        &UiEvent::resize(900, 640).for_window(window_id),
+    );
+    push_coalesced_event(
+        &mut events,
+        &UiEvent::resize(960, 680).for_window(window_id),
+    );
+    assert_eq!(events.len(), 1);
+    let UiEventPayload::Resize(latest) = &events[0].payload else {
+        panic!("coalesced resize must keep its payload");
+    };
+    assert_eq!((latest.width, latest.height), (960, 680));
+
+    push_coalesced_event(
+        &mut events,
+        &UiEvent::pointer_move(Point::new(12.0, 18.0)).for_window(window_id),
+    );
+    push_coalesced_event(
+        &mut events,
+        &UiEvent::resize(1_000, 720).for_window(window_id),
+    );
+    assert_eq!(events.len(), 3, "input must remain a resize barrier");
+
+    let other_window = WindowId::new(8);
+    push_coalesced_event(
+        &mut events,
+        &UiEvent::resize(1_100, 760).for_window(other_window),
+    );
+    assert_eq!(events.len(), 4, "resize coalescing is window-local");
+}
+
+#[test]
+fn resize_burst_rebuilds_the_surface_once_at_the_latest_extent() {
+    let mut platform = FakePlatform::new();
+    platform.event_source.inject_all([
+        UiEvent::resize(900, 640),
+        UiEvent::resize(960, 680),
+        UiEvent::resize(1_000, 720),
+    ]);
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "resize burst", 800, 600);
+    let mut engine = SoftwareEngine::new();
+    engine.initialize(800, 600).expect("initialize engine");
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Container::new()),
+        Box::new(engine),
+        800,
+        600,
+    );
+
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let observed = Cell::new((0, 0));
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        None,
+        map_ui_event,
+        |_| false,
+        |_, engine, _| observed.set(engine.logical_extent()),
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(observed.get(), (1_000, 720));
+    assert_eq!(window.state.resize_notify_calls, vec![(1_000, 720)]);
+}
+
+#[test]
 fn widget_tree_update_advances_animation_and_marks_dirty_rect() {
     let remaining = Arc::new(AtomicUsize::new(2));
     let updates = Arc::new(AtomicUsize::new(0));

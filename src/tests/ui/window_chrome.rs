@@ -13,7 +13,8 @@ use crate::ui::view::{
     ViewAdapter,
 };
 use crate::ui::{
-    AccessibilityRole, OverlayKind, PaintContext, SystemEvent, WidgetTree, WindowControl,
+    AccessibilityRole, AlignItems, JustifyContent, OverlayKind, PaintContext, SystemEvent,
+    WidgetTree, WindowControl,
 };
 
 fn pointer_event(pos: Point, down: bool, button: MouseButton) -> SystemEvent {
@@ -466,6 +467,31 @@ fn each_window_control_maps_to_its_platform_neutral_action() {
         tree.dispatch_event(&pointer_event(pos, false, MouseButton::Left));
         assert_eq!(tree.take_window_actions(), vec![expected]);
     }
+}
+
+#[test]
+fn window_control_content_can_be_centered_in_its_bounds() {
+    let mut tree = ViewAdapter::build(
+        window_control(WindowControl::Minimize, label("control"))
+            .width(60.0)
+            .height(32.0)
+            .align(AlignItems::Center)
+            .justify(JustifyContent::Center),
+    );
+    let root = tree.root_id().expect("window control root");
+    tree.root_mut()
+        .expect("window control root")
+        .set_frame(Rect::new(0.0, 0.0, 60.0, 32.0));
+    tree.layout();
+
+    let child = tree
+        .get(root)
+        .and_then(|node| node.children().first())
+        .and_then(|id| tree.get(*id))
+        .expect("window control content");
+    let child_frame = child.frame();
+    assert!((child_frame.x + child_frame.w * 0.5 - 30.0).abs() < 0.01);
+    assert!((child_frame.y + child_frame.h * 0.5 - 16.0).abs() < 0.01);
 }
 
 #[test]

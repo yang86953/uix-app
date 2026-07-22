@@ -31,7 +31,7 @@ use crate::draw::primitives::types::{
 };
 use crate::draw::traits::Canvas2D;
 use crate::native::traits::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient,
+    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
     GpuSolidMesh, GpuSolidRect, GpuStrokeRect, IGraphicsContext, NativeRasterCaps,
     OffscreenTargetId, PresentFrame, PresentMode, PresentTestResult, RasterMode, SoftFallbackTile,
 };
@@ -75,6 +75,11 @@ pub(crate) struct PendingNativeRadialGrad {
     pub(crate) scissor: (i32, i32, i32, i32),
 }
 
+pub(crate) struct PendingNativeSector {
+    pub(crate) sector: GpuSector,
+    pub(crate) scissor: (i32, i32, i32, i32),
+}
+
 pub(crate) struct PendingNativeMesh {
     pub(crate) mesh: GpuSolidMesh,
     pub(crate) scissor: (i32, i32, i32, i32),
@@ -103,6 +108,7 @@ pub(crate) enum PendingNativeOp {
     Glyph(PendingNativeGlyph),
     LinearGradient(PendingNativeLinearGrad),
     RadialGradient(PendingNativeRadialGrad),
+    Sector(PendingNativeSector),
     SolidMesh(PendingNativeMesh),
     BoxShadow(PendingNativeShadow),
     ImageBlit(PendingNativeImage),
@@ -116,6 +122,7 @@ impl PendingNativeOp {
             Self::Glyph(op) => op.scissor,
             Self::LinearGradient(op) => op.scissor,
             Self::RadialGradient(op) => op.scissor,
+            Self::Sector(op) => op.scissor,
             Self::SolidMesh(op) => op.scissor,
             Self::BoxShadow(op) => op.scissor,
             Self::ImageBlit(op) => op.scissor,
@@ -130,6 +137,7 @@ impl PendingNativeOp {
                 | (Self::Glyph(_), Self::Glyph(_))
                 | (Self::LinearGradient(_), Self::LinearGradient(_))
                 | (Self::RadialGradient(_), Self::RadialGradient(_))
+                | (Self::Sector(_), Self::Sector(_))
                 | (Self::SolidMesh(_), Self::SolidMesh(_))
                 | (Self::BoxShadow(_), Self::BoxShadow(_))
                 | (Self::ImageBlit(_), Self::ImageBlit(_))
@@ -699,6 +707,29 @@ impl NativeGpuCanvas2D {
         // an ever-increasing animation angle.
         let start = start_angle.rem_euclid(std::f32::consts::TAU);
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
+        if !self.soft_has_content && self.native_caps.sectors && native_blend {
+            let bounds = Rect::new(cx - radius, cy - radius, radius * 2.0, radius * 2.0);
+            if let Some((_, scale)) = self.try_axis_aligned_device_rect(bounds) {
+                if scales_are_uniform(scale) {
+                    let center = self
+                        .transform
+                        .transform_point(Point::new(cx + self.offset_x, cy + self.offset_y));
+                    self.pending_native
+                        .push(PendingNativeOp::Sector(PendingNativeSector {
+                            sector: GpuSector {
+                                cx: center.x,
+                                cy: center.y,
+                                radius: radius * scale.0.abs(),
+                                start_angle: start,
+                                sweep_angle: sweep,
+                                rgba: self.rgba(color),
+                            },
+                            scissor: self.scissor_aabb(),
+                        }));
+                    return;
+                }
+            }
+        }
         if self.soft_has_content || !self.native_caps.solid_meshes || !native_blend {
             if self.gpu_only {
                 self.reject_unsupported("sector GPU primitive or destination-dependent blend");
@@ -1211,6 +1242,16 @@ impl NativeGpuCanvas2D {
                         })
                         .collect::<Vec<_>>();
                     gpu_ctx.draw_radial_gradients(vw, vh, Some(scissor), &batch)?;
+                }
+                PendingNativeOp::Sector(_) => {
+                    let batch = self.pending_native[start..end]
+                        .iter()
+                        .map(|op| match op {
+                            PendingNativeOp::Sector(op) => op.sector,
+                            _ => unreachable!("native batch kind changed"),
+                        })
+                        .collect::<Vec<_>>();
+                    gpu_ctx.draw_sectors(vw, vh, Some(scissor), &batch)?;
                 }
                 PendingNativeOp::SolidMesh(_) => {
                     let batch = self.pending_native[start..end]

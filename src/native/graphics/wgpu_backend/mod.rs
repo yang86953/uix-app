@@ -17,7 +17,7 @@ use std::sync::{
 
 use crate::core::{Errc, Error, Rect, Result};
 use crate::native::traits::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient,
+    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
     GpuSolidMesh, GpuSolidRect, GpuStrokeRect, GraphicsBackend, GraphicsContextCaps,
     IGraphicsContext, NativeRasterCaps, OffscreenTargetId, PresentCoherency, PresentDamage,
     PresentTestResult,
@@ -512,6 +512,19 @@ impl IGraphicsContext for WgpuContext {
         self.ensure_active()?;
         self.renderer
             .radial_gradients((viewport_w, viewport_h), scissor, gradients);
+        Ok(())
+    }
+
+    fn draw_sectors(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        sectors: &[GpuSector],
+    ) -> Result<()> {
+        self.ensure_active()?;
+        self.renderer
+            .sectors((viewport_w, viewport_h), scissor, sectors);
         Ok(())
     }
 

@@ -53,6 +53,17 @@ fn paragraph_measure_accounts_for_cjk_width_and_explicit_line_breaks() {
 }
 
 #[test]
+fn paragraph_measure_matches_word_boundaries_and_normalized_line_breaks() {
+    let words = Typography::paragraph("AAAA BBBB CCCC");
+    let words_size = words.measure(Constraints::loose(Size::new(55.0, 300.0)));
+    assert_eq!(words_size.h, 63.0);
+
+    let mixed_breaks = Typography::paragraph("A\r\nB\rC");
+    let mixed_breaks_size = mixed_breaks.measure(Constraints::loose(Size::new(200.0, 300.0)));
+    assert_eq!(mixed_breaks_size.h, 63.0);
+}
+
+#[test]
 fn paragraph_render_places_wrapped_glyphs_on_later_lines() {
     let pixels = render_typography(
         &Typography::paragraph("WWWWWWWW"),
@@ -68,6 +79,14 @@ fn paragraph_render_places_wrapped_glyphs_on_later_lines() {
         later_line_pixels > 0,
         "wrapped paragraph must paint glyphs below the first line"
     );
+}
+
+#[test]
+fn paragraph_hit_testing_preserves_the_character_boundary_of_an_empty_line() {
+    let paragraph = Typography::paragraph("A\n\nB");
+    let _ = render_typography(&paragraph, Rect::new(20.0, 20.0, 120.0, 100.0));
+
+    assert_eq!(paragraph.cross_text_char_at(Point::new(1.0, 22.0)), 2);
 }
 
 #[test]

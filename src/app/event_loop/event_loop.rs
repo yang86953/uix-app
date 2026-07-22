@@ -22,6 +22,20 @@ use crate::ui::{ComponentId, SystemEvent, WidgetTree};
 use std::cell::{Cell, RefCell};
 use std::time::Instant;
 
+/// Keeps only the latest adjacent resize for one routing target. Any other
+/// event remains an ordering barrier.
+pub(crate) fn push_coalesced_event(events: &mut Vec<UiEvent>, event: &UiEvent) {
+    if event.type_ == UiEventType::WindowResize {
+        if let Some(pending) = events.last_mut() {
+            if pending.type_ == UiEventType::WindowResize && pending.window_id == event.window_id {
+                pending.clone_from(event);
+                return;
+            }
+        }
+    }
+    events.push(event.clone());
+}
+
 /// 运行完整的 widget 渲染事件循环。
 #[allow(clippy::too_many_arguments)]
 pub fn run_widget_loop<M, X, F>(
@@ -378,7 +392,7 @@ where
 
     let collect = |ev: &UiEvent| {
         if ev.window_id.is_some_and(|target| target != window_id) {
-            foreign_events.borrow_mut().push(ev.clone());
+            push_coalesced_event(&mut foreign_events.borrow_mut(), ev);
             return true;
         }
         match ev.type_ {
@@ -393,7 +407,7 @@ where
                 }
             }
         }
-        pending_events.borrow_mut().push(ev.clone());
+        push_coalesced_event(&mut pending_events.borrow_mut(), ev);
         true
     };
 

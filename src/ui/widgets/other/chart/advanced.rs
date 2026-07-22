@@ -554,16 +554,8 @@ component! {
     }
 
     measure => (&self, constraints: Constraints) -> Size {
-        let width = if self.responsive && constraints.max.w.is_finite() && constraints.max.w > 0.0 {
-            constraints.max.w
-        } else {
-            self.width
-        };
-        let height = if self.responsive && constraints.max.h.is_finite() && constraints.max.h > 0.0 {
-            constraints.max.h
-        } else {
-            self.height
-        };
+        let width = super::responsive_extent(self.responsive, constraints.max.w, self.width);
+        let height = super::responsive_extent(self.responsive, constraints.max.h, self.height);
         constraints.clamp(Size::new(width, height))
     }
 

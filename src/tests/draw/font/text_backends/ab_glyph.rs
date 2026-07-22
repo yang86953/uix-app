@@ -26,8 +26,35 @@ fn unload_font_invalid_handle_does_not_panic() {
 
 #[test]
 fn is_valid_unloaded_handle_returns_false() {
-    let backend = AbGlyphBackend::new();
-    assert!(!backend.is_valid(&FontHandle::new(0)));
+    let mut backend = AbGlyphBackend::new();
+    let handle = backend
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load font");
+    backend.unload_font(&handle);
+
+    assert!(!backend.is_valid(&handle));
+    assert!(backend
+        .layout_text(
+            &handle,
+            "x",
+            &crate::draw::font::text_backend::TextLayoutOptions {
+                max_width: f32::MAX,
+                max_height: 0.0,
+                line_height: 20.0,
+                word_wrap: false,
+                h_align: crate::draw::HAlign::Left,
+                v_align: crate::draw::VAlign::Top,
+                font_size: 14.0,
+            },
+        )
+        .glyphs
+        .is_empty());
+    assert!(backend
+        .rasterize_glyph(&handle, 1, 14.0)
+        .coverage
+        .is_empty());
+    assert!(backend.horizontal_line_metrics(&handle, 14.0).is_none());
+    assert!(backend.font_data(&handle).is_none());
 }
 
 #[test]
@@ -73,6 +100,41 @@ fn layout_text_empty_string_unloaded_handle_returns_empty_layout() {
 }
 
 #[test]
+fn layout_text_uses_whitespace_advance_for_tabs_instead_of_tofu() {
+    let mut backend = AbGlyphBackend::new();
+    let handle = backend
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load font");
+    let opts = crate::draw::font::text_backend::TextLayoutOptions {
+        max_width: f32::MAX,
+        max_height: 0.0,
+        line_height: 20.0,
+        word_wrap: false,
+        h_align: crate::draw::HAlign::Left,
+        v_align: crate::draw::VAlign::Top,
+        font_size: 14.0,
+    };
+
+    let layout = backend.layout_text(&handle, "A\tB", &opts);
+    let tab = layout
+        .glyphs
+        .iter()
+        .find(|glyph| glyph.char_index == 1)
+        .expect("tab advance glyph");
+
+    assert_ne!(tab.glyph_id, crate::draw::font::text_backend::TOFU_GLYPH_ID);
+    assert!(tab.width > 0.0);
+    assert_eq!(
+        layout
+            .glyphs
+            .iter()
+            .map(|glyph| glyph.char_index)
+            .collect::<Vec<_>>(),
+        vec![0, 1, 2]
+    );
+}
+
+#[test]
 fn rasterize_glyph_invalid_handle_returns_empty_raster() {
     let backend = AbGlyphBackend::new();
     let raster = backend.rasterize_glyph(&FontHandle::new(0), 0, 14.0);
@@ -102,11 +164,16 @@ fn clear_cache_does_not_panic() {
 }
 
 #[test]
-fn font_data_default_returns_none() {
-    // font_data 的默认实现返回 None
-    let backend = AbGlyphBackend::new();
-    let result = TextBackend::font_data(&backend, &FontHandle::new(0));
-    assert!(result.is_none());
+fn font_data_returns_the_loaded_bytes_and_rejects_invalid_handles() {
+    let bytes = include_bytes!("../../../../../assets/fonts/lucide.ttf");
+    let mut backend = AbGlyphBackend::new();
+    let handle = backend.load_font(bytes).expect("load font");
+
+    assert_eq!(
+        TextBackend::font_data(&backend, &handle).as_deref(),
+        Some(bytes.as_slice())
+    );
+    assert!(TextBackend::font_data(&backend, &FontHandle::new(999)).is_none());
 }
 
 #[test]

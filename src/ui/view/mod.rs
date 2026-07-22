@@ -294,6 +294,12 @@ impl ViewNode {
         self
     }
 
+    /// 主轴对齐（flex `justify-content`）。
+    pub fn justify(mut self, j: crate::ui::layout::JustifyContent) -> Self {
+        self.style.justify_content = j;
+        self
+    }
+
     pub fn align_self(mut self, a: crate::ui::layout::AlignItems) -> Self {
         self.style.align_self = Some(a);
         self
@@ -884,6 +890,10 @@ pub trait StyleExt: Into<ViewNode> + Sized {
 
     fn align(self, a: crate::ui::layout::AlignItems) -> ViewNode {
         self.into().align(a)
+    }
+
+    fn justify(self, j: crate::ui::layout::JustifyContent) -> ViewNode {
+        self.into().justify(j)
     }
 
     fn align_self(self, a: crate::ui::layout::AlignItems) -> ViewNode {

@@ -80,6 +80,29 @@ fn shape_fs(input: ShapeOut) -> @location(0) vec4<f32> {
         let t = clamp((distance - input.params0.x) / span, 0.0, 1.0);
         return premul(mix(input.color_a, input.color_b, t), 1.0);
     }
+    if input.mode == 7u {
+        let radius = input.params0.x;
+        let start = input.params0.y;
+        let sweep = input.params0.z;
+        let radial_distance = length(input.local) - radius;
+        var signed_distance = radial_distance;
+        if sweep < 6.283184 {
+            var delta = atan2(input.local.y, input.local.x) - start;
+            if delta < 0.0 { delta = delta + 6.283185307; }
+            let point_radius = length(input.local);
+            var angular_distance = 0.0;
+            if delta <= sweep {
+                angular_distance = -min(delta, sweep - delta) * point_radius;
+            } else {
+                angular_distance = min(delta - sweep, 6.283185307 - delta) * point_radius;
+            }
+            if point_radius < 0.75 { angular_distance = -0.75; }
+            signed_distance = max(radial_distance, angular_distance);
+        }
+        let aa = max(fwidth(signed_distance) * 0.5, 0.001);
+        let coverage = smoothstep(aa, -aa, signed_distance);
+        return premul(input.color_a, coverage);
+    }
     // mode 5 = drop shadow, mode 6 = ambient；params0 = (exp_w, exp_h, blur_x, blur_y)
     // 将局部坐标缩放到单位 blur 空间，使各向异性模糊仍可用圆形 SDF。
     let blur_x = max(input.params0.z, 0.5);

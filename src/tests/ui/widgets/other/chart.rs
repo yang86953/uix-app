@@ -309,6 +309,27 @@ fn pie_chart_renders_a_labeled_legend_in_reserved_space() {
 }
 
 #[test]
+fn pie_chart_does_not_overlay_dark_radial_separator_lines() {
+    let frame = Rect::new(0.0, 0.0, 100.0, 100.0);
+    let pixels = render_chart_pixels(
+        &PieChart::new()
+            .data(vec![
+                PieData::new("right", 50.0, Color::blue()),
+                PieData::new("left", 50.0, Color::green()),
+            ])
+            .label_visible(false)
+            .legend(LegendPosition::None),
+        frame,
+    );
+
+    assert_eq!(
+        pixels[20 * 100 + 50],
+        pixels[20 * 100 + 51],
+        "the shared sector edge must retain the slice color instead of receiving a dark 1px overlay"
+    );
+}
+
+#[test]
 fn pie_chart_feature_matrix_renders_rose_radii_arc_endpoint_and_positioned_legend() {
     let data = vec![
         PieData::new("small", 20.0, Color::blue()),
@@ -728,6 +749,41 @@ fn basic_charts_share_responsive_interaction_brush_tooltip_and_reconcile_contrac
     assert_eq!(
         PieChart::new().responsive(true).measure(constraints),
         Size::new(460.0, 260.0)
+    );
+}
+
+#[test]
+fn responsive_charts_keep_intrinsic_size_on_unbounded_axes() {
+    let unconstrained = Constraints::unconstrained();
+    assert_eq!(
+        BarChart::new().responsive(true).measure(unconstrained),
+        Size::new(300.0, 200.0)
+    );
+    assert_eq!(
+        LineChart::new().responsive(true).measure(unconstrained),
+        Size::new(300.0, 200.0)
+    );
+    assert_eq!(
+        PieChart::new().responsive(true).measure(unconstrained),
+        Size::new(180.0, 180.0)
+    );
+    assert_eq!(
+        AreaChart::new().responsive(true).measure(unconstrained),
+        Size::new(300.0, 200.0)
+    );
+
+    let vertical_scroll = Constraints::loose(Size::new(460.0, f32::MAX));
+    assert_eq!(
+        BarChart::new().responsive(true).measure(vertical_scroll),
+        Size::new(460.0, 200.0)
+    );
+    assert_eq!(
+        AreaChart::new()
+            .width(320.0)
+            .height(210.0)
+            .responsive(true)
+            .measure(vertical_scroll),
+        Size::new(460.0, 210.0)
     );
 }
 

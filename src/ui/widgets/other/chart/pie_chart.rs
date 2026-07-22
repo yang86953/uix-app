@@ -72,16 +72,8 @@ component! {
 
     measure => (&self, constraints: Constraints) -> Size {
         let intrinsic = self.intrinsic_size();
-        let width = if self.responsive && constraints.max.w.is_finite() && constraints.max.w > 0.0 {
-            constraints.max.w
-        } else {
-            intrinsic.w
-        };
-        let height = if self.responsive && constraints.max.h.is_finite() && constraints.max.h > 0.0 {
-            constraints.max.h
-        } else {
-            intrinsic.h
-        };
+        let width = super::responsive_extent(self.responsive, constraints.max.w, intrinsic.w);
+        let height = super::responsive_extent(self.responsive, constraints.max.h, intrinsic.h);
         constraints.clamp(Size::new(width, height))
     }
 
@@ -270,10 +262,8 @@ component! {
             let a = angle_fraction * sweep;
             let ea = sa + a;
             let ma = sa + a * 0.5;
-            let eng = ctx.canvas_2d();
             let radius = self.slice_radius(slice.fraction, rose_max_fraction, chart_r);
-            eng.fill_sector(cx, cy, radius, sa, ea, d.color);
-            eng.draw_line(cx, cy, cx + chart_r * sa.cos(), cy + chart_r * sa.sin(), text_c, 1.0);
+            ctx.fill_sector(cx, cy, radius, sa, ea, d.color);
 
             if self.label_visible && a.abs() > std::f32::consts::TAU * 0.04 {
                 let half_a = a * 0.5;
@@ -303,15 +293,10 @@ component! {
             }
             sa = ea;
         }
-        {
-            let eng = ctx.canvas_2d();
-            eng.draw_line(cx, cy, cx + chart_r * sa.cos(), cy + chart_r * sa.sin(), text_c, 1.0);
-        }
         if self.hole_radius > 0.0 {
             let hr = chart_r * self.hole_radius;
-            let eng = ctx.canvas_2d();
-            eng.fill_circle(cx, cy, hr, bg_c);
-            eng.stroke_circle(cx, cy, hr, axis_c, 1.0);
+            ctx.fill_circle(cx, cy, hr, bg_c);
+            ctx.stroke_circle(cx, cy, hr, axis_c, 1.0);
 
             let center_label = Self::format_value(Self::total_value(&slices));
             let cl_fs = hr * 0.6;

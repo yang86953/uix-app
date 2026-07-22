@@ -3,6 +3,9 @@
 /// 缺字占位（tofu）字形 ID。后端无真实轮廓时由 `FontService::rasterize_glyph` 合成方框。
 pub const TOFU_GLYPH_ID: u32 = u32::MAX - 1;
 
+/// 只占 advance、没有可见轮廓的空白字形 ID。
+pub(crate) const WHITESPACE_GLYPH_ID: u32 = u32::MAX - 2;
+
 pub(crate) fn prohibited_at_line_start(ch: char) -> bool {
     matches!(
         ch,
@@ -35,6 +38,24 @@ pub(crate) fn prohibited_at_line_start(ch: char) -> bool {
     )
 }
 
+pub(crate) fn prohibited_at_line_end(ch: char) -> bool {
+    matches!(
+        ch,
+        '（' | '【' | '《' | '〈' | '〔' | '［' | '｛' | '“' | '‘' | '(' | '[' | '{'
+    )
+}
+
+pub(crate) fn soft_wrap_opportunity_after(ch: char) -> bool {
+    if matches!(ch, '\u{00a0}' | '\u{202f}' | '\u{2060}') {
+        return false;
+    }
+    ch.is_whitespace() || matches!(ch, '\u{200b}' | '-' | '\u{2010}')
+}
+
+pub(crate) fn collapsible_wrap_whitespace(ch: char) -> bool {
+    soft_wrap_opportunity_after(ch) && (ch.is_whitespace() || ch == '\u{200b}')
+}
+
 fn is_wide_scalar(ch: char) -> bool {
     matches!(ch,
         '\u{1100}'..='\u{11ff}'
@@ -51,8 +72,9 @@ fn is_wide_scalar(ch: char) -> bool {
 fn estimated_scalar_width(ch: char, font_size: f32) -> f32 {
     let factor = match ch {
         '\n' | '\r' => 0.0,
+        '\u{200b}' => 0.0,
         ' ' => 0.35,
-        '\t' => 2.0,
+        '\t' => 1.4,
         'm' | 'M' | 'W' | 'w' => 0.7,
         'i' | 'I' | 'l' | '1' | '.' | ',' | ':' | ';' | '\'' => 0.3,
         c if is_wide_scalar(c) => 1.0,
@@ -80,46 +102,117 @@ pub(crate) fn estimate_text_metrics(
     let mut width_wrapped = false;
     let mut line_char_count = 0usize;
     let mut last_width = 0.0f32;
+    let mut last_char = '\0';
+    let mut last_soft_break: Option<(f32, f32, usize)> = None;
+    let mut trailing_wrap_whitespace = 0.0f32;
+    let mut line_has_content = false;
+    let mut collapse_auto_line_start_whitespace = false;
     let wraps = max_width.is_finite() && max_width > 0.0;
 
-    for ch in text.chars() {
-        if ch == '\n' {
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if matches!(ch, '\n' | '\r') {
+            if ch == '\r' && chars.peek() == Some(&'\n') {
+                chars.next();
+            }
             widest_line = widest_line.max(line_width);
             line_width = 0.0;
             line_count += 1;
             line_char_count = 0;
             last_width = 0.0;
+            last_char = '\0';
+            last_soft_break = None;
+            trailing_wrap_whitespace = 0.0;
+            line_has_content = false;
+            collapse_auto_line_start_whitespace = false;
             continue;
         }
-        if ch == '\r' {
-            continue;
-        }
-        let width = estimated_scalar_width(ch, font_size);
-        if wraps && line_width > 0.0 && line_width + width > max_width {
-            if prohibited_at_line_start(ch) && line_char_count > 1 {
-                line_width -= last_width;
+        let mut width = estimated_scalar_width(ch, font_size);
+        if wraps {
+            loop {
+                if collapse_auto_line_start_whitespace && collapsible_wrap_whitespace(ch) {
+                    width = 0.0;
+                }
+                if !line_has_content || line_width + width <= max_width {
+                    break;
+                }
+
+                if let Some((visible_break_width, consumed_width, break_count)) =
+                    last_soft_break.take()
+                {
+                    if break_count < line_char_count {
+                        line_width -= consumed_width;
+                        line_char_count -= break_count;
+                        widest_line = widest_line.max(visible_break_width);
+                        line_has_content = line_char_count > 0;
+                        collapse_auto_line_start_whitespace = false;
+                    } else {
+                        widest_line = widest_line.max(visible_break_width);
+                        line_width = 0.0;
+                        line_char_count = 0;
+                        last_width = 0.0;
+                        last_char = '\0';
+                        line_has_content = false;
+                        collapse_auto_line_start_whitespace = true;
+                    }
+                    line_count += 1;
+                    width_wrapped = true;
+                    trailing_wrap_whitespace = 0.0;
+                    continue;
+                }
+
+                let move_previous = line_char_count > 1
+                    && (prohibited_at_line_start(ch) || prohibited_at_line_end(last_char));
+                if move_previous {
+                    line_width -= last_width;
+                    widest_line = widest_line.max(line_width);
+                    line_width = last_width;
+                    line_char_count = 1;
+                    line_count += 1;
+                    width_wrapped = true;
+                    line_has_content = true;
+                    collapse_auto_line_start_whitespace = false;
+                    continue;
+                }
+
+                if prohibited_at_line_start(ch) {
+                    break;
+                }
+
                 widest_line = widest_line.max(line_width);
-                line_width = last_width + width;
-                line_char_count = 2;
-                last_width = width;
+                line_width = 0.0;
+                line_char_count = 0;
+                last_width = 0.0;
+                last_char = '\0';
                 line_count += 1;
                 width_wrapped = true;
-            } else if prohibited_at_line_start(ch) {
-                line_width += width;
-                line_char_count += 1;
-                last_width = width;
-            } else {
-                widest_line = widest_line.max(line_width);
-                line_width = width;
-                line_char_count = 1;
-                last_width = width;
-                line_count += 1;
-                width_wrapped = true;
+                trailing_wrap_whitespace = 0.0;
+                line_has_content = false;
+                collapse_auto_line_start_whitespace = true;
             }
+        }
+
+        line_width += width;
+        line_char_count += 1;
+        last_width = width;
+        last_char = ch;
+        if !collapsible_wrap_whitespace(ch) || width > 0.0 {
+            line_has_content = true;
+        }
+        if !collapsible_wrap_whitespace(ch) {
+            collapse_auto_line_start_whitespace = false;
+        }
+        if collapsible_wrap_whitespace(ch) {
+            trailing_wrap_whitespace += width;
         } else {
-            line_width += width;
-            line_char_count += 1;
-            last_width = width;
+            trailing_wrap_whitespace = 0.0;
+        }
+        if line_has_content && soft_wrap_opportunity_after(ch) {
+            last_soft_break = Some((
+                line_width - trailing_wrap_whitespace,
+                line_width,
+                line_char_count,
+            ));
         }
     }
 
@@ -159,6 +252,27 @@ pub struct PositionedGlyph {
     /// 对应源文本中的 Unicode 标量下标（`chars()` 序），与 glyph 下标解耦。
     pub char_index: usize,
     pub font: crate::draw::FontHandle,
+}
+
+/// 返回字符区间在一行字形中的可见水平范围。
+///
+/// 选择区使用源字符下标，而不是假设一个 Unicode 标量必然对应一个字形槽；
+/// 同时以最小/最大边界兼容未来后端返回视觉顺序字形。
+pub(crate) fn glyph_selection_x_range(
+    glyphs: &[PositionedGlyph],
+    start_char: usize,
+    end_char: usize,
+) -> Option<(f32, f32)> {
+    let mut left = f32::INFINITY;
+    let mut right = f32::NEG_INFINITY;
+    for glyph in glyphs
+        .iter()
+        .filter(|glyph| glyph.char_index >= start_char && glyph.char_index < end_char)
+    {
+        left = left.min(glyph.x);
+        right = right.max(glyph.x + glyph.width.max(0.0));
+    }
+    (left.is_finite() && right.is_finite()).then_some((left, right.max(left)))
 }
 
 /// 一行文本的布局信息。
