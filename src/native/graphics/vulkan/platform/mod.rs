@@ -27,6 +27,7 @@ pub(crate) mod surface;
 pub use context::VulkanContext;
 
 #[cfg(any(unix, windows))]
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) fn create(
     surface: *mut c_void,
     width: i32,

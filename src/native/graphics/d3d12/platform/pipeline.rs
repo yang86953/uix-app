@@ -844,7 +844,7 @@ impl D3d12Pipeline {
         let glyph_ps = compile_shader(GLYPH_HLSL, b"PSMain\0", b"ps_5_0\0")?;
         let glyph_input_layout = [
             D3D12_INPUT_ELEMENT_DESC {
-                SemanticName: PCSTR(b"POSITION\0".as_ptr()),
+                SemanticName: PCSTR(c"POSITION".as_ptr().cast()),
                 SemanticIndex: 0,
                 Format: DXGI_FORMAT_R32G32_FLOAT,
                 InputSlot: 0,
@@ -853,7 +853,7 @@ impl D3d12Pipeline {
                 InstanceDataStepRate: 0,
             },
             D3D12_INPUT_ELEMENT_DESC {
-                SemanticName: PCSTR(b"TEXCOORD\0".as_ptr()),
+                SemanticName: PCSTR(c"TEXCOORD".as_ptr().cast()),
                 SemanticIndex: 0,
                 Format: DXGI_FORMAT_R32G32_FLOAT,
                 InputSlot: 0,
@@ -862,7 +862,7 @@ impl D3d12Pipeline {
                 InstanceDataStepRate: 0,
             },
             D3D12_INPUT_ELEMENT_DESC {
-                SemanticName: PCSTR(b"COLOR\0".as_ptr()),
+                SemanticName: PCSTR(c"COLOR".as_ptr().cast()),
                 SemanticIndex: 0,
                 Format: DXGI_FORMAT_R32G32B32A32_FLOAT,
                 InputSlot: 0,
@@ -1252,6 +1252,10 @@ impl D3d12Pipeline {
         Ok(frame.buffers[slot].resource.clone())
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the explicit frame and viewport inputs match the D3D12 recording boundary"
+    )]
     pub(super) fn draw_glyphs(
         &mut self,
         device: &ID3D12Device,

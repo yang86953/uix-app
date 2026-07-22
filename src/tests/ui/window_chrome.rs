@@ -292,7 +292,7 @@ fn drag_region_double_click_keeps_nested_control_action() {
 fn control_region_owns_nested_presentation_and_emits_on_release() {
     // 即便内容本身是 Button，命中也由窗口控制包装器接管，避免嵌套交互吞事件。
     let mut tree = ViewAdapter::build(
-        window_control(WindowControl::Close, button("×"))
+        window_control(WindowControl::Close, button("Close"))
             .width(44.0)
             .height(32.0),
     );

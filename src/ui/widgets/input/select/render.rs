@@ -60,7 +60,7 @@ impl Select {
             ARROW_SLOT_WIDTH,
             control_rect.h,
         );
-        crate::ui::widgets::icon::paint_icon_in_frame(
+        crate::ui::widgets::icon::Icon::paint_in_frame(
             ctx,
             if self.is_present() {
                 "chevron-up"
@@ -231,7 +231,7 @@ impl Select {
                 ctx.pop_clip();
             }
             if close_width > 0.0 && close_rect.w > 0.0 {
-                crate::ui::widgets::icon::paint_icon_in_frame(
+                crate::ui::widgets::icon::Icon::paint_in_frame(
                     ctx,
                     "x",
                     close_rect,
@@ -413,7 +413,7 @@ impl Select {
                     );
                     if selected {
                         ctx.fill_rect(check_rect, primary, Some(Radius::uniform(3.0)));
-                        crate::ui::widgets::icon::paint_icon_in_frame(
+                        crate::ui::widgets::icon::Icon::paint_in_frame(
                             ctx,
                             "check",
                             check_rect,
@@ -448,7 +448,7 @@ impl Select {
                         self.draw_clipped_row_text(label, content, ctx, text_color);
                     }
                     if selected {
-                        crate::ui::widgets::icon::paint_icon_in_frame(
+                        crate::ui::widgets::icon::Icon::paint_in_frame(
                             ctx,
                             "check",
                             Rect::new(row_rect.x + row_rect.w - 28.0, row_rect.y, 20.0, row_rect.h),

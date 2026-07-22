@@ -63,6 +63,10 @@ pub trait TextRenderer {
     );
 
     // ── 文本选中 ──
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "selection colors and bounds are part of the rendering trait contract"
+    )]
     fn draw_text_with_selection(
         &mut self,
         canvas: &mut dyn Canvas2D,

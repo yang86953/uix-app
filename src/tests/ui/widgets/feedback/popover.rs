@@ -3,8 +3,9 @@ use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
 use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
 use crate::ui::traits::{EventHandler, WidgetAnimation, WidgetComponent, WidgetRender};
-use crate::ui::widgets::{Popover, PopoverPlacement};
-use crate::ui::{AccessibilityRole, AnimationConfig, LayoutChild, Placement};
+use crate::ui::view::{ViewAdapter, ViewNode};
+use crate::ui::widgets::{Label, Popover, PopoverPlacement, PopoverTrigger};
+use crate::ui::{AccessibilityRole, AnimationConfig, LayoutChild, Placement, State};
 
 fn render_popover(popover: &Popover, frame: Rect, surface_size: (i32, i32)) -> String {
     let mut canvas = SharedRasterizer::new(PixelSurface::new(surface_size.0, surface_size.1));
@@ -246,4 +247,273 @@ fn constrained_popover_flips_clips_elides_and_lays_out_trigger_child() {
         ),
         vec![(child, frame)]
     );
+}
+
+#[test]
+fn popover_custom_trigger_view_materializes_as_a_real_child() {
+    let build = |content: &str, trigger: &str| {
+        ViewNode::leaf(
+            Popover::new(content).trigger_view(crate::ui::view::label(trigger.to_owned())),
+        )
+    };
+    let mut tree = ViewAdapter::build_nodes(build("details", "打开"));
+    let root = tree.root_id().expect("popover root");
+    let frame = Rect::new(12.0, 8.0, 120.0, 32.0);
+    tree.get_mut(root).expect("popover root").set_frame(frame);
+    tree.get_mut(root).expect("popover root").set_active(true);
+    tree.layout();
+
+    let label_id = tree.find_by_type::<Label>().expect("custom trigger label");
+    let label = tree
+        .get(label_id)
+        .expect("custom trigger node")
+        .component()
+        .as_any()
+        .downcast_ref::<Label>()
+        .expect("Label component");
+    assert_eq!(label.text(), "打开");
+    assert_eq!(tree.get(label_id).expect("trigger node").frame(), frame);
+    let inside = Point::new(frame.x + 20.0, frame.y + 12.0);
+    assert_eq!(
+        tree.dispatch_event(&pointer_down(inside)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&pointer_up(inside)),
+        EventResult::Handled
+    );
+    let popover = tree
+        .get(root)
+        .expect("popover root")
+        .component()
+        .as_any()
+        .downcast_ref::<Popover>()
+        .expect("Popover component");
+    assert!(popover.is_visible());
+    let accessibility = popover.snapshot_fields().accessibility();
+    assert_eq!(accessibility.role, AccessibilityRole::Button);
+    assert_eq!(accessibility.state.expanded, Some(true));
+
+    ViewAdapter::reconcile_nodes(&mut tree, build("updated details", "新版触发器"));
+    assert_eq!(tree.root_id(), Some(root));
+    let reconciled_label_id = tree
+        .find_by_type::<Label>()
+        .expect("reconciled custom trigger label");
+    let label = tree
+        .get(reconciled_label_id)
+        .expect("reconciled custom trigger node")
+        .component()
+        .as_any()
+        .downcast_ref::<Label>()
+        .expect("Label component");
+    assert_eq!(reconciled_label_id, label_id);
+    assert_eq!(label.text(), "新版触发器");
+    assert!(tree
+        .get(root)
+        .expect("popover root")
+        .component()
+        .as_any()
+        .downcast_ref::<Popover>()
+        .expect("Popover component")
+        .is_visible());
+}
+
+#[test]
+fn popover_background_and_arrow_drive_real_paint_reconcile_and_bounded_overlay() {
+    let first_background = Color::from_rgba(12, 34, 56, 255);
+    let second_background = Color::from_rgba(78, 90, 123, 255);
+    let frame = Rect::new(100.0, 40.0, 80.0, 28.0);
+    let mut popover = Popover::new("before")
+        .title("Title")
+        .placement(PopoverPlacement::Bottom)
+        .bg(first_background)
+        .arrow(true);
+    popover.open();
+    assert!(!WidgetAnimation::update_animation(&mut popover, 1.0));
+
+    let arrowed = render_popover(&popover, frame, (240, 180));
+    assert!(
+        arrowed.contains("color: Color { r: 12, g: 34, b: 56, a: 255 }"),
+        "Popover::bg must paint the popup surface: {arrowed}"
+    );
+    assert!(
+        arrowed.contains("FillPath"),
+        "arrow(true) must emit arrow geometry: {arrowed}"
+    );
+
+    popover.sync_from(
+        Popover::new("after")
+            .title("Updated")
+            .placement(PopoverPlacement::Bottom)
+            .bg(second_background)
+            .arrow(false),
+    );
+    assert!(
+        popover.is_visible(),
+        "style reconcile preserves runtime open state"
+    );
+    let arrowless = render_popover(&popover, frame, (240, 180));
+    assert!(
+        arrowless.contains("color: Color { r: 78, g: 90, b: 123, a: 255 }"),
+        "reconcile must replace the painted popup background: {arrowless}"
+    );
+    assert!(
+        !arrowless.contains("FillPath"),
+        "arrow(false) must remove arrow paint: {arrowless}"
+    );
+    let overlay = WidgetRender::overlay_entry(&popover, ComponentId::new(44), frame)
+        .expect("open Popover overlay");
+    let bounds = overlay.bounds_rect().expect("bounded Popover overlay");
+    let surface = Rect::new(0.0, 0.0, 240.0, 180.0);
+    assert!(surface.contains(Point::new(bounds.x, bounds.y)));
+    assert!(surface.contains(Point::new(
+        bounds.x + bounds.w - 0.01,
+        bounds.y + bounds.h - 0.01,
+    )));
+    assert!(matches!(
+        popover.snapshot_fields(),
+        SnapshotFields::Popover {
+            content,
+            arrow: false,
+            visible: true,
+            ..
+        } if content == "after"
+    ));
+    let accessibility = popover.snapshot_fields().accessibility();
+    assert_eq!(accessibility.role, AccessibilityRole::Button);
+    assert_eq!(accessibility.state.expanded, Some(true));
+    assert_eq!(accessibility.state.value_text.as_deref(), Some("after"));
+}
+
+#[test]
+fn controlled_popover_writes_click_hover_and_focus_changes_without_feedback_loops() {
+    let click_open = State::new(false);
+    let mut click = Popover::new("details").controlled_open(&click_open);
+    let inside = Point::new(20.0, 12.0);
+
+    assert_eq!(click.on_event(&pointer_down(inside)), EventResult::Handled);
+    assert_eq!(click.on_event(&pointer_up(inside)), EventResult::Handled);
+    assert!(click.is_visible());
+    assert!(click_open.get());
+    let open_generation = click_open.generation();
+
+    click.open();
+    assert_eq!(
+        click_open.generation(),
+        open_generation,
+        "writing the already-controlled value must not create a reconcile loop"
+    );
+    assert_eq!(
+        click.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Escape,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(!click.is_visible());
+    assert!(!click_open.get());
+
+    let hover_open = State::new(false);
+    let mut hover = Popover::new("hover")
+        .trigger(PopoverTrigger::Hover)
+        .controlled_open(&hover_open);
+    assert_eq!(
+        hover.on_event(&SystemEvent::PointerEnter),
+        EventResult::Handled
+    );
+    assert!(hover.is_visible());
+    assert!(hover_open.get());
+    assert_eq!(
+        hover.on_event(&SystemEvent::PointerLeave),
+        EventResult::Handled
+    );
+    assert!(!hover.is_visible());
+    assert!(!hover_open.get());
+
+    let focus_open = State::new(false);
+    let mut focus = Popover::new("focus")
+        .trigger(PopoverTrigger::Focus)
+        .controlled_open(&focus_open);
+    assert_eq!(focus.on_focus_within(true), EventResult::Handled);
+    assert!(focus.is_visible());
+    assert!(focus_open.get());
+    assert_eq!(focus.on_focus_within(false), EventResult::Handled);
+    assert!(!focus.is_visible());
+    assert!(!focus_open.get());
+}
+
+#[test]
+fn external_controlled_popover_state_requests_reconcile_and_drives_the_live_instance() {
+    let open = State::new(false);
+    let build = || {
+        ViewAdapter::capture_root(|| ViewNode::leaf(Popover::new("details").controlled_open(&open)))
+    };
+    let mut tree = ViewAdapter::build_nodes(build());
+    let root = tree.root_id().expect("popover root");
+    tree.reset_invalidation();
+
+    open.set(true);
+    assert!(tree.take_reconcile_requested());
+    ViewAdapter::reconcile_nodes(&mut tree, build());
+    let popover = tree
+        .get(root)
+        .expect("reused popover")
+        .component()
+        .as_any()
+        .downcast_ref::<Popover>()
+        .expect("Popover component");
+    assert!(popover.is_visible());
+    assert_eq!(
+        popover.snapshot_fields().accessibility().state.expanded,
+        Some(true)
+    );
+
+    tree.reset_invalidation();
+    open.set(false);
+    assert!(tree.take_reconcile_requested());
+    ViewAdapter::reconcile_nodes(&mut tree, build());
+    let popover = tree
+        .get(root)
+        .expect("reused popover")
+        .component()
+        .as_any()
+        .downcast_ref::<Popover>()
+        .expect("Popover component");
+    assert!(!popover.is_visible());
+    assert!(
+        popover.is_present(),
+        "controlled close keeps its leave transition"
+    );
+    assert_eq!(
+        popover.snapshot_fields().accessibility().state.expanded,
+        Some(false)
+    );
+}
+
+#[test]
+fn controlled_popover_reconcile_replaces_the_bound_state_without_reviving_the_old_one() {
+    let old = State::new(true);
+    let current = State::new(false);
+    let mut popover = Popover::new("details").controlled_open(&old);
+    assert!(popover.is_visible());
+
+    popover.sync_from(Popover::new("details").controlled_open(&current));
+    assert!(!popover.is_visible());
+
+    old.set(false);
+    old.set(true);
+    assert!(
+        !popover.is_visible(),
+        "the replaced State must no longer control the live component"
+    );
+
+    current.set(true);
+    assert_eq!(
+        popover.on_event(&SystemEvent::PointerMove {
+            pos: Point::new(120.0, 12.0),
+            mods: KeyMod::NONE,
+        }),
+        EventResult::NotHandled
+    );
+    assert!(popover.is_visible());
 }

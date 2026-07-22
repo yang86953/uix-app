@@ -919,6 +919,7 @@ fn role_name(role: AccessibilityRole) -> &'static str {
         AccessibilityRole::Combobox => "combobox",
         AccessibilityRole::Dialog => "dialog",
         AccessibilityRole::Group => "group",
+        AccessibilityRole::Heading => "heading",
         AccessibilityRole::Image => "image",
         AccessibilityRole::List => "list",
         AccessibilityRole::Menu => "menu",

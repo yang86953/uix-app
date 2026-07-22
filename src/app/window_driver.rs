@@ -44,8 +44,8 @@ pub(crate) use support::{
 };
 use support::{
     dispatch_due_active_work, earliest_deadline, has_layout_work, log_frame_metrics,
-    next_loop_state, observe_agent_settle, protocol_failure, record_idle, record_layout,
-    record_present, report_graphics_frame_failure, report_graphics_resize_error,
+    native_window_dpi, next_loop_state, observe_agent_settle, protocol_failure, record_idle,
+    record_layout, record_present, report_graphics_frame_failure, report_graphics_resize_error,
     report_window_operation_error, update_scheduled_and_discovered_animations,
     with_platform_clipboard,
 };
@@ -91,6 +91,7 @@ pub(crate) struct WindowDriver {
     initial_size: (i32, i32),
     deferred_show: bool,
     started_at: Option<Instant>,
+    presented_sequence: u64,
     scheduled_animation_ids_scratch: Vec<NodeId>,
     app_timer_deadlines_scratch: Vec<(TimerId, Instant)>,
     app_timer_deadline_revision: Option<u64>,
@@ -108,6 +109,7 @@ impl WindowDriver {
             initial_size: (width, height),
             deferred_show,
             started_at: None,
+            presented_sequence: 0,
             scheduled_animation_ids_scratch: Vec::new(),
             app_timer_deadlines_scratch: Vec::new(),
             app_timer_deadline_revision: None,
@@ -448,6 +450,7 @@ impl WindowDriver {
         self.sync_app_timers(active_work, app_timers);
         active_work.drain_due_into(now, &mut self.due_work_scratch);
         let due_work = self.due_work_scratch.as_slice();
+        let due_active_work_count = due_work.len();
         let had_registered_work = !due_work.is_empty();
         if due_work.contains(&ActiveWorkKind::GraphicsMaintenance) {
             engine.release_idle_resources(now);
@@ -765,6 +768,7 @@ impl WindowDriver {
             false,
         );
 
+        let invalidation_revision_before_render = tree.invalidation_revision();
         let dirty_region = tree.dirty_region();
         let dirty_full = dirty_region.full_frame;
         let paint_t0 = Instant::now();
@@ -906,6 +910,7 @@ impl WindowDriver {
 
         if frame_committed {
             semantic_state.mark_presented();
+            self.presented_sequence = self.presented_sequence.wrapping_add(1);
             engine.note_presented_at(frame_time);
             sync_graphics_maintenance(active_work, engine);
             self.frame_scheduler
@@ -942,7 +947,17 @@ impl WindowDriver {
                 || layout_calls_this_frame > 0
                 || crate::core::perf_probe::perf_probe_enabled());
         if log_frame {
+            let monotonic_us = crate::core::perf_probe::process_monotonic_us();
+            let window_dpi = native_window_dpi(platform_window);
             log_frame_metrics(
+                self.presented_sequence,
+                platform_window.window_id().raw(),
+                native_width,
+                native_height,
+                window_dpi,
+                monotonic_us,
+                active_work.len(),
+                due_active_work_count,
                 frame_t0.elapsed().as_micros(),
                 input_us,
                 phase_reconcile_us,
@@ -993,8 +1008,18 @@ impl WindowDriver {
             );
         }
 
-        if frame_committed && (needs_layout || has_layout || need_render) {
+        if frame_committed
+            && (needs_layout || has_layout || need_render)
+            && !tree.reset_invalidation_if_revision(invalidation_revision_before_render)
+        {
+            // The committed frame consumed the old queue, but paint or
+            // presentation produced newer state. Exact queue ownership is
+            // intentionally not split here: replaying an already-consumed
+            // Composite scroll would move retained pixels twice. Clear the
+            // mixed queue and settle the latest tree with one conservative
+            // full layout/paint opportunity instead.
             tree.reset_invalidation();
+            tree.mark_full_frame_dirty();
         }
 
         self.arm_visual_request(frame_time, tree, pending_root, *reconcile_pending);

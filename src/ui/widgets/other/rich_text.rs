@@ -10,7 +10,7 @@
 //!
 //! - 文字选择：鼠标拖选（支持 Ctrl+A 全选、Ctrl+C 复制）
 //! - 链接激活：鼠标或键盘提交 URL 语义事件，由应用决定导航策略
-//! - 代码复制：悬停显示 📋 按钮，点击复制
+//! - 代码复制：悬停显示 copy 图标按钮，点击复制
 //!
 //! # 与 Label/Typography 的区别
 //!
@@ -587,7 +587,7 @@ component! {
                             },
                             Some(Radius::uniform(3.0)),
                         );
-                        crate::ui::widgets::icon::paint_icon_in_frame(
+                        crate::ui::widgets::icon::Icon::paint_in_frame(
                             ctx,
                             "copy",
                             visible_btn,

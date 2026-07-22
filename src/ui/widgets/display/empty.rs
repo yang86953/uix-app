@@ -71,7 +71,7 @@ component! {
         ctx.push_clip(frame);
         if let Some(icon_name) = icon_name.filter(|_| icon_size > 0.0) {
             let icon_frame = Rect::new(frame.x, y, frame.w, icon_size);
-            crate::ui::widgets::icon::paint_icon_in_frame(
+            crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 icon_name,
                 icon_frame,

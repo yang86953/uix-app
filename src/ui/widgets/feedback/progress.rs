@@ -4,9 +4,10 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::painting::PaintPass;
-use crate::draw::{Color, Radius};
+use crate::draw::{Color, GradientDirection, Radius};
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
+use std::rc::Rc;
 
 /// Progress display type.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -35,6 +36,11 @@ component! {
         width: f32,
         round: bool,
         progress_type: ProgressType,
+        gradient_start: Option<Color>,
+        gradient_end: Option<Color>,
+        steps: usize,
+        dashboard: bool,
+        format_text: Option<Rc<dyn Fn(f32) -> String>>,
         indeterminate_phase: f32,
         previous_indeterminate_phase: f32,
     }
@@ -53,12 +59,20 @@ component! {
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
-        let tokens = ctx.tokens();
-
-        let track_c = self.track_color.unwrap_or(tokens.color_fill_tertiary());
-        let stroke_c = self.stroke_color.unwrap_or(tokens.color_primary());
+        let track_c = self
+            .track_color
+            .unwrap_or_else(|| ctx.tokens().color_fill_tertiary());
+        let stroke_c = self
+            .stroke_color
+            .unwrap_or_else(|| ctx.tokens().color_primary());
+        let label_color = ctx.tokens().color_text();
 
         ctx.push_clip(frame);
+        if self.dashboard {
+            self.render_dashboard(frame, track_c, stroke_c, label_color, ctx);
+            ctx.pop_clip();
+            return;
+        }
         if self.progress_type == ProgressType::Circle {
             let cx = frame.x + frame.w * 0.5;
             let cy = frame.y + frame.h * 0.5;
@@ -98,6 +112,7 @@ component! {
                     ctx.canvas_2d().draw_line(x1, y1, x2, y2, stroke_c, track_width);
                 }
             }
+            self.paint_progress_label(frame, label_color, ctx);
             ctx.pop_clip();
             return;
         }
@@ -112,8 +127,26 @@ component! {
                 let fill_w = frame.w * p;
                 if fill_w > 0.0 {
                     let fill_rect = Rect::new(frame.x, frame.y, fill_w, frame.h);
-                    ctx.fill_rect(fill_rect, stroke_c, self.line_radius(fill_rect));
+                    if self.steps > 1 {
+                        let gap = (frame.w / self.steps as f32 * 0.08).min(2.0);
+                        for index in 0..self.steps {
+                            let start = frame.x + index as f32 * frame.w / self.steps as f32;
+                            let end = frame.x + (index + 1) as f32 * frame.w / self.steps as f32;
+                            let visible_end = (end - gap).min(frame.x + fill_w);
+                            if visible_end > start {
+                                self.paint_line_fill(
+                                    ctx,
+                                    Rect::new(start, frame.y, visible_end - start, frame.h),
+                                    frame,
+                                    stroke_c,
+                                );
+                            }
+                        }
+                    } else {
+                        self.paint_line_fill(ctx, fill_rect, frame, stroke_c);
+                    }
                 }
+                self.paint_progress_label(frame, label_color, ctx);
             }
             ProgressMode::Indeterminate => {
                 let bar_w = frame.w * 0.3;
@@ -168,6 +201,11 @@ impl ProgressBar {
             width: 200.0,
             round: true,
             progress_type: ProgressType::Line,
+            gradient_start: None,
+            gradient_end: None,
+            steps: 0,
+            dashboard: false,
+            format_text: None,
             indeterminate_phase: 0.0,
             previous_indeterminate_phase: 0.0,
         }
@@ -176,6 +214,36 @@ impl ProgressBar {
     pub fn progress(mut self, p: f32) -> Self {
         self.progress = Self::normalize_progress(p);
         self.mode = ProgressMode::Determinate(self.progress);
+        self
+    }
+
+    /// `.percent()` 是 `.progress()` 的语义别名，参数仍为 0.0～1.0。
+    pub fn percent(self, p: f32) -> Self {
+        self.progress(p)
+    }
+
+    pub fn gradient(mut self, start: Color, end: Color) -> Self {
+        self.gradient_start = Some(start);
+        self.gradient_end = Some(end);
+        self
+    }
+
+    pub fn steps(mut self, count: usize) -> Self {
+        self.steps = count.max(1);
+        self
+    }
+
+    pub fn dashboard(mut self) -> Self {
+        self.dashboard = true;
+        self.progress_type = ProgressType::Circle;
+        self
+    }
+
+    pub fn format<F>(mut self, formatter: F) -> Self
+    where
+        F: Fn(f32) -> String + 'static,
+    {
+        self.format_text = Some(Rc::new(formatter));
         self
     }
 
@@ -224,13 +292,113 @@ impl ProgressBar {
         self.indeterminate_phase
     }
 
+    fn render_dashboard(
+        &self,
+        frame: Rect,
+        track_color: Color,
+        stroke_color: Color,
+        label_color: Color,
+        ctx: &mut PaintContext<'_>,
+    ) {
+        let cx = frame.x + frame.w * 0.5;
+        let cy = frame.y + frame.h * 0.72;
+        let radius = (frame.w * 0.42).min(frame.h * 0.65);
+        if radius <= 0.0 {
+            return;
+        }
+        let width = (radius * 0.2).clamp(1.0, 8.0).min(radius);
+        let start = std::f32::consts::PI;
+        let end = std::f32::consts::TAU;
+        ctx.stroke_arc(cx, cy, radius, start, end, track_color, width);
+
+        let (progress_start, progress_end) = match self.mode {
+            ProgressMode::Determinate(progress) => (start, start + std::f32::consts::PI * progress),
+            ProgressMode::Indeterminate => {
+                let sweep = std::f32::consts::PI * 0.25;
+                let travel = std::f32::consts::PI - sweep;
+                let progress_start = start + travel * self.indeterminate_phase;
+                (progress_start, progress_start + sweep)
+            }
+        };
+        if progress_end > progress_start {
+            ctx.stroke_arc(
+                cx,
+                cy,
+                radius,
+                progress_start,
+                progress_end,
+                stroke_color,
+                width,
+            );
+        }
+        self.paint_progress_label(frame, label_color, ctx);
+    }
+
+    fn paint_progress_label(&self, frame: Rect, color: Color, ctx: &mut PaintContext<'_>) {
+        if let (ProgressMode::Determinate(progress), Some(format)) =
+            (self.mode, self.format_text.as_ref())
+        {
+            ctx.text_center(&format(progress), frame, color, 11.0);
+        }
+    }
+
+    fn paint_line_fill(
+        &self,
+        ctx: &mut PaintContext<'_>,
+        rect: Rect,
+        gradient_domain: Rect,
+        fallback: Color,
+    ) {
+        let Some((start, end)) = self.gradient_start.zip(self.gradient_end) else {
+            ctx.fill_rect(rect, fallback, self.line_radius(rect));
+            return;
+        };
+        if !self.round {
+            let color_a = gradient_color_at(start, end, gradient_domain, rect.x);
+            let color_b = gradient_color_at(start, end, gradient_domain, rect.x + rect.w);
+            ctx.fill_linear_gradient(rect, color_a, color_b, GradientDirection::Horizontal);
+            return;
+        }
+
+        let cap_radius = (rect.h * 0.5).min(rect.w * 0.5);
+        if cap_radius <= 0.0 {
+            return;
+        }
+        let left_center = rect.x + cap_radius;
+        let right_center = rect.x + rect.w - cap_radius;
+        if right_center > left_center {
+            let center = Rect::new(left_center, rect.y, right_center - left_center, rect.h);
+            ctx.fill_linear_gradient(
+                center,
+                gradient_color_at(start, end, gradient_domain, left_center),
+                gradient_color_at(start, end, gradient_domain, right_center),
+                GradientDirection::Horizontal,
+            );
+        }
+        let cy = rect.y + rect.h * 0.5;
+        ctx.fill_circle(
+            left_center,
+            cy,
+            cap_radius,
+            gradient_color_at(start, end, gradient_domain, left_center),
+        );
+        if right_center > left_center {
+            ctx.fill_circle(
+                right_center,
+                cy,
+                cap_radius,
+                gradient_color_at(start, end, gradient_domain, right_center),
+            );
+        }
+    }
+
     fn line_indeterminate_bounds(&self, frame: Rect) -> Rect {
         let previous = self.indeterminate_bar_rect(frame, self.previous_indeterminate_phase);
         let current = self.indeterminate_bar_rect(frame, self.indeterminate_phase);
         previous
             .union(&current)
             .intersect(&frame)
-            .unwrap_or(Rect::zero())
+            .unwrap_or_default()
     }
 
     fn indeterminate_bar_rect(&self, frame: Rect, phase: f32) -> Rect {
@@ -245,7 +413,7 @@ impl ProgressBar {
         let cy = frame.y + frame.h * 0.5;
         Rect::new(cx - r, cy - r, r * 2.0, r * 2.0)
             .intersect(&frame)
-            .unwrap_or(Rect::zero())
+            .unwrap_or_default()
     }
 
     fn line_radius(&self, rect: Rect) -> Option<Radius> {
@@ -297,6 +465,11 @@ impl ProgressBar {
         self.width = Self::normalize_dimension(next.width);
         self.round = next.round;
         self.progress_type = next.progress_type;
+        self.gradient_start = next.gradient_start;
+        self.gradient_end = next.gradient_end;
+        self.steps = next.steps;
+        self.dashboard = next.dashboard;
+        self.format_text = next.format_text;
     }
 
     fn normalize_progress(value: f32) -> f32 {
@@ -314,4 +487,23 @@ impl ProgressBar {
             0.0
         }
     }
+}
+
+fn interpolate_color(start: Color, end: Color, amount: f32) -> Color {
+    let t = amount.clamp(0.0, 1.0);
+    Color::from_rgba(
+        (start.r as f32 + (end.r as f32 - start.r as f32) * t).round() as u8,
+        (start.g as f32 + (end.g as f32 - start.g as f32) * t).round() as u8,
+        (start.b as f32 + (end.b as f32 - start.b as f32) * t).round() as u8,
+        (start.a as f32 + (end.a as f32 - start.a as f32) * t).round() as u8,
+    )
+}
+
+fn gradient_color_at(start: Color, end: Color, domain: Rect, x: f32) -> Color {
+    let amount = if domain.w > 0.0 {
+        (x - domain.x) / domain.w
+    } else {
+        0.0
+    };
+    interpolate_color(start, end, amount)
 }

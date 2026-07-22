@@ -785,7 +785,7 @@ fn windows_vulkan_shared_device_multiwindow_soak_is_bounded() {
     let second_sizes = [(192, 128), (144, 112), (240, 152), (168, 124)];
     let mut iteration = 0_u64;
     let mut exercise = |iteration: u64| {
-        if iteration % 2 == 0 {
+        if iteration.is_multiple_of(2) {
             let requested = first_sizes[iteration as usize % first_sizes.len()];
             first_window
                 .properties_mut()
@@ -829,7 +829,7 @@ fn windows_vulkan_shared_device_multiwindow_soak_is_bounded() {
                 PresentDamage::Full,
             )
             .expect("present second shared surface during soak");
-        if iteration % 32 == 0 {
+        if iteration.is_multiple_of(32) {
             assert_eq!(
                 first
                     .read_pixels(first.width() - 1, first.height() - 1, 1, 1)
@@ -868,8 +868,6 @@ fn windows_vulkan_shared_device_multiwindow_soak_is_bounded() {
         );
         iteration += 1;
     }
-    drop(exercise);
-
     let rounds = iteration - warmup_rounds;
     let handles_after = current_process_handle_count();
     println!(
@@ -953,7 +951,7 @@ fn windows_vulkan_hardware_resize_present_soak_is_bounded() {
                 PresentDamage::Full,
             )
             .expect("present during soak");
-        if iteration % 32 == 0 {
+        if iteration.is_multiple_of(32) {
             assert_eq!(
                 context
                     .read_pixels(context.width() - 1, context.height() - 1, 1, 1)
@@ -984,8 +982,6 @@ fn windows_vulkan_hardware_resize_present_soak_is_bounded() {
         );
         iteration += 1;
     }
-    drop(exercise);
-
     let rounds = iteration - warmup_rounds;
     let handles_after = current_process_handle_count();
     println!(

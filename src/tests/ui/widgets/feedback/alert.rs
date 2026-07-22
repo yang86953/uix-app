@@ -1,4 +1,5 @@
 use crate::draw::spatial::Orientation;
+use crate::native::traits::system::StatusLevel;
 use crate::tests::common::*;
 use crate::ui::widgets::Alert;
 use crate::ui::AccessibilityRole;
@@ -211,4 +212,122 @@ fn non_closable_alert_does_not_claim_close_interaction() {
         EventResult::NotHandled
     );
     assert!(alert.is_visible());
+}
+
+#[test]
+fn alert_status_constructors_drive_distinct_status_snapshots_and_paint() {
+    let variants = [
+        (Alert::success("success"), StatusLevel::Success),
+        (Alert::info("info"), StatusLevel::Info),
+        (Alert::warning("warning"), StatusLevel::Warning),
+        (Alert::error("error"), StatusLevel::Error),
+    ];
+    let mut paints = Vec::new();
+    for (alert, expected) in variants {
+        assert!(matches!(
+            alert.snapshot_fields(),
+            SnapshotFields::Alert { type_, .. } if type_ == expected
+        ));
+        paints.push(render_alert(
+            &alert,
+            Rect::new(0.0, 0.0, 300.0, 36.0),
+            (320, 56),
+        ));
+    }
+    paints.dedup();
+    assert_eq!(
+        paints.len(),
+        4,
+        "each status must use its own visual tokens/icon"
+    );
+}
+
+#[test]
+fn alert_action_requires_matching_release_and_is_keyboard_accessible_without_closing() {
+    let calls = std::rc::Rc::new(std::cell::Cell::new(0usize));
+    let mut alert = Alert::new("new version").action("details", {
+        let calls = calls.clone();
+        move || calls.set(calls.get() + 1)
+    });
+    render_alert(&alert, Rect::new(0.0, 0.0, 300.0, 36.0), (320, 56));
+    let action = Point::new(250.0, 18.0);
+
+    assert_eq!(WidgetComponent::tab_index(&alert), 1);
+    assert_eq!(alert.on_event(&pointer_down(action)), EventResult::Handled);
+    assert_eq!(calls.get(), 0, "PointerDown must only arm the action");
+    assert_eq!(
+        alert.on_event(&pointer_up(Point::new(20.0, 18.0))),
+        EventResult::Handled
+    );
+    assert_eq!(calls.get(), 0, "release outside must cancel the action");
+
+    assert_eq!(alert.on_event(&pointer_down(action)), EventResult::Handled);
+    assert_eq!(alert.on_event(&pointer_up(action)), EventResult::Handled);
+    assert_eq!(calls.get(), 1);
+    assert!(
+        alert.is_visible(),
+        "actions must not implicitly dismiss the Alert"
+    );
+    let semantic = alert
+        .semantic_event(ComponentId::new(27), &pointer_up(action))
+        .expect("action semantic event");
+    assert_eq!(semantic.kind, SemanticKind::Submit);
+    assert_eq!(semantic.text_payload(), Some("details"));
+
+    assert_eq!(alert.on_event(&SystemEvent::FocusIn), EventResult::Handled);
+    assert_eq!(
+        alert.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Space,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(calls.get(), 1);
+    assert_eq!(
+        alert.on_event(&SystemEvent::KeyUp {
+            key: KeyCode::Space,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(calls.get(), 2);
+    assert!(alert.is_visible());
+}
+
+#[test]
+fn alert_action_and_close_targets_do_not_overlap_and_banner_changes_real_paint() {
+    let calls = std::rc::Rc::new(std::cell::Cell::new(0usize));
+    let mut alert = Alert::warning("maintenance")
+        .action("details", {
+            let calls = calls.clone();
+            move || calls.set(calls.get() + 1)
+        })
+        .closable();
+    let normal = render_alert(&alert, Rect::new(0.0, 0.0, 300.0, 36.0), (320, 56));
+
+    let action = Point::new(230.0, 18.0);
+    assert_eq!(alert.on_event(&pointer_down(action)), EventResult::Handled);
+    assert_eq!(alert.on_event(&pointer_up(action)), EventResult::Handled);
+    assert_eq!(calls.get(), 1);
+    assert!(alert.is_visible());
+
+    let close = Point::new(282.0, 18.0);
+    assert_eq!(alert.on_event(&pointer_down(close)), EventResult::Handled);
+    assert_eq!(alert.on_event(&pointer_up(close)), EventResult::Handled);
+    assert_eq!(calls.get(), 1, "close target must not invoke the action");
+    assert!(!alert.is_visible());
+
+    let banner = render_alert(
+        &Alert::warning("maintenance")
+            .action("details", || {})
+            .closable()
+            .banner(true),
+        Rect::new(0.0, 0.0, 300.0, 36.0),
+        (320, 56),
+    );
+    assert_ne!(
+        normal, banner,
+        "banner mode must alter actual container paint"
+    );
+    assert!(banner.contains("radius: None"));
 }

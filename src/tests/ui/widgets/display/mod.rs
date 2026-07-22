@@ -9,6 +9,7 @@ mod collapse;
 mod descriptions;
 mod empty;
 mod image;
+mod image_group;
 mod list;
 mod result;
 mod selectable_list;

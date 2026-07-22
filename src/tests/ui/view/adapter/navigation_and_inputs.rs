@@ -49,12 +49,14 @@ fn reconcile_menu_preserves_active_key_and_syncs_items() {
             key: "a".to_string(),
             label: "A".to_string(),
             icon: String::new(),
+            children: Vec::new(),
             disabled: false,
         },
         MenuItem {
             key: "b".to_string(),
             label: "B".to_string(),
             icon: String::new(),
+            children: Vec::new(),
             disabled: false,
         },
     ];
@@ -62,6 +64,7 @@ fn reconcile_menu_preserves_active_key_and_syncs_items() {
         key: "c".to_string(),
         label: "C".to_string(),
         icon: "home".to_string(),
+        children: Vec::new(),
         disabled: true,
     }];
     let mut tree =
@@ -124,14 +127,17 @@ fn reconcile_tabs_preserves_active_index_and_syncs_tabs() {
                     Tab {
                         label: "First".to_string(),
                         key: "first".to_string(),
+                        icon: String::new(),
                     },
                     Tab {
                         label: "Second".to_string(),
                         key: "second".to_string(),
+                        icon: String::new(),
                     },
                     Tab {
                         label: "Third".to_string(),
                         key: "third".to_string(),
+                        icon: String::new(),
                     },
                 ])
                 .position(TabPosition::Bottom)

@@ -9,7 +9,7 @@ fn real_demo_opens_theme_window_and_syncs_observable_state() {
     let _guard = REAL_GUI_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut demo = DemoProcess::spawn(D3D11_GRAPHICS);
+    let mut demo = DemoProcess::spawn(DEFAULT_VULKAN_GRAPHICS);
     let descriptor = demo.wait_for_descriptor();
     let endpoint = descriptor["endpoint"]
         .as_str()
@@ -51,6 +51,7 @@ fn real_demo_opens_theme_window_and_syncs_observable_state() {
         "multi-window-main-before-navigation",
         main_window_id,
     );
+    demo.assert_expected_dpi(&main_before, "multi-window-main");
     let (runtime_x, runtime_y) =
         visible_center(node_by_automation_id(&main_before, "sidebar-page-1"));
     let opened_runtime = perform_until_presentable(

@@ -14,6 +14,13 @@ impl WidgetTree {
         self.invalidation.clone()
     }
 
+    pub(crate) fn invalidation_revision(&self) -> u64 {
+        self.invalidation
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .revision()
+    }
+
     pub fn reconcile_requester(&self) -> Arc<dyn Fn() + Send + Sync> {
         Arc::clone(&self.reconcile_callback)
     }
@@ -245,6 +252,23 @@ impl WidgetTree {
             .unwrap_or_else(|e| e.into_inner())
             .clear();
         self.scroll_region_moves.clear();
+    }
+
+    /// Clears the frame's consumed work only if painting/presentation did not
+    /// enqueue more work after the caller sampled `revision`.
+    pub(crate) fn reset_invalidation_if_revision(&mut self, revision: u64) -> bool {
+        if !self.pending_invalidations.is_empty() {
+            return false;
+        }
+        let cleared = self
+            .invalidation
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clear_if_revision(revision);
+        if cleared {
+            self.scroll_region_moves.clear();
+        }
+        cleared
     }
 
     /// 获取同帧全部滚动视口；提交成功前保留，供失败帧原样重试。

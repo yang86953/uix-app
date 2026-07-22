@@ -2,6 +2,8 @@ use crate::tests::common::*;
 use crate::ui::state::State;
 use crate::ui::view::ViewAdapter;
 use crate::ui::widgets::navigation::nav::*;
+use crate::ui::widgets::Button;
+use crate::ui::ClickEvent;
 
 #[test]
 fn nav_item_is_focusable_and_keyboard_activation_emits_change() {
@@ -116,6 +118,72 @@ fn navigation_exposes_no_active_key_for_an_unmatched_typed_state() {
 
     assert_eq!(navigation.active().get(), usize::MAX);
     assert_eq!(navigation.active_key(), None);
+}
+
+#[test]
+fn navigation_collapse_toggle_updates_state_and_invokes_callback() {
+    let collapsed = State::new(false);
+    let callback_values = Rc::new(RefCell::new(Vec::new()));
+    let callback_values_for_handler = callback_values.clone();
+    let theme = Theme::default();
+    let navigation = Navigation::new("Test")
+        .item("Home", TestPage::Home)
+        .collapsed(&collapsed)
+        .on_collapse(move |value| callback_values_for_handler.borrow_mut().push(value))
+        .show_version(false);
+
+    let mut tree =
+        ViewAdapter::build_nodes(crate::ui::view::embed(navigation.build(theme.tokens())));
+    let toggle = tree
+        .find_by_type::<Button>()
+        .expect("collapsed navigation should expose a toggle button");
+    let click = ClickEvent {
+        button: MouseButton::Left,
+        pos: Point::new(8.0, 8.0),
+        modifiers: KeyMod::NONE,
+    };
+
+    assert_eq!(
+        tree.dispatch_semantic(SemanticEvent::click(toggle, click)),
+        EventResult::Handled
+    );
+    assert!(collapsed.get());
+    assert_eq!(*callback_values.borrow(), vec![true]);
+
+    assert_eq!(
+        tree.dispatch_semantic(SemanticEvent::click(toggle, click)),
+        EventResult::Handled
+    );
+    assert!(!collapsed.get());
+    assert_eq!(*callback_values.borrow(), vec![true, false]);
+}
+
+#[test]
+fn navigation_collapse_callback_alone_creates_internal_toggle_state() {
+    let callback_values = Rc::new(RefCell::new(Vec::new()));
+    let callback_values_for_handler = callback_values.clone();
+    let theme = Theme::default();
+    let navigation = Navigation::new("Test")
+        .item("Home", TestPage::Home)
+        .on_collapse(move |value| callback_values_for_handler.borrow_mut().push(value))
+        .show_version(false);
+
+    let mut tree =
+        ViewAdapter::build_nodes(crate::ui::view::embed(navigation.build(theme.tokens())));
+    let toggle = tree
+        .find_by_type::<Button>()
+        .expect("callback-only navigation should expose a toggle button");
+    let click = ClickEvent {
+        button: MouseButton::Left,
+        pos: Point::new(8.0, 8.0),
+        modifiers: KeyMod::NONE,
+    };
+
+    assert_eq!(
+        tree.dispatch_semantic(SemanticEvent::click(toggle, click)),
+        EventResult::Handled
+    );
+    assert_eq!(*callback_values.borrow(), vec![true]);
 }
 
 #[test]

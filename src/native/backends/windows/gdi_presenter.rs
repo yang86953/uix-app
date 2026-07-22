@@ -107,6 +107,10 @@ pub(crate) fn clip_damage_rect(
 }
 
 /// 将 logical source damage 外扩映射到 physical target pixels。
+#[allow(
+    clippy::too_many_arguments,
+    reason = "source and target extents are explicit at the GDI scaling boundary"
+)]
 pub(crate) fn scale_damage_rect_to_target(
     x: i32,
     y: i32,

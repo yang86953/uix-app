@@ -362,14 +362,14 @@ component! {
                 border_color,
                 1.0,
             );
-            crate::ui::widgets::icon::paint_icon_in_frame(
+            crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 "chevron-up",
                 up_rect,
                 step_color,
                 10.0,
             );
-            crate::ui::widgets::icon::paint_icon_in_frame(
+            crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 "chevron-down",
                 dn_rect,

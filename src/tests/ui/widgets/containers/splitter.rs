@@ -1,9 +1,42 @@
+use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
 use crate::ui::widgets::containers::splitter::Splitter;
 use crate::ui::AccessibilityRole;
 
 fn capture_layout(splitter: &Splitter, frame: Rect) {
     let _ = splitter.layout_children(frame, &[], &WidgetTree::new());
+}
+
+fn render_splitter(splitter: &Splitter, frame: Rect, surface_size: (i32, i32)) -> String {
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(surface_size.0, surface_size.1));
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+    let mut display_list = crate::draw::painting::DisplayList::new();
+    {
+        let mut ctx = PaintContext::new_for_test(
+            &mut canvas,
+            font,
+            &fonts,
+            &images,
+            &tokens,
+            96.0,
+            1.0,
+            Orientation::YDown,
+            surface_size.0,
+            surface_size.1,
+        );
+        ctx.with_recorder(&mut display_list, |ctx| {
+            WidgetRender::render(splitter, frame, ctx, &tree);
+        });
+    }
+    format!("{display_list:?}")
 }
 
 #[test]
@@ -120,4 +153,27 @@ fn splitter_pointer_hit_uses_node_local_coordinates() {
         EventResult::Handled
     );
     assert!(!EventHandler::wants_continuous_pointer_move(&splitter));
+}
+
+#[test]
+fn splitter_grips_use_orientation_specific_shared_icons() {
+    let horizontal = render_splitter(
+        &Splitter::new(),
+        Rect::new(0.0, 0.0, 200.0, 120.0),
+        (200, 120),
+    );
+    let vertical = render_splitter(
+        &Splitter::new().vertical(true),
+        Rect::new(0.0, 0.0, 200.0, 120.0),
+        (200, 120),
+    );
+
+    assert!(
+        horizontal.contains("\\u{e0eb}"),
+        "horizontal panel split needs the vertical grip icon: {horizontal}"
+    );
+    assert!(
+        vertical.contains("\\u{e0ea}"),
+        "vertical panel split needs the horizontal grip icon: {vertical}"
+    );
 }

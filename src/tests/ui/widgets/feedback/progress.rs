@@ -183,3 +183,46 @@ fn progress_normalizes_and_clips_actual_render_geometry() {
     assert!(dirty.x + dirty.w <= frame.x + frame.w);
     assert!(dirty.y + dirty.h <= frame.y + frame.h);
 }
+
+#[test]
+fn determinate_gradient_uses_real_endpoint_colors_instead_of_a_midpoint_fill() {
+    let progress = ProgressBar::new()
+        .progress(0.75)
+        .round(false)
+        .gradient(Color::red(), Color::blue());
+    let display = render_progress(
+        &progress,
+        Rect::new(0.0, 0.0, 100.0, 10.0),
+        PaintPass::Content,
+    );
+
+    assert!(display.contains("FillLinearGradient"), "{display}");
+    assert!(
+        display.contains("color_a: Color { r: 255, g: 0, b: 0"),
+        "{display}"
+    );
+    assert!(
+        display.contains("color_b: Color { r: 64, g: 0, b: 191"),
+        "the visible gradient endpoint must represent 75% of the full track: {display}"
+    );
+}
+
+#[test]
+fn dashboard_uses_a_semicircular_arc_and_renders_zero_percent_format_text() {
+    let dashboard = ProgressBar::new()
+        .dashboard()
+        .progress(0.0)
+        .format(|progress| format!("{:.0}%", progress * 100.0));
+    let display = render_progress(
+        &dashboard,
+        Rect::new(0.0, 0.0, 120.0, 80.0),
+        PaintPass::Content,
+    );
+
+    assert!(display.contains("StrokePath"), "{display}");
+    assert!(
+        !display.contains("FillCircle"),
+        "dashboard must not reuse the full-circle donut track: {display}"
+    );
+    assert!(display.contains("text: \"0%\""), "{display}");
+}

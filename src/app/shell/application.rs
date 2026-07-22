@@ -167,6 +167,10 @@ impl SecondaryWindowSession {
         )
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "frame draining preserves the established application service boundary"
+    )]
     fn drain_frame(
         &mut self,
         font_service: &FontService,

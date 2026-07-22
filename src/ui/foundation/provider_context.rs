@@ -10,6 +10,10 @@ pub(crate) struct ProviderContext {
 }
 
 thread_local! {
+    #[allow(
+        clippy::missing_const_for_thread_local,
+        reason = "the initializer already uses an inline const block; Clippy reports the macro expansion"
+    )]
     static PROVIDER_CONTEXT_STACK: RefCell<Vec<ProviderContext>> = const { RefCell::new(Vec::new()) };
 }
 

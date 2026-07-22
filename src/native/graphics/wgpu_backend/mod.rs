@@ -17,9 +17,10 @@ use std::sync::{
 
 use crate::core::{Errc, Error, Rect, Result};
 use crate::native::traits::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
-    GpuSolidRect, GpuStrokeRect, GraphicsBackend, GraphicsContextCaps, IGraphicsContext,
-    NativeRasterCaps, OffscreenTargetId, PresentCoherency, PresentDamage, PresentTestResult,
+    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient,
+    GpuSolidMesh, GpuSolidRect, GpuStrokeRect, GraphicsBackend, GraphicsContextCaps,
+    IGraphicsContext, NativeRasterCaps, OffscreenTargetId, PresentCoherency, PresentDamage,
+    PresentTestResult,
 };
 
 use blur::SeparableBlur;
@@ -235,14 +236,15 @@ impl WgpuContext {
             .find(|mode| *mode == wgpu::PresentMode::Fifo)
             .or_else(|| capabilities.present_modes.first().copied())
             .ok_or_else(|| Error::new(Errc::PlatformError, "wgpu surface has no present modes"))?;
-        let alpha_mode = choose_surface_alpha_mode(&capabilities.alpha_modes).ok_or_else(|| {
-            Error::new(Errc::PlatformError, "wgpu surface has no alpha modes")
-        })?;
+        let alpha_mode = choose_surface_alpha_mode(&capabilities.alpha_modes)
+            .ok_or_else(|| Error::new(Errc::PlatformError, "wgpu surface has no alpha modes"))?;
         let extent = surface::drawable_extent(native_surface, width, height);
         let (drawable_width, drawable_height) =
             ensure_surface_extent(extent.width, extent.height, max_texture_dimension_2d)?;
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
+            // Swapchain textures are only render targets here. In particular,
+            // the GL surface backend does not advertise COPY_DST support.
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
             width: drawable_width,
             height: drawable_height,
@@ -353,11 +355,8 @@ impl IGraphicsContext for WgpuContext {
             return Ok(());
         }
         let extent = surface::drawable_extent(self.native_surface, width, height);
-        let (drawable_width, drawable_height) = ensure_surface_extent(
-            extent.width,
-            extent.height,
-            self.max_texture_dimension_2d,
-        )?;
+        let (drawable_width, drawable_height) =
+            ensure_surface_extent(extent.width, extent.height, self.max_texture_dimension_2d)?;
         self.logical_width = extent.logical_width;
         self.logical_height = extent.logical_height;
         self.width = drawable_width as i32;
@@ -448,8 +447,7 @@ impl IGraphicsContext for WgpuContext {
         rects: &[GpuSolidRect],
     ) -> Result<()> {
         self.ensure_active()?;
-        self.renderer
-            .clear_rects((viewport_w, viewport_h), rects);
+        self.renderer.clear_rects((viewport_w, viewport_h), rects);
         Ok(())
     }
 
@@ -585,22 +583,20 @@ impl IGraphicsContext for WgpuContext {
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let bind_group = self
-            .device
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("uix-offscreen-sample"),
-                layout: self.renderer.texture_bind_layout(),
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(self.renderer.texture_sampler()),
-                    },
-                ],
-            });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("uix-offscreen-sample"),
+            layout: self.renderer.texture_bind_layout(),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(self.renderer.texture_sampler()),
+                },
+            ],
+        });
         let id = if let Some(id) = self.free_offscreen_ids.pop() {
             id
         } else {
@@ -750,7 +746,8 @@ impl IGraphicsContext for WgpuContext {
             ));
         }
         // 若该目标正作为绑定 RT 或刚画完，先把命令落到纹理再采样。
-        if self.bound_offscreen == Some(id.0) || self.renderer.active_target() == ActiveTarget::Offscreen
+        if self.bound_offscreen == Some(id.0)
+            || self.renderer.active_target() == ActiveTarget::Offscreen
         {
             self.flush_bound_offscreen()?;
         }

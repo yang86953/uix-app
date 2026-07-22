@@ -30,6 +30,10 @@ impl Drop for BoundAnimatedSource {
 #[cfg(test)]
 thread_local! {
     /// 1=Phase1 2=Phase2 4=Phase4；0=不记录。
+    #[allow(
+        clippy::missing_const_for_thread_local,
+        reason = "the initializer is already const and the lint fires through thread_local"
+    )]
     pub(crate) static LAYOUT_TRACE_PHASE: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
 }
 

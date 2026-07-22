@@ -1555,6 +1555,10 @@ impl D3d11Pipeline {
         ))
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the scalar coordinates mirror the fixed D3D11 vertex layout at this backend boundary"
+    )]
     fn push_glyph_quad(
         verts: &mut Vec<GlyphVertex>,
         x: f32,
@@ -1853,6 +1857,10 @@ impl D3d11Pipeline {
         }
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the shader constants stay explicit at the legacy D3D11 command boundary"
+    )]
     fn draw_rect_constants(
         &self,
         context: &ID3D11DeviceContext,
@@ -2021,6 +2029,10 @@ impl D3d11Pipeline {
         }
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the shader constants stay explicit at the legacy D3D11 command boundary"
+    )]
     fn draw_grad_constants(
         &self,
         context: &ID3D11DeviceContext,
@@ -2501,6 +2513,10 @@ impl D3d11Pipeline {
     ///
     /// Sets a temporary viewport to `dst` and draws the fullscreen blit quad so the
     /// entire SRV covers that rect. Caller must not have `srv`'s texture bound as RTV.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "source and target dimensions are separate D3D11 validation inputs"
+    )]
     pub fn blit_srv_to_rect(
         &self,
         context: &ID3D11DeviceContext,

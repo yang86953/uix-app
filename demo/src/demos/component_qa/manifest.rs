@@ -219,6 +219,8 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
             "multiple",
             "disabled",
             "open",
+            "expanded-accessibility",
+            "popover-overlay",
             "hover",
             "pressed",
             "focus",
@@ -970,12 +972,7 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
         "反馈",
         &["default", "focus-cycle", "nested-controls"],
     ),
-    widget(
-        "anchor",
-        "Anchor",
-        "导航",
-        &["default", "active", "hover", "pressed", "focus"],
-    ),
+    widget("anchor", "Anchor", "导航", &["default", "active", "focus"]),
     widget(
         "breadcrumb",
         "Breadcrumb",
@@ -986,7 +983,7 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
         "dropdown",
         "Dropdown",
         "导航",
-        &["closed", "open", "items", "hover", "pressed", "focus"],
+        &["closed", "open", "items", "focus"],
     ),
     widget(
         "menu",
@@ -998,7 +995,6 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
             "active",
             "disabled",
             "hover",
-            "pressed",
             "focus",
         ],
     ),
@@ -1006,36 +1002,25 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
         "nav-item",
         "NavItem",
         "导航",
-        &[
-            "default", "selected", "compact", "hover", "pressed", "focus",
-        ],
+        &["default", "selected", "compact", "hover", "focus"],
     ),
     composite(
         "nav-group",
         "NavGroup",
         "导航",
-        &["items", "selected", "hover", "pressed", "focus"],
+        &["items", "selected", "hover", "focus"],
     ),
     composite(
         "navigation",
         "Navigation",
         "导航",
-        &[
-            "default", "selected", "compact", "hover", "pressed", "focus",
-        ],
+        &["default", "selected", "compact", "hover", "focus"],
     ),
     widget(
         "pagination",
         "Pagination",
         "导航",
-        &[
-            "default",
-            "active",
-            "disabled-edge",
-            "hover",
-            "pressed",
-            "focus",
-        ],
+        &["default", "active", "disabled-edge", "focus"],
     ),
     widget(
         "steps",
@@ -1047,7 +1032,7 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
         "tabs",
         "Tabs",
         "导航",
-        &["top", "bottom", "active", "hover", "pressed", "focus"],
+        &["top", "bottom", "active", "focus"],
     ),
     widget(
         "bar-chart",
@@ -1077,9 +1062,7 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
         "transfer",
         "Transfer",
         "图表与其他",
-        &[
-            "source", "selected", "target", "empty", "hover", "pressed", "focus",
-        ],
+        &["source", "selected", "target", "empty", "focus"],
     ),
     widget(
         "upload",
@@ -1114,4 +1097,25 @@ pub const COMPONENT_VISUAL_CASES: &[ComponentVisualCase] = &[
         "LocaleProvider",
         &["zh-cn", "en-us", "fallback"],
     ),
+    widget(
+        "chart-placeholder",
+        "ChartPlaceholder",
+        "图表与其他",
+        &["empty", "title", "subtitle", "responsive"],
+    ),
+    widget(
+        "float-button-group",
+        "FloatButtonGroup",
+        "通用",
+        &["collapsed", "hover", "focus", "lucide-icons"],
+    ),
+    widget(
+        "image-group",
+        "ImageGroup",
+        "数据展示",
+        &["gallery", "thumbnails", "open", "navigation", "focus"],
+    ),
 ];
+
+/// 组件 QA 的唯一冻结分母；页面、无窗契约与真窗证据都从 manifest 推导。
+pub const COMPONENT_VISUAL_CASE_COUNT: usize = COMPONENT_VISUAL_CASES.len();

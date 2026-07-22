@@ -38,6 +38,10 @@ impl OptGroup {
         }
     }
 
+    #[allow(
+        clippy::should_implement_trait,
+        reason = "add is the established fluent builder API, not arithmetic addition"
+    )]
     pub fn add(mut self, opt: &str) -> Self {
         self.options.push(opt.to_string());
         self

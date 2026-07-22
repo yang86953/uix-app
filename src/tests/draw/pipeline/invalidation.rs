@@ -178,3 +178,29 @@ fn clear_resets_paint_index() {
     assert_eq!(q.items.len(), 1);
     assert_eq!(q.dirty_region().rects(), &[Rect::new(3.0, 3.0, 1.0, 1.0)]);
 }
+
+#[test]
+fn revision_detects_even_merged_invalidations_before_conditional_clear() {
+    let mut queue = InvalidationQueue::new();
+    let id = NodeId::new(21);
+    queue.push(Invalidation::Paint {
+        id,
+        rect: Some(Rect::new(0.0, 0.0, 2.0, 2.0)),
+    });
+    let before_paint = queue.revision();
+
+    queue.push(Invalidation::Paint {
+        id,
+        rect: Some(Rect::new(1.0, 1.0, 2.0, 2.0)),
+    });
+    assert_eq!(queue.items.len(), 1, "the paint requests should merge");
+    assert!(
+        !queue.clear_if_revision(before_paint),
+        "a merged request is still new work and must prevent conditional clear"
+    );
+    assert!(queue.node_needs_paint(id));
+
+    let settled = queue.revision();
+    assert!(queue.clear_if_revision(settled));
+    assert!(queue.is_empty());
+}

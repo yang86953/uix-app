@@ -2,6 +2,7 @@
 
 mod clipboard;
 mod cursor;
+mod custom_chrome;
 mod display;
 mod dpi;
 mod filesystem;

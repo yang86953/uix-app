@@ -215,6 +215,12 @@ pub enum SnapshotFields {
         preview_open: bool,
         fit: bool,
     },
+    ImageGroup {
+        images: Vec<String>,
+        start_index: usize,
+        current: usize,
+        preview_open: bool,
+    },
     Tag {
         text: String,
         color: TagColor,
@@ -252,6 +258,11 @@ pub enum SnapshotFields {
         x: f32,
         y: f32,
         reserve_layout_space: bool,
+    },
+    FloatButtonGroup {
+        button_count: usize,
+        trigger: TriggerMode,
+        expanded: bool,
     },
     Alert {
         message: String,
@@ -567,6 +578,8 @@ pub enum SnapshotFields {
         selected_row: Option<usize>,
         checked_rows: Vec<usize>,
         empty_text: String,
+        current_page: Option<usize>,
+        total: Option<usize>,
         page_size: usize,
         virtual_scroll: bool,
     },
@@ -710,10 +723,11 @@ impl SnapshotFields {
             }
             Self::Typography {
                 content,
+                type_,
                 disabled,
                 copyable,
                 ..
-            } => typography_accessibility(content, *disabled, *copyable),
+            } => typography_accessibility(content, *type_, *disabled, *copyable),
             Self::Checkbox {
                 checked,
                 disabled,
@@ -840,6 +854,45 @@ impl SnapshotFields {
                 preview_open,
                 ..
             } => image_accessibility(alt, fallback, src, *preview, *preview_open),
+            Self::ImageGroup {
+                images,
+                current,
+                preview_open,
+                ..
+            } => {
+                let count = images.len();
+                let index = (*current).min(count.saturating_sub(1));
+                let role = if *preview_open {
+                    AccessibilityRole::Dialog
+                } else if count > 0 {
+                    AccessibilityRole::Button
+                } else {
+                    AccessibilityRole::Group
+                };
+                let value_text = images.get(index).map(|path| {
+                    if path.is_empty() {
+                        format!("图片 {} / {count}", index + 1)
+                    } else {
+                        format!("{path}，图片 {} / {count}", index + 1)
+                    }
+                });
+                AccessibilitySnapshot::named(
+                    role,
+                    if *preview_open {
+                        "图片预览"
+                    } else {
+                        "图片组"
+                    },
+                )
+                .with_state(AccessibilityState {
+                    expanded: (count > 0).then_some(*preview_open),
+                    value_text,
+                    value_now: (count > 0).then_some((index + 1) as f64),
+                    value_min: (count > 0).then_some(1.0),
+                    value_max: (count > 0).then_some(count as f64),
+                    ..AccessibilityState::default()
+                })
+            }
             Self::Tag {
                 text,
                 closable,
@@ -855,6 +908,17 @@ impl SnapshotFields {
             Self::FloatButton { icon, tooltip, .. } => AccessibilitySnapshot::named(
                 AccessibilityRole::Button,
                 first_non_empty([tooltip.as_str(), icon.as_str()]),
+            ),
+            Self::FloatButtonGroup {
+                button_count,
+                expanded,
+                ..
+            } => AccessibilitySnapshot::named(AccessibilityRole::Button, "浮动按钮组").with_state(
+                AccessibilityState {
+                    expanded: Some(*expanded),
+                    value_text: Some(format!("{button_count} 个操作")),
+                    ..AccessibilityState::default()
+                },
             ),
             Self::Badge {
                 count,

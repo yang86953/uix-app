@@ -4,3 +4,4 @@ mod damage;
 mod diagnostic;
 mod error;
 mod log;
+mod perf_probe;

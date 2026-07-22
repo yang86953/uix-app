@@ -122,6 +122,37 @@ fn set_value_and_insert_text_share_input_focus_and_text_routing() {
 }
 
 #[test]
+fn targeted_insert_text_focuses_and_opens_a_closed_searchable_select() {
+    let mut tree = laid_out_tree(embed(
+        Select::searchable()
+            .options(["Alpha", "Alpine", "Beta"])
+            .default_selected(2),
+    ));
+    let select = tree.root_id().unwrap();
+    assert!(tree
+        .supported_semantic_actions(select)
+        .contains(&SemanticActionKind::InsertText));
+    assert!(
+        !ComponentConfigSnapshot::from_component(select, tree.get(select).unwrap().component(),)
+            .selection()
+            .unwrap()
+            .expanded
+    );
+
+    tree.perform_semantic_action(select, &SemanticAction::InsertText("al".to_owned()))
+        .unwrap();
+
+    let snapshot =
+        ComponentConfigSnapshot::from_component(select, tree.get(select).unwrap().component());
+    assert_eq!(tree.managers().focus.focused_component(), Some(select));
+    assert!(snapshot.selection().unwrap().expanded);
+    assert_eq!(
+        snapshot.accessibility().state.value_text.as_deref(),
+        Some("al")
+    );
+}
+
+#[test]
 fn select_exposes_one_index_contract_and_reuses_keyboard_change_events() {
     let changes = Rc::new(RefCell::new(Vec::<String>::new()));
     let changes_for_handler = changes.clone();

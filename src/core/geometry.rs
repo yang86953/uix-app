@@ -35,6 +35,15 @@ pub struct Size {
 }
 
 impl Size {
+    /// Common UI-sized sentinels used by placeholder components.
+    #[allow(non_upper_case_globals)]
+    pub const Small: Self = Self { w: 32.0, h: 32.0 };
+    #[allow(non_upper_case_globals)]
+    pub const Default: Self = Self { w: 40.0, h: 40.0 };
+    #[allow(non_upper_case_globals)]
+    pub const Medium: Self = Self::Default;
+    #[allow(non_upper_case_globals)]
+    pub const Large: Self = Self { w: 56.0, h: 56.0 };
     /// Create a new Size with NaN-safe clamping: NaN values become 0.0.
     /// Negative values are preserved (caller uses `.max(0.0)` if needed).
     pub fn new(w: f32, h: f32) -> Self {

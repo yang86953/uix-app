@@ -127,9 +127,9 @@ impl WindowsPlatform {
                 let state_maximized = window.borrow().maximized;
                 let maximized =
                     super::custom_chrome::is_effectively_maximized(hwnd, state_maximized);
-                if let Some(result) =
-                    unsafe { super::custom_chrome::handle_nc_calc_size(hwnd, wparam, lparam, maximized) }
-                {
+                if let Some(result) = unsafe {
+                    super::custom_chrome::handle_nc_calc_size(hwnd, wparam, lparam, maximized)
+                } {
                     return result;
                 }
                 self.def_window_proc(hwnd, msg, wparam, lparam)

@@ -94,6 +94,10 @@ impl<'a> PaintContext<'a> {
 
     /// 测试用构造（10 参数兼容旧签名）。
     #[doc(hidden)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the hidden compatibility constructor preserves its legacy signature"
+    )]
     pub fn new_for_test(
         canvas_2d: &'a mut dyn Canvas2D,
         font: FontHandle,
@@ -329,6 +333,10 @@ impl<'a> PaintContext<'a> {
 
     /// 描边圆弧；角度使用弧度，几何经共享 Path 描边管线录制与绘制。
     #[inline(always)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "arc geometry mirrors the canvas drawing contract"
+    )]
     pub fn stroke_arc(
         &mut self,
         cx: f32,

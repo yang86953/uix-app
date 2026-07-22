@@ -88,10 +88,13 @@ component! {
         if self.checked {
             let bg = if self.disabled { primary_border } else if self.hovered { primary_hover } else { primary };
             ctx.fill_rect(box_r, bg, corner);
-            let cx = box_x + box_size * 0.5;
-            let cy = box_y + box_size * 0.5;
-            ctx.canvas_2d().draw_line(cx - 4.0 * scale, cy, cx - scale, cy + 3.0 * scale, white, 2.0 * scale);
-            ctx.canvas_2d().draw_line(cx - scale, cy + 3.0 * scale, cx + 4.0 * scale, cy - 2.0 * scale, white, 2.0 * scale);
+            crate::ui::widgets::icon::Icon::paint_in_frame(
+                ctx,
+                "check",
+                box_r,
+                white,
+                12.0 * scale,
+            );
         } else {
             let border = if self.disabled { border_sec } else if self.hovered { primary_hover } else { border_c };
             ctx.stroke_rect(box_r, border, 1.5, corner);

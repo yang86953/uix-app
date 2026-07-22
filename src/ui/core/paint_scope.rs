@@ -5,6 +5,10 @@ use std::cell::RefCell;
 use crate::core::ComponentId;
 
 thread_local! {
+    #[allow(
+        clippy::missing_const_for_thread_local,
+        reason = "the initializer already uses an inline const block; Clippy reports the macro expansion"
+    )]
     static CURRENT_PAINT_WIDGET: RefCell<Option<ComponentId>> = const { RefCell::new(None) };
 }
 

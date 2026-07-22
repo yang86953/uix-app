@@ -893,8 +893,10 @@ fn child_from_tree_reads_common_style_component_margins() {
 fn child_from_tree_reads_common_style_align_self() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
-    let mut style = Style::default();
-    style.align_self = Some(crate::ui::layout::AlignItems::Start);
+    let style = Style {
+        align_self: Some(crate::ui::layout::AlignItems::Start),
+        ..Style::default()
+    };
     let container = tree.add_child(root, Box::new(Container::new().style(style.clone())));
     let button = tree.add_child(root, Box::new(Button::new("Ok").style(style.clone())));
     let label = tree.add_child(root, Box::new(Label::new("Name").style(style)));
@@ -1042,8 +1044,10 @@ fn row_container_intrinsic_height_from_children() {
 fn flex_layout_uses_child_align_self_over_container_align() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(Container::new().size(100.0, 50.0)));
-    let mut child_style = Style::default();
-    child_style.align_self = Some(crate::ui::layout::AlignItems::Start);
+    let child_style = Style {
+        align_self: Some(crate::ui::layout::AlignItems::Start),
+        ..Style::default()
+    };
     let child = tree.add_child(
         root,
         Box::new(Container::new().style(child_style).size(20.0, 10.0)),
@@ -1063,8 +1067,10 @@ fn overflow_layout_uses_child_align_self_over_container_align() {
     let root = tree.set_root(Box::new(
         Container::new().size(100.0, 50.0).overflow_content(),
     ));
-    let mut child_style = Style::default();
-    child_style.align_self = Some(crate::ui::layout::AlignItems::Start);
+    let child_style = Style {
+        align_self: Some(crate::ui::layout::AlignItems::Start),
+        ..Style::default()
+    };
     let child = tree.add_child(
         root,
         Box::new(Container::new().style(child_style).size(20.0, 10.0)),

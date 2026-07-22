@@ -11,7 +11,7 @@ fn real_demo_recovers_from_injected_device_loss_and_accepts_followup_interaction
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut demo =
-        DemoProcess::spawn_with_args(D3D11_GRAPHICS, &["--graphics-recovery-acceptance"]);
+        DemoProcess::spawn_with_args(DEFAULT_VULKAN_GRAPHICS, &["--graphics-recovery-acceptance"]);
     let descriptor = demo.wait_for_descriptor();
     let endpoint = descriptor["endpoint"]
         .as_str()
@@ -54,6 +54,7 @@ fn real_demo_recovers_from_injected_device_loss_and_accepts_followup_interaction
     );
 
     let home = snapshot(&mut connection, "graphics-recovery-home", window_id);
+    demo.assert_expected_dpi(&home, "graphics-recovery");
     let (runtime_x, runtime_y) = visible_center(node_by_automation_id(&home, "sidebar-page-1"));
     let navigated = perform_until_presentable(
         &demo,
@@ -139,7 +140,7 @@ fn real_demo_recovers_from_injected_device_loss_and_accepts_followup_interaction
         "real window run must reach the typed injected failure boundary; output={output}"
     );
     println!(
-        "graphics recovery capture: backend=d3d11; typed_device_lost=true; recovered_revision={injected_revision}; followup_revision={}",
+        "graphics recovery capture: backend=vulkan; typed_device_lost=true; recovered_revision={injected_revision}; followup_revision={}",
         verified["revision"]
             .as_u64()
             .expect("verified status revision")

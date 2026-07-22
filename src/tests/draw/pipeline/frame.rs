@@ -95,8 +95,8 @@ fn begin_frame_scroll_copy_moves_before_clearing_exposed_strip() {
 }
 
 #[test]
-fn begin_frame_multi_dirty_clears_union_aabb() {
-    // 两块不相交 dirty：清屏须覆盖并集，避免中间空隙只被父背景盖住
+fn begin_frame_multi_dirty_preserves_disjoint_gap() {
+    // 两块不相交 dirty：保留离散矩形，不应把中间空隙提升为 AABB 并清屏
     let mut surface = CpuDrawSurface::new(20, 120);
     // 先铺不透明底色
     surface.canvas_mut().fill_rect(
@@ -115,13 +115,12 @@ fn begin_frame_multi_dirty_clears_union_aabb() {
         BackendCapabilities::cpu(),
     );
     let pixels = surface.surface().pixels();
-    // 中间 y=50 应被并集清屏（默认透明），而非残留红
+    // 中间 y=50 不属于任一 dirty，必须保留原有像素。
     let mid = (50 * 20 + 5) as usize;
     let red = crate::draw::Color::from_rgb(255, 0, 0).to_rgba();
-    assert_ne!(
+    assert_eq!(
         pixels[mid], red,
-        "union clear must wipe gap between dirty strips, got {:#x}",
-        pixels[mid]
+        "disjoint dirty rects must preserve the gap"
     );
     end_frame(&mut surface);
 }

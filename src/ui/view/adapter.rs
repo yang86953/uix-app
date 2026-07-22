@@ -36,7 +36,7 @@ use crate::ui::traits::WidgetComponent;
 #[cfg(any(test, feature = "test-harness"))]
 use crate::ui::view::View;
 use crate::ui::view::ViewNode;
-use crate::ui::widgets::{Button, Container, Grid, Label};
+use crate::ui::widgets::{Button, Calendar, Container, Grid, Label};
 use crate::ui::window_chrome::WindowInteractionRegion;
 use crate::ui::{ComponentId, WidgetTree};
 use std::collections::{HashMap, HashSet};
@@ -419,6 +419,19 @@ impl ViewAdapter {
             tree.set_node_visibility(id, false);
         }
         let widget = Self::apply_style(widget, &style, flex_grow_override, flex_shrink_override);
+        // Calendar cells depend on preserved runtime month/selection. Building them from
+        // the freshly declared widget here would invoke the factory with stale defaults;
+        // reconcile them after `sync_from` has patched the live Calendar instead.
+        let calendar_cells = widget
+            .as_any()
+            .downcast_ref::<Calendar>()
+            .is_some_and(Calendar::owns_custom_cell_children)
+            || tree.is_calendar_cell_component(id);
+        let component_view_children = if calendar_cells {
+            Vec::new()
+        } else {
+            widget.build_view_children()
+        };
         let next_accessibility = widget.snapshot_fields().accessibility();
         let next_disabled = accessibility_override
             .as_ref()
@@ -480,6 +493,7 @@ impl ViewAdapter {
         let table_cells = tree.has_table_cell_renderer(id);
         let table_expand = tree.has_table_expand_renderer(id);
         let select_options = tree.has_select_option_renderer(id);
+        let collapse_content = tree.is_collapse_content_component(id);
         if select_options {
             tree.invalidate_select_option_component(id);
         }
@@ -492,7 +506,13 @@ impl ViewAdapter {
             changed
         } else if select_options {
             tree.refresh_select_option_component(id)
+        } else if collapse_content {
+            tree.refresh_collapse_content_component(id)
+        } else if calendar_cells {
+            tree.refresh_calendar_cell_component(id)
         } else {
+            let mut children = children;
+            children.extend(component_view_children);
             Self::reconcile_children(tree, id, children, stagger_enter)
         };
         children_changed |= tree.refresh_virtual_scroll_component(id, None);

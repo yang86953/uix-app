@@ -1,3 +1,9 @@
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "GUI assertions intentionally fail fast when required fixture state is absent"
+)]
+
 use super::*;
 use crate::common::page::{
     INIT_H, INIT_W, INNER_W, PAGE_APP, PAGE_COUNT, PAGE_DATA, PAGE_FEEDBACK, PAGE_GENERAL,

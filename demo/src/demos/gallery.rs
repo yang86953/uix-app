@@ -215,7 +215,7 @@ pub fn page_gallery(ctx: &DemoCtx<'_>) -> ViewNode {
     let mut last_cat = "";
     for (cat, name, page, ok) in COVERAGE {
         if *cat != last_cat {
-            builder = builder.section(&format!("{cat}"));
+            builder = builder.section(cat);
             last_cat = cat;
         }
         builder = builder.push(coverage_row(tk, active, name, page, *ok));

@@ -66,6 +66,10 @@ impl FontService {
     }
 
     /// 第 2 遍：逐段布局 → 按行拼接。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the parameters are immutable state for one font layout pass"
+    )]
     fn layout_segments(
         &self,
         segments: &[FontSegment],

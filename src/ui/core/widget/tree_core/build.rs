@@ -2,6 +2,7 @@ use super::*;
 use crate::ui::foundation::provider_context::{
     current_provider_context, with_provider_context, ProviderContext,
 };
+use crate::ui::view::ViewAdapter;
 
 impl WidgetTree {
     pub(crate) fn root_bootstrap_constraints() -> Constraints {
@@ -9,13 +10,14 @@ impl WidgetTree {
     }
 
     pub fn set_root(&mut self, widget: Box<dyn WidgetComponent>) -> ComponentId {
-        self.set_root_with_context(widget, current_provider_context())
+        self.set_root_with_context(widget, current_provider_context(), true)
     }
 
     pub(super) fn set_root_with_context(
         &mut self,
         widget: Box<dyn WidgetComponent>,
         provider_context: ProviderContext,
+        include_view_children: bool,
     ) -> ComponentId {
         if let Some(root) = self.root_id {
             self.cancel_subtree_interaction(root);
@@ -40,6 +42,8 @@ impl WidgetTree {
         self.tree_version += 1;
 
         let children = with_provider_context(&provider_context, || widget.build());
+        let view_children = include_view_children
+            .then(|| with_provider_context(&provider_context, || widget.build_view_children()));
         let id = self.alloc_id();
         let mut boxed = BoxedWidget::new_with_context(widget, provider_context.clone());
         boxed.set_id(id);
@@ -56,7 +60,10 @@ impl WidgetTree {
         self.register_focusable(id);
         self.attach_node(id);
         for child in children {
-            self.add_child_with_context(id, child, provider_context.clone());
+            self.add_child_with_context(id, child, provider_context.clone(), true);
+        }
+        for child in view_children.into_iter().flatten() {
+            self.build_node(ViewAdapter::expand(child), Some(id));
         }
         self.push_layout_invalidation(id);
         id
@@ -71,7 +78,7 @@ impl WidgetTree {
             .get(parent_id)
             .map(|parent| parent.provider_context().clone())
             .unwrap_or_else(current_provider_context);
-        self.add_child_with_context(parent_id, child, provider_context)
+        self.add_child_with_context(parent_id, child, provider_context, true)
     }
 
     pub(super) fn add_child_with_context(
@@ -79,9 +86,12 @@ impl WidgetTree {
         parent_id: ComponentId,
         child: Box<dyn WidgetComponent>,
         provider_context: ProviderContext,
+        include_view_children: bool,
     ) -> ComponentId {
         self.tree_version += 1;
         let children = with_provider_context(&provider_context, || child.build());
+        let view_children = include_view_children
+            .then(|| with_provider_context(&provider_context, || child.build_view_children()));
         let child_id = self.alloc_id();
         let mut boxed = BoxedWidget::new_with_context(child, provider_context.clone());
         boxed.set_id(child_id);
@@ -97,7 +107,10 @@ impl WidgetTree {
             parent.children_mut().push(child_id);
         }
         for child in children {
-            self.add_child_with_context(child_id, child, provider_context.clone());
+            self.add_child_with_context(child_id, child, provider_context.clone(), true);
+        }
+        for child in view_children.into_iter().flatten() {
+            self.build_node(ViewAdapter::expand(child), Some(child_id));
         }
 
         // 结构变化：Layout 失效向上传播。
@@ -172,9 +185,18 @@ impl WidgetTree {
             render_handlers,
         } = node;
         let id = match parent {
-            Some(parent) => self.add_child_with_context(parent, widget, provider_context),
-            None => self.set_root_with_context(widget, provider_context),
+            Some(parent) => self.add_child_with_context(parent, widget, provider_context, false),
+            None => self.set_root_with_context(widget, provider_context, false),
         };
+        let component_view_children = self
+            .get(id)
+            .map(|current| {
+                let provider_context = current.provider_context().clone();
+                with_provider_context(&provider_context, || {
+                    current.component().build_view_children()
+                })
+            })
+            .unwrap_or_default();
         if let Some(node) = self.get_mut(id) {
             node.set_visible(visible);
             node.set_visual_transform(visual_transform);
@@ -185,7 +207,11 @@ impl WidgetTree {
             node.set_z_index(z_index);
             let tab_index_override =
                 tab_index_override.or_else(|| (tab_idx != 0).then_some(tab_idx));
-            node.set_tab_index_override(tab_index_override);
+            if let Some(tab_index) = tab_index_override {
+                node.set_tab_index(tab_index);
+            } else {
+                node.set_tab_index_override(None);
+            }
             node.set_accessibility_override(accessibility_override);
         }
         self.register_focusable(id);
@@ -205,6 +231,9 @@ impl WidgetTree {
             .replace_component(id, render_handlers);
         for child in children {
             self.build_node(child, Some(id));
+        }
+        for child in component_view_children {
+            self.build_node(ViewAdapter::expand(child), Some(id));
         }
         self.refresh_virtual_scroll_component(id, None);
         self.refresh_table_cell_component(id);

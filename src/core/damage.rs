@@ -58,7 +58,7 @@ impl DirtyRegion {
             return;
         }
         // 滚动 exposed strip 常与上游 dirty 同矩形；拆分路径不再并集，须跳过精确重复。
-        if self.rects.iter().any(|existing| *existing == rect) {
+        if self.rects.contains(&rect) {
             return;
         }
         self.clear_required = true;

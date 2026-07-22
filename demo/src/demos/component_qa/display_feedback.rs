@@ -1,6 +1,10 @@
 use uix::prelude::*;
 
-use super::{qa_row, qa_target, qa_target_view, qa_variant};
+use super::{qa_row, qa_target, qa_target_view, qa_variant, COMPONENT_VISUAL_CASE_COUNT};
+
+fn inventory_count_label() -> String {
+    format!("{} 个组件", COMPONENT_VISUAL_CASE_COUNT)
+}
 
 fn sample_tree() -> Vec<TreeNode> {
     let mut components = TreeNode::new("组件（展开后可滚动）", "components");
@@ -479,6 +483,8 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                         Card::new()
                             .title("质量卡片")
                             .bordered(true)
+                            .hoverable()
+                            .actions(vec!["Open", "Cancel"])
                             .size(210.0, 128.0)
                             .child(Label::new("正文层级与安全边距")),
                         210.0,
@@ -791,6 +797,15 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 ),
             ),
         ]),
+        "image-group" => qa_target(
+            ImageGroup::new()
+                .images([
+                    "assets/images/demo.png",
+                    "assets/images/demo.png",
+                    "assets/images/demo.png",
+                ])
+                .start_index(1),
+        ),
         "list" => qa_row([
             qa_variant(
                 "Data / target",
@@ -878,6 +893,11 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                             SelectableItem::new("visual", "视觉质量").icon("eye"),
                             SelectableItem::new("semantic", "语义质量").icon("file-text"),
                             SelectableItem::new("interaction", "交互质量").icon("mouse-pointer"),
+                            SelectableItem::new("layout", "布局质量"),
+                            SelectableItem::new("theme", "主题质量"),
+                            SelectableItem::new("performance", "性能质量"),
+                            SelectableItem::new("recovery", "恢复质量"),
+                            SelectableItem::new("release", "发布质量"),
                         ])
                         .active(1)
                         .header_button("全选")
@@ -1039,7 +1059,7 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
             qa_row([
                 qa_variant(
                     "CJK closable / target",
-                    row([qa_target(Tag::new("管理员").closable())]),
+                    row([qa_target(Tag::new("管理员").checkable(true).closable())]),
                 ),
                 qa_variant(
                     "CJK checked",
@@ -1082,7 +1102,9 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                     "220×150 / target",
                     timeline_frame(
                         Timeline::new()
-                            .add(TimelineItem::new("库存完成").description("88 个组件"))
+                            .add(
+                                TimelineItem::new("库存完成").description(&inventory_count_label()),
+                            )
                             .add(
                                 TimelineItem::new("视觉执行")
                                     .description("真实原生窗口")
@@ -1159,7 +1181,19 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
         ]),
         "rich-text" => column_fit([
             qa_variant(
-                "Wrapped links + code",
+                "Interactive link / target",
+                rich_text_frame(
+                    RichText::new().content(vec![RichTextSegment::Link {
+                        content: "质量报告 interactive link target 中英文交互区域".to_string(),
+                        url: "https://uix.dev/quality".to_string(),
+                    }]),
+                    320.0,
+                    48.0,
+                    "component-qa-target",
+                ),
+            ),
+            qa_variant(
+                "Wrapped styles + code",
                 rich_text_frame(
                     RichText::new().content(vec![
                         RichTextSegment::Link {
@@ -1184,7 +1218,7 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                     ]),
                     320.0,
                     82.0,
-                    "component-qa-target",
+                    "component-qa-rich-text-wrapped",
                 ),
             ),
             qa_variant(
@@ -1216,8 +1250,9 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 Alert::new("成功：组件视觉符合基线")
                     .description("完整释放关闭，说明也进入可访问值")
                     .type_(StatusLevel::Success)
+                    .action("复核", || {})
                     .closable(),
-                240.0,
+                180.0,
                 54.0,
                 "component-qa-target",
             ),
@@ -1388,49 +1423,39 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
             ]),
         ])
         .gap(10.0),
-        "tooltip" => column_fit([
-            row([
-                ViewNode::new(
-                    Tooltip::new("顶部提示").placement(TooltipPlacement::Top),
-                    vec![button("Top").into()],
-                )
-                .width(100.0)
-                .height(36.0)
-                .automation_id("component-qa-target"),
-                ViewNode::new(
-                    Tooltip::new("底部提示").placement(TooltipPlacement::Bottom),
-                    vec![button("Bottom").into()],
-                )
-                .width(100.0)
-                .height(36.0)
-                .automation_id("component-qa-tooltip-bottom"),
-                ViewNode::new(
-                    Tooltip::new("左侧提示").placement(TooltipPlacement::Left),
-                    vec![button("Left").into()],
-                )
-                .width(100.0)
-                .height(36.0)
-                .automation_id("component-qa-tooltip-left"),
-                ViewNode::new(
-                    Tooltip::new("右侧提示").placement(TooltipPlacement::Right),
-                    vec![button("Right").into()],
-                )
-                .width(100.0)
-                .height(36.0)
-                .automation_id("component-qa-tooltip-right"),
-            ])
-            .align(AlignItems::Center)
-            .gap(16.0)
-            .height(60.0),
+        "tooltip" => column_fit([row([
             ViewNode::new(
-                Tooltip::new("焦点提示").trigger(TriggerMode::Focus),
-                vec![button("Focus").automation_id("component-qa-tooltip-focus")],
+                Tooltip::new("顶部提示")
+                    .placement(TooltipPlacement::Top)
+                    .trigger(TriggerMode::Focus),
+                vec![button("Top").automation_id("component-qa-target")],
             )
-            .width(120.0)
+            .width(100.0)
+            .height(36.0),
+            ViewNode::new(
+                Tooltip::new("底部提示").placement(TooltipPlacement::Bottom),
+                vec![button("Bottom").automation_id("component-qa-tooltip-bottom")],
+            )
+            .width(100.0)
+            .height(36.0),
+            ViewNode::new(
+                Tooltip::new("左侧提示").placement(TooltipPlacement::Left),
+                vec![button("Left").automation_id("component-qa-tooltip-left")],
+            )
+            .width(100.0)
+            .height(36.0),
+            ViewNode::new(
+                Tooltip::new("右侧提示").placement(TooltipPlacement::Right),
+                vec![button("Right").automation_id("component-qa-tooltip-right")],
+            )
+            .width(100.0)
             .height(36.0),
         ])
+        .align(AlignItems::Center)
+        .gap(16.0)
+        .height(60.0)])
         .gap(18.0)
-        .height(114.0),
+        .height(60.0),
         "focus-trap" => qa_target_view(
             column([ViewNode::new(
                 FocusTrap::new(),

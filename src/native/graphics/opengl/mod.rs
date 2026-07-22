@@ -46,6 +46,7 @@ impl NativeOpenGlRuntime {
     }
 }
 
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) fn create(
     surface: *mut c_void,
     width: i32,

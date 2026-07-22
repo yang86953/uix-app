@@ -180,18 +180,11 @@ fn engine_logical_extent(engine: &mut dyn GraphicsEngine) -> Option<(f32, f32)> 
 
 /// 以 HWND 实际客户区为准；properties 在样式/DPI 变更窗口期可能滞后。
 pub(crate) fn native_client_logical_extent(platform_window: &dyn PlatformWindow) -> (i32, i32) {
-    let cached_width = platform_window.properties().width();
-    let cached_height = platform_window.properties().height();
-    #[cfg(windows)]
-    {
-        use crate::native::graphics::platform::windows::drawable_size;
-        let hwnd = platform_window.native_handle().native_window();
-        if !hwnd.is_null() {
-            let drawable = drawable_size(hwnd, cached_width, cached_height);
-            return (drawable.logical_width, drawable.logical_height);
-        }
-    }
-    (cached_width, cached_height)
+    crate::native::graphics::platform::native_client_logical_extent(platform_window)
+}
+
+pub(crate) fn native_window_dpi(platform_window: &dyn PlatformWindow) -> u32 {
+    crate::native::graphics::platform::native_window_dpi(platform_window)
 }
 
 pub(crate) fn ensure_surface_matches_window(
@@ -242,7 +235,6 @@ pub(crate) fn ensure_surface_matches_window(
         }
         tree.tree_version = tree.tree_version.wrapping_add(1);
         tree.mark_full_frame_dirty();
-        changed = true;
     }
     changed
 }
@@ -319,6 +311,14 @@ pub(super) fn record_idle(metrics: Option<&Cell<RenderMetrics>>, source: Invalid
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn log_frame_metrics(
+    frame_sequence: u64,
+    window_id: u64,
+    logical_width: i32,
+    logical_height: i32,
+    dpi: u32,
+    monotonic_us: u128,
+    active_work_count: usize,
+    due_active_work_count: usize,
     frame_us: u128,
     input_us: u128,
     reconcile_us: u128,
@@ -333,43 +333,59 @@ pub(super) fn log_frame_metrics(
     present_probe: crate::core::perf_probe::PresentProbeSample,
 ) {
     if crate::core::perf_probe::perf_probe_enabled() {
-        crate::core::log::info_fn(format_args!(
-            "frame_us={} input={} reconcile={} layout={} paint_cpu={} present={} events={} reconcile={} layouts={} dirty_full={} strategy_full={} backdrop_restore={} pixels={} layer_build={} record={} execute={} end_frame={} pic_raster={} pic_blit={} direct_paint={} pics={} pic_px={} widgets={} text_us={} texts={} cpu_flush={} flushes={} upload_copy={} fence_wait={} submit_present={} present_skipped={}",
-            frame_us,
-            input_us,
-            reconcile_us,
-            layout_us,
-            paint_us,
-            present_us,
-            u8::from(had_events),
-            u8::from(reconcile_ran),
-            layout_calls,
-            u8::from(dirty_full),
-            paint_probe.strategy_full,
-            paint_probe.backdrop_restore,
-            present_probe.pixels,
-            paint_probe.layer_build_us,
-            paint_probe.record_us,
-            paint_probe.execute_us,
-            paint_probe.end_frame_us,
-            paint_probe.picture_raster_us,
-            paint_probe.picture_blit_us,
-            paint_probe.direct_paint_us,
-            paint_probe.pictures_rasterized,
-            paint_probe.picture_pixels,
-            paint_probe.widgets_painted,
-            paint_probe.text_us,
-            paint_probe.text_draws,
-            paint_probe.cpu_flush_us,
-            paint_probe.cpu_flushes,
-            present_probe.upload_copy_us,
-            present_probe.fence_wait_us,
-            present_probe.submit_present_us,
-            present_probe.skipped,
-        ));
+        crate::core::perf_probe::with_internal_g5_scenario(|scenario| {
+            crate::core::log::info_fn(format_args!(
+                "G5_FRAME schema=1 frame_seq={} scenario={} window={} logical_width={} logical_height={} dpi={} monotonic_us={} presented={} present_skipped={} active_work={} due_active_work={} frame_us={} input_us={} reconcile_us={} layout_us={} paint_cpu_us={} present_us={} had_events={} reconcile_ran={} layout_calls={} dirty_full={} strategy_full={} backdrop_restore={} drawable_width={} drawable_height={} drawable_pixels={} pixels={} layer_build_us={} record_us={} execute_us={} end_frame_us={} picture_raster_us={} picture_blit_us={} direct_paint_us={} pictures_rasterized={} picture_pixels={} widgets_painted={} text_us={} text_draws={} cpu_flush_us={} cpu_flushes={} upload_copy_us={} fence_wait_us={} submit_present_us={} wgpu_surface_present_cpu_us={}",
+                frame_sequence,
+                scenario,
+                window_id,
+                logical_width,
+                logical_height,
+                dpi,
+                monotonic_us,
+                u8::from(present_probe.skipped == 0),
+                present_probe.skipped,
+                active_work_count,
+                due_active_work_count,
+                frame_us,
+                input_us,
+                reconcile_us,
+                layout_us,
+                paint_us,
+                present_us,
+                u8::from(had_events),
+                u8::from(reconcile_ran),
+                layout_calls,
+                u8::from(dirty_full),
+                paint_probe.strategy_full,
+                paint_probe.backdrop_restore,
+                present_probe.drawable_width,
+                present_probe.drawable_height,
+                present_probe.drawable_pixels,
+                present_probe.pixels,
+                paint_probe.layer_build_us,
+                paint_probe.record_us,
+                paint_probe.execute_us,
+                paint_probe.end_frame_us,
+                paint_probe.picture_raster_us,
+                paint_probe.picture_blit_us,
+                paint_probe.direct_paint_us,
+                paint_probe.pictures_rasterized,
+                paint_probe.picture_pixels,
+                paint_probe.widgets_painted,
+                paint_probe.text_us,
+                paint_probe.text_draws,
+                paint_probe.cpu_flush_us,
+                paint_probe.cpu_flushes,
+                present_probe.upload_copy_us,
+                present_probe.fence_wait_us,
+                present_probe.submit_present_us,
+                present_probe.wgpu_surface_present_cpu_us,
+            ));
+        });
     } else {
         crate::core::log::info_fn(format_args!(
-            "frame_us={} input={} reconcile={} layout={} paint_cpu={} present={} events={} reconcile={} layouts={} dirty_full={}",
+            "FRAME frame_us={} input_us={} reconcile_us={} layout_us={} paint_cpu_us={} present_us={} had_events={} reconcile_ran={} layout_calls={} dirty_full={}",
             frame_us,
             input_us,
             reconcile_us,

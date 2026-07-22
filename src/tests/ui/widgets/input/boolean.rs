@@ -41,6 +41,36 @@ fn render_switch_pixels(switch: &Switch, frame: Rect) -> (Vec<u32>, usize) {
     (canvas.surface().pixels().to_vec(), SURFACE_WIDTH as usize)
 }
 
+fn render_checkbox_pixels(checkbox: &Checkbox, frame: Rect) -> (Vec<u32>, usize) {
+    const SURFACE_WIDTH: i32 = 96;
+    const SURFACE_HEIGHT: i32 = 64;
+
+    let mut canvas = CpuCanvas2D::new(PixelSurface::new(SURFACE_WIDTH, SURFACE_HEIGHT));
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("bundled Lucide font");
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+    {
+        let mut ctx = PaintContext::new_for_test(
+            &mut canvas,
+            font,
+            &fonts,
+            &images,
+            &tokens,
+            96.0,
+            1.0,
+            Orientation::YDown,
+            SURFACE_WIDTH,
+            SURFACE_HEIGHT,
+        );
+        WidgetRender::render(checkbox, frame, &mut ctx, &tree);
+    }
+    (canvas.surface().pixels().to_vec(), SURFACE_WIDTH as usize)
+}
+
 fn pixel_at(pixels: &[u32], stride: usize, x: usize, y: usize) -> u32 {
     pixels[y * stride + x]
 }
@@ -160,6 +190,52 @@ fn checkbox_cjk_width_and_empty_label_gap_follow_visible_content() {
         Size::new(80.75, 40.0),
     );
     assert_size_close(Checkbox::new("").measure(max), Size::new(16.0, 32.0));
+}
+
+#[test]
+fn checkbox_checkmark_is_owned_by_the_icon_component_path() {
+    let source = include_str!("../../../../ui/widgets/input/checkbox.rs");
+
+    assert!(source.contains("\"check\""));
+    assert!(source.contains("Icon::paint_in_frame"));
+    assert!(!source.contains("icon_char("));
+    assert!(
+        !source.contains("canvas_2d().draw_line"),
+        "Checkbox must not paint an ad-hoc checkmark"
+    );
+}
+
+#[test]
+fn checked_checkbox_paints_the_lucide_checkmark_inside_its_box() {
+    let frame = Rect::new(8.0, 8.0, 16.0, 32.0);
+    let (checked, stride) = render_checkbox_pixels(&Checkbox::new("").default_checked(true), frame);
+    let (unchecked, _) = render_checkbox_pixels(&Checkbox::new(""), frame);
+    let box_top = (frame.y + (frame.h - 16.0) * 0.5) as usize;
+    let box_bottom = box_top + 16;
+    let box_left = frame.x as usize;
+    let box_right = box_left + 16;
+
+    let is_bright_neutral = |pixel: u32| {
+        let first = (pixel >> 16) & 0xff;
+        let second = (pixel >> 8) & 0xff;
+        let third = pixel & 0xff;
+        first > 96 && second > 96 && third > 96
+    };
+
+    let checked_icon_pixels = (box_top + 2..box_bottom - 2)
+        .flat_map(|y| (box_left + 2..box_right - 2).map(move |x| (x, y)))
+        .filter(|(x, y)| is_bright_neutral(pixel_at(&checked, stride, *x, *y)))
+        .count();
+    let unchecked_icon_pixels = (box_top + 2..box_bottom - 2)
+        .flat_map(|y| (box_left + 2..box_right - 2).map(move |x| (x, y)))
+        .filter(|(x, y)| is_bright_neutral(pixel_at(&unchecked, stride, *x, *y)))
+        .count();
+
+    assert!(
+        checked_icon_pixels > 0,
+        "checked box must contain visible icon pixels"
+    );
+    assert_eq!(unchecked_icon_pixels, 0);
 }
 
 #[test]

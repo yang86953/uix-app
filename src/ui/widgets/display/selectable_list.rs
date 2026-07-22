@@ -586,6 +586,15 @@ component! {
         }
     }
 
+    scroll_composite_viewport => (&self, frame: Rect) -> Option<Rect> {
+        let body = self.geometry(frame).body;
+        (body.w > 0.0 && body.h > 0.0).then_some(body)
+    }
+
+    viewport_scroll_offset => (&self) -> Option<(f32, f32)> {
+        Some((0.0, self.body_scroll.scroll_offset()))
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let geometry = self.geometry(frame);
         let frame = geometry.frame;
@@ -629,7 +638,7 @@ component! {
                 icon_size,
                 icon_size,
             );
-            crate::ui::widgets::general::icon::paint_icon_in_frame(
+            crate::ui::widgets::general::icon::Icon::paint_in_frame(
                 ctx, "plus", icon_frame, t_sec, 14.0,
             );
             let text_frame = Rect::new(
@@ -712,7 +721,7 @@ component! {
             };
             if !icon.is_empty() {
                 let icon_size = 18.0_f32.min(item_frame.h);
-                crate::ui::widgets::general::icon::paint_icon_in_frame(
+                crate::ui::widgets::general::icon::Icon::paint_in_frame(
                     ctx,
                     icon,
                     Rect::new(

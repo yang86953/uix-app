@@ -264,6 +264,10 @@ impl RasterRenderer {
         pixels[idx] = out_a << 24 | out_r << 16 | out_g << 8 | out_b;
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "pixel coordinates and surface bounds form the raster primitive contract"
+    )]
     pub(crate) fn put_pixel_aa(
         &self,
         pixels: &mut [u32],
@@ -323,6 +327,10 @@ impl RasterRenderer {
             | (out_b_p.round() as u32).min(255);
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "span coordinates and surface bounds form the raster primitive contract"
+    )]
     pub(crate) fn fill_span(
         &self,
         pixels: &mut [u32],
@@ -348,6 +356,10 @@ impl RasterRenderer {
         }
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "rectangle coordinates and surface bounds form the raster primitive contract"
+    )]
     pub(crate) fn fill_rect_raw(
         &self,
         pixels: &mut [u32],

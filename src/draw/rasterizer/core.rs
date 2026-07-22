@@ -64,7 +64,7 @@ pub fn color_with_premultiplied_opacity(color: Color, opacity: f32) -> Color {
     if alpha == 0 {
         return Color::transparent();
     }
-    let to_straight = |channel: u32| ((channel * 255 + alpha - 1) / alpha).min(255) as u8;
+    let to_straight = |channel: u32| (channel * 255).div_ceil(alpha).min(255) as u8;
     Color::from_rgba(
         to_straight((premultiplied >> 16) & 0xff),
         to_straight((premultiplied >> 8) & 0xff),

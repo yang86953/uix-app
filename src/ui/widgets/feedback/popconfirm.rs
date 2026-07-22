@@ -318,7 +318,7 @@ component! {
                 0.0
             };
             if icon_width > 0.0 {
-                crate::ui::widgets::icon::paint_icon_in_frame(
+                crate::ui::widgets::icon::Icon::paint_in_frame(
                     ctx,
                     "alert-triangle",
                     Rect::new(
@@ -409,7 +409,7 @@ component! {
         let frame = Self::normalize_frame(frame);
         let popup = expand_popconfirm_rect(self.absolute_popup_rect(frame), 12.0)
             .intersect(&self.surface_or_fallback(frame))
-            .unwrap_or(Rect::zero());
+            .unwrap_or_default();
         Some(
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
                 .bounds(popup)
@@ -654,7 +654,7 @@ impl Popconfirm {
                 12.0,
             ))
             .intersect(&self.surface_or_fallback(frame))
-            .unwrap_or(Rect::zero())
+            .unwrap_or_default()
     }
 
     fn normalize_frame(frame: Rect) -> Rect {

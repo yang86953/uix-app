@@ -35,7 +35,7 @@ pub(super) fn paint(
             );
         }
         let all_checked = table.checked_rows.len() == table.rows.len();
-        crate::ui::widgets::icon::paint_icon_in_frame(
+        crate::ui::widgets::Icon::paint_in_frame(
             ctx,
             if all_checked {
                 "check-square"
@@ -124,7 +124,7 @@ pub(super) fn paint(
                 };
                 let icon_width = 18.0_f32.min(sort_slot).min(laid_out.width);
                 if icon_width > 0.0 {
-                    crate::ui::widgets::icon::paint_icon_in_frame(
+                    crate::ui::widgets::Icon::paint_in_frame(
                         ctx,
                         indicator,
                         Rect::new(

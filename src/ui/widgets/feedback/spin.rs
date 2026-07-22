@@ -6,6 +6,7 @@ use crate::draw::painting::{PaintContext, PaintPass};
 use crate::draw::Color;
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpinSize {
@@ -22,6 +23,8 @@ component! {
         spinning: bool,
         tip: String,
         wrapper_mode: bool,
+        delay: Duration,
+        delay_elapsed: f32,
         phase: f32,
     }
 
@@ -49,7 +52,7 @@ component! {
         } else {
             PaintPass::Content
         };
-        if ctx.paint_pass() != expected_pass || !self.spinning {
+        if ctx.paint_pass() != expected_pass || !self.spinning || !self.delay_ready() {
             return;
         }
 
@@ -80,17 +83,29 @@ component! {
             return false;
         }
 
-        self.phase = (self.phase + dt as f32 * Self::SPIN_ANGULAR_SPEED)
+        let dt = if dt.is_finite() && dt > 0.0 {
+            dt.min(f32::MAX as f64) as f32
+        } else {
+            0.0
+        };
+
+        let delay = self.delay.as_secs_f32();
+        if delay > 0.0 && self.delay_elapsed < delay {
+            self.delay_elapsed = (self.delay_elapsed + dt).min(delay);
+            return true;
+        }
+
+        self.phase = (self.phase + dt * Self::SPIN_ANGULAR_SPEED)
             .rem_euclid(std::f32::consts::TAU);
         true
     }
 
     dirty_bounds => (&self, frame: Rect) -> Rect {
-        if self.spinning {
+        if self.spinning && self.delay_ready() {
             let frame = Self::normalize_frame(frame);
             self.spinner_bounds(frame)
                 .intersect(&frame)
-                .unwrap_or(Rect::zero())
+                .unwrap_or_default()
         } else {
             Rect::zero()
         }
@@ -243,6 +258,8 @@ impl Spin {
             spinning: true,
             tip: String::new(),
             wrapper_mode: false,
+            delay: Duration::ZERO,
+            delay_elapsed: 0.0,
             phase: 0.0,
         }
     }
@@ -254,6 +271,17 @@ impl Spin {
 
     pub fn large(mut self) -> Self {
         self.size = SpinSize::Large;
+        self
+    }
+
+    pub fn size(mut self, size: SpinSize) -> Self {
+        self.size = size;
+        self
+    }
+
+    pub fn delay(mut self, delay: Duration) -> Self {
+        self.delay = delay;
+        self.delay_elapsed = 0.0;
         self
     }
 
@@ -301,10 +329,20 @@ impl Spin {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let restarting = !self.spinning && next.spinning;
         self.size = next.size;
         self.color = next.color;
         self.spinning = next.spinning;
         self.tip = next.tip;
         self.wrapper_mode = next.wrapper_mode;
+        let delay_changed = self.delay != next.delay;
+        self.delay = next.delay;
+        if delay_changed || restarting || !self.spinning {
+            self.delay_elapsed = 0.0;
+        }
+    }
+
+    fn delay_ready(&self) -> bool {
+        self.delay.is_zero() || self.delay_elapsed >= self.delay.as_secs_f32()
     }
 }

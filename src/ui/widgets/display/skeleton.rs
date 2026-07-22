@@ -5,6 +5,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
+use std::cell::Cell;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SkeletonShape {
@@ -19,6 +20,11 @@ component! {
         shape: SkeletonShape,
         w: f32,
         h: f32,
+        avatar_size: Option<Size>,
+        paragraph_lines: usize,
+        active: bool,
+        phase: Cell<f32>,
+        animation_dirty: Cell<bool>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -36,46 +42,40 @@ component! {
         }
         let color = ctx.tokens().color_fill_tertiary();
         ctx.push_clip(frame);
-
-        match self.shape {
-            SkeletonShape::Rect => {
-                let radius = 4.0_f32.min(frame.w.min(frame.h) * 0.5);
-                ctx.fill_rect(
-                    frame,
-                    color,
-                    Some(crate::draw::Radius::uniform(radius)),
-                );
-            }
-            SkeletonShape::Circle => {
-                ctx.fill_circle(
-                    frame.x + frame.w * 0.5,
-                    frame.y + frame.h * 0.5,
-                    frame.w.min(frame.h) * 0.5,
-                    color,
-                );
-            }
-            SkeletonShape::Text => {
-                let line_h = frame.h * 0.35;
-                let gap = frame.h * 0.15;
-                let content_height = line_h * 2.0 + gap;
-                let y = frame.y + (frame.h - content_height) * 0.5;
-                ctx.fill_rect(
-                    Rect::new(frame.x, y, frame.w * 0.8, line_h),
-                    color,
-                    Some(crate::draw::Radius::uniform(
-                        2.0_f32.min(line_h * 0.5),
-                    )),
-                );
-                ctx.fill_rect(
-                    Rect::new(frame.x, y + line_h + gap, frame.w * 0.5, line_h),
-                    color,
-                    Some(crate::draw::Radius::uniform(
-                        2.0_f32.min(line_h * 0.5),
-                    )),
-                );
-            }
+        self.paint_placeholder(frame, color, ctx);
+        if self.active {
+            let phase = self.phase.get();
+            let band_width = (frame.w * 0.35).max(8.0).min(frame.w);
+            let shimmer_x = frame.x + (frame.w + band_width) * phase - band_width;
+            ctx.push_clip(Rect::new(shimmer_x, frame.y, band_width, frame.h));
+            self.paint_placeholder(
+                frame,
+                ctx.tokens().color_bg_container().with_alpha(96),
+                ctx,
+            );
+            ctx.pop_clip();
         }
         ctx.pop_clip();
+    }
+
+    update_animation => (&mut self, dt: f64) -> bool {
+        if !self.active { return false; }
+        let delta = if dt.is_finite() {
+            (dt.max(0.0) * 0.8).rem_euclid(1.0) as f32
+        } else {
+            0.0
+        };
+        let previous = self.phase.get();
+        let next = (previous + delta).rem_euclid(1.0);
+        if next != previous {
+            self.phase.set(next);
+            self.animation_dirty.set(true);
+        }
+        true
+    }
+
+    dirty_bounds => (&self, frame: Rect) -> Rect {
+        if self.animation_dirty.replace(false) { frame } else { Rect::zero() }
     }
 }
 
@@ -86,11 +86,18 @@ impl Default for Skeleton {
 }
 
 impl Skeleton {
+    const MAX_PARAGRAPH_LINES: usize = 64;
+
     pub fn new() -> Self {
         Self {
             shape: SkeletonShape::Rect,
             w: 200.0,
             h: 16.0,
+            avatar_size: None,
+            paragraph_lines: 0,
+            active: false,
+            phase: Cell::new(0.0),
+            animation_dirty: Cell::new(false),
         }
     }
 
@@ -102,6 +109,38 @@ impl Skeleton {
     pub fn size(mut self, w: f32, h: f32) -> Self {
         self.w = Self::normalized_dimension(w);
         self.h = Self::normalized_dimension(h);
+        self
+    }
+
+    pub fn width(mut self, width: f32) -> Self {
+        self.w = Self::normalized_dimension(width);
+        self
+    }
+
+    pub fn height(mut self, height: f32) -> Self {
+        self.h = Self::normalized_dimension(height);
+        self
+    }
+
+    /// 头像占位。`Size::Small/Default/Large` 分别为 32/40/56 logical。
+    pub fn avatar(mut self, size: Size) -> Self {
+        let side = Self::normalized_dimension(size.w.max(size.h));
+        self.shape = SkeletonShape::Circle;
+        self.avatar_size = Some(Size::new(side, side));
+        self.w = side;
+        self.h = side;
+        self
+    }
+
+    pub fn paragraph(mut self, lines: usize) -> Self {
+        self.shape = SkeletonShape::Text;
+        self.paragraph_lines = lines.clamp(1, Self::MAX_PARAGRAPH_LINES);
+        self.h = (self.paragraph_lines as f32 * 16.0).max(16.0);
+        self
+    }
+
+    pub fn active(mut self, active: bool) -> Self {
+        self.active = active;
         self
     }
 
@@ -126,6 +165,97 @@ impl Skeleton {
         )
     }
 
+    fn avatar_rect(&self, frame: Rect) -> Rect {
+        let requested = self
+            .avatar_size
+            .map(|size| Self::normalized_dimension(size.w.max(size.h)))
+            .unwrap_or_else(|| frame.w.min(frame.h));
+        let side = requested.min(frame.w).min(frame.h);
+        Rect::new(
+            frame.x + (frame.w - side) * 0.5,
+            frame.y + (frame.h - side) * 0.5,
+            side,
+            side,
+        )
+    }
+
+    fn paragraph_rects(&self, frame: Rect) -> Vec<Rect> {
+        let rows = if self.paragraph_lines == 0 {
+            2
+        } else {
+            self.paragraph_lines
+        };
+        let desired_line_height = 12.0;
+        let desired_gap = 4.0;
+        let desired_height =
+            desired_line_height * rows as f32 + desired_gap * rows.saturating_sub(1) as f32;
+        let scale = if desired_height > 0.0 {
+            (frame.h / desired_height).min(1.0)
+        } else {
+            0.0
+        };
+        let line_height = desired_line_height * scale;
+        let gap = desired_gap * scale;
+        let content_height = line_height * rows as f32 + gap * rows.saturating_sub(1) as f32;
+        let start_y = frame.y + (frame.h - content_height) * 0.5;
+
+        (0..rows)
+            .map(|row| {
+                let width_factor = if row + 1 == rows { 0.6 } else { 1.0 };
+                Rect::new(
+                    frame.x,
+                    start_y + row as f32 * (line_height + gap),
+                    frame.w * width_factor,
+                    line_height,
+                )
+            })
+            .collect()
+    }
+
+    fn paint_placeholder(&self, frame: Rect, color: crate::draw::Color, ctx: &mut PaintContext) {
+        match self.shape {
+            SkeletonShape::Rect => {
+                let radius = 4.0_f32.min(frame.w.min(frame.h) * 0.5);
+                ctx.fill_rect(frame, color, Some(crate::draw::Radius::uniform(radius)));
+            }
+            SkeletonShape::Circle => {
+                let avatar = self.avatar_rect(frame);
+                if avatar.w > 0.0 {
+                    ctx.fill_circle(
+                        avatar.x + avatar.w * 0.5,
+                        avatar.y + avatar.h * 0.5,
+                        avatar.w * 0.5,
+                        color,
+                    );
+                }
+            }
+            SkeletonShape::Text => {
+                for line in self.paragraph_rects(frame) {
+                    ctx.fill_rect(
+                        line,
+                        color,
+                        Some(crate::draw::Radius::uniform(2.0_f32.min(line.h * 0.5))),
+                    );
+                }
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn avatar_rect_for_test(&self, frame: Rect) -> Rect {
+        self.avatar_rect(Self::normalized_frame(frame))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn paragraph_rects_for_test(&self, frame: Rect) -> Vec<Rect> {
+        self.paragraph_rects(Self::normalized_frame(frame))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn phase_for_test(&self) -> f32 {
+        self.phase.get()
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Skeleton {
             shape: self.shape,
@@ -135,8 +265,16 @@ impl Skeleton {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let active_changed = self.active != next.active;
         self.shape = next.shape;
         self.w = Self::normalized_dimension(next.w);
         self.h = Self::normalized_dimension(next.h);
+        self.avatar_size = next.avatar_size;
+        self.paragraph_lines = next.paragraph_lines;
+        self.active = next.active;
+        if active_changed {
+            self.phase.set(0.0);
+            self.animation_dirty.set(true);
+        }
     }
 }

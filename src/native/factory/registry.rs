@@ -50,6 +50,9 @@ pub enum BackendStatus {
     Disabled,
 }
 
+pub(crate) type GraphicsContextFactory =
+    fn(*mut c_void, i32, i32) -> Result<Box<dyn IGraphicsContext>, Error>;
+
 /// One graphics API factory row — API identity plus declared raster × present axes.
 ///
 /// Engine assembly still reads live [`IGraphicsContext::caps`]; these fields document
@@ -66,7 +69,7 @@ pub struct GraphicsBackendEntry {
     /// recipe-validated and can later receive the shared thread-affinity
     /// binding. External callers must use `try_create_gpu_recipe` instead of
     /// bypassing the lifecycle contract through a raw function pointer.
-    pub(crate) create: fn(*mut c_void, i32, i32) -> Result<Box<dyn IGraphicsContext>, Error>,
+    pub(crate) create: GraphicsContextFactory,
 }
 
 impl GraphicsBackendEntry {

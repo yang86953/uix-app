@@ -1,10 +1,13 @@
+use super::component_visual_manifest::{CaseKind, COMPONENT_VISUAL_CASES};
 use super::*;
 use image::{GenericImage, Rgba, RgbaImage};
 use std::path::{Path, PathBuf};
 
-const COMPONENT_COUNT: usize = 89;
 const DEFAULT_WINDOW_SIZE: (i32, i32) = (1200, 800);
 const COMPACT_WINDOW_SIZE: (i32, i32) = (900, 640);
+const SELECT_OPEN_QUERY: &str = "al";
+const SEMANTIC_INVOKE_OPEN_CASE_IDS: &[&str] =
+    &["drawer", "modal", "popconfirm", "popover", "dropdown"];
 
 #[derive(Debug)]
 struct ObservedCase {
@@ -16,6 +19,119 @@ struct ObservedCase {
 }
 
 #[test]
+fn component_visual_denominator_is_derived_from_the_demo_manifest() {
+    let widget_count = COMPONENT_VISUAL_CASES
+        .iter()
+        .filter(|case| case.kind == CaseKind::Widget)
+        .count();
+    let composite_count = COMPONENT_VISUAL_CASES
+        .iter()
+        .filter(|case| case.kind == CaseKind::Composite)
+        .count();
+    let provider_count = COMPONENT_VISUAL_CASES
+        .iter()
+        .filter(|case| case.kind == CaseKind::Provider)
+        .count();
+
+    assert_eq!((widget_count, composite_count, provider_count), (87, 3, 2));
+    assert_eq!(
+        COMPONENT_VISUAL_CASE_COUNT,
+        widget_count + composite_count + provider_count
+    );
+    assert_eq!(COMPONENT_VISUAL_CASE_COUNT, 92, "frozen 0.0.1 inventory");
+    assert!(COMPONENT_VISUAL_CASES.iter().all(|case| {
+        !case.id.is_empty()
+            && !case.name.is_empty()
+            && !case.category.is_empty()
+            && !case.states.is_empty()
+    }));
+}
+
+#[test]
+fn expanded_evidence_accepts_only_boolean_true_from_supported_semantic_fields() {
+    assert!(node_exposes_expanded(&json!({
+        "state": { "expanded": true },
+        "selection": { "expanded": null },
+    })));
+    assert!(node_exposes_expanded(&json!({
+        "state": { "expanded": null },
+        "selection": { "expanded": true },
+    })));
+    assert!(!node_exposes_expanded(&json!({
+        "state": { "expanded": false },
+        "selection": { "expanded": false },
+    })));
+    assert!(!node_exposes_expanded(&json!({
+        "state": { "expanded": "true" },
+        "selection": {},
+    })));
+}
+
+#[test]
+fn expanded_accessibility_cases_support_a_fresh_open_evidence_sequence() {
+    let cases = COMPONENT_VISUAL_CASES
+        .iter()
+        .filter(|case| case.states.contains(&"expanded-accessibility"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        cases.iter().map(|case| case.id).collect::<Vec<_>>(),
+        [
+            "select",
+            "date-picker",
+            "date-range-picker",
+            "time-picker",
+            "color-picker",
+            "cascader",
+            "tree-select",
+            "auto-complete",
+            "mentions",
+        ]
+    );
+    for case in cases {
+        for required in ["pressed", "focus", "open"] {
+            assert!(
+                case.states.contains(&required),
+                "{} needs {required} before expanded evidence can be isolated",
+                case.name
+            );
+        }
+    }
+}
+
+#[test]
+fn semantic_trigger_cases_use_invoke_for_open_evidence() {
+    for id in SEMANTIC_INVOKE_OPEN_CASE_IDS {
+        let case = COMPONENT_VISUAL_CASES
+            .iter()
+            .find(|case| case.id == *id)
+            .unwrap_or_else(|| panic!("missing semantic trigger case {id}"));
+        assert!(
+            case.states.contains(&"open"),
+            "{} must capture open",
+            case.name
+        );
+        assert!(
+            case.states
+                .iter()
+                .any(|state| matches!(*state, "focus" | "focus-trap")),
+            "{} must prove keyboard focus after semantic Invoke",
+            case.name
+        );
+    }
+}
+
+#[test]
+fn select_open_evidence_uses_targeted_search_input() {
+    let case = COMPONENT_VISUAL_CASES
+        .iter()
+        .find(|case| case.id == "select")
+        .expect("Select visual case");
+    assert!(case.states.contains(&"search-buffer"));
+    assert!(case.states.contains(&"expanded-accessibility"));
+    assert_eq!(targeted_open_text(case.id), Some(SELECT_OPEN_QUERY));
+}
+
+#[test]
 #[ignore = "builds review boards from existing component visual evidence"]
 fn build_component_visual_contact_sheets() {
     let root = evidence_root();
@@ -24,8 +140,16 @@ fn build_component_visual_contact_sheets() {
     let mut interactive = evidence_files(&root, |name| {
         name.contains("-light-") && !name.ends_with("-light-desktop.png")
     });
-    assert_eq!(light.len(), COMPONENT_COUNT, "light component evidence");
-    assert_eq!(dark.len(), COMPONENT_COUNT, "dark component evidence");
+    assert_eq!(
+        light.len(),
+        COMPONENT_VISUAL_CASE_COUNT,
+        "light component evidence"
+    );
+    assert_eq!(
+        dark.len(),
+        COMPONENT_VISUAL_CASE_COUNT,
+        "dark component evidence"
+    );
     assert!(!interactive.is_empty(), "interactive component evidence");
     light.sort();
     dark.sort();
@@ -89,11 +213,11 @@ fn real_demo_captures_every_component_and_applicable_visual_state() {
     let initial = snapshot(&mut connection, "component-visual-initial-case", window_id);
     assert_eq!(
         node_name(node_by_automation_id(&initial, "component-qa-total")),
-        COMPONENT_COUNT.to_string()
+        COMPONENT_VISUAL_CASE_COUNT.to_string()
     );
 
-    let mut observed = Vec::with_capacity(COMPONENT_COUNT);
-    for index in 0..COMPONENT_COUNT {
+    let mut observed = Vec::with_capacity(COMPONENT_VISUAL_CASE_COUNT);
+    for index in 0..COMPONENT_VISUAL_CASE_COUNT {
         let mut case = inspect_case(&mut connection, window_id, index);
         let base_file = format!("{index:02}-{}-light-desktop.png", case.id);
         capture(&demo, &evidence_root, &base_file);
@@ -109,7 +233,7 @@ fn real_demo_captures_every_component_and_applicable_visual_state() {
             &base_file,
         );
         observed.push(case);
-        if index + 1 < COMPONENT_COUNT {
+        if index + 1 < COMPONENT_VISUAL_CASE_COUNT {
             invoke_and_wait(
                 &demo,
                 &mut connection,
@@ -161,7 +285,7 @@ fn real_demo_captures_every_component_and_applicable_visual_state() {
         expected
             .evidence
             .push(("global/dark-compact".into(), dark_file));
-        if index + 1 < COMPONENT_COUNT {
+        if index + 1 < COMPONENT_VISUAL_CASE_COUNT {
             invoke_and_wait(
                 &demo,
                 &mut connection,
@@ -183,8 +307,8 @@ fn real_demo_captures_every_component_and_applicable_visual_state() {
         }),
         "every declared component state must map to evidence"
     );
-    assert_eq!(observed.len(), COMPONENT_COUNT);
-    assert!(total_declared_states >= COMPONENT_COUNT * 2);
+    assert_eq!(observed.len(), COMPONENT_VISUAL_CASE_COUNT);
+    assert!(total_declared_states >= COMPONENT_VISUAL_CASE_COUNT * 2);
 
     resize_and_wait(
         &demo,
@@ -244,7 +368,7 @@ fn real_demo_captures_upload_list_visual() {
     );
 
     let mut upload_index = None;
-    for index in 0..COMPONENT_COUNT {
+    for index in 0..COMPONENT_VISUAL_CASE_COUNT {
         let case = inspect_case(&mut connection, window_id, index);
         if case.id == "upload" {
             upload_index = Some(index);
@@ -329,11 +453,11 @@ fn inspect_case(
         window_id,
     );
     let total = node_name(node_by_automation_id(&snapshot, "component-qa-total"));
-    assert_eq!(total, COMPONENT_COUNT.to_string());
+    assert_eq!(total, COMPONENT_VISUAL_CASE_COUNT.to_string());
     let position = node_name(node_by_automation_id(&snapshot, "component-qa-position"));
     assert_eq!(
         position,
-        format!("{}/{}", expected_index + 1, COMPONENT_COUNT)
+        format!("{}/{}", expected_index + 1, COMPONENT_VISUAL_CASE_COUNT)
     );
     let name = node_name(node_by_automation_id(&snapshot, "component-qa-current"));
     let id = node_name(node_by_automation_id(&snapshot, "component-qa-id"));
@@ -387,7 +511,6 @@ fn capture_interactive_states(
     let (bounds_x, bounds_y, bounds_w, bounds_h) = visible_rect(target);
     let (x, y) = match case.id.as_str() {
         "result-view" => (bounds_x + bounds_w * 0.5, bounds_y + bounds_h * 0.4 + 88.0),
-        "drawer" | "modal" | "popconfirm" | "popover" => (bounds_x + 48.0, bounds_y + 16.0),
         "splitter" => (bounds_x + bounds_w / 3.0, bounds_y + bounds_h * 0.5),
         "slider" => (bounds_x + bounds_w * 0.42, bounds_y + bounds_h * 0.5),
         "table" => (bounds_x + 12.0, bounds_y + 50.0),
@@ -466,6 +589,34 @@ fn capture_interactive_states(
             let file = format!("{:02}-{}-light-selected.png", case.index, case.id);
             capture(demo, root, &file);
             case.evidence.push(("selected".into(), file));
+        }
+        if requires_expanded_evidence(case) {
+            let pressed = snapshot(
+                connection,
+                &format!("component-visual-{}-pressed-expanded", case.id),
+                window_id,
+            );
+            if node_exposes_expanded(node_by_automation_id(&pressed, "component-qa-target")) {
+                perform_and_wait(
+                    demo,
+                    connection,
+                    window_id,
+                    generation,
+                    &format!("component-visual-{}-pressed-close", case.id),
+                    None,
+                    json!({ "kind": "press_key", "key": "escape" }),
+                );
+                let closed = snapshot(
+                    connection,
+                    &format!("component-visual-{}-pressed-closed", case.id),
+                    window_id,
+                );
+                assert!(
+                    !node_exposes_expanded(node_by_automation_id(&closed, "component-qa-target")),
+                    "{} pressed evidence must be closed before its independent open evidence",
+                    case.name
+                );
+            }
         }
     }
 
@@ -555,14 +706,43 @@ fn capture_interactive_states(
     }
 
     if case.states.iter().any(|state| state == "open") && case.id != "tooltip" {
+        let (open_target, open_action) = if let Some(text) = targeted_open_text(&case.id) {
+            assert!(
+                actions.contains(&json!("insert_text")),
+                "{} target must expose semantic insert_text: {actions:?}",
+                case.name
+            );
+            (
+                Some(json!({ "automation_id": "component-qa-target" })),
+                json!({ "kind": "insert_text", "text": text }),
+            )
+        } else if uses_semantic_invoke_to_open(case) {
+            assert!(
+                actions.contains(&json!("invoke")),
+                "{} closed trigger must expose semantic Invoke: {actions:?}",
+                case.name
+            );
+            (
+                Some(json!({ "automation_id": "component-qa-target" })),
+                json!({ "kind": "invoke" }),
+            )
+        } else {
+            match case.id.as_str() {
+                "cascader" | "tree-select" => (
+                    None,
+                    json!({ "kind": "press_key", "key": "down", "modifiers": [] }),
+                ),
+                _ => (None, json!({ "kind": "click_at", "x": x, "y": y })),
+            }
+        };
         perform_and_wait(
             demo,
             connection,
             window_id,
             generation,
             &format!("component-visual-{}-open", case.id),
-            None,
-            json!({ "kind": "click_at", "x": x, "y": y }),
+            open_target,
+            open_action,
         );
         thread::sleep(Duration::from_millis(180));
         let opened = snapshot(
@@ -575,8 +755,23 @@ fn capture_interactive_states(
             case.id,
             "overlay interaction must not leave the component case"
         );
+        let opened_target = node_by_automation_id(&opened, "component-qa-target");
+        if requires_expanded_evidence(case) {
+            assert!(
+                node_exposes_expanded(opened_target),
+                "{} open evidence must expose aria-expanded=true: {opened_target}",
+                case.name
+            );
+        }
         let file = format!("{:02}-{}-light-open.png", case.index, case.id);
         capture(demo, root, &file);
+        let changed_ratio = changed_pixel_ratio(&root.join(base_file), &root.join(&file));
+        assert!(
+            changed_ratio >= 0.005,
+            "{} open evidence changed only {:.3}% of pixels",
+            case.name,
+            changed_ratio * 100.0
+        );
         case.evidence.push(("open".into(), file.clone()));
         if case.states.iter().any(|state| state == "overlay") {
             case.evidence.push(("overlay".into(), file.clone()));
@@ -654,7 +849,10 @@ fn capture_interactive_states(
             generation,
             &format!("component-visual-{}-scroll", case.id),
             Some(json!({ "automation_id": "component-qa-target" })),
-            json!({ "kind": "scroll", "delta_x": 0.0, "delta_y": -180.0 }),
+            // Agent semantic actions use the framework-normalized convention:
+            // positive Y scrolls the viewport down. Native wheel input is the
+            // boundary that converts the opposite Windows wheel convention.
+            json!({ "kind": "scroll", "delta_x": 0.0, "delta_y": 180.0 }),
         );
         let file = format!("{:02}-{}-light-scrolled.png", case.index, case.id);
         capture(demo, root, &file);
@@ -734,7 +932,6 @@ fn capture_tooltip_states(
     case: &mut ObservedCase,
 ) {
     for (state, automation_id) in [
-        ("top", "component-qa-target"),
         ("bottom", "component-qa-tooltip-bottom"),
         ("left", "component-qa-tooltip-left"),
         ("right", "component-qa-tooltip-right"),
@@ -777,16 +974,17 @@ fn capture_tooltip_states(
         window_id,
         generation,
         "component-visual-tooltip-focus",
-        Some(json!({ "automation_id": "component-qa-tooltip-focus" })),
+        Some(json!({ "automation_id": "component-qa-target" })),
         json!({ "kind": "focus" }),
     );
     let focused = snapshot(connection, "component-visual-tooltip-focused", window_id);
     assert_eq!(
-        node_by_automation_id(&focused, "component-qa-tooltip-focus")["focused"],
+        node_by_automation_id(&focused, "component-qa-target")["focused"],
         true
     );
-    let file = format!("{:02}-tooltip-light-focus.png", case.index);
+    let file = format!("{:02}-tooltip-light-top-focus.png", case.index);
     capture(demo, root, &file);
+    case.evidence.push(("top".into(), file.clone()));
     case.evidence.push(("focus".into(), file));
 }
 
@@ -909,6 +1107,31 @@ fn capture_modal_focus_trap(
         node_by_automation_id(&wrapped, "component-qa-modal-cancel")["focused"],
         true
     );
+}
+
+fn node_exposes_expanded(node: &Value) -> bool {
+    node.pointer("/state/expanded").and_then(Value::as_bool) == Some(true)
+        || node.pointer("/selection/expanded").and_then(Value::as_bool) == Some(true)
+}
+
+fn requires_expanded_evidence(case: &ObservedCase) -> bool {
+    case.states
+        .iter()
+        .any(|state| state == "expanded-accessibility")
+        || case.id == "select"
+        || uses_semantic_invoke_to_open(case)
+}
+
+fn uses_semantic_invoke_to_open(case: &ObservedCase) -> bool {
+    SEMANTIC_INVOKE_OPEN_CASE_IDS.contains(&case.id.as_str())
+}
+
+fn targeted_open_text(case_id: &str) -> Option<&'static str> {
+    match case_id {
+        "select" => Some(SELECT_OPEN_QUERY),
+        "mentions" => Some("@"),
+        _ => None,
+    }
 }
 
 fn requires_distinct_evidence(case: &ObservedCase, state: &str) -> bool {
@@ -1102,6 +1325,26 @@ fn capture(demo: &DemoProcess, root: &Path, file_name: &str) {
     let path = root.join(file_name);
     foreground::capture_demo_client_png(demo, &path);
     eprintln!("component GUI evidence: {}", path.display());
+}
+
+fn changed_pixel_ratio(before: &Path, after: &Path) -> f64 {
+    let before = image::open(before)
+        .expect("open baseline component evidence")
+        .to_rgba8();
+    let after = image::open(after)
+        .expect("open changed component evidence")
+        .to_rgba8();
+    assert_eq!(
+        before.dimensions(),
+        after.dimensions(),
+        "component evidence dimensions must remain stable"
+    );
+    let changed = before
+        .pixels()
+        .zip(after.pixels())
+        .filter(|(left, right)| left.0[..3] != right.0[..3])
+        .count();
+    changed as f64 / before.pixels().len().max(1) as f64
 }
 
 fn evidence_files(root: &Path, keep: impl Fn(&str) -> bool) -> Vec<PathBuf> {

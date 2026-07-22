@@ -3165,7 +3165,10 @@ impl GraphicsEngine for GpuOverlayBackdropEngine {
     fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {
         let damage = match strategy {
             UpdateStrategy::FullRedraw => DamageRegion::full(),
-            UpdateStrategy::DirtyRects(rects) | UpdateStrategy::ScrollCopies { dirty_rects: rects, .. } => {
+            UpdateStrategy::DirtyRects(rects)
+            | UpdateStrategy::ScrollCopies {
+                dirty_rects: rects, ..
+            } => {
                 if rects.is_empty() {
                     DamageRegion::full()
                 } else {
@@ -3242,7 +3245,10 @@ fn gpu_native_overlay_frames_restore_retained_backdrop_without_repainting_normal
     );
     assert!(matches!(first.outcome, RenderOutcome::Present(_)));
     assert_eq!(scene.root_paints.get(), 1);
-    assert_eq!(engine.snapshots, 0, "first frame has no prior retained surface to snapshot");
+    assert_eq!(
+        engine.snapshots, 0,
+        "first frame has no prior retained surface to snapshot"
+    );
 
     scene.root_dirty.set(false);
     scene.show_overlay();
@@ -3276,7 +3282,10 @@ fn gpu_native_overlay_frames_restore_retained_backdrop_without_repainting_normal
         &images,
     );
     assert!(matches!(animated.outcome, RenderOutcome::Present(_)));
-    assert_eq!(engine.snapshots, 1, "snapshot once for the overlay lifetime");
+    assert_eq!(
+        engine.snapshots, 1,
+        "snapshot once for the overlay lifetime"
+    );
     assert_eq!(engine.restores, 2);
     assert_eq!(scene.root_paints.get(), 1);
     assert_eq!(scene.overlay_paints.get(), 2);

@@ -5,6 +5,10 @@
 
 #![allow(nonstandard_style)]
 #![allow(clippy::missing_safety_doc)]
+#![allow(
+    clippy::upper_case_acronyms,
+    reason = "these private declarations intentionally mirror the Windows ABI spellings"
+)]
 
 use std::ffi::{c_void, CStr, CString};
 use std::ptr;

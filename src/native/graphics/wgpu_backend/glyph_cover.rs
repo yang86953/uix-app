@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use bytemuck::{Pod, Zeroable};
 
+use crate::core::glyph_outline::{colorize_edges, is_outline_edges, EDGE_WHITE};
 use crate::core::{Errc, Error, Result};
-use crate::draw::font::glyph_outline::{colorize_edges, is_outline_edges};
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -161,6 +161,10 @@ impl GlyphCoverPipeline {
     }
 
     /// 将轮廓边栅格进 RGBA8 MSDF atlas；调用方须保证 atlas 当前不在采样中。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "GPU resources and atlas dimensions stay explicit at the encode boundary"
+    )]
     pub(super) fn encode(
         &mut self,
         device: &wgpu::Device,
@@ -181,15 +185,11 @@ impl GlyphCoverPipeline {
         let mut active: Vec<(u32, u32, u32, u32)> = Vec::new();
         let atlas_w = atlas_width.max(1) as f32;
         let atlas_h = atlas_height.max(1) as f32;
-        let to_clip = |x: f32, y: f32| -> [f32; 2] {
-            [x / atlas_w * 2.0 - 1.0, 1.0 - y / atlas_h * 2.0]
-        };
+        let to_clip =
+            |x: f32, y: f32| -> [f32; 2] { [x / atlas_w * 2.0 - 1.0, 1.0 - y / atlas_h * 2.0] };
 
         for draw in draws {
-            if draw.width == 0
-                || draw.height == 0
-                || !is_outline_edges(draw.mesh.as_ref())
-            {
+            if draw.width == 0 || draw.height == 0 || !is_outline_edges(draw.mesh.as_ref()) {
                 continue;
             }
             if draw.atlas_x.saturating_add(draw.width) > atlas_width
@@ -212,7 +212,7 @@ impl GlyphCoverPipeline {
                 let bx = draw.mesh[i + 2];
                 let by = draw.mesh[i + 3];
                 i += 4;
-                let mask = colors.get(edge_idx).copied().unwrap_or(crate::draw::font::glyph_outline::EDGE_WHITE);
+                let mask = colors.get(edge_idx).copied().unwrap_or(EDGE_WHITE);
                 edge_idx += 1;
                 if (ax - bx).abs() <= 1e-6 && (ay - by).abs() <= 1e-6 {
                     continue;
@@ -233,14 +233,7 @@ impl GlyphCoverPipeline {
             let by = ay + draw.height as f32;
             let origin = [ax, ay];
             // 两个三角形覆盖槽位。
-            let corners = [
-                (ax, ay),
-                (bx, ay),
-                (bx, by),
-                (ax, ay),
-                (bx, by),
-                (ax, by),
-            ];
+            let corners = [(ax, ay), (bx, ay), (bx, by), (ax, ay), (bx, by), (ax, by)];
             for (x, y) in corners {
                 vertices.push(CoverVertex {
                     position: to_clip(x, y),

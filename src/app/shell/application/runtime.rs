@@ -125,6 +125,10 @@ pub(crate) fn drain_secondary_window_frames(
     )
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "secondary window draining mirrors the application service boundary"
+)]
 pub(super) fn drain_secondary_window_frames_with_platform(
     platform: &mut dyn Platform,
     secondary_windows: &mut [SecondaryWindowSession],
@@ -147,6 +151,10 @@ pub(super) fn drain_secondary_window_frames_with_platform(
     )
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "secondary window draining mirrors the application service boundary"
+)]
 fn drain_secondary_window_frames_impl(
     platform: Option<&mut dyn Platform>,
     secondary_windows: &mut [SecondaryWindowSession],

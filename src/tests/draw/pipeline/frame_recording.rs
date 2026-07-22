@@ -2119,15 +2119,10 @@ fn additive_sampled_picture_blit_records_additive_flag() {
         FrameOpacity::opaque(),
         true,
     );
-    assert!(encoder.commands().iter().any(|command| {
-        matches!(
-            command,
-            FrameCommand::PictureBlit {
-                additive: true,
-                ..
-            }
-        )
-    }));
+    assert!(encoder
+        .commands()
+        .iter()
+        .any(|command| { matches!(command, FrameCommand::PictureBlit { additive: true, .. }) }));
 }
 
 #[test]

@@ -172,7 +172,7 @@ pub fn page_general(ctx: &DemoCtx<'_>) -> ViewNode {
                     .child(sample_block(
                         tk,
                         "FloatButton",
-                        FloatButton::new("+").reserve_layout_space(true),
+                        FloatButton::new("plus").reserve_layout_space(true),
                     ))
                     .child(sample_block(
                         tk,

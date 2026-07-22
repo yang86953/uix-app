@@ -753,9 +753,8 @@ impl FrameRecordingCanvas {
         if let Some((src, dst)) = self.sampled_picture_geometry(src, dst) {
             let opacity = FrameOpacity::from_canvas(self.scratch.opacity());
             let additive = self.blend_mode == BlendMode::Additive;
-            self.encoder_mut()?.blit_picture_with_opacity_blend(
-                image, src, dst, opacity, additive,
-            );
+            self.encoder_mut()?
+                .blit_picture_with_opacity_blend(image, src, dst, opacity, additive);
             return Ok(());
         }
         // Additive 下不得走透明 scratch 再 SrcOver 上传。
@@ -837,8 +836,12 @@ impl FrameRecordingCanvas {
             FrameImage::new(source.width, source.height, retained).map_err(frame_encoder_error)?;
         let retained_source = FrameRect::new(0, 0, source.width, source.height);
         self.flush_scratch()?;
-        self.encoder_mut()?
-            .blit_picture_integer_with_opacity(image, retained_source, destination, opacity);
+        self.encoder_mut()?.blit_picture_integer_with_opacity(
+            image,
+            retained_source,
+            destination,
+            opacity,
+        );
         Ok(true)
     }
 
@@ -1181,7 +1184,12 @@ impl FrameRecordingCanvas {
             && dst.h.fract() == 0.0;
         if allow_integer_clip && one_to_one && integer_placement {
             if let Some((clipped_src, clipped_dst)) = self.direct_picture_geometry(
-                Rect::new(src.x as f32, src.y as f32, src.width as f32, src.height as f32),
+                Rect::new(
+                    src.x as f32,
+                    src.y as f32,
+                    src.width as f32,
+                    src.height as f32,
+                ),
                 Rect::new(dst.x, dst.y, dst.w, dst.h),
             ) {
                 return Some((clipped_src, FrameSampledRect::from_integer(clipped_dst)));

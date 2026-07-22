@@ -7,9 +7,9 @@ fn title_bar_control(
     control: WindowControl,
     accessible_name: &str,
     automation_id: &str,
-    symbol: &str,
+    icon: &str,
 ) -> ViewNode {
-    window_control_named(control, accessible_name, label(symbol).font_size(14.0))
+    window_control_named(control, accessible_name, embed(Icon::new(icon).size(14.0)))
         .automation_id(automation_id)
         .width(WINDOW_CONTROL_WIDTH)
         .height(TITLE_BAR_HEIGHT)
@@ -38,21 +38,23 @@ pub(super) fn demo_title_bar() -> ViewNode {
         WindowControl::Minimize,
         "最小化窗口",
         "window-control-minimize",
-        "—",
+        "minus",
     );
     let maximize_restore = title_bar_control(
         WindowControl::MaximizeRestore,
         "最大化或还原窗口",
         "window-control-maximize-restore",
-        "□",
+        "maximize-2",
     );
-    let close = window_control_named(WindowControl::Close, "关闭窗口", label("×").font_size(16.0))
-        .automation_id("window-control-close")
-        .width(WINDOW_CONTROL_WIDTH)
-        .height(TITLE_BAR_HEIGHT)
-        .bg_hover(Color::hex("#E81123"))
-        .bg_focus(Color::hex("#F1707A"))
-        .bg_active(Color::hex("#C50F1F"));
+    let close = title_bar_control(
+        WindowControl::Close,
+        "关闭窗口",
+        "window-control-close",
+        "x",
+    )
+    .bg_hover(Color::hex("#E81123"))
+    .bg_focus(Color::hex("#F1707A"))
+    .bg_active(Color::hex("#C50F1F"));
 
     row([drag_region, minimize, maximize_restore, close])
         .automation_id("window-titlebar")

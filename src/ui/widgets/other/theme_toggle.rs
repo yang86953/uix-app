@@ -61,14 +61,14 @@ component! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let icon = if self.dark.get() { "sun" } else { "moon" };
-        let icon_str = crate::ui::widgets::icon::icon_char(icon);
         let text_color = ctx.tokens().color_text();
-        let saved = *ctx.font();
-        if let Some(fh) = crate::ui::widgets::icon::lucide_handle() {
-            ctx.set_font(fh);
-        }
-        ctx.text_center(icon_str, frame, text_color, 18.0);
-        ctx.set_font(saved);
+        crate::ui::widgets::icon::Icon::paint_in_frame(
+            ctx,
+            icon,
+            frame,
+            text_color,
+            18.0,
+        );
         if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(
                 frame,

@@ -1,14 +1,14 @@
 use crate::ui::foundation::virtual_scroll::VirtualScroll;
 use crate::ui::widgets::{
     Affix, Alert, Anchor, AutoComplete, Avatar, BackTop, Badge, BarChart, Breadcrumb, Button,
-    Calendar, Card, Carousel, Cascader, Checkbox, Collapse, ColorPicker, Container, Content,
-    DatePicker, DateRangePicker, Descriptions, Divider, Drawer, Dropdown, Empty, FloatButton,
-    Footer, Form, FormItem, Grid, Header, Icon, Image, Input, InputNumber, Label, Layout,
-    LineChart, List, Mentions, Menu, Message, Modal, NavItem, Notification, Pagination, PieChart,
-    Popconfirm, Popover, ProgressBar, QRCode, Radio, RangeSlider, Rate, ResultView, RichText,
-    ScrollView, Segmented, Select, SelectableList, Sider, Skeleton, Slider, Space, Spin, Splitter,
-    Steps, Switch, Table, Tabs, Tag, ThemeToggle, TimePicker, Timeline, Tooltip, Transfer, Tree,
-    TreeSelect, Typography, Upload, Watermark,
+    Calendar, Card, Carousel, Cascader, ChartPlaceholder, Checkbox, Collapse, ColorPicker,
+    Container, Content, DatePicker, DateRangePicker, Descriptions, Divider, Drawer, Dropdown,
+    Empty, FloatButton, FloatButtonGroup, Footer, Form, FormItem, Grid, Header, Icon, Image,
+    ImageGroup, Input, InputNumber, Label, Layout, LineChart, List, Mentions, Menu, Message, Modal,
+    NavItem, Notification, Pagination, PieChart, Popconfirm, Popover, ProgressBar, QRCode, Radio,
+    RangeSlider, Rate, ResultView, RichText, ScrollView, Segmented, Select, SelectableList, Sider,
+    Skeleton, Slider, Space, Spin, Splitter, Steps, Switch, Table, Tabs, Tag, ThemeToggle,
+    TimePicker, Timeline, Tooltip, Transfer, Tree, TreeSelect, Typography, Upload, Watermark,
 };
 use crate::ui::window_chrome::WindowInteractionRegion;
 use crate::ui::SnapshotFields;
@@ -63,6 +63,18 @@ pub(crate) fn builtin_widget_config_changed(
                 || current_width != next_width
                 || current_height != next_height,
         ),
+        (
+            SnapshotFields::ImageGroup {
+                images: current_images,
+                start_index: current_start,
+                ..
+            },
+            SnapshotFields::ImageGroup {
+                images: next_images,
+                start_index: next_start,
+                ..
+            },
+        ) => Some(current_images != next_images || current_start != next_start),
         _ => None,
     }
 }
@@ -131,6 +143,7 @@ pub(crate) fn patch_builtin_widget(
     patch_as!(ProgressBar);
     patch_as!(Spin);
     patch_as!(FloatButton);
+    patch_as!(FloatButtonGroup);
     patch_as!(BackTop);
     patch_as!(Alert);
     patch_as!(Tag);
@@ -138,6 +151,7 @@ pub(crate) fn patch_builtin_widget(
     patch_as!(Skeleton);
     patch_as!(Card);
     patch_as!(Image);
+    patch_as!(ImageGroup);
     patch_as!(Calendar);
     patch_as!(Collapse);
     patch_as!(Carousel);
@@ -150,6 +164,7 @@ pub(crate) fn patch_builtin_widget(
     patch_as!(BarChart);
     patch_as!(LineChart);
     patch_as!(PieChart);
+    patch_as!(ChartPlaceholder);
     patch_as!(QRCode);
     patch_as!(Watermark);
     patch_as!(Label);

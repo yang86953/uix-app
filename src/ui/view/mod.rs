@@ -36,6 +36,12 @@ pub trait View: 'static {
     fn build(self) -> ViewNode;
 }
 
+impl View for () {
+    fn build(self) -> ViewNode {
+        ViewNode::leaf(crate::ui::widgets::Space::new())
+    }
+}
+
 /// 中间节点表示。
 pub struct ViewNode {
     pub(crate) widget: Box<dyn WidgetComponent>,
@@ -933,13 +939,19 @@ pub trait StyleExt: Into<ViewNode> + Sized {
 
 impl<T: Into<ViewNode>> StyleExt for T {}
 
+type FillRectCallback<'a> = Box<dyn FnMut(Rect, Color, Option<f32>) + 'a>;
+type StrokeRectCallback<'a> = Box<dyn FnMut(Rect, Color, f32) + 'a>;
+type TextCallback<'a> = Box<dyn FnMut(&str, Point, Color, f32) + 'a>;
+type TextCenterCallback<'a> = Box<dyn FnMut(&str, Rect, Color, f32) + 'a>;
+type ColorCallback<'a> = Box<dyn FnMut(&str) -> Color + 'a>;
+
 /// 简化渲染上下文——用户层进行自定义绘制时使用的 API。
 pub struct Ui<'a> {
-    pub(crate) fill_rect_fn: Option<Box<dyn FnMut(Rect, Color, Option<f32>) + 'a>>,
-    pub(crate) stroke_rect_fn: Option<Box<dyn FnMut(Rect, Color, f32) + 'a>>,
-    pub(crate) text_fn: Option<Box<dyn FnMut(&str, Point, Color, f32) + 'a>>,
-    pub(crate) text_center_fn: Option<Box<dyn FnMut(&str, Rect, Color, f32) + 'a>>,
-    pub(crate) color_fn: Option<Box<dyn FnMut(&str) -> Color + 'a>>,
+    pub(crate) fill_rect_fn: Option<FillRectCallback<'a>>,
+    pub(crate) stroke_rect_fn: Option<StrokeRectCallback<'a>>,
+    pub(crate) text_fn: Option<TextCallback<'a>>,
+    pub(crate) text_center_fn: Option<TextCenterCallback<'a>>,
+    pub(crate) color_fn: Option<ColorCallback<'a>>,
 }
 
 impl<'a> Ui<'a> {

@@ -9,7 +9,8 @@ use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotCollapsePanel,
     SnapshotFields, SystemEvent, WidgetTree,
 };
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
 const HEADER_HEIGHT: f32 = 36.0;
 const HEADER_FONT_SIZE: f32 = 14.0;
@@ -44,11 +45,20 @@ impl CollapsePanel {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CollapseContentEntry {
+    panel_index: usize,
+    key: String,
+    content: String,
+}
+
 component! {
     /// Collapse — 可折叠面板组。
     pub struct Collapse {
         pub(crate) panels: Vec<CollapsePanel>,
         accordion: bool,
+        borderless: bool,
+        destroy_on_hide: bool,
         focused: bool,
         focused_header: usize,
         hovered_header: Cell<Option<usize>>,
@@ -58,6 +68,10 @@ component! {
         pub(crate) transitions: Vec<TransitionPlayer>,
         transition_dirty: bool,
         layout_requested: Cell<bool>,
+        #[snapshot(skip)]
+        content_opacities: Vec<Rc<Cell<f32>>>,
+        #[snapshot(skip)]
+        materialized_content: RefCell<Vec<CollapseContentEntry>>,
     }
 
     tab_index => (&self) -> i32 { i32::from(!self.panels.is_empty()) }
@@ -66,6 +80,38 @@ component! {
         let preferred_width = self.preferred_width();
         let width = constraints.clamp(Size::new(preferred_width, 0.0)).w;
         constraints.clamp(Size::new(width, self.intrinsic_height(width)))
+    }
+
+    build_view_children => (&self) -> Vec<crate::ui::view::ViewNode> {
+        let entries = self.desired_content_entries();
+        let views = self.content_views(&entries);
+        self.materialized_content.replace(entries);
+        views
+    }
+
+    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
+        -> Vec<(ComponentId, Rect)>
+    {
+        let entries = self.materialized_content.borrow();
+        children
+            .iter()
+            .enumerate()
+            .filter_map(|(child_index, child)| {
+                let entry = entries.get(child_index)?;
+                self.content_frame(frame, entry.panel_index)
+                    .map(|content_frame| (child.id, content_frame))
+            })
+            .collect()
+    }
+
+    child_visible => (&self, index: usize) -> bool {
+        let entries = self.materialized_content.borrow();
+        let Some(entry) = entries.get(index) else {
+            return false;
+        };
+        self.panels
+            .get(entry.panel_index)
+            .is_some_and(|panel| self.panel_present(entry.panel_index, panel))
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -182,7 +228,7 @@ component! {
         let primary = ctx.tokens().color_primary();
         let hover_bg = ctx.tokens().color_fill_quaternary();
         let pressed_bg = ctx.tokens().color_fill_tertiary();
-        let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
+        let r = (!self.borderless).then(|| Radius::uniform(ctx.tokens().border_radius_sm()));
         let mut y = frame.y;
         let frame_bottom = frame.y + frame.h;
         ctx.push_clip(frame);
@@ -200,7 +246,9 @@ component! {
                 bg
             };
             ctx.fill_rect(header_rect, header_bg, r);
-            ctx.stroke_rect(header_rect, border, 1.0, r);
+            if !self.borderless {
+                ctx.stroke_rect(header_rect, border, 1.0, r);
+            }
             if self.focused && tree.keyboard_focus_visible() && idx == self.focused_header {
                 let inset = 0.75_f32.min(header_rect.w * 0.5).min(header_rect.h * 0.5);
                 let focus_rect = Rect::new(
@@ -214,7 +262,7 @@ component! {
                 }
             }
             let icon_rect = Rect::new(header_rect.x + 4.0, header_rect.y, 24.0, header_rect.h);
-            crate::ui::widgets::icon::paint_icon_in_frame(
+            crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 if p.expanded { "chevron-down" } else { "chevron-right" },
                 icon_rect,
@@ -252,28 +300,14 @@ component! {
                 let body_rect = Rect::new(frame.x, y, frame.w, body_height);
                 if body_rect.w > 0.0 && body_rect.h > 0.0 {
                     ctx.fill_rect(body_rect, body_bg, r);
-                    ctx.stroke_rect(body_rect, border, 1.0, r);
-                }
-                let alpha = (text_secondary.a as f32 * self.panel_opacity(idx, p))
-                    .round()
-                    .clamp(0.0, 255.0) as u8;
-                let text_rect = Rect::new(
-                    body_rect.x + CONTENT_HORIZONTAL_PADDING,
-                    body_rect.y + CONTENT_VERTICAL_PADDING,
-                    (body_rect.w - CONTENT_HORIZONTAL_PADDING * 2.0).max(0.0),
-                    (body_rect.h - CONTENT_VERTICAL_PADDING * 2.0).max(0.0),
-                );
-                if alpha > 0 && text_rect.w > 0.0 && text_rect.h > 0.0 {
-                    ctx.push_clip(text_rect);
-                    ctx.draw_text_wrapped(
-                        &p.content,
-                        text_rect,
-                        text_secondary.with_alpha(alpha),
-                        CONTENT_FONT_SIZE,
-                    );
-                    ctx.pop_clip();
+                    if !self.borderless {
+                        ctx.stroke_rect(body_rect, border, 1.0, r);
+                    }
                 }
                 y += content_height;
+            }
+            if self.borderless && idx + 1 < self.panels.len() && y < frame_bottom {
+                ctx.draw_line(frame.x, y, frame.x + frame.w, y, border, 1.0);
             }
         }
         ctx.pop_clip();
@@ -298,6 +332,9 @@ component! {
             if !transition.finished {
                 had_active = true;
                 transition.update(dt);
+                if let Some(opacity) = self.content_opacities.get(index) {
+                    opacity.set(transition.opacity_progress.clamp(0.0, 1.0));
+                }
                 still_active |= !transition.finished;
                 if transition.finished
                     && self.panels.get(index).is_some_and(|panel| !panel.expanded)
@@ -365,6 +402,8 @@ impl Collapse {
         Self {
             panels: Vec::new(),
             accordion: false,
+            borderless: false,
+            destroy_on_hide: false,
             focused: false,
             focused_header: 0,
             hovered_header: Cell::new(None),
@@ -374,18 +413,32 @@ impl Collapse {
             transitions: Vec::new(),
             transition_dirty: false,
             layout_requested: Cell::new(false),
+            content_opacities: Vec::new(),
+            materialized_content: RefCell::new(Vec::new()),
         }
     }
     pub fn panels(mut self, ps: Vec<CollapsePanel>) -> Self {
         self.panels = ps;
         self.normalize_accordion();
         self.transitions = Self::settled_transitions(&self.panels);
+        self.content_opacities = Self::opacity_handles(&self.transitions);
         self
     }
     pub fn accordion(mut self) -> Self {
         self.accordion = true;
         self.normalize_accordion();
         self.transitions = Self::settled_transitions(&self.panels);
+        self.content_opacities = Self::opacity_handles(&self.transitions);
+        self
+    }
+
+    pub fn borderless(mut self, value: bool) -> Self {
+        self.borderless = value;
+        self
+    }
+
+    pub fn destroy_on_hide(mut self, value: bool) -> Self {
+        self.destroy_on_hide = value;
         self
     }
 
@@ -417,6 +470,116 @@ impl Collapse {
         line_count * CONTENT_FONT_SIZE * TEXT_LINE_HEIGHT + CONTENT_VERTICAL_PADDING * 2.0
     }
 
+    fn panel_content_key(&self, panel_index: usize) -> String {
+        let header = self
+            .panels
+            .get(panel_index)
+            .map(|panel| panel.header.as_str())
+            .unwrap_or_default();
+        let occurrence = self.panels[..panel_index.min(self.panels.len())]
+            .iter()
+            .filter(|panel| panel.header == header)
+            .count();
+        format!(
+            "uix:collapse-content:{}:{occurrence}:{header}",
+            header.len()
+        )
+    }
+
+    fn desired_content_entries(&self) -> Vec<CollapseContentEntry> {
+        self.panels
+            .iter()
+            .enumerate()
+            .filter(|(index, panel)| !self.destroy_on_hide || self.panel_present(*index, panel))
+            .map(|(panel_index, panel)| CollapseContentEntry {
+                panel_index,
+                key: self.panel_content_key(panel_index),
+                content: panel.content.clone(),
+            })
+            .collect()
+    }
+
+    fn content_views(&self, entries: &[CollapseContentEntry]) -> Vec<crate::ui::view::ViewNode> {
+        entries
+            .iter()
+            .map(|entry| {
+                let text = entry.content.clone();
+                let opacity = self
+                    .content_opacities
+                    .get(entry.panel_index)
+                    .cloned()
+                    .unwrap_or_else(|| Rc::new(Cell::new(0.0)));
+                let natural_height = (Self::content_height(&text, DEFAULT_WIDTH)
+                    - CONTENT_VERTICAL_PADDING * 2.0)
+                    .max(0.0);
+                crate::ui::view::canvas(
+                    (DEFAULT_WIDTH - CONTENT_HORIZONTAL_PADDING * 2.0).max(0.0),
+                    natural_height,
+                    move |frame, ctx| {
+                        if frame.w <= 0.0 || frame.h <= 0.0 {
+                            return;
+                        }
+                        let text_color = ctx.tokens().color_text_secondary();
+                        let alpha = (text_color.a as f32 * opacity.get())
+                            .round()
+                            .clamp(0.0, 255.0) as u8;
+                        if alpha == 0 {
+                            return;
+                        }
+                        ctx.push_clip(frame);
+                        ctx.draw_text_wrapped(
+                            &text,
+                            frame,
+                            text_color.with_alpha(alpha),
+                            CONTENT_FONT_SIZE,
+                        );
+                        ctx.pop_clip();
+                    },
+                )
+                .key(entry.key.clone())
+            })
+            .collect()
+    }
+
+    fn content_frame(&self, frame: Rect, panel_index: usize) -> Option<Rect> {
+        let frame = Self::normalized_frame(frame);
+        let frame_bottom = frame.y + frame.h;
+        let mut y = frame.y;
+        for (index, panel) in self.panels.iter().enumerate() {
+            y += HEADER_HEIGHT;
+            if !self.panel_present(index, panel) {
+                continue;
+            }
+            let content_height = Self::content_height(&panel.content, frame.w);
+            if index == panel_index {
+                let body_height = content_height.min((frame_bottom - y).max(0.0));
+                return Some(Rect::new(
+                    frame.x + CONTENT_HORIZONTAL_PADDING,
+                    y + CONTENT_VERTICAL_PADDING,
+                    (frame.w - CONTENT_HORIZONTAL_PADDING * 2.0).max(0.0),
+                    (body_height - CONTENT_VERTICAL_PADDING * 2.0).max(0.0),
+                ));
+            }
+            y += content_height;
+        }
+        None
+    }
+
+    pub(crate) fn content_views_for_refresh(
+        &self,
+        current_child_count: usize,
+    ) -> Option<(Vec<crate::ui::view::ViewNode>, Vec<CollapseContentEntry>)> {
+        let entries = self.desired_content_entries();
+        if current_child_count == entries.len() && *self.materialized_content.borrow() == entries {
+            return None;
+        }
+        Some((self.content_views(&entries), entries))
+    }
+
+    pub(crate) fn mark_content_materialized(&self, entries: Vec<CollapseContentEntry>) {
+        self.materialized_content.replace(entries);
+    }
+
     fn full_dirty_rect(&self, frame: Rect) -> Rect {
         let mut h = self.panels.len() as f32 * 36.0;
         for panel in &self.panels {
@@ -442,11 +605,19 @@ impl Collapse {
         transition
     }
 
+    fn opacity_handles(transitions: &[TransitionPlayer]) -> Vec<Rc<Cell<f32>>> {
+        transitions
+            .iter()
+            .map(|transition| Rc::new(Cell::new(transition.opacity_progress.clamp(0.0, 1.0))))
+            .collect()
+    }
+
     fn ensure_transition_count(&mut self) {
         if self.transitions.len() == self.panels.len() {
             return;
         }
         self.transitions = Self::settled_transitions(&self.panels);
+        self.content_opacities = Self::opacity_handles(&self.transitions);
     }
 
     fn start_panel_transition(&mut self, idx: usize, expanded: bool) {
@@ -463,11 +634,20 @@ impl Collapse {
                 transition.offset,
                 transition.scale,
             );
+            if let Some(opacity) = self.content_opacities.get(idx) {
+                opacity.set(transition.opacity_progress.clamp(0.0, 1.0));
+            }
             self.transition_dirty = true;
         }
     }
 
     pub(crate) fn panel_present(&self, idx: usize, panel: &CollapsePanel) -> bool {
+        if self.destroy_on_hide && !panel.expanded {
+            return self
+                .transitions
+                .get(idx)
+                .is_some_and(|transition| !transition.finished);
+        }
         panel.expanded
             || self
                 .transitions
@@ -475,16 +655,10 @@ impl Collapse {
                 .is_some_and(|transition| !transition.finished)
     }
 
-    fn panel_opacity(&self, idx: usize, panel: &CollapsePanel) -> f32 {
-        self.transitions
-            .get(idx)
-            .map(|transition| transition.opacity_progress.clamp(0.0, 1.0))
-            .unwrap_or(if panel.expanded { 1.0 } else { 0.0 })
-    }
-
     pub(crate) fn sync_from(&mut self, next: Self) {
         let current_panels = std::mem::take(&mut self.panels);
         let current_transitions = std::mem::take(&mut self.transitions);
+        let current_opacities = std::mem::take(&mut self.content_opacities);
         let focused_header = current_panels
             .get(self.focused_header)
             .map(|panel| panel.header.clone());
@@ -502,6 +676,7 @@ impl Collapse {
             .collect::<Vec<_>>();
         let mut used = vec![false; current_panels.len()];
         let mut transitions = Vec::with_capacity(panels.len());
+        let mut content_opacities = Vec::with_capacity(panels.len());
         for (idx, panel) in panels.iter_mut().enumerate() {
             let header_is_unique = current_panels
                 .iter()
@@ -524,18 +699,26 @@ impl Collapse {
             if let Some(current_idx) = matched {
                 used[current_idx] = true;
                 panel.expanded = current_panels[current_idx].expanded;
-                transitions.push(
-                    current_transitions
-                        .get(current_idx)
-                        .cloned()
-                        .unwrap_or_else(|| Self::settled_transition(panel.expanded)),
-                );
+                let transition = current_transitions
+                    .get(current_idx)
+                    .cloned()
+                    .unwrap_or_else(|| Self::settled_transition(panel.expanded));
+                content_opacities.push(current_opacities.get(current_idx).cloned().unwrap_or_else(
+                    || Rc::new(Cell::new(transition.opacity_progress.clamp(0.0, 1.0))),
+                ));
+                transitions.push(transition);
             } else {
-                transitions.push(Self::settled_transition(panel.expanded));
+                let transition = Self::settled_transition(panel.expanded);
+                content_opacities.push(Rc::new(Cell::new(
+                    transition.opacity_progress.clamp(0.0, 1.0),
+                )));
+                transitions.push(transition);
             }
         }
         self.panels = panels;
         self.accordion = next.accordion;
+        self.borderless = next.borderless;
+        self.destroy_on_hide = next.destroy_on_hide;
         let expanded_before_normalize = self
             .panels
             .iter()
@@ -571,6 +754,12 @@ impl Collapse {
                 }
             })
             .collect();
+        self.content_opacities = content_opacities;
+        for (index, transition) in self.transitions.iter().enumerate() {
+            if let Some(opacity) = self.content_opacities.get(index) {
+                opacity.set(transition.opacity_progress.clamp(0.0, 1.0));
+            }
+        }
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {

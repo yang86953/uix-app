@@ -11,6 +11,7 @@ use crate::ui::{
     WidgetTree,
 };
 use std::cell::Cell;
+use std::rc::Rc;
 
 component! {
     /// Anchor — 锚点导航条。
@@ -27,6 +28,12 @@ component! {
         offset_top: f32,
         /// 背景色
         bg_color: Option<Color>,
+        show_ink: bool,
+        bounds: f32,
+        container_enabled: bool,
+        #[snapshot(skip)]
+        container_view: Option<Rc<dyn Fn() -> crate::ui::view::ViewNode>>,
+        last_frame: Cell<Option<Rect>>,
         focused: bool,
         pending_change: Cell<Option<usize>>,
     }
@@ -37,6 +44,27 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
+    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
+        -> Vec<(crate::ui::ComponentId, Rect)>
+    {
+        if !self.container_enabled {
+            return Vec::new();
+        }
+        let content = self.container_rect(frame);
+        children.iter().map(|child| (child.id, content)).collect()
+    }
+
+    children_clip => (&self, frame: Rect) -> Option<Rect> {
+        Some(if self.container_enabled { self.container_rect(frame) } else { frame })
+    }
+
+    build_view_children => (&self) -> Vec<crate::ui::view::ViewNode> {
+        self.container_view
+            .as_ref()
+            .map(|factory| vec![factory()])
+            .unwrap_or_default()
+    }
+
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
             SystemEvent::PointerDown {
@@ -44,7 +72,7 @@ component! {
                 button: MouseButton::Left,
                 ..
             } => {
-                if pos.y < 0.0 {
+                if !self.local_navigation_rect().contains(*pos) || pos.y < 0.0 {
                     return EventResult::NotHandled;
                 }
                 let idx = (pos.y / 36.0) as usize;
@@ -103,6 +131,12 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
+        let frame = Self::normalized_frame(frame);
+        self.last_frame.set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
+        if frame.w <= 0.0 || frame.h <= 0.0 {
+            return;
+        }
+        let navigation = self.navigation_rect(frame);
         // 背景
         if let Some(bg) = self.bg_color {
             ctx.fill_rect(frame, bg, None);
@@ -114,29 +148,31 @@ component! {
 
         // 分割线
         ctx.stroke_rect(
-            Rect::new(frame.x + frame.w - 1.0, frame.y, 1.0, frame.h),
+            Rect::new(navigation.x + navigation.w - 1.0, navigation.y, 1.0, navigation.h),
             border_color, 1.0, None,
         );
 
+        ctx.push_clip(navigation);
         for (i, item) in self.items.iter().enumerate() {
-            let y = frame.y + i as f32 * 36.0;
+            let y = navigation.y + i as f32 * 36.0;
             let is_active = i == self.active_index;
             let color = if is_active { primary } else { text_secondary };
 
             // 激活态左侧指示条
-            if is_active {
-                ctx.fill_rect(Rect::new(frame.x, y, 3.0, 36.0), primary, None);
+            if is_active && self.show_ink {
+                ctx.fill_rect(Rect::new(navigation.x, y, 3.0, 36.0), primary, None);
             }
 
-            let label_x = frame.x + 16.0;
-            let row_rect = Rect::new(frame.x, y, frame.w, 36.0);
+            let label_x = navigation.x + 16.0;
+            let row_rect = Rect::new(navigation.x, y, navigation.w, 36.0);
             let label_y = ctx.visual_center_y(row_rect, 14.0);
             ctx.draw_text(&item.label, Point::new(label_x, label_y), color, 14.0);
         }
+        ctx.pop_clip();
 
         if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(
-                frame,
+                navigation,
                 primary,
                 1.5,
                 Some(crate::draw::Radius::uniform(
@@ -167,6 +203,15 @@ impl AnchorItem {
 
 impl Anchor {
     fn intrinsic_size(&self) -> Size {
+        let navigation = self.intrinsic_navigation_size();
+        if self.container_enabled {
+            Size::new(navigation.w + 320.0, navigation.h.max(240.0))
+        } else {
+            navigation
+        }
+    }
+
+    fn intrinsic_navigation_size(&self) -> Size {
         let w = self
             .items
             .iter()
@@ -185,6 +230,11 @@ impl Anchor {
             anchor_positions: vec![0.0; count],
             offset_top: 0.0,
             bg_color: None,
+            show_ink: true,
+            bounds: 10.0,
+            container_enabled: false,
+            container_view: None,
+            last_frame: Cell::new(None),
             focused: false,
             pending_change: Cell::new(None),
         }
@@ -199,7 +249,7 @@ impl Anchor {
     pub fn update_active(&mut self, scroll_y: f32) {
         let mut idx = self.items.len().saturating_sub(1);
         for (i, &pos) in self.anchor_positions.iter().enumerate() {
-            if scroll_y < pos - self.offset_top - 10.0 {
+            if scroll_y < pos - self.offset_top - self.bounds {
                 idx = i.saturating_sub(1);
                 break;
             }
@@ -209,6 +259,34 @@ impl Anchor {
 
     pub fn set_offset_top(mut self, v: f32) -> Self {
         self.offset_top = v;
+        self
+    }
+
+    pub fn target_offset(self, offset: f32) -> Self {
+        self.set_offset_top(offset)
+    }
+
+    pub fn show_ink(mut self, show: bool) -> Self {
+        self.show_ink = show;
+        self
+    }
+
+    pub fn bounds(mut self, bounds: f32) -> Self {
+        self.bounds = if bounds.is_finite() {
+            bounds.max(0.0)
+        } else {
+            10.0
+        };
+        self
+    }
+
+    pub fn container<F, V>(mut self, factory: F) -> Self
+    where
+        F: Fn() -> V + 'static,
+        V: crate::ui::view::View,
+    {
+        self.container_enabled = true;
+        self.container_view = Some(Rc::new(move || crate::ui::view::View::build(factory())));
         self
     }
     pub fn bg(mut self, c: Color) -> Self {
@@ -233,6 +311,10 @@ impl Anchor {
         self.items = next.items;
         self.offset_top = next.offset_top;
         self.bg_color = next.bg_color;
+        self.show_ink = next.show_ink;
+        self.bounds = next.bounds;
+        self.container_enabled = next.container_enabled;
+        self.container_view = next.container_view;
         self.active_index = self.active_index.min(self.items.len().saturating_sub(1));
         if old_position_count != self.items.len() {
             self.anchor_positions = vec![0.0; self.items.len()];
@@ -270,5 +352,44 @@ impl Anchor {
             self.active_index.saturating_sub(1)
         };
         self.select(next, true);
+    }
+
+    fn navigation_rect(&self, frame: Rect) -> Rect {
+        let width = self.intrinsic_navigation_size().w.min(frame.w).max(0.0);
+        Rect::new(frame.x, frame.y, width, frame.h)
+    }
+
+    fn container_rect(&self, frame: Rect) -> Rect {
+        let navigation = self.navigation_rect(frame);
+        Rect::new(
+            navigation.x + navigation.w,
+            frame.y,
+            (frame.w - navigation.w).max(0.0),
+            frame.h,
+        )
+    }
+
+    fn local_navigation_rect(&self) -> Rect {
+        self.navigation_rect(self.last_frame.get().unwrap_or_else(|| {
+            let size = self.intrinsic_size();
+            Rect::new(0.0, 0.0, size.w, size.h)
+        }))
+    }
+
+    fn normalized_frame(frame: Rect) -> Rect {
+        Rect::new(
+            frame.x,
+            frame.y,
+            if frame.w.is_finite() {
+                frame.w.max(0.0)
+            } else {
+                0.0
+            },
+            if frame.h.is_finite() {
+                frame.h.max(0.0)
+            } else {
+                0.0
+            },
+        )
     }
 }

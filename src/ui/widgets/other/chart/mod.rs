@@ -2,10 +2,12 @@
 //!
 //! All chart types render with theme-aware colors and auto-scaling.
 
+pub mod advanced;
 pub mod bar_chart;
 pub mod line_chart;
 pub mod pie_chart;
 
+pub use advanced::*;
 pub use bar_chart::*;
 pub use line_chart::*;
 pub use pie_chart::*;

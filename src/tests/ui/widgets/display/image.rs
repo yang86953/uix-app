@@ -1,9 +1,11 @@
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::pipeline::render_frame::{FrameRenderInput, FrameRenderer};
 use crate::draw::spatial::Orientation;
 use crate::draw::traits::canvas::Canvas2D;
 use crate::tests::common::*;
-use crate::ui::widgets::Image;
+use crate::ui::view::{ViewAdapter, ViewNode};
+use crate::ui::widgets::{Button, Image, Label};
 use crate::ui::{AccessibilityRole, ComponentId, EventHandler, WidgetRender};
 
 fn render(image: &Image, canvas: &mut SharedRasterizer, frame: Rect) {
@@ -59,6 +61,86 @@ fn render_display_list(image: &Image, frame: Rect, surface_size: (i32, i32)) -> 
         });
     }
     format!("{display_list:?}")
+}
+
+fn render_with_image_service(
+    image: &Image,
+    images: &ImageService,
+    frame: Rect,
+    surface_size: (i32, i32),
+) {
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(surface_size.0, surface_size.1));
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+    let mut ctx = PaintContext::new_for_test(
+        &mut canvas,
+        font,
+        &fonts,
+        images,
+        &tokens,
+        96.0,
+        1.0,
+        Orientation::YDown,
+        surface_size.0,
+        surface_size.1,
+    );
+    WidgetRender::render(image, frame, &mut ctx, &tree);
+}
+
+struct ImageTreeHarness {
+    engine: SoftwareEngine,
+    renderer: FrameRenderer,
+    fonts: FontService,
+    font: crate::draw::FontHandle,
+    images: ImageService,
+    tokens: DesignTokens,
+    rendered_first: bool,
+}
+
+impl ImageTreeHarness {
+    fn new() -> Self {
+        let mut engine = SoftwareEngine::new();
+        engine.initialize(160, 120).expect("software engine");
+        let mut fonts = FontService::new();
+        let font = fonts
+            .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+            .expect("load deterministic test font");
+        Self {
+            engine,
+            renderer: FrameRenderer::new(),
+            fonts,
+            font,
+            images: ImageService::new(),
+            tokens: DesignTokens::antd_light(),
+            rendered_first: false,
+        }
+    }
+
+    fn render(&mut self, tree: &WidgetTree) {
+        let dirty = DirtyRegion::full();
+        let _ = self.renderer.render_frame(
+            &mut self.engine,
+            tree,
+            FrameRenderInput {
+                rendered_first: self.rendered_first,
+                dirty_region: &dirty,
+                tree_version: tree.tree_version(),
+                scroll_move: None,
+                theme: ThemeSnapshot::new(&self.tokens),
+                font: self.font,
+                font_service: &self.fonts,
+                image_service: &self.images,
+                debug_mode: false,
+                hover_pos: None,
+                metrics: None,
+            },
+        );
+        self.rendered_first = true;
+    }
 }
 
 #[test]
@@ -248,4 +330,182 @@ fn reconcile_preserves_open_preview_until_preview_is_disabled() {
 
     image.sync_from(Image::new(160.0, 100.0).preview(false));
     assert!(!image.is_preview_open());
+}
+
+#[test]
+fn lazy_image_defers_io_until_it_enters_the_visible_frame() {
+    let images = ImageService::new();
+    let image = Image::new(80.0, 48.0)
+        .src("assets/images/demo.png")
+        .lazy(true);
+
+    render_with_image_service(
+        &image,
+        &images,
+        Rect::new(240.0, 0.0, 80.0, 48.0),
+        (120, 80),
+    );
+    assert_eq!(
+        images.memory_usage(),
+        0,
+        "an offscreen lazy Image must not read or decode its source"
+    );
+
+    render_with_image_service(&image, &images, Rect::new(8.0, 8.0, 80.0, 48.0), (120, 80));
+    assert!(
+        images.memory_usage() > 0,
+        "a lazy Image without a placeholder loads on its first visible opportunity"
+    );
+}
+
+#[test]
+fn placeholder_is_presented_before_loading_and_hidden_after_successful_layout_sync() {
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
+        Image::new(80.0, 48.0)
+            .src("assets/images/demo.png")
+            .placeholder(crate::ui::view::label("加载中"))
+            .preview(false),
+    ));
+    tree.layout();
+    let placeholder = tree.find_by_type::<Label>().expect("placeholder child");
+    assert!(tree.is_effectively_visible(placeholder));
+
+    let mut harness = ImageTreeHarness::new();
+    harness.render(&tree);
+    assert_eq!(
+        harness.images.memory_usage(),
+        0,
+        "the first rendered frame must not synchronously decode the image"
+    );
+    assert!(
+        tree.is_effectively_visible(placeholder),
+        "the placeholder must be part of the first presented tree"
+    );
+
+    tree.layout();
+    harness.render(&tree);
+    assert!(harness.images.memory_usage() > 0);
+    assert!(
+        tree.is_effectively_visible(placeholder),
+        "the already presented placeholder remains until the load result is laid out"
+    );
+
+    tree.layout();
+    assert!(
+        !tree.is_effectively_visible(placeholder),
+        "successful loading must remove the placeholder from paint and hit testing"
+    );
+}
+
+#[test]
+fn real_load_failure_materializes_specific_interactive_error_view() {
+    let errors = Rc::new(RefCell::new(Vec::<String>::new()));
+    let clicks = Rc::new(Cell::new(0usize));
+    let errors_for_factory = Rc::clone(&errors);
+    let clicks_for_factory = Rc::clone(&clicks);
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
+        Image::new(80.0, 48.0)
+            .src("assets/images/definitely-missing-image.png")
+            .placeholder(crate::ui::view::label("加载中"))
+            .on_error(move |error| {
+                errors_for_factory.borrow_mut().push(error.to_owned());
+                let clicks = Rc::clone(&clicks_for_factory);
+                crate::ui::view::button("重试").on_click_fn(move || {
+                    clicks.set(clicks.get() + 1);
+                })
+            })
+            .preview(false),
+    ));
+    tree.layout();
+    let placeholder = tree.find_by_type::<Label>().expect("placeholder child");
+    let mut harness = ImageTreeHarness::new();
+
+    harness.render(&tree);
+    assert!(errors.borrow().is_empty());
+    tree.layout();
+    harness.render(&tree);
+    assert!(errors.borrow().is_empty());
+
+    tree.layout();
+    let retry = tree.find_by_type::<Button>().expect("runtime error action");
+    assert!(!tree.is_effectively_visible(placeholder));
+    assert!(tree.is_effectively_visible(retry));
+    let errors = errors.borrow();
+    assert_eq!(
+        errors.len(),
+        1,
+        "the error factory must run once per failure"
+    );
+    assert!(
+        errors[0].contains("definitely-missing-image.png") && errors[0].contains("读取图片文件"),
+        "factory must receive the concrete image-service error: {}",
+        errors[0]
+    );
+    drop(errors);
+
+    let click = |down| {
+        if down {
+            SystemEvent::PointerDown {
+                pos: Point::new(40.0, 24.0),
+                button: MouseButton::Left,
+                mods: KeyMod::NONE,
+            }
+        } else {
+            SystemEvent::PointerUp {
+                pos: Point::new(40.0, 24.0),
+                button: MouseButton::Left,
+                mods: KeyMod::NONE,
+            }
+        }
+    };
+    assert_eq!(tree.dispatch_event(&click(true)), EventResult::Handled);
+    assert_eq!(tree.dispatch_event(&click(false)), EventResult::Handled);
+    assert_eq!(
+        clicks.get(),
+        1,
+        "the custom error Button must be interactive"
+    );
+}
+
+#[test]
+fn reconcile_to_a_new_source_clears_error_and_reuses_the_placeholder_until_ready() {
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
+        Image::new(80.0, 48.0)
+            .src("assets/images/definitely-missing-image.png")
+            .placeholder(crate::ui::view::label("加载中"))
+            .on_error(|_| crate::ui::view::button("重试"))
+            .preview(false),
+    ));
+    tree.layout();
+    let mut harness = ImageTreeHarness::new();
+    harness.render(&tree);
+    tree.layout();
+    harness.render(&tree);
+    tree.layout();
+    assert!(tree.find_by_type::<Button>().is_some());
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            Image::new(80.0, 48.0)
+                .src("assets/images/demo.png")
+                .placeholder(crate::ui::view::label("加载中"))
+                .on_error(|_| crate::ui::view::button("重试"))
+                .preview(false),
+        ),
+    );
+    tree.layout();
+    assert!(
+        tree.find_by_type::<Button>().is_none(),
+        "changing src must remove the stale recovery subtree"
+    );
+    let placeholder = tree.find_by_type::<Label>().expect("new placeholder");
+    assert!(tree.is_effectively_visible(placeholder));
+
+    harness.render(&tree);
+    tree.layout();
+    harness.render(&tree);
+    tree.layout();
+    assert!(harness.images.memory_usage() > 0);
+    assert!(!tree.is_effectively_visible(placeholder));
 }

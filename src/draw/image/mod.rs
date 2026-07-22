@@ -77,6 +77,8 @@ impl ImageSlot {
     }
 }
 
+type RoundedRectCache = HashMap<(BitmapHandle, u32, u32, u32, bool), BitmapHandle>;
+
 /// 图片服务 — 解码缓存与路径索引。
 pub struct ImageService {
     slots: RefCell<Vec<ImageSlot>>,
@@ -85,7 +87,7 @@ pub struct ImageService {
     square_cache: RefCell<HashMap<BitmapHandle, BitmapHandle>>,
     circular_cache: RefCell<HashMap<(BitmapHandle, u32), BitmapHandle>>,
     rounded_square_cache: RefCell<HashMap<(BitmapHandle, u32, u32), BitmapHandle>>,
-    rounded_rect_cache: RefCell<HashMap<(BitmapHandle, u32, u32, u32, bool), BitmapHandle>>,
+    rounded_rect_cache: RefCell<RoundedRectCache>,
 }
 
 impl Default for ImageService {

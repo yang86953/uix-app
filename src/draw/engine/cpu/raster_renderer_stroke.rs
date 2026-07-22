@@ -10,6 +10,10 @@ use crate::draw::primitives::types::Radius;
 use super::raster_renderer::RasterRenderer;
 
 impl RasterRenderer {
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "shape coordinates and surface bounds mirror the canvas contract"
+    )]
     pub fn stroke_rect(
         &self,
         pixels: &mut [u32],
@@ -127,6 +131,10 @@ impl RasterRenderer {
         }
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "shape coordinates and surface bounds mirror the canvas contract"
+    )]
     pub fn stroke_circle(
         &self,
         pixels: &mut [u32],
@@ -201,6 +209,10 @@ impl RasterRenderer {
         );
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "line endpoints and surface bounds mirror the canvas contract"
+    )]
     pub fn draw_line(
         &self,
         pixels: &mut [u32],

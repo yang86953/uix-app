@@ -273,7 +273,7 @@ component! {
                     } else {
                         Color::white()
                     };
-                    crate::ui::widgets::icon::paint_icon_in_frame(
+                    crate::ui::widgets::icon::Icon::paint_in_frame(
                         ctx,
                         "check",
                         cell_rect,

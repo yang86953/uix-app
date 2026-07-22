@@ -6,6 +6,9 @@
 //! 供缩放路径 MSDF 使用（过窄 fringe 会裁切距离场）。近 1:1 UI 字使用字体
 //! 光栅器给出的真实面积覆盖率 R8。
 //!
+
+#![cfg_attr(not(test), allow(dead_code))]
+
 //! MSDF：Chlumsky 真边着色（角点切换 CMY 双通道色），编码为
 //! `0.5 + sd / MSDF_RANGE`；采样时取 `median(r,g,b)` 再转 coverage，利于大字号缩放保角。
 
@@ -42,13 +45,15 @@ pub(crate) const EDGE_MAGENTA: u8 = EDGE_RED | EDGE_BLUE;
 pub(crate) const EDGE_CYAN: u8 = EDGE_GREEN | EDGE_BLUE;
 pub(crate) const EDGE_WHITE: u8 = EDGE_RED | EDGE_GREEN | EDGE_BLUE;
 
+type GlyphOutlineMesh = (usize, usize, f32, f32, Arc<[f32]>);
+
 /// 轮廓 → NonZero 边列表；失败时返回 `None`（调用方回退 CPU coverage）。
 pub(crate) fn mesh_from_outline(
     outline: &Outline,
     scale_factor: PxScaleFactor,
     px_bounds: AbRect,
     position: AbPoint,
-) -> Option<(usize, usize, f32, f32, Arc<[f32]>)> {
+) -> Option<GlyphOutlineMesh> {
     let inner_w = (px_bounds.max.x - px_bounds.min.x).ceil();
     let inner_h = (px_bounds.max.y - px_bounds.min.y).ceil();
     if !(inner_w.is_finite() && inner_h.is_finite()) || inner_w <= 0.0 || inner_h <= 0.0 {
@@ -123,7 +128,7 @@ pub(crate) fn mesh_from_outline(
         return None;
     }
     let edges = edges_from_path(&path)?;
-    if edges.len() < 4 || edges.len() % 4 != 0 || edges.len() / 4 > MAX_EDGES {
+    if edges.len() < 4 || !edges.len().is_multiple_of(4) || edges.len() / 4 > MAX_EDGES {
         return None;
     }
     Some((
@@ -157,11 +162,7 @@ fn edges_from_path(path: &crate::draw::primitives::path::Path) -> Option<Vec<f32
         }
         for i in 0..seg_count {
             let a = points[i];
-            let b = if i + 1 < n {
-                points[i + 1]
-            } else {
-                first
-            };
+            let b = if i + 1 < n { points[i + 1] } else { first };
             if (a.x - b.x).abs() <= 1e-6 && (a.y - b.y).abs() <= 1e-6 {
                 continue;
             }
@@ -185,7 +186,7 @@ fn edges_from_path(path: &crate::draw::primitives::path::Path) -> Option<Vec<f32
 /// 这不是轮廓的真实面积覆盖率，只用于没有字体光栅结果的兼容回退；正常
 /// 近 1:1 字形必须使用 `OutlinedGlyph::draw` 的 R8 coverage。
 pub(crate) fn coverage_from_edges(edges: &[f32], width: usize, height: usize) -> Option<Vec<u8>> {
-    if width == 0 || height == 0 || edges.len() < 4 || edges.len() % 4 != 0 {
+    if width == 0 || height == 0 || edges.len() < 4 || !edges.len().is_multiple_of(4) {
         return None;
     }
     let pixel_count = width.checked_mul(height)?;
@@ -209,7 +210,7 @@ pub(crate) fn coverage_from_edges(edges: &[f32], width: usize, height: usize) ->
 
 /// 由边列表生成 RGBA MSDF（RGB=编码距离，A=255）；与 GPU `glyph_cover` 公式一致。
 pub(crate) fn msdf_from_edges(edges: &[f32], width: usize, height: usize) -> Option<Vec<u8>> {
-    if width == 0 || height == 0 || edges.len() < 4 || edges.len() % 4 != 0 {
+    if width == 0 || height == 0 || edges.len() < 4 || !edges.len().is_multiple_of(4) {
         return None;
     }
     let colors = colorize_edges(edges)?;
@@ -227,7 +228,7 @@ pub(crate) fn msdf_from_colored_edges(
     if width == 0
         || height == 0
         || edge_count == 0
-        || edges.len() % 4 != 0
+        || !edges.len().is_multiple_of(4)
         || colors.len() < edge_count
     {
         return None;
@@ -286,13 +287,13 @@ pub(crate) fn coverage_from_msdf(msdf_rgba: &[u8], width: usize, height: usize) 
         return None;
     }
     coverage.resize(width * height, 0u8);
-    for i in 0..(width * height) {
+    for (i, pixel) in coverage.iter_mut().enumerate() {
         let o = i * 4;
         let r = msdf_rgba[o] as f32 / 255.0;
         let g = msdf_rgba[o + 1] as f32 / 255.0;
         let b = msdf_rgba[o + 2] as f32 / 255.0;
         let cov = msdf_encoded_to_coverage(r, g, b);
-        coverage[i] = (cov * 255.0).clamp(0.0, 255.0) as u8;
+        *pixel = (cov * 255.0).clamp(0.0, 255.0) as u8;
     }
     Some(coverage)
 }
@@ -307,7 +308,7 @@ fn median3(a: f32, b: f32, c: f32) -> f32 {
 /// 返回与边一一对应的色掩码；不修改边几何（展平后 teardrop 少于 3 边极少，退化为可用着色）。
 pub(crate) fn colorize_edges(edges: &[f32]) -> Option<Vec<u8>> {
     let n = edges.len() / 4;
-    if n == 0 || edges.len() % 4 != 0 {
+    if n == 0 || !edges.len().is_multiple_of(4) {
         return None;
     }
     let mut colors = vec![EDGE_CYAN; n];
@@ -318,7 +319,14 @@ pub(crate) fn colorize_edges(edges: &[f32]) -> Option<Vec<u8>> {
         if range.is_empty() {
             continue;
         }
-        colorize_contour(edges, &range, &mut colors, &mut color, &mut seed, cross_threshold);
+        colorize_contour(
+            edges,
+            &range,
+            &mut colors,
+            &mut color,
+            &mut seed,
+            cross_threshold,
+        );
     }
     Some(colors)
 }
@@ -588,5 +596,5 @@ fn point_segment_dist(px: f32, py: f32, ax: f32, ay: f32, bx: f32, by: f32) -> f
 /// 判断是否为合法边列表（供 GPU / soft 入口共用）。
 #[inline]
 pub(crate) fn is_outline_edges(data: &[f32]) -> bool {
-    data.len() >= 4 && data.len() % 4 == 0
+    data.len() >= 4 && data.len().is_multiple_of(4)
 }

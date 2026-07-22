@@ -10,8 +10,8 @@ use crate::native::graphics::wgpu_backend::draw_stream::{
 use crate::native::graphics::wgpu_backend::glyph_batch;
 use crate::native::graphics::wgpu_backend::glyph_cover::GlyphCoverPipeline;
 use crate::native::traits::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
-    GpuSolidRect, GpuStrokeRect,
+    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient,
+    GpuSolidMesh, GpuSolidRect, GpuStrokeRect,
 };
 
 pub(super) use crate::native::graphics::wgpu_backend::draw_stream::ActiveTarget;
@@ -273,7 +273,7 @@ impl WgpuRenderer {
                 module: &shader,
                 entry_point: Some("shape_fs"),
                 compilation_options: Default::default(),
-                targets: &[target.clone()],
+                targets: std::slice::from_ref(&target),
             }),
             multiview_mask: None,
             cache: None,
@@ -339,7 +339,7 @@ impl WgpuRenderer {
                 module: &shader,
                 entry_point: Some("glyph_fs"),
                 compilation_options: Default::default(),
-                targets: &[target.clone()],
+                targets: std::slice::from_ref(&target),
             }),
             multiview_mask: None,
             cache: None,
@@ -364,7 +364,7 @@ impl WgpuRenderer {
                 module: &shader,
                 entry_point: Some("glyph_msdf_fs"),
                 compilation_options: Default::default(),
-                targets: &[target.clone()],
+                targets: std::slice::from_ref(&target),
             }),
             multiview_mask: None,
             cache: None,
@@ -389,7 +389,7 @@ impl WgpuRenderer {
                 module: &shader,
                 entry_point: Some("texture_fs"),
                 compilation_options: Default::default(),
-                targets: &[target.clone()],
+                targets: std::slice::from_ref(&target),
             }),
             multiview_mask: None,
             cache: None,
@@ -529,11 +529,7 @@ impl WgpuRenderer {
     }
 
     /// 脏区 replace 清除：透明色覆写，不走 SrcOver。
-    pub(super) fn clear_rects(
-        &mut self,
-        viewport: (f32, f32),
-        rects: &[GpuSolidRect],
-    ) {
+    pub(super) fn clear_rects(&mut self, viewport: (f32, f32), rects: &[GpuSolidRect]) {
         for rect in rects {
             self.shape_quad(
                 viewport,
@@ -700,6 +696,10 @@ impl WgpuRenderer {
         glyph_batch::record_glyphs(self.stream(), viewport, scissor, glyphs)
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "sampled blit geometry mirrors one queued GPU operation"
+    )]
     pub(super) fn queue_sampled_blit(
         &mut self,
         viewport: (f32, f32),
@@ -848,17 +848,18 @@ impl WgpuRenderer {
         }
         let width = width.max(1);
         let height = height.max(1);
-        // 先绘入保留色缓冲，再全幅复制到 swapchain：绘制侧可 Load/脏区 clear，
-        // present 仍保持 FullOnly（不依赖 swapchain 图像保留）。
+        // 先绘入保留色缓冲，再以全屏纹理四边形提交到 swapchain：绘制侧可
+        // Load/脏区 clear，present 仍保持 FullOnly（不依赖 swapchain 图像保留）。
+        // 不能使用 texture copy，因为 GL surface 不保证 COPY_DST。
         self.ensure_retained_color(device, width, height)?;
-        let (retained_view, retained_texture) = {
+        let retained_view = {
             let retained = self.retained_color.as_ref().ok_or_else(|| {
                 Error::new(
                     Errc::InvalidState,
                     "wgpu retained color target missing after ensure",
                 )
             })?;
-            (retained.view.clone(), retained.texture.clone())
+            retained.view.clone()
         };
         self.flush_stream_to_view(
             device,
@@ -891,30 +892,76 @@ impl WgpuRenderer {
                 ));
             }
         };
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("uix-present-copy"),
+        let surface_view = surface_texture
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("uix-present-retained"),
+            layout: &self.texture_bind_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&retained_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.texture_sampler),
+                },
+            ],
         });
-        encoder.copy_texture_to_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &retained_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::TexelCopyTextureInfo {
-                texture: &surface_texture.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-        );
+        let positions = quad_positions(Rect::new(0.0, 0.0, width as f32, height as f32));
+        let uvs = [
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [1.0, 1.0],
+            [0.0, 0.0],
+            [1.0, 1.0],
+            [0.0, 1.0],
+        ];
+        let vertices =
+            positions.map(|position| ndc(position[0], position[1], (width as f32, height as f32)));
+        let vertices = std::array::from_fn::<TextureVertex, 6, _>(|index| TextureVertex {
+            position: vertices[index],
+            uv: uvs[index],
+            opacity: 1.0,
+            _pad: [0.0; 3],
+        });
+        queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("uix-present-blit"),
+        });
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("uix-present-blit-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &surface_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.texture_pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            pass.draw(0..6, 0..1);
+        }
         queue.submit(std::iter::once(encoder.finish()));
+        let surface_present_t0 = std::time::Instant::now();
         queue.present(surface_texture);
+        let mut sample = crate::core::perf_probe::take_present();
+        sample.wgpu_surface_present_cpu_us = surface_present_t0.elapsed().as_micros();
+        sample.drawable_pixels = u64::from(width).saturating_mul(u64::from(height));
+        sample.drawable_width = width;
+        sample.drawable_height = height;
+        sample.skipped = 0;
+        crate::core::perf_probe::record_present(sample);
         self.swapchain.clear_commands_only();
         self.frame_bind_groups.clear();
         self.frame_textures.clear();
@@ -951,11 +998,7 @@ impl WgpuRenderer {
                     "wgpu overlay backdrop snapshot requires a retained color target",
                 )
             })?;
-            (
-                retained.texture.clone(),
-                retained.width,
-                retained.height,
-            )
+            (retained.texture.clone(), retained.width, retained.height)
         };
         if width == 0 || height == 0 {
             return Err(Error::new(
@@ -1036,11 +1079,7 @@ impl WgpuRenderer {
                     "wgpu overlay backdrop restore requires a captured snapshot",
                 )
             })?;
-            (
-                backdrop.texture.clone(),
-                backdrop.width,
-                backdrop.height,
-            )
+            (backdrop.texture.clone(), backdrop.width, backdrop.height)
         };
         // 恢复路径不得重建保留缓冲：ensure 在新建时会清掉 overlay_backdrop。
         let retained = self.retained_color.as_ref().ok_or_else(|| {
@@ -1154,14 +1193,8 @@ impl WgpuRenderer {
         let msdf_bytes = bytemuck::cast_slice(&stream.msdf_glyphs);
         let texture_bytes = bytemuck::cast_slice(&stream.textures);
         let glyph_offset = align_up(shape_bytes.len() as u64, 16);
-        let msdf_offset = align_up(
-            glyph_offset.saturating_add(glyph_bytes.len() as u64),
-            16,
-        );
-        let texture_offset = align_up(
-            msdf_offset.saturating_add(msdf_bytes.len() as u64),
-            16,
-        );
+        let msdf_offset = align_up(glyph_offset.saturating_add(glyph_bytes.len() as u64), 16);
+        let texture_offset = align_up(msdf_offset.saturating_add(msdf_bytes.len() as u64), 16);
         let required = texture_offset
             .saturating_add(texture_bytes.len() as u64)
             .max(1);

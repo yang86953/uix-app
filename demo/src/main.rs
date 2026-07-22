@@ -9,6 +9,8 @@
 //                                      → 启用 Agent Bridge 的 GUI
 //   cargo run --features test-harness --bin uix-demo -- --graphics-recovery-acceptance
 //                                      → 显示图形故障恢复验收路径
+//   cargo run --release --bin uix-demo -- --g5-release-scenario
+//                                      → 显式启动内部 G5 生产测量场景
 // ============================================================================
 
 mod cli;
@@ -25,6 +27,7 @@ struct LaunchOptions {
     follow_system_theme: bool,
     graphics_recovery_acceptance: bool,
     component_qa: bool,
+    g5_release_scenario: bool,
 }
 
 fn parse_launch_options(args: impl IntoIterator<Item = String>) -> LaunchOptions {
@@ -36,6 +39,7 @@ fn parse_launch_options(args: impl IntoIterator<Item = String>) -> LaunchOptions
             "--follow-system-theme" => options.follow_system_theme = true,
             "--graphics-recovery-acceptance" => options.graphics_recovery_acceptance = true,
             "--component-qa" => options.component_qa = true,
+            "--g5-release-scenario" => options.g5_release_scenario = true,
             _ => {}
         }
     }
@@ -62,6 +66,7 @@ fn run_gui(options: LaunchOptions) {
             options.follow_system_theme,
             options.graphics_recovery_acceptance,
             options.component_qa,
+            options.g5_release_scenario,
         );
     };
 
@@ -109,6 +114,19 @@ fn main() {
         eprintln!("--component-qa 只适用于 GUI 模式，不能与 --cli 同时使用");
         std::process::exit(2);
     }
+    if options.cli && options.g5_release_scenario {
+        eprintln!("--g5-release-scenario 只适用于 GUI 模式，不能与 --cli 同时使用");
+        std::process::exit(2);
+    }
+    if options.g5_release_scenario
+        && (options.agent_control
+            || options.follow_system_theme
+            || options.graphics_recovery_acceptance
+            || options.component_qa)
+    {
+        eprintln!("--g5-release-scenario 必须独占启动，不能与其他 GUI 验收模式组合");
+        std::process::exit(2);
+    }
     #[cfg(not(feature = "agent-control"))]
     if options.agent_control {
         eprintln!("--agent-control 需要同时启用 Cargo feature：--features agent-control");
@@ -147,6 +165,7 @@ mod tests {
                 "--follow-system-theme".to_owned(),
                 "--graphics-recovery-acceptance".to_owned(),
                 "--component-qa".to_owned(),
+                "--g5-release-scenario".to_owned(),
             ]),
             LaunchOptions {
                 cli: true,
@@ -154,6 +173,7 @@ mod tests {
                 follow_system_theme: true,
                 graphics_recovery_acceptance: true,
                 component_qa: true,
+                g5_release_scenario: true,
             }
         );
         assert_eq!(

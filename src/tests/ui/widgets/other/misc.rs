@@ -1,7 +1,10 @@
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
 use crate::tests::common::*;
-use crate::ui::widgets::{QRCode, Transfer, TransferItem, Upload, UploadStatus, Watermark};
+use crate::ui::view::ViewAdapter;
+use crate::ui::widgets::{
+    Label, MoveDirection, QRCode, Transfer, TransferItem, Upload, UploadStatus, Watermark,
+};
 use crate::ui::{AccessibilityRole, SnapshotTransferItem};
 
 fn render_upload(upload: &Upload, frame: Rect) -> Vec<u32> {
@@ -33,6 +36,84 @@ fn render_upload(upload: &Upload, frame: Rect) -> Vec<u32> {
     upload.render(frame, &mut ctx, &tree);
     drop(ctx);
     canvas.surface().pixels().to_vec()
+}
+
+fn render_watermark(watermark: &Watermark, frame: Rect) -> Vec<u32> {
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(
+        frame.w.ceil().max(1.0) as i32,
+        frame.h.ceil().max(1.0) as i32,
+    ));
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic watermark font");
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+    let mut ctx = PaintContext::new_for_test(
+        &mut canvas,
+        font,
+        &fonts,
+        &images,
+        &tokens,
+        96.0,
+        1.0,
+        crate::draw::spatial::Orientation::YDown,
+        frame.w.ceil().max(1.0) as i32,
+        frame.h.ceil().max(1.0) as i32,
+    );
+    watermark.render(frame, &mut ctx, &tree);
+    drop(ctx);
+    canvas.surface().pixels().to_vec()
+}
+
+fn render_transfer(transfer: &Transfer, frame: Rect) -> String {
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(
+        frame.w.ceil().max(1.0) as i32,
+        frame.h.ceil().max(1.0) as i32,
+    ));
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic transfer font");
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+    let mut display_list = crate::draw::painting::DisplayList::new();
+    let mut ctx = PaintContext::new_for_test(
+        &mut canvas,
+        font,
+        &fonts,
+        &images,
+        &tokens,
+        96.0,
+        1.0,
+        crate::draw::spatial::Orientation::YDown,
+        frame.w.ceil().max(1.0) as i32,
+        frame.h.ceil().max(1.0) as i32,
+    );
+    ctx.with_recorder(&mut display_list, |ctx| {
+        transfer.render(frame, ctx, &tree);
+    });
+    format!("{display_list:?}")
+}
+
+fn non_transparent_height(pixels: &[u32], width: usize) -> usize {
+    let mut min_y = usize::MAX;
+    let mut max_y = 0usize;
+    for (index, pixel) in pixels.iter().enumerate() {
+        if pixel >> 24 == 0 {
+            continue;
+        }
+        let y = index / width;
+        min_y = min_y.min(y);
+        max_y = max_y.max(y);
+    }
+    if min_y == usize::MAX {
+        0
+    } else {
+        max_y - min_y + 1
+    }
 }
 
 #[test]
@@ -178,6 +259,146 @@ fn transfer_keyboard_selects_and_moves_active_rows() {
     assert_eq!(
         accessibility.state.value_text.as_deref(),
         Some("1 source; 1 target; 0 selected")
+    );
+}
+
+#[test]
+fn transfer_search_filters_rows_and_custom_renderer_builds_children() {
+    let mut searchable = Transfer::new()
+        .source(vec![
+            TransferItem::new("alpha", "Alpha"),
+            TransferItem::new("beta", "Beta"),
+        ])
+        .searchable(true);
+    assert_eq!(
+        searchable.on_event(&SystemEvent::TextInput {
+            text: "beta".into(),
+        }),
+        EventResult::Handled
+    );
+    searchable.set_frame_for_test(Rect::new(0.0, 0.0, 500.0, 200.0));
+    assert_eq!(
+        searchable.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(12.0, 54.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(searchable.source_items()[1].selected);
+
+    let transfer = Transfer::new()
+        .source(vec![TransferItem::new("a", "A")])
+        .render_item(|item| crate::ui::view::label(format!("custom {}", item.title)));
+    let tree = ViewAdapter::build_nodes(crate::ui::view::embed(transfer));
+    assert!(tree.find_by_type::<Label>().is_some());
+}
+
+#[test]
+fn transfer_titles_and_custom_rows_enter_real_paint_layout_and_filtering() {
+    let mut transfer = Transfer::new()
+        .source(vec![
+            TransferItem::new("alpha", "Alpha"),
+            TransferItem::new("beta", "Beta"),
+        ])
+        .target(vec![TransferItem::new("done", "Done")])
+        .titles("待选项目", "已选项目")
+        .searchable(true)
+        .render_item(|item| crate::ui::view::label(format!("custom:{}", item.title)));
+    let display = render_transfer(&transfer, Rect::new(0.0, 0.0, 500.0, 200.0));
+    assert!(display.contains("待选项目"));
+    assert!(display.contains("已选项目"));
+
+    let views = WidgetComponent::build_view_children(&transfer);
+    assert_eq!(views.len(), 3);
+    let children = [
+        crate::ui::LayoutChild::new(ComponentId::new(31), Size::new(20.0, 12.0)),
+        crate::ui::LayoutChild::new(ComponentId::new(32), Size::new(20.0, 12.0)),
+        crate::ui::LayoutChild::new(ComponentId::new(33), Size::new(20.0, 12.0)),
+    ];
+    assert_eq!(
+        WidgetLayout::layout_children(
+            &transfer,
+            Rect::new(0.0, 0.0, 500.0, 200.0),
+            &children,
+            &WidgetTree::new(),
+        ),
+        vec![
+            (ComponentId::new(31), Rect::new(0.0, 48.0, 220.0, 28.0)),
+            (ComponentId::new(32), Rect::new(0.0, 76.0, 220.0, 28.0)),
+            (ComponentId::new(33), Rect::new(280.0, 48.0, 220.0, 28.0)),
+        ]
+    );
+
+    assert_eq!(
+        transfer.on_event(&SystemEvent::TextInput {
+            text: "beta".into(),
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        WidgetLayout::layout_children(
+            &transfer,
+            Rect::new(0.0, 0.0, 500.0, 200.0),
+            &children,
+            &WidgetTree::new(),
+        ),
+        vec![
+            (ComponentId::new(31), Rect::zero()),
+            (ComponentId::new(32), Rect::new(0.0, 48.0, 220.0, 28.0)),
+            (ComponentId::new(33), Rect::zero()),
+        ]
+    );
+}
+
+#[test]
+fn transfer_change_callback_observes_both_latest_lists_and_direction() {
+    type Change = (Vec<String>, Vec<String>, MoveDirection);
+    let changes = std::rc::Rc::new(std::cell::RefCell::new(Vec::<Change>::new()));
+    let mut transfer = Transfer::new()
+        .source(vec![TransferItem {
+            key: "a".into(),
+            title: "A".into(),
+            selected: true,
+        }])
+        .on_change({
+            let changes = changes.clone();
+            move |source, target, direction| {
+                changes.borrow_mut().push((
+                    source.iter().map(|item| item.key.clone()).collect(),
+                    target.iter().map(|item| item.key.clone()).collect(),
+                    direction,
+                ));
+            }
+        });
+
+    let key = |key| SystemEvent::KeyDown {
+        key,
+        mods: KeyMod::NONE,
+    };
+    assert_eq!(
+        transfer.on_event(&key(KeyCode::Enter)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        transfer.on_event(&key(KeyCode::Right)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        transfer.on_event(&key(KeyCode::Space)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        transfer.on_event(&key(KeyCode::Enter)),
+        EventResult::Handled
+    );
+
+    assert_eq!(
+        changes.borrow().as_slice(),
+        &[
+            (vec![], vec!["a".to_string()], MoveDirection::LeftToRight),
+            (vec!["a".to_string()], vec![], MoveDirection::RightToLeft),
+        ]
     );
 }
 
@@ -514,5 +735,76 @@ fn watermark_normalizes_non_finite_and_unbounded_configuration() {
             x_offset: 0.0,
             y_offset: 0.0,
         }
+    );
+}
+
+#[test]
+fn watermark_rotation_changes_the_text_baseline_and_opacity_multiplies_color_alpha() {
+    let watermark = Watermark::new("内部")
+        .color(Color::from_rgba(10, 20, 30, 20))
+        .opacity(0.5)
+        .rotate(-30.0);
+
+    assert_eq!(
+        watermark.effective_color_for_test(),
+        Color::from_rgba(10, 20, 30, 10)
+    );
+    let origin = Point::new(100.0, 80.0);
+    let advanced = watermark.rotated_advance_for_test(origin, 20.0);
+    assert!((advanced.x - 117.320_51).abs() < 0.001);
+    assert!((advanced.y - 70.0).abs() < 0.001);
+
+    let horizontal = Watermark::new("内部").rotate(0.0);
+    assert_eq!(
+        horizontal.rotated_advance_for_test(origin, 20.0),
+        Point::new(120.0, 80.0)
+    );
+
+    let frame = Rect::new(0.0, 0.0, 160.0, 90.0);
+    let horizontal_pixels = render_watermark(
+        &Watermark::new("INTERNAL")
+            .color(Color::from_rgba(10, 20, 30, 20))
+            .opacity(0.5)
+            .rotate(0.0)
+            .gap(1_000.0, 1_000.0)
+            .offset(20.0, 50.0),
+        frame,
+    );
+    let rotated_pixels = render_watermark(
+        &Watermark::new("INTERNAL")
+            .color(Color::from_rgba(10, 20, 30, 20))
+            .opacity(0.5)
+            .rotate(-30.0)
+            .gap(1_000.0, 1_000.0)
+            .offset(20.0, 50.0),
+        frame,
+    );
+    let opaque_component_pixels = render_watermark(
+        &Watermark::new("INTERNAL")
+            .color(Color::from_rgba(10, 20, 30, 20))
+            .opacity(1.0)
+            .rotate(-30.0)
+            .gap(1_000.0, 1_000.0)
+            .offset(20.0, 50.0),
+        frame,
+    );
+    assert!(horizontal_pixels.iter().any(|pixel| pixel >> 24 > 0));
+    assert!(
+        rotated_pixels
+            .iter()
+            .map(|pixel| pixel >> 24)
+            .max()
+            .unwrap_or(0)
+            < opaque_component_pixels
+                .iter()
+                .map(|pixel| pixel >> 24)
+                .max()
+                .unwrap_or(0),
+        "component opacity must multiply, not replace, the configured color alpha"
+    );
+    assert!(
+        non_transparent_height(&rotated_pixels, 160)
+            > non_transparent_height(&horizontal_pixels, 160),
+        "rotating the baseline must alter the actual rendered tile geometry"
     );
 }

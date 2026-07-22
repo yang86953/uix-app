@@ -293,9 +293,36 @@ component! {
             if text_area.w > 0.0 {
                 ctx.push_clip(text_area);
                 if let Some((start, end)) = self.current_range() {
+                    let start = start.format();
+                    let end = end.format();
+                    let start_width = ctx.measure_text(&start, font_size).w;
+                    let range_icon_gap = 4.0 * scale;
+                    let range_icon_width = 16.0 * scale;
                     ctx.draw_text(
-                        &format!("{}  →  {}", start.format(), end.format()),
+                        &start,
                         Point::new(text_left, text_y),
+                        text_color,
+                        font_size,
+                    );
+                    let range_icon_frame = Rect::new(
+                        text_left + start_width + range_icon_gap,
+                        text_area.y,
+                        range_icon_width,
+                        text_area.h,
+                    );
+                    crate::ui::widgets::icon::Icon::paint_in_frame(
+                        ctx,
+                        "arrow-right",
+                        range_icon_frame,
+                        text_secondary,
+                        font_size,
+                    );
+                    ctx.draw_text(
+                        &end,
+                        Point::new(
+                            range_icon_frame.x + range_icon_frame.w + range_icon_gap,
+                            text_y,
+                        ),
                         text_color,
                         font_size,
                     );
@@ -309,7 +336,7 @@ component! {
                 }
                 ctx.pop_clip();
             }
-            crate::ui::widgets::icon::paint_icon_in_frame(
+            crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 "calendar",
                 icon_frame,

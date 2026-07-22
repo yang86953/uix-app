@@ -1,4 +1,5 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
 use crate::component;
 
@@ -7,7 +8,7 @@ use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
 use crate::ui::animation::{presets, AnimationConfig, TransitionPlayer};
 use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, KeyCode, MouseButton, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyCode, MouseButton, State, SystemEvent, WidgetTree};
 
 const POPOVER_WIDTH: f32 = 220.0;
 const POPOVER_HEIGHT: f32 = 100.0;
@@ -52,6 +53,13 @@ component! {
         placement: PopoverPlacement,
         trigger: PopoverTrigger,
         arrow: bool,
+        background: Option<Color>,
+        custom_trigger: bool,
+        #[snapshot(skip)]
+        custom_trigger_view:
+            Option<Rc<RefCell<Option<crate::ui::view::ViewNode>>>>,
+        #[snapshot(skip)]
+        open_binding: Option<State<bool>>,
         timer: f32,
         enter_animation: AnimationConfig,
         leave_animation: AnimationConfig,
@@ -79,9 +87,18 @@ component! {
         children.iter().map(|child| (child.id, Self::normalize_frame(frame))).collect()
     }
 
+    build_view_children => (&self) -> Vec<crate::ui::view::ViewNode> {
+        self.custom_trigger_view
+            .as_ref()
+            .and_then(|view| view.borrow_mut().take())
+            .into_iter()
+            .collect()
+    }
+
     tab_index => (&self) -> i32 { 1 }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        self.sync_bound_open();
         match event {
             SystemEvent::FocusIn => {
                 self.focused = true;
@@ -172,14 +189,11 @@ component! {
                 }
             }
             PopoverTrigger::Hover => {
-                match event {
-                    SystemEvent::PointerEnter => {
-                        self.hovered = true;
-                        self.open();
-                        self.timer = 0.0;
-                        return EventResult::Handled;
-                    }
-                    _ => {}
+                if let SystemEvent::PointerEnter = event {
+                    self.hovered = true;
+                    self.open();
+                    self.timer = 0.0;
+                    return EventResult::Handled;
                 }
             }
             PopoverTrigger::Focus => {}
@@ -221,7 +235,9 @@ component! {
             popup_geometry.popup.h,
         ));
 
-        let bg = ctx.tokens().color_bg_elevated();
+        let bg = self
+            .background
+            .unwrap_or_else(|| ctx.tokens().color_bg_elevated());
         let border = ctx.tokens().color_border();
         let text_color = ctx.tokens().color_text();
         let text_secondary = ctx.tokens().color_text_secondary();
@@ -249,7 +265,9 @@ component! {
             if self.focused && tree.keyboard_focus_visible() { 2.0 } else { 1.0 },
             r,
         );
-        Self::paint_elided_text(ctx, "Popover", frame, text_secondary, 12.0, true);
+        if !self.custom_trigger {
+            Self::paint_elided_text(ctx, "Popover", frame, text_secondary, 12.0, true);
+        }
 
         if self.is_present() && popup_geometry.popup.w > 0.0 && popup_geometry.popup.h > 0.0 {
             let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
@@ -341,7 +359,7 @@ component! {
         let popup = self
             .transition_sweep_rect(popup)
             .intersect(&self.surface_or_fallback(frame))
-            .unwrap_or(Rect::zero());
+            .unwrap_or_default();
         Some(
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
                 .bounds(popup)
@@ -390,6 +408,10 @@ impl Popover {
             placement: PopoverPlacement::Top,
             trigger: PopoverTrigger::Click,
             arrow: true,
+            background: None,
+            custom_trigger: false,
+            custom_trigger_view: None,
+            open_binding: None,
             timer: 0.0,
             enter_animation: presets::tooltip_enter(),
             leave_animation: presets::tooltip_exit(),
@@ -427,6 +449,19 @@ impl Popover {
         self
     }
 
+    pub fn bg(mut self, color: Color) -> Self {
+        self.background = Some(color);
+        self
+    }
+
+    pub fn trigger_view<V: crate::ui::view::View>(mut self, trigger: V) -> Self {
+        self.custom_trigger = true;
+        self.custom_trigger_view = Some(Rc::new(RefCell::new(Some(crate::ui::view::View::build(
+            trigger,
+        )))));
+        self
+    }
+
     /// 设置打开时播放的动画；已打开时从当前声明重新开始进场。
     pub fn enter_animation(mut self, animation: AnimationConfig) -> Self {
         self.enter_animation = animation;
@@ -456,6 +491,26 @@ impl Popover {
     }
 
     pub fn open(&mut self) {
+        self.open_now();
+        self.write_bound_open(true);
+    }
+
+    /// 将打开状态双向绑定到外部 [`State<bool>`]。
+    pub fn controlled_open(mut self, state: &State<bool>) -> Self {
+        self.open_binding = Some(state.clone());
+        self.apply_bound_open(state.get());
+        self
+    }
+
+    pub fn set_open(&mut self, open: bool) {
+        if open {
+            self.open();
+        } else {
+            self.close();
+        }
+    }
+
+    fn open_now(&mut self) {
         self.pressed_target = None;
         self.pressed_key = None;
         self.visible = true;
@@ -465,6 +520,11 @@ impl Popover {
     }
 
     pub fn close(&mut self) {
+        self.close_now();
+        self.write_bound_open(false);
+    }
+
+    fn close_now(&mut self) {
         self.pressed_target = None;
         self.pressed_key = None;
         if !self.is_present() {
@@ -487,8 +547,16 @@ impl Popover {
         self.placement = next.placement;
         self.trigger = next.trigger;
         self.arrow = next.arrow;
+        self.background = next.background;
+        self.custom_trigger = next.custom_trigger;
+        self.custom_trigger_view = next.custom_trigger_view;
+        let controlled_open = next.open_binding.as_ref().map(|_| next.visible);
+        self.open_binding = next.open_binding;
         self.enter_animation = next.enter_animation;
         self.leave_animation = next.leave_animation;
+        if let Some(open) = controlled_open {
+            self.apply_bound_open(open);
+        }
         if geometry_changed || trigger_changed {
             self.cancel_pending_activation();
         }
@@ -499,6 +567,34 @@ impl Popover {
             self.close();
         } else {
             self.open();
+        }
+    }
+
+    fn sync_bound_open(&mut self) {
+        let open = self.open_binding.as_ref().map(State::get);
+        if let Some(open) = open {
+            self.apply_bound_open(open);
+        }
+    }
+
+    fn apply_bound_open(&mut self, open: bool) {
+        if open {
+            if !self.visible || self.closing {
+                self.open_now();
+            }
+        } else if self.visible && !self.closing {
+            self.close_now();
+        } else if !self.is_present() {
+            self.visible = false;
+            self.closing = false;
+        }
+    }
+
+    fn write_bound_open(&self, open: bool) {
+        if let Some(state) = self.open_binding.as_ref() {
+            if state.get() != open {
+                state.set(open);
+            }
         }
     }
 
@@ -546,7 +642,7 @@ impl Popover {
         let bounds = frame.union(&self.transition_sweep_rect(popup));
         bounds
             .intersect(&self.surface_or_fallback(frame))
-            .unwrap_or(Rect::zero())
+            .unwrap_or_default()
     }
 
     fn intrinsic_size(&self) -> Size {
