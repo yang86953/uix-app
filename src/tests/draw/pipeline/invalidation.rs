@@ -101,6 +101,31 @@ fn merge_same_node_paint_rects() {
 }
 
 #[test]
+fn duplicate_layout_is_compacted_but_still_advances_revision() {
+    let mut q = InvalidationQueue::new();
+    let id = NodeId::new(4);
+    q.push(Invalidation::Layout(id));
+    let before_duplicate = q.revision();
+
+    q.push(Invalidation::Layout(id));
+
+    assert_eq!(
+        q.items.len(),
+        1,
+        "duplicate layout work should be compacted"
+    );
+    assert!(
+        !q.clear_if_revision(before_duplicate),
+        "a repeated request is still new work and must prevent conditional clear"
+    );
+    assert_eq!(q.layout_roots(), std::collections::HashSet::from([id]));
+
+    q.clear_layout();
+    q.push(Invalidation::Layout(id));
+    assert_eq!(q.items, vec![Invalidation::Layout(id)]);
+}
+
+#[test]
 fn node_needs_paint_targeted() {
     let mut q = InvalidationQueue::new();
     q.push(Invalidation::Paint {

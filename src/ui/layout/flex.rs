@@ -6,7 +6,7 @@ use super::*;
 /// cross-axis alignment via AlignItems and per-child align_self,
 /// flex-grow/shrink distribution, flex-basis, min_size/max_size constraints,
 /// and multi-line wrapping.
-pub fn compute_flex_layout(input: &FlexInput) -> FlexOutput {
+pub fn compute_flex_layout(input: &FlexInput<'_>) -> FlexOutput {
     let inner = Rect {
         x: input.container.x + input.padding.left,
         y: input.container.y + input.padding.top,
@@ -14,7 +14,7 @@ pub fn compute_flex_layout(input: &FlexInput) -> FlexOutput {
         h: (input.container.h - input.padding.vertical()).max(0.0),
     };
 
-    let count = input.children.len().min(input.child_sizes.len());
+    let count = input.children.len();
     if count == 0 {
         return FlexOutput {
             child_rects: Vec::new(),
@@ -43,18 +43,18 @@ pub fn compute_flex_layout(input: &FlexInput) -> FlexOutput {
     let mut cross_sizes = vec![0.0f32; count];
     let mut total_flex_grow = 0.0f32;
 
-    for ((base_main, cross), (child, child_size)) in base_main_sizes
+    for ((base_main, cross), child) in base_main_sizes
         .iter_mut()
         .zip(&mut cross_sizes)
-        .zip(input.children.iter().zip(&input.child_sizes))
+        .zip(input.children)
     {
         let basis = match child.flex_basis {
-            Some(v) if v >= 0.0 => v,
-            _ => main_size(child_size),
+            Some(v) if v.is_finite() && v >= 0.0 => v,
+            _ => finite_non_negative(main_size(&child.measured_size)),
         };
         *base_main = basis;
-        *cross = cross_size(child_size);
-        total_flex_grow += child.flex_grow;
+        *cross = finite_non_negative(cross_size(&child.measured_size));
+        total_flex_grow += flex_factor(child.flex_grow);
     }
 
     if input.wrap {
@@ -112,8 +112,34 @@ fn make_size_from(is_row: bool, main: f32, cross: f32) -> Size {
     }
 }
 
-fn child_margin(input: &FlexInput, index: usize) -> EdgeInsets {
-    input.child_margins.get(index).copied().unwrap_or_default()
+fn child_margin(input: &FlexInput<'_>, index: usize) -> EdgeInsets {
+    let margin = input.children[index].margin;
+    EdgeInsets::new(
+        finite_or_zero(margin.left),
+        finite_or_zero(margin.top),
+        finite_or_zero(margin.right),
+        finite_or_zero(margin.bottom),
+    )
+}
+
+fn finite_non_negative(value: f32) -> f32 {
+    if value.is_finite() {
+        value.max(0.0)
+    } else {
+        0.0
+    }
+}
+
+fn finite_or_zero(value: f32) -> f32 {
+    if value.is_finite() {
+        value
+    } else {
+        0.0
+    }
+}
+
+fn flex_factor(value: f32) -> f32 {
+    finite_non_negative(value)
 }
 
 fn margin_main(margin: EdgeInsets, is_row: bool) -> f32 {
@@ -157,7 +183,7 @@ fn distribute_flex_grow(
 ) {
     if total_flex_grow > 0.0 && remaining > 0.0 {
         for (main, child) in base.iter_mut().zip(children) {
-            *main += remaining * (child.flex_grow / total_flex_grow);
+            *main += remaining * (flex_factor(child.flex_grow) / total_flex_grow);
         }
     }
 }
@@ -166,14 +192,14 @@ fn distribute_shrink(base: &mut [f32], overflow: f32, children: &[FlexChild]) {
     let total_shrink_weight: f32 = base
         .iter()
         .zip(children.iter())
-        .map(|(&sz, ch)| ch.flex_shrink * sz)
+        .map(|(&sz, ch)| flex_factor(ch.flex_shrink) * sz)
         .sum();
     if total_shrink_weight > 0.0 {
         for (main, child) in base.iter_mut().zip(children) {
             if *main <= 0.0 {
                 continue;
             }
-            let weight = child.flex_shrink * *main / total_shrink_weight;
+            let weight = flex_factor(child.flex_shrink) * *main / total_shrink_weight;
             let reduction = (overflow * weight).min(*main);
             *main -= reduction;
         }
@@ -218,7 +244,7 @@ fn compute_justify(remaining: f32, count: usize, gap: f32, justify: JustifyConte
     reason = "the slices and axis flags are state for one flex layout pass"
 )]
 fn compute_single_line(
-    input: &FlexInput,
+    input: &FlexInput<'_>,
     inner: &Rect,
     is_row: bool,
     is_reverse: bool,
@@ -230,6 +256,7 @@ fn compute_single_line(
     total_flex_grow: f32,
 ) -> FlexOutput {
     let count = base_main_sizes.len();
+    let gap = finite_or_zero(input.gap);
     // intrinsic_main（#165：未设主轴尺寸，由子项撑开）必须跳过 shrink：
     // 父级常先按 measure=0 分到过小 frame；若此时 shrink，Label 等会被压成 h=0，
     // 文字仍绘制 → 标题/描述重叠（首页快捷导航复现）。
@@ -249,7 +276,7 @@ fn compute_single_line(
         .map(|i| margin_main(child_margin(input, i), is_row))
         .sum();
     let total_base: f32 = base_main_sizes.iter().sum::<f32>() + total_margin_main;
-    let gaps = input.gap * (count as f32 - 1.0);
+    let gaps = gap * (count as f32 - 1.0);
     let overflow = if skip_shrink {
         0.0
     } else {
@@ -257,7 +284,7 @@ fn compute_single_line(
     };
 
     if overflow > 0.0 {
-        distribute_shrink(base_main_sizes, overflow, &input.children);
+        distribute_shrink(base_main_sizes, overflow, input.children);
     }
     let total_after: f32 = base_main_sizes.iter().sum::<f32>() + total_margin_main;
     let mut remaining = if container_main > 0.0 {
@@ -265,7 +292,7 @@ fn compute_single_line(
     } else {
         0.0
     };
-    distribute_flex_grow(base_main_sizes, remaining, &input.children, total_flex_grow);
+    distribute_flex_grow(base_main_sizes, remaining, input.children, total_flex_grow);
 
     // Apply Stretch justify-content: distribute remaining space as growth
     let total_after: f32 = base_main_sizes.iter().sum::<f32>() + total_margin_main;
@@ -282,7 +309,7 @@ fn compute_single_line(
     }
 
     // Clamp to min/max
-    clamp_sizes(base_main_sizes, cross_sizes, &input.children, is_row);
+    clamp_sizes(base_main_sizes, cross_sizes, input.children, is_row);
 
     // Redistribute: space freed by max_size clamping is given back
     // to children with remaining flex_grow capacity. Loop up to 3 rounds
@@ -295,8 +322,8 @@ fn compute_single_line(
             0.0
         };
         if leftover > 0.0 && total_flex_grow > 0.0 {
-            distribute_flex_grow(base_main_sizes, leftover, &input.children, total_flex_grow);
-            clamp_sizes(base_main_sizes, cross_sizes, &input.children, is_row);
+            distribute_flex_grow(base_main_sizes, leftover, input.children, total_flex_grow);
+            clamp_sizes(base_main_sizes, cross_sizes, input.children, is_row);
         } else {
             break;
         }
@@ -311,7 +338,7 @@ fn compute_single_line(
         0.0
     };
     let (effective_gap, start_offset) =
-        compute_justify(remaining, count, input.gap, input.justify_content);
+        compute_justify(remaining, count, gap, input.justify_content);
 
     // Phase 4: position children
     let mut child_rects = Vec::with_capacity(count);
@@ -411,7 +438,7 @@ fn compute_single_line(
     reason = "the slices and axis flags are state for one wrapped flex layout pass"
 )]
 fn compute_wrapped(
-    input: &FlexInput,
+    input: &FlexInput<'_>,
     inner: &Rect,
     is_row: bool,
     is_reverse: bool,
@@ -422,6 +449,7 @@ fn compute_wrapped(
     _total_flex_grow: f32,
 ) -> FlexOutput {
     let count = base_main_sizes.len();
+    let gap = finite_or_zero(input.gap);
 
     // Build lines: each line is a range of child indices
     struct Line {
@@ -434,7 +462,7 @@ fn compute_wrapped(
 
     for (i, &base_main_size) in base_main_sizes.iter().enumerate() {
         let child_main = base_main_size + margin_main(child_margin(input, i), is_row);
-        let item_gap = if i > line_start { input.gap } else { 0.0 };
+        let item_gap = if i > line_start { gap } else { 0.0 };
 
         if line_main + item_gap + child_main > container_main && line_main > 0.0 {
             lines.push(Line {
@@ -462,7 +490,7 @@ fn compute_wrapped(
     }
 
     // Track cross-axis position for each line
-    let line_gap = input.gap;
+    let line_gap = gap;
     let mut line_cross_positions = Vec::with_capacity(lines.len());
     let mut line_max_cross = Vec::with_capacity(lines.len());
     let mut cursor_cross = 0.0f32;
@@ -474,7 +502,7 @@ fn compute_wrapped(
             .sum();
         let line_base: f32 =
             base_main_sizes[line.start..line.end].iter().sum::<f32>() + line_margin_main;
-        let line_gaps = input.gap * (line_count as f32 - 1.0).max(0.0);
+        let line_gaps = gap * (line_count as f32 - 1.0).max(0.0);
         let overflow = line_base + line_gaps - container_main;
 
         // Shrink within line
@@ -494,7 +522,7 @@ fn compute_wrapped(
             .max(0.0);
         let line_grow: f32 = input.children[line.start..line.end]
             .iter()
-            .map(|c| c.flex_grow)
+            .map(|c| flex_factor(c.flex_grow))
             .sum();
         distribute_flex_grow(
             &mut base_main_sizes[line.start..line.end],
@@ -524,7 +552,7 @@ fn compute_wrapped(
     }
 
     // Clamp to min/max (across all children)
-    clamp_sizes(base_main_sizes, cross_sizes, &input.children, is_row);
+    clamp_sizes(base_main_sizes, cross_sizes, input.children, is_row);
 
     // Position children line by line
     let mut child_rects = vec![Rect::zero(); count];
@@ -541,7 +569,7 @@ fn compute_wrapped(
 
     for (li, line) in lines.iter().enumerate() {
         let line_count = line.end - line.start;
-        let line_gaps_total = input.gap * (line_count as f32 - 1.0).max(0.0);
+        let line_gaps_total = gap * (line_count as f32 - 1.0).max(0.0);
         let line_margin_main: f32 = (line.start..line.end)
             .map(|i| margin_main(child_margin(input, i), is_row))
             .sum();
@@ -549,7 +577,7 @@ fn compute_wrapped(
             base_main_sizes[line.start..line.end].iter().sum::<f32>() + line_margin_main;
         let remaining = (container_main - total_line_main - line_gaps_total).max(0.0);
         let (effective_gap, start_offset) =
-            compute_justify(remaining, line_count, input.gap, input.justify_content);
+            compute_justify(remaining, line_count, gap, input.justify_content);
 
         let mut cursor_main = start_offset;
 

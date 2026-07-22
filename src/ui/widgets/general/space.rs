@@ -105,16 +105,15 @@ component! {
             return Vec::new();
         }
 
-        let child_sizes: Vec<Size> = children.iter().map(|child| child.measured_size).collect();
-
         let flex_children: Vec<FlexChild> = children
             .iter()
             .map(|child| FlexChild {
-                    flex_grow: child.flex_grow,
-                    // 禁止子节点收缩——Phase 2 负责扩展容器适应内容
-                    flex_shrink: 0.0,
-                    align_self: child.align_self,
-                    ..FlexChild::default()
+                flex_grow: child.flex_grow,
+                // 禁止子节点收缩——Phase 2 负责扩展容器适应内容
+                flex_shrink: 0.0,
+                align_self: child.align_self,
+                measured_size: child.measured_size,
+                ..FlexChild::default()
             })
             .collect();
 
@@ -129,9 +128,7 @@ component! {
             gap: self.space_size.value(),
             padding: crate::core::EdgeInsets::zero(),
             container: frame,
-            children: flex_children,
-            child_sizes,
-            child_margins: vec![crate::core::EdgeInsets::zero(); children.len()],
+            children: &flex_children,
             justify_content: self.justify,
             align_items: self.align,
             intrinsic_main,
@@ -160,6 +157,10 @@ component! {
 }
 
 impl Space {
+    pub(crate) fn explicit_size_locks(&self) -> (bool, bool) {
+        (self.fixed_width.is_some(), self.fixed_height.is_some())
+    }
+
     pub fn new() -> Self {
         Self {
             children: WidgetChildren::new(),

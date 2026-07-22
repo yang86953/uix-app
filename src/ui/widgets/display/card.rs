@@ -321,14 +321,13 @@ component! {
                 .collect();
         }
 
-        let child_sizes: Vec<Size> = children.iter().map(|child| child.measured_size).collect();
-
         let flex_children: Vec<FlexChild> = children
             .iter()
             .map(|child| FlexChild {
                 flex_grow: child.flex_grow,
                 flex_shrink: child.flex_shrink,
                 align_self: child.align_self,
+                measured_size: child.measured_size,
                 ..FlexChild::default()
             })
             .collect();
@@ -338,8 +337,7 @@ component! {
             gap: 0.0,
             padding: EdgeInsets::zero(),
             container: inner,
-            children: flex_children,
-            child_sizes,
+            children: &flex_children,
             justify_content: JustifyContent::Start,
             align_items: AlignItems::Stretch,
             ..FlexInput::default()

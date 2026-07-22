@@ -156,16 +156,16 @@ impl WidgetTree {
 
     /// 向上传播 Layout 失效到所有祖先。
     pub(crate) fn propagate_layout_invalidation(&mut self, from: WidgetId) {
-        let parents: Vec<WidgetId> = {
-            let mut chain = Vec::new();
-            let mut current = self.get(from).and_then(|n| n.parent());
-            while let Some(pid) = current {
-                chain.push(pid);
-                current = self.get(pid).and_then(|n| n.parent());
-            }
-            chain
-        };
-        self.push_invalidations(parents.into_iter().map(Invalidation::Layout));
+        let mut chain = std::mem::take(&mut self.layout_ancestor_scratch);
+        chain.clear();
+        let mut current = self.get(from).and_then(|n| n.parent());
+        while let Some(pid) = current {
+            chain.push(pid);
+            current = self.get(pid).and_then(|n| n.parent());
+        }
+        self.push_invalidations(chain.iter().copied().map(Invalidation::Layout));
+        chain.clear();
+        self.layout_ancestor_scratch = chain;
     }
 
     /// 标记节点 Paint 失效（精确 dirty_rect）。

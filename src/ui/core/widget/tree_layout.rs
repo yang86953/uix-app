@@ -53,11 +53,9 @@ impl WidgetTree {
                     .component()
                     .as_any()
                     .downcast_ref::<crate::ui::widgets::ScrollView>()
-                    .and_then(|scroll_view| match scroll_view.snapshot_fields() {
-                        crate::ui::SnapshotFields::ScrollView { direction, .. } => {
-                            Some((direction.can_scroll_x(), direction.can_scroll_y()))
-                        }
-                        _ => None,
+                    .map(|scroll_view| {
+                        let direction = scroll_view.scroll_direction();
+                        (direction.can_scroll_x(), direction.can_scroll_y())
                     })
                     .unwrap_or((false, false));
                 return Some(axes);
@@ -72,23 +70,23 @@ impl WidgetTree {
         let Some(node) = self.get(id) else {
             return (false, false);
         };
-        match node.component().snapshot_fields() {
-            crate::ui::SnapshotFields::Container { style }
-            | crate::ui::SnapshotFields::Grid { style, .. } => {
-                (style.width.is_some(), style.height.is_some())
-            }
-            crate::ui::SnapshotFields::Space {
-                fixed_width,
-                fixed_height,
-                ..
-            } => (fixed_width.is_some(), fixed_height.is_some()),
-            crate::ui::SnapshotFields::ScrollView {
-                fixed_width,
-                fixed_height,
-                ..
-            } => (fixed_width.is_some(), fixed_height.is_some()),
-            _ => (false, false),
+        let component = node.component().as_any();
+        if let Some(container) = component.downcast_ref::<crate::ui::widgets::Container>() {
+            return (
+                container.style.width.is_some(),
+                container.style.height.is_some(),
+            );
         }
+        if let Some(grid) = component.downcast_ref::<crate::ui::widgets::Grid>() {
+            return (grid.style.width.is_some(), grid.style.height.is_some());
+        }
+        if let Some(space) = component.downcast_ref::<crate::ui::widgets::Space>() {
+            return space.explicit_size_locks();
+        }
+        component
+            .downcast_ref::<crate::ui::widgets::ScrollView>()
+            .map(crate::ui::widgets::ScrollView::explicit_size_locks)
+            .unwrap_or((false, false))
     }
 
     /// 返回 Layout 失效影响的子树先序遍历顺序。

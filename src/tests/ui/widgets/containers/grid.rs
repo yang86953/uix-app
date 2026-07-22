@@ -136,3 +136,90 @@ fn explicit_columns_disable_responsive_configuration() {
     assert!(!grid.is_responsive());
     assert_eq!(grid.style.grid_template_columns.len(), 2);
 }
+
+#[test]
+fn grid_non_stretch_alignment_uses_intrinsic_size_inside_margins() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(
+        Grid::new()
+            .columns(vec![GridTrack::Px(100.0)])
+            .rows(vec![GridTrack::Px(80.0)])
+            .justify(JustifyContent::Center)
+            .align(crate::ui::layout::AlignItems::End),
+    ));
+    let child = tree.add_child(
+        root,
+        Box::new(
+            Container::new()
+                .size(20.0, 10.0)
+                .margin(EdgeInsets::new(5.0, 7.0, 9.0, 11.0)),
+        ),
+    );
+    tree.get_mut(root)
+        .expect("grid root")
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 80.0));
+    tree.push_layout_invalidation(root);
+    tree.layout();
+
+    let frame = tree.get(child).expect("grid child").frame();
+    assert_eq!(frame, Rect::new(38.0, 59.0, 20.0, 10.0));
+}
+
+#[test]
+fn auto_placed_grid_span_is_clamped_to_explicit_columns() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(
+        Grid::new()
+            .columns(vec![GridTrack::Px(50.0), GridTrack::Px(50.0)])
+            .rows(vec![GridTrack::Px(40.0)])
+            .justify(JustifyContent::Stretch),
+    ));
+    let child = tree.add_child(
+        root,
+        Box::new(
+            Container::new()
+                .style(
+                    Style::container()
+                        .with_grid_column_span(3)
+                        .with_grid_row_span(3),
+                )
+                .size(10.0, 10.0),
+        ),
+    );
+    tree.get_mut(root)
+        .expect("grid root")
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 120.0));
+    tree.push_layout_invalidation(root);
+    tree.layout();
+
+    assert_eq!(
+        tree.get(child).expect("spanning child").frame(),
+        Rect::new(0.0, 0.0, 100.0, 120.0)
+    );
+}
+
+#[test]
+fn invalid_grid_tracks_and_gaps_cannot_poison_child_geometry() {
+    let frames = responsive_child_frames(
+        Grid::new()
+            .columns(vec![
+                GridTrack::Px(f32::NAN),
+                GridTrack::Fr(-1.0),
+                GridTrack::Fr(1.0),
+            ])
+            .rows(vec![GridTrack::Px(f32::INFINITY)])
+            .gap(f32::NAN)
+            .justify(JustifyContent::Stretch),
+        Rect::new(0.0, 0.0, 120.0, 40.0),
+        1,
+    );
+
+    assert_eq!(frames.len(), 1);
+    let frame = frames[0];
+    assert!(
+        [frame.x, frame.y, frame.w, frame.h]
+            .into_iter()
+            .all(f32::is_finite),
+        "invalid grid inputs must be normalized, got {frame:?}"
+    );
+}

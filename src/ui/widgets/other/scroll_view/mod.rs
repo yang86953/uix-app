@@ -388,6 +388,14 @@ component! {
 }
 
 impl ScrollView {
+    pub(crate) fn scroll_direction(&self) -> ScrollDirection {
+        self.direction
+    }
+
+    pub(crate) fn explicit_size_locks(&self) -> (bool, bool) {
+        (self.fixed_width.is_some(), self.fixed_height.is_some())
+    }
+
     fn intrinsic_size(&self) -> Size {
         // flex_grow 视口：未固定边以 0 为 basis，由父级分得剩余客户区；
         // 否则默认 300×200 会阻止窗口缩小时收缩，内容被窗口裁切且 max_scroll=0。

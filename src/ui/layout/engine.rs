@@ -290,15 +290,14 @@ impl LayoutEngine for FlexLayout {
         }
 
         // 标准 FlexBox 模式
-        let child_sizes: Vec<Size> = children.iter().map(|c| c.measured_size).collect();
-        let child_margins: Vec<_> = children.iter().map(|c| c.margin).collect();
-
         let flex_children: Vec<FlexChild> = children
             .iter()
             .map(|c| FlexChild {
                 flex_grow: c.flex_grow,
                 flex_shrink: c.flex_shrink,
                 align_self: c.align_self,
+                measured_size: c.measured_size,
+                margin: c.margin,
                 ..FlexChild::default()
             })
             .collect();
@@ -309,9 +308,7 @@ impl LayoutEngine for FlexLayout {
             gap: self.gap,
             padding: crate::core::EdgeInsets::zero(),
             container: content_rect,
-            children: flex_children,
-            child_sizes,
-            child_margins,
+            children: &flex_children,
             justify_content: self.justify,
             align_items: self.align,
             intrinsic_main: self.intrinsic_main,
@@ -341,7 +338,7 @@ fn overflow_layout(
         FlexDirection::RowReverse | FlexDirection::ColumnReverse
     );
     let count = children.len();
-    let gap = engine.gap;
+    let gap = finite_or_zero(engine.gap);
 
     let container_main = if is_row {
         content_rect.w
@@ -354,24 +351,22 @@ fn overflow_layout(
         content_rect.w
     };
 
-    let main_sizes: Vec<f32> = children
-        .iter()
-        .map(|c| {
-            let pref = if is_row {
-                c.measured_size.w
-            } else {
-                c.measured_size.h
-            };
-            pref.max(0.0)
-        })
-        .collect();
-
     let total_margin_main: f32 = children
         .iter()
-        .map(|child| child.margin_main(engine.direction))
+        .map(|child| finite_or_zero(child.margin_main(engine.direction)))
         .sum();
-    let total_main: f32 =
-        main_sizes.iter().sum::<f32>() + total_margin_main + gap * (count as f32 - 1.0).max(0.0);
+    let total_main: f32 = children
+        .iter()
+        .map(|child| {
+            finite_non_negative(if is_row {
+                child.measured_size.w
+            } else {
+                child.measured_size.h
+            })
+        })
+        .sum::<f32>()
+        + total_margin_main
+        + gap * (count as f32 - 1.0).max(0.0);
     let total_size = if is_row {
         Size::new(total_main, container_cross)
     } else {
@@ -385,20 +380,24 @@ fn overflow_layout(
     };
     let mut positions = Vec::with_capacity(count);
 
-    for i in 0..count {
-        let main = main_sizes[i];
-        let cross_size = if is_row {
-            children[i].measured_size.h
+    for child in children {
+        let main = finite_non_negative(if is_row {
+            child.measured_size.w
         } else {
-            children[i].measured_size.w
+            child.measured_size.h
+        });
+        let cross_size = if is_row {
+            finite_non_negative(child.measured_size.h)
+        } else {
+            finite_non_negative(child.measured_size.w)
         };
         let margin_cross = if is_row {
-            children[i].margin.vertical()
+            finite_or_zero(child.margin.vertical())
         } else {
-            children[i].margin.horizontal()
+            finite_or_zero(child.margin.horizontal())
         };
 
-        let cross_align = children[i].align_self.unwrap_or(engine.align);
+        let cross_align = child.align_self.unwrap_or(engine.align);
         let child_cross = if cross_align == AlignItems::Stretch {
             (container_cross - margin_cross).max(0.0)
         } else {
@@ -414,15 +413,19 @@ fn overflow_layout(
 
         let (x, y, w, h) = if is_row {
             (
-                content_rect.x + cursor + children[i].margin_start(engine.direction),
-                content_rect.y + cross_offset + children[i].margin_cross_start(engine.direction),
+                content_rect.x + cursor + finite_or_zero(child.margin_start(engine.direction)),
+                content_rect.y
+                    + cross_offset
+                    + finite_or_zero(child.margin_cross_start(engine.direction)),
                 main,
                 child_cross,
             )
         } else {
             (
-                content_rect.x + cross_offset + children[i].margin_cross_start(engine.direction),
-                content_rect.y + cursor + children[i].margin_start(engine.direction),
+                content_rect.x
+                    + cross_offset
+                    + finite_or_zero(child.margin_cross_start(engine.direction)),
+                content_rect.y + cursor + finite_or_zero(child.margin_start(engine.direction)),
                 child_cross,
                 main,
             )
@@ -430,7 +433,7 @@ fn overflow_layout(
 
         positions.push(Rect::new(x, y, w, h));
 
-        let occupied_main = main + children[i].margin_main(engine.direction);
+        let occupied_main = main + finite_or_zero(child.margin_main(engine.direction));
         if is_reverse {
             cursor -= occupied_main + gap;
         } else {
@@ -441,6 +444,22 @@ fn overflow_layout(
     LayoutOutput {
         positions,
         total_size,
+    }
+}
+
+fn finite_non_negative(value: f32) -> f32 {
+    if value.is_finite() {
+        value.max(0.0)
+    } else {
+        0.0
+    }
+}
+
+fn finite_or_zero(value: f32) -> f32 {
+    if value.is_finite() {
+        value
+    } else {
+        0.0
     }
 }
 
@@ -493,6 +512,51 @@ impl GridLayout {
         self.justify_items = j;
         self
     }
+
+    pub(crate) fn layout_with_tracks(
+        &self,
+        content_rect: Rect,
+        columns: &[GridTrack],
+        rows: &[GridTrack],
+        children: &[LayoutChild],
+    ) -> LayoutOutput {
+        if columns.is_empty() || children.is_empty() {
+            return LayoutOutput {
+                positions: Vec::new(),
+                total_size: Size::new(content_rect.w, content_rect.h),
+            };
+        }
+
+        let grid_children: Vec<GridChild> = children
+            .iter()
+            .map(|c| GridChild {
+                cell: c.grid_cell,
+                col_span: c.grid_column_span,
+                row_span: c.grid_row_span,
+                measured_size: c.measured_size,
+                margin: c.margin,
+                align: None,
+                justify: None,
+            })
+            .collect();
+
+        let output = compute_grid_layout(&GridInput {
+            container: content_rect,
+            columns,
+            rows,
+            col_gap: self.col_gap,
+            row_gap: self.row_gap,
+            padding: crate::core::EdgeInsets::zero(),
+            children: &grid_children,
+            align_items: self.align_items,
+            justify_items: self.justify_items,
+        });
+
+        LayoutOutput {
+            positions: output.child_rects,
+            total_size: output.total_size,
+        }
+    }
 }
 
 impl Default for GridLayout {
@@ -503,64 +567,7 @@ impl Default for GridLayout {
 
 impl LayoutEngine for GridLayout {
     fn layout(&self, content_rect: Rect, children: &[LayoutChild]) -> LayoutOutput {
-        if self.columns.is_empty() || children.is_empty() {
-            return LayoutOutput {
-                positions: Vec::new(),
-                total_size: Size::new(content_rect.w, content_rect.h),
-            };
-        }
-
-        // 自动计算行数
-        let rows: Vec<GridTrack> = if self.rows.is_empty() {
-            let n_cols = self.columns.len();
-            let n_rows = children.len().div_ceil(n_cols);
-            vec![GridTrack::Auto; n_rows.max(1)]
-        } else {
-            self.rows.clone()
-        };
-
-        let grid_children: Vec<GridChild> = children
-            .iter()
-            .map(|c| GridChild {
-                cell: c.grid_cell,
-                col_span: c.grid_column_span,
-                row_span: c.grid_row_span,
-                measured_size: c.measured_size,
-                align: None,
-                justify: None,
-            })
-            .collect();
-
-        let output = compute_grid_layout(&GridInput {
-            container: content_rect,
-            columns: self.columns.clone(),
-            rows,
-            col_gap: self.col_gap,
-            row_gap: self.row_gap,
-            padding: crate::core::EdgeInsets::zero(),
-            children: grid_children,
-            align_items: self.align_items,
-            justify_items: self.justify_items,
-        });
-
-        let positions = output
-            .child_rects
-            .into_iter()
-            .zip(children.iter())
-            .map(|(rect, child)| {
-                Rect::new(
-                    rect.x + child.margin.left,
-                    rect.y + child.margin.top,
-                    (rect.w - child.margin.horizontal()).max(0.0),
-                    (rect.h - child.margin.vertical()).max(0.0),
-                )
-            })
-            .collect();
-
-        LayoutOutput {
-            positions,
-            total_size: output.total_size,
-        }
+        self.layout_with_tracks(content_rect, &self.columns, &self.rows, children)
     }
 }
 
@@ -598,31 +605,16 @@ pub fn child_from_tree_with_constraints(
 ) -> LayoutChild {
     let node = tree.get(component_id);
     let pref = node.map(|c| c.measure(constraints)).unwrap_or_default();
-
-    let grow = node
-        .and_then(|c| c.as_layout())
-        .map(|l| l.flex_grow())
-        .unwrap_or(0.0);
-    let shrink = node
-        .and_then(|c| c.as_layout())
-        .map(|l| l.flex_shrink())
-        .unwrap_or(1.0);
-    let margin = node
-        .and_then(|c| c.as_layout())
-        .map(|l| l.layout_margin())
+    let layout = node.and_then(|component| component.as_layout());
+    let grow = layout.map(|layout| layout.flex_grow()).unwrap_or(0.0);
+    let shrink = layout.map(|layout| layout.flex_shrink()).unwrap_or(1.0);
+    let margin = layout
+        .map(|layout| layout.layout_margin())
         .unwrap_or_default();
-    let align_self = node
-        .and_then(|c| c.as_layout())
-        .and_then(|l| l.align_self());
-    let grid_cell = node.and_then(|c| c.as_layout()).and_then(|l| l.grid_cell());
-    let grid_column_span = node
-        .and_then(|c| c.as_layout())
-        .map(|l| l.grid_column_span().max(1))
-        .unwrap_or(1);
-    let grid_row_span = node
-        .and_then(|c| c.as_layout())
-        .map(|l| l.grid_row_span().max(1))
-        .unwrap_or(1);
+    let align_self = layout.and_then(|layout| layout.align_self());
+    let grid_cell = layout.and_then(|layout| layout.grid_cell());
+    let grid_column_span = layout.map(|l| l.grid_column_span().max(1)).unwrap_or(1);
+    let grid_row_span = layout.map(|l| l.grid_row_span().max(1)).unwrap_or(1);
 
     LayoutChild {
         id: component_id,

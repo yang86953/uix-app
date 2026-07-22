@@ -210,3 +210,33 @@ fn column_fit_nav_tile_in_row_does_not_overlap_labels() {
         desc.1.y
     );
 }
+
+#[test]
+fn invalid_flex_factors_and_gap_cannot_poison_child_geometry() {
+    let mut tree = WidgetTree::new();
+    let host = tree.set_root(Box::new(Container::new()));
+    let first = tree.add_child(
+        host,
+        Box::new(Container::new().size(20.0, 10.0).flex_grow(f32::NAN)),
+    );
+    let second = tree.add_child(
+        host,
+        Box::new(Container::new().size(20.0, 10.0).flex_shrink(f32::INFINITY)),
+    );
+    let layout = Container::new()
+        .dir(crate::ui::layout::FlexDirection::Row)
+        .gap(f32::NAN);
+    let frame = Rect::new(0.0, 0.0, 100.0, 30.0);
+    let measured = layout.measure_children(frame, &[first, second], &tree);
+    let positions = layout.layout_children(frame, &measured, &tree);
+
+    assert_eq!(positions.len(), 2);
+    for (_, rect) in positions {
+        assert!(
+            [rect.x, rect.y, rect.w, rect.h]
+                .into_iter()
+                .all(f32::is_finite),
+            "invalid flex inputs must be normalized, got {rect:?}"
+        );
+    }
+}
