@@ -5,6 +5,7 @@ use std::sync::{Arc, OnceLock};
 use super::icon::paint_icon_in_frame;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
+use crate::draw::primitives::path::{FillRule, Path, PathBuilder};
 use crate::draw::Color;
 use crate::impl_widget_component;
 use crate::native::traits::input::{ControlSize, KeyCode, MouseButton};
@@ -95,6 +96,157 @@ pub(crate) fn cover_radius(origin: Point, size: Size) -> f32 {
             (dx * dx + dy * dy).sqrt()
         })
         .fold(0.0_f32, f32::max)
+}
+
+pub(crate) fn rounded_rect_circle_intersection(
+    rect: Rect,
+    corner_radius: f32,
+    center: Point,
+    circle_radius: f32,
+) -> Option<Path> {
+    if rect.w <= 0.0
+        || rect.h <= 0.0
+        || !corner_radius.is_finite()
+        || !circle_radius.is_finite()
+        || circle_radius <= 0.0
+    {
+        return None;
+    }
+
+    let corner_radius = corner_radius.max(0.0).min(rect.w.min(rect.h) * 0.5);
+    let clip = rounded_rect_points(rect, corner_radius);
+    let mut subject = circle_points(center, circle_radius);
+    for edge in clip.windows(2) {
+        subject = clip_convex_polygon(&subject, edge[0], edge[1]);
+        if subject.len() < 3 {
+            return None;
+        }
+    }
+    subject = clip_convex_polygon(&subject, *clip.last()?, clip[0]);
+    if subject.len() < 3 {
+        return None;
+    }
+
+    let mut path = PathBuilder::new();
+    path.move_to(subject[0].x, subject[0].y);
+    for point in &subject[1..] {
+        path.line_to(point.x, point.y);
+    }
+    path.close();
+    Some(path.build())
+}
+
+fn rounded_rect_points(rect: Rect, radius: f32) -> Vec<Point> {
+    if radius <= f32::EPSILON {
+        return vec![
+            Point::new(rect.x, rect.y),
+            Point::new(rect.x + rect.w, rect.y),
+            Point::new(rect.x + rect.w, rect.y + rect.h),
+            Point::new(rect.x, rect.y + rect.h),
+        ];
+    }
+
+    let segments = arc_segments(radius, std::f32::consts::FRAC_PI_2);
+    let mut points = Vec::with_capacity(segments * 4 + 4);
+    let corners = [
+        (
+            rect.x + rect.w - radius,
+            rect.y + radius,
+            -std::f32::consts::FRAC_PI_2,
+        ),
+        (rect.x + rect.w - radius, rect.y + rect.h - radius, 0.0),
+        (
+            rect.x + radius,
+            rect.y + rect.h - radius,
+            std::f32::consts::FRAC_PI_2,
+        ),
+        (rect.x + radius, rect.y + radius, std::f32::consts::PI),
+    ];
+    for (cx, cy, start) in corners {
+        for step in 0..=segments {
+            let angle = start + std::f32::consts::FRAC_PI_2 * step as f32 / segments as f32;
+            points.push(Point::new(
+                cx + radius * angle.cos(),
+                cy + radius * angle.sin(),
+            ));
+        }
+    }
+    points
+}
+
+fn circle_points(center: Point, radius: f32) -> Vec<Point> {
+    let segments = arc_segments(radius, std::f32::consts::TAU);
+    (0..segments)
+        .map(|step| {
+            let angle = std::f32::consts::TAU * step as f32 / segments as f32;
+            Point::new(
+                center.x + radius * angle.cos(),
+                center.y + radius * angle.sin(),
+            )
+        })
+        .collect()
+}
+
+fn arc_segments(radius: f32, sweep: f32) -> usize {
+    // At UI sizes a 0.1 px sagitta is visually indistinguishable from the SDF
+    // primitive while keeping path tessellation well below its vertex budget.
+    const TOLERANCE: f32 = 0.1;
+    let max_angle = if radius <= TOLERANCE {
+        sweep
+    } else {
+        (2.0 * (1.0 - TOLERANCE / radius).clamp(-1.0, 1.0).acos()).max(0.05)
+    };
+    (sweep / max_angle).ceil().clamp(1.0, 128.0) as usize
+}
+
+fn clip_convex_polygon(subject: &[Point], edge_start: Point, edge_end: Point) -> Vec<Point> {
+    let Some(mut previous) = subject.last().copied() else {
+        return Vec::new();
+    };
+    let mut previous_inside = edge_side(edge_start, edge_end, previous) >= -1e-5;
+    let mut output = Vec::with_capacity(subject.len() + 1);
+
+    for &current in subject {
+        let current_inside = edge_side(edge_start, edge_end, current) >= -1e-5;
+        if current_inside != previous_inside {
+            if let Some(point) = line_intersection(previous, current, edge_start, edge_end) {
+                output.push(point);
+            }
+        }
+        if current_inside {
+            output.push(current);
+        }
+        previous = current;
+        previous_inside = current_inside;
+    }
+    output
+}
+
+fn edge_side(edge_start: Point, edge_end: Point, point: Point) -> f32 {
+    (edge_end.x - edge_start.x) * (point.y - edge_start.y)
+        - (edge_end.y - edge_start.y) * (point.x - edge_start.x)
+}
+
+fn line_intersection(
+    line_start: Point,
+    line_end: Point,
+    edge_start: Point,
+    edge_end: Point,
+) -> Option<Point> {
+    let line_dx = line_end.x - line_start.x;
+    let line_dy = line_end.y - line_start.y;
+    let edge_dx = edge_end.x - edge_start.x;
+    let edge_dy = edge_end.y - edge_start.y;
+    let denominator = edge_dx * line_dy - edge_dy * line_dx;
+    if denominator.abs() <= f32::EPSILON {
+        return None;
+    }
+    let t = (edge_dx * (edge_start.y - line_start.y) - edge_dy * (edge_start.x - line_start.x))
+        / denominator;
+    Some(Point::new(
+        line_start.x + line_dx * t.clamp(0.0, 1.0),
+        line_start.y + line_dy * t.clamp(0.0, 1.0),
+    ))
 }
 
 /// 按钮组件。业务绑定不存放在组件内，由 HandlerTable 按 ComponentId 管理。
@@ -547,14 +699,19 @@ impl Button {
             return;
         }
 
-        ctx.push_clip(frame);
-        ctx.fill_circle(
-            frame.x + local.x,
-            frame.y + local.y,
-            radius,
-            ink.with_alpha(alpha),
-        );
-        ctx.pop_clip();
+        let center = Point::new(frame.x + local.x, frame.y + local.y);
+        let color = ink.with_alpha(alpha);
+        if style.border_radius > 0.0 {
+            if let Some(path) =
+                rounded_rect_circle_intersection(frame, style.border_radius, center, radius)
+            {
+                ctx.fill_path(&path, color, FillRule::NonZero);
+            }
+        } else {
+            ctx.push_clip(frame);
+            ctx.fill_circle(center.x, center.y, radius, color);
+            ctx.pop_clip();
+        }
     }
 
     /// 绘制纯图标按钮中的 Lucide 图标（复用 icon 模块基础设施）。

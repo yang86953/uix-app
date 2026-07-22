@@ -207,6 +207,49 @@ fn cover_radius_reaches_farthest_corner() {
 }
 
 #[test]
+fn ripple_is_clipped_to_the_button_rounded_rect() {
+    let idle = Button::new("ok");
+    let mut pressed = Button::new("ok");
+    let _ = pressed.on_event(&SystemEvent::PointerDown {
+        pos: Point::new(2.0, 2.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    assert!(!pressed.update_animation(ButtonRipple::EXPAND_SECS + 0.01));
+
+    let idle_pixels = render_button(&idle);
+    let pressed_pixels = render_button(&pressed);
+    let at = |pixels: &[u32], x: usize, y: usize| pixels[y * 180 + x];
+
+    for (x, y) in [(4, 8), (5, 8), (4, 9), (175, 8), (4, 39)] {
+        assert_eq!(
+            at(&pressed_pixels, x, y),
+            at(&idle_pixels, x, y),
+            "ripple must not paint the clipped rounded corner at ({x}, {y})"
+        );
+    }
+    assert_ne!(
+        at(&pressed_pixels, 12, 16),
+        at(&idle_pixels, 12, 16),
+        "ripple must remain visible inside the rounded button"
+    );
+
+    let path = rounded_rect_circle_intersection(
+        Rect::new(4.0, 8.0, 172.0, 32.0),
+        pressed.resolve_style().border_radius,
+        Point::new(6.0, 10.0),
+        cover_radius(Point::new(2.0, 2.0), Size::new(172.0, 32.0)),
+    )
+    .expect("expanded ripple intersects the button");
+    let vertices = crate::draw::primitives::tessellator::tessellate_fill(
+        &path,
+        crate::draw::primitives::path::FillRule::NonZero,
+    )
+    .expect("native GPU path tessellation");
+    assert!(vertices.len() >= 6);
+}
+
+#[test]
 fn dirty_bounds_only_while_ripple_active() {
     let mut btn = Button::new("ok");
     let frame = Rect::new(0.0, 0.0, 80.0, 32.0);

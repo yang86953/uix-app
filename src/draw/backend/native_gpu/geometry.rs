@@ -141,17 +141,21 @@ pub(super) fn quad_aabb(corners: [[f32; 2]; 4]) -> (f32, f32, f32, f32) {
     (min_x, min_y, max_x, max_y)
 }
 
-/// 近 1:1、无旋转/剪切时用解析 AA R8；明显缩放或仿射留给 MSDF。
+/// 物理像素 1:1、无旋转/剪切时用面积 coverage R8；其余留给 MSDF。
 ///
-/// UI 默认 identity 字号下 MSDF + 线性采样会把边缘洗成发虚；解析 coverage
-/// 与 soft 路径同契约，采样 `glyph_fs` 即可保持锐利。
-pub(super) fn outline_uses_analytic_r8(
+/// R8 coverage 已在逻辑像素网格上光栅化；DPR 不为 1 时再次缩放它会发虚，
+/// 因而即使 Canvas transform 为 identity 也必须走可缩放的 MSDF。
+pub(super) fn outline_uses_area_r8(
     transform: Transform,
+    device_pixel_ratio: f32,
     device_w: f32,
     device_h: f32,
     cov_w: usize,
     cov_h: usize,
 ) -> bool {
+    if !device_pixel_ratio.is_finite() || (device_pixel_ratio - 1.0).abs() > 0.01 {
+        return false;
+    }
     let [a, b, _, c, d, _] = transform.m;
     if b != 0.0 || c != 0.0 || !a.is_finite() || !d.is_finite() {
         return false;

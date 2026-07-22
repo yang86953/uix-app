@@ -185,7 +185,8 @@ pub struct TextLayout {
 /// 光栅化字形数据。
 ///
 /// `outline_mesh` 为 NonZero 边列表 `[ax,ay,bx,by,…]`（本地像素，含 MSDF 范围 fringe）；
-/// 同时缓存解析 AA `coverage` 供近 1:1 R8 路径复用。严格 GPU 缩放/仿射才走 RGBA8 MSDF。
+/// 同时缓存字体光栅器的面积 `coverage` 供物理 1:1 R8 路径复用。严格 GPU
+/// 缩放、仿射或高 DPR 走 RGBA8 MSDF。
 #[derive(Debug, Clone)]
 pub struct GlyphRaster {
     pub width: usize,
@@ -193,7 +194,7 @@ pub struct GlyphRaster {
     pub coverage: std::sync::Arc<[u8]>,
     pub bearing_x: f32,
     pub bearing_y: f32,
-    /// GPU atlas 覆盖边列表；近 1:1 时与 `coverage` 解析 AA 二选一，缩放走 MSDF。
+    /// GPU atlas 覆盖边列表；物理 1:1 时使用 `coverage`，缩放、仿射或高 DPR 走 MSDF。
     pub outline_mesh: Option<std::sync::Arc<[f32]>>,
 }
 

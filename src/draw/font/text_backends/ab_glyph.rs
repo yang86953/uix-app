@@ -32,6 +32,41 @@ impl Default for AbGlyphBackend {
     }
 }
 
+fn padded_area_coverage(
+    outlined: &OutlinedGlyph,
+    width: usize,
+    height: usize,
+) -> Option<Arc<[u8]>> {
+    let bounds = outlined.px_bounds();
+    let inner_w = bounds.width() as usize;
+    let inner_h = bounds.height() as usize;
+    let pad = crate::draw::font::glyph_outline::ATLAS_PAD;
+    let expected_w = inner_w.checked_add(pad.checked_mul(2)?)?;
+    let expected_h = inner_h.checked_add(pad.checked_mul(2)?)?;
+    if width != expected_w || height != expected_h {
+        return None;
+    }
+
+    let pixel_count = width.checked_mul(height)?;
+    let mut coverage = Vec::new();
+    if coverage.try_reserve_exact(pixel_count).is_err() {
+        return None;
+    }
+    coverage.resize(pixel_count, 0u8);
+    outlined.draw(|x, y, cov| {
+        let Some(dst_x) = (x as usize).checked_add(pad) else {
+            return;
+        };
+        let Some(dst_y) = (y as usize).checked_add(pad) else {
+            return;
+        };
+        if dst_x < width && dst_y < height {
+            coverage[dst_y * width + dst_x] = (cov * 255.0).clamp(0.0, 255.0) as u8;
+        }
+    });
+    Some(coverage.into())
+}
+
 impl AbGlyphBackend {
     pub fn new() -> Self {
         Self { fonts: vec![] }
@@ -204,19 +239,20 @@ impl TextBackend for AbGlyphBackend {
                 y: pixel_size,
             })
             .scale_factor();
-        // 优先：轮廓 → 边列表；同时缓存解析 AA，供近 1:1 R8 路径复用（atlas 键稳定）。
-        if let Some(outline) = f.outline(gid) {
-            let px_bounds = outline.px_bounds(scale_factor, glyph.position);
+        let glyph_position = glyph.position;
+        let outlined = f.outline_glyph(glyph);
+        // 同一份原始轮廓同时生成两种数据：字体光栅器的真实面积覆盖率供近
+        // 1:1 R8 使用，展平边列表供缩放/仿射 MSDF 使用。
+        if let (Some(outline), Some(outlined)) = (f.outline(gid), outlined.as_ref()) {
+            let px_bounds = outlined.px_bounds();
             if let Some((w, h, bx, by, mesh)) = crate::draw::font::glyph_outline::mesh_from_outline(
                 &outline,
                 scale_factor,
                 px_bounds,
-                glyph.position,
+                glyph_position,
             ) {
                 let coverage =
-                    crate::draw::font::glyph_outline::coverage_from_edges(mesh.as_ref(), w, h)
-                        .map(Arc::<[u8]>::from)
-                        .unwrap_or_else(|| Arc::<[u8]>::from([]));
+                    padded_area_coverage(outlined, w, h).unwrap_or_else(|| Arc::<[u8]>::from([]));
                 return GlyphRaster {
                     width: w,
                     height: h,
@@ -227,8 +263,8 @@ impl TextBackend for AbGlyphBackend {
                 };
             }
         }
-        // 回退：无轮廓或展平失败时仍走 ab_glyph CPU coverage。
-        let (w, h, data, bx, by) = if let Some(o) = f.outline_glyph(glyph) {
+        // 回退：无轮廓或展平失败时仍走 ab_glyph 面积 coverage。
+        let (w, h, data, bx, by) = if let Some(o) = outlined {
             let b = o.px_bounds();
             let bw = (b.max.x - b.min.x).ceil() as usize;
             let bh = (b.max.y - b.min.y).ceil() as usize;

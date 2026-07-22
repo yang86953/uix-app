@@ -1197,7 +1197,7 @@ fn render_session_resize_follows_adopted_native_gpu_surface() {
 
 #[test]
 fn native_gpu_canvas_uses_logical_extent_when_drawable_has_dpr() {
-    let backend = NativeGpuBackend::new(Box::new(ClientRectLargerContext {
+    let mut backend = NativeGpuBackend::new(Box::new(ClientRectLargerContext {
         width: 1600,
         height: 1200,
         bias_w: 0,
@@ -1210,6 +1210,30 @@ fn native_gpu_canvas_uses_logical_extent_when_drawable_has_dpr() {
     assert_eq!((backend.surface.width, backend.surface.height), (800, 600));
     let size = backend.surface.canvas.surface_size();
     assert_eq!((size.w as i32, size.h as i32), (800, 600));
+
+    let mesh: Arc<[f32]> = vec![
+        0.0, 0.0, 4.0, 0.0, //
+        4.0, 0.0, 4.0, 4.0, //
+        4.0, 4.0, 0.0, 4.0, //
+        0.0, 4.0, 0.0, 0.0,
+    ]
+    .into();
+    backend.surface.canvas.blit_glyph_outline_shared(
+        0,
+        0,
+        mesh,
+        Some(vec![255; 16].into()),
+        4,
+        4,
+        Color::white(),
+    );
+    match backend.surface.canvas.pending_native.first() {
+        Some(PendingNativeOp::Glyph(op)) => {
+            assert!(op.glyph.outline_mesh.is_some(), "DPR must reach glyph routing");
+            assert!(op.glyph.coverage.is_empty());
+        }
+        _ => panic!("high-DPR backend must queue an MSDF glyph"),
+    }
 }
 
 fn assert_soft_offset<F>(draw: F, hit: (usize, usize), miss: (usize, usize))
@@ -1734,7 +1758,7 @@ fn gpu_only_sheared_glyph_queues_affine_corners() {
 }
 
 #[test]
-fn gpu_only_outline_glyph_at_identity_reuses_cached_analytic_arc() {
+fn gpu_only_outline_glyph_at_identity_reuses_cached_area_arc() {
     use std::sync::Arc;
 
     let mut canvas = NativeGpuCanvas2D::new_gpu_only(64, 64, NativeRasterCaps::wgpu_full());
@@ -1745,10 +1769,10 @@ fn gpu_only_outline_glyph_at_identity_reuses_cached_analytic_arc() {
         0.0, 4.0, 0.0, 0.0,
     ]
     .into();
-    let cached: Arc<[u8]> =
-        crate::draw::font::glyph_outline::coverage_from_edges(mesh.as_ref(), 4, 4)
-            .expect("analytic")
-            .into();
+    let cached: Arc<[u8]> = vec![
+        0, 64, 128, 255, 64, 128, 255, 255, 128, 255, 255, 128, 0, 64, 128, 0,
+    ]
+    .into();
     canvas.blit_glyph_outline_shared(
         1,
         2,
@@ -1764,19 +1788,19 @@ fn gpu_only_outline_glyph_at_identity_reuses_cached_analytic_arc() {
             assert!(op.glyph.outline_mesh.is_none());
             assert!(
                 Arc::ptr_eq(&op.glyph.coverage, &cached),
-                "1:1 path must reuse cached analytic Arc for atlas dedup"
+                "physical 1:1 path must reuse cached area Arc for atlas dedup"
             );
         }
-        _ => panic!("expected analytic R8 Glyph"),
+        _ => panic!("expected area-coverage R8 Glyph"),
     }
 }
 
 #[test]
-fn gpu_only_outline_glyph_at_identity_queues_analytic_r8() {
+fn gpu_only_outline_without_area_cache_queues_msdf() {
     use std::sync::Arc;
 
     let mut canvas = NativeGpuCanvas2D::new_gpu_only(64, 64, NativeRasterCaps::wgpu_full());
-    // 矩形四边（解析 AA 边列表）；identity 1:1 应走 R8，避免 MSDF 发虚。
+    // 边列表本身不能冒充面积 coverage；没有字体光栅缓存时保守走 MSDF。
     let mesh: Arc<[f32]> = vec![
         0.0, 0.0, 4.0, 0.0, //
         4.0, 0.0, 4.0, 4.0, //
@@ -1789,24 +1813,39 @@ fn gpu_only_outline_glyph_at_identity_queues_analytic_r8() {
     assert_eq!(canvas.pending_native.len(), 1);
     match canvas.pending_native.first() {
         Some(PendingNativeOp::Glyph(op)) => {
-            assert!(
-                op.glyph.outline_mesh.is_none(),
-                "1:1 must not queue MSDF mesh"
-            );
-            assert_eq!(op.glyph.coverage.len(), 16);
+            assert!(op.glyph.outline_mesh.is_some());
+            assert!(op.glyph.coverage.is_empty());
             assert_eq!(op.glyph.cov_w, 4);
             assert_eq!(op.glyph.cov_h, 4);
-            // 矩形内部像素应接近满覆盖。
-            const INTERIOR_AT_1_1: usize = 5;
-            assert!(
-                op.glyph.coverage[INTERIOR_AT_1_1] >= 200,
-                "interior coverage={}",
-                op.glyph.coverage[INTERIOR_AT_1_1]
-            );
             assert!((op.glyph.x - 1.0).abs() < 1e-5);
             assert!((op.glyph.y - 2.0).abs() < 1e-5);
         }
-        _ => panic!("expected analytic R8 Glyph"),
+        _ => panic!("expected MSDF outline Glyph"),
+    }
+}
+
+#[test]
+fn gpu_only_outline_at_high_dpr_queues_msdf_even_with_area_cache() {
+    use std::sync::Arc;
+
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(64, 64, NativeRasterCaps::wgpu_full());
+    canvas.set_device_pixel_ratio(1.5);
+    let mesh: Arc<[f32]> = vec![
+        0.0, 0.0, 4.0, 0.0, //
+        4.0, 0.0, 4.0, 4.0, //
+        4.0, 4.0, 0.0, 4.0, //
+        0.0, 4.0, 0.0, 0.0,
+    ]
+    .into();
+    let area: Arc<[u8]> = vec![255; 16].into();
+    canvas.blit_glyph_outline_shared(1, 2, mesh, Some(area), 4, 4, Color::white());
+
+    match canvas.pending_native.first() {
+        Some(PendingNativeOp::Glyph(op)) => {
+            assert!(op.glyph.outline_mesh.is_some());
+            assert!(op.glyph.coverage.is_empty());
+        }
+        _ => panic!("high-DPR glyph must use MSDF"),
     }
 }
 
