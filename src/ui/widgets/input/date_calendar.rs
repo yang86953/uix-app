@@ -130,14 +130,14 @@ pub(crate) fn draw_calendar_panel(
         text_color,
         14.0,
     );
-    crate::ui::widgets::icon::paint_icon_in_frame(
+    crate::ui::widgets::icon::Icon::paint_in_frame(
         ctx,
         "chevron-left",
         Rect::new(popup.x, popup.y, NAVIGATION_WIDTH, HEADER_HEIGHT),
         text_secondary,
         12.0,
     );
-    crate::ui::widgets::icon::paint_icon_in_frame(
+    crate::ui::widgets::icon::Icon::paint_in_frame(
         ctx,
         "chevron-right",
         Rect::new(

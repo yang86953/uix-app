@@ -2,8 +2,11 @@ use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
 use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
+use crate::ui::traits::WidgetTextInput;
 use crate::ui::widgets::display::tree::*;
 use crate::ui::AccessibilityRole;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
 fn pointer_down(pos: Point) -> SystemEvent {
     SystemEvent::PointerDown {
@@ -264,6 +267,26 @@ fn constrained_tree_clips_elides_and_avoids_negative_geometry() {
 }
 
 #[test]
+fn checkable_tree_rows_use_shared_icons_instead_of_text_boxes() {
+    let mut checked_node = TreeNode::new("Checked", "checked").checkable(true);
+    checked_node.checked = true;
+    let tree = Tree::new(vec![
+        checked_node,
+        TreeNode::new("Unchecked", "unchecked").checkable(true),
+    ]);
+
+    let display_list = render_tree(&tree, Rect::new(0.0, 0.0, 180.0, 56.0), (180, 56));
+    assert!(
+        display_list.contains("\\u{e16a}") && display_list.contains("\\u{e167}"),
+        "checked and unchecked states must use Lucide icons: {display_list}"
+    );
+    assert!(
+        !display_list.contains("[x]") && !display_list.contains("[ ]"),
+        "text checkbox symbols must not return: {display_list}"
+    );
+}
+
+#[test]
 fn tree_accessibility_reports_selected_visible_title_and_position() {
     let mut tree = Tree::new(vec![
         TreeNode::new("Root", "root").children(vec![TreeNode::new("Readable child", "child")])
@@ -281,4 +304,246 @@ fn tree_accessibility_reports_selected_visible_title_and_position() {
     assert_eq!(accessibility.state.value_now, Some(2.0));
     assert_eq!(accessibility.state.value_min, Some(1.0));
     assert_eq!(accessibility.state.value_max, Some(2.0));
+}
+
+#[test]
+fn tree_node_filter_controls_search_matching() {
+    let mut tree = Tree::new(vec![
+        TreeNode::new("Only custom", "custom-x")
+            .filter(|node, keyword| node.key == format!("custom-{keyword}")),
+        TreeNode::new("Hidden label", "beta"),
+    ])
+    .searchable(true);
+
+    tree.set_search_query("x");
+    assert_eq!(tree.flat.len(), 1);
+    assert_eq!(tree.visible_keys_for_test(), ["custom-x"]);
+
+    tree.set_search_query("hidden");
+    assert_eq!(tree.flat.len(), 1);
+    assert_eq!(tree.visible_keys_for_test(), ["beta"]);
+
+    tree.set_search_query("beta");
+    assert!(
+        tree.visible_keys_for_test().is_empty(),
+        "the default filter matches the visible title, not the business key"
+    );
+}
+
+#[test]
+fn searchable_tree_consumes_text_preserves_selection_and_reconciles_runtime_query() {
+    let mut tree = Tree::new(vec![
+        TreeNode::new("Root", "root").children(vec![
+            TreeNode::new("Alpha", "alpha-id"),
+            TreeNode::new("Beta", "beta-id"),
+        ]),
+        TreeNode::new("Other", "other"),
+    ])
+    .searchable(true);
+    tree.set_selected_key("beta-id");
+    tree.last_frame.set(Some(Rect::new(0.0, 0.0, 200.0, 88.0)));
+
+    assert!(WidgetTextInput::accepts_text_input(&tree));
+    assert_eq!(
+        tree.on_event(&SystemEvent::TextInput {
+            text: "BETA".to_string(),
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(tree.search_query(), "BETA");
+    assert_eq!(tree.visible_keys_for_test(), ["root", "beta-id"]);
+    assert_eq!(tree.selected_key(), "beta-id");
+    assert!(EventHandler::take_layout_request(&mut tree));
+    let display = render_tree(&tree, Rect::new(0.0, 0.0, 200.0, 88.0), (200, 88));
+    assert!(
+        display.contains("BETA") && display.contains("Beta"),
+        "{display}"
+    );
+    assert!(!display.contains("Alpha"), "{display}");
+    assert_eq!(
+        tree.on_event(&SystemEvent::Wheel {
+            pos: Point::new(20.0, 16.0),
+            delta: Point::new(0.0, 1.0),
+        }),
+        EventResult::NotHandled,
+        "the search editor must not leak wheel events into the tree body"
+    );
+
+    tree.sync_from(
+        Tree::new(vec![TreeNode::new("Root next", "root")
+            .children(vec![TreeNode::new("Beta next", "beta-id")])])
+        .searchable(true),
+    );
+    assert_eq!(tree.search_query(), "BETA");
+    assert_eq!(tree.visible_keys_for_test(), ["root", "beta-id"]);
+    assert_eq!(tree.selected_key(), "beta-id");
+
+    tree.sync_from(Tree::new(vec![TreeNode::new("Plain", "plain")]).searchable(false));
+    assert!(!WidgetTextInput::accepts_text_input(&tree));
+    assert!(tree.search_query().is_empty());
+    assert_eq!(tree.visible_keys_for_test(), ["plain"]);
+    assert!(EventHandler::take_layout_request(&mut tree));
+}
+
+#[test]
+fn draggable_tree_reports_before_inside_after_with_search_header_offset() {
+    let drops = Rc::new(RefCell::new(Vec::new()));
+    let drops_for_callback = Rc::clone(&drops);
+    let mut tree = Tree::new(vec![
+        TreeNode::new("Source", "source"),
+        TreeNode::new("Target", "target"),
+    ])
+    .searchable(true)
+    .draggable(true)
+    .on_drop(move |source, target, position| {
+        drops_for_callback
+            .borrow_mut()
+            .push((source.to_string(), target.to_string(), position));
+    });
+    tree.last_frame.set(Some(Rect::new(0.0, 0.0, 200.0, 88.0)));
+
+    for (target_y, expected) in [
+        (61.0, DropPosition::Before),
+        (74.0, DropPosition::Inside),
+        (86.0, DropPosition::After),
+    ] {
+        assert_eq!(
+            tree.on_event(&pointer_down(Point::new(100.0, 46.0))),
+            EventResult::Handled
+        );
+        assert_eq!(
+            tree.on_event(&pointer_up(Point::new(100.0, target_y))),
+            EventResult::Handled
+        );
+        assert_eq!(drops.borrow().last().map(|drop| drop.2), Some(expected));
+    }
+    assert!(drops
+        .borrow()
+        .iter()
+        .all(|(source, target, _)| { source == "source" && target == "target" }));
+}
+
+#[test]
+fn tree_drag_cancels_on_focus_loss_and_reconcile_replaces_the_callback() {
+    let old_calls = Rc::new(Cell::new(0));
+    let old_calls_for_callback = Rc::clone(&old_calls);
+    let new_calls = Rc::new(Cell::new(0));
+    let new_calls_for_callback = Rc::clone(&new_calls);
+    let nodes = || {
+        vec![
+            TreeNode::new("Source", "source"),
+            TreeNode::new("Target", "target"),
+        ]
+    };
+    let mut tree = Tree::new(nodes())
+        .draggable(true)
+        .on_drop(move |_, _, _| old_calls_for_callback.set(old_calls_for_callback.get() + 1));
+    tree.last_frame.set(Some(Rect::new(0.0, 0.0, 200.0, 56.0)));
+
+    tree.on_event(&pointer_down(Point::new(100.0, 14.0)));
+    assert_eq!(tree.on_event(&SystemEvent::FocusOut), EventResult::Handled);
+    assert_eq!(
+        tree.on_event(&pointer_up(Point::new(100.0, 42.0))),
+        EventResult::NotHandled
+    );
+    assert_eq!(old_calls.get(), 0);
+
+    tree.on_event(&pointer_down(Point::new(100.0, 14.0)));
+    tree.sync_from(
+        Tree::new(nodes())
+            .draggable(true)
+            .on_drop(move |_, _, _| new_calls_for_callback.set(new_calls_for_callback.get() + 1)),
+    );
+    assert_eq!(
+        tree.on_event(&pointer_up(Point::new(100.0, 42.0))),
+        EventResult::NotHandled,
+        "reconcile must cancel an in-flight drag"
+    );
+    tree.on_event(&pointer_down(Point::new(100.0, 14.0)));
+    tree.on_event(&pointer_up(Point::new(100.0, 42.0)));
+    assert_eq!(old_calls.get(), 0);
+    assert_eq!(new_calls.get(), 1);
+}
+
+#[test]
+fn lazy_tree_expands_once_patches_children_and_does_not_reload_after_reopen() {
+    let expanded = Rc::new(RefCell::new(Vec::new()));
+    let expanded_for_callback = Rc::clone(&expanded);
+    let mut tree = Tree::new(vec![TreeNode::new("Lazy", "lazy").lazy(true)])
+        .on_expand(move |key| expanded_for_callback.borrow_mut().push(key.to_string()));
+    tree.set_selected_key("lazy");
+
+    assert_eq!(
+        tree.on_event(&key_event(KeyCode::Right)),
+        EventResult::Handled
+    );
+    assert_eq!(expanded.borrow().as_slice(), ["lazy"]);
+    assert!(matches!(
+        tree.snapshot_fields(),
+        SnapshotFields::Tree { expanded_keys, .. } if expanded_keys == ["lazy"]
+    ));
+    tree.on_event(&key_event(KeyCode::Right));
+    assert_eq!(
+        expanded.borrow().len(),
+        1,
+        "an already-open node must not reload"
+    );
+
+    assert!(tree.patch_children("lazy", vec![TreeNode::new("Child", "child")]));
+    assert!(!tree.patch_children("missing", Vec::new()));
+    assert_eq!(tree.visible_keys_for_test(), ["lazy", "child"]);
+    assert!(EventHandler::take_layout_request(&mut tree));
+
+    tree.on_event(&key_event(KeyCode::Left));
+    tree.on_event(&key_event(KeyCode::Right));
+    assert_eq!(
+        expanded.borrow().len(),
+        1,
+        "a loaded lazy node must stay loaded"
+    );
+}
+
+#[test]
+fn lazy_expand_callback_is_replaced_by_reconcile_before_first_expansion() {
+    let old_calls = Rc::new(Cell::new(0));
+    let old_calls_for_callback = Rc::clone(&old_calls);
+    let new_calls = Rc::new(Cell::new(0));
+    let new_calls_for_callback = Rc::clone(&new_calls);
+    let mut tree = Tree::new(vec![TreeNode::new("Lazy", "lazy").lazy(true)])
+        .on_expand(move |_| old_calls_for_callback.set(old_calls_for_callback.get() + 1));
+    tree.set_selected_key("lazy");
+    tree.sync_from(
+        Tree::new(vec![TreeNode::new("Lazy next", "lazy").lazy(true)])
+            .on_expand(move |_| new_calls_for_callback.set(new_calls_for_callback.get() + 1)),
+    );
+
+    tree.on_event(&key_event(KeyCode::Right));
+    assert_eq!(old_calls.get(), 0);
+    assert_eq!(new_calls.get(), 1);
+}
+
+#[test]
+fn tree_node_icon_renders_selects_and_updates_on_reconcile() {
+    let mut tree = Tree::new(vec![TreeNode::new("Favorite", "favorite").icon("star")]);
+    tree.last_frame.set(Some(Rect::new(0.0, 0.0, 180.0, 28.0)));
+    let star = render_tree(&tree, Rect::new(0.0, 0.0, 180.0, 28.0), (180, 28));
+    assert!(star.contains("\\u{e176}"), "{star}");
+
+    assert_eq!(
+        tree.on_event(&pointer_down(Point::new(10.0, 14.0))),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.on_event(&pointer_up(Point::new(10.0, 14.0))),
+        EventResult::Handled
+    );
+    assert_eq!(tree.selected_key(), "favorite");
+
+    tree.sync_from(Tree::new(vec![
+        TreeNode::new("Favorite next", "favorite").icon("heart")
+    ]));
+    let heart = render_tree(&tree, Rect::new(0.0, 0.0, 180.0, 28.0), (180, 28));
+    assert!(heart.contains("\\u{e0f2}"), "{heart}");
+    assert!(!heart.contains("\\u{e176}"), "{heart}");
+    assert_eq!(tree.selected_key(), "favorite");
 }

@@ -341,3 +341,13 @@ fn constrained_trigger_and_long_preset_paint_stay_inside_overlay_bounds() {
         }
     }
 }
+
+#[test]
+fn selected_range_uses_the_arrow_icon_component_instead_of_unicode_text() {
+    let source = include_str!("../../../../ui/widgets/input/date_range_picker.rs");
+
+    assert!(!source.contains('→'));
+    assert!(source.contains("\"arrow-right\""));
+    assert!(source.contains("Icon::paint_in_frame"));
+    assert!(!source.contains("icon_char("));
+}

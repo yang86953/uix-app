@@ -16,6 +16,10 @@ fn sidebar_icon_names_map_to_pua() {
     assert_eq!(icon_char("cpu"), "\u{E0A9}");
     assert_eq!(icon_char("bar-chart"), "\u{E06A}");
     assert_eq!(icon_char("layers"), "\u{E529}");
+    assert_eq!(icon_char("mouse-pointer"), "\u{E11F}");
+    assert_eq!(icon_char("credit-card"), "\u{E0AA}");
+    assert_eq!(icon_char("share"), "\u{E155}");
+    assert_eq!(icon_char("share-2"), "\u{E156}");
 }
 
 /// 根因回归：混排图标须用 UI 字体行盒定位，再切 Lucide 绘制。
@@ -34,7 +38,7 @@ fn paint_icon_uses_ui_font_line_box_not_lucide_metrics() {
     let ui_h = TextRenderService::new(segoe, &fs, 500.0).line_box_height(14.0);
     let lucide_h = TextRenderService::new(lucide, &fs, 500.0).line_box_height(14.0);
     let y_ui = row.y + (row.h - ui_h) * 0.5;
-    // 与 paint_icon_in_frame 相同：先按 UI 行盒算 y
+    // 与 Icon::paint_in_frame 相同：先按 UI 行盒算 y
     assert!(
         (y_ui - (row.y + (row.h - ui_h) * 0.5)).abs() < 0.01,
         "icon slot y must follow UI line box"

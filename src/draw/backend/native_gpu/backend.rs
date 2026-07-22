@@ -92,6 +92,10 @@ pub struct NativeGpuBackend {
     soft_fallback_idle_deadline: Option<Instant>,
     soft_used_in_last_present: bool,
     gpu_only: bool,
+    /// `new` is a crate-local hybrid fixture path and may receive an
+    /// unprepared context; the production GPU registry always marks its
+    /// factory-created context as prepared.
+    factory_prepared: bool,
     pub(crate) shutdown: bool,
 }
 
@@ -106,7 +110,7 @@ pub(crate) struct NativeGpuOffscreen {
 /// drawable extent through `width`/`height`, so derive the matching logical
 /// extent from their single DPR source before allocating draw-side state.
 fn device_pixel_ratio_from_context(gpu_ctx: &dyn IGraphicsContext) -> f32 {
-    let dpr = gpu_ctx.device_pixel_ratio();
+    let dpr = gpu_ctx.caps().device_pixel_ratio;
     if dpr.is_finite() && dpr > 0.0 {
         dpr
     } else {
@@ -123,16 +127,17 @@ fn logical_extent_from_context(gpu_ctx: &dyn IGraphicsContext) -> (i32, i32) {
 impl NativeGpuBackend {
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn new(gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
-        Self::new_with_mode(gpu_ctx, false)
+        Self::new_with_mode(gpu_ctx, false, false)
     }
 
     pub(crate) fn new_gpu_only(gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
-        Self::new_with_mode(gpu_ctx, true)
+        Self::new_with_mode(gpu_ctx, true, true)
     }
 
     fn new_with_mode(
         mut gpu_ctx: Box<dyn IGraphicsContext>,
         gpu_only: bool,
+        factory_prepared: bool,
     ) -> Result<Self, Error> {
         let caps = gpu_ctx.caps();
         let native_caps = gpu_ctx.native_raster_caps();
@@ -180,6 +185,7 @@ impl NativeGpuBackend {
             soft_fallback_idle_deadline: None,
             soft_used_in_last_present: false,
             gpu_only,
+            factory_prepared,
             surface: NativeGpuDrawSurface {
                 canvas,
                 native_caps,
@@ -887,15 +893,15 @@ impl NativeGpuBackend {
         {
             return Ok(());
         }
-        let pixel_count =
-            usize::try_from(i64::from(src.width).saturating_mul(i64::from(src.height))).map_err(
-                |_| {
-                    Error::new(
-                        Errc::GraphicsOutOfMemory,
-                        "FrameEncoder GPU image blit crop exceeds addressable memory",
-                    )
-                },
-            )?;
+        let pixel_count = usize::try_from(
+            i64::from(src.width).saturating_mul(i64::from(src.height)),
+        )
+        .map_err(|_| {
+            Error::new(
+                Errc::GraphicsOutOfMemory,
+                "FrameEncoder GPU image blit crop exceeds addressable memory",
+            )
+        })?;
         let mut retained = Vec::new();
         retained.try_reserve_exact(pixel_count).map_err(|error| {
             Error::new(
@@ -1010,14 +1016,19 @@ impl RenderBackend for NativeGpuBackend {
         self.gpu_ctx.resize(logical_w, logical_h)?;
         // D3D11/D3D12 等会按 HWND GetClientRect 校正缓冲尺寸；canvas/布局必须跟
         // 实际 RT 一致，否则清出更大黑底而 UI 仍画旧几何 → 窗口黑边。
+        self.factory_prepared = true;
         self.adopt_factory_drawable_extent();
         Ok(())
     }
 
-    fn initialize_prepared(&mut self, _width: i32, _height: i32) -> Result<(i32, i32), Error> {
+    fn initialize_prepared(&mut self, width: i32, height: i32) -> Result<(i32, i32), Error> {
         // `IGraphicsContext::initialize` already ran in the factory against
         // the real surface. Startup only synchronizes draw-owned state to the
         // factory-reported drawable; it must not recreate the swapchain.
+        if !self.factory_prepared {
+            self.gpu_ctx.resize(width.max(1), height.max(1))?;
+            self.factory_prepared = true;
+        }
         Ok(self.adopt_factory_drawable_extent())
     }
 
@@ -1520,7 +1531,12 @@ impl RenderBackend for NativeGpuBackend {
         let frame = PresentFrame::Swapchain {
             damage: damage_plan.present_damage,
         };
-        if let Err(err) = self.gpu_ctx.present(&frame) {
+        let present_t0 = std::time::Instant::now();
+        let present_result = self.gpu_ctx.present(&frame);
+        let mut present_sample = crate::core::perf_probe::take_present();
+        present_sample.present_us = present_t0.elapsed().as_micros();
+        crate::core::perf_probe::record_present(present_sample);
+        if let Err(err) = present_result {
             self.surface.needs_gpu_clear = true;
             return Err(err);
         }

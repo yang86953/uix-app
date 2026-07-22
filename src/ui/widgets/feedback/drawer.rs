@@ -55,6 +55,9 @@ component! {
         activation_key: Cell<Option<crate::ui::KeyCode>>,
     }
 
+    // Closed drawers still render and receive input through their trigger.
+    visible => (&self) -> bool { true }
+
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
     }
@@ -166,11 +169,8 @@ component! {
             }
             SystemEvent::PointerMove { pos, .. } => {
                 let hovered = self.pointer_target_at(*pos) == Some(DrawerPointerTarget::Close);
-                if self.close_hovered.replace(hovered) != hovered {
-                    EventResult::Handled
-                } else {
-                    EventResult::Handled
-                }
+                self.close_hovered.set(hovered);
+                EventResult::Handled
             }
             SystemEvent::PointerLeave | SystemEvent::FocusOut => {
                 self.cancel_interaction();
@@ -324,7 +324,7 @@ component! {
                     Some(Radius::uniform(4.0)),
                 );
             }
-            crate::ui::widgets::icon::paint_icon_in_frame(
+            crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 "x",
                 close_button,

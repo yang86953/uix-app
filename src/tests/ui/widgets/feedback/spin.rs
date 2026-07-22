@@ -4,7 +4,8 @@ use crate::draw::painting::PaintPass;
 use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
-use crate::ui::{AccessibilityRole, LayoutChild, Spin};
+use crate::ui::{AccessibilityRole, LayoutChild, Spin, SpinSize};
+use std::time::Duration;
 
 fn render_spin(spin: &Spin, frame: Rect, pass: PaintPass) -> String {
     let mut canvas = SharedRasterizer::new(PixelSurface::new(160, 100));
@@ -164,4 +165,75 @@ fn spin_accessibility_has_a_stable_loading_name_and_preserves_tip() {
         .accessibility();
     assert_eq!(tipped.role, AccessibilityRole::Status);
     assert_eq!(tipped.name.as_deref(), Some("正在同步"));
+}
+
+#[test]
+fn spin_size_presets_drive_intrinsic_geometry_and_real_dot_layout() {
+    let variants = [
+        (SpinSize::Small, 16.0),
+        (SpinSize::Default, 24.0),
+        (SpinSize::Large, 36.0),
+    ];
+    let mut displays = Vec::new();
+    for (size, expected) in variants {
+        let spin = Spin::new().size(size);
+        assert_eq!(
+            WidgetLayout::measure(&spin, Constraints::unconstrained()),
+            Size::new(expected, expected)
+        );
+        displays.push(render_spin(
+            &spin,
+            Rect::new(0.0, 0.0, expected, expected),
+            PaintPass::Content,
+        ));
+    }
+    displays.dedup();
+    assert_eq!(
+        displays.len(),
+        3,
+        "each size must alter actual dot geometry"
+    );
+}
+
+#[test]
+fn spin_delay_suppresses_paint_until_elapsed_and_restarts_on_reactivation() {
+    let delay = Duration::from_millis(500);
+    let frame = Rect::new(0.0, 0.0, 24.0, 24.0);
+    let mut spin = Spin::new().delay(delay);
+
+    assert_eq!(
+        render_spin(&spin, frame, PaintPass::Content),
+        "DisplayList { ops: [] }"
+    );
+    assert_eq!(WidgetAnimation::dirty_bounds(&spin, frame).w, 0.0);
+    assert!(WidgetAnimation::update_animation(&mut spin, 0.25));
+    assert_eq!(
+        render_spin(&spin, frame, PaintPass::Content),
+        "DisplayList { ops: [] }"
+    );
+    assert!(WidgetAnimation::update_animation(&mut spin, 0.25));
+    assert_ne!(
+        render_spin(&spin, frame, PaintPass::Content),
+        "DisplayList { ops: [] }"
+    );
+    assert!(WidgetAnimation::dirty_bounds(&spin, frame).w > 0.0);
+
+    spin.sync_from(Spin::new().spinning(false).delay(delay));
+    assert!(!WidgetAnimation::update_animation(&mut spin, 0.1));
+    spin.sync_from(Spin::new().spinning(true).delay(delay));
+    assert_eq!(
+        render_spin(&spin, frame, PaintPass::Content),
+        "DisplayList { ops: [] }",
+        "a fresh activation must observe the configured delay again"
+    );
+    assert!(WidgetAnimation::update_animation(&mut spin, 0.499));
+    assert_eq!(
+        render_spin(&spin, frame, PaintPass::Content),
+        "DisplayList { ops: [] }"
+    );
+    assert!(WidgetAnimation::update_animation(&mut spin, 0.001));
+    assert_ne!(
+        render_spin(&spin, frame, PaintPass::Content),
+        "DisplayList { ops: [] }"
+    );
 }

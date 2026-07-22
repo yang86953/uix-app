@@ -1,7 +1,14 @@
 #![cfg(all(windows, feature = "agent-control"))]
+#![allow(
+    clippy::expect_used,
+    clippy::too_many_arguments,
+    reason = "this assertion-heavy GUI test crate fails fast with scenario-specific diagnostics"
+)]
 
 #[path = "support/agent_gui_windows/component_visual.rs"]
 mod component_visual;
+#[path = "../demo/src/demos/component_qa/manifest.rs"]
+mod component_visual_manifest;
 #[path = "support/agent_gui_windows/foreground.rs"]
 mod foreground;
 #[path = "support/agent_gui_windows/framework.rs"]
@@ -19,6 +26,7 @@ mod text_components;
 #[path = "support/agent_gui_windows/visual.rs"]
 mod visual;
 
+use std::cell::Cell;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::windows::fs::OpenOptionsExt;
@@ -29,12 +37,15 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
-use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, RECT, WPARAM};
+use windows::Win32::UI::HiDpi::{
+    GetDpiForWindow, SetThreadDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VK_TAB,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowLongW, IsIconic, IsWindowVisible, IsZoomed, PostMessageW, SetWindowPos,
+    GetClientRect, GetWindowLongW, IsIconic, IsWindowVisible, IsZoomed, PostMessageW, SetWindowPos,
     ShowWindowAsync, GWL_STYLE, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
     SWP_SHOWWINDOW, SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE, SW_SHOW, WM_CLOSE, WS_CAPTION,
     WS_THICKFRAME,
@@ -45,28 +56,119 @@ use foreground::{find_process_window, keyboard_input, request_foreground_focus};
 const START_TIMEOUT: Duration = Duration::from_secs(45);
 const PRESENT_TIMEOUT_MS: u64 = 30_000;
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
+const COMPONENT_VISUAL_CASE_COUNT: usize = component_visual_manifest::COMPONENT_VISUAL_CASE_COUNT;
+const EXPECT_DPI_ENV: &str = "UIX_EXPECT_DPI";
+const GUI_EVIDENCE_DIR_ENV: &str = "UIX_GUI_EVIDENCE_DIR";
 
 #[derive(Debug, Clone, Copy)]
 struct GraphicsExpectation {
+    evidence_label: &'static str,
     backend_override: Option<&'static str>,
-    selected_recipe: &'static str,
-    present_occlusion: &'static str,
+    selected_recipe: Option<&'static str>,
+    present_occlusion: Option<&'static str>,
+    adapter_backend: Option<&'static str>,
+    software_fallback_request: Option<&'static str>,
+    run_foreground_visual_oracles: bool,
 }
 
-const D3D11_GRAPHICS: GraphicsExpectation = GraphicsExpectation {
-    backend_override: Some("d3d11"),
-    selected_recipe: "backend=d3d11; raster=gpu_native; present=swapchain",
-    present_occlusion: "present_status_and_test",
-};
 const DEFAULT_VULKAN_GRAPHICS: GraphicsExpectation = GraphicsExpectation {
+    evidence_label: "auto-vulkan",
     backend_override: None,
-    selected_recipe: "backend=vulkan; raster=cpu; present=pixel_upload",
-    present_occlusion: "unsupported",
+    selected_recipe: Some("backend=vulkan; raster=gpu_native; present=swapchain"),
+    present_occlusion: Some("unsupported"),
+    adapter_backend: Some("vulkan"),
+    software_fallback_request: None,
+    run_foreground_visual_oracles: true,
+};
+const FORCED_VULKAN_GRAPHICS: GraphicsExpectation = GraphicsExpectation {
+    evidence_label: "forced-vulkan",
+    backend_override: Some("vulkan"),
+    selected_recipe: Some("backend=vulkan; raster=gpu_native; present=swapchain"),
+    present_occlusion: Some("unsupported"),
+    adapter_backend: Some("vulkan"),
+    software_fallback_request: None,
+    run_foreground_visual_oracles: false,
+};
+// Production intentionally has no direct `software` backend override. A Metal
+// request is valid configuration but has no Windows registry row, so it drives
+// the shipping GPU-probe-exhausted -> whole SoftwareEngine fallback boundary.
+const SOFTWARE_FALLBACK_GRAPHICS: GraphicsExpectation = GraphicsExpectation {
+    evidence_label: "software-fallback",
+    backend_override: Some("metal"),
+    selected_recipe: None,
+    present_occlusion: None,
+    adapter_backend: None,
+    software_fallback_request: Some("metal"),
+    run_foreground_visual_oracles: false,
 };
 static REAL_GUI_LOCK: Mutex<()> = Mutex::new(());
 
+#[test]
+fn graphics_expectation_matrix_tracks_production_recipes() {
+    assert_eq!(DEFAULT_VULKAN_GRAPHICS.evidence_label, "auto-vulkan");
+    assert_eq!(DEFAULT_VULKAN_GRAPHICS.backend_override, None);
+    assert_eq!(
+        DEFAULT_VULKAN_GRAPHICS.selected_recipe,
+        Some("backend=vulkan; raster=gpu_native; present=swapchain")
+    );
+    assert_eq!(
+        DEFAULT_VULKAN_GRAPHICS.present_occlusion,
+        Some("unsupported")
+    );
+    assert_eq!(DEFAULT_VULKAN_GRAPHICS.adapter_backend, Some("vulkan"));
+    assert_eq!(DEFAULT_VULKAN_GRAPHICS.software_fallback_request, None);
+
+    assert_eq!(FORCED_VULKAN_GRAPHICS.backend_override, Some("vulkan"));
+    assert_eq!(
+        FORCED_VULKAN_GRAPHICS.selected_recipe,
+        DEFAULT_VULKAN_GRAPHICS.selected_recipe
+    );
+    assert_eq!(FORCED_VULKAN_GRAPHICS.adapter_backend, Some("vulkan"));
+    assert_eq!(SOFTWARE_FALLBACK_GRAPHICS.backend_override, Some("metal"));
+    assert_eq!(SOFTWARE_FALLBACK_GRAPHICS.selected_recipe, None);
+    assert_eq!(
+        SOFTWARE_FALLBACK_GRAPHICS.software_fallback_request,
+        Some("metal")
+    );
+    assert!(DEFAULT_VULKAN_GRAPHICS
+        .selected_recipe
+        .is_some_and(|recipe| !recipe.contains("software")));
+    for dpi in [96, 144, 192] {
+        assert_eq!(parse_expected_dpi(&dpi.to_string()), Ok(dpi));
+    }
+    for invalid in ["", "120", "144.0", "abc"] {
+        assert!(parse_expected_dpi(invalid).is_err());
+    }
+}
+
+fn parse_expected_dpi(value: &str) -> Result<u32, String> {
+    let dpi = value
+        .parse::<u32>()
+        .map_err(|_| format!("{EXPECT_DPI_ENV} must be one of 96, 144, or 192; got {value:?}"))?;
+    if matches!(dpi, 96 | 144 | 192) {
+        Ok(dpi)
+    } else {
+        Err(format!(
+            "{EXPECT_DPI_ENV} must be one of 96, 144, or 192; got {dpi}"
+        ))
+    }
+}
+
+fn expected_dpi_from_env() -> Option<u32> {
+    let value = std::env::var_os(EXPECT_DPI_ENV)?;
+    let value = match value.into_string() {
+        Ok(value) => value,
+        Err(_) => panic!("{EXPECT_DPI_ENV} must contain Unicode decimal digits"),
+    };
+    match parse_expected_dpi(&value) {
+        Ok(dpi) => Some(dpi),
+        Err(message) => panic!("{message}"),
+    }
+}
+
 struct DemoProcess {
     child: Child,
+    window: Cell<Option<HWND>>,
     discovery_root: PathBuf,
     discovery_path: PathBuf,
     output_readers: Vec<JoinHandle<String>>,
@@ -113,6 +215,7 @@ impl DemoProcess {
             .join(format!("uix-{}.json", child.id()));
         Self {
             child,
+            window: Cell::new(None),
             discovery_root,
             discovery_path,
             output_readers,
@@ -176,21 +279,178 @@ impl DemoProcess {
         );
 
         let output = self.take_output();
-        let selected = format!(
-            "Graphics bootstrap: selected recipe {}; present_occlusion={}",
-            self.graphics.selected_recipe, self.graphics.present_occlusion
-        );
-        assert!(
-            output.contains(&selected),
-            "demo did not select graphics recipe `{}` with present occlusion `{}`; output={output}",
-            self.graphics.selected_recipe,
-            self.graphics.present_occlusion
-        );
-        assert!(
-            !output.contains("fallback=software_cpu"),
-            "demo unexpectedly fell back to Software; output={output}"
-        );
+        self.assert_graphics_output(&output);
+        self.persist_graphics_output(&output);
         output
+    }
+
+    fn assert_graphics_output(&self, output: &str) {
+        if let Some(recipe) = self.graphics.selected_recipe {
+            let Some(present_occlusion) = self.graphics.present_occlusion else {
+                panic!("GPU graphics expectation must declare present occlusion support");
+            };
+            let selected = format!(
+                "Graphics bootstrap: selected recipe {recipe}; present_occlusion={present_occlusion}"
+            );
+            assert!(
+                output.contains(&selected),
+                "demo did not select graphics recipe `{recipe}` with present occlusion `{present_occlusion}`; output={output}"
+            );
+            let Some(adapter_backend) = self.graphics.adapter_backend else {
+                panic!("GPU graphics expectation must declare its wgpu adapter backend");
+            };
+            let adapter_marker = format!("WgpuContext: backend={adapter_backend}; adapter=\"");
+            let adapter_line = output
+                .lines()
+                .find(|line| line.contains(&adapter_marker))
+                .unwrap_or_else(|| {
+                    panic!("demo did not report a wgpu {adapter_backend} adapter; output={output}")
+                });
+            assert!(
+                !output.contains("fallback=software_cpu"),
+                "demo unexpectedly fell back to Software; output={output}"
+            );
+            eprintln!(
+                "graphics acceptance evidence: path={}; recipe={recipe}; present_occlusion={present_occlusion}; {}",
+                self.graphics.evidence_label,
+                adapter_line.trim()
+            );
+            return;
+        }
+
+        let Some(request) = self.graphics.software_fallback_request else {
+            panic!("non-GPU graphics expectation must declare a fallback request");
+        };
+        let fallback = format!(
+            "GPU probe exhausted; request={request}; platform=windows; fallback=software_cpu"
+        );
+        assert!(
+            output.contains(&fallback),
+            "demo did not reach the production whole-Software fallback for request `{request}`; output={output}"
+        );
+        assert!(
+            output.contains("CPU software engine initialized"),
+            "demo did not initialize SoftwareEngine after GPU probe exhaustion; output={output}"
+        );
+        assert!(
+            !output.contains("Graphics bootstrap: selected recipe"),
+            "software fallback scenario unexpectedly selected a GPU recipe; output={output}"
+        );
+        assert!(
+            !output.contains("WgpuContext: backend="),
+            "software fallback scenario unexpectedly created a wgpu adapter; output={output}"
+        );
+        eprintln!(
+            "graphics acceptance evidence: path={}; request={request}; fallback=software_cpu; engine=SoftwareEngine",
+            self.graphics.evidence_label
+        );
+    }
+
+    fn persist_graphics_output(&self, output: &str) {
+        let Some(root) = std::env::var_os(GUI_EVIDENCE_DIR_ENV) else {
+            return;
+        };
+        let root = PathBuf::from(root);
+        fs::create_dir_all(&root).expect("create GUI evidence directory");
+        let path = root.join(format!("graphics-{}.log", self.graphics.evidence_label));
+        fs::write(&path, output).expect("write graphics acceptance log");
+        eprintln!("graphics acceptance log: {}", path.display());
+    }
+
+    fn assert_expected_dpi(&self, snapshot: &Value, scenario: &str) {
+        let Some(expected_dpi) = expected_dpi_from_env() else {
+            return;
+        };
+        let window = self.window_handle();
+        // SAFETY: the HWND belongs to the live child process for the duration of this call.
+        let actual_dpi = unsafe { GetDpiForWindow(window) };
+        assert_ne!(actual_dpi, 0, "GetDpiForWindow returned zero");
+        assert_eq!(
+            actual_dpi, expected_dpi,
+            "window is on a {actual_dpi} DPI monitor, but {EXPECT_DPI_ENV} requested {expected_dpi}"
+        );
+
+        let mut client = RECT::default();
+        // GetClientRect must run in a Per-Monitor V2 caller context so its
+        // extent is the same physical-pixel contract consumed by the surface.
+        // SAFETY: this changes only the current test thread and the returned
+        // context is restored below before any assertion can panic.
+        let previous =
+            unsafe { SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
+        assert!(
+            !previous.0.is_null(),
+            "failed to enter a Per-Monitor V2 DPI context for evidence"
+        );
+        // SAFETY: `client` is a valid out parameter and the child HWND is still live.
+        let client_result = unsafe { GetClientRect(window, &mut client) };
+        // SAFETY: `previous` was returned by this thread's successful context switch.
+        let restored = unsafe { SetThreadDpiAwarenessContext(previous) };
+        assert!(
+            !restored.0.is_null(),
+            "failed to restore the test thread DPI awareness context"
+        );
+        if let Err(error) = client_result {
+            panic!("GetClientRect for DPI evidence failed: {error}");
+        }
+        let physical_width = (client.right - client.left).max(0);
+        let physical_height = (client.bottom - client.top).max(0);
+        assert!(
+            physical_width > 0 && physical_height > 0,
+            "DPI evidence requires a non-empty client extent"
+        );
+
+        let root = snapshot["nodes"]
+            .as_array()
+            .and_then(|nodes| nodes.iter().find(|node| node["parent"].is_null()))
+            .unwrap_or_else(|| panic!("DPI evidence snapshot must contain a semantic root"));
+        let logical_width = root["visible_bounds"]["w"]
+            .as_f64()
+            .unwrap_or_else(|| panic!("DPI evidence root must have a logical width"));
+        let logical_height = root["visible_bounds"]["h"]
+            .as_f64()
+            .unwrap_or_else(|| panic!("DPI evidence root must have a logical height"));
+        assert!(
+            logical_width > 0.0 && logical_height > 0.0,
+            "DPI evidence requires a non-empty logical extent"
+        );
+
+        let scale = actual_dpi as f64 / 96.0;
+        let expected_physical_width = logical_width * scale;
+        let expected_physical_height = logical_height * scale;
+        let width_delta = (physical_width as f64 - expected_physical_width).abs();
+        let height_delta = (physical_height as f64 - expected_physical_height).abs();
+        assert!(
+            width_delta <= 2.0 && height_delta <= 2.0,
+            "DPI extent mismatch: logical={logical_width:.2}x{logical_height:.2}, physical={physical_width}x{physical_height}, dpi={actual_dpi}, deltas={width_delta:.2}x{height_delta:.2}"
+        );
+
+        let evidence = json!({
+            "schema": "uix.gui.dpi.v1",
+            "graphics_path": self.graphics.evidence_label,
+            "scenario": scenario,
+            "expected_dpi": expected_dpi,
+            "actual_dpi": actual_dpi,
+            "logical_extent": {
+                "width": logical_width,
+                "height": logical_height,
+            },
+            "physical_extent": {
+                "width": physical_width,
+                "height": physical_height,
+            },
+        });
+        eprintln!("DPI acceptance evidence: {evidence}");
+        if let Some(root) = std::env::var_os(GUI_EVIDENCE_DIR_ENV) {
+            let root = PathBuf::from(root);
+            fs::create_dir_all(&root).expect("create GUI evidence directory");
+            let path = root.join(format!(
+                "dpi-{}-{scenario}.json",
+                self.graphics.evidence_label
+            ));
+            let bytes = serde_json::to_vec_pretty(&evidence).expect("serialize DPI evidence");
+            fs::write(&path, bytes).expect("write DPI acceptance evidence");
+            eprintln!("DPI acceptance record: {}", path.display());
+        }
     }
 
     fn take_output(&mut self) -> String {
@@ -297,9 +557,13 @@ impl DemoProcess {
     }
 
     fn window_handle(&self) -> HWND {
+        if let Some(window) = self.window.get() {
+            return window;
+        }
         let deadline = Instant::now() + SHUTDOWN_TIMEOUT;
         loop {
             if let Some(window) = find_process_window(self.child.id()) {
+                self.window.set(Some(window));
                 return window;
             }
             assert!(
@@ -578,15 +842,21 @@ fn invoke_until_presentable(
 }
 
 #[test]
-#[ignore = "requires an interactive Windows desktop"]
-fn real_d3d11_gui_process_authenticates_performs_and_cleans_up() {
-    run_real_gui_scenario(D3D11_GRAPHICS);
+#[ignore = "requires an interactive Windows desktop and Vulkan driver"]
+fn real_default_auto_vulkan_gui_presents_and_recovers_from_minimize() {
+    run_real_gui_scenario(DEFAULT_VULKAN_GRAPHICS);
 }
 
 #[test]
 #[ignore = "requires an interactive Windows desktop and Vulkan driver"]
-fn real_default_vulkan_gui_presents_and_recovers_from_minimize() {
-    run_real_gui_scenario(DEFAULT_VULKAN_GRAPHICS);
+fn real_forced_vulkan_gui_presents_and_recovers_from_minimize() {
+    run_real_gui_scenario(FORCED_VULKAN_GRAPHICS);
+}
+
+#[test]
+#[ignore = "requires an interactive Windows desktop and validates production Software fallback"]
+fn real_whole_software_fallback_gui_presents_and_recovers_from_minimize() {
+    run_real_gui_scenario(SOFTWARE_FALLBACK_GRAPHICS);
 }
 
 fn run_real_gui_scenario(graphics: GraphicsExpectation) {
@@ -661,6 +931,7 @@ fn run_real_gui_scenario(graphics: GraphicsExpectation) {
     );
     assert_success(&before, "snapshot-before");
     assert_custom_title_bar_nodes(&before["snapshot"]);
+    demo.assert_expected_dpi(&before["snapshot"], "main-window");
     let maximized = invoke_until_presentable(
         &demo,
         &mut connection,
@@ -692,7 +963,7 @@ fn run_real_gui_scenario(graphics: GraphicsExpectation) {
         node_by_automation_id(&before["snapshot"], "home-count-value")["name"],
         "计数: 0"
     );
-    if graphics.backend_override.is_none() {
+    if graphics.run_foreground_visual_oracles {
         foreground::verify_pointer_and_keyboard_focus_visuals(
             &demo,
             &mut connection,
@@ -753,7 +1024,20 @@ fn run_real_gui_scenario(graphics: GraphicsExpectation) {
         json!({ "kind": "focus" }),
     );
     assert_eq!(focused["settled"], true);
-    demo.send_system_tab();
+    if graphics.run_foreground_visual_oracles {
+        demo.send_system_tab();
+    } else {
+        let tabbed = perform_until_presentable(
+            &demo,
+            &mut connection,
+            window_id,
+            generation,
+            "portable-tab-forward",
+            None,
+            json!({ "kind": "press_key", "key": "tab", "modifiers": [] }),
+        );
+        assert_eq!(tabbed["settled"], true);
+    }
     wait_for_focused_node(
         &mut connection,
         window_id,
@@ -970,13 +1254,29 @@ fn run_real_gui_scenario(graphics: GraphicsExpectation) {
     );
     assert_eq!(opened_modal["settled"], true);
 
-    demo.send_system_tab();
+    if graphics.run_foreground_visual_oracles {
+        demo.send_system_tab();
+    } else {
+        let modal_tabbed = perform_until_presentable(
+            &demo,
+            &mut connection,
+            window_id,
+            generation,
+            "portable-modal-tab-forward",
+            None,
+            json!({ "kind": "press_key", "key": "tab", "modifiers": [] }),
+        );
+        assert_eq!(modal_tabbed["settled"], true);
+    }
     wait_for_focused_node(
         &mut connection,
         window_id,
         "feedback-modal-cancel",
         Duration::from_secs(10),
     );
+    // Vulkan reports present_occlusion=unsupported. SW_HIDE validates the
+    // production hidden/non-presentable lifecycle only; it is not evidence of
+    // true compositor occlusion by another foreground window.
     demo.hide();
     wait_until_presentable(&mut connection, window_id, false, Duration::from_secs(10));
     let hidden_modal = exchange(

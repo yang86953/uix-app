@@ -430,7 +430,7 @@ component! {
                 self.search_cursor_rect
                     .set(Rect::new(text_area.x, text_area.y, 0.0, text_area.h));
             }
-            crate::ui::widgets::icon::paint_icon_in_frame(
+            crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 if self.is_present() {
                     "chevron-up"
@@ -553,7 +553,13 @@ component! {
                     paint_loading_spinner(ctx, row, self.loading_phase, text_secondary);
                 } else if !option.children.is_empty() {
                     let arrow = Rect::new(row.x + row.w - 24.0, row.y, 24.0, row.h);
-                    ctx.text_center(loc.cascader_arrow, arrow, text_secondary, 14.0);
+                    crate::ui::widgets::icon::Icon::paint_in_frame(
+                        ctx,
+                        "chevron-right",
+                        arrow,
+                        text_secondary,
+                        14.0,
+                    );
                 }
             }
             ctx.pop_clip();

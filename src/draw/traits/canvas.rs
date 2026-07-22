@@ -379,6 +379,10 @@ pub trait Canvas2D {
 
     /// 与 [`blit_glyph_outline`] 相同，可携带缓存的面积 coverage（物理 1:1 时复用，
     /// 稳定 atlas 键）。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "glyph atlas geometry is an established canvas backend boundary"
+    )]
     fn blit_glyph_outline_shared(
         &mut self,
         x: i32,

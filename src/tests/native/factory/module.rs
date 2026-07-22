@@ -76,20 +76,8 @@ fn d3d12_explicit_factory_creates_active_real_window_context() {
     assert_eq!(context.graphics_backend(), GraphicsBackend::D3d12);
     assert_eq!(context.caps().raster, RasterMode::GpuNative);
     assert_eq!(context.caps().present, PresentMode::Swapchain);
-    assert_eq!(
-        context.native_raster_caps(),
-        NativeRasterCaps {
-            clear_target: true,
-            solid_rects: true,
-            stroke_rects: true,
-            glyphs: true,
-            linear_gradients: true,
-            radial_gradients: true,
-            solid_meshes: true,
-            box_shadows: true,
-            ..NativeRasterCaps::default()
-        }
-    );
+    assert_eq!(context.native_raster_caps(), NativeRasterCaps::wgpu_full());
+    assert!(context.native_raster_caps().has_gpu_only_baseline());
     let _ = context.try_shutdown();
     drop(context);
     window.close().expect("close factory test window");

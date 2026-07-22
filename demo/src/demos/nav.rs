@@ -49,18 +49,21 @@ pub fn page_nav(ctx: &DemoCtx<'_>) -> ViewNode {
                             key: "home".into(),
                             label: "首页".into(),
                             icon: "home".into(),
+                            children: Vec::new(),
                             disabled: false,
                         })
                         .add_item(MenuItem {
                             key: "docs".into(),
                             label: "文档".into(),
                             icon: "file-text".into(),
+                            children: Vec::new(),
                             disabled: false,
                         })
                         .add_item(MenuItem {
                             key: "about".into(),
                             label: "关于".into(),
                             icon: "info".into(),
+                            children: Vec::new(),
                             disabled: false,
                         })
                         .mode(MenuMode::Horizontal)
@@ -72,12 +75,14 @@ pub fn page_nav(ctx: &DemoCtx<'_>) -> ViewNode {
                             key: "a".into(),
                             label: "菜单 A".into(),
                             icon: "".into(),
+                            children: Vec::new(),
                             disabled: false,
                         })
                         .add_item(MenuItem {
                             key: "b".into(),
                             label: "菜单 B".into(),
                             icon: "".into(),
+                            children: Vec::new(),
                             disabled: false,
                         })
                         .mode(MenuMode::Vertical)

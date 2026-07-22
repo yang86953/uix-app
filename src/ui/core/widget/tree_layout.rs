@@ -184,6 +184,8 @@ impl WidgetTree {
             shrink_parent_children,
         } = scratch;
 
+        self.refresh_collapse_content_children(order);
+        self.refresh_image_error_children(order);
         self.refresh_table_cell_children(order);
         self.fill_layout_traversal(order, traversal);
         if order.is_empty() {
@@ -684,7 +686,7 @@ impl WidgetTree {
                 let new_positions = self.layout_children_preserving_expansions(
                     id,
                     relayout_frame,
-                    &children,
+                    children,
                     resized_children,
                 );
                 let mut child_moved = false;
@@ -786,6 +788,28 @@ impl WidgetTree {
         }
     }
 
+    fn refresh_image_error_children(&mut self, ids: &mut Vec<WidgetId>) {
+        ids.clear();
+        ids.extend(self.traverse().iter().copied());
+        for id in ids.iter().copied() {
+            if self.refresh_image_error_component(id) {
+                self.push_layout_invalidation(id);
+                self.propagate_layout_invalidation(id);
+            }
+        }
+    }
+
+    fn refresh_collapse_content_children(&mut self, ids: &mut Vec<WidgetId>) {
+        ids.clear();
+        ids.extend(self.traverse().iter().copied());
+        for id in ids.iter().copied() {
+            if self.refresh_collapse_content_component(id) {
+                self.push_layout_invalidation(id);
+                self.propagate_layout_invalidation(id);
+            }
+        }
+    }
+
     /// 检查节点是否有 viewport 祖先（如 ScrollView）。
     /// 递归遍历祖先链，不限于直接父节点。
     /// 用于 layout_shrink 中避免收缩 viewport 内部节点，防止与 ScrollView 尺寸设定形成振荡。
@@ -878,7 +902,7 @@ impl WidgetTree {
                     let Some(node) = self.get(id) else {
                         continue;
                     };
-                    node.layout_children(frame, &children, self)
+                    node.layout_children(frame, children, self)
                 };
                 for (child_id, rect) in positions {
                     if self.set_layout_frame(child_id, rect) {
@@ -964,7 +988,7 @@ impl WidgetTree {
                     // 收缩后重新布局子节点
                     let new_positions = self
                         .get(op.id)
-                        .map(|n| n.layout_children(new_frame, &children, self))
+                        .map(|n| n.layout_children(new_frame, children, self))
                         .unwrap_or_default();
                     for (child_id, rect) in new_positions {
                         let _ = self.set_layout_frame(child_id, rect);
@@ -979,7 +1003,7 @@ impl WidgetTree {
                         if !parent_children.is_empty() {
                             let parent_positions = self
                                 .get(pid)
-                                .map(|n| n.layout_children(parent_frame, &parent_children, self))
+                                .map(|n| n.layout_children(parent_frame, parent_children, self))
                                 .unwrap_or_default();
                             for (child_id, rect) in parent_positions {
                                 let _ = self.set_layout_frame(child_id, rect);
@@ -1135,6 +1159,15 @@ impl WidgetTree {
                 continue;
             };
 
+            let modal_was_present = self
+                .get(id)
+                .and_then(|node| {
+                    node.component()
+                        .as_any()
+                        .downcast_ref::<crate::ui::widgets::Modal>()
+                })
+                .is_some_and(crate::ui::widgets::Modal::is_present);
+
             let view_was_active = self
                 .get(id)
                 .is_some_and(BoxedWidget::view_transition_active);
@@ -1194,6 +1227,17 @@ impl WidgetTree {
             widget_overlays_changed |= !self.widget_overlay_is_current(id);
             updates.push((id, view_still_active || component_still_active));
             if remove_now {
+                completed_removals.push(id);
+            }
+
+            let modal_closed_for_destruction = modal_was_present
+                && self.get(id).is_some_and(|node| {
+                    node.component()
+                        .as_any()
+                        .downcast_ref::<crate::ui::widgets::Modal>()
+                        .is_some_and(|modal| modal.should_destroy_on_close() && !modal.is_present())
+                });
+            if modal_closed_for_destruction {
                 completed_removals.push(id);
             }
         }

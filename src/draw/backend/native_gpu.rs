@@ -1,7 +1,7 @@
 //! API-neutral non-GL GPU-native raster backend.
 //!
-//! Hot Canvas2D paths (`fill_rect` / `fill_circle` / `stroke_rect` /
-//! `stroke_circle`, axis-aligned `draw_line`, solid `blit_glyph`,
+//! Hot Canvas2D paths (`fill_rect` / `fill_circle` / `fill_sector` /
+//! `stroke_rect` / `stroke_circle`, axis-aligned `draw_line`, solid `blit_glyph`,
 //! linear/radial gradients, fill-rule-aware `fill_path`,
 //! cap/join-aware `stroke_path`, box/ambient shadow, and scaled image blit)
 //! draw via [`IGraphicsContext`] operations advertised by [`NativeRasterCaps`].
@@ -23,7 +23,7 @@ use crate::draw::pipeline::{
     FrameGlyphBlit, FrameRasterOp, FrameRect, FrameStrokeRect, ReferenceFrame,
 };
 use crate::draw::primitives::color::Color;
-use crate::draw::primitives::path::{FillRule, Path};
+use crate::draw::primitives::path::{FillRule, Path, PathBuilder};
 use crate::draw::primitives::stroker::StrokeOptions;
 use crate::draw::primitives::tessellator;
 use crate::draw::primitives::types::{
@@ -31,9 +31,9 @@ use crate::draw::primitives::types::{
 };
 use crate::draw::traits::Canvas2D;
 use crate::native::traits::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
-    GpuSolidRect, GpuStrokeRect, IGraphicsContext, NativeRasterCaps, OffscreenTargetId,
-    PresentFrame, PresentMode, PresentTestResult, RasterMode, SoftFallbackTile,
+    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient,
+    GpuSolidMesh, GpuSolidRect, GpuStrokeRect, IGraphicsContext, NativeRasterCaps,
+    OffscreenTargetId, PresentFrame, PresentMode, PresentTestResult, RasterMode, SoftFallbackTile,
 };
 
 const SOFT_FALLBACK_IDLE_PRESENT_GRACE: u8 = 2;
@@ -388,9 +388,8 @@ impl NativeGpuCanvas2D {
             return;
         }
         let scissor = self.scissor_aabb();
-        let has_radius = radius.is_some_and(|rad| {
-            rad.tl != 0.0 || rad.tr != 0.0 || rad.br != 0.0 || rad.bl != 0.0
-        });
+        let has_radius = radius
+            .is_some_and(|rad| rad.tl != 0.0 || rad.tr != 0.0 || rad.br != 0.0 || rad.bl != 0.0);
         if let Some((device, scale)) = self.try_axis_aligned_device_rect(rect) {
             if device.w <= 0.0 || device.h <= 0.0 {
                 return;
@@ -421,7 +420,10 @@ impl NativeGpuCanvas2D {
                 self.solid_rgba(color),
             );
             self.pending_native
-                .push(PendingNativeOp::SolidMesh(PendingNativeMesh { mesh, scissor }));
+                .push(PendingNativeOp::SolidMesh(PendingNativeMesh {
+                    mesh,
+                    scissor,
+                }));
             return;
         }
         self.soft_or_reject_transform("transformed rounded rect");
@@ -562,10 +564,9 @@ impl NativeGpuCanvas2D {
             }
             return;
         }
-        let center = self.transform.transform_point(Point::new(
-            cx + self.offset_x,
-            cy + self.offset_y,
-        ));
+        let center = self
+            .transform
+            .transform_point(Point::new(cx + self.offset_x, cy + self.offset_y));
         let s = scale.0.abs();
         self.pending_native
             .push(PendingNativeOp::RadialGradient(PendingNativeRadialGrad {
@@ -655,6 +656,77 @@ impl NativeGpuCanvas2D {
             }));
     }
 
+    /// Route a circular sector through the shared path tessellator so strict
+    /// GPU canvases never need a CPU fallback. Angles follow the historical
+    /// Canvas2D contract: the filled sweep advances from `start_angle` toward
+    /// `end_angle` in the positive direction, wrapping at one turn. A raw
+    /// sweep of at least one turn is a full circle.
+    fn queue_sector_mesh(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        radius: f32,
+        start_angle: f32,
+        end_angle: f32,
+        color: Color,
+    ) {
+        if !cx.is_finite()
+            || !cy.is_finite()
+            || !radius.is_finite()
+            || !start_angle.is_finite()
+            || !end_angle.is_finite()
+            || radius <= 0.0
+        {
+            return;
+        }
+
+        let raw_sweep = end_angle - start_angle;
+        if !raw_sweep.is_finite() {
+            return;
+        }
+        let full_turn_epsilon = f32::EPSILON * 16.0;
+        let is_full_turn = raw_sweep.abs() >= std::f32::consts::TAU - full_turn_epsilon;
+        let sweep = if is_full_turn {
+            std::f32::consts::TAU
+        } else {
+            raw_sweep.rem_euclid(std::f32::consts::TAU)
+        };
+        if sweep <= full_turn_epsilon {
+            return;
+        }
+
+        // Normalizing first keeps trigonometry stable for callers that retain
+        // an ever-increasing animation angle.
+        let start = start_angle.rem_euclid(std::f32::consts::TAU);
+        let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
+        if self.soft_has_content || !self.native_caps.solid_meshes || !native_blend {
+            if self.gpu_only {
+                self.reject_unsupported("sector GPU primitive or destination-dependent blend");
+                return;
+            }
+            self.with_soft_clip(|soft| {
+                if is_full_turn {
+                    soft.fill_circle(cx, cy, radius, color);
+                } else {
+                    soft.fill_sector(cx, cy, radius, start, start + sweep, color);
+                }
+            });
+            self.mark_soft();
+            return;
+        }
+
+        let mut builder = PathBuilder::new();
+        builder.arc(cx, cy, radius, start, start + sweep);
+        if !is_full_turn {
+            builder.line_to(cx, cy).close();
+        }
+        self.queue_path_mesh(&builder.build(), color, FillRule::NonZero, None);
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "shadow parameters mirror the canvas drawing contract"
+    )]
     fn queue_box_shadow(
         &mut self,
         rect: Rect,
@@ -760,10 +832,7 @@ impl NativeGpuCanvas2D {
                 radius: r,
                 ambient,
                 corners: GpuGlyphBlit::axis_aligned_corners(
-                    expanded.x,
-                    expanded.y,
-                    expanded.w,
-                    expanded.h,
+                    expanded.x, expanded.y, expanded.w, expanded.h,
                 ),
             }
         } else {
@@ -972,8 +1041,8 @@ impl NativeGpuCanvas2D {
         }
 
         let identity = self.transform.m == Transform::identity().m;
-        let one_to_one = destination_rect.w == source.width as f32
-            && destination_rect.h == source.height as f32;
+        let one_to_one =
+            destination_rect.w == source.width as f32 && destination_rect.h == source.height as f32;
         let (blit_x, blit_y, blit_w, blit_h, crop) = if identity && one_to_one {
             let dest_x = device_dst.x;
             let dest_y = device_dst.y;
@@ -1048,7 +1117,8 @@ impl NativeGpuCanvas2D {
             )
         };
 
-        let Some(pixel_count) = usize::try_from(i64::from(crop.width) * i64::from(crop.height)).ok()
+        let Some(pixel_count) =
+            usize::try_from(i64::from(crop.width) * i64::from(crop.height)).ok()
         else {
             return DirectImageBlit::Unsupported;
         };
@@ -1353,16 +1423,7 @@ impl Canvas2D for NativeGpuCanvas2D {
     }
 
     fn fill_sector(&mut self, cx: f32, cy: f32, r: f32, sa: f32, ea: f32, color: Color) {
-        if self.gpu_only {
-            self.reject_unsupported("sector GPU primitive");
-            return;
-        }
-        self.sync_fallback_state();
-        let _soft_clip = self.clip_rect;
-        self.ensure_soft().push_clip(_soft_clip);
-        self.ensure_soft().fill_sector(cx, cy, r, sa, ea, color);
-        self.ensure_soft().pop_clip();
-        self.mark_soft();
+        self.queue_sector_mesh(cx, cy, r, sa, ea, color);
     }
 
     fn fill_path(&mut self, path: &Path, color: Color, fill_rule: FillRule) {
@@ -1621,15 +1682,8 @@ impl Canvas2D for NativeGpuCanvas2D {
             self.sync_fallback_state();
             let _soft_clip = self.clip_rect;
             self.ensure_soft().push_clip(_soft_clip);
-            self.ensure_soft().blit_glyph_outline_shared(
-                x,
-                y,
-                mesh,
-                area_coverage,
-                w,
-                h,
-                color,
-            );
+            self.ensure_soft()
+                .blit_glyph_outline_shared(x, y, mesh, area_coverage, w, h, color);
             self.ensure_soft().pop_clip();
             self.mark_soft();
             return;

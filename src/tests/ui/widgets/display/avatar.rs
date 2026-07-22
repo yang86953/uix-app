@@ -8,7 +8,7 @@ use crate::ui::AccessibilityRole;
 fn avatar_test_image() -> (std::path::PathBuf, String) {
     static NEXT_FIXTURE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let image = image::RgbaImage::from_fn(8, 4, |x, _| {
-        if x < 2 || x >= 6 {
+        if !(2..6).contains(&x) {
             image::Rgba([255, 255, 0, 255])
         } else if x < 4 {
             image::Rgba([255, 0, 0, 255])

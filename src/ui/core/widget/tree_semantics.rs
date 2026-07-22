@@ -20,6 +20,7 @@ impl WidgetTree {
         let path = self.semantic_path_to_root(event.target);
         let result = self.handler_table.dispatch_path(&path, event);
         self.apply_modal_context_requests(&path);
+        self.apply_semantic_layout_requests(&path);
         result
     }
 
@@ -59,5 +60,17 @@ impl WidgetTree {
         }
         self.mark_full_frame_dirty();
         self.rebuild_widget_overlays();
+    }
+
+    fn apply_semantic_layout_requests(&mut self, path: &[WidgetId]) {
+        for &id in path {
+            let requested = self
+                .get_mut(id)
+                .is_some_and(|node| node.take_layout_request());
+            if requested {
+                self.push_layout_invalidation(id);
+                self.propagate_layout_invalidation(id);
+            }
+        }
     }
 }

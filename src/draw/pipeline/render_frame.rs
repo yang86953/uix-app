@@ -814,7 +814,7 @@ impl FrameRenderer {
 
     fn frame_image(pixels: Vec<u32>, width: i32) -> Option<FrameImage> {
         let width_usize = usize::try_from(width).ok().filter(|width| *width > 0)?;
-        if pixels.is_empty() || pixels.len() % width_usize != 0 {
+        if pixels.is_empty() || !pixels.len().is_multiple_of(width_usize) {
             return None;
         }
         let height = i32::try_from(pixels.len() / width_usize).ok()?;

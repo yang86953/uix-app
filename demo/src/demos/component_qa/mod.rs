@@ -10,7 +10,7 @@ use uix::prelude::*;
 
 use crate::demos::context::DemoCtx;
 
-pub use manifest::{ComponentVisualCase, COMPONENT_VISUAL_CASES};
+pub use manifest::{ComponentVisualCase, COMPONENT_VISUAL_CASES, COMPONENT_VISUAL_CASE_COUNT};
 
 const CASE_VIEWPORT_WIDTH: f32 = 620.0;
 const CASE_VIEWPORT_HEIGHT: f32 = 390.0;
@@ -49,7 +49,7 @@ fn build_case(case: &ComponentVisualCase, tk: &DesignTokens) -> ViewNode {
 
 pub fn page_component_qa(ctx: &DemoCtx<'_>) -> ViewNode {
     let case_state = ctx.component_case();
-    let total = COMPONENT_VISUAL_CASES.len();
+    let total = COMPONENT_VISUAL_CASE_COUNT;
     let index = case_state.get().min(total.saturating_sub(1));
     let case = &COMPONENT_VISUAL_CASES[index];
     let qa_tokens = if ctx.theme_control().is_some_and(|control| control.is_dark()) {
@@ -140,7 +140,7 @@ mod tests {
     use std::fs;
     use std::path::Path;
     use uix::core::Rect;
-    use uix::ui::test_harness::{ViewAdapter, WidgetCore};
+    use uix::ui::test_harness::{AutomationActionKind, ViewAdapter, WidgetCore};
 
     fn collect_rs_files(path: &Path, output: &mut Vec<std::path::PathBuf>) {
         let Ok(entries) = fs::read_dir(path) else {
@@ -193,6 +193,26 @@ mod tests {
         }
         declared.insert("Button".to_string());
 
+        let prelude = fs::read_to_string(root.join("src/prelude.rs"))
+            .unwrap_or_else(|error| panic!("read public prelude: {error}"));
+        let exported_identifiers: BTreeSet<_> = prelude
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .flat_map(|line| {
+                line.split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+            })
+            .filter(|identifier| !identifier.is_empty())
+            .collect();
+        let exported_widgets: BTreeSet<_> = declared
+            .iter()
+            .filter(|name| exported_identifiers.contains(name.as_str()))
+            .cloned()
+            .collect();
+        assert_eq!(
+            exported_widgets, declared,
+            "every component declaration must be publicly exported"
+        );
+
         let inventoried: BTreeSet<_> = COMPONENT_VISUAL_CASES
             .iter()
             .filter(|case| case.kind == manifest::CaseKind::Widget)
@@ -215,6 +235,24 @@ mod tests {
                 "Navigation",
             ])
         );
+        let widget_count = COMPONENT_VISUAL_CASES
+            .iter()
+            .filter(|case| case.kind == manifest::CaseKind::Widget)
+            .count();
+        let composite_count = COMPONENT_VISUAL_CASES
+            .iter()
+            .filter(|case| case.kind == manifest::CaseKind::Composite)
+            .count();
+        let provider_count = COMPONENT_VISUAL_CASES
+            .iter()
+            .filter(|case| case.kind == manifest::CaseKind::Provider)
+            .count();
+        assert_eq!((widget_count, composite_count, provider_count), (87, 3, 2));
+        assert_eq!(
+            COMPONENT_VISUAL_CASE_COUNT,
+            widget_count + composite_count + provider_count
+        );
+        assert_eq!(COMPONENT_VISUAL_CASE_COUNT, 92, "frozen 0.0.1 inventory");
     }
 
     #[test]
@@ -231,38 +269,92 @@ mod tests {
 
     #[test]
     fn every_component_visual_page_case_has_a_non_zero_target() {
-        let tokens = DesignTokens::antd_light();
-        let ticks = State::new(0u32);
-        let active = State::new(crate::common::page::PAGE_COMPONENT_QA);
-        let component_case = State::new(0usize);
-        for (index, case) in COMPONENT_VISUAL_CASES.iter().enumerate() {
-            component_case.set(index);
-            let ctx =
-                DemoCtx::new(&tokens, &ticks, Some(&active)).with_component_case(&component_case);
-            let mut tree = ViewAdapter::build(page_component_qa(&ctx));
-            if let Some(root) = tree.root_mut() {
-                root.set_frame(Rect::new(0.0, 0.0, 900.0, 640.0));
-            }
-            tree.layout();
-            let target = tree
-                .traverse()
-                .iter()
-                .copied()
-                .find(|id| {
-                    tree.get(*id)
-                        .and_then(|node| node.automation_id())
-                        .is_some_and(|automation_id| automation_id == "component-qa-target")
-                })
-                .unwrap_or_else(|| panic!("{} must expose a QA target", case.name));
-            let frame = tree
-                .get(target)
-                .unwrap_or_else(|| panic!("{} QA target node disappeared", case.name))
-                .frame();
-            assert!(
-                frame.w > 0.0 && frame.h > 0.0,
-                "{} target must have a non-zero frame: {frame:?}",
-                case.name
-            );
+        let worker = std::thread::Builder::new()
+            .name("component-qa-layout-test".to_string())
+            .stack_size(8 * 1024 * 1024)
+            .spawn(|| {
+                let tokens = DesignTokens::antd_light();
+                let ticks = State::new(0u32);
+                let active = State::new(crate::common::page::PAGE_COMPONENT_QA);
+                let component_case = State::new(0usize);
+                for (index, case) in COMPONENT_VISUAL_CASES.iter().enumerate() {
+                    component_case.set(index);
+                    let ctx = DemoCtx::new(&tokens, &ticks, Some(&active))
+                        .with_component_case(&component_case);
+                    let mut tree = ViewAdapter::build(page_component_qa(&ctx));
+                    if let Some(root) = tree.root_mut() {
+                        root.set_frame(Rect::new(0.0, 0.0, 900.0, 640.0));
+                    }
+                    tree.layout();
+                    let target = tree
+                        .traverse()
+                        .iter()
+                        .copied()
+                        .find(|id| {
+                            tree.get(*id)
+                                .and_then(|node| node.automation_id())
+                                .is_some_and(|automation_id| automation_id == "component-qa-target")
+                        })
+                        .unwrap_or_else(|| panic!("{} must expose a QA target", case.name));
+                    let frame = tree
+                        .get(target)
+                        .unwrap_or_else(|| panic!("{} QA target node disappeared", case.name))
+                        .frame();
+                    assert!(
+                        frame.w > 0.0 && frame.h > 0.0,
+                        "{} target must have a non-zero frame: {frame:?}",
+                        case.name
+                    );
+                }
+            })
+            .unwrap_or_else(|error| panic!("spawn component QA layout test: {error}"));
+        if let Err(payload) = worker.join() {
+            std::panic::resume_unwind(payload);
+        }
+    }
+
+    #[test]
+    fn late_component_visual_semantic_states_are_exposed_by_primary_target() {
+        let worker = std::thread::Builder::new()
+            .name("component-qa-capabilities".to_string())
+            .stack_size(8 * 1024 * 1024)
+            .spawn(|| {
+                let tokens = DesignTokens::antd_light();
+                let ticks = State::new(0u32);
+                let active = State::new(crate::common::page::PAGE_COMPONENT_QA);
+                let component_case = State::new(0usize);
+                for (index, case) in COMPONENT_VISUAL_CASES.iter().enumerate().skip(52) {
+                    component_case.set(index);
+                    let ctx = DemoCtx::new(&tokens, &ticks, Some(&active))
+                        .with_component_case(&component_case);
+                    let mut tree = ViewAdapter::build(page_component_qa(&ctx));
+                    if let Some(root) = tree.root_mut() {
+                        root.set_frame(Rect::new(0.0, 0.0, 900.0, 640.0));
+                    }
+                    tree.layout();
+                    let snapshot = tree.automation_snapshot(uix::core::WindowId::ROOT);
+                    let target = snapshot
+                        .find("component-qa-target")
+                        .unwrap_or_else(|error| panic!("{} target snapshot: {error}", case.name));
+                    for (state, action) in [
+                        ("focus", AutomationActionKind::Focus),
+                        ("open", AutomationActionKind::Invoke),
+                        ("scrolled", AutomationActionKind::Scroll),
+                    ] {
+                        if case.states.contains(&state) {
+                            assert!(
+                                target.actions.contains(&action),
+                                "{} declares {state}, but component-qa-target exposes {:?}",
+                                case.name,
+                                target.actions
+                            );
+                        }
+                    }
+                }
+            })
+            .unwrap_or_else(|error| panic!("spawn component QA capability test: {error}"));
+        if let Err(payload) = worker.join() {
+            std::panic::resume_unwind(payload);
         }
     }
 }

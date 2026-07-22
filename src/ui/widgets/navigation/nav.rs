@@ -144,7 +144,7 @@ component! {
             }
 
             if !self.icon.is_empty() {
-                crate::ui::widgets::icon::paint_icon_in_frame(
+                crate::ui::widgets::icon::Icon::paint_in_frame(
                     ctx,
                     &self.icon,
                     item_frame,
@@ -197,8 +197,8 @@ component! {
         let row_h = frame.h.max(self.fixed_height);
         if !self.icon.is_empty() {
             let icon_slot = Rect::new(cursor_x + 10.0, frame.y, 20.0, row_h);
-            // 先用 UI 字体光学中心画图标，再画标签（见 paint_icon_in_frame）
-            crate::ui::widgets::icon::paint_icon_in_frame(
+            // 先用 UI 字体光学中心画图标，再画标签（见 Icon::paint_in_frame）
+            crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 &self.icon,
                 icon_slot,
@@ -381,6 +381,8 @@ pub struct Navigation<K = String> {
     show_version: bool,
     show_title: bool,
     compact_items: bool,
+    collapsed_state: Option<State<bool>>,
+    collapse_callback: Option<Rc<dyn Fn(bool)>>,
 }
 
 impl<K> Navigation<K>
@@ -399,6 +401,8 @@ where
             show_version: true,
             show_title: true,
             compact_items: false,
+            collapsed_state: None,
+            collapse_callback: None,
         }
     }
 
@@ -472,24 +476,68 @@ where
         self
     }
 
+    pub fn collapsed(mut self, state: &State<bool>) -> Self {
+        self.collapsed_state = Some(state.clone());
+        self
+    }
+
+    pub fn on_collapse<F>(mut self, callback: F) -> Self
+    where
+        F: Fn(bool) + 'static,
+    {
+        // `on_collapse` is useful on its own as well as with a caller-owned
+        // state.  Keep an internal state for the former so the generated
+        // toggle remains an actual interaction instead of a callback-only
+        // decoration.
+        if self.collapsed_state.is_none() {
+            self.collapsed_state = Some(State::new(false));
+        }
+        self.collapse_callback = Some(Rc::new(callback));
+        self
+    }
+
     pub fn build(
         mut self,
         tokens: &dyn crate::ui::traits::TokenProvider,
     ) -> crate::ui::core::widget::WidgetNode {
         self.sync_page_binding();
+        let collapsed = self.collapsed_state.as_ref().is_some_and(State::get);
+        let compact_items = self.compact_items || collapsed;
+        let width = if collapsed {
+            self.height.min(self.width).max(48.0)
+        } else {
+            self.width
+        };
         let loc = crate::ui::locale::use_locale();
         use crate::ui::widgets::{Container, Divider, Label};
         use crate::ui::IntoWidgetNode;
 
-        let item_h = if self.compact_items { self.width } else { 36.0 };
+        let item_h = if compact_items { width } else { 36.0 };
         let mut children: Vec<crate::ui::core::widget::WidgetNode> = Vec::new();
 
-        if self.show_title {
+        if let Some(collapsed_state) = self.collapsed_state.clone() {
+            let callback = self.collapse_callback.clone();
+            let label = if collapsed { "展开" } else { "收起" };
+            let toggle_view: crate::ui::view::ViewNode = crate::ui::view::button(label)
+                .on_click_fn(move || {
+                    let next = !collapsed_state.get();
+                    collapsed_state.set(next);
+                    if let Some(callback) = callback.as_ref() {
+                        callback(next);
+                    }
+                })
+                .into();
+            let toggle =
+                crate::ui::view::ViewAdapter::expand(toggle_view.width(width).height(32.0));
+            children.push(toggle);
+        }
+
+        if self.show_title && !collapsed {
             children.push(
                 Label::new(&self.title)
                     .color(tokens.color_primary())
                     .font_size(20.0)
-                    .size(self.width, 52.0)
+                    .size(width, 52.0)
                     .into_node(),
             );
 
@@ -502,27 +550,22 @@ where
 
         for item in self.items {
             let mut nav_item = item;
-            nav_item.fixed_width = self.width;
+            nav_item.fixed_width = width;
             nav_item.fixed_height = item_h;
-            if self.compact_items {
+            if compact_items {
                 nav_item.compact = true;
             }
             children.push(nav_item.into_node());
         }
 
-        children.push(
-            Container::new()
-                .size(self.width, 0.0)
-                .flex_grow(1.0)
-                .into_node(),
-        );
+        children.push(Container::new().size(width, 0.0).flex_grow(1.0).into_node());
 
-        if self.show_version {
+        if self.show_version && !collapsed {
             children.push(
                 Label::new(loc.nav_version)
                     .color(tokens.color_text_quaternary())
                     .font_size(11.0)
-                    .size(self.width, 24.0)
+                    .size(width, 24.0)
                     .into_node(),
             );
         }
@@ -532,7 +575,7 @@ where
                 Container::new()
                     .bg(tokens.color_bg_container())
                     .dir(crate::ui::layout::FlexDirection::Column)
-                    .w(self.width)
+                    .w(width)
                     // 侧栏在 Row 父容器中仅固定宽度，禁止 flex-grow 抢占主轴（水平）空间
                     .flex_shrink(0.0),
             ),

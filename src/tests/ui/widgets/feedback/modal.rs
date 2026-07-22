@@ -5,7 +5,7 @@ use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::widgets::feedback::modal::*;
-use crate::ui::{AccessibilityRole, AnimationConfig};
+use crate::ui::{AccessibilityRole, AnimationConfig, ClickEvent};
 
 fn render_modal(modal: &Modal, frame: Rect, surface_size: (i32, i32)) -> String {
     let mut canvas = SharedRasterizer::new(PixelSurface::new(surface_size.0, surface_size.1));
@@ -141,6 +141,406 @@ fn completed_modal_exit_removes_its_overlay_presentation() {
 }
 
 #[test]
+fn modal_confirm_dispatches_each_callback_once_and_closes_context() {
+    use crate::ui::view::ViewAdapter;
+    use crate::ui::widgets::Button;
+
+    let ok_count = Rc::new(Cell::new(0));
+    let cancel_count = Rc::new(Cell::new(0));
+    let ok_count_for_callback = ok_count.clone();
+    let cancel_count_for_callback = cancel_count.clone();
+    let mut tree = ViewAdapter::build(crate::ui::widgets::Modal::confirm(
+        "Confirm",
+        "Continue?",
+        move || ok_count_for_callback.set(ok_count_for_callback.get() + 1),
+        move || cancel_count_for_callback.set(cancel_count_for_callback.get() + 1),
+    ));
+
+    let buttons = tree.find_all_by_type::<Button>();
+    assert_eq!(
+        buttons.len(),
+        2,
+        "confirm keeps separate cancel and OK actions"
+    );
+    let ok_id = buttons
+        .iter()
+        .find(|(_, button)| button.text() == "确定")
+        .map(|(id, _)| *id)
+        .expect("confirm action button");
+    let cancel_id = buttons
+        .iter()
+        .find(|(_, button)| button.text() == "取消")
+        .map(|(id, _)| *id)
+        .expect("cancel action button");
+    let click = ClickEvent {
+        button: MouseButton::Left,
+        pos: Point::new(8.0, 8.0),
+        modifiers: KeyMod::NONE,
+    };
+
+    assert_eq!(
+        tree.dispatch_semantic(SemanticEvent::click(ok_id, click)),
+        EventResult::Handled
+    );
+    assert_eq!(ok_count.get(), 1);
+    assert_eq!(cancel_count.get(), 0);
+    let modal = tree
+        .root_id()
+        .and_then(|id| tree.get(id))
+        .and_then(|node| node.component().as_any().downcast_ref::<Modal>())
+        .expect("confirm modal");
+    assert!(!modal.is_visible());
+    assert!(
+        modal.is_present(),
+        "OK starts the existing leave transition"
+    );
+
+    assert_eq!(
+        tree.dispatch_semantic(SemanticEvent::click(ok_id, click)),
+        EventResult::Handled
+    );
+    assert_eq!(ok_count.get(), 1, "FnOnce callback must not run twice");
+
+    assert_eq!(
+        tree.dispatch_semantic(SemanticEvent::click(cancel_id, click)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        cancel_count.get(),
+        0,
+        "a completed confirmation must reject the stale sibling action"
+    );
+
+    let second_ok_count = Rc::new(Cell::new(0));
+    let second_cancel_count = Rc::new(Cell::new(0));
+    let ok_for_callback = second_ok_count.clone();
+    let cancel_for_callback = second_cancel_count.clone();
+    let mut cancel_tree = ViewAdapter::build(crate::ui::widgets::Modal::confirm(
+        "Confirm",
+        "Continue?",
+        move || ok_for_callback.set(ok_for_callback.get() + 1),
+        move || cancel_for_callback.set(cancel_for_callback.get() + 1),
+    ));
+    let buttons = cancel_tree.find_all_by_type::<Button>();
+    let cancel_id = buttons
+        .iter()
+        .find(|(_, button)| button.text() == "取消")
+        .map(|(id, _)| *id)
+        .expect("cancel action button");
+    let ok_id = buttons
+        .iter()
+        .find(|(_, button)| button.text() == "确定")
+        .map(|(id, _)| *id)
+        .expect("confirm action button");
+    assert_eq!(
+        cancel_tree.dispatch_semantic(SemanticEvent::click(cancel_id, click)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        cancel_tree.dispatch_semantic(SemanticEvent::click(cancel_id, click)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        cancel_tree.dispatch_semantic(SemanticEvent::click(ok_id, click)),
+        EventResult::Handled
+    );
+    assert_eq!(second_cancel_count.get(), 1);
+    assert_eq!(second_ok_count.get(), 0);
+}
+
+#[test]
+fn modal_shortcuts_build_distinct_accessible_status_icons_and_one_ok_button() {
+    use crate::ui::view::ViewAdapter;
+    use crate::ui::widgets::{Button, Icon};
+
+    for (builder, expected_icon, expected_status) in [
+        (Modal::info("Status", "Message"), "info", "信息"),
+        (
+            Modal::warning("Status", "Message"),
+            "alert-triangle",
+            "警告",
+        ),
+        (Modal::error("Status", "Message"), "x-circle", "错误"),
+    ] {
+        let mut tree = ViewAdapter::build(builder);
+        let root = tree.root_id().expect("modal root");
+        tree.get_mut(root)
+            .expect("modal node")
+            .set_frame(Rect::new(0.0, 0.0, 800.0, 600.0));
+        tree.get_mut(root).expect("modal node").set_active(true);
+        tree.layout();
+        let buttons = tree.find_all_by_type::<Button>();
+        assert_eq!(buttons.len(), 1, "shortcut dialogs expose one action");
+        assert_eq!(buttons[0].1.text(), "确定");
+
+        let icons = tree.find_all_by_type::<Icon>();
+        assert_eq!(icons.len(), 1, "shortcut dialogs expose one status icon");
+        let icon_frame = tree.get(icons[0].0).expect("status icon node").frame();
+        assert!(
+            icon_frame.w > 0.0 && icon_frame.h > 0.0,
+            "the shortcut status icon must own real paint geometry"
+        );
+        let icon_fields = tree
+            .get(icons[0].0)
+            .expect("status icon node")
+            .component()
+            .snapshot_fields();
+        assert!(matches!(
+            icon_fields,
+            SnapshotFields::Icon { name, .. } if name == expected_icon
+        ));
+
+        let semantics = tree.semantic_snapshot_body();
+        assert!(semantics.nodes.iter().any(|node| {
+            node.accessibility.role == AccessibilityRole::Image
+                && node.accessibility.name.as_deref() == Some(expected_status)
+        }));
+        assert!(matches!(
+            tree.get(tree.root_id().expect("modal root"))
+                .expect("modal node")
+                .component()
+                .snapshot_fields(),
+            SnapshotFields::Modal {
+                open: true,
+                footer_visible: false,
+                overlay: true,
+                ..
+            }
+        ));
+    }
+}
+
+#[test]
+fn modal_shortcut_ok_closes_with_pointer_and_keyboard_activation() {
+    use crate::ui::view::ViewAdapter;
+    use crate::ui::widgets::Button;
+
+    fn layout_shortcut(tree: &mut WidgetTree) -> (ComponentId, ComponentId, Point) {
+        let modal = tree.root_id().expect("modal root");
+        tree.get_mut(modal)
+            .expect("modal node")
+            .set_frame(Rect::new(0.0, 0.0, 800.0, 600.0));
+        tree.get_mut(modal).expect("modal node").set_active(true);
+        tree.layout();
+        let button = tree.find_all_by_type::<Button>()[0].0;
+        let frame = tree.get(button).expect("OK button").frame();
+        assert!(frame.w > 0.0 && frame.h > 0.0);
+        (
+            modal,
+            button,
+            Point::new(frame.x + frame.w * 0.5, frame.y + frame.h * 0.5),
+        )
+    }
+
+    let mut pointer_tree = ViewAdapter::build(Modal::info("Status", "Message"));
+    let (pointer_modal, _, click) = layout_shortcut(&mut pointer_tree);
+    assert_eq!(
+        pointer_tree.dispatch_event(&pointer("down", click)),
+        EventResult::Handled
+    );
+    assert!(pointer_tree
+        .get(pointer_modal)
+        .expect("modal")
+        .component()
+        .as_any()
+        .downcast_ref::<Modal>()
+        .expect("Modal component")
+        .is_visible());
+    assert_eq!(
+        pointer_tree.dispatch_event(&pointer("up", click)),
+        EventResult::Handled
+    );
+    assert!(!pointer_tree
+        .get(pointer_modal)
+        .expect("modal")
+        .component()
+        .as_any()
+        .downcast_ref::<Modal>()
+        .expect("Modal component")
+        .is_visible());
+
+    let mut keyboard_tree = ViewAdapter::build(
+        Modal::warning("Status", "Message")
+            .closable(false)
+            .mask_closable(false),
+    );
+    let (keyboard_modal, button, _) = layout_shortcut(&mut keyboard_tree);
+    keyboard_tree.set_focus(Some(button));
+    assert_eq!(
+        keyboard_tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(keyboard_tree
+        .get(keyboard_modal)
+        .expect("modal")
+        .component()
+        .as_any()
+        .downcast_ref::<Modal>()
+        .expect("Modal component")
+        .is_visible());
+    assert_eq!(
+        keyboard_tree.dispatch_event(&SystemEvent::KeyUp {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(!keyboard_tree
+        .get(keyboard_modal)
+        .expect("modal")
+        .component()
+        .as_any()
+        .downcast_ref::<Modal>()
+        .expect("Modal component")
+        .is_visible());
+}
+
+#[test]
+fn modal_shortcut_reconcile_reuses_nodes_and_replaces_status_and_close_context() {
+    use crate::ui::view::ViewAdapter;
+    use crate::ui::widgets::{Button, Icon};
+
+    let mut tree = ViewAdapter::build(Modal::info("Status", "Before"));
+    let root = tree.root_id().expect("modal root");
+    let icon = tree.find_all_by_type::<Icon>()[0].0;
+
+    ViewAdapter::reconcile(&mut tree, Modal::error("Status", "After"));
+
+    assert_eq!(tree.root_id(), Some(root));
+    let reconciled_icon = tree.find_all_by_type::<Icon>()[0].0;
+    assert_eq!(reconciled_icon, icon);
+    assert!(matches!(
+        tree.get(reconciled_icon)
+            .expect("reconciled status icon")
+            .component()
+            .snapshot_fields(),
+        SnapshotFields::Icon { name, .. } if name == "x-circle"
+    ));
+    let button = tree.find_all_by_type::<Button>()[0].0;
+    assert_eq!(
+        tree.dispatch_semantic(SemanticEvent::click(
+            button,
+            ClickEvent {
+                button: MouseButton::Left,
+                pos: Point::zero(),
+                modifiers: KeyMod::NONE,
+            },
+        )),
+        EventResult::Handled
+    );
+    assert!(!tree
+        .get(root)
+        .expect("modal")
+        .component()
+        .as_any()
+        .downcast_ref::<Modal>()
+        .expect("Modal component")
+        .is_visible());
+}
+
+#[test]
+fn destroy_on_close_removes_modal_subtree_after_exit_transition() {
+    use crate::ui::view::{button, ViewAdapter, ViewNode};
+
+    let mut tree = ViewAdapter::build(ViewNode::new(
+        Modal::new("Dialog")
+            .visible(true)
+            .overlay(true)
+            .destroy_on_close(false),
+        vec![button("Cancel").into()],
+    ));
+    let modal_id = tree.root_id().expect("modal root");
+    tree.get_mut(modal_id)
+        .expect("modal root")
+        .set_frame(Rect::new(0.0, 0.0, 800.0, 600.0));
+    tree.get_mut(modal_id).expect("modal root").set_active(true);
+    tree.layout();
+
+    let modal = tree
+        .get_mut(modal_id)
+        .expect("modal root")
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<Modal>()
+        .expect("modal component");
+    modal.sync_from(Modal::new("Dialog").overlay(true).destroy_on_close(true));
+    assert!(modal.should_destroy_on_close());
+    modal.close();
+    assert!(!tree.update(1.0));
+    assert!(tree.get(modal_id).is_none());
+}
+
+#[test]
+fn closable_false_hides_and_disarms_the_close_slot_but_escape_still_exits() {
+    let frame = Rect::new(24.0, 18.0, 132.0, 90.0);
+    let close = Point::new(114.0, 18.0);
+    let mut modal = Modal::new("Dialog")
+        .size(120.0, 84.0)
+        .mask_closable(false)
+        .visible(true);
+    assert!(!WidgetAnimation::update_animation(&mut modal, 1.0));
+    let closable = render_modal(&modal, frame, (180, 128));
+    let close_glyph = crate::ui::widgets::icon::icon_char("x");
+    assert!(
+        closable.contains(close_glyph) || closable.contains("\\u{e1b2}"),
+        "the default Modal must paint a Lucide close icon: {closable}"
+    );
+
+    assert_eq!(
+        modal.on_event(&pointer("down", close)),
+        EventResult::Handled
+    );
+    modal.sync_from(
+        Modal::new("Dialog")
+            .size(120.0, 84.0)
+            .closable(false)
+            .mask_closable(false),
+    );
+    assert_eq!(modal.on_event(&pointer("up", close)), EventResult::Handled);
+    assert!(
+        modal.is_visible(),
+        "reconcile must disarm the old close slot"
+    );
+    assert!(matches!(
+        modal.snapshot_fields(),
+        SnapshotFields::Modal {
+            closable: false,
+            open: true,
+            ..
+        }
+    ));
+
+    let hidden = render_modal(&modal, frame, (180, 128));
+    assert!(
+        !hidden.contains(close_glyph) && !hidden.contains("\\u{e1b2}"),
+        "closable(false) must remove the close icon: {hidden}"
+    );
+    assert_eq!(
+        modal.on_event(&pointer("down", close)),
+        EventResult::Handled
+    );
+    assert_eq!(modal.on_event(&pointer("up", close)), EventResult::Handled);
+    assert!(modal.is_visible(), "the removed close slot must not hit");
+    assert_eq!(
+        modal.snapshot_fields().accessibility().role,
+        AccessibilityRole::Dialog
+    );
+
+    assert_eq!(
+        modal.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Escape,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert!(!modal.is_visible());
+    assert!(modal.is_present(), "Escape keeps the leave transition");
+}
+
+#[test]
 fn modal_advertises_animation_capability() {
     let modal = Modal::new("Dialog").visible(true);
 
@@ -169,7 +569,11 @@ fn modal_enter_transition_advances_and_marks_paint_dirty() {
     assert!(modal.transition.opacity_progress > initial_opacity);
 
     let mut tree = WidgetTree::new();
-    let id = tree.set_root(Box::new(Modal::new("Dialog").visible(true)));
+    let id = tree.set_root(Box::new(
+        Modal::new("Dialog")
+            .enter_animation(AnimationConfig::zoom_in(0.2))
+            .visible(true),
+    ));
     tree.get_mut(id)
         .expect("modal root")
         .set_frame(Rect::new(0.0, 0.0, 800.0, 600.0));

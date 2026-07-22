@@ -340,7 +340,7 @@ impl Input {
         );
 
         if !self.prefix.is_empty() {
-            crate::ui::widgets::icon::paint_icon_in_frame(
+            crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 &self.prefix,
                 Rect::new(inner_frame.x + 2.0, inner_frame.y, prefix_w, inner_frame.h),
@@ -396,7 +396,7 @@ impl Input {
         };
 
         if let Some(rect) = suffix_rect {
-            crate::ui::widgets::icon::paint_icon_in_frame(ctx, &self.suffix, rect, text_sec, 12.0);
+            crate::ui::widgets::icon::Icon::paint_in_frame(ctx, &self.suffix, rect, text_sec, 12.0);
         }
 
         let has_composition = !self.composition.is_empty();
@@ -548,7 +548,7 @@ impl Input {
                 rect.w,
                 rect.h,
             ));
-            crate::ui::widgets::icon::paint_icon_in_frame(ctx, "x", rect, text_sec, 12.0);
+            crate::ui::widgets::icon::Icon::paint_in_frame(ctx, "x", rect, text_sec, 12.0);
         } else {
             self.clear_icon_rect.set(Rect::zero());
         }
@@ -560,7 +560,7 @@ impl Input {
                 rect.w,
                 rect.h,
             ));
-            crate::ui::widgets::icon::paint_icon_in_frame(
+            crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 if self.password_visible {
                     "eye"
@@ -576,7 +576,7 @@ impl Input {
         }
 
         if let Some(rect) = search_rect {
-            crate::ui::widgets::icon::paint_icon_in_frame(ctx, "search", rect, text_sec, 12.0);
+            crate::ui::widgets::icon::Icon::paint_in_frame(ctx, "search", rect, text_sec, 12.0);
         }
     }
 }

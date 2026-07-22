@@ -151,3 +151,151 @@ fn disabled_copyable_typography_does_not_copy() {
     });
     assert_eq!(clipboard.last_set_text(), None);
 }
+
+#[test]
+fn title_levels_drive_layout_paint_and_heading_semantics() {
+    let constraints = Constraints::unconstrained();
+    let mut previous_height = f32::INFINITY;
+    let mut previous_paint: Option<Vec<u32>> = None;
+
+    for level in 1..=5 {
+        let title = Typography::title("Heading").level(level);
+        let measured = title.measure(constraints);
+        assert!(
+            measured.h < previous_height,
+            "h{level} should be smaller than the previous level: {measured:?}"
+        );
+        previous_height = measured.h;
+
+        let painted = render_typography(&title, Rect::new(10.0, 10.0, 280.0, 60.0));
+        if let Some(previous) = previous_paint.as_ref() {
+            assert_ne!(
+                &painted, previous,
+                "h{level} should produce level-specific glyph geometry"
+            );
+        }
+        previous_paint = Some(painted);
+
+        let accessibility = title.snapshot_fields().accessibility();
+        assert_eq!(accessibility.role, AccessibilityRole::Heading);
+        assert!(accessibility
+            .aria_attributes()
+            .iter()
+            .any(
+                |attribute| attribute.name == "aria-level" && attribute.value == level.to_string()
+            ));
+    }
+
+    let low = Typography::title("Low")
+        .level(0)
+        .snapshot_fields()
+        .accessibility();
+    let high = Typography::title("High")
+        .level(u8::MAX)
+        .snapshot_fields()
+        .accessibility();
+    assert!(low
+        .aria_attributes()
+        .iter()
+        .any(|attribute| attribute.name == "aria-level" && attribute.value == "1"));
+    assert!(high
+        .aria_attributes()
+        .iter()
+        .any(|attribute| attribute.name == "aria-level" && attribute.value == "5"));
+}
+
+#[test]
+fn paragraph_spacing_and_indent_change_measured_and_rendered_geometry() {
+    let default = Typography::paragraph("one\ntwo\nthree");
+    let spaced = Typography::paragraph("one\ntwo\nthree").spacing(2.0);
+    let constraints = Constraints::loose(Size::new(240.0, 300.0));
+    assert_eq!(default.measure(constraints).h, 63.0);
+    assert_eq!(spaced.measure(constraints).h, 84.0);
+
+    let _ = render_typography(&spaced, Rect::new(0.0, 0.0, 240.0, 100.0));
+    let spaced_lines = spaced.rendered_line_origins_for_test();
+    assert_eq!(spaced_lines.len(), 3);
+    assert!((spaced_lines[1].y - spaced_lines[0].y - 28.0).abs() < 0.01);
+
+    let indented = Typography::paragraph("WWWWWWWWWWWW")
+        .spacing(1.5)
+        .indent(2.0);
+    let _ = render_typography(&indented, Rect::new(0.0, 0.0, 90.0, 120.0));
+    let origins = indented.rendered_line_origins_for_test();
+    assert!(
+        origins.len() >= 2,
+        "indented paragraph should wrap: {origins:?}"
+    );
+    assert!((origins[0].x - 28.0).abs() < 0.01, "{origins:?}");
+    assert!(
+        origins[1].x.abs() < 0.01,
+        "only the first line is indented: {origins:?}"
+    );
+
+    let plain_width = Typography::paragraph("short").measure(constraints).w;
+    let indented_width = Typography::paragraph("short")
+        .indent(2.0)
+        .measure(constraints)
+        .w;
+    assert!(indented_width > plain_width);
+
+    for paragraph in [
+        Typography::paragraph("safe")
+            .spacing(f32::NAN)
+            .indent(f32::INFINITY),
+        Typography::paragraph("safe")
+            .spacing(f32::MAX)
+            .indent(f32::MAX),
+        Typography::paragraph("safe").spacing(-1.0).indent(-1.0),
+    ] {
+        let measured = paragraph.measure(constraints);
+        assert!(
+            measured.w.is_finite() && measured.h.is_finite(),
+            "{measured:?}"
+        );
+    }
+}
+
+#[test]
+fn text_keeps_single_line_inline_geometry_and_text_semantics() {
+    let inline = Typography::text("inline text that exceeds its frame")
+        .spacing(3.0)
+        .indent(2.0);
+    let _ = render_typography(&inline, Rect::new(0.0, 0.0, 32.0, 24.0));
+    let origins = inline.rendered_line_origins_for_test();
+    assert_eq!(origins.len(), 1);
+    assert!(
+        origins[0].x.abs() < 0.01,
+        "paragraph indent must not affect inline text"
+    );
+
+    let accessibility = inline.snapshot_fields().accessibility();
+    assert_eq!(accessibility.role, AccessibilityRole::Text);
+    assert!(!accessibility
+        .aria_attributes()
+        .iter()
+        .any(|attribute| attribute.name == "aria-level"));
+}
+
+#[test]
+fn typography_reconcile_updates_level_and_paragraph_geometry() {
+    let constraints = Constraints::loose(Size::new(120.0, 300.0));
+    let mut typography = Typography::title("Release").level(1);
+    let h1 = typography.measure(constraints);
+
+    typography.sync_from(Typography::title("Release").level(5));
+    let h5 = typography.measure(constraints);
+    assert!(h5.h < h1.h);
+    let accessibility = typography.snapshot_fields().accessibility();
+    assert!(accessibility
+        .aria_attributes()
+        .iter()
+        .any(|attribute| attribute.name == "aria-level" && attribute.value == "5"));
+
+    typography.sync_from(Typography::paragraph("one\ntwo").spacing(2.0).indent(1.0));
+    assert_eq!(typography.measure(constraints).h, 56.0);
+    assert_eq!(
+        typography.snapshot_fields().accessibility().role,
+        AccessibilityRole::Text
+    );
+}

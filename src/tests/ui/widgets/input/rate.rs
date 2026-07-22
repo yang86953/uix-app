@@ -183,24 +183,9 @@ fn rate_is_keyboard_focusable_and_tracks_focus_events() {
 #[test]
 fn half_rate_paints_active_left_half_and_empty_right_half() {
     let frame = Rect::new(8.0, 8.0, 24.0, 32.0);
-    let glyph = "\u{E176}";
-    let (empty, stride) = render_rate(&Rate::new().count(1).allow_half().character(glyph), frame);
-    let (half, _) = render_rate(
-        &Rate::new()
-            .count(1)
-            .allow_half()
-            .character(glyph)
-            .default_value(1),
-        frame,
-    );
-    let (full, _) = render_rate(
-        &Rate::new()
-            .count(1)
-            .allow_half()
-            .character(glyph)
-            .default_value(2),
-        frame,
-    );
+    let (empty, stride) = render_rate(&Rate::new().count(1).allow_half(), frame);
+    let (half, _) = render_rate(&Rate::new().count(1).allow_half().default_value(1), frame);
+    let (full, _) = render_rate(&Rate::new().count(1).allow_half().default_value(2), frame);
 
     let split_x = (frame.x + frame.w * 0.5) as usize;
     let mut left_samples = 0;
@@ -237,6 +222,19 @@ fn half_rate_paints_active_left_half_and_empty_right_half() {
         left_samples > 0 && right_samples > 0,
         "active/empty glyph differences must cross the half-cell split: split={split_x}, changed={changed_min_x}..={changed_max_x}"
     );
+}
+
+#[test]
+fn default_rate_star_is_owned_by_the_icon_component_path() {
+    let source = include_str!("../../../../ui/widgets/input/rate.rs");
+
+    assert!(
+        !source.contains('★'),
+        "default Rate must not embed a Unicode star"
+    );
+    assert!(source.contains("\"star\""));
+    assert!(source.contains("Icon::paint_in_frame"));
+    assert!(!source.contains("icon_char("));
 }
 
 #[test]

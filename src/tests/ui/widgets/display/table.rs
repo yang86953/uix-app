@@ -286,12 +286,198 @@ fn pointer_up(x: f32, y: f32) -> SystemEvent {
     }
 }
 
+fn key_down(key: KeyCode) -> SystemEvent {
+    SystemEvent::KeyDown {
+        key,
+        mods: KeyMod::NONE,
+    }
+}
+
+fn merge_anchor_rows(row: &TableRow, column: usize) -> usize {
+    if column != 0 {
+        return 1;
+    }
+    match row.first().map(String::as_str) {
+        Some("Anchor") => 2,
+        Some("Covered") => 0,
+        _ => 1,
+    }
+}
+
+fn merge_wide_columns(row: &TableRow, column: usize) -> usize {
+    if column == 0 && row.first().is_some_and(|value| value == "Wide") {
+        2
+    } else {
+        1
+    }
+}
+
 fn click(table: &mut Table, x: f32, y: f32) -> EventResult {
     let down = table.on_event(&pointer_down(x, y));
     if down == EventResult::NotHandled {
         return down;
     }
     table.on_event(&pointer_up(x, y))
+}
+
+#[test]
+fn remote_pagination_renders_consumes_pointer_and_reconciles_controlled_page() {
+    let pages = Rc::new(RefCell::new(Vec::new()));
+    let pages_for_change = Rc::clone(&pages);
+    let mut table = Table::new()
+        .columns(vec![TableColumn::new("Name", 120.0)])
+        .rows(vec![vec!["Ada".into()]])
+        .size(300.0, 160.0)
+        .pagination(TablePagination {
+            current: 2,
+            total: 45,
+            page_size: 10,
+            on_change: move |page| pages_for_change.borrow_mut().push(page),
+        });
+    table
+        .last_frame
+        .set(Some(Rect::new(0.0, 0.0, 300.0, 160.0)));
+
+    assert_eq!(table.body_viewport_height(), 87.0);
+    assert!(matches!(
+        table.snapshot_fields(),
+        SnapshotFields::Table {
+            current_page: Some(2),
+            total: Some(45),
+            page_size: 10,
+            ..
+        }
+    ));
+    let display = render_table(&table, Rect::new(0.0, 0.0, 300.0, 160.0), (300, 160));
+    assert!(
+        display.contains("2 / 5"),
+        "pager must be recorded: {display}"
+    );
+    assert!(
+        display.contains("\\u{e06e}") && display.contains("\\u{e06f}"),
+        "pager arrows must be rendered by the shared Icon component: {display}"
+    );
+    assert!(
+        !display.contains('‹') && !display.contains('›'),
+        "localized text arrows must not return: {display}"
+    );
+
+    assert_eq!(click(&mut table, 278.0, 140.0), EventResult::Handled);
+    assert_eq!(pages.borrow().as_slice(), &[3]);
+    assert!(matches!(
+        table.snapshot_fields(),
+        SnapshotFields::Table {
+            current_page: Some(2),
+            ..
+        }
+    ));
+
+    let replacement_pages = Rc::new(RefCell::new(Vec::new()));
+    let replacement_pages_for_change = Rc::clone(&replacement_pages);
+    table.sync_from(
+        Table::new()
+            .columns(vec![TableColumn::new("Name", 120.0)])
+            .rows(vec![vec!["Grace".into()]])
+            .size(300.0, 160.0)
+            .pagination(TablePagination {
+                current: 3,
+                total: 45,
+                page_size: 10,
+                on_change: move |page| {
+                    replacement_pages_for_change.borrow_mut().push(page);
+                },
+            }),
+    );
+    assert!(matches!(
+        table.snapshot_fields(),
+        SnapshotFields::Table {
+            current_page: Some(3),
+            total: Some(45),
+            ..
+        }
+    ));
+    assert_eq!(click(&mut table, 278.0, 140.0), EventResult::Handled);
+    assert_eq!(pages.borrow().as_slice(), &[3]);
+    assert_eq!(replacement_pages.borrow().as_slice(), &[4]);
+}
+
+#[test]
+fn remote_pagination_measures_handles_boundaries_keyboard_and_narrow_frames() {
+    let pages = Rc::new(RefCell::new(Vec::new()));
+    let pages_for_change = Rc::clone(&pages);
+    let mut table = Table::new()
+        .columns(vec![TableColumn::new("Name", 120.0)])
+        .rows(vec![vec!["Ada".into()]])
+        .pagination(TablePagination {
+            current: 2,
+            total: 45,
+            page_size: 10,
+            on_change: move |page| pages_for_change.borrow_mut().push(page),
+        });
+    assert_eq!(
+        table.measure(Constraints::loose(Size::new(500.0, 500.0))),
+        Size::new(120.0, 101.0),
+        "header, separator, row and pager must all participate in intrinsic measurement"
+    );
+    assert_eq!(table.on_event(&SystemEvent::FocusIn), EventResult::Handled);
+    assert_eq!(
+        table.on_event(&key_down(KeyCode::End)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        table.on_event(&key_down(KeyCode::Home)),
+        EventResult::Handled
+    );
+    assert_eq!(pages.borrow().as_slice(), &[5, 1]);
+    assert_eq!(
+        EventHandler::scroll_composite_viewport(&table, Rect::new(0.0, 0.0, 120.0, 100.0)),
+        Some(Rect::new(0.0, 33.0, 120.0, 27.0)),
+        "retained scrolling must exclude the remote pager footer"
+    );
+
+    let boundary_calls = Rc::new(Cell::new(0));
+    let boundary_calls_for_change = Rc::clone(&boundary_calls);
+    let mut boundary = Table::new()
+        .columns(vec![TableColumn::new("Name", 120.0)])
+        .pagination(TablePagination {
+            current: usize::MAX,
+            total: 0,
+            page_size: 0,
+            on_change: move |_| {
+                boundary_calls_for_change.set(boundary_calls_for_change.get() + 1);
+            },
+        });
+    boundary
+        .last_frame
+        .set(Some(Rect::new(0.0, 0.0, 70.0, 18.0)));
+    assert_eq!(WidgetComponent::tab_index(&boundary), 1);
+    assert!(matches!(
+        boundary.snapshot_fields(),
+        SnapshotFields::Table {
+            current_page: Some(1),
+            total: Some(0),
+            page_size: 1,
+            ..
+        }
+    ));
+    let frame = Rect::new(0.0, 0.0, 70.0, 18.0);
+    let (previous, label, next) = boundary
+        .pagination_controls_for_test(frame)
+        .expect("pagination controls");
+    for control in [previous, label, next] {
+        assert!(
+            control.x >= frame.x
+                && control.y >= frame.y
+                && control.x + control.w <= frame.x + frame.w
+                && control.y + control.h <= frame.y + frame.h,
+            "narrow-frame control must stay inside its footer: {control:?}"
+        );
+    }
+    assert_eq!(
+        click(&mut boundary, next.x + next.w * 0.5, next.y + next.h * 0.5,),
+        EventResult::Handled
+    );
+    assert_eq!(boundary_calls.get(), 0, "a one-page boundary is inert");
 }
 
 fn click_tree_to(tree: &mut WidgetTree, target: ComponentId, x: f32, y: f32) -> EventResult {
@@ -419,6 +605,280 @@ fn table_pointer_actions_commit_only_after_matching_release() {
         EventResult::NotHandled
     );
     assert_eq!(table.selected_row(), None);
+}
+
+#[test]
+fn row_click_requires_matching_release_excludes_selection_and_reconciles_callback() {
+    let old_calls = Rc::new(RefCell::new(Vec::new()));
+    let old_calls_for_callback = Rc::clone(&old_calls);
+    let mut table = Table::new()
+        .columns(vec![TableColumn::new("Name", 120.0)])
+        .rows(vec![vec!["Ada".into()], vec!["Grace".into()]])
+        .selection(true)
+        .size(180.0, 100.0)
+        .on_row_click(move |row, index| {
+            old_calls_for_callback
+                .borrow_mut()
+                .push((index, row[0].clone()));
+        });
+    table
+        .last_frame
+        .set(Some(Rect::new(0.0, 0.0, 180.0, 100.0)));
+
+    assert_eq!(
+        table.on_event(&pointer_down(60.0, 45.0)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        table.on_event(&pointer_up(60.0, 75.0)),
+        EventResult::Handled
+    );
+    assert!(old_calls.borrow().is_empty());
+
+    assert_eq!(click(&mut table, 60.0, 45.0), EventResult::Handled);
+    assert_eq!(old_calls.borrow().as_slice(), &[(0, "Ada".to_string())]);
+    assert_eq!(click(&mut table, 8.0, 45.0), EventResult::Handled);
+    assert_eq!(table.checked_rows(), &[0]);
+    assert_eq!(
+        old_calls.borrow().len(),
+        1,
+        "checkbox click is not a row click"
+    );
+
+    let new_calls = Rc::new(RefCell::new(Vec::new()));
+    let new_calls_for_callback = Rc::clone(&new_calls);
+    assert_eq!(
+        table.on_event(&pointer_down(60.0, 75.0)),
+        EventResult::Handled
+    );
+    table.sync_from(
+        Table::new()
+            .columns(vec![TableColumn::new("Name", 120.0)])
+            .rows(vec![vec!["Ada next".into()], vec!["Grace next".into()]])
+            .selection(true)
+            .size(180.0, 100.0)
+            .on_row_click(move |row, index| {
+                new_calls_for_callback
+                    .borrow_mut()
+                    .push((index, row[0].clone()));
+            }),
+    );
+    assert_eq!(
+        table.on_event(&pointer_up(60.0, 75.0)),
+        EventResult::NotHandled,
+        "reconcile cancels a press captured by the previous callback"
+    );
+    assert_eq!(click(&mut table, 60.0, 75.0), EventResult::Handled);
+    assert_eq!(old_calls.borrow().len(), 1);
+    assert_eq!(
+        new_calls.borrow().as_slice(),
+        &[(1, "Grace next".to_string())]
+    );
+
+    let blocked_calls = Rc::new(Cell::new(0));
+    let blocked_calls_for_callback = Rc::clone(&blocked_calls);
+    let mut loading = Table::new()
+        .columns(vec![TableColumn::new("Name", 120.0)])
+        .rows(vec![vec!["Blocked".into()]])
+        .size(180.0, 100.0)
+        .on_row_click(move |_, _| {
+            blocked_calls_for_callback.set(blocked_calls_for_callback.get() + 1);
+        })
+        .loading(true);
+    loading
+        .last_frame
+        .set(Some(Rect::new(0.0, 0.0, 180.0, 100.0)));
+    assert_eq!(click(&mut loading, 60.0, 45.0), EventResult::Handled);
+    assert_eq!(blocked_calls.get(), 0);
+}
+
+#[test]
+fn expandable_toggle_does_not_invoke_row_click_callback() {
+    let row_calls = Rc::new(Cell::new(0));
+    let row_calls_for_callback = Rc::clone(&row_calls);
+    let mut tree = ViewAdapter::build(
+        Table::new()
+            .columns(vec![TableColumn::new("Name", 120.0)])
+            .rows(vec![vec!["Ada".into()]])
+            .size(180.0, 100.0)
+            .on_row_click(move |_, _| {
+                row_calls_for_callback.set(row_calls_for_callback.get() + 1);
+            })
+            .expandable(40.0, |_row| crate::ui::view::label("Details")),
+    );
+    let root = tree.root_id().expect("table root");
+    tree.get_mut(root)
+        .expect("table node")
+        .set_frame(Rect::new(0.0, 0.0, 180.0, 100.0));
+    tree.layout();
+
+    assert_eq!(
+        click_tree_to(&mut tree, root, 170.0, 45.0),
+        EventResult::Handled
+    );
+    let table = tree
+        .get(root)
+        .expect("table node")
+        .component()
+        .as_any()
+        .downcast_ref::<Table>()
+        .expect("Table component");
+    assert_eq!(table.expanded_row(), Some(0));
+    assert_eq!(row_calls.get(), 0);
+}
+
+#[test]
+fn row_span_unifies_measurement_paint_hit_testing_and_reconcile() {
+    let clicked_rows = Rc::new(RefCell::new(Vec::new()));
+    let clicked_rows_for_callback = Rc::clone(&clicked_rows);
+    let mut table = Table::new()
+        .columns(vec![
+            TableColumn::new("Merged", 80.0).row_span(merge_anchor_rows),
+            TableColumn::new("Value", 80.0),
+        ])
+        .rows(vec![
+            vec!["Anchor".into(), "A".into()],
+            vec!["Covered".into(), "B".into()],
+        ])
+        .bordered(true)
+        .on_row_click(move |_, index| clicked_rows_for_callback.borrow_mut().push(index));
+    table.last_frame.set(Some(Rect::new(0.0, 0.0, 160.0, 89.0)));
+
+    assert_eq!(
+        table.measure(Constraints::loose(Size::new(500.0, 500.0))),
+        Size::new(160.0, 89.0)
+    );
+    let display = render_table(&table, Rect::new(0.0, 0.0, 160.0, 89.0), (160, 89));
+    assert!(
+        display.contains("Anchor") && display.contains('B'),
+        "{display}"
+    );
+    assert!(
+        !display.contains("Covered"),
+        "a zero-span covered cell must not paint: {display}"
+    );
+    assert!(
+        display.contains("Rect { x: 0.0, y: 33.0, w: 80.0, h: 56.0 }"),
+        "merged background and border must use the combined rectangle: {display}"
+    );
+
+    assert_eq!(
+        table.on_event(&pointer_down(40.0, 45.0)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        table.on_event(&pointer_up(40.0, 75.0)),
+        EventResult::Handled,
+        "both physical halves resolve to the same merged-cell anchor"
+    );
+    assert_eq!(click(&mut table, 120.0, 75.0), EventResult::Handled);
+    assert_eq!(clicked_rows.borrow().as_slice(), &[0, 1]);
+
+    table.sync_from(
+        Table::new()
+            .columns(vec![
+                TableColumn::new("Merged", 80.0),
+                TableColumn::new("Value", 80.0),
+            ])
+            .rows(vec![
+                vec!["Anchor".into(), "A".into()],
+                vec!["Covered".into(), "B".into()],
+            ])
+            .bordered(true),
+    );
+    let reconciled = render_table(&table, Rect::new(0.0, 0.0, 160.0, 89.0), (160, 89));
+    assert!(
+        reconciled.contains("Covered"),
+        "removing the span during reconcile restores the physical cell: {reconciled}"
+    );
+}
+
+#[test]
+fn col_span_paints_one_combined_cell_and_skips_covered_text() {
+    let table = Table::new()
+        .columns(vec![
+            TableColumn::new("Wide", 60.0).col_span(merge_wide_columns),
+            TableColumn::new("Second", 70.0),
+            TableColumn::new("Tail", 80.0),
+        ])
+        .rows(vec![vec!["Wide".into(), "Covered".into(), "Tail".into()]])
+        .bordered(true);
+
+    assert_eq!(
+        table.measure(Constraints::loose(Size::new(500.0, 500.0))),
+        Size::new(210.0, 61.0)
+    );
+    let display = render_table(&table, Rect::new(0.0, 0.0, 210.0, 61.0), (210, 61));
+    assert!(
+        display.contains("Wide") && display.contains("Tail"),
+        "{display}"
+    );
+    assert!(
+        !display.contains("Covered"),
+        "the column covered by colspan must not paint its title value: {display}"
+    );
+    assert!(
+        display.contains("Rect { x: 0.0, y: 33.0, w: 130.0, h: 28.0 }"),
+        "colspan must combine both declared widths: {display}"
+    );
+}
+
+#[test]
+fn row_spanned_view_cell_owns_combined_layout_and_lower_hit_region() {
+    let clicked_ids = Rc::new(RefCell::new(Vec::new()));
+    let clicked_ids_for_renderer = Rc::clone(&clicked_ids);
+    let table = Table::data(
+        vec![
+            UserRow {
+                id: 10,
+                name: "Anchor".to_string(),
+                age: 28,
+            },
+            UserRow {
+                id: 20,
+                name: "Covered".to_string(),
+                age: 35,
+            },
+        ],
+        |row| row.id.to_string(),
+    )
+    .expect("row ids are unique")
+    .columns(vec![TableColumn::new("Action", 120.0)
+        .row_span(merge_anchor_rows)
+        .bind(|row: &UserRow| row.name.clone())
+        .render(move |row: &UserRow| {
+            let id = row.id;
+            let clicked_ids = Rc::clone(&clicked_ids_for_renderer);
+            crate::ui::view::button(row.name.clone()).on_click_fn(move || {
+                clicked_ids.borrow_mut().push(id);
+            })
+        })]);
+    let mut tree = ViewAdapter::build(table);
+    let root = tree.root_id().expect("table root");
+    tree.get_mut(root)
+        .expect("table node")
+        .set_frame(Rect::new(0.0, 0.0, 120.0, 89.0));
+    tree.layout();
+    let children = tree.get(root).expect("table node").children().to_vec();
+    assert_eq!(children.len(), 2);
+    assert_eq!(
+        tree.get(children[0]).expect("anchor view cell").frame(),
+        Rect::new(0.0, 33.0, 120.0, 56.0)
+    );
+    assert_eq!(
+        tree.get(children[1]).expect("covered view cell").frame(),
+        Rect::new(0.0, 61.0, 0.0, 0.0)
+    );
+
+    assert_eq!(
+        tree.dispatch_event(&pointer_down(60.0, 75.0)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&pointer_up(60.0, 75.0)),
+        EventResult::Handled
+    );
+    assert_eq!(clicked_ids.borrow().as_slice(), &[10]);
 }
 
 #[test]
@@ -1014,7 +1474,10 @@ fn table_empty_factory_builds_custom_view_with_column_count() {
         .empty(|column_count| label(format!("暂无数据，共 {column_count} 列")))
         .build();
 
-    assert_eq!(view.widget_type_id(), std::any::TypeId::of::<crate::ui::Label>());
+    assert_eq!(
+        view.widget_type_id(),
+        std::any::TypeId::of::<crate::ui::Label>()
+    );
 }
 
 #[test]

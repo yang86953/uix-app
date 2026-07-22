@@ -213,6 +213,10 @@ fn compute_justify(remaining: f32, count: usize, gap: f32, justify: JustifyConte
 }
 
 /// Single-line (no wrap) flex layout.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the slices and axis flags are state for one flex layout pass"
+)]
 fn compute_single_line(
     input: &FlexInput,
     inner: &Rect,
@@ -402,6 +406,10 @@ fn compute_single_line(
 }
 
 /// Multi-line (wrapping) flex layout.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the slices and axis flags are state for one wrapped flex layout pass"
+)]
 fn compute_wrapped(
     input: &FlexInput,
     inner: &Rect,

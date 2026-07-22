@@ -8,6 +8,7 @@ mod date_picker;
 mod date_range_picker;
 mod form;
 mod form_list;
+#[allow(clippy::module_inception)]
 mod input;
 mod input_number;
 mod mentions;

@@ -1,5 +1,5 @@
 use crate::ui::core::widget::WidgetCore;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
@@ -50,6 +50,7 @@ component! {
         footer_visible: bool,
         centered: bool,
         overlay: bool,
+        destroy_on_close: bool,
         context_close_requested: Option<Rc<Cell<bool>>>,
         last_win_w: Cell<f32>,
         last_win_h: Cell<f32>,
@@ -178,18 +179,15 @@ component! {
             }
             SystemEvent::PointerMove { pos, .. } => {
                 let hovered = self.pointer_target_at(*pos) == Some(ModalPointerTarget::Close);
-                if self.close_hovered.replace(hovered) != hovered {
-                    EventResult::Handled
-                } else {
-                    EventResult::Handled
-                }
+                self.close_hovered.set(hovered);
+                EventResult::Handled
             }
             SystemEvent::PointerLeave | SystemEvent::FocusOut => {
                 self.cancel_interaction();
                 EventResult::Handled
             }
             SystemEvent::KeyDown { key, .. } => {
-                if *key == crate::ui::KeyCode::Escape && self.closable {
+                if *key == crate::ui::KeyCode::Escape {
                     self.close();
                     return EventResult::Handled;
                 }
@@ -310,7 +308,7 @@ component! {
                     Some(Radius::uniform(ctx.tokens().border_radius_sm())),
                 );
             }
-            crate::ui::widgets::icon::paint_icon_in_frame(
+            crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 "x",
                 close_button,
@@ -453,6 +451,7 @@ impl Modal {
             footer_visible: true,
             centered: true,
             overlay: false,
+            destroy_on_close: false,
             context_close_requested: None,
             last_win_w: Cell::new(0.0),
             last_win_h: Cell::new(0.0),
@@ -488,6 +487,113 @@ impl Modal {
         modal.footer_visible = false;
         modal.context_close_requested = Some(context.close_requested);
         ModalBuilder { modal, content }
+    }
+
+    /// 快捷确认对话框；回调由应用在接入业务动作时持有。
+    pub fn confirm<Ok, Cancel>(
+        title: impl Into<String>,
+        content: impl Into<String>,
+        ok_callback: Ok,
+        cancel_callback: Cancel,
+    ) -> ModalBuilder
+    where
+        Ok: FnOnce() + 'static,
+        Cancel: FnOnce() + 'static,
+    {
+        let ok_callback = Rc::new(RefCell::new(Some(ok_callback)));
+        let cancel_callback = Rc::new(RefCell::new(Some(cancel_callback)));
+        let completed = Rc::new(Cell::new(false));
+        let content = content.into();
+        Self::show(move |context| {
+            let cancel_context = context.clone();
+            let ok_context = context;
+            let cancel_callback = cancel_callback.clone();
+            let ok_callback = ok_callback.clone();
+            let cancel_completed = completed.clone();
+            let ok_completed = completed;
+            let cancel = crate::ui::view::button("取消").on_click_fn(move || {
+                if cancel_completed.replace(true) {
+                    return;
+                }
+                if let Some(callback) = cancel_callback.borrow_mut().take() {
+                    callback();
+                }
+                cancel_context.close();
+            });
+            let confirm = crate::ui::view::button("确定")
+                .primary()
+                .on_click_fn(move || {
+                    if ok_completed.replace(true) {
+                        return;
+                    }
+                    if let Some(callback) = ok_callback.borrow_mut().take() {
+                        callback();
+                    }
+                    ok_context.close();
+                });
+            crate::ui::view::column((
+                crate::ui::view::label(content),
+                crate::ui::view::row((cancel, confirm)).gap(8.0),
+            ))
+            .gap(16.0)
+        })
+        .title(title)
+    }
+
+    pub fn info(title: impl Into<String>, content: impl Into<String>) -> ModalBuilder {
+        Self::shortcut(
+            title,
+            content,
+            "info",
+            "信息",
+            crate::ui::PaletteColor::Info,
+        )
+    }
+
+    pub fn warning(title: impl Into<String>, content: impl Into<String>) -> ModalBuilder {
+        Self::shortcut(
+            title,
+            content,
+            "alert-triangle",
+            "警告",
+            crate::ui::PaletteColor::Warning,
+        )
+    }
+
+    pub fn error(title: impl Into<String>, content: impl Into<String>) -> ModalBuilder {
+        Self::shortcut(
+            title,
+            content,
+            "x-circle",
+            "错误",
+            crate::ui::PaletteColor::Error,
+        )
+    }
+
+    fn shortcut(
+        title: impl Into<String>,
+        content: impl Into<String>,
+        icon_name: &'static str,
+        status_name: &'static str,
+        status_color: crate::ui::PaletteColor,
+    ) -> ModalBuilder {
+        let title = title.into();
+        let content = content.into();
+        Self::show(move |context| {
+            let status_icon =
+                crate::ui::view::embed(crate::ui::widgets::Icon::new(icon_name).size(24.0))
+                    .color(crate::ui::ColorValue::Palette(status_color))
+                    .role(crate::ui::AccessibilityRole::Image)
+                    .accessible_name(status_name);
+            let message = crate::ui::view::row((status_icon, crate::ui::view::label(content)))
+                .align(crate::ui::layout::AlignItems::Center)
+                .gap(12.0);
+            let confirm = crate::ui::view::button("确定")
+                .primary()
+                .on_click_fn(move || context.close());
+            crate::ui::view::column((message, confirm)).gap(16.0)
+        })
+        .title(title)
     }
 
     pub fn size(mut self, w: f32, h: f32) -> Self {
@@ -537,6 +643,11 @@ impl Modal {
 
     pub fn overlay(mut self, v: bool) -> Self {
         self.overlay = v;
+        self
+    }
+
+    pub fn destroy_on_close(mut self, v: bool) -> Self {
+        self.destroy_on_close = v;
         self
     }
 
@@ -594,7 +705,7 @@ impl Modal {
         self.layout_requested.set(true);
     }
 
-    pub fn confirm(&mut self) {
+    pub fn confirm_close(&mut self) {
         self.close();
     }
 
@@ -614,6 +725,7 @@ impl Modal {
         self.footer_visible = next.footer_visible;
         self.centered = next.centered;
         self.overlay = next.overlay;
+        self.destroy_on_close = next.destroy_on_close;
         self.context_close_requested = next.context_close_requested;
         self.enter_animation = next.enter_animation;
         self.leave_animation = next.leave_animation;
@@ -803,6 +915,10 @@ impl Modal {
         self.visible || self.closing
     }
 
+    pub(crate) fn should_destroy_on_close(&self) -> bool {
+        self.destroy_on_close
+    }
+
     pub(crate) fn take_context_close_request(&self) -> bool {
         self.context_close_requested
             .as_ref()
@@ -922,6 +1038,11 @@ impl ModalBuilder {
 
     pub fn overlay(mut self, overlay: bool) -> Self {
         self.modal.overlay = overlay;
+        self
+    }
+
+    pub fn destroy_on_close(mut self, destroy_on_close: bool) -> Self {
+        self.modal.destroy_on_close = destroy_on_close;
         self
     }
 

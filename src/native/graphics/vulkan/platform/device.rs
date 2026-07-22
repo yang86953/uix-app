@@ -20,6 +20,10 @@ type DeviceKey = (vk::PhysicalDevice, u32);
 thread_local! {
     /// Vulkan 调用受 `ThreadBoundGraphicsContext` 约束；线程本地弱引用既复用父资源，
     /// 又不延长最后一个窗口 context 的生命周期。
+    #[allow(
+        clippy::missing_const_for_thread_local,
+        reason = "the initializer is already const and the lint fires through thread_local"
+    )]
     static THREAD_RUNTIME: RefCell<Weak<VulkanRuntime>> = const { RefCell::new(Weak::new()) };
 }
 

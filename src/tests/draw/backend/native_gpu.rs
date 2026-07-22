@@ -8,8 +8,8 @@ use crate::draw::primitives::path::Path;
 use crate::draw::primitives::types::{BlendMode, GradientDirection, Radius, Transform};
 use crate::draw::traits::{Canvas2D, GraphicsEngine};
 use crate::native::traits::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
-    GpuSolidRect, GpuStrokeRect, OffscreenTargetId,
+    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient,
+    GpuSolidMesh, GpuSolidRect, GpuStrokeRect, OffscreenTargetId,
 };
 use crate::tests::common::*;
 use std::sync::Arc;
@@ -58,7 +58,11 @@ fn rotated_sharp_rect_queues_solid_mesh_on_gpu() {
     canvas.set_transform(Transform {
         m: [0.0, -1.0, 16.0, 1.0, 0.0, 8.0],
     });
-    canvas.fill_rect(Rect::new(0.0, 0.0, 4.0, 2.0), Color::from_rgb(1, 2, 3), None);
+    canvas.fill_rect(
+        Rect::new(0.0, 0.0, 4.0, 2.0),
+        Color::from_rgb(1, 2, 3),
+        None,
+    );
     assert!(canvas.take_deferred_error().is_none());
     assert_eq!(canvas.pending_native.len(), 1);
     assert!(matches!(
@@ -88,6 +92,134 @@ fn gpu_only_transformed_path_queues_solid_mesh() {
         canvas.pending_native.first(),
         Some(PendingNativeOp::SolidMesh(_))
     ));
+}
+
+#[test]
+fn gpu_only_partial_sector_queues_transformed_clipped_mesh_with_color() {
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(96, 72, NativeRasterCaps::wgpu_full());
+    let transform = Transform::translate(11.0, 7.0).concat(Transform::scale(1.5, 0.75));
+    canvas.set_transform(transform);
+    canvas.set_offset(2.0, 3.0);
+    canvas.set_opacity(0.5);
+    canvas.push_clip(Rect::new(0.5, 1.25, 30.0, 20.0));
+    canvas.fill_sector(
+        10.0,
+        12.0,
+        6.0,
+        0.0,
+        std::f32::consts::FRAC_PI_2,
+        Color::from_rgba(10, 20, 30, 128),
+    );
+
+    assert!(canvas.take_deferred_error().is_none());
+    assert!(canvas.soft_fallback.is_none());
+    let Some(PendingNativeOp::SolidMesh(op)) = canvas.pending_native.first() else {
+        panic!("GPU-only sector must route through the shared solid-mesh path");
+    };
+    assert!(op.mesh.vertices.len() >= 6);
+    assert!(op.mesh.vertices.iter().all(|value| value.is_finite()));
+    assert_eq!(op.scissor, (14, 10, 46, 16));
+    assert!((op.mesh.rgba[0] - 10.0 / 255.0).abs() < 1e-6);
+    assert!((op.mesh.rgba[1] - 20.0 / 255.0).abs() < 1e-6);
+    assert!((op.mesh.rgba[2] - 30.0 / 255.0).abs() < 1e-6);
+    assert!((op.mesh.rgba[3] - (128.0 / 255.0) * 0.5).abs() < 1e-6);
+
+    let outer_start = transform.transform_point(Point::new(18.0, 15.0));
+    let outer_end = transform.transform_point(Point::new(12.0, 21.0));
+    for expected in [outer_start, outer_end] {
+        assert!(op
+            .mesh
+            .vertices
+            .chunks_exact(2)
+            .any(|xy| { (xy[0] - expected.x).abs() < 1e-3 && (xy[1] - expected.y).abs() < 1e-3 }));
+    }
+}
+
+#[test]
+fn gpu_only_sector_supports_full_turn_wrapped_angles_and_donut_composition() {
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(64, 64, NativeRasterCaps::wgpu_full());
+    canvas.fill_sector(
+        24.0,
+        28.0,
+        10.0,
+        -std::f32::consts::FRAC_PI_2,
+        std::f32::consts::TAU - std::f32::consts::FRAC_PI_2,
+        Color::red(),
+    );
+    canvas.fill_circle(24.0, 28.0, 4.0, Color::black());
+
+    assert!(canvas.take_deferred_error().is_none());
+    assert!(canvas.soft_fallback.is_none());
+    assert_eq!(canvas.pending_native.len(), 2);
+    let Some(PendingNativeOp::SolidMesh(op)) = canvas.pending_native.first() else {
+        panic!("full sector must be a solid mesh");
+    };
+    let mut xs = op.mesh.vertices.iter().step_by(2).copied();
+    let first_x = xs.next().expect("full sector x vertices");
+    let (min_x, max_x) = xs.fold((first_x, first_x), |(min_x, max_x), x| {
+        (min_x.min(x), max_x.max(x))
+    });
+    let mut ys = op.mesh.vertices.iter().skip(1).step_by(2).copied();
+    let first_y = ys.next().expect("full sector y vertices");
+    let (min_y, max_y) = ys.fold((first_y, first_y), |(min_y, max_y), y| {
+        (min_y.min(y), max_y.max(y))
+    });
+    assert!((min_x - 14.0).abs() < 0.05);
+    assert!((max_x - 34.0).abs() < 0.05);
+    assert!((min_y - 18.0).abs() < 0.05);
+    assert!((max_y - 38.0).abs() < 0.05);
+    assert!(matches!(
+        canvas.pending_native.get(1),
+        Some(PendingNativeOp::SolidRect(_))
+    ));
+}
+
+#[test]
+fn gpu_only_sector_preserves_positive_wrapped_sweep_and_empty_input_is_noop() {
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(64, 64, NativeRasterCaps::wgpu_full());
+    canvas.fill_sector(
+        20.0,
+        20.0,
+        8.0,
+        std::f32::consts::FRAC_PI_2 * 3.0,
+        std::f32::consts::FRAC_PI_2,
+        Color::green(),
+    );
+    let Some(PendingNativeOp::SolidMesh(op)) = canvas.pending_native.first() else {
+        panic!("wrapped sector must be a solid mesh");
+    };
+    assert!(op
+        .mesh
+        .vertices
+        .chunks_exact(2)
+        .all(|xy| xy[0] >= 20.0 - 1e-3));
+
+    canvas.pending_native.clear();
+    canvas.fill_sector(20.0, 20.0, 8.0, 1.0, 1.0, Color::green());
+    canvas.fill_sector(20.0, 20.0, 0.0, 0.0, 1.0, Color::green());
+    canvas.fill_sector(f32::NAN, 20.0, 8.0, 0.0, 1.0, Color::green());
+    assert!(canvas.pending_native.is_empty());
+    assert!(canvas.take_deferred_error().is_none());
+}
+
+#[test]
+fn sector_keeps_cpu_pixel_fallback_when_solid_meshes_are_unavailable() {
+    let mut caps = NativeRasterCaps::d3d11_full();
+    caps.solid_meshes = false;
+    let mut canvas = NativeGpuCanvas2D::new(32, 32, caps);
+    canvas.fill_sector(
+        16.0,
+        16.0,
+        8.0,
+        0.0,
+        std::f32::consts::FRAC_PI_2,
+        Color::blue(),
+    );
+
+    assert!(canvas.take_deferred_error().is_none());
+    assert!(canvas.pending_native.is_empty());
+    assert!(canvas.soft_has_content);
+    assert!(canvas.soft_fallback.is_some());
 }
 
 #[test]
@@ -568,6 +700,7 @@ impl IGraphicsContext for FakeD3d11Context {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn fake_ctx(
     clear_calls: &Rc<Cell<usize>>,
     clear_rect_calls: &Rc<Cell<usize>>,
@@ -627,6 +760,7 @@ enum FailStage {
     RestoreSwapchainAfterClear,
 }
 
+#[allow(clippy::type_complexity)]
 struct RecordingContext {
     fail_stage: Rc<Cell<FailStage>>,
     stages: Rc<RefCell<Vec<&'static str>>>,
@@ -926,6 +1060,7 @@ impl IGraphicsContext for RecordingContext {
     }
 }
 
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn recording_context(
     fail_stage: &Rc<Cell<FailStage>>,
     stages: &Rc<RefCell<Vec<&'static str>>>,
@@ -961,6 +1096,7 @@ fn recording_context(
     }
 }
 
+#[allow(clippy::type_complexity)]
 struct RecordingFixture {
     backend: NativeGpuBackend,
     fail_stage: Rc<Cell<FailStage>>,
@@ -1187,10 +1323,7 @@ fn render_session_resize_follows_adopted_native_gpu_surface() {
     session.resize(800, 600).expect("resize");
     assert_eq!((session.width(), session.height()), (920, 680));
     assert_eq!(
-        (
-            session.canvas_2d().width(),
-            session.canvas_2d().height()
-        ),
+        (session.canvas_2d().width(), session.canvas_2d().height()),
         (920, 680)
     );
 }
@@ -1229,7 +1362,10 @@ fn native_gpu_canvas_uses_logical_extent_when_drawable_has_dpr() {
     );
     match backend.surface.canvas.pending_native.first() {
         Some(PendingNativeOp::Glyph(op)) => {
-            assert!(op.glyph.outline_mesh.is_some(), "DPR must reach glyph routing");
+            assert!(
+                op.glyph.outline_mesh.is_some(),
+                "DPR must reach glyph routing"
+            );
             assert!(op.glyph.coverage.is_empty());
         }
         _ => panic!("high-DPR backend must queue an MSDF glyph"),
@@ -1411,9 +1547,7 @@ fn gpu_only_canvas_queues_axis_aligned_transform_image_blit() {
     use crate::draw::Transform;
 
     let mut canvas = NativeGpuCanvas2D::new_gpu_only(64, 64, NativeRasterCaps::wgpu_full());
-    canvas.set_transform(
-        Transform::translate(8.0, 6.0).concat(Transform::scale(0.5, 0.5)),
-    );
+    canvas.set_transform(Transform::translate(8.0, 6.0).concat(Transform::scale(0.5, 0.5)));
     let pixels = vec![0xFF00_00FFu32; 4];
     canvas.blit_image(
         &pixels,
@@ -1586,7 +1720,7 @@ fn gpu_only_blur_offscreen_reaches_graphics_context() {
     assert_eq!(blur_calls.get(), 1);
     assert!((blur_radius.get() - 4.5).abs() < 1e-6);
     assert!(
-        stages.borrow().iter().any(|stage| *stage == "blur"),
+        stages.borrow().contains(&"blur"),
         "blur must reach the graphics context without soft fallback"
     );
     assert!(soft_tiles.borrow().is_empty());
@@ -2050,10 +2184,7 @@ fn gpu_only_blur_reaches_engine_via_compositor_helper() {
         fn begin_frame(&mut self, _: UpdateStrategy) -> RenderOutcome {
             RenderOutcome::Idle
         }
-        fn end_frame(
-            &mut self,
-            _: &crate::draw::backend::DamageRegion,
-        ) -> RenderOutcome {
+        fn end_frame(&mut self, _: &crate::draw::backend::DamageRegion) -> RenderOutcome {
             RenderOutcome::Idle
         }
         fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
@@ -2089,16 +2220,11 @@ fn gpu_only_blur_reaches_engine_via_compositor_helper() {
     assert!(engine.backend.begin_offscreen_paint(&handle));
     engine.backend.end_offscreen_paint();
 
-    blur_picture_region(
-        &mut engine,
-        &handle,
-        Rect::new(0.0, 0.0, 16.0, 12.0),
-        3.0,
-    )
-    .expect("compositor blur helper");
+    blur_picture_region(&mut engine, &handle, Rect::new(0.0, 0.0, 16.0, 12.0), 3.0)
+        .expect("compositor blur helper");
     assert_eq!(blur_calls.get(), 1);
     assert!((blur_radius.get() - 3.0).abs() < 1e-6);
-    assert!(stages.borrow().iter().any(|stage| *stage == "blur"));
+    assert!(stages.borrow().contains(&"blur"));
     assert!(soft_tiles.borrow().is_empty());
 }
 
@@ -2123,7 +2249,7 @@ fn picture_offscreen_blit_forwards_canvas_opacity() {
         Rect::new(4.0, 6.0, 16.0, 12.0),
     );
     assert!(
-        stages.borrow().iter().any(|stage| *stage == "picture"),
+        stages.borrow().contains(&"picture"),
         "picture blit must reach the graphics context"
     );
     assert!(
@@ -2209,13 +2335,7 @@ fn retained_backend_snapshots_and_restores_overlay_backdrop_without_cpu_readback
         fn try_shutdown(&mut self) -> crate::core::Result<()> {
             Ok(())
         }
-        fn read_pixels(
-            &mut self,
-            _: i32,
-            _: i32,
-            _: i32,
-            _: i32,
-        ) -> crate::core::Result<Vec<u32>> {
+        fn read_pixels(&mut self, _: i32, _: i32, _: i32, _: i32) -> crate::core::Result<Vec<u32>> {
             Err(Error::new(
                 Errc::NotImplemented,
                 "backdrop fake has no CPU readback",

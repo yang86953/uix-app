@@ -13,11 +13,33 @@ use std::cell::RefCell;
 use std::fmt::Display;
 use std::rc::Rc;
 
+const TAB_GAP: f32 = 12.0;
+const TAB_HORIZONTAL_PADDING: f32 = 16.0;
+const SIDE_TAB_BAR_WIDTH: f32 = 160.0;
+const WHEEL_STEP: f32 = 40.0;
+
 /// A single tab definition.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tab {
     pub label: String,
     pub key: String,
+    pub icon: String,
+}
+
+impl Tab {
+    pub fn new(label: impl Into<String>) -> Self {
+        let label = label.into();
+        Self {
+            key: label.clone(),
+            label,
+            icon: String::new(),
+        }
+    }
+
+    pub fn icon(mut self, icon: impl Into<String>) -> Self {
+        self.icon = icon.into();
+        self
+    }
 }
 
 /// Tab bar position.
@@ -25,6 +47,14 @@ pub struct Tab {
 pub enum TabPosition {
     Top,
     Bottom,
+    Left,
+    Right,
+}
+
+impl TabPosition {
+    fn is_vertical(self) -> bool {
+        matches!(self, Self::Left | Self::Right)
+    }
 }
 
 trait TabsValueBinding {
@@ -68,8 +98,15 @@ component! {
         fixed_height: Option<f32>,
         focused: bool,
         pending_change: RefCell<Option<String>>,
-        /// 每帧 render 时计算的各 tab x 坐标（供 on_event 点击定位使用）
-        tab_x_positions: RefCell<Vec<(f32, f32)>>,
+        editable: bool,
+        scrollable: bool,
+        add_callback: Option<Rc<dyn Fn(&str)>>,
+        close_callback: Option<Rc<dyn Fn(&str)>>,
+        last_frame: std::cell::Cell<Option<Rect>>,
+        /// 每帧 render 时计算的各 tab 主轴区间，坐标相对 tab bar 且不含滚动偏移。
+        tab_main_ranges: RefCell<Vec<(f32, f32)>>,
+        tab_content_extent: std::cell::Cell<f32>,
+        tab_scroll_offset: std::cell::Cell<f32>,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -86,20 +123,47 @@ component! {
                 button: MouseButton::Left,
                 ..
             } => {
-                let tab_count = self.tabs.len();
-                if tab_count == 0 { return EventResult::NotHandled; }
-                // 使用 render 时存储的 tab_x_positions 做点击定位
-                let click_x = pos.x;
-                let clicked = self
-                    .tab_x_positions
-                    .borrow()
-                    .iter()
-                    .position(|&(start, end)| click_x >= start && click_x < end);
+                let clicked = self.tab_index_at_point(*pos);
                 if let Some(index) = clicked {
+                    if self.editable {
+                        let close = self.close_rect_for(index);
+                        if close.contains(*pos) {
+                            let key = self.tabs[index].key.clone();
+                            if let Some(callback) = self.close_callback.as_ref() {
+                                callback(&key);
+                            }
+                            self.tabs.remove(index);
+                            self.active_index = self.active_index.min(self.tabs.len().saturating_sub(1));
+                            self.tab_main_ranges.borrow_mut().clear();
+                            return EventResult::Handled;
+                        }
+                    }
                     self.select_index(index);
                     return EventResult::Handled;
                 }
+                if self.editable && self.add_rect().contains(*pos) {
+                    if let Some(callback) = self.add_callback.as_ref() {
+                        callback("");
+                    }
+                    return EventResult::Handled;
+                }
                 EventResult::NotHandled
+            }
+            SystemEvent::Wheel { pos, delta }
+                if self.scrollable && self.local_tab_bar_rect().contains(*pos) =>
+            {
+                let wheel_delta = if self.position.is_vertical() {
+                    delta.y
+                } else if delta.x.abs() > 0.01 {
+                    delta.x
+                } else {
+                    delta.y
+                };
+                if self.scroll_by(wheel_delta * WHEEL_STEP) {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
             }
             SystemEvent::FocusIn => {
                 self.focused = true;
@@ -110,7 +174,7 @@ component! {
                 EventResult::Handled
             }
             SystemEvent::KeyDown { key, .. } if !self.tabs.is_empty() => match key {
-                KeyCode::Right => {
+                KeyCode::Right | KeyCode::Down => {
                     let next = if self.active_index < self.tabs.len() {
                         (self.active_index + 1) % self.tabs.len()
                     } else {
@@ -119,7 +183,7 @@ component! {
                     self.select_index(next);
                     EventResult::Handled
                 }
-                KeyCode::Left => {
+                KeyCode::Left | KeyCode::Up => {
                     let previous = if self.active_index < self.tabs.len() {
                         (self.active_index + self.tabs.len() - 1) % self.tabs.len()
                     } else {
@@ -151,64 +215,154 @@ component! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         self.capture_bound_value_dependency();
+        let frame = Self::normalized_frame(frame);
+        self.last_frame.set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
+        if frame.w <= 0.0 || frame.h <= 0.0 {
+            return;
+        }
         let bg_container = ctx.tokens().color_bg_container();
         let border_secondary = ctx.tokens().color_border_secondary();
         let primary = ctx.tokens().color_primary();
         let text_secondary = ctx.tokens().color_text_secondary();
 
-        // 预计算各 tab 宽度和位置（使用 measure_text 确保与实际渲染一致）
-        let gap = 12.0;
-        let pad = 16.0;
-        let mut positions = Vec::with_capacity(self.tabs.len());
-        let mut cursor_x = pad;
+        let vertical = self.position.is_vertical();
+        let tab_bar = self.tab_bar_rect(frame);
+        let mut ranges = Vec::with_capacity(self.tabs.len());
+        let mut cursor = if vertical { 0.0 } else { TAB_HORIZONTAL_PADDING };
         for tab in &self.tabs {
-            let tw = ctx.measure_text(&tab.label, 14.0).w + pad * 2.0;
-            positions.push((cursor_x, cursor_x + tw));
-            cursor_x += tw + gap;
+            let icon_w = if tab.icon.is_empty() { 0.0 } else { 20.0 };
+            let close_w = if self.editable { 20.0 } else { 0.0 };
+            let extent = if vertical {
+                self.tab_height
+            } else {
+                ctx.measure_text(&tab.label, 14.0).w
+                    + TAB_HORIZONTAL_PADDING * 2.0
+                    + icon_w
+                    + close_w
+            };
+            ranges.push((cursor, cursor + extent));
+            cursor += extent + if vertical { 0.0 } else { TAB_GAP };
         }
-        *self.tab_x_positions.borrow_mut() = positions;
-
-        let tab_bar_h = self.tab_height;
-        let tab_bar_y = match self.position {
-            TabPosition::Top => frame.y,
-            TabPosition::Bottom => frame.y + frame.h - tab_bar_h,
+        let mut content_extent = ranges.last().map_or(0.0, |(_, end)| *end);
+        if !vertical && !ranges.is_empty() {
+            content_extent += TAB_HORIZONTAL_PADDING;
+        }
+        if self.editable {
+            content_extent += if vertical {
+                self.tab_height
+            } else {
+                TAB_GAP + 24.0
+            };
+        }
+        *self.tab_main_ranges.borrow_mut() = ranges;
+        self.tab_content_extent.set(content_extent);
+        let viewport_extent = if vertical { tab_bar.h } else { tab_bar.w };
+        let offset = if self.scrollable {
+            self.tab_scroll_offset
+                .get()
+                .clamp(0.0, (content_extent - viewport_extent).max(0.0))
+        } else {
+            0.0
         };
+        self.tab_scroll_offset.set(offset);
 
-        ctx.fill_rect(Rect::new(frame.x, tab_bar_y, frame.w, tab_bar_h), bg_container, None);
-        ctx.fill_rect(Rect::new(frame.x, tab_bar_y + tab_bar_h - 2.0, frame.w, 2.0), border_secondary, None);
+        ctx.fill_rect(tab_bar, bg_container, None);
+        let divider = match self.position {
+            TabPosition::Top => Rect::new(tab_bar.x, tab_bar.y + tab_bar.h - 2.0, tab_bar.w, 2.0),
+            TabPosition::Bottom => Rect::new(tab_bar.x, tab_bar.y, tab_bar.w, 2.0),
+            TabPosition::Left => Rect::new(tab_bar.x + tab_bar.w - 2.0, tab_bar.y, 2.0, tab_bar.h),
+            TabPosition::Right => Rect::new(tab_bar.x, tab_bar.y, 2.0, tab_bar.h),
+        };
+        ctx.fill_rect(divider, border_secondary, None);
 
-        let mut cursor_x = frame.x + pad;
+        ctx.push_clip(tab_bar);
         for (i, tab) in self.tabs.iter().enumerate() {
+            let (start, end) = self.tab_main_ranges.borrow()[i];
+            let tab_rect = if vertical {
+                Rect::new(tab_bar.x, tab_bar.y + start - offset, tab_bar.w, end - start)
+            } else {
+                Rect::new(tab_bar.x + start - offset, tab_bar.y, end - start, tab_bar.h)
+            };
             let is_active = i == self.active_index;
             let text_color = if is_active { primary } else { text_secondary };
-            let tw = ctx.measure_text(&tab.label, 14.0).w + pad * 2.0;
-
-            let tab_rect = Rect::new(cursor_x, tab_bar_y, tw, tab_bar_h);
             let tab_text_y = ctx.visual_center_y(tab_rect, 14.0);
-            ctx.draw_text(&tab.label,
-                Point::new(cursor_x + pad, tab_text_y),
-                text_color, 14.0);
+            let mut text_x = tab_rect.x + TAB_HORIZONTAL_PADDING;
+            if !tab.icon.is_empty() {
+                crate::ui::widgets::icon::Icon::paint_in_frame(
+                    ctx,
+                    &tab.icon,
+                    Rect::new(
+                        tab_rect.x + TAB_HORIZONTAL_PADDING,
+                        tab_rect.y,
+                        16.0,
+                        tab_rect.h,
+                    ),
+                    text_color,
+                    13.0,
+                );
+                text_x += 20.0;
+            }
+            ctx.draw_text(
+                &tab.label,
+                Point::new(text_x, tab_text_y),
+                text_color,
+                14.0,
+            );
+
+            if self.editable {
+                let close = Rect::new(
+                    (tab_rect.x + tab_rect.w - 20.0).max(tab_rect.x),
+                    tab_rect.y,
+                    20.0_f32.min(tab_rect.w),
+                    tab_rect.h,
+                );
+                crate::ui::widgets::icon::Icon::paint_in_frame(
+                    ctx,
+                    "x",
+                    close,
+                    text_secondary,
+                    10.0,
+                );
+            }
 
             if is_active {
-                let indicator_w = tw * 0.6;
-                let indicator_x = cursor_x + (tw - indicator_w) * 0.5;
-                let indicator_y = match self.position {
-                    TabPosition::Top => tab_bar_y + tab_bar_h - 2.0,
-                    TabPosition::Bottom => tab_bar_y - 2.0,
+                let indicator = match self.position {
+                    TabPosition::Top => {
+                        let w = tab_rect.w * 0.6;
+                        Rect::new(tab_rect.x + (tab_rect.w - w) * 0.5, tab_rect.y + tab_rect.h - 2.0, w, 2.0)
+                    }
+                    TabPosition::Bottom => {
+                        let w = tab_rect.w * 0.6;
+                        Rect::new(tab_rect.x + (tab_rect.w - w) * 0.5, tab_rect.y, w, 2.0)
+                    }
+                    TabPosition::Left => {
+                        let h = tab_rect.h * 0.6;
+                        Rect::new(tab_rect.x + tab_rect.w - 2.0, tab_rect.y + (tab_rect.h - h) * 0.5, 2.0, h)
+                    }
+                    TabPosition::Right => {
+                        let h = tab_rect.h * 0.6;
+                        Rect::new(tab_rect.x, tab_rect.y + (tab_rect.h - h) * 0.5, 2.0, h)
+                    }
                 };
-                ctx.fill_rect(Rect::new(indicator_x, indicator_y, indicator_w, 2.0), primary, Some(Radius::uniform(1.0)));
+                ctx.fill_rect(indicator, primary, Some(Radius::uniform(1.0)));
             }
-            cursor_x += tw + gap;
         }
+        if self.editable {
+            let add = Self::absolute_rect(frame, self.add_rect());
+            crate::ui::widgets::icon::Icon::paint_in_frame(
+                ctx,
+                "plus",
+                add,
+                primary,
+                14.0,
+            );
+        }
+        ctx.pop_clip();
 
-        let content_y = match self.position {
-            TabPosition::Top => tab_bar_y + tab_bar_h,
-            TabPosition::Bottom => frame.y,
-        };
-        ctx.fill_rect(Rect::new(frame.x, content_y, frame.w, frame.h - tab_bar_h), bg_container, None);
+        ctx.fill_rect(self.content_rect(frame), bg_container, None);
         if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(
-                Rect::new(frame.x, tab_bar_y, frame.w, tab_bar_h),
+                tab_bar,
                 primary,
                 1.5,
                 Some(Radius::uniform(ctx.tokens().border_radius_sm())),
@@ -220,15 +374,15 @@ component! {
         -> Vec<(crate::ui::ComponentId, Rect)>
     {
         if children.is_empty() { return Vec::new(); }
-        let tab_bar_h = self.tab_height;
-        let content_y = match self.position {
-            TabPosition::Top => frame.y + tab_bar_h,
-            TabPosition::Bottom => frame.y,
-        };
-        let content_h = frame.h - tab_bar_h;
+        let content = self.content_rect(Self::normalized_frame(frame));
         if self.active_index < children.len() {
             let cid = children[self.active_index].id;
-            vec![(cid, Rect::new(frame.x + 16.0, content_y + 8.0, frame.w - 32.0, content_h - 16.0))]
+            vec![(cid, Rect::new(
+                content.x + 16.0_f32.min(content.w * 0.5),
+                content.y + 8.0_f32.min(content.h * 0.5),
+                (content.w - 32.0).max(0.0),
+                (content.h - 16.0).max(0.0),
+            ))]
         } else {
             Vec::new()
         }
@@ -260,7 +414,14 @@ impl Tabs {
             fixed_height: None,
             focused: false,
             pending_change: RefCell::new(None),
-            tab_x_positions: RefCell::new(Vec::new()),
+            last_frame: std::cell::Cell::new(None),
+            tab_main_ranges: RefCell::new(Vec::new()),
+            tab_content_extent: std::cell::Cell::new(0.0),
+            tab_scroll_offset: std::cell::Cell::new(0.0),
+            editable: false,
+            scrollable: false,
+            add_callback: None,
+            close_callback: None,
         }
     }
 
@@ -269,6 +430,7 @@ impl Tabs {
         self.tabs.push(Tab {
             label: label.to_string(),
             key: key.to_string(),
+            icon: String::new(),
         });
         self
     }
@@ -309,6 +471,7 @@ impl Tabs {
             component.tabs.push(Tab {
                 label: label.into(),
                 key: key.to_string(),
+                icon: String::new(),
             });
             values.push(key);
         }
@@ -319,6 +482,40 @@ impl Tabs {
         self.position = pos;
         self
     }
+
+    pub fn tab_position(self, pos: TabPosition) -> Self {
+        self.position(pos)
+    }
+
+    pub fn editable() -> Self {
+        Self::new().editable_mode()
+    }
+
+    pub fn editable_mode(mut self) -> Self {
+        self.editable = true;
+        self
+    }
+
+    pub fn on_add<F>(mut self, callback: F) -> Self
+    where
+        F: Fn(&str) + 'static,
+    {
+        self.add_callback = Some(Rc::new(callback));
+        self
+    }
+
+    pub fn on_close<F>(mut self, callback: F) -> Self
+    where
+        F: Fn(&str) + 'static,
+    {
+        self.close_callback = Some(Rc::new(callback));
+        self
+    }
+
+    pub fn scrollable(mut self, scrollable: bool) -> Self {
+        self.scrollable = scrollable;
+        self
+    }
     pub fn size(mut self, w: f32, h: f32) -> Self {
         self.fixed_width = Some(w);
         self.fixed_height = Some(h);
@@ -327,6 +524,7 @@ impl Tabs {
 
     pub(crate) fn sync_from(&mut self, next: Self) {
         let previous_key = self.current_key().map(str::to_owned);
+        let previous_position = self.position;
         let controlled_index = next
             .value_binding
             .as_ref()
@@ -343,6 +541,15 @@ impl Tabs {
         self.tab_height = next.tab_height;
         self.fixed_width = next.fixed_width;
         self.fixed_height = next.fixed_height;
+        self.editable = next.editable;
+        self.scrollable = next.scrollable;
+        self.add_callback = next.add_callback;
+        self.close_callback = next.close_callback;
+        if !self.scrollable || previous_position.is_vertical() != self.position.is_vertical() {
+            self.tab_scroll_offset.set(0.0);
+        }
+        self.tab_main_ranges.borrow_mut().clear();
+        self.tab_content_extent.set(0.0);
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -358,7 +565,7 @@ impl Tabs {
     }
 
     fn select_index(&mut self, index: usize) {
-        let Some(tab) = self.tabs.get(index) else {
+        let Some(key) = self.tabs.get(index).map(|tab| tab.key.clone()) else {
             return;
         };
         if index != self.active_index {
@@ -366,8 +573,9 @@ impl Tabs {
             if let Some(binding) = self.value_binding.as_ref() {
                 binding.select_index(index);
             }
-            self.pending_change.replace(Some(tab.key.clone()));
+            self.pending_change.replace(Some(key));
         }
+        self.ensure_tab_visible(index);
     }
 
     fn bind_values<T>(&mut self, state: &State<T>, values: Vec<T>)
@@ -394,11 +602,194 @@ impl Tabs {
             return;
         };
         self.active_index = index;
+        self.ensure_tab_visible(index);
     }
 
     fn capture_bound_value_dependency(&self) {
         if let Some(binding) = self.value_binding.as_ref() {
             let _ = binding.selected_index();
         }
+    }
+
+    fn close_rect_for(&self, index: usize) -> Rect {
+        let Some(tab) = self.local_tab_rect(index) else {
+            return Rect::zero();
+        };
+        Rect::new(
+            (tab.x + tab.w - 20.0).max(tab.x),
+            tab.y,
+            20.0_f32.min(tab.w),
+            tab.h,
+        )
+    }
+
+    fn add_rect(&self) -> Rect {
+        let bar = self.local_tab_bar_rect();
+        let end = self
+            .tab_main_ranges
+            .borrow()
+            .last()
+            .map(|(_, end)| *end)
+            .unwrap_or(0.0);
+        if self.position.is_vertical() {
+            Rect::new(
+                bar.x,
+                bar.y + end - self.tab_scroll_offset.get(),
+                bar.w,
+                self.tab_height,
+            )
+        } else {
+            Rect::new(
+                bar.x + end + TAB_GAP - self.tab_scroll_offset.get(),
+                bar.y,
+                24.0,
+                bar.h,
+            )
+        }
+    }
+
+    fn tab_index_at_point(&self, point: Point) -> Option<usize> {
+        let bar = self.local_tab_bar_rect();
+        if !bar.contains(point) {
+            return None;
+        }
+        let main = if self.position.is_vertical() {
+            point.y - bar.y
+        } else {
+            point.x - bar.x
+        } + self.tab_scroll_offset.get();
+        self.tab_main_ranges
+            .borrow()
+            .iter()
+            .position(|&(start, end)| main >= start && main < end)
+    }
+
+    fn local_tab_rect(&self, index: usize) -> Option<Rect> {
+        let (start, end) = self.tab_main_ranges.borrow().get(index).copied()?;
+        let bar = self.local_tab_bar_rect();
+        let offset = self.tab_scroll_offset.get();
+        Some(if self.position.is_vertical() {
+            Rect::new(bar.x, bar.y + start - offset, bar.w, end - start)
+        } else {
+            Rect::new(bar.x + start - offset, bar.y, end - start, bar.h)
+        })
+    }
+
+    fn ensure_tab_visible(&self, index: usize) {
+        if !self.scrollable {
+            return;
+        }
+        let Some((start, end)) = self.tab_main_ranges.borrow().get(index).copied() else {
+            return;
+        };
+        let viewport = self.tab_bar_main_extent();
+        let old = self.tab_scroll_offset.get();
+        let next = if start < old {
+            start
+        } else if end > old + viewport {
+            end - viewport
+        } else {
+            old
+        };
+        self.tab_scroll_offset
+            .set(next.clamp(0.0, self.max_scroll_offset()));
+    }
+
+    fn scroll_by(&self, delta: f32) -> bool {
+        if !delta.is_finite() || delta.abs() <= 0.01 {
+            return false;
+        }
+        let old = self.tab_scroll_offset.get();
+        let next = (old + delta).clamp(0.0, self.max_scroll_offset());
+        if (next - old).abs() <= 0.01 {
+            return false;
+        }
+        self.tab_scroll_offset.set(next);
+        true
+    }
+
+    fn max_scroll_offset(&self) -> f32 {
+        (self.tab_content_extent.get() - self.tab_bar_main_extent()).max(0.0)
+    }
+
+    fn tab_bar_main_extent(&self) -> f32 {
+        let bar = self.local_tab_bar_rect();
+        if self.position.is_vertical() {
+            bar.h
+        } else {
+            bar.w
+        }
+    }
+
+    fn local_tab_bar_rect(&self) -> Rect {
+        self.tab_bar_rect(self.last_frame.get().unwrap_or_else(|| {
+            let size = self.intrinsic_size();
+            Rect::new(0.0, 0.0, size.w, size.h)
+        }))
+    }
+
+    fn tab_bar_rect(&self, frame: Rect) -> Rect {
+        let tab_height = self.tab_height.min(frame.h).max(0.0);
+        let side_width = SIDE_TAB_BAR_WIDTH.min(frame.w).max(0.0);
+        match self.position {
+            TabPosition::Top => Rect::new(frame.x, frame.y, frame.w, tab_height),
+            TabPosition::Bottom => {
+                Rect::new(frame.x, frame.y + frame.h - tab_height, frame.w, tab_height)
+            }
+            TabPosition::Left => Rect::new(frame.x, frame.y, side_width, frame.h),
+            TabPosition::Right => {
+                Rect::new(frame.x + frame.w - side_width, frame.y, side_width, frame.h)
+            }
+        }
+    }
+
+    fn content_rect(&self, frame: Rect) -> Rect {
+        let bar = self.tab_bar_rect(frame);
+        match self.position {
+            TabPosition::Top => {
+                Rect::new(frame.x, bar.y + bar.h, frame.w, (frame.h - bar.h).max(0.0))
+            }
+            TabPosition::Bottom => Rect::new(frame.x, frame.y, frame.w, (frame.h - bar.h).max(0.0)),
+            TabPosition::Left => {
+                Rect::new(bar.x + bar.w, frame.y, (frame.w - bar.w).max(0.0), frame.h)
+            }
+            TabPosition::Right => Rect::new(frame.x, frame.y, (frame.w - bar.w).max(0.0), frame.h),
+        }
+    }
+
+    fn normalized_frame(frame: Rect) -> Rect {
+        Rect::new(
+            frame.x,
+            frame.y,
+            if frame.w.is_finite() {
+                frame.w.max(0.0)
+            } else {
+                0.0
+            },
+            if frame.h.is_finite() {
+                frame.h.max(0.0)
+            } else {
+                0.0
+            },
+        )
+    }
+
+    fn absolute_rect(frame: Rect, local: Rect) -> Rect {
+        Rect::new(frame.x + local.x, frame.y + local.y, local.w, local.h)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn tab_scroll_offset(&self) -> f32 {
+        self.tab_scroll_offset.get()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn tab_rect_for_test(&self, index: usize) -> Option<Rect> {
+        self.local_tab_rect(index)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn add_rect_for_test(&self) -> Rect {
+        self.add_rect()
     }
 }

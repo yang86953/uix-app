@@ -16,6 +16,7 @@ mod swapchain;
 pub use context::D3d11Context;
 
 #[cfg(windows)]
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) fn create(
     surface: *mut c_void,
     width: i32,

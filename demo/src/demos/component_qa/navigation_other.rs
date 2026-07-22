@@ -1,12 +1,13 @@
 use uix::prelude::*;
 
-use super::{qa_row, qa_target, qa_target_view, qa_variant};
+use super::{qa_row, qa_target, qa_target_view, qa_variant, COMPONENT_VISUAL_CASE_COUNT};
 
 fn menu_item(key: &str, label: &str, icon: &str, disabled: bool) -> MenuItem {
     MenuItem {
         key: key.into(),
         label: label.into(),
         icon: icon.into(),
+        children: Vec::new(),
         disabled,
     }
 }
@@ -42,7 +43,7 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                         .add_item(menu_item("visual", "视觉", "eye", false))
                         .add_item(menu_item("disabled", "禁用", "lock", true))
                         .mode(MenuMode::Horizontal)
-                        .active_key("visual"),
+                        .active_key("inventory"),
                 ),
             ),
             qa_variant(
@@ -58,11 +59,15 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
         ])
         .gap(14.0),
         "nav-item" => {
-            let shared = SharedActive::new(std::cell::Cell::new(1));
+            let shared = SharedActive::new(std::cell::Cell::new(0));
             qa_row([
                 qa_variant(
-                    "Selected / target",
+                    "Default / target",
                     qa_target(NavItem::new("组件验收", 1, shared.clone()).icon("eye")),
+                ),
+                qa_variant(
+                    "Selected",
+                    embed(NavItem::new("已选择", 0, shared.clone()).icon("check")),
                 ),
                 qa_variant(
                     "Compact",
@@ -77,52 +82,59 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 .item("质量报告", "file-text")
                 .active_index(1)
                 .build();
-            qa_target(
-                Space::new()
-                    .size(SpaceSize::Small)
-                    .width(210.0)
-                    .height(150.0)
-                    .direction(FlexDirection::Column)
-                    .children(
-                        items
-                            .into_iter()
-                            .map(|item| Box::new(item) as Box<dyn WidgetComponent>)
-                            .collect(),
-                    ),
+            column(
+                items
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, item)| {
+                        if index == 0 {
+                            qa_target(item)
+                        } else {
+                            embed(item)
+                        }
+                    })
+                    .collect::<Vec<_>>(),
             )
+            .gap(4.0)
+            .width(210.0)
+            .height(150.0)
         }
-        "navigation" => qa_row([
-            qa_variant(
-                "Default / target",
-                qa_target_view(embed(
-                    Navigation::new("UIX Quality")
-                        .item_with_icon("组件库存", "inventory", "grid")
-                        .item_with_icon("视觉矩阵", "visual", "eye")
-                        .item_with_icon("质量报告", "report", "file-text")
-                        .active_index(1)
-                        .width(220.0)
-                        .height(190.0)
-                        .show_version(false)
-                        .build(tk),
-                )),
-            ),
-            qa_variant(
-                "Compact",
-                embed(
-                    Navigation::new("UIX")
-                        .item_with_icon("库存", "inventory", "grid")
-                        .item_with_icon("视觉", "visual", "eye")
-                        .item_with_icon("报告", "report", "file-text")
-                        .active_index(1)
-                        .width(44.0)
-                        .height(190.0)
-                        .show_title(false)
-                        .show_version(false)
-                        .compact(true)
-                        .build(tk),
+        "navigation" => {
+            let mut navigation = Navigation::new("UIX Quality")
+                .item_with_icon("组件库存", "inventory", "grid")
+                .item_with_icon("视觉矩阵", "visual", "eye")
+                .item_with_icon("质量报告", "report", "file-text")
+                .active_index(1)
+                .width(220.0)
+                .height(190.0)
+                .show_version(false)
+                .build(tk);
+            // Title and divider occupy the first two slots; target the first
+            // (unselected) NavItem so hover/focus evidence exercises the
+            // actual navigation control rather than its layout container.
+            if let Some(target) = navigation.children.get_mut(2) {
+                target.automation_id = Some("component-qa-target".into());
+            }
+            qa_row([
+                qa_variant("Default / target", embed(navigation)),
+                qa_variant(
+                    "Compact",
+                    embed(
+                        Navigation::new("UIX")
+                            .item_with_icon("库存", "inventory", "grid")
+                            .item_with_icon("视觉", "visual", "eye")
+                            .item_with_icon("报告", "report", "file-text")
+                            .active_index(1)
+                            .width(44.0)
+                            .height(190.0)
+                            .show_title(false)
+                            .show_version(false)
+                            .compact(true)
+                            .build(tk),
+                    ),
                 ),
-            ),
-        ]),
+            ])
+        }
         "pagination" => column_fit([
             qa_variant(
                 "Middle / target",
@@ -156,7 +168,7 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                         .active(1)
                         .position(TabPosition::Top)
                         .size(300.0, 150.0) => [
-                            label("88 个组件"),
+                            label(format!("{} 个组件", COMPONENT_VISUAL_CASE_COUNT)),
                             label("逐组件适用状态矩阵"),
                             label("Light / Dark / Compact"),
                         ]
@@ -179,6 +191,14 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 }),
             ),
         ]),
+        "chart-placeholder" => qa_target(
+            ChartPlaceholder::new()
+                .width(560.0)
+                .height(190.0)
+                .title("组件图表容器")
+                .subtitle("空数据状态与响应式尺寸契约")
+                .responsive(true),
+        ),
         "bar-chart" => qa_target(
             BarChart::new()
                 .width(560.0)
@@ -200,10 +220,10 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                 .show_dots(true)
                 .show_grid(true)
                 .data(vec![
-                    LineData::new("库存", 88.0),
-                    LineData::new("基础", 88.0),
-                    LineData::new("暗色", 88.0),
-                    LineData::new("紧凑", 88.0),
+                    LineData::new("库存", COMPONENT_VISUAL_CASE_COUNT as f32),
+                    LineData::new("基础", COMPONENT_VISUAL_CASE_COUNT as f32),
+                    LineData::new("暗色", COMPONENT_VISUAL_CASE_COUNT as f32),
+                    LineData::new("紧凑", COMPONENT_VISUAL_CASE_COUNT as f32),
                 ]),
         ),
         "pie-chart" => qa_row([

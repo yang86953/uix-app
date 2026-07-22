@@ -1,5 +1,6 @@
 use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
+use crate::ui::semantic_action::{SemanticAction, SemanticActionKind};
 use crate::ui::widgets::display::selectable_list::*;
 
 fn long_selectable_list() -> SelectableList {
@@ -46,6 +47,37 @@ fn selectable_list_wheel_records_composite_delta() {
         Some((0.0, 40.0))
     );
     assert!(EventHandler::scroll_delta_for_dirty(&list).is_none());
+    assert_eq!(
+        EventHandler::viewport_scroll_offset(&list),
+        Some((0.0, 40.0))
+    );
+}
+
+#[test]
+fn selectable_list_exposes_semantic_scroll_action() {
+    let mut tree = WidgetTree::new();
+    let list = long_selectable_list();
+    list.last_frame.set(Some(Rect::new(0.0, 0.0, 220.0, 120.0)));
+    let id = tree.set_root(Box::new(list));
+    tree.get_mut(id)
+        .expect("selectable list root")
+        .set_frame(Rect::new(0.0, 0.0, 220.0, 120.0));
+
+    assert!(tree
+        .supported_semantic_actions(id)
+        .contains(&SemanticActionKind::Scroll));
+    tree.perform_semantic_action(
+        id,
+        &SemanticAction::Scroll {
+            delta: Point::new(0.0, 1.0),
+        },
+    )
+    .expect("semantic scroll should move the long selectable list");
+    assert!(tree
+        .get(id)
+        .expect("selectable list root")
+        .viewport_scroll_offset()
+        .is_some_and(|(_, y)| y > 0.0));
 }
 
 #[test]

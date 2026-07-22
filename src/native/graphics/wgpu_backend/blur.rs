@@ -7,7 +7,8 @@ use std::mem::size_of;
 use bytemuck::{Pod, Zeroable};
 
 use crate::core::{Errc, Error, Rect, Result};
-use crate::draw::primitives::blur::MAX_GPU_BLUR_KERNEL_RADIUS;
+
+const MAX_GPU_BLUR_KERNEL_RADIUS: usize = 32;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -133,18 +134,16 @@ impl SeparableBlur {
             }),
             write_mask: wgpu::ColorWrites::ALL,
         });
-        let blur_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("uix-blur-conv-pipeline-layout"),
-                bind_group_layouts: &[Some(&blur_layout)],
-                immediate_size: 0,
-            });
-        let blit_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("uix-blur-blit-pipeline-layout"),
-                bind_group_layouts: &[Some(&sample_layout)],
-                immediate_size: 0,
-            });
+        let blur_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("uix-blur-conv-pipeline-layout"),
+            bind_group_layouts: &[Some(&blur_layout)],
+            immediate_size: 0,
+        });
+        let blit_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("uix-blur-blit-pipeline-layout"),
+            bind_group_layouts: &[Some(&sample_layout)],
+            immediate_size: 0,
+        });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("uix-separable-blur-pipeline"),
             layout: Some(&blur_pipeline_layout),
@@ -165,7 +164,7 @@ impl SeparableBlur {
                 module: &shader,
                 entry_point: Some("blur_fs"),
                 compilation_options: Default::default(),
-                targets: &[replace.clone()],
+                targets: std::slice::from_ref(&replace),
             }),
             multiview_mask: None,
             cache: None,
@@ -223,6 +222,10 @@ impl SeparableBlur {
     }
 
     /// 对已 flush 的离屏颜色目标做可分离模糊。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "GPU resources and blur geometry stay explicit at the render boundary"
+    )]
     pub(super) fn blur_target(
         &mut self,
         device: &wgpu::Device,
@@ -360,6 +363,10 @@ impl SeparableBlur {
         Ok(())
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "GPU resources and convolution geometry stay explicit at the render boundary"
+    )]
     fn encode_conv(
         &self,
         device: &wgpu::Device,
@@ -427,6 +434,10 @@ impl SeparableBlur {
         Ok(())
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "source and destination GPU resources stay explicit at the blit boundary"
+    )]
     fn encode_blit(
         &self,
         device: &wgpu::Device,
@@ -482,6 +493,10 @@ impl SeparableBlur {
         Ok(())
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "source and destination extents stay explicit while writing one quad"
+    )]
     fn write_dest_quad(
         &self,
         queue: &wgpu::Queue,

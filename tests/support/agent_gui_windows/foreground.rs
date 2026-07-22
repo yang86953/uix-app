@@ -17,13 +17,17 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SetActiveWindow, SetFocus, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
-    VIRTUAL_KEY,
+    SendInput, SetActiveWindow, SetFocus, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT,
+    KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN,
+    MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE, MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT, MOUSE_EVENT_FLAGS,
+    VIRTUAL_KEY, VK_MENU,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    BringWindowToTop, EnumWindows, GetForegroundWindow, GetWindowRect, GetWindowThreadProcessId,
-    SendMessageW, SetForegroundWindow, SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE,
-    SWP_SHOWWINDOW, WM_SETTINGCHANGE,
+    BringWindowToTop, EnumWindows, GetCursorPos, GetForegroundWindow, GetSystemMetrics,
+    GetWindowRect, GetWindowThreadProcessId, IsWindowVisible, PeekMessageW, SendMessageW,
+    SetForegroundWindow, SetWindowPos, SwitchToThisWindow, HWND_TOPMOST, MSG, PM_NOREMOVE,
+    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_NOACTIVATE,
+    SWP_NOMOVE, SWP_SHOWWINDOW, WM_SETTINGCHANGE,
 };
 
 use super::{
@@ -219,6 +223,13 @@ fn attach_input_thread(current: u32, other: u32) -> bool {
 }
 
 pub(super) fn request_foreground_focus(window: HWND) {
+    // AttachThreadInput fails when either thread has no message queue. Cargo's
+    // test worker is not otherwise a GUI thread, so create its queue first.
+    let mut message = MSG::default();
+    // SAFETY: the out parameter is valid and PM_NOREMOVE leaves any message queued.
+    unsafe {
+        let _ = PeekMessageW(&mut message, None, 0, 0, PM_NOREMOVE);
+    }
     // SAFETY: GetCurrentThreadId 不接收指针，返回值只用于本次输入队列操作。
     let current_thread = unsafe { GetCurrentThreadId() };
     let target_thread = window_thread_id(window);
@@ -239,27 +250,139 @@ pub(super) fn request_foreground_focus(window: HWND) {
         let _ = SetActiveWindow(window);
         let _ = SetForegroundWindow(window);
         let _ = SetFocus(Some(window));
+        SwitchToThisWindow(window, true);
+    }
+
+    let fallback_at = Instant::now() + Duration::from_millis(250);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut alt_unlock_sent = false;
+    let mut saved_cursor = POINT::default();
+    // SAFETY: the out parameter is valid for the synchronous cursor query.
+    let restore_cursor = unsafe { GetCursorPos(&mut saved_cursor) }.is_ok();
+    // SAFETY: GetSystemMetrics has no pointer arguments or ownership transfer.
+    let (virtual_left, virtual_top, virtual_width, virtual_height) = unsafe {
+        (
+            GetSystemMetrics(SM_XVIRTUALSCREEN),
+            GetSystemMetrics(SM_YVIRTUALSCREEN),
+            GetSystemMetrics(SM_CXVIRTUALSCREEN),
+            GetSystemMetrics(SM_CYVIRTUALSCREEN),
+        )
+    };
+    assert!(
+        virtual_width > 1 && virtual_height > 1,
+        "foreground handshake requires a non-empty virtual desktop"
+    );
+    let absolute_move = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK;
+    while foreground_window() != window && Instant::now() < deadline {
+        // The Codex host may reclaim activation while streaming tool output.
+        // Keep requesting the explicit task switch throughout this bounded
+        // handshake instead of assuming one successful call remains active.
+        unsafe {
+            let _ = BringWindowToTop(window);
+            let _ = SetForegroundWindow(window);
+            SwitchToThisWindow(window, true);
+        }
+        if !alt_unlock_sent && Instant::now() >= fallback_at {
+            // Windows permits the next SetForegroundWindow after the user
+            // presses Alt. SendInput is real desktop input from this test
+            // process, so this is the documented fallback when the current
+            // foreground process has not granted activation to Cargo.
+            let inputs = [
+                keyboard_input(VK_MENU, KEYBD_EVENT_FLAGS(0)),
+                keyboard_input(VK_MENU, KEYEVENTF_KEYUP),
+            ];
+            // SAFETY: INPUT array is valid for the duration of the synchronous call.
+            let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+            assert_eq!(sent as usize, inputs.len(), "send Alt activation handshake");
+            let mut window_rect = RECT::default();
+            // SAFETY: window is a live top-level HWND and the out parameter is valid.
+            unsafe { GetWindowRect(window, &mut window_rect) }
+                .expect("query demo bounds for foreground click handshake");
+            let click_x = window_rect.left.saturating_add(160);
+            let click_y = window_rect.top.saturating_add(20);
+            let click = [
+                mouse_input(
+                    normalized_virtual_pointer(click_x, virtual_left, virtual_width),
+                    normalized_virtual_pointer(click_y, virtual_top, virtual_height),
+                    absolute_move,
+                ),
+                mouse_input(0, 0, MOUSEEVENTF_LEFTDOWN),
+                mouse_input(0, 0, MOUSEEVENTF_LEFTUP),
+            ];
+            // SAFETY: INPUT array is valid for the duration of the synchronous call.
+            let clicked = unsafe { SendInput(&click, std::mem::size_of::<INPUT>() as i32) };
+            assert_eq!(
+                clicked as usize,
+                click.len(),
+                "send foreground click handshake"
+            );
+            // SAFETY: target HWND remains live and input queues are still attached.
+            unsafe {
+                let _ = BringWindowToTop(window);
+                let _ = SetForegroundWindow(window);
+                let _ = SetFocus(Some(window));
+                SwitchToThisWindow(window, true);
+            }
+            alt_unlock_sent = true;
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+
+    unsafe {
+        // SAFETY: detach exactly the successful input-queue attachments above.
         if attached_target {
             let _ = AttachThreadInput(current_thread, target_thread, false);
         }
         if attached_foreground {
             let _ = AttachThreadInput(current_thread, foreground_thread, false);
         }
+        if restore_cursor {
+            let restore = [mouse_input(
+                normalized_virtual_pointer(saved_cursor.x, virtual_left, virtual_width),
+                normalized_virtual_pointer(saved_cursor.y, virtual_top, virtual_height),
+                absolute_move,
+            )];
+            let restored = SendInput(&restore, std::mem::size_of::<INPUT>() as i32);
+            assert_eq!(
+                restored as usize,
+                restore.len(),
+                "restore cursor after foreground click handshake"
+            );
+        }
     }
+    assert_eq!(
+        foreground_window(),
+        window,
+        "demo HWND did not become the foreground window"
+    );
+}
 
-    let deadline = Instant::now() + Duration::from_secs(2);
-    while foreground_window() != window {
-        assert!(
-            Instant::now() < deadline,
-            "demo HWND did not become the foreground window"
-        );
-        thread::sleep(Duration::from_millis(25));
+fn mouse_input(dx: i32, dy: i32, flags: MOUSE_EVENT_FLAGS) -> INPUT {
+    INPUT {
+        r#type: INPUT_MOUSE,
+        Anonymous: INPUT_0 {
+            mi: MOUSEINPUT {
+                dx,
+                dy,
+                mouseData: 0,
+                dwFlags: flags,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
     }
+}
+
+fn normalized_virtual_pointer(position: i32, origin: i32, extent: i32) -> i32 {
+    let span = extent.saturating_sub(1).max(1);
+    let offset = position.saturating_sub(origin).clamp(0, span);
+    ((i64::from(offset) * 65_535) / i64::from(span)) as i32
 }
 
 struct WindowSearch {
     process_id: u32,
     window: Option<HWND>,
+    score: i64,
 }
 
 unsafe extern "system" fn find_window_callback(window: HWND, context: LPARAM) -> BOOL {
@@ -272,18 +395,30 @@ unsafe extern "system" fn find_window_callback(window: HWND, context: LPARAM) ->
         // SAFETY: HWND 由 EnumWindows 提供，输出指针指向有效的局部 u32。
         GetWindowThreadProcessId(window, Some(&mut process_id));
     }
-    if process_id == search.process_id {
-        search.window = Some(window);
-        BOOL(0)
-    } else {
-        BOOL(1)
+    let mut bounds = RECT::default();
+    // SAFETY: HWND is supplied by EnumWindows and `bounds` is a valid out parameter.
+    let has_window_bounds = unsafe { GetWindowRect(window, &mut bounds) }.is_ok();
+    // A process may own hidden helper windows. Prefer its visible drawable
+    // main window, then retain the largest drawable window while it is hidden.
+    let width = bounds.right.saturating_sub(bounds.left);
+    let height = bounds.bottom.saturating_sub(bounds.top);
+    if process_id == search.process_id && has_window_bounds && width >= 100 && height >= 100 {
+        let area = i64::from(width) * i64::from(height);
+        let visible_priority = i64::from(unsafe { IsWindowVisible(window) }.as_bool()) << 48;
+        let score = visible_priority.saturating_add(area);
+        if score > search.score {
+            search.window = Some(window);
+            search.score = score;
+        }
     }
+    BOOL(1)
 }
 
 pub(super) fn find_process_window(process_id: u32) -> Option<HWND> {
     let mut search = WindowSearch {
         process_id,
         window: None,
+        score: -1,
     };
     unsafe {
         // SAFETY: callback 与 context 仅在同步枚举期间使用，context 指针始终有效。
@@ -415,8 +550,11 @@ fn capture_client(window: HWND) -> ClientCapture {
 
 pub(super) fn capture_demo_client_png(demo: &DemoProcess, path: &Path) {
     let window = demo.window_handle();
+    // Screenshot scenarios are driven through the agent protocol. Raising the
+    // real HWND above the desktop and flushing DWM is sufficient for a screen
+    // pixel oracle; exact keyboard foreground ownership is separately proved
+    // by the default Vulkan interaction test.
     demo.raise_for_interaction();
-    request_foreground_focus(window);
     flush_desktop_composition();
     let capture = capture_client(window);
 

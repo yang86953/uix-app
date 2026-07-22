@@ -16,10 +16,8 @@ fn real_demo_switches_provider_locale_and_presents_framework_capabilities() {
     let _guard = REAL_GUI_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    // The Vulkan pixel-upload path is intentionally used for this visual
-    // acceptance test because the existing foreground oracle can sample its
-    // pixels through the desktop DC. D3D11 swapchains are covered separately
-    // by the WGC-based smoke evidence and are not readable through GDI BitBlt.
+    // Exercise the shipping default Auto -> Vulkan GPU-native swapchain.
+    // Desktop captures sample the DWM-composited client output.
     let mut demo = DemoProcess::spawn(DEFAULT_VULKAN_GRAPHICS);
     let descriptor = demo.wait_for_descriptor();
     let endpoint = descriptor["endpoint"]
@@ -54,6 +52,7 @@ fn real_demo_switches_provider_locale_and_presents_framework_capabilities() {
     );
 
     let home = snapshot(&mut connection, "framework-home", window_id);
+    demo.assert_expected_dpi(&home, "framework");
     capture_if_requested(&demo, "00-agent-home.png");
     let (framework_x, framework_y) =
         visible_center(node_by_automation_id(&home, FRAMEWORK_PAGE_ID));

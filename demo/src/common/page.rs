@@ -70,7 +70,7 @@ pub fn page_index_by_label(label: &str) -> Option<usize> {
     PAGE_TITLES
         .iter()
         .position(|(_, title)| title.trim() == key)
-        .or_else(|| match key {
+        .or(match key {
             "运行时" | "App 能力" | "应用能力" => Some(PAGE_APP),
             "Provider" | "框架" | "框架能力" => Some(PAGE_FRAMEWORK),
             "目录" | "覆盖清单" => Some(PAGE_GALLERY),

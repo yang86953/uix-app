@@ -147,7 +147,7 @@ fn select_dropdown_row_at_y_accounts_for_scroll_offset() {
 fn single_value_binding_reads_and_writes_option_text() {
     let options = ["Alpha", "Beta", "Gamma"];
     let selected = State::new("Beta".to_owned());
-    let mut select = Select::new().options(&options).value(&selected);
+    let mut select = Select::new().options(options).value(&selected);
     assert_eq!(select.current_value().as_deref(), Some("Beta"));
 
     select.open();
@@ -163,11 +163,11 @@ fn single_value_binding_reads_and_writes_option_text() {
     assert_eq!(select.current_value().as_deref(), Some("Alpha"));
 
     selected.set("Gamma".to_owned());
-    select.sync_from(Select::new().value(&selected).options(&options));
+    select.sync_from(Select::new().value(&selected).options(options));
     assert_eq!(select.current_value().as_deref(), Some("Gamma"));
 
     selected.set(String::new());
-    select.sync_from(Select::new().options(&options).value(&selected));
+    select.sync_from(Select::new().options(options).value(&selected));
     assert_eq!(select.current_value(), None);
     select.open();
     let _ = select.on_event(&SystemEvent::KeyDown {
@@ -181,7 +181,7 @@ fn single_value_binding_reads_and_writes_option_text() {
 fn multiple_value_binding_toggles_a_hash_set() {
     let options = ["Alpha", "Beta", "Gamma"];
     let selected = State::new(HashSet::from(["Beta".to_owned()]));
-    let mut select = Select::multiple().options(&options).value(&selected);
+    let mut select = Select::multiple().options(options).value(&selected);
     assert_eq!(select.current_values(), HashSet::from(["Beta".to_owned()]));
 
     select.open();
@@ -208,7 +208,7 @@ fn searchable_factory_and_external_state_reconcile_are_structural() {
     let options = ["Alpha", "Beta"];
     let selected = State::new("Alpha".to_owned());
     let mut tree = ViewAdapter::build_nodes(ViewAdapter::capture_root(|| {
-        ViewNode::leaf(Select::searchable().options(&options).value(&selected))
+        ViewNode::leaf(Select::searchable().options(options).value(&selected))
     }));
     let root = tree.root_id().expect("select root");
     tree.reset_invalidation();
@@ -216,7 +216,7 @@ fn searchable_factory_and_external_state_reconcile_are_structural() {
     selected.set("Beta".to_owned());
     assert!(tree.take_reconcile_requested());
     let next = ViewAdapter::capture_root(|| {
-        ViewNode::leaf(Select::searchable().options(&options).value(&selected))
+        ViewNode::leaf(Select::searchable().options(options).value(&selected))
     });
     ViewAdapter::reconcile_nodes(&mut tree, next);
 
@@ -238,7 +238,7 @@ fn searchable_factory_and_external_state_reconcile_are_structural() {
 fn searchable_filters_case_insensitively_and_selects_original_option() {
     let options = ["Alpha", "Beta", "Alpine"];
     let selected = State::new(String::new());
-    let mut select = Select::searchable().options(&options).value(&selected);
+    let mut select = Select::searchable().options(options).value(&selected);
 
     assert!(select
         .as_text_input()
@@ -725,7 +725,7 @@ fn custom_option_views_materialize_in_visible_rows_without_stealing_selection_hi
         Select::new()
             .options(["Alpha", "Beta"])
             .value(&selected)
-            .render_option(|option| label(format!("★ {option}"))),
+            .render_option(|option| label(format!("custom:{option}"))),
     );
     let root = tree.root_id().expect("custom Select root");
     tree.get_mut(root)
@@ -756,7 +756,7 @@ fn custom_option_views_materialize_in_visible_rows_without_stealing_selection_hi
             .downcast_ref::<Label>()
             .expect("custom Label")
             .text(),
-        "★ Alpha"
+        "custom:Alpha"
     );
     assert_eq!(first.frame(), Rect::new(110.0, 232.0, 118.0, 28.0));
     assert!(!tree.get(root).expect("Select node").hit_test_children());

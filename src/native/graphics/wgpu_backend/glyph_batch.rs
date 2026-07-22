@@ -32,7 +32,7 @@ pub(super) fn record_glyphs(
         let outline = glyph
             .outline_mesh
             .as_ref()
-            .filter(|mesh| crate::draw::font::glyph_outline::is_outline_edges(mesh))
+            .filter(|mesh| is_outline_edges(mesh))
             .cloned();
         let expected = (glyph.cov_w as usize).saturating_mul(glyph.cov_h as usize);
         if outline.is_none() && glyph.coverage.len() < expected {
@@ -107,8 +107,9 @@ pub(super) fn record_glyphs(
         } else {
             if stream.glyph_cursor_x + glyph.cov_w > GLYPH_ATLAS_WIDTH {
                 stream.glyph_cursor_x = 0;
-                stream.glyph_cursor_y =
-                    stream.glyph_cursor_y.saturating_add(stream.glyph_row_height);
+                stream.glyph_cursor_y = stream
+                    .glyph_cursor_y
+                    .saturating_add(stream.glyph_row_height);
                 stream.glyph_row_height = 0;
             }
             if stream.glyph_cursor_y + glyph.cov_h > GLYPH_ATLAS_HEIGHT {
@@ -170,4 +171,9 @@ pub(super) fn record_glyphs(
         stream.push_batch(prev, batch_first, count, viewport, scissor);
     }
     Ok(())
+}
+
+#[inline]
+fn is_outline_edges(data: &[f32]) -> bool {
+    data.len() >= 4 && data.len().is_multiple_of(4)
 }

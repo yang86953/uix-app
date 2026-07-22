@@ -77,6 +77,15 @@ pub trait WidgetComponent: 'static {
     fn build(&self) -> Vec<Box<dyn WidgetComponent>> {
         vec![]
     }
+    /// Declaration-time View children owned by a component.
+    ///
+    /// Unlike `build`, this hook preserves the complete ViewNode subtree,
+    /// including handlers and styles. It is used by components whose public
+    /// builder accepts a custom View while keeping that View outside the
+    /// component's business state.
+    fn build_view_children(&self) -> Vec<crate::ui::view::ViewNode> {
+        vec![]
+    }
     /// 默认 Tab 键导航索引（> 0 表示组件默认可通过 Tab 聚焦）。
     /// 应用层可通过 `WidgetNode::tab_index()` 覆盖。
     fn tab_index(&self) -> i32 {

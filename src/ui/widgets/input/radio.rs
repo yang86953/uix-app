@@ -232,6 +232,10 @@ impl Radio {
         }
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "radio item geometry is passed explicitly during one paint operation"
+    )]
     fn render_radio_item(
         &self,
         ctx: &mut PaintContext,
@@ -421,10 +425,10 @@ impl Radio {
         self.group_name = next.group_name;
         self.options = next.options;
         self.value_binding = next.value_binding;
-        self.selected = controlled_selected.unwrap_or_else(|| {
-            (self.selected < self.options.len())
-                .then_some(self.selected)
-                .unwrap_or(usize::MAX)
+        self.selected = controlled_selected.unwrap_or(if self.selected < self.options.len() {
+            self.selected
+        } else {
+            usize::MAX
         });
         self.disabled = next.disabled;
         self.direction = next.direction;

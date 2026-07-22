@@ -7,6 +7,8 @@ use crate::tests::common::*;
 use crate::ui::traits::{EventHandler, WidgetAnimation};
 use crate::ui::widgets::feedback::notification::*;
 use crate::ui::{AccessibilityRole, AnimationConfig, EventResult, Placement, SystemEvent};
+use std::cell::Cell;
+use std::rc::Rc;
 
 fn render_notification(
     notification: &Notification,
@@ -56,6 +58,13 @@ fn pointer(kind: &str, pos: Point) -> SystemEvent {
         },
         _ => unreachable!("unsupported pointer kind"),
     }
+}
+
+fn local_center(rect: Rect, frame: Rect) -> Point {
+    Point::new(
+        rect.x + rect.w * 0.5 - frame.x,
+        rect.y + rect.h * 0.5 - frame.y,
+    )
 }
 
 #[test]
@@ -342,6 +351,412 @@ fn close_hit_requires_matching_release_before_starting_leave() {
     assert!(notification.hit_bounds(frame).is_some());
     assert!(!WidgetAnimation::update_animation(&mut notification, 0.2));
     assert!(notification.hit_bounds(frame).is_none());
+}
+
+#[test]
+fn notification_controls_are_measured_painted_and_match_release_targets() {
+    let calls = Rc::new(Cell::new(0));
+    let calls_for_action = Rc::clone(&calls);
+    let mut notification = Notification::new()
+        .action("View details", move || {
+            calls_for_action.set(calls_for_action.get() + 1);
+        })
+        .icon("star")
+        .close_text("暂时忽略")
+        .leave_animation(AnimationConfig::fade_out(0.2));
+    notification.add(NotificationItem {
+        type_: StatusLevel::Info,
+        title: "Persistent".into(),
+        description: "interactive notification".into(),
+        duration_ms: 0,
+        closable: true,
+    });
+    let frame = Rect::new(100.0, 50.0, 520.0, 180.0);
+    let (card, action, close) = notification.interaction_rects_for_test(frame)[0];
+    let action = action.expect("action rect");
+    let close = close.expect("close rect");
+    assert!(action.w > 0.0 && action.h > 0.0);
+    assert!(close.w > 40.0, "custom close text must widen its slot");
+    assert!(action.x >= card.x && action.x + action.w <= close.x);
+    assert!(close.x >= card.x && close.x + close.w <= card.x + card.w);
+
+    let action_point = local_center(action, frame);
+    let close_point = local_center(close, frame);
+    assert_eq!(
+        notification.on_event(&pointer("down", action_point)),
+        EventResult::Handled,
+        "actions are interactive while an item is entering"
+    );
+    assert_eq!(
+        notification.on_event(&pointer("up", action_point)),
+        EventResult::Handled
+    );
+    assert_eq!(calls.get(), 1);
+    assert_eq!(notification.items().len(), 1);
+
+    assert!(!WidgetAnimation::update_animation(&mut notification, 0.2));
+    let display = render_notification(&notification, frame, (720, 280));
+    assert!(display.contains("View details"), "{display}");
+    assert!(display.contains("暂时忽略"), "{display}");
+    let star = crate::ui::widgets::icon::icon_char("star");
+    assert!(
+        display.contains(star) || display.contains("\\u{e176}"),
+        "the custom Lucide icon must be painted: {display}"
+    );
+
+    assert_eq!(
+        notification.on_event(&pointer("down", action_point)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        notification.on_event(&pointer("up", close_point)),
+        EventResult::Handled
+    );
+    assert_eq!(calls.get(), 1, "release in close must not invoke action");
+    assert_eq!(notification.items().len(), 1);
+
+    assert_eq!(
+        notification.on_event(&pointer("down", close_point)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        notification.on_event(&pointer("up", action_point)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        notification.items().len(),
+        1,
+        "release in action must not close"
+    );
+
+    assert_eq!(
+        notification.on_event(&pointer("down", action_point)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        notification.on_event(&SystemEvent::FocusOut),
+        EventResult::Handled
+    );
+    assert_eq!(
+        notification.on_event(&pointer("up", action_point)),
+        EventResult::NotHandled
+    );
+    assert_eq!(calls.get(), 1, "FocusOut must disarm the action");
+
+    assert_eq!(
+        notification.on_event(&pointer("down", close_point)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        notification.on_event(&pointer("up", close_point)),
+        EventResult::Handled
+    );
+    assert!(notification.items().is_empty());
+    assert_eq!(
+        notification.on_event(&pointer("down", action_point)),
+        EventResult::NotHandled,
+        "a leaving item must not expose its action"
+    );
+    assert!(!WidgetAnimation::update_animation(&mut notification, 0.2));
+    assert!(notification.hit_bounds(frame).is_none());
+}
+
+#[test]
+fn notification_action_and_close_slots_follow_label_measurement() {
+    fn widths(action: &str, close: &str, frame: Rect) -> (f32, f32) {
+        let notification = Notification::new().action(action, || {}).close_text(close);
+        notification.add(NotificationItem {
+            type_: StatusLevel::Info,
+            title: "title".into(),
+            description: String::new(),
+            duration_ms: 0,
+            closable: true,
+        });
+        let (_, action, close) = notification.interaction_rects_for_test(frame)[0];
+        let action = action.expect("action");
+        let close = close.expect("close");
+        assert!(action.x + action.w <= close.x);
+        (action.w, close.w)
+    }
+
+    let frame = Rect::new(35.0, 70.0, 520.0, 180.0);
+    let short = widths("Go", "关", frame);
+    let long = widths("Open complete details", "暂时忽略此通知", frame);
+    assert!(long.0 > short.0, "long actions need a wider slot");
+    assert!(long.1 > short.1, "long close text needs a wider slot");
+
+    let empty = Notification::new()
+        .action(" \n", || panic!("empty action must not run"))
+        .close_text(" \t");
+    empty.info("title", "");
+    let (_, action, close) = empty.interaction_rects_for_test(frame)[0];
+    assert!(action.is_none());
+    assert_eq!(close.expect("default close icon slot").w, 40.0);
+}
+
+#[test]
+fn nonclosable_notification_action_uses_the_trailing_area_without_a_close_target() {
+    let calls = Rc::new(Cell::new(0));
+    let calls_for_action = Rc::clone(&calls);
+    let mut notification = Notification::new().action("Open", move || {
+        calls_for_action.set(calls_for_action.get() + 1);
+    });
+    notification.add(NotificationItem {
+        type_: StatusLevel::Info,
+        title: "No close".into(),
+        description: String::new(),
+        duration_ms: 0,
+        closable: false,
+    });
+    assert!(!WidgetAnimation::update_animation(&mut notification, 0.2));
+    let frame = Rect::new(65.0, 45.0, 520.0, 180.0);
+    let (card, action, close) = notification.interaction_rects_for_test(frame)[0];
+    let action = action.expect("action");
+    assert!(close.is_none());
+    assert!(action.x + action.w <= card.x + card.w);
+    let action_point = local_center(action, frame);
+
+    assert_eq!(
+        notification.on_event(&pointer("down", action_point)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        notification.on_event(&pointer("up", action_point)),
+        EventResult::Handled
+    );
+    assert_eq!(calls.get(), 1);
+    assert_eq!(notification.items().len(), 1);
+}
+
+#[test]
+fn notification_action_release_must_match_the_same_queue_entry() {
+    let calls = Rc::new(Cell::new(0));
+    let calls_for_action = Rc::clone(&calls);
+    let mut notification = Notification::new().action("Open", move || {
+        calls_for_action.set(calls_for_action.get() + 1);
+    });
+    for title in ["first", "second"] {
+        notification.add(NotificationItem {
+            type_: StatusLevel::Info,
+            title: title.into(),
+            description: String::new(),
+            duration_ms: 0,
+            closable: true,
+        });
+    }
+    assert!(!WidgetAnimation::update_animation(&mut notification, 0.2));
+    let frame = Rect::new(70.0, 40.0, 520.0, 180.0);
+    let controls = notification.interaction_rects_for_test(frame);
+    let first = local_center(controls[0].1.expect("first action"), frame);
+    let second = local_center(controls[1].1.expect("second action"), frame);
+
+    assert_eq!(
+        notification.on_event(&pointer("down", first)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        notification.on_event(&pointer("up", second)),
+        EventResult::Handled
+    );
+    assert_eq!(calls.get(), 0);
+    assert_eq!(notification.items().len(), 2);
+
+    assert_eq!(
+        notification.on_event(&pointer("down", first)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        notification.on_event(&pointer("up", first)),
+        EventResult::Handled
+    );
+    assert_eq!(calls.get(), 1);
+}
+
+#[test]
+fn notification_offset_translates_every_placement_and_clips_at_frame_boundaries() {
+    let placements = [
+        Placement::Top,
+        Placement::TopLeft,
+        Placement::TopRight,
+        Placement::Bottom,
+        Placement::BottomLeft,
+        Placement::BottomRight,
+        Placement::Left,
+        Placement::Right,
+    ];
+    let frame = Rect::new(50.0, 100.0, 800.0, 600.0);
+
+    for placement in placements {
+        let base = Notification::new().placement(placement);
+        base.add(NotificationItem {
+            type_: StatusLevel::Info,
+            title: "base".into(),
+            description: String::new(),
+            duration_ms: 0,
+            closable: true,
+        });
+        let shifted_notification = Notification::new().placement(placement).offset(7.0, 5.0);
+        shifted_notification.add(NotificationItem {
+            type_: StatusLevel::Info,
+            title: "shifted".into(),
+            description: String::new(),
+            duration_ms: 0,
+            closable: true,
+        });
+        let base = base.hit_bounds(frame).expect("base bounds");
+        let shifted = shifted_notification
+            .hit_bounds(frame)
+            .expect("shifted bounds");
+        assert_eq!(shifted.x, base.x + 7.0, "{placement:?}");
+        assert_eq!(shifted.y, base.y + 5.0, "{placement:?}");
+        assert!(frame.contains(Point::new(shifted.x, shifted.y)));
+        assert!(frame.contains(Point::new(shifted.x + shifted.w, shifted.y + shifted.h)));
+        let overlay = WidgetRender::overlay_entry(
+            &shifted_notification,
+            ComponentId::new(900 + placement as usize),
+            frame,
+        )
+        .expect("shifted notification overlay")
+        .bounds_rect()
+        .expect("shifted overlay bounds");
+        assert!(overlay.contains(Point::new(
+            shifted.x + shifted.w * 0.5,
+            shifted.y + shifted.h * 0.5,
+        )));
+    }
+
+    let calls = Rc::new(Cell::new(0));
+    let calls_for_action = Rc::clone(&calls);
+    let mut offscreen = Notification::new()
+        .action("Hidden", move || {
+            calls_for_action.set(calls_for_action.get() + 1);
+        })
+        .offset(-10_000.0, -10_000.0);
+    offscreen.info("Outside", "clipped");
+    let (_, action, _) = offscreen.interaction_rects_for_test(frame)[0];
+    let action_point = local_center(action.expect("offscreen action"), frame);
+    assert_eq!(offscreen.hit_bounds(frame), None);
+    assert!(WidgetRender::overlay_entry(&offscreen, ComponentId::new(999), frame).is_none());
+    assert_eq!(
+        offscreen.on_event(&pointer("down", action_point)),
+        EventResult::NotHandled,
+        "clipped controls outside the real frame must not be interactive"
+    );
+    assert_eq!(calls.get(), 0);
+
+    let finite_default = Notification::new().offset(f32::NAN, f32::INFINITY);
+    finite_default.info("Finite", "");
+    let plain = Notification::new();
+    plain.info("Plain", "");
+    assert_eq!(finite_default.hit_bounds(frame), plain.hit_bounds(frame));
+}
+
+#[test]
+fn notification_timer_expiry_disarms_an_armed_action_before_leave() {
+    let calls = Rc::new(Cell::new(0));
+    let calls_for_action = Rc::clone(&calls);
+    let mut notification = Notification::new()
+        .action("Undo", move || {
+            calls_for_action.set(calls_for_action.get() + 1)
+        })
+        .leave_animation(AnimationConfig::fade_out(0.2));
+    notification.add(NotificationItem {
+        type_: StatusLevel::Info,
+        title: "Timed".into(),
+        description: String::new(),
+        duration_ms: 25,
+        closable: true,
+    });
+    assert!(!WidgetAnimation::update_animation(&mut notification, 0.2));
+    let frame = Rect::new(90.0, 40.0, 520.0, 180.0);
+    let action = notification.interaction_rects_for_test(frame)[0]
+        .1
+        .expect("action");
+    let action_point = local_center(action, frame);
+    let (timer_id, _) = EventHandler::active_timer(&notification).expect("timer");
+
+    assert_eq!(
+        notification.on_event(&pointer("down", action_point)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        notification.on_event(&SystemEvent::Timer {
+            id: timer_id as u32,
+        }),
+        EventResult::Handled
+    );
+    assert!(notification.items().is_empty());
+    assert_eq!(
+        notification.on_event(&pointer("up", action_point)),
+        EventResult::NotHandled
+    );
+    assert_eq!(calls.get(), 0);
+    assert!(!WidgetAnimation::update_animation(&mut notification, 0.2));
+}
+
+#[test]
+fn notification_reconcile_preserves_queue_and_cancels_armed_geometry() {
+    let mut notification = Notification::new().action("Old", || {}).close_text("Close");
+    notification.add(NotificationItem {
+        type_: StatusLevel::Warning,
+        title: "Keep".into(),
+        description: "queue identity".into(),
+        duration_ms: 0,
+        closable: true,
+    });
+    assert!(!WidgetAnimation::update_animation(&mut notification, 0.2));
+    let frame = Rect::new(80.0, 30.0, 600.0, 220.0);
+    let (_, _, old_close) = notification.interaction_rects_for_test(frame)[0];
+    let old_close_point = local_center(old_close.expect("old close"), frame);
+    assert_eq!(
+        notification.on_event(&pointer("down", old_close_point)),
+        EventResult::Handled
+    );
+
+    let calls = Rc::new(Cell::new(0));
+    let calls_for_action = Rc::clone(&calls);
+    notification.sync_from(
+        Notification::new()
+            .action("New action", move || {
+                calls_for_action.set(calls_for_action.get() + 1);
+            })
+            .icon("bell")
+            .close_text("暂时忽略")
+            .offset(-10.0, 8.0),
+    );
+    assert_eq!(notification.items()[0].title, "Keep");
+    let accessibility = notification.snapshot_fields().accessibility();
+    assert_eq!(accessibility.role, AccessibilityRole::Alert);
+    assert_eq!(accessibility.name.as_deref(), Some("Keep"));
+    assert_eq!(
+        accessibility.state.value_text.as_deref(),
+        Some("queue identity")
+    );
+    let (_, new_action, new_close) = notification.interaction_rects_for_test(frame)[0];
+    let new_close_point = local_center(new_close.expect("new close"), frame);
+    assert_eq!(
+        notification.on_event(&pointer("up", new_close_point)),
+        EventResult::NotHandled,
+        "offset/close-text reconcile must cancel the old close press"
+    );
+    assert_eq!(notification.items().len(), 1);
+    let display = render_notification(&notification, frame, (760, 280));
+    assert!(display.contains("New action"), "{display}");
+    assert!(display.contains("暂时忽略"), "{display}");
+    let bell = crate::ui::widgets::icon::icon_char("bell");
+    assert!(display.contains(bell) || display.contains("\\u{e059}"));
+
+    let new_action_point = local_center(new_action.expect("new action"), frame);
+    assert_eq!(
+        notification.on_event(&pointer("down", new_action_point)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        notification.on_event(&pointer("up", new_action_point)),
+        EventResult::Handled
+    );
+    assert_eq!(calls.get(), 1);
+    assert_eq!(notification.items().len(), 1);
 }
 
 #[test]

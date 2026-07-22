@@ -271,6 +271,10 @@ impl<'a> TextRenderService<'a> {
     }
 
     /// 绘制文本选中背景 + 文本。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "selection colors and bounds are part of the text rendering contract"
+    )]
     pub fn draw_text_with_selection(
         &mut self,
         canvas: &mut dyn Canvas2D,

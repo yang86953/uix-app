@@ -127,19 +127,30 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
             qa_variant(
                 "Default / target",
                 qa_target(
-                    FloatButton::new("+")
+                    FloatButton::new("plus")
                         .tooltip("新建")
                         .reserve_layout_space(true),
                 ),
             ),
             qa_variant(
                 "Badge",
-                embed(FloatButton::new("+").badge(8).reserve_layout_space(true)),
+                embed(FloatButton::new("plus").badge(8).reserve_layout_space(true)),
             ),
         ]),
         "float-button-back-top" => qa_variant(
             "BackTop preset / target",
             qa_target(FloatButtonBackTop::new().reserve_layout_space(true)),
+        ),
+        "float-button-group" => qa_variant(
+            "Hover group / target",
+            qa_target(
+                FloatButtonGroup::new()
+                    .trigger(TriggerMode::Hover)
+                    .buttons(vec![
+                        FloatButton::new("chevron-up").tooltip("上移"),
+                        FloatButton::new("chevron-up").tooltip("回到顶部"),
+                    ]),
+            ),
         ),
         "theme-toggle" => qa_row([
             qa_variant("Current / target", qa_target(ThemeToggle::new())),

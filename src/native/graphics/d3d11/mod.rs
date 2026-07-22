@@ -7,6 +7,7 @@ use crate::native::traits::present::IGraphicsContext;
 
 pub(crate) mod platform;
 
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) fn create(
     surface: *mut c_void,
     width: i32,

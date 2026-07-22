@@ -112,6 +112,8 @@ fn reconcile_table_preserves_runtime_selection_and_syncs_config() {
             selected_row: Some(1),
             checked_rows: vec![0],
             empty_text: "No rows".to_string(),
+            current_page: None,
+            total: None,
             page_size: 8,
             virtual_scroll: true,
         }
@@ -420,7 +422,7 @@ fn reconcile_spin_preserves_phase_and_syncs_config() {
 fn reconcile_float_button_patches_instance_and_syncs_config() {
     use crate::ui::widgets::FloatButton;
 
-    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(FloatButton::new("+")));
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(FloatButton::new("plus")));
     let root_id = tree.root_id().expect("float button root should exist");
     let before_ptr = tree
         .get(root_id)
@@ -433,7 +435,7 @@ fn reconcile_float_button_patches_instance_and_syncs_config() {
     ViewAdapter::reconcile_nodes(
         &mut tree,
         ViewNode::leaf(
-            FloatButton::new("up")
+            FloatButton::new("arrow-up")
                 .tooltip("Top")
                 .badge(9)
                 .size(48.0)
@@ -452,7 +454,7 @@ fn reconcile_float_button_patches_instance_and_syncs_config() {
     assert_eq!(
         float_button.snapshot_fields(),
         SnapshotFields::FloatButton {
-            icon: "up".to_string(),
+            icon: "arrow-up".to_string(),
             tooltip: "Top".to_string(),
             badge_count: 9,
             size: 48.0,

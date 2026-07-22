@@ -162,6 +162,10 @@ impl Descriptions {
         self.items = items;
         self
     }
+    #[allow(
+        clippy::should_implement_trait,
+        reason = "add is the established fluent builder API, not arithmetic addition"
+    )]
     pub fn add(mut self, item: DescriptionsItem) -> Self {
         self.items.push(item);
         self

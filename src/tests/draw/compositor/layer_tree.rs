@@ -764,7 +764,7 @@ fn direct_layers_multiply_parent_and_child_opacity() {
     )
     .expect("opacity layer rendering");
 
-    let pixel = engine.canvas_2d().pixels_mut()[1 * 8 + 1];
+    let pixel = engine.canvas_2d().pixels_mut()[8 + 1];
     let alpha = (pixel >> 24) & 0xff;
     assert!(
         (63..=64).contains(&alpha),

@@ -805,7 +805,7 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
                             .options(["设计", "研发", "测试"])
                             .render_option(|option| {
                                 row([
-                                    label("◆").font_size(10.0),
+                                    embed(Icon::new("palette").size(10.0)),
                                     label(option.to_owned()).font_size(12.0),
                                 ])
                                 .gap(6.0)

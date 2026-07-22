@@ -1,9 +1,10 @@
 [package]
 name = "uix"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 publish = false
 license-file = "LICENSE"
+exclude = ["test-reports/**"]
 
 [profile.dev]
 debug = "line-tables-only"
@@ -78,6 +79,7 @@ d3d11 = [
     "windows/Win32_Graphics_Dxgi_Common",
 ]
 d3d12 = [
+    "wgpu/dx12",
     "windows/Win32_Graphics_Direct3D",
     "windows/Win32_Graphics_Direct3D_Fxc",
     "windows/Win32_Graphics_Direct3D12",
@@ -85,9 +87,9 @@ d3d12 = [
     "windows/Win32_Graphics_Dxgi_Common",
     "windows/Win32_Security",
 ]
-opengles = ["dep:glow", "dep:khronos-egl"]
+opengles = ["dep:glow", "dep:khronos-egl", "wgpu/gles"]
 vulkan = ["dep:ash"]
-metal = []
+metal = ["wgpu/metal"]
 settings-serde = ["dep:serde", "dep:serde_json"]
 agent-control = [
     "dep:serde_json",

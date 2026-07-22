@@ -213,13 +213,10 @@ pub(crate) fn fill_secure_random(output: &mut [u8]) -> io::Result<()> {
     if status.is_ok() {
         Ok(())
     } else {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!(
-                "BCryptGenRandom failed with status 0x{:08x}",
-                status.0 as u32
-            ),
-        ))
+        Err(io::Error::other(format!(
+            "BCryptGenRandom failed with status 0x{:08x}",
+            status.0 as u32
+        )))
     }
 }
 
@@ -789,6 +786,6 @@ fn wide_null(value: &std::ffi::OsStr) -> Vec<u16> {
 }
 
 fn windows_error(error: windows::core::Error) -> io::Error {
-    let raw = (error.code().0 & 0xffff) as i32;
+    let raw = error.code().0 & 0xffff;
     io::Error::from_raw_os_error(raw)
 }

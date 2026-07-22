@@ -66,7 +66,7 @@ component! {
 
         ctx.fill_circle(cx, cy, r, primary);
         ctx.fill_circle(cx, cy, r - 2.0, bg_elevated);
-        crate::ui::widgets::general::icon::paint_icon_in_frame(
+        crate::ui::widgets::general::icon::Icon::paint_in_frame(
             ctx,
             "chevron-up",
             frame,

@@ -4,7 +4,7 @@
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::painting::{PaintContext, PaintPass};
 use crate::draw::{Color, Radius};
 use crate::ui::locale::Locale;
 use crate::ui::widgets::input::date_picker::{days_in_month, first_weekday, Date};
@@ -12,7 +12,8 @@ use crate::ui::SnapshotFields;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
 };
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
 const HEADER_HEIGHT: f32 = 40.0;
 const TITLE_HEIGHT: f32 = 24.0;
@@ -21,6 +22,60 @@ const DEFAULT_CELL_SIZE: f32 = 40.0;
 const MIN_CELL_SIZE: f32 = 20.0;
 const MIN_YEAR: i32 = 1;
 const MAX_YEAR: i32 = 9999;
+
+/// 日期格渲染上下文。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CalendarCellInfo {
+    pub is_today: bool,
+    pub is_selected: bool,
+    pub is_current_month: bool,
+}
+
+/// 日期格中的事件标记。
+#[derive(Debug, Clone, PartialEq)]
+pub struct CalendarEvent {
+    pub date: Date,
+    pub title: String,
+    pub color: Color,
+}
+
+impl CalendarEvent {
+    pub fn new(date: Date, title: impl Into<String>, color: Color) -> Self {
+        Self {
+            date,
+            title: title.into(),
+            color,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CalendarCellEntry {
+    date: Date,
+    info: CalendarCellInfo,
+    factory_generation: u64,
+}
+
+component! {
+    /// Internal viewport that confines a custom date-cell View to one grid slot.
+    struct CalendarCellHost {
+        _date: Date,
+    }
+
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(Size::zero())
+    }
+
+    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
+        -> Vec<(ComponentId, Rect)>
+    {
+        children.iter().map(|child| (child.id, frame)).collect()
+    }
+
+    children_clip => (&self, frame: Rect) -> Option<Rect> { Some(frame) }
+
+    render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct CalendarGeometry {
@@ -154,8 +209,18 @@ component! {
         focused_day: Cell<usize>,
         cell_size: f32,
         year_jump: bool,
+        events: Vec<CalendarEvent>,
+        disabled_predicate: Option<Rc<dyn Fn(Date) -> bool>>,
+        custom_cell: bool,
+        #[snapshot(skip)]
+        custom_cell_factory:
+            Option<Rc<dyn Fn(Date, CalendarCellInfo) -> crate::ui::view::ViewNode>>,
+        custom_cell_factory_generation: Cell<u64>,
+        #[snapshot(skip)]
+        materialized_cells: RefCell<Vec<CalendarCellEntry>>,
         focused: bool,
         pending_change: Cell<Option<Date>>,
+        layout_requested: Cell<bool>,
         last_geometry: Cell<Option<CalendarGeometry>>,
     }
 
@@ -163,6 +228,50 @@ component! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
+    }
+
+    build_view_children => (&self) -> Vec<crate::ui::view::ViewNode> {
+        let entries = self.desired_cell_entries();
+        let views = self.cell_views(&entries);
+        self.materialized_cells.replace(entries);
+        views
+    }
+
+    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
+        -> Vec<(crate::ui::ComponentId, Rect)>
+    {
+        let geometry = CalendarGeometry::new(
+            Rect::new(0.0, 0.0, frame.w.max(0.0), frame.h.max(0.0)),
+            self.cell_size,
+        );
+        let entries = self.materialized_cells.borrow();
+        children
+            .iter()
+            .enumerate()
+            .filter_map(|(index, child)| {
+                let entry = entries.get(index)?;
+                let child_frame = geometry
+                    .and_then(|geometry| {
+                        geometry
+                            .cell_rect(
+                                self.year.get(),
+                                self.month.get(),
+                                entry.date.day,
+                            )
+                            .map(|rect| Rect::new(frame.x + rect.x, frame.y + rect.y, rect.w, rect.h))
+                    })
+                    .unwrap_or_default();
+                Some((child.id, child_frame))
+            })
+            .collect()
+    }
+
+    children_clip => (&self, frame: Rect) -> Option<Rect> {
+        Some(Rect::new(frame.x, frame.y, frame.w.max(0.0), frame.h.max(0.0)))
+    }
+
+    take_layout_request => (&mut self) -> bool {
+        self.layout_requested.replace(false)
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -190,6 +299,10 @@ component! {
                     return EventResult::NotHandled;
                 }
                 if let Some(day) = geometry.day_at(*pos, self.year.get(), self.month.get()) {
+                    let date = Date::new(self.year.get(), self.month.get(), day);
+                    if self.is_disabled(date) {
+                        return EventResult::NotHandled;
+                    }
                     self.focused_day.set(day);
                     self.commit_selection();
                     EventResult::Handled
@@ -259,9 +372,38 @@ component! {
         let frame = Rect::new(frame.x, frame.y, frame.w.max(0.0), frame.h.max(0.0));
         let local_frame = Rect::new(0.0, 0.0, frame.w, frame.h);
         let Some(local_geometry) = CalendarGeometry::new(local_frame, self.cell_size) else {
-            self.last_geometry.set(None);
+            if ctx.paint_pass() == PaintPass::Content {
+                self.last_geometry.set(None);
+            }
             return;
         };
+        if ctx.paint_pass() == PaintPass::AfterChildren {
+            if !self.custom_cell {
+                return;
+            }
+            let geometry = local_geometry.offset(frame.x, frame.y);
+            let text_sec = ctx.tokens().color_text_secondary();
+            ctx.push_clip(frame);
+            for day in 1..=days_in_month(self.year.get(), self.month.get()) {
+                let Some(cell_rect) =
+                    geometry.cell_rect(self.year.get(), self.month.get(), day)
+                else {
+                    continue;
+                };
+                self.paint_event_markers(
+                    Date::new(self.year.get(), self.month.get(), day),
+                    cell_rect,
+                    text_sec,
+                    geometry.scale,
+                    ctx,
+                );
+            }
+            ctx.pop_clip();
+            return;
+        }
+        if ctx.paint_pass() != PaintPass::Content {
+            return;
+        }
         self.last_geometry.set(Some(local_geometry));
         let geometry = local_geometry.offset(frame.x, frame.y);
         let primary = ctx.tokens().color_primary();
@@ -313,14 +455,14 @@ component! {
                 title_font,
             );
         }
-        crate::ui::widgets::icon::paint_icon_in_frame(
+        crate::ui::widgets::icon::Icon::paint_in_frame(
             ctx,
             "chevron-left",
             geometry.previous_navigation(),
             primary,
             12.0 * geometry.scale,
         );
-        crate::ui::widgets::icon::paint_icon_in_frame(
+        crate::ui::widgets::icon::Icon::paint_in_frame(
             ctx,
             "chevron-right",
             geometry.next_navigation(),
@@ -362,9 +504,12 @@ component! {
             let column = (first + day - 1) % 7;
             let date = Date::new(cur_year, cur_month, day);
             let is_selected = selected == Some(date);
+            let is_disabled = self.is_disabled(date);
             let is_focused = self.focused && focused_day == day;
             let is_weekend = column >= 5;
-            let text_color = if is_selected {
+            let text_color = if is_disabled {
+                ctx.tokens().color_text_quaternary()
+            } else if is_selected {
                 Color::white()
             } else if is_weekend {
                 ctx.tokens().color_error()
@@ -401,7 +546,7 @@ component! {
                 cell_rect.w * 0.8,
                 cell_rect.h * 0.8,
             );
-            if day_font > 0.0 {
+            if !self.custom_cell && day_font > 0.0 {
                 let measured = ctx.measure_text(&day_text, day_font);
                 let text_y = ctx.visual_center_y(cell_rect, day_font);
                 ctx.draw_text(
@@ -412,6 +557,19 @@ component! {
                 );
             }
             ctx.stroke_rect(cell_rect, border, 0.5 * geometry.scale, None);
+            let event_count = self.events.iter().filter(|event| event.date == date).count();
+            if self.custom_cell && !is_disabled {
+                ctx.stroke_rect(cell_rect, primary, 0.75 * geometry.scale, None);
+            }
+            if !self.custom_cell && event_count > 0 {
+                self.paint_event_markers(
+                    date,
+                    cell_rect,
+                    text_sec,
+                    geometry.scale,
+                    ctx,
+                );
+            }
         }
         ctx.pop_clip();
     }
@@ -426,8 +584,15 @@ impl Calendar {
             focused_day: Cell::new(1),
             cell_size: DEFAULT_CELL_SIZE,
             year_jump: false,
+            events: Vec::new(),
+            disabled_predicate: None,
+            custom_cell: false,
+            custom_cell_factory: None,
+            custom_cell_factory_generation: Cell::new(0),
+            materialized_cells: RefCell::new(Vec::new()),
             focused: false,
             pending_change: Cell::new(None),
+            layout_requested: Cell::new(false),
             last_geometry: Cell::new(None),
         }
     }
@@ -467,6 +632,33 @@ impl Calendar {
         self
     }
 
+    /// 覆盖日期格的公开扩展入口；默认绘制继续使用框架日历样式。
+    pub fn date_cell<F, V>(mut self, factory: F) -> Self
+    where
+        F: Fn(Date, CalendarCellInfo) -> V + 'static,
+        V: crate::ui::view::View,
+    {
+        self.custom_cell = true;
+        self.custom_cell_factory = Some(Rc::new(move |date, info| {
+            crate::ui::view::View::build(factory(date, info))
+        }));
+        self
+    }
+
+    pub fn events(mut self, events: Vec<CalendarEvent>) -> Self {
+        self.events = events;
+        self
+    }
+
+    pub fn disabled_date<F>(self, predicate: F) -> Self
+    where
+        F: Fn(Date) -> bool + 'static,
+    {
+        let mut calendar = self;
+        calendar.disabled_predicate = Some(Rc::new(predicate));
+        calendar
+    }
+
     fn intrinsic_size(&self) -> Size {
         Size::new(self.cell_size * 7.0, self.cell_size * 6.0 + HEADER_HEIGHT)
     }
@@ -489,6 +681,122 @@ impl Calendar {
         }
         self.cell_size = next_cell_size;
         self.year_jump = next.year_jump;
+        self.events = next.events;
+        self.disabled_predicate = next.disabled_predicate;
+        self.custom_cell = next.custom_cell;
+        self.custom_cell_factory = next.custom_cell_factory;
+        self.custom_cell_factory_generation.set(
+            self.custom_cell_factory_generation
+                .get()
+                .wrapping_add(u64::from(self.custom_cell)),
+        );
+        if !self.custom_cell {
+            self.materialized_cells.borrow_mut().clear();
+        }
+    }
+
+    fn desired_cell_entries(&self) -> Vec<CalendarCellEntry> {
+        if self.custom_cell_factory.is_none() {
+            return Vec::new();
+        }
+        let year = self.year.get();
+        let month = self.month.get();
+        let selected = self.selected_date.get();
+        let today = Date::today();
+        let factory_generation = self.custom_cell_factory_generation.get();
+        (1..=days_in_month(year, month))
+            .map(|day| {
+                let date = Date::new(year, month, day);
+                CalendarCellEntry {
+                    date,
+                    info: CalendarCellInfo {
+                        is_today: date == today,
+                        is_selected: selected == Some(date),
+                        is_current_month: true,
+                    },
+                    factory_generation,
+                }
+            })
+            .collect()
+    }
+
+    fn cell_views(&self, entries: &[CalendarCellEntry]) -> Vec<crate::ui::view::ViewNode> {
+        let Some(factory) = self.custom_cell_factory.as_ref() else {
+            return Vec::new();
+        };
+        entries
+            .iter()
+            .map(|entry| {
+                crate::ui::view::ViewNode::new(
+                    CalendarCellHost { _date: entry.date },
+                    vec![factory(entry.date, entry.info)],
+                )
+                .key(format!("calendar-cell:{}", entry.date.format()))
+            })
+            .collect()
+    }
+
+    pub(crate) fn cell_views_for_refresh(
+        &self,
+        current_child_count: usize,
+    ) -> Option<(Vec<crate::ui::view::ViewNode>, Vec<CalendarCellEntry>)> {
+        let entries = self.desired_cell_entries();
+        if current_child_count == entries.len() && *self.materialized_cells.borrow() == entries {
+            return None;
+        }
+        Some((self.cell_views(&entries), entries))
+    }
+
+    pub(crate) fn mark_cells_materialized(&self, entries: Vec<CalendarCellEntry>) {
+        self.materialized_cells.replace(entries);
+    }
+
+    pub(crate) fn owns_custom_cell_children(&self) -> bool {
+        self.custom_cell || !self.materialized_cells.borrow().is_empty()
+    }
+
+    fn paint_event_markers(
+        &self,
+        date: Date,
+        cell_rect: Rect,
+        overflow_text: Color,
+        scale: f32,
+        ctx: &mut PaintContext<'_>,
+    ) {
+        let event_count = self
+            .events
+            .iter()
+            .filter(|event| event.date == date)
+            .count();
+        if event_count == 0 {
+            return;
+        }
+        let visible_events = event_count.min(3);
+        let dot_gap = 4.0 * scale;
+        let total_width = visible_events as f32 * dot_gap;
+        for (index, event) in self
+            .events
+            .iter()
+            .filter(|event| event.date == date)
+            .take(visible_events)
+            .enumerate()
+        {
+            ctx.fill_circle(
+                cell_rect.x + cell_rect.w * 0.5 + (index as f32 + 0.5) * dot_gap
+                    - total_width * 0.5,
+                cell_rect.y + cell_rect.h - 4.0 * scale,
+                1.5 * scale,
+                event.color,
+            );
+        }
+        if event_count > visible_events {
+            ctx.draw_text(
+                &format!("+{}", event_count - visible_events),
+                Point::new(cell_rect.x + 2.0 * scale, cell_rect.y + 2.0 * scale),
+                overflow_text,
+                8.0 * scale,
+            );
+        }
     }
 
     fn normalize_cell_size(value: f32) -> f32 {
@@ -529,12 +837,17 @@ impl Calendar {
         let shifted = (current + i64::from(delta)).clamp(0, maximum);
         let next_year = MIN_YEAR + (shifted / 12) as i32;
         let next_month = (shifted % 12) as usize + 1;
+        let displayed_changed = (year, month) != (next_year, next_month);
         self.year.set(next_year);
         self.month.set(next_month);
         self.clamp_focused_day();
+        if displayed_changed && self.custom_cell {
+            self.layout_requested.set(true);
+        }
     }
 
     fn shift_focused_day(&self, delta: i32) {
+        let displayed_before = (self.year.get(), self.month.get());
         let mut year = self.year.get();
         let mut month = self.month.get();
         let mut day = self.focused_day.get() as i32 + delta;
@@ -570,6 +883,9 @@ impl Calendar {
         self.year.set(year);
         self.month.set(month);
         self.focused_day.set(day as usize);
+        if displayed_before != (year, month) && self.custom_cell {
+            self.layout_requested.set(true);
+        }
     }
 
     fn clamp_focused_day(&self) {
@@ -582,10 +898,22 @@ impl Calendar {
 
     fn commit_selection(&self) {
         let date = Date::new(self.year.get(), self.month.get(), self.focused_day.get());
+        if self.is_disabled(date) {
+            return;
+        }
         if self.selected_date.get() != Some(date) {
             self.selected_date.set(Some(date));
             self.pending_change.set(Some(date));
+            if self.custom_cell {
+                self.layout_requested.set(true);
+            }
         }
+    }
+
+    fn is_disabled(&self, date: Date) -> bool {
+        self.disabled_predicate
+            .as_ref()
+            .is_some_and(|predicate| predicate(date))
     }
 
     #[cfg(test)]

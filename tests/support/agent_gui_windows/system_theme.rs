@@ -6,7 +6,8 @@ fn real_demo_follows_live_windows_system_theme_and_restores_preference() {
     let _guard = REAL_GUI_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut demo = DemoProcess::spawn_with_args(D3D11_GRAPHICS, &["--follow-system-theme"]);
+    let mut demo =
+        DemoProcess::spawn_with_args(DEFAULT_VULKAN_GRAPHICS, &["--follow-system-theme"]);
     let descriptor = demo.wait_for_descriptor();
     let endpoint = descriptor["endpoint"]
         .as_str()
@@ -66,6 +67,7 @@ fn real_demo_follows_live_windows_system_theme_and_restores_preference() {
         }),
     );
     assert_success(&snapshot, "system-theme-snapshot");
+    demo.assert_expected_dpi(&snapshot["snapshot"], "system-theme");
     assert_eq!(
         node_by_automation_id(&snapshot["snapshot"], "system-theme-follow-status")["name"],
         "跟随系统"

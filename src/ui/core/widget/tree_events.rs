@@ -593,7 +593,8 @@ impl WidgetTree {
         self.apply_event_layout_request(id);
         let dynamic_children_changed = self.refresh_table_expand_component(id)
             | self.refresh_table_cell_component(id)
-            | self.refresh_select_option_component(id);
+            | self.refresh_select_option_component(id)
+            | self.refresh_calendar_cell_component(id);
         if dynamic_children_changed {
             self.push_layout_invalidation(id);
             self.propagate_layout_invalidation(id);

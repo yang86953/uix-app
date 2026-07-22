@@ -170,7 +170,7 @@ component! {
                 let center_x = geometry.icon.x + geometry.icon.w * 0.5;
                 let center_y = geometry.icon.y + geometry.icon.h * 0.5;
                 ctx.fill_circle(center_x, center_y, radius, icon_color);
-                crate::ui::widgets::icon::paint_icon_in_frame(
+                crate::ui::widgets::icon::Icon::paint_in_frame(
                     ctx,
                     icon,
                     geometry.icon,

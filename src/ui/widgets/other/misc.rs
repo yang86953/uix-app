@@ -8,6 +8,7 @@ use crate::ui::{
 };
 use qrcode::{types::Color as QrModuleColor, EcLevel, QrCode};
 use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
 // ════════════════════════════════════════════════════════════════════════════
 // QRCode
@@ -173,6 +174,22 @@ pub struct TransferItem {
     pub selected: bool,
 }
 
+impl TransferItem {
+    pub fn new(key: impl Into<String>, title: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            title: title.into(),
+            selected: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MoveDirection {
+    LeftToRight,
+    RightToLeft,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TransferPane {
     Source,
@@ -183,6 +200,12 @@ component! {
     pub struct Transfer {
         source: Vec<TransferItem>,
         target: Vec<TransferItem>,
+        source_title: String,
+        target_title: String,
+        searchable: bool,
+        search_query: String,
+        item_renderer: Option<Rc<dyn Fn(&TransferItem) -> crate::ui::view::ViewNode>>,
+        change_callback: Option<Rc<dyn Fn(&[TransferItem], &[TransferItem], MoveDirection)>>,
         last_frame: Cell<Option<Rect>>,
         focused: bool,
         active_pane: TransferPane,
@@ -194,6 +217,52 @@ component! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(Size::new(500.0, 200.0))
+    }
+
+    accepts_text_input => (&self) -> bool { self.searchable }
+
+    text_input_cursor_rect => (&self) -> Rect {
+        let width = (self.search_query.chars().count() as f32 * 8.0 + 8.0).clamp(8.0, 280.0);
+        Rect::new(8.0 + width, 4.0, 1.0, 20.0)
+    }
+
+    build_view_children => (&self) -> Vec<crate::ui::view::ViewNode> {
+        let Some(factory) = self.item_renderer.as_ref() else {
+            return Vec::new();
+        };
+        let mut children = Vec::with_capacity(self.source.len() + self.target.len());
+        for item in &self.source {
+            children.push(factory(item).key(format!("transfer:source:{}", item.key)));
+        }
+        for item in &self.target {
+            children.push(factory(item).key(format!("transfer:target:{}", item.key)));
+        }
+        children
+    }
+
+    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
+        -> Vec<(crate::ui::ComponentId, Rect)>
+    {
+        let half = ((frame.w - 60.0) * 0.5).max(40.0);
+        let row_h = 28.0;
+        let header_h = 24.0 + if self.searchable { 24.0 } else { 0.0 };
+        let mut layouts = Vec::with_capacity(children.len());
+        for (index, child) in children.iter().enumerate() {
+            let (pane, raw_index) = if index < self.source.len() {
+                (TransferPane::Source, index)
+            } else {
+                (TransferPane::Target, index - self.source.len())
+            };
+            let visible = self.visible_indices(pane).into_iter().position(|item| item == raw_index);
+            let rect = if let Some(visible_index) = visible {
+                let x = if pane == TransferPane::Source { frame.x } else { frame.x + half + 60.0 };
+                Rect::new(x, frame.y + header_h + visible_index as f32 * row_h, half, row_h)
+            } else {
+                Rect::zero()
+            };
+            layouts.push((child.id, rect));
+        }
+        layouts
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -209,6 +278,24 @@ component! {
             }
             SystemEvent::FocusOut => {
                 self.focused = false;
+                EventResult::Handled
+            }
+            SystemEvent::KeyDown { key: KeyCode::Backspace, .. }
+                if self.searchable && !self.search_query.is_empty() =>
+            {
+                self.search_query.pop();
+                EventResult::Handled
+            }
+            SystemEvent::KeyDown { key: KeyCode::Escape, .. }
+                if self.searchable && !self.search_query.is_empty() =>
+            {
+                self.search_query.clear();
+                EventResult::Handled
+            }
+            SystemEvent::TextInput { text } | SystemEvent::Paste { text }
+                if self.searchable && !text.is_empty() && !text.chars().any(char::is_control) =>
+            {
+                self.search_query.push_str(text);
                 EventResult::Handled
             }
             SystemEvent::KeyDown { key, .. } => self.key_down(*key),
@@ -233,6 +320,8 @@ component! {
         let primary = ctx.tokens().color_primary();
         let fill = ctx.tokens().color_fill_tertiary();
         const LIST_HEADER_H: f32 = 24.0;
+        let search_h = if self.searchable { 24.0 } else { 0.0 };
+        let content_header_h = LIST_HEADER_H + search_h;
         const BTN_COL_W: f32 = 60.0;
         let half = ((frame.w - BTN_COL_W) * 0.5).max(40.0);
         let item_h = 28.0;
@@ -249,29 +338,70 @@ component! {
         };
         ctx.stroke_rect(left_rect, left_border, if left_border == primary { 1.5 } else { 1.0 }, r);
         let loc = crate::ui::locale::use_locale();
-        ctx.draw_text(&format!("{} ({}项)", loc.transfer_source, self.source.len()), Point::new(frame.x + 8.0, frame.y + 6.0), text_sec, 12.0);
-        for (i, item) in self.source.iter().enumerate() {
-            let y = frame.y + LIST_HEADER_H + i as f32 * item_h;
+        let source_title = if self.source_title.is_empty() { loc.transfer_source } else { &self.source_title };
+        if self.searchable {
+            ctx.stroke_rect(
+                Rect::new(frame.x + 4.0, frame.y + 2.0, (half - 8.0).max(0.0), 20.0),
+                border,
+                1.0,
+                None,
+            );
+            ctx.draw_text(
+                &format!("搜索: {}", self.search_query),
+                Point::new(frame.x + 8.0, frame.y + 6.0),
+                text_sec,
+                11.0,
+            );
+        }
+        ctx.draw_text(
+            &format!("{} ({}项)", source_title, self.source.len()),
+            Point::new(frame.x + 8.0, frame.y + search_h + 6.0),
+            text_sec,
+            12.0,
+        );
+        for (i, raw_index) in self.visible_indices(TransferPane::Source).into_iter().enumerate() {
+            let item = &self.source[raw_index];
+            let y = frame.y + content_header_h + i as f32 * item_h;
             let row_rect = Rect::new(frame.x, y, half, item_h);
             let row_y = ctx.visual_center_y(row_rect, 13.0);
             if item.selected { ctx.fill_rect(row_rect, fill, None); }
             if self.focused
                 && tree.keyboard_focus_visible()
                 && self.active_pane == TransferPane::Source
-                && self.active_index == i
+                && self.active_index == raw_index
             {
                 ctx.stroke_rect(row_rect, primary, 1.0, None);
             }
-            ctx.draw_text(if item.selected { "☑" } else { "☐" }, Point::new(frame.x + 8.0, row_y), text, 12.0);
-            ctx.draw_text(&item.title, Point::new(frame.x + 26.0, row_y), text, 13.0);
+            crate::ui::widgets::icon::Icon::paint_in_frame(
+                ctx,
+                if item.selected { "check-square" } else { "square" },
+                Rect::new(frame.x + 4.0, y, 20.0, item_h),
+                text,
+                12.0,
+            );
+            if self.item_renderer.is_none() {
+                ctx.draw_text(&item.title, Point::new(frame.x + 26.0, row_y), text, 13.0);
+            }
         }
         let btn_y = frame.y + frame.h * 0.5 - 20.0;
         let rbtn_rect = Rect::new(frame.x + half + 8.0, btn_y, 44.0, 20.0);
         let lbtn_rect = Rect::new(frame.x + half + 8.0, btn_y + 24.0, 44.0, 20.0);
         ctx.fill_rect(rbtn_rect, primary, Some(Radius::uniform(3.0)));
-        ctx.text_center("→", rbtn_rect, Color::white(), 14.0);
+        crate::ui::widgets::icon::Icon::paint_in_frame(
+            ctx,
+            "arrow-right",
+            rbtn_rect,
+            Color::white(),
+            14.0,
+        );
         ctx.fill_rect(lbtn_rect, border, Some(Radius::uniform(3.0)));
-        ctx.text_center("←", lbtn_rect, text, 14.0);
+        crate::ui::widgets::icon::Icon::paint_in_frame(
+            ctx,
+            "arrow-left",
+            lbtn_rect,
+            text,
+            14.0,
+        );
         let right_x = frame.x + half + BTN_COL_W;
         let right_rect = Rect::new(right_x, frame.y, half, frame.h);
         ctx.fill_rect(right_rect, bg, r);
@@ -284,21 +414,50 @@ component! {
             border
         };
         ctx.stroke_rect(right_rect, right_border, if right_border == primary { 1.5 } else { 1.0 }, r);
-        ctx.draw_text(&format!("{} ({}项)", loc.transfer_target, self.target.len()), Point::new(right_x + 8.0, frame.y + 6.0), text_sec, 12.0);
-        for (i, item) in self.target.iter().enumerate() {
-            let y = frame.y + LIST_HEADER_H + i as f32 * item_h;
+        let target_title = if self.target_title.is_empty() { loc.transfer_target } else { &self.target_title };
+        if self.searchable {
+            ctx.stroke_rect(
+                Rect::new(right_x + 4.0, frame.y + 2.0, (half - 8.0).max(0.0), 20.0),
+                border,
+                1.0,
+                None,
+            );
+            ctx.draw_text(
+                &format!("搜索: {}", self.search_query),
+                Point::new(right_x + 8.0, frame.y + 6.0),
+                text_sec,
+                11.0,
+            );
+        }
+        ctx.draw_text(
+            &format!("{} ({}项)", target_title, self.target.len()),
+            Point::new(right_x + 8.0, frame.y + search_h + 6.0),
+            text_sec,
+            12.0,
+        );
+        for (i, raw_index) in self.visible_indices(TransferPane::Target).into_iter().enumerate() {
+            let item = &self.target[raw_index];
+            let y = frame.y + content_header_h + i as f32 * item_h;
             let row_rect = Rect::new(right_x, y, half, item_h);
             let row_y = ctx.visual_center_y(row_rect, 13.0);
             if item.selected { ctx.fill_rect(row_rect, fill, None); }
             if self.focused
                 && tree.keyboard_focus_visible()
                 && self.active_pane == TransferPane::Target
-                && self.active_index == i
+                && self.active_index == raw_index
             {
                 ctx.stroke_rect(row_rect, primary, 1.0, None);
             }
-            ctx.draw_text(if item.selected { "☑" } else { "☐" }, Point::new(right_x + 8.0, row_y), text, 12.0);
-            ctx.draw_text(&item.title, Point::new(right_x + 26.0, row_y), text, 13.0);
+            crate::ui::widgets::icon::Icon::paint_in_frame(
+                ctx,
+                if item.selected { "check-square" } else { "square" },
+                Rect::new(right_x + 4.0, y, 20.0, item_h),
+                text,
+                12.0,
+            );
+            if self.item_renderer.is_none() {
+                ctx.draw_text(&item.title, Point::new(right_x + 26.0, row_y), text, 13.0);
+            }
         }
     }
 }
@@ -307,6 +466,12 @@ impl Transfer {
         Self {
             source: Vec::new(),
             target: Vec::new(),
+            source_title: String::new(),
+            target_title: String::new(),
+            searchable: false,
+            search_query: String::new(),
+            item_renderer: None,
+            change_callback: None,
             last_frame: Cell::new(None),
             focused: false,
             active_pane: TransferPane::Source,
@@ -320,6 +485,52 @@ impl Transfer {
     }
     pub fn target(mut self, items: Vec<TransferItem>) -> Self {
         self.target = items;
+        self
+    }
+
+    pub fn left_data(self, items: Vec<TransferItem>) -> Self {
+        self.source(items)
+    }
+
+    pub fn right_data(self, items: Vec<TransferItem>) -> Self {
+        self.target(items)
+    }
+
+    pub fn titles(mut self, source: impl Into<String>, target: impl Into<String>) -> Self {
+        self.source_title = source.into();
+        self.target_title = target.into();
+        self
+    }
+
+    pub fn searchable(mut self, value: bool) -> Self {
+        self.searchable = value;
+        if !value {
+            self.search_query.clear();
+        }
+        self
+    }
+
+    pub fn search_query(&self) -> &str {
+        &self.search_query
+    }
+
+    /// 自定义条目视图工厂；默认绘制仍使用稳定文本快照。
+    pub fn render_item<F, V>(mut self, factory: F) -> Self
+    where
+        F: Fn(&TransferItem) -> V + 'static,
+        V: crate::ui::view::View,
+    {
+        self.item_renderer = Some(Rc::new(move |item| {
+            crate::ui::view::View::build(factory(item))
+        }));
+        self
+    }
+
+    pub fn on_change<F>(mut self, callback: F) -> Self
+    where
+        F: Fn(&[TransferItem], &[TransferItem], MoveDirection) + 'static,
+    {
+        self.change_callback = Some(Rc::new(callback));
         self
     }
 
@@ -339,12 +550,41 @@ impl Transfer {
         self.active_pane == TransferPane::Target
     }
 
-    pub(crate) fn sync_from(&mut self, _next: Self) {}
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.source_title = next.source_title;
+        self.target_title = next.target_title;
+        self.searchable = next.searchable;
+        self.search_query = if next.searchable {
+            next.search_query
+        } else {
+            String::new()
+        };
+        self.item_renderer = next.item_renderer;
+        self.change_callback = next.change_callback;
+    }
 
     #[cfg(test)]
     pub(crate) fn set_frame_for_test(&self, frame: Rect) {
         self.last_frame
             .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
+    }
+
+    fn visible_indices(&self, pane: TransferPane) -> Vec<usize> {
+        let query = self.search_query.trim().to_lowercase();
+        let items = match pane {
+            TransferPane::Source => &self.source,
+            TransferPane::Target => &self.target,
+        };
+        items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| {
+                query.is_empty()
+                    || item.title.to_lowercase().contains(&query)
+                    || item.key.to_lowercase().contains(&query)
+            })
+            .map(|(index, _)| index)
+            .collect()
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -364,6 +604,7 @@ impl Transfer {
 
     fn pointer_down(&mut self, pos: Point) -> EventResult {
         const HEADER: f32 = 24.0;
+        let header = HEADER + if self.searchable { 24.0 } else { 0.0 };
         const BUTTONS: f32 = 60.0;
         const ROW: f32 = 28.0;
         let Some(frame) = self.last_frame.get().filter(|frame| frame.contains(pos)) else {
@@ -372,12 +613,12 @@ impl Transfer {
         let x = pos.x - frame.x;
         let y = pos.y - frame.y;
         let half = ((frame.w - BUTTONS) * 0.5).max(40.0);
-        let row = (y >= HEADER).then(|| ((y - HEADER) / ROW) as usize);
+        let row = (y >= header).then(|| ((y - header) / ROW) as usize);
         if x < half {
-            return self.toggle_row(TransferPane::Source, row);
+            return self.toggle_visible_row(TransferPane::Source, row);
         }
         if x > half + BUTTONS {
-            return self.toggle_row(TransferPane::Target, row);
+            return self.toggle_visible_row(TransferPane::Target, row);
         }
         let button_y = frame.h * 0.5 - 20.0;
         if y >= button_y && y < button_y + 20.0 {
@@ -437,6 +678,16 @@ impl Transfer {
         EventResult::Handled
     }
 
+    fn toggle_visible_row(&mut self, pane: TransferPane, row: Option<usize>) -> EventResult {
+        let Some(visible_row) = row else {
+            return EventResult::NotHandled;
+        };
+        let Some(raw_row) = self.visible_indices(pane).get(visible_row).copied() else {
+            return EventResult::NotHandled;
+        };
+        self.toggle_row(pane, Some(raw_row))
+    }
+
     fn toggle_active(&mut self) {
         let index = self.active_index;
         let items = match self.active_pane {
@@ -471,6 +722,13 @@ impl Transfer {
         self.active_index = self.active_index.min(self.active_len().saturating_sub(1));
         self.pending_change
             .replace(Some(self.target_keys_payload()));
+        if let Some(callback) = self.change_callback.as_ref() {
+            let direction = match from {
+                TransferPane::Source => MoveDirection::LeftToRight,
+                TransferPane::Target => MoveDirection::RightToLeft,
+            };
+            callback(&self.source, &self.target, direction);
+        }
         true
     }
 
@@ -607,7 +865,7 @@ component! {
         if self.drag && self.drag_hover {
             ctx.stroke_rect(Rect::new(frame.x + 4.0, frame.y + 4.0, frame.w - 8.0, 92.0), primary, 1.0, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
         }
-        crate::ui::widgets::icon::paint_icon_in_frame(
+        crate::ui::widgets::icon::Icon::paint_in_frame(
             ctx,
             "upload",
             Rect::new(frame.x + frame.w * 0.5 - 24.0, frame.y + 12.0, 48.0, 40.0),
@@ -655,7 +913,7 @@ component! {
                     true
                 });
             if !drew_preview {
-                crate::ui::widgets::icon::paint_icon_in_frame(
+                crate::ui::widgets::icon::Icon::paint_in_frame(
                     ctx,
                     "file",
                     Rect::new(frame.x + 6.0, y, 18.0, 24.0),
@@ -685,14 +943,14 @@ component! {
                 UploadStatus::Pending => "clock",
                 UploadStatus::Uploading => "refresh-cw",
             };
-            crate::ui::widgets::icon::paint_icon_in_frame(
+            crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 status_icon,
                 Rect::new(frame.x + frame.w - 48.0, y + 4.0, 20.0, 24.0),
                 status_color,
                 12.0,
             );
-            crate::ui::widgets::icon::paint_icon_in_frame(
+            crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 "x",
                 Rect::new(frame.x + frame.w - 24.0, y + 4.0, 20.0, 24.0),
@@ -1014,20 +1272,14 @@ component! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         if self.text.is_empty() { return; }
-        let mut c = self.color;
-        c.a = (self.opacity * 255.0).round() as u8;
+        let color = self.effective_color();
         let columns = (frame.w.max(0.0) / self.gap_x).ceil() as usize + 2;
         let rows = (frame.h.max(0.0) / self.gap_y).ceil() as usize + 2;
 
         ctx.push_clip(frame);
         for gy in 0..rows {
             for gx in 0..columns {
-                ctx.draw_text(
-                    &self.text,
-                    self.tile_position(frame, gx, gy),
-                    c,
-                    self.font_size,
-                );
+                self.paint_rotated_text(ctx, self.tile_position(frame, gx, gy), color);
             }
         }
         ctx.pop_clip();
@@ -1096,14 +1348,41 @@ impl Watermark {
     }
 
     pub(crate) fn tile_position(&self, frame: Rect, gx: usize, gy: usize) -> Point {
-        let base_x = gx as f32 * self.gap_x + self.x_offset;
-        let base_y = gy as f32 * self.gap_y + self.y_offset;
-        let angle_rad = self.rotate.to_radians();
-        let (sin_a, cos_a) = angle_rad.sin_cos();
-        let half = self.text.len() as f32 * self.font_size * 0.3;
-        let rotated_x = (base_x - half) * cos_a - (base_y - half) * sin_a + half;
-        let rotated_y = (base_x - half) * sin_a + (base_y - half) * cos_a + half;
-        Point::new(frame.x + rotated_x, frame.y + rotated_y)
+        Point::new(
+            frame.x + gx as f32 * self.gap_x + self.x_offset,
+            frame.y + gy as f32 * self.gap_y + self.y_offset,
+        )
+    }
+
+    fn paint_rotated_text(&self, ctx: &mut PaintContext<'_>, origin: Point, color: Color) {
+        let angle = self.rotate.to_radians();
+        let (sin_a, cos_a) = angle.sin_cos();
+        let line_height = self.font_size * 1.4;
+        for (line_index, line) in self.text.split('\n').enumerate() {
+            let normal_offset = line_index as f32 * line_height;
+            let line_origin = Point::new(
+                origin.x - sin_a * normal_offset,
+                origin.y + cos_a * normal_offset,
+            );
+            let mut advance = 0.0;
+            for character in line.chars() {
+                let glyph = character.to_string();
+                let position = Self::rotated_advance(line_origin, advance, sin_a, cos_a);
+                ctx.draw_text(&glyph, position, color, self.font_size);
+                advance += ctx.measure_text(&glyph, self.font_size).w;
+            }
+        }
+    }
+
+    fn rotated_advance(origin: Point, advance: f32, sin_a: f32, cos_a: f32) -> Point {
+        Point::new(origin.x + cos_a * advance, origin.y + sin_a * advance)
+    }
+
+    fn effective_color(&self) -> Color {
+        let alpha = (self.color.a as f32 * self.opacity)
+            .round()
+            .clamp(0.0, 255.0) as u8;
+        self.color.with_alpha(alpha)
     }
 
     fn positive_or(value: f32, fallback: f32) -> f32 {
@@ -1112,6 +1391,17 @@ impl Watermark {
         } else {
             fallback
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn effective_color_for_test(&self) -> Color {
+        self.effective_color()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn rotated_advance_for_test(&self, origin: Point, advance: f32) -> Point {
+        let (sin_a, cos_a) = self.rotate.to_radians().sin_cos();
+        Self::rotated_advance(origin, advance, sin_a, cos_a)
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {

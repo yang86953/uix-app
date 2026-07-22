@@ -3,7 +3,7 @@
 //! Values are microseconds. Thread-local so the event loop can attribute
 //! engine-managed present cost and record-path sub-stages.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PresentProbeSample {
@@ -11,7 +11,15 @@ pub struct PresentProbeSample {
     pub upload_copy_us: u128,
     pub fence_wait_us: u128,
     pub submit_present_us: u128,
+    /// CPU time spent in wgpu's actual surface-present call.
+    pub wgpu_surface_present_cpu_us: u128,
     pub pixels: u64,
+    /// Drawable pixels reported by the production wgpu swapchain.
+    pub drawable_pixels: u64,
+    /// Physical width reported by the production wgpu swapchain.
+    pub drawable_width: u32,
+    /// Physical height reported by the production wgpu swapchain.
+    pub drawable_height: u32,
     pub damage_full: u8,
     pub skipped: u8,
 }
@@ -39,15 +47,27 @@ pub struct PaintProbeSample {
 }
 
 thread_local! {
+    #[allow(
+        clippy::missing_const_for_thread_local,
+        reason = "the initializer already uses an inline const block; Clippy reports the macro expansion"
+    )]
     static LAST_PRESENT: Cell<PresentProbeSample> = const { Cell::new(PresentProbeSample {
         present_us: 0,
         upload_copy_us: 0,
         fence_wait_us: 0,
         submit_present_us: 0,
+        wgpu_surface_present_cpu_us: 0,
         pixels: 0,
+        drawable_pixels: 0,
+        drawable_width: 0,
+        drawable_height: 0,
         damage_full: 0,
         skipped: 0,
     }) };
+    #[allow(
+        clippy::missing_const_for_thread_local,
+        reason = "the initializer already uses an inline const block; Clippy reports the macro expansion"
+    )]
     static LAST_PAINT: Cell<PaintProbeSample> = const { Cell::new(PaintProbeSample {
         layer_build_us: 0,
         record_us: 0,
@@ -67,6 +87,10 @@ thread_local! {
         cpu_flush_us: 0,
         cpu_flushes: 0,
     }) };
+    #[allow(
+        clippy::missing_const_for_thread_local,
+        reason = "the initializer already uses an inline const block; Clippy reports the macro expansion"
+    )]
     static RECORD_ACC: Cell<PaintProbeSample> = const { Cell::new(PaintProbeSample {
         layer_build_us: 0,
         record_us: 0,
@@ -86,6 +110,11 @@ thread_local! {
         cpu_flush_us: 0,
         cpu_flushes: 0,
     }) };
+    #[allow(
+        clippy::missing_const_for_thread_local,
+        reason = "String cannot be initialized in a const thread-local block"
+    )]
+    static G5_SCENARIO: RefCell<String> = RefCell::new("ordinary".to_string());
 }
 
 pub fn record_present(sample: PresentProbeSample) {
@@ -179,6 +208,40 @@ pub fn take_record_acc() -> PaintProbeSample {
 
 pub fn perf_probe_enabled() -> bool {
     std::env::var_os("UIX_PERF_PROBE").is_some()
+}
+
+/// Sets the process-local scenario label attached to subsequent frame probes.
+///
+/// Labels are normalized to a single ASCII token so one log line remains
+/// unambiguous and can be parsed without quoting rules.
+#[doc(hidden)]
+pub fn set_internal_g5_scenario(name: &str) {
+    let mut normalized = String::with_capacity(name.len().min(64));
+    for character in name.chars().take(64) {
+        if character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.') {
+            normalized.push(character);
+        } else {
+            normalized.push('_');
+        }
+    }
+    if normalized.is_empty() {
+        normalized.push_str("unspecified");
+    }
+    G5_SCENARIO.with(|scenario| *scenario.borrow_mut() = normalized);
+}
+
+#[doc(hidden)]
+pub fn with_internal_g5_scenario<R>(operation: impl FnOnce(&str) -> R) -> R {
+    G5_SCENARIO.with(|scenario| operation(scenario.borrow().as_str()))
+}
+
+#[doc(hidden)]
+pub fn process_monotonic_us() -> u128 {
+    static STARTED_AT: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    STARTED_AT
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_micros()
 }
 
 pub fn skip_present_enabled() -> bool {

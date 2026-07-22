@@ -22,9 +22,10 @@ use std::thread::{self, ThreadId};
 
 use crate::core::{Errc, Error, Result};
 use crate::native::traits::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
-    GpuSolidRect, GpuStrokeRect, GraphicsContextCaps, IGraphicsContext, NativeRasterCaps,
-    OffscreenTargetId, PresentDamage, PresentFrame, PresentTestResult, SoftFallbackTile,
+    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient,
+    GpuSolidMesh, GpuSolidRect, GpuStrokeRect, GraphicsContextCaps, IGraphicsContext,
+    NativeRasterCaps, OffscreenTargetId, PresentDamage, PresentFrame, PresentTestResult,
+    SoftFallbackTile,
 };
 
 pub(crate) fn bind_to_current_thread(

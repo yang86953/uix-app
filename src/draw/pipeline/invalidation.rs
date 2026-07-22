@@ -48,6 +48,7 @@ pub enum Invalidation {
 pub struct InvalidationQueue {
     pub(crate) items: Vec<Invalidation>,
     paint_indices: HashMap<NodeId, usize>,
+    revision: u64,
 }
 
 impl InvalidationQueue {
@@ -62,6 +63,7 @@ impl InvalidationQueue {
 
     /// 上报失效；同一节点的 Paint 矩形会合并。
     pub fn push(&mut self, inv: Invalidation) {
+        self.revision = self.revision.wrapping_add(1);
         if let Invalidation::Paint { id, rect } = &inv {
             if let Some(existing) = self
                 .paint_indices
@@ -92,6 +94,12 @@ impl InvalidationQueue {
     /// 队列是否无任何失效（0 帧判定入口）。
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
+    }
+
+    /// Monotonic mutation marker used to retain invalidations raised while a
+    /// frame is being painted or presented.
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 
     /// 是否含 Layout 失效。
@@ -174,13 +182,29 @@ impl InvalidationQueue {
 
     /// 清空队列（帧末或 reset 时调用）。
     pub fn clear(&mut self) {
+        self.revision = self.revision.wrapping_add(1);
         self.items.clear();
         self.paint_indices.clear();
     }
 
+    /// Clears only when no producer pushed an invalidation since `revision`
+    /// was sampled. Existing and newly-added work remain together otherwise,
+    /// so the next frame can conservatively settle both.
+    pub fn clear_if_revision(&mut self, revision: u64) -> bool {
+        if self.revision != revision {
+            return false;
+        }
+        self.clear();
+        true
+    }
+
     /// 仅移除 Layout 项（layout() 收敛后消费；保留 Paint / Composite 供 present）。
     pub fn clear_layout(&mut self) {
+        let previous_len = self.items.len();
         self.items.retain(|i| !matches!(i, Invalidation::Layout(_)));
+        if self.items.len() != previous_len {
+            self.revision = self.revision.wrapping_add(1);
+        }
         self.rebuild_paint_indices();
     }
 

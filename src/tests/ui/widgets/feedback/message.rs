@@ -5,6 +5,8 @@ use crate::tests::common::*;
 use crate::ui::traits::{EventHandler, WidgetAnimation};
 use crate::ui::widgets::feedback::message::*;
 use crate::ui::{AccessibilityRole, AnimationConfig, EventResult, Placement, SystemEvent};
+use std::cell::Cell;
+use std::rc::Rc;
 
 fn render_message(message: &Message, frame: Rect, surface_size: (i32, i32)) -> String {
     let mut canvas = SharedRasterizer::new(PixelSurface::new(surface_size.0, surface_size.1));
@@ -50,6 +52,13 @@ fn pointer(kind: &str, pos: Point) -> SystemEvent {
         },
         _ => unreachable!("unsupported pointer kind"),
     }
+}
+
+fn local_center(rect: Rect, frame: Rect) -> Point {
+    Point::new(
+        rect.x + rect.w * 0.5 - frame.x,
+        rect.y + rect.h * 0.5 - frame.y,
+    )
 }
 
 #[test]
@@ -213,6 +222,284 @@ fn close_hit_requires_matching_release_before_starting_leave() {
     assert!(message.hit_bounds(frame).is_some());
     assert!(!WidgetAnimation::update_animation(&mut message, 0.2));
     assert!(message.hit_bounds(frame).is_none());
+}
+
+#[test]
+fn message_action_is_measured_painted_and_invoked_only_by_a_matching_release() {
+    let calls = Rc::new(Cell::new(0));
+    let calls_for_action = Rc::clone(&calls);
+    let mut message = Message::new()
+        .action("Retry request", move || {
+            calls_for_action.set(calls_for_action.get() + 1);
+        })
+        .icon("star")
+        .leave_animation(AnimationConfig::fade_out(0.2));
+    message.add(MessageItem {
+        type_: StatusLevel::Info,
+        content: "persistent".into(),
+        duration_ms: 0,
+        closable: true,
+    });
+    let frame = Rect::new(100.0, 50.0, 520.0, 180.0);
+    let (card, action, close) = message.interaction_rects_for_test(frame)[0];
+    let action = action.expect("action rect");
+    let close = close.expect("close rect");
+    assert!(action.w > 0.0 && action.h > 0.0);
+    assert!(close.w > 0.0 && close.h > 0.0);
+    assert!(action.x >= card.x && action.x + action.w <= close.x);
+    assert!(close.x >= card.x && close.x + close.w <= card.x + card.w);
+
+    let action_point = local_center(action, frame);
+    let close_point = local_center(close, frame);
+    assert_eq!(
+        message.on_event(&pointer("down", action_point)),
+        EventResult::Handled,
+        "actions are interactive while an item is entering"
+    );
+    assert_eq!(
+        message.on_event(&pointer("up", action_point)),
+        EventResult::Handled
+    );
+    assert_eq!(calls.get(), 1);
+    assert_eq!(message.items().len(), 1, "action must not dismiss the item");
+
+    assert!(!WidgetAnimation::update_animation(&mut message, 0.2));
+    let display = render_message(&message, frame, (720, 280));
+    assert!(display.contains("Retry request"), "{display}");
+    let star = crate::ui::widgets::icon::icon_char("star");
+    assert!(
+        display.contains(star) || display.contains("\\u{e176}"),
+        "the custom Lucide icon must be painted: {display}"
+    );
+
+    assert_eq!(
+        message.on_event(&pointer("down", action_point)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        message.on_event(&pointer("up", close_point)),
+        EventResult::Handled
+    );
+    assert_eq!(calls.get(), 1, "release in close must not invoke action");
+    assert_eq!(message.items().len(), 1);
+
+    assert_eq!(
+        message.on_event(&pointer("down", close_point)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        message.on_event(&pointer("up", action_point)),
+        EventResult::Handled
+    );
+    assert_eq!(message.items().len(), 1, "release in action must not close");
+
+    assert_eq!(
+        message.on_event(&pointer("down", action_point)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        message.on_event(&SystemEvent::PointerLeave),
+        EventResult::Handled
+    );
+    assert_eq!(
+        message.on_event(&pointer("up", action_point)),
+        EventResult::NotHandled
+    );
+    assert_eq!(calls.get(), 1, "PointerLeave must disarm the action");
+
+    assert_eq!(
+        message.on_event(&pointer("down", close_point)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        message.on_event(&pointer("up", close_point)),
+        EventResult::Handled
+    );
+    assert!(message.items().is_empty());
+    assert_eq!(
+        message.on_event(&pointer("down", action_point)),
+        EventResult::NotHandled,
+        "a leaving item must not expose its action"
+    );
+    assert!(!WidgetAnimation::update_animation(&mut message, 0.2));
+    assert!(message.hit_bounds(frame).is_none());
+}
+
+#[test]
+fn message_action_slot_tracks_label_measurement_without_overlapping_close() {
+    fn action_width(label: &str, frame: Rect) -> f32 {
+        let message = Message::new().action(label, || {});
+        message.add(MessageItem {
+            type_: StatusLevel::Info,
+            content: "content".into(),
+            duration_ms: 0,
+            closable: true,
+        });
+        let (_, action, close) = message.interaction_rects_for_test(frame)[0];
+        let action = action.expect("action");
+        let close = close.expect("close");
+        assert!(action.x + action.w <= close.x);
+        action.w
+    }
+
+    let frame = Rect::new(35.0, 70.0, 520.0, 180.0);
+    let short = action_width("Go", frame);
+    let long = action_width("Retry operation now", frame);
+    assert!(long > short, "long labels need a wider measured slot");
+
+    let empty = Message::new().action(" \n", || panic!("empty action must not run"));
+    empty.info("content");
+    assert!(empty.interaction_rects_for_test(frame)[0].1.is_none());
+}
+
+#[test]
+fn message_action_release_must_match_the_same_queue_entry() {
+    let calls = Rc::new(Cell::new(0));
+    let calls_for_action = Rc::clone(&calls);
+    let mut message = Message::new().action("Open", move || {
+        calls_for_action.set(calls_for_action.get() + 1);
+    });
+    for content in ["first", "second"] {
+        message.add(MessageItem {
+            type_: StatusLevel::Info,
+            content: content.into(),
+            duration_ms: 0,
+            closable: true,
+        });
+    }
+    assert!(!WidgetAnimation::update_animation(&mut message, 0.2));
+    let frame = Rect::new(70.0, 40.0, 520.0, 180.0);
+    let controls = message.interaction_rects_for_test(frame);
+    let first = local_center(controls[0].1.expect("first action"), frame);
+    let second = local_center(controls[1].1.expect("second action"), frame);
+
+    assert_eq!(
+        message.on_event(&pointer("down", first)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        message.on_event(&pointer("up", second)),
+        EventResult::Handled
+    );
+    assert_eq!(calls.get(), 0);
+    assert_eq!(message.items().len(), 2);
+
+    assert_eq!(
+        message.on_event(&pointer("down", first)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        message.on_event(&pointer("up", first)),
+        EventResult::Handled
+    );
+    assert_eq!(calls.get(), 1);
+}
+
+#[test]
+fn message_timer_expiry_disarms_an_armed_action_before_leave() {
+    let calls = Rc::new(Cell::new(0));
+    let calls_for_action = Rc::clone(&calls);
+    let mut message = Message::new()
+        .action("Undo", move || {
+            calls_for_action.set(calls_for_action.get() + 1)
+        })
+        .leave_animation(AnimationConfig::fade_out(0.2));
+    message.add(MessageItem {
+        type_: StatusLevel::Info,
+        content: "timed".into(),
+        duration_ms: 25,
+        closable: true,
+    });
+    assert!(!WidgetAnimation::update_animation(&mut message, 0.2));
+    let frame = Rect::new(90.0, 40.0, 520.0, 180.0);
+    let action = message.interaction_rects_for_test(frame)[0]
+        .1
+        .expect("action");
+    let action_point = local_center(action, frame);
+    let (timer_id, _) = EventHandler::active_timer(&message).expect("timer");
+
+    assert_eq!(
+        message.on_event(&pointer("down", action_point)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        message.on_event(&SystemEvent::Timer {
+            id: timer_id as u32,
+        }),
+        EventResult::Handled
+    );
+    assert!(message.items().is_empty());
+    assert_eq!(
+        message.on_event(&pointer("up", action_point)),
+        EventResult::NotHandled
+    );
+    assert_eq!(calls.get(), 0);
+    assert!(!WidgetAnimation::update_animation(&mut message, 0.2));
+}
+
+#[test]
+fn message_reconcile_preserves_queue_and_replaces_action_behavior() {
+    let old_calls = Rc::new(Cell::new(0));
+    let old_calls_for_action = Rc::clone(&old_calls);
+    let mut message = Message::new().action("Old", move || {
+        old_calls_for_action.set(old_calls_for_action.get() + 1);
+    });
+    message.add(MessageItem {
+        type_: StatusLevel::Warning,
+        content: "keep me".into(),
+        duration_ms: 0,
+        closable: true,
+    });
+    assert!(!WidgetAnimation::update_animation(&mut message, 0.2));
+    let frame = Rect::new(80.0, 30.0, 600.0, 220.0);
+    let old_action = message.interaction_rects_for_test(frame)[0]
+        .1
+        .expect("old action");
+    let old_point = local_center(old_action, frame);
+    assert_eq!(
+        message.on_event(&pointer("down", old_point)),
+        EventResult::Handled
+    );
+
+    let new_calls = Rc::new(Cell::new(0));
+    let new_calls_for_action = Rc::clone(&new_calls);
+    message.sync_from(
+        Message::new()
+            .action("New action", move || {
+                new_calls_for_action.set(new_calls_for_action.get() + 1);
+            })
+            .icon("bell"),
+    );
+    assert_eq!(message.items()[0].content, "keep me");
+    let accessibility = message.snapshot_fields().accessibility();
+    assert_eq!(accessibility.role, AccessibilityRole::Alert);
+    assert_eq!(accessibility.name.as_deref(), Some("keep me"));
+    assert_eq!(
+        message.on_event(&pointer("up", old_point)),
+        EventResult::NotHandled,
+        "reconcile must cancel an action armed under the old configuration"
+    );
+    assert_eq!(old_calls.get(), 0);
+    assert_eq!(new_calls.get(), 0);
+    let display = render_message(&message, frame, (760, 280));
+    assert!(display.contains("New action"), "{display}");
+    let bell = crate::ui::widgets::icon::icon_char("bell");
+    assert!(display.contains(bell) || display.contains("\\u{e059}"));
+
+    let new_action = message.interaction_rects_for_test(frame)[0]
+        .1
+        .expect("new action");
+    let new_point = local_center(new_action, frame);
+    assert_eq!(
+        message.on_event(&pointer("down", new_point)),
+        EventResult::Handled
+    );
+    assert_eq!(
+        message.on_event(&pointer("up", new_point)),
+        EventResult::Handled
+    );
+    assert_eq!(new_calls.get(), 1);
+    assert_eq!(message.items().len(), 1);
 }
 
 #[test]

@@ -492,6 +492,8 @@ impl Card {
         )
     }
 
+    // `max`/`min` intentionally collapse a NaN delta to zero; `clamp` would retain NaN.
+    #[allow(clippy::manual_clamp)]
     fn title_available_height(&self, frame: Rect) -> f32 {
         let frame_h = frame.h.max(0.0);
         let action_top = self

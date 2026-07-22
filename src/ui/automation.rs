@@ -352,7 +352,15 @@ impl TestApp {
     }
 
     pub fn scroll(&mut self, automation_id: &str, delta: Point) -> Result<(), AutomationError> {
-        self.perform(automation_id, AutomationAction::Scroll { delta })
+        // TestApp accepts the native wheel convention: negative vertical values
+        // move the viewport down. The widget event layer normalizes wheel input
+        // to positive-down deltas before dispatching it to ScrollView.
+        self.perform(
+            automation_id,
+            AutomationAction::Scroll {
+                delta: Point::new(-delta.x, -delta.y),
+            },
+        )
     }
 
     pub fn click(&mut self, automation_id: &str) -> Result<(), AutomationError> {
@@ -741,6 +749,7 @@ fn accessibility_role_name(role: AccessibilityRole) -> &'static str {
         AccessibilityRole::Combobox => "combobox",
         AccessibilityRole::Dialog => "dialog",
         AccessibilityRole::Group => "group",
+        AccessibilityRole::Heading => "heading",
         AccessibilityRole::Image => "image",
         AccessibilityRole::List => "list",
         AccessibilityRole::Menu => "menu",

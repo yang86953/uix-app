@@ -192,6 +192,9 @@ macro_rules! __component_build_method {
     (build; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn build($($p)*) -> $ret $body
     };
+    (build_view_children; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn build_view_children($($p)*) -> $ret $body
+    };
     (visible; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn visible($($p)*) -> $ret $body
     };
@@ -311,7 +314,7 @@ macro_rules! component {
                 let mut c = $crate::ui::traits::WidgetCapabilities::new();
                 $(
                     match stringify!($method) {
-                        "measure" | "flex_grow" | "flex_shrink" | "align_self" | "grid_cell" | "grid_column_span" | "grid_row_span" | "layout_margin" | "child_overflow_expands_parent" | "child_visible" | "measure_children" | "layout_children" | "build" =>
+                        "measure" | "flex_grow" | "flex_shrink" | "align_self" | "grid_cell" | "grid_column_span" | "grid_row_span" | "layout_margin" | "child_overflow_expands_parent" | "child_visible" | "measure_children" | "layout_children" | "build" | "build_view_children" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::LAYOUT),
                         "render" | "uses_palette" | "dirty_rect" | "children_clip" | "overlay_entry" | "draw_margin" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::RENDER),

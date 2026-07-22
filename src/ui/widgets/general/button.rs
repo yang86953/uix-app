@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, OnceLock};
 
-use super::icon::paint_icon_in_frame;
+use super::icon::Icon;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::primitives::path::{FillRule, Path, PathBuilder};
@@ -721,7 +721,7 @@ impl Button {
         let font_size = normalized_button_font_size(style.resolve_font_size(ctx.tokens()));
         let icon_size = font_size * 1.2;
         let icon_rect = Rect::new(content.x, content.y, content.w, content.h);
-        paint_icon_in_frame(ctx, &self.icon, icon_rect, color, icon_size);
+        Icon::paint_in_frame(ctx, &self.icon, icon_rect, color, icon_size);
     }
 
     /// 绘制加载旋转器；只在 loading 状态登记动画帧。

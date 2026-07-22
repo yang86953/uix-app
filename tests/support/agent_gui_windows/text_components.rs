@@ -3256,7 +3256,10 @@ fn real_demo_timeline_clips_long_rows_and_publishes_visual_order() {
     assert_eq!(target["visible_bounds"]["h"], 150.0);
     assert_eq!(
         target["state"]["value_text"],
-        "库存完成: 88 个组件; 视觉执行: 真实原生窗口; 质量门禁: 逐组件可追溯"
+        format!(
+            "库存完成: {} 个组件; 视觉执行: 真实原生窗口; 质量门禁: 逐组件可追溯",
+            COMPONENT_VISUAL_CASE_COUNT
+        )
     );
 
     let constrained = node_by_automation_id(&snapshot, "component-qa-timeline-constrained");
@@ -3550,7 +3553,7 @@ fn real_demo_drawer_opens_accessibly_and_traps_focus_in_light_and_dark() {
     let _guard = REAL_GUI_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut session = ComponentQaSession::open(59, "drawer-layout");
+    let mut session = ComponentQaSession::open(60, "drawer-layout");
     let snapshot = session.snapshot("drawer-layout-snapshot");
     assert_eq!(
         node_by_automation_id(&snapshot, "component-qa-id")["name"],
@@ -3563,7 +3566,7 @@ fn real_demo_drawer_opens_accessibly_and_traps_focus_in_light_and_dark() {
         .as_str()
         .is_some_and(|name| name.starts_with("打开 抽屉标题")));
 
-    let opened = session.click_at_fraction("component-qa-target", 0.5, 0.5, "drawer-open-light");
+    let opened = session.invoke("component-qa-target", "drawer-open-light");
     let target = node_by_automation_id(&opened, "component-qa-target");
     assert_eq!(target["role"], "dialog");
     assert_eq!(target["state"]["expanded"], true);

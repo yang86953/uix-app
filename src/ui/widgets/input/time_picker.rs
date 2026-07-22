@@ -304,7 +304,7 @@ component! {
                 ctx.pop_clip();
             }
 
-            crate::ui::widgets::icon::paint_icon_in_frame(
+            crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 "clock",
                 icon_frame,

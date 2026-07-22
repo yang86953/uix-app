@@ -1,7 +1,7 @@
 //! Icon widget — renders icons from Lucide TTF font.
 //!
-//! Maps icon names to Unicode Private Use Area codepoints from Lucide
-//! v1.17.0 (ISC license, 1981 icons).  The parent app is responsible for
+//! Maps the release-supported icon names to Unicode Private Use Area
+//! codepoints from Lucide v1.17.0 (ISC license). The parent app is responsible for
 //! loading `assets/fonts/lucide.ttf` into the engine via `load_font`.
 
 use std::sync::OnceLock;
@@ -42,36 +42,9 @@ pub fn lucide_handle() -> Option<FontHandle> {
     LUCIDE_FONT.get().copied()
 }
 
-/// 在 `rect` 内绘制 Lucide 图标，垂直对齐到**当前 UI 字体行盒**几何中心。
-///
-/// 调用时须仍持有标签/正文所用字体。先取行盒 `visual_center_y`，再切 Lucide
-/// 绘制——避免用图标字体 metrics 重新算 Y（与旁路文字错位）。
-pub fn paint_icon_in_frame(
-    ctx: &mut PaintContext,
-    name: &str,
-    rect: Rect,
-    color: Color,
-    font_size: f32,
-) {
-    if name.is_empty() {
-        return;
-    }
-    let line_h = ctx.line_box_height(font_size);
-    let y = rect.y + (rect.h - line_h) * 0.5;
-    let icon_str = icon_char(name);
-    let saved = *ctx.font();
-    if let Some(fh) = lucide_handle() {
-        ctx.set_font(fh);
-    }
-    let w = ctx.measure_text(icon_str, font_size).w;
-    let x = rect.x + ((rect.w - w) * 0.5).max(0.0);
-    ctx.draw_text(icon_str, Point::new(x, y), color, font_size);
-    ctx.set_font(saved);
-}
-
 /// Map icon name → Lucide PUA codepoint character.
 /// Generated from lucide-static v1.17.0 codepoints.json.
-pub fn icon_char(name: &str) -> &'static str {
+pub(crate) fn icon_char(name: &str) -> &'static str {
     match name {
         "search" => "\u{E151}",
         "home" => "\u{E0F5}",
@@ -94,7 +67,6 @@ pub fn icon_char(name: &str) -> &'static str {
         "calendar" => "\u{E063}",
         "heart" => "\u{E0F2}",
         "star" => "\u{E176}",
-        "github" => "\u{E0E6}",
         "sun" => "\u{E178}",
         "moon" => "\u{E11E}",
         "edit" => "\u{E172}",
@@ -120,7 +92,7 @@ pub fn icon_char(name: &str) -> &'static str {
         "eye-off" => "\u{E0BB}",
         "bookmark" => "\u{E060}",
         "tag" => "\u{E17F}",
-        "share" => "\u{E156}",
+        "share" => "\u{E155}",
         "send" => "\u{E152}",
         "flag" => "\u{E0D1}",
         "filter" => "\u{E0DC}",
@@ -128,6 +100,7 @@ pub fn icon_char(name: &str) -> &'static str {
         "refresh-ccw" => "\u{E144}",
         "copy" => "\u{E09E}",
         "clipboard" => "\u{E085}",
+        "credit-card" => "\u{E0AA}",
         "printer" => "\u{E141}",
         "bluetooth" => "\u{E05C}",
         "bold" => "\u{E05D}",
@@ -152,6 +125,8 @@ pub fn icon_char(name: &str) -> &'static str {
         "gift" => "\u{E0E1}",
         "globe" => "\u{E0E8}",
         "grid" => "\u{E0E9}",
+        "grip-horizontal" => "\u{E0EA}",
+        "grip-vertical" => "\u{E0EB}",
         "hard-drive" => "\u{E0ED}",
         "inbox" => "\u{E0F7}",
         "keyboard" => "\u{E284}",
@@ -167,6 +142,7 @@ pub fn icon_char(name: &str) -> &'static str {
         "minimize" => "\u{E11A}",
         "message-circle" => "\u{E116}",
         "message-square" => "\u{E117}",
+        "mouse-pointer" => "\u{E11F}",
         "navigation" => "\u{E123}",
         "package" => "\u{E129}",
         "pause" => "\u{E12E}",
@@ -225,25 +201,48 @@ component! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let color = ctx.tokens().color_text();
-        let saved = *ctx.font();
-        if let Some(fh) = lucide_handle() {
-            ctx.set_font(fh);
-            let icon_str = icon_char(&self.name);
-            ctx.text_center(icon_str, frame, color, self.size * 0.85);
+        if lucide_handle().is_some() {
+            Self::paint_in_frame(ctx, &self.name, frame, color, self.size * 0.85);
         } else {
             let fallback = self
                 .name
                 .chars()
                 .next()
-                .map(|c| c.to_uppercase().to_string())
+                .map(|character| character.to_uppercase().to_string())
                 .unwrap_or_else(|| "?".to_string());
             ctx.text_center(&fallback, frame, color, self.size * 0.55);
         }
-        ctx.set_font(saved);
     }
 }
 
 impl Icon {
+    /// Paint an icon inside another widget while preserving the parent widget's
+    /// font and line-box alignment. This is the embedded rendering entry point
+    /// owned by the `Icon` component; built-in widgets must not draw ad-hoc
+    /// Unicode symbols or call `icon_char` directly.
+    pub fn paint_in_frame(
+        ctx: &mut PaintContext,
+        name: &str,
+        rect: Rect,
+        color: Color,
+        font_size: f32,
+    ) {
+        if name.is_empty() {
+            return;
+        }
+        let line_h = ctx.line_box_height(font_size);
+        let y = rect.y + (rect.h - line_h) * 0.5;
+        let saved = *ctx.font();
+        if let Some(fh) = lucide_handle() {
+            ctx.set_font(fh);
+        }
+        let text = icon_char(name);
+        let width = ctx.measure_text(text, font_size).w;
+        let x = rect.x + ((rect.w - width) * 0.5).max(0.0);
+        ctx.draw_text(text, Point::new(x, y), color, font_size);
+        ctx.set_font(saved);
+    }
+
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.name = next.name;
         self.size = next.size;

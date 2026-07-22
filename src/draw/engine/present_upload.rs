@@ -63,7 +63,7 @@ impl PresentUploadEngine {
 
     /// 与 NativeGpuBackend 一致：layout 必须跟 factory 校正后的 logical 客户区对齐。
     fn sync_logical_extent_from_gpu(&mut self) {
-        let dpr = self.gpu_ctx.device_pixel_ratio();
+        let dpr = self.gpu_ctx.caps().device_pixel_ratio;
         let dpr = if dpr.is_finite() && dpr > 0.0 {
             dpr
         } else {
@@ -148,7 +148,11 @@ impl GraphicsEngine for PresentUploadEngine {
                         upload_copy_us: 0,
                         fence_wait_us: 0,
                         submit_present_us: 0,
+                        wgpu_surface_present_cpu_us: 0,
                         pixels,
+                        drawable_pixels: 0,
+                        drawable_width: 0,
+                        drawable_height: 0,
                         damage_full: if damage_full { 1 } else { 0 },
                         skipped: 1,
                     },

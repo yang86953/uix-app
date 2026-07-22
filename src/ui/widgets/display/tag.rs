@@ -310,7 +310,7 @@ component! {
         }
         if self.checked {
             if let Some(check) = geometry.check {
-                crate::ui::widgets::icon::paint_icon_in_frame(
+                crate::ui::widgets::icon::Icon::paint_in_frame(
                     ctx,
                     "check",
                     check,
@@ -328,7 +328,7 @@ component! {
                 icon_size.min(geometry.text.w),
                 geometry.text.h,
             );
-            crate::ui::widgets::icon::paint_icon_in_frame(
+            crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 &self.icon,
                 icon_rect,
@@ -346,7 +346,7 @@ component! {
             Self::paint_single_line(ctx, &self.text, geometry.text, fg, font_size);
         }
         if let Some(close) = geometry.close {
-            crate::ui::widgets::icon::paint_icon_in_frame(
+            crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 "x",
                 close,

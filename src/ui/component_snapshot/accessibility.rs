@@ -1,11 +1,12 @@
 use crate::ui::widgets::{
     AnchorItem, BadgeStatus, BreadcrumbItem, Date, MenuItem, OptGroup, ProgressMode, ResultType,
-    RichTextSegment, SelectableItem, Step, Tab, TimelineItem, UploadFile, UploadStatus,
+    RichTextSegment, SelectableItem, Step, Tab, TimelineItem, TypographyType, UploadFile,
+    UploadStatus,
 };
 
 use super::{
-    AccessibilityRole, AccessibilitySnapshot, AccessibilityState, SnapshotTransferItem,
-    SnapshotTreeNode,
+    AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute,
+    SnapshotTransferItem, SnapshotTreeNode,
 };
 
 pub(super) fn timeline_accessibility(
@@ -146,7 +147,10 @@ pub(super) fn dropdown_accessibility(
     open: bool,
     selected_index: Option<usize>,
 ) -> AccessibilitySnapshot {
-    AccessibilitySnapshot::named(AccessibilityRole::Menu, label).with_state(AccessibilityState {
+    // Dropdown is a focusable trigger that opens a menu, not the menu surface
+    // itself. Exposing the trigger as a button keeps semantic Invoke aligned
+    // with its Enter/Space activation path while expanded reports popup state.
+    AccessibilitySnapshot::named(AccessibilityRole::Button, label).with_state(AccessibilityState {
         expanded: Some(open),
         value_text: selected_index.and_then(|index| items.get(index)).cloned(),
         ..AccessibilityState::default()
@@ -248,18 +252,31 @@ pub(super) fn rich_text_accessibility(
 
 pub(super) fn typography_accessibility(
     content: &str,
+    type_: TypographyType,
     disabled: bool,
     copyable: bool,
 ) -> AccessibilitySnapshot {
-    AccessibilitySnapshot::named(
-        if copyable {
-            AccessibilityRole::Button
-        } else {
-            AccessibilityRole::Text
-        },
-        content,
-    )
-    .with_state(AccessibilityState::disabled(disabled))
+    let heading_level = match type_ {
+        TypographyType::Heading1 => Some(1),
+        TypographyType::Heading2 => Some(2),
+        TypographyType::Heading3 => Some(3),
+        TypographyType::Heading4 => Some(4),
+        TypographyType::Heading5 => Some(5),
+        TypographyType::Paragraph | TypographyType::Text => None,
+    };
+    let role = if heading_level.is_some() {
+        AccessibilityRole::Heading
+    } else if copyable {
+        AccessibilityRole::Button
+    } else {
+        AccessibilityRole::Text
+    };
+    let mut snapshot = AccessibilitySnapshot::named(role, content)
+        .with_state(AccessibilityState::disabled(disabled));
+    if let Some(level) = heading_level {
+        snapshot = snapshot.with_attribute(AriaAttribute::new("aria-level", level.to_string()));
+    }
+    snapshot
 }
 
 pub(super) fn transfer_accessibility(

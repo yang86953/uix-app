@@ -187,7 +187,7 @@ fn navigate_to_case(
     generation: u64,
     expected: &str,
 ) {
-    for index in 0..88 {
+    for index in 0..COMPONENT_VISUAL_CASE_COUNT {
         let current = snapshot(
             connection,
             window_id,

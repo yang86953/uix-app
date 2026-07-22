@@ -5,6 +5,7 @@ pub mod damage;
 pub mod diagnostic;
 pub mod error;
 pub mod geometry;
+pub(crate) mod glyph_outline;
 pub mod log;
 pub mod perf_probe;
 pub mod window_id;

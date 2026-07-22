@@ -1,12 +1,100 @@
 use super::tree_core::WidgetTree;
 use super::WidgetCore;
 use crate::core::ComponentId;
+use crate::ui::foundation::provider_context::with_provider_context;
 use crate::ui::foundation::virtual_scroll::VirtualScroll;
 use crate::ui::view::ViewAdapter;
 use crate::ui::widgets::display::table::Table;
+use crate::ui::widgets::display::{Calendar, Collapse, Image};
 use crate::ui::widgets::input::Select;
 
 impl WidgetTree {
+    pub(crate) fn is_calendar_cell_component(&self, id: ComponentId) -> bool {
+        self.get(id).is_some_and(|node| {
+            node.component()
+                .as_any()
+                .downcast_ref::<Calendar>()
+                .is_some_and(Calendar::owns_custom_cell_children)
+        })
+    }
+
+    pub(crate) fn refresh_calendar_cell_component(&mut self, id: ComponentId) -> bool {
+        let refresh = self.get(id).and_then(|node| {
+            let provider_context = node.provider_context().clone();
+            with_provider_context(&provider_context, || {
+                node.component()
+                    .as_any()
+                    .downcast_ref::<Calendar>()?
+                    .cell_views_for_refresh(node.children().len())
+            })
+        });
+        let Some((views, entries)) = refresh else {
+            return false;
+        };
+
+        let changed = ViewAdapter::reconcile_dynamic_children(self, id, views);
+        if let Some(calendar) = self
+            .get(id)
+            .and_then(|node| node.component().as_any().downcast_ref::<Calendar>())
+        {
+            calendar.mark_cells_materialized(entries);
+        }
+        self.bind_orphan_pending_states();
+        self.bind_pending_effects();
+        changed
+    }
+
+    pub(crate) fn is_collapse_content_component(&self, id: ComponentId) -> bool {
+        self.get(id)
+            .is_some_and(|node| node.component().as_any().is::<Collapse>())
+    }
+
+    pub(crate) fn refresh_collapse_content_component(&mut self, id: ComponentId) -> bool {
+        let refresh = self.get(id).and_then(|node| {
+            node.component()
+                .as_any()
+                .downcast_ref::<Collapse>()?
+                .content_views_for_refresh(node.children().len())
+        });
+        let Some((views, entries)) = refresh else {
+            return false;
+        };
+
+        ViewAdapter::reconcile_dynamic_children(self, id, views);
+        if let Some(collapse) = self
+            .get(id)
+            .and_then(|node| node.component().as_any().downcast_ref::<Collapse>())
+        {
+            collapse.mark_content_materialized(entries);
+        }
+        self.bind_orphan_pending_states();
+        self.bind_pending_effects();
+        true
+    }
+
+    pub(crate) fn refresh_image_error_component(&mut self, id: ComponentId) -> bool {
+        let error_view = self.get(id).and_then(|node| {
+            node.component()
+                .as_any()
+                .downcast_ref::<Image>()?
+                .error_view_for_refresh(node.children().len())
+        });
+        let Some(error_view) = error_view else {
+            return false;
+        };
+
+        self.build_child_node(id, ViewAdapter::expand(error_view));
+        if let Some(image) = self
+            .get(id)
+            .and_then(|node| node.component().as_any().downcast_ref::<Image>())
+        {
+            image.mark_error_view_materialized();
+        }
+        self.bind_orphan_pending_states();
+        self.bind_pending_effects();
+        true
+    }
+
     pub(crate) fn table_expand_view(&self, id: ComponentId) -> Option<crate::ui::view::ViewNode> {
         let table = self.get(id)?.component().as_any().downcast_ref::<Table>()?;
         let row = table.rows.get(table.expanded_row()?)?;

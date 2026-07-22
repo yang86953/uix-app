@@ -184,6 +184,10 @@ impl RasterRenderer {
         }
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "shape coordinates and surface bounds mirror the canvas contract"
+    )]
     pub fn fill_circle(
         &self,
         pixels: &mut [u32],
@@ -300,6 +304,10 @@ impl RasterRenderer {
         }
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "shape coordinates and surface bounds mirror the canvas contract"
+    )]
     pub fn fill_sector(
         &self,
         pixels: &mut [u32],

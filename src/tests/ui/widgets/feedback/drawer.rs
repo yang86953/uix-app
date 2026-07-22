@@ -221,12 +221,13 @@ fn masked_drawer_animation_marks_its_surface_dirty_through_layer_tree() {
     let scroll = tree.set_root(Box::new(
         ScrollView::new(ScrollDirection::Vertical).size(800.0, 600.0),
     ));
-    let drawer = tree.add_child(scroll, Box::new(
-        Drawer::new("Drawer").enter_animation(AnimationConfig::slide_in(
-            crate::ui::Placement::Right,
-            0.25,
-        )),
-    ));
+    let drawer = tree.add_child(
+        scroll,
+        Box::new(
+            Drawer::new("Drawer")
+                .enter_animation(AnimationConfig::slide_in(crate::ui::Placement::Right, 0.25)),
+        ),
+    );
     tree.get_mut(scroll)
         .expect("scroll root")
         .set_frame(Rect::new(0.0, 0.0, 800.0, 600.0));
@@ -424,10 +425,7 @@ fn drawer_default_enter_transition_is_immediately_at_rest() {
 #[test]
 fn drawer_enter_transition_advances_and_marks_paint_dirty() {
     let mut drawer = Drawer::new("Drawer")
-        .enter_animation(AnimationConfig::slide_in(
-            crate::ui::Placement::Right,
-            0.25,
-        ))
+        .enter_animation(AnimationConfig::slide_in(crate::ui::Placement::Right, 0.25))
         .show();
     let initial_offset = drawer.transition.offset;
 
@@ -435,7 +433,11 @@ fn drawer_enter_transition_advances_and_marks_paint_dirty() {
     assert_ne!(drawer.transition.offset, initial_offset);
 
     let mut tree = WidgetTree::new();
-    let id = tree.set_root(Box::new(Drawer::new("Drawer").show()));
+    let id = tree.set_root(Box::new(
+        Drawer::new("Drawer")
+            .enter_animation(AnimationConfig::slide_in(crate::ui::Placement::Right, 0.25))
+            .show(),
+    ));
     tree.get_mut(id)
         .expect("drawer root")
         .set_frame(Rect::new(0.0, 0.0, 800.0, 600.0));
@@ -610,9 +612,16 @@ fn masked_drawer_closes_via_escape_close_button_and_mask_in_widget_tree() {
         .expect("drawer child")
         .set_frame(Rect::new(120.0, 80.0, 96.0, 32.0));
 
+    fn trigger_point(tree: &WidgetTree, drawer_id: crate::ui::ComponentId) -> Point {
+        let frame = tree.get(drawer_id).expect("drawer child").frame();
+        Point::new(frame.x + frame.w * 0.5, frame.y + frame.h * 0.5)
+    }
+
+    let trigger = trigger_point(&tree, drawer_id);
+
     assert_eq!(
         tree.dispatch_event(&SystemEvent::PointerDown {
-            pos: Point::new(168.0, 96.0),
+            pos: trigger,
             button: crate::ui::MouseButton::Left,
             mods: crate::native::traits::input::KeyMod::NONE,
         }),
@@ -620,7 +629,7 @@ fn masked_drawer_closes_via_escape_close_button_and_mask_in_widget_tree() {
     );
     assert_eq!(
         tree.dispatch_event(&SystemEvent::PointerUp {
-            pos: Point::new(168.0, 96.0),
+            pos: trigger,
             button: crate::ui::MouseButton::Left,
             mods: crate::native::traits::input::KeyMod::NONE,
         }),
@@ -662,10 +671,13 @@ fn masked_drawer_closes_via_escape_close_button_and_mask_in_widget_tree() {
     assert!(drawer_is_present(&tree, drawer_id));
     assert!(!tree.update(1.0));
     assert!(!drawer_is_present(&tree, drawer_id));
+    tree.layout();
+
+    let trigger = trigger_point(&tree, drawer_id);
 
     assert_eq!(
         tree.dispatch_event(&SystemEvent::PointerDown {
-            pos: Point::new(168.0, 96.0),
+            pos: trigger,
             button: crate::ui::MouseButton::Left,
             mods: KeyMod::NONE,
         }),
@@ -673,7 +685,7 @@ fn masked_drawer_closes_via_escape_close_button_and_mask_in_widget_tree() {
     );
     assert_eq!(
         tree.dispatch_event(&SystemEvent::PointerUp {
-            pos: Point::new(168.0, 96.0),
+            pos: trigger,
             button: MouseButton::Left,
             mods: KeyMod::NONE,
         }),
@@ -694,10 +706,13 @@ fn masked_drawer_closes_via_escape_close_button_and_mask_in_widget_tree() {
     assert!(!drawer_is_visible(&tree, drawer_id));
     assert!(!tree.update(1.0));
     assert!(!drawer_is_present(&tree, drawer_id));
+    tree.layout();
+
+    let trigger = trigger_point(&tree, drawer_id);
 
     assert_eq!(
         tree.dispatch_event(&SystemEvent::PointerDown {
-            pos: Point::new(168.0, 96.0),
+            pos: trigger,
             button: MouseButton::Left,
             mods: KeyMod::NONE,
         }),
@@ -705,7 +720,7 @@ fn masked_drawer_closes_via_escape_close_button_and_mask_in_widget_tree() {
     );
     assert_eq!(
         tree.dispatch_event(&SystemEvent::PointerUp {
-            pos: Point::new(168.0, 96.0),
+            pos: trigger,
             button: MouseButton::Left,
             mods: KeyMod::NONE,
         }),

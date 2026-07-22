@@ -83,21 +83,21 @@ pub struct FrameSampledRect {
 
 impl FrameSampledRect {
     pub fn from_integer(rect: FrameRect) -> Self {
-        Self::from_parts(rect.x as f32, rect.y as f32, rect.width as f32, rect.height as f32)
-            .unwrap_or_else(|_| Self {
-                x_bits: 0.0f32.to_bits(),
-                y_bits: 0.0f32.to_bits(),
-                width_bits: 0.0f32.to_bits(),
-                height_bits: 0.0f32.to_bits(),
-            })
+        Self::from_parts(
+            rect.x as f32,
+            rect.y as f32,
+            rect.width as f32,
+            rect.height as f32,
+        )
+        .unwrap_or_else(|_| Self {
+            x_bits: 0.0f32.to_bits(),
+            y_bits: 0.0f32.to_bits(),
+            width_bits: 0.0f32.to_bits(),
+            height_bits: 0.0f32.to_bits(),
+        })
     }
 
-    pub fn from_parts(
-        x: f32,
-        y: f32,
-        width: f32,
-        height: f32,
-    ) -> Result<Self, FrameEncoderError> {
+    pub fn from_parts(x: f32, y: f32, width: f32, height: f32) -> Result<Self, FrameEncoderError> {
         if !x.is_finite()
             || !y.is_finite()
             || !width.is_finite()
@@ -1160,7 +1160,13 @@ impl FrameEncoder {
                         if !*additive
                             && target_is_transparent
                             && opacity.is_opaque()
-                            && full_frame_image_blit(self.width, self.height, image, *src, integer_dst)
+                            && full_frame_image_blit(
+                                self.width,
+                                self.height,
+                                image,
+                                *src,
+                                integer_dst,
+                            )
                         {
                             // Source-over onto a transparent target is exactly the
                             // premultiplied source. Retained backdrop restores use
@@ -1201,6 +1207,7 @@ impl FrameEncoder {
     /// Rasterizes one image segment directly into its visible destination
     /// tile. Native executors alpha-blit this exact segment at its recorded
     /// point without allocating or scanning a transparent frame-sized source.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn cpu_segment_reference_tile(
         &self,
         image: &FrameImage,
@@ -1556,11 +1563,7 @@ fn source_over_commands_have_safe_grouping(
                         return false;
                     }
                 }
-                FrameRasterOp::FillRoundedRectAdditive {
-                    rect,
-                    radius,
-                    ..
-                } => {
+                FrameRasterOp::FillRoundedRectAdditive { rect, radius, .. } => {
                     if !push_source_over_write(&mut writes, *rect, width, height) {
                         return false;
                     }
@@ -2314,6 +2317,10 @@ fn blit_image_pixels_with_opacity(
     blit_image_pixels_with_opacity_blend(width, height, pixels, image, src, dst, opacity, false);
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the helper mirrors one encoded image blit operation"
+)]
 fn blit_image_pixels_with_opacity_blend(
     width: i32,
     height: i32,
@@ -2350,6 +2357,10 @@ fn blit_sampled_image_pixels_with_opacity(
     );
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the helper mirrors one encoded sampled image blit operation"
+)]
 fn blit_sampled_image_pixels_with_opacity_blend(
     width: i32,
     height: i32,

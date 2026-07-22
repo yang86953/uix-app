@@ -116,9 +116,8 @@ pub fn embed(node: impl crate::ui::IntoWidgetNode) -> ViewNode {
 }
 
 fn adopt_widget_node(node: WidgetNode) -> ViewNode {
-    // Materialize component-owned children into the declarative View tree.
-    // Otherwise the initial WidgetTree build expands them, but a later View
-    // reconcile sees an empty child list and removes the live subtree.
+    // Materialize imperative children into the declarative View tree. View
+    // children remain component-owned and are appended by tree build/reconcile.
     let provider_context = node.provider_context.clone();
     let mut children: Vec<WidgetNode> =
         crate::ui::foundation::provider_context::with_provider_context(&provider_context, || {
@@ -126,7 +125,7 @@ fn adopt_widget_node(node: WidgetNode) -> ViewNode {
                 .build()
                 .into_iter()
                 .map(WidgetNode::leaf)
-                .collect()
+                .collect::<Vec<_>>()
         });
     children.extend(node.children);
     ViewNode {
@@ -626,9 +625,11 @@ impl WidgetRender for DynamicLabel {
     }
 }
 
+type CanvasPaint = dyn Fn(Rect, &mut PaintContext<'_>);
+
 struct Canvas {
     size: Size,
-    paint: Box<dyn Fn(Rect, &mut PaintContext<'_>)>,
+    paint: Box<CanvasPaint>,
 }
 
 impl WidgetComponent for Canvas {

@@ -7,6 +7,7 @@ use crate::ui::{
     SnapshotTreeNode, SystemEvent, WidgetTree,
 };
 use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
 pub(crate) const TREE_ROW_HEIGHT: f32 = 28.0;
 const TREE_SLOT_WIDTH: f32 = 20.0;
@@ -28,7 +29,6 @@ struct TreeRowGeometry {
     title: Rect,
 }
 
-#[derive(Debug, Clone, PartialEq)]
 pub struct TreeNode {
     pub title: String,
     pub key: String,
@@ -38,7 +38,72 @@ pub struct TreeNode {
     pub checkable: bool,
     pub checked: bool,
     pub draggable: bool,
+    pub lazy: bool,
     pub is_leaf: bool,
+    filter: Option<TreeFilter>,
+}
+
+type TreeFilter = Rc<dyn Fn(&TreeNode, &str) -> bool>;
+
+impl Clone for TreeNode {
+    fn clone(&self) -> Self {
+        Self {
+            title: self.title.clone(),
+            key: self.key.clone(),
+            icon: self.icon.clone(),
+            children: self.children.clone(),
+            disabled: self.disabled,
+            checkable: self.checkable,
+            checked: self.checked,
+            draggable: self.draggable,
+            lazy: self.lazy,
+            is_leaf: self.is_leaf,
+            filter: self.filter.clone(),
+        }
+    }
+}
+
+impl std::fmt::Debug for TreeNode {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("TreeNode")
+            .field("title", &self.title)
+            .field("key", &self.key)
+            .field("icon", &self.icon)
+            .field("children", &self.children)
+            .field("disabled", &self.disabled)
+            .field("checkable", &self.checkable)
+            .field("checked", &self.checked)
+            .field("draggable", &self.draggable)
+            .field("lazy", &self.lazy)
+            .field("is_leaf", &self.is_leaf)
+            .field("has_filter", &self.filter.is_some())
+            .finish()
+    }
+}
+
+impl PartialEq for TreeNode {
+    fn eq(&self, other: &Self) -> bool {
+        self.title == other.title
+            && self.key == other.key
+            && self.icon == other.icon
+            && self.children == other.children
+            && self.disabled == other.disabled
+            && self.checkable == other.checkable
+            && self.checked == other.checked
+            && self.draggable == other.draggable
+            && self.lazy == other.lazy
+            && self.is_leaf == other.is_leaf
+            && self.filter.is_some() == other.filter.is_some()
+    }
+}
+
+/// 树节点拖拽放置位置。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DropPosition {
+    Before,
+    Inside,
+    After,
 }
 
 pub(crate) struct FlatNode {
@@ -61,9 +126,15 @@ component! {
         selected_keys: Vec<String>,
         expanded_keys: Vec<String>,
         multiple: bool,
+        searchable: bool,
+        search_query: String,
+        draggable: bool,
+        drop_callback: Option<Rc<dyn Fn(&str, &str, DropPosition)>>,
+        expand_callback: Option<Rc<dyn Fn(&str)>>,
         focused: bool,
         hovered_action: Option<TreePointerAction>,
         pressed_action: Option<TreePointerAction>,
+        dragged_key: Option<String>,
         pending_change: RefCell<Option<String>>,
         pub(crate) body_scroll: VirtualListScroll,
         scroll_delta_strip: Cell<(f32, f32)>,
@@ -72,6 +143,15 @@ component! {
     }
 
     tab_index => (&self) -> i32 { 1 }
+
+    accepts_text_input => (&self) -> bool { self.searchable }
+
+    text_input_cursor_rect => (&self) -> Rect {
+        let frame = self.local_frame();
+        let width = (self.search_query.chars().count() as f32 * 8.0 + 8.0)
+            .clamp(8.0, (frame.w - 16.0).max(8.0));
+        Rect::new(frame.x + 8.0 + width, frame.y + 6.0, 1.0, 20.0)
+    }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
@@ -98,7 +178,11 @@ component! {
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
             SystemEvent::Wheel { pos, delta } => {
-                if !self.local_frame().contains(*pos) {
+                let frame = self.local_frame();
+                if !frame.contains(*pos)
+                    || self.searchable
+                        && pos.y < frame.y + self.search_height_for_intrinsic()
+                {
                     return EventResult::NotHandled;
                 }
                 let viewport_h = self.body_viewport_height();
@@ -121,6 +205,11 @@ component! {
                 ..
             } => {
                 if let Some(action) = self.action_at_point(*pos) {
+                    if self.draggable {
+                        if let TreePointerAction::Select(key) = &action {
+                            self.dragged_key = Some(key.clone());
+                        }
+                    }
                     self.hovered_action = Some(action.clone());
                     self.pressed_action = Some(action);
                     return EventResult::Handled;
@@ -137,6 +226,16 @@ component! {
                 };
                 let released = self.action_at_point(*pos);
                 self.hovered_action.clone_from(&released);
+                if let Some(source) = self.dragged_key.take() {
+                    if let Some(TreePointerAction::Select(target)) = released.as_ref() {
+                        if source != *target {
+                            if let Some(callback) = self.drop_callback.as_ref() {
+                                callback(&source, target, self.drop_position_at(*pos));
+                            }
+                            return EventResult::Handled;
+                        }
+                    }
+                }
                 if released.as_ref() == Some(&pressed) {
                     self.commit_pointer_action(pressed);
                 }
@@ -153,7 +252,8 @@ component! {
             }
             SystemEvent::PointerLeave => {
                 let changed = self.hovered_action.take().is_some()
-                    | self.pressed_action.take().is_some();
+                    | self.pressed_action.take().is_some()
+                    | self.dragged_key.take().is_some();
                 if changed {
                     EventResult::Handled
                 } else {
@@ -166,10 +266,22 @@ component! {
             }
             SystemEvent::FocusOut => {
                 self.focused = false;
+                self.hovered_action = None;
                 self.pressed_action = None;
+                self.dragged_key = None;
                 EventResult::Handled
             }
             SystemEvent::KeyDown { key, .. } => match key {
+                KeyCode::Backspace if self.searchable && !self.search_query.is_empty() => {
+                    self.search_query.pop();
+                    self.refresh_search();
+                    EventResult::Handled
+                }
+                KeyCode::Escape if self.searchable && !self.search_query.is_empty() => {
+                    self.search_query.clear();
+                    self.refresh_search();
+                    EventResult::Handled
+                }
                 KeyCode::Down => {
                     self.move_selection(true);
                     EventResult::Handled
@@ -192,6 +304,13 @@ component! {
                 }
                 _ => EventResult::NotHandled,
             },
+            SystemEvent::TextInput { text } | SystemEvent::Paste { text }
+                if self.searchable && !text.is_empty() && !text.chars().any(char::is_control) =>
+            {
+                self.search_query.push_str(text);
+                self.refresh_search();
+                EventResult::Handled
+            }
             _ => EventResult::NotHandled,
         }
     }
@@ -217,6 +336,26 @@ component! {
         let hover_fill = ctx.tokens().color_fill_tertiary();
         let pressed_fill = ctx.tokens().color_fill_secondary();
 
+        let search_h = self.search_height_for_intrinsic();
+        if self.searchable {
+            let search_rect = Rect::new(frame.x, frame.y, frame.w, search_h);
+            ctx.fill_rect(search_rect, ctx.tokens().color_bg_container(), None);
+            ctx.stroke_rect(search_rect, ctx.tokens().color_border_secondary(), 1.0, None);
+            let query = if self.search_query.is_empty() {
+                "搜索"
+            } else {
+                &self.search_query
+            };
+            let query_color = if self.search_query.is_empty() { text_sec } else { text };
+            Self::paint_single_line(
+                ctx,
+                query,
+                Rect::new(frame.x + 8.0, frame.y, (frame.w - 16.0).max(0.0), search_h),
+                query_color,
+                13.0,
+            );
+        }
+
         let viewport_h = self.body_viewport_height();
         let (start, end) = self
             .body_scroll
@@ -225,8 +364,11 @@ component! {
 
         for i in start..end {
             let node = &self.flat[i];
-            let y = frame.y + i as f32 * TREE_ROW_HEIGHT - self.body_scroll.scroll_offset();
-            if y + TREE_ROW_HEIGHT < frame.y || y > frame.y + viewport_h {
+            let y = frame.y + search_h + i as f32 * TREE_ROW_HEIGHT
+                - self.body_scroll.scroll_offset();
+            if y + TREE_ROW_HEIGHT < frame.y + search_h
+                || y > frame.y + search_h + viewport_h
+            {
                 continue;
             }
             let is_selected = self.multiple && self.selected_keys.contains(&node.key)
@@ -274,18 +416,21 @@ component! {
             }
 
             if let Some(check) = geometry.check {
-                let check_str = if node.checked { "[x]" } else { "[ ]" };
-                Self::paint_single_line(
+                crate::ui::widgets::Icon::paint_in_frame(
                     ctx,
-                    check_str,
+                    if node.checked {
+                        "check-square"
+                    } else {
+                        "square"
+                    },
                     check,
                     if node.checked { primary } else { text_sec },
-                    12.0,
+                    13.0_f32.min(check.h * 0.65),
                 );
             }
 
             if let Some(toggle) = geometry.toggle {
-                crate::ui::widgets::icon::paint_icon_in_frame(
+                crate::ui::widgets::Icon::paint_in_frame(
                     ctx,
                     if node.expanded { "chevron-down" } else { "chevron-right" },
                     toggle,
@@ -295,7 +440,7 @@ component! {
             }
 
             if let Some(icon) = geometry.icon {
-                crate::ui::widgets::icon::paint_icon_in_frame(
+                crate::ui::widgets::Icon::paint_in_frame(
                     ctx,
                     &node.icon,
                     icon,
@@ -332,15 +477,23 @@ component! {
 
 impl Tree {
     fn intrinsic_size(&self) -> Size {
-        let h = self.flat.len() as f32 * TREE_ROW_HEIGHT;
+        let h = self.flat.len() as f32 * TREE_ROW_HEIGHT + self.search_height_for_intrinsic();
         Size::new(200.0, h.max(TREE_ROW_HEIGHT))
     }
 
     pub(crate) fn body_viewport_height(&self) -> f32 {
         self.last_frame
             .get()
-            .map(|f| Self::normalized_frame(f).h)
-            .unwrap_or(300.0)
+            .map(|f| (Self::normalized_frame(f).h - self.search_height_for_intrinsic()).max(0.0))
+            .unwrap_or_else(|| (300.0 - self.search_height_for_intrinsic()).max(0.0))
+    }
+
+    fn search_height_for_intrinsic(&self) -> f32 {
+        if self.searchable {
+            32.0
+        } else {
+            0.0
+        }
     }
 
     fn local_frame(&self) -> Rect {
@@ -355,7 +508,11 @@ impl Tree {
         if !frame.contains(point) {
             return None;
         }
-        let content_y = point.y + self.body_scroll.scroll_offset();
+        if self.searchable && point.y < frame.y + self.search_height_for_intrinsic() {
+            return None;
+        }
+        let content_y = point.y - frame.y - self.search_height_for_intrinsic()
+            + self.body_scroll.scroll_offset();
         if content_y < 0.0 {
             return None;
         }
@@ -364,7 +521,8 @@ impl Tree {
         if node.disabled {
             return None;
         }
-        let y = index as f32 * TREE_ROW_HEIGHT - self.body_scroll.scroll_offset();
+        let y = frame.y + self.search_height_for_intrinsic() + index as f32 * TREE_ROW_HEIGHT
+            - self.body_scroll.scroll_offset();
         let geometry = self.row_geometry(frame, index, y);
         if geometry.check.is_some_and(|rect| rect.contains(point)) {
             return Some(TreePointerAction::Check(node.key.clone()));
@@ -378,10 +536,31 @@ impl Tree {
             .then(|| TreePointerAction::Select(node.key.clone()))
     }
 
+    fn drop_position_at(&self, point: Point) -> DropPosition {
+        let frame = self.local_frame();
+        let content_y = point.y - frame.y - self.search_height_for_intrinsic()
+            + self.body_scroll.scroll_offset();
+        let index = (content_y / TREE_ROW_HEIGHT).max(0.0) as usize;
+        let row_y = frame.y + self.search_height_for_intrinsic() + index as f32 * TREE_ROW_HEIGHT
+            - self.body_scroll.scroll_offset();
+        let relative = point.y - row_y;
+        if relative < TREE_ROW_HEIGHT / 3.0 {
+            DropPosition::Before
+        } else if relative > TREE_ROW_HEIGHT * 2.0 / 3.0 {
+            DropPosition::After
+        } else if frame.contains(point) {
+            DropPosition::Inside
+        } else {
+            DropPosition::After
+        }
+    }
+
     fn row_geometry(&self, frame: Rect, index: usize, y: f32) -> TreeRowGeometry {
         let node = &self.flat[index];
-        let visible_top = y.max(frame.y);
-        let visible_bottom = (y + TREE_ROW_HEIGHT).min(frame.y + frame.h);
+        let body_top = frame.y + self.search_height_for_intrinsic();
+        let body_bottom = body_top + self.body_viewport_height();
+        let visible_top = y.max(body_top);
+        let visible_bottom = (y + TREE_ROW_HEIGHT).min(body_bottom);
         let row = Rect::new(
             frame.x,
             visible_top,
@@ -513,9 +692,15 @@ impl Tree {
             selected_keys: Vec::new(),
             expanded_keys: Vec::new(),
             multiple: false,
+            searchable: false,
+            search_query: String::new(),
+            draggable: false,
+            drop_callback: None,
+            expand_callback: None,
             focused: false,
             hovered_action: None,
             pressed_action: None,
+            dragged_key: None,
             pending_change: RefCell::new(None),
             body_scroll: VirtualListScroll::new(),
             scroll_delta_strip: Cell::new((0.0, 0.0)),
@@ -546,6 +731,79 @@ impl Tree {
 
     pub fn multiple(mut self, v: bool) -> Self {
         self.multiple = v;
+        self
+    }
+
+    /// 在树顶显示可输入的搜索框，并按节点标题或 key 过滤可见行。
+    pub fn searchable(mut self, v: bool) -> Self {
+        self.searchable = v;
+        if !v {
+            self.search_query.clear();
+        }
+        self.flatten();
+        self
+    }
+
+    /// 当前搜索关键字。
+    pub fn search_query(&self) -> &str {
+        &self.search_query
+    }
+
+    /// 直接替换搜索关键字并刷新可见节点。
+    pub fn set_search_query(&mut self, query: impl Into<String>) {
+        self.search_query = query.into();
+        self.refresh_search();
+    }
+
+    pub fn clear_search(&mut self) {
+        self.search_query.clear();
+        self.refresh_search();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn visible_keys_for_test(&self) -> Vec<String> {
+        self.flat.iter().map(|node| node.key.clone()).collect()
+    }
+
+    pub fn draggable(mut self, v: bool) -> Self {
+        self.draggable = v;
+        self
+    }
+
+    /// 用新子节点替换指定懒加载节点的子树。
+    pub fn patch_children(&mut self, key: &str, children: Vec<TreeNode>) -> bool {
+        let is_leaf = {
+            let Some(node) = self.find_node_mut(key) else {
+                return false;
+            };
+            node.children = children;
+            node.lazy = false;
+            node.is_leaf = node.children.is_empty();
+            node.is_leaf
+        };
+        if is_leaf {
+            self.expanded_keys.retain(|expanded| expanded != key);
+        }
+        self.flatten();
+        self.layout_requested.set(true);
+        true
+    }
+
+    /// 开启节点拖拽并注册放置回调。
+    pub fn on_drop<F>(mut self, callback: F) -> Self
+    where
+        F: Fn(&str, &str, DropPosition) + 'static,
+    {
+        self.drop_callback = Some(Rc::new(callback));
+        self
+    }
+
+    /// 展开懒加载节点时通知应用层。
+    pub fn on_expand<F>(mut self, callback: F) -> Self
+    where
+        F: Fn(&str) + 'static,
+    {
+        self.expand_callback = Some(Rc::new(callback));
         self
     }
 
@@ -692,12 +950,25 @@ impl Tree {
 
     fn set_expanded(&mut self, key: &str, expanded: bool) {
         let old_len = self.flat.len();
-        if expanded {
-            if !self.expanded_keys.iter().any(|candidate| candidate == key) {
+        let newly_expanded = if expanded {
+            if self.expanded_keys.iter().any(|candidate| candidate == key) {
+                false
+            } else {
                 self.expanded_keys.push(key.to_string());
+                true
             }
         } else {
             self.expanded_keys.retain(|candidate| candidate != key);
+            false
+        };
+        if newly_expanded {
+            if let Some(node) = self.find_node_mut(key) {
+                if node.lazy {
+                    if let Some(callback) = self.expand_callback.as_ref() {
+                        callback(key);
+                    }
+                }
+            }
         }
         self.flatten();
         if self.flat.len() != old_len {
@@ -749,20 +1020,42 @@ impl Tree {
 
     fn flatten(&mut self) {
         let mut flat = Vec::new();
+        let query = self.search_query.trim().to_lowercase();
         for node in &self.nodes {
-            Self::flatten_node(node, 0, &self.expanded_keys, &mut flat);
+            Self::flatten_node_filtered(node, 0, &self.expanded_keys, &query, &mut flat);
         }
         self.flat = flat;
     }
 
-    fn flatten_node(
+    fn refresh_search(&mut self) {
+        self.flatten();
+        self.body_scroll.clamp_to_content(
+            self.flat.len(),
+            TREE_ROW_HEIGHT,
+            self.body_viewport_height(),
+        );
+        self.layout_requested.set(true);
+    }
+
+    fn flatten_node_filtered(
         node: &TreeNode,
         depth: usize,
         expanded_keys: &[String],
+        query: &str,
         flat: &mut Vec<FlatNode>,
-    ) {
+    ) -> bool {
+        let matches = query.is_empty() || Self::node_matches(node, query);
+        let descendant_matches = !query.is_empty()
+            && node
+                .children
+                .iter()
+                .any(|child| Self::node_matches_descendant(child, query));
+        if !matches && !descendant_matches {
+            return false;
+        }
+
         let is_expanded = expanded_keys.contains(&node.key);
-        let has_children = !node.children.is_empty();
+        let has_children = !node.children.is_empty() || node.lazy;
         flat.push(FlatNode {
             title: node.title.clone(),
             key: node.key.clone(),
@@ -774,18 +1067,50 @@ impl Tree {
             checkable: node.checkable,
             checked: node.checked,
         });
-        if is_expanded {
+
+        let show_children = if query.is_empty() {
+            is_expanded
+        } else {
+            matches || descendant_matches
+        };
+        if show_children {
             for child in &node.children {
-                Self::flatten_node(child, depth + 1, expanded_keys, flat);
+                Self::flatten_node_filtered(child, depth + 1, expanded_keys, query, flat);
             }
+        }
+        true
+    }
+
+    fn node_matches_descendant(node: &TreeNode, query: &str) -> bool {
+        Self::node_matches(node, query)
+            || node
+                .children
+                .iter()
+                .any(|child| Self::node_matches_descendant(child, query))
+    }
+
+    fn node_matches(node: &TreeNode, query: &str) -> bool {
+        if let Some(predicate) = node.filter.as_ref() {
+            predicate(node, query)
+        } else {
+            node.title.to_lowercase().contains(query)
         }
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let old_flat_len = self.flat.len();
+        let old_searchable = self.searchable;
         let mut nodes = next.nodes;
         Self::preserve_checked_state(&self.nodes, &mut nodes);
         self.nodes = nodes;
         self.multiple = next.multiple;
+        self.searchable = next.searchable;
+        if !self.searchable {
+            self.search_query.clear();
+        }
+        self.draggable = next.draggable;
+        self.drop_callback = next.drop_callback;
+        self.expand_callback = next.expand_callback;
         self.selected_key = if Self::contains_key(&self.nodes, &self.selected_key) {
             self.selected_key.clone()
         } else {
@@ -798,7 +1123,11 @@ impl Tree {
             .retain(|key| Self::contains_key(nodes, key));
         self.hovered_action = None;
         self.pressed_action = None;
+        self.dragged_key = None;
         self.flatten();
+        if old_searchable != self.searchable || old_flat_len != self.flat.len() {
+            self.layout_requested.set(true);
+        }
         self.body_scroll.clamp_to_content(
             self.flat.len(),
             TREE_ROW_HEIGHT,
@@ -857,7 +1186,9 @@ impl TreeNode {
             checkable: false,
             checked: false,
             draggable: false,
+            lazy: false,
             is_leaf: true,
+            filter: None,
         }
     }
 
@@ -872,6 +1203,10 @@ impl TreeNode {
         self
     }
 
+    #[allow(
+        clippy::should_implement_trait,
+        reason = "add is the established fluent builder API, not arithmetic addition"
+    )]
     pub fn add(mut self, child: TreeNode) -> Self {
         self.children.push(child);
         self.is_leaf = false;
@@ -890,6 +1225,20 @@ impl TreeNode {
 
     pub fn draggable(mut self, v: bool) -> Self {
         self.draggable = v;
+        self
+    }
+
+    /// 标记为展开时由应用异步补充子节点的节点。
+    pub fn lazy(mut self, v: bool) -> Self {
+        self.lazy = v;
+        self
+    }
+
+    pub fn filter<F>(mut self, predicate: F) -> Self
+    where
+        F: Fn(&Self, &str) -> bool + 'static,
+    {
+        self.filter = Some(Rc::new(predicate));
         self
     }
 }

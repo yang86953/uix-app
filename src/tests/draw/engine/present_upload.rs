@@ -200,13 +200,7 @@ fn present_upload_engine_logical_extent_follows_adopted_gpu_client_rect() {
             Ok(())
         }
 
-        fn read_pixels(
-            &mut self,
-            _x: i32,
-            _y: i32,
-            _w: i32,
-            _h: i32,
-        ) -> Result<Vec<u32>> {
+        fn read_pixels(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) -> Result<Vec<u32>> {
             Ok(Vec::new())
         }
 
@@ -242,11 +236,17 @@ fn present_upload_engine_logical_extent_follows_adopted_gpu_client_rect() {
     .unwrap();
     engine.initialize(800, 600).unwrap();
     assert_eq!(engine.logical_extent(), (800, 600));
-    assert_eq!((engine.session.width(), engine.session.height()), (800, 600));
+    assert_eq!(
+        (engine.session.width(), engine.session.height()),
+        (800, 600)
+    );
 
     engine.resize(800, 600).unwrap();
     assert_eq!(engine.logical_extent(), (920, 680));
-    assert_eq!((engine.session.width(), engine.session.height()), (920, 680));
+    assert_eq!(
+        (engine.session.width(), engine.session.height()),
+        (920, 680)
+    );
 }
 
 #[test]

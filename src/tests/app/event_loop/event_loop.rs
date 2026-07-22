@@ -20,8 +20,8 @@ use crate::ui::view::combinators::{button, dynamic_label, label};
 use crate::ui::view::{column, row, View, ViewNode};
 use crate::ui::widgets::feedback::Tooltip;
 use crate::ui::widgets::input::input::Input;
-use crate::ui::widgets::Container;
 use crate::ui::widgets::Label;
+use crate::ui::widgets::{Avatar, Container, Image};
 use crate::ui::{Animated, Easing};
 use std::any::Any;
 

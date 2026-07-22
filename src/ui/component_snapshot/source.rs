@@ -66,6 +66,9 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     if let Some(image) = component.downcast_ref::<Image>() {
         return image.snapshot_fields();
     }
+    if let Some(image_group) = component.downcast_ref::<ImageGroup>() {
+        return image_group.snapshot_fields();
+    }
     if let Some(tag) = component.downcast_ref::<Tag>() {
         return tag.snapshot_fields();
     }
@@ -80,6 +83,9 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     }
     if let Some(float_button) = component.downcast_ref::<FloatButton>() {
         return float_button.snapshot_fields();
+    }
+    if let Some(float_button_group) = component.downcast_ref::<FloatButtonGroup>() {
+        return float_button_group.snapshot_fields();
     }
     if let Some(alert) = component.downcast_ref::<Alert>() {
         return alert.snapshot_fields();

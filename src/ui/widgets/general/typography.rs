@@ -16,6 +16,8 @@ use crate::ui::{
     ComponentId, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
 };
 
+use super::icon::Icon;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TypographyType {
     Heading1,
@@ -40,6 +42,9 @@ component! {
         italic: bool,
         copyable: bool,
         color_override: Option<Color>,
+        spacing: f32,
+        indent: f32,
+        ellipsis: bool,
         glyph_xs: RefCell<Vec<f32>>,
         glyph_char_indices: RefCell<Vec<usize>>,
         /// 每行的 (相对 y, 字形数量)，用于 y 轴命中测试。
@@ -62,18 +67,20 @@ component! {
             let (fs, _) = self.compute_font_style();
             let copy_space = if self.copyable { 28.0 } else { 0.0 };
             let text_width = (constraints.max.w - copy_space).max(1.0);
+            let indent = self.paragraph_indent(fs).min(text_width);
+            let wrap_width = (text_width - indent).max(1.0);
             let estimated = crate::draw::font::text_backend::estimate_text_metrics(
                 &self.content,
-                text_width,
+                wrap_width,
                 fs,
             );
             intrinsic = Size::new(
                 if estimated.width_wrapped {
                     text_width + copy_space
                 } else {
-                    estimated.max_line_width.min(text_width) + copy_space
+                    (estimated.max_line_width + indent).min(text_width) + copy_space
                 },
-                fs * 1.5 * estimated.line_count as f32,
+                self.paragraph_line_height(fs) * estimated.line_count as f32,
             );
         }
         constraints.clamp(intrinsic)
@@ -183,12 +190,26 @@ component! {
         let copy_space = if self.copyable { 28.0 } else { 0.0 };
         let text_width = (frame.w - copy_space).max(1.0);
         let wraps = matches!(self.type_, TypographyType::Paragraph);
+        let indent = if wraps {
+            self.paragraph_indent(fs).min(text_width)
+        } else {
+            0.0
+        };
+        let layout_width = if wraps {
+            (text_width - indent).max(1.0)
+        } else {
+            text_width
+        };
 
         // 单次布局：同时用于 hit-test 缓存、选中背景和文字绘制
         let opts = crate::draw::TextLayoutOptions {
-            max_width: text_width,
+            max_width: layout_width,
             max_height: 0.0,
-            line_height: fs * 1.5,
+            line_height: if wraps {
+                self.paragraph_line_height(fs)
+            } else {
+                fs * 1.5
+            },
             word_wrap: wraps,
             h_align: crate::draw::HAlign::Left,
             v_align: crate::draw::VAlign::Top,
@@ -196,7 +217,17 @@ component! {
         };
         let backend_opts = crate::draw::font::text_backend::TextLayoutOptions::from(opts);
         let fh = *ctx.font();
-        let layout = ctx.font_service().layout_text(&fh, &self.content, &backend_opts);
+        let mut layout = ctx.font_service().layout_text(&fh, &self.content, &backend_opts);
+        if indent > 0.0 {
+            if let Some(first_line) = layout.lines.first_mut() {
+                let end = (first_line.glyph_start + first_line.glyph_count).min(layout.glyphs.len());
+                for glyph in &mut layout.glyphs[first_line.glyph_start..end] {
+                    glyph.x += indent;
+                }
+                first_line.width += indent;
+                layout.width = layout.width.max(first_line.width);
+            }
+        }
 
         let x = 0.0;
         let y = if wraps { 0.0 } else { ctx.visual_center_y(frame, fs) - frame.y };
@@ -314,7 +345,6 @@ component! {
 
         // copyable 图标
         if self.copyable {
-            let copy_icon = "📋";
             let copy_x = frame.x + (frame.w - 24.0).max(0.0);
             let copy_y = if wraps { frame.y } else { ctx.visual_center_y(frame, 14.0) };
             self.copy_rect.set(Some(Rect::new(
@@ -331,7 +361,14 @@ component! {
                     Some(Radius::uniform(3.0)),
                 );
             }
-            ctx.draw_text(copy_icon, Point::new(copy_x, copy_y), ctx.tokens().color_text_quaternary(), 14.0);
+            let copy_color = ctx.tokens().color_text_quaternary();
+            Icon::paint_in_frame(
+                ctx,
+                "copy",
+                Rect::new(copy_x - 2.0, copy_y - 2.0, 24.0, 20.0),
+                copy_color,
+                14.0,
+            );
         } else {
             self.copy_rect.set(None);
         }
@@ -352,6 +389,9 @@ impl Typography {
             italic: false,
             copyable: false,
             color_override: None,
+            spacing: 0.0,
+            indent: 0.0,
+            ellipsis: false,
             glyph_xs: RefCell::new(Vec::new()),
             glyph_char_indices: RefCell::new(Vec::new()),
             line_info: RefCell::new(Vec::new()),
@@ -365,14 +405,16 @@ impl Typography {
         }
     }
     pub fn heading(content: &str, level: u8) -> Self {
-        let type_ = match level {
-            1 => TypographyType::Heading1,
-            2 => TypographyType::Heading2,
-            3 => TypographyType::Heading3,
-            4 => TypographyType::Heading4,
-            _ => TypographyType::Heading5,
-        };
-        Self::new(content, type_)
+        Self::new(content, Self::type_for_level(level))
+    }
+
+    pub fn title(content: &str) -> Self {
+        Self::heading(content, 1)
+    }
+
+    pub fn level(mut self, level: u8) -> Self {
+        self.type_ = Self::type_for_level(level);
+        self
     }
     pub fn paragraph(content: &str) -> Self {
         Self::new(content, TypographyType::Paragraph)
@@ -414,6 +456,29 @@ impl Typography {
     }
     pub fn copyable(mut self, v: bool) -> Self {
         self.copyable = v;
+        self
+    }
+
+    pub fn spacing(mut self, value: f32) -> Self {
+        self.spacing = if value.is_finite() {
+            value.max(0.0)
+        } else {
+            0.0
+        };
+        self
+    }
+
+    pub fn indent(mut self, value: f32) -> Self {
+        self.indent = if value.is_finite() {
+            value.max(0.0)
+        } else {
+            0.0
+        };
+        self
+    }
+
+    pub fn ellipsis(mut self) -> Self {
+        self.ellipsis = true;
         self
     }
 
@@ -461,6 +526,34 @@ impl Typography {
         }
     }
 
+    fn type_for_level(level: u8) -> TypographyType {
+        match level.clamp(1, 5) {
+            1 => TypographyType::Heading1,
+            2 => TypographyType::Heading2,
+            3 => TypographyType::Heading3,
+            4 => TypographyType::Heading4,
+            _ => TypographyType::Heading5,
+        }
+    }
+
+    fn paragraph_line_height(&self, font_size: f32) -> f32 {
+        let factor = if self.spacing > 0.0 {
+            self.spacing
+        } else {
+            1.5
+        };
+        let line_height = font_size * factor;
+        if line_height.is_finite() && line_height > 0.0 {
+            line_height
+        } else {
+            font_size * 1.5
+        }
+    }
+
+    fn paragraph_indent(&self, font_size: f32) -> f32 {
+        self.indent * font_size
+    }
+
     fn intrinsic_size(&self) -> Size {
         let (fs, _fw) = self.compute_font_style();
         let copy_space = if self.copyable { 28.0 } else { 0.0 };
@@ -499,6 +592,21 @@ impl Typography {
     #[cfg(test)]
     pub(crate) fn copy_rect_for_test(&self) -> Option<Rect> {
         self.copy_rect.get()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn rendered_line_origins_for_test(&self) -> Vec<Point> {
+        let glyph_xs = self.glyph_xs.borrow();
+        let mut glyph_offset = 0usize;
+        self.line_info
+            .borrow()
+            .iter()
+            .map(|(y, glyph_count)| {
+                let x = glyph_xs.get(glyph_offset).copied().unwrap_or_default();
+                glyph_offset += *glyph_count;
+                Point::new(x, *y)
+            })
+            .collect()
     }
 
     fn char_at_xy(&self, text_x: f32, text_y: f32) -> usize {
@@ -584,6 +692,9 @@ impl Typography {
         self.italic = next.italic;
         self.copyable = next.copyable;
         self.color_override = next.color_override;
+        self.spacing = next.spacing;
+        self.indent = next.indent;
+        self.ellipsis = next.ellipsis;
         if !self.copyable || self.disabled {
             self.focused = false;
             self.copy_rect.set(None);

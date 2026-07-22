@@ -1,4 +1,3 @@
-
 #[test]
 fn pending_root_reconciles_once_before_frame_and_keeps_last_update() {
     let mut platform = FakePlatform::new();
@@ -339,5 +338,102 @@ fn first_frame_skips_redundant_forced_layout_when_already_laid_out() {
         metrics.get().layout_calls,
         1,
         "first frame must not force a redundant second layout"
+    );
+}
+
+#[test]
+fn image_loading_invalidations_created_during_paint_survive_present() {
+    let mut platform = FakePlatform::new();
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "image-loading", 160, 120);
+    let mut engine = SoftwareEngine::new();
+    engine.initialize(160, 120).expect("software engine");
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(
+            Image::new(80.0, 48.0)
+                .src("assets/images/demo.png")
+                .placeholder(label("loading"))
+                .preview(false),
+        ),
+        Box::new(engine),
+        160,
+        120,
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        None,
+        |_| None,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert!(
+        image_service.memory_usage() > 0,
+        "the paint-time Loading invalidation must schedule the subsequent decode frame"
+    );
+    let (tree, _) = session.tree_and_engine_mut();
+    let placeholder = tree.find_by_type::<Label>().expect("placeholder child");
+    assert!(
+        !tree.is_effectively_visible(placeholder),
+        "the paint-time Ready invalidation must schedule the layout that hides the placeholder"
+    );
+}
+
+#[test]
+fn avatar_first_load_invalidation_created_during_paint_survives_present() {
+    let mut platform = FakePlatform::new();
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "avatar-loading", 160, 120);
+    let mut engine = SoftwareEngine::new();
+    engine.initialize(160, 120).expect("software engine");
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Avatar::new("Ada").src("assets/images/demo.png")),
+        Box::new(engine),
+        160,
+        120,
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        |_| None,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert!(image_service.memory_usage() > 0);
+    assert!(
+        metrics.get().present_calls >= 2,
+        "Avatar's first-load paint invalidation must receive a settling frame"
     );
 }

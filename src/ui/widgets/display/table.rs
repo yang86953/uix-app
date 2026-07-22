@@ -5,8 +5,8 @@ use crate::draw::Radius;
 use crate::ui::foundation::virtual_scroll::VirtualListScroll;
 use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::{
-    ComponentId, EventResult, LayoutChild, SemanticEvent, SnapshotFields, SnapshotTableColumn,
-    SnapshotTableColumnGroup, SystemEvent, WidgetTree,
+    ComponentId, EventResult, KeyCode, LayoutChild, SemanticEvent, SnapshotFields,
+    SnapshotTableColumn, SnapshotTableColumnGroup, SystemEvent, WidgetTree,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
@@ -23,6 +23,11 @@ use geometry::{ColumnZone, TableColumnGeometry};
 
 const COLUMN_RESIZE_HANDLE_HALF_WIDTH: f32 = 4.0;
 const MIN_RESIZABLE_COLUMN_WIDTH: f32 = 32.0;
+const TABLE_PAGINATION_HEIGHT: f32 = 40.0;
+const TABLE_PAGINATION_ITEM_SIZE: f32 = 28.0;
+const TABLE_PAGINATION_GAP: f32 = 4.0;
+const TABLE_PAGINATION_LABEL_WIDTH: f32 = 80.0;
+const TABLE_PAGINATION_INSET: f32 = 8.0;
 
 fn finite_nonnegative(value: f32) -> f32 {
     if value.is_finite() {
@@ -48,7 +53,7 @@ pub enum Fixed {
 }
 
 /// 表格列定义。
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct TableColumn {
     pub title: String,
     pub width: f32,
@@ -58,6 +63,27 @@ pub struct TableColumn {
     pub filters: Vec<(String, bool)>, // (label, active)
     pub fixed: Option<Fixed>,
     pub resizable: bool,
+    /// 合并单元格时返回当前单元格占用的行数；返回 0 表示由上方单元格覆盖。
+    pub row_span: Option<fn(&TableRow, usize) -> usize>,
+    /// 合并单元格时返回当前单元格占用的列数。
+    pub col_span: Option<fn(&TableRow, usize) -> usize>,
+}
+
+impl PartialEq for TableColumn {
+    fn eq(&self, other: &Self) -> bool {
+        self.title == other.title
+            && self.width == other.width
+            && self.sortable == other.sortable
+            && self.sort_direction == other.sort_direction
+            && self.filterable == other.filterable
+            && self.filters == other.filters
+            && self.fixed == other.fixed
+            && self.resizable == other.resizable
+            // Function pointers do not have stable identity across codegen units;
+            // the callback's presence is the meaningful part of the declaration.
+            && self.row_span.is_some() == other.row_span.is_some()
+            && self.col_span.is_some() == other.col_span.is_some()
+    }
 }
 
 impl TableColumn {
@@ -71,6 +97,8 @@ impl TableColumn {
             filters: Vec::new(),
             fixed: None,
             resizable: false,
+            row_span: None,
+            col_span: None,
         }
     }
     pub fn sortable(mut self, v: bool) -> Self {
@@ -89,6 +117,18 @@ impl TableColumn {
     /// 将列固定在表格视口左侧或右侧。
     pub fn fixed(mut self, fixed: Fixed) -> Self {
         self.fixed = Some(fixed);
+        self
+    }
+
+    /// 设置单元格的行合并函数。
+    pub fn row_span(mut self, span: fn(&TableRow, usize) -> usize) -> Self {
+        self.row_span = Some(span);
+        self
+    }
+
+    /// 设置单元格的列合并函数。
+    pub fn col_span(mut self, span: fn(&TableRow, usize) -> usize) -> Self {
+        self.col_span = Some(span);
         self
     }
 
@@ -215,6 +255,17 @@ pub struct TableChange {
     pub page_size: usize,
 }
 
+/// 远程分页配置。回调由表格在页码变化时调用，数据本身仍由应用层维护。
+pub struct TablePagination<F = fn(usize)> {
+    pub current: usize,
+    pub total: usize,
+    pub page_size: usize,
+    pub on_change: F,
+}
+
+type TablePaginationCallback = Rc<dyn Fn(usize)>;
+type TableRowClickCallback = Rc<dyn Fn(&TableRow, usize)>;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TablePointerAction {
     ToggleAll,
@@ -222,6 +273,7 @@ enum TablePointerAction {
     SortColumn(usize),
     ToggleExpand(usize),
     SelectRow(usize),
+    ChangePage(usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -270,6 +322,8 @@ component! {
         /// 当前分页。
         current_page: Cell<usize>,
         page_size: usize,
+        pagination: Option<(usize, usize, usize, TablePaginationCallback)>,
+        row_click: Option<TableRowClickCallback>,
         pending_change: RefCell<Option<String>>,
         virtual_scroll: bool,
         pub(crate) body_scroll: VirtualListScroll,
@@ -284,7 +338,9 @@ component! {
         hover_resize_column: Cell<Option<usize>>,
     }
 
-    tab_index => (&self) -> i32 { i32::from(!self.loading && !self.rows.is_empty()) }
+    tab_index => (&self) -> i32 {
+        i32::from(!self.loading && (!self.rows.is_empty() || self.pagination.is_some()))
+    }
 
     measure => (&self, constraints: Constraints) -> Size {
         let w: f32 = self
@@ -295,7 +351,15 @@ component! {
             + self.selection_width();
         let extra = if self.expandable && self.expanded_row.get().is_some() { self.expand_height } else { 0.0 };
         let body_h = self.rows.len() as f32 * self.row_h + extra;
-        let h = self.total_header_height() + body_h;
+        let body_separator = if !self.rows.is_empty() || self.loading {
+            1.0
+        } else {
+            0.0
+        };
+        let h = self.total_header_height()
+            + body_separator
+            + body_h
+            + self.pagination_height();
         constraints.clamp(Size::new(
             self.fixed_width.unwrap_or(w),
             self.fixed_height.unwrap_or(h.max(60.0)),
@@ -318,7 +382,7 @@ component! {
 
     scroll_composite_viewport => (&self, frame: Rect) -> Option<Rect> {
         let header_height = self.total_header_height() + 1.0;
-        let body_height = (frame.h - header_height).max(0.0);
+        let body_height = (frame.h - header_height - self.pagination_height()).max(0.0);
         (body_height > 0.0).then(|| {
             Rect::new(frame.x, frame.y + header_height, frame.w, body_height)
         })
@@ -361,6 +425,20 @@ component! {
                 self.pressed_action.set(None);
                 self.cancel_column_resize();
                 self.hover_resize_column.set(None);
+                EventResult::Handled
+            }
+            SystemEvent::KeyDown { key, .. } if self.focused && self.pagination.is_some() => {
+                let current = self.pagination_current();
+                let next = match key {
+                    KeyCode::Left | KeyCode::PageUp => current.saturating_sub(1).max(1),
+                    KeyCode::Right | KeyCode::PageDown => {
+                        current.saturating_add(1).min(self.pagination_total_pages())
+                    }
+                    KeyCode::Home => 1,
+                    KeyCode::End => self.pagination_total_pages(),
+                    _ => return EventResult::NotHandled,
+                };
+                self.commit_page_change(next);
                 EventResult::Handled
             }
             SystemEvent::Wheel { pos, delta } => {
@@ -535,7 +613,7 @@ component! {
                     frame.x + horizontal_inset,
                     frame.y,
                     (frame.w - horizontal_inset * 2.0).max(0.0),
-                    frame.h,
+                    (frame.h - self.pagination_height()).max(0.0),
                 ),
                 text_sec,
                 14.0,
@@ -543,6 +621,7 @@ component! {
             if self.bordered {
                 ctx.stroke_rect(frame, border, 1.0, r);
             }
+            self.paint_pagination(frame, ctx);
             ctx.pop_clip();
             return;
         }
@@ -603,7 +682,7 @@ component! {
             ctx.fill_rect(row_rect, row_bg, None);
 
             if self.selection {
-                crate::ui::widgets::icon::paint_icon_in_frame(
+                crate::ui::widgets::Icon::paint_in_frame(
                     ctx,
                     if is_checked { "check-square" } else { "square" },
                     Rect::new(frame.x + 6.0, row_rect.y, 18.0, row_rect.h),
@@ -634,6 +713,13 @@ component! {
                     .iter()
                     .filter(|column| column.zone == zone)
                 {
+                    if self.is_cell_covered(actual_ri, laid_out.index) {
+                        continue;
+                    }
+                    let row_span = self.row_span(actual_ri, laid_out.index);
+                    let col_span = self.col_span(actual_ri, laid_out.index);
+                    let cell_width = self.span_width(&column_geometry, laid_out.index, col_span);
+                    let cell_height = self.span_height(actual_ri, row_span);
                     if !self.view_columns.contains(&laid_out.index) {
                         let cell = row
                             .get(laid_out.index)
@@ -643,8 +729,8 @@ component! {
                         let cell_frame = Rect::new(
                             laid_out.x,
                             row_rect.y,
-                            laid_out.width,
-                            row_rect.h,
+                            cell_width,
+                            cell_height,
                         );
                         if let Some(cell_frame) = cell_frame.intersect(&clip) {
                             let horizontal_inset = 8.0_f32.min(cell_frame.w * 0.25);
@@ -665,10 +751,10 @@ component! {
                     if self.bordered {
                         ctx.fill_rect(
                             Rect::new(
-                                laid_out.x + laid_out.width - 1.0,
+                                laid_out.x + cell_width - 1.0,
                                 row_rect.y,
                                 1.0,
-                                row_rect.h,
+                                cell_height,
                             ),
                             border,
                             None,
@@ -676,27 +762,6 @@ component! {
                     }
                 }
                 ctx.canvas_2d().pop_clip();
-            }
-
-            // 扩展行箭头
-            if self.expandable {
-                let icon_size = 18.0_f32.min(row_rect.h).min(frame.w);
-                crate::ui::widgets::icon::paint_icon_in_frame(
-                    ctx,
-                    if is_expanded {
-                        "chevron-up"
-                    } else {
-                        "chevron-down"
-                    },
-                    Rect::new(
-                        frame.x + (frame.w - icon_size - 6.0).max(0.0),
-                        row_rect.y + (row_rect.h - icon_size) * 0.5,
-                        icon_size,
-                        icon_size,
-                    ),
-                    text_sec,
-                    10.0,
-                );
             }
 
             if actual_ri + 1 < end || is_expanded {
@@ -715,7 +780,146 @@ component! {
             }
         }
 
+        // Row backgrounds and separators are painted one physical row at a time. Repaint merged
+        // anchors after those rows so a row-spanning cell keeps one background, border and text
+        // rectangle instead of being split by later rows.
+        if self.has_spans() {
+            let mut merged_anchors = HashSet::new();
+            for visible_row in start..end {
+                for column in 0..self.columns.len() {
+                    if let Some(anchor) = self.cell_anchor(visible_row, column) {
+                        let row_span = self.row_span(anchor.0, anchor.1);
+                        let col_span = self.col_span(anchor.0, anchor.1);
+                        if row_span > 1 || col_span > 1 {
+                            merged_anchors.insert(anchor);
+                        }
+                    }
+                }
+            }
+            let mut merged_anchors = merged_anchors.into_iter().collect::<Vec<_>>();
+            merged_anchors.sort_unstable();
+            for (row_index, column_index) in merged_anchors {
+                let Some(row) = self.rows.get(row_index) else {
+                    continue;
+                };
+                let Some(laid_out) = column_geometry
+                    .columns
+                    .iter()
+                    .find(|column| column.index == column_index)
+                else {
+                    continue;
+                };
+                let row_span = self.row_span(row_index, column_index);
+                let col_span = self.col_span(row_index, column_index);
+                let cell_width = self.span_width(&column_geometry, column_index, col_span);
+                let cell_height = self.span_height(row_index, row_span);
+                let expanded_offset = if expanded.is_some_and(|expanded_row| row_index > expanded_row)
+                {
+                    self.expand_height
+                } else {
+                    0.0
+                };
+                let row_y = body_top + row_index as f32 * self.row_h + expanded_offset
+                    - self.body_scroll.scroll_offset();
+                let cell_frame = Rect::new(laid_out.x, row_y, cell_width, cell_height);
+                if cell_frame.intersect(&body_clip).is_none() {
+                    continue;
+                }
+                let Some(zone_clip) =
+                    column_geometry.clip_for(laid_out.zone, cell_frame.y, cell_frame.h)
+                else {
+                    continue;
+                };
+                let is_selected = sel == Some(row_index);
+                let is_hovered = hover == Some(row_index);
+                let is_pressed = self
+                    .pressed_action
+                    .get()
+                    .and_then(Self::action_row)
+                    == Some(row_index)
+                    && is_hovered;
+                let cell_bg = if is_pressed {
+                    ctx.tokens().color_fill_secondary()
+                } else if is_selected {
+                    sel_bg
+                } else if is_hovered {
+                    hover_bg
+                } else if row_index.is_multiple_of(2) {
+                    bg
+                } else {
+                    ctx.tokens().color_bg_container()
+                };
+
+                ctx.canvas_2d().push_clip(zone_clip);
+                ctx.fill_rect(cell_frame, cell_bg, None);
+                if !self.view_columns.contains(&column_index) {
+                    let cell = row.get(column_index).map(String::as_str).unwrap_or("");
+                    let horizontal_inset = 8.0_f32.min(cell_frame.w * 0.25);
+                    Self::paint_single_line(
+                        ctx,
+                        cell,
+                        Rect::new(
+                            cell_frame.x + horizontal_inset,
+                            cell_frame.y,
+                            (cell_frame.w - horizontal_inset * 2.0).max(0.0),
+                            cell_frame.h,
+                        ),
+                        if is_selected { primary } else { text_color },
+                        12.0,
+                    );
+                }
+                if self.bordered {
+                    ctx.stroke_rect(cell_frame, border, 1.0, None);
+                } else {
+                    ctx.fill_rect(
+                        Rect::new(
+                            cell_frame.x,
+                            cell_frame.y + cell_frame.h,
+                            cell_frame.w,
+                            1.0,
+                        ),
+                        border,
+                        None,
+                    );
+                }
+                ctx.canvas_2d().pop_clip();
+            }
+        }
+
+        // Expansion affordances belong to physical rows. Paint them after merged cells so a
+        // colspan reaching the trailing edge cannot obscure the icon.
+        if self.expandable {
+            for actual_ri in start..end {
+                let expanded_offset = if expanded.is_some_and(|expanded_row| actual_ri > expanded_row)
+                {
+                    self.expand_height
+                } else {
+                    0.0
+                };
+                let row_y = body_top + actual_ri as f32 * self.row_h + expanded_offset
+                    - self.body_scroll.scroll_offset();
+                let icon_size = 18.0_f32.min(self.row_h).min(frame.w);
+                crate::ui::widgets::Icon::paint_in_frame(
+                    ctx,
+                    if expanded == Some(actual_ri) {
+                        "chevron-up"
+                    } else {
+                        "chevron-down"
+                    },
+                    Rect::new(
+                        frame.x + (frame.w - icon_size - 6.0).max(0.0),
+                        row_y + (self.row_h - icon_size) * 0.5,
+                        icon_size,
+                        icon_size,
+                    ),
+                    text_sec,
+                    10.0,
+                );
+            }
+        }
+
         ctx.pop_clip();
+        self.paint_pagination(frame, ctx);
         if self.loading {
             self.paint_loading_overlay(frame, ctx);
         }
@@ -768,7 +972,7 @@ component! {
             frame.x,
             frame.y + header_height + 1.0,
             frame.w,
-            (frame.h - header_height - 1.0).max(0.0),
+            (frame.h - header_height - 1.0 - self.pagination_height()).max(0.0),
         ))
     }
 
@@ -808,11 +1012,19 @@ component! {
                 // hit-test path apply the viewport scroll offset, so unchanged
                 // cells do not need new frames for every vertical wheel event.
                 let row_y = body_top + row as f32 * self.row_h + expanded_offset;
-                let cell = Rect::new(column.x, row_y, column.width, self.row_h);
+                if self.cell_anchor(row, column_index) != Some((row, column_index)) {
+                    positions.push((child.id, Rect::new(column.x, row_y, 0.0, 0.0)));
+                    continue;
+                }
+                let row_span = self.row_span(row, column_index);
+                let col_span = self.col_span(row, column_index);
+                let cell_width = self.span_width(&column_geometry, column_index, col_span);
+                let cell_height = self.span_height(row, row_span);
+                let cell = Rect::new(column.x, row_y, cell_width, cell_height);
                 positions.push((
                     child.id,
                     column_geometry
-                        .clip_for(column.zone, row_y, self.row_h)
+                        .clip_for(column.zone, row_y, cell_height)
                         .and_then(|zone_clip| cell.intersect(&zone_clip))
                         .unwrap_or_else(|| Rect::new(cell.x, cell.y, 0.0, 0.0)),
                 ));
@@ -889,6 +1101,8 @@ impl Table {
             empty_text: String::new(),
             current_page: Cell::new(0),
             page_size: 20,
+            pagination: None,
+            row_click: None,
             pending_change: RefCell::new(None),
             virtual_scroll: false,
             body_scroll: VirtualListScroll::new(),
@@ -996,7 +1210,10 @@ impl Table {
                     + self.selection_width();
                 Size::new(
                     self.fixed_width.unwrap_or(content_width.max(400.0)),
-                    self.total_header_height() + self.rows.len() as f32 * self.row_h + 1.0,
+                    self.total_header_height()
+                        + self.rows.len() as f32 * self.row_h
+                        + 1.0
+                        + self.pagination_height(),
                 )
             },
             |frame| Size::new(finite_nonnegative(frame.w), finite_nonnegative(frame.h)),
@@ -1018,6 +1235,9 @@ impl Table {
     fn action_at_point(&self, point: crate::core::Point) -> Option<TablePointerAction> {
         if !self.local_frame().contains(point) {
             return None;
+        }
+        if let Some(page) = self.pagination_page_at_point(point) {
+            return Some(TablePointerAction::ChangePage(page));
         }
         if self.selection && point.x < self.selection_width() {
             if point.y < self.total_header_height() {
@@ -1045,8 +1265,108 @@ impl Table {
         if self.expandable && self.expand_toggle_hit(point.x) {
             Some(TablePointerAction::ToggleExpand(row))
         } else {
+            let row = column
+                .and_then(|column| self.cell_anchor(row, column))
+                .map_or(row, |(anchor_row, _)| anchor_row);
             Some(TablePointerAction::SelectRow(row))
         }
+    }
+
+    fn declared_row_span(&self, row: usize, column: usize) -> usize {
+        self.rows
+            .get(row)
+            .and_then(|data| {
+                self.columns
+                    .get(column)
+                    .and_then(|column_def| column_def.row_span.map(|span| span(data, column)))
+            })
+            .unwrap_or(1)
+    }
+
+    fn declared_col_span(&self, row: usize, column: usize) -> usize {
+        self.rows
+            .get(row)
+            .and_then(|data| {
+                self.columns
+                    .get(column)
+                    .and_then(|column_def| column_def.col_span.map(|span| span(data, column)))
+            })
+            .unwrap_or(1)
+    }
+
+    fn row_span(&self, row: usize, column: usize) -> usize {
+        let declared = self.declared_row_span(row, column);
+        if declared == 0 {
+            0
+        } else {
+            declared.min(self.rows.len().saturating_sub(row).max(1))
+        }
+    }
+
+    fn col_span(&self, row: usize, column: usize) -> usize {
+        let declared = self.declared_col_span(row, column);
+        if declared == 0 {
+            0
+        } else {
+            declared.min(self.columns.len().saturating_sub(column).max(1))
+        }
+    }
+
+    fn has_spans(&self) -> bool {
+        self.columns
+            .iter()
+            .any(|column| column.row_span.is_some() || column.col_span.is_some())
+    }
+
+    fn cell_anchor(&self, row: usize, column: usize) -> Option<(usize, usize)> {
+        if row >= self.rows.len() || column >= self.columns.len() {
+            return None;
+        }
+        if !self.has_spans() {
+            return Some((row, column));
+        }
+        for anchor_row in 0..=row {
+            for anchor_column in 0..=column {
+                let row_span = self.row_span(anchor_row, anchor_column);
+                let col_span = self.col_span(anchor_row, anchor_column);
+                if row_span > 0
+                    && col_span > 0
+                    && row < anchor_row.saturating_add(row_span)
+                    && column < anchor_column.saturating_add(col_span)
+                {
+                    return Some((anchor_row, anchor_column));
+                }
+            }
+        }
+        None
+    }
+
+    fn is_cell_covered(&self, row: usize, column: usize) -> bool {
+        self.cell_anchor(row, column) != Some((row, column))
+    }
+
+    fn span_width(&self, geometry: &TableColumnGeometry, column: usize, span: usize) -> f32 {
+        geometry
+            .columns
+            .iter()
+            .filter(|laid_out| {
+                laid_out.index >= column && laid_out.index < column.saturating_add(span)
+            })
+            .map(|laid_out| laid_out.width)
+            .sum::<f32>()
+            .max(self.columns.get(column).map_or(0.0, |column| column.width))
+    }
+
+    fn span_height(&self, row: usize, span: usize) -> f32 {
+        let mut height = self.row_h * span as f32;
+        if self
+            .expanded_row
+            .get()
+            .is_some_and(|expanded| expanded >= row && expanded < row.saturating_add(span))
+        {
+            height += self.expand_height;
+        }
+        height
     }
 
     fn action_row(action: TablePointerAction) -> Option<usize> {
@@ -1054,7 +1374,9 @@ impl Table {
             TablePointerAction::ToggleRow(row)
             | TablePointerAction::ToggleExpand(row)
             | TablePointerAction::SelectRow(row) => Some(row),
-            TablePointerAction::ToggleAll | TablePointerAction::SortColumn(_) => None,
+            TablePointerAction::ToggleAll
+            | TablePointerAction::SortColumn(_)
+            | TablePointerAction::ChangePage(_) => None,
         }
     }
 
@@ -1103,7 +1425,14 @@ impl Table {
                 self.selected_row.set(Some(row));
                 self.layout_requested.set(true);
             }
-            TablePointerAction::SelectRow(row) => self.selected_row.set(Some(row)),
+            TablePointerAction::SelectRow(row) => {
+                self.selected_row.set(Some(row));
+                if let (Some(callback), Some(data)) = (self.row_click.as_ref(), self.rows.get(row))
+                {
+                    callback(data, row);
+                }
+            }
+            TablePointerAction::ChangePage(page) => self.commit_page_change(page),
         }
     }
 
@@ -1278,6 +1607,34 @@ impl Table {
         self
     }
 
+    /// 配置由应用层驱动的远程分页。
+    pub fn pagination<F>(mut self, pagination: TablePagination<F>) -> Self
+    where
+        F: Fn(usize) + 'static,
+    {
+        let page_size = pagination.page_size.max(1);
+        let total_pages = pagination.total.div_ceil(page_size).max(1);
+        let current = pagination.current.clamp(1, total_pages);
+        self.current_page.set(current - 1);
+        self.page_size = page_size;
+        self.pagination = Some((
+            current,
+            pagination.total,
+            page_size,
+            Rc::new(pagination.on_change),
+        ));
+        self
+    }
+
+    /// 在行主体按下并释放于同一行时调用；复选框与展开按钮不会触发该回调。
+    pub fn on_row_click<F>(mut self, callback: F) -> Self
+    where
+        F: Fn(&TableRow, usize) + 'static,
+    {
+        self.row_click = Some(Rc::new(callback));
+        self
+    }
+
     fn selection_width(&self) -> f32 {
         if self.selection {
             32.0
@@ -1341,6 +1698,125 @@ impl Table {
         } else {
             self.header_h * 2.0
         }
+    }
+
+    fn pagination_height(&self) -> f32 {
+        if self.pagination.is_some() {
+            TABLE_PAGINATION_HEIGHT
+        } else {
+            0.0
+        }
+    }
+
+    fn pagination_total_pages(&self) -> usize {
+        self.pagination
+            .as_ref()
+            .map_or(1, |(_, total, page_size, _)| {
+                total.div_ceil((*page_size).max(1)).max(1)
+            })
+    }
+
+    fn pagination_current(&self) -> usize {
+        self.pagination.as_ref().map_or(1, |(current, _, _, _)| {
+            (*current).clamp(1, self.pagination_total_pages())
+        })
+    }
+
+    fn pagination_controls(&self, frame: Rect) -> Option<(Rect, Rect, Rect)> {
+        self.pagination.as_ref()?;
+        let footer_height = TABLE_PAGINATION_HEIGHT.min(frame.h.max(0.0));
+        let inset = TABLE_PAGINATION_INSET.min(frame.w.max(0.0) * 0.1);
+        let available = (frame.w - inset * 2.0).max(0.0);
+        let gap = TABLE_PAGINATION_GAP.min(available * 0.05);
+        let label_width = TABLE_PAGINATION_LABEL_WIDTH.min(available * 0.5);
+        let item_size = TABLE_PAGINATION_ITEM_SIZE
+            .min(((available - label_width - gap * 2.0) * 0.5).max(0.0))
+            .min(footer_height);
+        let controls_width = item_size * 2.0 + label_width + gap * 2.0;
+        let x = frame.x + (frame.w - inset - controls_width).max(0.0);
+        let footer_y = frame.y + frame.h - footer_height;
+        let y = footer_y + (footer_height - item_size) * 0.5;
+        let previous = Rect::new(x, y, item_size, item_size);
+        let label = Rect::new(previous.x + previous.w + gap, y, label_width, item_size);
+        let next = Rect::new(label.x + label.w + gap, y, item_size, item_size);
+        Some((previous, label, next))
+    }
+
+    fn pagination_page_at_point(&self, point: crate::core::Point) -> Option<usize> {
+        let (previous, _, next) = self.pagination_controls(self.local_frame())?;
+        let current = self.pagination_current();
+        if previous.contains(point) {
+            Some(current.saturating_sub(1).max(1))
+        } else if next.contains(point) {
+            Some(current.saturating_add(1).min(self.pagination_total_pages()))
+        } else {
+            None
+        }
+    }
+
+    fn commit_page_change(&mut self, page: usize) {
+        let Some((current, _, page_size, callback)) = self.pagination.as_ref() else {
+            return;
+        };
+        let page = page.clamp(1, self.pagination_total_pages());
+        if page == *current {
+            return;
+        }
+        self.current_page.set(page - 1);
+        callback(page);
+        self.pending_change.replace(Some(
+            TableChange {
+                sort_column: None,
+                sort_direction: SortDirection::None,
+                page: page - 1,
+                page_size: *page_size,
+            }
+            .payload(),
+        ));
+    }
+
+    fn paint_pagination(&self, frame: Rect, ctx: &mut PaintContext<'_>) {
+        let Some((previous, label, next)) = self.pagination_controls(frame) else {
+            return;
+        };
+        let current = self.pagination_current();
+        let total_pages = self.pagination_total_pages();
+        let footer = Rect::new(
+            frame.x,
+            frame.y + (frame.h - TABLE_PAGINATION_HEIGHT).max(0.0),
+            frame.w,
+            TABLE_PAGINATION_HEIGHT.min(frame.h),
+        );
+        let border = ctx.tokens().color_border();
+        let text = ctx.tokens().color_text();
+        let secondary = ctx.tokens().color_text_secondary();
+        let bg = ctx.tokens().color_bg_container();
+        let radius = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
+        ctx.fill_rect(footer, bg, None);
+        ctx.fill_rect(Rect::new(footer.x, footer.y, footer.w, 1.0), border, None);
+        for button in [previous, next] {
+            ctx.fill_rect(button, bg, radius);
+            ctx.stroke_rect(button, border, 1.0, radius);
+        }
+        crate::ui::widgets::Icon::paint_in_frame(
+            ctx,
+            "chevron-left",
+            previous,
+            if current <= 1 { secondary } else { text },
+            14.0,
+        );
+        ctx.text_center(&format!("{current} / {total_pages}"), label, text, 13.0);
+        crate::ui::widgets::Icon::paint_in_frame(
+            ctx,
+            "chevron-right",
+            next,
+            if current >= total_pages {
+                secondary
+            } else {
+                text
+            },
+            14.0,
+        );
     }
 
     fn leaf_header_contains(&self, y: f32, column: Option<usize>) -> bool {
@@ -1469,7 +1945,13 @@ impl Table {
     pub(crate) fn body_viewport_height(&self) -> f32 {
         self.last_frame
             .get()
-            .map(|f| (finite_nonnegative(f.h) - self.total_header_height() - 1.0).max(0.0))
+            .map(|f| {
+                (finite_nonnegative(f.h)
+                    - self.total_header_height()
+                    - 1.0
+                    - self.pagination_height())
+                .max(0.0)
+            })
             .unwrap_or(300.0)
     }
 
@@ -1589,6 +2071,8 @@ impl Table {
             selected_row: self.selected_row.get(),
             checked_rows: self.checked_rows.clone(),
             empty_text: self.empty_text.clone(),
+            current_page: self.pagination.as_ref().map(|(current, _, _, _)| *current),
+            total: self.pagination.as_ref().map(|(_, total, _, _)| *total),
             page_size: self.page_size,
             virtual_scroll: self.virtual_scroll,
         }
@@ -1630,6 +2114,9 @@ impl Table {
         self.bordered = next.bordered;
         self.empty_text = next.empty_text;
         self.page_size = next.page_size;
+        self.current_page.set(next.current_page.get());
+        self.pagination = next.pagination;
+        self.row_click = next.row_click;
         self.virtual_scroll = next.virtual_scroll;
         if self.selection {
             self.checked_rows = self
@@ -1668,9 +2155,28 @@ impl Table {
     }
 
     pub(crate) fn cell_view_range_for_frame(&self, frame: Rect) -> (usize, usize) {
-        let viewport_height =
-            (finite_nonnegative(frame.h) - self.total_header_height() - 1.0).max(0.0);
-        self.visible_row_range(viewport_height)
+        let viewport_height = (finite_nonnegative(frame.h)
+            - self.total_header_height()
+            - 1.0
+            - self.pagination_height())
+        .max(0.0);
+        let (visible_start, end) = self.visible_row_range(viewport_height);
+        let mut start = visible_start;
+        if self.has_spans() {
+            for row in visible_start..end {
+                for &column in &self.view_columns {
+                    if let Some((anchor_row, _)) = self.cell_anchor(row, column) {
+                        start = start.min(anchor_row);
+                    }
+                }
+            }
+        }
+        (start, end)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pagination_controls_for_test(&self, frame: Rect) -> Option<(Rect, Rect, Rect)> {
+        self.pagination_controls(frame)
     }
 
     pub(crate) fn view_columns(&self) -> &[usize] {
@@ -1775,7 +2281,21 @@ impl<R> DataTable<R> {
         self
     }
 
-    fn into_parts(self) -> (Table, Option<RenderHandlerRegistration>, Option<TableEmptyRenderer>)
+    pub fn pagination<F>(mut self, pagination: TablePagination<F>) -> Self
+    where
+        F: Fn(usize) + 'static,
+    {
+        self.table = self.table.pagination(pagination);
+        self
+    }
+
+    fn into_parts(
+        self,
+    ) -> (
+        Table,
+        Option<RenderHandlerRegistration>,
+        Option<TableEmptyRenderer>,
+    )
     where
         R: 'static,
     {
@@ -1855,7 +2375,13 @@ impl<R: 'static> crate::ui::IntoWidgetNode for DataTable<R> {
 }
 
 impl TableBuilder {
-    fn into_parts(self) -> (Table, Vec<RenderHandlerRegistration>, Option<TableEmptyRenderer>) {
+    fn into_parts(
+        self,
+    ) -> (
+        Table,
+        Vec<RenderHandlerRegistration>,
+        Option<TableEmptyRenderer>,
+    ) {
         let mut handlers = Vec::new();
         if let Some(expand) = self.expand_renderer {
             handlers.push(RenderHandlerRegistration::TableExpand(expand));
@@ -1875,11 +2401,7 @@ impl TableBuilder {
     }
 
     /// 为展开行声明普通 View 子树；可与 `.empty` 组合。
-    pub fn expandable<V>(
-        mut self,
-        height: f32,
-        renderer: impl Fn(&TableRow) -> V + 'static,
-    ) -> Self
+    pub fn expandable<V>(mut self, height: f32, renderer: impl Fn(&TableRow) -> V + 'static) -> Self
     where
         V: crate::ui::view::View,
     {
@@ -1967,6 +2489,14 @@ impl TableBuilder {
 
     pub fn page_size(mut self, size: usize) -> Self {
         self.table.page_size = size;
+        self
+    }
+
+    pub fn pagination<F>(mut self, pagination: TablePagination<F>) -> Self
+    where
+        F: Fn(usize) + 'static,
+    {
+        self.table = self.table.pagination(pagination);
         self
     }
 }

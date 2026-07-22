@@ -194,7 +194,7 @@ fn constrained_trigger_paints_and_hits_only_inside_its_actual_frame() {
 
     for y in 0..180usize {
         for x in 0..280usize {
-            if x < 10 || x >= 22 || y < 10 || y >= 16 {
+            if !(10..22).contains(&x) || !(10..16).contains(&y) {
                 assert_eq!(
                     pixels[y * stride + x],
                     0,

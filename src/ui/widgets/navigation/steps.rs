@@ -12,6 +12,7 @@ use crate::ui::{
     WidgetTree,
 };
 use std::cell::Cell;
+use std::rc::Rc;
 
 const STEP_EXTENT: f32 = 80.0;
 
@@ -36,6 +37,7 @@ pub struct Step {
     pub title: String,
     pub description: String,
     pub status: StepStatus,
+    pub icon: String,
 }
 
 // Steps — 步骤条组件。
@@ -46,6 +48,9 @@ component! {
         direction: StepsDirection,
         focused: bool,
         pending_change: Cell<Option<usize>>,
+        clickable: bool,
+        dot: bool,
+        step_callback: Option<Rc<dyn Fn(usize, &Step)>>,
         /// 缓存 render 时的 frame 和 step_w，供 on_event 定位点击区域
         last_frame_and_step_w: Cell<Option<(Rect, f32)>>,
     }
@@ -64,7 +69,9 @@ component! {
                 ..
             } => {
                 if let Some(index) = self.step_at(pos.x, pos.y) {
-                    self.select(index);
+                    if self.clickable {
+                        self.select(index);
+                    }
                     EventResult::Handled
                 } else {
                     EventResult::NotHandled
@@ -154,8 +161,12 @@ component! {
                 ctx.canvas_2d().stroke_circle(cx, circle_y, circle_r, border_c, 2.0);
                 // 步骤编号/图标（在圆圈内居中）
                 let circle_rect = Rect::new(cx - circle_r, circle_y - circle_r, circle_r * 2.0, circle_r * 2.0);
-                if step.status == StepStatus::Finish {
-                    crate::ui::widgets::icon::paint_icon_in_frame(
+                if self.dot {
+                    ctx.fill_circle(cx, circle_y, circle_r * 0.35, text_c);
+                } else if !step.icon.is_empty() {
+                    crate::ui::widgets::icon::Icon::paint_in_frame(ctx, &step.icon, circle_rect, text_c, 14.0);
+                } else if step.status == StepStatus::Finish {
+                    crate::ui::widgets::icon::Icon::paint_in_frame(
                         ctx,
                         "check",
                         circle_rect,
@@ -211,8 +222,12 @@ component! {
                     circle_r * 2.0,
                     circle_r * 2.0,
                 );
-                if step.status == StepStatus::Finish {
-                    crate::ui::widgets::icon::paint_icon_in_frame(
+                if self.dot {
+                    ctx.fill_circle(circle_x, cy, circle_r * 0.35, text_c);
+                } else if !step.icon.is_empty() {
+                    crate::ui::widgets::icon::Icon::paint_in_frame(ctx, &step.icon, circle_rect, text_c, 14.0);
+                } else if step.status == StepStatus::Finish {
+                    crate::ui::widgets::icon::Icon::paint_in_frame(
                         ctx,
                         "check",
                         circle_rect,
@@ -270,6 +285,9 @@ impl Steps {
             direction: StepsDirection::Horizontal,
             focused: false,
             pending_change: Cell::new(None),
+            clickable: true,
+            dot: false,
+            step_callback: None,
             last_frame_and_step_w: Cell::new(None),
         }
     }
@@ -298,6 +316,9 @@ impl Steps {
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.steps = next.steps;
         self.direction = next.direction;
+        self.clickable = next.clickable;
+        self.dot = next.dot;
+        self.step_callback = next.step_callback;
         self.current.set(self.clamp_index(self.current.get()));
     }
 
@@ -321,6 +342,11 @@ impl Steps {
         if index != self.current.get() {
             self.current.set(index);
             self.pending_change.set(Some(index));
+            if let Some(callback) = self.step_callback.as_ref() {
+                if let Some(step) = self.steps.get(index) {
+                    callback(index, step);
+                }
+            }
         }
     }
 
@@ -369,6 +395,7 @@ impl Step {
             title: title.to_string(),
             description: String::new(),
             status: StepStatus::Wait,
+            icon: String::new(),
         }
     }
     pub fn description(mut self, d: &str) -> Self {
@@ -377,6 +404,31 @@ impl Step {
     }
     pub fn status(mut self, s: StepStatus) -> Self {
         self.status = s;
+        self
+    }
+
+    pub fn icon(mut self, icon: impl Into<String>) -> Self {
+        self.icon = icon.into();
+        self
+    }
+}
+
+impl Steps {
+    pub fn clickable(mut self, clickable: bool) -> Self {
+        self.clickable = clickable;
+        self
+    }
+
+    pub fn dot(mut self, dot: bool) -> Self {
+        self.dot = dot;
+        self
+    }
+
+    pub fn on_step<F>(mut self, callback: F) -> Self
+    where
+        F: Fn(usize, &Step) + 'static,
+    {
+        self.step_callback = Some(Rc::new(callback));
         self
     }
 }

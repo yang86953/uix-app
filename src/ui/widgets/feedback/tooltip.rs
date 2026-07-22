@@ -5,7 +5,7 @@ use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, MouseButton, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyCode, MouseButton, SystemEvent, WidgetTree};
 
 const TOOLTIP_FONT_SIZE: f32 = 12.0;
 const TOOLTIP_HORIZONTAL_PADDING: f32 = 16.0;
@@ -25,6 +25,7 @@ pub enum TriggerMode {
     Hover,
     Click,
     Focus,
+    ContextMenu,
 }
 
 component! {
@@ -42,6 +43,9 @@ component! {
         transition: TransitionPlayer,
         closing: bool,
         transition_dirty: bool,
+        pressed_button: Option<MouseButton>,
+        pressed_key: Option<KeyCode>,
+        last_frame: std::cell::Cell<Rect>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -50,50 +54,133 @@ component! {
 
     hit_test_children => (&self) -> bool { false }
 
+    hit_test_frame => (&self, actual_frame: Rect) -> Rect {
+        let frame = Self::normalize_frame(actual_frame);
+        self.last_frame.set(frame);
+        frame
+    }
+
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(crate::ui::ComponentId, Rect)>
     {
+        let frame = Self::normalize_frame(frame);
+        self.last_frame.set(frame);
         children.iter().map(|child| (child.id, frame)).collect()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
-        match (self.trigger, event) {
-            (TriggerMode::Hover, SystemEvent::PointerEnter) => {
-                if self.delay_ms == 0 {
-                    self.open();
-                    self.pending = false;
-                } else {
+        match event {
+            SystemEvent::FocusIn => return EventResult::Handled,
+            SystemEvent::FocusOut => {
+                self.cancel_pending_activation();
+                if self.trigger == TriggerMode::Focus {
                     self.close();
-                    self.pending = true;
                 }
-                EventResult::Handled
+                return EventResult::Handled;
             }
-            (TriggerMode::Hover, SystemEvent::PointerLeave) => {
+            SystemEvent::WindowBlur => {
+                let changed = self.pending
+                    || self.pressed_button.is_some()
+                    || self.pressed_key.is_some()
+                    || self.is_present();
+                self.cancel_pending_activation();
                 self.close();
-                self.pending = false;
-                EventResult::Handled
-            }
-            (
-                TriggerMode::Click,
-                SystemEvent::PointerDown {
-                    button: MouseButton::Left,
-                    ..
-                },
-            ) => {
-                if self.is_present() {
-                    self.close();
+                return if changed {
+                    EventResult::Handled
                 } else {
-                    self.open();
-                }
-                self.pending = false;
-                EventResult::Handled
+                    EventResult::NotHandled
+                };
             }
-            (_, SystemEvent::Timer { id }) if self.pending && *id == self.timer_id => {
+            SystemEvent::KeyDown { key: KeyCode::Escape, .. } if self.is_present() => {
+                self.cancel_pending_activation();
+                self.close();
+                return EventResult::Handled;
+            }
+            SystemEvent::Timer { id } if self.pending && *id == self.timer_id => {
                 self.open();
-                self.pending = false;
-                EventResult::Handled
+                return EventResult::Handled;
             }
-            _ => EventResult::NotHandled,
+            SystemEvent::PointerLeave => {
+                let had_activation = self.pressed_button.take().is_some();
+                if self.trigger == TriggerMode::Hover {
+                    self.pending = false;
+                    self.close();
+                    return EventResult::Handled;
+                }
+                if had_activation {
+                    return EventResult::Handled;
+                }
+            }
+            _ => {}
+        }
+
+        match self.trigger {
+            TriggerMode::Hover => {
+                if let SystemEvent::PointerEnter = event {
+                    if self.delay_ms == 0 {
+                        self.open();
+                    } else {
+                        self.close();
+                        self.pending = true;
+                    }
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
+            }
+            TriggerMode::Focus => EventResult::NotHandled,
+            TriggerMode::Click | TriggerMode::ContextMenu => {
+                let expected_button = if self.trigger == TriggerMode::ContextMenu {
+                    MouseButton::Right
+                } else {
+                    MouseButton::Left
+                };
+                match event {
+                    SystemEvent::PointerDown { pos, button, .. }
+                        if *button == expected_button =>
+                    {
+                        if self.trigger_rect().contains(*pos) {
+                            self.pressed_button = Some(*button);
+                            EventResult::Handled
+                        } else if self.is_present() {
+                            self.close();
+                            EventResult::Handled
+                        } else {
+                            EventResult::NotHandled
+                        }
+                    }
+                    SystemEvent::PointerUp { pos, button, .. }
+                        if *button == expected_button =>
+                    {
+                        let armed = self.pressed_button.take() == Some(*button);
+                        if armed && self.trigger_rect().contains(*pos) {
+                            self.toggle();
+                        }
+                        if armed {
+                            EventResult::Handled
+                        } else {
+                            EventResult::NotHandled
+                        }
+                    }
+                    SystemEvent::KeyDown {
+                        key: key @ (KeyCode::Enter | KeyCode::Space),
+                        ..
+                    } => {
+                        self.pressed_key = Some(*key);
+                        EventResult::Handled
+                    }
+                    SystemEvent::KeyUp {
+                        key: key @ (KeyCode::Enter | KeyCode::Space),
+                        ..
+                    } => {
+                        if self.pressed_key.take() == Some(*key) {
+                            self.toggle();
+                        }
+                        EventResult::Handled
+                    }
+                    _ => EventResult::NotHandled,
+                }
+            }
         }
     }
 
@@ -124,6 +211,7 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        self.last_frame.set(Self::normalize_frame(frame));
         if !self.is_present() {
             return;
         }
@@ -351,6 +439,9 @@ impl Tooltip {
             transition: TransitionPlayer::new(presets::tooltip_enter()),
             closing: false,
             transition_dirty: false,
+            pressed_button: None,
+            pressed_key: None,
+            last_frame: std::cell::Cell::new(Rect::new(0.0, 0.0, 80.0, 28.0)),
         }
     }
 
@@ -369,9 +460,17 @@ impl Tooltip {
         self
     }
 
+    pub fn bg(self, c: Color) -> Self {
+        self.bg_color(c)
+    }
+
     pub fn text_color(mut self, c: Color) -> Self {
         self.text_color = Some(c);
         self
+    }
+
+    pub fn color(self, c: Color) -> Self {
+        self.text_color(c)
     }
 
     pub fn arrow(mut self, v: bool) -> Self {
@@ -398,6 +497,7 @@ impl Tooltip {
     }
 
     pub fn open(&mut self) {
+        self.cancel_pending_activation();
         self.visible = true;
         self.closing = false;
         self.transition = TransitionPlayer::new(presets::tooltip_enter());
@@ -405,6 +505,7 @@ impl Tooltip {
     }
 
     pub fn close(&mut self) {
+        self.cancel_pending_activation();
         if !self.is_present() {
             self.visible = false;
             self.closing = false;
@@ -415,6 +516,44 @@ impl Tooltip {
         self.closing = true;
         self.transition = TransitionPlayer::new(presets::tooltip_exit());
         self.transition_dirty = true;
+    }
+
+    fn toggle(&mut self) {
+        if self.visible && !self.closing {
+            self.close();
+        } else {
+            self.open();
+        }
+    }
+
+    fn cancel_pending_activation(&mut self) {
+        self.pending = false;
+        self.pressed_button = None;
+        self.pressed_key = None;
+    }
+
+    fn trigger_rect(&self) -> Rect {
+        let frame = self.last_frame.get();
+        let width = if frame.w > 0.0 { frame.w } else { 80.0 };
+        let height = if frame.h > 0.0 { frame.h } else { 28.0 };
+        Rect::new(0.0, 0.0, width, height)
+    }
+
+    fn normalize_frame(frame: Rect) -> Rect {
+        Rect::new(
+            if frame.x.is_finite() { frame.x } else { 0.0 },
+            if frame.y.is_finite() { frame.y } else { 0.0 },
+            if frame.w.is_finite() {
+                frame.w.max(0.0)
+            } else {
+                0.0
+            },
+            if frame.h.is_finite() {
+                frame.h.max(0.0)
+            } else {
+                0.0
+            },
+        )
     }
 
     fn intrinsic_size(&self) -> Size {
@@ -435,6 +574,7 @@ impl Tooltip {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let trigger_changed = self.trigger != next.trigger;
         self.text = next.text;
         self.placement = next.placement;
         self.trigger = next.trigger;
@@ -443,5 +583,10 @@ impl Tooltip {
         self.delay_ms = next.delay_ms;
         self.timer_id = next.timer_id;
         self.arrow = next.arrow;
+        if trigger_changed {
+            self.pending = false;
+            self.pressed_button = None;
+            self.pressed_key = None;
+        }
     }
 }

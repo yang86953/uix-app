@@ -1,7 +1,41 @@
+use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::spatial::Orientation;
 use crate::tests::common::*;
 use crate::ui::state::State;
 use crate::ui::view::{ViewAdapter, ViewNode};
 use crate::ui::widgets::navigation::tabs::*;
+use crate::ui::LayoutChild;
+
+fn render_tabs(tabs: &Tabs, frame: Rect) -> String {
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(640, 320));
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let tree = WidgetTree::new();
+    let mut display_list = crate::draw::painting::DisplayList::new();
+    {
+        let mut ctx = PaintContext::new_for_test(
+            &mut canvas,
+            font,
+            &fonts,
+            &images,
+            &tokens,
+            96.0,
+            1.0,
+            Orientation::YDown,
+            640,
+            320,
+        );
+        ctx.with_recorder(&mut display_list, |ctx| {
+            WidgetRender::render(tabs, frame, ctx, &tree);
+        });
+    }
+    format!("{display_list:?}")
+}
 
 fn key_event(key: KeyCode) -> SystemEvent {
     SystemEvent::KeyDown {
@@ -200,4 +234,212 @@ fn external_tab_state_requests_reconcile_and_updates_the_live_component() {
         .downcast_ref::<Tabs>()
         .expect("Tabs component");
     assert_eq!(tabs.current_key(), Some("details"));
+}
+
+#[test]
+fn left_and_right_positions_use_a_vertical_tab_bar_and_reserve_content_width() {
+    let children = [
+        LayoutChild::new(ComponentId::new(11), Size::new(10.0, 10.0)),
+        LayoutChild::new(ComponentId::new(12), Size::new(10.0, 10.0)),
+    ];
+    let frame = Rect::new(10.0, 20.0, 400.0, 200.0);
+
+    let mut left = Tabs::new()
+        .tab("Overview", "overview")
+        .tab("Details", "details")
+        .active(1)
+        .tab_position(TabPosition::Left);
+    let display = render_tabs(&left, Rect::new(30.0, 40.0, 400.0, 200.0));
+    assert!(display.contains("Overview"));
+    assert_eq!(
+        left.tab_rect_for_test(0),
+        Some(Rect::new(0.0, 0.0, 160.0, 40.0))
+    );
+    assert_eq!(
+        left.tab_rect_for_test(1),
+        Some(Rect::new(0.0, 40.0, 160.0, 40.0))
+    );
+    assert_eq!(
+        WidgetLayout::layout_children(&left, frame, &children, &WidgetTree::new()),
+        vec![(ComponentId::new(12), Rect::new(186.0, 28.0, 208.0, 184.0))]
+    );
+    assert_eq!(
+        left.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(80.0, 20.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(left.current_key(), Some("overview"));
+
+    let mut right = Tabs::new()
+        .tab("Overview", "overview")
+        .tab("Details", "details")
+        .active(1)
+        .tab_position(TabPosition::Right);
+    render_tabs(&right, Rect::new(30.0, 40.0, 400.0, 200.0));
+    assert_eq!(
+        right.tab_rect_for_test(0),
+        Some(Rect::new(240.0, 0.0, 160.0, 40.0))
+    );
+    assert_eq!(
+        WidgetLayout::layout_children(&right, frame, &children, &WidgetTree::new()),
+        vec![(ComponentId::new(12), Rect::new(26.0, 28.0, 208.0, 184.0))]
+    );
+    assert_eq!(
+        right.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(300.0, 20.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(right.current_key(), Some("overview"));
+}
+
+#[test]
+fn scrollable_tabs_wheel_and_keyboard_keep_the_active_tab_visible() {
+    let mut horizontal = Tabs::new()
+        .tab("Overview alpha", "a")
+        .tab("Details beta", "b")
+        .tab("History gamma", "c")
+        .tab("Settings delta", "d")
+        .scrollable(true)
+        .size(180.0, 100.0);
+    render_tabs(&horizontal, Rect::new(50.0, 60.0, 180.0, 100.0));
+    assert_eq!(horizontal.tab_scroll_offset(), 0.0);
+    assert_eq!(
+        horizontal.on_event(&SystemEvent::Wheel {
+            pos: Point::new(90.0, 20.0),
+            delta: Point::new(0.0, 1.0),
+        }),
+        EventResult::Handled
+    );
+    assert!(horizontal.tab_scroll_offset() > 0.0);
+    assert_eq!(
+        horizontal.on_event(&SystemEvent::Wheel {
+            pos: Point::new(90.0, 80.0),
+            delta: Point::new(0.0, 1.0),
+        }),
+        EventResult::NotHandled,
+        "wheel outside the tab strip must keep bubbling"
+    );
+
+    horizontal.on_event(&key_event(KeyCode::End));
+    let last = horizontal.tab_rect_for_test(3).expect("last tab geometry");
+    assert!(last.x < 180.0 && last.x + last.w > 0.0);
+    assert_eq!(horizontal.current_key(), Some("d"));
+
+    let mut vertical = Tabs::new()
+        .tab("One", "one")
+        .tab("Two", "two")
+        .tab("Three", "three")
+        .tab("Four", "four")
+        .tab_position(TabPosition::Right)
+        .scrollable(true)
+        .size(220.0, 90.0);
+    render_tabs(&vertical, Rect::new(40.0, 30.0, 220.0, 90.0));
+    assert_eq!(
+        vertical.on_event(&SystemEvent::Wheel {
+            pos: Point::new(100.0, 45.0),
+            delta: Point::new(0.0, 1.0),
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(vertical.tab_scroll_offset(), 40.0);
+    vertical.on_event(&key_event(KeyCode::End));
+    let last = vertical
+        .tab_rect_for_test(3)
+        .expect("last vertical tab geometry");
+    assert!(last.y < 90.0 && last.y + last.h > 0.0);
+
+    vertical.sync_from(
+        Tabs::new()
+            .tab("One", "one")
+            .tab("Two", "two")
+            .tab_position(TabPosition::Top)
+            .scrollable(true),
+    );
+    assert_eq!(vertical.tab_scroll_offset(), 0.0);
+}
+
+#[test]
+fn editable_tabs_activate_real_add_and_close_targets_including_an_empty_bar() {
+    let added = std::rc::Rc::new(std::cell::Cell::new(0usize));
+    let closed = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let mut tabs = Tabs::editable()
+        .tab("Alpha", "alpha")
+        .tab("Beta", "beta")
+        .on_add({
+            let added = added.clone();
+            move |_| added.set(added.get() + 1)
+        })
+        .on_close({
+            let closed = closed.clone();
+            move |key| closed.borrow_mut().push(key.to_string())
+        });
+    render_tabs(&tabs, Rect::new(20.0, 20.0, 320.0, 100.0));
+
+    let close = tabs.tab_rect_for_test(0).expect("first editable tab");
+    assert_eq!(
+        tabs.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(close.x + close.w - 5.0, close.y + close.h * 0.5),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(closed.borrow().as_slice(), &["alpha"]);
+    assert_eq!(tabs.current_key(), Some("beta"));
+
+    render_tabs(&tabs, Rect::new(20.0, 20.0, 320.0, 100.0));
+    let add = tabs.add_rect_for_test();
+    assert_eq!(
+        tabs.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(add.x + add.w * 0.5, add.y + add.h * 0.5),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(added.get(), 1);
+
+    let mut empty = Tabs::editable().on_add({
+        let added = added.clone();
+        move |_| added.set(added.get() + 1)
+    });
+    render_tabs(&empty, Rect::new(0.0, 0.0, 120.0, 80.0));
+    let empty_add = empty.add_rect_for_test();
+    assert_eq!(
+        empty.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(empty_add.x + 4.0, empty_add.y + 4.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(added.get(), 2);
+}
+
+#[test]
+fn tab_icons_consume_real_paint_geometry_and_vertical_keys_follow_the_main_axis() {
+    let plain = Tabs::new().tabs(vec![Tab::new("Home")]);
+    let icon = Tabs::new().tabs(vec![Tab::new("Home").icon("home")]);
+    render_tabs(&plain, Rect::new(0.0, 0.0, 240.0, 100.0));
+    let icon_display = render_tabs(&icon, Rect::new(0.0, 0.0, 240.0, 100.0));
+    assert!(
+        icon.tab_rect_for_test(0).expect("icon tab").w
+            > plain.tab_rect_for_test(0).expect("plain tab").w
+    );
+    assert!(icon_display.contains("Home"));
+
+    let mut vertical = Tabs::new()
+        .tab("One", "one")
+        .tab("Two", "two")
+        .tab_position(TabPosition::Left);
+    vertical.on_event(&key_event(KeyCode::Down));
+    assert_eq!(vertical.current_key(), Some("two"));
+    vertical.on_event(&key_event(KeyCode::Up));
+    assert_eq!(vertical.current_key(), Some("one"));
 }

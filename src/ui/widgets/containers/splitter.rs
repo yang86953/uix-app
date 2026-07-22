@@ -169,14 +169,24 @@ component! {
             };
             let active = self.focused && i == self.active_handle || self.dragging == Some(i);
             ctx.fill_rect(handle_rect, if active { primary } else { handle_color }, None);
-            // 手柄中点
-            if self.vertical {
-                let cy = handle_rect.y + self.handle_size * 0.5;
-                ctx.fill_rect(Rect::new(frame.x + frame.w * 0.5 - 6.0, cy - 1.0, 12.0, 2.0), dot_color, None);
-            } else {
-                let cx = handle_rect.x + self.handle_size * 0.5;
-                ctx.fill_rect(Rect::new(cx - 1.0, frame.y + frame.h * 0.5 - 6.0, 2.0, 12.0), dot_color, None);
-            }
+            let grip_size = 16.0_f32.min(frame.w).min(frame.h);
+            let grip_frame = Rect::new(
+                handle_rect.x + (handle_rect.w - grip_size) * 0.5,
+                handle_rect.y + (handle_rect.h - grip_size) * 0.5,
+                grip_size,
+                grip_size,
+            );
+            crate::ui::widgets::Icon::paint_in_frame(
+                ctx,
+                if self.vertical {
+                    "grip-horizontal"
+                } else {
+                    "grip-vertical"
+                },
+                grip_frame,
+                dot_color,
+                14.0_f32.min(grip_size * 0.85),
+            );
             if active {
                 ctx.stroke_rect(handle_rect, primary, 1.5, None);
             }

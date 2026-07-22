@@ -11,6 +11,15 @@ use crate::core::{ComponentId, Rect};
 use crate::draw::pipeline::{invalidate_paint_handle, InvalidationQueueHandle};
 
 type ReconcileCallback = Arc<dyn Fn() + Send + Sync>;
+type GenerationCheck = Box<dyn Fn() -> u64 + Send + Sync>;
+type GenerationSnapshot = (GenerationCheck, u64);
+type StateWatcher<T> = Arc<dyn Fn(&T) + Send + Sync>;
+type StateBindCapture = (
+    ComponentId,
+    InvalidationQueueHandle,
+    Option<Rect>,
+    Vec<Arc<dyn StatePaintBind>>,
+);
 
 #[derive(Clone)]
 pub(crate) struct PaintBindSite {
@@ -32,13 +41,17 @@ pub(crate) struct ReconcileBindSite {
 // 这些依赖的 generation 快照，后续 get() 时比对以判断是否需要重新计算。
 
 thread_local! {
+    #[allow(
+        clippy::missing_const_for_thread_local,
+        reason = "the initializer already uses an inline const block; Clippy reports the macro expansion"
+    )]
     static TRACKING_DEPS: RefCell<Option<Vec<EffectDependency>>> =
         const { RefCell::new(None) };
 }
 
 struct EffectDependency {
     slot_id: StateSlotId,
-    check_generation: Box<dyn Fn() -> u64 + Send + Sync>,
+    check_generation: GenerationCheck,
     subscribe_pending: Box<dyn Fn(Arc<AtomicBool>) + Send + Sync>,
 }
 
@@ -50,24 +63,25 @@ thread_local! {
 
 // layout 后探测 DynamicLabel 闭包时捕获 `State::get()` 读取的实例。
 thread_local! {
-    static STATE_BIND_CAPTURE: RefCell<
-        Option<(
-            ComponentId,
-            InvalidationQueueHandle,
-            Option<Rect>,
-            Vec<Arc<dyn StatePaintBind>>,
-        )>,
-    > = const { RefCell::new(None) };
+    static STATE_BIND_CAPTURE: RefCell<Option<StateBindCapture>> = const { RefCell::new(None) };
 }
 
 // View 构建期暂存的 Effect（build 后注册到 WidgetTree）。
 thread_local! {
+    #[allow(
+        clippy::missing_const_for_thread_local,
+        reason = "the initializer already uses an inline const block; Clippy reports the macro expansion"
+    )]
     static PENDING_EFFECTS: RefCell<Vec<Effect>> = const { RefCell::new(Vec::new()) };
 }
 
 // 须为 thread_local：并行测试/多窗口同时 capture View 时，全局标志会导致
 // 先结束的 capture 关闭捕获，使同线程其他 capture 中的 State::get 无法登记 pending。
 thread_local! {
+    #[allow(
+        clippy::missing_const_for_thread_local,
+        reason = "the initializer already uses an inline const block; Clippy reports the macro expansion"
+    )]
     static STATE_CAPTURE_ACTIVE: Cell<bool> = const { Cell::new(false) };
 }
 static NEXT_STATE_SLOT: AtomicU64 = AtomicU64::new(1);
@@ -418,7 +432,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
     }
 
     pub fn set(&self, value: T) {
-        let watchers: Vec<Arc<dyn Fn(&T) + Send + Sync>>;
+        let watchers: Vec<StateWatcher<T>>;
         let snapshot: T;
         {
             let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
@@ -437,7 +451,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
     where
         F: FnOnce(&mut T),
     {
-        let watchers: Vec<Arc<dyn Fn(&T) + Send + Sync>>;
+        let watchers: Vec<StateWatcher<T>>;
         let snapshot: T;
         {
             let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
@@ -528,7 +542,7 @@ pub struct Computed<T> {
     compute_fn: Arc<dyn Fn() -> T + Send + Sync>,
     cached: Arc<RwLock<Option<T>>>,
     /// 依赖的 generation 检查器列表：(检查器, 上次计算时的 generation)
-    deps: Arc<RwLock<Vec<(Box<dyn Fn() -> u64 + Send + Sync>, u64)>>>,
+    deps: Arc<RwLock<Vec<GenerationSnapshot>>>,
     /// 自身 generation：值变更时递增，供外层计算/Effect 追踪本 Computed 的变化。
     generation: Arc<AtomicU64>,
     /// Phase R2：精确 Paint 失效绑定。
@@ -674,7 +688,7 @@ impl<T: fmt::Debug + Clone + Send + Sync + 'static> fmt::Debug for Computed<T> {
 /// ── Effect — 自动追踪依赖的副作用 ──────────────────────────────
 struct EffectInner {
     effect_fn: Box<dyn Fn() + Send + Sync>,
-    deps: RwLock<Vec<(Box<dyn Fn() -> u64 + Send + Sync>, u64)>>,
+    deps: RwLock<Vec<GenerationSnapshot>>,
     subscriptions: RwLock<HashSet<StateSlotId>>,
     pending: Arc<AtomicBool>,
 }

@@ -50,7 +50,10 @@ pub(super) enum BatchKind {
     Glyph,
     /// 轮廓边 → RGBA8 MSDF atlas，median 采样。
     GlyphMsdf,
-    Texture { bind_group: u32, additive: bool },
+    Texture {
+        bind_group: u32,
+        additive: bool,
+    },
 }
 
 pub(super) struct DrawBatch {

@@ -161,7 +161,7 @@ pub fn page_data(ctx: &DemoCtx<'_>) -> ViewNode {
                         .map(|i: usize| {
                             vec![
                                 format!("User {i}"),
-                                if i % 3 == 0 {
+                                if i.is_multiple_of(3) {
                                     "Designer".into()
                                 } else {
                                     "Engineer".into()

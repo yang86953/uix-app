@@ -107,8 +107,6 @@ component! {
         let warning = ctx.tokens().color_warning();
         let fill_tertiary = ctx.tokens().color_fill_tertiary();
         let text_quaternary = ctx.tokens().color_text_quaternary();
-        let ch = self.display_character();
-
         // hover 预览值优先于选中值
         let display_val = if self.hover_value > 0 { self.hover_value } else { self.value };
         let cell_width = self.cell_width_for_height(control_rect.h);
@@ -138,7 +136,7 @@ component! {
             };
 
             if filled {
-                ctx.text_center(ch, star_rect, active_color, font_size);
+                self.paint_character(ctx, star_rect, active_color, font_size);
             } else if self.half && display_val == i * 2 + 1 {
                 let half_width = star_rect.w * 0.5;
                 ctx.push_clip(Rect::new(
@@ -147,7 +145,7 @@ component! {
                     half_width,
                     star_rect.h,
                 ));
-                ctx.text_center(ch, star_rect, active_color, font_size);
+                self.paint_character(ctx, star_rect, active_color, font_size);
                 ctx.pop_clip();
                 ctx.push_clip(Rect::new(
                     star_rect.x + half_width,
@@ -155,10 +153,10 @@ component! {
                     star_rect.w - half_width,
                     star_rect.h,
                 ));
-                ctx.text_center(ch, star_rect, empty_color, font_size);
+                self.paint_character(ctx, star_rect, empty_color, font_size);
                 ctx.pop_clip();
             } else {
-                ctx.text_center(ch, star_rect, empty_color, font_size);
+                self.paint_character(ctx, star_rect, empty_color, font_size);
             }
         }
         if self.focused && tree.keyboard_focus_visible() {
@@ -325,14 +323,6 @@ impl Rate {
         crate::ui::config::control_height(self.rate_size)
     }
 
-    fn display_character(&self) -> &str {
-        if self.character.is_empty() {
-            "★"
-        } else {
-            &self.character
-        }
-    }
-
     fn visual_scale(&self) -> f32 {
         match self.rate_size {
             ControlSize::Small => 0.8,
@@ -360,13 +350,27 @@ impl Rate {
             return base_width;
         }
         let font_size = 18.0 * scale;
-        let text_width = estimate_text_metrics(self.display_character(), f32::INFINITY, font_size)
-            .max_line_width;
+        let text_width =
+            estimate_text_metrics(&self.character, f32::INFINITY, font_size).max_line_width;
         base_width.max(text_width + 4.0 * scale)
     }
 
     fn font_size_for_height(&self, height: f32) -> f32 {
         18.0 * self.visual_scale_for_height(height)
+    }
+
+    fn paint_character(
+        &self,
+        ctx: &mut PaintContext<'_>,
+        frame: Rect,
+        color: crate::draw::Color,
+        font_size: f32,
+    ) {
+        if self.character.is_empty() {
+            crate::ui::widgets::icon::Icon::paint_in_frame(ctx, "star", frame, color, font_size);
+        } else {
+            ctx.text_center(&self.character, frame, color, font_size);
+        }
     }
 }
 

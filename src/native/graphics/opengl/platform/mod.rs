@@ -21,6 +21,7 @@ pub use egl::EglContext;
 pub use wgl::WglContext;
 
 #[cfg(windows)]
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) fn create(
     surface: *mut c_void,
     width: i32,
