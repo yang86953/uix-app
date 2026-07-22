@@ -22,7 +22,7 @@ use std::thread::{self, ThreadId};
 
 use crate::core::{Errc, Error, Result};
 use crate::native::traits::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient,
+    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
     GpuSolidMesh, GpuSolidRect, GpuStrokeRect, GraphicsContextCaps, IGraphicsContext,
     NativeRasterCaps, OffscreenTargetId, PresentDamage, PresentFrame, PresentTestResult,
     SoftFallbackTile,
@@ -225,6 +225,7 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
     forward_result!(draw_glyphs(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, glyphs: &[GpuGlyphBlit]) -> ());
     forward_result!(draw_linear_gradients(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, rects: &[GpuLinearGradientRect]) -> ());
     forward_result!(draw_radial_gradients(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, grads: &[GpuRadialGradient]) -> ());
+    forward_result!(draw_sectors(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, sectors: &[GpuSector]) -> ());
     forward_result!(draw_solid_meshes(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, meshes: &[GpuSolidMesh]) -> ());
     forward_result!(draw_box_shadows(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, shadows: &[GpuBoxShadow]) -> ());
     forward_result!(draw_image_blits(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, blits: &[GpuImageBlit]) -> ());

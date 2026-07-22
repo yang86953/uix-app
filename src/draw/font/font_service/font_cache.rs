@@ -48,14 +48,22 @@ pub(crate) struct CachedRaster {
 
 #[derive(Debug, Default)]
 struct GlyphCacheState {
-    entries: HashMap<GlyphCacheKey, CachedRaster>,
+    entries: HashMap<GlyphCacheKey, GlyphCacheEntry>,
     retained_bytes: usize,
+    access_clock: u64,
+}
+
+#[derive(Debug)]
+struct GlyphCacheEntry {
+    raster: CachedRaster,
+    retained_bytes: usize,
+    last_access: u64,
 }
 
 /// 统一字形光栅缓存。
 ///
 /// 由 FontService 统一持有，所有后端共享。后端自身不应再维护独立缓存。
-/// 默认最多缓存 8192 个字形的覆盖位图。
+/// 默认最多缓存 2048 个字形、保留 8 MiB，并按最近最少使用顺序逐项淘汰。
 #[derive(Debug)]
 pub struct GlyphCache {
     inner: Mutex<GlyphCacheState>,
@@ -82,59 +90,78 @@ impl GlyphCache {
     }
 
     pub(crate) fn get(&self, key: &GlyphCacheKey) -> Option<CachedRaster> {
-        let state = self.inner.lock().ok()?;
-        state.entries.get(key).cloned()
+        let mut state = self.inner.lock().ok()?;
+        state.access_clock = state.access_clock.saturating_add(1);
+        let access = state.access_clock;
+        let entry = state.entries.get_mut(key)?;
+        entry.last_access = access;
+        Some(entry.raster.clone())
     }
 
     pub(crate) fn insert(&self, key: GlyphCacheKey, raster: CachedRaster) {
-        let mesh_bytes = raster
-            .outline_mesh
-            .as_ref()
-            .map(|mesh| mesh.len().saturating_mul(std::mem::size_of::<f32>()))
-            .unwrap_or(0);
-        let retained_bytes = std::mem::size_of::<GlyphCacheKey>()
-            .saturating_add(raster.coverage.len())
-            .saturating_add(mesh_bytes);
+        let retained_bytes = Self::retained_bytes(&raster);
         if retained_bytes > self.max_bytes {
             return;
         }
 
         if let Ok(mut state) = self.inner.lock() {
             if let Some(previous) = state.entries.remove(&key) {
-                let previous_mesh = previous
-                    .outline_mesh
-                    .as_ref()
-                    .map(|mesh| mesh.len().saturating_mul(std::mem::size_of::<f32>()))
-                    .unwrap_or(0);
-                state.retained_bytes = state.retained_bytes.saturating_sub(
-                    std::mem::size_of::<GlyphCacheKey>()
-                        .saturating_add(previous.coverage.len())
-                        .saturating_add(previous_mesh),
-                );
+                state.retained_bytes = state.retained_bytes.saturating_sub(previous.retained_bytes);
             }
 
             while state.entries.len() >= self.max_entries
                 || state.retained_bytes > self.max_bytes.saturating_sub(retained_bytes)
             {
-                let Some(evicted_key) = state.entries.keys().next().cloned() else {
+                let Some(evicted_key) = state
+                    .entries
+                    .iter()
+                    .min_by_key(|(_, entry)| entry.last_access)
+                    .map(|(key, _)| key.clone())
+                else {
                     break;
                 };
                 if let Some(evicted) = state.entries.remove(&evicted_key) {
-                    let evicted_mesh = evicted
-                        .outline_mesh
-                        .as_ref()
-                        .map(|mesh| mesh.len().saturating_mul(std::mem::size_of::<f32>()))
-                        .unwrap_or(0);
-                    state.retained_bytes = state.retained_bytes.saturating_sub(
-                        std::mem::size_of::<GlyphCacheKey>()
-                            .saturating_add(evicted.coverage.len())
-                            .saturating_add(evicted_mesh),
-                    );
+                    state.retained_bytes =
+                        state.retained_bytes.saturating_sub(evicted.retained_bytes);
                 }
             }
 
+            state.access_clock = state.access_clock.saturating_add(1);
+            let access = state.access_clock;
             state.retained_bytes = state.retained_bytes.saturating_add(retained_bytes);
-            state.entries.insert(key, raster);
+            state.entries.insert(
+                key,
+                GlyphCacheEntry {
+                    raster,
+                    retained_bytes,
+                    last_access: access,
+                },
+            );
+        }
+    }
+
+    fn retained_bytes(raster: &CachedRaster) -> usize {
+        let mesh_bytes = raster
+            .outline_mesh
+            .as_ref()
+            .map(|mesh| mesh.len().saturating_mul(std::mem::size_of::<f32>()))
+            .unwrap_or(0);
+        std::mem::size_of::<GlyphCacheKey>()
+            .saturating_add(raster.coverage.len())
+            .saturating_add(mesh_bytes)
+    }
+
+    pub(crate) fn remove_font(&self, font_idx: u32) {
+        if let Ok(mut state) = self.inner.lock() {
+            let removed_bytes = state
+                .entries
+                .iter()
+                .filter(|(key, _)| key.font_idx == font_idx)
+                .fold(0usize, |total, (_, entry)| {
+                    total.saturating_add(entry.retained_bytes)
+                });
+            state.entries.retain(|key, _| key.font_idx != font_idx);
+            state.retained_bytes = state.retained_bytes.saturating_sub(removed_bytes);
         }
     }
 
@@ -142,6 +169,7 @@ impl GlyphCache {
         if let Ok(mut state) = self.inner.lock() {
             state.entries.clear();
             state.retained_bytes = 0;
+            state.access_clock = 0;
         }
     }
 

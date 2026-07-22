@@ -10,7 +10,7 @@ use crate::native::graphics::wgpu_backend::draw_stream::{
 use crate::native::graphics::wgpu_backend::glyph_batch;
 use crate::native::graphics::wgpu_backend::glyph_cover::GlyphCoverPipeline;
 use crate::native::traits::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient,
+    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
     GpuSolidMesh, GpuSolidRect, GpuStrokeRect,
 };
 
@@ -623,6 +623,34 @@ impl WgpuRenderer {
                 [gradient.inner_r, gradient.outer_r, 0.0, 0.0],
                 [0.0; 4],
                 4,
+                LocalCoordinates::Centered,
+                BatchKind::Shape,
+            );
+        }
+    }
+
+    pub(super) fn sectors(
+        &mut self,
+        viewport: (f32, f32),
+        scissor: Option<(i32, i32, i32, i32)>,
+        sectors: &[GpuSector],
+    ) {
+        for sector in sectors {
+            let radius = sector.radius;
+            self.shape_quad(
+                viewport,
+                scissor,
+                Rect::new(
+                    sector.cx - radius,
+                    sector.cy - radius,
+                    radius * 2.0,
+                    radius * 2.0,
+                ),
+                sector.rgba,
+                sector.rgba,
+                [radius, sector.start_angle, sector.sweep_angle, 0.0],
+                [0.0; 4],
+                7,
                 LocalCoordinates::Centered,
                 BatchKind::Shape,
             );

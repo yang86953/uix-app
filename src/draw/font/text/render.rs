@@ -44,6 +44,7 @@ impl<'a> TextRenderService<'a> {
         h_align: HAlign,
         v_align: VAlign,
     ) -> TextLayoutOptions {
+        let font_size = crate::draw::font::text_backend::bounded_font_size(font_size);
         TextLayoutOptions {
             max_width,
             max_height,
@@ -63,7 +64,7 @@ impl<'a> TextRenderService<'a> {
         color: Color,
         font_size: f32,
     ) {
-        let fs = font_size.max(1.0);
+        let fs = crate::draw::font::text_backend::bounded_font_size(font_size);
         for gp in &layout.glyphs {
             let fh = if gp.font.0 != u32::MAX {
                 gp.font
@@ -123,7 +124,7 @@ impl<'a> TextRenderService<'a> {
 
     /// 单行行盒高度 = ascent + descent（与 `layout_text` 行盒一致）。
     pub fn line_box_height(&mut self, font_size: f32) -> f32 {
-        let fs = font_size.max(1.0);
+        let fs = crate::draw::font::text_backend::bounded_font_size(font_size);
         self.font_service
             .horizontal_line_metrics(&self.font, fs)
             .map(|m| m.ascent + m.descent)
@@ -171,7 +172,7 @@ impl<'a> TextRenderService<'a> {
         if text.is_empty() {
             return;
         }
-        let fs = font_size.max(1.0);
+        let fs = crate::draw::font::text_backend::bounded_font_size(font_size);
         let metrics = self.font_service.horizontal_line_metrics(&self.font, fs);
         let ascent = metrics.map(|m| m.ascent).unwrap_or(fs * 0.8);
         let top_y = baseline_y - ascent;
@@ -310,7 +311,8 @@ impl<'a> TextRenderService<'a> {
             return;
         }
         let (sx, sy) = spatial.project(&pos);
-        let fs = font_size.to_dip(spatial.dpi());
+        let fs =
+            crate::draw::font::text_backend::bounded_font_size(font_size.to_dip(spatial.dpi()));
         self.draw_text(canvas, text, Point::new(sx, sy), color, fs);
     }
 
@@ -327,7 +329,8 @@ impl<'a> TextRenderService<'a> {
         if text.is_empty() {
             return;
         }
-        let fs = font_size.to_dip(spatial.dpi());
+        let fs =
+            crate::draw::font::text_backend::bounded_font_size(font_size.to_dip(spatial.dpi()));
         let backend_opts = self.text_opts(
             fs,
             self.max_text_width,
@@ -375,27 +378,28 @@ impl<'a> TextRenderService<'a> {
         if layout.glyphs.is_empty() {
             return Vec::new();
         }
-        let end = end.min(layout.glyphs.len());
+        let total_chars = text.chars().count();
+        let end = end.min(total_chars);
         let start = start.min(end);
+        let fs = crate::draw::font::text_backend::bounded_font_size(font_size);
         let visual_h = self
             .font_service
-            .horizontal_line_metrics(&self.font, font_size)
+            .horizontal_line_metrics(&self.font, fs)
             .map(|m| m.ascent + m.descent)
-            .unwrap_or(font_size * 1.2);
+            .unwrap_or(fs * 1.2);
         let mut rects = Vec::new();
         for line in &layout.lines {
             let gs = line.glyph_start;
             let gc = line.glyph_count;
             let ge = gs + gc;
-            let sel_start = start.max(gs);
-            let sel_end = end.min(ge);
-            if sel_start >= sel_end {
+            let glyphs = &layout.glyphs[gs..ge.min(layout.glyphs.len())];
+            let Some((line_x0, line_x1)) =
+                crate::draw::font::text_backend::glyph_selection_x_range(glyphs, start, end)
+            else {
                 continue;
-            }
-            let glyphs = &layout.glyphs[sel_start..sel_end];
-            let x0 = pos.x + glyphs[0].x;
-            let last = glyphs[glyphs.len() - 1];
-            let x1 = pos.x + last.x + last.width.max(0.0);
+            };
+            let x0 = pos.x + line_x0;
+            let x1 = pos.x + line_x1;
             let y0 = pos.y + line.y;
             rects.push(Rect::new(x0, y0, (x1 - x0).max(0.0), visual_h));
         }
@@ -460,7 +464,7 @@ impl<'a> TextRenderService<'a> {
     ///
     /// 无光学下移。优先用布局把文字盒放好，再 `draw_text`；本函数仅过渡/简单控件。
     pub fn visual_center_y(&mut self, rect: Rect, font_size: f32) -> f32 {
-        let fs = font_size.max(1.0);
+        let fs = crate::draw::font::text_backend::bounded_font_size(font_size);
         match self.font_service.horizontal_line_metrics(&self.font, fs) {
             Some(m) => rect.y + (rect.h - m.ascent - m.descent) * 0.5,
             None => rect.y + (rect.h - fs) * 0.5,

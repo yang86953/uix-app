@@ -7,7 +7,7 @@ use crate::draw::TextBackend;
 use ab_glyph::*;
 use std::sync::Arc;
 pub(crate) use text_backend::TextLayoutOptions;
-use text_backend::TOFU_GLYPH_ID;
+use text_backend::{TOFU_GLYPH_ID, WHITESPACE_GLYPH_ID};
 
 pub(crate) struct FontSlot {
     handle: FontHandle,
@@ -73,17 +73,18 @@ impl AbGlyphBackend {
     }
     fn idx(&self, h: &FontHandle) -> Option<usize> {
         let i = h.0 as usize;
-        if i < self.fonts.len() {
-            Some(i)
-        } else {
-            None
-        }
+        self.fonts
+            .get(i)
+            .filter(|slot| slot.handle.0 == h.0)
+            .map(|_| i)
     }
 }
 
 impl TextBackend for AbGlyphBackend {
     fn load_font(&mut self, data: &[u8]) -> Result<FontHandle, Error> {
-        let f = FontVec::try_from_vec(data.to_vec())
+        // 对 TTC/OTC 保留完整文件并选择首个 face。集合内表可跨 face 共享，
+        // 不能把 offset 区间切成伪 TTF 后再解析。
+        let f = FontVec::try_from_vec_and_index(data.to_vec(), 0)
             .map_err(|e| Error::new(Errc::FormatError, format!("ab_glyph: {:?}", e)))?;
         let id = self.fonts.len() as u32;
         self.fonts.push(FontSlot {
@@ -101,8 +102,7 @@ impl TextBackend for AbGlyphBackend {
     }
 
     fn is_valid(&self, h: &FontHandle) -> bool {
-        self.idx(h)
-            .is_some_and(|i| self.fonts[i].handle.0 != u32::MAX)
+        self.idx(h).is_some()
     }
 
     fn has_glyph(&self, font: &FontHandle, ch: char) -> bool {
@@ -134,6 +134,12 @@ impl TextBackend for AbGlyphBackend {
         };
         let max_w = opts.max_width.is_finite() && opts.max_width > 0.0;
         let tofu_adv = (fs * 0.55).max(4.0);
+        let space_id = f.glyph_id(' ');
+        let space_adv = if space_id == GlyphId(0) {
+            (fs * 0.35).max(1.0)
+        } else {
+            sf.h_advance(space_id)
+        };
 
         let mut out = Vec::new();
         let mut cx = 0.0f32;
@@ -141,7 +147,21 @@ impl TextBackend for AbGlyphBackend {
         let mut prev = GlyphId(0);
         let mut char_index = 0usize;
 
-        for ch in text.chars() {
+        let mut chars = text.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '\r' {
+                let break_chars = if chars.peek() == Some(&'\n') {
+                    chars.next();
+                    2
+                } else {
+                    1
+                };
+                cx = 0.0;
+                cy += line_h;
+                prev = GlyphId(0);
+                char_index += break_chars;
+                continue;
+            }
             if ch == '\n' {
                 cx = 0.0;
                 cy += line_h;
@@ -150,7 +170,13 @@ impl TextBackend for AbGlyphBackend {
                 continue;
             }
             let gid = f.glyph_id(ch);
-            let (glyph_id, adv) = if gid == GlyphId(0) {
+            let (glyph_id, adv) = if ch == '\t' {
+                (WHITESPACE_GLYPH_ID, space_adv * 4.0)
+            } else if ch == '\u{200b}' {
+                (WHITESPACE_GLYPH_ID, 0.0)
+            } else if ch.is_whitespace() && gid == GlyphId(0) {
+                (WHITESPACE_GLYPH_ID, space_adv)
+            } else if gid == GlyphId(0) {
                 // 缺字：保留占位 advance，避免字符消失与索引错位
                 (TOFU_GLYPH_ID, tofu_adv)
             } else {
@@ -176,7 +202,7 @@ impl TextBackend for AbGlyphBackend {
             });
 
             cx += adv;
-            prev = if glyph_id == TOFU_GLYPH_ID {
+            prev = if matches!(glyph_id, TOFU_GLYPH_ID | WHITESPACE_GLYPH_ID) {
                 GlyphId(0)
             } else {
                 gid
@@ -223,6 +249,9 @@ impl TextBackend for AbGlyphBackend {
     }
 
     fn rasterize_glyph(&self, font: &FontHandle, glyph_id: u32, pixel_size: f32) -> GlyphRaster {
+        if glyph_id == WHITESPACE_GLYPH_ID {
+            return GlyphRaster::empty();
+        }
         let Some(pixel_size) = text_backend::normalized_raster_pixel_size(pixel_size) else {
             return GlyphRaster::empty();
         };
@@ -311,6 +340,11 @@ impl TextBackend for AbGlyphBackend {
             descent: -sc.descent(),
             new_line_size: sc.height(),
         })
+    }
+
+    fn font_data(&self, font: &FontHandle) -> Option<Vec<u8>> {
+        let i = self.idx(font)?;
+        (self.fonts[i].handle.0 != u32::MAX).then(|| self.fonts[i].font.as_slice().to_vec())
     }
 
     fn clear_cache(&mut self) { /* 缓存已统一在 FontService 层 */

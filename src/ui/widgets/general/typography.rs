@@ -29,6 +29,15 @@ pub enum TypographyType {
     Text,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct TextLineHit {
+    y: f32,
+    glyph_start: usize,
+    glyph_count: usize,
+    start_char: usize,
+    end_char: usize,
+}
+
 component! {
     pub struct Typography {
         content: String,
@@ -46,9 +55,10 @@ component! {
         indent: f32,
         ellipsis: bool,
         glyph_xs: RefCell<Vec<f32>>,
+        glyph_widths: RefCell<Vec<f32>>,
         glyph_char_indices: RefCell<Vec<usize>>,
-        /// 每行的 (相对 y, 字形数量)，用于 y 轴命中测试。
-        line_info: RefCell<Vec<(f32, usize)>>,
+        /// 每行的字符范围与字形范围，用于二维命中测试。
+        line_info: RefCell<Vec<TextLineHit>>,
         selection: Cell<Option<(usize, usize)>>,
         sel_anchor: Cell<usize>,
         sel_dragging: Cell<bool>,
@@ -238,11 +248,14 @@ component! {
         if !self.content.is_empty() {
             {
                 let mut xs = self.glyph_xs.borrow_mut();
+                let mut widths = self.glyph_widths.borrow_mut();
                 let mut cis = self.glyph_char_indices.borrow_mut();
                 xs.clear();
+                widths.clear();
                 cis.clear();
                 for g in &layout.glyphs {
                     xs.push(g.x);
+                    widths.push(g.width.max(0.0));
                     cis.push(g.char_index);
                 }
             }
@@ -250,8 +263,14 @@ component! {
             {
                 let mut li = self.line_info.borrow_mut();
                 li.clear();
-                for l in &layout.lines {
-                    li.push((l.y, l.glyph_count));
+                for line in &layout.lines {
+                    li.push(TextLineHit {
+                        y: line.y,
+                        glyph_start: line.glyph_start,
+                        glyph_count: line.glyph_count,
+                        start_char: line.start_char,
+                        end_char: line.end_char,
+                    });
                 }
             }
 
@@ -286,16 +305,17 @@ component! {
                     for line in &layout.lines {
                         let gs = line.glyph_start;
                         let ge = (gs + line.glyph_count).min(layout.glyphs.len());
-                        let glyphs: Vec<_> = layout.glyphs[gs..ge]
-                            .iter()
-                            .filter(|g| g.char_index >= sel_s && g.char_index < sel_e)
-                            .collect();
-                        if glyphs.is_empty() {
+                        let Some((line_x0, line_x1)) =
+                            crate::draw::font::text_backend::glyph_selection_x_range(
+                                &layout.glyphs[gs..ge],
+                                sel_s,
+                                sel_e,
+                            )
+                        else {
                             continue;
-                        }
-                        let x0 = abs_pos.x + glyphs[0].x;
-                        let last = glyphs[glyphs.len() - 1];
-                        let x1 = abs_pos.x + last.x + last.width.max(0.0);
+                        };
+                        let x0 = abs_pos.x + line_x0;
+                        let x1 = abs_pos.x + line_x1;
                         let y0 = abs_pos.y + line.y;
                         ctx.fill_rect(
                             Rect::new(x0, y0, (x1 - x0).max(0.0), visual_h),
@@ -393,6 +413,7 @@ impl Typography {
             indent: 0.0,
             ellipsis: false,
             glyph_xs: RefCell::new(Vec::new()),
+            glyph_widths: RefCell::new(Vec::new()),
             glyph_char_indices: RefCell::new(Vec::new()),
             line_info: RefCell::new(Vec::new()),
             selection: Cell::new(None),
@@ -597,20 +618,19 @@ impl Typography {
     #[cfg(test)]
     pub(crate) fn rendered_line_origins_for_test(&self) -> Vec<Point> {
         let glyph_xs = self.glyph_xs.borrow();
-        let mut glyph_offset = 0usize;
         self.line_info
             .borrow()
             .iter()
-            .map(|(y, glyph_count)| {
-                let x = glyph_xs.get(glyph_offset).copied().unwrap_or_default();
-                glyph_offset += *glyph_count;
-                Point::new(x, *y)
+            .map(|line| {
+                let x = glyph_xs.get(line.glyph_start).copied().unwrap_or_default();
+                Point::new(x, line.y)
             })
             .collect()
     }
 
     fn char_at_xy(&self, text_x: f32, text_y: f32) -> usize {
         let xs = self.glyph_xs.borrow();
+        let widths = self.glyph_widths.borrow();
         let cis = self.glyph_char_indices.borrow();
         let li = self.line_info.borrow();
         if xs.is_empty() {
@@ -618,7 +638,8 @@ impl Typography {
         }
         if li.is_empty() {
             for i in 0..xs.len() {
-                if text_x < xs[i] {
+                let boundary = xs[i] + widths.get(i).copied().unwrap_or_default() * 0.5;
+                if text_x < boundary {
                     return cis.get(i).copied().unwrap_or(i);
                 }
             }
@@ -627,31 +648,31 @@ impl Typography {
                 .map(|c| c + 1)
                 .unwrap_or(self.content.chars().count());
         }
-        let mut target_y = text_y;
-        let first_ly = li.first().map(|(ly, _)| *ly).unwrap_or(0.0);
-        if target_y < first_ly {
-            target_y = first_ly;
-        }
-        let mut global_off = 0usize;
-        let mut line_gc = 0usize;
-        for (i, &(ly, gc)) in li.iter().enumerate() {
-            let next_y = li.get(i + 1).map(|(ny, _)| *ny).unwrap_or(f32::MAX);
-            if target_y >= ly && target_y < next_y {
-                line_gc = gc;
-                break;
-            }
-            global_off += gc;
-        }
-        let end = (global_off + line_gc).min(xs.len());
-        for i in global_off..end {
-            if text_x < xs[i] {
+        let target_y = text_y.max(li[0].y);
+        let Some(line) = li
+            .iter()
+            .enumerate()
+            .find(|(index, line)| {
+                let next_y = li.get(index + 1).map_or(f32::MAX, |next| next.y);
+                target_y >= line.y && target_y < next_y
+            })
+            .map(|(_, line)| line)
+            .or_else(|| li.last())
+        else {
+            return 0;
+        };
+        let start = line.glyph_start.min(xs.len());
+        let end = (start + line.glyph_count).min(xs.len());
+        for i in start..end {
+            let boundary = xs[i] + widths.get(i).copied().unwrap_or_default() * 0.5;
+            if text_x < boundary {
                 return cis.get(i).copied().unwrap_or(i);
             }
         }
-        if end > 0 {
-            cis.get(end - 1).map(|c| c + 1).unwrap_or(end)
+        if end > start {
+            line.end_char
         } else {
-            0
+            line.start_char
         }
     }
 
@@ -676,6 +697,7 @@ impl Typography {
         if self.content != next.content {
             self.content = next.content;
             self.glyph_xs.borrow_mut().clear();
+            self.glyph_widths.borrow_mut().clear();
             self.glyph_char_indices.borrow_mut().clear();
             self.line_info.borrow_mut().clear();
             self.selection.set(None);

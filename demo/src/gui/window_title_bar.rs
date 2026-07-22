@@ -13,6 +13,8 @@ fn title_bar_control(
         .automation_id(automation_id)
         .width(WINDOW_CONTROL_WIDTH)
         .height(TITLE_BAR_HEIGHT)
+        .align(AlignItems::Center)
+        .justify(JustifyContent::Center)
         .bg_hover(ColorValue::Neutral(NeutralRole::FillSecondary))
         .bg_focus(ColorValue::Neutral(NeutralRole::Fill))
         .bg_active(ColorValue::Neutral(NeutralRole::FillTertiary))
@@ -32,7 +34,8 @@ pub(super) fn demo_title_bar() -> ViewNode {
     )
     .automation_id("window-titlebar-drag")
     .flex_grow(1.0)
-    .height(TITLE_BAR_HEIGHT);
+    .height(TITLE_BAR_HEIGHT)
+    .justify(JustifyContent::Center);
 
     let minimize = title_bar_control(
         WindowControl::Minimize,

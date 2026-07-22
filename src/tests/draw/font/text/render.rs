@@ -430,3 +430,137 @@ fn hit_test_returns_char_index_not_glyph_slot() {
     let hit = fs.hit_test_text(&segoe, "Hi", &opts, mid).expect("hit");
     assert_eq!(hit, layout.glyphs[1].char_index);
 }
+
+#[derive(Debug, Default)]
+struct SparseGlyphBackend {
+    loaded: bool,
+    has_glyph_calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl crate::draw::TextBackend for SparseGlyphBackend {
+    fn load_font(&mut self, _data: &[u8]) -> Result<FontHandle, crate::core::Error> {
+        self.loaded = true;
+        Ok(FontHandle::new(0))
+    }
+
+    fn unload_font(&mut self, _handle: &FontHandle) {
+        self.loaded = false;
+    }
+
+    fn is_valid(&self, handle: &FontHandle) -> bool {
+        self.loaded && handle.0 == 0
+    }
+
+    fn has_glyph(&self, _font: &FontHandle, _ch: char) -> bool {
+        self.has_glyph_calls
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        true
+    }
+
+    fn layout_text(
+        &self,
+        font: &FontHandle,
+        _text: &str,
+        _opts: &crate::draw::font::text_backend::TextLayoutOptions,
+    ) -> crate::draw::font::text_backend::TextLayout {
+        use crate::draw::font::text_backend::{LineInfo, PositionedGlyph, TextLayout};
+        TextLayout {
+            glyphs: vec![
+                PositionedGlyph {
+                    x: 0.0,
+                    y: 10.0,
+                    width: 8.0,
+                    height: 14.0,
+                    glyph_id: 1,
+                    char_index: 0,
+                    font: *font,
+                },
+                PositionedGlyph {
+                    x: 20.0,
+                    y: 10.0,
+                    width: 9.0,
+                    height: 14.0,
+                    glyph_id: 2,
+                    char_index: 2,
+                    font: *font,
+                },
+            ],
+            lines: vec![LineInfo {
+                y: 0.0,
+                height: 20.0,
+                width: 29.0,
+                start_char: 0,
+                end_char: 3,
+                glyph_start: 0,
+                glyph_count: 2,
+            }],
+            width: 29.0,
+            height: 20.0,
+        }
+    }
+
+    fn rasterize_glyph(
+        &self,
+        _font: &FontHandle,
+        _glyph_id: u32,
+        _pixel_size: f32,
+    ) -> crate::draw::font::text_backend::GlyphRaster {
+        crate::draw::font::text_backend::GlyphRaster {
+            width: 0,
+            height: 0,
+            coverage: std::sync::Arc::from([]),
+            bearing_x: 0.0,
+            bearing_y: 0.0,
+            outline_mesh: None,
+        }
+    }
+
+    fn horizontal_line_metrics(
+        &self,
+        _font: &FontHandle,
+        _pixel_size: f32,
+    ) -> Option<crate::draw::font::text_backend::LineMetrics> {
+        Some(crate::draw::font::text_backend::LineMetrics {
+            ascent: 10.0,
+            descent: 4.0,
+            new_line_size: 14.0,
+        })
+    }
+}
+
+#[test]
+fn selection_rects_use_character_indices_instead_of_glyph_slots() {
+    let mut fonts = FontService::new().with_text_backend(Box::new(SparseGlyphBackend::default()));
+    let font = fonts.load_font(&[1]).expect("load sparse test font");
+    let mut renderer = TextRenderService::new(font, &fonts, 100.0);
+    let mut canvas = crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
+
+    let rects = renderer.selection_rects(&mut canvas, "abc", 14.0, Point::new(5.0, 7.0), 2, 3);
+
+    assert_eq!(rects.len(), 1);
+    assert_eq!(rects[0], Rect::new(25.0, 7.0, 9.0, 14.0));
+}
+
+#[test]
+fn repeated_scalars_probe_font_coverage_once_per_layout() {
+    let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let backend = SparseGlyphBackend {
+        loaded: false,
+        has_glyph_calls: std::sync::Arc::clone(&calls),
+    };
+    let mut fonts = FontService::new().with_text_backend(Box::new(backend));
+    let font = fonts.load_font(&[1]).expect("load sparse test font");
+    let opts = crate::draw::font::text_backend::TextLayoutOptions {
+        max_width: f32::MAX,
+        max_height: 0.0,
+        line_height: 20.0,
+        word_wrap: false,
+        h_align: crate::draw::HAlign::Left,
+        v_align: crate::draw::VAlign::Top,
+        font_size: 14.0,
+    };
+
+    let _ = fonts.layout_text(&font, "aaaaaaaa", &opts);
+
+    assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed), 1);
+}
