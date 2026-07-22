@@ -288,6 +288,98 @@ struct ConstraintProbeWidget {
     seen: Rc<RefCell<Vec<Constraints>>>,
 }
 
+struct LayoutSnapshotProbe {
+    snapshots: Rc<Cell<u32>>,
+    intrinsic_height: Cell<f32>,
+    children: RefCell<Vec<Box<dyn WidgetComponent>>>,
+}
+
+impl LayoutSnapshotProbe {
+    fn new(snapshots: Rc<Cell<u32>>, children: Vec<Box<dyn WidgetComponent>>) -> Self {
+        Self {
+            snapshots,
+            intrinsic_height: Cell::new(20.0),
+            children: RefCell::new(children),
+        }
+    }
+}
+
+impl WidgetComponent for LayoutSnapshotProbe {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+
+    fn snapshot_fields(&self) -> crate::ui::SnapshotFields {
+        self.snapshots.set(self.snapshots.get().wrapping_add(1));
+        crate::ui::SnapshotFields::Unknown
+    }
+
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::from_bits(WidgetCapabilities::LAYOUT)
+    }
+
+    fn build(&self) -> Vec<Box<dyn WidgetComponent>> {
+        std::mem::take(&mut *self.children.borrow_mut())
+    }
+
+    crate::wc_upcast!(LayoutSnapshotProbe; WidgetLayout);
+}
+
+impl WidgetLayout for LayoutSnapshotProbe {
+    fn measure(&self, constraints: Constraints) -> Size {
+        constraints.clamp(Size::new(40.0, self.intrinsic_height.get()))
+    }
+
+    fn measure_children(
+        &self,
+        _frame: Rect,
+        children: &[ComponentId],
+        tree: &WidgetTree,
+    ) -> Vec<crate::ui::LayoutChild> {
+        children
+            .iter()
+            .copied()
+            .map(|id| child_from_tree_with_constraints(id, tree, Constraints::unconstrained()))
+            .collect()
+    }
+
+    fn layout_children(
+        &self,
+        frame: Rect,
+        children: &[crate::ui::LayoutChild],
+        _tree: &WidgetTree,
+    ) -> Vec<(ComponentId, Rect)> {
+        self.intrinsic_height.set(
+            children
+                .iter()
+                .map(|child| child.measured_size.h)
+                .fold(0.0, f32::max),
+        );
+        children
+            .iter()
+            .map(|child| {
+                (
+                    child.id,
+                    Rect::new(
+                        frame.x,
+                        frame.y,
+                        child.measured_size.w,
+                        child.measured_size.h,
+                    ),
+                )
+            })
+            .collect()
+    }
+}
+
 impl ConstraintProbeWidget {
     fn new(size: Size, seen: Rc<RefCell<Vec<Constraints>>>) -> Self {
         Self { size, seen }
@@ -4465,6 +4557,36 @@ fn resize_root_survives_layout_without_engine_sync() {
         content_w > 700.0,
         "flex content should grow with window, got {content_w}"
     );
+}
+
+#[test]
+fn convergence_reads_layout_metadata_without_building_component_snapshots() {
+    let snapshots = Rc::new(Cell::new(0));
+    let probe_widget = LayoutSnapshotProbe::new(
+        Rc::clone(&snapshots),
+        vec![Box::new(SpyWidget::new(40.0, 80.0))],
+    );
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(100.0, 100.0)));
+    let probe = tree.add_child(root, Box::new(probe_widget));
+    tree.get_mut(root)
+        .expect("root")
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
+    snapshots.set(0);
+    let _ = tree.take_layout_expand_ops();
+
+    tree.layout();
+
+    assert!(
+        tree.take_layout_expand_ops() > 0,
+        "the probe must exercise Phase 2 expansion"
+    );
+    assert_eq!(
+        snapshots.get(),
+        0,
+        "layout convergence must not construct semantic snapshots to inspect size locks"
+    );
+    assert!(tree.get(probe).expect("probe").frame().h >= 80.0);
 }
 
 /// 复现 demo 卡顿：row Stretch 把 column_fit 侧栏拉到客户区高后，

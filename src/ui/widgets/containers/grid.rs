@@ -1,5 +1,7 @@
 //! Grid widget - CSS Grid-like layout container.
 
+use std::borrow::Cow;
+
 use crate::component;
 use crate::core::{Constraints, EdgeInsets, Rect, Size};
 use crate::draw::compositor::PicturePolicy;
@@ -10,7 +12,6 @@ use crate::ui::layout::engine::{
 };
 use crate::ui::layout::{AlignItems, GridTrack, JustifyContent};
 use crate::ui::style::{apply_style as paint_style, ColorValue, DisplayMode, Style};
-use crate::ui::traits::layout::LayoutEngine;
 use crate::ui::{ComponentId, WidgetTree};
 use crate::ui::{SnapshotFields, SnapshotSource};
 
@@ -308,8 +309,8 @@ component! {
         }
 
         let engine = GridLayout {
-            columns: self.style.grid_template_columns.clone(),
-            rows: self.style.grid_template_rows.clone(),
+            columns: Vec::new(),
+            rows: Vec::new(),
             col_gap: self.effective_col_gap(),
             row_gap: self.effective_row_gap(),
             align_items: self.style.align_items,
@@ -317,7 +318,12 @@ component! {
         };
 
         let responsive_children = self.responsive_children(content_rect.w, children);
-        let output = engine.layout(content_rect, &responsive_children);
+        let output = engine.layout_with_tracks(
+            content_rect,
+            &self.style.grid_template_columns,
+            &self.style.grid_template_rows,
+            &responsive_children,
+        );
 
         responsive_children
             .iter()
@@ -497,13 +503,13 @@ impl Grid {
         }
     }
 
-    fn responsive_children(
+    fn responsive_children<'a>(
         &self,
         available_width: f32,
-        children: &[LayoutChild],
-    ) -> Vec<LayoutChild> {
+        children: &'a [LayoutChild],
+    ) -> Cow<'a, [LayoutChild]> {
         let Some(breakpoints) = self.breakpoints else {
-            return children.to_vec();
+            return Cow::Borrowed(children);
         };
 
         let mut configured = children.to_vec();
@@ -529,6 +535,6 @@ impl Grid {
             configured[index].grid_column_span = span as u32;
             next_cell = cell + span;
         }
-        configured
+        Cow::Owned(configured)
     }
 }

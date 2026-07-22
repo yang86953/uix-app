@@ -43,10 +43,11 @@ pub enum Invalidation {
     FullComposite,
 }
 
-/// 失效队列：合并重复 Paint、判定 0 帧。
+/// 失效队列：合并重复 Layout / Paint、判定 0 帧。
 #[derive(Debug, Clone, Default)]
 pub struct InvalidationQueue {
     pub(crate) items: Vec<Invalidation>,
+    layout_ids: HashSet<NodeId>,
     paint_indices: HashMap<NodeId, usize>,
     revision: u64,
 }
@@ -61,25 +62,33 @@ impl InvalidationQueue {
         Arc::new(Mutex::new(Self::new()))
     }
 
-    /// 上报失效；同一节点的 Paint 矩形会合并。
+    /// 上报失效；同一节点的 Layout 去重，Paint 矩形合并。
     pub fn push(&mut self, inv: Invalidation) {
         self.revision = self.revision.wrapping_add(1);
-        if let Invalidation::Paint { id, rect } = &inv {
-            if let Some(existing) = self
-                .paint_indices
-                .get(id)
-                .and_then(|&index| self.items.get_mut(index))
-            {
-                if let Invalidation::Paint {
-                    rect: existing_rect,
-                    ..
-                } = existing
-                {
-                    *existing_rect = merge_paint_rect(*existing_rect, *rect);
+        match &inv {
+            Invalidation::Layout(id) => {
+                if !self.layout_ids.insert(*id) {
+                    return;
                 }
-                return;
             }
-            self.paint_indices.insert(*id, self.items.len());
+            Invalidation::Paint { id, rect } => {
+                if let Some(existing) = self
+                    .paint_indices
+                    .get(id)
+                    .and_then(|&index| self.items.get_mut(index))
+                {
+                    if let Invalidation::Paint {
+                        rect: existing_rect,
+                        ..
+                    } = existing
+                    {
+                        *existing_rect = merge_paint_rect(*existing_rect, *rect);
+                    }
+                    return;
+                }
+                self.paint_indices.insert(*id, self.items.len());
+            }
+            Invalidation::Composite { .. } | Invalidation::FullComposite => {}
         }
         self.items.push(inv);
     }
@@ -104,9 +113,7 @@ impl InvalidationQueue {
 
     /// 是否含 Layout 失效。
     pub fn has_layout(&self) -> bool {
-        self.items
-            .iter()
-            .any(|i| matches!(i, Invalidation::Layout(_)))
+        !self.layout_ids.is_empty()
     }
 
     /// 是否含 Paint 或 Composite 失效（需要绘制）。
@@ -138,10 +145,7 @@ impl InvalidationQueue {
     /// 将 Layout 根写入调用方复用的集合。
     pub(crate) fn layout_roots_into(&self, roots: &mut HashSet<NodeId>) {
         roots.clear();
-        roots.extend(self.items.iter().filter_map(|item| match item {
-            Invalidation::Layout(id) => Some(*id),
-            _ => None,
-        }));
+        roots.extend(self.layout_ids.iter().copied());
     }
 
     /// 节点是否有 Paint 失效。
@@ -184,6 +188,7 @@ impl InvalidationQueue {
     pub fn clear(&mut self) {
         self.revision = self.revision.wrapping_add(1);
         self.items.clear();
+        self.layout_ids.clear();
         self.paint_indices.clear();
     }
 
@@ -205,6 +210,7 @@ impl InvalidationQueue {
         if self.items.len() != previous_len {
             self.revision = self.revision.wrapping_add(1);
         }
+        self.layout_ids.clear();
         self.rebuild_paint_indices();
     }
 

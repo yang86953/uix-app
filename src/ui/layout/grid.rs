@@ -2,7 +2,7 @@ use super::*;
 
 /// Compute grid layout from input constraints.
 /// Pure function: no side effects.
-pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
+pub fn compute_grid_layout(input: &GridInput<'_>) -> GridOutput {
     let inner = Rect::new(
         input.container.x + input.padding.left,
         input.container.y + input.padding.top,
@@ -22,20 +22,19 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
     let init_rows = input.rows.len().max(1);
     let mut occupied = vec![false; n_cols * init_rows];
     let mut assignments: Vec<CellAssignment> = Vec::with_capacity(input.children.len());
-    let mut auto_items: Vec<(usize, &GridChild)> = Vec::new();
 
     // 先登记显式 cell，同时扩展 occupied 矩阵
     for (ci, child) in input.children.iter().enumerate() {
         if let Some(cell) = child.cell {
             let col = cell % n_cols;
             let row = cell / n_cols;
-            let needed_rows = row + child.row_span as usize;
+            let span_cols = (child.col_span as usize).clamp(1, n_cols - col);
+            let span_rows = (child.row_span as usize).max(1);
+            let needed_rows = row.saturating_add(span_rows);
             let cur_rows = occupied.len() / n_cols;
             if needed_rows > cur_rows {
                 occupied.resize(n_cols * needed_rows, false);
             }
-            let span_cols = (child.col_span as usize).min(n_cols - col);
-            let span_rows = (child.row_span as usize).min(needed_rows - row);
             for r in 0..span_rows {
                 for c in 0..span_cols {
                     occupied[(row + r) * n_cols + (col + c)] = true;
@@ -48,18 +47,28 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
                 col_span: span_cols as u32,
                 row_span: span_rows as u32,
             });
-        } else {
-            auto_items.push((ci, child));
         }
     }
 
     // 再为 auto 项搜索完整可用矩形
-    for (ci, child) in auto_items {
-        let span_cols = child.col_span as usize;
-        let span_rows = child.row_span as usize;
+    for (ci, child) in input
+        .children
+        .iter()
+        .enumerate()
+        .filter(|(_, child)| child.cell.is_none())
+    {
+        // A span wider than the explicit grid can never fit and previously made
+        // the row-growth search loop forever. CSS-like grids clamp it to the
+        // available explicit columns while keeping row span semantics intact.
+        let span_cols = (child.col_span as usize).clamp(1, n_cols);
+        let span_rows = (child.row_span as usize).max(1);
         // 搜索下一个完整可用矩形
         let (col, row) = 'search: loop {
-            let cur_rows = occupied.len() / n_cols;
+            let mut cur_rows = occupied.len() / n_cols;
+            if span_rows > cur_rows {
+                occupied.resize(n_cols * span_rows, false);
+                cur_rows = span_rows;
+            }
             for base_row in 0..cur_rows.max(1) {
                 'row_search: for base_col in 0..n_cols {
                     // 验证完整 span 是否可用
@@ -110,12 +119,14 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
     let n_rows = occupied.len() / n_cols;
 
     // ── Phase 2: build full rows (explicit + implicit auto) ──
-    let mut rows = input.rows.clone();
+    let mut rows = input.rows.to_vec();
     rows.resize(n_rows, GridTrack::Auto);
 
     // ── Phase 3: resolve track sizes ──
-    let total_col_gap = input.col_gap * (n_cols.saturating_sub(1)) as f32;
-    let total_row_gap = input.row_gap * (n_rows.saturating_sub(1)) as f32;
+    let col_gap = finite_non_negative(input.col_gap);
+    let row_gap = finite_non_negative(input.row_gap);
+    let total_col_gap = col_gap * (n_cols.saturating_sub(1)) as f32;
+    let total_row_gap = row_gap * (n_rows.saturating_sub(1)) as f32;
 
     let resolve_tracks = |tracks: &[GridTrack], available: f32, total_gap: f32| -> Vec<f32> {
         let mut sizes = vec![0.0f32; tracks.len()];
@@ -126,10 +137,10 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
         for track in tracks.iter() {
             match track {
                 GridTrack::Px(px) => {
-                    used += px;
+                    used += finite_non_negative(*px);
                 }
                 GridTrack::Fr(fr) => {
-                    total_fr += fr;
+                    total_fr += finite_non_negative(*fr);
                 }
                 GridTrack::Auto => {
                     auto_count += 1;
@@ -143,22 +154,22 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
             let unit = remaining / total_flexible;
             for (i, track) in tracks.iter().enumerate() {
                 match track {
-                    GridTrack::Px(px) => sizes[i] = *px,
-                    GridTrack::Fr(fr) => sizes[i] = unit * fr,
+                    GridTrack::Px(px) => sizes[i] = finite_non_negative(*px),
+                    GridTrack::Fr(fr) => sizes[i] = unit * finite_non_negative(*fr),
                     GridTrack::Auto => sizes[i] = unit,
                 }
             }
         } else {
             for (i, track) in tracks.iter().enumerate() {
                 if let GridTrack::Px(px) = track {
-                    sizes[i] = *px;
+                    sizes[i] = finite_non_negative(*px);
                 }
             }
         }
         sizes
     };
 
-    let col_sizes = resolve_tracks(&input.columns, inner.w, total_col_gap);
+    let col_sizes = resolve_tracks(input.columns, inner.w, total_col_gap);
     let row_sizes = resolve_tracks(&rows, inner.h, total_row_gap);
 
     // ── Phase 4: build cell positions ──
@@ -169,7 +180,7 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
         col_positions.push((cx, size));
         cx += size;
         if index + 1 < n_cols {
-            cx += input.col_gap;
+            cx += col_gap;
         }
     }
 
@@ -179,7 +190,7 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
         row_positions.push((cy, size));
         cy += size;
         if index + 1 < n_rows {
-            cy += input.row_gap;
+            cy += row_gap;
         }
     }
 
@@ -202,48 +213,42 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
         let cell_x = col_positions[assignment.col].0;
         let cell_y = row_positions[assignment.row].0;
 
-        let mut cell_w = 0.0f32;
-        for c in 0..assignment.col_span as usize {
-            if assignment.col + c < col_positions.len() {
-                cell_w += col_positions[assignment.col + c].1;
-                if c > 0 {
-                    cell_w += input.col_gap;
-                }
-            }
-        }
-        let mut cell_h = 0.0f32;
-        for r in 0..assignment.row_span as usize {
-            if assignment.row + r < row_positions.len() {
-                cell_h += row_positions[assignment.row + r].1;
-                if r > 0 {
-                    cell_h += input.row_gap;
-                }
-            }
-        }
+        let col_end = (assignment.col + assignment.col_span as usize).min(col_positions.len());
+        let row_end = (assignment.row + assignment.row_span as usize).min(row_positions.len());
+        let cell_w = col_positions[col_end - 1].0 + col_positions[col_end - 1].1 - cell_x;
+        let cell_h = row_positions[row_end - 1].0 + row_positions[row_end - 1].1 - cell_y;
 
         let h_align = child.justify.unwrap_or(input.justify_items);
         let v_align = child.align.unwrap_or(input.align_items);
-        let pref = child.measured_size;
+        let pref = Size::new(
+            finite_non_negative(child.measured_size.w),
+            finite_non_negative(child.measured_size.h),
+        );
+        let margin = finite_insets(child.margin);
+        let available_w = (cell_w - margin.horizontal()).max(0.0);
+        let available_h = (cell_h - margin.vertical()).max(0.0);
 
         let child_w = match h_align {
-            JustifyContent::Start => pref.w.min(cell_w),
-            _ => cell_w,
+            JustifyContent::Start | JustifyContent::Center | JustifyContent::End => {
+                pref.w.min(available_w)
+            }
+            _ => available_w,
         };
         let child_h = match v_align {
-            AlignItems::Start => pref.h.min(cell_h),
-            _ => cell_h,
+            AlignItems::Start | AlignItems::Center | AlignItems::End => pref.h.min(available_h),
+            AlignItems::Stretch => available_h,
         };
         let child_x = match h_align {
-            JustifyContent::Start => cell_x,
-            JustifyContent::Center => cell_x + (cell_w - child_w) * 0.5,
-            JustifyContent::End => cell_x + cell_w - child_w,
-            _ => cell_x,
+            JustifyContent::Start => cell_x + margin.left,
+            JustifyContent::Center => cell_x + margin.left + (available_w - child_w) * 0.5,
+            JustifyContent::End => cell_x + margin.left + available_w - child_w,
+            _ => cell_x + margin.left,
         };
         let child_y = match v_align {
-            AlignItems::Start => cell_y,
-            AlignItems::Center => cell_y + (cell_h - child_h) * 0.5,
-            AlignItems::End => cell_y + cell_h - child_h,
-            _ => cell_y,
+            AlignItems::Start => cell_y + margin.top,
+            AlignItems::Center => cell_y + margin.top + (available_h - child_h) * 0.5,
+            AlignItems::End => cell_y + margin.top + available_h - child_h,
+            AlignItems::Stretch => cell_y + margin.top,
         };
 
         child_rects[assignment.child_idx] = Rect::new(child_x, child_y, child_w, child_h);
@@ -253,6 +258,31 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
         child_rects,
         total_size: Size::new(total_w, total_h),
     }
+}
+
+fn finite_non_negative(value: f32) -> f32 {
+    if value.is_finite() {
+        value.max(0.0)
+    } else {
+        0.0
+    }
+}
+
+fn finite_or_zero(value: f32) -> f32 {
+    if value.is_finite() {
+        value
+    } else {
+        0.0
+    }
+}
+
+fn finite_insets(insets: EdgeInsets) -> EdgeInsets {
+    EdgeInsets::new(
+        finite_or_zero(insets.left),
+        finite_or_zero(insets.top),
+        finite_or_zero(insets.right),
+        finite_or_zero(insets.bottom),
+    )
 }
 
 struct CellAssignment {

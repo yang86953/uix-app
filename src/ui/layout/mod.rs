@@ -66,6 +66,8 @@ pub(crate) struct FlexChild {
     pub align_self: Option<AlignItems>,
     pub min_size: Size,
     pub max_size: Size,
+    pub measured_size: Size,
+    pub margin: EdgeInsets,
 }
 
 impl Default for FlexChild {
@@ -77,28 +79,28 @@ impl Default for FlexChild {
             align_self: None,
             min_size: Size::zero(),
             max_size: Size::infinite(),
+            measured_size: Size::zero(),
+            margin: EdgeInsets::zero(),
         }
     }
 }
 
 /// flex 布局输入。
-#[derive(Debug, Clone)]
-pub(crate) struct FlexInput {
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FlexInput<'a> {
     pub direction: FlexDirection,
     pub wrap: bool,
     pub gap: f32,
     pub padding: EdgeInsets,
     pub container: Rect,
-    pub children: Vec<FlexChild>,
-    pub child_sizes: Vec<Size>,
-    pub child_margins: Vec<EdgeInsets>,
+    pub children: &'a [FlexChild],
     pub justify_content: JustifyContent,
     pub align_items: AlignItems,
     /// 主轴无显式尺寸时由子项撑开（Web 式 intrinsic），仍保留 flex-grow 分配。
     pub intrinsic_main: bool,
 }
 
-impl Default for FlexInput {
+impl Default for FlexInput<'_> {
     fn default() -> Self {
         Self {
             direction: FlexDirection::Row,
@@ -106,9 +108,7 @@ impl Default for FlexInput {
             gap: 0.0,
             padding: EdgeInsets::zero(),
             container: Rect::zero(),
-            children: Vec::new(),
-            child_sizes: Vec::new(),
-            child_margins: Vec::new(),
+            children: &[],
             justify_content: JustifyContent::Start,
             align_items: AlignItems::Stretch,
             intrinsic_main: false,
@@ -140,6 +140,7 @@ pub(crate) struct GridChild {
     pub col_span: u32,
     pub row_span: u32,
     pub measured_size: Size,
+    pub margin: EdgeInsets,
     pub align: Option<AlignItems>,
     pub justify: Option<JustifyContent>,
 }
@@ -151,6 +152,7 @@ impl Default for GridChild {
             col_span: 1,
             row_span: 1,
             measured_size: Size::zero(),
+            margin: EdgeInsets::zero(),
             align: None,
             justify: None,
         }
@@ -158,29 +160,29 @@ impl Default for GridChild {
 }
 
 /// grid 布局输入。
-#[derive(Debug, Clone)]
-pub(crate) struct GridInput {
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct GridInput<'a> {
     pub container: Rect,
-    pub columns: Vec<GridTrack>,
-    pub rows: Vec<GridTrack>,
+    pub columns: &'a [GridTrack],
+    pub rows: &'a [GridTrack],
     pub col_gap: f32,
     pub row_gap: f32,
     pub padding: EdgeInsets,
-    pub children: Vec<GridChild>,
+    pub children: &'a [GridChild],
     pub align_items: AlignItems,
     pub justify_items: JustifyContent,
 }
 
-impl Default for GridInput {
+impl Default for GridInput<'_> {
     fn default() -> Self {
         Self {
             container: Rect::zero(),
-            columns: Vec::new(),
-            rows: Vec::new(),
+            columns: &[],
+            rows: &[],
             col_gap: 0.0,
             row_gap: 0.0,
             padding: EdgeInsets::zero(),
-            children: Vec::new(),
+            children: &[],
             align_items: AlignItems::Stretch,
             justify_items: JustifyContent::Start,
         }
