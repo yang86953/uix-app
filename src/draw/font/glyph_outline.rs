@@ -1,9 +1,10 @@
-//! 从 TrueType 轮廓生成 GPU atlas 用边列表（解析 coverage AA / MSDF，不含 CPU 像素）。
+//! 从 TrueType 轮廓生成 GPU atlas 用边列表（距离 coverage / MSDF，不含 CPU 像素）。
 //!
 //! 坐标与 `ab_glyph::OutlinedGlyph::draw` 一致：相对 `px_bounds` 左上的本地像素空间，
 //! Y 向下。填充规则为 NonZero（与 TrueType 一致）。
 //! 数据布局：`[ax, ay, bx, by, …]` 折线边；槽位四周 fringe ≥ [`MSDF_RANGE`]，
-//! 供缩放路径 MSDF 使用（过窄 fringe 会裁切距离场）。近 1:1 UI 字改走解析 AA R8。
+//! 供缩放路径 MSDF 使用（过窄 fringe 会裁切距离场）。近 1:1 UI 字使用字体
+//! 光栅器给出的真实面积覆盖率 R8。
 //!
 //! MSDF：Chlumsky 真边着色（角点切换 CMY 双通道色），编码为
 //! `0.5 + sd / MSDF_RANGE`；采样时取 `median(r,g,b)` 再转 coverage，利于大字号缩放保角。
@@ -17,7 +18,7 @@ use crate::draw::primitives::flattener;
 use crate::draw::primitives::path::PathBuilder;
 use crate::draw::rasterizer::core::sdf_to_coverage_aa;
 
-/// AA 半宽（像素）；与形状 SDF 路径一致。
+/// 距离 coverage 的 AA 半宽（像素）；仅供兼容回退和测试使用。
 const AA_HALF: f32 = 0.5;
 /// 展平容差（像素）。
 const FLATTEN_TOLERANCE: f32 = 0.25;
@@ -26,7 +27,7 @@ const MAX_EDGES: usize = 4096;
 /// MSDF 距离编码半宽（像素）；与 GPU cover / sample 共用。
 pub(crate) const MSDF_RANGE: f32 = 4.0;
 /// atlas 槽位单边 fringe：至少容纳完整 MSDF 范围，并多 1px 供线性采样。
-const PAD: usize = MSDF_RANGE as usize + 1;
+pub(crate) const ATLAS_PAD: usize = MSDF_RANGE as usize + 1;
 /// 角点判定外角阈值（弧度），与 msdfgen `edgeColoringSimple` 示例一致（≈172°）。
 const CORNER_ANGLE_THRESHOLD: f32 = 3.0;
 /// 端点连接容差（像素）。
@@ -53,7 +54,7 @@ pub(crate) fn mesh_from_outline(
     if !(inner_w.is_finite() && inner_h.is_finite()) || inner_w <= 0.0 || inner_h <= 0.0 {
         return None;
     }
-    let fringe = PAD.saturating_mul(2);
+    let fringe = ATLAS_PAD.saturating_mul(2);
     let width = (inner_w as usize).saturating_add(fringe);
     let height = (inner_h as usize).saturating_add(fringe);
     if width == 0 || height == 0 {
@@ -61,7 +62,7 @@ pub(crate) fn mesh_from_outline(
     }
     let h_factor = scale_factor.horizontal;
     let v_factor = -scale_factor.vertical;
-    let pad = PAD as f32;
+    let pad = ATLAS_PAD as f32;
     let offset_x = position.x - px_bounds.min.x + pad;
     let offset_y = position.y - px_bounds.min.y + pad;
     let map = |p: AbPoint| Point::new(p.x * h_factor + offset_x, p.y * v_factor + offset_y);
@@ -179,7 +180,10 @@ fn edges_from_path(path: &crate::draw::primitives::path::Path) -> Option<Vec<f32
     Some(edges)
 }
 
-/// CPU / 近 1:1 GPU：由边列表生成解析 AA coverage。
+/// 由展平边列表生成像素中心距离 coverage。
+///
+/// 这不是轮廓的真实面积覆盖率，只用于没有字体光栅结果的兼容回退；正常
+/// 近 1:1 字形必须使用 `OutlinedGlyph::draw` 的 R8 coverage。
 pub(crate) fn coverage_from_edges(edges: &[f32], width: usize, height: usize) -> Option<Vec<u8>> {
     if width == 0 || height == 0 || edges.len() < 4 || edges.len() % 4 != 0 {
         return None;
@@ -490,7 +494,7 @@ fn seed_extract3(seed: &mut u64) -> usize {
 }
 
 fn sample_edges(edges: &[f32], px: f32, py: f32) -> (i32, f32) {
-    // 解析 AA 只需要全局最近距离，不走通道着色。
+    // 兼容距离 coverage 只需要全局最近距离，不走通道着色。
     let mut winding = 0i32;
     let mut min_dist = f32::INFINITY;
     let mut i = 0usize;

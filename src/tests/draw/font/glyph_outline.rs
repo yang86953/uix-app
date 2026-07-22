@@ -1,21 +1,23 @@
-//! 轮廓 → GPU atlas 边列表（解析 AA / MSDF）。
+//! 轮廓 → 字体面积 coverage / GPU atlas MSDF 边列表。
 
 use std::sync::Arc;
+
+use ab_glyph::{point, Font, FontArc, GlyphId};
 
 use crate::draw::font::font_service::FontService;
 use crate::draw::font::glyph_outline::{
     colorize_edges, coverage_from_edges, coverage_from_msdf, is_outline_edges,
-    msdf_encoded_to_coverage, msdf_from_edges, EDGE_BLUE, EDGE_CYAN, EDGE_GREEN, EDGE_MAGENTA,
-    EDGE_RED, EDGE_WHITE, EDGE_YELLOW, MSDF_RANGE,
+    msdf_encoded_to_coverage, msdf_from_edges, ATLAS_PAD, EDGE_BLUE, EDGE_CYAN, EDGE_GREEN,
+    EDGE_MAGENTA, EDGE_RED, EDGE_WHITE, EDGE_YELLOW, MSDF_RANGE,
 };
 use crate::draw::font::text_backend::TOFU_GLYPH_ID;
 
 #[test]
-fn rasterize_glyph_prefers_outline_edges_with_analytic_coverage() {
+fn rasterize_glyph_caches_padded_area_coverage_and_outline_edges() {
+    let font_bytes = include_bytes!("../../../../assets/fonts/lucide.ttf");
+    let direct_font = FontArc::try_from_slice(font_bytes).expect("parse lucide directly");
     let mut fonts = FontService::new();
-    let handle = fonts
-        .load_font(include_bytes!("../../../../assets/fonts/lucide.ttf"))
-        .expect("load lucide");
+    let handle = fonts.load_font(font_bytes).expect("load lucide");
     // Lucide 图标字体：取一个非 tofu glyph。
     let mut glyph_id = 1u32;
     while glyph_id < 512 {
@@ -29,10 +31,44 @@ fn rasterize_glyph_prefers_outline_edges_with_analytic_coverage() {
             assert_eq!(
                 raster.coverage.len(),
                 raster.width.saturating_mul(raster.height),
-                "outline glyphs cache analytic R8 for 1:1 crisp path"
+                "outline glyphs cache padded area coverage for physical 1:1 R8"
             );
+
+            let glyph = GlyphId(glyph_id as u16).with_scale_and_position(24.0, point(0.0, 0.0));
+            let outlined = direct_font
+                .outline_glyph(glyph)
+                .expect("selected lucide glyph must have an outline");
+            let bounds = outlined.px_bounds();
+            let inner_w = bounds.width() as usize;
+            let inner_h = bounds.height() as usize;
+            assert_eq!(raster.width, inner_w + ATLAS_PAD * 2);
+            assert_eq!(raster.height, inner_h + ATLAS_PAD * 2);
+
+            let mut direct = vec![0u8; inner_w * inner_h];
+            outlined.draw(|x, y, cov| {
+                direct[y as usize * inner_w + x as usize] = (cov * 255.0).clamp(0.0, 255.0) as u8;
+            });
+            for y in 0..inner_h {
+                let padded_start = (y + ATLAS_PAD) * raster.width + ATLAS_PAD;
+                assert_eq!(
+                    &raster.coverage[padded_start..padded_start + inner_w],
+                    &direct[y * inner_w..(y + 1) * inner_w],
+                    "padded row {y} must exactly match ab_glyph area coverage"
+                );
+            }
+            for y in 0..raster.height {
+                for x in 0..raster.width {
+                    if x < ATLAS_PAD
+                        || x >= raster.width - ATLAS_PAD
+                        || y < ATLAS_PAD
+                        || y >= raster.height - ATLAS_PAD
+                    {
+                        assert_eq!(raster.coverage[y * raster.width + x], 0);
+                    }
+                }
+            }
             // 槽位 fringe 须覆盖 MSDF_RANGE，否则距离场裁切会糊成叠字观感。
-            let min_pad = (MSDF_RANGE as usize).saturating_add(1);
+            let min_pad = ATLAS_PAD;
             assert!(
                 raster.width >= min_pad.saturating_mul(2).saturating_add(1)
                     && raster.height >= min_pad.saturating_mul(2).saturating_add(1),
@@ -60,7 +96,7 @@ fn rasterize_glyph_prefers_outline_edges_with_analytic_coverage() {
                 raster.width as f32 - max_x,
                 raster.height as f32 - max_y,
             );
-            // 缓存命中仍保留边列表与 coverage。
+            // 缓存命中仍复用边列表与面积 coverage allocation。
             let again = fonts.rasterize_glyph(&handle, glyph_id, 24.0);
             assert!(again.outline_mesh.is_some());
             assert!(Arc::ptr_eq(
@@ -95,7 +131,7 @@ fn coverage_from_edges_fills_solid_rect_interior() {
     // 槽位角落在矩形外，应为 0。
     assert_eq!(coverage[0], 0);
     assert_eq!(coverage[5], 0);
-    // 紧贴左边内侧的像素应有部分 AA（中心到 x=1.2 距离 0.3）。
+    // 兼容距离回退仍应保留部分 AA。
     let edge = coverage[3 * 6 + 1];
     assert!(
         edge > 0 && edge < 255,

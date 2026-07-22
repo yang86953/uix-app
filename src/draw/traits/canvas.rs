@@ -363,7 +363,8 @@ pub trait Canvas2D {
     }
 
     /// GPU 优先：轮廓边列表 → coverage atlas。
-    /// soft / 严格 GPU 近 1:1 均用解析 AA（R8）；明显缩放或仿射才走 RGBA8 MSDF。
+    /// soft / 严格 GPU 物理 1:1 优先用字体光栅器的面积 coverage（R8）；
+    /// 明显缩放、仿射或高 DPR 走 RGBA8 MSDF。
     fn blit_glyph_outline(
         &mut self,
         x: i32,
@@ -376,13 +377,14 @@ pub trait Canvas2D {
         self.blit_glyph_outline_shared(x, y, mesh, None, width, height, color);
     }
 
-    /// 与 [`blit_glyph_outline`] 相同，可携带缓存的解析 AA（近 1:1 时复用，稳定 atlas 键）。
+    /// 与 [`blit_glyph_outline`] 相同，可携带缓存的面积 coverage（物理 1:1 时复用，
+    /// 稳定 atlas 键）。
     fn blit_glyph_outline_shared(
         &mut self,
         x: i32,
         y: i32,
         mesh: std::sync::Arc<[f32]>,
-        analytic_coverage: Option<std::sync::Arc<[u8]>>,
+        area_coverage: Option<std::sync::Arc<[u8]>>,
         width: usize,
         height: usize,
         color: Color,
@@ -390,7 +392,7 @@ pub trait Canvas2D {
         if width == 0 || height == 0 {
             return;
         }
-        let coverage = analytic_coverage.filter(|c| c.len() >= width.saturating_mul(height));
+        let coverage = area_coverage.filter(|c| c.len() >= width.saturating_mul(height));
         let coverage = match coverage {
             Some(c) => c,
             None => {

@@ -142,6 +142,8 @@ impl PendingNativeOp {
 pub struct NativeGpuCanvas2D {
     native_caps: NativeRasterCaps,
     gpu_only: bool,
+    /// Logical-to-physical scale of the current target. Offscreens stay at 1.
+    device_pixel_ratio: f32,
     /// Allocated on first soft-path use (#105) — pure-native frames keep no CPU framebuffer.
     pub(crate) soft_fallback: Option<SharedRasterizer>,
     /// Soft buffer has content that must be composited (until full clear).
@@ -197,6 +199,7 @@ impl NativeGpuCanvas2D {
         Self {
             native_caps,
             gpu_only,
+            device_pixel_ratio: 1.0,
             soft_fallback: None,
             soft_has_content: false,
             soft_used_since_present: false,
@@ -217,6 +220,14 @@ impl NativeGpuCanvas2D {
             surface_h: h,
             last_soft_upload_bytes: 0,
         }
+    }
+
+    pub(crate) fn set_device_pixel_ratio(&mut self, device_pixel_ratio: f32) {
+        self.device_pixel_ratio = if device_pixel_ratio.is_finite() && device_pixel_ratio > 0.0 {
+            device_pixel_ratio
+        } else {
+            1.0
+        };
     }
 
     #[cfg(all(test, feature = "d3d11"))]
@@ -1592,7 +1603,7 @@ impl Canvas2D for NativeGpuCanvas2D {
         x: i32,
         y: i32,
         mesh: std::sync::Arc<[f32]>,
-        analytic_coverage: Option<std::sync::Arc<[u8]>>,
+        area_coverage: Option<std::sync::Arc<[u8]>>,
         w: usize,
         h: usize,
         color: Color,
@@ -1606,7 +1617,7 @@ impl Canvas2D for NativeGpuCanvas2D {
                 self.reject_unsupported("destination-dependent glyph blend");
                 return;
             }
-            // soft：解析 AA coverage（1:1 契约）；优先复用缓存。
+            // soft：优先复用字体光栅器给出的面积 coverage。
             self.sync_fallback_state();
             let _soft_clip = self.clip_rect;
             self.ensure_soft().push_clip(_soft_clip);
@@ -1614,7 +1625,7 @@ impl Canvas2D for NativeGpuCanvas2D {
                 x,
                 y,
                 mesh,
-                analytic_coverage,
+                area_coverage,
                 w,
                 h,
                 color,
@@ -1631,35 +1642,35 @@ impl Canvas2D for NativeGpuCanvas2D {
         if !device_w.is_finite() || !device_h.is_finite() || device_w <= 0.0 || device_h <= 0.0 {
             return;
         }
-        // 近 1:1：解析 AA → R8 atlas（与 soft 同锐利度）；缩放/仿射仍走 MSDF。
-        if outline_uses_analytic_r8(self.transform, device_w, device_h, w, h) {
+        // 物理 1:1：面积 coverage → R8 atlas；缩放、仿射及高 DPR 走 MSDF。
+        if outline_uses_area_r8(
+            self.transform,
+            self.device_pixel_ratio,
+            device_w,
+            device_h,
+            w,
+            h,
+        ) {
             let expected = w.saturating_mul(h);
-            let coverage = analytic_coverage
-                .filter(|c| c.len() >= expected)
-                .or_else(|| {
-                    crate::draw::font::glyph_outline::coverage_from_edges(mesh.as_ref(), w, h)
-                        .map(std::sync::Arc::<[u8]>::from)
-                });
-            let Some(coverage) = coverage else {
+            if let Some(coverage) = area_coverage.filter(|c| c.len() >= expected) {
+                self.pending_native
+                    .push(PendingNativeOp::Glyph(PendingNativeGlyph {
+                        glyph: GpuGlyphBlit {
+                            x: min_x,
+                            y: min_y,
+                            w: device_w,
+                            h: device_h,
+                            corners,
+                            rgba: self.rgba(color),
+                            coverage,
+                            cov_w: w as u32,
+                            cov_h: h as u32,
+                            outline_mesh: None,
+                        },
+                        scissor: self.scissor_aabb(),
+                    }));
                 return;
-            };
-            self.pending_native
-                .push(PendingNativeOp::Glyph(PendingNativeGlyph {
-                    glyph: GpuGlyphBlit {
-                        x: min_x,
-                        y: min_y,
-                        w: device_w,
-                        h: device_h,
-                        corners,
-                        rgba: self.rgba(color),
-                        coverage,
-                        cov_w: w as u32,
-                        cov_h: h as u32,
-                        outline_mesh: None,
-                    },
-                    scissor: self.scissor_aabb(),
-                }));
-            return;
+            }
         }
         self.pending_native
             .push(PendingNativeOp::Glyph(PendingNativeGlyph {
@@ -1763,7 +1774,7 @@ impl Canvas2D for NativeGpuCanvas2D {
 
 mod geometry;
 use geometry::{
-    frame_within, glyph_device_corners, outline_uses_analytic_r8, quad_aabb, rect_to_integer_frame,
+    frame_within, glyph_device_corners, outline_uses_area_r8, quad_aabb, rect_to_integer_frame,
     scaled_corner_radii, scales_are_uniform, solid_mesh_from_affine_rect,
     stroke_options_for_transform, uniform_transform_scale, IntegerFrame,
 };

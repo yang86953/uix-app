@@ -81,7 +81,7 @@ impl<'a> TextRenderService<'a> {
                 .as_ref()
                 .filter(|m| crate::draw::font::glyph_outline::is_outline_edges(m))
             {
-                let analytic =
+                let area_coverage =
                     if raster.coverage.len() >= raster.width.saturating_mul(raster.height) {
                         Some(std::sync::Arc::clone(&raster.coverage))
                     } else {
@@ -91,7 +91,7 @@ impl<'a> TextRenderService<'a> {
                     gx,
                     gy,
                     std::sync::Arc::clone(mesh),
-                    analytic,
+                    area_coverage,
                     raster.width,
                     raster.height,
                     color,

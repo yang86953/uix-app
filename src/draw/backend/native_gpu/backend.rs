@@ -105,13 +105,17 @@ pub(crate) struct NativeGpuOffscreen {
 /// Canvas coordinates are logical pixels. Native contexts report their
 /// drawable extent through `width`/`height`, so derive the matching logical
 /// extent from their single DPR source before allocating draw-side state.
-fn logical_extent_from_context(gpu_ctx: &dyn IGraphicsContext) -> (i32, i32) {
+fn device_pixel_ratio_from_context(gpu_ctx: &dyn IGraphicsContext) -> f32 {
     let dpr = gpu_ctx.device_pixel_ratio();
-    let dpr = if dpr.is_finite() && dpr > 0.0 {
+    if dpr.is_finite() && dpr > 0.0 {
         dpr
     } else {
         1.0
-    };
+    }
+}
+
+fn logical_extent_from_context(gpu_ctx: &dyn IGraphicsContext) -> (i32, i32) {
+    let dpr = device_pixel_ratio_from_context(gpu_ctx);
     let logical = |drawable: i32| ((drawable.max(1) as f32 / dpr).round() as i32).max(1);
     (logical(gpu_ctx.width()), logical(gpu_ctx.height()))
 }
@@ -154,6 +158,13 @@ impl NativeGpuBackend {
             ));
         }
         let (logical_w, logical_h) = logical_extent_from_context(gpu_ctx.as_ref());
+        let device_pixel_ratio = device_pixel_ratio_from_context(gpu_ctx.as_ref());
+        let mut canvas = if gpu_only {
+            NativeGpuCanvas2D::new_gpu_only(logical_w, logical_h, native_caps)
+        } else {
+            NativeGpuCanvas2D::new(logical_w, logical_h, native_caps)
+        };
+        canvas.set_device_pixel_ratio(device_pixel_ratio);
         Ok(Self {
             gpu_ctx,
             width: logical_w,
@@ -170,11 +181,7 @@ impl NativeGpuBackend {
             soft_used_in_last_present: false,
             gpu_only,
             surface: NativeGpuDrawSurface {
-                canvas: if gpu_only {
-                    NativeGpuCanvas2D::new_gpu_only(logical_w, logical_h, native_caps)
-                } else {
-                    NativeGpuCanvas2D::new(logical_w, logical_h, native_caps)
-                },
+                canvas,
                 native_caps,
                 width: logical_w,
                 height: logical_h,
@@ -246,11 +253,15 @@ impl NativeGpuBackend {
 
     fn adopt_factory_drawable_extent(&mut self) -> (i32, i32) {
         let (logical_w, logical_h) = logical_extent_from_context(self.gpu_ctx.as_ref());
+        let device_pixel_ratio = device_pixel_ratio_from_context(self.gpu_ctx.as_ref());
         self.width = logical_w;
         self.height = logical_h;
         self.surface.width = logical_w;
         self.surface.height = logical_h;
         self.surface.canvas.resize(logical_w, logical_h);
+        self.surface
+            .canvas
+            .set_device_pixel_ratio(device_pixel_ratio);
         self.soft_fallback_idle_deadline = None;
         self.soft_used_in_last_present = false;
         self.offscreen_flush_committed = false;
