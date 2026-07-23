@@ -1,11 +1,11 @@
 use crate::app::window_driver::{ensure_surface_matches_window, sync_root_frame_exactly_to_engine};
 use crate::draw::backend::DamageRegion;
-use crate::draw::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
+use crate::draw::{Canvas2D, RenderTarget, UpdateStrategy};
 use crate::tests::common::*;
 use crate::ui::Container;
 
 struct ScaledCanvasEngine {
-    inner: SoftwareEngine,
+    inner: Renderer,
     device_pixel_ratio: f32,
     logical_width: i32,
     logical_height: i32,
@@ -14,7 +14,7 @@ struct ScaledCanvasEngine {
 
 impl ScaledCanvasEngine {
     fn new(logical_width: i32, logical_height: i32, device_pixel_ratio: f32) -> Self {
-        let mut inner = SoftwareEngine::new();
+        let mut inner = Renderer::cpu();
         inner
             .initialize(
                 (logical_width as f32 * device_pixel_ratio).round() as i32,
@@ -31,7 +31,7 @@ impl ScaledCanvasEngine {
     }
 }
 
-impl GraphicsEngine for ScaledCanvasEngine {
+impl RenderTarget for ScaledCanvasEngine {
     fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.inner.initialize(width, height)
     }
@@ -161,7 +161,7 @@ impl AdoptedClientRectEngine {
     }
 }
 
-impl GraphicsEngine for AdoptedClientRectEngine {
+impl RenderTarget for AdoptedClientRectEngine {
     fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.logical_width = width.max(1);
         self.logical_height = height.max(1);

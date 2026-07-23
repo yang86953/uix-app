@@ -9,8 +9,8 @@ use std::cell::{Cell, RefCell};
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::font::text_backend::estimate_text_metrics;
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
+use crate::draw::resources::font::text_backend::estimate_text_metrics;
 use crate::native::traits::input::ControlSize;
 use crate::ui::clipboard;
 use crate::ui::state::State;

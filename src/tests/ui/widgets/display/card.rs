@@ -1,7 +1,7 @@
-use crate::draw::engine::cpu::pixel_surface::PixelSurface;
-use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
-use crate::draw::painting::PaintPass;
-use crate::draw::spatial::Orientation;
+use crate::draw::backend::cpu::pixel_surface::PixelSurface;
+use crate::draw::backend::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::command::PaintPass;
+use crate::draw::geometry::spatial::Orientation;
 use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::widgets::display::card::*;
@@ -25,7 +25,7 @@ fn render_card_in_pass(
     let images = ImageService::new();
     let tokens = DesignTokens::antd_light();
     let tree = WidgetTree::new();
-    let mut display_list = crate::draw::painting::DisplayList::new();
+    let mut display_list = crate::draw::command::DisplayList::new();
     {
         let mut ctx = PaintContext::new_for_test(
             &mut canvas,

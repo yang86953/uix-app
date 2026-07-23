@@ -4,7 +4,7 @@
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::Radius;
 use crate::native::traits::input::ControlSize;
 use crate::ui::{SnapshotFields, WidgetTree};
@@ -33,8 +33,8 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
-        crate::draw::compositor::PicturePolicy::Eligible
+    picture_policy => (&self) -> crate::draw::scene::PicturePolicy {
+        crate::draw::scene::PicturePolicy::Eligible
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -207,8 +207,12 @@ impl List {
 
     fn text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
         ctx.measure_text(value, font_size).w.max(
-            crate::draw::font::text_backend::estimate_text_metrics(value, f32::INFINITY, font_size)
-                .max_line_width,
+            crate::draw::resources::font::text_backend::estimate_text_metrics(
+                value,
+                f32::INFINITY,
+                font_size,
+            )
+            .max_line_width,
         )
     }
 

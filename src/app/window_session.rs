@@ -7,8 +7,8 @@ use crate::app::app_timer::AppTimerQueue;
 use crate::app::main_thread_queue::MainThreadQueue;
 use crate::app::window_semantics::{WindowSemanticSnapshot, WindowSemanticState};
 use crate::core::{Error, Rect, WindowId};
-use crate::draw::pipeline::NodeId;
-use crate::draw::traits::GraphicsEngine;
+use crate::draw::renderer::NodeId;
+use crate::draw::renderer::RenderTarget;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::view::{ViewAdapter, ViewNode};
 use crate::ui::{AppState, WidgetTree};
@@ -94,7 +94,7 @@ impl ViewFactorySlot {
 pub(crate) struct WindowSession {
     window_id: WindowId,
     tree: WidgetTree,
-    engine: Box<dyn GraphicsEngine>,
+    engine: Box<dyn RenderTarget>,
     engine_shutdown: bool,
     loop_state: WindowLoopState,
     active_work: ActiveWorkRegistry,
@@ -111,7 +111,7 @@ pub(crate) struct WindowSession {
 
 pub(crate) struct WindowSessionParts<'a> {
     pub(crate) tree: &'a mut WidgetTree,
-    pub(crate) engine: &'a mut dyn GraphicsEngine,
+    pub(crate) engine: &'a mut dyn RenderTarget,
     pub(crate) active_work: &'a mut ActiveWorkRegistry,
     pub(crate) app_timers: AppTimerQueue,
     pub(crate) main_thread_queue: MainThreadQueue,
@@ -127,7 +127,7 @@ pub(crate) struct WindowSessionParts<'a> {
 impl WindowSession {
     pub(crate) fn from_root(
         root_node: ViewNode,
-        engine: Box<dyn GraphicsEngine>,
+        engine: Box<dyn RenderTarget>,
         width: i32,
         height: i32,
     ) -> Self {
@@ -137,7 +137,7 @@ impl WindowSession {
     pub(crate) fn from_root_for_window(
         window_id: WindowId,
         root_node: ViewNode,
-        engine: Box<dyn GraphicsEngine>,
+        engine: Box<dyn RenderTarget>,
         width: i32,
         height: i32,
     ) -> Self {
@@ -178,7 +178,7 @@ impl WindowSession {
 
     pub(crate) fn from_root_factory<F>(
         build_root: F,
-        engine: Box<dyn GraphicsEngine>,
+        engine: Box<dyn RenderTarget>,
         width: i32,
         height: i32,
     ) -> Self
@@ -191,7 +191,7 @@ impl WindowSession {
     pub(crate) fn from_root_factory_for_window<F>(
         window_id: WindowId,
         build_root: F,
-        engine: Box<dyn GraphicsEngine>,
+        engine: Box<dyn RenderTarget>,
         width: i32,
         height: i32,
     ) -> Self
@@ -235,7 +235,7 @@ impl WindowSession {
         }
     }
 
-    pub(crate) fn tree_and_engine_mut(&mut self) -> (&mut WidgetTree, &mut dyn GraphicsEngine) {
+    pub(crate) fn tree_and_engine_mut(&mut self) -> (&mut WidgetTree, &mut dyn RenderTarget) {
         (&mut self.tree, self.engine.as_mut())
     }
 

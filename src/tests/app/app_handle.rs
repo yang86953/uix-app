@@ -6,7 +6,7 @@ use crate::app::session_runtime::AppRuntime;
 use crate::app::window_config::WindowConfig;
 use crate::app::Container as DiContainer;
 #[cfg(feature = "test-harness")]
-use crate::draw::engine::graphics_test_harness::GraphicsFaultSignal;
+use crate::draw::renderer::test_harness::GraphicsFaultSignal;
 use crate::native::traits::event::EventLoopWaker;
 use crate::tests::common::*;
 use crate::ui::view::combinators::label;
@@ -156,7 +156,7 @@ fn app_handle_arms_one_device_lost_fault_for_its_window() {
     let runtime = AppRuntime::new();
     let alive = Arc::new(AtomicBool::new(true));
     let graphics_faults = GraphicsFaultSignal::default();
-    graphics_faults.attach_recovering_engine();
+    graphics_faults.attach_recovery_driver();
     runtime.register_session_with_graphics_faults(
         WindowId::ROOT,
         AppTimerQueue::new(),

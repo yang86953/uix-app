@@ -2,7 +2,7 @@
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::Radius;
 use crate::native::traits::input::ControlSize;
 use crate::ui::state::State;
@@ -171,7 +171,7 @@ component! {
             if i > 0 && i != self.selected && i - 1 != self.selected {
                 let divider_color = ctx.tokens().color_border_secondary();
                 let inset = 6.0 * visual_scale;
-                ctx.canvas_2d().draw_line(
+                ctx.draw_line(
                     x,
                     control_rect.y + inset,
                     x,
@@ -315,8 +315,12 @@ impl Segmented {
     fn segment_width_for_height(option: &str, height: f32) -> f32 {
         let scale = Self::visual_scale_for_height(height);
         let font_size = Self::font_size_for_height(height);
-        crate::draw::font::text_backend::estimate_text_metrics(option, f32::INFINITY, font_size)
-            .max_line_width
+        crate::draw::resources::font::text_backend::estimate_text_metrics(
+            option,
+            f32::INFINITY,
+            font_size,
+        )
+        .max_line_width
             + 24.0 * scale
     }
 

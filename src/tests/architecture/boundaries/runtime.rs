@@ -39,7 +39,7 @@ fn graphics_backend_public_api_exposes_enum_not_context_factory() {
 #[test]
 fn canvas_scroll_copy_requires_an_explicit_backend_semantic() {
     let canvas =
-        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/draw/traits/canvas.rs"))
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/draw/api/canvas.rs"))
             .expect("read Canvas2D contract");
 
     assert!(
@@ -98,8 +98,8 @@ fn graphics_contracts_expose_only_checked_shutdown() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     for (contract, path) in [
         ("IGraphicsContext", "src/native/traits/present.rs"),
-        ("GraphicsEngine", "src/draw/traits/engine.rs"),
-        ("RenderBackend", "src/draw/backend/traits.rs"),
+        ("RenderTarget", "src/draw/renderer/target.rs"),
+        ("RenderBackend", "src/draw/backend/contract.rs"),
     ] {
         let source = read_source(root.join(path));
         assert!(
@@ -187,7 +187,7 @@ fn root_and_secondary_windows_share_one_frame_driver() {
         "root and secondary windows must call the same WindowDriver"
     );
     for duplicate in [
-        "FrameRenderer::new()",
+        "ScenePipeline::new()",
         "PresentDamageTracker::new()",
         "fn sync_secondary_animation_deadlines",
         "fn ensure_secondary_surface_matches_window",
@@ -409,7 +409,7 @@ fn d3d11_occlusion_is_a_per_window_idle_probe_not_graphics_recovery() {
         read_source(root.join("src/native/graphics/d3d12/platform/swap_chain.rs"));
     let scheduler = read_source(root.join("src/app/frame_scheduler.rs"));
     let driver = read_source(root.join("src/app/window_driver.rs"));
-    let recovering = read_source(root.join("src/draw/engine/recovering.rs"));
+    let recovery_driver = read_source(root.join("src/draw/renderer/recovery_driver.rs"));
 
     assert!(
         present_traits.contains("pub enum PresentTestResult")
@@ -446,8 +446,8 @@ fn d3d11_occlusion_is_a_per_window_idle_probe_not_graphics_recovery() {
         "WindowDriver must test occlusion before entering animation/layout/paint/present"
     );
     assert!(
-        recovering.contains("matches!(failure, GraphicsFailure::Occluded(_))")
-            && recovering.contains("self.engine.test_present()"),
+        recovery_driver.contains("matches!(failure, GraphicsFailure::Occluded(_))")
+            && recovery_driver.contains("self.engine.test_present()"),
         "a healthy occluded swapchain must be probed in place rather than rebuilt"
     );
 }

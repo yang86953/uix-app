@@ -4,12 +4,8 @@ fn pending_root_reconciles_once_before_frame_and_keeps_last_update() {
     platform.event_source.state.exit_after_blocking_calls = Some(1);
 
     let mut window = FakeWindow::new(1, "test", 800, 600);
-    let mut session = WindowSession::from_root_factory(
-        || label("initial"),
-        Box::new(NullEngine::new()),
-        800,
-        600,
-    );
+    let mut session =
+        WindowSession::from_root_factory(|| label("initial"), Box::new(Renderer::test()), 800, 600);
     let main_thread_queue = session.main_thread_queue();
     main_thread_queue.enqueue_with_context(|ctx| ctx.update_root(label("first")));
     main_thread_queue.enqueue_with_context(|ctx| ctx.update_root(label("second")));
@@ -83,7 +79,7 @@ fn dynamic_label_state_set_paints_without_rebuilding_factory() {
                 dynamic_label(move || format!("value-{}", state.get()))
             }
         },
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -152,7 +148,7 @@ fn ctrl_shift_d_toggles_debug_mode_and_marks_dirty() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -211,7 +207,7 @@ fn debug_pointer_move_dirties_only_when_hover_target_changes() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -257,12 +253,8 @@ fn deferred_show_reveals_window_only_after_first_present() {
     assert!(!window.is_visible());
     assert_eq!(window.state.show_calls, 0);
 
-    let mut session = WindowSession::from_root(
-        button("ready").into(),
-        Box::new(SoftwareEngine::new()),
-        120,
-        80,
-    );
+    let mut session =
+        WindowSession::from_root(button("ready").into(), Box::new(Renderer::cpu()), 120, 80);
     let font_service = FontService::new();
     let image_service = ImageService::new();
     let theme = RefCell::new(Theme::default());
@@ -302,7 +294,7 @@ fn first_frame_skips_redundant_forced_layout_when_already_laid_out() {
     platform.event_source.state.exit_after_timeout_calls = Some(1);
 
     let mut window = FakeWindow::new(1, "test", 120, 80);
-    let mut engine = SoftwareEngine::new();
+    let mut engine = Renderer::cpu();
     engine
         .initialize(120, 80)
         .expect("init engine to window size");
@@ -347,8 +339,8 @@ fn image_loading_invalidations_created_during_paint_survive_present() {
     platform.event_source.state.exit_after_blocking_calls = Some(1);
 
     let mut window = FakeWindow::new(1, "image-loading", 160, 120);
-    let mut engine = SoftwareEngine::new();
-    engine.initialize(160, 120).expect("software engine");
+    let mut engine = Renderer::cpu();
+    engine.initialize(160, 120).expect("CPU renderer");
     let mut session = WindowSession::from_root(
         ViewNode::leaf(
             Image::new(80.0, 48.0)
@@ -400,8 +392,8 @@ fn avatar_first_load_invalidation_created_during_paint_survives_present() {
     platform.event_source.state.exit_after_blocking_calls = Some(1);
 
     let mut window = FakeWindow::new(1, "avatar-loading", 160, 120);
-    let mut engine = SoftwareEngine::new();
-    engine.initialize(160, 120).expect("software engine");
+    let mut engine = Renderer::cpu();
+    engine.initialize(160, 120).expect("CPU renderer");
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Avatar::new("Ada").src("assets/images/demo.png")),
         Box::new(engine),

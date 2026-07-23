@@ -452,7 +452,7 @@ fn d3d11_warp_glyph_coverage_clip_and_reused_atlas_match_cpu() {
     let actual = ctx.read_pixels(0, 0, 32, 16).expect("readback");
     let mut expected = vec![base.premultiplied(); 32 * 16];
     for x in [2, 12] {
-        crate::draw::rasterizer::glyph::blit_glyph(
+        crate::draw::backend::cpu::rasterizer::glyph::blit_glyph(
             &mut expected,
             32,
             16,

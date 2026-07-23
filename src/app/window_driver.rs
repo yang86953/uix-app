@@ -17,14 +17,14 @@ use crate::app::text_input::sync_window_text_input;
 use crate::app::window_semantics::WindowSemanticState;
 use crate::app::window_session::{ViewFactorySlot, WindowLoopState, WindowTextInputState};
 use crate::core::{Errc, Error, Point, PresentDamageTracker, Rect};
-use crate::draw::engine::GraphicsFailure;
-use crate::draw::font::font_service::FontService;
-use crate::draw::image::ImageService;
-use crate::draw::painting::ThemeSnapshot;
-use crate::draw::pipeline::{
-    FrameRenderInput, FrameRenderer, InvalidationSource, NodeId, RenderMetrics,
+use crate::draw::api::ThemeSnapshot;
+use crate::draw::renderer::GraphicsFailure;
+use crate::draw::renderer::RenderTarget;
+use crate::draw::renderer::{
+    FrameRenderInput, InvalidationSource, NodeId, RenderMetrics, ScenePipeline,
 };
-use crate::draw::traits::GraphicsEngine;
+use crate::draw::resources::font::font_service::FontService;
+use crate::draw::resources::image::ImageService;
 use crate::draw::RenderOutcome;
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::traits::platform::Platform;
@@ -54,7 +54,7 @@ pub(crate) use support::{graphics_failure_diagnostic, graphics_failure_is_error}
 
 pub(crate) struct WindowFrameContext<'a, 'platform> {
     pub(crate) tree: &'a mut WidgetTree,
-    pub(crate) engine: &'a mut dyn GraphicsEngine,
+    pub(crate) engine: &'a mut dyn RenderTarget,
     pub(crate) active_work: &'a mut ActiveWorkRegistry,
     pub(crate) app_timers: &'a AppTimerQueue,
     pub(crate) main_thread_queue: &'a MainThreadQueue,
@@ -79,11 +79,11 @@ pub(crate) struct WindowFrameContext<'a, 'platform> {
     pub(crate) input_us: u128,
     pub(crate) next_external_deadline: Option<Instant>,
     pub(crate) on_runtime_tasks: &'a mut dyn FnMut(&mut dyn Platform, &mut WidgetTree),
-    pub(crate) on_frame: &'a dyn Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
+    pub(crate) on_frame: &'a dyn Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn Platform),
 }
 
 pub(crate) struct WindowDriver {
-    frame_renderer: FrameRenderer,
+    frame_renderer: ScenePipeline,
     rendered_first: bool,
     present_damage_tracker: PresentDamageTracker,
     frame_scheduler: FrameScheduler,
@@ -101,7 +101,7 @@ pub(crate) struct WindowDriver {
 impl WindowDriver {
     pub(crate) fn new(width: i32, height: i32, deferred_show: bool) -> Self {
         Self {
-            frame_renderer: FrameRenderer::new(),
+            frame_renderer: ScenePipeline::new(),
             rendered_first: false,
             present_damage_tracker: PresentDamageTracker::new(),
             frame_scheduler: FrameScheduler::new(width > 0 && height > 0),
@@ -144,7 +144,7 @@ impl WindowDriver {
         &mut self,
         event: &UiEvent,
         tree: &mut WidgetTree,
-        engine: &mut dyn GraphicsEngine,
+        engine: &mut dyn RenderTarget,
         platform_window: &mut dyn PlatformWindow,
         platform: &mut dyn Platform,
         text_input: &mut WindowTextInputState,
@@ -189,9 +189,7 @@ impl WindowDriver {
             UiEventType::WindowMaximize => {
                 self.cancel_outstanding_native_frame(platform_window);
                 self.frame_scheduler.resume();
-                if engine.canvas_2d().width() == self.initial_size.0
-                    && engine.canvas_2d().height() == self.initial_size.1
-                {
+                if engine.logical_extent() == self.initial_size {
                     let info = platform.display().info(0);
                     let width = info.bounds.w as i32;
                     let height = info.bounds.h as i32;
@@ -835,7 +833,7 @@ impl WindowDriver {
             }
             RenderOutcome::PresentPending(damage) => {
                 if !engine_capabilities.uses_external_presenter() {
-                    let message = "engine-managed path returned external presentation pending";
+                    let message = "backend-managed path returned external presentation pending";
                     crate::core::log::error_fn(format_args!("[WindowDriver] {message}"));
                     frame_failure = Some(protocol_failure(message));
                     self.rendered_first = false;
@@ -856,7 +854,7 @@ impl WindowDriver {
                         &damage,
                     );
                     match presenter.present(
-                        canvas.pixels_mut(),
+                        canvas.pixels(),
                         width,
                         height,
                         damage_plan.present_damage,
@@ -1044,7 +1042,7 @@ impl WindowDriver {
 
 pub(crate) fn sync_graphics_maintenance(
     active_work: &mut ActiveWorkRegistry,
-    engine: &dyn GraphicsEngine,
+    engine: &dyn RenderTarget,
 ) {
     if let Some(deadline) = engine.idle_resource_deadline() {
         active_work.register(ActiveWorkKind::GraphicsMaintenance, deadline);

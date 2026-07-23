@@ -1,6 +1,6 @@
-use crate::draw::engine::bootstrap::assemble_graphics_engine;
-use crate::draw::engine::{GraphicsFailure, RecoveringGraphicsEngine};
-use crate::draw::traits::UpdateStrategy;
+use crate::draw::renderer::bootstrap::assemble_renderer;
+use crate::draw::renderer::{GraphicsFailure, RecoveryDriver};
+use crate::draw::UpdateStrategy;
 use crate::native::graphics::platform::windows as win_surface;
 use crate::native::graphics::vulkan::platform::context::VulkanContext;
 use crate::tests::common::*;
@@ -34,7 +34,7 @@ fn native_vulkan_surface_fault_reaches_engine_recovery_boundary() {
         context.swapchain_maintenance1_enabled_for_test(),
     );
     let adapter = context.adapter_info.diagnostic_summary();
-    let initial = assemble_graphics_engine(
+    let initial = assemble_renderer(
         Box::new(context),
         INITIAL_LOGICAL_EXTENT.0,
         INITIAL_LOGICAL_EXTENT.1,
@@ -43,8 +43,8 @@ fn native_vulkan_surface_fault_reaches_engine_recovery_boundary() {
 
     let actions = Rc::new(RefCell::new(Vec::new()));
     let recorded_actions = Rc::clone(&actions);
-    let mut engine = RecoveringGraphicsEngine::new(
-        initial,
+    let mut engine = RecoveryDriver::new(
+        Box::new(initial),
         Box::new(move |action, width, height| {
             recorded_actions.borrow_mut().push(action);
             let context = VulkanContext::new(surface, width, height)?;
@@ -52,7 +52,8 @@ fn native_vulkan_surface_fault_reaches_engine_recovery_boundary() {
                 &context.adapter_info,
                 context.swapchain_maintenance1_enabled_for_test(),
             );
-            assemble_graphics_engine(Box::new(context), width, height)
+            assemble_renderer(Box::new(context), width, height)
+                .map(|renderer| Box::new(renderer) as Box<dyn RenderTarget>)
                 .map_err(|failure| failure.into_error())
         }),
     )

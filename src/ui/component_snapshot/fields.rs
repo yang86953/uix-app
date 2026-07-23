@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::draw::spatial::PhysicalUnit;
+use crate::draw::geometry::spatial::PhysicalUnit;
 use crate::draw::Color;
 use crate::native::traits::input::{ControlSize, ScrollDirection};
 use crate::native::traits::system::StatusLevel;

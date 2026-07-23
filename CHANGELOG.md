@@ -1,6 +1,6 @@
 # 变更记录
 
-这里记录 UIX 闭源版本的用户可观察变化。`0.0.1` 冻结前仍以[首发计划](docs/进度.md#001-首发计划)的 gate 与证据为准。
+这里记录 UIX 闭源版本的用户可观察变化。`0.0.1` 的当前事实见[首发状态](docs/进度/首发状态.md#当前状态)。
 
 ## 0.0.1（未发布）
 
@@ -16,5 +16,5 @@
 ### 发布状态
 
 - 版权归 `yangyanhui` 所有；版本按专有闭源、仅限内部授权使用的方式交付，不对外分发源码或二进制制品。
-- 冻结交付载体为 Windows 11 24H2 x64 内部 ZIP：release Demo、内部 `.crate`、UIX 专有许可、Lucide / Feather 第三方声明、说明文件与 SHA-256 清单；release 只启用默认 Vulkan feature，并保留 Software 整体回退。
-- 功能、真窗、硬件、长稳、性能、打包与缺陷门禁尚未全部闭合，因此本版本仍未发布。
+- 内部交付载体为 Windows 11 24H2 x64 ZIP：release Demo、内部 `.crate`、UIX 专有许可、Lucide / Feather 第三方声明、说明文件与 SHA-256 清单；release 只启用默认 Vulkan feature，并保留 Software 整体回退。
+- 本版本仍未发布；AMD / Intel、144 / 192 DPI、长稳、性能和正式内部包暂无当前报告。

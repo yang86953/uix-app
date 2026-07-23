@@ -9,8 +9,8 @@ fn render_button(button: &Button) -> Vec<u32> {
 }
 
 fn render_button_with_focus_visibility(button: &Button, focus_visible: bool) -> Vec<u32> {
-    let mut canvas = crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer::new(
-        crate::draw::engine::cpu::pixel_surface::PixelSurface::new(180, 48),
+    let mut canvas = crate::draw::backend::cpu::shared_rasterizer::SharedRasterizer::new(
+        crate::draw::backend::cpu::pixel_surface::PixelSurface::new(180, 48),
     );
     let mut fonts = FontService::new();
     let font = fonts
@@ -28,7 +28,7 @@ fn render_button_with_focus_visibility(button: &Button, focus_visible: bool) -> 
         &tokens,
         96.0,
         1.0,
-        crate::draw::spatial::Orientation::YDown,
+        crate::draw::geometry::spatial::Orientation::YDown,
         180,
         48,
     );
@@ -241,9 +241,9 @@ fn ripple_is_clipped_to_the_button_rounded_rect() {
         cover_radius(Point::new(2.0, 2.0), Size::new(172.0, 32.0)),
     )
     .expect("expanded ripple intersects the button");
-    let vertices = crate::draw::primitives::tessellator::tessellate_fill(
+    let vertices = crate::draw::geometry::tessellator::tessellate_fill(
         &path,
-        crate::draw::primitives::path::FillRule::NonZero,
+        crate::draw::geometry::path::FillRule::NonZero,
     )
     .expect("native GPU path tessellation");
     assert!(vertices.len() >= 6);

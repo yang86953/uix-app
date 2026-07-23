@@ -1,6 +1,6 @@
 use crate::app::window_driver::{graphics_failure_diagnostic, graphics_failure_is_error};
 use crate::core::{Errc, Error};
-use crate::draw::engine::GraphicsFailure;
+use crate::draw::renderer::GraphicsFailure;
 
 fn failure(code: Errc) -> GraphicsFailure {
     GraphicsFailure::from_error(Error::new(code, "injected graphics failure"))

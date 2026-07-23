@@ -4,7 +4,7 @@ use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
@@ -214,8 +214,8 @@ component! {
         })
     }
 
-    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
-        crate::draw::compositor::PicturePolicy::Eligible
+    picture_policy => (&self) -> crate::draw::scene::PicturePolicy {
+        crate::draw::scene::PicturePolicy::Eligible
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
@@ -422,7 +422,7 @@ impl Tag {
 
     fn intrinsic_size(&self) -> Size {
         let font_size = normalized_tag_font_size(self.font_size);
-        let text_width = crate::draw::font::text_backend::estimate_text_metrics(
+        let text_width = crate::draw::resources::font::text_backend::estimate_text_metrics(
             &self.text,
             f32::INFINITY,
             font_size,
@@ -547,8 +547,12 @@ impl Tag {
 
     fn text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
         ctx.measure_text(value, font_size).w.max(
-            crate::draw::font::text_backend::estimate_text_metrics(value, f32::INFINITY, font_size)
-                .max_line_width,
+            crate::draw::resources::font::text_backend::estimate_text_metrics(
+                value,
+                f32::INFINITY,
+                font_size,
+            )
+            .max_line_width,
         )
     }
 

@@ -5,8 +5,8 @@ use crate::app::event_loop::event_loop::*;
 use crate::app::map_ui_event;
 use crate::app::window_driver::{animation_clock_should_advance, sync_root_frame_to_engine};
 use crate::app::window_session::{WindowLoopState, WindowSession};
-use crate::draw::pipeline::RenderMetrics;
-use crate::draw::traits::GraphicsEngine;
+use crate::draw::renderer::RenderMetrics;
+use crate::draw::renderer::RenderTarget;
 use crate::native::test_harness::{FakePlatform, FakeWindow};
 use crate::native::traits::event::{FrameRequestToken, UiEvent, UiEventPayload, UiEventType};
 use crate::native::traits::platform::Platform;
@@ -91,13 +91,7 @@ impl WidgetComponent for TestAnimatedWidget {
 }
 
 impl WidgetRender for TestAnimatedWidget {
-    fn render(
-        &self,
-        _frame: Rect,
-        _ctx: &mut crate::draw::painting::PaintContext,
-        _tree: &WidgetTree,
-    ) {
-    }
+    fn render(&self, _frame: Rect, _ctx: &mut crate::draw::api::PaintContext, _tree: &WidgetTree) {}
 }
 
 impl WidgetAnimation for TestAnimatedWidget {
@@ -119,20 +113,20 @@ impl WidgetAnimation for TestAnimatedWidget {
 }
 
 struct FailFirstBeginEngine {
-    inner: NullEngine,
+    inner: Renderer,
     begin_calls: Arc<AtomicUsize>,
 }
 
 impl FailFirstBeginEngine {
     fn new(begin_calls: Arc<AtomicUsize>) -> Self {
         Self {
-            inner: NullEngine::new(),
+            inner: Renderer::test(),
             begin_calls,
         }
     }
 }
 
-impl GraphicsEngine for FailFirstBeginEngine {
+impl RenderTarget for FailFirstBeginEngine {
     fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.inner.initialize(width, height)
     }
@@ -145,9 +139,9 @@ impl GraphicsEngine for FailFirstBeginEngine {
         self.inner.resize(width, height)
     }
 
-    fn begin_frame(&mut self, strategy: crate::draw::traits::UpdateStrategy) -> RenderOutcome {
+    fn begin_frame(&mut self, strategy: crate::draw::UpdateStrategy) -> RenderOutcome {
         if self.begin_calls.fetch_add(1, Ordering::Relaxed) == 0 {
-            RenderOutcome::Failed(crate::draw::engine::GraphicsFailure::from_error(
+            RenderOutcome::Failed(crate::draw::renderer::GraphicsFailure::from_error(
                 Error::new(Errc::GraphicsSurfaceLost, "injected first-frame failure"),
             ))
         } else {
@@ -159,20 +153,20 @@ impl GraphicsEngine for FailFirstBeginEngine {
         self.inner.end_frame(damage)
     }
 
-    fn canvas_2d(&mut self) -> &mut dyn crate::draw::traits::Canvas2D {
+    fn canvas_2d(&mut self) -> &mut dyn crate::draw::Canvas2D {
         self.inner.canvas_2d()
     }
 
     fn try_execute_encoded_frame(
         &mut self,
         encoder: &FrameEncoder,
-    ) -> Result<crate::draw::pipeline::EncodedFrameExecution, Error> {
+    ) -> Result<crate::draw::command::EncodedFrameExecution, Error> {
         self.inner.try_execute_encoded_frame(encoder)
     }
 }
 
 struct OccludeFirstPresentEngine {
-    inner: NullEngine,
+    inner: Renderer,
     begin_calls: Arc<AtomicUsize>,
     end_calls: Arc<AtomicUsize>,
     probe_calls: Arc<AtomicUsize>,
@@ -185,7 +179,7 @@ impl OccludeFirstPresentEngine {
         probe_calls: Arc<AtomicUsize>,
     ) -> Self {
         Self {
-            inner: NullEngine::new(),
+            inner: Renderer::test(),
             begin_calls,
             end_calls,
             probe_calls,
@@ -193,7 +187,7 @@ impl OccludeFirstPresentEngine {
     }
 }
 
-impl GraphicsEngine for OccludeFirstPresentEngine {
+impl RenderTarget for OccludeFirstPresentEngine {
     fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.inner.initialize(width, height)
     }
@@ -206,7 +200,7 @@ impl GraphicsEngine for OccludeFirstPresentEngine {
         self.inner.resize(width, height)
     }
 
-    fn begin_frame(&mut self, strategy: crate::draw::traits::UpdateStrategy) -> RenderOutcome {
+    fn begin_frame(&mut self, strategy: crate::draw::UpdateStrategy) -> RenderOutcome {
         self.begin_calls.fetch_add(1, Ordering::Relaxed);
         self.inner.begin_frame(strategy)
     }
@@ -214,10 +208,9 @@ impl GraphicsEngine for OccludeFirstPresentEngine {
     fn end_frame(&mut self, damage: &DamageRegion) -> RenderOutcome {
         let inner = self.inner.end_frame(damage);
         if self.end_calls.fetch_add(1, Ordering::Relaxed) == 0 {
-            RenderOutcome::Failed(crate::draw::engine::GraphicsFailure::Occluded(Error::new(
-                Errc::GraphicsOccluded,
-                "injected first-present occlusion",
-            )))
+            RenderOutcome::Failed(crate::draw::renderer::GraphicsFailure::Occluded(
+                Error::new(Errc::GraphicsOccluded, "injected first-present occlusion"),
+            ))
         } else {
             inner
         }
@@ -232,20 +225,20 @@ impl GraphicsEngine for OccludeFirstPresentEngine {
         })
     }
 
-    fn canvas_2d(&mut self) -> &mut dyn crate::draw::traits::Canvas2D {
+    fn canvas_2d(&mut self) -> &mut dyn crate::draw::Canvas2D {
         self.inner.canvas_2d()
     }
 
     fn try_execute_encoded_frame(
         &mut self,
         encoder: &FrameEncoder,
-    ) -> Result<crate::draw::pipeline::EncodedFrameExecution, Error> {
+    ) -> Result<crate::draw::command::EncodedFrameExecution, Error> {
         self.inner.try_execute_encoded_frame(encoder)
     }
 }
 
 struct IdleResourceMaintenanceEngine {
-    inner: NullEngine,
+    inner: Renderer,
     deadline: Option<Instant>,
     present_notes: Arc<AtomicUsize>,
     release_calls: Arc<AtomicUsize>,
@@ -259,7 +252,7 @@ impl IdleResourceMaintenanceEngine {
         end_calls: Arc<AtomicUsize>,
     ) -> Self {
         Self {
-            inner: NullEngine::new(),
+            inner: Renderer::test(),
             deadline: None,
             present_notes,
             release_calls,
@@ -268,7 +261,7 @@ impl IdleResourceMaintenanceEngine {
     }
 }
 
-impl GraphicsEngine for IdleResourceMaintenanceEngine {
+impl RenderTarget for IdleResourceMaintenanceEngine {
     fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.inner.initialize(width, height)
     }
@@ -281,7 +274,7 @@ impl GraphicsEngine for IdleResourceMaintenanceEngine {
         self.inner.resize(width, height)
     }
 
-    fn begin_frame(&mut self, strategy: crate::draw::traits::UpdateStrategy) -> RenderOutcome {
+    fn begin_frame(&mut self, strategy: crate::draw::UpdateStrategy) -> RenderOutcome {
         self.inner.begin_frame(strategy)
     }
 
@@ -306,18 +299,18 @@ impl GraphicsEngine for IdleResourceMaintenanceEngine {
         }
     }
 
-    fn canvas_2d(&mut self) -> &mut dyn crate::draw::traits::Canvas2D {
+    fn canvas_2d(&mut self) -> &mut dyn crate::draw::Canvas2D {
         self.inner.canvas_2d()
     }
 
-    fn capabilities(&self) -> crate::draw::traits::GraphicsCapabilities {
+    fn capabilities(&self) -> crate::draw::GraphicsCapabilities {
         self.inner.capabilities()
     }
 
     fn try_execute_encoded_frame(
         &mut self,
         encoder: &FrameEncoder,
-    ) -> Result<crate::draw::pipeline::EncodedFrameExecution, Error> {
+    ) -> Result<crate::draw::command::EncodedFrameExecution, Error> {
         self.inner.try_execute_encoded_frame(encoder)
     }
 }

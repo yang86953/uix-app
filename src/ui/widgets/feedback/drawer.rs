@@ -2,7 +2,7 @@ use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::traits::input::ControlSize;
 use crate::ui::animation::{presets, AnimationConfig, TransitionPlayer};
@@ -222,10 +222,8 @@ component! {
 
         let mask_alpha = (96.0 * self.transition_opacity()).round().clamp(0.0, 96.0) as u8;
         let surface_extent = self.mask.then(|| {
-            (
-                ctx.canvas_2d().width() as f32,
-                ctx.canvas_2d().height() as f32,
-            )
+            let surface_size = ctx.surface_size();
+            (surface_size.w, surface_size.h)
         });
         if let Some((surface_w, surface_h)) = surface_extent {
             self.last_surface_w.set(surface_w);
@@ -847,8 +845,12 @@ impl Drawer {
 
     fn text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
         ctx.measure_text(value, font_size).w.max(
-            crate::draw::font::text_backend::estimate_text_metrics(value, f32::INFINITY, font_size)
-                .max_line_width,
+            crate::draw::resources::font::text_backend::estimate_text_metrics(
+                value,
+                f32::INFINITY,
+                font_size,
+            )
+            .max_line_width,
         )
     }
 

@@ -2,8 +2,8 @@ use crate::tests::common::*;
 use crate::ui::widgets::general::label::*;
 
 fn render_label(label: &Label) -> Vec<u32> {
-    let mut canvas = crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer::new(
-        crate::draw::engine::cpu::pixel_surface::PixelSurface::new(120, 48),
+    let mut canvas = crate::draw::backend::cpu::shared_rasterizer::SharedRasterizer::new(
+        crate::draw::backend::cpu::pixel_surface::PixelSurface::new(120, 48),
     );
     let mut fonts = FontService::new();
     let font = fonts
@@ -20,7 +20,7 @@ fn render_label(label: &Label) -> Vec<u32> {
         &tokens,
         96.0,
         1.0,
-        crate::draw::spatial::Orientation::YDown,
+        crate::draw::geometry::spatial::Orientation::YDown,
         120,
         48,
     );
@@ -90,7 +90,7 @@ fn label_measure_normalizes_invalid_and_physical_font_sizes() {
     }
 
     let physical = Label::new("界")
-        .font_size_unit(crate::draw::spatial::PhysicalUnit::Px(20.0))
+        .font_size_unit(crate::draw::geometry::spatial::PhysicalUnit::Px(20.0))
         .measure(Constraints::unconstrained());
     assert_eq!(physical.w, 20.0);
     assert!((physical.h - 24.0).abs() < 0.001);

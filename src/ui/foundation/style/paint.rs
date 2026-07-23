@@ -1,7 +1,7 @@
 //! Style painting helpers used by UI widgets.
 
 use crate::core::Rect;
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::Radius;
 use crate::ui::style::Style;
 
@@ -24,23 +24,24 @@ pub fn apply_style(ctx: &mut PaintContext<'_>, rect: Rect, style: &Style) {
         );
     }
 
-    if style.opacity < 1.0 {
-        ctx.canvas_2d().set_opacity(style.opacity);
-    }
-    if let Some(background) = style.background {
-        ctx.fill_rect(rect, background.resolve(ctx.tokens()), radius);
-    }
-    if style.has_border() {
-        if let Some(border_color) = style.border_color {
-            ctx.stroke_rect(
-                rect,
-                border_color.resolve(ctx.tokens()),
-                style.stroke_width(),
-                radius,
-            );
+    let paint_surface = |ctx: &mut PaintContext<'_>| {
+        if let Some(background) = style.background {
+            ctx.fill_rect(rect, background.resolve(ctx.tokens()), radius);
         }
-    }
+        if style.has_border() {
+            if let Some(border_color) = style.border_color {
+                ctx.stroke_rect(
+                    rect,
+                    border_color.resolve(ctx.tokens()),
+                    style.stroke_width(),
+                    radius,
+                );
+            }
+        }
+    };
     if style.opacity < 1.0 {
-        ctx.canvas_2d().set_opacity(1.0);
+        ctx.with_opacity(style.opacity, paint_surface);
+    } else {
+        paint_surface(ctx);
     }
 }

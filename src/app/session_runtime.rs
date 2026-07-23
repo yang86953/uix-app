@@ -22,7 +22,7 @@ use crate::app::window_config::WindowConfig;
 use crate::app::window_session::TextInputCoordinator;
 use crate::core::WindowId;
 #[cfg(feature = "test-harness")]
-use crate::draw::engine::graphics_test_harness::GraphicsFaultSignal;
+use crate::draw::renderer::test_harness::GraphicsFaultSignal;
 use crate::native::traits::event::EventLoopWaker;
 use crate::ui::Theme;
 use std::collections::VecDeque;

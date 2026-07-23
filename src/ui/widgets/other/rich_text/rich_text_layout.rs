@@ -5,8 +5,8 @@
 
 use super::RichTextSegment;
 use crate::core::Rect;
-use crate::draw::font::font_service::FontService;
-use crate::draw::font::text_backend::TextLayoutOptions;
+use crate::draw::resources::font::font_service::FontService;
+use crate::draw::resources::font::text_backend::TextLayoutOptions;
 use crate::draw::{Color, FontHandle};
 
 // ══════════════════════════════════════════════════════════════════

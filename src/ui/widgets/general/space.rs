@@ -6,7 +6,7 @@ use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::ui::children::WidgetChildren;
 use crate::ui::layout::engine::{child_from_tree_with_constraints, LayoutChild};
 use crate::ui::layout::{
@@ -70,8 +70,8 @@ component! {
         Size::new(w, h)
     }
 
-    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
-        crate::draw::compositor::PicturePolicy::Eligible
+    picture_policy => (&self) -> crate::draw::scene::PicturePolicy {
+        crate::draw::scene::PicturePolicy::Eligible
     }
 
     flex_grow => (&self) -> f32 { self.flex_grow_val }

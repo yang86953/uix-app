@@ -4,8 +4,8 @@ use std::sync::{Arc, OnceLock};
 
 use super::icon::Icon;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::painting::PaintContext;
-use crate::draw::primitives::path::{FillRule, Path, PathBuilder};
+use crate::draw::api::PaintContext;
+use crate::draw::geometry::path::{FillRule, Path, PathBuilder};
 use crate::draw::Color;
 use crate::impl_widget_component;
 use crate::native::traits::input::{ControlSize, KeyCode, MouseButton};
@@ -656,7 +656,7 @@ impl Button {
             height
         } else {
             // 无 FontService 时使用共享宽字符估算；真实宽在 paint 用 measure_text。
-            let text_w = crate::draw::font::text_backend::estimate_text_metrics(
+            let text_w = crate::draw::resources::font::text_backend::estimate_text_metrics(
                 &self.text,
                 f32::INFINITY,
                 font_size,

@@ -1,6 +1,6 @@
 # UIX 演示程序
 
-> **角色**：能力全景 + 可执行验收场景（多页组件 / Timer / 主题 / 多窗口 / View DSL），**不是**入门 starter。
+> **角色**：能力全景 + 可执行测试场景（多页组件 / Timer / 主题 / 多窗口 / View DSL），**不是**入门 starter。
 > 最小应用请复制 [README · 示例](../README.md#示例)；门面速查 → [`使用`](../docs/使用.md)。
 
 ## 快速运行
@@ -17,7 +17,7 @@ cargo run --features agent-control --bin uix-demo -- --agent-control
 
 Linux GUI 需 Wayland。
 
-`--follow-system-theme` 通过公开 `App::follow_system_theme(true)` 让 GUI 初始主题和后续变化由 OS 托管；该模式显示“跟随系统”状态，不再提供会覆盖托管状态的手动主题开关。`--graphics-recovery-acceptance` 仅在 `test-harness` feature 下显示下一帧 typed `DeviceLost` 注入与恢复后交互路径，Demo 仍通过公开 `AppHandle::inject_graphics_device_lost_for_test()` 使用框架。`--component-qa` 以隔离页面打开完整公开组件库存，供真实窗口逐组件视觉验收。`--agent-control` 仅用于本机开发预览，必须与 `agent-control` feature 同时启用；它会按 [`使用 · Agent Bridge`](../docs/使用/Agent%20Bridge.md#agent-bridge-开发预览) 启动当前用户私有端点。这些 GUI 参数都不能与 `--cli` 同时使用。
+`--follow-system-theme` 通过公开 `App::follow_system_theme(true)` 让 GUI 初始主题和后续变化由 OS 托管；该模式显示“跟随系统”状态，不再提供会覆盖托管状态的手动主题开关。`--graphics-recovery-acceptance` 仅在 `test-harness` feature 下显示下一帧 typed `DeviceLost` 注入与恢复后交互路径，Demo 仍通过公开 `AppHandle::inject_graphics_device_lost_for_test()` 使用框架。`--component-qa` 以隔离页面打开完整公开组件库存，供真实窗口逐组件视觉验收。`--agent-control` 仅用于本机开发预览，必须与 `agent-control` feature 同时启用；它会按 [`使用 · Agent Bridge`](../docs/使用/Agent控制.md#agent-bridge-开发预览) 启动当前用户私有端点。这些 GUI 参数都不能与 `--cli` 同时使用。
 
 ## 目录结构
 
@@ -100,41 +100,13 @@ demo/src/
 | 框架能力 | 4/4 | LocaleProvider、ConfigProvider/ControlSize、ComponentOverrides、typed token/render_empty 均有独立可观察样例 |
 | CLI | 10 项 | `--cli` 模式 |
 
-## 可执行验收场景
+## 测试覆盖现状
 
-| 场景 | 用户路径与可观察结果 | 自动化 |
-|------|----------------------|--------|
-| Windows 多窗口主题联动 | 主窗进入“应用能力” → 打开 `UIX Theme Window` → 副窗切到暗色 → 两窗均显示“当前主题：暗色” → 独立关闭副窗 | 稳定 `automation_id` 定位；等待两窗 `presented_revision`；断言窗口标题、语义状态和窗口数量 |
-| Windows 系统主题 live | 以 `--follow-system-theme` 启动 → UI 显示“跟随系统”且无手动开关 → OS 应用主题反转后窗口完成对应换色 → 恢复原 OS 设置后窗口恢复原配色 | 稳定 `automation_id` 断言模式；等待 `revision/presented_revision`；对真实前景窗口做桌面合成像素比较；测试始终恢复 `AppsUseLightTheme` |
-| Windows 图形故障恢复 | 以 `--graphics-recovery-acceptance` 启动 → 进入“应用能力” → 注入下一帧 `DeviceLost` → 状态在恢复后的真实 present 才可见 → 再执行一次用户操作并呈现“恢复后交互成功” | `test-harness` 只在恢复包装器边界注入 typed fault；稳定 `automation_id` 与 `presented_revision` 证明失败后恢复和继续交互；进程日志确认命中 fault，且 D3D11 同 recipe 重建成功 |
-| Provider 子树切换 | 主窗进入“框架能力” → 点击 `English` → 状态变为“当前语言：English”且空态文案变为 `No data`；同页可观察 Large/Small 优先级、构造覆盖和 typed token/统一空态 | 稳定 `automation_id`；`test-harness` 构建中文/英文子树并断言 `render_empty` 结果；真实窗口交互可由应用控制能力执行 |
-| 逐组件视觉矩阵 | 以 `--component-qa` 打开由当前清单生成的隔离库存 → 每项显示适用状态 → 浅色桌面、深色紧凑及真实交互逐项截图 | 公开导出精确比对；Agent Bridge 执行指针/键盘/滚动/主题/resize 并等待真实 present；冻结候选后输出状态清单、PNG、CSV 与联系表 |
-
-以下 Windows 集成场景运行真实 `uix-demo --agent-control` 进程，需要可交互的 Windows 桌面：
-
-```bash
-cargo test --features agent-control --test agent_gui_windows real_demo_opens_theme_window_and_syncs_observable_state -- --ignored --nocapture
-cargo test --features agent-control --test agent_gui_windows real_demo_follows_live_windows_system_theme_and_restores_preference -- --ignored --nocapture
-cargo test --features agent-control,test-harness --test agent_gui_windows real_demo_recovers_from_injected_device_loss_and_accepts_followup_interaction -- --ignored --nocapture
-cargo test --features agent-control,test-harness --test agent_gui_windows real_demo_switches_provider_locale_and_presents_framework_capabilities -- --ignored --nocapture
-cargo test --features agent-control,test-harness --test agent_gui_windows real_demo_captures_every_component_and_applicable_visual_state -- --ignored --nocapture
-cargo test --features agent-control,test-harness --test agent_gui_windows build_component_visual_contact_sheets -- --ignored --nocapture
-```
-
-Provider 子树场景通过 Agent Bridge 执行页面导航、语言切换与滚动，等待每次真实 present 后断言语义树中的文案、Provider 尺寸优先级、typed token 与自定义空态；设置 `UIX_GUI_EVIDENCE_DIR` 可同时输出首页、中文、English 和滚动后四张 PNG。它使用 Vulkan pixel-upload 路径，以便现有桌面像素 oracle 对真实窗口进行严格取证；D3D11 swapchain 另由 WGC smoke 证据覆盖。
-
-逐组件矩阵使用 Demo 内建 `--component-qa` 页和固定 `automation_id`，原始证据写入 `target/debug-captures/uix-component-visual/`；2026-07-17 的归档组件/状态映射、联系表和结论见 [`逐组件视觉质量报告`](../test-reports/20260717-uix-component-visual/report.md)，仅作历史回归参考，不作为 `0.0.1` 冻结库存分母。
-
-另有快速的无窗口构建契约测试：
-
-```bash
-cargo test --features test-harness --bin uix-demo framework_
-```
-
-## 验收 gap
-
-本 demo 仍缺 macOS / Wayland 的 `follow_system_theme` 实机切换。当前图形恢复场景验证 Windows D3D11 的 typed fault 跨模块集成与同 recipe 重建；真实驱动触发的 `DeviceLost`、AMD / Intel 和跨平台硬件证据不由注入场景替代，仍按框架矩阵记录 → [`进度`](../docs/进度.md)。
+- Windows 集成测试覆盖多窗口主题联动、系统主题 live 更新、注入式图形故障恢复、Provider 子树切换与逐组件视觉矩阵。
+- 逐组件页面由 `--component-qa` 提供，包含公开组件库存、适用状态、浅色桌面、深色紧凑及交互状态；原始数据默认位于 `target/debug-captures/uix-component-visual/`。
+- 2026-07-17 的组件 / 状态映射、联系表和结论见 [`逐组件视觉质量报告`](../test-reports/20260717-uix-component-visual/report.md)，只属于旧渲染基线。
+- macOS / Wayland 的 `follow_system_theme` 实机数据、真实驱动触发的 `DeviceLost`、AMD 与 Intel 数据当前缺失，详见[`进度`](../docs/进度.md)。
 
 ## CLI 演示项
 
-`cli/mod.rs` 顺序：`demo_core_types` · `demo_errors` · `demo_middleware` · `demo_state` · `demo_flex` · `demo_settings` · `demo_file_service` · `demo_theme` · `demo_graphics_engine` · `demo_di_container`
+`cli/mod.rs` 顺序：`demo_core_types` · `demo_errors` · `demo_middleware` · `demo_state` · `demo_flex` · `demo_settings` · `demo_file_service` · `demo_theme` · `demo_renderer` · `demo_di_container`

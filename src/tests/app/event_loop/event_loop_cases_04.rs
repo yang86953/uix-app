@@ -1,4 +1,3 @@
-
 #[test]
 fn window_blur_unregisters_focused_input_ime_work() {
     let mut platform = FakePlatform::new();
@@ -17,7 +16,7 @@ fn window_blur_unregisters_focused_input_ime_work() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Input::new("type here")),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -69,7 +68,7 @@ fn hiding_focused_input_unregisters_ime_work_in_same_frame() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Input::new("type here")),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -139,7 +138,7 @@ fn app_timer_due_work_uses_injected_test_clock() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -182,7 +181,7 @@ fn delayed_tooltip_registers_timer_with_active_work() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -243,7 +242,7 @@ fn registered_active_due_work_drains_without_timeout() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -293,7 +292,7 @@ fn due_registry_timer_dispatches_system_timer_to_tree() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -317,10 +316,9 @@ fn due_registry_timer_dispatches_system_timer_to_tree() {
         });
         tree.mark_full_frame_dirty();
     }
-    session.active_work_mut().register(
-        ActiveWorkKind::Timer(42),
-        start - Duration::from_millis(1),
-    );
+    session
+        .active_work_mut()
+        .register(ActiveWorkKind::Timer(42), start - Duration::from_millis(1));
 
     let font_service = FontService::new();
     let image_service = ImageService::new();
@@ -365,7 +363,7 @@ fn theme_changed_is_ignored_without_system_theme_opt_in() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -407,7 +405,7 @@ fn theme_changed_opt_in_updates_tokens_from_display_without_polling() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -450,7 +448,7 @@ fn theme_changed_opt_in_notifies_runtime_task_with_display_mode() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -501,7 +499,7 @@ fn theme_changed_without_system_theme_does_not_notify_runtime_task() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -551,7 +549,7 @@ fn app_timer_due_work_runs_callback_without_fixed_polling() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -603,7 +601,7 @@ fn consecutive_due_work_pumps_pending_events_before_next_frame() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -658,7 +656,7 @@ fn post_to_ui_drains_after_app_timer_and_before_frame_update() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -734,7 +732,7 @@ fn ui_event_registered_timer_drains_before_post_to_ui_in_same_frame() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );

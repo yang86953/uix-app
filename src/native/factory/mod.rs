@@ -97,7 +97,7 @@ pub(crate) fn create_gpu_context_with_backend(
     if requested == GraphicsBackend::Auto {
         return Err(Error::new(
             Errc::PlatformError,
-            "create_gpu_context: Auto requires draw::bootstrap_graphics_engine (sole probe loop)",
+            "create_gpu_context: Auto requires draw::bootstrap_renderer (sole probe loop)",
         ));
     }
     registry::try_create_gpu_context(requested, native_surface, width, height)

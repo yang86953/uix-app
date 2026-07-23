@@ -716,12 +716,12 @@ fn home_narrow_window_enables_horizontal_scroll() {
 #[test]
 fn other_page_narrow_window_keeps_content_and_vertical_scrollbar_interactive() {
     use uix::core::Point;
-    use uix::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
-    use uix::draw::font::font_service::FontService;
-    use uix::draw::image::ImageService;
-    use uix::draw::painting::{PaintContext, PaintPass};
-    use uix::draw::spatial::Orientation;
-    use uix::draw::FontHandle;
+    use uix::draw::api::{PaintContext, PaintSurfaceConfig};
+    use uix::draw::command::PaintPass;
+    use uix::draw::geometry::spatial::Orientation;
+    use uix::draw::resources::font::font_service::FontService;
+    use uix::draw::resources::image::ImageService;
+    use uix::draw::{FontHandle, RenderTarget, Renderer};
     use uix::native::traits::input::{KeyMod, MouseButton};
     use uix::ui::theme::DesignTokens;
     use uix::ui::traits::WidgetRender;
@@ -773,21 +773,26 @@ fn other_page_narrow_window_keeps_content_and_vertical_scrollbar_interactive() {
     }
 
     // 真实帧会先走此渲染路径；它记录 ScrollView 的当前 viewport，供拖拽命中使用。
-    let mut canvas = NoopCanvas2D;
+    let mut renderer = Renderer::cpu();
+    renderer
+        .initialize(640, 480)
+        .expect("initialize CPU renderer");
     let fonts = FontService::new();
     let images = ImageService::new();
     let tokens = DesignTokens::antd_light();
-    let mut ctx = PaintContext::new_for_test(
-        &mut canvas,
+    let mut ctx = PaintContext::new(
+        renderer.canvas_2d(),
         FontHandle::default(),
         &fonts,
         &images,
         &tokens,
-        96.0,
-        1.0,
-        Orientation::YDown,
-        640,
-        480,
+        PaintSurfaceConfig {
+            dpi: 96.0,
+            device_pixel_ratio: 1.0,
+            orientation: Orientation::YDown,
+            surface_w: 640,
+            surface_h: 480,
+        },
     );
     let scroll_view = tree
         .get(scroll_id)

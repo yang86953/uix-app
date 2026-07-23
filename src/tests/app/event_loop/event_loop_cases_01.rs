@@ -3,7 +3,7 @@ fn window_session_preserves_assigned_window_id() {
     let session = WindowSession::from_root_for_window(
         WindowId::new(9),
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -36,8 +36,8 @@ fn sync_root_frame_mismatch() {
     if let Some(root) = tree.get_mut(rid) {
         root.set_frame(Rect::new(0.0, 0.0, 800.0, 600.0));
     }
-    // NullEngine canvas 恒为 0×0：不得把已有根尺寸压空。
-    let mut engine = NullEngine::new();
+    // Renderer canvas 恒为 0×0：不得把已有根尺寸压空。
+    let mut engine = Renderer::test();
     sync_root_frame_to_engine(&mut tree, &mut engine);
     let root = tree.get(rid).unwrap();
     assert_eq!(root.frame(), Rect::new(0.0, 0.0, 800.0, 600.0));
@@ -47,7 +47,7 @@ fn sync_root_frame_mismatch() {
 fn sync_root_frame_already_matched() {
     let mut tree = WidgetTree::new();
     tree.set_root(Box::new(Container::new()));
-    let mut engine = NullEngine::new();
+    let mut engine = Renderer::test();
     sync_root_frame_to_engine(&mut tree, &mut engine);
     if let Some(rid) = tree.root_id() {
         let root = tree.get(rid).unwrap();
@@ -56,14 +56,14 @@ fn sync_root_frame_already_matched() {
 }
 
 #[test]
-fn sync_root_frame_follows_software_engine_size() {
+fn sync_root_frame_follows_cpu_renderer_size() {
     let mut tree = WidgetTree::new();
     let rid = tree.set_root(Box::new(Container::new()));
     // bootstrap：根近空时才从引擎补齐
     if let Some(root) = tree.get_mut(rid) {
         root.set_frame(Rect::new(0.0, 0.0, 0.0, 0.0));
     }
-    let mut engine = SoftwareEngine::new();
+    let mut engine = Renderer::cpu();
     engine.initialize(1000, 800).expect("init");
     sync_root_frame_to_engine(&mut tree, &mut engine);
     let root = tree.get(rid).unwrap();
@@ -77,7 +77,7 @@ fn sync_root_frame_does_not_overwrite_valid_root() {
     if let Some(root) = tree.get_mut(rid) {
         root.set_frame(Rect::new(0.0, 0.0, 1000.0, 800.0));
     }
-    let mut engine = SoftwareEngine::new();
+    let mut engine = Renderer::cpu();
     engine.initialize(800, 600).expect("init");
     sync_root_frame_to_engine(&mut tree, &mut engine);
     let root = tree.get(rid).unwrap();
@@ -95,7 +95,7 @@ fn sync_root_frame_grows_stale_root_to_larger_engine() {
     if let Some(root) = tree.get_mut(rid) {
         root.set_frame(Rect::new(0.0, 0.0, 800.0, 600.0));
     }
-    let mut engine = SoftwareEngine::new();
+    let mut engine = Renderer::cpu();
     engine.initialize(1200, 900).expect("init");
     sync_root_frame_to_engine(&mut tree, &mut engine);
     let root = tree.get(rid).unwrap();
@@ -116,7 +116,7 @@ fn window_resize_updates_root_and_flex_content() {
     platform.event_source.state.exit_after_timeout_calls = Some(1);
 
     let mut window = FakeWindow::new(1, "test", 800, 600);
-    let mut engine = SoftwareEngine::new();
+    let mut engine = Renderer::cpu();
     engine.initialize(800, 600).expect("init engine");
 
     let root_view = column([
@@ -219,14 +219,10 @@ fn resize_burst_rebuilds_the_surface_once_at_the_latest_extent() {
     platform.event_source.state.exit_after_timeout_calls = Some(1);
 
     let mut window = FakeWindow::new(1, "resize burst", 800, 600);
-    let mut engine = SoftwareEngine::new();
+    let mut engine = Renderer::cpu();
     engine.initialize(800, 600).expect("initialize engine");
-    let mut session = WindowSession::from_root(
-        ViewNode::leaf(Container::new()),
-        Box::new(engine),
-        800,
-        600,
-    );
+    let mut session =
+        WindowSession::from_root(ViewNode::leaf(Container::new()), Box::new(engine), 800, 600);
 
     let font_service = FontService::new();
     let image_service = ImageService::new();
@@ -594,7 +590,7 @@ fn event_dispatch_scopes_platform_clipboard_for_widgets() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Input::new("copy").with_value("managed clipboard")),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -689,7 +685,7 @@ fn active_animation_arms_one_fallback_frame_request() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(TestAnimatedWidget::new(remaining, updates.clone())),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -751,10 +747,13 @@ fn declarative_animated_uses_the_window_frame_registration() {
         WindowId::new(1),
         move || {
             let builds = root_builds.fetch_add(1, Ordering::Relaxed);
-            assert!(builds < 8, "Animated caused an unbounded root reconcile loop");
+            assert!(
+                builds < 8,
+                "Animated caused an unbounded root reconcile loop"
+            );
             label("fade").opacity(root_animated.value())
         },
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -808,7 +807,7 @@ fn delayed_declarative_animation_waits_on_deadline_before_requesting_frames() {
     let mut session = WindowSession::from_root_factory_for_window(
         WindowId::new(1),
         move || label("delayed").opacity(root_animated.value()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -871,7 +870,7 @@ fn native_frame_callback_advances_animation_before_fallback_deadline() {
             updates.clone(),
             recorded_dts.clone(),
         )),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -932,7 +931,7 @@ fn frame_opportunity_advances_all_open_animation_registrations() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );

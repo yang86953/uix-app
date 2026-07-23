@@ -4,7 +4,7 @@ use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, OverlayEntry, OverlayKind, SnapshotFields,
@@ -116,8 +116,9 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
-        let surface_w = ctx.canvas_2d().width() as f32;
-        let surface_h = ctx.canvas_2d().height() as f32;
+        let surface_size = ctx.surface_size();
+        let surface_w = surface_size.w;
+        let surface_h = surface_size.h;
         self.last_surface_w.set(surface_w);
         self.last_surface_h.set(surface_h);
 

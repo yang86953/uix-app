@@ -1,6 +1,6 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::Radius;
 use crate::ui::foundation::virtual_scroll::VirtualListScroll;
 use crate::ui::render_handler::RenderHandlerRegistration;
@@ -707,7 +707,7 @@ component! {
                 let Some(clip) = column_geometry.clip_for(zone, row_rect.y, row_rect.h) else {
                     continue;
                 };
-                ctx.canvas_2d().push_clip(clip);
+                ctx.push_clip(clip);
                 for laid_out in column_geometry
                     .columns
                     .iter()
@@ -761,7 +761,7 @@ component! {
                         );
                     }
                 }
-                ctx.canvas_2d().pop_clip();
+                ctx.pop_clip();
             }
 
             if actual_ri + 1 < end || is_expanded {
@@ -850,7 +850,7 @@ component! {
                     ctx.tokens().color_bg_container()
                 };
 
-                ctx.canvas_2d().push_clip(zone_clip);
+                ctx.push_clip(zone_clip);
                 ctx.fill_rect(cell_frame, cell_bg, None);
                 if !self.view_columns.contains(&column_index) {
                     let cell = row.get(column_index).map(String::as_str).unwrap_or("");
@@ -882,7 +882,7 @@ component! {
                         None,
                     );
                 }
-                ctx.canvas_2d().pop_clip();
+                ctx.pop_clip();
             }
         }
 
@@ -1194,8 +1194,12 @@ impl Table {
 
     fn text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
         ctx.measure_text(value, font_size).w.max(
-            crate::draw::font::text_backend::estimate_text_metrics(value, f32::INFINITY, font_size)
-                .max_line_width,
+            crate::draw::resources::font::text_backend::estimate_text_metrics(
+                value,
+                f32::INFINITY,
+                font_size,
+            )
+            .max_line_width,
         )
     }
 

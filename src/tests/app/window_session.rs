@@ -1,7 +1,7 @@
 use crate::app::main_thread_queue::MainThreadContext;
 use crate::app::window_session::*;
-use crate::draw::traits::GraphicsEngine;
-use crate::draw::traits::{Canvas2D, GraphicsCapabilities, UpdateStrategy};
+use crate::draw::renderer::RenderTarget;
+use crate::draw::{Canvas2D, GraphicsCapabilities, UpdateStrategy};
 use crate::impl_widget_component;
 use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
@@ -59,7 +59,7 @@ impl WidgetLifecycle for SessionLifecycleProbe {
 }
 
 struct ShutdownTrackingEngine {
-    inner: NullEngine,
+    inner: Renderer,
     shutdown_calls: Rc<Cell<usize>>,
     shutdown_failures: Rc<Cell<usize>>,
 }
@@ -67,7 +67,7 @@ struct ShutdownTrackingEngine {
 impl ShutdownTrackingEngine {
     fn new(shutdown_calls: Rc<Cell<usize>>) -> Self {
         Self {
-            inner: NullEngine::new(),
+            inner: Renderer::test(),
             shutdown_calls,
             shutdown_failures: Rc::new(Cell::new(0)),
         }
@@ -79,7 +79,7 @@ impl ShutdownTrackingEngine {
     }
 }
 
-impl GraphicsEngine for ShutdownTrackingEngine {
+impl RenderTarget for ShutdownTrackingEngine {
     fn initialize(&mut self, w: i32, h: i32) -> Result<(), Error> {
         self.inner.initialize(w, h)
     }
@@ -135,7 +135,7 @@ fn root_label_text(root: ViewNode) -> String {
 fn window_session_builds_tree_engine_and_p0_state() {
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         320,
         240,
     );
@@ -156,8 +156,7 @@ fn window_session_builds_tree_engine_and_p0_state() {
 
 #[test]
 fn window_session_injects_app_state_into_existing_mounted_tree() {
-    let mut session =
-        WindowSession::from_root(label("root"), Box::new(NullEngine::new()), 320, 240);
+    let mut session = WindowSession::from_root(label("root"), Box::new(Renderer::test()), 320, 240);
     let app_state = AppState::new();
     session.set_app_state(app_state.clone());
 
@@ -181,12 +180,12 @@ fn dynamic_label_state_marks_only_bound_window_session_for_paint() {
                 dynamic_label(move || format!("value-{}", state.get()))
             }
         },
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         320,
         240,
     );
     let mut unrelated_session =
-        WindowSession::from_root(label("static"), Box::new(NullEngine::new()), 320, 240);
+        WindowSession::from_root(label("static"), Box::new(Renderer::test()), 320, 240);
 
     {
         let (tree, _) = bound_session.tree_and_engine_mut();
@@ -221,7 +220,7 @@ fn structural_state_read_requests_factory_reconcile() {
             let state = state.clone();
             move || label(format!("value-{}", state.get()))
         },
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         320,
         240,
     );
@@ -240,12 +239,8 @@ fn structural_state_read_requests_factory_reconcile() {
 
 #[test]
 fn window_session_factory_builds_reconcile_root_when_no_pending_root() {
-    let mut session = WindowSession::from_root_factory(
-        || label("factory"),
-        Box::new(NullEngine::new()),
-        320,
-        240,
-    );
+    let mut session =
+        WindowSession::from_root_factory(|| label("factory"), Box::new(Renderer::test()), 320, 240);
 
     assert!(session.view_factory().is_installed());
     session.request_reconcile();
@@ -261,12 +256,8 @@ fn window_session_factory_builds_reconcile_root_when_no_pending_root() {
 
 #[test]
 fn window_session_pending_root_is_one_shot_and_overrides_factory() {
-    let mut session = WindowSession::from_root_factory(
-        || label("factory"),
-        Box::new(NullEngine::new()),
-        320,
-        240,
-    );
+    let mut session =
+        WindowSession::from_root_factory(|| label("factory"), Box::new(Renderer::test()), 320, 240);
 
     {
         let parts = session.parts_mut();
@@ -350,7 +341,7 @@ fn window_session_shutdown_tears_down_widget_lifecycle_once() {
         ViewNode::leaf(SessionLifecycleProbe {
             events: events.clone(),
         }),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         320,
         240,
     );

@@ -426,25 +426,27 @@ fn recreate_exact_graphics_recipe(
     width: i32,
     height: i32,
     recipe: GraphicsRecipe,
-) -> Result<Box<dyn GraphicsEngine>, Error> {
+) -> Result<Box<dyn RenderTarget>, Error> {
     let context = try_create_gpu_recipe(recipe, surface, width, height)?;
-    assemble_graphics_engine(context, width, height).map_err(|failure| failure.into_error())
+    assemble_renderer(context, width, height)
+        .map(|renderer| Box::new(renderer) as Box<dyn RenderTarget>)
+        .map_err(|failure| failure.into_error())
 }
 
 fn create_software_recovery_engine(
     width: i32,
     height: i32,
-) -> Result<Box<dyn GraphicsEngine>, Error> {
-    let mut engine = SoftwareEngine::new();
-    engine.initialize(width, height)?;
-    Ok(Box::new(engine))
+) -> Result<Box<dyn RenderTarget>, Error> {
+    let mut renderer = Renderer::cpu();
+    renderer.initialize(width, height)?;
+    Ok(Box::new(renderer))
 }
 
 pub(crate) fn graphics_recovery_rebuilder(
     surface: NativeSurfaceHandle,
     requested: GraphicsBackend,
     selected_recipe: GraphicsRecipe,
-) -> GraphicsEngineRebuilder {
+) -> RenderTargetRebuilder {
     let candidates = gpu_recipe_candidates(requested);
     let mut current_recipe = selected_recipe;
     Box::new(move |action, width, height| match action {
@@ -486,26 +488,26 @@ pub(super) fn create_preferred_engine(
     height: i32,
     graphics_backend: GraphicsBackend,
     #[cfg(feature = "test-harness")] graphics_faults: GraphicsFaultSignal,
-) -> Option<Box<dyn GraphicsEngine>> {
+) -> Option<Box<dyn RenderTarget>> {
     // SAFETY: `PlatformWindow` 在同步窗口会话全程拥有该 surface；图形启动与恢复
     // 均在同一事件循环线程执行，且 `NativeSurfaceHandle` 是 !Send + !Sync。
     let surface = unsafe { NativeSurfaceHandle::from_raw(platform_window.native_surface_ptr()) };
-    match bootstrap_graphics_engine(surface, width, height, graphics_backend) {
+    match bootstrap_renderer(surface, width, height, graphics_backend) {
         Ok(gpu) => {
             if gpu.report.failures.is_empty() {
                 crate::core::log::info_fn(format_args!(
-                    "GPU engine initialized ({})",
+                    "GPU renderer initialized ({})",
                     gpu.selected
                 ));
             } else {
                 crate::core::log::warn_fn(format_args!(
-                    "GPU engine initialized after probe fallback; selected={}; failures=[{}]",
+                    "GPU renderer initialized after probe fallback; selected={}; failures=[{}]",
                     gpu.selected,
                     format_probe_failures(&gpu.report)
                 ));
             }
-            let engine = RecoveringGraphicsEngine::new(
-                gpu.engine,
+            let engine = RecoveryDriver::new(
+                Box::new(gpu.renderer),
                 graphics_recovery_rebuilder(surface, graphics_backend, gpu.selected_recipe),
             )
             .with_extent(width, height);
@@ -516,16 +518,16 @@ pub(super) fn create_preferred_engine(
         Err(report) => {
             crate::core::log::warn_fn(format_gpu_probe_fallback(graphics_backend, &report));
 
-            let mut engine = SoftwareEngine::new();
-            match engine.initialize(width, height) {
+            let mut renderer = Renderer::cpu();
+            match renderer.initialize(width, height) {
                 Ok(()) => {
-                    crate::core::log::info_fn("CPU software engine initialized");
-                    Some(Box::new(engine))
+                    crate::core::log::info_fn("CPU renderer initialized");
+                    Some(Box::new(renderer))
                 }
                 Err(e) => {
-                    let _ = engine.try_shutdown();
+                    let _ = renderer.try_shutdown();
                     crate::core::log::error_fn(format_args!(
-                        "SoftwareEngine 初始化失败: {}",
+                        "CPU Renderer 初始化失败: {}",
                         e.what()
                     ));
                     None

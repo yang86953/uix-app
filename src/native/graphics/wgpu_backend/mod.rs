@@ -3,9 +3,9 @@
 
 pub(crate) mod blur;
 pub(crate) mod draw_stream;
+pub(crate) mod executor;
 pub(crate) mod glyph_batch;
 pub(crate) mod glyph_cover;
-pub(crate) mod renderer;
 #[path = "platform/surface.rs"]
 mod surface;
 
@@ -24,7 +24,7 @@ use crate::native::traits::present::{
 };
 
 use blur::SeparableBlur;
-use renderer::{ActiveTarget, WgpuRenderer};
+use executor::{ActiveTarget, WgpuExecutor};
 
 /// Prefer opaque composition so uncleared / partial-alpha pixels do not show the
 /// desktop through a normal HWND swapchain. Premultiplied remains the fallback.
@@ -145,7 +145,7 @@ pub struct WgpuContext {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
-    renderer: WgpuRenderer,
+    renderer: WgpuExecutor,
     backend: GraphicsBackend,
     native_surface: *mut c_void,
     logical_width: i32,
@@ -255,7 +255,7 @@ impl WgpuContext {
             color_space: wgpu::SurfaceColorSpace::Auto,
         };
         surface.configure(&device, &config);
-        let renderer = WgpuRenderer::new(&device, &queue, format)?;
+        let renderer = WgpuExecutor::new(&device, &queue, format)?;
         let separable_blur = SeparableBlur::new(&device, format)?;
         crate::core::log::info_fn(format_args!(
             "WgpuContext: backend={requested}; adapter=\"{}\"; type={:?}; driver=\"{}\"; {}x{}",

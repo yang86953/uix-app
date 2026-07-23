@@ -9,6 +9,7 @@ use uix::core::diagnostic::{
 };
 use uix::core::log::{info_fn, Level, Logger};
 use uix::data::SettingsService;
+use uix::draw::renderer::RenderTarget;
 use uix::native::file_service::FileService;
 use uix::prelude::*;
 
@@ -234,19 +235,17 @@ pub fn demo_file_service() -> Result<(), Error> {
     Ok(())
 }
 
-pub fn demo_graphics_engine() -> Result<(), Error> {
+pub fn demo_renderer() -> Result<(), Error> {
     println!("\n╔══ draw：图形引擎 ═══╗");
-    let mut e = NullEngine::new();
+    let mut e = Renderer::cpu();
     e.initialize(800, 600)?;
-    e.canvas_2d()
-        .fill_rect(Rect::new(10.0, 10.0, 100.0, 50.0), colors::PRIMARY, None);
+    let (width, height) = e.logical_extent();
+    println!("  Renderer(cpu) logical extent={width}x{height}");
     e.try_shutdown()?;
-    let mut boxed: Box<dyn GraphicsEngine> = Box::new(NullEngine::new());
+    let mut boxed: Box<dyn RenderTarget> = Box::new(Renderer::cpu());
     boxed.initialize(640, 480)?;
-    println!(
-        "  Box<dyn GraphicsEngine> width={}",
-        boxed.canvas_2d().width()
-    );
+    let (width, height) = boxed.logical_extent();
+    println!("  Box<dyn RenderTarget> logical extent={width}x{height}");
     boxed.try_shutdown()?;
     Ok(())
 }
@@ -279,7 +278,7 @@ pub fn run() -> Result<(), Error> {
     demo_settings()?;
     demo_file_service()?;
     demo_theme();
-    demo_graphics_engine()?;
+    demo_renderer()?;
     demo_di_container();
     println!("\n  ╔══════════════════════════════════╗");
     println!("  ║   全部演示完成！                  ║");

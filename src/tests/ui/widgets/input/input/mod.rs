@@ -1,7 +1,7 @@
-use crate::draw::engine::cpu::pixel_surface::PixelSurface;
-use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
-use crate::draw::painting::DisplayList;
-use crate::draw::spatial::Orientation;
+use crate::draw::backend::cpu::pixel_surface::PixelSurface;
+use crate::draw::backend::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::command::DisplayList;
+use crate::draw::geometry::spatial::Orientation;
 use crate::native::test_harness::FakeClipboard;
 use crate::native::traits::input::IClipboard;
 use crate::tests::common::*;
@@ -482,7 +482,7 @@ fn translated_software_render_keeps_placeholder_and_value_glyphs_visible() {
                 120,
                 40,
             );
-            ctx.canvas_2d().translate(-frame.x, -frame.y);
+            ctx.translate(-frame.x, -frame.y);
             if let Some(input) = input {
                 ctx.with_recorder(&mut list, |ctx| {
                     WidgetRender::render(input, frame, ctx, &tree);

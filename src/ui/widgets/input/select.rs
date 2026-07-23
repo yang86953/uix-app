@@ -1,6 +1,6 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::Color;
 use crate::native::traits::input::ControlSize;
 use crate::ui::animation::{presets, TransitionPlayer};
@@ -568,7 +568,7 @@ impl Select {
     }
 
     fn intrinsic_size(&self) -> Size {
-        let mut max_text_width = crate::draw::font::text_backend::estimate_text_metrics(
+        let mut max_text_width = crate::draw::resources::font::text_backend::estimate_text_metrics(
             &self.placeholder,
             f32::INFINITY,
             13.0,
@@ -576,13 +576,17 @@ impl Select {
         .max_line_width;
         for option in &self.options {
             max_text_width = max_text_width.max(
-                crate::draw::font::text_backend::estimate_text_metrics(option, f32::INFINITY, 13.0)
-                    .max_line_width,
+                crate::draw::resources::font::text_backend::estimate_text_metrics(
+                    option,
+                    f32::INFINITY,
+                    13.0,
+                )
+                .max_line_width,
             );
         }
         for group in &self.optgroups {
             max_text_width = max_text_width.max(
-                crate::draw::font::text_backend::estimate_text_metrics(
+                crate::draw::resources::font::text_backend::estimate_text_metrics(
                     &group.label,
                     f32::INFINITY,
                     12.0,
@@ -591,7 +595,7 @@ impl Select {
             );
             for option in &group.options {
                 max_text_width = max_text_width.max(
-                    crate::draw::font::text_backend::estimate_text_metrics(
+                    crate::draw::resources::font::text_backend::estimate_text_metrics(
                         option,
                         f32::INFINITY,
                         13.0,

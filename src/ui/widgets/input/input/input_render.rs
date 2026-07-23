@@ -3,7 +3,7 @@
 use super::*;
 
 use crate::core::{Point, Rect};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::{Color, Radius};
 // ════════════════════════════════════════════════════════════════════════════
 // 多行渲染
@@ -463,7 +463,8 @@ impl Input {
                 v_align: crate::draw::VAlign::Top,
                 font_size: FONT_SIZE,
             };
-            let backend_opts = crate::draw::font::text_backend::TextLayoutOptions::from(opts);
+            let backend_opts =
+                crate::draw::resources::font::text_backend::TextLayoutOptions::from(opts);
             let fh = *ctx.font();
             let layout = ctx
                 .font_service()

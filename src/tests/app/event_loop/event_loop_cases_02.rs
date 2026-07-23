@@ -1,4 +1,3 @@
-
 #[test]
 fn frame_opportunity_unregisters_hidden_animation_without_tick() {
     let start = Instant::now();
@@ -12,7 +11,7 @@ fn frame_opportunity_unregisters_hidden_animation_without_tick() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(TestAnimatedWidget::new(remaining.clone(), updates.clone())),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -69,7 +68,7 @@ fn frame_opportunity_advances_registered_and_discovers_unregistered_animations()
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -161,7 +160,7 @@ fn app_timer_due_work_does_not_add_an_animation_tick() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(TestAnimatedWidget::new(remaining.clone(), updates.clone())),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -223,7 +222,7 @@ fn finished_animation_returns_to_deep_idle_without_timeout() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(TestAnimatedWidget::new(remaining, updates.clone())),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -264,7 +263,7 @@ fn deep_idle_waits_without_fixed_timeout_or_extra_present() {
     platform.event_source.state.exit_after_timeout_calls = Some(1);
 
     let mut window = FakeWindow::new(1, "test", 800, 600);
-    let mut engine = NullEngine::new();
+    let mut engine = Renderer::test();
     let mut tree = WidgetTree::new();
     tree.set_root(Box::new(Container::new()));
     let font_service = FontService::new();
@@ -301,7 +300,7 @@ fn deep_idle_waits_without_fixed_timeout_or_extra_present() {
 }
 
 #[test]
-fn software_engine_first_frame_present_forwards_full_damage_to_fake_presenter() {
+fn cpu_renderer_first_frame_present_forwards_full_damage_to_fake_presenter() {
     let mut platform = FakePlatform::new();
     platform.event_source.state.exit_after_blocking_calls = Some(1);
     platform.event_source.state.exit_after_timeout_calls = Some(1);
@@ -309,7 +308,7 @@ fn software_engine_first_frame_present_forwards_full_damage_to_fake_presenter() 
     let mut window = FakeWindow::new(1, "test", 120, 80);
     let mut session = WindowSession::from_root(
         button("hover target").into(),
-        Box::new(SoftwareEngine::new()),
+        Box::new(Renderer::cpu()),
         120,
         80,
     );
@@ -354,7 +353,7 @@ fn software_engine_first_frame_present_forwards_full_damage_to_fake_presenter() 
 }
 
 #[test]
-fn software_engine_after_first_frame_forwards_partial_damage_to_fake_presenter() {
+fn cpu_renderer_after_first_frame_forwards_partial_damage_to_fake_presenter() {
     let mut platform = FakePlatform::new();
     platform
         .event_source
@@ -367,7 +366,7 @@ fn software_engine_after_first_frame_forwards_partial_damage_to_fake_presenter()
     let mut window = FakeWindow::new(1, "test", 120, 80);
     let mut session = WindowSession::from_root(
         button("hover target").into(),
-        Box::new(SoftwareEngine::new()),
+        Box::new(Renderer::cpu()),
         120,
         80,
     );
@@ -451,7 +450,7 @@ fn app_state_lookup_emit_drains_in_event_loop_and_returns_deep_idle() {
             }),
         ));
     }
-    let mut session = WindowSession::from_root(root, Box::new(NullEngine::new()), 800, 600);
+    let mut session = WindowSession::from_root(root, Box::new(Renderer::test()), 800, 600);
     session.set_app_state(app_state.clone());
     let root_id = session
         .tree_and_engine_mut()
@@ -510,7 +509,7 @@ fn focus_handle_wakes_target_event_loop_and_returns_deep_idle() {
     let root: ViewNode = button("focus target").into();
     let root = root.focus_handle(&focus);
     let mut window = FakeWindow::new(1, "test", 800, 600);
-    let mut session = WindowSession::from_root(root, Box::new(NullEngine::new()), 800, 600);
+    let mut session = WindowSession::from_root(root, Box::new(Renderer::test()), 800, 600);
     session.set_app_state(app_state.clone());
     let root_id = session
         .tree_and_engine_mut()
@@ -570,7 +569,7 @@ fn key_event_after_first_frame_does_not_force_layout_without_invalidation() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -621,7 +620,7 @@ fn fake_platform_pointer_click_reaches_handler_table() {
                 hits_for_handler.fetch_add(1, Ordering::Relaxed);
             })
             .build(),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -674,7 +673,7 @@ fn fake_platform_file_drop_reaches_handler_table() {
         }),
     ));
     let mut window = FakeWindow::new(1, "test", 800, 600);
-    let mut session = WindowSession::from_root(root, Box::new(NullEngine::new()), 800, 600);
+    let mut session = WindowSession::from_root(root, Box::new(Renderer::test()), 800, 600);
     let font_service = FontService::new();
     let image_service = ImageService::new();
     let theme = RefCell::new(Theme::default());
@@ -721,7 +720,7 @@ fn minimized_animation_keeps_registration_without_timeout_or_frame() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(TestAnimatedWidget::new(remaining, updates.clone())),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -777,7 +776,7 @@ fn hidden_animation_keeps_dirty_and_registration_without_wake_or_frame() {
         FakeWindow::new(1, "test", 800, 600).with_visibility_signal(Arc::clone(&visible));
     let mut session = WindowSession::from_root(
         ViewNode::leaf(TestAnimatedWidget::new(remaining, updates.clone())),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -841,7 +840,7 @@ fn visibility_change_without_lifecycle_event_suspends_before_present() {
         FakeWindow::new(1, "test", 800, 600).with_visibility_signal(Arc::clone(&visible));
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );

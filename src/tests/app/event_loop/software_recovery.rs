@@ -2,9 +2,9 @@ use crate::app::clock::AppClock;
 use crate::app::event_loop::event_loop::run_window_session_loop_with_clock;
 use crate::app::shell::application::graphics_recovery_rebuilder;
 use crate::app::window_session::{WindowLoopState, WindowSession};
-use crate::draw::engine::{GraphicsFailure, RecoveringGraphicsEngine};
-use crate::draw::pipeline::RenderMetrics;
-use crate::draw::traits::{Canvas2D, GraphicsCapabilities, UpdateStrategy};
+use crate::draw::renderer::RenderMetrics;
+use crate::draw::renderer::{GraphicsFailure, RecoveryDriver};
+use crate::draw::{Canvas2D, GraphicsCapabilities, UpdateStrategy};
 use crate::native::factory::GraphicsRecipe;
 use crate::native::test_harness::{FakePlatform, FakeWindow};
 use crate::native::traits::present::NativeSurfaceHandle;
@@ -13,18 +13,18 @@ use crate::ui::view::ViewNode;
 use crate::ui::widgets::Container;
 
 struct DeviceLostEngine {
-    inner: NullEngine,
+    inner: Renderer,
 }
 
 impl DeviceLostEngine {
     fn new() -> Self {
         Self {
-            inner: NullEngine::new(),
+            inner: Renderer::test(),
         }
     }
 }
 
-impl GraphicsEngine for DeviceLostEngine {
+impl RenderTarget for DeviceLostEngine {
     fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.inner.initialize(width, height)
     }
@@ -53,7 +53,7 @@ impl GraphicsEngine for DeviceLostEngine {
     }
 
     fn capabilities(&self) -> GraphicsCapabilities {
-        GraphicsCapabilities::engine_managed_full_redraw()
+        GraphicsCapabilities::backend_managed_full_redraw()
     }
 }
 
@@ -84,7 +84,7 @@ impl AppClock for SteppingClock {
 const WIDTH: i32 = 7;
 const HEIGHT: i32 = 5;
 
-fn recovering_engine(actions: Arc<Mutex<Vec<RecoveryAction>>>) -> RecoveringGraphicsEngine {
+fn recovering_engine(actions: Arc<Mutex<Vec<RecoveryAction>>>) -> RecoveryDriver {
     let mut failing_engine = DeviceLostEngine::new();
     failing_engine
         .initialize(WIDTH, HEIGHT)
@@ -101,7 +101,7 @@ fn recovering_engine(actions: Arc<Mutex<Vec<RecoveryAction>>>) -> RecoveringGrap
             PresentMode::Swapchain,
         ),
     );
-    RecoveringGraphicsEngine::new(
+    RecoveryDriver::new(
         Box::new(failing_engine),
         Box::new(move |action, width, height| {
             recorded_actions

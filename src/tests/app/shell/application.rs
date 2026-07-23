@@ -8,8 +8,8 @@ use crate::app::window_config::WindowConfig;
 use crate::app::window_session::WindowLoopState;
 use crate::app::Container as DiContainer;
 use crate::data::SettingsService;
-use crate::draw::engine::bootstrap::ProbeFailure;
-use crate::draw::engine::bootstrap::ProbeReport;
+use crate::draw::renderer::bootstrap::ProbeFailure;
+use crate::draw::renderer::bootstrap::ProbeReport;
 use crate::native::factory::GraphicsRecipe;
 use crate::native::test_harness::FakePlatform;
 use crate::native::traits::event::{
@@ -193,13 +193,7 @@ impl WidgetComponent for PaletteWidget {
 }
 
 impl WidgetRender for PaletteWidget {
-    fn render(
-        &self,
-        _frame: Rect,
-        _ctx: &mut crate::draw::painting::PaintContext,
-        _tree: &WidgetTree,
-    ) {
-    }
+    fn render(&self, _frame: Rect, _ctx: &mut crate::draw::api::PaintContext, _tree: &WidgetTree) {}
 }
 
 struct CountingAnimationWidget {
@@ -247,13 +241,7 @@ impl WidgetComponent for CountingAnimationWidget {
 }
 
 impl WidgetRender for CountingAnimationWidget {
-    fn render(
-        &self,
-        _frame: Rect,
-        _ctx: &mut crate::draw::painting::PaintContext,
-        _tree: &WidgetTree,
-    ) {
-    }
+    fn render(&self, _frame: Rect, _ctx: &mut crate::draw::api::PaintContext, _tree: &WidgetTree) {}
 }
 
 impl WidgetAnimation for CountingAnimationWidget {

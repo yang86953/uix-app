@@ -23,7 +23,7 @@ component! {
     render => (
         &self,
         _frame: crate::core::Rect,
-        _ctx: &mut crate::draw::painting::PaintContext,
+        _ctx: &mut crate::draw::api::PaintContext,
         _tree: &crate::ui::core::widget::WidgetTree
     ) {}
 }
@@ -40,7 +40,7 @@ component! {
     render => (
         &self,
         _frame: crate::core::Rect,
-        _ctx: &mut crate::draw::painting::PaintContext,
+        _ctx: &mut crate::draw::api::PaintContext,
         _tree: &crate::ui::core::widget::WidgetTree
     ) {}
 }
@@ -59,7 +59,7 @@ component! {
     render => (
         &self,
         _frame: crate::core::Rect,
-        _ctx: &mut crate::draw::painting::PaintContext,
+        _ctx: &mut crate::draw::api::PaintContext,
         _tree: &crate::ui::core::widget::WidgetTree
     ) {}
 }
@@ -78,7 +78,7 @@ component! {
     render => (
         &self,
         _frame: crate::core::Rect,
-        _ctx: &mut crate::draw::painting::PaintContext,
+        _ctx: &mut crate::draw::api::PaintContext,
         _tree: &crate::ui::core::widget::WidgetTree
     ) {}
 }

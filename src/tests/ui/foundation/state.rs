@@ -1,4 +1,4 @@
-use crate::draw::pipeline::InvalidationQueue;
+use crate::draw::renderer::InvalidationQueue;
 use crate::tests::common::*;
 use crate::ui::foundation::state::*;
 

@@ -1,11 +1,11 @@
-use crate::draw::spatial::Orientation;
+use crate::draw::geometry::spatial::Orientation;
 use crate::native::traits::system::StatusLevel;
 use crate::tests::common::*;
 use crate::ui::widgets::Alert;
 use crate::ui::AccessibilityRole;
 use crate::{
-    draw::engine::cpu::pixel_surface::PixelSurface,
-    draw::engine::cpu::shared_rasterizer::SharedRasterizer,
+    draw::backend::cpu::pixel_surface::PixelSurface,
+    draw::backend::cpu::shared_rasterizer::SharedRasterizer,
 };
 
 fn render_alert(alert: &Alert, frame: Rect, surface_size: (i32, i32)) -> String {
@@ -17,7 +17,7 @@ fn render_alert(alert: &Alert, frame: Rect, surface_size: (i32, i32)) -> String 
     let images = ImageService::new();
     let tokens = DesignTokens::antd_light();
     let tree = WidgetTree::new();
-    let mut display_list = crate::draw::painting::DisplayList::new();
+    let mut display_list = crate::draw::command::DisplayList::new();
     {
         let mut ctx = PaintContext::new_for_test(
             &mut canvas,

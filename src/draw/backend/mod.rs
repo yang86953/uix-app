@@ -1,17 +1,18 @@
 //! 渲染后端模块。
 
+pub mod contract;
 pub mod cpu;
-pub mod native_gpu;
-pub mod null;
-pub mod offscreen_pool;
-pub mod registry;
-pub mod traits;
+pub mod factory;
+pub mod gpu;
+#[cfg(test)]
+pub(crate) mod test_backend;
 
 pub use crate::core::DamageRegion;
+pub use contract::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
 pub use cpu::CpuBackend;
-pub use native_gpu::NativeGpuBackend;
-pub use null::NullBackend;
-pub use traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
+pub use gpu::GpuBackend;
+#[cfg(test)]
+pub(crate) use test_backend::TestBackend;
 
 use crate::core::{Errc, Error};
 use crate::native::traits::present::IGraphicsContext;
@@ -23,12 +24,13 @@ pub(crate) fn create_backend(
 ) -> Result<Box<dyn RenderBackend>, Error> {
     match kind {
         BackendKind::Cpu | BackendKind::Auto => Ok(Box::new(CpuBackend::new())),
-        BackendKind::Null => Ok(Box::new(NullBackend::new())),
+        #[cfg(test)]
+        BackendKind::Test => Ok(Box::new(TestBackend::new())),
         BackendKind::Gpu => {
             let ctx = gpu_ctx.ok_or_else(|| {
                 Error::new(Errc::InvalidArgument, "Gpu 后端需要 IGraphicsContext")
             })?;
-            registry::create_native_raster_backend(ctx)
+            factory::create_native_raster_backend(ctx)
         }
     }
 }

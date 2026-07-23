@@ -1,7 +1,7 @@
-use crate::draw::compositor::ScenePaint;
-use crate::draw::engine::cpu::pixel_surface::PixelSurface;
-use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
-use crate::draw::spatial::Orientation;
+use crate::draw::backend::cpu::pixel_surface::PixelSurface;
+use crate::draw::backend::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::geometry::spatial::Orientation;
+use crate::draw::scene::ScenePaint;
 use crate::tests::common::*;
 use crate::ui::state::State;
 use crate::ui::view::{ViewAdapter, ViewNode};
@@ -594,10 +594,13 @@ fn intrinsic_width_uses_unicode_text_metrics_instead_of_utf8_bytes() {
     let label = "超长中文选项用于宽度测量";
     let select = Select::new().options([label]);
     let measured = WidgetLayout::measure(&select, Constraints::unconstrained());
-    let expected =
-        crate::draw::font::text_backend::estimate_text_metrics(label, f32::INFINITY, 13.0)
-            .max_line_width
-            + 40.0;
+    let expected = crate::draw::resources::font::text_backend::estimate_text_metrics(
+        label,
+        f32::INFINITY,
+        13.0,
+    )
+    .max_line_width
+        + 40.0;
 
     assert!(
         (measured.w - expected.max(120.0)).abs() < 0.01,

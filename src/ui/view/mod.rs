@@ -3,7 +3,7 @@
 //! 本模块提供函数式组合子 API，让用户通过 `View` trait 和 `ViewNode` 声明 UI，
 //! 完全不需要了解 `WidgetTree`、`WidgetNode`、`BoxedWidget` 等内部概念。
 
-use crate::core::{EdgeInsets, Point, Rect};
+use crate::core::{EdgeInsets, Point};
 use crate::draw::Color;
 use crate::ui::accessibility_override::AccessibilityOverride;
 use crate::ui::event::{HandlerRegistration, SemanticEvent, SemanticKind};
@@ -948,52 +948,3 @@ pub trait StyleExt: Into<ViewNode> + Sized {
 }
 
 impl<T: Into<ViewNode>> StyleExt for T {}
-
-type FillRectCallback<'a> = Box<dyn FnMut(Rect, Color, Option<f32>) + 'a>;
-type StrokeRectCallback<'a> = Box<dyn FnMut(Rect, Color, f32) + 'a>;
-type TextCallback<'a> = Box<dyn FnMut(&str, Point, Color, f32) + 'a>;
-type TextCenterCallback<'a> = Box<dyn FnMut(&str, Rect, Color, f32) + 'a>;
-type ColorCallback<'a> = Box<dyn FnMut(&str) -> Color + 'a>;
-
-/// 简化渲染上下文——用户层进行自定义绘制时使用的 API。
-pub struct Ui<'a> {
-    pub(crate) fill_rect_fn: Option<FillRectCallback<'a>>,
-    pub(crate) stroke_rect_fn: Option<StrokeRectCallback<'a>>,
-    pub(crate) text_fn: Option<TextCallback<'a>>,
-    pub(crate) text_center_fn: Option<TextCenterCallback<'a>>,
-    pub(crate) color_fn: Option<ColorCallback<'a>>,
-}
-
-impl<'a> Ui<'a> {
-    pub fn fill_rect(&mut self, rect: Rect, color: impl Into<Color>, radius: Option<f32>) {
-        if let Some(ref mut f) = self.fill_rect_fn {
-            f(rect, color.into(), radius);
-        }
-    }
-
-    pub fn stroke_rect(&mut self, rect: Rect, color: impl Into<Color>, width: f32) {
-        if let Some(ref mut f) = self.stroke_rect_fn {
-            f(rect, color.into(), width);
-        }
-    }
-
-    pub fn text(&mut self, text: &str, pos: Point, color: impl Into<Color>, font_size: f32) {
-        if let Some(ref mut f) = self.text_fn {
-            f(text, pos, color.into(), font_size);
-        }
-    }
-
-    pub fn text_center(&mut self, text: &str, rect: Rect, color: impl Into<Color>, font_size: f32) {
-        if let Some(ref mut f) = self.text_center_fn {
-            f(text, rect, color.into(), font_size);
-        }
-    }
-
-    pub fn color(&mut self, name: &str) -> Color {
-        if let Some(ref mut f) = self.color_fn {
-            f(name)
-        } else {
-            Color::black()
-        }
-    }
-}

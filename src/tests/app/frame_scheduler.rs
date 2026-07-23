@@ -1,6 +1,6 @@
 use crate::app::frame_scheduler::{FrameScheduler, SurfaceState, SurfaceSuspendReason};
 use crate::core::{Errc, Error};
-use crate::draw::engine::GraphicsFailure;
+use crate::draw::renderer::GraphicsFailure;
 use crate::native::traits::event::FrameRequestToken;
 use std::time::{Duration, Instant};
 

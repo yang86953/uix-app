@@ -2,7 +2,7 @@
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
 
@@ -37,8 +37,8 @@ component! {
         constraints.clamp(Size::new(width, self.intrinsic_height(description, width)))
     }
 
-    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
-        crate::draw::compositor::PicturePolicy::Eligible
+    picture_policy => (&self) -> crate::draw::scene::PicturePolicy {
+        crate::draw::scene::PicturePolicy::Eligible
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -129,7 +129,7 @@ impl Empty {
     }
 
     fn preferred_width(&self, description: &str) -> f32 {
-        let text_width = crate::draw::font::text_backend::estimate_text_metrics(
+        let text_width = crate::draw::resources::font::text_backend::estimate_text_metrics(
             description,
             f32::INFINITY,
             TEXT_FONT_SIZE,
@@ -154,7 +154,7 @@ impl Empty {
     }
 
     fn description_line_count(description: &str, width: f32) -> usize {
-        crate::draw::font::text_backend::estimate_text_metrics(
+        crate::draw::resources::font::text_backend::estimate_text_metrics(
             description,
             width.max(1.0),
             TEXT_FONT_SIZE,

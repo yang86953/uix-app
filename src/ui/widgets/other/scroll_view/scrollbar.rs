@@ -4,7 +4,7 @@
 //! content is not painted underneath the thumb (not overlay-on-content).
 
 use crate::core::{Point, Rect};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::Radius;
 /// Which axis this scrollbar controls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,7 +1,7 @@
 //! WGL + OpenGL ES 3.0 graphics context for Windows.
 //!
 //! Creates an ES profile context on the window HWND and implements
-//! [`IGraphicsContext`] for [`GpuEngine`].
+//! OpenGL ES [`IGraphicsContext`] for the unique draw `Renderer`.
 
 #![allow(nonstandard_style)]
 #![allow(clippy::missing_safety_doc)]

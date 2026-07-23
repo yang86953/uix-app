@@ -1,6 +1,6 @@
-use crate::draw::compositor::ScenePaint;
-use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
-use crate::draw::spatial::Orientation;
+use crate::draw::backend::cpu::noop_canvas_2d::NoopCanvas2D;
+use crate::draw::geometry::spatial::Orientation;
+use crate::draw::scene::ScenePaint;
 use crate::tests::common::*;
 use crate::ui::state::State;
 use crate::ui::view::{canvas, ViewAdapter};

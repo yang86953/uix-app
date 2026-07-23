@@ -5,7 +5,7 @@
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::Color;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
@@ -158,7 +158,7 @@ component! {
                 if bg_c.a > 0 {
                     ctx.fill_circle(cx, circle_y, circle_r, bg_c);
                 }
-                ctx.canvas_2d().stroke_circle(cx, circle_y, circle_r, border_c, 2.0);
+                ctx.stroke_circle(cx, circle_y, circle_r, border_c, 2.0);
                 // 步骤编号/图标（在圆圈内居中）
                 let circle_rect = Rect::new(cx - circle_r, circle_y - circle_r, circle_r * 2.0, circle_r * 2.0);
                 if self.dot {
@@ -214,8 +214,7 @@ component! {
                 if bg_c.a > 0 {
                     ctx.fill_circle(circle_x, cy, circle_r, bg_c);
                 }
-                ctx.canvas_2d()
-                    .stroke_circle(circle_x, cy, circle_r, border_c, 2.0);
+                ctx.stroke_circle(circle_x, cy, circle_r, border_c, 2.0);
                 let circle_rect = Rect::new(
                     circle_x - circle_r,
                     cy - circle_r,

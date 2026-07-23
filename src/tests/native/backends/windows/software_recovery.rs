@@ -2,10 +2,10 @@ use crate::app::clock::AppClock;
 use crate::app::event_loop::event_loop::run_window_session_loop_with_clock;
 use crate::app::shell::application::graphics_recovery_rebuilder;
 use crate::app::window_session::WindowSession;
-use crate::draw::engine::bootstrap::bootstrap_graphics_engine;
-use crate::draw::engine::{GraphicsFailure, RecoveringGraphicsEngine};
-use crate::draw::pipeline::RenderMetrics;
-use crate::draw::traits::{Canvas2D, GraphicsCapabilities, UpdateStrategy};
+use crate::draw::renderer::bootstrap::bootstrap_renderer;
+use crate::draw::renderer::RenderMetrics;
+use crate::draw::renderer::{GraphicsFailure, RecoveryDriver};
+use crate::draw::{Canvas2D, GraphicsCapabilities, UpdateStrategy};
 use crate::native::backends::windows::consts::WM_CLOSE;
 use crate::native::backends::windows::ffi::PostMessageW;
 use crate::native::graphics::vulkan::platform::context::accept_device_wait_for_shutdown;
@@ -20,13 +20,13 @@ const WIDTH: i32 = 160;
 const HEIGHT: i32 = 120;
 
 struct InjectedDeviceLossEngine {
-    inner: Box<dyn GraphicsEngine>,
+    inner: Box<dyn RenderTarget>,
     vulkan_lost_wait_teardowns: Option<Arc<AtomicUsize>>,
 }
 
 impl InjectedDeviceLossEngine {
     fn new(
-        inner: Box<dyn GraphicsEngine>,
+        inner: Box<dyn RenderTarget>,
         vulkan_lost_wait_teardowns: Option<Arc<AtomicUsize>>,
     ) -> Self {
         Self {
@@ -36,7 +36,7 @@ impl InjectedDeviceLossEngine {
     }
 }
 
-impl GraphicsEngine for InjectedDeviceLossEngine {
+impl RenderTarget for InjectedDeviceLossEngine {
     fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.inner.initialize(width, height)
     }
@@ -80,7 +80,7 @@ impl GraphicsEngine for InjectedDeviceLossEngine {
         self.inner.device_pixel_ratio()
     }
 
-    fn orientation(&self) -> crate::draw::spatial::Orientation {
+    fn orientation(&self) -> crate::draw::geometry::spatial::Orientation {
         self.inner.orientation()
     }
 }
@@ -129,7 +129,7 @@ fn device_loss_crosses_real_windows_recipes_and_commits_software_frame() {
     let hwnd = window.native_surface_ptr();
     // SAFETY: 窗口在整个同步 bootstrap、恢复与事件循环期间存活，且操作始终留在当前线程。
     let surface = unsafe { NativeSurfaceHandle::from_raw(hwnd) };
-    let bootstrap = bootstrap_graphics_engine(surface, WIDTH, HEIGHT, GraphicsBackend::Auto)
+    let bootstrap = bootstrap_renderer(surface, WIDTH, HEIGHT, GraphicsBackend::Auto)
         .unwrap_or_else(|report| panic!("native GPU bootstrap failed: {:?}", report.failures));
     assert_eq!(bootstrap.selected_recipe.backend, GraphicsBackend::Vulkan);
 
@@ -140,9 +140,9 @@ fn device_loss_crosses_real_windows_recipes_and_commits_software_frame() {
     let rebuilt_lost_wait_teardowns = Arc::clone(&vulkan_lost_wait_teardowns);
     let mut native_rebuilder =
         graphics_recovery_rebuilder(surface, GraphicsBackend::Auto, bootstrap.selected_recipe);
-    let recovering = RecoveringGraphicsEngine::new(
+    let recovering = RecoveryDriver::new(
         Box::new(InjectedDeviceLossEngine::new(
-            bootstrap.engine,
+            Box::new(bootstrap.renderer),
             Some(initial_lost_wait_teardowns),
         )),
         Box::new(move |action, width, height| {

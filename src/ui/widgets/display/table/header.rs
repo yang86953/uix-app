@@ -1,5 +1,5 @@
 use crate::core::Rect;
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::Radius;
 
 use super::geometry::{ColumnZone, TableColumnGeometry};
@@ -68,7 +68,7 @@ pub(super) fn paint(
         let Some(zone_clip) = geometry.clip_for(zone, header_rect.y, header_rect.h) else {
             continue;
         };
-        ctx.canvas_2d().push_clip(zone_clip);
+        ctx.push_clip(zone_clip);
         for laid_out in geometry.columns.iter().filter(|column| column.zone == zone) {
             let grouped = table
                 .column_groups
@@ -167,7 +167,7 @@ pub(super) fn paint(
                 );
             }
         }
-        ctx.canvas_2d().pop_clip();
+        ctx.pop_clip();
     }
 }
 
@@ -207,7 +207,7 @@ fn paint_group_titles(
             else {
                 continue;
             };
-            ctx.canvas_2d().push_clip(segment);
+            ctx.push_clip(segment);
             let horizontal_inset = 8.0_f32.min(segment.w * 0.25);
             Table::paint_single_line(
                 ctx,
@@ -233,7 +233,7 @@ fn paint_group_titles(
                     None,
                 );
             }
-            ctx.canvas_2d().pop_clip();
+            ctx.pop_clip();
         }
     }
 }

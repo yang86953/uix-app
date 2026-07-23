@@ -7,7 +7,7 @@ use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::Color;
 use crate::ui::{EventResult, KeyCode, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
 
@@ -136,8 +136,8 @@ component! {
         }
     }
 
-    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
-        crate::draw::compositor::PicturePolicy::Eligible
+    picture_policy => (&self) -> crate::draw::scene::PicturePolicy {
+        crate::draw::scene::PicturePolicy::Eligible
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
@@ -394,7 +394,7 @@ impl ResultView {
     }
 
     fn estimated_text_width(value: &str, font_size: f32) -> f32 {
-        crate::draw::font::text_backend::estimate_text_metrics(
+        crate::draw::resources::font::text_backend::estimate_text_metrics(
             &value.replace(['\r', '\n'], " "),
             f32::INFINITY,
             font_size,
@@ -406,10 +406,11 @@ impl ResultView {
         if value.is_empty() || width <= 0.0 {
             return 0.0;
         }
-        let line_count =
-            crate::draw::font::text_backend::estimate_text_metrics(value, width, font_size)
-                .line_count
-                .clamp(1, max_lines);
+        let line_count = crate::draw::resources::font::text_backend::estimate_text_metrics(
+            value, width, font_size,
+        )
+        .line_count
+        .clamp(1, max_lines);
         line_count as f32 * font_size * 1.5
     }
 
@@ -428,8 +429,9 @@ impl ResultView {
         if visible_lines == 0 {
             return;
         }
-        let metrics =
-            crate::draw::font::text_backend::estimate_text_metrics(value, frame.w, font_size);
+        let metrics = crate::draw::resources::font::text_backend::estimate_text_metrics(
+            value, frame.w, font_size,
+        );
         ctx.push_clip(frame);
         if metrics.line_count <= 1 {
             ctx.text_center(value, frame, color, font_size);

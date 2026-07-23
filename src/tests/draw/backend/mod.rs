@@ -1,11 +1,10 @@
 // Auto-organized test modules. Tests live only under src/tests.
 
 mod cpu;
+mod factory;
+mod gpu;
 mod module;
-mod native_gpu;
-mod null;
-mod offscreen_pool;
 #[cfg(feature = "opengles")]
 mod opengl_native_tests;
-mod registry;
 mod rounded_additive;
+mod test_backend;

@@ -3,7 +3,7 @@ use std::cell::{Cell, RefCell};
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::traits::input::ControlSize;
 use crate::ui::animation::{presets, AnimationConfig, TransitionPlayer};
@@ -233,12 +233,8 @@ component! {
         let border_secondary = ctx.tokens().color_border_secondary();
         let text_color = ctx.tokens().color_text();
         let text_secondary = ctx.tokens().color_text_secondary();
-        let surface = Rect::new(
-            0.0,
-            0.0,
-            ctx.canvas_2d().width() as f32,
-            ctx.canvas_2d().height() as f32,
-        );
+        let surface_size = ctx.surface_size();
+        let surface = Rect::new(0.0, 0.0, surface_size.w, surface_size.h);
         let dialog = if self.overlay {
             self.last_win_w.set(surface.w);
             self.last_win_h.set(surface.h);
@@ -906,8 +902,12 @@ impl Modal {
 
     fn text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
         ctx.measure_text(value, font_size).w.max(
-            crate::draw::font::text_backend::estimate_text_metrics(value, f32::INFINITY, font_size)
-                .max_line_width,
+            crate::draw::resources::font::text_backend::estimate_text_metrics(
+                value,
+                f32::INFINITY,
+                font_size,
+            )
+            .max_line_width,
         )
     }
 

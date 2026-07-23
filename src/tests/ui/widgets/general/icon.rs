@@ -25,7 +25,7 @@ fn sidebar_icon_names_map_to_pua() {
 /// 根因回归：混排图标须用 UI 字体行盒定位，再切 Lucide 绘制。
 #[test]
 fn paint_icon_uses_ui_font_line_box_not_lucide_metrics() {
-    use crate::draw::font::text::render::TextRenderService;
+    use crate::draw::resources::font::text::render::TextRenderService;
 
     let mut fs = FontService::new();
     let Some(segoe) = fs.load_font_from_path(r"C:\Windows\Fonts\segoeui.ttf", 14.0) else {

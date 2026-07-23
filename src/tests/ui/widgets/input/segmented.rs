@@ -1,6 +1,6 @@
-use crate::draw::engine::cpu::pixel_surface::PixelSurface;
-use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
-use crate::draw::spatial::Orientation;
+use crate::draw::backend::cpu::pixel_surface::PixelSurface;
+use crate::draw::backend::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::geometry::spatial::Orientation;
 use crate::tests::common::*;
 use crate::ui::state::State;
 use crate::ui::view::{ViewAdapter, ViewNode};
@@ -43,8 +43,12 @@ fn segmented_cjk_width_uses_unicode_metrics_instead_of_utf8_bytes() {
     let expected = options
         .iter()
         .map(|option| {
-            crate::draw::font::text_backend::estimate_text_metrics(option, f32::INFINITY, 13.0)
-                .max_line_width
+            crate::draw::resources::font::text_backend::estimate_text_metrics(
+                option,
+                f32::INFINITY,
+                13.0,
+            )
+            .max_line_width
                 + 24.0
         })
         .sum::<f32>();

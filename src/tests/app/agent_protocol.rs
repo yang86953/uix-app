@@ -25,7 +25,7 @@ use crate::native::agent_transport::{
     endpoint_permissions_are_private_for_test, peer_user_ids_match_for_test,
 };
 use crate::native::traits::event::EventLoopWaker;
-use crate::tests::common::NullEngine;
+use crate::tests::common::Renderer;
 use crate::ui::view::combinators::{button, column, embed};
 use crate::ui::view::StyleExt;
 use crate::ui::widgets::Segmented;
@@ -244,7 +244,7 @@ fn protocol_routes_snapshot_perform_and_wait_through_the_window_ui_turn() {
             embed(Segmented::new(["Day", "Week", "Month"]).disable_option(1))
                 .automation_id("period"),
         ]),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         320,
         160,
     );

@@ -19,8 +19,8 @@ impl WidgetTree {
     /// 使用 Widget::hit_test_3d 方法，支持 3D 变换后的 widget。
     pub fn hit_test_3d(
         &self,
-        ray: &crate::draw::spatial::Ray3D,
-        spatial: &crate::draw::spatial::SpatialContext,
+        ray: &crate::draw::geometry::spatial::Ray3D,
+        spatial: &crate::draw::geometry::spatial::SpatialContext,
     ) -> Option<ComponentId> {
         self.root_id
             .and_then(|root| self.hit_test_3d_internal(root, ray, spatial))
@@ -30,8 +30,8 @@ impl WidgetTree {
     fn hit_test_3d_internal(
         &self,
         id: WidgetId,
-        ray: &crate::draw::spatial::Ray3D,
-        spatial: &crate::draw::spatial::SpatialContext,
+        ray: &crate::draw::geometry::spatial::Ray3D,
+        spatial: &crate::draw::geometry::spatial::SpatialContext,
     ) -> Option<WidgetId> {
         let node = self.get(id)?;
         if !node.visible() || self.is_pending_removal_subtree(id) {

@@ -1,7 +1,7 @@
-use crate::draw::backend::native_gpu::NativeGpuBackend;
-use crate::draw::backend::traits::RenderBackend;
-use crate::draw::pipeline::{EncodedFrameExecution, FrameRadius, FrameRasterOp};
-use crate::draw::primitives::types::Radius;
+use crate::draw::backend::contract::RenderBackend;
+use crate::draw::backend::gpu::GpuBackend;
+use crate::draw::command::{EncodedFrameExecution, FrameRadius, FrameRasterOp};
+use crate::draw::geometry::types::Radius;
 use crate::tests::common::*;
 
 struct RoundedAdditiveContext {
@@ -109,7 +109,7 @@ fn rounded_additive_uses_readback_reference_apply_and_replace_upload() {
         height: 1,
         pixels: Rc::clone(&pixels),
     };
-    let mut backend = NativeGpuBackend::new(Box::new(context)).expect("backend");
+    let mut backend = GpuBackend::new(Box::new(context)).expect("backend");
     backend.resize(9, 7).expect("resize");
 
     let mut encoder = FrameEncoder::new(9, 7).expect("encoder");

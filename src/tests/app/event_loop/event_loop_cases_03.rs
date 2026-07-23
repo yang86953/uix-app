@@ -1,4 +1,3 @@
-
 #[test]
 fn exact_occlusion_query_suspends_before_visual_work_without_waiting_for_notification() {
     let visible = Arc::new(AtomicBool::new(true));
@@ -15,7 +14,7 @@ fn exact_occlusion_query_suspends_before_visual_work_without_waiting_for_notific
         .with_occlusion_signal(Arc::clone(&occluded));
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -89,7 +88,7 @@ fn occlusion_notification_blocks_without_polling_then_exposure_rebases_animation
             updates.clone(),
             recorded_dts.clone(),
         )),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -174,7 +173,7 @@ fn showing_hidden_window_rebases_animation_and_presents_retained_dirty_once() {
             updates.clone(),
             recorded_dts.clone(),
         )),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -246,7 +245,7 @@ fn zero_extent_keeps_dirty_and_animation_registered_without_wake() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(TestAnimatedWidget::new(remaining, updates.clone())),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -318,7 +317,7 @@ fn restore_rebases_animation_clock_and_presents_retained_dirty() {
             updates.clone(),
             recorded_dts.clone(),
         )),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -395,7 +394,7 @@ fn minimized_window_preserves_dirty_until_restore() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -460,7 +459,7 @@ fn minimized_window_repaints_on_maximize() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -518,7 +517,7 @@ fn ime_events_without_focused_component_do_not_start_text_input_or_force_frame()
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -563,7 +562,7 @@ fn window_session_deep_idle_records_loop_state() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -602,7 +601,7 @@ fn registered_active_future_deadline_waits_until_deadline() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -649,7 +648,7 @@ fn registered_active_wait_until_uses_injected_test_clock() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Container::new()),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -702,7 +701,7 @@ fn focused_input_registers_open_ime_work_without_timeout() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         ViewNode::leaf(Input::new("type here")),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );
@@ -758,7 +757,7 @@ fn fake_platform_tab_then_text_input_targets_second_input_only() {
                 ViewNode::leaf(Input::new("second")),
             ],
         ),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         800,
         600,
     );

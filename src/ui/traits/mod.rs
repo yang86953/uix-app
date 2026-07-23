@@ -2,13 +2,11 @@
 
 pub mod animation;
 pub mod layout;
-pub mod render;
 pub mod theme;
 pub mod widget;
 
 pub use animation::Animatable;
 pub use layout::LayoutEngine;
-pub use render::{DebugRenderer, TextRenderer};
 pub use theme::TokenProvider;
 pub use widget::{
     EventHandler, IntoWidgetNode, WidgetAnimation, WidgetCapabilities, WidgetComponent,
