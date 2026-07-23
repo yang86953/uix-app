@@ -838,7 +838,7 @@ fn input_on_change_is_registered_as_semantic_handler() {
 
 #[test]
 fn static_display_widgets_are_picture_eligible() {
-    use crate::draw::compositor::PicturePolicy;
+    use crate::draw::scene::PicturePolicy;
     use crate::ui::widgets::{
         Alert, Avatar, Badge, BarChart, Content, Descriptions, Divider, Empty, Footer, Grid,
         Header, Icon, Layout, LineChart, List, PieChart, QRCode, ResultType, ResultView, Sider,

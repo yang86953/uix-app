@@ -21,9 +21,9 @@ use crate::ui::style::{DisplayMode, Style};
 use crate::ui::view::{View, ViewNode};
 
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::compositor::PicturePolicy;
-use crate::draw::painting::PaintContext;
-use crate::draw::pipeline::InvalidationQueueHandle;
+use crate::draw::api::PaintContext;
+use crate::draw::renderer::InvalidationQueueHandle;
+use crate::draw::scene::PicturePolicy;
 use crate::ui::state::{Computed, State, StatePaintBind};
 use crate::ui::traits::{WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetRender};
 use crate::ui::{ComponentId, WidgetTree};

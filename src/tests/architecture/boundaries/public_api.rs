@@ -14,9 +14,9 @@ fn low_level_widget_loop_stays_off_prelude() {
 }
 
 #[test]
-fn draw_gpu_engine_has_no_legacy_shader_reexports() {
+fn draw_api_has_no_native_shader_reexports() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let gpu_engine = fs::read_to_string(src.join("draw/gpu_engine/mod.rs")).unwrap();
+    let draw_api = fs::read_to_string(src.join("draw/mod.rs")).unwrap();
     let shader_names = [
         "BLIT_FRAG",
         "BLIT_RGBA_FRAG",
@@ -27,8 +27,8 @@ fn draw_gpu_engine_has_no_legacy_shader_reexports() {
     ];
 
     assert!(
-        shader_names.iter().all(|name| !gpu_engine.contains(name)),
-        "native shader sources must not be re-exported through draw::gpu_engine"
+        shader_names.iter().all(|name| !draw_api.contains(name)),
+        "native shader sources must not be re-exported through the public draw API"
     );
 }
 

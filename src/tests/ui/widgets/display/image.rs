@@ -1,8 +1,8 @@
-use crate::draw::engine::cpu::pixel_surface::PixelSurface;
-use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
-use crate::draw::pipeline::render_frame::{FrameRenderInput, FrameRenderer};
-use crate::draw::spatial::Orientation;
-use crate::draw::traits::canvas::Canvas2D;
+use crate::draw::backend::cpu::pixel_surface::PixelSurface;
+use crate::draw::backend::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::geometry::spatial::Orientation;
+use crate::draw::renderer::scene_pipeline::{FrameRenderInput, ScenePipeline};
+use crate::draw::Canvas2D;
 use crate::tests::common::*;
 use crate::ui::view::{ViewAdapter, ViewNode};
 use crate::ui::widgets::{Button, Image, Label};
@@ -42,7 +42,7 @@ fn render_display_list(image: &Image, frame: Rect, surface_size: (i32, i32)) -> 
     let images = ImageService::new();
     let tokens = DesignTokens::antd_light();
     let tree = WidgetTree::new();
-    let mut display_list = crate::draw::painting::DisplayList::new();
+    let mut display_list = crate::draw::command::DisplayList::new();
     {
         let mut ctx = PaintContext::new_for_test(
             &mut canvas,
@@ -92,8 +92,8 @@ fn render_with_image_service(
 }
 
 struct ImageTreeHarness {
-    engine: SoftwareEngine,
-    renderer: FrameRenderer,
+    engine: Renderer,
+    renderer: ScenePipeline,
     fonts: FontService,
     font: crate::draw::FontHandle,
     images: ImageService,
@@ -103,15 +103,15 @@ struct ImageTreeHarness {
 
 impl ImageTreeHarness {
     fn new() -> Self {
-        let mut engine = SoftwareEngine::new();
-        engine.initialize(160, 120).expect("software engine");
+        let mut engine = Renderer::cpu();
+        engine.initialize(160, 120).expect("CPU renderer");
         let mut fonts = FontService::new();
         let font = fonts
             .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
             .expect("load deterministic test font");
         Self {
             engine,
-            renderer: FrameRenderer::new(),
+            renderer: ScenePipeline::new(),
             fonts,
             font,
             images: ImageService::new(),

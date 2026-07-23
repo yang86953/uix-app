@@ -22,7 +22,7 @@ pub(crate) mod spacing_tokens;
 pub(crate) mod typography_tokens;
 pub(crate) mod wrapper;
 
-pub use crate::draw::painting::TokenPatch;
+pub use crate::draw::api::TokenPatch;
 pub use color_tokens::*;
 pub use design_tokens::primitives::ThemePrimitives;
 pub use design_tokens::*;

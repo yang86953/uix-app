@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::draw::compositor::LayerTree;
+use crate::draw::scene::LayerTree;
 use crate::tests::common::*;
 use crate::ui::animation::AnimationConfig;
 use crate::ui::core::widget::WidgetCore;
@@ -414,8 +414,8 @@ fn widget_tree_scene_bridge_renders_the_transformed_canvas_subtree() {
 
     let mut layers = LayerTree::new();
     layers.build(&tree, false);
-    let mut engine = SoftwareEngine::new();
-    engine.initialize(64, 64).expect("software engine init");
+    let mut engine = Renderer::cpu();
+    engine.initialize(64, 64).expect("CPU renderer init");
     let tokens = DesignTokens::antd_light();
     let theme = ThemeSnapshot::new(&tokens);
     let fonts = FontService::new();

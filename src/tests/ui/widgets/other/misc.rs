@@ -1,5 +1,5 @@
-use crate::draw::engine::cpu::pixel_surface::PixelSurface;
-use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::backend::cpu::pixel_surface::PixelSurface;
+use crate::draw::backend::cpu::shared_rasterizer::SharedRasterizer;
 use crate::tests::common::*;
 use crate::ui::view::ViewAdapter;
 use crate::ui::widgets::{
@@ -29,7 +29,7 @@ fn render_upload(upload: &Upload, frame: Rect) -> Vec<u32> {
         &tokens,
         96.0,
         1.0,
-        crate::draw::spatial::Orientation::YDown,
+        crate::draw::geometry::spatial::Orientation::YDown,
         surface_w,
         surface_h,
     );
@@ -58,7 +58,7 @@ fn render_watermark(watermark: &Watermark, frame: Rect) -> Vec<u32> {
         &tokens,
         96.0,
         1.0,
-        crate::draw::spatial::Orientation::YDown,
+        crate::draw::geometry::spatial::Orientation::YDown,
         frame.w.ceil().max(1.0) as i32,
         frame.h.ceil().max(1.0) as i32,
     );
@@ -79,7 +79,7 @@ fn render_transfer(transfer: &Transfer, frame: Rect) -> String {
     let images = ImageService::new();
     let tokens = DesignTokens::antd_light();
     let tree = WidgetTree::new();
-    let mut display_list = crate::draw::painting::DisplayList::new();
+    let mut display_list = crate::draw::command::DisplayList::new();
     let mut ctx = PaintContext::new_for_test(
         &mut canvas,
         font,
@@ -88,7 +88,7 @@ fn render_transfer(transfer: &Transfer, frame: Rect) -> String {
         &tokens,
         96.0,
         1.0,
-        crate::draw::spatial::Orientation::YDown,
+        crate::draw::geometry::spatial::Orientation::YDown,
         frame.w.ceil().max(1.0) as i32,
         frame.h.ceil().max(1.0) as i32,
     );

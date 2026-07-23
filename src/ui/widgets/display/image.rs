@@ -7,9 +7,10 @@ use std::rc::Rc;
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::image::BitmapHandle;
-use crate::draw::painting::{PaintContext, PaintPass};
-use crate::draw::pipeline::Invalidation;
+use crate::draw::api::PaintContext;
+use crate::draw::command::PaintPass;
+use crate::draw::renderer::Invalidation;
+use crate::draw::resources::image::BitmapHandle;
 use crate::draw::{Color, Radius};
 use crate::ui::core::paint_scope::current_paint_widget;
 use crate::ui::core::widget::WidgetTree;
@@ -183,10 +184,8 @@ component! {
             return;
         }
 
-        let (surface_w, surface_h) = {
-            let canvas = ctx.canvas_2d();
-            (canvas.width() as f32, canvas.height() as f32)
-        };
+        let surface_size = ctx.surface_size();
+        let (surface_w, surface_h) = (surface_size.w, surface_size.h);
         self.last_surface_w.set(surface_w);
         self.last_surface_h.set(surface_h);
         let frame = Self::normalized_frame(frame);
@@ -389,22 +388,12 @@ impl Image {
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return false;
         }
-        let canvas = ctx.canvas_2d();
-        let (offset_x, offset_y) = canvas.offset();
-        let surface_frame = canvas.current_transform().transform_rect(Rect::new(
-            frame.x + offset_x,
-            frame.y + offset_y,
-            frame.w,
-            frame.h,
-        ));
-        surface_frame
-            .intersect(&canvas.current_clip())
-            .is_some_and(|visible| visible.w > 0.0 && visible.h > 0.0)
+        ctx.is_rect_visible(frame)
     }
 
     fn valid_handle(
         &self,
-        image_service: &crate::draw::image::ImageService,
+        image_service: &crate::draw::resources::image::ImageService,
     ) -> Option<BitmapHandle> {
         if let Some(handle) = self.slot {
             if image_service.is_valid(handle) {
@@ -576,8 +565,9 @@ impl Image {
         if content.w <= 0.0 || content.h <= 0.0 {
             return;
         }
-        let metrics =
-            crate::draw::font::text_backend::estimate_text_metrics(label, content.w, font_size);
+        let metrics = crate::draw::resources::font::text_backend::estimate_text_metrics(
+            label, content.w, font_size,
+        );
         let line_height = font_size * 1.5;
         let label_height = (metrics.line_count.max(1) as f32 * line_height).min(content.h);
         let label_frame = Rect::new(

@@ -4,7 +4,7 @@
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::Radius;
 use crate::native::traits::input::ControlSize;
 use crate::ui::{SnapshotFields, WidgetTree};
@@ -55,8 +55,8 @@ component! {
         ))
     }
 
-    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
-        crate::draw::compositor::PicturePolicy::Eligible
+    picture_policy => (&self) -> crate::draw::scene::PicturePolicy {
+        crate::draw::scene::PicturePolicy::Eligible
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -327,9 +327,13 @@ fn wrapped_text_height(text: &str, region_width: f32) -> f32 {
     if text_width <= 0.0 {
         return 0.0;
     }
-    crate::draw::font::text_backend::estimate_text_metrics(text, text_width, ITEM_FONT_SIZE)
-        .line_count
-        .max(1) as f32
+    crate::draw::resources::font::text_backend::estimate_text_metrics(
+        text,
+        text_width,
+        ITEM_FONT_SIZE,
+    )
+    .line_count
+    .max(1) as f32
         * ITEM_FONT_SIZE
         * TEXT_LINE_HEIGHT
 }
@@ -356,8 +360,12 @@ fn draw_wrapped_cell_text(
 
 fn conservative_text_width(ctx: &mut PaintContext<'_>, text: &str, font_size: f32) -> f32 {
     ctx.measure_text(text, font_size).w.max(
-        crate::draw::font::text_backend::estimate_text_metrics(text, f32::INFINITY, font_size)
-            .max_line_width,
+        crate::draw::resources::font::text_backend::estimate_text_metrics(
+            text,
+            f32::INFINITY,
+            font_size,
+        )
+        .max_line_width,
     )
 }
 

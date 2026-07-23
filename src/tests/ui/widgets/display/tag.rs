@@ -4,8 +4,8 @@ use crate::ui::widgets::{Tag, TagColor};
 use crate::ui::{AccessibilityRole, EventHandler, WidgetComponent};
 
 fn render_tag(tag: &Tag) -> Vec<u32> {
-    let mut canvas = crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer::new(
-        crate::draw::engine::cpu::pixel_surface::PixelSurface::new(120, 36),
+    let mut canvas = crate::draw::backend::cpu::shared_rasterizer::SharedRasterizer::new(
+        crate::draw::backend::cpu::pixel_surface::PixelSurface::new(120, 36),
     );
     let mut fonts = FontService::new();
     let font = fonts
@@ -22,7 +22,7 @@ fn render_tag(tag: &Tag) -> Vec<u32> {
         &tokens,
         96.0,
         1.0,
-        crate::draw::spatial::Orientation::YDown,
+        crate::draw::geometry::spatial::Orientation::YDown,
         120,
         36,
     );
@@ -31,8 +31,8 @@ fn render_tag(tag: &Tag) -> Vec<u32> {
 }
 
 fn render_tag_display(tag: &Tag, frame: Rect, surface_size: (i32, i32)) -> String {
-    let mut canvas = crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer::new(
-        crate::draw::engine::cpu::pixel_surface::PixelSurface::new(surface_size.0, surface_size.1),
+    let mut canvas = crate::draw::backend::cpu::shared_rasterizer::SharedRasterizer::new(
+        crate::draw::backend::cpu::pixel_surface::PixelSurface::new(surface_size.0, surface_size.1),
     );
     let mut fonts = FontService::new();
     let font = fonts
@@ -41,7 +41,7 @@ fn render_tag_display(tag: &Tag, frame: Rect, surface_size: (i32, i32)) -> Strin
     let images = ImageService::new();
     let tokens = DesignTokens::antd_light();
     let tree = WidgetTree::new();
-    let mut display_list = crate::draw::painting::DisplayList::new();
+    let mut display_list = crate::draw::command::DisplayList::new();
     {
         let mut ctx = PaintContext::new_for_test(
             &mut canvas,
@@ -51,7 +51,7 @@ fn render_tag_display(tag: &Tag, frame: Rect, surface_size: (i32, i32)) -> Strin
             &tokens,
             96.0,
             1.0,
-            crate::draw::spatial::Orientation::YDown,
+            crate::draw::geometry::spatial::Orientation::YDown,
             surface_size.0,
             surface_size.1,
         );

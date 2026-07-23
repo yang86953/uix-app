@@ -61,7 +61,7 @@ impl IGraphicsContext for FakeGpuContext {
 }
 
 #[test]
-fn gpu_factory_routes_d3d11_context_to_native_gpu_backend() {
+fn gpu_factory_routes_d3d11_context_to_gpu_backend() {
     let context = FakeGpuContext {
         backend: GraphicsBackend::D3d11,
         native_caps: NativeRasterCaps::d3d11_full(),
@@ -69,9 +69,9 @@ fn gpu_factory_routes_d3d11_context_to_native_gpu_backend() {
     };
 
     let backend = create_backend(BackendKind::Gpu, Some(Box::new(context)))
-        .expect("D3D11 context should use NativeGpuBackend");
+        .expect("D3D11 context should use GpuBackend");
 
-    assert!(backend.as_any().is::<NativeGpuBackend>());
+    assert!(backend.as_any().is::<GpuBackend>());
 }
 
 #[cfg(feature = "opengles")]

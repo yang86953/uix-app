@@ -1,6 +1,6 @@
 use super::{fade_color, Select, VisibleRow, DROPDOWN_ROW_HEIGHT};
 use crate::core::{Point, Rect};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::{Color, Radius};
 
 const TEXT_SIZE: f32 = 13.0;

@@ -1,6 +1,6 @@
-use crate::draw::engine::cpu::canvas_2d::CpuCanvas2D;
-use crate::draw::engine::cpu::pixel_surface::PixelSurface;
-use crate::draw::spatial::Orientation;
+use crate::draw::backend::cpu::canvas_2d::CpuCanvas2D;
+use crate::draw::backend::cpu::pixel_surface::PixelSurface;
+use crate::draw::geometry::spatial::Orientation;
 use crate::tests::common::*;
 use crate::ui::view::{ViewAdapter, ViewNode};
 use crate::ui::widgets::{Cascader, CascaderOption, CascaderValue};

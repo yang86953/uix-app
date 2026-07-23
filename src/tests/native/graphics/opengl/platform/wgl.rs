@@ -171,7 +171,7 @@ fn wgl_glyph_atlas_reuses_coverage_and_matches_cpu_premultiplied_blend() {
         .expect("glyph readback");
     let mut expected = vec![base.premultiplied(); (width * height) as usize];
     for x in [2, 13] {
-        crate::draw::rasterizer::glyph::blit_glyph(
+        crate::draw::backend::cpu::rasterizer::glyph::blit_glyph(
             &mut expected,
             width,
             height,

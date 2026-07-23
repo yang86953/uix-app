@@ -437,7 +437,7 @@ fn reconcile_avatar_syncs_visual_config() {
 
 #[test]
 fn reconcile_badge_syncs_count_status_and_offsets() {
-    use crate::draw::spatial::PhysicalUnit;
+    use crate::draw::geometry::spatial::PhysicalUnit;
     use crate::ui::widgets::{Badge, BadgeStatus};
 
     let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Badge::new().count(1)));

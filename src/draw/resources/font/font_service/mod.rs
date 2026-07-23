@@ -1,0 +1,693 @@
+//! FontService — 独立于渲染器的字体系统。
+//!
+//! 职责：字体加载、元数据管理、文本布局、字形光栅化（含统一缓存）、
+//!       自动多字体回退（主字体→回退链→Bitmap 位图回退）。
+//! 渲染引擎只需通过 `draw_glyph_raster` 绘制像素，无需实现字体逻辑。
+
+mod font_cache;
+mod font_layout;
+
+pub use font_cache::{FontFace, GlyphCache};
+
+use std::sync::Arc;
+
+use crate::core::Error;
+use crate::core::{Point, Size};
+use crate::draw::resources::font::text_backend::{self as tb, GlyphRaster, TextLayoutOptions};
+use crate::draw::FontHandle;
+use crate::draw::TextBackend;
+
+pub(crate) use font_cache::{CachedRaster, FontSlot, GlyphCacheKey};
+
+// ════════════════════════════════════════════════════════════════════════════
+// FontService — 字体管理器
+// ════════════════════════════════════════════════════════════════════════════
+
+/// 字体服务——渲染器无关的字体子系统。
+///
+/// 管理所有已加载字体（通过 `text_backend`），提供：
+/// - 字体加载/卸载（委托给后端）
+/// - 字体元数据注册（family、path）
+/// - 统一字形缓存
+/// - 多字体回退布局（主字体 → fallback_chain → BitmapFont）
+/// - 文本度量、布局、击中测试
+pub struct FontService {
+    pub(crate) text_backend: Box<dyn TextBackend>,
+    /// 字体注册表：索引 = FontHandle.0。
+    registry: Vec<FontSlot>,
+    pub(crate) primary_family: String,
+    pub(crate) user_family_set: bool,
+    /// 主字体句柄（由 load_default_system_font 设置）。
+    pub loaded_font_handle: FontHandle,
+    /// 回退字体链（有序）。BitmapFont 自动作为最终回退。
+    fallback_handles: Vec<FontHandle>,
+    /// 统一字形缓存。
+    glyph_cache: GlyphCache,
+}
+
+impl FontService {
+    /// 创建新的字体服务实例（ab_glyph 后端）。
+    pub fn new() -> Self {
+        Self {
+            text_backend: Box::new(
+                crate::draw::resources::font::text_backends::ab_glyph::AbGlyphBackend::new(),
+            ),
+            registry: Vec::new(),
+            primary_family: "sans-serif".into(),
+            user_family_set: false,
+            loaded_font_handle: FontHandle::new(0),
+            fallback_handles: Vec::new(),
+            glyph_cache: GlyphCache::new(),
+        }
+    }
+
+    /// 替换文本后端（例如替换为 FreeType 后端）。
+    /// 必须在 `load_default_system_font` 之前调用。
+    pub fn with_text_backend(mut self, backend: Box<dyn TextBackend>) -> Self {
+        self.text_backend = backend;
+        self
+    }
+
+    // ── 字体元数据查询 ──
+
+    /// 返回字体族名称（若注册表中有记录）。
+    pub fn font_family(&self, handle: &FontHandle) -> Option<&str> {
+        let i = handle.0 as usize;
+        if i < self.registry.len() && self.registry[i].handle.0 != u32::MAX {
+            Some(self.registry[i].face.family.as_str())
+        } else {
+            None
+        }
+    }
+
+    /// 返回字体文件路径（若从文件加载）。
+    pub fn font_path(&self, handle: &FontHandle) -> Option<&str> {
+        let i = handle.0 as usize;
+        if i < self.registry.len() && self.registry[i].handle.0 != u32::MAX {
+            self.registry[i].face.path.as_deref()
+        } else {
+            None
+        }
+    }
+
+    /// 已注册的字体数量（含已卸载的无效槽位）。
+    pub fn font_count(&self) -> usize {
+        self.registry.len()
+    }
+
+    /// 回退链中的字体数量。
+    pub fn fallback_count(&self) -> usize {
+        self.fallback_handles.len()
+    }
+
+    // ── 字体加载 ──
+
+    /// 设置首选字体族名称。
+    ///
+    /// 必须在调用 `load_default_system_font()` **之前**调用才能生效。
+    pub fn set_font_family(&mut self, family: impl Into<String>) {
+        self.primary_family = family.into();
+        self.user_family_set = true;
+    }
+
+    /// 加载字体数据，返回字体句柄，同时在注册表中记录元数据。
+    pub fn load_font(&mut self, data: &[u8]) -> Result<FontHandle, Error> {
+        let handle = self.text_backend.load_font(data)?;
+        self.register_font(handle, self.primary_family.clone(), None);
+        // 注意：不更新 loaded_font_handle。loaded_font_handle 只由
+        // load_default_system_font() 设置为主字体句柄。图标字体等辅助字体
+        // 应通过 load_font() 加载但不应覆盖主字体句柄。
+        Ok(handle)
+    }
+
+    /// 从文件路径加载字体，注册时会记录路径信息。
+    pub fn load_font_from_path(&mut self, path: &str, _size: f32) -> Option<FontHandle> {
+        let data = std::fs::read(path).ok()?;
+        let handle = self.text_backend.load_font(&data).ok()?;
+        self.register_font(
+            handle,
+            Self::infer_family_from_path(path),
+            Some(path.to_owned()),
+        );
+        Some(handle)
+    }
+
+    fn register_font(&mut self, handle: FontHandle, family: String, path: Option<String>) {
+        let idx = handle.0 as usize;
+        while self.registry.len() <= idx {
+            self.registry.push(FontSlot {
+                handle: FontHandle::new(u32::MAX),
+                face: FontFace {
+                    family: String::new(),
+                    path: None,
+                },
+            });
+        }
+        self.registry[idx] = FontSlot {
+            handle,
+            face: FontFace { family, path },
+        };
+    }
+
+    fn install_primary_font(&mut self, handle: FontHandle, family: String, path: Option<String>) {
+        self.register_font(handle, family, path);
+        self.loaded_font_handle = handle;
+    }
+
+    /// 从路径字符串猜测字体族名称。
+    fn infer_family_from_path(path: &str) -> String {
+        let name = std::path::Path::new(path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
+        // 去掉常见的变体后缀
+        let cleaned = name
+            .replace("-Regular", "")
+            .replace("-Bold", "")
+            .replace("-Italic", "")
+            .replace("-Medium", "")
+            .replace("-Light", "")
+            .replace("_Regular", "")
+            .replace("_Bold", "");
+        if cleaned.is_empty() {
+            name.to_owned()
+        } else {
+            cleaned
+        }
+    }
+
+    /// 卸载字体。
+    pub fn unload_font(&mut self, handle: &FontHandle) {
+        self.text_backend.unload_font(handle);
+        self.glyph_cache.remove_font(handle.0);
+        let idx = handle.0 as usize;
+        if idx < self.registry.len() {
+            self.registry[idx].handle = FontHandle::new(u32::MAX);
+        }
+        self.fallback_handles.retain(|h| h.0 != handle.0);
+        if self.loaded_font_handle.0 == handle.0 {
+            self.loaded_font_handle = FontHandle::new(u32::MAX);
+        }
+        self.sync_fallback_fonts();
+    }
+
+    /// 检查字体句柄是否有效。
+    pub fn is_valid(&self, handle: &FontHandle) -> bool {
+        self.text_backend.is_valid(handle)
+    }
+
+    /// 检查字体是否包含指定字符的字形。
+    pub fn has_glyph(&self, font: &FontHandle, ch: char) -> bool {
+        self.text_backend.has_glyph(font, ch)
+    }
+
+    /// 添加字体到回退链尾部。
+    ///
+    /// 在 `load_default_system_font` 之后调用，添加额外的回退字体。
+    /// 后添加的字体优先级更低（排在链尾）。
+    pub fn add_fallback(&mut self, handle: FontHandle) {
+        if self.text_backend.is_valid(&handle)
+            && handle.0 != self.loaded_font_handle.0
+            && !self.fallback_handles.iter().any(|h| h.0 == handle.0)
+        {
+            self.fallback_handles.push(handle);
+            self.sync_fallback_fonts();
+        }
+    }
+
+    /// 显式设置完整回退链。
+    pub fn set_fallback_chain(&mut self, handles: &[FontHandle]) {
+        self.fallback_handles.clear();
+        for &handle in handles {
+            if self.text_backend.is_valid(&handle)
+                && handle.0 != self.loaded_font_handle.0
+                && !self.fallback_handles.iter().any(|h| h.0 == handle.0)
+            {
+                self.fallback_handles.push(handle);
+            }
+        }
+        self.sync_fallback_fonts();
+    }
+
+    /// 返回当前回退链。
+    pub fn fallback_chain(&self) -> &[FontHandle] {
+        &self.fallback_handles
+    }
+
+    fn sync_fallback_fonts(&mut self) {
+        self.text_backend.set_fallback_fonts(&self.fallback_handles);
+    }
+
+    /// 为指定字符查找可用的字体句柄。
+    ///
+    /// 按优先级：primary（主字体）→ fallback_chain → 返回 None（使用 BitmapFont）。
+    fn find_font_for_char(&self, primary: &FontHandle, ch: char) -> Option<FontHandle> {
+        // 主字体有 glyph？
+        if self.text_backend.is_valid(primary) && self.text_backend.has_glyph(primary, ch) {
+            return Some(*primary);
+        }
+        // 回退链？
+        for fb in &self.fallback_handles {
+            if self.text_backend.is_valid(fb) && self.text_backend.has_glyph(fb, ch) {
+                return Some(*fb);
+            }
+        }
+        None
+    }
+
+    /// 加载系统默认字体（自动检测平台）。
+    /// 第一个成功加载的字体作为主字体，其余作为回退链。
+    /// 始终在注册表中记录 family 信息。
+    pub fn load_default_system_font(
+        &mut self,
+        size: f32,
+        system_info: &dyn crate::native::traits::system::ISystemInfo,
+    ) {
+        if self.user_family_set {
+            let family = self.primary_family.clone();
+            if self.load_family_font(&family, size, system_info).is_some() {
+                self.load_cjk_fallback(size, system_info);
+                self.sync_fallback_fonts();
+                return;
+            }
+
+            let fallback_paths = system_info.default_font_paths();
+            for path in &fallback_paths {
+                if let Ok(data) = std::fs::read(path) {
+                    if let Some(handle) = self.load_raw_font(data, size) {
+                        self.install_primary_font(
+                            handle,
+                            Self::infer_family_from_path(path),
+                            Some(path.clone()),
+                        );
+                        crate::core::log::info_fn(format_args!(
+                            "Configured font '{}' not found, fallback: {}",
+                            self.primary_family, path
+                        ));
+                        self.load_cjk_fallback(size, system_info);
+                        self.sync_fallback_fonts();
+                        return;
+                    }
+                }
+            }
+        } else {
+            let paths = system_info.default_font_paths();
+
+            if !paths.is_empty() {
+                let mut primary_loaded = false;
+
+                // 启动只装主字体：其余 Latin fallback 不在首帧同步读盘。
+                // CJK 由 load_cjk_fallback / probe_cjk_font_path 单独装一枚。
+                for path in &paths {
+                    match std::fs::read(path) {
+                        Ok(data) => {
+                            if let Some(handle) = self.load_raw_font(data, size) {
+                                self.install_primary_font(
+                                    handle,
+                                    self.primary_family.clone(),
+                                    Some(path.clone()),
+                                );
+                                primary_loaded = true;
+                                crate::core::log::info_fn(format_args!(
+                                    "Loaded system default font: {} (handle={:?})",
+                                    path, handle
+                                ));
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            crate::core::log::info_fn(format_args!(
+                                "Failed to read font file {}: {}",
+                                path, e
+                            ));
+                        }
+                    }
+                }
+
+                if primary_loaded {
+                    self.load_cjk_fallback(size, system_info);
+                    self.sync_fallback_fonts();
+                    return;
+                }
+            }
+        }
+
+        // 第 4 步：最后的兜底——随机扫描一个可用字体
+        crate::core::log::info_fn("No primary font found via platform, scanning for fallback...");
+        if let Some(path) = system_info.scan_fallback_font_path() {
+            if let Ok(data) = std::fs::read(&path) {
+                if let Some(handle) = self.load_raw_font(data, size) {
+                    self.install_primary_font(
+                        handle,
+                        self.primary_family.clone(),
+                        Some(path.clone()),
+                    );
+                    crate::core::log::info_fn(format_args!(
+                        "Loaded fallback font (random scan): {} (handle={:?})",
+                        path, handle
+                    ));
+                    self.load_cjk_fallback(size, system_info);
+                    self.sync_fallback_fonts();
+                    return;
+                }
+            }
+        }
+
+        crate::core::log::info_fn("No primary font found, using bitmap fallback");
+    }
+
+    /// 加载 CJK 回退字体（通过平台层探测）。
+    /// 如果主字体本身已经包含中文字形则跳过，避免重复加载。
+    fn load_cjk_fallback(
+        &mut self,
+        size: f32,
+        system_info: &dyn crate::native::traits::system::ISystemInfo,
+    ) {
+        let cjk_test = ['中', '国', '文'];
+        let primary_has_cjk = cjk_test.iter().all(|&ch| {
+            self.text_backend.is_valid(&self.loaded_font_handle)
+                && self.text_backend.has_glyph(&self.loaded_font_handle, ch)
+        });
+        if primary_has_cjk {
+            crate::core::log::info_fn(
+                "Primary font already supports CJK, skipping CJK fallback load",
+            );
+            return;
+        }
+
+        let cjk_paths = system_info.probe_cjk_font_paths();
+        if cjk_paths.is_empty() {
+            crate::core::log::info_fn("No CJK fallback font found via platform");
+            return;
+        }
+
+        for path in cjk_paths {
+            match std::fs::read(&path) {
+                Ok(data) => {
+                    if let Some(handle) = self.load_raw_font(data, size) {
+                        let supports_cjk = cjk_test
+                            .iter()
+                            .all(|&ch| self.text_backend.has_glyph(&handle, ch));
+                        if !supports_cjk {
+                            self.unload_font(&handle);
+                            crate::core::log::info_fn(format_args!(
+                                "CJK candidate '{}' does not cover the probe set",
+                                path
+                            ));
+                            continue;
+                        }
+                        self.register_font(
+                            handle,
+                            Self::infer_family_from_path(&path),
+                            Some(path.clone()),
+                        );
+                        self.add_fallback(handle);
+                        crate::core::log::info_fn(format_args!(
+                            "Loaded CJK fallback font: {}",
+                            path
+                        ));
+                        return;
+                    }
+                    crate::core::log::info_fn(format_args!(
+                        "CJK font '{}' found but failed to load (unsupported format)",
+                        path
+                    ));
+                }
+                Err(e) => {
+                    crate::core::log::info_fn(format_args!(
+                        "Failed to read CJK font file {}: {}",
+                        path, e
+                    ));
+                }
+            }
+        }
+        crate::core::log::info_fn("No CJK fallback font could be loaded via platform");
+    }
+
+    /// 通过平台层按字体族名称查找并加载字体。
+    fn load_family_font(
+        &mut self,
+        family: &str,
+        size: f32,
+        system_info: &dyn crate::native::traits::system::ISystemInfo,
+    ) -> Option<FontHandle> {
+        if let Some(p) = system_info.probe_family_font_path(family) {
+            if let Ok(data) = std::fs::read(&p) {
+                if let Some(handle) = self.load_raw_font(data, size) {
+                    self.install_primary_font(handle, family.to_owned(), Some(p.clone()));
+                    crate::core::log::info_fn(format_args!(
+                        "Loaded family font '{}': {}",
+                        family, p
+                    ));
+                    return Some(handle);
+                }
+            }
+        }
+        None
+    }
+
+    /// 直接加载原始字体数据。
+    /// 字体集合必须由后端在完整文件上选择第一个 face；不能切片 TTC，
+    /// 因为集合内 table offset 是相对完整文件的，并且表数据允许跨 face 共享。
+    /// `TextBackend::load_font` 的成功返回就是解析/可用性边界；这里不以 Unicode
+    /// 码点冒充 glyph id 做二次验证，图标字体与重排字体的 glyph id 都不稳定。
+    fn load_raw_font(&mut self, data: Vec<u8>, _size: f32) -> Option<FontHandle> {
+        let handle = self.text_backend.load_font(&data).ok()?;
+        self.register_font(handle, self.primary_family.clone(), None);
+        Some(handle)
+    }
+
+    // ── 文本度量 ──
+
+    /// 测量文本尺寸。
+    ///
+    /// 使用 TTF 布局（含自动回退），最终回退到 BitmapFont 度量。
+    pub fn measure_text(&self, font: &FontHandle, text: &str, opts: &TextLayoutOptions) -> Size {
+        if self.text_backend.is_valid(font) {
+            let f = *font;
+            let layout = self.layout_text(&f, text, opts);
+            Size::new(
+                layout.width,
+                layout.height.max(tb::bounded_font_size(opts.font_size)),
+            )
+        } else {
+            // 回退到简单度量（无后端字体可用时）：按字符数，非字节
+            let cw = 6.0;
+            let lh = 10.0;
+            let len = text.chars().count() as f32;
+            Size::new(len * cw, lh)
+        }
+    }
+
+    /// 光栅化一个字形（使用统一缓存）。
+    pub fn rasterize_glyph(
+        &self,
+        font: &FontHandle,
+        glyph_id: u32,
+        pixel_size: f32,
+    ) -> GlyphRaster {
+        let Some(pixel_size) = tb::normalized_raster_pixel_size(pixel_size) else {
+            return GlyphRaster::empty();
+        };
+        let pixel_size = pixel_size as f32;
+
+        if glyph_id == tb::WHITESPACE_GLYPH_ID {
+            return GlyphRaster::empty();
+        }
+
+        // 缺字 tofu：合成空心方框，避免静默丢字。
+        if glyph_id == tb::TOFU_GLYPH_ID {
+            return Self::rasterize_tofu(pixel_size);
+        }
+
+        if !self.text_backend.is_valid(font) {
+            return GlyphRaster::empty();
+        }
+
+        let ps = pixel_size as u32;
+        let key = GlyphCacheKey {
+            font_idx: font.0,
+            glyph_id,
+            pixel_size: ps,
+        };
+
+        // 查缓存
+        if let Some(cached) = self.glyph_cache.get(&key) {
+            return GlyphRaster {
+                width: cached.width,
+                height: cached.height,
+                coverage: cached.coverage,
+                bearing_x: cached.bearing_x,
+                bearing_y: cached.bearing_y,
+                outline_mesh: cached.outline_mesh,
+            };
+        }
+
+        // 从后端光栅化
+        let raster = self
+            .text_backend
+            .rasterize_glyph(font, glyph_id, pixel_size);
+
+        // 写入缓存
+        if ps > 0 && raster.width > 0 && raster.height > 0 {
+            self.glyph_cache.insert(
+                key,
+                CachedRaster {
+                    width: raster.width,
+                    height: raster.height,
+                    coverage: Arc::clone(&raster.coverage),
+                    bearing_x: raster.bearing_x,
+                    bearing_y: raster.bearing_y,
+                    outline_mesh: raster.outline_mesh.clone(),
+                },
+            );
+        }
+
+        raster
+    }
+
+    /// 合成缺字 tofu（空心方框），相对基线的 bearing 与常规字形一致。
+    fn rasterize_tofu(pixel_size: f32) -> GlyphRaster {
+        let fs = tb::bounded_font_size(pixel_size);
+        let w = ((fs * 0.5).round() as usize).max(4);
+        let h = ((fs * 0.7).round() as usize).max(5);
+        let Some(pixel_count) = w.checked_mul(h) else {
+            return GlyphRaster::empty();
+        };
+        let mut coverage = Vec::new();
+        if coverage.try_reserve_exact(pixel_count).is_err() {
+            return GlyphRaster::empty();
+        }
+        coverage.resize(pixel_count, 0u8);
+        for x in 0..w {
+            coverage[x] = 220;
+            coverage[(h - 1) * w + x] = 220;
+        }
+        for y in 0..h {
+            coverage[y * w] = 220;
+            coverage[y * w + (w - 1)] = 220;
+        }
+        GlyphRaster {
+            width: w,
+            height: h,
+            coverage: Arc::<[u8]>::from(coverage),
+            bearing_x: (fs * 0.05).max(0.0),
+            // 相对布局 y（≈ ascent）：方框顶落在 ascent 下方一点
+            bearing_y: -(fs * 0.75),
+            outline_mesh: None,
+        }
+    }
+
+    /// 命中测试，返回 **字符下标**（`chars()` 序）。
+    pub fn hit_test_text(
+        &self,
+        font: &FontHandle,
+        text: &str,
+        opts: &TextLayoutOptions,
+        point: Point,
+    ) -> Option<usize> {
+        if text.is_empty() {
+            return None;
+        }
+        if self.text_backend.is_valid(font) {
+            let f = *font;
+            let layout = self.layout_text(&f, text, opts);
+            let total_chars = text.chars().count();
+            for li in &layout.lines {
+                if point.y >= li.y && point.y < li.y + li.height {
+                    let end = li.glyph_start + li.glyph_count;
+                    let glyphs = &layout.glyphs[li.glyph_start..end.min(layout.glyphs.len())];
+                    if glyphs.is_empty() {
+                        return Some(li.start_char.min(total_chars));
+                    }
+                    for g in glyphs {
+                        if point.x < g.x + g.width * 0.5 {
+                            return Some(g.char_index.min(total_chars));
+                        }
+                    }
+                    return Some(
+                        glyphs
+                            .last()
+                            .map(|g| (g.char_index + 1).min(total_chars))
+                            .unwrap_or(li.end_char.min(total_chars)),
+                    );
+                }
+            }
+            if let Some(last) = layout.lines.last() {
+                return Some(last.end_char.min(total_chars));
+            }
+        }
+        Some(0)
+    }
+
+    /// 获取指定 **字符下标** 的光标 x 位置。
+    pub fn text_cursor_x(
+        &self,
+        font: &FontHandle,
+        text: &str,
+        opts: &TextLayoutOptions,
+        char_index: usize,
+    ) -> f32 {
+        if text.is_empty() || !self.text_backend.is_valid(font) {
+            return 0.0;
+        }
+        let f = *font;
+        let layout = self.layout_text(&f, text, opts);
+        if let Some(g) = layout.glyphs.iter().find(|g| g.char_index == char_index) {
+            return g.x;
+        }
+        // 落在末尾或缺口：取最后一个 char_index < 目标 的右缘
+        layout
+            .glyphs
+            .iter()
+            .rev()
+            .find(|g| g.char_index < char_index)
+            .map_or(0.0, |g| g.x + g.width.max(0.0))
+    }
+
+    /// 获取水平行度量。
+    pub fn horizontal_line_metrics(
+        &self,
+        font: &FontHandle,
+        pixel_size: f32,
+    ) -> Option<tb::LineMetrics> {
+        let pixel_size = tb::normalized_raster_pixel_size(pixel_size)? as f32;
+        self.text_backend.horizontal_line_metrics(font, pixel_size)
+    }
+
+    /// 返回字体原始数据。
+    pub fn font_data(&self, font: &FontHandle) -> Option<Vec<u8>> {
+        self.text_backend.font_data(font)
+    }
+
+    /// 清空字形位图缓存（释放内存）。
+    pub fn clear_glyph_cache(&mut self) {
+        self.glyph_cache.clear();
+        self.text_backend.clear_cache();
+    }
+
+    /// 返回字体子系统近似内存使用（字节）。
+    pub fn memory_usage(&self) -> usize {
+        let backend_mem = self.text_backend.memory_usage();
+        let cache_mem = self.glyph_cache.memory_usage();
+        backend_mem.saturating_add(cache_mem)
+    }
+}
+
+impl Default for FontService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Debug for FontService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FontService")
+            .field("backend", &self.text_backend)
+            .field("primary_family", &self.primary_family)
+            .field("registry_size", &self.registry.len())
+            .field("fallback_count", &self.fallback_handles.len())
+            .field("cache_entries", &self.glyph_cache.len())
+            .finish()
+    }
+}

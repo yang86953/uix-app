@@ -4,7 +4,7 @@
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::Color;
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
@@ -19,8 +19,8 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
-        crate::draw::compositor::PicturePolicy::Eligible
+    picture_policy => (&self) -> crate::draw::scene::PicturePolicy {
+        crate::draw::scene::PicturePolicy::Eligible
     }
 
     flex_grow => (&self) -> f32 { 1.0 }
@@ -43,8 +43,8 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
-        crate::draw::compositor::PicturePolicy::Eligible
+    picture_policy => (&self) -> crate::draw::scene::PicturePolicy {
+        crate::draw::scene::PicturePolicy::Eligible
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -74,8 +74,8 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
-        crate::draw::compositor::PicturePolicy::Eligible
+    picture_policy => (&self) -> crate::draw::scene::PicturePolicy {
+        crate::draw::scene::PicturePolicy::Eligible
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -102,8 +102,8 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
-        crate::draw::compositor::PicturePolicy::Eligible
+    picture_policy => (&self) -> crate::draw::scene::PicturePolicy {
+        crate::draw::scene::PicturePolicy::Eligible
     }
 
     flex_grow => (&self) -> f32 { 1.0 }
@@ -133,8 +133,8 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
-        crate::draw::compositor::PicturePolicy::Eligible
+    picture_policy => (&self) -> crate::draw::scene::PicturePolicy {
+        crate::draw::scene::PicturePolicy::Eligible
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {

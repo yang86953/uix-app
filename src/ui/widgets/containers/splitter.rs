@@ -6,7 +6,7 @@ use std::cell::{Cell, RefCell};
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::ui::children::WidgetChildren;
 use crate::ui::SnapshotFields;
 use crate::ui::{

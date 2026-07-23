@@ -2,7 +2,7 @@
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::Radius;
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::{
@@ -367,7 +367,7 @@ impl Collapse {
         let mut width = DEFAULT_WIDTH;
         for panel in &self.panels {
             let header = single_line(&panel.header);
-            let header_width = crate::draw::font::text_backend::estimate_text_metrics(
+            let header_width = crate::draw::resources::font::text_backend::estimate_text_metrics(
                 &header,
                 f32::INFINITY,
                 HEADER_FONT_SIZE,
@@ -375,7 +375,7 @@ impl Collapse {
             .max_line_width
                 + HEADER_ICON_SLOT
                 + HEADER_RIGHT_PADDING;
-            let content_width = crate::draw::font::text_backend::estimate_text_metrics(
+            let content_width = crate::draw::resources::font::text_backend::estimate_text_metrics(
                 &panel.content,
                 f32::INFINITY,
                 CONTENT_FONT_SIZE,
@@ -460,7 +460,7 @@ impl Collapse {
 
     fn content_height(content: &str, width: f32) -> f32 {
         let text_width = (width - CONTENT_HORIZONTAL_PADDING * 2.0).max(1.0);
-        let line_count = crate::draw::font::text_backend::estimate_text_metrics(
+        let line_count = crate::draw::resources::font::text_backend::estimate_text_metrics(
             content,
             text_width,
             CONTENT_FONT_SIZE,
@@ -877,8 +877,12 @@ fn single_line(text: &str) -> String {
 
 fn conservative_text_width(ctx: &mut PaintContext<'_>, text: &str, font_size: f32) -> f32 {
     ctx.measure_text(text, font_size).w.max(
-        crate::draw::font::text_backend::estimate_text_metrics(text, f32::INFINITY, font_size)
-            .max_line_width,
+        crate::draw::resources::font::text_backend::estimate_text_metrics(
+            text,
+            f32::INFINITY,
+            font_size,
+        )
+        .max_line_width,
     )
 }
 

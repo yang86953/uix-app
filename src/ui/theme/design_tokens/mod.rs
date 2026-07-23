@@ -9,7 +9,7 @@ pub mod presets;
 pub mod primitives;
 
 use super::color_tokens::{NeutralRole, ShadowToken};
-use crate::draw::painting::{
+use crate::draw::api::{
     IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, ThemeTokens,
 };
 use crate::draw::Color;

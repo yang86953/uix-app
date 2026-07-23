@@ -2,7 +2,7 @@
 // native/graphics/opengl/egl.rs — EGL + GLES 3.0 图形上下文
 //
 // 通过 EGL 创建 OpenGL ES 3.0 上下文，对接 Wayland surface（wl_egl_window）。
-// 实现 IGraphicsContext trait，供 GpuEngine 使用。
+// 实现 IGraphicsContext trait，供唯一 Renderer 的 GPU 后端使用。
 //
 // 依赖 khronos-egl v6 (static 链接) + wayland-egl (系统库 FFI)。
 // ============================================================================

@@ -4,8 +4,8 @@
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::painting::PaintContext;
-use crate::draw::spatial::PhysicalUnit;
+use crate::draw::api::PaintContext;
+use crate::draw::geometry::spatial::PhysicalUnit;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
@@ -91,8 +91,8 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
-        crate::draw::compositor::PicturePolicy::Eligible
+    picture_policy => (&self) -> crate::draw::scene::PicturePolicy {
+        crate::draw::scene::PicturePolicy::Eligible
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -379,7 +379,11 @@ impl Badge {
     }
 
     fn estimated_text_width(text: &str, font_size: f32) -> f32 {
-        crate::draw::font::text_backend::estimate_text_metrics(text, f32::INFINITY, font_size)
-            .max_line_width
+        crate::draw::resources::font::text_backend::estimate_text_metrics(
+            text,
+            f32::INFINITY,
+            font_size,
+        )
+        .max_line_width
     }
 }

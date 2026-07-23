@@ -1,8 +1,8 @@
-use crate::draw::engine::cpu::pixel_surface::PixelSurface;
-use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
-use crate::draw::pipeline::{FrameRenderInput, FrameRenderer};
-use crate::draw::spatial::Orientation;
-use crate::draw::traits::GraphicsEngine;
+use crate::draw::backend::cpu::pixel_surface::PixelSurface;
+use crate::draw::backend::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::geometry::spatial::Orientation;
+use crate::draw::renderer::RenderTarget;
+use crate::draw::renderer::{FrameRenderInput, ScenePipeline};
 use crate::tests::common::*;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::widgets::feedback::drawer::*;
@@ -18,7 +18,7 @@ fn render_drawer(drawer: &Drawer, frame: Rect, surface_size: (i32, i32)) -> Stri
     let images = ImageService::new();
     let tokens = DesignTokens::antd_light();
     let tree = WidgetTree::new();
-    let mut display_list = crate::draw::painting::DisplayList::new();
+    let mut display_list = crate::draw::command::DisplayList::new();
     {
         let mut ctx = PaintContext::new_for_test(
             &mut canvas,
@@ -235,9 +235,9 @@ fn masked_drawer_animation_marks_its_surface_dirty_through_layer_tree() {
         .expect("drawer child")
         .set_frame(Rect::new(120.0, 80.0, 96.0, 32.0));
 
-    let mut engine = SoftwareEngine::new();
-    engine.initialize(800, 600).expect("software engine");
-    let mut renderer = FrameRenderer::new();
+    let mut engine = Renderer::cpu();
+    engine.initialize(800, 600).expect("CPU renderer");
+    let mut renderer = ScenePipeline::new();
     let mut fonts = FontService::new();
     let font = fonts
         .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))

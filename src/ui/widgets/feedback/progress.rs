@@ -2,8 +2,8 @@
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::painting::PaintContext;
-use crate::draw::painting::PaintPass;
+use crate::draw::api::PaintContext;
+use crate::draw::command::PaintPass;
 use crate::draw::{Color, GradientDirection, Radius};
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
@@ -109,7 +109,7 @@ component! {
                     let y1 = cy + a1.sin() * inner_r;
                     let x2 = cx + a2.cos() * inner_r;
                     let y2 = cy + a2.sin() * inner_r;
-                    ctx.canvas_2d().draw_line(x1, y1, x2, y2, stroke_c, track_width);
+                    ctx.draw_line(x1, y1, x2, y2, stroke_c, track_width);
                 }
             }
             self.paint_progress_label(frame, label_color, ctx);

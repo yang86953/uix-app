@@ -4,7 +4,7 @@
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::widgets::feedback::TriggerMode;

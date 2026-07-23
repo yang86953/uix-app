@@ -1,6 +1,6 @@
 use super::*;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::pipeline::{Invalidation, InvalidationQueueHandle};
+use crate::draw::renderer::{Invalidation, InvalidationQueueHandle};
 use crate::native::traits::input::{KeyCode, KeyMod};
 use crate::ui::animation::AnimatedSource;
 use crate::ui::app_state::{AppState, FocusRequest};
@@ -120,7 +120,7 @@ impl Default for WidgetTree {
             handler_table: HandlerTable::new(),
             render_handler_table: RenderHandlerTable::default(),
             overlay_stack: OverlayStack::new(),
-            invalidation: crate::draw::pipeline::InvalidationQueue::shared(),
+            invalidation: crate::draw::renderer::InvalidationQueue::shared(),
             pending_invalidations: Vec::new(),
             invalidation_batch_depth: 0,
             layout_ancestor_scratch: Vec::new(),

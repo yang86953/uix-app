@@ -2,10 +2,10 @@
 
 use crate::core::DirtyRegion;
 use crate::core::{ComponentId, Point, Rect};
-use crate::draw::compositor::PicturePolicy;
-use crate::draw::compositor::ScenePaint;
-use crate::draw::painting::PaintContext;
-use crate::draw::pipeline::NodeId;
+use crate::draw::api::PaintContext;
+use crate::draw::renderer::NodeId;
+use crate::draw::scene::PicturePolicy;
+use crate::draw::scene::ScenePaint;
 use crate::ui::core::paint_scope::set_current_paint_widget;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::core::widget::WidgetTree;

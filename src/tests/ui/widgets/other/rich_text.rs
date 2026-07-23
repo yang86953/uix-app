@@ -1,6 +1,6 @@
-use crate::draw::engine::cpu::pixel_surface::PixelSurface;
-use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
-use crate::draw::spatial::Orientation;
+use crate::draw::backend::cpu::pixel_surface::PixelSurface;
+use crate::draw::backend::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::geometry::spatial::Orientation;
 use crate::tests::common::*;
 use crate::ui::widgets::{RichText, RichTextSegment, RichTextStyle};
 use crate::ui::{AccessibilityRole, ComponentId};
@@ -17,7 +17,7 @@ fn render_rich_text_with_tokens(text: &RichText, frame: Rect, tokens: DesignToke
         .expect("load deterministic test font");
     let images = ImageService::new();
     let tree = WidgetTree::new();
-    let mut display_list = crate::draw::painting::DisplayList::new();
+    let mut display_list = crate::draw::command::DisplayList::new();
     {
         let mut ctx = PaintContext::new_for_test(
             &mut canvas,

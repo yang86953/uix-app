@@ -5,7 +5,7 @@ use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::Color;
 use crate::ui::{EventResult, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
 
@@ -193,8 +193,8 @@ component! {
                 .is_some_and(|config| config.trigger_mode() == TooltipTrigger::Hover)
     }
 
-    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
-        crate::draw::compositor::PicturePolicy::Eligible
+    picture_policy => (&self) -> crate::draw::scene::PicturePolicy {
+        crate::draw::scene::PicturePolicy::Eligible
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {

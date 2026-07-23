@@ -8,7 +8,7 @@ use std::cell::RefCell;
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::clipboard;
 use crate::ui::SnapshotFields;
@@ -79,7 +79,7 @@ component! {
             let text_width = (constraints.max.w - copy_space).max(1.0);
             let indent = self.paragraph_indent(fs).min(text_width);
             let wrap_width = (text_width - indent).max(1.0);
-            let estimated = crate::draw::font::text_backend::estimate_text_metrics(
+            let estimated = crate::draw::resources::font::text_backend::estimate_text_metrics(
                 &self.content,
                 wrap_width,
                 fs,
@@ -225,7 +225,7 @@ component! {
             v_align: crate::draw::VAlign::Top,
             font_size: fs,
         };
-        let backend_opts = crate::draw::font::text_backend::TextLayoutOptions::from(opts);
+        let backend_opts = crate::draw::resources::font::text_backend::TextLayoutOptions::from(opts);
         let fh = *ctx.font();
         let mut layout = ctx.font_service().layout_text(&fh, &self.content, &backend_opts);
         if indent > 0.0 {
@@ -306,7 +306,7 @@ component! {
                         let gs = line.glyph_start;
                         let ge = (gs + line.glyph_count).min(layout.glyphs.len());
                         let Some((line_x0, line_x1)) =
-                            crate::draw::font::text_backend::glyph_selection_x_range(
+                            crate::draw::resources::font::text_backend::glyph_selection_x_range(
                                 &layout.glyphs[gs..ge],
                                 sel_s,
                                 sel_e,
@@ -592,8 +592,8 @@ impl Typography {
     }
 
     fn line_bounds(
-        layout: &crate::draw::font::text_backend::TextLayout,
-        line: &crate::draw::font::text_backend::LineInfo,
+        layout: &crate::draw::resources::font::text_backend::TextLayout,
+        line: &crate::draw::resources::font::text_backend::LineInfo,
         origin: Point,
         font_size: f32,
     ) -> Option<Rect> {

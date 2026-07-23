@@ -1,6 +1,6 @@
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields,
@@ -28,8 +28,8 @@ component! {
         constraints.clamp(Size::new(self.size, self.size))
     }
 
-    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
-        crate::draw::compositor::PicturePolicy::Eligible
+    picture_policy => (&self) -> crate::draw::scene::PicturePolicy {
+        crate::draw::scene::PicturePolicy::Eligible
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -1266,8 +1266,8 @@ component! {
         Size::zero()
     }
 
-    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
-        crate::draw::compositor::PicturePolicy::Eligible
+    picture_policy => (&self) -> crate::draw::scene::PicturePolicy {
+        crate::draw::scene::PicturePolicy::Eligible
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {

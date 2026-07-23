@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder};
 use crate::ui::animation::{AnimationConfig, TransitionPlayer};
 use crate::ui::{EventResult, MouseButton, SystemEvent, WidgetTree};
@@ -1768,10 +1768,8 @@ impl ChartPlaceholder {
         {
             if let Some(pos) = hovered {
                 let color = ctx.tokens().color_primary();
-                ctx.canvas_2d()
-                    .draw_line(pos.x, frame.y, pos.x, frame.y + frame.h, color, 1.0);
-                ctx.canvas_2d()
-                    .draw_line(frame.x, pos.y, frame.x + frame.w, pos.y, color, 1.0);
+                ctx.draw_line(pos.x, frame.y, pos.x, frame.y + frame.h, color, 1.0);
+                ctx.draw_line(frame.x, pos.y, frame.x + frame.w, pos.y, color, 1.0);
             }
         }
         if let Some(config) = &self.tooltip_config {
@@ -1836,7 +1834,7 @@ impl ChartPlaceholder {
                 }
                 let start = plot.x + plot.w * segment as f32 / segments as f32;
                 let end = plot.x + plot.w * (segment + 1) as f32 / segments as f32;
-                ctx.canvas_2d().draw_line(start, y, end, y, color, 1.0);
+                ctx.draw_line(start, y, end, y, color, 1.0);
             }
             if !label.is_empty() {
                 ctx.draw_text(label, Point::new(plot.x + 4.0, y - 2.0), color, 9.0);
@@ -2043,15 +2041,12 @@ impl ChartPlaceholder {
                 path.close();
                 let fill =
                     Color::from_rgba(color.r, color.g, color.b, (255.0 * self.fill_opacity) as u8);
-                ctx.canvas_2d()
-                    .fill_path(&path.build(), fill, FillRule::NonZero);
+                ctx.fill_path(&path.build(), fill, FillRule::NonZero);
             }
             if self.step {
                 for pair in points.windows(2) {
-                    ctx.canvas_2d()
-                        .draw_line(pair[0].x, pair[0].y, pair[1].x, pair[0].y, color, 2.0);
-                    ctx.canvas_2d()
-                        .draw_line(pair[1].x, pair[0].y, pair[1].x, pair[1].y, color, 2.0);
+                    ctx.draw_line(pair[0].x, pair[0].y, pair[1].x, pair[0].y, color, 2.0);
+                    ctx.draw_line(pair[1].x, pair[0].y, pair[1].x, pair[1].y, color, 2.0);
                 }
             } else {
                 let line_points = if self.smooth {
@@ -2060,8 +2055,7 @@ impl ChartPlaceholder {
                     points.clone()
                 };
                 for pair in line_points.windows(2) {
-                    ctx.canvas_2d()
-                        .draw_line(pair[0].x, pair[0].y, pair[1].x, pair[1].y, color, 2.0);
+                    ctx.draw_line(pair[0].x, pair[0].y, pair[1].x, pair[1].y, color, 2.0);
                 }
             }
             for point in points {
@@ -2142,22 +2136,8 @@ impl ChartPlaceholder {
                         );
                     }
                     PointStyle::Cross => {
-                        ctx.canvas_2d().draw_line(
-                            px - radius,
-                            py,
-                            px + radius,
-                            py,
-                            point_color,
-                            2.0,
-                        );
-                        ctx.canvas_2d().draw_line(
-                            px,
-                            py - radius,
-                            px,
-                            py + radius,
-                            point_color,
-                            2.0,
-                        );
+                        ctx.draw_line(px - radius, py, px + radius, py, point_color, 2.0);
+                        ctx.draw_line(px, py - radius, px, py + radius, point_color, 2.0);
                     }
                 }
             }
@@ -2189,7 +2169,7 @@ impl ChartPlaceholder {
                         + axis as f32 * std::f32::consts::TAU / count as f32;
                     let next = -std::f32::consts::FRAC_PI_2
                         + (axis + 1) as f32 * std::f32::consts::TAU / count as f32;
-                    ctx.canvas_2d().draw_line(
+                    ctx.draw_line(
                         center.x + r * a.cos(),
                         center.y + r * a.sin(),
                         center.x + r * next.cos(),
@@ -2203,7 +2183,7 @@ impl ChartPlaceholder {
         for axis in 0..count {
             let angle =
                 -std::f32::consts::FRAC_PI_2 + axis as f32 * std::f32::consts::TAU / count as f32;
-            ctx.canvas_2d().draw_line(
+            ctx.draw_line(
                 center.x,
                 center.y,
                 center.x + radius * angle.cos(),
@@ -2277,8 +2257,7 @@ impl ChartPlaceholder {
                 path.close();
                 let fill =
                     Color::from_rgba(color.r, color.g, color.b, (255.0 * self.fill_opacity) as u8);
-                ctx.canvas_2d()
-                    .fill_path(&path.build(), fill, FillRule::NonZero);
+                ctx.fill_path(&path.build(), fill, FillRule::NonZero);
             } else {
                 ctx.fill_circle(points[0].x, points[0].y, 3.0, color);
             }
@@ -2288,8 +2267,7 @@ impl ChartPlaceholder {
                 .collect::<Vec<_>>()
                 .windows(2)
             {
-                ctx.canvas_2d()
-                    .draw_line(pair[0].x, pair[0].y, pair[1].x, pair[1].y, color, 1.5);
+                ctx.draw_line(pair[0].x, pair[0].y, pair[1].x, pair[1].y, color, 1.5);
             }
         }
     }
@@ -2505,8 +2483,7 @@ impl ChartPlaceholder {
             path.line_to(bottom_x, y + h.max(0.0));
             path.close();
             let funnel_color = ctx.tokens().color_primary();
-            ctx.canvas_2d()
-                .fill_path(&path.build(), funnel_color, FillRule::NonZero);
+            ctx.fill_path(&path.build(), funnel_color, FillRule::NonZero);
             if self.label_visible {
                 let mut label = format!("{} {}", item.label, value);
                 if self.show_conversion_rate && index > 0 {
@@ -2613,7 +2590,7 @@ impl ChartPlaceholder {
                 let connector_color = ctx.tokens().color_border();
                 if self.horizontal {
                     let y = rect.y + rect.h;
-                    ctx.canvas_2d().draw_line(
+                    ctx.draw_line(
                         rect.x + rect.w,
                         y,
                         rect.x + rect.w,
@@ -2624,7 +2601,7 @@ impl ChartPlaceholder {
                     let _ = next_start;
                 } else {
                     let x = rect.x + rect.w;
-                    ctx.canvas_2d().draw_line(
+                    ctx.draw_line(
                         x,
                         to_y(*end),
                         plot.x + (index + 1) as f32 * category_w + category_w * 0.15,
@@ -2806,7 +2783,7 @@ impl ChartPlaceholder {
                     path.line_to(last.x, baseline);
                 }
                 path.close();
-                ctx.canvas_2d().fill_path(
+                ctx.fill_path(
                     &path.build(),
                     Color::from_rgba(color.r, color.g, color.b, (255.0 * self.fill_opacity) as u8),
                     FillRule::NonZero,
@@ -2828,12 +2805,10 @@ impl ChartPlaceholder {
                             pair[0].x + (pair[1].x - pair[0].x) * end,
                             pair[0].y + (pair[1].y - pair[0].y) * end,
                         );
-                        ctx.canvas_2d()
-                            .draw_line(from.x, from.y, to.x, to.y, color, 2.0);
+                        ctx.draw_line(from.x, from.y, to.x, to.y, color, 2.0);
                     }
                 } else {
-                    ctx.canvas_2d()
-                        .draw_line(pair[0].x, pair[0].y, pair[1].x, pair[1].y, color, 2.0);
+                    ctx.draw_line(pair[0].x, pair[0].y, pair[1].x, pair[1].y, color, 2.0);
                 }
             }
             for point in points {
@@ -2947,11 +2922,10 @@ impl ChartPlaceholder {
         let range_max = self.gauge_min.max(self.gauge_max);
         let ratio = normalized_ratio(self.gauge_value, range_min, range_max);
         let bg = ctx.tokens().color_fill_tertiary();
-        ctx.canvas_2d()
-            .fill_sector(center.x, center.y, radius, start, start + sweep, bg);
+        ctx.fill_sector(center.x, center.y, radius, start, start + sweep, bg);
         if self.gauge_ranges.is_empty() {
             let color = ctx.tokens().color_primary();
-            ctx.canvas_2d().fill_sector(
+            ctx.fill_sector(
                 center.x,
                 center.y,
                 radius,
@@ -2970,7 +2944,7 @@ impl ChartPlaceholder {
                 let segment_end = raw_start.max(raw_end);
                 let end = segment_end.min(ratio);
                 if end > segment_start {
-                    ctx.canvas_2d().fill_sector(
+                    ctx.fill_sector(
                         center.x,
                         center.y,
                         radius,
@@ -2992,7 +2966,7 @@ impl ChartPlaceholder {
         if self.pointer_width > 0.0 {
             let angle = start + sweep * ratio;
             let pointer_color = self.pointer_color.unwrap_or(ctx.tokens().color_text());
-            ctx.canvas_2d().draw_line(
+            ctx.draw_line(
                 center.x,
                 center.y,
                 center.x + radius * 0.9 * angle.cos(),

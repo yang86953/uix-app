@@ -1,8 +1,8 @@
 pub use crate::core::ComponentId;
 pub use crate::core::Point;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::compositor::PicturePolicy;
-use crate::draw::spatial::{Ray3D, SpatialContext};
+use crate::draw::geometry::spatial::{Ray3D, SpatialContext};
+use crate::draw::scene::PicturePolicy;
 pub use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::accessibility_override::AccessibilityOverride;
 use crate::ui::component_snapshot::{
@@ -923,12 +923,7 @@ impl BoxedWidget {
             }
         });
     }
-    pub fn render(
-        &self,
-        frame: Rect,
-        ctx: &mut crate::draw::painting::PaintContext,
-        tree: &WidgetTree,
-    ) {
+    pub fn render(&self, frame: Rect, ctx: &mut crate::draw::api::PaintContext, tree: &WidgetTree) {
         let config = &self.provider_context.config;
         let theme = config.theme.as_ref().map(|theme| theme.tokens_arc());
         let patch = config

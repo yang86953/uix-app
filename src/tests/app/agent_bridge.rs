@@ -75,7 +75,7 @@ fn process_bridge_lists_metadata_and_routes_snapshot_and_perform() {
     let mut session = WindowSession::from_root_for_window(
         window_id,
         button("Run").automation_id("run"),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         320,
         160,
     );
@@ -215,7 +215,7 @@ fn wait_checks_generation_and_already_satisfied_conditions_without_ui_work() {
     let mut session = WindowSession::from_root_for_window(
         window_id,
         button("Wait").automation_id("wait"),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         240,
         80,
     );
@@ -275,7 +275,7 @@ fn wait_blocks_in_bridge_and_revision_or_present_notifications_do_not_wake_ui() 
     let mut session = WindowSession::from_root_for_window(
         window_id,
         button("Wait").automation_id("wait"),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         240,
         80,
     );
@@ -351,7 +351,7 @@ fn wait_has_a_hard_timeout_and_observes_window_and_app_close() {
     let mut session = WindowSession::from_root_for_window(
         window_id,
         button("Wait").automation_id("wait"),
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         240,
         80,
     );

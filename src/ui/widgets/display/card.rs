@@ -5,7 +5,8 @@ use std::cell::{Cell, RefCell};
 
 use crate::component;
 use crate::core::{Constraints, EdgeInsets, Point, Rect, Size};
-use crate::draw::painting::{PaintContext, PaintPass};
+use crate::draw::api::PaintContext;
+use crate::draw::command::PaintPass;
 use crate::draw::{Color, Radius};
 use crate::ui::children::WidgetChildren;
 use crate::ui::layout::{
@@ -734,9 +735,12 @@ fn fitted_text(
 
 fn conservative_text_width(ctx: &mut PaintContext<'_>, text: &str, font_size: f32) -> f32 {
     let measured = ctx.measure_text(text, font_size).w;
-    let estimated =
-        crate::draw::font::text_backend::estimate_text_metrics(text, f32::INFINITY, font_size)
-            .max_line_width;
+    let estimated = crate::draw::resources::font::text_backend::estimate_text_metrics(
+        text,
+        f32::INFINITY,
+        font_size,
+    )
+    .max_line_width;
     measured.max(estimated)
 }
 

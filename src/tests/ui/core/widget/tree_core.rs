@@ -63,7 +63,7 @@ impl WidgetLayout for SpyWidget {
     }
 }
 impl WidgetRender for SpyWidget {
-    fn render(&self, _: Rect, _: &mut crate::draw::painting::PaintContext, _: &WidgetTree) {}
+    fn render(&self, _: Rect, _: &mut crate::draw::api::PaintContext, _: &WidgetTree) {}
 }
 impl EventHandler for SpyWidget {
     fn on_event(&mut self, event: &SystemEvent) -> EventResult {
@@ -182,12 +182,7 @@ impl WidgetLayout for CaptureSpyWidget {
 }
 
 impl WidgetRender for CaptureSpyWidget {
-    fn render(
-        &self,
-        frame: Rect,
-        ctx: &mut crate::draw::painting::PaintContext,
-        tree: &WidgetTree,
-    ) {
+    fn render(&self, frame: Rect, ctx: &mut crate::draw::api::PaintContext, tree: &WidgetTree) {
         self.0.render(frame, ctx, tree)
     }
 }
@@ -235,12 +230,7 @@ impl WidgetLayout for PointerUpCaptureWidget {
 }
 
 impl WidgetRender for PointerUpCaptureWidget {
-    fn render(
-        &self,
-        frame: Rect,
-        ctx: &mut crate::draw::painting::PaintContext,
-        tree: &WidgetTree,
-    ) {
+    fn render(&self, frame: Rect, ctx: &mut crate::draw::api::PaintContext, tree: &WidgetTree) {
         self.0.render(frame, ctx, tree)
     }
 }
@@ -442,12 +432,7 @@ impl WidgetLayout for ContinuousSpyWidget {
 }
 
 impl WidgetRender for ContinuousSpyWidget {
-    fn render(
-        &self,
-        frame: Rect,
-        ctx: &mut crate::draw::painting::PaintContext,
-        tree: &WidgetTree,
-    ) {
+    fn render(&self, frame: Rect, ctx: &mut crate::draw::api::PaintContext, tree: &WidgetTree) {
         self.0.render(frame, ctx, tree)
     }
 }
@@ -502,7 +487,7 @@ impl WidgetLayout for PassThroughContainer {
     }
 }
 impl WidgetRender for PassThroughContainer {
-    fn render(&self, _: Rect, _: &mut crate::draw::painting::PaintContext, _: &WidgetTree) {}
+    fn render(&self, _: Rect, _: &mut crate::draw::api::PaintContext, _: &WidgetTree) {}
 }
 impl EventHandler for PassThroughContainer {
     fn on_event(&mut self, _: &SystemEvent) -> EventResult {
@@ -588,7 +573,7 @@ impl WidgetLayout for ClipContainer {
 }
 
 impl WidgetRender for ClipContainer {
-    fn render(&self, _: Rect, _: &mut crate::draw::painting::PaintContext, _: &WidgetTree) {}
+    fn render(&self, _: Rect, _: &mut crate::draw::api::PaintContext, _: &WidgetTree) {}
 
     fn uses_palette(&self) -> bool {
         false
@@ -688,7 +673,7 @@ impl WidgetLayout for ScrollClipContainer {
 }
 
 impl WidgetRender for ScrollClipContainer {
-    fn render(&self, _: Rect, _: &mut crate::draw::painting::PaintContext, _: &WidgetTree) {}
+    fn render(&self, _: Rect, _: &mut crate::draw::api::PaintContext, _: &WidgetTree) {}
 
     fn uses_palette(&self) -> bool {
         false
@@ -757,7 +742,7 @@ impl WidgetLayout for LifecycleProbe {
 }
 
 impl WidgetRender for LifecycleProbe {
-    fn render(&self, _: Rect, _: &mut crate::draw::painting::PaintContext, _: &WidgetTree) {}
+    fn render(&self, _: Rect, _: &mut crate::draw::api::PaintContext, _: &WidgetTree) {}
 
     fn uses_palette(&self) -> bool {
         self.uses_palette
@@ -6535,10 +6520,10 @@ fn typography_cross_selection_copy_aggregates_sibling_lines() {
 
 #[test]
 fn rendered_typography_drag_selection_copies_the_actual_cross_node_range() {
-    use crate::draw::engine::cpu::pixel_surface::PixelSurface;
-    use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
-    use crate::draw::painting::PaintContext;
-    use crate::draw::spatial::Orientation;
+    use crate::draw::api::PaintContext;
+    use crate::draw::backend::cpu::pixel_surface::PixelSurface;
+    use crate::draw::backend::cpu::shared_rasterizer::SharedRasterizer;
+    use crate::draw::geometry::spatial::Orientation;
     use crate::native::test_harness::FakeClipboard;
     use crate::ui::clipboard;
     use crate::ui::Typography;

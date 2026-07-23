@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
-use crate::draw::pipeline::NodeId;
+use crate::draw::renderer::NodeId;
 
 pub(crate) type TimerId = u64;
 

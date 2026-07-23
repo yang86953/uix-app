@@ -173,7 +173,7 @@ pub(super) fn report_graphics_resize_error(context: &str, result: crate::core::R
     }
 }
 
-fn engine_logical_extent(engine: &mut dyn GraphicsEngine) -> Option<(f32, f32)> {
+fn engine_logical_extent(engine: &mut dyn RenderTarget) -> Option<(f32, f32)> {
     let (width, height) = engine.logical_extent();
     (width > 0 && height > 0).then_some((width as f32, height as f32))
 }
@@ -189,7 +189,7 @@ pub(crate) fn native_window_dpi(platform_window: &dyn PlatformWindow) -> u32 {
 
 pub(crate) fn ensure_surface_matches_window(
     tree: &mut WidgetTree,
-    engine: &mut dyn GraphicsEngine,
+    engine: &mut dyn RenderTarget,
     native_width: i32,
     native_height: i32,
 ) -> bool {
@@ -241,7 +241,7 @@ pub(crate) fn ensure_surface_matches_window(
 
 pub(crate) fn sync_root_frame_exactly_to_engine(
     tree: &mut WidgetTree,
-    engine: &mut dyn GraphicsEngine,
+    engine: &mut dyn RenderTarget,
 ) {
     let Some((width, height)) = engine_logical_extent(engine) else {
         return;
@@ -260,7 +260,7 @@ pub(crate) fn sync_root_frame_exactly_to_engine(
     }
 }
 
-pub(crate) fn sync_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn GraphicsEngine) {
+pub(crate) fn sync_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn RenderTarget) {
     let Some((engine_width, engine_height)) = engine_logical_extent(engine) else {
         return;
     };

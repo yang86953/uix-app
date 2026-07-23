@@ -5,7 +5,7 @@ use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::Color;
 use crate::ui::{EventResult, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
 
@@ -192,8 +192,8 @@ component! {
                 .is_some_and(|config| config.trigger_mode() == TooltipTrigger::Hover)
     }
 
-    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
-        crate::draw::compositor::PicturePolicy::Eligible
+    picture_policy => (&self) -> crate::draw::scene::PicturePolicy {
+        crate::draw::scene::PicturePolicy::Eligible
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -289,7 +289,6 @@ component! {
 
         let series = self.series_data();
         let lw = self.line_width;
-        let half = (lw * 0.5).floor() as i32;
         for (series_index, data) in series.iter().enumerate() {
             let points = self.points_for_data(data, &plot);
             let lc = self.line_color.unwrap_or(match series_index {
@@ -300,11 +299,7 @@ component! {
                 _ => palette_error,
             });
             let draw_segment = |ctx: &mut PaintContext<'_>, from: Point, to: Point| {
-                for o in -half..=half {
-                    let o = o as f32;
-                    ctx.canvas_2d()
-                        .draw_line(from.x, from.y + o, to.x, to.y + o, lc, 1.0);
-                }
+                ctx.draw_line(from.x, from.y, to.x, to.y, lc, lw);
             };
             if self.step {
                 for segment in points.windows(2) {

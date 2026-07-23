@@ -1,8 +1,8 @@
 //! DebugRenderService — 调试绘制服务。
 
 use crate::core::Rect;
-use crate::draw::pipeline::{InvalidationSource, RenderMetrics};
-use crate::draw::traits::Canvas2D;
+use crate::draw::renderer::{InvalidationSource, RenderMetrics};
+use crate::draw::Canvas2D;
 use crate::draw::Color;
 
 /// 调试渲染服务。
@@ -165,7 +165,7 @@ impl DebugRenderService {
         surface_w as f32 - Self::HUD_PANEL_W - Self::HUD_MARGIN
     }
 
-    /// 返回 HUD 文本行（供 FrameRenderer 绘制标签）。
+    /// 返回 HUD 文本行（供 ScenePipeline 绘制标签）。
     pub fn telemetry_hud_lines(metrics: &RenderMetrics) -> [String; 6] {
         [
             format!("inv: {}", metrics.last_invalidation.label()),

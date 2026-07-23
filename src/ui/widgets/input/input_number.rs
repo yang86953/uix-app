@@ -4,7 +4,7 @@
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::Radius;
 use crate::native::traits::input::{ControlSize, KeyMod};
 use crate::ui::state::State;

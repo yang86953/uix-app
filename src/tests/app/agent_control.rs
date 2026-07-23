@@ -475,7 +475,7 @@ fn real_window_turn_settles_action_then_serves_snapshot_without_extra_polling() 
     let mut session = WindowSession::from_root_for_window(
         WindowId::new(25),
         root,
-        Box::new(NullEngine::new()),
+        Box::new(Renderer::test()),
         320,
         160,
     );

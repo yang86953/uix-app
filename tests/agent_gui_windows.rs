@@ -91,7 +91,7 @@ const FORCED_VULKAN_GRAPHICS: GraphicsExpectation = GraphicsExpectation {
 };
 // Production intentionally has no direct `software` backend override. A Metal
 // request is valid configuration but has no Windows registry row, so it drives
-// the shipping GPU-probe-exhausted -> whole SoftwareEngine fallback boundary.
+// the shipping GPU-probe-exhausted -> Renderer::cpu fallback boundary.
 const SOFTWARE_FALLBACK_GRAPHICS: GraphicsExpectation = GraphicsExpectation {
     evidence_label: "software-fallback",
     backend_override: Some("metal"),
@@ -329,8 +329,8 @@ impl DemoProcess {
             "demo did not reach the production whole-Software fallback for request `{request}`; output={output}"
         );
         assert!(
-            output.contains("CPU software engine initialized"),
-            "demo did not initialize SoftwareEngine after GPU probe exhaustion; output={output}"
+            output.contains("CPU renderer initialized"),
+            "demo did not initialize the CPU Renderer after GPU probe exhaustion; output={output}"
         );
         assert!(
             !output.contains("Graphics bootstrap: selected recipe"),
@@ -341,7 +341,7 @@ impl DemoProcess {
             "software fallback scenario unexpectedly created a wgpu adapter; output={output}"
         );
         eprintln!(
-            "graphics acceptance evidence: path={}; request={request}; fallback=software_cpu; engine=SoftwareEngine",
+            "graphics acceptance evidence: path={}; request={request}; fallback=software_cpu; renderer=Renderer::cpu",
             self.graphics.evidence_label
         );
     }

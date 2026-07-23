@@ -1,12 +1,12 @@
 #![cfg(feature = "opengles")]
 
 use crate::draw::backend::RenderBackend;
-use crate::draw::engine::GraphicsFailure;
-use crate::draw::gpu_engine::GpuEngine;
-use crate::draw::pipeline::{
+use crate::draw::command::{
     EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameRasterOp,
 };
-use crate::draw::{BlendMode, GraphicsEngine, Radius, UpdateStrategy};
+use crate::draw::renderer::GraphicsFailure;
+use crate::draw::Renderer;
+use crate::draw::{BlendMode, Radius, RenderTarget, UpdateStrategy};
 use crate::tests::common::*;
 
 fn open_engine(
@@ -16,7 +16,7 @@ fn open_engine(
 ) -> (
     Box<dyn crate::native::traits::platform::Platform>,
     Box<dyn crate::native::traits::window::PlatformWindow>,
-    GpuEngine,
+    Renderer,
 ) {
     let mut platform = crate::native::create_platform().expect("platform");
     let window = platform
@@ -30,7 +30,7 @@ fn open_engine(
         GraphicsBackend::OpenGlEs,
     )
     .expect("WglContext");
-    let mut engine = GpuEngine::new(context).expect("OpenGL ES GpuEngine");
+    let mut engine = Renderer::from_context(context).expect("OpenGL ES Renderer");
     engine
         .initialize(width, height)
         .expect("initialize GL engine");
@@ -66,7 +66,7 @@ fn opengles_native_path_keeps_order_and_bounded_soft_upload() {
 
     let backend = engine
         .session_mut()
-        .native_gpu_backend_mut()
+        .gpu_backend_mut()
         .expect("OpenGL ES NativeGpu backend");
     let pixels = backend.try_readback().expect("read back ordered frame");
     let pixel = |x: usize, y: usize| pixels[y * 128 + x];
@@ -99,7 +99,7 @@ fn opengles_encoded_glyph_ir_uses_native_atlas_without_soft_upload() {
     let (width, height) = {
         let size = engine
             .session_mut()
-            .native_gpu_backend_mut()
+            .gpu_backend_mut()
             .expect("OpenGL ES NativeGpu backend")
             .surface()
             .size();
@@ -108,7 +108,7 @@ fn opengles_encoded_glyph_ir_uses_native_atlas_without_soft_upload() {
     let mut encoder = FrameEncoder::new(width, height).expect("glyph encoder");
     encoder.clear(Color::from_rgb(12, 24, 48));
     let coverage: std::sync::Arc<[u8]> = vec![0, 64, 128, 255, 255, 128, 64, 0].into();
-    let glyph = crate::draw::pipeline::FrameGlyphBlit::new(
+    let glyph = crate::draw::command::FrameGlyphBlit::new(
         8,
         6,
         coverage,
@@ -125,7 +125,7 @@ fn opengles_encoded_glyph_ir_uses_native_atlas_without_soft_upload() {
 
     let backend = engine
         .session_mut()
-        .native_gpu_backend_mut()
+        .gpu_backend_mut()
         .expect("OpenGL ES NativeGpu backend");
     assert_eq!(
         backend
@@ -160,7 +160,7 @@ fn opengles_encoded_glyph_ir_uses_native_atlas_without_soft_upload() {
 #[test]
 #[ignore = "legacy WGL hybrid fixture; production uses the strict shared wgpu path"]
 fn opengles_picture_producer_glyph_ir_matches_reference_without_soft_upload() {
-    use crate::draw::pipeline::frame_recording::FrameRecordingEngine;
+    use crate::draw::command::recorder::CommandRecorder;
 
     if std::env::consts::OS != "windows" {
         return;
@@ -170,14 +170,14 @@ fn opengles_picture_producer_glyph_ir_matches_reference_without_soft_upload() {
     let (width, height) = {
         let size = engine
             .session_mut()
-            .native_gpu_backend_mut()
+            .gpu_backend_mut()
             .expect("OpenGL ES NativeGpu backend")
             .surface()
             .size();
         (size.w as i32, size.h as i32)
     };
 
-    let mut recorder = FrameRecordingEngine::new();
+    let mut recorder = CommandRecorder::new();
     recorder
         .initialize(width, height)
         .expect("initialize Picture recorder");
@@ -245,7 +245,7 @@ fn opengles_picture_producer_glyph_ir_matches_reference_without_soft_upload() {
 
     let backend = engine
         .session_mut()
-        .native_gpu_backend_mut()
+        .gpu_backend_mut()
         .expect("OpenGL ES NativeGpu backend");
     assert_eq!(
         backend
@@ -285,7 +285,7 @@ fn opengles_picture_producer_glyph_ir_matches_reference_without_soft_upload() {
 #[test]
 #[ignore = "legacy WGL hybrid fixture; production uses the strict shared wgpu path"]
 fn opengles_encoded_fill_opacity_ir_matches_reference_without_soft_upload() {
-    use crate::draw::pipeline::frame_recording::FrameRecordingEngine;
+    use crate::draw::command::recorder::CommandRecorder;
 
     if std::env::consts::OS != "windows" {
         return;
@@ -296,13 +296,13 @@ fn opengles_encoded_fill_opacity_ir_matches_reference_without_soft_upload() {
     let (width, height) = {
         let size = engine
             .session_mut()
-            .native_gpu_backend_mut()
+            .gpu_backend_mut()
             .expect("OpenGL ES NativeGpu backend")
             .surface()
             .size();
         (size.w as i32, size.h as i32)
     };
-    let mut recorder = FrameRecordingEngine::new();
+    let mut recorder = CommandRecorder::new();
     recorder
         .initialize(width, height)
         .expect("initialize opacity recorder");
@@ -345,7 +345,7 @@ fn opengles_encoded_fill_opacity_ir_matches_reference_without_soft_upload() {
 
     let backend = engine
         .session_mut()
-        .native_gpu_backend_mut()
+        .gpu_backend_mut()
         .expect("OpenGL ES NativeGpu backend");
     assert_eq!(
         backend
@@ -392,7 +392,7 @@ fn opengles_encoded_fill_opacity_ir_matches_reference_without_soft_upload() {
     window.close().expect("close native window");
 }
 
-fn record_half_blue_soft_tile(canvas: &mut dyn crate::draw::traits::Canvas2D) {
+fn record_half_blue_soft_tile(canvas: &mut dyn crate::draw::Canvas2D) {
     canvas.fill_rect(
         Rect::new(0.0, 0.0, 96.0, 96.0),
         Color::from_rgba(0, 255, 0, 255),
@@ -406,7 +406,7 @@ fn record_half_blue_soft_tile(canvas: &mut dyn crate::draw::traits::Canvas2D) {
     canvas.pop_clip();
 }
 
-fn record_common_hybrid_clip_scene(canvas: &mut dyn crate::draw::traits::Canvas2D) {
+fn record_common_hybrid_clip_scene(canvas: &mut dyn crate::draw::Canvas2D) {
     canvas.fill_rect(
         Rect::new(0.0, 0.0, 96.0, 64.0),
         Color::from_rgba(0, 0, 0, 255),
@@ -439,7 +439,7 @@ fn opengles_native_path_matches_software_for_hybrid_clip_and_bounded_tile() {
         return;
     }
 
-    let mut software = SoftwareEngine::new();
+    let mut software = Renderer::cpu();
     software.initialize(96, 64).expect("initialize software");
     let _ = software.begin_frame(UpdateStrategy::FullRedraw);
     record_common_hybrid_clip_scene(software.canvas_2d());
@@ -456,7 +456,7 @@ fn opengles_native_path_matches_software_for_hybrid_clip_and_bounded_tile() {
     let (pixels, stride, upload_bytes) = {
         let backend = engine
             .session_mut()
-            .native_gpu_backend_mut()
+            .gpu_backend_mut()
             .expect("OpenGL ES NativeGpu backend");
         let stride = backend.surface().size().w as usize;
         let pixels = backend.try_readback().expect("read back hybrid clip frame");
@@ -495,7 +495,7 @@ fn opengles_native_path_matches_software_for_premultiplied_soft_tile() {
         return;
     }
 
-    let mut software = SoftwareEngine::new();
+    let mut software = Renderer::cpu();
     software.initialize(96, 96).expect("initialize software");
     let _ = software.begin_frame(UpdateStrategy::FullRedraw);
     record_half_blue_soft_tile(software.canvas_2d());
@@ -511,7 +511,7 @@ fn opengles_native_path_matches_software_for_premultiplied_soft_tile() {
     let (pixels, stride) = {
         let backend = engine
             .session_mut()
-            .native_gpu_backend_mut()
+            .gpu_backend_mut()
             .expect("OpenGL ES NativeGpu backend");
         let stride = backend.surface().size().w as usize;
         let pixels = backend
@@ -572,7 +572,7 @@ fn opengles_native_path_executes_encoded_cached_picture_in_bound_offscreen() {
     let (pixels, stride) = {
         let backend = engine
             .session_mut()
-            .native_gpu_backend_mut()
+            .gpu_backend_mut()
             .expect("OpenGL ES NativeGpu backend");
         let stride = backend.surface().size().w as usize;
         let pixels = backend
@@ -626,7 +626,7 @@ fn opengles_native_path_honors_picture_source_crop() {
 
     let backend = engine
         .session_mut()
-        .native_gpu_backend_mut()
+        .gpu_backend_mut()
         .expect("OpenGL ES NativeGpu backend");
     let pixels = backend.try_readback().expect("read back cropped frame");
     let pixel = |x: usize, y: usize| pixels[y * 128 + x];
@@ -686,7 +686,7 @@ fn opengles_native_path_keeps_order_when_a_picture_blits_into_an_active_picture(
     engine.blit_offscreen(&destination, Rect::new(0.0, 0.0, 64.0, 64.0));
     let pixels = engine
         .session_mut()
-        .native_gpu_backend_mut()
+        .gpu_backend_mut()
         .expect("OpenGL ES NativeGpu backend")
         .try_readback()
         .expect("read back nested Picture frame");

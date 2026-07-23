@@ -8,7 +8,40 @@ component! {
     render => (&self, frame: Rect, ctx: &mut PaintContext) {
         let color = ctx.tokens().color_primary();
         let center = Point::new(frame.x + frame.w * 0.5, frame.y + frame.h * 0.5);
+        let polygon = [
+            Point::new(frame.x + 2.0, frame.y + frame.h - 2.0),
+            Point::new(center.x, frame.y + 2.0),
+            Point::new(frame.x + frame.w - 2.0, frame.y + frame.h - 2.0),
+        ];
+        let stroke = StrokeOptions {
+            width: 1.5,
+            ..StrokeOptions::default()
+        };
+
+        let _surface: Size = ctx.surface_size();
+        let _is_visible: bool = ctx.is_rect_visible(frame);
+        ctx.translate(0.0, 0.0);
+        ctx.set_blend_mode(BlendMode::SrcOver);
+        ctx.set_opacity(1.0);
         ctx.fill_rect(frame, color.with_alpha(24), Some(Radius::uniform(8.0)));
+        ctx.fill_rounded_rect(frame, color.with_alpha(24), Radius::uniform(8.0));
+        ctx.stroke_rounded_rect(frame, color, 1.0, Radius::uniform(8.0));
+        ctx.draw_point(center, color, 3.0);
+        ctx.draw_line(frame.x, center.y, frame.x + frame.w, center.y, color, 1.0);
+        ctx.fill_circle(center.x, center.y, self.radius, color.with_alpha(24));
+        ctx.fill_ellipse(frame, color.with_alpha(24));
+        ctx.stroke_ellipse(frame, color, &stroke);
+        ctx.fill_sector(
+            center.x,
+            center.y,
+            self.radius,
+            0.0,
+            std::f32::consts::FRAC_PI_2,
+            color,
+        );
+        ctx.fill_polygon(&polygon, color.with_alpha(24), FillRule::NonZero);
+        ctx.stroke_polyline(&polygon, color, &stroke);
+        ctx.stroke_polygon(&polygon, color, &stroke);
         ctx.stroke_arc(
             center.x,
             center.y,
@@ -18,6 +51,9 @@ component! {
             color,
             2.0,
         );
+        ctx.with_opacity(0.5, |ctx| {
+            ctx.draw_point(center, color, 2.0);
+        });
         ctx.draw_text("usage", Point::new(frame.x, frame.y), color, 14.0);
     }
 }

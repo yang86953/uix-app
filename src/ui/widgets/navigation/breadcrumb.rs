@@ -2,7 +2,7 @@
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::Radius;
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::{
@@ -82,8 +82,8 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
-        crate::draw::compositor::PicturePolicy::Eligible
+    picture_policy => (&self) -> crate::draw::scene::PicturePolicy {
+        crate::draw::scene::PicturePolicy::Eligible
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {

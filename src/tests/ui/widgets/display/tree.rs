@@ -1,6 +1,6 @@
-use crate::draw::engine::cpu::pixel_surface::PixelSurface;
-use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
-use crate::draw::spatial::Orientation;
+use crate::draw::backend::cpu::pixel_surface::PixelSurface;
+use crate::draw::backend::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::geometry::spatial::Orientation;
 use crate::tests::common::*;
 use crate::ui::traits::WidgetTextInput;
 use crate::ui::widgets::display::tree::*;
@@ -33,7 +33,7 @@ fn render_tree(tree: &Tree, frame: Rect, surface_size: (i32, i32)) -> String {
     let images = ImageService::new();
     let tokens = DesignTokens::antd_light();
     let widget_tree = WidgetTree::new();
-    let mut display_list = crate::draw::painting::DisplayList::new();
+    let mut display_list = crate::draw::command::DisplayList::new();
     {
         let mut ctx = PaintContext::new_for_test(
             &mut canvas,

@@ -1,7 +1,7 @@
 pub use crate::app::Container as DiContainer;
 pub use crate::app::{App, AppHandle, AppMode, TimerHandle, WindowConfig};
 pub use crate::component;
-pub use crate::draw::traits::GraphicsEngine;
+pub use crate::draw::renderer::RenderTarget;
 use crate::prelude::*;
 pub use crate::semantic_handler;
 use crate::tests::common::*;
@@ -15,7 +15,7 @@ pub use crate::ui::style::{
 pub use crate::ui::theme::{NeutralRole, ShadowToken, ThemePrimitives};
 pub use crate::ui::view::{
     label, AccessibilityExt, ButtonBuilder, EventExt, GridBuilder, InputBuilder, ScrollBuilder,
-    StyleExt, Ui, View, ViewNode,
+    StyleExt, View, ViewNode,
 };
 use crate::ui::widgets::Container;
 pub use crate::ui::{
@@ -148,10 +148,9 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_exported::<StatusLevel>();
     assert_exported::<Color>();
     assert_exported::<FontService>();
-    assert_exported::<dyn GraphicsEngine>();
+    assert_exported::<dyn RenderTarget>();
     assert_exported::<ImageService>();
-    assert_exported::<NullEngine>();
-    assert_exported::<SoftwareEngine>();
+    assert_exported::<Renderer>();
     assert_exported::<SettingsService>();
     assert_exported::<AlignItems>();
     assert_exported::<FlexDirection>();
@@ -195,7 +194,6 @@ fn prelude_exports_event_and_state_capture_types() {
     assert_event_ext::<ViewNode>();
     assert_style_ext::<ViewNode>();
     assert_view::<ViewNode>();
-    assert_exported::<Ui<'static>>();
     assert_exported::<ViewNode>();
     assert_exported::<BoxModel>();
     assert_exported::<BoxShadowDef>();

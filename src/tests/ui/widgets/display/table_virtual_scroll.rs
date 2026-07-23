@@ -319,10 +319,10 @@ fn table_horizontal_wheel_falls_back_to_table_paint() {
 
 #[test]
 fn table_expand_view_is_materialized_once_and_remains_interactive() {
-    use crate::draw::compositor::ScenePaint;
-    use crate::draw::engine::cpu::pixel_surface::PixelSurface;
-    use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
-    use crate::draw::spatial::Orientation;
+    use crate::draw::backend::cpu::pixel_surface::PixelSurface;
+    use crate::draw::backend::cpu::shared_rasterizer::SharedRasterizer;
+    use crate::draw::geometry::spatial::Orientation;
+    use crate::draw::scene::ScenePaint;
     use crate::ui::view::{button, ViewAdapter};
     use crate::ui::widgets::Button;
 

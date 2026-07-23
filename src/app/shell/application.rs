@@ -22,16 +22,14 @@ use crate::app::window_driver::{WindowDriver, WindowFrameContext};
 use crate::app::window_session::WindowSession;
 use crate::core::{Errc, Error, Point, WindowId};
 use crate::data::SettingsService;
-use crate::draw::engine::bootstrap::{
-    assemble_graphics_engine, bootstrap_graphics_engine, ProbeReport,
-};
+use crate::draw::renderer::bootstrap::{assemble_renderer, bootstrap_renderer, ProbeReport};
 #[cfg(feature = "test-harness")]
-use crate::draw::engine::graphics_test_harness::GraphicsFaultSignal;
-use crate::draw::engine::{GraphicsEngineRebuilder, RecoveringGraphicsEngine, RecoveryAction};
-use crate::draw::font::font_service::FontService;
-use crate::draw::image::ImageService;
-use crate::draw::traits::GraphicsEngine;
-use crate::draw::SoftwareEngine;
+use crate::draw::renderer::test_harness::GraphicsFaultSignal;
+use crate::draw::renderer::RenderTarget;
+use crate::draw::renderer::{RecoveryAction, RecoveryDriver, RenderTargetRebuilder};
+use crate::draw::resources::font::font_service::FontService;
+use crate::draw::resources::image::ImageService;
+use crate::draw::Renderer;
 use crate::native::create_platform;
 use crate::native::factory::{
     gpu_recipe_candidates, graphics_runtime_platform, try_create_gpu_recipe, GraphicsRecipe,
@@ -192,7 +190,7 @@ impl SecondaryWindowSession {
         let parts = session.parts_mut();
         let mut no_runtime_tasks = |_platform: &mut dyn Platform, _tree: &mut WidgetTree| {};
         let no_frame = |_tree: &mut WidgetTree,
-                        _engine: &mut dyn GraphicsEngine,
+                        _engine: &mut dyn RenderTarget,
                         _platform: &mut dyn Platform| {};
         let result = driver.drive_frame(WindowFrameContext {
             tree: parts.tree,
@@ -766,7 +764,7 @@ impl App {
         // UIX_DEBUG=1 启动即开调试 overlay（与 Window::new 一致）。
         let debug_mode = Cell::new(std::env::var("UIX_DEBUG").is_ok());
         let cursor_pos = Cell::new(Point::new(0.0, 0.0));
-        let metrics = Cell::new(crate::draw::pipeline::RenderMetrics::default());
+        let metrics = Cell::new(crate::draw::renderer::RenderMetrics::default());
         drain_secondary_window_frames_with_platform(
             &mut *platform,
             &mut secondary_windows.borrow_mut(),

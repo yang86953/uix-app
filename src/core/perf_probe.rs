@@ -1,7 +1,7 @@
 //! Frame/present timing probes for evidence-first perf diagnosis.
 //!
 //! Values are microseconds. Thread-local so the event loop can attribute
-//! engine-managed present cost and record-path sub-stages.
+//! backend-managed present cost and record-path sub-stages.
 
 use std::cell::{Cell, RefCell};
 

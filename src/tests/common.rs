@@ -6,18 +6,17 @@ pub(crate) use crate::core::{
     ComponentId, Constraints, DamageRegion, DirtyRegion, EdgeInsets, Errc, Error, Point, Rect,
     Size, WindowId,
 };
-pub(crate) use crate::draw::compositor::PicturePolicy;
-pub(crate) use crate::draw::engine::{RecoveryAction, RenderOutcome};
-pub(crate) use crate::draw::painting::{PaintContext, ThemeSnapshot};
-pub(crate) use crate::draw::pipeline::{FrameEncoder, FrameRect, NodeId};
-pub(crate) use crate::draw::primitives::path::{FillRule, LineCap, LineJoin};
-pub(crate) use crate::draw::primitives::types::ImageHandle;
-pub(crate) use crate::draw::spatial::{Mat4, Vec3, AABB3D};
-pub(crate) use crate::draw::traits::GraphicsEngine;
+pub(crate) use crate::draw::api::{PaintContext, ThemeSnapshot};
+pub(crate) use crate::draw::command::{FrameEncoder, FrameRect};
+pub(crate) use crate::draw::geometry::path::{FillRule, LineCap, LineJoin};
+pub(crate) use crate::draw::geometry::spatial::{Mat4, Vec3, AABB3D};
+pub(crate) use crate::draw::geometry::types::ImageHandle;
+pub(crate) use crate::draw::renderer::NodeId;
+pub(crate) use crate::draw::renderer::RenderTarget;
+pub(crate) use crate::draw::renderer::{RecoveryAction, RenderOutcome};
+pub(crate) use crate::draw::scene::PicturePolicy;
 pub(crate) use crate::draw::StrokeOptions;
-pub(crate) use crate::draw::{
-    Color, FontHandle, FontService, ImageService, NullEngine, SoftwareEngine,
-};
+pub(crate) use crate::draw::{Color, FontHandle, FontService, ImageService, Renderer};
 pub(crate) use crate::native::traits::input::{
     ControlSize, KeyCode, KeyMod, MouseButton, ScrollDirection,
 };

@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
 use crate::draw::Color;
 use crate::native::traits::system::StatusLevel;
 use crate::ui::animation::AnimationConfig;
@@ -806,7 +806,7 @@ impl Message {
         maximum: f32,
     ) -> f32 {
         let value = value.replace(['\r', '\n'], " ");
-        let text_width = crate::draw::font::text_backend::estimate_text_metrics(
+        let text_width = crate::draw::resources::font::text_backend::estimate_text_metrics(
             &value,
             f32::INFINITY,
             font_size,
@@ -897,8 +897,12 @@ impl Message {
 
     fn text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
         ctx.measure_text(value, font_size).w.max(
-            crate::draw::font::text_backend::estimate_text_metrics(value, f32::INFINITY, font_size)
-                .max_line_width,
+            crate::draw::resources::font::text_backend::estimate_text_metrics(
+                value,
+                f32::INFINITY,
+                font_size,
+            )
+            .max_line_width,
         )
     }
 }

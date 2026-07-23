@@ -8,8 +8,8 @@ use std::cell::RefCell;
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::painting::PaintContext;
-use crate::draw::spatial::PhysicalUnit;
+use crate::draw::api::PaintContext;
+use crate::draw::geometry::spatial::PhysicalUnit;
 use crate::draw::TextLayoutOptions;
 use crate::ui::clipboard;
 use crate::ui::style::Style;
@@ -196,7 +196,7 @@ component! {
             v_align: crate::draw::VAlign::Top,
             font_size: fs,
         };
-        let backend_opts = crate::draw::font::text_backend::TextLayoutOptions::from(opts);
+        let backend_opts = crate::draw::resources::font::text_backend::TextLayoutOptions::from(opts);
         let fh = *ctx.font();
         let layout = ctx.font_service().layout_text(&fh, &self.text, &backend_opts);
 
@@ -253,7 +253,7 @@ component! {
                         let gs = line.glyph_start;
                         let ge = (gs + line.glyph_count).min(layout.glyphs.len());
                         let Some((line_x0, line_x1)) =
-                            crate::draw::font::text_backend::glyph_selection_x_range(
+                            crate::draw::resources::font::text_backend::glyph_selection_x_range(
                                 &layout.glyphs[gs..ge],
                                 sel_s,
                                 sel_e,
@@ -434,7 +434,7 @@ impl Label {
                 .or_else(|| self.style.as_ref().map(|s| s.font_size.default_size()))
                 .unwrap_or(self.font_size);
             let fs = normalized_label_font_size(raw_font_size);
-            let estimated = crate::draw::font::text_backend::estimate_text_metrics(
+            let estimated = crate::draw::resources::font::text_backend::estimate_text_metrics(
                 &self.text,
                 f32::INFINITY,
                 fs,

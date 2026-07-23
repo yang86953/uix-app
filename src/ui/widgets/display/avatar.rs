@@ -4,9 +4,9 @@ use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::image::BitmapHandle;
-use crate::draw::painting::PaintContext;
-use crate::draw::pipeline::invalidate_paint_handle;
+use crate::draw::api::PaintContext;
+use crate::draw::renderer::invalidate_paint_handle;
+use crate::draw::resources::image::BitmapHandle;
 use crate::draw::Color;
 use crate::ui::core::paint_scope::current_paint_widget;
 use crate::ui::core::widget::WidgetTree;
@@ -27,8 +27,8 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
-        crate::draw::compositor::PicturePolicy::Eligible
+    picture_policy => (&self) -> crate::draw::scene::PicturePolicy {
+        crate::draw::scene::PicturePolicy::Eligible
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {

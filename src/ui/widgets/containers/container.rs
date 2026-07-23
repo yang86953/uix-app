@@ -5,8 +5,8 @@ use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, EdgeInsets, Rect, Size};
-use crate::draw::compositor::PicturePolicy;
-use crate::draw::painting::PaintContext;
+use crate::draw::api::PaintContext;
+use crate::draw::scene::PicturePolicy;
 use crate::ui::layout::engine::{
     child_from_tree_with_constraints, BoxModel, FlexLayout, LayoutChild,
 };

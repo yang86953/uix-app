@@ -4,7 +4,8 @@
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::painting::{PaintContext, PaintPass};
+use crate::draw::api::PaintContext;
+use crate::draw::command::PaintPass;
 use crate::draw::{Color, Radius};
 use crate::ui::locale::Locale;
 use crate::ui::widgets::input::date_picker::{days_in_month, first_weekday, Date};

@@ -1,8 +1,8 @@
 use crate::core::{Point, Rect};
-use crate::draw::compositor::ScenePaint;
-use crate::draw::engine::cpu::canvas_2d::CpuCanvas2D;
-use crate::draw::engine::cpu::pixel_surface::PixelSurface;
-use crate::draw::spatial::Orientation;
+use crate::draw::backend::cpu::canvas_2d::CpuCanvas2D;
+use crate::draw::backend::cpu::pixel_surface::PixelSurface;
+use crate::draw::geometry::spatial::Orientation;
+use crate::draw::scene::ScenePaint;
 use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::tests::common::{Color, DesignTokens, FontHandle, FontService, ImageService};
 use crate::ui::core::widget::WidgetCore;

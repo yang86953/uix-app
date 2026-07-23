@@ -1,0 +1,257 @@
+//! 2D 绘制上下文协议。
+
+use crate::core::{Point, Rect, Size};
+use crate::draw::geometry::color::Color;
+use crate::draw::geometry::path::{FillRule, Path, PathBuilder};
+use crate::draw::geometry::stroker::StrokeOptions;
+use crate::draw::geometry::types::{BlendMode, GradientDirection, Radius, Transform};
+
+pub trait Canvas2D {
+    // ── 仿射变换 ──
+
+    fn current_transform(&self) -> Transform;
+
+    fn set_transform(&mut self, transform: Transform);
+
+    /// Concatenates `transform` after the current local coordinates.
+    fn concat_transform(&mut self, transform: Transform) {
+        self.set_transform(self.current_transform().concat(transform));
+    }
+
+    // ── 画布偏移（像素空间平移）──
+
+    /// 当前像素偏移量（影响所有绘制操作的坐标）。
+    fn offset(&self) -> (f32, f32) {
+        (0.0, 0.0)
+    }
+
+    /// 设置像素偏移量。
+    fn set_offset(&mut self, _dx: f32, _dy: f32) {}
+
+    /// 累加像素偏移。
+    fn translate(&mut self, dx: f32, dy: f32) {
+        let (ox, oy) = self.offset();
+        self.set_offset(ox + dx, oy + dy);
+    }
+
+    // ── 矢量填充（后端必须显式实现，禁止从公开 trait 直写像素）──
+    fn fill_rect(&mut self, rect: Rect, color: Color, radius: Option<Radius>);
+    fn fill_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color);
+    fn fill_ellipse(&mut self, rect: Rect, color: Color);
+    fn fill_sector(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        r: f32,
+        start_angle: f32,
+        end_angle: f32,
+        color: Color,
+    );
+    fn fill_path(&mut self, path: &Path, color: Color, fill_rule: FillRule);
+
+    // ── 矢量描边 ──
+    fn stroke_rect(&mut self, rect: Rect, color: Color, line_width: f32, radius: Option<Radius>);
+    fn stroke_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color, line_width: f32);
+    fn stroke_path(&mut self, path: &Path, color: Color, opts: &StrokeOptions);
+    fn draw_line(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, color: Color, width: f32);
+
+    // ── 完整几何 API（统一下沉到现有填充/描边执行器）──
+
+    /// 绘制一个圆形点标记；`diameter` 为逻辑像素直径。
+    fn draw_point(&mut self, point: Point, color: Color, diameter: f32) {
+        if diameter.is_finite() && diameter > 0.0 {
+            self.fill_circle(point.x, point.y, diameter * 0.5, color);
+        }
+    }
+
+    /// 显式填充圆角矩形。
+    fn fill_rounded_rect(&mut self, rect: Rect, color: Color, radius: Radius) {
+        self.fill_rect(rect, color, Some(radius));
+    }
+
+    /// 显式描边圆角矩形。
+    fn stroke_rounded_rect(&mut self, rect: Rect, color: Color, line_width: f32, radius: Radius) {
+        self.stroke_rect(rect, color, line_width, Some(radius));
+    }
+
+    /// 填充任意多边形。
+    fn fill_polygon(&mut self, points: &[Point], color: Color, fill_rule: FillRule) {
+        let path = PathBuilder::new().polygon(points).build();
+        if !path.is_empty() {
+            self.fill_path(&path, color, fill_rule);
+        }
+    }
+
+    /// 描边开放折线；整条折线只进入一次共享描边管线。
+    fn stroke_polyline(&mut self, points: &[Point], color: Color, options: &StrokeOptions) {
+        let path = PathBuilder::new().polyline(points).build();
+        if !path.is_empty() {
+            self.stroke_path(&path, color, options);
+        }
+    }
+
+    /// 描边闭合多边形。
+    fn stroke_polygon(&mut self, points: &[Point], color: Color, options: &StrokeOptions) {
+        let path = PathBuilder::new().polygon(points).build();
+        if !path.is_empty() {
+            self.stroke_path(&path, color, options);
+        }
+    }
+
+    /// 描边椭圆。
+    fn stroke_ellipse(&mut self, rect: Rect, color: Color, options: &StrokeOptions) {
+        let path = PathBuilder::new().ellipse(rect).build();
+        if !path.is_empty() {
+            self.stroke_path(&path, color, options);
+        }
+    }
+
+    // ── 渐变 ──
+    fn fill_linear_gradient(
+        &mut self,
+        rect: Rect,
+        color_a: Color,
+        color_b: Color,
+        dir: GradientDirection,
+    );
+    fn fill_radial_gradient(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        inner_r: f32,
+        outer_r: f32,
+        inner_color: Color,
+        outer_color: Color,
+    );
+
+    // ── 阴影 ──
+    fn draw_box_shadow(
+        &mut self,
+        rect: Rect,
+        blur_radius: f32,
+        offset_x: f32,
+        offset_y: f32,
+        color: Color,
+        corner_radius: Option<Radius>,
+    );
+    fn draw_box_shadow_ambient(
+        &mut self,
+        rect: Rect,
+        blur_radius: f32,
+        offset_x: f32,
+        offset_y: f32,
+        color: Color,
+        corner_radius: Option<Radius>,
+    );
+
+    // ── 图像/字形混合 ──
+    fn blit_image(&mut self, src: &[u32], src_w: i32, src_rect: Rect, dst_rect: Rect);
+    fn blit_glyph(
+        &mut self,
+        x: i32,
+        y: i32,
+        coverage: &[u8],
+        width: usize,
+        height: usize,
+        color: Color,
+    );
+
+    /// 共享 coverage 的字形复制；默认转发到 [`Self::blit_glyph`]。
+    /// 原生 GPU backend 可保留 `Arc`，无需复制 coverage 字节（#105）。
+    fn blit_glyph_shared(
+        &mut self,
+        x: i32,
+        y: i32,
+        coverage: std::sync::Arc<[u8]>,
+        width: usize,
+        height: usize,
+        color: Color,
+    ) {
+        self.blit_glyph(x, y, coverage.as_ref(), width, height, color);
+    }
+
+    /// GPU 优先：轮廓边列表 → coverage atlas。
+    /// soft / 严格 GPU 物理 1:1 优先用字体光栅器的面积 coverage（R8）；
+    /// 明显缩放、仿射或高 DPR 走 RGBA8 MSDF。
+    fn blit_glyph_outline(
+        &mut self,
+        x: i32,
+        y: i32,
+        mesh: std::sync::Arc<[f32]>,
+        width: usize,
+        height: usize,
+        color: Color,
+    ) {
+        self.blit_glyph_outline_shared(x, y, mesh, None, width, height, color);
+    }
+
+    /// 与 [`blit_glyph_outline`] 相同，可携带缓存的面积 coverage（物理 1:1 时复用，
+    /// 稳定 atlas 键）。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "glyph atlas geometry is an established canvas backend boundary"
+    )]
+    fn blit_glyph_outline_shared(
+        &mut self,
+        x: i32,
+        y: i32,
+        mesh: std::sync::Arc<[f32]>,
+        area_coverage: Option<std::sync::Arc<[u8]>>,
+        width: usize,
+        height: usize,
+        color: Color,
+    ) {
+        if width == 0 || height == 0 {
+            return;
+        }
+        let coverage = area_coverage.filter(|c| c.len() >= width.saturating_mul(height));
+        let coverage = match coverage {
+            Some(c) => c,
+            None => {
+                let Some(generated) =
+                    crate::draw::resources::font::glyph_outline::coverage_from_edges(
+                        mesh.as_ref(),
+                        width,
+                        height,
+                    )
+                else {
+                    return;
+                };
+                std::sync::Arc::<[u8]>::from(generated)
+            }
+        };
+        self.blit_glyph_shared(x, y, coverage, width, height, color);
+    }
+
+    // ── 渲染状态栈（必须自行实现）──
+    fn save(&mut self);
+    fn restore(&mut self);
+    fn push_clip(&mut self, rect: Rect);
+    fn pop_clip(&mut self);
+    fn set_opacity(&mut self, opacity: f32);
+    fn opacity(&self) -> f32;
+    fn set_blend_mode(&mut self, mode: BlendMode);
+    fn push_clip_path(&mut self, path: &Path);
+
+    // ── 只读呈现数据；可变像素仅存在于引擎内部表面 ──
+    fn pixels(&self) -> &[u32];
+    #[cfg(test)]
+    fn pixels_mut(&mut self) -> &mut [u32];
+    fn surface_size(&self) -> Size;
+    fn width(&self) -> i32 {
+        self.surface_size().w as i32
+    }
+    fn height(&self) -> i32 {
+        self.surface_size().h as i32
+    }
+    fn current_clip(&self) -> Rect;
+
+    // ── 像素移动（滚动优化）──
+
+    /// 在画布上移动一个矩形区域内的像素（scroll/pan 优化）。
+    /// 将 viewport 区域内的像素从 `(viewport.x-dx, viewport.y-dy)` 复制到
+    /// `(viewport.x, viewport.y)`，避免全帧重绘。dx/dy 应是整数像素偏移。
+    /// 调用此方法后，viewport 中非 strip 区域的内容已正确偏移，
+    /// 调用者只需重绘新暴露的 strip 区域（与滚动方向相反的一侧）。
+    fn scroll_region(&mut self, viewport: Rect, dx: f32, dy: f32);
+}

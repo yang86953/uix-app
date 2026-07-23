@@ -1,4 +1,4 @@
-//! Render Loop — OS 事件 + Widget 调度；渲染段委托 draw FrameRenderer。
+//! Render Loop — OS 事件 + Widget 调度；渲染段委托 draw ScenePipeline。
 
 use crate::app::active_work_registry::ActiveWorkRegistry;
 use crate::app::agent_control::WindowAgentState;
@@ -9,10 +9,10 @@ use crate::app::window_driver::{WindowDriver, WindowFrameContext};
 use crate::app::window_semantics::WindowSemanticState;
 use crate::app::window_session::{WindowLoopState, WindowSession, WindowTextInputState};
 use crate::core::Point;
-use crate::draw::font::font_service::FontService;
-use crate::draw::image::ImageService;
-use crate::draw::pipeline::RenderMetrics;
-use crate::draw::traits::GraphicsEngine;
+use crate::draw::renderer::RenderMetrics;
+use crate::draw::renderer::RenderTarget;
+use crate::draw::resources::font::font_service::FontService;
+use crate::draw::resources::image::ImageService;
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::traits::platform::Platform;
 use crate::native::traits::window::PlatformWindow;
@@ -41,7 +41,7 @@ pub(crate) fn push_coalesced_event(events: &mut Vec<UiEvent>, event: &UiEvent) {
 pub fn run_widget_loop<M, X, F>(
     platform: &mut dyn Platform,
     platform_window: &mut dyn PlatformWindow,
-    engine: &mut dyn GraphicsEngine,
+    engine: &mut dyn RenderTarget,
     tree: &mut WidgetTree,
     font_service: &FontService,
     image_service: &ImageService,
@@ -56,7 +56,7 @@ pub fn run_widget_loop<M, X, F>(
 where
     M: Fn(&UiEvent) -> Option<SystemEvent>,
     X: Fn(&UiEvent) -> bool,
-    F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
+    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn Platform),
 {
     let mut active_work = ActiveWorkRegistry::new();
     let mut pending_root = None;
@@ -115,7 +115,7 @@ pub(crate) fn run_window_session_loop<M, X, F>(
 where
     M: Fn(&UiEvent) -> Option<SystemEvent>,
     X: Fn(&UiEvent) -> bool,
-    F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
+    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn Platform),
 {
     run_window_session_loop_with_system_theme(
         platform,
@@ -154,7 +154,7 @@ pub(crate) fn run_window_session_loop_with_system_theme<M, X, F>(
 where
     M: Fn(&UiEvent) -> Option<SystemEvent>,
     X: Fn(&UiEvent) -> bool,
-    F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
+    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn Platform),
 {
     run_window_session_loop_with_system_theme_and_tasks(
         platform,
@@ -201,7 +201,7 @@ where
     T: FnMut(&mut dyn Platform, &mut WidgetTree),
     R: FnMut(&UiEvent, &mut dyn Platform),
     D: FnMut() -> Option<Instant>,
-    F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
+    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn Platform),
 {
     run_window_session_loop_with_system_theme_and_clock(
         platform,
@@ -244,7 +244,7 @@ pub(crate) fn run_window_session_loop_with_clock<M, X, F>(
 where
     M: Fn(&UiEvent) -> Option<SystemEvent>,
     X: Fn(&UiEvent) -> bool,
-    F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
+    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn Platform),
 {
     run_window_session_loop_with_system_theme_and_clock(
         platform,
@@ -293,7 +293,7 @@ where
     T: FnMut(&mut dyn Platform, &mut WidgetTree),
     R: FnMut(&UiEvent, &mut dyn Platform),
     D: FnMut() -> Option<Instant>,
-    F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
+    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn Platform),
 {
     let parts = session.parts_mut();
     run_widget_loop_with_active_work(
@@ -332,7 +332,7 @@ where
 fn run_widget_loop_with_active_work<M, X, T, R, D, F>(
     platform: &mut dyn Platform,
     platform_window: &mut dyn PlatformWindow,
-    engine: &mut dyn GraphicsEngine,
+    engine: &mut dyn RenderTarget,
     tree: &mut WidgetTree,
     active_work: &mut ActiveWorkRegistry,
     app_timers: crate::app::app_timer::AppTimerQueue,
@@ -365,7 +365,7 @@ where
     T: FnMut(&mut dyn Platform, &mut WidgetTree),
     R: FnMut(&UiEvent, &mut dyn Platform),
     D: FnMut() -> Option<Instant>,
-    F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
+    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn Platform),
 {
     let bus_ptr: *mut dyn Platform = platform as *mut dyn Platform;
     let window_id = platform_window.window_id();

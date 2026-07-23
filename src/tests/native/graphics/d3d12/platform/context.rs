@@ -134,7 +134,7 @@ fn d3d12_warp_glyph_coverage_clip_overlap_and_cross_present_cache_match_cpu() {
     expected[0] = 0xFF11_22CC;
     expected[(width * height - 1) as usize] = 0xFFCC_2211;
     for x in [2, 7] {
-        crate::draw::rasterizer::glyph::blit_glyph(
+        crate::draw::backend::cpu::rasterizer::glyph::blit_glyph(
             &mut expected,
             width,
             height,
@@ -168,7 +168,7 @@ fn d3d12_warp_glyph_coverage_clip_overlap_and_cross_present_cache_match_cpu() {
         .read_pixels(0, 0, width, height)
         .expect("second glyph readback");
     let mut expected = vec![base.premultiplied(); (width * height) as usize];
-    crate::draw::rasterizer::glyph::blit_glyph(
+    crate::draw::backend::cpu::rasterizer::glyph::blit_glyph(
         &mut expected,
         width,
         height,
