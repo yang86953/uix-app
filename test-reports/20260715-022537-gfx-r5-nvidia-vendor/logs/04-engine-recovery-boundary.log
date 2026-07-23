@@ -1,9 +1,0 @@
-engine-recovery-boundary: UIX_GFX_R5_EXPECT_VENDOR=nvidia cargo test --features vulkan --lib tests::native::backends::windows::vulkan_fault_recovery::native_vulkan_surface_fault_reaches_engine_recovery_boundary -- --exact --ignored --nocapture --test-threads=1
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
-     Running unittests src\lib.rs (target\debug\deps\uix-aced7e1cc6324dd6.exe)
-
-running 1 test
-test tests::native::backends::windows::vulkan_fault_recovery::native_vulkan_surface_fault_reaches_engine_recovery_boundary ... GFX-R5 engine recovery evidence: expected=nvidia; action=RebuildSurface; fault=VulkanContext: vkQueuePresentKHR failed: ERROR_OUT_OF_DATE_KHR; adapter="NVIDIA GeForce RTX 4070 Ti SUPER"; type=discrete_gpu; vendor=0x10DE; device=0x2705; api=1.4.341; driver=0x988F8000; queue_family=0
-ok
-
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1618 filtered out; finished in 0.62s
