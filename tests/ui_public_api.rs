@@ -2,7 +2,27 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use uix::ui::view::{button, column, label, StyleExt};
-use uix::ui::State;
+use uix::ui::{
+    DesignTokens, IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, State,
+    ThemeTokens, TokenPatch, TokenProvider,
+};
+
+#[test]
+fn theme_and_token_contracts_are_owned_by_ui() {
+    fn assert_theme_provider<T>()
+    where
+        T: IColorTokens
+            + ITypographyTokens
+            + ISpacingTokens
+            + IBoxShadowTokens
+            + ThemeTokens
+            + TokenProvider,
+    {
+    }
+
+    assert_theme_provider::<DesignTokens>();
+    let _patch = TokenPatch::default();
+}
 
 #[test]
 fn ui_state_and_view_builders_work_from_public_exports() {

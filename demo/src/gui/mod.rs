@@ -2,7 +2,6 @@
 
 use std::time::{Duration, Instant};
 
-use uix::core::log::info_fn;
 use uix::prelude::*;
 
 use crate::common::page::{
@@ -343,9 +342,9 @@ fn log_g5_scenario(
     overlay: &str,
 ) {
     uix::core::perf_probe::set_internal_g5_scenario(&format!("{name}.{iteration}"));
-    info_fn(format!(
+    tracing::info!(
         "G5_SCENARIO schema=1 name={name} category={category} iteration={iteration} page={page} theme={theme} overlay={overlay}"
-    ));
+    );
 }
 
 const G5_MACRO_CYCLE_SECONDS: u64 = 10 * 60;
@@ -379,15 +378,15 @@ impl G5ScenarioState {
 }
 
 fn log_g5_phase(macro_cycle: u64, phase: &str, elapsed: Duration) {
-    info_fn(format_args!(
+    tracing::info!(
         "G5_PHASE schema=1 macro_cycle={macro_cycle} phase={phase} elapsed_us={}",
         elapsed.as_micros()
-    ));
+    );
 }
 
 fn set_g5_baseline(active: &State<usize>, overlay_mode: &State<u8>, theme_control: &ThemeControl) {
     if theme_control.is_dark() && !theme_control.toggle() {
-        uix::core::log::error_fn("G5 baseline theme transition failed");
+        tracing::error!("G5 baseline theme transition failed");
     }
     active.set(PAGE_HOME);
     overlay_mode.set(0);
@@ -471,7 +470,7 @@ fn advance_g5_state_machine(
             _ => ("page_charts", "page", PAGE_CHARTS, false, 0, 0),
         };
         if theme_control.is_dark() != dark && !theme_control.toggle() {
-            uix::core::log::error_fn("G5 theme transition failed");
+            tracing::error!("G5 theme transition failed");
         }
         active.set(page);
         overlay_mode.set(overlay);
@@ -525,15 +524,21 @@ fn schedule_g5_tick(
 
 fn start_g5_control_watcher() {
     let Some(path) = std::env::var_os("UIX_G5_STOP_FILE") else {
-        info_fn("G5_CAPABILITY schema=1 category=control status=blocked reason=missing_stop_file");
+        tracing::info!(
+            "G5_CAPABILITY schema=1 category=control status=blocked reason=missing_stop_file"
+        );
         return;
     };
     let Ok(token) = std::env::var("UIX_G5_STOP_TOKEN") else {
-        info_fn("G5_CAPABILITY schema=1 category=control status=blocked reason=missing_stop_token");
+        tracing::info!(
+            "G5_CAPABILITY schema=1 category=control status=blocked reason=missing_stop_token"
+        );
         return;
     };
     if token.is_empty() {
-        info_fn("G5_CAPABILITY schema=1 category=control status=blocked reason=empty_stop_token");
+        tracing::info!(
+            "G5_CAPABILITY schema=1 category=control status=blocked reason=empty_stop_token"
+        );
         return;
     }
     if let Err(error) = std::thread::Builder::new()
@@ -543,14 +548,13 @@ fn start_g5_control_watcher() {
                 .ok()
                 .is_some_and(|value| value.trim() == token);
             if requested {
-                info_fn("G5_CONTROL schema=1 outcome=complete");
-                uix::core::log::flush();
+                tracing::info!("G5_CONTROL schema=1 outcome=complete");
                 std::process::exit(0);
             }
             std::thread::sleep(Duration::from_millis(200));
         })
     {
-        uix::core::log::error_fn(format_args!("G5 control watcher failed: {error}"));
+        tracing::error!("G5 control watcher failed: {error}");
     }
 }
 
@@ -562,11 +566,11 @@ fn start_g5_state_machine(
     theme_control: &ThemeControl,
 ) {
     let _ = uix::core::perf_probe::process_monotonic_us();
-    info_fn("G5_CAPABILITY schema=1 category=theme status=blocked reason=no_post_present_theme_resource_baseline_observer");
-    info_fn("G5_CAPABILITY schema=1 category=modal status=blocked reason=no_post_present_overlay_inventory_resource_baseline_observer");
-    info_fn("G5_CAPABILITY schema=1 category=drawer status=blocked reason=no_post_present_overlay_inventory_resource_baseline_observer");
-    info_fn("G5_CAPABILITY schema=1 category=window status=blocked reason=no_release_safe_window_automation");
-    info_fn("G5_CAPABILITY schema=1 category=dpi status=blocked reason=requires_controlled_multi_dpi_environment");
+    tracing::info!("G5_CAPABILITY schema=1 category=theme status=blocked reason=no_post_present_theme_resource_baseline_observer");
+    tracing::info!("G5_CAPABILITY schema=1 category=modal status=blocked reason=no_post_present_overlay_inventory_resource_baseline_observer");
+    tracing::info!("G5_CAPABILITY schema=1 category=drawer status=blocked reason=no_post_present_overlay_inventory_resource_baseline_observer");
+    tracing::info!("G5_CAPABILITY schema=1 category=window status=blocked reason=no_release_safe_window_automation");
+    tracing::info!("G5_CAPABILITY schema=1 category=dpi status=blocked reason=requires_controlled_multi_dpi_environment");
     log_g5_scenario("page_home", "page", 0, PAGE_HOME, "light", "none");
     start_g5_control_watcher();
     schedule_g5_tick(
@@ -673,7 +677,7 @@ pub fn run(
                     && !g5_release_scenario
                     && std::env::var_os("UIX_PERF_PROBE").is_some()
                 {
-                    info_fn("PERF_SCENARIO=startup scheduled");
+                    tracing::info!("PERF_SCENARIO=startup scheduled");
                     let page = active.clone();
                     // Delays are wall-clock from on_start; first paint can take seconds,
                     // so keep later scenarios well after that cost settles.
@@ -681,7 +685,7 @@ pub fn run(
                         .run_after(Duration::from_millis(5000), {
                             let page = page.clone();
                             move || {
-                                info_fn("PERF_SCENARIO=page_switch_general");
+                                tracing::info!("PERF_SCENARIO=page_switch_general");
                                 page.set(2);
                             }
                         })
@@ -690,7 +694,7 @@ pub fn run(
                         .run_after(Duration::from_millis(9000), {
                             let page = page.clone();
                             move || {
-                                info_fn("PERF_SCENARIO=page_switch_input");
+                                tracing::info!("PERF_SCENARIO=page_switch_input");
                                 page.set(5);
                             }
                         })
@@ -699,24 +703,24 @@ pub fn run(
                         .run_after(Duration::from_millis(13000), {
                             let page = page.clone();
                             move || {
-                                info_fn("PERF_SCENARIO=page_switch_home");
+                                tracing::info!("PERF_SCENARIO=page_switch_home");
                                 page.set(0);
                             }
                         })
                         .detach();
                     handle
                         .run_after(Duration::from_millis(16000), || {
-                            info_fn("PERF_SCENARIO=await_timer_tick");
+                            tracing::info!("PERF_SCENARIO=await_timer_tick");
                         })
                         .detach();
                     handle
                         .run_after(Duration::from_millis(18500), || {
-                            info_fn("PERF_SCENARIO=idle_window_expect_no_frame");
+                            tracing::info!("PERF_SCENARIO=idle_window_expect_no_frame");
                         })
                         .detach();
                     handle
                         .run_after(Duration::from_millis(20000), || {
-                            info_fn("PERF_SCENARIO=done");
+                            tracing::info!("PERF_SCENARIO=done");
                             std::process::exit(0);
                         })
                         .detach();

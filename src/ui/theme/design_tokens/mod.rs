@@ -8,12 +8,11 @@
 pub mod presets;
 pub mod primitives;
 
-use super::color_tokens::{NeutralRole, ShadowToken};
-use crate::draw::api::{
-    IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, ThemeTokens,
-};
+use super::color_tokens::{IColorTokens, NeutralRole, ShadowToken};
 use crate::draw::Color;
-use crate::ui::traits::TokenProvider;
+use crate::ui::traits::{
+    IBoxShadowTokens, ISpacingTokens, ITypographyTokens, ThemeTokens, TokenProvider,
+};
 
 #[derive(Debug, Clone)]
 pub struct DesignTokens {

@@ -11,6 +11,7 @@ use crate::app::shell::di::Container;
 use crate::app::window_config::WindowConfig;
 pub use crate::core::WindowId;
 use crate::core::{ComponentId, Constraints, Errc, Error, Rect, Result, Size};
+use crate::diagnostics::Diagnostics;
 use crate::impl_widget_component;
 use crate::native::notification::ToastEntry;
 use crate::ui::traits::WidgetLayout;
@@ -127,6 +128,14 @@ impl AppHandle {
 
     pub fn app_state(&self) -> AppState {
         self.app_state.clone()
+    }
+
+    /// Returns the runtime-scoped stability, recovery, and reporting handle.
+    ///
+    /// The handle remains usable after this window closes so final reports and
+    /// snapshots are not lost with the window lifecycle.
+    pub fn diagnostics(&self) -> Diagnostics {
+        self.runtime.diagnostics()
     }
 
     pub fn resolve<T: 'static + Send + Sync + Clone>(&self) -> Option<T> {

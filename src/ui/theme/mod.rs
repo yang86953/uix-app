@@ -19,14 +19,14 @@ pub(crate) mod color_tokens;
 pub(crate) mod design_tokens;
 mod palette;
 pub(crate) mod spacing_tokens;
+mod token_patch;
 pub(crate) mod typography_tokens;
 pub(crate) mod wrapper;
 
-pub use crate::draw::api::TokenPatch;
 pub use color_tokens::*;
 pub use design_tokens::primitives::ThemePrimitives;
 pub use design_tokens::*;
 pub use palette::*;
-// 注：ISpacingTokens / IBoxShadowTokens / ITypographyTokens 已迁移至 ui::traits::theme。
-// spacing_tokens 和 typography_tokens 模块保留作为模块结构文档
+pub use token_patch::TokenPatch;
+pub(crate) use token_patch::{ScopedThemeTokens, TokenScope};
 pub use wrapper::*;

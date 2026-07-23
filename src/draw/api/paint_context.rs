@@ -6,7 +6,6 @@ use std::ptr::NonNull;
 use std::sync::Arc;
 
 use crate::core::{Point, Rect, Size};
-use crate::draw::api::{ScopedThemeTokens, ThemeTokens, TokenPatch, TokenScope};
 use crate::draw::command::display_list::{DisplayList, PaintOp, PaintPass};
 use crate::draw::debug::DebugRenderService;
 use crate::draw::geometry::path::{FillRule, Path, PathBuilder};
@@ -18,6 +17,8 @@ use crate::draw::resources::image::{blit_handle, BitmapHandle, ImageService};
 use crate::draw::Canvas2D;
 use crate::draw::GradientDirection;
 use crate::draw::{BlendMode, Color, FontHandle, Radius, Transform};
+use crate::ui::theme::{ScopedThemeTokens, TokenPatch, TokenScope};
+use crate::ui::traits::ThemeTokens;
 
 /// 绘制表面配置（组合 dpi/pr/orientation/size 减少参数传递）。
 #[derive(Clone, Copy, Debug)]

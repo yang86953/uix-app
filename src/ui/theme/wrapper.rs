@@ -8,13 +8,12 @@
 use std::sync::Arc;
 use std::sync::RwLock;
 
-use super::color_tokens::ShadowToken;
+use super::color_tokens::{IColorTokens, ShadowToken};
 use super::design_tokens::DesignTokens;
-use crate::draw::api::{
-    IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, ThemeTokens,
-};
 use crate::draw::Color;
-use crate::ui::traits::TokenProvider;
+use crate::ui::traits::{
+    IBoxShadowTokens, ISpacingTokens, ITypographyTokens, ThemeTokens, TokenProvider,
+};
 
 // ════════════════════════════════════════════════════════════════════════════
 // TokenProvider — supertrait 聚合全部子 trait

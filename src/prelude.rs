@@ -16,13 +16,12 @@ pub use crate::core::{
     ComponentId, Constraints, EdgeInsets, Errc, Error, ErrorSeverity, Point, Rect, Size, WindowId,
 };
 
-// native
+// UI-facing input values and platform graphics selection
 
-pub use crate::native::create_platform;
 pub use crate::native::traits::input::{
     ControlSize, CursorType, KeyCode, KeyMod, MouseButton, ScrollDirection,
 };
-pub use crate::native::traits::present::GraphicsBackend;
+pub use crate::platform::graphics::GraphicsBackend;
 pub use crate::native::traits::system::StatusLevel;
 // draw
 
@@ -63,11 +62,12 @@ pub use crate::ui::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AppState, AriaAttribute,
     ClickEvent, ComponentConfig, ComponentConfigSnapshot, ComponentHandle, ComponentOverrides,
     ComponentTokenOverrides, Config, ConfigProvider, EmptyContext, EmptyRenderer, EventResult,
-    FocusHandle, FocusHandleError, HandlerId, HandlerOptions, HandlerRegistration, IntoWidgetNode,
-    Locale, LocaleProvider, PaintContext, Placement, SemanticEvent, SemanticKind, SemanticPayload,
+    FocusHandle, FocusHandleError, HandlerId, HandlerOptions, HandlerRegistration,
+    IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, IntoWidgetNode, Locale,
+    LocaleProvider, PaintContext, Placement, SemanticEvent, SemanticKind, SemanticPayload,
     SnapshotCollapsePanel, SnapshotField, SnapshotFields, SnapshotSource, SnapshotTableColumn,
     SnapshotTableColumnGroup, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue, SystemEvent,
-    SystemEventKind, WidgetChildren, WidgetComponent, WindowControl,
+    SystemEventKind, ThemeTokens, TokenProvider, WidgetChildren, WidgetComponent, WindowControl,
 };
 pub use crate::ui::{
     Animated, Animation, AnimationConfig, AnimationGroup, AnimationGroupError, AnimationGroupItem,

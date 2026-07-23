@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
-use crate::draw::api::{
-    IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, ShadowToken, ThemeTokens,
-};
 use crate::draw::Color;
+use crate::ui::theme::{IColorTokens, ShadowToken};
+use crate::ui::traits::{IBoxShadowTokens, ISpacingTokens, ITypographyTokens, ThemeTokens};
 
 /// A typed, partial override for design tokens.
 ///

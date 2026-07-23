@@ -4,7 +4,7 @@ use crate::core::{Errc, Error, Point, Rect};
 
 use super::layer_tree::{LayerNode, LayerTree};
 use crate::core::DirtyRegion;
-use crate::draw::api::{PaintContext, PaintSurfaceConfig, ThemeTokens};
+use crate::draw::api::{PaintContext, PaintSurfaceConfig};
 use crate::draw::command::{recorder::CommandRecorder, DisplayList, FrameEncoder};
 use crate::draw::geometry::spatial::Orientation;
 use crate::draw::geometry::types::ImageHandle;
@@ -15,6 +15,7 @@ use crate::draw::resources::image::ImageService;
 use crate::draw::scene::viewport_transform::needs_paint;
 use crate::draw::scene::ScenePaint;
 use crate::draw::FontHandle;
+use crate::ui::traits::ThemeTokens;
 
 /// 离屏创建连续失败上限（超过后放弃离屏、改走直绘；仅 WARN 一次）。
 const MAX_OFFSCREEN_RETRY: u8 = 8;

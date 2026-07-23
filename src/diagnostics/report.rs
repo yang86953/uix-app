@@ -1,0 +1,202 @@
+use std::fmt;
+use std::time::SystemTime;
+
+use crate::core::{Errc, ErrorSeverity};
+
+/// Identity of one report within a single [`Diagnostics`](super::Diagnostics)
+/// lifetime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ReportId(pub(crate) u64);
+
+impl fmt::Display for ReportId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ReportSite {
+    pub(crate) file: String,
+    pub(crate) line: u32,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ErrorCause {
+    pub(crate) code: Errc,
+    pub(crate) severity: ErrorSeverity,
+    pub(crate) summary: String,
+    pub(crate) site: ReportSite,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ReportResource {
+    pub(crate) kind: &'static str,
+    pub(crate) id: String,
+}
+
+/// Framework-owned origin schema. The public reporting entry deliberately
+/// supplies the fixed application origin instead of accepting arbitrary
+/// context strings.
+#[derive(Debug, Clone)]
+pub(crate) struct ReportOrigin {
+    pub(crate) target: &'static str,
+    pub(crate) operation: Option<&'static str>,
+    pub(crate) resource: Option<ReportResource>,
+}
+
+impl ReportOrigin {
+    pub(crate) const fn application() -> Self {
+        Self {
+            target: "application",
+            operation: None,
+            resource: None,
+        }
+    }
+
+    pub(crate) const fn framework(target: &'static str, operation: &'static str) -> Self {
+        Self {
+            target,
+            operation: Some(operation),
+            resource: None,
+        }
+    }
+
+    pub(crate) fn with_resource(
+        mut self,
+        kind: &'static str,
+        opaque_id: impl Into<String>,
+    ) -> Self {
+        self.resource = Some(ReportResource {
+            kind,
+            id: opaque_id.into(),
+        });
+        self
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct ReportDraft {
+    pub(crate) observed_at: SystemTime,
+    pub(crate) code: Errc,
+    pub(crate) severity: ErrorSeverity,
+    pub(crate) summary: String,
+    pub(crate) causes: Vec<ErrorCause>,
+    pub(crate) error_site: ReportSite,
+    pub(crate) report_site: ReportSite,
+    pub(crate) origin_target: String,
+    pub(crate) operation: Option<String>,
+    pub(crate) resource: Option<(String, String)>,
+    pub(crate) thread: String,
+    pub(crate) backtrace: Option<String>,
+    pub(crate) causes_truncated: bool,
+}
+
+/// Bounded, sanitized observation generated from a typed framework error.
+///
+/// It intentionally does not retain the original `Error`.
+#[derive(Debug, Clone)]
+pub struct ErrorReport {
+    pub(crate) id: ReportId,
+    pub(crate) observed_at: SystemTime,
+    pub(crate) code: Errc,
+    pub(crate) severity: ErrorSeverity,
+    pub(crate) summary: String,
+    pub(crate) causes: Vec<ErrorCause>,
+    pub(crate) error_site: ReportSite,
+    pub(crate) report_site: ReportSite,
+    pub(crate) origin_target: String,
+    pub(crate) operation: Option<String>,
+    pub(crate) resource: Option<(String, String)>,
+    pub(crate) thread: String,
+    pub(crate) runtime_id: u64,
+    pub(crate) backtrace: Option<String>,
+    pub(crate) causes_truncated: bool,
+    pub(crate) event_emitted: bool,
+}
+
+impl ErrorReport {
+    pub(crate) fn from_draft(id: ReportId, runtime_id: u64, draft: ReportDraft) -> Self {
+        Self {
+            id,
+            observed_at: draft.observed_at,
+            code: draft.code,
+            severity: draft.severity,
+            summary: draft.summary,
+            causes: draft.causes,
+            error_site: draft.error_site,
+            report_site: draft.report_site,
+            origin_target: draft.origin_target,
+            operation: draft.operation,
+            resource: draft.resource,
+            thread: draft.thread,
+            runtime_id,
+            backtrace: draft.backtrace,
+            causes_truncated: draft.causes_truncated,
+            event_emitted: false,
+        }
+    }
+
+    pub fn id(&self) -> ReportId {
+        self.id
+    }
+
+    pub fn observed_at(&self) -> SystemTime {
+        self.observed_at
+    }
+
+    pub fn code(&self) -> Errc {
+        self.code
+    }
+
+    pub fn severity(&self) -> ErrorSeverity {
+        self.severity
+    }
+
+    pub fn summary(&self) -> &str {
+        &self.summary
+    }
+
+    pub fn origin_target(&self) -> &str {
+        &self.origin_target
+    }
+
+    pub fn operation(&self) -> Option<&str> {
+        self.operation.as_deref()
+    }
+
+    pub fn resource(&self) -> Option<(&str, &str)> {
+        self.resource
+            .as_ref()
+            .map(|(kind, id)| (kind.as_str(), id.as_str()))
+    }
+
+    pub fn causes_truncated(&self) -> bool {
+        self.causes_truncated
+    }
+
+    pub fn event_emitted(&self) -> bool {
+        self.event_emitted
+    }
+}
+
+/// Immutable point-in-time view of one runtime's retained reports.
+#[derive(Debug, Clone)]
+pub struct DiagnosticsSnapshot {
+    pub(crate) reports: Vec<ErrorReport>,
+    pub(crate) total_reports: u64,
+    pub(crate) evicted_reports: u64,
+}
+
+impl DiagnosticsSnapshot {
+    pub fn reports(&self) -> &[ErrorReport] {
+        &self.reports
+    }
+
+    pub fn total_reports(&self) -> u64 {
+        self.total_reports
+    }
+
+    pub fn evicted_reports(&self) -> u64 {
+        self.evicted_reports
+    }
+}

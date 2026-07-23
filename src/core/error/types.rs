@@ -108,7 +108,6 @@ impl Error {
     }
 
     /// 把新原因追加到现有原因链尾部，不覆盖已经采集的中间失败。
-    #[cfg(test)]
     pub(crate) fn with_appended_source(mut self, source: Error) -> Self {
         let mut tail = &mut self.source;
         while let Some(error) = tail {
