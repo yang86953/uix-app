@@ -66,8 +66,9 @@ fn main() {
 | 域 | 路径 | 用途 |
 |----|------|------|
 | 入口 | `uix::prelude::*` | App、View、State、组件 |
-| core | `uix::core::*` | 错误、几何、日志、DI |
-| native | `uix::native::*` | 窗口、事件、IME（仅 traits） |
+| core | `uix::core::*` | typed 错误与基础几何 |
+| platform | `uix::platform::*` | 线程亲和的平台、硬件、GPU 描述与独立系统服务 |
+| diagnostics | `uix::diagnostics::*` | 运行保障：恢复登记、最终错误报告与快照 |
 | draw | `uix::draw::*` | 统一 wgpu GPU backend、Software、颜色、字体 |
 | ui | `uix::ui::*` | 组件、布局、主题、动画 |
 | app | `uix::app::*` | App、Window、CLI、多窗、Agent Bridge |
@@ -75,4 +76,4 @@ fn main() {
 
 ## 图形
 
-默认 `Auto`（Windows 优先探测 Vulkan）；失败按 typed 原因在同 API 内有界恢复，耗尽后回 Software(GDI)，仅 `Auto` 可跨 GPU API probe。失败终态 `TerminalFailure`，无静默换 API、无 busy retry。空闲真休眠；Windows P6 遮挡基线已闭合。
+省略 `.graphics_backend(...)` 时使用框架内部自动选择策略；显式配置只接受实际图形 API。失败按 typed 原因在同 API 内有界恢复，耗尽后回 Software(GDI)，显式 API 不静默换成另一 GPU API。失败终态 `TerminalFailure`，无 busy retry。空闲真休眠；Windows P6 遮挡基线已闭合。
