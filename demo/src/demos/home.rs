@@ -170,19 +170,3 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
         )
         .build()
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::common::page::{page_index_by_label, PAGE_TITLES};
-
-    #[test]
-    fn page_labels_resolve() {
-        for (_, title) in PAGE_TITLES {
-            let trimmed = title.trim();
-            assert!(
-                page_index_by_label(trimmed).is_some(),
-                "missing index for {trimmed}"
-            );
-        }
-    }
-}

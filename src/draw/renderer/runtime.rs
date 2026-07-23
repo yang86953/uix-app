@@ -7,8 +7,6 @@ use std::time::Instant;
 
 use crate::core::{Errc, Error, PresentDamageTracker, Rect};
 use crate::draw::backend::factory::create_native_raster_backend;
-#[cfg(test)]
-use crate::draw::backend::TestBackend;
 use crate::draw::backend::{BackendKind, CpuBackend, DamageRegion};
 use crate::draw::command::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::geometry::color::Color;
@@ -100,22 +98,6 @@ impl Renderer {
                     error.short_what()
                 ));
                 RenderSession::with_backend(Box::new(CpuBackend::new()))
-            }
-        };
-        Self::with_session(session, Presentation::External)
-    }
-
-    /// 创建无绘制副作用的测试运行时。
-    #[cfg(test)]
-    pub(crate) fn test() -> Self {
-        let session = match RenderSession::new(BackendKind::Test) {
-            Ok(session) => session,
-            Err(error) => {
-                crate::core::log::error_fn(format_args!(
-                    "Test RenderSession 创建失败: {}",
-                    error.short_what()
-                ));
-                RenderSession::with_backend(Box::new(TestBackend::new()))
             }
         };
         Self::with_session(session, Presentation::External)
@@ -380,16 +362,7 @@ impl RenderTarget for Renderer {
         }
         match self.presentation.kind() {
             PresentationKind::External => match outcome {
-                RenderOutcome::Present(damage) => {
-                    #[cfg(test)]
-                    if self.session.backend_kind() == BackendKind::Test {
-                        RenderOutcome::PresentPending(present_damage.clone())
-                    } else {
-                        RenderOutcome::PresentPending(damage)
-                    }
-                    #[cfg(not(test))]
-                    RenderOutcome::PresentPending(damage)
-                }
+                RenderOutcome::Present(damage) => RenderOutcome::PresentPending(damage),
                 other => other,
             },
             PresentationKind::BackendManaged => {

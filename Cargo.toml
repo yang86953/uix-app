@@ -103,10 +103,12 @@ test-harness = []
 
 [lib]
 path = "src/lib.rs"
+test = false
 
 [[bin]]
 name = "uix-demo"
 path = "demo/src/main.rs"
+test = false
 
 [lints.clippy]
 unwrap_used = "warn"

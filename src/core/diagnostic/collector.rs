@@ -184,7 +184,7 @@ impl Collector {
             .deduplicate = enabled;
     }
 
-    pub fn collect(&self, err: Error) -> usize {
+    fn collect_impl(&self, err: Error, auto_log: bool) -> usize {
         let severity = err.severity();
         let callback_error = err.clone();
         let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
@@ -223,7 +223,9 @@ impl Collector {
 
         // 在不持有内部锁时按快照调用回调，避免重入死锁。
         let callbacks: Vec<ErrorCallback> = inner.callbacks.values().cloned().collect();
-        let log_level = Self::configured_log_level(&inner.config, severity);
+        let log_level = auto_log
+            .then(|| Self::configured_log_level(&inner.config, severity))
+            .flatten();
         drop(inner);
         for cb in &callbacks {
             cb(&callback_error);
@@ -238,6 +240,18 @@ impl Collector {
         }
 
         stored
+    }
+
+    pub fn collect(&self, err: Error) -> usize {
+        self.collect_impl(err, true)
+    }
+
+    /// Records an error that has already been emitted by the logging boundary.
+    ///
+    /// This keeps Collector callbacks and snapshots complete without printing
+    /// the same terminal diagnostic twice.
+    pub(crate) fn collect_logged(&self, err: Error) -> usize {
+        self.collect_impl(err, false)
     }
 
     pub fn collect_fn<F>(&self, f: F) -> usize
