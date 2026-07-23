@@ -1,4 +1,5 @@
-use uix::app::{Container, WindowConfig};
+use uix::app::{App, Container, WindowConfig};
+use uix::diagnostics::{Diagnostics, DiagnosticsConfig};
 use uix::ui::view::label;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -26,4 +27,13 @@ fn app_window_config_keeps_public_window_contract() {
     assert_eq!((config.width, config.height), (800, 600));
     assert!(config.custom_title_bar);
     let _root = (config.root)();
+}
+
+#[test]
+fn app_exposes_one_runtime_diagnostics_handle_to_user_callbacks() {
+    let _app = App::new()
+        .diagnostics(DiagnosticsConfig::default().report_capacity(4))
+        .on_start(|handle| {
+            let _: Diagnostics = handle.diagnostics();
+        });
 }

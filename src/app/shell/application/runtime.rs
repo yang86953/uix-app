@@ -3,10 +3,10 @@
 use super::*;
 
 pub(crate) fn resolve_graphics_backend(
-    builder: Option<GraphicsBackend>,
+    builder: Option<NativeGraphicsBackend>,
     env_value: Option<&str>,
     settings: Option<&SettingsService>,
-) -> GraphicsBackend {
+) -> NativeGraphicsBackend {
     if let Some(backend) = builder {
         return backend;
     }
@@ -27,11 +27,11 @@ pub(crate) fn resolve_graphics_backend(
         }
     }
 
-    GraphicsBackend::Auto
+    NativeGraphicsBackend::Auto
 }
 
-fn parse_graphics_backend_config(source: &str, value: &str) -> Option<GraphicsBackend> {
-    match value.parse::<GraphicsBackend>() {
+fn parse_graphics_backend_config(source: &str, value: &str) -> Option<NativeGraphicsBackend> {
+    match value.parse::<NativeGraphicsBackend>() {
         Ok(backend) => Some(backend),
         Err(err) => {
             crate::core::log::warn_fn(format_args!(

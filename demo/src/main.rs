@@ -18,8 +18,6 @@ mod common;
 mod demos;
 mod gui;
 
-use uix::core::log::{info_fn, Level, Logger};
-
 #[derive(Debug, Default, PartialEq, Eq)]
 struct LaunchOptions {
     cli: bool,
@@ -46,17 +44,12 @@ fn parse_launch_options(args: impl IntoIterator<Item = String>) -> LaunchOptions
     options
 }
 
-fn parse_log_level() -> Level {
-    std::env::var("RUST_LOG")
-        .ok()
-        .and_then(|s| match s.to_lowercase().as_str() {
-            "trace" => Some(Level::Trace),
-            "debug" => Some(Level::Debug),
-            "warn" => Some(Level::Warn),
-            "error" => Some(Level::Error),
-            _ => None,
-        })
-        .unwrap_or(Level::Info)
+fn init_tracing() {
+    use tracing_subscriber::EnvFilter;
+
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("uix=info,uix_demo=info"));
+    let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
 }
 
 fn run_gui(options: LaunchOptions) {
@@ -95,7 +88,7 @@ fn run_gui(options: LaunchOptions) {
 }
 
 fn main() {
-    Logger::instance().set_level(parse_log_level());
+    init_tracing();
     let options = parse_launch_options(std::env::args().skip(1));
 
     if options.cli && options.agent_control {
@@ -141,13 +134,13 @@ fn main() {
     }
 
     if options.cli {
-        info_fn("UIX CLI 演示启动中...");
+        tracing::info!("UIX CLI 演示启动中...");
         if let Err(e) = cli::run() {
             eprintln!("CLI 演示出错: {}", e.short_what());
             std::process::exit(1);
         }
     } else {
-        info_fn("UIX GUI 演示启动中...");
+        tracing::info!("UIX GUI 演示启动中...");
         run_gui(options);
     }
 }

@@ -86,12 +86,13 @@ pub use overlay::{OverlayEntry, OverlayId, OverlayKind, OverlayStack};
 pub use placement::Placement;
 pub use theme::{
     generate_color_scale, ColorScale, DataVisualizationPalette, DesignTokens, DynTokens,
-    FunctionalColorRole, NeutralColorScale, NeutralRole, PrimaryHue, ShadowToken, Theme,
-    ThemePrimitives, TokenPatch, DATA_VISUALIZATION_PALETTE, NEUTRAL_PALETTE,
+    FunctionalColorRole, IColorTokens, NeutralColorScale, NeutralRole, PrimaryHue, ShadowToken,
+    Theme, ThemePrimitives, TokenPatch, DATA_VISUALIZATION_PALETTE, NEUTRAL_PALETTE,
 };
 pub use traits::{
-    Animatable, EventHandler, TokenProvider, WidgetAnimation, WidgetCapabilities, WidgetComponent,
-    WidgetLayout, WidgetLifecycle, WidgetRender,
+    Animatable, EventHandler, IBoxShadowTokens, ISpacingTokens, ITypographyTokens, ThemeTokens,
+    TokenProvider, WidgetAnimation, WidgetCapabilities, WidgetComponent, WidgetLayout,
+    WidgetLifecycle, WidgetRender,
 };
 pub use widgets::*;
 pub use window_chrome::{window_control, window_control_named, window_drag_region, WindowControl};

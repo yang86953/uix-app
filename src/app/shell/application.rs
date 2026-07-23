@@ -36,8 +36,11 @@ use crate::native::factory::{
 };
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::traits::platform::Platform;
-use crate::native::traits::present::{GraphicsBackend, NativeSurfaceHandle};
+use crate::native::traits::present::{
+    GraphicsBackend as NativeGraphicsBackend, NativeSurfaceHandle,
+};
 use crate::native::traits::window::{PlatformWindow, WindowOcclusionState};
+use crate::platform::graphics::GraphicsBackend;
 use crate::ui::theme::{DesignTokens, DynTokens, Theme};
 use crate::ui::traits::TokenProvider;
 use crate::ui::view::ViewNode;
@@ -285,7 +288,7 @@ pub struct App {
     cli: Option<Cli>,
     container: Container,
     settings_path: Option<String>,
-    pub(crate) graphics_backend: Option<GraphicsBackend>,
+    pub(crate) graphics_backend: Option<NativeGraphicsBackend>,
     #[cfg(feature = "test-harness")]
     graphics_faults: GraphicsFaultSignal,
     #[cfg(feature = "agent-control")]
@@ -378,6 +381,13 @@ impl App {
         self
     }
 
+    /// Configures the runtime-scoped stability, recovery, and reporting
+    /// service before the application starts.
+    pub fn diagnostics(mut self, config: crate::diagnostics::DiagnosticsConfig) -> Self {
+        self.runtime.set_diagnostics(config);
+        self
+    }
+
     /// 设置是否在运行中跟随 OS 主题变化（默认 false）。
     pub fn follow_system_theme(mut self, follow: bool) -> Self {
         self.follow_system_theme = follow;
@@ -386,7 +396,7 @@ impl App {
 
     /// Select the GPU API once during window/engine initialization.
     pub fn graphics_backend(mut self, backend: GraphicsBackend) -> Self {
-        self.graphics_backend = Some(backend);
+        self.graphics_backend = Some(backend.into_native());
         self
     }
 
@@ -471,7 +481,7 @@ impl App {
         self
     }
 
-    pub(crate) fn configured_graphics_backend(&self) -> GraphicsBackend {
+    pub(crate) fn configured_graphics_backend(&self) -> NativeGraphicsBackend {
         let env_value = std::env::var(GRAPHICS_BACKEND_ENV).ok();
         resolve_graphics_backend(
             self.graphics_backend,

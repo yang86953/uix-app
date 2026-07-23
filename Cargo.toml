@@ -29,6 +29,8 @@ qrcode = { version = "0.14.1", default-features = false }
 regex = "1"
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # `#[implement]` 宏在 crate 根解析 `windows_core`；无平台 cfg，避免违反 native-only cfg 边界。
 windows-core = "0.62.2"
 # Shared by Linux Wayland and Windows Win32 Vulkan adapters (feature = "vulkan").

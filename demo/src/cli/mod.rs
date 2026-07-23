@@ -2,21 +2,17 @@
 //!
 //! 运行：`cargo run --bin uix-demo -- --cli`
 
-use std::cell::Cell;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
-use uix::core::diagnostic::{
-    LogMiddleware as SvcLogMiddleware, MiddlewareContext, MiddlewarePipeline, RetryMiddleware,
-};
-use uix::core::log::{info_fn, Level, Logger};
 use uix::data::SettingsService;
+use uix::diagnostics::{Diagnostics, RecoveryAction, RecoveryOutcome};
 use uix::draw::renderer::RenderTarget;
-use uix::native::file_service::FileService;
 use uix::prelude::*;
 
 #[allow(dead_code)]
-pub fn init_logger() {
-    Logger::instance().set_level(Level::Info);
-    info_fn("演示日志初始化完成");
+pub fn init_logging() {
+    tracing::info!("演示日志初始化完成");
 }
 
 pub fn demo_core_types() {
@@ -68,45 +64,21 @@ pub fn demo_errors() {
     println!("  root_cause: {}", chained.root_cause());
 }
 
-pub fn demo_middleware() {
-    println!("\n╔══ core：诊断中间件 ═══╗");
-    let mut p = MiddlewarePipeline::new();
-    p.add(SvcLogMiddleware);
-    p.add(RetryMiddleware::new(2));
-    let mut ctx = MiddlewareContext {
-        service_name: "Demo".into(),
-        operation: "GET /ok".into(),
-        ..Default::default()
-    };
-    p.execute(&mut ctx, |c| {
-        c.succeeded = true;
-        c.status_code = 200;
+pub fn demo_recovery() {
+    println!("\n╔══ diagnostics：指定错误恢复 ═══╗");
+    let diagnostics = Diagnostics::default();
+    let recoveries = Arc::new(AtomicUsize::new(0));
+    let recovery_count = Arc::clone(&recoveries);
+    let _subscription = diagnostics.on_error(Errc::Timeout, move |_| {
+        recovery_count.fetch_add(1, Ordering::Relaxed);
+        RecoveryAction::Recovered
     });
-    println!("  Success: ok={} status={}", ctx.succeeded, ctx.status_code);
-    let mut fctx = MiddlewareContext {
-        operation: "GET /fail".into(),
-        ..Default::default()
-    };
-    let att = Cell::new(0u32);
-    p.execute(&mut fctx, move |c| {
-        let n = att.get() + 1;
-        att.set(n);
-        if n >= 3 {
-            c.succeeded = true;
-            c.status_code = 200;
-        } else {
-            c.succeeded = false;
-            c.error_message = format!("fail #{}", n);
-        }
-        println!(
-            "    attempt {}: {}",
-            n,
-            if c.succeeded { "OK" } else { "fail" }
-        );
-    });
+
+    let outcome = diagnostics.attempt_recovery(Error::new(Errc::Timeout, "demo timeout"));
     println!(
-        "  After retry: ok={} retries={}",
-        fctx.succeeded, fctx.retry_count
+        "  recovered={} callbacks={}",
+        matches!(outcome, RecoveryOutcome::Recovered),
+        recoveries.load(Ordering::Relaxed)
     );
 }
 
@@ -216,22 +188,27 @@ pub fn demo_settings() -> Result<(), Error> {
 }
 
 pub fn demo_file_service() -> Result<(), Error> {
-    println!("\n╔══ native：文件服务 ═══╗");
-    let fs = FileService::new();
+    println!("\n╔══ std：文件服务 ═══╗");
     let tmp = std::env::temp_dir().join("uix_demo_fs");
     let p = tmp.join("hello.txt");
-    let ps = p.to_string_lossy().to_string();
-    fs.write_string(&ps, "Hello UIX!\nLine 2.\n")?;
+    std::fs::create_dir_all(&tmp)?;
+    std::fs::write(&p, "Hello UIX!\nLine 2.\n")?;
+    let metadata = std::fs::metadata(&p)?;
     println!(
         "  written, exists:{} size:{}",
-        fs.exists(&ps),
-        fs.file_size(&ps)?
+        p.exists(),
+        metadata.len()
     );
-    println!("  content: {}", fs.read_to_string(&ps)?.trim());
-    fs.append_string(&ps, "Line 3.\n")?;
-    println!("  after append: {} lines", fs.read_lines(&ps)?.len());
-    fs.remove(&ps)?;
-    std::fs::remove_dir(&tmp).ok();
+    println!("  content: {}", std::fs::read_to_string(&p)?.trim());
+    use std::io::Write as _;
+    let mut file = std::fs::OpenOptions::new().append(true).open(&p)?;
+    file.write_all(b"Line 3.\n")?;
+    println!(
+        "  after append: {} lines",
+        std::fs::read_to_string(&p)?.lines().count()
+    );
+    std::fs::remove_file(&p)?;
+    std::fs::remove_dir(&tmp)?;
     Ok(())
 }
 
@@ -272,7 +249,7 @@ pub fn run() -> Result<(), Error> {
     println!("  ╚══════════════════════════════════╝");
     demo_core_types();
     demo_errors();
-    demo_middleware();
+    demo_recovery();
     demo_state();
     demo_flex();
     demo_settings()?;

@@ -7,7 +7,7 @@ pub mod widget;
 
 pub use animation::Animatable;
 pub use layout::LayoutEngine;
-pub use theme::TokenProvider;
+pub use theme::{IBoxShadowTokens, ISpacingTokens, ITypographyTokens, ThemeTokens, TokenProvider};
 pub use widget::{
     EventHandler, IntoWidgetNode, WidgetAnimation, WidgetCapabilities, WidgetComponent,
     WidgetLayout, WidgetLifecycle, WidgetRender, WidgetTextInput,

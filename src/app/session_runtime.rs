@@ -21,6 +21,7 @@ use crate::app::main_thread_queue::{MainThreadContext, MainThreadQueue};
 use crate::app::window_config::WindowConfig;
 use crate::app::window_session::TextInputCoordinator;
 use crate::core::WindowId;
+use crate::diagnostics::{Diagnostics, DiagnosticsConfig};
 #[cfg(feature = "test-harness")]
 use crate::draw::renderer::test_harness::GraphicsFaultSignal;
 use crate::native::traits::event::EventLoopWaker;
@@ -29,6 +30,7 @@ use std::collections::VecDeque;
 
 #[derive(Clone, Default)]
 pub(crate) struct AppRuntime {
+    diagnostics: Diagnostics,
     pub(crate) sessions: Arc<Mutex<BTreeMap<WindowId, SessionRuntime>>>,
     pending_open_windows: Arc<Mutex<VecDeque<OpenWindowRequest>>>,
     pending_theme: Arc<Mutex<Option<Theme>>>,
@@ -68,6 +70,14 @@ pub(crate) struct ReservedWindowSession {
 impl AppRuntime {
     pub(crate) fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn set_diagnostics(&mut self, config: DiagnosticsConfig) {
+        self.diagnostics = Diagnostics::new(config);
+    }
+
+    pub(crate) fn diagnostics(&self) -> Diagnostics {
+        self.diagnostics.clone()
     }
 
     pub(crate) fn register_session(
