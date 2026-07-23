@@ -23,9 +23,6 @@ pub enum BackendKind {
     /// Auto: without a platform GPU context, equivalent to Cpu; app bootstrap
     /// owns GPU-first fallback via `bootstrap_renderer`.
     Auto,
-    /// No-op backend available only to in-crate tests.
-    #[cfg(test)]
-    Test,
 }
 
 /// 后端能力声明。

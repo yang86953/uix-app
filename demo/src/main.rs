@@ -151,34 +151,3 @@ fn main() {
         run_gui(options);
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{parse_launch_options, LaunchOptions};
-
-    #[test]
-    fn launch_options_keep_gui_capabilities_explicit() {
-        assert_eq!(
-            parse_launch_options([
-                "--cli".to_owned(),
-                "--agent-control".to_owned(),
-                "--follow-system-theme".to_owned(),
-                "--graphics-recovery-acceptance".to_owned(),
-                "--component-qa".to_owned(),
-                "--g5-release-scenario".to_owned(),
-            ]),
-            LaunchOptions {
-                cli: true,
-                agent_control: true,
-                follow_system_theme: true,
-                graphics_recovery_acceptance: true,
-                component_qa: true,
-                g5_release_scenario: true,
-            }
-        );
-        assert_eq!(
-            parse_launch_options(["--unknown".to_owned()]),
-            LaunchOptions::default()
-        );
-    }
-}

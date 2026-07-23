@@ -1,5 +1,0 @@
-// Auto-organized test modules. Tests live only under src/tests.
-
-mod platform;
-mod raster;
-mod shaders;

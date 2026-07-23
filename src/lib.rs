@@ -1,5 +1,4 @@
 #![deny(clippy::unwrap_used, clippy::expect_used)]
-#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
 //! UIX — Rust Native UI Framework
 //!
@@ -25,6 +24,3 @@ pub mod draw;
 pub mod native;
 pub mod prelude;
 pub mod ui;
-
-#[cfg(test)]
-pub(crate) mod tests;

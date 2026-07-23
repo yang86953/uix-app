@@ -15,7 +15,8 @@ pub mod sink;
 use std::fmt;
 use std::sync::{Arc, OnceLock, RwLock};
 
-use crate::core::error::Error;
+use crate::core::diagnostic::Collector;
+use crate::core::error::{Errc, Error};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 日志级别
@@ -233,7 +234,18 @@ pub fn warn_fn(msg: impl fmt::Display) {
 
 #[track_caller]
 pub fn error_fn(msg: impl fmt::Display) {
-    emit(Level::Error, msg, std::panic::Location::caller());
+    let location = std::panic::Location::caller();
+    let handler = handler();
+    let Some(message) = render_message_if_enabled(handler.as_ref(), Level::Error, msg) else {
+        return;
+    };
+    handler.handle(Level::Error, &message, location.file(), location.line());
+    Collector::instance().collect_logged(Error::with_location(
+        Errc::Unknown,
+        message,
+        location.file(),
+        location.line(),
+    ));
 }
 
 #[track_caller]

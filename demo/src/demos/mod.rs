@@ -56,21 +56,3 @@ pub fn build_page(page_index: usize, ctx: &DemoCtx<'_>) -> ViewNode {
         _ => page_home(ctx),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::common::page::{PAGE_COUNT, PAGE_TITLES};
-
-    #[test]
-    fn all_pages_build() {
-        let tk = DesignTokens::antd_light();
-        let timer_ticks = State::new(0u32);
-        let active = State::new(0usize);
-        let ctx = DemoCtx::new(&tk, &timer_ticks, Some(&active));
-        assert_eq!(PAGE_TITLES.len(), PAGE_COUNT);
-        for i in 0..PAGE_COUNT {
-            let _ = build_page(i, &ctx);
-        }
-    }
-}

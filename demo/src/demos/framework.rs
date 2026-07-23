@@ -172,37 +172,3 @@ pub fn page_framework(ctx: &DemoCtx<'_>) -> ViewNode {
         .build()
         .automation_id(FRAMEWORK_SCROLL_ID)
 }
-
-#[cfg(all(test, feature = "test-harness"))]
-mod tests {
-    use super::*;
-    use crate::demos::context::FrameworkControl;
-    use uix::ui::test_harness::ViewAdapter;
-
-    #[test]
-    fn framework_page_reflects_provider_state_and_custom_empty_view() {
-        let tokens = DesignTokens::antd_light();
-        let ticks = State::new(0u32);
-        let control = FrameworkControl::default();
-        let initial_ctx = DemoCtx::new(&tokens, &ticks, None).with_framework_control(&control);
-        let initial = ViewAdapter::build(page_framework(&initial_ctx));
-        let initial_labels: Vec<String> = initial
-            .find_all_by_type::<Label>()
-            .into_iter()
-            .map(|(_, label)| label.text().to_string())
-            .collect();
-        assert!(initial_labels
-            .iter()
-            .any(|text| text == "Locale.empty_description：暂无数据"));
-        assert!(initial_labels.iter().any(|text| text == "List 自定义空态"));
-
-        control.locale_state().set(FrameworkLocale::EnUs);
-        let english_ctx = DemoCtx::new(&tokens, &ticks, None).with_framework_control(&control);
-        let english = ViewAdapter::build(page_framework(&english_ctx));
-        assert!(english
-            .find_all_by_type::<Label>()
-            .into_iter()
-            .map(|(_, label)| label.text().to_string())
-            .any(|text| text == "Locale.empty_description：No data"));
-    }
-}

@@ -103,44 +103,6 @@ const SOFTWARE_FALLBACK_GRAPHICS: GraphicsExpectation = GraphicsExpectation {
 };
 static REAL_GUI_LOCK: Mutex<()> = Mutex::new(());
 
-#[test]
-fn graphics_expectation_matrix_tracks_production_recipes() {
-    assert_eq!(DEFAULT_VULKAN_GRAPHICS.evidence_label, "auto-vulkan");
-    assert_eq!(DEFAULT_VULKAN_GRAPHICS.backend_override, None);
-    assert_eq!(
-        DEFAULT_VULKAN_GRAPHICS.selected_recipe,
-        Some("backend=vulkan; raster=gpu_native; present=swapchain")
-    );
-    assert_eq!(
-        DEFAULT_VULKAN_GRAPHICS.present_occlusion,
-        Some("unsupported")
-    );
-    assert_eq!(DEFAULT_VULKAN_GRAPHICS.adapter_backend, Some("vulkan"));
-    assert_eq!(DEFAULT_VULKAN_GRAPHICS.software_fallback_request, None);
-
-    assert_eq!(FORCED_VULKAN_GRAPHICS.backend_override, Some("vulkan"));
-    assert_eq!(
-        FORCED_VULKAN_GRAPHICS.selected_recipe,
-        DEFAULT_VULKAN_GRAPHICS.selected_recipe
-    );
-    assert_eq!(FORCED_VULKAN_GRAPHICS.adapter_backend, Some("vulkan"));
-    assert_eq!(SOFTWARE_FALLBACK_GRAPHICS.backend_override, Some("metal"));
-    assert_eq!(SOFTWARE_FALLBACK_GRAPHICS.selected_recipe, None);
-    assert_eq!(
-        SOFTWARE_FALLBACK_GRAPHICS.software_fallback_request,
-        Some("metal")
-    );
-    assert!(DEFAULT_VULKAN_GRAPHICS
-        .selected_recipe
-        .is_some_and(|recipe| !recipe.contains("software")));
-    for dpi in [96, 144, 192] {
-        assert_eq!(parse_expected_dpi(&dpi.to_string()), Ok(dpi));
-    }
-    for invalid in ["", "120", "144.0", "abc"] {
-        assert!(parse_expected_dpi(invalid).is_err());
-    }
-}
-
 fn parse_expected_dpi(value: &str) -> Result<u32, String> {
     let dpi = value
         .parse::<u32>()

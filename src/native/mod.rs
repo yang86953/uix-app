@@ -8,6 +8,7 @@ pub(crate) mod graphics;
 pub mod presenter;
 pub mod services;
 pub mod shared;
+#[cfg(feature = "test-harness")]
 pub mod test_harness;
 pub mod traits;
 
