@@ -1,78 +1,53 @@
-# 托管与多窗
+# window 模块
 
 [← 架构索引](../../架构.md)
 
-> **接口**：声明 app 系统中 **window / window_session / window_driver — 窗口管理**模块的内部设计。所属系统：`app`。依赖：[主循环模块](主循环.md)。导出：多窗口用法 → [使用 · 多窗口](../../使用/多窗口.md)。
-
-## 模块定位
-
-窗口管理（`src/app/window/`、`window_session.rs`、`window_driver.rs`）负责每个窗口的独立生命周期、跨线程安全通信和 IME 会话管理。
+> **接口**：声明 app 系统的窗口创建、逐窗会话、单帧驱动、文本输入和关闭协议。依赖：[platform/windowing](../platform/windowing.md)、[platform/presentation](../platform/presentation.md)、[ui/component](../ui/component.md)、[ui/view](../ui/view.md)、[graphics/renderer](../graphics/renderer.md)。导出：`Window`、`WindowConfig`、逐窗 drive/result 契约和内部会话，供 event-loop 与 agent 使用。
+>
+> **当前实现线索**：相关实现暂分布于 `src/app/window/`、`window_session.rs`、`window_driver.rs`、`text_input.rs`、`bridge/` 等位置；重构后统一服从本模块的逐窗所有权。
 
 ## 组件清单
 
 | 组件 | 类型 | 职责 |
-|------|------|------|
-| `WindowSession` | struct | 窗口会话；持有 WidgetTree、渲染目标、事件队列、动画注册 |
-| `WindowDriver` | struct | 窗口驱动器；管理 reconcile → layout → paint 流程 |
-| `ComponentHandle` | struct | 跨线程安全的组件操作句柄 |
-| `FocusHandle` | struct | 跨线程安全的焦点句柄 |
-| `WindowConfig` | struct | 窗口配置：标题、尺寸、最小尺寸、标题栏样式 |
-| `WindowActions` | struct | 窗口操作：最小化、最大化、关闭、全屏 |
-| `WindowSemantics` | struct | 窗口语义：标题、图标、无障碍信息 |
+|---|---|---|
+| `Window` / `WindowConfig` | public structs | 描述窗口能力、根 View 工厂、标题和初始几何 |
+| `WindowSession` | internal struct | 独占组件树、渲染目标、队列、调度状态、IME 和语义状态 |
+| `SessionRuntime` | internal struct | 管理窗口身份预留、创建、查找和销毁 |
+| `WindowDriver` | internal struct | 按确定顺序推进单个窗口的一轮 UI/图形管线 |
+| `WindowTextInputState` | internal struct | 协调窗口焦点、目标节点与 composition |
+| `WindowAction` | enum | 表达拖动、最小化、最大化、关闭等一次性请求 |
+| scene paint bridge | internal adapter | 把 UI 绘制遍历适配为 graphics scene 输入 |
+
+## 组件：Window / WindowConfig
+
+配置在创建原生资源前完成验证。未支持的标题栏、透明度或输入能力返回 typed error，不能静默退回不同语义。公开 `Window` 只暴露稳定窗口操作，不泄漏 platform backend、surface 或可变组件树。
 
 ## 组件：WindowSession
 
-**接口**：每个窗口的独立会话。
+每个窗口独占 `WidgetTree`、RenderTarget、timer、动画、frame request、surface 状态、IME、Agent 队列和语义 revision。一窗关闭、暂停或失败不销毁、唤醒或污染其他窗口资源。
 
-| 持有资源 | 说明 |
-|----------|------|
-| WidgetTree | 该窗口的组件树 |
-| RenderTarget | 渲染目标表面 |
-| Event Queue | 本窗的事件队列 |
-| Animation Registry | 本窗的活跃动画注册 |
-| Timer Registry | 本窗的定时器注册 |
-
-**隔离约束**：任一窗口 wake 不得把其他窗口拉成 Active。`TerminalFailure` 窗口不因普通生命周期或 surface 信号重开视觉帧。
+创建时先预留带 generation 的 `WindowId`，再依次建立 platform window、graphics target 和根组件树；任一步失败按逆序回收。迟到 callback 或旧 handle 只能被识别为 stale 并丢弃。
 
 ## 组件：WindowDriver
 
-**接口**：管理帧内流程。
-
-```
-消费截至该点的最后一次 root
-  → reconcile
+```text
+due work / queue / Agent / Effect
+  → consume latest root input
+  → reconcile（至多一次）
   → 按需 layout
-  → paint
-  → 至多一次 present
+  → paint / scene
+  → present（至多一次）
+  → 汇总下一 WindowLoopState
 ```
 
-- 成功才消费 dirty
-- 提交后仍有动画或 dirty 才申请下一次帧
-- 开放动画快照复用每窗口峰值容量 scratch
-- AppTimer deadline 快照只在 revision 变化时刷新
+只有成功提交后才能消费对应 present dirty；提交失败保留真实 damage 并交由 graphics/app 的 typed 恢复协议分类。event-loop 不复制这条逐窗 pipeline。
 
-## 组件：ComponentHandle / FocusHandle
+## 组件：WindowTextInputState
 
-**接口**：跨线程安全句柄。
+同一共享原生输入能力在任一时刻只有一个有效 owner，由 WindowId、native view identity 和 generation 共同约束。焦点切换、节点隐藏/移除和窗口关闭都先停止旧 IME 会话，再让目标身份失效；未 commit composition 不写入受控状态。
 
-| 句柄 | 用途 | 约束 |
-|------|------|------|
-| `ComponentHandle` | 读取组件状态、触发语义动作 | 操作在目标窗 UI 线程排队执行 |
-| `FocusHandle` | focus() / blur() | 同 handle 不允许多节点/多窗口绑定 |
+## 关闭不变量
 
-- `focus()` / `blur()` 可从后台线程登记，`Ok(())` 表示命令已进入目标队列
-- 目标隐藏或不接收事件时，UI 轮次消费命令但不强制聚焦
-- `blur()` 只清除该 handle 持有的逻辑焦点，不影响同窗其他节点
-
-## 组件：WindowConfig
-
-**接口**：窗口创建配置。
-
-| 字段 | 说明 |
-|------|------|
-| `title` | 窗口标题 |
-| `width` / `height` | 初始尺寸 |
-| `min_width` / `min_height` | 最小尺寸 |
-| `title_bar_style` | 系统标题栏 / 自定义标题栏 |
-| `resizable` | 是否可调整大小 |
-| `maximized` | 是否最大化启动 |
+- 关闭顺序是停止新工作与 Agent 命令 → 结束 pointer/focus/IME → 清空窗口队列与 side table → shutdown graphics → 销毁原生窗口。
+- `WindowAction` 只由所属树产生并由本窗消费，不进入全局广播。
+- app 中的 scene bridge 只转换调用形状，不拥有第二份组件树、场景或 Renderer。

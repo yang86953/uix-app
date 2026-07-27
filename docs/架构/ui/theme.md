@@ -1,32 +1,42 @@
-# 主题与配置
+# theme 模块
 
 [← 架构索引](../../架构.md)
 
-> **接口**：声明 ui 系统中 **theme — 主题系统**及 **foundation/** 中 Locale/Config 提供者的内部设计。所属系统：`ui`。依赖：[设计令牌与色彩](../graphics/geometry.md)（令牌推导链）、[组件核心模块](core.md)。导出：主题配置用法 → [使用 · 框架能力](../../使用/框架能力.md)。
+> **接口**：声明 ui 系统的主题令牌、组件配置、本地化与子树上下文。依赖：[view](view.md)、[graphics/geometry](../graphics/geometry.md)。导出：组件解析视觉值、行为默认值和内置文案的统一 Provider 契约。
+>
+> **当前实现线索**：相关实现暂分布于 `src/ui/theme/`、`src/ui/traits/theme.rs`、`src/ui/foundation/config.rs`、`provider_context.rs` 和 `locale.rs`；重构后应以本模块提供统一上下文。
 
 ## 组件清单
 
-### 模块：主题系统（`theme/`）
-
 | 组件 | 类型 | 职责 |
-|------|------|------|
-| `DesignTokens` | struct | ~100 个运行时令牌（color_text, color_bg_container, border_radius 等） |
-| `ThemePrimitives` | struct | 8 个基色种子（primary, success, warning, error, info, bg, text, border） |
-| `TokenPatch` | struct | 组件级令牌覆写 |
-| `Theme` | struct | 完整主题（含亮/暗模式） |
-| `ConfigProvider` | struct | 组件配置上下文提供者 |
-| `LocaleProvider` | struct | 本地化上下文提供者 |
-| `Config` | struct | 组件配置结构 |
-| `Locale` | struct | 本地化字符串集合 |
+|---|---|---|
+| `ThemePrimitives` | struct | 保存品牌、语义、背景、文字和边框基色 |
+| `DesignTokens` / `Theme` | struct | 提供运行时语义视觉令牌 |
+| `ThemeTokens` / `TokenProvider` | trait | 定义组件读取令牌的最小契约 |
+| `TokenPatch` | struct | 只覆写显式字段，其余委托父主题 |
+| `ComponentConfig` | struct | 保存组件行为与尺寸默认值 |
+| `ConfigProvider` | View component | 覆写子树中的组件配置或 token patch |
+| `Locale` / `LocaleProvider` | struct/View component | 提供内置组件文案与子树本地化覆写 |
+| `ProviderContext` | internal value | 绑定节点构建、测量、绘制和语义阶段的同一上下文 |
 
-详细设计 → [`graphics/geometry.md`](../graphics/geometry.md)
+## 组件：ThemePrimitives / DesignTokens
 
-## 组件：TokenPatch
+Primitives 通过稳定推导规则生成文本、背景、边框、状态、间距、圆角和阴影等 `DesignTokens`。色板按需生成；graphics 只消费解析后的颜色、字号、圆角与阴影，不知道 Theme 或组件类型。
 
-TokenPatch 携带组件粒度的令牌覆写。在 reconciliation 阶段，UI 层自顶向下收集当前 subtree 的所有 TokenPatch，合并后应用到该组件的渲染中。
+## 组件：ConfigProvider / TokenPatch
 
-> `graphics` 层只消费已解析的 Color，`ui` 层的 TokenPatch 和 DesignTokens 推导逻辑不进入 `graphics` 层。
+优先级为组件局部属性 > 最近 Provider > App 根上下文 > 框架预设。Provider 只覆盖显式字段；配置变化按字段分类为 reconcile、Layout 或 Paint，不能无条件重建整棵树。
 
-## 组件：Locale
+## 组件：LocaleProvider
 
-Locale 是框架内置国际化方案。使用 `zh_cn` / `en_us` 两个内置 locale。
+节点捕获最近 Locale，measure、render、事件提示和无障碍名称读取同一上下文，避免显示文案与语义文案不一致。系统语言变化只有在应用显式接受后才更新根上下文。
+
+## 组件：ProviderContext
+
+`ProviderContext` 是构建时向子树传递的不可变快照，不是全局可变单例。后续组件阶段恢复同一上下文，节点移除后释放引用；Provider 不创建独立组件树或工作循环。
+
+## 模块不变量
+
+- Theme、组件配置和 Locale 属于 ui；graphics 与 platform 不反向依赖 Provider。
+- 设置持久化属于 data，theme 只持有当前运行时上下文。
+- Provider 继承只有一套优先级和一份有效值，不建立 manager/config 的平行真相。

@@ -1,51 +1,55 @@
-# 设计令牌与色彩
+# geometry 模块
 
 [← 架构索引](../../架构.md)
 
-> **接口**：声明 graphics 系统中 **geometry — 绘制几何**模块（Color、Path）和 ui 系统中 **theme — 主题系统**模块（DesignTokens）之间的令牌推导链。所属系统：`graphics` + `ui` 交界。依赖：[系统列表](../系统列表.md)。导出：设计令牌用法 → [使用 · 样式与主题](../../使用/样式与主题.md)。
+> **接口**：声明 graphics 系统的目标 `geometry` 模块及绘制值契约。依赖：[core/geometry](../core/geometry.md)。导出：供 painting、scene、renderer 与 ui 使用。
 
-## 模块定位
-
-色彩体系分两层：**选色色板**（graphics 系统，按需取用）和**运行时令牌**（ui 系统，主题驱动）。两者共享种子约定但不互相复制。
+> **当前实现线索**：主要位于 `src/draw/geometry/`。
 
 ## 组件清单
 
-### 模块：绘制几何中的色彩组件
+| 模块 | 组件 | 职责 |
+|---|---|---|
+| `color` | `Color`、`colors` | 8-bit RGBA 绘制值和常用常量 |
+| `path` | `Path`、`PathBuilder`、`PathSegment`、`FillRule`、`LineCap`、`LineJoin` | API-neutral 矢量路径 |
+| `types` | `Radius`、`BlendMode`、`Transform`、`GradientDirection`、`TextLayoutOptions` | 绘制状态和值对象 |
+| `stroker` | `StrokeOptions` | 描边宽度、连接和端点参数 |
+| `flattener` / `tessellator` | flat path / mesh | 把曲线转换为后端可消费几何 |
+| `spatial` | `Mat4`、`Vec2/3/4`、`AABB3D`、`Quad2D`、`Ray3D`、`SpatialContext` | 空间变换、命中和物理单位 |
 
-| 组件 | 类型 | 所属系统 | 职责 |
-|------|------|----------|------|
-| `Color` | struct | `graphics` | RGBA 颜色；hex、rgba、from_rgb 构造 |
-| `ColorScale` | struct | `graphics` | 单色 10 阶色板；0 最浅、9 最深、5 为主色 |
-| `PrimaryHue` | enum | `graphics` | 12 个主色相（Red 到 Magenta），Blue 为品牌主色 |
-| `NEUTRAL_PALETTE` | const | `graphics` | 白到黑 13 阶中性色 |
-| `FunctionalColorRole` | enum | `graphics` | 功能色角色：Success / Warning / Error / Info |
-| `DATA_VISUALIZATION_PALETTE` | const | `graphics` | AntV 10 色分类数据色板 |
+## 组件：Color
 
-### 模块：主题系统（ui 侧）
+`Color` 是最终 8-bit RGBA 绘制值，不携带品牌、暗色模式或组件覆盖语义；UI 主题先解析语义 token，再把 Color 交给 graphics。
 
-| 组件 | 类型 | 所属系统 | 职责 |
-|------|------|----------|------|
-| `ThemePrimitives` | struct | `ui` | 8 个基色种子（primary, success, warning, error, info, bg, text, border） |
-| `DesignTokens` | struct | `ui` | ~100 个运行时令牌；桥接 ThemePrimitives 到组件 TokenPatch |
-| `TokenPatch` | struct | `ui` | 组件级令牌覆写；用于组件自定义覆盖 |
-| `ShadowToken` | struct | `ui` | 阴影令牌 |
-| `Theme` | struct | `ui` | 完整主题（含亮/暗模式） |
+## 组件：Path / PathBuilder
 
-### 模块：绘制几何（`geometry/`）
+Path 保存调用方声明的 segment 与 fill/stroke 语义；backend 可以直接执行、flatten 或 tessellate，但不能改变 FillRule、LineCap、LineJoin 和 painter order。
 
-| 组件 | 类型 | 职责 |
-|------|------|------|
-| `Color` | struct | 已在上方组件清单列出 |
-| `Path` | struct | 矢量路径；支持线段、贝塞尔曲线、弧线；与 Color 共同构成绘制几何基础 |
+## 组件：Transform / spatial types
 
-## 组件：ColorScale → ThemePrimitives → DesignTokens 推导链
+变换、clip、命中、语义 bounds 和 damage 使用同一组合链。UI 提交 logical geometry，RenderTarget 在 surface 边界处理 DPR 与 physical extent。
 
+## 模块边界
+
+| core | graphics |
+|---|---|
+| `Point`、`Size`、`Rect`、`Constraints`、`EdgeInsets` | Path、Color、Transform、BlendMode、Stroke、空间几何 |
+| 布局/命中可复用的基础值 | 绘制录制和后端执行需要的值 |
+| 不知道颜色或光栅化 | 不决定 Widget 布局策略 |
+
+`ColorScale`、`PrimaryHue`、`ThemePrimitives`、`DesignTokens`、`Theme` 和 `TokenPatch` 属于 [ui/theme](../ui/theme.md)，当前定义在 `src/ui/theme/`。
+
+```text
+ui Theme / DesignTokens
+  → 解析语义色、字号、圆角、阴影
+  → graphics Color / Radius / TextLayoutOptions
+  → painting / Renderer
 ```
-ColorScale（graphics 层）
-  → PrimaryHue.NEUTRAL_PALETTE.FunctionalColorRole
-  → ThemePrimitives（ui 层，每一色相插值出 10 阶）
-  → DesignTokens（ui 层，~100 个语义令牌）
-  → TokenPatch（ui 层，组件级覆写）
-```
 
-**分层不变量**：`graphics` 层只消费已解析的 `Color`，不染指 `ThemePrimitives` / `DesignTokens` 的推导逻辑。`ColorScale` 和色板在 `graphics` 层，主题推导在 `ui` 层。
+graphics 不引用 Theme 或组件 token；这保证 `draw` 不反向依赖 `ui`。`Color` 只是最终绘制值，不带品牌、暗色模式或组件覆盖语义。
+
+## 模块不变量
+
+- 所有传入 backend 的尺寸、坐标和变换在边界处验证为有限值。
+- geometry 不持有 GPU/OS 资源，也不登记 timer、frame 或线程。
+- API-specific shader、surface handle 和 adapter 信息不进入公共几何类型。
