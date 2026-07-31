@@ -3,6 +3,7 @@
 use std::ffi::c_void;
 
 use crate::core::error::{Errc, Error};
+use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::thread_bound::bind_to_current_thread;
 use crate::native::traits::present::{
     GraphicsBackend, IGraphicsContext, NativeSurfaceHandle, PresentMode, RasterMode,
@@ -51,7 +52,7 @@ pub enum BackendStatus {
 }
 
 pub(crate) type GraphicsContextFactory =
-    fn(*mut c_void, i32, i32) -> Result<Box<dyn IGraphicsContext>, Error>;
+    fn(*mut c_void, i32, i32, PendingFailureQueue) -> Result<Box<dyn IGraphicsContext>, Error>;
 
 /// One graphics API factory row — API identity plus declared raster × present axes.
 ///
@@ -115,6 +116,7 @@ pub(crate) fn try_create_context(
     native_surface: *mut c_void,
     width: i32,
     height: i32,
+    pending_failures: PendingFailureQueue,
 ) -> Result<Box<dyn IGraphicsContext>, Error> {
     if entry.status == BackendStatus::Planned {
         return Err(Error::new(
@@ -131,7 +133,7 @@ pub(crate) fn try_create_context(
             format!("GraphicsBackend {} is disabled in this build", entry.id),
         ));
     }
-    let ctx = (entry.create)(native_surface, width, height)?;
+    let ctx = (entry.create)(native_surface, width, height, pending_failures)?;
     let caps = ctx.caps();
     let actual = GraphicsRecipe::new(caps.backend, caps.raster, caps.present);
     let expected = entry.recipe();
@@ -240,6 +242,23 @@ pub fn try_create_gpu_recipe(
     width: i32,
     height: i32,
 ) -> Result<Box<dyn IGraphicsContext>, Error> {
+    try_create_gpu_recipe_with_queue(
+        recipe,
+        native_surface,
+        width,
+        height,
+        PendingFailureQueue::new(),
+    )
+}
+
+/// Creates one exact recipe context using the runtime-scoped callback queue.
+pub(crate) fn try_create_gpu_recipe_with_queue(
+    recipe: GraphicsRecipe,
+    native_surface: NativeSurfaceHandle,
+    width: i32,
+    height: i32,
+    pending_failures: PendingFailureQueue,
+) -> Result<Box<dyn IGraphicsContext>, Error> {
     let entry = entry_for_recipe(recipe).ok_or_else(|| {
         Error::new(
             Errc::PlatformError,
@@ -248,7 +267,13 @@ pub fn try_create_gpu_recipe(
     })?;
     // Only the native factory bridge unwraps the opaque surface handle before
     // it reaches an API/platform constructor.
-    try_create_context(entry, native_surface.as_raw(), width, height)
+    try_create_context(
+        entry,
+        native_surface.as_raw(),
+        width,
+        height,
+        pending_failures,
+    )
 }
 
 /// Creates a single GPU context for one backend (compatibility helper).
@@ -268,5 +293,11 @@ pub(crate) fn try_create_gpu_context(
             format!("Graphics factory: no registry entry for {backend}"),
         )
     })?;
-    try_create_context(entry, native_surface, width, height)
+    try_create_context(
+        entry,
+        native_surface,
+        width,
+        height,
+        PendingFailureQueue::new(),
+    )
 }

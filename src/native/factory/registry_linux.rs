@@ -1,5 +1,6 @@
 //! Linux backend registry table.
 
+use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::registry::{BackendStatus, GraphicsBackendEntry};
 use crate::native::traits::present::{GraphicsBackend, PresentMode, RasterMode};
 
@@ -16,12 +17,22 @@ use crate::native::graphics::wgpu_backend::create_opengl as create_opengles;
 use crate::native::graphics::wgpu_backend::create_vulkan;
 
 #[cfg(not(feature = "opengles"))]
-fn create_opengles(_: *mut c_void, _: i32, _: i32) -> Result<Box<dyn IGraphicsContext>, Error> {
+fn create_opengles(
+    _: *mut c_void,
+    _: i32,
+    _: i32,
+    _: PendingFailureQueue,
+) -> Result<Box<dyn IGraphicsContext>, Error> {
     Err(feature_disabled("opengles"))
 }
 
 #[cfg(not(feature = "vulkan"))]
-fn create_vulkan(_: *mut c_void, _: i32, _: i32) -> Result<Box<dyn IGraphicsContext>, Error> {
+fn create_vulkan(
+    _: *mut c_void,
+    _: i32,
+    _: i32,
+    _: PendingFailureQueue,
+) -> Result<Box<dyn IGraphicsContext>, Error> {
     Err(feature_disabled("vulkan"))
 }
 

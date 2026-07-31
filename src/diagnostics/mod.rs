@@ -9,6 +9,7 @@
 //!   narrow Components selected and owned by the reporting Module.
 
 mod config;
+mod pending;
 mod recovery;
 mod report;
 mod reporting;
@@ -20,6 +21,7 @@ use std::sync::Arc;
 use crate::core::Error;
 
 pub use config::{BacktracePolicy, DiagnosticsConfig};
+pub(crate) use pending::{PendingFailureQueue, PendingFailureSource};
 pub use recovery::{RecoveryAction, RecoveryOutcome, RecoverySubscription};
 pub(crate) use report::ReportOrigin;
 pub use report::{DiagnosticsSnapshot, ErrorReport, ReportId};
@@ -30,6 +32,7 @@ static NEXT_RUNTIME_ID: AtomicU64 = AtomicU64::new(1);
 struct DiagnosticsInner {
     runtime_id: u64,
     config: DiagnosticsConfig,
+    pending_failures: PendingFailureQueue,
     reporting: ReportingModule,
     recovery: Arc<recovery::RecoveryModule>,
 }
@@ -52,6 +55,7 @@ impl Diagnostics {
                 runtime_id,
                 reporting: ReportingModule::new(&config),
                 config,
+                pending_failures: PendingFailureQueue::new(),
                 recovery: Arc::new(recovery::RecoveryModule::new()),
             }),
         }
@@ -67,6 +71,13 @@ impl Diagnostics {
     /// Returns an immutable point-in-time snapshot ordered by `ReportId`.
     pub fn snapshot(&self) -> DiagnosticsSnapshot {
         self.inner.reporting.snapshot()
+    }
+
+    /// Returns the runtime queue used by native callbacks to deliver typed
+    /// failures to their owner-thread resource. The queue never invokes user
+    /// code while a callback is running.
+    pub(crate) fn pending_failure_queue(&self) -> PendingFailureQueue {
+        self.inner.pending_failures.clone()
     }
 
     /// Registers recovery logic for one exact typed error code.

@@ -22,7 +22,9 @@ use crate::app::window_driver::{WindowDriver, WindowFrameContext};
 use crate::app::window_session::WindowSession;
 use crate::core::{Errc, Error, Point, WindowId};
 use crate::data::SettingsService;
-use crate::draw::renderer::bootstrap::{assemble_renderer, bootstrap_renderer, ProbeReport};
+use crate::draw::renderer::bootstrap::{
+    assemble_renderer, bootstrap_renderer_with_pending, ProbeReport,
+};
 #[cfg(feature = "test-harness")]
 use crate::draw::renderer::test_harness::GraphicsFaultSignal;
 use crate::draw::renderer::RenderTarget;
@@ -32,7 +34,8 @@ use crate::draw::resources::image::ImageService;
 use crate::draw::Renderer;
 use crate::native::create_platform;
 use crate::native::factory::{
-    gpu_recipe_candidates, graphics_runtime_platform, try_create_gpu_recipe, GraphicsRecipe,
+    gpu_recipe_candidates, graphics_runtime_platform, try_create_gpu_recipe_with_queue,
+    GraphicsRecipe,
 };
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::traits::platform::Platform;
@@ -628,11 +631,17 @@ impl App {
             w,
             h,
             graphics_backend,
+            self.runtime.diagnostics(),
             self.graphics_faults.clone(),
         );
         #[cfg(not(feature = "test-harness"))]
-        let preferred_engine =
-            create_preferred_engine(platform_window.as_mut(), w, h, graphics_backend);
+        let preferred_engine = create_preferred_engine(
+            platform_window.as_mut(),
+            w,
+            h,
+            graphics_backend,
+            self.runtime.diagnostics(),
+        );
         let engine = match preferred_engine {
             Some(engine) => engine,
             None => {
@@ -911,5 +920,4 @@ use runtime::{create_preferred_engine, drain_secondary_window_frames_with_platfo
 #[cfg(test)]
 pub(crate) use runtime::{
     drain_pending_open_windows, drain_secondary_window_frames, format_gpu_probe_fallback,
-    graphics_recovery_rebuilder,
 };
