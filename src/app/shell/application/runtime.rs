@@ -3,6 +3,23 @@
 use super::*;
 use crate::diagnostics::{Diagnostics, PendingFailureQueue};
 
+/// Drains native callback failures at the application owner-thread boundary.
+///
+/// Native callbacks only enqueue typed errors. This function is intentionally
+/// called by the app loop, where reporting or a future domain recovery action
+/// is allowed to run.
+pub(crate) fn drain_platform_pending_failures(
+    platform: &mut dyn Platform,
+    diagnostics: &Diagnostics,
+) -> usize {
+    let mut drained = 0;
+    while let Some(error) = platform.take_pending_failure() {
+        diagnostics.report(error);
+        drained += 1;
+    }
+    drained
+}
+
 pub(crate) fn resolve_graphics_backend(
     builder: Option<NativeGraphicsBackend>,
     env_value: Option<&str>,

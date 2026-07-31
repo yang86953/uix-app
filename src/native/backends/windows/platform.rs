@@ -33,6 +33,7 @@ use super::timer::WindowsTimer;
 use super::util::{to_wide, windows_diag};
 use super::window_ops::WindowsWindowOps;
 use crate::core::WindowId;
+use crate::diagnostics::{PendingFailureQueue, PendingFailureSource};
 use crate::native::shared::{OsEventSource, PlatformWindowCore, WindowState};
 use crate::native::traits::event::{EventLoopWaker, UiEvent};
 use crate::native::traits::*;
@@ -66,6 +67,7 @@ pub struct WindowsPlatform {
     pub(crate) console_subsys: WindowsConsole,
     pub(crate) system_info_subsys: WindowsSystemInfo,
     pub(crate) single_shot_timers: Arc<Mutex<HashSet<u32>>>,
+    pending_failures: PendingFailureSource,
     system_dark_mode: bool,
     window_handles: BTreeMap<WindowId, usize>,
     next_window_id: u64,
@@ -79,6 +81,10 @@ impl Default for WindowsPlatform {
 
 impl WindowsPlatform {
     pub fn new() -> Self {
+        Self::new_with_pending(PendingFailureQueue::new())
+    }
+
+    pub(crate) fn new_with_pending(pending_failures: PendingFailureQueue) -> Self {
         let timer_subsys = WindowsTimer::new();
         let single_shot = timer_subsys.non_repeating_set();
         let event_queue = Arc::new(Mutex::new(VecDeque::new()));
@@ -103,9 +109,18 @@ impl WindowsPlatform {
             event_bus: EventBus::new(),
             console_subsys: WindowsConsole::new(),
             system_info_subsys: WindowsSystemInfo::new(),
+            pending_failures: pending_failures.source(),
             system_dark_mode,
             window_handles: BTreeMap::new(),
         }
+    }
+
+    pub(crate) fn enqueue_callback_failure(&self, error: Error) {
+        let _ = self.pending_failures.enqueue(error);
+    }
+
+    pub(crate) fn take_pending_failure(&mut self) -> Option<Error> {
+        self.pending_failures.take()
     }
 
     pub(crate) fn lock_event_queue(&self) -> MutexGuard<'_, VecDeque<UiEvent>> {
@@ -337,6 +352,10 @@ impl IWindowManager for WindowsPlatform {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl Platform for WindowsPlatform {
+    fn take_pending_failure(&mut self) -> Option<Error> {
+        Self::take_pending_failure(self)
+    }
+
     fn window_manager(&mut self) -> &mut dyn IWindowManager {
         self
     }
@@ -383,6 +402,36 @@ impl Platform for WindowsPlatform {
 
 impl Drop for WindowsPlatform {
     fn drop(&mut self) {
+        self.pending_failures.close();
         self.notification_subsys.remove_icon();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::consts::WM_DPICHANGED;
+    use super::super::text_input::WindowsImeState;
+    use super::*;
+    use crate::core::{Errc, WindowId};
+    use crate::diagnostics::PendingFailureQueue;
+
+    #[test]
+    fn wnd_proc_failure_is_deferred_to_owner_boundary() {
+        let queue = PendingFailureQueue::new();
+        let mut platform = WindowsPlatform::new_with_pending(queue);
+        let window = Rc::new(RefCell::new(WindowState {
+            window_id: WindowId::new(1),
+            ..WindowState::default()
+        }));
+        let ime = RefCell::new(WindowsImeState::default());
+
+        platform.handle_message(std::ptr::null_mut(), &window, &ime, WM_DPICHANGED, 0, 0);
+
+        let Some(error) = platform.take_pending_failure() else {
+            panic!("WM_DPICHANGED failure must be queued");
+        };
+        assert_eq!(error.code(), Errc::InvalidArgument);
+        assert!(error.message().contains("WM_DPICHANGED"));
+        assert!(platform.take_pending_failure().is_none());
     }
 }

@@ -5,9 +5,18 @@ use super::event::{EventBus, IEventLoop};
 use super::input::{IClipboard, ICursor, IKeyboard, ITextInput};
 use super::system::{IConsole, IFileDialog, IFileSystem, INotification, ISystemInfo, ITimer};
 use super::window::IWindowManager;
+use crate::core::Error;
 
 /// 平台根接口 — 持有并暴露所有 OS 抽象子系统。
 pub trait Platform {
+    /// Takes one native callback failure at an owner-thread boundary.
+    ///
+    /// Callback code must only enqueue typed failures. The application owns
+    /// the decision to recover, return, or report after taking the failure.
+    fn take_pending_failure(&mut self) -> Option<Error> {
+        None
+    }
+
     fn window_manager(&mut self) -> &mut dyn IWindowManager;
     fn event_loop(&mut self) -> &mut dyn IEventLoop;
     fn event_bus(&mut self) -> &mut EventBus;
