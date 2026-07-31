@@ -12,6 +12,7 @@ use super::ffi::*;
 // ============================================================================
 
 use crate::core::{Errc, Error, Rect, Result, WindowId};
+use crate::diagnostics::{PendingFailureQueue, PendingFailureSource};
 use crate::native::backends::windows::tsf_session::{TsfActivateParams, TsfSession};
 use crate::native::backends::windows::util::windows_diag;
 use crate::native::traits::event::UiEvent;
@@ -144,15 +145,20 @@ pub struct WindowsTextInput {
     hwnd: *mut std::ffi::c_void,
     window_id: Option<WindowId>,
     events: Arc<Mutex<VecDeque<UiEvent>>>,
+    pending_failures: PendingFailureSource,
     tsf: Option<TsfSession>,
 }
 
 impl WindowsTextInput {
-    pub fn new(events: Arc<Mutex<VecDeque<UiEvent>>>) -> Self {
+    pub fn new(
+        events: Arc<Mutex<VecDeque<UiEvent>>>,
+        pending_failures: PendingFailureSource,
+    ) -> Self {
         Self {
             hwnd: ptr::null_mut(),
             window_id: None,
             events,
+            pending_failures,
             tsf: None,
         }
     }
@@ -193,17 +199,21 @@ impl WindowsTextInput {
             return;
         }
         let Some(window_id) = self.window_id else {
-            crate::core::log::warn_fn("Windows text input: TSF skipped (no window_id)");
+            let _ = self.pending_failures.enqueue(Error::new(
+                Errc::InvalidState,
+                "Windows text input: TSF skipped because the target has no window_id",
+            ));
             return;
         };
         match TsfSession::activate(TsfActivateParams {
             hwnd,
             window_id,
             events: Arc::clone(&self.events),
+            pending_failures: self.pending_failures.clone(),
         }) {
             Ok(session) => self.tsf = Some(session),
             Err(err) => {
-                crate::core::log::warn_fn(err.short_what());
+                let _ = self.pending_failures.enqueue(err);
             }
         }
     }
@@ -217,7 +227,10 @@ impl WindowsTextInput {
 
 impl Default for WindowsTextInput {
     fn default() -> Self {
-        Self::new(Arc::new(Mutex::new(VecDeque::new())))
+        Self::new(
+            Arc::new(Mutex::new(VecDeque::new())),
+            PendingFailureQueue::new().source(),
+        )
     }
 }
 

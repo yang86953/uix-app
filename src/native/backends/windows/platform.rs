@@ -88,6 +88,7 @@ impl WindowsPlatform {
         let timer_subsys = WindowsTimer::new();
         let single_shot = timer_subsys.non_repeating_set();
         let event_queue = Arc::new(Mutex::new(VecDeque::new()));
+        let pending_source = pending_failures.source();
         let display_subsys = WindowsDisplay::new();
         let system_dark_mode = WindowsDisplay::detect_os_theme();
         Self {
@@ -103,13 +104,13 @@ impl WindowsPlatform {
             file_dialog_subsys: WindowsFileDialog::new(),
             file_system_subsys: WindowsFileSystem::new(),
             keyboard_subsys: WindowsKeyboard::new(),
-            text_input_subsys: WindowsTextInput::new(event_queue),
+            text_input_subsys: WindowsTextInput::new(event_queue, pending_source.clone()),
             timer_subsys,
             notification_subsys: WindowsNotification::new(),
             event_bus: EventBus::new(),
             console_subsys: WindowsConsole::new(),
             system_info_subsys: WindowsSystemInfo::new(),
-            pending_failures: pending_failures.source(),
+            pending_failures: pending_source,
             system_dark_mode,
             window_handles: BTreeMap::new(),
         }

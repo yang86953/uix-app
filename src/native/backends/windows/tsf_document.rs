@@ -14,7 +14,8 @@ use windows::Win32::UI::TextServices::{
     TS_LF_READWRITE, TS_LF_SYNC, TS_SELECTIONSTYLE, TS_SELECTION_ACP, TS_TEXTCHANGE,
 };
 
-use crate::core::WindowId;
+use crate::core::{Errc, Error, WindowId};
+use crate::diagnostics::PendingFailureSource;
 use crate::native::shared::ime_events::ImeCompositionState;
 use crate::native::traits::event::UiEvent;
 
@@ -23,9 +24,21 @@ pub(crate) struct TsfEventSink {
     pub events: Arc<Mutex<VecDeque<UiEvent>>>,
     pub window_id: WindowId,
     pub hwnd: HWND,
+    pub pending_failures: PendingFailureSource,
 }
 
 impl TsfEventSink {
+    pub(crate) fn enqueue_failure(&self, error: Error) {
+        let _ = self.pending_failures.enqueue(error);
+    }
+
+    pub(crate) fn enqueue_windows_failure(&self, context: &str, error: WinError) {
+        self.enqueue_failure(Error::new(
+            Errc::PlatformError,
+            format!("{context}: {error}"),
+        ));
+    }
+
     pub(crate) fn push(&self, events: Vec<UiEvent>) {
         if events.is_empty() {
             return;
@@ -40,13 +53,15 @@ impl TsfEventSink {
         }
         drop(queue);
         // 与 EventLoopWaker 同形；仅唤醒拥有该 HWND 的消息循环。
-        unsafe {
-            let _ = windows::Win32::UI::WindowsAndMessaging::PostMessageW(
+        if let Err(error) = unsafe {
+            windows::Win32::UI::WindowsAndMessaging::PostMessageW(
                 Some(self.hwnd),
                 windows::Win32::UI::WindowsAndMessaging::WM_NULL,
                 windows::Win32::Foundation::WPARAM(0),
                 windows::Win32::Foundation::LPARAM(0),
-            );
+            )
+        } {
+            self.enqueue_windows_failure("TSF: PostMessageW(WM_NULL) failed", error);
         }
     }
 }
@@ -269,5 +284,48 @@ impl TsfDocumentLock {
 
     fn has_write(&self) -> bool {
         self.granted == Some(TsfLockKind::ReadWrite)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TsfEventSink;
+    use crate::core::{Errc, WindowId};
+    use crate::diagnostics::PendingFailureQueue;
+    use crate::native::traits::event::UiEvent;
+    use std::collections::VecDeque;
+    use std::sync::{Arc, Mutex};
+    use windows::Win32::Foundation::HWND;
+
+    #[test]
+    fn tsf_post_message_failure_is_deferred_to_owner_boundary() {
+        let queue = PendingFailureQueue::new();
+        let source = queue.source();
+        let sink = TsfEventSink {
+            events: Arc::new(Mutex::new(VecDeque::new())),
+            window_id: WindowId::new(1),
+            hwnd: HWND(1usize as *mut std::ffi::c_void),
+            pending_failures: source.clone(),
+        };
+
+        sink.push(vec![UiEvent::text_input("ime")]);
+
+        let queued_events = sink
+            .events
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        assert_eq!(queued_events.len(), 1);
+        assert_eq!(
+            queued_events.front().and_then(|event| event.window_id),
+            Some(WindowId::new(1))
+        );
+        drop(queued_events);
+
+        let Some(error) = source.take() else {
+            panic!("TSF PostMessageW failure must reach the owner source");
+        };
+        assert_eq!(error.code(), Errc::PlatformError);
+        assert!(error.message().contains("TSF: PostMessageW"));
+        assert!(source.take().is_none());
     }
 }

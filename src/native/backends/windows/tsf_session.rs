@@ -17,6 +17,7 @@ use windows::Win32::UI::TextServices::{
 };
 
 use crate::core::{Errc, Error, Result, WindowId};
+use crate::diagnostics::PendingFailureSource;
 use crate::native::backends::windows::tsf_text_store::{
     TsfEventSink, TsfStoreHandle, TsfTextStore,
 };
@@ -31,6 +32,7 @@ pub(crate) struct TsfActivateParams {
     pub hwnd: *mut std::ffi::c_void,
     pub window_id: WindowId,
     pub events: Arc<Mutex<VecDeque<UiEvent>>>,
+    pub pending_failures: PendingFailureSource,
 }
 
 /// TSF 线程/文档焦点会话（与 IMM32 `ITextInput` 并存）。
@@ -81,6 +83,7 @@ impl TsfSession {
             events: params.events,
             window_id: params.window_id,
             hwnd,
+            pending_failures: params.pending_failures,
         };
         let (text_store, store_state) = TsfTextStore::create(event_sink);
         let punk: windows::core::IUnknown = text_store.to_interface();
