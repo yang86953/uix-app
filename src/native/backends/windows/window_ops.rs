@@ -8,6 +8,7 @@
 #![cfg(windows)]
 
 use crate::core::error::{Errc, Error, Result};
+use crate::diagnostics::PendingFailureSource;
 use crate::native::shared::WindowOps;
 use crate::native::traits::event::FrameRequestToken;
 use crate::native::traits::window::NativeFrameRequest;
@@ -127,12 +128,13 @@ impl WindowsWindowOps {
         hwnd: *mut std::ffi::c_void,
         binding: Box<WindowBinding>,
         frame_pacer_state: SharedWindowsFramePacerState,
+        pending_failures: PendingFailureSource,
     ) -> Self {
         Self {
             hwnd,
             icon_state: WindowIconState::new(hwnd),
             _binding: binding,
-            frame_pacer: WindowsFramePacer::new(hwnd, frame_pacer_state),
+            frame_pacer: WindowsFramePacer::new(hwnd, frame_pacer_state, pending_failures),
             opacity_layered_style_owned: false,
             fullscreen_restore: None,
         }
