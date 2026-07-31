@@ -5,8 +5,8 @@ use crate::core::{Errc, Error, Point, Rect};
 use crate::core::DirtyRegion;
 
 use crate::draw::backend::DamageRegion;
-use crate::draw::command::{recorder::CommandRecorder, EncodedFrameExecution, FrameImage};
 use crate::draw::debug::DebugRenderService;
+use crate::draw::painting::{recorder::CommandRecorder, EncodedFrameExecution, FrameImage};
 use crate::draw::renderer::{InvalidationSource, RenderMetrics};
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::font::text::TextRenderService;
@@ -781,7 +781,7 @@ impl ScenePipeline {
         }
     }
 
-    fn scene_has_overlay(scene: &impl ScenePaint, id: crate::draw::renderer::NodeId) -> bool {
+    fn scene_has_overlay(scene: &impl ScenePaint, id: crate::draw::scene::NodeId) -> bool {
         if !scene.node_visible(id) {
             return false;
         }
@@ -793,7 +793,7 @@ impl ScenePipeline {
                 .any(|child| Self::scene_has_overlay(scene, child))
     }
 
-    fn scene_normal_tree_dirty(scene: &impl ScenePaint, id: crate::draw::renderer::NodeId) -> bool {
+    fn scene_normal_tree_dirty(scene: &impl ScenePaint, id: crate::draw::scene::NodeId) -> bool {
         if !scene.node_visible(id) || scene.node_is_overlay(id) {
             return false;
         }

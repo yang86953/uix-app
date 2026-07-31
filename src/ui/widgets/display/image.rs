@@ -7,7 +7,7 @@ use std::rc::Rc;
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::command::PaintPass;
+use crate::draw::painting::PaintPass;
 use crate::draw::renderer::Invalidation;
 use crate::draw::resources::image::BitmapHandle;
 use crate::draw::{Color, Radius};

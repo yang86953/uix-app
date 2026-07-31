@@ -2,8 +2,8 @@
 
 use crate::core::DirtyRegion;
 use crate::core::{ComponentId, Point, Rect};
-use crate::draw::api::PaintContext;
-use crate::draw::renderer::NodeId;
+use crate::draw::painting::PaintContext;
+use crate::draw::scene::NodeId;
 use crate::draw::scene::PicturePolicy;
 use crate::draw::scene::ScenePaint;
 use crate::ui::core::paint_scope::set_current_paint_widget;

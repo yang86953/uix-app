@@ -7,22 +7,22 @@
 //! unsafe mappings materialize that stream lazily as one ordered image blit.
 
 use crate::core::{DamageRegion, Errc, Error, Rect};
-use crate::draw::backend::cpu::pixel_surface::PixelSurface;
-use crate::draw::backend::cpu::shared_rasterizer::SharedRasterizer;
-use crate::draw::command::{
+use crate::draw::geometry::path::{FillRule, Path};
+use crate::draw::geometry::stroker::StrokeOptions;
+use crate::draw::geometry::types::{BlendMode, GradientDirection, ImageHandle, Radius, Transform};
+use crate::draw::outcome::RenderOutcome;
+use crate::draw::painting::{
     EncodedFrameExecution, EncodedPictureExecution, FrameEncoder, FrameEncoderError,
     FrameGlyphBlit, FrameImage, FrameOpacity, FrameRadius, FrameRasterOp, FrameRect,
     FrameSampledRect, FrameStrokeRect, FrameStrokeWidth,
 };
-use crate::draw::geometry::path::{FillRule, Path};
-use crate::draw::geometry::stroker::StrokeOptions;
-use crate::draw::geometry::types::{BlendMode, GradientDirection, ImageHandle, Radius, Transform};
-use crate::draw::renderer::RenderOutcome;
+use crate::draw::raster::pixel_surface::PixelSurface;
+use crate::draw::raster::shared_rasterizer::SharedRasterizer;
 use crate::draw::Color;
 use crate::draw::{Canvas2D, GraphicsCapabilities, RenderTarget, UpdateStrategy};
 use std::sync::Arc;
 
-/// The only producer used by [`crate::draw::renderer::ScenePipeline`]. It owns
+/// The only producer used by the renderer scene pipeline. It owns
 /// no API object and cannot present; its output is consumed exactly once by
 /// the caller's live renderer.
 pub(crate) struct CommandRecorder {
@@ -272,7 +272,7 @@ impl CommandRecorder {
         src_rect: Rect,
         dst_rect: Rect,
         target: &FrameRecordingCanvas,
-    ) -> Option<Vec<crate::draw::command::FrameCommand>> {
+    ) -> Option<Vec<crate::draw::painting::FrameCommand>> {
         let picture = self.offscreens.get(handle)?;
         let RecordedPicturePayload::Encoder(encoder) = picture.committed.as_ref()? else {
             return None;
@@ -319,7 +319,7 @@ impl RenderTarget for CommandRecorder {
     }
 
     fn end_frame(&mut self, _present_damage: &DamageRegion) -> RenderOutcome {
-        RenderOutcome::Failed(crate::draw::renderer::GraphicsFailure::from_error(
+        RenderOutcome::Failed(crate::draw::outcome::GraphicsFailure::from_error(
             Error::new(Errc::InvalidState, "CommandRecorder cannot present a frame"),
         ))
     }
@@ -397,11 +397,11 @@ impl RenderTarget for CommandRecorder {
                 .translated_source_over_commands(0, 0, target.canvas.width, target.canvas.height)
                 .unwrap_or_else(|| {
                     let full = FrameRect::new(0, 0, encoder.width(), encoder.height());
-                    vec![crate::draw::command::FrameCommand::PictureBlit {
+                    vec![crate::draw::painting::FrameCommand::PictureBlit {
                         image: encoder.render_image(),
                         src: full,
                         dst: FrameSampledRect::from_integer(full),
-                        opacity: crate::draw::command::FrameOpacity::opaque(),
+                        opacity: crate::draw::painting::FrameOpacity::opaque(),
                         additive: false,
                     }]
                 });
@@ -729,7 +729,7 @@ impl FrameRecordingCanvas {
 
     fn record_validated_commands(
         &mut self,
-        commands: Vec<crate::draw::command::FrameCommand>,
+        commands: Vec<crate::draw::painting::FrameCommand>,
     ) -> Result<(), Error> {
         self.flush_scratch()?;
         self.encoder_mut()?
@@ -1020,7 +1020,7 @@ impl FrameRecordingCanvas {
         color: Color,
     ) {
         if let Some((clip, native_x, native_y)) = self.native_src_over_glyph(x, y) {
-            let native_color = crate::draw::backend::cpu::rasterizer::color_with_glyph_opacity(
+            let native_color = crate::draw::raster::rasterizer::color_with_glyph_opacity(
                 color,
                 self.scratch.opacity(),
             );
@@ -1269,11 +1269,10 @@ impl Canvas2D for FrameRecordingCanvas {
             return;
         }
         if let Some((native_rect, clip)) = self.native_src_over_rects(rect) {
-            let native_color =
-                crate::draw::backend::cpu::rasterizer::color_with_premultiplied_opacity(
-                    color,
-                    self.scratch.opacity(),
-                );
+            let native_color = crate::draw::raster::rasterizer::color_with_premultiplied_opacity(
+                color,
+                self.scratch.opacity(),
+            );
             let native_radius = match radius.map(FrameRadius::new).transpose() {
                 Ok(radius) => radius,
                 Err(_) => {
@@ -1378,11 +1377,10 @@ impl Canvas2D for FrameRecordingCanvas {
             if clip.width <= 0 || clip.height <= 0 {
                 return;
             }
-            let native_color =
-                crate::draw::backend::cpu::rasterizer::color_with_premultiplied_opacity(
-                    color,
-                    self.scratch.opacity(),
-                );
+            let native_color = crate::draw::raster::rasterizer::color_with_premultiplied_opacity(
+                color,
+                self.scratch.opacity(),
+            );
             if native_color.a == 0 {
                 return;
             }

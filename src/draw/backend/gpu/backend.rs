@@ -373,7 +373,7 @@ impl GpuBackend {
                         encoder,
                         image,
                         *src,
-                        crate::draw::command::FrameSampledRect::from_integer(*dst),
+                        crate::draw::painting::FrameSampledRect::from_integer(*dst),
                         1.0,
                         false,
                     )?;
@@ -684,7 +684,7 @@ impl GpuBackend {
         let mut surface = PixelSurface::try_new(bounds.width, bounds.height)?;
         let local_clip = Rect::new(0.0, 0.0, bounds.width as f32, bounds.height as f32);
         for glyph in glyphs {
-            crate::draw::backend::cpu::rasterizer::glyph::blit_glyph(
+            crate::draw::raster::rasterizer::glyph::blit_glyph(
                 surface.pixels_mut(),
                 bounds.width,
                 bounds.height,
@@ -830,7 +830,7 @@ impl GpuBackend {
                 ),
             ));
         }
-        crate::draw::command::encoder::apply_frame_raster_op(
+        crate::draw::painting::encoder::apply_frame_raster_op(
             target_width,
             target_height,
             &mut pixels,
@@ -854,9 +854,9 @@ impl GpuBackend {
     fn execute_frame_image_blit(
         &mut self,
         encoder: &FrameEncoder,
-        image: &crate::draw::command::FrameImage,
+        image: &crate::draw::painting::FrameImage,
         src: FrameRect,
-        dst: crate::draw::command::FrameSampledRect,
+        dst: crate::draw::painting::FrameSampledRect,
         opacity: f32,
         additive: bool,
     ) -> Result<(), Error> {
@@ -865,7 +865,7 @@ impl GpuBackend {
         }
         // Additive 必须走 GPU 纹理 pipeline；soft tile 上传是 SrcOver，不能冒充。
         if self.surface.native_caps.soft_blit && !additive {
-            let frame_opacity = crate::draw::command::FrameOpacity::from_canvas(opacity);
+            let frame_opacity = crate::draw::painting::FrameOpacity::from_canvas(opacity);
             if let Some((source, destination)) =
                 encoder.picture_blit_reference_tile(image, src, dst, frame_opacity)
             {
@@ -879,9 +879,9 @@ impl GpuBackend {
 
     fn gpu_texture_blit_frame_image(
         &mut self,
-        image: &crate::draw::command::FrameImage,
+        image: &crate::draw::painting::FrameImage,
         src: FrameRect,
-        dst: crate::draw::command::FrameSampledRect,
+        dst: crate::draw::painting::FrameSampledRect,
         opacity: f32,
         additive: bool,
     ) -> Result<(), Error> {

@@ -18,18 +18,18 @@ use crate::core::{DamageRegion, Errc, Error, Point, PresentDamageTracker, Rect};
 use crate::draw::backend::contract::{
     BackendCapabilities, BackendKind, DrawSurface, RenderBackend,
 };
-use crate::draw::backend::cpu::pixel_surface::PixelSurface;
-use crate::draw::backend::cpu::rasterizer::core::align_rounded_rect;
-use crate::draw::backend::cpu::shared_rasterizer::SharedRasterizer;
-use crate::draw::command::{
-    EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameEncoder, FrameEncoderError,
-    FrameGlyphBlit, FrameRasterOp, FrameRect, FrameStrokeRect, ReferenceFrame,
-};
 use crate::draw::geometry::color::Color;
 use crate::draw::geometry::path::{FillRule, Path, PathBuilder};
 use crate::draw::geometry::stroker::StrokeOptions;
 use crate::draw::geometry::tessellator;
 use crate::draw::geometry::types::{BlendMode, GradientDirection, ImageHandle, Radius, Transform};
+use crate::draw::painting::{
+    EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameEncoder, FrameEncoderError,
+    FrameGlyphBlit, FrameRasterOp, FrameRect, FrameStrokeRect, ReferenceFrame,
+};
+use crate::draw::raster::pixel_surface::PixelSurface;
+use crate::draw::raster::rasterizer::core::align_rounded_rect;
+use crate::draw::raster::shared_rasterizer::SharedRasterizer;
 use crate::draw::Canvas2D;
 use crate::native::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
@@ -1036,10 +1036,8 @@ impl NativeGpuCanvas2D {
     }
 
     fn solid_rgba(&self, color: Color) -> [f32; 4] {
-        let color = crate::draw::backend::cpu::rasterizer::color_with_premultiplied_opacity(
-            color,
-            self.opacity,
-        );
+        let color =
+            crate::draw::raster::rasterizer::color_with_premultiplied_opacity(color, self.opacity);
         [
             color.r as f32 / 255.0,
             color.g as f32 / 255.0,

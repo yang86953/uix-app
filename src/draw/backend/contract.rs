@@ -4,7 +4,7 @@ use std::any::Any;
 
 use crate::core::{DamageRegion, Error, Point, Rect, Size};
 
-use crate::draw::command::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
+use crate::draw::painting::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::ImageHandle;
 use crate::draw::{Canvas2D, PresentationMode};
 use crate::native::present::PresentTestResult;

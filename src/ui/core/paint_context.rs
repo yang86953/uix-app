@@ -1,7 +1,7 @@
 //! UI-owned 绘制上下文。
 //!
 //! UI 组件的 `WidgetRender::render` 只接收本类型：它包装底层
-//! [`crate::draw::api::PaintContext`]，并持有 UI 域的主题令牌作用域
+//! [`crate::draw::painting::PaintContext`]，并持有 UI 域的主题令牌作用域
 //! （`tokens()` / 组件补丁 scope）。底层 draw 上下文只接收已解析的
 //! 颜色、尺寸与绘制值，不再引用任何 UI 主题类型，从而维持
 //! `graphics → core / platform` 的单向边界。
@@ -13,11 +13,11 @@
 use std::sync::Arc;
 
 use crate::core::{Point, Rect, Size};
-use crate::draw::api::PaintContext as DrawPaintContext;
-use crate::draw::command::PaintPass;
 use crate::draw::geometry::path::{FillRule, Path};
 use crate::draw::geometry::spatial::{PhysicalUnit, Vec3, AABB3D};
 use crate::draw::geometry::stroker::StrokeOptions;
+use crate::draw::painting::PaintContext as DrawPaintContext;
+use crate::draw::painting::PaintPass;
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::font::text_backend::TextLayout;
 use crate::draw::resources::image::{BitmapHandle, ImageService};

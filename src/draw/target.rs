@@ -1,10 +1,10 @@
 //! 渲染目标协议 — 帧生命周期、更新策略与后端能力。
 
-pub use crate::draw::renderer::RenderOutcome;
+pub use crate::draw::outcome::RenderOutcome;
 
 use crate::core::{Error, Point, Rect};
-use crate::draw::command::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::geometry::types::ImageHandle;
+use crate::draw::painting::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::Canvas2D;
 use crate::native::present::PresentTestResult;
 use std::time::Instant;

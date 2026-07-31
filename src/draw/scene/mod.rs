@@ -3,6 +3,7 @@
 #![allow(clippy::too_many_arguments)]
 
 pub mod layer_tree;
+pub mod node;
 pub(crate) mod picture;
 pub(crate) mod render_object;
 pub mod scene_paint;
@@ -16,3 +17,5 @@ pub use viewport_transform::{
     content_to_viewport, cumulative_scroll, needs_paint, needs_paint_rect, node_viewport_frame,
     node_visual_rect, node_visual_transform, visible_viewport_rect,
 };
+
+pub use node::NodeId;

@@ -7,8 +7,8 @@
 
 use crate::core::{Error, Rect};
 use crate::draw::backend::DamageRegion;
-use crate::draw::command::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::geometry::types::ImageHandle;
+use crate::draw::painting::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 #[cfg(feature = "test-harness")]
 use crate::draw::renderer::test_harness::GraphicsFaultSignal;
 use crate::draw::renderer::{GraphicsFailure, GraphicsRecovery, RecoveryAction, RenderOutcome};

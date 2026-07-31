@@ -4,12 +4,12 @@
 
 use crate::core::{Errc, Error, Rect};
 
-use crate::draw::backend::cpu::pixel_surface::PixelSurface;
-use crate::draw::backend::cpu::software_rasterizer::SoftwareRasterizer;
 use crate::draw::geometry::color::Color;
 use crate::draw::geometry::path::{FillRule, Path};
 use crate::draw::geometry::stroker::StrokeOptions;
 use crate::draw::geometry::types::{BlendMode, GradientDirection, Radius, Transform};
+use crate::draw::raster::pixel_surface::PixelSurface;
+use crate::draw::raster::software_rasterizer::SoftwareRasterizer;
 use crate::draw::Canvas2D;
 
 /// 共享 CPU 光栅化 surface。
@@ -186,7 +186,7 @@ impl Canvas2D for SharedRasterizer {
             self.renderer.opacity(),
         );
         let pixels = self.surface.pixels_mut();
-        crate::draw::backend::cpu::rasterizer::gradient::fill_linear_gradient(
+        crate::draw::raster::rasterizer::gradient::fill_linear_gradient(
             pixels,
             size.w as i32,
             size.h as i32,
@@ -211,7 +211,7 @@ impl Canvas2D for SharedRasterizer {
             self.renderer.opacity(),
         );
         let pixels = self.surface.pixels_mut();
-        crate::draw::backend::cpu::rasterizer::gradient::fill_radial_gradient(
+        crate::draw::raster::rasterizer::gradient::fill_radial_gradient(
             pixels,
             size.w as i32,
             size.h as i32,
@@ -247,7 +247,7 @@ impl Canvas2D for SharedRasterizer {
             self.renderer.opacity(),
         );
         let pixels = self.surface.pixels_mut();
-        crate::draw::backend::cpu::rasterizer::shadow::draw_box_shadow(
+        crate::draw::raster::rasterizer::shadow::draw_box_shadow(
             pixels,
             size.w as i32,
             size.h as i32,
@@ -282,7 +282,7 @@ impl Canvas2D for SharedRasterizer {
             self.renderer.opacity(),
         );
         let pixels = self.surface.pixels_mut();
-        crate::draw::backend::cpu::rasterizer::shadow::draw_box_shadow_ambient(
+        crate::draw::raster::rasterizer::shadow::draw_box_shadow_ambient(
             pixels,
             size.w as i32,
             size.h as i32,
@@ -310,7 +310,7 @@ impl Canvas2D for SharedRasterizer {
             self.renderer.opacity(),
         );
         let pixels = self.surface.pixels_mut();
-        crate::draw::backend::cpu::rasterizer::image::blit_image(
+        crate::draw::raster::rasterizer::image::blit_image(
             pixels,
             size.w as i32,
             size.h as i32,
@@ -331,7 +331,7 @@ impl Canvas2D for SharedRasterizer {
             self.renderer.opacity(),
         );
         let pixels = self.surface.pixels_mut();
-        crate::draw::backend::cpu::rasterizer::glyph::blit_glyph(
+        crate::draw::raster::rasterizer::glyph::blit_glyph(
             pixels,
             size.w as i32,
             size.h as i32,

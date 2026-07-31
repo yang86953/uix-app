@@ -4,9 +4,9 @@
 
 use crate::core::{Point, Rect};
 
-use crate::draw::api::PaintContext;
 use crate::draw::geometry::path::{FillRule, Path};
 use crate::draw::geometry::stroker::StrokeOptions;
+use crate::draw::painting::PaintContext;
 use crate::draw::resources::font::text::TextRenderService;
 use crate::draw::resources::image::{blit_handle, BitmapHandle, ImageService};
 use crate::draw::Canvas2D;

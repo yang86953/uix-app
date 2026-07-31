@@ -5,7 +5,7 @@ use crate::draw::backend::GpuBackend;
 use crate::draw::backend::{
     create_backend, BackendCapabilities, BackendKind, CpuBackend, RenderBackend,
 };
-use crate::draw::renderer::RenderOutcome;
+use crate::draw::outcome::RenderOutcome;
 use crate::draw::{Canvas2D, GraphicsCapabilities, UpdateStrategy};
 use crate::native::present::IGraphicsContext;
 use std::thread::ThreadId;

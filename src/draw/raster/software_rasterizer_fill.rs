@@ -415,7 +415,7 @@ impl SoftwareRasterizer {
         let mut global_edges = Vec::new();
         let mut active_edges = Vec::new();
         let clip = self.clip_rect;
-        crate::draw::backend::cpu::rasterizer::polygon::fill_polygons(
+        crate::draw::raster::rasterizer::polygon::fill_polygons(
             &polys,
             pixels,
             surface_w,

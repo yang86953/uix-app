@@ -27,10 +27,10 @@ use crate::draw::renderer::bootstrap::{
 };
 #[cfg(feature = "test-harness")]
 use crate::draw::renderer::test_harness::GraphicsFaultSignal;
-use crate::draw::renderer::RenderTarget;
 use crate::draw::renderer::{RebuildRequest, RecoveryDriver, RenderTargetRebuilder};
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::image::ImageService;
+use crate::draw::target::RenderTarget;
 use crate::draw::Renderer;
 use crate::native::factory::{
     create_platform_with_pending, gpu_recipe_candidates, graphics_runtime_platform,

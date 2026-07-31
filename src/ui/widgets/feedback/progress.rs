@@ -2,7 +2,7 @@
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::command::PaintPass;
+use crate::draw::painting::PaintPass;
 use crate::draw::{Color, GradientDirection, Radius};
 use crate::ui::core::paint_context::PaintContext;
 use crate::ui::core::widget::WidgetTree;

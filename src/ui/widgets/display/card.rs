@@ -5,7 +5,7 @@ use std::cell::{Cell, RefCell};
 
 use crate::component;
 use crate::core::{Constraints, EdgeInsets, Point, Rect, Size};
-use crate::draw::command::PaintPass;
+use crate::draw::painting::PaintPass;
 use crate::draw::{Color, Radius};
 use crate::ui::children::WidgetChildren;
 use crate::ui::core::paint_context::PaintContext;

@@ -342,7 +342,8 @@ pub fn align_rounded_rect(rect: Rect) -> Option<Rect> {
 }
 
 #[inline]
-pub fn rounded_rect_sdf(ux: f32, uy: f32, r: &Rect, rad: &Radius) -> f32 {    if rad.tl == 0.0 && rad.tr == 0.0 && rad.bl == 0.0 && rad.br == 0.0 {
+pub fn rounded_rect_sdf(ux: f32, uy: f32, r: &Rect, rad: &Radius) -> f32 {
+    if rad.tl == 0.0 && rad.tr == 0.0 && rad.bl == 0.0 && rad.br == 0.0 {
         let dx = (r.x - ux).max(ux - (r.x + r.w)).max(0.0);
         let dy = (r.y - uy).max(uy - (r.y + r.h)).max(0.0);
         let outside = (dx * dx + dy * dy).sqrt();

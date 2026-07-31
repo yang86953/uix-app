@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use uix::data::SettingsService;
 use uix::diagnostics::{Diagnostics, RecoveryAction, RecoveryOutcome};
-use uix::draw::renderer::RenderTarget;
+use uix::draw::target::RenderTarget;
 use uix::prelude::*;
 
 #[allow(dead_code)]
