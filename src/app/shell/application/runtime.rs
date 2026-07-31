@@ -57,7 +57,7 @@ pub(crate) fn drain_pending_open_windows(
         runtime,
         app_state,
         container,
-        GraphicsBackend::Auto,
+        NativeGraphicsBackend::Auto,
         on_window_start,
         secondary_windows,
     )
@@ -68,7 +68,7 @@ pub(crate) fn drain_pending_open_windows_with_backend(
     runtime: &AppRuntime,
     app_state: &AppState,
     container: &Container,
-    graphics_backend: GraphicsBackend,
+    graphics_backend: NativeGraphicsBackend,
     on_window_start: Option<&Arc<dyn Fn(AppHandle) + Send + Sync>>,
     secondary_windows: &mut Vec<SecondaryWindowSession>,
 ) -> usize {
@@ -267,7 +267,7 @@ fn create_secondary_window(
     runtime: &AppRuntime,
     app_state: &AppState,
     container: &Container,
-    graphics_backend: GraphicsBackend,
+    graphics_backend: NativeGraphicsBackend,
     request: OpenWindowRequest,
 ) -> Option<SecondaryWindowSession> {
     let OpenWindowRequest {
@@ -444,7 +444,7 @@ fn create_software_recovery_engine(
 
 pub(crate) fn graphics_recovery_rebuilder(
     surface: NativeSurfaceHandle,
-    requested: GraphicsBackend,
+    requested: NativeGraphicsBackend,
     selected_recipe: GraphicsRecipe,
 ) -> RenderTargetRebuilder {
     let candidates = gpu_recipe_candidates(requested);
@@ -486,7 +486,7 @@ pub(super) fn create_preferred_engine(
     platform_window: &mut dyn PlatformWindow,
     width: i32,
     height: i32,
-    graphics_backend: GraphicsBackend,
+    graphics_backend: NativeGraphicsBackend,
     #[cfg(feature = "test-harness")] graphics_faults: GraphicsFaultSignal,
 ) -> Option<Box<dyn RenderTarget>> {
     // SAFETY: `PlatformWindow` 在同步窗口会话全程拥有该 surface；图形启动与恢复
@@ -556,7 +556,10 @@ fn format_probe_failures(report: &ProbeReport) -> String {
         .join("; ")
 }
 
-pub(crate) fn format_gpu_probe_fallback(request: GraphicsBackend, report: &ProbeReport) -> String {
+pub(crate) fn format_gpu_probe_fallback(
+    request: NativeGraphicsBackend,
+    report: &ProbeReport,
+) -> String {
     format!(
         "GPU probe exhausted; request={request}; platform={}; fallback=software_cpu; failures=[{}]",
         graphics_runtime_platform(),
