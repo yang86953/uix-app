@@ -1,10 +1,12 @@
+//! Structured tracing emission Component owned by the reporting Module.
+
 use std::cell::Cell;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::core::ErrorSeverity;
 
-use super::ErrorReport;
+use super::super::report::ErrorReport;
 
 thread_local! {
     static EMITTING_REPORT: Cell<bool> = const { Cell::new(false) };
@@ -30,7 +32,7 @@ impl Drop for EmissionGuard {
     }
 }
 
-pub(crate) fn emit_report(report: &ErrorReport, emergency_count: &AtomicU64) -> bool {
+pub(super) fn emit_report(report: &ErrorReport, emergency_count: &AtomicU64) -> bool {
     let Some(_guard) = EmissionGuard::enter() else {
         emergency_notice(emergency_count, "recursive diagnostics event suppressed");
         return false;

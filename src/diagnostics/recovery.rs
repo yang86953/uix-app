@@ -1,3 +1,8 @@
+//! Private recovery Module owned by the Diagnostics System.
+//!
+//! The Module owns exact-code handler registrations and their RAII lifetime;
+//! the public action/outcome/subscription types are the System contract.
+
 use std::cell::Cell;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex, Weak};
@@ -53,12 +58,12 @@ struct RecoveryState {
     entries: Vec<RecoveryEntry>,
 }
 
-pub(crate) struct RecoveryRegistry {
+pub(super) struct RecoveryModule {
     state: Mutex<RecoveryState>,
 }
 
-impl RecoveryRegistry {
-    pub(crate) fn new() -> Self {
+impl RecoveryModule {
+    pub(super) fn new() -> Self {
         Self {
             state: Mutex::new(RecoveryState {
                 next_id: 1,
@@ -67,7 +72,7 @@ impl RecoveryRegistry {
         }
     }
 
-    pub(crate) fn register<F>(self: &Arc<Self>, code: Errc, handler: F) -> RecoverySubscription
+    pub(super) fn register<F>(self: &Arc<Self>, code: Errc, handler: F) -> RecoverySubscription
     where
         F: Fn(&Error) -> RecoveryAction + Send + Sync + 'static,
     {
@@ -85,7 +90,7 @@ impl RecoveryRegistry {
         }
     }
 
-    pub(crate) fn attempt(&self, error: Error) -> RecoveryOutcome {
+    pub(super) fn attempt(&self, error: Error) -> RecoveryOutcome {
         let Some(_guard) = RecoveryGuard::enter() else {
             return RecoveryOutcome::Unhandled(error);
         };
@@ -149,7 +154,7 @@ impl RecoveryRegistry {
 /// registry lock.
 pub struct RecoverySubscription {
     id: u64,
-    registry: Weak<RecoveryRegistry>,
+    registry: Weak<RecoveryModule>,
 }
 
 impl Drop for RecoverySubscription {
