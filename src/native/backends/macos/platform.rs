@@ -915,28 +915,78 @@ impl ITimer for MacosTimer {
 struct MacosNotification;
 
 impl INotification for MacosNotification {
-    fn show(&mut self, _title: &str, _message: &str) {}
+    fn show(&mut self, _title: &str, _message: &str) -> Result<()> {
+        Err(Error::new(
+            Errc::NotImplemented,
+            "MacosNotification::show: not implemented",
+        ))
+    }
 }
 
 struct MacosConsole;
 
 impl IConsole for MacosConsole {
-    fn write(&mut self, text: &str) {
-        print!("{text}");
+    fn write(&mut self, text: &str) -> Result<()> {
+        use std::io::Write;
+        std::io::stdout()
+            .write_all(text.as_bytes())
+            .map_err(|error| {
+                Error::new(Errc::PlatformError, format!("MacosConsole::write: {error}"))
+            })?;
+        std::io::stdout().flush().map_err(|error| {
+            Error::new(
+                Errc::PlatformError,
+                format!("MacosConsole::write flush: {error}"),
+            )
+        })
     }
 
-    fn write_line(&mut self, text: &str) {
-        println!("{text}");
+    fn write_line(&mut self, text: &str) -> Result<()> {
+        use std::io::Write;
+        let mut line = text.to_string();
+        line.push('\n');
+        std::io::stdout()
+            .write_all(line.as_bytes())
+            .map_err(|error| {
+                Error::new(
+                    Errc::PlatformError,
+                    format!("MacosConsole::write_line: {error}"),
+                )
+            })?;
+        std::io::stdout().flush().map_err(|error| {
+            Error::new(
+                Errc::PlatformError,
+                format!("MacosConsole::write_line flush: {error}"),
+            )
+        })
     }
 
-    fn set_color(&mut self, _color: ConsoleColor) {}
+    fn set_color(&mut self, _color: ConsoleColor) -> Result<()> {
+        Ok(())
+    }
 
-    fn reset_color(&mut self) {}
+    fn reset_color(&mut self) -> Result<()> {
+        Ok(())
+    }
 
-    fn show_terminal_cursor(&mut self, _visible: bool) {}
+    fn show_terminal_cursor(&mut self, _visible: bool) -> Result<()> {
+        Ok(())
+    }
 
-    fn set_terminal_title(&mut self, title: &str) {
-        print!("\x1b]0;{title}\x07");
+    fn set_terminal_title(&mut self, title: &str) -> Result<()> {
+        use std::io::Write;
+        write!(std::io::stdout(), "\x1b]0;{title}\x07").map_err(|error| {
+            Error::new(
+                Errc::PlatformError,
+                format!("MacosConsole::set_terminal_title: {error}"),
+            )
+        })?;
+        std::io::stdout().flush().map_err(|error| {
+            Error::new(
+                Errc::PlatformError,
+                format!("MacosConsole::set_terminal_title flush: {error}"),
+            )
+        })
     }
 
     fn capabilities(&self) -> TerminalCapabilities {
