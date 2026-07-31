@@ -10,9 +10,9 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::geometry::spatial::PhysicalUnit;
 use crate::draw::TextLayoutOptions;
-use crate::ui::clipboard;
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::style::Style;
+use crate::ui::component::clipboard;
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::theme::style::Style;
 use crate::ui::{EventResult, KeyCode, KeyMod, MouseButton, SystemEvent, WidgetTree};
 use crate::ui::{SnapshotFields, SnapshotSource};
 
@@ -167,7 +167,7 @@ component! {
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         // 统一样式优先：背景/边框（section 色条等）再绘制文字
         if let Some(style) = self.style.as_ref() {
-            crate::ui::style::apply_style(ctx, frame, style);
+            crate::ui::theme::style::apply_style(ctx, frame, style);
         }
 
         // 统一样式优先：style.color > self.color > theme default

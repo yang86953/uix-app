@@ -7,7 +7,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, FillRule, PathBuilder};
 use crate::ui::animation::{AnimationConfig, TransitionPlayer};
-use crate::ui::core::paint_context::PaintContext;
+use crate::ui::component::paint_context::PaintContext;
 use crate::ui::{EventResult, MouseButton, SystemEvent, WidgetTree};
 
 use super::bar_chart::BarData;
@@ -3102,7 +3102,7 @@ impl Default for ChartPlaceholder {
 impl crate::ui::view::View for ChartPlaceholder {
     fn build(self) -> crate::ui::view::ViewNode {
         if !self.has_data() {
-            if let Some(empty) = crate::ui::config::render_empty_for::<Self>() {
+            if let Some(empty) = crate::ui::component::config::render_empty_for::<Self>() {
                 return empty;
             }
             return crate::ui::view::ViewNode::leaf(crate::ui::widgets::display::Empty::new());

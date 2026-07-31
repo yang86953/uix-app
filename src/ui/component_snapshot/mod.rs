@@ -47,7 +47,7 @@ pub struct ComponentConfigSnapshot {
 impl ComponentConfigSnapshot {
     pub fn from_component(
         id: ComponentId,
-        component: &dyn crate::ui::traits::WidgetComponent,
+        component: &dyn crate::ui::component::traits::WidgetComponent,
     ) -> Self {
         let fields = component.snapshot_fields();
         Self::from_component_fields(id, component, fields)
@@ -55,7 +55,7 @@ impl ComponentConfigSnapshot {
 
     pub(crate) fn from_component_fields(
         id: ComponentId,
-        component: &dyn crate::ui::traits::WidgetComponent,
+        component: &dyn crate::ui::component::traits::WidgetComponent,
         fields: SnapshotFields,
     ) -> Self {
         Self {

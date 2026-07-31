@@ -5,8 +5,8 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::resources::font::text_backend::estimate_text_metrics;
 use crate::draw::Radius;
 use crate::native::windowing::input::ControlSize;
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::state::State;
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::reactive::state::State;
 use crate::ui::SnapshotFields;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
@@ -317,7 +317,7 @@ impl Default for Radio {
 
 impl Radio {
     pub fn new() -> Self {
-        let config = crate::ui::config::use_config();
+        let config = crate::ui::component::config::use_config();
         Self {
             group_name: String::new(),
             options: Vec::new(),
@@ -325,7 +325,7 @@ impl Radio {
             value_binding: None,
             disabled: false,
             direction: RadioDirection::Horizontal,
-            item_h: crate::ui::config::control_height(config.size),
+            item_h: crate::ui::component::config::control_height(config.size),
             hovered_idx: None,
             focused: false,
             pending_change: Cell::new(None),
@@ -386,7 +386,7 @@ impl Radio {
         self
     }
     pub fn size(mut self, size: ControlSize) -> Self {
-        self.item_h = crate::ui::config::control_height(size);
+        self.item_h = crate::ui::component::config::control_height(size);
         self
     }
     pub fn vertical(mut self) -> Self {
@@ -395,7 +395,7 @@ impl Radio {
     }
 
     fn visual_scale(&self) -> f32 {
-        self.item_h / crate::ui::config::control_height(ControlSize::Medium)
+        self.item_h / crate::ui::component::config::control_height(ControlSize::Medium)
     }
 
     fn font_size(&self) -> f32 {

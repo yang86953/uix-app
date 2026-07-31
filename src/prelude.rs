@@ -41,13 +41,13 @@ pub use crate::impl_widget_component;
 pub use crate::keyframe;
 pub use crate::semantic_handler;
 pub use crate::tree;
-pub use crate::ui::foundation::FocusTrap;
+pub use crate::ui::component::focus_trap::FocusTrap;
 pub use crate::ui::layout::{
     AlignItems, BoxModel, FlexDirection, FlexLayout, GridLayout, GridTrack, JustifyContent,
     LayoutChild, LayoutEngine, LayoutOutput,
 };
-pub use crate::ui::state::{Computed, Effect, State, StateSlotId};
-pub use crate::ui::style::{
+pub use crate::ui::reactive::state::{Computed, Effect, State, StateSlotId};
+pub use crate::ui::theme::style::{
     BoxShadowDef, ColorValue, DisplayMode, PaletteColor, Style, StyleSet, StyleState,
     TypographyToken,
 };
@@ -119,7 +119,7 @@ pub use crate::ui::{layout_rich_text_segments, parse_rich_text};
 
 // view
 
-pub use crate::ui::view::{
+pub use crate::ui::{
     button, canvas, column, column_fit, dynamic_label, embed, grid, input, label, row, scroll,
     show, space, AccessibilityExt, ButtonBuilder, EventExt, GridBuilder, InputBuilder,
     IntoLabelContent, IntoViewChildren, ScrollBuilder, StyleExt, TransitionExt, View, ViewNode,

@@ -1,7 +1,7 @@
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
-use crate::ui::core::paint_context::PaintContext;
+use crate::ui::component::paint_context::PaintContext;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields,
     SnapshotTransferItem, SystemEvent, WidgetTree,
@@ -337,7 +337,7 @@ component! {
             border
         };
         ctx.stroke_rect(left_rect, left_border, if left_border == primary { 1.5 } else { 1.0 }, r);
-        let loc = crate::ui::locale::use_locale();
+        let loc = crate::ui::component::locale::use_locale();
         let source_title = if self.source_title.is_empty() { loc.transfer_source } else { &self.source_title };
         if self.searchable {
             ctx.stroke_rect(
@@ -872,7 +872,7 @@ component! {
             text_sec,
             24.0,
         );
-        let loc = crate::ui::locale::use_locale();
+        let loc = crate::ui::component::locale::use_locale();
         ctx.draw_text(loc.upload_drag, Point::new(frame.x + frame.w * 0.5 - 48.0, frame.y + 60.0), text_sec, 13.0);
         if !self.accept.is_empty() && self.accept != "*" {
             let suffix = format!("{}: {}", loc.filter_title, self.accept);

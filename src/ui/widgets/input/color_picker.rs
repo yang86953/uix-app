@@ -7,8 +7,8 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::native::windowing::input::ControlSize;
 use crate::ui::animation::{presets, TransitionPlayer};
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::state::State;
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::reactive::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
     WidgetTree,
@@ -331,7 +331,7 @@ impl ColorPicker {
     }
 
     pub fn new() -> Self {
-        let config = crate::ui::config::use_config();
+        let config = crate::ui::component::config::use_config();
         Self {
             value: Cell::new(Color::default()),
             value_binding: None,
@@ -454,7 +454,7 @@ impl ColorPicker {
     }
 
     fn control_height(&self) -> f32 {
-        crate::ui::config::control_height(self.picker_size)
+        crate::ui::component::config::control_height(self.picker_size)
     }
 
     fn interaction_frame(&self) -> Rect {

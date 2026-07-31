@@ -1,7 +1,7 @@
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::foundation::virtual_scroll::VirtualListScroll;
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields,
     SnapshotTreeNode, SystemEvent, WidgetTree,

@@ -9,9 +9,10 @@ use std::cell::Cell;
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::ui::children::WidgetChildren;
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::core::widget::WidgetCore;
-use crate::ui::layout::engine::{child_from_tree_with_constraints, LayoutChild};
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::component::tree_measure::child_from_tree_with_constraints;
+use crate::ui::component::widget::WidgetCore;
+use crate::ui::layout::LayoutChild;
 use crate::ui::{ComponentId, SnapshotFields, WidgetComponent, WidgetTree};
 
 component! {

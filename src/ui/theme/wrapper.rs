@@ -11,7 +11,7 @@ use std::sync::RwLock;
 use super::color_tokens::{IColorTokens, ShadowToken};
 use super::design_tokens::DesignTokens;
 use crate::draw::Color;
-use crate::ui::traits::{
+use crate::ui::theme::traits::{
     IBoxShadowTokens, ISpacingTokens, ITypographyTokens, ThemeTokens, TokenProvider,
 };
 

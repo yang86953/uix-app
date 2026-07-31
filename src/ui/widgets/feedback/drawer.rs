@@ -5,8 +5,8 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::native::windowing::input::ControlSize;
 use crate::ui::animation::{presets, AnimationConfig, TransitionPlayer};
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::core::widget::WidgetCore;
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::component::widget::WidgetCore;
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, MouseButton, SystemEvent, WidgetTree};
 
@@ -189,7 +189,7 @@ component! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.last_frame.set(Self::normalize_frame(frame));
-        let loc = crate::ui::locale::use_locale();
+        let loc = crate::ui::component::locale::use_locale();
         if !self.is_present() {
             let local_trigger = Self::trigger_rect_for_size(frame.w, frame.h);
             self.last_trigger_rect.set(local_trigger);
@@ -491,7 +491,7 @@ component! {
 
 impl Drawer {
     pub fn new(title: &str) -> Self {
-        let size = crate::ui::config::use_config().size;
+        let size = crate::ui::component::config::use_config().size;
         Self {
             title: title.to_string(),
             visible: false,

@@ -5,8 +5,8 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::resources::font::text_backend::estimate_text_metrics;
 use crate::draw::Radius;
 use crate::native::windowing::input::ControlSize;
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::state::State;
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::reactive::state::State;
 use crate::ui::SnapshotFields;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
@@ -245,7 +245,7 @@ impl Rate {
     }
 
     pub fn new() -> Self {
-        let config = crate::ui::config::use_config();
+        let config = crate::ui::component::config::use_config();
         Self {
             count: 5,
             value: 0,
@@ -320,7 +320,7 @@ impl Rate {
     }
 
     fn control_height(&self) -> f32 {
-        crate::ui::config::control_height(self.rate_size)
+        crate::ui::component::config::control_height(self.rate_size)
     }
 
     fn visual_scale(&self) -> f32 {

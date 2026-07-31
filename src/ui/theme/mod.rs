@@ -23,6 +23,8 @@ mod token_patch;
 pub(crate) mod typography_tokens;
 pub(crate) mod wrapper;
 
+pub mod style;
+pub(crate) mod traits;
 pub use color_tokens::*;
 pub use design_tokens::primitives::ThemePrimitives;
 pub use design_tokens::*;

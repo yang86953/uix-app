@@ -5,8 +5,8 @@ use super::{
     KeyframeError, Spring, SpringAnimation,
 };
 use crate::core::ComponentId;
-use crate::ui::foundation::state::State;
-use crate::ui::traits::Animatable;
+use crate::ui::animation::traits::Animatable;
+use crate::ui::reactive::state::State;
 use std::cell::RefCell;
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};

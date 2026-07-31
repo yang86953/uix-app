@@ -6,8 +6,8 @@ use std::sync::Arc;
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::native::windowing::input::ControlSize;
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::state::State;
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::reactive::state::State;
 use crate::ui::widgets::input::date_calendar::{
     calendar_popup_rect, draw_calendar_panel, hit_calendar_date, hit_month_navigation,
     CalendarPanelState, MonthNavigation, CALENDAR_PANEL_HEIGHT,
@@ -102,7 +102,7 @@ component! {
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(Size::new(
             280.0,
-            crate::ui::config::control_height(self.picker_size),
+            crate::ui::component::config::control_height(self.picker_size),
         ))
     }
 
@@ -259,7 +259,7 @@ component! {
         let text_tertiary = ctx.tokens().color_text_tertiary();
         let radius = Some(crate::draw::Radius::uniform(ctx.tokens().border_radius_sm()));
 
-        let nominal_height = crate::ui::config::control_height(self.picker_size);
+        let nominal_height = crate::ui::component::config::control_height(self.picker_size);
         let scale = if nominal_height > 0.0 {
             (frame.h / nominal_height).clamp(0.0, 1.0)
         } else {
@@ -383,7 +383,7 @@ component! {
 impl DateRangePicker {
     pub fn new() -> Self {
         let today = Date::today();
-        let config = crate::ui::config::use_config();
+        let config = crate::ui::component::config::use_config();
         Self {
             start_value: Cell::new(Date::default()),
             end_value: Cell::new(Date::default()),
@@ -391,7 +391,9 @@ impl DateRangePicker {
             end_binding: None,
             view_year: Cell::new(today.year),
             view_month: Cell::new(today.month),
-            placeholder: crate::ui::locale::use_locale().placeholder.to_owned(),
+            placeholder: crate::ui::component::locale::use_locale()
+                .placeholder
+                .to_owned(),
             presets: Vec::new(),
             disabled_date: None,
             open: Cell::new(false),

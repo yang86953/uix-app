@@ -1,6 +1,6 @@
 use crate::core::Rect;
 use crate::draw::Radius;
-use crate::ui::core::paint_context::PaintContext;
+use crate::ui::component::paint_context::PaintContext;
 
 use super::geometry::{ColumnZone, TableColumnGeometry};
 use super::{SortDirection, Table};

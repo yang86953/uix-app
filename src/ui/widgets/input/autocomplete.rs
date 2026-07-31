@@ -6,8 +6,8 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::foundation::virtual_scroll::VirtualListScroll;
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
     WidgetTree,
@@ -343,7 +343,7 @@ component! {
                 let y = ctx.visual_center_y(no_data_area, FONT_SIZE);
                 ctx.push_clip(no_data_area);
                 ctx.draw_text(
-                    crate::ui::locale::use_locale().no_data,
+                    crate::ui::component::locale::use_locale().no_data,
                     Point::new(no_data_area.x, y),
                     text_secondary,
                     FONT_SIZE,

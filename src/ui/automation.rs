@@ -6,17 +6,18 @@ use std::path::{Path, PathBuf};
 
 use crate::core::{ComponentId, Point, Rect, WindowId};
 use crate::native::windowing::input::{KeyCode, KeyMod, MouseButton};
+pub use crate::ui::accessibility::semantic_snapshot::{
+    SemanticNode as AutomationNode, SemanticTarget as AutomationTarget,
+};
+use crate::ui::adapter::ViewAdapter;
+use crate::ui::component::widget::{EventResult, WidgetCore, WidgetTree};
 use crate::ui::component_snapshot::{AccessibilityRole, AccessibilityState};
-use crate::ui::core::widget::{EventResult, WidgetCore, WidgetTree};
 use crate::ui::event::SystemEvent;
 use crate::ui::semantic_action::SemanticActionError;
 pub use crate::ui::semantic_action::{
     SemanticAction as AutomationAction, SemanticActionKind as AutomationActionKind,
 };
-pub use crate::ui::semantic_snapshot::{
-    SemanticNode as AutomationNode, SemanticTarget as AutomationTarget,
-};
-use crate::ui::view::{ViewAdapter, ViewNode};
+use crate::ui::view::ViewNode;
 pub use crate::ui::SelectionSnapshot as AutomationSelection;
 
 pub const AUTOMATION_DIR_ENV: &str = "UIX_AUTOMATION_DIR";

@@ -6,7 +6,7 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
 use crate::native::windowing::input::ControlSize;
-use crate::ui::core::paint_context::PaintContext;
+use crate::ui::component::paint_context::PaintContext;
 use crate::ui::{SnapshotFields, WidgetTree};
 
 /// List 尺寸对应的行高。
@@ -234,7 +234,7 @@ impl List {
             header: String::new(),
             footer: String::new(),
             bordered: true,
-            list_size: crate::ui::config::use_config().size,
+            list_size: crate::ui::component::config::use_config().size,
             items: Vec::new(),
             load_more_text: String::new(),
         }
@@ -294,7 +294,7 @@ impl Default for List {
 impl crate::ui::view::View for List {
     fn build(self) -> crate::ui::view::ViewNode {
         if self.items.is_empty() {
-            if let Some(empty) = crate::ui::config::render_empty_for::<Self>() {
+            if let Some(empty) = crate::ui::component::config::render_empty_for::<Self>() {
                 return empty;
             }
             return crate::ui::view::ViewNode::leaf(crate::ui::widgets::display::Empty::new());

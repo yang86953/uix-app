@@ -4,7 +4,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::ui::animation::{presets, TransitionPlayer};
-use crate::ui::core::paint_context::PaintContext;
+use crate::ui::component::paint_context::PaintContext;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotCollapsePanel,
     SnapshotFields, SystemEvent, WidgetTree,
@@ -512,7 +512,7 @@ impl Collapse {
                 let natural_height = (Self::content_height(&text, DEFAULT_WIDTH)
                     - CONTENT_VERTICAL_PADDING * 2.0)
                     .max(0.0);
-                crate::ui::view::canvas(
+                crate::ui::widgets::canvas(
                     (DEFAULT_WIDTH - CONTENT_HORIZONTAL_PADDING * 2.0).max(0.0),
                     natural_height,
                     move |frame, ctx| {

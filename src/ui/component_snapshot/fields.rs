@@ -4,10 +4,11 @@ use crate::draw::geometry::spatial::PhysicalUnit;
 use crate::draw::Color;
 use crate::native::capabilities::system::StatusLevel;
 use crate::native::windowing::input::{ControlSize, ScrollDirection};
+use crate::ui::form::FormLayout;
 use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
-use crate::ui::style::{Style, StyleSet};
+use crate::ui::theme::style::{Style, StyleSet};
+use crate::ui::widgets::window_chrome::WindowControl;
 use crate::ui::widgets::*;
-use crate::ui::window_chrome::WindowControl;
 use crate::ui::Placement;
 
 use super::accessibility::{
@@ -839,7 +840,7 @@ impl SnapshotFields {
             Self::Empty { description, .. } => AccessibilitySnapshot::named(
                 AccessibilityRole::Status,
                 if description.is_empty() {
-                    crate::ui::locale::use_locale()
+                    crate::ui::component::locale::use_locale()
                         .empty_description
                         .to_string()
                 } else {

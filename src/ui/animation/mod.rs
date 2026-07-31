@@ -31,6 +31,7 @@ pub mod easing;
 pub mod group;
 pub mod keyframe;
 pub mod spring;
+pub(crate) mod traits;
 pub mod transition;
 
 pub use animated::*;

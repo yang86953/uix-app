@@ -7,7 +7,7 @@ use std::cell::{Cell, RefCell};
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::ui::children::WidgetChildren;
-use crate::ui::core::paint_context::PaintContext;
+use crate::ui::component::paint_context::PaintContext;
 use crate::ui::SnapshotFields;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetComponent,

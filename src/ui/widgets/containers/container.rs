@@ -1,20 +1,20 @@
 //! Container widget — flexbox layout container with background/border.
 
-use crate::ui::core::widget::WidgetCore;
+use crate::ui::component::widget::WidgetCore;
 use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, EdgeInsets, Rect, Size};
 use crate::draw::scene::PicturePolicy;
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::layout::engine::{
-    child_from_tree_with_constraints, BoxModel, FlexLayout, LayoutChild,
-};
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::component::tree_measure::child_from_tree_with_constraints;
+use crate::ui::layout::engine::{BoxModel, FlexLayout, LayoutChild};
+
+use crate::ui::layout::LayoutEngine;
 use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
-use crate::ui::style::{
+use crate::ui::theme::style::{
     apply_style, BoxShadowDef, ColorValue, DisplayMode, Style, TypographyToken,
 };
-use crate::ui::traits::LayoutEngine;
 use crate::ui::{ComponentId, WidgetTree};
 use crate::ui::{SnapshotFields, SnapshotSource};
 
@@ -149,12 +149,12 @@ component! {
         // 否则 Container measured_size 卡在父级分配的视口高，ScrollView 永远 max_scroll=0。
         let main_axis_indefinite = matches!(
             s.flex_direction,
-            crate::ui::style::FlexDirection::Column
-                | crate::ui::style::FlexDirection::ColumnReverse
+            crate::ui::theme::style::FlexDirection::Column
+                | crate::ui::theme::style::FlexDirection::ColumnReverse
         ) && s.height.is_none_or(|h| h <= 0.0)
             || matches!(
                 s.flex_direction,
-                crate::ui::style::FlexDirection::Row | crate::ui::style::FlexDirection::RowReverse
+                crate::ui::theme::style::FlexDirection::Row | crate::ui::theme::style::FlexDirection::RowReverse
             ) && s.width.is_none_or(|w| w <= 0.0);
 
         // 委托给统一的 FlexLayout 布局引擎
@@ -198,35 +198,35 @@ component! {
 }
 
 /// 将 style::FlexDirection 转换为 layout::FlexDirection
-fn convert_flex_direction(d: crate::ui::style::FlexDirection) -> FlexDirection {
+fn convert_flex_direction(d: crate::ui::theme::style::FlexDirection) -> FlexDirection {
     match d {
-        crate::ui::style::FlexDirection::Row => FlexDirection::Row,
-        crate::ui::style::FlexDirection::Column => FlexDirection::Column,
-        crate::ui::style::FlexDirection::RowReverse => FlexDirection::RowReverse,
-        crate::ui::style::FlexDirection::ColumnReverse => FlexDirection::ColumnReverse,
+        crate::ui::theme::style::FlexDirection::Row => FlexDirection::Row,
+        crate::ui::theme::style::FlexDirection::Column => FlexDirection::Column,
+        crate::ui::theme::style::FlexDirection::RowReverse => FlexDirection::RowReverse,
+        crate::ui::theme::style::FlexDirection::ColumnReverse => FlexDirection::ColumnReverse,
     }
 }
 
 /// 将 style::JustifyContent 转换为 layout::JustifyContent
-fn convert_justify(j: crate::ui::style::JustifyContent) -> JustifyContent {
+fn convert_justify(j: crate::ui::theme::style::JustifyContent) -> JustifyContent {
     match j {
-        crate::ui::style::JustifyContent::Start => JustifyContent::Start,
-        crate::ui::style::JustifyContent::Center => JustifyContent::Center,
-        crate::ui::style::JustifyContent::End => JustifyContent::End,
-        crate::ui::style::JustifyContent::SpaceBetween => JustifyContent::SpaceBetween,
-        crate::ui::style::JustifyContent::SpaceAround => JustifyContent::SpaceAround,
-        crate::ui::style::JustifyContent::SpaceEvenly => JustifyContent::SpaceEvenly,
-        crate::ui::style::JustifyContent::Stretch => JustifyContent::Stretch,
+        crate::ui::theme::style::JustifyContent::Start => JustifyContent::Start,
+        crate::ui::theme::style::JustifyContent::Center => JustifyContent::Center,
+        crate::ui::theme::style::JustifyContent::End => JustifyContent::End,
+        crate::ui::theme::style::JustifyContent::SpaceBetween => JustifyContent::SpaceBetween,
+        crate::ui::theme::style::JustifyContent::SpaceAround => JustifyContent::SpaceAround,
+        crate::ui::theme::style::JustifyContent::SpaceEvenly => JustifyContent::SpaceEvenly,
+        crate::ui::theme::style::JustifyContent::Stretch => JustifyContent::Stretch,
     }
 }
 
 /// 将 style::AlignItems 转换为 layout::AlignItems
-fn convert_align(a: crate::ui::style::AlignItems) -> AlignItems {
+fn convert_align(a: crate::ui::theme::style::AlignItems) -> AlignItems {
     match a {
-        crate::ui::style::AlignItems::Start => AlignItems::Start,
-        crate::ui::style::AlignItems::Center => AlignItems::Center,
-        crate::ui::style::AlignItems::End => AlignItems::End,
-        crate::ui::style::AlignItems::Stretch => AlignItems::Stretch,
+        crate::ui::theme::style::AlignItems::Start => AlignItems::Start,
+        crate::ui::theme::style::AlignItems::Center => AlignItems::Center,
+        crate::ui::theme::style::AlignItems::End => AlignItems::End,
+        crate::ui::theme::style::AlignItems::Stretch => AlignItems::Stretch,
     }
 }
 
@@ -351,7 +351,7 @@ impl Container {
     }
 
     /// 设置 flex 方向。
-    pub fn direction(mut self, d: crate::ui::style::FlexDirection) -> Self {
+    pub fn direction(mut self, d: crate::ui::theme::style::FlexDirection) -> Self {
         self.style.flex_direction = d;
         self
     }
@@ -363,13 +363,13 @@ impl Container {
     }
 
     /// 设置主轴对齐。
-    pub fn justify(mut self, j: crate::ui::style::JustifyContent) -> Self {
+    pub fn justify(mut self, j: crate::ui::theme::style::JustifyContent) -> Self {
         self.style.justify_content = j;
         self
     }
 
     /// 设置交叉轴对齐。
-    pub fn align(mut self, a: crate::ui::style::AlignItems) -> Self {
+    pub fn align(mut self, a: crate::ui::theme::style::AlignItems) -> Self {
         self.style.align_items = a;
         self
     }
@@ -413,10 +413,10 @@ impl Container {
     /// 便捷方法：设置 flex 方向。
     pub fn dir(mut self, d: FlexDirection) -> Self {
         self.style.flex_direction = match d {
-            FlexDirection::Row => crate::ui::style::FlexDirection::Row,
-            FlexDirection::Column => crate::ui::style::FlexDirection::Column,
-            FlexDirection::RowReverse => crate::ui::style::FlexDirection::RowReverse,
-            FlexDirection::ColumnReverse => crate::ui::style::FlexDirection::ColumnReverse,
+            FlexDirection::Row => crate::ui::theme::style::FlexDirection::Row,
+            FlexDirection::Column => crate::ui::theme::style::FlexDirection::Column,
+            FlexDirection::RowReverse => crate::ui::theme::style::FlexDirection::RowReverse,
+            FlexDirection::ColumnReverse => crate::ui::theme::style::FlexDirection::ColumnReverse,
         };
         self
     }
@@ -430,7 +430,8 @@ impl Container {
     fn child_measure_constraints(&self, content_rect: Rect) -> Constraints {
         let is_row = matches!(
             self.style.flex_direction,
-            crate::ui::style::FlexDirection::Row | crate::ui::style::FlexDirection::RowReverse
+            crate::ui::theme::style::FlexDirection::Row
+                | crate::ui::theme::style::FlexDirection::RowReverse
         );
         // 与 Space 对齐：主轴始终 MAX。定高 Column 若用 content_rect.h 钳子项，
         // measure 会把 wrap 内容从 121 压回 106，Phase 1 写回后与 Phase 2 振荡；

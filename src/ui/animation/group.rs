@@ -6,7 +6,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::ui::traits::Animatable;
+use crate::ui::animation::traits::Animatable;
 
 use super::{Animated, Easing};
 

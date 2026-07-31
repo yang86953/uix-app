@@ -7,8 +7,8 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::native::windowing::input::ControlSize;
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::state::State;
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::reactive::state::State;
 use crate::ui::widgets::feedback::tooltip::{paint_tooltip_bubble, tooltip_bubble_rect};
 use crate::ui::widgets::TooltipPlacement;
 use crate::ui::SnapshotFields;
@@ -380,7 +380,7 @@ impl Slider {
     }
 
     fn control_height(&self) -> f32 {
-        crate::ui::config::control_height(self.slider_size)
+        crate::ui::component::config::control_height(self.slider_size)
     }
 
     fn track_height(&self, frame: Rect) -> f32 {
@@ -479,7 +479,7 @@ impl Slider {
 
     pub fn new(range: RangeInclusive<f64>) -> Self {
         let (min, max) = Self::normalize_range(range);
-        let config = crate::ui::config::use_config();
+        let config = crate::ui::component::config::use_config();
         Self {
             min,
             max,

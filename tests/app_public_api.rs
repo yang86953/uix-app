@@ -1,6 +1,6 @@
 use uix::app::{App, Container, WindowConfig};
 use uix::diagnostics::{Diagnostics, DiagnosticsConfig};
-use uix::ui::view::label;
+use uix::ui::label;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Service(&'static str);

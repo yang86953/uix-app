@@ -4,8 +4,8 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::native::windowing::input::ControlSize;
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::state::State;
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::reactive::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
     WidgetTree,
@@ -301,11 +301,11 @@ impl Segmented {
     }
 
     fn control_height(&self) -> f32 {
-        crate::ui::config::control_height(self.segmented_size)
+        crate::ui::component::config::control_height(self.segmented_size)
     }
 
     fn visual_scale_for_height(height: f32) -> f32 {
-        (height / crate::ui::config::control_height(ControlSize::Medium)).max(0.0)
+        (height / crate::ui::component::config::control_height(ControlSize::Medium)).max(0.0)
     }
 
     fn font_size_for_height(height: f32) -> f32 {
@@ -374,12 +374,12 @@ impl Segmented {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        let config = crate::ui::config::use_config();
+        let config = crate::ui::component::config::use_config();
         let options = options
             .into_iter()
             .map(|option| option.as_ref().to_owned())
             .collect::<Vec<_>>();
-        let control_height = crate::ui::config::control_height(config.size);
+        let control_height = crate::ui::component::config::control_height(config.size);
         let control_width = options
             .iter()
             .map(|option| Self::segment_width_for_height(option, control_height))

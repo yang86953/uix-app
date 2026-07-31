@@ -77,6 +77,53 @@
 //! // 旧平台工厂入口不得通过 prelude 恢复。
 //! use uix::prelude::create_platform;
 //! ```
+//!
+//! SMC-04 后，以下 ui 旧平铺路径不得复活（12 Module 边界与 System 私有边界收口）：
+//!
+//! ```compile_fail
+//! // ui 旧运行时平铺路径归 component Module（SMC-04）。
+//! use uix::ui::core::widget::WidgetTree;
+//! ```
+//!
+//! ```compile_fail
+//! // foundation 目录已拆解：state 归 reactive、style 归 theme（SMC-04）。
+//! use uix::ui::foundation::state::State;
+//! ```
+//!
+//! ```compile_fail
+//! // traits 目录已拆解：组件契约归 component（SMC-04）。
+//! use uix::ui::traits::WidgetComponent;
+//! ```
+//!
+//! ```compile_fail
+//! // 表单组件归 form Module，不得经 widgets::input 路径恢复（SMC-04）。
+//! use uix::ui::widgets::input::form::Form;
+//! ```
+//!
+//! ```compile_fail
+//! // view DSL 组合子归 widgets（view 不再构建具体组件，SMC-04）。
+//! use uix::ui::view::combinators::button;
+//! ```
+//!
+//! ```compile_fail
+//! // 语义快照/覆盖归 accessibility Module（SMC-04）。
+//! use uix::ui::semantic_snapshot::SemanticTarget;
+//! ```
+//!
+//! ```compile_fail
+//! // ViewAdapter 是 System 私有边界粘合（SMC-04）。
+//! use uix::ui::adapter::ViewAdapter;
+//! ```
+//!
+//! ```compile_fail
+//! // 树-组件语义访问点为 System 私有边界（SMC-04）。
+//! use uix::ui::tree_widget_hooks::modal_was_present;
+//! ```
+//!
+//! ```compile_fail
+//! // 旧 ui 根级模块路径不得复活：window_chrome 归 widgets（SMC-04）。
+//! use uix::ui::window_chrome::WindowControl;
+//! ```
 
 // `windows::core::implement` 宏展开依赖 crate 根的 `windows_core`（无平台 cfg：依赖在各目标可用）。
 extern crate self as uix;

@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use uix::ui::view::{button, column, label, StyleExt};
+use uix::ui::{button, column, label, StyleExt};
 use uix::ui::{
     DesignTokens, IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, State,
     ThemeTokens, TokenPatch, TokenProvider,
