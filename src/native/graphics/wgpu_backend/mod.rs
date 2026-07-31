@@ -10,12 +10,10 @@ pub(crate) mod glyph_cover;
 mod surface;
 
 use std::ffi::c_void;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
+use std::sync::Arc;
 
 use crate::core::{Errc, Error, Rect, Result};
+use crate::diagnostics::PendingFailureQueue;
 use crate::native::traits::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
     GpuSolidMesh, GpuSolidRect, GpuStrokeRect, GraphicsBackend, GraphicsContextCaps,
@@ -93,9 +91,16 @@ pub(crate) fn create_vulkan(
     surface: *mut c_void,
     width: i32,
     height: i32,
+    pending_failures: PendingFailureQueue,
 ) -> Result<Box<dyn IGraphicsContext>, Error> {
-    WgpuContext::new(surface, width, height, GraphicsBackend::Vulkan)
-        .map(|context| Box::new(context) as _)
+    WgpuContext::new(
+        surface,
+        width,
+        height,
+        GraphicsBackend::Vulkan,
+        pending_failures,
+    )
+    .map(|context| Box::new(context) as _)
 }
 
 #[allow(dead_code)] // compiled on every target so platform cfg stays in platform/**
@@ -103,9 +108,16 @@ pub(crate) fn create_d3d12(
     surface: *mut c_void,
     width: i32,
     height: i32,
+    pending_failures: PendingFailureQueue,
 ) -> Result<Box<dyn IGraphicsContext>, Error> {
-    WgpuContext::new(surface, width, height, GraphicsBackend::D3d12)
-        .map(|context| Box::new(context) as _)
+    WgpuContext::new(
+        surface,
+        width,
+        height,
+        GraphicsBackend::D3d12,
+        pending_failures,
+    )
+    .map(|context| Box::new(context) as _)
 }
 
 #[allow(dead_code)] // compiled on every target so platform cfg stays in platform/**
@@ -113,9 +125,16 @@ pub(crate) fn create_opengl(
     surface: *mut c_void,
     width: i32,
     height: i32,
+    pending_failures: PendingFailureQueue,
 ) -> Result<Box<dyn IGraphicsContext>, Error> {
-    WgpuContext::new(surface, width, height, GraphicsBackend::OpenGlEs)
-        .map(|context| Box::new(context) as _)
+    WgpuContext::new(
+        surface,
+        width,
+        height,
+        GraphicsBackend::OpenGlEs,
+        pending_failures,
+    )
+    .map(|context| Box::new(context) as _)
 }
 
 #[allow(dead_code)] // compiled on every target so platform cfg stays in platform/**
@@ -123,9 +142,16 @@ pub(crate) fn create_metal(
     surface: *mut c_void,
     width: i32,
     height: i32,
+    pending_failures: PendingFailureQueue,
 ) -> Result<Box<dyn IGraphicsContext>, Error> {
-    WgpuContext::new(surface, width, height, GraphicsBackend::Metal)
-        .map(|context| Box::new(context) as _)
+    WgpuContext::new(
+        surface,
+        width,
+        height,
+        GraphicsBackend::Metal,
+        pending_failures,
+    )
+    .map(|context| Box::new(context) as _)
 }
 
 struct OffscreenSlot {
@@ -153,7 +179,7 @@ pub struct WgpuContext {
     width: i32,
     height: i32,
     max_texture_dimension_2d: u32,
-    device_lost: Arc<AtomicBool>,
+    pending_failures: crate::diagnostics::PendingFailureSource,
     shutdown: bool,
     offscreens: Vec<Option<OffscreenSlot>>,
     free_offscreen_ids: Vec<u32>,
@@ -168,6 +194,7 @@ impl WgpuContext {
         width: i32,
         height: i32,
         requested: GraphicsBackend,
+        pending_failures: PendingFailureQueue,
     ) -> Result<Self> {
         let backends = wgpu_backends(requested)?;
         let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
@@ -210,15 +237,19 @@ impl WgpuContext {
             pollster::block_on(adapter.request_device(&descriptor)).map_err(|error| {
                 Error::new(Errc::PlatformError, format!("wgpu request_device: {error}"))
             })?;
-        device.on_uncaptured_error(Arc::new(|error| {
-            crate::core::log::error_fn(format_args!("wgpu uncaptured error: {error}"));
+        let pending_failures = pending_failures.source();
+        let uncaptured_pending = pending_failures.clone();
+        device.on_uncaptured_error(Arc::new(move |error| {
+            let _ = uncaptured_pending.enqueue(Error::new(
+                Errc::PlatformError,
+                format!("wgpu uncaptured error: {error}"),
+            ));
         }));
-        let device_lost = Arc::new(AtomicBool::new(false));
-        let callback_device_lost = Arc::clone(&device_lost);
+        let device_lost_pending = pending_failures.clone();
         device.set_device_lost_callback(move |reason, message| {
-            callback_device_lost.store(true, Ordering::Release);
-            crate::core::log::error_fn(format_args!(
-                "wgpu device lost: reason={reason:?}; message={message}"
+            let _ = device_lost_pending.enqueue(Error::new(
+                Errc::GraphicsDeviceLost,
+                format!("wgpu device lost: reason={reason:?}; message={message}"),
             ));
         });
         let capabilities = surface.get_capabilities(&adapter);
@@ -276,7 +307,7 @@ impl WgpuContext {
             width: drawable_width as i32,
             height: drawable_height as i32,
             max_texture_dimension_2d,
-            device_lost,
+            pending_failures,
             shutdown: false,
             offscreens: Vec::new(),
             free_offscreen_ids: Vec::new(),
@@ -292,8 +323,8 @@ impl WgpuContext {
                 Errc::InvalidState,
                 "WgpuContext operation requested after shutdown",
             ))
-        } else if self.device_lost.load(Ordering::Acquire) {
-            Err(Error::new(Errc::GraphicsDeviceLost, "wgpu device was lost"))
+        } else if let Some(error) = self.pending_failures.take() {
+            Err(error)
         } else {
             Ok(())
         }
@@ -403,6 +434,7 @@ impl IGraphicsContext for WgpuContext {
         self.offscreens.clear();
         self.free_offscreen_ids.clear();
         self.bound_offscreen = None;
+        self.pending_failures.close();
         let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
         self.shutdown = true;
         Ok(())

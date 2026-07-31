@@ -1,5 +1,6 @@
 //! macOS backend registry table.
 
+use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::registry::{BackendStatus, GraphicsBackendEntry};
 use crate::native::traits::present::{GraphicsBackend, PresentMode, RasterMode};
 
@@ -16,7 +17,12 @@ use crate::native::graphics::wgpu_backend::create_metal;
 use crate::native::graphics::wgpu_backend::create_vulkan;
 
 #[cfg(not(feature = "metal"))]
-fn create_metal(_: *mut c_void, _: i32, _: i32) -> Result<Box<dyn IGraphicsContext>, Error> {
+fn create_metal(
+    _: *mut c_void,
+    _: i32,
+    _: i32,
+    _: PendingFailureQueue,
+) -> Result<Box<dyn IGraphicsContext>, Error> {
     Err(Error::new(
         Errc::PlatformError,
         "graphics feature `metal` is disabled in this build",
@@ -24,7 +30,12 @@ fn create_metal(_: *mut c_void, _: i32, _: i32) -> Result<Box<dyn IGraphicsConte
 }
 
 #[cfg(not(feature = "vulkan"))]
-fn create_vulkan(_: *mut c_void, _: i32, _: i32) -> Result<Box<dyn IGraphicsContext>, Error> {
+fn create_vulkan(
+    _: *mut c_void,
+    _: i32,
+    _: i32,
+    _: PendingFailureQueue,
+) -> Result<Box<dyn IGraphicsContext>, Error> {
     Err(Error::new(
         Errc::PlatformError,
         "graphics feature `vulkan` is disabled in this build",

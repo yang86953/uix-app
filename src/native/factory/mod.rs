@@ -16,6 +16,7 @@ use crate::native::traits::present::{GraphicsBackend, IGraphicsContext};
 use crate::native::traits::system::ISystemInfo;
 use std::ffi::c_void;
 
+pub(crate) use registry::try_create_gpu_recipe_with_queue;
 pub use registry::{
     active_entries, describe_backend_availability, entry_for, entry_for_recipe,
     gpu_probe_candidates, gpu_recipe_candidates, graphics_runtime_platform, try_create_gpu_recipe,

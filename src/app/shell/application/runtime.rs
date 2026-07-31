@@ -1,6 +1,7 @@
 //! 应用运行时辅助：图形选择、副窗编排与平台事件映射。
 
 use super::*;
+use crate::diagnostics::{Diagnostics, PendingFailureQueue};
 
 pub(crate) fn resolve_graphics_backend(
     builder: Option<NativeGraphicsBackend>,
@@ -351,11 +352,17 @@ fn create_secondary_window(
         width,
         height,
         graphics_backend,
+        runtime.diagnostics(),
         graphics_faults,
     );
     #[cfg(not(feature = "test-harness"))]
-    let preferred_engine =
-        create_preferred_engine(platform_window.as_mut(), width, height, graphics_backend);
+    let preferred_engine = create_preferred_engine(
+        platform_window.as_mut(),
+        width,
+        height,
+        graphics_backend,
+        runtime.diagnostics(),
+    );
     let engine = match preferred_engine {
         Some(engine) => engine,
         None => {
@@ -426,8 +433,10 @@ fn recreate_exact_graphics_recipe(
     width: i32,
     height: i32,
     recipe: GraphicsRecipe,
+    pending_failures: &PendingFailureQueue,
 ) -> Result<Box<dyn RenderTarget>, Error> {
-    let context = try_create_gpu_recipe(recipe, surface, width, height)?;
+    let context =
+        try_create_gpu_recipe_with_queue(recipe, surface, width, height, pending_failures.clone())?;
     assemble_renderer(context, width, height)
         .map(|renderer| Box::new(renderer) as Box<dyn RenderTarget>)
         .map_err(|failure| failure.into_error())
@@ -442,16 +451,23 @@ fn create_software_recovery_engine(
     Ok(Box::new(renderer))
 }
 
-pub(crate) fn graphics_recovery_rebuilder(
+pub(crate) fn graphics_recovery_rebuilder_with_pending(
     surface: NativeSurfaceHandle,
     requested: NativeGraphicsBackend,
     selected_recipe: GraphicsRecipe,
+    pending_failures: PendingFailureQueue,
 ) -> RenderTargetRebuilder {
     let candidates = gpu_recipe_candidates(requested);
     let mut current_recipe = selected_recipe;
     Box::new(move |action, width, height| match action {
         RecoveryAction::RebuildSurface | RecoveryAction::RebuildRecipe => {
-            recreate_exact_graphics_recipe(surface, width, height, current_recipe)
+            recreate_exact_graphics_recipe(
+                surface,
+                width,
+                height,
+                current_recipe,
+                &pending_failures,
+            )
         }
         RecoveryAction::TryNextRecipe => {
             let start = candidates
@@ -464,7 +480,13 @@ pub(crate) fn graphics_recovery_rebuilder(
                 format!("graphics recovery: no next recipe after {current_recipe}"),
             );
             for candidate in candidates.iter().copied().skip(start) {
-                match recreate_exact_graphics_recipe(surface, width, height, candidate) {
+                match recreate_exact_graphics_recipe(
+                    surface,
+                    width,
+                    height,
+                    candidate,
+                    &pending_failures,
+                ) {
                     Ok(engine) => {
                         current_recipe = candidate;
                         return Ok(engine);
@@ -487,12 +509,20 @@ pub(super) fn create_preferred_engine(
     width: i32,
     height: i32,
     graphics_backend: NativeGraphicsBackend,
+    diagnostics: Diagnostics,
     #[cfg(feature = "test-harness")] graphics_faults: GraphicsFaultSignal,
 ) -> Option<Box<dyn RenderTarget>> {
     // SAFETY: `PlatformWindow` 在同步窗口会话全程拥有该 surface；图形启动与恢复
     // 均在同一事件循环线程执行，且 `NativeSurfaceHandle` 是 !Send + !Sync。
     let surface = unsafe { NativeSurfaceHandle::from_raw(platform_window.native_surface_ptr()) };
-    match bootstrap_renderer(surface, width, height, graphics_backend) {
+    let pending_failures = diagnostics.pending_failure_queue();
+    match bootstrap_renderer_with_pending(
+        surface,
+        width,
+        height,
+        graphics_backend,
+        pending_failures.clone(),
+    ) {
         Ok(gpu) => {
             if gpu.report.failures.is_empty() {
                 crate::core::log::info_fn(format_args!(
@@ -508,7 +538,12 @@ pub(super) fn create_preferred_engine(
             }
             let engine = RecoveryDriver::new(
                 Box::new(gpu.renderer),
-                graphics_recovery_rebuilder(surface, graphics_backend, gpu.selected_recipe),
+                graphics_recovery_rebuilder_with_pending(
+                    surface,
+                    graphics_backend,
+                    gpu.selected_recipe,
+                    pending_failures,
+                ),
             )
             .with_extent(width, height);
             #[cfg(feature = "test-harness")]

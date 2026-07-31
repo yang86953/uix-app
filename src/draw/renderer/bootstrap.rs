@@ -1,11 +1,13 @@
 //! GPU graphics bootstrap — sole owner of the init-time backend probe loop (P6.7 M3).
 
 use crate::core::{Errc, Error, Result};
+use crate::diagnostics::PendingFailureQueue;
 use crate::draw::renderer::factory::create_renderer;
 use crate::draw::renderer::RenderTarget;
 use crate::draw::renderer::Renderer;
 use crate::native::factory::{
-    describe_backend_availability, gpu_recipe_candidates, try_create_gpu_recipe, GraphicsRecipe,
+    describe_backend_availability, gpu_recipe_candidates, try_create_gpu_recipe_with_queue,
+    GraphicsRecipe,
 };
 use crate::native::traits::present::{
     GraphicsBackend, IGraphicsContext, NativeSurfaceHandle, PresentOcclusionSupport,
@@ -155,8 +157,26 @@ pub fn bootstrap_renderer(
     height: i32,
     request: GraphicsBackend,
 ) -> Result<GpuBootstrap, ProbeReport> {
+    bootstrap_renderer_with_pending(surface, width, height, request, PendingFailureQueue::new())
+}
+
+/// Bootstrap entry used by an application runtime that owns callback failure
+/// delivery for every graphics context it creates.
+pub(crate) fn bootstrap_renderer_with_pending(
+    surface: NativeSurfaceHandle,
+    width: i32,
+    height: i32,
+    request: GraphicsBackend,
+    pending_failures: PendingFailureQueue,
+) -> Result<GpuBootstrap, ProbeReport> {
     bootstrap_renderer_with(surface, width, height, request, |candidate| {
-        try_create_gpu_recipe(candidate, surface, width, height)
+        try_create_gpu_recipe_with_queue(
+            candidate,
+            surface,
+            width,
+            height,
+            pending_failures.clone(),
+        )
     })
 }
 
