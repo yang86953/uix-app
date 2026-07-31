@@ -9,7 +9,7 @@ use crate::native::factory::{
     describe_backend_availability, gpu_recipe_candidates, try_create_gpu_recipe_with_queue,
     GraphicsRecipe,
 };
-use crate::native::traits::present::{
+use crate::native::present::{
     GraphicsBackend, IGraphicsContext, NativeSurfaceHandle, PresentOcclusionSupport,
 };
 

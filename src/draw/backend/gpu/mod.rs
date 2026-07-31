@@ -31,7 +31,7 @@ use crate::draw::geometry::stroker::StrokeOptions;
 use crate::draw::geometry::tessellator;
 use crate::draw::geometry::types::{BlendMode, GradientDirection, ImageHandle, Radius, Transform};
 use crate::draw::Canvas2D;
-use crate::native::traits::present::{
+use crate::native::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
     GpuSolidMesh, GpuSolidRect, GpuStrokeRect, IGraphicsContext, NativeRasterCaps,
     OffscreenTargetId, PresentFrame, PresentMode, PresentTestResult, RasterMode, SoftFallbackTile,

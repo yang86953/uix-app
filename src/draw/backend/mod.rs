@@ -11,7 +11,7 @@ pub use cpu::CpuBackend;
 pub use gpu::GpuBackend;
 
 use crate::core::{Errc, Error};
-use crate::native::traits::present::IGraphicsContext;
+use crate::native::present::IGraphicsContext;
 
 /// 按种类创建后端实例。
 pub(crate) fn create_backend(

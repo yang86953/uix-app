@@ -3,7 +3,7 @@
 use crate::core::{Errc, Error, Result};
 use crate::draw::backend::contract::RenderBackend;
 use crate::draw::backend::gpu::GpuBackend;
-use crate::native::traits::present::{GraphicsBackend, IGraphicsContext, RasterMode};
+use crate::native::present::{GraphicsBackend, IGraphicsContext, RasterMode};
 
 /// Creates the GPU raster backend for a native graphics context.
 ///

@@ -14,13 +14,13 @@ use std::time::{Duration, Instant};
 
 use libc::{poll, pollfd, POLLERR, POLLHUP, POLLIN, POLLNVAL, POLLOUT};
 
-use crate::native::traits::event::{EventLoopWaker, UiEvent};
-use crate::native::traits::input::KeyMod;
+use crate::native::windowing::event::{EventLoopWaker, UiEvent};
+use crate::native::windowing::input::KeyMod;
 
 use super::keycode::keycode_to_char;
 use super::WaylandBackend;
-use crate::native::shared::nonblocking_read::NonBlockingReadStatus;
-use crate::native::shared::nonblocking_write::NonBlockingWriteStatus;
+use crate::native::windowing::shared::nonblocking_read::NonBlockingReadStatus;
+use crate::native::windowing::shared::nonblocking_write::NonBlockingWriteStatus;
 
 impl WaylandBackend {
     /// 非阻塞事件分发。

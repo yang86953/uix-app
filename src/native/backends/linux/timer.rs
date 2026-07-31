@@ -6,8 +6,8 @@
 // 取代线程-per-timer 模式以降低线程开销。
 // ============================================================================
 
-use crate::native::traits::event::UiEvent;
-use crate::native::traits::system::ITimer;
+use crate::native::capabilities::system::ITimer;
+use crate::native::windowing::event::UiEvent;
 use crate::native::{Errc, Error, Result};
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Sender};

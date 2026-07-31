@@ -11,8 +11,8 @@ pub enum GraphicsBackend {
 }
 
 impl GraphicsBackend {
-    pub(crate) const fn into_native(self) -> crate::native::traits::present::GraphicsBackend {
-        use crate::native::traits::present::GraphicsBackend as NativeGraphicsBackend;
+    pub(crate) const fn into_native(self) -> crate::native::present::GraphicsBackend {
+        use crate::native::present::GraphicsBackend as NativeGraphicsBackend;
 
         match self {
             Self::Vulkan => NativeGraphicsBackend::Vulkan,

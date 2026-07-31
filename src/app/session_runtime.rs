@@ -24,7 +24,7 @@ use crate::core::WindowId;
 use crate::diagnostics::{Diagnostics, DiagnosticsConfig};
 #[cfg(feature = "test-harness")]
 use crate::draw::renderer::test_harness::GraphicsFaultSignal;
-use crate::native::traits::event::EventLoopWaker;
+use crate::native::windowing::event::EventLoopWaker;
 use crate::ui::Theme;
 use std::collections::VecDeque;
 

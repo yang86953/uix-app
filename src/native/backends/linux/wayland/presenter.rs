@@ -13,9 +13,9 @@ use wayland_client::protocol::{wl_buffer, wl_compositor, wl_shm, wl_surface};
 use wayland_client::Main;
 
 use crate::core::{Errc, Error, Result};
-use crate::native::shared::buffer_lease::BufferLease;
-use crate::native::traits::present::PresentDamage;
-use crate::native::traits::present::{validate_pixel_buffer, IPresenter};
+use crate::native::present::PresentDamage;
+use crate::native::present::{validate_pixel_buffer, IPresenter};
+use crate::native::windowing::shared::buffer_lease::BufferLease;
 
 use super::shm_buffer::ShmBuffer;
 

@@ -5,7 +5,7 @@ use std::ffi::c_void;
 use crate::core::error::{Errc, Error};
 use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::thread_bound::bind_to_current_thread;
-use crate::native::traits::present::{
+use crate::native::present::{
     GraphicsBackend, IGraphicsContext, NativeSurfaceHandle, PresentMode, RasterMode,
 };
 

@@ -2,7 +2,7 @@
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::native::traits::input::ControlSize;
+use crate::native::windowing::input::ControlSize;
 use crate::ui::core::paint_context::PaintContext;
 use crate::ui::state::State;
 use crate::ui::SnapshotFields;

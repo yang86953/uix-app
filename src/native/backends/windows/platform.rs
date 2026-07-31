@@ -34,9 +34,12 @@ use super::util::{to_wide, windows_diag};
 use super::window_ops::WindowsWindowOps;
 use crate::core::WindowId;
 use crate::diagnostics::{PendingFailureQueue, PendingFailureSource};
-use crate::native::shared::{OsEventSource, PlatformWindowCore, WindowState};
-use crate::native::traits::event::{EventLoopWaker, UiEvent};
-use crate::native::traits::*;
+use crate::native::capabilities::*;
+use crate::native::platform::*;
+use crate::native::present::*;
+use crate::native::windowing::event::{EventLoopWaker, UiEvent};
+use crate::native::windowing::shared::{OsEventSource, PlatformWindowCore, WindowState};
+use crate::native::windowing::*;
 use crate::native::{Errc, Error};
 // ════════════════════════════════════════════════════════════════════════════
 // WindowsPlatform
@@ -334,7 +337,7 @@ impl IWindowManager for WindowsPlatform {
                 Ok(p) => Box::new(p),
                 Err(e) => {
                     tracing::warn!("GdiPresenter failed ({}), using null", e.short_what());
-                    Box::new(crate::native::presenter::NullPresenter::new())
+                    Box::new(crate::native::presentation::presenter::NullPresenter::new())
                 }
             };
 

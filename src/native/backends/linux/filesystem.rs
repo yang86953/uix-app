@@ -2,8 +2,8 @@
 // platform/linux/filesystem.rs — Linux 特殊目录解析
 // ============================================================================
 
-use crate::native::shared::{FileSystemCore, SpecialDirProvider};
-use crate::native::traits::system::SpecialDir;
+use crate::native::capabilities::services::{FileSystemCore, SpecialDirProvider};
+use crate::native::capabilities::system::SpecialDir;
 use crate::native::{Errc, Error, Result};
 
 // ════════════════════════════════════════════════════════════════════════════

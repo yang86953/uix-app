@@ -6,7 +6,7 @@ use std::rc::Rc;
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
-use crate::native::traits::system::StatusLevel;
+use crate::native::capabilities::system::StatusLevel;
 use crate::ui::core::paint_context::PaintContext;
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;

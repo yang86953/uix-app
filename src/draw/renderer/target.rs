@@ -6,7 +6,7 @@ use crate::core::{Error, Point, Rect};
 use crate::draw::command::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::geometry::types::ImageHandle;
 use crate::draw::Canvas2D;
-use crate::native::traits::present::PresentTestResult;
+use crate::native::present::PresentTestResult;
 use std::time::Instant;
 
 /// 一次保留缓冲内的滚动像素移动。

@@ -9,9 +9,13 @@ use std::sync::Arc;
 
 use wayland_client::protocol::wl_data_source;
 
-use crate::native::shared::nonblocking_read::{NonBlockingReadAccumulator, NonBlockingReadStatus};
-use crate::native::shared::nonblocking_write::{NonBlockingWriteCursor, NonBlockingWriteProgress};
-use crate::native::traits::input::IClipboard;
+use crate::native::windowing::input::IClipboard;
+use crate::native::windowing::shared::nonblocking_read::{
+    NonBlockingReadAccumulator, NonBlockingReadStatus,
+};
+use crate::native::windowing::shared::nonblocking_write::{
+    NonBlockingWriteCursor, NonBlockingWriteProgress,
+};
 use crate::native::{Errc, Error, Result};
 
 use super::WaylandBackend;

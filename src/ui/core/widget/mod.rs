@@ -3,7 +3,7 @@ pub use crate::core::Point;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::geometry::spatial::{Ray3D, SpatialContext};
 use crate::draw::scene::PicturePolicy;
-pub use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
+pub use crate::native::windowing::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::accessibility_override::AccessibilityOverride;
 use crate::ui::component_snapshot::{
     AccessibilitySnapshot, ComponentConfigSnapshot, SnapshotFields,

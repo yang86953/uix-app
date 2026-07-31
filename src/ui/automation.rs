@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use crate::core::{ComponentId, Point, Rect, WindowId};
-use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
+use crate::native::windowing::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::component_snapshot::{AccessibilityRole, AccessibilityState};
 use crate::ui::core::widget::{EventResult, WidgetCore, WidgetTree};
 use crate::ui::event::SystemEvent;

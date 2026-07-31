@@ -15,8 +15,8 @@
 pub(crate) mod fonts;
 pub use fonts::*;
 
-use crate::native::traits::system::ISystemInfo;
-use crate::native::traits::system::{MemoryInfo, OsInfo};
+use crate::native::capabilities::system::ISystemInfo;
+use crate::native::capabilities::system::{MemoryInfo, OsInfo};
 use crate::native::{Errc, Error, Result};
 
 use std::fs;

@@ -7,7 +7,7 @@ use crate::core::{DamageRegion, Error, Point, Rect, Size};
 use crate::draw::command::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::ImageHandle;
 use crate::draw::{Canvas2D, PresentationMode};
-use crate::native::traits::present::PresentTestResult;
+use crate::native::present::PresentTestResult;
 
 /// Renderer backend preference ([架构 · 图形](docs/架构.md#图形-api与帧提交硬约束)).
 ///

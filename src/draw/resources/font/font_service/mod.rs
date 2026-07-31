@@ -261,7 +261,7 @@ impl FontService {
     pub fn load_default_system_font(
         &mut self,
         size: f32,
-        system_info: &dyn crate::native::traits::system::ISystemInfo,
+        system_info: &dyn crate::native::capabilities::system::ISystemInfo,
     ) {
         if self.user_family_set {
             let family = self.primary_family.clone();
@@ -379,7 +379,7 @@ impl FontService {
     fn load_cjk_fallback(
         &mut self,
         size: f32,
-        system_info: &dyn crate::native::traits::system::ISystemInfo,
+        system_info: &dyn crate::native::capabilities::system::ISystemInfo,
     ) {
         let cjk_test = ['中', '国', '文'];
         let primary_has_cjk = cjk_test.iter().all(|&ch| {
@@ -436,7 +436,7 @@ impl FontService {
         &mut self,
         family: &str,
         size: f32,
-        system_info: &dyn crate::native::traits::system::ISystemInfo,
+        system_info: &dyn crate::native::capabilities::system::ISystemInfo,
     ) -> Option<FontHandle> {
         if let Some(p) = system_info.probe_family_font_path(family) {
             if let Ok(data) = std::fs::read(&p) {

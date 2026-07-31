@@ -7,7 +7,7 @@ use super::ffi::*;
 
 use crate::native::backends::windows::util::to_utf8;
 use crate::native::backends::windows::util::to_wide;
-use crate::native::traits::input::IClipboard;
+use crate::native::windowing::input::IClipboard;
 use crate::native::{Errc, Error, Result};
 use std::ptr;
 

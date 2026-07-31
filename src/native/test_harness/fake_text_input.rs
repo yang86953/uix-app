@@ -1,7 +1,7 @@
 //! Fake 文字输入 — 记录 IME 激活状态变化。
 
 use crate::core::{Rect, Result, WindowId};
-use crate::native::traits::input::ITextInput;
+use crate::native::windowing::input::ITextInput;
 
 #[derive(Debug, Clone, Default)]
 pub struct FakeTextInputState {

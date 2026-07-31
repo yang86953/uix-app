@@ -14,7 +14,7 @@ use crate::draw::geometry::types::ImageHandle;
 use crate::draw::renderer::RenderSession;
 use crate::draw::renderer::{GraphicsFailure, RenderOutcome};
 use crate::draw::{Canvas2D, GraphicsCapabilities, RasterPipeline, RenderTarget, UpdateStrategy};
-use crate::native::traits::present::{
+use crate::native::present::{
     IGraphicsContext, PresentDamage, PresentFrame, PresentMode, PresentTestResult, RasterMode,
 };
 

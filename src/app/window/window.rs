@@ -16,8 +16,8 @@
 use std::cell::Cell;
 
 use crate::core::{Point, Result};
-use crate::native::traits::platform::Platform;
-use crate::native::traits::window::PlatformWindow;
+use crate::native::platform::Platform;
+use crate::native::windowing::window::PlatformWindow;
 /// Event-driven application window.
 ///
 /// 只负责窗口生命周期和平台句柄管理。
@@ -170,9 +170,9 @@ impl Window {
         while self.running {
             let saw_event = Cell::new(false);
             let close_requested = Cell::new(false);
-            let collect = |event: &crate::native::traits::event::UiEvent| {
+            let collect = |event: &crate::native::windowing::event::UiEvent| {
                 saw_event.set(true);
-                if event.type_ == crate::native::traits::event::UiEventType::WindowClose {
+                if event.type_ == crate::native::windowing::event::UiEventType::WindowClose {
                     close_requested.set(true);
                 }
                 true

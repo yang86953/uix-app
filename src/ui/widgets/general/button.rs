@@ -7,7 +7,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::geometry::path::{FillRule, Path, PathBuilder};
 use crate::draw::Color;
 use crate::impl_widget_component;
-use crate::native::traits::input::{ControlSize, KeyCode, MouseButton};
+use crate::native::windowing::input::{ControlSize, KeyCode, MouseButton};
 use crate::ui::animation::{Animation, Easing};
 use crate::ui::core::paint_context::PaintContext;
 use crate::ui::style::{apply_style, ColorValue, PaletteColor, Style, StyleSet, StyleState};
