@@ -17,6 +17,7 @@ pub use fonts::*;
 
 use crate::native::traits::system::ISystemInfo;
 use crate::native::traits::system::{MemoryInfo, OsInfo};
+use crate::native::{Errc, Error, Result};
 
 use std::fs;
 
@@ -40,34 +41,34 @@ impl Default for LinuxSystemInfo {
 }
 
 impl ISystemInfo for LinuxSystemInfo {
-    fn os_info(&self) -> OsInfo {
+    fn os_info(&self) -> Result<OsInfo> {
         probe_os_info()
     }
 
-    fn cpu_count(&self) -> u32 {
+    fn cpu_count(&self) -> Result<u32> {
         probe_cpu_count()
     }
 
-    fn memory_info(&self) -> MemoryInfo {
+    fn memory_info(&self) -> Result<MemoryInfo> {
         probe_memory_info()
     }
 
-    fn hostname(&self) -> String {
+    fn hostname(&self) -> Result<String> {
         probe_hostname()
     }
 
-    fn username(&self) -> String {
+    fn username(&self) -> Result<String> {
         probe_username()
     }
 
-    fn up_time(&self) -> u64 {
+    fn up_time(&self) -> Result<u64> {
         probe_uptime_ms()
     }
-    fn default_font_paths(&self) -> Vec<String> {
-        match probe_system_default_font() {
+    fn default_font_paths(&self) -> Result<Vec<String>> {
+        Ok(match probe_system_default_font() {
             Some(p) => vec![p],
             None => vec![],
-        }
+        })
     }
 
     fn probe_cjk_font_path(&self) -> Option<String> {
@@ -83,32 +84,22 @@ impl ISystemInfo for LinuxSystemInfo {
 // Internal helpers
 // ════════════════════════════════════════════════════════════════════════════
 
-fn probe_os_info() -> OsInfo {
+fn probe_os_info() -> Result<OsInfo> {
     // 安全替代：读取 /proc/sys/kernel/ 下的文本文件
-    let sysname = std::fs::read_to_string("/proc/sys/kernel/ostype")
-        .unwrap_or_default()
-        .trim()
-        .to_string();
-    let release = std::fs::read_to_string("/proc/sys/kernel/osrelease")
-        .unwrap_or_default()
-        .trim()
-        .to_string();
-    let version = std::fs::read_to_string("/proc/sys/kernel/version")
-        .unwrap_or_default()
-        .trim()
-        .to_string();
+    let sysname = read_proc_text("/proc/sys/kernel/ostype")?;
+    let release = read_proc_text("/proc/sys/kernel/osrelease")?;
+    let version = read_proc_text("/proc/sys/kernel/version")?;
     let machine = std::process::Command::new("uname")
         .arg("-m")
         .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-            } else {
-                None
-            }
-        })
-        .unwrap_or_default();
+        .map_err(|err| {
+            Error::new(
+                Errc::IoError,
+                format!("LinuxSystemInfo: uname -m failed: {err}"),
+            )
+        })?
+        .stdout;
+    let machine = String::from_utf8_lossy(&machine).trim().to_string();
 
     let os_name = if sysname == "Linux" {
         detect_distro().unwrap_or_else(|| "Linux".to_string())
@@ -118,12 +109,23 @@ fn probe_os_info() -> OsInfo {
 
     let is_64bit = machine == "x86_64" || machine == "aarch64";
 
-    OsInfo {
+    Ok(OsInfo {
         name: os_name,
         version: release,
         build: version,
         is_64bit,
-    }
+    })
+}
+
+fn read_proc_text(path: &str) -> Result<String> {
+    std::fs::read_to_string(path)
+        .map(|s| s.trim().to_string())
+        .map_err(|err| {
+            Error::new(
+                Errc::IoError,
+                format!("LinuxSystemInfo: cannot read {path}: {err}"),
+            )
+        })
 }
 
 fn detect_distro() -> Option<String> {
@@ -149,15 +151,20 @@ fn detect_distro() -> Option<String> {
     None
 }
 
-fn probe_cpu_count() -> u32 {
+fn probe_cpu_count() -> Result<u32> {
     // 安全替代：std::thread::available_parallelism()
     std::thread::available_parallelism()
         .map(|n| n.get() as u32)
-        .unwrap_or(1)
+        .map_err(|err| {
+            Error::new(
+                Errc::PlatformError,
+                format!("LinuxSystemInfo: available_parallelism failed: {err}"),
+            )
+        })
 }
 
-fn probe_memory_info() -> MemoryInfo {
-    let content = fs::read_to_string("/proc/meminfo").unwrap_or_default();
+fn probe_memory_info() -> Result<MemoryInfo> {
+    let content = read_proc_text("/proc/meminfo")?;
     let mut total = 0u64;
     let mut available = 0u64;
 
@@ -169,12 +176,19 @@ fn probe_memory_info() -> MemoryInfo {
         }
     }
 
-    MemoryInfo {
+    if total == 0 {
+        return Err(Error::new(
+            Errc::PlatformError,
+            "LinuxSystemInfo: /proc/meminfo missing MemTotal",
+        ));
+    }
+
+    Ok(MemoryInfo {
         total_bytes: total * 1024, // /proc/meminfo reports in kB
         available_bytes: available * 1024,
         process_working_set: 0,
         process_private_bytes: 0,
-    }
+    })
 }
 
 fn parse_meminfo_line(line: &str, key: &str) -> Option<u64> {
@@ -189,44 +203,51 @@ fn parse_meminfo_line(line: &str, key: &str) -> Option<u64> {
     None
 }
 
-fn probe_hostname() -> String {
+fn probe_hostname() -> Result<String> {
     // 安全替代：读取 /proc/sys/kernel/hostname
-    std::fs::read_to_string("/proc/sys/kernel/hostname")
-        .map(|s| s.trim().to_string())
-        .unwrap_or_default()
+    read_proc_text("/proc/sys/kernel/hostname")
 }
 
-fn probe_username() -> String {
+fn probe_username() -> Result<String> {
     // Try $USER first, then $LOGNAME
     if let Ok(user) = std::env::var("USER") {
-        return user;
+        return Ok(user);
     }
     if let Ok(user) = std::env::var("LOGNAME") {
-        return user;
+        return Ok(user);
     }
     // 安全替代：读 /etc/passwd 取当前 uid 对应的用户名
     let uid = std::process::Command::new("id")
         .arg("-un")
         .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-            } else {
-                None
-            }
-        })
-        .unwrap_or_default();
-    uid
+        .map_err(|err| {
+            Error::new(
+                Errc::IoError,
+                format!("LinuxSystemInfo: id -un failed: {err}"),
+            )
+        })?
+        .stdout;
+    let uid = String::from_utf8_lossy(&uid).trim().to_string();
+    if uid.is_empty() {
+        Err(Error::new(
+            Errc::NotFound,
+            "LinuxSystemInfo: cannot determine username",
+        ))
+    } else {
+        Ok(uid)
+    }
 }
 
-fn probe_uptime_ms() -> u64 {
+fn probe_uptime_ms() -> Result<u64> {
     // Read /proc/uptime: first field is uptime in seconds (with decimals)
-    let content = fs::read_to_string("/proc/uptime").unwrap_or_default();
+    let content = read_proc_text("/proc/uptime")?;
     if let Some(secs_str) = content.split_whitespace().next() {
         if let Ok(secs) = secs_str.parse::<f64>() {
-            return (secs * 1000.0) as u64;
+            return Ok((secs * 1000.0) as u64);
         }
     }
-    0
+    Err(Error::new(
+        Errc::FormatError,
+        "LinuxSystemInfo: /proc/uptime has unexpected format",
+    ))
 }

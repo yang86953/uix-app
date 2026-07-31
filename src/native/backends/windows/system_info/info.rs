@@ -9,6 +9,7 @@
 use crate::native::backends::windows::util::to_utf8;
 use crate::native::traits::system::ISystemInfo;
 use crate::native::traits::system::{MemoryInfo, OsInfo};
+use crate::native::{Errc, Error, Result};
 
 // ════════════════════════════════════════════════════════════════════════════
 // WindowsSystemInfo
@@ -30,32 +31,32 @@ impl Default for WindowsSystemInfo {
 }
 
 impl ISystemInfo for WindowsSystemInfo {
-    fn os_info(&self) -> OsInfo {
+    fn os_info(&self) -> Result<OsInfo> {
         get_os_info()
     }
 
-    fn cpu_count(&self) -> u32 {
+    fn cpu_count(&self) -> Result<u32> {
         get_cpu_count()
     }
 
-    fn memory_info(&self) -> MemoryInfo {
+    fn memory_info(&self) -> Result<MemoryInfo> {
         get_memory_info()
     }
 
-    fn hostname(&self) -> String {
+    fn hostname(&self) -> Result<String> {
         get_hostname()
     }
 
-    fn username(&self) -> String {
+    fn username(&self) -> Result<String> {
         get_username()
     }
 
-    fn up_time(&self) -> u64 {
+    fn up_time(&self) -> Result<u64> {
         get_uptime_ms()
     }
 
-    fn default_font_paths(&self) -> Vec<String> {
-        crate::native::backends::windows::util::system_default_font_paths()
+    fn default_font_paths(&self) -> Result<Vec<String>> {
+        Ok(crate::native::backends::windows::util::system_default_font_paths())
     }
 
     fn probe_cjk_font_path(&self) -> Option<String> {
@@ -74,7 +75,7 @@ impl ISystemInfo for WindowsSystemInfo {
         crate::native::backends::windows::util::scan_random_font_path()
     }
 
-    fn process_memory(&self) -> (usize, usize) {
+    fn process_memory(&self) -> Result<(usize, usize)> {
         get_process_memory()
     }
 }
@@ -83,7 +84,7 @@ impl ISystemInfo for WindowsSystemInfo {
 // 内部实现
 // ════════════════════════════════════════════════════════════════════════════
 
-fn get_os_info() -> OsInfo {
+fn get_os_info() -> Result<OsInfo> {
     // Use RtlGetVersion to get accurate OS version (not affected by manifest compat)
     unsafe {
         let mut ver = RTL_OSVERSIONINFOW {
@@ -96,73 +97,72 @@ fn get_os_info() -> OsInfo {
         };
 
         let status = RtlGetVersion(&mut ver);
-        if status == 0 {
-            let mut is_64bit = false;
-            let mut system_info = SYSTEM_INFO::default();
-            GetNativeSystemInfo(&mut system_info);
-            match system_info.wProcessorArchitecture {
-                0 => { /* x86 */ }
-                9 => {
-                    is_64bit = true;
-                } // AMD64
-                12 => {
-                    is_64bit = true;
-                } // ARM64
-                6 => {
-                    /* IA64 */
-                    is_64bit = true;
-                }
-                _ => {}
-            }
-
-            let version_str = format!("{}.{}", ver.dwMajorVersion, ver.dwMinorVersion);
-            let build_str = format!("{}", ver.dwBuildNumber);
-
-            // Determine OS name
-            let name = match (ver.dwMajorVersion, ver.dwMinorVersion) {
-                (10, 0) => {
-                    if ver.dwBuildNumber >= 22000 {
-                        "Windows 11"
-                    } else {
-                        "Windows 10"
-                    }
-                }
-                (6, 3) => "Windows 8.1",
-                (6, 2) => "Windows 8",
-                (6, 1) => "Windows 7",
-                (6, 0) => "Windows Vista",
-                (5, 2) => "Windows Server 2003 / XP x64",
-                (5, 1) => "Windows XP",
-                (5, 0) => "Windows 2000",
-                _ => "Windows (Unknown)",
-            };
-
-            OsInfo {
-                name: name.to_string(),
-                version: version_str,
-                build: build_str,
-                is_64bit,
-            }
-        } else {
-            OsInfo {
-                name: "Windows (Unknown)".to_string(),
-                version: String::new(),
-                build: String::new(),
-                is_64bit: false,
-            }
+        if status != 0 {
+            return Err(system_info_error("RtlGetVersion"));
         }
+        let mut is_64bit = false;
+        let mut system_info = SYSTEM_INFO::default();
+        GetNativeSystemInfo(&mut system_info);
+        match system_info.wProcessorArchitecture {
+            0 => { /* x86 */ }
+            9 => {
+                is_64bit = true;
+            } // AMD64
+            12 => {
+                is_64bit = true;
+            } // ARM64
+            6 => {
+                /* IA64 */
+                is_64bit = true;
+            }
+            _ => {}
+        }
+
+        let version_str = format!("{}.{}", ver.dwMajorVersion, ver.dwMinorVersion);
+        let build_str = format!("{}", ver.dwBuildNumber);
+
+        // Determine OS name
+        let name = match (ver.dwMajorVersion, ver.dwMinorVersion) {
+            (10, 0) => {
+                if ver.dwBuildNumber >= 22000 {
+                    "Windows 11"
+                } else {
+                    "Windows 10"
+                }
+            }
+            (6, 3) => "Windows 8.1",
+            (6, 2) => "Windows 8",
+            (6, 1) => "Windows 7",
+            (6, 0) => "Windows Vista",
+            (5, 2) => "Windows Server 2003 / XP x64",
+            (5, 1) => "Windows XP",
+            (5, 0) => "Windows 2000",
+            _ => "Windows (Unknown)",
+        };
+
+        Ok(OsInfo {
+            name: name.to_string(),
+            version: version_str,
+            build: build_str,
+            is_64bit,
+        })
     }
 }
 
-fn get_cpu_count() -> u32 {
+fn get_cpu_count() -> Result<u32> {
     unsafe {
         let mut system_info = SYSTEM_INFO::default();
         GetNativeSystemInfo(&mut system_info);
-        system_info.dwNumberOfProcessors
+        if system_info.dwNumberOfProcessors == 0 {
+            return Err(system_info_error(
+                "GetNativeSystemInfo returned zero processors",
+            ));
+        }
+        Ok(system_info.dwNumberOfProcessors)
     }
 }
 
-fn get_memory_info() -> MemoryInfo {
+fn get_memory_info() -> Result<MemoryInfo> {
     unsafe {
         let mut mem = MEMORYSTATUSEX {
             dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
@@ -176,52 +176,54 @@ fn get_memory_info() -> MemoryInfo {
             ullAvailExtendedVirtual: 0,
         };
         let ok = GlobalMemoryStatusEx(&mut mem);
-        if ok != 0 {
-            MemoryInfo {
-                total_bytes: mem.ullTotalPhys,
-                available_bytes: mem.ullAvailPhys,
-                process_working_set: 0,
-                process_private_bytes: 0,
-            }
-        } else {
-            MemoryInfo {
-                total_bytes: 0,
-                available_bytes: 0,
-                process_working_set: 0,
-                process_private_bytes: 0,
-            }
+        if ok == 0 || mem.ullTotalPhys == 0 {
+            return Err(system_info_error("GlobalMemoryStatusEx"));
         }
+        Ok(MemoryInfo {
+            total_bytes: mem.ullTotalPhys,
+            available_bytes: mem.ullAvailPhys,
+            process_working_set: 0,
+            process_private_bytes: 0,
+        })
     }
 }
 
-fn get_hostname() -> String {
+fn get_hostname() -> Result<String> {
     unsafe {
         let mut buf = [0u16; MAX_COMPUTERNAME_LENGTH + 1];
         let mut len = buf.len() as u32;
         let ok = GetComputerNameW(buf.as_mut_ptr(), &mut len);
         if ok != 0 {
-            to_utf8(&buf[..len as usize])
+            Ok(to_utf8(&buf[..len as usize]))
         } else {
-            String::new()
+            Err(system_info_error("GetComputerNameW"))
         }
     }
 }
 
-fn get_username() -> String {
+fn get_username() -> Result<String> {
     unsafe {
         let mut buf = [0u16; UNLEN + 1];
         let mut len = buf.len() as u32;
         let ok = GetUserNameW(buf.as_mut_ptr(), &mut len);
         if ok != 0 {
-            to_utf8(&buf[..len as usize])
+            Ok(to_utf8(&buf[..len as usize]))
         } else {
-            String::new()
+            Err(system_info_error("GetUserNameW"))
         }
     }
 }
 
-fn get_uptime_ms() -> u64 {
-    unsafe { GetTickCount64() }
+fn get_uptime_ms() -> Result<u64> {
+    // SAFETY: GetTickCount64 无参数且不失败。
+    Ok(unsafe { GetTickCount64() })
+}
+
+fn system_info_error(operation: &str) -> Error {
+    Error::new(
+        Errc::PlatformError,
+        format!("WindowsSystemInfo: {operation} failed"),
+    )
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -322,7 +324,7 @@ extern "system" {
 }
 
 /// 获取当前进程的内存使用统计（工作集字节, 私有字节）。
-pub fn get_process_memory() -> (usize, usize) {
+pub fn get_process_memory() -> Result<(usize, usize)> {
     unsafe {
         let mut pmc = std::mem::MaybeUninit::<PROCESS_MEMORY_COUNTERS>::zeroed();
         let h_process = GetCurrentProcess();
@@ -333,9 +335,9 @@ pub fn get_process_memory() -> (usize, usize) {
         );
         if ret != 0 {
             let pmc = pmc.assume_init();
-            (pmc.WorkingSetSize, pmc.PrivateUsage)
+            Ok((pmc.WorkingSetSize, pmc.PrivateUsage))
         } else {
-            (0, 0)
+            Err(system_info_error("GetProcessMemoryInfo"))
         }
     }
 }

@@ -140,14 +140,16 @@ pub(crate) fn create_gpu_context_with_backend(
 pub fn available_memory_bytes() -> u64 {
     crate::native::backends::linux::system_info::LinuxSystemInfo::new()
         .memory_info()
-        .available_bytes
+        .map(|info| info.available_bytes)
+        .unwrap_or(0)
 }
 
 #[cfg(windows)]
 pub fn available_memory_bytes() -> u64 {
     crate::native::backends::windows::system_info::WindowsSystemInfo::new()
         .memory_info()
-        .available_bytes
+        .map(|info| info.available_bytes)
+        .unwrap_or(0)
 }
 
 #[cfg(target_os = "macos")]
