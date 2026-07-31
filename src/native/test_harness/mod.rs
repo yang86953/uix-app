@@ -59,11 +59,15 @@ use std::time::Duration;
 
 use crate::core::Error;
 use crate::diagnostics::{PendingFailureQueue, PendingFailureSource};
-use crate::native::shared::OsEventSource;
-use crate::native::traits::event::EventBus;
-use crate::native::traits::event::EventLoopWaker;
-use crate::native::traits::event::UiEvent;
-use crate::native::traits::*;
+use crate::native::capabilities::*;
+use crate::native::platform::*;
+use crate::native::present::*;
+use crate::native::presentation::*;
+use crate::native::windowing::event::EventBus;
+use crate::native::windowing::event::EventLoopWaker;
+use crate::native::windowing::event::UiEvent;
+use crate::native::windowing::shared::OsEventSource;
+use crate::native::windowing::*;
 
 // ════════════════════════════════════════════════════════════════════════════
 // FakePlatform — 聚合所有 Fake 子系统

@@ -9,7 +9,7 @@ use std::fs::File;
 use wayland_client::protocol::{wl_buffer, wl_shm_pool};
 use wayland_client::Main;
 
-use crate::native::shared::buffer_lease::BufferLease;
+use crate::native::windowing::shared::buffer_lease::BufferLease;
 
 /// SHM 缓冲区：SHM 池 + wl_buffer + 后备临时文件。
 pub(crate) struct ShmBuffer {

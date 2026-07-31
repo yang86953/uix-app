@@ -14,7 +14,7 @@ use super::platform::WindowsPlatform;
 use super::util::{to_utf8, to_wide, windows_diag};
 use super::wnd_proc::wnd_proc;
 use crate::core::Point;
-use crate::native::traits::*;
+use crate::native::windowing::*;
 use crate::native::{Errc, Error};
 
 const ERROR_CLASS_ALREADY_EXISTS: u32 = 1410;

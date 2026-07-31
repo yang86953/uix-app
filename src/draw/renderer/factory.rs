@@ -2,7 +2,7 @@
 
 use crate::core::{Error, Result};
 use crate::draw::renderer::Renderer;
-use crate::native::traits::present::IGraphicsContext;
+use crate::native::present::IGraphicsContext;
 
 /// Creates the unique renderer for the context's orthogonal raster/present recipe.
 ///

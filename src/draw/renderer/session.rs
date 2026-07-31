@@ -7,7 +7,7 @@ use crate::draw::backend::{
 };
 use crate::draw::renderer::RenderOutcome;
 use crate::draw::{Canvas2D, GraphicsCapabilities, UpdateStrategy};
-use crate::native::traits::present::IGraphicsContext;
+use crate::native::present::IGraphicsContext;
 use std::thread::ThreadId;
 
 /// 绘图层会话：持有可切换后端与共享帧逻辑。

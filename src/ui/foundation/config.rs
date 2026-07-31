@@ -2,7 +2,7 @@ use std::any::TypeId;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::native::traits::input::ControlSize;
+use crate::native::windowing::input::ControlSize;
 use crate::ui::style::StyleSet;
 use crate::ui::theme::{Theme, TokenPatch};
 use crate::ui::traits::WidgetComponent;

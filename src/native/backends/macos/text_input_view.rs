@@ -3,12 +3,14 @@ use std::ffi::{c_char, c_void, CString};
 use std::sync::{Arc, Mutex, MutexGuard, Once};
 
 use crate::core::{Errc, Error, WindowId};
-use crate::native::shared::ime_events::{
+use crate::native::windowing::event::UiEvent;
+use crate::native::windowing::shared::ime_events::{
     on_committed_text_for_window, on_marked_text_for_window, on_unmark_text_for_window,
     ImeCompositionState,
 };
-use crate::native::shared::ime_owner::{NativeImeOwner, NativeImeSession, NativeImeTarget};
-use crate::native::traits::event::UiEvent;
+use crate::native::windowing::shared::ime_owner::{
+    NativeImeOwner, NativeImeSession, NativeImeTarget,
+};
 
 use super::objc_runtime;
 
@@ -71,7 +73,7 @@ impl Drop for MacosTextInput {
     }
 }
 
-impl crate::native::traits::input::ITextInput for MacosTextInput {
+impl crate::native::windowing::input::ITextInput for MacosTextInput {
     fn set_target_window(
         &mut self,
         window_id: WindowId,

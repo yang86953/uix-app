@@ -4,7 +4,7 @@ use std::process::{Command, Stdio};
 
 use crate::core::{Errc, Error, Result};
 use crate::native::backends::macos::platform::MacosPlatform;
-use crate::native::traits::platform::Platform as NativePlatform;
+use crate::native::platform::Platform as NativePlatform;
 use crate::platform::hardware::{DisplayInfo, MemoryInfo, OsInfo};
 use crate::platform::services::{SpecialDir, SystemNotification};
 

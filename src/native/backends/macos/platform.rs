@@ -7,21 +7,21 @@ use std::sync::{Arc, Mutex, Once};
 use std::time::Duration;
 
 use crate::core::{Errc, Error, Rect, Result, WindowId};
-use crate::native::shared::{
-    FileSystemCore, OsEventSource, PlatformWindowCore, SpecialDirProvider, WindowOps, WindowState,
-};
-use crate::native::traits::display::{DisplayInfo, IDisplay};
-use crate::native::traits::event::{EventBus, EventLoopWaker, FrameRequestToken, UiEvent};
-use crate::native::traits::input::{
-    CursorType, IClipboard, ICursor, IKeyboard, ITextInput, KeyCode, KeyMod, MouseButton,
-};
-use crate::native::traits::platform::Platform;
-use crate::native::traits::present::{validate_pixel_buffer, IPresenter, PresentDamage};
-use crate::native::traits::system::{
+use crate::native::capabilities::display::{DisplayInfo, IDisplay};
+use crate::native::capabilities::system::{
     ConsoleColor, IConsole, IFileDialog, IFileSystem, INotification, ISystemInfo, ITimer,
     MemoryInfo, OsInfo, SpecialDir, TerminalCapabilities,
 };
-use crate::native::traits::window::{
+use crate::native::platform::Platform;
+use crate::native::present::{validate_pixel_buffer, IPresenter, PresentDamage};
+use crate::native::windowing::event::{EventBus, EventLoopWaker, FrameRequestToken, UiEvent};
+use crate::native::windowing::input::{
+    CursorType, IClipboard, ICursor, IKeyboard, ITextInput, KeyCode, KeyMod, MouseButton,
+};
+use crate::native::windowing::shared::{
+    FileSystemCore, OsEventSource, PlatformWindowCore, SpecialDirProvider, WindowOps, WindowState,
+};
+use crate::native::windowing::window::{
     IWindowManager, NativeFrameRequest, PlatformWindow, WindowOcclusionState,
 };
 
@@ -109,8 +109,8 @@ impl OsEventSource for MacosPlatform {
         if event.as_ref().is_some_and(|event| {
             matches!(
                 event.type_,
-                crate::native::traits::event::UiEventType::WindowBlur
-                    | crate::native::traits::event::UiEventType::WindowClose
+                crate::native::windowing::event::UiEventType::WindowBlur
+                    | crate::native::windowing::event::UiEventType::WindowClose
             )
         }) {
             self.keyboard.keys_down.clear();
@@ -138,15 +138,15 @@ impl MacosPlatform {
         let suppress_keydown_text = self.text_input.suppress_keydown_text(event.window_id);
         for ui_event in event.into_ui_events(suppress_keydown_text) {
             match ui_event.type_ {
-                crate::native::traits::event::UiEventType::KeyDown => {
-                    if let crate::native::traits::event::UiEventPayload::Key(data) =
+                crate::native::windowing::event::UiEventType::KeyDown => {
+                    if let crate::native::windowing::event::UiEventPayload::Key(data) =
                         &ui_event.payload
                     {
                         self.keyboard.keys_down.insert(data.key);
                     }
                 }
-                crate::native::traits::event::UiEventType::KeyUp => {
-                    if let crate::native::traits::event::UiEventPayload::Key(data) =
+                crate::native::windowing::event::UiEventType::KeyUp => {
+                    if let crate::native::windowing::event::UiEventPayload::Key(data) =
                         &ui_event.payload
                     {
                         self.keyboard.keys_down.remove(&data.key);
@@ -228,7 +228,7 @@ impl Platform for MacosPlatform {
         self
     }
 
-    fn event_loop(&mut self) -> &mut dyn crate::native::traits::event::IEventLoop {
+    fn event_loop(&mut self) -> &mut dyn crate::native::windowing::event::IEventLoop {
         self
     }
 

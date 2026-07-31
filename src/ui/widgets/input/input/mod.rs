@@ -10,7 +10,7 @@ use std::cell::{Cell, RefCell};
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::resources::font::text_backend::estimate_text_metrics;
-use crate::native::traits::input::ControlSize;
+use crate::native::windowing::input::ControlSize;
 use crate::ui::clipboard;
 use crate::ui::core::paint_context::PaintContext;
 use crate::ui::state::State;

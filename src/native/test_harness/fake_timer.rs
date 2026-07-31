@@ -3,7 +3,7 @@
 //! 主动推进时间轴，触发到期的定时器回调。
 //! 支持单次和重复定时器，追踪所有 set/clear 操作。
 
-use crate::native::traits::system::ITimer;
+use crate::native::capabilities::system::ITimer;
 use crate::native::Result;
 use std::time::Duration;
 

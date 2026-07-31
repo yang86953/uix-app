@@ -3,7 +3,7 @@
 //! 平台剪贴板由事件循环按词法作用域托管；作用域结束后立即恢复先前服务，
 //! 不在公开安全 API 中暴露或长期保存可伪造、可悬垂的 trait-object 指针。
 
-use crate::native::traits::input::IClipboard;
+use crate::native::windowing::input::IClipboard;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::ptr::NonNull;

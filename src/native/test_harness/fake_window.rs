@@ -3,12 +3,12 @@
 use crate::core::error::Result;
 use crate::core::geometry::Point;
 use crate::core::WindowId;
-use crate::native::shared::window::validate_window_extent_constraints;
+use crate::native::present::{IGraphicsContext, IPresenter};
 use crate::native::test_harness::fake_graphics_context::FakeGraphicsContext;
 use crate::native::test_harness::fake_presenter::FakePresenter;
-use crate::native::traits::event::FrameRequestToken;
-use crate::native::traits::present::{IGraphicsContext, IPresenter};
-use crate::native::traits::window::{
+use crate::native::windowing::event::FrameRequestToken;
+use crate::native::windowing::shared::window::validate_window_extent_constraints;
+use crate::native::windowing::window::{
     INativeHandle, IWindowManager, IWindowProperties, NativeFrameRequest, PlatformWindow,
     WindowOcclusionState,
 };

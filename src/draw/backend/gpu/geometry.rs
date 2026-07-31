@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::core::{Point, Rect};
 use crate::draw::geometry::stroker::StrokeOptions;
 use crate::draw::geometry::types::{Radius, Transform};
-use crate::native::traits::present::GpuSolidMesh;
+use crate::native::present::GpuSolidMesh;
 
 #[derive(Clone, Copy)]
 pub(super) struct IntegerFrame {

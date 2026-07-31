@@ -799,9 +799,13 @@ mod tests {
     use super::*;
     use crate::core::Errc;
     use crate::diagnostics::{Diagnostics, DiagnosticsConfig, RecoveryAction};
-    use crate::native::traits::event::EventBus;
-    use crate::native::traits::platform::Platform;
-    use crate::native::traits::*;
+    use crate::native::capabilities::*;
+    use crate::native::platform::Platform;
+    use crate::native::platform::*;
+    use crate::native::present::*;
+    use crate::native::presentation::*;
+    use crate::native::windowing::event::EventBus;
+    use crate::native::windowing::*;
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;

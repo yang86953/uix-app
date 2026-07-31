@@ -5,8 +5,8 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex, Once};
 
 use crate::core::{Errc, Error, WindowId};
-use crate::native::shared::{push_window_close, push_window_resize, WindowState};
-use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
+use crate::native::windowing::event::{UiEvent, UiEventPayload, UiEventType};
+use crate::native::windowing::shared::{push_window_close, push_window_resize, WindowState};
 
 use super::objc_runtime;
 

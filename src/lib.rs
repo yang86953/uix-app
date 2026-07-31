@@ -31,18 +31,31 @@
 //! ```
 //!
 //! ```compile_fail
-//! // 图形 context / 厂商对象不可达。
-//! use uix::native::graphics::wgpu_backend::WgpuContext;
+//! // 图形 context / 厂商对象不可达（SMC-02 后位于 presentation Module）。
+//! use uix::native::presentation::graphics::wgpu_backend::WgpuContext;
 //! ```
 //!
 //! ```compile_fail
-//! // 平台共享事件源实现不可达。
-//! use uix::native::shared::event_loop::OsEventSource;
+//! // 平台共享事件源实现不可达（SMC-02 后位于 windowing Module）。
+//! use uix::native::windowing::shared::event_loop::OsEventSource;
 //! ```
 //!
 //! ```compile_fail
-//! // native trait SPI 不可达。
-//! use uix::native::traits::window::IWindowManager;
+//! // platform 私有 Module 边界不可达：capabilities / windowing / presentation / agent_transport。
+//! use uix::native::capabilities::system::ISystemInfo;
+//! ```
+//!
+//! ```compile_fail
+//! use uix::native::windowing::window::IWindowManager;
+//! ```
+//!
+//! ```compile_fail
+//! use uix::native::presentation::graphics::IGraphicsContext;
+//! ```
+//!
+//! ```compile_fail
+//! // agent-transport Module 不可达（feature 启用与否都不允许外部引用）。
+//! use uix::native::agent_transport::AgentListener;
 //! ```
 //!
 //! ```compile_fail

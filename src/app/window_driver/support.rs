@@ -178,11 +178,11 @@ fn engine_logical_extent(engine: &mut dyn RenderTarget) -> Option<(f32, f32)> {
 
 /// 以 HWND 实际客户区为准；properties 在样式/DPI 变更窗口期可能滞后。
 pub(crate) fn native_client_logical_extent(platform_window: &dyn PlatformWindow) -> (i32, i32) {
-    crate::native::graphics::platform::native_client_logical_extent(platform_window)
+    crate::native::presentation::graphics::platform::native_client_logical_extent(platform_window)
 }
 
 pub(crate) fn native_window_dpi(platform_window: &dyn PlatformWindow) -> u32 {
-    crate::native::graphics::platform::native_window_dpi(platform_window)
+    crate::native::presentation::graphics::platform::native_window_dpi(platform_window)
 }
 
 pub(crate) fn ensure_surface_matches_window(

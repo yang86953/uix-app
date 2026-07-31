@@ -8,8 +8,8 @@
 
 use crate::core::error::Errc;
 use crate::core::error::{Error, Result};
-use crate::native::traits::system::IConsole;
-use crate::native::traits::system::{ConsoleColor, TerminalCapabilities};
+use crate::native::capabilities::system::IConsole;
+use crate::native::capabilities::system::{ConsoleColor, TerminalCapabilities};
 use std::ptr;
 
 use crate::native::backends::windows::util::to_wide;

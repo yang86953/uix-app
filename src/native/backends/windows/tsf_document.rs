@@ -16,8 +16,8 @@ use windows::Win32::UI::TextServices::{
 
 use crate::core::{Errc, Error, WindowId};
 use crate::diagnostics::PendingFailureSource;
-use crate::native::shared::ime_events::ImeCompositionState;
-use crate::native::traits::event::UiEvent;
+use crate::native::windowing::event::UiEvent;
+use crate::native::windowing::shared::ime_events::ImeCompositionState;
 
 #[derive(Clone)]
 pub(crate) struct TsfEventSink {
@@ -292,7 +292,7 @@ mod tests {
     use super::TsfEventSink;
     use crate::core::{Errc, WindowId};
     use crate::diagnostics::PendingFailureQueue;
-    use crate::native::traits::event::UiEvent;
+    use crate::native::windowing::event::UiEvent;
     use std::collections::VecDeque;
     use std::sync::{Arc, Mutex};
     use windows::Win32::Foundation::HWND;

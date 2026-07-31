@@ -1,6 +1,6 @@
 //! Fake 文件对话框 — 预设返回值，记录调用参数。
 
-use crate::native::traits::system::IFileDialog;
+use crate::native::capabilities::system::IFileDialog;
 use crate::native::Result;
 
 #[derive(Debug, Clone, Default)]

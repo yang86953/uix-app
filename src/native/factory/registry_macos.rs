@@ -2,19 +2,19 @@
 
 use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::registry::{BackendStatus, GraphicsBackendEntry};
-use crate::native::traits::present::{GraphicsBackend, PresentMode, RasterMode};
+use crate::native::present::{GraphicsBackend, PresentMode, RasterMode};
 
 #[cfg(any(not(feature = "metal"), not(feature = "vulkan")))]
 use crate::core::{Errc, Error};
 #[cfg(any(not(feature = "metal"), not(feature = "vulkan")))]
-use crate::native::traits::present::IGraphicsContext;
+use crate::native::present::IGraphicsContext;
 #[cfg(any(not(feature = "metal"), not(feature = "vulkan")))]
 use std::ffi::c_void;
 
 #[cfg(feature = "metal")]
-use crate::native::graphics::wgpu_backend::create_metal;
+use crate::native::presentation::graphics::wgpu_backend::create_metal;
 #[cfg(feature = "vulkan")]
-use crate::native::graphics::wgpu_backend::create_vulkan;
+use crate::native::presentation::graphics::wgpu_backend::create_vulkan;
 
 #[cfg(not(feature = "metal"))]
 fn create_metal(

@@ -1,7 +1,7 @@
 //! Fake 图形上下文 — 空操作实现，记录调用。
 
 use crate::core::error::Result;
-use crate::native::traits::present::{IGraphicsContext, PresentDamage};
+use crate::native::present::{IGraphicsContext, PresentDamage};
 use std::cell::Cell;
 
 #[derive(Debug, Clone)]
@@ -55,16 +55,16 @@ impl Default for FakeGraphicsContext {
 }
 
 impl IGraphicsContext for FakeGraphicsContext {
-    fn caps(&self) -> crate::native::traits::present::GraphicsContextCaps {
-        crate::native::traits::present::GraphicsContextCaps::gpu_native_swapchain(
-            crate::native::traits::present::GraphicsBackend::OpenGlEs,
+    fn caps(&self) -> crate::native::present::GraphicsContextCaps {
+        crate::native::present::GraphicsContextCaps::gpu_native_swapchain(
+            crate::native::present::GraphicsBackend::OpenGlEs,
             crate::core::PresentCoherency::FullOnly,
             1.0,
         )
     }
 
-    fn graphics_backend(&self) -> crate::native::traits::present::GraphicsBackend {
-        crate::native::traits::present::GraphicsBackend::OpenGlEs
+    fn graphics_backend(&self) -> crate::native::present::GraphicsBackend {
+        crate::native::present::GraphicsBackend::OpenGlEs
     }
 
     fn initialize(&mut self, _native_window: *mut std::ffi::c_void, w: i32, h: i32) -> Result<()> {

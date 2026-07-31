@@ -24,11 +24,11 @@ pub(crate) mod window_ops;
 // ── 依赖 ────────────────────────────────────────────────────────
 use self::shm_buffer::ShmBuffer;
 use crate::core::{Point, WindowId};
-use crate::native::shared::ime_events::ImeCompositionState;
-use crate::native::shared::input_serial::InputSerial;
-use crate::native::shared::window_target::SurfaceWindowTargets;
-use crate::native::traits::event::*;
-use crate::native::traits::input::{KeyCode, KeyMod};
+use crate::native::windowing::event::*;
+use crate::native::windowing::input::{KeyCode, KeyMod};
+use crate::native::windowing::shared::ime_events::ImeCompositionState;
+use crate::native::windowing::shared::input_serial::InputSerial;
+use crate::native::windowing::shared::window_target::SurfaceWindowTargets;
 use std::collections::{HashSet, VecDeque};
 use std::os::unix::io::RawFd;
 

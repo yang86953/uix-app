@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use crate::draw::geometry::spatial::PhysicalUnit;
 use crate::draw::Color;
-use crate::native::traits::input::{ControlSize, ScrollDirection};
-use crate::native::traits::system::StatusLevel;
+use crate::native::capabilities::system::StatusLevel;
+use crate::native::windowing::input::{ControlSize, ScrollDirection};
 use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
 use crate::ui::style::{Style, StyleSet};
 use crate::ui::widgets::*;

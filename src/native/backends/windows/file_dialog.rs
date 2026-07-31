@@ -7,7 +7,7 @@
 #![allow(nonstandard_style)]
 
 use crate::native::backends::windows::util::{to_utf8, to_wide};
-use crate::native::traits::system::IFileDialog;
+use crate::native::capabilities::system::IFileDialog;
 use crate::native::{Errc, Error, Result};
 use std::ptr;
 

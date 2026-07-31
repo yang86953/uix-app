@@ -22,12 +22,14 @@ use wayland_protocols::xdg_shell::client::{xdg_surface, xdg_toplevel, xdg_wm_bas
 
 use crate::core::error::{Errc, Error, Result};
 use crate::core::WindowId;
-use crate::native::graphics::platform::linux::WaylandSurfaceHandle;
-use crate::native::shared::window_mode::{NativeMaximizeTransition, NativeWindowModeState};
-use crate::native::shared::window_target::SurfaceWindowTargets;
-use crate::native::shared::{unimpl, WindowOps, WindowState};
-use crate::native::traits::event::{FrameRequestToken, UiEvent};
-use crate::native::traits::window::{NativeFrameRequest, NativeFrameRequestPhase};
+use crate::native::presentation::graphics::platform::linux::WaylandSurfaceHandle;
+use crate::native::windowing::event::{FrameRequestToken, UiEvent};
+use crate::native::windowing::shared::window_mode::{
+    NativeMaximizeTransition, NativeWindowModeState,
+};
+use crate::native::windowing::shared::window_target::SurfaceWindowTargets;
+use crate::native::windowing::shared::{unimpl, WindowOps, WindowState};
+use crate::native::windowing::window::{NativeFrameRequest, NativeFrameRequestPhase};
 
 /// Wayland 平台窗口操作句柄。
 ///
@@ -138,7 +140,7 @@ impl WaylandWindowOps {
         height: i32,
         window_state: Rc<RefCell<WindowState>>,
     ) -> Result<(), Error> {
-        use crate::native::traits::event::{UiEventPayload, UiEventType};
+        use crate::native::windowing::event::{UiEventPayload, UiEventType};
         use wayland_protocols::misc::server_decoration::client::{
             org_kde_kwin_server_decoration::Mode,
             org_kde_kwin_server_decoration_manager::OrgKdeKwinServerDecorationManager,

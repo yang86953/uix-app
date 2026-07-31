@@ -21,7 +21,7 @@ use std::rc::Rc;
 use std::thread::{self, ThreadId};
 
 use crate::core::{Errc, Error, Result};
-use crate::native::traits::present::{
+use crate::native::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
     GpuSolidMesh, GpuSolidRect, GpuStrokeRect, GraphicsContextCaps, IGraphicsContext,
     NativeRasterCaps, OffscreenTargetId, PresentDamage, PresentFrame, PresentTestResult,

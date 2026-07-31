@@ -8,7 +8,7 @@
 
 use crate::core::error::Errc;
 use crate::core::error::{Error, Result};
-use crate::native::traits::system::INotification;
+use crate::native::capabilities::system::INotification;
 use std::process::Command;
 
 // ════════════════════════════════════════════════════════════════════════════

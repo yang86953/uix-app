@@ -1,7 +1,7 @@
 //! UI 窗口动作到当前原生窗口的窄边界适配。
 
 use crate::core::Result;
-use crate::native::traits::window::PlatformWindow;
+use crate::native::windowing::window::PlatformWindow;
 use crate::ui::event::WindowAction;
 use crate::ui::WidgetTree;
 

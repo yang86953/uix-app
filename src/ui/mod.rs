@@ -29,10 +29,10 @@ pub mod widgets;
 pub mod window_chrome;
 
 pub use crate::core::ComponentId;
-pub use crate::native::traits::input::{
+pub use crate::native::capabilities::system::StatusLevel;
+pub use crate::native::windowing::input::{
     ControlSize, CursorType, KeyCode, KeyMod, MouseButton, ScrollDirection,
 };
-pub use crate::native::traits::system::StatusLevel;
 pub use animation::{
     Animated, Animation, AnimationConfig, AnimationGroup, AnimationGroupError, AnimationGroupItem,
     Easing, Keyframe, KeyframeAnimation, KeyframeError, Spring, SpringAnimation,

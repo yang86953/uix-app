@@ -8,8 +8,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::core::{Error, WindowId};
-use crate::native::shared::{PlatformWindowCore, WindowState};
-use crate::native::traits::*;
+use crate::native::capabilities::*;
+use crate::native::platform::*;
+use crate::native::present::*;
+use crate::native::presentation::*;
+use crate::native::windowing::shared::{PlatformWindowCore, WindowState};
+use crate::native::windowing::*;
 
 use super::window_ops::WaylandWindowOps;
 use super::WaylandBackend;

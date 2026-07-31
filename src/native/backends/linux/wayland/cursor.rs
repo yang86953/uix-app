@@ -3,8 +3,8 @@
 // ============================================================================
 
 use crate::core::Point;
-use crate::native::traits::input::CursorType;
-use crate::native::traits::input::ICursor;
+use crate::native::windowing::input::CursorType;
+use crate::native::windowing::input::ICursor;
 use crate::native::{Errc, Error, Result};
 
 use super::WaylandBackend;

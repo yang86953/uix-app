@@ -9,8 +9,8 @@ use std::sync::atomic::Ordering;
 use wayland_protocols::unstable::text_input::v3::client::zwp_text_input_v3;
 
 use crate::core::{Errc, Error, Rect, Result, WindowId};
-use crate::native::shared::ime_events::{on_unmark_text_for_window, PendingImeBatch};
-use crate::native::traits::input::ITextInput;
+use crate::native::windowing::input::ITextInput;
+use crate::native::windowing::shared::ime_events::{on_unmark_text_for_window, PendingImeBatch};
 
 use super::WaylandBackend;
 

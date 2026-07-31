@@ -4,7 +4,7 @@ use std::ops::RangeInclusive;
 use std::sync::Arc;
 
 use crate::draw::Color;
-use crate::native::traits::input::ControlSize;
+use crate::native::windowing::input::ControlSize;
 use crate::ui::view::{input, EventExt, View, ViewNode};
 use crate::ui::{EventResult, FocusHandle, SemanticKind, State, SystemEvent};
 

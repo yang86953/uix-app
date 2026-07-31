@@ -13,8 +13,8 @@ use std::cell::Cell;
 
 use crate::native::backends::windows::ffi::{GetDC, ReleaseDC};
 use crate::native::backends::windows::util::windows_diag;
-use crate::native::graphics::platform::windows::query_client_rect;
-use crate::native::traits::present::{IPresenter, PresentCoherency, PresentDamage, PresentSurface};
+use crate::native::present::{IPresenter, PresentCoherency, PresentDamage, PresentSurface};
+use crate::native::presentation::graphics::platform::windows::query_client_rect;
 use crate::native::{Errc, Error};
 // ── Windows FFI declarations ────────────────────────────────────────────────
 

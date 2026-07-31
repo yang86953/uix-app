@@ -15,8 +15,8 @@ use wayland_client::protocol::{wl_data_device, wl_keyboard, wl_pointer, wl_seat}
 use super::{HeldKeyInfo, WaylandBackend};
 use crate::core::{Point, WindowId};
 use crate::native::backends::linux::wayland::keycode::{keycode_to_char, linux_keycode_to_keycode};
-use crate::native::traits::event::*;
-use crate::native::traits::input::{KeyMod, MouseButton};
+use crate::native::windowing::event::*;
+use crate::native::windowing::input::{KeyMod, MouseButton};
 
 fn enqueue_for_window(
     events: &Arc<Mutex<VecDeque<UiEvent>>>,

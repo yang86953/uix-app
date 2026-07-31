@@ -1,6 +1,6 @@
 //! Fake 剪贴板 — 内存实现 + 操作记录。
 
-use crate::native::traits::input::IClipboard;
+use crate::native::windowing::input::IClipboard;
 use crate::native::Result;
 use std::cell::Cell;
 

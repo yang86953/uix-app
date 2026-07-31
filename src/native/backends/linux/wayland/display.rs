@@ -5,8 +5,8 @@
 // 回退到硬编码值（1920×1080, scale=1）当 wl_output 未绑定或零输出时。
 // ============================================================================
 
-use crate::native::traits::display::DisplayInfo;
-use crate::native::traits::display::IDisplay;
+use crate::native::capabilities::display::DisplayInfo;
+use crate::native::capabilities::display::IDisplay;
 use crate::native::{Errc, Error, Result};
 
 use super::WaylandBackend;

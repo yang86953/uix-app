@@ -9,9 +9,9 @@
 
 use crate::core::error::{Errc, Error, Result};
 use crate::diagnostics::PendingFailureSource;
-use crate::native::shared::WindowOps;
-use crate::native::traits::event::FrameRequestToken;
-use crate::native::traits::window::NativeFrameRequest;
+use crate::native::windowing::event::FrameRequestToken;
+use crate::native::windowing::shared::WindowOps;
+use crate::native::windowing::window::NativeFrameRequest;
 
 use super::frame_pacer::{SharedWindowsFramePacerState, WindowsFramePacer};
 use super::platform::WindowBinding;

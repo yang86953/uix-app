@@ -1,7 +1,7 @@
 //! Fake 系统信息 — 完全可配置，支持 &self 访问。
 
-use crate::native::traits::system::ISystemInfo;
-use crate::native::traits::system::{MemoryInfo, OsInfo};
+use crate::native::capabilities::system::ISystemInfo;
+use crate::native::capabilities::system::{MemoryInfo, OsInfo};
 use crate::native::Result;
 use std::cell::Cell;
 

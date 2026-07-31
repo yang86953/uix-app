@@ -36,12 +36,10 @@ use crate::native::factory::{
     create_platform_with_pending, gpu_recipe_candidates, graphics_runtime_platform,
     try_create_gpu_recipe_with_queue, GraphicsRecipe,
 };
-use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
-use crate::native::traits::platform::Platform;
-use crate::native::traits::present::{
-    GraphicsBackend as NativeGraphicsBackend, NativeSurfaceHandle,
-};
-use crate::native::traits::window::{PlatformWindow, WindowOcclusionState};
+use crate::native::platform::Platform;
+use crate::native::present::{GraphicsBackend as NativeGraphicsBackend, NativeSurfaceHandle};
+use crate::native::windowing::event::{UiEvent, UiEventPayload, UiEventType};
+use crate::native::windowing::window::{PlatformWindow, WindowOcclusionState};
 use crate::platform::graphics::GraphicsBackend;
 use crate::ui::theme::{DesignTokens, DynTokens, Theme};
 use crate::ui::traits::TokenProvider;

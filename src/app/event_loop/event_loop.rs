@@ -13,9 +13,9 @@ use crate::draw::renderer::RenderMetrics;
 use crate::draw::renderer::RenderTarget;
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::image::ImageService;
-use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
-use crate::native::traits::platform::Platform;
-use crate::native::traits::window::PlatformWindow;
+use crate::native::platform::Platform;
+use crate::native::windowing::event::{UiEvent, UiEventPayload, UiEventType};
+use crate::native::windowing::window::PlatformWindow;
 use crate::ui::clipboard;
 use crate::ui::theme::{DynTokens, Theme};
 use crate::ui::{ComponentId, SystemEvent, WidgetTree};
@@ -497,7 +497,7 @@ where
                     }
                 }
                 UiEventType::KeyDown => {
-                    use crate::native::traits::input::{KeyCode, KeyMod};
+                    use crate::native::windowing::input::{KeyCode, KeyMod};
                     if let UiEventPayload::Key(ref data) = ev.payload {
                         // Ctrl+Shift+D：切换 debug overlay。
                         // 不用 F12：Windows 调试器下 F12 会触发系统 DebugBreak（DbgBreakPoint/int3），

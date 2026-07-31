@@ -6,7 +6,7 @@ use std::hash::{Hash, Hasher};
 
 use crate::core::{ComponentId, Point, WindowId};
 
-use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
+use crate::native::windowing::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::widget::EventResult;
 
 /// 由 UI 组件发往事件所属原生窗口的无外观动作。

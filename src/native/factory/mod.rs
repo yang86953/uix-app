@@ -11,10 +11,10 @@ pub(crate) mod thread_bound;
 
 use crate::core::error::{Errc, Error};
 use crate::diagnostics::PendingFailureQueue;
-use crate::native::traits::platform::Platform;
-use crate::native::traits::present::{GraphicsBackend, IGraphicsContext};
 #[cfg(any(windows, all(unix, not(target_os = "macos"))))]
-use crate::native::traits::system::ISystemInfo;
+use crate::native::capabilities::system::ISystemInfo;
+use crate::native::platform::Platform;
+use crate::native::present::{GraphicsBackend, IGraphicsContext};
 use std::ffi::c_void;
 
 pub(crate) use registry::try_create_gpu_recipe_with_queue;
@@ -29,14 +29,14 @@ pub(crate) fn create_d3d11_warp_test_context(
     surface: *mut std::ffi::c_void,
     width: i32,
     height: i32,
-) -> crate::core::Result<Box<dyn crate::native::traits::present::IGraphicsContext>> {
-    crate::native::graphics::d3d11::create_warp_test_context(surface, width, height)
+) -> crate::core::Result<Box<dyn crate::native::present::IGraphicsContext>> {
+    crate::native::presentation::graphics::d3d11::create_warp_test_context(surface, width, height)
         .map(thread_bound::bind_to_current_thread)
 }
 
 #[cfg(all(test, feature = "d3d11"))]
 pub(crate) fn d3d11_warp_test_context_available() -> bool {
-    crate::native::graphics::d3d11::warp_test_context_available()
+    crate::native::presentation::graphics::d3d11::warp_test_context_available()
 }
 
 #[cfg(all(test, feature = "d3d12"))]
@@ -44,14 +44,14 @@ pub(crate) fn create_d3d12_warp_test_context(
     surface: *mut std::ffi::c_void,
     width: i32,
     height: i32,
-) -> crate::core::Result<Box<dyn crate::native::traits::present::IGraphicsContext>> {
-    crate::native::graphics::d3d12::create_warp_test_context(surface, width, height)
+) -> crate::core::Result<Box<dyn crate::native::present::IGraphicsContext>> {
+    crate::native::presentation::graphics::d3d12::create_warp_test_context(surface, width, height)
         .map(thread_bound::bind_to_current_thread)
 }
 
 #[cfg(all(test, feature = "d3d12"))]
 pub(crate) fn d3d12_warp_test_context_available() -> bool {
-    crate::native::graphics::d3d12::warp_test_context_available()
+    crate::native::presentation::graphics::d3d12::warp_test_context_available()
 }
 
 /// 创建当前平台对应的 Platform 实例。

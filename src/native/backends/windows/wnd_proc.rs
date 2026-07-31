@@ -12,7 +12,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::time::Instant;
 
 use crate::core::Point;
-use crate::native::traits::*;
+use crate::native::windowing::*;
 use crate::native::{Errc, Error};
 
 use super::bindings::*;
@@ -185,7 +185,7 @@ impl WindowsPlatform {
     pub(crate) fn handle_message(
         &mut self,
         hwnd: *mut std::ffi::c_void,
-        window: &std::rc::Rc<std::cell::RefCell<crate::native::shared::WindowState>>,
+        window: &std::rc::Rc<std::cell::RefCell<crate::native::windowing::shared::WindowState>>,
         ime: &std::cell::RefCell<WindowsImeState>,
         msg: u32,
         wparam: usize,

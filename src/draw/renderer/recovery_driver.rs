@@ -13,7 +13,7 @@ use crate::draw::geometry::types::ImageHandle;
 use crate::draw::renderer::test_harness::GraphicsFaultSignal;
 use crate::draw::renderer::{GraphicsFailure, GraphicsRecovery, RecoveryAction, RenderOutcome};
 use crate::draw::{Canvas2D, GraphicsCapabilities, RenderTarget, UpdateStrategy};
-use crate::native::traits::present::PresentTestResult;
+use crate::native::present::PresentTestResult;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;

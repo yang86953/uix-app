@@ -20,7 +20,7 @@ use crate::ui::{
     WidgetTree,
 };
 
-pub use crate::native::traits::input::ScrollDirection;
+pub use crate::native::windowing::input::ScrollDirection;
 
 component! {
     /// A scrollable viewport that clips its children.

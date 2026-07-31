@@ -7,8 +7,8 @@
 use super::ffi::*;
 use super::util::to_wide;
 use crate::core::Rect;
-use crate::native::traits::display::DisplayInfo;
-use crate::native::traits::display::IDisplay;
+use crate::native::capabilities::display::DisplayInfo;
+use crate::native::capabilities::display::IDisplay;
 use crate::native::{Errc, Error, Result};
 use std::cell::Cell;
 use std::ptr;

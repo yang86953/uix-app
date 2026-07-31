@@ -5,7 +5,7 @@
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
-use crate::native::traits::input::ControlSize;
+use crate::native::windowing::input::ControlSize;
 use crate::ui::core::paint_context::PaintContext;
 use crate::ui::{SnapshotFields, WidgetTree};
 

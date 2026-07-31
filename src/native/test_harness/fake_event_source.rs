@@ -3,8 +3,8 @@
 //! 实现 `OsEventSource`，通过 blanket impl 自动获得 `IEventLoop`。
 //! 支持注入事件序列、追踪已处理事件、模拟退出信号。
 
-use crate::native::shared::OsEventSource;
-use crate::native::traits::event::{EventLoopWaker, UiEvent};
+use crate::native::windowing::event::{EventLoopWaker, UiEvent};
+use crate::native::windowing::shared::OsEventSource;
 use std::collections::VecDeque;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},

@@ -7,7 +7,7 @@
 // Falls back to zenity if neither is detected or available.
 // ============================================================================
 
-use crate::native::traits::system::IFileDialog;
+use crate::native::capabilities::system::IFileDialog;
 use crate::native::{Errc, Error, Result};
 
 // ════════════════════════════════════════════════════════════════════════════

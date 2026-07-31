@@ -25,10 +25,10 @@ use crate::draw::renderer::{
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::image::ImageService;
 use crate::draw::RenderOutcome;
-use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
-use crate::native::traits::platform::Platform;
-use crate::native::traits::present::PresentTestResult;
-use crate::native::traits::window::{NativeFrameRequest, PlatformWindow, WindowOcclusionState};
+use crate::native::platform::Platform;
+use crate::native::present::PresentTestResult;
+use crate::native::windowing::event::{UiEvent, UiEventPayload, UiEventType};
+use crate::native::windowing::window::{NativeFrameRequest, PlatformWindow, WindowOcclusionState};
 use crate::ui::clipboard;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::theme::Theme;
