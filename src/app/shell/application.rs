@@ -539,6 +539,9 @@ impl App {
     // ── 运行 ──────────────────────────────────────────────────────
 
     pub fn run(mut self) -> i32 {
+        // panic hook 在配置加载前安装：settings / CLI / GUI 任一段 panic 都被
+        // 捕获并原子写入 crash report（配置目录时），且从不吞 panic。
+        self.runtime.diagnostics().install_panic_hook();
         if !self.load_configured_settings() {
             return self.exit_code;
         }

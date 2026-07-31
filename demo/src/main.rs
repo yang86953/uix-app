@@ -18,6 +18,8 @@ mod common;
 mod demos;
 mod gui;
 
+use std::path::PathBuf;
+
 #[derive(Debug, Default, PartialEq, Eq)]
 struct LaunchOptions {
     cli: bool,
@@ -26,11 +28,13 @@ struct LaunchOptions {
     graphics_recovery_acceptance: bool,
     component_qa: bool,
     g5_release_scenario: bool,
+    crash_dir: Option<PathBuf>,
 }
 
 fn parse_launch_options(args: impl IntoIterator<Item = String>) -> LaunchOptions {
     let mut options = LaunchOptions::default();
-    for argument in args {
+    let mut args = args.into_iter();
+    while let Some(argument) = args.next() {
         match argument.as_str() {
             "--cli" => options.cli = true,
             "--agent-control" => options.agent_control = true,
@@ -38,6 +42,14 @@ fn parse_launch_options(args: impl IntoIterator<Item = String>) -> LaunchOptions
             "--graphics-recovery-acceptance" => options.graphics_recovery_acceptance = true,
             "--component-qa" => options.component_qa = true,
             "--g5-release-scenario" => options.g5_release_scenario = true,
+            "--crash-dir" => {
+                if let Some(directory) = args.next() {
+                    options.crash_dir = Some(PathBuf::from(directory));
+                }
+            }
+            _ if argument.starts_with("--crash-dir=") => {
+                options.crash_dir = Some(PathBuf::from(&argument["--crash-dir=".len()..]));
+            }
             _ => {}
         }
     }
@@ -47,8 +59,8 @@ fn parse_launch_options(args: impl IntoIterator<Item = String>) -> LaunchOptions
 fn init_tracing() {
     use tracing_subscriber::EnvFilter;
 
-    let filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("uix=info,uix_demo=info"));
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("uix=info,uix_demo=info"));
     let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
 }
 
@@ -60,6 +72,7 @@ fn run_gui(options: LaunchOptions) {
             options.graphics_recovery_acceptance,
             options.component_qa,
             options.g5_release_scenario,
+            options.crash_dir,
         );
     };
 

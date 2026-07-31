@@ -33,8 +33,13 @@
 //! ```compile_fail
 //! use uix::diagnostics::config::DiagnosticsConfig;
 //! ```
+//!
+//! ```compile_fail
+//! use uix::diagnostics::crash::CrashReport;
+//! ```
 
 mod config;
+mod crash;
 mod pending;
 mod recovery;
 mod report;
@@ -158,6 +163,20 @@ impl Diagnostics {
 
     pub(crate) fn crash_report_directory(&self) -> Option<&std::path::Path> {
         self.inner.config.crash_report_directory.as_deref()
+    }
+
+    pub(crate) fn runtime_id(&self) -> u64 {
+        self.inner.runtime_id
+    }
+
+    /// Installs the framework panic hook bound to this runtime.
+    ///
+    /// Panics are never swallowed: the previous hook is always invoked, so
+    /// default output and unwind/abort semantics are preserved. When a crash
+    /// directory is configured, a bounded crash report is written atomically
+    /// before forwarding.
+    pub(crate) fn install_panic_hook(&self) {
+        crash::install_panic_hook(self.clone());
     }
 }
 

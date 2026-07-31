@@ -628,6 +628,7 @@ pub fn run(
     graphics_recovery_acceptance: bool,
     component_qa: bool,
     g5_release_scenario: bool,
+    crash_dir: Option<std::path::PathBuf>,
 ) {
     let active = State::new(if component_qa {
         PAGE_COMPONENT_QA
@@ -648,8 +649,14 @@ pub fn run(
         .size(INIT_W, INIT_H)
         .custom_title_bar(true)
         .theme(Theme::antd_light())
-        .follow_system_theme(follow_system_theme)
-        .on_start(
+        .follow_system_theme(follow_system_theme);
+    let app = match crash_dir {
+        Some(directory) => app.diagnostics(
+            uix::diagnostics::DiagnosticsConfig::default().crash_report_directory(directory),
+        ),
+        None => app,
+    };
+    let app = app.on_start(
             with_cloned!(theme_control, graphics_recovery_control, timer_ticks, active, g5_overlay_mode; |handle| {
                 theme_control.set_handle(handle.clone());
                 graphics_recovery_control.set_handle(handle.clone());
