@@ -4,6 +4,7 @@
 
 use crate::native::shared::{FileSystemCore, SpecialDirProvider};
 use crate::native::traits::system::SpecialDir;
+use crate::native::{Errc, Error, Result};
 
 // ════════════════════════════════════════════════════════════════════════════
 // LinuxFileSystem
@@ -15,56 +16,39 @@ pub type LinuxFileSystem = FileSystemCore<LinuxSpecialDirs>;
 pub struct LinuxSpecialDirs;
 
 impl SpecialDirProvider for LinuxSpecialDirs {
-    fn special_dir(&self, dir: SpecialDir) -> String {
+    fn special_dir(&self, dir: SpecialDir) -> Result<String> {
         match dir {
-            SpecialDir::Home => std::env::var("HOME").unwrap_or_default(),
-            SpecialDir::Temp => std::env::var("TMPDIR")
+            SpecialDir::Home => home_dir()
+                .ok_or_else(|| Error::new(Errc::NotFound, "LinuxSpecialDirs: HOME is not set")),
+            SpecialDir::Temp => Ok(std::env::var("TMPDIR")
                 .or_else(|_| std::env::var("TEMP"))
-                .unwrap_or_else(|_| "/tmp".to_string()),
-            SpecialDir::AppData => {
-                let home = std::env::var("HOME").unwrap_or_default();
-                if home.is_empty() {
-                    String::new()
-                } else {
-                    format!("{}/.config", home)
-                }
-            }
-            SpecialDir::LocalAppData => {
-                let home = std::env::var("HOME").unwrap_or_default();
-                if home.is_empty() {
-                    String::new()
-                } else {
-                    format!("{}/.local/share", home)
-                }
-            }
-            SpecialDir::Documents => {
-                let home = std::env::var("HOME").unwrap_or_default();
-                if home.is_empty() {
-                    String::new()
-                } else {
-                    format!("{}/Documents", home)
-                }
-            }
+                .unwrap_or_else(|_| "/tmp".to_string())),
+            SpecialDir::AppData => Self::home_joined(".config", dir),
+            SpecialDir::LocalAppData => Self::home_joined(".local/share", dir),
+            SpecialDir::Documents => Self::home_joined("Documents", dir),
             SpecialDir::Desktop => {
-                let home = std::env::var("HOME").unwrap_or_default();
-                if home.is_empty() {
-                    String::new()
-                } else {
-                    // 优先遵循 freedesktop.org XDG_DESKTOP_DIR。
-                    Self::xdg_user_dir("DESKTOP").unwrap_or_else(|| format!("{}/Desktop", home))
-                }
+                let home = home_dir().ok_or_else(|| {
+                    Error::new(Errc::NotFound, "LinuxSpecialDirs: HOME is not set")
+                })?;
+                // 优先遵循 freedesktop.org XDG_DESKTOP_DIR。
+                Ok(Self::xdg_user_dir("DESKTOP").unwrap_or_else(|| format!("{home}/Desktop")))
             }
             SpecialDir::Downloads => {
-                let home = std::env::var("HOME").unwrap_or_default();
-                if home.is_empty() {
-                    String::new()
-                } else {
-                    Self::xdg_user_dir("DOWNLOAD").unwrap_or_else(|| format!("{}/Downloads", home))
-                }
+                let home = home_dir().ok_or_else(|| {
+                    Error::new(Errc::NotFound, "LinuxSpecialDirs: HOME is not set")
+                })?;
+                Ok(Self::xdg_user_dir("DOWNLOAD").unwrap_or_else(|| format!("{home}/Downloads")))
             }
-            SpecialDir::Current | SpecialDir::Executable => String::new(),
+            SpecialDir::Current | SpecialDir::Executable => Err(Error::new(
+                Errc::NotImplemented,
+                "LinuxSpecialDirs: Current/Executable are handled by FileSystemCore",
+            )),
         }
     }
+}
+
+fn home_dir() -> Option<String> {
+    std::env::var("HOME").ok()
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -72,6 +56,17 @@ impl SpecialDirProvider for LinuxSpecialDirs {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl LinuxSpecialDirs {
+    /// 以 HOME 为基座拼接子目录;HOME 缺失视为解析失败。
+    fn home_joined(child: &str, dir: SpecialDir) -> Result<String> {
+        let home = home_dir().ok_or_else(|| {
+            Error::new(
+                Errc::NotFound,
+                format!("LinuxSpecialDirs: HOME is not set for {dir:?}"),
+            )
+        })?;
+        Ok(format!("{home}/{child}"))
+    }
+
     /// 读取 XDG 用户目录配置，返回指定键对应的目录。
     fn xdg_user_dir(key: &str) -> Option<String> {
         let home = std::env::var("HOME").ok()?;

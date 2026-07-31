@@ -8,6 +8,7 @@
 
 use crate::native::traits::event::UiEvent;
 use crate::native::traits::system::ITimer;
+use crate::native::{Errc, Error, Result};
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
@@ -149,22 +150,34 @@ impl LinuxTimer {
 }
 
 impl ITimer for LinuxTimer {
-    fn set(&mut self, interval_ms: u32, repeating: bool) -> u32 {
+    fn set(&mut self, interval_ms: u32, repeating: bool) -> Result<u32> {
         let id = self.next_id;
         self.next_id = self.next_id.wrapping_add(1);
         if let Ok(mut map) = self.active.lock() {
             map.insert(id, interval_ms);
         }
-        let _ = self.cmd_tx.send(Cmd::Register {
-            id,
-            interval_ms,
-            repeating,
-        });
-        id
+        self.cmd_tx
+            .send(Cmd::Register {
+                id,
+                interval_ms,
+                repeating,
+            })
+            .map_err(|_| {
+                Error::new(
+                    Errc::IoError,
+                    "LinuxTimer::set: timer worker channel closed",
+                )
+            })?;
+        Ok(id)
     }
 
-    fn clear(&mut self, id: u32) {
-        let _ = self.cmd_tx.send(Cmd::Clear { id });
+    fn clear(&mut self, id: u32) -> Result<()> {
+        self.cmd_tx.send(Cmd::Clear { id }).map_err(|_| {
+            Error::new(
+                Errc::IoError,
+                "LinuxTimer::clear: timer worker channel closed",
+            )
+        })
     }
 }
 

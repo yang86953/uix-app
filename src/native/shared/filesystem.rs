@@ -7,10 +7,10 @@
 
 use crate::native::traits::system::IFileSystem;
 use crate::native::traits::system::SpecialDir;
-use crate::native::{Errc, Error};
+use crate::native::{Errc, Error, Result};
 /// 平台特殊目录解析接口。
 pub trait SpecialDirProvider {
-    fn special_dir(&self, dir: SpecialDir) -> String;
+    fn special_dir(&self, dir: SpecialDir) -> Result<String>;
 }
 
 /// 文件系统共享实现。
@@ -44,7 +44,7 @@ impl<P: Default> Default for FileSystemCore<P> {
 }
 
 impl<P: SpecialDirProvider> IFileSystem for FileSystemCore<P> {
-    fn get_special_dir(&self, dir: SpecialDir) -> String {
+    fn get_special_dir(&self, dir: SpecialDir) -> Result<String> {
         match dir {
             SpecialDir::Current => current_dir(),
             SpecialDir::Executable => self.executable_dir(),
@@ -52,18 +52,28 @@ impl<P: SpecialDirProvider> IFileSystem for FileSystemCore<P> {
         }
     }
 
-    fn executable_path(&self) -> String {
+    fn executable_path(&self) -> Result<String> {
         executable_path()
     }
 
-    fn executable_dir(&self) -> String {
-        std::env::current_exe()
-            .ok()
-            .and_then(|path| path.parent().map(|dir| dir.to_string_lossy().to_string()))
-            .unwrap_or_default()
+    fn executable_dir(&self) -> Result<String> {
+        let path = std::env::current_exe().map_err(|err| {
+            Error::new(
+                Errc::IoError,
+                format!("FileSystemCore::executable_dir: current_exe failed: {err}"),
+            )
+        })?;
+        path.parent()
+            .map(|dir| dir.to_string_lossy().to_string())
+            .ok_or_else(|| {
+                Error::new(
+                    Errc::PlatformError,
+                    "FileSystemCore::executable_dir: current_exe has no parent",
+                )
+            })
     }
 
-    fn read_file(&self, path: &str) -> Result<Vec<u8>, Error> {
+    fn read_file(&self, path: &str) -> Result<Vec<u8>> {
         if path.is_empty() {
             return Err(Error::new(
                 Errc::InvalidArgument,
@@ -75,16 +85,26 @@ impl<P: SpecialDirProvider> IFileSystem for FileSystemCore<P> {
     }
 }
 
-fn current_dir() -> String {
+fn current_dir() -> Result<String> {
     std::env::current_dir()
         .map(|path| path.to_string_lossy().to_string())
-        .unwrap_or_default()
+        .map_err(|err| {
+            Error::new(
+                Errc::IoError,
+                format!("FileSystemCore::current_dir failed: {err}"),
+            )
+        })
 }
 
-fn executable_path() -> String {
+fn executable_path() -> Result<String> {
     std::env::current_exe()
         .map(|path| path.to_string_lossy().to_string())
-        .unwrap_or_default()
+        .map_err(|err| {
+            Error::new(
+                Errc::IoError,
+                format!("FileSystemCore::executable_path failed: {err}"),
+            )
+        })
 }
 
 fn read_error(path: &str, err: std::io::Error) -> Error {

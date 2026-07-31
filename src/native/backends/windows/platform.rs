@@ -90,7 +90,7 @@ impl WindowsPlatform {
         let event_queue = Arc::new(Mutex::new(VecDeque::new()));
         let pending_source = pending_failures.source();
         let display_subsys = WindowsDisplay::new();
-        let system_dark_mode = WindowsDisplay::detect_os_theme();
+        let system_dark_mode = WindowsDisplay::detect_os_theme().unwrap_or(false);
         Self {
             event_queue: Arc::clone(&event_queue),
             hwnd: std::ptr::null_mut(),

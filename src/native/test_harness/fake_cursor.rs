@@ -3,6 +3,7 @@
 use crate::core::Point;
 use crate::native::traits::input::CursorType;
 use crate::native::traits::input::ICursor;
+use crate::native::Result;
 
 #[derive(Debug, Clone)]
 pub struct FakeCursorState {
@@ -68,37 +69,43 @@ impl Default for FakeCursor {
 }
 
 impl ICursor for FakeCursor {
-    fn set_cursor(&mut self, cursor: CursorType) {
+    fn set_cursor(&mut self, cursor: CursorType) -> Result<()> {
         self.state.cursor_type = cursor;
         self.state.set_cursor_calls.push(cursor);
+        Ok(())
     }
 
-    fn show_cursor(&mut self, visible: bool) {
+    fn show_cursor(&mut self, visible: bool) -> Result<()> {
         self.state.visible = visible;
         self.state.show_cursor_calls.push(visible);
+        Ok(())
     }
 
-    fn cursor_position(&self) -> Point {
-        self.state.position
+    fn cursor_position(&self) -> Result<Point> {
+        Ok(self.state.position)
     }
 
-    fn set_cursor_position(&mut self, x: i32, y: i32) {
+    fn set_cursor_position(&mut self, x: i32, y: i32) -> Result<()> {
         self.state.position = Point::new(x as f32, y as f32);
         self.state.set_position_calls.push((x, y));
+        Ok(())
     }
 
-    fn confine_cursor(&mut self, confine: bool) {
+    fn confine_cursor(&mut self, confine: bool) -> Result<()> {
         self.state.confined = confine;
         self.state.confine_calls.push(confine);
+        Ok(())
     }
 
-    fn capture_mouse(&mut self) {
+    fn capture_mouse(&mut self) -> Result<()> {
         self.state.captured = true;
         self.state.capture_calls += 1;
+        Ok(())
     }
 
-    fn release_mouse(&mut self) {
+    fn release_mouse(&mut self) -> Result<()> {
         self.state.captured = false;
         self.state.release_calls += 1;
+        Ok(())
     }
 }

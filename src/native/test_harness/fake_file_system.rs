@@ -98,16 +98,16 @@ impl Default for FakeFileSystem {
 }
 
 impl IFileSystem for FakeFileSystem {
-    fn get_special_dir(&self, dir: SpecialDir) -> String {
-        self.get_special_dir_impl(dir)
+    fn get_special_dir(&self, dir: SpecialDir) -> Result<String> {
+        Ok(self.get_special_dir_impl(dir))
     }
 
-    fn executable_path(&self) -> String {
-        self.state.executable_path.clone()
+    fn executable_path(&self) -> Result<String> {
+        Ok(self.state.executable_path.clone())
     }
 
-    fn executable_dir(&self) -> String {
-        self.state.executable_dir.clone()
+    fn executable_dir(&self) -> Result<String> {
+        Ok(self.state.executable_dir.clone())
     }
 
     fn read_file(&self, path: &str) -> Result<Vec<u8>> {

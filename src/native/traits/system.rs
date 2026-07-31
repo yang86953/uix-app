@@ -73,15 +73,18 @@ pub enum StatusLevel {
 }
 
 pub trait IFileDialog {
-    fn open(&mut self, title: &str, filters: &str) -> Vec<String>;
-    fn save(&mut self, title: &str, filters: &str) -> String;
-    fn open_folder(&mut self, title: &str) -> String;
+    /// 打开文件选择对话框。`Ok(None)` 表示用户取消；`Err` 表示对话框本身失败。
+    fn open(&mut self, title: &str, filters: &str) -> Result<Option<Vec<String>>>;
+    /// 打开保存对话框。`Ok(None)` 表示用户取消；`Err` 表示对话框本身失败。
+    fn save(&mut self, title: &str, filters: &str) -> Result<Option<String>>;
+    /// 打开目录选择对话框。`Ok(None)` 表示用户取消；`Err` 表示对话框本身失败。
+    fn open_folder(&mut self, title: &str) -> Result<Option<String>>;
 }
 
 pub trait IFileSystem {
-    fn get_special_dir(&self, dir: SpecialDir) -> String;
-    fn executable_path(&self) -> String;
-    fn executable_dir(&self) -> String;
+    fn get_special_dir(&self, dir: SpecialDir) -> Result<String>;
+    fn executable_path(&self) -> Result<String>;
+    fn executable_dir(&self) -> Result<String>;
     fn read_file(&self, path: &str) -> Result<Vec<u8>, Error>;
 }
 
@@ -90,8 +93,8 @@ pub trait INotification {
 }
 
 pub trait ITimer {
-    fn set(&mut self, interval_ms: u32, repeating: bool) -> u32;
-    fn clear(&mut self, id: u32);
+    fn set(&mut self, interval_ms: u32, repeating: bool) -> Result<u32>;
+    fn clear(&mut self, id: u32) -> Result<()>;
 }
 
 pub trait ISystemInfo {

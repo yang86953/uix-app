@@ -518,7 +518,13 @@ where
                 }
                 UiEventType::ThemeChanged => {
                     if let Some(tokens) = system_theme_tokens {
-                        let is_dark = platform.display().is_dark_mode();
+                        let is_dark = platform.display().is_dark_mode().unwrap_or_else(|error| {
+                            tracing::warn!(
+                                "theme query failed, defaulting to light: {}",
+                                error.short_what()
+                            );
+                            false
+                        });
                         tokens.set_mode(is_dark);
                         *theme.borrow_mut() = Theme::new(tokens.snapshot());
                         clipboard::with_clipboard(platform.clipboard(), || {

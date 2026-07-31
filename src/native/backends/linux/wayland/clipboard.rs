@@ -12,6 +12,7 @@ use wayland_client::protocol::wl_data_source;
 use crate::native::shared::nonblocking_read::{NonBlockingReadAccumulator, NonBlockingReadStatus};
 use crate::native::shared::nonblocking_write::{NonBlockingWriteCursor, NonBlockingWriteProgress};
 use crate::native::traits::input::IClipboard;
+use crate::native::{Errc, Error, Result};
 
 use super::WaylandBackend;
 
@@ -92,60 +93,77 @@ impl ClipboardWrite {
 }
 
 impl IClipboard for WaylandBackend {
-    fn text(&self) -> String {
-        self.clipboard_text
-            .lock()
-            .map(|t| t.clone())
-            .unwrap_or_default()
+    fn text(&self) -> Result<String> {
+        self.clipboard_text.lock().map(|t| t.clone()).map_err(|_| {
+            Error::new(
+                Errc::InvalidState,
+                "WaylandBackend::text: clipboard_text lock poisoned",
+            )
+        })
     }
-    fn set_text(&mut self, text: &str) {
-        if let Ok(mut t) = self.clipboard_text.lock() {
+    fn set_text(&mut self, text: &str) -> Result<()> {
+        {
+            let mut t = self.clipboard_text.lock().map_err(|_| {
+                Error::new(
+                    Errc::InvalidState,
+                    "WaylandBackend::set_text: clipboard_text lock poisoned",
+                )
+            })?;
             *t = text.to_string();
         }
-        if let Some(ref dm) = self.data_device_manager {
-            if let Some(ref dd) = self.data_device {
-                let serial = self
-                    .last_input_serial
-                    .lock()
-                    .unwrap_or_else(|error| error.into_inner())
-                    .latest();
-                let Some(serial) = serial else {
-                    if let Ok(mut owns) = self.owns_clipboard.lock() {
-                        *owns = false;
+        let Some(ref dm) = self.data_device_manager else {
+            return Ok(());
+        };
+        let Some(ref dd) = self.data_device else {
+            return Ok(());
+        };
+        let serial = self
+            .last_input_serial
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .latest();
+        let Some(serial) = serial else {
+            if let Ok(mut owns) = self.owns_clipboard.lock() {
+                *owns = false;
+            }
+            tracing::warn!("Wayland clipboard selection requires a pointer or keyboard serial",);
+            return Err(Error::new(
+                Errc::InvalidState,
+                "WaylandBackend::set_text: no pointer or keyboard serial for selection",
+            ));
+        };
+        let source = dm.create_data_source();
+        source.offer("text/plain;charset=utf-8".to_string());
+        let bytes = Arc::<[u8]>::from(text.as_bytes());
+        let writes = Arc::clone(&self.clipboard_writes);
+        source.quick_assign(move |_, event, _| {
+            if let wl_data_source::Event::Send { mime_type: _, fd } = event {
+                match ClipboardWrite::from_event_fd(fd, Arc::clone(&bytes)) {
+                    Ok(write) => writes
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner())
+                        .push(write),
+                    Err(error) => {
+                        tracing::error!("Wayland clipboard send setup failed: {error}")
                     }
-                    tracing::warn!(
-                        "Wayland clipboard selection requires a pointer or keyboard serial",
-                    );
-                    return;
-                };
-                let source = dm.create_data_source();
-                source.offer("text/plain;charset=utf-8".to_string());
-                let bytes = Arc::<[u8]>::from(text.as_bytes());
-                let writes = Arc::clone(&self.clipboard_writes);
-                source.quick_assign(move |_, event, _| {
-                    if let wl_data_source::Event::Send { mime_type: _, fd } = event {
-                        match ClipboardWrite::from_event_fd(fd, Arc::clone(&bytes)) {
-                            Ok(write) => writes
-                                .lock()
-                                .unwrap_or_else(|error| error.into_inner())
-                                .push(write),
-                            Err(error) => {
-                                tracing::error!("Wayland clipboard send setup failed: {error}")
-                            }
-                        }
-                    }
-                });
-                dd.set_selection(Some(&source), serial);
-                if let Ok(mut owns) = self.owns_clipboard.lock() {
-                    *owns = true;
                 }
             }
+        });
+        dd.set_selection(Some(&source), serial);
+        if let Ok(mut owns) = self.owns_clipboard.lock() {
+            *owns = true;
         }
+        Ok(())
     }
-    fn has_text(&self) -> bool {
+    fn has_text(&self) -> Result<bool> {
         self.clipboard_text
             .lock()
             .map(|t| !t.is_empty())
-            .unwrap_or(false)
+            .map_err(|_| {
+                Error::new(
+                    Errc::InvalidState,
+                    "WaylandBackend::has_text: clipboard_text lock poisoned",
+                )
+            })
     }
 }

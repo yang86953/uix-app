@@ -8,6 +8,7 @@
 use crate::native::backends::windows::util::to_utf8;
 use crate::native::shared::{FileSystemCore, SpecialDirProvider};
 use crate::native::traits::system::SpecialDir;
+use crate::native::{Errc, Error, Result};
 use std::ptr;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -20,7 +21,7 @@ pub type WindowsFileSystem = FileSystemCore<WindowsSpecialDirs>;
 pub struct WindowsSpecialDirs;
 
 impl SpecialDirProvider for WindowsSpecialDirs {
-    fn special_dir(&self, dir: SpecialDir) -> String {
+    fn special_dir(&self, dir: SpecialDir) -> Result<String> {
         match dir {
             SpecialDir::Temp => get_temp_dir(),
             _ => {
@@ -32,7 +33,12 @@ impl SpecialDirProvider for WindowsSpecialDirs {
                     SpecialDir::Documents => FOLDERID_DOCUMENTS,
                     SpecialDir::Desktop => FOLDERID_DESKTOP,
                     SpecialDir::Downloads => FOLDERID_DOWNLOADS,
-                    _ => return String::new(),
+                    _ => {
+                        return Err(Error::new(
+                            Errc::InvalidArgument,
+                            format!("WindowsSpecialDirs::special_dir: unsupported dir {dir:?}"),
+                        ))
+                    }
                 };
                 get_known_folder_path(&guid)
             }
@@ -44,34 +50,45 @@ impl SpecialDirProvider for WindowsSpecialDirs {
 // 内部实现函数
 // ════════════════════════════════════════════════════════════════════════════
 
-fn get_temp_dir() -> String {
+fn get_temp_dir() -> Result<String> {
     read_variable_wide_path(|buffer| unsafe {
         GetTempPathW(buffer.len() as u32, buffer.as_mut_ptr()) as usize
     })
 }
 
-pub(crate) fn read_variable_wide_path(mut query: impl FnMut(&mut [u16]) -> usize) -> String {
+pub(crate) fn read_variable_wide_path(
+    mut query: impl FnMut(&mut [u16]) -> usize,
+) -> Result<String> {
     let mut buffer = vec![0u16; MAX_PATH + 1];
     loop {
         let length = query(&mut buffer);
         if length == 0 {
-            return String::new();
+            return Err(Error::new(
+                Errc::PlatformError,
+                "WindowsSpecialDirs: Win32 path query returned zero length",
+            ));
         }
         if length < buffer.len() {
-            return to_utf8(&buffer[..length]);
+            return Ok(to_utf8(&buffer[..length]));
         }
 
         let Some(next_capacity) = length.checked_add(1) else {
-            return String::new();
+            return Err(Error::new(
+                Errc::OutOfRange,
+                "WindowsSpecialDirs: path length overflow",
+            ));
         };
         if next_capacity > MAX_WIN32_PATH_UNITS {
-            return String::new();
+            return Err(Error::new(
+                Errc::OutOfRange,
+                "WindowsSpecialDirs: path exceeds MAX_WIN32_PATH_UNITS",
+            ));
         }
         buffer.resize(next_capacity, 0);
     }
 }
 
-fn get_known_folder_path(guid: &GUID) -> String {
+fn get_known_folder_path(guid: &GUID) -> Result<String> {
     unsafe {
         let mut path_ptr: *mut u16 = ptr::null_mut();
         let hr = SHGetKnownFolderPath(guid as *const GUID, 0, ptr::null_mut(), &mut path_ptr);
@@ -82,9 +99,15 @@ fn get_known_folder_path(guid: &GUID) -> String {
             }
             let result = to_utf8(std::slice::from_raw_parts(path_ptr, len));
             CoTaskMemFree(path_ptr as *mut std::ffi::c_void);
-            result
+            Ok(result)
         } else {
-            String::new()
+            Err(Error::new(
+                Errc::PlatformError,
+                format!(
+                    "WindowsSpecialDirs: SHGetKnownFolderPath failed with HRESULT {:#x}",
+                    hr as u32
+                ),
+            ))
         }
     }
 }

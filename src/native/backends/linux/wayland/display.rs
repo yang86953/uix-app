@@ -7,49 +7,54 @@
 
 use crate::native::traits::display::DisplayInfo;
 use crate::native::traits::display::IDisplay;
+use crate::native::{Errc, Error, Result};
 
 use super::WaylandBackend;
 
 impl IDisplay for WaylandBackend {
-    fn dpi_scale(&self) -> f32 {
-        self.outputs
-            .lock()
-            .ok()
-            .and_then(|list| {
-                list.iter()
-                    .find(|o| o.is_primary)
-                    .or_else(|| list.first())
-                    .map(|o| o.scale as f32)
-            })
-            .unwrap_or(1.0)
+    fn dpi_scale(&self) -> Result<f32> {
+        let list = self.outputs.lock().map_err(|_| {
+            Error::new(
+                Errc::InvalidState,
+                "WaylandBackend::dpi_scale: outputs lock poisoned",
+            )
+        })?;
+        list.iter()
+            .find(|o| o.is_primary)
+            .or_else(|| list.first())
+            .map(|o| o.scale as f32)
+            .ok_or_else(|| Error::new(Errc::NotFound, "WaylandBackend::dpi_scale: no outputs"))
     }
 
-    fn is_dark_mode(&self) -> bool {
-        std::env::var("GTK_THEME")
+    fn is_dark_mode(&self) -> Result<bool> {
+        Ok(std::env::var("GTK_THEME")
             .map(|t| t.contains("dark"))
-            .unwrap_or(false)
+            .unwrap_or(false))
     }
 
-    fn count(&self) -> i32 {
-        self.outputs
-            .lock()
-            .map(|list| list.len() as i32)
-            .unwrap_or(1)
+    fn count(&self) -> Result<i32> {
+        let list = self.outputs.lock().map_err(|_| {
+            Error::new(
+                Errc::InvalidState,
+                "WaylandBackend::count: outputs lock poisoned",
+            )
+        })?;
+        Ok(list.len() as i32)
     }
 
-    fn info(&self, index: i32) -> DisplayInfo {
+    fn info(&self, index: i32) -> Result<DisplayInfo> {
         let idx = index.max(0) as usize;
-        self.outputs
-            .lock()
-            .ok()
-            .and_then(|list| list.get(idx).map(|o| o.to_display_info()))
-            .unwrap_or_else(|| {
-                // 回退：虚拟 1080p 显示器
-                DisplayInfo {
-                    bounds: crate::core::Rect::new(0.0, 0.0, 1920.0, 1080.0),
-                    dpi_scale: 1.0,
-                    is_primary: index == 0,
-                }
-            })
+        let list = self.outputs.lock().map_err(|_| {
+            Error::new(
+                Errc::InvalidState,
+                "WaylandBackend::info: outputs lock poisoned",
+            )
+        })?;
+        list.get(idx).map(|o| o.to_display_info()).ok_or_else(|| {
+            Error::new(
+                Errc::NotFound,
+                format!("WaylandBackend::info: no output at index {idx}"),
+            )
+        })
     }
 }

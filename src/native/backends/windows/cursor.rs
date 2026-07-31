@@ -8,6 +8,7 @@
 use crate::core::Point;
 use crate::native::traits::input::CursorType;
 use crate::native::traits::input::ICursor;
+use crate::native::{Errc, Error, Result};
 use std::ptr;
 
 use super::bindings::{POINT, RECT};
@@ -75,7 +76,7 @@ impl Default for WindowsCursor {
 }
 
 impl ICursor for WindowsCursor {
-    fn set_cursor(&mut self, cursor: CursorType) {
+    fn set_cursor(&mut self, cursor: CursorType) -> Result<()> {
         let id = match cursor {
             CursorType::Arrow => IDC_ARROW,
             CursorType::IBeam => IDC_IBEAM,
@@ -88,66 +89,100 @@ impl ICursor for WindowsCursor {
             CursorType::Move => IDC_SIZEALL,
             CursorType::Wait => IDC_WAIT,
             CursorType::NotAllowed => IDC_NO,
-            CursorType::Custom => return,
+            CursorType::Custom => return Ok(()),
         };
+        // SAFETY: id 是预定义系统光标标识符，hcursor 由系统分配并保持有效。
+        let hcursor = unsafe { LoadCursorW(ptr::null_mut(), id as *const u16) };
+        if hcursor.is_null() {
+            return Err(cursor_error("LoadCursorW"));
+        }
+        // SAFETY: hcursor 来自 LoadCursorW，SetCursor 接受该句柄并保持其有效。
         unsafe {
-            let hcursor = LoadCursorW(ptr::null_mut(), id as *const u16);
-            if !hcursor.is_null() {
-                SetCursor(hcursor);
-            }
+            SetCursor(hcursor);
+        }
+        Ok(())
+    }
+
+    fn show_cursor(&mut self, visible: bool) -> Result<()> {
+        // SAFETY: ShowCursor 接受布尔显示计数增量；返回值小于 0 表示失败。
+        let result = unsafe { ShowCursor(if visible { TRUE } else { FALSE }) };
+        if result < 0 {
+            Err(cursor_error("ShowCursor"))
+        } else {
+            Ok(())
         }
     }
 
-    fn show_cursor(&mut self, visible: bool) {
-        unsafe {
-            ShowCursor(if visible { TRUE } else { FALSE });
+    fn cursor_position(&self) -> Result<Point> {
+        // SAFETY: pt 由 GetCursorPos 在同步调用期间写入。
+        let mut pt = POINT { x: 0, y: 0 };
+        if unsafe { GetCursorPos(&mut pt) } != 0 {
+            Ok(Point::new(pt.x as f32, pt.y as f32))
+        } else {
+            Err(cursor_error("GetCursorPos"))
         }
     }
 
-    fn cursor_position(&self) -> Point {
-        unsafe {
-            let mut pt = POINT { x: 0, y: 0 };
-            if GetCursorPos(&mut pt) != 0 {
-                Point::new(pt.x as f32, pt.y as f32)
-            } else {
-                Point::default()
-            }
+    fn set_cursor_position(&mut self, x: i32, y: i32) -> Result<()> {
+        // SAFETY: SetCursorPos 为同步 Win32 调用，无借用期。
+        if unsafe { SetCursorPos(x, y) } != 0 {
+            Ok(())
+        } else {
+            Err(cursor_error("SetCursorPos"))
         }
     }
 
-    fn set_cursor_position(&mut self, x: i32, y: i32) {
-        unsafe {
-            SetCursorPos(x, y);
-        }
-    }
-
-    fn confine_cursor(&mut self, confine: bool) {
+    fn confine_cursor(&mut self, confine: bool) -> Result<()> {
         if confine {
-            if let Some(rect) = client_area_screen_rect(self.hwnd) {
-                // SAFETY: rect 是当前客户区的有效 screen-space physical 矩形。
-                unsafe {
-                    ClipCursor(&rect);
-                }
+            let Some(rect) = client_area_screen_rect(self.hwnd) else {
+                return Err(cursor_error("GetClientRect/ClientToScreen"));
+            };
+            // SAFETY: rect 是当前客户区的有效 screen-space physical 矩形。
+            if unsafe { ClipCursor(&rect) } != 0 {
+                Ok(())
+            } else {
+                Err(cursor_error("ClipCursor"))
             }
         } else {
             // SAFETY: 空指针按 Win32 契约解除光标约束。
-            unsafe {
-                ClipCursor(ptr::null());
+            if unsafe { ClipCursor(ptr::null()) } != 0 {
+                Ok(())
+            } else {
+                Err(cursor_error("ClipCursor"))
             }
         }
     }
 
-    fn capture_mouse(&mut self) {
-        unsafe {
-            SetCapture(self.hwnd);
+    fn capture_mouse(&mut self) -> Result<()> {
+        if self.hwnd.is_null() {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "WindowsCursor::capture_mouse: no window handle bound",
+            ));
+        }
+        // SAFETY: hwnd 来自存活平台窗口；SetCapture 返回前一个捕获窗口或空指针。
+        if unsafe { SetCapture(self.hwnd) }.is_null() {
+            Err(cursor_error("SetCapture"))
+        } else {
+            Ok(())
         }
     }
 
-    fn release_mouse(&mut self) {
-        unsafe {
-            ReleaseCapture();
+    fn release_mouse(&mut self) -> Result<()> {
+        // SAFETY: ReleaseCapture 为同步 Win32 调用；返回 0 表示失败。
+        if unsafe { ReleaseCapture() } != 0 {
+            Ok(())
+        } else {
+            Err(cursor_error("ReleaseCapture"))
         }
     }
+}
+
+fn cursor_error(operation: &str) -> Error {
+    Error::new(
+        Errc::PlatformError,
+        format!("WindowsCursor: {operation} failed"),
+    )
 }
 
 const IDC_ARROW: u16 = 32512;

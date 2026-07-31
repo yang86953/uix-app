@@ -8,6 +8,7 @@
 
 use crate::native::backends::windows::util::{to_utf8, to_wide};
 use crate::native::traits::system::IFileDialog;
+use crate::native::{Errc, Error, Result};
 use std::ptr;
 
 pub struct WindowsFileDialog {
@@ -31,8 +32,23 @@ impl Default for WindowsFileDialog {
     }
 }
 
+/// `GetOpenFileNameW` / `GetSaveFileNameW` 返回 0 时,0 表示用户取消,
+/// 非 0 表示对话框内部失败(如内存不足、模板无效)。
+fn dialog_failure_or_cancelled() -> Result<()> {
+    // SAFETY: CommDlgExtendedError 无参数,返回最近一次对话框错误的扩展码。
+    let error = unsafe { CommDlgExtendedError() };
+    if error == 0 {
+        Ok(())
+    } else {
+        Err(Error::new(
+            Errc::PlatformError,
+            format!("WindowsFileDialog: common dialog failed with extended error {error}"),
+        ))
+    }
+}
+
 impl IFileDialog for WindowsFileDialog {
-    fn open(&mut self, title: &str, filters: &str) -> Vec<String> {
+    fn open(&mut self, title: &str, filters: &str) -> Result<Option<Vec<String>>> {
         let wide_filters = to_wide(filters);
         let mut buf = [0u16; 4096];
         let wide_title = to_wide(title);
@@ -64,21 +80,27 @@ impl IFileDialog for WindowsFileDialog {
             };
             let result = GetOpenFileNameW(&mut ofn);
             if result == 0 {
-                return Vec::new();
+                return dialog_failure_or_cancelled().map(|()| None);
             }
             let wide_str = &buf[..];
             let null_pos = wide_str.iter().position(|&c| c == 0).unwrap_or(0);
             if null_pos == 0 {
-                return Vec::new();
+                return Err(Error::new(
+                    Errc::FormatError,
+                    "WindowsFileDialog::open: empty file buffer",
+                ));
             }
             let dir = to_utf8(&wide_str[..null_pos]);
             if dir.is_empty() {
-                return Vec::new();
+                return Err(Error::new(
+                    Errc::FormatError,
+                    "WindowsFileDialog::open: empty directory path",
+                ));
             }
             let remaining = &wide_str[(null_pos + 1)..];
             let second_null = remaining.iter().position(|&c| c == 0).unwrap_or(0);
             if second_null == 0 || remaining[0] == 0 {
-                return vec![dir];
+                return Ok(Some(vec![dir]));
             }
             let mut result = Vec::new();
             let mut pos = 0;
@@ -97,11 +119,11 @@ impl IFileDialog for WindowsFileDialog {
                 result.push(format!("{}\\{}", dir, file_name));
                 pos = pos + end + 1;
             }
-            result
+            Ok(Some(result))
         }
     }
 
-    fn save(&mut self, title: &str, filters: &str) -> String {
+    fn save(&mut self, title: &str, filters: &str) -> Result<Option<String>> {
         let wide_filters = to_wide(filters);
         let mut buf = [0u16; 4096];
         let wide_title = to_wide(title);
@@ -133,13 +155,13 @@ impl IFileDialog for WindowsFileDialog {
             };
             let result = GetSaveFileNameW(&mut ofn);
             if result == 0 {
-                return String::new();
+                return dialog_failure_or_cancelled().map(|()| None);
             }
-            to_utf8(&buf)
+            Ok(Some(to_utf8(&buf)))
         }
     }
 
-    fn open_folder(&mut self, title: &str) -> String {
+    fn open_folder(&mut self, title: &str) -> Result<Option<String>> {
         let wide_title = to_wide(title);
         let mut buf = [0u16; 4096];
         unsafe {
@@ -155,14 +177,17 @@ impl IFileDialog for WindowsFileDialog {
             };
             let pidl = SHBrowseForFolderW(&mut bi);
             if pidl.is_null() {
-                return String::new();
+                return Ok(None);
             }
             let result = SHGetPathFromIDListW(pidl, buf.as_mut_ptr());
             CoTaskMemFree(pidl);
             if result != 0 {
-                to_utf8(&buf)
+                Ok(Some(to_utf8(&buf)))
             } else {
-                String::new()
+                Err(Error::new(
+                    Errc::PlatformError,
+                    "WindowsFileDialog::open_folder: SHGetPathFromIDListW failed",
+                ))
             }
         }
     }
@@ -208,6 +233,7 @@ const OFN_OVERWRITEPROMPT: u32 = 0x00000002;
 extern "system" {
     fn GetOpenFileNameW(lpofn: *mut OPENFILENAMEW) -> i32;
     fn GetSaveFileNameW(lpofn: *mut OPENFILENAMEW) -> i32;
+    fn CommDlgExtendedError() -> u32;
 }
 
 // ── Folder picker FFI ──

@@ -6,6 +6,7 @@
 
 use super::ffi::{KillTimer, SetTimer};
 use crate::native::traits::system::ITimer;
+use crate::native::{Errc, Error, Result};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
@@ -38,31 +39,46 @@ impl Default for WindowsTimer {
 }
 
 impl ITimer for WindowsTimer {
-    fn set(&mut self, interval_ms: u32, repeating: bool) -> u32 {
+    fn set(&mut self, interval_ms: u32, repeating: bool) -> Result<u32> {
+        if self.hwnd.is_null() {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "WindowsTimer::set: no window handle bound",
+            ));
+        }
         let id = self.next_id;
         self.next_id = self.next_id.wrapping_add(1);
-        if self.hwnd.is_null() {
-            return id;
-        }
         if !repeating {
             if let Ok(mut set) = self.non_repeating.lock() {
                 set.insert(id);
             }
         }
-        unsafe {
-            SetTimer(self.hwnd, id, interval_ms, None);
+        // SAFETY: hwnd 来自存活平台窗口，SetTimer 返回新定时器 ID 或空指针。
+        let timer = unsafe { SetTimer(self.hwnd, id, interval_ms, None) };
+        if timer == 0 {
+            Err(Error::new(
+                Errc::PlatformError,
+                "WindowsTimer::set: SetTimer failed",
+            ))
+        } else {
+            Ok(id)
         }
-        id
     }
-    fn clear(&mut self, id: u32) {
+    fn clear(&mut self, id: u32) -> Result<()> {
         if self.hwnd.is_null() {
-            return;
+            return Ok(());
         }
         if let Ok(mut set) = self.non_repeating.lock() {
             set.remove(&id);
         }
-        unsafe {
-            KillTimer(self.hwnd, id);
+        // SAFETY: hwnd 来自存活平台窗口；KillTimer 返回 0 表示失败。
+        if unsafe { KillTimer(self.hwnd, id) } != 0 {
+            Ok(())
+        } else {
+            Err(Error::new(
+                Errc::PlatformError,
+                "WindowsTimer::clear: KillTimer failed",
+            ))
         }
     }
 }

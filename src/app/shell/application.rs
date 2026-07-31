@@ -672,7 +672,14 @@ impl App {
         let image_service = ImageService::new();
 
         let system_theme_tokens = if self.follow_system_theme {
-            let tokens = Arc::new(DynTokens::new(if platform.display().is_dark_mode() {
+            let is_dark = platform.display().is_dark_mode().unwrap_or_else(|error| {
+                tracing::warn!(
+                    "startup theme query failed, defaulting to light: {}",
+                    error.short_what()
+                );
+                false
+            });
+            let tokens = Arc::new(DynTokens::new(if is_dark {
                 DesignTokens::antd_dark()
             } else {
                 DesignTokens::antd_light()

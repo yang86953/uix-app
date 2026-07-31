@@ -9,6 +9,7 @@ use super::util::to_wide;
 use crate::core::Rect;
 use crate::native::traits::display::DisplayInfo;
 use crate::native::traits::display::IDisplay;
+use crate::native::{Errc, Error, Result};
 use std::cell::Cell;
 use std::ptr;
 use windows::core::BOOL;
@@ -34,7 +35,7 @@ impl WindowsDisplay {
     }
 
     /// 读取 Windows 注册表检测系统深色/浅色模式
-    pub(crate) fn detect_os_theme() -> bool {
+    pub(crate) fn detect_os_theme() -> Result<bool> {
         unsafe {
             let sub_key =
                 to_wide("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize");
@@ -49,7 +50,10 @@ impl WindowsDisplay {
                 &mut hkey,
             );
             if ret != ERROR_SUCCESS || hkey.is_null() {
-                return false;
+                return Err(Error::new(
+                    Errc::PlatformError,
+                    format!("WindowsDisplay::is_dark_mode: RegOpenKeyExW failed ({ret})"),
+                ));
             }
 
             let mut data: u32 = 0;
@@ -67,11 +71,18 @@ impl WindowsDisplay {
 
             RegCloseKey(hkey);
 
-            ret == ERROR_SUCCESS && data_type == REG_DWORD && data == 0
+            if ret == ERROR_SUCCESS && data_type == REG_DWORD {
+                Ok(data == 0)
+            } else {
+                Err(Error::new(
+                    Errc::PlatformError,
+                    format!("WindowsDisplay::is_dark_mode: RegQueryValueExW failed ({ret})"),
+                ))
+            }
         }
     }
 
-    fn monitors(&self) -> Vec<MonitorDescriptor> {
+    fn monitors(&self) -> Result<Vec<MonitorDescriptor>> {
         let mut inventory = MonitorInventory::default();
         let inventory_ptr = (&mut inventory as *mut MonitorInventory) as isize;
         // SAFETY: EnumDisplayMonitors 同步调用回调，inventory 在整个调用期间唯一可写且有效。
@@ -79,7 +90,10 @@ impl WindowsDisplay {
             EnumDisplayMonitors(None, None, Some(collect_monitor), LPARAM(inventory_ptr))
         };
         if !completed.as_bool() || inventory.failed {
-            return Vec::new();
+            return Err(Error::new(
+                Errc::PlatformError,
+                "WindowsDisplay::monitors: EnumDisplayMonitors failed",
+            ));
         }
         inventory.monitors.sort_by_key(|monitor| {
             (
@@ -90,7 +104,7 @@ impl WindowsDisplay {
                 monitor.bounds.right,
             )
         });
-        inventory.monitors
+        Ok(inventory.monitors)
     }
 
     fn dpi_for_monitor(&self, monitor: HMONITOR) -> u32 {
@@ -116,18 +130,6 @@ impl WindowsDisplay {
             }
         }
         super::dpi::dpi_for_system()
-    }
-
-    fn fallback_info(&self) -> DisplayInfo {
-        unsafe {
-            let width = GetSystemMetrics(SM_CXSCREEN);
-            let height = GetSystemMetrics(SM_CYSCREEN);
-            DisplayInfo {
-                bounds: Rect::new(0.0, 0.0, width as f32, height as f32),
-                dpi_scale: self.dpi_scale(),
-                is_primary: true,
-            }
-        }
     }
 }
 
@@ -179,36 +181,32 @@ impl Default for WindowsDisplay {
 }
 
 impl IDisplay for WindowsDisplay {
-    fn dpi_scale(&self) -> f32 {
+    fn dpi_scale(&self) -> Result<f32> {
         let hwnd = self.hwnd.get() as *mut std::ffi::c_void;
         let dpi = if hwnd.is_null() {
             super::dpi::dpi_for_system()
         } else {
             super::dpi::dpi_for_window(hwnd)
         };
-        dpi as f32 / super::dpi::BASE_DPI as f32
+        Ok(dpi as f32 / super::dpi::BASE_DPI as f32)
     }
 
-    fn is_dark_mode(&self) -> bool {
+    fn is_dark_mode(&self) -> Result<bool> {
         Self::detect_os_theme()
     }
 
-    fn count(&self) -> i32 {
-        i32::try_from(self.monitors().len())
-            .ok()
-            .filter(|count| *count > 0)
-            .unwrap_or(1)
+    fn count(&self) -> Result<i32> {
+        i32::try_from(self.monitors()?.len())
+            .map_err(|_| Error::new(Errc::OutOfRange, "WindowsDisplay::count: too many monitors"))
     }
 
-    fn info(&self, index: i32) -> DisplayInfo {
-        let monitors = self.monitors();
+    fn info(&self, index: i32) -> Result<DisplayInfo> {
+        let monitors = self.monitors()?;
         let monitor = monitors
             .get(index.max(0) as usize)
-            .or_else(|| monitors.first());
-        let Some(monitor) = monitor else {
-            return self.fallback_info();
-        };
-        DisplayInfo {
+            .or_else(|| monitors.first())
+            .ok_or_else(|| Error::new(Errc::NotFound, "WindowsDisplay::info: no monitors"))?;
+        Ok(DisplayInfo {
             bounds: Rect::new(
                 monitor.bounds.left as f32,
                 monitor.bounds.top as f32,
@@ -217,9 +215,6 @@ impl IDisplay for WindowsDisplay {
             ),
             dpi_scale: self.dpi_for_monitor(monitor.handle) as f32 / super::dpi::BASE_DPI as f32,
             is_primary: monitor.is_primary,
-        }
+        })
     }
 }
-
-const SM_CXSCREEN: i32 = 0;
-const SM_CYSCREEN: i32 = 1;
