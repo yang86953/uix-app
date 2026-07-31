@@ -7,6 +7,32 @@
 //!   instance; neither Module is exported or discovers the other.
 //! - report draft construction, bounded storage, and tracing emission are
 //!   narrow Components selected and owned by the reporting Module.
+//!
+//! # 私有 Module 边界 deny 证据（compile-fail）
+//!
+//! `reporting` / `recovery` 是 Diagnostics System 的私有 Module，`pending` /
+//! `report` / `config` 是 System 私有实现文件；它们对外一律不可达。以下契约
+//! 锁定该边界，任何把私有 Module 提升为公开模块的改动都会编译失败。
+//!
+//! ```compile_fail
+//! use uix::diagnostics::reporting::ReportingModule;
+//! ```
+//!
+//! ```compile_fail
+//! use uix::diagnostics::recovery::RecoveryModule;
+//! ```
+//!
+//! ```compile_fail
+//! use uix::diagnostics::pending::PendingFailureQueue;
+//! ```
+//!
+//! ```compile_fail
+//! use uix::diagnostics::report::ReportOrigin;
+//! ```
+//!
+//! ```compile_fail
+//! use uix::diagnostics::config::DiagnosticsConfig;
+//! ```
 
 mod config;
 mod pending;

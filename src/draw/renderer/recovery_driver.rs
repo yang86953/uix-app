@@ -14,7 +14,38 @@ use crate::draw::renderer::test_harness::GraphicsFaultSignal;
 use crate::draw::renderer::{GraphicsFailure, GraphicsRecovery, RecoveryAction, RenderOutcome};
 use crate::draw::{Canvas2D, GraphicsCapabilities, RenderTarget, UpdateStrategy};
 use crate::native::traits::present::PresentTestResult;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
+
+/// One app-owned rebuild request shared by a Diagnostics recovery registration
+/// and the owning [`RecoveryDriver`].
+///
+/// The request is intentionally narrow: it only says "the domain observed a
+/// typed failure that needs the bounded graphics recovery sequence at the next
+/// frame boundary". The sequence itself stays in [`GraphicsRecovery`] and the
+/// rebuilder closure; this handle never probes or replaces an engine.
+#[derive(Clone, Default)]
+pub(crate) struct RebuildRequest {
+    requested: Arc<AtomicBool>,
+}
+
+impl RebuildRequest {
+    /// Records one rebuild request. Calling it from any thread is safe; the
+    /// owning [`RecoveryDriver`] consumes it at its next frame boundary.
+    pub(crate) fn request_rebuild(&self) {
+        self.requested.store(true, Ordering::Release);
+    }
+
+    /// Read-only check whether a rebuild is currently requested.
+    pub(crate) fn is_requested(&self) -> bool {
+        self.requested.load(Ordering::Acquire)
+    }
+
+    fn take(&self) -> bool {
+        self.requested.swap(false, Ordering::AcqRel)
+    }
+}
 
 /// Recreates one initialized engine for a permitted recovery action.
 ///
@@ -31,6 +62,7 @@ pub struct RecoveryDriver {
     rebuilder: RenderTargetRebuilder,
     pending_failure: Option<GraphicsFailure>,
     terminal_failure: Option<GraphicsFailure>,
+    rebuild_request: RebuildRequest,
     width: i32,
     height: i32,
     shutdown: bool,
@@ -46,12 +78,19 @@ impl RecoveryDriver {
             rebuilder,
             pending_failure: None,
             terminal_failure: None,
+            rebuild_request: RebuildRequest::default(),
             width: 0,
             height: 0,
             shutdown: false,
             #[cfg(feature = "test-harness")]
             test_faults: None,
         }
+    }
+
+    /// Attaches the shared rebuild request consumed at each frame boundary.
+    pub(crate) fn with_rebuild_request(mut self, request: RebuildRequest) -> Self {
+        self.rebuild_request = request;
+        self
     }
 
     /// Records the already-initialized engine's current logical extent.
@@ -178,6 +217,16 @@ impl RenderTarget for RecoveryDriver {
             ));
             self.record_failure(failure.clone());
             return RenderOutcome::Failed(failure);
+        }
+        // An external recovery registration (e.g. a Diagnostics handler) may
+        // request the bounded rebuild sequence at the next frame boundary.
+        // record_failure keeps the first unhandled failure; the request is
+        // consumed once and joins the existing recovery state machine.
+        if self.rebuild_request.take() {
+            self.record_failure(GraphicsFailure::DeviceLost(Error::new(
+                crate::core::Errc::GraphicsDeviceLost,
+                "recovery handler requested graphics rebuild",
+            )));
         }
         if let Some(outcome) = self.recover_before_frame() {
             return outcome;
@@ -408,5 +457,146 @@ impl Drop for RecoveryDriver {
                 error.short_what()
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::Errc;
+    use crate::draw::backend::cpu::noop_canvas_2d::NoopCanvas2D;
+    use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+
+    struct StubTarget {
+        frames: u32,
+        fail_next: bool,
+        shutdown: bool,
+        canvas: NoopCanvas2D,
+    }
+
+    impl StubTarget {
+        fn new() -> Self {
+            Self {
+                frames: 0,
+                fail_next: false,
+                shutdown: false,
+                canvas: NoopCanvas2D,
+            }
+        }
+
+        fn new_failing() -> Self {
+            Self {
+                frames: 0,
+                fail_next: true,
+                shutdown: false,
+                canvas: NoopCanvas2D,
+            }
+        }
+    }
+
+    impl RenderTarget for StubTarget {
+        fn initialize(&mut self, _width: i32, _height: i32) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn try_shutdown(&mut self) -> Result<(), Error> {
+            self.shutdown = true;
+            Ok(())
+        }
+
+        fn resize(&mut self, _width: i32, _height: i32) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn begin_frame(&mut self, _strategy: UpdateStrategy) -> RenderOutcome {
+            self.frames += 1;
+            if self.fail_next {
+                self.fail_next = false;
+                return RenderOutcome::Failed(GraphicsFailure::DeviceLost(Error::new(
+                    Errc::GraphicsDeviceLost,
+                    "stub device lost",
+                )));
+            }
+            RenderOutcome::FrameReady(DamageRegion::full())
+        }
+
+        fn end_frame(&mut self, _damage: &DamageRegion) -> RenderOutcome {
+            RenderOutcome::Present(DamageRegion::full())
+        }
+
+        fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
+            &mut self.canvas
+        }
+    }
+
+    fn counting_rebuilder(rebuilds: &Arc<AtomicUsize>) -> RenderTargetRebuilder {
+        let rebuilds = Arc::clone(rebuilds);
+        Box::new(move |_action: RecoveryAction, _width: i32, _height: i32| {
+            rebuilds.fetch_add(1, AtomicOrdering::SeqCst);
+            Ok(Box::new(StubTarget::new()) as Box<dyn RenderTarget>)
+        })
+    }
+
+    #[test]
+    fn rebuild_request_runs_bounded_recovery_at_next_frame_boundary() {
+        let request = RebuildRequest::default();
+        let rebuilds = Arc::new(AtomicUsize::new(0));
+        let mut driver =
+            RecoveryDriver::new(Box::new(StubTarget::new()), counting_rebuilder(&rebuilds))
+                .with_extent(100, 100)
+                .with_rebuild_request(request.clone());
+
+        // 无请求时正常推进，不触发重建。
+        assert!(matches!(
+            driver.begin_frame(UpdateStrategy::FullRedraw),
+            RenderOutcome::FrameReady(_)
+        ));
+        assert_eq!(rebuilds.load(AtomicOrdering::SeqCst), 0);
+
+        // 请求后下一帧执行有界恢复序列（RebuildSurface → rebuilder 一次）。
+        request.request_rebuild();
+        let outcome = driver.begin_frame(UpdateStrategy::FullRedraw);
+        assert!(
+            matches!(outcome, RenderOutcome::FrameReady(_)),
+            "recovery should rebuild and continue, got {outcome:?}"
+        );
+        assert_eq!(rebuilds.load(AtomicOrdering::SeqCst), 1);
+
+        // 请求是一次性的：后续帧不再重复恢复。
+        let outcome = driver.begin_frame(UpdateStrategy::FullRedraw);
+        assert!(matches!(outcome, RenderOutcome::FrameReady(_)));
+        assert_eq!(rebuilds.load(AtomicOrdering::SeqCst), 1);
+    }
+
+    #[test]
+    fn rebuild_request_joins_an_already_pending_failure_without_double_recovery() {
+        let request = RebuildRequest::default();
+        let rebuilds = Arc::new(AtomicUsize::new(0));
+        let mut driver =
+            RecoveryDriver::new(Box::new(StubTarget::new()), counting_rebuilder(&rebuilds))
+                .with_extent(100, 100)
+                .with_rebuild_request(request.clone());
+
+        // 先注入一次真实帧失败：本帧直接失败并保留 pending failure。
+        let failing = Box::new(StubTarget::new_failing());
+        driver.engine = failing;
+        let outcome = driver.begin_frame(UpdateStrategy::FullRedraw);
+        assert!(matches!(outcome, RenderOutcome::Failed(_)));
+        assert_eq!(rebuilds.load(AtomicOrdering::SeqCst), 0);
+
+        // 恢复请求被消费，但不覆盖首个未处理失败，也不产生第二次重建：
+        // 下一帧只执行一次有界恢复（针对原始 device-lost 失败）。
+        request.request_rebuild();
+        let outcome = driver.begin_frame(UpdateStrategy::FullRedraw);
+        assert!(
+            matches!(outcome, RenderOutcome::FrameReady(_)),
+            "recovery should rebuild once and continue, got {outcome:?}"
+        );
+        assert_eq!(rebuilds.load(AtomicOrdering::SeqCst), 1);
+
+        // 请求是一次性的：后续帧不再重复恢复。
+        let outcome = driver.begin_frame(UpdateStrategy::FullRedraw);
+        assert!(matches!(outcome, RenderOutcome::FrameReady(_)));
+        assert_eq!(rebuilds.load(AtomicOrdering::SeqCst), 1);
     }
 }
