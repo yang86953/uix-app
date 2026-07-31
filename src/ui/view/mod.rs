@@ -586,7 +586,7 @@ impl ViewNode {
         self
     }
 
-    /// 默认点击路径：绑定 `State` 指纹，reconcile 可稳定复用（[使用](docs/使用.md)）。
+    /// 默认点击路径：绑定 `State` 指纹，reconcile 可稳定复用（知识库：`C:\data\note\我的项目\软件\UIX App\使用.md`）。
     ///
     /// 与 [`button`] 的 `on_click` 对齐，可用于 `label` / `embed` 等任意 View。
     pub fn on_click<T, F>(mut self, state: &crate::ui::state::State<T>, mut f: F) -> Self
@@ -609,9 +609,9 @@ impl ViewNode {
         self
     }
 
-    /// 无 State 的点击闭包；每次 reconcile **保守重绑**（[使用](docs/使用.md)）。
+    /// 无 State 的点击闭包；每次 reconcile **保守重绑**（知识库：`C:\data\note\我的项目\软件\UIX App\使用.md`）。
     ///
-    /// 命名保留 `_fn`：Rust 无法与 [`Self::on_click`] 重载；有 State 时优先 `on_click(&state, …)`（[使用](docs/使用.md)）。
+    /// 命名保留 `_fn`：Rust 无法与 [`Self::on_click`] 重载；有 State 时优先 `on_click(&state, …)`（知识库：`C:\data\note\我的项目\软件\UIX App\使用.md`）。
     pub fn on_click_fn<F: FnMut() + 'static>(mut self, mut f: F) -> Self {
         self.handlers.push(HandlerRegistration::new(
             SemanticKind::Click,
@@ -797,7 +797,7 @@ pub trait TransitionExt: Into<ViewNode> + Sized {
 
 impl<T: Into<ViewNode>> TransitionExt for T {}
 
-/// 为所有 `Into<ViewNode>` 类型提供样式链（[使用](docs/使用.md)）。
+/// 为所有 `Into<ViewNode>` 类型提供样式链（知识库：`C:\data\note\我的项目\软件\UIX App\使用.md`）。
 ///
 /// 实现委托 [`ViewNode`] 同名方法，避免双份逻辑漂移。
 /// **链式顺序**：先写 builder 专有方法（如 `button(…).primary().on_click(…)`），再写本 trait
