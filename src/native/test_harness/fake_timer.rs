@@ -4,6 +4,7 @@
 //! 支持单次和重复定时器，追踪所有 set/clear 操作。
 
 use crate::native::traits::system::ITimer;
+use crate::native::Result;
 use std::time::Duration;
 
 #[derive(Debug, Clone)]
@@ -125,7 +126,7 @@ impl Default for FakeTimer {
 }
 
 impl ITimer for FakeTimer {
-    fn set(&mut self, interval_ms: u32, repeating: bool) -> u32 {
+    fn set(&mut self, interval_ms: u32, repeating: bool) -> Result<u32> {
         let id = self.state.next_id;
         self.state.next_id += 1;
         self.state.timers.push(FakeTimerEntry {
@@ -135,11 +136,12 @@ impl ITimer for FakeTimer {
             remaining: Duration::from_millis(interval_ms as u64),
         });
         self.state.set_calls.push((interval_ms, repeating));
-        id
+        Ok(id)
     }
 
-    fn clear(&mut self, id: u32) {
+    fn clear(&mut self, id: u32) -> Result<()> {
         self.state.timers.retain(|t| t.id != id);
         self.state.clear_calls.push(id);
+        Ok(())
     }
 }

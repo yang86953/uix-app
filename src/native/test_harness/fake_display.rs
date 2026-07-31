@@ -3,6 +3,7 @@
 use crate::core::geometry::Rect;
 use crate::native::traits::display::DisplayInfo;
 use crate::native::traits::display::IDisplay;
+use crate::native::Result;
 use std::cell::Cell;
 
 #[derive(Debug)]
@@ -58,20 +59,20 @@ impl Default for FakeDisplay {
 }
 
 impl IDisplay for FakeDisplay {
-    fn dpi_scale(&self) -> f32 {
-        self.dpi_scale.get()
+    fn dpi_scale(&self) -> Result<f32> {
+        Ok(self.dpi_scale.get())
     }
 
-    fn is_dark_mode(&self) -> bool {
-        self.is_dark_mode.get()
+    fn is_dark_mode(&self) -> Result<bool> {
+        Ok(self.is_dark_mode.get())
     }
 
-    fn count(&self) -> i32 {
-        self.count.get()
+    fn count(&self) -> Result<i32> {
+        Ok(self.count.get())
     }
 
-    fn info(&self, index: i32) -> DisplayInfo {
+    fn info(&self, index: i32) -> Result<DisplayInfo> {
         self.info_calls.borrow_mut().push(index);
-        self.make_info(index)
+        Ok(self.make_info(index))
     }
 }

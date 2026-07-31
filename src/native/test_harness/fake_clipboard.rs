@@ -1,6 +1,7 @@
 //! Fake 剪贴板 — 内存实现 + 操作记录。
 
 use crate::native::traits::input::IClipboard;
+use crate::native::Result;
 use std::cell::Cell;
 
 /// 剪贴板状态（公开字段，测试可直接读取断言）
@@ -56,19 +57,20 @@ impl Default for FakeClipboard {
 }
 
 impl IClipboard for FakeClipboard {
-    fn text(&self) -> String {
-        self.state.text.clone()
+    fn text(&self) -> Result<String> {
+        Ok(self.state.text.clone())
     }
 
-    fn set_text(&mut self, text: &str) {
+    fn set_text(&mut self, text: &str) -> Result<()> {
         self.state.text = text.to_string();
         self.state.set_text_calls.push(text.to_string());
+        Ok(())
     }
 
-    fn has_text(&self) -> bool {
+    fn has_text(&self) -> Result<bool> {
         self.state
             .has_text_calls
             .set(self.state.has_text_calls.get() + 1);
-        !self.state.text.is_empty()
+        Ok(!self.state.text.is_empty())
     }
 }

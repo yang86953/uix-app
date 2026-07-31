@@ -8,6 +8,7 @@ use super::ffi::*;
 use crate::native::backends::windows::util::to_utf8;
 use crate::native::backends::windows::util::to_wide;
 use crate::native::traits::input::IClipboard;
+use crate::native::{Errc, Error, Result};
 use std::ptr;
 
 struct ClipboardSession;
@@ -148,44 +149,54 @@ impl Default for WindowsClipboard {
 }
 
 impl IClipboard for WindowsClipboard {
-    fn text(&self) -> String {
+    fn text(&self) -> Result<String> {
         let Some(_session) = ClipboardSession::open(self.hwnd) else {
-            return String::new();
+            return Err(clipboard_error("OpenClipboard"));
         };
         // SAFETY: 剪贴板会话保持打开，返回的 HGLOBAL 仅在会话内加锁读取。
         let handle = unsafe { GetClipboardData(CF_UNICODETEXT) };
         LockedGlobalMemory::lock(handle)
             .map(|memory| memory.text())
-            .unwrap_or_default()
+            .ok_or_else(|| clipboard_error("GetClipboardData"))
     }
 
-    fn set_text(&mut self, text: &str) {
+    fn set_text(&mut self, text: &str) -> Result<()> {
         let Some(memory) = OwnedGlobalMemory::from_text(text) else {
-            return;
+            return Err(clipboard_error("GlobalAlloc"));
         };
         let Some(_session) = ClipboardSession::open(self.hwnd) else {
-            return;
+            return Err(clipboard_error("OpenClipboard"));
         };
         // SAFETY: 当前任务持有已打开的剪贴板；失败时不覆盖现有内容。
         if unsafe { EmptyClipboard() } == 0 {
-            return;
+            return Err(clipboard_error("EmptyClipboard"));
         }
         // SAFETY: HGLOBAL 已解锁且仍由 memory 独占；非空返回值将所有权转移给系统。
         if !unsafe { SetClipboardData(CF_UNICODETEXT, memory.handle()) }.is_null() {
             memory.transfer_to_clipboard();
+            Ok(())
+        } else {
+            Err(clipboard_error("SetClipboardData"))
         }
     }
 
-    fn has_text(&self) -> bool {
+    fn has_text(&self) -> Result<bool> {
         let Some(_session) = ClipboardSession::open(self.hwnd) else {
-            return false;
+            return Err(clipboard_error("OpenClipboard"));
         };
         let formats = [CF_UNICODETEXT, CF_TEXT];
         // SAFETY: formats 指向两个有效的剪贴板格式 ID，会话在调用期间保持打开。
-        priority_result_has_text(unsafe {
+        Ok(priority_result_has_text(unsafe {
             GetPriorityClipboardFormat(formats.as_ptr(), formats.len() as i32)
-        })
+        }))
     }
+}
+
+fn clipboard_error(operation: &str) -> Error {
+    Error::new(
+        Errc::PlatformError,
+        format!("WindowsClipboard: {operation} failed"),
+    )
 }
 
 // FFI declarations

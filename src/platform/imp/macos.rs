@@ -75,7 +75,7 @@ pub(crate) fn memory_info() -> Result<MemoryInfo> {
 pub(crate) fn displays() -> Result<Box<[DisplayInfo]>> {
     let platform = MacosPlatform::new();
     let display = platform.display();
-    let count = usize::try_from(display.count()).map_err(|_| {
+    let count = usize::try_from(display.count()?).map_err(|_| {
         Error::new(
             Errc::PlatformError,
             "Platform::displays: AppKit returned a negative display count",
@@ -89,7 +89,7 @@ pub(crate) fn displays() -> Result<Box<[DisplayInfo]>> {
                 "Platform::displays: display index exceeds i32",
             )
         })?;
-        let value = display.info(index);
+        let value = display.info(index)?;
         values.push(DisplayInfo::new(
             value.bounds,
             value.dpi_scale,

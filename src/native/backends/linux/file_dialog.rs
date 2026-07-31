@@ -8,6 +8,7 @@
 // ============================================================================
 
 use crate::native::traits::system::IFileDialog;
+use crate::native::{Errc, Error, Result};
 
 // ════════════════════════════════════════════════════════════════════════════
 // LinuxFileDialog
@@ -29,7 +30,7 @@ impl Default for LinuxFileDialog {
 }
 
 impl IFileDialog for LinuxFileDialog {
-    fn open(&mut self, title: &str, filters: &str) -> Vec<String> {
+    fn open(&mut self, title: &str, filters: &str) -> Result<Option<Vec<String>>> {
         if use_kde() {
             kde_open_file(title, filters)
         } else {
@@ -37,7 +38,7 @@ impl IFileDialog for LinuxFileDialog {
         }
     }
 
-    fn save(&mut self, title: &str, filters: &str) -> String {
+    fn save(&mut self, title: &str, filters: &str) -> Result<Option<String>> {
         if use_kde() {
             kde_save_file(title, filters)
         } else {
@@ -45,7 +46,7 @@ impl IFileDialog for LinuxFileDialog {
         }
     }
 
-    fn open_folder(&mut self, title: &str) -> String {
+    fn open_folder(&mut self, title: &str) -> Result<Option<String>> {
         if use_kde() {
             kde_open_folder(title)
         } else {
@@ -70,7 +71,7 @@ fn use_kde() -> bool {
 // Zenity (GNOME / generic GTK)
 // ════════════════════════════════════════════════════════════════════════════
 
-fn zenity_open_file(title: &str, filters: &str) -> Vec<String> {
+fn zenity_open_file(title: &str, filters: &str) -> Result<Option<Vec<String>>> {
     let mut cmd = std::process::Command::new("zenity");
     cmd.args([
         "--file-selection",
@@ -91,22 +92,21 @@ fn zenity_open_file(title: &str, filters: &str) -> Vec<String> {
         }
     }
 
-    let output = match cmd.output() {
-        Ok(o) => o,
-        Err(_) => return Vec::new(),
-    };
+    let output = spawn_dialog("zenity", &mut cmd)?;
     if !output.status.success() {
-        return Vec::new();
+        return Ok(None);
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
-    stdout
-        .lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect()
+    Ok(Some(
+        stdout
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect(),
+    ))
 }
 
-fn zenity_save_file(title: &str, filters: &str) -> String {
+fn zenity_save_file(title: &str, filters: &str) -> Result<Option<String>> {
     let mut cmd = std::process::Command::new("zenity");
     cmd.args([
         "--file-selection",
@@ -126,81 +126,74 @@ fn zenity_save_file(title: &str, filters: &str) -> String {
         }
     }
 
-    let output = match cmd.output() {
-        Ok(o) => o,
-        Err(_) => return String::new(),
-    };
+    let output = spawn_dialog("zenity", &mut cmd)?;
     if !output.status.success() {
-        return String::new();
+        return Ok(None);
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
-    stdout.trim().to_string()
+    Ok(Some(stdout.trim().to_string()))
 }
 
-fn zenity_open_folder(title: &str) -> String {
-    let output = match std::process::Command::new("zenity")
-        .args(["--file-selection", "--title", title, "--directory"])
-        .output()
-    {
-        Ok(o) => o,
-        Err(_) => return String::new(),
-    };
+fn zenity_open_folder(title: &str) -> Result<Option<String>> {
+    let mut cmd = std::process::Command::new("zenity");
+    cmd.args(["--file-selection", "--title", title, "--directory"]);
+    let output = spawn_dialog("zenity", &mut cmd)?;
     if !output.status.success() {
-        return String::new();
+        return Ok(None);
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
-    stdout.trim().to_string()
+    Ok(Some(stdout.trim().to_string()))
 }
 
 // ════════════════════════════════════════════════════════════════════════════
 // KDialog (KDE)
 // ════════════════════════════════════════════════════════════════════════════
 
-fn kde_open_file(title: &str, filters: &str) -> Vec<String> {
-    let output = match std::process::Command::new("kdialog")
-        .args(["--title", title, "--getopenfilename", ".", filters])
-        .output()
-    {
-        Ok(o) => o,
-        Err(_) => return Vec::new(),
-    };
+fn kde_open_file(title: &str, filters: &str) -> Result<Option<Vec<String>>> {
+    let mut cmd = std::process::Command::new("kdialog");
+    cmd.args(["--title", title, "--getopenfilename", ".", filters]);
+    let output = spawn_dialog("kdialog", &mut cmd)?;
     if !output.status.success() {
-        return Vec::new();
+        return Ok(None);
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
-    stdout
-        .lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect()
+    Ok(Some(
+        stdout
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect(),
+    ))
 }
 
-fn kde_save_file(title: &str, filters: &str) -> String {
-    let output = match std::process::Command::new("kdialog")
-        .args(["--title", title, "--getsavefilename", ".", filters])
-        .output()
-    {
-        Ok(o) => o,
-        Err(_) => return String::new(),
-    };
+fn kde_save_file(title: &str, filters: &str) -> Result<Option<String>> {
+    let mut cmd = std::process::Command::new("kdialog");
+    cmd.args(["--title", title, "--getsavefilename", ".", filters]);
+    let output = spawn_dialog("kdialog", &mut cmd)?;
     if !output.status.success() {
-        return String::new();
+        return Ok(None);
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
-    stdout.trim().to_string()
+    Ok(Some(stdout.trim().to_string()))
 }
 
-fn kde_open_folder(title: &str) -> String {
-    let output = match std::process::Command::new("kdialog")
-        .args(["--title", title, "--getexistingdirectory", "."])
-        .output()
-    {
-        Ok(o) => o,
-        Err(_) => return String::new(),
-    };
+fn kde_open_folder(title: &str) -> Result<Option<String>> {
+    let mut cmd = std::process::Command::new("kdialog");
+    cmd.args(["--title", title, "--getexistingdirectory", "."]);
+    let output = spawn_dialog("kdialog", &mut cmd)?;
     if !output.status.success() {
-        return String::new();
+        return Ok(None);
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
-    stdout.trim().to_string()
+    Ok(Some(stdout.trim().to_string()))
+}
+
+/// 启动对话框进程;进程无法启动(程序缺失等)视为对话框本身失败。
+fn spawn_dialog(program: &str, cmd: &mut std::process::Command) -> Result<std::process::Output> {
+    cmd.output().map_err(|err| {
+        Error::new(
+            Errc::IoError,
+            format!("LinuxFileDialog: failed to launch {program}: {err}"),
+        )
+    })
 }

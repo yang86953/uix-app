@@ -189,19 +189,19 @@ impl ScrollDirection {
 }
 
 pub trait IClipboard {
-    fn text(&self) -> String;
-    fn set_text(&mut self, text: &str);
-    fn has_text(&self) -> bool;
+    fn text(&self) -> Result<String>;
+    fn set_text(&mut self, text: &str) -> Result<()>;
+    fn has_text(&self) -> Result<bool>;
 }
 
 pub trait ICursor {
-    fn set_cursor(&mut self, cursor: CursorType);
-    fn show_cursor(&mut self, visible: bool);
-    fn cursor_position(&self) -> Point;
-    fn set_cursor_position(&mut self, x: i32, y: i32);
-    fn confine_cursor(&mut self, confine: bool);
-    fn capture_mouse(&mut self);
-    fn release_mouse(&mut self);
+    fn set_cursor(&mut self, cursor: CursorType) -> Result<()>;
+    fn show_cursor(&mut self, visible: bool) -> Result<()>;
+    fn cursor_position(&self) -> Result<Point>;
+    fn set_cursor_position(&mut self, x: i32, y: i32) -> Result<()>;
+    fn confine_cursor(&mut self, confine: bool) -> Result<()>;
+    fn capture_mouse(&mut self) -> Result<()>;
+    fn release_mouse(&mut self) -> Result<()>;
 }
 
 pub trait ITextInput {

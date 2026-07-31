@@ -6,7 +6,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex, Once};
 use std::time::Duration;
 
-use crate::core::{Errc, Error, Rect, WindowId};
+use crate::core::{Errc, Error, Rect, Result, WindowId};
 use crate::native::shared::{
     FileSystemCore, OsEventSource, PlatformWindowCore, SpecialDirProvider, WindowOps, WindowState,
 };
@@ -712,24 +712,25 @@ impl MacosClipboard {
 }
 
 impl IClipboard for MacosClipboard {
-    fn text(&self) -> String {
+    fn text(&self) -> Result<String> {
         // SAFETY: NSPasteboard is an AppKit singleton; returned NSString data is
         // copied into a Rust String before leaving the FFI boundary.
-        unsafe { cocoa::clipboard_text() }
+        Ok(unsafe { cocoa::clipboard_text() })
     }
 
-    fn set_text(&mut self, text: &str) {
+    fn set_text(&mut self, text: &str) -> Result<()> {
         // SAFETY: text is converted to NSString and consumed synchronously by
         // NSPasteboard's setter; Rust does not retain Objective-C pointers.
         unsafe {
             cocoa::set_clipboard_text(text);
         }
+        Ok(())
     }
 
-    fn has_text(&self) -> bool {
+    fn has_text(&self) -> Result<bool> {
         // SAFETY: Same invariant as text(); this only checks whether the
         // pasteboard currently has a string payload.
-        unsafe { cocoa::clipboard_has_text() }
+        Ok(unsafe { cocoa::clipboard_has_text() })
     }
 }
 
@@ -748,72 +749,91 @@ impl MacosCursor {
 }
 
 impl ICursor for MacosCursor {
-    fn set_cursor(&mut self, cursor: CursorType) {
+    fn set_cursor(&mut self, cursor: CursorType) -> Result<()> {
         self.cursor = cursor;
+        Ok(())
     }
 
-    fn show_cursor(&mut self, _visible: bool) {}
-
-    fn cursor_position(&self) -> crate::core::Point {
-        self.position
+    fn show_cursor(&mut self, _visible: bool) -> Result<()> {
+        Ok(())
     }
 
-    fn set_cursor_position(&mut self, x: i32, y: i32) {
+    fn cursor_position(&self) -> Result<crate::core::Point> {
+        Ok(self.position)
+    }
+
+    fn set_cursor_position(&mut self, x: i32, y: i32) -> Result<()> {
         self.position = crate::core::Point::new(x as f32, y as f32);
+        Ok(())
     }
 
-    fn confine_cursor(&mut self, _confine: bool) {}
+    fn confine_cursor(&mut self, _confine: bool) -> Result<()> {
+        Ok(())
+    }
 
-    fn capture_mouse(&mut self) {}
+    fn capture_mouse(&mut self) -> Result<()> {
+        Ok(())
+    }
 
-    fn release_mouse(&mut self) {}
+    fn release_mouse(&mut self) -> Result<()> {
+        Ok(())
+    }
 }
 
 struct MacosDisplay;
 
 impl IDisplay for MacosDisplay {
-    fn dpi_scale(&self) -> f32 {
+    fn dpi_scale(&self) -> Result<f32> {
         // SAFETY: NSScreen returns AppKit-owned objects and scalar values; Rust
         // copies the scale factor immediately.
-        unsafe { cocoa::main_screen_scale() as f32 }
+        Ok(unsafe { cocoa::main_screen_scale() as f32 })
     }
 
-    fn is_dark_mode(&self) -> bool {
+    fn is_dark_mode(&self) -> Result<bool> {
         // SAFETY: NSUserDefaults returns an autoreleased NSString that is copied
         // into Rust before comparison.
-        unsafe { cocoa::is_dark_mode() }
+        Ok(unsafe { cocoa::is_dark_mode() })
     }
 
-    fn count(&self) -> i32 {
+    fn count(&self) -> Result<i32> {
         // SAFETY: NSScreen screens is an AppKit-owned NSArray; only its count is read.
-        unsafe { cocoa::screen_count() as i32 }
+        Ok(unsafe { cocoa::screen_count() as i32 })
     }
 
-    fn info(&self, index: i32) -> DisplayInfo {
+    fn info(&self, index: i32) -> Result<DisplayInfo> {
         // SAFETY: screen_info copies the selected NSScreen frame and scale into
         // plain Rust values and falls back to the main screen for invalid indexes.
         let screen = unsafe { cocoa::screen_info(index.max(0) as usize) };
-        DisplayInfo {
+        Ok(DisplayInfo {
             bounds: screen.bounds,
             dpi_scale: screen.scale as f32,
             is_primary: true,
-        }
+        })
     }
 }
 
 struct MacosFileDialog;
 
 impl IFileDialog for MacosFileDialog {
-    fn open(&mut self, _title: &str, _filters: &str) -> Vec<String> {
-        Vec::new()
+    fn open(&mut self, _title: &str, _filters: &str) -> Result<Option<Vec<String>>> {
+        Err(Error::new(
+            Errc::NotImplemented,
+            "MacosFileDialog::open: not implemented",
+        ))
     }
 
-    fn save(&mut self, _title: &str, _filters: &str) -> String {
-        String::new()
+    fn save(&mut self, _title: &str, _filters: &str) -> Result<Option<String>> {
+        Err(Error::new(
+            Errc::NotImplemented,
+            "MacosFileDialog::save: not implemented",
+        ))
     }
 
-    fn open_folder(&mut self, _title: &str) -> String {
-        String::new()
+    fn open_folder(&mut self, _title: &str) -> Result<Option<String>> {
+        Err(Error::new(
+            Errc::NotImplemented,
+            "MacosFileDialog::open_folder: not implemented",
+        ))
     }
 }
 
@@ -823,17 +843,21 @@ type MacosFileSystem = FileSystemCore<MacosSpecialDirs>;
 struct MacosSpecialDirs;
 
 impl SpecialDirProvider for MacosSpecialDirs {
-    fn special_dir(&self, dir: SpecialDir) -> String {
+    fn special_dir(&self, dir: SpecialDir) -> Result<String> {
         match dir {
-            SpecialDir::Home => home_dir(),
-            SpecialDir::Temp => std::env::temp_dir().to_string_lossy().to_string(),
+            SpecialDir::Home => home_dir()
+                .ok_or_else(|| Error::new(Errc::NotFound, "MacosSpecialDirs: HOME is not set")),
+            SpecialDir::Temp => Ok(std::env::temp_dir().to_string_lossy().to_string()),
             SpecialDir::AppData | SpecialDir::LocalAppData => {
                 home_child("Library/Application Support")
             }
             SpecialDir::Documents => home_child("Documents"),
             SpecialDir::Desktop => home_child("Desktop"),
             SpecialDir::Downloads => home_child("Downloads"),
-            SpecialDir::Current | SpecialDir::Executable => String::new(),
+            SpecialDir::Current | SpecialDir::Executable => Err(Error::new(
+                Errc::NotImplemented,
+                "MacosSpecialDirs: Current/Executable are handled by FileSystemCore",
+            )),
         }
     }
 }
@@ -864,24 +888,28 @@ impl IKeyboard for MacosKeyboard {
     }
 }
 
-struct MacosTimer {
-    next_id: u32,
-}
+struct MacosTimer;
 
 impl MacosTimer {
     fn new() -> Self {
-        Self { next_id: 1 }
+        Self
     }
 }
 
 impl ITimer for MacosTimer {
-    fn set(&mut self, _interval_ms: u32, _repeating: bool) -> u32 {
-        let id = self.next_id;
-        self.next_id = self.next_id.wrapping_add(1).max(1);
-        id
+    fn set(&mut self, _interval_ms: u32, _repeating: bool) -> Result<u32> {
+        Err(Error::new(
+            Errc::NotImplemented,
+            "MacosTimer::set: not implemented",
+        ))
     }
 
-    fn clear(&mut self, _id: u32) {}
+    fn clear(&mut self, _id: u32) -> Result<()> {
+        Err(Error::new(
+            Errc::NotImplemented,
+            "MacosTimer::clear: not implemented",
+        ))
+    }
 }
 
 struct MacosNotification;
@@ -992,19 +1020,17 @@ impl ISystemInfo for MacosSystemInfo {
     }
 }
 
-fn home_dir() -> String {
-    std::env::var("HOME").unwrap_or_default()
+fn home_dir() -> Option<String> {
+    std::env::var("HOME").ok()
 }
 
-fn home_child(child: &str) -> String {
-    let home = home_dir();
-    if home.is_empty() {
-        return String::new();
-    }
-    PathBuf::from(home)
+fn home_child(child: &str) -> Result<String> {
+    let home = home_dir()
+        .ok_or_else(|| Error::new(Errc::NotFound, "MacosSpecialDirs: HOME is not set"))?;
+    Ok(PathBuf::from(home)
         .join(child)
         .to_string_lossy()
-        .to_string()
+        .to_string())
 }
 
 fn find_existing_path(paths: &[&str]) -> Option<String> {

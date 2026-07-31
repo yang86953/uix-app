@@ -243,7 +243,8 @@ impl WindowsPlatform {
                 0
             }
             WM_SETTINGCHANGE | WM_THEMECHANGED => {
-                self.route_system_theme_change(window_id, WindowsDisplay::detect_os_theme());
+                let is_dark = WindowsDisplay::detect_os_theme().unwrap_or(false);
+                self.route_system_theme_change(window_id, is_dark);
                 self.def_window_proc(hwnd, msg, wparam, lparam)
             }
             WM_GETMINMAXINFO => {

@@ -190,9 +190,22 @@ impl WindowDriver {
                 self.cancel_outstanding_native_frame(platform_window);
                 self.frame_scheduler.resume();
                 if engine.logical_extent() == self.initial_size {
-                    let info = platform.display().info(0);
-                    let width = info.bounds.w as i32;
-                    let height = info.bounds.h as i32;
+                    let width;
+                    let height;
+                    match platform.display().info(0) {
+                        Ok(info) => {
+                            width = info.bounds.w as i32;
+                            height = info.bounds.h as i32;
+                        }
+                        Err(error) => {
+                            tracing::warn!(
+                                "window maximize: display info unavailable: {}",
+                                error.short_what()
+                            );
+                            width = 0;
+                            height = 0;
+                        }
+                    }
                     if width > 0 && height > 0 {
                         if report_graphics_resize_error(
                             "window graphics maximize resize failed",

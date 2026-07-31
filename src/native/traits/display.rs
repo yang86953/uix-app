@@ -1,5 +1,6 @@
 //! 显示协议 — 显示器信息与 DPI。
 
+use crate::core::error::Result;
 use crate::core::geometry::Rect;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -24,8 +25,8 @@ impl Default for DisplayInfo {
 }
 
 pub trait IDisplay {
-    fn dpi_scale(&self) -> f32;
-    fn is_dark_mode(&self) -> bool;
-    fn count(&self) -> i32;
-    fn info(&self, index: i32) -> DisplayInfo;
+    fn dpi_scale(&self) -> Result<f32>;
+    fn is_dark_mode(&self) -> Result<bool>;
+    fn count(&self) -> Result<i32>;
+    fn info(&self, index: i32) -> Result<DisplayInfo>;
 }

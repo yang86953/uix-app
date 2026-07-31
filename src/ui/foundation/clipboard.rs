@@ -62,7 +62,9 @@ pub fn copy_to_clipboard(text: &str) {
         };
         // SAFETY: `with_clipboard` 安装的指针在作用域结束前始终有效；当前
         // RefCell 独占借用同时阻止通过本服务重入并创建第二个可变引用。
-        unsafe { pointer.as_mut().set_text(text) };
+        if let Err(error) = unsafe { pointer.as_mut().set_text(text) } {
+            tracing::error!("copy_to_clipboard failed: {}", error.short_what());
+        }
     });
 }
 
@@ -75,7 +77,12 @@ pub fn read_text_from_clipboard() -> Option<String> {
         let pointer = current.as_ref()?;
         // SAFETY: 见 `copy_to_clipboard`。读取期间仍持有 RefCell 独占借用，
         // 因而自定义实现无法通过本服务重入并与该引用发生别名。
-        let text = unsafe { pointer.as_ref().text() };
-        (!text.is_empty()).then_some(text)
+        match unsafe { pointer.as_ref().text() } {
+            Ok(text) => (!text.is_empty()).then_some(text),
+            Err(error) => {
+                tracing::error!("read_text_from_clipboard failed: {}", error.short_what());
+                None
+            }
+        }
     })
 }
