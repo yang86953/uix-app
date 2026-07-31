@@ -20,6 +20,7 @@ use windows::Win32::UI::TextServices::{
 };
 
 pub(crate) use super::tsf_document::{TsfEventSink, TsfLockKind, TsfLockRequest, TsfStoreState};
+use crate::core::{Errc, Error};
 use crate::native::backends::windows::tsf_session::tsf_composition_events;
 use crate::native::traits::event::UiEvent;
 
@@ -43,23 +44,38 @@ impl TsfTextStore {
 }
 
 #[derive(Clone)]
-pub(crate) struct TsfStoreHandle(Rc<RefCell<TsfStoreState>>);
+pub(crate) struct TsfStoreHandle {
+    state: Rc<RefCell<TsfStoreState>>,
+    event_sink: TsfEventSink,
+}
 
 impl TsfStoreHandle {
     fn new(state: TsfStoreState) -> Self {
-        Self(Rc::new(RefCell::new(state)))
+        let event_sink = state.event_sink.clone();
+        Self {
+            state: Rc::new(RefCell::new(state)),
+            event_sink,
+        }
     }
 
     pub(crate) fn read(&self) -> WinResult<CellRef<'_, TsfStoreState>> {
-        self.0
-            .try_borrow()
-            .map_err(|_| WinError::from(E_UNEXPECTED))
+        self.state.try_borrow().map_err(|_| {
+            self.event_sink.enqueue_failure(Error::new(
+                Errc::InvalidState,
+                "TSF: text store read borrow conflict",
+            ));
+            WinError::from(E_UNEXPECTED)
+        })
     }
 
     pub(crate) fn write(&self) -> WinResult<CellRefMut<'_, TsfStoreState>> {
-        self.0
-            .try_borrow_mut()
-            .map_err(|_| WinError::from(E_UNEXPECTED))
+        self.state.try_borrow_mut().map_err(|_| {
+            self.event_sink.enqueue_failure(Error::new(
+                Errc::InvalidState,
+                "TSF: text store write borrow conflict",
+            ));
+            WinError::from(E_UNEXPECTED)
+        })
     }
 }
 
@@ -99,13 +115,22 @@ fn require_write_lock(state: &TsfStoreState) -> WinResult<()> {
     }
 }
 
-fn notify_lock_granted(sink: Option<&ITextStoreACPSink>, kind: TsfLockKind) -> HRESULT {
+fn notify_lock_granted(
+    event_sink: &TsfEventSink,
+    sink: Option<&ITextStoreACPSink>,
+    kind: TsfLockKind,
+) -> HRESULT {
     let Some(sink) = sink else {
         return HRESULT(0);
     };
     match unsafe { sink.OnLockGranted(kind.flags()) } {
         Ok(()) => HRESULT(0),
-        Err(error) => error.code(),
+        Err(error) => {
+            let code = error.code();
+            event_sink
+                .enqueue_windows_failure("TSF: ITextStoreACPSink::OnLockGranted failed", error);
+            code
+        }
     }
 }
 
@@ -144,10 +169,10 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
     }
 
     fn RequestLock(&self, dwlockflags: u32) -> WinResult<HRESULT> {
-        let (sink, request) = {
+        let (event_sink, sink, request) = {
             let mut state = self.state.write()?;
             let request = state.begin_lock(dwlockflags);
-            (state.acp_sink.clone(), request)
+            (state.event_sink.clone(), state.acp_sink.clone(), request)
         };
 
         let kind = match request {
@@ -156,10 +181,10 @@ impl ITextStoreACP_Impl for TsfTextStore_Impl {
             TsfLockRequest::RejectSynchronous => return Ok(TS_E_SYNCHRONOUS),
         };
 
-        let session_hr = notify_lock_granted(sink.as_ref(), kind);
+        let session_hr = notify_lock_granted(&event_sink, sink.as_ref(), kind);
         let pending = self.state.write()?.complete_lock();
         if let Some(pending_kind) = pending {
-            let _ = notify_lock_granted(sink.as_ref(), pending_kind);
+            let _ = notify_lock_granted(&event_sink, sink.as_ref(), pending_kind);
             let _ = self.state.write()?.complete_lock();
         }
         Ok(session_hr)
