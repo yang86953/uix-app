@@ -124,6 +124,13 @@
 //! // 旧 ui 根级模块路径不得复活：window_chrome 归 widgets（SMC-04）。
 //! use uix::ui::window_chrome::WindowControl;
 //! ```
+//!
+//! SMC-05 后，data 私有 Module 边界不得经公开路径访问：
+//!
+//! ```compile_fail
+//! // data settings Module 为私有边界（SMC-05）。
+//! use uix::data::settings::SettingsService;
+//! ```
 
 // `windows::core::implement` 宏展开依赖 crate 根的 `windows_core`（无平台 cfg：依赖在各目标可用）。
 extern crate self as uix;
