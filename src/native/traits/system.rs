@@ -1,6 +1,6 @@
 ﻿//! 系统服务协议 — 文件、对话框、通知、定时器、控制台与系统信息。
 
-use crate::core::error::{Error, Result};
+use crate::core::error::{Errc, Error, Result};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 文件系统
@@ -98,13 +98,13 @@ pub trait ITimer {
 }
 
 pub trait ISystemInfo {
-    fn os_info(&self) -> OsInfo;
-    fn cpu_count(&self) -> u32;
-    fn memory_info(&self) -> MemoryInfo;
-    fn hostname(&self) -> String;
-    fn username(&self) -> String;
-    fn up_time(&self) -> u64;
-    fn default_font_paths(&self) -> Vec<String>;
+    fn os_info(&self) -> Result<OsInfo>;
+    fn cpu_count(&self) -> Result<u32>;
+    fn memory_info(&self) -> Result<MemoryInfo>;
+    fn hostname(&self) -> Result<String>;
+    fn username(&self) -> Result<String>;
+    fn up_time(&self) -> Result<u64>;
+    fn default_font_paths(&self) -> Result<Vec<String>>;
     fn probe_cjk_font_path(&self) -> Option<String> {
         None
     }
@@ -118,8 +118,11 @@ pub trait ISystemInfo {
     fn scan_fallback_font_path(&self) -> Option<String> {
         None
     }
-    fn process_memory(&self) -> (usize, usize) {
-        (0, 0)
+    fn process_memory(&self) -> Result<(usize, usize)> {
+        Err(Error::new(
+            Errc::NotImplemented,
+            "ISystemInfo::process_memory: not provided by this backend",
+        ))
     }
 }
 

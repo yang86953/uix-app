@@ -2,6 +2,7 @@
 
 use crate::native::traits::system::ISystemInfo;
 use crate::native::traits::system::{MemoryInfo, OsInfo};
+use crate::native::Result;
 use std::cell::Cell;
 
 #[derive(Debug)]
@@ -58,47 +59,47 @@ impl Default for FakeSystemInfo {
 }
 
 impl ISystemInfo for FakeSystemInfo {
-    fn os_info(&self) -> OsInfo {
-        OsInfo {
+    fn os_info(&self) -> Result<OsInfo> {
+        Ok(OsInfo {
             name: self.os_name.clone(),
             version: self.os_version.clone(),
             build: self.os_build.clone(),
             is_64bit: self.is_64bit.get(),
-        }
+        })
     }
 
-    fn cpu_count(&self) -> u32 {
-        self.cpu_count.get()
+    fn cpu_count(&self) -> Result<u32> {
+        Ok(self.cpu_count.get())
     }
 
-    fn memory_info(&self) -> MemoryInfo {
-        MemoryInfo {
+    fn memory_info(&self) -> Result<MemoryInfo> {
+        Ok(MemoryInfo {
             total_bytes: self.memory_total.get(),
             available_bytes: self.memory_available.get(),
             process_working_set: self.process_working_set.get(),
             process_private_bytes: self.process_private_bytes.get(),
-        }
+        })
     }
 
-    fn hostname(&self) -> String {
-        self.hostname.clone()
+    fn hostname(&self) -> Result<String> {
+        Ok(self.hostname.clone())
     }
 
-    fn username(&self) -> String {
-        self.username.clone()
+    fn username(&self) -> Result<String> {
+        Ok(self.username.clone())
     }
 
-    fn up_time(&self) -> u64 {
-        self.up_time.get()
+    fn up_time(&self) -> Result<u64> {
+        Ok(self.up_time.get())
     }
 
-    fn default_font_paths(&self) -> Vec<String> {
+    fn default_font_paths(&self) -> Result<Vec<String>> {
         self.default_font_calls
             .set(self.default_font_calls.get() + 1);
         if self.default_font.is_empty() {
-            Vec::new()
+            Ok(Vec::new())
         } else {
-            vec![self.default_font.clone()]
+            Ok(vec![self.default_font.clone()])
         }
     }
 }

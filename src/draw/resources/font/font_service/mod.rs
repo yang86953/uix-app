@@ -271,7 +271,16 @@ impl FontService {
                 return;
             }
 
-            let fallback_paths = system_info.default_font_paths();
+            let fallback_paths = match system_info.default_font_paths() {
+                Ok(paths) => paths,
+                Err(error) => {
+                    tracing::warn!(
+                        "system default font paths unavailable: {}",
+                        error.short_what()
+                    );
+                    Vec::new()
+                }
+            };
             for path in &fallback_paths {
                 if let Ok(data) = std::fs::read(path) {
                     if let Some(handle) = self.load_raw_font(data, size) {
@@ -292,7 +301,16 @@ impl FontService {
                 }
             }
         } else {
-            let paths = system_info.default_font_paths();
+            let paths = match system_info.default_font_paths() {
+                Ok(paths) => paths,
+                Err(error) => {
+                    tracing::warn!(
+                        "system default font paths unavailable: {}",
+                        error.short_what()
+                    );
+                    Vec::new()
+                }
+            };
 
             if !paths.is_empty() {
                 let mut primary_loaded = false;
