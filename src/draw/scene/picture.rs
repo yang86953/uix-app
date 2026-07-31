@@ -15,7 +15,6 @@ use crate::draw::resources::image::ImageService;
 use crate::draw::scene::viewport_transform::needs_paint;
 use crate::draw::scene::ScenePaint;
 use crate::draw::FontHandle;
-use crate::ui::traits::ThemeTokens;
 
 /// 离屏创建连续失败上限（超过后放弃离屏、改走直绘；仅 WARN 一次）。
 const MAX_OFFSCREEN_RETRY: u8 = 8;
@@ -25,7 +24,6 @@ pub(crate) struct LayerRenderEnv<'a> {
     pub font: FontHandle,
     pub font_service: &'a FontService,
     pub image_service: &'a ImageService,
-    pub tokens: &'a dyn ThemeTokens,
     pub dpi: f32,
     pub dpr: f32,
     pub orientation: Orientation,
@@ -161,7 +159,6 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
             env.font,
             env.font_service,
             env.image_service,
-            env.tokens,
             PaintSurfaceConfig {
                 dpi: env.dpi,
                 device_pixel_ratio: env.dpr,

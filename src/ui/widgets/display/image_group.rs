@@ -4,8 +4,8 @@ use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::{Color, Radius};
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, OverlayEntry, OverlayKind, SnapshotFields,
     SystemEvent, WidgetTree,
@@ -446,7 +446,7 @@ impl ImageGroup {
         )
     }
 
-    fn paint_gallery(&self, frame: Rect, ctx: &mut PaintContext<'_>, tree: &WidgetTree) {
+    fn paint_gallery(&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
@@ -494,7 +494,7 @@ impl ImageGroup {
         ctx.pop_clip();
     }
 
-    fn paint_controls(&self, ctx: &mut PaintContext<'_>, geometry: &GalleryGeometry) {
+    fn paint_controls(&self, ctx: &mut PaintContext, geometry: &GalleryGeometry) {
         let text_color = ctx.tokens().color_text();
         if let Some(previous) = geometry.previous {
             Self::paint_navigation_control(ctx, previous, "chevron-left", text_color);
@@ -523,7 +523,7 @@ impl ImageGroup {
         }
     }
 
-    fn paint_preview(&self, ctx: &mut PaintContext<'_>, surface: Rect) {
+    fn paint_preview(&self, ctx: &mut PaintContext, surface: Rect) {
         let surface = Self::normalized_frame(surface);
         if surface.w <= 0.0 || surface.h <= 0.0 || self.images.is_empty() {
             return;
@@ -600,7 +600,7 @@ impl ImageGroup {
 
     fn paint_image(
         &self,
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         path: &str,
         frame: Rect,
         fit: bool,
@@ -634,7 +634,7 @@ impl ImageGroup {
         }
     }
 
-    fn paint_navigation_control(ctx: &mut PaintContext<'_>, frame: Rect, icon: &str, color: Color) {
+    fn paint_navigation_control(ctx: &mut PaintContext, frame: Rect, icon: &str, color: Color) {
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }

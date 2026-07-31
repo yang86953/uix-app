@@ -2,9 +2,9 @@
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::command::PaintPass;
 use crate::draw::Color;
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
 use std::time::Duration;
@@ -173,7 +173,7 @@ impl Spin {
         (cx, cy, d, tip_frame)
     }
 
-    fn render_tip(&self, ctx: &mut PaintContext<'_>, frame: Rect) {
+    fn render_tip(&self, ctx: &mut PaintContext, frame: Rect) {
         const FONT_SIZE: f32 = 13.0;
         let Some(text) = Self::elide_single_line(ctx, &self.tip, FONT_SIZE, frame.w) else {
             return;
@@ -189,7 +189,7 @@ impl Spin {
     }
 
     fn elide_single_line(
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         value: &str,
         font_size: f32,
         max_width: f32,
@@ -220,7 +220,7 @@ impl Spin {
         Some(visible)
     }
 
-    fn text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
+    fn text_width(ctx: &mut PaintContext, value: &str, font_size: f32) -> f32 {
         ctx.measure_text(value, font_size).w.max(
             crate::draw::resources::font::text_backend::estimate_text_metrics(
                 value,

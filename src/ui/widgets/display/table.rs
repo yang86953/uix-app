@@ -1,7 +1,7 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::Radius;
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::foundation::virtual_scroll::VirtualListScroll;
 use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::{
@@ -1143,7 +1143,7 @@ impl Table {
     }
 
     pub(super) fn paint_single_line(
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         value: &str,
         frame: Rect,
         color: crate::draw::Color,
@@ -1161,7 +1161,7 @@ impl Table {
     }
 
     fn elide_single_line(
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         value: &str,
         font_size: f32,
         max_width: f32,
@@ -1192,7 +1192,7 @@ impl Table {
         Some(visible)
     }
 
-    fn text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
+    fn text_width(ctx: &mut PaintContext, value: &str, font_size: f32) -> f32 {
         ctx.measure_text(value, font_size).w.max(
             crate::draw::resources::font::text_backend::estimate_text_metrics(
                 value,
@@ -1670,7 +1670,7 @@ impl Table {
         )
     }
 
-    fn paint_loading_overlay(&self, frame: Rect, ctx: &mut PaintContext<'_>) {
+    fn paint_loading_overlay(&self, frame: Rect, ctx: &mut PaintContext) {
         let body = self.loading_body_rect(frame);
         if body.w <= 0.0 || body.h <= 0.0 {
             return;
@@ -1779,7 +1779,7 @@ impl Table {
         ));
     }
 
-    fn paint_pagination(&self, frame: Rect, ctx: &mut PaintContext<'_>) {
+    fn paint_pagination(&self, frame: Rect, ctx: &mut PaintContext) {
         let Some((previous, label, next)) = self.pagination_controls(frame) else {
             return;
         };

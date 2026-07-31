@@ -22,10 +22,10 @@ use std::sync::{Arc, Mutex};
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::geometry::spatial::PhysicalUnit;
 use crate::draw::{Color, Radius};
 use crate::ui::clipboard;
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SnapshotFields,
     SystemEvent, WidgetTree,

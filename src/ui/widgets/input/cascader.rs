@@ -2,9 +2,9 @@
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
     WidgetTree,
@@ -1199,7 +1199,7 @@ fn byte_index_for_char(text: &str, char_index: usize) -> usize {
         .unwrap_or(text.len())
 }
 
-fn paint_loading_spinner(ctx: &mut PaintContext<'_>, row: Rect, phase: f32, color: Color) {
+fn paint_loading_spinner(ctx: &mut PaintContext, row: Rect, phase: f32, color: Color) {
     let slot = Rect::new(row.x + row.w - 24.0, row.y, 24.0, row.h);
     let radius = 4.5_f32.min(slot.w.min(slot.h) * 0.25);
     if radius > 0.0 {

@@ -4,8 +4,8 @@ use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::{Color, Radius};
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
 use crate::ui::{ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent};
@@ -496,7 +496,7 @@ impl Tag {
     }
 
     fn paint_single_line(
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         value: &str,
         frame: Rect,
         color: Color,
@@ -514,7 +514,7 @@ impl Tag {
     }
 
     fn elide_single_line(
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         value: &str,
         font_size: f32,
         max_width: f32,
@@ -545,7 +545,7 @@ impl Tag {
         Some(visible)
     }
 
-    fn text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
+    fn text_width(ctx: &mut PaintContext, value: &str, font_size: f32) -> f32 {
         ctx.measure_text(value, font_size).w.max(
             crate::draw::resources::font::text_backend::estimate_text_metrics(
                 value,

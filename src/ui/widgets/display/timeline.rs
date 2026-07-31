@@ -4,8 +4,8 @@
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::Color;
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
 
@@ -265,11 +265,7 @@ struct RowTextGeometry {
     dot_y: f32,
 }
 
-fn row_text_geometry(
-    ctx: &mut PaintContext<'_>,
-    row: Rect,
-    has_description: bool,
-) -> RowTextGeometry {
+fn row_text_geometry(ctx: &mut PaintContext, row: Rect, has_description: bool) -> RowTextGeometry {
     let scale = (row.h / ITEM_HEIGHT).clamp(0.75, 1.0);
     let label_font = 14.0 * scale;
     let description_font = 12.0 * scale;
@@ -296,7 +292,7 @@ fn row_text_geometry(
 }
 
 fn draw_connector(
-    ctx: &mut PaintContext<'_>,
+    ctx: &mut PaintContext,
     line_x: f32,
     previous_dot_y: f32,
     dot_y: f32,
@@ -315,7 +311,7 @@ fn draw_connector(
 }
 
 fn paint_single_line(
-    ctx: &mut PaintContext<'_>,
+    ctx: &mut PaintContext,
     value: &str,
     frame: Rect,
     color: Color,
@@ -333,7 +329,7 @@ fn paint_single_line(
 }
 
 fn elide_single_line(
-    ctx: &mut PaintContext<'_>,
+    ctx: &mut PaintContext,
     value: &str,
     font_size: f32,
     max_width: f32,
@@ -364,7 +360,7 @@ fn elide_single_line(
     Some(visible)
 }
 
-fn text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
+fn text_width(ctx: &mut PaintContext, value: &str, font_size: f32) -> f32 {
     ctx.measure_text(value, font_size).w.max(
         crate::draw::resources::font::text_backend::estimate_text_metrics(
             value,

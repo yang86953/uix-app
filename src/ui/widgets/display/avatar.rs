@@ -4,10 +4,10 @@ use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::renderer::invalidate_paint_handle;
 use crate::draw::resources::image::BitmapHandle;
 use crate::draw::Color;
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::core::paint_scope::current_paint_widget;
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
@@ -160,7 +160,7 @@ impl Avatar {
 
     fn resolve_handle(
         &self,
-        ctx: &PaintContext<'_>,
+        ctx: &PaintContext,
         tree: &WidgetTree,
         frame: Rect,
     ) -> Option<BitmapHandle> {

@@ -2,9 +2,9 @@
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::Radius;
 use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotCollapsePanel,
     SnapshotFields, SystemEvent, WidgetTree,
@@ -875,7 +875,7 @@ fn single_line(text: &str) -> String {
     text.replace(['\r', '\n'], " ")
 }
 
-fn conservative_text_width(ctx: &mut PaintContext<'_>, text: &str, font_size: f32) -> f32 {
+fn conservative_text_width(ctx: &mut PaintContext, text: &str, font_size: f32) -> f32 {
     ctx.measure_text(text, font_size).w.max(
         crate::draw::resources::font::text_backend::estimate_text_metrics(
             text,
@@ -887,7 +887,7 @@ fn conservative_text_width(ctx: &mut PaintContext<'_>, text: &str, font_size: f3
 }
 
 fn elide_single_line(
-    ctx: &mut PaintContext<'_>,
+    ctx: &mut PaintContext,
     text: &str,
     font_size: f32,
     max_width: f32,

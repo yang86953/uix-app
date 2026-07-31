@@ -923,7 +923,12 @@ impl BoxedWidget {
             }
         });
     }
-    pub fn render(&self, frame: Rect, ctx: &mut crate::draw::api::PaintContext, tree: &WidgetTree) {
+    pub fn render(
+        &self,
+        frame: Rect,
+        ctx: &mut crate::ui::core::paint_context::PaintContext,
+        tree: &WidgetTree,
+    ) {
         let config = &self.provider_context.config;
         let theme = config.theme.as_ref().map(|theme| theme.tokens_arc());
         let patch = config

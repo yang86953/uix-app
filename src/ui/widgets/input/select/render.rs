@@ -1,14 +1,14 @@
 use super::{fade_color, Select, VisibleRow, DROPDOWN_ROW_HEIGHT};
 use crate::core::{Point, Rect};
-use crate::draw::api::PaintContext;
 use crate::draw::{Color, Radius};
+use crate::ui::core::paint_context::PaintContext;
 
 const TEXT_SIZE: f32 = 13.0;
 const CONTROL_LEFT_PADDING: f32 = 10.0;
 const ARROW_SLOT_WIDTH: f32 = 28.0;
 
 impl Select {
-    pub(super) fn render_select(&self, frame: Rect, ctx: &mut PaintContext<'_>) {
+    pub(super) fn render_select(&self, frame: Rect, ctx: &mut PaintContext) {
         self.capture_bound_value_dependency();
         self.multi_remove_rects.borrow_mut().clear();
 
@@ -87,7 +87,7 @@ impl Select {
         &self,
         control_rect: Rect,
         text_area: Rect,
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         text: Color,
         text_secondary: Color,
         primary: Color,
@@ -180,7 +180,7 @@ impl Select {
         &self,
         control_rect: Rect,
         text_area: Rect,
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         text: Color,
         text_secondary: Color,
     ) {
@@ -256,7 +256,7 @@ impl Select {
         ctx.pop_clip();
     }
 
-    fn render_dropdown(&self, frame: Rect, control_rect: Rect, ctx: &mut PaintContext<'_>) {
+    fn render_dropdown(&self, frame: Rect, control_rect: Rect, ctx: &mut PaintContext) {
         let visible_rows = self.visible_rows();
         let no_data = !self.loading && visible_rows.is_empty();
         let row_count = self.dropdown_row_count();
@@ -361,7 +361,7 @@ impl Select {
         item_y: f32,
         flat_index: usize,
         row: VisibleRow,
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         text: Color,
         primary: Color,
         primary_bg: Color,
@@ -465,7 +465,7 @@ impl Select {
         &self,
         label: &str,
         content: Rect,
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         color: Color,
     ) {
         if content.w <= 0.0 {

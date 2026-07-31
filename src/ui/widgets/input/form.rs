@@ -1,7 +1,7 @@
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::Color;
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::layout::{child_from_tree_with_constraints, LayoutChild};
 use crate::ui::{ComponentId, SnapshotFields, WidgetTree};
 

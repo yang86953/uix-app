@@ -1,9 +1,9 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::Color;
 use crate::native::traits::input::ControlSize;
 use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::foundation::virtual_scroll::VirtualListScroll;
 use crate::ui::state::State;
 use crate::ui::{

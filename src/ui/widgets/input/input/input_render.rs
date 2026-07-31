@@ -3,14 +3,14 @@
 use super::*;
 
 use crate::core::{Point, Rect};
-use crate::draw::api::PaintContext;
 use crate::draw::{Color, Radius};
+use crate::ui::core::paint_context::PaintContext;
 // ════════════════════════════════════════════════════════════════════════════
 // 多行渲染
 // ════════════════════════════════════════════════════════════════════════════
 
 impl Input {
-    fn status_color(&self, ctx: &PaintContext<'_>) -> Option<Color> {
+    fn status_color(&self, ctx: &PaintContext) -> Option<Color> {
         self.status.map(|status| match status {
             InputStatus::Success => ctx.tokens().color_success(),
             InputStatus::Warning => ctx.tokens().color_warning(),
@@ -22,7 +22,7 @@ impl Input {
         &self,
         frame: Rect,
         control_height: f32,
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
     ) {
         if self.status_message.is_empty() || frame.h <= control_height {
             return;

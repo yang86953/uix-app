@@ -2,9 +2,9 @@
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::command::PaintPass;
 use crate::draw::{Color, GradientDirection, Radius};
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
 use std::rc::Rc;
@@ -298,7 +298,7 @@ impl ProgressBar {
         track_color: Color,
         stroke_color: Color,
         label_color: Color,
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
     ) {
         let cx = frame.x + frame.w * 0.5;
         let cy = frame.y + frame.h * 0.72;
@@ -334,7 +334,7 @@ impl ProgressBar {
         self.paint_progress_label(frame, label_color, ctx);
     }
 
-    fn paint_progress_label(&self, frame: Rect, color: Color, ctx: &mut PaintContext<'_>) {
+    fn paint_progress_label(&self, frame: Rect, color: Color, ctx: &mut PaintContext) {
         if let (ProgressMode::Determinate(progress), Some(format)) =
             (self.mode, self.format_text.as_ref())
         {
@@ -344,7 +344,7 @@ impl ProgressBar {
 
     fn paint_line_fill(
         &self,
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         rect: Rect,
         gradient_domain: Rect,
         fallback: Color,

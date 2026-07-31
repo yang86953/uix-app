@@ -12,8 +12,8 @@ use std::rc::Rc;
 
 use crate::component;
 use crate::core::{ComponentId, Constraints, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::Radius;
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::state::State;
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,

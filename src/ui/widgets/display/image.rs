@@ -7,11 +7,11 @@ use std::rc::Rc;
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::command::PaintPass;
 use crate::draw::renderer::Invalidation;
 use crate::draw::resources::image::BitmapHandle;
 use crate::draw::{Color, Radius};
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::core::paint_scope::current_paint_widget;
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
@@ -384,7 +384,7 @@ impl Image {
         self.error_child_materialized.set(false);
     }
 
-    fn frame_is_visible(ctx: &mut PaintContext<'_>, frame: Rect) -> bool {
+    fn frame_is_visible(ctx: &mut PaintContext, frame: Rect) -> bool {
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return false;
         }
@@ -456,7 +456,7 @@ impl Image {
         frame: Rect,
         radius: f32,
         handle: Option<BitmapHandle>,
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
     ) {
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
@@ -526,7 +526,7 @@ impl Image {
         handle: Option<BitmapHandle>,
         surface_w: f32,
         surface_h: f32,
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         tree: &WidgetTree,
     ) {
         if frame.w > 0.0 && frame.h > 0.0 {
@@ -555,7 +555,7 @@ impl Image {
     }
 
     fn paint_centered_label(
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         label: &str,
         frame: Rect,
         color: Color,
@@ -585,7 +585,7 @@ impl Image {
         ctx.pop_clip();
     }
 
-    fn paint_preview_indicator(ctx: &mut PaintContext<'_>, frame: Rect) {
+    fn paint_preview_indicator(ctx: &mut PaintContext, frame: Rect) {
         let shortest = frame.w.min(frame.h);
         if shortest < 20.0 {
             return;
@@ -673,7 +673,7 @@ impl Image {
 
     fn resolve_handle(
         &self,
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         tree: &WidgetTree,
         frame: Rect,
     ) -> Option<BitmapHandle> {
@@ -762,7 +762,7 @@ impl Image {
 
     fn render_preview(
         &self,
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         handle: Option<BitmapHandle>,
         surface_w: f32,
         surface_h: f32,

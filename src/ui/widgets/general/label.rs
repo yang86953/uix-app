@@ -8,10 +8,10 @@ use std::cell::RefCell;
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::geometry::spatial::PhysicalUnit;
 use crate::draw::TextLayoutOptions;
 use crate::ui::clipboard;
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::style::Style;
 use crate::ui::{EventResult, KeyCode, KeyMod, MouseButton, SystemEvent, WidgetTree};
 use crate::ui::{SnapshotFields, SnapshotSource};

@@ -4,8 +4,8 @@ use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::{Color, Radius};
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::foundation::virtual_scroll::VirtualListScroll;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
@@ -295,7 +295,7 @@ impl SelectableList {
     }
 
     fn paint_single_line(
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         value: &str,
         frame: Rect,
         color: Color,
@@ -313,7 +313,7 @@ impl SelectableList {
     }
 
     fn elide_single_line(
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         value: &str,
         font_size: f32,
         max_width: f32,
@@ -344,7 +344,7 @@ impl SelectableList {
         Some(visible)
     }
 
-    fn text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
+    fn text_width(ctx: &mut PaintContext, value: &str, font_size: f32) -> f32 {
         ctx.measure_text(value, font_size).w.max(
             crate::draw::resources::font::text_backend::estimate_text_metrics(
                 value,

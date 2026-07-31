@@ -4,9 +4,9 @@
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::geometry::spatial::PhysicalUnit;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
 
@@ -321,7 +321,7 @@ impl Badge {
         }
     }
 
-    fn render_marker_label(&self, ctx: &mut PaintContext<'_>, frame: Rect, marker_color: Color) {
+    fn render_marker_label(&self, ctx: &mut PaintContext, frame: Rect, marker_color: Color) {
         let radius = Self::MARKER_DIAMETER * 0.5;
         let center_y = frame.y + frame.h * 0.5;
         ctx.fill_circle(frame.x + radius, center_y, radius, marker_color);
@@ -342,7 +342,7 @@ impl Badge {
 
     fn render_ribbon(
         &self,
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         frame: Rect,
         background: Color,
         foreground: Color,

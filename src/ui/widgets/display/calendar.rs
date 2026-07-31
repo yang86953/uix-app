@@ -4,9 +4,9 @@
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::command::PaintPass;
 use crate::draw::{Color, Radius};
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::locale::Locale;
 use crate::ui::widgets::input::date_picker::{days_in_month, first_weekday, Date};
 use crate::ui::SnapshotFields;
@@ -762,7 +762,7 @@ impl Calendar {
         cell_rect: Rect,
         overflow_text: Color,
         scale: f32,
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
     ) {
         let event_count = self
             .events
@@ -959,7 +959,7 @@ fn replace_two_placeholders(pattern: &str, first: &str, second: &str) -> Option<
 }
 
 fn fitted_font_size(
-    ctx: &mut PaintContext<'_>,
+    ctx: &mut PaintContext,
     text: &str,
     base_size: f32,
     max_width: f32,

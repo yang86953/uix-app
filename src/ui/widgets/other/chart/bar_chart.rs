@@ -5,8 +5,8 @@ use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::Color;
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::{EventResult, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
 
 use super::advanced::{
@@ -691,7 +691,7 @@ impl BarChart {
         }
     }
 
-    fn paint_tooltip(&self, ctx: &mut PaintContext<'_>, frame: Rect, pos: Point) {
+    fn paint_tooltip(&self, ctx: &mut PaintContext, frame: Rect, pos: Point) {
         let Some(config) = &self.tooltip_config else {
             return;
         };

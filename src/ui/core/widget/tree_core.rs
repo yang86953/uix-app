@@ -10,6 +10,8 @@ use crate::ui::foundation::focus_trap::next_focus_in_order;
 use crate::ui::managers::WidgetManagers;
 use crate::ui::overlay::OverlayStack;
 use crate::ui::render_handler::{RenderHandlerRegistration, RenderHandlerTable};
+use crate::ui::theme::Theme;
+use crate::ui::traits::ThemeTokens;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -51,6 +53,8 @@ pub struct WidgetTree {
     pub(crate) scroll_region_moves: Vec<(Rect, f32, f32)>,
     pub(crate) pending_window_actions: Vec<WindowAction>,
     pub tree_version: u64,
+    /// UI 域主题令牌根；ScenePaint::paint 用它构造 UI-owned 绘制上下文。
+    theme_tokens: std::sync::Arc<dyn ThemeTokens>,
     cached_traversal: std::cell::RefCell<(Vec<WidgetId>, u64)>,
 
     pub(crate) handler_table: HandlerTable,
@@ -113,6 +117,7 @@ impl Default for WidgetTree {
             generations: Vec::new(),
             next_slot: 0,
             root_id: None,
+            theme_tokens: Theme::antd_light().tokens_arc(),
             scroll_region_moves: Vec::new(),
             pending_window_actions: Vec::new(),
             tree_version: 0,
@@ -173,6 +178,15 @@ impl WidgetTree {
         if let Some(focused) = self.managers.focus.focused_component() {
             self.invalidate_paint(focused);
         }
+    }
+
+    pub(crate) fn set_theme_tokens(&mut self, tokens: std::sync::Arc<dyn ThemeTokens>) {
+        self.theme_tokens = tokens;
+    }
+
+    /// 当前 UI 域主题令牌根。
+    pub(crate) fn theme_tokens(&self) -> std::sync::Arc<dyn ThemeTokens> {
+        self.theme_tokens.clone()
     }
 
     pub fn new() -> Self {

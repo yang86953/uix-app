@@ -133,8 +133,8 @@ impl VirtualListScroll {
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::command::PaintPass;
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::view::{View, ViewNode};
 use crate::ui::{ComponentId, EventResult, SystemEvent, WidgetTree};

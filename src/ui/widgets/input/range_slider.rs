@@ -5,9 +5,9 @@ use std::ops::RangeInclusive;
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::traits::input::ControlSize;
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::state::State;
 use crate::ui::SnapshotFields;
 use crate::ui::{
