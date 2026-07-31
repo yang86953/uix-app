@@ -340,7 +340,8 @@ impl IWindowManager for WindowsPlatform {
                 }
             };
 
-            let ops = WindowsWindowOps::new(hwnd, binding, frame_pacer);
+            let ops =
+                WindowsWindowOps::new(hwnd, binding, frame_pacer, self.pending_failures.clone());
             let core = PlatformWindowCore::new(state, ops, presenter);
             Ok(Box::new(core))
         }

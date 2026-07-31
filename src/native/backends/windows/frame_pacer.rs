@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
 use crate::core::error::{Errc, Error, Result};
+use crate::diagnostics::PendingFailureSource;
 use crate::native::traits::event::FrameRequestToken;
 use crate::native::traits::window::{NativeFrameRequest, NativeFrameRequestPhase};
 
@@ -142,7 +143,11 @@ struct FramePacerWorker {
 }
 
 impl FramePacerWorker {
-    fn spawn(hwnd: usize, state: SharedWindowsFramePacerState) -> Result<Self> {
+    fn spawn(
+        hwnd: usize,
+        state: SharedWindowsFramePacerState,
+        pending_failures: PendingFailureSource,
+    ) -> Result<Self> {
         // One command may wait behind the in-flight DwmFlush. Further
         // replacements fall back instead of growing an unbounded queue.
         let (sender, receiver) = mpsc::sync_channel(1);
@@ -165,13 +170,23 @@ impl FramePacerWorker {
                         .lock()
                         .unwrap_or_else(|error| error.into_inner())
                         .matches_submitted(ticket);
-                    if result < 0 || !still_pending {
-                        if result < 0 {
+                    if result < 0 {
+                        if still_pending {
                             state
                                 .lock()
                                 .unwrap_or_else(|error| error.into_inner())
                                 .discard(ticket);
+                            enqueue_worker_failure(
+                                &pending_failures,
+                                Error::new(Errc::PlatformError, format_dwm_flush_failure(result)),
+                            );
                         }
+                        // A stale ticket cannot report a failure against a
+                        // replacement request. The owner source also closes
+                        // during platform teardown, making late callbacks no-ops.
+                        continue;
+                    }
+                    if !still_pending {
                         continue;
                     }
 
@@ -185,10 +200,15 @@ impl FramePacerWorker {
                         )
                     };
                     if posted == 0 {
+                        let error = super::util::windows_diag(
+                            Errc::PlatformError,
+                            "Windows DWM frame pacer: PostMessageW failed",
+                        );
                         state
                             .lock()
                             .unwrap_or_else(|error| error.into_inner())
                             .discard(ticket);
+                        enqueue_worker_failure(&pending_failures, error);
                     }
                 }
             })
@@ -208,14 +228,20 @@ impl FramePacerWorker {
 pub(crate) struct WindowsFramePacer {
     hwnd: usize,
     state: SharedWindowsFramePacerState,
+    pending_failures: PendingFailureSource,
     worker: Option<FramePacerWorker>,
 }
 
 impl WindowsFramePacer {
-    pub(crate) fn new(hwnd: *mut std::ffi::c_void, state: SharedWindowsFramePacerState) -> Self {
+    pub(crate) fn new(
+        hwnd: *mut std::ffi::c_void,
+        state: SharedWindowsFramePacerState,
+        pending_failures: PendingFailureSource,
+    ) -> Self {
         Self {
             hwnd: hwnd as usize,
             state,
+            pending_failures,
             worker: None,
         }
     }
@@ -245,7 +271,11 @@ impl WindowsFramePacer {
             return Ok(());
         }
         if self.worker.is_none() {
-            self.worker = Some(FramePacerWorker::spawn(self.hwnd, Arc::clone(&self.state))?);
+            self.worker = Some(FramePacerWorker::spawn(
+                self.hwnd,
+                Arc::clone(&self.state),
+                self.pending_failures.clone(),
+            )?);
         }
 
         let Some(ticket) = self
@@ -296,6 +326,17 @@ impl WindowsFramePacer {
     }
 }
 
+fn enqueue_worker_failure(pending_failures: &PendingFailureSource, error: Error) {
+    let _ = pending_failures.enqueue(error);
+}
+
+fn format_dwm_flush_failure(result: i32) -> String {
+    format!(
+        "Windows DWM frame pacer: DwmFlush failed with HRESULT 0x{:08x}",
+        result as u32
+    )
+}
+
 impl Drop for WindowsFramePacer {
     fn drop(&mut self) {
         clear_pending_frame(&self.state);
@@ -326,4 +367,46 @@ pub(crate) fn epoch_to_message(epoch: u64) -> (usize, isize) {
 #[cfg(target_pointer_width = "32")]
 pub(crate) fn epoch_from_message(wparam: usize, lparam: isize) -> u64 {
     u64::from(wparam as u32) | (u64::from(lparam as u32) << 32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{enqueue_worker_failure, format_dwm_flush_failure};
+    use crate::core::{Errc, Error};
+    use crate::diagnostics::PendingFailureQueue;
+
+    #[test]
+    fn frame_worker_failures_are_deferred_to_owner_boundary() {
+        let queue = PendingFailureQueue::new();
+        let source = queue.source();
+        let callback_source = source.clone();
+        std::thread::spawn(move || {
+            enqueue_worker_failure(
+                &callback_source,
+                Error::new(Errc::PlatformError, format_dwm_flush_failure(-1)),
+            );
+            enqueue_worker_failure(
+                &callback_source,
+                Error::new(
+                    Errc::PlatformError,
+                    "Windows DWM frame pacer: PostMessageW failed",
+                ),
+            );
+        })
+        .join()
+        .expect("frame worker callback must finish");
+
+        let Some(flush_failure) = source.take() else {
+            panic!("DwmFlush failure must reach the owner source");
+        };
+        assert_eq!(flush_failure.code(), Errc::PlatformError);
+        assert!(flush_failure.message().contains("DwmFlush"));
+
+        let Some(post_failure) = source.take() else {
+            panic!("PostMessageW failure must reach the owner source");
+        };
+        assert_eq!(post_failure.code(), Errc::PlatformError);
+        assert!(post_failure.message().contains("PostMessageW"));
+        assert!(source.take().is_none());
+    }
 }
