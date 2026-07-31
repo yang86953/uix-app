@@ -548,10 +548,10 @@ impl WindowOps for WindowsWindowOps {
         // 去掉系统标题栏后恢复 DWM 阴影/圆角；恢复标题栏时清掉扩展边距。
         let maximized = super::custom_chrome::is_effectively_maximized(
             self.hwnd,
+            new_style,
             self._binding.state.borrow().maximized,
         );
-        super::custom_chrome::apply_dwm_frame_effects(self.hwnd, maximized);
-        Ok(())
+        super::custom_chrome::apply_dwm_frame_effects(self.hwnd, new_style, maximized)
     }
 
     fn os_set_borderless(&mut self, borderless: bool) -> Result<()> {

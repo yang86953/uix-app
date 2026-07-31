@@ -125,10 +125,19 @@ impl WindowsPlatform {
         match msg {
             WM_NCCALCSIZE => {
                 let state_maximized = window.borrow().maximized;
+                let style = match super::custom_chrome::window_style(hwnd) {
+                    Ok(style) => style,
+                    Err(error) => {
+                        self.enqueue_callback_failure(error);
+                        return self.def_window_proc(hwnd, msg, wparam, lparam);
+                    }
+                };
                 let maximized =
-                    super::custom_chrome::is_effectively_maximized(hwnd, state_maximized);
+                    super::custom_chrome::is_effectively_maximized(hwnd, style, state_maximized);
                 if let Some(result) = unsafe {
-                    super::custom_chrome::handle_nc_calc_size(hwnd, wparam, lparam, maximized)
+                    super::custom_chrome::handle_nc_calc_size(
+                        hwnd, style, wparam, lparam, maximized,
+                    )
                 } {
                     return result;
                 }
@@ -136,10 +145,21 @@ impl WindowsPlatform {
             }
             WM_NCHITTEST => {
                 let resizable = window.borrow().resizable;
-                if let Some(result) =
-                    unsafe { super::custom_chrome::handle_nc_hit_test(hwnd, lparam, resizable) }
-                {
-                    return result;
+                let style = match super::custom_chrome::window_style(hwnd) {
+                    Ok(style) => style,
+                    Err(error) => {
+                        self.enqueue_callback_failure(error);
+                        return self.def_window_proc(hwnd, msg, wparam, lparam);
+                    }
+                };
+                match unsafe {
+                    super::custom_chrome::handle_nc_hit_test(hwnd, style, lparam, resizable)
+                } {
+                    Ok(Some(result)) => return result,
+                    Ok(None) => {}
+                    Err(error) => {
+                        self.enqueue_callback_failure(error);
+                    }
                 }
                 self.def_window_proc(hwnd, msg, wparam, lparam)
             }
@@ -176,6 +196,13 @@ impl WindowsPlatform {
                 let dpi = super::dpi::dpi_for_window(hwnd);
                 let w = super::dpi::physical_extent_to_logical(Self::loword(lparam) as i32, dpi);
                 let h = super::dpi::physical_extent_to_logical(Self::hiword(lparam) as i32, dpi);
+                let chrome_style = match super::custom_chrome::window_style(hwnd) {
+                    Ok(style) => Some(style),
+                    Err(error) => {
+                        self.enqueue_callback_failure(error);
+                        None
+                    }
+                };
                 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
                 enum SizeAction {
                     Minimized,
@@ -218,12 +245,28 @@ impl WindowsPlatform {
                         }
                     }
                     drop(state);
-                    if refresh_extended_frame {
-                        super::custom_chrome::refresh_extended_client_frame(hwnd);
+                    if let Some(style) = chrome_style {
+                        let mut chrome_failure = None;
+                        if refresh_extended_frame {
+                            if let Err(error) =
+                                super::custom_chrome::refresh_extended_client_frame(hwnd, style)
+                            {
+                                chrome_failure = Some(error);
+                            }
+                        }
+                        let maximized = matches!(wparam, SIZE_MAXIMIZED)
+                            || super::custom_chrome::is_effectively_maximized(hwnd, style, false);
+                        if let Err(error) =
+                            super::custom_chrome::apply_dwm_frame_effects(hwnd, style, maximized)
+                        {
+                            if chrome_failure.is_none() {
+                                chrome_failure = Some(error);
+                            }
+                        }
+                        if let Some(error) = chrome_failure {
+                            self.enqueue_callback_failure(error);
+                        }
                     }
-                    let maximized = matches!(wparam, SIZE_MAXIMIZED)
-                        || super::custom_chrome::is_effectively_maximized(hwnd, false);
-                    super::custom_chrome::apply_dwm_frame_effects(hwnd, maximized);
                     acts
                 };
                 for action in actions {

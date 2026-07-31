@@ -24,7 +24,8 @@ use super::consts::{
     HTTOPRIGHT, WS_CAPTION, WS_MAXIMIZE, WS_THICKFRAME,
 };
 use super::dpi::{dpi_for_window, logical_extent_to_physical, BASE_DPI};
-use super::ffi::{GetWindowLongW, GetWindowRect, IsZoomed};
+use super::ffi::{GetWindowRect, IsZoomed};
+use crate::native::{Errc, Error, Result};
 
 #[repr(C)]
 pub(crate) struct NcCalcSizeParams {
@@ -37,20 +38,27 @@ pub(crate) fn uses_extended_client(style: u32) -> bool {
     (style & WS_CAPTION) == 0 && (style & WS_THICKFRAME) != 0
 }
 
-pub(crate) fn window_style(hwnd: *mut c_void) -> u32 {
+pub(crate) fn window_style(hwnd: *mut c_void) -> Result<u32> {
     if hwnd.is_null() {
-        return 0;
+        return Ok(0);
     }
-    // SAFETY: 仅读取样式位；无效 HWND 时 Win32 返回 0。
-    unsafe { GetWindowLongW(hwnd, GWL_STYLE) as u32 }
+    super::window_ops::get_window_long_checked(
+        hwnd,
+        GWL_STYLE,
+        "custom chrome: GetWindowLongW(GWL_STYLE) failed",
+    )
+    .map(|style| style as u32)
 }
 
 /// 最大化判定需覆盖 `WM_NCCALCSIZE` 过渡期（此时 `WindowState.maximized` 可能尚未更新）。
-pub(crate) fn is_effectively_maximized(hwnd: *mut c_void, state_maximized: bool) -> bool {
+pub(crate) fn is_effectively_maximized(
+    hwnd: *mut c_void,
+    style: u32,
+    state_maximized: bool,
+) -> bool {
     if state_maximized {
         return true;
     }
-    let style = window_style(hwnd);
     if style & WS_MAXIMIZE != 0 {
         return true;
     }
@@ -62,14 +70,14 @@ pub(crate) fn is_effectively_maximized(hwnd: *mut c_void, state_maximized: bool)
 }
 
 /// 还原后强制重算非客户区；否则最大化期的边框内缩会残留，客户区小于外窗。
-pub(crate) fn refresh_extended_client_frame(hwnd: *mut c_void) {
-    if hwnd.is_null() || !uses_extended_client(window_style(hwnd)) {
-        return;
+pub(crate) fn refresh_extended_client_frame(hwnd: *mut c_void, style: u32) -> Result<()> {
+    if hwnd.is_null() || !uses_extended_client(style) {
+        return Ok(());
     }
     use super::consts::{SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER};
     use super::ffi::SetWindowPos;
     // SAFETY: 仅触发帧重算；不改位置/尺寸/Z 序。
-    unsafe {
+    if unsafe {
         SetWindowPos(
             hwnd,
             std::ptr::null_mut(),
@@ -78,19 +86,28 @@ pub(crate) fn refresh_extended_client_frame(hwnd: *mut c_void) {
             0,
             0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
-        );
+        )
+    } == 0
+    {
+        return Err(super::util::windows_diag(
+            Errc::PlatformError,
+            "custom chrome: SetWindowPos(FRAMECHANGED) failed",
+        ));
     }
+    Ok(())
 }
 
 /// 扩展客户区下恢复 DWM 阴影与 Win11 圆角；最大化时关闭圆角。
-///
-/// 失败只记日志：旧系统或缺 DWM 时不应阻断窗口创建。
-pub(crate) fn apply_dwm_frame_effects(hwnd: *mut c_void, maximized: bool) {
+pub(crate) fn apply_dwm_frame_effects(
+    hwnd: *mut c_void,
+    style: u32,
+    maximized: bool,
+) -> Result<()> {
     if hwnd.is_null() {
-        return;
+        return Ok(());
     }
     let handle = HWND(hwnd);
-    if !uses_extended_client(window_style(hwnd)) {
+    if !uses_extended_client(style) {
         let zero = MARGINS {
             cxLeftWidth: 0,
             cxRightWidth: 0,
@@ -98,12 +115,13 @@ pub(crate) fn apply_dwm_frame_effects(hwnd: *mut c_void, maximized: bool) {
             cyBottomHeight: 0,
         };
         // SAFETY: HWND 来自当前窗口；清掉扩展边距，交还系统默认帧合成。
-        if let Err(error) = unsafe { DwmExtendFrameIntoClientArea(handle, &zero) } {
-            crate::core::log::warn_fn(format_args!(
-                "DwmExtendFrameIntoClientArea(reset) failed: {error}"
-            ));
-        }
-        return;
+        unsafe { DwmExtendFrameIntoClientArea(handle, &zero) }.map_err(|error| {
+            dwm_failure(
+                "custom chrome: DwmExtendFrameIntoClientArea(reset) failed",
+                error,
+            )
+        })?;
+        return Ok(());
     }
     // 1px 底边足以让 DWM 继续画阴影，又不会露出标准边框。
     let margins = MARGINS {
@@ -113,29 +131,32 @@ pub(crate) fn apply_dwm_frame_effects(hwnd: *mut c_void, maximized: bool) {
         cyBottomHeight: 1,
     };
     // SAFETY: 同步 DWM 调用；margins 在调用期间有效。
-    if let Err(error) = unsafe { DwmExtendFrameIntoClientArea(handle, &margins) } {
-        crate::core::log::warn_fn(format_args!(
-            "DwmExtendFrameIntoClientArea(shadow) failed: {error}"
-        ));
-    }
+    unsafe { DwmExtendFrameIntoClientArea(handle, &margins) }.map_err(|error| {
+        dwm_failure(
+            "custom chrome: DwmExtendFrameIntoClientArea(shadow) failed",
+            error,
+        )
+    })?;
     let preference: DWM_WINDOW_CORNER_PREFERENCE = if maximized {
         DWMWCP_DONOTROUND
     } else {
         DWMWCP_ROUND
     };
     // SAFETY: attribute 缓冲与枚举同寿，长度匹配 DWMWA_WINDOW_CORNER_PREFERENCE。
-    if let Err(error) = unsafe {
+    unsafe {
         DwmSetWindowAttribute(
             handle,
             DWMWA_WINDOW_CORNER_PREFERENCE,
             (&preference as *const DWM_WINDOW_CORNER_PREFERENCE).cast::<c_void>(),
             std::mem::size_of_val(&preference) as u32,
         )
-    } {
-        crate::core::log::warn_fn(format_args!(
-            "DwmSetWindowAttribute(corner) failed: {error}"
-        ));
     }
+    .map_err(|error| dwm_failure("custom chrome: DwmSetWindowAttribute(corner) failed", error))?;
+    Ok(())
+}
+
+fn dwm_failure(operation: &str, error: windows::core::Error) -> Error {
+    Error::new(Errc::PlatformError, format!("{operation}: {error}"))
 }
 
 /// 当前 DPI 下单侧缩放边框厚度（physical pixels）。
@@ -165,11 +186,12 @@ pub(crate) fn outer_matches_client_when_extended(style: u32) -> bool {
 /// `lparam` 必须指向当前同步消息期间有效的 `RECT` 或 [`NcCalcSizeParams`]。
 pub(crate) unsafe fn handle_nc_calc_size(
     hwnd: *mut c_void,
+    style: u32,
     wparam: usize,
     lparam: isize,
     maximized: bool,
 ) -> Option<isize> {
-    if lparam == 0 || !uses_extended_client(window_style(hwnd)) {
+    if lparam == 0 || !uses_extended_client(style) {
         return None;
     }
     if wparam == 0 {
@@ -203,14 +225,15 @@ pub(crate) fn screen_point_from_lparam(lparam: isize) -> (i32, i32) {
 /// `hwnd` 必须是当前消息所属窗口。
 pub(crate) unsafe fn handle_nc_hit_test(
     hwnd: *mut c_void,
+    style: u32,
     lparam: isize,
     resizable: bool,
-) -> Option<isize> {
-    if !uses_extended_client(window_style(hwnd)) {
-        return None;
+) -> Result<Option<isize>> {
+    if !uses_extended_client(style) {
+        return Ok(None);
     }
     if !resizable {
-        return Some(HTCLIENT as isize);
+        return Ok(Some(HTCLIENT as isize));
     }
     let mut window_rect = RECT {
         left: 0,
@@ -219,7 +242,10 @@ pub(crate) unsafe fn handle_nc_hit_test(
         bottom: 0,
     };
     if GetWindowRect(hwnd, &mut window_rect) == 0 {
-        return Some(HTCLIENT as isize);
+        return Err(super::util::windows_diag(
+            Errc::PlatformError,
+            "WM_NCHITTEST GetWindowRect failed",
+        ));
     }
     let (x, y) = screen_point_from_lparam(lparam);
     let border = resize_border_thickness(hwnd).max(1);
@@ -238,5 +264,5 @@ pub(crate) unsafe fn handle_nc_hit_test(
         (false, false, false, true) => HTBOTTOM,
         _ => HTCLIENT,
     };
-    Some(hit as isize)
+    Ok(Some(hit as isize))
 }
