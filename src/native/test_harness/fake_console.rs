@@ -1,5 +1,6 @@
 //! Fake 控制台 — 记录所有输出到内存缓冲区，支持断言。
 
+use crate::core::error::Result;
 use crate::native::traits::system::IConsole;
 use crate::native::traits::system::{ConsoleColor, TerminalCapabilities};
 
@@ -85,34 +86,40 @@ impl Default for FakeConsole {
 }
 
 impl IConsole for FakeConsole {
-    fn write(&mut self, text: &str) {
+    fn write(&mut self, text: &str) -> Result<()> {
         self.state.output.push_str(text);
         self.state.writes.push(text.to_string());
+        Ok(())
     }
 
-    fn write_line(&mut self, text: &str) {
+    fn write_line(&mut self, text: &str) -> Result<()> {
         self.state.output.push_str(text);
         self.state.output.push('\n');
         self.state.writes.push(text.to_string());
         self.state.lines.push(text.to_string());
+        Ok(())
     }
 
-    fn set_color(&mut self, color: ConsoleColor) {
+    fn set_color(&mut self, color: ConsoleColor) -> Result<()> {
         self.state.current_color = color;
         self.state.colors.push(color);
+        Ok(())
     }
 
-    fn reset_color(&mut self) {
+    fn reset_color(&mut self) -> Result<()> {
         self.state.current_color = ConsoleColor::Default;
         self.state.colors.push(ConsoleColor::Default);
+        Ok(())
     }
 
-    fn show_terminal_cursor(&mut self, visible: bool) {
+    fn show_terminal_cursor(&mut self, visible: bool) -> Result<()> {
         self.state.cursor_visible = visible;
+        Ok(())
     }
 
-    fn set_terminal_title(&mut self, title: &str) {
+    fn set_terminal_title(&mut self, title: &str) -> Result<()> {
         self.state.title = title.to_string();
+        Ok(())
     }
 
     fn capabilities(&self) -> TerminalCapabilities {

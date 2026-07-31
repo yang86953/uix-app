@@ -6,6 +6,8 @@
 #![allow(clippy::upper_case_acronyms)]
 #![allow(nonstandard_style)]
 
+use crate::core::error::Errc;
+use crate::core::error::{Error, Result};
 use crate::native::traits::system::IConsole;
 use crate::native::traits::system::{ConsoleColor, TerminalCapabilities};
 use std::ptr;
@@ -52,55 +54,85 @@ impl Default for WindowsConsole {
 }
 
 impl IConsole for WindowsConsole {
-    fn write(&mut self, text: &str) {
+    fn write(&mut self, text: &str) -> Result<()> {
         unsafe {
             let bytes = text.as_bytes();
             let mut written: u32 = 0;
-            // Use WriteConsoleA for proper console output
-            WriteConsoleA(
+            if WriteConsoleA(
                 self.stdout,
                 bytes.as_ptr() as *const std::ffi::c_void,
                 bytes.len() as u32,
                 &mut written,
                 ptr::null_mut(),
-            );
+            ) == 0
+            {
+                return Err(Error::new(
+                    Errc::PlatformError,
+                    "WindowsConsole::write: WriteConsoleA failed",
+                ));
+            }
         }
+        Ok(())
     }
 
-    fn write_line(&mut self, text: &str) {
+    fn write_line(&mut self, text: &str) -> Result<()> {
         let mut line = text.to_string();
         line.push('\n');
-        self.write(&line);
+        self.write(&line)
     }
 
-    fn set_color(&mut self, color: ConsoleColor) {
+    fn set_color(&mut self, color: ConsoleColor) -> Result<()> {
         let attr = COLORS[color as usize];
         unsafe {
-            SetConsoleTextAttribute(self.stdout, attr);
+            if SetConsoleTextAttribute(self.stdout, attr) == 0 {
+                return Err(Error::new(
+                    Errc::PlatformError,
+                    "WindowsConsole::set_color: SetConsoleTextAttribute failed",
+                ));
+            }
         }
+        Ok(())
     }
 
-    fn reset_color(&mut self) {
+    fn reset_color(&mut self) -> Result<()> {
         unsafe {
-            SetConsoleTextAttribute(self.stdout, COLORS[0]);
+            if SetConsoleTextAttribute(self.stdout, COLORS[0]) == 0 {
+                return Err(Error::new(
+                    Errc::PlatformError,
+                    "WindowsConsole::reset_color: SetConsoleTextAttribute failed",
+                ));
+            }
         }
+        Ok(())
     }
 
-    fn show_terminal_cursor(&mut self, visible: bool) {
+    fn show_terminal_cursor(&mut self, visible: bool) -> Result<()> {
         unsafe {
             let mut info = CONSOLE_CURSOR_INFO {
                 dwSize: 25,
                 bVisible: if visible { 1 } else { 0 },
             };
-            SetConsoleCursorInfo(self.stdout, &mut info);
+            if SetConsoleCursorInfo(self.stdout, &mut info) == 0 {
+                return Err(Error::new(
+                    Errc::PlatformError,
+                    "WindowsConsole::show_terminal_cursor: SetConsoleCursorInfo failed",
+                ));
+            }
         }
+        Ok(())
     }
 
-    fn set_terminal_title(&mut self, title: &str) {
+    fn set_terminal_title(&mut self, title: &str) -> Result<()> {
         let wide = to_wide(title);
         unsafe {
-            SetConsoleTitleW(wide.as_ptr());
+            if SetConsoleTitleW(wide.as_ptr()) == 0 {
+                return Err(Error::new(
+                    Errc::PlatformError,
+                    "WindowsConsole::set_terminal_title: SetConsoleTitleW failed",
+                ));
+            }
         }
+        Ok(())
     }
 
     fn capabilities(&self) -> TerminalCapabilities {
@@ -129,8 +161,8 @@ impl IConsole for WindowsConsole {
 
 impl Drop for WindowsConsole {
     fn drop(&mut self) {
-        // Reset colors on drop
-        self.reset_color();
+        // Reset colors on drop — best effort, ignore failure.
+        let _ = self.reset_color();
     }
 }
 

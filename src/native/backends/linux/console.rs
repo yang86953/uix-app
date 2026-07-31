@@ -7,6 +7,8 @@
 // level — it is handled by higher-level interactive shells when needed.
 // ============================================================================
 
+use crate::core::error::Errc;
+use crate::core::error::{Error, Result};
 use crate::native::traits::system::IConsole;
 use crate::native::traits::system::{ConsoleColor, TerminalCapabilities};
 
@@ -44,43 +46,106 @@ impl Default for LinuxConsole {
 }
 
 impl IConsole for LinuxConsole {
-    fn write(&mut self, text: &str) {
+    fn write(&mut self, text: &str) -> Result<()> {
         use std::io::Write;
-        let _ = std::io::stdout().write_all(text.as_bytes());
-        let _ = std::io::stdout().flush();
+        std::io::stdout()
+            .write_all(text.as_bytes())
+            .map_err(|error| {
+                Error::new(Errc::PlatformError, format!("LinuxConsole::write: {error}"))
+            })?;
+        std::io::stdout().flush().map_err(|error| {
+            Error::new(
+                Errc::PlatformError,
+                format!("LinuxConsole::write flush: {error}"),
+            )
+        })
     }
 
-    fn write_line(&mut self, text: &str) {
+    fn write_line(&mut self, text: &str) -> Result<()> {
         use std::io::Write;
         let mut line = text.to_string();
         line.push('\n');
-        let _ = std::io::stdout().write_all(line.as_bytes());
-        let _ = std::io::stdout().flush();
+        std::io::stdout()
+            .write_all(line.as_bytes())
+            .map_err(|error| {
+                Error::new(
+                    Errc::PlatformError,
+                    format!("LinuxConsole::write_line: {error}"),
+                )
+            })?;
+        std::io::stdout().flush().map_err(|error| {
+            Error::new(
+                Errc::PlatformError,
+                format!("LinuxConsole::write_line flush: {error}"),
+            )
+        })
     }
 
-    fn set_color(&mut self, color: ConsoleColor) {
+    fn set_color(&mut self, color: ConsoleColor) -> Result<()> {
         use std::io::Write;
-        let _ = std::io::stdout().write_all(COLORS[color as usize].as_bytes());
-        let _ = std::io::stdout().flush();
+        std::io::stdout()
+            .write_all(COLORS[color as usize].as_bytes())
+            .map_err(|error| {
+                Error::new(
+                    Errc::PlatformError,
+                    format!("LinuxConsole::set_color: {error}"),
+                )
+            })?;
+        std::io::stdout().flush().map_err(|error| {
+            Error::new(
+                Errc::PlatformError,
+                format!("LinuxConsole::set_color flush: {error}"),
+            )
+        })
     }
 
-    fn reset_color(&mut self) {
+    fn reset_color(&mut self) -> Result<()> {
         use std::io::Write;
-        let _ = std::io::stdout().write_all(b"\x1b[0m");
-        let _ = std::io::stdout().flush();
+        std::io::stdout().write_all(b"\x1b[0m").map_err(|error| {
+            Error::new(
+                Errc::PlatformError,
+                format!("LinuxConsole::reset_color: {error}"),
+            )
+        })?;
+        std::io::stdout().flush().map_err(|error| {
+            Error::new(
+                Errc::PlatformError,
+                format!("LinuxConsole::reset_color flush: {error}"),
+            )
+        })
     }
 
-    fn show_terminal_cursor(&mut self, visible: bool) {
+    fn show_terminal_cursor(&mut self, visible: bool) -> Result<()> {
         use std::io::Write;
         let seq = if visible { b"\x1b[?25h" } else { b"\x1b[?25l" };
-        let _ = std::io::stdout().write_all(seq);
-        let _ = std::io::stdout().flush();
+        std::io::stdout().write_all(seq).map_err(|error| {
+            Error::new(
+                Errc::PlatformError,
+                format!("LinuxConsole::show_terminal_cursor: {error}"),
+            )
+        })?;
+        std::io::stdout().flush().map_err(|error| {
+            Error::new(
+                Errc::PlatformError,
+                format!("LinuxConsole::show_terminal_cursor flush: {error}"),
+            )
+        })
     }
 
-    fn set_terminal_title(&mut self, title: &str) {
+    fn set_terminal_title(&mut self, title: &str) -> Result<()> {
         use std::io::Write;
-        let _ = write!(std::io::stdout(), "\x1b]0;{}\x07", title);
-        let _ = std::io::stdout().flush();
+        write!(std::io::stdout(), "\x1b]0;{}\x07", title).map_err(|error| {
+            Error::new(
+                Errc::PlatformError,
+                format!("LinuxConsole::set_terminal_title: {error}"),
+            )
+        })?;
+        std::io::stdout().flush().map_err(|error| {
+            Error::new(
+                Errc::PlatformError,
+                format!("LinuxConsole::set_terminal_title flush: {error}"),
+            )
+        })
     }
 
     fn capabilities(&self) -> TerminalCapabilities {

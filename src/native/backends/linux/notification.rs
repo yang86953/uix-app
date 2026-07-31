@@ -6,6 +6,8 @@
 // Specification). Falls back silently if notify-send is not available.
 // ============================================================================
 
+use crate::core::error::Errc;
+use crate::core::error::{Error, Result};
 use crate::native::traits::system::INotification;
 use std::process::Command;
 
@@ -29,14 +31,30 @@ impl Default for LinuxNotification {
 }
 
 impl INotification for LinuxNotification {
-    fn show(&mut self, title: &str, message: &str) {
+    fn show(&mut self, title: &str, message: &str) -> Result<()> {
         // notify-send is the standard freedesktop notification tool.
         // It is available on most Linux desktop environments.
-        let _ = Command::new("notify-send")
+        let output = Command::new("notify-send")
             .arg(title)
             .arg(message)
             .arg("--app-name")
             .arg("UIX")
-            .output();
+            .output()
+            .map_err(|error| {
+                Error::new(
+                    Errc::PlatformError,
+                    format!("LinuxNotification::show: notify-send spawn failed: {error}"),
+                )
+            })?;
+        if !output.status.success() {
+            return Err(Error::new(
+                Errc::PlatformError,
+                format!(
+                    "LinuxNotification::show: notify-send exited with {}",
+                    output.status
+                ),
+            ));
+        }
+        Ok(())
     }
 }

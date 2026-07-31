@@ -89,7 +89,8 @@ pub trait IFileSystem {
 }
 
 pub trait INotification {
-    fn show(&mut self, title: &str, message: &str);
+    /// 显示系统通知。失败时返回 typed error（如通知区域不可用、notify-send 缺失）。
+    fn show(&mut self, title: &str, message: &str) -> Result<()>;
 }
 
 pub trait ITimer {
@@ -127,11 +128,11 @@ pub trait ISystemInfo {
 }
 
 pub trait IConsole {
-    fn write(&mut self, text: &str);
-    fn write_line(&mut self, text: &str);
-    fn set_color(&mut self, color: ConsoleColor);
-    fn reset_color(&mut self);
-    fn show_terminal_cursor(&mut self, visible: bool);
-    fn set_terminal_title(&mut self, title: &str);
+    fn write(&mut self, text: &str) -> Result<()>;
+    fn write_line(&mut self, text: &str) -> Result<()>;
+    fn set_color(&mut self, color: ConsoleColor) -> Result<()>;
+    fn reset_color(&mut self) -> Result<()>;
+    fn show_terminal_cursor(&mut self, visible: bool) -> Result<()>;
+    fn set_terminal_title(&mut self, title: &str) -> Result<()>;
     fn capabilities(&self) -> TerminalCapabilities;
 }

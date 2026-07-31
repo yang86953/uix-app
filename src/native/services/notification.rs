@@ -11,6 +11,7 @@
 // ============================================================================
 
 use crate::core::error::{Error, ErrorSeverity, Result};
+use crate::diagnostics::{Diagnostics, DiagnosticsConfig};
 use crate::native::traits::system::StatusLevel;
 use std::collections::VecDeque;
 
@@ -67,6 +68,8 @@ pub struct NotificationService {
     next_id: u64,
     /// 可选回调：Toast 队列变化时触发（UI 刷新）。
     on_change: Option<Box<dyn Fn() + Send>>,
+    /// 运行时 Diagnostics — 通知失败在此最终责任边界提交观察。
+    diagnostics: Diagnostics,
 }
 
 impl Default for NotificationService {
@@ -77,6 +80,7 @@ impl Default for NotificationService {
             max_visible: 5,
             next_id: 0,
             on_change: None,
+            diagnostics: Diagnostics::new(DiagnosticsConfig::default()),
         }
     }
 }
@@ -92,6 +96,12 @@ impl NotificationService {
         notifier: Box<dyn crate::native::traits::system::INotification>,
     ) -> Self {
         self.platform_notifier = Some(notifier);
+        self
+    }
+
+    /// 注入运行时 Diagnostics（通知失败在此最终责任边界提交观察）。
+    pub fn with_diagnostics(mut self, diagnostics: Diagnostics) -> Self {
+        self.diagnostics = diagnostics;
         self
     }
 
@@ -169,7 +179,9 @@ impl NotificationService {
 
         // 1. 发送平台通知（系统级弹窗/气球提示）
         if let Some(ref mut pn) = self.platform_notifier {
-            pn.show(title, message);
+            if let Err(error) = pn.show(title, message) {
+                self.diagnostics.report(error);
+            }
         }
 
         // 2. 入队应用内 Toast

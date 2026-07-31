@@ -6,6 +6,8 @@
 #![allow(clippy::upper_case_acronyms)]
 #![allow(nonstandard_style)]
 
+use crate::core::error::Errc;
+use crate::core::error::{Error, Result};
 use crate::native::traits::system::INotification;
 use std::ptr;
 
@@ -97,10 +99,10 @@ impl Default for WindowsNotification {
 }
 
 impl INotification for WindowsNotification {
-    fn show(&mut self, title: &str, message: &str) {
+    fn show(&mut self, title: &str, message: &str) -> Result<()> {
         let action = notification_owner_action(self.active_owner, self.hwnd as usize);
         let (owner, operation) = match action {
-            NotificationOwnerAction::Ignore => return,
+            NotificationOwnerAction::Ignore => return Ok(()),
             NotificationOwnerAction::Add { owner } => (owner, NIM_ADD),
             NotificationOwnerAction::Modify { owner } => (owner, NIM_MODIFY),
             NotificationOwnerAction::Move { previous, owner } => {
@@ -111,7 +113,10 @@ impl INotification for WindowsNotification {
         };
         let hwnd = owner as *mut std::ffi::c_void;
         if hwnd.is_null() {
-            return;
+            return Err(Error::new(
+                Errc::PlatformError,
+                "WindowsNotification::show: owner HWND is null",
+            ));
         }
         unsafe {
             let mut nid: NOTIFYICONDATAW = std::mem::zeroed();
@@ -126,11 +131,23 @@ impl INotification for WindowsNotification {
             nid.hIcon = LoadIconW(ptr::null_mut(), IDI_APPLICATION as *const u16);
             if Shell_NotifyIconW(operation, &mut nid) != 0 {
                 self.active_owner = owner;
+                Ok(())
             } else if operation == NIM_MODIFY {
                 self.active_owner = 0;
                 if Shell_NotifyIconW(NIM_ADD, &mut nid) != 0 {
                     self.active_owner = owner;
+                    Ok(())
+                } else {
+                    Err(Error::new(
+                        Errc::PlatformError,
+                        "WindowsNotification::show: Shell_NotifyIconW(NIM_ADD) fallback failed",
+                    ))
                 }
+            } else {
+                Err(Error::new(
+                    Errc::PlatformError,
+                    "WindowsNotification::show: Shell_NotifyIconW failed",
+                ))
             }
         }
     }

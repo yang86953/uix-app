@@ -1,5 +1,6 @@
 //! Fake 通知 — 记录通知历史，支持断言。
 
+use crate::core::error::Result;
 use crate::native::traits::system::INotification;
 
 #[derive(Debug, Clone)]
@@ -56,10 +57,11 @@ impl Default for FakeNotification {
 }
 
 impl INotification for FakeNotification {
-    fn show(&mut self, title: &str, message: &str) {
+    fn show(&mut self, title: &str, message: &str) -> Result<()> {
         self.state.history.push(NotificationRecord {
             title: title.to_string(),
             message: message.to_string(),
         });
+        Ok(())
     }
 }
