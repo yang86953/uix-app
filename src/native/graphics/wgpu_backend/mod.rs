@@ -440,9 +440,30 @@ impl IGraphicsContext for WgpuContext {
         if self.shutdown {
             return Ok(());
         }
+
+        // Keep the owner live and retryable until every bound/offscreen
+        // resource has crossed its checked destruction boundary.  In
+        // particular, do not close the source before a pending callback or a
+        // flush failure can be returned to the owner.
+        self.bind_swapchain_target()?;
+        let handles = self
+            .offscreens
+            .iter()
+            .enumerate()
+            .filter_map(|(id, target)| target.as_ref().map(|_| OffscreenTargetId(id as u32)))
+            .collect::<Vec<_>>();
+        for handle in handles {
+            self.try_destroy_offscreen_target(handle)?;
+        }
+
         self.offscreens.clear();
         self.free_offscreen_ids.clear();
+        self.next_offscreen_id = 0;
         self.bound_offscreen = None;
+
+        // Late callbacks from this context are now stale. Closing the source
+        // before the final device poll makes them harmless and prevents them
+        // from being observed by a replacement context.
         self.pending_failures.close();
         let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
         self.shutdown = true;
@@ -871,10 +892,39 @@ mod tests {
     fn offscreen_destroy_failure_after_source_close_cannot_reach_replacement_owner() {
         let queue = PendingFailureQueue::new();
         let source = queue.source();
+        let replacement = queue.source();
         source.close();
         enqueue_offscreen_destroy_failure(
             &source,
             Error::new(Errc::PlatformError, "late offscreen destroy failure"),
+        );
+
+        assert!(source.take().is_none());
+        enqueue_offscreen_destroy_failure(
+            &replacement,
+            Error::new(Errc::GraphicsDeviceLost, "replacement device lost"),
+        );
+        let Some(error) = replacement.take() else {
+            panic!("replacement source must receive only its own failure");
+        };
+        assert_eq!(error.code(), Errc::GraphicsDeviceLost);
+        assert_eq!(error.message(), "replacement device lost");
+        assert!(replacement.take().is_none());
+    }
+
+    #[test]
+    fn teardown_source_close_is_idempotent_and_discards_late_failures() {
+        let queue = PendingFailureQueue::new();
+        let source = queue.source();
+        enqueue_offscreen_destroy_failure(
+            &source,
+            Error::new(Errc::GraphicsDeviceLost, "queued before teardown"),
+        );
+        source.close();
+        source.close();
+        enqueue_offscreen_destroy_failure(
+            &source,
+            Error::new(Errc::PlatformError, "late after repeated teardown"),
         );
 
         assert!(source.take().is_none());
