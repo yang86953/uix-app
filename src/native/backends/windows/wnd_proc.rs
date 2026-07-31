@@ -167,7 +167,7 @@ impl WindowsPlatform {
                     let info = unsafe { &mut *(lparam as *mut MINMAXINFO) };
                     if let Err(error) = apply_window_track_constraints(hwnd, minimum, maximum, info)
                     {
-                        crate::core::log::error_fn(error.short_what());
+                        self.enqueue_callback_failure(error);
                     }
                 }
                 default_result
@@ -275,7 +275,7 @@ impl WindowsPlatform {
                     )
                 };
                 if let Err(error) = result {
-                    crate::core::log::error_fn(error.short_what());
+                    self.enqueue_callback_failure(error);
                 }
                 0
             }
@@ -301,13 +301,10 @@ impl WindowsPlatform {
                 };
                 // SAFETY: hwnd 属于当前同步窗口消息；rect 在调用期间有效可写。
                 if unsafe { GetWindowRect(hwnd, &mut rect) } == 0 {
-                    crate::core::log::error_fn(
-                        super::util::windows_diag(
-                            crate::native::Errc::PlatformError,
-                            "WM_MOVE GetWindowRect failed",
-                        )
-                        .short_what(),
-                    );
+                    self.enqueue_callback_failure(super::util::windows_diag(
+                        crate::native::Errc::PlatformError,
+                        "WM_MOVE GetWindowRect failed",
+                    ));
                 } else {
                     let mut state = window.borrow_mut();
                     state.pos_x = rect.left;
@@ -389,7 +386,7 @@ impl WindowsPlatform {
                     match result_string(hwnd) {
                         Ok(value) => ImmStringRead::from_flagged_result(true, Ok(value)),
                         Err(err) => {
-                            crate::core::log::error_fn(err.short_what());
+                            self.enqueue_callback_failure(err);
                             ImmStringRead::Skipped
                         }
                     }
@@ -400,7 +397,7 @@ impl WindowsPlatform {
                     match composition_string(hwnd) {
                         Ok(value) => ImmStringRead::from_flagged_result(true, Ok(value)),
                         Err(err) => {
-                            crate::core::log::error_fn(err.short_what());
+                            self.enqueue_callback_failure(err);
                             ImmStringRead::Skipped
                         }
                     }

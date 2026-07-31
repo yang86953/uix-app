@@ -32,10 +32,9 @@ use crate::draw::renderer::{RecoveryAction, RecoveryDriver, RenderTargetRebuilde
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::image::ImageService;
 use crate::draw::Renderer;
-use crate::native::create_platform;
 use crate::native::factory::{
-    gpu_recipe_candidates, graphics_runtime_platform, try_create_gpu_recipe_with_queue,
-    GraphicsRecipe,
+    create_platform_with_pending, gpu_recipe_candidates, graphics_runtime_platform,
+    try_create_gpu_recipe_with_queue, GraphicsRecipe,
 };
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::traits::platform::Platform;
@@ -592,14 +591,16 @@ impl App {
 
         let (w, h) = self.size;
         let graphics_backend = self.configured_graphics_backend();
+        let diagnostics = self.runtime.diagnostics();
 
-        let mut platform = match create_platform() {
+        let mut platform = match create_platform_with_pending(diagnostics.pending_failure_queue()) {
             Ok(p) => p,
             Err(e) => {
                 crate::core::log::error_fn(format_args!("create_platform 失败: {:?}", e));
                 return 1;
             }
         };
+        drain_platform_pending_failures(&mut *platform, &diagnostics);
 
         let mut platform_window = match platform.window_manager().create_window(&self.title, w, h) {
             Ok(win) => win,
@@ -625,6 +626,7 @@ impl App {
             "initial center_on_screen failed",
             platform_window.center_on_screen(),
         );
+        drain_platform_pending_failures(&mut *platform, &diagnostics);
         #[cfg(feature = "test-harness")]
         let preferred_engine = create_preferred_engine(
             platform_window.as_mut(),
@@ -817,6 +819,7 @@ impl App {
             map_ui_event,
             |ev| on_exit(ev),
             |platform, tree| {
+                drain_platform_pending_failures(platform, &diagnostics);
                 if let Some(next_theme) = runtime.take_pending_theme() {
                     apply_runtime_theme_change(
                         &theme,
@@ -875,6 +878,7 @@ impl App {
         for window in secondary_windows.drain(..) {
             window.close();
         }
+        drain_platform_pending_failures(&mut *platform, &diagnostics);
         self.runtime.shutdown_all();
         app_handle.mark_closed();
 
@@ -916,7 +920,10 @@ pub(crate) use runtime::{
     dispatch_secondary_window_event, drain_pending_open_windows_with_backend,
     drain_secondary_window_queues, resolve_graphics_backend, secondary_windows_next_deadline,
 };
-use runtime::{create_preferred_engine, drain_secondary_window_frames_with_platform};
+use runtime::{
+    create_preferred_engine, drain_platform_pending_failures,
+    drain_secondary_window_frames_with_platform,
+};
 #[cfg(test)]
 pub(crate) use runtime::{
     drain_pending_open_windows, drain_secondary_window_frames, format_gpu_probe_fallback,

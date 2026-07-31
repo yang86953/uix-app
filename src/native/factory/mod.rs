@@ -10,6 +10,7 @@ pub(crate) mod registry_windows;
 pub(crate) mod thread_bound;
 
 use crate::core::error::{Errc, Error};
+use crate::diagnostics::PendingFailureQueue;
 use crate::native::traits::platform::Platform;
 use crate::native::traits::present::{GraphicsBackend, IGraphicsContext};
 #[cfg(any(windows, all(unix, not(target_os = "macos"))))]
@@ -56,19 +57,42 @@ pub(crate) fn d3d12_warp_test_context_available() -> bool {
 /// 创建当前平台对应的 Platform 实例。
 #[cfg(windows)]
 pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
+    create_platform_with_pending(PendingFailureQueue::new())
+}
+
+#[cfg(windows)]
+pub(crate) fn create_platform_with_pending(
+    pending_failures: PendingFailureQueue,
+) -> Result<Box<dyn Platform>, Error> {
     Ok(Box::new(
-        crate::native::backends::windows::platform::WindowsPlatform::new(),
+        crate::native::backends::windows::platform::WindowsPlatform::new_with_pending(
+            pending_failures,
+        ),
     ))
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
+    create_platform_with_pending(PendingFailureQueue::new())
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+pub(crate) fn create_platform_with_pending(
+    _pending_failures: PendingFailureQueue,
+) -> Result<Box<dyn Platform>, Error> {
     let platform = crate::native::backends::linux::platform::LinuxPlatform::new()?;
     Ok(Box::new(platform))
 }
 
 #[cfg(target_os = "macos")]
 pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
+    create_platform_with_pending(PendingFailureQueue::new())
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn create_platform_with_pending(
+    _pending_failures: PendingFailureQueue,
+) -> Result<Box<dyn Platform>, Error> {
     Ok(Box::new(
         crate::native::backends::macos::platform::MacosPlatform::new(),
     ))
@@ -76,6 +100,13 @@ pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
 
 #[cfg(not(any(windows, unix)))]
 pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
+    create_platform_with_pending(PendingFailureQueue::new())
+}
+
+#[cfg(not(any(windows, unix)))]
+pub(crate) fn create_platform_with_pending(
+    _pending_failures: PendingFailureQueue,
+) -> Result<Box<dyn Platform>, Error> {
     Err(Error::new(
         Errc::PlatformError,
         unsupported_platform_message(),
