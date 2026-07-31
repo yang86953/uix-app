@@ -13,7 +13,7 @@ use std::ffi::c_void;
 use std::sync::Arc;
 
 use crate::core::{Errc, Error, Rect, Result};
-use crate::diagnostics::PendingFailureQueue;
+use crate::diagnostics::{PendingFailureQueue, PendingFailureSource};
 use crate::native::traits::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
     GpuSolidMesh, GpuSolidRect, GpuStrokeRect, GraphicsBackend, GraphicsContextCaps,
@@ -85,6 +85,15 @@ pub(crate) fn ensure_surface_extent(
         ));
     }
     Ok((width, height))
+}
+
+/// Keeps the legacy void destroy adapter on the callback-to-owner boundary.
+///
+/// The checked path still returns the original error to its owner. This
+/// adapter has no return channel, so it must preserve the typed cause in the
+/// context source instead of logging a lossy summary or invoking recovery.
+fn enqueue_offscreen_destroy_failure(pending_failures: &PendingFailureSource, error: Error) {
+    let _ = pending_failures.enqueue(error);
 }
 
 pub(crate) fn create_vulkan(
@@ -675,10 +684,7 @@ impl IGraphicsContext for WgpuContext {
 
     fn destroy_offscreen_target(&mut self, id: OffscreenTargetId) {
         if let Err(error) = self.try_destroy_offscreen_target(id) {
-            crate::core::log::error_fn(format_args!(
-                "WgpuContext: destroy offscreen target failed: {}",
-                error.short_what()
-            ));
+            enqueue_offscreen_destroy_failure(&self.pending_failures, error);
         }
     }
 
@@ -835,6 +841,43 @@ impl IGraphicsContext for WgpuContext {
 
     fn has_overlay_backdrop(&self) -> bool {
         self.renderer.has_overlay_backdrop()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::enqueue_offscreen_destroy_failure;
+    use crate::core::{Errc, Error};
+    use crate::diagnostics::PendingFailureQueue;
+
+    #[test]
+    fn offscreen_destroy_failure_reaches_owner_with_typed_cause() {
+        let queue = PendingFailureQueue::new();
+        let source = queue.source();
+        enqueue_offscreen_destroy_failure(
+            &source,
+            Error::new(Errc::GraphicsDeviceLost, "offscreen destroy device lost"),
+        );
+
+        let Some(error) = source.take() else {
+            panic!("offscreen destroy failure must be queued");
+        };
+        assert_eq!(error.code(), Errc::GraphicsDeviceLost);
+        assert_eq!(error.message(), "offscreen destroy device lost");
+        assert!(source.take().is_none());
+    }
+
+    #[test]
+    fn offscreen_destroy_failure_after_source_close_cannot_reach_replacement_owner() {
+        let queue = PendingFailureQueue::new();
+        let source = queue.source();
+        source.close();
+        enqueue_offscreen_destroy_failure(
+            &source,
+            Error::new(Errc::PlatformError, "late offscreen destroy failure"),
+        );
+
+        assert!(source.take().is_none());
     }
 }
 
