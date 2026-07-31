@@ -178,11 +178,11 @@ impl AgentProtocolSession {
     pub(crate) fn handle_line(&mut self, line: &[u8]) -> AgentProtocolReply {
         let started = Instant::now();
         let reply = self.handle_line_inner(line);
-        crate::core::log::info_fn(format_args!(
+        tracing::info!(
             "agent request result={} duration_ms={}",
             reply.result_code(),
             started.elapsed().as_millis()
-        ));
+        );
         reply
     }
 

@@ -76,7 +76,7 @@ impl Cli {
             return handler(&args);
         }
 
-        crate::core::log::error_fn(format_args!("Unknown command: {}", args.command));
+        tracing::error!("Unknown command: {}", args.command);
         self.print_help();
         1
     }

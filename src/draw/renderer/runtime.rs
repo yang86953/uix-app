@@ -93,10 +93,7 @@ impl Renderer {
         let session = match RenderSession::new(BackendKind::Cpu) {
             Ok(session) => session,
             Err(error) => {
-                crate::core::log::error_fn(format_args!(
-                    "RenderSession 创建失败: {}",
-                    error.short_what()
-                ));
+                tracing::error!("RenderSession 创建失败: {}", error.short_what());
                 RenderSession::with_backend(Box::new(CpuBackend::new()))
             }
         };
@@ -218,12 +215,12 @@ impl Renderer {
                 damage_full: u8::from(damage_full),
                 skipped: 1,
             });
-            crate::core::log::info_fn(format_args!(
+            tracing::info!(
                 "present_upload_us=0 pixels={} damage_full={} backend={} skipped=1",
                 pixels,
                 u8::from(damage_full),
                 backend_name,
-            ));
+            );
             return Ok(());
         }
 
@@ -242,7 +239,7 @@ impl Renderer {
         sample.damage_full = u8::from(damage_full);
         sample.skipped = 0;
         crate::core::perf_probe::record_present(sample);
-        crate::core::log::info_fn(format_args!(
+        tracing::info!(
             "present_upload_us={} upload_copy_us={} fence_wait_us={} submit_present_us={} \
              pixels={} damage_full={} backend={}",
             present_us,
@@ -252,7 +249,7 @@ impl Renderer {
             pixels,
             u8::from(damage_full),
             backend_name,
-        ));
+        );
         present_result?;
         upload.damage_tracker.commit(
             caps.present_coherency,
@@ -586,20 +583,14 @@ impl RenderTarget for Renderer {
     }
 
     fn diagnose_memory(&self) {
-        crate::core::log::info_fn(format_args!(
-            "Renderer memory: {} bytes",
-            self.memory_usage()
-        ));
+        tracing::info!("Renderer memory: {} bytes", self.memory_usage());
     }
 }
 
 impl Drop for Renderer {
     fn drop(&mut self) {
         if let Err(error) = self.try_shutdown() {
-            crate::core::log::error_fn(format_args!(
-                "Renderer checked shutdown failed: {}",
-                error.short_what()
-            ));
+            tracing::error!("Renderer checked shutdown failed: {}", error.short_what());
         }
     }
 }

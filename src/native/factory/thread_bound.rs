@@ -102,10 +102,10 @@ impl ThreadBoundGraphicsContext {
     }
 
     fn log_legacy_rejection(operation: &str, error: &Error) {
-        crate::core::log::error_fn(format_args!(
+        tracing::error!(
             "legacy graphics context {operation} rejected: {}",
             error.what()
-        ));
+        );
     }
 
     #[cfg(test)]

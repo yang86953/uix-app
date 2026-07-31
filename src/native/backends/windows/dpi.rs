@@ -175,7 +175,7 @@ impl Drop for PerMonitorV2Scope {
             return;
         };
         if let Err(error) = restore_thread_context(previous) {
-            crate::core::log::error_fn(error.short_what());
+            tracing::error!("{}", error.short_what());
         }
     }
 }

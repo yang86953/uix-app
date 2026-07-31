@@ -297,10 +297,14 @@ impl WgpuContext {
         surface.configure(&device, &config);
         let renderer = WgpuExecutor::new(&device, &queue, format)?;
         let separable_blur = SeparableBlur::new(&device, format)?;
-        crate::core::log::info_fn(format_args!(
+        tracing::info!(
             "WgpuContext: backend={requested}; adapter=\"{}\"; type={:?}; driver=\"{}\"; {}x{}",
-            info.name, info.device_type, info.driver, drawable_width, drawable_height
-        ));
+            info.name,
+            info.device_type,
+            info.driver,
+            drawable_width,
+            drawable_height
+        );
         Ok(Self {
             _instance: instance,
             surface,
@@ -957,10 +961,7 @@ fn graphics_backend(backend: wgpu::Backend) -> GraphicsBackend {
 impl Drop for WgpuContext {
     fn drop(&mut self) {
         if let Err(error) = self.try_shutdown() {
-            crate::core::log::error_fn(format_args!(
-                "WgpuContext shutdown failed: {}",
-                error.short_what()
-            ));
+            tracing::error!("WgpuContext shutdown failed: {}", error.short_what());
         }
     }
 }

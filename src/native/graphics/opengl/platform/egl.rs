@@ -92,7 +92,7 @@ impl EglContext {
                 format!("EglContext: eglInitialize 失败: {e:?}"),
             )
         })?;
-        crate::core::log::info_fn(format_args!("EglContext: EGL {major}.{minor}"));
+        tracing::info!("EglContext: EGL {major}.{minor}");
 
         // 3. 绑定 API 到 OpenGL ES
         if let Err(e) = egl.bind_api(egl::OPENGL_ES_API) {
@@ -193,7 +193,7 @@ impl EglContext {
                     format!("EglContext: native raster requires GLES 3.0: {e:?}"),
                 )
             })?;
-        crate::core::log::info_fn("EglContext: GLES 3.0 上下文创建成功");
+        tracing::info!("EglContext: GLES 3.0 上下文创建成功");
 
         // 8. make current
         egl.make_current(display, Some(surface), Some(surface), Some(context))

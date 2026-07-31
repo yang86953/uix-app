@@ -13,10 +13,10 @@ impl WindowDriver {
             return;
         };
         if let Err(error) = platform_window.cancel_native_frame(token) {
-            crate::core::log::warn_fn(format_args!(
+            tracing::warn!(
                 "[WindowDriver] native frame cancellation failed: {}",
                 error.short_what()
-            ));
+            );
         }
     }
 

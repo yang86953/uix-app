@@ -30,7 +30,7 @@ impl WaylandBackend {
             return false;
         }
         if let Err(e) = self.event_queue.dispatch_pending(&mut (), |_, _, _| {}) {
-            crate::core::log::error_fn(format_args!("Wayland dispatch_pending error: {}", e));
+            tracing::error!("Wayland dispatch_pending error: {}", e);
             self.closed = true;
             return false;
         }
@@ -155,7 +155,7 @@ impl WaylandBackend {
             if error.kind() == std::io::ErrorKind::Interrupted {
                 return true;
             }
-            crate::core::log::error_fn(format_args!("Wayland {} poll error: {}", context, error));
+            tracing::error!("Wayland {} poll error: {}", context, error);
             self.closed = true;
             return false;
         }
@@ -166,16 +166,13 @@ impl WaylandBackend {
             self.drain_wake_pipe();
         }
         if (wayland_revents & (POLLERR | POLLHUP | POLLNVAL)) != 0 {
-            crate::core::log::error_fn(format_args!("Wayland {} fd error", context));
+            tracing::error!("Wayland {} fd error", context);
             self.closed = true;
             return false;
         }
         if (wayland_revents & POLLIN) != 0 {
             if let Err(e) = self.event_queue.dispatch(&mut (), |_, _, _| {}) {
-                crate::core::log::error_fn(format_args!(
-                    "Wayland {} dispatch error: {}",
-                    context, e
-                ));
+                tracing::error!("Wayland {} dispatch error: {}", context, e);
                 self.closed = true;
                 return false;
             }
@@ -193,7 +190,7 @@ impl WaylandBackend {
                     .unwrap_or_else(|error| error.into_inner());
                 if active.as_ref().is_some_and(|read| read.fd() == polled_fd) {
                     *active = None;
-                    crate::core::log::error_fn("Wayland clipboard fd error");
+                    tracing::error!("Wayland clipboard fd error");
                 }
             }
         }
@@ -331,7 +328,7 @@ impl WaylandBackend {
                     String::from_utf8_lossy(&bytes).into_owned();
             }
             Some(Err(error)) => {
-                crate::core::log::error_fn(format_args!("Wayland clipboard read failed: {error}"));
+                tracing::error!("Wayland clipboard read failed: {error}");
             }
             None => {}
         }
@@ -348,7 +345,7 @@ impl WaylandBackend {
 
         if (revents & (POLLERR | POLLHUP | POLLNVAL)) != 0 {
             writes.swap_remove(index);
-            crate::core::log::warn_fn("Wayland clipboard receiver closed before send completed");
+            tracing::warn!("Wayland clipboard receiver closed before send completed");
             return 0;
         }
         if (revents & POLLOUT) == 0 {
@@ -364,7 +361,7 @@ impl WaylandBackend {
             }
             Err(error) => {
                 writes.swap_remove(index);
-                crate::core::log::error_fn(format_args!("Wayland clipboard send failed: {error}"));
+                tracing::error!("Wayland clipboard send failed: {error}");
                 0
             }
         }

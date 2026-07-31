@@ -231,7 +231,7 @@ impl VulkanDevice {
                 "vkDeviceWaitIdle during shutdown",
                 vk::Result::ERROR_DEVICE_LOST,
             ));
-            crate::core::log::error_fn(error.what());
+            tracing::error!("{}", error.what());
         }
     }
 

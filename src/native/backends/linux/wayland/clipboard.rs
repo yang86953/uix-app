@@ -113,7 +113,7 @@ impl IClipboard for WaylandBackend {
                     if let Ok(mut owns) = self.owns_clipboard.lock() {
                         *owns = false;
                     }
-                    crate::core::log::warn_fn(
+                    tracing::warn!(
                         "Wayland clipboard selection requires a pointer or keyboard serial",
                     );
                     return;
@@ -129,9 +129,9 @@ impl IClipboard for WaylandBackend {
                                 .lock()
                                 .unwrap_or_else(|error| error.into_inner())
                                 .push(write),
-                            Err(error) => crate::core::log::error_fn(format_args!(
-                                "Wayland clipboard send setup failed: {error}"
-                            )),
+                            Err(error) => {
+                                tracing::error!("Wayland clipboard send setup failed: {error}")
+                            }
                         }
                     }
                 });

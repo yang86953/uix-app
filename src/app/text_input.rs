@@ -54,10 +54,7 @@ pub(crate) fn sync_window_text_input(
             return;
         }
         if let Err(error) = platform.text_input().start() {
-            crate::core::log::error_fn(format_args!(
-                "IME session start failed: {}",
-                error.short_what()
-            ));
+            tracing::error!("IME session start failed: {}", error.short_what());
             return;
         }
         state.coordinator.activate(window_id);
@@ -69,10 +66,7 @@ pub(crate) fn sync_window_text_input(
         return;
     }
     if let Err(error) = platform.text_input().set_cursor_rect(cursor_rect) {
-        crate::core::log::warn_fn(format_args!(
-            "IME cursor rect update failed: {}",
-            error.short_what()
-        ));
+        tracing::warn!("IME cursor rect update failed: {}", error.short_what());
     }
     state.cursor_rect = Some(cursor_rect);
 }
@@ -86,10 +80,7 @@ fn select_target(
         .text_input()
         .set_target_window(window_id, native_window)
     {
-        crate::core::log::error_fn(format_args!(
-            "IME target selection failed: {}",
-            error.short_what()
-        ));
+        tracing::error!("IME target selection failed: {}", error.short_what());
         return false;
     }
     true
@@ -97,10 +88,7 @@ fn select_target(
 
 fn report_stop_error(result: crate::core::Result<()>) -> bool {
     if let Err(error) = result {
-        crate::core::log::error_fn(format_args!(
-            "IME session stop failed: {}",
-            error.short_what()
-        ));
+        tracing::error!("IME session stop failed: {}", error.short_what());
         return false;
     }
     true

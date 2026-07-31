@@ -228,16 +228,14 @@ where
     }
 
     for candidate in candidates {
-        crate::core::log::info_fn(format_args!(
-            "Graphics bootstrap: probing recipe {candidate}"
-        ));
+        tracing::info!("Graphics bootstrap: probing recipe {candidate}");
         let context = match try_create(candidate) {
             Ok(context) => context,
             Err(err) => {
-                crate::core::log::warn_fn(format_args!(
+                tracing::warn!(
                     "Graphics bootstrap: recipe {candidate} unavailable: {}",
                     err.what()
-                ));
+                );
                 report.record_failure_at(candidate, ProbeStage::ContextCreate, None, &err);
                 continue;
             }
@@ -249,10 +247,10 @@ where
         let renderer = match assemble_renderer(context, width, height) {
             Ok(renderer) => renderer,
             Err(failure) => {
-                crate::core::log::warn_fn(format_args!(
+                tracing::warn!(
                     "Graphics bootstrap: renderer assembly for recipe {selected} unavailable: {}",
                     failure.error.what()
-                ));
+                );
                 report.record_failure_at(
                     candidate,
                     failure.stage.probe_stage(),
@@ -262,9 +260,9 @@ where
                 continue;
             }
         };
-        crate::core::log::info_fn(format_args!(
+        tracing::info!(
             "Graphics bootstrap: selected recipe {selected}; present_occlusion={present_occlusion}"
-        ));
+        );
         return Ok(GpuBootstrap {
             renderer,
             selected: selected.backend,

@@ -125,10 +125,10 @@ impl AgentTransportHandle {
             })
             .map_err(AgentTransportError::ListenerThread)?;
 
-        crate::core::log::info_fn(format_args!(
+        tracing::info!(
             "agent bridge ready discovery={}",
             info.discovery_path.display()
-        ));
+        );
         Ok(Self {
             info,
             shutdown,
@@ -149,7 +149,7 @@ impl AgentTransportHandle {
         }
         if let Some(listener_thread) = self.listener_thread.take() {
             if listener_thread.join().is_err() {
-                crate::core::log::error_fn("agent listener thread panicked during shutdown");
+                tracing::error!("agent listener thread panicked during shutdown");
             }
         }
     }
@@ -175,9 +175,7 @@ fn listener_loop(
             Ok(accepted) => accepted,
             Err(error) => {
                 if !shutdown.load(Ordering::Acquire) {
-                    crate::core::log::error_fn(format_args!(
-                        "agent listener stopped after accept failure: {error}"
-                    ));
+                    tracing::error!("agent listener stopped after accept failure: {error}");
                 }
                 break;
             }
@@ -210,9 +208,7 @@ fn listener_loop(
             .spawn(move || {
                 if let Err(error) = serve_connection(stream, worker_bridge, worker_token) {
                     if !worker_shutdown.load(Ordering::Acquire) {
-                        crate::core::log::error_fn(format_args!(
-                            "agent connection ended after I/O failure: {error}"
-                        ));
+                        tracing::error!("agent connection ended after I/O failure: {error}");
                     }
                 }
                 worker_connections
@@ -229,9 +225,7 @@ fn listener_loop(
                     .lock()
                     .unwrap_or_else(|lock_error| lock_error.into_inner())
                     .remove(&connection_id);
-                crate::core::log::error_fn(format_args!(
-                    "agent connection thread failed to start: {error}"
-                ));
+                tracing::error!("agent connection thread failed to start: {error}");
             }
         }
     }
@@ -239,7 +233,7 @@ fn listener_loop(
     cancel_connections(&connections);
     for worker in workers {
         if worker.join().is_err() {
-            crate::core::log::error_fn("agent connection thread panicked during shutdown");
+            tracing::error!("agent connection thread panicked during shutdown");
         }
     }
 }

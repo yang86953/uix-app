@@ -190,10 +190,7 @@ impl NotificationService {
             cb();
         }
 
-        crate::core::log::info_fn(format_args!(
-            "[Notification] {:?}: {} — {}",
-            level, title, message
-        ));
+        tracing::info!("[Notification] {:?}: {} — {}", level, title, message);
 
         id
     }

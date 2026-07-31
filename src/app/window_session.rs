@@ -261,10 +261,10 @@ impl WindowSession {
 
     pub(crate) fn shutdown(&mut self) {
         if let Err(error) = self.try_shutdown() {
-            crate::core::log::error_fn(format_args!(
+            tracing::error!(
                 "WindowSession checked shutdown failed: {}",
                 error.short_what()
-            ));
+            );
         }
     }
 

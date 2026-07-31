@@ -54,7 +54,7 @@ impl LinuxPlatform {
     pub fn new() -> Result<Self, Error> {
         let backend = match WaylandBackend::new() {
             Ok(wl) => {
-                crate::core::log::info_fn("Wayland backend initialized");
+                tracing::info!("Wayland backend initialized");
                 wl
             }
             Err(e) => {

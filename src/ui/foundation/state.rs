@@ -144,9 +144,7 @@ pub fn end_state_bind_capture(component_id: ComponentId) {
             return;
         };
         if id != component_id {
-            crate::core::log::warn_fn(format_args!(
-                "State 绑定探测 component_id 不一致: 期望 {component_id}, 实际 {id}"
-            ));
+            tracing::warn!("State 绑定探测 component_id 不一致: 期望 {component_id}, 实际 {id}");
         }
         for source in states {
             // 渲染闭包或组件在 render/measure 时读取最新值，只需 Paint。

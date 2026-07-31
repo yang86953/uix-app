@@ -150,10 +150,7 @@ pub trait WindowOps {
 
 /// 报告未实现的窗口操作。
 pub fn unimpl(method: &str) -> Result<()> {
-    crate::core::log::debug_fn(format_args!(
-        "WindowOps::{} 未实现！该平台不支持此窗口操作。",
-        method
-    ));
+    tracing::debug!("WindowOps::{} 未实现！该平台不支持此窗口操作。", method);
     Err(Error::new(
         Errc::NotImplemented,
         format!("WindowOps::{method} is not supported on this platform"),

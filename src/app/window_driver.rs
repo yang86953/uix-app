@@ -548,10 +548,10 @@ impl WindowDriver {
                     return WindowFrameResult { did_work: true };
                 }
                 Err(error) => {
-                    crate::core::log::error_fn(format_args!(
+                    tracing::error!(
                         "[WindowDriver] occlusion present test failed: {}",
                         error.short_what()
-                    ));
+                    );
                     let failure = GraphicsFailure::from_error(error);
                     self.frame_scheduler.frame_failed(&failure, now);
                     active_work.park_animated_deadlines();
@@ -609,10 +609,10 @@ impl WindowDriver {
 
         if let Some(token) = opportunity.fallback_token() {
             if let Err(error) = platform_window.cancel_native_frame(token) {
-                crate::core::log::warn_fn(format_args!(
+                tracing::warn!(
                     "[WindowDriver] fallback native frame cancellation failed: {}",
                     error.short_what()
-                ));
+                );
             }
         }
 
@@ -664,10 +664,10 @@ impl WindowDriver {
                     }
                     Ok(false) => {}
                     Err(error) => {
-                        crate::core::log::warn_fn(format_args!(
+                        tracing::warn!(
                             "[WindowDriver] native frame request failed; fallback remains armed: {}",
                             error.short_what()
-                        ));
+                        );
                     }
                 }
             }
@@ -822,7 +822,7 @@ impl WindowDriver {
                 if engine_capabilities.uses_external_presenter() {
                     let message =
                         "external presenter path reported final Present before platform submission";
-                    crate::core::log::error_fn(format_args!("[WindowDriver] {message}"));
+                    tracing::error!("[WindowDriver] {message}");
                     frame_failure = Some(protocol_failure(message));
                     self.rendered_first = false;
                 } else {
@@ -834,7 +834,7 @@ impl WindowDriver {
             RenderOutcome::PresentPending(damage) => {
                 if !engine_capabilities.uses_external_presenter() {
                     let message = "backend-managed path returned external presentation pending";
-                    crate::core::log::error_fn(format_args!("[WindowDriver] {message}"));
+                    tracing::error!("[WindowDriver] {message}");
                     frame_failure = Some(protocol_failure(message));
                     self.rendered_first = false;
                 } else {
@@ -873,10 +873,10 @@ impl WindowDriver {
                         }
                         Err(error) => {
                             engine.external_present_failed(error.clone());
-                            crate::core::log::error_fn(format_args!(
+                            tracing::error!(
                                 "[WindowDriver] external present failed: {}",
                                 error.what()
-                            ));
+                            );
                             frame_failure = Some(GraphicsFailure::from_error(error));
                             self.rendered_first = false;
                         }
@@ -888,14 +888,14 @@ impl WindowDriver {
                 record_idle(metrics, outcome_source);
                 if need_render {
                     let message = "frame renderer returned Idle while render work was pending";
-                    crate::core::log::error_fn(format_args!("[WindowDriver] {message}"));
+                    tracing::error!("[WindowDriver] {message}");
                     frame_failure = Some(protocol_failure(message));
                     self.rendered_first = false;
                 }
             }
             RenderOutcome::FrameReady(_) => {
                 let message = "frame renderer returned FrameReady without final presentation";
-                crate::core::log::error_fn(format_args!("[WindowDriver] {message}"));
+                tracing::error!("[WindowDriver] {message}");
                 frame_failure = Some(protocol_failure(message));
                 self.rendered_first = false;
             }
@@ -917,10 +917,10 @@ impl WindowDriver {
                 .filter(|token| self.frame_scheduler.outstanding_native_token() == Some(*token))
             {
                 if let Err(error) = platform_window.native_frame_presented(token) {
-                    crate::core::log::warn_fn(format_args!(
+                    tracing::warn!(
                         "[WindowDriver] native frame present notification failed; fallback remains armed: {}",
                         error.short_what()
-                    ));
+                    );
                 }
             }
         } else if let Some(failure) = frame_failure.as_ref() {
@@ -973,24 +973,24 @@ impl WindowDriver {
 
         if frame_committed && self.deferred_show {
             if let Err(error) = platform_window.show() {
-                crate::core::log::error_fn(format_args!(
+                tracing::error!(
                     "[WindowDriver] deferred show after first present failed: {}",
                     error.short_what()
-                ));
+                );
             } else if let Err(error) = platform_window.raise() {
-                crate::core::log::warn_fn(format_args!(
+                tracing::warn!(
                     "[WindowDriver] deferred raise after first present failed: {}",
                     error.short_what()
-                ));
+                );
             }
             let elapsed = self
                 .started_at
                 .and_then(|started| frame_time.checked_duration_since(started))
                 .unwrap_or_default();
-            crate::core::log::info_fn(format_args!(
+            tracing::info!(
                 "first_present_ms={} (window revealed after present; no pre-present white flash)",
                 elapsed.as_millis()
-            ));
+            );
             self.deferred_show = false;
         }
 
