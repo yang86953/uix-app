@@ -1,15 +1,63 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use tracing::span::{Attributes, Id, Record};
+use tracing::subscriber::Interest;
 use tracing::{Event, Metadata, Subscriber};
 use uix::core::{Errc, Error, ErrorSeverity};
 use uix::diagnostics::{
     BacktracePolicy, Diagnostics, DiagnosticsConfig, RecoveryAction, RecoveryOutcome,
 };
 
+/// 全局默认 subscriber:`register_callsite` 恒返回 `Interest::sometimes()`。
+///
+/// tracing 的 callsite interest 是进程级、首次注册即缓存的(见 tracing-core
+/// `DefaultCallsite::register`)。若一个 callsite 首次在"无任何 subscriber 的空
+/// dispatch"下注册,`NoSubscriber::register_callsite` 会返回 `Interest::never()`
+/// 并被永久缓存,之后所有 `with_default` 的 subscriber 都收不到该 callsite 的
+/// 事件。测试并行时,无 `with_default` 的测试(如 `report_is_retained_...`、
+/// `concurrent_reports_...` 的 worker 线程)可能先注册 `emit_event` 的共享
+/// callsite,导致 `reentrant_report_...` 偶发收不到事件而失败。安装一个全局
+/// 默认 subscriber 后,任何线程首次注册 callsite 时都会经过它,interest 恒为
+/// `sometimes`,从而消除该竞态。
+struct GlobalNoop;
+
+impl Subscriber for GlobalNoop {
+    fn register_callsite(&self, _metadata: &Metadata<'_>) -> Interest {
+        Interest::sometimes()
+    }
+
+    fn enabled(&self, _metadata: &Metadata<'_>) -> bool {
+        true
+    }
+
+    fn new_span(&self, _span: &Attributes<'_>) -> Id {
+        Id::from_u64(1)
+    }
+
+    fn record(&self, _span: &Id, _values: &Record<'_>) {}
+
+    fn record_follows_from(&self, _span: &Id, _follows: &Id) {}
+
+    fn event(&self, _event: &Event<'_>) {}
+
+    fn enter(&self, _span: &Id) {}
+
+    fn exit(&self, _span: &Id) {}
+}
+
+/// 进程内只安装一次全局默认 subscriber。`set_global_default` 重复调用返回
+/// `Err`,OnceLock 保证只尝试一次。
+fn install_global_default_subscriber() {
+    static ONCE: OnceLock<()> = OnceLock::new();
+    ONCE.get_or_init(|| {
+        let _ = tracing::subscriber::set_global_default(GlobalNoop);
+    });
+}
+
 #[test]
 fn report_is_retained_without_a_subscriber_and_snapshot_is_immutable() {
+    install_global_default_subscriber();
     let diagnostics = Diagnostics::new(
         DiagnosticsConfig::default()
             .report_capacity(2)
@@ -39,6 +87,7 @@ fn report_is_retained_without_a_subscriber_and_snapshot_is_immutable() {
 
 #[test]
 fn reports_are_sanitized_and_cause_depth_is_bounded() {
+    install_global_default_subscriber();
     let diagnostics = Diagnostics::new(
         DiagnosticsConfig::default().backtrace(BacktracePolicy::Disabled),
     );
@@ -60,6 +109,7 @@ fn reports_are_sanitized_and_cause_depth_is_bounded() {
 
 #[test]
 fn concurrent_reports_keep_unique_monotonic_retained_ids() {
+    install_global_default_subscriber();
     let diagnostics = Diagnostics::new(
         DiagnosticsConfig::default()
             .report_capacity(16)
@@ -93,6 +143,7 @@ fn concurrent_reports_keep_unique_monotonic_retained_ids() {
 
 #[test]
 fn exact_error_recovery_is_ordered_raii_scoped_and_panic_safe() {
+    install_global_default_subscriber();
     let diagnostics = Diagnostics::default();
     let calls = Arc::new(AtomicUsize::new(0));
 
@@ -187,6 +238,7 @@ impl Subscriber for CaptureSubscriber {
 
 #[test]
 fn report_emits_one_fixed_target_event_with_contract_fields() {
+    install_global_default_subscriber();
     let events = Arc::new(Mutex::new(Vec::new()));
     let subscriber = CaptureSubscriber {
         events: Arc::clone(&events),
@@ -247,6 +299,7 @@ impl Subscriber for ReentrantSubscriber {
 
 #[test]
 fn reentrant_report_is_retained_but_recursive_event_is_suppressed() {
+    install_global_default_subscriber();
     let diagnostics = Diagnostics::default();
     let subscriber = ReentrantSubscriber {
         diagnostics: diagnostics.clone(),
@@ -289,6 +342,7 @@ impl Subscriber for PanicSubscriber {
 
 #[test]
 fn subscriber_panic_does_not_escape_or_discard_the_report() {
+    install_global_default_subscriber();
     let diagnostics = Diagnostics::default();
     tracing::subscriber::with_default(PanicSubscriber, || {
         diagnostics.report(Error::new(Errc::IoError, "retained"));
@@ -301,6 +355,7 @@ fn subscriber_panic_does_not_escape_or_discard_the_report() {
 
 #[test]
 fn ordinary_tracing_error_does_not_create_an_error_report() {
+    install_global_default_subscriber();
     let diagnostics = Diagnostics::default();
     tracing::error!(target: "application", "ordinary log");
     assert_eq!(diagnostics.snapshot().total_reports(), 0);

@@ -1,4 +1,17 @@
 //! Structured tracing emission Component owned by the reporting Module.
+//!
+//! # tracing 全局状态依赖
+//!
+//! `emit_event` 通过 `tracing::event!` 发射事件。tracing 对每个宏展开位置(callsite)
+//! 的 `Interest` 做进程级、首次注册即缓存的判定(`DefaultCallsite::register`,
+//! tracing-core)。若一个 callsite 首次在"无任何 subscriber 的空 dispatch"下注册,
+//! `NoSubscriber::register_callsite` 返回 `Interest::never()` 并被永久缓存,此后
+//! 任何 subscriber 都收不到该 callsite 的事件。
+//!
+//! 规避方式:应用应尽早初始化 tracing(推荐 `set_global_default`,它注册时会全量
+//! 重建 interest 缓存);若在初始化前已经产生过 report 且此后事件不可见,调用
+//! `tracing::callsite::rebuild_interest_cache()`(或 [`Diagnostics::rebuild_tracing_interest_cache`])
+//! 重新评估缓存。UIX 自身不调用上述 API,以免干扰应用的 subscriber 配置。
 
 use std::cell::Cell;
 use std::panic::{catch_unwind, AssertUnwindSafe};

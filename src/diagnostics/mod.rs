@@ -63,9 +63,25 @@ impl Diagnostics {
 
     /// Reports an application-owned typed error at its final responsibility
     /// boundary.
+    ///
+    /// > **tracing 初始化顺序**:事件经 `tracing::event!` 发射,tracing 对每个
+    /// > callsite 的 interest 首次注册即缓存。若在本进程设置 tracing
+    /// > subscriber 之前调用过本方法,且此后事件不可见,调用
+    /// > [`Self::rebuild_tracing_interest_cache`] 即可恢复。
     #[track_caller]
     pub fn report(&self, error: Error) -> ReportId {
         self.report_with_origin(error, ReportOrigin::application())
+    }
+
+    /// Re-evaluates tracing's process-wide callsite interest cache.
+    ///
+    /// tracing 对每个 callsite 的 `Interest` 首次注册即缓存;若某个 callsite 在
+    /// 尚无任何 subscriber 的上下文下注册,会被缓存为 `never`,之后即使设置了
+    /// subscriber 也收不到该 callsite 的事件(见 `diagnostics::reporting::emit`)。
+    /// 应用在初始化 tracing subscriber 后调用本方法即可刷新全部 callsite 的
+    /// interest,恢复诊断事件可见性。
+    pub fn rebuild_tracing_interest_cache(&self) {
+        tracing::callsite::rebuild_interest_cache();
     }
 
     /// Returns an immutable point-in-time snapshot ordered by `ReportId`.
