@@ -17,7 +17,6 @@ use crate::app::text_input::sync_window_text_input;
 use crate::app::window_semantics::WindowSemanticState;
 use crate::app::window_session::{ViewFactorySlot, WindowLoopState, WindowTextInputState};
 use crate::core::{Errc, Error, Point, PresentDamageTracker, Rect};
-use crate::draw::api::ThemeSnapshot;
 use crate::draw::renderer::GraphicsFailure;
 use crate::draw::renderer::RenderTarget;
 use crate::draw::renderer::{
@@ -787,7 +786,7 @@ impl WindowDriver {
             (RenderOutcome::Idle, InvalidationSource::None)
         } else {
             let theme_ref = theme.borrow();
-            let snapshot = ThemeSnapshot::new(theme_ref.tokens());
+            tree.set_theme_tokens(theme_ref.tokens_arc());
             let scroll_move = tree.scroll_region_moves();
             let hover_pos = debug_mode.get().then(|| cursor_pos.get());
             let metrics_ref = metrics.map(Cell::get);
@@ -799,7 +798,6 @@ impl WindowDriver {
                     dirty_region: &dirty_region,
                     tree_version: tree.tree_version(),
                     scroll_move,
-                    theme: snapshot,
                     font: font_service.loaded_font_handle,
                     font_service,
                     image_service,

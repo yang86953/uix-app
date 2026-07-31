@@ -123,7 +123,7 @@ impl ScenePaint for WidgetTree {
         self.get(id).and_then(|n| n.parent())
     }
 
-    fn paint(&self, id: NodeId, frame: Rect, ctx: &mut PaintContext<'_>) {
+    fn paint(&self, id: NodeId, frame: Rect, ctx: &mut PaintContext) {
         if let Some(node) = self.get(id) {
             if node.visible() {
                 let dirty = node.dirty_rect(frame);
@@ -132,7 +132,10 @@ impl ScenePaint for WidgetTree {
                     .and_then(|rect| self.node_visual_rect(id, rect));
                 begin_state_bind_capture(id, self.invalidation_handle(), paint_rect);
                 set_current_paint_widget(Some(id));
-                node.render(frame, ctx, self);
+                let theme_tokens = self.theme_tokens();
+                let mut ui_ctx =
+                    crate::ui::core::paint_context::PaintContext::new(ctx, theme_tokens);
+                node.render(frame, &mut ui_ctx, self);
                 set_current_paint_widget(None);
                 end_state_bind_capture(id);
             }

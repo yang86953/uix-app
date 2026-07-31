@@ -4,12 +4,12 @@ use std::sync::{Arc, OnceLock};
 
 use super::icon::Icon;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::geometry::path::{FillRule, Path, PathBuilder};
 use crate::draw::Color;
 use crate::impl_widget_component;
 use crate::native::traits::input::{ControlSize, KeyCode, MouseButton};
 use crate::ui::animation::{Animation, Easing};
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::style::{apply_style, ColorValue, PaletteColor, Style, StyleSet, StyleState};
 use crate::ui::traits::{EventHandler, WidgetAnimation, WidgetLayout, WidgetRender};
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
@@ -673,7 +673,7 @@ impl Button {
         }
     }
 
-    fn paint_ripple(&self, frame: Rect, ctx: &mut PaintContext<'_>, style: &Style) {
+    fn paint_ripple(&self, frame: Rect, ctx: &mut PaintContext, style: &Style) {
         let Some(ripple) = self.ripple.as_ref() else {
             return;
         };
@@ -715,7 +715,7 @@ impl Button {
     }
 
     /// 绘制纯图标按钮中的 Lucide 图标（复用 icon 模块基础设施）。
-    fn paint_icon(&self, frame: Rect, ctx: &mut PaintContext<'_>, style: &Style) {
+    fn paint_icon(&self, frame: Rect, ctx: &mut PaintContext, style: &Style) {
         let color = style.resolve_color(ctx.tokens());
         let content = frame.inset(style.padding);
         let font_size = normalized_button_font_size(style.resolve_font_size(ctx.tokens()));
@@ -725,7 +725,7 @@ impl Button {
     }
 
     /// 绘制加载旋转器；只在 loading 状态登记动画帧。
-    fn paint_loading_spinner(&self, frame: Rect, ctx: &mut PaintContext<'_>, style: &Style) {
+    fn paint_loading_spinner(&self, frame: Rect, ctx: &mut PaintContext, style: &Style) {
         let color = style.resolve_color(ctx.tokens());
         let content = frame.inset(style.padding);
         let font_size = normalized_button_font_size(style.resolve_font_size(ctx.tokens()));
@@ -746,7 +746,7 @@ impl Button {
         );
     }
 
-    fn ripple_ink_color(style: &Style, ctx: &PaintContext<'_>) -> Color {
+    fn ripple_ink_color(style: &Style, ctx: &PaintContext) -> Color {
         // 实心强调色按钮用浅色波；描边/浅底用深色波。
         let filled_dark = match style.background {
             Some(ColorValue::Palette(PaletteColor::Primary))

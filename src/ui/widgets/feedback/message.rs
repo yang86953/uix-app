@@ -5,10 +5,10 @@ use std::rc::Rc;
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::Color;
 use crate::native::traits::system::StatusLevel;
 use crate::ui::animation::AnimationConfig;
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::{EventResult, MouseButton, Placement, SnapshotFields, SystemEvent};
 
@@ -827,7 +827,7 @@ impl Message {
     }
 
     fn paint_elided_text(
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         value: &str,
         frame: Rect,
         color: Color,
@@ -846,7 +846,7 @@ impl Message {
     }
 
     fn paint_centered_elided_text(
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         value: &str,
         frame: Rect,
         color: Color,
@@ -864,7 +864,7 @@ impl Message {
     }
 
     fn elide_single_line(
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         value: &str,
         font_size: f32,
         max_width: f32,
@@ -895,7 +895,7 @@ impl Message {
         Some(visible)
     }
 
-    fn text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
+    fn text_width(ctx: &mut PaintContext, value: &str, font_size: f32) -> f32 {
         ctx.measure_text(value, font_size).w.max(
             crate::draw::resources::font::text_backend::estimate_text_metrics(
                 value,

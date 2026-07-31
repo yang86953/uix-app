@@ -3,9 +3,9 @@
 use std::any::Any;
 
 use crate::core::{ComponentId, Constraints, EdgeInsets, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::native::traits::input::{KeyCode, MouseButton};
 use crate::ui::component_snapshot::SnapshotFields;
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::event::WindowAction;
 use crate::ui::layout::engine::BoxModel;
 use crate::ui::layout::{AlignItems, LayoutChild};

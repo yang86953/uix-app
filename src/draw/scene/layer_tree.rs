@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use crate::core::{Point, Rect};
 
 use crate::core::DirtyRegion;
-use crate::draw::api::{PaintContext, PaintSurfaceConfig, ThemeSnapshot};
+use crate::draw::api::{PaintContext, PaintSurfaceConfig};
 use crate::draw::command::{DisplayList, PaintPass};
 use crate::draw::geometry::types::{ImageHandle, Transform};
 use crate::draw::renderer::NodeId;
@@ -341,7 +341,6 @@ impl LayerTree {
         engine: &mut dyn RenderTarget,
         scene: &impl ScenePaint,
         paint_region: &DirtyRegion,
-        theme: &ThemeSnapshot<'_>,
         font: FontHandle,
         font_service: &FontService,
         image_service: &ImageService,
@@ -353,7 +352,6 @@ impl LayerTree {
             engine,
             scene,
             paint_region,
-            theme,
             font,
             font_service,
             image_service,
@@ -372,7 +370,6 @@ impl LayerTree {
         engine: &mut dyn RenderTarget,
         scene: &impl ScenePaint,
         paint_region: &DirtyRegion,
-        theme: &ThemeSnapshot<'_>,
         font: FontHandle,
         font_service: &FontService,
         image_service: &ImageService,
@@ -384,7 +381,6 @@ impl LayerTree {
             engine,
             scene,
             paint_region,
-            theme,
             font,
             font_service,
             image_service,
@@ -401,7 +397,6 @@ impl LayerTree {
         engine: &mut dyn RenderTarget,
         scene: &impl ScenePaint,
         paint_region: &DirtyRegion,
-        theme: &ThemeSnapshot<'_>,
         font: FontHandle,
         font_service: &FontService,
         image_service: &ImageService,
@@ -419,7 +414,6 @@ impl LayerTree {
             font,
             font_service,
             image_service,
-            tokens: theme.tokens(),
             dpi,
             dpr,
             orientation,
@@ -502,7 +496,6 @@ impl LayerTree {
             env.font,
             env.font_service,
             env.image_service,
-            env.tokens,
             PaintSurfaceConfig {
                 dpi: env.dpi,
                 device_pixel_ratio: env.dpr,

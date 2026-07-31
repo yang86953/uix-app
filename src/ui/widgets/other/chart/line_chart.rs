@@ -5,8 +5,8 @@ use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::Color;
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::{EventResult, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
 
 use super::advanced::{
@@ -298,7 +298,7 @@ component! {
                 3 => palette_warning,
                 _ => palette_error,
             });
-            let draw_segment = |ctx: &mut PaintContext<'_>, from: Point, to: Point| {
+            let draw_segment = |ctx: &mut PaintContext, from: Point, to: Point| {
                 ctx.draw_line(from.x, from.y, to.x, to.y, lc, lw);
             };
             if self.step {
@@ -658,7 +658,7 @@ impl LineChart {
         }
     }
 
-    fn paint_tooltip(&self, ctx: &mut PaintContext<'_>, frame: Rect, pos: Point) {
+    fn paint_tooltip(&self, ctx: &mut PaintContext, frame: Rect, pos: Point) {
         let Some(config) = &self.tooltip_config else {
             return;
         };

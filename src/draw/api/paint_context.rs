@@ -17,8 +17,6 @@ use crate::draw::resources::image::{blit_handle, BitmapHandle, ImageService};
 use crate::draw::Canvas2D;
 use crate::draw::GradientDirection;
 use crate::draw::{BlendMode, Color, FontHandle, Radius, Transform};
-use crate::ui::theme::{ScopedThemeTokens, TokenPatch, TokenScope};
-use crate::ui::traits::ThemeTokens;
 
 /// 绘制表面配置（组合 dpi/pr/orientation/size 减少参数传递）。
 #[derive(Clone, Copy, Debug)]
@@ -43,9 +41,6 @@ pub struct PaintContext<'a> {
     /// 调试渲染服务。
     debug: DebugRenderService,
 
-    /// 设计令牌。
-    tokens: ScopedThemeTokens<'a>,
-
     /// 当前绘制阶段（合成器设置）。
     paint_pass: PaintPass,
 
@@ -69,7 +64,6 @@ impl<'a> PaintContext<'a> {
         font: FontHandle,
         font_service: &'a FontService,
         image_service: &'a ImageService,
-        tokens: &'a dyn ThemeTokens,
         surface: PaintSurfaceConfig,
     ) -> Self {
         Self {
@@ -84,7 +78,6 @@ impl<'a> PaintContext<'a> {
             text: TextRenderService::new(font, font_service, f32::MAX),
             image_service,
             debug: DebugRenderService::new(false),
-            tokens: ScopedThemeTokens::new(tokens),
             paint_pass: PaintPass::Content,
             recorder: None,
             record_ops: true,
@@ -103,7 +96,6 @@ impl<'a> PaintContext<'a> {
         font: FontHandle,
         font_service: &'a FontService,
         image_service: &'a ImageService,
-        tokens: &'a dyn ThemeTokens,
         dpi: f32,
         device_pixel_ratio: f32,
         orientation: Orientation,
@@ -115,7 +107,6 @@ impl<'a> PaintContext<'a> {
             font,
             font_service,
             image_service,
-            tokens,
             PaintSurfaceConfig {
                 dpi,
                 device_pixel_ratio,
@@ -883,24 +874,6 @@ impl<'a> PaintContext<'a> {
     }
 
     // ── 访问器 ──
-
-    /// 获取设计令牌。
-    #[inline(always)]
-    pub fn tokens(&self) -> &dyn ThemeTokens {
-        &self.tokens
-    }
-
-    pub(crate) fn replace_token_scope(
-        &mut self,
-        theme: Option<Arc<dyn ThemeTokens>>,
-        patch: Option<Arc<TokenPatch>>,
-    ) -> TokenScope {
-        self.tokens.replace_scope(theme, patch)
-    }
-
-    pub(crate) fn restore_token_scope(&mut self, scope: TokenScope) {
-        self.tokens.restore_scope(scope);
-    }
 
     /// 获取字体服务。
     #[inline(always)]

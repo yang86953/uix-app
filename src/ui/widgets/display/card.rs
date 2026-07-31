@@ -5,10 +5,10 @@ use std::cell::{Cell, RefCell};
 
 use crate::component;
 use crate::core::{Constraints, EdgeInsets, Point, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::command::PaintPass;
 use crate::draw::{Color, Radius};
 use crate::ui::children::WidgetChildren;
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::layout::{
     child_from_tree_with_constraints, flex::compute_flex_layout, AlignItems, FlexChild,
     FlexDirection, FlexInput, JustifyContent, LayoutChild,
@@ -695,7 +695,7 @@ impl Card {
 }
 
 fn fitted_text(
-    ctx: &mut PaintContext<'_>,
+    ctx: &mut PaintContext,
     text: &str,
     base_size: f32,
     min_size: f32,
@@ -733,7 +733,7 @@ fn fitted_text(
     Some((visible, font_size))
 }
 
-fn conservative_text_width(ctx: &mut PaintContext<'_>, text: &str, font_size: f32) -> f32 {
+fn conservative_text_width(ctx: &mut PaintContext, text: &str, font_size: f32) -> f32 {
     let measured = ctx.measure_text(text, font_size).w;
     let estimated = crate::draw::resources::font::text_backend::estimate_text_metrics(
         text,
@@ -744,14 +744,14 @@ fn conservative_text_width(ctx: &mut PaintContext<'_>, text: &str, font_size: f3
     measured.max(estimated)
 }
 
-fn conservative_text_height(ctx: &mut PaintContext<'_>, text: &str, font_size: f32) -> f32 {
+fn conservative_text_height(ctx: &mut PaintContext, text: &str, font_size: f32) -> f32 {
     ctx.measure_text(text, font_size)
         .h
         .max(ctx.line_box_height(font_size))
 }
 
 fn elide_text_to_width(
-    ctx: &mut PaintContext<'_>,
+    ctx: &mut PaintContext,
     text: &str,
     font_size: f32,
     max_width: f32,

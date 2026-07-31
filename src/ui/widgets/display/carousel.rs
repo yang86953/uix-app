@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::command::PaintPass;
+use crate::ui::core::paint_context::PaintContext;
 
 use crate::ui::children::WidgetChildren;
 use crate::ui::{

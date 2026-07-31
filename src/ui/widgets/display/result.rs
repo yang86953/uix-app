@@ -7,8 +7,8 @@ use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::Color;
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::{EventResult, KeyCode, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
 
 /// 结果类型。
@@ -415,7 +415,7 @@ impl ResultView {
     }
 
     fn paint_text_block(
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         value: &str,
         frame: Rect,
         color: Color,
@@ -443,7 +443,7 @@ impl ResultView {
         ctx.pop_clip();
     }
 
-    fn paint_action_text(ctx: &mut PaintContext<'_>, value: &str, frame: Rect) {
+    fn paint_action_text(ctx: &mut PaintContext, value: &str, frame: Rect) {
         let horizontal_padding = 16.0_f32.min(frame.w * 0.25);
         let content = Rect::new(
             frame.x + horizontal_padding,
@@ -459,7 +459,7 @@ impl ResultView {
     }
 
     fn elide_single_line(
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         value: &str,
         font_size: f32,
         max_width: f32,
@@ -490,7 +490,7 @@ impl ResultView {
         Some(visible)
     }
 
-    fn conservative_text_width(ctx: &mut PaintContext<'_>, value: &str, font_size: f32) -> f32 {
+    fn conservative_text_width(ctx: &mut PaintContext, value: &str, font_size: f32) -> f32 {
         ctx.measure_text(value, font_size)
             .w
             .max(Self::estimated_text_width(value, font_size))

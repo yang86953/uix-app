@@ -8,9 +8,9 @@ use std::sync::OnceLock;
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::{Color, FontHandle};
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
 

@@ -10,9 +10,9 @@ use std::cell::Cell;
 use self::scrollbar::{ScrollBar, ScrollbarOrientation};
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::command::PaintPass;
 use crate::ui::children::WidgetChildren;
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::layout::engine::{child_from_tree_with_constraints, LayoutChild};
 use crate::ui::state::State;
 use crate::ui::{

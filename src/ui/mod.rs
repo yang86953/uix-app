@@ -29,7 +29,6 @@ pub mod widgets;
 pub mod window_chrome;
 
 pub use crate::core::ComponentId;
-pub use crate::draw::api::PaintContext;
 pub use crate::native::traits::input::{
     ControlSize, CursorType, KeyCode, KeyMod, MouseButton, ScrollDirection,
 };
@@ -48,6 +47,7 @@ pub use component_snapshot::{
     SnapshotTransferItem, SnapshotTreeNode, SnapshotValue,
 };
 pub use core::children::WidgetChildren;
+pub use core::paint_context::PaintContext;
 pub(crate) use core::widget::WidgetTree;
 pub use core::widget::{EventResult, IntoWidgetNode};
 pub(crate) use core::{children, widget};

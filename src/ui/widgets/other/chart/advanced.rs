@@ -5,9 +5,9 @@ use std::rc::Rc;
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder};
 use crate::ui::animation::{AnimationConfig, TransitionPlayer};
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::{EventResult, MouseButton, SystemEvent, WidgetTree};
 
 use super::bar_chart::BarData;
@@ -1635,7 +1635,7 @@ impl ChartPlaceholder {
         }
     }
 
-    fn paint_legend(&self, ctx: &mut PaintContext<'_>, rect: Rect) {
+    fn paint_legend(&self, ctx: &mut PaintContext, rect: Rect) {
         let labels = self.legend_labels();
         if labels.is_empty() || rect.w <= 0.0 || rect.h <= 0.0 {
             return;
@@ -1659,7 +1659,7 @@ impl ChartPlaceholder {
         }
     }
 
-    fn paint(&self, ctx: &mut PaintContext<'_>, frame: Rect) {
+    fn paint(&self, ctx: &mut PaintContext, frame: Rect) {
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
@@ -1746,7 +1746,7 @@ impl ChartPlaceholder {
         ctx.pop_clip();
     }
 
-    fn paint_interaction(&self, ctx: &mut PaintContext<'_>, frame: Rect) {
+    fn paint_interaction(&self, ctx: &mut PaintContext, frame: Rect) {
         if let Some(start) = self.brush_start.get() {
             if let Some(end) = self.hovered_pos.get() {
                 let x = start.x.min(end.x).clamp(frame.x, frame.x + frame.w);
@@ -1795,7 +1795,7 @@ impl ChartPlaceholder {
         }
     }
 
-    fn paint_axes(&self, ctx: &mut PaintContext<'_>, plot: Rect) {
+    fn paint_axes(&self, ctx: &mut PaintContext, plot: Rect) {
         let axis = ctx.tokens().color_border();
         ctx.fill_rect(
             Rect::new(plot.x, plot.y + plot.h - 1.0, plot.w, 1.0),
@@ -1842,7 +1842,7 @@ impl ChartPlaceholder {
         }
     }
 
-    fn paint_bars(&self, ctx: &mut PaintContext<'_>, plot: Rect) {
+    fn paint_bars(&self, ctx: &mut PaintContext, plot: Rect) {
         self.paint_axes(ctx, plot);
         let series: Vec<&[BarData]> = match &self.payload {
             ChartPayload::Bars(data) => vec![data.as_slice()],
@@ -1971,7 +1971,7 @@ impl ChartPlaceholder {
         }
     }
 
-    fn paint_lines(&self, ctx: &mut PaintContext<'_>, plot: Rect) {
+    fn paint_lines(&self, ctx: &mut PaintContext, plot: Rect) {
         self.paint_axes(ctx, plot);
         let series: Vec<Vec<LineData>> = match &self.payload {
             ChartPayload::Lines(data) => vec![data.clone()],
@@ -2064,7 +2064,7 @@ impl ChartPlaceholder {
         }
     }
 
-    fn paint_scatter(&self, ctx: &mut PaintContext<'_>, plot: Rect) {
+    fn paint_scatter(&self, ctx: &mut PaintContext, plot: Rect) {
         self.paint_axes(ctx, plot);
         let series: Vec<Vec<(f32, f32, f32, bool)>> = match &self.payload {
             ChartPayload::Scatter(data) => vec![data
@@ -2144,7 +2144,7 @@ impl ChartPlaceholder {
         }
     }
 
-    fn paint_radar(&self, ctx: &mut PaintContext<'_>, plot: Rect) {
+    fn paint_radar(&self, ctx: &mut PaintContext, plot: Rect) {
         let count = self
             .radar_axes
             .len()
@@ -2291,7 +2291,7 @@ impl ChartPlaceholder {
         lerp_color(window[0].1, window[1].1, (value - window[0].0) / span)
     }
 
-    fn paint_heatmap(&self, ctx: &mut PaintContext<'_>, plot: Rect) {
+    fn paint_heatmap(&self, ctx: &mut PaintContext, plot: Rect) {
         let ChartPayload::Heatmap(cells) = &self.payload else {
             return;
         };
@@ -2426,7 +2426,7 @@ impl ChartPlaceholder {
         }
     }
 
-    fn paint_funnel(&self, ctx: &mut PaintContext<'_>, plot: Rect) {
+    fn paint_funnel(&self, ctx: &mut PaintContext, plot: Rect) {
         let ChartPayload::Funnel(data) = &self.payload else {
             return;
         };
@@ -2509,7 +2509,7 @@ impl ChartPlaceholder {
         }
     }
 
-    fn paint_waterfall(&self, ctx: &mut PaintContext<'_>, plot: Rect) {
+    fn paint_waterfall(&self, ctx: &mut PaintContext, plot: Rect) {
         let ChartPayload::Waterfall(data) = &self.payload else {
             return;
         };
@@ -2614,7 +2614,7 @@ impl ChartPlaceholder {
         }
     }
 
-    fn paint_combo(&self, ctx: &mut PaintContext<'_>, plot: Rect) {
+    fn paint_combo(&self, ctx: &mut PaintContext, plot: Rect) {
         self.paint_axes(ctx, plot);
         if !self.y_axis_right.is_empty() {
             let size = ctx.measure_text(&self.y_axis_right, 10.0);
@@ -2817,7 +2817,7 @@ impl ChartPlaceholder {
         }
     }
 
-    fn paint_treemap(&self, ctx: &mut PaintContext<'_>, plot: Rect) {
+    fn paint_treemap(&self, ctx: &mut PaintContext, plot: Rect) {
         let ChartPayload::Treemap(nodes) = &self.payload else {
             return;
         };
@@ -2826,7 +2826,7 @@ impl ChartPlaceholder {
 
     fn paint_treemap_nodes(
         &self,
-        ctx: &mut PaintContext<'_>,
+        ctx: &mut PaintContext,
         nodes: &[TreemapNode],
         plot: Rect,
         depth: usize,
@@ -2909,7 +2909,7 @@ impl ChartPlaceholder {
         }
     }
 
-    fn paint_gauge(&self, ctx: &mut PaintContext<'_>, plot: Rect) {
+    fn paint_gauge(&self, ctx: &mut PaintContext, plot: Rect) {
         let center = Point::new(plot.x + plot.w * 0.5, plot.y + plot.h * 0.56);
         let radius = plot.w.min(plot.h) * 0.38;
         let (start, sweep) = match self.gauge_type {

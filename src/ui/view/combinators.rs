@@ -21,9 +21,9 @@ use crate::ui::style::{DisplayMode, Style};
 use crate::ui::view::{View, ViewNode};
 
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::renderer::InvalidationQueueHandle;
 use crate::draw::scene::PicturePolicy;
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::state::{Computed, State, StatePaintBind};
 use crate::ui::traits::{WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetRender};
 use crate::ui::{ComponentId, WidgetTree};
@@ -625,7 +625,7 @@ impl WidgetRender for DynamicLabel {
     }
 }
 
-type CanvasPaint = dyn Fn(Rect, &mut PaintContext<'_>);
+type CanvasPaint = dyn Fn(Rect, &mut PaintContext<'_, '_>);
 
 struct Canvas {
     size: Size,
@@ -680,7 +680,7 @@ impl WidgetRender for Canvas {
 /// 到该节点的 Paint 失效，不会形成每帧回调。
 pub fn canvas<F>(width: f32, height: f32, paint: F) -> ViewNode
 where
-    F: Fn(Rect, &mut PaintContext<'_>) + 'static,
+    F: Fn(Rect, &mut PaintContext) + 'static,
 {
     let finite_extent = |value: f32| {
         if value.is_finite() {

@@ -99,8 +99,8 @@ pub struct TokenPatch {
     pub is_dark: Option<bool>,
 }
 
-pub(crate) struct ScopedThemeTokens<'a> {
-    root: &'a dyn ThemeTokens,
+pub(crate) struct ScopedThemeTokens {
+    root: Arc<dyn ThemeTokens>,
     theme: Option<Arc<dyn ThemeTokens>>,
     patch: Option<Arc<TokenPatch>>,
 }
@@ -110,8 +110,8 @@ pub(crate) struct TokenScope {
     pub patch: Option<Arc<TokenPatch>>,
 }
 
-impl<'a> ScopedThemeTokens<'a> {
-    pub fn new(root: &'a dyn ThemeTokens) -> Self {
+impl ScopedThemeTokens {
+    pub fn new(root: Arc<dyn ThemeTokens>) -> Self {
         Self {
             root,
             theme: None,
@@ -136,7 +136,7 @@ impl<'a> ScopedThemeTokens<'a> {
     }
 
     fn base(&self) -> &dyn ThemeTokens {
-        self.theme.as_deref().unwrap_or(self.root)
+        self.theme.as_deref().unwrap_or(self.root.as_ref())
     }
 }
 
@@ -160,7 +160,7 @@ macro_rules! copy_methods {
     };
 }
 
-impl IColorTokens for ScopedThemeTokens<'_> {
+impl IColorTokens for ScopedThemeTokens {
     copy_methods! {
         color_primary -> Color;
         color_primary_hover -> Color;
@@ -206,7 +206,7 @@ impl IColorTokens for ScopedThemeTokens<'_> {
     }
 }
 
-impl ITypographyTokens for ScopedThemeTokens<'_> {
+impl ITypographyTokens for ScopedThemeTokens {
     fn font_family(&self) -> &str {
         self.patch
             .as_ref()
@@ -232,7 +232,7 @@ impl ITypographyTokens for ScopedThemeTokens<'_> {
     }
 }
 
-impl ISpacingTokens for ScopedThemeTokens<'_> {
+impl ISpacingTokens for ScopedThemeTokens {
     copy_methods! {
         padding_xss -> f32;
         padding_xs -> f32;
@@ -289,14 +289,14 @@ impl ISpacingTokens for ScopedThemeTokens<'_> {
     }
 }
 
-impl IBoxShadowTokens for ScopedThemeTokens<'_> {
+impl IBoxShadowTokens for ScopedThemeTokens {
     copy_methods! {
         box_shadow -> ShadowToken;
         box_shadow_secondary -> ShadowToken;
     }
 }
 
-impl ThemeTokens for ScopedThemeTokens<'_> {
+impl ThemeTokens for ScopedThemeTokens {
     fn is_dark(&self) -> bool {
         patched_copy!(self, is_dark)
     }

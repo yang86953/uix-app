@@ -3,7 +3,7 @@
 use crate::core::{Errc, Error, Point, Rect};
 
 use crate::core::DirtyRegion;
-use crate::draw::api::ThemeSnapshot;
+
 use crate::draw::backend::DamageRegion;
 use crate::draw::command::{recorder::CommandRecorder, EncodedFrameExecution, FrameImage};
 use crate::draw::debug::DebugRenderService;
@@ -21,7 +21,6 @@ pub struct FrameRenderInput<'a> {
     pub dirty_region: &'a DirtyRegion,
     pub tree_version: u64,
     pub scroll_move: Option<Vec<(Rect, f32, f32)>>,
-    pub theme: ThemeSnapshot<'a>,
     pub font: FontHandle,
     pub font_service: &'a FontService,
     pub image_service: &'a ImageService,
@@ -426,7 +425,6 @@ impl ScenePipeline {
                         &mut self.recorder,
                         scene,
                         &sub_region,
-                        &input.theme,
                         input.font,
                         input.font_service,
                         input.image_service,
@@ -439,7 +437,6 @@ impl ScenePipeline {
                         &mut self.recorder,
                         scene,
                         &sub_region,
-                        &input.theme,
                         input.font,
                         input.font_service,
                         input.image_service,
@@ -475,7 +472,6 @@ impl ScenePipeline {
                     &mut self.recorder,
                     scene,
                     &paint_region,
-                    &input.theme,
                     input.font,
                     input.font_service,
                     input.image_service,
@@ -488,7 +484,6 @@ impl ScenePipeline {
                     &mut self.recorder,
                     scene,
                     &paint_region,
-                    &input.theme,
                     input.font,
                     input.font_service,
                     input.image_service,
@@ -673,7 +668,6 @@ impl ScenePipeline {
                         engine,
                         scene,
                         &sub_region,
-                        &input.theme,
                         input.font,
                         input.font_service,
                         input.image_service,
@@ -686,7 +680,6 @@ impl ScenePipeline {
                         engine,
                         scene,
                         &sub_region,
-                        &input.theme,
                         input.font,
                         input.font_service,
                         input.image_service,
@@ -719,7 +712,6 @@ impl ScenePipeline {
                     engine,
                     scene,
                     &paint_region,
-                    &input.theme,
                     input.font,
                     input.font_service,
                     input.image_service,
@@ -732,7 +724,6 @@ impl ScenePipeline {
                     engine,
                     scene,
                     &paint_region,
-                    &input.theme,
                     input.font,
                     input.font_service,
                     input.image_service,

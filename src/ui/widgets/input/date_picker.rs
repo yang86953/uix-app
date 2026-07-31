@@ -8,8 +8,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::native::traits::input::ControlSize;
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::state::State;
 use crate::ui::widgets::input::date_calendar::{
     calendar_popup_rect, draw_calendar_panel, hit_calendar_date, hit_month_navigation,

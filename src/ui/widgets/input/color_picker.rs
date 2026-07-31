@@ -4,10 +4,10 @@
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::traits::input::ControlSize;
 use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
@@ -534,7 +534,7 @@ fn fade_color(color: Color, opacity: f32) -> Color {
     color.with_alpha(alpha)
 }
 
-fn paint_transparency_checkerboard(ctx: &mut PaintContext<'_>, frame: Rect, scale: f32) {
+fn paint_transparency_checkerboard(ctx: &mut PaintContext, frame: Rect, scale: f32) {
     let tile = (4.0 * scale).max(1.0);
     let columns = (frame.w / tile).ceil() as usize;
     let rows = (frame.h / tile).ceil() as usize;

@@ -4,9 +4,9 @@
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::Radius;
 use crate::native::traits::input::{ControlSize, KeyMod};
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::state::State;
 use crate::ui::SnapshotFields;
 use crate::ui::{

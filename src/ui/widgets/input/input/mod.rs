@@ -9,10 +9,10 @@ use std::cell::{Cell, RefCell};
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::resources::font::text_backend::estimate_text_metrics;
 use crate::native::traits::input::ControlSize;
 use crate::ui::clipboard;
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SystemEvent, WidgetTree,

@@ -21,9 +21,9 @@
 //! ```
 
 use crate::core::{ComponentId, Constraints, EdgeInsets, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::geometry::spatial::{Ray3D, SpatialContext};
 use crate::draw::scene::PicturePolicy;
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::event::{SemanticEvent, WindowAction};
 use crate::ui::layout::{AlignItems, LayoutChild};
 use crate::ui::overlay::OverlayEntry;

@@ -2,9 +2,9 @@
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::api::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::core::paint_context::PaintContext;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
     WidgetTree,
