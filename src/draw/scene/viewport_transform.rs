@@ -7,7 +7,7 @@
 use crate::core::Rect;
 
 use crate::core::DirtyRegion;
-use crate::draw::renderer::NodeId;
+use crate::draw::scene::NodeId;
 use crate::draw::scene::ScenePaint;
 use crate::draw::Transform;
 

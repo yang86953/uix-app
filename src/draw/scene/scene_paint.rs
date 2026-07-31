@@ -3,8 +3,8 @@
 use crate::core::{Point, Rect};
 
 use crate::core::DirtyRegion;
-use crate::draw::api::PaintContext;
-use crate::draw::renderer::NodeId;
+use crate::draw::painting::PaintContext;
+use crate::draw::scene::NodeId;
 use crate::draw::Transform;
 
 /// Picture cache eligibility declared by widget metadata and refined by runtime signals.

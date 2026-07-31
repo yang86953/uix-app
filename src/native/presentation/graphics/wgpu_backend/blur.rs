@@ -1,6 +1,6 @@
 //! 可分离高斯模糊：水平 → 垂直两趟 fragment pass；大半径时先 2× 降采样再模糊上采样。
 //!
-//! Shader 内按 `sigma = radius / 3` 计算权重，与 CPU [`crate::draw::backend::cpu::rasterizer::blur`] 对齐。
+//! Shader 内按 `sigma = radius / 3` 计算权重，与 CPU [`crate::draw::raster::rasterizer::blur`] 对齐。
 
 use std::mem::size_of;
 

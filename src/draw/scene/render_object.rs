@@ -4,9 +4,9 @@ use std::collections::HashMap;
 
 use crate::core::Rect;
 
-use crate::draw::api::PaintContext;
-use crate::draw::command::{DisplayList, PaintPass};
-use crate::draw::renderer::NodeId;
+use crate::draw::painting::PaintContext;
+use crate::draw::painting::{DisplayList, PaintPass};
+use crate::draw::scene::NodeId;
 use crate::draw::scene::ScenePaint;
 
 /// 单个 widget 的 Content 阶段绘制缓存。

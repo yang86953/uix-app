@@ -6,8 +6,8 @@
 //! consumes the encoder, so a recorded frame cannot be presented twice.
 
 use crate::core::Rect;
-use crate::draw::backend::cpu::software_rasterizer::SoftwareRasterizer;
 use crate::draw::geometry::types::{BlendMode, Radius};
+use crate::draw::raster::software_rasterizer::SoftwareRasterizer;
 use crate::draw::Color;
 use std::sync::Arc;
 
@@ -1999,7 +1999,7 @@ fn apply_stroke_rect_pixels(
     if stroke.rect.is_empty() {
         return;
     }
-    crate::draw::backend::cpu::rasterizer::stroke::stroke_rect(
+    crate::draw::raster::rasterizer::stroke::stroke_rect(
         pixels,
         width,
         height,
@@ -2052,7 +2052,7 @@ fn apply_raster_op_pixels(width: i32, height: i32, pixels: &mut [u32], operation
                 clip.height as f32,
             );
             for glyph in glyphs {
-                crate::draw::backend::cpu::rasterizer::glyph::blit_glyph(
+                crate::draw::raster::rasterizer::glyph::blit_glyph(
                     pixels,
                     width,
                     height,
@@ -2405,7 +2405,7 @@ fn blit_sampled_image_pixels_with_opacity_blend(
             let mut source =
                 image.pixels[source_y as usize * image.width as usize + source_x as usize];
             if apply_opacity {
-                source = crate::draw::backend::cpu::rasterizer::apply_opacity(source, opacity);
+                source = crate::draw::raster::rasterizer::apply_opacity(source, opacity);
             }
             let index = y as usize * width as usize + x as usize;
             pixels[index] = if additive {
@@ -2465,7 +2465,7 @@ fn blit_image_pixels_additive(
             let mut source =
                 image.pixels[source_y as usize * image.width as usize + source_x as usize];
             if apply_opacity {
-                source = crate::draw::backend::cpu::rasterizer::apply_opacity(source, opacity);
+                source = crate::draw::raster::rasterizer::apply_opacity(source, opacity);
             }
             let index = y as usize * width as usize + x as usize;
             pixels[index] = blend_pixel_additive(source, pixels[index]);
@@ -2510,7 +2510,7 @@ fn blit_image_pixels_impl<const APPLY_OPACITY: bool>(
             }
             let source = image.pixels[source_y as usize * image.width as usize + source_x as usize];
             let source = if APPLY_OPACITY {
-                crate::draw::backend::cpu::rasterizer::apply_opacity(source, opacity)
+                crate::draw::raster::rasterizer::apply_opacity(source, opacity)
             } else {
                 source
             };
@@ -2557,7 +2557,7 @@ fn blit_unscaled_image_pixels<const APPLY_OPACITY: bool>(
         let destination_row = &mut pixels[destination_start..destination_start + copy_width];
         for (&source, destination) in source_row.iter().zip(destination_row) {
             let source = if APPLY_OPACITY {
-                crate::draw::backend::cpu::rasterizer::apply_opacity(source, opacity)
+                crate::draw::raster::rasterizer::apply_opacity(source, opacity)
             } else {
                 source
             };
@@ -2579,7 +2579,7 @@ fn blend_pixel_src_over(source: u32, destination: u32) -> u32 {
         return source;
     }
     let destination_a = (destination >> 24) & 0xff;
-    crate::draw::backend::cpu::rasterizer::core::blend_srcover(
+    crate::draw::raster::rasterizer::core::blend_srcover(
         source_a,
         destination_a,
         (source >> 16) & 0xff,

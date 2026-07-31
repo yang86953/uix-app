@@ -17,9 +17,9 @@ use std::sync::Arc;
 use ab_glyph::{Outline, OutlineCurve, Point as AbPoint, PxScaleFactor, Rect as AbRect};
 
 use crate::core::Point;
-use crate::draw::backend::cpu::rasterizer::core::sdf_to_coverage_aa;
 use crate::draw::geometry::flattener;
 use crate::draw::geometry::path::PathBuilder;
+use crate::draw::raster::rasterizer::core::sdf_to_coverage_aa;
 
 /// 距离 coverage 的 AA 半宽（像素）；仅供兼容回退和测试使用。
 const AA_HALF: f32 = 0.5;

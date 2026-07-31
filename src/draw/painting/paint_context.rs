@@ -6,11 +6,11 @@ use std::ptr::NonNull;
 use std::sync::Arc;
 
 use crate::core::{Point, Rect, Size};
-use crate::draw::command::display_list::{DisplayList, PaintOp, PaintPass};
 use crate::draw::debug::DebugRenderService;
 use crate::draw::geometry::path::{FillRule, Path, PathBuilder};
 use crate::draw::geometry::spatial::{Orientation, PhysicalUnit, SpatialContext, Vec3, AABB3D};
 use crate::draw::geometry::stroker::StrokeOptions;
+use crate::draw::painting::display_list::{DisplayList, PaintOp, PaintPass};
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::font::text::TextRenderService;
 use crate::draw::resources::image::{blit_handle, BitmapHandle, ImageService};

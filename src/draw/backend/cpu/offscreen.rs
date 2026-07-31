@@ -3,8 +3,8 @@
 //! GPU 后端使用各自的 RT/FBO，不得挂接本池。
 
 use crate::draw::backend::cpu::canvas_2d::CpuCanvas2D;
-use crate::draw::backend::cpu::pixel_surface::PixelSurface;
 use crate::draw::geometry::types::ImageHandle;
+use crate::draw::raster::pixel_surface::PixelSurface;
 use crate::draw::Canvas2D;
 
 #[derive(Default)]

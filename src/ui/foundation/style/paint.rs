@@ -27,7 +27,7 @@ pub fn apply_style(ctx: &mut PaintContext, rect: Rect, style: &Style) {
     // 令牌在 UI 边界解析为最终颜色；draw 层闭包只接收已解析绘制值。
     let background = style.background.map(|bg| bg.resolve(ctx.tokens()));
     let border_color = style.border_color.map(|bc| bc.resolve(ctx.tokens()));
-    let paint_surface = |ctx: &mut crate::draw::api::PaintContext| {
+    let paint_surface = |ctx: &mut crate::draw::painting::PaintContext| {
         if let Some(background) = background {
             ctx.fill_rect(rect, background, radius);
         }

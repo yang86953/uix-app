@@ -3,8 +3,8 @@
 use crate::core::{Errc, Error, Result};
 use crate::diagnostics::PendingFailureQueue;
 use crate::draw::renderer::factory::create_renderer;
-use crate::draw::renderer::RenderTarget;
 use crate::draw::renderer::Renderer;
+use crate::draw::target::RenderTarget;
 use crate::native::factory::{
     describe_backend_availability, gpu_recipe_candidates, try_create_gpu_recipe_with_queue,
     GraphicsRecipe,

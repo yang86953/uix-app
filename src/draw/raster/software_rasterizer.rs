@@ -6,9 +6,9 @@
 
 use crate::core::Rect;
 
-use crate::draw::backend::cpu::rasterizer::core as rast;
 use crate::draw::geometry::color::Color;
 use crate::draw::geometry::types::{BlendMode, Transform};
+use crate::draw::raster::rasterizer::core as rast;
 
 /// 渲染状态快照（用于 save/restore）。
 #[derive(Clone)]

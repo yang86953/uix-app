@@ -4,12 +4,6 @@ pub(crate) mod canvas_2d;
 #[cfg(test)]
 pub(crate) mod noop_canvas_2d;
 pub(crate) mod offscreen;
-pub(crate) mod pixel_surface;
-pub(crate) mod rasterizer;
-pub(crate) mod shared_rasterizer;
-pub(crate) mod software_rasterizer;
-mod software_rasterizer_fill;
-mod software_rasterizer_stroke;
 
 use crate::core::{Error, Point, Rect};
 
@@ -19,11 +13,11 @@ use crate::draw::backend::contract::{
 };
 use crate::draw::backend::cpu::canvas_2d::CpuCanvas2D;
 use crate::draw::backend::cpu::offscreen::CpuOffscreenPool;
-use crate::draw::backend::cpu::pixel_surface::PixelSurface;
-use crate::draw::backend::cpu::rasterizer::image::blit_image;
-use crate::draw::command::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::geometry::color::Color;
 use crate::draw::geometry::types::ImageHandle;
+use crate::draw::painting::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
+use crate::draw::raster::pixel_surface::PixelSurface;
+use crate::draw::raster::rasterizer::image::blit_image;
 use crate::draw::Canvas2D;
 
 /// CPU 主缓冲 DrawSurface 适配器。
@@ -408,9 +402,7 @@ impl RenderBackend for CpuBackend {
         let width = canvas.surface().width();
         let height = canvas.surface().height();
         let pixels = canvas.surface_mut().pixels_mut();
-        crate::draw::backend::cpu::rasterizer::blur::gaussian_blur(
-            pixels, width, height, region, radius,
-        );
+        crate::draw::raster::rasterizer::blur::gaussian_blur(pixels, width, height, region, radius);
         Ok(())
     }
 

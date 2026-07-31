@@ -7,10 +7,9 @@ use std::collections::{HashMap, HashSet};
 use crate::core::{Point, Rect};
 
 use crate::core::DirtyRegion;
-use crate::draw::api::{PaintContext, PaintSurfaceConfig};
-use crate::draw::command::{DisplayList, PaintPass};
 use crate::draw::geometry::types::{ImageHandle, Transform};
-use crate::draw::renderer::NodeId;
+use crate::draw::painting::{DisplayList, PaintPass};
+use crate::draw::painting::{PaintContext, PaintSurfaceConfig};
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::image::ImageService;
 use crate::draw::scene::picture::{
@@ -18,6 +17,7 @@ use crate::draw::scene::picture::{
 };
 use crate::draw::scene::render_object::RenderObjectTree;
 use crate::draw::scene::viewport_transform::{needs_paint, needs_paint_rect};
+use crate::draw::scene::NodeId;
 use crate::draw::scene::{PicturePolicy, ScenePaint};
 use crate::draw::FontHandle;
 use crate::draw::{Canvas2D, RenderTarget};

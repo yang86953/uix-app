@@ -18,12 +18,11 @@ use crate::app::window_semantics::WindowSemanticState;
 use crate::app::window_session::{ViewFactorySlot, WindowLoopState, WindowTextInputState};
 use crate::core::{Errc, Error, Point, PresentDamageTracker, Rect};
 use crate::draw::renderer::GraphicsFailure;
-use crate::draw::renderer::RenderTarget;
-use crate::draw::renderer::{
-    FrameRenderInput, InvalidationSource, NodeId, RenderMetrics, ScenePipeline,
-};
+use crate::draw::renderer::{FrameRenderInput, InvalidationSource, RenderMetrics, ScenePipeline};
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::image::ImageService;
+use crate::draw::scene::NodeId;
+use crate::draw::target::RenderTarget;
 use crate::draw::RenderOutcome;
 use crate::native::platform::Platform;
 use crate::native::present::PresentTestResult;

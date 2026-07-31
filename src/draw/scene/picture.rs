@@ -4,16 +4,16 @@ use crate::core::{Errc, Error, Point, Rect};
 
 use super::layer_tree::{LayerNode, LayerTree};
 use crate::core::DirtyRegion;
-use crate::draw::api::{PaintContext, PaintSurfaceConfig};
-use crate::draw::command::{recorder::CommandRecorder, DisplayList, FrameEncoder};
 use crate::draw::geometry::spatial::Orientation;
 use crate::draw::geometry::types::ImageHandle;
-use crate::draw::renderer::NodeId;
-use crate::draw::renderer::RenderTarget;
+use crate::draw::painting::{recorder::CommandRecorder, DisplayList, FrameEncoder};
+use crate::draw::painting::{PaintContext, PaintSurfaceConfig};
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::image::ImageService;
 use crate::draw::scene::viewport_transform::needs_paint;
+use crate::draw::scene::NodeId;
 use crate::draw::scene::ScenePaint;
+use crate::draw::target::RenderTarget;
 use crate::draw::FontHandle;
 
 /// 离屏创建连续失败上限（超过后放弃离屏、改走直绘；仅 WARN 一次）。
@@ -47,7 +47,7 @@ pub(crate) fn blit_picture_cache(
 /// 对已栅格化的 Picture 离屏做可分离高斯模糊（GPU RT 或 CPU 像素）。
 ///
 /// 供 Modal / Drawer 等毛玻璃消费方在 blit 前调用；半径语义同
-/// [`crate::draw::backend::cpu::rasterizer::blur::gaussian_blur`]。
+/// [`crate::draw::raster::rasterizer::blur::gaussian_blur`]。
 pub fn blur_picture_region(
     engine: &mut dyn RenderTarget,
     handle: &ImageHandle,
@@ -134,7 +134,7 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
                 ) {
                     Ok(encoder) => matches!(
                         engine.try_execute_encoded_picture(&handle, &encoder)?,
-                        crate::draw::command::EncodedPictureExecution::Executed
+                        crate::draw::painting::EncodedPictureExecution::Executed
                     ),
                     Err(_) => false,
                 }

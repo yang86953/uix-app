@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use super::invalidation::NodeId;
+use crate::draw::scene::NodeId;
 
 /// Tracks active animation nodes without walking the whole widget tree.
 #[derive(Debug, Clone, Default)]

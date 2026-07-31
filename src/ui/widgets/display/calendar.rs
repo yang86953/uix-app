@@ -4,7 +4,7 @@
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::command::PaintPass;
+use crate::draw::painting::PaintPass;
 use crate::draw::{Color, Radius};
 use crate::ui::core::paint_context::PaintContext;
 use crate::ui::locale::Locale;
