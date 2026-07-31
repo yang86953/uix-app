@@ -61,9 +61,14 @@ fn shape_fs(input: ShapeOut) -> @location(0) vec4<f32> {
         let outer = rounded_distance(input.local, input.params0.xy, input.params1);
         let inset = max(input.params0.z, 0.0);
         let inner_size = max(input.params0.xy - vec2<f32>(inset * 2.0), vec2<f32>(0.0));
-        let inner_radii = max(input.params1 - vec4<f32>(inset), vec4<f32>(0.0));
-        let inner = rounded_distance(input.local - vec2<f32>(inset), inner_size, inner_radii);
-        let coverage = smoothstep(0.75, -0.75, outer) * smoothstep(-0.75, 0.75, inner);
+        var coverage = smoothstep(0.75, -0.75, outer);
+        if (inner_size.x > 0.0 && inner_size.y > 0.0) {
+            // 描边宽度盖满矩形时跳过 inner（与 CPU 一致），否则双 SDF。
+            let inner_radii = max(input.params1 - vec4<f32>(inset), vec4<f32>(0.0));
+            let inner = rounded_distance(input.local - vec2<f32>(inset), inner_size, inner_radii);
+            // Matches CPU `sdf_to_coverage(outer) * sdf_to_coverage(-inner)`.
+            coverage *= smoothstep(-0.75, 0.75, inner);
+        }
         return premul(input.color_a, coverage);
     }
     if input.mode == 3u {

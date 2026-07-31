@@ -323,9 +323,26 @@ pub fn intersect_rect(a: &Rect, b: &Rect) -> Option<Rect> {
     }
 }
 
+/// 圆角矩形对齐物理像素网格：亚像素坐标下 SDF 弧线端点与像素中心错位，
+/// 导致四角取整不对称（顶/底圆角视觉半径不一致）。按左右/上下边界分别
+/// 就近取整，保证每侧偏移 < 0.5px 且宽度守恒；尺寸对齐后非正则返回 `None`。
 #[inline]
-pub fn rounded_rect_sdf(ux: f32, uy: f32, r: &Rect, rad: &Radius) -> f32 {
-    if rad.tl == 0.0 && rad.tr == 0.0 && rad.bl == 0.0 && rad.br == 0.0 {
+pub fn align_rounded_rect(rect: Rect) -> Option<Rect> {
+    let x0 = rect.x.round();
+    let y0 = rect.y.round();
+    let x1 = (rect.x + rect.w).round();
+    let y1 = (rect.y + rect.h).round();
+    let w = x1 - x0;
+    let h = y1 - y0;
+    if w <= 0.0 || h <= 0.0 {
+        None
+    } else {
+        Some(Rect::new(x0, y0, w, h))
+    }
+}
+
+#[inline]
+pub fn rounded_rect_sdf(ux: f32, uy: f32, r: &Rect, rad: &Radius) -> f32 {    if rad.tl == 0.0 && rad.tr == 0.0 && rad.bl == 0.0 && rad.br == 0.0 {
         let dx = (r.x - ux).max(ux - (r.x + r.w)).max(0.0);
         let dy = (r.y - uy).max(uy - (r.y + r.h)).max(0.0);
         let outside = (dx * dx + dy * dy).sqrt();

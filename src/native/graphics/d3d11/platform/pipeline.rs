@@ -106,11 +106,30 @@ float4 PSMain(VSOut input) : SV_Target
     if (u_stroke.x > 0.0)
     {
         float expand = u_stroke.x + 1.0;
-        float2 shape_local = input.local - float2(expand, expand);
-        float sd = rounded_rect_sdf(shape_local, input.rect_size, u_radius);
-        float stroke_sd = abs(sd) - u_stroke.x;
-        // Matches CPU `sdf_to_coverage`: saturate(0.5 - sd).
-        mask = saturate(0.5 - stroke_sd);
+        // Quad 由 VS 外扩 expand，原点在 rect.xy - (h+1)；减去 1px 后原点
+        // 落在 rect.xy - h，即 outer 矩形左上角（outer/inner 中心与 rect
+        // 中心重合），避免双 SDF 中心错位。
+        float2 shape_local = input.local - float2(1.0, 1.0);
+        // 双 SDF（与 CPU / wgpu 一致）：外扩/内缩 half 使弧线端点对齐像素
+        // 中心，消除整数坐标下顶/底圆角起点偏差；中心行 coverage 与 CPU 相同。
+        float h = u_stroke.x;
+        float2 outer_size = input.rect_size + 2.0 * h;
+        float4 outer_rad = u_radius + h;
+        float2 inner_size = max(input.rect_size - 2.0 * h, 0.0);
+        float4 inner_rad = max(u_radius - h, 0.0);
+        float outer_sd = rounded_rect_sdf(shape_local, outer_size, outer_rad);
+        float mask;
+        if (inner_size.x > 0.0 && inner_size.y > 0.0)
+        {
+            float inner_sd = rounded_rect_sdf(shape_local, inner_size, inner_rad);
+            // Matches CPU `sdf_to_coverage(outer) * sdf_to_coverage(-inner)`.
+            mask = saturate(0.5 - outer_sd) * saturate(0.5 + inner_sd);
+        }
+        else
+        {
+            // 描边宽度盖满矩形：直接填充外扩圆角矩形。
+            mask = saturate(0.5 - outer_sd);
+        }
     }
     else
     {
