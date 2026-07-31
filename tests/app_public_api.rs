@@ -1,5 +1,6 @@
 use uix::app::{App, Container, WindowConfig};
 use uix::diagnostics::{Diagnostics, DiagnosticsConfig};
+use uix::platform::graphics::GraphicsBackend;
 use uix::ui::view::label;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -36,4 +37,9 @@ fn app_exposes_one_runtime_diagnostics_handle_to_user_callbacks() {
         .on_start(|handle| {
             let _: Diagnostics = handle.diagnostics();
         });
+}
+
+#[test]
+fn app_accepts_the_public_graphics_backend_selection() {
+    let _app = App::new().graphics_backend(GraphicsBackend::Vulkan);
 }
