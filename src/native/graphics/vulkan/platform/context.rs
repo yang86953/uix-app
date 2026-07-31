@@ -325,14 +325,14 @@ impl VulkanContext {
         ctx.width = ctx.extent.width as i32;
         ctx.height = ctx.extent.height as i32;
         device.observe(ctx.recreate_upload_buffer(staging_size(ctx.width, ctx.height)))?;
-        crate::core::log::info_fn(format_args!(
+        tracing::info!(
             "VulkanContext: created {}x{} swapchain; {}; device_fault_reporting={}; swapchain_maintenance1={}",
             ctx.width,
             ctx.height,
             ctx.adapter_info.diagnostic_summary(),
             device.fault_reporting_enabled(),
             device.swapchain_maintenance1_enabled()
-        ));
+        );
         Ok(ctx)
     }
 
@@ -881,10 +881,10 @@ impl IGraphicsContext for VulkanContext {
 impl Drop for VulkanContext {
     fn drop(&mut self) {
         if let Err(error) = self.try_shutdown() {
-            crate::core::log::error_fn(format_args!(
+            tracing::error!(
                 "VulkanContext: undrained Drop retained Vulkan parents: {}",
                 error.short_what()
-            ));
+            );
             if let Some(device) = self.device_lease.take() {
                 std::mem::forget(device);
             }

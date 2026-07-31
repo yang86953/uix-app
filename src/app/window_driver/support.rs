@@ -146,20 +146,18 @@ pub(crate) fn graphics_failure_diagnostic(failure: &GraphicsFailure) -> String {
 
 pub(super) fn report_graphics_frame_failure(failure: &GraphicsFailure) {
     if graphics_failure_is_error(failure) {
-        crate::core::log::error_fn(format_args!(
+        tracing::error!(
             "[WindowDriver] graphics frame failed: {}",
             graphics_failure_diagnostic(failure)
-        ));
-    } else {
-        crate::core::log::debug_fn(
-            "[WindowDriver] graphics surface occluded; waiting for availability",
         );
+    } else {
+        tracing::debug!("[WindowDriver] graphics surface occluded; waiting for availability",);
     }
 }
 
 pub(super) fn report_window_operation_error(context: &str, result: crate::core::Result<()>) {
     if let Err(error) = result {
-        crate::core::log::warn_fn(format_args!("{context}: {}", error.short_what()));
+        tracing::warn!("{context}: {}", error.short_what());
     }
 }
 
@@ -167,7 +165,7 @@ pub(super) fn report_graphics_resize_error(context: &str, result: crate::core::R
     match result {
         Ok(()) => true,
         Err(error) => {
-            crate::core::log::warn_fn(format_args!("{context}: {}", error.what()));
+            tracing::warn!("{context}: {}", error.what());
             false
         }
     }
@@ -334,7 +332,7 @@ pub(super) fn log_frame_metrics(
 ) {
     if crate::core::perf_probe::perf_probe_enabled() {
         crate::core::perf_probe::with_internal_g5_scenario(|scenario| {
-            crate::core::log::info_fn(format_args!(
+            tracing::info!(
                 "G5_FRAME schema=1 frame_seq={} scenario={} window={} logical_width={} logical_height={} dpi={} monotonic_us={} presented={} present_skipped={} active_work={} due_active_work={} frame_us={} input_us={} reconcile_us={} layout_us={} paint_cpu_us={} present_us={} had_events={} reconcile_ran={} layout_calls={} dirty_full={} strategy_full={} backdrop_restore={} drawable_width={} drawable_height={} drawable_pixels={} pixels={} layer_build_us={} record_us={} execute_us={} end_frame_us={} picture_raster_us={} picture_blit_us={} direct_paint_us={} pictures_rasterized={} picture_pixels={} widgets_painted={} text_us={} text_draws={} cpu_flush_us={} cpu_flushes={} upload_copy_us={} fence_wait_us={} submit_present_us={} wgpu_surface_present_cpu_us={}",
                 frame_sequence,
                 scenario,
@@ -381,10 +379,10 @@ pub(super) fn log_frame_metrics(
                 present_probe.fence_wait_us,
                 present_probe.submit_present_us,
                 present_probe.wgpu_surface_present_cpu_us,
-            ));
+            );
         });
     } else {
-        crate::core::log::info_fn(format_args!(
+        tracing::info!(
             "FRAME frame_us={} input_us={} reconcile_us={} layout_us={} paint_cpu_us={} present_us={} had_events={} reconcile_ran={} layout_calls={} dirty_full={}",
             frame_us,
             input_us,
@@ -396,6 +394,6 @@ pub(super) fn log_frame_metrics(
             u8::from(reconcile_ran),
             layout_calls,
             u8::from(dirty_full),
-        ));
+        );
     }
 }

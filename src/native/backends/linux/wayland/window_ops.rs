@@ -229,7 +229,7 @@ impl WaylandWindowOps {
                 let d = dm.create(&surface);
                 d.request_mode(Mode::Server);
                 self.kde_decoration = Some(d);
-                crate::core::log::info_fn("[Wayland] KDE server-side decoration requested");
+                tracing::info!("[Wayland] KDE server-side decoration requested");
                 true
             })
             .unwrap_or(false);
@@ -238,9 +238,9 @@ impl WaylandWindowOps {
                 let d = dm.get_toplevel_decoration(&tl);
                 d.set_mode(XdgDecoMode::ServerSide);
                 self.xdg_decoration = Some(d);
-                crate::core::log::info_fn("[Wayland] xdg-decoration ServerSide mode requested");
+                tracing::info!("[Wayland] xdg-decoration ServerSide mode requested");
             } else {
-                crate::core::log::warn_fn("[Wayland] 无可用的窗口装饰协议，窗口可能无标题栏");
+                tracing::warn!("[Wayland] 无可用的窗口装饰协议，窗口可能无标题栏");
             }
         }
 

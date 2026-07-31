@@ -554,9 +554,7 @@ impl WidgetTree {
         };
         let result = recorder.publish(snapshot);
         if let Err(error) = result {
-            crate::core::log::error_fn(format_args!(
-                "automation snapshot export disabled after write failure: {error}"
-            ));
+            tracing::error!("automation snapshot export disabled after write failure: {error}");
             self.automation_recorder = None;
         }
     }
@@ -571,9 +569,7 @@ impl WidgetTree {
             return;
         };
         if let Err(error) = recorder.close(generation, revision, presented_revision) {
-            crate::core::log::error_fn(format_args!(
-                "automation snapshot close marker failed: {error}"
-            ));
+            tracing::error!("automation snapshot close marker failed: {error}");
         }
         self.automation_recorder = None;
     }

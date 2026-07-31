@@ -116,10 +116,10 @@ component! {
             .filter(|&cid| {
                 let visible = tree.get(cid).map(|node| node.visible()).unwrap_or(true);
                 if !visible {
-                    crate::core::log::debug_fn(format_args!(
+                    tracing::debug!(
                         "[Container::measure_children] child {} is invisible, skipping",
                         cid
-                    ));
+                    );
                 }
                 visible
             })

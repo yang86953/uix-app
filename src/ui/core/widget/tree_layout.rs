@@ -301,7 +301,7 @@ impl WidgetTree {
 
             if !pass_expand_sig.is_empty() {
                 if has_prev_expand_sig && prev_expand_sig == pass_expand_sig {
-                    crate::core::log::debug_fn(
+                    tracing::debug!(
                         "[Layout] Phase 2: identical expand signature — stop (no progress)",
                     );
                     break;
@@ -328,7 +328,7 @@ impl WidgetTree {
         self.rebuild_widget_overlays();
         self.reconcile_lifecycle_after_layout();
         self.sync_app_state_registry_from_lifecycle_states();
-        crate::core::log::debug_fn("[Layout] layout() done");
+        tracing::debug!("[Layout] layout() done");
     }
 
     /// Synchronize parent-owned child visibility without overwriting a
@@ -638,7 +638,7 @@ impl WidgetTree {
                 let expanded_w = effective_w > node_frame.w + 0.5;
                 let expanded_h = effective_h > node_frame.h + 0.5;
                 if expanded_w || expanded_h {
-                    crate::core::log::debug_fn(format_args!(
+                    tracing::debug!(
                         "[Layout] Phase 2: id={} frame ({:.0},{:.0}) → ({:.0},{:.0}) (child right/bottom=({:.0},{:.0}))",
                         id,
                         node_frame.w,
@@ -647,7 +647,7 @@ impl WidgetTree {
                         effective_h,
                         max_right,
                         max_bottom,
-                    ));
+                    );
                     if self.set_layout_frame(
                         id,
                         Rect::new(old_frame.x, old_frame.y, effective_w, effective_h),
@@ -668,10 +668,10 @@ impl WidgetTree {
                         }
                     }
                 } else if has_resized_child {
-                    crate::core::log::debug_fn(format_args!(
+                    tracing::debug!(
                         "[Layout] Phase 2: id={} re-layout siblings (child resized, frame=({:.0},{:.0}))",
                         id, node_frame.w, node_frame.h,
-                    ));
+                    );
                 }
                 // 重新布局子节点（容器扩展后 or 子节点被扩展过）。
                 // 对已扩展子节点用当前 frame 做 measure 下限，避免父级仍按旧
@@ -747,7 +747,7 @@ impl WidgetTree {
                 if children.is_empty() {
                     continue;
                 }
-                crate::core::log::debug_fn(format_args!(
+                tracing::debug!(
                     "[Layout] Phase 3: viewport id={} frame=({:.0},{:.0},{:.0},{:.0}) {} children",
                     id,
                     frame.x,
@@ -755,7 +755,7 @@ impl WidgetTree {
                     frame.w,
                     frame.h,
                     children.len(),
-                ));
+                );
                 // 仅触发 content_bounds 副作用，丢弃返回的 child rects
                 let _ = node.layout_children(frame, children, self);
             }
@@ -948,7 +948,7 @@ impl WidgetTree {
                 let parent_floor_h = self.parent_allocated_frame(id).map(|r| r.h).unwrap_or(0.0);
                 let effective_needed = min_h.max(parent_floor_h);
                 if node_frame.h - effective_needed > 0.5 {
-                    crate::core::log::debug_fn(format_args!(
+                    tracing::debug!(
                         "[Layout] Phase 4: id={} shrink {:.0}px {:.0}→{:.0} (needed={:.0} pref={:.0} floor={:.0})",
                         id,
                         node_frame.h - effective_needed,
@@ -957,7 +957,7 @@ impl WidgetTree {
                         needed_h,
                         pref_h,
                         parent_floor_h,
-                    ));
+                    );
                     ops.push(ShrinkOp {
                         id,
                         needed_h: effective_needed,

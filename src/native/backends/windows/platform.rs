@@ -333,10 +333,7 @@ impl IWindowManager for WindowsPlatform {
             let presenter: Box<dyn IPresenter> = match GdiPresenter::new(hwnd, width, height) {
                 Ok(p) => Box::new(p),
                 Err(e) => {
-                    crate::core::log::warn_fn(format_args!(
-                        "GdiPresenter failed ({}), using null",
-                        e.short_what()
-                    ));
+                    tracing::warn!("GdiPresenter failed ({}), using null", e.short_what());
                     Box::new(crate::native::presenter::NullPresenter::new())
                 }
             };

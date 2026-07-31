@@ -52,10 +52,10 @@ fn parse_graphics_backend_config(source: &str, value: &str) -> Option<NativeGrap
     match value.parse::<NativeGraphicsBackend>() {
         Ok(backend) => Some(backend),
         Err(err) => {
-            crate::core::log::warn_fn(format_args!(
+            tracing::warn!(
                 "graphics backend config {source} ignored: {}",
                 err.short_what()
-            ));
+            );
             None
         }
     }
@@ -310,10 +310,7 @@ fn create_secondary_window(
         Ok(window) => window,
         Err(e) => {
             runtime.close_session(window_id);
-            crate::core::log::error_fn(format_args!(
-                "open_window create_window failed: {}",
-                e.short_what()
-            ));
+            tracing::error!("open_window create_window failed: {}", e.short_what());
             return None;
         }
     };
@@ -324,11 +321,11 @@ fn create_secondary_window(
             platform_window.close(),
         );
         runtime.close_session(window_id);
-        crate::core::log::error_fn(format_args!(
+        tracing::error!(
             "open_window window_id mismatch: reserved={}, native={}",
             window_id.raw(),
             actual.raw()
-        ));
+        );
         return None;
     }
 
@@ -339,10 +336,10 @@ fn create_secondary_window(
                 platform_window.close(),
             );
             runtime.close_session(window_id);
-            crate::core::log::error_fn(format_args!(
+            tracing::error!(
                 "open_window custom title bar failed: {}",
                 error.short_what()
-            ));
+            );
             return None;
         }
     }
@@ -542,16 +539,13 @@ pub(super) fn create_preferred_engine(
     ) {
         Ok(gpu) => {
             if gpu.report.failures.is_empty() {
-                crate::core::log::info_fn(format_args!(
-                    "GPU renderer initialized ({})",
-                    gpu.selected
-                ));
+                tracing::info!("GPU renderer initialized ({})", gpu.selected);
             } else {
-                crate::core::log::warn_fn(format_args!(
+                tracing::warn!(
                     "GPU renderer initialized after probe fallback; selected={}; failures=[{}]",
                     gpu.selected,
                     format_probe_failures(&gpu.report)
-                ));
+                );
             }
             let engine = RecoveryDriver::new(
                 Box::new(gpu.renderer),
@@ -568,20 +562,17 @@ pub(super) fn create_preferred_engine(
             Some(Box::new(engine))
         }
         Err(report) => {
-            crate::core::log::warn_fn(format_gpu_probe_fallback(graphics_backend, &report));
+            tracing::warn!("{}", format_gpu_probe_fallback(graphics_backend, &report));
 
             let mut renderer = Renderer::cpu();
             match renderer.initialize(width, height) {
                 Ok(()) => {
-                    crate::core::log::info_fn("CPU renderer initialized");
+                    tracing::info!("CPU renderer initialized");
                     Some(Box::new(renderer))
                 }
                 Err(e) => {
                     let _ = renderer.try_shutdown();
-                    crate::core::log::error_fn(format_args!(
-                        "CPU Renderer 初始化失败: {}",
-                        e.what()
-                    ));
+                    tracing::error!("CPU Renderer 初始化失败: {}", e.what());
                     None
                 }
             }

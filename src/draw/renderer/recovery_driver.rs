@@ -403,10 +403,10 @@ impl RenderTarget for RecoveryDriver {
 impl Drop for RecoveryDriver {
     fn drop(&mut self) {
         if let Err(error) = self.try_shutdown() {
-            crate::core::log::error_fn(format_args!(
+            tracing::error!(
                 "RecoveryDriver checked shutdown failed: {}",
                 error.short_what()
-            ));
+            );
         }
     }
 }

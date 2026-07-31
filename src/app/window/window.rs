@@ -39,7 +39,7 @@ impl Window {
     pub fn new(platform: Box<dyn Platform>) -> Self {
         let debug_mode = std::env::var("UIX_DEBUG").is_ok();
         if debug_mode {
-            crate::core::log::info_fn("[Debug] UIX_DEBUG 环境变量已设置，调试模式默认开启");
+            tracing::info!("[Debug] UIX_DEBUG 环境变量已设置，调试模式默认开启");
         }
         Self {
             platform,
@@ -80,42 +80,35 @@ impl Window {
         {
             Ok(mut w) => {
                 if let Err(error) = w.center_on_screen() {
-                    crate::core::log::warn_fn(format_args!(
+                    tracing::warn!(
                         "Window::create: center_on_screen failed: {}",
                         error.short_what()
-                    ));
+                    );
                 }
                 if let Err(error) = w.show() {
-                    crate::core::log::error_fn(format_args!(
-                        "Window::create: show failed: {}",
-                        error.short_what()
-                    ));
+                    tracing::error!("Window::create: show failed: {}", error.short_what());
                     if let Err(close_error) = w.close() {
-                        crate::core::log::warn_fn(format_args!(
+                        tracing::warn!(
                             "Window::create: cleanup close failed: {}",
                             close_error.short_what()
-                        ));
+                        );
                     }
                     return false;
                 }
                 if let Err(error) = w.raise() {
-                    crate::core::log::warn_fn(format_args!(
-                        "Window::create: raise failed: {}",
-                        error.short_what()
-                    ));
+                    tracing::warn!("Window::create: raise failed: {}", error.short_what());
                 }
-                crate::core::log::info_fn(format_args!(
+                tracing::info!(
                     "Window created and shown ({}x{}, title='{}')",
-                    width, height, title
-                ));
+                    width,
+                    height,
+                    title
+                );
                 self.window = Some(w);
                 true
             }
             Err(e) => {
-                crate::core::log::error_fn(format_args!(
-                    "Window::create: platform failed: {}",
-                    e.short_what()
-                ));
+                tracing::error!("Window::create: platform failed: {}", e.short_what());
                 false
             }
         }
@@ -153,10 +146,7 @@ impl Window {
     /// 设置调试模式。
     pub fn set_debug_mode(&self, mode: bool) {
         self.debug_mode.set(mode);
-        crate::core::log::info_fn(format_args!(
-            "[Debug] 调试模式 {}",
-            if mode { "开启" } else { "关闭" }
-        ));
+        tracing::info!("[Debug] 调试模式 {}", if mode { "开启" } else { "关闭" });
     }
 
     /// 查询当前是否处于调试模式。
@@ -171,11 +161,11 @@ impl Window {
     {
         self.running = true;
         if let Some(ref w) = self.window {
-            crate::core::log::info_fn(format_args!(
+            tracing::info!(
                 "Window event loop started ({}x{})",
                 w.properties().width(),
                 w.properties().height()
-            ));
+            );
         }
         while self.running {
             let saw_event = Cell::new(false);
@@ -206,14 +196,11 @@ impl Window {
         }
         if let Some(ref mut window) = self.window {
             if let Err(error) = window.close() {
-                crate::core::log::warn_fn(format_args!(
-                    "Window::run: close failed: {}",
-                    error.short_what()
-                ));
+                tracing::warn!("Window::run: close failed: {}", error.short_what());
             }
         }
         self.running = false;
-        crate::core::log::info_fn("Window event loop ended");
+        tracing::info!("Window event loop ended");
         self.exit_code
     }
 }
@@ -223,10 +210,7 @@ impl Drop for Window {
         if self.running {
             if let Some(ref mut w) = self.window {
                 if let Err(error) = w.close() {
-                    crate::core::log::warn_fn(format_args!(
-                        "Window::drop: close failed: {}",
-                        error.short_what()
-                    ));
+                    tracing::warn!("Window::drop: close failed: {}", error.short_what());
                 }
             }
         }

@@ -66,7 +66,7 @@ const GRAPHICS_BACKEND_SETTING_KEYS: [&str; 2] = ["graphics_backend", "uix.graph
 
 fn report_window_operation_error(context: &str, result: crate::core::Result<()>) {
     if let Err(error) = result {
-        crate::core::log::warn_fn(format_args!("{context}: {}", error.short_what()));
+        tracing::warn!("{context}: {}", error.short_what());
     }
 }
 
@@ -123,10 +123,7 @@ impl SecondaryWindowSession {
         if let Some(system_event) = map_ui_event(event) {
             parts.tree.dispatch_event(&system_event);
             if let Err(error) = apply_pending_window_actions(parts.tree, self._window.as_mut()) {
-                crate::core::log::error_fn(format_args!(
-                    "secondary window action failed: {}",
-                    error.short_what()
-                ));
+                tracing::error!("secondary window action failed: {}", error.short_what());
                 return false;
             }
         }
@@ -227,10 +224,10 @@ impl SecondaryWindowSession {
             on_frame: &no_frame,
         });
         if let Err(error) = apply_pending_window_actions(parts.tree, _window.as_mut()) {
-            crate::core::log::error_fn(format_args!(
+            tracing::error!(
                 "secondary window action failed after runtime work: {}",
                 error.short_what()
-            ));
+            );
             report_window_operation_error(
                 "secondary window action failure close request failed",
                 _window.request_close(),
@@ -560,7 +557,7 @@ impl App {
         let load_result = resolve_configured_settings_path(path)
             .and_then(|resolved_path| settings.load(&resolved_path));
         if let Err(err) = load_result {
-            crate::core::log::error_fn(format_args!("load settings failed: {}", err.short_what()));
+            tracing::error!("load settings failed: {}", err.short_what());
             self.exit_code = 1;
             return false;
         }
@@ -574,7 +571,7 @@ impl App {
             let args = std::env::args().collect::<Vec<_>>();
             self.exit_code = cli.run(&args);
         } else {
-            crate::core::log::error_fn("CLI 模式须调用 .cli() 注册命令处理器");
+            tracing::error!("CLI 模式须调用 .cli() 注册命令处理器");
             self.exit_code = 1;
         }
         self.exit_code
@@ -584,7 +581,7 @@ impl App {
         let root_factory = match self.root_factory.take() {
             Some(factory) => factory,
             None => {
-                crate::core::log::error_fn("GUI 模式须调用 .root() 设置根 View");
+                tracing::error!("GUI 模式须调用 .root() 设置根 View");
                 return 1;
             }
         };
@@ -596,7 +593,7 @@ impl App {
         let mut platform = match create_platform_with_pending(diagnostics.pending_failure_queue()) {
             Ok(p) => p,
             Err(e) => {
-                crate::core::log::error_fn(format_args!("create_platform 失败: {:?}", e));
+                tracing::error!("create_platform 失败: {:?}", e);
                 return 1;
             }
         };
@@ -605,16 +602,13 @@ impl App {
         let mut platform_window = match platform.window_manager().create_window(&self.title, w, h) {
             Ok(win) => win,
             Err(e) => {
-                crate::core::log::error_fn(format_args!("create_window 失败: {:?}", e));
+                tracing::error!("create_window 失败: {:?}", e);
                 return 1;
             }
         };
         if self.custom_title_bar {
             if let Err(error) = configure_custom_title_bar(platform_window.as_mut(), w, h) {
-                crate::core::log::error_fn(format_args!(
-                    "configure custom title bar failed: {}",
-                    error.short_what()
-                ));
+                tracing::error!("configure custom title bar failed: {}", error.short_what());
                 report_window_operation_error(
                     "custom title bar failure cleanup close failed",
                     platform_window.close(),
@@ -671,10 +665,10 @@ impl App {
             include_bytes!("../../../assets/fonts/lucide.ttf"),
             &mut font_service,
         );
-        crate::core::log::info_fn(format_args!(
+        tracing::info!(
             "startup fonts ready in {}ms (primary+CJK only; show deferred)",
             font_t0.elapsed().as_millis()
-        ));
+        );
         let image_service = ImageService::new();
 
         let system_theme_tokens = if self.follow_system_theme {
@@ -750,7 +744,7 @@ impl App {
         #[cfg(feature = "agent-control")]
         if self.agent_control_enabled {
             if let Err(error) = self.runtime.start_agent_transport() {
-                crate::core::log::error_fn(format_args!("agent transport startup failed: {error}"));
+                tracing::error!("agent transport startup failed: {error}");
                 report_window_operation_error(
                     "agent transport failure graphics shutdown failed",
                     session.try_shutdown(),

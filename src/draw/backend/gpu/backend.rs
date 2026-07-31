@@ -1062,10 +1062,10 @@ impl RenderBackend for GpuBackend {
             .gpu_ctx
             .create_offscreen_target(width, height)
             .inspect_err(|err| {
-                crate::core::log::warn_fn(format_args!(
+                tracing::warn!(
                     "GpuBackend: create_offscreen_target failed: {}",
                     err.short_what()
-                ));
+                );
             })
             .ok()?;
         let id = if let Some(id) = self.free_offscreen_ids.pop() {
@@ -1426,19 +1426,19 @@ impl RenderBackend for GpuBackend {
             return false;
         }
         if let Err(err) = self.gpu_ctx.make_current() {
-            crate::core::log::warn_fn(format_args!(
+            tracing::warn!(
                 "GpuBackend: snapshot_overlay_backdrop make_current failed: {}",
                 err.short_what()
-            ));
+            );
             return false;
         }
         match self.gpu_ctx.snapshot_overlay_backdrop() {
             Ok(()) => true,
             Err(err) => {
-                crate::core::log::warn_fn(format_args!(
+                tracing::warn!(
                     "GpuBackend: snapshot_overlay_backdrop failed: {}",
                     err.short_what()
-                ));
+                );
                 false
             }
         }
@@ -1449,10 +1449,10 @@ impl RenderBackend for GpuBackend {
             return false;
         }
         if let Err(err) = self.gpu_ctx.make_current() {
-            crate::core::log::warn_fn(format_args!(
+            tracing::warn!(
                 "GpuBackend: restore_overlay_backdrop make_current failed: {}",
                 err.short_what()
-            ));
+            );
             return false;
         }
         match self.gpu_ctx.restore_overlay_backdrop() {
@@ -1463,10 +1463,10 @@ impl RenderBackend for GpuBackend {
                 true
             }
             Err(err) => {
-                crate::core::log::warn_fn(format_args!(
+                tracing::warn!(
                     "GpuBackend: restore_overlay_backdrop failed: {}",
                     err.short_what()
-                ));
+                );
                 false
             }
         }
@@ -1573,10 +1573,10 @@ impl RenderBackend for GpuBackend {
 impl Drop for GpuBackend {
     fn drop(&mut self) {
         if let Err(error) = self.try_shutdown() {
-            crate::core::log::error_fn(format_args!(
+            tracing::error!(
                 "GpuBackend: checked shutdown failed: {}",
                 error.short_what()
-            ));
+            );
         }
     }
 }

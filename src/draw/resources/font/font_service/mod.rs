@@ -280,10 +280,11 @@ impl FontService {
                             Self::infer_family_from_path(path),
                             Some(path.clone()),
                         );
-                        crate::core::log::info_fn(format_args!(
+                        tracing::info!(
                             "Configured font '{}' not found, fallback: {}",
-                            self.primary_family, path
-                        ));
+                            self.primary_family,
+                            path
+                        );
                         self.load_cjk_fallback(size, system_info);
                         self.sync_fallback_fonts();
                         return;
@@ -308,18 +309,16 @@ impl FontService {
                                     Some(path.clone()),
                                 );
                                 primary_loaded = true;
-                                crate::core::log::info_fn(format_args!(
+                                tracing::info!(
                                     "Loaded system default font: {} (handle={:?})",
-                                    path, handle
-                                ));
+                                    path,
+                                    handle
+                                );
                                 break;
                             }
                         }
                         Err(e) => {
-                            crate::core::log::info_fn(format_args!(
-                                "Failed to read font file {}: {}",
-                                path, e
-                            ));
+                            tracing::info!("Failed to read font file {}: {}", path, e);
                         }
                     }
                 }
@@ -333,7 +332,7 @@ impl FontService {
         }
 
         // 第 4 步：最后的兜底——随机扫描一个可用字体
-        crate::core::log::info_fn("No primary font found via platform, scanning for fallback...");
+        tracing::info!("No primary font found via platform, scanning for fallback...");
         if let Some(path) = system_info.scan_fallback_font_path() {
             if let Ok(data) = std::fs::read(&path) {
                 if let Some(handle) = self.load_raw_font(data, size) {
@@ -342,10 +341,11 @@ impl FontService {
                         self.primary_family.clone(),
                         Some(path.clone()),
                     );
-                    crate::core::log::info_fn(format_args!(
+                    tracing::info!(
                         "Loaded fallback font (random scan): {} (handle={:?})",
-                        path, handle
-                    ));
+                        path,
+                        handle
+                    );
                     self.load_cjk_fallback(size, system_info);
                     self.sync_fallback_fonts();
                     return;
@@ -353,7 +353,7 @@ impl FontService {
             }
         }
 
-        crate::core::log::info_fn("No primary font found, using bitmap fallback");
+        tracing::info!("No primary font found, using bitmap fallback");
     }
 
     /// 加载 CJK 回退字体（通过平台层探测）。
@@ -369,15 +369,13 @@ impl FontService {
                 && self.text_backend.has_glyph(&self.loaded_font_handle, ch)
         });
         if primary_has_cjk {
-            crate::core::log::info_fn(
-                "Primary font already supports CJK, skipping CJK fallback load",
-            );
+            tracing::info!("Primary font already supports CJK, skipping CJK fallback load",);
             return;
         }
 
         let cjk_paths = system_info.probe_cjk_font_paths();
         if cjk_paths.is_empty() {
-            crate::core::log::info_fn("No CJK fallback font found via platform");
+            tracing::info!("No CJK fallback font found via platform");
             return;
         }
 
@@ -390,10 +388,7 @@ impl FontService {
                             .all(|&ch| self.text_backend.has_glyph(&handle, ch));
                         if !supports_cjk {
                             self.unload_font(&handle);
-                            crate::core::log::info_fn(format_args!(
-                                "CJK candidate '{}' does not cover the probe set",
-                                path
-                            ));
+                            tracing::info!("CJK candidate '{}' does not cover the probe set", path);
                             continue;
                         }
                         self.register_font(
@@ -402,26 +397,20 @@ impl FontService {
                             Some(path.clone()),
                         );
                         self.add_fallback(handle);
-                        crate::core::log::info_fn(format_args!(
-                            "Loaded CJK fallback font: {}",
-                            path
-                        ));
+                        tracing::info!("Loaded CJK fallback font: {}", path);
                         return;
                     }
-                    crate::core::log::info_fn(format_args!(
+                    tracing::info!(
                         "CJK font '{}' found but failed to load (unsupported format)",
                         path
-                    ));
+                    );
                 }
                 Err(e) => {
-                    crate::core::log::info_fn(format_args!(
-                        "Failed to read CJK font file {}: {}",
-                        path, e
-                    ));
+                    tracing::info!("Failed to read CJK font file {}: {}", path, e);
                 }
             }
         }
-        crate::core::log::info_fn("No CJK fallback font could be loaded via platform");
+        tracing::info!("No CJK fallback font could be loaded via platform");
     }
 
     /// 通过平台层按字体族名称查找并加载字体。
@@ -435,10 +424,7 @@ impl FontService {
             if let Ok(data) = std::fs::read(&p) {
                 if let Some(handle) = self.load_raw_font(data, size) {
                     self.install_primary_font(handle, family.to_owned(), Some(p.clone()));
-                    crate::core::log::info_fn(format_args!(
-                        "Loaded family font '{}': {}",
-                        family, p
-                    ));
+                    tracing::info!("Loaded family font '{}': {}", family, p);
                     return Some(handle);
                 }
             }

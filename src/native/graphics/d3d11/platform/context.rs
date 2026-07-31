@@ -181,10 +181,10 @@ impl D3d11Context {
         ) {
             Ok(context) => Ok(context),
             Err(hardware_error) => {
-                crate::core::log::warn_fn(format_args!(
+                tracing::warn!(
                     "D3d11Context: hardware device unavailable; retrying with WARP: {}",
                     hardware_error.what()
-                ));
+                );
                 create_with_drawable(
                     native_window,
                     drawable,
@@ -400,10 +400,10 @@ pub(crate) fn create_with_driver(
     })?;
 
     let adapter_info = query_adapter_info(&device, driver).unwrap_or_else(|error| {
-        crate::core::log::warn_fn(format_args!(
+        tracing::warn!(
             "D3d11Context: adapter diagnostics unavailable: {}",
             error.what()
-        ));
+        );
         D3d11AdapterInfo::unavailable(driver)
     });
     let pipeline = D3d11Pipeline::new(&device)?;
@@ -424,11 +424,11 @@ pub(crate) fn create_with_driver(
         next_offscreen_id: 0,
         bound_offscreen: None,
     };
-    crate::core::log::info_fn(format_args!(
+    tracing::info!(
         "D3d11Context: created {width}x{height} swapchain at feature level {:?}; {}",
         selected_level,
         ctx.adapter_info.diagnostic_summary()
-    ));
+    );
     ctx.create_rtv()?;
     Ok(ctx)
 }
@@ -894,10 +894,10 @@ impl IGraphicsContext for D3d11Context {
 
     fn destroy_offscreen_target(&mut self, id: OffscreenTargetId) {
         if let Err(error) = self.try_destroy_offscreen_target(id) {
-            crate::core::log::error_fn(format_args!(
+            tracing::error!(
                 "D3d11Context: destroy offscreen target failed: {}",
                 error.short_what()
-            ));
+            );
         }
     }
 

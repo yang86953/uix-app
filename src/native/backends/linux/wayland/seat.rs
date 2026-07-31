@@ -43,7 +43,7 @@ impl WaylandBackend {
         let seat = match self._globals.instantiate_exact::<wl_seat::WlSeat>(5) {
             Ok(s) => s,
             Err(_) => {
-                crate::core::log::warn_fn("Wayland: no wl_seat available, input unavailable");
+                tracing::warn!("Wayland: no wl_seat available, input unavailable");
                 return;
             }
         };
@@ -70,9 +70,9 @@ impl WaylandBackend {
                                     .lock()
                                     .unwrap_or_else(|error| error.into_inner()) = Some(read);
                             }
-                            Err(error) => crate::core::log::error_fn(format_args!(
-                                "Wayland clipboard pipe creation failed: {error}"
-                            )),
+                            Err(error) => {
+                                tracing::error!("Wayland clipboard pipe creation failed: {error}")
+                            }
                         }
                     } else {
                         *clipboard_read
