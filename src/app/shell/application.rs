@@ -28,7 +28,7 @@ use crate::draw::renderer::bootstrap::{
 #[cfg(feature = "test-harness")]
 use crate::draw::renderer::test_harness::GraphicsFaultSignal;
 use crate::draw::renderer::RenderTarget;
-use crate::draw::renderer::{RecoveryAction, RecoveryDriver, RenderTargetRebuilder};
+use crate::draw::renderer::{RebuildRequest, RecoveryDriver, RenderTargetRebuilder};
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::image::ImageService;
 use crate::draw::Renderer;
@@ -590,6 +590,18 @@ impl App {
         let graphics_backend = self.configured_graphics_backend();
         let diagnostics = self.runtime.diagnostics();
 
+        // 真实 device-lost 恢复注册：typed `GraphicsDeviceLost` 到达 owner-thread
+        // 安全点时，恢复 handler 只请求窗口引擎在下个帧边界执行既有有界恢复序列
+        // （领域算法仍归 graphics 的 RecoveryDriver）；`report` 不自动执行恢复。
+        let recovery_request = RebuildRequest::default();
+        let _device_lost_recovery = diagnostics.on_error(Errc::GraphicsDeviceLost, {
+            let request = recovery_request.clone();
+            move |_error| {
+                request.request_rebuild();
+                crate::diagnostics::RecoveryAction::Recovered
+            }
+        });
+
         let mut platform = match create_platform_with_pending(diagnostics.pending_failure_queue()) {
             Ok(p) => p,
             Err(e) => {
@@ -628,6 +640,7 @@ impl App {
             h,
             graphics_backend,
             self.runtime.diagnostics(),
+            recovery_request.clone(),
             self.graphics_faults.clone(),
         );
         #[cfg(not(feature = "test-harness"))]
@@ -637,6 +650,7 @@ impl App {
             h,
             graphics_backend,
             self.runtime.diagnostics(),
+            recovery_request.clone(),
         );
         let engine = match preferred_engine {
             Some(engine) => engine,
@@ -777,6 +791,7 @@ impl App {
             &self.app_state,
             &self.container,
             graphics_backend,
+            recovery_request.clone(),
             self.on_window_start.as_ref(),
             &mut secondary_windows.borrow_mut(),
         );
@@ -835,6 +850,7 @@ impl App {
                     &app_state,
                     &container,
                     graphics_backend,
+                    recovery_request.clone(),
                     on_window_start.as_ref(),
                     &mut secondary_windows.borrow_mut(),
                 );

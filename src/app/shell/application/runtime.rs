@@ -2,19 +2,24 @@
 
 use super::*;
 use crate::diagnostics::{Diagnostics, PendingFailureQueue};
+use crate::draw::renderer::{RebuildRequest, RecoveryAction};
 
 /// Drains native callback failures at the application owner-thread boundary.
 ///
 /// Native callbacks only enqueue typed errors. This function is intentionally
 /// called by the app loop, where reporting or a future domain recovery action
-/// is allowed to run.
+/// is allowed to run. Registered recovery handlers run first at this safe
+/// point; only errors that remain unhandled reach the final report, matching
+/// the "报告不能恢复的" runtime guarantee.
 pub(crate) fn drain_platform_pending_failures(
     platform: &mut dyn Platform,
     diagnostics: &Diagnostics,
 ) -> usize {
     let mut drained = 0;
     while let Some(error) = platform.take_pending_failure() {
-        diagnostics.report(error);
+        if let Some(unresolved) = diagnostics.attempt_recovery(error).into_error() {
+            diagnostics.report(unresolved);
+        }
         drained += 1;
     }
     drained
@@ -76,6 +81,7 @@ pub(crate) fn drain_pending_open_windows(
         app_state,
         container,
         NativeGraphicsBackend::Auto,
+        RebuildRequest::default(),
         on_window_start,
         secondary_windows,
     )
@@ -87,6 +93,7 @@ pub(crate) fn drain_pending_open_windows_with_backend(
     app_state: &AppState,
     container: &Container,
     graphics_backend: NativeGraphicsBackend,
+    recovery_request: RebuildRequest,
     on_window_start: Option<&Arc<dyn Fn(AppHandle) + Send + Sync>>,
     secondary_windows: &mut Vec<SecondaryWindowSession>,
 ) -> usize {
@@ -98,6 +105,7 @@ pub(crate) fn drain_pending_open_windows_with_backend(
             app_state,
             container,
             graphics_backend,
+            recovery_request.clone(),
             request,
         ) {
             if let Some(callback) = on_window_start {
@@ -286,6 +294,7 @@ fn create_secondary_window(
     app_state: &AppState,
     container: &Container,
     graphics_backend: NativeGraphicsBackend,
+    recovery_request: RebuildRequest,
     request: OpenWindowRequest,
 ) -> Option<SecondaryWindowSession> {
     let OpenWindowRequest {
@@ -367,6 +376,7 @@ fn create_secondary_window(
         height,
         graphics_backend,
         runtime.diagnostics(),
+        recovery_request.clone(),
         graphics_faults,
     );
     #[cfg(not(feature = "test-harness"))]
@@ -376,6 +386,7 @@ fn create_secondary_window(
         height,
         graphics_backend,
         runtime.diagnostics(),
+        recovery_request.clone(),
     );
     let engine = match preferred_engine {
         Some(engine) => engine,
@@ -524,6 +535,7 @@ pub(super) fn create_preferred_engine(
     height: i32,
     graphics_backend: NativeGraphicsBackend,
     diagnostics: Diagnostics,
+    recovery_request: RebuildRequest,
     #[cfg(feature = "test-harness")] graphics_faults: GraphicsFaultSignal,
 ) -> Option<Box<dyn RenderTarget>> {
     // SAFETY: `PlatformWindow` 在同步窗口会话全程拥有该 surface；图形启动与恢复
@@ -556,7 +568,8 @@ pub(super) fn create_preferred_engine(
                     pending_failures,
                 ),
             )
-            .with_extent(width, height);
+            .with_extent(width, height)
+            .with_rebuild_request(recovery_request);
             #[cfg(feature = "test-harness")]
             let engine = engine.with_test_fault_signal(graphics_faults);
             Some(Box::new(engine))
@@ -778,5 +791,178 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
             }
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::Errc;
+    use crate::diagnostics::{Diagnostics, DiagnosticsConfig, RecoveryAction};
+    use crate::native::traits::event::EventBus;
+    use crate::native::traits::platform::Platform;
+    use crate::native::traits::*;
+    use std::collections::VecDeque;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    fn new_diagnostics() -> Diagnostics {
+        Diagnostics::new(DiagnosticsConfig::default())
+    }
+
+    /// 最小 owner-thread 平台桩：只提供 pending failure 取出，其余能力不可达。
+    struct PendingPlatform {
+        pending: VecDeque<Error>,
+    }
+
+    impl PendingPlatform {
+        fn enqueue(&mut self, error: Error) {
+            self.pending.push_back(error);
+        }
+    }
+
+    impl Platform for PendingPlatform {
+        fn take_pending_failure(&mut self) -> Option<Error> {
+            self.pending.pop_front()
+        }
+
+        fn window_manager(&mut self) -> &mut dyn IWindowManager {
+            unimplemented!("not needed by the drain safe-point test")
+        }
+
+        fn event_loop(&mut self) -> &mut dyn IEventLoop {
+            unimplemented!("not needed by the drain safe-point test")
+        }
+
+        fn event_bus(&mut self) -> &mut EventBus {
+            unimplemented!("not needed by the drain safe-point test")
+        }
+
+        fn clipboard(&mut self) -> &mut dyn IClipboard {
+            unimplemented!("not needed by the drain safe-point test")
+        }
+
+        fn cursor(&mut self) -> &mut dyn ICursor {
+            unimplemented!("not needed by the drain safe-point test")
+        }
+
+        fn display(&self) -> &dyn IDisplay {
+            unimplemented!("not needed by the drain safe-point test")
+        }
+
+        fn file_dialog(&mut self) -> &mut dyn IFileDialog {
+            unimplemented!("not needed by the drain safe-point test")
+        }
+
+        fn keyboard(&self) -> &dyn IKeyboard {
+            unimplemented!("not needed by the drain safe-point test")
+        }
+
+        fn text_input(&mut self) -> &mut dyn ITextInput {
+            unimplemented!("not needed by the drain safe-point test")
+        }
+
+        fn timer(&mut self) -> &mut dyn ITimer {
+            unimplemented!("not needed by the drain safe-point test")
+        }
+
+        fn notification(&mut self) -> &mut dyn INotification {
+            unimplemented!("not needed by the drain safe-point test")
+        }
+
+        fn console(&mut self) -> &mut dyn IConsole {
+            unimplemented!("not needed by the drain safe-point test")
+        }
+
+        fn file_system(&self) -> &dyn IFileSystem {
+            unimplemented!("not needed by the drain safe-point test")
+        }
+
+        fn system_info(&self) -> &dyn ISystemInfo {
+            unimplemented!("not needed by the drain safe-point test")
+        }
+    }
+
+    #[test]
+    fn drain_recovered_failure_is_not_reported_and_unhandled_is_reported_once() {
+        let diagnostics = new_diagnostics();
+        let mut platform = PendingPlatform {
+            pending: VecDeque::new(),
+        };
+        let handled = Arc::new(AtomicUsize::new(0));
+
+        let _subscription = diagnostics.on_error(Errc::PlatformError, {
+            let handled = Arc::clone(&handled);
+            move |_| {
+                handled.fetch_add(1, Ordering::SeqCst);
+                RecoveryAction::Recovered
+            }
+        });
+
+        platform.enqueue(Error::new(
+            Errc::PlatformError,
+            "recoverable callback failure",
+        ));
+        platform.enqueue(Error::new(
+            Errc::WindowCreationFailed,
+            "unrecoverable callback failure",
+        ));
+
+        let drained = drain_platform_pending_failures(&mut platform, &diagnostics);
+        assert_eq!(drained, 2);
+        assert_eq!(handled.load(Ordering::SeqCst), 1);
+
+        let snapshot = diagnostics.snapshot();
+        let reports = snapshot.reports();
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].code, Errc::WindowCreationFailed);
+    }
+
+    #[test]
+    fn report_never_runs_registered_recovery_handlers() {
+        let diagnostics = new_diagnostics();
+        let handled = Arc::new(AtomicUsize::new(0));
+
+        let _subscription = diagnostics.on_error(Errc::PlatformError, {
+            let handled = Arc::clone(&handled);
+            move |_| {
+                handled.fetch_add(1, Ordering::SeqCst);
+                RecoveryAction::Recovered
+            }
+        });
+
+        diagnostics.report(Error::new(Errc::PlatformError, "reported failure"));
+
+        assert_eq!(handled.load(Ordering::SeqCst), 0);
+        assert_eq!(diagnostics.snapshot().reports().len(), 1);
+    }
+
+    #[test]
+    fn device_lost_recovery_registration_requests_rebuild_on_attempt() {
+        let diagnostics = new_diagnostics();
+        let request = RebuildRequest::default();
+        let _subscription = diagnostics.on_error(Errc::GraphicsDeviceLost, {
+            let request = request.clone();
+            move |_| {
+                request.request_rebuild();
+                RecoveryAction::Recovered
+            }
+        });
+
+        let outcome =
+            diagnostics.attempt_recovery(Error::new(Errc::GraphicsDeviceLost, "wgpu device lost"));
+        assert!(outcome.is_recovered());
+        assert!(request.is_requested());
+
+        // 未注册代码的 device-lost 仍以 Unhandled 保留原错误。
+        let unregistered = new_diagnostics();
+        let outcome = unregistered.attempt_recovery(Error::new(
+            Errc::GraphicsDeviceLost,
+            "unregistered device lost",
+        ));
+        assert!(matches!(
+            outcome,
+            crate::diagnostics::RecoveryOutcome::Unhandled(_)
+        ));
     }
 }

@@ -57,6 +57,8 @@ pub use fake_window::{FakeNativeHandle, FakeWindow, FakeWindowManager, FakeWindo
 
 use std::time::Duration;
 
+use crate::core::Error;
+use crate::diagnostics::{PendingFailureQueue, PendingFailureSource};
 use crate::native::shared::OsEventSource;
 use crate::native::traits::event::EventBus;
 use crate::native::traits::event::EventLoopWaker;
@@ -94,6 +96,7 @@ pub struct FakePlatform {
     pub timer: FakeTimer,
     pub window_manager: FakeWindowManager,
     pub event_bus: EventBus,
+    pub pending_failures: PendingFailureSource,
 }
 
 impl FakePlatform {
@@ -115,7 +118,14 @@ impl FakePlatform {
             timer: FakeTimer::new(),
             window_manager: FakeWindowManager::new(),
             event_bus: EventBus::new(),
+            pending_failures: PendingFailureQueue::new().source(),
         }
+    }
+
+    /// Enqueues one typed callback-style failure, mirroring the native
+    /// callback contract: only enqueue here, never report or recover.
+    pub fn enqueue_pending_failure(&self, error: Error) {
+        let _ = self.pending_failures.enqueue(error);
     }
 }
 
@@ -156,6 +166,10 @@ impl OsEventSource for FakePlatform {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl Platform for FakePlatform {
+    fn take_pending_failure(&mut self) -> Option<Error> {
+        self.pending_failures.take()
+    }
+
     fn window_manager(&mut self) -> &mut dyn IWindowManager {
         &mut self.window_manager
     }
