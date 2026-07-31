@@ -8,10 +8,12 @@
 #![cfg(windows)]
 #![allow(non_snake_case)]
 
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::time::Instant;
 
 use crate::core::Point;
 use crate::native::traits::*;
+use crate::native::{Errc, Error};
 
 use super::bindings::*;
 use super::consts::*;
@@ -73,6 +75,55 @@ pub(crate) unsafe extern "system" fn wnd_proc(
     wparam: usize,
     lparam: isize,
 ) -> isize {
+    run_wnd_proc_boundary(
+        || unsafe { wnd_proc_inner(hwnd, msg, wparam, lparam) },
+        || unsafe { enqueue_wnd_proc_panic(hwnd, msg) },
+        || unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+    )
+}
+
+/// Keeps a Rust panic inside the Win32 callback boundary.
+///
+/// The notification and fallback are defensive boundaries too: a failure
+/// while recording diagnostics must not become a second unwind across the
+/// Windows ABI.
+fn run_wnd_proc_boundary<Run, Notify, Fallback>(
+    run: Run,
+    notify: Notify,
+    fallback: Fallback,
+) -> isize
+where
+    Run: FnOnce() -> isize,
+    Notify: FnOnce(),
+    Fallback: FnOnce() -> isize,
+{
+    match catch_unwind(AssertUnwindSafe(run)) {
+        Ok(result) => result,
+        Err(_) => {
+            let _ = catch_unwind(AssertUnwindSafe(notify));
+            catch_unwind(AssertUnwindSafe(fallback)).unwrap_or(0)
+        }
+    }
+}
+
+unsafe fn enqueue_wnd_proc_panic(hwnd: *mut std::ffi::c_void, msg: u32) {
+    let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+    if ptr == 0 {
+        return;
+    }
+    let binding = &*(ptr as *const WindowBinding);
+    (&*binding.platform).enqueue_callback_failure(Error::new(
+        Errc::PlatformError,
+        format!("Windows wnd_proc ABI callback panicked while handling message 0x{msg:04x}"),
+    ));
+}
+
+unsafe fn wnd_proc_inner(
+    hwnd: *mut std::ffi::c_void,
+    msg: u32,
+    wparam: usize,
+    lparam: isize,
+) -> isize {
     if msg == WM_NCCREATE {
         let cs = lparam as *const CREATESTRUCTW;
         let this_ptr = (*cs).lpCreateParams;
@@ -99,6 +150,25 @@ pub(crate) unsafe extern "system" fn wnd_proc(
         clear_pending_frame(&binding.frame_pacer);
     }
     platform.handle_message(hwnd, &binding.state, &binding.ime, msg, wparam, lparam)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::run_wnd_proc_boundary;
+    use std::cell::Cell;
+
+    #[test]
+    fn wnd_proc_boundary_returns_safe_fallback_after_panic() {
+        let notified = Cell::new(false);
+        let result = run_wnd_proc_boundary(
+            || -> isize { panic!("test wnd_proc ABI panic") },
+            || notified.set(true),
+            || 0x5a,
+        );
+
+        assert_eq!(result, 0x5a);
+        assert!(notified.get());
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
