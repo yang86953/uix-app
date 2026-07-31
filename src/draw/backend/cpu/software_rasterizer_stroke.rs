@@ -71,60 +71,64 @@ impl SoftwareRasterizer {
             return;
         }
         let h = lw * 0.5;
+        // 圆角矩形对齐物理像素网格：亚像素坐标下 SDF 弧线端点与像素中心错位，
+        // 导致四角取整不对称（顶/底圆角视觉半径不一致）。直角矩形无此问题。
+        let rect = if rad.tl != 0.0 || rad.tr != 0.0 || rad.bl != 0.0 || rad.br != 0.0 {
+            match super::rasterizer::core::align_rounded_rect(rect) {
+                Some(rect) => rect,
+                None => return,
+            }
+        } else {
+            rect
+        };
+        // 圆角描边使用"外扩 outer + 内缩 inner"双 SDF(与 GPU 后端一致):
+        // 外扩 half 使弧线端点对齐像素中心,消除整数坐标下顶/底圆角起点偏差。
+        let outer_rect = Rect::new(rect.x - h, rect.y - h, rect.w + lw, rect.h + lw);
+        let inner_rect = Rect::new(
+            rect.x + h,
+            rect.y + h,
+            (rect.w - lw).max(0.0),
+            (rect.h - lw).max(0.0),
+        );
+        let outer_rad = Radius {
+            tl: rad.tl + h,
+            tr: rad.tr + h,
+            br: rad.br + h,
+            bl: rad.bl + h,
+        };
+        let inner_rad = Radius {
+            tl: (rad.tl - h).max(0.0),
+            tr: (rad.tr - h).max(0.0),
+            br: (rad.br - h).max(0.0),
+            bl: (rad.bl - h).max(0.0),
+        };
         let expand = h + 1.0;
         let expanded = Rect::new(
-            rect.x - expand,
-            rect.y - expand,
-            rect.w + expand * 2.0,
-            rect.h + expand * 2.0,
+            outer_rect.x - expand,
+            outer_rect.y - expand,
+            outer_rect.w + expand * 2.0,
+            outer_rect.h + expand * 2.0,
         );
         if let Some(cr) = self.intersect_clip(&expanded) {
             let x0 = cr.x as i32;
             let y0 = cr.y as i32;
             let x1 = (cr.x + cr.w) as i32;
             let y1 = (cr.y + cr.h) as i32;
-            let split = ((rect.x + rect.w * 0.5 - 0.5).ceil() as i32).clamp(x0, x1);
-            let optimized = [rad.tl, rad.tr, rad.br, rad.bl]
-                .iter()
-                .all(|radius| radius.is_finite() && *radius >= 0.0);
+            let inner_is_positive = inner_rect.w > 0.0 && inner_rect.h > 0.0;
             for py in y0..y1 {
-                if !optimized {
-                    for px in x0..x1 {
-                        let ux = px as f32 + 0.5;
-                        let uy = py as f32 + 0.5;
-                        let sd = Self::rounded_rect_sdf(ux, uy, &rect, &rad);
-                        let coverage = Self::sdf_to_coverage(sd.abs() - h);
-                        if coverage > 0.0 {
-                            self.put_pixel_aa(pixels, surface_w, surface_h, px, py, c, coverage);
-                        }
-                    }
-                    continue;
-                }
-
                 let uy = py as f32 + 0.5;
-                let mut saw_coverage = false;
-                for px in x0..split {
+                for px in x0..x1 {
                     let ux = px as f32 + 0.5;
-                    let sd = Self::rounded_rect_sdf(ux, uy, &rect, &rad);
-                    let coverage = Self::sdf_to_coverage(sd.abs() - h);
+                    let outer_sd = Self::rounded_rect_sdf(ux, uy, &outer_rect, &outer_rad);
+                    let coverage = if inner_is_positive {
+                        let inner_sd = Self::rounded_rect_sdf(ux, uy, &inner_rect, &inner_rad);
+                        Self::sdf_to_coverage(outer_sd) * Self::sdf_to_coverage(-inner_sd)
+                    } else {
+                        // 描边宽度盖满矩形:直接填充外扩圆角矩形。
+                        Self::sdf_to_coverage(outer_sd)
+                    };
                     if coverage > 0.0 {
-                        saw_coverage = true;
                         self.put_pixel_aa(pixels, surface_w, surface_h, px, py, c, coverage);
-                    } else if saw_coverage {
-                        break;
-                    }
-                }
-
-                let mut saw_coverage = false;
-                for px in (split..x1).rev() {
-                    let ux = px as f32 + 0.5;
-                    let sd = Self::rounded_rect_sdf(ux, uy, &rect, &rad);
-                    let coverage = Self::sdf_to_coverage(sd.abs() - h);
-                    if coverage > 0.0 {
-                        saw_coverage = true;
-                        self.put_pixel_aa(pixels, surface_w, surface_h, px, py, c, coverage);
-                    } else if saw_coverage {
-                        break;
                     }
                 }
             }

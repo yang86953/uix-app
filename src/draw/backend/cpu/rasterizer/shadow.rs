@@ -6,8 +6,8 @@ use crate::draw::geometry::color::Color;
 use crate::draw::geometry::types::Radius;
 
 use super::{
-    clip_to_int, color_to_premul, intersect_rect, put_pixel_aa, rounded_rect_sdf, sdf_to_coverage,
-    shadow_coverage, shadow_coverage_ambient,
+    align_rounded_rect, clip_to_int, color_to_premul, intersect_rect, put_pixel_aa,
+    rounded_rect_sdf, sdf_to_coverage, shadow_coverage, shadow_coverage_ambient,
 };
 
 /// 纯函数：绘制盒阴影。
@@ -99,6 +99,16 @@ fn _draw_box_shadow_impl(
         opacity,
     );
     let shadow_rect = Rect::new(rect.x + offset_x, rect.y + offset_y, rect.w, rect.h);
+    // 圆角矩形对齐物理像素网格（与 fill/stroke 一致）：亚像素坐标下 SDF 弧线
+    // 端点与像素中心错位导致四角取整不对称，blur=0 的阴影与填充同构同样受影响。
+    let shadow_rect = if rad.tl != 0.0 || rad.tr != 0.0 || rad.bl != 0.0 || rad.br != 0.0 {
+        match align_rounded_rect(shadow_rect) {
+            Some(rect) => rect,
+            None => return,
+        }
+    } else {
+        shadow_rect
+    };
 
     let expand = blur + 1.0;
     let bounds = Rect::new(

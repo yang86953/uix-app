@@ -69,6 +69,11 @@ impl SoftwareRasterizer {
         // No transform
         if let Some(rad) = radius {
             if rad.tl != 0.0 || rad.tr != 0.0 || rad.bl != 0.0 || rad.br != 0.0 {
+                // 圆角矩形对齐物理像素网格：亚像素坐标下 SDF 弧线端点与像素中心
+                // 错位，导致四角取整不对称（顶/底圆角视觉半径不一致）。
+                let Some(rect) = super::rasterizer::core::align_rounded_rect(rect) else {
+                    return;
+                };
                 let expanded = Rect::new(rect.x - 1.0, rect.y - 1.0, rect.w + 2.0, rect.h + 2.0);
                 if let Some(cr) = self.intersect_clip(&expanded) {
                     let x0 = cr.x as i32;

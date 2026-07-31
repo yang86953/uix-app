@@ -19,6 +19,7 @@ use crate::draw::backend::contract::{
     BackendCapabilities, BackendKind, DrawSurface, RenderBackend,
 };
 use crate::draw::backend::cpu::pixel_surface::PixelSurface;
+use crate::draw::backend::cpu::rasterizer::core::align_rounded_rect;
 use crate::draw::backend::cpu::shared_rasterizer::SharedRasterizer;
 use crate::draw::command::{
     EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameEncoder, FrameEncoderError,
@@ -405,6 +406,16 @@ impl NativeGpuCanvas2D {
             }
             // 轴对齐各向异性：设备空间圆角用几何平均近似椭圆角，避免 typed 失败。
             let r = scaled_corner_radii(radius, scale);
+            // 圆角矩形对齐物理像素网格：亚像素设备坐标下 SDF 弧线端点与像素
+            // 中心错位，导致四角取整不对称（顶/底圆角视觉半径不一致）。
+            let device = if r.iter().any(|radius| *radius > 0.0) {
+                match align_rounded_rect(device) {
+                    Some(device) => device,
+                    None => return,
+                }
+            } else {
+                device
+            };
             self.pending_native
                 .push(PendingNativeOp::SolidRect(PendingNativeRect {
                     rect: GpuSolidRect {
@@ -472,6 +483,16 @@ impl NativeGpuCanvas2D {
         }
         let r = scaled_corner_radii(radius, scale);
         let stroke_w = lw * ((scale.0.abs() * scale.1.abs()).sqrt());
+        // 圆角矩形对齐物理像素网格：亚像素设备坐标下 SDF 弧线端点与像素
+        // 中心错位，导致四角取整不对称（顶/底圆角视觉半径不一致）。
+        let device = if r.iter().any(|radius| *radius > 0.0) {
+            match align_rounded_rect(device) {
+                Some(device) => device,
+                None => return,
+            }
+        } else {
+            device
+        };
         self.pending_native
             .push(PendingNativeOp::StrokeRect(PendingNativeStroke {
                 rect: GpuStrokeRect {
@@ -862,6 +883,17 @@ impl NativeGpuCanvas2D {
             let r = match mapped_rad {
                 Some(radius) => [radius.tl, radius.tr, radius.br, radius.bl],
                 None => [0.0; 4],
+            };
+            // 圆角矩形对齐物理像素网格（与 fill/stroke 一致）：亚像素设备坐标下
+            // SDF 弧线端点与像素中心错位导致四角取整不对称，blur=0 的阴影与
+            // 填充同构同样受影响。blur>0 时模糊会掩盖差异，round 亦无副作用。
+            let device_rect = if r.iter().any(|radius| *radius > 0.0) {
+                match align_rounded_rect(device_rect) {
+                    Some(rect) => rect,
+                    None => return,
+                }
+            } else {
+                device_rect
             };
             let expanded = Rect::new(
                 device_rect.x + mapped_ox - mapped_blur_x,
