@@ -9,8 +9,9 @@ use crate::app::window_semantics::{WindowSemanticSnapshot, WindowSemanticState};
 use crate::core::{Error, Rect, WindowId};
 use crate::draw::scene::NodeId;
 use crate::draw::target::RenderTarget;
-use crate::ui::core::widget::WidgetCore;
-use crate::ui::view::{ViewAdapter, ViewNode};
+use crate::ui::adapter::ViewAdapter;
+use crate::ui::component::widget::WidgetCore;
+use crate::ui::view::ViewNode;
 use crate::ui::{AppState, WidgetTree};
 use std::sync::{Arc, Mutex};
 

@@ -1,5 +1,6 @@
 use std::any::Any;
 
+use crate::ui::form::{Form, FormItem};
 use crate::ui::widgets::*;
 
 use super::SnapshotFields;

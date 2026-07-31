@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use crate::core::Point;
 use crate::ui::animation::TransitionPlayer;
-use crate::ui::state::{State, StateSlotId};
+use crate::ui::reactive::state::{State, StateSlotId};
 use crate::ui::AnimationConfig;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

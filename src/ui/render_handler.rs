@@ -1,11 +1,13 @@
 //! Node-authored render and child-factory handlers kept outside widget storage.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::core::ComponentId;
-use crate::ui::core::widget::WidgetNode;
-use crate::ui::foundation::virtual_scroll::VirtualScrollRenderer;
-use crate::ui::view::{ViewAdapter, ViewNode};
+use crate::ui::adapter::ViewAdapter;
+use crate::ui::component::widget::WidgetNode;
+use crate::ui::view::ViewNode;
+use crate::ui::virtualization::virtual_scroll::VirtualScrollRenderer;
 use crate::ui::widgets::display::table::{ExpandRenderer, TableCellRenderer, TableRow};
 use crate::ui::widgets::input::select::SelectOptionRenderer;
 
@@ -153,5 +155,78 @@ impl RenderHandlerTable {
 
     pub(crate) fn contains_select_options(&self, component: ComponentId) -> bool {
         self.select_options.contains_key(&component)
+    }
+}
+
+// ── 空态渲染回调（System 私有边界）───────────────────────────────
+//
+// `EmptyRenderer` 由 ComponentConfig（component）持有、widgets 消费、
+// 用户闭包产出 ViewNode（view）：跨 Module 契约归本边界（SMC-04）。
+
+use crate::ui::component::config::{use_config, ComponentConfig};
+use crate::ui::component::traits::WidgetComponent;
+use crate::ui::view::View;
+
+/// 标识正在请求空态 View 的数据组件。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EmptyContext {
+    component_name: &'static str,
+}
+
+impl EmptyContext {
+    fn of<T: WidgetComponent>() -> Self {
+        let full_name = std::any::type_name::<T>();
+        Self {
+            component_name: full_name.rsplit("::").next().map_or(full_name, |name| name),
+        }
+    }
+
+    pub fn component_name(self) -> &'static str {
+        self.component_name
+    }
+}
+
+/// 由 `ComponentConfig` 持有的可克隆空态 View factory。
+#[derive(Clone)]
+pub struct EmptyRenderer {
+    renderer: Arc<dyn Fn(EmptyContext) -> ViewNode + Send + Sync>,
+}
+
+impl EmptyRenderer {
+    pub fn new<F, V>(renderer: F) -> Self
+    where
+        F: Fn(EmptyContext) -> V + Send + Sync + 'static,
+        V: View,
+    {
+        Self {
+            renderer: Arc::new(move |context| renderer(context).build()),
+        }
+    }
+
+    pub fn render<T: WidgetComponent>(&self) -> ViewNode {
+        (self.renderer)(EmptyContext::of::<T>())
+    }
+
+    pub(crate) fn is_same_renderer(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.renderer, &other.renderer)
+    }
+}
+
+/// 为指定组件类型构建当前配置的空态 View。
+pub fn render_empty_for<T: WidgetComponent>() -> Option<ViewNode> {
+    use_config()
+        .empty_renderer
+        .map(|renderer| renderer.render::<T>())
+}
+
+impl ComponentConfig {
+    /// 为数据组件设置空态 View factory（方法定义随跨 Module 契约归本边界）。
+    pub fn render_empty<F, V>(mut self, renderer: F) -> Self
+    where
+        F: Fn(EmptyContext) -> V + Send + Sync + 'static,
+        V: View,
+    {
+        self.empty_renderer = Some(EmptyRenderer::new(renderer));
+        self
     }
 }

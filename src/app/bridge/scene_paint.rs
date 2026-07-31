@@ -6,10 +6,10 @@ use crate::draw::painting::PaintContext;
 use crate::draw::scene::NodeId;
 use crate::draw::scene::PicturePolicy;
 use crate::draw::scene::ScenePaint;
-use crate::ui::core::paint_scope::set_current_paint_widget;
-use crate::ui::core::widget::WidgetCore;
-use crate::ui::core::widget::WidgetTree;
-use crate::ui::foundation::state::{begin_state_bind_capture, end_state_bind_capture};
+use crate::ui::component::paint_scope::set_current_paint_widget;
+use crate::ui::component::widget::WidgetCore;
+use crate::ui::component::widget::WidgetTree;
+use crate::ui::reactive::state::{begin_state_bind_capture, end_state_bind_capture};
 
 impl ScenePaint for WidgetTree {
     fn root_id(&self) -> Option<NodeId> {
@@ -134,7 +134,7 @@ impl ScenePaint for WidgetTree {
                 set_current_paint_widget(Some(id));
                 let theme_tokens = self.theme_tokens();
                 let mut ui_ctx =
-                    crate::ui::core::paint_context::PaintContext::new(ctx, theme_tokens);
+                    crate::ui::component::paint_context::PaintContext::new(ctx, theme_tokens);
                 node.render(frame, &mut ui_ctx, self);
                 set_current_paint_widget(None);
                 end_state_bind_capture(id);

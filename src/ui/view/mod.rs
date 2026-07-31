@@ -5,41 +5,24 @@
 
 use crate::core::{EdgeInsets, Point};
 use crate::draw::Color;
-use crate::ui::accessibility_override::AccessibilityOverride;
+use crate::ui::accessibility::accessibility_override::AccessibilityOverride;
+use crate::ui::component::provider_context::{current_provider_context, ProviderContext};
+use crate::ui::component::traits::WidgetComponent;
+use crate::ui::component::view_transform::ViewTransform;
+use crate::ui::event::system_event_handler::{SystemEventFilter, SystemEventHandlerRegistration};
 use crate::ui::event::{HandlerRegistration, SemanticEvent, SemanticKind};
-use crate::ui::foundation::provider_context::{current_provider_context, ProviderContext};
 use crate::ui::render_handler::RenderHandlerRegistration;
-use crate::ui::style::{BoxShadowDef, ColorValue, Style, TypographyToken};
-use crate::ui::system_event_handler::{SystemEventFilter, SystemEventHandlerRegistration};
-use crate::ui::traits::WidgetComponent;
-use crate::ui::view_transform::ViewTransform;
+use crate::ui::theme::style::{BoxShadowDef, ColorValue, Style, TypographyToken};
 use crate::ui::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute, EventResult,
     FocusHandle, SystemEvent,
 };
 
-pub(crate) mod adapter;
-pub mod combinators;
-
-pub use crate::ui::window_chrome::{
-    window_control, window_control_named, window_drag_region, WindowControl,
-};
-pub(crate) use adapter::ViewAdapter;
-pub use combinators::{
-    button, canvas, column, column_fit, dynamic_label, embed, grid, input, label, row, scroll,
-    show, space, ButtonBuilder, GridBuilder, InputBuilder, IntoLabelContent, IntoViewChildren,
-    ScrollBuilder,
-};
+pub(crate) mod providers;
 
 /// 用户层 UI 声明 trait。
 pub trait View: 'static {
     fn build(self) -> ViewNode;
-}
-
-impl View for () {
-    fn build(self) -> ViewNode {
-        ViewNode::leaf(crate::ui::widgets::Space::new())
-    }
 }
 
 /// 中间节点表示。
@@ -549,7 +532,7 @@ impl ViewNode {
     pub fn on_semantic_capture<T>(
         mut self,
         kind: SemanticKind,
-        state: &crate::ui::state::State<T>,
+        state: &crate::ui::reactive::state::State<T>,
         handler: impl FnMut(&mut SemanticEvent) + 'static,
     ) -> Self
     where
@@ -563,7 +546,7 @@ impl ViewNode {
     pub fn on_semantic_computed_capture<T>(
         mut self,
         kind: SemanticKind,
-        computed: &crate::ui::state::Computed<T>,
+        computed: &crate::ui::reactive::state::Computed<T>,
         handler: impl FnMut(&mut SemanticEvent) + 'static,
     ) -> Self
     where
@@ -589,10 +572,10 @@ impl ViewNode {
     /// 默认点击路径：绑定 `State` 指纹，reconcile 可稳定复用（知识库：`C:\data\note\我的项目\软件\UIX App\使用.md`）。
     ///
     /// 与 [`button`] 的 `on_click` 对齐，可用于 `label` / `embed` 等任意 View。
-    pub fn on_click<T, F>(mut self, state: &crate::ui::state::State<T>, mut f: F) -> Self
+    pub fn on_click<T, F>(mut self, state: &crate::ui::reactive::state::State<T>, mut f: F) -> Self
     where
         T: Clone + Send + Sync + 'static,
-        F: FnMut(&crate::ui::state::State<T>) + 'static,
+        F: FnMut(&crate::ui::reactive::state::State<T>) + 'static,
     {
         let captured = state.clone();
         self.handlers.push(
@@ -628,7 +611,11 @@ impl ViewNode {
     ///
     /// 新代码优先 `on_click(&state, |s| …)`；无 State 用 [`Self::on_click_fn`]。
     #[doc(alias = "on_click")]
-    pub fn on_click_capture<T, F>(self, state: &crate::ui::state::State<T>, mut f: F) -> Self
+    pub fn on_click_capture<T, F>(
+        self,
+        state: &crate::ui::reactive::state::State<T>,
+        mut f: F,
+    ) -> Self
     where
         T: Clone + Send + Sync + 'static,
         F: FnMut() + 'static,
@@ -660,7 +647,11 @@ impl ViewNode {
         self
     }
 
-    pub fn on_click_event_capture<T, F>(mut self, state: &crate::ui::state::State<T>, f: F) -> Self
+    pub fn on_click_event_capture<T, F>(
+        mut self,
+        state: &crate::ui::reactive::state::State<T>,
+        f: F,
+    ) -> Self
     where
         T: Clone + Send + Sync + 'static,
         F: FnMut(&mut SemanticEvent) + 'static,
@@ -688,8 +679,8 @@ impl ViewNode {
 }
 
 impl crate::ui::IntoWidgetNode for ViewNode {
-    fn into_node(self) -> crate::ui::core::widget::WidgetNode {
-        adapter::ViewAdapter::expand(self)
+    fn into_node(self) -> crate::ui::component::widget::WidgetNode {
+        crate::ui::adapter::ViewAdapter::expand(self)
     }
 }
 

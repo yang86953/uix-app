@@ -41,8 +41,8 @@ use crate::native::present::{GraphicsBackend as NativeGraphicsBackend, NativeSur
 use crate::native::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::windowing::window::{PlatformWindow, WindowOcclusionState};
 use crate::platform::graphics::GraphicsBackend;
+use crate::ui::theme::traits::TokenProvider;
 use crate::ui::theme::{DesignTokens, DynTokens, Theme};
-use crate::ui::traits::TokenProvider;
 use crate::ui::view::ViewNode;
 use crate::ui::{
     with_config, with_locale, AppState, ComponentConfig, Locale, SystemEvent, WidgetTree,

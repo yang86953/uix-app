@@ -4,7 +4,7 @@ use std::error::Error;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use crate::ui::traits::Animatable;
+use crate::ui::animation::traits::Animatable;
 
 use super::Easing;
 

@@ -9,8 +9,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::native::windowing::input::ControlSize;
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::state::State;
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::reactive::state::State;
 use crate::ui::widgets::input::date_calendar::{
     calendar_popup_rect, draw_calendar_panel, hit_calendar_date, hit_month_navigation,
     CalendarPanelState, MonthNavigation,
@@ -330,7 +330,7 @@ component! {
 
         let val = self.value.get();
         let is_default = val == Date::default();
-        let nominal_height = crate::ui::config::control_height(self.picker_size);
+        let nominal_height = crate::ui::component::config::control_height(self.picker_size);
         let scale = if nominal_height > 0.0 {
             (frame.h / nominal_height).clamp(0.0, 1.0)
         } else {
@@ -424,18 +424,23 @@ fn picker_bounds(frame: Rect) -> Rect {
 
 impl DatePicker {
     fn intrinsic_size(&self) -> Size {
-        Size::new(160.0, crate::ui::config::control_height(self.picker_size))
+        Size::new(
+            160.0,
+            crate::ui::component::config::control_height(self.picker_size),
+        )
     }
 
     pub fn new() -> Self {
         let today = Date::today();
-        let config = crate::ui::config::use_config();
+        let config = crate::ui::component::config::use_config();
         Self {
             value: Cell::new(Date::default()),
             value_binding: None,
             view_year: Cell::new(today.year),
             view_month: Cell::new(today.month),
-            placeholder: crate::ui::locale::use_locale().placeholder.to_owned(),
+            placeholder: crate::ui::component::locale::use_locale()
+                .placeholder
+                .to_owned(),
             mode: PickerMode::Date,
             disabled_date: None,
             open: Cell::new(false),

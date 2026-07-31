@@ -3,9 +3,9 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::Color;
 use crate::native::windowing::input::ControlSize;
 use crate::ui::animation::{presets, TransitionPlayer};
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::foundation::virtual_scroll::VirtualListScroll;
-use crate::ui::state::State;
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::reactive::state::State;
+use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, LayoutChild, MouseButton, SemanticEvent, SnapshotFields,
     SystemEvent, WidgetTree,
@@ -564,7 +564,7 @@ component! {
 
 impl Select {
     fn control_height(&self) -> f32 {
-        crate::ui::config::control_height(self.select_size)
+        crate::ui::component::config::control_height(self.select_size)
     }
 
     fn intrinsic_size(&self) -> Size {
@@ -817,8 +817,8 @@ impl Default for Select {
 
 impl Select {
     pub fn new() -> Self {
-        let config = crate::ui::config::use_config();
-        let control_height = crate::ui::config::control_height(config.size);
+        let config = crate::ui::component::config::use_config();
+        let control_height = crate::ui::component::config::control_height(config.size);
         Self {
             options: Vec::new(),
             optgroups: Vec::new(),
@@ -1130,7 +1130,7 @@ impl From<SelectOptionView> for crate::ui::view::ViewNode {
 }
 
 impl crate::ui::IntoWidgetNode for SelectOptionView {
-    fn into_node(self) -> crate::ui::core::widget::WidgetNode {
+    fn into_node(self) -> crate::ui::component::widget::WidgetNode {
         crate::ui::IntoWidgetNode::into_node(crate::ui::view::View::build(self))
     }
 }

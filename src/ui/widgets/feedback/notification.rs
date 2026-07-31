@@ -10,8 +10,8 @@ use crate::draw::{Color, Radius};
 use crate::native::capabilities::system::StatusLevel;
 use crate::native::notification::{NotificationService, ToastEntry};
 use crate::ui::animation::AnimationConfig;
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::core::widget::WidgetTree;
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::component::widget::WidgetTree;
 use crate::ui::{EventResult, MouseButton, Placement, SnapshotFields, SystemEvent};
 
 use super::toast_motion::{ToastMotion, ToastMotionEntry, ToastQueue};

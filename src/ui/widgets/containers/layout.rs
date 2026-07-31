@@ -5,8 +5,8 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Color;
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::core::widget::WidgetTree;
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::component::widget::WidgetTree;
 use crate::ui::SnapshotFields;
 
 component! {

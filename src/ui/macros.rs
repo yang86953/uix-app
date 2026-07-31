@@ -24,7 +24,7 @@ macro_rules! impl_widget_component {
         $($cap:ident),+ $(,)?
         $(; tab_index => $tab:expr)?
     ) => {
-        impl $crate::ui::traits::WidgetComponent for $T {
+        impl $crate::ui::__private::traits::WidgetComponent for $T {
             fn as_any(&self) -> &dyn std::any::Any {
                 self
             }
@@ -34,8 +34,8 @@ macro_rules! impl_widget_component {
             fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
                 self
             }
-            fn capabilities(&self) -> $crate::ui::traits::WidgetCapabilities {
-                let mut caps = $crate::ui::traits::WidgetCapabilities::new();
+            fn capabilities(&self) -> $crate::ui::__private::traits::WidgetCapabilities {
+                let mut caps = $crate::ui::__private::traits::WidgetCapabilities::new();
                 $(
                     impl_widget_component!(@insert_cap caps $cap);
                 )+
@@ -52,62 +52,62 @@ macro_rules! impl_widget_component {
         }
     };
     (@insert_cap $caps:ident Layout) => {
-        $caps.insert($crate::ui::traits::WidgetCapabilities::LAYOUT);
+        $caps.insert($crate::ui::__private::traits::WidgetCapabilities::LAYOUT);
     };
     (@insert_cap $caps:ident Render) => {
-        $caps.insert($crate::ui::traits::WidgetCapabilities::RENDER);
+        $caps.insert($crate::ui::__private::traits::WidgetCapabilities::RENDER);
     };
     (@insert_cap $caps:ident Event) => {
-        $caps.insert($crate::ui::traits::WidgetCapabilities::EVENT);
+        $caps.insert($crate::ui::__private::traits::WidgetCapabilities::EVENT);
     };
     (@insert_cap $caps:ident Lifecycle) => {
-        $caps.insert($crate::ui::traits::WidgetCapabilities::LIFECYCLE);
+        $caps.insert($crate::ui::__private::traits::WidgetCapabilities::LIFECYCLE);
     };
     (@insert_cap $caps:ident Animation) => {
-        $caps.insert($crate::ui::traits::WidgetCapabilities::ANIMATION);
+        $caps.insert($crate::ui::__private::traits::WidgetCapabilities::ANIMATION);
     };
     (@insert_cap $caps:ident TextInput) => {
-        $caps.insert($crate::ui::traits::WidgetCapabilities::TEXT_INPUT);
+        $caps.insert($crate::ui::__private::traits::WidgetCapabilities::TEXT_INPUT);
     };
     (@upcast Layout) => {
-        fn as_layout(&self) -> Option<&dyn $crate::ui::traits::WidgetLayout> {
+        fn as_layout(&self) -> Option<&dyn $crate::ui::__private::traits::WidgetLayout> {
             Some(self)
         }
     };
     (@upcast Render) => {
-        fn as_render(&self) -> Option<&dyn $crate::ui::traits::WidgetRender> {
+        fn as_render(&self) -> Option<&dyn $crate::ui::__private::traits::WidgetRender> {
             Some(self)
         }
-        fn as_render_mut(&mut self) -> Option<&mut dyn $crate::ui::traits::WidgetRender> {
+        fn as_render_mut(&mut self) -> Option<&mut dyn $crate::ui::__private::traits::WidgetRender> {
             Some(self)
         }
     };
     (@upcast Event) => {
-        fn as_event(&self) -> Option<&dyn $crate::ui::traits::EventHandler> {
+        fn as_event(&self) -> Option<&dyn $crate::ui::__private::traits::EventHandler> {
             Some(self)
         }
-        fn as_event_mut(&mut self) -> Option<&mut dyn $crate::ui::traits::EventHandler> {
+        fn as_event_mut(&mut self) -> Option<&mut dyn $crate::ui::__private::traits::EventHandler> {
             Some(self)
         }
     };
     (@upcast Lifecycle) => {
-        fn as_lifecycle(&self) -> Option<&dyn $crate::ui::traits::WidgetLifecycle> {
+        fn as_lifecycle(&self) -> Option<&dyn $crate::ui::__private::traits::WidgetLifecycle> {
             Some(self)
         }
-        fn as_lifecycle_mut(&mut self) -> Option<&mut dyn $crate::ui::traits::WidgetLifecycle> {
+        fn as_lifecycle_mut(&mut self) -> Option<&mut dyn $crate::ui::__private::traits::WidgetLifecycle> {
             Some(self)
         }
     };
     (@upcast Animation) => {
-        fn as_animation(&self) -> Option<&dyn $crate::ui::traits::WidgetAnimation> {
+        fn as_animation(&self) -> Option<&dyn $crate::ui::__private::traits::WidgetAnimation> {
             Some(self)
         }
-        fn as_animation_mut(&mut self) -> Option<&mut dyn $crate::ui::traits::WidgetAnimation> {
+        fn as_animation_mut(&mut self) -> Option<&mut dyn $crate::ui::__private::traits::WidgetAnimation> {
             Some(self)
         }
     };
     (@upcast TextInput) => {
-        fn as_text_input(&self) -> Option<&dyn $crate::ui::traits::WidgetTextInput> {
+        fn as_text_input(&self) -> Option<&dyn $crate::ui::__private::traits::WidgetTextInput> {
             Some(self)
         }
     };
@@ -131,44 +131,50 @@ macro_rules! tree {
 #[doc(hidden)]
 macro_rules! wc_upcast {
     ($T:ty; WidgetRender) => {
-        fn as_render(&self) -> Option<&dyn $crate::ui::traits::WidgetRender> {
+        fn as_render(&self) -> Option<&dyn $crate::ui::__private::traits::WidgetRender> {
             Some(self)
         }
-        fn as_render_mut(&mut self) -> Option<&mut dyn $crate::ui::traits::WidgetRender> {
+        fn as_render_mut(
+            &mut self,
+        ) -> Option<&mut dyn $crate::ui::__private::traits::WidgetRender> {
             Some(self)
         }
     };
     ($T:ty; EventHandler) => {
-        fn as_event(&self) -> Option<&dyn $crate::ui::traits::EventHandler> {
+        fn as_event(&self) -> Option<&dyn $crate::ui::__private::traits::EventHandler> {
             Some(self)
         }
-        fn as_event_mut(&mut self) -> Option<&mut dyn $crate::ui::traits::EventHandler> {
+        fn as_event_mut(&mut self) -> Option<&mut dyn $crate::ui::__private::traits::EventHandler> {
             Some(self)
         }
     };
     ($T:ty; WidgetLifecycle) => {
-        fn as_lifecycle(&self) -> Option<&dyn $crate::ui::traits::WidgetLifecycle> {
+        fn as_lifecycle(&self) -> Option<&dyn $crate::ui::__private::traits::WidgetLifecycle> {
             Some(self)
         }
-        fn as_lifecycle_mut(&mut self) -> Option<&mut dyn $crate::ui::traits::WidgetLifecycle> {
+        fn as_lifecycle_mut(
+            &mut self,
+        ) -> Option<&mut dyn $crate::ui::__private::traits::WidgetLifecycle> {
             Some(self)
         }
     };
     ($T:ty; WidgetAnimation) => {
-        fn as_animation(&self) -> Option<&dyn $crate::ui::traits::WidgetAnimation> {
+        fn as_animation(&self) -> Option<&dyn $crate::ui::__private::traits::WidgetAnimation> {
             Some(self)
         }
-        fn as_animation_mut(&mut self) -> Option<&mut dyn $crate::ui::traits::WidgetAnimation> {
+        fn as_animation_mut(
+            &mut self,
+        ) -> Option<&mut dyn $crate::ui::__private::traits::WidgetAnimation> {
             Some(self)
         }
     };
     ($T:ty; WidgetLayout) => {
-        fn as_layout(&self) -> Option<&dyn $crate::ui::traits::WidgetLayout> {
+        fn as_layout(&self) -> Option<&dyn $crate::ui::__private::traits::WidgetLayout> {
             Some(self)
         }
     };
     ($T:ty; WidgetTextInput) => {
-        fn as_text_input(&self) -> Option<&dyn $crate::ui::traits::WidgetTextInput> {
+        fn as_text_input(&self) -> Option<&dyn $crate::ui::__private::traits::WidgetTextInput> {
             Some(self)
         }
     };
@@ -185,6 +191,19 @@ macro_rules! __component_text_input_upcast_method {
 
 // ── 辅助宏：build 方法和 upcast ──
 
+/// 组件声明 `build_view_children` 时，生成 ViewChildrenProvider 实现
+/// （SMC-04：声明期 View 子节点端口归 System 私有边界）。
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __component_view_children_impl {
+    ($T:ty; build_view_children; ($($p:tt)*) -> $ret:ty $body:block) => {
+        impl $crate::ui::__private::traits::ViewChildrenProvider for $T {
+            fn build_view_children($($p)*) -> $ret $body
+        }
+    };
+    ($T:ty; $other:ident; $($rest:tt)*) => {};
+}
+
 /// 如果方法是 `build`，生成 `fn build(params) -> Ret { body }`。
 #[macro_export]
 #[doc(hidden)]
@@ -193,7 +212,11 @@ macro_rules! __component_build_method {
         fn build($($p)*) -> $ret $body
     };
     (build_view_children; ($($p:tt)*) -> $ret:ty $body:block) => {
-        fn build_view_children($($p)*) -> $ret $body
+        fn as_view_children(
+            &self,
+        ) -> Option<&dyn $crate::ui::__private::traits::ViewChildrenProvider> {
+            Some(self)
+        }
     };
     (visible; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn visible($($p)*) -> $ret $body
@@ -305,27 +328,27 @@ macro_rules! component {
             $name { $($field)* }
         }
 
-        impl $crate::ui::traits::WidgetComponent for $name {
+        impl $crate::ui::__private::traits::WidgetComponent for $name {
             fn as_any(&self) -> &dyn std::any::Any { self }
             fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
             fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> { self }
             $crate::__component_component_snapshot_method!($name);
-            fn capabilities(&self) -> $crate::ui::traits::WidgetCapabilities {
-                let mut c = $crate::ui::traits::WidgetCapabilities::new();
+            fn capabilities(&self) -> $crate::ui::__private::traits::WidgetCapabilities {
+                let mut c = $crate::ui::__private::traits::WidgetCapabilities::new();
                 $(
                     match stringify!($method) {
                         "measure" | "flex_grow" | "flex_shrink" | "align_self" | "grid_cell" | "grid_column_span" | "grid_row_span" | "layout_margin" | "child_overflow_expands_parent" | "child_visible" | "measure_children" | "layout_children" | "build" | "build_view_children" =>
-                            c.insert($crate::ui::traits::WidgetCapabilities::LAYOUT),
+                            c.insert($crate::ui::__private::traits::WidgetCapabilities::LAYOUT),
                         "render" | "uses_palette" | "dirty_rect" | "children_clip" | "overlay_entry" | "draw_margin" =>
-                            c.insert($crate::ui::traits::WidgetCapabilities::RENDER),
+                            c.insert($crate::ui::__private::traits::WidgetCapabilities::RENDER),
                         "on_event" | "on_focus_within" | "take_layout_request" | "scroll_delta" | "scroll_delta_for_dirty" | "scroll_composite_viewport" | "viewport_scroll_offset" | "scroll_descendant_by" | "active_timer" | "wants_capture_phase" | "wants_continuous_pointer_move" | "hit_test_frame" | "hit_test_children" =>
-                            c.insert($crate::ui::traits::WidgetCapabilities::EVENT),
+                            c.insert($crate::ui::__private::traits::WidgetCapabilities::EVENT),
                         "on_init" | "on_attach" | "on_mount" | "on_active" | "on_inactive" | "on_theme_changed" | "on_unmount" | "on_detach" | "on_destroy" =>
-                            c.insert($crate::ui::traits::WidgetCapabilities::LIFECYCLE),
+                            c.insert($crate::ui::__private::traits::WidgetCapabilities::LIFECYCLE),
                         "update_animation" | "dirty_bounds" =>
-                            c.insert($crate::ui::traits::WidgetCapabilities::ANIMATION),
+                            c.insert($crate::ui::__private::traits::WidgetCapabilities::ANIMATION),
                         "text_input_cursor_rect" =>
-                            c.insert($crate::ui::traits::WidgetCapabilities::TEXT_INPUT),
+                            c.insert($crate::ui::__private::traits::WidgetCapabilities::TEXT_INPUT),
                         _ => {}
                     }
                 )*
@@ -393,6 +416,9 @@ macro_rules! component {
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
         }
+        $(
+            $crate::__component_view_children_impl!($name; $method; ($($params)*) $(-> $ret)? $body);
+        )*
     };
 }
 
@@ -477,7 +503,7 @@ macro_rules! __component_component_snapshot_method {
     (Grid) => {};
     ($name:ident) => {
         fn snapshot_fields(&self) -> $crate::ui::SnapshotFields {
-            let typed = $crate::ui::component_snapshot::snapshot_fields_from_any(self.as_any());
+            let typed = $crate::ui::__private::snapshot_fields_from_any(self.as_any());
             match typed {
                 $crate::ui::SnapshotFields::Unknown => {
                     $crate::ui::SnapshotSource::snapshot_fields(self)
@@ -855,7 +881,7 @@ macro_rules! __match_trait_method {
 macro_rules! __component_grouped_impl {
     // ── WidgetLayout ──
     (WidgetLayout, $T:ty, [$($allowed:ident)*], [$(($method:ident, ($($p:tt)*) $(-> $ret:ty)? $body:block))*]) => {
-        impl $crate::ui::traits::WidgetLayout for $T {
+        impl $crate::ui::__private::traits::WidgetLayout for $T {
             $(
                 $crate::__match_trait_method!(WidgetLayout, $method, ($($p)*) $(-> $ret)? $body);
             )*
@@ -863,7 +889,7 @@ macro_rules! __component_grouped_impl {
     };
     // ── WidgetRender ──
     (WidgetRender, $T:ty, [$($allowed:ident)*], [$(($method:ident, ($($p:tt)*) $(-> $ret:ty)? $body:block))*]) => {
-        impl $crate::ui::traits::WidgetRender for $T {
+        impl $crate::ui::__private::traits::WidgetRender for $T {
             $(
                 $crate::__match_trait_method!(WidgetRender, $method, ($($p)*) $(-> $ret)? $body);
             )*
@@ -871,7 +897,7 @@ macro_rules! __component_grouped_impl {
     };
     // ── EventHandler ──
     (EventHandler, $T:ty, [$($allowed:ident)*], [$(($method:ident, ($($p:tt)*) $(-> $ret:ty)? $body:block))*]) => {
-        impl $crate::ui::traits::EventHandler for $T {
+        impl $crate::ui::__private::traits::EventHandler for $T {
             $(
                 $crate::__match_trait_method!(EventHandler, $method, ($($p)*) $(-> $ret)? $body);
             )*
@@ -879,21 +905,21 @@ macro_rules! __component_grouped_impl {
     };
     // ── WidgetLifecycle ──
     (WidgetLifecycle, $T:ty, [$($allowed:ident)*], [$(($method:ident, ($($p:tt)*) $(-> $ret:ty)? $body:block))*]) => {
-        impl $crate::ui::traits::WidgetLifecycle for $T {
+        impl $crate::ui::__private::traits::WidgetLifecycle for $T {
             $(
                 $crate::__match_trait_method!(WidgetLifecycle, $method, ($($p)*) $(-> $ret)? $body);
             )*
         }
     };
     (WidgetAnimation, $T:ty, [$($allowed:ident)*], [$(($method:ident, ($($p:tt)*) $(-> $ret:ty)? $body:block))*]) => {
-        impl $crate::ui::traits::WidgetAnimation for $T {
+        impl $crate::ui::__private::traits::WidgetAnimation for $T {
             $(
                 $crate::__match_trait_method!(WidgetAnimation, $method, ($($p)*) $(-> $ret)? $body);
             )*
         }
     };
     (WidgetTextInput, $T:ty, [$($allowed:ident)*], [$(($method:ident, ($($p:tt)*) $(-> $ret:ty)? $body:block))*]) => {
-        impl $crate::ui::traits::WidgetTextInput for $T {
+        impl $crate::ui::__private::traits::WidgetTextInput for $T {
             $(
                 $crate::__match_trait_method!(WidgetTextInput, $method, ($($p)*) $(-> $ret)? $body);
             )*
@@ -956,7 +982,7 @@ macro_rules! semantic_handler {
 macro_rules! views {
     ($($child:expr),* $(,)?) => {{
         {
-            use $crate::ui::view::View;
+            use $crate::ui::View;
             vec![$(View::build($child),)*]
         }
     }};

@@ -15,8 +15,8 @@ use crate::app::window_semantics::{WindowSemanticSnapshot, WindowSemanticState};
 #[cfg(any(test, feature = "agent-control"))]
 use crate::core::Point;
 use crate::core::{ComponentId, WindowId};
+use crate::ui::accessibility::semantic_snapshot::SemanticTarget;
 use crate::ui::semantic_action::{SemanticAction, SemanticActionError, SemanticActionKind};
-use crate::ui::semantic_snapshot::SemanticTarget;
 use crate::ui::WidgetTree;
 #[cfg(any(test, feature = "agent-control"))]
 use crate::ui::{KeyCode, KeyMod, MouseButton, SystemEvent};

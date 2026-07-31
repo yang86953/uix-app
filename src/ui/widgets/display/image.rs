@@ -11,9 +11,9 @@ use crate::draw::painting::PaintPass;
 use crate::draw::renderer::Invalidation;
 use crate::draw::resources::image::BitmapHandle;
 use crate::draw::{Color, Radius};
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::core::paint_scope::current_paint_widget;
-use crate::ui::core::widget::WidgetTree;
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::component::paint_scope::current_paint_widget;
+use crate::ui::component::widget::WidgetTree;
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, KeyCode, MouseButton, OverlayEntry, OverlayKind, SystemEvent};
 

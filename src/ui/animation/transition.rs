@@ -289,6 +289,8 @@ impl TransitionPlayer {
     }
 
     /// 重置动画以重新播放。
+    /// 原公开面遗留（SMC-04 模块收口后无内部消费方；保留供外部集成）。
+    #[allow(dead_code)]
     pub fn reset(&mut self) {
         self.opacity_anim = self.config.opacity_animation();
         self.offset_anim = self.config.offset_animation();

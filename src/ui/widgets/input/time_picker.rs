@@ -8,8 +8,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::native::windowing::input::ControlSize;
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::state::State;
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::reactive::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
     WidgetTree,
@@ -255,7 +255,7 @@ component! {
         let radius = Some(crate::draw::Radius::uniform(border_radius_sm));
 
         let val = self.value.get();
-        let nominal_height = crate::ui::config::control_height(self.picker_size);
+        let nominal_height = crate::ui::component::config::control_height(self.picker_size);
         let scale = if nominal_height > 0.0 {
             (frame.h / nominal_height).clamp(0.0, 1.0)
         } else {
@@ -406,12 +406,14 @@ fn time_popup_rect(frame: Rect) -> Rect {
 
 impl TimePicker {
     pub fn new() -> Self {
-        let config = crate::ui::config::use_config();
+        let config = crate::ui::component::config::use_config();
         Self {
             value: Cell::new(Time::default()),
             value_configured: Cell::new(false),
             value_binding: None,
-            placeholder: crate::ui::locale::use_locale().placeholder.to_owned(),
+            placeholder: crate::ui::component::locale::use_locale()
+                .placeholder
+                .to_owned(),
             open: Cell::new(false),
             focused: false,
             hover_hour: Cell::new(0),
@@ -461,7 +463,10 @@ impl TimePicker {
     }
 
     fn intrinsic_size(&self) -> Size {
-        Size::new(120.0, crate::ui::config::control_height(self.picker_size))
+        Size::new(
+            120.0,
+            crate::ui::component::config::control_height(self.picker_size),
+        )
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {

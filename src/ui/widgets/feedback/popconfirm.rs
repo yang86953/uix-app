@@ -4,8 +4,8 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component_snapshot::SnapshotPopconfirm;
-use crate::ui::core::paint_context::PaintContext;
 use crate::ui::SnapshotFields;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
@@ -236,7 +236,7 @@ component! {
             popup_geometry.popup.h,
         ));
 
-        let loc = crate::ui::locale::use_locale();
+        let loc = crate::ui::component::locale::use_locale();
         let bg = ctx.tokens().color_bg_elevated();
         let border = ctx.tokens().color_border();
         let text_color = ctx.tokens().color_text();
@@ -299,7 +299,7 @@ component! {
                 );
             }
 
-            let loc = crate::ui::locale::use_locale();
+            let loc = crate::ui::component::locale::use_locale();
             let title = if self.title.is_empty() {
                 loc.popconfirm_title
             } else {

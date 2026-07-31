@@ -16,7 +16,7 @@ use crate::draw::target::RenderTarget;
 use crate::native::platform::Platform;
 use crate::native::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::windowing::window::PlatformWindow;
-use crate::ui::clipboard;
+use crate::ui::component::clipboard;
 use crate::ui::theme::{DynTokens, Theme};
 use crate::ui::{ComponentId, SystemEvent, WidgetTree};
 use std::cell::{Cell, RefCell};

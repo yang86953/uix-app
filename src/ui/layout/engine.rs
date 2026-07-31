@@ -9,18 +9,8 @@ use super::flex::compute_flex_layout;
 use super::grid::compute_grid_layout;
 use super::{AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent};
 use super::{GridChild, GridInput, GridTrack};
-use crate::core::{ComponentId, Constraints, EdgeInsets, Rect, Size};
+use crate::core::{ComponentId, EdgeInsets, Rect, Size};
 use crate::draw::geometry::spatial::AABB3D;
-use crate::ui::core::widget::WidgetCore;
-use crate::ui::core::widget::WidgetTree;
-
-pub fn natural_measure_constraints() -> Constraints {
-    Constraints::loose(Size::infinite())
-}
-
-fn frame_measure_constraints(frame: Rect) -> Option<Constraints> {
-    (frame.w > 0.0 && frame.h > 0.0).then(|| Constraints::loose(Size::new(frame.w, frame.h)))
-}
 
 // ── 统一盒模型 ────────────────────────────────────────────────────
 
@@ -155,8 +145,11 @@ impl LayoutChild {
 
 // ── 布局引擎 trait ─────────────────────────────────────────────────
 
-// LayoutEngine trait 定义已迁移至 ui::traits::layout。
-use crate::ui::traits::layout::LayoutEngine;
+/// 统一布局引擎 trait — Flex 和 Grid 的公共抽象。
+pub trait LayoutEngine {
+    /// 在内容区域内计算子节点位置。
+    fn layout(&self, content_rect: Rect, children: &[LayoutChild]) -> LayoutOutput;
+}
 
 /// 布局引擎的输出：子节点位置 + 内容总尺寸。
 #[derive(Debug, Clone)]
@@ -169,6 +162,8 @@ pub struct LayoutOutput {
 ///
 /// `z` 用于 3D 空间中的深度排序和透视变换。
 /// 默认 z=0。
+// 原公开面遗留（SMC-04 模块收口后无内部消费方；保留供外部集成）。
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct LayoutOutput3D {
     pub positions: Vec<Rect>,
@@ -176,6 +171,8 @@ pub struct LayoutOutput3D {
     pub total_size: Size,
 }
 
+// 原公开面遗留（SMC-04 模块收口后无内部消费方；保留供外部集成）。
+#[allow(dead_code)]
 impl LayoutOutput3D {
     /// 从 LayoutOutput + z 值创建。
     pub fn from_2d(output: &LayoutOutput, z: f32) -> Self {
@@ -568,63 +565,5 @@ impl Default for GridLayout {
 impl LayoutEngine for GridLayout {
     fn layout(&self, content_rect: Rect, children: &[LayoutChild]) -> LayoutOutput {
         self.layout_with_tracks(content_rect, &self.columns, &self.rows, children)
-    }
-}
-
-// ── 辅助：从 WidgetTree 构建 LayoutChild ──────────────────────────
-
-/// 从 WidgetTree 节点构建统一的 LayoutChild。
-///
-/// 这是自然尺寸 fallback；生产布局路径应优先使用
-/// [`child_from_tree_with_constraints`] 传入父级 content rect 约束。
-pub fn child_from_tree(component_id: ComponentId, tree: &WidgetTree) -> LayoutChild {
-    child_from_tree_with_constraints(
-        component_id,
-        tree,
-        child_fallback_constraints(component_id, tree),
-    )
-}
-
-fn child_fallback_constraints(component_id: ComponentId, tree: &WidgetTree) -> Constraints {
-    let Some(node) = tree.get(component_id) else {
-        return natural_measure_constraints();
-    };
-
-    node.parent()
-        .and_then(|parent| tree.get(parent))
-        .and_then(|parent| frame_measure_constraints(parent.frame()))
-        .or_else(|| frame_measure_constraints(node.frame()))
-        .unwrap_or_else(natural_measure_constraints)
-}
-
-/// 从 WidgetTree 节点构建统一的 LayoutChild，并使用父级内容框约束测量。
-pub fn child_from_tree_with_constraints(
-    component_id: ComponentId,
-    tree: &WidgetTree,
-    constraints: Constraints,
-) -> LayoutChild {
-    let node = tree.get(component_id);
-    let pref = node.map(|c| c.measure(constraints)).unwrap_or_default();
-    let layout = node.and_then(|component| component.as_layout());
-    let grow = layout.map(|layout| layout.flex_grow()).unwrap_or(0.0);
-    let shrink = layout.map(|layout| layout.flex_shrink()).unwrap_or(1.0);
-    let margin = layout
-        .map(|layout| layout.layout_margin())
-        .unwrap_or_default();
-    let align_self = layout.and_then(|layout| layout.align_self());
-    let grid_cell = layout.and_then(|layout| layout.grid_cell());
-    let grid_column_span = layout.map(|l| l.grid_column_span().max(1)).unwrap_or(1);
-    let grid_row_span = layout.map(|l| l.grid_row_span().max(1)).unwrap_or(1);
-
-    LayoutChild {
-        id: component_id,
-        measured_size: pref,
-        flex_grow: grow,
-        flex_shrink: shrink,
-        margin,
-        align_self,
-        grid_cell,
-        grid_column_span,
-        grid_row_span,
     }
 }

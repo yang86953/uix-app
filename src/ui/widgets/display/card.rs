@@ -8,10 +8,11 @@ use crate::core::{Constraints, EdgeInsets, Point, Rect, Size};
 use crate::draw::painting::PaintPass;
 use crate::draw::{Color, Radius};
 use crate::ui::children::WidgetChildren;
-use crate::ui::core::paint_context::PaintContext;
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::component::tree_measure::child_from_tree_with_constraints;
 use crate::ui::layout::{
-    child_from_tree_with_constraints, flex::compute_flex_layout, AlignItems, FlexChild,
-    FlexDirection, FlexInput, JustifyContent, LayoutChild,
+    flex::compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
+    LayoutChild,
 };
 use crate::ui::SnapshotFields;
 use crate::ui::{

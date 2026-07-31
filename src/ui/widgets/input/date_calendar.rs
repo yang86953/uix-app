@@ -1,7 +1,7 @@
 //! 日期输入组件共用的月视图面板。
 
 use crate::core::{Point, Rect};
-use crate::ui::core::paint_context::PaintContext;
+use crate::ui::component::paint_context::PaintContext;
 use crate::ui::widgets::input::date_picker::{days_in_month, first_weekday, Date, DisabledDate};
 
 pub(crate) const CALENDAR_PANEL_HEIGHT: f32 = 250.0;
@@ -158,7 +158,7 @@ pub(crate) fn draw_calendar_panel(
         WEEKDAY_HEIGHT,
     );
     let weekday_text_y = ctx.visual_center_y(weekday_row, 10.0);
-    for (index, weekday) in crate::ui::locale::use_locale()
+    for (index, weekday) in crate::ui::component::locale::use_locale()
         .weekdays_short
         .iter()
         .enumerate()

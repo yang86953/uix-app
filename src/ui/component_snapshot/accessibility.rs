@@ -32,7 +32,11 @@ pub(super) fn timeline_accessibility(
         entries.push(entry);
     }
     if pending {
-        entries.push(crate::ui::locale::use_locale().timeline_pending.to_string());
+        entries.push(
+            crate::ui::component::locale::use_locale()
+                .timeline_pending
+                .to_string(),
+        );
     }
     AccessibilitySnapshot::new(AccessibilityRole::List).with_state(AccessibilityState {
         value_text: (!entries.is_empty()).then(|| entries.join("; ")),

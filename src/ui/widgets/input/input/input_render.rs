@@ -4,7 +4,7 @@ use super::*;
 
 use crate::core::{Point, Rect};
 use crate::draw::{Color, Radius};
-use crate::ui::core::paint_context::PaintContext;
+use crate::ui::component::paint_context::PaintContext;
 // ════════════════════════════════════════════════════════════════════════════
 // 多行渲染
 // ════════════════════════════════════════════════════════════════════════════

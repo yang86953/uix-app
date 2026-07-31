@@ -1,16 +1,17 @@
-use crate::ui::foundation::virtual_scroll::VirtualScroll;
+use crate::ui::form::{Form, FormItem};
+use crate::ui::virtualization::virtual_scroll::VirtualScroll;
+use crate::ui::widgets::window_chrome::WindowInteractionRegion;
 use crate::ui::widgets::{
     Affix, Alert, Anchor, AutoComplete, Avatar, BackTop, Badge, BarChart, Breadcrumb, Button,
     Calendar, Card, Carousel, Cascader, ChartPlaceholder, Checkbox, Collapse, ColorPicker,
     Container, Content, DatePicker, DateRangePicker, Descriptions, Divider, Drawer, Dropdown,
-    Empty, FloatButton, FloatButtonGroup, Footer, Form, FormItem, Grid, Header, Icon, Image,
-    ImageGroup, Input, InputNumber, Label, Layout, LineChart, List, Mentions, Menu, Message, Modal,
-    NavItem, Notification, Pagination, PieChart, Popconfirm, Popover, ProgressBar, QRCode, Radio,
+    Empty, FloatButton, FloatButtonGroup, Footer, Grid, Header, Icon, Image, ImageGroup, Input,
+    InputNumber, Label, Layout, LineChart, List, Mentions, Menu, Message, Modal, NavItem,
+    Notification, Pagination, PieChart, Popconfirm, Popover, ProgressBar, QRCode, Radio,
     RangeSlider, Rate, ResultView, RichText, ScrollView, Segmented, Select, SelectableList, Sider,
     Skeleton, Slider, Space, Spin, Splitter, Steps, Switch, Table, Tabs, Tag, ThemeToggle,
     TimePicker, Timeline, Tooltip, Transfer, Tree, TreeSelect, Typography, Upload, Watermark,
 };
-use crate::ui::window_chrome::WindowInteractionRegion;
 use crate::ui::SnapshotFields;
 use crate::ui::WidgetComponent;
 

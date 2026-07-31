@@ -18,8 +18,8 @@ use crate::app::agent_control::{
 use crate::app::session_runtime::AppRuntime;
 use crate::app::window_semantics::WindowSemanticSnapshot;
 use crate::core::WindowId;
+use crate::ui::accessibility::semantic_snapshot::SemanticTarget;
 use crate::ui::semantic_action::SemanticAction;
-use crate::ui::semantic_snapshot::SemanticTarget;
 
 pub(crate) const MAX_AGENT_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 

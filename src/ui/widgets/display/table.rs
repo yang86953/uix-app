@@ -1,9 +1,9 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::foundation::virtual_scroll::VirtualListScroll;
+use crate::ui::component::paint_context::PaintContext;
 use crate::ui::render_handler::RenderHandlerRegistration;
+use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, LayoutChild, SemanticEvent, SnapshotFields,
     SnapshotTableColumn, SnapshotTableColumnGroup, SystemEvent, WidgetTree,
@@ -243,7 +243,7 @@ fn resolve_table_empty_view(
     if let Some(renderer) = empty_renderer {
         return Some(renderer(table.columns.len()));
     }
-    crate::ui::config::render_empty_for::<Table>()
+    crate::ui::component::config::render_empty_for::<Table>()
 }
 
 /// 变更事件。
@@ -603,7 +603,7 @@ component! {
 
         // 空状态
         if self.rows.is_empty() && !self.loading {
-            let loc = crate::ui::locale::use_locale();
+            let loc = crate::ui::component::locale::use_locale();
             let empty = if self.empty_text.is_empty() { loc.empty_data } else { &self.empty_text };
             let horizontal_inset = 16.0_f32.min(frame.w * 0.25);
             Self::paint_single_line(
@@ -2027,7 +2027,7 @@ impl Table {
                 }
             }
         }
-        crate::ui::foundation::virtual_scroll::virtual_list_index_range(
+        crate::ui::virtualization::virtual_scroll::virtual_list_index_range(
             self.rows.len(),
             self.row_h,
             logical_offset,
@@ -2365,7 +2365,7 @@ impl<R: 'static> crate::ui::view::View for DataTable<R> {
 }
 
 impl<R: 'static> crate::ui::IntoWidgetNode for DataTable<R> {
-    fn into_node(self) -> crate::ui::core::widget::WidgetNode {
+    fn into_node(self) -> crate::ui::component::widget::WidgetNode {
         let (table, handler, empty_renderer) = self.into_parts();
         if let Some(empty) = resolve_table_empty_view(&table, empty_renderer.as_ref()) {
             return crate::ui::IntoWidgetNode::into_node(empty);
@@ -2506,12 +2506,13 @@ impl TableBuilder {
 }
 
 impl crate::ui::IntoWidgetNode for TableBuilder {
-    fn into_node(self) -> crate::ui::core::widget::WidgetNode {
+    fn into_node(self) -> crate::ui::component::widget::WidgetNode {
         let (table, handlers, empty_renderer) = self.into_parts();
         if let Some(empty) = resolve_table_empty_view(&table, empty_renderer.as_ref()) {
             return crate::ui::IntoWidgetNode::into_node(empty);
         }
-        crate::ui::core::widget::WidgetNode::leaf(Box::new(table)).with_render_handlers(handlers)
+        crate::ui::component::widget::WidgetNode::leaf(Box::new(table))
+            .with_render_handlers(handlers)
     }
 }
 

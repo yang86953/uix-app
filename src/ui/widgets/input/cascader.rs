@@ -4,7 +4,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
-use crate::ui::core::paint_context::PaintContext;
+use crate::ui::component::paint_context::PaintContext;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
     WidgetTree,
@@ -319,7 +319,7 @@ component! {
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.last_frame
             .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
-        let loc = crate::ui::locale::use_locale();
+        let loc = crate::ui::component::locale::use_locale();
         let primary = ctx.tokens().color_primary();
         let border_color = ctx.tokens().color_border();
         let text_color = ctx.tokens().color_text();

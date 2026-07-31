@@ -13,8 +13,8 @@ use std::rc::Rc;
 use crate::component;
 use crate::core::{ComponentId, Constraints, Rect, Size};
 use crate::draw::Radius;
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::state::State;
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::reactive::state::State;
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
 };
@@ -498,8 +498,8 @@ where
 
     pub fn build(
         mut self,
-        tokens: &dyn crate::ui::traits::TokenProvider,
-    ) -> crate::ui::core::widget::WidgetNode {
+        tokens: &dyn crate::ui::theme::traits::TokenProvider,
+    ) -> crate::ui::component::widget::WidgetNode {
         self.sync_page_binding();
         let collapsed = self.collapsed_state.as_ref().is_some_and(State::get);
         let compact_items = self.compact_items || collapsed;
@@ -508,17 +508,17 @@ where
         } else {
             self.width
         };
-        let loc = crate::ui::locale::use_locale();
+        let loc = crate::ui::component::locale::use_locale();
         use crate::ui::widgets::{Container, Divider, Label};
         use crate::ui::IntoWidgetNode;
 
         let item_h = if compact_items { width } else { 36.0 };
-        let mut children: Vec<crate::ui::core::widget::WidgetNode> = Vec::new();
+        let mut children: Vec<crate::ui::component::widget::WidgetNode> = Vec::new();
 
         if let Some(collapsed_state) = self.collapsed_state.clone() {
             let callback = self.collapse_callback.clone();
             let label = if collapsed { "展开" } else { "收起" };
-            let toggle_view: crate::ui::view::ViewNode = crate::ui::view::button(label)
+            let toggle_view: crate::ui::view::ViewNode = crate::ui::widgets::button(label)
                 .on_click_fn(move || {
                     let next = !collapsed_state.get();
                     collapsed_state.set(next);
@@ -528,7 +528,7 @@ where
                 })
                 .into();
             let toggle =
-                crate::ui::view::ViewAdapter::expand(toggle_view.width(width).height(32.0));
+                crate::ui::adapter::ViewAdapter::expand(toggle_view.width(width).height(32.0));
             children.push(toggle);
         }
 
@@ -570,7 +570,7 @@ where
             );
         }
 
-        crate::ui::core::widget::WidgetNode::new(
+        crate::ui::component::widget::WidgetNode::new(
             Box::new(
                 Container::new()
                     .bg(tokens.color_bg_container())

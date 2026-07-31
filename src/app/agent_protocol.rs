@@ -20,9 +20,9 @@ use crate::app::agent_control::{
 };
 use crate::app::window_semantics::WindowSemanticSnapshot;
 use crate::core::{ComponentId, Point, Rect, WindowId};
+use crate::ui::accessibility::semantic_snapshot::{SemanticNode, SemanticTarget};
 use crate::ui::component_snapshot::{AccessibilityRole, AccessibilityState};
 use crate::ui::semantic_action::SemanticAction;
-use crate::ui::semantic_snapshot::{SemanticNode, SemanticTarget};
 use crate::ui::{KeyCode, KeyMod};
 
 pub(crate) const AGENT_PROTOCOL_SCHEMA: &str = "uix.agent.v1";

@@ -3,7 +3,7 @@
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use crate::ui::traits::Animatable;
+use crate::ui::animation::traits::Animatable;
 
 type FinishCallback = Arc<Mutex<Option<Box<dyn FnOnce() + Send + 'static>>>>;
 

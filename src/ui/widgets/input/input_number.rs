@@ -6,8 +6,8 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::native::windowing::input::{ControlSize, KeyMod};
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::state::State;
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::reactive::state::State;
 use crate::ui::SnapshotFields;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
@@ -226,7 +226,7 @@ component! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.capture_bound_value_dependency();
-        let control_height = crate::ui::config::control_height(self.input_size).min(frame.h);
+        let control_height = crate::ui::component::config::control_height(self.input_size).min(frame.h);
         let control_frame = Rect::new(frame.x, frame.y, frame.w, control_height);
         let step_width = control_height.min(control_frame.w);
         let input_frame = Rect::new(
@@ -383,7 +383,7 @@ component! {
 
 impl InputNumber {
     pub fn new() -> Self {
-        let config = crate::ui::config::use_config();
+        let config = crate::ui::component::config::use_config();
         Self {
             value: 0.0,
             min: f64::MIN,
@@ -492,7 +492,7 @@ impl InputNumber {
     }
 
     fn intrinsic_size(&self) -> Size {
-        let height = crate::ui::config::control_height(self.input_size);
+        let height = crate::ui::component::config::control_height(self.input_size);
         Size::new(80.0 + height, height)
     }
 

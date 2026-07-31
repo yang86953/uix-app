@@ -5,8 +5,8 @@ use std::cell::Cell;
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::{Color, Radius};
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::core::widget::WidgetTree;
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::component::widget::WidgetTree;
 use crate::ui::SnapshotFields;
 use crate::ui::{ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent};
 

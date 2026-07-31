@@ -6,7 +6,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::native::windowing::input::ControlSize;
-use crate::ui::core::paint_context::PaintContext;
+use crate::ui::component::paint_context::PaintContext;
 use crate::ui::{SnapshotFields, WidgetTree};
 
 const DEFAULT_WIDTH: f32 = 600.0;
@@ -151,7 +151,7 @@ impl Descriptions {
             bordered: false,
             column: 3,
             label_width: 100.0,
-            size: crate::ui::config::use_config().size,
+            size: crate::ui::component::config::use_config().size,
         }
     }
     pub fn title(mut self, t: &str) -> Self {

@@ -1,4 +1,4 @@
-use crate::ui::core::widget::WidgetCore;
+use crate::ui::component::widget::WidgetCore;
 use std::cell::{Cell, RefCell};
 
 use crate::component;
@@ -6,7 +6,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::native::windowing::input::ControlSize;
 use crate::ui::animation::{presets, AnimationConfig, TransitionPlayer};
-use crate::ui::core::paint_context::PaintContext;
+use crate::ui::component::paint_context::PaintContext;
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, MouseButton, SystemEvent, WidgetTree};
 use std::rc::Rc;
@@ -435,7 +435,7 @@ component! {
 
 impl Modal {
     pub fn new(title: &str) -> Self {
-        let size = crate::ui::config::use_config().size;
+        let size = crate::ui::component::config::use_config().size;
         Self {
             title: title.to_string(),
             visible: false,
@@ -507,7 +507,7 @@ impl Modal {
             let ok_callback = ok_callback.clone();
             let cancel_completed = completed.clone();
             let ok_completed = completed;
-            let cancel = crate::ui::view::button("取消").on_click_fn(move || {
+            let cancel = crate::ui::widgets::button("取消").on_click_fn(move || {
                 if cancel_completed.replace(true) {
                     return;
                 }
@@ -516,7 +516,7 @@ impl Modal {
                 }
                 cancel_context.close();
             });
-            let confirm = crate::ui::view::button("确定")
+            let confirm = crate::ui::widgets::button("确定")
                 .primary()
                 .on_click_fn(move || {
                     if ok_completed.replace(true) {
@@ -527,9 +527,9 @@ impl Modal {
                     }
                     ok_context.close();
                 });
-            crate::ui::view::column((
-                crate::ui::view::label(content),
-                crate::ui::view::row((cancel, confirm)).gap(8.0),
+            crate::ui::widgets::column((
+                crate::ui::widgets::label(content),
+                crate::ui::widgets::row((cancel, confirm)).gap(8.0),
             ))
             .gap(16.0)
         })
@@ -577,17 +577,18 @@ impl Modal {
         let content = content.into();
         Self::show(move |context| {
             let status_icon =
-                crate::ui::view::embed(crate::ui::widgets::Icon::new(icon_name).size(24.0))
+                crate::ui::widgets::embed(crate::ui::widgets::Icon::new(icon_name).size(24.0))
                     .color(crate::ui::ColorValue::Palette(status_color))
                     .role(crate::ui::AccessibilityRole::Image)
                     .accessible_name(status_name);
-            let message = crate::ui::view::row((status_icon, crate::ui::view::label(content)))
-                .align(crate::ui::layout::AlignItems::Center)
-                .gap(12.0);
-            let confirm = crate::ui::view::button("确定")
+            let message =
+                crate::ui::widgets::row((status_icon, crate::ui::widgets::label(content)))
+                    .align(crate::ui::layout::AlignItems::Center)
+                    .gap(12.0);
+            let confirm = crate::ui::widgets::button("确定")
                 .primary()
                 .on_click_fn(move || context.close());
-            crate::ui::view::column((message, confirm)).gap(16.0)
+            crate::ui::widgets::column((message, confirm)).gap(16.0)
         })
         .title(title)
     }
@@ -1064,8 +1065,8 @@ impl crate::ui::view::View for ModalBuilder {
 }
 
 impl crate::ui::IntoWidgetNode for ModalBuilder {
-    fn into_node(self) -> crate::ui::core::widget::WidgetNode {
-        crate::ui::view::ViewAdapter::expand(crate::ui::view::View::build(self))
+    fn into_node(self) -> crate::ui::component::widget::WidgetNode {
+        crate::ui::adapter::ViewAdapter::expand(crate::ui::view::View::build(self))
     }
 }
 

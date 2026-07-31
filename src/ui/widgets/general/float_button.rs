@@ -6,7 +6,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
-use crate::ui::core::paint_context::PaintContext;
+use crate::ui::component::paint_context::PaintContext;
 use crate::ui::widgets::feedback::TriggerMode;
 use crate::ui::SnapshotFields;
 use crate::ui::{
@@ -101,7 +101,7 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
-        let loc = crate::ui::locale::use_locale();
+        let loc = crate::ui::component::locale::use_locale();
         let primary = ctx.tokens().color_primary();
         let primary_hover = ctx.tokens().color_primary_hover();
         let white = Color::white();

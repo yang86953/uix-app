@@ -3,8 +3,8 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::native::windowing::input::ControlSize;
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::state::State;
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::reactive::state::State;
 use crate::ui::SnapshotFields;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
@@ -119,7 +119,7 @@ impl Default for Switch {
 
 impl Switch {
     pub fn new() -> Self {
-        let config = crate::ui::config::use_config();
+        let config = crate::ui::component::config::use_config();
         Self {
             checked: false,
             checked_binding: None,
@@ -181,7 +181,7 @@ impl Switch {
     fn intrinsic_size(&self) -> Size {
         Size::new(
             self.track_width(),
-            crate::ui::config::control_height(self.control_size),
+            crate::ui::component::config::control_height(self.control_size),
         )
     }
 

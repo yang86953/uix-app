@@ -14,8 +14,9 @@ use crate::core::{ComponentId, Constraints, Errc, Error, Rect, Result, Size};
 use crate::diagnostics::Diagnostics;
 use crate::impl_widget_component;
 use crate::native::notification::ToastEntry;
-use crate::ui::traits::WidgetLayout;
-use crate::ui::view::{View, ViewAdapter, ViewNode};
+use crate::ui::adapter::ViewAdapter;
+use crate::ui::component::traits::WidgetLayout;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widgets::feedback::notification::{
     Notification, NotificationHandle, NotificationItem,
 };

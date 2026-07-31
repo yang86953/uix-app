@@ -5,7 +5,7 @@
 
 use crate::app::agent_bridge::AgentWindowRegistration;
 use crate::core::WindowId;
-use crate::ui::semantic_snapshot::{SemanticNode, SemanticSnapshotBody};
+use crate::ui::accessibility::semantic_snapshot::{SemanticNode, SemanticSnapshotBody};
 use crate::ui::WidgetTree;
 
 const INITIAL_WINDOW_GENERATION: u64 = 1;

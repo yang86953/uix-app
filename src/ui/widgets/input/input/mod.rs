@@ -11,9 +11,9 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::resources::font::text_backend::estimate_text_metrics;
 use crate::native::windowing::input::ControlSize;
-use crate::ui::clipboard;
-use crate::ui::core::paint_context::PaintContext;
-use crate::ui::state::State;
+use crate::ui::component::clipboard;
+use crate::ui::component::paint_context::PaintContext;
+use crate::ui::reactive::state::State;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
 };
@@ -423,7 +423,7 @@ impl Input {
     }
 
     pub fn new(placeholder: impl Into<String>) -> Self {
-        let config = crate::ui::config::use_config();
+        let config = crate::ui::component::config::use_config();
         let input_overrides = config.overrides.input;
         Self {
             value: String::new(),
