@@ -116,6 +116,50 @@ class ReleaseG5ContractTests(unittest.TestCase):
 
         self.assertEqual(accumulator.validated_iterations["theme"], {1})
 
+    def test_missing_loop_capability_remains_blocked(self) -> None:
+        accumulator = G5.ScenarioAccumulator("a" * 40)
+
+        result = accumulator.loop_matrix()
+
+        self.assertEqual(result["theme"]["status"], "blocked")
+        self.assertEqual(
+            result["theme"]["reason"],
+            "missing_closed_loop_capability_evidence",
+        )
+
+    def test_ready_loop_capability_still_fails_without_bound_proofs(self) -> None:
+        accumulator = G5.ScenarioAccumulator("a" * 40)
+        accumulator.observe(
+            "G5_CAPABILITY schema=1 category=theme status=ready reason=observer_ready"
+        )
+        accumulator.observe(
+            "G5_SCENARIO schema=1 name=page_general_dark.1 category=theme "
+            "iteration=1 page=1 theme=dark overlay=none"
+        )
+        accumulator.bind_loop_frames([])
+
+        result = accumulator.loop_matrix()
+
+        self.assertEqual(result["theme"]["status"], "fail")
+        self.assertEqual(
+            result["theme"]["reason"],
+            "missing_frame_bound_closed_loop_proofs",
+        )
+
+    def test_loop_proof_rejects_nonzero_resource_delta(self) -> None:
+        accumulator = G5.ScenarioAccumulator("a" * 40)
+
+        with self.assertRaisesRegex(
+            G5.G5Error, "successful closed-loop baseline proof"
+        ):
+            accumulator.observe(
+                "G5_LOOP schema=1 category=theme iteration=1 status=pass "
+                "final_state=stable baseline=pass open_presented=1 closed_presented=1 "
+                "final_window_count=1 final_overlay_count=0 final_active_work=0 "
+                "resource_delta=1 open_window=1 open_frame_seq=1 "
+                "closed_window=1 closed_frame_seq=2"
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
