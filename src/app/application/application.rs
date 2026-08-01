@@ -5,21 +5,21 @@ use std::path::Path;
 use std::sync::{atomic::AtomicBool, Arc};
 use std::time::{Duration, Instant};
 
-use crate::app::app_handle::{
+use crate::app::application::app_handle::{
     wrap_root_with_notification_overlay, AppHandle, AppNotificationState,
 };
-use crate::app::app_timer::{AppTimerQueue, TimerHandle};
-use crate::app::clock::{system_clock, AppClock};
+use crate::app::event_loop::app_timer::{AppTimerQueue, TimerHandle};
+use crate::app::event_loop::clock::{system_clock, AppClock};
 use crate::app::event_loop::run_window_session_loop_with_system_theme_and_tasks;
-use crate::app::main_thread_queue::{MainThreadContext, MainThreadQueue};
+use crate::app::event_loop::main_thread_queue::{MainThreadContext, MainThreadQueue};
 use crate::app::session_runtime::{AppRuntime, OpenWindowRequest};
-use crate::app::shell::cli::Cli;
-use crate::app::shell::di::Container;
-use crate::app::text_input::sync_window_text_input;
-use crate::app::window_actions::{apply_pending_window_actions, configure_custom_title_bar};
-use crate::app::window_config::WindowConfig;
-use crate::app::window_driver::{WindowDriver, WindowFrameContext};
-use crate::app::window_session::WindowSession;
+use crate::app::application::cli::Cli;
+use crate::app::application::di::Container;
+use crate::app::window::text_input::sync_window_text_input;
+use crate::app::window::window_actions::{apply_pending_window_actions, configure_custom_title_bar};
+use crate::app::window::window_config::WindowConfig;
+use crate::app::window::window_driver::{WindowDriver, WindowFrameContext};
+use crate::app::window::window_session::WindowSession;
 use crate::core::{Errc, Error, Point, WindowId};
 use crate::data::SettingsService;
 use crate::draw::renderer::bootstrap::{
