@@ -254,7 +254,7 @@ mod tests {
                         assert!(evidence.forward.target_monitor_reached);
                         assert!(evidence.return_transition.target_monitor_reached);
                         println!(
-                            "GFX-R5 mixed-DPI evidence: expected={vendor}; {}; monitor_initial bounds=({},{}..{},{}),dpi={}x{}; monitor_forward bounds=({},{}..{},{}),dpi={}x{}; initial={:?}; forward={:?}; return={:?}",
+                            "GFX-R5 Vulkan mixed-DPI evidence: expected={vendor}; {}; monitor_initial bounds=({},{}..{},{}),dpi={}x{}; monitor_forward bounds=({},{}..{},{}),dpi={}x{}; initial={:?}; forward={:?}; return={:?}",
                             evidence.adapter_diagnostic,
                             evidence.monitor_samples[0].bounds.0,
                             evidence.monitor_samples[0].bounds.1,
