@@ -59,6 +59,15 @@ impl ThemePrimitives {
         }
     }
 
+    /// 替换品牌主色种子并保持模式（E-09）：接受 `Color` 或 `PrimaryHue`；
+    /// 同步更新 `primary` 与 `info`，语义色板经 `into_design_tokens` 自动生成。
+    pub fn with_brand_primary(mut self, primary: impl Into<Color>) -> Self {
+        let primary = primary.into();
+        self.primary = primary;
+        self.info = primary;
+        self
+    }
+
     /// Ant Design 5 暗色主题基色。
     pub fn antd_dark() -> Self {
         Self {

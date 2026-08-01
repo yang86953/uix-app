@@ -203,6 +203,13 @@ impl PrimaryHue {
     }
 }
 
+/// 品牌色种子 → 主色（E-09）：`PrimaryHue::Violet` 可直接作为种子传入。
+impl From<PrimaryHue> for Color {
+    fn from(hue: PrimaryHue) -> Self {
+        hue.primary()
+    }
+}
+
 const fn rgb(hex: u32) -> Color {
     Color::from_rgb(
         ((hex >> 16) & 0xff) as u8,
