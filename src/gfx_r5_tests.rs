@@ -299,4 +299,184 @@ pub(crate) mod native {
             }
         }
     }
+
+    pub(crate) mod backends {
+        pub(crate) mod windows {
+            pub(crate) mod vulkan_fault_recovery {
+                use super::super::super::super::{expected_vendor, NativeWindowFixture};
+                use crate::core::{Errc, Error};
+                use crate::draw::backend::cpu::noop_canvas_2d::NoopCanvas2D;
+                use crate::draw::backend::DamageRegion;
+                use crate::draw::renderer::{
+                    RecoveryAction, RecoveryDriver, RenderOutcome, RenderTarget,
+                    RenderTargetRebuilder, UpdateStrategy,
+                };
+                use crate::native::present::{IGraphicsContext, PresentDamage, PresentTestResult};
+                use crate::native::presentation::graphics::vulkan::platform::VulkanContext;
+                use std::sync::{Arc, Mutex};
+
+                struct VulkanRecoveryTarget {
+                    context: VulkanContext,
+                    canvas: NoopCanvas2D,
+                    recovery_evidence: Arc<Mutex<Option<(i32, i32, u32)>>>,
+                }
+
+                impl VulkanRecoveryTarget {
+                    fn new(
+                        context: VulkanContext,
+                        recovery_evidence: Arc<Mutex<Option<(i32, i32, u32)>>>,
+                    ) -> Self {
+                        Self {
+                            context,
+                            canvas: NoopCanvas2D,
+                            recovery_evidence,
+                        }
+                    }
+                }
+
+                impl RenderTarget for VulkanRecoveryTarget {
+                    fn initialize(&mut self, _width: i32, _height: i32) -> Result<(), Error> {
+                        Ok(())
+                    }
+
+                    fn try_shutdown(&mut self) -> Result<(), Error> {
+                        self.context.try_shutdown()
+                    }
+
+                    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+                        self.context.resize(width, height)
+                    }
+
+                    fn begin_frame(&mut self, _strategy: UpdateStrategy) -> RenderOutcome {
+                        RenderOutcome::FrameReady(DamageRegion::full())
+                    }
+
+                    fn end_frame(&mut self, _present_damage: &DamageRegion) -> RenderOutcome {
+                        RenderOutcome::Present(DamageRegion::full())
+                    }
+
+                    fn test_present(&mut self) -> Result<PresentTestResult, Error> {
+                        let width = self.context.width();
+                        let height = self.context.height();
+                        let pixels = vec![0xFFB7642D; (width as usize) * (height as usize)];
+                        self.context
+                            .present_pixels(&pixels, width, height, PresentDamage::Full)?;
+                        let readback = self.context.read_pixels(0, 0, 1, 1)?[0];
+                        *self
+                            .recovery_evidence
+                            .lock()
+                            .expect("GFX-R5 recovery evidence lock") =
+                            Some((width, height, readback));
+                        Ok(PresentTestResult::Presentable)
+                    }
+
+                    fn canvas_2d(&mut self) -> &mut dyn crate::draw::Canvas2D {
+                        &mut self.canvas
+                    }
+
+                    fn logical_extent(&mut self) -> (i32, i32) {
+                        (self.context.width(), self.context.height())
+                    }
+                }
+
+                #[test]
+                #[ignore = "requires an interactive Windows desktop and Vulkan driver"]
+                fn native_vulkan_surface_fault_reaches_engine_recovery_boundary() {
+                    let (vendor, vendor_id) = expected_vendor();
+                    let mut fixture = NativeWindowFixture::new(137, 103);
+                    let mut context = match VulkanContext::new(fixture.surface(), 137, 103) {
+                        Ok(context) => context,
+                        Err(error) => panic!("GFX-R5 Vulkan context creation failed: {error}"),
+                    };
+                    assert_eq!(context.adapter_info.vendor_id, vendor_id);
+                    let adapter_diagnostic = context.adapter_info.diagnostic_summary();
+
+                    let initial_drawable = (context.width(), context.height());
+                    let initial_pixels = vec![
+                        0xFF3478BC;
+                        (initial_drawable.0 as usize)
+                            * (initial_drawable.1 as usize)
+                    ];
+                    if let Err(error) = context.present_pixels(
+                        &initial_pixels,
+                        initial_drawable.0,
+                        initial_drawable.1,
+                        PresentDamage::Full,
+                    ) {
+                        panic!("GFX-R5 initial Vulkan present failed: {error}");
+                    }
+
+                    fixture.resize(229, 163);
+                    let fault = match context.present_pixels(
+                        &initial_pixels,
+                        initial_drawable.0,
+                        initial_drawable.1,
+                        PresentDamage::Full,
+                    ) {
+                        Ok(()) => {
+                            panic!("GFX-R5 engine recovery did not observe ERROR_OUT_OF_DATE_KHR")
+                        }
+                        Err(error) => error,
+                    };
+                    assert_eq!(fault.code(), Errc::GraphicsSurfaceLost);
+                    println!("GFX-R5 engine recovery fault: {fault}");
+
+                    let recovery_evidence = Arc::new(Mutex::new(None));
+                    let rebuilder_evidence = Arc::clone(&recovery_evidence);
+                    let surface = fixture.surface();
+                    let rebuilder: RenderTargetRebuilder = Box::new(
+                        move |action, width, height| {
+                            if action != RecoveryAction::RebuildSurface {
+                                return Err(Error::new(
+                                    Errc::InvalidState,
+                                    format!("GFX-R5 expected RebuildSurface, got {action:?}"),
+                                ));
+                            }
+                            if (width, height) != (229, 163) {
+                                return Err(Error::new(
+                                        Errc::InvalidArgument,
+                                        format!(
+                                            "GFX-R5 recovery extent was {width}x{height}, expected 229x163"
+                                        ),
+                                    ));
+                            }
+                            let replacement = VulkanContext::new(surface, width, height)?;
+                            Ok(Box::new(VulkanRecoveryTarget::new(
+                                replacement,
+                                Arc::clone(&rebuilder_evidence),
+                            )) as Box<dyn RenderTarget>)
+                        },
+                    );
+                    let target = VulkanRecoveryTarget::new(context, Arc::clone(&recovery_evidence));
+                    let mut driver =
+                        RecoveryDriver::new(Box::new(target), rebuilder).with_extent(229, 163);
+                    driver.external_present_failed(fault);
+
+                    let outcome = driver.begin_frame(UpdateStrategy::FullRedraw);
+                    assert!(
+                        matches!(outcome, RenderOutcome::FrameReady(_)),
+                        "GFX-R5 engine recovery did not resume after rebuild: {outcome:?}"
+                    );
+                    assert_eq!(driver.test_present(), Ok(PresentTestResult::Presentable));
+                    let (drawable_width, drawable_height, recovered_readback) = recovery_evidence
+                        .lock()
+                        .expect("GFX-R5 recovery evidence lock")
+                        .expect("GFX-R5 recovery present evidence");
+                    println!(
+                            "GFX-R5 engine recovery evidence: expected={vendor}; {}; fault_code=graphics_surface_lost; action=RebuildSurface; logical_extent=229x163; drawable_extent={}x{}; recovered_readback=0x{recovered_readback:08X}; recovered_present=true",
+                            adapter_diagnostic,
+                            drawable_width,
+                            drawable_height,
+                        );
+
+                    assert_eq!((drawable_width, drawable_height), (229, 163));
+                    assert_eq!(recovered_readback, 0xFFB7642D);
+                    driver.external_present_succeeded();
+                    if let Err(error) = driver.try_shutdown() {
+                        panic!("GFX-R5 engine recovery shutdown failed: {error}");
+                    }
+                }
+            }
+        }
+    }
 }
