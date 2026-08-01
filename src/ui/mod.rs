@@ -117,6 +117,7 @@ pub use layout::{
 pub use overlay::{OverlayEntry, OverlayId, OverlayKind, OverlayStack, Placement};
 pub use reactive::state::{Computed, Effect, State, StateSlotId};
 pub use render_handler::{render_empty_for, EmptyContext, EmptyRenderer};
+pub use semantic_action::{SemanticAction, SemanticActionKind};
 pub use theme::style::{ColorValue, PaletteColor, Style, StyleSet, StyleState, TypographyToken};
 pub use theme::traits::{
     IBoxShadowTokens, ISpacingTokens, ITypographyTokens, ThemeTokens, TokenProvider,

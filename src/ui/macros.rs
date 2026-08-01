@@ -208,6 +208,13 @@ macro_rules! __component_view_children_impl {
 #[macro_export]
 #[doc(hidden)]
 macro_rules! __component_build_method {
+    (__semantic_actions_decl; ($($actions:tt)*) $body:block) => {
+        // E-05：`semantic_actions => [...]` 槽位生成的声明方法；$actions 为
+        // `&[...]` 表达式（由前置分支包装），直接作为返回值。
+        fn declared_semantic_actions(&self) -> &'static [$crate::ui::SemanticAction] {
+            $($actions)*
+        }
+    };
     (build; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn build($($p)*) -> $ret $body
     };
@@ -298,6 +305,32 @@ macro_rules! component {
         $crate::component! {
             $(#[$m])* $vis $name { $($field)* }
             $($rest)*
+        }
+    };
+    (
+        $(#[$m:meta])*
+        $vis:vis $name:ident {
+            $($field:tt)*
+        }
+        $(
+            @new -> Self $new_body:block
+        )?
+        semantic_actions => [ $($semantic_actions:tt)* ]
+        $(
+            $method:ident => ( $($params:tt)* ) $(-> $ret:ty)? $body:block
+        )*
+    ) => {
+        // E-05：把 `semantic_actions => [...]` 槽位转换为合成方法槽位后递归展开；
+        // 槽位必须位于 `@new` 之后、其他方法之前。
+        $crate::component! {
+            $(#[$m])* $vis $name { $($field)* }
+            $(
+                @new -> Self $new_body
+            )?
+            __semantic_actions_decl => ( &[$($semantic_actions)*] ) {}
+            $(
+                $method => ( $($params)* ) $(-> $ret)? $body
+            )*
         }
     };
     (
