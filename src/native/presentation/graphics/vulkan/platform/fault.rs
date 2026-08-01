@@ -349,10 +349,17 @@ impl DeviceLossState {
     }
 
     #[cfg(any(test, all(windows, feature = "vulkan")))]
-    pub(super) fn mark_for_test(&self) {
+    pub(super) fn mark_for_test(&self, device_fault_supported: bool) {
+        let diagnostic = if device_fault_supported {
+            "ERROR_DEVICE_LOST; VK_EXT_device_fault: synthetic external reset"
+        } else {
+            "ERROR_DEVICE_LOST"
+        };
         let error = Error::new(
             Errc::GraphicsDeviceLost,
-            "VulkanContext: shared logical device marked lost by test (ERROR_DEVICE_LOST)",
+            format!(
+                "VulkanContext: shared logical device marked lost by test ({diagnostic})"
+            ),
         );
         let _ = self.record_with(error, |error| error);
     }
