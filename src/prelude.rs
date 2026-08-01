@@ -37,12 +37,14 @@ pub use crate::data::SettingsService;
 // ui
 
 pub use crate::component;
-pub use crate::Display;
 pub use crate::impl_widget_component;
 pub use crate::keyframe;
 pub use crate::semantic_handler;
+pub use crate::t;
+pub use crate::t_fmt_arg;
 pub use crate::tree;
 pub use crate::ui::component::focus_trap::FocusTrap;
+pub use crate::ui::i18n::{register_translations, set_translations, t_lookup, t_lookup_fmt};
 pub use crate::ui::layout::{
     AlignItems, BoxModel, FlexDirection, FlexLayout, GridLayout, GridTrack, JustifyContent,
     LayoutChild, LayoutEngine, LayoutOutput,
@@ -75,6 +77,7 @@ pub use crate::ui::{
     Animated, Animation, AnimationConfig, AnimationGroup, AnimationGroupError, AnimationGroupItem,
     Easing, Keyframe, KeyframeAnimation, KeyframeError, Spring, SpringAnimation,
 };
+pub use crate::Display;
 // ui / components
 pub use crate::ui::{
     Affix, Alert, Anchor, AnchorItem, AreaChart, AutoComplete, Avatar, AxisSide, BackTop, Badge,

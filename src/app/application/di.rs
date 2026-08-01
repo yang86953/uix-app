@@ -21,6 +21,12 @@ impl Container {
             .insert(TypeId::of::<T>(), Arc::new(instance));
     }
 
+    /// 批量注册服务对象（E-08）：聚合结构体整体注册为单例；
+    /// 组件经 `resolve::<AppServices>()` 取用，不各自 new 全局服务。
+    pub fn register<T: Any + Send + Sync>(&mut self, instance: T) {
+        self.singleton(instance);
+    }
+
     /// Resolve a service by type.
     pub fn resolve<T: Any + Send + Sync>(&self) -> Option<&T> {
         self.singletons

@@ -58,6 +58,7 @@ pub(crate) mod component_snapshot;
 pub(crate) mod event;
 #[allow(hidden_glob_reexports)] // SMC-04：Module 为 pub(crate)，glob 再导出仅为根级 API。
 pub(crate) mod form;
+pub(crate) mod i18n;
 #[allow(hidden_glob_reexports)] // SMC-04：Module 为 pub(crate)，glob 再导出仅为根级 API。
 pub(crate) mod layout;
 pub mod macros;
@@ -110,6 +111,7 @@ pub use event::{
     SemanticEvent, SemanticKind, SemanticPayload, SystemEvent, SystemEventKind,
 };
 pub use form::*;
+pub use i18n::{register_translations, set_translations, t_lookup, t_lookup_fmt};
 pub use layout::{
     AlignItems, BoxModel, FlexDirection, FlexLayout, GridLayout, GridTrack, JustifyContent,
     LayoutChild, LayoutEngine, LayoutOutput,
