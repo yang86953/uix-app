@@ -238,6 +238,9 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     if let Some(pie_chart) = component.downcast_ref::<PieChart>() {
         return pie_chart.snapshot_fields();
     }
+    if let Some(chart_placeholder) = component.downcast_ref::<ChartPlaceholder>() {
+        return chart_placeholder.snapshot_fields();
+    }
     if let Some(qrcode) = component.downcast_ref::<QRCode>() {
         return qrcode.snapshot_fields();
     }

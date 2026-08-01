@@ -65,19 +65,21 @@ COMPONENT_TO_CASE: dict[str, str] = {
     "Typography": "typography",
 }
 
-# Advanced chart rows have no dedicated case in the component QA demo; their
-# scene is the charts demo page (not part of S4-03 evidence scope).
-PENDING_SCENE_COMPONENTS = {
-    "AreaChart",
-    "Chart通用",
-    "ComboChart",
-    "FunnelChart",
-    "Gauge",
-    "Heatmap",
-    "RadarChart",
-    "ScatterChart",
-    "Treemap",
-    "WaterfallChart",
+# Advanced chart rows are captured from the charts demo page (``--charts``
+# scene in ``demo/src/demos/charts.rs``) by the charts evidence collector.
+CHART_SCENE_TITLES: dict[str, list[str]] = {
+    "AreaChart": ["磁盘占用趋势"],
+    "ScatterChart": ["散点分布", "气泡分布"],
+    "RadarChart": ["能力雷达"],
+    "Heatmap": ["热力矩阵"],
+    "FunnelChart": ["转化漏斗"],
+    "WaterfallChart": ["月度盈亏"],
+    "ComboChart": ["双轴组合"],
+    "Treemap": ["磁盘占用"],
+    "Gauge": ["完成度", "预算使用"],
+    # Chart 通用 rows are covered by any captured chart node (the shared
+    # chart configuration surface is exercised on every chart instance).
+    "Chart通用": [],
 }
 
 LEDGER_GAP_ITEMS = {f"8.{n}" for n in range(7, 13)}
@@ -110,6 +112,20 @@ def component_evidence(candidate_dir: Path) -> dict[str, dict]:
     return evidence
 
 
+def charts_evidence(candidate_dir: Path) -> dict[str, dict]:
+    """Advanced chart scene nodes keyed by their accessible name."""
+    path = candidate_dir / "charts-evidence.json"
+    if not path.is_file():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    by_name: dict[str, dict] = {}
+    for node in data.get("nodes", []):
+        name = node.get("name")
+        if name:
+            by_name[name] = node
+    return by_name
+
+
 def build(candidate: str) -> None:
     root = ROOT / "test-reports" / candidate / "accessibility"
     items_dir = root / "items"
@@ -121,14 +137,25 @@ def build(candidate: str) -> None:
 
     evidence = component_evidence(root)
     captured = set(COMPONENT_TO_CASE.values())
+    chart_scene = charts_evidence(root)
 
     entries: list[dict] = []
     captured_items = 0
     for row in rows:
         component = row["component"]
-        if component in PENDING_SCENE_COMPONENTS:
-            status = "pending-scene"
-            case_id = None
+        if component in CHART_SCENE_TITLES:
+            titles = CHART_SCENE_TITLES[component]
+            if component == "Chart通用":
+                status = "captured" if chart_scene else "pending-scene"
+                case_id = "charts-scene"
+            elif any(title in chart_scene for title in titles):
+                status = "captured"
+                case_id = "charts-scene"
+            else:
+                status = "pending-scene"
+                case_id = None
+            if status == "captured":
+                captured_items += 1
         elif component in COMPONENT_TO_CASE:
             case_id = COMPONENT_TO_CASE[component]
             if case_id not in evidence:
@@ -155,7 +182,10 @@ def build(candidate: str) -> None:
             }
         )
         if status == "captured":
-            write_item(items_dir / f"{row['item_id']}.json", row, evidence[case_id])
+            if component in CHART_SCENE_TITLES:
+                write_chart_item(items_dir / f"{row['item_id']}.json", row, chart_scene, component)
+            else:
+                write_item(items_dir / f"{row['item_id']}.json", row, evidence[case_id])
 
     for item_id in sorted(LEDGER_GAP_ITEMS):
         entries.append(
@@ -197,6 +227,37 @@ def build(candidate: str) -> None:
     for entry in entries:
         if entry["status"] == "captured":
             assert (root / entry["evidence_file"]).is_file(), entry
+
+
+def write_chart_item(path: Path, row: dict[str, str], chart_scene: dict[str, dict], component: str) -> None:
+    titles = CHART_SCENE_TITLES[component]
+    if component == "Chart通用":
+        nodes = list(chart_scene.values())
+    else:
+        nodes = [chart_scene[title] for title in titles if title in chart_scene]
+    if not nodes:
+        raise SystemExit(f"no charts evidence for {component}")
+    first = nodes[0]
+    payload = {
+        "schema": "uix.accessibility.item.v1",
+        "item_id": row["item_id"],
+        "batch": int(row["batch"]),
+        "component": component,
+        "case_id": "charts-scene",
+        "component_capture": "charts-evidence.json",
+        "role": first.get("role"),
+        "name": first.get("name"),
+        "state": first.get("state"),
+        "value": first.get("value"),
+        "actions": first.get("actions"),
+        "focus": first.get("focus"),
+        "keyboard": first.get("keyboard"),
+        "scene_nodes": [node.get("name") for node in nodes],
+    }
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 def write_item(path: Path, row: dict[str, str], evidence: dict) -> None:

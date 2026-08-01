@@ -8,7 +8,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, FillRule, PathBuilder};
 use crate::ui::animation::{AnimationConfig, TransitionPlayer};
 use crate::ui::component::paint_context::PaintContext;
-use crate::ui::{EventResult, MouseButton, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
 
 use super::bar_chart::BarData;
 use super::line_chart::LineData;
@@ -3096,6 +3096,35 @@ impl ChartPlaceholder {
 impl Default for ChartPlaceholder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl ChartPlaceholder {
+    /// Human-readable chart kind label used for the semantic image name
+    /// (mirrors the BarChart / LineChart / PieChart snapshot naming).
+    fn kind_label(&self) -> &'static str {
+        match self.kind {
+            ChartKind::Generic => "Chart",
+            ChartKind::Bar => "Bar chart",
+            ChartKind::Line => "Line chart",
+            ChartKind::Area => "Area chart",
+            ChartKind::Scatter => "Scatter chart",
+            ChartKind::Radar => "Radar chart",
+            ChartKind::Heatmap => "Heatmap chart",
+            ChartKind::Funnel => "Funnel chart",
+            ChartKind::Waterfall => "Waterfall chart",
+            ChartKind::Combo => "Combo chart",
+            ChartKind::Treemap => "Treemap chart",
+            ChartKind::Gauge => "Gauge chart",
+        }
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::ChartPlaceholder {
+            title: self.title.clone(),
+            subtitle: self.subtitle.clone(),
+            kind_name: self.kind_label(),
+        }
     }
 }
 
