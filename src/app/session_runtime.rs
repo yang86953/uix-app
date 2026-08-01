@@ -78,6 +78,10 @@ impl AppRuntime {
         self.diagnostics = Diagnostics::new(config);
     }
 
+    pub(crate) fn set_diagnostics_runtime(&mut self, diagnostics: Diagnostics) {
+        self.diagnostics = diagnostics;
+    }
+
     pub(crate) fn diagnostics(&self) -> Diagnostics {
         self.diagnostics.clone()
     }
