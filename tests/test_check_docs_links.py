@@ -9,7 +9,8 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 
-SCRIPT = Path(__file__).with_name("check_docs_links.py")
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts" / "check_docs_links.py"
 SPEC = importlib.util.spec_from_file_location("check_docs_links", SCRIPT)
 if SPEC is None or SPEC.loader is None:  # pragma: no cover - import guard
     raise RuntimeError(f"cannot load {SCRIPT}")
@@ -50,7 +51,10 @@ class CheckDocsLinksTests(unittest.TestCase):
             result = CHECK.main()
 
         self.assertEqual(result, 0, output.getvalue())
-        self.assertIn("external document link(s) outside repository boundary", output.getvalue())
+        self.assertIn(
+            "external document link(s) outside repository boundary",
+            output.getvalue(),
+        )
 
 
 if __name__ == "__main__":
