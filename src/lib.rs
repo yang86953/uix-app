@@ -208,3 +208,7 @@ pub(crate) mod native;
 pub mod platform;
 pub mod prelude;
 pub mod ui;
+
+#[cfg(all(test, windows, feature = "vulkan"))]
+#[path = "gfx_r5_tests.rs"]
+mod tests;
