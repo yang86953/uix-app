@@ -1539,6 +1539,12 @@ impl Table {
         self.virtual_scroll = enabled;
         self
     }
+
+    /// 声明式虚拟化开关（E-02）：等价于 `virtual_scroll`。
+    pub fn virtualized(mut self, enabled: bool) -> Self {
+        self.virtual_scroll = enabled;
+        self
+    }
     /// 设置虚拟滚动使用的固定行高；不会隐式开启虚拟滚动。
     pub fn virtual_row_height(mut self, height: f32) -> Self {
         self.row_h = Self::normalized_row_height(height);
@@ -2259,6 +2265,13 @@ impl<R> DataTable<R> {
         self
     }
 
+    /// 声明式虚拟化开关（E-02）：等价于 `virtual_scroll`，大数据集只物化
+    /// 可视区及 overscan 范围内的行；`false` 时全量物化。
+    pub fn virtualized(mut self, enabled: bool) -> Self {
+        self.table.virtual_scroll = enabled;
+        self
+    }
+
     pub fn virtual_row_height(mut self, height: f32) -> Self {
         self.table.row_h = Table::normalized_row_height(height);
         self
@@ -2480,6 +2493,12 @@ impl TableBuilder {
         self
     }
 
+    /// 声明式虚拟化开关（E-02）：等价于 `virtual_scroll`。
+    pub fn virtualized(mut self, enabled: bool) -> Self {
+        self.table.virtual_scroll = enabled;
+        self
+    }
+
     /// 设置虚拟滚动使用的固定行高；不会隐式开启虚拟滚动。
     pub fn virtual_row_height(mut self, height: f32) -> Self {
         self.table.row_h = Table::normalized_row_height(height);
@@ -2540,5 +2559,78 @@ impl crate::ui::view::View for Table {
             return empty;
         }
         crate::ui::view::ViewNode::leaf(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Clone)]
+    struct UserRow {
+        id: u64,
+        name: String,
+    }
+
+    fn data_table(rows: Vec<UserRow>) -> DataTable<UserRow> {
+        Table::data(rows.clone(), |row| row.id.to_string())
+            .unwrap()
+            .columns(vec![
+                TableColumn::new("ID", 80.0).bind(|r: &UserRow| r.id.to_string())
+            ])
+            .row_height(32.0)
+    }
+
+    #[test]
+    fn virtualized_true_materializes_viewport_only() {
+        let rows = (0..1000)
+            .map(|id| UserRow {
+                id,
+                name: format!("row-{id}"),
+            })
+            .collect::<Vec<_>>();
+        let data = data_table(rows).virtualized(true);
+        let (table, _, _) = data.into_parts();
+
+        // 1000 行 + 32px 行高 + 320px 视口：只物化可视区与 overscan。
+        let (start, end) = table.visible_row_range(320.0);
+        assert!(
+            end - start <= 30,
+            "虚拟化应限制物化行数，实际 {}",
+            end - start
+        );
+        assert!(end > start);
+        assert_eq!(table.row_keys().len(), 1000, "行身份仍保留全量");
+    }
+
+    #[test]
+    fn virtualized_false_materializes_all_rows() {
+        let rows = (0..1000)
+            .map(|id| UserRow {
+                id,
+                name: format!("row-{id}"),
+            })
+            .collect::<Vec<_>>();
+        let data = data_table(rows).virtualized(false);
+        let (table, _, _) = data.into_parts();
+
+        assert_eq!(table.visible_row_range(320.0), (0, 1000));
+    }
+
+    #[test]
+    fn virtualized_is_alias_of_virtual_scroll() {
+        let rows = (0..100)
+            .map(|id| UserRow {
+                id,
+                name: format!("row-{id}"),
+            })
+            .collect::<Vec<_>>();
+        let on = data_table(rows.clone()).virtualized(true);
+        let (table_on, _, _) = on.into_parts();
+        assert!(table_on.virtual_scroll);
+
+        let off = data_table(rows).virtualized(false);
+        let (table_off, _, _) = off.into_parts();
+        assert!(!table_off.virtual_scroll);
     }
 }
