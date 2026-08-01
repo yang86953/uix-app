@@ -18,6 +18,7 @@
 //! 适合渲染 Markdown 风格的聊天消息、文档等富文本内容。
 
 use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use crate::component;
@@ -163,6 +164,7 @@ component! {
         focused: bool,
         focused_link: usize,
         pending_submit: RefCell<Option<String>>,
+        on_link: Option<Rc<dyn Fn(&str)>>,
 
         // ── 代码块复制 ──
         code_regions: RefCell<Vec<CodeCopyRegion>>,
@@ -193,6 +195,7 @@ component! {
             focused: false,
             focused_link: 0,
             pending_submit: RefCell::new(None),
+            on_link: None,
             code_regions: RefCell::new(Vec::new()),
             hovered_code: Cell::new(None),
             last_frame: Cell::new(None),
@@ -388,10 +391,13 @@ component! {
     }
 
     semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
-        self.pending_submit
-            .borrow_mut()
-            .take()
-            .map(|url| SemanticEvent::submit(id, url))
+        self.pending_submit.borrow_mut().take().map(|url| {
+            // E-07：on_link 便捷回调与既有 SemanticKind::Submit 语义事件共存。
+            if let Some(callback) = &self.on_link {
+                callback(&url);
+            }
+            SemanticEvent::submit(id, url)
+        })
     }
 
     flex_grow => (&self) -> f32 { 1.0 }
@@ -677,6 +683,9 @@ impl RichText {
         self.default_font_size_unit = next.default_font_size_unit;
         self.default_color = next.default_color;
         self.use_theme_color = next.use_theme_color;
+        if next.on_link.is_some() {
+            self.on_link = next.on_link;
+        }
 
         if layout_config_changed {
             self.layout_lines.borrow_mut().clear();
@@ -719,6 +728,17 @@ impl RichText {
     /// 返回当前键盘焦点链接的显示文本与 URL。
     pub fn focused_link(&self) -> Option<(&str, &str)> {
         self.link_at_ordinal(self.focused_link)
+    }
+
+    /// 注册链接激活回调（E-07）：链接经键盘 Enter/Space 或指针点击激活时
+    /// 调用，导航策略由应用决定（内部路由或系统浏览器）；与
+    /// `SemanticKind::Submit` 语义事件共存，不替代既有事件流。
+    pub fn on_link<F>(mut self, callback: F) -> Self
+    where
+        F: Fn(&str) + 'static,
+    {
+        self.on_link = Some(Rc::new(callback));
+        self
     }
 
     /// 获取选中的文本
@@ -889,5 +909,68 @@ fn parse_inline_text(text: &str, segments: &mut Vec<RichTextSegment>) {
             content: remaining.to_string(),
             style: RichTextStyle::default(),
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::Point;
+    use crate::ui::component::traits::EventHandler;
+    use crate::ui::event::SystemEvent;
+    use crate::ui::{KeyMod, MouseButton};
+
+    fn dummy_event() -> SystemEvent {
+        SystemEvent::PointerUp {
+            pos: Point::new(0.0, 0.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }
+    }
+
+    #[test]
+    fn on_link_callback_fires_when_submit_emitted() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let hook = calls.clone();
+        let mut rich = RichText::new().on_link(move |url| hook.borrow_mut().push(url.to_string()));
+        rich.pending_submit
+            .replace(Some("https://example.com".to_string()));
+
+        let event = rich.semantic_event(ComponentId::default(), &dummy_event());
+        assert!(event.is_some(), "应发出 Submit 语义事件");
+        assert_eq!(*calls.borrow(), vec!["https://example.com".to_string()]);
+    }
+
+    #[test]
+    fn on_link_not_called_without_pending_submit() {
+        let calls = Rc::new(RefCell::new(0usize));
+        let hook = calls.clone();
+        let rich = RichText::new().on_link(move |_| *hook.borrow_mut() += 1);
+
+        let event = rich.semantic_event(ComponentId::default(), &dummy_event());
+        assert!(event.is_none());
+        assert_eq!(*calls.borrow(), 0, "无待提交链接时不应触发回调");
+    }
+
+    #[test]
+    fn on_link_and_submit_semantic_event_coexist() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let hook = calls.clone();
+        let mut rich = RichText::new().on_link(move |url| hook.borrow_mut().push(url.to_string()));
+        rich.pending_submit
+            .replace(Some("https://uix.dev/route".to_string()));
+
+        let event = rich
+            .semantic_event(ComponentId::default(), &dummy_event())
+            .expect("Submit 语义事件保留");
+        assert_eq!(
+            event.kind,
+            crate::ui::SemanticKind::Submit,
+            "与 SemanticKind::Submit 共存"
+        );
+        assert!(
+            matches!(&event.payload, crate::ui::SemanticPayload::Text(url) if url == "https://uix.dev/route")
+        );
+        assert_eq!(*calls.borrow(), vec!["https://uix.dev/route".to_string()]);
     }
 }
