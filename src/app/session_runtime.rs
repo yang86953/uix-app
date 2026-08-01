@@ -15,9 +15,11 @@ use crate::app::agent::agent_control::{
     AgentCommandQueue, AgentCommandRequest, AgentCommandTicket, AgentSubmitError,
 };
 #[cfg(feature = "agent-control")]
-use crate::app::agent::agent_transport::{AgentTransportError, AgentTransportHandle, AgentTransportInfo};
-use crate::app::event_loop::app_timer::{AppTimerQueue, TimerHandle};
-use crate::app::event_loop::main_thread_queue::{MainThreadContext, MainThreadQueue};
+use crate::app::agent::agent_transport::{
+    AgentTransportError, AgentTransportHandle, AgentTransportInfo,
+};
+use crate::app::queues::app_timer::{AppTimerQueue, TimerHandle};
+use crate::app::queues::main_thread_queue::{MainThreadContext, MainThreadQueue};
 use crate::app::window::window_config::WindowConfig;
 use crate::app::window::window_session::TextInputCoordinator;
 use crate::core::WindowId;

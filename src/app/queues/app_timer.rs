@@ -5,8 +5,8 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
-use crate::app::event_loop::active_work_registry::TimerId;
-use crate::app::event_loop::clock::{system_clock, AppClock};
+use crate::app::queues::active_work_registry::TimerId;
+use crate::app::queues::clock::{system_clock, AppClock};
 
 #[derive(Clone)]
 pub(crate) struct AppTimerQueue {

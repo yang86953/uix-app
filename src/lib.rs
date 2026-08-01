@@ -131,6 +131,43 @@
 //! // data settings Module 为私有边界（SMC-05）。
 //! use uix::data::settings::SettingsService;
 //! ```
+//!
+//! SMC-06 后，app 旧平铺路径与 System 私有边界不得复活：
+//!
+//! ```compile_fail
+//! // 旧 shell 目录已拆解为 application / event_loop / window / agent（SMC-06）。
+//! use uix::app::shell::application::App;
+//! ```
+//!
+//! ```compile_fail
+//! // 组合根 session_runtime 是 System 私有边界（SMC-06）。
+//! use uix::app::session_runtime::AppRuntime;
+//! ```
+//!
+//! ```compile_fail
+//! // 主循环调度队列是 System 私有边界（SMC-06）。
+//! use uix::app::queues::app_timer::TimerHandle;
+//! ```
+//!
+//! ```compile_fail
+//! // 每窗口语义状态是 System 私有边界（SMC-06）。
+//! use uix::app::window_semantics::WindowSemanticState;
+//! ```
+//!
+//! ```compile_fail
+//! // agent Module 为私有边界，自动化 IPC 不经公开面暴露（SMC-06）。
+//! use uix::app::agent::agent_transport::AgentTransport;
+//! ```
+//!
+//! ```compile_fail
+//! // frame_scheduler 已归 window Module，旧 event_loop 路径不得复活（SMC-06）。
+//! use uix::app::event_loop::frame_scheduler::FrameScheduler;
+//! ```
+//!
+//! ```compile_fail
+//! // window 内部驱动实现不可达（SMC-06）。
+//! use uix::app::window::window_driver::WindowDriver;
+//! ```
 
 // `windows::core::implement` 宏展开依赖 crate 根的 `windows_core`（无平台 cfg：依赖在各目标可用）。
 extern crate self as uix;

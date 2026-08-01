@@ -8,12 +8,6 @@
 
 #[allow(clippy::module_inception)]
 pub(crate) mod event_loop;
-pub(crate) mod frame_scheduler;
-pub(crate) mod clock;
-pub(crate) mod main_thread_queue;
-pub(crate) mod app_timer;
-pub(crate) mod active_work_registry;
 
-pub use app_timer::TimerHandle;
 pub use event_loop::run_widget_loop;
 pub(crate) use event_loop::run_window_session_loop_with_system_theme_and_tasks;
