@@ -40,6 +40,15 @@ impl Theme {
         }
     }
 
+    /// 从主题基色构建 Theme（E-09）：品牌种子声明式切换，色板自动生成；
+    /// 明暗模式由基色 `bg` 亮度判定（`antd_light` → 亮色，`antd_dark` → 暗色）。
+    pub fn custom(primitives: super::ThemePrimitives) -> Self {
+        let is_dark = !primitives.bg.is_light();
+        Self::new(super::design_tokens::DesignTokens::from_primitives(
+            primitives, is_dark,
+        ))
+    }
+
     /// 通过已有的 `Arc<dyn TokenProvider>` 创建 Theme。
     /// 与 `new()` 的区别在于不会重新包装 Arc，适用于需要共享同一 provider 的场景。
     pub fn from_arc(provider: Arc<dyn TokenProvider>) -> Self {
