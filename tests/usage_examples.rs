@@ -194,3 +194,88 @@ fn chart_state_driven_anchor_compiles() {
     let empty = series.map_opt(|data| (!data.is_empty()).then(|| column(())));
     let _ = empty;
 }
+
+// ---- 全量核对修复锁定的示例形态（embed 直接收组件，不 .build()） ----
+
+#[test]
+fn embed_accepts_component_chains_without_build() {
+    use uix::prelude::*;
+    let _ = embed(Card::new().title("用户").child(Label::new("详细信息")).actions(vec!["编辑"]));
+    let _ = embed(Tree::new(vec![TreeNode::new("root", "root")]));
+    let _ = embed(QRCode::new("https://example.com").size(128.0).error_level(2));
+    let _ = embed(ResultView::new(ResultType::Success).title("操作成功").subtitle("已保存"));
+    let _ = embed(Descriptions::new().items(vec![DescriptionsItem::new("姓名", "Ada")]).column(2));
+    let _ = embed(Timeline::new().items(vec![TimelineItem::new("创建").description("2026-07-01")]));
+    let _ = embed(Select::new().options(["中文", "English"]));
+    let _ = embed(Badge::new().count(120).max(99));
+    let _ = embed(Popconfirm::new().title("确定删除？").confirm_text("确认").cancel_text("取消"));
+    let _ = embed(Alert::success("保存成功").action("清理", || {}).banner(true));
+    let _ = embed(Spin::new().delay(std::time::Duration::from_millis(200)).size(SpinSize::Large));
+    let _ = embed(FloatButtonGroup::new().buttons(vec![FloatButton::new("edit")]));
+    let _ = embed(Popover::new("内容").title("标题").arrow(true).bg(Color::WHITE));
+    let _ = embed(Tooltip::new("提示").placement(TooltipPlacement::Top).arrow(true));
+    let _ = embed(InputNumber::new().min(0.0).max(100.0).step(5.0));
+    let _ = embed(RangeSlider::new(0.0..=100.0).step(5.0));
+    let _ = embed(Radio::new().options(["管理员", "普通用户"]).default_selected(0));
+    let _ = embed(Switch::new().checked(&State::new(false)));
+    let _ = embed(DatePicker::new().value(&State::new(Date::new(2026, 7, 31))));
+    let _ = embed(TimePicker::new().value(&State::new(Time::new(14, 30))));
+    let _ = embed(ColorPicker::new().value(&State::new(Color::hex("#1677ff"))));
+    let _ = embed(FocusTrap::new());
+    let _ = embed(Splitter::new().panels(2).min_size(0, 120.0).vertical(false));
+    let _ = embed(BackTop::new().visibility_height(400.0));
+    let _ = embed(Affix::new(12.0).scroll_y(180.0));
+    let _ = embed(Gauge::new().value(68.0).min(0.0).max(100.0)
+        .range_colors(vec![GaugeRange::new(0.0, 30.0, Color::hex("#ff4d4f"))])
+        .gauge_type(GaugeType::Dashboard));
+    let _ = embed(ScatterChart::new().data(vec![ScatterData::new("A", 2.5, 6.3)]).x_axis("宽度"));
+    let _ = embed(Menu::new().items(vec![MenuItem::new("首页")]).active_key("home").mode(MenuMode::Inline));
+    let _nav_group = NavGroup::new().item("首页", "home").active_index(0).build();
+    let _ = embed(Pagination::new(200, 20).current(2).simple(true).show_jumper(true));
+    let _ = embed(Steps::new(vec![Step::new("填写信息")]).current(1).vertical());
+    let _ = embed(Breadcrumb::new().items(vec![BreadcrumbItem::new("首页").active()]).separator(">"));
+    let _ = embed(Anchor::new(vec![AnchorItem::new("基本信息", "section-1")]));
+    let _ = embed(Tabs::new().tab_position(TabPosition::Top).scrollable(true));
+    let _ = embed(Dropdown::new("操作").items(vec!["编辑", "删除"]).trigger(TriggerMode::Hover));
+}
+
+#[test]
+fn tree_macro_requires_nested_tree_for_item_children() {
+    use uix::prelude::*;
+    let form = embed(tree! {
+        Form::new().label_width(86.0).gap(8.0).layout(FormLayout::Vertical) => [
+            tree! { FormItem::new("用户名").name("user").required(true).help("必填") => [
+                Input::new("请输入用户名").into_node(),
+            ]},
+            tree! { FormItem::new("密码").name("password").required(true).help("至少 8 位") => [
+                Input::password().into_node(),
+            ]},
+        ]
+    });
+    let _ = form;
+}
+
+#[test]
+fn provider_child_closures_return_views_not_build_results() {
+    use uix::prelude::*;
+    let _ = embed(ConfigProvider::new()
+        .component_size(ControlSize::Large)
+        .disabled(true)
+        .child(|| column((
+            button("继承 Large"),
+            input().placeholder("继承禁用态"),
+        )))
+        .build());
+    let _ = embed(ConfigProvider::new()
+        .overrides(ComponentOverrides::default())
+        .child(|| input().placeholder("自动注入前缀"))
+        .build());
+    let _ = embed(ConfigProvider::new()
+        .component_tokens::<Button>(TokenPatch {
+            color_primary: Some(Color::hex("#722ed1")),
+            border_radius: Some(10.0),
+            ..TokenPatch::default()
+        })
+        .child(|| button("紫色按钮").primary())
+        .build());
+}
