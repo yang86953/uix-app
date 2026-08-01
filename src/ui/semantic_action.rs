@@ -27,6 +27,7 @@ pub enum SemanticActionKind {
     Toggle,
     Increment,
     Decrement,
+    Adjust,
     Scroll,
 }
 
@@ -42,6 +43,7 @@ impl SemanticActionKind {
             Self::Toggle => "toggle",
             Self::Increment => "increment",
             Self::Decrement => "decrement",
+            Self::Adjust => "adjust",
             Self::Scroll => "scroll",
         }
     }
@@ -58,7 +60,15 @@ pub enum SemanticAction {
     Toggle,
     Increment,
     Decrement,
-    Scroll { delta: Point },
+    /// 连续值调整能力声明（E-05）：目标支持在 `min..=max` 范围内调整；
+    /// 方向性步进经 `Increment` / `Decrement` 动作执行。
+    Adjust {
+        min: f64,
+        max: f64,
+    },
+    Scroll {
+        delta: Point,
+    },
 }
 
 impl SemanticAction {
@@ -72,6 +82,7 @@ impl SemanticAction {
             Self::Toggle => SemanticActionKind::Toggle,
             Self::Increment => SemanticActionKind::Increment,
             Self::Decrement => SemanticActionKind::Decrement,
+            Self::Adjust { .. } => SemanticActionKind::Adjust,
             Self::Scroll { .. } => SemanticActionKind::Scroll,
         }
     }
@@ -88,6 +99,11 @@ impl fmt::Debug for SemanticAction {
             Self::Toggle => f.write_str("Toggle"),
             Self::Increment => f.write_str("Increment"),
             Self::Decrement => f.write_str("Decrement"),
+            Self::Adjust { min, max } => f
+                .debug_struct("Adjust")
+                .field("min", min)
+                .field("max", max)
+                .finish(),
             Self::Scroll { delta } => f.debug_struct("Scroll").field("delta", delta).finish(),
         }
     }
@@ -155,6 +171,14 @@ impl WidgetTree {
                 ));
 
         let mut actions = Vec::new();
+        // 组件声明（E-05）：`component!` 的 `semantic_actions` 槽位在 role 推断
+        // 之外补充自定义能力（如连续值 `Adjust`）。
+        for declared in node.component().declared_semantic_actions() {
+            let kind = declared.kind();
+            if !actions.contains(&kind) {
+                actions.push(kind);
+            }
+        }
         if role == AccessibilityRole::Button || has_click_handler {
             actions.push(SemanticActionKind::Invoke);
         }
@@ -186,6 +210,7 @@ impl WidgetTree {
         ) {
             actions.push(SemanticActionKind::Increment);
             actions.push(SemanticActionKind::Decrement);
+            actions.push(SemanticActionKind::Adjust);
         }
         if node.viewport_scroll_offset().is_some() {
             actions.push(SemanticActionKind::Scroll);
@@ -271,6 +296,16 @@ impl WidgetTree {
             SemanticAction::Toggle => self.focus_and_press(id, KeyCode::Space),
             SemanticAction::Increment => self.focus_and_press(id, KeyCode::Up),
             SemanticAction::Decrement => self.focus_and_press(id, KeyCode::Down),
+            // 连续值调整能力（E-05）：执行时聚焦目标并返回 Handled，方向性
+            // 步进由 `Increment` / `Decrement` 动作驱动；min/max 已进入语义快照。
+            SemanticAction::Adjust { .. } => {
+                self.set_focus(Some(id));
+                if self.managers().focus.focused_component() == Some(id) {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
+            }
             SemanticAction::Scroll { delta } => {
                 if delta.x == 0.0 && delta.y == 0.0 {
                     EventResult::Handled

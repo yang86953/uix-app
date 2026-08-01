@@ -96,6 +96,13 @@ pub trait WidgetComponent: 'static {
     fn exposes_semantic_children(&self) -> bool {
         true
     }
+
+    /// 组件声明的无障碍动作（E-05）：`component!` 的 `semantic_actions` 槽位
+    /// 生成此方法；在 role 推断之外声明自定义能力（如连续值 `Adjust`）。
+    /// 声明进入语义快照，并经窗口 owner thread 的自动化执行器路由。
+    fn declared_semantic_actions(&self) -> &'static [crate::ui::SemanticAction] {
+        &[]
+    }
     fn picture_policy(&self) -> PicturePolicy {
         PicturePolicy::Never
     }

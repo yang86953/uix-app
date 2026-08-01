@@ -64,10 +64,11 @@ pub use crate::ui::{
     ComponentTokenOverrides, Config, ConfigProvider, EmptyContext, EmptyRenderer, EventResult,
     FocusHandle, FocusHandleError, HandlerId, HandlerOptions, HandlerRegistration,
     IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, IntoWidgetNode, Locale,
-    LocaleProvider, PaintContext, Placement, SemanticEvent, SemanticKind, SemanticPayload,
-    SnapshotCollapsePanel, SnapshotField, SnapshotFields, SnapshotSource, SnapshotTableColumn,
-    SnapshotTableColumnGroup, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue, SystemEvent,
-    SystemEventKind, ThemeTokens, TokenProvider, WidgetChildren, WidgetComponent, WindowControl,
+    LocaleProvider, PaintContext, Placement, SemanticAction, SemanticActionKind, SemanticEvent,
+    SemanticKind, SemanticPayload, SnapshotCollapsePanel, SnapshotField, SnapshotFields,
+    SnapshotSource, SnapshotTableColumn, SnapshotTableColumnGroup, SnapshotTransferItem,
+    SnapshotTreeNode, SnapshotValue, SystemEvent, SystemEventKind, ThemeTokens, TokenProvider,
+    WidgetChildren, WidgetComponent, WindowControl,
 };
 pub use crate::ui::{
     Animated, Animation, AnimationConfig, AnimationGroup, AnimationGroupError, AnimationGroupItem,
