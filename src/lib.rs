@@ -173,6 +173,9 @@
 extern crate self as uix;
 extern crate windows_core;
 
+// E-06：路由 key 派生宏（`#[derive(uix::Display)]` 免除手写 Display）。
+pub use uix_derive::Display;
+
 pub mod app;
 pub mod core;
 pub mod data;
