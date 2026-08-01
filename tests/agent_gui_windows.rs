@@ -5,6 +5,8 @@
     reason = "this assertion-heavy GUI test crate fails fast with scenario-specific diagnostics"
 )]
 
+#[path = "support/agent_gui_windows/accessibility.rs"]
+mod accessibility;
 #[path = "support/agent_gui_windows/component_visual.rs"]
 mod component_visual;
 #[path = "../demo/src/demos/component_qa/manifest.rs"]
