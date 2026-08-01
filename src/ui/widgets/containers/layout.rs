@@ -3,7 +3,7 @@
 //! 组合使用构建标准页面布局。
 
 use crate::component;
-use crate::core::{Constraints, Point, Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::draw::Color;
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::component::widget::WidgetTree;
@@ -37,7 +37,6 @@ component! {
     pub struct Header {
         height: f32,
         bg_color: Option<Color>,
-        title: Option<String>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -51,12 +50,6 @@ component! {
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         if let Some(bg) = self.bg_color {
             ctx.fill_rect(frame, bg, None);
-        }
-        if let Some(title) = &self.title {
-            let color = ctx.tokens().color_text();
-            let font_size = 16.0;
-            let y = frame.y + (frame.h - font_size) * 0.5;
-            ctx.draw_text(title, Point::new(frame.x + 12.0, y), color, font_size);
         }
     }
 
@@ -193,17 +186,10 @@ impl Header {
         Self {
             height,
             bg_color: None,
-            title: None,
         }
     }
     pub fn bg(mut self, c: Color) -> Self {
         self.bg_color = Some(c);
-        self
-    }
-
-    /// 声明式标题文字（左侧渲染）。
-    pub fn title(mut self, title: impl Into<String>) -> Self {
-        self.title = Some(title.into());
         self
     }
 
@@ -214,7 +200,6 @@ impl Header {
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.height = next.height;
         self.bg_color = next.bg_color;
-        self.title = next.title;
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -292,14 +277,6 @@ impl Content {
     pub fn bg(mut self, c: Color) -> Self {
         self.bg_color = Some(c);
         self
-    }
-
-    /// 便捷：包裹单个子节点（等价 `tree! { Content::new() => [node] }`）。
-    pub fn child(self, node: impl crate::ui::IntoWidgetNode) -> crate::ui::component::widget::WidgetNode {
-        crate::ui::component::widget::WidgetNode::new(
-            Box::new(self),
-            vec![node.into_node()],
-        )
     }
 
     fn intrinsic_size(&self) -> Size {
