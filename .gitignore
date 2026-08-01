@@ -31,3 +31,6 @@ test-reports/
 
 # Rust documentation build
 # target/ already covers target/doc/
+
+# Reasonix 扩展机器状态（桌面会话主题元数据，不入库）
+.reasonix/
