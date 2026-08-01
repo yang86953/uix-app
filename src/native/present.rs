@@ -526,7 +526,7 @@ impl GraphicsContextCaps {
 /// Concrete GPU API selected by the native factory.
 ///
 /// This is diagnostic and init-time selection data; draw continues to expose
-/// [`crate::draw::BackendKind`] as the engine-level raster preference
+/// `BackendKind` (draw system) as the engine-level raster preference
 /// (`Gpu` ≈ try GPU path, not a specific API).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GraphicsBackend {
