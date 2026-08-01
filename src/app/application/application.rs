@@ -387,6 +387,14 @@ impl App {
         self
     }
 
+    /// 注入已构建的 Diagnostics runtime 实例（宿主持有共享句柄，如
+    /// `Diagnostics::new(DiagnosticsConfig::default())`）。与 [`Self::diagnostics`]
+    /// 互斥；后调用者生效。
+    pub fn diagnostics_runtime(mut self, diagnostics: crate::diagnostics::Diagnostics) -> Self {
+        self.runtime.set_diagnostics_runtime(diagnostics);
+        self
+    }
+
     /// 设置是否在运行中跟随 OS 主题变化（默认 false）。
     pub fn follow_system_theme(mut self, follow: bool) -> Self {
         self.follow_system_theme = follow;
