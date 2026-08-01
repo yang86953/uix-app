@@ -298,7 +298,7 @@ mod tests {
                         assert_eq!(evidence.recovered_readback, 0xFFB7642D);
                         println!("GFX-R5 engine recovery fault: {}", evidence.fault);
                         println!(
-                            "GFX-R5 engine recovery evidence: expected={vendor}; {}; fault_code={}; action={}; logical_extent={}x{}; drawable_extent={}x{}; recovered_readback=0x{:08X}; recovered_present=true",
+                            "GFX-R5 engine recovery evidence: expected={vendor}; {}; fault_code={}; action={}; logical_extent={}x{}; drawable_extent={}x{}; recovered_present=true",
                             evidence.adapter_diagnostic,
                             evidence.fault.code,
                             evidence.action,
@@ -306,8 +306,7 @@ mod tests {
                             evidence.logical_extent.1,
                             evidence.drawable_extent.0,
                             evidence.drawable_extent.1,
-                            evidence.recovered_readback,
-                        );
+                            );
                     }
                 }
             }
