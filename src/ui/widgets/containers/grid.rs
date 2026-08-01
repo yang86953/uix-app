@@ -463,17 +463,6 @@ impl Grid {
         self
     }
 
-    /// 便捷：包裹多个子节点（等价 `tree! { Grid::responsive() => [...] }`）。
-    pub fn children<I>(self, nodes: Vec<I>) -> crate::ui::component::widget::WidgetNode
-    where
-        I: crate::ui::IntoWidgetNode,
-    {
-        crate::ui::component::widget::WidgetNode::new(
-            Box::new(self),
-            nodes.into_iter().map(|node| node.into_node()).collect(),
-        )
-    }
-
     pub fn apply_style(&mut self, style: &Style) {
         self.style = self.style.clone().apply(style.clone());
         self.style.display = DisplayMode::Grid;
