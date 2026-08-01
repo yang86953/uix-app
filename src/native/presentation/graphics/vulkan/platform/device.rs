@@ -239,7 +239,7 @@ impl VulkanDevice {
         self.observe_error(vk_err(operation, error))
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, all(windows, feature = "vulkan")))]
     pub(super) fn mark_lost(&self) {
         self.loss.mark_for_test();
     }
