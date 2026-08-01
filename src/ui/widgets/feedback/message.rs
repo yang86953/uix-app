@@ -389,7 +389,7 @@ impl Message {
     const CONTENT_TRAILING_GAP: f32 = 7.0;
 
     pub fn new() -> Self {
-        Self {
+        let this = Self {
             queue: ToastQueue::new(),
             motion: RefCell::new(ToastMotion::default()),
             placement: Placement::Top,
@@ -404,7 +404,10 @@ impl Message {
             action_label: None,
             action_callback: None,
             icon_name: None,
-        }
+        };
+        // E-04：构造即注册为当前消息门面目标（最近挂载生效）。
+        crate::ui::widgets::feedback::facade::register_message(this.handle());
+        this
     }
 
     pub fn placement(mut self, placement: Placement) -> Self {

@@ -2,6 +2,7 @@
 
 pub mod alert;
 pub mod drawer;
+pub mod facade;
 pub mod message;
 pub mod modal;
 pub mod notification;
@@ -14,6 +15,7 @@ pub mod tooltip;
 
 pub use alert::*;
 pub use drawer::*;
+pub use facade::*;
 pub use message::*;
 pub use modal::*;
 pub use notification::*;

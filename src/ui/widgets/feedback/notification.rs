@@ -453,6 +453,8 @@ impl Notification {
     }
 
     pub(crate) fn from_handle(handle: NotificationHandle) -> Self {
+        // E-04：构造即注册为当前通知门面目标（最近挂载生效）。
+        crate::ui::widgets::feedback::facade::register_notification(handle.clone());
         Self {
             queue: handle.queue,
             motion: RefCell::new(ToastMotion::default()),
