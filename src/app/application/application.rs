@@ -510,6 +510,13 @@ impl App {
         self
     }
 
+    /// 批量注册服务对象（E-08）：把应用自定义聚合服务（如 `AppServices`）
+    /// 整体注册，组件经 `resolve` 取用，不各自 new 全局服务。
+    pub fn register<T: 'static + Send + Sync>(mut self, instance: T) -> Self {
+        self.container.register(instance);
+        self
+    }
+
     // ── 查询 ──────────────────────────────────────────────────────
 
     pub fn current_mode(&self) -> AppMode {

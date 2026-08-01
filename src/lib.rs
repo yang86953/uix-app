@@ -176,6 +176,29 @@ extern crate windows_core;
 // E-06：路由 key 派生宏（`#[derive(uix::Display)]` 免除手写 Display）。
 pub use uix_derive::Display;
 
+/// 按 key 取当前资源表文案（E-08）：`t!("common.save")`。
+///
+/// 返回 `String`（只影响显示，不改变业务值）；未命中时返回 key 原文。
+/// 资源经 `uix::ui::register_translations` / `set_translations` 注册。
+#[macro_export]
+macro_rules! t {
+    ($key:literal) => {
+        $crate::ui::t_lookup($key)
+    };
+    ($key:literal $(, $arg:expr)+) => {
+        $crate::ui::t_lookup_fmt($key, &[$($crate::t_fmt_arg!($arg)),+])
+    };
+}
+
+/// 把参数转成 `String` 供 `t!` 格式化占位（`{0}` 起始）。
+#[doc(hidden)]
+#[macro_export]
+macro_rules! t_fmt_arg {
+    ($arg:expr) => {
+        ::std::string::ToString::to_string(&$arg)
+    };
+}
+
 pub mod app;
 pub mod core;
 pub mod data;
