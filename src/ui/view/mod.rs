@@ -230,6 +230,11 @@ impl ViewNode {
         self
     }
 
+    /// 声明式进场动画（`Transition` 紧凑写法）：等价于 `enter_animation`。
+    pub fn enter(self, transition: crate::ui::animation::Transition) -> Self {
+        self.enter_animation(transition.into())
+    }
+
     /// Retains this node for a one-shot visual transition after keyed removal.
     pub fn leave_animation(mut self, animation: crate::ui::animation::AnimationConfig) -> Self {
         assert!(
@@ -238,6 +243,11 @@ impl ViewNode {
         );
         self.leave_animation = Some(animation);
         self
+    }
+
+    /// 声明式离场动画（`Transition` 紧凑写法）：等价于 `leave_animation`。
+    pub fn leave(self, transition: crate::ui::animation::Transition) -> Self {
+        self.leave_animation(transition.into())
     }
 
     /// Staggers one-shot enter transitions for immediate children.

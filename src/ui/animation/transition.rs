@@ -13,6 +13,8 @@ pub struct AnimationConfig {
     kind: AnimationKind,
     duration: f64,
     distance: f32,
+    /// Stagger entry delay applied before the animation starts (0 = none).
+    delay: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -34,6 +36,7 @@ impl AnimationConfig {
             kind: AnimationKind::FadeIn,
             duration: duration.max(0.0),
             distance: 0.0,
+            delay: 0.0,
         }
     }
 
@@ -43,6 +46,7 @@ impl AnimationConfig {
             kind: AnimationKind::FadeOut,
             duration: duration.max(0.0),
             distance: 0.0,
+            delay: 0.0,
         }
     }
 
@@ -52,6 +56,7 @@ impl AnimationConfig {
             kind: AnimationKind::SlideIn(placement),
             distance: Self::DEFAULT_SLIDE_DISTANCE,
             duration: duration.max(0.0),
+            delay: 0.0,
         }
     }
 
@@ -61,6 +66,7 @@ impl AnimationConfig {
             kind: AnimationKind::SlideOut(placement),
             distance: Self::DEFAULT_SLIDE_DISTANCE,
             duration: duration.max(0.0),
+            delay: 0.0,
         }
     }
 
@@ -70,6 +76,7 @@ impl AnimationConfig {
             kind: AnimationKind::ZoomIn,
             duration: duration.max(0.0),
             distance: 0.0,
+            delay: 0.0,
         }
     }
 
@@ -79,7 +86,19 @@ impl AnimationConfig {
             kind: AnimationKind::ZoomOut,
             duration: duration.max(0.0),
             distance: 0.0,
+            delay: 0.0,
         }
+    }
+
+    /// 附加延迟（stagger 交错入场）；`delay` 秒后开始播放。
+    pub fn with_delay(mut self, delay: f64) -> Self {
+        self.delay = delay.max(0.0);
+        self
+    }
+
+    /// 获取附加延迟。
+    pub fn delay(self) -> f64 {
+        self.delay
     }
 
     /// 是否为进场动画。
@@ -229,6 +248,8 @@ pub struct TransitionPlayer {
     pub scale: f32,
     /// 是否已完成。
     pub finished: bool,
+    /// 已推进时间（含 stagger 延迟等待）。
+    elapsed: f64,
     opacity_anim: Animation<f32>,
     offset_anim: Option<Animation<Point>>,
     scale_anim: Option<Animation<f32>>,
@@ -249,6 +270,7 @@ impl TransitionPlayer {
             offset,
             scale,
             finished: false,
+            elapsed: 0.0,
             config,
             opacity_anim,
             offset_anim,
@@ -317,6 +339,17 @@ impl TransitionPlayer {
         if self.finished {
             return;
         }
+        let mut dt = dt.max(0.0);
+        let delay = self.config.delay();
+        if delay > 0.0 && self.elapsed < delay {
+            let remaining = delay - self.elapsed;
+            if dt <= remaining {
+                self.elapsed += dt;
+                return;
+            }
+            self.elapsed = delay;
+            dt -= remaining;
+        }
         self.opacity_progress = self.opacity_anim.update(dt);
         if let Some(ref mut animation) = self.offset_anim {
             self.offset = animation.update(dt);
@@ -333,5 +366,101 @@ impl TransitionPlayer {
             self.offset = Point::new(0.0, 0.0);
             self.scale = 1.0;
         }
+    }
+}
+
+/// 声明式入场/离场动画的紧凑类型：文档「目标写法」的 `Transition::fade_in` /
+/// `stagger` / `slide_up` 等直接绑定到 [`View`] 的 `enter` / `leave`。
+///
+/// `Transition` 是 [`AnimationConfig`] 的薄封装，`Into<AnimationConfig>` 后由
+/// 既有播放管线消费，不改变任何现有 API。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Transition {
+    config: AnimationConfig,
+}
+
+impl Transition {
+    /// 渐入。
+    pub fn fade_in(duration: f64) -> Self {
+        Self { config: AnimationConfig::fade_in(duration) }
+    }
+
+    /// 渐出。
+    pub fn fade_out(duration: f64) -> Self {
+        Self { config: AnimationConfig::fade_out(duration) }
+    }
+
+    /// 从下方滑入（`slide_up` 语义：内容向上进入视口）。
+    pub fn slide_up(duration: f64) -> Self {
+        Self { config: AnimationConfig::slide_in(Placement::Bottom, duration) }
+    }
+
+    /// 从上方滑入（`slide_down` 语义：内容向下进入视口）。
+    pub fn slide_down(duration: f64) -> Self {
+        Self { config: AnimationConfig::slide_in(Placement::Top, duration) }
+    }
+
+    /// 从 `placement` 所在方向滑入。
+    pub fn slide_in(placement: Placement, duration: f64) -> Self {
+        Self { config: AnimationConfig::slide_in(placement, duration) }
+    }
+
+    /// 向 `placement` 所在方向滑出。
+    pub fn slide_out(placement: Placement, duration: f64) -> Self {
+        Self { config: AnimationConfig::slide_out(placement, duration) }
+    }
+
+    /// 缩放渐入。
+    pub fn zoom_in(duration: f64) -> Self {
+        Self { config: AnimationConfig::zoom_in(duration) }
+    }
+
+    /// 缩放渐出。
+    pub fn zoom_out(duration: f64) -> Self {
+        Self { config: AnimationConfig::zoom_out(duration) }
+    }
+
+    /// 交错入场：`delay` 秒后开始播放 `inner`（stagger 语义）。
+    pub fn stagger(delay: f64, inner: Transition) -> Self {
+        Self { config: inner.config.with_delay(delay) }
+    }
+}
+
+impl From<Transition> for AnimationConfig {
+    fn from(transition: Transition) -> Self {
+        transition.config
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transition_converts_to_animation_config() {
+        let config: AnimationConfig = Transition::fade_in(0.3).into();
+        assert!(config.is_enter());
+        assert_eq!(config.duration(), 0.3);
+        assert_eq!(config.delay(), 0.0);
+    }
+
+    #[test]
+    fn transition_stagger_sets_delay() {
+        let config: AnimationConfig =
+            Transition::stagger(0.25, Transition::slide_up(0.2)).into();
+        assert_eq!(config.delay(), 0.25);
+        assert!(config.is_enter());
+        assert_eq!(config.duration(), 0.2);
+    }
+
+    #[test]
+    fn transition_player_waits_for_delay_before_animating() {
+        let config = Transition::stagger(0.5, Transition::fade_in(0.1)).into();
+        let mut player = TransitionPlayer::new(config);
+        player.update(0.2);
+        assert!(!player.finished);
+        assert_eq!(player.opacity_progress, 0.0, "delay 期间不推进动画");
+        player.update(0.4);
+        assert!(player.finished, "延迟耗尽后动画推进完成");
     }
 }
