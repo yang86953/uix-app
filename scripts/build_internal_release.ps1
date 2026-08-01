@@ -84,13 +84,16 @@ $payload = [ordered]@{
     'THIRD_PARTY_NOTICES.md' = Join-Path $repoRoot 'THIRD_PARTY_NOTICES.md'
     'CHANGELOG.md' = Join-Path $repoRoot 'CHANGELOG.md'
     'README.md' = Join-Path $repoRoot 'README.md'
+    'assets/images/demo.png' = Join-Path $repoRoot 'assets\images\demo.png'
 }
 
 foreach ($entry in $payload.GetEnumerator()) {
     if (-not (Test-Path -LiteralPath $entry.Value -PathType Leaf)) {
         throw "Missing release payload: $($entry.Value)"
     }
-    Copy-Item -LiteralPath $entry.Value -Destination (Join-Path $stageRoot $entry.Key)
+    $destination = Join-Path $stageRoot $entry.Key
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
+    Copy-Item -LiteralPath $entry.Value -Destination $destination
 }
 
 $hashLines = foreach ($name in $payload.Keys) {
