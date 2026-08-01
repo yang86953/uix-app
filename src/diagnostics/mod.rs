@@ -54,6 +54,14 @@ use crate::core::Error;
 pub use config::{BacktracePolicy, DiagnosticsConfig};
 pub(crate) use pending::{PendingFailureQueue, PendingFailureSource};
 pub use recovery::{RecoveryAction, RecoveryOutcome, RecoverySubscription};
+
+/// 测试专用：保护进程级全局 panic hook 的安装/恢复窗口。
+///
+/// panic hook 是进程全局状态。`crash` 的 hook 测试与故意触发 panic 的 ABI
+/// 测试（`wnd_proc` / TSF thunk）并行时，后者的 panic 会被前者的全局 hook
+/// 捕获并写入其崩溃目录，导致目录断言失败。这些测试共享本锁串行执行。
+#[cfg(test)]
+pub(crate) static PANIC_HOOK_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 pub(crate) use report::ReportOrigin;
 pub use report::{DiagnosticsSnapshot, ErrorReport, ReportId};
 use reporting::ReportingModule;

@@ -92,6 +92,11 @@ mod tests {
 
     #[test]
     fn generated_tsf_thunk_converts_panic_to_hresult_and_owner_failure() {
+        // 与 crash hook 测试共享全局 panic hook 窗口锁：本测试故意 panic，
+        // 若与 crash 测试并行会被其全局 hook 捕获并污染崩溃目录。
+        let _lock = crate::diagnostics::PANIC_HOOK_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let queue = PendingFailureQueue::new();
         let source = queue.source();
         let sink = TsfEventSink {

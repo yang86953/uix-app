@@ -271,9 +271,12 @@ mod tests {
     use super::*;
     use crate::diagnostics::{Diagnostics, DiagnosticsConfig};
     use std::panic::{catch_unwind, AssertUnwindSafe};
-    use std::sync::Mutex;
 
-    static HOOK_LOCK: Mutex<()> = Mutex::new(());
+    fn panic_hook_test_lock() -> std::sync::MutexGuard<'static, ()> {
+        crate::diagnostics::PANIC_HOOK_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 
     fn temp_dir() -> PathBuf {
         let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
@@ -399,9 +402,7 @@ mod tests {
 
     #[test]
     fn panic_hook_writes_crash_report_and_does_not_swallow_panic() {
-        let _lock = HOOK_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _lock = panic_hook_test_lock();
         let previous = std::panic::take_hook();
         let directory = temp_dir();
         let _ = std::fs::remove_dir_all(&directory);
@@ -437,9 +438,7 @@ mod tests {
 
     #[test]
     fn panic_hook_write_failure_still_does_not_swallow_panic() {
-        let _lock = HOOK_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _lock = panic_hook_test_lock();
         let previous = std::panic::take_hook();
         let parent = temp_dir();
         let _ = std::fs::remove_dir_all(&parent);
