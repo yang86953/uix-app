@@ -83,7 +83,7 @@ pub use crate::native::windowing::input::{
 pub use animation::traits::Animatable;
 pub use animation::{
     Animated, Animation, AnimationConfig, AnimationGroup, AnimationGroupError, AnimationGroupItem,
-    Easing, Keyframe, KeyframeAnimation, KeyframeError, Spring, SpringAnimation,
+    Easing, Keyframe, KeyframeAnimation, KeyframeError, Spring, SpringAnimation, Transition,
 };
 pub(crate) use component::children;
 pub use component::clipboard::{copy_to_clipboard, read_text_from_clipboard};

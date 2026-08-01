@@ -74,7 +74,7 @@ pub use crate::ui::{
     WidgetChildren, WidgetComponent, WindowControl,
 };
 pub use crate::ui::{
-    Animated, Animation, AnimationConfig, AnimationGroup, AnimationGroupError, AnimationGroupItem,
+    Animated, Animation, AnimationConfig, AnimationGroup, AnimationGroupError, AnimationGroupItem, Transition,
     Easing, Keyframe, KeyframeAnimation, KeyframeError, Spring, SpringAnimation,
 };
 pub use crate::Display;
