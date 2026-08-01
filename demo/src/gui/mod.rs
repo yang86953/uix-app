@@ -628,9 +628,12 @@ pub fn run(
     graphics_recovery_acceptance: bool,
     component_qa: bool,
     g5_release_scenario: bool,
+    empty: bool,
     crash_dir: Option<std::path::PathBuf>,
 ) {
-    let active = State::new(if component_qa {
+    let active = State::new(if empty {
+        PAGE_HOME
+    } else if component_qa {
         PAGE_COMPONENT_QA
     } else {
         PAGE_HOME
@@ -657,7 +660,11 @@ pub fn run(
         None => app,
     };
     let app = app.on_start(
-            with_cloned!(theme_control, graphics_recovery_control, timer_ticks, active, g5_overlay_mode; |handle| {
+        with_cloned!(theme_control, graphics_recovery_control, timer_ticks, active, g5_overlay_mode; |handle| {
+                if empty {
+                    // 内存剖析空窗口基线：不启动任何定时器/状态机。
+                    return;
+                }
                 theme_control.set_handle(handle.clone());
                 graphics_recovery_control.set_handle(handle.clone());
                 if g5_release_scenario {
@@ -732,8 +739,8 @@ pub fn run(
                         })
                         .detach();
                 }
-            }),
-        );
+            })
+    );
     #[cfg(feature = "agent-control")]
     let app = if agent_control {
         app.enable_agent_control()
@@ -756,20 +763,25 @@ pub fn run(
         graphics_recovery_control,
         framework_control;
         {
-            let shell = demo_window(app_shell_with_controls(
-                active,
-                timer_ticks,
-                &component_case,
-                &home_count,
-                &runtime_count,
-                &theme_control,
-                graphics_recovery_control.enabled().then_some(&graphics_recovery_control),
-                &framework_control,
-            ));
-            if g5_release_scenario {
-                g5_release_root(shell, &g5_overlay_mode)
+            if empty {
+                // 内存剖析空窗口基线：不渲染任何内容，评估框架+驱动固定开销。
+                column(())
             } else {
-                shell
+                let shell = demo_window(app_shell_with_controls(
+                    active,
+                    timer_ticks,
+                    &component_case,
+                    &home_count,
+                    &runtime_count,
+                    &theme_control,
+                    graphics_recovery_control.enabled().then_some(&graphics_recovery_control),
+                    &framework_control,
+                ));
+                if g5_release_scenario {
+                    g5_release_root(shell, &g5_overlay_mode)
+                } else {
+                    shell
+                }
             }
         }
     ))

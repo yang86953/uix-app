@@ -28,6 +28,7 @@ struct LaunchOptions {
     graphics_recovery_acceptance: bool,
     component_qa: bool,
     g5_release_scenario: bool,
+    empty: bool,
     crash_dir: Option<PathBuf>,
 }
 
@@ -42,6 +43,7 @@ fn parse_launch_options(args: impl IntoIterator<Item = String>) -> LaunchOptions
             "--graphics-recovery-acceptance" => options.graphics_recovery_acceptance = true,
             "--component-qa" => options.component_qa = true,
             "--g5-release-scenario" => options.g5_release_scenario = true,
+            "--empty" => options.empty = true,
             "--crash-dir" => {
                 if let Some(directory) = args.next() {
                     options.crash_dir = Some(PathBuf::from(directory));
@@ -72,6 +74,7 @@ fn run_gui(options: LaunchOptions) {
             options.graphics_recovery_acceptance,
             options.component_qa,
             options.g5_release_scenario,
+            options.empty,
             options.crash_dir,
         );
     };
@@ -128,7 +131,8 @@ fn main() {
         && (options.agent_control
             || options.follow_system_theme
             || options.graphics_recovery_acceptance
-            || options.component_qa)
+            || options.component_qa
+            || options.empty)
     {
         eprintln!("--g5-release-scenario 必须独占启动，不能与其他 GUI 验收模式组合");
         std::process::exit(2);
