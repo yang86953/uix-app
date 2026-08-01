@@ -1,9 +1,10 @@
 //! 平台聚合协议 — 统一访问各功能域子系统。
 
-use crate::core::Error;
+use crate::core::{Error, Result};
 use crate::native::capabilities::display::IDisplay;
 use crate::native::capabilities::system::{
-    IConsole, IFileDialog, IFileSystem, INotification, ISystemInfo, ITimer,
+    CpuInfo, IConsole, IFileDialog, IFileSystem, INotification, ISystemInfo, ITimer, MemoryInfo,
+    OsInfo,
 };
 use crate::native::windowing::event::{EventBus, IEventLoop};
 use crate::native::windowing::input::{IClipboard, ICursor, IKeyboard, ITextInput};
@@ -17,6 +18,22 @@ pub trait Platform {
     /// the decision to recover, return, or report after taking the failure.
     fn take_pending_failure(&mut self) -> Option<Error> {
         None
+    }
+
+    /// 便捷：操作系统信息（走 `system_info()` 契约）。
+    fn os_info(&self) -> Result<OsInfo> {
+        self.system_info().os_info()
+    }
+
+    /// 便捷：CPU 架构与逻辑核心数。
+    fn cpu_info(&self) -> Result<CpuInfo> {
+        let system = self.system_info();
+        Ok(CpuInfo::new(std::env::consts::ARCH, system.cpu_count()?))
+    }
+
+    /// 便捷：内存总量与可用量（走 `system_info()` 契约）。
+    fn memory_info(&self) -> Result<MemoryInfo> {
+        self.system_info().memory_info()
     }
 
     fn window_manager(&mut self) -> &mut dyn IWindowManager;

@@ -32,6 +32,32 @@ pub struct MemoryInfo {
     pub process_private_bytes: usize,
 }
 
+/// CPU 信息（架构 + 逻辑核心数），供平台便捷查询与 UI 展示。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CpuInfo {
+    architecture: &'static str,
+    logical_cores: u32,
+}
+
+impl CpuInfo {
+    /// 指令集架构名（如 `x86_64` / `aarch64`）。
+    pub fn architecture(&self) -> &'static str {
+        self.architecture
+    }
+
+    /// 逻辑核心数。
+    pub fn logical_cores(&self) -> u32 {
+        self.logical_cores
+    }
+
+    pub(crate) fn new(architecture: &'static str, logical_cores: u32) -> Self {
+        Self {
+            architecture,
+            logical_cores,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct OsInfo {
     pub name: String,
