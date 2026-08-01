@@ -21,7 +21,7 @@ lto = "fat"
 codegen-units = 1
 
 [dependencies]
-uix-derive = { path = "uix-derive" }
+uix-derive = { path = "uix-derive", version = "0.0.1" }
 ab_glyph = "0.2.32"
 memmap2 = "0.9"
 earcut = "0.4.10"
