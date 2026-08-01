@@ -193,7 +193,8 @@ class GfxR5Case:
             "test",
             "--features",
             "vulkan",
-            "--lib",
+            "--test",
+            "tests",
             self.test_name,
             "--",
             "--exact",
@@ -229,7 +230,7 @@ class GfxR5Case:
 
 
 def test_inventory_command() -> tuple[str, ...]:
-    return ("cargo", "test", "--features", "vulkan", "--lib", "--", "--list")
+    return ("cargo", "test", "--features", "vulkan", "--test", "tests", "--", "--list")
 
 
 def parse_test_inventory(output: str) -> set[str]:

@@ -1,7 +1,7 @@
 //! CPU 渲染后端 — PixelSurface + CpuCanvas2D。
 
 pub(crate) mod canvas_2d;
-#[cfg(test)]
+#[cfg(any(test, all(windows, feature = "vulkan")))]
 pub(crate) mod noop_canvas_2d;
 pub(crate) mod offscreen;
 
