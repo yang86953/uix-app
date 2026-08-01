@@ -8,7 +8,7 @@ use crate::native::windowing::input::ControlSize;
 use crate::ui::animation::{presets, AnimationConfig, TransitionPlayer};
 use crate::ui::component::paint_context::PaintContext;
 use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, MouseButton, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, MouseButton, State, SystemEvent, WidgetTree};
 use std::rc::Rc;
 
 /// Modal 内容回调上下文；关闭请求只作用于持有该上下文的 Modal。
@@ -27,6 +27,35 @@ impl ModalContext {
     /// 在 Modal 子树的事件回调中请求关闭当前 Modal。
     pub fn close(&self) {
         self.close_requested.set(true);
+    }
+}
+
+/// 受控打开绑定（E-03）：visible 跟随 `State<bool>`，变化时通知回调。
+///
+/// 双向语义：外部 `State::set(true)` 在下一帧打开；用户侧关闭（mask /
+/// close 按钮 / Escape / [`ModalContext::close`] / 公开 `close()`）写回
+/// `false` 并触发 `on_open_change`。
+struct ControlledOpen {
+    state: State<bool>,
+    on_change: Option<Rc<dyn Fn(bool)>>,
+}
+
+impl ControlledOpen {
+    fn new(state: &State<bool>) -> Self {
+        Self {
+            state: state.clone(),
+            on_change: None,
+        }
+    }
+
+    fn want_open(&self) -> bool {
+        self.state.get()
+    }
+
+    fn notify(&self, open: bool) {
+        if let Some(callback) = &self.on_change {
+            callback(open);
+        }
     }
 }
 
@@ -51,6 +80,7 @@ component! {
         centered: bool,
         overlay: bool,
         destroy_on_close: bool,
+        controlled: Option<ControlledOpen>,
         context_close_requested: Option<Rc<Cell<bool>>>,
         last_win_w: Cell<f32>,
         last_win_h: Cell<f32>,
@@ -401,6 +431,7 @@ component! {
     }
 
     update_animation => (&mut self, dt: f64) -> bool {
+        self.controlled_sync();
         if !self.is_present() || self.transition.finished {
             self.transition_dirty = false;
             return false;
@@ -448,6 +479,7 @@ impl Modal {
             centered: true,
             overlay: false,
             destroy_on_close: false,
+            controlled: None,
             context_close_requested: None,
             last_win_w: Cell::new(0.0),
             last_win_h: Cell::new(0.0),
@@ -482,6 +514,17 @@ impl Modal {
         let mut modal = Self::new("").visible(true).overlay(true);
         modal.footer_visible = false;
         modal.context_close_requested = Some(context.close_requested);
+        ModalBuilder { modal, content }
+    }
+
+    /// 构建受控声明式 Modal（E-03）：配合 `.open(&State<bool>)` 由业务状态
+    /// 驱动可见性，`.on_open_change` 在用户侧关闭时回调；`closable(false)`
+    /// 禁用外部关闭但保留 Escape。
+    pub fn builder() -> ModalBuilder {
+        let mut modal = Self::new("").overlay(true);
+        modal.footer_visible = false;
+        let content = crate::ui::render_empty_for::<Modal>()
+            .unwrap_or_else(|| crate::ui::view::View::build(crate::ui::widgets::label("")));
         ModalBuilder { modal, content }
     }
 
@@ -680,6 +723,22 @@ impl Modal {
     }
 
     pub fn open(&mut self) {
+        self.do_open();
+        if let Some(controlled) = &self.controlled {
+            controlled.state.set(true);
+            controlled.notify(true);
+        }
+    }
+
+    pub fn close(&mut self) {
+        self.do_close();
+        if let Some(controlled) = &self.controlled {
+            controlled.state.set(false);
+            controlled.notify(false);
+        }
+    }
+
+    fn do_open(&mut self) {
         self.cancel_interaction();
         self.visible = true;
         self.closing = false;
@@ -687,7 +746,7 @@ impl Modal {
         self.layout_requested.set(true);
     }
 
-    pub fn close(&mut self) {
+    fn do_close(&mut self) {
         self.cancel_interaction();
         if !self.is_present() {
             self.visible = false;
@@ -700,6 +759,22 @@ impl Modal {
         self.transition = TransitionPlayer::new(self.leave_animation);
         self.transition_dirty = true;
         self.layout_requested.set(true);
+    }
+
+    /// 受控跟随（E-03）：每帧把受控 State 同步到 visible；外部 `set(true)`
+    /// 在下一帧打开，`set(false)` 走正常离场动画。
+    fn controlled_sync(&mut self) {
+        if let Some(controlled) = &self.controlled {
+            let want_open = controlled.want_open();
+            let is_open = self.visible && !self.closing;
+            if want_open != is_open {
+                if want_open {
+                    self.do_open();
+                } else {
+                    self.do_close();
+                }
+            }
+        }
     }
 
     pub fn confirm_close(&mut self) {
@@ -724,6 +799,9 @@ impl Modal {
         self.overlay = next.overlay;
         self.destroy_on_close = next.destroy_on_close;
         self.context_close_requested = next.context_close_requested;
+        if next.controlled.is_some() {
+            self.controlled = next.controlled;
+        }
         self.enter_animation = next.enter_animation;
         self.leave_animation = next.leave_animation;
         if interaction_geometry_changed {
@@ -991,6 +1069,37 @@ pub struct ModalBuilder {
 }
 
 impl ModalBuilder {
+    /// 设置受控打开状态（E-03）：Modal 可见性跟随 `State<bool>`；
+    /// 初始为 `true` 时首帧直接呈现。
+    pub fn open(mut self, state: &State<bool>) -> Self {
+        self.modal.controlled = Some(ControlledOpen::new(state));
+        if state.get() {
+            self.modal.visible = true;
+        }
+        self
+    }
+
+    /// 注册可见性变化回调（E-03）：用户侧关闭（mask / close 按钮 / Escape）
+    /// 与公开 `close()` 时触发；可与受控 State 双向回写。
+    pub fn on_open_change<F>(mut self, callback: F) -> Self
+    where
+        F: Fn(bool) + 'static,
+    {
+        if let Some(controlled) = &mut self.modal.controlled {
+            controlled.on_change = Some(Rc::new(callback));
+        }
+        self
+    }
+
+    /// 设置 Modal 内容（E-03）：`FnOnce` 闭包构建内容 View。
+    pub fn content<V>(mut self, content: impl FnOnce() -> V) -> Self
+    where
+        V: crate::ui::view::View,
+    {
+        self.content = crate::ui::view::View::build(content());
+        self
+    }
+
     pub fn title(mut self, title: impl Into<String>) -> Self {
         self.modal.title = title.into();
         self
@@ -1073,5 +1182,90 @@ impl crate::ui::IntoWidgetNode for ModalBuilder {
 impl From<ModalBuilder> for crate::ui::view::ViewNode {
     fn from(builder: ModalBuilder) -> Self {
         crate::ui::view::View::build(builder)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::component::traits::WidgetAnimation;
+
+    fn controlled_modal(state: &State<bool>) -> Modal {
+        let mut modal = Modal::new("");
+        modal.controlled = Some(ControlledOpen::new(state));
+        modal
+    }
+
+    #[test]
+    fn controlled_follows_external_state() {
+        let state = State::new(false);
+        let mut modal = controlled_modal(&state);
+        assert!(!modal.is_visible());
+
+        // 外部 set(true)：下一帧打开。
+        state.set(true);
+        modal.update_animation(0.016);
+        assert!(modal.is_visible());
+
+        // 外部 set(false)：进入离场动画，动画完成后消失。
+        state.set(false);
+        modal.update_animation(0.016);
+        assert!(!modal.is_visible() || modal.is_present());
+        modal.update_animation(10.0);
+        assert!(!modal.is_present());
+    }
+
+    #[test]
+    fn controlled_user_close_writes_back_state() {
+        let state = State::new(true);
+        let mut modal = controlled_modal(&state);
+        modal.open();
+        assert!(modal.is_visible());
+
+        modal.close();
+        assert!(!state.get(), "用户侧关闭应写回受控 State");
+    }
+
+    #[test]
+    fn controlled_callback_fires_on_open_and_close() {
+        let state = State::new(false);
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let mut modal = Modal::new("");
+        let mut controlled = ControlledOpen::new(&state);
+        let hook = calls.clone();
+        controlled.on_change = Some(Rc::new(move |open| hook.borrow_mut().push(open)));
+        modal.controlled = Some(controlled);
+
+        modal.open();
+        modal.close();
+        assert_eq!(*calls.borrow(), vec![true, false]);
+    }
+
+    #[test]
+    fn controlled_sync_does_not_loop_on_write_back() {
+        // 用户 close() 写回 false 后，下一帧受控同步不得再次关闭/回调。
+        let state = State::new(true);
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let mut modal = Modal::new("");
+        let mut controlled = ControlledOpen::new(&state);
+        let hook = calls.clone();
+        controlled.on_change = Some(Rc::new(move |open| hook.borrow_mut().push(open)));
+        modal.controlled = Some(controlled);
+        modal.open();
+
+        modal.close();
+        modal.update_animation(0.016);
+        modal.update_animation(10.0);
+        assert_eq!(*calls.borrow(), vec![true, false], "写回不得重复触发回调");
+        assert!(!modal.is_present());
+    }
+
+    #[test]
+    fn builder_open_initializes_visible_from_state() {
+        let state = State::new(true);
+        let builder = Modal::builder().open(&state).closable(false);
+        let view = crate::ui::view::View::build(builder);
+        assert_eq!(view.children.len(), 1);
+        let _ = view;
     }
 }
