@@ -1,4 +1,4 @@
-use crate::app::event_loop::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry};
+use crate::app::queues::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry};
 use crate::app::window::window_session::WindowTextInputState;
 use crate::core::WindowId;
 use crate::native::platform::Platform;

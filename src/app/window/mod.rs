@@ -6,14 +6,15 @@
 //! （渲染/事件泵）、window_session（会话状态机）、window_actions（窗口动作
 //! 窄适配）、window_config、text_input（输入法协调）与 bridge（UI↔Draw 桥接）。
 
+pub(crate) mod bridge;
+pub(crate) mod frame_scheduler;
+pub(crate) mod text_input;
 #[allow(clippy::module_inception)]
 pub mod window;
 pub(crate) mod window_actions;
 pub(crate) mod window_config;
 pub(crate) mod window_driver;
 pub(crate) mod window_session;
-pub(crate) mod text_input;
-pub(crate) mod bridge;
 
 pub use window::Window;
 pub use window_config::WindowConfig;

@@ -5,9 +5,9 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
-use crate::app::event_loop::app_timer::TimerHandle;
-use crate::app::session_runtime::AppRuntime;
 use crate::app::application::di::Container;
+use crate::app::queues::app_timer::TimerHandle;
+use crate::app::session_runtime::AppRuntime;
 use crate::app::window::window_config::WindowConfig;
 pub use crate::core::WindowId;
 use crate::core::{ComponentId, Constraints, Errc, Error, Rect, Result, Size};
