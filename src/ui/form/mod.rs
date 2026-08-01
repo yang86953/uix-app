@@ -9,8 +9,10 @@ pub mod form;
 pub mod form_binding;
 pub mod form_list;
 pub mod form_validation;
+pub mod model_form;
 
 pub use form::*;
 pub use form_binding::*;
 pub use form_list::*;
 pub use form_validation::*;
+pub use model_form::*;

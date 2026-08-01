@@ -20,16 +20,40 @@ use crate::ui::widgets::input::{
 };
 
 /// 一个已登记字段的声明式文本输入项。
+/// 一个已登记字段的声明式文本输入项。
+///
+/// 经 `Form::model` 字段投影（裸配置）或 `FormModel::input_item`（已绑定）创建；
+/// 直接作为 View 使用前必须完成绑定，否则构建时 panic（带明确提示）。
 pub struct FormInputItem {
-    model: FormModel,
-    field: String,
-    value: State<String>,
-    focus_handle: FocusHandle,
-    placeholder: String,
-    show_error: bool,
+    pub(crate) model: Option<FormModel>,
+    pub(crate) field: String,
+    pub(crate) value: Option<State<String>>,
+    pub(crate) focus_handle: Option<FocusHandle>,
+    pub(crate) placeholder: String,
+    pub(crate) required: bool,
+    pub(crate) show_error: bool,
 }
 
 impl FormInputItem {
+    /// 声明式裸配置：字段名即标签；经 `Form::model(...).field(...)` 投影绑定时使用。
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            model: None,
+            field: name.into(),
+            value: None,
+            focus_handle: None,
+            placeholder: String::new(),
+            required: false,
+            show_error: true,
+        }
+    }
+
+    /// 声明字段为必填（`Form::model` 构建时登记校验规则）。
+    pub fn required(mut self, required: bool) -> Self {
+        self.required = required;
+        self
+    }
+
     /// 设置输入占位文本。
     pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
         self.placeholder = placeholder.into();
@@ -41,21 +65,45 @@ impl FormInputItem {
         self.show_error = show_error;
         self
     }
+
+    /// 绑定模型、值 State 与焦点句柄（由 `FormModel::input_item` 或 `Form::model` 内部调用）。
+    pub(crate) fn bind(
+        self,
+        model: FormModel,
+        value: State<String>,
+        focus_handle: FocusHandle,
+    ) -> Self {
+        Self {
+            model: Some(model),
+            value: Some(value),
+            focus_handle: Some(focus_handle),
+            ..self
+        }
+    }
 }
 
 impl View for FormInputItem {
     fn build(self) -> ViewNode {
-        let current = self.value.get();
-        self.model.sync_text_value(&self.field, &current);
+        let model = self
+            .model
+            .clone()
+            .expect("FormInputItem 未绑定：请经 Form::model 字段投影或 FormModel::input_item 创建");
+        let value = self.value.clone().expect("FormInputItem 未绑定值 State");
+        let focus_handle = self
+            .focus_handle
+            .clone()
+            .expect("FormInputItem 未绑定焦点句柄");
+        let current = value.get();
+        model.sync_text_value(&self.field, &current);
 
-        let change_model = self.model.clone();
+        let change_model = model.clone();
         let change_field = self.field.clone();
-        let blur_model = self.model.clone();
+        let blur_model = model.clone();
         let blur_field = self.field.clone();
-        let blur_value = self.value.clone();
+        let blur_value = value.clone();
         let input = input()
             .placeholder(self.placeholder)
-            .value(&self.value)
+            .value(&value)
             .on_change(move |value| {
                 change_model.sync_text_value(&change_field, value);
             })
@@ -67,29 +115,60 @@ impl View for FormInputItem {
                 }
                 EventResult::NotHandled
             })
-            .focus_handle(&self.focus_handle);
+            .focus_handle(&focus_handle);
 
-        form_item_shell(&self.model, &self.field, self.show_error, input)
+        form_item_shell(&model, &self.field, self.show_error, input)
     }
 }
 
+/// 一个已登记字段的声明式数值输入项。
 /// 一个已登记字段的声明式数值输入项。
 pub struct FormInputNumberItem<T>
 where
     T: InputNumberValue + IntoFormValue<Stored = T>,
 {
-    model: FormModel,
-    field: String,
-    value: State<T>,
-    focus_handle: FocusHandle,
-    input_number: InputNumber,
-    show_error: bool,
+    pub(crate) model: Option<FormModel>,
+    pub(crate) field: String,
+    pub(crate) value: Option<State<T>>,
+    pub(crate) focus_handle: Option<FocusHandle>,
+    pub(crate) input_number: InputNumber,
+    pub(crate) required: bool,
+    pub(crate) show_error: bool,
 }
 
 impl<T> FormInputNumberItem<T>
 where
     T: InputNumberValue + IntoFormValue<Stored = T>,
 {
+    /// 声明式裸配置：字段名即标签；经 `Form::model(...).field(...)` 投影绑定时使用。
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            model: None,
+            field: name.into(),
+            value: None,
+            focus_handle: None,
+            input_number: InputNumber::new(),
+            required: false,
+            show_error: true,
+        }
+    }
+
+    /// 声明字段为必填（`Form::model` 构建时登记校验规则）。
+    pub fn required(mut self, required: bool) -> Self {
+        self.required = required;
+        self
+    }
+
+    /// 绑定模型、值 State 与焦点句柄（由 `FormModel::input_number_item` 或 `Form::model` 内部调用）。
+    pub(crate) fn bind(self, model: FormModel, value: State<T>, focus_handle: FocusHandle) -> Self {
+        Self {
+            model: Some(model),
+            value: Some(value),
+            focus_handle: Some(focus_handle),
+            ..self
+        }
+    }
+
     /// 设置输入占位文本。
     pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
         self.input_number = self.input_number.placeholder(placeholder);
@@ -138,41 +217,83 @@ where
     T: InputNumberValue + IntoFormValue<Stored = T>,
 {
     fn build(self) -> ViewNode {
-        let input = ViewNode::leaf(self.input_number.value(&self.value));
-        let input = bind_typed_control(
-            &self.model,
-            &self.field,
-            &self.value,
-            &self.focus_handle,
-            input,
-        );
+        let model = self
+            .model
+            .clone()
+            .expect("FormInputNumberItem 未绑定：请经 Form::model 字段投影或 FormModel::input_number_item 创建");
+        let value = self
+            .value
+            .clone()
+            .expect("FormInputNumberItem 未绑定值 State");
+        let focus_handle = self
+            .focus_handle
+            .clone()
+            .expect("FormInputNumberItem 未绑定焦点句柄");
+        let input = ViewNode::leaf(self.input_number.value(&value));
+        let input = bind_typed_control(&model, &self.field, &value, &focus_handle, input);
 
-        form_item_shell(&self.model, &self.field, self.show_error, input)
+        form_item_shell(&model, &self.field, self.show_error, input)
     }
 }
 
+/// 一个已登记字段的声明式单选输入项。
 /// 一个已登记字段的声明式单选输入项。
 pub struct FormSelectItem<T = String>
 where
     T: SelectValue + IntoFormValue<Stored = T>,
 {
-    model: FormModel,
-    field: String,
-    value: State<T>,
-    focus_handle: FocusHandle,
-    options: Vec<String>,
-    optgroups: Vec<OptGroup>,
-    placeholder: String,
-    searchable: bool,
-    disabled: Option<bool>,
-    size: Option<ControlSize>,
-    show_error: bool,
+    pub(crate) model: Option<FormModel>,
+    pub(crate) field: String,
+    pub(crate) value: Option<State<T>>,
+    pub(crate) focus_handle: Option<FocusHandle>,
+    pub(crate) options: Vec<String>,
+    pub(crate) optgroups: Vec<OptGroup>,
+    pub(crate) placeholder: String,
+    pub(crate) searchable: bool,
+    pub(crate) disabled: Option<bool>,
+    pub(crate) size: Option<ControlSize>,
+    pub(crate) required: bool,
+    pub(crate) show_error: bool,
 }
 
 impl<T> FormSelectItem<T>
 where
     T: SelectValue + IntoFormValue<Stored = T>,
 {
+    /// 声明式裸配置：字段名即标签；经 `Form::model(...).field(...)` 投影绑定时使用。
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            model: None,
+            field: name.into(),
+            value: None,
+            focus_handle: None,
+            options: Vec::new(),
+            optgroups: Vec::new(),
+            placeholder: String::new(),
+            searchable: false,
+            disabled: None,
+            size: None,
+            required: false,
+            show_error: true,
+        }
+    }
+
+    /// 声明字段为必填（`Form::model` 构建时登记校验规则）。
+    pub fn required(mut self, required: bool) -> Self {
+        self.required = required;
+        self
+    }
+
+    /// 绑定模型、值 State 与焦点句柄（由 `FormModel::select_item` 或 `Form::model` 内部调用）。
+    pub(crate) fn bind(self, model: FormModel, value: State<T>, focus_handle: FocusHandle) -> Self {
+        Self {
+            model: Some(model),
+            value: Some(value),
+            focus_handle: Some(focus_handle),
+            ..self
+        }
+    }
+
     /// 设置平铺选项。
     pub fn options<I, S>(mut self, options: I) -> Self
     where
@@ -228,6 +349,14 @@ where
     T: SelectValue + IntoFormValue<Stored = T>,
 {
     fn build(self) -> ViewNode {
+        let model = self.model.clone().expect(
+            "FormSelectItem 未绑定：请经 Form::model 字段投影或 FormModel::select_item 创建",
+        );
+        let value = self.value.clone().expect("FormSelectItem 未绑定值 State");
+        let focus_handle = self
+            .focus_handle
+            .clone()
+            .expect("FormSelectItem 未绑定焦点句柄");
         let mut select = if self.searchable {
             Select::searchable()
         } else {
@@ -236,7 +365,7 @@ where
         .options(self.options)
         .optgroups(self.optgroups)
         .placeholder(self.placeholder)
-        .value(&self.value);
+        .value(&value);
         if let Some(disabled) = self.disabled {
             select = select.disabled(disabled);
         }
@@ -245,14 +374,14 @@ where
         }
 
         let input = bind_typed_control(
-            &self.model,
+            &model,
             &self.field,
-            &self.value,
-            &self.focus_handle,
+            &value,
+            &focus_handle,
             ViewNode::leaf(select),
         );
 
-        form_item_shell(&self.model, &self.field, self.show_error, input)
+        form_item_shell(&model, &self.field, self.show_error, input)
     }
 }
 
@@ -1056,11 +1185,12 @@ impl FormModel {
         let focus_handle = self.focus_handle_for(field)?;
         self.register_reset_state(field, value);
         Some(FormInputItem {
-            model: self.clone(),
+            model: Some(self.clone()),
             field: field.to_string(),
-            value: value.clone(),
-            focus_handle,
+            value: Some(value.clone()),
+            focus_handle: Some(focus_handle),
             placeholder: String::new(),
+            required: false,
             show_error: true,
         })
     }
@@ -1080,11 +1210,12 @@ impl FormModel {
         let focus_handle = self.focus_handle_for(field)?;
         self.register_reset_state(field, value);
         Some(FormInputNumberItem {
-            model: self.clone(),
+            model: Some(self.clone()),
             field: field.to_string(),
-            value: value.clone(),
-            focus_handle,
+            value: Some(value.clone()),
+            focus_handle: Some(focus_handle),
             input_number: InputNumber::new(),
+            required: false,
             show_error: true,
         })
     }
@@ -1104,16 +1235,17 @@ impl FormModel {
         let focus_handle = self.focus_handle_for(field)?;
         self.register_reset_state(field, value);
         Some(FormSelectItem {
-            model: self.clone(),
+            model: Some(self.clone()),
             field: field.to_string(),
-            value: value.clone(),
-            focus_handle,
+            value: Some(value.clone()),
+            focus_handle: Some(focus_handle),
             options: Vec::new(),
             optgroups: Vec::new(),
             placeholder: String::new(),
             searchable: false,
             disabled: None,
             size: None,
+            required: false,
             show_error: true,
         })
     }

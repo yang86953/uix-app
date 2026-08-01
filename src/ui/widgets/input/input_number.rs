@@ -62,6 +62,34 @@ type ReadNumber = Box<dyn Fn() -> f64 + Send + Sync>;
 type WriteNumber = Box<dyn Fn(f64) -> f64 + Send + Sync>;
 type NumberFormatter = Box<dyn Fn(f64) -> String + Send + Sync>;
 
+impl Clone for InputNumber {
+    /// 配置克隆：复制公开配置（值/值域/步进/占位/尺寸/禁用/键盘）。
+    ///
+    /// 不复制运行时状态（焦点/悬停/缓冲区/光标）与闭包绑定（formatter /
+    /// value_binding）；值绑定在构建 View 时经 `.value(&State)` 重建（E-01）。
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value,
+            min: self.min,
+            max: self.max,
+            step: self.step,
+            value_configured: self.value_configured,
+            value_binding: None,
+            placeholder: self.placeholder.clone(),
+            focused: false,
+            hovered: false,
+            disabled: self.disabled,
+            keyboard: self.keyboard,
+            formatter: None,
+            input_size: self.input_size,
+            text_buffer: String::new(),
+            pending_change: Cell::new(None),
+            cursor_rect: Cell::new(Rect::default()),
+            step_button_rect: Cell::new(Rect::default()),
+        }
+    }
+}
+
 fn decimal_places(value: f64) -> i32 {
     if !value.is_finite() || value == 0.0 {
         return 0;
