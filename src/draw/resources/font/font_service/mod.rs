@@ -123,7 +123,7 @@ impl FontService {
     /// 从文件路径加载字体，注册时会记录路径信息。
     pub fn load_font_from_path(&mut self, path: &str, _size: f32) -> Option<FontHandle> {
         let data = std::fs::read(path).ok()?;
-        let handle = self.text_backend.load_font(&data).ok()?;
+        let handle = self.text_backend.load_font_owned(data).ok()?;
         self.register_font(
             handle,
             Self::infer_family_from_path(path),
@@ -282,22 +282,20 @@ impl FontService {
                 }
             };
             for path in &fallback_paths {
-                if let Ok(data) = std::fs::read(path) {
-                    if let Some(handle) = self.load_raw_font(data, size) {
-                        self.install_primary_font(
-                            handle,
-                            Self::infer_family_from_path(path),
-                            Some(path.clone()),
-                        );
-                        tracing::info!(
-                            "Configured font '{}' not found, fallback: {}",
-                            self.primary_family,
-                            path
-                        );
-                        self.load_cjk_fallback(size, system_info);
-                        self.sync_fallback_fonts();
-                        return;
-                    }
+                if let Some(handle) = self.load_mapped_font(path) {
+                    self.install_primary_font(
+                        handle,
+                        Self::infer_family_from_path(path),
+                        Some(path.clone()),
+                    );
+                    tracing::info!(
+                        "Configured font '{}' not found, fallback: {}",
+                        self.primary_family,
+                        path
+                    );
+                    self.load_cjk_fallback(size, system_info);
+                    self.sync_fallback_fonts();
+                    return;
                 }
             }
         } else {
@@ -318,26 +316,19 @@ impl FontService {
                 // 启动只装主字体：其余 Latin fallback 不在首帧同步读盘。
                 // CJK 由 load_cjk_fallback / probe_cjk_font_path 单独装一枚。
                 for path in &paths {
-                    match std::fs::read(path) {
-                        Ok(data) => {
-                            if let Some(handle) = self.load_raw_font(data, size) {
-                                self.install_primary_font(
-                                    handle,
-                                    self.primary_family.clone(),
-                                    Some(path.clone()),
-                                );
-                                primary_loaded = true;
-                                tracing::info!(
-                                    "Loaded system default font: {} (handle={:?})",
-                                    path,
-                                    handle
-                                );
-                                break;
-                            }
-                        }
-                        Err(e) => {
-                            tracing::info!("Failed to read font file {}: {}", path, e);
-                        }
+                    if let Some(handle) = self.load_mapped_font(path) {
+                        self.install_primary_font(
+                            handle,
+                            self.primary_family.clone(),
+                            Some(path.clone()),
+                        );
+                        primary_loaded = true;
+                        tracing::info!(
+                            "Loaded system default font: {} (handle={:?})",
+                            path,
+                            handle
+                        );
+                        break;
                     }
                 }
 
@@ -352,22 +343,20 @@ impl FontService {
         // 第 4 步：最后的兜底——随机扫描一个可用字体
         tracing::info!("No primary font found via platform, scanning for fallback...");
         if let Some(path) = system_info.scan_fallback_font_path() {
-            if let Ok(data) = std::fs::read(&path) {
-                if let Some(handle) = self.load_raw_font(data, size) {
-                    self.install_primary_font(
-                        handle,
-                        self.primary_family.clone(),
-                        Some(path.clone()),
-                    );
-                    tracing::info!(
-                        "Loaded fallback font (random scan): {} (handle={:?})",
-                        path,
-                        handle
-                    );
-                    self.load_cjk_fallback(size, system_info);
-                    self.sync_fallback_fonts();
-                    return;
-                }
+            if let Some(handle) = self.load_mapped_font(&path) {
+                self.install_primary_font(
+                    handle,
+                    self.primary_family.clone(),
+                    Some(path.clone()),
+                );
+                tracing::info!(
+                    "Loaded fallback font (random scan): {} (handle={:?})",
+                    path,
+                    handle
+                );
+                self.load_cjk_fallback(size, system_info);
+                self.sync_fallback_fonts();
+                return;
             }
         }
 
@@ -381,6 +370,11 @@ impl FontService {
         size: f32,
         system_info: &dyn crate::native::capabilities::system::ISystemInfo,
     ) {
+        // 内存剖析开关：跳过 CJK 回退字体加载，量化中文字体常驻对 working set 的贡献。
+        if std::env::var_os("UIX_SKIP_CJK_FONT").is_some() {
+            tracing::info!("UIX_SKIP_CJK_FONT set; skipping CJK fallback font load");
+            return;
+        }
         let cjk_test = ['中', '国', '文'];
         let primary_has_cjk = cjk_test.iter().all(|&ch| {
             self.text_backend.is_valid(&self.loaded_font_handle)
@@ -398,35 +392,28 @@ impl FontService {
         }
 
         for path in cjk_paths {
-            match std::fs::read(&path) {
-                Ok(data) => {
-                    if let Some(handle) = self.load_raw_font(data, size) {
-                        let supports_cjk = cjk_test
-                            .iter()
-                            .all(|&ch| self.text_backend.has_glyph(&handle, ch));
-                        if !supports_cjk {
-                            self.unload_font(&handle);
-                            tracing::info!("CJK candidate '{}' does not cover the probe set", path);
-                            continue;
-                        }
-                        self.register_font(
-                            handle,
-                            Self::infer_family_from_path(&path),
-                            Some(path.clone()),
-                        );
-                        self.add_fallback(handle);
-                        tracing::info!("Loaded CJK fallback font: {}", path);
-                        return;
-                    }
-                    tracing::info!(
-                        "CJK font '{}' found but failed to load (unsupported format)",
-                        path
-                    );
+            if let Some(handle) = self.load_mapped_font(&path) {
+                let supports_cjk = cjk_test
+                    .iter()
+                    .all(|&ch| self.text_backend.has_glyph(&handle, ch));
+                if !supports_cjk {
+                    self.unload_font(&handle);
+                    tracing::info!("CJK candidate '{}' does not cover the probe set", path);
+                    continue;
                 }
-                Err(e) => {
-                    tracing::info!("Failed to read CJK font file {}: {}", path, e);
-                }
+                self.register_font(
+                    handle,
+                    Self::infer_family_from_path(&path),
+                    Some(path.clone()),
+                );
+                self.add_fallback(handle);
+                tracing::info!("Loaded CJK fallback font: {}", path);
+                return;
             }
+            tracing::info!(
+                "CJK font '{}' found but failed to load (unsupported format)",
+                path
+            );
         }
         tracing::info!("No CJK fallback font could be loaded via platform");
     }
@@ -439,12 +426,10 @@ impl FontService {
         system_info: &dyn crate::native::capabilities::system::ISystemInfo,
     ) -> Option<FontHandle> {
         if let Some(p) = system_info.probe_family_font_path(family) {
-            if let Ok(data) = std::fs::read(&p) {
-                if let Some(handle) = self.load_raw_font(data, size) {
-                    self.install_primary_font(handle, family.to_owned(), Some(p.clone()));
-                    tracing::info!("Loaded family font '{}': {}", family, p);
-                    return Some(handle);
-                }
+            if let Some(handle) = self.load_mapped_font(&p) {
+                self.install_primary_font(handle, family.to_owned(), Some(p.clone()));
+                tracing::info!("Loaded family font '{}': {}", family, p);
+                return Some(handle);
             }
         }
         None
@@ -456,7 +441,17 @@ impl FontService {
     /// `TextBackend::load_font` 的成功返回就是解析/可用性边界；这里不以 Unicode
     /// 码点冒充 glyph id 做二次验证，图标字体与重排字体的 glyph id 都不稳定。
     fn load_raw_font(&mut self, data: Vec<u8>, _size: f32) -> Option<FontHandle> {
-        let handle = self.text_backend.load_font(&data).ok()?;
+        let handle = self.text_backend.load_font_owned(data).ok()?;
+        self.register_font(handle, self.primary_family.clone(), None);
+        Some(handle)
+    }
+
+    /// 从文件路径内存映射加载字体（惰性分页：未触达字形不驻留 working set）。
+    fn load_mapped_font(&mut self, path: impl AsRef<std::path::Path>) -> Option<FontHandle> {
+        let file = std::fs::File::open(path.as_ref()).ok()?;
+        // SAFETY: 映射只读；文件由本函数持有至映射建立；映射生命周期由后端槽位持有。
+        let mmap = unsafe { memmap2::Mmap::map(&file).ok()? };
+        let handle = self.text_backend.load_font_mapped(mmap).ok()?;
         self.register_font(handle, self.primary_family.clone(), None);
         Some(handle)
     }

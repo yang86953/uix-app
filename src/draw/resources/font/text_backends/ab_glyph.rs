@@ -9,9 +9,40 @@ use std::sync::Arc;
 pub(crate) use text_backend::TextLayoutOptions;
 use text_backend::{TOFU_GLYPH_ID, WHITESPACE_GLYPH_ID};
 
+/// 字体槽位：`font` 借用 `_data` 的内容（借用先声明先 drop，安全）。
+///
+/// 数据存放位置在堆上（Box/Arc），`Vec<FontSlot>` 扩容移动本结构体时
+/// 只移动指针/句柄，数据地址不变，借用始终有效。
 pub(crate) struct FontSlot {
     handle: FontHandle,
-    font: FontVec,
+    font: FontRef<'static>,
+    /// 字体文件字节：mmap（惰性分页，中文字体常驻收益）或 Arc（用户 Vec 数据）。
+    _data: FontData,
+}
+
+/// 字体字节的所有权来源。
+pub(crate) enum FontData {
+    /// 内存映射文件：仅实际触达的字形页驻留 working set。
+    Mapped(Box<memmap2::Mmap>),
+    /// 用户提供或 API 兼容路径拷贝的数据。
+    Owned(Arc<[u8]>),
+}
+
+impl FontSlot {
+    /// 从自有数据构造借用槽位。
+    ///
+    /// # Safety
+    ///
+    /// `font` 必须以 `&data[..]` 为源创建（`FontRef::try_from_slice_and_index`），
+    /// 且 data 由本槽位持有（堆上，地址稳定）；字段声明顺序保证 `font` 先于
+    /// `_data` 释放，借用不会悬垂。
+    unsafe fn new_borrowed(handle: FontHandle, font: FontRef<'static>, data: FontData) -> Self {
+        Self {
+            handle,
+            font,
+            _data: data,
+        }
+    }
 }
 
 pub struct AbGlyphBackend {
@@ -84,12 +115,46 @@ impl TextBackend for AbGlyphBackend {
     fn load_font(&mut self, data: &[u8]) -> Result<FontHandle, Error> {
         // 对 TTC/OTC 保留完整文件并选择首个 face。集合内表可跨 face 共享，
         // 不能把 offset 区间切成伪 TTF 后再解析。
-        let f = FontVec::try_from_vec_and_index(data.to_vec(), 0)
+        let id = self.fonts.len() as u32;
+        // SAFETY: f 借用 data 的内容；data 复制进 Arc 由槽位持有（见 new_borrowed 契约）。
+        let data: Arc<[u8]> = Arc::from(data);
+        let f = FontRef::try_from_slice_and_index(&data, 0)
+            .map_err(|e| Error::new(Errc::FormatError, format!("ab_glyph: {:?}", e)))?;
+        let f = unsafe {
+            std::mem::transmute::<FontRef<'_>, FontRef<'static>>(f)
+        };
+        self.fonts.push(unsafe {
+            FontSlot::new_borrowed(FontHandle::new(id), f, FontData::Owned(data))
+        });
+        Ok(FontHandle::new(id))
+    }
+
+    fn load_font_owned(&mut self, data: Vec<u8>) -> Result<FontHandle, Error> {
+        let id = self.fonts.len() as u32;
+        // SAFETY: f 借用 data 的内容；data 由槽位持有（见 new_borrowed 契约）。
+        let data: Arc<[u8]> = Arc::from(data);
+        let f = FontRef::try_from_slice_and_index(&data, 0)
+            .map_err(|e| Error::new(Errc::FormatError, format!("ab_glyph: {:?}", e)))?;
+        let f = unsafe {
+            std::mem::transmute::<FontRef<'_>, FontRef<'static>>(f)
+        };
+        self.fonts.push(unsafe {
+            FontSlot::new_borrowed(FontHandle::new(id), f, FontData::Owned(data))
+        });
+        Ok(FontHandle::new(id))
+    }
+
+    fn load_font_mapped(&mut self, mmap: memmap2::Mmap) -> Result<FontHandle, Error> {
+        let boxed = Box::new(mmap);
+        let f = FontRef::try_from_slice_and_index(boxed.as_ref(), 0)
             .map_err(|e| Error::new(Errc::FormatError, format!("ab_glyph: {:?}", e)))?;
         let id = self.fonts.len() as u32;
-        self.fonts.push(FontSlot {
-            handle: FontHandle::new(id),
-            font: f,
+        // SAFETY: f 借用 boxed 的映射内容；boxed 由槽位持有，堆地址稳定（见 new_borrowed 契约）。
+        let f = unsafe {
+            std::mem::transmute::<FontRef<'_>, FontRef<'static>>(f)
+        };
+        self.fonts.push(unsafe {
+            FontSlot::new_borrowed(FontHandle::new(id), f, FontData::Mapped(boxed))
         });
         Ok(FontHandle::new(id))
     }
@@ -346,7 +411,10 @@ impl TextBackend for AbGlyphBackend {
 
     fn font_data(&self, font: &FontHandle) -> Option<Vec<u8>> {
         let i = self.idx(font)?;
-        (self.fonts[i].handle.0 != u32::MAX).then(|| self.fonts[i].font.as_slice().to_vec())
+        (self.fonts[i].handle.0 != u32::MAX).then(|| match &self.fonts[i]._data {
+            FontData::Mapped(m) => m.as_ref().to_vec(),
+            FontData::Owned(a) => a.to_vec(),
+        })
     }
 
     fn clear_cache(&mut self) { /* 缓存已统一在 FontService 层 */
@@ -356,7 +424,10 @@ impl TextBackend for AbGlyphBackend {
         let mut t = 0usize;
         for s in &self.fonts {
             if s.handle.0 != u32::MAX {
-                t += s.font.as_slice().len();
+                t += match &s._data {
+                    FontData::Mapped(m) => m.len(),
+                    FontData::Owned(a) => a.len(),
+                };
             }
         }
         t
