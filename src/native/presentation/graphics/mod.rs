@@ -12,6 +12,6 @@ pub mod metal;
 #[cfg(all(test, feature = "opengles"))]
 pub mod opengl;
 pub mod platform;
-#[cfg(all(test, feature = "vulkan"))]
+#[cfg(all(feature = "vulkan", any(test, windows)))]
 pub mod vulkan;
 pub(crate) mod wgpu_backend;

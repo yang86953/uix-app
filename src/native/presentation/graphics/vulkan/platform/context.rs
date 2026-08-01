@@ -365,7 +365,7 @@ impl VulkanContext {
             .is_some_and(|device| device.fault_reporting_enabled())
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, all(windows, feature = "vulkan")))]
     pub(crate) fn swapchain_maintenance1_enabled_for_test(&self) -> bool {
         self.device_lease
             .as_ref()

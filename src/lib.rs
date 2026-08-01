@@ -204,11 +204,10 @@ pub mod core;
 pub mod data;
 pub mod diagnostics;
 pub mod draw;
+#[cfg(all(windows, feature = "vulkan"))]
+#[doc(hidden)]
+pub mod gfx_r5_support;
 pub(crate) mod native;
 pub mod platform;
 pub mod prelude;
 pub mod ui;
-
-#[cfg(all(test, windows, feature = "vulkan"))]
-#[path = "gfx_r5_tests.rs"]
-mod tests;
