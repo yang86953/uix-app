@@ -626,6 +626,11 @@ pub enum SnapshotFields {
         fixed_size: f32,
         hole_radius: f32,
     },
+    ChartPlaceholder {
+        title: String,
+        subtitle: String,
+        kind_name: &'static str,
+    },
     QRCode {
         value: String,
         size: f32,
@@ -1184,6 +1189,18 @@ impl SnapshotFields {
                     .filter(|item| item.value.is_finite() && item.value > 0.0)
                     .map(|item| (item.label.as_str(), item.value)),
             ),
+            Self::ChartPlaceholder {
+                title,
+                kind_name,
+                ..
+            } => {
+                let name = if title.trim().is_empty() {
+                    kind_name.to_string()
+                } else {
+                    title.clone()
+                };
+                AccessibilitySnapshot::named(AccessibilityRole::Image, name)
+            }
             Self::Select {
                 options,
                 optgroups,

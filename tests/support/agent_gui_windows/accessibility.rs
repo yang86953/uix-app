@@ -216,6 +216,144 @@ fn real_demo_captures_component_semantic_evidence() {
 
 // ---- helpers mirroring the component visual harness (private per module) ----
 
+/// PAGE_CHARTS index in `demo/src/common/page.rs` (sidebar automation id
+/// ``sidebar-page-8``).
+const CHARTS_PAGE_IDX: usize = 8;
+
+/// Advanced chart scene titles rendered by `demo/src/demos/charts.rs`.
+/// The collector matches semantic image nodes by these titles; the assembler
+/// maps them back to ledger rows.
+const CHARTS_SCENE_TITLES: &[&str] = &[
+    "磁盘占用趋势", // AreaChart
+    "散点分布",   // ScatterChart
+    "气泡分布",   // ScatterChart (bubble)
+    "能力雷达",   // RadarChart
+    "热力矩阵",   // Heatmap
+    "转化漏斗",   // FunnelChart
+    "月度盈亏",   // WaterfallChart
+    "双轴组合",   // ComboChart
+    "磁盘占用",   // Treemap
+    "完成度",    // Gauge
+    "预算使用",   // Gauge
+];
+
+#[test]
+#[ignore = "requires an interactive Windows desktop and writes accessibility evidence"]
+fn real_demo_captures_charts_semantic_evidence() {
+    let _guard = REAL_GUI_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let evidence_root = evidence_root();
+    fs::create_dir_all(&evidence_root).expect("create accessibility evidence root");
+
+    let mut demo = DemoProcess::spawn_with_args(DEFAULT_VULKAN_GRAPHICS, &[]);
+    let descriptor = demo.wait_for_descriptor();
+    let endpoint = descriptor["endpoint"].as_str().expect("descriptor endpoint");
+    let token = descriptor["token"].as_str().expect("descriptor token");
+    let stream = connect(endpoint, &mut demo.child);
+    let mut connection = BufReader::new(stream);
+
+    let hello = exchange(
+        &mut connection,
+        json!({
+            "schema": "uix.agent.v1",
+            "request_id": "charts-accessibility-hello",
+            "type": "hello",
+            "token": token,
+            "client": { "name": "uix-charts-accessibility-evidence" },
+        }),
+    );
+    assert_success(&hello, "charts-accessibility-hello");
+
+    let listed = list_windows(&mut connection, "charts-accessibility-list");
+    let window_id = listed[0]["window_id"].as_u64().expect("window id");
+    let generation = listed[0]["generation"].as_u64().expect("generation");
+    wait_for_presented(
+        &mut connection,
+        "charts-accessibility-first-present",
+        window_id,
+        generation,
+        1,
+    );
+
+    // Navigate to the charts page by clicking the sidebar item (NavItem
+    // exposes no semantic invoke; pointer click drives page switching).
+    let nav_snapshot = snapshot(
+        &mut connection,
+        "charts-accessibility-nav-snapshot",
+        window_id,
+    );
+    let nav_item = node_by_automation_id(
+        &nav_snapshot,
+        &format!("sidebar-page-{CHARTS_PAGE_IDX}"),
+    )
+    .clone();
+    let bounds = &nav_item["visible_bounds"];
+    let (x, y) = (
+        bounds["x"].as_f64().expect("nav x") + bounds["w"].as_f64().expect("nav w") * 0.5,
+        bounds["y"].as_f64().expect("nav y") + bounds["h"].as_f64().expect("nav h") * 0.5,
+    );
+    perform_and_wait(
+        &demo,
+        &mut connection,
+        window_id,
+        generation,
+        "charts-accessibility-navigate",
+        None,
+        json!({ "kind": "click_at", "x": x, "y": y }),
+    );
+
+    let current = snapshot(
+        &mut connection,
+        "charts-accessibility-snapshot",
+        window_id,
+    );
+    let nodes = current["nodes"].as_array().expect("snapshot nodes");
+    let mut captured: Vec<Value> = Vec::new();
+    for node in nodes {
+        if node["role"] != "image" {
+            continue;
+        }
+        let name = node["name"].as_str().unwrap_or_default();
+        if CHARTS_SCENE_TITLES.contains(&name) {
+            captured.push(projection(node));
+        }
+    }
+
+    let missing: Vec<&str> = CHARTS_SCENE_TITLES
+        .iter()
+        .copied()
+        .filter(|title| {
+            !captured.iter().any(|node| {
+                node["name"].as_str() == Some(title)
+            })
+        })
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "charts scene missing semantic nodes for: {missing:?}"
+    );
+
+    let value = json!({
+        "schema": "uix.accessibility.charts.v1",
+        "captured_nodes": captured.len(),
+        "nodes": captured,
+    });
+    fs::write(
+        evidence_root.join("charts-evidence.json"),
+        serde_json::to_string_pretty(&value).expect("serialize charts evidence"),
+    )
+    .expect("write charts evidence");
+    eprintln!(
+        "accessibility charts evidence: {}; nodes={}",
+        evidence_root.join("charts-evidence.json").display(),
+        captured.len()
+    );
+
+    drop(connection);
+    demo.close_and_wait();
+}
+
 fn node_name(node: &Value) -> String {
     node["name"].as_str().unwrap_or_default().to_string()
 }
