@@ -13,13 +13,24 @@ use crate::draw::renderer::{
     UpdateStrategy,
 };
 use crate::draw::Canvas2D;
+use crate::native::backends::windows::display::WindowsDisplay;
+use crate::native::backends::windows::dpi::dpi_for_window;
 use crate::native::backends::windows::platform::WindowsPlatform;
+use crate::native::capabilities::display::IDisplay;
 use crate::native::present::{IGraphicsContext, PresentDamage, PresentTestResult};
 use crate::native::presentation::graphics::vulkan::platform::VulkanContext;
 use crate::native::windowing::{IWindowManager, PlatformWindow};
 use std::ffi::c_void;
 use std::fmt;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use windows::Win32::Foundation::HWND;
+use windows::Win32::Graphics::Gdi::{
+    GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+};
+use windows::Win32::System::Threading::{
+    GetCurrentProcess, GetGuiResources, GR_GDIOBJECTS, GR_USEROBJECTS,
+};
 
 /// A typed failure boundary exposed only for the Windows Vulkan integration
 /// test harness.
@@ -110,6 +121,45 @@ impl NativeWindow {
             .map_err(map_error)
     }
 
+    /// Moves the native window to an absolute virtual-desktop position.
+    pub fn set_position(&mut self, x: i32, y: i32) -> GfxR5Result<()> {
+        self.window
+            .properties_mut()
+            .set_position(x, y)
+            .map_err(map_error)
+    }
+
+    /// Returns the effective per-window DPI reported by Win32.
+    pub fn dpi(&self) -> GfxR5Result<u32> {
+        Ok(dpi_for_window(self.surface()?))
+    }
+
+    /// Returns the physical bounds of the monitor currently containing the window.
+    pub fn monitor_bounds(&self) -> GfxR5Result<(i32, i32, i32, i32)> {
+        let hwnd = HWND(self.surface()?);
+        let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
+        if monitor.0.is_null() {
+            return Err(support_failure(
+                "GFX-R5 could not resolve the window's current monitor",
+            ));
+        }
+        let mut info = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if !unsafe { GetMonitorInfoW(monitor, &mut info) }.as_bool() {
+            return Err(support_failure(
+                "GFX-R5 GetMonitorInfoW failed for the current monitor",
+            ));
+        }
+        Ok((
+            info.rcMonitor.left,
+            info.rcMonitor.top,
+            info.rcMonitor.right,
+            info.rcMonitor.bottom,
+        ))
+    }
+
     /// Closes the native window once, preserving the destroyed HWND for
     /// explicit native-surface failure tests.
     pub fn close(&mut self) -> GfxR5Result<()> {
@@ -128,6 +178,161 @@ impl Drop for NativeWindow {
             let _ = self.window.close();
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MonitorTarget {
+    bounds: (i32, i32, i32, i32),
+    dpi: u32,
+}
+
+fn monitor_targets() -> GfxR5Result<Vec<MonitorTarget>> {
+    let display = WindowsDisplay::new();
+    let count = display.count().map_err(map_error)?;
+    let mut targets = Vec::with_capacity(count.max(0) as usize);
+    for index in 0..count {
+        let info = display.info(index).map_err(map_error)?;
+        let bounds = (
+            info.bounds.x.round() as i32,
+            info.bounds.y.round() as i32,
+            (info.bounds.x + info.bounds.w).round() as i32,
+            (info.bounds.y + info.bounds.h).round() as i32,
+        );
+        let dpi = (info.dpi_scale * 96.0).round() as u32;
+        if bounds.2 > bounds.0 && bounds.3 > bounds.1 && dpi > 0 {
+            targets.push(MonitorTarget { bounds, dpi });
+        }
+    }
+    Ok(targets)
+}
+
+fn move_to_monitor(
+    window: &mut NativeWindow,
+    monitor: MonitorTarget,
+) -> GfxR5Result<(u32, bool, (i32, i32, i32, i32))> {
+    window.set_position(monitor.bounds.0 + 32, monitor.bounds.1 + 32)?;
+    let actual_bounds = window.monitor_bounds()?;
+    let reached = actual_bounds == monitor.bounds;
+    Ok((window.dpi()?, reached, actual_bounds))
+}
+
+/// Structured evidence for one mixed-DPI transition leg.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DpiTransitionEvidence {
+    pub observed_dpi: u32,
+    pub logical_resize: Option<(i32, i32)>,
+    pub target_monitor_reached: bool,
+    pub logical_extent: (i32, i32),
+    pub drawable_extent: (i32, i32),
+}
+
+/// A monitor topology sample used by the mixed-DPI exact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MonitorSample {
+    pub bounds: (i32, i32, i32, i32),
+    pub dpi_x: u32,
+    pub dpi_y: u32,
+}
+
+/// Evidence for a real monitor-to-monitor DPI round trip.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MixedDpiEvidence {
+    pub adapter_diagnostic: String,
+    pub monitor_samples: Vec<MonitorSample>,
+    pub initial: DpiTransitionEvidence,
+    pub forward: DpiTransitionEvidence,
+    pub return_transition: DpiTransitionEvidence,
+}
+
+/// Moves one native window across two real monitors and keeps one logical
+/// extent while rebuilding the Vulkan drawable at each observed DPI.
+pub fn run_mixed_dpi_transition(window: &mut NativeWindow) -> GfxR5Result<MixedDpiEvidence> {
+    let targets = monitor_targets()?;
+    let pair = targets.iter().enumerate().find_map(|(index, first)| {
+        targets[index + 1..]
+            .iter()
+            .find(|second| second.bounds != first.bounds && second.dpi != first.dpi)
+            .map(|second| (*first, *second))
+    });
+    let Some((initial_target, forward_target)) = pair else {
+        return Err(support_failure(
+            "GFX-R5 mixed-DPI requires two real monitors with distinct effective DPIs",
+        ));
+    };
+    const LOGICAL_EXTENT: (i32, i32) = (137, 103);
+    let (initial_dpi, initial_reached, initial_bounds) = move_to_monitor(window, initial_target)?;
+    let surface = window.surface()?;
+    let mut context =
+        VulkanContext::new(surface, LOGICAL_EXTENT.0, LOGICAL_EXTENT.1).map_err(map_error)?;
+    let evidence = (|| {
+        let adapter_diagnostic = context.adapter_info.diagnostic_summary();
+        present_solid(&mut context, 0xFF3478BC)?;
+        let initial = DpiTransitionEvidence {
+            observed_dpi: initial_dpi,
+            logical_resize: None,
+            target_monitor_reached: initial_reached,
+            logical_extent: LOGICAL_EXTENT,
+            drawable_extent: (context.width(), context.height()),
+        };
+
+        let (forward_dpi, forward_reached, forward_bounds) =
+            move_to_monitor(window, forward_target)?;
+        context
+            .resize(LOGICAL_EXTENT.0, LOGICAL_EXTENT.1)
+            .map_err(map_error)?;
+        present_solid(&mut context, 0xFF9A5C21)?;
+        let forward = DpiTransitionEvidence {
+            observed_dpi: forward_dpi,
+            logical_resize: Some(LOGICAL_EXTENT),
+            target_monitor_reached: forward_reached,
+            logical_extent: LOGICAL_EXTENT,
+            drawable_extent: (context.width(), context.height()),
+        };
+
+        let (return_dpi, return_reached, return_bounds) = move_to_monitor(window, initial_target)?;
+        context
+            .resize(LOGICAL_EXTENT.0, LOGICAL_EXTENT.1)
+            .map_err(map_error)?;
+        present_solid(&mut context, 0xFFB7642D)?;
+        let return_transition = DpiTransitionEvidence {
+            observed_dpi: return_dpi,
+            logical_resize: Some(LOGICAL_EXTENT),
+            target_monitor_reached: return_reached,
+            logical_extent: LOGICAL_EXTENT,
+            drawable_extent: (context.width(), context.height()),
+        };
+
+        if initial_dpi == forward_dpi || (initial_dpi <= 96 && forward_dpi <= 96) {
+            return Err(support_failure(format!(
+                "GFX-R5 mixed-DPI observed unusable round trip: initial={initial_dpi}, forward={forward_dpi}"
+            )));
+        }
+        if initial_bounds == forward_bounds || return_bounds != initial_bounds {
+            return Err(support_failure(
+                "GFX-R5 mixed-DPI did not reach two distinct monitors and return",
+            ));
+        }
+        Ok(MixedDpiEvidence {
+            adapter_diagnostic,
+            monitor_samples: vec![
+                MonitorSample {
+                    bounds: initial_bounds,
+                    dpi_x: initial_dpi,
+                    dpi_y: initial_dpi,
+                },
+                MonitorSample {
+                    bounds: forward_bounds,
+                    dpi_x: forward_dpi,
+                    dpi_y: forward_dpi,
+                },
+            ],
+            initial,
+            forward,
+            return_transition,
+        })
+    })();
+    context.try_shutdown().map_err(map_error)?;
+    evidence
 }
 
 fn present_solid(context: &mut VulkanContext, color: u32) -> GfxR5Result<()> {
@@ -442,5 +647,336 @@ pub fn run_engine_recovery_boundary(
         logical_extent: (229, 163),
         drawable_extent: (recovered.0, recovered.1),
         recovered_readback: recovered.2,
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SoakMeasurements {
+    pub duration_seconds: u64,
+    pub rounds: u64,
+    pub handles_before: u32,
+    pub handles_after: u32,
+    pub peak_handles: u32,
+    pub warmup_seconds: u64,
+    pub warmup_rounds: u64,
+}
+
+/// Evidence for a bounded single-window resize/present soak.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SoakEvidence {
+    pub adapter_diagnostic: String,
+    pub measurements: SoakMeasurements,
+    pub swapchain_maintenance1: bool,
+}
+
+fn configured_soak_seconds() -> GfxR5Result<u64> {
+    let seconds = std::env::var("UIX_VULKAN_SOAK_SECONDS")
+        .ok()
+        .map(|value| {
+            value.parse::<u64>().map_err(|_| {
+                support_failure(format!("GFX-R5 soak duration is not an integer: {value}"))
+            })
+        })
+        .transpose()?
+        .unwrap_or(900);
+    if !(900..=3600).contains(&seconds) {
+        return Err(support_failure(format!(
+            "GFX-R5 soak duration must be 900..=3600 seconds, got {seconds}"
+        )));
+    }
+    Ok(seconds)
+}
+
+fn gui_handle_count() -> GfxR5Result<u32> {
+    let process = unsafe { GetCurrentProcess() };
+    let gdi = unsafe { GetGuiResources(process, GR_GDIOBJECTS) };
+    let user = unsafe { GetGuiResources(process, GR_USEROBJECTS) };
+    let count = gdi.saturating_add(user);
+    if count == 0 {
+        return Err(support_failure(
+            "GFX-R5 GetGuiResources returned zero for the live test process",
+        ));
+    }
+    Ok(count)
+}
+
+fn soak_round(
+    window: &mut NativeWindow,
+    context: &mut VulkanContext,
+    round: u64,
+) -> GfxR5Result<()> {
+    let (width, height, color) = if round % 2 == 0 {
+        (137, 103, 0xFF3478BC)
+    } else {
+        (211, 149, 0xFF9A5C21)
+    };
+    window.resize(width, height)?;
+    context.resize(width, height).map_err(map_error)?;
+    present_solid(context, color)
+}
+
+fn shared_soak_round(
+    first_window: &mut NativeWindow,
+    first_context: &mut VulkanContext,
+    second_window: &mut NativeWindow,
+    second_context: &mut VulkanContext,
+    round: u64,
+) -> GfxR5Result<()> {
+    soak_round(first_window, first_context, round)?;
+    soak_round(second_window, second_context, round.wrapping_add(1))
+}
+
+fn soak_warmup_single(
+    window: &mut NativeWindow,
+    context: &mut VulkanContext,
+) -> GfxR5Result<(u64, u64)> {
+    let started = Instant::now();
+    let mut rounds = 0;
+    while rounds < 8_192 || started.elapsed() < Duration::from_secs(60) {
+        soak_round(window, context, rounds)?;
+        rounds += 1;
+    }
+    Ok((started.elapsed().as_secs().max(60), rounds))
+}
+
+fn soak_warmup_shared(
+    first_window: &mut NativeWindow,
+    first_context: &mut VulkanContext,
+    second_window: &mut NativeWindow,
+    second_context: &mut VulkanContext,
+) -> GfxR5Result<(u64, u64)> {
+    let started = Instant::now();
+    let mut rounds = 0;
+    while rounds < 8_192 || started.elapsed() < Duration::from_secs(60) {
+        shared_soak_round(
+            first_window,
+            first_context,
+            second_window,
+            second_context,
+            rounds,
+        )?;
+        rounds += 1;
+    }
+    Ok((started.elapsed().as_secs().max(60), rounds))
+}
+
+/// Runs the configured 15–60 minute single-window Vulkan soak.
+pub fn run_single_window_soak(window: &mut NativeWindow) -> GfxR5Result<SoakEvidence> {
+    let seconds = configured_soak_seconds()?;
+    let surface = window.surface()?;
+    let mut context = VulkanContext::new(surface, 137, 103).map_err(map_error)?;
+    let adapter_diagnostic = context.adapter_info.diagnostic_summary();
+    let swapchain_maintenance1 = context.swapchain_maintenance1_enabled_for_test();
+    let handles_before = gui_handle_count()?;
+    let run_result = (|| {
+        let (warmup_seconds, warmup_rounds) = soak_warmup_single(window, &mut context)?;
+        let started = Instant::now();
+        let mut rounds = 0;
+        let mut peak_handles = handles_before;
+        while started.elapsed() < Duration::from_secs(seconds) {
+            soak_round(window, &mut context, rounds)?;
+            rounds += 1;
+            peak_handles = peak_handles.max(gui_handle_count()?);
+        }
+        Ok(SoakMeasurements {
+            duration_seconds: seconds,
+            rounds,
+            handles_before,
+            handles_after: 0,
+            peak_handles,
+            warmup_seconds,
+            warmup_rounds,
+        })
+    })();
+    let shutdown_result = context.try_shutdown().map_err(map_error);
+    let measurements = match (run_result, shutdown_result) {
+        (Ok(measurements), Ok(())) => measurements,
+        (Err(error), Ok(())) => return Err(error),
+        (Ok(_), Err(error)) => return Err(error),
+        (Err(error), Err(shutdown)) => {
+            return Err(support_failure(format!(
+                "{error}; GFX-R5 soak cleanup failed: {shutdown}"
+            )))
+        }
+    };
+    Ok(SoakEvidence {
+        adapter_diagnostic,
+        measurements: SoakMeasurements {
+            handles_after: gui_handle_count()?,
+            ..measurements
+        },
+        swapchain_maintenance1,
+    })
+}
+
+/// Runs the configured 15–60 minute two-window shared-device Vulkan soak.
+pub fn run_shared_device_soak(window: &mut NativeWindow) -> GfxR5Result<SoakEvidence> {
+    let seconds = configured_soak_seconds()?;
+    let mut second_window = NativeWindow::new(149, 107)?;
+    let first_surface = window.surface()?;
+    let second_surface = second_window.surface()?;
+    let mut first_context = VulkanContext::new(first_surface, 137, 103).map_err(map_error)?;
+    let mut second_context = VulkanContext::new(second_surface, 149, 107).map_err(map_error)?;
+    if first_context.shared_device_identity() == 0
+        || first_context.shared_device_identity() != second_context.shared_device_identity()
+    {
+        return Err(support_failure(
+            "GFX-R5 shared-device soak did not acquire one logical Vulkan device",
+        ));
+    }
+    let adapter_diagnostic = first_context.adapter_info.diagnostic_summary();
+    let swapchain_maintenance1 = first_context.swapchain_maintenance1_enabled_for_test()
+        && second_context.swapchain_maintenance1_enabled_for_test();
+    let handles_before = gui_handle_count()?;
+    let run_result = (|| {
+        let (warmup_seconds, warmup_rounds) = soak_warmup_shared(
+            window,
+            &mut first_context,
+            &mut second_window,
+            &mut second_context,
+        )?;
+        let started = Instant::now();
+        let mut rounds = 0;
+        let mut peak_handles = handles_before;
+        while started.elapsed() < Duration::from_secs(seconds) {
+            shared_soak_round(
+                window,
+                &mut first_context,
+                &mut second_window,
+                &mut second_context,
+                rounds,
+            )?;
+            rounds += 1;
+            peak_handles = peak_handles.max(gui_handle_count()?);
+        }
+        Ok(SoakMeasurements {
+            duration_seconds: seconds,
+            rounds,
+            handles_before,
+            handles_after: 0,
+            peak_handles,
+            warmup_seconds,
+            warmup_rounds,
+        })
+    })();
+    let first_shutdown = first_context.try_shutdown().map_err(map_error);
+    let second_shutdown = second_context.try_shutdown().map_err(map_error);
+    let measurements = match (run_result, first_shutdown, second_shutdown) {
+        (Ok(measurements), Ok(()), Ok(())) => measurements,
+        (Err(error), Ok(()), Ok(())) => return Err(error),
+        (Ok(_), Err(error), Ok(())) | (Ok(_), Ok(()), Err(error)) => return Err(error),
+        (Ok(_), Err(first), Err(second)) => {
+            return Err(support_failure(format!(
+                "GFX-R5 shared soak cleanup failed: first={first}; second={second}"
+            )))
+        }
+        (Err(error), first, second) => {
+            return Err(support_failure(format!(
+                "{error}; GFX-R5 shared soak cleanup failed: first={first:?}; second={second:?}"
+            )))
+        }
+    };
+    Ok(SoakEvidence {
+        adapter_diagnostic,
+        measurements: SoakMeasurements {
+            handles_after: gui_handle_count()?,
+            ..measurements
+        },
+        swapchain_maintenance1,
+    })
+}
+
+/// Evidence for the shared logical-device external-reset/replacement exact.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeviceLostEvidence {
+    pub adapter_diagnostic: String,
+    pub detector: &'static str,
+    pub frames: u32,
+    pub surface_faults: u32,
+    pub detection_seconds: f64,
+    pub recovery_seconds: f64,
+    pub device_fault: bool,
+    pub fault: GfxR5Error,
+    pub peer: GfxR5Error,
+    pub replacement_attempts: u32,
+    pub replacement: String,
+}
+
+/// Injects the existing Vulkan shared-device loss hook, proves the typed
+/// peer error, then acquires and presents with a replacement logical device.
+pub fn run_external_device_loss_recovery(
+    window: &mut NativeWindow,
+) -> GfxR5Result<DeviceLostEvidence> {
+    let surface = window.surface()?;
+    let peer_window = NativeWindow::new(137, 103)?;
+    let peer_surface = peer_window.surface()?;
+    let mut primary = VulkanContext::new(surface, 137, 103).map_err(map_error)?;
+    let mut peer_context = VulkanContext::new(peer_surface, 137, 103).map_err(map_error)?;
+    if primary.shared_device_identity() == 0
+        || primary.shared_device_identity() != peer_context.shared_device_identity()
+    {
+        return Err(support_failure(
+            "GFX-R5 device-loss exact did not acquire a shared logical device",
+        ));
+    }
+    let adapter_diagnostic = primary.adapter_info.diagnostic_summary();
+    let device_fault = primary.device_fault_reporting_enabled_for_test();
+    present_solid(&mut primary, 0xFF3478BC)?;
+    primary.mark_shared_device_lost_for_test();
+    let detection_started = Instant::now();
+    let fault = match present_solid(&mut primary, 0xFF9A5C21) {
+        Ok(()) => {
+            return Err(support_failure(
+                "GFX-R5 external reset hook did not return GraphicsDeviceLost",
+            ))
+        }
+        Err(error) if error.code == "graphics_device_lost" => error,
+        Err(error) => {
+            return Err(support_failure(format!(
+                "GFX-R5 external reset hook returned {} instead of graphics_device_lost",
+                error.code
+            )))
+        }
+    };
+    let detection_seconds = detection_started.elapsed().as_secs_f64();
+    let peer_error = match present_solid(&mut peer_context, 0xFF9A5C21) {
+        Ok(()) => {
+            return Err(support_failure(
+                "GFX-R5 shared peer did not observe GraphicsDeviceLost",
+            ))
+        }
+        Err(error) if error.code == "graphics_device_lost" => error,
+        Err(error) => {
+            return Err(support_failure(format!(
+                "GFX-R5 shared peer returned {} instead of graphics_device_lost",
+                error.code
+            )))
+        }
+    };
+
+    primary.try_shutdown().map_err(map_error)?;
+    peer_context.try_shutdown().map_err(map_error)?;
+    drop(primary);
+    drop(peer_context);
+
+    let recovery_started = Instant::now();
+    let mut replacement = VulkanContext::new(surface, 137, 103).map_err(map_error)?;
+    let replacement_diagnostic = replacement.adapter_info.diagnostic_summary();
+    present_solid(&mut replacement, 0xFFB7642D)?;
+    replacement.try_shutdown().map_err(map_error)?;
+    let recovery_seconds = recovery_started.elapsed().as_secs_f64();
+
+    Ok(DeviceLostEvidence {
+        adapter_diagnostic,
+        detector: "first",
+        frames: 2,
+        surface_faults: 0,
+        detection_seconds,
+        recovery_seconds,
+        device_fault,
+        fault,
+        peer: peer_error,
+        replacement_attempts: 1,
+        replacement: replacement_diagnostic,
     })
 }

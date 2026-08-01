@@ -351,14 +351,14 @@ impl VulkanContext {
             .is_some_and(|device| device.swapchain_maintenance1_enabled())
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, all(windows, feature = "vulkan")))]
     pub(crate) fn shared_device_identity(&self) -> usize {
         self.device_lease
             .as_ref()
             .map_or(0, |device| Rc::as_ptr(device) as usize)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, all(windows, feature = "vulkan")))]
     pub(crate) fn device_fault_reporting_enabled_for_test(&self) -> bool {
         self.device_lease
             .as_ref()
@@ -372,7 +372,7 @@ impl VulkanContext {
             .is_some_and(|device| device.swapchain_maintenance1_enabled())
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, all(windows, feature = "vulkan")))]
     pub(crate) fn mark_shared_device_lost_for_test(&self) {
         if let Some(device) = self.device_lease.as_ref() {
             device.mark_lost();

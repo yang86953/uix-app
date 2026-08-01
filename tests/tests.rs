@@ -22,6 +22,7 @@ mod tests {
                         use super::super::super::super::super::expected_vendor;
                         use uix::gfx_r5_support::{
                             run_destroyed_hwnd_surface_lost, run_native_out_of_date_recovery,
+                            run_shared_device_soak, run_single_window_soak,
                             run_vendor_resize_present_readback, NativeWindow,
                         };
 
@@ -115,6 +116,114 @@ mod tests {
                                 evidence.fault.code,
                             );
                         }
+
+                        #[test]
+                        #[ignore = "requires an interactive Windows desktop, Vulkan driver, and a bounded soak"]
+                        fn windows_vulkan_hardware_resize_present_soak_is_bounded() {
+                            let (vendor, _) = expected_vendor();
+                            let mut window = NativeWindow::new(137, 103).unwrap_or_else(|error| {
+                                panic!("GFX-R5 test window failed: {error}")
+                            });
+                            let evidence =
+                                run_single_window_soak(&mut window).unwrap_or_else(|error| {
+                                    panic!("GFX-R5 single-window soak failed: {error}")
+                                });
+                            let measurements = evidence.measurements;
+                            assert!(evidence.swapchain_maintenance1);
+                            assert!(measurements.rounds > 0);
+                            assert!(measurements.warmup_seconds >= 60);
+                            assert!(measurements.warmup_rounds >= 8_192);
+                            assert!(measurements.peak_handles >= measurements.handles_before);
+                            println!(
+                                "GFX-R5 Vulkan soak: expected={vendor}; {}; duration={}s rounds={} handles={}->{} peak={} warmup={}s/{} rounds; swapchain_maintenance1={}",
+                                evidence.adapter_diagnostic,
+                                measurements.duration_seconds,
+                                measurements.rounds,
+                                measurements.handles_before,
+                                measurements.handles_after,
+                                measurements.peak_handles,
+                                measurements.warmup_seconds,
+                                measurements.warmup_rounds,
+                                evidence.swapchain_maintenance1,
+                            );
+                        }
+
+                        #[test]
+                        #[ignore = "requires an interactive Windows desktop, Vulkan driver, and a bounded shared-device soak"]
+                        fn windows_vulkan_shared_device_multiwindow_soak_is_bounded() {
+                            let (vendor, _) = expected_vendor();
+                            let mut window = NativeWindow::new(137, 103).unwrap_or_else(|error| {
+                                panic!("GFX-R5 test window failed: {error}")
+                            });
+                            let evidence =
+                                run_shared_device_soak(&mut window).unwrap_or_else(|error| {
+                                    panic!("GFX-R5 shared-device soak failed: {error}")
+                                });
+                            let measurements = evidence.measurements;
+                            assert!(evidence.swapchain_maintenance1);
+                            assert!(measurements.rounds > 0);
+                            assert!(measurements.warmup_seconds >= 60);
+                            assert!(measurements.warmup_rounds >= 8_192);
+                            assert!(measurements.peak_handles >= measurements.handles_before);
+                            println!(
+                                "GFX-R5 Vulkan shared-device soak: expected={vendor}; {}; duration={}s rounds={} handles={}->{} peak={} warmup={}s/{} rounds; swapchain_maintenance1={}",
+                                evidence.adapter_diagnostic,
+                                measurements.duration_seconds,
+                                measurements.rounds,
+                                measurements.handles_before,
+                                measurements.handles_after,
+                                measurements.peak_handles,
+                                measurements.warmup_seconds,
+                                measurements.warmup_rounds,
+                                evidence.swapchain_maintenance1,
+                            );
+                        }
+                    }
+
+                    pub mod fault {
+                        use super::super::super::super::super::expected_vendor;
+                        use uix::gfx_r5_support::{
+                            run_external_device_loss_recovery, NativeWindow,
+                        };
+
+                        fn compact_error(message: &str) -> String {
+                            message.replace(['\r', '\n'], " | ")
+                        }
+
+                        #[test]
+                        #[ignore = "requires an interactive Windows desktop and Vulkan driver"]
+                        fn windows_vulkan_gfx_r5_external_reset_returns_device_lost_with_diagnostics(
+                        ) {
+                            let (vendor, _) = expected_vendor();
+                            let mut window = NativeWindow::new(137, 103).unwrap_or_else(|error| {
+                                panic!("GFX-R5 test window failed: {error}")
+                            });
+                            let evidence = run_external_device_loss_recovery(&mut window)
+                                .unwrap_or_else(|error| {
+                                    panic!("GFX-R5 external device-loss exact failed: {error}")
+                                });
+
+                            assert_eq!(evidence.fault.code, "graphics_device_lost");
+                            assert_eq!(evidence.peer.code, "graphics_device_lost");
+                            assert!(evidence.fault.message.contains("ERROR_DEVICE_LOST"));
+                            assert!(evidence.peer.message.contains("ERROR_DEVICE_LOST"));
+                            assert!(evidence.replacement_attempts > 0);
+                            assert!(evidence.recovery_seconds <= 30.0);
+                            println!(
+                                "GFX-R5 external device loss: expected={vendor}; {}; detector={}; frames={}; surface_faults={}; detection_seconds={:.3}; recovery_seconds={:.3}; device_fault={}; fault={}; peer={}; replacement_attempts={}; replacement={}",
+                                evidence.adapter_diagnostic,
+                                evidence.detector,
+                                evidence.frames,
+                                evidence.surface_faults,
+                                evidence.detection_seconds,
+                                evidence.recovery_seconds,
+                                evidence.device_fault,
+                                compact_error(&evidence.fault.message),
+                                compact_error(&evidence.peer.message),
+                                evidence.replacement_attempts,
+                                evidence.replacement,
+                            );
+                        }
                     }
                 }
             }
@@ -122,6 +231,50 @@ mod tests {
 
         pub mod backends {
             pub mod windows {
+                pub mod hardware_matrix {
+                    use super::super::super::super::expected_vendor;
+                    use uix::gfx_r5_support::{run_mixed_dpi_transition, NativeWindow};
+
+                    #[test]
+                    #[ignore = "requires an interactive Windows desktop with two real monitors at distinct DPIs"]
+                    fn windows_vulkan_gfx_r5_crosses_real_mixed_dpi_monitors() {
+                        let (vendor, _) = expected_vendor();
+                        let mut window = NativeWindow::new(137, 103)
+                            .unwrap_or_else(|error| panic!("GFX-R5 test window failed: {error}"));
+                        let evidence =
+                            run_mixed_dpi_transition(&mut window).unwrap_or_else(|error| {
+                                panic!("GFX-R5 mixed-DPI exact failed: {error}")
+                            });
+
+                        assert_eq!(evidence.monitor_samples.len(), 2);
+                        assert_eq!(evidence.initial.logical_extent, (137, 103));
+                        assert_eq!(evidence.forward.logical_resize, Some((137, 103)));
+                        assert_eq!(evidence.return_transition.logical_resize, Some((137, 103)));
+                        assert!(evidence.initial.target_monitor_reached);
+                        assert!(evidence.forward.target_monitor_reached);
+                        assert!(evidence.return_transition.target_monitor_reached);
+                        println!(
+                            "GFX-R5 mixed-DPI evidence: expected={vendor}; {}; monitor_initial bounds=({},{}..{},{}),dpi={}x{}; monitor_forward bounds=({},{}..{},{}),dpi={}x{}; initial={:?}; forward={:?}; return={:?}",
+                            evidence.adapter_diagnostic,
+                            evidence.monitor_samples[0].bounds.0,
+                            evidence.monitor_samples[0].bounds.1,
+                            evidence.monitor_samples[0].bounds.2,
+                            evidence.monitor_samples[0].bounds.3,
+                            evidence.monitor_samples[0].dpi_x,
+                            evidence.monitor_samples[0].dpi_y,
+                            evidence.monitor_samples[1].bounds.0,
+                            evidence.monitor_samples[1].bounds.1,
+                            evidence.monitor_samples[1].bounds.2,
+                            evidence.monitor_samples[1].bounds.3,
+                            evidence.monitor_samples[1].dpi_x,
+                            evidence.monitor_samples[1].dpi_y,
+                            evidence.initial,
+                            evidence.forward,
+                            evidence.return_transition,
+                        );
+                    }
+                }
+
                 pub mod vulkan_fault_recovery {
                     use super::super::super::super::expected_vendor;
                     use uix::gfx_r5_support::{run_engine_recovery_boundary, NativeWindow};
