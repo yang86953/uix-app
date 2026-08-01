@@ -1,19 +1,22 @@
 # -*- coding: utf-8 -*-
-"""Validate local Markdown links in core docs, reports, and project READMEs."""
+"""Validate repository-local Markdown links and anchors.
+
+Product, architecture, usage, and project instructions are owned by the
+knowledge base after the documentation migration.  ``file:///`` links to
+those documents are therefore an explicit external boundary, not repository
+relative paths to validate from this checkout.
+"""
 from __future__ import annotations
 
 import re
 import sys
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
 
 # Unicode escapes avoid source-encoding issues on Windows consoles.
-PRODUCT = "\u4ea7\u54c1.md"
 PROGRESS = "\u8fdb\u5ea6.md"
-ARCH = "\u67b6\u6784.md"
-USAGE = "\u4f7f\u7528.md"
 DOMAIN = "\u9886\u57df"
 DEMAND = "\u6309\u9700\u9a71\u52a8.md"
 PUBLIC_API = "\u516c\u5f00API.md"
@@ -25,6 +28,8 @@ DEFECTS_OLD = "\u7f3a\u9677.md"
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.M)
 HTML_ID_RE = re.compile(r'<a\s+id="([^"]+)"\s*>', re.I)
+EXTERNAL_SCHEMES = frozenset({"data", "file", "http", "https", "mailto"})
+EXTERNAL_DOCUMENT_SCHEMES = frozenset({"file"})
 
 SCAN = [
     ROOT / "AGENTS.md",
@@ -67,9 +72,10 @@ def duplicate_explicit_anchors(path: Path) -> list[str]:
 
 def split_target(target: str) -> tuple[str, str | None]:
     target = target.strip()
-    if target.startswith("<") and target.endswith(">"):
+    angle_target = target.startswith("<") and target.endswith(">")
+    if angle_target:
         target = target[1:-1]
-    if " " in target and not target.startswith("#"):
+    if not angle_target and " " in target and not target.startswith("#"):
         target = target.split(" ", 1)[0]
     target = unquote(target)
     if target.startswith("#"):
@@ -80,9 +86,26 @@ def split_target(target: str) -> tuple[str, str | None]:
     return target, None
 
 
+def target_scheme(raw: str) -> str:
+    """Return the URI scheme of a Markdown link target, if it has one."""
+
+    path_part, _ = split_target(raw)
+    return urlparse(path_part).scheme.casefold()
+
+
+def is_external_target(raw: str) -> bool:
+    return target_scheme(raw) in EXTERNAL_SCHEMES
+
+
+def is_external_document_target(raw: str) -> bool:
+    return target_scheme(raw) in EXTERNAL_DOCUMENT_SCHEMES
+
+
 def validate_local_target(
     md: Path, raw: str, anchor_cache: dict[Path, set[str]]
 ) -> str | None:
+    if is_external_target(raw):
+        return None
     path_part, frag = split_target(raw)
     target = md if path_part == "" else (md.parent / path_part).resolve()
     if not target.is_file():
@@ -105,13 +128,10 @@ def main() -> int:
     errors: list[str] = []
     anchor_cache: dict[Path, set[str]] = {}
 
-    required = [
-        ROOT / "AGENTS.md",
-        ROOT / "docs" / PRODUCT,
-        ROOT / "docs" / ARCH,
-        ROOT / "docs" / PROGRESS,
-        ROOT / "docs" / USAGE,
-    ]
+    # These two files are the repository-local gate entry points.  AGENTS.md
+    # and the product/architecture/usage documents are authoritative in the
+    # knowledge base and are intentionally not required in this checkout.
+    required = [ROOT / "README.md", ROOT / "docs" / PROGRESS]
     for p in required:
         if not p.is_file():
             errors.append(f"missing required file: {p.relative_to(ROOT).as_posix()}")
@@ -138,9 +158,12 @@ def main() -> int:
                 f"removed encyclopedia must not sit at docs root: {p.relative_to(ROOT).as_posix()}"
             )
 
+    scanned = 0
+    external_document_links = 0
     for md in SCAN:
         if not md.is_file():
             continue
+        scanned += 1
         for anchor in duplicate_explicit_anchors(md):
             errors.append(
                 f"{md.relative_to(ROOT).as_posix()}: duplicate explicit anchor #{anchor}"
@@ -148,18 +171,24 @@ def main() -> int:
         text = md.read_text(encoding="utf-8")
         for m in LINK_RE.finditer(text):
             raw = m.group(1).strip()
-            if raw.startswith(("http://", "https://", "mailto:", "data:")):
+            if is_external_target(raw):
+                if is_external_document_target(raw):
+                    external_document_links += 1
                 continue
             if error := validate_local_target(md, raw, anchor_cache):
                 errors.append(error)
 
-    print(f"scanned {len(SCAN)} files")
+    print(f"scanned {scanned} files")
+    print(
+        "skipped "
+        f"{external_document_links} external document link(s) outside repository boundary"
+    )
     if errors:
         print(f"FAIL: {len(errors)} issue(s)")
         for e in errors:
             print(" ", e)
         return 1
-    print("OK: tree + file links valid")
+    print("OK: repository-local tree + file links valid")
     return 0
 
 
