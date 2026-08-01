@@ -1191,11 +1191,21 @@ dependencies = [
  "serde_json",
  "tracing",
  "tracing-subscriber",
+ "uix-derive",
  "wayland-client",
  "wayland-protocols",
  "wgpu",
  "windows",
  "windows-core",
+]
+
+[[package]]
+name = "uix-derive"
+version = "0.0.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.118",
 ]
 
 [[package]]

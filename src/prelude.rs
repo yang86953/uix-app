@@ -37,6 +37,7 @@ pub use crate::data::SettingsService;
 // ui
 
 pub use crate::component;
+pub use crate::Display;
 pub use crate::impl_widget_component;
 pub use crate::keyframe;
 pub use crate::semantic_handler;

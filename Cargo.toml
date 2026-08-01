@@ -21,6 +21,7 @@ lto = "fat"
 codegen-units = 1
 
 [dependencies]
+uix-derive = { path = "uix-derive" }
 ab_glyph = "0.2.32"
 earcut = "0.4.10"
 glow = { version = "0.18.0", optional = true }
