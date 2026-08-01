@@ -44,7 +44,17 @@ try {
         throw 'Release Demo build failed.'
     }
 
-    $packageArgs = @('package', '--locked', '--offline')
+    # Cargo rewrites the private path dependency to a registry dependency while
+    # packaging. Keep verification on the repository's local proc-macro source;
+    # the UIX crate is internal-only and is not resolved from crates.io.
+    $derivePath = (Resolve-Path -LiteralPath (Join-Path $repoRoot 'uix-derive')).Path.Replace('\', '/')
+    $packageArgs = @(
+        'package'
+        '--locked'
+        '--offline'
+        '--config'
+        "patch.crates-io.uix-derive.path='$derivePath'"
+    )
     if ($AllowDirtyForVerification) {
         $packageArgs += '--allow-dirty'
     }
