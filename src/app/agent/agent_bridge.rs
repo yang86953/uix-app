@@ -11,8 +11,8 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 #[cfg(any(test, feature = "agent-control"))]
-use crate::app::agent_control::AgentWindowAction;
-use crate::app::agent_control::{
+use crate::app::agent::agent_control::AgentWindowAction;
+use crate::app::agent::agent_control::{
     AgentCommandRequest, AgentCommandTicket, AgentErrorCode, AgentSubmitError,
 };
 use crate::app::session_runtime::AppRuntime;

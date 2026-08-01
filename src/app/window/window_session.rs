@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
-use crate::app::active_work_registry::ActiveWorkRegistry;
-use crate::app::agent_bridge::AgentWindowRegistration;
-use crate::app::agent_control::{AgentCommandQueue, WindowAgentState};
-use crate::app::app_timer::AppTimerQueue;
-use crate::app::main_thread_queue::MainThreadQueue;
+use crate::app::event_loop::active_work_registry::ActiveWorkRegistry;
+use crate::app::agent::agent_bridge::AgentWindowRegistration;
+use crate::app::agent::agent_control::{AgentCommandQueue, WindowAgentState};
+use crate::app::event_loop::app_timer::AppTimerQueue;
+use crate::app::event_loop::main_thread_queue::MainThreadQueue;
 use crate::app::window_semantics::{WindowSemanticSnapshot, WindowSemanticState};
 use crate::core::{Error, Rect, WindowId};
 use crate::draw::scene::NodeId;

@@ -10,11 +10,11 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Map, Value};
 
-use crate::app::agent_bridge::{
+use crate::app::agent::agent_bridge::{
     AgentProcessBridge, AgentWaitCondition, AgentWaitError, AgentWaitOutcome, AgentWindowInfo,
     MAX_AGENT_WAIT_TIMEOUT,
 };
-use crate::app::agent_control::{
+use crate::app::agent::agent_control::{
     AgentCommandError, AgentCommandResponse, AgentErrorCode, AgentSubmitError, AgentWindowAction,
     DEFAULT_AGENT_COMMAND_QUEUE_CAPACITY, MAX_AGENT_SETTLE_PASSES,
 };

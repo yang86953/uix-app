@@ -8,14 +8,14 @@
 mod availability;
 mod support;
 
-use crate::app::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry, TimerId};
-use crate::app::agent_control::WindowAgentState;
-use crate::app::app_timer::AppTimerQueue;
-use crate::app::frame_scheduler::{FrameScheduler, SurfaceSuspendReason};
-use crate::app::main_thread_queue::{MainThreadContext, MainThreadQueue};
-use crate::app::text_input::sync_window_text_input;
+use crate::app::event_loop::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry, TimerId};
+use crate::app::agent::agent_control::WindowAgentState;
+use crate::app::event_loop::app_timer::AppTimerQueue;
+use crate::app::event_loop::frame_scheduler::{FrameScheduler, SurfaceSuspendReason};
+use crate::app::event_loop::main_thread_queue::{MainThreadContext, MainThreadQueue};
+use crate::app::window::text_input::sync_window_text_input;
 use crate::app::window_semantics::WindowSemanticState;
-use crate::app::window_session::{ViewFactorySlot, WindowLoopState, WindowTextInputState};
+use crate::app::window::window_session::{ViewFactorySlot, WindowLoopState, WindowTextInputState};
 use crate::core::{Errc, Error, Point, PresentDamageTracker, Rect};
 use crate::draw::renderer::GraphicsFailure;
 use crate::draw::renderer::{FrameRenderInput, InvalidationSource, RenderMetrics, ScenePipeline};

@@ -3,7 +3,7 @@
 //! Tracking is disabled until a recorder or Agent Bridge explicitly enables
 //! it. A disabled session therefore performs no semantic-tree traversal.
 
-use crate::app::agent_bridge::AgentWindowRegistration;
+use crate::app::agent::agent_bridge::AgentWindowRegistration;
 use crate::core::WindowId;
 use crate::ui::accessibility::semantic_snapshot::{SemanticNode, SemanticSnapshotBody};
 use crate::ui::WidgetTree;

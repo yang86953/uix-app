@@ -5,10 +5,10 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
-use crate::app::app_timer::TimerHandle;
+use crate::app::event_loop::app_timer::TimerHandle;
 use crate::app::session_runtime::AppRuntime;
-use crate::app::shell::di::Container;
-use crate::app::window_config::WindowConfig;
+use crate::app::application::di::Container;
+use crate::app::window::window_config::WindowConfig;
 pub use crate::core::WindowId;
 use crate::core::{ComponentId, Constraints, Errc, Error, Rect, Result, Size};
 use crate::diagnostics::Diagnostics;

@@ -10,8 +10,8 @@ use std::thread::{self, JoinHandle};
 
 use serde_json::json;
 
-use crate::app::agent_bridge::AgentProcessBridge;
-use crate::app::agent_protocol::{
+use crate::app::agent::agent_bridge::AgentProcessBridge;
+use crate::app::agent::agent_protocol::{
     encode_session_token, framing_error_reply, AgentProtocolReply, AgentProtocolSession,
     AGENT_PROTOCOL_SCHEMA, MAX_AGENT_CONNECTIONS, MAX_AGENT_MESSAGE_BYTES,
 };

@@ -1,13 +1,13 @@
 //! Render Loop — OS 事件 + Widget 调度；渲染段委托 draw ScenePipeline。
 
-use crate::app::active_work_registry::ActiveWorkRegistry;
-use crate::app::agent_control::WindowAgentState;
-use crate::app::clock::{system_clock, AppClock};
-use crate::app::text_input::sync_window_text_input;
-use crate::app::window_actions::apply_pending_window_actions;
-use crate::app::window_driver::{WindowDriver, WindowFrameContext};
+use crate::app::event_loop::active_work_registry::ActiveWorkRegistry;
+use crate::app::agent::agent_control::WindowAgentState;
+use crate::app::event_loop::clock::{system_clock, AppClock};
+use crate::app::window::text_input::sync_window_text_input;
+use crate::app::window::window_actions::apply_pending_window_actions;
+use crate::app::window::window_driver::{WindowDriver, WindowFrameContext};
 use crate::app::window_semantics::WindowSemanticState;
-use crate::app::window_session::{WindowLoopState, WindowSession, WindowTextInputState};
+use crate::app::window::window_session::{WindowLoopState, WindowSession, WindowTextInputState};
 use crate::core::Point;
 use crate::draw::renderer::RenderMetrics;
 use crate::draw::resources::font::font_service::FontService;
@@ -70,8 +70,8 @@ where
         engine,
         tree,
         &mut active_work,
-        crate::app::app_timer::AppTimerQueue::new(),
-        crate::app::main_thread_queue::MainThreadQueue::new(),
+        crate::app::event_loop::app_timer::AppTimerQueue::new(),
+        crate::app::event_loop::main_thread_queue::MainThreadQueue::new(),
         &mut agent_commands,
         system_clock(),
         None,
@@ -335,11 +335,11 @@ fn run_widget_loop_with_active_work<M, X, T, R, D, F>(
     engine: &mut dyn RenderTarget,
     tree: &mut WidgetTree,
     active_work: &mut ActiveWorkRegistry,
-    app_timers: crate::app::app_timer::AppTimerQueue,
-    main_thread_queue: crate::app::main_thread_queue::MainThreadQueue,
+    app_timers: crate::app::event_loop::app_timer::AppTimerQueue,
+    main_thread_queue: crate::app::event_loop::main_thread_queue::MainThreadQueue,
     agent_commands: &mut WindowAgentState,
     clock: std::sync::Arc<dyn AppClock>,
-    view_factory: Option<&crate::app::window_session::ViewFactorySlot>,
+    view_factory: Option<&crate::app::window::window_session::ViewFactorySlot>,
     pending_root: &mut Option<crate::ui::view::ViewNode>,
     reconcile_pending: &mut bool,
     mut loop_state: Option<&mut WindowLoopState>,

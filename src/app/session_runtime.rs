@@ -6,20 +6,20 @@ use std::sync::{
 use std::time::Duration;
 
 #[cfg(any(test, feature = "agent-control"))]
-use crate::app::agent_bridge::AgentProcessBridge;
-use crate::app::agent_bridge::{
+use crate::app::agent::agent_bridge::AgentProcessBridge;
+use crate::app::agent::agent_bridge::{
     AgentBridgeDirectory, AgentWaitCondition, AgentWaitError, AgentWaitOutcome, AgentWindowInfo,
     AgentWindowRegistration,
 };
-use crate::app::agent_control::{
+use crate::app::agent::agent_control::{
     AgentCommandQueue, AgentCommandRequest, AgentCommandTicket, AgentSubmitError,
 };
 #[cfg(feature = "agent-control")]
-use crate::app::agent_transport::{AgentTransportError, AgentTransportHandle, AgentTransportInfo};
-use crate::app::app_timer::{AppTimerQueue, TimerHandle};
-use crate::app::main_thread_queue::{MainThreadContext, MainThreadQueue};
-use crate::app::window_config::WindowConfig;
-use crate::app::window_session::TextInputCoordinator;
+use crate::app::agent::agent_transport::{AgentTransportError, AgentTransportHandle, AgentTransportInfo};
+use crate::app::event_loop::app_timer::{AppTimerQueue, TimerHandle};
+use crate::app::event_loop::main_thread_queue::{MainThreadContext, MainThreadQueue};
+use crate::app::window::window_config::WindowConfig;
+use crate::app::window::window_session::TextInputCoordinator;
 use crate::core::WindowId;
 use crate::diagnostics::{Diagnostics, DiagnosticsConfig};
 #[cfg(feature = "test-harness")]
