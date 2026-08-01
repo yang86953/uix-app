@@ -95,7 +95,8 @@ INVALID_EVIDENCE_EXIT = 3
 FIELD_PATTERN = re.compile(r"(?<![A-Za-z0-9_])([A-Za-z][A-Za-z0-9_]*)=([^\s]+)")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 EXPECTED_ENGINE_MARKER = (
-    "GPU engine initialized (backend=vulkan; raster=gpu_native; present=swapchain)"
+    "Graphics bootstrap: selected recipe backend=vulkan; "
+    "raster=gpu_native; present=swapchain"
 )
 EXPECTED_WGPU_MARKER = "WgpuContext: backend=vulkan"
 FORBIDDEN_BACKEND_MARKERS = (
