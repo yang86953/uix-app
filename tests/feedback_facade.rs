@@ -2,11 +2,20 @@
 //!
 //! 覆盖：组件构造自动注册、未注册 no-op、显式 register/unregister。
 
+use std::sync::{Mutex, OnceLock};
+
 use uix::prelude::*;
 use uix::ui::{register_feedback, unregister_feedback};
 
+/// 门面是进程级注册表：测试串行化避免并行注册互相覆盖。
+fn serial() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+}
+
 #[test]
 fn message_component_registers_facade_automatically() {
+    let _guard = serial();
     let _message = Message::new();
     let facade = message();
     assert!(facade.is_available());
@@ -18,6 +27,7 @@ fn message_component_registers_facade_automatically() {
 
 #[test]
 fn notification_component_registers_facade_automatically() {
+    let _guard = serial();
     let _notification = Notification::new();
     let facade = notify();
     assert!(facade.is_available());
@@ -29,6 +39,7 @@ fn notification_component_registers_facade_automatically() {
 
 #[test]
 fn facade_is_noop_when_unregistered() {
+    let _guard = serial();
     unregister_feedback();
     assert!(!message().is_available());
     assert_eq!(message().success("丢失"), 0, "未注册时应 no-op 返回 0");
@@ -37,6 +48,7 @@ fn facade_is_noop_when_unregistered() {
 
 #[test]
 fn explicit_register_overrides_and_unregister_clears() {
+    let _guard = serial();
     let handle = Message::new().handle();
     let notification = Notification::new().handle();
     register_feedback(handle.clone(), notification.clone());
