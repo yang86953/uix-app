@@ -72,6 +72,7 @@ impl IFileDialog for WindowsFileDialog {
                 nFileExtension: 0,
                 lpstrDefExt: ptr::null(),
                 lCustData: 0,
+                // Hook callback 不注册；避免把 Rust 函数指针交给 common dialog。
                 lpfnHook: ptr::null_mut(),
                 lpTemplateName: ptr::null(),
                 pvReserved: ptr::null_mut(),
@@ -147,6 +148,7 @@ impl IFileDialog for WindowsFileDialog {
                 nFileExtension: 0,
                 lpstrDefExt: ptr::null(),
                 lCustData: 0,
+                // Hook callback 不注册；避免把 Rust 函数指针交给 common dialog。
                 lpfnHook: ptr::null_mut(),
                 lpTemplateName: ptr::null(),
                 pvReserved: ptr::null_mut(),
@@ -171,6 +173,7 @@ impl IFileDialog for WindowsFileDialog {
                 pszDisplayName: buf.as_mut_ptr(),
                 lpszTitle: wide_title.as_ptr(),
                 ulFlags: BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE,
+                // Folder-picker callback 不注册；这里没有 Rust ABI callback owner。
                 lpfn: None,
                 lParam: 0,
                 iImage: 0,
