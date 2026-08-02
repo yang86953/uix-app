@@ -36,6 +36,24 @@ pub(crate) fn push_coalesced_event(events: &mut Vec<UiEvent>, event: &UiEvent) {
     events.push(event.clone());
 }
 
+/// Records the native event type that wakes a G5 idle phase without changing
+/// event routing or rendering behavior. The log is intentionally limited to
+/// perf-probe idle runs so ordinary applications do not pay for telemetry.
+fn log_g5_idle_event(event: &UiEvent) {
+    if !crate::core::perf_probe::perf_probe_enabled() {
+        return;
+    }
+    crate::core::perf_probe::with_internal_g5_scenario(|scenario| {
+        if scenario.starts_with("idle.") {
+            tracing::info!(
+                "G5_EVENT schema=1 scenario={} type={:?}",
+                scenario,
+                event.type_
+            );
+        }
+    });
+}
+
 /// 运行完整的 widget 渲染事件循环。
 #[allow(clippy::too_many_arguments)]
 pub fn run_widget_loop<M, X, F>(
@@ -391,6 +409,7 @@ where
     driver.sync_app_timers(active_work, &app_timers);
 
     let collect = |ev: &UiEvent| {
+        log_g5_idle_event(ev);
         if ev.window_id.is_some_and(|target| target != window_id) {
             push_coalesced_event(&mut foreign_events.borrow_mut(), ev);
             return true;
