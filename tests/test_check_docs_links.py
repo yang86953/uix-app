@@ -19,10 +19,16 @@ SPEC.loader.exec_module(CHECK)
 
 
 class CheckDocsLinksTests(unittest.TestCase):
+    def test_all_root_markdown_files_are_scanned(self) -> None:
+        root_markdown = set(CHECK.ROOT.glob("*.md"))
+
+        self.assertTrue(root_markdown)
+        self.assertTrue(root_markdown.issubset(set(CHECK.SCAN)))
+
     def test_file_uri_is_an_external_document_boundary(self) -> None:
         raw = (
-            "<file:///C:/data/pi/note/我的项目/软件/UIX%20App/架构/"
-            "platform/diagnostics.md#平台层全覆盖>"
+            "<file:///C:/data/note/程序开发/"
+            "System%20Module%20Component%20设计模式.md#强制不变量>"
         )
 
         self.assertEqual(CHECK.target_scheme(raw), "file")
@@ -44,6 +50,24 @@ class CheckDocsLinksTests(unittest.TestCase):
 
         self.assertFalse(CHECK.is_external_target(raw))
         self.assertIsNone(CHECK.validate_local_target(md, raw, {}))
+
+    def test_all_four_role_indexes_are_required(self) -> None:
+        required_names = {path.name for path in CHECK.REQUIRED_FILES}
+
+        self.assertTrue({"产品.md", "使用.md", "架构.md", "进度.md"}.issubset(required_names))
+
+    def test_legacy_vault_project_path_is_detected(self) -> None:
+        text = r"C:\data\note\我的项目\软件\UIX App\使用.md"
+
+        self.assertIsNotNone(CHECK.LEGACY_PROJECT_PATH_RE.search(text))
+
+    def test_obsidian_wiki_link_is_detected(self) -> None:
+        self.assertIsNotNone(CHECK.WIKI_LINK_RE.search("[[使用/快速开始|快速开始]]"))
+
+    def test_usage_example_id_is_extracted_from_rust_fence(self) -> None:
+        text = "```rust uix-compile=hello-world\nfn main() {}\n```"
+
+        self.assertEqual(CHECK.USAGE_EXAMPLE_ID_RE.findall(text), ["hello-world"])
 
     def test_current_repository_passes_the_gate(self) -> None:
         output = io.StringIO()
