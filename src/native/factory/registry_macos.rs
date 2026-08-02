@@ -13,7 +13,7 @@ use std::ffi::c_void;
 
 #[cfg(feature = "metal")]
 use crate::native::presentation::graphics::wgpu_backend::create_metal;
-#[cfg(feature = "vulkan")]
+#[cfg(all(feature = "metal", feature = "vulkan"))]
 use crate::native::presentation::graphics::wgpu_backend::create_vulkan;
 
 #[cfg(not(feature = "metal"))]
@@ -29,7 +29,7 @@ fn create_metal(
     ))
 }
 
-#[cfg(not(feature = "vulkan"))]
+#[cfg(not(all(feature = "metal", feature = "vulkan")))]
 fn create_vulkan(
     _: *mut c_void,
     _: i32,
@@ -38,7 +38,7 @@ fn create_vulkan(
 ) -> Result<Box<dyn IGraphicsContext>, Error> {
     Err(Error::new(
         Errc::PlatformError,
-        "graphics feature `vulkan` is disabled in this build",
+        "macOS Vulkan requires the `metal` and `vulkan` features",
     ))
 }
 
@@ -48,7 +48,7 @@ const METAL_STATUS: BackendStatus = if cfg!(feature = "metal") {
     BackendStatus::Disabled
 };
 
-const VULKAN_STATUS: BackendStatus = if cfg!(feature = "vulkan") {
+const VULKAN_STATUS: BackendStatus = if cfg!(all(feature = "metal", feature = "vulkan")) {
     BackendStatus::Active
 } else {
     BackendStatus::Disabled
