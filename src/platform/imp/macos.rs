@@ -73,7 +73,7 @@ pub(crate) fn memory_info() -> Result<MemoryInfo> {
 }
 
 pub(crate) fn displays() -> Result<Box<[DisplayInfo]>> {
-    let platform = MacosPlatform::new();
+    let platform = MacosPlatform::new(crate::diagnostics::PendingFailureQueue::new());
     let display = platform.display();
     let count = usize::try_from(display.count()?).map_err(|_| {
         Error::new(

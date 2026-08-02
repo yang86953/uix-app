@@ -9,10 +9,12 @@
 
 use std::collections::VecDeque;
 use std::ffi::{c_char, c_void, CString};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex, Once};
 use std::time::{Duration, Instant};
 
 use crate::core::{Errc, Error, Result, WindowId};
+use crate::diagnostics::PendingFailureSource;
 use crate::native::windowing::event::{FrameRequestToken, UiEvent};
 use crate::native::windowing::shared::native_frame_mailbox::{
     NativeFrameArmResult, NativeFrameMailbox,
@@ -28,6 +30,7 @@ struct DisplayLinkTargetContext {
     events: Arc<Mutex<VecDeque<UiEvent>>>,
     mailbox: SharedMailbox,
     window_id: WindowId,
+    pending_failures: PendingFailureSource,
 }
 
 pub(crate) struct MacosFramePacer {
@@ -36,6 +39,7 @@ pub(crate) struct MacosFramePacer {
     events: Arc<Mutex<VecDeque<UiEvent>>>,
     mailbox: SharedMailbox,
     window_id: WindowId,
+    pending_failures: PendingFailureSource,
 }
 
 impl MacosFramePacer {
@@ -43,6 +47,7 @@ impl MacosFramePacer {
         window: Id,
         events: Arc<Mutex<VecDeque<UiEvent>>>,
         window_id: WindowId,
+        pending_failures: PendingFailureSource,
     ) -> Self {
         Self {
             window,
@@ -50,6 +55,7 @@ impl MacosFramePacer {
             events,
             mailbox: Arc::new(Mutex::new(NativeFrameMailbox::default())),
             window_id,
+            pending_failures,
         }
     }
 
@@ -154,6 +160,7 @@ impl MacosFramePacer {
                     events: Arc::clone(&self.events),
                     mailbox: Arc::clone(&self.mailbox),
                     window_id: self.window_id,
+                    pending_failures: self.pending_failures.clone(),
                 },
             )?
         };
@@ -332,6 +339,27 @@ mod cocoa {
     }
 
     unsafe extern "C" fn display_link_fired(target: Id, _cmd: Sel, display_link: Id) {
+        let pending_failures = if target.is_null() {
+            None
+        } else {
+            let context =
+                objc_runtime::box_ptr::<DisplayLinkTargetContext>(target, TARGET_CONTEXT_OFFSET);
+            (!context.is_null()).then(|| (*context).pending_failures.clone())
+        };
+        let result = catch_unwind(AssertUnwindSafe(|| unsafe {
+            display_link_fired_inner(target, display_link);
+        }));
+        if result.is_err() {
+            if let Some(pending_failures) = pending_failures {
+                let _ = pending_failures.enqueue(Error::new(
+                    Errc::PlatformError,
+                    "macOS CADisplayLink callback panicked",
+                ));
+            }
+        }
+    }
+
+    unsafe fn display_link_fired_inner(target: Id, display_link: Id) {
         if display_link.is_null() {
             return;
         }
@@ -366,11 +394,23 @@ mod cocoa {
     }
 
     unsafe extern "C" fn target_dealloc(target: Id, _cmd: Sel) {
-        drop(objc_runtime::take_box::<DisplayLinkTargetContext>(
-            target,
-            TARGET_CONTEXT_OFFSET,
-        ));
-        objc_runtime::call_super_dealloc(target, TARGET_CLASS_PTR);
+        let context =
+            objc_runtime::take_box::<DisplayLinkTargetContext>(target, TARGET_CONTEXT_OFFSET);
+        let pending_failures = context
+            .as_ref()
+            .map(|context| context.pending_failures.clone());
+        drop(context);
+        let result = catch_unwind(AssertUnwindSafe(|| unsafe {
+            objc_runtime::call_super_dealloc(target, TARGET_CLASS_PTR);
+        }));
+        if result.is_err() {
+            if let Some(pending_failures) = pending_failures {
+                let _ = pending_failures.enqueue(Error::new(
+                    Errc::PlatformError,
+                    "macOS CADisplayLink target dealloc callback panicked",
+                ));
+            }
+        }
     }
 
     unsafe fn target_present_time(display_link: Id, frame_time: Instant) -> Option<Instant> {

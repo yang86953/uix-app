@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, Once};
 use std::time::Duration;
 
 use crate::core::{Errc, Error, Rect, Result, WindowId};
+use crate::diagnostics::{PendingFailureQueue, PendingFailureSource};
 use crate::native::capabilities::display::{DisplayInfo, IDisplay};
 use crate::native::capabilities::services::{FileSystemCore, SpecialDirProvider};
 use crate::native::capabilities::system::{
@@ -31,6 +32,7 @@ use super::text_input_view::{self, MacosTextInput};
 use super::window_delegate::{self, WindowDelegateContext};
 
 pub struct MacosPlatform {
+    pending_failures: PendingFailureSource,
     events: Arc<Mutex<VecDeque<UiEvent>>>,
     event_bus: EventBus,
     clipboard: MacosClipboard,
@@ -48,8 +50,10 @@ pub struct MacosPlatform {
 }
 
 impl MacosPlatform {
-    pub fn new() -> Self {
+    pub fn new(pending_failures: PendingFailureQueue) -> Self {
+        let pending_failures = pending_failures.source();
         Self {
+            pending_failures,
             events: Arc::new(Mutex::new(VecDeque::new())),
             event_bus: EventBus::new(),
             clipboard: MacosClipboard::new(),
@@ -70,7 +74,13 @@ impl MacosPlatform {
 
 impl Default for MacosPlatform {
     fn default() -> Self {
-        Self::new()
+        Self::new(PendingFailureQueue::new())
+    }
+}
+
+impl Drop for MacosPlatform {
+    fn drop(&mut self) {
+        self.pending_failures.close();
     }
 }
 
@@ -200,6 +210,7 @@ impl IWindowManager for MacosPlatform {
                     window_id,
                     state: Rc::clone(&state),
                     open: Rc::clone(&open),
+                    pending_failures: self.pending_failures.clone(),
                 },
             )
         } {
@@ -217,6 +228,7 @@ impl IWindowManager for MacosPlatform {
             Arc::clone(&self.events),
             text_input_owner,
             open,
+            self.pending_failures.clone(),
         );
         let presenter = MacosPresenter::new(content_layer.layer, width, height);
         let core = PlatformWindowCore::new(state, ops, Box::new(presenter));
@@ -225,6 +237,10 @@ impl IWindowManager for MacosPlatform {
 }
 
 impl Platform for MacosPlatform {
+    fn take_pending_failure(&mut self) -> Option<Error> {
+        self.pending_failures.take()
+    }
+
     fn window_manager(&mut self) -> &mut dyn IWindowManager {
         self
     }
@@ -299,12 +315,13 @@ impl MacosWindowOps {
         events: Arc<Mutex<VecDeque<UiEvent>>>,
         text_input_owner: text_input_view::SharedImeOwner,
         open: Rc<Cell<bool>>,
+        pending_failures: PendingFailureSource,
     ) -> Self {
         Self {
             window,
             layer,
             window_id,
-            frame_pacer: MacosFramePacer::new(window, events, window_id),
+            frame_pacer: MacosFramePacer::new(window, events, window_id, pending_failures),
             text_input_owner,
             open,
         }
