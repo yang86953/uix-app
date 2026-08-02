@@ -1,11 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Validate repository-local Markdown links and anchors.
-
-Product, architecture, usage, and project instructions are owned by the
-knowledge base after the documentation migration.  ``file:///`` links to
-those documents are therefore an explicit external boundary, not repository
-relative paths to validate from this checkout.
-"""
+"""Validate the repository-owned UIX documentation tree, links, and anchors."""
 from __future__ import annotations
 
 import re
@@ -17,6 +11,9 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # Unicode escapes avoid source-encoding issues on Windows consoles.
 PROGRESS = "\u8fdb\u5ea6.md"
+PRODUCT = "\u4ea7\u54c1.md"
+USAGE = "\u4f7f\u7528.md"
+ARCHITECTURE = "\u67b6\u6784.md"
 DOMAIN = "\u9886\u57df"
 DEMAND = "\u6309\u9700\u9a71\u52a8.md"
 PUBLIC_API = "\u516c\u5f00API.md"
@@ -26,14 +23,40 @@ RENDER = "\u6e32\u67d3.md"
 DEFECTS_OLD = "\u7f3a\u9677.md"
 
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
+WIKI_LINK_RE = re.compile(r"\[\[[^\]\n]+\]\]")
+USAGE_EXAMPLE_ID_RE = re.compile(
+    r"^```rust[^\n]*\buix-compile=([A-Za-z0-9_-]+)", re.MULTILINE
+)
+TARGET_EXAMPLE_RE = re.compile(r"^```text\s*$", re.MULTILINE)
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.M)
 HTML_ID_RE = re.compile(r'<a\s+id="([^"]+)"\s*>', re.I)
+LEGACY_PROJECT_PATH_RE = re.compile(
+    r"\u6211\u7684\u9879\u76ee[/\\]+\u8f6f\u4ef6[/\\]+UIX(?:%20| )App",
+    re.IGNORECASE,
+)
 EXTERNAL_SCHEMES = frozenset({"data", "file", "http", "https", "mailto"})
 EXTERNAL_DOCUMENT_SCHEMES = frozenset({"file"})
 
-SCAN = [
-    ROOT / "AGENTS.md",
+REQUIRED_FILES = (
     ROOT / "README.md",
+    ROOT / "docs" / "README.md",
+    ROOT / "docs" / PRODUCT,
+    ROOT / "docs" / USAGE,
+    ROOT / "docs" / ARCHITECTURE,
+    ROOT / "docs" / PROGRESS,
+)
+ROLE_DIRECTORIES = (
+    ROOT / "docs" / PRODUCT.removesuffix(".md"),
+    ROOT / "docs" / USAGE.removesuffix(".md"),
+    ROOT / "docs" / ARCHITECTURE.removesuffix(".md"),
+    ROOT / "docs" / PROGRESS.removesuffix(".md"),
+)
+FORBIDDEN_GENERATED_INDEXES = frozenset(
+    {"\u76ee\u5f55\u7d22\u5f15.md", "\u9879\u76ee\u4e0a\u4e0b\u6587\u7d22\u5f15.md"}
+)
+
+SCAN = [
+    *sorted(ROOT.glob("*.md")),
     ROOT / "demo" / "README.md",
     *sorted((ROOT / "assets").rglob("*.md")),
     *sorted((ROOT / "docs").rglob("*.md")),
@@ -127,14 +150,23 @@ def validate_local_target(
 def main() -> int:
     errors: list[str] = []
     anchor_cache: dict[Path, set[str]] = {}
+    usage_example_owners: dict[str, Path] = {}
+    usage_dir = ROOT / "docs" / USAGE.removesuffix(".md")
 
-    # These two files are the repository-local gate entry points.  AGENTS.md
-    # and the product/architecture/usage documents are authoritative in the
-    # knowledge base and are intentionally not required in this checkout.
-    required = [ROOT / "README.md", ROOT / "docs" / PROGRESS]
-    for p in required:
+    for p in REQUIRED_FILES:
         if not p.is_file():
             errors.append(f"missing required file: {p.relative_to(ROOT).as_posix()}")
+
+    for p in ROLE_DIRECTORIES:
+        if not p.is_dir():
+            errors.append(f"missing role directory: {p.relative_to(ROOT).as_posix()}")
+
+    for p in (ROOT / "docs").rglob("*.md"):
+        if p.name in FORBIDDEN_GENERATED_INDEXES:
+            errors.append(
+                "knowledge-base generated index must not be kept in repository: "
+                f"{p.relative_to(ROOT).as_posix()}"
+            )
 
     domain_dir = ROOT / "docs" / DOMAIN
     if domain_dir.exists():
@@ -169,6 +201,33 @@ def main() -> int:
                 f"{md.relative_to(ROOT).as_posix()}: duplicate explicit anchor #{anchor}"
             )
         text = md.read_text(encoding="utf-8")
+        if text.startswith("---") and "schema: ai-note/" in text.split("---", 2)[1]:
+            errors.append(
+                f"{md.relative_to(ROOT).as_posix()}: Obsidian governance frontmatter"
+            )
+        for match in WIKI_LINK_RE.finditer(text):
+            errors.append(
+                f"{md.relative_to(ROOT).as_posix()}: Obsidian Wiki link -> "
+                f"{match.group(0)}"
+            )
+        if LEGACY_PROJECT_PATH_RE.search(text):
+            errors.append(
+                f"{md.relative_to(ROOT).as_posix()}: legacy external UIX project path"
+            )
+        if md.is_relative_to(usage_dir):
+            if TARGET_EXAMPLE_RE.search(text):
+                errors.append(
+                    f"{md.relative_to(ROOT).as_posix()}: unimplemented target example "
+                    "must be tracked by progress, not usage"
+                )
+            for example_id in USAGE_EXAMPLE_ID_RE.findall(text):
+                if owner := usage_example_owners.get(example_id):
+                    errors.append(
+                        f"{md.relative_to(ROOT).as_posix()}: duplicate uix-compile id "
+                        f"{example_id} (first in {owner.relative_to(ROOT).as_posix()})"
+                    )
+                else:
+                    usage_example_owners[example_id] = md
         for m in LINK_RE.finditer(text):
             raw = m.group(1).strip()
             if is_external_target(raw):
