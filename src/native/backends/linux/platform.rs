@@ -58,7 +58,7 @@ pub struct LinuxPlatform {
 impl LinuxPlatform {
     pub fn new(pending_failures: PendingFailureQueue) -> Result<Self, Error> {
         let pending_source = pending_failures.source();
-        let backend = match WaylandBackend::new(pending_source) {
+        let backend = match WaylandBackend::new(pending_source.clone()) {
             Ok(wl) => {
                 tracing::info!("Wayland backend initialized");
                 wl
@@ -82,7 +82,7 @@ impl LinuxPlatform {
             notification_subsys: LinuxNotification::new(),
             system_info_subsys: LinuxSystemInfo::new(),
             event_bus: EventBus::new(),
-            timer_subsys: LinuxTimer::new(timer_eq),
+            timer_subsys: LinuxTimer::new(timer_eq, pending_source),
         })
     }
 }

@@ -6,13 +6,15 @@
 // 取代线程-per-timer 模式以降低线程开销。
 // ============================================================================
 
+use std::collections::HashMap;
+use std::sync::mpsc::{self, RecvTimeoutError, Sender};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+
+use crate::diagnostics::PendingFailureSource;
 use crate::native::capabilities::system::ITimer;
 use crate::native::windowing::event::UiEvent;
 use crate::native::{Errc, Error, Result};
-use std::collections::HashMap;
-use std::sync::mpsc::{self, Sender};
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
 
 /// 定时器控制指令
 enum Cmd {
@@ -31,16 +33,21 @@ pub struct LinuxTimer {
     next_id: u32,
     cmd_tx: Sender<Cmd>,
     active: Arc<Mutex<HashMap<u32, u32>>>,
+    pending_failures: PendingFailureSource,
 }
 
 impl LinuxTimer {
-    pub fn new(event_queue: Arc<Mutex<std::collections::VecDeque<UiEvent>>>) -> Self {
+    pub fn new(
+        event_queue: Arc<Mutex<std::collections::VecDeque<UiEvent>>>,
+        pending_failures: PendingFailureSource,
+    ) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>();
         let active = Arc::new(Mutex::new(HashMap::new()));
         let active_clone = active.clone();
+        let worker_failures = pending_failures.clone();
 
         // 单一后台线程管理所有定时器
-        std::thread::Builder::new()
+        if let Err(error) = std::thread::Builder::new()
             .name("uix-timers".into())
             .spawn(move || {
                 let mut entries: Vec<(Instant, u32, u32, bool)> = Vec::new();
@@ -65,12 +72,28 @@ impl LinuxTimer {
                                 }
                                 Cmd::Clear { id } => {
                                     entries.retain(|e| e.1 != id);
-                                    if let Ok(mut map) = active_clone.lock() {
-                                        map.remove(&id);
+                                    match active_clone.lock() {
+                                        Ok(mut map) => {
+                                            map.remove(&id);
+                                        }
+                                        Err(poisoned) => {
+                                            let mut map = poisoned.into_inner();
+                                            map.remove(&id);
+                                            let _ = worker_failures.enqueue(Error::new(
+                                                Errc::InvalidState,
+                                                "LinuxTimer: active timer state lock was poisoned",
+                                            ));
+                                        }
                                     }
                                 }
                             },
-                            Err(_) => break,
+                            Err(_) => {
+                                let _ = worker_failures.enqueue(Error::new(
+                                    Errc::IoError,
+                                    "LinuxTimer: timer worker command channel disconnected",
+                                ));
+                                break;
+                            }
                         }
                         continue;
                     }
@@ -83,30 +106,50 @@ impl LinuxTimer {
                     } else {
                         std::time::Duration::ZERO
                     };
-                    if let Ok(cmd) = cmd_rx.recv_timeout(wait) {
-                        match cmd {
-                            Cmd::Shutdown => break,
-                            Cmd::Register {
-                                id,
-                                interval_ms,
-                                repeating,
-                            } => {
-                                entries.push((
-                                    Instant::now()
-                                        + std::time::Duration::from_millis(interval_ms as u64),
+                    match cmd_rx.recv_timeout(wait) {
+                        Ok(cmd) => {
+                            match cmd {
+                                Cmd::Shutdown => break,
+                                Cmd::Register {
                                     id,
                                     interval_ms,
                                     repeating,
-                                ));
-                            }
-                            Cmd::Clear { id } => {
-                                entries.retain(|e| e.1 != id);
-                                if let Ok(mut map) = active_clone.lock() {
-                                    map.remove(&id);
+                                } => {
+                                    entries.push((
+                                        Instant::now()
+                                            + std::time::Duration::from_millis(interval_ms as u64),
+                                        id,
+                                        interval_ms,
+                                        repeating,
+                                    ));
+                                }
+                                Cmd::Clear { id } => {
+                                    entries.retain(|e| e.1 != id);
+                                    match active_clone.lock() {
+                                        Ok(mut map) => {
+                                            map.remove(&id);
+                                        }
+                                        Err(poisoned) => {
+                                            let mut map = poisoned.into_inner();
+                                            map.remove(&id);
+                                            let _ = worker_failures.enqueue(Error::new(
+                                                Errc::InvalidState,
+                                                "LinuxTimer: active timer state lock was poisoned",
+                                            ));
+                                        }
+                                    }
                                 }
                             }
+                            continue;
                         }
-                        continue;
+                        Err(RecvTimeoutError::Timeout) => {}
+                        Err(RecvTimeoutError::Disconnected) => {
+                            let _ = worker_failures.enqueue(Error::new(
+                                Errc::IoError,
+                                "LinuxTimer: timer worker command channel disconnected",
+                            ));
+                            break;
+                        }
                     }
 
                     // 触发所有到期的定时器
@@ -120,8 +163,18 @@ impl LinuxTimer {
                     entries.retain(|e| e.0 > now);
 
                     for (id, interval_ms, repeating) in fired {
-                        if let Ok(mut q) = event_queue.lock() {
-                            q.push_back(UiEvent::timer(id));
+                        match event_queue.lock() {
+                            Ok(mut q) => {
+                                q.push_back(UiEvent::timer(id));
+                            }
+                            Err(poisoned) => {
+                                let mut q = poisoned.into_inner();
+                                q.push_back(UiEvent::timer(id));
+                                let _ = worker_failures.enqueue(Error::new(
+                                    Errc::InvalidState,
+                                    "LinuxTimer: event queue lock was poisoned",
+                                ));
+                            }
                         }
                         if repeating {
                             entries.push((
@@ -132,19 +185,35 @@ impl LinuxTimer {
                                 true,
                             ));
                         } else {
-                            if let Ok(mut map) = active_clone.lock() {
-                                map.remove(&id);
+                            match active_clone.lock() {
+                                Ok(mut map) => {
+                                    map.remove(&id);
+                                }
+                                Err(poisoned) => {
+                                    let mut map = poisoned.into_inner();
+                                    map.remove(&id);
+                                    let _ = worker_failures.enqueue(Error::new(
+                                        Errc::InvalidState,
+                                        "LinuxTimer: active timer state lock was poisoned",
+                                    ));
+                                }
                             }
                         }
                     }
                 }
             })
-            .ok();
+        {
+            let _ = pending_failures.enqueue(Error::new(
+                Errc::IoError,
+                format!("LinuxTimer: failed to start timer worker: {error}"),
+            ));
+        }
 
         Self {
             next_id: 1,
             cmd_tx,
             active,
+            pending_failures,
         }
     }
 }
@@ -153,8 +222,18 @@ impl ITimer for LinuxTimer {
     fn set(&mut self, interval_ms: u32, repeating: bool) -> Result<u32> {
         let id = self.next_id;
         self.next_id = self.next_id.wrapping_add(1);
-        if let Ok(mut map) = self.active.lock() {
-            map.insert(id, interval_ms);
+        match self.active.lock() {
+            Ok(mut map) => {
+                map.insert(id, interval_ms);
+            }
+            Err(poisoned) => {
+                let mut map = poisoned.into_inner();
+                map.insert(id, interval_ms);
+                let _ = self.pending_failures.enqueue(Error::new(
+                    Errc::InvalidState,
+                    "LinuxTimer::set: active timer state lock was poisoned",
+                ));
+            }
         }
         self.cmd_tx
             .send(Cmd::Register {
@@ -183,6 +262,11 @@ impl ITimer for LinuxTimer {
 
 impl Drop for LinuxTimer {
     fn drop(&mut self) {
-        let _ = self.cmd_tx.send(Cmd::Shutdown);
+        if self.cmd_tx.send(Cmd::Shutdown).is_err() {
+            let _ = self.pending_failures.enqueue(Error::new(
+                Errc::IoError,
+                "LinuxTimer::drop: timer worker channel closed",
+            ));
+        }
     }
 }
