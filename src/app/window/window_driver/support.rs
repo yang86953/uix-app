@@ -344,23 +344,25 @@ fn observe_g5_post_present(scenario: &str, snapshot: G5ResourceSnapshot) {
     let Some((category, is_open, iteration)) = g5_loop_descriptor(scenario) else {
         return;
     };
-    tracing::info!(
-        "G5_RESOURCE schema=1 phase=post_present category={category} iteration={iteration} state={} window={} frame_seq={} live_nodes={} tree_slots={} overlay_count={} active_work={}",
-        if is_open { "open" } else { "closed" },
-        snapshot.window,
-        snapshot.frame_seq,
-        snapshot.live_nodes,
-        snapshot.tree_slots,
-        snapshot.overlay_count,
-        snapshot.active_work,
-    );
 
     if is_open {
-        G5_OPEN_LOOP_SNAPSHOTS.with(|snapshots| {
+        let first_open_frame = G5_OPEN_LOOP_SNAPSHOTS.with(|snapshots| {
             snapshots
                 .borrow_mut()
-                .insert((category, iteration), snapshot);
+                .insert((category, iteration), snapshot)
+                .is_none()
         });
+        if first_open_frame {
+            tracing::info!(
+                "G5_RESOURCE schema=1 phase=post_present category={category} iteration={iteration} state=open window={} frame_seq={} live_nodes={} tree_slots={} overlay_count={} active_work={}",
+                snapshot.window,
+                snapshot.frame_seq,
+                snapshot.live_nodes,
+                snapshot.tree_slots,
+                snapshot.overlay_count,
+                snapshot.active_work,
+            );
+        }
         return;
     }
 
@@ -369,6 +371,16 @@ fn observe_g5_post_present(scenario: &str, snapshot: G5ResourceSnapshot) {
     else {
         return;
     };
+
+    tracing::info!(
+        "G5_RESOURCE schema=1 phase=post_present category={category} iteration={iteration} state=closed window={} frame_seq={} live_nodes={} tree_slots={} overlay_count={} active_work={}",
+        snapshot.window,
+        snapshot.frame_seq,
+        snapshot.live_nodes,
+        snapshot.tree_slots,
+        snapshot.overlay_count,
+        snapshot.active_work,
+    );
 
     let resource_delta =
         open.live_nodes.abs_diff(snapshot.live_nodes) as u64 + snapshot.overlay_count as u64;
