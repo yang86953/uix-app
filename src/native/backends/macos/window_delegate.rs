@@ -1,10 +1,12 @@
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::ffi::{c_char, c_void, CString};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, Once};
 
 use crate::core::{Errc, Error, WindowId};
+use crate::diagnostics::PendingFailureSource;
 use crate::native::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::windowing::shared::{push_window_close, push_window_resize, WindowState};
 
@@ -15,6 +17,7 @@ pub(crate) struct WindowDelegateContext {
     pub window_id: WindowId,
     pub state: Rc<RefCell<WindowState>>,
     pub open: Rc<Cell<bool>>,
+    pub pending_failures: PendingFailureSource,
 }
 
 /// Installs a delegate that is strongly owned by `window` and owns its Rust
@@ -188,36 +191,44 @@ mod cocoa {
     unsafe extern "C" fn delegate_dealloc(delegate: Id, _cmd: Sel) {
         // SAFETY: this class installs the Box exactly once before publication;
         // replacing the ivar with null makes dealloc the unique reclaim point.
-        drop(objc_runtime::take_box::<WindowDelegateContext>(
-            delegate,
-            DELEGATE_CONTEXT_OFFSET,
-        ));
-        objc_runtime::call_super_dealloc(delegate, DELEGATE_CLASS_PTR);
+        let context =
+            objc_runtime::take_box::<WindowDelegateContext>(delegate, DELEGATE_CONTEXT_OFFSET);
+        let pending_failures = context
+            .as_ref()
+            .map(|context| context.pending_failures.clone());
+        drop(context);
+        let result = catch_unwind(AssertUnwindSafe(|| unsafe {
+            objc_runtime::call_super_dealloc(delegate, DELEGATE_CLASS_PTR);
+        }));
+        if result.is_err() {
+            if let Some(pending_failures) = pending_failures {
+                let _ = pending_failures.enqueue(Error::new(
+                    Errc::PlatformError,
+                    "macOS window delegate dealloc callback panicked",
+                ));
+            }
+        }
     }
 
     unsafe extern "C" fn window_will_close(delegate: Id, _cmd: Sel, _notification: Id) {
-        let context = delegate_context(delegate);
-        if context.is_null() {
-            return;
-        }
-        (*context).open.set(false);
-        push_window_close(&(*context).events, (*context).window_id);
+        with_context(delegate, "windowWillClose", |context| {
+            context.open.set(false);
+            push_window_close(&context.events, context.window_id);
+        });
     }
 
     unsafe extern "C" fn window_did_resize(delegate: Id, _cmd: Sel, notification: Id) {
-        let context = delegate_context(delegate);
-        if context.is_null() {
-            return;
-        }
-        let window = window_from_notification(notification);
-        let (width, height) = content_view_size(window);
-        push_window_resize(
-            &(*context).events,
-            (*context).window_id,
-            &(*context).state,
-            width,
-            height,
-        );
+        with_context(delegate, "windowDidResize", |context| {
+            let window = window_from_notification(notification);
+            let (width, height) = content_view_size(window);
+            push_window_resize(
+                &context.events,
+                context.window_id,
+                &context.state,
+                width,
+                height,
+            );
+        });
     }
 
     unsafe extern "C" fn window_did_become_key(delegate: Id, _cmd: Sel, _notification: Id) {
@@ -241,15 +252,30 @@ mod cocoa {
     }
 
     unsafe fn push_window_event(delegate: Id, event: UiEvent) {
+        with_context(delegate, "window event", |context| {
+            let event = event.for_window(context.window_id);
+            let _ = context
+                .events
+                .lock()
+                .map(|mut events| events.push_back(event));
+        });
+    }
+
+    unsafe fn with_context<F>(delegate: Id, callback_name: &str, callback: F)
+    where
+        F: FnOnce(&WindowDelegateContext),
+    {
         let context = delegate_context(delegate);
         if context.is_null() {
             return;
         }
-        let event = event.for_window((*context).window_id);
-        let _ = (*context)
-            .events
-            .lock()
-            .map(|mut events| events.push_back(event));
+        let result = catch_unwind(AssertUnwindSafe(|| callback(&*context)));
+        if result.is_err() {
+            let _ = (*context).pending_failures.enqueue(Error::new(
+                Errc::PlatformError,
+                format!("macOS {callback_name} callback panicked"),
+            ));
+        }
     }
 
     unsafe fn window_from_notification(notification: Id) -> Id {
