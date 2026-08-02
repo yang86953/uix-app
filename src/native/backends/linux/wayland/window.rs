@@ -48,6 +48,7 @@ impl IWindowManager for WaylandBackend {
             &self._globals,
             &self.display,
             &mut self.event_queue,
+            &mut self.dispatch_state,
             &self.pointer,
             title,
             width,

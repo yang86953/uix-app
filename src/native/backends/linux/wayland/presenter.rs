@@ -9,8 +9,8 @@ use std::fs::File;
 use std::io::{Seek, SeekFrom, Write};
 use std::os::unix::io::AsRawFd;
 
+use super::compat::Main;
 use wayland_client::protocol::{wl_buffer, wl_compositor, wl_shm, wl_surface};
-use wayland_client::Main;
 
 use crate::core::{Errc, Error, Result};
 use crate::native::present::PresentDamage;

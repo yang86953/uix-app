@@ -9,7 +9,7 @@
 // 注意：不再直接实现 IEventLoop，由 LinuxPlatform 通过 OsEventSource 获得。
 // ============================================================================
 
-use std::os::fd::RawFd;
+use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::time::{Duration, Instant};
 
 use libc::{poll, pollfd, POLLERR, POLLHUP, POLLIN, POLLNVAL, POLLOUT};
@@ -29,7 +29,7 @@ impl WaylandBackend {
         if self.closed {
             return false;
         }
-        if let Err(e) = self.event_queue.dispatch_pending(&mut (), |_, _, _| {}) {
+        if let Err(e) = self.event_queue.dispatch_pending(&mut self.dispatch_state) {
             tracing::error!("Wayland dispatch_pending error: {}", e);
             self.closed = true;
             return false;
@@ -103,7 +103,7 @@ impl WaylandBackend {
 
     fn dispatch_polled(&mut self, timeout_ms: i32, context: &str) -> bool {
         let _ = self.display.flush();
-        let wayland_fd = self.display.get_connection_fd();
+        let wayland_fd = self.display.as_fd().as_raw_fd();
         let clipboard_fd = self
             .clipboard_read
             .lock()
@@ -171,7 +171,14 @@ impl WaylandBackend {
             return false;
         }
         if (wayland_revents & POLLIN) != 0 {
-            if let Err(e) = self.event_queue.dispatch(&mut (), |_, _, _| {}) {
+            if let Some(read_guard) = self.display.prepare_read() {
+                if let Err(e) = read_guard.read() {
+                    tracing::error!("Wayland {} read error: {}", context, e);
+                    self.closed = true;
+                    return false;
+                }
+            }
+            if let Err(e) = self.event_queue.dispatch_pending(&mut self.dispatch_state) {
                 tracing::error!("Wayland {} dispatch error: {}", context, e);
                 self.closed = true;
                 return false;
