@@ -53,6 +53,8 @@ impl ITimer for WindowsTimer {
                 set.insert(id);
             }
         }
+        // SetTimer 的可选函数指针必须保持为空：WM_TIMER 由已保护的
+        // wnd_proc 统一消费，不能让 Rust callback 直接跨 Win32 ABI。
         // SAFETY: hwnd 来自存活平台窗口，SetTimer 返回新定时器 ID 或空指针。
         let timer = unsafe { SetTimer(self.hwnd, id, interval_ms, None) };
         if timer == 0 {
