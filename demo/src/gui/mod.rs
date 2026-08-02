@@ -431,7 +431,7 @@ fn advance_g5_state_machine(
     state.pulse = state.pulse.wrapping_add(1);
     ticks.update(|value| *value = value.wrapping_add(1));
     if state.pulse.is_multiple_of(125) {
-        state.phase = (state.phase + 1) % 5;
+        state.phase = (state.phase + 1) % 8;
         let (name, category, page, dark, overlay, iteration) = match state.phase {
             0 => ("page_home", "page", PAGE_HOME, false, 0, 0),
             1 => {
@@ -445,7 +445,15 @@ fn advance_g5_state_machine(
                     state.theme_iteration,
                 )
             }
-            2 => {
+            2 => (
+                "page_general_light",
+                "theme",
+                PAGE_GENERAL,
+                false,
+                0,
+                state.theme_iteration,
+            ),
+            3 => {
                 state.modal_iteration = state.modal_iteration.wrapping_add(1);
                 (
                     "modal_feedback",
@@ -456,7 +464,15 @@ fn advance_g5_state_machine(
                     state.modal_iteration,
                 )
             }
-            3 => {
+            4 => (
+                "modal_closed",
+                "modal",
+                PAGE_FEEDBACK,
+                true,
+                0,
+                state.modal_iteration,
+            ),
+            5 => {
                 state.drawer_iteration = state.drawer_iteration.wrapping_add(1);
                 (
                     "drawer_feedback",
@@ -467,7 +483,16 @@ fn advance_g5_state_machine(
                     state.drawer_iteration,
                 )
             }
-            _ => ("page_charts", "page", PAGE_CHARTS, false, 0, 0),
+            6 => (
+                "drawer_closed",
+                "drawer",
+                PAGE_FEEDBACK,
+                false,
+                0,
+                state.drawer_iteration,
+            ),
+            7 => ("page_charts", "page", PAGE_CHARTS, false, 0, 0),
+            _ => unreachable!("G5 phase is modulo eight"),
         };
         if theme_control.is_dark() != dark && !theme_control.toggle() {
             tracing::error!("G5 theme transition failed");
@@ -566,11 +591,21 @@ fn start_g5_state_machine(
     theme_control: &ThemeControl,
 ) {
     let _ = uix::core::perf_probe::process_monotonic_us();
-    tracing::info!("G5_CAPABILITY schema=1 category=theme status=blocked reason=no_post_present_theme_resource_baseline_observer");
-    tracing::info!("G5_CAPABILITY schema=1 category=modal status=blocked reason=no_post_present_overlay_inventory_resource_baseline_observer");
-    tracing::info!("G5_CAPABILITY schema=1 category=drawer status=blocked reason=no_post_present_overlay_inventory_resource_baseline_observer");
-    tracing::info!("G5_CAPABILITY schema=1 category=window status=blocked reason=no_release_safe_window_automation");
-    tracing::info!("G5_CAPABILITY schema=1 category=dpi status=blocked reason=requires_controlled_multi_dpi_environment");
+    tracing::info!(
+        "G5_CAPABILITY schema=1 category=theme status=ready reason=post_present_tree_resource_baseline_observer"
+    );
+    tracing::info!(
+        "G5_CAPABILITY schema=1 category=modal status=ready reason=post_present_overlay_inventory_resource_baseline_observer"
+    );
+    tracing::info!(
+        "G5_CAPABILITY schema=1 category=drawer status=ready reason=post_present_overlay_inventory_resource_baseline_observer"
+    );
+    tracing::info!(
+        "G5_CAPABILITY schema=1 category=window status=blocked reason=no_release_safe_window_automation"
+    );
+    tracing::info!(
+        "G5_CAPABILITY schema=1 category=dpi status=blocked reason=requires_controlled_multi_dpi_environment"
+    );
     log_g5_scenario("page_home", "page", 0, PAGE_HOME, "light", "none");
     start_g5_control_watcher();
     schedule_g5_tick(
