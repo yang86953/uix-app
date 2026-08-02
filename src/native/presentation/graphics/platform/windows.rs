@@ -5,16 +5,12 @@
 
 use std::ffi::c_void;
 
-#[cfg(any(
-    test,
-    feature = "d3d11",
-    feature = "d3d12",
-    feature = "opengles",
-    feature = "vulkan"
-))]
 use crate::native::backends::windows::dpi::{
     dpi_for_window, logical_extent_to_physical, physical_extent_to_logical,
 };
+
+// These helpers belong to the shared wgpu surface path, which is compiled
+// even when every optional native backend feature is disabled.
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -38,13 +34,6 @@ extern "system" {
 /// same monitor DPI. All Windows graphics APIs consume this value so caps,
 /// swapchain allocation, and raster scissor coordinates agree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg(any(
-    test,
-    feature = "d3d11",
-    feature = "d3d12",
-    feature = "opengles",
-    feature = "vulkan"
-))]
 pub(crate) struct DrawableSize {
     pub(crate) logical_width: i32,
     pub(crate) logical_height: i32,
@@ -66,13 +55,6 @@ pub(crate) unsafe fn query_client_rect(hwnd: *mut c_void) -> Option<Rect> {
     }
 }
 
-#[cfg(any(
-    test,
-    feature = "d3d11",
-    feature = "d3d12",
-    feature = "opengles",
-    feature = "vulkan"
-))]
 fn physical_client_size(hwnd: *mut c_void) -> Option<(i32, i32)> {
     unsafe {
         query_client_rect(hwnd).map(|rect| {
@@ -84,13 +66,6 @@ fn physical_client_size(hwnd: *mut c_void) -> Option<(i32, i32)> {
     }
 }
 
-#[cfg(any(
-    test,
-    feature = "d3d11",
-    feature = "d3d12",
-    feature = "opengles",
-    feature = "vulkan"
-))]
 pub(crate) fn drawable_size_from_dpi(
     logical_width: i32,
     logical_height: i32,
@@ -107,13 +82,6 @@ pub(crate) fn drawable_size_from_dpi(
     }
 }
 
-#[cfg(any(
-    test,
-    feature = "d3d11",
-    feature = "d3d12",
-    feature = "opengles",
-    feature = "vulkan"
-))]
 pub(crate) fn drawable_size_from_client_pixels(
     physical_width: i32,
     physical_height: i32,
@@ -131,13 +99,6 @@ pub(crate) fn drawable_size_from_client_pixels(
 
 /// Computes logical client and physical drawable extents from an already-held
 /// HDC. WGL owns an HDC for its lifetime and therefore uses this variant.
-#[cfg(any(
-    test,
-    feature = "d3d11",
-    feature = "d3d12",
-    feature = "opengles",
-    feature = "vulkan"
-))]
 pub(crate) fn drawable_size_from_hdc(
     hwnd: *mut c_void,
     _hdc: *mut c_void,
@@ -154,7 +115,6 @@ pub(crate) fn drawable_size_from_hdc(
 /// Computes the shared Windows graphics drawable extent. D3D contexts acquire
 /// a short-lived HDC; callers that already own one use
 /// [`drawable_size_from_hdc`] instead.
-#[cfg(any(test, feature = "d3d11", feature = "d3d12", feature = "vulkan"))]
 pub(crate) fn drawable_size(hwnd: *mut c_void, fallback_w: i32, fallback_h: i32) -> DrawableSize {
     drawable_size_from_hdc(hwnd, std::ptr::null_mut(), fallback_w, fallback_h)
 }
