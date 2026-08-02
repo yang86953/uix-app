@@ -10,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER_PATH = ROOT / "scripts" / "run_release_g5.py"
+EVENT_LOOP_PATH = ROOT / "src" / "app" / "event_loop" / "event_loop.rs"
 SPEC = importlib.util.spec_from_file_location("run_release_g5", RUNNER_PATH)
 if SPEC is None or SPEC.loader is None:  # pragma: no cover - import guard
     raise RuntimeError(f"cannot load {RUNNER_PATH}")
@@ -32,6 +33,13 @@ def frame_line(
 
 
 class ReleaseG5ContractTests(unittest.TestCase):
+    def test_idle_event_telemetry_is_gated_and_typed(self) -> None:
+        source = EVENT_LOOP_PATH.read_text(encoding="utf-8")
+
+        self.assertIn('"G5_EVENT schema=1', source)
+        self.assertIn('scenario.starts_with("idle.")', source)
+        self.assertIn("log_g5_idle_event(ev);", source)
+
     def test_backend_evidence_accepts_production_vulkan_markers(self) -> None:
         evidence = G5.BackendEvidence()
         evidence.observe(
