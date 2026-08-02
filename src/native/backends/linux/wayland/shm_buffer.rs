@@ -5,9 +5,9 @@
 // 用于 Wayland 像素呈现的双缓冲。
 // ============================================================================
 
+use super::compat::Main;
 use std::fs::File;
 use wayland_client::protocol::{wl_buffer, wl_shm_pool};
-use wayland_client::Main;
 
 use crate::native::windowing::shared::buffer_lease::BufferLease;
 

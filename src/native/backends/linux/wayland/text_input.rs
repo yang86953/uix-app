@@ -6,7 +6,8 @@
 // ============================================================================
 
 use std::sync::atomic::Ordering;
-use wayland_protocols::unstable::text_input::v3::client::zwp_text_input_v3;
+use wayland_client::Proxy;
+use wayland_protocols::wp::text_input::zv3::client::zwp_text_input_v3;
 
 use crate::core::{Errc, Error, Rect, Result, WindowId};
 use crate::native::windowing::input::ITextInput;
@@ -81,7 +82,7 @@ impl ITextInput for WaylandBackend {
                     let owns_surface = surface_windows
                         .lock()
                         .unwrap_or_else(|error| error.into_inner())
-                        .window_for_surface(surface.as_ref().id())
+                        .window_for_surface(surface.id().protocol_id())
                         == Some(window_id);
                     if focused && !owns_surface {
                         let mut state = composition

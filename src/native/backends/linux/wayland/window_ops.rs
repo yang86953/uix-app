@@ -13,12 +13,12 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use super::compat::Main;
 use wayland_client::protocol::{wl_callback, wl_compositor, wl_region, wl_shm, wl_surface};
-use wayland_client::Main;
-use wayland_protocols::misc::server_decoration::client::org_kde_kwin_server_decoration::OrgKdeKwinServerDecoration;
-use wayland_protocols::staging::xdg_activation::v1::client::xdg_activation_v1::XdgActivationV1;
-use wayland_protocols::unstable::xdg_decoration::v1::client::zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1;
-use wayland_protocols::xdg_shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
+use wayland_client::{globals::GlobalList, Connection, EventQueue};
+use wayland_protocols::xdg::activation::v1::client::xdg_activation_v1::XdgActivationV1;
+use wayland_protocols::xdg::decoration::zv1::client::zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1;
+use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 
 use crate::core::error::{Errc, Error, Result};
 use crate::core::WindowId;
@@ -30,6 +30,8 @@ use crate::native::windowing::shared::window_mode::{
 use crate::native::windowing::shared::window_target::SurfaceWindowTargets;
 use crate::native::windowing::shared::{unimpl, WindowOps, WindowState};
 use crate::native::windowing::window::{NativeFrameRequest, NativeFrameRequestPhase};
+
+use super::compat::WaylandDispatchState;
 
 /// Wayland 平台窗口操作句柄。
 ///
@@ -49,8 +51,6 @@ pub(crate) struct WaylandWindowOps {
     surface_windows: Arc<Mutex<SurfaceWindowTargets>>,
     frame_request: Arc<Mutex<Option<NativeFrameRequest>>>,
     configured_modes: Arc<Mutex<NativeWindowModeState>>,
-    /// KDE 服务器端装饰对象（需维持生命周期以避免装饰被撤销）
-    pub(crate) kde_decoration: Option<Main<OrgKdeKwinServerDecoration>>,
     /// xdg-decoration 装饰对象（需维持生命周期以避免装饰被撤销）
     pub(crate) xdg_decoration: Option<Main<ZxdgToplevelDecorationV1>>,
     /// 显示器信息，用于计算居中位置
@@ -75,7 +75,7 @@ impl WaylandWindowOps {
             // Proxy 内的 inner (ProxyInner) 持有 *mut wl_proxy
             // 我们通过 id() 对应的方式获取指针：
             // 实际上 wayland 协议中 wl_proxy 指针就是 surface 指针
-            s.as_ref().c_ptr() as *mut std::ffi::c_void
+            s.c_ptr()
         })
     }
 
@@ -110,7 +110,6 @@ impl WaylandWindowOps {
             surface_windows,
             frame_request: Arc::new(Mutex::new(None)),
             configured_modes: Arc::new(Mutex::new(NativeWindowModeState::default())),
-            kde_decoration: None,
             xdg_decoration: None,
             outputs,
             xdg_activation,
@@ -131,9 +130,10 @@ impl WaylandWindowOps {
     pub(crate) fn init(
         &mut self,
         wm_base: &Main<xdg_wm_base::XdgWmBase>,
-        globals: &wayland_client::GlobalManager,
-        display: &wayland_client::Display,
-        event_queue: &mut wayland_client::EventQueue,
+        globals: &GlobalList,
+        display: &Connection,
+        event_queue: &mut EventQueue<WaylandDispatchState>,
+        dispatch_state: &mut WaylandDispatchState,
         pointer: &Arc<Mutex<Option<Main<wayland_client::protocol::wl_pointer::WlPointer>>>>,
         title: &str,
         width: i32,
@@ -141,11 +141,7 @@ impl WaylandWindowOps {
         window_state: Rc<RefCell<WindowState>>,
     ) -> Result<(), Error> {
         use crate::native::windowing::event::{UiEventPayload, UiEventType};
-        use wayland_protocols::misc::server_decoration::client::{
-            org_kde_kwin_server_decoration::Mode,
-            org_kde_kwin_server_decoration_manager::OrgKdeKwinServerDecorationManager,
-        };
-        use wayland_protocols::unstable::xdg_decoration::v1::client::{
+        use wayland_protocols::xdg::decoration::zv1::client::{
             zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
             zxdg_toplevel_decoration_v1::Mode as XdgDecoMode,
         };
@@ -154,7 +150,7 @@ impl WaylandWindowOps {
         let window_id = self.window_id;
 
         let surface = self.compositor.create_surface();
-        let surface_id = surface.as_ref().id();
+        let surface_id = surface.id().protocol_id();
         let xdg_surf = wm_base.get_xdg_surface(&surface);
         let tl = xdg_surf.get_toplevel();
         tl.set_title(title.to_string());
@@ -225,25 +221,15 @@ impl WaylandWindowOps {
         });
 
         // 窗口装饰 — 维持装饰对象生命周期，防止过早销毁导致装饰被撤销
-        let got_kde = globals
-            .instantiate_exact::<OrgKdeKwinServerDecorationManager>(1)
-            .map(|dm| {
-                let d = dm.create(&surface);
-                d.request_mode(Mode::Server);
-                self.kde_decoration = Some(d);
-                tracing::info!("[Wayland] KDE server-side decoration requested");
-                true
-            })
-            .unwrap_or(false);
-        if !got_kde {
-            if let Ok(dm) = globals.instantiate_exact::<ZxdgDecorationManagerV1>(1) {
-                let d = dm.get_toplevel_decoration(&tl);
-                d.set_mode(XdgDecoMode::ServerSide);
-                self.xdg_decoration = Some(d);
-                tracing::info!("[Wayland] xdg-decoration ServerSide mode requested");
-            } else {
-                tracing::warn!("[Wayland] 无可用的窗口装饰协议，窗口可能无标题栏");
-            }
+        let queue_handle = self.compositor.queue_handle();
+        if let Ok(dm) = globals.bind::<ZxdgDecorationManagerV1, _, _>(&queue_handle, 1..=1, ()) {
+            let dm = Main::new(dm, self.compositor.context());
+            let d = dm.get_toplevel_decoration(&tl);
+            d.set_mode(XdgDecoMode::ServerSide);
+            self.xdg_decoration = Some(d);
+            tracing::info!("[Wayland] xdg-decoration ServerSide mode requested");
+        } else {
+            tracing::warn!("[Wayland] no available window decoration protocol");
         }
 
         xdg_surf.set_window_geometry(0, 0, width, height);
@@ -264,16 +250,16 @@ impl WaylandWindowOps {
         self.xdg_surface = Some(xdg_surf);
         self.toplevel = Some(tl);
         self.native_surface =
-            WaylandSurfaceHandle::new(display.get_display_ptr().cast(), self.surface_c_ptr());
+            WaylandSurfaceHandle::new(display.backend().display_ptr().cast(), self.surface_c_ptr());
 
-        let _ = event_queue.dispatch(&mut (), |_, _, _| {});
+        let _ = event_queue.dispatch_pending(dispatch_state);
         for _ in 0..5 {
             let has_ptr = pointer.lock().map(|p| p.is_some()).unwrap_or(false);
             if has_ptr {
                 break;
             }
             let _ = display.flush();
-            let _ = event_queue.dispatch(&mut (), |_, _, _| {});
+            let _ = event_queue.dispatch_pending(dispatch_state);
         }
         if let Some(ref s) = self.surface {
             s.commit();

@@ -4,7 +4,7 @@
 
 use std::fs::File;
 use std::io;
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
 use std::sync::Arc;
 
 use wayland_client::protocol::wl_data_source;
@@ -142,7 +142,7 @@ impl IClipboard for WaylandBackend {
         let writes = Arc::clone(&self.clipboard_writes);
         source.quick_assign(move |_, event, _| {
             if let wl_data_source::Event::Send { mime_type: _, fd } = event {
-                match ClipboardWrite::from_event_fd(fd, Arc::clone(&bytes)) {
+                match ClipboardWrite::from_event_fd(fd.into_raw_fd(), Arc::clone(&bytes)) {
                     Ok(write) => writes
                         .lock()
                         .unwrap_or_else(|error| error.into_inner())

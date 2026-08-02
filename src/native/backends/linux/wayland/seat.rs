@@ -7,11 +7,13 @@
 // ============================================================================
 
 use std::collections::VecDeque;
-use std::os::fd::IntoRawFd;
+use std::os::fd::AsFd;
 use std::sync::{Arc, Mutex};
 
 use wayland_client::protocol::{wl_data_device, wl_keyboard, wl_pointer, wl_seat};
+use wayland_client::{Proxy, WEnum};
 
+use super::compat::Main;
 use super::{HeldKeyInfo, WaylandBackend};
 use crate::core::{Point, WindowId};
 use crate::native::backends::linux::wayland::keycode::{keycode_to_char, linux_keycode_to_keycode};
@@ -40,13 +42,26 @@ impl WaylandBackend {
             return; // 已绑定
         }
 
-        let seat = match self._globals.instantiate_exact::<wl_seat::WlSeat>(5) {
-            Ok(s) => s,
-            Err(_) => {
-                tracing::warn!("Wayland: no wl_seat available, input unavailable");
-                return;
-            }
+        let Some(global) = self
+            ._globals
+            .contents()
+            .clone_list()
+            .into_iter()
+            .find(|global| global.interface == "wl_seat")
+        else {
+            tracing::warn!("Wayland: no wl_seat available, input unavailable");
+            return;
         };
+        let queue_handle = self._compositor.queue_handle();
+        let seat = Main::new(
+            self._globals.registry().bind::<wl_seat::WlSeat, _, _>(
+                global.name,
+                global.version.min(5),
+                &queue_handle,
+                (),
+            ),
+            self._compositor.context(),
+        );
 
         // ── 剪贴板数据设备 ──────────────────────────────────
         if let Some(ref sdm) = self.data_device_manager {
@@ -64,7 +79,7 @@ impl WaylandBackend {
                             Ok((read, write_fd)) => {
                                 offer.receive(
                                     "text/plain;charset=utf-8".to_string(),
-                                    write_fd.into_raw_fd(),
+                                    write_fd.as_fd(),
                                 );
                                 *clipboard_read
                                     .lock()
@@ -107,6 +122,9 @@ impl WaylandBackend {
         seat.quick_assign(move |seat, event, _| {
             if let wl_seat::Event::Capabilities { capabilities } = event {
                 use wayland_client::protocol::wl_seat::Capability;
+                let WEnum::Value(capabilities) = capabilities else {
+                    return;
+                };
                 if capabilities.contains(Capability::Pointer) {
                     let ev = ptr_events.clone();
                     let pos = ptr_pos.clone();
@@ -123,7 +141,7 @@ impl WaylandBackend {
                             let window_id = targets
                                 .lock()
                                 .unwrap_or_else(|error| error.into_inner())
-                                .pointer_enter(surface.as_ref().id());
+                                .pointer_enter(surface.id().protocol_id());
                             if window_id.is_none() {
                                 return;
                             }
@@ -155,7 +173,7 @@ impl WaylandBackend {
                             targets
                                 .lock()
                                 .unwrap_or_else(|error| error.into_inner())
-                                .pointer_leave(surface.as_ref().id());
+                                .pointer_leave(surface.id().protocol_id());
                         }
                         wl_pointer::Event::Button {
                             serial,
@@ -177,7 +195,7 @@ impl WaylandBackend {
                                 _ => MouseButton::None,
                             };
                             let click_pos = pos.lock().map(|lp| lp.position).unwrap_or_default();
-                            if state == wl_pointer::ButtonState::Pressed {
+                            if state == WEnum::Value(wl_pointer::ButtonState::Pressed) {
                                 pointer_serial
                                     .lock()
                                     .unwrap_or_else(|error| error.into_inner())
@@ -204,8 +222,8 @@ impl WaylandBackend {
                                 return;
                             }
                             let (dx, dy) = match axis {
-                                wl_pointer::Axis::VerticalScroll => (0.0, value),
-                                wl_pointer::Axis::HorizontalScroll => (value, 0.0),
+                                WEnum::Value(wl_pointer::Axis::VerticalScroll) => (0.0, value),
+                                WEnum::Value(wl_pointer::Axis::HorizontalScroll) => (value, 0.0),
                                 _ => (0.0, 0.0),
                             };
                             if dx != 0.0 || dy != 0.0 {
@@ -250,7 +268,8 @@ impl WaylandBackend {
                                     let mut targets =
                                         targets.lock().unwrap_or_else(|error| error.into_inner());
                                     let previous = targets.keyboard_target();
-                                    let current = targets.keyboard_enter(surface.as_ref().id());
+                                    let current =
+                                        targets.keyboard_enter(surface.id().protocol_id());
                                     (previous, current)
                                 };
                                 if previous_window != window_id {
@@ -282,7 +301,7 @@ impl WaylandBackend {
                                         targets.lock().unwrap_or_else(|error| error.into_inner());
                                     let previous = targets.keyboard_target();
                                     targets
-                                        .keyboard_leave(surface.as_ref().id())
+                                        .keyboard_leave(surface.id().protocol_id())
                                         .then_some(previous)
                                         .flatten()
                                 };
@@ -316,7 +335,7 @@ impl WaylandBackend {
                                 let mut q = ev.lock().unwrap_or_else(|e| e.into_inner());
                                 let current_mods = mods.lock().map(|m| *m).unwrap_or(KeyMod::NONE);
                                 let shift_down = current_mods.intersects(KeyMod::SHIFT);
-                                if state == wl_keyboard::KeyState::Pressed {
+                                if state == WEnum::Value(wl_keyboard::KeyState::Pressed) {
                                     // 去重：若已启用客户端侧重复且该键已被按下，
                                     // 跳过 compositor 发送的重复 Key 事件，避免双重重复
                                     let client_repeat_enabled =
@@ -451,14 +470,14 @@ impl WaylandBackend {
         self.seat = Some(seat);
 
         // ── 分发 Capabilities 事件 ─────────────────────────
-        let _ = self.event_queue.dispatch(&mut (), |_, _, _| {});
+        let _ = self.event_queue.dispatch_pending(&mut self.dispatch_state);
         for _ in 0..5 {
             let has_pointer = self.pointer.lock().map(|p| p.is_some()).unwrap_or(false);
             if has_pointer {
                 break;
             }
             let _ = self.display.flush();
-            let _ = self.event_queue.dispatch(&mut (), |_, _, _| {});
+            let _ = self.event_queue.dispatch_pending(&mut self.dispatch_state);
         }
     }
 }

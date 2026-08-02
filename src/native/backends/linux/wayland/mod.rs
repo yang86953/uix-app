@@ -7,6 +7,7 @@
 
 // ── 子模块 ──────────────────────────────────────────────────────
 pub(crate) mod clipboard;
+pub(crate) mod compat;
 pub(crate) mod cursor;
 pub(crate) mod display;
 pub(crate) mod event_loop;
@@ -22,6 +23,7 @@ pub(crate) mod window;
 pub(crate) mod window_ops;
 
 // ── 依赖 ────────────────────────────────────────────────────────
+use self::compat::{Main, ProxyContext, WaylandDispatchState};
 use self::shm_buffer::ShmBuffer;
 use crate::core::{Point, WindowId};
 use crate::native::windowing::event::*;
@@ -35,17 +37,18 @@ use std::os::unix::io::RawFd;
 use std::sync::{Arc, Mutex};
 
 use wayland_client::{
+    globals::{registry_queue_init, GlobalList},
     protocol::{
         wl_compositor, wl_data_device_manager, wl_keyboard, wl_output, wl_pointer, wl_region,
         wl_seat, wl_shm, wl_surface,
     },
-    Display, EventQueue, GlobalManager, Main,
+    Connection, EventQueue,
 };
-use wayland_protocols::staging::xdg_activation::v1::client::xdg_activation_v1::XdgActivationV1;
-use wayland_protocols::unstable::text_input::v3::client::{
+use wayland_protocols::wp::text_input::zv3::client::{
     zwp_text_input_manager_v3::ZwpTextInputManagerV3, zwp_text_input_v3::ZwpTextInputV3,
 };
-use wayland_protocols::xdg_shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
+use wayland_protocols::xdg::activation::v1::client::xdg_activation_v1::XdgActivationV1;
+use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 
 // ════════════════════════════════════════════════════════════════════════════
 // ShmBuffer — RAII 包装：SHM 池 + 缓冲区 + 后备文件
@@ -72,10 +75,11 @@ pub(crate) struct HeldKeyInfo {
 
 pub struct WaylandBackend {
     // ── Wayland 连接 ──────────────────────────────────────────────
-    pub(crate) display: Display,
-    pub(crate) event_queue: EventQueue,
+    pub(crate) display: Connection,
+    pub(crate) event_queue: EventQueue<WaylandDispatchState>,
+    pub(crate) dispatch_state: WaylandDispatchState,
     #[allow(dead_code)]
-    pub(crate) _globals: GlobalManager,
+    pub(crate) _globals: GlobalList,
 
     // ── 协议全局对象 ──────────────────────────────────────────────
     pub(crate) _compositor: Main<wl_compositor::WlCompositor>,
@@ -173,159 +177,84 @@ impl WaylandBackend {
 
     pub fn new() -> Result<Self, String> {
         let display =
-            Display::connect_to_env().map_err(|e| format!("Wayland connect failed: {}", e))?;
+            Connection::connect_to_env().map_err(|e| format!("Wayland connect failed: {e}"))?;
+        let (globals, mut event_queue) = registry_queue_init::<WaylandDispatchState>(&display)
+            .map_err(|e| format!("Wayland registry initialization failed: {e}"))?;
+        let queue_handle = event_queue.handle();
+        let proxy_context = ProxyContext::new(queue_handle.clone());
+        let mut dispatch_state = WaylandDispatchState::from_context(&proxy_context);
 
-        let mut event_queue = display.create_event_queue();
-        let attached = (*display).clone().attach(event_queue.token());
+        let _compositor = Main::new(
+            globals
+                .bind::<wl_compositor::WlCompositor, _, _>(&queue_handle, 1..=4, ())
+                .map_err(|e| format!("no wl_compositor: {e}"))?,
+            proxy_context.clone(),
+        );
+        let _wm_base = Main::new(
+            globals
+                .bind::<xdg_wm_base::XdgWmBase, _, _>(&queue_handle, 1..=1, ())
+                .map_err(|e| format!("no xdg_wm_base (need xdg-shell): {e}"))?,
+            proxy_context.clone(),
+        );
+        let _shm = Main::new(
+            globals
+                .bind::<wl_shm::WlShm, _, _>(&queue_handle, 1..=1, ())
+                .map_err(|e| format!("no wl_shm: {e}"))?,
+            proxy_context.clone(),
+        );
 
-        // ── 使用 Arc<Mutex> 捕获 global_filter! 回调中绑定的单例对象 ──
-        // 必须用 Arc（非 Rc）因为回调要求 'static 生命周期。
-        let compositor_cell: Arc<Mutex<Option<Main<wl_compositor::WlCompositor>>>> =
-            Arc::new(Mutex::new(None));
-
-        let wm_base_cell: Arc<Mutex<Option<Main<xdg_wm_base::XdgWmBase>>>> =
-            Arc::new(Mutex::new(None));
-
-        let shm_cell: Arc<Mutex<Option<Main<wl_shm::WlShm>>>> = Arc::new(Mutex::new(None));
-
-        // ── wl_output 多实例收集 ──────────────────────────────────
         let outputs: Arc<Mutex<Vec<output::RawOutput>>> = Arc::new(Mutex::new(Vec::new()));
-        let wl_output_handles: Arc<Mutex<Vec<Main<wl_output::WlOutput>>>> =
-            Arc::new(Mutex::new(Vec::new()));
-
-        // 防止多个 wl_output 的 done 事件竞态（仅第一个标记为 primary）
-        let is_first_output = Arc::new(Mutex::new(true));
-
-        // text_input_manager 绑定
-        let text_input_manager_cell: Arc<Mutex<Option<Main<ZwpTextInputManagerV3>>>> =
-            Arc::new(Mutex::new(None));
-        let tim_for_cb = text_input_manager_cell.clone();
-
-        // xdg_activation 绑定
-        let xdg_activation_cell: Arc<Mutex<Option<Main<XdgActivationV1>>>> =
-            Arc::new(Mutex::new(None));
-        let xa_for_cb = xdg_activation_cell.clone();
-
-        // ── 手动回调绑定所有全局（避免 global_filter! 宏的高阶生命周期问题）──
-        let globals = GlobalManager::new_with_cb(&attached, {
-            let compositor_for_cb = compositor_cell.clone();
-            let wm_base_for_cb = wm_base_cell.clone();
-            let shm_for_cb = shm_cell.clone();
-            let outputs_for_cb = outputs.clone();
-            let wl_output_handles_for_cb = wl_output_handles.clone();
-            let is_first_for_cb = is_first_output.clone();
-            move |event: wayland_client::GlobalEvent,
-                  registry: wayland_client::Attached<
-                wayland_client::protocol::wl_registry::WlRegistry,
-            >,
-                  _ddata: wayland_client::DispatchData<'_>| {
-                use wayland_client::GlobalEvent;
-                if let GlobalEvent::New {
-                    id,
-                    interface,
-                    version,
-                } = event
-                {
-                    match interface.as_str() {
-                        "wl_compositor" => {
-                            let proxy: Main<wl_compositor::WlCompositor> =
-                                registry.bind(version.min(4), id);
-                            *compositor_for_cb.lock().unwrap_or_else(|e| e.into_inner()) =
-                                Some(proxy);
-                        }
-                        "xdg_wm_base" => {
-                            let proxy: Main<xdg_wm_base::XdgWmBase> =
-                                registry.bind(version.min(1), id);
-                            *wm_base_for_cb.lock().unwrap_or_else(|e| e.into_inner()) = Some(proxy);
-                        }
-                        "wl_shm" => {
-                            let proxy: Main<wl_shm::WlShm> = registry.bind(version.min(1), id);
-                            *shm_for_cb.lock().unwrap_or_else(|e| e.into_inner()) = Some(proxy);
-                        }
-                        "wl_output" => {
-                            let out_list = outputs_for_cb.clone();
-                            let first_flag = is_first_for_cb.clone();
-                            let mut handles = wl_output_handles_for_cb
-                                .lock()
-                                .unwrap_or_else(|e| e.into_inner());
-                            let idx = handles.len();
-                            let proxy: Main<wl_output::WlOutput> =
-                                registry.bind(version.min(2), id);
-                            proxy.quick_assign(move |_, event, _| {
-                                let mut list = out_list.lock().unwrap_or_else(|e| e.into_inner());
-                                while list.len() <= idx {
-                                    list.push(output::RawOutput::default());
-                                }
-                                let entry = &mut list[idx];
-                                match event {
-                                    wl_output::Event::Geometry { x, y, .. } => {
-                                        entry.x = x;
-                                        entry.y = y;
-                                    }
-                                    wl_output::Event::Mode {
-                                        flags,
-                                        width,
-                                        height,
-                                        ..
-                                    } => {
-                                        const WL_OUTPUT_MODE_CURRENT: u32 = 0x1;
-                                        if (flags.to_raw() & WL_OUTPUT_MODE_CURRENT) != 0 {
-                                            entry.width = width;
-                                            entry.height = height;
-                                        }
-                                    }
-                                    wl_output::Event::Scale { factor } => {
-                                        entry.scale = factor;
-                                    }
-                                    wl_output::Event::Done => {
-                                        if let Ok(mut first) = first_flag.lock() {
-                                            if *first {
-                                                *first = false;
-                                                entry.is_primary = true;
-                                            }
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            });
-                            handles.push(proxy);
-                        }
-                        "zwp_text_input_manager_v3" => {
-                            let proxy: Main<ZwpTextInputManagerV3> =
-                                registry.bind(version.min(1), id);
-                            *tim_for_cb.lock().unwrap_or_else(|e| e.into_inner()) = Some(proxy);
-                        }
-                        "xdg_activation_v1" => {
-                            let proxy: Main<XdgActivationV1> = registry.bind(version.min(1), id);
-                            *xa_for_cb.lock().unwrap_or_else(|e| e.into_inner()) = Some(proxy);
-                        }
-                        _ => {}
-                    }
+        let mut wl_output_handles = Vec::new();
+        for (index, global) in globals
+            .contents()
+            .clone_list()
+            .into_iter()
+            .filter(|global| global.interface == "wl_output")
+            .enumerate()
+        {
+            let output = Main::new(
+                globals.registry().bind::<wl_output::WlOutput, _, _>(
+                    global.name,
+                    global.version.min(2),
+                    &queue_handle,
+                    (),
+                ),
+                proxy_context.clone(),
+            );
+            let output_list = Arc::clone(&outputs);
+            output.quick_assign(move |_, event, _| {
+                let mut list = output_list
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner());
+                while list.len() <= index {
+                    list.push(output::RawOutput::default());
                 }
-            }
-        });
-
-        // ── 初始 roundtrip：接收所有全局广告事件 ──────────────────
-        event_queue
-            .sync_roundtrip(&mut (), |_, _, _| {})
-            .map_err(|e| format!("Wayland roundtrip failed: {}", e))?;
-
-        // ── 提取单例对象 ──────────────────────────────────────────
-        let _compositor = compositor_cell
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take()
-            .ok_or("no wl_compositor".to_string())?;
-        let _wm_base = wm_base_cell
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take()
-            .ok_or("no xdg_wm_base (need xdg-shell)".to_string())?;
-        let _shm = shm_cell
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take()
-            .ok_or("no wl_shm".to_string())?;
+                let entry = &mut list[index];
+                match event {
+                    wl_output::Event::Geometry { x, y, .. } => {
+                        entry.x = x;
+                        entry.y = y;
+                    }
+                    wl_output::Event::Mode {
+                        flags,
+                        width,
+                        height,
+                        ..
+                    } => {
+                        if let wayland_client::WEnum::Value(flags) = flags {
+                            if (flags.bits() & 0x1) != 0 {
+                                entry.width = width;
+                                entry.height = height;
+                            }
+                        }
+                    }
+                    wl_output::Event::Scale { factor } => entry.scale = factor,
+                    wl_output::Event::Done => entry.is_primary = index == 0,
+                    _ => {}
+                }
+            });
+            wl_output_handles.push(output);
+        }
 
         _wm_base.quick_assign(|wm, event, _| {
             if let xdg_wm_base::Event::Ping { serial } = event {
@@ -333,49 +262,35 @@ impl WaylandBackend {
             }
         });
 
-        // ── 第二次 roundtrip：收集 wl_output 的 geometry/mode/scale/done ──
+        let data_device_manager = globals
+            .bind::<wl_data_device_manager::WlDataDeviceManager, _, _>(&queue_handle, 1..=3, ())
+            .ok()
+            .map(|proxy| Main::new(proxy, proxy_context.clone()));
+        let text_input_manager = globals
+            .bind::<ZwpTextInputManagerV3, _, _>(&queue_handle, 1..=1, ())
+            .ok()
+            .map(|proxy| Main::new(proxy, proxy_context.clone()));
+        let xdg_activation = globals
+            .bind::<XdgActivationV1, _, _>(&queue_handle, 1..=1, ())
+            .ok()
+            .map(|proxy| Main::new(proxy, proxy_context.clone()));
+
         event_queue
-            .sync_roundtrip(&mut (), |_, _, _| {})
-            .map_err(|e| format!("Wayland output roundtrip failed: {}", e))?;
+            .roundtrip(&mut dispatch_state)
+            .map_err(|e| format!("Wayland roundtrip failed: {e}"))?;
 
-        let _wl_outputs = {
-            let mut handles = wl_output_handles.lock().unwrap_or_else(|e| e.into_inner());
-            handles.drain(..).collect::<Vec<_>>()
-        };
-
-        // ── 其余共享状态初始化 ────────────────────────────────────
         let events: Arc<Mutex<VecDeque<UiEvent>>> = Arc::new(Mutex::new(VecDeque::new()));
         let clipboard_text: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
         let owns_clipboard: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
         let clipboard_read = Arc::new(Mutex::new(None));
         let last_pointer: Arc<Mutex<LastPointerState>> =
             Arc::new(Mutex::new(LastPointerState::default()));
-
-        // data_device_manager 需要通过 globals 绑定
-        // 注意：由于使用了 new_with_cb，globals 内部没有跟踪 wl_data_device_manager，
-        // 我们需要手动使用 instantiate_exact。
-        // 但实际上 GlobalManager::new_with_cb 仍会跟踪所有全局，
-        // 所以 instantiate_exact 仍然可用。
-        let data_device_manager = globals
-            .instantiate_exact::<wl_data_device_manager::WlDataDeviceManager>(3)
-            .ok();
-
-        let text_input_manager = text_input_manager_cell
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take();
-
-        // 提取 xdg_activation（先求值再用于 struct init，避免 MutexGuard 生命周期问题）
-        let xdg_activation = xdg_activation_cell
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take();
-
         let (wake_read_fd, wake_write_fd) = Self::create_wake_pipe()?;
 
         Ok(Self {
             display,
             event_queue,
+            dispatch_state,
             _globals: globals,
             _compositor,
             _wm_base,
@@ -413,7 +328,7 @@ impl WaylandBackend {
             wake_write_fd,
             poll_fds: Vec::with_capacity(4),
             outputs,
-            _wl_outputs,
+            _wl_outputs: wl_output_handles,
             text_input_manager,
             text_input: None,
             text_input_window_id: None,
