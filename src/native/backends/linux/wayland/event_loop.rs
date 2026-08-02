@@ -10,6 +10,7 @@
 // ============================================================================
 
 use std::os::fd::{AsFd, AsRawFd, RawFd};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::time::{Duration, Instant};
 
 use libc::{poll, pollfd, POLLERR, POLLHUP, POLLIN, POLLNVAL, POLLOUT};
@@ -415,11 +416,17 @@ impl WaylandBackend {
     }
 
     pub(crate) fn dispatch_pending_checked(&mut self, context: &str) -> bool {
-        match self.event_queue.dispatch_pending(&mut self.dispatch_state) {
-            Ok(_) => true,
-            Err(error) => self.close_after_failure(
+        match catch_unwind(AssertUnwindSafe(|| {
+            self.event_queue.dispatch_pending(&mut self.dispatch_state)
+        })) {
+            Ok(Ok(_)) => true,
+            Ok(Err(error)) => self.close_after_failure(
                 Errc::PlatformError,
                 format!("Wayland {context} dispatch error: {error}"),
+            ),
+            Err(_) => self.close_after_failure(
+                Errc::PlatformError,
+                format!("Wayland {context} callback panicked during dispatch"),
             ),
         }
     }
