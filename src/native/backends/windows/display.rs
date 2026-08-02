@@ -11,15 +11,16 @@ use crate::native::capabilities::display::DisplayInfo;
 use crate::native::capabilities::display::IDisplay;
 use crate::native::{Errc, Error, Result};
 use std::cell::Cell;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
-use windows::core::BOOL;
 use windows::Win32::Foundation::{LPARAM, RECT};
 use windows::Win32::Graphics::Gdi::{
-    EnumDisplayMonitors, GetMonitorInfoW, MonitorFromWindow, HDC, HMONITOR, MONITORINFO,
-    MONITOR_DEFAULTTONEAREST,
+    EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITOR_DEFAULTTONEAREST, MONITORINFO,
+    MonitorFromWindow,
 };
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::MONITORINFOF_PRIMARY;
+use windows::core::BOOL;
 
 pub struct WindowsDisplay {
     hwnd: Cell<usize>,
@@ -152,6 +153,22 @@ unsafe extern "system" fn collect_monitor(
     _bounds: *mut RECT,
     inventory: LPARAM,
 ) -> BOOL {
+    match catch_unwind(AssertUnwindSafe(|| unsafe {
+        collect_monitor_unchecked(monitor, inventory)
+    })) {
+        Ok(result) => result,
+        Err(_) => {
+            if inventory.0 != 0 {
+                // SAFETY: the synchronous EnumDisplayMonitors caller keeps this
+                // inventory alive until the callback returns.
+                unsafe { (*(inventory.0 as *mut MonitorInventory)).failed = true };
+            }
+            BOOL(0)
+        }
+    }
+}
+
+unsafe fn collect_monitor_unchecked(monitor: HMONITOR, inventory: LPARAM) -> BOOL {
     if inventory.0 == 0 {
         return BOOL(0);
     }

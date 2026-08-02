@@ -1,18 +1,19 @@
-use std::ffi::{c_void, OsString};
+use std::ffi::{OsString, c_void};
 use std::os::windows::ffi::OsStringExt;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 
 use crate::core::{Errc, Error, Rect, Result};
 use crate::platform::hardware::{DisplayInfo, MemoryInfo, OsInfo};
 use crate::platform::services::{SpecialDir, SystemNotification};
-use windows::core::{BOOL, PCWSTR};
 use windows::Win32::Foundation::{LPARAM, RECT};
 use windows::Win32::Graphics::Gdi::{
-    EnumDisplayMonitors, EnumDisplaySettingsW, GetMonitorInfoW, DEVMODEW, ENUM_CURRENT_SETTINGS,
+    DEVMODEW, ENUM_CURRENT_SETTINGS, EnumDisplayMonitors, EnumDisplaySettingsW, GetMonitorInfoW,
     HDC, HMONITOR, MONITORINFO, MONITORINFOEXW,
 };
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::MONITORINFOF_PRIMARY;
+use windows::core::{BOOL, PCWSTR};
 
 const COINIT_APARTMENTTHREADED: u32 = 0x2;
 const RPC_E_CHANGED_MODE: i32 = 0x8001_0106_u32 as i32;
@@ -196,6 +197,12 @@ pub(crate) fn displays() -> Result<Box<[DisplayInfo]>> {
     // remains valid and uniquely borrowed for the complete enumeration.
     let completed =
         unsafe { EnumDisplayMonitors(None, None, Some(collect_monitor), LPARAM(pointer)) };
+    if inventory.panicked {
+        return Err(Error::new(
+            Errc::PlatformError,
+            "Platform::displays: EnumDisplayMonitors callback panicked",
+        ));
+    }
     if !completed.as_bool() {
         return Err(Error::new(
             Errc::PlatformError,
@@ -286,6 +293,22 @@ unsafe extern "system" fn collect_monitor(
     _bounds: *mut RECT,
     data: LPARAM,
 ) -> BOOL {
+    match catch_unwind(AssertUnwindSafe(|| unsafe {
+        collect_monitor_unchecked(monitor, data)
+    })) {
+        Ok(result) => result,
+        Err(_) => {
+            if data.0 != 0 {
+                // SAFETY: the synchronous EnumDisplayMonitors caller keeps this
+                // inventory alive until the callback returns.
+                unsafe { (*(data.0 as *mut MonitorInventory)).panicked = true };
+            }
+            BOOL(0)
+        }
+    }
+}
+
+unsafe fn collect_monitor_unchecked(monitor: HMONITOR, data: LPARAM) -> BOOL {
     if data.0 == 0 {
         return BOOL(0);
     }
@@ -373,6 +396,7 @@ unsafe extern "system" fn collect_monitor(
 struct MonitorInventory {
     values: Vec<DisplayInfo>,
     failure: Option<String>,
+    panicked: bool,
 }
 
 fn wide_text(value: &[u16]) -> Option<String> {
