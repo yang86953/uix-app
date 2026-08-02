@@ -6,6 +6,7 @@ use std::num::NonZeroIsize;
 #[cfg(all(unix, not(target_os = "macos")))]
 use std::ptr::NonNull;
 
+#[cfg(any(windows, all(unix, not(target_os = "macos"))))]
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 #[cfg(windows)]
 use windows::Win32::{
@@ -62,6 +63,14 @@ pub(super) unsafe fn create_surface(
             "wgpu native surface is null",
         ));
     }
+    #[cfg(all(target_os = "macos", not(feature = "metal")))]
+    {
+        let _ = (instance, native_surface);
+        return Err(Error::new(
+            Errc::PlatformError,
+            "macOS wgpu surface requires the `metal` feature",
+        ));
+    }
     #[cfg(windows)]
     let target = {
         let hwnd = NonZeroIsize::new(native_surface as isize)
@@ -96,13 +105,16 @@ pub(super) unsafe fn create_surface(
             ),
         }
     };
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", feature = "metal"))]
     let target = wgpu::SurfaceTargetUnsafe::CoreAnimationLayer(native_surface);
 
-    instance.create_surface_unsafe(target).map_err(|error| {
-        Error::new(
-            Errc::PlatformError,
-            format!("wgpu create_surface failed: {error}"),
-        )
-    })
+    #[cfg(any(not(target_os = "macos"), feature = "metal"))]
+    {
+        instance.create_surface_unsafe(target).map_err(|error| {
+            Error::new(
+                Errc::PlatformError,
+                format!("wgpu create_surface failed: {error}"),
+            )
+        })
+    }
 }

@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use crate::core::{Errc, Error, Rect, Result, WindowId};
 use crate::native::capabilities::display::{DisplayInfo, IDisplay};
+use crate::native::capabilities::services::{FileSystemCore, SpecialDirProvider};
 use crate::native::capabilities::system::{
     ConsoleColor, IConsole, IFileDialog, IFileSystem, INotification, ISystemInfo, ITimer,
     MemoryInfo, OsInfo, SpecialDir, TerminalCapabilities,
@@ -19,7 +20,7 @@ use crate::native::windowing::input::{
     CursorType, IClipboard, ICursor, IKeyboard, ITextInput, KeyCode, KeyMod, MouseButton,
 };
 use crate::native::windowing::shared::{
-    FileSystemCore, OsEventSource, PlatformWindowCore, SpecialDirProvider, WindowOps, WindowState,
+    OsEventSource, PlatformWindowCore, WindowOps, WindowState,
 };
 use crate::native::windowing::window::{
     IWindowManager, NativeFrameRequest, PlatformWindow, WindowOcclusionState,
