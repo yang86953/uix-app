@@ -1,8 +1,10 @@
 use std::collections::VecDeque;
 use std::ffi::{c_char, c_void, CString};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex, MutexGuard, Once};
 
 use crate::core::{Errc, Error, WindowId};
+use crate::diagnostics::PendingFailureSource;
 use crate::native::windowing::event::UiEvent;
 use crate::native::windowing::shared::ime_events::{
     on_committed_text_for_window, on_marked_text_for_window, on_unmark_text_for_window,
@@ -20,6 +22,7 @@ pub(crate) struct TextInputContext {
     events: Arc<Mutex<VecDeque<UiEvent>>>,
     window_id: WindowId,
     owner: SharedImeOwner,
+    pending_failures: PendingFailureSource,
     composition: ImeCompositionState,
     marked_text: String,
     session_generation: Option<u64>,
@@ -108,6 +111,7 @@ pub(crate) unsafe fn create_content_view(
     events: Arc<Mutex<VecDeque<UiEvent>>>,
     window_id: WindowId,
     owner: SharedImeOwner,
+    pending_failures: PendingFailureSource,
 ) -> crate::core::Result<cocoa::Id> {
     let frame = cocoa::CGRect {
         origin: cocoa::CGPoint { x: 0.0, y: 0.0 },
@@ -128,6 +132,7 @@ pub(crate) unsafe fn create_content_view(
         events,
         window_id,
         owner,
+        pending_failures,
         composition: ImeCompositionState::default(),
         marked_text: String::new(),
         session_generation: None,
@@ -436,57 +441,105 @@ mod cocoa {
         }
     }
 
+    fn report_callback_panic(pending_failures: Option<PendingFailureSource>, callback_name: &str) {
+        if let Some(pending_failures) = pending_failures {
+            let _ = pending_failures.enqueue(Error::new(
+                Errc::PlatformError,
+                format!("macOS text input {callback_name} callback panicked"),
+            ));
+        }
+    }
+
+    unsafe fn callback_failure_source(view: Id) -> Option<PendingFailureSource> {
+        let context = view_context(view);
+        (!context.is_null()).then(|| (*context).pending_failures.clone())
+    }
+
+    unsafe fn with_callback<T, F>(view: Id, callback_name: &str, fallback: T, callback: F) -> T
+    where
+        F: FnOnce() -> T,
+    {
+        let pending_failures = callback_failure_source(view);
+        match catch_unwind(AssertUnwindSafe(callback)) {
+            Ok(value) => value,
+            Err(_) => {
+                report_callback_panic(pending_failures, callback_name);
+                fallback
+            }
+        }
+    }
+
     unsafe extern "C" fn view_dealloc(view: Id, _cmd: Sel) {
         // SAFETY: UixContentView installs the Box once before publication and
         // clears the ivar here, making this the unique Rust reclaim point.
-        if let Some(mut context) =
-            objc_runtime::take_box::<TextInputContext>(view, VIEW_CONTEXT_OFFSET)
-        {
-            let target = context.target(view);
-            lock_owner(&context.owner).forget_target(target);
-            context.session_generation = None;
-            context.marked_text.clear();
-            on_unmark_text_for_window(&context.events, &mut context.composition, context.window_id);
-            drop(context);
+        let context = objc_runtime::take_box::<TextInputContext>(view, VIEW_CONTEXT_OFFSET);
+        let pending_failures = context
+            .as_ref()
+            .map(|context| context.pending_failures.clone());
+        let cleanup = catch_unwind(AssertUnwindSafe(|| {
+            if let Some(mut context) = context {
+                let target = context.target(view);
+                lock_owner(&context.owner).forget_target(target);
+                context.session_generation = None;
+                context.marked_text.clear();
+                on_unmark_text_for_window(
+                    &context.events,
+                    &mut context.composition,
+                    context.window_id,
+                );
+                drop(context);
+            }
+        }));
+        if cleanup.is_err() {
+            report_callback_panic(pending_failures.clone(), "view dealloc");
         }
-        objc_runtime::call_super_dealloc(view, VIEW_CLASS_PTR);
+        let superclass_dealloc = catch_unwind(AssertUnwindSafe(|| {
+            objc_runtime::call_super_dealloc(view, VIEW_CLASS_PTR);
+        }));
+        if superclass_dealloc.is_err() {
+            report_callback_panic(pending_failures, "view superclass dealloc");
+        }
     }
 
-    unsafe extern "C" fn accepts_first_responder(_view: Id, _cmd: Sel) -> Bool {
-        YES
+    unsafe extern "C" fn accepts_first_responder(view: Id, _cmd: Sel) -> Bool {
+        with_callback(view, "acceptsFirstResponder", NO, || YES)
     }
 
     unsafe extern "C" fn has_marked_text(view: Id, _cmd: Sel) -> Bool {
-        let context = view_context(view);
-        if context.is_null() {
-            return NO;
-        }
-        let context = &mut *context;
-        if context.accepts_callback(view) && !context.marked_text.is_empty() {
-            YES
-        } else {
-            NO
-        }
+        with_callback(view, "hasMarkedText", NO, || {
+            let context = view_context(view);
+            if context.is_null() {
+                return NO;
+            }
+            let context = &mut *context;
+            if context.accepts_callback(view) && !context.marked_text.is_empty() {
+                YES
+            } else {
+                NO
+            }
+        })
     }
 
     unsafe extern "C" fn marked_range(view: Id, _cmd: Sel) -> NSRange {
-        let context = view_context(view);
-        if context.is_null() {
-            return not_found_range();
-        }
-        let context = &mut *context;
-        if context.accepts_callback(view) && !context.marked_text.is_empty() {
-            NSRange {
-                location: 0,
-                length: context.marked_text.chars().count(),
+        with_callback(view, "markedRange", not_found_range(), || {
+            let context = view_context(view);
+            if context.is_null() {
+                return not_found_range();
             }
-        } else {
-            not_found_range()
-        }
+            let context = &mut *context;
+            if context.accepts_callback(view) && !context.marked_text.is_empty() {
+                NSRange {
+                    location: 0,
+                    length: context.marked_text.chars().count(),
+                }
+            } else {
+                not_found_range()
+            }
+        })
     }
 
-    unsafe extern "C" fn selected_range(_view: Id, _cmd: Sel) -> NSRange {
-        not_found_range()
+    unsafe extern "C" fn selected_range(view: Id, _cmd: Sel) -> NSRange {
+        with_callback(view, "selectedRange", not_found_range(), not_found_range)
     }
 
     unsafe extern "C" fn set_marked_text(
@@ -496,75 +549,83 @@ mod cocoa {
         _selected_range: NSRange,
         _replacement_range: NSRange,
     ) {
-        let context = view_context(view);
-        if context.is_null() {
-            return;
-        }
-        let context = &mut *context;
-        if !context.accepts_callback(view) {
-            return;
-        }
-        let text = id_to_string(string).unwrap_or_default();
-        context.marked_text = text.clone();
-        on_marked_text_for_window(
-            &context.events,
-            &mut context.composition,
-            &text,
-            context.window_id,
-        );
+        with_callback(view, "setMarkedText", (), || {
+            let context = view_context(view);
+            if context.is_null() {
+                return;
+            }
+            let context = &mut *context;
+            if !context.accepts_callback(view) {
+                return;
+            }
+            let text = id_to_string(string).unwrap_or_default();
+            context.marked_text = text.clone();
+            on_marked_text_for_window(
+                &context.events,
+                &mut context.composition,
+                &text,
+                context.window_id,
+            );
+        });
     }
 
     unsafe extern "C" fn insert_text(view: Id, _cmd: Sel, string: Id, _replacement_range: NSRange) {
-        let context = view_context(view);
-        if context.is_null() {
-            return;
-        }
-        let context = &mut *context;
-        if !context.accepts_callback(view) {
-            return;
-        }
-        let text = id_to_string(string).unwrap_or_default();
-        context.marked_text.clear();
-        on_committed_text_for_window(
-            &context.events,
-            &mut context.composition,
-            &text,
-            context.window_id,
-        );
+        with_callback(view, "insertText", (), || {
+            let context = view_context(view);
+            if context.is_null() {
+                return;
+            }
+            let context = &mut *context;
+            if !context.accepts_callback(view) {
+                return;
+            }
+            let text = id_to_string(string).unwrap_or_default();
+            context.marked_text.clear();
+            on_committed_text_for_window(
+                &context.events,
+                &mut context.composition,
+                &text,
+                context.window_id,
+            );
+        });
     }
 
     unsafe extern "C" fn unmark_text(view: Id, _cmd: Sel) {
-        let context = view_context(view);
-        if context.is_null() {
-            return;
-        }
-        let context = &mut *context;
-        if !context.accepts_callback(view) {
-            return;
-        }
-        context.marked_text.clear();
-        on_unmark_text_for_window(&context.events, &mut context.composition, context.window_id);
+        with_callback(view, "unmarkText", (), || {
+            let context = view_context(view);
+            if context.is_null() {
+                return;
+            }
+            let context = &mut *context;
+            if !context.accepts_callback(view) {
+                return;
+            }
+            context.marked_text.clear();
+            on_unmark_text_for_window(&context.events, &mut context.composition, context.window_id);
+        });
     }
 
     unsafe extern "C" fn key_down(view: Id, _cmd: Sel, event: Id) {
-        let context = view_context(view);
-        if context.is_null() || event.is_null() {
-            return;
-        }
-        let context = &mut *context;
-        if !context.accepts_callback(view) {
-            return;
-        }
-        let array = msg_id(class("NSArray"), "alloc");
-        let array = msg_id_id(array, "initWithObject:", event);
-        if array.is_null() {
-            return;
-        }
-        msg_void_id(view, "interpretKeyEvents:", array);
-        msg_void(array, "release");
+        with_callback(view, "keyDown", (), || {
+            let context = view_context(view);
+            if context.is_null() || event.is_null() {
+                return;
+            }
+            let context = &mut *context;
+            if !context.accepts_callback(view) {
+                return;
+            }
+            let array = msg_id(class("NSArray"), "alloc");
+            let array = msg_id_id(array, "initWithObject:", event);
+            if array.is_null() {
+                return;
+            }
+            msg_void_id(view, "interpretKeyEvents:", array);
+            msg_void(array, "release");
+        });
     }
 
-    unsafe fn not_found_range() -> NSRange {
+    fn not_found_range() -> NSRange {
         NSRange {
             location: NS_NOT_FOUND,
             length: 0,
