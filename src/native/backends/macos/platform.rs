@@ -194,6 +194,7 @@ impl IWindowManager for MacosPlatform {
                 Arc::clone(&self.events),
                 window_id,
                 Arc::clone(&text_input_owner),
+                self.pending_failures.clone(),
             )
         }?;
         let state = Rc::new(RefCell::new(WindowState::with_id_and_size(
@@ -1245,6 +1246,7 @@ mod cocoa {
         events: Arc<Mutex<VecDeque<UiEvent>>>,
         window_id: WindowId,
         text_input_owner: text_input_view::SharedImeOwner,
+        pending_failures: PendingFailureSource,
     ) -> crate::core::Result<(Id, CreatedWindow)> {
         initialize_app();
         let width = width.max(1);
@@ -1292,6 +1294,7 @@ mod cocoa {
             events,
             window_id,
             text_input_owner,
+            pending_failures,
         ) {
             Ok(view) => view,
             Err(error) => {
