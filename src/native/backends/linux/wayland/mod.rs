@@ -25,7 +25,8 @@ pub(crate) mod window_ops;
 // ── 依赖 ────────────────────────────────────────────────────────
 use self::compat::{Main, ProxyContext, WaylandDispatchState};
 use self::shm_buffer::ShmBuffer;
-use crate::core::{Point, WindowId};
+use crate::core::{Error, Point, WindowId};
+use crate::diagnostics::PendingFailureSource;
 use crate::native::windowing::event::*;
 use crate::native::windowing::input::{KeyCode, KeyMod};
 use crate::native::windowing::shared::ime_events::ImeCompositionState;
@@ -97,6 +98,7 @@ pub struct WaylandBackend {
     pub(crate) shown: bool,
     pub(crate) closed: bool,
     pub(crate) configured: bool,
+    pub(crate) pending_failures: PendingFailureSource,
 
     // ── 事件队列（线程安全，供 quick_assign 回调写入）───────────
     pub(crate) events: Arc<Mutex<VecDeque<UiEvent>>>,
@@ -161,6 +163,14 @@ impl WaylandBackend {
         self.events.clone()
     }
 
+    pub(crate) fn enqueue_failure(&self, error: Error) {
+        let _ = self.pending_failures.enqueue(error);
+    }
+
+    pub(crate) fn take_pending_failure(&mut self) -> Option<Error> {
+        self.pending_failures.take()
+    }
+
     pub(crate) fn create_wake_pipe() -> Result<(RawFd, RawFd), String> {
         let mut fds = [0; 2];
         let flags = libc::O_CLOEXEC | libc::O_NONBLOCK;
@@ -175,13 +185,13 @@ impl WaylandBackend {
         }
     }
 
-    pub fn new() -> Result<Self, String> {
+    pub fn new(pending_failures: PendingFailureSource) -> Result<Self, String> {
         let display =
             Connection::connect_to_env().map_err(|e| format!("Wayland connect failed: {e}"))?;
         let (globals, mut event_queue) = registry_queue_init::<WaylandDispatchState>(&display)
             .map_err(|e| format!("Wayland registry initialization failed: {e}"))?;
         let queue_handle = event_queue.handle();
-        let proxy_context = ProxyContext::new(queue_handle.clone());
+        let proxy_context = ProxyContext::new(queue_handle.clone(), pending_failures.clone());
         let mut dispatch_state = WaylandDispatchState::from_context(&proxy_context);
 
         let _compositor = Main::new(
@@ -303,6 +313,7 @@ impl WaylandBackend {
             shown: false,
             closed: false,
             configured: false,
+            pending_failures,
             shm_buffers: [None, None],
             active_buffer: 0,
             events,
@@ -344,6 +355,7 @@ impl WaylandBackend {
 
 impl Drop for WaylandBackend {
     fn drop(&mut self) {
+        self.pending_failures.close();
         let _ = unsafe { libc::close(self.wake_read_fd) };
         let _ = unsafe { libc::close(self.wake_write_fd) };
     }

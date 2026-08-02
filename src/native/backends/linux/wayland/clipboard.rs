@@ -140,6 +140,7 @@ impl IClipboard for WaylandBackend {
         source.offer("text/plain;charset=utf-8".to_string());
         let bytes = Arc::<[u8]>::from(text.as_bytes());
         let writes = Arc::clone(&self.clipboard_writes);
+        let pending_failures = self.pending_failures.clone();
         source.quick_assign(move |_, event, _| {
             if let wl_data_source::Event::Send { mime_type: _, fd } = event {
                 match ClipboardWrite::from_event_fd(fd.into_raw_fd(), Arc::clone(&bytes)) {
@@ -148,7 +149,10 @@ impl IClipboard for WaylandBackend {
                         .unwrap_or_else(|error| error.into_inner())
                         .push(write),
                     Err(error) => {
-                        tracing::error!("Wayland clipboard send setup failed: {error}")
+                        let _ = pending_failures.enqueue(Error::new(
+                            Errc::IoError,
+                            format!("Wayland clipboard send setup failed: {error}"),
+                        ));
                     }
                 }
             }
