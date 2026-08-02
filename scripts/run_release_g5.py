@@ -603,6 +603,9 @@ class ScenarioAccumulator:
             fields = parse_tagged_fields(line, "G5_PHASE")
             kind = "phase"
         if fields is None:
+            fields = parse_tagged_fields(line, "G5_RESOURCE")
+            kind = "resource"
+        if fields is None:
             return None
         if fields.get("schema") != str(FRAME_SCHEMA):
             raise G5Error(f"{kind} schema mismatch")
@@ -727,6 +730,51 @@ class ScenarioAccumulator:
             ):
                 payload[key] = value
             self.loop_records.append(dict(payload))
+        elif kind == "resource":
+            required = (
+                "phase",
+                "category",
+                "iteration",
+                "state",
+                "window",
+                "frame_seq",
+                "live_nodes",
+                "tree_slots",
+                "overlay_count",
+                "active_work",
+            )
+            missing = [key for key in required if key not in fields]
+            if missing:
+                raise G5Error(f"G5_RESOURCE missing fields: {', '.join(missing)}")
+            if fields["phase"] != "post_present":
+                raise G5Error("G5_RESOURCE phase must be post_present")
+            if fields["category"] not in {"theme", "modal", "drawer"}:
+                raise G5Error("G5_RESOURCE category is not a frozen loop class")
+            if fields["state"] not in {"open", "closed"}:
+                raise G5Error("G5_RESOURCE state must be open or closed")
+            try:
+                integer_fields = {
+                    key: int(fields[key], 10)
+                    for key in (
+                        "iteration",
+                        "window",
+                        "frame_seq",
+                        "live_nodes",
+                        "tree_slots",
+                        "overlay_count",
+                        "active_work",
+                    )
+                }
+            except ValueError as error:
+                raise G5Error("G5_RESOURCE numeric fields must be integers") from error
+            if integer_fields["iteration"] <= 0:
+                raise G5Error("G5_RESOURCE iteration must be positive")
+            if integer_fields["window"] <= 0 or integer_fields["frame_seq"] <= 0:
+                raise G5Error("G5_RESOURCE frame identity must be positive")
+            if any(value < 0 for value in integer_fields.values()):
+                raise G5Error("G5_RESOURCE counts must be nonnegative")
+            payload = dict(fields)
+            payload.update(integer_fields)
         else:
             required = ("macro_cycle", "phase", "elapsed_us")
             missing = [key for key in required if key not in fields]

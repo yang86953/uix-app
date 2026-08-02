@@ -116,6 +116,25 @@ class ReleaseG5ContractTests(unittest.TestCase):
 
         self.assertEqual(accumulator.validated_iterations["theme"], {1})
 
+    def test_post_present_resource_observer_records_closed_state(self) -> None:
+        accumulator = G5.ScenarioAccumulator("a" * 40)
+
+        opened = accumulator.observe(
+            "G5_RESOURCE schema=1 phase=post_present category=modal iteration=1 "
+            "state=open window=1 frame_seq=10 live_nodes=20 tree_slots=24 "
+            "overlay_count=1 active_work=1"
+        )
+        closed = accumulator.observe(
+            "G5_RESOURCE schema=1 phase=post_present category=modal iteration=1 "
+            "state=closed window=1 frame_seq=11 live_nodes=20 tree_slots=24 "
+            "overlay_count=0 active_work=1"
+        )
+
+        self.assertEqual(opened["kind"], "resource")
+        self.assertEqual(closed["state"], "closed")
+        self.assertEqual(closed["live_nodes"], 20)
+        self.assertEqual(closed["overlay_count"], 0)
+
     def test_missing_loop_capability_remains_blocked(self) -> None:
         accumulator = G5.ScenarioAccumulator("a" * 40)
 

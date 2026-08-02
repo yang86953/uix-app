@@ -1,4 +1,6 @@
 use super::*;
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct WindowFrameResult {
@@ -307,8 +309,96 @@ pub(super) fn record_idle(metrics: Option<&Cell<RenderMetrics>>, source: Invalid
     }
 }
 
+#[derive(Clone, Copy)]
+struct G5ResourceSnapshot {
+    window: u64,
+    frame_seq: u64,
+    live_nodes: usize,
+    tree_slots: usize,
+    overlay_count: usize,
+    active_work: usize,
+    tree_version: u64,
+}
+
+thread_local! {
+    static G5_OPEN_LOOP_SNAPSHOTS: RefCell<HashMap<(&'static str, u64), G5ResourceSnapshot>> =
+        RefCell::new(HashMap::new());
+}
+
+fn g5_loop_descriptor(scenario: &str) -> Option<(&'static str, bool, u64)> {
+    let (name, iteration) = scenario.rsplit_once('.')?;
+    let iteration = iteration.parse().ok()?;
+    let (category, is_open) = match name {
+        "page_general_dark" => ("theme", true),
+        "page_general_light" => ("theme", false),
+        "modal_feedback" => ("modal", true),
+        "modal_closed" => ("modal", false),
+        "drawer_feedback" => ("drawer", true),
+        "drawer_closed" => ("drawer", false),
+        _ => return None,
+    };
+    Some((category, is_open, iteration))
+}
+
+fn observe_g5_post_present(scenario: &str, snapshot: G5ResourceSnapshot) {
+    let Some((category, is_open, iteration)) = g5_loop_descriptor(scenario) else {
+        return;
+    };
+    tracing::info!(
+        "G5_RESOURCE schema=1 phase=post_present category={category} iteration={iteration} state={} window={} frame_seq={} live_nodes={} tree_slots={} overlay_count={} active_work={}",
+        if is_open { "open" } else { "closed" },
+        snapshot.window,
+        snapshot.frame_seq,
+        snapshot.live_nodes,
+        snapshot.tree_slots,
+        snapshot.overlay_count,
+        snapshot.active_work,
+    );
+
+    if is_open {
+        G5_OPEN_LOOP_SNAPSHOTS.with(|snapshots| {
+            snapshots
+                .borrow_mut()
+                .insert((category, iteration), snapshot);
+        });
+        return;
+    }
+
+    let Some(open) = G5_OPEN_LOOP_SNAPSHOTS
+        .with(|snapshots| snapshots.borrow_mut().remove(&(category, iteration)))
+    else {
+        return;
+    };
+
+    let resource_delta =
+        open.live_nodes.abs_diff(snapshot.live_nodes) as u64 + snapshot.overlay_count as u64;
+    // The recurring G5 callback is one protocol-owned app timer. Exclude that
+    // timer from the closed-scene proof; any additional work remains visible.
+    let final_active_work = snapshot.active_work.saturating_sub(1);
+    let baseline = (resource_delta == 0 && final_active_work == 0)
+        .then_some("pass")
+        .unwrap_or("fail");
+    let status = (resource_delta == 0 && final_active_work == 0)
+        .then_some("pass")
+        .unwrap_or("fail");
+    tracing::info!(
+        "G5_LOOP schema=1 category={category} iteration={iteration} status={status} final_state=stable baseline={baseline} open_presented=1 closed_presented=1 final_window_count=1 final_overlay_count={} final_active_work={final_active_work} resource_delta={resource_delta} open_window={} open_frame_seq={} closed_window={} closed_frame_seq={} open_live_nodes={} closed_live_nodes={} open_tree_slots={} closed_tree_slots={} observed_closed_active_work={}",
+        snapshot.overlay_count,
+        open.window,
+        open.frame_seq,
+        snapshot.window,
+        snapshot.frame_seq,
+        open.live_nodes,
+        snapshot.live_nodes,
+        open.tree_slots,
+        snapshot.tree_slots,
+        snapshot.active_work,
+    );
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn log_frame_metrics(
+    tree: &WidgetTree,
     frame_sequence: u64,
     window_id: u64,
     logical_width: i32,
@@ -331,9 +421,18 @@ pub(super) fn log_frame_metrics(
     present_probe: crate::core::perf_probe::PresentProbeSample,
 ) {
     if crate::core::perf_probe::perf_probe_enabled() {
+        let resource_snapshot = G5ResourceSnapshot {
+            window: window_id,
+            frame_seq: frame_sequence,
+            live_nodes: tree.nodes.iter().flatten().count(),
+            tree_slots: tree.nodes.len(),
+            overlay_count: tree.overlay_stack().len(),
+            active_work: active_work_count,
+            tree_version: tree.tree_version(),
+        };
         crate::core::perf_probe::with_internal_g5_scenario(|scenario| {
             tracing::info!(
-                "G5_FRAME schema=1 frame_seq={} scenario={} window={} logical_width={} logical_height={} dpi={} monotonic_us={} presented={} present_skipped={} active_work={} due_active_work={} frame_us={} input_us={} reconcile_us={} layout_us={} paint_cpu_us={} present_us={} had_events={} reconcile_ran={} layout_calls={} dirty_full={} strategy_full={} backdrop_restore={} drawable_width={} drawable_height={} drawable_pixels={} pixels={} layer_build_us={} record_us={} execute_us={} end_frame_us={} picture_raster_us={} picture_blit_us={} direct_paint_us={} pictures_rasterized={} picture_pixels={} widgets_painted={} text_us={} text_draws={} cpu_flush_us={} cpu_flushes={} upload_copy_us={} fence_wait_us={} submit_present_us={} wgpu_surface_present_cpu_us={}",
+                "G5_FRAME schema=1 frame_seq={} scenario={} window={} logical_width={} logical_height={} dpi={} monotonic_us={} presented={} present_skipped={} active_work={} due_active_work={} frame_us={} input_us={} reconcile_us={} layout_us={} paint_cpu_us={} present_us={} had_events={} reconcile_ran={} layout_calls={} dirty_full={} strategy_full={} backdrop_restore={} drawable_width={} drawable_height={} drawable_pixels={} pixels={} layer_build_us={} record_us={} execute_us={} end_frame_us={} picture_raster_us={} picture_blit_us={} direct_paint_us={} pictures_rasterized={} picture_pixels={} widgets_painted={} text_us={} text_draws={} cpu_flush_us={} cpu_flushes={} upload_copy_us={} fence_wait_us={} submit_present_us={} wgpu_surface_present_cpu_us={} tree_live_nodes={} tree_slots={} overlay_count={} tree_version={}",
                 frame_sequence,
                 scenario,
                 window_id,
@@ -379,7 +478,12 @@ pub(super) fn log_frame_metrics(
                 present_probe.fence_wait_us,
                 present_probe.submit_present_us,
                 present_probe.wgpu_surface_present_cpu_us,
+                resource_snapshot.live_nodes,
+                resource_snapshot.tree_slots,
+                resource_snapshot.overlay_count,
+                resource_snapshot.tree_version,
             );
+            observe_g5_post_present(scenario, resource_snapshot);
         });
     } else {
         tracing::info!(

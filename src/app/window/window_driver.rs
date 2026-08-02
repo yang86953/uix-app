@@ -958,6 +958,7 @@ impl WindowDriver {
             let monotonic_us = crate::core::perf_probe::process_monotonic_us();
             let window_dpi = native_window_dpi(platform_window);
             log_frame_metrics(
+                tree,
                 self.presented_sequence,
                 platform_window.window_id().raw(),
                 native_width,
