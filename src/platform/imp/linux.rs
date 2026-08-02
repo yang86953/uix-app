@@ -97,13 +97,14 @@ pub(crate) fn memory_info() -> Result<MemoryInfo> {
 }
 
 pub(crate) fn displays() -> Result<Box<[DisplayInfo]>> {
-    let platform = LinuxPlatform::new().map_err(|error| {
-        Error::new(
-            error.code(),
-            format!("Platform::displays: {}", error.message()),
-        )
-        .with_source(error)
-    })?;
+    let platform =
+        LinuxPlatform::new(crate::diagnostics::PendingFailureQueue::new()).map_err(|error| {
+            Error::new(
+                error.code(),
+                format!("Platform::displays: {}", error.message()),
+            )
+            .with_source(error)
+        })?;
     let display = platform.display();
     let count = usize::try_from(display.count()?).map_err(|_| {
         Error::new(

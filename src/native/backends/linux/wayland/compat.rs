@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::os::fd::BorrowedFd;
 use std::os::raw::c_void;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};
 
 use wayland_client::backend::ObjectId;
@@ -30,20 +31,28 @@ use wayland_protocols::xdg::decoration::zv1::client::{
 };
 use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 
+use crate::core::{Errc, Error};
+use crate::diagnostics::PendingFailureSource;
+
 type Callback<I> =
     Box<dyn FnMut(&Main<I>, <I as Proxy>::Event, &QueueHandle<WaylandDispatchState>) + 'static>;
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(crate) struct ProxyContext {
     callbacks: Arc<Mutex<HashMap<(TypeId, u32), Box<dyn Any>>>>,
     queue_handle: Option<QueueHandle<WaylandDispatchState>>,
+    pending_failures: PendingFailureSource,
 }
 
 impl ProxyContext {
-    pub(crate) fn new(queue_handle: QueueHandle<WaylandDispatchState>) -> Self {
+    pub(crate) fn new(
+        queue_handle: QueueHandle<WaylandDispatchState>,
+        pending_failures: PendingFailureSource,
+    ) -> Self {
         Self {
             callbacks: Arc::new(Mutex::new(HashMap::new())),
             queue_handle: Some(queue_handle),
+            pending_failures,
         }
     }
 
@@ -56,10 +65,12 @@ impl ProxyContext {
     fn with_callbacks(
         callbacks: Arc<Mutex<HashMap<(TypeId, u32), Box<dyn Any>>>>,
         queue_handle: QueueHandle<WaylandDispatchState>,
+        pending_failures: PendingFailureSource,
     ) -> Self {
         Self {
             callbacks,
             queue_handle: Some(queue_handle),
+            pending_failures,
         }
     }
 
@@ -86,12 +97,14 @@ impl ProxyContext {
 /// A 0.31 event queue state used by the legacy callback adapters.
 pub(crate) struct WaylandDispatchState {
     callbacks: Arc<Mutex<HashMap<(TypeId, u32), Box<dyn Any>>>>,
+    pending_failures: PendingFailureSource,
 }
 
 impl WaylandDispatchState {
     pub(crate) fn from_context(context: &ProxyContext) -> Self {
         Self {
             callbacks: Arc::clone(&context.callbacks),
+            pending_failures: context.pending_failures.clone(),
         }
     }
 
@@ -114,9 +127,21 @@ impl WaylandDispatchState {
         if let Ok(mut callback) = callback.downcast::<Callback<I>>() {
             let callback_proxy = Main::new(
                 proxy.clone(),
-                ProxyContext::with_callbacks(Arc::clone(&self.callbacks), qh.clone()),
+                ProxyContext::with_callbacks(
+                    Arc::clone(&self.callbacks),
+                    qh.clone(),
+                    self.pending_failures.clone(),
+                ),
             );
-            callback(&callback_proxy, event, qh);
+            let callback_result = catch_unwind(AssertUnwindSafe(|| {
+                callback(&callback_proxy, event, qh);
+            }));
+            if callback_result.is_err() {
+                let _ = self.pending_failures.enqueue(Error::new(
+                    Errc::PlatformError,
+                    format!("Wayland {} callback panicked", I::interface().name),
+                ));
+            }
             self.callbacks
                 .lock()
                 .unwrap_or_else(|error| error.into_inner())

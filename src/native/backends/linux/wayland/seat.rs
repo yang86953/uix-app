@@ -15,7 +15,7 @@ use wayland_client::{Proxy, WEnum};
 
 use super::compat::Main;
 use super::{HeldKeyInfo, WaylandBackend};
-use crate::core::{Point, WindowId};
+use crate::core::{Errc, Error, Point, WindowId};
 use crate::native::backends::linux::wayland::keycode::{keycode_to_char, linux_keycode_to_keycode};
 use crate::native::windowing::event::*;
 use crate::native::windowing::input::{KeyMod, MouseButton};
@@ -69,6 +69,7 @@ impl WaylandBackend {
             let clipboard_read = self.clipboard_read.clone();
             let clipboard_text = self.clipboard_text.clone();
             let owns_clipboard = self.owns_clipboard.clone();
+            let pending_failures = self.pending_failures.clone();
             dev.quick_assign(move |_, event, _| {
                 if let wl_data_device::Event::Selection { id } = event {
                     *owns_clipboard
@@ -86,7 +87,10 @@ impl WaylandBackend {
                                     .unwrap_or_else(|error| error.into_inner()) = Some(read);
                             }
                             Err(error) => {
-                                tracing::error!("Wayland clipboard pipe creation failed: {error}")
+                                let _ = pending_failures.enqueue(Error::new(
+                                    Errc::IoError,
+                                    format!("Wayland clipboard pipe creation failed: {error}"),
+                                ));
                             }
                         }
                     } else {
@@ -470,14 +474,19 @@ impl WaylandBackend {
         self.seat = Some(seat);
 
         // ── 分发 Capabilities 事件 ─────────────────────────
-        let _ = self.event_queue.dispatch_pending(&mut self.dispatch_state);
+        if !self.dispatch_pending_checked("seat capabilities") {
+            return;
+        }
         for _ in 0..5 {
             let has_pointer = self.pointer.lock().map(|p| p.is_some()).unwrap_or(false);
             if has_pointer {
                 break;
             }
-            let _ = self.display.flush();
-            let _ = self.event_queue.dispatch_pending(&mut self.dispatch_state);
+            if !self.flush_checked("seat capabilities")
+                || !self.dispatch_pending_checked("seat capabilities")
+            {
+                break;
+            }
         }
     }
 }

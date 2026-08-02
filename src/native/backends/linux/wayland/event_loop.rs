@@ -13,7 +13,9 @@ use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::time::{Duration, Instant};
 
 use libc::{poll, pollfd, POLLERR, POLLHUP, POLLIN, POLLNVAL, POLLOUT};
+use wayland_client::backend::WaylandError;
 
+use crate::core::{Errc, Error};
 use crate::native::windowing::event::{EventLoopWaker, UiEvent};
 use crate::native::windowing::input::KeyMod;
 
@@ -29,9 +31,7 @@ impl WaylandBackend {
         if self.closed {
             return false;
         }
-        if let Err(e) = self.event_queue.dispatch_pending(&mut self.dispatch_state) {
-            tracing::error!("Wayland dispatch_pending error: {}", e);
-            self.closed = true;
+        if !self.dispatch_pending_checked("dispatch_pending") {
             return false;
         }
         self.dispatch_polled(0, "dispatch")
@@ -75,9 +75,22 @@ impl WaylandBackend {
 
     pub(crate) fn waker(&self) -> EventLoopWaker {
         let fd = self.wake_write_fd;
+        let pending_failures = self.pending_failures.clone();
         EventLoopWaker::new(move || {
             let byte = [1_u8];
-            let _ = unsafe { libc::write(fd, byte.as_ptr().cast(), byte.len()) };
+            let result = unsafe { libc::write(fd, byte.as_ptr().cast(), byte.len()) };
+            if result < 0 {
+                let error = std::io::Error::last_os_error();
+                if !matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted
+                ) {
+                    let _ = pending_failures.enqueue(Error::new(
+                        Errc::IoError,
+                        format!("Wayland wake pipe write failed: {error}"),
+                    ));
+                }
+            }
         })
     }
 
@@ -102,7 +115,9 @@ impl WaylandBackend {
     // ── 内部辅助 ──────────────────────────────────────────
 
     fn dispatch_polled(&mut self, timeout_ms: i32, context: &str) -> bool {
-        let _ = self.display.flush();
+        if !self.flush_checked(context) {
+            return false;
+        }
         let wayland_fd = self.display.as_fd().as_raw_fd();
         let clipboard_fd = self
             .clipboard_read
@@ -155,9 +170,10 @@ impl WaylandBackend {
             if error.kind() == std::io::ErrorKind::Interrupted {
                 return true;
             }
-            tracing::error!("Wayland {} poll error: {}", context, error);
-            self.closed = true;
-            return false;
+            return self.close_after_failure(
+                Errc::IoError,
+                format!("Wayland {context} poll error: {error}"),
+            );
         }
 
         let wayland_revents = self.poll_fds[0].revents;
@@ -166,21 +182,21 @@ impl WaylandBackend {
             self.drain_wake_pipe();
         }
         if (wayland_revents & (POLLERR | POLLHUP | POLLNVAL)) != 0 {
-            tracing::error!("Wayland {} fd error", context);
-            self.closed = true;
-            return false;
+            return self.close_after_failure(
+                Errc::IoError,
+                format!("Wayland {context} display fd reported an error"),
+            );
         }
         if (wayland_revents & POLLIN) != 0 {
             if let Some(read_guard) = self.display.prepare_read() {
                 if let Err(e) = read_guard.read() {
-                    tracing::error!("Wayland {} read error: {}", context, e);
-                    self.closed = true;
-                    return false;
+                    return self.close_after_failure(
+                        Errc::IoError,
+                        format!("Wayland {context} read error: {e}"),
+                    );
                 }
             }
-            if let Err(e) = self.event_queue.dispatch_pending(&mut self.dispatch_state) {
-                tracing::error!("Wayland {} dispatch error: {}", context, e);
-                self.closed = true;
+            if !self.dispatch_pending_checked(context) {
                 return false;
             }
         }
@@ -197,7 +213,10 @@ impl WaylandBackend {
                     .unwrap_or_else(|error| error.into_inner());
                 if active.as_ref().is_some_and(|read| read.fd() == polled_fd) {
                     *active = None;
-                    tracing::error!("Wayland clipboard fd error");
+                    self.enqueue_failure(Error::new(
+                        Errc::IoError,
+                        "Wayland clipboard read fd reported an error",
+                    ));
                 }
             }
         }
@@ -228,6 +247,12 @@ impl WaylandBackend {
                 let error = std::io::Error::last_os_error();
                 if error.kind() == std::io::ErrorKind::Interrupted {
                     continue;
+                }
+                if error.kind() != std::io::ErrorKind::WouldBlock {
+                    self.enqueue_failure(Error::new(
+                        Errc::IoError,
+                        format!("Wayland wake pipe read failed: {error}"),
+                    ));
                 }
             }
             break;
@@ -335,7 +360,10 @@ impl WaylandBackend {
                     String::from_utf8_lossy(&bytes).into_owned();
             }
             Some(Err(error)) => {
-                tracing::error!("Wayland clipboard read failed: {error}");
+                self.enqueue_failure(Error::new(
+                    Errc::IoError,
+                    format!("Wayland clipboard read failed: {error}"),
+                ));
             }
             None => {}
         }
@@ -352,7 +380,10 @@ impl WaylandBackend {
 
         if (revents & (POLLERR | POLLHUP | POLLNVAL)) != 0 {
             writes.swap_remove(index);
-            tracing::warn!("Wayland clipboard receiver closed before send completed");
+            self.enqueue_failure(Error::new(
+                Errc::IoError,
+                "Wayland clipboard receiver closed before send completed",
+            ));
             return 0;
         }
         if (revents & POLLOUT) == 0 {
@@ -368,8 +399,48 @@ impl WaylandBackend {
             }
             Err(error) => {
                 writes.swap_remove(index);
-                tracing::error!("Wayland clipboard send failed: {error}");
+                self.enqueue_failure(Error::new(
+                    Errc::IoError,
+                    format!("Wayland clipboard send failed: {error}"),
+                ));
                 0
+            }
+        }
+    }
+
+    fn close_after_failure(&mut self, code: Errc, message: String) -> bool {
+        self.enqueue_failure(Error::new(code, message));
+        self.closed = true;
+        false
+    }
+
+    pub(crate) fn dispatch_pending_checked(&mut self, context: &str) -> bool {
+        match self.event_queue.dispatch_pending(&mut self.dispatch_state) {
+            Ok(_) => true,
+            Err(error) => self.close_after_failure(
+                Errc::PlatformError,
+                format!("Wayland {context} dispatch error: {error}"),
+            ),
+        }
+    }
+
+    pub(crate) fn flush_checked(&self, context: &str) -> bool {
+        match self.display.flush() {
+            Ok(()) => true,
+            Err(WaylandError::Io(error)) if error.kind() == std::io::ErrorKind::WouldBlock => true,
+            Err(WaylandError::Io(error)) => {
+                self.enqueue_failure(Error::new(
+                    Errc::IoError,
+                    format!("Wayland {context} flush error: {error}"),
+                ));
+                false
+            }
+            Err(WaylandError::Protocol(error)) => {
+                self.enqueue_failure(Error::new(
+                    Errc::PlatformError,
+                    format!("Wayland {context} protocol error: {error}"),
+                ));
+                false
             }
         }
     }

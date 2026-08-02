@@ -11,6 +11,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use crate::core::Error;
+use crate::diagnostics::PendingFailureQueue;
 use crate::native::capabilities::*;
 use crate::native::platform::*;
 use crate::native::present::*;
@@ -55,8 +56,9 @@ pub struct LinuxPlatform {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl LinuxPlatform {
-    pub fn new() -> Result<Self, Error> {
-        let backend = match WaylandBackend::new() {
+    pub fn new(pending_failures: PendingFailureQueue) -> Result<Self, Error> {
+        let pending_source = pending_failures.source();
+        let backend = match WaylandBackend::new(pending_source) {
             Ok(wl) => {
                 tracing::info!("Wayland backend initialized");
                 wl
@@ -121,6 +123,10 @@ impl OsEventSource for LinuxPlatform {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl Platform for LinuxPlatform {
+    fn take_pending_failure(&mut self) -> Option<Error> {
+        self.backend.take_pending_failure()
+    }
+
     fn window_manager(&mut self) -> &mut dyn IWindowManager {
         &mut self.backend
     }

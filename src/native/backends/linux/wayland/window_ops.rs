@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use super::compat::Main;
+use wayland_client::backend::WaylandError;
 use wayland_client::protocol::{wl_callback, wl_compositor, wl_region, wl_shm, wl_surface};
 use wayland_client::{globals::GlobalList, Connection, EventQueue};
 use wayland_protocols::xdg::activation::v1::client::xdg_activation_v1::XdgActivationV1;
@@ -252,19 +253,54 @@ impl WaylandWindowOps {
         self.native_surface =
             WaylandSurfaceHandle::new(display.backend().display_ptr().cast(), self.surface_c_ptr());
 
-        let _ = event_queue.dispatch_pending(dispatch_state);
+        event_queue
+            .dispatch_pending(dispatch_state)
+            .map_err(|error| {
+                Error::new(
+                    Errc::PlatformError,
+                    format!("Wayland window initialization dispatch failed: {error}"),
+                )
+            })?;
         for _ in 0..5 {
             let has_ptr = pointer.lock().map(|p| p.is_some()).unwrap_or(false);
             if has_ptr {
                 break;
             }
-            let _ = display.flush();
-            let _ = event_queue.dispatch_pending(dispatch_state);
+            if let Err(error) = display.flush() {
+                if !matches!(
+                    error,
+                    WaylandError::Io(ref error)
+                        if error.kind() == std::io::ErrorKind::WouldBlock
+                ) {
+                    return Err(Error::new(
+                        Errc::IoError,
+                        format!("Wayland window initialization flush failed: {error}"),
+                    ));
+                }
+            }
+            event_queue
+                .dispatch_pending(dispatch_state)
+                .map_err(|error| {
+                    Error::new(
+                        Errc::PlatformError,
+                        format!("Wayland window initialization dispatch failed: {error}"),
+                    )
+                })?;
         }
         if let Some(ref s) = self.surface {
             s.commit();
         }
-        let _ = display.flush();
+        if let Err(error) = display.flush() {
+            if !matches!(
+                error,
+                WaylandError::Io(ref error) if error.kind() == std::io::ErrorKind::WouldBlock
+            ) {
+                return Err(Error::new(
+                    Errc::IoError,
+                    format!("Wayland window initialization flush failed: {error}"),
+                ));
+            }
+        }
         Ok(())
     }
 }

@@ -78,9 +78,9 @@ pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
 
 #[cfg(all(unix, not(target_os = "macos")))]
 pub(crate) fn create_platform_with_pending(
-    _pending_failures: PendingFailureQueue,
+    pending_failures: PendingFailureQueue,
 ) -> Result<Box<dyn Platform>, Error> {
-    let platform = crate::native::backends::linux::platform::LinuxPlatform::new()?;
+    let platform = crate::native::backends::linux::platform::LinuxPlatform::new(pending_failures)?;
     Ok(Box::new(platform))
 }
 
