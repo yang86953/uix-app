@@ -401,6 +401,9 @@ fn advance_g5_state_machine(
 ) -> Duration {
     let elapsed = state.started.elapsed();
     let warmup = Duration::from_secs(G5_WARMUP_SECONDS);
+    if elapsed < warmup {
+        return warmup.saturating_sub(elapsed).max(Duration::from_millis(1));
+    }
     let protocol_elapsed = elapsed.saturating_sub(warmup);
     let macro_cycle = protocol_elapsed.as_secs() / G5_MACRO_CYCLE_SECONDS;
     let elapsed_in_cycle =
