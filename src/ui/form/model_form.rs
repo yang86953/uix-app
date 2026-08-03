@@ -13,6 +13,15 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+/// 断言字段已在内部模型登记：未登记属 `Form::model` 投影误用，给出
+/// 带明确提示的可诊断 panic（开发者契约错误，非运行时失败）。
+fn field_bound_or_panic<T>(value: Option<T>, contract: &str) -> T {
+    match value {
+        Some(v) => v,
+        None => panic!("{contract}"),
+    }
+}
+
 use crate::ui::form::form::{Form, FormLayout};
 use crate::ui::form::form_binding::{FormInputItem, FormInputNumberItem, FormSelectItem};
 use crate::ui::form::form_validation::{FieldError, FormBuilder, FormModel, IntoFormValue};
@@ -37,9 +46,11 @@ pub trait FormItemSpec<F> {
 
 impl FormItemSpec<String> for FormInputItem {
     fn bind_view(&self, form: &FormModel, value: &State<String>) -> ViewNode {
-        let mut bound = form
-            .input_item(&self.field, value)
-            .expect("Form::model 字段未在内部模型登记");
+        // 字段未登记属开发者误用：panic 并携带底层错误详情。
+        let mut bound = field_bound_or_panic(
+            form.input_item(&self.field, value),
+            "Form::model 字段未在内部模型登记",
+        );
         bound.placeholder = self.placeholder.clone();
         bound.required = self.required;
         bound.show_error = self.show_error;
@@ -56,9 +67,10 @@ where
     T: InputNumberValue + IntoFormValue<Stored = T> + Clone + Send + Sync + 'static,
 {
     fn bind_view(&self, form: &FormModel, value: &State<T>) -> ViewNode {
-        let mut bound = form
-            .input_number_item(&self.field, value)
-            .expect("Form::model 字段未在内部模型登记");
+        let mut bound = field_bound_or_panic(
+            form.input_number_item(&self.field, value),
+            "Form::model 字段未在内部模型登记",
+        );
         bound.input_number = self.input_number.clone();
         bound.required = self.required;
         bound.show_error = self.show_error;
@@ -75,9 +87,10 @@ where
     T: SelectValue + IntoFormValue<Stored = T> + Clone + Send + Sync + 'static,
 {
     fn bind_view(&self, form: &FormModel, value: &State<T>) -> ViewNode {
-        let mut bound = form
-            .select_item(&self.field, value)
-            .expect("Form::model 字段未在内部模型登记");
+        let mut bound = field_bound_or_panic(
+            form.select_item(&self.field, value),
+            "Form::model 字段未在内部模型登记",
+        );
         bound.options = self.options.clone();
         bound.optgroups = self.optgroups.clone();
         bound.placeholder = self.placeholder.clone();

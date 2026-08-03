@@ -539,10 +539,11 @@ impl RenderTarget for VulkanRecoveryTarget {
         self.context
             .present_pixels(&pixels, width, height, PresentDamage::Full)?;
         let readback = self.context.read_pixels(0, 0, 1, 1)?[0];
+        // 毒锁恢复：Mutex 中毒时取回内部值，不把锁竞争转化为 panic。
         *self
             .recovery_evidence
             .lock()
-            .expect("GFX-R5 recovery evidence lock") = Some((width, height, readback));
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some((width, height, readback));
         Ok(PresentTestResult::Presentable)
     }
 
