@@ -1,169 +1,15 @@
 use super::*;
-use crate::core::{Constraints, Rect, Size};
-use crate::draw::renderer::{Invalidation, InvalidationQueueHandle};
-use crate::native::windowing::input::{KeyCode, KeyMod};
-use crate::ui::animation::AnimatedSource;
-use crate::ui::component::app_state::{AppState, FocusRequest};
-use crate::ui::component::focus_handle::FocusHandle;
-use crate::ui::component::focus_trap::next_focus_in_order;
+use crate::core::{Rect, Size};
+use crate::ui::component::app_state::AppState;
 use crate::ui::component::managers::WidgetManagers;
-use crate::ui::event::{HandlerTable, SemanticEvent, WindowAction};
-use crate::ui::overlay::OverlayStack;
-use crate::ui::render_handler::{RenderHandlerRegistration, RenderHandlerTable};
+use crate::ui::event::WindowAction;
 use crate::ui::theme::traits::ThemeTokens;
-use crate::ui::theme::Theme;
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
-static NEXT_WIDGET_TREE_SCOPE: AtomicU64 = AtomicU64::new(1);
-
-pub(crate) struct BoundAnimatedSource {
-    tree_scope: u64,
-    source: Arc<dyn AnimatedSource>,
-}
-
-impl Drop for BoundAnimatedSource {
-    fn drop(&mut self) {
-        self.source.unbind_owner(self.tree_scope);
-    }
-}
-
-#[cfg(test)]
-thread_local! {
-    /// 1=Phase1 2=Phase2 4=Phase4；0=不记录。
-    #[allow(
-        clippy::missing_const_for_thread_local,
-        reason = "the initializer is already const and the lint fires through thread_local"
-    )]
-    pub(crate) static LAYOUT_TRACE_PHASE: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
-}
-
-mod build;
-#[path = "tree_layout/mod.rs"]
-mod tree_layout;
-
-pub struct WidgetTree {
-    tree_scope: u64,
-    pub(crate) nodes: Vec<Option<BoxedWidget>>,
-    pub(crate) free_slots: Vec<usize>,
-    pub(crate) generations: Vec<u32>,
-    pub(crate) next_slot: usize,
-    pub(crate) root_id: Option<WidgetId>,
-    pub(crate) scroll_region_moves: Vec<(Rect, f32, f32)>,
-    pub(crate) pending_window_actions: Vec<WindowAction>,
-    pub tree_version: u64,
-    /// UI 域主题令牌根；ScenePaint::paint 用它构造 UI-owned 绘制上下文。
-    theme_tokens: std::sync::Arc<dyn ThemeTokens>,
-    cached_traversal: std::cell::RefCell<(Vec<WidgetId>, u64)>,
-
-    pub(crate) handler_table: HandlerTable,
-    pub(crate) render_handler_table: RenderHandlerTable,
-    pub(crate) overlay_stack: OverlayStack,
-
-    pub(crate) invalidation: InvalidationQueueHandle,
-    pub(crate) pending_invalidations: Vec<Invalidation>,
-    pub(crate) invalidation_batch_depth: usize,
-    pub(crate) layout_ancestor_scratch: Vec<WidgetId>,
-    pub(crate) reconcile_requested: Arc<AtomicBool>,
-    pub(crate) reconcile_callback: Arc<dyn Fn() + Send + Sync>,
-    pub(crate) effects: Vec<crate::ui::reactive::state::Effect>,
-    pub(crate) animated_sources: BTreeMap<WidgetId, BoundAnimatedSource>,
-    pub(crate) active_component_animations: HashSet<WidgetId>,
-    pub(crate) animation_ids_scratch: Vec<WidgetId>,
-    pub(crate) lifecycle_states_scratch: Vec<(WidgetId, bool)>,
-    pub(crate) layout_scratch: tree_layout::LayoutFrameScratch,
-    app_state_semantic_events_scratch: Vec<(WidgetId, SemanticEvent)>,
-    app_state_focus_requests_scratch: Vec<(WidgetId, FocusRequest)>,
-    pub(crate) managers: WidgetManagers,
-    pub(crate) app_state: Option<AppState>,
-    focus_handles: HashMap<WidgetId, FocusHandle>,
-    timer_routes: BTreeMap<u64, (WidgetId, u32)>,
-    focus_trap_restore: Vec<(WidgetId, Option<WidgetId>)>,
-    pub(crate) window_focused: bool,
-    keyboard_focus_visible: bool,
-    pub(crate) keyboard_activation: Option<(WidgetId, KeyCode, KeyMod)>,
-    #[cfg(feature = "test-harness")]
-    pub(crate) automation_recorder: Option<crate::ui::automation::AutomationRecorder>,
-    /// layout() 内实际改写 frame 次数（回归：收敛后二次 layout 应为 0）。
-    #[cfg(test)]
-    pub(crate) layout_frame_writes: std::cell::Cell<u32>,
-    /// Phase 4 实际执行的 shrink 次数（回归：Stretch 侧栏不应反复 shrink）。
-    #[cfg(test)]
-    pub(crate) layout_shrink_ops: std::cell::Cell<u32>,
-    /// 单次 layout() 收敛循环实际执行的遍数（含最后稳定遍）。
-    #[cfg(test)]
-    pub(crate) layout_converge_passes: std::cell::Cell<u32>,
-    /// Phase 2 实际扩展 frame 的次数（回归：不得在稳定后反复 120→124）。
-    #[cfg(test)]
-    pub(crate) layout_expand_ops: std::cell::Cell<u32>,
-    /// 测试探针：记录 `(phase, id, before_h, after_h)` 的 frame 写入。
-    #[cfg(test)]
-    pub(crate) layout_frame_trace: std::cell::RefCell<Vec<(u8, ComponentId, i32, i32)>>,
-}
-
-impl Default for WidgetTree {
-    fn default() -> Self {
-        let reconcile_requested = Arc::new(AtomicBool::new(false));
-        let reconcile_callback = {
-            let requested = Arc::clone(&reconcile_requested);
-            Arc::new(move || requested.store(true, Ordering::Release))
-                as Arc<dyn Fn() + Send + Sync>
-        };
-        Self {
-            tree_scope: NEXT_WIDGET_TREE_SCOPE.fetch_add(1, Ordering::Relaxed),
-            nodes: Vec::new(),
-            free_slots: Vec::new(),
-            generations: Vec::new(),
-            next_slot: 0,
-            root_id: None,
-            theme_tokens: Theme::antd_light().tokens_arc(),
-            scroll_region_moves: Vec::new(),
-            pending_window_actions: Vec::new(),
-            tree_version: 0,
-            cached_traversal: std::cell::RefCell::new((Vec::new(), 0)),
-            handler_table: HandlerTable::new(),
-            render_handler_table: RenderHandlerTable::default(),
-            overlay_stack: OverlayStack::new(),
-            invalidation: crate::draw::renderer::InvalidationQueue::shared(),
-            pending_invalidations: Vec::new(),
-            invalidation_batch_depth: 0,
-            layout_ancestor_scratch: Vec::new(),
-            reconcile_requested,
-            reconcile_callback,
-            effects: Vec::new(),
-            animated_sources: BTreeMap::new(),
-            active_component_animations: HashSet::new(),
-            animation_ids_scratch: Vec::new(),
-            lifecycle_states_scratch: Vec::new(),
-            layout_scratch: tree_layout::LayoutFrameScratch::default(),
-            app_state_semantic_events_scratch: Vec::new(),
-            app_state_focus_requests_scratch: Vec::new(),
-            managers: WidgetManagers::new(),
-            app_state: None,
-            focus_handles: HashMap::new(),
-            timer_routes: BTreeMap::new(),
-            focus_trap_restore: Vec::new(),
-            window_focused: true,
-            keyboard_focus_visible: true,
-            keyboard_activation: None,
-            #[cfg(feature = "test-harness")]
-            automation_recorder: None,
-            #[cfg(test)]
-            layout_frame_writes: std::cell::Cell::new(0),
-            #[cfg(test)]
-            layout_shrink_ops: std::cell::Cell::new(0),
-            #[cfg(test)]
-            layout_converge_passes: std::cell::Cell::new(0),
-            #[cfg(test)]
-            layout_expand_ops: std::cell::Cell::new(0),
-            #[cfg(test)]
-            layout_frame_trace: std::cell::RefCell::new(Vec::new()),
-        }
-    }
-}
 
 impl WidgetTree {
+
     pub(crate) const ROOT_BOOTSTRAP_SIZE: Size = Size { w: 800.0, h: 600.0 };
 
     pub(crate) fn keyboard_focus_visible(&self) -> bool {
@@ -349,7 +195,7 @@ impl WidgetTree {
         }
     }
 
-    fn sync_app_state_registry(&self) {
+    pub(crate) fn sync_app_state_registry(&self) {
         if self.app_state.is_none() {
             return;
         }
@@ -372,7 +218,7 @@ impl WidgetTree {
         WidgetId::from_scoped_parts(self.tree_scope, slot, self.generations[slot])
     }
 
-    fn slot_for(&self, id: WidgetId) -> Option<usize> {
+    pub(crate) fn slot_for(&self, id: WidgetId) -> Option<usize> {
         if id.tree_scope() != self.tree_scope {
             return None;
         }
@@ -384,13 +230,13 @@ impl WidgetTree {
         Some(slot)
     }
 
-    fn node_slot_for(&self, id: WidgetId) -> Option<usize> {
+    pub(crate) fn node_slot_for(&self, id: WidgetId) -> Option<usize> {
         let slot = self.slot_for(id)?;
         self.nodes.get(slot).and_then(|node| node.as_ref())?;
         Some(slot)
     }
 
-    fn invalidate_slot_generation(&mut self, slot: usize) {
+    pub(crate) fn invalidate_slot_generation(&mut self, slot: usize) {
         if let Some(generation) = self.generations.get_mut(slot) {
             *generation = generation.wrapping_add(1);
         }
@@ -421,7 +267,7 @@ impl WidgetTree {
         id
     }
 
-    fn reset_interaction_state(&mut self) {
+    pub(crate) fn reset_interaction_state(&mut self) {
         self.managers.focus.clear_tree_focus();
         self.managers.interaction.clear_tree_interaction();
         self.managers.drag.clear_tree_drag();
@@ -429,7 +275,7 @@ impl WidgetTree {
         self.focus_trap_restore.clear();
     }
 
-    fn collect_lifecycle_subtree(&self, id: WidgetId, out: &mut Vec<WidgetId>) {
+    pub(crate) fn collect_lifecycle_subtree(&self, id: WidgetId, out: &mut Vec<WidgetId>) {
         if self.get(id).is_none() {
             return;
         }
@@ -441,7 +287,7 @@ impl WidgetTree {
         }
     }
 
-    fn attach_node(&mut self, id: WidgetId) {
+    pub(crate) fn attach_node(&mut self, id: WidgetId) {
         if let Some(node) = self.get_mut(id) {
             if !node.attached() {
                 node.set_attached(true);
@@ -450,7 +296,7 @@ impl WidgetTree {
         }
     }
 
-    fn deactivate_detach_and_destroy(&mut self, id: WidgetId) {
+    pub(crate) fn deactivate_detach_and_destroy(&mut self, id: WidgetId) {
         self.unregister_app_state_snapshot(id);
         if let Some(node) = self.get_mut(id) {
             if node.active() {
@@ -480,7 +326,7 @@ impl WidgetTree {
         }
     }
 
-    fn teardown_all(&mut self) {
+    pub(crate) fn teardown_all(&mut self) {
         let ids: Vec<_> = self.traverse().iter().copied().collect();
         for id in ids.into_iter().rev() {
             self.deactivate_detach_and_destroy(id);
@@ -718,7 +564,7 @@ impl WidgetTree {
         result
     }
 
-    fn dispatch_timer_work_inner(&mut self, timer_id: u64) -> EventResult {
+    pub(crate) fn dispatch_timer_work_inner(&mut self, timer_id: u64) -> EventResult {
         if let Some((target, local_id)) = self.timer_routes.get(&timer_id).copied() {
             if self.get(target).is_some() && !self.is_pending_removal_subtree(target) {
                 let result = self.dispatch_to(target, &SystemEvent::Timer { id: local_id });
@@ -785,7 +631,7 @@ impl WidgetTree {
         std::mem::take(&mut *self.layout_frame_trace.borrow_mut())
     }
 
-    fn apply_frame_paint(&mut self, id: ComponentId, new_frame: Rect) -> bool {
+    pub(crate) fn apply_frame_paint(&mut self, id: ComponentId, new_frame: Rect) -> bool {
         match self.get(id) {
             Some(w) => {
                 let old = w.frame();
@@ -828,195 +674,7 @@ impl WidgetTree {
         self.layout_expand_ops.replace(0)
     }
 
-    pub fn focus_by_type<T: WidgetComponent + 'static>(&mut self) -> Option<ComponentId> {
-        let id = self.find_by_type::<T>()?;
-        self.set_focus(Some(id));
-        Some(id)
-    }
 
-    pub fn is_focused_type<T: WidgetComponent + 'static>(&self) -> bool {
-        self.managers
-            .focus
-            .focused_component()
-            .and_then(|id| self.get(id))
-            .map(|node| node.component().as_any().downcast_ref::<T>().is_some())
-            .unwrap_or(false)
-    }
-
-    pub fn handler_table(&mut self) -> &mut HandlerTable {
-        &mut self.handler_table
-    }
-
-    pub(crate) fn replace_render_handlers(
-        &mut self,
-        id: ComponentId,
-        handlers: Vec<RenderHandlerRegistration>,
-    ) {
-        self.render_handler_table.replace_component(id, handlers);
-    }
-
-    pub(crate) fn replace_system_event_handlers(
-        &mut self,
-        id: ComponentId,
-        handlers: Vec<crate::ui::event::system_event_handler::SystemEventHandlerRegistration>,
-    ) {
-        if let Some(node) = self.get_mut(id) {
-            node.replace_system_event_handlers(handlers);
-        }
-    }
-
-    pub(crate) fn set_tab_index_override(&mut self, id: ComponentId, tab_index: Option<i32>) {
-        if let Some(node) = self.get_mut(id) {
-            node.set_tab_index_override(tab_index);
-        }
-        self.register_focusable(id);
-    }
-
-    pub(crate) fn set_focus_handle(&mut self, id: ComponentId, handle: Option<FocusHandle>) {
-        let unchanged = self
-            .focus_handles
-            .get(&id)
-            .zip(handle.as_ref())
-            .is_some_and(|(current, next)| current.same_handle(next));
-        if unchanged {
-            return;
-        }
-        if let Some(previous) = self.focus_handles.remove(&id) {
-            previous.unbind(id);
-        }
-        let Some(handle) = handle else {
-            return;
-        };
-        if let Some(app_state) = &self.app_state {
-            handle.bind(id, app_state);
-        }
-        self.focus_handles.insert(id, handle);
-    }
-
-    pub fn overlay_stack(&self) -> &OverlayStack {
-        &self.overlay_stack
-    }
-
-    pub fn overlay_stack_mut(&mut self) -> &mut OverlayStack {
-        &mut self.overlay_stack
-    }
-
-    // Tab focus navigation.
-
-    pub fn collect_focusable(&self) -> Vec<ComponentId> {
-        let mut result = self
-            .managers
-            .focus
-            .focusable_order()
-            .into_iter()
-            .filter(|&id| self.is_tab_focus_candidate(id))
-            .collect::<Vec<_>>();
-
-        for &id in self.traverse().iter() {
-            if !result.contains(&id) && self.is_tab_focus_candidate(id) {
-                result.push(id);
-            }
-        }
-
-        result
-    }
-
-    pub(crate) fn is_effectively_visible(&self, id: WidgetId) -> bool {
-        let mut current = Some(id);
-        while let Some(current_id) = current {
-            let Some(node) = self.get(current_id) else {
-                return false;
-            };
-            if !node.visible() {
-                return false;
-            }
-            current = node.parent();
-        }
-        true
-    }
-
-    fn is_tab_focus_candidate(&self, id: WidgetId) -> bool {
-        self.is_effectively_visible(id)
-            && !self.is_pending_removal_subtree(id)
-            && self.get(id).is_some_and(|node| node.is_focusable())
-    }
-
-    pub(crate) fn focus_target_available(&self, id: WidgetId) -> bool {
-        self.is_effectively_visible(id)
-            && !self.is_pending_removal_subtree(id)
-            && self
-                .get(id)
-                .is_some_and(|node| node.accepts_events() && node.is_interaction_enabled())
-    }
-
-    pub(crate) fn is_descendant_of(&self, id: WidgetId, ancestor: WidgetId) -> bool {
-        let mut current = Some(id);
-        while let Some(current_id) = current {
-            if current_id == ancestor {
-                return true;
-            }
-            current = self.get(current_id).and_then(|node| node.parent());
-        }
-        false
-    }
-
-    pub(crate) fn collect_focusable_within(&self, root: WidgetId) -> Vec<WidgetId> {
-        self.collect_focusable()
-            .into_iter()
-            .filter(|&id| self.is_descendant_of(id, root))
-            .collect()
-    }
-
-    fn next_focus_from_order(
-        &self,
-        focusable: &[WidgetId],
-        current: Option<WidgetId>,
-        forward: bool,
-    ) -> Option<WidgetId> {
-        next_focus_in_order(focusable, current, forward)
-    }
-
-    pub fn focus_next(&self, forward: bool) -> Option<ComponentId> {
-        let focusable = self.collect_focusable();
-        self.next_focus_from_order(&focusable, self.managers.focus.focused_component(), forward)
-    }
-
-    pub(crate) fn focus_next_in_scope(&self, root: WidgetId, forward: bool) -> Option<WidgetId> {
-        let focusable = self.collect_focusable_within(root);
-        self.next_focus_from_order(&focusable, self.managers.focus.focused_component(), forward)
-    }
-
-    pub(crate) fn remember_focus_before_trap(&mut self, owner: WidgetId) {
-        if self
-            .focus_trap_restore
-            .iter()
-            .any(|&(restore_owner, _)| restore_owner == owner)
-        {
-            return;
-        }
-        let current = self.managers.focus.focused_component();
-        let restore = current.filter(|&id| !self.is_descendant_of(id, owner));
-        self.focus_trap_restore.push((owner, restore));
-    }
-
-    pub(crate) fn take_focus_trap_restore(&mut self, owner: WidgetId) -> Option<WidgetId> {
-        let index = self
-            .focus_trap_restore
-            .iter()
-            .position(|&(restore_owner, _)| restore_owner == owner)?;
-        self.focus_trap_restore.remove(index).1
-    }
-
-    pub(crate) fn restore_focus_after_trap_owner(&mut self, owner: WidgetId) {
-        let restore_focus = self
-            .take_focus_trap_restore(owner)
-            .filter(|&id| self.focus_target_available(id));
-        self.set_focus(restore_focus);
-    }
-
-    fn register_focusable(&mut self, id: WidgetId) {
-        if let Some(node) = self.get(id) {
-            self.managers.focus.register_focusable(id, node.tab_index());
-        }
-    }
 }
+
+
