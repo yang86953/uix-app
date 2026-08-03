@@ -1,53 +1,23 @@
-use super::super::*;
-use super::WidgetTree;
-use crate::core::{Constraints, Rect, Size};
-use crate::ui::animation::AnimatedRegistration;
+use super::super::super::*;
+use super::super::WidgetTree;
+use crate::core::Rect;
 use std::collections::HashSet;
-use std::time::Instant;
 
 #[cfg(test)]
-use super::LAYOUT_TRACE_PHASE;
+use super::super::LAYOUT_TRACE_PHASE;
 
-fn frame_constraints(frame: Rect) -> Constraints {
-    Constraints::loose(Size::new(frame.w, frame.h))
-}
+use super::{LayoutFrameScratch, LayoutTraversalScratch};
 
-#[derive(Default)]
-struct LayoutTraversalScratch {
-    roots: HashSet<WidgetId>,
-    paths: HashSet<WidgetId>,
-    stack: Vec<(WidgetId, bool)>,
-}
-
-#[derive(Clone, Copy)]
-struct ShrinkOp {
-    id: WidgetId,
-    needed_h: f32,
-}
-
-#[derive(Default)]
-pub(super) struct LayoutFrameScratch {
-    order: Vec<WidgetId>,
-    traversal: LayoutTraversalScratch,
-    prev_expand_sig: Vec<(WidgetId, i32, i32, i32, i32)>,
-    pass_expand_sig: Vec<(WidgetId, i32, i32, i32, i32)>,
-    resized_children: HashSet<WidgetId>,
-    visibility_changes: Vec<(WidgetId, bool)>,
-    expand_children: Vec<WidgetId>,
-    shrink_ops: Vec<ShrinkOp>,
-    shrink_children: Vec<WidgetId>,
-    shrink_parent_children: Vec<WidgetId>,
-}
 
 impl WidgetTree {
-    /// 最近 viewport 祖先允许内容溢出的轴（组件语义见 System 私有边界 tree_widget_hooks）。
-    fn nearest_viewport_overflow_axes(&self, id: WidgetId) -> Option<(bool, bool)> {
+
+    pub(crate) fn nearest_viewport_overflow_axes(&self, id: WidgetId) -> Option<(bool, bool)> {
         crate::ui::tree_widget_hooks::nearest_viewport_overflow_axes(self, id)
     }
 
     /// Phase 2 不得撑开显式定宽/定高的节点（Container/Space/ScrollView 等；
     /// 组件语义见 System 私有边界 tree_widget_hooks）。
-    fn phase2_explicit_size_locks(&self, id: WidgetId) -> (bool, bool) {
+    pub(crate) fn phase2_explicit_size_locks(&self, id: WidgetId) -> (bool, bool) {
         crate::ui::tree_widget_hooks::phase2_explicit_size_locks(self, id)
     }
 
@@ -60,7 +30,7 @@ impl WidgetTree {
         result
     }
 
-    fn fill_layout_traversal(
+    pub(crate) fn fill_layout_traversal(
         &self,
         result: &mut Vec<ComponentId>,
         scratch: &mut LayoutTraversalScratch,
@@ -130,7 +100,7 @@ impl WidgetTree {
         self.layout_scratch = scratch;
     }
 
-    fn layout_with_scratch(&mut self, scratch: &mut LayoutFrameScratch) {
+    pub(crate) fn layout_with_scratch(&mut self, scratch: &mut LayoutFrameScratch) {
         let LayoutFrameScratch {
             order,
             traversal,
@@ -296,7 +266,7 @@ impl WidgetTree {
     /// Synchronize parent-owned child visibility without overwriting a
     /// child's authored `visible` gate. A tree-version bump is required
     /// because the compositor omits invisible subtrees while building layers.
-    fn sync_parent_child_visibility(
+    pub(crate) fn sync_parent_child_visibility(
         &mut self,
         order: &[WidgetId],
         changes: &mut Vec<(WidgetId, bool)>,
@@ -454,7 +424,7 @@ impl WidgetTree {
         self.lifecycle_states_scratch = states;
     }
 
-    fn sync_app_state_registry_from_lifecycle_states(&self) {
+    pub(crate) fn sync_app_state_registry_from_lifecycle_states(&self) {
         if self.app_state.is_none() {
             return;
         }
@@ -465,7 +435,7 @@ impl WidgetTree {
         }
     }
 
-    fn focus_affects_active(&self, id: WidgetId) -> bool {
+    pub(crate) fn focus_affects_active(&self, id: WidgetId) -> bool {
         let mut current = self.managers().focus.focused_component();
         while let Some(current_id) = current {
             if current_id == id {
@@ -483,7 +453,7 @@ impl WidgetTree {
     /// 自下而上扩展：当子节点右侧/底部超出容器时，扩展容器宽度/高度。
     /// 后序遍历确保子节点先扩展、父节点后扩展。
     /// 返回是否有任何容器被扩展，并把本趟签名追加到调用方复用缓冲。
-    fn layout_expand(
+    pub(crate) fn layout_expand(
         &mut self,
         order: &[WidgetId],
         expand_sig: &mut Vec<(WidgetId, i32, i32, i32, i32)>,
@@ -666,570 +636,7 @@ impl WidgetTree {
         any_resized
     }
 
-    /// Phase 2 重排：对已扩展子节点，measure 结果不得低于当前 frame。
-    fn layout_children_preserving_expansions(
-        &self,
-        id: WidgetId,
-        frame: Rect,
-        children: &[WidgetId],
-        expanded: &std::collections::HashSet<WidgetId>,
-    ) -> Vec<(WidgetId, Rect)> {
-        let Some(node) = self.get(id) else {
-            return Vec::new();
-        };
-        let Some(layout) = node.component().as_layout() else {
-            return Vec::new();
-        };
-        let mut measured = layout.measure_children(frame, children, self);
-        for child in &mut measured {
-            if !expanded.contains(&child.id) {
-                continue;
-            }
-            if let Some(cf) = self.get(child.id).map(|n| n.frame()) {
-                child.measured_size.w = child.measured_size.w.max(cf.w);
-                child.measured_size.h = child.measured_size.h.max(cf.h);
-            }
-        }
-        layout.layout_children(frame, &measured, self)
-    }
 
-    /// 更新所有 viewport 容器的 content_bounds。
-    /// 只触发 content_bounds 副作用，不移动子节点位置。
-    fn layout_viewports(&mut self, order: &[WidgetId]) {
-        for &id in order {
-            if !self.is_effectively_visible(id) {
-                continue;
-            }
-            if let Some(node) = self.get(id) {
-                if node.children_clip(node.frame()).is_none() {
-                    continue;
-                }
-                let frame = node.frame();
-                let children = node.children();
-                if children.is_empty() {
-                    continue;
-                }
-                tracing::debug!(
-                    "[Layout] Phase 3: viewport id={} frame=({:.0},{:.0},{:.0},{:.0}) {} children",
-                    id,
-                    frame.x,
-                    frame.y,
-                    frame.w,
-                    frame.h,
-                    children.len(),
-                );
-                // 仅触发 content_bounds 副作用，丢弃返回的 child rects
-                let _ = node.layout_children(frame, children, self);
-            }
-        }
-    }
-
-    /// Rebuild VirtualScroll child windows when layout frame or scroll offset changes.
-    fn refresh_virtual_scroll_children(&mut self, ids: &mut Vec<WidgetId>) {
-        ids.clear();
-        ids.extend(self.traverse().iter().copied());
-        for id in ids.iter().copied() {
-            let viewport_h = self.get(id).map(|node| node.frame().h).unwrap_or(0.0);
-            if viewport_h <= 0.0 {
-                continue;
-            }
-            self.refresh_virtual_scroll_component(id, Some(viewport_h));
-        }
-    }
-
-    fn refresh_table_cell_children(&mut self, ids: &mut Vec<WidgetId>) {
-        ids.clear();
-        ids.extend(self.traverse().iter().copied());
-        for id in ids.iter().copied() {
-            if self.refresh_table_cell_component(id) {
-                self.push_layout_invalidation(id);
-                self.propagate_layout_invalidation(id);
-            }
-        }
-    }
-
-    fn refresh_image_error_children(&mut self, ids: &mut Vec<WidgetId>) {
-        ids.clear();
-        ids.extend(self.traverse().iter().copied());
-        for id in ids.iter().copied() {
-            if self.refresh_image_error_component(id) {
-                self.push_layout_invalidation(id);
-                self.propagate_layout_invalidation(id);
-            }
-        }
-    }
-
-    fn refresh_collapse_content_children(&mut self, ids: &mut Vec<WidgetId>) {
-        ids.clear();
-        ids.extend(self.traverse().iter().copied());
-        for id in ids.iter().copied() {
-            if self.refresh_collapse_content_component(id) {
-                self.push_layout_invalidation(id);
-                self.propagate_layout_invalidation(id);
-            }
-        }
-    }
-
-    /// 检查节点是否有 viewport 祖先（如 ScrollView）。
-    /// 递归遍历祖先链，不限于直接父节点。
-    /// 用于 layout_shrink 中避免收缩 viewport 内部节点，防止与 ScrollView 尺寸设定形成振荡。
-    fn has_viewport_ancestor(&self, id: WidgetId) -> bool {
-        let mut current = id;
-        while let Some(pid) = self.get(current).and_then(|n| n.parent()) {
-            if self
-                .get(pid)
-                .map(|p| p.children_clip(p.frame()).is_some())
-                .unwrap_or(false)
-            {
-                return true;
-            }
-            current = pid;
-        }
-        false
-    }
-
-    /// 父级当前会分配给 `id` 的 frame（Phase 1 槽位）。
-    /// Phase 4 不得收缩到该高度以下，否则 Stretch/flex 分配会被下一轮 Phase 1 拉回，形成 thrashing。
-    fn parent_allocated_frame(&self, id: WidgetId) -> Option<Rect> {
-        let parent_id = self.get(id).and_then(|n| n.parent())?;
-        let parent_frame = self.get(parent_id)?.frame();
-        let children = self.get(parent_id)?.children();
-        if children.is_empty() {
-            return None;
-        }
-        let positions = self
-            .get(parent_id)?
-            .layout_children(parent_frame, children, self);
-        positions
-            .into_iter()
-            .find(|(cid, _)| *cid == id)
-            .map(|(_, rect)| rect)
-    }
-
-    /// 收缩过大的容器。与 layout_expand 相反——当子节点高度
-    /// 显著小于容器当前高度，且子节点延伸到可见区域时，收缩容器。
-    /// 每轮先重新布局子节点（确保兄弟组件靠拢），再检查是否需要收缩。
-    /// 返回是否有任何容器被收缩。
-    fn layout_shrink(
-        &mut self,
-        order: &[WidgetId],
-        ops: &mut Vec<ShrinkOp>,
-        children: &mut Vec<WidgetId>,
-        parent_children: &mut Vec<WidgetId>,
-    ) -> bool {
-        let mut any_changed = false;
-        for _pass in 0..3 {
-            let mut pass_changed = false;
-            // Phase A: 收集需要收缩的容器
-            ops.clear();
-
-            for &id in order.iter().rev() {
-                if !self.is_effectively_visible(id) {
-                    continue;
-                }
-                // 根 frame 由窗口客户区锁定，shrink 同样不得改写。
-                if self.root_id == Some(id) {
-                    continue;
-                }
-                let is_viewport = self
-                    .get(id)
-                    .map(|n| n.children_clip(n.frame()).is_some())
-                    .unwrap_or(false);
-                if is_viewport {
-                    continue;
-                }
-                // 不收缩祖先链中有 viewport（如 ScrollView）的节点，
-                // 避免与 ScrollView::layout_children 的尺寸设定形成振荡。
-                // 递归检查所有祖先，不限于直接父节点（修复 Container→Input 嵌套场景）。
-                if self.has_viewport_ancestor(id) {
-                    continue;
-                }
-                // layout_viewports（Phase 3）会在收缩后更新 content_bounds。
-
-                children.clear();
-                match self.get(id) {
-                    Some(n) if !n.children().is_empty() => {
-                        children.extend_from_slice(n.children());
-                    }
-                    _ => continue,
-                }
-
-                // 先按当前 frame 重新布局子节点（兄弟组件靠拢/张开）
-                let Some(frame) = self.get(id).map(|n| n.frame()) else {
-                    continue;
-                };
-                let positions: Vec<(WidgetId, Rect)> = {
-                    let Some(node) = self.get(id) else {
-                        continue;
-                    };
-                    node.layout_children(frame, children, self)
-                };
-                for (child_id, rect) in positions {
-                    if self.set_layout_frame(child_id, rect) {
-                        pass_changed = true;
-                    }
-                }
-
-                // 检查容器是否需要收缩
-                let Some(node_frame) = self.get(id).map(|n| n.frame()) else {
-                    continue;
-                };
-                let mut max_child_bottom = f32::MIN;
-                let mut has_visible = false;
-                for &cid in children.iter() {
-                    if let Some(child) = self.get(cid) {
-                        if child.visible() {
-                            let cf = child.frame();
-                            let child_bottom = cf.y + cf.h;
-                            if child_bottom > 0.0 {
-                                max_child_bottom = max_child_bottom.max(child_bottom);
-                                has_visible = true;
-                            }
-                        }
-                    }
-                }
-                if !has_visible {
-                    continue;
-                }
-
-                let needed_h = max_child_bottom - node_frame.y;
-                // ⭐ 最小高度取子节点实际内容和 measure 的较大值。
-                // 设此下限可防止收缩到子节点内容以下，从而避免与
-                // layout_expand（Phase 2）形成振荡循环。
-                // 使用 1.0 像素绝对最小值而非比例值（如 0.01 * h），
-                // 后者在高 DPI 场景下可能过大（2000px * 0.01 = 20px 虚高）。
-                let measure_constraints = frame_constraints(node_frame);
-                let pref_h = self
-                    .get(id)
-                    .map(|n| n.measure(measure_constraints).h)
-                    .unwrap_or(0.0);
-                let min_h = needed_h.max(pref_h).max(1.0);
-                // 不得低于父级 Phase 1 分配高度（Stretch / flex-grow 槽位）。
-                // demo 侧栏 column_fit 被 row Stretch 拉到客户区高后，若按内容缩回，
-                // 下一轮 Phase 1 会再次拉满 → 同结果 Phase 4 空转 thrashing。
-                let parent_floor_h = self.parent_allocated_frame(id).map(|r| r.h).unwrap_or(0.0);
-                let effective_needed = min_h.max(parent_floor_h);
-                if node_frame.h - effective_needed > 0.5 {
-                    tracing::debug!(
-                        "[Layout] Phase 4: id={} shrink {:.0}px {:.0}→{:.0} (needed={:.0} pref={:.0} floor={:.0})",
-                        id,
-                        node_frame.h - effective_needed,
-                        node_frame.h,
-                        effective_needed,
-                        needed_h,
-                        pref_h,
-                        parent_floor_h,
-                    );
-                    ops.push(ShrinkOp {
-                        id,
-                        needed_h: effective_needed,
-                    });
-                }
-            }
-            // Phase B: 执行收缩
-            for op in ops.iter() {
-                if let Some(old_frame) = self.get(op.id).map(|n| n.frame()) {
-                    if !self.set_layout_frame(
-                        op.id,
-                        Rect::new(old_frame.x, old_frame.y, old_frame.w, op.needed_h),
-                    ) {
-                        continue;
-                    }
-                    #[cfg(test)]
-                    {
-                        self.layout_shrink_ops
-                            .set(self.layout_shrink_ops.get().wrapping_add(1));
-                    }
-                    children.clear();
-                    if let Some(node) = self.get(op.id) {
-                        children.extend_from_slice(node.children());
-                    }
-                    let new_frame = Rect::new(old_frame.x, old_frame.y, old_frame.w, op.needed_h);
-                    // 收缩后重新布局子节点
-                    let new_positions = self
-                        .get(op.id)
-                        .map(|n| n.layout_children(new_frame, children, self))
-                        .unwrap_or_default();
-                    for (child_id, rect) in new_positions {
-                        let _ = self.set_layout_frame(child_id, rect);
-                    }
-                    // 重新布局父容器，让兄弟组件靠拢
-                    if let Some(pid) = self.get(op.id).and_then(|n| n.parent()) {
-                        let parent_frame = self.get(pid).map(|n| n.frame()).unwrap_or_default();
-                        parent_children.clear();
-                        if let Some(parent) = self.get(pid) {
-                            parent_children.extend_from_slice(parent.children());
-                        }
-                        if !parent_children.is_empty() {
-                            let parent_positions = self
-                                .get(pid)
-                                .map(|n| n.layout_children(parent_frame, parent_children, self))
-                                .unwrap_or_default();
-                            for (child_id, rect) in parent_positions {
-                                let _ = self.set_layout_frame(child_id, rect);
-                            }
-                        }
-                    }
-                    pass_changed = true;
-                }
-            }
-            if !pass_changed {
-                break;
-            }
-            any_changed = true;
-        }
-        any_changed
-    }
-
-    pub fn update(&mut self, dt: f64) -> bool {
-        self.update_animations(dt)
-            .into_iter()
-            .any(|(_, still_active)| still_active)
-    }
-
-    pub(crate) fn update_animations(&mut self, dt: f64) -> Vec<(WidgetId, bool)> {
-        self.update_animations_at(Instant::now(), dt)
-    }
-
-    pub(crate) fn update_animations_at(&mut self, now: Instant, dt: f64) -> Vec<(WidgetId, bool)> {
-        let ids = self.take_animation_node_ids();
-        let updates = self.update_animation_nodes_at(ids.iter().copied(), now, dt);
-        self.animation_ids_scratch = ids;
-        updates
-    }
-
-    pub(crate) fn update_animations_except_at(
-        &mut self,
-        excluded_ids: &[WidgetId],
-        now: Instant,
-        dt: f64,
-    ) -> Vec<(WidgetId, bool)> {
-        let mut ids = self.take_animation_node_ids();
-        ids.retain(|id| !excluded_ids.contains(id));
-        let updates = self.update_animation_nodes_at(ids.iter().copied(), now, dt);
-        self.animation_ids_scratch = ids;
-        updates
-    }
-
-    fn take_animation_node_ids(&mut self) -> Vec<WidgetId> {
-        let mut ids = std::mem::take(&mut self.animation_ids_scratch);
-        ids.clear();
-        ids.extend(
-            self.traverse()
-                .iter()
-                .copied()
-                .filter(|&id| self.active_animation_frame(id).is_some()),
-        );
-        ids.extend(
-            self.animated_sources
-                .iter()
-                .filter(|(_, source)| {
-                    source.source.registration() != AnimatedRegistration::Inactive
-                })
-                .map(|(id, _)| *id),
-        );
-        ids
-    }
-
-    pub(crate) fn animated_source_registrations(&self) -> Vec<(WidgetId, Option<Instant>)> {
-        self.animated_sources
-            .iter()
-            .filter_map(|(&id, source)| match source.source.registration() {
-                AnimatedRegistration::Inactive => None,
-                AnimatedRegistration::Open => Some((id, None)),
-                AnimatedRegistration::Deadline(deadline) => Some((id, Some(deadline))),
-            })
-            .collect()
-    }
-
-    fn active_animation_frame(&self, id: WidgetId) -> Option<Rect> {
-        let node = self.get(id)?;
-        let visible_and_active = self.is_effectively_visible(id) && node.active();
-        let view_transition =
-            node.view_transition_active() && (node.pending_removal() || visible_and_active);
-        let component_animation = visible_and_active
-            && !self.is_pending_removal_subtree(id)
-            && node
-                .capabilities()
-                .contains(crate::ui::component::traits::WidgetCapabilities::ANIMATION);
-        (view_transition || component_animation).then_some(node.frame())
-    }
-
-    #[cfg(test)]
-    pub(crate) fn active_view_transition_ids(&self) -> Vec<WidgetId> {
-        self.traverse()
-            .iter()
-            .copied()
-            .filter(|&id| {
-                self.get(id)
-                    .is_some_and(BoxedWidget::view_transition_active)
-                    && (self.get(id).is_some_and(BoxedWidget::pending_removal)
-                        || self.is_effectively_visible(id))
-            })
-            .collect()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn view_transition_registrations(&self) -> Vec<(WidgetId, Option<Instant>)> {
-        let mut registrations = Vec::new();
-        self.extend_view_transition_registrations(&mut registrations);
-        registrations
-    }
-
-    pub(crate) fn extend_view_transition_registrations(
-        &self,
-        registrations: &mut Vec<(WidgetId, Option<Instant>)>,
-    ) {
-        registrations.extend(self.traverse().iter().copied().filter_map(|id| {
-            let node = self.get(id)?;
-            (node.view_transition_active()
-                && (node.pending_removal() || self.is_effectively_visible(id)))
-            .then_some((id, node.view_transition_deadline()))
-        }));
-    }
-
-    #[cfg(test)]
-    pub(crate) fn update_animation_nodes<I>(&mut self, ids: I, dt: f64) -> Vec<(WidgetId, bool)>
-    where
-        I: IntoIterator<Item = WidgetId>,
-    {
-        self.update_animation_nodes_at(ids, Instant::now(), dt)
-    }
-
-    pub(crate) fn update_animation_nodes_at<I>(
-        &mut self,
-        ids: I,
-        now: Instant,
-        dt: f64,
-    ) -> Vec<(WidgetId, bool)>
-    where
-        I: IntoIterator<Item = WidgetId>,
-    {
-        let mut updates = Vec::new();
-        let mut widget_overlays_changed = false;
-        let mut completed_removals = Vec::new();
-        for id in ids {
-            if let Some(source) = self.animated_sources.get(&id) {
-                updates.push((id, source.source.advance(now, dt)));
-                continue;
-            }
-            let Some(frame) = self.active_animation_frame(id) else {
-                self.active_component_animations.remove(&id);
-                updates.push((id, false));
-                continue;
-            };
-
-            let modal_was_present = crate::ui::tree_widget_hooks::modal_was_present(self, id);
-
-            let view_was_active = self
-                .get(id)
-                .is_some_and(BoxedWidget::view_transition_active);
-            let view_is_waiting = self
-                .get(id)
-                .and_then(BoxedWidget::view_transition_deadline)
-                .is_some_and(|deadline| deadline > now);
-            let old_visual_bounds = (view_was_active && !view_is_waiting)
-                .then(|| self.visual_subtree_bounds(id))
-                .flatten();
-            let (view_still_active, remove_now) = if view_was_active && !view_is_waiting {
-                self.get_mut(id)
-                    .map_or((false, false), |node| node.advance_view_transition(now, dt))
-            } else {
-                (false, false)
-            };
-            let new_visual_bounds = (view_was_active && !view_is_waiting)
-                .then(|| self.visual_subtree_bounds(id))
-                .flatten();
-            for rect in [old_visual_bounds, new_visual_bounds].into_iter().flatten() {
-                if rect.w > 0.0 && rect.h > 0.0 {
-                    self.push_paint_invalidation(id, Some(rect));
-                }
-            }
-
-            let (component_still_active, dirty) = self
-                .get_mut(id)
-                .and_then(|node| {
-                    let animation = node.component_mut().as_animation_mut()?;
-                    let still_active = animation.update_animation(dt);
-                    let dirty = animation.dirty_bounds(frame);
-                    Some((still_active, dirty))
-                })
-                .unwrap_or((false, Rect::zero()));
-            let dynamic_children_changed = self.refresh_select_option_component(id);
-            if dynamic_children_changed {
-                self.push_layout_invalidation(id);
-                self.propagate_layout_invalidation(id);
-                self.invalidate_paint(id);
-            }
-            let animation_layout_requested = self
-                .get_mut(id)
-                .is_some_and(|node| node.take_layout_request());
-            if animation_layout_requested {
-                self.push_layout_invalidation(id);
-                self.propagate_layout_invalidation(id);
-            }
-            if component_still_active {
-                self.active_component_animations.insert(id);
-            } else {
-                self.active_component_animations.remove(&id);
-            }
-
-            if dirty.w > 0.0 && dirty.h > 0.0 {
-                self.invalidate_paint_rect(id, dirty);
-            }
-            widget_overlays_changed |= !self.widget_overlay_is_current(id);
-            updates.push((id, view_still_active || component_still_active));
-            if remove_now {
-                completed_removals.push(id);
-            }
-
-            let modal_closed_for_destruction = modal_was_present
-                && crate::ui::tree_widget_hooks::modal_closed_for_destruction(self, id);
-            if modal_closed_for_destruction {
-                completed_removals.push(id);
-            }
-        }
-        for id in completed_removals {
-            if self.get(id).is_some() {
-                self.remove(id);
-                widget_overlays_changed = true;
-            }
-        }
-        self.cancel_hidden_interaction();
-        if widget_overlays_changed || updates.iter().any(|(_, still_active)| !still_active) {
-            self.rebuild_widget_overlays();
-        }
-        updates
-    }
-
-    pub(crate) fn component_animation_ids(&self) -> impl Iterator<Item = WidgetId> + '_ {
-        self.active_component_animations
-            .iter()
-            .copied()
-            .filter(|id| self.get(*id).is_some())
-    }
-
-    fn widget_overlay_is_current(&self, id: WidgetId) -> bool {
-        let desired = (self.is_effectively_visible(id) && !self.is_pending_removal_subtree(id))
-            .then(|| self.get(id))
-            .flatten()
-            .and_then(|node| node.overlay_entry(id, node.frame()));
-        let mut current = self
-            .overlay_stack
-            .iter()
-            .filter(|entry| !entry.is_managed() && entry.owner() == id);
-
-        match (desired, current.next()) {
-            (None, None) => true,
-            (Some(desired), Some(current_entry)) if current.next().is_none() => {
-                desired.kind() == current_entry.kind()
-                    && desired.bounds_rect() == current_entry.bounds_rect()
-                    && desired.z_index_value() == current_entry.z_index_value()
-                    && desired.is_modal() == current_entry.is_modal()
-                    && desired.dismisses_on_outside() == current_entry.dismisses_on_outside()
-                    && desired.traps_focus() == current_entry.traps_focus()
-            }
-            _ => false,
-        }
-    }
 }
+
+

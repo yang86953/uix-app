@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 static NEXT_WIDGET_TREE_SCOPE: AtomicU64 = AtomicU64::new(1);
 
-struct BoundAnimatedSource {
+pub(crate) struct BoundAnimatedSource {
     tree_scope: u64,
     source: Arc<dyn AnimatedSource>,
 }
@@ -40,7 +40,7 @@ thread_local! {
 }
 
 mod build;
-#[path = "tree_layout.rs"]
+#[path = "tree_layout/mod.rs"]
 mod tree_layout;
 
 pub struct WidgetTree {
@@ -68,15 +68,15 @@ pub struct WidgetTree {
     pub(crate) reconcile_requested: Arc<AtomicBool>,
     pub(crate) reconcile_callback: Arc<dyn Fn() + Send + Sync>,
     pub(crate) effects: Vec<crate::ui::reactive::state::Effect>,
-    animated_sources: BTreeMap<WidgetId, BoundAnimatedSource>,
-    active_component_animations: HashSet<WidgetId>,
-    animation_ids_scratch: Vec<WidgetId>,
-    lifecycle_states_scratch: Vec<(WidgetId, bool)>,
-    layout_scratch: tree_layout::LayoutFrameScratch,
+    pub(crate) animated_sources: BTreeMap<WidgetId, BoundAnimatedSource>,
+    pub(crate) active_component_animations: HashSet<WidgetId>,
+    pub(crate) animation_ids_scratch: Vec<WidgetId>,
+    pub(crate) lifecycle_states_scratch: Vec<(WidgetId, bool)>,
+    pub(crate) layout_scratch: tree_layout::LayoutFrameScratch,
     app_state_semantic_events_scratch: Vec<(WidgetId, SemanticEvent)>,
     app_state_focus_requests_scratch: Vec<(WidgetId, FocusRequest)>,
-    managers: WidgetManagers,
-    app_state: Option<AppState>,
+    pub(crate) managers: WidgetManagers,
+    pub(crate) app_state: Option<AppState>,
     focus_handles: HashMap<WidgetId, FocusHandle>,
     timer_routes: BTreeMap<u64, (WidgetId, u32)>,
     focus_trap_restore: Vec<(WidgetId, Option<WidgetId>)>,
