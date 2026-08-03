@@ -1,0 +1,288 @@
+//! Macros — 组件式 widget 定义。
+
+/// 为组件生成 `WidgetComponent` 胶水代码（能力位 + 上转型）。
+///
+/// 组件本身是数据 struct；按需 `impl WidgetLayout / WidgetRender / …`，
+/// 未覆盖的方法使用 trait 默认实现。
+///
+/// ```ignore
+/// pub struct Button { text: String, ... }
+///
+/// impl_widget_component!(Button; Layout, Render, Event, Lifecycle; tab_index => 1);
+///
+/// impl WidgetLayout for Button {
+///     fn measure(&self, constraints: Constraints) -> Size { ... }
+/// }
+/// impl WidgetRender for Button {
+///     fn render(&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) { ... }
+/// }
+/// ```
+#[macro_export]
+macro_rules! impl_widget_component {
+    (
+        $T:ty;
+        $($cap:ident),+ $(,)?
+        $(; tab_index => $tab:expr)?
+    ) => {
+        impl $crate::ui::__private::traits::WidgetComponent for $T {
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
+            fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+                self
+            }
+            fn capabilities(&self) -> $crate::ui::__private::traits::WidgetCapabilities {
+                let mut caps = $crate::ui::__private::traits::WidgetCapabilities::new();
+                $(
+                    impl_widget_component!(@insert_cap caps $cap);
+                )+
+                caps
+            }
+            $(
+                fn tab_index(&self) -> i32 {
+                    $tab
+                }
+            )?
+            $(
+                impl_widget_component!(@upcast $cap);
+            )+
+        }
+    };
+    (@insert_cap $caps:ident Layout) => {
+        $caps.insert($crate::ui::__private::traits::WidgetCapabilities::LAYOUT);
+    };
+    (@insert_cap $caps:ident Render) => {
+        $caps.insert($crate::ui::__private::traits::WidgetCapabilities::RENDER);
+    };
+    (@insert_cap $caps:ident Event) => {
+        $caps.insert($crate::ui::__private::traits::WidgetCapabilities::EVENT);
+    };
+    (@insert_cap $caps:ident Lifecycle) => {
+        $caps.insert($crate::ui::__private::traits::WidgetCapabilities::LIFECYCLE);
+    };
+    (@insert_cap $caps:ident Animation) => {
+        $caps.insert($crate::ui::__private::traits::WidgetCapabilities::ANIMATION);
+    };
+    (@insert_cap $caps:ident TextInput) => {
+        $caps.insert($crate::ui::__private::traits::WidgetCapabilities::TEXT_INPUT);
+    };
+    (@upcast Layout) => {
+        fn as_layout(&self) -> Option<&dyn $crate::ui::__private::traits::WidgetLayout> {
+            Some(self)
+        }
+    };
+    (@upcast Render) => {
+        fn as_render(&self) -> Option<&dyn $crate::ui::__private::traits::WidgetRender> {
+            Some(self)
+        }
+        fn as_render_mut(&mut self) -> Option<&mut dyn $crate::ui::__private::traits::WidgetRender> {
+            Some(self)
+        }
+    };
+    (@upcast Event) => {
+        fn as_event(&self) -> Option<&dyn $crate::ui::__private::traits::EventHandler> {
+            Some(self)
+        }
+        fn as_event_mut(&mut self) -> Option<&mut dyn $crate::ui::__private::traits::EventHandler> {
+            Some(self)
+        }
+    };
+    (@upcast Lifecycle) => {
+        fn as_lifecycle(&self) -> Option<&dyn $crate::ui::__private::traits::WidgetLifecycle> {
+            Some(self)
+        }
+        fn as_lifecycle_mut(&mut self) -> Option<&mut dyn $crate::ui::__private::traits::WidgetLifecycle> {
+            Some(self)
+        }
+    };
+    (@upcast Animation) => {
+        fn as_animation(&self) -> Option<&dyn $crate::ui::__private::traits::WidgetAnimation> {
+            Some(self)
+        }
+        fn as_animation_mut(&mut self) -> Option<&mut dyn $crate::ui::__private::traits::WidgetAnimation> {
+            Some(self)
+        }
+    };
+    (@upcast TextInput) => {
+        fn as_text_input(&self) -> Option<&dyn $crate::ui::__private::traits::WidgetTextInput> {
+            Some(self)
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! tree {
+    ($parent:expr => [$($child:expr),+ $(,)?]) => {
+        $crate::ui::__private::WidgetNode::new(
+            Box::new($parent),
+            vec![$($crate::ui::IntoWidgetNode::into_node($child)),+],
+        )
+    };
+    ($widget:expr) => {
+        $crate::ui::__private::WidgetNode::leaf(Box::new($widget))
+    };
+}
+
+/// 辅助：能力上转型生成。
+#[macro_export]
+#[doc(hidden)]
+macro_rules! wc_upcast {
+    ($T:ty; WidgetRender) => {
+        fn as_render(&self) -> Option<&dyn $crate::ui::__private::traits::WidgetRender> {
+            Some(self)
+        }
+        fn as_render_mut(
+            &mut self,
+        ) -> Option<&mut dyn $crate::ui::__private::traits::WidgetRender> {
+            Some(self)
+        }
+    };
+    ($T:ty; EventHandler) => {
+        fn as_event(&self) -> Option<&dyn $crate::ui::__private::traits::EventHandler> {
+            Some(self)
+        }
+        fn as_event_mut(&mut self) -> Option<&mut dyn $crate::ui::__private::traits::EventHandler> {
+            Some(self)
+        }
+    };
+    ($T:ty; WidgetLifecycle) => {
+        fn as_lifecycle(&self) -> Option<&dyn $crate::ui::__private::traits::WidgetLifecycle> {
+            Some(self)
+        }
+        fn as_lifecycle_mut(
+            &mut self,
+        ) -> Option<&mut dyn $crate::ui::__private::traits::WidgetLifecycle> {
+            Some(self)
+        }
+    };
+    ($T:ty; WidgetAnimation) => {
+        fn as_animation(&self) -> Option<&dyn $crate::ui::__private::traits::WidgetAnimation> {
+            Some(self)
+        }
+        fn as_animation_mut(
+            &mut self,
+        ) -> Option<&mut dyn $crate::ui::__private::traits::WidgetAnimation> {
+            Some(self)
+        }
+    };
+    ($T:ty; WidgetLayout) => {
+        fn as_layout(&self) -> Option<&dyn $crate::ui::__private::traits::WidgetLayout> {
+            Some(self)
+        }
+    };
+    ($T:ty; WidgetTextInput) => {
+        fn as_text_input(&self) -> Option<&dyn $crate::ui::__private::traits::WidgetTextInput> {
+            Some(self)
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __component_text_input_upcast_method {
+    (text_input_cursor_rect; $T:ty) => {
+        $crate::wc_upcast!($T; WidgetTextInput);
+    };
+    ($other:ident; $T:ty) => {};
+}
+
+// ── 辅助宏：build 方法和 upcast ──
+
+/// 组件声明 `build_view_children` 时，生成 ViewChildrenProvider 实现
+/// （SMC-04：声明期 View 子节点端口归 System 私有边界）。
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __component_view_children_impl {
+    ($T:ty; build_view_children; ($($p:tt)*) -> $ret:ty $body:block) => {
+        impl $crate::ui::__private::traits::ViewChildrenProvider for $T {
+            fn build_view_children($($p)*) -> $ret $body
+        }
+    };
+    ($T:ty; $other:ident; $($rest:tt)*) => {};
+}
+
+/// 如果方法是 `build`，生成 `fn build(params) -> Ret { body }`。
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __component_build_method {
+    (__semantic_actions_decl; ($($actions:tt)*) $body:block) => {
+        // E-05：`semantic_actions => [...]` 槽位生成的声明方法；$actions 为
+        // `&[...]` 表达式（由前置分支包装），直接作为返回值。
+        fn declared_semantic_actions(&self) -> &'static [$crate::ui::SemanticAction] {
+            $($actions)*
+        }
+    };
+    (build; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn build($($p)*) -> $ret $body
+    };
+    (build_view_children; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn as_view_children(
+            &self,
+        ) -> Option<&dyn $crate::ui::__private::traits::ViewChildrenProvider> {
+            Some(self)
+        }
+    };
+    (visible; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn visible($($p)*) -> $ret $body
+    };
+    (tab_index; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn tab_index($($p)*) -> $ret $body
+    };
+    (picture_policy; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn picture_policy($($p)*) -> $ret $body
+    };
+    (has_dynamic_content; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn has_dynamic_content($($p)*) -> $ret $body
+    };
+    ($other:ident; $($rest:tt)*) => {};
+}
+
+/// 每个 trait 只生成一次 upcast（主方法负责）。
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __component_upcast_method {
+    (measure; $T:ty) => { $crate::wc_upcast!($T; WidgetLayout); };
+    (flex_grow; $T:ty) => {};
+    (flex_shrink; $T:ty) => {};
+    (align_self; $T:ty) => {};
+    (grid_cell; $T:ty) => {};
+    (grid_column_span; $T:ty) => {};
+    (grid_row_span; $T:ty) => {};
+    (layout_margin; $T:ty) => {};
+    (child_overflow_expands_parent; $T:ty) => {};
+    (child_visible; $T:ty) => {};
+    (measure_children; $T:ty) => {};
+    (layout_children; $T:ty) => {};
+    (render; $T:ty) => { $crate::wc_upcast!($T; WidgetRender); };
+    (uses_palette; $T:ty) => {};
+    (dirty_rect; $T:ty) => {};
+    (children_clip; $T:ty) => {};
+    (overlay_entry; $T:ty) => {};
+    (draw_margin; $T:ty) => {};
+    (on_event; $T:ty) => { $crate::wc_upcast!($T; EventHandler); };
+    (take_layout_request; $T:ty) => {};
+    (scroll_delta; $T:ty) => {};
+    (scroll_delta_for_dirty; $T:ty) => {};
+    (scroll_composite_viewport; $T:ty) => {};
+    (viewport_scroll_offset; $T:ty) => {};
+    (scroll_descendant_by; $T:ty) => {};
+    (hit_test_frame; $T:ty) => {};
+    (on_init; $T:ty) => { $crate::wc_upcast!($T; WidgetLifecycle); };
+    (on_attach; $T:ty) => {};
+    (on_mount; $T:ty) => {};
+    (on_active; $T:ty) => {};
+    (on_inactive; $T:ty) => {};
+    (on_theme_changed; $T:ty) => {};
+    (on_unmount; $T:ty) => {};
+    (on_detach; $T:ty) => {};
+    (on_destroy; $T:ty) => {};
+    (update_animation; $T:ty) => { $crate::wc_upcast!($T; WidgetAnimation); };
+    (dirty_bounds; $T:ty) => {};
+    ($other:ident; $T:ty) => {};
+}
+
+mod component;
+mod helpers;

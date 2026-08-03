@@ -1,0 +1,163 @@
+//! Direct3D 11 graphics context for Windows.
+//!
+//! Caps: [`RasterMode::GpuNative`] × [`PresentMode::Swapchain`] (#169).
+//! Native solid/rounded fill + stroke + glyph atlas text + linear/radial
+//! gradients + simple path meshes + box/ambient shadow; unsupported Canvas2D
+//! ops soft-raster and alpha-blit (same hybrid pattern as the native GL path).
+//! bitblt swapchain 固定使用 `DXGI_SWAP_EFFECT_DISCARD`；状态边界把
+//! `DXGI_STATUS_OCCLUDED` 映射为 `Errc::GraphicsOccluded`，并以
+//! `Present(0, DXGI_PRESENT_TEST)` 做无帧数据的退出探测。
+
+#![allow(nonstandard_style)]
+
+use std::ffi::c_void;
+
+use super::pipeline::D3d11Pipeline;
+use super::swapchain::d3d_error;
+pub(crate) use super::swapchain::{
+    map_dxgi_present_result, map_dxgi_present_test_result, map_dxgi_resize_result, swap_chain_desc,
+};
+use crate::core::{Errc, Error, Result};
+use crate::native::present::{
+    GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
+    GpuSolidRect, GpuStrokeRect, GraphicsBackend, GraphicsContextCaps, IGraphicsContext,
+    NativeRasterCaps, OffscreenTargetId, PresentCoherency, PresentDamage, PresentFrame,
+    PresentOcclusionSupport, PresentTestResult, SoftFallbackTile,
+};
+use crate::native::presentation::graphics::platform::windows as win_surface;
+use ::windows::core::Interface;
+use ::windows::Win32::Foundation::HMODULE;
+use ::windows::Win32::Graphics::Direct3D::{
+    D3D_DRIVER_TYPE, D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL,
+    D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
+};
+use ::windows::Win32::Graphics::Direct3D11::{
+    D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, ID3D11RenderTargetView,
+    ID3D11ShaderResourceView, ID3D11Texture2D, D3D11_BIND_RENDER_TARGET,
+    D3D11_BIND_SHADER_RESOURCE, D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+    D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC,
+    D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING, D3D11_VIEWPORT,
+};
+use ::windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC};
+use ::windows::Win32::Graphics::Dxgi::{
+    IDXGIDevice, IDXGISwapChain, DXGI_PRESENT, DXGI_PRESENT_TEST, DXGI_SWAP_CHAIN_FLAG,
+};
+
+type HWND_PTR = *mut c_void;
+
+struct OffscreenTarget {
+    #[allow(dead_code)] // kept alive for RTV/SRV; not read directly after create
+    texture: ID3D11Texture2D,
+    pub(crate) rtv: ID3D11RenderTargetView,
+    srv: ID3D11ShaderResourceView,
+    width: i32,
+    height: i32,
+}
+
+pub(crate) const D3D11_FEATURE_LEVELS: [D3D_FEATURE_LEVEL; 4] = [
+    D3D_FEATURE_LEVEL_11_1,
+    D3D_FEATURE_LEVEL_11_0,
+    D3D_FEATURE_LEVEL_10_1,
+    D3D_FEATURE_LEVEL_10_0,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum D3d11DriverKind {
+    Hardware,
+    Warp,
+}
+
+impl D3d11DriverKind {
+    fn native(self) -> D3D_DRIVER_TYPE {
+        match self {
+            Self::Hardware => D3D_DRIVER_TYPE_HARDWARE,
+            Self::Warp => D3D_DRIVER_TYPE_WARP,
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Hardware => "hardware",
+            Self::Warp => "warp",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct D3d11AdapterInfo {
+    pub driver: D3d11DriverKind,
+    pub description: String,
+    pub vendor_id: u32,
+    pub device_id: u32,
+    pub dedicated_video_memory: u64,
+}
+
+impl D3d11AdapterInfo {
+    fn unavailable(driver: D3d11DriverKind) -> Self {
+        Self {
+            driver,
+            description: "unavailable".to_string(),
+            vendor_id: 0,
+            device_id: 0,
+            dedicated_video_memory: 0,
+        }
+    }
+
+    pub fn diagnostic_summary(&self) -> String {
+        format!(
+            "driver={}; adapter=\"{}\"; vendor={:#06X}; device={:#06X}; dedicated_vram_mb={}",
+            self.driver.as_str(),
+            self.description,
+            self.vendor_id,
+            self.device_id,
+            self.dedicated_video_memory / (1024 * 1024)
+        )
+    }
+}
+
+fn query_adapter_info(device: &ID3D11Device, driver: D3d11DriverKind) -> Result<D3d11AdapterInfo> {
+    let dxgi_device: IDXGIDevice = device
+        .cast()
+        .map_err(|err| d3d_error("ID3D11Device::cast<IDXGIDevice>", err))?;
+    let adapter = unsafe { dxgi_device.GetAdapter() }
+        .map_err(|err| d3d_error("IDXGIDevice::GetAdapter", err))?;
+    let desc =
+        unsafe { adapter.GetDesc() }.map_err(|err| d3d_error("IDXGIAdapter::GetDesc", err))?;
+    let description_len = desc
+        .Description
+        .iter()
+        .position(|unit| *unit == 0)
+        .unwrap_or(desc.Description.len());
+    let description = String::from_utf16_lossy(&desc.Description[..description_len]);
+    Ok(D3d11AdapterInfo {
+        driver,
+        description,
+        vendor_id: desc.VendorId,
+        device_id: desc.DeviceId,
+        dedicated_video_memory: desc.DedicatedVideoMemory as u64,
+    })
+}
+
+pub struct D3d11Context {
+    hwnd: HWND_PTR,
+    device: ID3D11Device,
+    pub(crate) context: ID3D11DeviceContext,
+    swap_chain: IDXGISwapChain,
+    pub(crate) rtv: Option<ID3D11RenderTargetView>,
+    pipeline: D3d11Pipeline,
+    pub(crate) adapter_info: D3d11AdapterInfo,
+    logical_width: i32,
+    logical_height: i32,
+    width: i32,
+    height: i32,
+    offscreens: Vec<Option<OffscreenTarget>>,
+    free_offscreen_ids: Vec<u32>,
+    next_offscreen_id: u32,
+    /// When set, draw/clear target the offscreen instead of the swapchain.
+    bound_offscreen: Option<u32>,
+}
+
+#[cfg(test)]
+
+mod graphics;
+mod methods;
