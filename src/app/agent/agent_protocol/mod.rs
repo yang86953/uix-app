@@ -1,0 +1,519 @@
+//! Authenticated, bounded JSON Lines protocol for the process Agent Bridge.
+//!
+//! Native transports provide a private byte stream. This module owns framing
+//! semantics and wire validation, but never touches a platform handle or a
+//! `WidgetTree` directly.
+
+use std::sync::mpsc::RecvTimeoutError;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use serde_json::{json, Map, Value};
+
+use crate::app::agent::agent_bridge::{
+    AgentProcessBridge, AgentWaitCondition, AgentWaitError, AgentWaitOutcome, AgentWindowInfo,
+    MAX_AGENT_WAIT_TIMEOUT,
+};
+use crate::app::queues::agent_command_queue::{
+    AgentCommandError, AgentCommandResponse, AgentErrorCode, AgentSubmitError, AgentWindowAction,
+    DEFAULT_AGENT_COMMAND_QUEUE_CAPACITY, MAX_AGENT_SETTLE_PASSES,
+};
+use crate::app::window_semantics::WindowSemanticSnapshot;
+use crate::core::{ComponentId, Point, Rect, WindowId};
+use crate::ui::accessibility::semantic_snapshot::{SemanticNode, SemanticTarget};
+use crate::ui::component_snapshot::{AccessibilityRole, AccessibilityState};
+use crate::ui::semantic_action::SemanticAction;
+use crate::ui::{KeyCode, KeyMod};
+
+pub(crate) const AGENT_PROTOCOL_SCHEMA: &str = "uix.agent.v1";
+pub(crate) const MAX_AGENT_MESSAGE_BYTES: usize = 4 * 1024 * 1024;
+pub(crate) const MAX_AGENT_TEXT_BYTES: usize = 64 * 1024;
+pub(crate) const MAX_AGENT_CONNECTIONS: usize = 8;
+const MAX_REQUEST_ID_BYTES: usize = 128;
+const MAX_AUTOMATION_ID_BYTES: usize = 512;
+const AGENT_COMMAND_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
+const AGENT_REQUEST_TYPES: &[&str] = &["hello", "list_windows", "snapshot", "perform", "wait"];
+const AGENT_SEMANTIC_ACTIONS: &[&str] = &[
+    "invoke",
+    "focus",
+    "set_value",
+    "insert_text",
+    "select",
+    "toggle",
+    "increment",
+    "decrement",
+    "scroll",
+];
+const AGENT_WINDOW_ACTIONS: &[&str] = &[
+    "press_key",
+    "click_at",
+    "pointer_move",
+    "pointer_down",
+    "pointer_up",
+];
+const AGENT_KEY_MODIFIERS: &[&str] = &["shift", "ctrl", "alt", "super"];
+const AGENT_KEY_CODES: &[(&str, KeyCode)] = &[
+    ("a", KeyCode::A),
+    ("b", KeyCode::B),
+    ("c", KeyCode::C),
+    ("d", KeyCode::D),
+    ("e", KeyCode::E),
+    ("f", KeyCode::F),
+    ("g", KeyCode::G),
+    ("h", KeyCode::H),
+    ("i", KeyCode::I),
+    ("j", KeyCode::J),
+    ("k", KeyCode::K),
+    ("l", KeyCode::L),
+    ("m", KeyCode::M),
+    ("n", KeyCode::N),
+    ("o", KeyCode::O),
+    ("p", KeyCode::P),
+    ("q", KeyCode::Q),
+    ("r", KeyCode::R),
+    ("s", KeyCode::S),
+    ("t", KeyCode::T),
+    ("u", KeyCode::U),
+    ("v", KeyCode::V),
+    ("w", KeyCode::W),
+    ("x", KeyCode::X),
+    ("y", KeyCode::Y),
+    ("z", KeyCode::Z),
+    ("0", KeyCode::Num0),
+    ("1", KeyCode::Num1),
+    ("2", KeyCode::Num2),
+    ("3", KeyCode::Num3),
+    ("4", KeyCode::Num4),
+    ("5", KeyCode::Num5),
+    ("6", KeyCode::Num6),
+    ("7", KeyCode::Num7),
+    ("8", KeyCode::Num8),
+    ("9", KeyCode::Num9),
+    ("f1", KeyCode::F1),
+    ("f2", KeyCode::F2),
+    ("f3", KeyCode::F3),
+    ("f4", KeyCode::F4),
+    ("f5", KeyCode::F5),
+    ("f6", KeyCode::F6),
+    ("f7", KeyCode::F7),
+    ("f8", KeyCode::F8),
+    ("f9", KeyCode::F9),
+    ("f10", KeyCode::F10),
+    ("f11", KeyCode::F11),
+    ("f12", KeyCode::F12),
+    ("up", KeyCode::Up),
+    ("down", KeyCode::Down),
+    ("left", KeyCode::Left),
+    ("right", KeyCode::Right),
+    ("home", KeyCode::Home),
+    ("end", KeyCode::End),
+    ("page_up", KeyCode::PageUp),
+    ("page_down", KeyCode::PageDown),
+    ("enter", KeyCode::Enter),
+    ("escape", KeyCode::Escape),
+    ("backspace", KeyCode::Backspace),
+    ("delete", KeyCode::Delete),
+    ("tab", KeyCode::Tab),
+    ("space", KeyCode::Space),
+    ("insert", KeyCode::Insert),
+    ("shift", KeyCode::Shift),
+    ("ctrl", KeyCode::Ctrl),
+    ("alt", KeyCode::Alt),
+    ("super", KeyCode::Super),
+];
+
+#[derive(Debug)]
+pub(crate) struct AgentProtocolReply {
+    bytes: Vec<u8>,
+    close_connection: bool,
+    result_code: &'static str,
+}
+
+impl AgentProtocolReply {
+    pub(crate) fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    pub(crate) const fn close_connection(&self) -> bool {
+        self.close_connection
+    }
+
+    pub(crate) const fn result_code(&self) -> &'static str {
+        self.result_code
+    }
+
+    fn from_value(value: Value, close_connection: bool, result_code: &'static str) -> Self {
+        let mut bytes = match serde_json::to_vec(&value) {
+            Ok(bytes) if bytes.len() < MAX_AGENT_MESSAGE_BYTES => bytes,
+            Ok(_) | Err(_) => br#"{"schema":"uix.agent.v1","request_id":null,"ok":false,"error":{"code":"internal","message":"response exceeds the protocol limit"}}"#.to_vec(),
+        };
+        bytes.push(b'\n');
+        Self {
+            bytes,
+            close_connection,
+            result_code,
+        }
+    }
+}
+
+pub(crate) fn framing_error_reply(message: &'static str) -> AgentProtocolReply {
+    error_reply(None, AgentErrorCode::InvalidRequest, message, true)
+}
+
+pub(crate) struct AgentProtocolSession {
+    bridge: AgentProcessBridge,
+    session_token: Arc<[u8; 32]>,
+    authenticated: bool,
+}
+
+impl AgentProtocolSession {
+    pub(crate) fn new(bridge: AgentProcessBridge, session_token: Arc<[u8; 32]>) -> Self {
+        Self {
+            bridge,
+            session_token,
+            authenticated: false,
+        }
+    }
+
+    pub(crate) fn handle_line(&mut self, line: &[u8]) -> AgentProtocolReply {
+        let started = Instant::now();
+        let reply = self.handle_line_inner(line);
+        tracing::info!(
+            "agent request result={} duration_ms={}",
+            reply.result_code(),
+            started.elapsed().as_millis()
+        );
+        reply
+    }
+
+    fn handle_line_inner(&mut self, line: &[u8]) -> AgentProtocolReply {
+        if line.len() > MAX_AGENT_MESSAGE_BYTES {
+            return error_reply(
+                None,
+                AgentErrorCode::InvalidRequest,
+                "message exceeds the protocol limit",
+                true,
+            );
+        }
+
+        let value: Value = match serde_json::from_slice(line) {
+            Ok(value) => value,
+            Err(_) => {
+                return error_reply(
+                    None,
+                    AgentErrorCode::InvalidRequest,
+                    "message is not valid JSON",
+                    !self.authenticated,
+                )
+            }
+        };
+        let Some(object) = value.as_object() else {
+            return error_reply(
+                None,
+                AgentErrorCode::InvalidRequest,
+                "request must be a JSON object",
+                !self.authenticated,
+            );
+        };
+        let request_id = match request_id(object) {
+            Ok(request_id) => request_id,
+            Err(error) => return error.into_reply(None, !self.authenticated),
+        };
+        let schema = match required_string(object, "schema", MAX_REQUEST_ID_BYTES) {
+            Ok(schema) => schema,
+            Err(error) => return error.into_reply(Some(request_id), !self.authenticated),
+        };
+        if schema != AGENT_PROTOCOL_SCHEMA {
+            return error_reply(
+                Some(request_id),
+                AgentErrorCode::UnsupportedSchema,
+                "unsupported protocol schema",
+                !self.authenticated,
+            );
+        }
+        let request_type = match required_string(object, "type", 64) {
+            Ok(request_type) => request_type,
+            Err(error) => return error.into_reply(Some(request_id), !self.authenticated),
+        };
+
+        if !self.authenticated {
+            return self.handle_hello(object, request_id, request_type);
+        }
+
+        match request_type {
+            "hello" => error_reply(
+                Some(request_id),
+                AgentErrorCode::InvalidRequest,
+                "connection is already authenticated",
+                false,
+            ),
+            "list_windows" => self.handle_list_windows(request_id),
+            "snapshot" => self.handle_snapshot(object, request_id),
+            "perform" => self.handle_perform(object, request_id),
+            "wait" => self.handle_wait(object, request_id),
+            _ => error_reply(
+                Some(request_id),
+                AgentErrorCode::InvalidRequest,
+                "unknown request type",
+                false,
+            ),
+        }
+    }
+
+    fn handle_hello(
+        &mut self,
+        object: &Map<String, Value>,
+        request_id: String,
+        request_type: &str,
+    ) -> AgentProtocolReply {
+        if request_type != "hello" {
+            return error_reply(
+                Some(request_id),
+                AgentErrorCode::Unauthorized,
+                "hello must be the first request",
+                true,
+            );
+        }
+        let token = object.get("token").and_then(Value::as_str).unwrap_or("");
+        if !token_matches(self.session_token.as_ref(), token) {
+            return error_reply(
+                Some(request_id),
+                AgentErrorCode::Unauthorized,
+                "session authentication failed",
+                true,
+            );
+        }
+        self.authenticated = true;
+        success_reply(
+            request_id,
+            "hello",
+            json!({
+                "process_id": std::process::id(),
+                "capabilities": {
+                    "request_types": AGENT_REQUEST_TYPES,
+                    "semantic_actions": AGENT_SEMANTIC_ACTIONS,
+                    "window_actions": AGENT_WINDOW_ACTIONS,
+                    "key_names": AGENT_KEY_CODES
+                        .iter()
+                        .map(|(name, _)| *name)
+                        .collect::<Vec<_>>(),
+                    "key_modifiers": AGENT_KEY_MODIFIERS,
+                },
+                "limits": {
+                    "max_message_bytes": MAX_AGENT_MESSAGE_BYTES,
+                    "max_text_bytes": MAX_AGENT_TEXT_BYTES,
+                    "max_connections": MAX_AGENT_CONNECTIONS,
+                    "window_queue_capacity": DEFAULT_AGENT_COMMAND_QUEUE_CAPACITY,
+                    "max_settle_passes": MAX_AGENT_SETTLE_PASSES,
+                    "max_wait_ms": MAX_AGENT_WAIT_TIMEOUT.as_millis() as u64,
+                },
+            }),
+        )
+    }
+
+    fn handle_list_windows(&self, request_id: String) -> AgentProtocolReply {
+        match self.bridge.list_windows() {
+            Ok(windows) => success_reply(
+                request_id,
+                "list_windows",
+                json!({
+                    "windows": windows.iter().map(window_info_value).collect::<Vec<_>>()
+                }),
+            ),
+            Err(error) => submit_error_reply(request_id, error),
+        }
+    }
+
+    fn handle_snapshot(
+        &self,
+        object: &Map<String, Value>,
+        request_id: String,
+    ) -> AgentProtocolReply {
+        let window_id = match parse_window_id(object) {
+            Ok(window_id) => window_id,
+            Err(error) => return error.into_reply(Some(request_id), false),
+        };
+        let ticket = match self.bridge.snapshot(window_id) {
+            Ok(ticket) => ticket,
+            Err(error) => return submit_error_reply(request_id, error),
+        };
+        match ticket.recv_timeout(AGENT_COMMAND_RESPONSE_TIMEOUT) {
+            Ok(Ok(AgentCommandResponse::Snapshot(snapshot))) => success_reply(
+                request_id,
+                "snapshot",
+                json!({ "snapshot": semantic_snapshot_value(&snapshot) }),
+            ),
+            Ok(Ok(AgentCommandResponse::Performed { .. })) => error_reply(
+                Some(request_id),
+                AgentErrorCode::Internal,
+                "unexpected command response",
+                false,
+            ),
+            Ok(Err(error)) => command_error_reply(request_id, error),
+            Err(RecvTimeoutError::Timeout) => error_reply(
+                Some(request_id),
+                AgentErrorCode::Timeout,
+                "UI command timed out",
+                false,
+            ),
+            Err(RecvTimeoutError::Disconnected) => error_reply(
+                Some(request_id),
+                AgentErrorCode::AppClosed,
+                "application closed before responding",
+                false,
+            ),
+        }
+    }
+
+    fn handle_perform(
+        &self,
+        object: &Map<String, Value>,
+        request_id: String,
+    ) -> AgentProtocolReply {
+        let window_id = match parse_window_id(object) {
+            Ok(window_id) => window_id,
+            Err(error) => return error.into_reply(Some(request_id), false),
+        };
+        let generation = match required_u64(object, "generation") {
+            Ok(generation) => generation,
+            Err(error) => return error.into_reply(Some(request_id), false),
+        };
+        let expected_revision = match optional_u64(object, "expected_revision") {
+            Ok(revision) => revision,
+            Err(error) => return error.into_reply(Some(request_id), false),
+        };
+        let action = match object
+            .get("action")
+            .ok_or_else(|| WireError::invalid("perform requires an action object"))
+            .and_then(parse_action)
+        {
+            Ok(action) => action,
+            Err(error) => return error.into_reply(Some(request_id), false),
+        };
+
+        let ticket = match action {
+            ParsedAgentAction::Semantic(action) => {
+                let target = match object
+                    .get("target")
+                    .ok_or_else(|| WireError::invalid("semantic action requires a target object"))
+                    .and_then(parse_target)
+                {
+                    Ok(target) => target,
+                    Err(error) => return error.into_reply(Some(request_id), false),
+                };
+                match self
+                    .bridge
+                    .perform(window_id, generation, expected_revision, target, action)
+                {
+                    Ok(ticket) => ticket,
+                    Err(error) => return submit_error_reply(request_id, error),
+                }
+            }
+            ParsedAgentAction::Window(action) => {
+                if object.contains_key("target") {
+                    return WireError::invalid("window action must not include a target")
+                        .into_reply(Some(request_id), false);
+                }
+                match self
+                    .bridge
+                    .perform_window(window_id, generation, expected_revision, action)
+                {
+                    Ok(ticket) => ticket,
+                    Err(error) => return submit_error_reply(request_id, error),
+                }
+            }
+        };
+        match ticket.recv_timeout(AGENT_COMMAND_RESPONSE_TIMEOUT) {
+            Ok(Ok(AgentCommandResponse::Performed {
+                window_id,
+                generation,
+                revision,
+                presented_revision,
+                settled,
+            })) => success_reply(
+                request_id,
+                "perform",
+                json!({
+                    "window_id": window_id.raw(),
+                    "generation": generation,
+                    "revision": revision,
+                    "presented_revision": presented_revision,
+                    "settled": settled,
+                }),
+            ),
+            Ok(Ok(AgentCommandResponse::Snapshot(_))) => error_reply(
+                Some(request_id),
+                AgentErrorCode::Internal,
+                "unexpected command response",
+                false,
+            ),
+            Ok(Err(error)) => command_error_reply(request_id, error),
+            Err(RecvTimeoutError::Timeout) => error_reply(
+                Some(request_id),
+                AgentErrorCode::Timeout,
+                "UI command timed out",
+                false,
+            ),
+            Err(RecvTimeoutError::Disconnected) => error_reply(
+                Some(request_id),
+                AgentErrorCode::AppClosed,
+                "application closed before responding",
+                false,
+            ),
+        }
+    }
+
+    fn handle_wait(&self, object: &Map<String, Value>, request_id: String) -> AgentProtocolReply {
+        let window_id = match parse_window_id(object) {
+            Ok(window_id) => window_id,
+            Err(error) => return error.into_reply(Some(request_id), false),
+        };
+        let generation = match required_u64(object, "generation") {
+            Ok(generation) => generation,
+            Err(error) => return error.into_reply(Some(request_id), false),
+        };
+        let timeout_ms = match required_u64(object, "timeout_ms") {
+            Ok(timeout_ms) => timeout_ms,
+            Err(error) => return error.into_reply(Some(request_id), false),
+        };
+        let after_revision = match optional_u64(object, "after_revision") {
+            Ok(revision) => revision,
+            Err(error) => return error.into_reply(Some(request_id), false),
+        };
+        let presented_revision = match optional_u64(object, "presented_revision") {
+            Ok(revision) => revision,
+            Err(error) => return error.into_reply(Some(request_id), false),
+        };
+        let condition = match (after_revision, presented_revision) {
+            (Some(revision), None) => AgentWaitCondition::RevisionAfter(revision),
+            (None, Some(revision)) => AgentWaitCondition::PresentedAtLeast(revision),
+            _ => {
+                return error_reply(
+                    Some(request_id),
+                    AgentErrorCode::InvalidRequest,
+                    "wait requires exactly one revision condition",
+                    false,
+                )
+            }
+        };
+
+        match self.bridge.wait(
+            window_id,
+            generation,
+            condition,
+            Duration::from_millis(timeout_ms),
+        ) {
+            Ok(AgentWaitOutcome::Changed(window)) => wait_success(request_id, "changed", &window),
+            Ok(AgentWaitOutcome::Presented(window)) => {
+                wait_success(request_id, "presented", &window)
+            }
+            Ok(AgentWaitOutcome::Closed(window)) => wait_success(request_id, "closed", &window),
+            Err(error) => wait_error_reply(request_id, error),
+        }
+    }
+}
+
+mod wire;
+
+use self::wire::*;
+pub(crate) use self::wire::encode_session_token;
