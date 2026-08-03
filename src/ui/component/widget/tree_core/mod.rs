@@ -1,0 +1,170 @@
+use super::*;
+use crate::core::{Constraints, Rect};
+use crate::draw::renderer::{Invalidation, InvalidationQueueHandle};
+use crate::native::windowing::input::{KeyCode, KeyMod};
+use crate::ui::animation::AnimatedSource;
+use crate::ui::component::app_state::{AppState, FocusRequest};
+use crate::ui::component::focus_handle::FocusHandle;
+use crate::ui::component::managers::WidgetManagers;
+use crate::ui::event::{HandlerTable, SemanticEvent, WindowAction};
+use crate::ui::overlay::OverlayStack;
+use crate::ui::render_handler::RenderHandlerTable;
+use crate::ui::theme::traits::ThemeTokens;
+use crate::ui::theme::Theme;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
+
+static NEXT_WIDGET_TREE_SCOPE: AtomicU64 = AtomicU64::new(1);
+
+
+pub(crate) struct BoundAnimatedSource {
+    tree_scope: u64,
+    source: Arc<dyn AnimatedSource>,
+}
+
+impl Drop for BoundAnimatedSource {
+    fn drop(&mut self) {
+        self.source.unbind_owner(self.tree_scope);
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// 1=Phase1 2=Phase2 4=Phase4；0=不记录。
+    #[allow(
+        clippy::missing_const_for_thread_local,
+        reason = "the initializer is already const and the lint fires through thread_local"
+    )]
+    pub(crate) static LAYOUT_TRACE_PHASE: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+}
+
+mod build;
+#[path = "../tree_layout/mod.rs"]
+mod tree_layout;
+
+pub struct WidgetTree {
+    tree_scope: u64,
+    pub(crate) nodes: Vec<Option<BoxedWidget>>,
+    pub(crate) free_slots: Vec<usize>,
+    pub(crate) generations: Vec<u32>,
+    pub(crate) next_slot: usize,
+    pub(crate) root_id: Option<WidgetId>,
+    pub(crate) scroll_region_moves: Vec<(Rect, f32, f32)>,
+    pub(crate) pending_window_actions: Vec<WindowAction>,
+    pub tree_version: u64,
+    /// UI 域主题令牌根；ScenePaint::paint 用它构造 UI-owned 绘制上下文。
+    theme_tokens: std::sync::Arc<dyn ThemeTokens>,
+    cached_traversal: std::cell::RefCell<(Vec<WidgetId>, u64)>,
+
+    pub(crate) handler_table: HandlerTable,
+    pub(crate) render_handler_table: RenderHandlerTable,
+    pub(crate) overlay_stack: OverlayStack,
+
+    pub(crate) invalidation: InvalidationQueueHandle,
+    pub(crate) pending_invalidations: Vec<Invalidation>,
+    pub(crate) invalidation_batch_depth: usize,
+    pub(crate) layout_ancestor_scratch: Vec<WidgetId>,
+    pub(crate) reconcile_requested: Arc<AtomicBool>,
+    pub(crate) reconcile_callback: Arc<dyn Fn() + Send + Sync>,
+    pub(crate) effects: Vec<crate::ui::reactive::state::Effect>,
+    pub(crate) animated_sources: BTreeMap<WidgetId, BoundAnimatedSource>,
+    pub(crate) active_component_animations: HashSet<WidgetId>,
+    pub(crate) animation_ids_scratch: Vec<WidgetId>,
+    pub(crate) lifecycle_states_scratch: Vec<(WidgetId, bool)>,
+    pub(crate) layout_scratch: tree_layout::LayoutFrameScratch,
+    app_state_semantic_events_scratch: Vec<(WidgetId, SemanticEvent)>,
+    app_state_focus_requests_scratch: Vec<(WidgetId, FocusRequest)>,
+    pub(crate) managers: WidgetManagers,
+    pub(crate) app_state: Option<AppState>,
+    focus_handles: HashMap<WidgetId, FocusHandle>,
+    timer_routes: BTreeMap<u64, (WidgetId, u32)>,
+    focus_trap_restore: Vec<(WidgetId, Option<WidgetId>)>,
+    pub(crate) window_focused: bool,
+    keyboard_focus_visible: bool,
+    pub(crate) keyboard_activation: Option<(WidgetId, KeyCode, KeyMod)>,
+    #[cfg(feature = "test-harness")]
+    pub(crate) automation_recorder: Option<crate::ui::automation::AutomationRecorder>,
+    /// layout() 内实际改写 frame 次数（回归：收敛后二次 layout 应为 0）。
+    #[cfg(test)]
+    pub(crate) layout_frame_writes: std::cell::Cell<u32>,
+    /// Phase 4 实际执行的 shrink 次数（回归：Stretch 侧栏不应反复 shrink）。
+    #[cfg(test)]
+    pub(crate) layout_shrink_ops: std::cell::Cell<u32>,
+    /// 单次 layout() 收敛循环实际执行的遍数（含最后稳定遍）。
+    #[cfg(test)]
+    pub(crate) layout_converge_passes: std::cell::Cell<u32>,
+    /// Phase 2 实际扩展 frame 的次数（回归：不得在稳定后反复 120→124）。
+    #[cfg(test)]
+    pub(crate) layout_expand_ops: std::cell::Cell<u32>,
+    /// 测试探针：记录 `(phase, id, before_h, after_h)` 的 frame 写入。
+    #[cfg(test)]
+    pub(crate) layout_frame_trace: std::cell::RefCell<Vec<(u8, ComponentId, i32, i32)>>,
+}
+
+impl Default for WidgetTree {
+    fn default() -> Self {
+        let reconcile_requested = Arc::new(AtomicBool::new(false));
+        let reconcile_callback = {
+            let requested = Arc::clone(&reconcile_requested);
+            Arc::new(move || requested.store(true, Ordering::Release))
+                as Arc<dyn Fn() + Send + Sync>
+        };
+        Self {
+            tree_scope: NEXT_WIDGET_TREE_SCOPE.fetch_add(1, Ordering::Relaxed),
+            nodes: Vec::new(),
+            free_slots: Vec::new(),
+            generations: Vec::new(),
+            next_slot: 0,
+            root_id: None,
+            theme_tokens: Theme::antd_light().tokens_arc(),
+            scroll_region_moves: Vec::new(),
+            pending_window_actions: Vec::new(),
+            tree_version: 0,
+            cached_traversal: std::cell::RefCell::new((Vec::new(), 0)),
+            handler_table: HandlerTable::new(),
+            render_handler_table: RenderHandlerTable::default(),
+            overlay_stack: OverlayStack::new(),
+            invalidation: crate::draw::renderer::InvalidationQueue::shared(),
+            pending_invalidations: Vec::new(),
+            invalidation_batch_depth: 0,
+            layout_ancestor_scratch: Vec::new(),
+            reconcile_requested,
+            reconcile_callback,
+            effects: Vec::new(),
+            animated_sources: BTreeMap::new(),
+            active_component_animations: HashSet::new(),
+            animation_ids_scratch: Vec::new(),
+            lifecycle_states_scratch: Vec::new(),
+            layout_scratch: tree_layout::LayoutFrameScratch::default(),
+            app_state_semantic_events_scratch: Vec::new(),
+            app_state_focus_requests_scratch: Vec::new(),
+            managers: WidgetManagers::new(),
+            app_state: None,
+            focus_handles: HashMap::new(),
+            timer_routes: BTreeMap::new(),
+            focus_trap_restore: Vec::new(),
+            window_focused: true,
+            keyboard_focus_visible: true,
+            keyboard_activation: None,
+            #[cfg(feature = "test-harness")]
+            automation_recorder: None,
+            #[cfg(test)]
+            layout_frame_writes: std::cell::Cell::new(0),
+            #[cfg(test)]
+            layout_shrink_ops: std::cell::Cell::new(0),
+            #[cfg(test)]
+            layout_converge_passes: std::cell::Cell::new(0),
+            #[cfg(test)]
+            layout_expand_ops: std::cell::Cell::new(0),
+            #[cfg(test)]
+            layout_frame_trace: std::cell::RefCell::new(Vec::new()),
+        }
+    }
+}
+
+mod focus;
+mod methods;
+
+
+
