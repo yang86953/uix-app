@@ -1,6 +1,6 @@
 use crate::core::{Point, Rect};
 
-use super::{Fixed, TableColumn};
+use super::types::{Fixed, TableColumn};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ColumnZone {

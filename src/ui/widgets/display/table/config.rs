@@ -1,4 +1,4 @@
-use super::{ColumnGroupRange, TableColumn, TableColumnGroup};
+use super::types::{ColumnGroupRange, TableColumn, TableColumnGroup};
 
 pub(super) fn merge_table_columns(
     current: &[TableColumn],
