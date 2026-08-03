@@ -825,8 +825,8 @@ impl App {
             }) {
             Ok(subscription) => subscription,
             Err(error) => {
-                // 新总线必为 Active，此处不可达；可诊断报告后继续
-                // （失败策略：隔离并继续，不静默吞掉）。
+                // 新总线必为 Active，此处不可达；若发生（实现缺陷）
+                // 中止启动并报告，不静默吞掉订阅失败。
                 tracing::error!("theme event subscription failed: {}", error.short_what());
                 return 1;
             }
@@ -928,6 +928,20 @@ impl App {
                             &mut secondary_windows.borrow_mut(),
                             data.is_dark,
                         );
+                        // 事实建立点：系统主题已生效并分发给全部窗口 UI 树后
+                        // 发布 ThemeApplied（SystemEvent(SMC)）；本闭包只由主窗口
+                        // 循环转发调用，window_id=None 事件不进 foreign_events
+                        // 队列，同一事实仅发布一次。
+                        theme_revision.set(theme_revision.get() + 1);
+                        if let Err(error) = theme_bus.borrow().publish(ThemeApplied {
+                            is_dark: data.is_dark,
+                            revision: theme_revision.get(),
+                        }) {
+                            tracing::error!(
+                                "theme applied publish failed: {}",
+                                error.short_what()
+                            );
+                        }
                     }
                 } else {
                     dispatch_secondary_window_event(
