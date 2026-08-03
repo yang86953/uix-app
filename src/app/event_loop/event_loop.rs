@@ -1,8 +1,8 @@
 //! Render Loop — OS 事件 + Widget 调度；渲染段委托 draw ScenePipeline。
 
-use crate::app::agent::agent_control::WindowAgentState;
 use crate::app::queues::active_work_registry::ActiveWorkRegistry;
 use crate::app::queues::clock::{system_clock, AppClock};
+use crate::app::queues::window_agent_state::WindowAgentState;
 use crate::app::window::text_input::sync_window_text_input;
 use crate::app::window::window_actions::apply_pending_window_actions;
 use crate::app::window::window_driver::{WindowDriver, WindowFrameContext};
@@ -386,6 +386,11 @@ where
     F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn Platform),
 {
     let bus_ptr: *mut dyn Platform = platform as *mut dyn Platform;
+    // SAFETY: `bus_ptr` 由函数参数 `platform`（`&mut dyn Platform`，本函数作用域内
+    // 存活）直接转换而来，event loop 运行期间指针始终有效。两处解引用均发生在
+    // event loop 主线程，且解引用时不存在对 `platform` 的其他活跃可变借用
+    // （`clipboard::with_clipboard` / `sync_window_text_input` 等借用点均已结束）；
+    // `event_bus()` 返回的 `&mut EventBus` 只用于瞬时 `publish`，未逃逸。
     let window_id = platform_window.window_id();
     let native_window = platform_window.native_handle().native_window();
 
@@ -553,6 +558,7 @@ where
                         on_foreign_event(&normalized_event, platform);
                     }
                     unsafe {
+                        // SAFETY: 见 `bus_ptr` 声明处注释——主线程、无重叠可变借用。
                         (*bus_ptr).event_bus().publish(&ev);
                     }
                     continue;
@@ -580,6 +586,7 @@ where
             );
 
             unsafe {
+                // SAFETY: 见 `bus_ptr` 声明处注释——主线程、无重叠可变借用。
                 (*bus_ptr).event_bus().publish(&ev);
             }
         }

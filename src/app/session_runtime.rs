@@ -11,15 +11,17 @@ use crate::app::agent::agent_bridge::{
     AgentBridgeDirectory, AgentWaitCondition, AgentWaitError, AgentWaitOutcome, AgentWindowInfo,
     AgentWindowRegistration,
 };
-use crate::app::agent::agent_control::{
+use crate::app::agent::agent_control::AgentCommandExecutorImpl;
+use crate::app::queues::agent_command_queue::{
     AgentCommandQueue, AgentCommandRequest, AgentCommandTicket, AgentSubmitError,
 };
+use crate::app::queues::app_timer::{AppTimerQueue, TimerHandle};
+use crate::app::queues::main_thread_queue::{MainThreadContext, MainThreadQueue};
+use crate::app::queues::window_agent_state::AgentCommandExecutor;
 #[cfg(feature = "agent-control")]
 use crate::app::agent::agent_transport::{
     AgentTransportError, AgentTransportHandle, AgentTransportInfo,
 };
-use crate::app::queues::app_timer::{AppTimerQueue, TimerHandle};
-use crate::app::queues::main_thread_queue::{MainThreadContext, MainThreadQueue};
 use crate::app::window::window_config::WindowConfig;
 use crate::app::window::window_session::TextInputCoordinator;
 use crate::core::WindowId;
@@ -30,7 +32,7 @@ use crate::native::windowing::event::EventLoopWaker;
 use crate::ui::Theme;
 use std::collections::VecDeque;
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(crate) struct AppRuntime {
     diagnostics: Diagnostics,
     pub(crate) sessions: Arc<Mutex<BTreeMap<WindowId, SessionRuntime>>>,
@@ -41,6 +43,7 @@ pub(crate) struct AppRuntime {
     event_loop_waker: Arc<Mutex<EventLoopWaker>>,
     text_input_coordinator: TextInputCoordinator,
     agent_bridge: AgentBridgeDirectory,
+    agent_executor: Arc<dyn AgentCommandExecutor>,
     #[cfg(feature = "agent-control")]
     agent_transport: Arc<Mutex<Option<AgentTransportHandle>>>,
 }
@@ -72,6 +75,11 @@ pub(crate) struct ReservedWindowSession {
 impl AppRuntime {
     pub(crate) fn new() -> Self {
         Self::default()
+    }
+
+    /// 组装期默认：Agent 命令执行器由组合根创建，注入每窗口状态机。
+    pub(crate) fn agent_command_executor(&self) -> Arc<dyn AgentCommandExecutor> {
+        self.agent_executor.clone()
     }
 
     pub(crate) fn set_diagnostics(&mut self, config: DiagnosticsConfig) {
@@ -496,5 +504,24 @@ impl AppRuntime {
                 .clone()
         };
         waker.wake();
+    }
+}
+
+impl Default for AppRuntime {
+    fn default() -> Self {
+        Self {
+            diagnostics: Diagnostics::default(),
+            sessions: Arc::new(Mutex::new(BTreeMap::new())),
+            pending_open_windows: Arc::new(Mutex::new(VecDeque::new())),
+            pending_theme: Arc::new(Mutex::new(None)),
+            shutting_down: Arc::new(AtomicBool::new(false)),
+            next_window_id: Arc::new(Mutex::new(0)),
+            event_loop_waker: Arc::new(Mutex::new(EventLoopWaker::default())),
+            text_input_coordinator: TextInputCoordinator::default(),
+            agent_bridge: AgentBridgeDirectory::default(),
+            agent_executor: Arc::new(AgentCommandExecutorImpl),
+            #[cfg(feature = "agent-control")]
+            agent_transport: Arc::new(Mutex::new(None)),
+        }
     }
 }

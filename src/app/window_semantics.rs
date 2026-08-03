@@ -3,12 +3,20 @@
 //! Tracking is disabled until a recorder or Agent Bridge explicitly enables
 //! it. A disabled session therefore performs no semantic-tree traversal.
 
-use crate::app::agent::agent_bridge::AgentWindowRegistration;
 use crate::core::WindowId;
 use crate::ui::accessibility::semantic_snapshot::{SemanticNode, SemanticSnapshotBody};
 use crate::ui::WidgetTree;
 
 const INITIAL_WINDOW_GENERATION: u64 = 1;
+
+/// 语义发布端口契约（SMC-06 P1 修复）：本边界持有能力端口，`agent` Module
+/// 提供实现（`AgentWindowRegistration`），组合根组装期注入。
+pub(crate) trait AgentSemanticsPort: std::fmt::Debug {
+    fn window_id(&self) -> WindowId;
+    fn generation(&self) -> u64;
+    fn publish_semantics(&self, snapshot: &WindowSemanticSnapshot);
+    fn publish_availability(&self, visible: bool, presentable: bool);
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct WindowSemanticSnapshot {
@@ -24,7 +32,7 @@ pub(crate) struct WindowSemanticSnapshot {
 pub(crate) struct WindowSemanticState {
     enabled: bool,
     snapshot: WindowSemanticSnapshot,
-    agent_window: Option<AgentWindowRegistration>,
+    agent_window: Option<Box<dyn AgentSemanticsPort>>,
 }
 
 impl WindowSemanticState {
@@ -43,7 +51,10 @@ impl WindowSemanticState {
         }
     }
 
-    pub(crate) fn bind_agent_window(&mut self, registration: AgentWindowRegistration) -> bool {
+    pub(crate) fn bind_agent_window(
+        &mut self,
+        registration: Box<dyn AgentSemanticsPort>,
+    ) -> bool {
         if self.snapshot.closed || registration.window_id() != self.snapshot.window_id {
             return false;
         }

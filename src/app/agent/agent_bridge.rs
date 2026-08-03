@@ -11,12 +11,12 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 #[cfg(any(test, feature = "agent-control"))]
-use crate::app::agent::agent_control::AgentWindowAction;
-use crate::app::agent::agent_control::{
+use crate::app::queues::agent_command_queue::AgentWindowAction;
+use crate::app::queues::agent_command_queue::{
     AgentCommandRequest, AgentCommandTicket, AgentErrorCode, AgentSubmitError,
 };
 use crate::app::session_runtime::AppRuntime;
-use crate::app::window_semantics::WindowSemanticSnapshot;
+use crate::app::window_semantics::{AgentSemanticsPort, WindowSemanticSnapshot};
 use crate::core::WindowId;
 use crate::ui::accessibility::semantic_snapshot::SemanticTarget;
 use crate::ui::semantic_action::SemanticAction;
@@ -357,21 +357,21 @@ pub(crate) struct AgentWindowRegistration {
     generation: u64,
 }
 
-impl AgentWindowRegistration {
-    pub(crate) const fn window_id(&self) -> WindowId {
+impl AgentSemanticsPort for AgentWindowRegistration {
+    fn window_id(&self) -> WindowId {
         self.window_id
     }
 
-    pub(crate) const fn generation(&self) -> u64 {
+    fn generation(&self) -> u64 {
         self.generation
     }
 
-    pub(crate) fn publish_semantics(&self, snapshot: &WindowSemanticSnapshot) {
+    fn publish_semantics(&self, snapshot: &WindowSemanticSnapshot) {
         self.directory
             .publish_semantics(self.window_id, self.generation, snapshot);
     }
 
-    pub(crate) fn publish_availability(&self, visible: bool, presentable: bool) {
+    fn publish_availability(&self, visible: bool, presentable: bool) {
         self.directory
             .publish_availability(self.window_id, self.generation, visible, presentable);
     }

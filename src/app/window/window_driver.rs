@@ -8,10 +8,10 @@
 mod availability;
 mod support;
 
-use crate::app::agent::agent_control::WindowAgentState;
 use crate::app::queues::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry, TimerId};
 use crate::app::queues::app_timer::AppTimerQueue;
 use crate::app::queues::main_thread_queue::{MainThreadContext, MainThreadQueue};
+use crate::app::queues::window_agent_state::WindowAgentState;
 use crate::app::window::frame_scheduler::{FrameScheduler, SurfaceSuspendReason};
 use crate::app::window::text_input::sync_window_text_input;
 use crate::app::window::window_session::{ViewFactorySlot, WindowLoopState, WindowTextInputState};

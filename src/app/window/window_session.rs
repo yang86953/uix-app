@@ -1,11 +1,13 @@
 #![allow(dead_code)]
 
-use crate::app::agent::agent_bridge::AgentWindowRegistration;
-use crate::app::agent::agent_control::{AgentCommandQueue, WindowAgentState};
 use crate::app::queues::active_work_registry::ActiveWorkRegistry;
+use crate::app::queues::agent_command_queue::AgentCommandQueue;
 use crate::app::queues::app_timer::AppTimerQueue;
 use crate::app::queues::main_thread_queue::MainThreadQueue;
-use crate::app::window_semantics::{WindowSemanticSnapshot, WindowSemanticState};
+use crate::app::queues::window_agent_state::{AgentCommandExecutor, WindowAgentState};
+use crate::app::window_semantics::{
+    AgentSemanticsPort, WindowSemanticSnapshot, WindowSemanticState,
+};
 use crate::core::{Error, Rect, WindowId};
 use crate::draw::scene::NodeId;
 use crate::draw::target::RenderTarget;
@@ -310,8 +312,19 @@ impl WindowSession {
         self.agent_commands.replace_queue(queue);
     }
 
-    pub(crate) fn bind_agent_window(&mut self, registration: AgentWindowRegistration) -> bool {
-        if !self.semantic_state.bind_agent_window(registration) {
+    /// 组装期注入 Agent 命令执行器（组合根提供，agent Module 实现）。
+    pub(crate) fn set_agent_command_executor(
+        &mut self,
+        executor: std::sync::Arc<dyn AgentCommandExecutor>,
+    ) {
+        self.agent_commands.set_executor(executor);
+    }
+
+    pub(crate) fn bind_agent_window(
+        &mut self,
+        registration: impl AgentSemanticsPort + 'static,
+    ) -> bool {
+        if !self.semantic_state.bind_agent_window(Box::new(registration)) {
             return false;
         }
         let _ = self.semantic_state.enable(&self.tree);

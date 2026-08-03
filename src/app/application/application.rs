@@ -775,6 +775,7 @@ impl App {
         if let Some(queue) = self.runtime.agent_command_queue(root_window_id) {
             session.set_agent_command_queue(queue);
         }
+        session.set_agent_command_executor(self.runtime.agent_command_executor());
         if let Some(registration) = self.runtime.register_agent_window(
             root_window_id,
             self.title.clone(),
