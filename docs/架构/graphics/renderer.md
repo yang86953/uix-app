@@ -24,6 +24,8 @@
 
 CPU/GPU 是 Renderer 内部 backend 选择，不是两套组件绘制 API。同窗一帧只有一条有序命令序列和至多一次最终 present。
 
+Renderer 只面向 `RenderBackend`：CPU 路径执行 canonical 语义，GPU 路径由[通用 GPU Renderer](backend.md)统一降级为 `FramePlan` / `DrawPacket`。Renderer 不选择原生 pipeline、不持有 RHI 资源，也不按 D3D11、Vulkan、Metal 等 API 分叉场景调度。
+
 ## 组件：ScenePipeline
 
 ScenePipeline 合并失效、选择 full/partial/composite 策略并驱动 scene；backend/capability 替换后必须重新读取能力，不能沿用旧提交协议。
