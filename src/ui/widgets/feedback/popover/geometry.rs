@@ -1,403 +1,6 @@
-use std::cell::{Cell, RefCell};
-use std::rc::Rc;
+//! 气泡卡片行为与几何。
 
-use crate::component;
-
-use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::{Color, FillRule, PathBuilder, Radius};
-use crate::ui::animation::{presets, AnimationConfig, TransitionPlayer};
-use crate::ui::component::paint_context::PaintContext;
-use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, KeyCode, MouseButton, State, SystemEvent, WidgetTree};
-
-const POPOVER_WIDTH: f32 = 220.0;
-const POPOVER_HEIGHT: f32 = 100.0;
-const TRIGGER_WIDTH: f32 = 80.0;
-const TRIGGER_HEIGHT: f32 = 28.0;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PopoverPressTarget {
-    Trigger,
-}
-
-/// Popover placement.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum PopoverPlacement {
-    Top,
-    TopLeft,
-    TopRight,
-    Bottom,
-    BottomLeft,
-    BottomRight,
-    Left,
-    LeftTop,
-    LeftBottom,
-    Right,
-    RightTop,
-    RightBottom,
-}
-
-/// Popover trigger mode.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum PopoverTrigger {
-    Click,
-    Hover,
-    Focus,
-}
-
-component! {
-    pub struct Popover {
-        title: String,
-        content: String,
-        visible: bool,
-        placement: PopoverPlacement,
-        trigger: PopoverTrigger,
-        arrow: bool,
-        background: Option<Color>,
-        custom_trigger: bool,
-        #[snapshot(skip)]
-        custom_trigger_view:
-            Option<Rc<RefCell<Option<crate::ui::view::ViewNode>>>>,
-        #[snapshot(skip)]
-        open_binding: Option<State<bool>>,
-        timer: f32,
-        enter_animation: AnimationConfig,
-        leave_animation: AnimationConfig,
-        transition: TransitionPlayer,
-        closing: bool,
-        transition_dirty: bool,
-        focused: bool,
-        hovered: bool,
-        pressed_target: Option<PopoverPressTarget>,
-        pressed_key: Option<KeyCode>,
-        last_frame: Cell<Rect>,
-        popup_rect: Cell<Rect>,
-        surface_rect: Cell<Rect>,
-    }
-
-    measure => (&self, constraints: Constraints) -> Size {
-        constraints.clamp(self.intrinsic_size())
-    }
-
-    hit_test_children => (&self) -> bool { false }
-
-    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
-        -> Vec<(crate::ui::ComponentId, Rect)>
-    {
-        children.iter().map(|child| (child.id, Self::normalize_frame(frame))).collect()
-    }
-
-    build_view_children => (&self) -> Vec<crate::ui::view::ViewNode> {
-        self.custom_trigger_view
-            .as_ref()
-            .and_then(|view| view.borrow_mut().take())
-            .into_iter()
-            .collect()
-    }
-
-    tab_index => (&self) -> i32 { 1 }
-
-    on_event => (&mut self, event: &SystemEvent) -> EventResult {
-        self.sync_bound_open();
-        match event {
-            SystemEvent::FocusIn => {
-                self.focused = true;
-                return EventResult::Handled;
-            }
-            SystemEvent::FocusOut => {
-                self.focused = false;
-                self.cancel_pending_activation();
-                return EventResult::Handled;
-            }
-            SystemEvent::KeyDown { key: key @ (KeyCode::Enter | KeyCode::Space), .. }
-                if self.trigger == PopoverTrigger::Click =>
-            {
-                self.pressed_key = Some(*key);
-                return EventResult::Handled;
-            }
-            SystemEvent::KeyUp { key: key @ (KeyCode::Enter | KeyCode::Space), .. }
-                if self.trigger == PopoverTrigger::Click =>
-            {
-                let matches = self.pressed_key.take() == Some(*key);
-                if matches {
-                    self.toggle();
-                }
-                return EventResult::Handled;
-            }
-            SystemEvent::KeyDown { key: KeyCode::Escape, .. } if self.is_present() => {
-                self.cancel_pending_activation();
-                self.close();
-                return EventResult::Handled;
-            }
-            SystemEvent::PointerMove { pos, .. } => {
-                let hovered = self.trigger_rect().contains(*pos);
-                if self.hovered != hovered {
-                    self.hovered = hovered;
-                    return EventResult::Handled;
-                }
-            }
-            SystemEvent::PointerLeave => {
-                let changed = self.hovered || self.pressed_target.is_some();
-                self.hovered = false;
-                self.pressed_target = None;
-                if self.trigger == PopoverTrigger::Hover && self.is_present() {
-                    self.close();
-                    return EventResult::Handled;
-                }
-                if changed {
-                    return EventResult::Handled;
-                }
-            }
-            _ => {}
-        }
-        match self.trigger {
-            PopoverTrigger::Click => {
-                match event {
-                    SystemEvent::PointerDown {
-                        pos,
-                        button: MouseButton::Left,
-                        ..
-                    } => {
-                        if self.trigger_rect().contains(*pos) {
-                            self.focused = true;
-                            self.pressed_target = Some(PopoverPressTarget::Trigger);
-                            return EventResult::Handled;
-                        }
-                        if self.is_present() && self.popup_rect.get().contains(*pos) {
-                            return EventResult::Handled;
-                        }
-                        if self.is_present() {
-                            self.cancel_pending_activation();
-                            self.close();
-                            return EventResult::Handled;
-                        }
-                    }
-                    SystemEvent::PointerUp {
-                        pos,
-                        button: MouseButton::Left,
-                        ..
-                    } => {
-                        let pressed = self.pressed_target.take();
-                        if pressed == Some(PopoverPressTarget::Trigger)
-                            && self.trigger_rect().contains(*pos)
-                        {
-                            self.toggle();
-                        }
-                        return EventResult::Handled;
-                    }
-                    _ => {}
-                }
-            }
-            PopoverTrigger::Hover => {
-                if let SystemEvent::PointerEnter = event {
-                    self.hovered = true;
-                    self.open();
-                    self.timer = 0.0;
-                    return EventResult::Handled;
-                }
-            }
-            PopoverTrigger::Focus => {}
-        }
-        EventResult::NotHandled
-    }
-
-    on_focus_within => (&mut self, focused: bool) -> EventResult {
-        if self.trigger != PopoverTrigger::Focus {
-            return EventResult::NotHandled;
-        }
-        if focused {
-            self.open();
-        } else {
-            self.close();
-        }
-        EventResult::Handled
-    }
-
-
-    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
-        let frame = Self::normalize_frame(frame);
-        let surface_size = ctx.logical_surface_size();
-        let surface = Self::normalize_frame(Rect::new(0.0, 0.0, surface_size.w, surface_size.h));
-        self.last_frame.set(frame);
-        self.surface_rect.set(surface);
-        let popup_geometry = resolve_popover_geometry(
-            frame,
-            surface,
-            self.placement,
-            self.arrow,
-            POPOVER_WIDTH,
-            POPOVER_HEIGHT,
-        );
-        self.popup_rect.set(Rect::new(
-            popup_geometry.popup.x - frame.x,
-            popup_geometry.popup.y - frame.y,
-            popup_geometry.popup.w,
-            popup_geometry.popup.h,
-        ));
-
-        let bg = self
-            .background
-            .unwrap_or_else(|| ctx.tokens().color_bg_elevated());
-        let border = ctx.tokens().color_border();
-        let text_color = ctx.tokens().color_text();
-        let text_secondary = ctx.tokens().color_text_secondary();
-        let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
-
-        ctx.push_clip(surface);
-        if self.hovered || self.pressed_target.is_some() {
-            ctx.fill_rect(
-                frame,
-                if self.pressed_target.is_some() {
-                    ctx.tokens().color_fill_secondary()
-                } else {
-                    ctx.tokens().color_fill_tertiary()
-                },
-                r,
-            );
-        }
-        ctx.stroke_rect(
-            frame,
-            if self.focused && tree.keyboard_focus_visible() {
-                ctx.tokens().color_primary()
-            } else {
-                border
-            },
-            if self.focused && tree.keyboard_focus_visible() { 2.0 } else { 1.0 },
-            r,
-        );
-        if !self.custom_trigger {
-            Self::paint_elided_text(ctx, "Popover", frame, text_secondary, 12.0, true);
-        }
-
-        if self.is_present() && popup_geometry.popup.w > 0.0 && popup_geometry.popup.h > 0.0 {
-            let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
-            let popup_bg = fade_color(bg, opacity);
-            let popup_border = fade_color(border, opacity);
-            let popup_text = fade_color(text_color, opacity);
-            let popup_secondary = fade_color(text_secondary, opacity);
-            let pop_rect = self.transitioned_rect(popup_geometry.popup);
-            let shadow = ctx.tokens().box_shadow_secondary();
-            ctx.draw_box_shadow(
-                pop_rect,
-                shadow.layer_1.2,
-                shadow.layer_1.0,
-                shadow.layer_1.1,
-                fade_color(shadow.layer_1.3, opacity),
-                r,
-            );
-            ctx.fill_rect(pop_rect, popup_bg, r);
-            ctx.stroke_rect(pop_rect, popup_border, 1.0, r);
-
-            if self.arrow {
-                draw_popover_arrow(
-                    ctx,
-                    frame,
-                    pop_rect,
-                    popup_geometry.placement,
-                    popup_bg,
-                );
-            }
-
-            let inset = 12.0_f32.min(pop_rect.w * 0.5);
-            let content_width = (pop_rect.w - inset * 2.0).max(0.0);
-            let title_height = 32.0_f32.min(pop_rect.h);
-            if !self.title.is_empty() && content_width > 0.0 {
-                let title_rect = Rect::new(
-                    pop_rect.x + inset,
-                    pop_rect.y,
-                    content_width,
-                    title_height,
-                );
-                Self::paint_elided_text(ctx, &self.title, title_rect, popup_text, 14.0, false);
-                if pop_rect.h > title_height {
-                    ctx.fill_rect(
-                        Rect::new(
-                            pop_rect.x + inset,
-                            pop_rect.y + title_height,
-                            content_width,
-                            1.0,
-                        ),
-                        popup_border,
-                        None,
-                    );
-                }
-            }
-            let content_top = if self.title.is_empty() {
-                pop_rect.y
-            } else {
-                (pop_rect.y + title_height + 1.0).min(pop_rect.y + pop_rect.h)
-            };
-            let content_rect = Rect::new(
-                pop_rect.x + inset,
-                content_top,
-                content_width,
-                (pop_rect.y + pop_rect.h - content_top).max(0.0),
-            );
-            Self::paint_elided_text(
-                ctx,
-                &self.content,
-                content_rect,
-                popup_secondary,
-                12.0,
-                false,
-            );
-        }
-        ctx.pop_clip();
-    }
-
-    dirty_rect => (&self, frame: Rect) -> Rect {
-        self.transition_dirty_rect(frame)
-    }
-
-    overlay_entry => (&self, id: crate::ui::ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
-        if !self.is_present() {
-            return None;
-        }
-
-        let frame = Self::normalize_frame(frame);
-        let popup = expand_popover_rect(self.absolute_popup_rect(frame), 12.0);
-        let popup = self
-            .transition_sweep_rect(popup)
-            .intersect(&self.surface_or_fallback(frame))
-            .unwrap_or_default();
-        Some(
-            crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
-                .bounds(popup)
-                .z_index(900),
-        )
-    }
-
-    update_animation => (&mut self, dt: f64) -> bool {
-        if !self.is_present() || self.transition.finished {
-            self.transition_dirty = false;
-            return false;
-        }
-
-        self.transition.update(dt);
-        self.transition_dirty = true;
-
-        if self.closing && self.transition.finished {
-            self.visible = false;
-            self.closing = false;
-        }
-
-        self.is_present() && !self.transition.finished
-    }
-
-    dirty_bounds => (&self, frame: Rect) -> Rect {
-        if self.transition_dirty {
-            self.transition_dirty_rect(frame)
-        } else {
-            Rect::zero()
-        }
-    }
-}
-
-impl Default for Popover {
-    fn default() -> Self {
-        Self::new("")
-    }
-}
+use super::*;
 
 impl Popover {
     pub fn new(content: impl Into<String>) -> Self {
@@ -562,7 +165,7 @@ impl Popover {
         }
     }
 
-    fn toggle(&mut self) {
+    pub(super) fn toggle(&mut self) {
         if self.is_present() && !self.closing {
             self.close();
         } else {
@@ -570,7 +173,7 @@ impl Popover {
         }
     }
 
-    fn sync_bound_open(&mut self) {
+    pub(super) fn sync_bound_open(&mut self) {
         let open = self.open_binding.as_ref().map(State::get);
         if let Some(open) = open {
             self.apply_bound_open(open);
@@ -598,12 +201,12 @@ impl Popover {
         }
     }
 
-    fn cancel_pending_activation(&mut self) {
+    pub(super) fn cancel_pending_activation(&mut self) {
         self.pressed_target = None;
         self.pressed_key = None;
     }
 
-    fn trigger_rect(&self) -> Rect {
+    pub(super) fn trigger_rect(&self) -> Rect {
         let frame = self.last_frame.get();
         let width = if frame.w > 0.0 {
             frame.w
@@ -618,7 +221,7 @@ impl Popover {
         Rect::new(0.0, 0.0, width, height)
     }
 
-    fn transitioned_rect(&self, rect: Rect) -> Rect {
+    pub(super) fn transitioned_rect(&self, rect: Rect) -> Rect {
         let scale = self.transition.scale.max(0.0);
         let width = rect.w * scale;
         let height = rect.h * scale;
@@ -630,13 +233,13 @@ impl Popover {
         )
     }
 
-    fn transition_sweep_rect(&self, rect: Rect) -> Rect {
+    pub(super) fn transition_sweep_rect(&self, rect: Rect) -> Rect {
         let (from, to) = self.transition.offset_endpoints();
         rect.union(&translated_rect(rect, from))
             .union(&translated_rect(rect, to))
     }
 
-    fn transition_dirty_rect(&self, frame: Rect) -> Rect {
+    pub(super) fn transition_dirty_rect(&self, frame: Rect) -> Rect {
         let frame = Self::normalize_frame(frame);
         let popup = expand_popover_rect(self.absolute_popup_rect(frame), 12.0);
         let bounds = frame.union(&self.transition_sweep_rect(popup));
@@ -645,7 +248,7 @@ impl Popover {
             .unwrap_or_default()
     }
 
-    fn intrinsic_size(&self) -> Size {
+    pub(super) fn intrinsic_size(&self) -> Size {
         Size::new(TRIGGER_WIDTH, TRIGGER_HEIGHT)
     }
 
@@ -660,7 +263,7 @@ impl Popover {
         }
     }
 
-    fn absolute_popup_rect(&self, frame: Rect) -> Rect {
+    pub(super) fn absolute_popup_rect(&self, frame: Rect) -> Rect {
         if self.last_frame.get() == frame && self.popup_rect.get().w >= 0.0 {
             let popup = self.popup_rect.get();
             Rect::new(frame.x + popup.x, frame.y + popup.y, popup.w, popup.h)
@@ -677,7 +280,7 @@ impl Popover {
         }
     }
 
-    fn surface_or_fallback(&self, frame: Rect) -> Rect {
+    pub(super) fn surface_or_fallback(&self, frame: Rect) -> Rect {
         let surface = self.surface_rect.get();
         if surface.w > 0.0 && surface.h > 0.0 {
             surface
@@ -691,7 +294,7 @@ impl Popover {
         }
     }
 
-    fn normalize_frame(frame: Rect) -> Rect {
+    pub(super) fn normalize_frame(frame: Rect) -> Rect {
         Rect::new(
             if frame.x.is_finite() { frame.x } else { 0.0 },
             if frame.y.is_finite() { frame.y } else { 0.0 },
@@ -708,7 +311,7 @@ impl Popover {
         )
     }
 
-    fn paint_elided_text(
+    pub(super) fn paint_elided_text(
         ctx: &mut PaintContext,
         value: &str,
         frame: Rect,
@@ -777,12 +380,12 @@ impl Popover {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct PopoverGeometry {
-    popup: Rect,
-    placement: PopoverPlacement,
+pub(crate) struct PopoverGeometry {
+    pub(crate) popup: Rect,
+    pub(crate) placement: PopoverPlacement,
 }
 
-fn resolve_popover_geometry(
+pub(super) fn resolve_popover_geometry(
     trigger: Rect,
     surface: Rect,
     placement: PopoverPlacement,
@@ -821,7 +424,7 @@ fn resolve_popover_geometry(
     }
 }
 
-fn rect_for_popover_placement(
+pub(super) fn rect_for_popover_placement(
     frame: Rect,
     placement: PopoverPlacement,
     arrow: bool,
@@ -832,14 +435,14 @@ fn rect_for_popover_placement(
     Rect::new(x, y, width, height)
 }
 
-fn overflow_score(rect: Rect, surface: Rect) -> f32 {
+pub(super) fn overflow_score(rect: Rect, surface: Rect) -> f32 {
     (surface.x - rect.x).max(0.0)
         + (surface.y - rect.y).max(0.0)
         + (rect.x + rect.w - surface.x - surface.w).max(0.0)
         + (rect.y + rect.h - surface.y - surface.h).max(0.0)
 }
 
-fn flip_popover_placement(placement: PopoverPlacement) -> PopoverPlacement {
+pub(super) fn flip_popover_placement(placement: PopoverPlacement) -> PopoverPlacement {
     match placement {
         PopoverPlacement::Top => PopoverPlacement::Bottom,
         PopoverPlacement::TopLeft => PopoverPlacement::BottomLeft,
@@ -856,7 +459,7 @@ fn flip_popover_placement(placement: PopoverPlacement) -> PopoverPlacement {
     }
 }
 
-fn popover_position(
+pub(super) fn popover_position(
     frame: Rect,
     placement: PopoverPlacement,
     arrow: bool,
@@ -880,11 +483,11 @@ fn popover_position(
     }
 }
 
-fn translated_rect(rect: Rect, offset: Point) -> Rect {
+pub(super) fn translated_rect(rect: Rect, offset: Point) -> Rect {
     Rect::new(rect.x + offset.x, rect.y + offset.y, rect.w, rect.h)
 }
 
-fn expand_popover_rect(rect: Rect, amount: f32) -> Rect {
+pub(super) fn expand_popover_rect(rect: Rect, amount: f32) -> Rect {
     if rect.w <= 0.0 || rect.h <= 0.0 {
         Rect::zero()
     } else {
@@ -897,14 +500,14 @@ fn expand_popover_rect(rect: Rect, amount: f32) -> Rect {
     }
 }
 
-fn fade_color(color: Color, opacity: f32) -> Color {
+pub(super) fn fade_color(color: Color, opacity: f32) -> Color {
     let alpha = (color.a as f32 * opacity.clamp(0.0, 1.0))
         .round()
         .clamp(0.0, 255.0) as u8;
     color.with_alpha(alpha)
 }
 
-fn draw_popover_arrow(
+pub(super) fn draw_popover_arrow(
     ctx: &mut PaintContext,
     trigger: Rect,
     popup: Rect,
@@ -966,7 +569,7 @@ fn draw_popover_arrow(
     ctx.fill_path(&pb.build(), color, FillRule::NonZero);
 }
 
-fn arrow_anchor(desired: f32, start: f32, length: f32, inset: f32) -> f32 {
+pub(super) fn arrow_anchor(desired: f32, start: f32, length: f32, inset: f32) -> f32 {
     if length <= inset * 2.0 {
         start + length * 0.5
     } else {

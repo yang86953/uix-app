@@ -1,6 +1,13 @@
 //! 浮动全局提示容器。
 
 use std::cell::{Cell, RefCell};
+
+mod geometry;
+mod item;
+
+pub use self::item::{MessageHandle, MessageItem};
+use self::geometry::*;
+
 use std::rc::Rc;
 
 use crate::component;
@@ -13,87 +20,6 @@ use crate::ui::component::widget::WidgetTree;
 use crate::ui::{EventResult, MouseButton, Placement, SnapshotFields, SystemEvent};
 
 use super::toast_motion::{ToastMotion, ToastMotionEntry, ToastQueue};
-
-#[derive(Debug, Clone)]
-pub struct MessageItem {
-    pub type_: StatusLevel,
-    pub content: String,
-    /// 展示时长；`0` 表示仅由调用方或关闭按钮移除。
-    pub duration_ms: u64,
-    pub closable: bool,
-}
-
-/// 向已挂载的 [`Message`] 队列增删提示，不暴露内部动画与定时器。
-#[derive(Clone)]
-pub struct MessageHandle {
-    queue: ToastQueue<MessageItem>,
-}
-
-impl MessageHandle {
-    /// 添加提示并返回稳定 ID。
-    pub fn add(&self, item: MessageItem) -> u64 {
-        let duration_ms = item.duration_ms;
-        self.queue.push(item, duration_ms)
-    }
-
-    pub fn success(&self, content: impl Into<String>) -> u64 {
-        self.add(MessageItem {
-            type_: StatusLevel::Success,
-            content: content.into(),
-            duration_ms: Message::MSG_DURATION_SUCCESS,
-            closable: true,
-        })
-    }
-
-    pub fn info(&self, content: impl Into<String>) -> u64 {
-        self.add(MessageItem {
-            type_: StatusLevel::Info,
-            content: content.into(),
-            duration_ms: Message::MSG_DURATION_INFO,
-            closable: true,
-        })
-    }
-
-    pub fn warning(&self, content: impl Into<String>) -> u64 {
-        self.add(MessageItem {
-            type_: StatusLevel::Warning,
-            content: content.into(),
-            duration_ms: Message::MSG_DURATION_WARNING,
-            closable: true,
-        })
-    }
-
-    pub fn error(&self, content: impl Into<String>) -> u64 {
-        self.add(MessageItem {
-            type_: StatusLevel::Error,
-            content: content.into(),
-            duration_ms: Message::MSG_DURATION_ERROR,
-            closable: true,
-        })
-    }
-
-    /// 请求移除指定提示；离场动画完成后才从画面消失。
-    pub fn dismiss(&self, id: u64) -> bool {
-        self.queue.remove_local(id)
-    }
-
-    /// 请求移除全部提示。
-    pub fn clear(&self) {
-        self.queue.clear();
-    }
-
-    pub fn items(&self) -> Vec<MessageItem> {
-        self.queue.values()
-    }
-
-    pub fn len(&self) -> usize {
-        self.queue.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.queue.is_empty()
-    }
-}
 
 component! {
     /// 全局浮动提示容器。
@@ -910,46 +836,3 @@ impl Message {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct MessageGeometry {
-    icon: Rect,
-    content: Rect,
-    action: Option<Rect>,
-    close: Rect,
-}
-
-fn transitioned_rect(rect: Rect, offset: Point, scale: f32) -> Rect {
-    let scale = scale.max(0.0);
-    let width = rect.w * scale;
-    let height = rect.h * scale;
-    Rect::new(
-        rect.x + (rect.w - width) * 0.5 + offset.x,
-        rect.y + (rect.h - height) * 0.5 + offset.y,
-        width,
-        height,
-    )
-}
-
-fn translated_rect(rect: Rect, offset: Point) -> Rect {
-    Rect::new(rect.x + offset.x, rect.y + offset.y, rect.w, rect.h)
-}
-
-fn expand_rect(rect: Rect, margin: f32) -> Rect {
-    if rect.w <= 0.0 || rect.h <= 0.0 {
-        Rect::zero()
-    } else {
-        Rect::new(
-            rect.x - margin,
-            rect.y - margin,
-            rect.w + margin * 2.0,
-            rect.h + margin * 2.0,
-        )
-    }
-}
-
-fn fade_color(color: Color, opacity: f32) -> Color {
-    let alpha = (color.a as f32 * opacity.clamp(0.0, 1.0))
-        .round()
-        .clamp(0.0, 255.0) as u8;
-    color.with_alpha(alpha)
-}

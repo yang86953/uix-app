@@ -1,0 +1,516 @@
+use super::*;
+
+impl WidgetTree {
+    pub(super) fn dispatch_pointer_press(
+        &mut self,
+        event: &SystemEvent,
+        pos: Point,
+        button: MouseButton,
+        mods: KeyMod,
+    ) -> EventResult {
+        if button != MouseButton::Right {
+            self.set_keyboard_focus_visible(false);
+        }
+        if let Some(result) = self.intercept_top_overlay_outside_pointer_down(pos) {
+            return result;
+        }
+        let target = self.pointer_target_at(pos);
+        if target.is_some_and(|target| {
+            self.get(target)
+                .is_none_or(|node| !node.is_interaction_enabled())
+        }) {
+            if button != MouseButton::Right {
+                self.set_focus(None);
+            }
+            self.rebuild_widget_overlays();
+            return EventResult::NotHandled;
+        }
+        let begins_pointer = self
+            .managers_mut()
+            .interaction
+            .begin_pressed_pointer(target, button);
+        if begins_pointer {
+            self.managers_mut()
+                .drag
+                .begin_gesture(target, pos, button, mods);
+        }
+        let Some(target) = target else {
+            if button != MouseButton::Right {
+                self.set_focus(None);
+            }
+            self.rebuild_widget_overlays();
+            return EventResult::NotHandled;
+        };
+
+        let actions_before_dispatch = self.pending_window_actions.len();
+        self.invalidate_paint(target);
+        let pointer_down;
+        let capture_event = if matches!(event, SystemEvent::PointerDoubleClick { .. }) {
+            pointer_down = SystemEvent::PointerDown { pos, button, mods };
+            &pointer_down
+        } else {
+            event
+        };
+        if let Some(capture_target) = self.capture_to(target, capture_event) {
+            if begins_pointer {
+                let _ = self
+                    .managers_mut()
+                    .interaction
+                    .release_pressed_pointer(button);
+                if self.managers().drag.is_gesture_button(button) {
+                    self.managers_mut().drag.end_drag();
+                }
+            }
+            if button != MouseButton::Right
+                && self
+                    .get(capture_target)
+                    .is_some_and(|node| node.is_focusable())
+            {
+                self.set_focus(Some(capture_target));
+            }
+            self.rebuild_widget_overlays();
+            return EventResult::Handled;
+        }
+        let result = if matches!(event, SystemEvent::PointerDoubleClick { .. }) {
+            self.dispatch_double_click_to(target, event)
+        } else {
+            self.dispatch_to(target, event)
+        };
+        if result == EventResult::Handled {
+            if self
+                .get(target)
+                .is_some_and(crate::ui::text_selection::participates)
+            {
+                self.clear_sibling_cross_text_selections(target);
+            }
+            self.invalidate_nav_siblings(target);
+            let preserves_keyboard_focus = button == MouseButton::Right
+                || self.pending_window_actions[actions_before_dispatch..]
+                    .iter()
+                    .any(|action| action.preserves_keyboard_focus());
+            if !preserves_keyboard_focus {
+                self.set_focus(Some(target));
+            }
+        } else if button != MouseButton::Right {
+            self.set_focus(None);
+        }
+        self.rebuild_widget_overlays();
+        result
+    }
+
+    /// 捕获阶段：从 root 到 target 的路径上依次分发事件（不含 target 自身）。
+    /// 任意节点返回 `Handled` 则终止捕获并阻止后续冒泡阶段。
+    /// 用于 Modal 外部点击拦截、ScrollView 滚动拦截、全局快捷键等场景。
+    pub(super) fn pointer_inside_widget_hit_frame(&self, target: WidgetId, pos: Point) -> bool {
+        let Some(node) = self.get(target) else {
+            return false;
+        };
+        if !node.visible() {
+            return false;
+        }
+
+        self.point_to_node_layout(target, pos)
+            .is_some_and(|pos| node.hit_test_frame(node.frame()).contains(pos))
+    }
+
+    pub(super) fn capture_wheel_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
+        let mut path = Vec::new();
+        let mut current = Some(target);
+        while let Some(id) = current {
+            path.push(id);
+            current = self.get(id).and_then(|node| node.parent());
+        }
+        path.reverse();
+        if path.last() == Some(&target) {
+            path.pop();
+        }
+
+        for id in path {
+            let Some(translated) = self.localize_spatial_event(id, event) else {
+                continue;
+            };
+            let result = {
+                let node = match self.get_mut(id) {
+                    Some(node) => node,
+                    None => continue,
+                };
+                node.on_event(&translated)
+            };
+            if result == EventResult::Handled {
+                return self.finish_scroll_aware_dispatch(id, &translated);
+            }
+        }
+        EventResult::NotHandled
+    }
+
+    pub(super) fn dispatch_wheel_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
+        let mut current = Some(target);
+        while let Some(id) = current {
+            let Some(localized) = self.localize_spatial_event(id, event) else {
+                return EventResult::NotHandled;
+            };
+            let (result, parent_id) = {
+                let node = match self.get_mut(id) {
+                    Some(node) => node,
+                    None => return EventResult::NotHandled,
+                };
+                let result = node.on_event(&localized);
+                (result, node.parent())
+            };
+            if result == EventResult::Handled {
+                return self.finish_scroll_aware_dispatch(id, &localized);
+            }
+            current = parent_id;
+        }
+        EventResult::NotHandled
+    }
+
+    pub(super) fn finish_scroll_aware_dispatch(&mut self, id: WidgetId, event: &SystemEvent) -> EventResult {
+        if let Some(action) = self.get_mut(id).and_then(|node| node.take_window_action()) {
+            self.pending_window_actions.push(action);
+        }
+        self.apply_event_layout_request(id);
+        let dynamic_children_changed = self.refresh_table_expand_component(id)
+            | self.refresh_table_cell_component(id)
+            | self.refresh_select_option_component(id)
+            | self.refresh_calendar_cell_component(id);
+        if dynamic_children_changed {
+            self.push_layout_invalidation(id);
+            self.propagate_layout_invalidation(id);
+            // A rebuilt dynamic subtree invalidates the old viewport pixels.
+            // Consume any queued delta so a later stable scroll cannot replay
+            // movement that was already covered by this conservative repaint.
+            let _ = self.get(id).and_then(|node| node.scroll_delta_for_dirty());
+        }
+        if dynamic_children_changed || !self.register_scroll_composite(id) {
+            self.invalidate_paint(id);
+        }
+        let semantic = self.get(id).and_then(|node| node.semantic_event(id, event));
+        if let Some(event) = semantic {
+            let _ = self.dispatch_semantic(event);
+        }
+        EventResult::Handled
+    }
+
+    pub(super) fn register_scroll_composite(&mut self, id: WidgetId) -> bool {
+        let transformed = self.path_has_visual_transform(id);
+        let Some((viewport, dx, dy)) = self.get(id).and_then(|node| {
+            let frame = node.frame();
+            node.scroll_delta_for_dirty().map(|(dx, dy)| {
+                let viewport = node.scroll_composite_viewport(frame);
+                (viewport, dx, dy)
+            })
+        }) else {
+            return false;
+        };
+        if transformed {
+            return false;
+        }
+        self.push_scroll_composite(viewport, dx, dy)
+    }
+
+    pub(crate) fn reveal_focused_target(&mut self, target: WidgetId) -> bool {
+        let mut ancestors = Vec::new();
+        let mut current = self.get(target).and_then(|node| node.parent());
+        while let Some(id) = current {
+            ancestors.push(id);
+            current = self.get(id).and_then(|node| node.parent());
+        }
+
+        let mut changed = false;
+        for viewport_id in ancestors {
+            let Some((target_frame, viewport_frame)) = self.get(target).and_then(|target_node| {
+                let target_visual = self.node_visual_rect(target, target_node.frame())?;
+                let viewport_node = self.get(viewport_id)?;
+                viewport_node.viewport_scroll_offset()?;
+                let viewport_clip = viewport_node
+                    .children_clip(viewport_node.frame())
+                    .unwrap_or_else(|| viewport_node.frame());
+                let inverse = self.node_visual_transform(viewport_id)?.inverse()?;
+                Some((inverse.transform_rect(target_visual), viewport_clip))
+            }) else {
+                continue;
+            };
+
+            let dx = reveal_axis_delta(
+                target_frame.x,
+                target_frame.x + target_frame.w,
+                viewport_frame.x,
+                viewport_frame.x + viewport_frame.w,
+            );
+            let dy = reveal_axis_delta(
+                target_frame.y,
+                target_frame.y + target_frame.h,
+                viewport_frame.y,
+                viewport_frame.y + viewport_frame.h,
+            );
+            if dx.abs() <= 0.01 && dy.abs() <= 0.01 {
+                continue;
+            }
+
+            let scrolled = self
+                .get_mut(viewport_id)
+                .is_some_and(|node| node.scroll_descendant_by(dx, dy));
+            if !scrolled {
+                continue;
+            }
+            changed = true;
+            if !self.register_scroll_composite(viewport_id) {
+                self.invalidate_paint(viewport_id);
+            }
+        }
+        changed
+    }
+
+    pub(super) fn capture_to(&mut self, target: WidgetId, event: &SystemEvent) -> Option<WidgetId> {
+        // 收集从 root 到 target 的祖先路径（不含 target）
+        let mut path = Vec::new();
+        let mut current = self.get(target).and_then(|n| n.parent());
+        while let Some(id) = current {
+            path.push(id);
+            current = self.get(id).and_then(|n| n.parent());
+        }
+        path.reverse(); // 现在是从 root → ... → target.parent
+
+        for &id in &path {
+            if !self.get(id).is_some_and(|node| node.wants_capture_phase()) {
+                continue;
+            }
+            let Some(localized) = self.localize_spatial_event(id, event) else {
+                continue;
+            };
+            let handled = {
+                let node = match self.get_mut(id) {
+                    Some(n) => n,
+                    None => continue,
+                };
+                node.on_event(&localized) == EventResult::Handled
+            };
+            if handled {
+                self.on_widget_handled_in_capture(id);
+                let semantic = self
+                    .get(id)
+                    .and_then(|node| node.semantic_event(id, &localized));
+                if let Some(event) = semantic {
+                    let _ = self.dispatch_semantic(event);
+                }
+                return Some(id);
+            }
+        }
+        None
+    }
+
+    /// capture 阶段拦截事件后：标记拦截节点重绘。
+    pub(super) fn on_widget_handled_in_capture(&mut self, id: WidgetId) {
+        if let Some(action) = self.get_mut(id).and_then(|node| node.take_window_action()) {
+            self.pending_window_actions.push(action);
+        }
+        self.apply_event_layout_request(id);
+        self.invalidate_paint(id);
+    }
+
+    pub(super) fn apply_event_layout_request(&mut self, id: WidgetId) {
+        let requested = self
+            .get_mut(id)
+            .is_some_and(|node| node.take_layout_request());
+        if requested {
+            self.push_layout_invalidation(id);
+            self.propagate_layout_invalidation(id);
+        }
+    }
+
+    pub(crate) fn dispatch_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
+        if self.is_pending_removal_subtree(target) {
+            return EventResult::NotHandled;
+        }
+        let mut current = Some(target);
+        let secondary_drag_boundary = self.secondary_pointer_drag_boundary(target, event);
+        // 每个冒泡节点都按自身的完整 visual/scroll 链反变换到局部坐标。
+        while let Some(id) = current {
+            if secondary_drag_boundary == Some(id) {
+                return EventResult::Handled;
+            }
+            // 先以共享借用生成局部事件，再获取可变节点调用 on_event。
+            let Some(localized) = self.localize_spatial_event(id, event) else {
+                return EventResult::NotHandled;
+            };
+
+            // 处理 widget 自身的 on_event
+            let (result, parent_id) = {
+                let node = match self.get_mut(id) {
+                    Some(n) => n,
+                    None => return EventResult::NotHandled,
+                };
+                let r = node.on_event(&localized);
+                (r, node.parent())
+            };
+            if result == EventResult::Handled {
+                return self.finish_scroll_aware_dispatch(id, &localized);
+            }
+
+            // Bubbled 或 NotHandled → 继续向父节点传播
+            current = parent_id;
+        }
+        EventResult::NotHandled
+    }
+
+    pub(super) fn dispatch_double_click_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
+        let mut current = Some(target);
+        while let Some(id) = current {
+            let Some(double_click) = self.localize_spatial_event(id, event) else {
+                return EventResult::NotHandled;
+            };
+            let SystemEvent::PointerDoubleClick { pos, button, mods } = double_click else {
+                return EventResult::NotHandled;
+            };
+            let double_click = SystemEvent::PointerDoubleClick { pos, button, mods };
+            let pointer_down = SystemEvent::PointerDown { pos, button, mods };
+            let (handled_event, parent) = {
+                let Some(node) = self.get_mut(id) else {
+                    return EventResult::NotHandled;
+                };
+                let handled = if node.on_event(&double_click) == EventResult::Handled {
+                    Some(&double_click)
+                } else if node.on_event(&pointer_down) == EventResult::Handled {
+                    Some(&pointer_down)
+                } else {
+                    None
+                };
+                (handled.cloned(), node.parent())
+            };
+            if let Some(handled_event) = handled_event {
+                return self.finish_scroll_aware_dispatch(id, &handled_event);
+            }
+            current = parent;
+        }
+        EventResult::NotHandled
+    }
+
+    pub(super) fn localize_spatial_event(&self, id: WidgetId, event: &SystemEvent) -> Option<SystemEvent> {
+        let frame = self.get(id)?.frame();
+        let map_point = |point: Point| {
+            self.point_to_node_layout(id, point)
+                .map(|point| Point::new(point.x - frame.x, point.y - frame.y))
+        };
+        let map_delta = |delta: Point| {
+            let inverse = self.node_visual_transform(id)?.inverse()?;
+            let origin = inverse.transform_point(Point::new(0.0, 0.0));
+            let endpoint = inverse.transform_point(delta);
+            Some(Point::new(endpoint.x - origin.x, endpoint.y - origin.y))
+        };
+
+        Some(match event {
+            SystemEvent::PointerDown { pos, button, mods } => SystemEvent::PointerDown {
+                pos: map_point(*pos)?,
+                button: *button,
+                mods: *mods,
+            },
+            SystemEvent::PointerDoubleClick { pos, button, mods } => {
+                SystemEvent::PointerDoubleClick {
+                    pos: map_point(*pos)?,
+                    button: *button,
+                    mods: *mods,
+                }
+            }
+            SystemEvent::PointerUp { pos, button, mods } => SystemEvent::PointerUp {
+                pos: map_point(*pos)?,
+                button: *button,
+                mods: *mods,
+            },
+            SystemEvent::PointerMove { pos, mods } => SystemEvent::PointerMove {
+                pos: map_point(*pos)?,
+                mods: *mods,
+            },
+            SystemEvent::Wheel { pos, delta } => SystemEvent::Wheel {
+                pos: map_point(*pos)?,
+                delta: map_delta(*delta)?,
+            },
+            SystemEvent::FileDrop { files, position } => SystemEvent::FileDrop {
+                files: files.clone(),
+                position: map_point(*position)?,
+            },
+            SystemEvent::DragStart { pos, button, mods } => SystemEvent::DragStart {
+                pos: map_point(*pos)?,
+                button: *button,
+                mods: *mods,
+            },
+            SystemEvent::DragMove { pos, delta, mods } => SystemEvent::DragMove {
+                pos: map_point(*pos)?,
+                delta: map_delta(*delta)?,
+                mods: *mods,
+            },
+            SystemEvent::DragEnd { pos, button, mods } => SystemEvent::DragEnd {
+                pos: map_point(*pos)?,
+                button: *button,
+                mods: *mods,
+            },
+            other => other.clone(),
+        })
+    }
+
+    pub(crate) fn set_focus(&mut self, new_focus: Option<WidgetId>) {
+        let old_focus = self.managers().focus.focused_component();
+        if new_focus == old_focus {
+            return;
+        }
+        // A keyboard gesture belongs to the focus target that accepted its KeyDown.
+        // Any real focus transition cancels it before FocusOut resets widget visuals.
+        self.keyboard_activation = None;
+        let old_path = self.focus_containment_path(old_focus);
+        let new_path = self.focus_containment_path(new_focus);
+        if let Some(old) = old_focus {
+            self.invalidate_paint(old);
+            if self.window_focused {
+                let _ = self.dispatch_to(old, &SystemEvent::FocusOut);
+            }
+        }
+        if self.window_focused {
+            for &id in &old_path {
+                if !new_path.contains(&id) {
+                    self.dispatch_focus_within(id, false);
+                }
+            }
+        }
+        self.managers_mut().focus.set_focused_component(new_focus);
+        if let Some(new) = new_focus {
+            self.invalidate_paint(new);
+            if self.window_focused {
+                let _ = self.dispatch_to(new, &SystemEvent::FocusIn);
+            }
+        }
+        if self.window_focused {
+            for &id in new_path.iter().rev() {
+                if !old_path.contains(&id) {
+                    self.dispatch_focus_within(id, true);
+                }
+            }
+            self.reconcile_lifecycle_after_layout();
+        }
+    }
+
+    pub(super) fn focus_containment_path(&self, target: Option<WidgetId>) -> Vec<WidgetId> {
+        let mut path = Vec::new();
+        let mut current = target;
+        while let Some(id) = current {
+            path.push(id);
+            current = self.get(id).and_then(|node| node.parent());
+        }
+        path
+    }
+
+    pub(super) fn dispatch_focus_within(&mut self, id: WidgetId, focused: bool) {
+        let handled = self
+            .get_mut(id)
+            .is_some_and(|node| node.on_focus_within(focused) == EventResult::Handled);
+        if handled {
+            self.on_widget_handled_in_capture(id);
+        }
+    }
+
+    /// NavItem 共享 active 索引时，刷新整组导航项（取消/选中态联动；
+    /// 组件语义见 System 私有边界 tree_widget_hooks）。
+    pub(super) fn invalidate_nav_siblings(&mut self, clicked: WidgetId) {
+        crate::ui::tree_widget_hooks::invalidate_nav_siblings(self, clicked);
+    }
+}
+
