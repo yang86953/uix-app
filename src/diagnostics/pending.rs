@@ -273,7 +273,11 @@ mod tests {
 
         let (queued, overflowed) = producers
             .into_iter()
-            .map(|producer| producer.join().expect("callback producer must not panic"))
+            .map(|producer| {
+                producer
+                    .join()
+                    .unwrap_or_else(|_| panic!("callback producer must not panic"))
+            })
             .fold(
                 (0, 0),
                 |(queued, overflowed), (producer_queued, producer_overflowed)| {

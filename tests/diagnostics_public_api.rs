@@ -128,7 +128,9 @@ fn concurrent_reports_keep_unique_monotonic_retained_ids() {
         }));
     }
     for worker in workers {
-        worker.join().expect("report worker must not panic");
+        worker
+            .join()
+            .unwrap_or_else(|_| panic!("report worker must not panic"));
     }
 
     let snapshot = diagnostics.snapshot();

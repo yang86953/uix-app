@@ -2573,8 +2573,10 @@ mod tests {
     }
 
     fn data_table(rows: Vec<UserRow>) -> DataTable<UserRow> {
-        Table::data(rows.clone(), |row| row.id.to_string())
-            .unwrap()
+        let Ok(table) = Table::data(rows.clone(), |row| row.id.to_string()) else {
+            panic!("Table::data must accept a stable id extractor");
+        };
+        table
             .columns(vec![
                 TableColumn::new("ID", 80.0).bind(|r: &UserRow| r.id.to_string())
             ])

@@ -376,8 +376,9 @@ mod tests {
         let _ = std::fs::write(&file_as_directory, b"not a directory");
 
         let result = write_atomic(&file_as_directory, &sample_report());
-        assert!(result.is_err());
-        let error = result.unwrap_err();
+        let Err(error) = result else {
+            panic!("write_atomic to a blocked path must fail");
+        };
         assert_eq!(error.code(), Errc::IoError);
         assert!(error.source_error().is_some());
 

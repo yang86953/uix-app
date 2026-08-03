@@ -394,7 +394,7 @@ mod tests {
             );
         })
         .join()
-        .expect("frame worker callback must finish");
+        .unwrap_or_else(|_| panic!("frame worker callback must finish"));
 
         let Some(flush_failure) = source.take() else {
             panic!("DwmFlush failure must reach the owner source");

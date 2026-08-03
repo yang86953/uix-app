@@ -172,7 +172,9 @@ mod tests {
         let mut pixels = vec![0u32; (w * h) as usize];
         let rect = Rect::new(8.75, 5.0, 35.0, 35.0);
         // 与实现相同的边界对齐：左右/上下边界分别就近取整。
-        let aligned = align_rounded_rect(rect).unwrap();
+        let Some(aligned) = align_rounded_rect(rect) else {
+            panic!("align_rounded_rect must succeed for a positive rect");
+        };
         let clip = Rect::new(0.0, 0.0, w as f32, h as f32);
         fill_rect(
             &mut pixels,
