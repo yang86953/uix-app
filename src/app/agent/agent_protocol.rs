@@ -14,7 +14,7 @@ use crate::app::agent::agent_bridge::{
     AgentProcessBridge, AgentWaitCondition, AgentWaitError, AgentWaitOutcome, AgentWindowInfo,
     MAX_AGENT_WAIT_TIMEOUT,
 };
-use crate::app::agent::agent_control::{
+use crate::app::queues::agent_command_queue::{
     AgentCommandError, AgentCommandResponse, AgentErrorCode, AgentSubmitError, AgentWindowAction,
     DEFAULT_AGENT_COMMAND_QUEUE_CAPACITY, MAX_AGENT_SETTLE_PASSES,
 };

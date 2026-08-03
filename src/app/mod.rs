@@ -20,10 +20,14 @@
 //! | [`queues`] | 主循环调度队列（clock / active_work_registry / app_timer / main_thread_queue）：event-loop 与 window 共用，任何 Module 不拥有 |
 //! | [`app_events`] | System 私有边界事件契约与总线（SystemEvent(SMC)：主题变更事实等）：任何 Module 不拥有，订阅进入路由清单 |
 //!
-//! 兄弟隔离审计（SMC-06，rg 证据）：agent 不引用任何兄弟 Module；window 只
-//! 下行引用 agent 与 queues；event-loop 只下行引用 window / agent / queues；
-//! application 只下行引用 event-loop / window / agent / queues；全部依赖经
-//! System 私有边界（组合根注入）收敛，无环。
+//! 兄弟隔离现状（SMC-06，2026-08-03 全量审核修正，2026-08-04 P1 修复落地）：
+//! agent 不引用任何兄弟 Module；application 只下行引用 event-loop / window /
+//! agent / queues；event_loop / window / window_semantics 对 agent Module 的
+//! 具体类型依赖已清零（rg 审计）：`WindowAgentState` / `AgentCommandQueue` /
+//! 命令协议契约（`AgentCommandRequest` 等）上移 System 私有边界 `queues/`，
+//! `agent` 只提供执行实现（`AgentCommandExecutor`）与语义发布端口实现
+//! （`AgentSemanticsPort`，契约归 `window_semantics`），由组合根
+//! `session_runtime` 组装期注入。
 
 pub(crate) mod agent;
 pub(crate) mod app_events;

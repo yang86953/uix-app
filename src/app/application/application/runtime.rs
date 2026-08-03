@@ -428,6 +428,7 @@ fn create_secondary_window(
     if let Some(queue) = runtime.agent_command_queue(window_id) {
         session.set_agent_command_queue(queue);
     }
+    session.set_agent_command_executor(runtime.agent_command_executor());
     if let Some(registration) = runtime.register_agent_window(
         window_id,
         title,
