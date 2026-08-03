@@ -5,7 +5,7 @@ use crate::ui::component::paint_context::PaintContext;
 use super::super::bar_chart::BarData;
 use super::super::line_chart::LineData;
 use super::{
-    AxisSide, ChartKind, ChartPayload, ChartPlaceholder, ChartType, FunnelAlign, FunnelShape, GaugeType,
+    AxisSide, ChartPayload, ChartPlaceholder, ChartType, FunnelAlign, FunnelShape, GaugeType,
     LabelPosition, LineStyle, MAX_HEATMAP_DIMENSION, TooltipTrigger, TreemapNode, WaterfallKind,
     calendar_day_count, is_leap_year, january_first_weekday, lerp_color, normalized_ratio,
     palette_color,
@@ -775,6 +775,7 @@ impl ChartPlaceholder {
 
     #[cfg(test)]
     pub(crate) fn kind_for_test(&self) -> &'static str {
+        use super::ChartKind;
         match self.kind {
             ChartKind::Generic => "generic",
             ChartKind::Bar => "bar",
