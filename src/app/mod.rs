@@ -18,6 +18,7 @@
 //! | [`session_runtime`] | 组合根：AppRuntime / SessionRuntime 创建并注入各 Module 组件实例（agent bridge / transport / command queue、window session、event-loop waker） |
 //! | [`window_semantics`] | 每窗口语义修订状态（event-loop / window / agent 共用） |
 //! | [`queues`] | 主循环调度队列（clock / active_work_registry / app_timer / main_thread_queue）：event-loop 与 window 共用，任何 Module 不拥有 |
+//! | [`app_events`] | System 私有边界事件契约与总线（SystemEvent(SMC)：主题变更事实等）：任何 Module 不拥有，订阅进入路由清单 |
 //!
 //! 兄弟隔离审计（SMC-06，rg 证据）：agent 不引用任何兄弟 Module；window 只
 //! 下行引用 agent 与 queues；event-loop 只下行引用 window / agent / queues；
@@ -25,6 +26,7 @@
 //! System 私有边界（组合根注入）收敛，无环。
 
 pub(crate) mod agent;
+pub(crate) mod app_events;
 pub(crate) mod application;
 pub(crate) mod event_loop;
 pub(crate) mod queues;
