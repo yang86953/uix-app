@@ -444,7 +444,7 @@ pub(super) fn log_frame_metrics(
         };
         crate::core::perf_probe::with_internal_g5_scenario(|scenario| {
             tracing::info!(
-                "G5_FRAME schema=1 frame_seq={} scenario={} window={} logical_width={} logical_height={} dpi={} monotonic_us={} presented={} present_skipped={} active_work={} due_active_work={} frame_us={} input_us={} reconcile_us={} layout_us={} paint_cpu_us={} present_us={} had_events={} reconcile_ran={} layout_calls={} dirty_full={} strategy_full={} backdrop_restore={} drawable_width={} drawable_height={} drawable_pixels={} pixels={} layer_build_us={} record_us={} execute_us={} end_frame_us={} picture_raster_us={} picture_blit_us={} direct_paint_us={} pictures_rasterized={} picture_pixels={} widgets_painted={} text_us={} text_draws={} cpu_flush_us={} cpu_flushes={} upload_copy_us={} fence_wait_us={} submit_present_us={} wgpu_surface_present_cpu_us={} tree_live_nodes={} tree_slots={} overlay_count={} tree_version={}",
+                "G5_FRAME schema=1 frame_seq={} scenario={} window={} logical_width={} logical_height={} dpi={} monotonic_us={} presented={} present_skipped={} active_work={} due_active_work={} frame_us={} input_us={} reconcile_us={} layout_us={} paint_cpu_us={} present_us={} had_events={} reconcile_ran={} layout_calls={} dirty_full={} strategy_full={} backdrop_restore={} drawable_width={} drawable_height={} drawable_pixels={} pixels={} layer_build_us={} record_us={} execute_us={} end_frame_us={} picture_raster_us={} picture_blit_us={} direct_paint_us={} pictures_rasterized={} picture_pixels={} widgets_painted={} text_us={} text_draws={} cpu_flush_us={} cpu_flushes={} upload_copy_us={} fence_wait_us={} submit_present_us={} surface_present_cpu_us={} tree_live_nodes={} tree_slots={} overlay_count={} tree_version={}",
                 frame_sequence,
                 scenario,
                 window_id,
@@ -489,7 +489,7 @@ pub(super) fn log_frame_metrics(
                 present_probe.upload_copy_us,
                 present_probe.fence_wait_us,
                 present_probe.submit_present_us,
-                present_probe.wgpu_surface_present_cpu_us,
+                present_probe.surface_present_cpu_us,
                 resource_snapshot.live_nodes,
                 resource_snapshot.tree_slots,
                 resource_snapshot.overlay_count,

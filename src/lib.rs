@@ -33,7 +33,7 @@
 //!
 //! ```compile_fail
 //! // 图形 context / 厂商对象不可达（SMC-02 后位于 presentation Module）。
-//! use uix::native::presentation::graphics::wgpu_backend::WgpuContext;
+//! use uix::native::presentation::graphics::d3d11::D3d11Context;
 //! ```
 //!
 //! ```compile_fail

@@ -781,7 +781,7 @@ impl IGraphicsContext for WglContext {
         if additive {
             return Err(Error::new(
                 Errc::NotImplemented,
-                "WglContext: Additive blit_offscreen_target requires wgpu",
+                "WglContext: Additive blit_offscreen_target is not supported by this backend",
             ));
         }
         self.make_current_result()?;

@@ -1,7 +1,6 @@
 use super::*;
 
-use super::*;
-
+impl D3d11Pipeline {
     pub(crate) fn bind_grad_pipeline(
         &self,
         context: &ID3D11DeviceContext,
@@ -626,6 +625,124 @@ use super::*;
                 context.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
                 context.RSSetState(&self.rasterizer);
                 context.OMSetBlendState(&self.blend_alpha, None, 0xffff_ffff);
+                context.Draw(6, 0);
+                context.PSSetShaderResources(0, Some(&[None]));
+            }
+            Ok(())
+        })();
+        previous_raster_state.restore(context);
+        result
+    }
+
+    /// 单方向可分离高斯 pass：从 `src_srv` 采样，写入 `dst_rtv`。
+    ///
+    /// `region` 为 dst 纹理物理像素矩形（viewport/scissor），只重绘该区域；
+    /// 核权重按 `sigma` 生成，tap 数 = 2*tap_radius+1（上限 63）。
+    pub(crate) fn blur_pass(
+        &self,
+        context: &ID3D11DeviceContext,
+        src_srv: &ID3D11ShaderResourceView,
+        tex_w: f32,
+        tex_h: f32,
+        dst_rtv: &ID3D11RenderTargetView,
+        direction: [f32; 2],
+        tap_radius: i32,
+        sigma: f32,
+        region: crate::core::Rect,
+    ) -> Result<()> {
+        if region.w <= 0.0 || region.h <= 0.0 || tex_w <= 0.0 || tex_h <= 0.0 {
+            return Ok(());
+        }
+        if tap_radius <= 0 || tap_radius > 31 {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                "D3d11Pipeline: blur tap radius must be in 1..=31",
+            ));
+        }
+        // 高斯核：sigma 由调用方换算（radius/3），tap 覆盖 ±3σ。
+        let taps = (2 * tap_radius + 1) as usize;
+        let mut weights = [0.0f32; 64];
+        let mut sum = 0.0f32;
+        for i in 0..taps {
+            let d = i as f32 - tap_radius as f32;
+            weights[i] = (-d * d / (2.0 * sigma * sigma)).exp();
+            sum += weights[i];
+        }
+        // 极端 sigma 下核退化：直接跳过，避免除零/NaN。
+        if !sum.is_finite() || sum <= 0.0 {
+            return Ok(());
+        }
+        for w in weights.iter_mut().take(taps) {
+            *w /= sum;
+        }
+        // 钳制 region 到目标纹理范围。
+        let x0 = region.x.max(0.0);
+        let y0 = region.y.max(0.0);
+        let region = crate::core::Rect::new(
+            x0,
+            y0,
+            region.w.min(tex_w - x0),
+            region.h.min(tex_h - y0),
+        );
+        if region.w <= 0.0 || region.h <= 0.0 {
+            return Ok(());
+        }
+        let vp = D3D11_VIEWPORT {
+            TopLeftX: region.x,
+            TopLeftY: region.y,
+            Width: region.w,
+            Height: region.h,
+            MinDepth: 0.0,
+            MaxDepth: 1.0,
+        };
+        let scissor = RECT {
+            left: region.x.floor() as i32,
+            top: region.y.floor() as i32,
+            right: (region.x + region.w).ceil() as i32,
+            bottom: (region.y + region.h).ceil() as i32,
+        };
+        let constants = BlurConstants {
+            sizes: [region.w, region.h, tex_w, tex_h],
+            region: [region.x, region.y, region.w, region.h],
+            dir_taps: [direction[0], direction[1], tap_radius as f32, 0.0],
+            weights,
+        };
+        let previous_raster_state = RasterState::capture(context);
+        let result = (|| -> Result<()> {
+            unsafe {
+                context.OMSetRenderTargets(Some(&[Some(dst_rtv.clone())]), None);
+                context.RSSetViewports(Some(&[vp]));
+                context.RSSetScissorRects(Some(&[scissor]));
+                let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+                context
+                    .Map(&self.cb_blur, 0, D3D11_MAP_WRITE_DISCARD, 0, Some(&mut mapped))
+                    .map_err(|e| d3d_error("Map(cb_blur)", e))?;
+                std::ptr::copy_nonoverlapping(
+                    (&constants as *const BlurConstants).cast::<u8>(),
+                    mapped.pData.cast(),
+                    size_of::<BlurConstants>(),
+                );
+                context.Unmap(&self.cb_blur, 0);
+                let stride = (2 * size_of::<f32>()) as u32;
+                let offset = 0u32;
+                context.IASetInputLayout(&self.layout);
+                context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                context.IASetVertexBuffers(
+                    0,
+                    1,
+                    Some(&Some(self.vb_fullscreen.clone())),
+                    Some(&stride),
+                    Some(&offset),
+                );
+                context.VSSetShader(&self.vs_blit, None);
+                context.PSSetShader(&self.ps_blur, None);
+                context.VSSetConstantBuffers(0, Some(&[Some(self.cb_blur.clone())]));
+                context.PSSetConstantBuffers(0, Some(&[Some(self.cb_blur.clone())]));
+                context.PSSetShaderResources(0, Some(&[Some(src_srv.clone())]));
+                context.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
+                context.RSSetState(&self.rasterizer);
+                // 模糊必须覆盖写入（非混合），否则核求和会重复叠加。
+                context.OMSetBlendState(&self.blend_replace, None, 0xffff_ffff);
                 context.Draw(6, 0);
                 context.PSSetShaderResources(0, Some(&[None]));
             }

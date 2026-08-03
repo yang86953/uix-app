@@ -207,7 +207,7 @@ impl Renderer {
                 upload_copy_us: 0,
                 fence_wait_us: 0,
                 submit_present_us: 0,
-                wgpu_surface_present_cpu_us: 0,
+                surface_present_cpu_us: 0,
                 pixels,
                 drawable_pixels: 0,
                 drawable_width: 0,

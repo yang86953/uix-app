@@ -121,47 +121,13 @@ impl Platform {
     /// 按具体图形 API 同步枚举 GPU adapter。
     pub fn gpu_adapters(&self, backend: GraphicsBackend) -> Result<Box<[GpuAdapterInfo]>> {
         self.ensure_owner("Platform::gpu_adapters")?;
-        let backends = backend_mask(backend)?;
-        if !wgpu::Instance::enabled_backend_features().contains(backends) {
-            return Err(not_implemented_backend(backend));
-        }
-
-        let values = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
-            descriptor.backends = backends;
-            let instance = wgpu::Instance::new(descriptor);
-            pollster::block_on(instance.enumerate_adapters(backends))
-                .into_iter()
-                .map(|adapter| {
-                    let info = adapter.get_info();
-                    let device_type = match info.device_type {
-                        wgpu::DeviceType::IntegratedGpu => GpuDeviceType::Integrated,
-                        wgpu::DeviceType::DiscreteGpu => GpuDeviceType::Discrete,
-                        wgpu::DeviceType::VirtualGpu => GpuDeviceType::Virtual,
-                        wgpu::DeviceType::Cpu => GpuDeviceType::Software,
-                        wgpu::DeviceType::Other => GpuDeviceType::Unknown,
-                    };
-                    let driver = joined_driver(&info.driver, &info.driver_info);
-                    GpuAdapterInfo::new(
-                        backend,
-                        device_type,
-                        non_empty(info.name),
-                        (info.vendor != 0).then_some(info.vendor),
-                        (info.device != 0).then_some(info.device),
-                        driver,
-                    )
-                })
-                .collect::<Vec<_>>()
-        }))
-        .map_err(|_| {
-            Error::new(
-                Errc::PlatformError,
-                format!(
-                    "Platform::gpu_adapters: {:?} driver enumeration panicked",
-                    backend
-                ),
-            )
-        })?;
+        // 显式标注返回元素类型：d3d11 feature 未启用时 match 无产生值分支，
+        // 需要类型标注才能推断 `values`（否则 E0282）。
+        let values: Vec<GpuAdapterInfo> = match backend {
+            #[cfg(all(windows, feature = "d3d11"))]
+            GraphicsBackend::Direct3D11 => enumerate_dxgi_adapters()?,
+            _ => return Err(not_implemented_backend(backend)),
+        };
         Ok(values.into_boxed_slice())
     }
 
@@ -243,39 +209,67 @@ impl Drop for InstanceClaim {
     }
 }
 
-fn backend_mask(backend: GraphicsBackend) -> Result<wgpu::Backends> {
-    match backend {
-        GraphicsBackend::Vulkan if cfg!(feature = "vulkan") => Ok(wgpu::Backends::VULKAN),
-        GraphicsBackend::Direct3D12 if cfg!(all(windows, feature = "d3d12")) => {
-            Ok(wgpu::Backends::DX12)
-        }
-        GraphicsBackend::Metal if cfg!(all(target_os = "macos", feature = "metal")) => {
-            Ok(wgpu::Backends::METAL)
-        }
-        GraphicsBackend::OpenGlEs if cfg!(feature = "opengles") => Ok(wgpu::Backends::GL),
-        _ => Err(not_implemented_backend(backend)),
+/// 通过 DXGI 枚举 D3D11 图形适配器（替代已移除的 wgpu 枚举）。
+#[cfg(all(windows, feature = "d3d11"))]
+fn enumerate_dxgi_adapters() -> Result<Vec<GpuAdapterInfo>, Error> {
+    use windows::Win32::Graphics::Dxgi::{
+        CreateDXGIFactory1, DXGI_ADAPTER_DESC1, DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_ERROR_NOT_FOUND,
+        IDXGIFactory1,
+    };
+
+    // SAFETY: CreateDXGIFactory1 返回进程级 DXGI 工厂，无需传入句柄。
+    let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.map_err(|error| {
+        Error::new(
+            Errc::PlatformError,
+            format!("Platform::gpu_adapters: CreateDXGIFactory1 failed: {error}"),
+        )
+    })?;
+    let mut adapters = Vec::new();
+    for index in 0.. {
+        // SAFETY: EnumAdapters1 返回的 adapter 由 factory 管理生命周期，仅在本函数内查询。
+        let adapter = match unsafe { factory.EnumAdapters1(index) } {
+            Ok(adapter) => adapter,
+            Err(error) if error.code() == DXGI_ERROR_NOT_FOUND => break,
+            Err(error) => {
+                return Err(Error::new(
+                    Errc::PlatformError,
+                    format!("Platform::gpu_adapters: EnumAdapters1 failed: {error}"),
+                ));
+            }
+        };
+        // SAFETY: desc 为输出缓冲，GetDesc1 调用期间有效。
+        let desc: DXGI_ADAPTER_DESC1 = unsafe { adapter.GetDesc1() }.map_err(|error| {
+            Error::new(
+                Errc::PlatformError,
+                format!("Platform::gpu_adapters: GetDesc1 failed: {error}"),
+            )
+        })?;
+        // DXGI 无法直接区分集成/独显；仅识别软件适配器（WARP/基本显示）。
+        let software = desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 != 0 || desc.VendorId == 0x1414;
+        adapters.push(GpuAdapterInfo::new(
+            GraphicsBackend::Direct3D11,
+            if software {
+                GpuDeviceType::Software
+            } else {
+                GpuDeviceType::Unknown
+            },
+            non_empty(String::from_utf16_lossy(&desc.Description)),
+            (desc.VendorId != 0).then_some(desc.VendorId),
+            (desc.DeviceId != 0).then_some(desc.DeviceId),
+            None,
+        ));
     }
+    Ok(adapters)
 }
 
 fn not_implemented_backend(backend: GraphicsBackend) -> Error {
     Error::new(
         Errc::NotImplemented,
         format!(
-            "Platform::gpu_adapters: {:?} is not compiled for this target",
+            "Platform::gpu_adapters: {:?} has no native enumerator on this target",
             backend
         ),
     )
-}
-
-fn joined_driver(driver: &str, driver_info: &str) -> Option<String> {
-    match (
-        non_empty(driver.to_owned()),
-        non_empty(driver_info.to_owned()),
-    ) {
-        (Some(driver), Some(info)) if driver != info => Some(format!("{driver} ({info})")),
-        (Some(driver), _) => Some(driver),
-        (None, info) => info,
-    }
 }
 
 fn normalize_text(value: Option<String>) -> Option<String> {

@@ -649,7 +649,7 @@ mod tests {
         });
 
         let outcome =
-            diagnostics.attempt_recovery(Error::new(Errc::GraphicsDeviceLost, "wgpu device lost"));
+            diagnostics.attempt_recovery(Error::new(Errc::GraphicsDeviceLost, "graphics device lost"));
         assert!(outcome.is_recovered());
         assert!(request.is_requested());
 

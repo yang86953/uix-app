@@ -9,7 +9,7 @@ use crate::native::backends::windows::dpi::{
     dpi_for_window, logical_extent_to_physical, physical_extent_to_logical,
 };
 
-// These helpers belong to the shared wgpu surface path, which is compiled
+// These helpers belong to the shared native surface path, which is compiled
 // even when every optional native backend feature is disabled.
 
 #[repr(C)]

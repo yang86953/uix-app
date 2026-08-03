@@ -11,14 +11,14 @@ pub struct PresentProbeSample {
     pub upload_copy_us: u128,
     pub fence_wait_us: u128,
     pub submit_present_us: u128,
-    /// CPU time spent in wgpu's actual surface-present call.
-    pub wgpu_surface_present_cpu_us: u128,
+    /// CPU time spent in the backend's actual surface-present call.
+    pub surface_present_cpu_us: u128,
     pub pixels: u64,
-    /// Drawable pixels reported by the production wgpu swapchain.
+    /// Drawable pixels reported by the production swapchain.
     pub drawable_pixels: u64,
-    /// Physical width reported by the production wgpu swapchain.
+    /// Physical width reported by the production swapchain.
     pub drawable_width: u32,
-    /// Physical height reported by the production wgpu swapchain.
+    /// Physical height reported by the production swapchain.
     pub drawable_height: u32,
     pub damage_full: u8,
     pub skipped: u8,
@@ -56,7 +56,7 @@ thread_local! {
         upload_copy_us: 0,
         fence_wait_us: 0,
         submit_present_us: 0,
-        wgpu_surface_present_cpu_us: 0,
+        surface_present_cpu_us: 0,
         pixels: 0,
         drawable_pixels: 0,
         drawable_width: 0,

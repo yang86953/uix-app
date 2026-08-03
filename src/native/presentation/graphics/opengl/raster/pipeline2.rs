@@ -259,7 +259,7 @@ use super::*;
         if opacity < 1.0 - 1e-6 {
             return Err(Error::new(
                 Errc::NotImplemented,
-                "OpenGL blit_offscreen_target opacity < 1 requires wgpu",
+                "OpenGL blit_offscreen_target opacity < 1 is not supported by this backend",
             ));
         }
         let source = self
