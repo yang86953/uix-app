@@ -3,7 +3,8 @@ use crate::draw::Radius;
 use crate::ui::component::paint_context::PaintContext;
 
 use super::geometry::{ColumnZone, TableColumnGeometry};
-use super::{SortDirection, Table};
+use super::types::SortDirection;
+use super::Table;
 
 pub(super) fn paint(
     table: &Table,
