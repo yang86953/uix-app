@@ -7,6 +7,7 @@
 //! | 模块 | 职责 |
 //! |------|------|
 //! | [`core`] | 基础设施 — 错误、几何 |
+//! | [`bus`] | 基础设施 — 进程内同步类型化事件分发（模式外，待定级） |
 //! | [`native`] | 平台能力 — OS 抽象（Win32 / Wayland） |
 //! | [`draw`] | 绘制能力 — 2D 引擎、光栅化、字体、合成 |
 //! | [`ui`] | 界面能力 — 组件、布局、主题、View DSL |
@@ -200,6 +201,7 @@ macro_rules! t_fmt_arg {
 }
 
 pub mod app;
+pub mod bus;
 pub mod core;
 pub mod data;
 pub mod diagnostics;

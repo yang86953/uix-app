@@ -1,23 +1,31 @@
-﻿// ============================================================================
-// platform/event_bus.rs — 事件订阅/发布总线
+// ============================================================================
+// native/windowing/event/bus.rs — 平台输入事件分发总线
 //
-// 设计意图：平台层负责事件收集与分发，其他层通过订阅机制接收事件。
-// 取代原来的 callback 链式传递模式（collect closure），
-// 改用注册式订阅。
+// 设计意图：platform System 私有边界（windowing Module）的输入事件分发
+// 通道，取代旧 callback 链式传递模式（collect closure），改用注册式订阅。
+//
+// 定位与边界（SMC 治理，2026-08-03）：
+// - 本总线只做「输入事件分发」，不是通用 SMC 的「事实广播 EventBus」；
+//   `-> bool` 返回语义（请求退出事件循环）已移除——事件总线不携带业务
+//   应答（通用 SMC I-15 / I-24），退出请求经直接契约流转；
+// - 当前无业务订阅者：UIX 事件路径经 map_event → tree.dispatch_event
+//   直接分发；本通道作为 platform 私有预留分发点保留，发布为 no-op；
+// - 优先级 / 通配符 / 一次性订阅是输入事件分发的合理需求，与
+//   `src/bus/`（精确类型事实广播）用途不同，二者不互相替代；
+// - 每条同步订阅进入路由清单（docs/架构/路由清单.md）。
 //
 // 使用方式：
 //   let sub_id = bus.subscribe(UiEventType::PointerMove, |ev| {
-//       // 处理事件，返回 true 继续，false 退出事件循环
-//       true
+//       // 处理事件
 //   });
-//   bus.unsubscribe(sub_id); // 取消订阅
+//   bus.unsubscribe(sub_id); // 取消订阅（幂等）
 // ============================================================================
 
 use super::types::{UiEvent, UiEventType};
 use std::cell::RefCell;
 
-/// 事件处理函数签名：接收事件引用，返回 false 表示请求退出事件循环。
-pub type EventHandler = Box<dyn FnMut(&UiEvent) -> bool>;
+/// 事件处理函数签名：接收事件引用，无返回值（事件分发不承诺业务应答）。
+pub type EventHandler = Box<dyn FnMut(&UiEvent)>;
 
 /// 默认优先级（中间值）。
 pub const PRIORITY_DEFAULT: i32 = 0;
@@ -52,6 +60,14 @@ struct SubscriberEntry {
 ///
 /// `subscribe_once` / `subscribe_all_once` 注册的 handler 触发一次后自动取消。
 /// 适合「等待窗口出现」或「等待特定按键」等一次性场景。
+///
+/// # 生命周期契约
+///
+/// - 注销幂等：重复 `unsubscribe` 与对已注销 id 注销均为 no-op；
+/// - 发布期间注册表被排他借用（同步单线程场景，处理器应短小有界）；
+///   处理器内注册/注销本总线未声明支持，业务代码不得依赖；
+/// - 处理器失败（panic）会沿发布调用传播：本通道面向平台输入事件，
+///   处理器由 platform 私有边界控制，panic 属进程级缺陷，不隔离。
 pub struct EventBus {
     subscribers: RefCell<Vec<SubscriberEntry>>,
     next_id: usize,
@@ -94,7 +110,7 @@ impl EventBus {
     /// 返回 subscription ID（用于取消订阅）。
     pub fn subscribe<F>(&mut self, event_type: UiEventType, handler: F) -> usize
     where
-        F: FnMut(&UiEvent) -> bool + 'static,
+        F: FnMut(&UiEvent) + 'static,
     {
         self.add_entry(Some(event_type), PRIORITY_DEFAULT, false, Box::new(handler))
     }
@@ -104,7 +120,7 @@ impl EventBus {
     /// 返回 subscription ID（用于取消订阅）。
     pub fn subscribe_all<F>(&mut self, handler: F) -> usize
     where
-        F: FnMut(&UiEvent) -> bool + 'static,
+        F: FnMut(&UiEvent) + 'static,
     {
         self.add_entry(None, PRIORITY_DEFAULT, false, Box::new(handler))
     }
@@ -121,7 +137,7 @@ impl EventBus {
         handler: F,
     ) -> usize
     where
-        F: FnMut(&UiEvent) -> bool + 'static,
+        F: FnMut(&UiEvent) + 'static,
     {
         self.add_entry(Some(event_type), priority, false, Box::new(handler))
     }
@@ -129,7 +145,7 @@ impl EventBus {
     /// 按优先级订阅所有事件。
     pub fn subscribe_all_with_priority<F>(&mut self, priority: i32, handler: F) -> usize
     where
-        F: FnMut(&UiEvent) -> bool + 'static,
+        F: FnMut(&UiEvent) + 'static,
     {
         self.add_entry(None, priority, false, Box::new(handler))
     }
@@ -139,7 +155,7 @@ impl EventBus {
     /// 一次性订阅特定类型的事件：触发一次后自动取消订阅。
     pub fn subscribe_once<F>(&mut self, event_type: UiEventType, handler: F) -> usize
     where
-        F: FnMut(&UiEvent) -> bool + 'static,
+        F: FnMut(&UiEvent) + 'static,
     {
         self.add_entry(Some(event_type), PRIORITY_DEFAULT, true, Box::new(handler))
     }
@@ -147,7 +163,7 @@ impl EventBus {
     /// 一次性订阅所有事件：触发一次后自动取消订阅。
     pub fn subscribe_all_once<F>(&mut self, handler: F) -> usize
     where
-        F: FnMut(&UiEvent) -> bool + 'static,
+        F: FnMut(&UiEvent) + 'static,
     {
         self.add_entry(None, PRIORITY_DEFAULT, true, Box::new(handler))
     }
@@ -160,14 +176,14 @@ impl EventBus {
         handler: F,
     ) -> usize
     where
-        F: FnMut(&UiEvent) -> bool + 'static,
+        F: FnMut(&UiEvent) + 'static,
     {
         self.add_entry(Some(event_type), priority, true, Box::new(handler))
     }
 
     // ── 取消订阅 ───────────────────────────────────────────────
 
-    /// 取消订阅。
+    /// 取消订阅（幂等）：对已注销或不存在的 id 注销为 no-op。
     pub fn unsubscribe(&mut self, id: usize) {
         self.subscribers.borrow_mut().retain(|e| e.id != id);
     }
@@ -177,10 +193,11 @@ impl EventBus {
     /// 发布事件到所有匹配的订阅者。
     ///
     /// 按优先级降序（高→低）依次调用匹配的 handler，
-    /// 相同优先级按注册顺序。
-    /// 任意 handler 返回 false 则立即终止并返回 false。
-    /// 发布后自动清理已触发的一次性订阅。
-    pub fn publish(&self, event: &UiEvent) -> bool {
+    /// 相同优先级按注册顺序。发布后自动清理已触发的一次性订阅。
+    ///
+    /// 事件分发不承诺业务应答：退出事件循环等请求经直接契约流转，
+    /// 不通过本总线的返回值表达。
+    pub fn publish(&self, event: &UiEvent) {
         let mut subs = self.subscribers.borrow_mut();
 
         // 按优先级降序排序（高优先级先执行）
@@ -193,9 +210,7 @@ impl EventBus {
                 None => true, // 通配符订阅匹配所有
             };
             if matches {
-                if !(entry.handler)(event) {
-                    return false;
-                }
+                (entry.handler)(event);
                 // 一次性订阅：触发后标记为待删除（id=0，因为有效 id 从 1 开始）
                 if entry.once {
                     entry.id = 0;
@@ -205,7 +220,6 @@ impl EventBus {
 
         // 清理已触发的一次性订阅（id=0 的条目）
         subs.retain(|e| e.id != 0);
-        true
     }
 
     /// 清空所有订阅。
@@ -222,5 +236,139 @@ impl EventBus {
 impl Default for EventBus {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! 平台输入事件分发通道的最小验证：订阅/发布、类型过滤、
+    //! 通配符、优先级、一次性、注销幂等、清空与计数。
+
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use crate::native::windowing::event::types::UiEventPayload;
+    use super::*;
+
+    /// 构造一个指定类型的 UiEvent（测试负载）。
+    fn event_of(kind: UiEventType) -> UiEvent {
+        UiEvent::new(kind, UiEventPayload::None)
+    }
+
+    #[test]
+    fn subscribe_and_publish_invokes_matching_handler() {
+        // 订阅特定类型：发布同类型事件时处理器被调用。
+        let mut bus = EventBus::new();
+        let calls = Rc::new(RefCell::new(0u32));
+        let c = Rc::clone(&calls);
+        let _id = bus.subscribe(UiEventType::PointerMove, move |_| {
+            *c.borrow_mut() += 1;
+        });
+        bus.publish(&event_of(UiEventType::PointerMove));
+        assert_eq!(*calls.borrow(), 1);
+    }
+
+    #[test]
+    fn type_filter_ignores_other_event_types() {
+        // 只分发订阅的类型：其他类型不触发处理器。
+        let mut bus = EventBus::new();
+        let calls = Rc::new(RefCell::new(0u32));
+        let c = Rc::clone(&calls);
+        let _id = bus.subscribe(UiEventType::PointerMove, move |_| {
+            *c.borrow_mut() += 1;
+        });
+        bus.publish(&event_of(UiEventType::KeyDown));
+        assert_eq!(*calls.borrow(), 0);
+    }
+
+    #[test]
+    fn subscribe_all_matches_every_event() {
+        // 通配符订阅匹配所有事件类型。
+        let mut bus = EventBus::new();
+        let calls = Rc::new(RefCell::new(0u32));
+        let c = Rc::clone(&calls);
+        let _id = bus.subscribe_all(move |_| {
+            *c.borrow_mut() += 1;
+        });
+        bus.publish(&event_of(UiEventType::PointerMove));
+        bus.publish(&event_of(UiEventType::KeyDown));
+        assert_eq!(*calls.borrow(), 2);
+    }
+
+    #[test]
+    fn priority_order_is_highest_first() {
+        // 优先级越高越先执行；同优先级按注册顺序（记录执行顺序）。
+        let order = Rc::new(RefCell::new(Vec::new()));
+        let mut bus = EventBus::new();
+        let o1 = Rc::clone(&order);
+        let _low =
+            bus.subscribe_with_priority(UiEventType::PointerMove, PRIORITY_LOWEST, move |_| {
+                o1.borrow_mut().push("low");
+            });
+        let o2 = Rc::clone(&order);
+        let _high =
+            bus.subscribe_with_priority(UiEventType::PointerMove, PRIORITY_HIGHEST, move |_| {
+                o2.borrow_mut().push("high");
+            });
+        bus.publish(&event_of(UiEventType::PointerMove));
+        assert_eq!(*order.borrow(), ["high", "low"]);
+    }
+
+    #[test]
+    fn once_subscription_fires_single_time() {
+        // 一次性订阅：触发一次后自动取消，后续发布不再调用。
+        let mut bus = EventBus::new();
+        let calls = Rc::new(RefCell::new(0u32));
+        let c = Rc::clone(&calls);
+        let _id = bus.subscribe_once(UiEventType::PointerMove, move |_| {
+            *c.borrow_mut() += 1;
+        });
+        bus.publish(&event_of(UiEventType::PointerMove));
+        bus.publish(&event_of(UiEventType::PointerMove));
+        assert_eq!(*calls.borrow(), 1);
+        assert_eq!(bus.subscriber_count(), 0);
+    }
+
+    #[test]
+    fn unsubscribe_is_idempotent() {
+        // 注销幂等：重复注销与对无效 id 注销均为 no-op。
+        let mut bus = EventBus::new();
+        let calls = Rc::new(RefCell::new(0u32));
+        let c = Rc::clone(&calls);
+        let id = bus.subscribe(UiEventType::PointerMove, move |_| {
+            *c.borrow_mut() += 1;
+        });
+        bus.unsubscribe(id);
+        bus.unsubscribe(id);
+        bus.unsubscribe(9999);
+        bus.publish(&event_of(UiEventType::PointerMove));
+        assert_eq!(*calls.borrow(), 0);
+    }
+
+    #[test]
+    fn clear_removes_all_subscribers() {
+        // 清空后无处理器被调用，计数归零。
+        let mut bus = EventBus::new();
+        let calls = Rc::new(RefCell::new(0u32));
+        let c1 = Rc::clone(&calls);
+        let _a = bus.subscribe(UiEventType::PointerMove, move |_| {
+            *c1.borrow_mut() += 1;
+        });
+        let c2 = Rc::clone(&calls);
+        let _b = bus.subscribe_all(move |_| {
+            *c2.borrow_mut() += 1;
+        });
+        bus.clear();
+        assert_eq!(bus.subscriber_count(), 0);
+        bus.publish(&event_of(UiEventType::PointerMove));
+        assert_eq!(*calls.borrow(), 0);
+    }
+
+    #[test]
+    fn publish_without_subscribers_is_noop() {
+        // 无订阅者时发布安全返回。
+        let bus = EventBus::new();
+        bus.publish(&event_of(UiEventType::PointerMove));
+        assert_eq!(bus.subscriber_count(), 0);
     }
 }

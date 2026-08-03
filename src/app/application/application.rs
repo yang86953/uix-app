@@ -2,9 +2,11 @@
 
 use std::cell::{Cell, RefCell};
 use std::path::Path;
+use std::rc::Rc;
 use std::sync::{atomic::AtomicBool, Arc};
 use std::time::{Duration, Instant};
 
+use crate::app::app_events::ThemeApplied;
 use crate::app::application::app_handle::{
     wrap_root_with_notification_overlay, AppHandle, AppNotificationState,
 };
@@ -22,6 +24,7 @@ use crate::app::window::window_actions::{
 use crate::app::window::window_config::WindowConfig;
 use crate::app::window::window_driver::{WindowDriver, WindowFrameContext};
 use crate::app::window::window_session::WindowSession;
+use crate::bus::EventBus;
 use crate::core::{Errc, Error, Point, WindowId};
 use crate::data::SettingsService;
 use crate::draw::renderer::bootstrap::{
@@ -803,6 +806,31 @@ impl App {
         }
         let secondary_windows = RefCell::new(Vec::new());
         let secondary_clock = system_clock();
+
+        // 主题事实总线（System 私有边界，app_events）：组合根/应用组装处
+        // 创建并注入窄能力；订阅在组装期注册，路由见 docs/架构/路由清单.md。
+        let theme_bus = Rc::new(RefCell::new(EventBus::new()));
+        // 主题应用序次（单调递增，供 ThemeApplied 负载区分重复应用）。
+        let theme_revision = Cell::new(0u64);
+        // 感知方：主题变更诊断遥测（tracing 发射，可观测性订阅）。
+        let theme_events_subscription = match theme_bus
+            .borrow_mut()
+            .subscribe(|fact: &ThemeApplied| {
+                tracing::debug!(
+                    target: "app.theme",
+                    is_dark = fact.is_dark,
+                    revision = fact.revision,
+                    "theme applied"
+                );
+            }) {
+            Ok(subscription) => subscription,
+            Err(error) => {
+                // 新总线必为 Active，此处不可达；可诊断报告后继续
+                // （失败策略：隔离并继续，不静默吞掉）。
+                tracing::error!("theme event subscription failed: {}", error.short_what());
+                return 1;
+            }
+        };
         drain_pending_open_windows_with_backend(
             &mut *platform,
             &self.runtime,
@@ -861,6 +889,15 @@ impl App {
                         &mut secondary_windows.borrow_mut(),
                         next_theme,
                     );
+                    // 事实建立点：主题替换完成后发布 ThemeApplied
+                    // （SystemEvent(SMC)）；失败或回滚时不得发布。
+                    theme_revision.set(theme_revision.get() + 1);
+                    if let Err(error) = theme_bus.borrow().publish(ThemeApplied {
+                        is_dark: theme.borrow().is_dark(),
+                        revision: theme_revision.get(),
+                    }) {
+                        tracing::error!("theme applied publish failed: {}", error.short_what());
+                    }
                 }
                 drain_pending_open_windows_with_backend(
                     platform,
@@ -903,6 +940,9 @@ impl App {
             || secondary_windows_next_deadline(&mut secondary_windows.borrow_mut()),
             |_, _, _| {},
         );
+
+        // 会话循环结束：释放主题事实订阅句柄（幂等注销）。
+        drop(theme_events_subscription);
 
         report_window_operation_error("main graphics shutdown failed", session.try_shutdown());
         // Keep the native window alive through the checked Drop retry.
