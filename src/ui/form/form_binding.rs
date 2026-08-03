@@ -19,7 +19,15 @@ use crate::ui::widgets::input::{
     Time, TimePicker,
 };
 
-/// 一个已登记字段的声明式文本输入项。
+/// 断言视图绑定契约成立：绑定缺失属 API 误用，给出带明确提示的
+/// 可诊断 panic（开发者契约错误，非运行时失败；生产路径不传播）。
+fn bound_required<T>(value: Option<T>, contract: &str) -> T {
+    match value {
+        Some(v) => v,
+        None => panic!("{contract}"),
+    }
+}
+
 /// 一个已登记字段的声明式文本输入项。
 ///
 /// 经 `Form::model` 字段投影（裸配置）或 `FormModel::input_item`（已绑定）创建；
@@ -84,15 +92,12 @@ impl FormInputItem {
 
 impl View for FormInputItem {
     fn build(self) -> ViewNode {
-        let model = self
-            .model
-            .clone()
-            .expect("FormInputItem 未绑定：请经 Form::model 字段投影或 FormModel::input_item 创建");
-        let value = self.value.clone().expect("FormInputItem 未绑定值 State");
-        let focus_handle = self
-            .focus_handle
-            .clone()
-            .expect("FormInputItem 未绑定焦点句柄");
+        let model = bound_required(
+            self.model.clone(),
+            "FormInputItem 未绑定：请经 Form::model 字段投影或 FormModel::input_item 创建",
+        );
+        let value = bound_required(self.value.clone(), "FormInputItem 未绑定值 State");
+        let focus_handle = bound_required(self.focus_handle.clone(), "FormInputItem 未绑定焦点句柄");
         let current = value.get();
         model.sync_text_value(&self.field, &current);
 
@@ -217,18 +222,18 @@ where
     T: InputNumberValue + IntoFormValue<Stored = T>,
 {
     fn build(self) -> ViewNode {
-        let model = self
-            .model
-            .clone()
-            .expect("FormInputNumberItem 未绑定：请经 Form::model 字段投影或 FormModel::input_number_item 创建");
-        let value = self
-            .value
-            .clone()
-            .expect("FormInputNumberItem 未绑定值 State");
-        let focus_handle = self
-            .focus_handle
-            .clone()
-            .expect("FormInputNumberItem 未绑定焦点句柄");
+        let model = bound_required(
+            self.model.clone(),
+            "FormInputNumberItem 未绑定：请经 Form::model 字段投影或 FormModel::input_number_item 创建",
+        );
+        let value = bound_required(
+            self.value.clone(),
+            "FormInputNumberItem 未绑定值 State",
+        );
+        let focus_handle = bound_required(
+            self.focus_handle.clone(),
+            "FormInputNumberItem 未绑定焦点句柄",
+        );
         let input = ViewNode::leaf(self.input_number.value(&value));
         let input = bind_typed_control(&model, &self.field, &value, &focus_handle, input);
 
@@ -349,14 +354,12 @@ where
     T: SelectValue + IntoFormValue<Stored = T>,
 {
     fn build(self) -> ViewNode {
-        let model = self.model.clone().expect(
+        let model = bound_required(
+            self.model.clone(),
             "FormSelectItem 未绑定：请经 Form::model 字段投影或 FormModel::select_item 创建",
         );
-        let value = self.value.clone().expect("FormSelectItem 未绑定值 State");
-        let focus_handle = self
-            .focus_handle
-            .clone()
-            .expect("FormSelectItem 未绑定焦点句柄");
+        let value = bound_required(self.value.clone(), "FormSelectItem 未绑定值 State");
+        let focus_handle = bound_required(self.focus_handle.clone(), "FormSelectItem 未绑定焦点句柄");
         let mut select = if self.searchable {
             Select::searchable()
         } else {
