@@ -43,7 +43,7 @@ pub struct GpuStrokeRect {
 /// 轴对齐时与 `(x,y,w,h)` AABB 一致，旋转 / 剪切时 coverage 经仿射四边形采样。
 ///
 /// Coverage 来源二选一：
-/// - `outline_mesh`：本地像素边列表 `[ax,ay,bx,by,…]`，由共享 wgpu MSDF cover pass
+/// - `outline_mesh`：本地像素边列表 `[ax,ay,bx,by,…]`，由共享 MSDF cover pass
 ///   写入 RGBA8 atlas（缩放 / 仿射 / 高 DPR 字形）；物理 1:1 UI 字不走此路径
 /// - `coverage`：字体面积 coverage / soft / tofu mask → R8 atlas（含严格 GPU 物理 1:1 outline）
 #[derive(Debug, Clone)]
@@ -197,26 +197,6 @@ pub struct NativeRasterCaps {
 }
 
 impl NativeRasterCaps {
-    /// Shared production baseline implemented once by the wgpu renderer.
-    pub const fn wgpu_full() -> Self {
-        Self {
-            clear_target: true,
-            clear_rects: true,
-            soft_blit: false,
-            solid_rects: true,
-            stroke_rects: true,
-            glyphs: true,
-            linear_gradients: true,
-            radial_gradients: true,
-            sectors: true,
-            solid_meshes: true,
-            box_shadows: true,
-            offscreen_targets: true,
-            // 主路径经保留色缓冲绘制，再全幅 blit 到 swapchain。
-            retained_framebuffer: true,
-        }
-    }
-
     /// Complete capability set currently implemented by the D3D11 context.
     pub const fn d3d11_full() -> Self {
         Self {

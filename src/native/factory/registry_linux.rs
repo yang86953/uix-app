@@ -1,60 +1,40 @@
 //! Linux backend registry table.
 
+use crate::core::{Errc, Error};
 use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::registry::{BackendStatus, GraphicsBackendEntry};
-use crate::native::present::{GraphicsBackend, PresentMode, RasterMode};
-
-#[cfg(any(not(feature = "opengles"), not(feature = "vulkan")))]
-use crate::core::{Errc, Error};
-#[cfg(any(not(feature = "opengles"), not(feature = "vulkan")))]
-use crate::native::present::IGraphicsContext;
-#[cfg(any(not(feature = "opengles"), not(feature = "vulkan")))]
+use crate::native::present::{GraphicsBackend, IGraphicsContext, PresentMode, RasterMode};
 use std::ffi::c_void;
 
-#[cfg(feature = "opengles")]
-use crate::native::presentation::graphics::wgpu_backend::create_opengl as create_opengles;
-#[cfg(feature = "vulkan")]
-use crate::native::presentation::graphics::wgpu_backend::create_vulkan;
+// 方案 A：wgpu 已移除，原生 Vulkan/OpenGL 后端仍为 test-only，
+// Linux 暂无生产 GPU 后端；条目保留以便诊断信息完整。
 
-#[cfg(not(feature = "opengles"))]
 fn create_opengles(
     _: *mut c_void,
     _: i32,
     _: i32,
     _: PendingFailureQueue,
 ) -> Result<Box<dyn IGraphicsContext>, Error> {
-    Err(feature_disabled("opengles"))
+    Err(Error::new(
+        Errc::NotImplemented,
+        "graphics backend `opengles` has no production implementation on Linux",
+    ))
 }
 
-#[cfg(not(feature = "vulkan"))]
 fn create_vulkan(
     _: *mut c_void,
     _: i32,
     _: i32,
     _: PendingFailureQueue,
 ) -> Result<Box<dyn IGraphicsContext>, Error> {
-    Err(feature_disabled("vulkan"))
+    Err(Error::new(
+        Errc::NotImplemented,
+        "graphics backend `vulkan` has no production implementation on Linux",
+    ))
 }
 
-#[cfg(any(not(feature = "opengles"), not(feature = "vulkan")))]
-fn feature_disabled(feature: &str) -> Error {
-    Error::new(
-        Errc::PlatformError,
-        format!("graphics feature `{feature}` is disabled in this build"),
-    )
-}
-
-const VULKAN_STATUS: BackendStatus = if cfg!(feature = "vulkan") {
-    BackendStatus::Active
-} else {
-    BackendStatus::Disabled
-};
-
-const OPENGL_STATUS: BackendStatus = if cfg!(feature = "opengles") {
-    BackendStatus::Active
-} else {
-    BackendStatus::Disabled
-};
+const VULKAN_STATUS: BackendStatus = BackendStatus::Disabled;
+const OPENGL_STATUS: BackendStatus = BackendStatus::Disabled;
 
 pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
     GraphicsBackendEntry {

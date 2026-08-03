@@ -1,7 +1,5 @@
 use super::*;
 
-use super::*;
-
 impl D3d11Pipeline {
     pub(crate) fn new(device: &ID3D11Device) -> Result<Self> {
         let vs_blob = compile_shader(RECT_HLSL, c"VSMain", c"vs_4_0")?;
@@ -80,6 +78,24 @@ impl D3d11Pipeline {
         }
         let ps_blit =
             ps_blit.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no blit PS"))?;
+
+        // 可分离高斯模糊 PS（blur_offscreen_target 使用）。
+        let blur_ps_blob = compile_shader(BLUR_HLSL, c"PSMain", c"ps_4_0")?;
+        let mut ps_blur = None;
+        unsafe {
+            device
+                .CreatePixelShader(
+                    std::slice::from_raw_parts(
+                        blur_ps_blob.GetBufferPointer() as *const u8,
+                        blur_ps_blob.GetBufferSize(),
+                    ),
+                    None,
+                    Some(&mut ps_blur),
+                )
+                .map_err(|e| d3d_error("CreatePixelShader(blur)", e))?;
+        }
+        let ps_blur =
+            ps_blur.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no blur PS"))?;
 
         let mut vs_glyph = None;
         unsafe {
@@ -324,6 +340,23 @@ impl D3d11Pipeline {
         let cb_blit =
             cb_blit.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no blit CB"))?;
 
+        let cb_blur_desc = D3D11_BUFFER_DESC {
+            ByteWidth: size_of::<BlurConstants>() as u32,
+            Usage: D3D11_USAGE_DYNAMIC,
+            BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
+            CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
+            MiscFlags: 0,
+            StructureByteStride: 0,
+        };
+        let mut cb_blur = None;
+        unsafe {
+            device
+                .CreateBuffer(&cb_blur_desc, None, Some(&mut cb_blur))
+                .map_err(|e| d3d_error("CreateBuffer(cb_blur)", e))?;
+        }
+        let cb_blur =
+            cb_blur.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no blur CB"))?;
+
         let cb_glyph_desc = D3D11_BUFFER_DESC {
             ByteWidth: size_of::<GlyphConstants>() as u32,
             Usage: D3D11_USAGE_DYNAMIC,
@@ -513,6 +546,7 @@ impl D3d11Pipeline {
             layout,
             vs_blit,
             ps_blit,
+            ps_blur,
             vs_glyph,
             ps_glyph,
             layout_glyph,
@@ -530,6 +564,7 @@ impl D3d11Pipeline {
             vb_mesh_capacity_floats,
             cb,
             cb_blit,
+            cb_blur,
             cb_glyph,
             cb_grad,
             cb_mesh,
@@ -553,7 +588,6 @@ impl D3d11Pipeline {
                 row_h: 0,
             },
             atlas_cache: HashMap::new(),
-            #[cfg(test)]
             atlas_upload_count: 0,
             atlas_upload: Vec::new(),
             glyph_verts: Vec::new(),
@@ -620,4 +654,4 @@ impl D3d11Pipeline {
         self.soft_h = h;
         Ok(())
     }
-
+}

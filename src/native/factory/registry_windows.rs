@@ -1,53 +1,44 @@
 //! Windows backend registry table.
 
+use crate::core::{Errc, Error};
 use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::registry::{BackendStatus, GraphicsBackendEntry};
-use crate::native::present::{GraphicsBackend, PresentMode, RasterMode};
-
-#[cfg(any(
-    not(feature = "d3d12"),
-    not(feature = "opengles"),
-    not(feature = "vulkan")
-))]
-use crate::core::{Errc, Error};
-#[cfg(any(
-    not(feature = "d3d12"),
-    not(feature = "opengles"),
-    not(feature = "vulkan")
-))]
-use crate::native::present::IGraphicsContext;
-#[cfg(any(
-    not(feature = "d3d12"),
-    not(feature = "opengles"),
-    not(feature = "vulkan")
-))]
+use crate::native::present::{GraphicsBackend, IGraphicsContext, PresentMode, RasterMode};
 use std::ffi::c_void;
 
-#[cfg(feature = "d3d12")]
-use crate::native::presentation::graphics::wgpu_backend::create_d3d12;
-#[cfg(feature = "opengles")]
-use crate::native::presentation::graphics::wgpu_backend::create_opengl as create_opengles;
-#[cfg(feature = "vulkan")]
-use crate::native::presentation::graphics::wgpu_backend::create_vulkan;
-
-#[cfg(not(feature = "d3d12"))]
-fn create_d3d12(
-    _: *mut c_void,
-    _: i32,
-    _: i32,
-    _: PendingFailureQueue,
+// 生产 GPU 后端：原生 D3D11（wgpu 已移除）。
+#[cfg(feature = "d3d11")]
+fn create_d3d11(
+    surface: *mut c_void,
+    width: i32,
+    height: i32,
+    _pending: PendingFailureQueue,
 ) -> Result<Box<dyn IGraphicsContext>, Error> {
-    Err(feature_disabled("d3d12"))
+    crate::native::presentation::graphics::d3d11::create(surface, width, height)
 }
 
-#[cfg(not(feature = "opengles"))]
-fn create_opengles(
+#[cfg(not(feature = "d3d11"))]
+fn create_d3d11(
     _: *mut c_void,
     _: i32,
     _: i32,
     _: PendingFailureQueue,
 ) -> Result<Box<dyn IGraphicsContext>, Error> {
-    Err(feature_disabled("opengles"))
+    Err(feature_disabled("d3d11"))
+}
+
+#[cfg(feature = "vulkan")]
+fn create_vulkan(
+    _: *mut c_void,
+    _: i32,
+    _: i32,
+    _: PendingFailureQueue,
+) -> Result<Box<dyn IGraphicsContext>, Error> {
+    // 方案 A：原生 Vulkan 后端仍为 test-only，未注册生产入口。
+    Err(Error::new(
+        Errc::NotImplemented,
+        "graphics backend `vulkan` has no production implementation on Windows",
+    ))
 }
 
 #[cfg(not(feature = "vulkan"))]
@@ -60,11 +51,31 @@ fn create_vulkan(
     Err(feature_disabled("vulkan"))
 }
 
-#[cfg(any(
-    not(feature = "d3d12"),
-    not(feature = "opengles"),
-    not(feature = "vulkan")
-))]
+#[cfg(feature = "opengles")]
+fn create_opengles(
+    _: *mut c_void,
+    _: i32,
+    _: i32,
+    _: PendingFailureQueue,
+) -> Result<Box<dyn IGraphicsContext>, Error> {
+    // 方案 A：原生 OpenGL 后端仍为 test-only，未注册生产入口。
+    Err(Error::new(
+        Errc::NotImplemented,
+        "graphics backend `opengles` has no production implementation on Windows",
+    ))
+}
+
+#[cfg(not(feature = "opengles"))]
+fn create_opengles(
+    _: *mut c_void,
+    _: i32,
+    _: i32,
+    _: PendingFailureQueue,
+) -> Result<Box<dyn IGraphicsContext>, Error> {
+    Err(feature_disabled("opengles"))
+}
+
+#[allow(dead_code)] // d3d11 生产构建下无 disabled 行引用它
 fn feature_disabled(feature: &str) -> Error {
     Error::new(
         Errc::PlatformError,
@@ -72,40 +83,40 @@ fn feature_disabled(feature: &str) -> Error {
     )
 }
 
-const D3D12_STATUS: BackendStatus = if cfg!(feature = "d3d12") {
-    BackendStatus::Active
-} else {
-    BackendStatus::Disabled
-};
-
-const OPENGL_STATUS: BackendStatus = if cfg!(feature = "opengles") {
+const D3D11_STATUS: BackendStatus = if cfg!(feature = "d3d11") {
     BackendStatus::Active
 } else {
     BackendStatus::Disabled
 };
 
 const VULKAN_STATUS: BackendStatus = if cfg!(feature = "vulkan") {
-    BackendStatus::Active
+    BackendStatus::Disabled
+} else {
+    BackendStatus::Disabled
+};
+
+const OPENGL_STATUS: BackendStatus = if cfg!(feature = "opengles") {
+    BackendStatus::Disabled
 } else {
     BackendStatus::Disabled
 };
 
 pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
     GraphicsBackendEntry {
-        id: GraphicsBackend::Vulkan,
+        id: GraphicsBackend::D3d11,
         priority: 30,
+        status: D3D11_STATUS,
+        raster: RasterMode::GpuNative,
+        present: PresentMode::Swapchain,
+        create: create_d3d11,
+    },
+    GraphicsBackendEntry {
+        id: GraphicsBackend::Vulkan,
+        priority: 20,
         status: VULKAN_STATUS,
         raster: RasterMode::GpuNative,
         present: PresentMode::Swapchain,
         create: create_vulkan,
-    },
-    GraphicsBackendEntry {
-        id: GraphicsBackend::D3d12,
-        priority: 20,
-        status: D3D12_STATUS,
-        raster: RasterMode::GpuNative,
-        present: PresentMode::Swapchain,
-        create: create_d3d12,
     },
     GraphicsBackendEntry {
         id: GraphicsBackend::OpenGlEs,

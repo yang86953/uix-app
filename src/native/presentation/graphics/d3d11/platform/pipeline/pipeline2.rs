@@ -1,7 +1,6 @@
 use super::*;
 
-use super::*;
-
+impl D3d11Pipeline {
     pub(crate) fn ensure_atlas(&mut self, device: &ID3D11Device, need_w: u32, need_h: u32) -> Result<()> {
         let need_w = need_w.max(1);
         let need_h = need_h.max(1);
@@ -438,7 +437,7 @@ use super::*;
         self.flush_glyph_batch(device, context, viewport_w, viewport_h, scissor)
     }
 
-    #[cfg(test)]
+    /// 返回累计的 glyph atlas 上传次数（诊断）。
     pub(crate) fn glyph_atlas_upload_count(&self) -> usize {
         self.atlas_upload_count
     }
@@ -620,3 +619,4 @@ use super::*;
         Ok(())
     }
 
+}

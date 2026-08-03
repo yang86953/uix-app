@@ -4,6 +4,7 @@
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GraphicsBackend {
+    Direct3D11,
     Vulkan,
     Direct3D12,
     Metal,
@@ -15,6 +16,7 @@ impl GraphicsBackend {
         use crate::native::present::GraphicsBackend as NativeGraphicsBackend;
 
         match self {
+            Self::Direct3D11 => NativeGraphicsBackend::D3d11,
             Self::Vulkan => NativeGraphicsBackend::Vulkan,
             Self::Direct3D12 => NativeGraphicsBackend::D3d12,
             Self::Metal => NativeGraphicsBackend::Metal,

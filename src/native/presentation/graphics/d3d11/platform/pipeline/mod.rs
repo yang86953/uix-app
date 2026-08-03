@@ -25,12 +25,12 @@ use ::windows::Win32::Graphics::Direct3D::{
 };
 use ::windows::Win32::Graphics::Direct3D11::{
     ID3D11BlendState, ID3D11Buffer, ID3D11Device, ID3D11DeviceContext, ID3D11InputLayout,
-    ID3D11PixelShader, ID3D11RasterizerState, ID3D11SamplerState, ID3D11ShaderResourceView,
-    ID3D11Texture2D, ID3D11VertexShader, D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_SHADER_RESOURCE,
-    D3D11_BIND_VERTEX_BUFFER, D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_ONE,
-    D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO, D3D11_BOX, D3D11_BUFFER_DESC,
-    D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_COMPARISON_NEVER, D3D11_CPU_ACCESS_WRITE, D3D11_CULL_NONE,
-    D3D11_FILL_SOLID, D3D11_FILTER_MIN_MAG_MIP_POINT, D3D11_INPUT_ELEMENT_DESC,
+    ID3D11PixelShader, ID3D11RasterizerState, ID3D11RenderTargetView, ID3D11SamplerState,
+    ID3D11ShaderResourceView, ID3D11Texture2D, ID3D11VertexShader, D3D11_BIND_CONSTANT_BUFFER,
+    D3D11_BIND_SHADER_RESOURCE, D3D11_BIND_VERTEX_BUFFER, D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA,
+    D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO, D3D11_BOX,
+    D3D11_BUFFER_DESC, D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_COMPARISON_NEVER, D3D11_CPU_ACCESS_WRITE,
+    D3D11_CULL_NONE, D3D11_FILL_SOLID, D3D11_FILTER_MIN_MAG_MIP_POINT, D3D11_INPUT_ELEMENT_DESC,
     D3D11_INPUT_PER_VERTEX_DATA, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_WRITE_DISCARD,
     D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC, D3D11_SAMPLER_DESC,
     D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC_0, D3D11_SUBRESOURCE_DATA,
@@ -110,7 +110,7 @@ float4 PSMain(VSOut input) : SV_Target
         // 落在 rect.xy - h，即 outer 矩形左上角（outer/inner 中心与 rect
         // 中心重合），避免双 SDF 中心错位。
         float2 shape_local = input.local - float2(1.0, 1.0);
-        // 双 SDF（与 CPU / wgpu 一致）：外扩/内缩 half 使弧线端点对齐像素
+        // 双 SDF（与 CPU 一致）：外扩/内缩 half 使弧线端点对齐像素
         // 中心，消除整数坐标下顶/底圆角起点偏差；中心行 coverage 与 CPU 相同。
         float h = u_stroke.x;
         float2 outer_size = input.rect_size + 2.0 * h;
@@ -339,6 +339,52 @@ float4 PSMain(VSOut input) : SV_Target
 "#;
 
 // Box / ambient shadow — ports CPU `shadow_coverage` / `shadow_coverage_ambient`.
+const BLUR_HLSL: &str = r#"
+Texture2D u_tex : register(t0);
+SamplerState u_samp : register(s0);
+
+cbuffer BlurCB : register(b0)
+{
+    // xy = target viewport size; zw = source texture size (physical px)
+    float4 u_sizes;
+    // xy = target region origin; zw = region size (physical px)
+    float4 u_region;
+    // xy = pixel sampling direction; z = tap radius (taps = 2r+1)
+    float4 u_dir_taps;
+    // Gaussian weights ordered [-r..+r], zero-terminated, max 64 taps
+    float4 u_weights[16];
+};
+
+struct VSIn { float2 pos : POSITION; };
+struct VSOut { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; };
+
+VSOut VSMain(VSIn input)
+{
+    VSOut o;
+    o.pos = float4(input.pos, 0.0, 1.0);
+    // D3D texture (0,0) is top-left; map the region to the source UV space.
+    float2 unit = float2(input.pos.x * 0.5 + 0.5, 0.5 - input.pos.y * 0.5);
+    o.uv = (u_region.xy + unit * u_region.zw) / u_sizes.zw;
+    return o;
+}
+
+// Separable Gaussian: one pass samples along u_dir_taps.xy.
+float4 PSMain(VSOut input) : SV_TARGET
+{
+    float2 step = u_dir_taps.xy / u_sizes.zw;
+    int radius = (int)u_dir_taps.z;
+    float4 color = 0;
+    for (int i = 0; i < 64; ++i)
+    {
+        float w = u_weights[i / 4][i % 4];
+        if (w <= 0.0) break;
+        float2 off = step * (float)(i - radius);
+        color += w * u_tex.Sample(u_samp, input.uv + off);
+    }
+    return color;
+}
+"#;
+
 const SHADOW_HLSL: &str = r#"
 cbuffer ShadowCB : register(b0)
 {
@@ -449,6 +495,19 @@ struct RectConstants {
 #[derive(Clone, Copy)]
 struct BlitConstants {
     uv_rect: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct BlurConstants {
+    /// xy = viewport 尺寸；zw = 源纹理尺寸（物理像素）。
+    sizes: [f32; 4],
+    /// xy = 目标 region 原点；zw = region 尺寸（物理像素）。
+    region: [f32; 4],
+    /// xy = 采样方向（像素）；z = tap 半径；w 保留。
+    dir_taps: [f32; 4],
+    /// 高斯权重，按 [-r..+r] 顺序、0 结尾，最多 64 taps。
+    weights: [f32; 64],
 }
 
 #[repr(C)]
@@ -727,6 +786,8 @@ pub struct D3d11Pipeline {
     layout: ID3D11InputLayout,
     vs_blit: ID3D11VertexShader,
     ps_blit: ID3D11PixelShader,
+    /// 可分离高斯模糊像素着色器。
+    ps_blur: ID3D11PixelShader,
     vs_glyph: ID3D11VertexShader,
     ps_glyph: ID3D11PixelShader,
     layout_glyph: ID3D11InputLayout,
@@ -744,6 +805,8 @@ pub struct D3d11Pipeline {
     vb_mesh_capacity_floats: usize,
     cb: ID3D11Buffer,
     cb_blit: ID3D11Buffer,
+    /// 模糊常量缓冲（方向、region、高斯权重）。
+    cb_blur: ID3D11Buffer,
     cb_glyph: ID3D11Buffer,
     cb_grad: ID3D11Buffer,
     cb_mesh: ID3D11Buffer,
@@ -766,17 +829,13 @@ pub struct D3d11Pipeline {
     /// shared, not copied, and total retained exact glyph bytes are bounded by
     /// the atlas packing capacity.
     atlas_cache: HashMap<GlyphAtlasKey, GlyphAtlasEntry>,
-    #[cfg(test)]
+    /// Atlas 上传次数统计（诊断）。
     atlas_upload_count: usize,
     /// Scratch for packing coverage into atlas rows (R8).
     atlas_upload: Vec<u8>,
     /// Scratch glyph vertices for Map/Draw.
     glyph_verts: Vec<GlyphVertex>,
 }
-
-mod pipeline;
-mod pipeline2;
-mod pipeline3;
 
 mod pipeline;
 mod pipeline2;

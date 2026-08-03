@@ -303,7 +303,7 @@ pub trait IGraphicsContext {
 
     /// Upload tightly cropped BGRA images and draw textured quads.
     ///
-    /// Same scissor convention as [`Self::draw_solid_rects`]. Production wgpu
+    /// Same scissor convention as [`Self::draw_solid_rects`]. Production D3D11
     /// implements SrcOver blits with optional destination scaling; fractional
     /// destination origin is allowed. Non-identity canvas transforms stay at
     /// the Canvas2D boundary.
@@ -447,7 +447,7 @@ pub trait IGraphicsContext {
     /// 对离屏颜色目标做可分离高斯模糊（水平→垂直；大半径可降采样）。
     ///
     /// `region` 为逻辑像素矩形；半径语义与 CPU `gaussian_blur` 一致
-    ///（`sigma = radius / 3`）。默认未实现；生产 wgpu 路径提供原生实现，
+    ///（`sigma = radius / 3`）。默认未实现；生产 D3D11 路径提供原生实现，
     /// 禁止用 CPU PixelUpload 冒充。
     fn blur_offscreen_target(
         &mut self,

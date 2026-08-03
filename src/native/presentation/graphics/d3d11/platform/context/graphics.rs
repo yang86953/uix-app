@@ -478,17 +478,17 @@ impl IGraphicsContext for D3d11Context {
         if additive {
             return Err(Error::new(
                 Errc::NotImplemented,
-                "D3d11Context: Additive blit_offscreen_target requires wgpu",
+                "D3d11Context: Additive blit_offscreen_target is not supported by this backend",
             ));
         }
         if !opacity.is_finite() || opacity <= 0.0 {
             return Ok(());
         }
         if opacity < 1.0 - 1e-6 {
-            // 遗留 D3D11 路径无组 opacity 着色器；严格 GPU 走 wgpu。
+            // 遗留 D3D11 路径无组 opacity 着色器，该能力暂不支持。
             return Err(Error::new(
                 Errc::NotImplemented,
-                "D3d11Context: blit_offscreen_target opacity < 1 requires wgpu",
+                "D3d11Context: blit_offscreen_target opacity < 1 is not supported by this backend",
             ));
         }
         let idx = id.0 as usize;
@@ -519,6 +519,77 @@ impl IGraphicsContext for D3d11Context {
             src,
             dst,
         )
+    }
+
+    fn blur_offscreen_target(
+        &mut self,
+        id: OffscreenTargetId,
+        region: crate::core::Rect,
+        radius: f32,
+    ) -> Result<(), Error> {
+        let idx = id.0 as usize;
+        let Some(Some(target)) = self.offscreens.get(idx) else {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                format!("D3d11Context: blur_offscreen_target unknown id {}", id.0),
+            ));
+        };
+        if self.bound_offscreen == Some(id.0) {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "D3d11Context: cannot blur offscreen while it is the bound RT",
+            ));
+        }
+        if !radius.is_finite() || radius < 0.5 {
+            return Ok(());
+        }
+        // sigma = radius/3（与 CPU gaussian_blur 一致）；tap 覆盖 ±3σ。
+        // 上限 31 受权重数组（64 taps）约束；更大半径暂不降采样。
+        let sigma = radius / 3.0;
+        let tap_radius = (sigma * 3.0).ceil().min(31.0) as i32;
+        if tap_radius < 1 {
+            return Ok(());
+        }
+        // region 为逻辑像素，换算到目标纹理的物理像素坐标。
+        let dpr = self.device_pixel_ratio();
+        let phys = |value: f32| (value * dpr).round();
+        let region_phys = crate::core::Rect::new(
+            phys(region.x),
+            phys(region.y),
+            phys(region.w),
+            phys(region.h),
+        );
+        // 取出目标句柄后释放借用，以便创建/复用 scratch 纹理（&mut self）。
+        let tex_w = target.width as f32;
+        let tex_h = target.height as f32;
+        let src_srv = target.srv.clone();
+        let dst_rtv = target.rtv.clone();
+        let (scratch_rtv, scratch_srv) = self.ensure_blur_scratch(target.width, target.height)?;
+        // 水平 pass：offscreen → scratch；垂直 pass：scratch → offscreen。
+        self.pipeline.blur_pass(
+            &self.context,
+            &src_srv,
+            tex_w,
+            tex_h,
+            &scratch_rtv,
+            [1.0, 0.0],
+            tap_radius,
+            sigma,
+            region_phys,
+        )?;
+        self.pipeline.blur_pass(
+            &self.context,
+            &scratch_srv,
+            tex_w,
+            tex_h,
+            &dst_rtv,
+            [0.0, 1.0],
+            tap_radius,
+            sigma,
+            region_phys,
+        )?;
+        // blur 直接改写了 OMSetRenderTargets，恢复当前绘制目标。
+        self.bind_current_draw_target()
     }
 
     fn present(&mut self, frame: &PresentFrame<'_>) -> Result<()> {
