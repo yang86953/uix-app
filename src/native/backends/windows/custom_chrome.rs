@@ -18,13 +18,13 @@ use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::HiDpi::GetSystemMetricsForDpi;
 use windows::Win32::UI::WindowsAndMessaging::{SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME};
 
-use super::bindings::RECT;
+use super::bindings::{MONITORINFO, RECT};
 use super::consts::{
     GWL_STYLE, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCLIENT, HTLEFT, HTRIGHT, HTTOP, HTTOPLEFT,
-    HTTOPRIGHT, WS_CAPTION, WS_MAXIMIZE, WS_THICKFRAME,
+    HTTOPRIGHT, MONITOR_DEFAULTTONEAREST, WS_CAPTION, WS_MAXIMIZE, WS_THICKFRAME,
 };
 use super::dpi::{dpi_for_window, logical_extent_to_physical, BASE_DPI};
-use super::ffi::{GetWindowRect, IsZoomed};
+use super::ffi::{GetMonitorInfoW, GetWindowRect, IsZoomed, MonitorFromWindow};
 use crate::native::{Errc, Error, Result};
 
 #[repr(C)]
@@ -123,12 +123,22 @@ pub(crate) fn apply_dwm_frame_effects(
         })?;
         return Ok(());
     }
-    // 1px 底边足以让 DWM 继续画阴影，又不会露出标准边框。
-    let margins = MARGINS {
-        cxLeftWidth: 0,
-        cxRightWidth: 0,
-        cyTopHeight: 0,
-        cyBottomHeight: 1,
+    // 最大化窗口无阴影需求：清零扩展边距，避免 DWM 在客户区底部残留 1px 边框线；
+    // 还原态用 1px 底边让 DWM 继续画阴影，又不会露出标准边框。
+    let margins = if maximized {
+        MARGINS {
+            cxLeftWidth: 0,
+            cxRightWidth: 0,
+            cyTopHeight: 0,
+            cyBottomHeight: 0,
+        }
+    } else {
+        MARGINS {
+            cxLeftWidth: 0,
+            cxRightWidth: 0,
+            cyTopHeight: 0,
+            cyBottomHeight: 1,
+        }
     };
     // SAFETY: 同步 DWM 调用；margins 在调用期间有效。
     unsafe { DwmExtendFrameIntoClientArea(handle, &margins) }.map_err(|error| {
@@ -159,6 +169,39 @@ fn dwm_failure(operation: &str, error: windows::core::Error) -> Error {
     Error::new(Errc::PlatformError, format!("{operation}: {error}"))
 }
 
+/// 查询窗口所在显示器的工作区（排除任务栏等系统区域），失败时返回 None。
+fn monitor_work_area(hwnd: *mut c_void) -> Option<RECT> {
+    if hwnd.is_null() {
+        return None;
+    }
+    // SAFETY: hwnd 属于当前同步窗口消息；返回的显示器句柄仅用于本次查询。
+    let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
+    if monitor.is_null() {
+        return None;
+    }
+    let mut info = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        rcMonitor: RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        },
+        rcWork: RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        },
+        dwFlags: 0,
+    };
+    // SAFETY: info 在调用期间有效可写。
+    if unsafe { GetMonitorInfoW(monitor, &mut info) } == 0 {
+        return None;
+    }
+    Some(info.rcWork)
+}
+
 /// 当前 DPI 下单侧缩放边框厚度（physical pixels）。
 pub(crate) fn resize_border_thickness(hwnd: *mut c_void) -> i32 {
     let dpi = dpi_for_window(hwnd);
@@ -180,7 +223,8 @@ pub(crate) fn outer_matches_client_when_extended(style: u32) -> bool {
     uses_extended_client(style)
 }
 
-/// 处理 `WM_NCCALCSIZE`：扩展客户区；最大化时内缩边框以免盖住任务栏。
+/// 处理 `WM_NCCALCSIZE`：扩展客户区；最大化时对齐到显示器工作区，
+/// 避免露出 DWM 非客户区边框或遮住任务栏。
 ///
 /// # Safety
 /// `lparam` 必须指向当前同步消息期间有效的 `RECT` 或 [`NcCalcSizeParams`]。
@@ -203,12 +247,20 @@ pub(crate) unsafe fn handle_nc_calc_size(
         return None;
     }
     if maximized {
-        let border = resize_border_thickness(hwnd);
-        let rect = &mut (*params).rgrc[0];
-        rect.left = rect.left.saturating_add(border);
-        rect.top = rect.top.saturating_add(border);
-        rect.right = rect.right.saturating_sub(border);
-        rect.bottom = rect.bottom.saturating_sub(border);
+        // 最大化时系统给出的外窗矩形比可见工作区大（含屏幕外的缩放边框）：
+        // 直接铺满会遮住任务栏，内缩四边又会让窗口顶部/底部露出 DWM 非客户区
+        // （浅色主题下即 1px 白线）。正确做法是把客户区对齐到所在显示器的工作区。
+        if let Some(work) = monitor_work_area(hwnd) {
+            (*params).rgrc[0] = work;
+        } else {
+            // 工作区查询失败时回退到内缩边框，保证不遮任务栏。
+            let border = resize_border_thickness(hwnd);
+            let rect = &mut (*params).rgrc[0];
+            rect.left = rect.left.saturating_add(border);
+            rect.top = rect.top.saturating_add(border);
+            rect.right = rect.right.saturating_sub(border);
+            rect.bottom = rect.bottom.saturating_sub(border);
+        }
     }
     Some(0)
 }
