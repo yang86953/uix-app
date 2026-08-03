@@ -960,9 +960,9 @@ mod tests {
         rich.pending_submit
             .replace(Some("https://uix.dev/route".to_string()));
 
-        let event = rich
-            .semantic_event(ComponentId::default(), &dummy_event())
-            .expect("Submit 语义事件保留");
+        let Some(event) = rich.semantic_event(ComponentId::default(), &dummy_event()) else {
+            panic!("Submit 语义事件保留");
+        };
         assert_eq!(
             event.kind,
             crate::ui::SemanticKind::Submit,

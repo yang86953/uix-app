@@ -100,8 +100,9 @@ impl AppTimerQueue {
     #[cfg(test)]
     pub(crate) fn deadlines(&self) -> Vec<(TimerId, Instant)> {
         let mut deadlines = Vec::new();
-        self.deadlines_into_if_changed(None, &mut deadlines)
-            .expect("initial timer deadline snapshot");
+        let Some(_) = self.deadlines_into_if_changed(None, &mut deadlines) else {
+            panic!("initial timer deadline snapshot must report a revision");
+        };
         deadlines
     }
 

@@ -110,7 +110,9 @@ mod tests {
 
         TEST_PANIC_NEXT_CALLBACK.store(true, Ordering::SeqCst);
         let result = unsafe { acp.GetStatus() };
-        let error = result.expect_err("a generated TSF thunk panic must become E_FAIL");
+        let Err(error) = result else {
+            panic!("a generated TSF thunk panic must become E_FAIL");
+        };
 
         assert_eq!(error.code(), E_FAIL);
         let Some(failure) = source.take() else {
