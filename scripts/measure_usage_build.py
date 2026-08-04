@@ -43,6 +43,8 @@ class Scenario:
     feature_args: tuple[str, ...] = ()
     # 记录 check 与 build 使用的 Cargo target 参数。
     build_args: tuple[str, ...] = ()
+    # 允许单个场景覆盖 rustc host target，未设置时使用主机目标。
+    target: str | None = None
     # 记录 resolved graph 中必须出现的专属 package。
     required_packages: tuple[str, ...] = ()
     # 记录 resolved graph 中必须缺席的未选 package。
@@ -210,6 +212,45 @@ def find_rustc() -> str | None:
     return shutil.which("rustc")
 
 
+# 从 rustc 详细版本输出中提取 host target triple。
+def parse_rustc_host_target(verbose_version: str) -> str | None:
+    # 逐行查找 rustc 固定格式的 host 字段。
+    for line in verbose_version.splitlines():
+        # 只接受明确的 host 前缀，避免误读其他版本字段。
+        if line.startswith("host: "):
+            # 去掉字段名前缀和两端空白后返回 target triple。
+            return line.removeprefix("host: ").strip() or None
+    # 缺少 host 字段时返回空值，让调用方拒绝生成不绑定 target 的证据。
+    return None
+
+
+# 查询当前 rustc 的 host target triple。
+def rustc_host_target(rustc: str, root: Path) -> str | None:
+    # 执行只读版本查询并保留完整输出。
+    completed = subprocess.run(
+        # 请求包含 host 字段的详细版本格式。
+        [rustc, "-vV"],
+        # 在仓库根目录执行，保持工具调用上下文一致。
+        cwd=root,
+        # 手动检查退出码以返回明确空值。
+        check=False,
+        # 捕获输出供稳定解析。
+        capture_output=True,
+        # 以文本模式读取 rustc 输出。
+        text=True,
+        # 固定 UTF-8，避免本地代码页影响字段解析。
+        encoding="utf-8",
+        # 用替换字符容忍工具链输出中的异常字节。
+        errors="replace",
+    )
+    # rustc 查询失败时不猜测目标平台。
+    if completed.returncode != 0:
+        # 返回空值交由主入口阻止真实采集。
+        return None
+    # 解析 rustc 标准详细版本输出。
+    return parse_rustc_host_target(completed.stdout)
+
+
 # 执行一条命令并返回可序列化的摘要。
 def run_command(command: list[str], cwd: Path, dry_run: bool) -> dict[str, Any]:
     # 生成便于人工复核的命令文本。
@@ -365,7 +406,9 @@ def resolved_graph_summary(metadata: dict[str, Any]) -> dict[str, Any]:
 
 
 # 定位 fixture release 产物并返回大小。
-def release_artifact(metadata: dict[str, Any], package: dict[str, Any]) -> dict[str, Any] | None:
+def release_artifact(
+    metadata: dict[str, Any], package: dict[str, Any], target: str
+) -> dict[str, Any] | None:
     # 读取 Cargo metadata 给出的 target 根目录。
     target_directory = Path(metadata["target_directory"])
     # 仅选择 fixture 自身声明的二进制 target。
@@ -380,10 +423,12 @@ def release_artifact(metadata: dict[str, Any], package: dict[str, Any]) -> dict[
         return None
     # 取排序后的第一个 target 保持结果稳定。
     target_name = sorted(target["name"] for target in binary_targets)[0]
+    # 显式 target 构建把 release 产物放在 target triple 子目录。
+    release_directory = target_directory / target / "release"
     # 在 Windows 上 release 二进制带有 exe 后缀。
     candidates = [
-        target_directory / "release" / f"{target_name}.exe",
-        target_directory / "release" / target_name,
+        release_directory / f"{target_name}.exe",
+        release_directory / target_name,
     ]
     # 返回第一个实际存在的产物信息。
     for candidate in candidates:
@@ -403,11 +448,14 @@ def measure_scenario(
     scenario: Scenario,
     root: Path,
     cargo: str,
+    host_target: str,
     locked: bool,
     clean_before: bool,
     clean_after: bool,
     dry_run: bool,
 ) -> dict[str, Any]:
+    # 场景未覆盖 target 时使用当前 rustc host triple。
+    effective_target = scenario.target or host_target
     # 初始化 fixture 报告。
     record: dict[str, Any] = {
         "name": scenario.name,
@@ -416,6 +464,8 @@ def measure_scenario(
         "feature_args": list(scenario.feature_args),
         # 记录构建目标参数，避免把根清单其他目标误当证据。
         "build_args": list(scenario.build_args),
+        # 记录 metadata 过滤与实际构建共同使用的 target triple。
+        "target": effective_target,
         "manifest": str(scenario.manifest.resolve().relative_to(root.resolve())),
         "clean_before": clean_before,
         "clean_after": clean_after,
@@ -440,6 +490,10 @@ def measure_scenario(
     }
     # 预先准备所有 Cargo 子命令共用的清单参数。
     manifest_args = ["--manifest-path", str(scenario.manifest)]
+    # 显式绑定编译目标，避免默认 host 漂移后沿用旧证据。
+    target_args = ["--target", effective_target]
+    # metadata 必须过滤到同一目标，不能混入其他 target 条件依赖。
+    metadata_target_args = ["--filter-platform", effective_target]
     # 追加 locked 参数，确保清单锁文件参与解析。
     locked_suffix = ["--locked"] if locked else []
     # 无论前置步骤是否失败，都尝试执行收尾清理。
@@ -455,8 +509,11 @@ def measure_scenario(
                 # 将命令错误交给统一异常记录逻辑。
                 raise RuntimeError("cargo clean（前置）失败")
         # 解析完整依赖图和锁定 package 信息。
+        # 组装绑定 target 过滤与 feature 集的 metadata 命令。
+        metadata_command = [cargo, "metadata", *manifest_args, "--format-version", "1", *metadata_target_args, *scenario.feature_args, *locked_suffix]
+        # 执行目标感知的依赖图解析。
         metadata_result = run_command(
-            [cargo, "metadata", *manifest_args, "--format-version", "1", *scenario.feature_args] + locked_suffix,
+            metadata_command,
             root,
             dry_run,
         )
@@ -501,8 +558,11 @@ def measure_scenario(
         # compile-fail 场景验证禁用能力的公开入口确实不可用。
         if scenario.expected_compile_failure:
             # 执行使用方编译检查并保留完整诊断。
+            # 组装绑定编译 target、feature 与目标选择的检查命令。
+            check_command = [cargo, "check", *manifest_args, *target_args, *scenario.feature_args, *scenario.build_args, *locked_suffix]
+            # 执行目标感知的 compile-fail 检查。
             check_result = run_command(
-                [cargo, "check", *manifest_args, *scenario.feature_args, *scenario.build_args] + locked_suffix,
+                check_command,
                 root,
                 dry_run,
             )
@@ -539,8 +599,11 @@ def measure_scenario(
                 raise RuntimeError(f"compile-fail 诊断缺少片段: {missing_fragments}")
         else:
             # 记录正向场景的 release 构建开始时间。
+            # 组装绑定编译 target、feature 与二进制目标的 release 命令。
+            build_command = [cargo, "build", *manifest_args, "--release", *target_args, *scenario.feature_args, *scenario.build_args, *locked_suffix]
+            # 执行目标感知的 clean release 构建。
             build_result = run_command(
-                [cargo, "build", *manifest_args, "--release", *scenario.feature_args, *scenario.build_args] + locked_suffix,
+                build_command,
                 root,
                 dry_run,
             )
@@ -553,7 +616,7 @@ def measure_scenario(
             # 真实构建成功后读取 release 产物大小。
             if not dry_run:
                 # metadata 在非 dry-run 分支中已经完成初始化。
-                record["release_artifact"] = release_artifact(metadata, package)
+                record["release_artifact"] = release_artifact(metadata, package, effective_target)
         # 只有所有步骤通过后才标记 fixture 成功。
         record["status"] = "dry-run" if dry_run else "passed"
     except (OSError, RuntimeError, json.JSONDecodeError) as error:
@@ -609,14 +672,22 @@ def main() -> int:
     # 查找 Cargo 和 rustc，供真实运行报告工具链。
     cargo = find_cargo()
     rustc = find_rustc()
-    # 没有 Cargo 时只允许 dry-run，避免产生误导性证据。
-    if cargo is None and not args.dry_run:
+    # 没有 Cargo 或 rustc 时只允许 dry-run，避免产生不绑定 target 的证据。
+    if (cargo is None or rustc is None) and not args.dry_run:
         # 将工具链缺失明确报告给调用方。
-        print("Cargo 不在 PATH；请使用 --dry-run 或先安装 Rust 工具链。")
+        print("Cargo 或 rustc 不在 PATH；请使用 --dry-run 或先安装 Rust 工具链。")
         # 返回非零状态，阻止把未完成采集当作成功。
         return 2
     # dry-run 使用占位命令名来展示最终命令。
     cargo_command = cargo or "cargo"
+    # 工具链可用时读取真实 host target，dry-run 缺少 rustc 时使用可识别占位符。
+    host_target = rustc_host_target(rustc, root) if rustc is not None else "host-target"
+    # 真实采集无法解析 host 时拒绝继续，避免 target 事实缺失。
+    if host_target is None:
+        # 输出明确错误供修复工具链或版本解析。
+        print("无法从 rustc -vV 解析 host target；停止生成构建证据。")
+        # 返回非零状态阻止写入不完整报告。
+        return 2
     # 计算本轮是否在 fixture 前后清理 target。
     clean_before = not args.no_clean
     # 只有显式保留参数才跳过后置清理。
@@ -629,7 +700,7 @@ def main() -> int:
         scenarios = [scenario for scenario in scenarios if scenario.name == args.scenario]
     # 初始化总报告并绑定源码提交。
     report: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "commit": current_commit(root),
         "locked": args.locked,
         "dry_run": args.dry_run,
@@ -637,6 +708,8 @@ def main() -> int:
         "clean_after": clean_after,
         "cargo": cargo,
         "rustc": rustc,
+        # 记录本轮所有默认场景使用的 rustc host target。
+        "host_target": host_target,
         "scenarios": [],
     }
     # 逐个 fixture 采集，保证每个入口拥有独立的清理边界。
@@ -647,6 +720,7 @@ def main() -> int:
                 scenario,
                 root,
                 cargo_command,
+                host_target,
                 args.locked,
                 clean_before,
                 clean_after,

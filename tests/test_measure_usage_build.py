@@ -86,6 +86,62 @@ class ResolvedGraphTests(unittest.TestCase):
         # 两个根二进制场景必须使用同一根清单以便比较。
         self.assertEqual(enabled.manifest, disabled.manifest)
 
+    # 确认 rustc 详细版本输出能稳定提取 host target。
+    def test_parse_rustc_host_target(self) -> None:
+        # 构造包含真实格式 host 字段的详细版本输出。
+        verbose_version = "rustc 1.97.1\nbinary: rustc\nhost: x86_64-pc-windows-gnu\n"
+        # 解析结果必须等于报告和 Cargo 命令使用的 target triple。
+        self.assertEqual(
+            measure_usage_build.parse_rustc_host_target(verbose_version),
+            "x86_64-pc-windows-gnu",
+        )
+        # 缺少 host 字段时不得猜测目标平台。
+        self.assertIsNone(measure_usage_build.parse_rustc_host_target("rustc 1.97.1\n"))
+
+    # 确认 dry-run 同时绑定 metadata 过滤目标和实际构建目标。
+    def test_measure_scenario_binds_target_to_metadata_and_build(self) -> None:
+        # 读取仓库根目录供场景清单定位。
+        root = measure_usage_build.project_root()
+        # 构造不执行外部命令的最小场景。
+        scenario = measure_usage_build.Scenario(
+            # 使用稳定测试名称。
+            name="target-binding",
+            # 复用现有最小 fixture 清单。
+            manifest=root / "fixtures" / "usage-build" / "minimal" / "Cargo.toml",
+            # 说明该场景只验证命令生成。
+            description="验证 target 参数绑定",
+        # 结束测试场景定义。
+        )
+        # 以 dry-run 生成完整场景命令而不创建构建产物。
+        record = measure_usage_build.measure_scenario(
+            # 传入测试场景。
+            scenario,
+            # 传入仓库根目录。
+            root,
+            # 使用占位 Cargo 命令。
+            "cargo",
+            # 绑定稳定的测试 host target。
+            "x86_64-pc-windows-gnu",
+            # 要求命令包含 locked 门禁。
+            True,
+            # 跳过前置清理以缩短命令列表。
+            False,
+            # 跳过后置清理以缩短命令列表。
+            False,
+            # 启用 dry-run，禁止外部副作用。
+            True,
+        )
+        # 找到 metadata 命令记录。
+        metadata_step = next(step for step in record["steps"] if step["name"] == "metadata")
+        # 找到 release build 命令记录。
+        build_step = next(step for step in record["steps"] if step["name"] == "build-release")
+        # metadata 必须按同一 target 过滤 resolved graph。
+        self.assertIn("--filter-platform x86_64-pc-windows-gnu", metadata_step["command"])
+        # release build 必须显式使用同一 target。
+        self.assertIn("--target x86_64-pc-windows-gnu", build_step["command"])
+        # 场景报告必须保存最终生效的 target。
+        self.assertEqual(record["target"], "x86_64-pc-windows-gnu")
+
 
 # 允许直接运行本文件执行测试。
 if __name__ == "__main__":
