@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""采集使用方 Rust fixture 的 clean-build 基线。"""
+"""采集使用方 Rust fixture 的 clean-build 与 compile-fail 证据。"""
 
 # 启用未来注解，避免运行时解析类型前向引用。
 from __future__ import annotations
@@ -37,6 +37,10 @@ class Scenario:
     required_packages: tuple[str, ...] = ()
     # 记录 resolved graph 中必须缺席的未选 package。
     forbidden_packages: tuple[str, ...] = ()
+    # 标记该场景是否必须在公开入口编译阶段失败。
+    expected_compile_failure: bool = False
+    # 记录 compile-fail 场景必须出现的错误片段。
+    expected_error_fragments: tuple[str, ...] = ()
 
 
 # 返回仓库根目录。
@@ -76,6 +80,15 @@ def scenario_specs(root: Path) -> list[Scenario]:
             manifest=root / "fixtures" / "usage-build" / "qrcode" / "Cargo.toml",
             description="只打开 qrcode capability 的入口",
             required_packages=("qrcode",),
+        ),
+        # 二维码禁用入口必须证明公开类型无法绕过 capability。
+        Scenario(
+            name="qrcode-disabled",
+            manifest=root / "fixtures" / "usage-build" / "qrcode-disabled" / "Cargo.toml",
+            description="关闭 qrcode capability 的公开入口 compile-fail",
+            forbidden_packages=("qrcode",),
+            expected_compile_failure=True,
+            expected_error_fragments=("unresolved import", "QRCode"),
         ),
     ]
 
@@ -140,6 +153,16 @@ def run_command(command: list[str], cwd: Path, dry_run: bool) -> dict[str, Any]:
 def public_result(result: dict[str, Any]) -> dict[str, Any]:
     # 只保留报告需要的公开键。
     return {key: value for key, value in result.items() if not key.startswith("_")}
+
+
+# 返回 compile-fail 输出中缺少的必需错误片段。
+def missing_error_fragments(
+    result: dict[str, Any], expected_fragments: tuple[str, ...]
+) -> list[str]:
+    # 合并完整标准输出与标准错误，避免只检查截断摘要。
+    output = f"{result.get('_stdout', '')}\n{result.get('_stderr', '')}"
+    # 保持声明顺序返回未出现的错误片段。
+    return [fragment for fragment in expected_fragments if fragment not in output]
 
 
 # 返回当前仓库提交，供基线结果绑定源码版本。
@@ -297,6 +320,13 @@ def measure_scenario(
             "missing_required": [],
             "present_forbidden": [],
         },
+        "expected_outcome": (
+            "compile-fail" if scenario.expected_compile_failure else "build-success"
+        ),
+        "compile_fail_assertions": {
+            "required_fragments": list(scenario.expected_error_fragments),
+            "missing_fragments": [],
+        },
         "release_artifact": None,
     }
     # 预先准备所有 Cargo 子命令共用的清单参数。
@@ -359,22 +389,62 @@ def measure_scenario(
                 raise RuntimeError(
                     f"依赖图断言失败：缺少 {missing_required}，意外出现 {present_forbidden}"
                 )
-        # 记录 release 构建开始时间。
-        build_result = run_command(
-            [cargo, "build", *manifest_args, "--release"] + locked_suffix,
-            root,
-            dry_run,
-        )
-        # 记录 release 构建命令结果和耗时。
-        record["steps"].append({"name": "build-release", **public_result(build_result)})
-        # 真实构建失败时将 fixture 标记为失败。
-        if build_result["status"] == "failed":
-            # 让统一异常处理记录清晰原因。
-            raise RuntimeError("cargo build --release 失败")
-        # 真实构建成功后读取 release 产物大小。
-        if not dry_run:
-            # metadata 在非 dry-run 分支中已经完成初始化。
-            record["release_artifact"] = release_artifact(metadata, package)
+        # compile-fail 场景验证禁用能力的公开入口确实不可用。
+        if scenario.expected_compile_failure:
+            # 执行使用方编译检查并保留完整诊断。
+            check_result = run_command(
+                [cargo, "check", *manifest_args] + locked_suffix,
+                root,
+                dry_run,
+            )
+            # dry-run 不虚构错误片段，真实运行才检查诊断内容。
+            missing_fragments = (
+                []
+                if dry_run
+                else missing_error_fragments(check_result, scenario.expected_error_fragments)
+            )
+            # 复制公开命令结果，随后按预期失败语义归一状态。
+            check_record = public_result(check_result)
+            # 真实非零退出且错误片段完整时，compile-fail 步骤才算通过。
+            compile_fail_passed = dry_run or (
+                check_result["returncode"] not in (None, 0) and not missing_fragments
+            )
+            # 非 dry-run 时把预期的命令失败转成门禁通过状态。
+            if not dry_run:
+                # 报告状态表达门禁结论，不沿用子进程的原始失败标签。
+                check_record["status"] = "passed" if compile_fail_passed else "failed"
+            # 记录 compile-fail 命令及归一后的门禁状态。
+            record["steps"].append({"name": "compile-fail-check", **check_record})
+            # 把错误片段断言写入结构化报告。
+            record["compile_fail_assertions"] = {
+                "required_fragments": list(scenario.expected_error_fragments),
+                "missing_fragments": missing_fragments,
+            }
+            # 编译意外成功意味着禁用能力仍从公开面泄漏。
+            if not dry_run and check_result["returncode"] == 0:
+                # 阻止把公开面泄漏记录为通过。
+                raise RuntimeError("compile-fail fixture 意外编译成功")
+            # 错误片段不完整意味着失败原因不符合门禁目标。
+            if missing_fragments:
+                # 明确列出缺少的诊断片段供修复。
+                raise RuntimeError(f"compile-fail 诊断缺少片段: {missing_fragments}")
+        else:
+            # 记录正向场景的 release 构建开始时间。
+            build_result = run_command(
+                [cargo, "build", *manifest_args, "--release"] + locked_suffix,
+                root,
+                dry_run,
+            )
+            # 记录 release 构建命令结果和耗时。
+            record["steps"].append({"name": "build-release", **public_result(build_result)})
+            # 真实构建失败时将 fixture 标记为失败。
+            if build_result["status"] == "failed":
+                # 让统一异常处理记录清晰原因。
+                raise RuntimeError("cargo build --release 失败")
+            # 真实构建成功后读取 release 产物大小。
+            if not dry_run:
+                # metadata 在非 dry-run 分支中已经完成初始化。
+                record["release_artifact"] = release_artifact(metadata, package)
         # 只有所有步骤通过后才标记 fixture 成功。
         record["status"] = "dry-run" if dry_run else "passed"
     except (OSError, RuntimeError, json.JSONDecodeError) as error:
