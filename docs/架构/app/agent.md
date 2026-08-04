@@ -43,7 +43,7 @@ platform IPC
 
 快照复用 accessibility 模块派生的语义树，携带窗口 generation、`revision` 与 `presented_revision`。节点 ID 只在当前 generation 内有效；跨重建稳定定位使用应用声明的 automation ID。
 
-`wait` 可以等待语义 revision 前进或已呈现 revision 达标。窗口隐藏、最小化、遮挡或终止失败时，需要视觉证据的请求返回 not-presentable 语义，不能通过 busy loop 强制呈现。
+`wait` 可以等待语义 revision 前进或已呈现 revision 达标。窗口隐藏、最小化、遮挡或终止失败时，需要视觉验证的请求返回 not-presentable 语义，不能通过 busy loop 强制呈现。
 
 ## 安全不变量
 
