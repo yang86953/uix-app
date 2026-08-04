@@ -58,8 +58,8 @@ def scenario_specs(root: Path) -> list[Scenario]:
             name="minimal",
             manifest=root / "fixtures" / "usage-build" / "minimal" / "Cargo.toml",
             description="关闭默认 feature 的最小使用方入口",
-            # 最小入口必须排除全部已独立裁剪的专属依赖。
-            forbidden_packages=("image", "qrcode", "regex"),
+            # 最小入口必须排除全部已独立裁剪的专属依赖及已删除的死依赖。
+            forbidden_packages=("image", "qrcode", "regex", "raw-window-handle"),
         ),
         # 默认入口覆盖当前 Windows 默认 D3D11 能力。
         Scenario(
@@ -68,14 +68,16 @@ def scenario_specs(root: Path) -> list[Scenario]:
             description="使用当前默认 feature 的图形入口",
             # 默认兼容集合必须包含图片、二维码与表单正则依赖。
             required_packages=("image", "qrcode", "regex"),
+            # 已删除的死依赖在默认入口中也必须保持缺席。
+            forbidden_packages=("raw-window-handle",),
         ),
         # 单能力入口只打开设置序列化能力。
         Scenario(
             name="settings-serde",
             manifest=root / "fixtures" / "usage-build" / "settings-serde" / "Cargo.toml",
             description="只打开 settings-serde capability 的入口",
-            # 设置序列化入口不得合并图片、二维码或表单正则依赖。
-            forbidden_packages=("image", "qrcode", "regex"),
+            # 设置序列化入口不得合并其他能力依赖或已删除的死依赖。
+            forbidden_packages=("image", "qrcode", "regex", "raw-window-handle"),
         ),
         # 图片编解码单能力入口只打开对应文件格式 capability。
         # 创建图片编解码正向使用方场景。
@@ -88,8 +90,8 @@ def scenario_specs(root: Path) -> list[Scenario]:
             description="只打开 image-codecs capability 的入口",
             # 图片编解码入口必须解析精确 image package。
             required_packages=("image",),
-            # 图片编解码入口不得合并其他独立 capability 依赖。
-            forbidden_packages=("qrcode", "regex"),
+            # 图片编解码入口不得合并其他 capability 依赖或已删除的死依赖。
+            forbidden_packages=("qrcode", "regex", "raw-window-handle"),
         # 结束图片编解码正向场景定义。
         ),
         # 二维码单能力入口只打开对应组件 capability。
@@ -98,8 +100,8 @@ def scenario_specs(root: Path) -> list[Scenario]:
             manifest=root / "fixtures" / "usage-build" / "qrcode" / "Cargo.toml",
             description="只打开 qrcode capability 的入口",
             required_packages=("qrcode",),
-            # 二维码入口不得合并图片或表单正则依赖。
-            forbidden_packages=("image", "regex"),
+            # 二维码入口不得合并其他 capability 依赖或已删除的死依赖。
+            forbidden_packages=("image", "regex", "raw-window-handle"),
         ),
         # 表单 pattern 单能力入口只打开正则规则 capability。
         Scenario(
@@ -107,16 +109,16 @@ def scenario_specs(root: Path) -> list[Scenario]:
             manifest=root / "fixtures" / "usage-build" / "form-pattern" / "Cargo.toml",
             description="只打开 form-pattern capability 的入口",
             required_packages=("regex",),
-            # 表单正则入口不得合并图片或二维码依赖。
-            forbidden_packages=("image", "qrcode"),
+            # 表单正则入口不得合并其他 capability 依赖或已删除的死依赖。
+            forbidden_packages=("image", "qrcode", "raw-window-handle"),
         ),
         # 二维码禁用入口必须证明公开类型无法绕过 capability。
         Scenario(
             name="qrcode-disabled",
             manifest=root / "fixtures" / "usage-build" / "qrcode-disabled" / "Cargo.toml",
             description="关闭 qrcode capability 的公开入口 compile-fail",
-            # 禁用入口必须排除全部已独立裁剪的专属依赖。
-            forbidden_packages=("image", "qrcode", "regex"),
+            # 禁用入口必须排除全部专属依赖及已删除的死依赖。
+            forbidden_packages=("image", "qrcode", "regex", "raw-window-handle"),
             expected_compile_failure=True,
             expected_error_fragments=("unresolved import", "QRCode"),
         ),
@@ -125,8 +127,8 @@ def scenario_specs(root: Path) -> list[Scenario]:
             name="form-pattern-disabled",
             manifest=root / "fixtures" / "usage-build" / "form-pattern-disabled" / "Cargo.toml",
             description="关闭 form-pattern capability 的公开方法 compile-fail",
-            # 禁用入口必须排除全部已独立裁剪的专属依赖。
-            forbidden_packages=("image", "qrcode", "regex"),
+            # 禁用入口必须排除全部专属依赖及已删除的死依赖。
+            forbidden_packages=("image", "qrcode", "regex", "raw-window-handle"),
             expected_compile_failure=True,
             expected_error_fragments=("no method named", "validate_pattern"),
         ),
@@ -139,8 +141,8 @@ def scenario_specs(root: Path) -> list[Scenario]:
             manifest=root / "fixtures" / "usage-build" / "image-codecs-disabled" / "Cargo.toml",
             # 说明该入口必须在公开方法编译阶段失败。
             description="关闭 image-codecs capability 的公开方法 compile-fail",
-            # 禁用入口必须排除全部已独立裁剪的专属依赖。
-            forbidden_packages=("image", "qrcode", "regex"),
+            # 禁用入口必须排除全部专属依赖及已删除的死依赖。
+            forbidden_packages=("image", "qrcode", "regex", "raw-window-handle"),
             # 标记该场景预期编译失败。
             expected_compile_failure=True,
             # 绑定稳定的缺失方法诊断片段。
