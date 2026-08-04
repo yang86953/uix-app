@@ -170,8 +170,15 @@ impl WidgetTree {
             self.pending_window_actions.push(action);
         }
         self.apply_event_layout_request(id);
-        let dynamic_children_changed = self.refresh_table_expand_component(id)
-            | self.refresh_table_cell_component(id)
+        // 表格 capability 启用时才刷新扩展行与泛型单元格子树。
+        #[cfg(feature = "table")]
+        let table_children_changed =
+            self.refresh_table_expand_component(id) | self.refresh_table_cell_component(id);
+        // 表格 capability 关闭时不保留专属动态刷新分支。
+        #[cfg(not(feature = "table"))]
+        let table_children_changed = false;
+        // 合并可选表格刷新与常驻动态组件刷新结果。
+        let dynamic_children_changed = table_children_changed
             | self.refresh_select_option_component(id)
             | self.refresh_calendar_cell_component(id);
         if dynamic_children_changed {
@@ -513,4 +520,3 @@ impl WidgetTree {
         crate::ui::tree_widget_hooks::invalidate_nav_siblings(self, clicked);
     }
 }
-

@@ -220,6 +220,9 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     if let Some(result) = component.downcast_ref::<ResultView>() {
         return result.snapshot_fields();
     }
+    // 表格 capability 启用时才引用表格组件类型。
+    #[cfg(feature = "table")]
+    // 启用后保留表格结构化快照分派。
     if let Some(table) = component.downcast_ref::<Table>() {
         return table.snapshot_fields();
     }

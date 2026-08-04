@@ -81,6 +81,8 @@ impl WidgetTree {
         }
     }
 
+    // 表格 capability 启用时才扫描并刷新泛型单元格子树。
+    #[cfg(feature = "table")]
     pub(crate) fn refresh_table_cell_children(&mut self, ids: &mut Vec<WidgetId>) {
         ids.clear();
         ids.extend(self.traverse().iter().copied());
@@ -327,5 +329,4 @@ impl WidgetTree {
 
 
 }
-
 
