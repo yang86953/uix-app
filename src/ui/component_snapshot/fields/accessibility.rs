@@ -513,6 +513,8 @@ impl SnapshotFields {
                 focused_link,
                 ..
             } => rich_text_accessibility(segments, *focused_link),
+            // 表格 capability 启用时才匹配同步存在的表格快照变体。
+            #[cfg(feature = "table")]
             Self::Table { .. } => AccessibilitySnapshot::new(AccessibilityRole::Table),
             // 图表 capability 启用时才匹配柱状图快照变体。
             #[cfg(feature = "charts")]

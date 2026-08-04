@@ -14,6 +14,9 @@ pub mod list;
 pub mod result;
 pub mod selectable_list;
 pub mod skeleton;
+// 表格 capability 关闭时不解析基础表格、泛型数据表与动态渲染实现。
+#[cfg(feature = "table")]
+// 启用后保留既有 display::table 子模块路径。
 pub mod table;
 pub mod tag;
 pub mod timeline;
@@ -33,6 +36,9 @@ pub use list::*;
 pub use result::*;
 pub use selectable_list::*;
 pub use skeleton::*;
+// 表格 capability 启用时才汇入数据展示公开面。
+#[cfg(feature = "table")]
+// 启用后保持全部表格类型的既有扁平重导出。
 pub use table::*;
 pub use tag::*;
 pub use timeline::*;

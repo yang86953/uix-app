@@ -242,7 +242,11 @@ impl WidgetTree {
             self.build_node(ViewAdapter::expand(child), Some(id));
         }
         self.refresh_virtual_scroll_component(id, None);
+        // 表格 capability 启用时才刷新泛型单元格子树。
+        #[cfg(feature = "table")]
         self.refresh_table_cell_component(id);
+        // 表格 capability 启用时才刷新扩展行子树。
+        #[cfg(feature = "table")]
         self.refresh_table_expand_component(id);
         self.refresh_select_option_component(id);
         id

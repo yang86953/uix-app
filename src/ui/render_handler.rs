@@ -8,11 +8,18 @@ use crate::ui::adapter::ViewAdapter;
 use crate::ui::component::widget::WidgetNode;
 use crate::ui::view::ViewNode;
 use crate::ui::virtualization::virtual_scroll::VirtualScrollRenderer;
+// 表格 capability 启用时才引入扩展行、自定义单元格与行数据类型。
+#[cfg(feature = "table")]
+// 这些类型只服务表格动态渲染 sidecar。
 use crate::ui::widgets::display::table::{ExpandRenderer, TableCellRenderer, TableRow};
 use crate::ui::widgets::input::select::SelectOptionRenderer;
 
 pub(crate) enum RenderHandlerRegistration {
+    // 表格 capability 启用时才接受扩展行 renderer。
+    #[cfg(feature = "table")]
     TableExpand(ExpandRenderer),
+    // 表格 capability 启用时才接受泛型单元格 renderer。
+    #[cfg(feature = "table")]
     TableCells(TableCellRenderer),
     SelectOptions(SelectOptionRenderer),
     VirtualScrollItem(VirtualScrollRenderer),
@@ -20,7 +27,11 @@ pub(crate) enum RenderHandlerRegistration {
 
 #[derive(Default)]
 pub(crate) struct RenderHandlerTable {
+    // 表格 capability 启用时才存储扩展行 renderer。
+    #[cfg(feature = "table")]
     table_expand: HashMap<ComponentId, ExpandRenderer>,
+    // 表格 capability 启用时才存储泛型单元格 renderer。
+    #[cfg(feature = "table")]
     table_cells: HashMap<ComponentId, TableCellRenderer>,
     select_options: HashMap<ComponentId, SelectOptionRenderer>,
     virtual_scroll_item: HashMap<ComponentId, VirtualScrollRenderer>,
@@ -35,9 +46,13 @@ impl RenderHandlerTable {
         self.clear_component(component);
         for handler in handlers {
             match handler {
+                // 表格 capability 启用时才注册扩展行 renderer。
+                #[cfg(feature = "table")]
                 RenderHandlerRegistration::TableExpand(renderer) => {
                     self.table_expand.insert(component, renderer);
                 }
+                // 表格 capability 启用时才注册泛型单元格 renderer。
+                #[cfg(feature = "table")]
                 RenderHandlerRegistration::TableCells(renderer) => {
                     self.table_cells.insert(component, renderer);
                 }
@@ -51,6 +66,8 @@ impl RenderHandlerTable {
         }
     }
 
+    // 表格 capability 启用时才编译扩展行 View 构建入口。
+    #[cfg(feature = "table")]
     pub(crate) fn render_table_expand_view(
         &self,
         component: ComponentId,
@@ -60,6 +77,8 @@ impl RenderHandlerTable {
         Some(ViewAdapter::capture_root(|| renderer(row)))
     }
 
+    // 表格 capability 启用时才编译扩展行 Widget 构建入口。
+    #[cfg(feature = "table")]
     pub(crate) fn render_table_expand_widget(
         &self,
         component: ComponentId,
@@ -84,6 +103,8 @@ impl RenderHandlerTable {
         )
     }
 
+    // 表格 capability 启用时才编译泛型单元格批量构建入口。
+    #[cfg(feature = "table")]
     pub(crate) fn render_table_cells(
         &self,
         component: ComponentId,
@@ -128,19 +149,29 @@ impl RenderHandlerTable {
     }
 
     pub(crate) fn clear_component(&mut self, component: ComponentId) {
+        // 表格 capability 启用时才清理扩展行 renderer。
+        #[cfg(feature = "table")]
         self.table_expand.remove(&component);
+        // 表格 capability 启用时才清理泛型单元格 renderer。
+        #[cfg(feature = "table")]
         self.table_cells.remove(&component);
         self.select_options.remove(&component);
         self.virtual_scroll_item.remove(&component);
     }
 
     pub(crate) fn clear(&mut self) {
+        // 表格 capability 启用时才清空扩展行 renderer 表。
+        #[cfg(feature = "table")]
         self.table_expand.clear();
+        // 表格 capability 启用时才清空泛型单元格 renderer 表。
+        #[cfg(feature = "table")]
         self.table_cells.clear();
         self.select_options.clear();
         self.virtual_scroll_item.clear();
     }
 
+    // 表格 capability 启用时才查询扩展行 renderer。
+    #[cfg(feature = "table")]
     pub(crate) fn contains_table_expand(&self, component: ComponentId) -> bool {
         self.table_expand.contains_key(&component)
     }
@@ -149,6 +180,8 @@ impl RenderHandlerTable {
         self.virtual_scroll_item.contains_key(&component)
     }
 
+    // 表格 capability 启用时才查询泛型单元格 renderer。
+    #[cfg(feature = "table")]
     pub(crate) fn contains_table_cells(&self, component: ComponentId) -> bool {
         self.table_cells.contains_key(&component)
     }

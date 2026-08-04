@@ -12,9 +12,13 @@ use crate::ui::widgets::*;
 use crate::ui::Placement;
 
 use super::{
-    SnapshotCollapsePanel, SnapshotField, SnapshotPopconfirm, SnapshotTableColumn,
-    SnapshotTableColumnGroup, SnapshotTransferItem, SnapshotTreeNode,
+    SnapshotCollapsePanel, SnapshotField, SnapshotPopconfirm, SnapshotTransferItem,
+    SnapshotTreeNode,
 };
+// 表格 capability 启用时才引入专属快照列模型。
+#[cfg(feature = "table")]
+// 两个类型只服务同步门控的 Table 枚举变体。
+use super::{SnapshotTableColumn, SnapshotTableColumnGroup};
 
 mod accessibility;
 
@@ -552,6 +556,9 @@ pub enum SnapshotFields {
         subtitle: String,
         extra_text: String,
     },
+    // 表格 capability 关闭时同步收缩公开快照枚举。
+    #[cfg(feature = "table")]
+    // 启用后记录表格列、数据、布局与交互状态。
     Table {
         columns: Vec<SnapshotTableColumn>,
         column_groups: Vec<SnapshotTableColumnGroup>,

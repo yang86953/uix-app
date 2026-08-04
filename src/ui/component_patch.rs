@@ -8,14 +8,18 @@ use crate::ui::widgets::{
     Footer, Grid, Header, Icon, Image, ImageGroup, Input, InputNumber, Label, Layout, List,
     Mentions, Menu, Message, Modal, NavItem, Notification, Pagination, Popconfirm, Popover,
     ProgressBar, Radio, RangeSlider, Rate, ResultView, ScrollView, Segmented, Select,
-    SelectableList, Sider, Skeleton, Slider, Space, Spin, Splitter, Steps, Switch, Table, Tabs,
-    Tag, ThemeToggle, TimePicker, Timeline, Tooltip, Transfer, Tree, TreeSelect, Typography,
-    Upload, Watermark,
+    SelectableList, Sider, Skeleton, Slider, Space, Spin, Splitter, Steps, Switch, Tabs, Tag,
+    ThemeToggle, TimePicker, Timeline, Tooltip, Transfer, Tree, TreeSelect, Typography, Upload,
+    Watermark,
 };
 // 图表 capability 启用时才引入对应 patch 目标类型。
 #[cfg(feature = "charts")]
 // 该导入覆盖基础图表与高级图表共用的占位组件。
 use crate::ui::widgets::{BarChart, ChartPlaceholder, LineChart, PieChart};
+// 表格 capability 启用时才引入对应 patch 目标类型。
+#[cfg(feature = "table")]
+// 该导入仅供内建组件 patch 分派使用。
+use crate::ui::widgets::Table;
 // 二维码 capability 启用时才引入对应组件类型。
 #[cfg(feature = "qrcode")]
 // 该导入仅供内建组件 patch 分派使用。
@@ -152,6 +156,9 @@ pub(crate) fn patch_builtin_widget(
     patch_as!(Segmented);
     patch_as!(FormItem);
     patch_as!(Form);
+    // 表格 capability 启用时才生成类型化 patch 分支。
+    #[cfg(feature = "table")]
+    // 启用后保持表格组件的原位同步语义。
     patch_as!(Table);
     patch_as!(ProgressBar);
     patch_as!(Spin);

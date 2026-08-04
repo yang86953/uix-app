@@ -4,6 +4,9 @@ use crate::ui::component::provider_context::with_provider_context;
 use crate::ui::component::widget::tree_core::WidgetTree;
 use crate::ui::component::widget::WidgetCore;
 use crate::ui::virtualization::virtual_scroll::VirtualScroll;
+// 表格 capability 启用时才引入动态扩展行与单元格目标类型。
+#[cfg(feature = "table")]
+// 该类型只服务同步门控的表格刷新入口。
 use crate::ui::widgets::display::table::Table;
 use crate::ui::widgets::display::{Calendar, Collapse, Image};
 use crate::ui::widgets::input::Select;
@@ -95,12 +98,16 @@ impl WidgetTree {
         true
     }
 
+    // 表格 capability 启用时才构建当前扩展行 View。
+    #[cfg(feature = "table")]
     pub(crate) fn table_expand_view(&self, id: ComponentId) -> Option<crate::ui::view::ViewNode> {
         let table = self.get(id)?.component().as_any().downcast_ref::<Table>()?;
         let row = table.rows.get(table.expanded_row()?)?;
         self.render_handler_table.render_table_expand_view(id, row)
     }
 
+    // 表格 capability 启用时才记录扩展行子树物化状态。
+    #[cfg(feature = "table")]
     pub(crate) fn mark_table_expand_materialized(&self, id: ComponentId) {
         if let Some(table) = self
             .get(id)
@@ -110,6 +117,8 @@ impl WidgetTree {
         }
     }
 
+    // 表格 capability 启用时才刷新扩展行动态子树。
+    #[cfg(feature = "table")]
     pub(crate) fn refresh_table_expand_component(&mut self, id: ComponentId) -> bool {
         if !self.render_handler_table.contains_table_expand(id) {
             return false;
@@ -192,6 +201,8 @@ impl WidgetTree {
         true
     }
 
+    // 表格 capability 启用时才刷新泛型单元格动态子树。
+    #[cfg(feature = "table")]
     pub(crate) fn refresh_table_cell_component(&mut self, id: ComponentId) -> bool {
         if !self.render_handler_table.contains_table_cells(id) {
             return false;
@@ -277,10 +288,14 @@ impl WidgetTree {
         }
     }
 
+    // 表格 capability 启用时才查询扩展行 renderer。
+    #[cfg(feature = "table")]
     pub(crate) fn has_table_expand_renderer(&self, id: ComponentId) -> bool {
         self.render_handler_table.contains_table_expand(id)
     }
 
+    // 表格 capability 启用时才查询泛型单元格 renderer。
+    #[cfg(feature = "table")]
     pub(crate) fn has_table_cell_renderer(&self, id: ComponentId) -> bool {
         self.render_handler_table.contains_table_cells(id)
     }

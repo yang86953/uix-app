@@ -103,9 +103,12 @@ pub use component::{
 pub use component_snapshot::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute,
     ComponentConfigSnapshot, SelectionSnapshot, SnapshotCollapsePanel, SnapshotField,
-    SnapshotFields, SnapshotSource, SnapshotTableColumn, SnapshotTableColumnGroup,
-    SnapshotTransferItem, SnapshotTreeNode, SnapshotValue,
+    SnapshotFields, SnapshotSource, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue,
 };
+// 表格 capability 启用时才从 UI 门面导出专属快照列模型。
+#[cfg(feature = "table")]
+// 保持启用场景下既有的两个公开类型路径。
+pub use component_snapshot::{SnapshotTableColumn, SnapshotTableColumnGroup};
 pub use event::{
     ClickEvent, EventResult, HandlerId, HandlerOptions, HandlerRegistration, HandlerTable,
     SemanticEvent, SemanticKind, SemanticPayload, SystemEvent, SystemEventKind,

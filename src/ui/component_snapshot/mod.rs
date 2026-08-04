@@ -2,9 +2,11 @@ use std::any::TypeId;
 use std::fmt;
 
 use crate::core::ComponentId;
-use crate::ui::widgets::{
-    Fixed, PopconfirmPlacement, SortDirection, TableColumn, TransferItem, TreeNode,
-};
+use crate::ui::widgets::{PopconfirmPlacement, TransferItem, TreeNode};
+// 表格 capability 启用时才引入专属列配置类型。
+#[cfg(feature = "table")]
+// 这些类型仅用于同步门控的公开快照列模型。
+use crate::ui::widgets::{Fixed, SortDirection, TableColumn};
 
 mod accessibility;
 mod fields;
@@ -347,6 +349,8 @@ pub struct SnapshotCollapsePanel {
     pub expanded: bool,
 }
 
+// 表格 capability 关闭时同步收缩公开列快照模型。
+#[cfg(feature = "table")]
 #[derive(Debug, Clone, PartialEq)]
 pub struct SnapshotTableColumn {
     pub title: String,
@@ -359,6 +363,8 @@ pub struct SnapshotTableColumn {
     pub resizable: bool,
 }
 
+// 表格 capability 启用时才提供列配置到快照的转换。
+#[cfg(feature = "table")]
 impl SnapshotTableColumn {
     pub fn from_table_column(column: &TableColumn) -> Self {
         Self {
@@ -378,6 +384,8 @@ impl SnapshotTableColumn {
     }
 }
 
+// 表格 capability 关闭时同步收缩公开列组快照模型。
+#[cfg(feature = "table")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SnapshotTableColumnGroup {
     pub title: Option<String>,

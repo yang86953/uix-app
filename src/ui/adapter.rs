@@ -510,19 +510,27 @@ impl ViewAdapter {
         let _handlers_changed = Self::reconcile_handlers(tree, id, handlers);
         tree.replace_system_event_handlers(id, system_event_handlers);
         tree.replace_render_handlers(id, render_handlers);
-        let table_cells = tree.has_table_cell_renderer(id);
-        let table_expand = tree.has_table_expand_renderer(id);
+        // 表格 capability 启用时才协调泛型单元格或扩展行动态子树。
+        #[cfg(feature = "table")]
+        let table_children_changed = if tree.has_table_cell_renderer(id) {
+            Some(tree.refresh_table_cell_component(id))
+        } else if tree.has_table_expand_renderer(id) {
+            let expanded = tree.table_expand_view(id).into_iter().collect();
+            let changed = Self::reconcile_children(tree, id, expanded, None);
+            tree.mark_table_expand_materialized(id);
+            Some(changed)
+        } else {
+            None
+        };
+        // 表格 capability 关闭时不保留专属动态子树协调结果。
+        #[cfg(not(feature = "table"))]
+        let table_children_changed = None::<bool>;
         let select_options = tree.has_select_option_renderer(id);
         let collapse_content = tree.is_collapse_content_component(id);
         if select_options {
             tree.invalidate_select_option_component(id);
         }
-        let mut children_changed = if table_cells {
-            tree.refresh_table_cell_component(id)
-        } else if table_expand {
-            let expanded = tree.table_expand_view(id).into_iter().collect();
-            let changed = Self::reconcile_children(tree, id, expanded, None);
-            tree.mark_table_expand_materialized(id);
+        let mut children_changed = if let Some(changed) = table_children_changed {
             changed
         } else if select_options {
             tree.refresh_select_option_component(id)

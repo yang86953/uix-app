@@ -116,6 +116,8 @@ impl WidgetTree {
 
         self.refresh_collapse_content_children(order);
         self.refresh_image_error_children(order);
+        // 表格 capability 启用时才在布局前刷新泛型单元格。
+        #[cfg(feature = "table")]
         self.refresh_table_cell_children(order);
         self.fill_layout_traversal(order, traversal);
         if order.is_empty() {
@@ -254,6 +256,8 @@ impl WidgetTree {
         // 最终更新 viewport（确保收敛结束后的 content_bounds 正确）
         self.layout_viewports(order);
         self.refresh_virtual_scroll_children(order);
+        // 表格 capability 启用时才用最终 viewport 再刷新泛型单元格。
+        #[cfg(feature = "table")]
         self.refresh_table_cell_children(order);
         // Phase 6：layout 完成后用最新 frame 绑定 State → Paint rect
         self.bind_reactive_widget_states();
@@ -638,5 +642,4 @@ impl WidgetTree {
 
 
 }
-
 
