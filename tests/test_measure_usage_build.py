@@ -50,6 +50,17 @@ class ResolvedGraphTests(unittest.TestCase):
         # 根 package 同时记录 Cargo 选择的 feature。
         self.assertEqual(root["features"], ["selected"])
 
+    # 确认 compile-fail 门禁同时检查所有必需诊断片段。
+    def test_missing_error_fragments_reports_incomplete_diagnostics(self) -> None:
+        # 构造只包含类型名、不包含错误类别的编译诊断。
+        result = {"_stdout": "", "_stderr": "QRCode is unavailable"}
+        # 检查两个预期诊断片段。
+        missing = measure_usage_build.missing_error_fragments(
+            result, ("unresolved import", "QRCode")
+        )
+        # 仅未出现的错误类别必须被报告。
+        self.assertEqual(missing, ["unresolved import"])
+
 
 # 允许直接运行本文件执行测试。
 if __name__ == "__main__":
