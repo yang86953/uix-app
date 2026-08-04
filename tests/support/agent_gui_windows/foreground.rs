@@ -553,7 +553,7 @@ pub(super) fn capture_demo_client_png(demo: &DemoProcess, path: &Path) {
     // Screenshot scenarios are driven through the agent protocol. Raising the
     // real HWND above the desktop and flushing DWM is sufficient for a screen
     // pixel oracle; exact keyboard foreground ownership is separately proved
-    // by the default Vulkan interaction test.
+    // by the default D3D11 interaction test.
     demo.raise_for_interaction();
     flush_desktop_composition();
     let capture = capture_client(window);

@@ -14,8 +14,8 @@ use std::{collections::HashMap, ffi::CStr, mem::size_of, sync::Arc};
 
 use crate::core::{Errc, Error, Result};
 use crate::native::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
-    GpuSolidRect, GpuStrokeRect, SoftFallbackTile,
+    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
+    GpuSolidMesh, GpuSolidRect, GpuStrokeRect, SoftFallbackTile,
 };
 use ::windows::core::PCSTR;
 use ::windows::Win32::Foundation::{FALSE, RECT, TRUE};
@@ -27,19 +27,20 @@ use ::windows::Win32::Graphics::Direct3D11::{
     ID3D11BlendState, ID3D11Buffer, ID3D11Device, ID3D11DeviceContext, ID3D11InputLayout,
     ID3D11PixelShader, ID3D11RasterizerState, ID3D11RenderTargetView, ID3D11SamplerState,
     ID3D11ShaderResourceView, ID3D11Texture2D, ID3D11VertexShader, D3D11_BIND_CONSTANT_BUFFER,
-    D3D11_BIND_SHADER_RESOURCE, D3D11_BIND_VERTEX_BUFFER, D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA,
-    D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO, D3D11_BOX,
-    D3D11_BUFFER_DESC, D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_COMPARISON_NEVER, D3D11_CPU_ACCESS_WRITE,
-    D3D11_CULL_NONE, D3D11_FILL_SOLID, D3D11_FILTER_MIN_MAG_MIP_POINT, D3D11_INPUT_ELEMENT_DESC,
-    D3D11_INPUT_PER_VERTEX_DATA, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_WRITE_DISCARD,
-    D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC, D3D11_SAMPLER_DESC,
-    D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC_0, D3D11_SUBRESOURCE_DATA,
-    D3D11_TEX2D_SRV, D3D11_TEXTURE2D_DESC, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_USAGE_DEFAULT,
-    D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT,
+    D3D11_BIND_SHADER_RESOURCE, D3D11_BIND_VERTEX_BUFFER, D3D11_BLEND_DESC,
+    D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA,
+    D3D11_BLEND_ZERO, D3D11_BOX, D3D11_BUFFER_DESC, D3D11_COLOR_WRITE_ENABLE_ALL,
+    D3D11_COMPARISON_NEVER, D3D11_CPU_ACCESS_WRITE, D3D11_CULL_NONE, D3D11_FILL_SOLID,
+    D3D11_FILTER_MIN_MAG_MIP_POINT, D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA,
+    D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_WRITE_DISCARD, D3D11_RASTERIZER_DESC,
+    D3D11_RENDER_TARGET_BLEND_DESC, D3D11_SAMPLER_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC,
+    D3D11_SHADER_RESOURCE_VIEW_DESC_0, D3D11_SUBRESOURCE_DATA, D3D11_TEX2D_SRV,
+    D3D11_TEXTURE2D_DESC, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_USAGE_DEFAULT, D3D11_USAGE_DYNAMIC,
+    D3D11_VIEWPORT,
 };
 use ::windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32_FLOAT,
-    DXGI_FORMAT_R8_UNORM, DXGI_SAMPLE_DESC,
+    DXGI_FORMAT_R32_UINT, DXGI_FORMAT_R8_UNORM, DXGI_SAMPLE_DESC,
 };
 
 const ATLAS_MIN: u32 = 256;
@@ -156,6 +157,8 @@ cbuffer BlitCB : register(b0)
 {
     // xy = source top-left; zw = source size, both normalized to the SRV.
     float4 u_uv_rect;
+    // 组 opacity 需要同步缩放 premultiplied RGB 和 alpha。
+    float4 u_tint;
 };
 
 struct VSIn {
@@ -179,7 +182,8 @@ VSOut VSMain(VSIn input)
 
 float4 PSMain(VSOut input) : SV_Target
 {
-    return u_tex.Sample(u_samp, input.uv);
+    // 离屏目标已经是 premultiplied 颜色，tint 不得只缩放 alpha。
+    return u_tex.Sample(u_samp, input.uv) * u_tint;
 }
 "#;
 
@@ -230,18 +234,38 @@ float4 PSMain(VSOut input) : SV_Target
 }
 "#;
 
+// 薄 RHI 的通用 sampled quad 像素着色器，顶点阶段复用 glyph 的 position/uv/color ABI。
+const RHI_TEXTURED_PS_HLSL: &str = r#"
+Texture2D u_tex : register(t0);
+SamplerState u_samp : register(s0);
+
+struct VSOut {
+    float4 pos : SV_POSITION;
+    float2 uv : TEXCOORD0;
+    float4 color : COLOR0;
+};
+
+float4 PSMain(VSOut input) : SV_Target
+{
+    float4 sample = u_tex.Sample(u_samp, input.uv);
+    float4 tint = saturate(input.color);
+    return float4(sample.rgb * tint.rgb, sample.a * tint.a);
+}
+"#;
+
 const GRADIENT_HLSL: &str = r#"
 cbuffer GradCB : register(b0)
 {
     float2 u_viewport;
     float2 _pad0;
-    float4 u_rect;      // xy = top-left, zw = size (AABB)
+    float4 u_origin_edge_x; // xy = origin, zw = physical edge X
+    float4 u_edge_y;        // xy = physical edge Y, zw = padding
     float4 u_color_a;
     float4 u_color_b;
     // x = mode (0=linear, 1=radial)
-    // y = linear dir (0..3) OR radial inner_r
-    // z = radial outer_r (unused for linear)
-    // w unused
+    // y = linear dir (0..3) OR radial inner radius in local space
+    // z = radial outer radius in local space OR linear edge X length
+    // w = linear edge Y length
     float4 u_params;
 };
 
@@ -252,20 +276,19 @@ struct VSIn {
 struct VSOut {
     float4 pos : SV_POSITION;
     float2 local : TEXCOORD0;
-    float2 rect_size : TEXCOORD1;
 };
 
 VSOut VSMain(VSIn input)
 {
     VSOut o;
-    float2 draw_xy = u_rect.xy;
-    float2 draw_wh = u_rect.zw;
-    float2 pos = draw_xy + input.pos * draw_wh;
+    float2 origin = u_origin_edge_x.xy;
+    float2 edge_x = u_origin_edge_x.zw;
+    float2 edge_y = u_edge_y.xy;
+    float2 pos = origin + input.pos.x * edge_x + input.pos.y * edge_y;
     float2 ndc = (pos / u_viewport) * 2.0 - 1.0;
     ndc.y = -ndc.y;
     o.pos = float4(ndc, 0.0, 1.0);
-    o.local = input.pos * draw_wh;
-    o.rect_size = draw_wh;
+    o.local = input.pos;
     return o;
 }
 
@@ -278,24 +301,23 @@ float4 PSMain(VSOut input) : SV_Target
         float dir = u_params.y;
         float t;
         float2 local = input.local;
-        float2 size = input.rect_size;
+        float2 size = float2(u_params.z, u_params.w);
         if (dir < 0.5)
-            t = local.x / max(size.x, 1.0);
+            t = local.x;
         else if (dir < 1.5)
-            t = local.y / max(size.y, 1.0);
+            t = local.y;
         else if (dir < 2.5)
-            t = (local.x + local.y) / max(size.x + size.y, 1.0);
+            t = (local.x * size.x + local.y * size.y) / max(size.x + size.y, 1e-6);
         else
-            t = (local.x - local.y + size.y) / max(size.x + size.y, 1.0);
+            t = (local.x * size.x - local.y * size.y + size.y) / max(size.x + size.y, 1e-6);
         t = saturate(t);
         return lerp(u_color_a, u_color_b, t);
     }
     else
     {
-        // Radial — AABB is (cx-outer, cy-outer, 2*outer, 2*outer).
-        float2 center = u_rect.xy + u_rect.zw * 0.5;
-        float2 world = u_rect.xy + input.local;
-        float dist = length(world - center);
+        // Radial — local space is the original circle's normalized square.
+        float2 center = float2(0.5, 0.5);
+        float dist = length(input.local - center);
         float outer_r = u_params.z;
         float inner_r = u_params.y;
         if (dist > outer_r)
@@ -390,12 +412,14 @@ cbuffer ShadowCB : register(b0)
 {
     float2 u_viewport;
     float2 _pad0;
-    // Shadow shape rect (after offset), not the expanded draw quad.
+    // Shadow expanded quad origin and x edge in device coordinates.
     float4 u_rect;
     float4 u_color;
     float4 u_radius;
-    // x = blur, y = ambient (0/1), zw unused
+    // xy = y edge, zw = x/y blur in device coordinates.
     float4 u_params;
+    // xy = shadow body size, z = ambient flag, w unused.
+    float4 u_size;
 };
 
 struct VSIn {
@@ -411,16 +435,20 @@ struct VSOut {
 VSOut VSMain(VSIn input)
 {
     VSOut o;
-    float blur = max(u_params.x, 0.0);
-    float expand = blur + 1.0;
-    float2 draw_xy = u_rect.xy - expand;
-    float2 draw_wh = u_rect.zw + expand * 2.0;
-    float2 pos = draw_xy + input.pos * draw_wh;
+    float2 blur = max(u_params.zw, 0.0);
+    float2 body_size = max(u_size.xy, float2(0.0001, 0.0001));
+    float2 expanded_size = body_size + 2.0 * blur;
+    float2 axis_x = u_rect.zw / max(expanded_size.x, 0.0001);
+    float2 axis_y = u_params.xy / max(expanded_size.y, 0.0001);
+    float2 draw_xy = u_rect.xy - axis_x - axis_y;
+    float2 draw_edge_x = u_rect.zw + axis_x * 2.0;
+    float2 draw_edge_y = u_params.xy + axis_y * 2.0;
+    float2 pos = draw_xy + input.pos.x * draw_edge_x + input.pos.y * draw_edge_y;
     float2 ndc = (pos / u_viewport) * 2.0 - 1.0;
     ndc.y = -ndc.y;
     o.pos = float4(ndc, 0.0, 1.0);
-    o.local = input.pos * draw_wh;
-    o.rect_size = u_rect.zw;
+    o.local = input.pos * (expanded_size + 2.0);
+    o.rect_size = body_size;
     return o;
 }
 
@@ -455,17 +483,17 @@ float shadow_coverage_ambient(float sd, float blur)
 
 float4 PSMain(VSOut input) : SV_Target
 {
-    float blur = max(u_params.x, 0.0);
-    float expand = blur + 1.0;
-    float2 shape_local = input.local - float2(expand, expand);
+    float2 blur = max(u_params.zw, 0.0);
+    float blur_radius = max(blur.x, blur.y);
+    float2 shape_local = input.local - blur - 1.0;
     float sd = rounded_rect_sdf(shape_local, input.rect_size, u_radius);
     float coverage;
-    if (blur > 0.5)
+    if (blur_radius > 0.5)
     {
-        if (u_params.y > 0.5)
-            coverage = shadow_coverage_ambient(sd, blur);
+        if (u_size.z > 0.5)
+            coverage = shadow_coverage_ambient(sd, blur_radius);
         else
-            coverage = shadow_coverage(sd, blur);
+            coverage = shadow_coverage(sd, blur_radius);
     }
     else
     {
@@ -495,6 +523,8 @@ struct RectConstants {
 #[derive(Clone, Copy)]
 struct BlitConstants {
     uv_rect: [f32; 4],
+    // 对 premultiplied 离屏采样结果执行组 opacity 缩放。
+    tint: [f32; 4],
 }
 
 #[repr(C)]
@@ -522,7 +552,8 @@ struct GlyphConstants {
 struct GradientConstants {
     viewport: [f32; 2],
     _pad0: [f32; 2],
-    rect: [f32; 4],
+    origin_edge_x: [f32; 4],
+    edge_y: [f32; 4],
     color_a: [f32; 4],
     color_b: [f32; 4],
     /// x=mode (0 linear / 1 radial), y=dir|inner_r, z=outer_r, w unused.
@@ -790,6 +821,10 @@ pub struct D3d11Pipeline {
     ps_blur: ID3D11PixelShader,
     vs_glyph: ID3D11VertexShader,
     ps_glyph: ID3D11PixelShader,
+    // 薄 RHI 的 RGBA8 MSDF 字形像素着色器。
+    ps_msdf: ID3D11PixelShader,
+    // 薄 RHI 通用纹理 quad 的像素着色器。
+    ps_rhi_textured: ID3D11PixelShader,
     layout_glyph: ID3D11InputLayout,
     vs_grad: ID3D11VertexShader,
     ps_grad: ID3D11PixelShader,
@@ -797,6 +832,11 @@ pub struct D3d11Pipeline {
     ps_mesh: ID3D11PixelShader,
     vs_shadow: ID3D11VertexShader,
     ps_shadow: ID3D11PixelShader,
+    // 薄 RHI 的原生扇形 VS/PS。
+    vs_sector: ID3D11VertexShader,
+    ps_sector: ID3D11PixelShader,
+    // 兼容层动态 BGRA 图片纹理与 SRV 的所有权。
+    image: rhi_image::D3d11ImageOwner,
     vb_unit: ID3D11Buffer,
     vb_fullscreen: ID3D11Buffer,
     vb_glyph: ID3D11Buffer,
@@ -813,6 +853,8 @@ pub struct D3d11Pipeline {
     cb_shadow: ID3D11Buffer,
     blend_alpha: ID3D11BlendState,
     blend_premultiplied: ID3D11BlendState,
+    // sampled Additive quad 使用源与目标都为 ONE 的 blend 状态。
+    blend_additive: ID3D11BlendState,
     blend_replace: ID3D11BlendState,
     rasterizer: ID3D11RasterizerState,
     sampler: ID3D11SamplerState,
@@ -840,3 +882,17 @@ pub struct D3d11Pipeline {
 mod pipeline;
 mod pipeline2;
 mod pipeline3;
+// 将 MSDF shader 源拆出，保持 pipeline 主模块不超过文件行数边界。
+mod msdf_shader;
+mod rhi_blur;
+mod rhi_gradient;
+mod rhi_shadow;
+mod rhi_shape;
+// 将扇形 shader 与 draw ABI 拆到独立文件，保持 pipeline 主模块边界清晰。
+mod rhi_sector;
+// 将兼容层图片上传与 affine textured draw 拆到独立文件。
+mod rhi_image;
+mod rhi_textured;
+
+// 让 pipeline 构造模块复用 MSDF shader 源而不暴露原生 shader 对象。
+pub(super) use msdf_shader::MSDF_GLYPH_HLSL;

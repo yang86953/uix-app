@@ -9,6 +9,22 @@ pub(crate) mod helpers;
 pub(crate) mod impl_frame;
 pub(crate) mod impl_main;
 pub(crate) mod render_backend;
+// 主 surface 的最终 present 状态机独立管理，保持 RenderBackend 文件可维护。
+pub(crate) mod render_present;
+pub(crate) mod rhi_frame;
+pub(crate) mod rhi_submit;
+// 主 surface 的持久 RHI 颜色目标独立管理代际和销毁。
+pub(crate) mod rhi_surface;
+// 主 surface 的局部 RHI 清理计划独立管理，避免污染提交主文件。
+pub(crate) mod rhi_surface_clear;
+// 主 surface 的滚动 TextureMove 计划独立管理，保持边界语义可审计。
+pub(crate) mod rhi_surface_scroll;
+// 主 surface 的 solid/mixed RHI 最终提交独立管理，控制提交文件行数。
+pub(crate) mod rhi_surface_present;
+// 主 surface 的 CPU soft segment RHI 合成独立管理，保持 retained 组合边界清晰。
+pub(crate) mod rhi_surface_soft;
+// Picture texture 的 RHI sampled blit 独立管理，保持目标切换边界清晰。
+pub(crate) mod rhi_surface_blit;
 pub(crate) mod surface;
 
 pub use surface::NativeGpuDrawSurface;
@@ -17,6 +33,11 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::core::{Error, PresentDamageTracker, Rect};
+// 引入通用 RHI lowering 缓存。
+use crate::draw::backend::contract::{
+    BackendCapabilities, BackendKind, DrawSurface, RenderBackend,
+};
+use crate::draw::backend::rhi_renderer::RhiRenderer;
 use crate::draw::geometry::color::Color;
 use crate::draw::geometry::types::ImageHandle;
 use crate::draw::painting::{
@@ -24,8 +45,9 @@ use crate::draw::painting::{
     FrameGlyphBlit, FrameImage, FrameRasterOp, FrameRect, FrameStrokeRect,
 };
 use crate::draw::Canvas2D;
-use crate::draw::backend::contract::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
 use crate::native::present::{IGraphicsContext, NativeRasterCaps, OffscreenTargetId};
+// 引入迁移期 RHI 的离屏纹理句柄。
+use crate::native::present::rhi::TextureHandle;
 
 use super::canvas::NativeGpuCanvas2D;
 
@@ -39,6 +61,8 @@ pub struct GpuBackend {
     next_offscreen_id: u32,
     /// Picture paint currently targeting this offscreen handle id.
     pub(crate) active_offscreen: Option<u32>,
+    /// RHI Picture target 是否已经执行过首个 Clear pass。
+    offscreen_rhi_initialized: bool,
     /// The active Picture's latest checked flush completed. This gates eager
     /// CPU staging release at the checked target-restore boundary.
     offscreen_flush_committed: bool,
@@ -56,10 +80,21 @@ pub struct GpuBackend {
     /// factory-created context as prepared.
     factory_prepared: bool,
     pub(crate) shutdown: bool,
+    /// D3D11 参考 adapter 的迁移期 FramePlan resource cache。
+    pub(crate) rhi_renderer: Option<RhiRenderer>,
+    /// 保存跨帧 retained surface 的 RHI 颜色纹理。
+    pub(crate) rhi_surface_texture: Option<TextureHandle>,
+    /// 记录 retained texture 所属的 surface generation 和 extent。
+    pub(crate) rhi_surface_token: Option<crate::native::present::rhi::SurfaceToken>,
+    /// 标记 FrameEncoder 已写入 retained texture、等待最终合成 present。
+    pub(crate) rhi_surface_frame_pending_present: bool,
 }
 
 pub(super) struct NativeGpuOffscreen {
+    // 保存兼容 presenter 使用的原生离屏 target。
     target: OffscreenTargetId,
+    // 保存可选的 RHI texture；存在时由 FramePlan 负责绘制和采样。
+    pub(crate) rhi_texture: Option<TextureHandle>,
     pub(crate) canvas: NativeGpuCanvas2D,
     pub(crate) width: i32,
     pub(crate) height: i32,

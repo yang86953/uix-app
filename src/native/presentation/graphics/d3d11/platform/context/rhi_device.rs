@@ -1,0 +1,909 @@
+//! D3D11 device 对薄 RHI 的资源与 pass 迁移期实现。
+//!
+//! 当前纵切已经覆盖资源生命周期、目标绑定、clear、copy、viewport、scissor、
+//! solid/textured draw packet 与 submit；渐变、字形、离屏效果等高层语义仍
+//! 由兼容 pipeline 承担，不在薄 RHI 中重新定义。
+
+#![allow(dead_code)]
+#![allow(nonstandard_style)]
+
+// 引入统一错误和结果类型。
+use crate::core::error::{Errc, Error, Result};
+// 引入薄 RHI 的资源、命令和能力类型。
+use crate::native::present::rhi::{
+    BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsCapabilities, GraphicsDevice,
+    LoadAction, PipelineDesc, PipelineHandle, RenderTargetHandle, RhiColor, RhiExtent, RhiScissor,
+    RhiViewport, SamplerDesc, SamplerHandle, TextureCopy, TextureDesc, TextureFormat,
+    TextureHandle, TextureMove,
+};
+// 引入 D3D11 的基础资源和绑定类型。
+use ::windows::Win32::Graphics::Direct3D11::{
+    D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_INDEX_BUFFER, D3D11_BIND_RENDER_TARGET,
+    D3D11_BIND_SHADER_RESOURCE, D3D11_BIND_VERTEX_BUFFER, D3D11_BOX, D3D11_BUFFER_DESC,
+    D3D11_COMPARISON_NEVER, D3D11_CPU_ACCESS_WRITE, D3D11_FILTER_MIN_MAG_MIP_LINEAR,
+    D3D11_FILTER_MIN_MAG_MIP_POINT, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_WRITE_DISCARD,
+    D3D11_SAMPLER_DESC, D3D11_TEXTURE2D_DESC, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_USAGE_DEFAULT,
+    D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT,
+};
+// 引入 D3D11 格式和统一的窗口矩形类型。
+use ::windows::Win32::Foundation::RECT;
+// 引入 D3D11 纹理格式。
+use ::windows::Win32::Graphics::Dxgi::Common::{
+    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8_UNORM,
+};
+
+// 引入 context 父模块的 D3D11 状态和 surface target 身份。
+use super::{D3d11Context, RHI_SURFACE_TARGET_RAW};
+
+// 把资源生命周期拆到独立文件，保持每个代码文件处于可审阅的尺寸内。
+#[path = "rhi_device_resources.rs"]
+mod rhi_device_resources;
+// 将 raster state 编码拆出，保持主适配器文件低于行数上限。
+#[path = "rhi_device_state.rs"]
+mod rhi_device_state;
+// 将局部颜色清理拆出，保持 D3D11 资源主文件低于行数上限。
+#[path = "rhi_device_clear.rs"]
+mod rhi_device_clear;
+// 将固定 draw ABI 分派拆出，保持资源与命令主文件低于行数上限。
+#[path = "rhi_device_draw.rs"]
+mod rhi_device_draw;
+
+// 保存一个 RHI buffer 的原生对象和通用描述。
+struct D3d11RhiBuffer {
+    // 保持 D3D11 buffer 的生命周期。
+    native: ::windows::Win32::Graphics::Direct3D11::ID3D11Buffer,
+    // 保存可验证的容量。
+    size_bytes: usize,
+    // 保存顶点或索引步长。
+    stride_bytes: u32,
+    // 保存 buffer 用途，便于资源审计。
+    usage: BufferUsage,
+}
+
+// 保存一个 RHI texture 的原生对象和可选 view。
+struct D3d11RhiTexture {
+    // 保持 D3D11 texture 的生命周期。
+    native: ::windows::Win32::Graphics::Direct3D11::ID3D11Texture2D,
+    // 保存 render target view，R8 覆盖率纹理可以没有它。
+    rtv: Option<::windows::Win32::Graphics::Direct3D11::ID3D11RenderTargetView>,
+    // 保存 sampled shader resource view。
+    srv: ::windows::Win32::Graphics::Direct3D11::ID3D11ShaderResourceView,
+    // 保存通用资源尺寸。
+    extent: RhiExtent,
+    // 保存通用资源格式。
+    format: TextureFormat,
+}
+
+// 保存一个 RHI pipeline 的稳定通用 key。
+struct D3d11RhiPipeline {
+    // 保存由通用 renderer 选择的有限 pipeline 语义。
+    key: u64,
+}
+
+// 保存一个 RHI sampler 的原生状态对象。
+struct D3d11RhiSampler {
+    // 保持 D3D11 sampler state 的生命周期。
+    native: ::windows::Win32::Graphics::Direct3D11::ID3D11SamplerState,
+}
+
+// 持有 D3D11 RHI 资源表与 owner-thread pass 状态。
+pub(super) struct D3d11RhiDevice {
+    // 保存按不透明 id 索引的 buffer 资源。
+    buffers: Vec<Option<D3d11RhiBuffer>>,
+    // 保存按不透明 id 索引的 texture 资源。
+    textures: Vec<Option<D3d11RhiTexture>>,
+    // 保存按不透明 id 索引的有限 pipeline 资源。
+    pipelines: Vec<Option<D3d11RhiPipeline>>,
+    // 保存按不透明 id 索引的 sampler 资源。
+    samplers: Vec<Option<D3d11RhiSampler>>,
+    // 保存当前是否已经打开一个 RHI pass。
+    pass_open: bool,
+    // 保存当前 pass 绑定的目标。
+    active_target: Option<::windows::Win32::Graphics::Direct3D11::ID3D11RenderTargetView>,
+    // 保存当前 pass 绑定的通用目标句柄。
+    active_target_handle: Option<RenderTargetHandle>,
+    // 保存当前 pass 最近一次绑定的采样纹理。
+    bound_texture: Option<TextureHandle>,
+    // 保存当前 pass 最近一次绑定的采样器。
+    bound_sampler: Option<crate::native::present::rhi::SamplerHandle>,
+    // 保存当前 pass 的物理尺寸。
+    active_extent: Option<RhiExtent>,
+    // 保存提交序号，D3D11 immediate context 以 owner-thread 顺序完成提交。
+    next_submission: u64,
+}
+
+// 为 D3D11 RHI 状态提供初始化和资源查找辅助。
+impl D3d11RhiDevice {
+    // 创建没有资源和打开 pass 的初始状态。
+    pub(super) const fn new() -> Self {
+        // 返回可安全嵌入 D3D11 context 的空状态。
+        Self {
+            buffers: Vec::new(),
+            textures: Vec::new(),
+            pipelines: Vec::new(),
+            samplers: Vec::new(),
+            pass_open: false,
+            active_target: None,
+            active_target_handle: None,
+            bound_texture: None,
+            bound_sampler: None,
+            active_extent: None,
+            next_submission: 1,
+        }
+    }
+
+    // 通过一开始从 1 分配的句柄读取 buffer。
+    fn buffer(&self, handle: BufferHandle) -> Result<&D3d11RhiBuffer> {
+        // 零句柄和越界句柄都表示调用方没有完成资源绑定。
+        let Some(index) = handle.raw().checked_sub(1) else {
+            // 返回稳定的参数错误。
+            return Err(rhi_invalid("buffer handle is null"));
+        };
+        // 读取资源槽并检查已销毁状态。
+        self.buffers
+            .get(index as usize)
+            .and_then(Option::as_ref)
+            .ok_or_else(|| rhi_invalid("buffer handle is stale"))
+    }
+
+    // 通过一开始从 1 分配的句柄读取可变 buffer。
+    fn buffer_mut(&mut self, handle: BufferHandle) -> Result<&mut D3d11RhiBuffer> {
+        // 零句柄和越界句柄都表示调用方没有完成资源绑定。
+        let Some(index) = handle.raw().checked_sub(1) else {
+            // 返回稳定的参数错误。
+            return Err(rhi_invalid("buffer handle is null"));
+        };
+        // 读取可变资源槽并检查已销毁状态。
+        self.buffers
+            .get_mut(index as usize)
+            .and_then(Option::as_mut)
+            .ok_or_else(|| rhi_invalid("buffer handle is stale"))
+    }
+
+    // 通过不透明句柄读取已创建的 pipeline。
+    fn pipeline(&self, handle: PipelineHandle) -> Result<&D3d11RhiPipeline> {
+        // 零句柄和越界句柄都表示调用方没有完成 pipeline 绑定。
+        let Some(index) = handle.raw().checked_sub(1) else {
+            // 返回稳定的参数错误。
+            return Err(rhi_invalid("pipeline handle is null"));
+        };
+        // 读取资源槽并检查已销毁状态。
+        self.pipelines
+            .get(index as usize)
+            .and_then(Option::as_ref)
+            .ok_or_else(|| rhi_invalid("pipeline handle is stale"))
+    }
+
+    // 通过不透明句柄读取已创建的 sampler。
+    fn sampler(&self, handle: SamplerHandle) -> Result<&D3d11RhiSampler> {
+        // 零句柄和越界句柄都表示调用方没有完成 sampler 绑定。
+        let Some(index) = handle.raw().checked_sub(1) else {
+            // 返回稳定的参数错误。
+            return Err(rhi_invalid("sampler handle is null"));
+        };
+        // 读取资源槽并检查已销毁状态。
+        self.samplers
+            .get(index as usize)
+            .and_then(Option::as_ref)
+            .ok_or_else(|| rhi_invalid("sampler handle is stale"))
+    }
+
+    // 通过一开始从 1 分配的句柄读取 texture。
+    fn texture(&self, handle: TextureHandle) -> Result<&D3d11RhiTexture> {
+        // 零句柄和越界句柄都表示调用方没有完成资源绑定。
+        let Some(index) = handle.raw().checked_sub(1) else {
+            // 返回稳定的参数错误。
+            return Err(rhi_invalid("texture handle is null"));
+        };
+        // 读取资源槽并检查已销毁状态。
+        self.textures
+            .get(index as usize)
+            .and_then(Option::as_ref)
+            .ok_or_else(|| rhi_invalid("texture handle is stale"))
+    }
+
+    // 通过 render target 句柄读取对应 texture。
+    fn target_texture(&self, raw: u64) -> Result<&D3d11RhiTexture> {
+        // RHI target 和 texture 共用同一个不透明资源身份。
+        self.texture(TextureHandle::from_raw(raw))
+    }
+
+    // 保存纹理格式对应的 DXGI 格式、每像素字节数和是否可作为 RTV。
+    fn texture_format(format: TextureFormat) -> (i32, usize, bool) {
+        // 把有限的通用格式映射到 D3D11 事实格式。
+        match format {
+            // 映射 BGRA 八位格式。
+            TextureFormat::Bgra8Unorm => (DXGI_FORMAT_B8G8R8A8_UNORM.0, 4, true),
+            // 映射 RGBA 八位格式。
+            TextureFormat::Rgba8Unorm => (DXGI_FORMAT_R8G8B8A8_UNORM.0, 4, true),
+            // 映射单通道覆盖率格式。
+            TextureFormat::R8Unorm => (DXGI_FORMAT_R8_UNORM.0, 1, false),
+        }
+    }
+}
+
+// 为 D3D11 context 实现 buffer、texture、pass、copy 和 submit 原语。
+impl GraphicsDevice for D3d11Context {
+    // 返回当前迁移期 device 的事实能力，能力只描述低层原语而非 UI 操作。
+    fn capabilities(&self) -> GraphicsCapabilities {
+        // 资源和 pass 基础已可执行，通用 sampled draw 仍由 pipeline ABI 门禁。
+        GraphicsCapabilities {
+            dynamic_buffers: true,
+            texture_upload: true,
+            texture_copy: true,
+            texture_region_move: true,
+            clear_rect: true,
+            sampled_textures: true,
+            render_to_texture: true,
+            scissor: true,
+            premultiplied_alpha_blend: true,
+            additive_blend: true,
+            retained_framebuffer: false,
+            partial_present: false,
+            occlusion: true,
+        }
+    }
+
+    // 把设备健康检查委托给独立模块，避免资源实现超过文件行数边界。
+    fn maintain(&mut self) -> Result<()> {
+        // 统一沿用 context 健康维护实现和 DXGI typed mapping。
+        self.maintain_rhi_device()
+    }
+    #[cfg(feature = "test-harness")]
+    fn inject_device_lost_for_test(&mut self) -> Result<()> {
+        self.arm_rhi_device_lost_for_test();
+        Ok(())
+    }
+
+    // 创建 D3D11 默认 buffer。
+    fn create_buffer(&mut self, desc: BufferDesc) -> Result<BufferHandle> {
+        // 拒绝零容量或超过 D3D11 字段范围的描述。
+        if desc.size_bytes == 0 || desc.size_bytes > u32::MAX as usize {
+            // 返回稳定的参数错误。
+            return Err(rhi_invalid("D3d11 RHI buffer size is invalid"));
+        }
+        // 选择底层绑定类型、更新方式和 CPU 写入权限。
+        let (bind_flags, usage, cpu_access, stride_bytes) = match desc.usage {
+            // 顶点 buffer 使用默认显存资源并按 stride 绑定。
+            BufferUsage::Vertex => (
+                D3D11_BIND_VERTEX_BUFFER.0 as u32,
+                D3D11_USAGE_DEFAULT,
+                0,
+                desc.stride_bytes,
+            ),
+            // 索引 buffer 使用默认显存资源，索引格式由 draw ABI 固定。
+            BufferUsage::Index => (
+                D3D11_BIND_INDEX_BUFFER.0 as u32,
+                D3D11_USAGE_DEFAULT,
+                0,
+                desc.stride_bytes,
+            ),
+            // uniform buffer 使用 16 字节对齐的动态常量资源。
+            BufferUsage::Uniform => {
+                // D3D11 常量 buffer 的容量必须是 16 字节的整数倍。
+                if desc.size_bytes % 16 != 0 {
+                    // 返回稳定的参数错误。
+                    return Err(rhi_invalid("D3d11 RHI uniform buffer size is not aligned"));
+                }
+                (
+                    D3D11_BIND_CONSTANT_BUFFER.0 as u32,
+                    D3D11_USAGE_DYNAMIC,
+                    D3D11_CPU_ACCESS_WRITE.0 as u32,
+                    0,
+                )
+            }
+        };
+        // 准备 D3D11 buffer 描述。
+        let native_desc = D3D11_BUFFER_DESC {
+            ByteWidth: desc.size_bytes as u32,
+            Usage: usage,
+            BindFlags: bind_flags,
+            CPUAccessFlags: cpu_access,
+            MiscFlags: 0,
+            StructureByteStride: stride_bytes,
+        };
+        // 为 CreateBuffer 准备空初始数据。
+        let mut native = None;
+        // SAFETY: device 属于当前 owner thread 的 D3D11 context，描述和输出槽
+        // 由本函数构造且在调用期间保持有效。
+        unsafe {
+            self.device
+                .CreateBuffer(&native_desc, None, Some(&mut native))
+                .map_err(|error| d3d_error("ID3D11Device::CreateBuffer(rhi)", error))?;
+        }
+        // 拒绝驱动返回的空资源。
+        let native =
+            native.ok_or_else(|| rhi_platform("D3d11 RHI CreateBuffer returned no buffer"))?;
+        // 分配从 1 开始的不透明资源身份。
+        self.rhi_device.buffers.push(Some(D3d11RhiBuffer {
+            native,
+            size_bytes: desc.size_bytes,
+            stride_bytes: desc.stride_bytes,
+            usage: desc.usage,
+        }));
+        // 计算刚刚追加的资源句柄。
+        let raw = self.rhi_device.buffers.len() as u64;
+        // 返回 opaque buffer handle。
+        Ok(BufferHandle::from_raw(raw))
+    }
+
+    // 将紧密排列的数据写入已有 D3D11 buffer。
+    fn update_buffer(&mut self, buffer: BufferHandle, offset: usize, data: &[u8]) -> Result<()> {
+        // 空更新没有任何可观察语义，直接保持成功。
+        if data.is_empty() {
+            // 返回成功，不触碰 native context。
+            return Ok(());
+        }
+        // 检查 offset 和 payload 是否落在已分配容量内。
+        let resource = self.rhi_device.buffer(buffer)?;
+        let end = offset
+            .checked_add(data.len())
+            .ok_or_else(|| rhi_invalid("D3d11 RHI buffer update overflows"))?;
+        // 拒绝越界写入。
+        if end > resource.size_bytes {
+            // 返回携带句柄、用途和容量的参数错误，便于定位跨帧资源 ABI 漂移。
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                format!(
+                    "D3d11 RHI buffer update exceeds capacity: buffer={:?}; usage={:?}; offset={offset}; data_bytes={}; capacity_bytes={}",
+                    buffer,
+                    resource.usage,
+                    data.len(),
+                    resource.size_bytes,
+                ),
+            ));
+        }
+        // 动态 uniform 通过 Map/WRITE_DISCARD 完整更新，避免把 default buffer
+        // 的 UpdateSubresource 语义错误地套到 CPU 可写资源上。
+        if resource.usage == BufferUsage::Uniform {
+            // 本阶段的 uniform ABI 要求一次更新覆盖整个常量块。
+            if offset != 0 || data.len() != resource.size_bytes {
+                // 返回稳定的参数错误。
+                return Err(rhi_invalid(
+                    "D3d11 RHI uniform update must replace the full buffer",
+                ));
+            }
+            // 准备动态映射输出。
+            let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+            // SAFETY: uniform resource 由当前 device 以 DYNAMIC 创建，data 在
+            // 调用期间保持只读有效，Map/Unmap 只在 owner thread 执行。
+            unsafe {
+                self.context
+                    .Map(
+                        &resource.native,
+                        0,
+                        D3D11_MAP_WRITE_DISCARD,
+                        0,
+                        Some(&mut mapped),
+                    )
+                    .map_err(|error| d3d_error("ID3D11DeviceContext::Map(rhi)", error))?;
+                std::ptr::copy_nonoverlapping(data.as_ptr(), mapped.pData.cast::<u8>(), data.len());
+                self.context.Unmap(&resource.native, 0);
+            }
+            // 返回 uniform 更新成功。
+            return Ok(());
+        }
+        // 构造只覆盖本次更新的 D3D11 buffer box。
+        let dst_box = D3D11_BOX {
+            left: offset as u32,
+            right: end as u32,
+            top: 0,
+            bottom: 1,
+            front: 0,
+            back: 1,
+        };
+        // SAFETY: resource 由同一 owner-thread device 创建，data 在调用期间
+        // 保持只读有效；D3D11 立即上下文不会跨线程使用该资源。
+        unsafe {
+            self.context.UpdateSubresource(
+                &resource.native,
+                0,
+                Some(&dst_box),
+                data.as_ptr().cast(),
+                data.len() as u32,
+                0,
+            );
+        }
+        // 返回上传成功。
+        Ok(())
+    }
+
+    // 创建可采样且尽可能可作为 render target 的 D3D11 texture。
+    fn create_texture(&mut self, desc: TextureDesc) -> Result<TextureHandle> {
+        // 把资源创建细节委托给按文件拆分的 RHI resource helper。
+        self.rhi_create_texture(desc)
+    }
+
+    // 创建当前 D3D11 适配器已经具备 shader ABI 的有限 pipeline。
+    fn create_pipeline(&mut self, desc: PipelineDesc) -> Result<PipelineHandle> {
+        // 把 pipeline key 校验和资源登记委托给 resource helper。
+        self.rhi_create_pipeline(desc)
+    }
+
+    // 创建带 clamp 地址模式的 D3D11 sampler。
+    fn create_sampler(&mut self, desc: SamplerDesc) -> Result<SamplerHandle> {
+        // 把 sampler state 创建委托给 resource helper。
+        self.rhi_create_sampler(desc)
+    }
+
+    // 上传 texture 的紧密排列像素。
+    fn update_texture(
+        &mut self,
+        texture: TextureHandle,
+        extent: RhiExtent,
+        data: &[u8],
+    ) -> Result<()> {
+        // 整块上传是从左上角开始的零偏移子区域。
+        self.update_texture_region(texture, 0, 0, extent, data)
+    }
+
+    // 上传 texture 中任意合法的紧密排列子区域。
+    fn update_texture_region(
+        &mut self,
+        texture: TextureHandle,
+        destination_x: u32,
+        destination_y: u32,
+        extent: RhiExtent,
+        data: &[u8],
+    ) -> Result<()> {
+        // 读取目标纹理的格式和尺寸事实。
+        let resource = self.rhi_device.texture(texture)?;
+        // 计算当前格式的每像素字节数。
+        let (_, bytes_per_pixel, _) = D3d11RhiDevice::texture_format(resource.format);
+        // 计算上传所需字节数并拒绝溢出。
+        let required = (extent.width as usize)
+            .checked_mul(extent.height as usize)
+            .and_then(|pixels| pixels.checked_mul(bytes_per_pixel))
+            .ok_or_else(|| rhi_invalid("D3d11 RHI texture region size overflows"))?;
+        // 计算目标矩形右下角并拒绝越过纹理边界。
+        let end_x = destination_x
+            .checked_add(extent.width)
+            .ok_or_else(|| rhi_invalid("D3d11 RHI texture region x overflows"))?;
+        let end_y = destination_y
+            .checked_add(extent.height)
+            .ok_or_else(|| rhi_invalid("D3d11 RHI texture region y overflows"))?;
+        if !extent.is_positive() || end_x > resource.extent.width || end_y > resource.extent.height
+        {
+            // 返回稳定的参数错误。
+            return Err(rhi_invalid("D3d11 RHI texture region is out of range"));
+        }
+        // 拒绝短 payload，避免驱动读取未初始化内存。
+        if data.len() != required {
+            // 返回稳定的参数错误。
+            return Err(rhi_invalid(
+                "D3d11 RHI texture region payload length is invalid",
+            ));
+        }
+        // 构造覆盖目标偏移区域的 texture box。
+        let dst_box = D3D11_BOX {
+            left: destination_x,
+            right: end_x,
+            top: destination_y,
+            bottom: end_y,
+            front: 0,
+            back: 1,
+        };
+        // SAFETY: resource 由同一 owner-thread device 创建，data 在调用期间
+        // 保持只读有效，row pitch 与紧密排列的 payload 一致。
+        unsafe {
+            self.context.UpdateSubresource(
+                &resource.native,
+                0,
+                Some(&dst_box),
+                data.as_ptr().cast(),
+                (extent.width as usize * bytes_per_pixel) as u32,
+                0,
+            );
+        }
+        // 返回上传成功。
+        Ok(())
+    }
+
+    // 销毁 buffer 资源槽。
+    fn destroy_buffer(&mut self, buffer: BufferHandle) -> Result<()> {
+        // 解析资源身份并检查是否已销毁。
+        let index = buffer
+            .raw()
+            .checked_sub(1)
+            .ok_or_else(|| rhi_invalid("buffer handle is null"))? as usize;
+        // 读取资源槽。
+        let Some(slot) = self.rhi_device.buffers.get_mut(index) else {
+            // 返回稳定的参数错误。
+            return Err(rhi_invalid("buffer handle is stale"));
+        };
+        // 拒绝重复销毁。
+        if slot.is_none() {
+            // 返回稳定的状态错误。
+            return Err(rhi_invalid("buffer handle was already destroyed"));
+        }
+        // 清空资源槽，让旧句柄立即失效。
+        *slot = None;
+        // 返回成功。
+        Ok(())
+    }
+
+    // 销毁 texture 资源槽。
+    fn destroy_texture(&mut self, texture: TextureHandle) -> Result<()> {
+        // 解析资源身份并检查是否已销毁。
+        let index = texture
+            .raw()
+            .checked_sub(1)
+            .ok_or_else(|| rhi_invalid("texture handle is null"))? as usize;
+        // 不能在当前 pass 仍引用资源时销毁它。
+        if self.rhi_device.active_target_handle == Some(RenderTargetHandle::from_raw(texture.raw()))
+        {
+            // 返回稳定的状态错误。
+            return Err(Error::new(
+                Errc::InvalidState,
+                "D3d11 RHI cannot destroy the active render target",
+            ));
+        }
+        // 读取资源槽。
+        let Some(slot) = self.rhi_device.textures.get_mut(index) else {
+            // 返回稳定的参数错误。
+            return Err(rhi_invalid("texture handle is stale"));
+        };
+        // 拒绝重复销毁。
+        if slot.is_none() {
+            // 返回稳定的状态错误。
+            return Err(rhi_invalid("texture handle was already destroyed"));
+        }
+        // 清空资源槽，让旧句柄立即失效。
+        *slot = None;
+        // 返回成功。
+        Ok(())
+    }
+
+    // 销毁 pipeline 资源槽。
+    fn destroy_pipeline(&mut self, pipeline: PipelineHandle) -> Result<()> {
+        // 把检查式销毁委托给 resource helper。
+        self.rhi_destroy_pipeline(pipeline)
+    }
+
+    // 销毁 sampler 资源槽。
+    fn destroy_sampler(&mut self, sampler: SamplerHandle) -> Result<()> {
+        // 把检查式销毁委托给 resource helper。
+        self.rhi_destroy_sampler(sampler)
+    }
+
+    // 开始一个 D3D11 render pass，并绑定 surface 或 RHI texture target。
+    fn begin_render_pass(&mut self, target: RenderTargetHandle, load: LoadAction) -> Result<()> {
+        // 拒绝嵌套 pass，保持 FramePlan 的显式边界。
+        if self.rhi_device.pass_open {
+            // 返回稳定的状态错误。
+            return Err(Error::new(
+                Errc::InvalidState,
+                "D3d11 RHI render pass is already open",
+            ));
+        }
+        // 解析 surface 或离屏纹理目标，同时复制 COM view 避免借用跨越状态更新。
+        let (rtv, extent) =
+            if target.raw() == RHI_SURFACE_TARGET_RAW {
+                // surface target 使用当前 swapchain backbuffer。
+                self.ensure_rtv()?;
+                // 没有 RTV 就不能开始 surface pass。
+                let rtv =
+                    self.rtv.as_ref().cloned().ok_or_else(|| {
+                        rhi_platform("D3d11 RHI surface has no render target view")
+                    })?;
+                // surface extent 以当前物理 drawable 尺寸为准。
+                let extent = RhiExtent::new(self.width.max(1) as u32, self.height.max(1) as u32);
+                (rtv, extent)
+            } else {
+                // 离屏 target 必须指向已创建且可渲染的 RHI texture。
+                let texture = self.rhi_device.target_texture(target.raw())?;
+                // 复制 texture 的 RTV 和尺寸后再修改 pass 状态。
+                let rtv =
+                    texture.rtv.as_ref().cloned().ok_or_else(|| {
+                        rhi_not_implemented("D3d11 RHI target texture render view")
+                    })?;
+                (rtv, texture.extent)
+            };
+        // 绑定本 pass 的唯一 render target。
+        unsafe {
+            self.context
+                .OMSetRenderTargets(Some(&[Some(rtv.clone())]), None);
+        }
+        // 只在明确要求时清理目标，Load 保留底层既有内容。
+        if let LoadAction::Clear(color) = load {
+            // SAFETY: rtv 属于当前 D3D11 device，颜色值已由 FramePlan 验证有限。
+            unsafe {
+                self.context.ClearRenderTargetView(&rtv, &color.0);
+            }
+        }
+        // 记录 pass 状态和目标身份。
+        self.rhi_device.pass_open = true;
+        self.rhi_device.active_target = Some(rtv);
+        self.rhi_device.active_target_handle = Some(target);
+        self.rhi_device.active_extent = Some(extent);
+        // 返回 pass 开始成功。
+        Ok(())
+    }
+
+    // 绑定当前 pass 的采样纹理和 sampler。
+    fn bind_texture(
+        &mut self,
+        slot: u32,
+        texture: TextureHandle,
+        sampler: SamplerHandle,
+    ) -> Result<()> {
+        // 把绑定校验和状态保存委托给 resource helper。
+        self.rhi_bind_texture(slot, texture, sampler)
+    }
+
+    // 设置当前 pass viewport。
+    fn set_viewport(&mut self, viewport: RhiViewport) -> Result<()> {
+        // 把状态编码委托给按文件拆分的 RHI state helper。
+        self.rhi_set_viewport(viewport)
+    }
+
+    // 设置当前 pass scissor。
+    fn set_scissor(&mut self, scissor: Option<RhiScissor>) -> Result<()> {
+        // 把状态编码委托给按文件拆分的 RHI state helper。
+        self.rhi_set_scissor(scissor)
+    }
+
+    // 在当前 D3D11 render pass 内清理一个物理矩形。
+    fn clear_rect(&mut self, color: RhiColor, scissor: RhiScissor) -> Result<()> {
+        // 把 API 细节委托给独立的 ClearView helper。
+        self.rhi_clear_rect(color, scissor)
+    }
+
+    // 执行一个已经选择固定 pipeline 与资源句柄的通用 draw packet。
+    fn draw(&mut self, packet: DrawPacket) -> Result<()> {
+        // 把固定 ABI 分派委托给独立模块，保持资源主文件短小。
+        self.draw_rhi_packet(packet)
+    }
+
+    // 在 pass 外复制两个 RHI texture。
+    fn copy_texture(&mut self, copy: TextureCopy) -> Result<()> {
+        // 复制必须位于显式 pass 之外，避免 render target 和 copy source 重叠。
+        if self.rhi_device.pass_open {
+            // 返回稳定的状态错误。
+            return Err(Error::new(
+                Errc::InvalidState,
+                "D3d11 RHI texture copy inside render pass",
+            ));
+        }
+        // 读取源和目标资源。
+        let source = self.rhi_device.texture(copy.source)?;
+        let destination = self.rhi_device.texture(copy.destination)?;
+        // 当前 adapter 只允许同格式 copy，避免驱动隐式转换造成像素漂移。
+        if source.format != destination.format {
+            // 返回稳定的参数错误。
+            return Err(rhi_invalid("D3d11 RHI texture copy formats differ"));
+        }
+        // 零尺寸 copy 没有合法的 D3D11_BOX。
+        if copy.width == 0 || copy.height == 0 {
+            // 返回稳定的参数错误。
+            return Err(rhi_invalid("D3d11 RHI texture copy extent is empty"));
+        }
+        // 检查复制区域没有超出任何一方资源。
+        if copy.source_x.saturating_add(copy.width) > source.extent.width
+            || copy.source_y.saturating_add(copy.height) > source.extent.height
+            || copy.destination_x.saturating_add(copy.width) > destination.extent.width
+            || copy.destination_y.saturating_add(copy.height) > destination.extent.height
+        {
+            // 返回稳定的参数错误。
+            return Err(rhi_invalid("D3d11 RHI texture copy is out of range"));
+        }
+        // 构造源纹理复制区域。
+        let source_box = D3D11_BOX {
+            left: copy.source_x,
+            right: copy.source_x + copy.width,
+            top: copy.source_y,
+            bottom: copy.source_y + copy.height,
+            front: 0,
+            back: 1,
+        };
+        // SAFETY: 两个 texture 均由同一 D3D11 device 创建，区域经过边界验证，
+        // immediate context 只在 owner thread 上使用。
+        unsafe {
+            self.context.CopySubresourceRegion(
+                &destination.native,
+                0,
+                copy.destination_x,
+                copy.destination_y,
+                0,
+                &source.native,
+                0,
+                Some(&source_box),
+            );
+        }
+        // 返回复制成功。
+        Ok(())
+    }
+
+    // 在 D3D11 上执行同纹理重叠安全的区域移动。
+    fn move_texture_region(&mut self, movement: TextureMove) -> Result<()> {
+        // 移动必须发生在显式 pass 之外。
+        if self.rhi_device.pass_open {
+            // 返回稳定的状态错误。
+            return Err(Error::new(
+                Errc::InvalidState,
+                "D3d11 RHI texture move inside render pass",
+            ));
+        }
+        // 先复制资源描述，避免后续 scratch 操作持有资源表借用。
+        let (source_extent, source_format) = {
+            // 读取源纹理的尺寸和格式事实。
+            let source = self.rhi_device.texture(movement.source)?;
+            (source.extent, source.format)
+        };
+        // 读取目标纹理的尺寸和格式事实。
+        let (destination_extent, destination_format) = {
+            // 读取目标纹理的尺寸和格式事实。
+            let destination = self.rhi_device.texture(movement.destination)?;
+            (destination.extent, destination.format)
+        };
+        // 移动必须使用相同格式，避免隐式转换破坏像素语义。
+        if source_format != destination_format {
+            // 返回稳定的参数错误。
+            return Err(rhi_invalid("D3d11 RHI texture move formats differ"));
+        }
+        // 零尺寸移动没有可定义的区域。
+        if movement.width == 0 || movement.height == 0 {
+            // 返回稳定的参数错误。
+            return Err(rhi_invalid("D3d11 RHI texture move extent is empty"));
+        }
+        // 使用 checked_add 防止异常坐标在边界检查前回绕。
+        let source_right = movement
+            .source_x
+            .checked_add(movement.width)
+            .ok_or_else(|| rhi_invalid("D3d11 RHI texture move source x overflows"))?;
+        // 检查源区域底边不会回绕。
+        let source_bottom = movement
+            .source_y
+            .checked_add(movement.height)
+            .ok_or_else(|| rhi_invalid("D3d11 RHI texture move source y overflows"))?;
+        // 检查目标区域右边不会回绕。
+        let destination_right = movement
+            .destination_x
+            .checked_add(movement.width)
+            .ok_or_else(|| rhi_invalid("D3d11 RHI texture move destination x overflows"))?;
+        // 检查目标区域底边不会回绕。
+        let destination_bottom = movement
+            .destination_y
+            .checked_add(movement.height)
+            .ok_or_else(|| rhi_invalid("D3d11 RHI texture move destination y overflows"))?;
+        // 同时检查源和目标范围。
+        if source_right > source_extent.width
+            || source_bottom > source_extent.height
+            || destination_right > destination_extent.width
+            || destination_bottom > destination_extent.height
+        {
+            // 返回稳定的参数错误。
+            return Err(rhi_invalid("D3d11 RHI texture move is out of range"));
+        }
+        // 不同纹理没有重叠风险，复用已验证的 copy 原语。
+        if movement.source != movement.destination {
+            // 将移动转换为普通纹理复制。
+            return self.copy_texture(TextureCopy {
+                source: movement.source,
+                destination: movement.destination,
+                source_x: movement.source_x,
+                source_y: movement.source_y,
+                destination_x: movement.destination_x,
+                destination_y: movement.destination_y,
+                width: movement.width,
+                height: movement.height,
+            });
+        }
+        // 同一纹理必须先复制到 scratch，不能依赖 CopySubresourceRegion 的重叠行为。
+        let scratch = self.rhi_create_texture(TextureDesc {
+            extent: RhiExtent::new(movement.width, movement.height),
+            format: source_format,
+        })?;
+        // 先保存源区域，再写回目标区域，形成明确的 memmove 顺序。
+        let operation = self
+            .copy_texture(TextureCopy {
+                source: movement.source,
+                destination: scratch,
+                source_x: movement.source_x,
+                source_y: movement.source_y,
+                destination_x: 0,
+                destination_y: 0,
+                width: movement.width,
+                height: movement.height,
+            })
+            .and_then(|()| {
+                // 将 scratch 的完整区域写入目标位置。
+                self.copy_texture(TextureCopy {
+                    source: scratch,
+                    destination: movement.destination,
+                    source_x: 0,
+                    source_y: 0,
+                    destination_x: movement.destination_x,
+                    destination_y: movement.destination_y,
+                    width: movement.width,
+                    height: movement.height,
+                })
+            });
+        // 无论第二次 copy 是否失败，都尝试销毁 scratch，避免隐藏资源泄漏。
+        let cleanup = self.destroy_texture(scratch);
+        // 优先返回移动错误，再返回 scratch 清理错误。
+        match (operation, cleanup) {
+            // 移动失败时保留原始错误。
+            (Err(error), _) => Err(error),
+            // 清理失败也不能伪造移动完整成功。
+            (Ok(()), Err(error)) => Err(error),
+            // 移动和临时资源清理均成功。
+            (Ok(()), Ok(())) => Ok(()),
+        }
+    }
+
+    // 结束当前 D3D11 render pass。
+    fn end_render_pass(&mut self) -> Result<()> {
+        // 拒绝没有开始 pass 的结束调用。
+        if !self.rhi_device.pass_open {
+            // 返回稳定的状态错误。
+            return Err(Error::new(
+                Errc::InvalidState,
+                "D3d11 RHI render pass is not open",
+            ));
+        }
+        // 释放 pass 级状态，不销毁底层资源。
+        self.rhi_device.pass_open = false;
+        // 清除当前目标引用。
+        self.rhi_device.active_target = None;
+        // 清除当前目标句柄。
+        self.rhi_device.active_target_handle = None;
+        // 清除当前 extent。
+        self.rhi_device.active_extent = None;
+        // 清除 pass 内资源绑定，下一 pass 必须显式重新绑定。
+        self.rhi_device.bound_texture = None;
+        self.rhi_device.bound_sampler = None;
+        // 返回成功。
+        Ok(())
+    }
+
+    // 提交 D3D11 immediate context 当前命令序列。
+    fn submit(&mut self) -> Result<crate::native::present::rhi::SubmissionHandle> {
+        // 未结束的 pass 不能提交，避免隐含结束语义。
+        if self.rhi_device.pass_open {
+            // 返回稳定的状态错误。
+            return Err(Error::new(
+                Errc::InvalidState,
+                "D3d11 RHI submit with open render pass",
+            ));
+        }
+        // 取出本次提交序号。
+        let serial = self.rhi_device.next_submission;
+        // 推进提交序号并防止回绕到零句柄。
+        self.rhi_device.next_submission = serial.saturating_add(1).max(1);
+        // D3D11 immediate context 的命令顺序已经由 owner thread 建立。
+        Ok(crate::native::present::rhi::SubmissionHandle::from_raw(
+            serial,
+        ))
+    }
+}
+
+// 生成 D3D11 RHI 参数错误。
+fn rhi_invalid(message: &'static str) -> Error {
+    // 使用统一错误码，避免把资源句柄错误伪装为平台崩溃。
+    Error::new(Errc::InvalidArgument, message)
+}
+
+// 生成 D3D11 RHI 未实现错误。
+fn rhi_not_implemented(operation: &'static str) -> Error {
+    // 使用稳定前缀区分迁移缺口和驱动失败。
+    Error::new(
+        Errc::NotImplemented,
+        format!("D3d11 thin RHI operation is not implemented: {operation}"),
+    )
+}
+
+// 生成 D3D11 RHI 平台错误。
+fn rhi_platform(message: &'static str) -> Error {
+    // 资源创建失败属于平台资源错误而不是参数错误。
+    Error::new(Errc::PlatformError, message)
+}
+
+// 将 Windows HRESULT 错误转换到 D3D11 现有诊断语义。
+fn d3d_error(operation: &'static str, error: ::windows::core::Error) -> Error {
+    // 保持与现有 D3D11 pipeline 相同的可观察错误前缀。
+    Error::new(
+        Errc::PlatformError,
+        format!("D3d11 RHI {operation} failed: {error}"),
+    )
+}

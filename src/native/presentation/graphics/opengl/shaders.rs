@@ -35,6 +35,8 @@ in vec2 v_rect_size;
 
 uniform vec4 u_color;
 uniform vec4 u_radius;
+// 描边使用相对 rect 边界居中的半线宽。
+uniform float u_stroke;
 
 out vec4 fragColor;
 
@@ -55,9 +57,27 @@ float rounded_rect_sdf(vec2 local, vec2 size, vec4 radius) {
 
 void main() {
     vec2 size = v_rect_size;
-    float mask = any(greaterThan(u_radius, vec4(0.0)))
-        ? clamp(0.5 - rounded_rect_sdf(v_local, size, u_radius), 0.0, 1.0)
-        : 1.0;
+    float mask;
+    if (u_stroke > 0.0) {
+        // outer shape 向 rect 外扩，inner shape 向内收缩。
+        float half_stroke = u_stroke;
+        vec2 outer_size = size + 2.0 * half_stroke;
+        vec4 outer_radius = u_radius + half_stroke;
+        vec2 inner_size = max(size - 2.0 * half_stroke, vec2(0.0));
+        vec4 inner_radius = max(u_radius - half_stroke, vec4(0.0));
+        float outer_sd = rounded_rect_sdf(v_local + vec2(half_stroke), outer_size, outer_radius);
+        if (inner_size.x > 0.0 && inner_size.y > 0.0) {
+            float inner_sd = rounded_rect_sdf(v_local - vec2(half_stroke), inner_size, inner_radius);
+            mask = clamp(0.5 - outer_sd, 0.0, 1.0)
+                * clamp(0.5 + inner_sd, 0.0, 1.0);
+        } else {
+            mask = clamp(0.5 - outer_sd, 0.0, 1.0);
+        }
+    } else {
+        mask = any(greaterThan(u_radius, vec4(0.0)))
+            ? clamp(0.5 - rounded_rect_sdf(v_local, size, u_radius), 0.0, 1.0)
+            : 1.0;
+    }
     if (mask <= 0.0) discard;
 
     // Match CPU solid fill: quantize the 8-bit straight color, premultiply
@@ -161,11 +181,14 @@ precision highp float;
 in vec2 v_uv;
 uniform sampler2D u_tex;
 uniform vec4 u_uv_rect;
+// 组 opacity 对已经 premultiplied 的离屏采样结果同步缩放 RGB 和 alpha。
+uniform float u_opacity;
 
 out vec4 fragColor;
 
 void main() {
-    fragColor = texture(u_tex, u_uv_rect.xy + v_uv * u_uv_rect.zw);
+    // Picture texture 的结果必须按组 opacity 保持 premultiplied 语义。
+    fragColor = texture(u_tex, u_uv_rect.xy + v_uv * u_uv_rect.zw) * u_opacity;
 }
 "#;
 

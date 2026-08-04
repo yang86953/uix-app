@@ -15,6 +15,8 @@ const CHILD_SYSTEM_THEME_STATUS_ID: &str = "theme-window-system-theme-follow-sta
 const CHILD_WINDOW_CLOSE_ID: &str = "theme-window-close";
 const RUNTIME_SYSTEM_THEME_STATUS_ID: &str = "runtime-system-theme-follow-status";
 const GRAPHICS_RECOVERY_INJECT_ID: &str = "runtime-inject-device-lost";
+// 图形恢复页的 surface-lost lower injection 入口。
+const GRAPHICS_RECOVERY_SURFACE_INJECT_ID: &str = "runtime-inject-surface-lost";
 const GRAPHICS_RECOVERY_VERIFY_ID: &str = "runtime-verify-recovered-interaction";
 const GRAPHICS_RECOVERY_STATUS_ID: &str = "runtime-graphics-recovery-status";
 
@@ -156,6 +158,8 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
         .filter(|control| control.enabled())
         .map(|control| {
             let inject_control = control.clone();
+            // surface 注入与 device 注入共享同一恢复状态和验证按钮。
+            let surface_inject_control = control.clone();
             let verify_control = control.clone();
             column_fit([
                 control
@@ -171,6 +175,11 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
                         .on_click_fn(move || inject_control.inject_device_lost())
                         .automation_id(GRAPHICS_RECOVERY_INJECT_ID)
                         .build(),
+                    button("注入 SurfaceLost")
+                        .disabled(!control.can_inject())
+                        .on_click_fn(move || surface_inject_control.inject_surface_lost())
+                        .automation_id(GRAPHICS_RECOVERY_SURFACE_INJECT_ID)
+                        .build(),
                     button("验证恢复后交互")
                         .disabled(!control.can_verify())
                         .on_click_fn(move || verify_control.verify_recovered_interaction())
@@ -180,7 +189,7 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
                 .gap(8.0),
                 info_note(
                     tk,
-                    "test-harness 只让下一次真实绘制返回 typed DeviceLost；窗口仍走生产恢复 FSM，恢复后须再次完成用户交互与 present。",
+                    "test-harness 只让下一次真实绘制经过 typed DeviceLost 或 SurfaceLost；窗口仍走生产恢复 FSM，恢复后须再次完成用户交互与 present。",
                 ),
             ])
             .gap(12.0)

@@ -9,7 +9,9 @@ use crate::draw::painting::{FrameCommand, FrameRect};
 use crate::native::present::{GpuImageBlit, IGraphicsContext};
 
 use super::canvas::NativeGpuCanvas2D;
-use super::geometry::{frame_within, rect_to_integer_frame, IntegerFrame};
+use super::geometry::{
+    frame_within, glyph_device_corners, quad_aabb, rect_to_integer_frame, IntegerFrame,
+};
 use super::pending::DirectImageBlit;
 
 impl NativeGpuCanvas2D {
@@ -127,9 +129,45 @@ impl NativeGpuCanvas2D {
         {
             return DirectImageBlit::Culled;
         }
-        let Some((device_dst, _)) = self.try_axis_aligned_device_rect(destination_rect) else {
-            return DirectImageBlit::Unsupported;
-        };
+        // 轴对齐变换直接复用矩形几何；旋转/剪切改用四角 payload。
+        let (device_corners, device_dst) =
+            if let Some((rect, _)) = self.try_axis_aligned_device_rect(destination_rect) {
+                (
+                    crate::native::present::GpuGlyphBlit::axis_aligned_corners(
+                        rect.x, rect.y, rect.w, rect.h,
+                    ),
+                    rect,
+                )
+            } else {
+                // 仿射矩阵不可逆时无法保证采样 UV 的单调映射。
+                let [a, b, _, c, d, _] = self.transform.m;
+                let determinant = a * d - b * c;
+                if !a.is_finite()
+                    || !b.is_finite()
+                    || !c.is_finite()
+                    || !d.is_finite()
+                    || !determinant.is_finite()
+                    || determinant.abs() < 1e-12
+                {
+                    return DirectImageBlit::Unsupported;
+                }
+                // 计算四角和 AABB，surface scissor 负责裁剪旋转后的边界。
+                let corners = glyph_device_corners(
+                    destination_rect,
+                    self.transform,
+                    self.offset_x,
+                    self.offset_y,
+                );
+                if corners.iter().flatten().any(|value| !value.is_finite()) {
+                    return DirectImageBlit::Unsupported;
+                }
+                let (min_x, min_y, max_x, max_y) = quad_aabb(corners);
+                let rect = Rect::new(min_x, min_y, max_x - min_x, max_y - min_y);
+                if rect.w <= 0.0 || rect.h <= 0.0 {
+                    return DirectImageBlit::Culled;
+                }
+                (corners, rect)
+            };
         if device_dst.w <= 0.0 || device_dst.h <= 0.0 {
             return DirectImageBlit::Culled;
         }
@@ -145,7 +183,7 @@ impl NativeGpuCanvas2D {
         let identity = self.transform.m == Transform::identity().m;
         let one_to_one =
             destination_rect.w == source.width as f32 && destination_rect.h == source.height as f32;
-        let (blit_x, blit_y, blit_w, blit_h, crop) = if identity && one_to_one {
+        let (blit_x, blit_y, blit_w, blit_h, crop, blit_corners) = if identity && one_to_one {
             let dest_x = device_dst.x;
             let dest_y = device_dst.y;
             let integer_placement = self.offset_x.fract() == 0.0
@@ -197,6 +235,12 @@ impl NativeGpuCanvas2D {
                     clipped_dst.width as f32,
                     clipped_dst.height as f32,
                     clipped_src,
+                    crate::native::present::GpuGlyphBlit::axis_aligned_corners(
+                        clipped_dst.x as f32,
+                        clipped_dst.y as f32,
+                        clipped_dst.width as f32,
+                        clipped_dst.height as f32,
+                    ),
                 )
             } else {
                 // 亚像素落点：保留完整源 crop，裁剪交给 GPU scissor。
@@ -206,6 +250,7 @@ impl NativeGpuCanvas2D {
                     source.width as f32,
                     source.height as f32,
                     source,
+                    device_corners,
                 )
             }
         } else {
@@ -216,6 +261,7 @@ impl NativeGpuCanvas2D {
                 device_dst.w,
                 device_dst.h,
                 source,
+                device_corners,
             )
         };
 
@@ -238,6 +284,7 @@ impl NativeGpuCanvas2D {
             y: blit_y,
             w: blit_w,
             h: blit_h,
+            corners: blit_corners,
             opacity: self.opacity.clamp(0.0, 1.0),
             additive: matches!(self.blend_mode, BlendMode::Additive),
             pixels: Arc::<[u32]>::from(retained),

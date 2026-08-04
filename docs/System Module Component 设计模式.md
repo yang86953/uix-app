@@ -1,52 +1,3 @@
----
-schema: ai-note/v2
-id: system-module-component-pattern
-title: System / Module / Component 设计模式
-aliases:
-  - SMC
-  - System Module Component 设计模式
-summary: 定义 System、Module、Component 三层通用架构角色，并把类型化、作用域订阅的进程内同步 EventBus 合理纳入契约、所有权、生命周期和依赖规则，不绑定具体语言或框架。
-note_type: reference
-status: active
-project: ""
-privacy: internal
-ai_index: true
-ai_origin: assisted
-review_status: reviewed
-reviewed_at: 2026-08-03
-tags:
-  - domain/development
-  - topic/design-patterns
-  - topic/software-architecture
-keywords:
-  - System
-  - Module
-  - Component
-  - Event
-  - EventBus
-  - Mediator
-  - 类型化事件
-  - 作用域订阅
-  - 事件类型集合
-  - 同步分发
-  - DomainEvent
-  - 事件驱动
-  - SMC
-  - 软件架构
-  - FactEstablished
-  - 生命周期治理
-  - 架构不变量
-created: 2026-07-27
-updated: 2026-08-03
-verified_at: 2026-08-03
-review_after: ""
-source_type: imported
-source_url: ""
-source_author: ""
-related:
-  - "[[集成消息与事件投递设计]]"
----
-
 # System / Module / Component 设计模式
 
 本模式从逻辑职责视角把软件划分为 System、Module、Component 三层：
@@ -86,7 +37,7 @@ SMC 只定义逻辑职责、契约依赖、实例所有权和定义复用，不�
 
 本文以语言无关的方式定义进程内同步 EventBus，不绑定类、模板、接口、异常机制、
 内存模型、运行时或第三方框架。EventBus 不代表线程调度器、异步队列、持久化日志
-或跨进程消息总线；这些内容见[[集成消息与事件投递设计]]。
+或跨进程消息总线；这些内容见[集成消息与事件投递设计](集成消息与事件投递设计.md)。
 
 组合根、契约定义、普通函数、基础算法、生成代码和外部资源不必强行归类为
 System、Module 或 Component：
@@ -303,7 +254,7 @@ Adapter、Backend 和 Driver 描述环境适配责任，不与 Component 身份�
 事件契约遵守相同的类型所有权规则。Component 默认只产生自己拥有的窄输出；
 Module 将其显式映射为协调多个 Components 的 ModuleEvent。跨 Modules 的事件由
 System 私有边界拥有，本文称为 SystemEvent。跨 Systems 的消息不通过同一个
-进程内 EventBus 传播，其公开契约和投递规则见[[集成消息与事件投递设计]]。
+进程内 EventBus 传播，其公开契约和投递规则见[集成消息与事件投递设计](集成消息与事件投递设计.md)。
 边界感知的私有 Component 可以例外采用上层私有事件契约，但不得把这种耦合带入
 可复用定义。
 
@@ -347,7 +298,7 @@ Event 表示已经发生的不可变事实。发布者不指定某个接收者�
 特定语言和存储为前提。普通 Event 只能在该点之后发布；建立前的候选信息应保持为
 `PendingEventRecord` 或显式事务通知，并通过调用链、Pipeline 或工作单元协调，不能
 泄漏到普通 EventBus 或产生不可回滚的外部副作用。投递配置见
-[[集成消息与事件投递设计]]。
+[集成消息与事件投递设计](集成消息与事件投递设计.md)。
 
 先按交互语义选择机制：
 
@@ -358,7 +309,7 @@ Event 表示已经发生的不可变事实。发布者不指定某个接收者�
 | 已发生的事实可被零个或多个能力独立感知 | 进程内 EventBus |
 | 多步骤操作依赖固定顺序、补偿或总体结果 | 显式 Workflow / Process Manager |
 | 需要换线程、延迟执行或背压 | 独立 Executor / Queue 设计 |
-| 需要跨进程、持久化或重放 | [[集成消息与事件投递设计]] |
+| 需要跨进程、持久化或重放 | [集成消息与事件投递设计](集成消息与事件投递设计.md) |
 
 Event 应使用过去式事实命名，例如 `OrderConfirmed`，而不是 `ConfirmOrder`。需要
 处理结果的 Command/Query 不得伪装成 Event；如果正确性取决于某个订阅者存在、
@@ -418,7 +369,7 @@ EventBus 实现可以作为可复用 Component 定义，但每个 Module 或 Sys
 `TechnicalEvent` 等描述消息语义。这两个分类维度正交：一个表达已建立领域事实的
 SystemEvent 同时也是 DomainEvent，但并非每个 SystemEvent 都具有领域事实语义。
 `IntegrationEvent` 是跨 System 的版本化公开投影，属于集成消息契约，见
-[[集成消息与事件投递设计]]，不在本文的进程内 EventBus 中传播。
+[集成消息与事件投递设计](集成消息与事件投递设计.md)，不在本文的进程内 EventBus 中传播。
 
 事件负载必须：
 
@@ -669,7 +620,7 @@ EventBus 库或包装器可以作为可复用 Component 定义，但复用定义
 - Module/System 维护完整的进程内路由清单，并把同步调用边纳入环和锁顺序审查；
 - 组合根按已经批准的路由执行创建和注册，不自行决定业务响应；
 - 跨 System 消息使用独立公开契约与通信 Adapter，具体规则见
-  [[集成消息与事件投递设计]]；
+  [集成消息与事件投递设计](集成消息与事件投递设计.md)；
 - 事件引发的多步骤响应由显式 Workflow 或协调者管理顺序、失败和终止。
 
 禁止：

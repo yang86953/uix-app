@@ -47,21 +47,38 @@ impl D3d11Pipeline {
         context: &ID3D11DeviceContext,
         viewport_w: f32,
         viewport_h: f32,
-        x: f32,
-        y: f32,
-        w: f32,
-        h: f32,
+        local_w: f32,
+        local_h: f32,
+        corners: [[f32; 2]; 4],
         color_a: [f32; 4],
         color_b: [f32; 4],
         params: [f32; 4],
     ) -> Result<()> {
-        if w <= 0.0 || h <= 0.0 {
+        // 退化逻辑尺寸或异常 affine 四角不产生无效 GPU draw。
+        if local_w <= 0.0
+            || local_h <= 0.0
+            || !corners
+                .iter()
+                .flatten()
+                .all(|component| component.is_finite())
+        {
             return Ok(());
         }
+        // 线性 shader 使用逻辑尺寸计算 t，避免 skew 改变渐变语义。
+        let mut params = params;
+        if params[0] < 0.5 {
+            params[2] = local_w;
+            params[3] = local_h;
+        }
+        // 由 TL、TR、BL 四角重建 affine quad 的原点与两条边。
+        let edge_x = [corners[1][0] - corners[0][0], corners[1][1] - corners[0][1]];
+        let edge_y = [corners[3][0] - corners[0][0], corners[3][1] - corners[0][1]];
+        // 将 affine geometry 与渐变参数写入现有 96 字节常量布局。
         let constants = GradientConstants {
             viewport: [viewport_w, viewport_h],
             _pad0: [0.0, 0.0],
-            rect: [x, y, w, h],
+            origin_edge_x: [corners[0][0], corners[0][1], edge_x[0], edge_x[1]],
+            edge_y: [edge_y[0], edge_y[1], 0.0, 0.0],
             color_a,
             color_b,
             params,
@@ -101,17 +118,30 @@ impl D3d11Pipeline {
         }
         self.bind_grad_pipeline(context, viewport_w, viewport_h, scissor);
         for rect in rects {
-            if rect.w <= 0.0 || rect.h <= 0.0 {
+            // 过滤退化矩形、非法方向、异常 affine 四角和颜色。
+            if rect.w <= 0.0
+                || rect.h <= 0.0
+                || rect.dir > 3
+                || !rect
+                    .corners
+                    .iter()
+                    .flatten()
+                    .all(|component| component.is_finite())
+                || !rect
+                    .color_a
+                    .iter()
+                    .chain(rect.color_b.iter())
+                    .all(|component| component.is_finite())
+            {
                 continue;
             }
             self.draw_grad_constants(
                 context,
                 viewport_w,
                 viewport_h,
-                rect.x,
-                rect.y,
                 rect.w,
                 rect.h,
+                rect.corners,
                 rect.color_a,
                 rect.color_b,
                 [0.0, rect.dir as f32, 0.0, 0.0],
@@ -134,29 +164,44 @@ impl D3d11Pipeline {
         self.bind_grad_pipeline(context, viewport_w, viewport_h, scissor);
         for g in grads {
             let outer = g.outer_r.max(0.0);
-            if outer <= 0.0 {
+            // 过滤退化半径、越界半径、异常 affine 四角和颜色。
+            if outer <= 0.0
+                || !g.inner_r.is_finite()
+                || g.inner_r < 0.0
+                || g.inner_r > outer
+                || !g
+                    .corners
+                    .iter()
+                    .flatten()
+                    .all(|component| component.is_finite())
+                || !g
+                    .color_inner
+                    .iter()
+                    .chain(g.color_outer.iter())
+                    .all(|component| component.is_finite())
+            {
                 continue;
             }
-            let x = g.cx - outer;
-            let y = g.cy - outer;
-            let size = outer * 2.0;
             self.draw_grad_constants(
                 context,
                 viewport_w,
                 viewport_h,
-                x,
-                y,
-                size,
-                size,
+                outer * 2.0,
+                outer * 2.0,
+                g.corners,
                 g.color_inner,
                 g.color_outer,
-                [1.0, g.inner_r.max(0.0), outer, 0.0],
+                [1.0, (g.inner_r / outer).min(1.0) * 0.5, 0.5, 0.0],
             )?;
         }
         Ok(())
     }
 
-    pub(crate) fn ensure_mesh_vb(&mut self, device: &ID3D11Device, float_count: usize) -> Result<()> {
+    pub(crate) fn ensure_mesh_vb(
+        &mut self,
+        device: &ID3D11Device,
+        float_count: usize,
+    ) -> Result<()> {
         if float_count <= self.vb_mesh_capacity_floats {
             return Ok(());
         }
@@ -262,6 +307,67 @@ impl D3d11Pipeline {
                 context.Draw(vert_count, 0);
             }
         }
+        Ok(())
+    }
+
+    // 执行薄 RHI 的实心三角 draw packet，不接收任何 UI 高层语义。
+    pub(crate) fn draw_rhi_solid_mesh(
+        &self,
+        context: &ID3D11DeviceContext,
+        vertex: &ID3D11Buffer,
+        vertex_stride: u32,
+        index: Option<&ID3D11Buffer>,
+        uniform: &ID3D11Buffer,
+        vertex_count: u32,
+        index_count: u32,
+        first_vertex: u32,
+        first_index: u32,
+        base_vertex: i32,
+    ) -> Result<()> {
+        // 该 pipeline 的 shader ABI 只接受位置 float2。
+        if vertex_stride != (2 * size_of::<f32>()) as u32 {
+            // 把错误留在 RHI adapter，不让 D3D11 读错步长。
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                "D3d11 RHI solid mesh stride must be float2",
+            ));
+        }
+        // 非索引和索引绘制必须恰好选择一种范围。
+        if (index.is_some() && index_count == 0) || (index.is_none() && vertex_count == 0) {
+            // 返回稳定的参数错误。
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                "D3d11 RHI solid mesh draw range is empty",
+            ));
+        }
+        // 绑定 RHI packet 对应的固定 mesh pipeline。
+        unsafe {
+            context.IASetInputLayout(&self.layout);
+            context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            context.IASetVertexBuffers(
+                0,
+                1,
+                Some(&Some(vertex.clone())),
+                Some(&vertex_stride),
+                Some(&0),
+            );
+            // None 会清除前一个 packet 留下的索引绑定。
+            context.IASetIndexBuffer(index, DXGI_FORMAT_R32_UINT, 0);
+            context.VSSetShader(&self.vs_mesh, None);
+            context.PSSetShader(&self.ps_mesh, None);
+            context.VSSetConstantBuffers(0, Some(&[Some(uniform.clone())]));
+            context.PSSetConstantBuffers(0, Some(&[Some(uniform.clone())]));
+            context.RSSetState(&self.rasterizer);
+            context.OMSetBlendState(&self.blend_alpha, None, 0xffff_ffff);
+            if index.is_some() {
+                // 索引 ABI 固定为 uint32，base vertex 保留 D3D11 原生语义。
+                context.DrawIndexed(index_count, first_index, base_vertex);
+            } else {
+                // 非索引 packet 直接使用顶点范围。
+                context.Draw(vertex_count, first_vertex);
+            }
+        }
+        // 返回编码成功。
         Ok(())
     }
 
@@ -434,6 +540,8 @@ impl D3d11Pipeline {
                 upload_w as f32 / target_width as f32,
                 upload_h as f32 / target_height as f32,
             ],
+            // CPU soft tile 已经是完整颜色，保持原有不透明组缩放。
+            tint: [1.0; 4],
         };
         let upload_box = D3D11_BOX {
             left: tile.dst_x as u32,
@@ -536,7 +644,13 @@ impl D3d11Pipeline {
         target_h: f32,
         src: crate::core::Rect,
         dst: crate::core::Rect,
+        opacity: f32,
+        additive: bool,
     ) -> Result<()> {
+        // 透明组不需要提交采样 draw。
+        if !opacity.is_finite() || opacity <= 0.0 {
+            return Ok(());
+        }
         if dst.w <= 0.0
             || dst.h <= 0.0
             || source_w <= 0.0
@@ -585,6 +699,8 @@ impl D3d11Pipeline {
                 src.w / source_w,
                 src.h / source_h,
             ],
+            // 对 premultiplied source 同步缩放 RGB 与 alpha。
+            tint: [opacity.clamp(0.0, 1.0); 4],
         };
         let previous_raster_state = RasterState::capture(context);
         let result = (|| -> Result<()> {
@@ -624,7 +740,13 @@ impl D3d11Pipeline {
                 context.PSSetShaderResources(0, Some(&[Some(srv.clone())]));
                 context.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
                 context.RSSetState(&self.rasterizer);
-                context.OMSetBlendState(&self.blend_alpha, None, 0xffff_ffff);
+                // 离屏目标是 premultiplied；Additive 只切换目标因子。
+                let blend = if additive {
+                    &self.blend_additive
+                } else {
+                    &self.blend_premultiplied
+                };
+                context.OMSetBlendState(blend, None, 0xffff_ffff);
                 context.Draw(6, 0);
                 context.PSSetShaderResources(0, Some(&[None]));
             }
@@ -678,12 +800,8 @@ impl D3d11Pipeline {
         // 钳制 region 到目标纹理范围。
         let x0 = region.x.max(0.0);
         let y0 = region.y.max(0.0);
-        let region = crate::core::Rect::new(
-            x0,
-            y0,
-            region.w.min(tex_w - x0),
-            region.h.min(tex_h - y0),
-        );
+        let region =
+            crate::core::Rect::new(x0, y0, region.w.min(tex_w - x0), region.h.min(tex_h - y0));
         if region.w <= 0.0 || region.h <= 0.0 {
             return Ok(());
         }
@@ -715,7 +833,13 @@ impl D3d11Pipeline {
                 context.RSSetScissorRects(Some(&[scissor]));
                 let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
                 context
-                    .Map(&self.cb_blur, 0, D3D11_MAP_WRITE_DISCARD, 0, Some(&mut mapped))
+                    .Map(
+                        &self.cb_blur,
+                        0,
+                        D3D11_MAP_WRITE_DISCARD,
+                        0,
+                        Some(&mut mapped),
+                    )
                     .map_err(|e| d3d_error("Map(cb_blur)", e))?;
                 std::ptr::copy_nonoverlapping(
                     (&constants as *const BlurConstants).cast::<u8>(),

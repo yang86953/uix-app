@@ -9,9 +9,14 @@ use std::sync::Arc;
 use glow::HasContext as _;
 
 use crate::core::{Errc, Error, Rect, Result};
-use crate::native::present::{GpuGlyphBlit, GpuSolidRect, OffscreenTargetId, SoftFallbackTile};
+use crate::native::present::{
+    GpuBoxShadow, GpuGlyphBlit, GpuSolidRect, GpuStrokeRect, OffscreenTargetId, SoftFallbackTile,
+};
 
 use super::{shaders, NativeOpenGlRuntime};
+
+// 引入与 legacy raster 并存的薄 RHI 资源 owner。
+use rhi_device::OpenGlRhiDevice;
 
 #[derive(Clone, Copy)]
 pub(crate) struct TargetState {
@@ -120,6 +125,16 @@ pub(crate) struct OpenGlRasterPipeline {
     rect_rect: Option<glow::UniformLocation>,
     rect_color: Option<glow::UniformLocation>,
     rect_radius: Option<glow::UniformLocation>,
+    // 复用同一圆角矩形 shader 的居中描边宽度。
+    rect_stroke: Option<glow::UniformLocation>,
+    // 复用 RHI 的仿射阴影 shader，覆盖 legacy native queue。
+    shadow_program: glow::Program,
+    shadow_viewport: Option<glow::UniformLocation>,
+    shadow_rect: Option<glow::UniformLocation>,
+    shadow_color: Option<glow::UniformLocation>,
+    shadow_radius: Option<glow::UniformLocation>,
+    shadow_params: Option<glow::UniformLocation>,
+    shadow_size: Option<glow::UniformLocation>,
     glyph_vao: glow::VertexArray,
     glyph_vbo: glow::Buffer,
     glyph_program: glow::Program,
@@ -141,6 +156,8 @@ pub(crate) struct OpenGlRasterPipeline {
     blit_rgba_program: glow::Program,
     blit_rgba_texture: Option<glow::UniformLocation>,
     blit_rgba_uv: Option<glow::UniformLocation>,
+    // 缓存 Picture texture blit 的组 opacity uniform。
+    blit_rgba_opacity: Option<glow::UniformLocation>,
     soft_texture: Option<glow::Texture>,
     soft_width: i32,
     soft_height: i32,
@@ -150,6 +167,10 @@ pub(crate) struct OpenGlRasterPipeline {
     free_offscreen_ids: Vec<u32>,
     next_offscreen_id: u32,
     released: bool,
+    // 保存通用 FramePlan 使用的 OpenGL ES RHI 资源和 pass 状态。
+    rhi: OpenGlRhiDevice,
+    // 保存 legacy native queue 复用的薄 RHI 绘制资源。
+    legacy: legacy_rhi_ops::LegacyNativeOps,
 }
 
 pub(crate) fn logical_scissor_to_drawable(
@@ -414,3 +435,19 @@ fn gl_error(operation: &str, error: String) -> Error {
 
 mod pipeline;
 mod pipeline2;
+// 将 legacy queue 的渐变、mesh、sector、图片 ABI 拆到独立资源 owner。
+#[path = "legacy_rhi_ops.rs"]
+mod legacy_rhi_ops;
+
+// 保持固定 GLSL ABI 与资源设备实现处于同一 native adapter 边界。
+#[path = "rhi_shaders.rs"]
+mod rhi_shaders;
+// 将 RHI 资源表和 pass 生命周期拆出，避免主 raster 文件继续膨胀。
+#[path = "rhi_device.rs"]
+mod rhi_device;
+// 将 OpenGlRasterPipeline 的 RHI bridge 暴露给 WGL/EGL context。
+#[path = "rhi.rs"]
+mod rhi;
+
+// 将 surface target sentinel 暴露给 OpenGL host，而不暴露内部资源表。
+pub(crate) use rhi::OPENGL_RHI_SURFACE_TARGET_RAW;

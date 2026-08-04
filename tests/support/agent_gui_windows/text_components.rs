@@ -9,7 +9,7 @@ struct ComponentQaSession {
 
 impl ComponentQaSession {
     fn open(case_index: usize, request_prefix: &str) -> Self {
-        let mut demo = DemoProcess::spawn_with_args(DEFAULT_VULKAN_GRAPHICS, &["--component-qa"]);
+        let mut demo = DemoProcess::spawn_with_args(DEFAULT_D3D11_GRAPHICS, &["--component-qa"]);
         let descriptor = demo.wait_for_descriptor();
         let endpoint = descriptor["endpoint"]
             .as_str()

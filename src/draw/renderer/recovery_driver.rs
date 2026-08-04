@@ -5,7 +5,7 @@
 //! typed failure is returned first so the caller retains dirty state, then the
 //! next `begin_frame` runs exactly one bounded recovery action.
 
-use crate::core::{Error, Rect};
+use crate::core::{Errc, Error, Rect};
 use crate::draw::backend::DamageRegion;
 use crate::draw::geometry::types::ImageHandle;
 use crate::draw::painting::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
@@ -211,12 +211,53 @@ impl RenderTarget for RecoveryDriver {
                 .as_ref()
                 .is_some_and(GraphicsFaultSignal::take_device_lost)
         {
-            let failure = GraphicsFailure::DeviceLost(Error::new(
-                crate::core::Errc::GraphicsDeviceLost,
-                "test-harness injected graphics device loss",
-            ));
-            self.record_failure(failure.clone());
-            return RenderOutcome::Failed(failure);
+            // 先尝试把注入送到真实 backend；D3D11 会在最终 present 预检报告失败。
+            match self.engine.inject_graphics_device_lost_for_test() {
+                Ok(()) => {}
+                Err(error) if error.code() == Errc::NotImplemented => {
+                    // 未接入薄 RHI 的测试 backend 保留原有包装器级兼容语义。
+                    let failure = GraphicsFailure::DeviceLost(Error::new(
+                        crate::core::Errc::GraphicsDeviceLost,
+                        "test-harness injected graphics device loss",
+                    ));
+                    self.record_failure(failure.clone());
+                    return RenderOutcome::Failed(failure);
+                }
+                Err(error) => {
+                    // 真实 adapter 注入入口的其它错误也必须进入同一恢复 FSM。
+                    let failure = GraphicsFailure::from_error(error);
+                    self.record_failure(failure.clone());
+                    return RenderOutcome::Failed(failure);
+                }
+            }
+        }
+        #[cfg(feature = "test-harness")]
+        if self.pending_failure.is_none()
+            && self.terminal_failure.is_none()
+            && self
+                .test_faults
+                .as_ref()
+                .is_some_and(GraphicsFaultSignal::take_surface_lost)
+        {
+            // 让 D3D11 在下一次 RHI acquire 返回 GraphicsSurfaceLost。
+            match self.engine.inject_graphics_surface_lost_for_test() {
+                Ok(()) => {}
+                Err(error) if error.code() == Errc::NotImplemented => {
+                    // 未接入薄 RHI 的测试 backend 保留包装器级兼容回退语义。
+                    let failure = GraphicsFailure::SurfaceLost(Error::new(
+                        crate::core::Errc::GraphicsSurfaceLost,
+                        "test-harness injected graphics surface loss",
+                    ));
+                    self.record_failure(failure.clone());
+                    return RenderOutcome::Failed(failure);
+                }
+                Err(error) => {
+                    // 真实 adapter 注入入口的其它错误也必须进入同一恢复 FSM。
+                    let failure = GraphicsFailure::from_error(error);
+                    self.record_failure(failure.clone());
+                    return RenderOutcome::Failed(failure);
+                }
+            }
         }
         // An external recovery registration (e.g. a Diagnostics handler) may
         // request the bounded rebuild sequence at the next frame boundary.

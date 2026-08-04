@@ -1,7 +1,12 @@
 use super::*;
 
 impl D3d11Pipeline {
-    pub(crate) fn ensure_atlas(&mut self, device: &ID3D11Device, need_w: u32, need_h: u32) -> Result<()> {
+    pub(crate) fn ensure_atlas(
+        &mut self,
+        device: &ID3D11Device,
+        need_w: u32,
+        need_h: u32,
+    ) -> Result<()> {
         let need_w = need_w.max(1);
         let need_h = need_h.max(1);
         let want_w = next_pow2_u32(need_w).clamp(ATLAS_MIN, ATLAS_MAX);
@@ -72,7 +77,11 @@ impl D3d11Pipeline {
         self.atlas_cache.clear();
     }
 
-    pub(crate) fn ensure_glyph_vb(&mut self, device: &ID3D11Device, glyph_count: usize) -> Result<()> {
+    pub(crate) fn ensure_glyph_vb(
+        &mut self,
+        device: &ID3D11Device,
+        glyph_count: usize,
+    ) -> Result<()> {
         if glyph_count <= self.vb_glyph_capacity {
             return Ok(());
         }
@@ -618,5 +627,4 @@ impl D3d11Pipeline {
         }
         Ok(())
     }
-
 }

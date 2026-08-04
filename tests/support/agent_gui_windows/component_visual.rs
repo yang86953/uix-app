@@ -59,7 +59,7 @@ fn real_demo_captures_every_component_and_applicable_visual_state() {
     fs::create_dir_all(&evidence_root).expect("create component visual evidence root");
     clear_generated_evidence(&evidence_root);
 
-    let mut demo = DemoProcess::spawn_with_args(DEFAULT_VULKAN_GRAPHICS, &["--component-qa"]);
+    let mut demo = DemoProcess::spawn_with_args(DEFAULT_D3D11_GRAPHICS, &["--component-qa"]);
     let descriptor = demo.wait_for_descriptor();
     let endpoint = descriptor["endpoint"]
         .as_str()
@@ -223,7 +223,7 @@ fn real_demo_captures_upload_list_visual() {
     let evidence_root = evidence_root();
     fs::create_dir_all(&evidence_root).expect("create component visual evidence root");
 
-    let mut demo = DemoProcess::spawn_with_args(DEFAULT_VULKAN_GRAPHICS, &["--component-qa"]);
+    let mut demo = DemoProcess::spawn_with_args(DEFAULT_D3D11_GRAPHICS, &["--component-qa"]);
     let descriptor = demo.wait_for_descriptor();
     let endpoint = descriptor["endpoint"]
         .as_str()
@@ -323,6 +323,16 @@ fn real_demo_captures_upload_list_visual() {
         "upload"
     );
     capture(&demo, &evidence_root, "upload-list-dark-compact.png");
+
+    // 把窗口恢复到默认尺寸，验证 RHI surface resize 的反向代际路径。
+    resize_and_wait(
+        &demo,
+        &mut connection,
+        window_id,
+        generation,
+        DEFAULT_WINDOW_SIZE,
+        "upload-visual-desktop-restore",
+    );
 
     drop(connection);
     demo.close_and_wait();

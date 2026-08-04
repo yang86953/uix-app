@@ -23,11 +23,26 @@ const COMPACT_WINDOW_SIZE: (i32, i32) = (900, 640);
 #[test]
 #[ignore = "requires an interactive Windows desktop and writes visual evidence"]
 fn real_demo_captures_all_pages_for_visual_review() {
+    // 保留生产默认 D3D11 的全页面视觉验收入口。
+    run_visual_capture(DEFAULT_D3D11_GRAPHICS);
+}
+
+// 在真实 Windows OpenGL ES swapchain 上重复同一套页面视觉验收。
+#[cfg(feature = "opengles")]
+#[test]
+#[ignore = "requires an interactive Windows desktop and writes OpenGL ES visual evidence"]
+fn real_opengles_demo_captures_all_pages_for_visual_review() {
+    // 使用显式 OpenGL ES recipe，确保不会静默切回 CPU 或 D3D11。
+    run_visual_capture(FORCED_OPENGLES_GRAPHICS);
+}
+
+// 执行跨页面、滚动、缩放、主题和弹窗的真实窗口视觉验收。
+fn run_visual_capture(graphics: GraphicsExpectation) {
     let _guard = REAL_GUI_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let evidence_root = evidence_root();
-    let mut demo = DemoProcess::spawn(DEFAULT_VULKAN_GRAPHICS);
+    let mut demo = DemoProcess::spawn(graphics);
     let descriptor = demo.wait_for_descriptor();
     let endpoint = descriptor["endpoint"]
         .as_str()

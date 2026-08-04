@@ -19,6 +19,9 @@ mod framework;
 mod graphics_recovery;
 #[path = "support/agent_gui_windows/multi_window.rs"]
 mod multi_window;
+// 单独运行大字号旋转水印，验证 MSDF 真窗 present 边界。
+#[path = "support/agent_gui_windows/msdf_visual.rs"]
+mod msdf_visual;
 #[path = "support/agent_gui_windows/overlay_performance.rs"]
 mod overlay_performance;
 #[path = "support/agent_gui_windows/system_theme.rs"]
@@ -68,27 +71,50 @@ struct GraphicsExpectation {
     backend_override: Option<&'static str>,
     selected_recipe: Option<&'static str>,
     present_occlusion: Option<&'static str>,
-    adapter_backend: Option<&'static str>,
+    // 记录当前原生 adapter 在启动日志中的稳定识别标记。
+    adapter_marker: Option<&'static str>,
     software_fallback_request: Option<&'static str>,
     run_foreground_visual_oracles: bool,
 }
 
-const DEFAULT_VULKAN_GRAPHICS: GraphicsExpectation = GraphicsExpectation {
-    evidence_label: "auto-vulkan",
+// 描述 Windows 默认生产 D3D11 路径的真窗验证期望。
+const DEFAULT_D3D11_GRAPHICS: GraphicsExpectation = GraphicsExpectation {
+    evidence_label: "auto-d3d11",
     backend_override: None,
-    selected_recipe: Some("backend=vulkan; raster=gpu_native; present=swapchain"),
-    present_occlusion: Some("unsupported"),
-    adapter_backend: Some("vulkan"),
+    selected_recipe: Some("backend=d3d11; raster=gpu_native; present=swapchain"),
+    present_occlusion: Some("present_status_and_test"),
+    adapter_marker: Some("D3d11Context: created"),
     software_fallback_request: None,
     run_foreground_visual_oracles: true,
 };
-const FORCED_VULKAN_GRAPHICS: GraphicsExpectation = GraphicsExpectation {
-    evidence_label: "forced-vulkan",
-    backend_override: Some("vulkan"),
-    selected_recipe: Some("backend=vulkan; raster=gpu_native; present=swapchain"),
-    present_occlusion: Some("unsupported"),
-    adapter_backend: Some("vulkan"),
+
+// 描述显式请求 Windows 原生 D3D11 的真窗验证期望。
+const FORCED_D3D11_GRAPHICS: GraphicsExpectation = GraphicsExpectation {
+    evidence_label: "forced-d3d11",
+    backend_override: Some("d3d11"),
+    selected_recipe: Some("backend=d3d11; raster=gpu_native; present=swapchain"),
+    present_occlusion: Some("present_status_and_test"),
+    adapter_marker: Some("D3d11Context: created"),
     software_fallback_request: None,
+    run_foreground_visual_oracles: false,
+};
+
+// 描述显式请求 Windows OpenGL ES 的真窗验证期望。
+#[cfg(feature = "opengles")]
+const FORCED_OPENGLES_GRAPHICS: GraphicsExpectation = GraphicsExpectation {
+    // OpenGL 验收日志需要与 D3D11 路径分开保存。
+    evidence_label: "forced-opengles",
+    // 通过环境变量强制选择 OpenGL ES 原生适配器。
+    backend_override: Some("opengles"),
+    // OpenGL ES 使用共享的 GPU-native swapchain recipe。
+    selected_recipe: Some("backend=opengles; raster=gpu_native; present=swapchain"),
+    // WGL/EGL 当前没有可靠的逐窗 PresentStatusAndTest 能力。
+    present_occlusion: Some("unsupported"),
+    // WGL 创建日志提供稳定的适配器识别标记。
+    adapter_marker: Some("WglContext: OpenGL ES context created"),
+    // 该场景必须保持在 OpenGL ES 原生路径，不能请求 CPU fallback。
+    software_fallback_request: None,
+    // 故障恢复测试通过 agent-control 交互，不重复前台视觉断言。
     run_foreground_visual_oracles: false,
 };
 // Production intentionally has no direct `software` backend override. A Metal
@@ -99,7 +125,7 @@ const SOFTWARE_FALLBACK_GRAPHICS: GraphicsExpectation = GraphicsExpectation {
     backend_override: Some("metal"),
     selected_recipe: None,
     present_occlusion: None,
-    adapter_backend: None,
+    adapter_marker: None,
     software_fallback_request: Some("metal"),
     run_foreground_visual_oracles: false,
 };
@@ -260,15 +286,14 @@ impl DemoProcess {
                 output.contains(&selected),
                 "demo did not select graphics recipe `{recipe}` with present occlusion `{present_occlusion}`; output={output}"
             );
-            let Some(adapter_backend) = self.graphics.adapter_backend else {
-                panic!("GPU graphics expectation must declare its wgpu adapter backend");
+            let Some(adapter_marker) = self.graphics.adapter_marker else {
+                panic!("GPU graphics expectation must declare its native adapter marker");
             };
-            let adapter_marker = format!("WgpuContext: backend={adapter_backend}; adapter=\"");
             let adapter_line = output
                 .lines()
-                .find(|line| line.contains(&adapter_marker))
+                .find(|line| line.contains(adapter_marker))
                 .unwrap_or_else(|| {
-                    panic!("demo did not report a wgpu {adapter_backend} adapter; output={output}")
+                    panic!("demo did not report native adapter marker `{adapter_marker}`; output={output}")
                 });
             assert!(
                 !output.contains("fallback=software_cpu"),
@@ -301,8 +326,8 @@ impl DemoProcess {
             "software fallback scenario unexpectedly selected a GPU recipe; output={output}"
         );
         assert!(
-            !output.contains("WgpuContext: backend="),
-            "software fallback scenario unexpectedly created a wgpu adapter; output={output}"
+            !output.contains("D3d11Context: created"),
+            "software fallback scenario unexpectedly created a D3D11 adapter; output={output}"
         );
         eprintln!(
             "graphics acceptance evidence: path={}; request={request}; fallback=software_cpu; renderer=Renderer::cpu",
@@ -806,15 +831,15 @@ fn invoke_until_presentable(
 }
 
 #[test]
-#[ignore = "requires an interactive Windows desktop and Vulkan driver"]
-fn real_default_auto_vulkan_gui_presents_and_recovers_from_minimize() {
-    run_real_gui_scenario(DEFAULT_VULKAN_GRAPHICS);
+#[ignore = "requires an interactive Windows desktop and D3D11 driver"]
+fn real_default_auto_d3d11_gui_presents_and_recovers_from_minimize() {
+    run_real_gui_scenario(DEFAULT_D3D11_GRAPHICS);
 }
 
 #[test]
-#[ignore = "requires an interactive Windows desktop and Vulkan driver"]
-fn real_forced_vulkan_gui_presents_and_recovers_from_minimize() {
-    run_real_gui_scenario(FORCED_VULKAN_GRAPHICS);
+#[ignore = "requires an interactive Windows desktop and D3D11 driver"]
+fn real_forced_d3d11_gui_presents_and_recovers_from_minimize() {
+    run_real_gui_scenario(FORCED_D3D11_GRAPHICS);
 }
 
 #[test]
@@ -1238,7 +1263,7 @@ fn run_real_gui_scenario(graphics: GraphicsExpectation) {
         "feedback-modal-cancel",
         Duration::from_secs(10),
     );
-    // Vulkan reports present_occlusion=unsupported. SW_HIDE validates the
+    // D3D11 reports present_occlusion=present_status_and_test. SW_HIDE validates the
     // production hidden/non-presentable lifecycle only; it is not evidence of
     // true compositor occlusion by another foreground window.
     demo.hide();

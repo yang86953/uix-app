@@ -44,6 +44,8 @@ pub struct NativeGpuCanvas2D {
     pub(crate) pending_native: Vec<PendingNativeOp>,
     pub(super) clip_rect: Rect,
     pub(super) clip_stack: Vec<Rect>,
+    // 与 clip_stack 对齐，true 表示对应项需要同步 pop soft path mask。
+    pub(super) clip_kind_stack: Vec<bool>,
     pub(super) opacity: f32,
     pub(super) offset_x: f32,
     pub(super) offset_y: f32,
@@ -89,6 +91,7 @@ impl NativeGpuCanvas2D {
             pending_native: Vec::new(),
             clip_rect: Rect::new(0.0, 0.0, w as f32, h as f32),
             clip_stack: Vec::new(),
+            clip_kind_stack: Vec::new(),
             opacity: 1.0,
             offset_x: 0.0,
             offset_y: 0.0,
@@ -142,6 +145,7 @@ impl NativeGpuCanvas2D {
         self.surface_h = h;
         self.clip_rect = Rect::new(0.0, 0.0, w as f32, h as f32);
         self.clip_stack.clear();
+        self.clip_kind_stack.clear();
         self.state_stack.clear();
         self.pending_native.clear();
         // Drop soft buffer on resize; recreate lazily at the new size.
@@ -191,6 +195,7 @@ impl NativeGpuCanvas2D {
         self.pending_native.clear();
         self.clip_rect = Rect::new(0.0, 0.0, self.surface_w as f32, self.surface_h as f32);
         self.clip_stack.clear();
+        self.clip_kind_stack.clear();
         self.opacity = 1.0;
         self.offset_x = 0.0;
         self.offset_y = 0.0;

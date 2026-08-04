@@ -15,6 +15,12 @@ use crate::draw::raster::rasterizer::core as rast;
 struct StateSnapshot {
     clip_rect: Rect,
     clip_int: (i32, i32, i32, i32),
+    // 保存路径 mask，保证 save/restore 不丢失非矩形裁剪状态。
+    clip_mask: Option<Vec<u8>>,
+    // 保存矩形/路径裁剪栈，保证 restore 后后续 pop 顺序仍然一致。
+    clip_stack: Vec<Rect>,
+    // 保存每一级裁剪前的路径 mask。
+    clip_mask_stack: Vec<Option<Vec<u8>>>,
     opacity: f32,
     offset_x: f32,
     offset_y: f32,
@@ -27,12 +33,20 @@ struct StateSnapshot {
 ///
 /// 管理所有渲染状态，绘制方法写入调用者传入的像素缓冲。
 pub(crate) struct SoftwareRasterizer {
+    /// 当前像素目标宽度，用于构造路径裁剪 mask。
+    pub(crate) surface_w: i32,
+    /// 当前像素目标高度，用于构造路径裁剪 mask。
+    pub(crate) surface_h: i32,
     /// 当前裁剪矩形（浮点）。
     pub(crate) clip_rect: Rect,
     /// 预计算的整数裁剪边界。
     clip_int: (i32, i32, i32, i32),
-    /// 裁剪矩形栈。
-    clip_stack: Vec<Rect>,
+    /// 裁剪矩形栈，供路径 mask lowering 维护同一 pop 顺序。
+    pub(crate) clip_stack: Vec<Rect>,
+    /// 当前路径裁剪的逐像素 coverage mask。
+    pub(crate) clip_mask: Option<Vec<u8>>,
+    /// 每次 push_clip 前的路径 mask，用于统一 pop_clip。
+    pub(crate) clip_mask_stack: Vec<Option<Vec<u8>>>,
     /// 全局透明度。
     opacity: f32,
     /// 像素偏移量（画布平移）。
@@ -51,10 +65,17 @@ pub(crate) struct SoftwareRasterizer {
 impl SoftwareRasterizer {
     /// 创建新渲染器，默认全屏裁剪、identity 变换。
     pub fn new(surface_w: i32, surface_h: i32) -> Self {
+        // 裁剪计算统一使用至少 1x1 的安全目标尺寸。
+        let surface_w = surface_w.max(1);
+        let surface_h = surface_h.max(1);
         Self {
+            surface_w,
+            surface_h,
             clip_rect: Rect::new(0.0, 0.0, surface_w as f32, surface_h as f32),
             clip_int: (0, 0, surface_w, surface_h),
             clip_stack: Vec::new(),
+            clip_mask: None,
+            clip_mask_stack: Vec::new(),
             opacity: 1.0,
             offset_x: 0.0,
             offset_y: 0.0,
@@ -94,6 +115,9 @@ impl SoftwareRasterizer {
         self.state_stack.push(StateSnapshot {
             clip_rect: self.clip_rect,
             clip_int: self.clip_int,
+            clip_mask: self.clip_mask.clone(),
+            clip_stack: self.clip_stack.clone(),
+            clip_mask_stack: self.clip_mask_stack.clone(),
             opacity: self.opacity,
             offset_x: self.offset_x,
             offset_y: self.offset_y,
@@ -107,6 +131,9 @@ impl SoftwareRasterizer {
         if let Some(snap) = self.state_stack.pop() {
             self.clip_rect = snap.clip_rect;
             self.clip_int = snap.clip_int;
+            self.clip_mask = snap.clip_mask;
+            self.clip_stack = snap.clip_stack;
+            self.clip_mask_stack = snap.clip_mask_stack;
             self.opacity = snap.opacity;
             self.offset_x = snap.offset_x;
             self.offset_y = snap.offset_y;
@@ -121,7 +148,9 @@ impl SoftwareRasterizer {
     }
 
     pub fn push_clip_surface(&mut self, rect: Rect) {
+        // 统一记录当前路径 mask，让矩形与路径裁剪可以混合嵌套。
         self.clip_stack.push(self.clip_rect);
+        self.clip_mask_stack.push(self.clip_mask.clone());
         if let Some(intersection) = self.clip_rect.intersect(&rect) {
             self.clip_rect = intersection;
             self.sync_clip_int();
@@ -135,6 +164,10 @@ impl SoftwareRasterizer {
         if let Some(prev) = self.clip_stack.pop() {
             self.clip_rect = prev;
             self.sync_clip_int();
+        }
+        // 没有对应 mask 时保持旧的矩形裁剪行为。
+        if let Some(mask) = self.clip_mask_stack.pop() {
+            self.clip_mask = mask;
         }
     }
 
@@ -187,7 +220,8 @@ impl SoftwareRasterizer {
         })
     }
 
-    fn sync_clip_int(&mut self) {
+    // 路径 mask 更新 clip AABB 后重新计算整数 scissor。
+    pub(crate) fn sync_clip_int(&mut self) {
         self.clip_int = rast::clip_to_int(&self.clip_rect);
     }
 
@@ -236,6 +270,16 @@ impl SoftwareRasterizer {
         if idx >= pixels.len() {
             return;
         }
+        // 路径 mask 以 premultiplied coverage 作用于整条源颜色。
+        let mask = self.clip_mask_value(x, y);
+        if mask == 0 {
+            return;
+        }
+        let color = if mask == u8::MAX {
+            color
+        } else {
+            Self::modulate_premultiplied(color, mask)
+        };
         let src_a = (color >> 24) & 0xFF;
         if src_a == 0 {
             return;
@@ -282,10 +326,17 @@ impl SoftwareRasterizer {
         if x < cx0 || y < cy0 || x >= cx1 || y >= cy1 {
             return;
         }
+        // coverage 小于 1 时在当前像素处叠加路径 mask；完整 coverage 交给
+        // blend_pixel，由它统一处理 mask，避免重复相乘。
+        let mask = self.clip_mask_value(x, y);
+        if mask == 0 {
+            return;
+        }
         if coverage >= 1.0 - 1e-6 {
             self.blend_pixel(pixels, w, h, x, y, premul_color);
             return;
         }
+        let coverage = coverage * (mask as f32 / 255.0);
         if coverage <= 0.0 {
             return;
         }
@@ -341,7 +392,10 @@ impl SoftwareRasterizer {
         span_w: i32,
         color: u32,
     ) {
-        if (color >> 24) == 0xFF && self.blend_mode != BlendMode::Additive {
+        if (color >> 24) == 0xFF
+            && self.blend_mode != BlendMode::Additive
+            && self.clip_mask.is_none()
+        {
             let (cx0, cy0, cx1, cy1) = self.clip_int;
             let x0 = x.max(cx0).max(0);
             let x1 = (x + span_w).min(cx1).min(w);
@@ -391,6 +445,27 @@ impl SoftwareRasterizer {
     }
     pub(crate) fn sdf_to_coverage(sd: f32) -> f32 {
         rast::sdf_to_coverage(sd)
+    }
+
+    // 读取当前像素的路径 coverage；没有路径裁剪时保持满 coverage。
+    pub(crate) fn clip_mask_value(&self, x: i32, y: i32) -> u8 {
+        let Some(mask) = self.clip_mask.as_ref() else {
+            return u8::MAX;
+        };
+        if x < 0 || y < 0 || x >= self.surface_w || y >= self.surface_h {
+            return 0;
+        }
+        let index = (y as usize)
+            .saturating_mul(self.surface_w as usize)
+            .saturating_add(x as usize);
+        mask.get(index).copied().unwrap_or(0)
+    }
+
+    // 对 premultiplied AARRGGBB 颜色应用路径 coverage。
+    fn modulate_premultiplied(color: u32, coverage: u8) -> u32 {
+        let factor = coverage as u32;
+        let channel = |shift: u32| ((color >> shift) & 0xFF) * factor / 255;
+        (channel(24) << 24) | (channel(16) << 16) | (channel(8) << 8) | channel(0)
     }
 }
 

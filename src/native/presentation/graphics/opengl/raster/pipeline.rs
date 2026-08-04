@@ -11,6 +11,15 @@ impl OpenGlRasterPipeline {
         let gl = runtime.context();
         let rect_program =
             unsafe { compile_program(gl, shaders::RECT_VERT, shaders::RECT_FRAG, "rect")? };
+        // legacy shadow queue 复用已经经过 RHI probe 的仿射阴影 shader。
+        let shadow_program = unsafe {
+            compile_program(
+                gl,
+                super::rhi_shaders::SHADOW_VERTEX,
+                super::rhi_shaders::SHADOW_FRAGMENT,
+                "shadow",
+            )?
+        };
         let (rect_vao, rect_vbo) = unsafe { create_quad(gl, &RECT_VERTICES)? };
         let glyph_program =
             unsafe { compile_program(gl, shaders::GLYPH_VERT, shaders::GLYPH_FRAG, "glyph")? };
@@ -38,6 +47,10 @@ impl OpenGlRasterPipeline {
             drawable_width,
             drawable_height,
         );
+        // 在同一 current GLES context 中初始化通用 RHI 的共享 VAO。
+        let rhi = OpenGlRhiDevice::new(gl)?;
+        // 初始化 legacy queue 复用的渐变、mesh、sector 与图片 shader。
+        let legacy = super::legacy_rhi_ops::LegacyNativeOps::new(gl)?;
 
         let pipeline = Self {
             rect_vao,
@@ -47,6 +60,16 @@ impl OpenGlRasterPipeline {
             rect_rect: unsafe { gl.get_uniform_location(rect_program, "u_rect") },
             rect_color: unsafe { gl.get_uniform_location(rect_program, "u_color") },
             rect_radius: unsafe { gl.get_uniform_location(rect_program, "u_radius") },
+            // 保存描边 uniform，避免每帧重新查找 shader 位置。
+            rect_stroke: unsafe { gl.get_uniform_location(rect_program, "u_stroke") },
+            // 缓存仿射 shadow 的固定 uniform 位置。
+            shadow_program,
+            shadow_viewport: unsafe { gl.get_uniform_location(shadow_program, "u_viewport") },
+            shadow_rect: unsafe { gl.get_uniform_location(shadow_program, "u_rect") },
+            shadow_color: unsafe { gl.get_uniform_location(shadow_program, "u_color") },
+            shadow_radius: unsafe { gl.get_uniform_location(shadow_program, "u_radius") },
+            shadow_params: unsafe { gl.get_uniform_location(shadow_program, "u_params") },
+            shadow_size: unsafe { gl.get_uniform_location(shadow_program, "u_size") },
             glyph_vao,
             glyph_vbo,
             glyph_program,
@@ -68,6 +91,8 @@ impl OpenGlRasterPipeline {
             blit_rgba_program,
             blit_rgba_texture: unsafe { gl.get_uniform_location(blit_rgba_program, "u_tex") },
             blit_rgba_uv: unsafe { gl.get_uniform_location(blit_rgba_program, "u_uv_rect") },
+            // 缓存离屏 texture blit 的组 opacity uniform。
+            blit_rgba_opacity: unsafe { gl.get_uniform_location(blit_rgba_program, "u_opacity") },
             // Glyph-only/native-only frames must not retain an unused
             // full-target RGBA soft-upload texture.
             soft_texture: None,
@@ -80,6 +105,10 @@ impl OpenGlRasterPipeline {
             free_offscreen_ids: Vec::new(),
             next_offscreen_id: 0,
             released: false,
+            // 保存与 legacy raster 同 owner-thread 的薄 RHI 状态。
+            rhi,
+            // 保存 legacy native queue 的固定 ABI 资源。
+            legacy,
         };
         pipeline.restore_full_viewport();
         Ok(pipeline)
@@ -197,11 +226,166 @@ impl OpenGlRasterPipeline {
                     rect.radius[2],
                     rect.radius[3],
                 );
+                // solid rect 必须显式关闭描边分支，避免复用旧 uniform 状态。
+                self.gl().uniform_1_f32(self.rect_stroke.as_ref(), 0.0);
                 self.gl().draw_arrays(glow::TRIANGLES, 0, 6);
             }
             self.gl().bind_vertex_array(None);
         }
         self.check_gl_error("draw_solid_rects")
+    }
+
+    // 使用同一圆角 SDF shader 绘制居中描边矩形。
+    pub(crate) fn draw_stroke_rects(
+        &mut self,
+        viewport_width: f32,
+        viewport_height: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        rects: &[GpuStrokeRect],
+    ) -> Result<()> {
+        // 空批次或无效 viewport 不应触发 GL 状态变更。
+        if rects.is_empty() || viewport_width <= 0.0 || viewport_height <= 0.0 {
+            return Ok(());
+        }
+        // 描边和 solid rect 共用 premultiplied SrcOver blend 与圆角 pipeline。
+        self.apply_scissor(scissor);
+        unsafe {
+            self.gl().enable(glow::BLEND);
+            self.gl().blend_func_separate(
+                glow::ONE,
+                glow::ONE_MINUS_SRC_ALPHA,
+                glow::ONE,
+                glow::ONE_MINUS_SRC_ALPHA,
+            );
+            self.gl().use_program(Some(self.rect_program));
+            self.gl().uniform_2_f32(
+                self.rect_viewport.as_ref(),
+                viewport_width.max(1.0),
+                viewport_height.max(1.0),
+            );
+            self.gl().bind_vertex_array(Some(self.rect_vao));
+            for rect in rects {
+                // 退化描边与 CPU stroke_rect 的 no-op 语义一致。
+                let half_stroke = rect.line_width.max(0.0) * 0.5;
+                if rect.w <= 0.0 || rect.h <= 0.0 || half_stroke <= 0.0 {
+                    continue;
+                }
+                self.gl()
+                    .uniform_4_f32(self.rect_rect.as_ref(), rect.x, rect.y, rect.w, rect.h);
+                self.gl().uniform_4_f32(
+                    self.rect_color.as_ref(),
+                    rect.rgba[0],
+                    rect.rgba[1],
+                    rect.rgba[2],
+                    rect.rgba[3],
+                );
+                self.gl().uniform_4_f32(
+                    self.rect_radius.as_ref(),
+                    rect.radius[0],
+                    rect.radius[1],
+                    rect.radius[2],
+                    rect.radius[3],
+                );
+                // shader 以半线宽扩展 outer shape 并裁掉 inner shape。
+                self.gl()
+                    .uniform_1_f32(self.rect_stroke.as_ref(), half_stroke);
+                self.gl().draw_arrays(glow::TRIANGLES, 0, 6);
+            }
+            self.gl().bind_vertex_array(None);
+        }
+        // 统一检查 GLES 错误，避免把 adapter 状态错误延迟到 present。
+        self.check_gl_error("draw_stroke_rects")
+    }
+
+    // 使用已验证的 RHI 仿射 shadow shader 执行 legacy box-shadow batch。
+    pub(crate) fn draw_box_shadows(
+        &mut self,
+        viewport_width: f32,
+        viewport_height: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        shadows: &[GpuBoxShadow],
+    ) -> Result<()> {
+        // 空批次或无效 viewport 不应触发 GL 状态变更。
+        if shadows.is_empty() || viewport_width <= 0.0 || viewport_height <= 0.0 {
+            return Ok(());
+        }
+        // shadow 使用 straight-alpha 输出，必须与 RHI BOX_SHADOW 保持同一 blend。
+        self.apply_scissor(scissor);
+        unsafe {
+            self.gl().enable(glow::BLEND);
+            self.gl().blend_func_separate(
+                glow::SRC_ALPHA,
+                glow::ONE_MINUS_SRC_ALPHA,
+                glow::ONE,
+                glow::ONE_MINUS_SRC_ALPHA,
+            );
+            self.gl().use_program(Some(self.shadow_program));
+            self.gl().uniform_2_f32(
+                self.shadow_viewport.as_ref(),
+                viewport_width.max(1.0),
+                viewport_height.max(1.0),
+            );
+            self.gl().bind_vertex_array(Some(self.rect_vao));
+            for shadow in shadows {
+                // 与 D3D11 native queue 一致跳过退化和完全透明阴影。
+                if !shadow.w.is_finite()
+                    || !shadow.h.is_finite()
+                    || shadow.w <= 0.0
+                    || shadow.h <= 0.0
+                    || shadow.rgba[3] <= 0.0
+                {
+                    continue;
+                }
+                let top_left = shadow.corners[0];
+                let top_edge = [
+                    shadow.corners[1][0] - top_left[0],
+                    shadow.corners[1][1] - top_left[1],
+                ];
+                let left_edge = [
+                    shadow.corners[3][0] - top_left[0],
+                    shadow.corners[3][1] - top_left[1],
+                ];
+                self.gl().uniform_4_f32(
+                    self.shadow_rect.as_ref(),
+                    top_left[0],
+                    top_left[1],
+                    top_edge[0],
+                    top_edge[1],
+                );
+                self.gl().uniform_4_f32(
+                    self.shadow_color.as_ref(),
+                    shadow.rgba[0],
+                    shadow.rgba[1],
+                    shadow.rgba[2],
+                    shadow.rgba[3],
+                );
+                self.gl().uniform_4_f32(
+                    self.shadow_radius.as_ref(),
+                    shadow.radius[0],
+                    shadow.radius[1],
+                    shadow.radius[2],
+                    shadow.radius[3],
+                );
+                self.gl().uniform_4_f32(
+                    self.shadow_params.as_ref(),
+                    left_edge[0],
+                    left_edge[1],
+                    shadow.blur_x.max(0.0),
+                    shadow.blur_y.max(0.0),
+                );
+                self.gl().uniform_4_f32(
+                    self.shadow_size.as_ref(),
+                    shadow.w,
+                    shadow.h,
+                    if shadow.ambient { 1.0 } else { 0.0 },
+                    0.0,
+                );
+                self.gl().draw_arrays(glow::TRIANGLES, 0, 6);
+            }
+            self.gl().bind_vertex_array(None);
+        }
+        // 统一检查 GLES 错误，避免把 shadow shader 错误延迟到 present。
+        self.check_gl_error("draw_box_shadows")
     }
 
     pub(crate) fn draw_glyphs(
@@ -288,7 +472,11 @@ impl OpenGlRasterPipeline {
         self.flush_glyph_batch(viewport_width, viewport_height, scissor)
     }
 
-    pub(super) fn ensure_glyph_atlas(&mut self, needed_width: u32, needed_height: u32) -> Result<()> {
+    pub(super) fn ensure_glyph_atlas(
+        &mut self,
+        needed_width: u32,
+        needed_height: u32,
+    ) -> Result<()> {
         let width = next_power_of_two(self.glyph_atlas_width.max(needed_width))
             .clamp(GLYPH_ATLAS_MIN, GLYPH_ATLAS_MAX);
         let height = next_power_of_two(self.glyph_atlas_height.max(needed_height))
@@ -477,4 +665,5 @@ impl OpenGlRasterPipeline {
         result
     }
 
-    #[cfg(test)]
+    // 结束 OpenGlRasterPipeline 的 legacy glyph batch 实现。
+}

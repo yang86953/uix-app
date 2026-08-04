@@ -2,7 +2,7 @@
 //!
 //! GPU 未实现路径与 CPU 后端共用，避免 API-specific canvas 内嵌 CPU 后端。
 
-use crate::core::{Errc, Error, Rect};
+use crate::core::{Error, Rect};
 
 use crate::draw::geometry::color::Color;
 use crate::draw::geometry::path::{FillRule, Path};
@@ -32,15 +32,6 @@ impl SharedRasterizer {
 
     pub(crate) fn take_deferred_error(&mut self) -> Option<Error> {
         self.deferred_error.take()
-    }
-
-    fn reject_path_clip(&mut self) {
-        if self.deferred_error.is_none() {
-            self.deferred_error = Some(Error::new(
-                Errc::NotImplemented,
-                "CPU rasterizer does not implement path clip",
-            ));
-        }
     }
 
     pub fn surface(&self) -> &PixelSurface {
@@ -100,6 +91,11 @@ impl SharedRasterizer {
 
     pub fn pop_clip(&mut self) {
         self.renderer.pop_clip();
+    }
+
+    // 路径裁剪统一委托给 SoftwareRasterizer 的 mask lowering。
+    pub(crate) fn try_push_clip_path(&mut self, path: &Path) -> Result<(), Error> {
+        self.renderer.try_push_clip_path(path)
     }
 }
 
@@ -367,8 +363,13 @@ impl Canvas2D for SharedRasterizer {
     fn set_blend_mode(&mut self, mode: BlendMode) {
         self.renderer.set_blend_mode(mode);
     }
-    fn push_clip_path(&mut self, _path: &Path) {
-        self.reject_path_clip();
+    fn push_clip_path(&mut self, path: &Path) {
+        // Canvas2D 无返回值，因此把 typed failure 延迟到帧边界消费。
+        if let Err(error) = self.try_push_clip_path(path) {
+            if self.deferred_error.is_none() {
+                self.deferred_error = Some(error);
+            }
+        }
     }
 
     fn pixels(&self) -> &[u32] {

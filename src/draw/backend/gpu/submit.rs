@@ -1,16 +1,631 @@
 //! GPU-native 提交与软回退上传 — gpu 子模块。
 
 use crate::core::{Errc, Error};
-use crate::draw::geometry::types::BlendMode;
-use crate::native::present::{
-    IGraphicsContext, NativeRasterCaps, PresentTestResult, RasterMode, SoftFallbackTile,
+// 引入 FramePlan 的显式 render target 引用。
+use crate::draw::backend::frame_plan::RenderTargetRef;
+// 引入通用 RHI lowering 的 mesh 载荷和 renderer。
+use crate::draw::backend::rhi_renderer::{
+    RhiCoverageQuad, RhiRenderer, RhiShadow, RhiShapeRect, RhiSolidMesh, RhiTexturedQuad,
 };
+use crate::draw::geometry::types::BlendMode;
+// 引入薄 RHI 的组合 context、load 和 viewport 类型。
+use crate::native::present::rhi::{GraphicsContextRhi, LoadAction, RhiScissor, RhiViewport};
+// 引入兼容软提交仍需要的高层 graphics context 生命周期。
+use crate::native::present::IGraphicsContext;
 
-use super::{NativeGpuCanvas2D, SOFT_FALLBACK_IDLE_PRESENT_GRACE};
-use super::pending::{PendingNativeOp, StateSnapshot};
+use super::pending::PendingNativeOp;
 use super::tile::pack_visible_soft_fallback_tile;
+use super::{NativeGpuCanvas2D, SOFT_FALLBACK_IDLE_PRESENT_GRACE};
+
+// 将保序混合 RHI lowering 拆到独立文件，避免继续膨胀提交模块。
+#[path = "rhi_lowering.rs"]
+mod lowering;
+
+// 将渐变队列提交拆到独立文件，保持提交模块的单文件行数边界。
+#[path = "rhi_gradient_submit.rs"]
+mod gradient_submit;
+
+// 由逻辑 canvas 尺寸和 RHI surface extent 推导物理 lowering 比例。
+pub(crate) fn rhi_physical_geometry(
+    context: &dyn GraphicsContextRhi,
+    logical_width: i32,
+    logical_height: i32,
+) -> (RhiViewport, f32, f32) {
+    // 读取当前 surface 的物理 drawable 尺寸，不依赖兼容 context 的高层单位。
+    let extent = context.token().extent;
+    // 计算 x/y 两个轴的逻辑到物理比例，覆盖 mixed-DPI 的非对称变化。
+    let scale_x = extent.width as f32 / logical_width.max(1) as f32;
+    let scale_y = extent.height as f32 / logical_height.max(1) as f32;
+    // 返回 RHI 使用的物理 viewport 和两轴比例。
+    (
+        RhiViewport {
+            width: extent.width as f32,
+            height: extent.height as f32,
+        },
+        scale_x,
+        scale_y,
+    )
+}
+
+// 把逻辑 scissor 转成已经裁到 surface 范围内的物理 scissor。
+fn rhi_physical_scissor(
+    scissor: (i32, i32, i32, i32),
+    scale_x: f32,
+    scale_y: f32,
+    context: &dyn GraphicsContextRhi,
+) -> Option<RhiScissor> {
+    // 逻辑裁剪已经由 canvas 计算，此处只拒绝异常输入。
+    if scissor.2 <= 0 || scissor.3 <= 0 || !scale_x.is_finite() || !scale_y.is_finite() {
+        // 空裁剪不能被误译成“无裁剪”。
+        return None;
+    }
+    // 读取物理 surface 边界。
+    let extent = context.token().extent;
+    // 用绝对远端换算并夹到 drawable，避免缩放后的宽高少一列。
+    let x0 = (scissor.0 as f32 * scale_x)
+        .floor()
+        .max(0.0)
+        .min(extent.width as f32);
+    let y0 = (scissor.1 as f32 * scale_y)
+        .floor()
+        .max(0.0)
+        .min(extent.height as f32);
+    let x1 = (scissor.0.saturating_add(scissor.2) as f32 * scale_x)
+        .ceil()
+        .max(0.0)
+        .min(extent.width as f32);
+    let y1 = (scissor.1.saturating_add(scissor.3) as f32 * scale_y)
+        .ceil()
+        .max(0.0)
+        .min(extent.height as f32);
+    // 完全不可见的操作应回到兼容路径，由原有路径决定 no-op 语义。
+    if x1 <= x0 || y1 <= y0 {
+        // 不返回 full-surface 的 None，避免越界绘制。
+        return None;
+    }
+    // 物理坐标已经夹到 u32 extent，转换为 D3D11 可接受的 i32。
+    // 防止异常超大 drawable 在窄的 native RECT 类型中回绕。
+    let max_i32 = i32::MAX as f32;
+    // 返回已经限制到 D3D11 整数坐标范围的裁剪。
+    Some(RhiScissor {
+        x: x0.min(max_i32) as i32,
+        y: y0.min(max_i32) as i32,
+        width: (x1 - x0).min(max_i32) as i32,
+        height: (y1 - y0).min(max_i32) as i32,
+    })
+}
+
+// 把已经完成逻辑几何 lowering 的 xy 顶点转换为物理坐标。
+fn scale_rhi_vertices(
+    vertices: &[f32],
+    scale_x: f32,
+    scale_y: f32,
+) -> Option<std::sync::Arc<[f32]>> {
+    // xy 顶点必须成对出现，且每个坐标都能稳定缩放。
+    if vertices.len() < 6 || !vertices.len().is_multiple_of(2) {
+        // 将不完整的 mesh 留给兼容路径处理。
+        return None;
+    }
+    // 分配与原 mesh 等长的物理顶点载荷。
+    let mut scaled = Vec::with_capacity(vertices.len());
+    // 逐对转换 x/y 坐标。
+    for pair in vertices.chunks_exact(2) {
+        // 拒绝 NaN/无穷，避免 adapter 产生未定义裁剪。
+        if !pair[0].is_finite() || !pair[1].is_finite() {
+            // 将异常 mesh 留给兼容路径错误处理。
+            return None;
+        }
+        // 计算物理 x 坐标并检查乘法没有溢出。
+        let x = pair[0] * scale_x;
+        // 计算物理 y 坐标并检查乘法没有溢出。
+        let y = pair[1] * scale_y;
+        // 异常结果交回兼容路径。
+        if !x.is_finite() || !y.is_finite() {
+            // 不让 NaN 进入底层 viewport 变换。
+            return None;
+        }
+        // 写入物理 x 坐标。
+        scaled.push(x);
+        // 写入物理 y 坐标。
+        scaled.push(y);
+    }
+    // 返回不可变共享物理载荷。
+    Some(std::sync::Arc::<[f32]>::from(scaled))
+}
+
+// 将任意设备四角统一转换到当前 RHI 的物理坐标。
+fn scale_rhi_corners(corners: [[f32; 2]; 4], scale_x: f32, scale_y: f32) -> Option<[[f32; 2]; 4]> {
+    // 逐角缩放并拒绝非有限坐标，避免 shader 收到未定义几何。
+    let scaled = corners.map(|corner| [corner[0] * scale_x, corner[1] * scale_y]);
+    if scaled.iter().flatten().any(|value| !value.is_finite()) {
+        return None;
+    }
+    Some(scaled)
+}
+
+// 按旧 queue 的几何平均规则把逻辑圆角半径降低到物理 RHI 空间。
+fn scale_rhi_shape_radius(radius: [f32; 4], scale_x: f32, scale_y: f32) -> Option<[f32; 4]> {
+    // 各向异性缩放下沿用旧 SDF 的等效圆角半径定义。
+    let scale = (scale_x.abs() * scale_y.abs()).sqrt();
+    // 缩放因子必须是可表示的正有限值。
+    if !scale.is_finite() || scale <= 0.0 {
+        // 异常几何交回兼容路径。
+        return None;
+    }
+    // 逐角缩放并检查乘法结果。
+    let mut scaled = [0.0; 4];
+    // 保留四个角的 painter 语义顺序。
+    for (index, value) in radius.into_iter().enumerate() {
+        // 负半径不属于 RECT_HLSL 的合法输入。
+        if !value.is_finite() || value < 0.0 {
+            // 让旧路径处理异常输入。
+            return None;
+        }
+        // 计算物理半径。
+        scaled[index] = value * scale;
+        // 不允许溢出为无穷。
+        if !scaled[index].is_finite() {
+            // 让旧路径处理异常输入。
+            return None;
+        }
+    }
+    // 返回物理空间圆角半径。
+    Some(scaled)
+}
 
 impl NativeGpuCanvas2D {
+    // 尝试把纯 solid mesh/无圆角 rect 队列交给通用 FramePlan RHI lowering。
+    pub(crate) fn submit_rhi_solid(
+        &self,
+        renderer: &mut RhiRenderer,
+        context: &mut dyn GraphicsContextRhi,
+        load: LoadAction,
+        // 指定本次 solid 计划写入的 surface 或 retained texture。
+        target: RenderTargetRef,
+        damage: crate::core::PresentDamage,
+    ) -> Result<bool, Error> {
+        // soft 内容与 RHI native 几何不能在这条纵切中交错提交。
+        if self.soft_has_content || self.pending_native.is_empty() {
+            // 返回 false 让兼容路径保持原有 painter-order 语义。
+            return Ok(false);
+        }
+        // 预先分配同一顺序的 RHI mesh 载荷。
+        let mut meshes = Vec::with_capacity(self.pending_native.len());
+        // 读取当前 surface 的物理 viewport 和两轴缩放。
+        let (viewport, scale_x, scale_y) =
+            rhi_physical_geometry(context, self.surface_w, self.surface_h);
+        // 逐项检查当前队列是否属于已经迁移的几何子集。
+        for operation in &self.pending_native {
+            // 把现有逻辑 scissor 转成薄 RHI 的物理矩形。
+            let Some(scissor) =
+                rhi_physical_scissor(operation.scissor(), scale_x, scale_y, context)
+            else {
+                // 返回 false 而不是伪造一帧成功。
+                return Ok(false);
+            };
+            // 仅迁移已经完成三角 lowering 的 mesh，以及无圆角 rect。
+            let mesh = match operation {
+                // 直接复用通用 GPU queue 生成的设备空间三角形。
+                super::pending::PendingNativeOp::SolidMesh(mesh) => {
+                    // 缩放失败时回到兼容路径，避免在无 Result 的 Canvas 边界伪造成功。
+                    let Some(vertices) =
+                        scale_rhi_vertices(mesh.mesh.vertices.as_ref(), scale_x, scale_y)
+                    else {
+                        // 让旧路径保留原有错误与回退策略。
+                        return Ok(false);
+                    };
+                    // 组装物理坐标 solid mesh。
+                    RhiSolidMesh {
+                        vertices,
+                        rgba: mesh.mesh.rgba,
+                        scissor: Some(scissor),
+                    }
+                }
+                // 无圆角矩形可以在通用层稳定展开成两个三角形。
+                super::pending::PendingNativeOp::SolidRect(rect)
+                    if rect.rect.radius.iter().all(|radius| *radius == 0.0) =>
+                {
+                    let value = rect.rect;
+                    RhiSolidMesh {
+                        vertices: std::sync::Arc::<[f32]>::from(vec![
+                            value.x * scale_x,
+                            value.y * scale_y,
+                            (value.x + value.w) * scale_x,
+                            value.y * scale_y,
+                            (value.x + value.w) * scale_x,
+                            (value.y + value.h) * scale_y,
+                            value.x * scale_x,
+                            value.y * scale_y,
+                            (value.x + value.w) * scale_x,
+                            (value.y + value.h) * scale_y,
+                            value.x * scale_x,
+                            (value.y + value.h) * scale_y,
+                        ]),
+                        rgba: value.rgba,
+                        scissor: Some(scissor),
+                    }
+                }
+                // 圆角、描边、字形、渐变、图片等仍由兼容路径处理。
+                _ => return Ok(false),
+            };
+            // 保持 pending queue 的 painter order。
+            meshes.push(mesh);
+        }
+        // 由通用 renderer 生成 FramePlan 并完成唯一最终 present。
+        renderer.execute_solid_meshes(
+            context,
+            damage,
+            viewport,
+            load,
+            target,
+            &meshes,
+        )?;
+        // 告知调用方本次队列已经通过 RHI present 成功。
+        Ok(true)
+    }
+
+    // 尝试把轴对齐圆角/描边矩形队列交给通用 FramePlan lowering。
+    pub(crate) fn submit_rhi_shapes(
+        &self,
+        renderer: &mut RhiRenderer,
+        context: &mut dyn GraphicsContextRhi,
+        load: LoadAction,
+        // 指定本次 shape 计划写入的 surface 或 retained texture。
+        target: RenderTargetRef,
+        damage: crate::core::PresentDamage,
+    ) -> Result<bool, Error> {
+        // soft 内容与 RHI shape 不能在这条纵切中交错提交。
+        if self.soft_has_content || self.pending_native.is_empty() {
+            // 返回 false 让兼容路径保持原有 painter-order 语义。
+            return Ok(false);
+        }
+        // 读取当前 surface 的物理 viewport 和两轴缩放。
+        let (viewport, scale_x, scale_y) =
+            rhi_physical_geometry(context, self.surface_w, self.surface_h);
+        // 预先分配同一顺序的 shape 载荷。
+        let mut rects = Vec::with_capacity(self.pending_native.len());
+        // 逐项确认当前队列只包含 shape rect/stroke rect。
+        for operation in &self.pending_native {
+            // 把逻辑裁剪转换为物理裁剪。
+            let Some(scissor) =
+                rhi_physical_scissor(operation.scissor(), scale_x, scale_y, context)
+            else {
+                // 空裁剪保留原有 no-op 语义。
+                return Ok(false);
+            };
+            // 只迁移轴对齐圆角填充和描边矩形。
+            let rect = match operation {
+                // 填充矩形沿用 queue 已规整的圆角与直通颜色。
+                super::pending::PendingNativeOp::SolidRect(rect) => {
+                    let value = rect.rect;
+                    let Some(radius) = scale_rhi_shape_radius(value.radius, scale_x, scale_y)
+                    else {
+                        // 异常半径交回兼容路径。
+                        return Ok(false);
+                    };
+                    RhiShapeRect {
+                        x: value.x * scale_x,
+                        y: value.y * scale_y,
+                        w: value.w * scale_x,
+                        h: value.h * scale_y,
+                        rgba: value.rgba,
+                        radius,
+                        half_stroke: 0.0,
+                        scissor: Some(scissor),
+                    }
+                }
+                // 描边矩形把完整线宽转换为 shader 所需的半宽。
+                super::pending::PendingNativeOp::StrokeRect(rect) => {
+                    let value = rect.rect;
+                    let Some(radius) = scale_rhi_shape_radius(value.radius, scale_x, scale_y)
+                    else {
+                        // 异常半径交回兼容路径。
+                        return Ok(false);
+                    };
+                    let half_stroke =
+                        value.line_width * 0.5 * (scale_x.abs() * scale_y.abs()).sqrt();
+                    if !half_stroke.is_finite() || half_stroke < 0.0 {
+                        // 异常线宽交回兼容路径。
+                        return Ok(false);
+                    }
+                    RhiShapeRect {
+                        x: value.x * scale_x,
+                        y: value.y * scale_y,
+                        w: value.w * scale_x,
+                        h: value.h * scale_y,
+                        rgba: value.rgba,
+                        radius,
+                        half_stroke,
+                        scissor: Some(scissor),
+                    }
+                }
+                // 其他 UI 语义不能被矩形 SDF shader 偷换。
+                _ => return Ok(false),
+            };
+            // 保持 pending queue 的 painter order。
+            rects.push(rect);
+        }
+        // 由通用 renderer 生成 FramePlan 并完成唯一最终 present。
+        renderer.execute_shape_rects(
+            context,
+            damage,
+            viewport,
+            load,
+            target,
+            &rects,
+        )?;
+        // 告知调用方本次队列已经通过 RHI present 成功。
+        Ok(true)
+    }
+
+    // 尝试把仿射阴影队列交给通用 FramePlan lowering。
+    pub(crate) fn submit_rhi_shadows(
+        &self,
+        renderer: &mut RhiRenderer,
+        context: &mut dyn GraphicsContextRhi,
+        load: LoadAction,
+        // 指定本次 shadow 计划写入的 surface 或 retained texture。
+        target: RenderTargetRef,
+        damage: crate::core::PresentDamage,
+    ) -> Result<bool, Error> {
+        // soft 内容与 RHI shadow 不能在这条纵切中交错提交。
+        if self.soft_has_content || self.pending_native.is_empty() {
+            // 返回 false 让兼容路径保持原有 painter-order 语义。
+            return Ok(false);
+        }
+        // 读取当前 surface 的物理 viewport 和两轴缩放。
+        let (viewport, scale_x, scale_y) =
+            rhi_physical_geometry(context, self.surface_w, self.surface_h);
+        // 预先分配同一顺序的 shadow 载荷。
+        let mut shadows = Vec::with_capacity(self.pending_native.len());
+        // 逐项确认当前队列只包含 box shadow。
+        for operation in &self.pending_native {
+            // 只有 box shadow 操作可以进入 shadow SDF pipeline。
+            let super::pending::PendingNativeOp::BoxShadow(shadow) = operation else {
+                // 其他高层操作不能被阴影 shader 偷换。
+                return Ok(false);
+            };
+            // 旋转/剪切四边形保留为真实设备四角。
+            let corners = match scale_rhi_corners(shadow.shadow.corners, scale_x, scale_y) {
+                // 继续校验缩放后的四边形。
+                Some(corners) if super::geometry::convex_quad_is_valid(&corners) => corners,
+                // 不把真实仿射几何错误地压平为 AABB。
+                _ => {
+                    // 交回原有兼容路径。
+                    return Ok(false);
+                }
+            };
+            // 把逻辑裁剪转换为物理裁剪。
+            let Some(scissor) = rhi_physical_scissor(shadow.scissor, scale_x, scale_y, context)
+            else {
+                // 空裁剪保留原有 no-op 语义。
+                return Ok(false);
+            };
+            // 把旧 queue 已完成的 body/offset/blur/radius 统一转换为物理空间。
+            let value = shadow.shadow;
+            let Some(radius) = scale_rhi_shape_radius(value.radius, scale_x, scale_y) else {
+                // 异常半径交回兼容路径。
+                return Ok(false);
+            };
+            let blur_x = value.blur_x * scale_x.abs();
+            let blur_y = value.blur_y * scale_y.abs();
+            let offset_x = value.offset_x * scale_x;
+            let offset_y = value.offset_y * scale_y;
+            // 拒绝缩放后产生的异常阴影参数。
+            if !blur_x.is_finite()
+                || !blur_y.is_finite()
+                || !offset_x.is_finite()
+                || !offset_y.is_finite()
+            {
+                // 让兼容路径保留原有 typed error 或回退语义。
+                return Ok(false);
+            }
+            // 组装保留仿射四角的物理 shadow。
+            shadows.push(RhiShadow {
+                x: value.x * scale_x,
+                y: value.y * scale_y,
+                w: value.w * scale_x,
+                h: value.h * scale_y,
+                corners,
+                offset_x,
+                offset_y,
+                blur_x,
+                blur_y,
+                rgba: value.rgba,
+                radius,
+                ambient: value.ambient,
+                scissor: Some(scissor),
+            });
+        }
+        // 由通用 renderer 生成 FramePlan 并完成唯一最终 present。
+        renderer.execute_shadows(
+            context,
+            damage,
+            viewport,
+            load,
+            target,
+            &shadows,
+        )?;
+        // 告知调用方本次队列已经通过 RHI present 成功。
+        Ok(true)
+    }
+
+    // 尝试把轴对齐 R8 glyph coverage 队列交给通用 FramePlan lowering。
+    pub(crate) fn submit_rhi_glyphs(
+        &self,
+        renderer: &mut RhiRenderer,
+        context: &mut dyn GraphicsContextRhi,
+        load: LoadAction,
+        // 指定本次 glyph 计划写入的 surface 或 retained texture。
+        target: RenderTargetRef,
+        damage: crate::core::PresentDamage,
+    ) -> Result<bool, Error> {
+        // soft 内容与 RHI coverage 不能在这条纵切中交错提交。
+        if self.soft_has_content || self.pending_native.is_empty() {
+            // 返回 false 让兼容路径保持原有 painter-order 语义。
+            return Ok(false);
+        }
+        // 读取当前 surface 的物理 viewport 和两轴缩放。
+        let (viewport, scale_x, scale_y) =
+            rhi_physical_geometry(context, self.surface_w, self.surface_h);
+        // 预先分配同一顺序的 coverage quad 载荷。
+        let mut quads = Vec::with_capacity(self.pending_native.len());
+        // 逐项确认当前队列是轴对齐 R8 coverage 子集。
+        for operation in &self.pending_native {
+            // 只有 glyph 操作可以进入 coverage pipeline。
+            let super::pending::PendingNativeOp::Glyph(glyph) = operation else {
+                // 其他高层操作不能被 glyph shader 偷换。
+                return Ok(false);
+            };
+            // 轮廓 mesh/MSDF 仍由后续 MSDF pipeline 处理，R8 coverage 可保留真实四角。
+            if glyph.glyph.outline_mesh.is_some() {
+                // 不把 MSDF 轮廓错误地当作 R8 coverage。
+                return Ok(false);
+            }
+            // 把逻辑裁剪转换为物理裁剪。
+            let Some(scissor) = rhi_physical_scissor(glyph.scissor, scale_x, scale_y, context)
+            else {
+                // 空裁剪保留原有 no-op 语义。
+                return Ok(false);
+            };
+            // 只接受紧密 R8 coverage，避免旧 atlas 的额外尾部字节被误上传。
+            let pixel_count = (glyph.glyph.cov_w as usize).checked_mul(glyph.glyph.cov_h as usize);
+            if glyph.glyph.cov_w == 0
+                || glyph.glyph.cov_h == 0
+                || pixel_count != Some(glyph.glyph.coverage.len())
+            {
+                // 交回兼容路径，由原有 atlas 逻辑处理异常载荷。
+                return Ok(false);
+            }
+            // 计算物理目标矩形并拒绝异常几何。
+            let x = glyph.glyph.x * scale_x;
+            let y = glyph.glyph.y * scale_y;
+            let w = glyph.glyph.w * scale_x;
+            let h = glyph.glyph.h * scale_y;
+            if !x.is_finite()
+                || !y.is_finite()
+                || !w.is_finite()
+                || !h.is_finite()
+                || w <= 0.0
+                || h <= 0.0
+            {
+                // 让兼容路径保留原有 typed error 或 no-op 语义。
+                return Ok(false);
+            }
+            // 组装物理坐标 coverage quad。
+            quads.push(RhiCoverageQuad {
+                x,
+                y,
+                w,
+                h,
+                corners: glyph
+                    .glyph
+                    .corners
+                    .map(|corner| [corner[0] * scale_x, corner[1] * scale_y]),
+                rgba: glyph.glyph.rgba,
+                coverage: glyph.glyph.coverage.clone(),
+                pixel_w: glyph.glyph.cov_w,
+                pixel_h: glyph.glyph.cov_h,
+                scissor: Some(scissor),
+            });
+        }
+        // 由通用 renderer 生成 FramePlan 并完成唯一最终 present。
+        renderer.execute_coverage_quads(
+            context,
+            damage,
+            viewport,
+            load,
+            target,
+            &quads,
+        )?;
+        // 告知调用方本次队列已经通过 RHI present 成功。
+        Ok(true)
+    }
+
+    // 尝试把纯图片 blit 队列交给通用 FramePlan sampled-quad lowering。
+    pub(crate) fn submit_rhi_textured(
+        &self,
+        renderer: &mut RhiRenderer,
+        context: &mut dyn GraphicsContextRhi,
+        load: LoadAction,
+        // 指定本次图片计划写入的 surface 或 retained texture。
+        target: RenderTargetRef,
+        damage: crate::core::PresentDamage,
+    ) -> Result<bool, Error> {
+        // soft 内容与 RHI texture 不能在这条纵切中交错提交。
+        if self.soft_has_content || self.pending_native.is_empty() {
+            // 返回 false 让兼容路径保持原有 painter-order 语义。
+            return Ok(false);
+        }
+        // 读取当前 surface 的物理 viewport 和两轴缩放。
+        let (viewport, scale_x, scale_y) =
+            rhi_physical_geometry(context, self.surface_w, self.surface_h);
+        // 预先分配同一顺序的 sampled quad 载荷。
+        let mut quads = Vec::with_capacity(self.pending_native.len());
+        // 逐项确认当前队列是可迁移的 SrcOver image blit 子集。
+        for operation in &self.pending_native {
+            // 其他高层操作不能被纹理 shader 偷换。
+            let super::pending::PendingNativeOp::ImageBlit(image) = operation else {
+                return Ok(false);
+            };
+            // 缺少可选 Additive 能力时回到兼容路径，不能伪造 SrcOver 结果。
+            if image.blit.additive && !context.capabilities().additive_blend {
+                // 保持旧 adapter 的能力分流和 painter-order 语义。
+                return Ok(false);
+            }
+            // 把逻辑裁剪转换为物理裁剪。
+            let Some(scissor) = rhi_physical_scissor(image.scissor, scale_x, scale_y, context)
+            else {
+                // 空裁剪保留原有 no-op 语义。
+                return Ok(false);
+            };
+            // 检查图片载荷尺寸，避免 texture 创建后才发现不一致。
+            let pixel_count =
+                (image.blit.pixel_w as usize).checked_mul(image.blit.pixel_h as usize);
+            if image.blit.pixel_w == 0
+                || image.blit.pixel_h == 0
+                || pixel_count != Some(image.blit.pixels.len())
+            {
+                // 交回兼容路径，由原有 typed image 语义处理异常输入。
+                return Ok(false);
+            }
+            // 保持 premultiplied 源 RGB 和 alpha 同比例降低 opacity。
+            let opacity = image.blit.opacity.clamp(0.0, 1.0);
+            // 将目标几何和裁剪一起转换到物理 RHI 坐标。
+            quads.push(RhiTexturedQuad {
+                x: image.blit.x * scale_x,
+                y: image.blit.y * scale_y,
+                w: image.blit.w * scale_x,
+                h: image.blit.h * scale_y,
+                corners: scale_rhi_corners(image.blit.corners, scale_x, scale_y).ok_or_else(
+                    || {
+                        Error::new(
+                            Errc::InvalidArgument,
+                            "RHI textured image affine corners are not finite",
+                        )
+                    },
+                )?,
+                rgba: [opacity; 4],
+                additive: image.blit.additive,
+                pixels: image.blit.pixels.clone(),
+                pixel_w: image.blit.pixel_w,
+                pixel_h: image.blit.pixel_h,
+                scissor: Some(scissor),
+            });
+        }
+        // 由通用 renderer 生成 FramePlan 并完成唯一最终 present。
+        renderer.execute_textured_quads(
+            context,
+            damage,
+            viewport,
+            load,
+            target,
+            &quads,
+        )?;
+        // 告知调用方本次队列已经通过 RHI present 成功。
+        Ok(true)
+    }
+
     pub(crate) fn submit_native(
         &mut self,
         gpu_ctx: &mut dyn IGraphicsContext,
@@ -118,6 +733,13 @@ impl NativeGpuCanvas2D {
                         })
                         .collect::<Vec<_>>();
                     gpu_ctx.draw_image_blits(vw, vh, Some(scissor), &batch)?;
+                }
+                // scroll 已要求 retained RHI lowering；兼容 surface 没有同义 copy ABI。
+                PendingNativeOp::ScrollCopy(_) => {
+                    return Err(Error::new(
+                        Errc::NotImplemented,
+                        "NativeGpuCanvas2D scroll-region requires retained RHI lowering",
+                    ));
                 }
             }
             start = end;

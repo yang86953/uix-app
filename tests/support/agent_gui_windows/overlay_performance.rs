@@ -8,7 +8,7 @@ fn real_demo_modal_and_drawer_first_frame_latency_does_not_accumulate() {
     let _guard = REAL_GUI_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut demo = DemoProcess::spawn_with_args(DEFAULT_VULKAN_GRAPHICS, &["--component-qa"]);
+    let mut demo = DemoProcess::spawn_with_args(DEFAULT_D3D11_GRAPHICS, &["--component-qa"]);
     let descriptor = demo.wait_for_descriptor();
     let endpoint = descriptor["endpoint"]
         .as_str()

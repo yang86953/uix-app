@@ -14,15 +14,20 @@ use std::ffi::{c_void, CStr, CString};
 use std::ptr;
 
 use crate::native::backends::windows::util::windows_diag;
-use crate::native::present::{
-    GpuGlyphBlit, GpuSolidRect, IGraphicsContext, NativeRasterCaps, OffscreenTargetId,
-    PresentCoherency, PresentDamage, PresentFrame, SoftFallbackTile,
-};
+// 引入共享的 OpenGL RHI host 生命周期实现。
 use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
 use crate::native::presentation::graphics::platform::windows::{
     device_context, drawable_size_from_hdc, release_device_context, release_device_context_checked,
+    DrawableSize,
 };
 use crate::native::{Errc, Error};
+
+// 将 WGL 的 RHI 生命周期实现拆到独立文件，避免平台适配文件继续膨胀。
+#[path = "wgl_rhi.rs"]
+mod wgl_rhi;
+// 将 WGL 的 IGraphicsContext forwarding 实现拆到独立文件。
+#[path = "wgl_graphics.rs"]
+mod wgl_graphics;
 
 type HDC = *mut c_void;
 type HGLRC = *mut c_void;
@@ -409,6 +414,8 @@ pub struct WglContext {
     logical_height: i32,
     width: i32,
     height: i32,
+    // surface 重建代际，用于拒绝迟到 FramePlan。
+    surface_generation: u64,
     pipeline: OpenGlRasterPipeline,
 }
 
@@ -526,6 +533,8 @@ impl WglContext {
                 logical_height: drawable.logical_height,
                 width: drawable.width,
                 height: drawable.height,
+                // 初始 WGL swapchain 属于第一代 surface。
+                surface_generation: 0,
                 pipeline,
             })
         })();
@@ -552,7 +561,8 @@ impl WglContext {
     fn swap_buffers_result(&self) -> Result<(), Error> {
         if unsafe { SwapBuffers(self.hdc) } == 0 {
             Err(windows_diag(
-                Errc::PlatformError,
+                // SwapBuffers 失败时当前 HWND/HDC surface 已不可交换。
+                Errc::GraphicsSurfaceLost,
                 "WglContext: SwapBuffers failed",
             ))
         } else {
@@ -594,210 +604,42 @@ impl WglContext {
         }
         Ok(())
     }
-}
 
-impl IGraphicsContext for WglContext {
-    fn caps(&self) -> crate::native::present::GraphicsContextCaps {
-        crate::native::present::GraphicsContextCaps::gpu_native_swapchain(
-            crate::native::present::GraphicsBackend::OpenGlEs,
-            PresentCoherency::FullOnly,
-            self.device_pixel_ratio(),
-        )
-    }
-
-    fn native_raster_caps(&self) -> NativeRasterCaps {
-        NativeRasterCaps {
-            clear_target: true,
-            clear_rects: true,
-            soft_blit: true,
-            solid_rects: true,
-            glyphs: true,
-            offscreen_targets: true,
-            ..NativeRasterCaps::default()
-        }
-    }
-
-    fn graphics_backend(&self) -> crate::native::present::GraphicsBackend {
-        crate::native::present::GraphicsBackend::OpenGlEs
-    }
-
-    fn initialize(
-        &mut self,
-        _native_window: *mut c_void,
-        _width: i32,
-        _height: i32,
-    ) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        self.make_current()?;
-        let drawable = drawable_size_from_hdc(self.hwnd, self.hdc, width, height);
+    // 直接更新 WGL surface 的 drawable 元数据和 RHI swapchain 状态。
+    fn resize_surface_drawable(&mut self, drawable: DrawableSize) -> Result<(), Error> {
+        // 确保 pipeline 的 viewport 和资源操作仍在 owner-thread context 上。
+        self.make_current_result()?;
+        // 记录本次 resize 是否真的改变了 drawable surface。
+        let changed = drawable.logical_width != self.logical_width
+            || drawable.logical_height != self.logical_height
+            || drawable.width != self.width
+            || drawable.height != self.height;
+        // 先更新逻辑 drawable 元数据。
         self.logical_width = drawable.logical_width;
         self.logical_height = drawable.logical_height;
+        // 再更新实际物理 drawable 尺寸。
         self.width = drawable.width;
         self.height = drawable.height;
+        // 把同一尺寸事实交给 OpenGL RHI pipeline。
         self.pipeline.resize_swapchain(
             drawable.logical_width,
             drawable.logical_height,
             drawable.width,
             drawable.height,
         );
+        // 只有 surface 事实改变时才推进 generation，避免无意义地丢帧。
+        if changed {
+            self.surface_generation = self.surface_generation.saturating_add(1);
+        }
+        // 原生 OpenGL surface resize 已经完成。
         Ok(())
-    }
-
-    fn make_current(&mut self) -> Result<(), Error> {
-        self.make_current_result()
-    }
-
-    fn swap_buffers(&mut self, damage: PresentDamage) -> Result<(), Error> {
-        let _ = damage;
-        self.swap_buffers_result()
-    }
-
-    fn present(&mut self, frame: &PresentFrame) -> Result<(), Error> {
-        match frame {
-            PresentFrame::Swapchain { .. } => {
-                self.make_current_result()?;
-                self.swap_buffers_result()
-            }
-            PresentFrame::PixelBuffer { .. } => Err(Error::new(
-                Errc::NotImplemented,
-                "WglContext: CPU pixel present is unsupported",
-            )),
-        }
-    }
-
-    fn try_shutdown(&mut self) -> Result<(), Error> {
-        self.shutdown_result()
-    }
-
-    fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>, Error> {
-        self.make_current_result()?;
-        self.pipeline.read_pixels(x, y, width, height)
-    }
-
-    fn width(&self) -> i32 {
-        self.width
-    }
-
-    fn height(&self) -> i32 {
-        self.height
-    }
-
-    fn clear_render_target(&mut self, r: f32, g: f32, b: f32, a: f32) -> Result<(), Error> {
-        self.make_current_result()?;
-        self.pipeline.clear_render_target([r, g, b, a])
-    }
-
-    fn draw_solid_rects(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        rects: &[GpuSolidRect],
-    ) -> Result<(), Error> {
-        self.make_current_result()?;
-        self.pipeline
-            .draw_solid_rects(viewport_w, viewport_h, scissor, rects)
-    }
-
-    fn draw_glyphs(
-        &mut self,
-        viewport_w: f32,
-        viewport_h: f32,
-        scissor: Option<(i32, i32, i32, i32)>,
-        glyphs: &[GpuGlyphBlit],
-    ) -> Result<(), Error> {
-        self.make_current_result()?;
-        self.pipeline
-            .draw_glyphs(viewport_w, viewport_h, scissor, glyphs)
-    }
-
-    fn blit_soft_fallback_tile(
-        &mut self,
-        pixels: &[u32],
-        tile: SoftFallbackTile,
-    ) -> Result<(), Error> {
-        self.make_current_result()?;
-        let (target_width, target_height) = self.pipeline.current_target_size();
-        self.pipeline
-            .blit_soft_fallback_tile(pixels, target_width, target_height, tile)
-    }
-
-    fn upload_surface_pixels(
-        &mut self,
-        pixels: &[u32],
-        width: i32,
-        height: i32,
-    ) -> Result<(), Error> {
-        self.make_current_result()?;
-        self.pipeline.upload_surface_pixels(pixels, width, height)
-    }
-
-    fn clear_rects(
-        &mut self,
-        _viewport_w: f32,
-        _viewport_h: f32,
-        rects: &[GpuSolidRect],
-    ) -> Result<(), Error> {
-        self.make_current_result()?;
-        self.pipeline.clear_rects(rects)
-    }
-
-    fn create_offscreen_target(
-        &mut self,
-        width: i32,
-        height: i32,
-    ) -> Result<OffscreenTargetId, Error> {
-        self.make_current_result()?;
-        self.pipeline.create_offscreen_target(width, height)
-    }
-
-    fn try_destroy_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<(), Error> {
-        self.make_current_result()?;
-        self.pipeline.destroy_offscreen_target(id)
-    }
-
-    fn bind_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<(), Error> {
-        self.make_current_result()?;
-        self.pipeline.bind_offscreen_target(id)
-    }
-
-    fn bind_swapchain_target(&mut self) -> Result<(), Error> {
-        self.make_current_result()?;
-        self.pipeline.bind_swapchain_target();
-        Ok(())
-    }
-
-    fn blit_offscreen_target(
-        &mut self,
-        id: OffscreenTargetId,
-        src: crate::core::Rect,
-        dst: crate::core::Rect,
-        opacity: f32,
-        additive: bool,
-    ) -> Result<(), Error> {
-        if additive {
-            return Err(Error::new(
-                Errc::NotImplemented,
-                "WglContext: Additive blit_offscreen_target is not supported by this backend",
-            ));
-        }
-        self.make_current_result()?;
-        self.pipeline.blit_offscreen_target(id, src, dst, opacity)
-    }
-
-    fn device_pixel_ratio(&self) -> f32 {
-        if self.logical_width <= 0 {
-            return 1.0;
-        }
-        self.width as f32 / self.logical_width as f32
     }
 }
 
+// 释放 WGL owner-thread 的所有 GPU 资源。
 impl Drop for WglContext {
     fn drop(&mut self) {
-        let _ = self.try_shutdown();
+        // Drop 直接调用 inherent shutdown，避免依赖已拆出的 trait impl。
+        let _ = self.shutdown_result();
     }
 }

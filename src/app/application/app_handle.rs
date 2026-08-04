@@ -202,6 +202,24 @@ impl AppHandle {
             .inject_graphics_device_lost_for_test(self.window_id)
     }
 
+    /// 在目标窗口下一次真实绘制帧注入一次 `GraphicsSurfaceLost`。
+    ///
+    /// 仅随 `test-harness` feature 提供；surface 错误仍由 RHI acquire 和
+    /// 正常 `RecoveryDriver` 边界处理，不绕过或直接替换图形引擎。
+    #[cfg(feature = "test-harness")]
+    pub fn inject_graphics_surface_lost_for_test(&self) -> Result<()> {
+        // 关闭后的 AppHandle 不能再安排 owner-thread 图形故障。
+        if !self.alive.load(Ordering::Acquire) {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "cannot inject a surface fault from a closed AppHandle",
+            ));
+        }
+        // 把 surface 故障交给窗口会话的恢复信号。
+        self.runtime
+            .inject_graphics_surface_lost_for_test(self.window_id)
+    }
+
     pub fn notify_error(&self, error: &Error) -> Option<u64> {
         if !self.alive.load(Ordering::Acquire) {
             return None;

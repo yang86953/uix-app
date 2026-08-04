@@ -12,16 +12,16 @@ use crate::app::agent::agent_bridge::{
     AgentWindowRegistration,
 };
 use crate::app::agent::agent_control::AgentCommandExecutorImpl;
+#[cfg(feature = "agent-control")]
+use crate::app::agent::agent_transport::{
+    AgentTransportError, AgentTransportHandle, AgentTransportInfo,
+};
 use crate::app::queues::agent_command_queue::{
     AgentCommandQueue, AgentCommandRequest, AgentCommandTicket, AgentSubmitError,
 };
 use crate::app::queues::app_timer::{AppTimerQueue, TimerHandle};
 use crate::app::queues::main_thread_queue::{MainThreadContext, MainThreadQueue};
 use crate::app::queues::window_agent_state::AgentCommandExecutor;
-#[cfg(feature = "agent-control")]
-use crate::app::agent::agent_transport::{
-    AgentTransportError, AgentTransportHandle, AgentTransportInfo,
-};
 use crate::app::window::window_config::WindowConfig;
 use crate::app::window::window_session::TextInputCoordinator;
 use crate::core::WindowId;
@@ -457,6 +457,26 @@ impl AppRuntime {
             )
         })?;
         session.graphics_faults.arm_device_lost()?;
+        self.wake_event_loop();
+        Ok(())
+    }
+
+    // 在目标窗口下一次 owner-thread 帧边界安排 surface-lost 注入。
+    #[cfg(feature = "test-harness")]
+    pub(crate) fn inject_graphics_surface_lost_for_test(
+        &self,
+        window_id: WindowId,
+    ) -> crate::core::Result<()> {
+        // 关闭窗口后不允许向已释放的图形会话投递故障。
+        let session = self.session(window_id).ok_or_else(|| {
+            crate::core::Error::new(
+                crate::core::Errc::NotFound,
+                "cannot inject a surface fault into a closed window session",
+            )
+        })?;
+        // 复用同一恢复信号，实际 surface 错误仍在 owner thread 产生。
+        session.graphics_faults.arm_surface_lost()?;
+        // 唤醒事件循环，让下一帧及时消费测试信号。
         self.wake_event_loop();
         Ok(())
     }

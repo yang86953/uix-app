@@ -53,16 +53,13 @@ fn create_vulkan(
 
 #[cfg(feature = "opengles")]
 fn create_opengles(
-    _: *mut c_void,
-    _: i32,
-    _: i32,
-    _: PendingFailureQueue,
+    surface: *mut c_void,
+    width: i32,
+    height: i32,
+    _pending: PendingFailureQueue,
 ) -> Result<Box<dyn IGraphicsContext>, Error> {
-    // 方案 A：原生 OpenGL 后端仍为 test-only，未注册生产入口。
-    Err(Error::new(
-        Errc::NotImplemented,
-        "graphics backend `opengles` has no production implementation on Windows",
-    ))
+    // OpenGL ES 已接入同一 FramePlan/RHI，进入生产 registry 的次级候选。
+    crate::native::presentation::graphics::opengl::create(surface, width, height)
 }
 
 #[cfg(not(feature = "opengles"))]
@@ -96,7 +93,7 @@ const VULKAN_STATUS: BackendStatus = if cfg!(feature = "vulkan") {
 };
 
 const OPENGL_STATUS: BackendStatus = if cfg!(feature = "opengles") {
-    BackendStatus::Disabled
+    BackendStatus::Active
 } else {
     BackendStatus::Disabled
 };

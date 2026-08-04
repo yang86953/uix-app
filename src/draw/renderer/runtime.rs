@@ -387,6 +387,34 @@ impl RenderTarget for Renderer {
         }
     }
 
+    // 将测试故障安排到 backend-managed GPU 的真实 RHI 设备边界。
+    #[cfg(feature = "test-harness")]
+    fn inject_graphics_device_lost_for_test(&mut self) -> Result<(), Error> {
+        // PixelUpload 和外部 presenter 没有当前 D3D11 RHI 注入契约。
+        if !matches!(self.presentation.kind(), PresentationKind::BackendManaged) {
+            return Err(Error::new(
+                Errc::NotImplemented,
+                "graphics device-lost injection requires a backend-managed GPU",
+            ));
+        }
+        // RenderSession 保持 owner-thread 检查并继续下沉到 GpuBackend。
+        self.session.inject_graphics_device_lost_for_test()
+    }
+
+    // 将测试 surface-lost 安排到 backend-managed GPU 的真实 RHI surface 边界。
+    #[cfg(feature = "test-harness")]
+    fn inject_graphics_surface_lost_for_test(&mut self) -> Result<(), Error> {
+        // PixelUpload 和外部 presenter 没有当前 D3D11 RHI 注入契约。
+        if !matches!(self.presentation.kind(), PresentationKind::BackendManaged) {
+            return Err(Error::new(
+                Errc::NotImplemented,
+                "surface-lost injection requires a backend-managed GPU",
+            ));
+        }
+        // RenderSession 保持 owner-thread 检查并继续下沉到 GpuBackend。
+        self.session.inject_graphics_surface_lost_for_test()
+    }
+
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
         self.session.canvas_2d()
     }

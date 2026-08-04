@@ -15,30 +15,31 @@ use std::ffi::c_void;
 use super::pipeline::D3d11Pipeline;
 use super::swapchain::d3d_error;
 pub(crate) use super::swapchain::{
-    map_dxgi_present_result, map_dxgi_present_test_result, map_dxgi_resize_result, swap_chain_desc,
+    map_dxgi_device_removed_reason, map_dxgi_present_result, map_dxgi_present_test_result,
+    map_dxgi_resize_result, swap_chain_desc,
 };
 use crate::core::{Errc, Error, Result};
 use crate::native::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
-    GpuSolidRect, GpuStrokeRect, GraphicsBackend, GraphicsContextCaps, IGraphicsContext,
-    NativeRasterCaps, OffscreenTargetId, PresentCoherency, PresentDamage, PresentFrame,
-    PresentOcclusionSupport, PresentTestResult, SoftFallbackTile,
+    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
+    GpuSolidMesh, GpuSolidRect, GpuStrokeRect, GraphicsBackend, GraphicsContextCaps,
+    IGraphicsContext, NativeRasterCaps, OffscreenTargetId, PresentCoherency, PresentDamage,
+    PresentFrame, PresentOcclusionSupport, PresentTestResult, SoftFallbackTile,
 };
 use crate::native::presentation::graphics::platform::windows as win_surface;
 use ::windows::core::Interface;
 use ::windows::Win32::Foundation::HMODULE;
 use ::windows::Win32::Graphics::Direct3D::{
-    D3D_DRIVER_TYPE, D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL,
-    D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
-    D3D11_SRV_DIMENSION_TEXTURE2D,
+    D3D11_SRV_DIMENSION_TEXTURE2D, D3D_DRIVER_TYPE, D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP,
+    D3D_FEATURE_LEVEL, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0,
+    D3D_FEATURE_LEVEL_11_1,
 };
 use ::windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, ID3D11RenderTargetView,
     ID3D11ShaderResourceView, ID3D11Texture2D, D3D11_BIND_RENDER_TARGET,
     D3D11_BIND_SHADER_RESOURCE, D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-    D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_SDK_VERSION,
-    D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC_0,
-    D3D11_TEX2D_SRV, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING, D3D11_VIEWPORT,
+    D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_SDK_VERSION, D3D11_SHADER_RESOURCE_VIEW_DESC,
+    D3D11_SHADER_RESOURCE_VIEW_DESC_0, D3D11_TEX2D_SRV, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT,
+    D3D11_USAGE_STAGING, D3D11_VIEWPORT,
 };
 use ::windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC};
 use ::windows::Win32::Graphics::Dxgi::{
@@ -152,6 +153,16 @@ pub struct D3d11Context {
     logical_height: i32,
     width: i32,
     height: i32,
+    /// surface 重建代际；同 extent 重建也必须推进该值。
+    surface_generation: u64,
+    /// 迁移期薄 RHI 的 D3D11 资源与 pass 状态。
+    pub(crate) rhi_device: D3d11RhiDevice,
+    /// test-harness 安排的下一次 owner-thread device-lost 预检。
+    #[cfg(feature = "test-harness")]
+    rhi_device_lost_for_test: bool,
+    /// test-harness 安排的下一次 owner-thread surface-lost acquire。
+    #[cfg(feature = "test-harness")]
+    rhi_surface_lost_for_test: bool,
     offscreens: Vec<Option<OffscreenTarget>>,
     free_offscreen_ids: Vec<u32>,
     next_offscreen_id: u32,
@@ -169,3 +180,12 @@ pub struct D3d11Context {
 
 mod graphics;
 mod methods;
+mod rhi;
+mod rhi_device;
+mod rhi_health;
+
+// 导入 D3D11 薄 RHI 的 device 状态。
+use self::rhi_device::D3d11RhiDevice;
+
+// 为 D3D11 backbuffer 保留一个不会与 RHI texture id 冲突的 target 身份。
+pub(super) const RHI_SURFACE_TARGET_RAW: u64 = u64::MAX;

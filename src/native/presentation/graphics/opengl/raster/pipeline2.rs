@@ -1,5 +1,8 @@
 use super::*;
 
+// 复用主 raster 类型承载离屏、软回退和状态恢复操作。
+impl OpenGlRasterPipeline {
+    #[cfg(test)]
     pub(crate) fn glyph_atlas_upload_count(&self) -> usize {
         self.glyph_atlas_upload_count
     }
@@ -252,15 +255,11 @@ use super::*;
         src: Rect,
         dst: Rect,
         opacity: f32,
+        additive: bool,
     ) -> Result<()> {
+        // 透明组不需要触碰源纹理或目标 framebuffer。
         if !opacity.is_finite() || opacity <= 0.0 {
             return Ok(());
-        }
-        if opacity < 1.0 - 1e-6 {
-            return Err(Error::new(
-                Errc::NotImplemented,
-                "OpenGL blit_offscreen_target opacity < 1 is not supported by this backend",
-            ));
         }
         let source = self
             .offscreens
@@ -300,10 +299,20 @@ use super::*;
             self.gl()
                 .bind_texture(glow::TEXTURE_2D, Some(source.texture));
             self.gl().enable(glow::BLEND);
-            self.gl()
-                .blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
+            // 离屏目标存储的是 premultiplied 颜色，Additive 只切换目标因子。
+            self.gl().blend_func(
+                glow::ONE,
+                if additive {
+                    glow::ONE
+                } else {
+                    glow::ONE_MINUS_SRC_ALPHA
+                },
+            );
             self.gl().use_program(Some(self.blit_rgba_program));
             self.gl().uniform_1_i32(self.blit_rgba_texture.as_ref(), 0);
+            // 统一缩放 premultiplied RGB 与 alpha，保持 Picture 组透明度。
+            self.gl()
+                .uniform_1_f32(self.blit_rgba_opacity.as_ref(), opacity.clamp(0.0, 1.0));
             self.gl().uniform_4_f32(
                 self.blit_rgba_uv.as_ref(),
                 src_x / max_x,
@@ -364,6 +373,8 @@ use super::*;
             return;
         }
         self.released = true;
+        // 先释放 FramePlan/RHI 资源，再释放 legacy raster 对象。
+        self.rhi_release();
         self.bind_swapchain_target();
         let offscreens = std::mem::take(&mut self.offscreens);
         for target in offscreens.into_iter().flatten() {
@@ -376,6 +387,11 @@ use super::*;
             self.gl().delete_vertex_array(self.rect_vao);
             self.gl().delete_buffer(self.rect_vbo);
             self.gl().delete_program(self.rect_program);
+            // 释放 legacy queue 复用的仿射 shadow program。
+            self.gl().delete_program(self.shadow_program);
+            // 释放 legacy queue 的渐变、mesh、sector、图片资源。
+            let gl = self.runtime.context();
+            self.legacy.release(gl);
             self.gl().delete_vertex_array(self.glyph_vao);
             self.gl().delete_buffer(self.glyph_vbo);
             self.gl().delete_program(self.glyph_program);
@@ -450,4 +466,3 @@ use super::*;
         }
     }
 }
-

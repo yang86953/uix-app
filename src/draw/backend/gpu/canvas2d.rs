@@ -31,7 +31,7 @@ use super::pending::StateSnapshot;
 use super::pending::{
     DirectImageBlit, PendingNativeGlyph, PendingNativeImage, PendingNativeLinearGrad,
     PendingNativeMesh, PendingNativeOp, PendingNativeRadialGrad, PendingNativeRect,
-    PendingNativeSector, PendingNativeShadow, PendingNativeStroke,
+    PendingNativeScroll, PendingNativeSector, PendingNativeShadow, PendingNativeStroke,
 };
 
 impl Canvas2D for NativeGpuCanvas2D {
@@ -62,16 +62,8 @@ impl Canvas2D for NativeGpuCanvas2D {
     }
 
     fn fill_ellipse(&mut self, rect: Rect, color: Color) {
-        if self.gpu_only {
-            self.queue_ellipse_mesh(rect, color);
-            return;
-        }
-        self.sync_fallback_state();
-        let _soft_clip = self.clip_rect;
-        self.ensure_soft().push_clip(_soft_clip);
-        self.ensure_soft().fill_ellipse(rect, color);
-        self.ensure_soft().pop_clip();
-        self.mark_soft();
+        // hybrid 与 GPU-only 共用同一条有界 ellipse path tessellation lowering。
+        self.queue_ellipse_mesh(rect, color);
     }
 
     fn fill_sector(&mut self, cx: f32, cy: f32, r: f32, sa: f32, ea: f32, color: Color) {
@@ -399,13 +391,56 @@ impl Canvas2D for NativeGpuCanvas2D {
             }));
     }
 
-    fn push_clip_path(&mut self, _path: &Path) {
-        self.reject_path_clip();
+    fn push_clip_path(&mut self, path: &Path) {
+        // GPU-only 没有 stencil/path-mask 原语时继续保持确定性 typed failure。
+        if self.gpu_only {
+            self.reject_path_clip();
+            return;
+        }
+        // 计算与 native path lowering 相同的设备空间路径和保守边界。
+        let composed = self
+            .transform
+            .concat(Transform::translate(self.offset_x, self.offset_y));
+        let device_path = path.transformed(composed);
+        let path_bounds = device_path.bounds();
+        // 先同步状态，再让共享 soft renderer 建立真正的逐像素 path mask。
+        self.sync_fallback_state();
+        let result = {
+            let soft = self.ensure_soft();
+            soft.try_push_clip_path(path)
+        };
+        // 失败时不入 native clip 栈，帧边界会消费该 typed error。
+        if let Err(error) = result {
+            if self.deferred_error.is_none() {
+                self.deferred_error = Some(error);
+            }
+            return;
+        }
+        // 路径 clip 一旦生效，后续绘制统一走 soft staging，保证 native primitive 不越过 mask。
+        self.clip_stack.push(self.clip_rect);
+        self.clip_kind_stack.push(true);
+        if let Some(bounds) = path_bounds.and_then(|bounds| self.clip_rect.intersect(&bounds)) {
+            self.clip_rect = bounds;
+        } else {
+            self.clip_rect = Rect::zero();
+        }
+        self.mark_soft();
     }
 
     fn save(&mut self) {
+        // 已存在 soft renderer 时同步保存其 path mask 与内部 clip 栈。
+        let soft_was_present = self.soft_fallback.is_some();
+        if soft_was_present {
+            if let Some(soft) = self.soft_fallback.as_mut() {
+                soft.save();
+            }
+        }
+        // GPU canvas 额外保存裁剪栈长度，保持 native/soft 两套栈的 pop 边界一致。
         self.state_stack.push(StateSnapshot {
             clip_rect: self.clip_rect,
+            clip_stack_len: self.clip_stack.len(),
+            clip_kind_stack_len: self.clip_kind_stack.len(),
+            soft_was_present,
             opacity: self.opacity,
             offset_x: self.offset_x,
             offset_y: self.offset_y,
@@ -416,12 +451,28 @@ impl Canvas2D for NativeGpuCanvas2D {
 
     fn restore(&mut self) {
         if let Some(state) = self.state_stack.pop() {
+            // 保存快照决定 restore 是否需要弹出 soft renderer 的状态栈。
+            let soft_was_present = state.soft_was_present;
             self.clip_rect = state.clip_rect;
+            self.clip_stack.truncate(state.clip_stack_len);
+            self.clip_kind_stack.truncate(state.clip_kind_stack_len);
             self.opacity = state.opacity;
             self.offset_x = state.offset_x;
             self.offset_y = state.offset_y;
             self.transform = state.transform;
             self.blend_mode = state.blend_mode;
+            // soft 在 save 前存在时恢复完整 path mask；否则只重置其状态而保留已绘制像素。
+            if soft_was_present {
+                if let Some(soft) = self.soft_fallback.as_mut() {
+                    soft.restore();
+                }
+            } else if let Some(soft) = self.soft_fallback.as_mut() {
+                soft.reset_state_for_extent(self.surface_w, self.surface_h);
+                soft.set_transform(self.transform);
+                soft.set_opacity(self.opacity);
+                soft.set_blend_mode(self.blend_mode);
+                soft.set_offset(self.offset_x, self.offset_y);
+            }
         }
     }
 
@@ -433,6 +484,7 @@ impl Canvas2D for NativeGpuCanvas2D {
             rect.h,
         ));
         self.clip_stack.push(self.clip_rect);
+        self.clip_kind_stack.push(false);
         if let Some(intersection) = self.clip_rect.intersect(&rect) {
             self.clip_rect = intersection;
         } else {
@@ -441,6 +493,13 @@ impl Canvas2D for NativeGpuCanvas2D {
     }
 
     fn pop_clip(&mut self) {
+        // 只有路径裁剪在 soft renderer 中拥有持久 mask，需要成对弹出。
+        let was_path = self.clip_kind_stack.pop().unwrap_or(false);
+        if was_path {
+            if let Some(soft) = self.soft_fallback.as_mut() {
+                soft.pop_clip();
+            }
+        }
         if let Some(prev) = self.clip_stack.pop() {
             self.clip_rect = prev;
         }
@@ -483,7 +542,134 @@ impl Canvas2D for NativeGpuCanvas2D {
         self.clip_rect
     }
 
-    fn scroll_region(&mut self, _viewport: Rect, _dx: f32, _dy: f32) {
-        self.reject_unsupported("scroll-region copy");
+    fn scroll_region(&mut self, viewport: Rect, dx: f32, dy: f32) {
+        // 位移和视口必须可稳定转换到同一逻辑像素网格。
+        if !dx.is_finite()
+            || !dy.is_finite()
+            || !viewport.x.is_finite()
+            || !viewport.y.is_finite()
+            || !viewport.w.is_finite()
+            || !viewport.h.is_finite()
+            || viewport.w <= 0.0
+            || viewport.h <= 0.0
+        {
+            // Canvas2D 无 Result 通道，延迟到帧边界返回 typed error。
+            self.reject_unsupported("scroll-region with invalid geometry");
+            return;
+        }
+        // 与 CPU/shared rasterizer 保持相同的取整语义。
+        let dx = dx.round();
+        let dy = dy.round();
+        // 零位移是严格 no-op，不制造无意义的 RHI boundary。
+        if dx == 0.0 && dy == 0.0 {
+            return;
+        }
+        // 记录目标相关边界，后续由保序 mixed RHI lowering 执行 TextureMove。
+        self.pending_native
+            .push(PendingNativeOp::ScrollCopy(PendingNativeScroll {
+                viewport,
+                dx: dx as i32,
+                dy: dy as i32,
+            }));
+    }
+}
+
+// 验证原生 Canvas2D scroll 会保留为 ordered native boundary。
+#[cfg(test)]
+mod tests {
+    // 引入当前 canvas、能力表和 pending scroll 枚举。
+    use super::super::canvas::NativeGpuCanvas2D;
+    use super::super::pending::PendingNativeOp;
+    use crate::core::Rect;
+    use crate::draw::geometry::path::PathBuilder;
+    use crate::draw::Color;
+    use crate::draw::Canvas2D;
+    use crate::native::present::NativeRasterCaps;
+
+    // 正常整数 scroll 不应在 Canvas2D 入口被降级为 deferred error。
+    #[test]
+    fn records_native_scroll_boundary() {
+        // 使用 GPU-only canvas，避免测试意外创建 CPU soft surface。
+        let mut canvas = NativeGpuCanvas2D::new_gpu_only(64, 48, NativeRasterCaps::default());
+        // 记录 source = viewport + delta、destination = viewport 的 scroll。
+        canvas.scroll_region(Rect::new(8.0, 6.0, 32.0, 24.0), 3.0, -2.0);
+        // 验证队列保留了目标相关操作，而不是即时拒绝。
+        assert!(matches!(
+            canvas.pending_native.as_slice(),
+            [PendingNativeOp::ScrollCopy(scroll)]
+                if scroll.viewport == Rect::new(8.0, 6.0, 32.0, 24.0)
+                    && scroll.dx == 3
+                    && scroll.dy == -2
+        ));
+        // 正常记录不应产生延迟错误。
+        assert!(canvas.take_deferred_error().is_none());
+    }
+
+    // 非有限几何必须保留 typed failure，不能把 NaN 转成可执行 copy。
+    #[test]
+    fn rejects_invalid_native_scroll_geometry() {
+        // 使用 GPU-only canvas 只验证入口审计，不触发任何 adapter 调用。
+        let mut canvas = NativeGpuCanvas2D::new_gpu_only(16, 16, NativeRasterCaps::default());
+        // 无穷 viewport 被延迟记录为明确的 NotImplemented 错误。
+        canvas.scroll_region(Rect::new(f32::INFINITY, 0.0, 4.0, 4.0), 1.0, 0.0);
+        // 验证没有生成可能污染 retained target 的 pending operation。
+        assert!(canvas.pending_native.is_empty());
+        // 验证错误仍保留在最终 present 边界消费。
+        assert_eq!(
+            canvas
+                .take_deferred_error()
+                .expect("invalid scroll must record an error")
+                .code(),
+            crate::core::Errc::NotImplemented
+        );
+    }
+
+    // hybrid canvas 在具备 solid mesh 时应把椭圆保留为 GPU native mesh。
+    #[test]
+    fn hybrid_ellipse_uses_shared_mesh_lowering() {
+        // 只打开 ellipse 依赖的共享 mesh 能力，保持测试边界最小。
+        let caps = NativeRasterCaps {
+            solid_meshes: true,
+            ..NativeRasterCaps::default()
+        };
+        // 使用 hybrid canvas 验证非 GPU-only 入口也能复用相同 lowering。
+        let mut canvas = NativeGpuCanvas2D::new(64, 48, caps);
+        // 记录一个有限的椭圆填充操作。
+        canvas.fill_ellipse(Rect::new(8.0, 6.0, 24.0, 18.0), Color::red());
+        // 椭圆应进入 solid mesh，且不分配 soft staging。
+        assert!(matches!(
+            canvas.pending_native.as_slice(),
+            [PendingNativeOp::SolidMesh(_)]
+        ));
+        // 没有发生 CPU fallback allocation。
+        assert!(canvas.soft_fallback.is_none());
+    }
+
+    // hybrid path clip 应建立 soft mask，并让随后绘制受 mask 约束。
+    #[test]
+    fn hybrid_path_clip_uses_shared_soft_mask() {
+        // 使用普通 hybrid canvas，验证路径裁剪不再被直接拒绝。
+        let mut canvas = NativeGpuCanvas2D::new(32, 32, NativeRasterCaps::default());
+        // 构造一个左上三角形路径。
+        let mut builder = PathBuilder::new();
+        builder
+            .move_to(1.0, 1.0)
+            .line_to(20.0, 1.0)
+            .line_to(1.0, 20.0)
+            .close();
+        let path = builder.build();
+        // 入栈后应分配共享 soft renderer，而不是产生 deferred error。
+        canvas.push_clip_path(&path);
+        assert!(canvas.soft_fallback.is_some());
+        assert!(canvas.take_deferred_error().is_none());
+        // 绘制整块矩形，结果只应出现在三角形内部。
+        canvas.fill_rect(Rect::new(0.0, 0.0, 32.0, 32.0), Color::red(), None);
+        let pixels = canvas.pixels();
+        assert!(pixels[2 * 32 + 2] != 0);
+        assert_eq!(pixels[24 * 32 + 24], 0);
+        // 弹出路径裁剪后，后续绘制应恢复矩形 clip 的完整范围。
+        canvas.pop_clip();
+        canvas.fill_rect(Rect::new(24.0, 24.0, 4.0, 4.0), Color::blue(), None);
+        assert!(canvas.pixels()[25 * 32 + 25] != 0);
     }
 }

@@ -160,6 +160,30 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
         self.caps
     }
 
+    // 只有 owner thread 可以借用 inner 的薄 RHI 组合视图。
+    fn rhi_context(
+        &mut self,
+    ) -> Option<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
+        // 该查询无错误返回通道，跨线程时保守地报告不支持。
+        if self.require_owner("rhi_context").is_err() {
+            return None;
+        }
+        // 把 RHI 借用继续委托给真实 native context。
+        self.inner.rhi_context()
+    }
+
+    // 在线程绑定边界内执行 RHI surface resize，并同步外层 drawable 元数据。
+    fn resize_rhi_surface(&mut self, width: i32, height: i32) -> Result<()> {
+        // 把实际 resize 委托给创建线程上的 native context。
+        self.with_owner("resize_rhi_surface", |inner| {
+            inner.resize_rhi_surface(width, height)
+        })?;
+        // RHI 可能改变物理 drawable，成功后刷新 wrapper 的缓存查询值。
+        self.refresh_metadata();
+        // 返回已经通过 owner-thread 和 surface generation 边界的成功结果。
+        Ok(())
+    }
+
     fn native_raster_caps(&self) -> NativeRasterCaps {
         self.native_raster_caps
     }

@@ -362,6 +362,8 @@ impl WindowDriver {
         let dirty_region = tree.dirty_region();
         let dirty_full = dirty_region.full_frame;
         let paint_t0 = Instant::now();
+        // 记录 GPU 首帧前已经成功显示的窗口，避免成功后重复调用 show。
+        let mut pre_present_shown = false;
         let (outcome, outcome_source) = if !need_render {
             (RenderOutcome::Idle, InvalidationSource::None)
         } else {
@@ -370,6 +372,19 @@ impl WindowDriver {
             let scroll_move = tree.scroll_region_moves();
             let hover_pos = debug_mode.get().then(|| cursor_pos.get());
             let metrics_ref = metrics.map(Cell::get);
+            // 原生 swapchain 必须在首个 GPU Present 前进入可见状态，避免 DXGI 将隐藏窗口视为 occluded。
+            if self.deferred_show && !engine.capabilities().uses_external_presenter() {
+                // 只提前执行可见性切换，保留首帧成功后的统一 show/raise 收尾和失败重试状态。
+                match platform_window.show() {
+                    // 成功显示后仍保留 deferred_show，直到首帧真正提交才消费状态。
+                    Ok(()) => pre_present_shown = true,
+                    // 显示失败不丢弃 deferred_show，后续首帧提交仍可重试原有边界。
+                    Err(error) => tracing::warn!(
+                        "[WindowDriver] pre-present show failed; deferred retry remains armed: {}",
+                        error.short_what()
+                    ),
+                }
+            }
             let frame_out = self.frame_renderer.render_frame(
                 engine,
                 tree,
@@ -564,12 +579,17 @@ impl WindowDriver {
         }
 
         if frame_committed && self.deferred_show {
-            if let Err(error) = platform_window.show() {
-                tracing::error!(
-                    "[WindowDriver] deferred show after first present failed: {}",
-                    error.short_what()
-                );
-            } else if let Err(error) = platform_window.raise() {
+            // GPU 路径已在绘制前显示窗口，CPU 外部 presenter 仍在此处执行首次显示。
+            if !pre_present_shown {
+                if let Err(error) = platform_window.show() {
+                    tracing::error!(
+                        "[WindowDriver] deferred show after first present failed: {}",
+                        error.short_what()
+                    );
+                }
+            }
+            // 首帧提交成功后再提升窗口层级，保持原有焦点与窗口顺序语义。
+            if let Err(error) = platform_window.raise() {
                 tracing::warn!(
                     "[WindowDriver] deferred raise after first present failed: {}",
                     error.short_what()
@@ -580,7 +600,7 @@ impl WindowDriver {
                 .and_then(|started| frame_time.checked_duration_since(started))
                 .unwrap_or_default();
             tracing::info!(
-                "first_present_ms={} (window revealed after present; no pre-present white flash)",
+                "first_present_ms={} (window visibility and first present handshake completed)",
                 elapsed.as_millis()
             );
             self.deferred_show = false;

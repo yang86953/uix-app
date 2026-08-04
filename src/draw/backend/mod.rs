@@ -1,5 +1,10 @@
 //! 渲染后端模块。
 
+// 通用 GPU Renderer 的有限帧计划，供 backend 内部迁移使用。
+pub(crate) mod frame_plan;
+// 通用 RHI lowering，逐步替代 GPU backend 的逐 UI native submit。
+pub(crate) mod rhi_renderer;
+
 pub mod contract;
 pub mod cpu;
 pub mod factory;

@@ -13,7 +13,6 @@ struct MacosAppEvent {
     modifiers: usize,
     text: String,
 }
-
 impl MacosAppEvent {
     fn into_ui_events(self, suppress_keydown_text: bool) -> Vec<UiEvent> {
         let Some(window_id) = self.window_id else {
@@ -181,5 +180,3 @@ fn macos_keycode_to_keycode(code: u16) -> KeyCode {
         _ => KeyCode::Unknown,
     }
 }
-
-#[derive(Default)]

@@ -1,6 +1,6 @@
 //! 绘图层会话 — Pipeline + Backend 组合入口（Phase 1 骨架）。
 
-use crate::core::Error;
+use crate::core::{Errc, Error};
 use crate::draw::backend::GpuBackend;
 use crate::draw::backend::{
     create_backend, BackendCapabilities, BackendKind, CpuBackend, RenderBackend,
@@ -235,6 +235,38 @@ impl RenderSession {
 
     pub(crate) fn gpu_backend_mut(&mut self) -> Option<&mut GpuBackend> {
         self.backend.as_any_mut().downcast_mut()
+    }
+
+    // 把测试设备丢失注入限制在当前图形 owner thread 和 GPU backend。
+    #[cfg(feature = "test-harness")]
+    pub(crate) fn inject_graphics_device_lost_for_test(&mut self) -> Result<(), Error> {
+        // 先验证调用线程，避免测试入口绕过 native context 亲和性。
+        self.require_owner("inject_graphics_device_lost_for_test")?;
+        // 只有薄 RHI GPU backend 能把注入推进到 adapter 维护边界。
+        let Some(backend) = self.gpu_backend_mut() else {
+            return Err(Error::new(
+                Errc::NotImplemented,
+                "render session does not own a GPU backend",
+            ));
+        };
+        // 交给 GPU backend 选择具体的 RHI adapter。
+        backend.inject_graphics_device_lost_for_test()
+    }
+
+    // 把测试 surface-lost 注入限制在当前图形 owner thread 和 GPU backend。
+    #[cfg(feature = "test-harness")]
+    pub(crate) fn inject_graphics_surface_lost_for_test(&mut self) -> Result<(), Error> {
+        // 先验证调用线程，避免测试入口绕过 native context 亲和性。
+        self.require_owner("inject_graphics_surface_lost_for_test")?;
+        // 只有薄 RHI GPU backend 能把注入推进到 surface acquire 边界。
+        let Some(backend) = self.gpu_backend_mut() else {
+            return Err(Error::new(
+                Errc::NotImplemented,
+                "render session does not own a GPU backend",
+            ));
+        };
+        // 交给 GPU backend 选择具体的 RHI surface。
+        backend.inject_graphics_surface_lost_for_test()
     }
 
     pub(crate) fn backend_mut(&mut self) -> &mut dyn RenderBackend {

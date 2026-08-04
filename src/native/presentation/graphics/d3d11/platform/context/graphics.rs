@@ -10,6 +10,12 @@ impl IGraphicsContext for D3d11Context {
         .with_present_occlusion(PresentOcclusionSupport::PresentStatusAndTest)
     }
 
+    // 暴露同一 owner-thread context 上的薄 RHI device/surface 组合视图。
+    fn rhi_context(&mut self) -> Option<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
+        // D3D11 是当前参考 adapter；其他 backend 继续走兼容接口。
+        Some(self)
+    }
+
     fn graphics_backend(&self) -> GraphicsBackend {
         GraphicsBackend::D3d11
     }
@@ -23,27 +29,18 @@ impl IGraphicsContext for D3d11Context {
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<()> {
-        let drawable = win_surface::drawable_size(self.hwnd, width, height);
-        if drawable.width == self.width && drawable.height == self.height {
-            return Ok(());
-        }
-        self.release_rtv();
-        if let Err(error) = unsafe {
-            self.swap_chain.ResizeBuffers(
-                0,
-                drawable.width as u32,
-                drawable.height as u32,
-                DXGI_FORMAT_B8G8R8A8_UNORM,
-                DXGI_SWAP_CHAIN_FLAG(0),
-            )
-        } {
-            map_dxgi_resize_result(error.code())?;
-        }
-        self.logical_width = drawable.logical_width;
-        self.logical_height = drawable.logical_height;
-        self.width = drawable.width;
-        self.height = drawable.height;
-        self.create_rtv()
+        self.resize_surface_logical(width, height)
+    }
+
+    // 把 D3D11 当前 drawable 元数据提供给兼容 present 边界。
+    fn present_surface(&self) -> crate::native::present::PresentSurface {
+        // 使用同一代际值保证旧 damage 不会跨 swapchain 重建复用。
+        crate::native::present::PresentSurface::identity(
+            self.width,
+            self.height,
+            self.device_pixel_ratio(),
+            self.surface_generation,
+        )
     }
 
     fn make_current(&mut self) -> Result<()> {
@@ -284,6 +281,46 @@ impl IGraphicsContext for D3d11Context {
             .draw_radial_gradients(&self.context, viewport_w, viewport_h, scissor, grads)
     }
 
+    // 将兼容层 sector batch 转交 D3D11 原生 pipeline。
+    fn draw_sectors(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        sectors: &[GpuSector],
+    ) -> Result<()> {
+        // 先确保当前 render target 与 owner-thread context 有效。
+        self.ensure_rtv()?;
+        // 绑定当前 D3D11 context，统一处理 surface 重建边界。
+        self.make_current()?;
+        // 使用与薄 RHI 相同的 sector shader 和 blend ABI。
+        self.pipeline
+            .draw_sectors(&self.context, viewport_w, viewport_h, scissor, sectors)
+    }
+
+    // 将兼容层 BGRA 图片 affine batch 转交 D3D11 原生 pipeline。
+    fn draw_image_blits(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        blits: &[GpuImageBlit],
+    ) -> Result<()> {
+        // 先确保当前 render target 与 owner-thread context 有效。
+        self.ensure_rtv()?;
+        // 绑定当前 D3D11 context，统一处理 surface 重建边界。
+        self.make_current()?;
+        // 使用兼容图片 owner 执行 payload 上传与 affine draw。
+        self.pipeline.draw_image_blits(
+            &self.device,
+            &self.context,
+            viewport_w,
+            viewport_h,
+            scissor,
+            blits,
+        )
+    }
+
     fn draw_solid_meshes(
         &mut self,
         viewport_w: f32,
@@ -475,21 +512,8 @@ impl IGraphicsContext for D3d11Context {
         opacity: f32,
         additive: bool,
     ) -> Result<(), Error> {
-        if additive {
-            return Err(Error::new(
-                Errc::NotImplemented,
-                "D3d11Context: Additive blit_offscreen_target is not supported by this backend",
-            ));
-        }
         if !opacity.is_finite() || opacity <= 0.0 {
             return Ok(());
-        }
-        if opacity < 1.0 - 1e-6 {
-            // 遗留 D3D11 路径无组 opacity 着色器，该能力暂不支持。
-            return Err(Error::new(
-                Errc::NotImplemented,
-                "D3d11Context: blit_offscreen_target opacity < 1 is not supported by this backend",
-            ));
         }
         let idx = id.0 as usize;
         let Some(Some(target)) = self.offscreens.get(idx) else {
@@ -518,6 +542,8 @@ impl IGraphicsContext for D3d11Context {
             th as f32,
             src,
             dst,
+            opacity,
+            additive,
         )
     }
 

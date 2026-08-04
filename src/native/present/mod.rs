@@ -80,6 +80,8 @@ pub struct GpuLinearGradientRect {
     pub y: f32,
     pub w: f32,
     pub h: f32,
+    /// 目标矩形经当前 affine 变换后的 TL/TR/BR/BL 四角。
+    pub corners: [[f32; 2]; 4],
     pub color_a: [f32; 4],
     pub color_b: [f32; 4],
     /// 0=Horizontal, 1=Vertical, 2=DiagonalTLBR, 3=DiagonalBLTR.
@@ -96,6 +98,8 @@ pub struct GpuRadialGradient {
     pub cy: f32,
     pub inner_r: f32,
     pub outer_r: f32,
+    /// 径向渐变逻辑圆盘包围矩形经当前 affine 变换后的四角。
+    pub corners: [[f32; 2]; 4],
     pub color_inner: [f32; 4],
     pub color_outer: [f32; 4],
 }
@@ -163,6 +167,8 @@ pub struct GpuImageBlit {
     pub y: f32,
     pub w: f32,
     pub h: f32,
+    /// 设备坐标四角：左上、右上、右下、左下；支持旋转与剪切。
+    pub corners: [[f32; 2]; 4],
     pub opacity: f32,
     pub additive: bool,
     pub pixels: std::sync::Arc<[u32]>,
@@ -208,7 +214,27 @@ impl NativeRasterCaps {
             glyphs: true,
             linear_gradients: true,
             radial_gradients: true,
-            sectors: false,
+            sectors: true,
+            solid_meshes: true,
+            box_shadows: true,
+            offscreen_targets: true,
+            retained_framebuffer: false,
+        }
+    }
+
+    /// 首个薄 RHI 绘制子集需要的 GPU-only 录制能力。
+    pub const fn rhi_gpu_only_subset() -> Self {
+        // 这些操作由通用 RhiRenderer lowering，不能再触发 CPU soft fallback。
+        Self {
+            clear_target: true,
+            clear_rects: false,
+            soft_blit: false,
+            solid_rects: true,
+            stroke_rects: true,
+            glyphs: true,
+            linear_gradients: true,
+            radial_gradients: true,
+            sectors: true,
             solid_meshes: true,
             box_shadows: true,
             offscreen_targets: true,
@@ -227,6 +253,7 @@ impl NativeRasterCaps {
             && self.glyphs
             && self.linear_gradients
             && self.radial_gradients
+            && self.sectors
             && self.solid_meshes
             && self.box_shadows
     }
@@ -611,7 +638,10 @@ impl std::fmt::Debug for NativeSurfaceHandle {
 }
 
 /// GPU graphics context lifecycle and presentation contract.
+// 薄 RHI 作为迁移期 platform 私有契约，不向使用方公开原生句柄。
+pub(crate) mod rhi;
 
+// 兼容期高层 graphics context，逐步由 `rhi` 替代。
 mod traits;
 
 pub use self::traits::IGraphicsContext;
