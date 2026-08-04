@@ -5,11 +5,10 @@ use super::super::accessibility::{
     breadcrumb_accessibility, calendar_accessibility, card_accessibility, carousel_accessibility,
     chart_accessibility, date_range_accessibility, dropdown_accessibility, first_non_empty,
     image_accessibility, input_number_accessibility, menu_accessibility, pagination_accessibility,
-    popconfirm_accessibility, progress_accessibility, result_accessibility,
-    select_accessibility, selectable_list_accessibility,
-    splitter_accessibility, steps_accessibility, tabs_accessibility, tag_accessibility,
-    theme_toggle_accessibility, timeline_accessibility, transfer_accessibility, tree_accessibility,
-    typography_accessibility, upload_accessibility,
+    popconfirm_accessibility, progress_accessibility, result_accessibility, select_accessibility,
+    selectable_list_accessibility, splitter_accessibility, steps_accessibility, tabs_accessibility,
+    tag_accessibility, theme_toggle_accessibility, timeline_accessibility, transfer_accessibility,
+    tree_accessibility, typography_accessibility, upload_accessibility,
 };
 // 富文本 capability 启用时才引入专属无障碍转换函数。
 #[cfg(feature = "rich-text")]
@@ -511,24 +510,30 @@ impl SnapshotFields {
                 ..
             } => rich_text_accessibility(segments, *focused_link),
             Self::Table { .. } => AccessibilitySnapshot::new(AccessibilityRole::Table),
+            // 图表 capability 启用时才匹配柱状图快照变体。
+            #[cfg(feature = "charts")]
             Self::BarChart { data, .. } => chart_accessibility(
                 "Bar chart",
                 data.iter().map(|item| (item.label.as_str(), item.value)),
             ),
+            // 图表 capability 启用时才匹配折线图快照变体。
+            #[cfg(feature = "charts")]
             Self::LineChart { data, .. } => chart_accessibility(
                 "Line chart",
                 data.iter().map(|item| (item.label.as_str(), item.value)),
             ),
+            // 图表 capability 启用时才匹配饼图快照变体。
+            #[cfg(feature = "charts")]
             Self::PieChart { data, .. } => chart_accessibility(
                 "Pie chart",
                 data.iter()
                     .filter(|item| item.value.is_finite() && item.value > 0.0)
                     .map(|item| (item.label.as_str(), item.value)),
             ),
+            // 图表 capability 启用时才匹配高级图表快照变体。
+            #[cfg(feature = "charts")]
             Self::ChartPlaceholder {
-                title,
-                kind_name,
-                ..
+                title, kind_name, ..
             } => {
                 let name = if title.trim().is_empty() {
                     kind_name.to_string()

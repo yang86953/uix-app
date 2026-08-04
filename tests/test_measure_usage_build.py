@@ -93,8 +93,8 @@ class ResolvedGraphTests(unittest.TestCase):
     def test_demo_logging_scenarios_bind_root_binary_and_feature_graph(self) -> None:
         # 读取当前仓库的全部场景定义。
         scenarios = measure_usage_build.scenario_specs(measure_usage_build.project_root())
-        # 文档声明的 schema v6 矩阵必须保持二十七个独立执行场景。
-        self.assertEqual(len(scenarios), 27)
+        # 文档声明的 schema v6 矩阵必须保持二十九个独立执行场景。
+        self.assertEqual(len(scenarios), 29)
         # 按稳定名称索引场景。
         by_name = {scenario.name: scenario for scenario in scenarios}
         # 场景名称必须全局唯一，避免字典索引静默覆盖配置。
@@ -110,7 +110,7 @@ class ResolvedGraphTests(unittest.TestCase):
         # 禁用场景仍必须要求演示使用的三项能力依赖存在。
         self.assertEqual(disabled.required_packages, ("image", "qrcode", "regex"))
         # 演示基础组合必须显式选择 D3D11 与无专属 package 的富文本 capability。
-        self.assertEqual(disabled.required_uix_features, ("d3d11", "rich-text"))
+        self.assertEqual(disabled.required_uix_features, ("d3d11", "charts", "rich-text"))
         # 读取只启用演示日志的根二进制场景。
         enabled = by_name["demo-logging"]
         # 启用场景必须在同一基础组合上增加 demo-logging capability。
@@ -118,7 +118,7 @@ class ResolvedGraphTests(unittest.TestCase):
         # 启用场景必须要求基础依赖与日志订阅器共同进入解析图。
         self.assertEqual(enabled.required_packages, ("image", "qrcode", "regex", "tracing-subscriber"))
         # 日志对照不得改变演示所需的 D3D11 与富文本 capability。
-        self.assertEqual(enabled.required_uix_features, ("d3d11", "rich-text"))
+        self.assertEqual(enabled.required_uix_features, ("d3d11", "charts", "rich-text"))
         # 两个根二进制场景必须使用同一根清单以便比较。
         self.assertEqual(enabled.manifest, disabled.manifest)
 
@@ -141,10 +141,10 @@ class ResolvedGraphTests(unittest.TestCase):
         self.assertIn("glow", d3d11.forbidden_packages)
         # 读取关闭 D3D11 的负向入口。
         d3d11_disabled = by_name["d3d11-disabled"]
-        # 负向入口必须禁止全部 backend feature 意外进入解析图。
+        # 负向入口必须禁止全部 backend 与无依赖图表 feature 意外进入解析图。
         self.assertEqual(
             d3d11_disabled.forbidden_uix_features,
-            measure_usage_build.GRAPHICS_BACKEND_FEATURES,
+            (*measure_usage_build.GRAPHICS_BACKEND_FEATURES, "charts"),
         )
         # D3D11/D3D12 的 Win32 API feature 在禁用入口中必须全部缺席。
         self.assertEqual(
@@ -258,10 +258,10 @@ class ResolvedGraphTests(unittest.TestCase):
             disabled = by_name[name]
             # 场景必须走真实 compile-fail 分支。
             self.assertTrue(disabled.expected_compile_failure)
-            # 全部 uix backend feature 必须保持关闭。
+            # 全部 uix backend 与无依赖图表 feature 必须保持关闭。
             self.assertEqual(
                 disabled.forbidden_uix_features,
-                measure_usage_build.GRAPHICS_BACKEND_FEATURES,
+                (*measure_usage_build.GRAPHICS_BACKEND_FEATURES, "charts"),
             )
             # 稳定诊断必须同时绑定错误类别与公开变体名。
             self.assertEqual(disabled.expected_error_fragments, fragments)
@@ -281,7 +281,7 @@ class ResolvedGraphTests(unittest.TestCase):
         # 读取关闭富文本能力的负向入口。
         disabled = by_name["rich-text-disabled"]
         # 负向入口必须禁止 rich-text feature 意外进入解析图。
-        self.assertEqual(disabled.forbidden_uix_features, ("rich-text",))
+        self.assertEqual(disabled.forbidden_uix_features, ("charts", "rich-text"))
         # 负向入口必须以公开导入失败结束。
         self.assertTrue(disabled.expected_compile_failure)
         # 诊断必须同时覆盖组件类型和解析辅助函数。
@@ -289,6 +289,40 @@ class ResolvedGraphTests(unittest.TestCase):
             disabled.expected_error_fragments,
             ("unresolved import", "RichText", "parse_rich_text"),
         )
+
+    # 确认图表正反场景同时覆盖纯源码 feature 与基础/高级公开面收缩。
+    def test_charts_scenarios_bind_feature_and_public_api_guards(self) -> None:
+        # 读取当前仓库的全部场景定义。
+        scenarios = measure_usage_build.scenario_specs(measure_usage_build.project_root())
+        # 按稳定名称索引场景。
+        by_name = {scenario.name: scenario for scenario in scenarios}
+        # 读取只启用图表能力的正向入口。
+        enabled = by_name["charts"]
+        # 图表没有专属第三方 package，正向证据必须绑定根 feature。
+        self.assertEqual(enabled.required_packages, ())
+        # metadata 必须证明只选择 charts 源码 capability。
+        self.assertEqual(enabled.required_uix_features, ("charts",))
+        # 单图表入口不得合并富文本等其他纯源码能力。
+        self.assertIn("rich-text", enabled.forbidden_uix_features)
+        # 读取关闭图表能力的负向入口。
+        disabled = by_name["charts-disabled"]
+        # 负向入口必须禁止 charts feature 意外进入解析图。
+        self.assertEqual(disabled.forbidden_uix_features, ("charts",))
+        # 负向入口必须以公开导入失败结束。
+        self.assertTrue(disabled.expected_compile_failure)
+        # 诊断必须同时覆盖基础图表和高级图表类型。
+        self.assertEqual(
+            disabled.expected_error_fragments,
+            ("unresolved import", "BarChart", "Gauge"),
+        )
+        # 每个场景都必须对无专属 package 的 charts feature 作正向或负向断言。
+        for scenario in scenarios:
+            # 防止新增场景遗漏纯源码 capability 的解析图边界。
+            self.assertIn(
+                "charts",
+                (*scenario.required_uix_features, *scenario.forbidden_uix_features),
+                scenario.name,
+            )
 
     # 确认 Agent 与设置能力共享 JSON package 时仍保持 feature 与公开面隔离。
     def test_agent_control_scenarios_bind_shared_json_and_public_api_guards(self) -> None:
@@ -333,7 +367,7 @@ class ResolvedGraphTests(unittest.TestCase):
         # 负向入口必须排除 Agent 独占的 JSON 直接依赖。
         self.assertIn("serde_json", disabled.forbidden_packages)
         # 负向入口必须禁止 Agent feature 意外进入解析图。
-        self.assertEqual(disabled.forbidden_uix_features, ("agent-control",))
+        self.assertEqual(disabled.forbidden_uix_features, ("agent-control", "charts"))
         # 负向入口必须以公开 builder 方法不可用结束。
         self.assertTrue(disabled.expected_compile_failure)
         # 诊断必须绑定缺失方法和稳定公开方法名。

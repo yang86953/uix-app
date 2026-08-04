@@ -2,16 +2,20 @@ use crate::ui::form::{Form, FormItem};
 use crate::ui::virtualization::virtual_scroll::VirtualScroll;
 use crate::ui::widgets::window_chrome::WindowInteractionRegion;
 use crate::ui::widgets::{
-    Affix, Alert, Anchor, AutoComplete, Avatar, BackTop, Badge, BarChart, Breadcrumb, Button,
-    Calendar, Card, Carousel, Cascader, ChartPlaceholder, Checkbox, Collapse, ColorPicker,
-    Container, Content, DatePicker, DateRangePicker, Descriptions, Divider, Drawer, Dropdown,
-    Empty, FloatButton, FloatButtonGroup, Footer, Grid, Header, Icon, Image, ImageGroup, Input,
-    InputNumber, Label, Layout, LineChart, List, Mentions, Menu, Message, Modal, NavItem,
-    Notification, Pagination, PieChart, Popconfirm, Popover, ProgressBar, Radio,
-    RangeSlider, Rate, ResultView, ScrollView, Segmented, Select, SelectableList, Sider,
-    Skeleton, Slider, Space, Spin, Splitter, Steps, Switch, Table, Tabs, Tag, ThemeToggle,
-    TimePicker, Timeline, Tooltip, Transfer, Tree, TreeSelect, Typography, Upload, Watermark,
+    Affix, Alert, Anchor, AutoComplete, Avatar, BackTop, Badge, Breadcrumb, Button, Calendar, Card,
+    Carousel, Cascader, Checkbox, Collapse, ColorPicker, Container, Content, DatePicker,
+    DateRangePicker, Descriptions, Divider, Drawer, Dropdown, Empty, FloatButton, FloatButtonGroup,
+    Footer, Grid, Header, Icon, Image, ImageGroup, Input, InputNumber, Label, Layout, List,
+    Mentions, Menu, Message, Modal, NavItem, Notification, Pagination, Popconfirm, Popover,
+    ProgressBar, Radio, RangeSlider, Rate, ResultView, ScrollView, Segmented, Select,
+    SelectableList, Sider, Skeleton, Slider, Space, Spin, Splitter, Steps, Switch, Table, Tabs,
+    Tag, ThemeToggle, TimePicker, Timeline, Tooltip, Transfer, Tree, TreeSelect, Typography,
+    Upload, Watermark,
 };
+// 图表 capability 启用时才引入对应 patch 目标类型。
+#[cfg(feature = "charts")]
+// 该导入覆盖基础图表与高级图表共用的占位组件。
+use crate::ui::widgets::{BarChart, ChartPlaceholder, LineChart, PieChart};
 // 二维码 capability 启用时才引入对应组件类型。
 #[cfg(feature = "qrcode")]
 // 该导入仅供内建组件 patch 分派使用。
@@ -170,9 +174,21 @@ pub(crate) fn patch_builtin_widget(
     patch_as!(Timeline);
     patch_as!(Tree);
     patch_as!(SelectableList);
+    // 图表 capability 启用时才生成柱状图类型化 patch 分支。
+    #[cfg(feature = "charts")]
+    // 启用后保持柱状图的原位同步语义。
     patch_as!(BarChart);
+    // 图表 capability 启用时才生成折线图类型化 patch 分支。
+    #[cfg(feature = "charts")]
+    // 启用后保持折线图的原位同步语义。
     patch_as!(LineChart);
+    // 图表 capability 启用时才生成饼图类型化 patch 分支。
+    #[cfg(feature = "charts")]
+    // 启用后保持饼图的原位同步语义。
     patch_as!(PieChart);
+    // 图表 capability 启用时才生成高级图表占位组件 patch 分支。
+    #[cfg(feature = "charts")]
+    // 启用后保持高级图表的原位同步语义。
     patch_as!(ChartPlaceholder);
     // 关闭二维码 capability 时不生成类型化 patch 分支。
     #[cfg(feature = "qrcode")]
