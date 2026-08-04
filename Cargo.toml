@@ -79,8 +79,8 @@ wayland-protocols = { version = "=0.32.13", features = ["client", "unstable", "s
 khronos-egl = { version = "6", features = ["static", "no-pkg-config"], optional = true }
 
 [features]
-# 保持既有默认 API 与演示日志行为：生产 D3D11、三项使用方能力及演示订阅器默认启用。
-default = ["d3d11", "image-codecs", "qrcode", "form-pattern", "demo-logging"]
+# 保持既有默认 API 与演示日志行为：生产 D3D11、四项使用方能力及演示订阅器默认启用。
+default = ["d3d11", "image-codecs", "qrcode", "form-pattern", "rich-text", "demo-logging"]
 d3d11 = [
     "windows/Win32_Graphics_Direct3D",
     "windows/Win32_Graphics_Direct3D_Fxc",
@@ -106,6 +106,8 @@ image-codecs = ["dep:image"]
 qrcode = ["dep:qrcode"]
 # 表单正则 pattern 规则独占 regex 依赖，基础校验能力不受影响。
 form-pattern = ["dep:regex"]
+# 富文本组件、解析布局与快照公开面作为一个可独立关闭的源码能力。
+rich-text = []
 # 演示二进制日志订阅独占 tracing-subscriber，库的 tracing 事件契约不受影响。
 demo-logging = ["dep:tracing-subscriber"]
 agent-control = [

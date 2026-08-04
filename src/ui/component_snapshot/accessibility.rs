@@ -1,8 +1,12 @@
 use crate::ui::widgets::{
     AnchorItem, BadgeStatus, BreadcrumbItem, Date, MenuItem, OptGroup, ProgressMode, ResultType,
-    RichTextSegment, SelectableItem, Step, Tab, TimelineItem, TypographyType, UploadFile,
+    SelectableItem, Step, Tab, TimelineItem, TypographyType, UploadFile,
     UploadStatus,
 };
+// 富文本 capability 启用时才引入其内容模型。
+#[cfg(feature = "rich-text")]
+// 该类型仅供富文本无障碍快照转换使用。
+use crate::ui::widgets::RichTextSegment;
 
 use super::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute,
@@ -215,6 +219,8 @@ pub(super) fn upload_accessibility(files: &[UploadFile]) -> AccessibilitySnapsho
     )
 }
 
+// 富文本 capability 关闭时不编译专属无障碍转换逻辑。
+#[cfg(feature = "rich-text")]
 pub(super) fn rich_text_accessibility(
     segments: &[RichTextSegment],
     focused_link: Option<usize>,

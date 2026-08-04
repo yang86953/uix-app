@@ -6,11 +6,15 @@ use super::super::accessibility::{
     chart_accessibility, date_range_accessibility, dropdown_accessibility, first_non_empty,
     image_accessibility, input_number_accessibility, menu_accessibility, pagination_accessibility,
     popconfirm_accessibility, progress_accessibility, result_accessibility,
-    rich_text_accessibility, select_accessibility, selectable_list_accessibility,
+    select_accessibility, selectable_list_accessibility,
     splitter_accessibility, steps_accessibility, tabs_accessibility, tag_accessibility,
     theme_toggle_accessibility, timeline_accessibility, transfer_accessibility, tree_accessibility,
     typography_accessibility, upload_accessibility,
 };
+// 富文本 capability 启用时才引入专属无障碍转换函数。
+#[cfg(feature = "rich-text")]
+// 该函数只处理同步门控的 RichText 快照变体。
+use super::super::accessibility::rich_text_accessibility;
 use super::super::{AccessibilityRole, AccessibilitySnapshot, AccessibilityState};
 use super::SnapshotFields;
 
@@ -499,6 +503,8 @@ impl SnapshotFields {
             } => card_accessibility(title.as_deref(), actions, *focused_action),
             Self::Transfer { source, target } => transfer_accessibility(source, target),
             Self::Upload { files, .. } => upload_accessibility(files),
+            // 富文本 capability 启用时才匹配同步存在的快照变体。
+            #[cfg(feature = "rich-text")]
             Self::RichText {
                 segments,
                 focused_link,
@@ -661,4 +667,3 @@ impl SnapshotFields {
         }
     }
 }
-

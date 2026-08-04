@@ -14,6 +14,8 @@ use crate::ui::component::widget::tree_core::WidgetTree;
 use crate::ui::component::widget::{BoxedWidget, WidgetCore, WidgetId};
 use crate::ui::widgets::general::label::Label;
 use crate::ui::widgets::general::typography::Typography;
+// 富文本 capability 关闭时不引用已裁剪的组件模块。
+#[cfg(feature = "rich-text")]
 use crate::ui::widgets::other::rich_text::RichText;
 
 pub(crate) fn participates(node: &BoxedWidget) -> bool {
@@ -21,6 +23,8 @@ pub(crate) fn participates(node: &BoxedWidget) -> bool {
     if c.as_any().is::<Typography>() {
         return true;
     }
+    // 启用富文本后才把 RichText 纳入跨节点选择参与者。
+    #[cfg(feature = "rich-text")]
     if c.as_any().is::<RichText>() {
         return true;
     }
@@ -35,6 +39,8 @@ pub(crate) fn is_dragging(node: &BoxedWidget) -> bool {
     if let Some(t) = c.as_any().downcast_ref::<Typography>() {
         return t.is_cross_text_dragging();
     }
+    // 启用富文本后才读取 RichText 的拖选状态。
+    #[cfg(feature = "rich-text")]
     if let Some(r) = c.as_any().downcast_ref::<RichText>() {
         return r.is_cross_text_dragging();
     }
@@ -49,6 +55,8 @@ fn text_len(node: &BoxedWidget) -> usize {
     if let Some(t) = c.as_any().downcast_ref::<Typography>() {
         return t.cross_text_len();
     }
+    // 启用富文本后才读取 RichText 的字符长度。
+    #[cfg(feature = "rich-text")]
     if let Some(r) = c.as_any().downcast_ref::<RichText>() {
         return r.cross_text_len();
     }
@@ -63,6 +71,8 @@ fn text_anchor(node: &BoxedWidget) -> usize {
     if let Some(t) = c.as_any().downcast_ref::<Typography>() {
         return t.cross_text_anchor();
     }
+    // 启用富文本后才读取 RichText 的选择锚点。
+    #[cfg(feature = "rich-text")]
     if let Some(r) = c.as_any().downcast_ref::<RichText>() {
         return r.cross_text_anchor();
     }
@@ -78,6 +88,8 @@ fn set_range(node: &BoxedWidget, range: Option<(usize, usize)>) {
         t.set_cross_text_range(range);
         return;
     }
+    // 启用富文本后才同步 RichText 的跨节点选区。
+    #[cfg(feature = "rich-text")]
     if let Some(r) = c.as_any().downcast_ref::<RichText>() {
         r.set_cross_text_range(range);
         return;
@@ -92,6 +104,8 @@ fn char_at(node: &BoxedWidget, frame_local: Point) -> usize {
     if let Some(t) = c.as_any().downcast_ref::<Typography>() {
         return t.cross_text_char_at(frame_local);
     }
+    // 启用富文本后才执行 RichText 的字符命中测试。
+    #[cfg(feature = "rich-text")]
     if let Some(r) = c.as_any().downcast_ref::<RichText>() {
         return r.cross_text_char_at(frame_local);
     }
@@ -106,6 +120,8 @@ fn node_selected_text(node: &BoxedWidget) -> Option<String> {
     if let Some(t) = c.as_any().downcast_ref::<Typography>() {
         return t.selected_text();
     }
+    // 启用富文本后才聚合 RichText 的已选文字。
+    #[cfg(feature = "rich-text")]
     if let Some(r) = c.as_any().downcast_ref::<RichText>() {
         return r.selected_text();
     }
