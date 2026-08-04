@@ -27,7 +27,8 @@ memmap2 = "0.9"
 earcut = "0.4.10"
 glow = { version = "0.18.0", optional = true }
 image = { version = "0.25.6", default-features = false, features = ["png", "jpeg"] }
-qrcode = { version = "0.14.1", default-features = false }
+# 二维码编码依赖仅随对应组件 capability 进入使用方解析图。
+qrcode = { version = "0.14.1", default-features = false, optional = true }
 regex = "1"
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
@@ -73,8 +74,8 @@ wayland-protocols = { version = "=0.32.13", features = ["client", "unstable", "s
 khronos-egl = { version = "6", features = ["static", "no-pkg-config"], optional = true }
 
 [features]
-# 生产 GPU 后端：Windows 用原生 D3D11（wgpu 已移除）。
-default = ["d3d11"]
+# 保持既有默认 API：生产 D3D11 与二维码组件默认启用，no-default 可独立裁剪。
+default = ["d3d11", "qrcode"]
 d3d11 = [
     "windows/Win32_Graphics_Direct3D",
     "windows/Win32_Graphics_Direct3D_Fxc",
@@ -94,6 +95,8 @@ opengles = ["dep:glow", "dep:khronos-egl"]
 vulkan = ["dep:ash"]
 metal = []
 settings-serde = ["dep:serde", "dep:serde_json"]
+# 二维码组件独占编码依赖，关闭后同时收缩模块与公开门面。
+qrcode = ["dep:qrcode"]
 agent-control = [
     "dep:serde_json",
     "windows/Win32_Security",

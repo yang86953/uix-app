@@ -33,6 +33,10 @@ class Scenario:
     manifest: Path
     # 记录该入口覆盖的能力范围。
     description: str
+    # 记录 resolved graph 中必须出现的专属 package。
+    required_packages: tuple[str, ...] = ()
+    # 记录 resolved graph 中必须缺席的未选 package。
+    forbidden_packages: tuple[str, ...] = ()
 
 
 # 返回仓库根目录。
@@ -41,27 +45,37 @@ def project_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-# 返回 ODC-01 的三个独立 fixture 定义。
+# 返回 ODC-01/ODC-07 的独立 fixture 定义。
 def scenario_specs(root: Path) -> list[Scenario]:
-    # 返回最小入口、默认图形入口和单能力入口。
+    # 返回最小入口、默认入口和单能力入口。
     return [
         # 最小入口关闭所有默认 feature。
         Scenario(
             name="minimal",
             manifest=root / "fixtures" / "usage-build" / "minimal" / "Cargo.toml",
             description="关闭默认 feature 的最小使用方入口",
+            forbidden_packages=("qrcode",),
         ),
         # 默认入口覆盖当前 Windows 默认 D3D11 能力。
         Scenario(
             name="d3d11-default",
             manifest=root / "fixtures" / "usage-build" / "d3d11-default" / "Cargo.toml",
             description="使用当前默认 feature 的图形入口",
+            required_packages=("qrcode",),
         ),
         # 单能力入口只打开设置序列化能力。
         Scenario(
             name="settings-serde",
             manifest=root / "fixtures" / "usage-build" / "settings-serde" / "Cargo.toml",
             description="只打开 settings-serde capability 的入口",
+            forbidden_packages=("qrcode",),
+        ),
+        # 二维码单能力入口只打开对应组件 capability。
+        Scenario(
+            name="qrcode",
+            manifest=root / "fixtures" / "usage-build" / "qrcode" / "Cargo.toml",
+            description="只打开 qrcode capability 的入口",
+            required_packages=("qrcode",),
         ),
     ]
 
@@ -172,9 +186,31 @@ def direct_dependency_names(package: dict[str, Any]) -> list[str]:
     return sorted(names)
 
 
+# 返回 Cargo resolve 节点实际包含的 package 名称。
+def resolved_package_names(metadata: dict[str, Any]) -> set[str]:
+    # 收集当前 feature 与 target 解析结果中的 package 标识。
+    resolved_ids = {
+        node.get("id")
+        for node in metadata.get("resolve", {}).get("nodes", [])
+        if node.get("id")
+    }
+    # 只返回确实出现在 resolve 节点中的 package 名称。
+    return {
+        package["name"]
+        for package in metadata.get("packages", [])
+        if package.get("id") in resolved_ids
+    }
+
+
 # 从 metadata 中提取可复核的解析依赖图摘要。
 def resolved_graph_summary(metadata: dict[str, Any]) -> dict[str, Any]:
-    # 为每个 package 仅保留基线关心的稳定字段。
+    # 将实际 resolve 节点按 package 标识建立索引。
+    resolved_nodes = {
+        node["id"]: node
+        for node in metadata.get("resolve", {}).get("nodes", [])
+        if node.get("id")
+    }
+    # 为每个实际解析的 package 仅保留基线关心的稳定字段。
     packages = [
         {
             "name": package.get("name"),
@@ -182,11 +218,13 @@ def resolved_graph_summary(metadata: dict[str, Any]) -> dict[str, Any]:
             "source": package.get("source"),
             "dependencies": sorted(
                 dependency.get("name")
-                for dependency in package.get("dependencies", [])
+                for dependency in resolved_nodes[package["id"]].get("deps", [])
                 if dependency.get("name")
             ),
+            "features": sorted(resolved_nodes[package["id"]].get("features", [])),
         }
         for package in metadata.get("packages", [])
+        if package.get("id") in resolved_nodes
     ]
     # 按名称和版本排序，避免 Cargo 输出顺序影响 diff。
     packages.sort(key=lambda package: (package["name"] or "", package["version"] or ""))
@@ -253,6 +291,12 @@ def measure_scenario(
         "steps": [],
         "resolved_graph": None,
         "direct_dependencies": [],
+        "dependency_assertions": {
+            "required": list(scenario.required_packages),
+            "forbidden": list(scenario.forbidden_packages),
+            "missing_required": [],
+            "present_forbidden": [],
+        },
         "release_artifact": None,
     }
     # 预先准备所有 Cargo 子命令共用的清单参数。
@@ -296,6 +340,25 @@ def measure_scenario(
             record["direct_dependencies"] = direct_dependency_names(package)
             # 记录完整 resolved graph 摘要。
             record["resolved_graph"] = resolved_graph_summary(metadata)
+            # 提取当前场景实际解析到的 package 名称。
+            resolved_packages = resolved_package_names(metadata)
+            # 找出场景声明但未进入解析图的必需 package。
+            missing_required = sorted(set(scenario.required_packages) - resolved_packages)
+            # 找出未选择能力却意外进入解析图的禁用 package。
+            present_forbidden = sorted(set(scenario.forbidden_packages) & resolved_packages)
+            # 把依赖存在性断言写入结构化报告。
+            record["dependency_assertions"] = {
+                "required": list(scenario.required_packages),
+                "forbidden": list(scenario.forbidden_packages),
+                "missing_required": missing_required,
+                "present_forbidden": present_forbidden,
+            }
+            # 依赖断言失败时禁止继续生成可误读的通过报告。
+            if missing_required or present_forbidden:
+                # 返回同时包含缺失与误入依赖的明确错误。
+                raise RuntimeError(
+                    f"依赖图断言失败：缺少 {missing_required}，意外出现 {present_forbidden}"
+                )
         # 记录 release 构建开始时间。
         build_result = run_command(
             [cargo, "build", *manifest_args, "--release"] + locked_suffix,
