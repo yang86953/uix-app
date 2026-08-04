@@ -1,0 +1,32 @@
+# 声明复用的未生产化 backend 公开选择面 fixture。
+[package]
+# 使用稳定名称，便于六个配置共享同一清单与锁文件。
+name = "uix-usage-backend-selection"
+# 与主 crate 保持当前基线版本。
+version = "0.0.1"
+# 使用仓库当前 Rust edition。
+edition = "2021"
+# 明确该 fixture 只用于仓库内验证。
+publish = false
+
+# 声明正向转发与负向不转发的六个互斥配置。
+[features]
+# 默认不选择任何 backend，所有场景必须显式声明配置。
+default = []
+# D3D12 正向配置向 uix 转发同名 feature。
+d3d12-selection = ["uix/d3d12"]
+# D3D12 负向配置只选择 fixture 分支，不向 uix 转发。
+d3d12-selection-disabled = []
+# Vulkan 正向配置向 uix 转发同名 feature。
+vulkan-selection = ["uix/vulkan"]
+# Vulkan 负向配置只选择 fixture 分支，不向 uix 转发。
+vulkan-selection-disabled = []
+# Metal 正向配置向 uix 转发同名 feature。
+metal-selection = ["uix/metal"]
+# Metal 负向配置只选择 fixture 分支，不向 uix 转发。
+metal-selection-disabled = []
+
+# 声明被测主 crate 依赖。
+[dependencies]
+# 关闭 uix 默认集合，由 fixture feature 决定是否转发 backend feature。
+uix = { path = "../../../", default-features = false }

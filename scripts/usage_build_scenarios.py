@@ -27,6 +27,40 @@ D3D11_WINDOWS_PACKAGE_FEATURES = (
     # DXGI 公共格式与描述类型属于 D3D11 实现依赖。
     ("windows", "Win32_Graphics_Dxgi_Common"),
 )
+# 记录只有 D3D11 选择面才应启用的 Windows API feature。
+D3D11_ONLY_WINDOWS_PACKAGE_FEATURES = (
+    # Direct3D 11 API 不得被 D3D12 或其他 backend 选择面合并。
+    ("windows", "Win32_Graphics_Direct3D11"),
+)
+# 记录 D3D12 选择面声明的完整 Windows API feature 集。
+D3D12_WINDOWS_PACKAGE_FEATURES = (
+    # Direct3D 基础类型由 D3D12 清单 feature 显式启用。
+    ("windows", "Win32_Graphics_Direct3D"),
+    # 当前 D3D12 legacy pipeline 仍声明 shader 编译 API。
+    ("windows", "Win32_Graphics_Direct3D_Fxc"),
+    # Direct3D 12 API 是该选择面的专属核心 feature。
+    ("windows", "Win32_Graphics_Direct3D12"),
+    # DXGI factory 与 swapchain 类型由 D3D12 feature 启用。
+    ("windows", "Win32_Graphics_Dxgi"),
+    # DXGI 公共格式与描述类型由 D3D12 feature 启用。
+    ("windows", "Win32_Graphics_Dxgi_Common"),
+    # 当前 D3D12 清单同时声明基础安全 API。
+    ("windows", "Win32_Security"),
+)
+# 记录只有 D3D12 选择面才应启用的 Windows API feature。
+D3D12_ONLY_WINDOWS_PACKAGE_FEATURES = (
+    # Direct3D 12 API 不得泄漏到 D3D11 或其他 backend 入口。
+    ("windows", "Win32_Graphics_Direct3D12"),
+    # 基础安全 API 当前只由 D3D12 或 Agent 显式声明。
+    ("windows", "Win32_Security"),
+)
+# 汇总图形选择面可能向 windows package 合并的全部 API feature。
+GRAPHICS_WINDOWS_PACKAGE_FEATURES = (
+    # 复用完整 D3D11 feature 集作为公共与 D3D11 专属部分。
+    *D3D11_WINDOWS_PACKAGE_FEATURES,
+    # 追加 D3D12 专属 feature，避免重复公共 Direct3D/DXGI 项。
+    *D3D12_ONLY_WINDOWS_PACKAGE_FEATURES,
+)
 
 
 # 描述一个独立的使用方基线入口。
@@ -81,8 +115,8 @@ def scenario_specs(root: Path) -> list[Scenario]:
             description="关闭默认 feature 的最小使用方入口",
             # 最小入口必须排除全部已独立裁剪的专属依赖及已删除的死依赖。
             forbidden_packages=("ash", "bytemuck", "glow", "image", "khronos-egl", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
-            # 最小入口必须排除 D3D11 向基础 windows package 合并的 API feature。
-            forbidden_package_features=D3D11_WINDOWS_PACKAGE_FEATURES,
+            # 最小入口必须排除全部 D3D11/D3D12 图形 API feature。
+            forbidden_package_features=GRAPHICS_WINDOWS_PACKAGE_FEATURES,
             # 最小入口必须证明 backend、非默认源码与数据能力未被 Cargo 选择。
             forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "agent-control", "rich-text", "settings-serde"),
         ),
@@ -143,6 +177,8 @@ def scenario_specs(root: Path) -> list[Scenario]:
             forbidden_packages=("ash", "glow", "raw-window-handle", "serde_json"),
             # 默认 D3D11 必须选择完整的 Win32 图形 API feature 集。
             required_package_features=D3D11_WINDOWS_PACKAGE_FEATURES,
+            # 默认 D3D11 入口不得合并 D3D12 专属 Windows API feature。
+            forbidden_package_features=D3D12_ONLY_WINDOWS_PACKAGE_FEATURES,
             # 默认兼容集合必须继续包含 D3D11 与富文本公开能力。
             required_uix_features=("d3d11", "rich-text"),
             # Agent 控制与 OpenGL ES 不属于默认兼容集合。
@@ -160,6 +196,8 @@ def scenario_specs(root: Path) -> list[Scenario]:
             forbidden_packages=("ash", "bytemuck", "glow", "image", "khronos-egl", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
             # D3D11 必须精确选择其 Win32 API feature 集。
             required_package_features=D3D11_WINDOWS_PACKAGE_FEATURES,
+            # 单 D3D11 入口不得合并 D3D12 专属 Windows API feature。
+            forbidden_package_features=D3D12_ONLY_WINDOWS_PACKAGE_FEATURES,
             # metadata 必须证明 uix 实际选择了 D3D11 feature。
             required_uix_features=("d3d11",),
             # 单 backend 入口不得合并其他图形实现或源码能力。
@@ -178,13 +216,77 @@ def scenario_specs(root: Path) -> list[Scenario]:
             required_packages=("glow",),
             # 单 backend 入口不得合并其他 backend 与使用方 capability 依赖。
             forbidden_packages=("ash", "bytemuck", "image", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
-            # OpenGL ES 入口不得合并 D3D11 的 Win32 API feature 集。
-            forbidden_package_features=D3D11_WINDOWS_PACKAGE_FEATURES,
+            # OpenGL ES 入口不得合并 D3D11/D3D12 的 Win32 API feature 集。
+            forbidden_package_features=GRAPHICS_WINDOWS_PACKAGE_FEATURES,
             # metadata 必须证明 uix 实际选择了 OpenGL ES feature。
             required_uix_features=("opengles",),
             # 单 backend 入口不得合并其他图形实现或源码能力。
             forbidden_uix_features=("d3d11", "d3d12", "metal", "vulkan", "agent-control", "rich-text", "settings-serde"),
         # 结束 OpenGL ES 正向场景定义。
+        ),
+        # D3D12 当前只验证公开选择面与清单依赖，不宣称生产 registry 可用。
+        Scenario(
+            # 使用稳定名称显式区分选择面与生产 backend。
+            name="d3d12-selection",
+            # 三种未生产化 backend 复用同一个选择面 fixture。
+            manifest=root / "fixtures" / "usage-build" / "backend-selection" / "Cargo.toml",
+            # 说明该入口只覆盖 D3D12 公开变体与 Cargo feature 边界。
+            description="只验证 d3d12 公开选择面与依赖图，不作为生产 backend 证据",
+            # 选择 fixture 的 D3D12 转发 feature。
+            feature_args=("--no-default-features", "--features", "d3d12-selection"),
+            # D3D12 选择面不得合并其他 backend 或 capability 依赖。
+            forbidden_packages=("ash", "bytemuck", "glow", "image", "khronos-egl", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
+            # D3D12 必须精确选择其清单声明的 Windows API feature 集。
+            required_package_features=D3D12_WINDOWS_PACKAGE_FEATURES,
+            # D3D12 入口不得合并 D3D11 专属 API feature。
+            forbidden_package_features=D3D11_ONLY_WINDOWS_PACKAGE_FEATURES,
+            # metadata 必须证明 uix 实际选择 D3D12 feature。
+            required_uix_features=("d3d12",),
+            # 单选择面入口不得合并其他 backend 与源码 capability。
+            forbidden_uix_features=("d3d11", "metal", "opengles", "vulkan", "agent-control", "rich-text", "settings-serde"),
+        # 结束 D3D12 选择面正向场景定义。
+        ),
+        # Vulkan 当前验证公开选择面、ash 与可编译源码，但不宣称 registry 可用。
+        Scenario(
+            # 使用稳定名称显式区分选择面与生产 backend。
+            name="vulkan-selection",
+            # 复用统一 backend 选择面 fixture。
+            manifest=root / "fixtures" / "usage-build" / "backend-selection" / "Cargo.toml",
+            # 说明该入口只覆盖 Vulkan 公开变体与 Cargo feature 边界。
+            description="只验证 vulkan 公开选择面、ash 与构建图，不作为生产 backend 证据",
+            # 选择 fixture 的 Vulkan 转发 feature。
+            feature_args=("--no-default-features", "--features", "vulkan-selection"),
+            # Vulkan feature 必须解析其专属 ash package。
+            required_packages=("ash",),
+            # Vulkan 选择面不得合并其他 capability 依赖或死依赖。
+            forbidden_packages=("bytemuck", "glow", "image", "khronos-egl", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
+            # Vulkan 不得合并 D3D11/D3D12 的 Windows API feature。
+            forbidden_package_features=GRAPHICS_WINDOWS_PACKAGE_FEATURES,
+            # metadata 必须证明 uix 实际选择 Vulkan feature。
+            required_uix_features=("vulkan",),
+            # 单选择面入口不得合并其他 backend 与源码 capability。
+            forbidden_uix_features=("d3d11", "d3d12", "metal", "opengles", "agent-control", "rich-text", "settings-serde"),
+        # 结束 Vulkan 选择面正向场景定义。
+        ),
+        # Metal 当前只验证无专属 package 的公开选择面，不宣称 Windows 生产实现。
+        Scenario(
+            # 使用稳定名称显式区分选择面与生产 backend。
+            name="metal-selection",
+            # 复用统一 backend 选择面 fixture。
+            manifest=root / "fixtures" / "usage-build" / "backend-selection" / "Cargo.toml",
+            # 说明该入口只覆盖 Metal 公开变体与空 feature 边界。
+            description="只验证 metal 公开选择面与空依赖 feature，不作为生产 backend 证据",
+            # 选择 fixture 的 Metal 转发 feature。
+            feature_args=("--no-default-features", "--features", "metal-selection"),
+            # Metal 选择面不得引入其他 backend/capability package 或死依赖。
+            forbidden_packages=("ash", "bytemuck", "glow", "image", "khronos-egl", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
+            # Metal 空 feature 不得合并任何 D3D Windows API feature。
+            forbidden_package_features=GRAPHICS_WINDOWS_PACKAGE_FEATURES,
+            # metadata 必须证明 uix 实际选择 Metal feature。
+            required_uix_features=("metal",),
+            # 单选择面入口不得合并其他 backend 与源码 capability。
+            forbidden_uix_features=("d3d11", "d3d12", "opengles", "vulkan", "agent-control", "rich-text", "settings-serde"),
+        # 结束 Metal 选择面正向场景定义。
         ),
         # 演示日志禁用入口直接构建根清单二进制。
         Scenario(
@@ -204,6 +306,8 @@ def scenario_specs(root: Path) -> list[Scenario]:
             forbidden_packages=("ash", "glow", "raw-window-handle", "serde_json", "tracing-subscriber"),
             # 演示使用的 D3D11 必须选择完整 Win32 图形 API feature 集。
             required_package_features=D3D11_WINDOWS_PACKAGE_FEATURES,
+            # 演示基础组合不得合并 D3D12 专属 Windows API feature。
+            forbidden_package_features=D3D12_ONLY_WINDOWS_PACKAGE_FEATURES,
             # 演示基础组合必须显式保留 D3D11 与富文本组件能力。
             required_uix_features=("d3d11", "rich-text"),
             # 演示日志对照不得意外启用 Agent 控制或 OpenGL ES。
@@ -228,6 +332,8 @@ def scenario_specs(root: Path) -> list[Scenario]:
             forbidden_packages=("ash", "glow", "raw-window-handle", "serde_json"),
             # 日志启用入口必须保持相同的 D3D11 Win32 feature 集。
             required_package_features=D3D11_WINDOWS_PACKAGE_FEATURES,
+            # 日志启用对照不得合并 D3D12 专属 Windows API feature。
+            forbidden_package_features=D3D12_ONLY_WINDOWS_PACKAGE_FEATURES,
             # 日志对照只能增加订阅器，D3D11 与富文本能力必须保持一致。
             required_uix_features=("d3d11", "rich-text"),
             # 日志启用场景同样不得合并 Agent 控制或 OpenGL ES。
@@ -305,8 +411,8 @@ def scenario_specs(root: Path) -> list[Scenario]:
                 "windows-core",
             # 结束 Linux Agent 禁用依赖集合。
             ),
-            # Linux Agent 不得合并 D3D11 的 Win32 API feature。
-            forbidden_package_features=D3D11_WINDOWS_PACKAGE_FEATURES,
+            # Linux Agent 不得合并任何 D3D11/D3D12 Win32 API feature。
+            forbidden_package_features=GRAPHICS_WINDOWS_PACKAGE_FEATURES,
             # metadata 必须证明 uix 实际选择 Agent 控制 feature。
             required_uix_features=("agent-control",),
             # Linux Agent 单能力入口不得合并 backend、富文本或设置能力。
@@ -370,8 +476,8 @@ def scenario_specs(root: Path) -> list[Scenario]:
             description="关闭 d3d11 backend capability 的公开变体 compile-fail",
             # 禁用入口必须排除 backend、使用方能力依赖与死依赖。
             forbidden_packages=("ash", "bytemuck", "glow", "image", "khronos-egl", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
-            # D3D11 禁用入口不得选择任何对应 Win32 API feature。
-            forbidden_package_features=D3D11_WINDOWS_PACKAGE_FEATURES,
+            # D3D11 禁用入口不得选择任何 D3D11/D3D12 Win32 API feature。
+            forbidden_package_features=GRAPHICS_WINDOWS_PACKAGE_FEATURES,
             # metadata 必须证明全部 backend feature 都保持关闭。
             forbidden_uix_features=GRAPHICS_BACKEND_FEATURES,
             # 标记该场景预期编译失败。
@@ -390,8 +496,8 @@ def scenario_specs(root: Path) -> list[Scenario]:
             description="关闭 opengles backend capability 的公开变体 compile-fail",
             # 禁用入口必须排除 backend、使用方能力依赖与死依赖。
             forbidden_packages=("ash", "bytemuck", "glow", "image", "khronos-egl", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
-            # OpenGL ES 禁用入口同样不得合并 D3D11 Win32 API feature。
-            forbidden_package_features=D3D11_WINDOWS_PACKAGE_FEATURES,
+            # OpenGL ES 禁用入口同样不得合并 D3D11/D3D12 Win32 API feature。
+            forbidden_package_features=GRAPHICS_WINDOWS_PACKAGE_FEATURES,
             # metadata 必须证明全部 backend feature 都保持关闭。
             forbidden_uix_features=GRAPHICS_BACKEND_FEATURES,
             # 标记该场景预期编译失败。
@@ -399,6 +505,72 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 绑定缺失枚举变体的稳定诊断与公开名称。
             expected_error_fragments=("no variant", "OpenGlEs"),
         # 结束 OpenGL ES 负向场景定义。
+        ),
+        # D3D12 禁用入口必须证明公开选择变体无法绕过 uix feature。
+        Scenario(
+            # 使用稳定名称区分禁用选择面场景。
+            name="d3d12-selection-disabled",
+            # 复用统一 backend 选择面 fixture，但只启用不转发 uix feature 的分支。
+            manifest=root / "fixtures" / "usage-build" / "backend-selection" / "Cargo.toml",
+            # 说明该入口必须在 D3D12 公开变体处编译失败。
+            description="关闭 d3d12 feature 的公开选择变体 compile-fail",
+            # 只启用 fixture 自身的禁用分支，不向 uix 转发 D3D12。
+            feature_args=("--no-default-features", "--features", "d3d12-selection-disabled"),
+            # 禁用入口必须排除 backend、能力依赖与死依赖。
+            forbidden_packages=("ash", "bytemuck", "glow", "image", "khronos-egl", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
+            # 禁用入口不得合并任何 D3D 图形 API feature。
+            forbidden_package_features=GRAPHICS_WINDOWS_PACKAGE_FEATURES,
+            # metadata 必须证明全部 backend feature 关闭。
+            forbidden_uix_features=GRAPHICS_BACKEND_FEATURES,
+            # 标记该场景预期编译失败。
+            expected_compile_failure=True,
+            # 绑定缺失枚举变体与公开名称。
+            expected_error_fragments=("no variant", "Direct3D12"),
+        # 结束 D3D12 选择面负向场景定义。
+        ),
+        # Vulkan 禁用入口必须证明公开选择变体与 ash 同步消失。
+        Scenario(
+            # 使用稳定名称区分禁用选择面场景。
+            name="vulkan-selection-disabled",
+            # 复用统一 backend 选择面 fixture 的禁用分支。
+            manifest=root / "fixtures" / "usage-build" / "backend-selection" / "Cargo.toml",
+            # 说明该入口必须在 Vulkan 公开变体处编译失败。
+            description="关闭 vulkan feature 的公开选择变体 compile-fail",
+            # 只启用 fixture 自身的禁用分支，不向 uix 转发 Vulkan。
+            feature_args=("--no-default-features", "--features", "vulkan-selection-disabled"),
+            # Vulkan 禁用入口必须排除 ash 与其他能力依赖。
+            forbidden_packages=("ash", "bytemuck", "glow", "image", "khronos-egl", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
+            # 禁用入口不得合并任何 D3D 图形 API feature。
+            forbidden_package_features=GRAPHICS_WINDOWS_PACKAGE_FEATURES,
+            # metadata 必须证明全部 backend feature 关闭。
+            forbidden_uix_features=GRAPHICS_BACKEND_FEATURES,
+            # 标记该场景预期编译失败。
+            expected_compile_failure=True,
+            # 绑定缺失枚举变体与公开名称。
+            expected_error_fragments=("no variant", "Vulkan"),
+        # 结束 Vulkan 选择面负向场景定义。
+        ),
+        # Metal 禁用入口必须证明空依赖 feature 仍控制公开变体。
+        Scenario(
+            # 使用稳定名称区分禁用选择面场景。
+            name="metal-selection-disabled",
+            # 复用统一 backend 选择面 fixture 的禁用分支。
+            manifest=root / "fixtures" / "usage-build" / "backend-selection" / "Cargo.toml",
+            # 说明该入口必须在 Metal 公开变体处编译失败。
+            description="关闭 metal feature 的公开选择变体 compile-fail",
+            # 只启用 fixture 自身的禁用分支，不向 uix 转发 Metal。
+            feature_args=("--no-default-features", "--features", "metal-selection-disabled"),
+            # Metal 禁用入口必须排除其他 backend/capability package 与死依赖。
+            forbidden_packages=("ash", "bytemuck", "glow", "image", "khronos-egl", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
+            # 禁用入口不得合并任何 D3D 图形 API feature。
+            forbidden_package_features=GRAPHICS_WINDOWS_PACKAGE_FEATURES,
+            # metadata 必须证明全部 backend feature 关闭。
+            forbidden_uix_features=GRAPHICS_BACKEND_FEATURES,
+            # 标记该场景预期编译失败。
+            expected_compile_failure=True,
+            # 绑定缺失枚举变体与公开名称。
+            expected_error_fragments=("no variant", "Metal"),
+        # 结束 Metal 选择面负向场景定义。
         ),
         # 二维码禁用入口必须证明公开类型无法绕过 capability。
         Scenario(

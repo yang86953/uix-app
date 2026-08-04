@@ -93,10 +93,12 @@ class ResolvedGraphTests(unittest.TestCase):
     def test_demo_logging_scenarios_bind_root_binary_and_feature_graph(self) -> None:
         # 读取当前仓库的全部场景定义。
         scenarios = measure_usage_build.scenario_specs(measure_usage_build.project_root())
-        # 文档声明的 schema v6 矩阵必须保持二十一个独立执行场景。
-        self.assertEqual(len(scenarios), 21)
+        # 文档声明的 schema v6 矩阵必须保持二十七个独立执行场景。
+        self.assertEqual(len(scenarios), 27)
         # 按稳定名称索引场景。
         by_name = {scenario.name: scenario for scenario in scenarios}
+        # 场景名称必须全局唯一，避免字典索引静默覆盖配置。
+        self.assertEqual(len(by_name), len(scenarios))
         # 读取关闭演示日志的根二进制场景。
         disabled = by_name["demo-logging-disabled"]
         # 禁用场景必须显式保留演示基础能力但不含日志 feature。
@@ -120,7 +122,7 @@ class ResolvedGraphTests(unittest.TestCase):
         # 两个根二进制场景必须使用同一根清单以便比较。
         self.assertEqual(enabled.manifest, disabled.manifest)
 
-    # 确认 D3D11 与 OpenGL ES 正反场景同时覆盖依赖、feature 与公开变体。
+    # 确认五种图形选择面的正反场景同时覆盖依赖、feature 与公开变体。
     def test_graphics_backend_scenarios_bind_dependency_and_public_api_guards(self) -> None:
         # 读取当前仓库的全部场景定义。
         scenarios = measure_usage_build.scenario_specs(measure_usage_build.project_root())
@@ -144,10 +146,10 @@ class ResolvedGraphTests(unittest.TestCase):
             d3d11_disabled.forbidden_uix_features,
             measure_usage_build.GRAPHICS_BACKEND_FEATURES,
         )
-        # D3D11 的 Win32 API feature 在禁用入口中必须全部缺席。
+        # D3D11/D3D12 的 Win32 API feature 在禁用入口中必须全部缺席。
         self.assertEqual(
             d3d11_disabled.forbidden_package_features,
-            measure_usage_build.D3D11_WINDOWS_PACKAGE_FEATURES,
+            measure_usage_build.GRAPHICS_WINDOWS_PACKAGE_FEATURES,
         )
         # 负向诊断必须绑定缺失变体与公开名称。
         self.assertEqual(
@@ -160,10 +162,10 @@ class ResolvedGraphTests(unittest.TestCase):
         self.assertEqual(opengles.required_packages, ("glow",))
         # metadata 必须证明 uix 实际选择 opengles feature。
         self.assertEqual(opengles.required_uix_features, ("opengles",))
-        # OpenGL ES 不得合并 D3D11 的 windows API feature。
+        # OpenGL ES 不得合并 D3D11/D3D12 的 windows API feature。
         self.assertEqual(
             opengles.forbidden_package_features,
-            measure_usage_build.D3D11_WINDOWS_PACKAGE_FEATURES,
+            measure_usage_build.GRAPHICS_WINDOWS_PACKAGE_FEATURES,
         )
         # 读取关闭 OpenGL ES 的负向入口。
         opengles_disabled = by_name["opengles-disabled"]
@@ -174,6 +176,95 @@ class ResolvedGraphTests(unittest.TestCase):
             opengles_disabled.expected_error_fragments,
             ("no variant", "OpenGlEs"),
         )
+        # 读取只验证 D3D12 公开选择面的正向入口。
+        d3d12 = by_name["d3d12-selection"]
+        # D3D12 正向入口必须显式转发 fixture feature。
+        self.assertEqual(
+            d3d12.feature_args,
+            ("--no-default-features", "--features", "d3d12-selection"),
+        )
+        # D3D12 必须要求清单声明的完整 Windows API feature 集。
+        self.assertEqual(
+            d3d12.required_package_features,
+            measure_usage_build.D3D12_WINDOWS_PACKAGE_FEATURES,
+        )
+        # D3D12 单选择面不得合并 D3D11 专属 API。
+        self.assertEqual(
+            d3d12.forbidden_package_features,
+            measure_usage_build.D3D11_ONLY_WINDOWS_PACKAGE_FEATURES,
+        )
+        # metadata 必须证明 uix 实际选择 d3d12 feature。
+        self.assertEqual(d3d12.required_uix_features, ("d3d12",))
+        # 读取只验证 Vulkan 公开选择面的正向入口。
+        vulkan = by_name["vulkan-selection"]
+        # Vulkan feature 必须精确引入 ash package。
+        self.assertEqual(vulkan.required_packages, ("ash",))
+        # Vulkan 不得合并任何 D3D Windows API feature。
+        self.assertEqual(
+            vulkan.forbidden_package_features,
+            measure_usage_build.GRAPHICS_WINDOWS_PACKAGE_FEATURES,
+        )
+        # metadata 必须证明 uix 实际选择 vulkan feature。
+        self.assertEqual(vulkan.required_uix_features, ("vulkan",))
+        # 读取只验证 Metal 公开选择面的正向入口。
+        metal = by_name["metal-selection"]
+        # Metal 空依赖 feature 不得引入 Vulkan 的 ash package。
+        self.assertIn("ash", metal.forbidden_packages)
+        # Metal 不得合并任何 D3D Windows API feature。
+        self.assertEqual(
+            metal.forbidden_package_features,
+            measure_usage_build.GRAPHICS_WINDOWS_PACKAGE_FEATURES,
+        )
+        # metadata 必须证明 uix 实际选择 metal feature。
+        self.assertEqual(metal.required_uix_features, ("metal",))
+        # 六个新配置必须复用同一 fixture 清单与锁文件。
+        selection_names = (
+            # D3D12 正向选择面。
+            "d3d12-selection",
+            # Vulkan 正向选择面。
+            "vulkan-selection",
+            # Metal 正向选择面。
+            "metal-selection",
+            # D3D12 负向选择面。
+            "d3d12-selection-disabled",
+            # Vulkan 负向选择面。
+            "vulkan-selection-disabled",
+            # Metal 负向选择面。
+            "metal-selection-disabled",
+        )
+        # 收集六个配置使用的唯一清单路径。
+        selection_manifests = {by_name[name].manifest for name in selection_names}
+        # 复用边界必须保持一个清单，避免复制 fixture 造成漂移。
+        self.assertEqual(selection_manifests, {d3d12.manifest})
+        # 每个场景必须只启用与稳定名称相同的单一 fixture feature。
+        for name in selection_names:
+            # 正反配置都显式关闭 fixture 默认集合并只选择自身分支。
+            self.assertEqual(
+                by_name[name].feature_args,
+                ("--no-default-features", "--features", name),
+            )
+        # 三个禁用入口分别绑定对应缺失公开变体的诊断。
+        disabled_fragments = {
+            # D3D12 禁用入口诊断。
+            "d3d12-selection-disabled": ("no variant", "Direct3D12"),
+            # Vulkan 禁用入口诊断。
+            "vulkan-selection-disabled": ("no variant", "Vulkan"),
+            # Metal 禁用入口诊断。
+            "metal-selection-disabled": ("no variant", "Metal"),
+        }
+        # 逐项核对负向配置没有转发 uix backend feature。
+        for name, fragments in disabled_fragments.items():
+            # 读取当前禁用场景。
+            disabled = by_name[name]
+            # 场景必须走真实 compile-fail 分支。
+            self.assertTrue(disabled.expected_compile_failure)
+            # 全部 uix backend feature 必须保持关闭。
+            self.assertEqual(
+                disabled.forbidden_uix_features,
+                measure_usage_build.GRAPHICS_BACKEND_FEATURES,
+            )
+            # 稳定诊断必须同时绑定错误类别与公开变体名。
+            self.assertEqual(disabled.expected_error_fragments, fragments)
 
     # 确认富文本正反场景同时覆盖 feature 解析与公开面收缩。
     def test_rich_text_scenarios_bind_feature_and_public_api_guards(self) -> None:

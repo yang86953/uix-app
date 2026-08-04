@@ -39,6 +39,14 @@ DEMO_LOGGING_FEATURES = usage_build_scenarios.DEMO_LOGGING_FEATURES
 GRAPHICS_BACKEND_FEATURES = usage_build_scenarios.GRAPHICS_BACKEND_FEATURES
 # 重导出 D3D11 的 windows package feature 集合。
 D3D11_WINDOWS_PACKAGE_FEATURES = usage_build_scenarios.D3D11_WINDOWS_PACKAGE_FEATURES
+# 重导出 D3D11 专属的 windows package feature 集合。
+D3D11_ONLY_WINDOWS_PACKAGE_FEATURES = usage_build_scenarios.D3D11_ONLY_WINDOWS_PACKAGE_FEATURES
+# 重导出 D3D12 的 windows package feature 集合。
+D3D12_WINDOWS_PACKAGE_FEATURES = usage_build_scenarios.D3D12_WINDOWS_PACKAGE_FEATURES
+# 重导出 D3D12 专属的 windows package feature 集合。
+D3D12_ONLY_WINDOWS_PACKAGE_FEATURES = usage_build_scenarios.D3D12_ONLY_WINDOWS_PACKAGE_FEATURES
+# 重导出全部图形选择面可能启用的 windows package feature 集合。
+GRAPHICS_WINDOWS_PACKAGE_FEATURES = usage_build_scenarios.GRAPHICS_WINDOWS_PACKAGE_FEATURES
 # 重导出场景数据类型。
 Scenario = usage_build_scenarios.Scenario
 # 重导出仓库根目录解析函数。
