@@ -3,17 +3,32 @@
 //! 职责：解码 PNG/JPEG 等格式、路径缓存、按句柄提供像素数据。
 //! 渲染通过 `PaintContext::draw_image` 调用 `Canvas2D::blit_image`。
 
+// 图片编解码 capability 启用时才编译第三方格式解码模块。
+#[cfg(feature = "image-codecs")]
+// 该模块只负责把压缩图片转换为框架 RGBA 像素。
 pub(crate) mod decode;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+// 图片编解码 capability 启用时才需要读取文件。
+#[cfg(feature = "image-codecs")]
+// 路径解码入口使用标准文件系统读取压缩数据。
 use std::fs;
+// 图片编解码 capability 启用时才公开路径加载入口。
+#[cfg(feature = "image-codecs")]
+// 路径类型仅服务于图片文件解码。
 use std::path::Path;
 
+// 图片编解码 capability 启用时才构造解码与文件错误。
+#[cfg(feature = "image-codecs")]
+// 解码入口继续返回框架统一错误类型。
 use crate::core::error::Error;
 use crate::core::Rect;
 use crate::draw::Canvas2D;
 
+// 图片编解码 capability 启用时才暴露压缩数据解码函数。
+#[cfg(feature = "image-codecs")]
+// 关闭 capability 后不保留绕过 ImageService 的公开解码路径。
 pub use decode::decode_to_pixels;
 
 /// 解码位图句柄（区别于离屏缓冲 `ImageHandle`）。
@@ -110,12 +125,18 @@ impl ImageService {
     }
 
     /// 从原始字节加载图片，返回新句柄。
+    // 图片编解码 capability 启用时才公开字节解码入口。
+    #[cfg(feature = "image-codecs")]
+    // 关闭 capability 后使用方无法绕过依赖门控调用该方法。
     pub fn load_from_bytes(&self, data: &[u8]) -> Result<BitmapHandle, Error> {
         let (w, h, pixels) = decode_to_pixels(data)?;
         Ok(self.insert_slot(ImageSlot::from_decoded(w, h, pixels, None)))
     }
 
     /// 从文件路径加载图片（带路径缓存）。
+    // 图片编解码 capability 启用时才公开路径解码入口。
+    #[cfg(feature = "image-codecs")]
+    // 关闭 capability 后路径缓存仍可服务已有内部槽位清理。
     pub fn load_from_path(&self, path: impl AsRef<Path>) -> Result<BitmapHandle, Error> {
         let path_str = path.as_ref().to_string_lossy().into_owned();
         if let Some(handle) = self.path_cache.borrow().get(&path_str).copied() {
@@ -137,6 +158,9 @@ impl ImageService {
     }
 
     /// 懒加载：路径为空或加载失败返回 `None`。
+    // 图片编解码 capability 启用时才公开路径懒加载入口。
+    #[cfg(feature = "image-codecs")]
+    // 关闭 capability 后路径型组件 API 会同步收缩。
     pub fn ensure_loaded(&self, path: &str) -> Option<BitmapHandle> {
         if path.is_empty() {
             return None;

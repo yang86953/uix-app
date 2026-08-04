@@ -4,10 +4,16 @@ use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
+// 图片编解码 capability 启用时才需要在路径加载后触发重绘。
+#[cfg(feature = "image-codecs")]
+// 该导入仅服务于头像路径解码入口。
 use crate::draw::renderer::invalidate_paint_handle;
 use crate::draw::resources::image::BitmapHandle;
 use crate::draw::Color;
 use crate::ui::component::paint_context::PaintContext;
+// 图片编解码 capability 启用时才追踪当前头像组件。
+#[cfg(feature = "image-codecs")]
+// 该导入仅服务于头像路径解码后的局部失效。
 use crate::ui::component::paint_scope::current_paint_widget;
 use crate::ui::component::widget::WidgetTree;
 use crate::ui::SnapshotFields;
@@ -65,7 +71,18 @@ component! {
             ctx.fill_circle(cx, cy, cr, bg);
         }
 
+        // 图片编解码 capability 启用时解析头像文件路径。
+        #[cfg(feature = "image-codecs")]
+        // 路径能力开启时复用原有缓存与失效契约。
         let handle = self.resolve_handle(ctx, tree, control);
+        // 图片编解码 capability 关闭时头像只保留文字回退。
+        #[cfg(not(feature = "image-codecs"))]
+        // 显式类型保证后续位图绘制分支保持同一契约。
+        let handle: Option<BitmapHandle> = None;
+        // 图片编解码 capability 关闭时不需要触发组件局部失效。
+        #[cfg(not(feature = "image-codecs"))]
+        // 显式消费组件树参数以保持无默认构建零新增警告。
+        let _ = tree;
         let drew_image = if let Some(handle) = handle {
             let device_scale = ctx.device_pixel_ratio().max(f32::EPSILON);
             let target_side = (side * device_scale).ceil().clamp(1.0, 4096.0) as u32;
@@ -148,6 +165,9 @@ impl Avatar {
         self.square = v;
         self
     }
+    // 图片编解码 capability 启用时才公开头像路径入口。
+    #[cfg(feature = "image-codecs")]
+    // 关闭 capability 后使用方无法设置需要解码的图片来源。
     pub fn src(mut self, s: &str) -> Self {
         self.src = s.to_string();
         self.cached.set(None);
@@ -158,6 +178,9 @@ impl Avatar {
         Size::new(self.size, self.size)
     }
 
+    // 图片编解码 capability 启用时才编译头像路径解析逻辑。
+    #[cfg(feature = "image-codecs")]
+    // 路径解析继续复用应用级 ImageService 缓存。
     fn resolve_handle(
         &self,
         ctx: &PaintContext,

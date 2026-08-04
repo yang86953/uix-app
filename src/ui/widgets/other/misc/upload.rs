@@ -137,6 +137,9 @@ component! {
                 UploadStatus::Pending => text_sec,
             };
             let thumbnail = Rect::new(frame.x + 4.0, y + 4.0, 24.0, 24.0);
+            // 图片编解码 capability 启用时才尝试本地文件缩略图。
+            #[cfg(feature = "image-codecs")]
+            // 能力开启时复用原有预览加载与裁剪逻辑。
             let drew_preview = self.preview_image
                 && f.source_path.as_deref().is_some_and(|path| {
                     let Some(handle) = ctx.image_service().ensure_loaded(path) else {
@@ -157,6 +160,14 @@ component! {
                     ctx.draw_image_fill(drawable, thumbnail);
                     true
                 });
+            // 图片编解码 capability 关闭时上传列表只显示文件图标。
+            #[cfg(not(feature = "image-codecs"))]
+            // 显式消费缩略图区域以保持无默认构建零新增警告。
+            let _ = thumbnail;
+            // 图片编解码 capability 关闭时上传列表只显示文件图标。
+            #[cfg(not(feature = "image-codecs"))]
+            // 固定为未绘制预览以复用原有回退分支。
+            let drew_preview = false;
             if !drew_preview {
                 crate::ui::widgets::icon::Icon::paint_in_frame(
                     ctx,
@@ -253,6 +264,9 @@ impl Upload {
         self
     }
     /// Render decodable real local image files as list thumbnails.
+    // 图片编解码 capability 启用时才公开上传缩略图入口。
+    #[cfg(feature = "image-codecs")]
+    // 关闭 capability 后使用方无法请求不可用的解码行为。
     pub fn preview_image(mut self, preview: bool) -> Self {
         self.preview_image = preview;
         self

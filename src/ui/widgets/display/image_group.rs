@@ -160,6 +160,9 @@ impl ImageGroup {
         }
     }
 
+    // 图片编解码 capability 启用时才公开路径集合入口。
+    #[cfg(feature = "image-codecs")]
+    // 关闭 capability 后 ImageGroup 不接受无法解码的来源。
     pub fn images<I, S>(mut self, images: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -610,7 +613,20 @@ impl ImageGroup {
             return;
         }
         ctx.fill_rect(frame, ctx.tokens().color_fill_tertiary(), None);
-        if let Some(handle) = ctx.image_service().ensure_loaded(path) {
+        // 图片编解码 capability 启用时才解析画廊中的文件路径。
+        #[cfg(feature = "image-codecs")]
+        // 能力开启时从应用级缓存取得位图句柄。
+        let handle = ctx.image_service().ensure_loaded(path);
+        // 图片编解码 capability 关闭时统一进入不可用占位分支。
+        #[cfg(not(feature = "image-codecs"))]
+        // 显式类型保持后续绘制分支的句柄契约。
+        let handle: Option<crate::draw::resources::image::BitmapHandle> = None;
+        // 图片编解码 capability 关闭时路径不会进入文件加载。
+        #[cfg(not(feature = "image-codecs"))]
+        // 显式消费路径参数以保持无默认构建零新增警告。
+        let _ = path;
+        // 有效句柄继续沿用原有 fit 与 fill 绘制行为。
+        if let Some(handle) = handle {
             if fit {
                 ctx.draw_image(handle, frame);
             } else {
