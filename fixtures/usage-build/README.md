@@ -19,4 +19,4 @@ python scripts/measure_usage_build.py --dry-run
 python scripts/measure_usage_build.py --locked
 ```
 
-采集器先为每个 fixture 执行 `cargo clean`、`cargo metadata` 与依赖存在性断言。六个正向入口继续执行 `cargo build --release`；三个 `*-disabled` 入口执行预期失败的 `cargo check`，并匹配各自稳定诊断片段。`minimal`、`settings-serde` 和三个禁用入口断言 `image`、`qrcode`、`regex` 均缺席；单能力入口只允许自己的专属 package 出现；默认入口断言三个默认 capability 的专属 package 均存在。所有入口最后执行 `cargo clean`，因此正常采集结束后不会保留 Rust `target` 构建产物；只有显式传入 `--keep-build-artifacts` 才会跳过后置清理。`--dry-run` 在没有 Rust 工具链时只展示命令，不写入基线证据。
+采集器先为每个 fixture 执行 `cargo clean`、`cargo metadata` 与依赖存在性断言。六个正向入口继续执行 `cargo build --release`；三个 `*-disabled` 入口执行预期失败的 `cargo check`，并匹配各自稳定诊断片段。`minimal`、`settings-serde` 和三个禁用入口断言 `image`、`qrcode`、`regex` 均缺席；单能力入口只允许自己的专属 package 出现；默认入口断言三个默认 capability 的专属 package 均存在。九个入口还统一断言已删除且无源码调用点的 `raw-window-handle` 不得重新进入 resolved graph。所有入口最后执行 `cargo clean`，因此正常采集结束后不会保留 Rust `target` 构建产物；只有显式传入 `--keep-build-artifacts` 才会跳过后置清理。`--dry-run` 在没有 Rust 工具链时只展示命令，不写入基线证据。
