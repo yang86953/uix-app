@@ -8,6 +8,9 @@ use std::ops::RangeInclusive;
 use std::rc::Rc;
 use std::sync::Arc;
 
+// 仅在使用方启用表单 pattern capability 时引入正则引擎。
+#[cfg(feature = "form-pattern")]
+// 正则类型只存放在同 feature 门控的字段规则中。
 use regex::Regex;
 
 use crate::draw::Color;
@@ -272,6 +275,9 @@ enum FieldRule {
         end: usize,
         message: String,
     },
+    // 关闭表单 pattern capability 时不保留正则规则变体。
+    #[cfg(feature = "form-pattern")]
+    // 启用后保存预编译 matcher 与用户错误文案。
     Pattern {
         matcher: Option<Regex>,
         message: String,
