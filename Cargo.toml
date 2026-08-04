@@ -39,7 +39,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 # Shared by Linux Wayland and Windows Win32 Vulkan adapters (feature = "vulkan").
 ash = { version = "0.38", default-features = false, features = ["loaded", "std"], optional = true }
-bytemuck = { version = "1.25", features = ["derive"] }
 
 # Windows TSF 的 `#[implement]` 宏只在 Windows target 需要根依赖。
 [target.'cfg(windows)'.dependencies]
