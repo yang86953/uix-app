@@ -8,7 +8,7 @@ use crate::ui::widgets::{
     Empty, FloatButton, FloatButtonGroup, Footer, Grid, Header, Icon, Image, ImageGroup, Input,
     InputNumber, Label, Layout, LineChart, List, Mentions, Menu, Message, Modal, NavItem,
     Notification, Pagination, PieChart, Popconfirm, Popover, ProgressBar, Radio,
-    RangeSlider, Rate, ResultView, RichText, ScrollView, Segmented, Select, SelectableList, Sider,
+    RangeSlider, Rate, ResultView, ScrollView, Segmented, Select, SelectableList, Sider,
     Skeleton, Slider, Space, Spin, Splitter, Steps, Switch, Table, Tabs, Tag, ThemeToggle,
     TimePicker, Timeline, Tooltip, Transfer, Tree, TreeSelect, Typography, Upload, Watermark,
 };
@@ -16,6 +16,10 @@ use crate::ui::widgets::{
 #[cfg(feature = "qrcode")]
 // 该导入仅供内建组件 patch 分派使用。
 use crate::ui::widgets::QRCode;
+// 富文本 capability 启用时才引入对应组件类型。
+#[cfg(feature = "rich-text")]
+// 该导入仅供内建组件 patch 分派使用。
+use crate::ui::widgets::RichText;
 use crate::ui::SnapshotFields;
 use crate::ui::WidgetComponent;
 
@@ -202,6 +206,8 @@ pub(crate) fn patch_builtin_widget(
     patch_as!(Mentions);
     patch_as!(Message);
     patch_as!(Notification);
+    // 富文本 capability 启用时才参与内建组件 patch 分派。
+    #[cfg(feature = "rich-text")]
     patch_as!(RichText);
     patch_as!(ThemeToggle);
     patch_as!(Transfer);

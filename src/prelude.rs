@@ -103,7 +103,7 @@ pub use crate::ui::{
     PickerMode, PieChart, PieData, PointStyle, Popconfirm, PopconfirmPlacement, Popover,
     PopoverPlacement, PopoverTrigger, PresetDate, ProgressBar, ProgressMode, ProgressType,
     RadarAxis, RadarChart, RadarData, RadarShape, Radio, RadioDirection, RangeSlider, Rate,
-    ResultType, ResultView, RichText, RichTextSegment, RichTextStyle, RoseStyle, ScatterChart,
+    ResultType, ResultView, RoseStyle, ScatterChart,
     ScatterData, ScrollView, Segmented, Select, SelectOptionGroup, SelectableItem, SelectableList,
     SharedActive, Sider, Skeleton, SkeletonShape, Slider, SortDirection, Space, SpaceSize, Spin,
     SpinSize, Splitter, Step, StepStatus, Steps, Switch, Tab, TabPosition, Table, TableBuilder,
@@ -118,12 +118,19 @@ pub use crate::ui::{
 #[cfg(feature = "qrcode")]
 // 保持启用场景下既有的 QRCode 导入写法。
 pub use crate::ui::QRCode;
+// 富文本 capability 启用时才在 prelude 暴露组件与内容模型。
+#[cfg(feature = "rich-text")]
+// 保持启用场景下既有的富文本类型导入写法。
+pub use crate::ui::{RichText, RichTextSegment, RichTextStyle};
 
 // app
 
 pub use crate::app::Container as DiContainer;
 pub use crate::app::{map_ui_event, App, AppHandle, AppMode, TimerHandle, WindowConfig};
 
+// 富文本 capability 启用时才暴露解析与布局辅助函数。
+#[cfg(feature = "rich-text")]
+// 两个辅助函数与 RichText 组件共享同一能力边界。
 pub use crate::ui::{layout_rich_text_segments, parse_rich_text};
 
 // view

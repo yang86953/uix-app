@@ -247,6 +247,9 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     if let Some(qrcode) = component.downcast_ref::<QRCode>() {
         return qrcode.snapshot_fields();
     }
+    // 关闭富文本 capability 时不引用已裁剪的组件类型。
+    #[cfg(feature = "rich-text")]
+    // 启用后保留富文本组件的结构化快照分派。
     if let Some(rich_text) = component.downcast_ref::<RichText>() {
         return rich_text.snapshot_fields();
     }

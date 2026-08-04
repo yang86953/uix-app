@@ -31,5 +31,7 @@ pub use other::*;
 pub use display::tree;
 pub use general::icon;
 pub use other::chart;
+// 富文本 capability 启用时才保留兼容子模块路径。
+#[cfg(feature = "rich-text")]
 pub use other::rich_text;
 pub use other::scroll_view;

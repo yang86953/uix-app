@@ -631,6 +631,9 @@ pub enum SnapshotFields {
         module_count: usize,
         encoding_error: Option<String>,
     },
+    // 关闭富文本 capability 时同步收缩公开快照枚举。
+    #[cfg(feature = "rich-text")]
+    // 启用后保留富文本内容、样式与焦点状态字段。
     RichText {
         segments: Vec<RichTextSegment>,
         default_font_size: f32,
@@ -676,4 +679,3 @@ pub enum SnapshotFields {
         cols: Vec<Col>,
     },
 }
-

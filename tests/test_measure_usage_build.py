@@ -37,6 +37,13 @@ class ResolvedGraphTests(unittest.TestCase):
         # 未激活的 optional package 不得进入结果。
         self.assertEqual(names, {"root", "active"})
 
+    # 确认 capability 断言只读取指定 package 的实际 resolve feature。
+    def test_resolved_package_features_use_selected_resolve_node(self) -> None:
+        # 提取根 package 当前真实选择的 feature。
+        features = measure_usage_build.resolved_package_features(self.metadata(), "root")
+        # 结果必须包含 resolve 节点的 selected，且不猜测未激活 feature。
+        self.assertEqual(features, {"selected"})
+
     # 确认结构化摘要使用实际依赖边与启用 feature。
     def test_resolved_graph_summary_uses_resolve_edges(self) -> None:
         # 生成稳定排序的解析图摘要。
@@ -77,14 +84,42 @@ class ResolvedGraphTests(unittest.TestCase):
         self.assertIn("tracing-subscriber", disabled.forbidden_packages)
         # 禁用场景仍必须要求演示使用的三项能力依赖存在。
         self.assertEqual(disabled.required_packages, ("image", "qrcode", "regex"))
+        # 演示基础组合必须显式选择无专属 package 的富文本 capability。
+        self.assertEqual(disabled.required_uix_features, ("rich-text",))
         # 读取只启用演示日志的根二进制场景。
         enabled = by_name["demo-logging"]
         # 启用场景必须在同一基础组合上增加 demo-logging capability。
         self.assertEqual(enabled.feature_args, ("--no-default-features", "--features", measure_usage_build.DEMO_LOGGING_FEATURES))
         # 启用场景必须要求基础依赖与日志订阅器共同进入解析图。
         self.assertEqual(enabled.required_packages, ("image", "qrcode", "regex", "tracing-subscriber"))
+        # 日志对照不得改变演示所需的富文本 capability。
+        self.assertEqual(enabled.required_uix_features, ("rich-text",))
         # 两个根二进制场景必须使用同一根清单以便比较。
         self.assertEqual(enabled.manifest, disabled.manifest)
+
+    # 确认富文本正反场景同时覆盖 feature 解析与公开面收缩。
+    def test_rich_text_scenarios_bind_feature_and_public_api_guards(self) -> None:
+        # 读取当前仓库的全部场景定义。
+        scenarios = measure_usage_build.scenario_specs(measure_usage_build.project_root())
+        # 按稳定名称索引场景。
+        by_name = {scenario.name: scenario for scenario in scenarios}
+        # 读取只启用富文本能力的正向入口。
+        enabled = by_name["rich-text"]
+        # 正向入口必须要求 Cargo 实际选择 rich-text feature。
+        self.assertEqual(enabled.required_uix_features, ("rich-text",))
+        # 正向入口不得依赖其他可选第三方 capability package。
+        self.assertIn("image", enabled.forbidden_packages)
+        # 读取关闭富文本能力的负向入口。
+        disabled = by_name["rich-text-disabled"]
+        # 负向入口必须禁止 rich-text feature 意外进入解析图。
+        self.assertEqual(disabled.forbidden_uix_features, ("rich-text",))
+        # 负向入口必须以公开导入失败结束。
+        self.assertTrue(disabled.expected_compile_failure)
+        # 诊断必须同时覆盖组件类型和解析辅助函数。
+        self.assertEqual(
+            disabled.expected_error_fragments,
+            ("unresolved import", "RichText", "parse_rich_text"),
+        )
 
     # 确认删除的 bytemuck 直接边只在未启用图片能力的场景中执行 package 缺席断言。
     def test_bytemuck_is_forbidden_without_image_codecs(self) -> None:
