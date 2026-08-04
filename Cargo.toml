@@ -35,7 +35,8 @@ regex = { version = "1", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# 演示二进制的日志订阅器仅随对应 capability 进入使用方解析图。
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 # `#[implement]` 宏在 crate 根解析 `windows_core`；无平台 cfg，避免违反 native-only cfg 边界。
 windows-core = "0.62.2"
 # Shared by Linux Wayland and Windows Win32 Vulkan adapters (feature = "vulkan").
@@ -75,8 +76,8 @@ wayland-protocols = { version = "=0.32.13", features = ["client", "unstable", "s
 khronos-egl = { version = "6", features = ["static", "no-pkg-config"], optional = true }
 
 [features]
-# 保持既有默认 API：生产 D3D11、图片编解码、二维码与表单 pattern 规则默认启用。
-default = ["d3d11", "image-codecs", "qrcode", "form-pattern"]
+# 保持既有默认 API 与演示日志行为：生产 D3D11、三项使用方能力及演示订阅器默认启用。
+default = ["d3d11", "image-codecs", "qrcode", "form-pattern", "demo-logging"]
 d3d11 = [
     "windows/Win32_Graphics_Direct3D",
     "windows/Win32_Graphics_Direct3D_Fxc",
@@ -102,6 +103,8 @@ image-codecs = ["dep:image"]
 qrcode = ["dep:qrcode"]
 # 表单正则 pattern 规则独占 regex 依赖，基础校验能力不受影响。
 form-pattern = ["dep:regex"]
+# 演示二进制日志订阅独占 tracing-subscriber，库的 tracing 事件契约不受影响。
+demo-logging = ["dep:tracing-subscriber"]
 agent-control = [
     "dep:serde_json",
     "windows/Win32_Security",

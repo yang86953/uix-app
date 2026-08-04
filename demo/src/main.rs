@@ -58,6 +58,9 @@ fn parse_launch_options(args: impl IntoIterator<Item = String>) -> LaunchOptions
     options
 }
 
+// 演示日志 capability 关闭时不编译订阅器初始化实现。
+#[cfg(feature = "demo-logging")]
+// 初始化演示程序使用的环境过滤日志订阅器。
 fn init_tracing() {
     use tracing_subscriber::EnvFilter;
 
@@ -104,6 +107,9 @@ fn run_gui(options: LaunchOptions) {
 }
 
 fn main() {
+    // 仅在演示日志 capability 启用时安装全局订阅器。
+    #[cfg(feature = "demo-logging")]
+    // 安装订阅器后再解析并执行演示启动参数。
     init_tracing();
     let options = parse_launch_options(std::env::args().skip(1));
 

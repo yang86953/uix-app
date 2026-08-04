@@ -24,6 +24,12 @@ from pathlib import Path
 from typing import Any
 
 
+# 记录 uix-demo 除日志订阅外必须启用的既有能力组合。
+DEMO_BASE_FEATURES = "d3d11,image-codecs,qrcode,form-pattern"
+# 记录在相同演示能力组合上额外启用日志订阅的对照集合。
+DEMO_LOGGING_FEATURES = f"{DEMO_BASE_FEATURES},demo-logging"
+
+
 # 描述一个独立的使用方基线入口。
 @dataclass(frozen=True)
 class Scenario:
@@ -33,6 +39,10 @@ class Scenario:
     manifest: Path
     # 记录该入口覆盖的能力范围。
     description: str
+    # 记录 metadata、check 与 build 共用的 Cargo feature 参数。
+    feature_args: tuple[str, ...] = ()
+    # 记录 check 与 build 使用的 Cargo target 参数。
+    build_args: tuple[str, ...] = ()
     # 记录 resolved graph 中必须出现的专属 package。
     required_packages: tuple[str, ...] = ()
     # 记录 resolved graph 中必须缺席的未选 package。
@@ -49,9 +59,9 @@ def project_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-# 返回 ODC-01/ODC-07 的独立 fixture 定义。
+# 返回 ODC-01/ODC-07 的独立 fixture 与根二进制场景定义。
 def scenario_specs(root: Path) -> list[Scenario]:
-    # 返回最小入口、默认入口、单能力入口与禁用公开面入口。
+    # 返回最小、默认、单能力、根二进制与禁用公开面入口。
     return [
         # 最小入口关闭所有默认 feature。
         Scenario(
@@ -59,17 +69,53 @@ def scenario_specs(root: Path) -> list[Scenario]:
             manifest=root / "fixtures" / "usage-build" / "minimal" / "Cargo.toml",
             description="关闭默认 feature 的最小使用方入口",
             # 最小入口必须排除全部已独立裁剪的专属依赖及已删除的死依赖。
-            forbidden_packages=("image", "qrcode", "regex", "raw-window-handle"),
+            forbidden_packages=("image", "qrcode", "regex", "raw-window-handle", "tracing-subscriber"),
         ),
         # 默认入口覆盖当前 Windows 默认 D3D11 能力。
         Scenario(
             name="d3d11-default",
             manifest=root / "fixtures" / "usage-build" / "d3d11-default" / "Cargo.toml",
             description="使用当前默认 feature 的图形入口",
-            # 默认兼容集合必须包含图片、二维码与表单正则依赖。
-            required_packages=("image", "qrcode", "regex"),
+            # 默认兼容集合必须包含三项能力依赖与演示日志订阅器。
+            required_packages=("image", "qrcode", "regex", "tracing-subscriber"),
             # 已删除的死依赖在默认入口中也必须保持缺席。
             forbidden_packages=("raw-window-handle",),
+        ),
+        # 演示日志禁用入口直接构建根清单二进制。
+        Scenario(
+            # 记录报告中的稳定场景名称。
+            name="demo-logging-disabled",
+            # 指向包含 uix-demo 的根清单。
+            manifest=root / "Cargo.toml",
+            # 说明该入口验证保持演示基础能力但关闭订阅器的二进制。
+            description="保持演示基础能力并关闭 demo-logging 的二进制入口",
+            # 关闭默认集合并显式启用演示所需的非日志能力。
+            feature_args=("--no-default-features", "--features", DEMO_BASE_FEATURES),
+            # 只构建演示二进制目标。
+            build_args=("--bin", "uix-demo"),
+            # 禁用入口必须保留演示基础能力依赖。
+            required_packages=("image", "qrcode", "regex"),
+            # 禁用入口必须排除死依赖与日志订阅器。
+            forbidden_packages=("raw-window-handle", "tracing-subscriber"),
+        # 结束演示日志禁用场景定义。
+        ),
+        # 演示日志单能力入口直接构建根清单二进制。
+        Scenario(
+            # 记录报告中的稳定场景名称。
+            name="demo-logging",
+            # 指向包含 uix-demo 的根清单。
+            manifest=root / "Cargo.toml",
+            # 说明该入口在相同演示基础组合上启用日志订阅能力。
+            description="保持演示基础能力并打开 demo-logging 的二进制入口",
+            # 关闭默认集合并显式启用演示基础能力及日志 capability。
+            feature_args=("--no-default-features", "--features", DEMO_LOGGING_FEATURES),
+            # 只构建演示二进制目标。
+            build_args=("--bin", "uix-demo"),
+            # 启用入口必须解析演示基础依赖与日志订阅器。
+            required_packages=("image", "qrcode", "regex", "tracing-subscriber"),
+            # 演示日志入口不得重新引入已删除的死依赖。
+            forbidden_packages=("raw-window-handle",),
+        # 结束演示日志正向场景定义。
         ),
         # 单能力入口只打开设置序列化能力。
         Scenario(
@@ -77,7 +123,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             manifest=root / "fixtures" / "usage-build" / "settings-serde" / "Cargo.toml",
             description="只打开 settings-serde capability 的入口",
             # 设置序列化入口不得合并其他能力依赖或已删除的死依赖。
-            forbidden_packages=("image", "qrcode", "regex", "raw-window-handle"),
+            forbidden_packages=("image", "qrcode", "regex", "raw-window-handle", "tracing-subscriber"),
         ),
         # 图片编解码单能力入口只打开对应文件格式 capability。
         # 创建图片编解码正向使用方场景。
@@ -91,7 +137,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 图片编解码入口必须解析精确 image package。
             required_packages=("image",),
             # 图片编解码入口不得合并其他 capability 依赖或已删除的死依赖。
-            forbidden_packages=("qrcode", "regex", "raw-window-handle"),
+            forbidden_packages=("qrcode", "regex", "raw-window-handle", "tracing-subscriber"),
         # 结束图片编解码正向场景定义。
         ),
         # 二维码单能力入口只打开对应组件 capability。
@@ -101,7 +147,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             description="只打开 qrcode capability 的入口",
             required_packages=("qrcode",),
             # 二维码入口不得合并其他 capability 依赖或已删除的死依赖。
-            forbidden_packages=("image", "regex", "raw-window-handle"),
+            forbidden_packages=("image", "regex", "raw-window-handle", "tracing-subscriber"),
         ),
         # 表单 pattern 单能力入口只打开正则规则 capability。
         Scenario(
@@ -110,7 +156,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             description="只打开 form-pattern capability 的入口",
             required_packages=("regex",),
             # 表单正则入口不得合并其他 capability 依赖或已删除的死依赖。
-            forbidden_packages=("image", "qrcode", "raw-window-handle"),
+            forbidden_packages=("image", "qrcode", "raw-window-handle", "tracing-subscriber"),
         ),
         # 二维码禁用入口必须证明公开类型无法绕过 capability。
         Scenario(
@@ -118,7 +164,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             manifest=root / "fixtures" / "usage-build" / "qrcode-disabled" / "Cargo.toml",
             description="关闭 qrcode capability 的公开入口 compile-fail",
             # 禁用入口必须排除全部专属依赖及已删除的死依赖。
-            forbidden_packages=("image", "qrcode", "regex", "raw-window-handle"),
+            forbidden_packages=("image", "qrcode", "regex", "raw-window-handle", "tracing-subscriber"),
             expected_compile_failure=True,
             expected_error_fragments=("unresolved import", "QRCode"),
         ),
@@ -128,7 +174,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             manifest=root / "fixtures" / "usage-build" / "form-pattern-disabled" / "Cargo.toml",
             description="关闭 form-pattern capability 的公开方法 compile-fail",
             # 禁用入口必须排除全部专属依赖及已删除的死依赖。
-            forbidden_packages=("image", "qrcode", "regex", "raw-window-handle"),
+            forbidden_packages=("image", "qrcode", "regex", "raw-window-handle", "tracing-subscriber"),
             expected_compile_failure=True,
             expected_error_fragments=("no method named", "validate_pattern"),
         ),
@@ -142,7 +188,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 说明该入口必须在公开方法编译阶段失败。
             description="关闭 image-codecs capability 的公开方法 compile-fail",
             # 禁用入口必须排除全部专属依赖及已删除的死依赖。
-            forbidden_packages=("image", "qrcode", "regex", "raw-window-handle"),
+            forbidden_packages=("image", "qrcode", "regex", "raw-window-handle", "tracing-subscriber"),
             # 标记该场景预期编译失败。
             expected_compile_failure=True,
             # 绑定稳定的缺失方法诊断片段。
@@ -366,6 +412,10 @@ def measure_scenario(
     record: dict[str, Any] = {
         "name": scenario.name,
         "description": scenario.description,
+        # 记录 feature 参数，确保根二进制场景可复核。
+        "feature_args": list(scenario.feature_args),
+        # 记录构建目标参数，避免把根清单其他目标误当证据。
+        "build_args": list(scenario.build_args),
         "manifest": str(scenario.manifest.resolve().relative_to(root.resolve())),
         "clean_before": clean_before,
         "clean_after": clean_after,
@@ -406,7 +456,7 @@ def measure_scenario(
                 raise RuntimeError("cargo clean（前置）失败")
         # 解析完整依赖图和锁定 package 信息。
         metadata_result = run_command(
-            [cargo, "metadata", *manifest_args, "--format-version", "1"] + locked_suffix,
+            [cargo, "metadata", *manifest_args, "--format-version", "1", *scenario.feature_args] + locked_suffix,
             root,
             dry_run,
         )
@@ -452,7 +502,7 @@ def measure_scenario(
         if scenario.expected_compile_failure:
             # 执行使用方编译检查并保留完整诊断。
             check_result = run_command(
-                [cargo, "check", *manifest_args] + locked_suffix,
+                [cargo, "check", *manifest_args, *scenario.feature_args, *scenario.build_args] + locked_suffix,
                 root,
                 dry_run,
             )
@@ -490,7 +540,7 @@ def measure_scenario(
         else:
             # 记录正向场景的 release 构建开始时间。
             build_result = run_command(
-                [cargo, "build", *manifest_args, "--release"] + locked_suffix,
+                [cargo, "build", *manifest_args, "--release", *scenario.feature_args, *scenario.build_args] + locked_suffix,
                 root,
                 dry_run,
             )
