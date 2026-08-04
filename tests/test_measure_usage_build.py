@@ -61,6 +61,31 @@ class ResolvedGraphTests(unittest.TestCase):
         # 仅未出现的错误类别必须被报告。
         self.assertEqual(missing, ["unresolved import"])
 
+    # 确认演示日志场景分别绑定禁用与单能力根二进制构建参数。
+    def test_demo_logging_scenarios_bind_root_binary_and_feature_graph(self) -> None:
+        # 读取当前仓库的全部场景定义。
+        scenarios = measure_usage_build.scenario_specs(measure_usage_build.project_root())
+        # 按稳定名称索引场景。
+        by_name = {scenario.name: scenario for scenario in scenarios}
+        # 读取关闭演示日志的根二进制场景。
+        disabled = by_name["demo-logging-disabled"]
+        # 禁用场景必须显式保留演示基础能力但不含日志 feature。
+        self.assertEqual(disabled.feature_args, ("--no-default-features", "--features", measure_usage_build.DEMO_BASE_FEATURES))
+        # 禁用场景必须只构建 uix-demo。
+        self.assertEqual(disabled.build_args, ("--bin", "uix-demo"))
+        # 禁用场景必须阻止日志订阅器进入解析图。
+        self.assertIn("tracing-subscriber", disabled.forbidden_packages)
+        # 禁用场景仍必须要求演示使用的三项能力依赖存在。
+        self.assertEqual(disabled.required_packages, ("image", "qrcode", "regex"))
+        # 读取只启用演示日志的根二进制场景。
+        enabled = by_name["demo-logging"]
+        # 启用场景必须在同一基础组合上增加 demo-logging capability。
+        self.assertEqual(enabled.feature_args, ("--no-default-features", "--features", measure_usage_build.DEMO_LOGGING_FEATURES))
+        # 启用场景必须要求基础依赖与日志订阅器共同进入解析图。
+        self.assertEqual(enabled.required_packages, ("image", "qrcode", "regex", "tracing-subscriber"))
+        # 两个根二进制场景必须使用同一根清单以便比较。
+        self.assertEqual(enabled.manifest, disabled.manifest)
+
 
 # 允许直接运行本文件执行测试。
 if __name__ == "__main__":
