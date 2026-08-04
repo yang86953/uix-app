@@ -1,7 +1,8 @@
 //! GPU graphics contexts.
 //!
-//! 生产渲染使用原生 D3D11（Windows）；其余 per-API 实现保留为
-//! test-only，直到其低层回归 fixture 退役。
+//! 默认生产渲染使用原生 D3D11（Windows）；启用 `opengles` feature 时，
+//! WGL/EGL OpenGL ES adapter 也进入生产 registry，并复用同一套薄 RHI。
+//! D3D12、Vulkan 与 Metal 仍受各自 feature/target 门控，尚未完成同等验收。
 
 #[cfg(feature = "d3d11")]
 pub mod d3d11;
@@ -9,7 +10,7 @@ pub mod d3d11;
 pub mod d3d12;
 #[cfg(all(test, feature = "metal"))]
 pub mod metal;
-#[cfg(all(test, feature = "opengles"))]
+#[cfg(feature = "opengles")]
 pub mod opengl;
 pub mod platform;
 #[cfg(all(feature = "vulkan", any(test, windows)))]

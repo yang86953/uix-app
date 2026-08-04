@@ -8,7 +8,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TEXT_INPUT = ROOT / "src/native/backends/macos/text_input_view.rs"
-PLATFORM = ROOT / "src/native/backends/macos/platform.rs"
+# macOS platform 已拆分为目录 module，测试读取其组合入口。
+PLATFORM = ROOT / "src/native/backends/macos/platform/mod.rs"
 
 CALLBACKS = (
     "view_dealloc",
@@ -47,7 +48,8 @@ class MacosCallbackGuardTests(unittest.TestCase):
         platform = PLATFORM.read_text(encoding="utf-8")
         self.assertIn("pending_failures: PendingFailureSource", platform)
         self.assertIn("self.pending_failures.clone()", platform)
-        self.assertIn("pending_failures,\n        )", platform)
+        # 拆分后的 platform module 以字段名传递 pending source。
+        self.assertIn("pending_failures: self.pending_failures.clone()", platform)
 
 
 if __name__ == "__main__":

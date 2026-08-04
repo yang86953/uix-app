@@ -17,10 +17,10 @@ use crate::native::present::{
     RasterMode, SoftFallbackTile,
 };
 
-use super::helpers::{glyph_visible_bounds, union_frame_rect_wide};
 use super::super::canvas::NativeGpuCanvas2D;
 use super::super::pending::PendingNativeOp;
 use super::super::tile::pack_visible_soft_fallback_tile;
+use super::helpers::{glyph_visible_bounds, union_frame_rect_wide};
 use super::GpuBackend;
 
 impl GpuBackend {
@@ -401,6 +401,12 @@ impl GpuBackend {
             y: dst.y(),
             w: dst.width(),
             h: dst.height(),
+            corners: GpuGlyphBlit::axis_aligned_corners(
+                dst.x(),
+                dst.y(),
+                dst.width(),
+                dst.height(),
+            ),
             opacity: opacity.clamp(0.0, 1.0),
             additive,
             pixels: std::sync::Arc::<[u32]>::from(retained),
@@ -443,5 +449,4 @@ impl GpuBackend {
         }
         Ok(())
     }
-
 }

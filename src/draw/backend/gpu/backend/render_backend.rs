@@ -3,25 +3,71 @@
 //! offscreen 生命周期、编码 Picture/Frame 执行、叠加层 backdrop 快照。
 
 use std::any::Any;
-use std::time::Instant;
 
-use crate::core::{DamageRegion, Errc, Error, Rect};
+use crate::core::{DamageRegion, Errc, Error, PresentDamage, Rect};
 use crate::draw::backend::contract::{
     BackendCapabilities, BackendKind, DrawSurface, RenderBackend,
 };
-use crate::draw::geometry::color::Color;
 use crate::draw::geometry::types::{BlendMode, ImageHandle};
 use crate::draw::painting::{
-    EncodedFrameExecution, EncodedPictureExecution, FrameEncoder, FrameEncoderError,
+    EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameEncoder,
 };
 use crate::draw::Canvas2D;
-use crate::native::present::{
-    IGraphicsContext, OffscreenTargetId, PresentFrame, PresentTestResult,
+use crate::native::present::PresentTestResult;
+// 引入迁移期 RHI 的离屏纹理描述。
+use crate::native::present::rhi::{
+    LoadAction, RenderTargetHandle, RhiColor, RhiExtent, RhiViewport, TextureDesc,
+    TextureFormat,
 };
 
 use super::super::canvas::NativeGpuCanvas2D;
-use super::super::pending::PendingNativeOp;
+// 复用通用 soft staging helper，保证主 surface 与 Picture 使用同一采样契约。
+use super::rhi_surface_soft::try_upload_rhi_canvas_soft;
 use super::{GpuBackend, NativeGpuOffscreen};
+
+// 为 RHI/legacy Picture 回退提供独立的资源所有权辅助。
+impl GpuBackend {
+    // 把尚未提交过 RHI 内容的 Picture slot 降级为唯一的 legacy target。
+    fn downgrade_offscreen_rhi_texture(&mut self, handle: ImageHandle) -> Result<(), Error> {
+        // 先从 slot 取出句柄，避免 owner-thread destroy 借用跨过 slot 修改。
+        let texture = self
+            .offscreens
+            .get_mut(handle.0 as usize)
+            .and_then(Option::as_mut)
+            .ok_or_else(|| {
+                Error::new(
+                    Errc::InvalidState,
+                    "Picture target disappeared before RHI fallback downgrade",
+                )
+            })?
+            .rhi_texture
+            .take();
+        // 没有 RHI 纹理时已经是 legacy-only slot，降级操作是幂等的。
+        let Some(texture) = texture else {
+            return Ok(());
+        };
+        // RHI 纹理必须由创建它的 owner-thread context 检查式释放。
+        let Some(context) = self.gpu_ctx.rhi_context() else {
+            // context 丢失时恢复句柄，禁止把未释放资源伪装成降级成功。
+            if let Some(Some(offscreen)) = self.offscreens.get_mut(handle.0 as usize) {
+                offscreen.rhi_texture = Some(texture);
+            }
+            return Err(Error::new(
+                Errc::InvalidState,
+                "RHI Picture texture lost its owner context before fallback downgrade",
+            ));
+        };
+        // 销毁失败同样恢复 slot，保证后续 shutdown 仍能重试资源回收。
+        if let Err(error) = context.destroy_texture(texture) {
+            if let Some(Some(offscreen)) = self.offscreens.get_mut(handle.0 as usize) {
+                offscreen.rhi_texture = Some(texture);
+            }
+            return Err(error);
+        }
+        // 成功后 slot 只保留已经准备好的 legacy target。
+        Ok(())
+    }
+}
 
 impl RenderBackend for GpuBackend {
     fn kind(&self) -> BackendKind {
@@ -43,7 +89,20 @@ impl RenderBackend for GpuBackend {
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         let logical_w = width.max(1);
         let logical_h = height.max(1);
-        self.gpu_ctx.resize(logical_w, logical_h)?;
+        // swapchain resize 会推进 surface generation，先释放旧代际 retained texture。
+        self.destroy_rhi_surface_texture()?;
+        // 生产 GPU adapter 优先由薄 RHI surface 执行实际重建和代际推进。
+        match self.gpu_ctx.resize_rhi_surface(logical_w, logical_h) {
+            // RHI resize 成功后不再穿过逐 UI 兼容生命周期。
+            Ok(()) => {}
+            // 尚未接入 RHI 的旧 adapter 才保留兼容 resize 回退。
+            Err(error) if error.code() == Errc::NotImplemented => {
+                // 兼容回退只处理明确的迁移期能力缺口。
+                self.gpu_ctx.resize(logical_w, logical_h)?;
+            }
+            // surface lost、device lost、参数错误等真实失败不能被回退吞掉。
+            Err(error) => return Err(error),
+        }
         // D3D11/D3D12 等会按 HWND GetClientRect 校正缓冲尺寸；canvas/布局必须跟
         // 实际 RT 一致，否则清出更大黑底而 UI 仍画旧几何 → 窗口黑边。
         self.factory_prepared = true;
@@ -67,6 +126,16 @@ impl RenderBackend for GpuBackend {
             return Ok(());
         }
         self.destroy_all_offscreens()?;
+        // 在 owner-thread context 关闭前释放主 surface 的 retained texture。
+        self.destroy_rhi_surface_texture()?;
+        // 在 owner-thread context 关闭前释放 RHI renderer 持有的跨帧 MSDF atlas pages。
+        if let Some(renderer) = self.rhi_renderer.as_mut() {
+            // 只有暴露薄 RHI 的 native context 才有对应资源表可释放。
+            if let Some(context) = self.gpu_ctx.rhi_context() {
+                // 失败时保留 typed error，禁止在资源仍存活时伪造 shutdown 成功。
+                renderer.release_msdf_atlas(context)?;
+            }
+        }
         self.gpu_ctx.try_shutdown()?;
         self.shutdown = true;
         Ok(())
@@ -98,6 +167,27 @@ impl RenderBackend for GpuBackend {
                 );
             })
             .ok()?;
+        // 在暴露 RHI 的 adapter 上同步创建可渲染、可采样的离屏纹理。
+        let rhi_texture = match self.gpu_ctx.rhi_context() {
+            // 让 RHI adapter 自己负责纹理和 RTV/SRV 的具体资源创建。
+            Some(context) => match context.create_texture(TextureDesc {
+                extent: RhiExtent::new(width as u32, height as u32),
+                format: TextureFormat::Bgra8Unorm,
+            }) {
+                // 保存通用 texture 句柄，后续 FramePlan 以同一身份作为 target 和 source。
+                Ok(texture) => Some(texture),
+                // RHI 离屏资源失败时保留旧 target，确保兼容路径仍可工作。
+                Err(error) => {
+                    tracing::warn!(
+                        "GpuBackend: create RHI offscreen texture failed: {}",
+                        error.short_what()
+                    );
+                    None
+                }
+            },
+            // 未暴露 RHI 的 adapter 继续使用 legacy offscreen target。
+            None => None,
+        };
         let id = if let Some(id) = self.free_offscreen_ids.pop() {
             id
         } else {
@@ -111,6 +201,7 @@ impl RenderBackend for GpuBackend {
         }
         self.offscreens[idx] = Some(NativeGpuOffscreen {
             target,
+            rhi_texture,
             canvas: if self.gpu_only {
                 NativeGpuCanvas2D::new_gpu_only(width, height, self.surface.native_caps)
             } else {
@@ -124,13 +215,38 @@ impl RenderBackend for GpuBackend {
 
     fn try_destroy_offscreen(&mut self, handle: ImageHandle) -> Result<(), Error> {
         let idx = handle.0 as usize;
-        let Some(off) = self.offscreens.get(idx).and_then(Option::as_ref) else {
+        let Some(Some(off)) = self.offscreens.get(idx) else {
             return Ok(());
         };
+        // 复制 legacy target 身份，释放对 slot 的借用再进入 owner-thread 调用。
+        let target = off.target;
         if self.active_offscreen == Some(handle.0) {
             self.gpu_ctx.bind_swapchain_target()?;
         }
-        self.gpu_ctx.try_destroy_offscreen_target(off.target)?;
+        // 先销毁可选 RHI 纹理，避免 legacy destroy 后留下悬挂句柄。
+        let rhi_texture = self
+            .offscreens
+            .get(idx)
+            .and_then(Option::as_ref)
+            .and_then(|off| off.rhi_texture);
+        if let Some(texture) = rhi_texture {
+            // 具有 RHI 纹理的 slot 必须仍由同一 owner-thread context 管理。
+            let Some(context) = self.gpu_ctx.rhi_context() else {
+                // 不在无法回收 RHI 资源时静默释放 slot。
+                return Err(Error::new(
+                    Errc::InvalidState,
+                    "RHI offscreen texture lost its owner context before destroy",
+                ));
+            };
+            // 检查式释放 RHI 纹理。
+            context.destroy_texture(texture)?;
+            // 只有释放成功后才从 backend slot 清除句柄。
+            if let Some(Some(off)) = self.offscreens.get_mut(idx) {
+                off.rhi_texture = None;
+            }
+        }
+        // 兼容 target 仍需经过原有 checked destruction boundary。
+        self.gpu_ctx.try_destroy_offscreen_target(target)?;
         self.offscreens[idx] = None;
         if self.active_offscreen == Some(handle.0) {
             self.active_offscreen = None;
@@ -188,10 +304,48 @@ impl RenderBackend for GpuBackend {
                 ),
             ));
         }
-        let target = target.target;
+        let target_id = target.target;
+        let rhi_texture = target.rhi_texture;
 
-        self.gpu_ctx.bind_offscreen_target(target)?;
+        self.gpu_ctx.bind_offscreen_target(target_id)?;
+        // 已有 RHI texture 时优先把整条 Picture encoder 写入同一 texture target。
+        if let Some(texture) = rhi_texture {
+            // 新 Picture 首次执行必须透明初始化，后续片段保留已有内容。
+            let load = if self.offscreen_rhi_initialized {
+                LoadAction::Load
+            } else {
+                LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0]))
+            };
+            let rhi_target = RenderTargetHandle::from_raw(texture.raw());
+            if self.try_execute_frame_encoder_rhi(
+                encoder,
+                crate::draw::backend::frame_plan::RenderTargetRef::Texture(rhi_target),
+                load,
+                false,
+            )? {
+                // 只有整条 encoder RHI 提交成功才消费 Picture staging 状态。
+                if let Some(Some(offscreen)) = self.offscreens.get_mut(handle.0 as usize) {
+                    offscreen.canvas.commit_presented_frame();
+                }
+                self.offscreen_rhi_initialized = true;
+                return Ok(EncodedPictureExecution::Executed);
+            }
+        }
+        // RHI 不覆盖时保留既有整条兼容执行器，不混合两种 lowering。
+        if rhi_texture.is_some() {
+            // 已经提交过 RHI 内容的 Picture 不能在同一资源上切换到 legacy。
+            if self.offscreen_rhi_initialized {
+                return Err(Error::new(
+                    Errc::NotImplemented,
+                    "Picture RHI target cannot switch to legacy rendering after commit",
+                ));
+            }
+            // 首次 lowering 失败后销毁 RHI texture，避免后续 blit 读取空资源。
+            self.downgrade_offscreen_rhi_texture(*handle)?;
+        }
         self.execute_frame_encoder(encoder, false)?;
+        // legacy execution 已经初始化同一 Picture 的唯一提交目标。
+        self.offscreen_rhi_initialized = true;
         Ok(EncodedPictureExecution::Executed)
     }
 
@@ -221,6 +375,37 @@ impl RenderBackend for GpuBackend {
         let execute = (|| {
             self.gpu_ctx.make_current()?;
             self.gpu_ctx.bind_swapchain_target()?;
+            // 首条 Clear 可完整替代 begin_frame 的 pending damage clear。
+            let starts_with_clear =
+                matches!(encoder.commands().first(), Some(FrameCommand::Clear { .. }));
+            let rhi_load = if starts_with_clear {
+                // RHI lowering 会从 encoder 的首条 Clear 读取真实颜色。
+                Some(LoadAction::Load)
+            } else if !self.surface.pending_clear_rects.is_empty() {
+                // 当前 FramePlan 尚未表达局部 retained clear，交回兼容路径。
+                None
+            } else if self.surface.needs_gpu_clear {
+                // 无显式 Clear 时沿用 begin_frame 的透明初始化。
+                Some(LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0])))
+            } else {
+                // 保留 retained surface 的前序像素。
+                Some(LoadAction::Load)
+            };
+            if let Some(load) = rhi_load {
+                if self.try_execute_frame_encoder_rhi(
+                    encoder,
+                    crate::draw::backend::frame_plan::RenderTargetRef::Surface,
+                    load,
+                    false,
+                )? {
+                    // RHI 片段已替代当前 encoder，外层仍负责最终 present。
+                    self.surface.needs_gpu_clear = false;
+                    self.surface.pending_clear_rects.clear();
+                    return Ok(());
+                }
+            }
+            // RHI lowering 若回退，先丢弃可能已创建但未提交的 retained target。
+            self.abandon_rhi_surface_texture_for_legacy()?;
             let target_initialized = self.prepare_main_frame_encoder_target(encoder)?;
             self.execute_frame_encoder(encoder, target_initialized)
         })();
@@ -258,12 +443,17 @@ impl RenderBackend for GpuBackend {
             ));
         };
         let target = off.target;
-        self.gpu_ctx.bind_offscreen_target(target)?;
-        if let Err(error) = self.gpu_ctx.clear_render_target(0.0, 0.0, 0.0, 0.0) {
-            return match self.gpu_ctx.bind_swapchain_target() {
-                Ok(()) => Err(error),
-                Err(restore_error) => Err(restore_error.with_source(error)),
-            };
+        let rhi_texture = off.rhi_texture;
+        // RHI 离屏由 flush 时的 FramePlan Clear 初始化，不提前绑定 legacy target。
+        if rhi_texture.is_none() {
+            // 没有 RHI 资源时沿用 legacy target 的立即清理语义。
+            self.gpu_ctx.bind_offscreen_target(target)?;
+            if let Err(error) = self.gpu_ctx.clear_render_target(0.0, 0.0, 0.0, 0.0) {
+                return match self.gpu_ctx.bind_swapchain_target() {
+                    Ok(()) => Err(error),
+                    Err(restore_error) => Err(restore_error.with_source(error)),
+                };
+            }
         }
         if let Some(Some(off)) = self.offscreens.get_mut(idx) {
             off.canvas.reset_for_repaint();
@@ -300,10 +490,140 @@ impl RenderBackend for GpuBackend {
             return Err(error);
         }
         let target = off.target;
-        self.gpu_ctx.bind_offscreen_target(target)?;
-        off.canvas.submit_native(self.gpu_ctx.as_mut())?;
-        off.canvas.submit_soft(self.gpu_ctx.as_mut())?;
-        off.canvas.commit_presented_frame();
+        let rhi_texture = off.rhi_texture;
+        // 记录本次 flush 是否仍处于 RHI target 的首个提交边界。
+        let rhi_was_uninitialized = !self.offscreen_rhi_initialized;
+        // 先尝试把当前 Picture queue 作为离屏 FramePlan 提交，不触发主 surface present。
+        let rhi_submitted = if let Some(texture) = rhi_texture {
+            // 首次提交清理新纹理，后续有序 flush 保留已有离屏内容。
+            let load = if self.offscreen_rhi_initialized {
+                // 保留 Picture target 已经绘制的前序内容。
+                LoadAction::Load
+            } else {
+                // 以透明色初始化 Picture target。
+                LoadAction::Clear(RhiColor([0.0, 0.0, 0.0, 0.0]))
+            };
+            // 缺少 renderer/context 时交回 legacy target，而不是伪造 RHI 成功。
+            if let Some(renderer) = self.rhi_renderer.as_mut() {
+                if let Some(context) = self.gpu_ctx.rhi_context() {
+                    // 使用离屏 texture 的同一不透明身份作为 render target。
+                    let rhi_target = RenderTargetHandle::from_raw(texture.raw());
+                    // 离屏 target 使用自身物理尺寸，不借用主窗口 drawable 的 DPR。
+                    let viewport = RhiViewport {
+                        width: off.width.max(1) as f32,
+                        height: off.height.max(1) as f32,
+                    };
+                    // 记录当前 Picture 是否同时含有 native 与 soft staging。
+                    let has_native = !off.canvas.pending_native.is_empty();
+                    // 记录当前 Picture 是否有尚未合成的 CPU soft 内容。
+                    let has_soft = off.canvas.soft_has_content;
+                    // destination-dependent soft 不能被透明 SrcOver quad 等价替换。
+                    if has_soft && off.canvas.soft_uses_destination_blend {
+                        // 已初始化的 RHI target 不允许中途切换到失同步的 legacy 资源。
+                        if self.offscreen_rhi_initialized {
+                            return Err(Error::new(
+                                Errc::NotImplemented,
+                                "Picture RHI target cannot switch after destination-dependent soft blend",
+                            ));
+                        }
+                        // 首次提交保留完整兼容路径处理该 soft 语义。
+                        false
+                    } else {
+                        // native 前缀存在时只提交已验证的 queue，保留后续 soft 合成机会。
+                        let native_submitted = if has_native {
+                            off.canvas.submit_rhi_mixed_for_geometry(
+                                renderer,
+                                context,
+                                load,
+                                crate::draw::backend::frame_plan::RenderTargetRef::Texture(
+                                    rhi_target,
+                                ),
+                                PresentDamage::Full,
+                                viewport,
+                                1.0,
+                                1.0,
+                                has_soft,
+                            )?
+                        } else {
+                            true
+                        };
+                        // native queue 未完全 lowering 时不能继续消费 soft staging。
+                        if has_native && !native_submitted {
+                            if self.offscreen_rhi_initialized {
+                                return Err(Error::new(
+                                    Errc::NotImplemented,
+                                    "Picture RHI target cannot switch to legacy rendering after commit",
+                                ));
+                            }
+                            false
+                        } else {
+                            // native 成功后 soft tile 必须以 Load 继续写入同一离屏 target。
+                            let soft_submitted = if has_soft || !has_native {
+                                try_upload_rhi_canvas_soft(
+                                    &mut off.canvas,
+                                    off.width,
+                                    off.height,
+                                    viewport,
+                                    1.0,
+                                    1.0,
+                                    rhi_target,
+                                    if has_native { LoadAction::Load } else { load },
+                                    context,
+                                    renderer,
+                                )?
+                            } else {
+                                true
+                            };
+                            // 只有 native 与 soft 两段都成功才消费 Picture staging。
+                            native_submitted && soft_submitted
+                        }
+                    }
+                } else {
+                    // 当前 context 未暴露 RHI，使用 legacy target。
+                    false
+                }
+            } else {
+                // 当前 backend 没有 renderer cache，使用 legacy target。
+                false
+            }
+        } else {
+            // 未暴露 RHI texture 的 adapter 直接使用兼容 target。
+            false
+        };
+        if rhi_submitted {
+            // RHI 离屏 submit 成功后才提交 canvas staging 状态。
+            off.canvas.commit_presented_frame();
+            // 标记 target 已经有可被后续 Load pass 保留的内容。
+            self.offscreen_rhi_initialized = true;
+        } else {
+            // 首次 RHI lowering 失败后永久收敛到 legacy target，避免双写资源失去同步。
+            if rhi_was_uninitialized && rhi_texture.is_some() {
+                self.downgrade_offscreen_rhi_texture(*handle)?;
+            }
+            // RHI 未覆盖当前队列时，回到原生 target 的完整兼容提交。
+            self.gpu_ctx.bind_offscreen_target(target)?;
+            // RHI target 首次回退时需要显式清理 legacy target。
+            if rhi_was_uninitialized && rhi_texture.is_some() {
+                self.gpu_ctx.clear_render_target(0.0, 0.0, 0.0, 0.0)?;
+            }
+            // 重新取得 slot，继续在 legacy target 上提交完整队列。
+            let off = self
+                .offscreens
+                .get_mut(idx)
+                .and_then(Option::as_mut)
+                .ok_or_else(|| {
+                    Error::new(
+                        Errc::InvalidState,
+                        "offscreen target disappeared during legacy fallback",
+                    )
+                })?;
+            // 先提交 native queue，再提交 soft queue，保持既有 painter order。
+            off.canvas.submit_native(self.gpu_ctx.as_mut())?;
+            off.canvas.submit_soft(self.gpu_ctx.as_mut())?;
+            // 兼容 flush 成功后同样视为 target 已初始化。
+            off.canvas.commit_presented_frame();
+            self.offscreen_rhi_initialized = true;
+        }
         if self.active_offscreen == Some(handle.0) {
             self.offscreen_flush_committed = true;
         }
@@ -328,6 +648,7 @@ impl RenderBackend for GpuBackend {
             }
         }
         self.offscreen_flush_committed = false;
+        self.offscreen_rhi_initialized = false;
         restore
     }
 
@@ -359,6 +680,9 @@ impl RenderBackend for GpuBackend {
             ));
         };
         let target = off.target;
+        let source_rhi_texture = off.rhi_texture;
+        let source_width = off.width;
+        let source_height = off.height;
         let opacity = if let Some(active) = self.active_offscreen {
             self.offscreens
                 .get(active as usize)
@@ -402,8 +726,48 @@ impl RenderBackend for GpuBackend {
             // Picture does not leapfrog preceding painter-order commands.
             // The subsequent commands remain queued and are committed by the
             // same final present.
-            self.flush_main_segment_before_ordered_boundary()?;
+            if source_rhi_texture.is_some() {
+                // native/soft queue 或局部清理都必须先建立 retained painter-order boundary。
+                if self.surface.canvas.soft_has_content
+                    || !self.surface.canvas.pending_native.is_empty()
+                    || !self.surface.pending_clear_rects.is_empty()
+                    || !self.surface.pending_scroll_copies.is_empty()
+                {
+                    // RHI source 不能跟在已经落入 legacy swapchain 的前缀后面。
+                    if !self.try_flush_main_segment_rhi()? {
+                        // 不支持的组合保持明确失败，不消费尚未验证的 staging。
+                        return Err(Error::new(
+                            Errc::NotImplemented,
+                            "RHI Picture blit requires a fully retained preceding main segment",
+                        ));
+                    }
+                    // RHI source 不能采样已经落到 legacy swapchain 的前置内容。
+                    if self.rhi_surface_texture.is_none() {
+                        // 将不完整组合报告为未实现，而不是返回错误的像素结果。
+                        return Err(Error::new(
+                            Errc::NotImplemented,
+                            "RHI Picture blit requires the preceding main queue to stay retained",
+                        ));
+                    }
+                }
+            } else {
+                // legacy source 仍需沿用原有的立即目标 flush 语义。
+                self.flush_main_segment_before_ordered_boundary()?;
+            }
         }
+        // RHI 离屏资源必须通过同一 sampled pipeline 合成，不能交给不认识该句柄的 legacy target。
+        if let Some(texture) = source_rhi_texture {
+            return self.blit_rhi_offscreen_texture(
+                texture,
+                source_width,
+                source_height,
+                src_rect,
+                dst_rect,
+                opacity.clamp(0.0, 1.0),
+                additive,
+            );
+        }
+        // 没有 RHI 纹理时继续走兼容 adapter 的立即 blit。
         self.gpu_ctx.blit_offscreen_target(
             target,
             src_rect,
@@ -413,6 +777,7 @@ impl RenderBackend for GpuBackend {
         )
     }
 
+    // 尝试使用已有 RHI target 执行 blur；未覆盖部分仍由兼容路径处理。
     fn try_blur_offscreen(
         &mut self,
         handle: &ImageHandle,
@@ -436,6 +801,9 @@ impl RenderBackend for GpuBackend {
             ));
         };
         let target = off.target;
+        let rhi_texture = off.rhi_texture;
+        let offscreen_width = off.width;
+        let offscreen_height = off.height;
         // 模糊前必须把挂起的绘制落到纹理，且不能在绑定为目标时采样。
         if self.active_offscreen == Some(handle.0) {
             self.try_flush_offscreen_paint(handle)?;
@@ -448,6 +816,43 @@ impl RenderBackend for GpuBackend {
         } else {
             self.flush_main_segment_before_ordered_boundary()?;
         }
+        // RHI texture 已经拥有完整 Picture 内容时，执行真正的两段 RHI blur。
+        if let Some(texture) = rhi_texture {
+            // Picture RHI texture 按自身逻辑 extent 创建，不能重复乘主 surface DPR。
+            let rhi_region = super::rhi_surface_blit::lower_picture_blur_region(region);
+            // 分开借用 owner-thread context 和通用 renderer cache。
+            let (gpu_ctx, rhi_renderer) = (&mut self.gpu_ctx, &mut self.rhi_renderer);
+            // RHI texture 不能在缺少 renderer 时静默切回不一致的 legacy target。
+            let Some(renderer) = rhi_renderer.as_mut() else {
+                // 返回稳定的迁移期未实现错误。
+                return Err(Error::new(
+                    Errc::NotImplemented,
+                    "RHI offscreen blur requires the RHI renderer cache",
+                ));
+            };
+            // 只有组合 RHI context 能执行 texture target 的多阶段计划。
+            let Some(context) = gpu_ctx.rhi_context() else {
+                // 返回稳定的迁移期未实现错误。
+                return Err(Error::new(
+                    Errc::NotImplemented,
+                    "RHI offscreen blur requires a composable RHI context",
+                ));
+            };
+            // 当前 Picture texture 同时作为 source 和最终 target，scratch 由 renderer 管理。
+            return renderer.execute_blur_without_present(
+                context,
+                PresentDamage::Full,
+                texture,
+                RhiExtent::new(offscreen_width as u32, offscreen_height as u32),
+                rhi_region,
+                radius,
+                TextureFormat::Bgra8Unorm,
+                crate::draw::backend::frame_plan::RenderTargetRef::Texture(
+                    RenderTargetHandle::from_raw(texture.raw()),
+                ),
+            );
+        }
+        // 没有 RHI texture 的 adapter 继续使用原有 checked blur 边界。
         self.gpu_ctx.blur_offscreen_target(target, region, radius)
     }
 
@@ -511,80 +916,7 @@ impl RenderBackend for GpuBackend {
     }
 
     fn present(&mut self, damage: &DamageRegion) -> Result<(), Error> {
-        if self.active_offscreen.is_some() {
-            self.end_offscreen_paint();
-        }
-        if let Some(error) = self.surface.canvas.take_deferred_error() {
-            self.surface.needs_gpu_clear = true;
-            return Err(error);
-        }
-        if let Some(error) = self.frame_failure.take() {
-            self.surface.needs_gpu_clear = true;
-            return Err(error);
-        }
-        self.gpu_ctx.make_current()?;
-
-        if self.surface.needs_gpu_clear {
-            self.gpu_ctx.clear_render_target(0.0, 0.0, 0.0, 0.0)?;
-            self.surface.needs_gpu_clear = false;
-            self.surface.pending_clear_rects.clear();
-        } else if !self.surface.pending_clear_rects.is_empty() {
-            if let Err(err) = self.gpu_ctx.clear_rects(
-                self.surface.width as f32,
-                self.surface.height as f32,
-                &self.surface.pending_clear_rects,
-            ) {
-                self.surface.needs_gpu_clear = true;
-                return Err(err);
-            }
-            self.surface.pending_clear_rects.clear();
-        }
-
-        if let Err(err) = self.surface.canvas.submit_native(self.gpu_ctx.as_mut()) {
-            self.surface.needs_gpu_clear = true;
-            return Err(err);
-        }
-        if let Err(err) = self.surface.canvas.submit_soft(self.gpu_ctx.as_mut()) {
-            self.surface.needs_gpu_clear = true;
-            return Err(err);
-        }
-
-        let caps = self.gpu_ctx.caps();
-        let present_surface = self.gpu_ctx.present_surface();
-        let present_image = self.gpu_ctx.present_image();
-        let damage_plan = self.present_damage_tracker.plan(
-            caps.present_coherency,
-            present_surface,
-            present_image,
-            damage,
-        );
-        let frame = PresentFrame::Swapchain {
-            damage: damage_plan.present_damage,
-        };
-        let present_t0 = std::time::Instant::now();
-        let present_result = self.gpu_ctx.present(&frame);
-        let mut present_sample = crate::core::perf_probe::take_present();
-        present_sample.present_us = present_t0.elapsed().as_micros();
-        crate::core::perf_probe::record_present(present_sample);
-        if let Err(err) = present_result {
-            self.surface.needs_gpu_clear = true;
-            return Err(err);
-        }
-        self.present_damage_tracker.commit(
-            caps.present_coherency,
-            present_surface,
-            present_image,
-            damage,
-        );
-        let mut used_soft = self.surface.canvas.finish_presented_frame();
-        for off in self.offscreens.iter_mut().flatten() {
-            used_soft |= off.canvas.age_soft_fallback_after_present();
-        }
-        self.soft_used_in_last_present = used_soft;
-        if !self.has_soft_fallback_allocation() {
-            self.soft_fallback_idle_deadline = None;
-        }
-        Ok(())
+        self.present_impl(damage)
     }
 
     fn test_present(&mut self) -> Result<PresentTestResult, Error> {

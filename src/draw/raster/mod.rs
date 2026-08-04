@@ -12,5 +12,7 @@ pub(crate) mod pixel_surface;
 pub(crate) mod rasterizer;
 pub(crate) mod shared_rasterizer;
 pub(crate) mod software_rasterizer;
+// 路径裁剪复用同一 tessellation 与 SoftwareRasterizer 状态边界。
+pub(crate) mod software_rasterizer_clip;
 pub(crate) mod software_rasterizer_fill;
 pub(crate) mod software_rasterizer_stroke;

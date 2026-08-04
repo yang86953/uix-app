@@ -11,13 +11,37 @@ use std::ffi::c_void;
 use std::ptr;
 
 use crate::native::present::{
-    GpuGlyphBlit, GpuSolidRect, IGraphicsContext, NativeRasterCaps, OffscreenTargetId,
-    PresentCoherency, PresentDamage, SoftFallbackTile,
+    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
+    GpuSolidMesh, GpuSolidRect, GpuStrokeRect, IGraphicsContext, NativeRasterCaps,
+    OffscreenTargetId, PresentCoherency, PresentDamage, SoftFallbackTile,
 };
+// 引入共享的 OpenGL RHI host 生命周期实现。
 use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
+use crate::native::presentation::graphics::opengl::rhi_host::OpenGlRhiHost;
 use crate::native::{Errc, Error};
+// 引入 surface resize 使用的物理 extent 类型。
+use crate::native::present::rhi::RhiExtent;
 
 use crate::native::presentation::graphics::platform::linux::WaylandSurfaceHandle;
+
+// 将 EGL 交换错误映射为恢复 FSM 可消费的 surface/device typed failure。
+fn map_egl_swap_error(error: khronos_egl::Error) -> Error {
+    // EGL_BAD_SURFACE 与 EGL_BAD_NATIVE_WINDOW 表示 native surface 已失效。
+    let code = match &error {
+        khronos_egl::Error::BadSurface | khronos_egl::Error::BadNativeWindow => {
+            Errc::GraphicsSurfaceLost
+        }
+        // EGL_CONTEXT_LOST 要求销毁 context 并重新初始化所有 GLES 对象。
+        khronos_egl::Error::ContextLost => Errc::GraphicsDeviceLost,
+        // 其它 EGL 交换错误保留平台错误，不伪造更窄的恢复分类。
+        _ => Errc::PlatformError,
+    };
+    // 保留原始 EGL 枚举，便于日志和故障证据定位。
+    Error::new(
+        code,
+        format!("EglContext: eglSwapBuffers failed: {error:?}"),
+    )
+}
 // ════════════════════════════════════════════════════════════════════════════
 // wl_egl_window FFI（wayland-egl 客户端库，Linux 系统自带）
 // ════════════════════════════════════════════════════════════════════════════
@@ -58,6 +82,8 @@ pub struct EglContext {
     egl_window: *mut WlEglWindow,
     width: i32,
     height: i32,
+    // surface 重建代际，用于拒绝迟到 FramePlan。
+    surface_generation: u64,
     pipeline: OpenGlRasterPipeline,
     shutdown: bool,
     context_destroyed: bool,
@@ -238,6 +264,8 @@ impl EglContext {
             egl_window,
             width,
             height,
+            // 初始 EGL swapchain 属于第一代 surface。
+            surface_generation: 0,
             pipeline,
             shutdown: false,
             context_destroyed: false,
@@ -312,6 +340,29 @@ impl EglContext {
         self.shutdown = true;
         Ok(())
     }
+
+    // 直接更新 EGL surface、Wayland window 和 OpenGL RHI 的 drawable 状态。
+    fn resize_surface_extent(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        // 相同物理尺寸无需重复触碰 Wayland 或推进 surface generation。
+        if width == self.width && height == self.height {
+            return Ok(());
+        }
+        // 保存新的物理 surface 尺寸。
+        self.width = width;
+        self.height = height;
+        // 通知 Wayland EGL window 更新其 native buffer 尺寸。
+        if !self.egl_window.is_null() {
+            unsafe {
+                wl_egl_window_resize(self.egl_window, width, height, 0, 0);
+            }
+        }
+        // 把尺寸事实同步到共享 OpenGL RHI pipeline。
+        self.pipeline.resize_swapchain(width, height, width, height);
+        // resize 成功后推进 surface generation，隔离旧 FramePlan。
+        self.surface_generation = self.surface_generation.saturating_add(1);
+        // 原生 EGL surface resize 已经完成。
+        Ok(())
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -327,20 +378,19 @@ impl IGraphicsContext for EglContext {
         )
     }
 
+    // 暴露同一 owner-thread context 上的 OpenGL ES 薄 RHI 组合视图。
+    fn rhi_context(&mut self) -> Option<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
+        // EGL adapter 已经实现共享 GraphicsDevice/GraphicsSurface。
+        Some(self)
+    }
+
     fn graphics_backend(&self) -> crate::native::present::GraphicsBackend {
         crate::native::present::GraphicsBackend::OpenGlEs
     }
 
     fn native_raster_caps(&self) -> NativeRasterCaps {
-        NativeRasterCaps {
-            clear_target: true,
-            clear_rects: true,
-            soft_blit: true,
-            solid_rects: true,
-            glyphs: true,
-            offscreen_targets: true,
-            ..NativeRasterCaps::default()
-        }
+        // OpenGL ES 的首个 GPU-only 录制子集由通用 RHI lowering 执行。
+        NativeRasterCaps::rhi_gpu_only_subset()
     }
 
     fn initialize(
@@ -354,18 +404,8 @@ impl IGraphicsContext for EglContext {
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        if width == self.width && height == self.height {
-            return Ok(());
-        }
-        self.width = width;
-        self.height = height;
-        if !self.egl_window.is_null() {
-            unsafe {
-                wl_egl_window_resize(self.egl_window, width, height, 0, 0);
-            }
-        }
-        self.pipeline.resize_swapchain(width, height, width, height);
-        Ok(())
+        self.make_current()?;
+        self.resize_surface_extent(width, height)
     }
 
     fn make_current(&mut self) -> Result<(), Error> {
@@ -385,29 +425,28 @@ impl IGraphicsContext for EglContext {
     }
 
     fn swap_buffers(&mut self, damage: PresentDamage) -> Result<(), Error> {
+        // 兼容 presenter 也必须消费共享 OpenGL lower surface-lost 注入。
+        #[cfg(feature = "test-harness")]
+        if self.pipeline.rhi_take_surface_lost_for_test() {
+            // 保留与共享 RHI surface host 相同的故障 marker。
+            tracing::warn!("OpenGL RHI test surface lost");
+            return Err(Error::new(
+                Errc::GraphicsSurfaceLost,
+                "OpenGL RHI test surface lost before present",
+            ));
+        }
         match damage {
-            PresentDamage::Full => {
-                self.egl
-                    .swap_buffers(self.display, self.surface)
-                    .map_err(|err| {
-                        Error::new(
-                            Errc::PlatformError,
-                            format!("EglContext: eglSwapBuffers failed: {err:?}"),
-                        )
-                    })
-            }
+            PresentDamage::Full => self
+                .egl
+                .swap_buffers(self.display, self.surface)
+                .map_err(map_egl_swap_error),
             PresentDamage::Partial(_) => {
                 // `EGL_KHR_swap_buffers_with_damage` is only a compositor hint.  Until
                 // buffer preservation and age are verified, a partial input must not
                 // choose an untyped extension ABI or claim partial-redraw semantics.
                 self.egl
                     .swap_buffers(self.display, self.surface)
-                    .map_err(|err| {
-                        Error::new(
-                            Errc::PlatformError,
-                            format!("EglContext: eglSwapBuffers failed: {err:?}"),
-                        )
-                    })
+                    .map_err(map_egl_swap_error)
             }
         }
     }
@@ -444,6 +483,109 @@ impl IGraphicsContext for EglContext {
         self.make_current()?;
         self.pipeline
             .draw_solid_rects(viewport_w, viewport_h, scissor, rects)
+    }
+
+    // 将 EGL OpenGL ES 原生描边矩形转发到共享圆角 SDF shader。
+    fn draw_stroke_rects(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        rects: &[GpuStrokeRect],
+    ) -> Result<(), Error> {
+        // 保证描边调用发生在创建上下文的 owner thread。
+        self.make_current()?;
+        self.pipeline
+            .draw_stroke_rects(viewport_w, viewport_h, scissor, rects)
+    }
+
+    // 将 EGL OpenGL ES 原生线性渐变转发到 legacy compatibility owner。
+    fn draw_linear_gradients(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        rects: &[GpuLinearGradientRect],
+    ) -> Result<(), Error> {
+        // 保证渐变调用发生在创建上下文的 owner thread。
+        self.make_current()?;
+        // 委托给 legacy gradient owner。
+        self.pipeline
+            .draw_linear_gradients(viewport_w, viewport_h, scissor, rects)
+    }
+
+    // 将 EGL OpenGL ES 原生径向渐变转发到 legacy compatibility owner。
+    fn draw_radial_gradients(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        grads: &[GpuRadialGradient],
+    ) -> Result<(), Error> {
+        // 保证渐变调用发生在创建上下文的 owner thread。
+        self.make_current()?;
+        // 委托给 legacy gradient owner。
+        self.pipeline
+            .draw_radial_gradients(viewport_w, viewport_h, scissor, grads)
+    }
+
+    // 将 EGL OpenGL ES 原生 sector 转发到 legacy compatibility owner。
+    fn draw_sectors(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        sectors: &[GpuSector],
+    ) -> Result<(), Error> {
+        // 保证 sector 调用发生在创建上下文的 owner thread。
+        self.make_current()?;
+        // 委托给 legacy sector owner。
+        self.pipeline
+            .draw_sectors(viewport_w, viewport_h, scissor, sectors)
+    }
+
+    // 将 EGL OpenGL ES 原生 solid mesh 转发到 legacy compatibility owner。
+    fn draw_solid_meshes(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        meshes: &[GpuSolidMesh],
+    ) -> Result<(), Error> {
+        // 保证 mesh 调用发生在创建上下文的 owner thread。
+        self.make_current()?;
+        // 委托给 legacy mesh owner。
+        self.pipeline
+            .draw_solid_meshes(viewport_w, viewport_h, scissor, meshes)
+    }
+
+    // 将 EGL OpenGL ES 原生 box shadow 转发到共享仿射 SDF shader。
+    fn draw_box_shadows(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        shadows: &[GpuBoxShadow],
+    ) -> Result<(), Error> {
+        // 保证阴影调用发生在创建上下文的 owner thread。
+        self.make_current()?;
+        self.pipeline
+            .draw_box_shadows(viewport_w, viewport_h, scissor, shadows)
+    }
+
+    // 将 EGL OpenGL ES 原生图片 affine blit 转发到 legacy compatibility owner。
+    fn draw_image_blits(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        blits: &[GpuImageBlit],
+    ) -> Result<(), Error> {
+        // 保证图片调用发生在创建上下文的 owner thread。
+        self.make_current()?;
+        // 委托给 legacy textured owner。
+        self.pipeline
+            .draw_image_blits(viewport_w, viewport_h, scissor, blits)
     }
 
     fn draw_glyphs(
@@ -522,14 +664,9 @@ impl IGraphicsContext for EglContext {
         opacity: f32,
         additive: bool,
     ) -> Result<(), Error> {
-        if additive {
-            return Err(Error::new(
-                Errc::NotImplemented,
-                "EglContext: Additive blit_offscreen_target is not supported by this backend",
-            ));
-        }
         self.make_current()?;
-        self.pipeline.blit_offscreen_target(id, src, dst, opacity)
+        self.pipeline
+            .blit_offscreen_target(id, src, dst, opacity, additive)
     }
 }
 
@@ -537,6 +674,46 @@ impl IGraphicsContext for EglContext {
 // Drop — 确保 GPU 资源释放
 // ════════════════════════════════════════════════════════════════════════════
 
+// 将 EGL 原生生命周期接入共享 OpenGL RHI host。
+impl OpenGlRhiHost for EglContext {
+    // 借用可变 raster/RHI owner。
+    fn rhi_pipeline_mut(&mut self) -> &mut OpenGlRasterPipeline {
+        &mut self.pipeline
+    }
+
+    // 借用只读 raster/RHI owner。
+    fn rhi_pipeline(&self) -> &OpenGlRasterPipeline {
+        &self.pipeline
+    }
+
+    // 切换到 EGL owner-thread context。
+    fn rhi_make_current(&mut self) -> Result<(), Error> {
+        <Self as IGraphicsContext>::make_current(self)
+    }
+
+    // 返回 EGL surface generation。
+    fn rhi_generation(&self) -> u64 {
+        self.surface_generation
+    }
+
+    // 按物理 extent 进入 EGL 原生 surface resize helper。
+    fn rhi_resize_surface(&mut self, extent: RhiExtent) -> Result<(), Error> {
+        if self.pipeline.rhi_surface_extent() == extent {
+            return Ok(());
+        }
+        self.rhi_make_current()?;
+        self.resize_surface_extent(extent.width as i32, extent.height as i32)
+    }
+
+    // 交换 EGL window surface。
+    fn rhi_swap_buffers(&mut self, _damage: PresentDamage) -> Result<(), Error> {
+        self.egl
+            .swap_buffers(self.display, self.surface)
+            .map_err(map_egl_swap_error)
+    }
+}
+
+// 释放 EGL owner-thread 的所有 GPU 资源。
 impl Drop for EglContext {
     fn drop(&mut self) {
         let _ = self.try_shutdown();

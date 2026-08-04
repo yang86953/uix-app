@@ -17,14 +17,17 @@ use crate::native::present::{
     GpuGlyphBlit, GpuImageBlit, GpuSolidMesh, GpuSolidRect, GpuStrokeRect, IGraphicsContext,
     OffscreenTargetId, PresentMode, PresentTestResult, RasterMode, SoftFallbackTile,
 };
+// 引入 RHI device 的测试注入契约。
+#[cfg(feature = "test-harness")]
+use crate::native::present::rhi::{GraphicsDevice, GraphicsSurface};
 
-use super::surface::NativeGpuDrawSurface;
-use super::{device_pixel_ratio_from_context, logical_extent_from_context};
-use super::GpuBackend;
 use super::super::canvas::NativeGpuCanvas2D;
 use super::super::pending::PendingNativeOp;
 use super::super::tile::pack_visible_soft_fallback_tile;
 use super::super::SOFT_FALLBACK_IDLE_TIME_GRACE;
+use super::surface::NativeGpuDrawSurface;
+use super::GpuBackend;
+use super::{device_pixel_ratio_from_context, logical_extent_from_context};
 
 impl GpuBackend {
     pub(crate) fn new(gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
@@ -33,6 +36,34 @@ impl GpuBackend {
 
     pub(crate) fn new_gpu_only(gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
         Self::new_with_mode(gpu_ctx, true, true)
+    }
+
+    // 把可控 device-lost 注入送入当前 owner-thread 的薄 RHI。
+    #[cfg(feature = "test-harness")]
+    pub(crate) fn inject_graphics_device_lost_for_test(&mut self) -> Result<(), Error> {
+        // 没有薄 RHI 的 GPU 后端继续使用恢复包装器兼容回退。
+        let Some(context) = self.gpu_ctx.rhi_context() else {
+            return Err(Error::new(
+                Errc::NotImplemented,
+                "GPU backend does not expose a thin RHI device",
+            ));
+        };
+        // 由 adapter 自己保存一次性注入状态，最终 present 才报告 typed failure。
+        context.inject_device_lost_for_test()
+    }
+
+    // 把可控 surface-lost 注入送入当前 owner-thread 的薄 RHI surface。
+    #[cfg(feature = "test-harness")]
+    pub(crate) fn inject_graphics_surface_lost_for_test(&mut self) -> Result<(), Error> {
+        // 没有薄 RHI 的 GPU 后端继续使用恢复包装器兼容回退。
+        let Some(context) = self.gpu_ctx.rhi_context() else {
+            return Err(Error::new(
+                Errc::NotImplemented,
+                "GPU backend does not expose a thin RHI surface",
+            ));
+        };
+        // 由 adapter 自己保存一次性注入状态，下一次 acquire 才报告 typed failure。
+        context.inject_surface_lost_for_test()
     }
 
     pub(super) fn new_with_mode(
@@ -65,6 +96,10 @@ impl GpuBackend {
         }
         let (logical_w, logical_h) = logical_extent_from_context(gpu_ctx.as_ref());
         let device_pixel_ratio = device_pixel_ratio_from_context(gpu_ctx.as_ref());
+        // 只有已暴露薄 RHI 组合视图的参考 adapter 创建 lowering cache。
+        let rhi_renderer = gpu_ctx
+            .rhi_context()
+            .map(|_| super::super::super::rhi_renderer::RhiRenderer::default());
         let mut canvas = if gpu_only {
             NativeGpuCanvas2D::new_gpu_only(logical_w, logical_h, native_caps)
         } else {
@@ -80,6 +115,7 @@ impl GpuBackend {
             free_offscreen_ids: Vec::new(),
             next_offscreen_id: 0,
             active_offscreen: None,
+            offscreen_rhi_initialized: false,
             offscreen_flush_committed: false,
             frame_failure: None,
             present_damage_tracker: PresentDamageTracker::new(),
@@ -87,6 +123,13 @@ impl GpuBackend {
             soft_used_in_last_present: false,
             gpu_only,
             factory_prepared,
+            rhi_renderer,
+            // 启动时延迟创建 retained texture，避免在 context 尚未完成 probe 前占用资源。
+            rhi_surface_texture: None,
+            // 没有 texture 时不存在可复用的 surface 代际。
+            rhi_surface_token: None,
+            // 首帧还没有 FrameEncoder 写入 retained target。
+            rhi_surface_frame_pending_present: false,
             surface: NativeGpuDrawSurface {
                 canvas,
                 native_caps,
@@ -94,6 +137,7 @@ impl GpuBackend {
                 height: logical_h,
                 needs_gpu_clear: true,
                 pending_clear_rects: Vec::new(),
+                pending_scroll_copies: Vec::new(),
             },
         })
     }
@@ -174,6 +218,9 @@ impl GpuBackend {
         self.offscreen_flush_committed = false;
         self.surface.needs_gpu_clear = true;
         self.surface.pending_clear_rects.clear();
+        self.surface.pending_scroll_copies.clear();
+        // drawable extent 变化后，下一次 RHI submit 必须重新确认 retained token。
+        self.rhi_surface_frame_pending_present = false;
         (logical_w, logical_h)
     }
 
@@ -218,6 +265,22 @@ impl GpuBackend {
     /// it only establishes the exact painter-order boundary inside the one
     /// frame and leaves final swap/present to [`RenderBackend::present`].
     pub(super) fn flush_main_segment_before_ordered_boundary(&mut self) -> Result<(), Error> {
+        // 已有 retained target 且没有待提交内容时，有序 boundary 不需要触碰 swapchain。
+        if self.rhi_surface_texture.is_some()
+            && !self.surface.canvas.soft_has_content
+            && self.surface.canvas.pending_native.is_empty()
+            && self.surface.pending_clear_rects.is_empty()
+        {
+            // 后续 RHI Picture blit 可以继续写入同一 retained target。
+            return Ok(());
+        }
+        // 优先把可验证的 native queue 写入 retained target，保持 painter order。
+        if self.try_flush_main_segment_rhi()? {
+            // 最终 swapchain present 仍由统一帧边界完成。
+            return Ok(());
+        }
+        // legacy boundary 不能与旧 retained 副本并存，先安全丢弃 retained target。
+        self.abandon_rhi_surface_texture_for_legacy()?;
         self.gpu_ctx.make_current()?;
 
         if self.surface.needs_gpu_clear {
@@ -314,7 +377,10 @@ impl GpuBackend {
     /// discard every clean pixel while the encoder only repaints its damage.
     /// Apply the damage clears queued by `begin_frame` and let the native
     /// command stream load the retained target instead.
-    pub(super) fn prepare_main_frame_encoder_target(&mut self, encoder: &FrameEncoder) -> Result<bool, Error> {
+    pub(super) fn prepare_main_frame_encoder_target(
+        &mut self,
+        encoder: &FrameEncoder,
+    ) -> Result<bool, Error> {
         if matches!(encoder.commands().first(), Some(FrameCommand::Clear { .. })) {
             return Ok(false);
         }
@@ -335,7 +401,10 @@ impl GpuBackend {
         Ok(true)
     }
 
-    pub(super) fn ensure_frame_encoder_target(&mut self, target_initialized: &mut bool) -> Result<(), Error> {
+    pub(super) fn ensure_frame_encoder_target(
+        &mut self,
+        target_initialized: &mut bool,
+    ) -> Result<(), Error> {
         if !*target_initialized {
             self.clear_frame_encoder_target(Color::transparent())?;
             *target_initialized = true;
@@ -446,5 +515,4 @@ impl GpuBackend {
             }
         }
     }
-
 }

@@ -116,8 +116,9 @@ impl Path {
         }
         let mut min_x = f32::MAX;
         let mut min_y = f32::MAX;
-        let mut max_x = f32::MIN;
-        let mut max_y = f32::MIN;
+        // 负坐标路径也必须从负无穷初始化最大值，不能使用 f32::MIN。
+        let mut max_x = f32::NEG_INFINITY;
+        let mut max_y = f32::NEG_INFINITY;
         for seg in &self.segments {
             let pts = seg.all_points();
             for p in &pts {

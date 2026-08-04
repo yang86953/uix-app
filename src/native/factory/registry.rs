@@ -133,7 +133,7 @@ pub(crate) fn try_create_context(
             format!("GraphicsBackend {} is disabled in this build", entry.id),
         ));
     }
-    let ctx = (entry.create)(native_surface, width, height, pending_failures)?;
+    let mut ctx = (entry.create)(native_surface, width, height, pending_failures)?;
     let caps = ctx.caps();
     let actual = GraphicsRecipe::new(caps.backend, caps.raster, caps.present);
     let expected = entry.recipe();
@@ -144,6 +144,45 @@ pub(crate) fn try_create_context(
         let mut ctx = ctx;
         ctx.try_shutdown()?;
         return Err(Error::new(Errc::PlatformError, msg));
+    }
+    // 首帧前强制检查迁移期薄 RHI，避免 registry 把只有 legacy draw
+    // 接口的 context 宣称为产品 GPU recipe。
+    let missing_rhi_capability = {
+        // 只在这个局部借用内读取组合 RHI 能力快照。
+        match ctx.rhi_context() {
+            // 真实 adapter 需要满足文档冻结的 GPU 原语基线。
+            Some(rhi) => rhi
+                .capabilities()
+                .first_missing_gpu_baseline()
+                .map(str::to_string),
+            // 没有薄 RHI 的 legacy context 不能进入生产 recipe。
+            None => Some("thin_rhi".to_string()),
+        }
+    };
+    // 能力缺口必须在返回前关闭已经创建的 native context。
+    if let Some(missing) = missing_rhi_capability {
+        ctx.try_shutdown()?;
+        return Err(Error::new(
+            Errc::NotImplemented,
+            format!("Graphics recipe {expected} lacks required RHI capability: {missing}"),
+        ));
+    }
+    // 首帧前执行真实资源与固定 pipeline probe，拒绝只声明 capability 的 context。
+    if let Some(rhi) = ctx.rhi_context() {
+        // probe 失败时保持原始 typed error，并先释放已经创建的 owner 资源。
+        if let Err(error) = rhi.probe() {
+            ctx.try_shutdown()?;
+            return Err(error);
+        }
+        // 记录首帧前已经通过真实资源与固定 pipeline 编译的 adapter。
+        tracing::info!("Graphics recipe {expected}: thin RHI probe passed");
+    } else {
+        // capability gate 已处理 None；这里保留显式分支防止未来逻辑回归。
+        ctx.try_shutdown()?;
+        return Err(Error::new(
+            Errc::NotImplemented,
+            format!("Graphics recipe {expected} lacks thin_rhi probe"),
+        ));
     }
     Ok(bind_to_current_thread(ctx))
 }

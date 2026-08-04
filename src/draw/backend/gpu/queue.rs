@@ -12,8 +12,8 @@ use crate::draw::geometry::stroker::StrokeOptions;
 use crate::draw::geometry::tessellator;
 use crate::draw::geometry::types::{BlendMode, GradientDirection, ImageHandle, Radius, Transform};
 use crate::draw::painting::FrameRect;
-use crate::draw::Canvas2D;
 use crate::draw::raster::rasterizer::core::align_rounded_rect;
+use crate::draw::Canvas2D;
 use crate::native::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
     GpuSolidMesh, GpuSolidRect, GpuStrokeRect, IGraphicsContext, SoftFallbackTile,
@@ -21,8 +21,8 @@ use crate::native::present::{
 
 use super::canvas::NativeGpuCanvas2D;
 use super::geometry::{
-    scaled_corner_radii, scales_are_uniform, solid_mesh_from_affine_rect,
-    stroke_options_for_transform,
+    convex_quad_is_valid, glyph_device_corners, quad_aabb, rounded_rect_path, scaled_corner_radii,
+    scales_are_uniform, solid_mesh_from_affine_rect, stroke_options_for_transform,
 };
 use super::pending::{
     PendingNativeGlyph, PendingNativeImage, PendingNativeLinearGrad, PendingNativeMesh,
@@ -90,6 +90,13 @@ impl NativeGpuCanvas2D {
                 }));
             return;
         }
+        // 变换圆角矩形使用共享路径 tessellation，保留真实圆角轮廓而不是压平为 AABB。
+        if has_radius && self.native_caps.solid_meshes {
+            // 路径保留逻辑空间半径，再由 queue_path_mesh 统一应用当前 affine transform。
+            let path = rounded_rect_path(rect, radius);
+            self.queue_path_mesh(&path, color, FillRule::NonZero, None);
+            return;
+        }
         self.soft_or_reject_transform("transformed rounded rect");
         if !self.gpu_only {
             self.with_soft_clip(|soft| soft.fill_rect(rect, color, radius));
@@ -115,6 +122,17 @@ impl NativeGpuCanvas2D {
             return;
         }
         let Some((device, scale)) = self.try_axis_aligned_device_rect(rect) else {
+            // 任意仿射描边矩形转为闭合圆角路径，复用 solid mesh 与共享 stroker。
+            if self.native_caps.solid_meshes {
+                // 描边宽度保持逻辑值，由 queue_path_mesh 按当前 transform 处理。
+                let path = rounded_rect_path(rect, radius);
+                let options = StrokeOptions {
+                    width: lw,
+                    ..StrokeOptions::default()
+                };
+                self.queue_path_mesh(&path, color, FillRule::NonZero, Some(&options));
+                return;
+            }
             self.soft_or_reject_transform("non-axis-aligned stroke rect transform");
             if !self.gpu_only {
                 self.with_soft_clip(|soft| soft.stroke_rect(rect, color, lw, radius));
@@ -152,7 +170,13 @@ impl NativeGpuCanvas2D {
             }));
     }
 
-    pub(super) fn queue_linear_gradient(&mut self, rect: Rect, ca: Color, cb: Color, dir: GradientDirection) {
+    pub(super) fn queue_linear_gradient(
+        &mut self,
+        rect: Rect,
+        ca: Color,
+        cb: Color,
+        dir: GradientDirection,
+    ) {
         if rect.w <= 0.0 || rect.h <= 0.0 {
             return;
         }
@@ -162,15 +186,21 @@ impl NativeGpuCanvas2D {
             self.mark_soft();
             return;
         }
-        let Some((device, _)) = self.try_axis_aligned_device_rect(rect) else {
-            self.soft_or_reject_transform("non-axis-aligned linear gradient transform");
+        // 线性渐变直接保留逻辑矩形经过 affine 后的四角。
+        let corners = glyph_device_corners(rect, self.transform, self.offset_x, self.offset_y);
+        if !convex_quad_is_valid(&corners) {
+            // 奇异变换不能稳定地映射单位渐变 quad。
+            self.soft_or_reject_transform("degenerate linear gradient transform");
             if !self.gpu_only {
                 self.with_soft_clip(|soft| soft.fill_linear_gradient(rect, ca, cb, dir));
                 self.mark_soft();
             }
             return;
-        };
-        if device.w <= 0.0 || device.h <= 0.0 {
+        }
+        // AABB 仅服务于旧 native DTO 和裁剪诊断，shader 使用真实四角。
+        let (min_x, min_y, max_x, max_y) = quad_aabb(corners);
+        let device = Rect::new(min_x, min_y, max_x - min_x, max_y - min_y);
+        if device.w <= 0.0 || device.h <= 0.0 || !device.x.is_finite() || !device.y.is_finite() {
             return;
         }
         let dir_u = match dir {
@@ -186,6 +216,7 @@ impl NativeGpuCanvas2D {
                     y: device.y,
                     w: device.w,
                     h: device.h,
+                    corners,
                     color_a: self.rgba(ca),
                     color_b: self.rgba(cb),
                     dir: dir_u,
@@ -194,7 +225,15 @@ impl NativeGpuCanvas2D {
             }));
     }
 
-    pub(super) fn queue_radial_gradient(&mut self, cx: f32, cy: f32, ir: f32, or: f32, ic: Color, oc: Color) {
+    pub(super) fn queue_radial_gradient(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        ir: f32,
+        or: f32,
+        ic: Color,
+        oc: Color,
+    ) {
         if or <= 0.0 {
             return;
         }
@@ -204,51 +243,34 @@ impl NativeGpuCanvas2D {
             self.mark_soft();
             return;
         }
-        let identity = self.transform.m == Transform::identity().m;
-        if identity {
-            self.pending_native
-                .push(PendingNativeOp::RadialGradient(PendingNativeRadialGrad {
-                    grad: GpuRadialGradient {
-                        cx: cx + self.offset_x,
-                        cy: cy + self.offset_y,
-                        inner_r: ir.max(0.0),
-                        outer_r: or,
-                        color_inner: self.rgba(ic),
-                        color_outer: self.rgba(oc),
-                    },
-                    scissor: self.scissor_aabb(),
-                }));
-            return;
-        }
-        // 径向在 GPU 上是圆；仅均匀轴对齐缩放可保持圆语义。
+        // 径向渐变把逻辑圆盘包围矩形映射为真实四角，shader 在局部坐标中求圆距。
         let bb = Rect::new(cx - or, cy - or, or * 2.0, or * 2.0);
-        let Some((_, scale)) = self.try_axis_aligned_device_rect(bb) else {
-            self.soft_or_reject_transform("non-axis-aligned radial gradient transform");
-            if !self.gpu_only {
-                self.with_soft_clip(|soft| soft.fill_radial_gradient(cx, cy, ir, or, ic, oc));
-                self.mark_soft();
-            }
-            return;
-        };
-        if !scales_are_uniform(scale) {
-            self.soft_or_reject_transform("anisotropic radial gradient transform");
+        let corners = glyph_device_corners(bb, self.transform, self.offset_x, self.offset_y);
+        if !convex_quad_is_valid(&corners) {
+            // 奇异变换不能稳定地恢复局部圆盘坐标。
+            self.soft_or_reject_transform("degenerate radial gradient transform");
             if !self.gpu_only {
                 self.with_soft_clip(|soft| soft.fill_radial_gradient(cx, cy, ir, or, ic, oc));
                 self.mark_soft();
             }
             return;
         }
+        // 保留轴对齐缩放下旧 native DTO 的半径语义；仿射 RHI 使用四角和半径比值。
+        let legacy_scale = self
+            .try_axis_aligned_device_rect(bb)
+            .and_then(|(_, scale)| scales_are_uniform(scale).then_some(scale.0.abs()))
+            .unwrap_or(1.0);
         let center = self
             .transform
             .transform_point(Point::new(cx + self.offset_x, cy + self.offset_y));
-        let s = scale.0.abs();
         self.pending_native
             .push(PendingNativeOp::RadialGradient(PendingNativeRadialGrad {
                 grad: GpuRadialGradient {
                     cx: center.x,
                     cy: center.y,
-                    inner_r: ir.max(0.0) * s,
-                    outer_r: or * s,
+                    inner_r: ir.max(0.0) * legacy_scale,
+                    outer_r: or * legacy_scale,
+                    corners,
                     color_inner: self.rgba(ic),
                     color_outer: self.rgba(oc),
                 },

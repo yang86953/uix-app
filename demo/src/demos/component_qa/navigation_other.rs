@@ -314,6 +314,8 @@ pub fn build(id: &str, tk: &DesignTokens) -> Option<ViewNode> {
         "watermark" => qa_target_view(
             column([ViewNode::new(
                 Watermark::new("UIX QUALITY")
+                    // 大字号叠加旋转会稳定进入通用 MSDF lowering，作为真窗视觉矩阵样本。
+                    .font_size(64.0)
                     .opacity(0.14)
                     .rotate(-22.0)
                     .gap(120.0, 72.0),

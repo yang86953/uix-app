@@ -16,9 +16,9 @@ fn real_demo_switches_provider_locale_and_presents_framework_capabilities() {
     let _guard = REAL_GUI_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    // Exercise the shipping default Auto -> Vulkan GPU-native swapchain.
+    // Exercise the shipping default Auto -> D3D11 GPU-native swapchain.
     // Desktop captures sample the DWM-composited client output.
-    let mut demo = DemoProcess::spawn(DEFAULT_VULKAN_GRAPHICS);
+    let mut demo = DemoProcess::spawn(DEFAULT_D3D11_GRAPHICS);
     let descriptor = demo.wait_for_descriptor();
     let endpoint = descriptor["endpoint"]
         .as_str()

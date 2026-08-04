@@ -105,7 +105,8 @@ impl GraphicsRecoveryControl {
     }
 
     pub fn can_inject(&self) -> bool {
-        self.status.get() == GRAPHICS_RECOVERY_READY
+        let status = self.status.get();
+        status == GRAPHICS_RECOVERY_READY || status == GRAPHICS_RECOVERY_VERIFIED
     }
 
     pub fn can_verify(&self) -> bool {
@@ -134,6 +135,39 @@ impl GraphicsRecoveryControl {
 
         #[cfg(not(feature = "test-harness"))]
         {
+            let _ = handle;
+            self.status
+                .set("图形恢复验收：注入失败（未启用 test-harness）".to_string());
+        }
+    }
+
+    // 触发 D3D11 RHI acquire 边界的可控 surface-lost 验收。
+    pub fn inject_surface_lost(&self) {
+        // 读取已经绑定到当前 demo window 的 AppHandle。
+        let Some(handle) = self
+            .handle
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+        else {
+            self.status
+                .set("图形恢复验收：注入失败（AppHandle 尚未就绪）".to_string());
+            return;
+        };
+
+        #[cfg(feature = "test-harness")]
+        match handle.inject_graphics_surface_lost_for_test() {
+            // surface 错误会在下一次 RHI acquire 返回并进入恢复 FSM。
+            Ok(()) => self.status.set(GRAPHICS_RECOVERY_PENDING.to_string()),
+            // 把 owner-thread 的 typed failure 显示给验收页面。
+            Err(error) => self
+                .status
+                .set(format!("图形恢复验收：注入失败（{}）", error.short_what())),
+        }
+
+        #[cfg(not(feature = "test-harness"))]
+        {
+            // 未启用 test-harness 时保持页面可运行但不伪造恢复能力。
             let _ = handle;
             self.status
                 .set("图形恢复验收：注入失败（未启用 test-harness）".to_string());

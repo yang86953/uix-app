@@ -9,7 +9,7 @@ fn real_demo_opens_theme_window_and_syncs_observable_state() {
     let _guard = REAL_GUI_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut demo = DemoProcess::spawn(DEFAULT_VULKAN_GRAPHICS);
+    let mut demo = DemoProcess::spawn(DEFAULT_D3D11_GRAPHICS);
     let descriptor = demo.wait_for_descriptor();
     let endpoint = descriptor["endpoint"]
         .as_str()

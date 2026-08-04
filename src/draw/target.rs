@@ -162,6 +162,24 @@ pub trait RenderTarget: 'static {
         ))
     }
 
+    /// test-harness 将一次可控 device-lost 注入安排到真实 backend 边界。
+    #[cfg(feature = "test-harness")]
+    fn inject_graphics_device_lost_for_test(&mut self) -> Result<(), Error> {
+        Err(Error::new(
+            crate::core::Errc::NotImplemented,
+            "render target does not expose a lower graphics fault injection",
+        ))
+    }
+
+    /// test-harness 将一次可控 surface-lost 注入安排到真实 surface 边界。
+    #[cfg(feature = "test-harness")]
+    fn inject_graphics_surface_lost_for_test(&mut self) -> Result<(), Error> {
+        Err(Error::new(
+            crate::core::Errc::NotImplemented,
+            "render target does not expose a lower surface fault injection",
+        ))
+    }
+
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D;
 
     /// 引擎当前采用的 logical viewport；默认等于 Canvas2D extent。

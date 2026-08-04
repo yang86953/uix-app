@@ -8,12 +8,19 @@ impl D3d11Pipeline {
         let blit_ps_blob = compile_shader(BLIT_HLSL, c"PSMain", c"ps_4_0")?;
         let glyph_vs_blob = compile_shader(GLYPH_HLSL, c"VSMain", c"vs_4_0")?;
         let glyph_ps_blob = compile_shader(GLYPH_HLSL, c"PSMain", c"ps_4_0")?;
+        // 编译 RGBA8 MSDF 字形的共享 VS/PS 源，保证其 constant ABI 自洽。
+        let msdf_vs_blob = compile_shader(MSDF_GLYPH_HLSL, c"VSMain", c"vs_4_0")?;
+        // 编译 RGBA8 MSDF 字形的像素 shader。
+        let msdf_ps_blob = compile_shader(MSDF_GLYPH_HLSL, c"PSMain", c"ps_4_0")?;
+        let rhi_textured_ps_blob = compile_shader(RHI_TEXTURED_PS_HLSL, c"PSMain", c"ps_4_0")?;
         let grad_vs_blob = compile_shader(GRADIENT_HLSL, c"VSMain", c"vs_4_0")?;
         let grad_ps_blob = compile_shader(GRADIENT_HLSL, c"PSMain", c"ps_4_0")?;
         let mesh_vs_blob = compile_shader(MESH_HLSL, c"VSMain", c"vs_4_0")?;
         let mesh_ps_blob = compile_shader(MESH_HLSL, c"PSMain", c"ps_4_0")?;
         let shadow_vs_blob = compile_shader(SHADOW_HLSL, c"VSMain", c"vs_4_0")?;
         let shadow_ps_blob = compile_shader(SHADOW_HLSL, c"PSMain", c"ps_4_0")?;
+        // 编译分析扇形 VS/PS，确保原生 sector 也在 RHI probe 中可用。
+        let (vs_sector, ps_sector) = rhi_sector::create_sector_shaders(device)?;
 
         let mut vs_rect = None;
         unsafe {
@@ -128,6 +135,63 @@ impl D3d11Pipeline {
         }
         let ps_glyph = ps_glyph
             .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no glyph PS"))?;
+
+        // 创建 MSDF 字形 VS，输入布局与普通 glyph float8 ABI 完全一致。
+        let mut vs_msdf = None;
+        // SAFETY: MSDF shader blob 由本函数刚刚编译，指针和长度在调用期间有效。
+        unsafe {
+            device
+                .CreateVertexShader(
+                    std::slice::from_raw_parts(
+                        msdf_vs_blob.GetBufferPointer() as *const u8,
+                        msdf_vs_blob.GetBufferSize(),
+                    ),
+                    None,
+                    Some(&mut vs_msdf),
+                )
+                .map_err(|e| d3d_error("CreateVertexShader(msdf)", e))?;
+        }
+        // 拒绝驱动返回的空 MSDF VS；该局部 VS 只用于创建兼容输入布局。
+        let _vs_msdf =
+            vs_msdf.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no MSDF VS"))?;
+
+        // 创建 MSDF 字形像素 shader。
+        let mut ps_msdf = None;
+        // SAFETY: MSDF shader blob 由本函数刚刚编译，指针和长度在调用期间有效。
+        unsafe {
+            device
+                .CreatePixelShader(
+                    std::slice::from_raw_parts(
+                        msdf_ps_blob.GetBufferPointer() as *const u8,
+                        msdf_ps_blob.GetBufferSize(),
+                    ),
+                    None,
+                    Some(&mut ps_msdf),
+                )
+                .map_err(|e| d3d_error("CreatePixelShader(msdf)", e))?;
+        }
+        // 保存驱动创建出的 MSDF PS。
+        let ps_msdf =
+            ps_msdf.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no MSDF PS"))?;
+
+        // 创建薄 RHI 通用纹理 quad 的像素着色器。
+        let mut ps_rhi_textured = None;
+        // SAFETY: shader blob 由本函数刚刚编译，指针和长度在调用期间有效。
+        unsafe {
+            device
+                .CreatePixelShader(
+                    std::slice::from_raw_parts(
+                        rhi_textured_ps_blob.GetBufferPointer() as *const u8,
+                        rhi_textured_ps_blob.GetBufferSize(),
+                    ),
+                    None,
+                    Some(&mut ps_rhi_textured),
+                )
+                .map_err(|e| d3d_error("CreatePixelShader(rhi_textured)", e))?;
+        }
+        // 拒绝驱动返回的空 shader。
+        let ps_rhi_textured = ps_rhi_textured
+            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no RHI textured PS"))?;
 
         let mut vs_grad = None;
         unsafe {
@@ -475,6 +539,44 @@ impl D3d11Pipeline {
             )
         })?;
 
+        // 为 sampled Additive quad 创建源目标均为 ONE 的加法 blend。
+        let mut blend_additive = None;
+        // 描述颜色与 alpha 都执行 source + destination。
+        let additive_desc = D3D11_BLEND_DESC {
+            // Additive 不使用 alpha-to-coverage。
+            AlphaToCoverageEnable: FALSE,
+            // 所有 render target 使用相同的固定状态。
+            IndependentBlendEnable: FALSE,
+            // 设置第一个 render target 的加法因子。
+            RenderTarget: [D3D11_RENDER_TARGET_BLEND_DESC {
+                // 打开硬件 blend。
+                BlendEnable: TRUE,
+                // 累加源颜色。
+                SrcBlend: D3D11_BLEND_ONE,
+                // 累加目标颜色。
+                DestBlend: D3D11_BLEND_ONE,
+                // 颜色执行加法。
+                BlendOp: D3D11_BLEND_OP_ADD,
+                // 累加源 alpha。
+                SrcBlendAlpha: D3D11_BLEND_ONE,
+                // 累加目标 alpha。
+                DestBlendAlpha: D3D11_BLEND_ONE,
+                // alpha 执行加法。
+                BlendOpAlpha: D3D11_BLEND_OP_ADD,
+                // 保留四个颜色通道。
+                RenderTargetWriteMask: D3D11_COLOR_WRITE_ENABLE_ALL.0 as u8,
+            }; 8],
+        };
+        // 在当前 D3D11 device 上创建加法状态对象。
+        unsafe {
+            device
+                .CreateBlendState(&additive_desc, Some(&mut blend_additive))
+                .map_err(|e| d3d_error("CreateBlendState(additive)", e))?;
+        }
+        // 驱动必须返回有效的加法状态对象。
+        let blend_additive = blend_additive
+            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no additive blend"))?;
+
         let mut blend_replace = None;
         let replace_desc = D3D11_BLEND_DESC {
             AlphaToCoverageEnable: FALSE,
@@ -549,6 +651,8 @@ impl D3d11Pipeline {
             ps_blur,
             vs_glyph,
             ps_glyph,
+            ps_msdf,
+            ps_rhi_textured,
             layout_glyph,
             vs_grad,
             ps_grad,
@@ -556,6 +660,9 @@ impl D3d11Pipeline {
             ps_mesh,
             vs_shadow,
             ps_shadow,
+            vs_sector,
+            ps_sector,
+            image: rhi_image::D3d11ImageOwner::default(),
             vb_unit,
             vb_fullscreen,
             vb_glyph,
@@ -571,6 +678,7 @@ impl D3d11Pipeline {
             cb_shadow,
             blend_alpha,
             blend_premultiplied,
+            blend_additive,
             blend_replace,
             rasterizer,
             sampler,

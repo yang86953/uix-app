@@ -84,6 +84,12 @@ pub(crate) fn map_dxgi_resize_result(result: ::windows::core::HRESULT) -> Result
     map_dxgi_operation_result("IDXGISwapChain::ResizeBuffers", result)
 }
 
+// 把 D3D11 设备移除查询统一纳入已有 HRESULT 分类边界。
+pub(crate) fn map_dxgi_device_removed_reason(result: ::windows::core::HRESULT) -> Result<()> {
+    // 健康设备返回 S_OK，已移除或重置设备返回 GraphicsDeviceLost。
+    map_dxgi_operation_result("ID3D11Device::GetDeviceRemovedReason", result)
+}
+
 fn map_dxgi_operation_result(operation: &str, result: ::windows::core::HRESULT) -> Result<()> {
     if result.is_err() {
         return Err(Error::new(
@@ -92,4 +98,35 @@ fn map_dxgi_operation_result(operation: &str, result: ::windows::core::HRESULT) 
         ));
     }
     Ok(())
+}
+
+// 固定 D3D11 设备健康查询的 HRESULT 分类契约。
+#[cfg(test)]
+mod tests {
+    // 引入设备移除映射函数。
+    use super::map_dxgi_device_removed_reason;
+    // 引入统一错误码。
+    use crate::core::Errc;
+    // 引入 Windows HRESULT 及设备移除常量。
+    use ::windows::core::HRESULT;
+    // 引入 DXGI 设备移除状态。
+    use ::windows::Win32::Graphics::Dxgi::DXGI_ERROR_DEVICE_REMOVED;
+
+    // 验证 S_OK 被视为健康设备状态。
+    #[test]
+    fn device_removed_reason_accepts_success() {
+        // 传入成功 HRESULT，不应触发恢复错误。
+        assert!(map_dxgi_device_removed_reason(HRESULT(0)).is_ok());
+    }
+
+    // 验证已知设备移除状态保持 typed device-lost 语义。
+    #[test]
+    fn device_removed_reason_maps_device_loss() {
+        // 把 DXGI 设备移除码交给统一分类边界。
+        let error = map_dxgi_device_removed_reason(DXGI_ERROR_DEVICE_REMOVED)
+            // 明确设备移除输入必须产生错误。
+            .expect_err("device removal HRESULT must be reported");
+        // 验证恢复层可以按 GraphicsDeviceLost 选择重建 device。
+        assert_eq!(error.code(), Errc::GraphicsDeviceLost);
+    }
 }

@@ -6,18 +6,30 @@ use crate::native::factory::registry::{BackendStatus, GraphicsBackendEntry};
 use crate::native::present::{GraphicsBackend, IGraphicsContext, PresentMode, RasterMode};
 use std::ffi::c_void;
 
-// 方案 A：wgpu 已移除，原生 Vulkan/OpenGL 后端仍为 test-only，
-// Linux 暂无生产 GPU 后端；条目保留以便诊断信息完整。
+// 原生 OpenGL ES 已接入同一 FramePlan/RHI；Vulkan 仍保留为诊断条目。
 
+#[cfg(feature = "opengles")]
+fn create_opengles(
+    surface: *mut c_void,
+    width: i32,
+    height: i32,
+    _pending: PendingFailureQueue,
+) -> Result<Box<dyn IGraphicsContext>, Error> {
+    // EGL adapter 直接接管 Wayland surface 与 owner-thread RHI。
+    crate::native::presentation::graphics::opengl::create(surface, width, height)
+}
+
+#[cfg(not(feature = "opengles"))]
 fn create_opengles(
     _: *mut c_void,
     _: i32,
     _: i32,
     _: PendingFailureQueue,
 ) -> Result<Box<dyn IGraphicsContext>, Error> {
+    // feature 关闭时保留 typed disabled 诊断。
     Err(Error::new(
-        Errc::NotImplemented,
-        "graphics backend `opengles` has no production implementation on Linux",
+        Errc::PlatformError,
+        "graphics feature `opengles` is disabled in this build",
     ))
 }
 
@@ -34,7 +46,11 @@ fn create_vulkan(
 }
 
 const VULKAN_STATUS: BackendStatus = BackendStatus::Disabled;
-const OPENGL_STATUS: BackendStatus = BackendStatus::Disabled;
+const OPENGL_STATUS: BackendStatus = if cfg!(feature = "opengles") {
+    BackendStatus::Active
+} else {
+    BackendStatus::Disabled
+};
 
 pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
     GraphicsBackendEntry {

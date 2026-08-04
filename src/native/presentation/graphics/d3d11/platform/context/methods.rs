@@ -100,6 +100,70 @@ impl D3d11Context {
         Ok(())
     }
 
+    // 把逻辑尺寸转换和原生 swapchain 重建统一收敛到 context 底层。
+    pub(super) fn resize_surface_logical(&mut self, width: i32, height: i32) -> Result<()> {
+        // 使用平台 drawable 规则得到实际物理尺寸和逻辑元数据。
+        let drawable = win_surface::drawable_size(self.hwnd, width, height);
+        // 由同一条原生路径执行 ResizeBuffers、代际推进和 RTV 重建。
+        self.resize_surface_extent(
+            drawable.width,
+            drawable.height,
+            drawable.logical_width,
+            drawable.logical_height,
+        )
+    }
+
+    // 直接执行 D3D11 surface 的物理尺寸重建，不再依赖兼容 resize 入口。
+    pub(super) fn resize_surface_extent(
+        &mut self,
+        physical_width: i32,
+        physical_height: i32,
+        logical_width: i32,
+        logical_height: i32,
+    ) -> Result<()> {
+        // 拒绝无效尺寸，避免把非法参数传给 DXGI。
+        if physical_width <= 0 || physical_height <= 0 {
+            // 返回稳定的参数错误，保持 RHI 和兼容入口一致。
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                "D3d11 surface extent must be positive",
+            ));
+        }
+        // 尺寸没有变化时无需释放和重建现有 RTV。
+        if physical_width == self.width && physical_height == self.height {
+            // 仍然同步逻辑尺寸，覆盖同物理尺寸下的逻辑元数据变化。
+            self.logical_width = logical_width;
+            self.logical_height = logical_height;
+            // 返回当前 surface 状态。
+            return Ok(());
+        }
+        // 先解除旧 RTV 绑定，满足 ResizeBuffers 的资源生命周期要求。
+        self.release_rtv();
+        // 让 DXGI 执行 backbuffer 的原生尺寸重建。
+        if let Err(error) = unsafe {
+            self.swap_chain.ResizeBuffers(
+                0,
+                physical_width as u32,
+                physical_height as u32,
+                DXGI_FORMAT_B8G8R8A8_UNORM,
+                DXGI_SWAP_CHAIN_FLAG(0),
+            )
+        } {
+            // 将设备移除、无效参数等 DXGI 结果映射为统一错误。
+            map_dxgi_resize_result(error.code())?;
+        }
+        // 提交成功后更新逻辑尺寸元数据。
+        self.logical_width = logical_width;
+        self.logical_height = logical_height;
+        // 保存新的物理 drawable 尺寸。
+        self.width = physical_width;
+        self.height = physical_height;
+        // ResizeBuffers 成功后推进 surface 代际，隔离旧帧和旧 view。
+        self.surface_generation = self.surface_generation.saturating_add(1);
+        // 重新创建 RTV 并恢复默认 swapchain target 绑定。
+        self.create_rtv()
+    }
+
     pub(super) fn release_rtv(&mut self) {
         unsafe {
             self.context.OMSetRenderTargets(None, None);
@@ -217,9 +281,8 @@ impl D3d11Context {
                 .CreateRenderTargetView(&tex, None, Some(&mut rtv))
                 .map_err(|e| d3d_error("CreateRenderTargetView(blur scratch)", e))?;
         }
-        let rtv = rtv.ok_or_else(|| {
-            Error::new(Errc::PlatformError, "D3d11Context: no blur scratch RTV")
-        })?;
+        let rtv = rtv
+            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Context: no blur scratch RTV"))?;
         let mut srv = None;
         let srv_desc = D3D11_SHADER_RESOURCE_VIEW_DESC {
             Format: DXGI_FORMAT_B8G8R8A8_UNORM,
@@ -236,14 +299,24 @@ impl D3d11Context {
                 .CreateShaderResourceView(&tex, Some(&srv_desc), Some(&mut srv))
                 .map_err(|e| d3d_error("CreateShaderResourceView(blur scratch)", e))?;
         }
-        let srv = srv.ok_or_else(|| {
-            Error::new(Errc::PlatformError, "D3d11Context: no blur scratch SRV")
-        })?;
+        let srv = srv
+            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Context: no blur scratch SRV"))?;
         self.blur_scratch = Some((tex, rtv.clone(), srv.clone(), width, height));
         Ok((rtv, srv))
     }
 
     pub(super) fn present_result(&mut self) -> Result<()> {
+        // 兼容 presenter 也必须消费同一 lower surface-lost 注入，避免故障
+        // 因本帧没有进入 RHI acquire 而被静默跳过。
+        #[cfg(feature = "test-harness")]
+        if std::mem::take(&mut self.rhi_surface_lost_for_test) {
+            // 只在 test-harness 记录共同 adapter present 边界。
+            tracing::warn!("D3d11 RHI test surface lost");
+            return Err(Error::new(
+                Errc::GraphicsSurfaceLost,
+                "D3d11 RHI test surface lost before present",
+            ));
+        }
         // SAFETY: the swap chain belongs to this context and is used only on
         // its owning UI thread while the context remains alive.
         //
@@ -328,6 +401,16 @@ pub(crate) fn create_with_driver(
         logical_height: height,
         width,
         height,
+        // 初始 swapchain 属于第一代 surface。
+        surface_generation: 0,
+        // 初始化尚未创建资源的薄 RHI 状态。
+        rhi_device: D3d11RhiDevice::new(),
+        // 默认不安排测试设备丢失。
+        #[cfg(feature = "test-harness")]
+        rhi_device_lost_for_test: false,
+        // 默认不安排测试 surface 丢失。
+        #[cfg(feature = "test-harness")]
+        rhi_surface_lost_for_test: false,
         offscreens: Vec::new(),
         free_offscreen_ids: Vec::new(),
         next_offscreen_id: 0,
@@ -360,4 +443,3 @@ fn create_with_drawable(
     context.logical_height = drawable.logical_height;
     Ok(context)
 }
-

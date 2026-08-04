@@ -108,7 +108,10 @@ fn capture_case(
             window_id,
         );
         let focused = node_by_automation_id(&after, "component-qa-target").clone();
-        assert_eq!(focused["focused"], true, "{name} must be focused after focus");
+        assert_eq!(
+            focused["focused"], true,
+            "{name} must be focused after focus"
+        );
         Some(focused)
     } else {
         None
@@ -137,8 +140,11 @@ fn write_case_evidence(root: &Path, case: &CaseSemantics) {
         "target": projection(&case.target),
         "focus": case.focus_node.as_ref().map(projection).unwrap_or(Value::Null),
     });
-    fs::write(&file, serde_json::to_string_pretty(&value).expect("serialize component evidence"))
-        .expect("write component evidence");
+    fs::write(
+        &file,
+        serde_json::to_string_pretty(&value).expect("serialize component evidence"),
+    )
+    .expect("write component evidence");
     eprintln!("accessibility component evidence: {}", file.display());
 }
 
@@ -157,7 +163,7 @@ fn real_demo_captures_component_semantic_evidence() {
         }
     }
 
-    let mut demo = DemoProcess::spawn_with_args(DEFAULT_VULKAN_GRAPHICS, &["--component-qa"]);
+    let mut demo = DemoProcess::spawn_with_args(DEFAULT_D3D11_GRAPHICS, &["--component-qa"]);
     let descriptor = demo.wait_for_descriptor();
     let endpoint = descriptor["endpoint"]
         .as_str()
@@ -225,16 +231,16 @@ const CHARTS_PAGE_IDX: usize = 8;
 /// maps them back to ledger rows.
 const CHARTS_SCENE_TITLES: &[&str] = &[
     "磁盘占用趋势", // AreaChart
-    "散点分布",   // ScatterChart
-    "气泡分布",   // ScatterChart (bubble)
-    "能力雷达",   // RadarChart
-    "热力矩阵",   // Heatmap
-    "转化漏斗",   // FunnelChart
-    "月度盈亏",   // WaterfallChart
-    "双轴组合",   // ComboChart
-    "磁盘占用",   // Treemap
-    "完成度",    // Gauge
-    "预算使用",   // Gauge
+    "散点分布",     // ScatterChart
+    "气泡分布",     // ScatterChart (bubble)
+    "能力雷达",     // RadarChart
+    "热力矩阵",     // Heatmap
+    "转化漏斗",     // FunnelChart
+    "月度盈亏",     // WaterfallChart
+    "双轴组合",     // ComboChart
+    "磁盘占用",     // Treemap
+    "完成度",       // Gauge
+    "预算使用",     // Gauge
 ];
 
 #[test]
@@ -246,9 +252,11 @@ fn real_demo_captures_charts_semantic_evidence() {
     let evidence_root = evidence_root();
     fs::create_dir_all(&evidence_root).expect("create accessibility evidence root");
 
-    let mut demo = DemoProcess::spawn_with_args(DEFAULT_VULKAN_GRAPHICS, &[]);
+    let mut demo = DemoProcess::spawn_with_args(DEFAULT_D3D11_GRAPHICS, &[]);
     let descriptor = demo.wait_for_descriptor();
-    let endpoint = descriptor["endpoint"].as_str().expect("descriptor endpoint");
+    let endpoint = descriptor["endpoint"]
+        .as_str()
+        .expect("descriptor endpoint");
     let token = descriptor["token"].as_str().expect("descriptor token");
     let stream = connect(endpoint, &mut demo.child);
     let mut connection = BufReader::new(stream);
@@ -283,11 +291,8 @@ fn real_demo_captures_charts_semantic_evidence() {
         "charts-accessibility-nav-snapshot",
         window_id,
     );
-    let nav_item = node_by_automation_id(
-        &nav_snapshot,
-        &format!("sidebar-page-{CHARTS_PAGE_IDX}"),
-    )
-    .clone();
+    let nav_item =
+        node_by_automation_id(&nav_snapshot, &format!("sidebar-page-{CHARTS_PAGE_IDX}")).clone();
     let bounds = &nav_item["visible_bounds"];
     let (x, y) = (
         bounds["x"].as_f64().expect("nav x") + bounds["w"].as_f64().expect("nav w") * 0.5,
@@ -303,11 +308,7 @@ fn real_demo_captures_charts_semantic_evidence() {
         json!({ "kind": "click_at", "x": x, "y": y }),
     );
 
-    let current = snapshot(
-        &mut connection,
-        "charts-accessibility-snapshot",
-        window_id,
-    );
+    let current = snapshot(&mut connection, "charts-accessibility-snapshot", window_id);
     let nodes = current["nodes"].as_array().expect("snapshot nodes");
     let mut captured: Vec<Value> = Vec::new();
     for node in nodes {
@@ -324,9 +325,9 @@ fn real_demo_captures_charts_semantic_evidence() {
         .iter()
         .copied()
         .filter(|title| {
-            !captured.iter().any(|node| {
-                node["name"].as_str() == Some(title)
-            })
+            !captured
+                .iter()
+                .any(|node| node["name"].as_str() == Some(title))
         })
         .collect();
     assert!(

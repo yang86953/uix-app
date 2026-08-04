@@ -10,6 +10,8 @@ use crate::native::present::IGraphicsContext;
 
 pub(crate) mod platform;
 pub(crate) mod raster;
+// WGL/EGL context 通过这一层共享同一套 FramePlan/RHI host 实现。
+pub(crate) mod rhi_host;
 
 // Shader sources are API artefacts: they live with the native GL runtime even
 // while the transitional draw-side canvas still owns program/FBO lifetime.
