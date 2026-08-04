@@ -2,6 +2,8 @@
 
 # 导入标准单元测试框架。
 import unittest
+# 导入环境变量隔离补丁工具。
+from unittest.mock import patch
 
 # 导入被测采集模块。
 from scripts import measure_usage_build
@@ -91,8 +93,8 @@ class ResolvedGraphTests(unittest.TestCase):
     def test_demo_logging_scenarios_bind_root_binary_and_feature_graph(self) -> None:
         # 读取当前仓库的全部场景定义。
         scenarios = measure_usage_build.scenario_specs(measure_usage_build.project_root())
-        # 文档声明的 schema v5 矩阵必须保持二十个独立执行场景。
-        self.assertEqual(len(scenarios), 20)
+        # 文档声明的 schema v6 矩阵必须保持二十一个独立执行场景。
+        self.assertEqual(len(scenarios), 21)
         # 按稳定名称索引场景。
         by_name = {scenario.name: scenario for scenario in scenarios}
         # 读取关闭演示日志的根二进制场景。
@@ -221,6 +223,20 @@ class ResolvedGraphTests(unittest.TestCase):
         self.assertEqual(enabled.required_uix_features, ("agent-control",))
         # Agent 入口不得合并设置序列化 feature。
         self.assertIn("settings-serde", enabled.forbidden_uix_features)
+        # 读取复用相同公开入口的 Linux release 场景。
+        linux = by_name["agent-control-linux"]
+        # Linux Agent 场景必须显式覆盖为 GNU 目标。
+        self.assertEqual(linux.target, "x86_64-unknown-linux-gnu")
+        # Linux Agent 必须执行最终 release 链接而不是降级为 check。
+        self.assertFalse(linux.check_only)
+        # Linux Agent 必须解析 Unix、Wayland 与共享 JSON package。
+        self.assertEqual(linux.required_packages, ("libc", "serde_json", "wayland-client"))
+        # Linux 解析图必须排除 Windows API package。
+        self.assertIn("windows", linux.forbidden_packages)
+        # Linux 入口必须选择相同的 Agent 根 feature。
+        self.assertEqual(linux.required_uix_features, ("agent-control",))
+        # 两个目标必须复用同一 fixture，避免公开 API 差异污染对照。
+        self.assertEqual(linux.manifest, enabled.manifest)
         # 读取关闭 Agent 控制的负向入口。
         disabled = by_name["agent-control-disabled"]
         # 负向入口必须排除 Agent 独占的 JSON 直接依赖。
@@ -239,11 +255,11 @@ class ResolvedGraphTests(unittest.TestCase):
     def test_serde_json_is_scoped_to_settings_and_agent_control(self) -> None:
         # 读取当前仓库的全部场景定义。
         scenarios = measure_usage_build.scenario_specs(measure_usage_build.project_root())
-        # 记录当前允许解析 serde_json 的两个能力入口。
-        json_scenarios = {"settings-serde", "agent-control"}
+        # 记录当前允许解析 serde_json 的三个能力入口。
+        json_scenarios = {"settings-serde", "agent-control", "agent-control-linux"}
         # 逐场景核对共享 package 的正反断言。
         for scenario in scenarios:
-            # 两个显式能力入口必须要求 JSON package 存在。
+            # 三个显式能力入口必须要求 JSON package 存在。
             if scenario.name in json_scenarios:
                 # 共享 package 必须进入对应正向解析图。
                 self.assertIn("serde_json", scenario.required_packages)
@@ -318,6 +334,103 @@ class ResolvedGraphTests(unittest.TestCase):
         self.assertIn("--target x86_64-unknown-linux-gnu", check_step["command"])
         # 跨目标检查场景不得伪造 release 构建步骤。
         self.assertNotIn("build-release", {step["name"] for step in record["steps"]})
+
+    # 确认 Linux Agent release 必须绑定并探针显式交叉 linker。
+    def test_agent_control_linux_release_records_explicit_linker(self) -> None:
+        # 读取仓库根目录和完整场景矩阵。
+        root = measure_usage_build.project_root()
+        # 按稳定名称索引场景。
+        by_name = {
+            scenario.name: scenario
+            for scenario in measure_usage_build.scenario_specs(root)
+        }
+        # 读取 Linux Agent release 场景。
+        linux = by_name["agent-control-linux"]
+        # 计算 Cargo 为 Linux GNU 目标读取的标准 linker 环境变量名。
+        linker_environment = measure_usage_build.target_linker_environment_name(linux.target)
+        # 环境变量名必须符合 Cargo 的全大写下划线约定。
+        self.assertEqual(
+            linker_environment,
+            "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER",
+        )
+        # 用空覆盖模拟 Windows 交叉宿主缺少 Linux linker 的真实配置。
+        with patch.dict(
+            measure_usage_build.os.environ,
+            {linker_environment: ""},
+            clear=False,
+        ):
+            # 禁用清理并执行非 dry-run；门禁必须在任何 Cargo 调用前失败。
+            missing_linker_record = measure_usage_build.measure_scenario(
+                # 传入 Linux Agent release 场景。
+                linux,
+                # 传入仓库根目录。
+                root,
+                # 使用不会被执行的占位 Cargo 命令。
+                "cargo-must-not-run",
+                # 提供不同的 Windows host，触发跨目标 linker 门禁。
+                "x86_64-pc-windows-gnu",
+                # locked 参数在前置门禁失败前不会进入命令。
+                True,
+                # 跳过前置清理，确保测试没有外部副作用。
+                False,
+                # 跳过后置清理，确保测试没有外部副作用。
+                False,
+                # 使用真实模式验证缺失 linker 会被拒绝。
+                False,
+            )
+        # 缺少 linker 的跨目标 release 必须保持失败状态。
+        self.assertEqual(missing_linker_record["status"], "failed")
+        # 失败原因必须指出调用方需要设置的标准环境变量。
+        self.assertIn(linker_environment, missing_linker_record["error"])
+        # 前置 linker 门禁不得执行任何 Cargo 或构建步骤。
+        self.assertEqual(missing_linker_record["steps"], [])
+        # 临时注入稳定占位 linker，验证证据记录而不执行外部工具。
+        with patch.dict(
+            measure_usage_build.os.environ,
+            {linker_environment: "zigcc"},
+            clear=False,
+        ):
+            # 以 dry-run 生成跨目标 release 命令与 linker 探针。
+            record = measure_usage_build.measure_scenario(
+                # 传入 Linux Agent release 场景。
+                linux,
+                # 传入仓库根目录。
+                root,
+                # 使用占位 Cargo 命令。
+                "cargo",
+                # 提供不同的 Windows host，触发跨目标 linker 门禁。
+                "x86_64-pc-windows-gnu",
+                # 要求命令包含 locked 门禁。
+                True,
+                # 跳过前置清理以缩短命令列表。
+                False,
+                # 跳过后置清理以缩短命令列表。
+                False,
+                # 启用 dry-run，禁止外部副作用。
+                True,
+            )
+        # 报告必须表达最终 release 构建语义。
+        self.assertEqual(record["expected_outcome"], "build-success")
+        # 报告必须保存显式 linker 环境变量和值。
+        self.assertEqual(
+            record["cross_target_linker"]["environment"], linker_environment
+        )
+        # 报告必须保存本轮实际使用的 linker 覆盖。
+        self.assertEqual(record["cross_target_linker"]["override"], "zigcc")
+        # dry-run 也必须生成可复核的 linker 版本探针命令。
+        linker_step = next(
+            step for step in record["steps"] if step["name"] == "linker-probe"
+        )
+        # 探针必须调用同一个显式 linker。
+        self.assertEqual(linker_step["command"], "zigcc --version")
+        # 找到 Linux release 构建步骤。
+        build_step = next(
+            step for step in record["steps"] if step["name"] == "build-release"
+        )
+        # 最终构建必须绑定 Linux GNU target。
+        self.assertIn("--target x86_64-unknown-linux-gnu", build_step["command"])
+        # Linux Agent release 不得退化为正向 check。
+        self.assertNotIn("check", {step["name"] for step in record["steps"]})
 
     # 确认 rustc 详细版本输出能稳定提取 host target。
     def test_parse_rustc_host_target(self) -> None:

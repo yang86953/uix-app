@@ -100,6 +100,14 @@ def rustc_host_target(rustc: str, root: Path) -> str | None:
     return parse_rustc_host_target(completed.stdout)
 
 
+# 返回 Cargo 为指定 target 读取的 linker 环境变量名。
+def target_linker_environment_name(target: str) -> str:
+    # 将 target triple 转为 Cargo 约定的全大写下划线形式。
+    normalized_target = target.upper().replace("-", "_")
+    # 拼接 Cargo 的目标 linker 环境变量名。
+    return f"CARGO_TARGET_{normalized_target}_LINKER"
+
+
 # 执行一条命令并返回可序列化的摘要。
 def run_command(command: list[str], cwd: Path, dry_run: bool) -> dict[str, Any]:
     # 生成便于人工复核的命令文本。
@@ -359,6 +367,22 @@ def measure_scenario(
 ) -> dict[str, Any]:
     # 场景未覆盖 target 时使用当前 rustc host triple。
     effective_target = scenario.target or host_target
+    # 只把跨宿主的正向 release 识别为必须显式绑定 linker 的场景。
+    cross_target_release = (
+        # compile-fail 场景只执行 cargo check，不需要最终 linker。
+        not scenario.expected_compile_failure
+        # check-only 场景不会生成最终可执行文件。
+        and not scenario.check_only
+        # host 与目标不同才需要记录额外交叉 linker。
+        and effective_target != host_target
+    # 结束跨目标 release 判定。
+    )
+    # 计算 Cargo 为当前目标读取的 linker 环境变量名。
+    linker_environment = target_linker_environment_name(effective_target)
+    # 读取显式 linker 覆盖；空字符串按未配置处理。
+    linker_override = os.environ.get(linker_environment)
+    # 去掉意外的两端空白，保留可直接执行的 linker 路径。
+    linker_override = linker_override.strip() if linker_override else None
     # 初始化 fixture 报告。
     record: dict[str, Any] = {
         "name": scenario.name,
@@ -417,6 +441,21 @@ def measure_scenario(
             "required_fragments": list(scenario.expected_error_fragments),
             "missing_fragments": [],
         },
+        # 跨目标 release 必须记录显式 linker 与版本探针，避免遗漏关键工具链。
+        "cross_target_linker": (
+            # 只有真正跨宿主链接的场景需要该证据对象。
+            {
+                # 保存 Cargo 读取的环境变量名，便于复现实验。
+                "environment": linker_environment,
+                # 保存本轮实际传给 Cargo 的 linker 覆盖。
+                "override": linker_override,
+                # 版本探针在执行阶段填充。
+                "probe": None,
+            }
+            # host release 与 check 场景不虚构额外 linker 证据。
+            if cross_target_release
+            else None
+        ),
         "release_artifact": None,
     }
     # 预先准备所有 Cargo 子命令共用的清单参数。
@@ -439,6 +478,28 @@ def measure_scenario(
             if clean_result["status"] == "failed":
                 # 将命令错误交给统一异常记录逻辑。
                 raise RuntimeError("cargo clean（前置）失败")
+        # 跨目标 release 必须先证明显式 linker 可执行并记录其版本。
+        if cross_target_release:
+            # 真实采集缺少 linker 覆盖时立即失败，不浪费时间等待最终链接报错。
+            if linker_override is None and not dry_run:
+                # 给出 Cargo 标准环境变量名，便于调用方补齐工具链。
+                raise RuntimeError(f"跨目标 release 缺少 linker：请设置 {linker_environment}")
+            # 已配置 linker 时执行只读版本探针并写入结构化证据。
+            if linker_override is not None:
+                # 调用 linker 的标准版本参数，不创建构建产物。
+                linker_probe = run_command([linker_override, "--version"], root, dry_run)
+                # 保存探针摘要到跨目标 linker 证据对象。
+                record["cross_target_linker"]["probe"] = public_result(linker_probe)
+                # 同时加入步骤列表，保留统一的执行顺序与状态审计。
+                record["steps"].append(
+                    # 标记该步骤只负责 linker 版本探针。
+                    {"name": "linker-probe", **public_result(linker_probe)}
+                # 结束 linker 探针步骤记录。
+                )
+                # linker 探针失败时禁止继续生成 release 证据。
+                if linker_probe["status"] == "failed":
+                    # 返回明确错误，避免后续 Cargo 失败掩盖工具不可执行。
+                    raise RuntimeError("跨目标 release linker 版本探针失败")
         # 解析完整依赖图和锁定 package 信息。
         # 组装绑定 target 过滤与 feature 集的 metadata 命令。
         metadata_command = [cargo, "metadata", *manifest_args, "--format-version", "1", *metadata_target_args, *scenario.feature_args, *locked_suffix]
@@ -705,8 +766,8 @@ def main() -> int:
         scenarios = [scenario for scenario in scenarios if scenario.name == args.scenario]
     # 初始化总报告并绑定源码提交。
     report: dict[str, Any] = {
-        # schema v5 增加既有 package 上精确 feature 的正反解析断言。
-        "schema_version": 5,
+        # schema v6 增加跨目标 release linker 覆盖与版本探针证据。
+        "schema_version": 6,
         "commit": current_commit(root),
         "locked": args.locked,
         "dry_run": args.dry_run,

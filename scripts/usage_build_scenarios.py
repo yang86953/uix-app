@@ -265,6 +265,54 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 共享 JSON package 不得掩盖设置或富文本 feature 的误入。
             forbidden_uix_features=("rich-text", "settings-serde"),
         ),
+        # 复用 Agent 使用方入口建立 Linux GNU 最终链接证据。
+        Scenario(
+            # 使用稳定名称区分同一 fixture 的 Linux release 结果。
+            name="agent-control-linux",
+            # 复用 Agent 控制正向 fixture，避免公开 API 差异污染目标对照。
+            manifest=root / "fixtures" / "usage-build" / "agent-control" / "Cargo.toml",
+            # 说明该入口覆盖 Linux Agent capability 与最终 ELF 链接。
+            description="只打开 agent-control capability 的 Linux GNU release 入口",
+            # 显式覆盖宿主目标，让 metadata 与 release 构建绑定同一 Linux triple。
+            target="x86_64-unknown-linux-gnu",
+            # Linux Agent 必须同时解析 Unix 平台、Wayland 基础与共享 JSON package。
+            required_packages=("libc", "serde_json", "wayland-client"),
+            # Linux Agent 不得合并其他 capability、Windows 平台依赖或死依赖。
+            forbidden_packages=(
+                # Vulkan backend 未启用。
+                "ash",
+                # 未启用图片能力时不得恢复 bytemuck 直接边。
+                "bytemuck",
+                # OpenGL ES backend 未启用。
+                "glow",
+                # 图片编解码能力未启用。
+                "image",
+                # Linux EGL loader 只应随 OpenGL ES backend 启用。
+                "khronos-egl",
+                # 二维码能力未启用。
+                "qrcode",
+                # 已删除的窗口句柄死依赖不得回归。
+                "raw-window-handle",
+                # 表单正则能力未启用。
+                "regex",
+                # 设置序列化独占的 serde derive package 不得被共享 JSON 掩盖。
+                "serde",
+                # 演示日志订阅能力未启用。
+                "tracing-subscriber",
+                # Windows API package 不得进入 Linux 解析图。
+                "windows",
+                # Windows 宏展开根依赖不得进入 Linux 解析图。
+                "windows-core",
+            # 结束 Linux Agent 禁用依赖集合。
+            ),
+            # Linux Agent 不得合并 D3D11 的 Win32 API feature。
+            forbidden_package_features=D3D11_WINDOWS_PACKAGE_FEATURES,
+            # metadata 必须证明 uix 实际选择 Agent 控制 feature。
+            required_uix_features=("agent-control",),
+            # Linux Agent 单能力入口不得合并 backend、富文本或设置能力。
+            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "rich-text", "settings-serde"),
+        # 结束 Linux Agent release 场景定义。
+        ),
         # 图片编解码单能力入口只打开对应文件格式 capability。
         # 创建图片编解码正向使用方场景。
         Scenario(
