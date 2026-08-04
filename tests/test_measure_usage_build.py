@@ -44,6 +44,25 @@ class ResolvedGraphTests(unittest.TestCase):
         # 结果必须包含 resolve 节点的 selected，且不猜测未激活 feature。
         self.assertEqual(features, {"selected"})
 
+    # 确认 package feature 正反断言只观察实际 resolve feature。
+    def test_package_feature_assertions_use_selected_resolve_features(self) -> None:
+        # 构造一个存在 feature 与一个不存在 feature 的断言集合。
+        assertions = (("root", "selected"), ("root", "missing"))
+        # 必需断言只应报告没有被 Cargo 选择的 feature。
+        self.assertEqual(
+            measure_usage_build.missing_required_package_features(
+                self.metadata(), assertions
+            ),
+            ["root/missing"],
+        )
+        # 禁用断言只应报告真实进入解析图的 feature。
+        self.assertEqual(
+            measure_usage_build.present_forbidden_package_features(
+                self.metadata(), assertions
+            ),
+            ["root/selected"],
+        )
+
     # 确认结构化摘要使用实际依赖边与启用 feature。
     def test_resolved_graph_summary_uses_resolve_edges(self) -> None:
         # 生成稳定排序的解析图摘要。
@@ -72,6 +91,8 @@ class ResolvedGraphTests(unittest.TestCase):
     def test_demo_logging_scenarios_bind_root_binary_and_feature_graph(self) -> None:
         # 读取当前仓库的全部场景定义。
         scenarios = measure_usage_build.scenario_specs(measure_usage_build.project_root())
+        # 文档声明的 schema v5 矩阵必须保持二十个独立执行场景。
+        self.assertEqual(len(scenarios), 20)
         # 按稳定名称索引场景。
         by_name = {scenario.name: scenario for scenario in scenarios}
         # 读取关闭演示日志的根二进制场景。
@@ -84,18 +105,73 @@ class ResolvedGraphTests(unittest.TestCase):
         self.assertIn("tracing-subscriber", disabled.forbidden_packages)
         # 禁用场景仍必须要求演示使用的三项能力依赖存在。
         self.assertEqual(disabled.required_packages, ("image", "qrcode", "regex"))
-        # 演示基础组合必须显式选择无专属 package 的富文本 capability。
-        self.assertEqual(disabled.required_uix_features, ("rich-text",))
+        # 演示基础组合必须显式选择 D3D11 与无专属 package 的富文本 capability。
+        self.assertEqual(disabled.required_uix_features, ("d3d11", "rich-text"))
         # 读取只启用演示日志的根二进制场景。
         enabled = by_name["demo-logging"]
         # 启用场景必须在同一基础组合上增加 demo-logging capability。
         self.assertEqual(enabled.feature_args, ("--no-default-features", "--features", measure_usage_build.DEMO_LOGGING_FEATURES))
         # 启用场景必须要求基础依赖与日志订阅器共同进入解析图。
         self.assertEqual(enabled.required_packages, ("image", "qrcode", "regex", "tracing-subscriber"))
-        # 日志对照不得改变演示所需的富文本 capability。
-        self.assertEqual(enabled.required_uix_features, ("rich-text",))
+        # 日志对照不得改变演示所需的 D3D11 与富文本 capability。
+        self.assertEqual(enabled.required_uix_features, ("d3d11", "rich-text"))
         # 两个根二进制场景必须使用同一根清单以便比较。
         self.assertEqual(enabled.manifest, disabled.manifest)
+
+    # 确认 D3D11 与 OpenGL ES 正反场景同时覆盖依赖、feature 与公开变体。
+    def test_graphics_backend_scenarios_bind_dependency_and_public_api_guards(self) -> None:
+        # 读取当前仓库的全部场景定义。
+        scenarios = measure_usage_build.scenario_specs(measure_usage_build.project_root())
+        # 按稳定名称索引场景。
+        by_name = {scenario.name: scenario for scenario in scenarios}
+        # 读取只启用 D3D11 的正向入口。
+        d3d11 = by_name["d3d11"]
+        # 正向入口必须要求 uix 实际选择 d3d11 feature。
+        self.assertEqual(d3d11.required_uix_features, ("d3d11",))
+        # D3D11 必须要求完整的 windows package API feature 集。
+        self.assertEqual(
+            d3d11.required_package_features,
+            measure_usage_build.D3D11_WINDOWS_PACKAGE_FEATURES,
+        )
+        # D3D11 单 backend 入口不得解析 OpenGL ES 的 glow package。
+        self.assertIn("glow", d3d11.forbidden_packages)
+        # 读取关闭 D3D11 的负向入口。
+        d3d11_disabled = by_name["d3d11-disabled"]
+        # 负向入口必须禁止全部 backend feature 意外进入解析图。
+        self.assertEqual(
+            d3d11_disabled.forbidden_uix_features,
+            measure_usage_build.GRAPHICS_BACKEND_FEATURES,
+        )
+        # D3D11 的 Win32 API feature 在禁用入口中必须全部缺席。
+        self.assertEqual(
+            d3d11_disabled.forbidden_package_features,
+            measure_usage_build.D3D11_WINDOWS_PACKAGE_FEATURES,
+        )
+        # 负向诊断必须绑定缺失变体与公开名称。
+        self.assertEqual(
+            d3d11_disabled.expected_error_fragments,
+            ("no variant", "Direct3D11"),
+        )
+        # 读取只启用 OpenGL ES 的正向入口。
+        opengles = by_name["opengles"]
+        # OpenGL ES 正向入口必须解析 glow package。
+        self.assertEqual(opengles.required_packages, ("glow",))
+        # metadata 必须证明 uix 实际选择 opengles feature。
+        self.assertEqual(opengles.required_uix_features, ("opengles",))
+        # OpenGL ES 不得合并 D3D11 的 windows API feature。
+        self.assertEqual(
+            opengles.forbidden_package_features,
+            measure_usage_build.D3D11_WINDOWS_PACKAGE_FEATURES,
+        )
+        # 读取关闭 OpenGL ES 的负向入口。
+        opengles_disabled = by_name["opengles-disabled"]
+        # 禁用入口必须阻止 glow package 误入解析图。
+        self.assertIn("glow", opengles_disabled.forbidden_packages)
+        # 负向诊断必须绑定缺失变体与公开名称。
+        self.assertEqual(
+            opengles_disabled.expected_error_fragments,
+            ("no variant", "OpenGlEs"),
+        )
 
     # 确认富文本正反场景同时覆盖 feature 解析与公开面收缩。
     def test_rich_text_scenarios_bind_feature_and_public_api_guards(self) -> None:

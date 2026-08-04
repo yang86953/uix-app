@@ -4,10 +4,20 @@
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GraphicsBackend {
+    /// 启用 `d3d11` feature 时可显式选择 Direct3D 11。
+    #[cfg(feature = "d3d11")]
     Direct3D11,
+    /// 启用 `vulkan` feature 时可显式选择 Vulkan。
+    #[cfg(feature = "vulkan")]
     Vulkan,
+    /// 启用 `d3d12` feature 时可显式选择 Direct3D 12。
+    #[cfg(feature = "d3d12")]
     Direct3D12,
+    /// 启用 `metal` feature 时可显式选择 Metal。
+    #[cfg(feature = "metal")]
     Metal,
+    /// 启用 `opengles` feature 时可显式选择 OpenGL ES。
+    #[cfg(feature = "opengles")]
     OpenGlEs,
 }
 
@@ -16,10 +26,20 @@ impl GraphicsBackend {
         use crate::native::present::GraphicsBackend as NativeGraphicsBackend;
 
         match self {
+            // 公开 D3D11 变体只在对应实现参与构建时存在。
+            #[cfg(feature = "d3d11")]
             Self::Direct3D11 => NativeGraphicsBackend::D3d11,
+            // 公开 Vulkan 变体只在对应实现参与构建时存在。
+            #[cfg(feature = "vulkan")]
             Self::Vulkan => NativeGraphicsBackend::Vulkan,
+            // 公开 D3D12 变体只在对应实现参与构建时存在。
+            #[cfg(feature = "d3d12")]
             Self::Direct3D12 => NativeGraphicsBackend::D3d12,
+            // 公开 Metal 变体只在对应实现参与构建时存在。
+            #[cfg(feature = "metal")]
             Self::Metal => NativeGraphicsBackend::Metal,
+            // 公开 OpenGL ES 变体只在对应实现参与构建时存在。
+            #[cfg(feature = "opengles")]
             Self::OpenGlEs => NativeGraphicsBackend::OpenGlEs,
         }
     }

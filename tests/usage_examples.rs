@@ -70,7 +70,8 @@ fn settings_typed_struct_anchor_compiles() {
     }
     let app = App::new()
         .settings("app.settings.json")
-        .graphics_backend(GraphicsBackend::Vulkan)
+        // 默认测试集合只启用 D3D11，因此显式选择同一公开 backend。
+        .graphics_backend(GraphicsBackend::Direct3D11)
         .on_start(|handle| {
             let Some(_settings) = handle.resolve::<SettingsService>() else {
                 return;
