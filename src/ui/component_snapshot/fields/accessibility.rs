@@ -3,13 +3,17 @@ use crate::ui::widgets::*;
 use super::super::accessibility::{
     anchor_accessibility, avatar_accessibility, back_top_accessibility, badge_accessibility,
     breadcrumb_accessibility, calendar_accessibility, card_accessibility, carousel_accessibility,
-    chart_accessibility, date_range_accessibility, dropdown_accessibility, first_non_empty,
-    image_accessibility, input_number_accessibility, menu_accessibility, pagination_accessibility,
+    date_range_accessibility, dropdown_accessibility, first_non_empty, image_accessibility,
+    input_number_accessibility, menu_accessibility, pagination_accessibility,
     popconfirm_accessibility, progress_accessibility, result_accessibility, select_accessibility,
     selectable_list_accessibility, splitter_accessibility, steps_accessibility, tabs_accessibility,
     tag_accessibility, theme_toggle_accessibility, timeline_accessibility, transfer_accessibility,
     tree_accessibility, typography_accessibility, upload_accessibility,
 };
+// 图表 capability 启用时才引入专属无障碍摘要辅助函数。
+#[cfg(feature = "charts")]
+// 该函数只处理同步门控的四种图表快照变体。
+use super::super::accessibility::chart_accessibility;
 // 富文本 capability 启用时才引入专属无障碍转换函数。
 #[cfg(feature = "rich-text")]
 // 该函数只处理同步门控的 RichText 快照变体。

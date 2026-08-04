@@ -1,7 +1,6 @@
 use crate::ui::widgets::{
     AnchorItem, BadgeStatus, BreadcrumbItem, Date, MenuItem, OptGroup, ProgressMode, ResultType,
-    SelectableItem, Step, Tab, TimelineItem, TypographyType, UploadFile,
-    UploadStatus,
+    SelectableItem, Step, Tab, TimelineItem, TypographyType, UploadFile, UploadStatus,
 };
 // 富文本 capability 启用时才引入其内容模型。
 #[cfg(feature = "rich-text")]
@@ -78,6 +77,8 @@ pub(super) fn tree_accessibility(
     })
 }
 
+// 图表 capability 关闭时不编译专属无障碍摘要辅助函数。
+#[cfg(feature = "charts")]
 pub(super) fn chart_accessibility<'a>(
     name: &'static str,
     values: impl Iterator<Item = (&'a str, f32)>,
