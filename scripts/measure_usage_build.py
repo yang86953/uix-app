@@ -58,21 +58,21 @@ def scenario_specs(root: Path) -> list[Scenario]:
             name="minimal",
             manifest=root / "fixtures" / "usage-build" / "minimal" / "Cargo.toml",
             description="关闭默认 feature 的最小使用方入口",
-            forbidden_packages=("qrcode",),
+            forbidden_packages=("qrcode", "regex"),
         ),
         # 默认入口覆盖当前 Windows 默认 D3D11 能力。
         Scenario(
             name="d3d11-default",
             manifest=root / "fixtures" / "usage-build" / "d3d11-default" / "Cargo.toml",
             description="使用当前默认 feature 的图形入口",
-            required_packages=("qrcode",),
+            required_packages=("qrcode", "regex"),
         ),
         # 单能力入口只打开设置序列化能力。
         Scenario(
             name="settings-serde",
             manifest=root / "fixtures" / "usage-build" / "settings-serde" / "Cargo.toml",
             description="只打开 settings-serde capability 的入口",
-            forbidden_packages=("qrcode",),
+            forbidden_packages=("qrcode", "regex"),
         ),
         # 二维码单能力入口只打开对应组件 capability。
         Scenario(
@@ -80,15 +80,33 @@ def scenario_specs(root: Path) -> list[Scenario]:
             manifest=root / "fixtures" / "usage-build" / "qrcode" / "Cargo.toml",
             description="只打开 qrcode capability 的入口",
             required_packages=("qrcode",),
+            forbidden_packages=("regex",),
+        ),
+        # 表单 pattern 单能力入口只打开正则规则 capability。
+        Scenario(
+            name="form-pattern",
+            manifest=root / "fixtures" / "usage-build" / "form-pattern" / "Cargo.toml",
+            description="只打开 form-pattern capability 的入口",
+            required_packages=("regex",),
+            forbidden_packages=("qrcode",),
         ),
         # 二维码禁用入口必须证明公开类型无法绕过 capability。
         Scenario(
             name="qrcode-disabled",
             manifest=root / "fixtures" / "usage-build" / "qrcode-disabled" / "Cargo.toml",
             description="关闭 qrcode capability 的公开入口 compile-fail",
-            forbidden_packages=("qrcode",),
+            forbidden_packages=("qrcode", "regex"),
             expected_compile_failure=True,
             expected_error_fragments=("unresolved import", "QRCode"),
+        ),
+        # 表单 pattern 禁用入口必须证明 builder 方法无法绕过 capability。
+        Scenario(
+            name="form-pattern-disabled",
+            manifest=root / "fixtures" / "usage-build" / "form-pattern-disabled" / "Cargo.toml",
+            description="关闭 form-pattern capability 的公开方法 compile-fail",
+            forbidden_packages=("qrcode", "regex"),
+            expected_compile_failure=True,
+            expected_error_fragments=("no method named", "validate_pattern"),
         ),
     ]
 

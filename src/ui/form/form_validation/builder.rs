@@ -89,6 +89,9 @@ impl FormBuilder {
         self
     }
 
+    // 关闭表单 pattern capability 时同步收缩公开 builder 方法。
+    #[cfg(feature = "form-pattern")]
+    // 启用后把正则表达式预编译为字段规则。
     pub fn validate_pattern(
         mut self,
         pattern: impl AsRef<str>,
@@ -575,10 +578,16 @@ fn validate_field(field: &FormField, current: &StoredValue, values: &Values) -> 
             {
                 Some(message.clone())
             }
+            // 关闭表单 pattern capability 时不生成无效正则分支。
+            #[cfg(feature = "form-pattern")]
+            // 无效表达式稳定返回调用方提供的错误文案。
             FieldRule::Pattern {
                 matcher: None,
                 message,
             } => Some(message.clone()),
+            // 关闭表单 pattern capability 时不生成 matcher 执行分支。
+            #[cfg(feature = "form-pattern")]
+            // 非空文本不匹配时返回调用方提供的错误文案。
             FieldRule::Pattern {
                 matcher: Some(matcher),
                 message,
