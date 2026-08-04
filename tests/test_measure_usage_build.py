@@ -121,6 +121,61 @@ class ResolvedGraphTests(unittest.TestCase):
             ("unresolved import", "RichText", "parse_rich_text"),
         )
 
+    # 确认 Agent 与设置能力共享 JSON package 时仍保持 feature 与公开面隔离。
+    def test_agent_control_scenarios_bind_shared_json_and_public_api_guards(self) -> None:
+        # 读取当前仓库的全部场景定义。
+        scenarios = measure_usage_build.scenario_specs(measure_usage_build.project_root())
+        # 按稳定名称索引场景。
+        by_name = {scenario.name: scenario for scenario in scenarios}
+        # 读取设置序列化单能力入口。
+        settings = by_name["settings-serde"]
+        # 设置入口必须解析 serde 与共享 serde_json package。
+        self.assertEqual(settings.required_packages, ("serde", "serde_json"))
+        # 设置入口必须只选择自己的 uix feature。
+        self.assertEqual(settings.required_uix_features, ("settings-serde",))
+        # 共享 package 不得使 Agent feature 意外进入解析图。
+        self.assertIn("agent-control", settings.forbidden_uix_features)
+        # 读取只启用 Agent 控制的正向入口。
+        enabled = by_name["agent-control"]
+        # Agent 入口必须解析共享 JSON package。
+        self.assertEqual(enabled.required_packages, ("serde_json",))
+        # Agent 不需要设置能力独占的 serde derive 直接边。
+        self.assertIn("serde", enabled.forbidden_packages)
+        # metadata 必须证明 Agent feature 已启用。
+        self.assertEqual(enabled.required_uix_features, ("agent-control",))
+        # Agent 入口不得合并设置序列化 feature。
+        self.assertIn("settings-serde", enabled.forbidden_uix_features)
+        # 读取关闭 Agent 控制的负向入口。
+        disabled = by_name["agent-control-disabled"]
+        # 负向入口必须排除 Agent 独占的 JSON 直接依赖。
+        self.assertIn("serde_json", disabled.forbidden_packages)
+        # 负向入口必须禁止 Agent feature 意外进入解析图。
+        self.assertEqual(disabled.forbidden_uix_features, ("agent-control",))
+        # 负向入口必须以公开 builder 方法不可用结束。
+        self.assertTrue(disabled.expected_compile_failure)
+        # 诊断必须绑定缺失方法和稳定公开方法名。
+        self.assertEqual(
+            disabled.expected_error_fragments,
+            ("no method named", "enable_agent_control"),
+        )
+
+    # 确认共享 JSON package 只进入显式启用设置或 Agent 的场景。
+    def test_serde_json_is_scoped_to_settings_and_agent_control(self) -> None:
+        # 读取当前仓库的全部场景定义。
+        scenarios = measure_usage_build.scenario_specs(measure_usage_build.project_root())
+        # 记录当前允许解析 serde_json 的两个能力入口。
+        json_scenarios = {"settings-serde", "agent-control"}
+        # 逐场景核对共享 package 的正反断言。
+        for scenario in scenarios:
+            # 两个显式能力入口必须要求 JSON package 存在。
+            if scenario.name in json_scenarios:
+                # 共享 package 必须进入对应正向解析图。
+                self.assertIn("serde_json", scenario.required_packages)
+                # 当前场景已经完成正向分支核对。
+                continue
+            # 其余场景必须防止 Agent 或设置能力依赖误入。
+            self.assertIn("serde_json", scenario.forbidden_packages)
+
     # 确认删除的 bytemuck 直接边只在未启用图片能力的场景中执行 package 缺席断言。
     def test_bytemuck_is_forbidden_without_image_codecs(self) -> None:
         # 读取当前仓库的全部场景定义。
