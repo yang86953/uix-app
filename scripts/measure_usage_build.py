@@ -255,8 +255,8 @@ def measure_scenario(
         "direct_dependencies": [],
         "release_artifact": None,
     }
-    # 预先准备 metadata 和 build 的共同参数。
-    base_command = [cargo, "--manifest-path", str(scenario.manifest)]
+    # 预先准备所有 Cargo 子命令共用的清单参数。
+    manifest_args = ["--manifest-path", str(scenario.manifest)]
     # 追加 locked 参数，确保清单锁文件参与解析。
     locked_suffix = ["--locked"] if locked else []
     # 无论前置步骤是否失败，都尝试执行收尾清理。
@@ -264,7 +264,7 @@ def measure_scenario(
         # 默认先清理 fixture 的构建目录。
         if clean_before:
             # 执行 cargo clean，避免复用上一个 fixture 的 target。
-            clean_result = run_command(base_command + ["clean"], root, dry_run)
+            clean_result = run_command([cargo, "clean", *manifest_args], root, dry_run)
             # 记录前置清理结果。
             record["steps"].append({"name": "clean-before", **public_result(clean_result)})
             # 真实清理失败时停止当前 fixture。
@@ -273,7 +273,7 @@ def measure_scenario(
                 raise RuntimeError("cargo clean（前置）失败")
         # 解析完整依赖图和锁定 package 信息。
         metadata_result = run_command(
-            base_command + ["metadata", "--format-version", "1"] + locked_suffix,
+            [cargo, "metadata", *manifest_args, "--format-version", "1"] + locked_suffix,
             root,
             dry_run,
         )
@@ -298,7 +298,7 @@ def measure_scenario(
             record["resolved_graph"] = resolved_graph_summary(metadata)
         # 记录 release 构建开始时间。
         build_result = run_command(
-            base_command + ["build", "--release"] + locked_suffix,
+            [cargo, "build", *manifest_args, "--release"] + locked_suffix,
             root,
             dry_run,
         )
@@ -321,7 +321,7 @@ def measure_scenario(
         # 默认在每个 fixture 完成后清理构建产物。
         if clean_after:
             # 执行 cargo clean，确保报告采集结束后没有 target 残留。
-            clean_result = run_command(base_command + ["clean"], root, dry_run)
+            clean_result = run_command([cargo, "clean", *manifest_args], root, dry_run)
             # 记录后置清理结果。
             record["steps"].append({"name": "clean-after", **public_result(clean_result)})
             # 清理失败时覆盖成功状态并记录原因。
