@@ -35,6 +35,10 @@ except ModuleNotFoundError:
 DEMO_BASE_FEATURES = usage_build_scenarios.DEMO_BASE_FEATURES
 # 重导出演示日志 feature 常量。
 DEMO_LOGGING_FEATURES = usage_build_scenarios.DEMO_LOGGING_FEATURES
+# 重导出图形 backend feature 集合，供矩阵测试复核。
+GRAPHICS_BACKEND_FEATURES = usage_build_scenarios.GRAPHICS_BACKEND_FEATURES
+# 重导出 D3D11 的 windows package feature 集合。
+D3D11_WINDOWS_PACKAGE_FEATURES = usage_build_scenarios.D3D11_WINDOWS_PACKAGE_FEATURES
 # 重导出场景数据类型。
 Scenario = usage_build_scenarios.Scenario
 # 重导出仓库根目录解析函数。
@@ -240,6 +244,36 @@ def resolved_package_features(metadata: dict[str, Any], package_name: str) -> se
     return features
 
 
+# 把 package 与 feature 对转换为稳定、可读的报告标签。
+def package_feature_labels(assertions: tuple[tuple[str, str], ...]) -> list[str]:
+    # 使用 Cargo 常见的 package/feature 形式并保持声明顺序。
+    return [f"{package}/{feature}" for package, feature in assertions]
+
+
+# 返回场景要求但未进入解析图的 package feature 标签。
+def missing_required_package_features(
+    metadata: dict[str, Any], assertions: tuple[tuple[str, str], ...]
+) -> list[str]:
+    # 逐 package 读取真实 resolve feature，缺少 package 时同样判定为缺失。
+    return sorted(
+        f"{package}/{feature}"
+        for package, feature in assertions
+        if feature not in resolved_package_features(metadata, package)
+    )
+
+
+# 返回场景禁止却进入解析图的 package feature 标签。
+def present_forbidden_package_features(
+    metadata: dict[str, Any], assertions: tuple[tuple[str, str], ...]
+) -> list[str]:
+    # 逐 package 读取真实 resolve feature，只报告确实被 Cargo 选择的误入项。
+    return sorted(
+        f"{package}/{feature}"
+        for package, feature in assertions
+        if feature in resolved_package_features(metadata, package)
+    )
+
+
 # 从 metadata 中提取可复核的解析依赖图摘要。
 def resolved_graph_summary(metadata: dict[str, Any]) -> dict[str, Any]:
     # 将实际 resolve 节点按 package 标识建立索引。
@@ -350,6 +384,17 @@ def measure_scenario(
             "missing_required": [],
             "present_forbidden": [],
         },
+        # 记录既有 package 上精确 Cargo feature 的正反断言。
+        "package_feature_assertions": {
+            # 保存场景要求启用的 package feature。
+            "required": package_feature_labels(scenario.required_package_features),
+            # 保存场景要求关闭的 package feature。
+            "forbidden": package_feature_labels(scenario.forbidden_package_features),
+            # 初始化缺失 package feature 列表。
+            "missing_required": [],
+            # 初始化误入 package feature 列表。
+            "present_forbidden": [],
+        },
         # 记录无专属 package capability 的 Cargo feature 正反断言。
         "uix_feature_assertions": {
             # 保存场景要求启用的 uix feature。
@@ -440,6 +485,36 @@ def measure_scenario(
                 # 返回同时包含缺失与误入依赖的明确错误。
                 raise RuntimeError(
                     f"依赖图断言失败：缺少 {missing_required}，意外出现 {present_forbidden}"
+                )
+            # 找出场景声明但未被 Cargo 选择的必需 package feature。
+            missing_required_package_feature_labels = missing_required_package_features(
+                metadata, scenario.required_package_features
+            )
+            # 找出场景要求关闭却意外被 Cargo 选择的 package feature。
+            present_forbidden_package_feature_labels = present_forbidden_package_features(
+                metadata, scenario.forbidden_package_features
+            )
+            # 把 package feature 断言写入结构化报告。
+            record["package_feature_assertions"] = {
+                # 保存要求启用的 package feature。
+                "required": package_feature_labels(scenario.required_package_features),
+                # 保存要求关闭的 package feature。
+                "forbidden": package_feature_labels(scenario.forbidden_package_features),
+                # 保存实际缺失的 package feature。
+                "missing_required": missing_required_package_feature_labels,
+                # 保存实际误入的 package feature。
+                "present_forbidden": present_forbidden_package_feature_labels,
+            }
+            # package feature 断言失败时禁止继续生成可误读的通过报告。
+            if (
+                missing_required_package_feature_labels
+                or present_forbidden_package_feature_labels
+            ):
+                # 返回同时包含缺失与误入 package feature 的明确错误。
+                raise RuntimeError(
+                    "package feature 断言失败："
+                    f"缺少 {missing_required_package_feature_labels}，"
+                    f"意外出现 {present_forbidden_package_feature_labels}"
                 )
             # 提取 uix package 在当前场景中实际启用的 feature。
             resolved_uix_features = resolved_package_features(metadata, "uix")
@@ -630,8 +705,8 @@ def main() -> int:
         scenarios = [scenario for scenario in scenarios if scenario.name == args.scenario]
     # 初始化总报告并绑定源码提交。
     report: dict[str, Any] = {
-        # schema v4 增加 uix capability feature 的正反解析断言。
-        "schema_version": 4,
+        # schema v5 增加既有 package 上精确 feature 的正反解析断言。
+        "schema_version": 5,
         "commit": current_commit(root),
         "locked": args.locked,
         "dry_run": args.dry_run,

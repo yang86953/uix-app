@@ -12,6 +12,21 @@ from pathlib import Path
 DEMO_BASE_FEATURES = "d3d11,image-codecs,qrcode,form-pattern,rich-text"
 # 记录在相同演示能力组合上额外启用日志订阅的对照集合。
 DEMO_LOGGING_FEATURES = f"{DEMO_BASE_FEATURES},demo-logging"
+# 记录所有可独立选择的图形 backend feature，供最小与负向场景统一排除。
+GRAPHICS_BACKEND_FEATURES = ("d3d11", "d3d12", "metal", "opengles", "vulkan")
+# 记录 D3D11 启用后必须进入 windows package 的精确 API feature。
+D3D11_WINDOWS_PACKAGE_FEATURES = (
+    # Direct3D 基础类型属于 D3D11 实现依赖。
+    ("windows", "Win32_Graphics_Direct3D"),
+    # shader 编译 API 属于 D3D11 实现依赖。
+    ("windows", "Win32_Graphics_Direct3D_Fxc"),
+    # Direct3D 11 API 是该 backend 的核心依赖。
+    ("windows", "Win32_Graphics_Direct3D11"),
+    # DXGI factory 与 adapter API 属于 D3D11 实现依赖。
+    ("windows", "Win32_Graphics_Dxgi"),
+    # DXGI 公共格式与描述类型属于 D3D11 实现依赖。
+    ("windows", "Win32_Graphics_Dxgi_Common"),
+)
 
 
 # 描述一个独立的使用方基线入口。
@@ -35,6 +50,10 @@ class Scenario:
     required_packages: tuple[str, ...] = ()
     # 记录 resolved graph 中必须缺席的未选 package。
     forbidden_packages: tuple[str, ...] = ()
+    # 记录 resolved package 上必须启用的精确 feature。
+    required_package_features: tuple[tuple[str, str], ...] = ()
+    # 记录 resolved package 上必须关闭的精确 feature。
+    forbidden_package_features: tuple[tuple[str, str], ...] = ()
     # 记录 uix resolve 节点中必须启用的 capability feature。
     required_uix_features: tuple[str, ...] = ()
     # 记录 uix resolve 节点中必须关闭的 capability feature。
@@ -61,9 +80,11 @@ def scenario_specs(root: Path) -> list[Scenario]:
             manifest=root / "fixtures" / "usage-build" / "minimal" / "Cargo.toml",
             description="关闭默认 feature 的最小使用方入口",
             # 最小入口必须排除全部已独立裁剪的专属依赖及已删除的死依赖。
-            forbidden_packages=("bytemuck", "image", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
-            # 最小入口必须证明非默认源码与数据能力未被 Cargo 选择。
-            forbidden_uix_features=("agent-control", "rich-text", "settings-serde"),
+            forbidden_packages=("ash", "bytemuck", "glow", "image", "khronos-egl", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
+            # 最小入口必须排除 D3D11 向基础 windows package 合并的 API feature。
+            forbidden_package_features=D3D11_WINDOWS_PACKAGE_FEATURES,
+            # 最小入口必须证明 backend、非默认源码与数据能力未被 Cargo 选择。
+            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "agent-control", "rich-text", "settings-serde"),
         ),
         # 复用最小入口建立真实的非 Windows 编译轴。
         Scenario(
@@ -83,8 +104,14 @@ def scenario_specs(root: Path) -> list[Scenario]:
             forbidden_packages=(
                 # 图片编解码能力未启用。
                 "image",
+                # Vulkan backend 的专属依赖未启用。
+                "ash",
                 # 已删除的 bytemuck 直接边不得在未启用图片能力时回归。
                 "bytemuck",
+                # OpenGL ES backend 的跨平台入口依赖未启用。
+                "glow",
+                # Linux EGL loader 只应随 OpenGL ES backend 启用。
+                "khronos-egl",
                 # 二维码能力未启用。
                 "qrcode",
                 # 表单正则能力未启用。
@@ -101,8 +128,8 @@ def scenario_specs(root: Path) -> list[Scenario]:
                 "windows-core",
             # 结束 Linux 禁用依赖集合。
             ),
-            # Linux 最小入口同样不得选择 Agent、富文本与设置能力。
-            forbidden_uix_features=("agent-control", "rich-text", "settings-serde"),
+            # Linux 最小入口同样不得选择 backend、Agent、富文本与设置能力。
+            forbidden_uix_features=(*GRAPHICS_BACKEND_FEATURES, "agent-control", "rich-text", "settings-serde"),
         # 结束 Linux 最小场景定义。
         ),
         # 默认入口覆盖当前 Windows 默认 D3D11 能力。
@@ -112,12 +139,52 @@ def scenario_specs(root: Path) -> list[Scenario]:
             description="使用当前默认 feature 的图形入口",
             # 默认兼容集合必须包含三项能力依赖与演示日志订阅器。
             required_packages=("image", "qrcode", "regex", "tracing-subscriber"),
-            # 已删除的死依赖在默认入口中也必须保持缺席。
-            forbidden_packages=("raw-window-handle", "serde_json"),
-            # 默认兼容集合必须继续包含富文本公开能力。
-            required_uix_features=("rich-text",),
-            # Agent 控制不属于默认兼容集合。
-            forbidden_uix_features=("agent-control",),
+            # 未选 backend 与已删除的死依赖在默认入口中必须保持缺席。
+            forbidden_packages=("ash", "glow", "raw-window-handle", "serde_json"),
+            # 默认 D3D11 必须选择完整的 Win32 图形 API feature 集。
+            required_package_features=D3D11_WINDOWS_PACKAGE_FEATURES,
+            # 默认兼容集合必须继续包含 D3D11 与富文本公开能力。
+            required_uix_features=("d3d11", "rich-text"),
+            # Agent 控制与 OpenGL ES 不属于默认兼容集合。
+            forbidden_uix_features=("agent-control", "opengles"),
+        ),
+        # D3D11 单 backend 入口只打开对应实现与公开选择面。
+        Scenario(
+            # 记录报告中的稳定场景名称。
+            name="d3d11",
+            # 指向 D3D11 正向 fixture 清单。
+            manifest=root / "fixtures" / "usage-build" / "d3d11" / "Cargo.toml",
+            # 说明该入口只覆盖 D3D11 backend capability。
+            description="只打开 d3d11 backend capability 的入口",
+            # 单 backend 入口不得合并其他 backend 与使用方 capability 依赖。
+            forbidden_packages=("ash", "bytemuck", "glow", "image", "khronos-egl", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
+            # D3D11 必须精确选择其 Win32 API feature 集。
+            required_package_features=D3D11_WINDOWS_PACKAGE_FEATURES,
+            # metadata 必须证明 uix 实际选择了 D3D11 feature。
+            required_uix_features=("d3d11",),
+            # 单 backend 入口不得合并其他图形实现或源码能力。
+            forbidden_uix_features=("d3d12", "metal", "opengles", "vulkan", "agent-control", "rich-text", "settings-serde"),
+        # 结束 D3D11 正向场景定义。
+        ),
+        # OpenGL ES 单 backend 入口只打开对应实现与公开选择面。
+        Scenario(
+            # 记录报告中的稳定场景名称。
+            name="opengles",
+            # 指向 OpenGL ES 正向 fixture 清单。
+            manifest=root / "fixtures" / "usage-build" / "opengles" / "Cargo.toml",
+            # 说明该入口只覆盖 OpenGL ES backend capability。
+            description="只打开 opengles backend capability 的入口",
+            # OpenGL ES 跨平台实现必须解析 glow package。
+            required_packages=("glow",),
+            # 单 backend 入口不得合并其他 backend 与使用方 capability 依赖。
+            forbidden_packages=("ash", "bytemuck", "image", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
+            # OpenGL ES 入口不得合并 D3D11 的 Win32 API feature 集。
+            forbidden_package_features=D3D11_WINDOWS_PACKAGE_FEATURES,
+            # metadata 必须证明 uix 实际选择了 OpenGL ES feature。
+            required_uix_features=("opengles",),
+            # 单 backend 入口不得合并其他图形实现或源码能力。
+            forbidden_uix_features=("d3d11", "d3d12", "metal", "vulkan", "agent-control", "rich-text", "settings-serde"),
+        # 结束 OpenGL ES 正向场景定义。
         ),
         # 演示日志禁用入口直接构建根清单二进制。
         Scenario(
@@ -134,11 +201,13 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 禁用入口必须保留演示基础能力依赖。
             required_packages=("image", "qrcode", "regex"),
             # 禁用入口必须排除死依赖与日志订阅器。
-            forbidden_packages=("raw-window-handle", "serde_json", "tracing-subscriber"),
-            # 演示基础组合必须显式保留富文本组件能力。
-            required_uix_features=("rich-text",),
-            # 演示日志对照不得意外启用 Agent 控制。
-            forbidden_uix_features=("agent-control",),
+            forbidden_packages=("ash", "glow", "raw-window-handle", "serde_json", "tracing-subscriber"),
+            # 演示使用的 D3D11 必须选择完整 Win32 图形 API feature 集。
+            required_package_features=D3D11_WINDOWS_PACKAGE_FEATURES,
+            # 演示基础组合必须显式保留 D3D11 与富文本组件能力。
+            required_uix_features=("d3d11", "rich-text"),
+            # 演示日志对照不得意外启用 Agent 控制或 OpenGL ES。
+            forbidden_uix_features=("agent-control", "opengles"),
         # 结束演示日志禁用场景定义。
         ),
         # 演示日志单能力入口直接构建根清单二进制。
@@ -156,11 +225,13 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 启用入口必须解析演示基础依赖与日志订阅器。
             required_packages=("image", "qrcode", "regex", "tracing-subscriber"),
             # 演示日志入口不得重新引入已删除的死依赖。
-            forbidden_packages=("raw-window-handle", "serde_json"),
-            # 日志对照只能增加订阅器，富文本能力必须与禁用场景一致。
-            required_uix_features=("rich-text",),
-            # 日志启用场景同样不得合并 Agent 控制。
-            forbidden_uix_features=("agent-control",),
+            forbidden_packages=("ash", "glow", "raw-window-handle", "serde_json"),
+            # 日志启用入口必须保持相同的 D3D11 Win32 feature 集。
+            required_package_features=D3D11_WINDOWS_PACKAGE_FEATURES,
+            # 日志对照只能增加订阅器，D3D11 与富文本能力必须保持一致。
+            required_uix_features=("d3d11", "rich-text"),
+            # 日志启用场景同样不得合并 Agent 控制或 OpenGL ES。
+            forbidden_uix_features=("agent-control", "opengles"),
         # 结束演示日志正向场景定义。
         ),
         # 单能力入口只打开设置序列化能力。
@@ -240,6 +311,46 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # metadata 必须证明 uix 实际选择了富文本 feature。
             required_uix_features=("rich-text",),
         # 结束富文本正向场景定义。
+        ),
+        # D3D11 禁用入口必须证明公开 backend 变体无法绕过 feature。
+        Scenario(
+            # 记录报告中的稳定场景名称。
+            name="d3d11-disabled",
+            # 指向 D3D11 负向 fixture 清单。
+            manifest=root / "fixtures" / "usage-build" / "d3d11-disabled" / "Cargo.toml",
+            # 说明该入口必须在公开 backend 变体处编译失败。
+            description="关闭 d3d11 backend capability 的公开变体 compile-fail",
+            # 禁用入口必须排除 backend、使用方能力依赖与死依赖。
+            forbidden_packages=("ash", "bytemuck", "glow", "image", "khronos-egl", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
+            # D3D11 禁用入口不得选择任何对应 Win32 API feature。
+            forbidden_package_features=D3D11_WINDOWS_PACKAGE_FEATURES,
+            # metadata 必须证明全部 backend feature 都保持关闭。
+            forbidden_uix_features=GRAPHICS_BACKEND_FEATURES,
+            # 标记该场景预期编译失败。
+            expected_compile_failure=True,
+            # 绑定缺失枚举变体的稳定诊断与公开名称。
+            expected_error_fragments=("no variant", "Direct3D11"),
+        # 结束 D3D11 负向场景定义。
+        ),
+        # OpenGL ES 禁用入口必须证明公开 backend 变体无法绕过 feature。
+        Scenario(
+            # 记录报告中的稳定场景名称。
+            name="opengles-disabled",
+            # 指向 OpenGL ES 负向 fixture 清单。
+            manifest=root / "fixtures" / "usage-build" / "opengles-disabled" / "Cargo.toml",
+            # 说明该入口必须在公开 backend 变体处编译失败。
+            description="关闭 opengles backend capability 的公开变体 compile-fail",
+            # 禁用入口必须排除 backend、使用方能力依赖与死依赖。
+            forbidden_packages=("ash", "bytemuck", "glow", "image", "khronos-egl", "qrcode", "regex", "raw-window-handle", "serde_json", "tracing-subscriber"),
+            # OpenGL ES 禁用入口同样不得合并 D3D11 Win32 API feature。
+            forbidden_package_features=D3D11_WINDOWS_PACKAGE_FEATURES,
+            # metadata 必须证明全部 backend feature 都保持关闭。
+            forbidden_uix_features=GRAPHICS_BACKEND_FEATURES,
+            # 标记该场景预期编译失败。
+            expected_compile_failure=True,
+            # 绑定缺失枚举变体的稳定诊断与公开名称。
+            expected_error_fragments=("no variant", "OpenGlEs"),
+        # 结束 OpenGL ES 负向场景定义。
         ),
         # 二维码禁用入口必须证明公开类型无法绕过 capability。
         Scenario(
