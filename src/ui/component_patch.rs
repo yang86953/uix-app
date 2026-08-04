@@ -7,11 +7,15 @@ use crate::ui::widgets::{
     Container, Content, DatePicker, DateRangePicker, Descriptions, Divider, Drawer, Dropdown,
     Empty, FloatButton, FloatButtonGroup, Footer, Grid, Header, Icon, Image, ImageGroup, Input,
     InputNumber, Label, Layout, LineChart, List, Mentions, Menu, Message, Modal, NavItem,
-    Notification, Pagination, PieChart, Popconfirm, Popover, ProgressBar, QRCode, Radio,
+    Notification, Pagination, PieChart, Popconfirm, Popover, ProgressBar, Radio,
     RangeSlider, Rate, ResultView, RichText, ScrollView, Segmented, Select, SelectableList, Sider,
     Skeleton, Slider, Space, Spin, Splitter, Steps, Switch, Table, Tabs, Tag, ThemeToggle,
     TimePicker, Timeline, Tooltip, Transfer, Tree, TreeSelect, Typography, Upload, Watermark,
 };
+// 二维码 capability 启用时才引入对应组件类型。
+#[cfg(feature = "qrcode")]
+// 该导入仅供内建组件 patch 分派使用。
+use crate::ui::widgets::QRCode;
 use crate::ui::SnapshotFields;
 use crate::ui::WidgetComponent;
 
@@ -166,6 +170,9 @@ pub(crate) fn patch_builtin_widget(
     patch_as!(LineChart);
     patch_as!(PieChart);
     patch_as!(ChartPlaceholder);
+    // 关闭二维码 capability 时不生成类型化 patch 分支。
+    #[cfg(feature = "qrcode")]
+    // 启用后保持二维码组件的原位同步语义。
     patch_as!(QRCode);
     patch_as!(Watermark);
     patch_as!(Label);

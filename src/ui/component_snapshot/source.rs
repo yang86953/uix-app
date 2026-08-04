@@ -241,6 +241,9 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     if let Some(chart_placeholder) = component.downcast_ref::<ChartPlaceholder>() {
         return chart_placeholder.snapshot_fields();
     }
+    // 关闭二维码 capability 时不引用已裁剪的组件类型。
+    #[cfg(feature = "qrcode")]
+    // 启用后保留二维码组件的结构化快照分派。
     if let Some(qrcode) = component.downcast_ref::<QRCode>() {
         return qrcode.snapshot_fields();
     }

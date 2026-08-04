@@ -101,7 +101,7 @@ pub use crate::ui::{
     Message, MessageFacade, MessageItem, Modal, ModalBuilder, ModalContext, MoveDirection,
     NavGroup, NavItem, Navigation, Notification, NotificationItem, OptGroup, Pagination,
     PickerMode, PieChart, PieData, PointStyle, Popconfirm, PopconfirmPlacement, Popover,
-    PopoverPlacement, PopoverTrigger, PresetDate, ProgressBar, ProgressMode, ProgressType, QRCode,
+    PopoverPlacement, PopoverTrigger, PresetDate, ProgressBar, ProgressMode, ProgressType,
     RadarAxis, RadarChart, RadarData, RadarShape, Radio, RadioDirection, RangeSlider, Rate,
     ResultType, ResultView, RichText, RichTextSegment, RichTextStyle, RoseStyle, ScatterChart,
     ScatterData, ScrollView, Segmented, Select, SelectOptionGroup, SelectableItem, SelectableList,
@@ -114,6 +114,10 @@ pub use crate::ui::{
     Upload, UploadFile, UploadStatus, ValidateStatus, Values, VirtualScroll, VirtualScrollBuilder,
     WaterfallChart, WaterfallData, WaterfallKind, Watermark, Weekday,
 };
+// 二维码 capability 启用时才在 prelude 暴露组件类型。
+#[cfg(feature = "qrcode")]
+// 保持启用场景下既有的 QRCode 导入写法。
+pub use crate::ui::QRCode;
 
 // app
 

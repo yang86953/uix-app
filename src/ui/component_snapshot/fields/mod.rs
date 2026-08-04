@@ -621,6 +621,9 @@ pub enum SnapshotFields {
         subtitle: String,
         kind_name: &'static str,
     },
+    // 关闭二维码 capability 时同步收缩公开快照枚举。
+    #[cfg(feature = "qrcode")]
+    // 启用后保留二维码编码与矩阵状态字段。
     QRCode {
         value: String,
         size: f32,
