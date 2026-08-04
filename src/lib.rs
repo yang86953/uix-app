@@ -170,8 +170,11 @@
 //! use uix::app::window::window_driver::WindowDriver;
 //! ```
 
-// `windows::core::implement` 宏展开依赖 crate 根的 `windows_core`（无平台 cfg：依赖在各目标可用）。
+// 让派生宏从当前 crate 根通过 `uix` 稳定路径回指自身。
 extern crate self as uix;
+// Windows TSF 的 `#[implement]` 宏展开只在 Windows 目标解析此 crate。
+#[cfg(windows)]
+// 宏生成代码从 crate 根查找 `windows_core`。
 extern crate windows_core;
 
 // E-06：路由 key 派生宏（`#[derive(uix::Display)]` 免除手写 Display）。

@@ -86,6 +86,58 @@ class ResolvedGraphTests(unittest.TestCase):
         # 两个根二进制场景必须使用同一根清单以便比较。
         self.assertEqual(enabled.manifest, disabled.manifest)
 
+    # 确认 Linux 最小场景覆盖目标、依赖边界与正向检查命令。
+    def test_minimal_linux_scenario_binds_target_and_platform_graph(self) -> None:
+        # 读取当前仓库的全部场景定义。
+        scenarios = measure_usage_build.scenario_specs(measure_usage_build.project_root())
+        # 按稳定名称索引场景。
+        by_name = {scenario.name: scenario for scenario in scenarios}
+        # 读取显式绑定 Linux GNU 目标的最小场景。
+        linux = by_name["minimal-linux"]
+        # 场景必须覆盖宿主 target，形成真实非 Windows 轴。
+        self.assertEqual(linux.target, "x86_64-unknown-linux-gnu")
+        # Windows 宿主不具备 Linux 链接器时仍须执行真实类型检查。
+        self.assertTrue(linux.check_only)
+        # Linux 平台基础依赖必须进入目标过滤后的解析图。
+        self.assertEqual(linux.required_packages, ("libc", "wayland-client"))
+        # Windows API 与宏展开根依赖不得进入 Linux 解析图。
+        self.assertIn("windows", linux.forbidden_packages)
+        # 精确的 windows-core package 同样必须缺席。
+        self.assertIn("windows-core", linux.forbidden_packages)
+        # 以 dry-run 生成目标感知命令而不创建构建产物。
+        record = measure_usage_build.measure_scenario(
+            # 传入 Linux 最小场景。
+            linux,
+            # 传入仓库根目录。
+            measure_usage_build.project_root(),
+            # 使用占位 Cargo 命令。
+            "cargo",
+            # 提供不同的 Windows host，验证场景 target 确实覆盖它。
+            "x86_64-pc-windows-gnu",
+            # 要求命令包含 locked 门禁。
+            True,
+            # 跳过前置清理以缩短命令列表。
+            False,
+            # 跳过后置清理以缩短命令列表。
+            False,
+            # 启用 dry-run，禁止外部副作用。
+            True,
+        )
+        # 报告必须表达正向类型检查语义。
+        self.assertEqual(record["expected_outcome"], "check-success")
+        # 报告必须保存场景覆盖后的 Linux target。
+        self.assertEqual(record["target"], "x86_64-unknown-linux-gnu")
+        # 找到目标过滤的 metadata 命令。
+        metadata_step = next(step for step in record["steps"] if step["name"] == "metadata")
+        # 找到正向 cargo check 命令。
+        check_step = next(step for step in record["steps"] if step["name"] == "check")
+        # metadata 必须按 Linux target 过滤解析图。
+        self.assertIn("--filter-platform x86_64-unknown-linux-gnu", metadata_step["command"])
+        # 类型检查必须使用同一个 Linux target。
+        self.assertIn("--target x86_64-unknown-linux-gnu", check_step["command"])
+        # 跨目标检查场景不得伪造 release 构建步骤。
+        self.assertNotIn("build-release", {step["name"] for step in record["steps"]})
+
     # 确认 rustc 详细版本输出能稳定提取 host target。
     def test_parse_rustc_host_target(self) -> None:
         # 构造包含真实格式 host 字段的详细版本输出。

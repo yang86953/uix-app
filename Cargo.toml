@@ -37,12 +37,16 @@ serde_json = { version = "1", optional = true }
 tracing = "0.1"
 # 演示二进制的日志订阅器仅随对应 capability 进入使用方解析图。
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
-# `#[implement]` 宏在 crate 根解析 `windows_core`；无平台 cfg，避免违反 native-only cfg 边界。
-windows-core = "0.62.2"
 # Shared by Linux Wayland and Windows Win32 Vulkan adapters (feature = "vulkan").
 ash = { version = "0.38", default-features = false, features = ["loaded", "std"], optional = true }
 bytemuck = { version = "1.25", features = ["derive"] }
 
+# Windows TSF 的 `#[implement]` 宏只在 Windows target 需要根依赖。
+[target.'cfg(windows)'.dependencies]
+# 宏生成代码从 crate 根解析精确的 `windows_core` package。
+windows-core = "0.62.2"
+
+# Windows 原生后端按需启用 Win32 API 集合。
 [target.'cfg(windows)'.dependencies.windows]
 version = "0.62.2"
 features = [
