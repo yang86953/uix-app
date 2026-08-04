@@ -264,6 +264,9 @@ impl Image {
     }
 
     /// 设置图片文件路径（渲染时懒加载）。
+    // 图片编解码 capability 启用时才公开文件路径入口。
+    #[cfg(feature = "image-codecs")]
+    // 关闭 capability 后仍可通过 slot 使用框架内部 RGBA 位图。
     pub fn src(mut self, path: impl Into<String>) -> Self {
         self.src = path.into();
         self.cached.set(None);
@@ -707,6 +710,9 @@ impl Image {
             return None;
         }
 
+        // 图片编解码 capability 启用时才尝试文件路径加载。
+        #[cfg(feature = "image-codecs")]
+        // 关闭 capability 后不会保留运行时失败的路径型伪入口。
         if !self.src.is_empty() {
             return match ctx.image_service().load_from_path(&self.src) {
                 Ok(handle) => {

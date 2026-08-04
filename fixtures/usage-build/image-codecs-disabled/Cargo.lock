@@ -424,7 +424,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "uix-usage-qrcode-disabled"
+name = "uix-usage-image-codecs-disabled"
 version = "0.0.1"
 dependencies = [
  "uix",

@@ -26,7 +26,8 @@ ab_glyph = "0.2.32"
 memmap2 = "0.9"
 earcut = "0.4.10"
 glow = { version = "0.18.0", optional = true }
-image = { version = "0.25.6", default-features = false, features = ["png", "jpeg"] }
+# 图片文件编解码依赖仅随对应 capability 进入使用方解析图。
+image = { version = "0.25.6", default-features = false, features = ["png", "jpeg"], optional = true }
 # 二维码编码依赖仅随对应组件 capability 进入使用方解析图。
 qrcode = { version = "0.14.1", default-features = false, optional = true }
 # 表单正则 pattern 规则仅随对应 capability 进入使用方解析图。
@@ -75,8 +76,8 @@ wayland-protocols = { version = "=0.32.13", features = ["client", "unstable", "s
 khronos-egl = { version = "6", features = ["static", "no-pkg-config"], optional = true }
 
 [features]
-# 保持既有默认 API：生产 D3D11、二维码与表单 pattern 规则默认启用。
-default = ["d3d11", "qrcode", "form-pattern"]
+# 保持既有默认 API：生产 D3D11、图片编解码、二维码与表单 pattern 规则默认启用。
+default = ["d3d11", "image-codecs", "qrcode", "form-pattern"]
 d3d11 = [
     "windows/Win32_Graphics_Direct3D",
     "windows/Win32_Graphics_Direct3D_Fxc",
@@ -96,6 +97,8 @@ opengles = ["dep:glow", "dep:khronos-egl"]
 vulkan = ["dep:ash"]
 metal = []
 settings-serde = ["dep:serde", "dep:serde_json"]
+# 图片路径与字节解码入口独占 image 依赖，核心 RGBA 位图契约不受影响。
+image-codecs = ["dep:image"]
 # 二维码组件独占编码依赖，关闭后同时收缩模块与公开门面。
 qrcode = ["dep:qrcode"]
 # 表单正则 pattern 规则独占 regex 依赖，基础校验能力不受影响。
