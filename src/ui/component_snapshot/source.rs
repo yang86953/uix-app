@@ -229,15 +229,27 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     if let Some(scroll_view) = component.downcast_ref::<ScrollView>() {
         return scroll_view.snapshot_fields();
     }
+    // 图表 capability 启用时才引用柱状图组件类型。
+    #[cfg(feature = "charts")]
+    // 启用后保留柱状图结构化快照分派。
     if let Some(bar_chart) = component.downcast_ref::<BarChart>() {
         return bar_chart.snapshot_fields();
     }
+    // 图表 capability 启用时才引用折线图组件类型。
+    #[cfg(feature = "charts")]
+    // 启用后保留折线图结构化快照分派。
     if let Some(line_chart) = component.downcast_ref::<LineChart>() {
         return line_chart.snapshot_fields();
     }
+    // 图表 capability 启用时才引用饼图组件类型。
+    #[cfg(feature = "charts")]
+    // 启用后保留饼图结构化快照分派。
     if let Some(pie_chart) = component.downcast_ref::<PieChart>() {
         return pie_chart.snapshot_fields();
     }
+    // 图表 capability 启用时才引用高级图表占位组件类型。
+    #[cfg(feature = "charts")]
+    // 启用后保留高级图表结构化快照分派。
     if let Some(chart_placeholder) = component.downcast_ref::<ChartPlaceholder>() {
         return chart_placeholder.snapshot_fields();
     }

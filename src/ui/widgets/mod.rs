@@ -30,6 +30,9 @@ pub use other::*;
 // ── 常用子模块重导出──
 pub use display::tree;
 pub use general::icon;
+// 图表 capability 启用时才保留兼容子模块路径。
+#[cfg(feature = "charts")]
+// 启用后保持 ui::widgets::chart 的既有导入路径。
 pub use other::chart;
 // 富文本 capability 启用时才保留兼容子模块路径。
 #[cfg(feature = "rich-text")]

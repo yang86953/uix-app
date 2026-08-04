@@ -591,6 +591,9 @@ pub enum SnapshotFields {
         scroll_x: f32,
         scroll_y: f32,
     },
+    // 图表 capability 启用时才保留柱状图快照变体。
+    #[cfg(feature = "charts")]
+    // 启用后记录柱状图数据与布局配置。
     BarChart {
         data: Vec<BarData>,
         fixed_width: f32,
@@ -599,6 +602,9 @@ pub enum SnapshotFields {
         show_value: bool,
         bar_radius: f32,
     },
+    // 图表 capability 启用时才保留折线图快照变体。
+    #[cfg(feature = "charts")]
+    // 启用后记录折线图数据、布局与样式配置。
     LineChart {
         data: Vec<LineData>,
         fixed_width: f32,
@@ -611,11 +617,17 @@ pub enum SnapshotFields {
         line_width: f32,
         dot_radius: f32,
     },
+    // 图表 capability 启用时才保留饼图快照变体。
+    #[cfg(feature = "charts")]
+    // 启用后记录饼图数据与环形布局配置。
     PieChart {
         data: Vec<PieData>,
         fixed_size: f32,
         hole_radius: f32,
     },
+    // 图表 capability 启用时才保留高级图表快照变体。
+    #[cfg(feature = "charts")]
+    // 启用后记录高级图表的标题与类型摘要。
     ChartPlaceholder {
         title: String,
         subtitle: String,
