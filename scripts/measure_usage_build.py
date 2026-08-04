@@ -73,7 +73,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             manifest=root / "fixtures" / "usage-build" / "minimal" / "Cargo.toml",
             description="关闭默认 feature 的最小使用方入口",
             # 最小入口必须排除全部已独立裁剪的专属依赖及已删除的死依赖。
-            forbidden_packages=("image", "qrcode", "regex", "raw-window-handle", "tracing-subscriber"),
+            forbidden_packages=("bytemuck", "image", "qrcode", "regex", "raw-window-handle", "tracing-subscriber"),
         ),
         # 复用最小入口建立真实的非 Windows 编译轴。
         Scenario(
@@ -93,6 +93,8 @@ def scenario_specs(root: Path) -> list[Scenario]:
             forbidden_packages=(
                 # 图片编解码能力未启用。
                 "image",
+                # 已删除的 bytemuck 直接边不得在未启用图片能力时回归。
+                "bytemuck",
                 # 二维码能力未启用。
                 "qrcode",
                 # 表单正则能力未启用。
@@ -161,7 +163,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             manifest=root / "fixtures" / "usage-build" / "settings-serde" / "Cargo.toml",
             description="只打开 settings-serde capability 的入口",
             # 设置序列化入口不得合并其他能力依赖或已删除的死依赖。
-            forbidden_packages=("image", "qrcode", "regex", "raw-window-handle", "tracing-subscriber"),
+            forbidden_packages=("bytemuck", "image", "qrcode", "regex", "raw-window-handle", "tracing-subscriber"),
         ),
         # 图片编解码单能力入口只打开对应文件格式 capability。
         # 创建图片编解码正向使用方场景。
@@ -185,7 +187,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             description="只打开 qrcode capability 的入口",
             required_packages=("qrcode",),
             # 二维码入口不得合并其他 capability 依赖或已删除的死依赖。
-            forbidden_packages=("image", "regex", "raw-window-handle", "tracing-subscriber"),
+            forbidden_packages=("bytemuck", "image", "regex", "raw-window-handle", "tracing-subscriber"),
         ),
         # 表单 pattern 单能力入口只打开正则规则 capability。
         Scenario(
@@ -194,7 +196,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             description="只打开 form-pattern capability 的入口",
             required_packages=("regex",),
             # 表单正则入口不得合并其他 capability 依赖或已删除的死依赖。
-            forbidden_packages=("image", "qrcode", "raw-window-handle", "tracing-subscriber"),
+            forbidden_packages=("bytemuck", "image", "qrcode", "raw-window-handle", "tracing-subscriber"),
         ),
         # 二维码禁用入口必须证明公开类型无法绕过 capability。
         Scenario(
@@ -202,7 +204,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             manifest=root / "fixtures" / "usage-build" / "qrcode-disabled" / "Cargo.toml",
             description="关闭 qrcode capability 的公开入口 compile-fail",
             # 禁用入口必须排除全部专属依赖及已删除的死依赖。
-            forbidden_packages=("image", "qrcode", "regex", "raw-window-handle", "tracing-subscriber"),
+            forbidden_packages=("bytemuck", "image", "qrcode", "regex", "raw-window-handle", "tracing-subscriber"),
             expected_compile_failure=True,
             expected_error_fragments=("unresolved import", "QRCode"),
         ),
@@ -212,7 +214,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             manifest=root / "fixtures" / "usage-build" / "form-pattern-disabled" / "Cargo.toml",
             description="关闭 form-pattern capability 的公开方法 compile-fail",
             # 禁用入口必须排除全部专属依赖及已删除的死依赖。
-            forbidden_packages=("image", "qrcode", "regex", "raw-window-handle", "tracing-subscriber"),
+            forbidden_packages=("bytemuck", "image", "qrcode", "regex", "raw-window-handle", "tracing-subscriber"),
             expected_compile_failure=True,
             expected_error_fragments=("no method named", "validate_pattern"),
         ),
@@ -226,7 +228,7 @@ def scenario_specs(root: Path) -> list[Scenario]:
             # 说明该入口必须在公开方法编译阶段失败。
             description="关闭 image-codecs capability 的公开方法 compile-fail",
             # 禁用入口必须排除全部专属依赖及已删除的死依赖。
-            forbidden_packages=("image", "qrcode", "regex", "raw-window-handle", "tracing-subscriber"),
+            forbidden_packages=("bytemuck", "image", "qrcode", "regex", "raw-window-handle", "tracing-subscriber"),
             # 标记该场景预期编译失败。
             expected_compile_failure=True,
             # 绑定稳定的缺失方法诊断片段。

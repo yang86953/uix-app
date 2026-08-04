@@ -86,6 +86,21 @@ class ResolvedGraphTests(unittest.TestCase):
         # 两个根二进制场景必须使用同一根清单以便比较。
         self.assertEqual(enabled.manifest, disabled.manifest)
 
+    # 确认删除的 bytemuck 直接边只在未启用图片能力的场景中执行 package 缺席断言。
+    def test_bytemuck_is_forbidden_without_image_codecs(self) -> None:
+        # 读取当前仓库的全部场景定义。
+        scenarios = measure_usage_build.scenario_specs(measure_usage_build.project_root())
+        # 逐场景核对图片能力与 bytemuck 断言的对应关系。
+        for scenario in scenarios:
+            # 启用 image 的场景允许其合法传递依赖继续存在。
+            if "image" in scenario.required_packages:
+                # 不得把上游 image 的 bytemuck 传递边误判为回归。
+                self.assertNotIn("bytemuck", scenario.forbidden_packages)
+                # 当前场景已经完成对应分支核对。
+                continue
+            # 未启用 image 时，bytemuck 不得由 uix 的直接边重新进入解析图。
+            self.assertIn("bytemuck", scenario.forbidden_packages)
+
     # 确认 Linux 最小场景覆盖目标、依赖边界与正向检查命令。
     def test_minimal_linux_scenario_binds_target_and_platform_graph(self) -> None:
         # 读取当前仓库的全部场景定义。
