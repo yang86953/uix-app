@@ -45,6 +45,8 @@ class Scenario:
     build_args: tuple[str, ...] = ()
     # 允许单个场景覆盖 rustc host target，未设置时使用主机目标。
     target: str | None = None
+    # 标记正向跨目标场景只执行类型检查，避免要求宿主机具备目标链接器。
+    check_only: bool = False
     # 记录 resolved graph 中必须出现的专属 package。
     required_packages: tuple[str, ...] = ()
     # 记录 resolved graph 中必须缺席的未选 package。
@@ -72,6 +74,40 @@ def scenario_specs(root: Path) -> list[Scenario]:
             description="关闭默认 feature 的最小使用方入口",
             # 最小入口必须排除全部已独立裁剪的专属依赖及已删除的死依赖。
             forbidden_packages=("image", "qrcode", "regex", "raw-window-handle", "tracing-subscriber"),
+        ),
+        # 复用最小入口建立真实的非 Windows 编译轴。
+        Scenario(
+            # 使用稳定名称区分同一 fixture 的 Linux 目标证据。
+            name="minimal-linux",
+            # 复用最小使用方清单，避免 feature 集差异污染目标对照。
+            manifest=root / "fixtures" / "usage-build" / "minimal" / "Cargo.toml",
+            # 说明该入口验证 Linux GNU 目标的基础平台依赖边界。
+            description="关闭默认 feature 的 Linux GNU 目标最小入口",
+            # 显式覆盖宿主目标，确保 metadata 与 check 使用同一 Linux triple。
+            target="x86_64-unknown-linux-gnu",
+            # 跨目标只要求真实类型检查，不要求 Windows 宿主具备 Linux 链接器。
+            check_only=True,
+            # Linux 最小入口必须解析 Unix 与 Wayland 基础依赖。
+            required_packages=("libc", "wayland-client"),
+            # Linux 最小入口必须排除 Windows 依赖、未选能力和已删除死依赖。
+            forbidden_packages=(
+                # 图片编解码能力未启用。
+                "image",
+                # 二维码能力未启用。
+                "qrcode",
+                # 表单正则能力未启用。
+                "regex",
+                # 已删除的窗口句柄死依赖不得回归。
+                "raw-window-handle",
+                # 演示日志订阅能力未启用。
+                "tracing-subscriber",
+                # Windows API package 不得进入 Linux 解析图。
+                "windows",
+                # Windows 宏展开根依赖不得进入 Linux 解析图。
+                "windows-core",
+            # 结束 Linux 禁用依赖集合。
+            ),
+        # 结束 Linux 最小场景定义。
         ),
         # 默认入口覆盖当前 Windows 默认 D3D11 能力。
         Scenario(
@@ -466,6 +502,8 @@ def measure_scenario(
         "build_args": list(scenario.build_args),
         # 记录 metadata 过滤与实际构建共同使用的 target triple。
         "target": effective_target,
+        # 记录正向场景是否只执行跨目标类型检查。
+        "check_only": scenario.check_only,
         "manifest": str(scenario.manifest.resolve().relative_to(root.resolve())),
         "clean_before": clean_before,
         "clean_after": clean_after,
@@ -480,7 +518,11 @@ def measure_scenario(
             "present_forbidden": [],
         },
         "expected_outcome": (
-            "compile-fail" if scenario.expected_compile_failure else "build-success"
+            # 禁用公开面场景必须以匹配诊断的失败结束。
+            "compile-fail"
+            if scenario.expected_compile_failure
+            # 跨目标正向场景只要求类型检查成功。
+            else ("check-success" if scenario.check_only else "build-success")
         ),
         "compile_fail_assertions": {
             "required_fragments": list(scenario.expected_error_fragments),
@@ -597,6 +639,22 @@ def measure_scenario(
             if missing_fragments:
                 # 明确列出缺少的诊断片段供修复。
                 raise RuntimeError(f"compile-fail 诊断缺少片段: {missing_fragments}")
+        # 正向跨目标场景执行 cargo check，避免把缺失目标链接器误判为源码失败。
+        elif scenario.check_only:
+            # 组装绑定编译 target、feature 与目标选择的正向检查命令。
+            check_command = [cargo, "check", *manifest_args, *target_args, *scenario.feature_args, *scenario.build_args, *locked_suffix]
+            # 执行目标感知的正向类型检查。
+            check_result = run_command(
+                check_command,
+                root,
+                dry_run,
+            )
+            # 记录正向检查命令及其状态。
+            record["steps"].append({"name": "check", **public_result(check_result)})
+            # 真实类型检查失败时阻止场景通过。
+            if check_result["status"] == "failed":
+                # 让统一异常处理记录清晰原因。
+                raise RuntimeError("cargo check 失败")
         else:
             # 记录正向场景的 release 构建开始时间。
             # 组装绑定编译 target、feature 与二进制目标的 release 命令。
@@ -700,7 +758,8 @@ def main() -> int:
         scenarios = [scenario for scenario in scenarios if scenario.name == args.scenario]
     # 初始化总报告并绑定源码提交。
     report: dict[str, Any] = {
-        "schema_version": 2,
+        # schema v3 增加跨目标正向 check 场景及其显式模式字段。
+        "schema_version": 3,
         "commit": current_commit(root),
         "locked": args.locked,
         "dry_run": args.dry_run,
