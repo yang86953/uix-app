@@ -20,7 +20,7 @@ cargo test --quiet
 cargo run --release --bin uix-demo
 ```
 
-默认 feature 使用 Vulkan；运行环境不满足时，以[平台工程](docs/进度/平台工程.md)记录的支持边界为准。
+默认 feature 启用原生 D3D11；Windows 默认选择 D3D11，启用 `opengles` 时可构造 WGL/EGL OpenGL ES。运行环境不满足时，以[平台工程](docs/进度/平台工程.md)记录的支持边界为准。
 
 完整依赖配置、第一个应用和示例说明见[使用 · 快速开始](docs/使用/快速开始.md)。
 
@@ -46,7 +46,7 @@ cargo run --release --bin uix-demo
 | core | `uix::core::*` | typed 错误与基础几何 |
 | platform | `uix::platform::*` | 线程亲和的平台、硬件、GPU 描述与独立系统服务 |
 | diagnostics | `uix::diagnostics::*` | 恢复登记、最终错误报告与快照 |
-| graphics | `uix::draw::*` | 统一 wgpu GPU backend、Software、颜色、字体 |
+| graphics | `uix::draw::*` | 统一 GPU backend（D3D11/OpenGL ES）、Software、颜色、字体 |
 | ui | `uix::ui::*` | 组件、布局、主题、动画 |
 | app | `uix::app::*` | App、Window、CLI、多窗、Agent Bridge |
 | data | `uix::data::*` | SettingsService（opt-in KV） |
