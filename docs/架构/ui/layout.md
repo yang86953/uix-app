@@ -37,6 +37,8 @@
 
 - Flex 支持主轴方向、wrap、grow/shrink、justify、align、gap 和 per-child `align_self`。
 - Grid 使用显式 column/row track、cell/span 与独立 row/column gap；空 track 或空 child 返回有限空输出。
+- Grid 先确定 `Px` 与基于子项有限测量外尺寸的 `Auto`，再让正权重 `Fr` 按比例分配剩余空间；纯 `Auto` 轨道不为填满容器而膨胀。
+- 跨多轨道子项在 span 不含正权重 `Fr` 时，先扣除 span 内部 gap、`Px` 与已知 `Auto` 尺寸，再把未覆盖的外尺寸缺口均分给所覆盖的 `Auto` 轨道。
 - 容器组件组合 `FlexLayout`/`GridLayout`，不复制第二套算法。
 
 ## 增量与缓存
@@ -58,4 +60,6 @@
 - `tests/layout_invariants.rs` 覆盖盒模型 content rect、空 Flex/Grid、病理 Flex/Grid 输入和正常几何稳定性。修复前四个病理用例均失败，修复后五项全部通过；正常 Flex/Grid 子 frame 与总尺寸使用精确值断言，防止安全归一化改变有效输入语义。
 - 共享入口没有为首批归一化复制 Grid track；纯求解器继续借用 columns，并只沿用生成 implicit rows 所需的既有行缓冲。
 - `7e03fe41` 把 Flex min/max 前移到分行与弹性分配之前，并以有界、无额外分配的迭代重新分配触顶/触底后的剩余 grow、shrink 与 Stretch 空间；wrapped bootstrap、固有主轴、反向镜像、非对称交叉轴 margin 及单行/多行总尺寸共用落实后的几何账本。
-- 第二批六个聚焦断言在修复前失败；修复后 `tests/layout_invariants.rs` 9/9、内部 Flex 边界 4/4、库测试 101/101，公开 API 与使用门面回归通过。本证据仍不替代 Grid 与 Flex 其余组合、measure/paint/hit-test 一致性、增量缓存或真窗视觉矩阵。
+- 第二批六个聚焦断言在修复前失败；修复后 `tests/layout_invariants.rs` 9/9、内部 Flex 边界 4/4、库测试 101/101，公开 API 与使用门面回归通过。
+- `33721e4a` 将 Grid `Auto` 从等权弹性轨道收敛为内容轨道，在列/行轴均统计测量尺寸与 margin，并为不含正权重 `Fr` 的 span 分摊未覆盖尺寸；修复前三个列轴聚焦断言失败，修复后公开布局契约 13/13、库测试 101/101、公开 API 2/2、使用门面 5/5，无默认特性库与全特性全目标检查均为 0 错误。
+- 现有证据仍不替代 Grid 显式超大 cell/row-span 的资源上限、Grid/Flex 其余 align/justify/span 组合、measure/paint/hit-test 一致性、增量缓存或真窗视觉矩阵。
