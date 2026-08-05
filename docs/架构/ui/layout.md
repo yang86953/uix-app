@@ -51,3 +51,9 @@
 - 结果尺寸和 frame 有限、非负；无界轴使用约束语义，不能把 `f32::MAX` 写入实际 frame。
 - measure、paint、hit-test 对同一组件使用同一实际 frame。
 - 布局不执行业务 I/O、任意应用 callback、present 或跨窗 wake。
+
+## 当前审计证据
+
+- `7de6fcd8` 在共享 BoxModel/Flex/Grid 边界归一实际 frame、总尺寸、子测量尺寸、margin、border/padding、gap 与弹性因子；有限负坐标和 margin 继续保留，负尺寸与非有限值收敛为零，`f32::MAX` 不再物化到公开布局输出。
+- `tests/layout_invariants.rs` 覆盖盒模型 content rect、空 Flex/Grid、病理 Flex/Grid 输入和正常几何稳定性。修复前四个病理用例均失败，修复后五项全部通过；正常 Flex/Grid 子 frame 与总尺寸使用精确值断言，防止安全归一化改变有效输入语义。
+- Grid track 仍由求解器借用并逐值归一，没有为审计门禁引入每帧 track 复制。本证据只闭合有限几何首批，不替代 measure/paint/hit-test 一致性、完整算法边界、增量缓存或真窗视觉矩阵。
