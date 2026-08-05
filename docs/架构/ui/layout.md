@@ -33,7 +33,7 @@
 - margin 推开兄弟；border/padding 从外框收敛到 content rect；阴影只影响视觉 damage，不改变 content box。
 - 子节点 frame 收敛后同步父级 `child_visible`，不可见子树退出后续阶段。
 
-## 组件：FlexLayout / GridLayout / ScrollView
+## 组件：FlexLayout / GridLayout / ScrollView / VirtualScroll
 
 - Flex 支持主轴方向、wrap、grow/shrink、justify、align、gap 和 per-child `align_self`；`overflow_content` 只保留自然主轴尺寸，不取消分布、交叉轴对齐或反向语义，固有反向主轴按自然内容长度镜像，零交叉轴由自然外尺寸 bootstrap。
 - Grid 使用显式 column/row track、cell/span 与独立 row/column gap；空 track 或空 child 返回有限空输出，per-child `align_self` 覆盖容器级交叉轴对齐。
@@ -43,6 +43,7 @@
 - 自动放置使用可复用的二维占用数前缀和，候选矩形查询为常数时间；每个子项至多在当前矩阵和一次有界扩行后各搜索一次，不保留无限增长循环。
 - `Container` 与 `Space` 共享子 frame 内容外尺寸计算：Space 必须传递子项 margin，缓存取可见 frame 末端并补入正右/下 margin，不用父级受限的求解器总尺寸冒充真实内容范围。
 - `ScrollView` 在纵向/双向纵列与横向单行中统一消费子项 margin，滚动条首轮判断使用自然外尺寸，非滚动轴填充先扣两侧 margin；双轴 `content_bounds` 补入对侧经典沟槽，使 `max_scroll` 仍按外视口相减却等价于真实内容视口。
+- `VirtualScroll` 只接受有限正行高与 viewport 参与范围计算，offset 先夹到内容边界；每次最多物化 4096 行，可见行优先于 overscan，总高度、滚动状态与最终行 frame 均保持有限。
 - 容器组件组合 `FlexLayout`/`GridLayout`，不复制第二套算法。
 
 ## 增量与缓存
@@ -50,7 +51,7 @@
 - 只有尺寸约束、布局属性、子结构、文本度量或可见性变化才标 Layout dirty。
 - Paint-only 主题色、hover、opacity 动画不触发布局；width/height 等几何动画触发布局。
 - 布局 scratch 与输出快照可按窗口复用，但树版本、约束或相关属性变化时必须失效。
-- 虚拟滚动只在物化范围变化时 reconcile 行子树；稳定范围的滚动走 composite/paint 路径。
+- 虚拟滚动在范围与挂载数量稳定且没有新版声明时不调用 renderer 或 reconcile，滚动走 composite/paint 路径；范围或 renderer 声明变化时，以业务 key 或绝对索引后备 key 协调当前有界窗口，重叠行保留原组件身份。
 
 ## 不变量
 
@@ -70,4 +71,5 @@
 - `40e66b65` 恢复 Grid 子项 `align_self` 到单元格求解器的传递，并让 Flex 溢出路径复用标准主轴分布、扣除交叉轴两侧 margin、先正向放置再沿容器主轴镜像；四个聚焦断言在修复前失败，修复后公开布局契约 20/20、库测试 107/107、公开 API 2/2、使用门面 5/5，两套特性组合检查均为 0 错误。
 - `e7ad9d55` 让固有反向溢出按自然主轴镜像、零交叉轴 Stretch 保留自然外尺寸，并统一 Container/Space 的 margin 传递和内容缓存；两个公开与两个组件聚焦断言在修复前失败，修复后公开布局契约 22/22、组件缓存 2/2、库测试 109/109、公开 API 2/2、使用门面 5/5，两套特性组合检查均为 0 错误。
 - `b5c4f152` 让 ScrollView 的放置、滚动条判断和内容范围共同消费子项 margin，并把对侧沟槽纳入双轴滚动坐标范围，同时在组件边界复用共享有限几何归一规则；三个聚焦断言修复前失败，修复后内部 ScrollView 4/4、公开布局契约 22/22、库测试 113/113、公开 API 2/2、使用门面 5/5、使用示例 11/11，两套特性组合检查均为 0 错误。
+- `5b45c0d9` 以绝对索引后备 key 和 keyed reconcile 替换 VirtualScroll 的破坏性 `set_children`，让窗口重叠行与 renderer 声明更新保留组件身份；`cca439f9` 再为非法度量、超限 offset、总高度、滚动增量和最终行 frame 建立有限值规则，并以 4096 行硬预算限制 viewport/overscan。三项身份门禁与四项病理资源门禁修复前失败，修复后内部 VirtualScroll 8/8、公开布局契约 22/22、库测试 121/121、公开 API 2/2、使用门面 5/5、使用示例 11/11，两套特性组合检查均为 0 错误，文档测试 47 通过/23 忽略。
 - 现有证据仍不替代 Grid 其余 justify/span 组合、Flex overflow 与 wrap 组合、其他组件 measure/paint/hit-test 一致性、增量缓存或真窗视觉矩阵。
