@@ -41,7 +41,6 @@ pub fn compute_flex_layout(input: &FlexInput<'_>) -> FlexOutput {
     // Phase 1: determine flex basis and cross sizes
     let mut base_main_sizes = vec![0.0f32; count];
     let mut cross_sizes = vec![0.0f32; count];
-    let mut total_flex_grow = 0.0f32;
 
     for ((base_main, cross), child) in base_main_sizes
         .iter_mut()
@@ -49,13 +48,21 @@ pub fn compute_flex_layout(input: &FlexInput<'_>) -> FlexOutput {
         .zip(input.children)
     {
         let basis = match child.flex_basis {
-            Some(v) if v.is_finite() && v >= 0.0 => v,
+            // 显式 basis 只接受有限、非负且不是无界哨兵的实际尺寸。
+            Some(v) if v.is_finite() && v.abs() < f32::MAX && v >= 0.0 => v,
             _ => finite_non_negative(main_size(&child.measured_size)),
         };
         *base_main = basis;
         *cross = finite_non_negative(cross_size(&child.measured_size));
-        total_flex_grow += flex_factor(child.flex_grow);
     }
+
+    // 在分行和弹性分配前落实每个子项的主轴与交叉轴上下限。
+    clamp_sizes(
+        &mut base_main_sizes,
+        &mut cross_sizes,
+        input.children,
+        is_row,
+    );
 
     if input.wrap {
         compute_wrapped(
@@ -67,7 +74,6 @@ pub fn compute_flex_layout(input: &FlexInput<'_>) -> FlexOutput {
             container_cross,
             &mut base_main_sizes,
             &mut cross_sizes,
-            total_flex_grow,
         )
     } else {
         compute_single_line(
@@ -80,35 +86,62 @@ pub fn compute_flex_layout(input: &FlexInput<'_>) -> FlexOutput {
             intrinsic_main,
             &mut base_main_sizes,
             &mut cross_sizes,
-            total_flex_grow,
         )
     }
 }
 
-fn clamp_sizes(base: &mut [f32], cross: &mut [f32], children: &[FlexChild], is_row: bool) {
-    for ((main, cross), child) in base.iter_mut().zip(cross).zip(children) {
-        let sz = make_size_from(is_row, *main, *cross);
+// 把一个轴的 min/max 收敛为有序且可用于实际布局的区间。
+fn normalized_axis_bounds(minimum: f32, maximum: f32) -> (f32, f32) {
+    // 最小值只接受有限非负实际尺寸。
+    let minimum = finite_non_negative(minimum);
+    // 有限且不是无界哨兵的最大值继续参与钳制。
+    let maximum = if maximum.is_finite() && maximum.abs() < f32::MAX {
+        // 最大值不得低于零或已经归一的最小值。
+        maximum.max(0.0).max(minimum)
+    } else {
+        // 无界或非法最大值统一回退为内部无界上限。
+        f32::MAX
+    };
+    // 返回不会触发反向区间的上下限。
+    (minimum, maximum)
+}
 
-        let clamped = Size::new(
-            sz.w.max(child.min_size.w).min(child.max_size.w),
-            sz.h.max(child.min_size.h).min(child.max_size.h),
-        );
-
-        let new_main = if is_row { clamped.w } else { clamped.h };
-        let new_cross = if is_row { clamped.h } else { clamped.w };
-
-        if (*main - new_main).abs() > 0.001 || (*cross - new_cross).abs() > 0.001 {
-            *main = new_main;
-            *cross = new_cross;
-        }
+// 读取子项在当前主轴上的尺寸上下限。
+fn child_main_bounds(child: &FlexChild, is_row: bool) -> (f32, f32) {
+    // 水平主轴读取宽度约束，垂直主轴读取高度约束。
+    if is_row {
+        // 归一宽度上下限。
+        normalized_axis_bounds(child.min_size.w, child.max_size.w)
+    } else {
+        // 归一高度上下限。
+        normalized_axis_bounds(child.min_size.h, child.max_size.h)
     }
 }
 
-fn make_size_from(is_row: bool, main: f32, cross: f32) -> Size {
+// 读取子项在当前交叉轴上的尺寸上下限。
+fn child_cross_bounds(child: &FlexChild, is_row: bool) -> (f32, f32) {
+    // 水平主轴的交叉轴为高度，垂直主轴的交叉轴为宽度。
     if is_row {
-        Size::new(main, cross)
+        // 归一高度上下限。
+        normalized_axis_bounds(child.min_size.h, child.max_size.h)
     } else {
-        Size::new(cross, main)
+        // 归一宽度上下限。
+        normalized_axis_bounds(child.min_size.w, child.max_size.w)
+    }
+}
+
+// 在弹性分配前统一落实子项主轴与交叉轴约束。
+fn clamp_sizes(base: &mut [f32], cross: &mut [f32], children: &[FlexChild], is_row: bool) {
+    // 按相同索引遍历主轴、交叉轴与子项约束。
+    for ((main, cross), child) in base.iter_mut().zip(cross).zip(children) {
+        // 读取当前主轴的有序上下限。
+        let (main_min, main_max) = child_main_bounds(child, is_row);
+        // 读取当前交叉轴的有序上下限。
+        let (cross_min, cross_max) = child_cross_bounds(child, is_row);
+        // 主轴尺寸先满足最小值再满足最大值。
+        *main = finite_non_negative(*main).max(main_min).min(main_max);
+        // 交叉轴尺寸采用相同约束规则。
+        *cross = finite_non_negative(*cross).max(cross_min).min(cross_max);
     }
 }
 
@@ -177,34 +210,136 @@ fn margin_cross_start(margin: EdgeInsets, is_row: bool) -> f32 {
     }
 }
 
-fn distribute_flex_grow(
+// 把正剩余空间反复分给尚未触及主轴上限的子项。
+fn distribute_positive_space<F>(
     base: &mut [f32],
     remaining: f32,
     children: &[FlexChild],
-    total_flex_grow: f32,
-) {
-    if total_flex_grow > 0.0 && remaining > 0.0 {
-        for (main, child) in base.iter_mut().zip(children) {
-            *main += remaining * (flex_factor(child.flex_grow) / total_flex_grow);
+    is_row: bool,
+    weight_for: F,
+) where
+    // 调用方决定使用 flex-grow 权重还是 Stretch 的均匀权重。
+    F: Fn(&FlexChild) -> f32,
+{
+    // 使用 f64 账本避免多个极大有限权重在求和时溢出。
+    let mut remaining = finite_non_negative(remaining) as f64;
+    // 每轮至少冻结一个触顶项，因此最多需要子项数加一轮。
+    for _round in 0..=base.len() {
+        // 浮点尾差小于阈值时视为已经分配完成。
+        if remaining <= 0.000_1 {
+            // 结束正空间分配。
+            break;
         }
+        // 汇总仍可增长子项的有效权重。
+        let total_weight: f64 = base
+            .iter()
+            .zip(children)
+            .filter_map(|(&main, child)| {
+                // 读取子项当前主轴最大值。
+                let (_, maximum) = child_main_bounds(child, is_row);
+                // 归一调用方提供的增长权重。
+                let weight = finite_non_negative(weight_for(child));
+                // 只保留有权重且尚未触顶的子项。
+                (weight > 0.0 && main + 0.000_1 < maximum).then_some(weight as f64)
+            })
+            .sum();
+        // 没有可增长子项时保留剩余空间给 justify 处理。
+        if total_weight <= 0.0 {
+            // 结束正空间分配。
+            break;
+        }
+        // 记录本轮真正写入子项尺寸的空间。
+        let mut consumed = 0.0f64;
+        // 按权重尝试增长每个尚未触顶的子项。
+        for (main, child) in base.iter_mut().zip(children) {
+            // 读取当前子项主轴上限。
+            let (_, maximum) = child_main_bounds(child, is_row);
+            // 归一当前子项权重。
+            let weight = finite_non_negative(weight_for(child));
+            // 跳过无权重或已经触顶的子项。
+            if weight <= 0.0 || *main + 0.000_1 >= maximum {
+                // 继续处理下一个子项。
+                continue;
+            }
+            // 按本轮总权重计算该子项应得份额。
+            let share = remaining * weight as f64 / total_weight;
+            // 把份额钳制到当前子项剩余增长容量。
+            let growth = share.min((maximum - *main).max(0.0) as f64);
+            // 将实际增长写回主轴尺寸。
+            *main += growth as f32;
+            // 累加本轮已消费空间。
+            consumed += growth;
+        }
+        // 没有可观消费时避免在浮点尾差上空转。
+        if consumed <= 0.000_1 {
+            // 结束正空间分配。
+            break;
+        }
+        // 未消费空间进入下一轮并排除已经触顶的子项。
+        remaining = (remaining - consumed).max(0.0);
     }
 }
 
-fn distribute_shrink(base: &mut [f32], overflow: f32, children: &[FlexChild]) {
-    let total_shrink_weight: f32 = base
-        .iter()
-        .zip(children.iter())
-        .map(|(&sz, ch)| flex_factor(ch.flex_shrink) * sz)
-        .sum();
-    if total_shrink_weight > 0.0 {
+// 把溢出反复分给尚未触及主轴下限的子项。
+fn distribute_shrink(base: &mut [f32], overflow: f32, children: &[FlexChild], is_row: bool) {
+    // 使用 f64 账本避免极大有限尺寸与权重相乘后溢出。
+    let mut overflow = finite_non_negative(overflow) as f64;
+    // 每轮至少冻结一个触底项，因此最多需要子项数加一轮。
+    for _round in 0..=base.len() {
+        // 浮点尾差小于阈值时视为已经吸收完溢出。
+        if overflow <= 0.000_1 {
+            // 结束收缩分配。
+            break;
+        }
+        // 汇总仍可收缩子项的缩放权重。
+        let total_shrink_weight: f64 = base
+            .iter()
+            .zip(children)
+            .filter_map(|(&main, child)| {
+                // 读取当前子项主轴下限。
+                let (minimum, _) = child_main_bounds(child, is_row);
+                // 归一 shrink 因子。
+                let factor = flex_factor(child.flex_shrink);
+                // 只保留有权重且仍高于下限的子项。
+                (factor > 0.0 && main > minimum + 0.000_1).then_some(factor as f64 * main as f64)
+            })
+            .sum();
+        // 没有可收缩子项时允许内容按最小尺寸溢出。
+        if total_shrink_weight <= 0.0 {
+            // 结束收缩分配。
+            break;
+        }
+        // 记录本轮真正吸收的溢出。
+        let mut consumed = 0.0f64;
+        // 按缩放权重尝试收缩每个尚未触底的子项。
         for (main, child) in base.iter_mut().zip(children) {
-            if *main <= 0.0 {
+            // 读取当前子项主轴下限。
+            let (minimum, _) = child_main_bounds(child, is_row);
+            // 归一 shrink 因子。
+            let factor = flex_factor(child.flex_shrink);
+            // 跳过无权重或已经触底的子项。
+            if factor <= 0.0 || *main <= minimum + 0.000_1 {
+                // 继续处理下一个子项。
                 continue;
             }
-            let weight = flex_factor(child.flex_shrink) * *main / total_shrink_weight;
-            let reduction = (overflow * weight).min(*main);
-            *main -= reduction;
+            // 使用当前尺寸保持原有 scaled shrink 权重语义。
+            let weight = factor as f64 * *main as f64;
+            // 按本轮总权重计算应吸收的溢出。
+            let share = overflow * weight / total_shrink_weight;
+            // 把收缩量钳制到当前子项剩余容量。
+            let reduction = share.min((*main - minimum).max(0.0) as f64);
+            // 将实际收缩写回主轴尺寸。
+            *main -= reduction as f32;
+            // 累加本轮已吸收溢出。
+            consumed += reduction;
         }
+        // 没有可观消费时避免在浮点尾差上空转。
+        if consumed <= 0.000_1 {
+            // 结束收缩分配。
+            break;
+        }
+        // 未吸收的溢出进入下一轮并排除已经触底的子项。
+        overflow = (overflow - consumed).max(0.0);
     }
 }
 
@@ -255,7 +390,6 @@ fn compute_single_line(
     intrinsic_main: bool,
     base_main_sizes: &mut [f32],
     cross_sizes: &mut [f32],
-    total_flex_grow: f32,
 ) -> FlexOutput {
     let count = base_main_sizes.len();
     let gap = finite_or_zero(input.gap);
@@ -266,7 +400,10 @@ fn compute_single_line(
     // 有明确主轴尺寸（style 设宽/高）时仍 shrink，以适配窗口/固定卡片。
     let bootstrap_main = container_main <= 1.0;
     let skip_shrink = intrinsic_main || bootstrap_main;
-    let max_child_cross = cross_sizes.iter().cloned().fold(0.0, f32::max);
+    // 固有交叉轴占位必须包含每个子项的两侧 margin。
+    let max_child_cross = (0..count)
+        .map(|index| cross_sizes[index] + margin_cross(child_margin(input, index), is_row))
+        .fold(0.0, f32::max);
     let effective_cross = if container_cross > 0.0 {
         container_cross
     } else {
@@ -286,7 +423,8 @@ fn compute_single_line(
     };
 
     if overflow > 0.0 {
-        distribute_shrink(base_main_sizes, overflow, input.children);
+        // 把溢出持续转交给尚未触及 min_size 的子项。
+        distribute_shrink(base_main_sizes, overflow, input.children, is_row);
     }
     let total_after: f32 = base_main_sizes.iter().sum::<f32>() + total_margin_main;
     let mut remaining = if container_main > 0.0 {
@@ -294,7 +432,15 @@ fn compute_single_line(
     } else {
         0.0
     };
-    distribute_flex_grow(base_main_sizes, remaining, input.children, total_flex_grow);
+    // grow 子项触及 max_size 后继续把剩余空间交给未触顶兄弟。
+    distribute_positive_space(
+        base_main_sizes,
+        remaining,
+        input.children,
+        is_row,
+        // 标准增长使用每个子项声明的 flex-grow 权重。
+        |child| flex_factor(child.flex_grow),
+    );
 
     // Apply Stretch justify-content: distribute remaining space as growth
     let total_after: f32 = base_main_sizes.iter().sum::<f32>() + total_margin_main;
@@ -304,31 +450,15 @@ fn compute_single_line(
         0.0
     };
     if input.justify_content == JustifyContent::Stretch && remaining > 0.0 {
-        let extra = remaining / count as f32;
-        for b in base_main_sizes.iter_mut() {
-            *b += extra;
-        }
-    }
-
-    // Clamp to min/max
-    clamp_sizes(base_main_sizes, cross_sizes, input.children, is_row);
-
-    // Redistribute: space freed by max_size clamping is given back
-    // to children with remaining flex_grow capacity. Loop up to 3 rounds
-    // to handle cascading clamp effects until all space is consumed.
-    for _round in 0..3 {
-        let current_total = base_main_sizes.iter().sum::<f32>() + total_margin_main;
-        let leftover = if container_main > 0.0 {
-            (container_main - current_total - gaps).max(0.0)
-        } else {
-            0.0
-        };
-        if leftover > 0.0 && total_flex_grow > 0.0 {
-            distribute_flex_grow(base_main_sizes, leftover, input.children, total_flex_grow);
-            clamp_sizes(base_main_sizes, cross_sizes, input.children, is_row);
-        } else {
-            break;
-        }
+        // Stretch 使用均匀权重，并同样尊重每个子项的 max_size。
+        distribute_positive_space(
+            base_main_sizes,
+            remaining,
+            input.children,
+            is_row,
+            // 每个尚未触顶的子项获得相同权重。
+            |_child| 1.0,
+        );
     }
 
     // Phase 3: justify-content positioning
@@ -349,10 +479,13 @@ fn compute_single_line(
     for i in 0..count {
         let margin = child_margin(input, i);
         let cross_align = input.children[i].align_self.unwrap_or(input.align_items);
+        // 交叉轴先扣除两侧 margin，再在剩余区域内执行对齐。
+        let available_cross = (effective_cross - margin_cross(margin, is_row)).max(0.0);
         // Stretch：父级交叉轴已确定（>1）时填满父级，允许小于 measure（窗口缩小）；
         // bootstrap（交叉轴仍 ≤1）时取 max(measured)，以便子项撑开容器。
         let child_cross_size = if cross_align == AlignItems::Stretch {
-            let filled = (effective_cross - margin_cross(margin, is_row)).max(0.0);
+            // Stretch 填满已经扣除 margin 的交叉轴可用区域。
+            let filled = available_cross;
             if container_cross <= 1.0 {
                 filled.max(cross_sizes[i])
             } else {
@@ -364,8 +497,8 @@ fn compute_single_line(
 
         let cross_offset = match cross_align {
             AlignItems::Start => 0.0,
-            AlignItems::Center => (effective_cross - child_cross_size) / 2.0,
-            AlignItems::End => effective_cross - child_cross_size,
+            AlignItems::Center => (available_cross - child_cross_size) / 2.0,
+            AlignItems::End => available_cross - child_cross_size,
             AlignItems::Stretch => 0.0,
         };
 
@@ -395,7 +528,17 @@ fn compute_single_line(
 
     // Reverse: 以主轴终点镜像子项位置
     if is_reverse {
-        let main_extent = if is_row { inner.w } else { inner.h };
+        // 固有主轴使用真实内容总长镜像，避免零尺寸 bootstrap 产生负坐标。
+        let main_extent = if intrinsic_main {
+            // 固有主轴包含子项、margin 与 gap。
+            total_final + gaps
+        } else if is_row {
+            // 水平固定主轴使用内容区宽度。
+            inner.w
+        } else {
+            // 垂直固定主轴使用内容区高度。
+            inner.h
+        };
         for rect in &mut child_rects {
             if is_row {
                 rect.x = inner.x + main_extent - (rect.x - inner.x) - rect.w;
@@ -448,10 +591,21 @@ fn compute_wrapped(
     container_cross: f32,
     base_main_sizes: &mut [f32],
     cross_sizes: &mut [f32],
-    _total_flex_grow: f32,
 ) -> FlexOutput {
     let count = base_main_sizes.len();
     let gap = finite_or_zero(input.gap);
+    // 零或近零主轴属于首次 bootstrap，不应被当成真实换行上限。
+    let bootstrap_main = container_main <= 1.0;
+    // 固有主轴或 bootstrap 阶段保持子项自然尺寸，不执行 shrink。
+    let skip_shrink = input.intrinsic_main || bootstrap_main;
+    // bootstrap 使用内部无界约束聚合自然尺寸，实际输出仍会保持有限。
+    let wrap_limit = if bootstrap_main {
+        // 无真实主轴约束时把所有子项留在自然行中。
+        f32::MAX
+    } else {
+        // 已有真实主轴尺寸时按容器边界换行。
+        container_main
+    };
 
     // Build lines: each line is a range of child indices
     struct Line {
@@ -466,7 +620,7 @@ fn compute_wrapped(
         let child_main = base_main_size + margin_main(child_margin(input, i), is_row);
         let item_gap = if i > line_start { gap } else { 0.0 };
 
-        if line_main + item_gap + child_main > container_main && line_main > 0.0 {
+        if line_main + item_gap + child_main > wrap_limit && line_main > 0.0 {
             lines.push(Line {
                 start: line_start,
                 end: i,
@@ -505,14 +659,23 @@ fn compute_wrapped(
         let line_base: f32 =
             base_main_sizes[line.start..line.end].iter().sum::<f32>() + line_margin_main;
         let line_gaps = gap * (line_count as f32 - 1.0).max(0.0);
-        let overflow = line_base + line_gaps - container_main;
+        // 固有或 bootstrap 主轴不得因临时容器尺寸压缩自然内容。
+        let overflow = if skip_shrink {
+            // 保持自然尺寸。
+            0.0
+        } else {
+            // 有真实约束时计算当前行溢出。
+            (line_base + line_gaps - container_main).max(0.0)
+        };
 
         // Shrink within line
         if overflow > 0.0 {
+            // 持续转交溢出直到所有可收缩项完成或触及 min_size。
             distribute_shrink(
                 &mut base_main_sizes[line.start..line.end],
                 overflow,
                 &input.children[line.start..line.end],
+                is_row,
             );
         }
 
@@ -522,15 +685,14 @@ fn compute_wrapped(
             - line_margin_main
             - line_gaps)
             .max(0.0);
-        let line_grow: f32 = input.children[line.start..line.end]
-            .iter()
-            .map(|c| flex_factor(c.flex_grow))
-            .sum();
-        distribute_flex_grow(
+        // grow 项触及 max_size 后继续把空间交给同一行的未触顶兄弟。
+        distribute_positive_space(
             &mut base_main_sizes[line.start..line.end],
             remaining,
             &input.children[line.start..line.end],
-            line_grow,
+            is_row,
+            // 标准增长使用每个子项的 flex-grow 权重。
+            |child| flex_factor(child.flex_grow),
         );
 
         // Apply Stretch
@@ -538,10 +700,15 @@ fn compute_wrapped(
             base_main_sizes[line.start..line.end].iter().sum::<f32>() + line_margin_main;
         let remaining2 = (container_main - total_after - line_gaps).max(0.0);
         if input.justify_content == JustifyContent::Stretch && remaining2 > 0.0 {
-            let extra = remaining2 / line_count as f32;
-            for b in base_main_sizes[line.start..line.end].iter_mut() {
-                *b += extra;
-            }
+            // Stretch 均匀分配空间并尊重每个子项的 max_size。
+            distribute_positive_space(
+                &mut base_main_sizes[line.start..line.end],
+                remaining2,
+                &input.children[line.start..line.end],
+                is_row,
+                // 同一行每个尚未触顶的子项使用相同权重。
+                |_child| 1.0,
+            );
         }
 
         // Compute cross size for this line
@@ -552,9 +719,6 @@ fn compute_wrapped(
         line_max_cross.push(max_cross);
         cursor_cross += max_cross + line_gap;
     }
-
-    // Clamp to min/max (across all children)
-    clamp_sizes(base_main_sizes, cross_sizes, input.children, is_row);
 
     // Position children line by line
     let mut child_rects = vec![Rect::zero(); count];
@@ -568,6 +732,8 @@ fn compute_wrapped(
         AlignItems::End => (container_cross - total_cross).max(0.0),
         _ => 0.0,
     };
+    // 记录所有行中真实占用的最大主轴长度，供固有尺寸与反向布局使用。
+    let mut max_line_main = 0.0f32;
 
     for (li, line) in lines.iter().enumerate() {
         let line_count = line.end - line.start;
@@ -577,6 +743,10 @@ fn compute_wrapped(
             .sum();
         let total_line_main: f32 =
             base_main_sizes[line.start..line.end].iter().sum::<f32>() + line_margin_main;
+        // 当前行真实占用包含行内 gap。
+        let occupied_line_main = (total_line_main + line_gaps_total).max(0.0);
+        // 更新所有行的最大主轴占用。
+        max_line_main = max_line_main.max(occupied_line_main);
         let remaining = (container_main - total_line_main - line_gaps_total).max(0.0);
         let (effective_gap, start_offset) =
             compute_justify(remaining, line_count, gap, input.justify_content);
@@ -588,16 +758,19 @@ fn compute_wrapped(
         for i in line.start..line.end {
             let margin = child_margin(input, i);
             let cross_align = input.children[i].align_self.unwrap_or(input.align_items);
+            // 每个子项先扣除当前行交叉轴两侧 margin 再执行对齐。
+            let available_cross = (line_max_cross[li] - margin_cross(margin, is_row)).max(0.0);
             let child_cross_size = if cross_align == AlignItems::Stretch {
-                (line_max_cross[li] - margin_cross(margin, is_row)).max(0.0)
+                // Stretch 填满扣除 margin 后的可用交叉轴。
+                available_cross
             } else {
                 cross_sizes[i]
             };
 
             let cross_offset = match cross_align {
                 AlignItems::Start => 0.0,
-                AlignItems::Center => (line_max_cross[li] - child_cross_size) / 2.0,
-                AlignItems::End => line_max_cross[li] - child_cross_size,
+                AlignItems::Center => (available_cross - child_cross_size) / 2.0,
+                AlignItems::End => available_cross - child_cross_size,
                 AlignItems::Stretch => 0.0,
             };
 
@@ -626,7 +799,17 @@ fn compute_wrapped(
 
     // Reverse: 以主轴终点镜像子项位置
     if is_reverse {
-        let main_extent = if is_row { inner.w } else { inner.h };
+        // 固有主轴使用真实最大行长镜像，避免 bootstrap 生成负坐标。
+        let main_extent = if input.intrinsic_main {
+            // 固有尺寸取所有行的最大主轴占用。
+            max_line_main
+        } else if is_row {
+            // 水平固定主轴使用内容区宽度。
+            inner.w
+        } else {
+            // 垂直固定主轴使用内容区高度。
+            inner.h
+        };
         for rect in &mut child_rects {
             if is_row {
                 rect.x = inner.x + main_extent - (rect.x - inner.x) - rect.w;
@@ -636,34 +819,28 @@ fn compute_wrapped(
         }
     }
 
+    // 固有主轴由最大行长撑开，固定主轴继续占满父级分配空间。
+    let resolved_main = if input.intrinsic_main {
+        // 返回自然内容主轴长度。
+        max_line_main
+    } else {
+        // 返回父级分配的实际主轴长度。
+        container_main.max(0.0)
+    };
     // Total size
     let (total_w, total_h) = if is_row {
-        let max_cross = if lines.len() > 1 {
-            line_cross_positions
-                .last()
-                .zip(line_max_cross.last())
-                .map(|(&p, &s)| p + s)
-                .unwrap_or(0.0)
-        } else {
-            cross_sizes.iter().cloned().fold(0.0, f32::max)
-        };
+        // 水平布局的交叉轴总量统一使用行账本，单行也包含 margin。
+        let resolved_cross = total_cross.max(container_cross);
         (
-            container_main.max(0.0) + input.padding.horizontal(),
-            (max_cross + input.padding.vertical()).max(container_cross),
+            resolved_main + input.padding.horizontal(),
+            resolved_cross + input.padding.vertical(),
         )
     } else {
-        let max_cross = if lines.len() > 1 {
-            line_cross_positions
-                .last()
-                .zip(line_max_cross.last())
-                .map(|(&p, &s)| p + s)
-                .unwrap_or(0.0)
-        } else {
-            cross_sizes.iter().cloned().fold(0.0, f32::max)
-        };
+        // 垂直布局的交叉轴总量采用相同行账本语义。
+        let resolved_cross = total_cross.max(container_cross);
         (
-            (max_cross + input.padding.horizontal()).max(container_cross),
-            container_main.max(0.0) + input.padding.vertical(),
+            resolved_cross + input.padding.horizontal(),
+            resolved_main + input.padding.vertical(),
         )
     };
 
@@ -672,3 +849,7 @@ fn compute_wrapped(
         total_size: Size::new(total_w, total_h),
     }
 }
+
+// 仅在库测试中加载独立的 min/max 弹性分配契约。
+#[cfg(test)]
+mod tests;
