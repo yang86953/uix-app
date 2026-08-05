@@ -1,11 +1,13 @@
 // 导入被测的声明树适配器。
 use super::ViewAdapter;
-// 导入构造布局几何变化所需的边距类型。
-use crate::core::EdgeInsets;
+// 导入构造布局几何变化、滚动偏移与固有尺寸断言所需的核心类型。
+use crate::core::{Constraints, EdgeInsets, Point, Size};
 // 导入构造绘制变化所需的颜色常量。
 use crate::draw::Color;
-// 导入建立最小组件树与保守回退门禁所需的组件类型。
-use crate::ui::widgets::{Button, Container, Grid, Label};
+// 导入建立最小组件树、缓存门禁与保守回退门禁所需的组件类型。
+use crate::ui::widgets::{Affix, Button, Carousel, Container, Grid, Label, ScrollView, Space};
+// 导入构造纵向滚动视口所需的方向类型。
+use crate::ui::{ScrollDirection, State};
 // 导入构造 Grid 轨道几何变化所需的轨道类型。
 use crate::ui::GridTrack;
 // 导入把叶组件包装成声明节点所需的节点类型。
@@ -36,6 +38,16 @@ fn invalidation_flags(tree: &WidgetTree) -> (bool, bool) {
         .unwrap_or_else(|error| error.into_inner());
     // 按布局、绘制的固定顺序返回门禁结果。
     (queue.has_layout(), queue.has_paint_or_composite())
+}
+
+// 在宽松约束下读取根组件当前暴露的固有尺寸。
+fn root_measure(tree: &WidgetTree) -> Size {
+    // 构造足够容纳测试子项的有限宽松约束。
+    let constraints = Constraints::loose(Size::new(1_000.0, 1_000.0));
+    // 根节点在声明树建成后必须存在，直接读取其组件测量结果。
+    tree.root()
+        .expect("测试声明树必须存在根节点")
+        .measure(constraints)
 }
 
 // 验证标签颜色变化只需要重绘而不重新布局。
@@ -165,4 +177,214 @@ fn unclassified_widget_change_conservatively_invalidates_layout() {
 
     // 未分类配置变化必须同时请求 Layout 与 Paint，不能误吞布局工作。
     assert_eq!(invalidation_flags(&tree), (true, true));
+}
+
+// 验证 Container 移除最后一个子节点时立即清除内容尺寸缓存。
+#[test]
+fn container_last_child_removal_clears_intrinsic_cache() {
+    // 构建由固定尺寸标签撑开的无显式尺寸容器。
+    let mut tree = ViewAdapter::build_nodes(ViewNode::new(
+        Container::new(),
+        vec![ViewNode::leaf(Label::new("content").size(120.0, 30.0))],
+    ));
+    // 完成首轮布局，让容器记录真实子内容尺寸。
+    clear_initial_invalidations(&mut tree);
+    // 读取首轮布局后由子内容撑开的容器尺寸。
+    let measured = root_measure(&tree);
+    // 前置条件：至少一个轴必须已经记录非零子内容范围。
+    assert!(measured.w > 0.0 || measured.h > 0.0);
+
+    // 原位协调为同类型空容器，触发最后一个子节点移除路径。
+    ViewAdapter::reconcile_nodes(&mut tree, ViewNode::leaf(Container::new()));
+
+    // 子节点移除后不得继续暴露上一轮内容尺寸。
+    assert_eq!(root_measure(&tree), Size::zero());
+}
+
+// 验证 Space 移除最后一个子节点时立即清除内容尺寸缓存。
+#[test]
+fn space_last_child_removal_clears_intrinsic_cache() {
+    // 构建由固定尺寸标签撑开的无显式尺寸间距容器。
+    let mut tree = ViewAdapter::build_nodes(ViewNode::new(
+        Space::new(),
+        vec![ViewNode::leaf(Label::new("content").size(90.0, 24.0))],
+    ));
+    // 完成首轮布局，让 Space 记录真实子内容尺寸。
+    clear_initial_invalidations(&mut tree);
+    // 读取首轮布局后由子内容撑开的 Space 尺寸。
+    let measured = root_measure(&tree);
+    // 前置条件：至少一个轴必须已经记录非零子内容范围。
+    assert!(measured.w > 0.0 || measured.h > 0.0);
+
+    // 原位协调为同类型空 Space，触发最后一个子节点移除路径。
+    ViewAdapter::reconcile_nodes(&mut tree, ViewNode::leaf(Space::new()));
+
+    // 子节点移除后不得继续暴露上一轮内容尺寸。
+    assert_eq!(root_measure(&tree), Size::zero());
+}
+
+// 验证 Affix 移除最后一个子节点时立即清除占位尺寸缓存。
+#[test]
+fn affix_last_child_removal_clears_intrinsic_cache() {
+    // 构建由固定尺寸标签撑开的吸顶占位容器。
+    let mut tree = ViewAdapter::build_nodes(ViewNode::new(
+        Affix::new(8.0),
+        vec![ViewNode::leaf(Label::new("content").size(80.0, 28.0))],
+    ));
+    // 完成首轮布局，让 Affix 记录真实子项占位尺寸。
+    clear_initial_invalidations(&mut tree);
+    // 读取首轮布局后由子项撑开的 Affix 占位尺寸。
+    let measured = root_measure(&tree);
+    // 前置条件：至少一个轴必须已经记录非零子项占位。
+    assert!(measured.w > 0.0 || measured.h > 0.0);
+
+    // 原位协调为同类型空 Affix，触发最后一个子节点移除路径。
+    ViewAdapter::reconcile_nodes(&mut tree, ViewNode::leaf(Affix::new(8.0)));
+
+    // 子节点移除后不得继续保留上一轮吸顶占位。
+    assert_eq!(root_measure(&tree), Size::zero());
+}
+
+// 验证 ScrollView 移除最后一个子节点时立即清除滚动范围与偏移。
+#[test]
+fn scroll_view_last_child_removal_clears_scroll_state() {
+    // 建立双向绑定的滚动偏移，验证结构归零会同步到声明状态。
+    let offset = State::new(Point::new(0.0, 0.0));
+    // 构建内容高度大于固定视口的纵向滚动树。
+    let mut tree = ViewAdapter::build_nodes(ViewNode::new(
+        ScrollView::new(ScrollDirection::Vertical)
+            .size(80.0, 40.0)
+            .scroll_offset(&offset),
+        vec![ViewNode::leaf(Label::new("content").size(80.0, 200.0))],
+    ));
+    // 完成首轮布局，让滚动视口记录内容范围。
+    clear_initial_invalidations(&mut tree);
+    // 取得可变根组件并写入一个有效的非零滚动偏移。
+    let scroll = tree
+        .root_mut()
+        .expect("测试声明树必须存在根节点")
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<ScrollView>()
+        .expect("测试根组件必须是 ScrollView");
+    // 前置条件：高内容必须产生纵向滚动范围。
+    assert!(scroll.max_scroll_y() > 0.0);
+    // 将滚动位置推进到范围内部，验证移除时会归零运行态偏移。
+    scroll.scroll_to_xy(0.0, 20.0);
+    // 前置条件：运行态偏移必须成功更新。
+    assert_eq!(scroll.scroll_y(), 20.0);
+    // 双向绑定必须接收同一非零运行态偏移。
+    assert_eq!(offset.get(), Point::new(0.0, 20.0));
+
+    // 原位协调为同尺寸空视口，触发最后一个子节点移除路径。
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            ScrollView::new(ScrollDirection::Vertical)
+                .size(80.0, 40.0)
+                .scroll_offset(&offset),
+        ),
+    );
+
+    // 重新取得协调后保留的同一 ScrollView 实例。
+    let scroll = tree
+        .root()
+        .expect("测试声明树必须存在根节点")
+        .component()
+        .as_any()
+        .downcast_ref::<ScrollView>()
+        .expect("测试根组件必须是 ScrollView");
+    // 空视口不得继续暴露已移除内容的滚动范围。
+    assert_eq!(scroll.max_scroll_y(), 0.0);
+    // 空视口不得继续保留超出当前范围的滚动偏移。
+    assert_eq!(scroll.scroll_y(), 0.0);
+    // 受控偏移也必须同步归零，不能在下一次协调时恢复陈旧位置。
+    assert_eq!(offset.get(), Point::new(0.0, 0.0));
+}
+
+// 验证 Carousel 移除最后一组幻灯片时立即清除直接子节点计数。
+#[test]
+fn carousel_last_slide_removal_clears_runtime_count() {
+    // 构建含两个幻灯片的轮播声明树。
+    let mut tree = ViewAdapter::build_nodes(ViewNode::new(
+        Carousel::new().size(120.0, 60.0),
+        vec![
+            ViewNode::leaf(Label::new("first").size(120.0, 60.0)),
+            ViewNode::leaf(Label::new("second").size(120.0, 60.0)),
+        ],
+    ));
+    // 完成首轮布局，让运行态记录精确幻灯片数量。
+    clear_initial_invalidations(&mut tree);
+    // 取得布局后的轮播组件。
+    let carousel = tree
+        .root()
+        .expect("测试声明树必须存在根节点")
+        .component()
+        .as_any()
+        .downcast_ref::<Carousel>()
+        .expect("测试根组件必须是 Carousel");
+    // 前置条件：轮播运行态必须已经记录两个幻灯片。
+    assert_eq!(carousel.slide_count(), 2);
+
+    // 原位协调为同尺寸空轮播，触发最后一组幻灯片移除路径。
+    ViewAdapter::reconcile_nodes(&mut tree, ViewNode::leaf(Carousel::new().size(120.0, 60.0)));
+
+    // 重新取得协调后保留的同一 Carousel 实例。
+    let carousel = tree
+        .root()
+        .expect("测试声明树必须存在根节点")
+        .component()
+        .as_any()
+        .downcast_ref::<Carousel>()
+        .expect("测试根组件必须是 Carousel");
+    // 空轮播不得继续暴露已移除幻灯片的数量。
+    assert_eq!(carousel.slide_count(), 0);
+    // 空轮播的活动索引必须归一到零。
+    assert_eq!(carousel.current_index(), 0);
+}
+
+// 验证 Carousel 的结构通知不会把自定义箭头误计为幻灯片。
+#[test]
+fn carousel_structure_count_excludes_custom_arrow() {
+    // 构建带两个幻灯片和一个自定义箭头子树的轮播。
+    let mut tree = ViewAdapter::build_nodes(ViewNode::new(
+        Carousel::new()
+            .size(120.0, 60.0)
+            .arrows(|_, _| ViewNode::leaf(Label::new("arrows"))),
+        vec![
+            ViewNode::leaf(Label::new("first").size(120.0, 60.0)),
+            ViewNode::leaf(Label::new("second").size(120.0, 60.0)),
+        ],
+    ));
+    // 取得建树后尚未依赖布局修正的轮播组件。
+    let carousel = tree
+        .root()
+        .expect("测试声明树必须存在根节点")
+        .component()
+        .as_any()
+        .downcast_ref::<Carousel>()
+        .expect("测试根组件必须是 Carousel");
+    // 两个幻灯片加一个箭头仍只能发布两个幻灯片。
+    assert_eq!(carousel.slide_count(), 2);
+
+    // 保留自定义箭头但移除全部幻灯片，且暂不执行下一轮布局。
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            Carousel::new()
+                .size(120.0, 60.0)
+                .arrows(|_, _| ViewNode::leaf(Label::new("arrows"))),
+        ),
+    );
+
+    // 重新取得结构协调后保留的轮播组件。
+    let carousel = tree
+        .root()
+        .expect("测试声明树必须存在根节点")
+        .component()
+        .as_any()
+        .downcast_ref::<Carousel>()
+        .expect("测试根组件必须是 Carousel");
+    // 唯一剩余的箭头子树不得形成虚假的幻灯片计数。
+    assert_eq!(carousel.slide_count(), 0);
 }

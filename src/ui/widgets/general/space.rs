@@ -81,6 +81,14 @@ component! {
 
     flex_shrink => (&self) -> f32 { 0.0 }
 
+    on_children_changed => (&mut self, child_count: usize) {
+        // 最后一个子节点移除后，旧内容尺寸不再是有效的测量下限。
+        if child_count == 0 {
+            // 立即归零，避免树布局跳过空节点时继续暴露陈旧尺寸。
+            self.cached_content_size.set(Size::zero());
+        }
+    }
+
     render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {
         // Space itself is invisible; children are rendered by the tree.
     }
